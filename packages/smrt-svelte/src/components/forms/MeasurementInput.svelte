@@ -446,7 +446,7 @@ function handleUnitChange(e: Event) {
     <FieldLabel for={name} {label} {required} />
   {/if}
 
-  <div class="smrt-measurement-input__input-wrapper" class:smrt-measurement-input__mode={isSmrt}>
+  <div class="smrt-measurement-input__input-wrapper" class:smrt-measurement-input__mode={isSmrt} data-smrt-part="field">
     <input
       id={name}
       name={name}
@@ -471,7 +471,7 @@ function handleUnitChange(e: Event) {
       value={unit}
       {disabled}
       class="smrt-measurement-input__unit-select"
-      data-smrt-part="field"
+      data-smrt-part="input"
       class:smrt-measurement-input__mode={isSmrt}
       aria-label={label ? `${label} unit` : 'Unit'}
       onchange={handleUnitChange}

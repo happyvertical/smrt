@@ -190,7 +190,7 @@ function confirmImport() {
           <dt>{line.label}</dt>
           <dd>
             {#if line.chips}
-              <ul class="smrt-export-panel__chips" data-smrt-part="chips">
+              <ul class="smrt-export-panel__chips" data-smrt-part="list">
                 {#each line.chips as chip, i (`${chip}:${i}`)}
                   <li><Chip label={chip} size="sm" /></li>
                 {/each}
@@ -236,7 +236,7 @@ function confirmImport() {
         aria-describedby="prompt-note"
         interaction={false}
       />
-      <p class="smrt-export-panel__notice" data-smrt-part="notice" role="status" aria-live="polite">{promptNotice}</p>
+      <p class="smrt-export-panel__notice" data-smrt-part="status" role="status" aria-live="polite">{promptNotice}</p>
     </div>
   </Card>
 
@@ -247,7 +247,7 @@ function confirmImport() {
         Download writes <code>{fileName}</code> ({fileSize}). To make the app from
         it yourself, run this where the file is:
       </p>
-      <div class="smrt-export-panel__command" data-smrt-part="toolbar">
+      <div class="smrt-export-panel__command" data-smrt-part="actions">
         <code bind:this={commandLine} data-export-command>{command}</code>
         <CopyButton
           text={() => command}
@@ -258,7 +258,7 @@ function confirmImport() {
           onfail={commandCopyFailed}
         />
       </div>
-      <p class="smrt-export-panel__notice" data-smrt-part="notice" role="status" aria-live="polite">{commandNotice}</p>
+      <p class="smrt-export-panel__notice" data-smrt-part="status" role="status" aria-live="polite">{commandNotice}</p>
       <div class="smrt-export-panel__actions" data-export-actions="download" data-smrt-part="actions">
         <Button variant={exportAction ? 'secondary' : 'primary'} onclick={downloadCurrent}>Download cookbook</Button>
         {#if kitchenState.config}
@@ -270,7 +270,7 @@ function confirmImport() {
         {/if}
       </div>
       <Disclosure title="Preview JSON">
-        <pre class="smrt-export-panel__json" data-smrt-part="preview">{serializeCookbook(current)}</pre>
+        <pre class="smrt-export-panel__json" data-smrt-part="panel">{serializeCookbook(current)}</pre>
       </Disclosure>
     </div>
   </Card>
@@ -342,7 +342,7 @@ function confirmImport() {
       {#if error}
         <Alert variant="error" title="Import failed">{error}</Alert>
       {/if}
-      <p class="smrt-export-panel__notice" data-smrt-part="notice" role="status" aria-live="polite">{notice}</p>
+      <p class="smrt-export-panel__notice" data-smrt-part="status" role="status" aria-live="polite">{notice}</p>
     </Disclosure>
   </section>
 </div>

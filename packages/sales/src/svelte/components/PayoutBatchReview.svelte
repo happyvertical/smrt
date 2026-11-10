@@ -94,36 +94,36 @@ function methodLabel(method: string): string {
       {@const actions = payoutActionsFor(payout.status)}
       <Card variant="outlined">
         <div class="smrt-payout-batch-review__header" data-smrt-part="header">
-          <span class="smrt-payout-batch-review__earner">{payout.earnerName ?? 'Earner'}</span>
+          <span class="smrt-payout-batch-review__earner" data-smrt-part="author">{payout.earnerName ?? 'Earner'}</span>
           <Badge variant={payoutStatusBadgeVariant(payout.status)} size="sm">
             {payout.status}
           </Badge>
         </div>
 
-        <dl class="smrt-payout-batch-review__facts" data-smrt-part="facts">
-          <div class="smrt-payout-batch-review__fact">
+        <dl class="smrt-payout-batch-review__facts" data-smrt-part="meta">
+          <div class="smrt-payout-batch-review__fact" data-smrt-part="item">
             <dt>Period</dt>
             <dd>
               {formatDate(payout.periodStart, locale)} – {formatDate(payout.periodEnd, locale)}
             </dd>
           </div>
-          <div class="smrt-payout-batch-review__fact">
+          <div class="smrt-payout-batch-review__fact" data-smrt-part="item">
             <dt>Method</dt>
             <dd>{methodLabel(payout.payoutMethod)}</dd>
           </div>
-          <div class="smrt-payout-batch-review__fact">
+          <div class="smrt-payout-batch-review__fact" data-smrt-part="item">
             <dt>Commissions</dt>
             <dd>{formatCents(payout.commissionTotalCents, payout.currency, locale)}</dd>
           </div>
-          <div class="smrt-payout-batch-review__fact">
+          <div class="smrt-payout-batch-review__fact" data-smrt-part="item">
             <dt>Adjustments</dt>
-            <dd class:smrt-payout-batch-review__negative={payout.adjustmentTotalCents < 0}>
+            <dd class:smrt-payout-batch-review__negative={payout.adjustmentTotalCents < 0} data-smrt-part="value">
               {formatCents(payout.adjustmentTotalCents, payout.currency, locale)}
             </dd>
           </div>
-          <div class="smrt-payout-batch-review__fact smrt-payout-batch-review__fact--net">
+          <div class="smrt-payout-batch-review__fact smrt-payout-batch-review__fact--net" data-smrt-part="item">
             <dt>Net</dt>
-            <dd class:smrt-payout-batch-review__negative={payout.totalAmountCents < 0}>
+            <dd class:smrt-payout-batch-review__negative={payout.totalAmountCents < 0} data-smrt-part="value">
               {formatCents(payout.totalAmountCents, payout.currency, locale)}
             </dd>
           </div>

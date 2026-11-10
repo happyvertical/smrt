@@ -67,10 +67,10 @@ const slotMeta = $derived(moduleMeta?.uiSlots?.[slotId]);
     <p class="smrt-module-panel__placeholder-title" data-smrt-part="title">
       {t(M['ui.module_panel.component_not_registered'])}
     </p>
-    <code class="smrt-module-panel__placeholder-code" data-smrt-part="content">
+    <code class="smrt-module-panel__placeholder-code" data-smrt-part="body">
       {moduleName}/{slotId}
     </code>
-    <p class="smrt-module-panel__placeholder-hint" data-smrt-part="hint">
+    <p class="smrt-module-panel__placeholder-hint" data-smrt-part="description">
       {t(M['ui.module_panel.register_hint'])}
     </p>
     {#if slotMeta}

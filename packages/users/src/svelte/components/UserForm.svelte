@@ -83,7 +83,7 @@ function handleSubmit() {
       <label for="email">Email</label>
       <Input id="email" type="email" bind:value={email} required disabled={loading || !!user} />
       {#if user}
-        <span class="smrt-user-form__hint" data-smrt-part="hint">{t(M['users.user_form.email_cannot_be_changed'])}</span>
+        <span class="smrt-user-form__hint" data-smrt-part="description">{t(M['users.user_form.email_cannot_be_changed'])}</span>
       {/if}
     </div>
 

@@ -79,11 +79,11 @@ export interface Props {
   />
 
   <div class="smrt-forward-form__body" data-smrt-part="body">
-    <pre class="smrt-forward-form__content" data-smrt-part="content">{forwardedBlock}</pre>
+    <pre class="smrt-forward-form__content" data-smrt-part="body">{forwardedBlock}</pre>
   </div>
 
   {#if sendError}
-    <div class="smrt-forward-form__message" role="alert" aria-live="assertive">
+    <div class="smrt-forward-form__message" role="alert" aria-live="assertive" data-smrt-part="message">
       {sendError}
     </div>
   {/if}

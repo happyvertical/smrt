@@ -76,7 +76,7 @@ function handleScroll(event: Event) {
     </div>
   {:else}
     {#each groupedMessages as group}
-      <div class="smrt-message-list__separator" data-smrt-part="separator" role="separator">
+      <div class="smrt-message-list__separator" data-smrt-part="marker" role="separator">
         <span class="smrt-message-list__label" data-smrt-part="label">{group.dateLabel}</span>
       </div>
       {#each group.messages as message (message.id)}

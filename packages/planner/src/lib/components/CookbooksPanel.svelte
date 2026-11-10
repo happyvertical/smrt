@@ -144,11 +144,11 @@ function commit() {
       <li>
         <button
           type="button"
-          class="smrt-cookbooks-panel__card" data-smrt-part="card"
+          class="smrt-cookbooks-panel__card" data-smrt-part="option"
           data-cookbook={cookbook.id}
           onclick={() => open(cookbook)}
         >
-          <span class="smrt-cookbooks-panel__heading" data-smrt-part="heading">
+          <span class="smrt-cookbooks-panel__heading" data-smrt-part="header">
             <svg
               class="smrt-cookbooks-panel__icon" data-smrt-part="icon"
               viewBox="0 0 24 24"
@@ -165,7 +165,7 @@ function commit() {
                 <path {d} />
               {/each}
             </svg>
-            <span class="smrt-cookbooks-panel__name" data-smrt-part="name">{cookbook.name}</span>
+            <span class="smrt-cookbooks-panel__name" data-smrt-part="title">{cookbook.name}</span>
           </span>
           <span class="smrt-cookbooks-panel__summary" data-smrt-part="summary">{cookbook.summary}</span>
           {#if active}<span class="smrt-cookbooks-panel__badge" data-smrt-part="badge">In use</span>{/if}
@@ -190,15 +190,15 @@ function commit() {
       </div>
       <h2 id="preview-heading" tabindex="-1" bind:this={detailHeading}>{selected.name}</h2>
       <p class="smrt-cookbooks-panel__summary" data-smrt-part="summary">{selected.summary}</p>
-      <div class="smrt-cookbooks-panel__block" data-smrt-part="section">
+      <div class="smrt-cookbooks-panel__block" data-smrt-part="group">
         <h3>Recipes</h3>
-        <ul class="smrt-cookbooks-panel__chips" data-smrt-part="chips" aria-label="Recipes">
+        <ul class="smrt-cookbooks-panel__chips" data-smrt-part="list" aria-label="Recipes">
           {#each libraryRecipeLabels(selected) as label (label)}
             <li>{label}</li>
           {/each}
         </ul>
       </div>
-      <div class="smrt-cookbooks-panel__block" data-smrt-part="section">
+      <div class="smrt-cookbooks-panel__block" data-smrt-part="group">
         <h3>Menu</h3>
         <div class="smrt-cookbooks-panel__menu" data-smrt-part="list">
           {#each menu as section (section.id)}
@@ -213,7 +213,7 @@ function commit() {
           {/each}
         </div>
       </div>
-      <div class="smrt-cookbooks-panel__block" data-smrt-part="section">
+      <div class="smrt-cookbooks-panel__block" data-smrt-part="group">
         <h3>Settings</h3>
         <AppSettings
           value={settings}

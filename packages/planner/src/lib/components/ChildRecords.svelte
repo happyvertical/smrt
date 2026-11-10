@@ -196,7 +196,7 @@ async function remove(row: ModelRecord) {
       <form onsubmit={save} novalidate>
         {#each fields as field (field.name)}
           {#if calculated.has(field.name)}
-            <div class="smrt-child-records__derived" data-smrt-part="derived">
+            <div class="smrt-child-records__derived" data-smrt-part="field">
               <FieldLabel label={field.label} />
               <output data-derived={field.name}>
                 {formatValue(field, derivedPreview(field.name), labels)}
@@ -233,7 +233,7 @@ async function remove(row: ModelRecord) {
   {:else if rows.length === 0}
     <p class="smrt-child-records__empty" data-smrt-part="empty">None yet.</p>
   {:else}
-    <div class="smrt-child-records__scroll" data-smrt-part="scroll">
+    <div class="smrt-child-records__scroll" data-smrt-part="body">
       <table class="planner-list">
         <thead>
           <tr>

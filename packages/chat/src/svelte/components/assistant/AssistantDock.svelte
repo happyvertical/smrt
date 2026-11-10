@@ -714,7 +714,7 @@ async function handleConfirmAction(requestId: string) {
   {:else if messageFormat === 'markdown'}
     <!-- Only the escaping renderer's output is injected (#4505): it escapes
          all input HTML and emits a fixed tag set with checked http(s) hrefs. -->
-    <div class="smrt-assistant-dock__message-content smrt-assistant-dock__markdown" data-smrt-part="markdown">
+    <div class="smrt-assistant-dock__message-content smrt-assistant-dock__markdown" data-smrt-part="message">
       {@html renderAssistantMarkdown(message.content)}
     </div>
   {:else}
@@ -725,7 +725,7 @@ async function handleConfirmAction(requestId: string) {
 <div class="smrt-assistant-dock__root" data-smrt-component="AssistantDock">
   <div
     class="smrt-assistant-dock__layout"
-    data-smrt-part="layout"
+    data-smrt-part="group"
     data-threads-open={threadsOpen || undefined}
   >
     {#if presentation === 'full' && conversations !== 'single' && threadList}
@@ -742,7 +742,7 @@ async function handleConfirmAction(requestId: string) {
 
       <div
         class="smrt-assistant-dock__threads"
-        data-smrt-part="threads"
+        data-smrt-part="nav"
         id={threadsId}
         bind:this={threadsEl}
       >
@@ -755,7 +755,7 @@ async function handleConfirmAction(requestId: string) {
       </div>
     {/if}
 
-    <div class="smrt-assistant-dock__main" data-smrt-part="main">
+    <div class="smrt-assistant-dock__main" data-smrt-part="body">
       {#if aiUnavailable}
         <AiUnavailableNotice status={aiUnavailable} settingsHref={aiSettingsHref} />
       {/if}
@@ -776,7 +776,7 @@ async function handleConfirmAction(requestId: string) {
       {/if}
 
       {#if controller.run && (presentation === 'controls' || controller.run.state === 'paused')}
-        <div class="smrt-assistant-dock__run" data-smrt-part="run" role="status" aria-live="polite">
+        <div class="smrt-assistant-dock__run" data-smrt-part="summary" role="status" aria-live="polite">
           <span>{controller.run.goal}</span>
           {#if controller.run.state === 'running'}
             <Button type="button" size="sm" variant="ghost" onclick={() => controller.pauseRun()}>
@@ -822,13 +822,13 @@ async function handleConfirmAction(requestId: string) {
         </p>
       {/if}
 
-      <div class="smrt-assistant-dock__scroll" data-smrt-part="scroll">
+      <div class="smrt-assistant-dock__scroll" data-smrt-part="body">
         {#if presentation === 'full'}
         {#if conversations === 'single'}
           {#if !controller.activeThreadId && !controller.error}
             <div
               class="smrt-assistant-dock__thread-state smrt-assistant-dock__thread-loading"
-            data-smrt-part="state"
+            data-smrt-part="status"
               role="status"
               aria-label={t(M['chat.assistant_dock.opening_conversation'])}
             >
@@ -838,7 +838,7 @@ async function handleConfirmAction(requestId: string) {
         {:else if !controller.activeThreadId && controller.threadsLoading}
           <div
             class="smrt-assistant-dock__thread-state smrt-assistant-dock__thread-loading"
-            data-smrt-part="state"
+            data-smrt-part="status"
             role="status"
             aria-label={t(M['chat.assistant_dock.loading_conversations'])}
           >
@@ -847,7 +847,7 @@ async function handleConfirmAction(requestId: string) {
         {:else if !controller.activeThreadId && !controller.error}
           <section
             class="smrt-assistant-dock__thread-state"
-            data-smrt-part="state"
+            data-smrt-part="status"
             aria-labelledby={`${threadsId}-empty-title`}
           >
             {#if threadList && controller.threads.length > 0}
@@ -855,7 +855,7 @@ async function handleConfirmAction(requestId: string) {
                 {t(M['chat.assistant_dock.choose_conversation'])}
               </h2>
               <p>{t(M['chat.assistant_dock.choose_conversation_hint'])}</p>
-              <div class="smrt-assistant-dock__thread-state-actions" data-smrt-part="state-actions">
+              <div class="smrt-assistant-dock__thread-state-actions" data-smrt-part="actions">
                 <Button
                   type="button"
                   aria-controls={threadsId}
@@ -887,7 +887,7 @@ async function handleConfirmAction(requestId: string) {
         {/if}
 
         {#if controller.activeThreadId && !controller.threadsLoading && !controller.messages.some((message) => message.role === 'user' || message.role === 'tool') && controller.pendingSends.length === 0 && suggestions.length > 0}
-          <div class="smrt-assistant-dock__suggestions" data-smrt-part="suggestions" role="group" aria-label={t(M['chat.assistant_dock.conversation_starters'])}>
+          <div class="smrt-assistant-dock__suggestions" data-smrt-part="actions" role="group" aria-label={t(M['chat.assistant_dock.conversation_starters'])}>
             {#each suggestions as suggestion (suggestion.prompt)}
               <Button variant="secondary" disabled={composerDisabled} onclick={() => { void handleSend(suggestion.prompt, []).catch(() => {}); }}>
                 {suggestion.label}
@@ -895,14 +895,14 @@ async function handleConfirmAction(requestId: string) {
             {/each}
           </div>
         {/if}
-        <ul class="smrt-assistant-dock__messages" data-smrt-part="messages">
+        <ul class="smrt-assistant-dock__messages" data-smrt-part="list">
           {#each controller.messages as message (message.id)}
             {@const ResultComponent = message.role === 'tool' ? toolResultComponent?.(message) : undefined}
             {@const question = message.role === 'assistant' ? assistantQuestionFromMessage(message) : null}
             <li data-role={message.role} data-smrt-part="row">
               {#if ResultComponent}
                 <!-- Structured results are cards spanning the thread, not bubbles. -->
-                <div class="smrt-assistant-dock__card" data-smrt-part="card">
+                <div class="smrt-assistant-dock__card" data-smrt-part="item">
                   <ResultComponent {message} />
                 </div>
               {:else}
@@ -919,29 +919,29 @@ async function handleConfirmAction(requestId: string) {
                   {#if message.attachments && message.attachments.length > 0}
                     <ul
                       class="smrt-assistant-dock__attachments"
-                      data-smrt-part="attachments"
+                      data-smrt-part="list"
                       aria-label={t(M['chat.assistant_dock.attachments'])}
                     >
                       {#each message.attachments as attachment (attachment.id)}
                         {@const href = safeAttachmentHref(attachment.url)}
-                        <li class="smrt-assistant-dock__attachment" data-smrt-part="attachment">
+                        <li class="smrt-assistant-dock__attachment" data-smrt-part="item">
                           {#if href}
                             <a
                               {href}
                               target="_blank"
                               rel="noopener noreferrer"
                               class="smrt-assistant-dock__attachment-link"
-                              data-smrt-part="attachment-link"
+                              data-smrt-part="action"
                             >
                               {attachment.name}
                             </a>
                           {:else}
-                            <span class="smrt-assistant-dock__attachment-name" data-smrt-part="attachment-name">
+                            <span class="smrt-assistant-dock__attachment-name" data-smrt-part="title">
                               {attachment.name}
                             </span>
                           {/if}
                           {#if attachment.size !== undefined}
-                            <span class="smrt-assistant-dock__attachment-size" data-smrt-part="attachment-size">
+                            <span class="smrt-assistant-dock__attachment-size" data-smrt-part="meta">
                               {formatAttachmentSize(attachment.size)}
                             </span>
                           {/if}
@@ -953,7 +953,7 @@ async function handleConfirmAction(requestId: string) {
                 </MessageBubble>
               {/if}
               {#if question}
-                <div class="smrt-assistant-dock__card" data-smrt-part="card">
+                <div class="smrt-assistant-dock__card" data-smrt-part="item">
                   <AssistantQuestionForm
                     {question}
                     answered={controller.answeredQuestions[`${message.id}:${question.id}`] ?? null}
@@ -965,7 +965,7 @@ async function handleConfirmAction(requestId: string) {
               {#if toolCall && message.toolCallData != null}
                 <!-- A host's cards (a report preview, an offer) span the thread
                      under the message's text bubble. -->
-                <div class="smrt-assistant-dock__card smrt-assistant-dock__tool-call" data-smrt-part="tool-card">
+                <div class="smrt-assistant-dock__card smrt-assistant-dock__tool-call" data-smrt-part="panel">
                   {@render toolCall(message)}
                 </div>
               {/if}
@@ -976,7 +976,7 @@ async function handleConfirmAction(requestId: string) {
         {#if controller.streamingText}
           <div
             class="smrt-assistant-dock__streaming"
-            data-smrt-part="streaming"
+            data-smrt-part="status"
             aria-label={t(M['chat.assistant_dock.reply_in_progress'])}
           >
             <MessageBubble variant="agent" own={false}>
@@ -999,21 +999,21 @@ async function handleConfirmAction(requestId: string) {
         {/if}
 
         {#each controller.toolRequests.filter((r) => r.status === 'waiting') as request (request.id)}
-          <div class="smrt-assistant-dock__tool-request" data-smrt-part="tool-request" role="group" aria-label={t(M['chat.assistant_dock.tool_request_title'])}>
-            <p class="smrt-assistant-dock__tool-request-title" data-smrt-part="tool-request-title">
+          <div class="smrt-assistant-dock__tool-request" data-smrt-part="panel" role="group" aria-label={t(M['chat.assistant_dock.tool_request_title'])}>
+            <p class="smrt-assistant-dock__tool-request-title" data-smrt-part="title">
               {t(M['chat.assistant_dock.tool_request_title'])}
             </p>
-            <p class="smrt-assistant-dock__tool-request-description" data-smrt-part="tool-request-description">{request.description || request.name}</p>
+            <p class="smrt-assistant-dock__tool-request-description" data-smrt-part="description">{request.description || request.name}</p>
             {#if request.effect === 'destructive'}
-              <p class="smrt-assistant-dock__tool-request-warning" data-smrt-part="tool-request-warning">
+              <p class="smrt-assistant-dock__tool-request-warning" data-smrt-part="description">
                 {t(M['chat.assistant_dock.tool_request_destructive'])}
               </p>
             {/if}
-            <details class="smrt-assistant-dock__tool-request-details" data-smrt-part="tool-request-details">
+            <details class="smrt-assistant-dock__tool-request-details" data-smrt-part="body">
               <summary>{t(M['chat.assistant_dock.tool_request_details'])}</summary>
               <pre>{formatToolArgs(request.args)}</pre>
             </details>
-            <div class="smrt-assistant-dock__tool-request-actions" data-smrt-part="tool-request-actions">
+            <div class="smrt-assistant-dock__tool-request-actions" data-smrt-part="actions">
               <Button type="button" size="sm" onclick={() => controller.approveToolRequest(request.id)}>
                 {t(M['chat.assistant_dock.tool_request_allow'])}
               </Button>
@@ -1063,7 +1063,7 @@ async function handleConfirmAction(requestId: string) {
                        landed. Reject is withdrawn (ToolCallDisplay only
                        offers it for a live preview); the only affordance is a
                        same-key retry. -->
-                  <div class="smrt-assistant-dock__action-unknown" data-smrt-part="action-unknown" role="status">
+                  <div class="smrt-assistant-dock__action-unknown" data-smrt-part="status" role="status">
                     <p>{t(M['chat.assistant_dock.action_outcome_unknown'])}</p>
                     <Button
                       type="button"
@@ -1081,7 +1081,7 @@ async function handleConfirmAction(requestId: string) {
         {/if}
 
         {#if controller.pendingSends.some((p) => p.status === 'stale')}
-          <div class="smrt-assistant-dock__stale" data-smrt-part="stale">
+          <div class="smrt-assistant-dock__stale" data-smrt-part="status">
             <p>{t(M['chat.assistant_dock.taking_longer'])}</p>
             {#each controller.pendingSends.filter((p) => p.status === 'stale') as pending (pending.clientRequestId)}
               <Button
@@ -1101,7 +1101,7 @@ async function handleConfirmAction(requestId: string) {
                all — only 'stale' rendered above. retry(clientRequestId)
                already exists and reuses the same id, so it's the same
                affordance as the stale case. -->
-          <div class="smrt-assistant-dock__failed" data-smrt-part="failed">
+          <div class="smrt-assistant-dock__failed" data-smrt-part="error">
             <p>{t(M['chat.assistant_dock.send_failed'])}</p>
             {#each controller.pendingSends.filter((p) => p.status === 'failed') as pending (pending.clientRequestId)}
               <Button
@@ -1118,7 +1118,7 @@ async function handleConfirmAction(requestId: string) {
 
       {#if controller.status.state === 'working'}
         <div class="smrt-assistant-dock__status" data-smrt-part="status" role="status" aria-live="polite">
-          <span class="smrt-assistant-dock__status-label" data-smrt-part="status-label">{controller.status.label}</span>
+          <span class="smrt-assistant-dock__status-label" data-smrt-part="label">{controller.status.label}</span>
           {#if controller.status.cancellable}
             <Button type="button" size="sm" variant="ghost" onclick={() => controller.cancel()}>
               {t(M['chat.assistant_dock.stop'])}
@@ -1128,9 +1128,9 @@ async function handleConfirmAction(requestId: string) {
       {/if}
 
       {#if presentation === 'full'}
-      <div class="smrt-assistant-dock__composer" data-smrt-part="composer">
+      <div class="smrt-assistant-dock__composer" data-smrt-part="panel">
         {#if controller.models.length > 0}
-          <div class="smrt-assistant-dock__composer-header" data-smrt-part="composer-header">
+          <div class="smrt-assistant-dock__composer-header" data-smrt-part="header">
             <ModelPicker
               models={controller.models}
               value={controller.selectedModel ?? controller.models[0].id}
@@ -1251,6 +1251,12 @@ async function handleConfirmAction(requestId: string) {
       flex: 1;
       min-width: 0;
     }
+    .smrt-assistant-dock__root .smrt-assistant-dock__layout > :global([data-smrt-component="Button"]::before) {
+      content: '▸' / '';
+    }
+    .smrt-assistant-dock__root .smrt-assistant-dock__layout[data-threads-open] > :global([data-smrt-component="Button"]::before) {
+      content: '▾' / '';
+    }
   }
   .smrt-assistant-dock__main {
     flex: 1;
@@ -1299,11 +1305,12 @@ async function handleConfirmAction(requestId: string) {
     padding: var(--smrt-spacing-2) var(--smrt-spacing-3);
     overflow-wrap: anywhere;
   }
-  .smrt-assistant-dock__messages > li[data-role='user'] :global([data-smrt-component="MessageBubble"]) {
+  .smrt-assistant-dock__messages > li[data-role='user'] :global([data-smrt-component="MessageBubble"]),
+  .smrt-assistant-dock__messages > li[data-role='user'] :global(.smrt-message-bubble__own) {
     align-self: flex-end;
   }
-  .smrt-assistant-dock__messages > li:not([data-role='user']) :global([data-smrt-component="MessageBubble"]),
-  .smrt-assistant-dock__streaming :global([data-smrt-component="MessageBubble"]) {
+  .smrt-assistant-dock__messages > li:not([data-role='user']) :global(.smrt-message-bubble__agent),
+  .smrt-assistant-dock__streaming :global(.smrt-message-bubble__agent) {
     align-self: flex-start;
   }
   .smrt-assistant-dock__streaming {
@@ -1472,12 +1479,7 @@ async function handleConfirmAction(requestId: string) {
       text-align: left;
     }
     .smrt-assistant-dock__root .smrt-assistant-dock__layout > :global([data-smrt-component="Button"]::before) {
-      content: '▸' / '';
       color: var(--smrt-color-on-surface-variant);
-    }
-    .smrt-assistant-dock__root .smrt-assistant-dock__layout[data-threads-open]
-    > :global([data-smrt-component="Button"]::before) {
-      content: '▾' / '';
     }
     .smrt-assistant-dock__root .smrt-assistant-dock__layout > :global([data-smrt-component="Button"]:focus-visible) {
       outline: 2px solid var(--smrt-color-primary);
@@ -1500,13 +1502,14 @@ async function handleConfirmAction(requestId: string) {
   .smrt-assistant-dock__streaming :global([data-smrt-component="MessageBubble"]) {
     border-radius: var(--smrt-radius-large);
   }
-  .smrt-assistant-dock__messages > li[data-role='user'] :global([data-smrt-component="MessageBubble"]) {
+  .smrt-assistant-dock__messages > li[data-role='user'] :global([data-smrt-component="MessageBubble"]),
+  .smrt-assistant-dock__messages > li[data-role='user'] :global(.smrt-message-bubble__own) {
     background: var(--smrt-color-primary-container);
     color: var(--smrt-color-on-primary-container);
     border-radius: var(--smrt-radius-large);
   }
-  .smrt-assistant-dock__messages > li:not([data-role='user']) :global([data-smrt-component="MessageBubble"]),
-  .smrt-assistant-dock__streaming :global([data-smrt-component="MessageBubble"]) {
+  .smrt-assistant-dock__messages > li:not([data-role='user']) :global(.smrt-message-bubble__agent),
+  .smrt-assistant-dock__streaming :global(.smrt-message-bubble__agent) {
     background: var(--smrt-color-surface-container);
     color: var(--smrt-color-on-surface);
     border-left: none;

@@ -55,7 +55,7 @@ function handleCreate(data: {
     {/if}
 
     {#if lastCreated}
-      <dl class="smrt-create-asset-modal-preview__summary" data-smrt-part="details">
+      <dl class="smrt-create-asset-modal-preview__summary" data-smrt-part="body">
         <div>
           <dt>File</dt>
           <dd>{lastCreated.fileName}</dd>

@@ -57,14 +57,14 @@ onMount(async () => {
 <Provider webmcp={{ definitions: definition ? [definition] : [] }}>
   <AppLayout>
     {#snippet children()}
-    <div class="smrt-live-products-page__root">
+    <div class="smrt-live-products-page__root" data-smrt-part="body">
       <div class="smrt-live-products-page__header" data-smrt-part="header">
         <h1>{t(M['products.live_page.title'])}</h1>
         <p class="smrt-live-products-page__description" data-smrt-part="meta">{t(M['products.live_page.description'])}</p>
       </div>
 
       {#if loadError}
-        <p class="smrt-live-products-page__status" data-smrt-part="status" role="alert">
+        <p class="smrt-live-products-page__status" data-smrt-part="error" role="alert">
           {t(M['products.live_page.load_failed'])} {loadError}
         </p>
       {:else if LiveProductList && definition}

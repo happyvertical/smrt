@@ -684,21 +684,21 @@ function keydown(event: KeyboardEvent) {
 }
 </script>
 <svelte:window onkeydown={keydown} />
-<div class="smrt-triage-view__workspace" data-smrt-part="body" bind:this={root} data-testid="intake-workspace">
+<div class="smrt-triage-view__workspace"  bind:this={root} data-testid="intake-workspace" data-smrt-component="TriageView">
 <div class="smrt-triage-view__list" data-smrt-part="list">
 <InboxView bind:this={inbox} {host} {rowAside} {accept} {dropzone} {listPollMs} selectedId={selected} onselect={(id) => request(id)} onitems={listed} onreadstart={readStarted} {stamp} status={rowStatus} resolveInRow={false} />
 </div>
 <section class="smrt-triage-view__item" data-smrt-part="panel" bind:this={pane} tabindex="-1" aria-label={label ?? t(M['ingestion.selectedItem'])} data-testid="workspace-item" onfocusin={noteField}>
-<div class="smrt-triage-view__queue-nav" data-smrt-part="toolbar" role="group" aria-label={t(M['ingestion.workspace'])}>
+<div class="smrt-triage-view__queue-nav" data-smrt-part="actions" role="group" aria-label={t(M['ingestion.workspace'])}>
 <Button disabled={position === 0 || !rows.length} aria-keyshortcuts="K Alt+ArrowUp" onclick={() => move(-1)}>{t(M['ingestion.previousItem'])}</Button>
 {#if position >= 0}<p data-testid="queue-position">{t(M['ingestion.itemOf'], { index: position + 1, count: rows.length })}</p>{/if}
 <Button disabled={(position >= rows.length - 1 && !more) || !rows.length} aria-keyshortcuts="J Alt+ArrowDown" onclick={() => move(1)}>{t(M['ingestion.nextItem'])}</Button>
 </div>
-<p class="smrt-triage-view__hint" data-smrt-part="hint">{t(M['ingestion.keyboardHelp'])}</p>
+<p class="smrt-triage-view__hint" data-smrt-part="description">{t(M['ingestion.keyboardHelp'])}</p>
 <p role="status" data-testid="background-update">{announcement}</p>
 <!-- One persistent live region whose text changes, so the notes are announced reliably. -->
 <p role="status" class="smrt-triage-view__note" data-smrt-part="message" data-testid="pane-note">{#if held}<span data-testid="advance-held">{t(M[held === 'unsent' ? 'ingestion.finishedUnsent' : held === 'failed' ? 'ingestion.advanceFailed' : 'ingestion.advanceRetry'])}</span>{:else if done && !selected}<span data-testid="queue-done">{t(M['ingestion.queueDone'])}</span>{/if}</p>
-{#if leaving}<div class="smrt-triage-view__leave" data-smrt-part="dialog" role="group" aria-labelledby="unsaved-leave-note" bind:this={stay} data-testid="unsaved-leave"><p id="unsaved-leave-note">{t(M['ingestion.unsavedLeave'])}</p><Button data-stay onclick={keepEditing}>{t(M['ingestion.stay'])}</Button><Button onclick={discardAndLeave}>{t(M['ingestion.discardLeave'])}</Button></div>{/if}
+{#if leaving}<div class="smrt-triage-view__leave" data-smrt-part="panel" role="group" aria-labelledby="unsaved-leave-note" bind:this={stay} data-testid="unsaved-leave"><p id="unsaved-leave-note">{t(M['ingestion.unsavedLeave'])}</p><Button data-stay onclick={keepEditing}>{t(M['ingestion.stay'])}</Button><Button onclick={discardAndLeave}>{t(M['ingestion.discardLeave'])}</Button></div>{/if}
 {#if selected}
 {#key selected}<ReviewView {host} itemId={selected} {pollMs} layout="stacked" {stamp} onview={paneChanged} ondirty={(dirty: boolean) => { paneDirty = dirty; }} onoutcome={outcome} />{/key}
 {:else if !done}<p>{t(M['ingestion.selectItem'])}</p>{/if}

@@ -47,10 +47,10 @@ function detailsId(id: string): string {
         <tr>
           <th scope="col">Event</th>
           <th scope="col">Basis</th>
-          <th scope="col" class="smrt-commission-breakdown__number">Base</th>
-          <th scope="col" class="smrt-commission-breakdown__number">Rate</th>
-          <th scope="col" class="smrt-commission-breakdown__number">Share</th>
-          <th scope="col" class="smrt-commission-breakdown__number">Amount</th>
+          <th scope="col" class="smrt-commission-breakdown__number" data-smrt-part="cell">Base</th>
+          <th scope="col" class="smrt-commission-breakdown__number" data-smrt-part="cell">Rate</th>
+          <th scope="col" class="smrt-commission-breakdown__number" data-smrt-part="cell">Share</th>
+          <th scope="col" class="smrt-commission-breakdown__number" data-smrt-part="cell">Amount</th>
           <th scope="col">Status</th>
           <th scope="col">Clears</th>
           <th scope="col"><span class="smrt-commission-breakdown__visually-hidden" data-smrt-part="label">Explanation</span></th>
@@ -61,18 +61,18 @@ function detailsId(id: string): string {
           {@const isExpanded = !!expanded[row.id]}
           <tr data-smrt-part="row">
             <td>
-              <span class="smrt-commission-breakdown__event-kind">{row.eventKind.replace(/_/g, ' ')}</span>
+              <span class="smrt-commission-breakdown__event-kind" data-smrt-part="meta">{row.eventKind.replace(/_/g, ' ')}</span>
               {#if row.sourceLabel}
-                <span class="smrt-commission-breakdown__secondary">{row.sourceLabel}</span>
+                <span class="smrt-commission-breakdown__secondary" data-smrt-part="meta">{row.sourceLabel}</span>
               {/if}
             </td>
             <td>{row.basis}</td>
-            <td class="smrt-commission-breakdown__number">{formatCents(row.baseAmountCents, row.currency, locale)}</td>
-            <td class="smrt-commission-breakdown__number">
+            <td class="smrt-commission-breakdown__number" data-smrt-part="cell">{formatCents(row.baseAmountCents, row.currency, locale)}</td>
+            <td class="smrt-commission-breakdown__number" data-smrt-part="cell">
               {row.basis === 'fixed' ? '—' : formatPercent(row.rate, locale)}
             </td>
-            <td class="smrt-commission-breakdown__number">{formatPercent(row.shareFraction, locale)}</td>
-            <td class="smrt-commission-breakdown__number smrt-commission-breakdown__amount" class:smrt-commission-breakdown__negative={row.amountCents < 0}>
+            <td class="smrt-commission-breakdown__number" data-smrt-part="cell">{formatPercent(row.shareFraction, locale)}</td>
+            <td class="smrt-commission-breakdown__number smrt-commission-breakdown__amount" class:smrt-commission-breakdown__negative={row.amountCents < 0} data-smrt-part="cell">
               {formatCents(row.amountCents, row.currency, locale)}
             </td>
             <td>
@@ -103,7 +103,7 @@ function detailsId(id: string): string {
                       · component <code>{row.trace.componentKey}</code>
                     </p>
                   {/if}
-                  <p class="smrt-commission-breakdown__details-formula">
+                  <p class="smrt-commission-breakdown__details-formula" data-smrt-part="description">
                     <code>
                       {formatCommissionFormula(
                         {
@@ -119,14 +119,14 @@ function detailsId(id: string): string {
                     </code>
                   </p>
                   {#if row.adjustments && row.adjustments.length > 0}
-                    <table class="smrt-commission-breakdown__adjustments">
-                      <caption class="smrt-commission-breakdown__visually-hidden">
+                    <table class="smrt-commission-breakdown__adjustments" data-smrt-part="table">
+                      <caption class="smrt-commission-breakdown__visually-hidden" data-smrt-part="caption">
                         Adjustments against this commission
                       </caption>
                       <thead>
                         <tr>
                           <th scope="col">Kind</th>
-                          <th scope="col" class="smrt-commission-breakdown__number">Amount</th>
+                          <th scope="col" class="smrt-commission-breakdown__number" data-smrt-part="cell">Amount</th>
                           <th scope="col">Reason</th>
                           <th scope="col">Recorded</th>
                         </tr>
@@ -135,7 +135,7 @@ function detailsId(id: string): string {
                         {#each row.adjustments as adjustment (adjustment.id)}
                           <tr>
                             <td>{adjustment.adjustmentKind}</td>
-                            <td class="smrt-commission-breakdown__number" class:smrt-commission-breakdown__negative={adjustment.amountCents < 0}>
+                            <td class="smrt-commission-breakdown__number" class:smrt-commission-breakdown__negative={adjustment.amountCents < 0} data-smrt-part="cell">
                               {formatCents(adjustment.amountCents, adjustment.currency, locale)}
                             </td>
                             <td>{adjustment.reason}</td>

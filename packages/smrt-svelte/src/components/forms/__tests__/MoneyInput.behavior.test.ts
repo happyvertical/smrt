@@ -64,9 +64,11 @@ describe('MoneyInput — behavior', () => {
     const { container } = render(MoneyInput, {
       props: { name: 'price', label: 'Price' },
     });
-    expect(container.querySelector('.currency-symbol')).toBeNull(); // shown once
+    expect(container.querySelectorAll('[data-smrt-part="unit"]')).toHaveLength(
+      1,
+    );
     expect(
-      container.querySelector('.smrt-money-input__currency-code')?.textContent,
+      container.querySelector('[data-smrt-part="unit"]')?.textContent,
     ).toBe('CAD');
   });
 
@@ -74,9 +76,11 @@ describe('MoneyInput — behavior', () => {
     const { container } = render(MoneyInput, {
       props: { name: 'price', label: 'Price', currency: 'USD' },
     });
-    expect(container.querySelector('.currency-symbol')).toBeNull(); // shown once
+    expect(container.querySelectorAll('[data-smrt-part="unit"]')).toHaveLength(
+      1,
+    );
     expect(
-      container.querySelector('.smrt-money-input__currency-code')?.textContent,
+      container.querySelector('[data-smrt-part="unit"]')?.textContent,
     ).toBe('USD');
   });
 

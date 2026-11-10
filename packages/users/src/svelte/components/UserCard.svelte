@@ -62,8 +62,8 @@ const statusClass = $derived.by(() => {
   <UserAvatar {profile} size="md" />
 
   <div class="smrt-user-card__info" data-smrt-part="body">
-    <div class="smrt-user-card__name" data-smrt-part="name">{profile.name}</div>
-    <div class="smrt-user-card__email" data-smrt-part="email">{user.email}</div>
+    <div class="smrt-user-card__name" data-smrt-part="title">{profile.name}</div>
+    <div class="smrt-user-card__email" data-smrt-part="meta">{user.email}</div>
   </div>
 
   <div class="smrt-user-card__meta" data-smrt-part="meta">

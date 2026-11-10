@@ -91,7 +91,7 @@ function getColor(name: string): string {
   onkeydown={(event: KeyboardEvent) => event.key === 'Enter' && onclick?.()}
   use:ripple data-smrt-component="TenantCard"
 >
-  <div class="smrt-tenant-card__avatar" data-smrt-part="avatar" style:background-color={getColor(tenant.name ?? '')}>
+  <div class="smrt-tenant-card__avatar" data-smrt-part="icon" style:background-color={getColor(tenant.name ?? '')}>
     {getInitials(tenant.name ?? 'T')}
   </div>
 
@@ -102,12 +102,12 @@ function getColor(name: string): string {
     </div>
 
     {#if tenant.slug}
-      <div class="smrt-tenant-card__slug" data-smrt-part="slug">{tenant.slug}</div>
+      <div class="smrt-tenant-card__slug" data-smrt-part="meta">{tenant.slug}</div>
     {/if}
 
     {#if memberCount !== undefined}
       <div class="smrt-tenant-card__meta" data-smrt-part="meta">
-        <span class="smrt-tenant-card__members">{memberCount} member{memberCount === 1 ? '' : 's'}</span>
+        <span class="smrt-tenant-card__members" data-smrt-part="count">{memberCount} member{memberCount === 1 ? '' : 's'}</span>
       </div>
     {/if}
   </div>

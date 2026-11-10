@@ -65,38 +65,38 @@ const stats = $derived.by(() => {
 
 <div class="smrt-agent-dashboard__root" class:smrt-agent-dashboard__loading={loading} data-smrt-component="AgentDashboard">
   <!-- Stats Overview -->
-  <section class="smrt-agent-dashboard__stats" data-smrt-part="stats">
+  <section class="smrt-agent-dashboard__stats" data-smrt-part="group">
     <div class="smrt-agent-dashboard__grid" data-smrt-part="grid">
       <Card padding="sm">
-        <div class="smrt-agent-dashboard__card" data-smrt-part="card">
+        <div class="smrt-agent-dashboard__card" data-smrt-part="item">
           <div class="smrt-agent-dashboard__stat-value" data-smrt-part="value">{schedules.length}</div>
           <div class="smrt-agent-dashboard__stat-label" data-smrt-part="label">{t(M['agents.dashboard.total_schedules'])}</div>
         </div>
       </Card>
 
       <Card padding="sm">
-        <div class="smrt-agent-dashboard__card smrt-agent-dashboard__card-active" data-smrt-part="card">
+        <div class="smrt-agent-dashboard__card smrt-agent-dashboard__card-active" data-smrt-part="item">
           <div class="smrt-agent-dashboard__stat-value" data-smrt-part="value">{stats.active}</div>
           <div class="smrt-agent-dashboard__stat-label" data-smrt-part="label">Active</div>
         </div>
       </Card>
 
       <Card padding="sm">
-        <div class="smrt-agent-dashboard__card smrt-agent-dashboard__card-running" data-smrt-part="card">
+        <div class="smrt-agent-dashboard__card smrt-agent-dashboard__card-running" data-smrt-part="item">
           <div class="smrt-agent-dashboard__stat-value" data-smrt-part="value">{stats.running}</div>
           <div class="smrt-agent-dashboard__stat-label" data-smrt-part="label">{t(M['agents.dashboard.running_now'])}</div>
         </div>
       </Card>
 
       <Card padding="sm">
-        <div class="smrt-agent-dashboard__card" data-smrt-part="card">
+        <div class="smrt-agent-dashboard__card" data-smrt-part="item">
           <div class="smrt-agent-dashboard__stat-value" data-smrt-part="value">{stats.totalRuns.toLocaleString()}</div>
           <div class="smrt-agent-dashboard__stat-label" data-smrt-part="label">{t(M['agents.dashboard.total_runs'])}</div>
         </div>
       </Card>
 
       <Card padding="sm">
-        <div class="smrt-agent-dashboard__card" data-smrt-part="card">
+        <div class="smrt-agent-dashboard__card" data-smrt-part="item">
           <div class="smrt-agent-dashboard__stat-value" data-smrt-part="value">
             {stats.successRate !== null
               ? `${(stats.successRate * 100).toFixed(1)}%`
@@ -108,7 +108,7 @@ const stats = $derived.by(() => {
 
       {#if stats.error > 0}
         <Card padding="sm">
-          <div class="smrt-agent-dashboard__card smrt-agent-dashboard__card-error" data-smrt-part="card">
+          <div class="smrt-agent-dashboard__card smrt-agent-dashboard__card-error" data-smrt-part="item">
             <div class="smrt-agent-dashboard__stat-value" data-smrt-part="value">{stats.error}</div>
             <div class="smrt-agent-dashboard__stat-label" data-smrt-part="label">Errors</div>
           </div>
@@ -118,7 +118,7 @@ const stats = $derived.by(() => {
   </section>
 
   <!-- Schedules List -->
-  <section class="smrt-agent-dashboard__section" data-smrt-part="section">
+  <section class="smrt-agent-dashboard__section" data-smrt-part="group">
     <Card>
       {#snippet header()}
         <div class="smrt-agent-dashboard__header" data-smrt-part="header">
@@ -155,7 +155,7 @@ const stats = $derived.by(() => {
 
   <!-- Recent Run History -->
   {#if recentHistory.length > 0}
-    <section class="smrt-agent-dashboard__section" data-smrt-part="section">
+    <section class="smrt-agent-dashboard__section" data-smrt-part="group">
       <Card>
         {#snippet header()}
           <div class="smrt-agent-dashboard__header" data-smrt-part="header">

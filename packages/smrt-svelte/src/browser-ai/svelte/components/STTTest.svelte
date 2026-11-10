@@ -185,7 +185,7 @@ function clearLogs() {
     <div class="smrt-stt-test__error" data-smrt-part="error">{error}</div>
   {/if}
 
-  <div class="smrt-stt-test__result" data-smrt-part="content">
+  <div class="smrt-stt-test__result" data-smrt-part="body">
     <strong>Transcript:</strong>
     <div class="smrt-stt-test__transcript" data-smrt-part="body">{transcript || '(no result yet)'}</div>
   </div>

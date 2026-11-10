@@ -97,7 +97,7 @@ function removeReference(id: string) {
         {@const safeUrl = getSafeReferenceUrl(reference)}
         {@const referenceId = typeof reference.id === 'string' ? reference.id : ''}
         <div class="smrt-content-references-panel__row" data-smrt-part="row">
-          <div class="smrt-content-references-panel__copy" data-smrt-part="copy">
+          <div class="smrt-content-references-panel__copy" data-smrt-part="body">
             <strong>{getReferenceLabel(reference)}</strong>
             {#if safeUrl}
               <a href={safeUrl} target="_blank" rel="noreferrer">{safeUrl}</a>

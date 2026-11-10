@@ -60,7 +60,7 @@ function formatWhen(value?: Date | string): string {
 {:else}
   <div class="smrt-development-request-list__root" data-smrt-component="DevelopmentRequestList">
     {#each visibleRequests as request (request.id)}
-      <article class="smrt-development-request-list__card" data-smrt-part="card">
+      <article class="smrt-development-request-list__card" data-smrt-part="item">
         <header>
           <div>
             <p class="smrt-development-request-list__eyebrow" data-smrt-part="label">{request.type}</p>

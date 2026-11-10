@@ -372,7 +372,7 @@ async function playSpeech() {
 
 <section class="smrt-photo-cutout-setup__root" aria-busy={busy !== null} aria-labelledby="cutout-title" data-smrt-component="PhotoCutoutSetup">
   <h2 id="cutout-title">{t(M['images.photo_cutout_setup.title'])}</h2>
-  <ol class="smrt-photo-cutout-setup__steps" data-smrt-part="navigation" aria-label={t(M['images.photo_cutout_setup.steps_label'])}>
+  <ol class="smrt-photo-cutout-setup__steps" data-smrt-part="nav" aria-label={t(M['images.photo_cutout_setup.steps_label'])}>
     <li class:smrt-photo-cutout-setup__current={!source && !ready} class:smrt-photo-cutout-setup__complete={source !== null || ready} aria-current={!source && !ready ? 'step' : undefined} data-smrt-part="item">{t(M['images.photo_cutout_setup.step_choose'])}</li>
     <li class:smrt-photo-cutout-setup__current={source !== null && !head && !ready} class:smrt-photo-cutout-setup__complete={head !== null || ready} aria-current={source !== null && !head && !ready ? 'step' : undefined} data-smrt-part="item">{t(M['images.photo_cutout_setup.step_isolate'])}</li>
     <li class:smrt-photo-cutout-setup__current={head !== null && !ready} class:smrt-photo-cutout-setup__complete={ready} aria-current={head !== null && !ready ? 'step' : undefined} data-smrt-part="item">{t(M['images.photo_cutout_setup.step_mouth'])}</li>
@@ -387,10 +387,10 @@ async function playSpeech() {
       {:else if !head}<Button onclick={() => run('outline')} disabled={!source || busy !== null}>{failed === 'outline' ? 'Retry head isolation' : 'Isolate head'}</Button>
       {:else if !ready}<Button onclick={() => run('mouth-landmarks')} disabled={busy !== null}>{failed === 'mouth-landmarks' ? 'Retry mouth segmentation' : 'Continue: segment mouth'}</Button>
       {/if}
-      {#if busy}<span class="smrt-photo-cutout-setup__spinner" data-smrt-part="status" aria-label={busy === 'outline' ? 'Isolating head' : 'Segmenting mouth'}></span><Button variant="secondary" onclick={cancel}>Cancel</Button>{/if}
+      {#if busy}<span class="smrt-photo-cutout-setup__spinner" data-smrt-part="spinner" aria-label={busy === 'outline' ? 'Isolating head' : 'Segmenting mouth'}></span><Button variant="secondary" onclick={cancel}>Cancel</Button>{/if}
     </div>
-    {#if ready && saveSetup}<p class="smrt-photo-cutout-setup__save-hint" data-smrt-part="hint">{t(M['images.photo_cutout_setup.save_hint'])}</p>{/if}
-    <div class="smrt-photo-cutout-setup__secondary" data-smrt-part="navigation" aria-label={t(M['images.photo_cutout_setup.options_label'])}>
+    {#if ready && saveSetup}<p class="smrt-photo-cutout-setup__save-hint" data-smrt-part="description">{t(M['images.photo_cutout_setup.save_hint'])}</p>{/if}
+    <div class="smrt-photo-cutout-setup__secondary" data-smrt-part="nav" aria-label={t(M['images.photo_cutout_setup.options_label'])}>
       {#if head}<Button variant="secondary" onclick={() => run('outline')} disabled={busy !== null || persisting !== null}>{t(M['images.photo_cutout_setup.redo_head'])}</Button>{/if}
       {#if head && ready}<Button variant="secondary" onclick={() => run('mouth-landmarks')} disabled={busy !== null || persisting !== null}>{t(M['images.photo_cutout_setup.redo_mouth'])}</Button>{/if}
       {#if ready && saveSetup}<Button variant="secondary" onclick={toggleMouth}>{open ? 'Close mouth' : 'Open mouth'}</Button>{/if}
@@ -399,9 +399,9 @@ async function playSpeech() {
   </div>
   {#if ready && speechPreview}<div class="smrt-photo-cutout-setup__speech" data-smrt-part="panel"><label>{t(M['images.photo_cutout_setup.preview_speech'])} <Textarea bind:value={speechText} maxlength={500} disabled={speaking} /></label><Button onclick={playSpeech} disabled={speaking || !speechText.trim()}>{speaking ? speechStarted ? 'Speaking…' : 'Preparing…' : 'Play speech'}</Button>{#if speaking}<Button onclick={() => stopSpeech()}>{t(M['images.photo_cutout_setup.stop_speech'])}</Button>{/if}</div>{/if}
   <div class="smrt-photo-cutout-setup__previews" data-smrt-part="list">
-    {#if head}<figure><figcaption>{t(M['images.photo_cutout_setup.transparent_head'])}</figcaption><img class="smrt-photo-cutout-setup__checkerboard" data-smrt-part="thumbnail" src={head.url} alt={t(M['images.photo_cutout_setup.isolated_head_alt'])} /></figure>
+    {#if head}<figure><figcaption>{t(M['images.photo_cutout_setup.transparent_head'])}</figcaption><img class="smrt-photo-cutout-setup__checkerboard" data-smrt-part="media" src={head.url} alt={t(M['images.photo_cutout_setup.isolated_head_alt'])} /></figure>
     {:else if source}<figure><figcaption>{t(M['images.photo_cutout_setup.step_choose'])}</figcaption><img src={source.url} alt={t(M['images.photo_cutout_setup.source_alt'])} /></figure>{/if}
-    <div bind:this={target} class="smrt-photo-cutout-setup__preview-target" data-smrt-part="preview" class:smrt-photo-cutout-setup__preview={ready} class:smrt-photo-cutout-setup__checkerboard={ready} aria-label={ready ? t(M['images.photo_cutout_setup.preview_label']) : undefined} aria-hidden={!ready}></div>
+    <div bind:this={target} class="smrt-photo-cutout-setup__preview-target" data-smrt-part="panel" class:smrt-photo-cutout-setup__preview={ready} class:smrt-photo-cutout-setup__checkerboard={ready} aria-label={ready ? t(M['images.photo_cutout_setup.preview_label']) : undefined} aria-hidden={!ready}></div>
   </div>
 </section>
 

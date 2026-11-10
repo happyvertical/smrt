@@ -59,7 +59,7 @@ function getFactLabel(fact: {
       {/if}
     </div>
     {#if transparency}
-      <div class="smrt-content-transparency-report__badges" data-smrt-part="badges">
+      <div class="smrt-content-transparency-report__badges" data-smrt-part="meta">
         <span class="smrt-content-transparency-report__badge" data-smrt-part="badge">{transparency.factsUsed.length} {t(M['content.transparency_report.facts_used'])}</span>
         <span class="smrt-content-transparency-report__badge" data-smrt-part="badge">{transparency.references.length} {t(M['content.transparency_report.references'])}</span>
         <span class="smrt-content-transparency-report__badge" data-smrt-part="badge">{transparency.corrections.length} {t(M['content.transparency_report.corrections'])}</span>
@@ -84,7 +84,7 @@ function getFactLabel(fact: {
           {/if}
         </p>
         {#if transparency.generation.publicPrompt}
-          <pre class="smrt-content-transparency-report__prompt" data-smrt-part="prompt">{transparency.generation.publicPrompt}</pre>
+          <pre class="smrt-content-transparency-report__prompt" data-smrt-part="field">{transparency.generation.publicPrompt}</pre>
         {:else}
           <p class="smrt-content-transparency-report__empty" data-smrt-part="empty">{t(M['content.transparency_report.no_public_prompt_attached'])}</p>
         {/if}
@@ -128,7 +128,7 @@ function getFactLabel(fact: {
                 <a href={reference.url} target="_blank" rel="noreferrer">{reference.url}</a>
               {/if}
               {#if reference.extractedFacts.length > 0}
-                <div class="smrt-content-transparency-report__pill-list" data-smrt-part="badges">
+                <div class="smrt-content-transparency-report__pill-list" data-smrt-part="meta">
                   {#each reference.extractedFacts as fact (fact.id ?? fact.textRefined ?? fact.textRaw)}
                     <span class:smrt-content-transparency-report__used={fact.usedInArticle} data-smrt-part="badge">{getFactLabel(fact)}</span>
                   {/each}
@@ -143,7 +143,7 @@ function getFactLabel(fact: {
     {#if transparency.otherExtractedFacts.length > 0}
       <article class="smrt-content-transparency-report__panel" data-smrt-part="panel">
         <h4>{t(M['content.transparency_report.other_extracted_facts'])}</h4>
-        <div class="smrt-content-transparency-report__pill-list" data-smrt-part="badges">
+        <div class="smrt-content-transparency-report__pill-list" data-smrt-part="meta">
           {#each transparency.otherExtractedFacts as fact (fact.id ?? fact.textRefined ?? fact.textRaw)}
             <span>{getFactLabel(fact)}</span>
           {/each}

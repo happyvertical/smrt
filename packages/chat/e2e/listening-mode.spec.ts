@@ -21,7 +21,7 @@ test('explicit start, interim/final routing, independent toggles and pending app
   await expect(page.getByRole('button', { name: 'Confirm', exact: true })).toBeVisible();
   await expect(page.getByLabel('Project status', { exact: true })).toHaveValue('pending');
   await expect(page.locator('[data-smrt-component="AssistantDock"]')).toHaveCount(1);
-  await expect(page.locator('[data-smrt-part="messages"]')).toHaveCount(0);
+  await expect(page.locator('[data-smrt-component="AssistantDock"] > [data-smrt-part="group"] > [data-smrt-part="body"] > [data-smrt-part="body"] > ul[data-smrt-part="list"]')).toHaveCount(0);
   await expect(page.locator('[data-smrt-component="AssistantComposer"]')).toHaveCount(0);
   await page.getByRole('button', { name: 'Playback boundary', exact: true }).click();
   await expect(page.getByLabel('Assistant is speaking', { exact: true })).toHaveCount(0);
@@ -70,9 +70,9 @@ test('stop ignores late media callbacks and preserves an existing draft', async 
   await expect(draft).toHaveValue('My existing draft');
   await expect(page.getByTestId('sent-turns')).toHaveText('1');
   await page.getByRole('button', { name: 'Synthetic interim', exact: true }).click();
-  await expect(page.locator('[data-smrt-component="HeardCaptions"] [data-smrt-part="preview"]')).toBeVisible();
+  await expect(page.locator('[data-smrt-component="HeardCaptions"] [data-smrt-part="message"]')).toBeVisible();
   await page.getByRole('button', { name: 'Stop listening', exact: true }).click();
-  await expect(page.locator('[data-smrt-component="HeardCaptions"] [data-smrt-part="preview"]')).toHaveCount(0);
+  await expect(page.locator('[data-smrt-component="HeardCaptions"] [data-smrt-part="message"]')).toHaveCount(0);
   await page.getByRole('button', { name: 'Synthetic final', exact: true }).click();
   await expect(page.getByTestId('sent-turns')).toHaveText('1');
 });
@@ -160,7 +160,7 @@ for (const speaker of ['heard', 'spoken']) {
       expect(bounds!.x + bounds!.width).toBeLessThanOrEqual(320);
       expect(await caption.evaluate((el) => el.scrollWidth <= el.clientWidth)).toBe(true);
       expect(await page.evaluate(() => document.documentElement.scrollWidth <= window.innerWidth)).toBe(true);
-      for (const text of await caption.locator('[data-smrt-part="body"] p, [data-smrt-part="preview"]').all()) {
+      for (const text of await caption.locator('[data-smrt-part="body"] p, [data-smrt-part="message"]').all()) {
         const textBounds = await text.evaluate((el) => {
           const range = document.createRange();
           range.selectNodeContents(el);
@@ -257,7 +257,7 @@ test('tall caption group is viewport bounded and keyboard scrollable', async ({ 
   expect(box.y).toBeGreaterThanOrEqual(0);
   expect(box.y + box.height).toBeLessThanOrEqual(568);
   expect(box.height).toBeLessThanOrEqual(284);
-  const viewport = group.locator('[data-smrt-part="body"]');
+  const viewport = group.locator(':scope > [data-smrt-part="body"]');
   const up = group.getByRole('button', { name: 'Scroll captions up', exact: true });
   const down = group.getByRole('button', { name: 'Scroll captions down', exact: true });
   await expect(up).toBeDisabled();
@@ -307,7 +307,7 @@ for (const speaker of ['heard', 'spoken']) {
     expect(bounds.y).toBeGreaterThanOrEqual(0);
     expect(bounds.y + bounds.height).toBeLessThanOrEqual(568);
     expect(bounds.height).toBeLessThanOrEqual(284);
-    const viewport = group.locator('[data-smrt-part="body"]');
+    const viewport = group.locator(':scope > [data-smrt-part="body"]');
     const up = group.getByRole('button', { name: 'Scroll captions up', exact: true });
     const down = group.getByRole('button', { name: 'Scroll captions down', exact: true });
     await expect(up).toBeDisabled();
@@ -318,7 +318,7 @@ for (const speaker of ['heard', 'spoken']) {
     for (let i = 0; i < 150 && !(await down.isDisabled()); i++) await down.press('Enter');
     await expect(down).toBeDisabled();
     const textEnd = await caption.evaluate((el) => {
-      const p = el.querySelector('[data-smrt-part="preview"]') ?? el.querySelector('[data-smrt-part="body"] p:last-child');
+      const p = el.querySelector('[data-smrt-part="message"]') ?? el.querySelector('[data-smrt-part="body"] p:last-child');
       const range = document.createRange();
       range.selectNodeContents(p!);
       const last = [...range.getClientRects()].at(-1)!;

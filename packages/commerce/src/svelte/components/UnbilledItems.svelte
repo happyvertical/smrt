@@ -105,7 +105,7 @@ const someSelected = $derived(
     </div>
   {:else}
     <div class="smrt-unbilled-items__header" data-smrt-part="header">
-      <label class="smrt-unbilled-items__select-all" data-smrt-part="selection">
+      <label class="smrt-unbilled-items__select-all" data-smrt-part="control">
         <!-- raw-primitive-allow: tri-state select-all checkbox needs the indeterminate flag for the some-but-not-all state; neither CheckboxInput nor Toggle exposes indeterminate, and a use action cannot be applied to a component -->
         <input
           type="checkbox"
@@ -129,7 +129,7 @@ const someSelected = $derived(
             checked={selectedIds.has(item.id)}
             onchange={() => toggleItem(item.id)}
           />
-          <div class="smrt-unbilled-items__content" data-smrt-part="content">
+          <div class="smrt-unbilled-items__content" data-smrt-part="body">
             <div class="smrt-unbilled-items__main" data-smrt-part="row">
               <span class="smrt-unbilled-items__type smrt-unbilled-items__type-{item.type}" data-smrt-part="badge">{item.type}</span>
               <span class="smrt-unbilled-items__description" data-smrt-part="title">{item.description}</span>

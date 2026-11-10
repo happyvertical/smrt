@@ -20,7 +20,7 @@ const count = $derived(Array.from(value).length);
 
 <section class="smrt-specs-panel__root" aria-labelledby="planner-specs-heading" data-smrt-component="SpecsPanel">
   <h2 id="planner-specs-heading">Specs</h2>
-  <p id="planner-specs-help" class="smrt-specs-panel__help" data-smrt-part="hint">
+  <p id="planner-specs-help" class="smrt-specs-panel__help" data-smrt-part="description">
     What your app must also do beyond its features: unique rules, workflows,
     integrations. They go into your build prompt and exported cookbook.
   </p>

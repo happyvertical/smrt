@@ -78,7 +78,7 @@ function canWithdraw(contribution: ContentContributionData) {
             <p>{selectedContribution.description}</p>
           {/if}
           {#if selectedContribution.editorNotes}
-            <div class="smrt-content-contribution-portal__callout" data-smrt-part="notice">
+            <div class="smrt-content-contribution-portal__callout" data-smrt-part="status">
               <strong>{t(M['content.contribution_portal.editor_notes'])}</strong>
               <p>{selectedContribution.editorNotes}</p>
             </div>

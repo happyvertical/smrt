@@ -57,7 +57,7 @@ function approve(proposal: DirectiveProposalView): void {
           <span class="smrt-directive-review-queue__title" data-smrt-part="title">
             {proposal.personaName ?? proposal.agentClass ?? 'Persona directive'}
           </span>
-          <span class="smrt-directive-review-queue__badges" data-smrt-part="badges">
+          <span class="smrt-directive-review-queue__badges" data-smrt-part="meta">
             {#if proposal.confidence != null}
               <Badge variant="info" size="sm">
                 {confidencePercent(proposal.confidence)} confidence
@@ -71,13 +71,13 @@ function approve(proposal: DirectiveProposalView): void {
 
         <p class="smrt-directive-review-queue__rationale" data-smrt-part="meta">{proposal.rationale}</p>
 
-        <div class="smrt-directive-review-queue__diff" data-smrt-part="diff">
-          <div class="smrt-directive-review-queue__column" data-smrt-part="column">
-            <h4 class="smrt-directive-review-queue__column-title" data-smrt-part="label">Current</h4>
+        <div class="smrt-directive-review-queue__diff" data-smrt-part="body">
+          <div class="smrt-directive-review-queue__column" data-smrt-part="group">
+            <h4 class="smrt-directive-review-queue__column-title" data-smrt-part="title">Current</h4>
             <pre class="smrt-directive-review-queue__pre" data-smrt-part="body">{proposal.currentInstructions || '(none)'}</pre>
           </div>
-          <div class="smrt-directive-review-queue__column" data-smrt-part="column">
-            <h4 class="smrt-directive-review-queue__column-title" data-smrt-part="label">Proposed</h4>
+          <div class="smrt-directive-review-queue__column" data-smrt-part="group">
+            <h4 class="smrt-directive-review-queue__column-title" data-smrt-part="title">Proposed</h4>
             <Textarea
               value={draftFor(proposal)}
               rows={5}

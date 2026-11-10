@@ -111,7 +111,7 @@ function handleSubmit() {
   <Form class="operation-form" onsubmit={handleSubmit}>
     <div class="smrt-operation-form__field" data-smrt-part="field">
       <label for="{uid}-code">
-        {t(M['manufacturing.operation_form.code'])}<span class="smrt-operation-form__required" data-smrt-part="required" aria-hidden="true">*</span>
+        {t(M['manufacturing.operation_form.code'])}<span class="smrt-operation-form__required" data-smrt-part="marker" aria-hidden="true">*</span>
       </label>
       <Input
         id="{uid}-code"
@@ -125,7 +125,7 @@ function handleSubmit() {
         aria-describedby={describedBy('code', isNew ? undefined : `${uid}-code-hint`)}
       />
       {#if !isNew}
-        <span class="smrt-operation-form__hint" data-smrt-part="hint" id="{uid}-code-hint">
+        <span class="smrt-operation-form__hint" data-smrt-part="description" id="{uid}-code-hint">
           {t(M['manufacturing.operation_form.code_edit_help'])}
         </span>
       {/if}
@@ -133,7 +133,7 @@ function handleSubmit() {
 
     <div class="smrt-operation-form__field" data-smrt-part="field">
       <label for="{uid}-name">
-        {t(M['manufacturing.operation_form.name'])}<span class="smrt-operation-form__required" data-smrt-part="required" aria-hidden="true">*</span>
+        {t(M['manufacturing.operation_form.name'])}<span class="smrt-operation-form__required" data-smrt-part="marker" aria-hidden="true">*</span>
       </label>
       <Input
         id="{uid}-name"
@@ -164,7 +164,7 @@ function handleSubmit() {
           <option value={suggestion}></option>
         {/each}
       </datalist>
-      <span class="smrt-operation-form__hint" data-smrt-part="hint" id="{uid}-category-hint">
+      <span class="smrt-operation-form__hint" data-smrt-part="description" id="{uid}-category-hint">
         {t(M['manufacturing.operation_form.category_help'])}
       </span>
     </div>
@@ -179,13 +179,13 @@ function handleSubmit() {
         disabled={loading}
         aria-describedby="{uid}-qualification-hint"
       />
-      <span class="smrt-operation-form__hint" data-smrt-part="hint" id="{uid}-qualification-hint">
+      <span class="smrt-operation-form__hint" data-smrt-part="description" id="{uid}-qualification-hint">
         {t(M['manufacturing.operation_form.qualification_help'])}
       </span>
     </div>
 
     {#if errors.length > 0}
-      <div class="smrt-operation-form__errors" data-smrt-part="errors" role="alert">
+      <div class="smrt-operation-form__errors" data-smrt-part="error" role="alert">
         <ul>
           {#each errors as error (error.field)}
             <li id={errorId(error.field)}>{error.message}</li>

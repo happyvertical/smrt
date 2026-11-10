@@ -1030,15 +1030,15 @@ onMount(() => {
     />
   </div>
   <div hidden={workbenchTab !== 'chat'}>
-  <div class="smrt-chat-page__root">
+  <div class="smrt-chat-page__root" data-smrt-part="body">
     <header class="smrt-chat-page__topbar" data-smrt-part="header">
-      <div class="smrt-chat-page__title-block" data-smrt-part="title-block">
-        <p class="smrt-chat-page__eyebrow" data-smrt-part="eyebrow">@happyvertical/smrt-chat</p>
+      <div class="smrt-chat-page__title-block" data-smrt-part="header">
+        <p class="smrt-chat-page__eyebrow" data-smrt-part="label">@happyvertical/smrt-chat</p>
         <h1>Chat Dev</h1>
       </div>
 
       <nav class="smrt-chat-page__topbar-actions" data-smrt-part="actions" aria-label="Chat dev navigation">
-        <div class="smrt-chat-page__mode-toggle" data-smrt-part="controls" role="group" aria-label="Input mode">
+        <div class="smrt-chat-page__mode-toggle" data-smrt-part="actions" role="group" aria-label="Input mode">
           <Button
             variant="ghost"
             size="sm"
@@ -1060,7 +1060,7 @@ onMount(() => {
             Voice
           </Button>
         </div>
-        <a class="smrt-chat-page__preview-link" data-smrt-part="link" href="/previews">Previews</a>
+        <a class="smrt-chat-page__preview-link" data-smrt-part="action" href="/previews">Previews</a>
         <Button variant="ghost" size="sm" type="button" onclick={resetConversation}>
           Reset
         </Button>
@@ -1069,7 +1069,7 @@ onMount(() => {
     </header>
 
     <main class="smrt-chat-page__workspace" data-smrt-part="body">
-      <section class="smrt-chat-page__chat" data-smrt-part="chat" aria-label="Chat workbench">
+      <section class="smrt-chat-page__chat" data-smrt-part="body" aria-label="Chat workbench">
         <ChatLayout
           {rooms}
           {currentRoomId}
@@ -1077,7 +1077,7 @@ onMount(() => {
           onselectroom={(roomId) => (currentRoomId = roomId)}
         >
           <RoomHeader room={currentRoom} participantCount={currentRoom.participantCount} />
-          <div class="smrt-chat-page__transcript" data-smrt-part="transcript">
+          <div class="smrt-chat-page__transcript" data-smrt-part="body">
             <MessageList
               {messages}
               {currentProfileId}
@@ -1185,7 +1185,7 @@ onMount(() => {
             </div>
 
             <div class="smrt-chat-page__voice-readout" data-smrt-part="indicator">
-              <span class:smrt-chat-page__active={voiceConnected} aria-hidden="true"></span>
+              <span class:smrt-chat-page__active={voiceConnected} aria-hidden="true" data-smrt-part="indicator"></span>
               <strong>{voiceStatus}</strong>
             </div>
 
@@ -1199,13 +1199,13 @@ onMount(() => {
             </div>
 
             {#if voiceWarning}
-              <p class="smrt-chat-page__warning" data-smrt-part="warning">{voiceWarning}</p>
+              <p class="smrt-chat-page__warning" data-smrt-part="description">{voiceWarning}</p>
             {/if}
           </section>
         {/if}
 
         {#if warning}
-          <p class="smrt-chat-page__warning" data-smrt-part="warning">{warning}</p>
+          <p class="smrt-chat-page__warning" data-smrt-part="description">{warning}</p>
         {/if}
       </aside>
     </main>
@@ -1406,7 +1406,7 @@ onMount(() => {
     font-size: var(--smrt-typography-label-large-size, 0.875rem);
     font-weight: var(--smrt-typography-weight-bold, 700);
   }
-  .smrt-chat-page__mode-toggle :global(.smrt-chat-page__mode-button--active) {
+  .smrt-chat-page__mode-toggle :global(.smrt-chat-page__mode-button.smrt-chat-page__mode-button--active) {
     background: var(--smrt-color-primary);
     color: var(--smrt-color-on-primary);
   }

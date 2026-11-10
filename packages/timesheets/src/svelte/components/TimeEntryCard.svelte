@@ -88,7 +88,7 @@ function handleKeydown(event: KeyboardEvent) {
   class:smrt-time-entry-card__clickable={!!href || !!onclick} data-smrt-component="TimeEntryCard"
 >
   {#if selectable}
-    <div class="smrt-time-entry-card__checkbox" data-smrt-part="checkbox">
+    <div class="smrt-time-entry-card__checkbox" data-smrt-part="control">
       <!-- raw-primitive-allow: native checkbox; no Provider-free checkbox primitive, kept native to match the indeterminate select-all in TimeEntryList -->
       <input
         type="checkbox"
@@ -132,7 +132,7 @@ function handleKeydown(event: KeyboardEvent) {
 
 {#snippet cardBody()}
   <div class="smrt-time-entry-card__header" data-smrt-part="header">
-    <span class="smrt-time-entry-card__date" data-smrt-part="date">{formatDate(entry.date)}</span>
+    <span class="smrt-time-entry-card__date" data-smrt-part="meta">{formatDate(entry.date)}</span>
     <span class="smrt-time-entry-card__status" data-smrt-part="badge" style="--smrt-time-entry-card-status-color: {statusColors[entry.status]}">
       {entry.status.toUpperCase()}
     </span>
@@ -146,19 +146,19 @@ function handleKeydown(event: KeyboardEvent) {
   </div>
 
   <div class="smrt-time-entry-card__footer" data-smrt-part="footer">
-    <div class="smrt-time-entry-card__hours" data-smrt-part="hours">
+    <div class="smrt-time-entry-card__hours" data-smrt-part="value">
       <span class="smrt-time-entry-card__hours-value" data-smrt-part="value">{hoursFormatter(entry.hours)}</span>
       {#if entry.hourlyRate}
         <span class="smrt-time-entry-card__rate" data-smrt-part="meta">@ {formatCurrency(entry.hourlyRate, currency)}/hr</span>
       {/if}
     </div>
     {#if entry.amount !== undefined}
-      <span class="smrt-time-entry-card__amount" data-smrt-part="amount">{formatCurrency(entry.amount, currency)}</span>
+      <span class="smrt-time-entry-card__amount" data-smrt-part="value">{formatCurrency(entry.amount, currency)}</span>
     {/if}
   </div>
 
   {#if entry.mileage && entry.mileage > 0}
-    <div class="smrt-time-entry-card__mileage" data-smrt-part="mileage">
+    <div class="smrt-time-entry-card__mileage" data-smrt-part="meta">
       {t(M['projects.time_entry_card.mileage'], { mileage: entry.mileage })}
     </div>
   {/if}

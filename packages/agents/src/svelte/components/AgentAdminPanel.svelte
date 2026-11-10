@@ -71,7 +71,7 @@ async function handleSave(newConfig: unknown) {
 		<p class="smrt-agent-admin-panel__message" data-smrt-part="message">
 			{t(M['ui.agent_admin_panel.no_panel_message'])} <code>{agentClass}.{slotId}</code>
 		</p>
-		<p class="smrt-agent-admin-panel__hint" data-smrt-part="hint">
+		<p class="smrt-agent-admin-panel__hint" data-smrt-part="description">
 			{t(M['ui.agent_admin_panel.no_panel_hint'])}
 		</p>
 	</div>

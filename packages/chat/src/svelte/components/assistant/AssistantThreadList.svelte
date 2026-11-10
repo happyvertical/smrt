@@ -66,7 +66,7 @@ const { threads, activeThreadId = null, onselect, oncreate }: Props = $props();
     min-width: 160px;
     overflow-y: auto;
   }
-  .smrt-assistant-thread-list__root > :global([data-smrt-component="Button"]) {
+  :global(:where([data-smrt-component="AssistantThreadList"]) > [data-smrt-component="Button"]) {
     margin: var(--smrt-spacing-2);
     padding: var(--smrt-spacing-2) var(--smrt-spacing-3);
     cursor: pointer;
@@ -79,7 +79,7 @@ const { threads, activeThreadId = null, onselect, oncreate }: Props = $props();
     flex-direction: column;
     gap: var(--smrt-spacing-1);
   }
-  li > :global([data-smrt-component="Button"]) {
+  :global(:where([data-smrt-component="AssistantThreadList"] li) > [data-smrt-component="Button"]) {
     display: flex;
     align-items: center;
     justify-content: flex-start;
@@ -90,7 +90,7 @@ const { threads, activeThreadId = null, onselect, oncreate }: Props = $props();
     cursor: pointer;
   }
   /* The Button's inner row: title left (clipped with an ellipsis), count right. */
-  li > :global([data-smrt-component="Button"] > [data-smrt-part="label"]) {
+  :global(:where([data-smrt-component="AssistantThreadList"] li) > [data-smrt-component="Button"] > [data-smrt-part="label"]) {
     flex: 1 1 auto;
     min-width: 0;
     display: flex;
@@ -114,7 +114,7 @@ const { threads, activeThreadId = null, onselect, oncreate }: Props = $props();
     border-right: var(--smrt-hairline);
     background: var(--smrt-color-surface-container-low);
   }
-  .smrt-assistant-thread-list__root > :global([data-smrt-component="Button"]) {
+  :global(:where([data-smrt-component="AssistantThreadList"]) > [data-smrt-component="Button"]) {
     border: 1px dashed var(--smrt-color-outline-variant);
     border-radius: var(--smrt-radius-medium);
     background: transparent;
@@ -122,10 +122,10 @@ const { threads, activeThreadId = null, onselect, oncreate }: Props = $props();
     font: var(--smrt-typography-label-medium-font, 500 0.8125rem/1.3 sans-serif);
     text-align: left;
   }
-  .smrt-assistant-thread-list__root > :global([data-smrt-component="Button"]:hover) {
+  :global(:where([data-smrt-component="AssistantThreadList"]) > [data-smrt-component="Button"]:hover) {
     background: var(--smrt-color-surface-container);
   }
-  li > :global([data-smrt-component="Button"]) {
+  :global(:where([data-smrt-component="AssistantThreadList"] li) > [data-smrt-component="Button"]) {
     border: none;
     border-radius: var(--smrt-radius-medium);
     background: transparent;
@@ -133,10 +133,10 @@ const { threads, activeThreadId = null, onselect, oncreate }: Props = $props();
     font: var(--smrt-typography-body-medium-font, 0.875rem/1.4 sans-serif);
     text-align: left;
   }
-  li > :global([data-smrt-component="Button"]:hover) {
+  :global(:where([data-smrt-component="AssistantThreadList"] li) > [data-smrt-component="Button"]:hover) {
     background: var(--smrt-color-surface-container);
   }
-  li > :global([data-smrt-component="Button"][aria-current="true"]) {
+  :global(:where([data-smrt-component="AssistantThreadList"] li) > [data-smrt-component="Button"][aria-current="true"]) {
     background: var(--smrt-color-secondary-container);
     color: var(--smrt-color-on-secondary-container);
     font-weight: var(--smrt-typography-weight-semibold, 600);

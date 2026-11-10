@@ -94,10 +94,10 @@ let {
       class:smrt-plan-picker__selected={plan.planKey === selectedPlanKey}
       class="smrt-plan-picker__plan"
       type="button"
-      onclick={() => onSelect?.(plan)}
+      onclick={() => onSelect?.(plan)} data-smrt-part="trigger"
     >
-      <span class="smrt-plan-picker__name">{plan.name}</span>
-      <span class="smrt-plan-picker__price">
+      <span class="smrt-plan-picker__name" data-smrt-part="title">{plan.name}</span>
+      <span class="smrt-plan-picker__price" data-smrt-part="value">
         {#if plan.pricingMode === 'free'}
           {t(M['subscriptions.picker.free'])}
         {:else if plan.pricingMode === 'pay_what_you_can'}
@@ -112,9 +112,9 @@ let {
         {/if}
       </span>
       {#if plan.description}
-        <span class="smrt-plan-picker__description">{plan.description}</span>
+        <span class="smrt-plan-picker__description" data-smrt-part="description">{plan.description}</span>
       {/if}
-      <span class="smrt-plan-picker__features">
+      <span class="smrt-plan-picker__features" data-smrt-part="group">
         {featureCount(plan)} features
       </span>
     </button>

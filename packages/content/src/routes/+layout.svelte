@@ -27,10 +27,10 @@ const navItems = [
 </script>
 
 <ThemeProvider colorScheme="system" persist={true}>
-<div class="smrt-app-layout__root">
+<div class="smrt-app-layout__root" data-smrt-part="body">
   <header class="smrt-app-layout__header" data-smrt-part="header">
-    <div class="smrt-app-layout__toolbar" data-smrt-part="toolbar">
-      <a href="/" class="smrt-app-layout__brand" data-smrt-part="brand">📝 <span>Content Service</span></a>
+    <div class="smrt-app-layout__toolbar" data-smrt-part="actions">
+      <a href="/" class="smrt-app-layout__brand" data-smrt-part="label">📝 <span>Content Service</span></a>
       <nav class="smrt-app-layout__nav" data-smrt-part="nav">
         {#each navItems as item}
           <a
@@ -48,7 +48,7 @@ const navItems = [
     </div>
   </header>
 
-  <main class="smrt-app-layout__main" data-smrt-part="main">
+  <main class="smrt-app-layout__main" data-smrt-part="body">
     {@render children()}
   </main>
 

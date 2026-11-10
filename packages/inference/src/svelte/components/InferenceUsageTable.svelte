@@ -70,14 +70,14 @@ function regroup(event: Event): void {
 }
 </script>
 
-<div class="smrt-inference-usage-table__root" data-testid="inference-usage">
+<div class="smrt-inference-usage-table__root" data-testid="inference-usage" data-smrt-component="InferenceUsageTable">
   {#if transcriptsEnabled === false}
     <p class="smrt-inference-usage-table__label" data-smrt-part="label" role="status" data-testid="inference-transcripts-off">
       Transcripts are off; turn them on with <code>inference.transcripts.enabled</code> (Advanced, Transcripts) or <code>SMRT_INFERENCE_TRANSCRIPTS=1</code>.
     </p>
   {/if}
   {#if onUsageGroupBy}
-    <form class="smrt-inference-usage-table__group" data-smrt-part="form">
+    <form class="smrt-inference-usage-table__group" data-smrt-part="field">
       <span class="smrt-inference-usage-table__label" data-smrt-part="label">Group by</span>
       {#each DIMENSIONS as dimension (dimension.id)}
         <label>

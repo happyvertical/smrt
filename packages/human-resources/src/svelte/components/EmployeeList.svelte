@@ -31,12 +31,12 @@ const { employees, onselect, emptyMessage }: EmployeeListProps = $props();
 </script>
 
 {#if employees.length === 0}
-  <p class="smrt-employee-list__empty" data-smrt-component="EmployeeList" data-smrt-part="empty">
+  <p class="smrt-employee-list__empty" data-smrt-component="EmployeeList" >
     {emptyMessage ?? t(M['human_resources.employee_list.empty'])}
   </p>
 {:else}
   <div class="smrt-employee-list__root" data-smrt-component="EmployeeList">
-    <table class="smrt-employee-list__table">
+    <table class="smrt-employee-list__table" data-smrt-part="table">
       <caption class="smrt-employee-list__caption" data-smrt-part="caption">{t(M['human_resources.employee_list.caption'])}</caption>
       <thead data-smrt-part="header">
         <tr>
@@ -51,7 +51,7 @@ const { employees, onselect, emptyMessage }: EmployeeListProps = $props();
       <tbody data-smrt-part="body">
         {#each employees as employee (employee.id)}
           <tr data-smrt-part="row">
-            <th scope="row" class="smrt-employee-list__name">
+            <th scope="row" class="smrt-employee-list__name" data-smrt-part="cell">
               {#if onselect}
                 <Button
                   variant="ghost"
@@ -65,12 +65,12 @@ const { employees, onselect, emptyMessage }: EmployeeListProps = $props();
                 {employee.displayName}
               {/if}
             </th>
-            <td class="smrt-employee-list__number">{employee.employeeNumber}</td>
+            <td class="smrt-employee-list__number" data-smrt-part="cell">{employee.employeeNumber}</td>
             <td>
               {#if employee.position}
                 {employee.position}
               {:else}
-                <span class="smrt-employee-list__none">{t(M['human_resources.employee_list.none'])}</span>
+                <span class="smrt-employee-list__none" data-smrt-part="meta">{t(M['human_resources.employee_list.none'])}</span>
               {/if}
             </td>
             <td>{employee.workerType}</td>
@@ -81,7 +81,7 @@ const { employees, onselect, emptyMessage }: EmployeeListProps = $props();
                 size="sm"
               />
               {#if employee.endsOn}
-                <span class="smrt-employee-list__last-day">
+                <span class="smrt-employee-list__last-day" data-smrt-part="meta">
                   {t(M['human_resources.employee_list.last_day'], { date: employee.endsOn })}
                 </span>
               {/if}
@@ -90,7 +90,7 @@ const { employees, onselect, emptyMessage }: EmployeeListProps = $props();
               {#if employee.startedOn}
                 <time datetime={employee.startedOn}>{employee.startedOn}</time>
               {:else}
-                <span class="smrt-employee-list__none">{t(M['human_resources.employee_list.none'])}</span>
+                <span class="smrt-employee-list__none" data-smrt-part="meta">{t(M['human_resources.employee_list.none'])}</span>
               {/if}
             </td>
           </tr>

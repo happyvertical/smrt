@@ -63,7 +63,7 @@ function handlePointerUp() {
 >
   <aside
     class="smrt-chat-layout__sidebar"
-    data-smrt-part="sidebar"
+    data-smrt-part="panel"
     style:--smrt-chat-layout-sidebar-width="{sidebarWidth}px"
     aria-label={t(M['chat.chat_layout.rooms_label'])}
   >
@@ -79,7 +79,7 @@ function handlePointerUp() {
   <button
     type="button"
     class="smrt-chat-layout__handle"
-    data-smrt-part="handle"
+    data-smrt-part="meta"
     aria-label={t(M['chat.chat_layout.resize_sidebar'])}
     onpointerdown={handlePointerDown}
     onpointermove={handlePointerMove}

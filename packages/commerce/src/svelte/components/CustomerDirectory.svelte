@@ -200,7 +200,7 @@ function customerTypeLabel(value: string | undefined): string {
         </Card>
       {/each}
     </div>
-    <nav class="smrt-customer-directory__pagination" data-smrt-part="navigation" aria-label={t(M['commerce.party.pagination'], { singular })}>
+    <nav class="smrt-customer-directory__pagination" data-smrt-part="nav" aria-label={t(M['commerce.party.pagination'], { singular })}>
       {#if previousHref}<Button href={previousHref} variant="secondary">{labels.previous ?? t(M['commerce.party.previous'])}</Button>{/if}
       <span>{t(M['commerce.party.page'], { page })}</span>
       {#if nextHref}<Button href={nextHref} variant="secondary">{labels.next ?? t(M['commerce.party.next'])}</Button>{/if}

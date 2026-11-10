@@ -19,7 +19,7 @@ const { t } = useI18n();
         {t(M['products.app_layout.service_title'])}
       </h1>
       
-      <nav class="smrt-app-layout__nav" data-smrt-part="navigation">
+      <nav class="smrt-app-layout__nav" data-smrt-part="nav">
         <a href="#products" class="smrt-app-layout__nav-link" data-smrt-part="item">Products</a>
         <a href="#live" class="smrt-app-layout__nav-link" data-smrt-part="item">Live</a>
         <a href="#categories" class="smrt-app-layout__nav-link" data-smrt-part="item">Categories</a>
@@ -42,7 +42,7 @@ const { t } = useI18n();
   <footer class="smrt-app-layout__footer" data-smrt-part="footer">
     <div class="smrt-app-layout__footer-content" data-smrt-part="group">
       <p>&copy; {t(M['products.app_layout.footer_copyright'])}</p>
-      <div class="smrt-app-layout__footer-links" data-smrt-part="navigation">
+      <div class="smrt-app-layout__footer-links" data-smrt-part="nav">
         <a href="#api-docs">{t(M['products.app_layout.api_docs'])}</a>
         <a href="#federation">Federation</a>
         <a href="#mcp-tools">{t(M['products.app_layout.mcp_tools'])}</a>

@@ -247,7 +247,7 @@ function tierAllowed(tier: InferenceSettingsTier): boolean {
       {#if advanced}
         <div id="isp-advanced" class="smrt-inference-settings-panel__advanced" data-smrt-part="panel" data-testid="inference-advanced">
           {#key advancedKey}
-            <section class="smrt-inference-settings-panel__section" data-smrt-part="section">
+            <section class="smrt-inference-settings-panel__section" data-smrt-part="group">
               <h3>Tier ladder</h3>
               {#each tiers as row (row.tier)}
                 <InferenceTierRow
@@ -260,19 +260,19 @@ function tierAllowed(tier: InferenceSettingsTier): boolean {
                   {onSaveTier}
                 />
               {:else}
-                <p class="smrt-inference-settings-panel__hint" data-smrt-part="hint">No tier rows were provided.</p>
+                <p class="smrt-inference-settings-panel__hint" data-smrt-part="description">No tier rows were provided.</p>
               {/each}
             </section>
 
             {#if defaultTier}
-              <section class="smrt-inference-settings-panel__section" data-smrt-part="section">
+              <section class="smrt-inference-settings-panel__section" data-smrt-part="group">
                 <h3><code>auto</code> default tier</h3>
-                <form class="smrt-inference-settings-panel__auto" data-smrt-part="form" onsubmit={saveDefaultTier} data-testid="inference-auto-tier">
+                <form class="smrt-inference-settings-panel__auto" data-smrt-part="field" onsubmit={saveDefaultTier} data-testid="inference-auto-tier">
                   <span>
                     Now {defaultTier.effectiveTier} ({inferenceLevelLabel(defaultTier.supplyingLevel)})
                   </span>
                   <label>
-                    <span class="smrt-inference-settings-panel__hint" data-smrt-part="hint">auto resolves to</span>
+                    <span class="smrt-inference-settings-panel__hint" data-smrt-part="description">auto resolves to</span>
                     <select
                       name="autoTier"
                       disabled={busy}
@@ -289,7 +289,7 @@ function tierAllowed(tier: InferenceSettingsTier): boolean {
               </section>
             {/if}
 
-            <section class="smrt-inference-settings-panel__section" data-smrt-part="section">
+            <section class="smrt-inference-settings-panel__section" data-smrt-part="group">
               <h3>Aliases</h3>
               {#each aliases as alias (alias.name)}
                 <InferenceAliasEditor
@@ -300,7 +300,7 @@ function tierAllowed(tier: InferenceSettingsTier): boolean {
                   {onTestCandidate}
                 />
               {:else}
-                <p class="smrt-inference-settings-panel__hint" data-smrt-part="hint">No aliases are defined.</p>
+                <p class="smrt-inference-settings-panel__hint" data-smrt-part="description">No aliases are defined.</p>
               {/each}
               {#if definitionsEditable && onSaveAlias}
                 <InferenceAliasEditor
@@ -314,7 +314,7 @@ function tierAllowed(tier: InferenceSettingsTier): boolean {
               {/if}
             </section>
 
-            <section class="smrt-inference-settings-panel__section" data-smrt-part="section">
+            <section class="smrt-inference-settings-panel__section" data-smrt-part="group">
               <h3>Fusions</h3>
               <InferenceFusionList
                 {fusions}
@@ -325,7 +325,7 @@ function tierAllowed(tier: InferenceSettingsTier): boolean {
             </section>
 
             {#if transcripts}
-              <section class="smrt-inference-settings-panel__section" data-smrt-part="section">
+              <section class="smrt-inference-settings-panel__section" data-smrt-part="group">
                 <h3>Transcripts</h3>
                 <InferenceTranscriptSettings
                   settings={transcripts}

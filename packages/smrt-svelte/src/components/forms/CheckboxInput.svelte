@@ -111,7 +111,7 @@ function handleChange(e: Event) {
 </script>
 
 <div class="smrt-checkbox-input__root" class:smrt-checkbox-input__disabled={disabled} class:smrt-checkbox-input__mode={isSmrt} data-smrt-component="CheckboxInput">
-  <div class="smrt-checkbox-input__container" use:ripple>
+  <div class="smrt-checkbox-input__container" use:ripple data-smrt-part="field">
     <input
       type="checkbox"
       id={name}
@@ -123,14 +123,14 @@ function handleChange(e: Event) {
       data-smrt-part="input"
       onchange={handleChange}
     />
-    <div class="smrt-checkbox-input__box" class:smrt-checkbox-input__checked={checked} data-smrt-part="box">
+    <div class="smrt-checkbox-input__box" class:smrt-checkbox-input__checked={checked} data-smrt-part="control">
       {#if checked}
-        <svg viewBox="0 0 24 24" class="smrt-checkbox-input__icon">
+        <svg viewBox="0 0 24 24" class="smrt-checkbox-input__icon" data-smrt-part="indicator">
           <path d="M9 16.17L4.83 12l-1.42 1.41L9 19 21 7l-1.41-1.41L9 16.17z" />
         </svg>
       {/if}
     </div>
-    <div class="smrt-checkbox-input__state-layer"></div>
+    <div class="smrt-checkbox-input__state-layer" data-smrt-part="backdrop"></div>
   </div>
   
   {#if label}

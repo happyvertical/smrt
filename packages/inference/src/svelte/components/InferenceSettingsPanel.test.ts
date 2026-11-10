@@ -302,7 +302,7 @@ describe('InferenceSettingsPanel advanced', () => {
     const app = render({ tiers: TIERS, scope: 'app', advancedOpen: true });
     expect(
       app.querySelector(
-        '[data-testid="inference-tier-great"] [data-smrt-part="hint"]',
+        '[data-testid="inference-tier-great"] [data-smrt-part="description"]',
       )?.textContent,
     ).toContain('anthropic/claude-config');
     const tenant = render({
@@ -311,7 +311,7 @@ describe('InferenceSettingsPanel advanced', () => {
       advancedOpen: true,
     });
     const hint = tenant.querySelectorAll(
-      '[data-testid="inference-tier-great"] [data-smrt-part="hint"]',
+      '[data-testid="inference-tier-great"] [data-smrt-part="description"]',
     );
     const text = hint[hint.length - 1]?.textContent ?? '';
     // Tenant revert returns to config + app override, never the bare default.

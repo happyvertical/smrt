@@ -303,7 +303,7 @@ function handleInput(e: Event) {
     <FieldLabel id={labelId} for={name} {label} {required} />
   {/if}
 
-  <div class="smrt-phone-input__input-wrapper">
+  <div class="smrt-phone-input__input-wrapper" data-smrt-part="field">
     <input
       bind:this={inputEl}
       id={name}
@@ -373,7 +373,7 @@ function handleInput(e: Event) {
     </div>
   {:else if isHolding}
     <div class="smrt-phone-input__listening-indicator" data-smrt-part="status">
-      <span class="smrt-phone-input__listening-dot"></span>
+      <span class="smrt-phone-input__listening-dot" data-smrt-part="indicator"></span>
       <span>Recording...</span>
     </div>
   {:else if isProcessing}

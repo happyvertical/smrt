@@ -94,7 +94,7 @@ const text = $derived({
             {#if contact.label}<p>{contact.label}</p>{/if}
             {#if contact.email}<p><a href={`mailto:${contact.email}`}>{contact.email}</a></p>{/if}
             {#if contact.phone}<p><a href={`tel:${contact.phone}`}>{contact.phone}</a></p>{/if}
-            {#if contact.address}<p class="smrt-party-contact-fields__address" data-smrt-part="content">{contact.address}</p>{/if}
+            {#if contact.address}<p class="smrt-party-contact-fields__address" data-smrt-part="body">{contact.address}</p>{/if}
           </article>
         {:else}
           <fieldset class="smrt-party-contact-fields__card" data-smrt-part="item">

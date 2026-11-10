@@ -368,7 +368,7 @@ async function startExport() {
             <h3>{t(M['ui.importExport.map.heading'])}</h3>
           {/snippet}
           <p>{t(M['ui.importExport.map.help'])}</p>
-          <div class="smrt-import-export__scroll" data-smrt-part="content">
+          <div class="smrt-import-export__scroll" data-smrt-part="body">
             <table>
               <thead>
                 <tr>
@@ -432,7 +432,7 @@ async function startExport() {
 
           {#if mappedColumns.length > 0}
             <h4>{t(M['ui.importExport.check.preview'], { count: Math.min(PREVIEW_ROWS, table.rows.length) })}</h4>
-            <div class="smrt-import-export__scroll" data-smrt-part="content">
+            <div class="smrt-import-export__scroll" data-smrt-part="body">
               <table>
                 <thead>
                   <tr>
@@ -467,7 +467,7 @@ async function startExport() {
 
           {#if rowIssueCap.length > 0}
             <h4>{t(M['ui.importExport.check.problems'])}</h4>
-            <div class="smrt-import-export__scroll" data-smrt-part="content">
+            <div class="smrt-import-export__scroll" data-smrt-part="body">
               <table>
                 <thead>
                   <tr>

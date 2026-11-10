@@ -167,7 +167,7 @@ $effect(() => {
           </header>
 
           {#if selectedContribution.body}
-            <div class="smrt-content-contribution-inbox__preview" data-smrt-part="preview">
+            <div class="smrt-content-contribution-inbox__preview" data-smrt-part="panel">
               {selectedContribution.body}
             </div>
           {/if}
@@ -266,7 +266,7 @@ $effect(() => {
   .smrt-content-contribution-inbox__header,
   .smrt-content-contribution-inbox__layout,
   .smrt-content-contribution-inbox__detail,
-  .smrt-content-contribution-inbox__detail :global(.form) {
+  .smrt-content-contribution-inbox__detail :global([data-smrt-component="Form"]) {
     display: grid;
     gap: 1rem;
   }

@@ -88,7 +88,7 @@ $effect(() => {
     <!-- raw-primitive-allow: click-catching modal backdrop; structural overlay, not a primitive -->
     <button
       type="button"
-      class="smrt-reject-dialog__overlay" data-smrt-part="overlay"
+      class="smrt-reject-dialog__overlay" data-smrt-part="backdrop"
       aria-label={t(M['projects.reject_dialog.close_dialog'])}
       onclick={handleCancel}
     ></button>
@@ -115,7 +115,7 @@ $effect(() => {
       ></textarea>
 
       {#if required && reason.trim().length === 0}
-        <p class="smrt-reject-dialog__hint" data-smrt-part="hint">{t(M['projects.reject_dialog.reason_required'])}</p>
+        <p class="smrt-reject-dialog__hint" data-smrt-part="description">{t(M['projects.reject_dialog.reason_required'])}</p>
       {/if}
 
       <div class="smrt-reject-dialog__actions" data-smrt-part="actions">

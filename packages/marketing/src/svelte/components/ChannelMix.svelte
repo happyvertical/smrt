@@ -33,8 +33,8 @@ const mix = $derived(calculateChannelMix(channels));
         <Card padding="sm">
           <div class="smrt-channel-mix__head" data-smrt-part="header">
             <div>
-              <span class="smrt-channel-mix__name">{channel.label ?? humanizeKey(channel.channelKind)}</span>
-              <span class="smrt-channel-mix__secondary">{channel.channelRef}</span>
+              <span class="smrt-channel-mix__name" data-smrt-part="title">{channel.label ?? humanizeKey(channel.channelKind)}</span>
+              <span class="smrt-channel-mix__secondary" data-smrt-part="meta">{channel.channelRef}</span>
             </div>
             <Badge variant={campaignStatusBadgeVariant(channel.status)} size="sm">
               {humanizeKey(channel.status)}
@@ -49,7 +49,7 @@ const mix = $derived(calculateChannelMix(channels));
             max={1}
             label={`${channel.label ?? channel.channelKind} spend share`}
           />
-          <dl class="smrt-channel-mix__metrics" data-smrt-part="metrics">
+          <dl class="smrt-channel-mix__metrics" data-smrt-part="group">
             <div><dt>Allocation</dt><dd>{formatCents(channel.allocatedBudgetCents, currency, locale)}</dd></div>
             <div><dt>Impressions</dt><dd>{formatNumber(channel.impressions ?? 0, locale)}</dd></div>
             <div><dt>Clicks</dt><dd>{formatNumber(channel.clicks ?? 0, locale)}</dd></div>

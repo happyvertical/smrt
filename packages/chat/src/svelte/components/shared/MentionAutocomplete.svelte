@@ -102,7 +102,7 @@ function highlightMatch(
           size="sm"
         />
         <span class="smrt-mention-autocomplete__name" data-smrt-part="label">
-          {parts.before}<mark class="smrt-mention-autocomplete__highlight" data-smrt-part="highlight">{parts.match}</mark>{parts.after}
+          {parts.before}<mark class="smrt-mention-autocomplete__highlight" data-smrt-part="message">{parts.match}</mark>{parts.after}
         </span>
       </button>
     {/each}

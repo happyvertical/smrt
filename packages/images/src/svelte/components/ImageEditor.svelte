@@ -189,13 +189,13 @@ async function handleAIEdit() {
   {#if !image}
     <div class="smrt-image-editor__empty" data-smrt-part="empty">{t(M['images.image_editor.no_image_selected'])}</div>
   {:else}
-    <div class="smrt-image-editor__content" data-smrt-part="content">
-      <div class="smrt-image-editor__preview" data-smrt-part="preview" style="background-image: url({image.url})">
+    <div class="smrt-image-editor__content" data-smrt-part="body">
+      <div class="smrt-image-editor__preview" data-smrt-part="panel" style="background-image: url({image.url})">
         <!-- Optional: Interactive crop overlay could go here -->
       </div>
       
       <div class="smrt-image-editor__controls" data-smrt-part="panel">
-        <div class="smrt-image-editor__modes" data-smrt-part="navigation">
+        <div class="smrt-image-editor__modes" data-smrt-part="nav">
           <Button
             variant={mode === 'standard' ? 'primary' : 'ghost'}
             class="smrt-image-editor__mode-button"
@@ -260,7 +260,7 @@ async function handleAIEdit() {
           <!-- AI Operations -->
           <div class="smrt-image-editor__tool" data-smrt-part="group">
             <h4>{t(M['images.image_editor.ai_powered_edit'])}</h4>
-            <p class="smrt-image-editor__hint" data-smrt-part="hint">{t(M['images.image_editor.ai_powered_edit_hint'])}</p>
+            <p class="smrt-image-editor__hint" data-smrt-part="description">{t(M['images.image_editor.ai_powered_edit_hint'])}</p>
             <Textarea
               class="smrt-image-editor__prompt"
               bind:value={prompt}

@@ -53,7 +53,7 @@ const mainOn = (card: PlannerCard) => cardIsOn(card, recipeState.ids);
       {@const on = mainOn(card)}
       {@const locks = cardLocks(card, recipeState.ids, recipesById)}
       {@const needed = locks.main}
-      <li class:smrt-recipe-cards__selected={on} data-smrt-part="card">
+      <li class:smrt-recipe-cards__selected={on} data-smrt-part="item">
         <h2 id={`card-${card.id}`}>{card.label}</h2>
         <p class="smrt-recipe-cards__description" id={`card-${card.id}-summary`} data-smrt-part="description">{card.summary}</p>
         <Switch

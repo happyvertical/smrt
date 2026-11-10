@@ -45,7 +45,7 @@ function formatUpdated(iso: string | null): string {
 </script>
 
 {#if cases.length === 0}
-  <p class="smrt-case-queue__empty" data-smrt-component="CaseQueue" data-smrt-part="empty">{emptyMessage}</p>
+  <p class="smrt-case-queue__empty" data-smrt-component="CaseQueue" >{emptyMessage}</p>
 {:else}
   <ul class="smrt-case-queue__root" data-smrt-component="CaseQueue">
     {#each cases as item (item.id)}
@@ -58,8 +58,8 @@ function formatUpdated(iso: string | null): string {
         >
           <span class="smrt-case-queue__line" data-smrt-part="body">
             <span class="smrt-case-queue__main" data-smrt-part="title">
-              <span class="smrt-case-queue__number">{item.caseNumber}</span>
-              <span class="smrt-case-queue__subject">{item.subject}</span>
+              <span class="smrt-case-queue__number" data-smrt-part="value">{item.caseNumber}</span>
+              <span class="smrt-case-queue__subject" data-smrt-part="title">{item.subject}</span>
             </span>
             <span class="smrt-case-queue__meta" data-smrt-part="meta">
               <StatusBadge
@@ -73,15 +73,15 @@ function formatUpdated(iso: string | null): string {
                 size="sm"
               />
               {#if item.channelKind}
-                <span class="smrt-case-queue__channel">{item.channelKind}</span>
+                <span class="smrt-case-queue__channel" data-smrt-part="meta">{item.channelKind}</span>
               {/if}
               {#if showAssignee}
-                <span class="smrt-case-queue__assignee">
+                <span class="smrt-case-queue__assignee" data-smrt-part="meta">
                   {item.assignedSpecialistName ??
                     (item.assignedSpecialistId ? 'assigned' : 'unassigned')}
                 </span>
               {/if}
-              <span class="smrt-case-queue__updated">
+              <span class="smrt-case-queue__updated" data-smrt-part="meta">
                 {formatUpdated(item.updatedAt)}
               </span>
             </span>

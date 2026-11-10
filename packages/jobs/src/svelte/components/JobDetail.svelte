@@ -69,7 +69,7 @@ const formattedArgs = $derived(JSON.stringify(job.args, null, 2));
     <div class="smrt-job-detail__content" data-smrt-part="body">
       <div class="smrt-job-detail__grid" data-smrt-part="grid">
         <!-- Basic Info -->
-        <div class="smrt-job-detail__section" data-smrt-part="section">
+        <div class="smrt-job-detail__section" data-smrt-part="group">
           <h3>{t(M['jobs.job_detail.job_info'])}</h3>
           <dl class="smrt-job-detail__list" data-smrt-part="list">
             <dt>ID</dt>
@@ -95,7 +95,7 @@ const formattedArgs = $derived(JSON.stringify(job.args, null, 2));
         </div>
 
         <!-- Timing -->
-        <div class="smrt-job-detail__section" data-smrt-part="section">
+        <div class="smrt-job-detail__section" data-smrt-part="group">
           <h3>Timing</h3>
           <dl class="smrt-job-detail__list" data-smrt-part="list">
             <dt>Created</dt>
@@ -125,7 +125,7 @@ const formattedArgs = $derived(JSON.stringify(job.args, null, 2));
         </div>
 
         <!-- Execution -->
-        <div class="smrt-job-detail__section" data-smrt-part="section">
+        <div class="smrt-job-detail__section" data-smrt-part="group">
           <h3>Execution</h3>
           <dl class="smrt-job-detail__list" data-smrt-part="list">
             <dt>Attempts</dt>
@@ -145,16 +145,16 @@ const formattedArgs = $derived(JSON.stringify(job.args, null, 2));
       </div>
 
       <!-- Arguments -->
-      <div class="smrt-job-detail__section smrt-job-detail__section-full" data-smrt-part="section">
+      <div class="smrt-job-detail__section smrt-job-detail__section-full" data-smrt-part="group">
         <h3>Arguments</h3>
-        <pre class="smrt-job-detail__code" data-smrt-part="code">{formattedArgs}</pre>
+        <pre class="smrt-job-detail__code" data-smrt-part="body">{formattedArgs}</pre>
       </div>
 
       <!-- Error -->
       {#if job.lastError}
-        <div class="smrt-job-detail__section smrt-job-detail__section-full smrt-job-detail__section-error" data-smrt-part="section">
+        <div class="smrt-job-detail__section smrt-job-detail__section-full smrt-job-detail__section-error" data-smrt-part="group">
           <h3>{t(M['jobs.job_detail.last_error'])}</h3>
-          <pre class="smrt-job-detail__code smrt-job-detail__code-error" data-smrt-part="code">{job.lastError}</pre>
+          <pre class="smrt-job-detail__code smrt-job-detail__code-error" data-smrt-part="body">{job.lastError}</pre>
         </div>
       {/if}
     </div>

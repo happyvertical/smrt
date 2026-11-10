@@ -34,11 +34,11 @@ function componentText(line: RequirementLineView): string {
 }
 </script>
 
-<ul class="smrt-requirements-tree-level__tree" data-smrt-part="list" aria-label={label}>
+<ul class="smrt-requirements-tree-level__tree"  aria-label={label} data-smrt-component="RequirementsTreeLevel">
   {#each lines as line (line.key)}
     <li class="smrt-requirements-tree-level__line" data-smrt-part="item" data-level={line.level}>
       <div class="smrt-requirements-tree-level__row" data-smrt-part="row">
-        <span class="smrt-requirements-tree-level__component" data-smrt-part="name">{componentText(line)}</span>
+        <span class="smrt-requirements-tree-level__component" data-smrt-part="title">{componentText(line)}</span>
         <Badge size="sm" variant={line.kind === 'missing' ? 'error' : 'default'}>
           {t(componentKindLabelKey(line.kind))}
         </Badge>
@@ -59,13 +59,13 @@ function componentText(line: RequirementLineView): string {
               {t(M['manufacturing.requirements.short'], { qty: quantity(line.short) })}
             </Badge>
           {:else}
-            <span class="smrt-requirements-tree-level__note" data-smrt-part="note">{t(M['manufacturing.requirements.covered'])}</span>
+            <span class="smrt-requirements-tree-level__note" data-smrt-part="description">{t(M['manufacturing.requirements.covered'])}</span>
           {/if}
         {/if}
         {#if line.kind === 'assembly' && !line.buildable}
-          <span class="smrt-requirements-tree-level__note" data-smrt-part="note">{t(M['manufacturing.requirements.no_bill'])}</span>
+          <span class="smrt-requirements-tree-level__note" data-smrt-part="description">{t(M['manufacturing.requirements.no_bill'])}</span>
         {:else if line.buildable && line.children.length === 0 && (line.short ?? 0) > 0}
-          <span class="smrt-requirements-tree-level__note" data-smrt-part="note">{t(M['manufacturing.requirements.buildable'])}</span>
+          <span class="smrt-requirements-tree-level__note" data-smrt-part="description">{t(M['manufacturing.requirements.buildable'])}</span>
         {/if}
       </div>
       {#if line.children.length > 0}

@@ -256,7 +256,7 @@ async function confirmAction() {
               {@const manageErrorId = `${uid}-${run.id}-manage-error`}
               <td>
                 {#if isProductionRunOpen(run.status)}
-                  <div class="smrt-production-run-list__manage" data-smrt-part="form">
+                  <div class="smrt-production-run-list__manage" data-smrt-part="field">
                     {#if onsettarget}
                       <Form class="run-list-report" onsubmit={() => setTarget(run)}>
                         <Input

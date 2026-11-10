@@ -166,7 +166,7 @@ function getPatternPlaceholder(type: string): string {
 </script>
 
 <div class="smrt-email-filter-manager__root" data-smrt-component="EmailFilterManager">
-  <div class="smrt-email-filter-manager__toggle" data-smrt-part="toggle">
+  <div class="smrt-email-filter-manager__toggle" data-smrt-part="trigger">
     <Button
       variant={activeSection === 'whitelist' ? 'primary' : 'ghost'}
       size="sm"
@@ -202,7 +202,7 @@ function getPatternPlaceholder(type: string): string {
 
   <!-- Whitelist Section -->
   {#if activeSection === 'whitelist'}
-    <div class="smrt-email-filter-manager__content" data-smrt-part="content">
+    <div class="smrt-email-filter-manager__content" data-smrt-part="body">
       <div class="smrt-email-filter-manager__header" data-smrt-part="header">
         <div class="smrt-email-filter-manager__description" data-smrt-part="description">
           {t(M['messages.email_filter_manager.whitelist_description'])}
@@ -218,7 +218,7 @@ function getPatternPlaceholder(type: string): string {
       </div>
 
       {#if showWhitelistForm}
-        <div class="smrt-email-filter-manager__form" data-smrt-part="form">
+        <div class="smrt-email-filter-manager__form" data-smrt-part="field">
           <div class="smrt-email-filter-manager__form-title" data-smrt-part="title">{t(M['messages.email_filter_manager.add_whitelist_entry'])}</div>
           <div class="smrt-email-filter-manager__row" data-smrt-part="row">
             <div class="smrt-email-filter-manager__field" data-smrt-part="field" style="flex: 0 0 120px;">
@@ -242,7 +242,7 @@ function getPatternPlaceholder(type: string): string {
           </div>
           <div class="smrt-email-filter-manager__row" data-smrt-part="row">
             <div class="smrt-email-filter-manager__field" data-smrt-part="field" style="flex: 1;">
-              <label class="smrt-email-filter-manager__label" data-smrt-part="label" for="wl-category">Category <span class="smrt-email-filter-manager__optional">(optional)</span></label>
+              <label class="smrt-email-filter-manager__label" data-smrt-part="label" for="wl-category">Category <span class="smrt-email-filter-manager__optional" data-smrt-part="meta">(optional)</span></label>
               <Input
                 id="wl-category"
                 class="form-input"
@@ -276,17 +276,17 @@ function getPatternPlaceholder(type: string): string {
       {:else}
         <div class="smrt-email-filter-manager__list" data-smrt-part="list">
           {#each whitelist as entry}
-            <div class="smrt-email-filter-manager__entry smrt-email-filter-manager__allow" data-smrt-part="entry">
+            <div class="smrt-email-filter-manager__entry smrt-email-filter-manager__allow" data-smrt-part="item">
               <div class="smrt-email-filter-manager__body" data-smrt-part="body">
                 <span class="smrt-email-filter-manager__icon" data-smrt-part="icon" title={entry.type}>{getTypeIcon(entry.type)}</span>
                 <div class="smrt-email-filter-manager__meta" data-smrt-part="meta">
-                  <span class="smrt-email-filter-manager__pattern">{entry.pattern}</span>
+                  <span class="smrt-email-filter-manager__pattern" data-smrt-part="value">{entry.pattern}</span>
                   {#if entry.description}
-                    <span class="smrt-email-filter-manager__entry-description">{entry.description}</span>
+                    <span class="smrt-email-filter-manager__entry-description" data-smrt-part="description">{entry.description}</span>
                   {/if}
                 </div>
                 {#if entry.category}
-                  <span class="smrt-email-filter-manager__category-tag">{entry.category}</span>
+                  <span class="smrt-email-filter-manager__category-tag" data-smrt-part="meta">{entry.category}</span>
                 {/if}
               </div>
               {#if !isReadonly && onremovewhitelist}
@@ -306,7 +306,7 @@ function getPatternPlaceholder(type: string): string {
 
   <!-- Blacklist Section -->
   {:else}
-    <div class="smrt-email-filter-manager__content" data-smrt-part="content">
+    <div class="smrt-email-filter-manager__content" data-smrt-part="body">
       <div class="smrt-email-filter-manager__header" data-smrt-part="header">
         <div class="smrt-email-filter-manager__description" data-smrt-part="description">
           {t(M['messages.email_filter_manager.blacklist_description'])}
@@ -322,7 +322,7 @@ function getPatternPlaceholder(type: string): string {
       </div>
 
       {#if showBlacklistForm}
-        <div class="smrt-email-filter-manager__form" data-smrt-part="form">
+        <div class="smrt-email-filter-manager__form" data-smrt-part="field">
           <div class="smrt-email-filter-manager__form-title" data-smrt-part="title">{t(M['messages.email_filter_manager.add_blacklist_entry'])}</div>
           <div class="smrt-email-filter-manager__row" data-smrt-part="row">
             <div class="smrt-email-filter-manager__field" data-smrt-part="field" style="flex: 0 0 120px;">
@@ -377,17 +377,17 @@ function getPatternPlaceholder(type: string): string {
       {:else}
         <div class="smrt-email-filter-manager__list" data-smrt-part="list">
           {#each blacklist as entry}
-            <div class="smrt-email-filter-manager__entry smrt-email-filter-manager__block" data-smrt-part="entry">
+            <div class="smrt-email-filter-manager__entry smrt-email-filter-manager__block" data-smrt-part="item">
               <div class="smrt-email-filter-manager__body" data-smrt-part="body">
                 <span class="smrt-email-filter-manager__icon" data-smrt-part="icon" title={entry.type}>{getTypeIcon(entry.type)}</span>
                 <div class="smrt-email-filter-manager__meta" data-smrt-part="meta">
-                  <span class="smrt-email-filter-manager__pattern">{entry.pattern}</span>
+                  <span class="smrt-email-filter-manager__pattern" data-smrt-part="value">{entry.pattern}</span>
                   {#if entry.reason}
-                    <span class="smrt-email-filter-manager__entry-description">{entry.reason}</span>
+                    <span class="smrt-email-filter-manager__entry-description" data-smrt-part="description">{entry.reason}</span>
                   {/if}
                 </div>
                 {#if entry.autoArchive}
-                  <span class="smrt-email-filter-manager__auto-archive-tag">auto-archive</span>
+                  <span class="smrt-email-filter-manager__auto-archive-tag" data-smrt-part="meta">auto-archive</span>
                 {/if}
               </div>
               {#if !isReadonly && onremoveblacklist}

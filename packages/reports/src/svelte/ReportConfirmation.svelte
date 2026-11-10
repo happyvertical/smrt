@@ -119,7 +119,7 @@ function decline() {
   {:else}
     {#if proposal.spec.description}<p class="smrt-report-confirmation__description" data-smrt-part="meta">{proposal.spec.description}</p>{/if}
     {#if description}
-      <dl class="smrt-report-confirmation__facts" data-smrt-part="facts">
+      <dl class="smrt-report-confirmation__facts" data-smrt-part="meta">
         <div><dt>{t(M['reports.source'])}</dt><dd>{description.source}</dd></div>
         <div><dt>{t(M['reports.groupings'])}</dt><dd>{description.groupings || t(M['reports.none'])}</dd></div>
         {#if description.period}

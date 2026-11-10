@@ -185,10 +185,10 @@ function getInitials(name: string): string {
     aria-controls={open ? `${menuId}-dropdown` : undefined}
     aria-label={ariaLabel}
   >
-    <span class="smrt-user-menu__avatar" data-smrt-part="avatar" aria-hidden="true">
+    <span class="smrt-user-menu__avatar" data-smrt-part="icon" aria-hidden="true">
       {getInitials(displayName)}
     </span>
-    <span class="smrt-user-menu__user-name" data-smrt-part="name">{displayName}</span>
+    <span class="smrt-user-menu__user-name" data-smrt-part="title">{displayName}</span>
     <svg class="smrt-user-menu__chevron" data-smrt-part="indicator" class:smrt-user-menu__open={open} viewBox="0 0 20 20" fill="currentColor" aria-hidden="true">
       <path fill-rule="evenodd" d="M5.293 7.293a1 1 0 011.414 0L10 10.586l3.293-3.293a1 1 0 111.414 1.414l-4 4a1 1 0 01-1.414 0l-4-4a1 1 0 010-1.414z" clip-rule="evenodd" />
     </svg>
@@ -207,9 +207,9 @@ function getInitials(name: string): string {
       {#if userEmail}
         <div class="smrt-user-menu__info" data-smrt-part="meta" role="none">
           <span class="smrt-user-menu__info-name" data-smrt-part="label">{displayName}</span>
-          <span class="smrt-user-menu__info-email" data-smrt-part="email">{userEmail}</span>
+          <span class="smrt-user-menu__info-email" data-smrt-part="meta">{userEmail}</span>
         </div>
-        <hr class="smrt-user-menu__divider" data-smrt-part="separator" />
+        <hr class="smrt-user-menu__divider" data-smrt-part="marker" />
       {/if}
 
       <a
@@ -240,7 +240,7 @@ function getInitials(name: string): string {
         </svg>
         Settings
       </a>
-      <hr class="smrt-user-menu__divider" data-smrt-part="separator" />
+      <hr class="smrt-user-menu__divider" data-smrt-part="marker" />
       <a
         bind:this={itemEls[2]}
         href={signoutUrl}
@@ -317,6 +317,14 @@ function getInitials(name: string): string {
   .smrt-user-menu__divider {
     margin: var(--smrt-spacing-1) 0;
   }
+  .smrt-user-menu__chevron.smrt-user-menu__open {
+    transform: rotate(180deg);
+  }
+  @media (prefers-reduced-motion: reduce) {
+    .smrt-user-menu__chevron.smrt-user-menu__open {
+      transform: none;
+    }
+  }
 }
 
 @layer smrt.theme {
@@ -344,9 +352,6 @@ function getInitials(name: string): string {
   .smrt-user-menu__chevron {
     transition: transform var(--smrt-duration-short3, 200ms) var(--smrt-easing-standard, cubic-bezier(0.2, 0, 0, 1));
     opacity: 0.7;
-  }
-  .smrt-user-menu__chevron.smrt-user-menu__open {
-    transform: rotate(180deg);
   }
   .smrt-user-menu__dropdown {
     background-color: var(--smrt-color-surface-container);
@@ -394,9 +399,6 @@ function getInitials(name: string): string {
     .smrt-user-menu__chevron,
     .smrt-user-menu__item {
       transition: none;
-    }
-    .smrt-user-menu__chevron.smrt-user-menu__open {
-      transform: none;
     }
   }
 }

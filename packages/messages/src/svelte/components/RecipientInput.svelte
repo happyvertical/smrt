@@ -66,8 +66,8 @@ export interface Props {
   <label class="smrt-recipient-input__label" data-smrt-part="label" for={inputId}>{label}</label>
   <div class="smrt-recipient-input__body" data-smrt-part="body">
     {#each recipients as recipient, i}
-      <span class="smrt-recipient-input__chip" class:smrt-recipient-input__invalid={!recipient.isValid} data-smrt-part="chip">
-        <span class="smrt-recipient-input__chip-title" data-smrt-part="chip-title">{recipient.name || recipient.address}</span>
+      <span class="smrt-recipient-input__chip" class:smrt-recipient-input__invalid={!recipient.isValid} data-smrt-part="badge">
+        <span class="smrt-recipient-input__chip-title" data-smrt-part="label">{recipient.name || recipient.address}</span>
         <Button
           variant="ghost"
           size="sm"

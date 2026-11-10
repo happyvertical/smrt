@@ -73,7 +73,7 @@ function toggle(entry: FeatureEntry, on: boolean) {
   />
 
   {#if chips.length > 1}
-    <div class="smrt-record-features__chips" role="group" aria-label="Filter by package" data-smrt-part="chips">
+    <div class="smrt-record-features__chips" role="group" aria-label="Filter by package" data-smrt-part="list">
       <ToggleButton pressed={active === null} onclick={() => (packageId = null)}>
         All
       </ToggleButton>
@@ -88,7 +88,7 @@ function toggle(entry: FeatureEntry, on: boolean) {
     </div>
   {/if}
 
-  <div class="smrt-record-features__bar" data-smrt-part="toolbar">
+  <div class="smrt-record-features__bar" data-smrt-part="actions">
     <h2 class="smrt-record-features__count" data-smrt-part="count">
       {results.length} {results.length === 1 ? 'feature' : 'features'}{hidden
         ? ` (${hidden} hidden)`
@@ -110,7 +110,7 @@ function toggle(entry: FeatureEntry, on: boolean) {
         <li class:smrt-record-features__selected={on} animate:flip={{ duration: motionDuration('medium2', 300) }} data-smrt-part="row">
           <span class="smrt-record-features__icon" aria-hidden="true" data-smrt-part="icon"><Icon path={DATABASE} size={22} /></span>
           <div class="smrt-record-features__text" data-smrt-part="body">
-            <span class="smrt-record-features__name" data-smrt-part="name">
+            <span class="smrt-record-features__name" data-smrt-part="title">
               <a href={appHref(`/packages/${entry.packageId}/`)}>{entry.label}</a>
               {#if entry.plumbing}<span class="smrt-record-features__tag" data-smrt-part="badge">plumbing</span>{/if}
             </span>
@@ -130,7 +130,7 @@ function toggle(entry: FeatureEntry, on: boolean) {
   {:else}
     <p class="smrt-record-features__empty" data-smrt-part="empty">No features match "{query}".</p>
   {/if}
-  <p class="smrt-record-features__notice" role="status" aria-live="polite" data-smrt-part="notice">{notice}</p>
+  <p class="smrt-record-features__notice" role="status" aria-live="polite" data-smrt-part="status">{notice}</p>
 </div>
 
 <style>

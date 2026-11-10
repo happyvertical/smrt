@@ -33,7 +33,7 @@ const { tabs, onselect, onclose }: Props = $props();
           type="button"
           onclick={() => onselect(tab.roomId)}
           aria-label={t(M['chat.chat_tab_list.open_chat_with'], { name: tab.room.name })}
-          title={tab.room.name}
+          title={tab.room.name} data-smrt-part="trigger"
         >
           <Avatar
             name={tab.room.name}

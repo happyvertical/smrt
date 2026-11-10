@@ -41,7 +41,7 @@ function statusClass(status: string): string {
 	{#if displayEvents.length === 0}
 		<p class="smrt-events-table__empty" data-smrt-part="empty">{t(M['analytics.events_table.empty'])}</p>
 	{:else}
-		<table class="smrt-events-table__table">
+		<table class="smrt-events-table__table" data-smrt-part="table">
 			<caption class="smrt-events-table__caption" data-smrt-part="caption">{t(M['analytics.events_table.caption'])}</caption>
 			<thead data-smrt-part="header">
 				<tr>
@@ -55,11 +55,11 @@ function statusClass(status: string): string {
 			<tbody data-smrt-part="body">
 				{#each displayEvents as event (event.id)}
 					<tr data-smrt-part="row">
-						<td class="smrt-events-table__event-name">{event.eventName}</td>
-						<td class="smrt-events-table__event-page">{event.pagePath ?? '-'}</td>
-						<td class="smrt-events-table__event-client" title={event.clientId}>{(event.clientId ?? '').slice(0, 8)}</td>
-						<td class="smrt-events-table__event-time">{formatTimestamp(event.eventTimestamp)}</td>
-						<td><span class="smrt-events-table__status-pill {statusClass(event.status)}">{event.status}</span></td>
+						<td class="smrt-events-table__event-name" data-smrt-part="cell">{event.eventName}</td>
+						<td class="smrt-events-table__event-page" data-smrt-part="cell">{event.pagePath ?? '-'}</td>
+						<td class="smrt-events-table__event-client" title={event.clientId} data-smrt-part="cell">{(event.clientId ?? '').slice(0, 8)}</td>
+						<td class="smrt-events-table__event-time" data-smrt-part="cell">{formatTimestamp(event.eventTimestamp)}</td>
+						<td><span class="smrt-events-table__status-pill {statusClass(event.status)}" data-smrt-part="badge">{event.status}</span></td>
 					</tr>
 				{/each}
 			</tbody>

@@ -159,7 +159,7 @@ function submit(event: SubmitEvent, prompt: PromptSettingsView): void {
             {#if showApp}
               {#if appIsEditable}
                 <div class="smrt-prompt-settings-panel__field" data-smrt-part="field">
-                  <label class="smrt-prompt-settings-panel__toggle">
+                  <label class="smrt-prompt-settings-panel__toggle" data-smrt-part="trigger">
                     <input
                       type="checkbox"
                       name="appOverride"
@@ -174,9 +174,9 @@ function submit(event: SubmitEvent, prompt: PromptSettingsView): void {
                     aria-label={appLabel}
                     rows="3"
                     disabled={busy || !isTemplateEditable(prompt)}
-                    value={prompt.appTemplate ?? appRevertPreview(prompt)}
+                    value={prompt.appTemplate ?? appRevertPreview(prompt)} data-smrt-part="input"
                   ></textarea>
-                  <p class="smrt-prompt-settings-panel__hint" data-smrt-part="hint">
+                  <p class="smrt-prompt-settings-panel__hint" data-smrt-part="description">
                     Unchecked reverts to: {appRevertPreview(prompt)}
                   </p>
                 </div>
@@ -191,7 +191,7 @@ function submit(event: SubmitEvent, prompt: PromptSettingsView): void {
             {/if}
 
             <div class="smrt-prompt-settings-panel__field" data-smrt-part="field">
-              <label class="smrt-prompt-settings-panel__toggle">
+              <label class="smrt-prompt-settings-panel__toggle" data-smrt-part="trigger">
                 <input
                   type="checkbox"
                   name="tenantOverride"
@@ -206,9 +206,9 @@ function submit(event: SubmitEvent, prompt: PromptSettingsView): void {
                 aria-label={tenantLabel}
                 rows="4"
                 disabled={busy || !isTemplateEditable(prompt)}
-                value={prompt.tenantTemplate ?? tenantRevertPreview(prompt)}
+                value={prompt.tenantTemplate ?? tenantRevertPreview(prompt)} data-smrt-part="input"
               ></textarea>
-              <p class="smrt-prompt-settings-panel__hint" data-smrt-part="hint">
+              <p class="smrt-prompt-settings-panel__hint" data-smrt-part="description">
                 Unchecked reverts to: {tenantRevertPreview(prompt)}
               </p>
             </div>

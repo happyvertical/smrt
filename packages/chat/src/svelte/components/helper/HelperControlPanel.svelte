@@ -354,11 +354,11 @@ async function customSaved(offering: HelperOffering) {
         {/each}
       </div>
       {#if previewOffering}
-        <div class="smrt-helper-control-panel__preview" data-smrt-part="preview" aria-label={t(M['chat.helper.preview'])} bind:this={previewTarget}></div>
+        <div class="smrt-helper-control-panel__preview" data-smrt-part="panel" aria-label={t(M['chat.helper.preview'])} bind:this={previewTarget}></div>
       {/if}
       {#if previewError}<p class="smrt-helper-control-panel__message" data-smrt-part="message" role="status">{previewError}</p>{/if}
       {#if availableSetups.length}
-        <div class="smrt-helper-control-panel__setup-actions" data-smrt-part="setup-actions">
+        <div class="smrt-helper-control-panel__setup-actions" data-smrt-part="actions">
           {#each availableSetups as style (style.id)}
             <Button id={`${panelInstanceId}-setup-${style.id}`} type="button" variant="secondary" disabled={!editable('offeringId')} onclick={() => openSetup(style.id)}>{t(M['chat.helper.add_style'], { style: style.label })}</Button>
           {/each}
@@ -366,7 +366,7 @@ async function customSaved(offering: HelperOffering) {
       {/if}
       {#if setupStyleId && registry.get(setupStyleId)?.Setup}
         {@const Setup = registry.get(setupStyleId)?.Setup}
-        <section bind:this={setupTarget} class="smrt-helper-control-panel__custom-setup" data-smrt-part="custom-setup" aria-label={t(M['chat.helper.custom_setup'])}>
+        <section bind:this={setupTarget} class="smrt-helper-control-panel__custom-setup" data-smrt-part="actions" aria-label={t(M['chat.helper.custom_setup'])}>
           <Button type="button" variant="secondary" onclick={closeSetup}>{t(M['chat.helper.back_to_settings'])}</Button>
           {#if Setup}<Setup onsaved={customSaved} oncancel={closeSetup} />{/if}
         </section>

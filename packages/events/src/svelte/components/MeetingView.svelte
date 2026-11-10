@@ -58,7 +58,7 @@ const hasDocuments = $derived(
 
     {#if meeting.council}
       <div class="smrt-meeting-view__badge" data-smrt-part="badge">
-        <span class="smrt-meeting-view__badge-icon">{'\u{1F3DB}'}</span>
+        <span class="smrt-meeting-view__badge-icon" data-smrt-part="icon">{'\u{1F3DB}'}</span>
         {meeting.council.name}
       </div>
     {/if}
@@ -66,65 +66,65 @@ const hasDocuments = $derived(
     <h1 class="smrt-meeting-view__title" data-smrt-part="title">{meeting.name}</h1>
 
     <div class="smrt-meeting-view__meta" data-smrt-part="meta">
-      <time class="smrt-meeting-view__date">{formattedDate}</time>
-      <span class="smrt-meeting-view__time">{formattedTime}</span>
+      <time class="smrt-meeting-view__date" data-smrt-part="time">{formattedDate}</time>
+      <span class="smrt-meeting-view__time" data-smrt-part="time">{formattedTime}</span>
     </div>
   </header>
 
   <div class="smrt-meeting-view__body" data-smrt-part="body">
     {#if hasDocuments}
-      <section class="smrt-meeting-view__documents" data-smrt-part="documents">
-        <h2 class="smrt-meeting-view__heading">{t(M['events.meeting_view.documents_and_resources'])}</h2>
+      <section class="smrt-meeting-view__documents" data-smrt-part="list">
+        <h2 class="smrt-meeting-view__heading" data-smrt-part="title">{t(M['events.meeting_view.documents_and_resources'])}</h2>
 
         <div class="smrt-meeting-view__grid" data-smrt-part="list">
           {#if meeting.agendaUrl}
-            <a href={meeting.agendaUrl} class="smrt-meeting-view__card" data-smrt-part="document" target="_blank" rel="noopener noreferrer">
-              <span class="smrt-meeting-view__card-icon">{'\u{1F4CB}'}</span>
-              <div class="smrt-meeting-view__card-info">
-                <span class="smrt-meeting-view__card-name">Agenda</span>
-                <span class="smrt-meeting-view__card-desc">{t(M['events.meeting_view.agenda_desc'])}</span>
+            <a href={meeting.agendaUrl} class="smrt-meeting-view__card" data-smrt-part="body" target="_blank" rel="noopener noreferrer">
+              <span class="smrt-meeting-view__card-icon" data-smrt-part="icon">{'\u{1F4CB}'}</span>
+              <div class="smrt-meeting-view__card-info" data-smrt-part="description">
+                <span class="smrt-meeting-view__card-name" data-smrt-part="title">Agenda</span>
+                <span class="smrt-meeting-view__card-desc" data-smrt-part="description">{t(M['events.meeting_view.agenda_desc'])}</span>
               </div>
-              <span class="smrt-meeting-view__card-arrow">{'\u2197'}</span>
+              <span class="smrt-meeting-view__card-arrow" data-smrt-part="icon">{'\u2197'}</span>
             </a>
           {/if}
 
           {#if meeting.minutesUrl}
-            <a href={meeting.minutesUrl} class="smrt-meeting-view__card" data-smrt-part="document" target="_blank" rel="noopener noreferrer">
-              <span class="smrt-meeting-view__card-icon">{'\u{1F4DD}'}</span>
-              <div class="smrt-meeting-view__card-info">
-                <span class="smrt-meeting-view__card-name">Minutes</span>
-                <span class="smrt-meeting-view__card-desc">{t(M['events.meeting_view.minutes_desc'])}</span>
+            <a href={meeting.minutesUrl} class="smrt-meeting-view__card" data-smrt-part="body" target="_blank" rel="noopener noreferrer">
+              <span class="smrt-meeting-view__card-icon" data-smrt-part="icon">{'\u{1F4DD}'}</span>
+              <div class="smrt-meeting-view__card-info" data-smrt-part="description">
+                <span class="smrt-meeting-view__card-name" data-smrt-part="title">Minutes</span>
+                <span class="smrt-meeting-view__card-desc" data-smrt-part="description">{t(M['events.meeting_view.minutes_desc'])}</span>
               </div>
-              <span class="smrt-meeting-view__card-arrow">{'\u2197'}</span>
+              <span class="smrt-meeting-view__card-arrow" data-smrt-part="icon">{'\u2197'}</span>
             </a>
           {/if}
 
           {#if meeting.videoUrl}
-            <a href={meeting.videoUrl} class="smrt-meeting-view__card" data-smrt-part="document" target="_blank" rel="noopener noreferrer">
-              <span class="smrt-meeting-view__card-icon">{'\u{1F3AC}'}</span>
-              <div class="smrt-meeting-view__card-info">
-                <span class="smrt-meeting-view__card-name">Video</span>
-                <span class="smrt-meeting-view__card-desc">{t(M['events.meeting_view.video_desc'])}</span>
+            <a href={meeting.videoUrl} class="smrt-meeting-view__card" data-smrt-part="body" target="_blank" rel="noopener noreferrer">
+              <span class="smrt-meeting-view__card-icon" data-smrt-part="icon">{'\u{1F3AC}'}</span>
+              <div class="smrt-meeting-view__card-info" data-smrt-part="description">
+                <span class="smrt-meeting-view__card-name" data-smrt-part="title">Video</span>
+                <span class="smrt-meeting-view__card-desc" data-smrt-part="description">{t(M['events.meeting_view.video_desc'])}</span>
               </div>
-              <span class="smrt-meeting-view__card-arrow">{'\u2197'}</span>
+              <span class="smrt-meeting-view__card-arrow" data-smrt-part="icon">{'\u2197'}</span>
             </a>
           {/if}
 
           {#if meeting.highlightsUrl}
-            <a href={meeting.highlightsUrl} class="smrt-meeting-view__card" data-smrt-part="document" target="_blank" rel="noopener noreferrer">
-              <span class="smrt-meeting-view__card-icon">{'\u{2728}'}</span>
-              <div class="smrt-meeting-view__card-info">
-                <span class="smrt-meeting-view__card-name">Highlights</span>
-                <span class="smrt-meeting-view__card-desc">{t(M['events.meeting_view.highlights_desc'])}</span>
+            <a href={meeting.highlightsUrl} class="smrt-meeting-view__card" data-smrt-part="body" target="_blank" rel="noopener noreferrer">
+              <span class="smrt-meeting-view__card-icon" data-smrt-part="icon">{'\u{2728}'}</span>
+              <div class="smrt-meeting-view__card-info" data-smrt-part="description">
+                <span class="smrt-meeting-view__card-name" data-smrt-part="title">Highlights</span>
+                <span class="smrt-meeting-view__card-desc" data-smrt-part="description">{t(M['events.meeting_view.highlights_desc'])}</span>
               </div>
-              <span class="smrt-meeting-view__card-arrow">{'\u2197'}</span>
+              <span class="smrt-meeting-view__card-arrow" data-smrt-part="icon">{'\u2197'}</span>
             </a>
           {/if}
         </div>
       </section>
     {:else}
       <div class="smrt-meeting-view__empty" data-smrt-part="empty">
-        <span class="smrt-meeting-view__empty-icon">{'\u{1F4C4}'}</span>
+        <span class="smrt-meeting-view__empty-icon" data-smrt-part="icon">{'\u{1F4C4}'}</span>
         <p class="smrt-meeting-view__empty-text" data-smrt-part="message">{t(M['events.meeting_view.no_documents'])}</p>
       </div>
     {/if}
@@ -225,6 +225,9 @@ const hasDocuments = $derived(
       grid-template-columns: 1fr;
     }
   }
+  .smrt-meeting-view__time::before {
+    content: '\2022';
+  }
 }
 
 @layer smrt.theme {
@@ -270,9 +273,6 @@ const hasDocuments = $derived(
   }
   .smrt-meeting-view__date {
     font-weight: var(--smrt-typography-weight-medium, 500);
-  }
-  .smrt-meeting-view__time::before {
-    content: '\2022';
   }
   .smrt-meeting-view__heading {
     font-size: var(--smrt-typography-title-medium-size, 1.125rem);

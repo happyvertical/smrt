@@ -123,7 +123,7 @@ function labour(minutes: number): string {
       <tbody>
         {#each assemblies as assembly (assembly.id)}
           <tr>
-            <th scope="row" class="smrt-assembly-list__name" data-smrt-part="name">
+            <th scope="row" class="smrt-assembly-list__name" data-smrt-part="title">
               {#if onselect}
                 <Button
                   variant="ghost"
@@ -147,7 +147,7 @@ function labour(minutes: number): string {
               </td>
             {/if}
             {#if visible.has('sku')}
-              <td class="smrt-assembly-list__code" data-smrt-part="code">
+              <td class="smrt-assembly-list__code" data-smrt-part="body">
                 {#if assembly.skuCodes.length > 0}
                   {assembly.skuCodes.join(', ')}
                 {:else}

@@ -637,7 +637,7 @@ function apiTabCount(
 <ThemeProvider colorScheme="dark" persist={true} storageKey="smrt-workbench-theme">
   <div
     class="smrt-workbench-host__root"
-    data-hydrated={isHydrated ? 'true' : 'false'}
+    data-hydrated={isHydrated ? 'true' : 'false'} data-smrt-part="body"
   >
     <AdminShell
       edgeToggles
@@ -646,7 +646,7 @@ function apiTabCount(
       state={shellState}
     >
       {#snippet topLeftCorner()}
-        <div class="smrt-workbench-host__shell-mark" data-smrt-part="logo" aria-label="SMRT">
+        <div class="smrt-workbench-host__shell-mark" data-smrt-part="label" aria-label="SMRT">
           <svg viewBox="0 0 32 32" role="img" aria-label="SMRT">
             <path
               d="M19.7 3.4c1.2 4.1-.3 6.9-2.2 9 2.8-1.1 5-3 6.6-5.5 2.7 4.8 3.1 9.1 1.1 12.9-1.9 3.5-5.3 5.7-9.2 5.7-4 0-7.4-2.2-9.3-5.7-2.1-4-.9-8.5 3.7-13.5-.1 2.8.8 5.1 2.5 6.9 2.5-2.7 4.6-5.8 6.8-9.8Z"
@@ -675,7 +675,7 @@ function apiTabCount(
       {/snippet}
 
       {#snippet appPanel()}
-        <section class="smrt-workbench-host__app-panel" data-smrt-part="app-panel" aria-label="Workbench scope">
+        <section class="smrt-workbench-host__app-panel" data-smrt-part="body" aria-label="Workbench scope">
           <div>
             <p class="smrt-workbench-host__eyebrow" data-smrt-part="label">{project.scope.projectRoot}</p>
             <h2>{rootNavLabel}</h2>
@@ -685,7 +685,7 @@ function apiTabCount(
                 : 'Workspace packages and package-owned surfaces discovered for this repository.'}
             </p>
           </div>
-          <dl class="smrt-workbench-host__scope-metrics" data-smrt-part="stats">
+          <dl class="smrt-workbench-host__scope-metrics" data-smrt-part="group">
             <div><dt>Packages</dt><dd>{totals.packages}</dd></div>
             <div><dt>Routes</dt><dd>{totals.routes}</dd></div>
             <div><dt>Previews</dt><dd>{totals.playground}</dd></div>
@@ -695,9 +695,9 @@ function apiTabCount(
       {/snippet}
 
       {#snippet tenantPanel()}
-        <div class="smrt-workbench-host__nav-shell" data-smrt-part="sidebar">
+        <div class="smrt-workbench-host__nav-shell" data-smrt-part="nav">
           <header class="smrt-workbench-host__nav-header" data-smrt-part="header">
-            <div class="smrt-workbench-host__brand" data-smrt-part="brand">
+            <div class="smrt-workbench-host__brand" data-smrt-part="label">
               <p class="smrt-workbench-host__eyebrow smrt-workbench-host__badge" data-smrt-part="label">
                 <svg
                   viewBox="0 0 32 32"
@@ -775,7 +775,7 @@ function apiTabCount(
               <button
                 type="button"
                 class:smrt-workbench-host__active={activeTab === 'packages'}
-                class="smrt-workbench-host__root-nav" data-smrt-part="link"
+                class="smrt-workbench-host__root-nav" data-smrt-part="action"
                 onclick={() => selectSection('packages')}
               >
                 <strong>{rootNavLabel}</strong>
@@ -802,14 +802,14 @@ function apiTabCount(
                   <div
                     class:smrt-workbench-host__package-node={true}
                     class:smrt-workbench-host__node-selected={packageIsSelected}
-                    class:smrt-workbench-host__node-expanded={packageIsExpanded} data-smrt-part="node"
+                    class:smrt-workbench-host__node-expanded={packageIsExpanded} data-smrt-part="item"
                   >
                     <button
                       type="button"
                       class:smrt-workbench-host__selected={packageIsSelected}
                       aria-expanded={packageIsExpanded}
                       data-workbench-package={packageSummary.name}
-                      onclick={() => selectPackage(packageSummary)}
+                      onclick={() => selectPackage(packageSummary)} data-smrt-part="trigger"
                     >
                       <strong>{packageSummary.name}</strong>
                       <span>{stats?.routes || 0} routes · {stats?.playground || 0} previews</span>
@@ -828,7 +828,7 @@ function apiTabCount(
                                 class:smrt-workbench-host__active={activeTab === 'docs' && doc.path === selectedDocument?.path}
                                 aria-pressed={activeTab === 'docs' && doc.path === selectedDocument?.path}
                                 data-workbench-document={doc.title}
-                                onclick={() => selectDocument(doc)}
+                                onclick={() => selectDocument(doc)} data-smrt-part="trigger"
                               >
                                 <span>{doc.title}</span>
                               </button>
@@ -836,12 +836,12 @@ function apiTabCount(
                           </div>
                         {/if}
                         {#each sectionTabs as tab}
-                          <div class="smrt-workbench-host__section-node" data-smrt-part="node">
+                          <div class="smrt-workbench-host__section-node" data-smrt-part="item">
                             <button
                               type="button"
                               class:smrt-workbench-host__active={activeTab === tab.id}
                               aria-pressed={activeTab === tab.id}
-                              onclick={() => selectSection(tab.id)}
+                              onclick={() => selectSection(tab.id)} data-smrt-part="trigger"
                             >
                               {tab.label}
                             </button>
@@ -856,7 +856,7 @@ function apiTabCount(
                                     class:smrt-workbench-host__active={activeTab === 'playground' && entry.qualifiedId === selectedPlaygroundEntry?.qualifiedId}
                                     aria-pressed={activeTab === 'playground' && entry.qualifiedId === selectedPlaygroundEntry?.qualifiedId}
                                     data-workbench-playground-entry={entry.qualifiedId}
-                                    onclick={() => selectPlaygroundEntry(entry)}
+                                    onclick={() => selectPlaygroundEntry(entry)} data-smrt-part="trigger"
                                   >
                                     <span>{entry.title}</span>
                                   </button>
@@ -874,7 +874,7 @@ function apiTabCount(
                                     class:smrt-workbench-host__active={activeTab === 'routes' && route.qualifiedId === selectedRoute?.qualifiedId}
                                     aria-pressed={activeTab === 'routes' && route.qualifiedId === selectedRoute?.qualifiedId}
                                     data-workbench-route-entry={route.qualifiedId}
-                                    onclick={() => selectRoute(route)}
+                                    onclick={() => selectRoute(route)} data-smrt-part="trigger"
                                   >
                                     <span>{route.title}</span>
                                   </button>
@@ -895,7 +895,7 @@ function apiTabCount(
 
       {#snippet systemPanel()}
         <section class="smrt-workbench-host__system-panel" data-smrt-part="panel" aria-label="Workbench system">
-          <div class="smrt-workbench-host__theme-controls" data-smrt-part="controls">
+          <div class="smrt-workbench-host__theme-controls" data-smrt-part="actions">
             <ThemeSwitcher variant="select" label="Theme" />
             <ColorSchemeToggle />
           </div>
@@ -908,7 +908,7 @@ function apiTabCount(
         </section>
       {/snippet}
 
-      <div class="smrt-workbench-host__main" data-smrt-part="main">
+      <div class="smrt-workbench-host__main" data-smrt-part="body">
       <header class="smrt-workbench-host__main-header" data-smrt-part="header">
         <div>
           <p class="smrt-workbench-host__eyebrow" data-smrt-part="label" data-testid="workbench-scope">{project.scope.projectRoot}</p>
@@ -951,7 +951,7 @@ function apiTabCount(
             {/each}
           </div>
         {:else if activeTab === 'playground'}
-          <div class="smrt-workbench-host__playground-embed" data-smrt-part="embed">
+          <div class="smrt-workbench-host__playground-embed" data-smrt-part="body">
             <PlaygroundHost
               embedded={true}
               hideEntryList={true}
@@ -968,7 +968,7 @@ function apiTabCount(
               <p>This package has no workbench route module.</p>
             </div>
           {:else}
-            <div class="smrt-workbench-host__route-stage" data-smrt-part="stage" data-testid="workbench-route-stage">
+            <div class="smrt-workbench-host__route-stage" data-smrt-part="panel" data-testid="workbench-route-stage">
               {#if selectedRoute && RouteComponent && routeComponentId === selectedRoute.qualifiedId}
                 <div class="smrt-workbench-host__route-meta" data-smrt-part="meta">
                   <div>
@@ -980,7 +980,7 @@ function apiTabCount(
                   </div>
                   <code>{selectedRoute.defaultPath}</code>
                 </div>
-                <div class="smrt-workbench-host__route-render" data-smrt-part="render">
+                <div class="smrt-workbench-host__route-render" data-smrt-part="body">
                   <RouteComponent {...routeProps(selectedRoute)} />
                 </div>
               {:else if routeIsLoading}
@@ -998,7 +998,7 @@ function apiTabCount(
           {@const restEndpoints = apiRestEndpoints(selectedPackage)}
           {@const cliCommands = apiCliCommands(selectedPackage)}
           {@const mcpTools = apiMcpTools(selectedPackage)}
-          <div class="smrt-workbench-host__api-layout" data-smrt-part="layout">
+          <div class="smrt-workbench-host__api-layout" data-smrt-part="group">
             <div
               class="smrt-workbench-host__api-tabs" data-smrt-part="list"
               role="tablist"
@@ -1012,7 +1012,7 @@ function apiTabCount(
                   aria-selected={activeApiTab === apiTab.id}
                   class:smrt-workbench-host__active={activeApiTab === apiTab.id}
                   data-testid={`workbench-api-tab-${apiTab.id}`}
-                  onclick={() => (activeApiTab = apiTab.id)}
+                  onclick={() => (activeApiTab = apiTab.id)} data-smrt-part="trigger"
                 >
                   <span>{apiTab.label}</span>
                   <strong>{apiTabCount(apiTab.id, objects, restEndpoints, mcpTools, cliCommands)}</strong>
@@ -1024,11 +1024,11 @@ function apiTabCount(
               <section class="smrt-workbench-host__api-panel" data-smrt-part="panel" data-testid="workbench-api-objects">
                 <h3>Objects <span>{objects.length}</span></h3>
                 {#if objects.length === 0}
-                  <p class="smrt-workbench-host__muted" data-smrt-part="note">No object metadata found.</p>
+                  <p class="smrt-workbench-host__muted" data-smrt-part="description">No object metadata found.</p>
                 {:else}
                   <div class="smrt-workbench-host__api-object-list" data-smrt-part="list">
                     {#each objects as object (object.qualifiedName || object.name)}
-                      <article class="smrt-workbench-host__api-object-doc" data-smrt-part="doc">
+                      <article class="smrt-workbench-host__api-object-doc" data-smrt-part="body">
                         <header>
                           <div>
                             <h4>{object.className || object.name}</h4>
@@ -1043,13 +1043,13 @@ function apiTabCount(
                         {#if object.description}
                           <MarkdownDocument content={object.description} />
                         {:else}
-                          <p class="smrt-workbench-host__muted" data-smrt-part="note">No TypeDoc summary found for this object.</p>
+                          <p class="smrt-workbench-host__muted" data-smrt-part="description">No TypeDoc summary found for this object.</p>
                         {/if}
                         {#if object.typedocPath}
-                          <p class="smrt-workbench-host__muted" data-smrt-part="note">TypeDoc: {relativePath(object.typedocPath)}</p>
+                          <p class="smrt-workbench-host__muted" data-smrt-part="description">TypeDoc: {relativePath(object.typedocPath)}</p>
                         {/if}
                         {#if object.sourcePath}
-                          <p class="smrt-workbench-host__muted" data-smrt-part="note">{relativePath(object.sourcePath)}</p>
+                          <p class="smrt-workbench-host__muted" data-smrt-part="description">{relativePath(object.sourcePath)}</p>
                         {/if}
                         {#if object.fields.length > 0}
                           <details>
@@ -1080,7 +1080,7 @@ function apiTabCount(
               <section class="smrt-workbench-host__api-panel" data-smrt-part="panel" data-testid="workbench-api-rest">
                 <h3>REST <span>{restEndpoints.length}</span></h3>
                 {#if restEndpoints.length === 0}
-                  <p class="smrt-workbench-host__muted" data-smrt-part="note">No REST endpoints exposed.</p>
+                  <p class="smrt-workbench-host__muted" data-smrt-part="description">No REST endpoints exposed.</p>
                 {:else}
                   <div class="smrt-workbench-host__api-surface-list" data-smrt-part="list">
                     {#each restEndpoints as endpoint, index (`rest:${index}:${endpoint.method}:${endpoint.path}:${endpoint.action}`)}
@@ -1114,7 +1114,7 @@ function apiTabCount(
               <section class="smrt-workbench-host__api-panel" data-smrt-part="panel" data-testid="workbench-api-mcp">
                 <h3>MCP <span>{mcpTools.length}</span></h3>
                 {#if mcpTools.length === 0}
-                  <p class="smrt-workbench-host__muted" data-smrt-part="note">No MCP tools exposed.</p>
+                  <p class="smrt-workbench-host__muted" data-smrt-part="description">No MCP tools exposed.</p>
                 {:else}
                   <div class="smrt-workbench-host__api-surface-list" data-smrt-part="list">
                     {#each mcpTools as tool, index (`mcp:${index}:${tool.toolName}:${tool.action}`)}
@@ -1146,7 +1146,7 @@ function apiTabCount(
               <section class="smrt-workbench-host__api-panel" data-smrt-part="panel" data-testid="workbench-api-cli">
                 <h3>CLI <span>{cliCommands.length}</span></h3>
                 {#if cliCommands.length === 0}
-                  <p class="smrt-workbench-host__muted" data-smrt-part="note">No CLI commands exposed.</p>
+                  <p class="smrt-workbench-host__muted" data-smrt-part="description">No CLI commands exposed.</p>
                 {:else}
                   <div class="smrt-workbench-host__api-surface-list" data-smrt-part="list">
                     {#each cliCommands as command, index (`cli:${index}:${command.command}:${command.action}`)}
@@ -1179,17 +1179,17 @@ function apiTabCount(
         {:else if activeTab === 'docs' && selectedPackage}
           <div class="smrt-workbench-host__document-list" data-smrt-part="list">
             {#if selectedDocument}
-              <article class="smrt-workbench-host__document-view" data-smrt-part="view" data-testid="workbench-document-view">
+              <article class="smrt-workbench-host__document-view" data-smrt-part="body" data-testid="workbench-document-view">
                 <header>
                   <h3>{selectedDocument.title}</h3>
                   <button type="button" onclick={() => copyValue(selectedDocument.content || '')}>
                     {copiedValue === (selectedDocument.content || '') ? 'Copied' : 'Copy'}
                   </button>
                 </header>
-                <p class="smrt-workbench-host__muted" data-smrt-part="note">{relativePath(selectedDocument.path)}</p>
+                <p class="smrt-workbench-host__muted" data-smrt-part="description">{relativePath(selectedDocument.path)}</p>
                 <MarkdownDocument content={selectedDocument.content || ''} />
                 {#if selectedDocument.truncated}
-                  <p class="smrt-workbench-host__muted" data-smrt-part="note">Document truncated for workbench display.</p>
+                  <p class="smrt-workbench-host__muted" data-smrt-part="description">Document truncated for workbench display.</p>
                 {/if}
               </article>
             {:else}
@@ -1203,7 +1203,7 @@ function apiTabCount(
           <div class="smrt-workbench-host__surface-grid" data-smrt-part="grid">
             <section>
               <h3>Knowledge Summary</h3>
-              <dl class="smrt-workbench-host__definition-list" data-smrt-part="definitions">
+              <dl class="smrt-workbench-host__definition-list" data-smrt-part="group">
                 <div><dt>Objects</dt><dd>{selectedPackage.knowledge.objectCount}</dd></div>
                 <div><dt>Relationships</dt><dd>{selectedPackage.knowledge.relationshipCount}</dd></div>
                 <div><dt>Prompts</dt><dd>{selectedPackage.knowledge.promptCount}</dd></div>
@@ -1223,7 +1223,7 @@ function apiTabCount(
           <div class="smrt-workbench-host__specialist-panel" data-smrt-part="panel">
             <section>
               <h3>Package Specialist Context</h3>
-              <p class="smrt-workbench-host__muted" data-smrt-part="note">{specialistUri(selectedPackage.name)}</p>
+              <p class="smrt-workbench-host__muted" data-smrt-part="description">{specialistUri(selectedPackage.name)}</p>
               <button type="button" onclick={() => copyValue(specialistUri(selectedPackage.name))}>
                 {copiedValue === specialistUri(selectedPackage.name) ? 'Copied' : 'Copy resource URI'}
               </button>
@@ -1303,7 +1303,7 @@ function apiTabCount(
             <article>
               <h3>Migrations</h3>
               {#if selectedPackage.migrations.length === 0}
-                <p class="smrt-workbench-host__muted" data-smrt-part="note">No migration files found.</p>
+                <p class="smrt-workbench-host__muted" data-smrt-part="description">No migration files found.</p>
               {:else}
                 <ul class="smrt-workbench-host__file-list" data-smrt-part="list">
                   {#each selectedPackage.migrations as file}
@@ -1332,7 +1332,7 @@ function apiTabCount(
                     {/if}
                   </header>
                   {#if example.path}
-                    <p class="smrt-workbench-host__muted" data-smrt-part="note">{relativePath(example.path)}</p>
+                    <p class="smrt-workbench-host__muted" data-smrt-part="description">{relativePath(example.path)}</p>
                   {/if}
                   {#if example.code}
                     <pre>{example.code}</pre>

@@ -33,7 +33,7 @@ const successRateFormatted = $derived(
   <div class="smrt-job-stats__grid" data-smrt-part="grid">
     <!-- Total Jobs -->
     <Card padding="sm">
-      <div class="smrt-job-stats__card" data-smrt-part="card">
+      <div class="smrt-job-stats__card" data-smrt-part="item">
         <div class="smrt-job-stats__stat-value" data-smrt-part="value">{stats.total.toLocaleString()}</div>
         <div class="smrt-job-stats__stat-label" data-smrt-part="label">{t(M['jobs.job_stats.total_jobs'])}</div>
       </div>
@@ -41,7 +41,7 @@ const successRateFormatted = $derived(
 
     <!-- Pending -->
     <Card padding="sm">
-      <div class="smrt-job-stats__card smrt-job-stats__card-pending" data-smrt-part="card">
+      <div class="smrt-job-stats__card smrt-job-stats__card-pending" data-smrt-part="item">
         <div class="smrt-job-stats__stat-value" data-smrt-part="value">{stats.pending.toLocaleString()}</div>
         <div class="smrt-job-stats__stat-label" data-smrt-part="label">Pending</div>
       </div>
@@ -49,7 +49,7 @@ const successRateFormatted = $derived(
 
     <!-- Running -->
     <Card padding="sm">
-      <div class="smrt-job-stats__card smrt-job-stats__card-running" data-smrt-part="card">
+      <div class="smrt-job-stats__card smrt-job-stats__card-running" data-smrt-part="item">
         <div class="smrt-job-stats__stat-value" data-smrt-part="value">{stats.running.toLocaleString()}</div>
         <div class="smrt-job-stats__stat-label" data-smrt-part="label">Running</div>
       </div>
@@ -57,7 +57,7 @@ const successRateFormatted = $derived(
 
     <!-- Completed -->
     <Card padding="sm">
-      <div class="smrt-job-stats__card smrt-job-stats__card-completed" data-smrt-part="card">
+      <div class="smrt-job-stats__card smrt-job-stats__card-completed" data-smrt-part="item">
         <div class="smrt-job-stats__stat-value" data-smrt-part="value">{stats.completed.toLocaleString()}</div>
         <div class="smrt-job-stats__stat-label" data-smrt-part="label">Completed</div>
       </div>
@@ -65,7 +65,7 @@ const successRateFormatted = $derived(
 
     <!-- Failed -->
     <Card padding="sm">
-      <div class="smrt-job-stats__card smrt-job-stats__card-failed" data-smrt-part="card">
+      <div class="smrt-job-stats__card smrt-job-stats__card-failed" data-smrt-part="item">
         <div class="smrt-job-stats__stat-value" data-smrt-part="value">{stats.failed.toLocaleString()}</div>
         <div class="smrt-job-stats__stat-label" data-smrt-part="label">Failed</div>
       </div>
@@ -73,7 +73,7 @@ const successRateFormatted = $derived(
 
     <!-- Success Rate -->
     <Card padding="sm">
-      <div class="smrt-job-stats__card" data-smrt-part="card">
+      <div class="smrt-job-stats__card" data-smrt-part="item">
         <div class="smrt-job-stats__stat-value" data-smrt-part="value">{successRateFormatted}</div>
         <div class="smrt-job-stats__stat-label" data-smrt-part="label">{t(M['jobs.job_stats.success_rate'])}</div>
       </div>
@@ -81,7 +81,7 @@ const successRateFormatted = $derived(
 
     <!-- Avg Duration -->
     <Card padding="sm">
-      <div class="smrt-job-stats__card" data-smrt-part="card">
+      <div class="smrt-job-stats__card" data-smrt-part="item">
         <div class="smrt-job-stats__stat-value" data-smrt-part="value">{formatDuration(stats.avgDuration)}</div>
         <div class="smrt-job-stats__stat-label" data-smrt-part="label">{t(M['jobs.job_stats.avg_duration'])}</div>
       </div>
@@ -89,30 +89,30 @@ const successRateFormatted = $derived(
   </div>
 
   {#if queues.length > 0 && !compact}
-    <div class="smrt-job-stats__queues" data-smrt-part="queues">
+    <div class="smrt-job-stats__queues" data-smrt-part="group">
       <h3>Queues</h3>
       <div class="smrt-job-stats__queue-list" data-smrt-part="list">
         {#each queues as queue (queue.name)}
           <Card padding="sm">
-            <div class="smrt-job-stats__queue-card" data-smrt-part="card">
+            <div class="smrt-job-stats__queue-card" data-smrt-part="item">
               <div class="smrt-job-stats__queue-header" data-smrt-part="header">
-                <span class="smrt-job-stats__queue-name" data-smrt-part="name">{queue.name}</span>
+                <span class="smrt-job-stats__queue-name" data-smrt-part="title">{queue.name}</span>
                 <span class="smrt-job-stats__queue-running" data-smrt-part="meta">{queue.running} running</span>
               </div>
-              <div class="smrt-job-stats__queue-stats" data-smrt-part="stats">
-                <div class="smrt-job-stats__queue-stat" data-smrt-part="stat">
+              <div class="smrt-job-stats__queue-stats" data-smrt-part="group">
+                <div class="smrt-job-stats__queue-stat" data-smrt-part="value">
                   <span class="smrt-job-stats__queue-stat-value" data-smrt-part="value">{queue.pending}</span>
                   <span class="smrt-job-stats__queue-stat-label" data-smrt-part="label">pending</span>
                 </div>
-                <div class="smrt-job-stats__queue-stat" data-smrt-part="stat">
+                <div class="smrt-job-stats__queue-stat" data-smrt-part="value">
                   <span class="smrt-job-stats__queue-stat-value" data-smrt-part="value">{queue.completed24h}</span>
                   <span class="smrt-job-stats__queue-stat-label" data-smrt-part="label">completed/24h</span>
                 </div>
-                <div class="smrt-job-stats__queue-stat" data-smrt-part="stat">
+                <div class="smrt-job-stats__queue-stat" data-smrt-part="value">
                   <span class="smrt-job-stats__queue-stat-value" data-smrt-part="value">{queue.failed24h}</span>
                   <span class="smrt-job-stats__queue-stat-label" data-smrt-part="label">failed/24h</span>
                 </div>
-                <div class="smrt-job-stats__queue-stat" data-smrt-part="stat">
+                <div class="smrt-job-stats__queue-stat" data-smrt-part="value">
                   <span class="smrt-job-stats__queue-stat-value" data-smrt-part="value"
                     >{formatDuration(queue.avgDuration)}</span
                   >

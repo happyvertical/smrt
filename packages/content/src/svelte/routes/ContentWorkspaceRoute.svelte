@@ -165,8 +165,8 @@ function closeForms() {
 
 <div class="smrt-content-workspace-route__root" class:smrt-content-workspace-route__root--embedded={embedded} data-smrt-component="ContentWorkspaceRoute">
   <header class="smrt-content-workspace-route__header" data-smrt-part="header">
-    <div class="smrt-content-workspace-route__copy" data-smrt-part="copy">
-      <div class="smrt-content-workspace-route__eyebrow" data-smrt-part="eyebrow">{t(M['content.workspace.eyebrow'])}</div>
+    <div class="smrt-content-workspace-route__copy" data-smrt-part="body">
+      <div class="smrt-content-workspace-route__eyebrow" data-smrt-part="label">{t(M['content.workspace.eyebrow'])}</div>
       <h1>{t(M['content.workspace.heading'])}</h1>
       <p>
         {t(M['content.workspace.intro'])}
@@ -187,13 +187,13 @@ function closeForms() {
     </nav>
   </header>
 
-  <main class="smrt-content-workspace-route__main" data-smrt-part="main">
+  <main class="smrt-content-workspace-route__main" data-smrt-part="body">
     <section class="smrt-content-workspace-route__callout-grid" data-smrt-part="grid">
-      <article class="smrt-content-workspace-route__callout-card" data-smrt-part="callout">
+      <article class="smrt-content-workspace-route__callout-card" data-smrt-part="status">
         <strong>{stats.total}</strong>
         <span>{t(M['content.workspace.stat_total'])}</span>
       </article>
-      <article class="smrt-content-workspace-route__callout-card" data-smrt-part="callout">
+      <article class="smrt-content-workspace-route__callout-card" data-smrt-part="status">
         <strong>{stats.published}</strong>
         <span>{t(M['content.workspace.stat_published'])}</span>
       </article>
@@ -245,7 +245,7 @@ function closeForms() {
           onAdd={handleAddContent}
         >
           {#snippet controls()}
-            <div class="smrt-content-workspace-route__controls" data-smrt-part="controls">
+            <div class="smrt-content-workspace-route__controls" data-smrt-part="actions">
               <Button
                 variant="ghost"
                 type="button"
@@ -254,7 +254,7 @@ function closeForms() {
               >
                 {t(M['content.workspace.create_governed'])}
               </Button>
-              <a class="smrt-content-workspace-route__inline-link" data-smrt-part="link" href={governanceHref}>
+              <a class="smrt-content-workspace-route__inline-link" data-smrt-part="action" href={governanceHref}>
                 {t(M['content.workspace.review_governance'])}
               </a>
             </div>

@@ -459,18 +459,18 @@ const primaryControlId = $derived(isSmrt ? `${name}_voice` : `${name}_start`);
   <div class="smrt-date-range-input__range-wrapper" class:smrt-date-range-input__mode={isSmrt} class:smrt-date-range-input__invalid={showInvalid} data-smrt-part="field">
     {#if isSmrt}
       <!-- Voice mode: single input for the entire range -->
-      <div class="smrt-date-range-input__voice-input-wrapper">
-        <div class="smrt-date-range-input__voice-display" data-smrt-part="content">
+      <div class="smrt-date-range-input__voice-input-wrapper" data-smrt-part="field">
+        <div class="smrt-date-range-input__voice-display" data-smrt-part="body">
           {#if startDisplay && endDisplay}
-            <span class="smrt-date-range-input__date-value">{startDisplay}</span>
-            <span class="smrt-date-range-input__range-separator">→</span>
-            <span class="smrt-date-range-input__date-value">{endDisplay}</span>
+            <span class="smrt-date-range-input__date-value" data-smrt-part="value">{startDisplay}</span>
+            <span class="smrt-date-range-input__range-separator" data-smrt-part="indicator">→</span>
+            <span class="smrt-date-range-input__date-value" data-smrt-part="value">{endDisplay}</span>
           {:else if startDisplay}
-            <span class="smrt-date-range-input__date-value">{startDisplay}</span>
-            <span class="smrt-date-range-input__range-separator">→</span>
-            <span class="smrt-date-range-input__placeholder">{endPlaceholder}</span>
+            <span class="smrt-date-range-input__date-value" data-smrt-part="value">{startDisplay}</span>
+            <span class="smrt-date-range-input__range-separator" data-smrt-part="indicator">→</span>
+            <span class="smrt-date-range-input__placeholder" data-smrt-part="placeholder">{endPlaceholder}</span>
           {:else}
-            <span class="smrt-date-range-input__placeholder">Say "from [start] to [end]"</span>
+            <span class="smrt-date-range-input__placeholder" data-smrt-part="placeholder">Say "from [start] to [end]"</span>
           {/if}
         </div>
 
@@ -526,7 +526,7 @@ const primaryControlId = $derived(isSmrt ? `${name}_voice` : `${name}_start`);
           />
         </div>
 
-        <span class="smrt-date-range-input__range-arrow">→</span>
+        <span class="smrt-date-range-input__range-arrow" data-smrt-part="indicator">→</span>
 
         <div class="smrt-date-range-input__date-field" data-smrt-part="field">
           <label for="{name}_end" class="smrt-date-range-input__field-label" data-smrt-part="label">End</label>

@@ -254,14 +254,14 @@ const ancestors = $derived(bomId ? [bomId] : []);
             {@const subId = `${uid}-sub-${line.id}`}
             {@const errorId = `${uid}-row-error-${line.id}`}
             <tr>
-              <th scope="row" class="smrt-bom-editor__component" data-smrt-part="name">{componentText(line)}</th>
+              <th scope="row" class="smrt-bom-editor__component" data-smrt-part="title">{componentText(line)}</th>
               <td>
                 <div class="smrt-bom-editor__kind" data-smrt-part="meta">
                   <Badge size="sm" variant={line.kind === 'missing' ? 'error' : 'default'}>
                     {t(componentKindLabelKey(line.kind))}
                   </Badge>
                   {#if line.kind === 'assembly'}
-                    <span class="smrt-bom-editor__note" data-smrt-part="note">
+                    <span class="smrt-bom-editor__note" data-smrt-part="description">
                       {t(
                         line.subBomId
                           ? M['manufacturing.bom_editor.has_bill']
@@ -362,7 +362,7 @@ const ancestors = $derived(bomId ? [bomId] : []);
                     {/if}
                   </div>
                   {#if invalid.length > 0}
-                    <ul class="smrt-bom-editor__errors" data-smrt-part="errors" id={errorId}>
+                    <ul class="smrt-bom-editor__errors" data-smrt-part="error" id={errorId}>
                       {#each invalid as field (field)}
                         <li>{errorText(field)}</li>
                       {/each}
@@ -384,9 +384,9 @@ const ancestors = $derived(bomId ? [bomId] : []);
                         label={t(M['manufacturing.bom_editor.sub_bill_label'], { component: line.componentName })}
                       />
                     {:else if entry?.state === 'failed'}
-                      <p class="smrt-bom-editor__note" data-smrt-part="note" role="alert">{t(M['manufacturing.bom_editor.load_failed'])}</p>
+                      <p class="smrt-bom-editor__note" data-smrt-part="description" role="alert">{t(M['manufacturing.bom_editor.load_failed'])}</p>
                     {:else}
-                      <p class="smrt-bom-editor__note" data-smrt-part="note" role="status">{t(M['manufacturing.bom_editor.loading'])}</p>
+                      <p class="smrt-bom-editor__note" data-smrt-part="description" role="status">{t(M['manufacturing.bom_editor.loading'])}</p>
                     {/if}
                   </div>
                 </td>
@@ -399,7 +399,7 @@ const ancestors = $derived(bomId ? [bomId] : []);
   {/if}
 
   {#if onadd && components}
-    <section class="smrt-bom-editor__add" data-smrt-part="add" aria-labelledby="{uid}-add-heading">
+    <section class="smrt-bom-editor__add" data-smrt-part="submit" aria-labelledby="{uid}-add-heading">
       <h3 id="{uid}-add-heading" class="smrt-bom-editor__add-heading" data-smrt-part="title">{t(M['manufacturing.bom_editor.add_heading'])}</h3>
       <Form class="bom-editor-add-form" onsubmit={add}>
         <div class="smrt-bom-editor__field smrt-bom-editor__field-component" data-smrt-part="field">
@@ -463,7 +463,7 @@ const ancestors = $derived(bomId ? [bomId] : []);
         </div>
       </Form>
       {#if addInvalid.length > 0}
-        <ul class="smrt-bom-editor__errors" data-smrt-part="errors" id="{uid}-add-errors">
+        <ul class="smrt-bom-editor__errors" data-smrt-part="error" id="{uid}-add-errors">
           {#each addInvalid as field (field)}
             <li>{errorText(field)}</li>
           {/each}

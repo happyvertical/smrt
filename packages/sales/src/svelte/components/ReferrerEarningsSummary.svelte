@@ -51,9 +51,9 @@ const tiles = $derived.by((): Tile[] => {
   {:else}
     <dl class="smrt-referrer-earnings-summary__tiles" data-smrt-part="list">
       {#each tiles as tile (tile.label)}
-        <div class="smrt-referrer-earnings-summary__tile" class:smrt-referrer-earnings-summary__emphasis={tile.emphasis} data-smrt-part="tile">
+        <div class="smrt-referrer-earnings-summary__tile" class:smrt-referrer-earnings-summary__emphasis={tile.emphasis} data-smrt-part="item">
           <dt>{tile.label}</dt>
-          <dd class:smrt-referrer-earnings-summary__negative={tile.amountCents < 0}>
+          <dd class:smrt-referrer-earnings-summary__negative={tile.amountCents < 0} data-smrt-part="value">
             {formatCents(tile.amountCents, balance.currency, locale)}
           </dd>
         </div>

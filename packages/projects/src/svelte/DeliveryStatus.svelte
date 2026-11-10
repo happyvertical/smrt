@@ -63,12 +63,14 @@ const format = (value: Date | string) =>
   .smrt-delivery-status__root p {
     margin: var(--smrt-spacing-1) 0;
   }
+  .smrt-delivery-status__root li:not(:last-child)::before {
+    content: '';
+  }
 }
 
 @layer smrt.theme {
   .smrt-delivery-status__root li:not(:last-child)::before {
     background: var(--smrt-color-outline-variant);
-    content: '';
   }
   .smrt-delivery-status__marker {
     background: var(--smrt-color-primary);

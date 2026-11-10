@@ -85,7 +85,7 @@ const statusLabel: Record<string, string> = {
         />
 
         <div class="smrt-agent-session-panel__item-body" data-smrt-part="body">
-          <div class="smrt-agent-session-panel__item-header" data-smrt-part="heading">
+          <div class="smrt-agent-session-panel__item-header" data-smrt-part="header">
             <span class="smrt-agent-session-panel__item-name" data-smrt-part="label">{session.agentName}</span>
             <time class="smrt-agent-session-panel__item-date" data-smrt-part="time">
               {formatDate(session.createdAt)}
@@ -109,12 +109,12 @@ const statusLabel: Record<string, string> = {
           </div>
 
           {#if session.allowedTools.length > 0}
-            <div class="smrt-agent-session-panel__item-tools" data-smrt-part="tools">
+            <div class="smrt-agent-session-panel__item-tools" data-smrt-part="list">
               {#each session.allowedTools.slice(0, 3) as tool}
-                <span class="smrt-agent-session-panel__tool-chip" data-smrt-part="chip">{tool}</span>
+                <span class="smrt-agent-session-panel__tool-chip" data-smrt-part="badge">{tool}</span>
               {/each}
               {#if session.allowedTools.length > 3}
-                <span class="smrt-agent-session-panel__tool-chip smrt-agent-session-panel__tool-chip--more" data-smrt-part="chip">
+                <span class="smrt-agent-session-panel__tool-chip smrt-agent-session-panel__tool-chip--more" data-smrt-part="badge">
                   +{session.allowedTools.length - 3}
                 </span>
               {/if}

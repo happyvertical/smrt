@@ -36,7 +36,7 @@ const replyCount = $derived(
 
 <aside class="smrt-thread-panel__root" aria-label={t(M['chat.thread_panel.thread_label'], { title: threadTitle })} data-smrt-component="ThreadPanel">
   <header class="smrt-thread-panel__header" data-smrt-part="header">
-    <div class="smrt-thread-panel__header-text" data-smrt-part="heading">
+    <div class="smrt-thread-panel__header-text" data-smrt-part="header">
       <h3 class="smrt-thread-panel__title" data-smrt-part="title">{threadTitle}</h3>
       <span class="smrt-thread-panel__meta" data-smrt-part="meta">
         {replyCount} {replyCount === 1 ? 'reply' : 'replies'}

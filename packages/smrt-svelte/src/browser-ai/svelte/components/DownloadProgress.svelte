@@ -32,7 +32,7 @@ function formatBytes(bytes: number): string {
   <div class="smrt-download-progress__label" data-smrt-part="label">
     <span>{label}</span>
     {#if showPercent && progress}
-      <span class="smrt-download-progress__percent">{progress.percent}%</span>
+      <span class="smrt-download-progress__percent" data-smrt-part="value">{progress.percent}%</span>
     {/if}
   </div>
 
@@ -40,7 +40,7 @@ function formatBytes(bytes: number): string {
     <div
       class="smrt-download-progress__progress-fill"
       style:width={progress && progress.state !== 'idle' ? `${progress.percent ?? 0}%` : undefined}
-      class:smrt-download-progress__indeterminate={!progress || progress.state === 'idle'}
+      class:smrt-download-progress__indeterminate={!progress || progress.state === 'idle'} data-smrt-part="indicator"
     ></div>
   </div>
 

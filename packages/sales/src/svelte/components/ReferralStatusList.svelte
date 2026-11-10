@@ -46,12 +46,12 @@ let { referrals = [], locale }: Props = $props();
               </Badge>
             </td>
             <td>
-              <span class="smrt-referral-status-list__target-kind">{referral.targetKind}</span>
+              <span class="smrt-referral-status-list__target-kind" data-smrt-part="meta">{referral.targetKind}</span>
               {#if referral.targetLabel}
-                <span class="smrt-referral-status-list__secondary">{referral.targetLabel}</span>
+                <span class="smrt-referral-status-list__secondary" data-smrt-part="meta">{referral.targetLabel}</span>
               {/if}
             </td>
-            <td class="smrt-referral-status-list__credit">
+            <td class="smrt-referral-status-list__credit" data-smrt-part="cell">
               {formatPercent(referral.creditFraction, locale)}
               {#if referral.splitGroupId}
                 <Badge variant="info" size="sm">split</Badge>

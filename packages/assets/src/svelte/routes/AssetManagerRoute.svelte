@@ -42,7 +42,7 @@ const customActions = [
   </header>
 
   <div class="smrt-asset-manager-route__body" data-smrt-part="body">
-    <section class="smrt-asset-manager-route__manager" data-smrt-part="content" aria-label={t(M['assets.asset_manager_route.surface_label'])}>
+    <section class="smrt-asset-manager-route__manager" data-smrt-part="body" aria-label={t(M['assets.asset_manager_route.surface_label'])}>
       <AssetManager
         mode="manage"
         accept="image/*"
@@ -51,7 +51,7 @@ const customActions = [
       />
     </section>
 
-    <aside class="smrt-asset-manager-route__sidebar" data-smrt-part="navigation" aria-label={t(M['assets.asset_manager_route.route_state_label'])}>
+    <aside class="smrt-asset-manager-route__sidebar" data-smrt-part="nav" aria-label={t(M['assets.asset_manager_route.route_state_label'])}>
       <div class="smrt-asset-manager-route__panel" data-smrt-part="panel">
         <h2>{t(M['assets.asset_manager_route.selection_state'])}</h2>
         {#if selectedAssets.length === 0}
@@ -78,7 +78,7 @@ const customActions = [
         <h2>{t(M['assets.asset_manager_route.custom_action_example'])}</h2>
         <p>{t(M['assets.asset_manager_route.custom_action_description'])}</p>
         {#if lastActionMessage}
-          <p class="smrt-asset-manager-route__message" data-smrt-part="notice">{lastActionMessage}</p>
+          <p class="smrt-asset-manager-route__message" data-smrt-part="status">{lastActionMessage}</p>
         {:else}
           <p class="smrt-asset-manager-route__empty" data-smrt-part="empty">
             Trigger <em>{t(M['assets.asset_manager_route.queue_review'])}</em> {t(M['assets.asset_manager_route.queue_review_hint'])}

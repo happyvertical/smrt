@@ -60,7 +60,7 @@ const { t } = useI18n();
 </script>
 
 <div class="smrt-time-summary__root" class:smrt-time-summary__horizontal={layout === 'horizontal'} data-smrt-component="TimeSummary">
-  <div class="smrt-time-summary__card" data-smrt-part="card">
+  <div class="smrt-time-summary__card" data-smrt-part="item">
     <span class="smrt-time-summary__label" data-smrt-part="label">{t(M['projects.time_summary.total_hours'])}</span>
     <span class="smrt-time-summary__value" data-smrt-part="value">{hoursFormatter(totalHours)}</span>
     {#if entryCount !== undefined}
@@ -68,13 +68,13 @@ const { t } = useI18n();
     {/if}
   </div>
 
-  <div class="smrt-time-summary__card" data-smrt-part="card">
+  <div class="smrt-time-summary__card" data-smrt-part="item">
     <span class="smrt-time-summary__label" data-smrt-part="label">{t(M['projects.time_summary.total_value'])}</span>
     <span class="smrt-time-summary__value" data-smrt-part="value">{formatCurrency(totalAmount, currency)}</span>
   </div>
 
   {#if showPending && (pendingHours > 0 || pendingAmount > 0)}
-    <div class="smrt-time-summary__card smrt-time-summary__highlight" data-smrt-part="card">
+    <div class="smrt-time-summary__card smrt-time-summary__highlight" data-smrt-part="item">
       <span class="smrt-time-summary__label" data-smrt-part="label">{t(M['projects.time_summary.pending_approval'])}</span>
       <span class="smrt-time-summary__value" data-smrt-part="value">{hoursFormatter(pendingHours)}</span>
       <span class="smrt-time-summary__sub-value" data-smrt-part="meta">{formatCurrency(pendingAmount, currency)}</span>
@@ -82,7 +82,7 @@ const { t } = useI18n();
   {/if}
 
   {#if showApproved && (approvedHours > 0 || approvedAmount > 0)}
-    <div class="smrt-time-summary__card smrt-time-summary__success" data-smrt-part="card">
+    <div class="smrt-time-summary__card smrt-time-summary__success" data-smrt-part="item">
       <span class="smrt-time-summary__label" data-smrt-part="label">Approved</span>
       <span class="smrt-time-summary__value" data-smrt-part="value">{hoursFormatter(approvedHours)}</span>
       <span class="smrt-time-summary__sub-value" data-smrt-part="meta">{formatCurrency(approvedAmount, currency)}</span>

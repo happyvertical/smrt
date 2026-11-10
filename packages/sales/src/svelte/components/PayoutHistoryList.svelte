@@ -37,40 +37,40 @@ function methodLabel(method: string): string {
             <span class="smrt-payout-history-list__period" data-smrt-part="title">
               {formatDate(payout.periodStart, locale)} – {formatDate(payout.periodEnd, locale)}
             </span>
-            <span class="smrt-payout-history-list__meta">
-              <span class="smrt-payout-history-list__method">{methodLabel(payout.payoutMethod)}</span>
+            <span class="smrt-payout-history-list__meta" data-smrt-part="meta">
+              <span class="smrt-payout-history-list__method" data-smrt-part="meta">{methodLabel(payout.payoutMethod)}</span>
               <Badge variant={payoutStatusBadgeVariant(payout.status)} size="sm">
                 {payout.status}
               </Badge>
             </span>
           </div>
 
-          <dl class="smrt-payout-history-list__totals" data-smrt-part="facts">
-            <div class="smrt-payout-history-list__total">
+          <dl class="smrt-payout-history-list__totals" data-smrt-part="meta">
+            <div class="smrt-payout-history-list__total" data-smrt-part="value">
               <dt>Commissions</dt>
               <dd>{formatCents(payout.commissionTotalCents, payout.currency, locale)}</dd>
             </div>
-            <div class="smrt-payout-history-list__total">
+            <div class="smrt-payout-history-list__total" data-smrt-part="value">
               <dt>Adjustments</dt>
-              <dd class:smrt-payout-history-list__negative={payout.adjustmentTotalCents < 0}>
+              <dd class:smrt-payout-history-list__negative={payout.adjustmentTotalCents < 0} data-smrt-part="value">
                 {formatCents(payout.adjustmentTotalCents, payout.currency, locale)}
               </dd>
             </div>
-            <div class="smrt-payout-history-list__total smrt-payout-history-list__total--net">
+            <div class="smrt-payout-history-list__total smrt-payout-history-list__total--net" data-smrt-part="value">
               <dt>Net</dt>
-              <dd class:smrt-payout-history-list__negative={payout.totalAmountCents < 0}>
+              <dd class:smrt-payout-history-list__negative={payout.totalAmountCents < 0} data-smrt-part="value">
                 {formatCents(payout.totalAmountCents, payout.currency, locale)}
               </dd>
             </div>
           </dl>
 
-          <ol class="smrt-payout-history-list__timeline" data-smrt-part="timeline">
+          <ol class="smrt-payout-history-list__timeline" data-smrt-part="list">
             {#each payoutStatusTimeline(payout.status) as step (step.status)}
               <li
                 class="smrt-payout-history-list__step smrt-payout-history-list__step--{step.state}"
                 class:smrt-payout-history-list__step--failed={step.status === 'failed'}
                 aria-current={step.state === 'current' ? 'step' : undefined}
-                data-smrt-part="step"
+                data-smrt-part="item"
               >
                 {step.status}
               </li>
@@ -80,19 +80,19 @@ function methodLabel(method: string): string {
           {#if payout.paymentReference || payout.providerRef || payout.paidAt}
             <dl class="smrt-payout-history-list__refs" data-smrt-part="meta">
               {#if payout.paymentReference}
-                <div class="smrt-payout-history-list__ref">
+                <div class="smrt-payout-history-list__ref" data-smrt-part="label">
                   <dt>Payment reference</dt>
                   <dd><code>{payout.paymentReference}</code></dd>
                 </div>
               {/if}
               {#if payout.providerRef}
-                <div class="smrt-payout-history-list__ref">
+                <div class="smrt-payout-history-list__ref" data-smrt-part="label">
                   <dt>Provider reference</dt>
                   <dd><code>{payout.providerRef}</code></dd>
                 </div>
               {/if}
               {#if payout.paidAt}
-                <div class="smrt-payout-history-list__ref">
+                <div class="smrt-payout-history-list__ref" data-smrt-part="label">
                   <dt>Paid</dt>
                   <dd>{formatDate(payout.paidAt, locale)}</dd>
                 </div>
@@ -101,7 +101,7 @@ function methodLabel(method: string): string {
           {/if}
 
           {#if payout.notes}
-            <p class="smrt-payout-history-list__notes" data-smrt-part="note">{payout.notes}</p>
+            <p class="smrt-payout-history-list__notes" data-smrt-part="description">{payout.notes}</p>
           {/if}
         </li>
       {/each}

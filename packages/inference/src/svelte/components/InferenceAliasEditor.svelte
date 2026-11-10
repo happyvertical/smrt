@@ -104,7 +104,7 @@ function save(event: SubmitEvent): void {
 }
 </script>
 
-<form class="smrt-inference-alias-editor__root" onsubmit={save} data-testid={`inference-alias-${isNew ? 'new' : alias.name}`}>
+<form class="smrt-inference-alias-editor__root" onsubmit={save} data-testid={`inference-alias-${isNew ? 'new' : alias.name}`} data-smrt-component="InferenceAliasEditor">
   <div class="smrt-inference-alias-editor__header" data-smrt-part="header">
     {#if isNew}
       <label>

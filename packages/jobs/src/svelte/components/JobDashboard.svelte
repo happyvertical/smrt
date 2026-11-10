@@ -51,13 +51,13 @@ let {
 
 <div class="smrt-job-dashboard__root" class:smrt-job-dashboard__loading={loading} data-smrt-component="JobDashboard">
   <!-- Stats Overview -->
-  <section class="smrt-job-dashboard__section" data-smrt-part="section">
+  <section class="smrt-job-dashboard__section" data-smrt-part="group">
     <JobStatsSummary {stats} {queues} {loading} />
   </section>
 
-  <div class="smrt-job-dashboard__panels" data-smrt-part="panels">
+  <div class="smrt-job-dashboard__panels" data-smrt-part="group">
     <!-- Recent Jobs -->
-    <section class="smrt-job-dashboard__section" data-smrt-part="section">
+    <section class="smrt-job-dashboard__section" data-smrt-part="group">
       <Card>
         {#snippet header()}
           <div class="smrt-job-dashboard__header" data-smrt-part="header">
@@ -83,7 +83,7 @@ let {
 
     <!-- Failed Jobs -->
     {#if failedJobs.length > 0 || stats.failed > 0}
-      <section class="smrt-job-dashboard__section" data-smrt-part="section">
+      <section class="smrt-job-dashboard__section" data-smrt-part="group">
         <Card>
           {#snippet header()}
             <div class="smrt-job-dashboard__header smrt-job-dashboard__header-error" data-smrt-part="header">

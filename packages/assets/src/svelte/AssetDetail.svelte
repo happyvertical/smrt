@@ -180,21 +180,21 @@ function formatDate(date: Date | string | undefined): string {
       <div class="smrt-asset-detail__body" data-smrt-part="body">
         <!-- Preview Section -->
         <section class="smrt-asset-detail__section" data-smrt-part="group">
-          <div class="smrt-asset-detail__preview" data-smrt-part="preview">
+          <div class="smrt-asset-detail__preview" data-smrt-part="panel">
             {#if isImage && asset.sourceUri}
-              <img src={asset.sourceUri} alt={editAlt || asset.name} class="smrt-asset-detail__preview-image" data-smrt-part="content" />
+              <img src={asset.sourceUri} alt={editAlt || asset.name} class="smrt-asset-detail__preview-image" data-smrt-part="media" />
             {:else if isVideo && asset.sourceUri}
               <!-- svelte-ignore a11y_media_has_caption -->
-              <video src={asset.sourceUri} controls class="smrt-asset-detail__preview-video" data-smrt-part="content"></video>
+              <video src={asset.sourceUri} controls class="smrt-asset-detail__preview-video" data-smrt-part="media"></video>
             {:else if isAudio && asset.sourceUri}
-              <audio src={asset.sourceUri} controls class="smrt-asset-detail__preview-audio" data-smrt-part="content"></audio>
+              <audio src={asset.sourceUri} controls class="smrt-asset-detail__preview-audio" data-smrt-part="media"></audio>
             {:else if isPdf && asset.sourceUri}
-              <div class="smrt-asset-detail__preview-document" data-smrt-part="content">
+              <div class="smrt-asset-detail__preview-document" data-smrt-part="body">
                 <span class="smrt-asset-detail__preview-document-icon" data-smrt-part="icon">📄</span>
                 <a href={asset.sourceUri} target="_blank" rel="noopener noreferrer" class="smrt-asset-detail__preview-document-link" data-smrt-part="actions">{t(M['assets.asset_detail.open_pdf_in_new_tab'])}</a>
               </div>
             {:else}
-              <div class="smrt-asset-detail__preview-generic" data-smrt-part="content">
+              <div class="smrt-asset-detail__preview-generic" data-smrt-part="body">
                 <span class="smrt-asset-detail__preview-generic-icon" data-smrt-part="icon">📎</span>
                 <span class="smrt-asset-detail__preview-generic-mime" data-smrt-part="value">{asset.mimeType || 'Unknown type'}</span>
               </div>
@@ -204,9 +204,9 @@ function formatDate(date: Date | string | undefined): string {
 
         <!-- SEO & Accessibility -->
         <section class="smrt-asset-detail__section" data-smrt-part="group">
-          <h3 class="smrt-asset-detail__section-heading" data-smrt-part="heading">SEO & Accessibility</h3>
+          <h3 class="smrt-asset-detail__section-heading" data-smrt-part="title">SEO & Accessibility</h3>
 
-          <div class="smrt-asset-detail__form" data-smrt-part="form">
+          <div class="smrt-asset-detail__form" data-smrt-part="field">
             <div class="smrt-asset-detail__form-field" data-smrt-part="field">
               <label for="detail-name" class="smrt-asset-detail__form-label" data-smrt-part="label">Name</label>
               <Input id="detail-name" type="text" bind:value={editName} />
@@ -217,7 +217,7 @@ function formatDate(date: Date | string | undefined): string {
                 <label for="detail-alt" class="smrt-asset-detail__form-label" data-smrt-part="label">
                   {t(M['assets.asset_detail.alt_text'])}
                   {#if missingAlt}
-                    <span class="smrt-asset-detail__label-warning" data-smrt-part="hint">{t(M['assets.asset_detail.alt_text_missing_warning'])}</span>
+                    <span class="smrt-asset-detail__label-warning" data-smrt-part="description">{t(M['assets.asset_detail.alt_text_missing_warning'])}</span>
                   {/if}
                 </label>
                 <Input id="detail-alt" type="text" bind:value={editAlt} placeholder={t(M['assets.asset_detail.alt_text_placeholder'])} />
@@ -233,7 +233,7 @@ function formatDate(date: Date | string | undefined): string {
 
         <!-- Metadata -->
         <section class="smrt-asset-detail__section" data-smrt-part="group">
-          <h3 class="smrt-asset-detail__section-heading" data-smrt-part="heading">Metadata</h3>
+          <h3 class="smrt-asset-detail__section-heading" data-smrt-part="title">Metadata</h3>
           <div class="smrt-asset-detail__metadata-grid" data-smrt-part="meta">
             <div class="smrt-asset-detail__metadata-item" data-smrt-part="item">
               <span class="smrt-asset-detail__metadata-label" data-smrt-part="label">Type</span>
@@ -266,7 +266,7 @@ function formatDate(date: Date | string | undefined): string {
 
         <!-- Quick Actions -->
         <section class="smrt-asset-detail__section" data-smrt-part="group">
-          <h3 class="smrt-asset-detail__section-heading" data-smrt-part="heading">{t(M['assets.asset_detail.quick_actions'])}</h3>
+          <h3 class="smrt-asset-detail__section-heading" data-smrt-part="title">{t(M['assets.asset_detail.quick_actions'])}</h3>
           <div class="smrt-asset-detail__quick-actions" data-smrt-part="actions">
             <Button variant="ghost" size="sm" onclick={copyUrl} disabled={!asset.sourceUri}>
               {t(M['assets.asset_detail.copy_url'])}
@@ -288,7 +288,7 @@ function formatDate(date: Date | string | undefined): string {
         <!-- Content References (injected) -->
         {#if contentReferences && asset.id}
           <section class="smrt-asset-detail__section" data-smrt-part="group">
-            <h3 class="smrt-asset-detail__section-heading" data-smrt-part="heading">{t(M['assets.asset_detail.used_in'])}</h3>
+            <h3 class="smrt-asset-detail__section-heading" data-smrt-part="title">{t(M['assets.asset_detail.used_in'])}</h3>
             {@render contentReferences({ assetId: asset.id })}
           </section>
         {/if}

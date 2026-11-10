@@ -105,12 +105,12 @@ function formatDuration(ms: number | undefined): string {
 
     <div class="smrt-tool-call-display__header-right" data-smrt-part="meta">
       {#if toolCall.duration !== undefined}
-        <span class="smrt-tool-call-display__duration" data-smrt-part="duration">{formatDuration(toolCall.duration)}</span>
+        <span class="smrt-tool-call-display__duration" data-smrt-part="meta">{formatDuration(toolCall.duration)}</span>
       {/if}
       <span class="smrt-tool-call-display__status-label" data-smrt-part="status">{statusLabel}</span>
       <svg
         class="smrt-tool-call-display__chevron"
-        data-smrt-part="chevron"
+        data-smrt-part="indicator"
         width="16"
         height="16"
         viewBox="0 0 24 24"
@@ -127,28 +127,28 @@ function formatDuration(ms: number | undefined): string {
   {#if isExpanded}
     <div class="smrt-tool-call-display__body" data-smrt-part="body" id="tool-call-body-{toolCall.toolCallId}">
       {#if toolCall.arguments && Object.keys(toolCall.arguments).length > 0}
-        <div class="smrt-tool-call-display__section" data-smrt-part="section">
-          <span class="smrt-tool-call-display__section-label" data-smrt-part="section-label">Arguments</span>
-          <pre class="smrt-tool-call-display__json" data-smrt-part="json">{formatJson(toolCall.arguments)}</pre>
+        <div class="smrt-tool-call-display__section" data-smrt-part="group">
+          <span class="smrt-tool-call-display__section-label" data-smrt-part="label">Arguments</span>
+          <pre class="smrt-tool-call-display__json" data-smrt-part="body">{formatJson(toolCall.arguments)}</pre>
         </div>
       {/if}
 
       {#if toolCall.status === 'success' && toolCall.result !== undefined}
-        <div class="smrt-tool-call-display__section" data-smrt-part="section">
-          <span class="smrt-tool-call-display__section-label" data-smrt-part="section-label">Result</span>
-          <pre class="smrt-tool-call-display__json smrt-tool-call-display__json--result" data-smrt-part="json">{formatJson(toolCall.result)}</pre>
+        <div class="smrt-tool-call-display__section" data-smrt-part="group">
+          <span class="smrt-tool-call-display__section-label" data-smrt-part="label">Result</span>
+          <pre class="smrt-tool-call-display__json smrt-tool-call-display__json--result" data-smrt-part="body">{formatJson(toolCall.result)}</pre>
         </div>
       {/if}
 
       {#if toolCall.status === 'error' && toolCall.error}
-        <div class="smrt-tool-call-display__section" data-smrt-part="section">
-          <span class="smrt-tool-call-display__section-label" data-smrt-part="section-label">Error</span>
-          <pre class="smrt-tool-call-display__json smrt-tool-call-display__json--error" data-smrt-part="json">{toolCall.error}</pre>
+        <div class="smrt-tool-call-display__section" data-smrt-part="group">
+          <span class="smrt-tool-call-display__section-label" data-smrt-part="label">Error</span>
+          <pre class="smrt-tool-call-display__json smrt-tool-call-display__json--error" data-smrt-part="body">{toolCall.error}</pre>
         </div>
       {/if}
 
       {#if toolCall.status === 'running'}
-        <div class="smrt-tool-call-display__running" data-smrt-part="running">
+        <div class="smrt-tool-call-display__running" data-smrt-part="status">
           <div class="smrt-tool-call-display__spinner" data-smrt-part="spinner" aria-label={t(M['chat.tool_call_display.running'])}></div>
           <span>Executing...</span>
         </div>
@@ -156,12 +156,12 @@ function formatDuration(ms: number | undefined): string {
 
       {#if actionResult}
         <div class="smrt-tool-call-display__section smrt-tool-call-display__action" data-smrt-part="action" data-phase={actionResult.phase} data-ok={actionResult.ok}>
-          <span class="smrt-tool-call-display__section-label" data-smrt-part="section-label">
+          <span class="smrt-tool-call-display__section-label" data-smrt-part="label">
             {actionResult.phase === 'preview' ? 'Proposed change' : 'Applied change'}
           </span>
           {#if actionResult.ok}
             {#if actionResult.details}
-              <pre class="smrt-tool-call-display__json" data-smrt-part="json">{formatJson(actionResult.details)}</pre>
+              <pre class="smrt-tool-call-display__json" data-smrt-part="body">{formatJson(actionResult.details)}</pre>
             {:else if actionResult.phase === 'apply'}
               <p class="smrt-tool-call-display__applied-fallback" data-smrt-part="message">
                 {t(M['chat.tool_call_display.applied_successfully'])}
@@ -183,7 +183,7 @@ function formatDuration(ms: number | undefined): string {
               </div>
             {/if}
           {:else}
-            <pre class="smrt-tool-call-display__json smrt-tool-call-display__json--error" data-smrt-part="json">{actionResult.reason ?? 'Action failed'}</pre>
+            <pre class="smrt-tool-call-display__json smrt-tool-call-display__json--error" data-smrt-part="body">{actionResult.reason ?? 'Action failed'}</pre>
           {/if}
         </div>
       {/if}
@@ -255,6 +255,9 @@ function formatDuration(ms: number | undefined): string {
   .smrt-tool-call-display__spinner {
     width: 16px;
     height: 16px;
+  }
+  .smrt-tool-call-display__chevron--open {
+    transform: rotate(180deg);
   }
 }
 
@@ -338,9 +341,6 @@ function formatDuration(ms: number | undefined): string {
   .smrt-tool-call-display__chevron {
     color: var(--smrt-color-on-surface-variant);
     transition: transform var(--smrt-duration-short2, 150ms);
-  }
-  .smrt-tool-call-display__chevron--open {
-    transform: rotate(180deg);
   }
   .smrt-tool-call-display__body {
     border-top: var(--smrt-hairline);

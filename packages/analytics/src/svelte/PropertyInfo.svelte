@@ -54,7 +54,7 @@ const lastSyncFormatted = $derived.by(() => {
 	</div>
 
 	{#if propertyId}
-		<dl class="smrt-property-info__details" data-smrt-part="details">
+		<dl class="smrt-property-info__details" data-smrt-part="body">
 			<div class="smrt-property-info__row" data-smrt-part="row">
 				<dt>Provider</dt>
 				<dd>{providerLabel}</dd>

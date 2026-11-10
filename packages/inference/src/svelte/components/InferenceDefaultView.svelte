@@ -140,12 +140,12 @@ async function testConnection(): Promise<void> {
 }
 </script>
 
-<div class="smrt-inference-default-view__root" data-testid="inference-default-view">
-  <form class="smrt-inference-default-view__form" data-smrt-part="form" onsubmit={saveChoices} data-testid="inference-choices-form">
+<div class="smrt-inference-default-view__root" data-testid="inference-default-view" data-smrt-component="InferenceDefaultView">
+  <form class="smrt-inference-default-view__form" data-smrt-part="field" onsubmit={saveChoices} data-testid="inference-choices-form">
     <fieldset class="smrt-inference-default-view__modes" data-smrt-part="list" disabled={busy}>
       <legend>Inference</legend>
       {#each INFERENCE_SETTINGS_MODES as option (option)}
-        <label class="smrt-inference-default-view__radio" data-smrt-part="radio">
+        <label class="smrt-inference-default-view__radio" data-smrt-part="control">
           <input type="radio" name="mode" value={option} bind:group={mode} />
           {MODE_LABELS[option]}
         </label>
@@ -189,7 +189,7 @@ async function testConnection(): Promise<void> {
         </datalist>
       </label>
       {#if onDiscoverModels}
-        <button type="button" class="smrt-inference-default-view__link" data-smrt-part="link" onclick={() => onDiscoverModels?.()} disabled={busy}>
+        <button type="button" class="smrt-inference-default-view__link" data-smrt-part="action" onclick={() => onDiscoverModels?.()} disabled={busy}>
           Find local models
         </button>
       {/if}
@@ -250,7 +250,7 @@ async function testConnection(): Promise<void> {
       <button type="submit" disabled={busy || !onSaveKey}>
         {keySet ? 'Replace key' : 'Save key'}
       </button>
-      <p class="smrt-inference-default-view__hint" data-smrt-part="hint">
+      <p class="smrt-inference-default-view__hint" data-smrt-part="description">
         The key is stored on the server and only ever sent to this provider's endpoint.
       </p>
       {#if keyError}

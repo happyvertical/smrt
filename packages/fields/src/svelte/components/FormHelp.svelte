@@ -91,8 +91,8 @@ const glossary = $derived.by(() => {
     {#if glossary.length > 0}
       <dl class="smrt-form-help__glossary" data-smrt-part="list">
         {#each glossary as entry}
-          <dt class="smrt-form-help__term" data-smrt-part="term">{entry.label}</dt>
-          <dd class="smrt-form-help__definition" data-smrt-part="definition">{entry.help}</dd>
+          <dt class="smrt-form-help__term" data-smrt-part="label">{entry.label}</dt>
+          <dd class="smrt-form-help__definition" data-smrt-part="value">{entry.help}</dd>
         {/each}
       </dl>
     {:else}

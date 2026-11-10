@@ -107,7 +107,7 @@ $effect(() => {
   >
     <div class="smrt-room-create-dialog__field" data-smrt-part="field">
       <label class="smrt-room-create-dialog__label" data-smrt-part="label" for="room-name">
-        {t(M['chat.room_create_dialog.room_name'])} <span class="smrt-room-create-dialog__required" data-smrt-part="required" aria-label={t(M['chat.room_create_dialog.required'])}>*</span>
+        {t(M['chat.room_create_dialog.room_name'])} <span class="smrt-room-create-dialog__required" data-smrt-part="marker" aria-label={t(M['chat.room_create_dialog.required'])}>*</span>
       </label>
       <Input
         bind:value={name}
@@ -121,7 +121,7 @@ $effect(() => {
 
     <fieldset class="smrt-room-create-dialog__field" data-smrt-part="field">
       <legend class="smrt-room-create-dialog__label" data-smrt-part="label">{t(M['chat.room_create_dialog.room_type'])}</legend>
-      <div class="smrt-room-create-dialog__type-options" data-smrt-part="options">
+      <div class="smrt-room-create-dialog__type-options" data-smrt-part="list">
         {#each roomTypes as option (option.value)}
           <label
             class="smrt-room-create-dialog__type-option"
@@ -139,7 +139,7 @@ $effect(() => {
               data-smrt-part="input"
             />
             <span class="smrt-room-create-dialog__option-body" data-smrt-part="body">
-              <span class="smrt-room-create-dialog__option-label" data-smrt-part="option-label">{option.label}</span>
+              <span class="smrt-room-create-dialog__option-label" data-smrt-part="label">{option.label}</span>
               <span class="smrt-room-create-dialog__option-description" data-smrt-part="description">{option.description}</span>
             </span>
           </label>
@@ -156,7 +156,7 @@ $effect(() => {
         rows={3}
         maxlength={500}
       />
-      <span class="smrt-room-create-dialog__hint" data-smrt-part="hint">{description.length}/500</span>
+      <span class="smrt-room-create-dialog__hint" data-smrt-part="description">{description.length}/500</span>
     </div>
 
     <!-- Hidden submit keeps Enter-to-submit working inside the Modal body. -->

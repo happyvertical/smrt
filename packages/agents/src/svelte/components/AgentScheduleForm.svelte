@@ -133,7 +133,7 @@ function handleCronPreset(preset: string) {
     <h2>{editMode ? 'Edit Schedule' : 'Create Schedule'}</h2>
   {/snippet}
 
-  <div class="smrt-agent-schedule-form__root">
+  <div class="smrt-agent-schedule-form__root" data-smrt-part="body">
   <Form class="schedule-form" onsubmit={handleSubmit}>
     <div class="smrt-agent-schedule-form__grid" data-smrt-part="grid">
       <!-- Agent Type -->
@@ -195,7 +195,7 @@ function handleCronPreset(preset: string) {
           required
           disabled={loading}
         />
-        <div class="smrt-agent-schedule-form__presets" data-smrt-part="presets">
+        <div class="smrt-agent-schedule-form__presets" data-smrt-part="list">
           {#each cronPresets as preset}
             <Button
               variant="secondary"

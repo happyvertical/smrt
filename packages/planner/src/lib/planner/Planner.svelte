@@ -559,7 +559,7 @@ const dockToggles = $derived(
 >
   <ThemeBridge deferInitial={persistence === 'host'} presetOverride={applyCookbookTheme(shell.theme)} />
   <PlannerLifecycle {controller} {basePath} {inference} {persistence} {onready} {initialConversation} {cookbookOffers} {conversationalAction} nativeAssistant links="hash" onreset={resetProject} />
-  <main class="smrt-planner__content" data-smrt-part="main">
+  <main class="smrt-planner__content" data-smrt-part="body">
     {#if sectionSlug}
       {#if cookbookStore.loaded}
         {#key `${sectionSlug}:${dataGeneration}`}

@@ -36,7 +36,7 @@ const message = $derived(t(MESSAGES[status.reason] ?? MESSAGES.off));
 <p class="smrt-ai-unavailable-notice__root" role="status" data-reason={status.reason} data-smrt-component="AiUnavailableNotice">
   <span>{message}</span>
   {#if settingsHref}
-    <a class="smrt-ai-unavailable-notice__link" data-smrt-part="link" href={settingsHref}>
+    <a class="smrt-ai-unavailable-notice__link" data-smrt-part="action" href={settingsHref}>
       {settingsLabel ?? t(M['chat.ai_unavailable.open_settings'])}
     </a>
   {/if}

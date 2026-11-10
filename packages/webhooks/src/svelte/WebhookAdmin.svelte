@@ -90,7 +90,7 @@ async function submit() {
       {:else}<li>No subscriptions yet.</li>{/each}
     </ul>
     <h3>Delivery log</h3>
-    <div class="smrt-webhook-admin__table-scroll">
+    <div class="smrt-webhook-admin__table-scroll" data-smrt-part="body">
       <table>
         <caption>Recent webhook deliveries</caption>
         <thead data-smrt-part="header"><tr><th scope="col">Delivery</th><th scope="col">Status</th><th scope="col">Attempts</th><th scope="col">Response</th><th scope="col">Actions</th></tr></thead>

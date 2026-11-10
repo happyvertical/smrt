@@ -278,7 +278,7 @@ function handleManagerDrop(event: DragEvent) {
   />
 
   <!-- Main content area -->
-  <div class="smrt-asset-manager__content" data-smrt-part="content">
+  <div class="smrt-asset-manager__content" data-smrt-part="body">
     {#if view === 'grid'}
       <AssetGrid
         {assets}
@@ -316,8 +316,8 @@ function handleManagerDrop(event: DragEvent) {
 
   <!-- Drag overlay indicator -->
   {#if managerDragOver}
-    <div class="smrt-asset-manager__drag-overlay" data-smrt-part="overlay">
-      <div class="smrt-asset-manager__drag-overlay-content" data-smrt-part="content">
+    <div class="smrt-asset-manager__drag-overlay" data-smrt-part="backdrop">
+      <div class="smrt-asset-manager__drag-overlay-content" data-smrt-part="body">
         <svg xmlns="http://www.w3.org/2000/svg" width="48" height="48" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round">
           <path d="M21 15v4a2 2 0 01-2 2H5a2 2 0 01-2-2v-4"></path>
           <polyline points="17 8 12 3 7 8"></polyline>

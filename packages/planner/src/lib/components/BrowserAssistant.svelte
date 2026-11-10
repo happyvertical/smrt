@@ -100,7 +100,7 @@ $effect(() => {
   {#if isThemeUndoRef(ref) && session.themeUndos}
     {@const entry = session.themeUndos.undos[ref.undoId]}
     {#if entry?.status === 'available'}
-      <div class="smrt-browser-assistant__offer" data-smrt-part="notice" role="group" aria-label="Theme change">
+      <div class="smrt-browser-assistant__offer" data-smrt-part="status" role="group" aria-label="Theme change">
         <Button variant="secondary" onclick={() => session.themeUndos?.undo(entry.id)}>
           Undo theme change
         </Button>
@@ -137,7 +137,7 @@ $effect(() => {
     {#if offer && cookbook}
       {#if offer.status === 'pending'}
         {@const menu = previewMenu(cookbook.document)}
-        <div class="smrt-browser-assistant__offer" data-smrt-part="notice" role="group" aria-label="Add the {cookbook.name} cookbook">
+        <div class="smrt-browser-assistant__offer" data-smrt-part="status" role="group" aria-label="Add the {cookbook.name} cookbook">
           <div class="smrt-browser-assistant__offer-text" data-smrt-part="description">
             <strong>{cookbook.name} cookbook</strong>
             <span>{cookbook.summary}</span>
@@ -165,7 +165,7 @@ $effect(() => {
       {:else if offer.status === 'applied'}
         <p class="smrt-browser-assistant__offer-note" data-smrt-part="status" role="status">{cookbook.name} set up.</p>
       {:else if offer.status === 'failed'}
-        <p class="smrt-browser-assistant__offer-note" data-smrt-part="status" role="alert">{offer.error}</p>
+        <p class="smrt-browser-assistant__offer-note" data-smrt-part="error" role="alert">{offer.error}</p>
       {/if}
     {/if}
   {/if}
@@ -184,8 +184,8 @@ $effect(() => {
     </div>
   {:else if session.status === 'ready'}
     <div class="smrt-browser-assistant__top" data-smrt-part="header">
-      <div class="smrt-browser-assistant__bar" data-smrt-part="toolbar">
-        <span class="smrt-browser-assistant__model-name" data-smrt-part="name">{thinkName}</span>
+      <div class="smrt-browser-assistant__bar" data-smrt-part="actions">
+        <span class="smrt-browser-assistant__model-name" data-smrt-part="title">{thinkName}</span>
         <a
           class="smrt-browser-assistant__model-link" data-smrt-part="icon"
           href={settingsHref}

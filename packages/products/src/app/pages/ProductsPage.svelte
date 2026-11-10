@@ -9,7 +9,7 @@ const { t } = useI18n();
 
 <AppLayout>
   {#snippet children()}
-    <div class="smrt-products-page__root">
+    <div class="smrt-products-page__root" data-smrt-part="body">
       <div class="smrt-products-page__header" data-smrt-part="header">
         <h1>Products</h1>
         <p class="smrt-products-page__description" data-smrt-part="meta">
@@ -17,11 +17,11 @@ const { t } = useI18n();
         </p>
       </div>
       
-      <div class="smrt-products-page__content" data-smrt-part="content">
+      <div class="smrt-products-page__content" data-smrt-part="body">
         <ProductCatalog showCreateForm={true} />
       </div>
       
-      <div class="smrt-products-page__integration" data-smrt-part="details">
+      <div class="smrt-products-page__integration" data-smrt-part="body">
         <div class="smrt-products-page__cards" data-smrt-part="list">
           <div class="smrt-products-page__card" data-smrt-part="item">
             <h3>🔄 Auto-Generated</h3>

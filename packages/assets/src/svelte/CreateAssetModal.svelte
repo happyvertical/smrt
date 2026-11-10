@@ -168,23 +168,23 @@ const isLargeFile = $derived((file?.size ?? 0) > 2 * 1024 * 1024);
             <line x1="12" y1="3" x2="12" y2="15"></line>
           </svg>
           <p class="smrt-create-asset-modal__dropzone-text" data-smrt-part="title">{t(M['assets.create_asset_modal.dropzone_text'])}</p>
-          <p class="smrt-create-asset-modal__dropzone-hint" data-smrt-part="hint">{t(M['assets.create_asset_modal.dropzone_hint'])}</p>
+          <p class="smrt-create-asset-modal__dropzone-hint" data-smrt-part="description">{t(M['assets.create_asset_modal.dropzone_hint'])}</p>
           <!-- raw-primitive-allow: hidden native file input behind the custom drop zone, triggered programmatically; styled Input is unwanted here (visually hidden, opened via the dropzone click/keydown) -->
-          <input id="file-input" type="file" class="smrt-create-asset-modal__dropzone-input" data-smrt-part="field" onchange={handleFileSelect} />
+          <input id="file-input" type="file" class="smrt-create-asset-modal__dropzone-input" data-smrt-part="input" onchange={handleFileSelect} />
         </div>
       {:else}
         <!-- File preview + metadata form -->
-        <div class="smrt-create-asset-modal__file-preview" data-smrt-part="preview">
+        <div class="smrt-create-asset-modal__file-preview" data-smrt-part="panel">
           {#if previewUrl}
-            <img src={previewUrl} alt={t(M['assets.create_asset_modal.preview_alt'])} class="smrt-create-asset-modal__file-preview-image" data-smrt-part="thumbnail" />
+            <img src={previewUrl} alt={t(M['assets.create_asset_modal.preview_alt'])} class="smrt-create-asset-modal__file-preview-image" data-smrt-part="media" />
           {:else}
             <div class="smrt-create-asset-modal__file-preview-icon" data-smrt-part="icon">📎</div>
           {/if}
-          <div class="smrt-create-asset-modal__file-preview-meta" data-smrt-part="details">
+          <div class="smrt-create-asset-modal__file-preview-meta" data-smrt-part="body">
             <span class="smrt-create-asset-modal__file-preview-filename" data-smrt-part="title">{file.name}</span>
             <span class="smrt-create-asset-modal__file-preview-size" data-smrt-part="meta">{formatSize(file.size)}</span>
             {#if isLargeFile}
-              <span class="smrt-create-asset-modal__file-preview-warning" data-smrt-part="hint">{t(M['assets.create_asset_modal.large_file_warning'])}</span>
+              <span class="smrt-create-asset-modal__file-preview-warning" data-smrt-part="description">{t(M['assets.create_asset_modal.large_file_warning'])}</span>
             {/if}
           </div>
           <Button variant="ghost" size="sm" onclick={() => { file = null; }} aria-label={t(M['assets.create_asset_modal.remove_file'])}>
@@ -192,7 +192,7 @@ const isLargeFile = $derived((file?.size ?? 0) > 2 * 1024 * 1024);
           </Button>
         </div>
 
-        <div class="smrt-create-asset-modal__form-fields" data-smrt-part="form">
+        <div class="smrt-create-asset-modal__form-fields" data-smrt-part="field">
           <div class="smrt-create-asset-modal__form-field" data-smrt-part="field">
             <label for="asset-name" class="smrt-create-asset-modal__form-label" data-smrt-part="label">Name</label>
             <Input id="asset-name" type="text" bind:value={name} placeholder={t(M['assets.create_asset_modal.name_placeholder'])} />
@@ -208,7 +208,7 @@ const isLargeFile = $derived((file?.size ?? 0) > 2 * 1024 * 1024);
               <label for="asset-alt" class="smrt-create-asset-modal__form-label" data-smrt-part="label">
                 {t(M['assets.create_asset_modal.alt_text'])}
                 {#if !altText}
-                  <span class="smrt-create-asset-modal__form-label-warning" data-smrt-part="hint">{t(M['assets.create_asset_modal.alt_text_recommended_warning'])}</span>
+                  <span class="smrt-create-asset-modal__form-label-warning" data-smrt-part="description">{t(M['assets.create_asset_modal.alt_text_recommended_warning'])}</span>
                 {/if}
               </label>
               <Input id="asset-alt" type="text" bind:value={altText} placeholder={t(M['assets.create_asset_modal.alt_text_placeholder'])} />

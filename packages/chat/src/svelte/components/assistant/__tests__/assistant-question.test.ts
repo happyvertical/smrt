@@ -216,7 +216,7 @@ describe('dock question form', () => {
     await mount(true);
     const form = screen.getByRole('group', { name: /Group invoices/ });
     expect(form.closest('[data-smrt-component="MessageBubble"]')).toBeNull();
-    expect(form.closest('[data-smrt-part="card"]')).not.toBeNull();
+    expect(form.closest('[data-smrt-part="item"]')).not.toBeNull();
     expect(
       screen
         .getByText('How should I group them?')

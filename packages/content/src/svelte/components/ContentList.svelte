@@ -2705,7 +2705,7 @@ const tableColumns: DataTableColumn<ContentListRow>[] = $derived([
   bind:this={surfaceRoot} data-smrt-component="ContentList"
 >
 
-  <div class="smrt-content-list__controls" data-smrt-part="controls">
+  <div class="smrt-content-list__controls" data-smrt-part="actions">
     <div class="smrt-content-list__search-filters" data-smrt-part="filters">
       <Input
         type="text"
@@ -2770,7 +2770,7 @@ const tableColumns: DataTableColumn<ContentListRow>[] = $derived([
       {/if}
 
       {#if savedViews}
-        <div class="smrt-content-list__saved-views" data-smrt-part="saved-views" role="group" aria-label={t(M['content.content_list.saved_views'])}>
+        <div class="smrt-content-list__saved-views" data-smrt-part="nav" role="group" aria-label={t(M['content.content_list.saved_views'])}>
           <Select
             aria-label={t(M['content.content_list.saved_views'])}
             value={selectedSavedViewId}
@@ -2818,8 +2818,8 @@ const tableColumns: DataTableColumn<ContentListRow>[] = $derived([
       {/if}
     </div>
 
-    <div class="smrt-content-list__actions-group" data-smrt-part="toolbar">
-      <div class="smrt-content-list__view-toggles" data-smrt-part="view-toggles" role="group" aria-label={t(M['content.content_list.view_mode'])}>
+    <div class="smrt-content-list__actions-group" data-smrt-part="actions">
+      <div class="smrt-content-list__view-toggles" data-smrt-part="actions" role="group" aria-label={t(M['content.content_list.view_mode'])}>
         <Button
           variant="ghost"
           size="sm"
@@ -2886,7 +2886,7 @@ const tableColumns: DataTableColumn<ContentListRow>[] = $derived([
         </Button>
       </div>
 
-      <Button variant="ghost" class="add-button" type="button" onclick={() => onAdd()}>
+      <Button variant="ghost" class="smrt-content-list__add" type="button" onclick={() => onAdd()}>
         <svg viewBox="0 0 24 24" width="16" height="16" stroke="currentColor" stroke-width="2" fill="none" aria-hidden="true">
           <line x1="12" y1="5" x2="12" y2="19"></line>
           <line x1="5" y1="12" x2="19" y2="12"></line>
@@ -2897,7 +2897,7 @@ const tableColumns: DataTableColumn<ContentListRow>[] = $derived([
   </div>
 
   {#if showDropNotice}
-    <div class="smrt-content-list__state-notice" data-smrt-part="notice" role="status">
+    <div class="smrt-content-list__state-notice" data-smrt-part="status" role="status">
       <p class="smrt-content-list__state-notice-title" data-smrt-part="title">{t(M['content.content_list.dropped_title'])}</p>
       <ul class="smrt-content-list__state-notice-list" data-smrt-part="list">
         {#each dropNotices as drop, index (index)}
@@ -2951,7 +2951,7 @@ const tableColumns: DataTableColumn<ContentListRow>[] = $derived([
   {/if}
 
   {#if jobSnapshot.jobs.length > 0}
-    <section class="smrt-content-list__jobs" data-smrt-part="jobs" aria-label={t(M['content.content_list.jobs'])}>
+    <section class="smrt-content-list__jobs" data-smrt-part="list" aria-label={t(M['content.content_list.jobs'])}>
       <ul class="smrt-content-list__jobs-list" data-smrt-part="list" aria-live="polite" aria-atomic="false">
         {#each jobSnapshot.jobs as job (job.jobId)}
           <li class={`smrt-content-list__job smrt-content-list__job--${job.status}`} data-smrt-part="item" data-job-id={job.jobId}>
@@ -3061,7 +3061,7 @@ const tableColumns: DataTableColumn<ContentListRow>[] = $derived([
     {/if}
 
     {#if workflows && (selectedCount > 0 || workflowError || workflowResult)}
-      <section class="smrt-content-list__workflows" data-smrt-part="workflows" aria-label={t(M['content.content_list.bulk_workflows'])}>
+      <section class="smrt-content-list__workflows" data-smrt-part="list" aria-label={t(M['content.content_list.bulk_workflows'])}>
         <Select
           aria-label={t(M['content.content_list.bulk_workflow'])}
           value={selectedWorkflow}
@@ -3171,7 +3171,7 @@ const tableColumns: DataTableColumn<ContentListRow>[] = $derived([
 
     {#if refreshing && viewMode !== 'compact'}
       <!-- DataTable announces its own refresh; the card views need their own. -->
-      <p class="smrt-content-list__refreshing" data-smrt-part="hint" role="status" aria-live="polite">
+      <p class="smrt-content-list__refreshing" data-smrt-part="description" role="status" aria-live="polite">
         {t(M['content.content_list.refreshing'])}
       </p>
     {/if}
@@ -3212,7 +3212,7 @@ const tableColumns: DataTableColumn<ContentListRow>[] = $derived([
           {@const content = row.content}
           {@const actions = rowActions(row)}
           <article class="smrt-content-list__row" data-smrt-part="row">
-            <div class="smrt-content-list__row-select" data-smrt-part="select">
+            <div class="smrt-content-list__row-select" data-smrt-part="field">
               <Checkbox
                 checked={isSelected(row)}
                 disabled={workflowPending || !row.identified || rowPending(row) || allMatchingSelected}
@@ -3241,7 +3241,7 @@ const tableColumns: DataTableColumn<ContentListRow>[] = $derived([
               {/if}
 
               {#if content.url || content.fileKey}
-                <div class="smrt-content-list__row-links" data-smrt-part="links">
+                <div class="smrt-content-list__row-links" data-smrt-part="list">
                   {#if content.url}
                     <a href={content.url} target="_blank" rel="noreferrer">
                       {t(M['content.content_list.source_material'])}
@@ -3296,9 +3296,9 @@ const tableColumns: DataTableColumn<ContentListRow>[] = $derived([
         {#each pageRows as row (row.id)}
           {@const content = row.content}
           {@const actions = rowActions(row)}
-          <div class="smrt-content-list__card" data-smrt-part="card">
+          <div class="smrt-content-list__card" data-smrt-part="item">
             {#if content.thumbnailAssetId}
-              <div class="smrt-content-list__card-thumbnail" data-smrt-part="thumbnail">
+              <div class="smrt-content-list__card-thumbnail" data-smrt-part="media">
                 <ImageThumbnail
                   apiBaseUrl={apiBaseUrl}
                   assetId={content.thumbnailAssetId}
@@ -3328,7 +3328,7 @@ const tableColumns: DataTableColumn<ContentListRow>[] = $derived([
 
             <div class="smrt-content-list__meta" data-smrt-part="meta">
               <div>{row.typeLabel}</div>
-              <div class="smrt-content-list__badges" data-smrt-part="badges">
+              <div class="smrt-content-list__badges" data-smrt-part="meta">
                 <span class="smrt-content-list__badge smrt-content-list__status-{contentStatusVariant(row.status)}" data-smrt-part="badge">{row.statusLabel}</span>
                 <span class="smrt-content-list__badge smrt-content-list__state-{contentStateVariant(row.state)}" data-smrt-part="badge">{row.stateLabel}</span>
               </div>
@@ -3337,7 +3337,7 @@ const tableColumns: DataTableColumn<ContentListRow>[] = $derived([
             <p class="smrt-content-list__description" data-smrt-part="description">{row.description}</p>
 
             <div class="smrt-content-list__footer" data-smrt-part="footer">
-              <div class="smrt-content-list__meta-links" data-smrt-part="links">
+              <div class="smrt-content-list__meta-links" data-smrt-part="list">
                 {#if content.url}
                   <div class="smrt-content-list__source" data-smrt-part="meta">Source: <a href={content.url} target="_blank" rel="noreferrer">{content.url}</a></div>
                 {/if}
@@ -3380,7 +3380,7 @@ const tableColumns: DataTableColumn<ContentListRow>[] = $derived([
     {/if}
 
     {#if showPagination}
-      <div class="smrt-content-list__pagination" data-smrt-part="pagination">
+      <div class="smrt-content-list__pagination" data-smrt-part="nav">
         <Pagination
           currentPage={tableState.page}
           {totalPages}
@@ -3467,7 +3467,7 @@ const tableColumns: DataTableColumn<ContentListRow>[] = $derived([
     align-items: center;
     justify-content: center;
   }
-  .smrt-content-list__actions-group :global(.add-button) {
+  .smrt-content-list__actions-group :global(.smrt-content-list__add) {
     display: flex;
     align-items: center;
     gap: 0.5rem;
@@ -3745,7 +3745,7 @@ const tableColumns: DataTableColumn<ContentListRow>[] = $derived([
     }
     .smrt-content-list__search-filters :global([data-smrt-component="Input"]),
     .smrt-content-list__search-filters :global([data-smrt-component="Select"]),
-    .add-button {
+    .smrt-content-list__add {
       width: 100%;
     }
     .smrt-content-list__actions-group {
@@ -3797,7 +3797,7 @@ const tableColumns: DataTableColumn<ContentListRow>[] = $derived([
     color: var(--smrt-color-on-surface);
     box-shadow: var(--smrt-elevation-1, 0 1px 2px rgba(0,0,0,0.1));
   }
-  .smrt-content-list__actions-group :global(.add-button) {
+  .smrt-content-list__actions-group :global(.smrt-content-list__add) {
     background: linear-gradient(
       135deg,
       var(--smrt-color-primary) 0%,
@@ -3809,7 +3809,7 @@ const tableColumns: DataTableColumn<ContentListRow>[] = $derived([
     font-weight: var(--smrt-typography-weight-semibold, 600);
     transition: transform 0.2s, box-shadow 0.2s;
   }
-  .smrt-content-list__actions-group :global(.add-button:hover) {
+  .smrt-content-list__actions-group :global(.smrt-content-list__add:hover) {
     transform: translateY(-1px);
     box-shadow: 0 4px 6px -1px color-mix(in srgb, var(--smrt-color-primary) 50%, transparent);
   }

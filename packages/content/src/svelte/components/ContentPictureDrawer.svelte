@@ -286,10 +286,10 @@ function handleFiles(event: Event & { currentTarget: HTMLInputElement }) {
     {/if}
   </header>
 
-  <p class="smrt-content-picture-drawer__hint" data-smrt-part="hint">{t(M['content.content_picture_drawer.hint'])}</p>
+  <p class="smrt-content-picture-drawer__hint" data-smrt-part="description">{t(M['content.content_picture_drawer.hint'])}</p>
 
   {#if mainPictureMode === 'chosen'}
-    <p class="smrt-content-picture-drawer__main-status" data-smrt-part="notice">
+    <p class="smrt-content-picture-drawer__main-status" data-smrt-part="status">
       <span>{t(M['content.content_picture_drawer.main_chosen'])}</span>
       {#if onClearMainChoice}
         <Button type="button" variant="ghost" size="sm" onclick={onClearMainChoice}>
@@ -298,12 +298,12 @@ function handleFiles(event: Event & { currentTarget: HTMLInputElement }) {
       {/if}
     </p>
   {:else if mainPictureMode === 'automatic'}
-    <p class="smrt-content-picture-drawer__main-status" data-smrt-part="notice">{t(M['content.content_picture_drawer.main_automatic'])}</p>
+    <p class="smrt-content-picture-drawer__main-status" data-smrt-part="status">{t(M['content.content_picture_drawer.main_automatic'])}</p>
   {:else}
-    <p class="smrt-content-picture-drawer__main-status" data-smrt-part="notice">{t(M['content.content_picture_drawer.main_none'])}</p>
+    <p class="smrt-content-picture-drawer__main-status" data-smrt-part="status">{t(M['content.content_picture_drawer.main_none'])}</p>
   {/if}
 
-  <div class="smrt-content-picture-drawer__tools" data-smrt-part="tools">
+  <div class="smrt-content-picture-drawer__tools" data-smrt-part="list">
     <Input
       type="search"
       bind:value={query}
@@ -358,7 +358,7 @@ function handleFiles(event: Event & { currentTarget: HTMLInputElement }) {
           <button
             type="button"
             class="smrt-content-picture-drawer__picture-pick"
-            data-smrt-part="preview"
+            data-smrt-part="panel"
             aria-pressed={isSelected}
             aria-label={t(M['content.content_picture_drawer.select'], { name: picture.title })}
             onclick={() => toggle(picture)}
@@ -384,7 +384,7 @@ function handleFiles(event: Event & { currentTarget: HTMLInputElement }) {
             {/if}
           </button>
           <span class="smrt-content-picture-drawer__picture-title" data-smrt-part="title">{picture.title}</span>
-          <span class="smrt-content-picture-drawer__picture-tags" data-smrt-part="tags">
+          <span class="smrt-content-picture-drawer__picture-tags" data-smrt-part="meta">
             {#if isMain}
               <span class="smrt-content-picture-drawer__tag smrt-content-picture-drawer__tag--main" data-smrt-part="meta">{t(M['content.content_picture_drawer.main'])}</span>
             {:else if inStory.has(picture.id)}
@@ -400,11 +400,11 @@ function handleFiles(event: Event & { currentTarget: HTMLInputElement }) {
       {/if}
     </ul>
   {:else if loading}
-    <p class="smrt-content-picture-drawer__hint" data-smrt-part="hint">{t(M['content.content_picture_drawer.loading'])}</p>
+    <p class="smrt-content-picture-drawer__hint" data-smrt-part="description">{t(M['content.content_picture_drawer.loading'])}</p>
   {:else if pictures.some((picture) => !brokenPreviews[picture.id]) || (onSearch && query.trim())}
-    <p class="smrt-content-picture-drawer__hint" data-smrt-part="hint">{t(M['content.content_picture_drawer.no_match'])}</p>
+    <p class="smrt-content-picture-drawer__hint" data-smrt-part="description">{t(M['content.content_picture_drawer.no_match'])}</p>
   {:else}
-    <p class="smrt-content-picture-drawer__hint" data-smrt-part="hint">{t(M['content.content_picture_drawer.empty'])}</p>
+    <p class="smrt-content-picture-drawer__hint" data-smrt-part="description">{t(M['content.content_picture_drawer.empty'])}</p>
   {/if}
 
   <p class="smrt-content-picture-drawer__status" data-smrt-part="status" role="status" aria-live="polite">{moreStatus}</p>

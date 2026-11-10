@@ -96,7 +96,7 @@ function handleSubmit() {
 }
 </script>
 
-<section class="smrt-field-policy-form-preview__root">
+<section class="smrt-field-policy-form-preview__root" data-smrt-component="FieldPolicyFormPreview">
   <!--
     ONE provider, extended over the header too. FormHelp assembles its glossary
     from the provider context and must live inside it; the provider renders no
@@ -116,7 +116,7 @@ function handleSubmit() {
       />
     </header>
 
-    <div class="smrt-field-policy-form-preview__toolbar" data-smrt-part="toolbar">
+    <div class="smrt-field-policy-form-preview__toolbar" data-smrt-part="actions">
       <ModeSwitch />
     </div>
 

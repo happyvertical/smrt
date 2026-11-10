@@ -291,7 +291,7 @@ async function reset(fieldName: string): Promise<void> {
 </script>
 
 <Modal open={true} onClose={onclose} title="Field settings" size="xl" ariaDescribedBy="field-policy-editor-description">
-<div class="smrt-field-policy-editor__root">
+<div class="smrt-field-policy-editor__root" data-smrt-part="body">
   <p id="field-policy-editor-description">Overrides are sparse. Reset removes this scope’s row and inherits the effective policy.</p>
 
   <div class="smrt-field-policy-editor__tabs" data-smrt-part="list" role="tablist" aria-label="Field policy scope">

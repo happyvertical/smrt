@@ -51,7 +51,7 @@ function handleCustomSubmit(data: ProductData) {
     </p>
   </header>
 
-  <nav class="smrt-demo-page__nav" data-smrt-part="navigation">
+  <nav class="smrt-demo-page__nav" data-smrt-part="nav">
     <Button
       variant={currentTab === 'auto' ? 'primary' : 'secondary'}
       onclick={() => currentTab = 'auto'}
@@ -72,7 +72,7 @@ function handleCustomSubmit(data: ProductData) {
     </Button>
   </nav>
 
-  <main class="smrt-demo-page__content" data-smrt-part="content">
+  <main class="smrt-demo-page__content" data-smrt-part="body">
     {#if currentTab === 'auto'}
       <section class="smrt-demo-page__section" data-smrt-part="group">
         <h2>{t(M['products.demo_page.auto_generated_heading'])}</h2>
@@ -169,7 +169,7 @@ function handleCustomSubmit(data: ProductData) {
   </main>
 
   <footer class="smrt-demo-page__footer" data-smrt-part="footer">
-    <div class="smrt-demo-page__framework-info" data-smrt-part="details">
+    <div class="smrt-demo-page__framework-info" data-smrt-part="body">
       <h4>{t(M['products.demo_page.benefits_heading'])}</h4>
       <ul>
         <li><strong>{t(M['products.demo_page.benefit_define_once_label'])}</strong> {t(M['products.demo_page.benefit_define_once_text'])}</li>

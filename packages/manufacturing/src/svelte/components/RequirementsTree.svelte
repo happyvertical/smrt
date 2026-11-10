@@ -56,7 +56,7 @@ function componentText(name: string, skuCode: string): string {
 
 {#if totals && totals.length > 0}
   <div class="smrt-requirements-tree__root" data-smrt-component="RequirementsTree">
-    <table class="smrt-requirements-tree__totals" data-smrt-part="totals">
+    <table class="smrt-requirements-tree__totals" data-smrt-part="group">
       <caption>{t(M['manufacturing.requirements.totals_caption'])}</caption>
       <thead>
         <tr>

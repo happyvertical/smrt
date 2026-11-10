@@ -91,7 +91,7 @@ function handleClose() {
   closeOnBackdrop={!loading}
   closeOnEscape={!loading}
 >
-  <div class="smrt-invite-user-modal__root">
+  <div class="smrt-invite-user-modal__root" data-smrt-part="body">
     <Form id={formId} class="invite-form" onsubmit={handleSubmit}>
       {#if error}
         <div class="smrt-invite-user-modal__error" data-smrt-part="error">{error}</div>
@@ -120,14 +120,14 @@ function handleClose() {
         />
       </div>
 
-      <div class="smrt-invite-user-modal__checkbox-field" data-smrt-part="checkbox">
+      <div class="smrt-invite-user-modal__checkbox-field" data-smrt-part="control">
         <!-- raw-primitive-allow: native checkbox; no Provider-free checkbox primitive (Toggle is a switch with different semantics, CheckboxInput requires a Provider) -->
         <input id="send-email" type="checkbox" bind:checked={sendEmail} disabled={loading} />
         <label for="send-email">{t(M['users.invite_user_modal.send_invitation_email'])}</label>
       </div>
 
       {#if !sendEmail}
-        <div class="smrt-invite-user-modal__hint" data-smrt-part="hint">
+        <div class="smrt-invite-user-modal__hint" data-smrt-part="description">
           {t(M['users.invite_user_modal.pending_hint'])}
         </div>
       {/if}

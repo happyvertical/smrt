@@ -48,7 +48,7 @@ const periodLabel = $derived(
 
 <section class="smrt-subscription-summary" data-smrt-component="SubscriptionSummary">
   <div>
-    <p class="smrt-subscription-summary__label">{t(M['subscriptions.summary.current_plan'])}</p>
+    <p class="smrt-subscription-summary__label" data-smrt-part="label">{t(M['subscriptions.summary.current_plan'])}</p>
     <h2>{resolution?.planKey ?? t(M['subscriptions.summary.no_active_plan'])}</h2>
   </div>
   <dl>

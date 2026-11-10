@@ -308,7 +308,7 @@ async function saveRoute() {
           {/if}
         {/each}
         <h4>{t(M['messages.messaging_settings.credentials'])}</h4>
-        {#if accountId}<p class="smrt-messaging-settings-panel__note" data-smrt-part="note">{t(M['messages.messaging_settings.credentials_note'])}</p>{/if}
+        {#if accountId}<p class="smrt-messaging-settings-panel__note" data-smrt-part="description">{t(M['messages.messaging_settings.credentials_note'])}</p>{/if}
         {#each activeAccountProvider.credentialFields as field (field.id)}
           <label for={`account-secret-${field.id}`}>{field.label}</label>
           {#if field.type === 'select'}
@@ -331,7 +331,7 @@ async function saveRoute() {
   {:else if openForm === 'endpoint'}
     <Form class="editor" onsubmit={saveEndpoint}>
       <h3>{t(M[endpointId ? 'messages.messaging_settings.replace_destination_title' : 'messages.messaging_settings.add_destination_title'])}</h3>
-      {#if endpointId}<p class="smrt-messaging-settings-panel__note" data-smrt-part="note">{t(M['messages.messaging_settings.destination_note'])}</p>{/if}
+      {#if endpointId}<p class="smrt-messaging-settings-panel__note" data-smrt-part="description">{t(M['messages.messaging_settings.destination_note'])}</p>{/if}
       <label for="messaging-endpoint-label">{t(M['messages.messaging_settings.label'])}</label>
       <Input id="messaging-endpoint-label" bind:value={endpointLabel} required disabled={saving} />
       <label for="messaging-endpoint-provider">{t(M['messages.messaging_settings.provider'])}</label>

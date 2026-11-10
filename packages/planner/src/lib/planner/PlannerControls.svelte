@@ -249,7 +249,7 @@ $effect(() => {
 <style>
 @layer smrt.reset, smrt.structure, smrt.theme;
 @layer smrt.structure {
-  .smrt-planner-controls__root :global(.tab-panel) {
+  .smrt-planner-controls__root :global(:where([data-smrt-component="Tabs"]) > [data-smrt-part="panel"]) {
     padding-top: var(--smrt-spacing-4);
   }
   /* Phones: smrt-ui's Tabs strip scrolls sideways but shows no sign of it,
@@ -258,13 +258,13 @@ $effect(() => {
   follow, lifting as the strip reaches its end (an inactive timeline, a
   strip that fits, leaves the fade at its initial 0). The real home for
   this is smrt-ui's Tabs. */
-  .smrt-planner-controls__root :global(.smrt-tabs__nav) {
+  .smrt-planner-controls__root :global(:where([data-smrt-component="Tabs"]) > [data-smrt-part="list"]:where([role="tablist"])) {
     overscroll-behavior-x: contain;
   }
-  .smrt-planner-controls__root :global(.smrt-tabs__nav) {
+  .smrt-planner-controls__root :global(:where([data-smrt-component="Tabs"]) > [data-smrt-part="list"]:where([role="tablist"])) {
     scroll-snap-type: x proximity;
   }
-  .smrt-planner-controls__root :global(.smrt-tabs__tab-button) {
+  .smrt-planner-controls__root :global(:where([data-smrt-component="Tabs"]) [data-smrt-part="tab"]:where(button)) {
     scroll-snap-align: start;
   }
   .smrt-planner-controls__pane {
@@ -282,11 +282,11 @@ $effect(() => {
 
 @layer smrt.theme {
   /* The strip persists across configure-page route changes; the panel below
-  crossfades with the content. smrt-ui's Tabs owns the classes (`tabs-nav`
-  for button tabs, `tabs-links` for link tabs; one strip per Tabs). Named
+  crossfades with the content. Tabs exposes the list hook in both button
+  and link mode (one strip per Tabs). Named
   only while a transition runs, as in Planner.svelte. */
-  :global([data-smrt-view-transition]) .smrt-planner-controls__root :global(.tabs-nav),
-  :global([data-smrt-view-transition]) .smrt-planner-controls__root :global(.tabs-links) {
+  :global([data-smrt-view-transition]) .smrt-planner-controls__root :global(:where([data-smrt-component="Tabs"]) > [data-smrt-part="list"]:where([role="tablist"])),
+  :global([data-smrt-view-transition]) .smrt-planner-controls__root :global(:where([data-smrt-component="Tabs"]) > [data-smrt-part="list"]:where(nav)) {
     view-transition-name: planner-tabs;
   }
   /* The length below feeds only the mask gradient (a paint edge), so it is
@@ -297,7 +297,7 @@ $effect(() => {
     initial-value: 0rem;
   }
   @supports (animation-timeline: scroll()) {
-    .smrt-planner-controls__root :global(.smrt-tabs__nav) {
+    .smrt-planner-controls__root :global(:where([data-smrt-component="Tabs"]) > [data-smrt-part="list"]:where([role="tablist"])) {
       mask-image: linear-gradient(
         to right,
         black calc(100% - var(--smrt-planner-controls-tabs-fade)),

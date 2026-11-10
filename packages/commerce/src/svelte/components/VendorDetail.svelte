@@ -128,7 +128,7 @@ function minimumOrder(amountMinor: number): string {
   </Card>
 
   <PartyContactFields contacts={vendor.contacts ?? []} labels={contactLabels} readOnly />
-  {#if vendor.notes}<Card padding="md"><h2>{t(M['commerce.party.notes'])}</h2><p class="smrt-vendor-detail__notes" data-smrt-part="content">{vendor.notes}</p></Card>{/if}
+  {#if vendor.notes}<Card padding="md"><h2>{t(M['commerce.party.notes'])}</h2><p class="smrt-vendor-detail__notes" data-smrt-part="body">{vendor.notes}</p></Card>{/if}
   {@render extension?.(vendor)}
 </section>
 

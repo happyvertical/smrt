@@ -32,7 +32,7 @@ const connect = $derived.by(() => {
 {#if section}
   <main>
     <header>
-      <div class="smrt-recipe-help-page__bar" data-smrt-part="toolbar">
+      <div class="smrt-recipe-help-page__bar" data-smrt-part="actions">
         <p class="smrt-recipe-help-page__meta" data-smrt-part="meta">
           <a href={appHref('/')}>Planner</a> /
           <a href={appHref(`/recipes/${section.id}/`)}>{section.label}</a> / Help

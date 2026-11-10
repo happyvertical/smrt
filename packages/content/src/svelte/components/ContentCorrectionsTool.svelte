@@ -172,7 +172,7 @@ async function issueCorrection() {
   {/if}
 
   {#if notice}
-    <p class="smrt-content-corrections-tool__notice" data-smrt-part="notice" role="status" aria-live="polite">{notice}</p>
+    <p class="smrt-content-corrections-tool__notice" data-smrt-part="status" role="status" aria-live="polite">{notice}</p>
   {/if}
 
   {#if !savedContentId}
@@ -236,7 +236,7 @@ async function issueCorrection() {
         <p class="smrt-content-corrections-tool__empty" data-smrt-part="empty">{t(M['content.corrections_tool.no_corrections_issued'])}</p>
       {:else}
         {#each corrections as correction (correction.id ?? `${correction.correctionType}-${correction.createdAt}`)}
-          <div class="smrt-content-corrections-tool__card" data-smrt-part="card">
+          <div class="smrt-content-corrections-tool__card" data-smrt-part="item">
             <div class="smrt-content-corrections-tool__card-header" data-smrt-part="header">
               <strong>{correction.correctionType}</strong>
               <span class={`smrt-content-corrections-tool__pill smrt-content-corrections-tool__pill--${correction.status}`} data-smrt-part="badge">{correction.status}</span>

@@ -43,7 +43,7 @@ const visible = $derived(selectedCount > 0);
 
 {#if visible}
   <div class="smrt-bulk-actions__root" data-smrt-component="BulkActions">
-    <div class="smrt-bulk-actions__info" data-smrt-part="info">
+    <div class="smrt-bulk-actions__info" data-smrt-part="meta">
       <span class="smrt-bulk-actions__count" data-smrt-part="count">{selectedCount}</span>
       <span class="smrt-bulk-actions__label" data-smrt-part="label">{selectedCount === 1 ? 'item' : 'items'} selected</span>
       {#if onclear}

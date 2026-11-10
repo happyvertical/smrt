@@ -1555,12 +1555,12 @@ export function getInteractionRegistry(): ControlInteractionRegistry {
   {#if showModeToggle || showFormListen}
     <div class="smrt-form__controls" data-smrt-part="actions">
       {#if showModeToggle}
-        <div class="smrt-form__mode-toggle">
+        <div class="smrt-form__mode-toggle" data-smrt-part="group">
           <button
             type="button"
             class="smrt-form__mode-btn"
             class:smrt-form__active={!isSmrt}
-            onclick={handleModeToggle}
+            onclick={handleModeToggle} data-smrt-part="option"
           >
             Dumb
           </button>
@@ -1568,7 +1568,7 @@ export function getInteractionRegistry(): ControlInteractionRegistry {
             type="button"
             class="smrt-form__mode-btn"
             class:smrt-form__active={isSmrt}
-            onclick={handleModeToggle}
+            onclick={handleModeToggle} data-smrt-part="option"
           >
             s-m-r-t
           </button>
@@ -1651,7 +1651,7 @@ export function getInteractionRegistry(): ControlInteractionRegistry {
 </form>
 
 {#if isFormListening && spokenText}
-  <div class="smrt-form__spoken-toaster" data-smrt-part="status" data-smrt-component="Form">
+  <div class="smrt-form__spoken-toaster"  data-smrt-component="Form">
     <strong>{t(M['ui.form.you_said'])}</strong> {spokenText}
   </div>
 {/if}

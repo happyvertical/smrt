@@ -276,6 +276,9 @@ function handleKeydown(event: KeyboardEvent) {
       max-block-size: calc(100dvh - 4.5rem);
     }
   }
+  .smrt-floating-assistant__root:not([data-expanded]) .smrt-floating-assistant__panel {
+    opacity: 0;
+  }
 }
 
 @layer smrt.theme {
@@ -308,7 +311,6 @@ function handleKeydown(event: KeyboardEvent) {
     transition: opacity 160ms ease, transform 160ms ease, visibility 160ms ease;
   }
   .smrt-floating-assistant__root:not([data-expanded]) .smrt-floating-assistant__panel {
-    opacity: 0;
     transform: translateY(0.5rem);
   }
   @media (prefers-reduced-motion: reduce) {

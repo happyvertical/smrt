@@ -263,7 +263,7 @@ function choose(field: string, id: string) {
 {#if action.origin === 'reviewer-selected'}<p>{t(M['ingestion.reviewerSelected'])}</p>{/if}
 <p data-testid="review-state">{t(M['ingestion.state'])}: {stateKey ? t(M[stateKey]) : action.review.state}</p>
 {#if action.args !== undefined}
-<h4>{t(M['ingestion.effects'])}</h4>{#if effects.length}<dl class="smrt-action-review__effects" data-smrt-part="effects" data-testid="effects">{#each effects as [name, value] (name)}<dt>{name}</dt><dd>{value}</dd>{/each}</dl>{/if}
+<h4>{t(M['ingestion.effects'])}</h4>{#if effects.length}<dl class="smrt-action-review__effects" data-smrt-part="group" data-testid="effects">{#each effects as [name, value] (name)}<dt>{name}</dt><dd>{value}</dd>{/each}</dl>{/if}
 <ArgumentFields bind:value={args} label={t(M['ingestion.args'])} catalog={fields} {candidates} {evidence} readonly={!editable || !!action.plan} {host} {itemId} {deny} />
 {#if editable}
 {#if missing.length}<h4>{t(M['ingestion.missing'])}</h4><ul>{#each missing as name (name)}<li>{name}</li>{/each}</ul>{/if}

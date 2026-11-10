@@ -52,7 +52,7 @@ function statusLabel(account: SocialAccountSettingsItem): string {
   </header>
 
   {#if !readonly}
-    <div class="smrt-social-account-settings__connect" data-smrt-part="connect" aria-label={t(M['social.account_settings.connect_aria'])}>
+    <div class="smrt-social-account-settings__connect" data-smrt-part="actions" aria-label={t(M['social.account_settings.connect_aria'])}>
       {#each platforms as item}
         {#if connectHrefs[item.platform]}
           <Button variant="primary" href={connectHrefs[item.platform]}>{item.label}</Button>
@@ -86,7 +86,7 @@ function statusLabel(account: SocialAccountSettingsItem): string {
               </p>
             {/if}
             {#if account.missingPermissions?.length}
-              <p class="smrt-social-account-settings__warning" data-smrt-part="warning">Missing: {account.missingPermissions.join(', ')}</p>
+              <p class="smrt-social-account-settings__warning" data-smrt-part="description">Missing: {account.missingPermissions.join(', ')}</p>
             {/if}
           </div>
 

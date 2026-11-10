@@ -35,12 +35,12 @@ const _lastSyncFormatted = $derived.by(() => {
   <div class="smrt-account-card__body" data-smrt-part="body">
     <div class="smrt-account-card__header" data-smrt-part="header">
       <AccountAvatar providerType={account.providerType} name={account.name} size="lg" />
-      <div class="smrt-account-card__content" data-smrt-part="content">
-        <h3 class="smrt-account-card__name" data-smrt-part="name">{account.name}</h3>
+      <div class="smrt-account-card__content" data-smrt-part="body">
+        <h3 class="smrt-account-card__name" data-smrt-part="title">{account.name}</h3>
         {#if account.email}
-          <span class="smrt-account-card__email" data-smrt-part="email">{account.email}</span>
+          <span class="smrt-account-card__email" data-smrt-part="meta">{account.email}</span>
         {/if}
-        <span class="smrt-account-card__provider" data-smrt-part="provider">{account.providerType}</span>
+        <span class="smrt-account-card__provider" data-smrt-part="meta">{account.providerType}</span>
       </div>
     </div>
 

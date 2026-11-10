@@ -28,7 +28,7 @@ const docks = [250, 285, 800].map((width) => ({
   {#each docks as dock (dock.width)}
     <div
       class="smrt-assistant-dock-narrow__dock-box"
-      data-smrt-part="fixture"
+      data-smrt-part="panel"
       data-width={dock.width}
       style:width="{dock.width}px"
       style:--smrt-font-family="Georgia, serif"

@@ -109,7 +109,7 @@ const { t } = useI18n();
       {/each}
       {#if making}
         {#each { length: making.expected } as _, index (index)}
-          <li class="smrt-assistant-choice-cards__pending" data-smrt-part="pending" aria-hidden="true">
+          <li class="smrt-assistant-choice-cards__pending" data-smrt-part="placeholder" aria-hidden="true">
             <span class="smrt-assistant-choice-cards__placeholder" data-smrt-part="placeholder"></span>
             <span class="smrt-assistant-choice-cards__label" data-smrt-part="label">{t(M['chat.assistant_dock.choices_making'])}</span>
           </li>
@@ -121,7 +121,7 @@ const { t } = useI18n();
       <p class="smrt-assistant-choice-cards__status" data-smrt-part="status">{set.note}</p>
     {/if}
     {#if preview && open}
-      <div class="smrt-assistant-choice-cards__actions smrt-assistant-choice-cards__commit" data-smrt-part="commit">
+      <div class="smrt-assistant-choice-cards__actions smrt-assistant-choice-cards__commit" data-smrt-part="actions">
         <Button
           type="button"
           disabled={previewing || !previewed || previewed === set.original?.id}
@@ -134,7 +134,7 @@ const { t } = useI18n();
         </Button>
       </div>
       {#if set.status === 'failed'}
-        <p class="smrt-assistant-choice-cards__status smrt-assistant-choice-cards__error" data-smrt-part="status" role="alert">
+        <p class="smrt-assistant-choice-cards__status smrt-assistant-choice-cards__error" data-smrt-part="error" role="alert">
           {t(M['chat.assistant_dock.choices_failed'], { message: set.error ?? '' })}
         </p>
       {/if}
@@ -152,12 +152,12 @@ const { t } = useI18n();
         {set.outcome ?? t(M['chat.assistant_dock.choices_applied'], { label: chosen?.label ?? '' })}
       </p>
     {:else if set.status === 'failed' && !preview}
-      <p class="smrt-assistant-choice-cards__status smrt-assistant-choice-cards__error" data-smrt-part="status" role="alert">
+      <p class="smrt-assistant-choice-cards__status smrt-assistant-choice-cards__error" data-smrt-part="error" role="alert">
         {t(M['chat.assistant_dock.choices_failed'], { message: set.error ?? '' })}
       </p>
     {:else if set.status === 'unavailable'}
       <div class="smrt-assistant-choice-cards__actions" data-smrt-part="actions">
-        <p class="smrt-assistant-choice-cards__status smrt-assistant-choice-cards__error" data-smrt-part="status" role="alert">
+        <p class="smrt-assistant-choice-cards__status smrt-assistant-choice-cards__error" data-smrt-part="error" role="alert">
           {t(M['chat.assistant_dock.choices_unavailable'], { message: set.error ?? '' })}
         </p>
         <Button type="button" size="sm" variant="ghost" onclick={() => ondismiss(set.id)}>
@@ -221,7 +221,7 @@ const { t } = useI18n();
   .smrt-assistant-choice-cards__commit :global(button) {
     min-block-size: 44px;
   }
-  .smrt-assistant-choice-cards__commit > :global([data-smrt-component="Button"]:first-of-type) {
+  .smrt-assistant-choice-cards__commit > :global([data-smrt-component="Button"]:where(:first-of-type)) {
     flex: 1 1 auto;
   }
   .smrt-assistant-choice-cards__status {

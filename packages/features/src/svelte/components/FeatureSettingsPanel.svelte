@@ -147,7 +147,7 @@ function readOnlyEffectLabel(feature: FeatureSettingsView): string {
                 {effectiveStateLabel(feature.effectiveEnabled)}
               </Badge>
             </div>
-            <p class="smrt-feature-settings-panel__description">{feature.description || feature.featureKey}</p>
+            <p class="smrt-feature-settings-panel__description" data-smrt-part="description">{feature.description || feature.featureKey}</p>
             {#if showKeys}
               <code class="smrt-feature-settings-panel__key" data-smrt-part="key">{feature.featureKey}</code>
               {#if feature.packageName}

@@ -160,7 +160,7 @@ async function save(event: SubmitEvent) {
       {:else if matrix && rowAxis && colAxis}
         <div class="smrt-variant-grid-form__scroll" data-smrt-part="panel">
           <table>
-            <caption class="smrt-variant-grid-form__visually-hidden" data-smrt-part="label">
+            <caption class="smrt-variant-grid-form__visually-hidden" data-smrt-part="caption">
               {rowAxis.label} by {colAxis.label.toLowerCase()}
             </caption>
             <thead>
@@ -187,7 +187,7 @@ async function save(event: SubmitEvent) {
       {:else}
         <div class="smrt-variant-grid-form__scroll" data-smrt-part="panel">
           <table>
-            <caption class="smrt-variant-grid-form__visually-hidden" data-smrt-part="label">Combinations</caption>
+            <caption class="smrt-variant-grid-form__visually-hidden" data-smrt-part="caption">Combinations</caption>
             <thead>
               <tr>
                 {#each usedAxes as axis (axis.name)}
@@ -214,7 +214,7 @@ async function save(event: SubmitEvent) {
     {#if error}<p class="error" role="alert">{error}</p>{/if}
     <div class="actions">
       <button type="submit">Save</button>
-      <button type="button" class="smrt-variant-grid-form__secondary" onclick={oncancel} data-smrt-part="actions">Cancel</button>
+      <button type="button" class="smrt-variant-grid-form__secondary" onclick={oncancel} data-smrt-part="action">Cancel</button>
     </div>
   </form>
 {/if}

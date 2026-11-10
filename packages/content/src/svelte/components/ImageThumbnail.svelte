@@ -112,12 +112,12 @@ $effect(() => {
           expiresAt: Date.now() + THUMBNAIL_FAILURE_TTL_MS,
         });
       }
-    }}
+    }} data-smrt-component="ImageThumbnail"
   />
 {:else if thumbnailState === 'loading'}
-  <div class="smrt-image-thumbnail__skeleton" aria-hidden="true"></div>
+  <div class="smrt-image-thumbnail__skeleton" aria-hidden="true" data-smrt-component="ImageThumbnail"></div>
 {:else}
-  <div class="smrt-image-thumbnail__missing" aria-label={t(M['content.image_thumbnail.thumbnail_unavailable'])}>
+  <div class="smrt-image-thumbnail__missing" aria-label={t(M['content.image_thumbnail.thumbnail_unavailable'])} data-smrt-component="ImageThumbnail">
     <span>{t(M['content.image_thumbnail.preview_unavailable'])}</span>
   </div>
 {/if}

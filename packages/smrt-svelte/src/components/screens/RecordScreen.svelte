@@ -313,7 +313,7 @@ function cancel(): void {
       : undefined}
   <span class="smrt-record-screen__widget-heading" data-smrt-part="header">
     <span class="smrt-record-screen__widget-title" data-smrt-part="title">
-      {widgetTitle}{#if panel && panel.count !== null}<span class="smrt-record-screen__count"
+      {widgetTitle}{#if panel && panel.count !== null}<span class="smrt-record-screen__count" data-smrt-part="count"
           >{' · '}{new Intl.NumberFormat(locale).format(panel.count)}</span
         >{/if}
     </span>
@@ -390,7 +390,7 @@ function cancel(): void {
     >
       {@render children?.()}
     </DetailScreen>
-    <section class="smrt-record-screen__related" aria-label={t(M['ui.screens.related'])} data-smrt-part="content">
+    <section class="smrt-record-screen__related" aria-label={t(M['ui.screens.related'])} data-smrt-part="body">
       <OverviewGrid
         {controller}
         editing={layoutEditing}

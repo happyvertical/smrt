@@ -127,7 +127,7 @@ const isOverdue = $derived.by(() => {
 <div class="smrt-invoice-header__root" data-smrt-component="InvoiceHeader">
   <div class="smrt-invoice-header__main" data-smrt-part="body">
     <div class="smrt-invoice-header__title" data-smrt-part="title">
-      <h2 class="smrt-invoice-header__number" data-smrt-part="heading">{invoiceNumber}</h2>
+      <h2 class="smrt-invoice-header__number" data-smrt-part="title">{invoiceNumber}</h2>
       <span
         class="smrt-invoice-header__status" data-smrt-part="status"
         style:background-color={isOverdue && status !== 'overdue' ? statusConfig.overdue.bg : statusInfo.bg}
@@ -161,7 +161,7 @@ const isOverdue = $derived.by(() => {
     {/if}
   </div>
 
-  <div class="smrt-invoice-header__meta" data-smrt-part="details">
+  <div class="smrt-invoice-header__meta" data-smrt-part="body">
     <div class="smrt-invoice-header__meta-item" data-smrt-part="item">
       <span class="smrt-invoice-header__label" data-smrt-part="label">{t(M['commerce.invoice_header.issue_date'])}</span>
       <span class="smrt-invoice-header__value" data-smrt-part="value">{formatDate(issueDate)}</span>

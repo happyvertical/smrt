@@ -101,14 +101,14 @@ function formatAmount(amount: number, currency = 'USD'): string {
     {#each entries as entry (entry.id)}
       <li class="smrt-time-entry-approval-queue__row" data-smrt-part="row">
         <div class="smrt-time-entry-approval-queue__line" data-smrt-part="body">
-          <span class="smrt-time-entry-approval-queue__date" data-smrt-part="date">{entry.date}</span>
+          <span class="smrt-time-entry-approval-queue__date" data-smrt-part="meta">{entry.date}</span>
           <span class="smrt-time-entry-approval-queue__main" data-smrt-part="title">
             <span class="smrt-time-entry-approval-queue__description" data-smrt-part="description">{entry.description}</span>
             {#if entry.workerName}
               <span class="smrt-time-entry-approval-queue__worker" data-smrt-part="meta">{entry.workerName}</span>
             {/if}
           </span>
-          <span class="smrt-time-entry-approval-queue__meta" data-smrt-part="stats">
+          <span class="smrt-time-entry-approval-queue__meta" data-smrt-part="group">
             <span class="smrt-time-entry-approval-queue__hours" data-smrt-part="value">{hoursFormatter(entry.hours)}</span>
             <StatusBadge
               status={timeEntryStatusBadgeKey(entry.status)}
@@ -116,7 +116,7 @@ function formatAmount(amount: number, currency = 'USD'): string {
               size="sm"
             />
             {#if entry.amount !== undefined}
-              <span class="smrt-time-entry-approval-queue__amount" data-smrt-part="amount">
+              <span class="smrt-time-entry-approval-queue__amount" data-smrt-part="value">
                 {formatAmount(entry.amount, entry.currency)}
               </span>
             {/if}

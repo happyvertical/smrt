@@ -174,7 +174,7 @@ function handleSubmit() {
   <Form class="employee-form" onsubmit={handleSubmit}>
     <div class="smrt-employee-form__field" data-smrt-part="field">
       <label for="{uid}-employee-number">
-        {t(M['human_resources.employee_form.employee_number'])}<span class="smrt-employee-form__required" aria-hidden="true">*</span>
+        {t(M['human_resources.employee_form.employee_number'])}<span class="smrt-employee-form__required" aria-hidden="true" data-smrt-part="marker">*</span>
       </label>
       <Input
         id="{uid}-employee-number"
@@ -191,7 +191,7 @@ function handleSubmit() {
         )}
       />
       {#if !isNew}
-        <span class="smrt-employee-form__hint" id="{uid}-employee-number-hint">
+        <span class="smrt-employee-form__hint" id="{uid}-employee-number-hint" data-smrt-part="description">
           {t(M['human_resources.employee_form.employee_number_edit_help'])}
         </span>
       {/if}
@@ -199,7 +199,7 @@ function handleSubmit() {
 
     <div class="smrt-employee-form__field" data-smrt-part="field">
       <label for="{uid}-worker-type">
-        {t(M['human_resources.employee_form.worker_type'])}<span class="smrt-employee-form__required" aria-hidden="true">*</span>
+        {t(M['human_resources.employee_form.worker_type'])}<span class="smrt-employee-form__required" aria-hidden="true" data-smrt-part="marker">*</span>
       </label>
       <Input
         id="{uid}-worker-type"
@@ -218,7 +218,7 @@ function handleSubmit() {
           <option value={suggestion}></option>
         {/each}
       </datalist>
-      <span class="smrt-employee-form__hint" id="{uid}-worker-type-hint">
+      <span class="smrt-employee-form__hint" id="{uid}-worker-type-hint" data-smrt-part="description">
         {t(M['human_resources.employee_form.worker_type_help'])}
       </span>
     </div>
@@ -231,7 +231,7 @@ function handleSubmit() {
     {#if isNew}
       <div class="smrt-employee-form__field" data-smrt-part="field">
         <label for="{uid}-started-on">
-          {t(M['human_resources.employee_form.started_on'])}<span class="smrt-employee-form__required" aria-hidden="true">*</span>
+          {t(M['human_resources.employee_form.started_on'])}<span class="smrt-employee-form__required" aria-hidden="true" data-smrt-part="marker">*</span>
         </label>
         <Input
           id="{uid}-started-on"
@@ -247,7 +247,7 @@ function handleSubmit() {
     {:else}
       <div class="smrt-employee-form__field" data-smrt-part="field">
         <label for="{uid}-effective-on">
-          {t(M['human_resources.employee_form.effective_on'])}<span class="smrt-employee-form__required" aria-hidden="true">*</span>
+          {t(M['human_resources.employee_form.effective_on'])}<span class="smrt-employee-form__required" aria-hidden="true" data-smrt-part="marker">*</span>
         </label>
         <Input
           id="{uid}-effective-on"
@@ -259,7 +259,7 @@ function handleSubmit() {
           aria-invalid={invalid.includes('effectiveOn') ? 'true' : undefined}
           aria-describedby={describedBy('effectiveOn', `${uid}-effective-on-hint`)}
         />
-        <span class="smrt-employee-form__hint" id="{uid}-effective-on-hint">
+        <span class="smrt-employee-form__hint" id="{uid}-effective-on-hint" data-smrt-part="description">
           {t(M['human_resources.employee_form.effective_on_help'])}
         </span>
       </div>
@@ -290,13 +290,13 @@ function handleSubmit() {
           aria-describedby="{uid}-login-hint"
         />
       {/if}
-      <span class="smrt-employee-form__hint" id="{uid}-login-hint">
+      <span class="smrt-employee-form__hint" id="{uid}-login-hint" data-smrt-part="description">
         {t(M['human_resources.employee_form.login_help'])}
       </span>
     </div>
 
     {#if errors.length > 0}
-      <div class="smrt-employee-form__errors" data-smrt-part="errors" role="alert">
+      <div class="smrt-employee-form__errors" data-smrt-part="error" role="alert">
         <ul>
           {#each errors as error (error.field)}
             <li id={errorId(error.field)}>{error.message}</li>

@@ -53,11 +53,11 @@ function getColor(name: string): string {
 </script>
 
 <div class="smrt-user-avatar__root" class:smrt-user-avatar__sm={size === 'sm'} class:smrt-user-avatar__lg={size === 'lg'} class:smrt-user-avatar__xl={size === 'xl'} data-smrt-component="UserAvatar">
-  <span class="smrt-user-avatar__avatar" data-smrt-part="avatar" style:background-color={getColor(profile.name ?? '')}>
+  <span class="smrt-user-avatar__avatar" data-smrt-part="icon" style:background-color={getColor(profile.name ?? '')}>
     {getInitials(profile.name ?? 'U')}
   </span>
   {#if showName}
-    <span class="smrt-user-avatar__name" data-smrt-part="name">{profile.name}</span>
+    <span class="smrt-user-avatar__name" data-smrt-part="title">{profile.name}</span>
   {/if}
 </div>
 

@@ -275,7 +275,7 @@ function handleSubmit(event?: Event) {
     {#if shown('name')}
       <div class="smrt-assembly-form__field" data-smrt-part="field">
         <label for="{uid}-name">
-          {t(M['manufacturing.assembly_form.name'])}<span class="smrt-assembly-form__required" data-smrt-part="required" aria-hidden="true">*</span>
+          {t(M['manufacturing.assembly_form.name'])}<span class="smrt-assembly-form__required" data-smrt-part="marker" aria-hidden="true">*</span>
         </label>
         <Input
           id="{uid}-name"
@@ -316,7 +316,7 @@ function handleSubmit(event?: Event) {
           disabled={loading}
           aria-describedby="{uid}-part-reference-hint"
         />
-        <span class="smrt-assembly-form__hint" data-smrt-part="hint" id="{uid}-part-reference-hint">
+        <span class="smrt-assembly-form__hint" data-smrt-part="description" id="{uid}-part-reference-hint">
           {t(M['manufacturing.assembly_form.part_reference_help'])}
         </span>
       </div>
@@ -325,7 +325,7 @@ function handleSubmit(event?: Event) {
     {#if shown('skuCode')}
       <div class="smrt-assembly-form__field" data-smrt-part="field">
         <label for="{uid}-sku-code">
-          {t(M['manufacturing.assembly_form.sku_code'])}<span class="smrt-assembly-form__required" data-smrt-part="required" aria-hidden="true">*</span>
+          {t(M['manufacturing.assembly_form.sku_code'])}<span class="smrt-assembly-form__required" data-smrt-part="marker" aria-hidden="true">*</span>
         </label>
         <Input
           id="{uid}-sku-code"
@@ -339,7 +339,7 @@ function handleSubmit(event?: Event) {
           aria-invalid={errors.some((error) => error.field === 'skuCode') ? 'true' : undefined}
           aria-describedby={describedBy('skuCode', `${uid}-sku-code-hint`)}
         />
-        <span class="smrt-assembly-form__hint" data-smrt-part="hint" id="{uid}-sku-code-hint">
+        <span class="smrt-assembly-form__hint" data-smrt-part="description" id="{uid}-sku-code-hint">
           {t(M['manufacturing.assembly_form.sku_code_help'])}
         </span>
       </div>
@@ -374,7 +374,7 @@ function handleSubmit(event?: Event) {
           aria-invalid={invalid.includes('price') ? 'true' : undefined}
           aria-describedby={describedBy('price', `${uid}-price-hint`)}
         />
-        <span class="smrt-assembly-form__hint" data-smrt-part="hint" id="{uid}-price-hint">
+        <span class="smrt-assembly-form__hint" data-smrt-part="description" id="{uid}-price-hint">
           {t(M['manufacturing.assembly_form.price_help'], { currency })}
         </span>
       </div>
@@ -395,7 +395,7 @@ function handleSubmit(event?: Event) {
           aria-invalid={invalid.includes('estimatedLabourMinutes') ? 'true' : undefined}
           aria-describedby={describedBy('estimatedLabourMinutes', `${uid}-labour-hint`)}
         />
-        <span class="smrt-assembly-form__hint" data-smrt-part="hint" id="{uid}-labour-hint">
+        <span class="smrt-assembly-form__hint" data-smrt-part="description" id="{uid}-labour-hint">
           {t(M['manufacturing.assembly_form.labour_help'])}
         </span>
       </div>
@@ -416,7 +416,7 @@ function handleSubmit(event?: Event) {
             <option value={choice.id}>{choice.label}</option>
           {/each}
         </Select>
-        <span class="smrt-assembly-form__hint" data-smrt-part="hint" id="{uid}-operation-hint">
+        <span class="smrt-assembly-form__hint" data-smrt-part="description" id="{uid}-operation-hint">
           {t(M['manufacturing.assembly_form.operation_help'])}
         </span>
       </div>
@@ -435,7 +435,7 @@ function handleSubmit(event?: Event) {
           disabled={loading}
           aria-describedby="{uid}-tags-hint"
         />
-        <span class="smrt-assembly-form__hint" data-smrt-part="hint" id="{uid}-tags-hint">
+        <span class="smrt-assembly-form__hint" data-smrt-part="description" id="{uid}-tags-hint">
           {t(M['manufacturing.assembly_form.tags_help'])}
         </span>
       </div>
@@ -444,11 +444,11 @@ function handleSubmit(event?: Event) {
     {@render extraFields?.()}
 
     {#if hostErrors.form}
-      <p class="smrt-assembly-form__errors" data-smrt-part="errors" role="alert">{hostErrors.form}</p>
+      <p class="smrt-assembly-form__errors" data-smrt-part="error" role="alert">{hostErrors.form}</p>
     {/if}
 
     {#if errors.length > 0}
-      <div class="smrt-assembly-form__errors" data-smrt-part="errors" role="alert">
+      <div class="smrt-assembly-form__errors" data-smrt-part="error" role="alert">
         <ul>
           {#each errors as error (error.field)}
             <li id={errorId(error.field)}>{error.message}</li>

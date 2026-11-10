@@ -82,8 +82,8 @@ function handleSelect(selected: ImageLike | File | string) {
       {#each assets as asset, index (asset.id || `${getAssetLabel(asset)}-${index}`)}
         {@const source = getAssetImageSource(asset)}
         {@const assetId = typeof asset.id === 'string' ? asset.id : ''}
-        <article class="smrt-content-image-browser__asset-card" class:smrt-content-image-browser__asset-card--thumbnail={thumbnailAssetId === assetId} data-smrt-part="card">
-          <div class="smrt-content-image-browser__asset-preview" data-smrt-part="preview">
+        <article class="smrt-content-image-browser__asset-card" class:smrt-content-image-browser__asset-card--thumbnail={thumbnailAssetId === assetId} data-smrt-part="item">
+          <div class="smrt-content-image-browser__asset-preview" data-smrt-part="panel">
             {#if source}
               <img src={source} alt={getAssetLabel(asset)} loading="lazy" decoding="async" />
             {:else}

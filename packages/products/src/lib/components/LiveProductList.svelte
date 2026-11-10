@@ -137,7 +137,7 @@ async function addProduct() {
       {t(M['products.live_list.loading'])}
     </p>
   {:else if view.isError}
-    <p class="smrt-live-product-list__status" data-smrt-part="status" role="alert">
+    <p class="smrt-live-product-list__status" data-smrt-part="error" role="alert">
       {t(M['products.live_list.load_failed'])} {String(view.error)}
     </p>
   {:else if view.rows.length === 0}
@@ -183,7 +183,7 @@ async function addProduct() {
     gap: 0.75rem;
     margin-bottom: 1rem;
   }
-  .smrt-live-product-list__root :global([data-smrt-component="Form"]) :global(.smrt-live-product-list__name) {
+  .smrt-live-product-list__root :global([data-smrt-component="Form"]) :global([data-smrt-component="TextInput"]) {
     flex: 1;
   }
   .smrt-live-product-list__error {

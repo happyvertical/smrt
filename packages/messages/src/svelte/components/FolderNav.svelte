@@ -75,7 +75,7 @@ function getFolderIcon(specialUse?: string): string {
 
   {#if _userFolders.length > 0}
     {#if _systemFolders.length > 0}
-      <hr class="smrt-folder-nav__divider" />
+      <hr class="smrt-folder-nav__divider" data-smrt-part="marker" />
     {/if}
     <ul class="smrt-folder-nav__list" role="list" data-smrt-part="list">
       {#each _userFolders as folder (folder.id)}
