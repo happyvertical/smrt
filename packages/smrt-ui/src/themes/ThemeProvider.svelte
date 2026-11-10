@@ -1,6 +1,7 @@
 <script lang="ts">
+import { DEV } from 'esm-env';
 import type { Snippet } from 'svelte';
-import { onMount, untrack } from 'svelte';
+import { onMount, tick, untrack } from 'svelte';
 import { SMRT_CASCADE_LAYERS_CSS } from '../styles/layers.js';
 import {
   setThemeContext,
@@ -381,6 +382,28 @@ onMount(() => {
     };
   }
 });
+
+// Wait for persisted preferences and root attributes to settle before reading CSS.
+// DEV is a build-time constant, so production drops this diagnostic entirely.
+if (DEV) {
+  onMount(() => {
+    let active = true;
+    void tick().then(() => {
+      if (!active || !rootEl || !isBuiltInPreset || useInlineVariables) return;
+      const background = getComputedStyle(rootEl)
+        .getPropertyValue('--smrt-color-background')
+        .trim();
+      if (!background) {
+        console.warn(
+          `[smrt-ui] ThemeProvider preset "${config.preset}" has no resolved theme tokens. Add import '@happyvertical/smrt-ui/themes/styles/${config.preset}.css' (or themes/styles/all.css) to your app.`,
+        );
+      }
+    });
+    return () => {
+      active = false;
+    };
+  });
+}
 
 // Update document classes and attributes
 $effect(() => {

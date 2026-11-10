@@ -319,6 +319,14 @@ Headings, role utilities (`.smrt-display-large` ... `.smrt-label-small`) and tab
 
 Built-in presets stay static (no inline token payload); only user overrides go inline: non-`md` `borderRadius` (control radius tokens), `primaryColor` (derived set via `derivePrimaryOverrides`) and `density`. `data-smrt-theme-changing` marks one `--smrt-duration-scheme` after a post-mount scheme change (not on first paint, not under reduced motion); `data-contrast` (`standard|more|forced`) and `data-forced-colors` come from `prefers-contrast`/`forced-colors` or the `contrast` prop. `themeScript()` stamps `data-contrast`/`data-density` pre-paint from the same persisted config; keep it tiny. Forced-colors contract: hairlines `CanvasText`, focus rings `Highlight`, no painting over system colours.
 
+
+In development, `ThemeProvider` checks `--smrt-color-background` on its wrapper
+once after mount and warns if a built-in preset has no resolved token. Import
+`@happyvertical/smrt-ui/themes/styles/<preset>.css` (or `themes/styles/all.css`)
+in the app. The check runs after persisted preferences settle, skips custom
+themes and `inlineVariables={true}`, and is absent in production and SSR. It
+never injects a preset stylesheet or token values.
+
 ## Forced colors
 
 Contract and token table: [Forced colors](../src/themes/README.md#forced-colors).
