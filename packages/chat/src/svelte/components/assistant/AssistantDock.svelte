@@ -1353,24 +1353,24 @@ async function handleConfirmAction(requestId: string) {
     min-width: 0;
   }
 
-  .assistant-dock-messages > li :global(.bubble),
-  .assistant-dock-streaming :global(.bubble) {
+  .assistant-dock-messages > li :global([data-smrt-component="MessageBubble"]),
+  .assistant-dock-streaming :global([data-smrt-component="MessageBubble"]) {
     max-width: 85%;
     padding: var(--smrt-spacing-2) var(--smrt-spacing-3);
     border-radius: var(--smrt-radius-large);
     overflow-wrap: anywhere;
   }
 
-  .assistant-dock-messages > li[data-role='user'] :global(.bubble),
-  .assistant-dock-messages > li[data-role='user'] :global(.bubble--own) {
+  .assistant-dock-messages > li[data-role='user'] :global([data-smrt-component="MessageBubble"]),
+  .assistant-dock-messages > li[data-role='user'] :global(.smrt-message-bubble__own) {
     align-self: flex-end;
     background: var(--smrt-color-primary-container);
     color: var(--smrt-color-on-primary-container);
     border-radius: var(--smrt-radius-large);
   }
 
-  .assistant-dock-messages > li:not([data-role='user']) :global(.bubble--agent),
-  .assistant-dock-streaming :global(.bubble--agent) {
+  .assistant-dock-messages > li:not([data-role='user']) :global(.smrt-message-bubble__agent),
+  .assistant-dock-streaming :global(.smrt-message-bubble__agent) {
     align-self: flex-start;
     background: var(--smrt-color-surface-container);
     color: var(--smrt-color-on-surface);
