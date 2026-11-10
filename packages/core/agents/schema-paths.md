@@ -343,10 +343,13 @@ and always reports what it will not touch:
   backfill of the manifest default; without a default the live data is probed
   and, if NULLs exist, the change is reported (comment SQL + `advisory`) instead
   of emitting an ALTER that would abort the atomic batch.
-- **Relaxing** (`DROP NOT NULL`, `DROP DEFAULT`) is a report-only advisory until
-  the caller passes `relaxColumns` (`db:migrate --relax-columns`). The manifest
-  can be under-specified (#2372 registration-order weakness), so a live column
-  that is stricter than the manifest is never weakened silently.
+- **Relaxing.** `DROP NOT NULL` on a column the manifest declares nullable is
+  executable by default on engines with `ALTER COLUMN` (PostgreSQL, DuckDB): it
+  loses no data and rejects no row, and the manifest is already trusted to
+  tighten columns (`SET NOT NULL`), so a package release that relaxes a column
+  must not strand consumers on manual drift (#4897). `DROP DEFAULT`, orphan
+  `DROP NOT NULL` and the SQLite rebuild stay report-only advisories until the
+  caller passes `relaxColumns` (`db:migrate --relax-columns`).
 - **Orphans** — DB columns absent from the manifest, DB tables no manifest
   declares (`SchemaDiff.orphan_tables`), and unclaimed `*_key` unique constraint
   indexes — are always reported. A NOT NULL orphan without a default is a

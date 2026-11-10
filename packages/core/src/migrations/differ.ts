@@ -175,9 +175,12 @@ export interface DiffOptions {
   includeDroppedColumns?: boolean;
   /**
    * Execute constraint relaxations instead of only reporting them:
-   * `DROP NOT NULL` / `DROP DEFAULT` on live columns that are stricter than
-   * the manifest, and `DROP NOT NULL` on orphan NOT NULL columns. Default:
-   * false — relaxations are reported as advisories with the suggested SQL.
+   * `DROP DEFAULT` on live columns that are stricter than the manifest,
+   * `DROP NOT NULL` on orphan NOT NULL columns, and (SQLite only) the
+   * table-rebuild `DROP NOT NULL`. Default: false — those are reported as
+   * advisories with the suggested SQL. On engines with `ALTER COLUMN`,
+   * `DROP NOT NULL` on a column the manifest declares nullable is always
+   * executable: it loses no data and rejects no row.
    * Strengthening repairs (`SET NOT NULL`, `SET DEFAULT`) are always emitted
    * where the engine supports `ALTER COLUMN` (#2369).
    */
@@ -3455,7 +3458,9 @@ export class SchemaComparer {
    *   without a default the live data is probed and, if NULLs exist, the
    *   change is reported as manual with the suggested backfill instead of
    *   emitting an ALTER the engine would reject mid-batch.
-   * - Relaxing (`DROP NOT NULL`, `DROP DEFAULT`) is reported as an advisory
+   * - Relaxing `DROP NOT NULL` on a column the manifest declares nullable is
+   *   executable by default where the engine has `ALTER COLUMN` (it loses no
+   *   data and rejects no row). `DROP DEFAULT` is reported as an advisory
    *   unless `relaxColumns` is set, in which case it is executable.
    * - SQLite has no `ALTER COLUMN`; explicit supported NOT NULL relaxation
    *   uses the table rebuild (#4413). Other alterations remain manual except
@@ -3701,10 +3706,18 @@ export class SchemaComparer {
                 `ALTER TABLE ${this.quoteIdentifier(tableName)} ALTER COLUMN ${this.quoteIdentifier(colName)} DROP NOT NULL`,
               ]
             : null,
-          relaxation: {
-            severity: 'warning',
-            message: `${tableName}.${colName} is NOT NULL in the database but nullable in the manifest; writes that store NULL will fail. ${this.relaxHint('drop the constraint')}`,
-          },
+          // Dropping NOT NULL from a column the manifest declares nullable
+          // loses no data and rejects no row, so on engines that can ALTER
+          // COLUMN in place it is executable by default: a package release
+          // that relaxes a column must not strand every consumer on a
+          // fail-closed migration. SQLite keeps the opt-in rebuild path, and
+          // DROP DEFAULT / orphan relaxations still require `relaxColumns`.
+          relaxation: this.supportsAlterColumn()
+            ? undefined
+            : {
+                severity: 'warning',
+                message: `${tableName}.${colName} is NOT NULL in the database but nullable in the manifest; writes that store NULL will fail. ${this.relaxHint('drop the constraint')}`,
+              },
         }),
       );
     }

@@ -42,8 +42,8 @@ of those columns:
 **A report-only `alter_column` advisory is deliberately excluded from that
 second loop**, even though `SchemaAdvisory` allows the type. Unlike
 `type_upgrade`, the only producer of an advisory-only `alter_column` is an
-un-opted-into relaxation (`drop_default`/`drop_not_null` when
-`--relax-columns` was not passed) — it says the live column is *stricter*
+un-opted-into relaxation (`drop_default`, or `drop_not_null` on SQLite/orphans,
+when `--relax-columns` was not passed) — it says the live column is *stricter*
 than the manifest, not that anything about the column blocks convergence,
 and it reappears on every run regardless of `--apply-unblocked`. Blocking on
 it reproduced the exact `engineUnsupported` defect for a different shape:

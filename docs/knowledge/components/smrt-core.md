@@ -5,10 +5,10 @@ description: "Core SMRT framework for business objects, persistence, and generat
 status: "stable"
 generated:
   by: "smrt/scripts/generate-knowledge-okf.ts"
-  at: "2026-11-09T22:28:45Z"
+  at: "2026-11-10T18:08:17Z"
 audience: "internal"
 evidence_level: "source-inspected"
-source_revision: "sha256:a37c2b3684fa99010d048c2ec9b500ebc506da4f844368c0badbcca81e29a071"
+source_revision: "sha256:b3e6ac91da9552dd9e638d11e521e8dfbf346482ac825dda3d23af0a297d3e4a"
 sources:
   - id: "manifest"
     resource: "https://github.com/happyvertical/smrt/blob/main/packages/core/package.json"

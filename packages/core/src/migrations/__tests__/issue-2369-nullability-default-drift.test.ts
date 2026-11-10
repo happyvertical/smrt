@@ -1075,7 +1075,7 @@ for (const { name, type, engine } of engines) {
         ).toEqual([]);
       });
 
-      it('relaxes a live column stricter than the manifest only when relaxColumns is set', async () => {
+      it('drops NOT NULL on a manifest-nullable column by default; DROP DEFAULT still needs relaxColumns', async () => {
         await db.query(
           "CREATE TABLE items (id TEXT PRIMARY KEY, note TEXT NOT NULL, kind TEXT DEFAULT 'a')",
         );
@@ -1087,21 +1087,20 @@ for (const { name, type, engine } of engines) {
           }),
         };
 
-        const reportOnly = await comparer().compare(manifest);
-        expect(reportOnly.changes.map((c) => c.alteration).sort()).toEqual([
-          'drop_default',
-          'drop_not_null',
+        // DROP NOT NULL loses no data and rejects no row: executable without
+        // the opt-in, and not manual drift. DROP DEFAULT stays advisory.
+        const byDefault = await comparer().compare(manifest);
+        expect(getSQLFromDiff(byDefault)).toEqual([
+          'ALTER TABLE "items" ALTER COLUMN "note" DROP NOT NULL',
         ]);
-        expect(reportOnly.changes.every(isAdvisoryOnlyChange)).toBe(true);
-        expect(hasActionableChanges(reportOnly)).toBe(false);
-        expect(
-          reportOnly.changes.find((c) => c.alteration === 'drop_not_null')
-            ?.advisory?.severity,
-        ).toBe('warning');
-        expect(
-          reportOnly.changes.find((c) => c.alteration === 'drop_default')
-            ?.advisory?.severity,
-        ).toBe('info');
+        expect(hasActionableChanges(byDefault)).toBe(true);
+        const defaultAdvisory = byDefault.changes.find(
+          (c) => c.alteration === 'drop_default',
+        );
+        expect(defaultAdvisory && isAdvisoryOnlyChange(defaultAdvisory)).toBe(
+          true,
+        );
+        expect(defaultAdvisory?.advisory?.severity).toBe('info');
 
         const relaxed = await comparer({ relaxColumns: true }).compare(
           manifest,
@@ -1112,6 +1111,32 @@ for (const { name, type, engine } of engines) {
         ]);
         await applyStatements(db, getSQLFromDiff(relaxed));
         await db.query("INSERT INTO items (id) VALUES ('i1')");
+        expect((await comparer().compare(manifest)).changes).toEqual([]);
+      });
+
+      it('applies the default NOT NULL relaxation once, keeps rows, and is untouched on a second run and on a fresh table', async () => {
+        await db.query(
+          'CREATE TABLE items (id TEXT PRIMARY KEY, note TEXT NOT NULL)',
+        );
+        await db.query("INSERT INTO items (id, note) VALUES ('i1', 'keep')");
+        const manifest = {
+          items: schema('items', {
+            id: { type: 'TEXT', primaryKey: true },
+            note: { type: 'TEXT' },
+          }),
+        };
+        const first = await comparer().compare(manifest);
+        await applyStatements(db, getSQLFromDiff(first));
+        await db.query("INSERT INTO items (id) VALUES ('i2')");
+        const rows = await db.query('SELECT id, note FROM items ORDER BY id');
+        expect(rows.rows.map((r: Record<string, unknown>) => r.note)).toEqual([
+          'keep',
+          null,
+        ]);
+        expect((await comparer().compare(manifest)).changes).toEqual([]);
+
+        await db.query('DROP TABLE items');
+        await db.query('CREATE TABLE items (id TEXT PRIMARY KEY, note TEXT)');
         expect((await comparer().compare(manifest)).changes).toEqual([]);
       });
 
@@ -1275,11 +1300,17 @@ describe('SchemaComparer PostgreSQL SQL shape for #2369 (mocked adapter)', () =>
       `UPDATE "items" SET "status" = 'draft' WHERE "status" IS NULL`,
       `ALTER TABLE "items" ALTER COLUMN "status" SET NOT NULL`,
       `ALTER TABLE "items" ALTER COLUMN "meta" SET DEFAULT '{}'::jsonb`,
+      `ALTER TABLE "items" ALTER COLUMN "note" DROP NOT NULL`,
     ]);
+    // DROP NOT NULL on a manifest-nullable column is executable by default
+    // (#4897: a package release that relaxes a column); DROP DEFAULT
+    // still needs relaxColumns.
+    expect(getSQLFromDiff(reportOnly)).toContain(
+      `ALTER TABLE "items" ALTER COLUMN "note" DROP NOT NULL`,
+    );
     const relaxations = reportOnly.changes.filter(isAdvisoryOnlyChange);
     expect(relaxations.map((c) => `${c.name}:${c.alteration}`).sort()).toEqual([
       'note:drop_default',
-      'note:drop_not_null',
     ]);
 
     const relaxed = await pgComparer(columns, { relaxColumns: true }).compare(
