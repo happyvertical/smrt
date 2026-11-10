@@ -83,7 +83,7 @@ describe('ContentPictureDrawer', () => {
     const onInsert = vi.fn();
     const root = render({ pictures: PICTURES, onInsert });
     const tiles = root.querySelectorAll<HTMLButtonElement>(
-      '.drawer-picture-pick',
+      '.smrt-content-picture-drawer__picture-pick',
     );
     tiles[2].click();
     tiles[0].click();
@@ -92,12 +92,16 @@ describe('ContentPictureDrawer', () => {
     buttonByText(root, 'Insert 2 pictures').click();
     flushSync();
     expect(onInsert).toHaveBeenCalledWith([PICTURES[2], PICTURES[0]]);
-    expect(root.querySelector('.drawer-actions')).toBeNull();
+    expect(
+      root.querySelector('.smrt-content-picture-drawer__actions'),
+    ).toBeNull();
   });
 
   it('drags the picked pictures together, or just the one dragged', () => {
     const root = render({ pictures: PICTURES, onInsert: vi.fn() });
-    const items = root.querySelectorAll<HTMLLIElement>('.drawer-picture');
+    const items = root.querySelectorAll<HTMLLIElement>(
+      '.smrt-content-picture-drawer__picture',
+    );
     const drag = (item: HTMLLIElement) => {
       const data = new Map<string, string>();
       const event = new Event('dragstart', { bubbles: true }) as DragEvent;
@@ -113,8 +117,16 @@ describe('ContentPictureDrawer', () => {
 
     expect(drag(items[1]).map((p: { id: string }) => p.id)).toEqual(['p-2']);
 
-    root.querySelectorAll<HTMLButtonElement>('.drawer-picture-pick')[0].click();
-    root.querySelectorAll<HTMLButtonElement>('.drawer-picture-pick')[2].click();
+    root
+      .querySelectorAll<HTMLButtonElement>(
+        '.smrt-content-picture-drawer__picture-pick',
+      )[0]
+      .click();
+    root
+      .querySelectorAll<HTMLButtonElement>(
+        '.smrt-content-picture-drawer__picture-pick',
+      )[2]
+      .click();
     flushSync();
     const payload = drag(items[2]);
     expect(payload.map((p: { id: string }) => p.id)).toEqual(['p-1', 'p-3']);
@@ -135,7 +147,9 @@ describe('ContentPictureDrawer', () => {
       onUseAsMain,
       onClearMainChoice,
     });
-    const items = root.querySelectorAll('.drawer-picture');
+    const items = root.querySelectorAll(
+      '.smrt-content-picture-drawer__picture',
+    );
     expect(items[1].textContent).toContain('Main picture');
     expect(items[0].textContent).toContain('In the story');
     buttonByText(root, 'Use the first picture instead').click();
@@ -143,7 +157,7 @@ describe('ContentPictureDrawer', () => {
     // "Use as main picture" shows for one picked picture that is not the main one.
     expect(root.textContent).not.toContain('Use as main picture');
     const tiles = root.querySelectorAll<HTMLButtonElement>(
-      '.drawer-picture-pick',
+      '.smrt-content-picture-drawer__picture-pick',
     );
     tiles[1].click();
     flushSync();
@@ -164,7 +178,9 @@ describe('ContentPictureDrawer', () => {
     search.value = 'council';
     search.dispatchEvent(new Event('input', { bubbles: true }));
     flushSync();
-    expect(root.querySelectorAll('.drawer-picture')).toHaveLength(1);
+    expect(
+      root.querySelectorAll('.smrt-content-picture-drawer__picture'),
+    ).toHaveLength(1);
     search.value = 'zebra';
     search.dispatchEvent(new Event('input', { bubbles: true }));
     flushSync();
@@ -182,7 +198,9 @@ describe('ContentPictureDrawer', () => {
     flushSync();
     expect(onSearch).toHaveBeenLastCalledWith('council');
     // The host re-queries; the drawer does not filter what it was given.
-    expect(root.querySelectorAll('.drawer-picture')).toHaveLength(3);
+    expect(
+      root.querySelectorAll('.smrt-content-picture-drawer__picture'),
+    ).toHaveLength(3);
   });
 
   it('says nothing matches a host search with no results, and shows loading first', () => {
@@ -223,9 +241,11 @@ describe('ContentPictureDrawer', () => {
       expect(root.textContent).not.toContain('Show more');
       expect(root.querySelector('button')?.textContent).not.toContain('more');
       const observer = observers.at(-1);
-      expect(observer?.targets[0]?.classList.contains('drawer-more')).toBe(
-        true,
-      );
+      expect(
+        observer?.targets[0]?.classList.contains(
+          'smrt-content-picture-drawer__more',
+        ),
+      ).toBe(true);
       onLoadMore.mockClear();
       observer?.callback(
         [{ isIntersecting: true } as IntersectionObserverEntry],

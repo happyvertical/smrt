@@ -96,7 +96,7 @@ function updateTags(value: string) {
 </script>
 
 {#snippet metadataFields()}
-  <div class="content-metadata-fields" data-smrt-component="ContentMetadataFields">
+  <div class="smrt-content-metadata-fields__root" data-smrt-component="ContentMetadataFields">
     {#if shown.has('author')}
       <FormGroup label={fieldLabel(t(M['content.content_fields.author']))} id="{idPrefix}-author">
         <Input
@@ -162,7 +162,7 @@ function updateTags(value: string) {
 {/snippet}
 
 {#if disclosure}
-  <details class="content-metadata-details" open={disclosure.open} data-smrt-component="ContentMetadataFields">
+  <details class="smrt-content-metadata-fields__details" open={disclosure.open} data-smrt-component="ContentMetadataFields">
     <summary>{disclosure.label}</summary>
     {@render metadataFields()}
   </details>
@@ -172,25 +172,28 @@ function updateTags(value: string) {
 
 <style>
 @layer smrt.reset, smrt.structure, smrt.theme;
-@layer smrt.theme {
-  .content-metadata-fields {
+@layer smrt.structure {
+  .smrt-content-metadata-fields__root {
     display: grid;
     gap: 1rem;
   }
-
-  .content-metadata-fields :global([data-smrt-component="FormGroup"]) {
+  .smrt-content-metadata-fields__root :global([data-smrt-component="FormGroup"]) {
     margin: 0;
   }
-
-  .content-metadata-details > summary {
+  .smrt-content-metadata-fields__details > summary {
     cursor: pointer;
     padding-block: 0.5rem;
-    color: var(--smrt-color-on-surface);
-    font-weight: var(--smrt-typography-weight-semibold, 600);
   }
-
-  .content-metadata-details[open] > summary {
+  .smrt-content-metadata-fields__details[open] > summary {
     margin-bottom: 0.75rem;
   }
 }
+
+@layer smrt.theme {
+  .smrt-content-metadata-fields__details > summary {
+    color: var(--smrt-color-on-surface);
+    font-weight: var(--smrt-typography-weight-semibold, 600);
+  }
+}
+
 </style>

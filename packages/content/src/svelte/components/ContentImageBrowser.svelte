@@ -76,27 +76,27 @@ function handleSelect(selected: ImageLike | File | string) {
 }
 </script>
 
-<div class="content-image-browser" data-smrt-component="ContentImageBrowser">
+<div class="smrt-content-image-browser__root" data-smrt-component="ContentImageBrowser">
   {#if assets.length}
-    <div class="asset-grid">
+    <div class="smrt-content-image-browser__asset-grid" data-smrt-part="grid">
       {#each assets as asset, index (asset.id || `${getAssetLabel(asset)}-${index}`)}
         {@const source = getAssetImageSource(asset)}
         {@const assetId = typeof asset.id === 'string' ? asset.id : ''}
-        <article class="asset-card" class:asset-card--thumbnail={thumbnailAssetId === assetId}>
-          <div class="asset-preview">
+        <article class="smrt-content-image-browser__asset-card" class:smrt-content-image-browser__asset-card--thumbnail={thumbnailAssetId === assetId} data-smrt-part="card">
+          <div class="smrt-content-image-browser__asset-preview" data-smrt-part="preview">
             {#if source}
               <img src={source} alt={getAssetLabel(asset)} loading="lazy" decoding="async" />
             {:else}
               <span>{getAssetLabel(asset).slice(0, 1).toUpperCase()}</span>
             {/if}
           </div>
-          <div class="asset-meta">
+          <div class="smrt-content-image-browser__asset-meta" data-smrt-part="meta">
             <strong>{getAssetLabel(asset)}</strong>
             {#if thumbnailAssetId === assetId}
               <span>Thumbnail</span>
             {/if}
           </div>
-          <div class="asset-actions">
+          <div class="smrt-content-image-browser__asset-actions" data-smrt-part="actions">
             {#if onUseAsset}
               <Button variant="ghost" type="button" class="asset-action-btn" onclick={() => onUseAsset?.(asset)}>{selectActionLabel}</Button>
             {/if}
@@ -111,11 +111,11 @@ function handleSelect(selected: ImageLike | File | string) {
       {/each}
     </div>
   {:else}
-    <p class="empty-state">{t(M['content.content_image_browser.no_images_attached'])}</p>
+    <p class="smrt-content-image-browser__empty-state" data-smrt-part="empty">{t(M['content.content_image_browser.no_images_attached'])}</p>
   {/if}
 
   {#if showUploader}
-    <div class="uploader-panel">
+    <div class="smrt-content-image-browser__uploader-panel" data-smrt-part="panel">
       <ImageUploader {apiBaseUrl} onSelect={handleSelect} onCancel={() => showUploader = false} />
     </div>
   {:else if onSelectImage}
@@ -132,126 +132,130 @@ function handleSelect(selected: ImageLike | File | string) {
 
 <style>
 @layer smrt.reset, smrt.structure, smrt.theme;
-@layer smrt.theme {
-  .content-image-browser {
+@layer smrt.structure {
+  .smrt-content-image-browser__root {
     display: grid;
     gap: 1rem;
     min-height: 5.5rem;
     padding: 1rem;
-    border: 1px dashed color-mix(in srgb, var(--smrt-color-outline) 45%, transparent);
-    border-radius: 0.5rem;
   }
-
-  .asset-grid {
+  .smrt-content-image-browser__asset-grid {
     display: grid;
     grid-template-columns: repeat(auto-fill, minmax(12rem, 1fr));
     gap: 0.75rem;
   }
-
-  .asset-card {
+  .smrt-content-image-browser__asset-card {
     display: grid;
     gap: 0.75rem;
-    border: 1px solid color-mix(in srgb, var(--smrt-color-outline) 28%, transparent);
-    border-radius: 0.5rem;
-    background: var(--smrt-color-surface-container-low);
     padding: 0.75rem;
   }
-
-  .asset-card--thumbnail {
-    border-color: var(--smrt-color-primary);
-  }
-
-  .asset-preview {
+  .smrt-content-image-browser__asset-preview {
     display: grid;
     place-items: center;
     aspect-ratio: 16 / 9;
     overflow: hidden;
+  }
+  .smrt-content-image-browser__asset-preview img {
+    width: 100%;
+    height: 100%;
+    object-fit: cover;
+  }
+  .smrt-content-image-browser__asset-meta {
+    display: grid;
+    gap: 0.2rem;
+    min-width: 0;
+  }
+  .smrt-content-image-browser__asset-meta strong {
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+  }
+  .smrt-content-image-browser__empty-state {
+    margin: 0;
+  }
+  .smrt-content-image-browser__asset-actions {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 0.5rem;
+  }
+  .smrt-content-image-browser__root :global(.asset-action-btn) {
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    gap: 0.45rem;
+    min-height: 2.35rem;
+    cursor: pointer;
+    padding: 0.5rem 0.875rem;
+  }
+  .smrt-content-image-browser__root :global(.add-image-button) {
+    justify-self: start;
+  }
+  .smrt-content-image-browser__root :global(.add-image-button svg) {
+    width: 1rem;
+    height: 1rem;
+  }
+  .smrt-content-image-browser__uploader-panel {
+    overflow: hidden;
+  }
+}
+
+@layer smrt.theme {
+  .smrt-content-image-browser__root {
+    border: 1px dashed color-mix(in srgb, var(--smrt-color-outline) 45%, transparent);
+    border-radius: 0.5rem;
+  }
+  .smrt-content-image-browser__asset-card {
+    border: 1px solid color-mix(in srgb, var(--smrt-color-outline) 28%, transparent);
+    border-radius: 0.5rem;
+    background: var(--smrt-color-surface-container-low);
+  }
+  .smrt-content-image-browser__asset-card--thumbnail {
+    border-color: var(--smrt-color-primary);
+  }
+  .smrt-content-image-browser__asset-preview {
     border-radius: 0.375rem;
     background: var(--smrt-color-surface-container);
     color: var(--smrt-color-on-surface-variant);
     font-size: var(--smrt-typography-headline-small-size, 1.5rem);
     font-weight: var(--smrt-typography-weight-bold, 700);
   }
-
-  .asset-preview img {
-    width: 100%;
-    height: 100%;
-    object-fit: cover;
-  }
-
-  .asset-meta {
-    display: grid;
-    gap: 0.2rem;
-    min-width: 0;
-  }
-
-  .asset-meta strong {
-    overflow: hidden;
+  .smrt-content-image-browser__asset-meta strong {
     color: var(--smrt-color-on-surface);
     font-size: var(--smrt-typography-title-small-size, 0.875rem);
-    text-overflow: ellipsis;
-    white-space: nowrap;
   }
-
-  .asset-meta span,
-  .empty-state {
+  .smrt-content-image-browser__asset-meta span,
+  .smrt-content-image-browser__empty-state {
     color: var(--smrt-color-on-surface-variant);
     font-size: var(--smrt-typography-body-medium-size, 0.875rem);
   }
-
-  .empty-state {
-    margin: 0;
+  .smrt-content-image-browser__empty-state {
     font-style: italic;
   }
-
-  .asset-actions {
-    display: flex;
-    flex-wrap: wrap;
-    gap: 0.5rem;
-  }
-
-  .content-image-browser :global(.asset-action-btn) {
-    display: inline-flex;
-    align-items: center;
-    justify-content: center;
-    gap: 0.45rem;
-    min-height: 2.35rem;
+  .smrt-content-image-browser__root :global(.asset-action-btn) {
     border: var(--smrt-hairline-strong);
     border-radius: 0.5rem;
     background: var(--smrt-color-surface-container);
     color: var(--smrt-color-on-surface);
-    cursor: pointer;
     font: inherit;
     font-size: var(--smrt-typography-label-large-size, 0.875rem);
     font-weight: var(--smrt-typography-weight-semibold, 600);
-    padding: 0.5rem 0.875rem;
   }
-
-  .content-image-browser :global(.asset-action-btn:hover) {
+  .smrt-content-image-browser__root :global(.asset-action-btn:hover) {
     background: var(--smrt-color-surface-container-high);
   }
-
-  .content-image-browser :global(.asset-action-btn--danger) {
+  .smrt-content-image-browser__root :global(.asset-action-btn--danger) {
     color: var(--smrt-color-error);
   }
-
-  .content-image-browser :global(.add-image-button) {
-    justify-self: start;
-  }
-
-  .content-image-browser :global(.add-image-button svg) {
-    width: 1rem;
-    height: 1rem;
+  .smrt-content-image-browser__root :global(.add-image-button svg) {
     fill: none;
     stroke: currentColor;
     stroke-width: 2;
     stroke-linecap: round;
     stroke-linejoin: round;
   }
-
-  .uploader-panel {
+  .smrt-content-image-browser__uploader-panel {
     border-radius: 0.5rem;
-    overflow: hidden;
   }
 }
+
 </style>

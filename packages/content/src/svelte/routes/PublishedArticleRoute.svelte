@@ -35,17 +35,17 @@ function formatTimestamp(value: string | null | undefined) {
 }
 </script>
 
-<div class="article-page" data-smrt-component="PublishedArticleRoute">
-  <header class="article-hero">
-    <div class="article-hero__inner">
-      <a href={backHref} class="back-link">{backLabel}</a>
-      <div class="eyebrow">{t(M['content.published_article.eyebrow'])}</div>
+<div class="smrt-published-article-route__root" data-smrt-component="PublishedArticleRoute">
+  <header class="smrt-published-article-route__hero" data-smrt-part="hero">
+    <div class="smrt-published-article-route__hero-inner" data-smrt-part="copy">
+      <a href={backHref} class="smrt-published-article-route__back-link" data-smrt-part="link">{backLabel}</a>
+      <div class="smrt-published-article-route__eyebrow" data-smrt-part="eyebrow">{t(M['content.published_article.eyebrow'])}</div>
       <h1>{data.content.title || t(M['content.published_article.untitled'])}</h1>
       {#if data.content.description}
-        <p class="article-dek">{data.content.description}</p>
+        <p class="smrt-published-article-route__dek" data-smrt-part="dek">{data.content.description}</p>
       {/if}
 
-      <div class="article-meta">
+      <div class="smrt-published-article-route__meta" data-smrt-part="meta">
         <span>{data.content.author || t(M['content.published_article.unknown_author'])}</span>
         <span>{formatTimestamp(data.content.publish_date)}</span>
         {#if data.content.slug}
@@ -55,15 +55,15 @@ function formatTimestamp(value: string | null | undefined) {
     </div>
   </header>
 
-  <main class="article-layout">
-    <article class="article-body">
+  <main class="smrt-published-article-route__layout" data-smrt-part="layout">
+    <article class="smrt-published-article-route__body" data-smrt-part="body">
       <ContentBodyRenderer
         content={data.content.body || ''}
         format={data.content.bodyFormat}
       />
     </article>
 
-    <aside class="article-sidebar">
+    <aside class="smrt-published-article-route__sidebar" data-smrt-part="sidebar">
       <ContentTransparencyReport
         transparency={data.transparency}
         title={t(M['content.published_article.transparency_title'])}
@@ -75,9 +75,69 @@ function formatTimestamp(value: string | null | undefined) {
 
 <style>
 @layer smrt.reset, smrt.structure, smrt.theme;
-@layer smrt.theme {
+@layer smrt.structure {
   :global(body) {
     margin: 0;
+    min-height: 100vh;
+  }
+  .smrt-published-article-route__root {
+    min-height: 100vh;
+    padding: 2rem 1.25rem 3rem;
+  }
+  .smrt-published-article-route__hero,
+  .smrt-published-article-route__layout {
+    max-width: 1280px;
+    margin: 0 auto;
+  }
+  .smrt-published-article-route__hero {
+    margin-bottom: 2rem;
+  }
+  .smrt-published-article-route__hero-inner {
+    padding: 1.5rem;
+    display: flex;
+    flex-direction: column;
+    gap: 1rem;
+  }
+  .smrt-published-article-route__back-link {
+    width: fit-content;
+  }
+  .smrt-published-article-route__hero h1 {
+    margin: 0;
+  }
+  .smrt-published-article-route__dek {
+    margin: 0;
+    max-width: 55rem;
+  }
+  .smrt-published-article-route__meta {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 0.85rem;
+  }
+  .smrt-published-article-route__layout {
+    display: grid;
+    gap: 1.5rem;
+  }
+  .smrt-published-article-route__body,
+  .smrt-published-article-route__sidebar {
+    padding: 1.5rem;
+  }
+  .smrt-published-article-route__body {
+    min-width: 0;
+  }
+  @media (min-width: 1080px) {
+    .smrt-published-article-route__layout {
+      grid-template-columns: minmax(0, 2fr) minmax(320px, 1fr);
+      align-items: start;
+    }
+    .smrt-published-article-route__sidebar {
+      position: sticky;
+      top: 1.5rem;
+    }
+  }
+}
+
+@layer smrt.theme {
+  :global(body) {
     font-family:
       var(--smrt-font-family, 'Inter', -apple-system, BlinkMacSystemFont,
       'Segoe UI', Roboto, sans-serif);
@@ -89,25 +149,8 @@ function formatTimestamp(value: string | null | undefined) {
       ),
       var(--smrt-color-background);
     color: var(--smrt-color-on-background);
-    min-height: 100vh;
   }
-
-  .article-page {
-    min-height: 100vh;
-    padding: 2rem 1.25rem 3rem;
-  }
-
-  .article-hero,
-  .article-layout {
-    max-width: 1280px;
-    margin: 0 auto;
-  }
-
-  .article-hero {
-    margin-bottom: 2rem;
-  }
-
-  .article-hero__inner {
+  .smrt-published-article-route__hero-inner {
     border: var(--smrt-hairline);
     background: color-mix(
       in srgb,
@@ -116,60 +159,37 @@ function formatTimestamp(value: string | null | undefined) {
     );
     box-shadow: var(--smrt-elevation-2, 0 12px 40px rgba(15, 23, 42, 0.08));
     border-radius: 1.25rem;
-    padding: 1.5rem;
-    display: flex;
-    flex-direction: column;
-    gap: 1rem;
   }
-
-  .back-link {
+  .smrt-published-article-route__back-link {
     color: var(--smrt-color-primary);
     text-decoration: none;
     font-weight: var(--smrt-typography-weight-semibold, 600);
-    width: fit-content;
   }
-
-  .back-link:hover {
+  .smrt-published-article-route__back-link:hover {
     text-decoration: underline;
   }
-
-  .eyebrow {
+  .smrt-published-article-route__eyebrow {
     color: var(--smrt-color-on-surface-variant);
     text-transform: uppercase;
     letter-spacing: var(--smrt-typography-label-medium-tracking, 0.08em);
     font-size: var(--smrt-typography-label-medium-size, 0.8rem);
     font-weight: var(--smrt-typography-weight-bold, 700);
   }
-
-  .article-hero h1 {
-    margin: 0;
+  .smrt-published-article-route__hero h1 {
     font-size: clamp(2.2rem, 5vw, 4rem);
     line-height: 1.05;
     color: var(--smrt-color-on-surface);
   }
-
-  .article-dek {
-    margin: 0;
+  .smrt-published-article-route__dek {
     font-size: var(--smrt-typography-body-large-size, 1.15rem);
     color: var(--smrt-color-on-surface-variant);
-    max-width: 55rem;
   }
-
-  .article-meta {
-    display: flex;
-    flex-wrap: wrap;
-    gap: 0.85rem;
+  .smrt-published-article-route__meta {
     color: var(--smrt-color-on-surface-variant);
     font-size: var(--smrt-typography-body-medium-size, 0.92rem);
   }
-
-  .article-layout {
-    display: grid;
-    gap: 1.5rem;
-  }
-
-  .article-body,
-  .article-sidebar {
+  .smrt-published-article-route__body,
+  .smrt-published-article-route__sidebar {
     border: var(--smrt-hairline);
     background: color-mix(
       in srgb,
@@ -177,24 +197,8 @@ function formatTimestamp(value: string | null | undefined) {
       transparent
     );
     border-radius: 1.25rem;
-    padding: 1.5rem;
     box-shadow: var(--smrt-elevation-1, 0 8px 24px rgba(15, 23, 42, 0.05));
   }
-
-  .article-body {
-    min-width: 0;
-  }
-
-  @media (min-width: 1080px) {
-    .article-layout {
-      grid-template-columns: minmax(0, 2fr) minmax(320px, 1fr);
-      align-items: start;
-    }
-
-    .article-sidebar {
-      position: sticky;
-      top: 1.5rem;
-    }
-  }
 }
+
 </style>

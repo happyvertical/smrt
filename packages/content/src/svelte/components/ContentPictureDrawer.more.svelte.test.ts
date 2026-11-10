@@ -37,7 +37,7 @@ describe('ContentPictureDrawer loading more', () => {
     flushSync();
     onLoadMore.mockClear();
     const lastTile = target.querySelectorAll(
-      '.drawer-picture-pick',
+      '.smrt-content-picture-drawer__picture-pick',
     )[2] as HTMLElement;
     lastTile.focus();
     lastTile.dispatchEvent(new FocusEvent('focusin', { bubbles: true }));
@@ -72,14 +72,16 @@ describe('ContentPictureDrawer missing pictures', () => {
       mount(ContentPictureDrawer, { target, props: { pictures: PICTURES } }),
     );
     flushSync();
-    expect(target.querySelectorAll('.drawer-picture')).toHaveLength(3);
+    expect(
+      target.querySelectorAll('.smrt-content-picture-drawer__picture'),
+    ).toHaveLength(3);
 
     const broken = target.querySelector('img[src="/p/2"]') as HTMLImageElement;
     broken.dispatchEvent(new Event('error'));
     flushSync();
 
     const titles = Array.from(
-      target.querySelectorAll('.drawer-picture-title'),
+      target.querySelectorAll('.smrt-content-picture-drawer__picture-title'),
     ).map((node) => node.textContent);
     expect(titles).toEqual(['Arena at night', 'Main street']);
     expect(target.textContent).not.toContain('No preview');

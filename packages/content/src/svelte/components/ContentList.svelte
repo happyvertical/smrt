@@ -2596,7 +2596,7 @@ const tableColumns: DataTableColumn<ContentListRow>[] = $derived([
 </script>
 
 {#snippet tableEmptyState()}
-  <p class="table-empty-state">
+  <p class="smrt-content-list__table-empty-state" data-smrt-part="empty">
     {lifecycleMode === 'trash'
       ? t(M['content.content_list.trash_empty'])
       : t(M['content.content_list.empty'])}
@@ -2628,23 +2628,23 @@ const tableColumns: DataTableColumn<ContentListRow>[] = $derived([
 {/snippet}
 
 {#snippet typeCell({ row }: { row: ContentListRow })}
-  <span class={`type-pill type-pill--${row.type}`}>{row.typeLabel}</span>
+  <span class={`smrt-content-list__type-pill smrt-content-list__type-pill--${row.type}`} data-smrt-part="badge">{row.typeLabel}</span>
 {/snippet}
 
 {#snippet titleCell({ row }: { row: ContentListRow })}
   {#if viewHref(row)}
-    <a class="title-link" href={viewHref(row)}>{row.title}</a>
+    <a class="smrt-content-list__title-link" data-smrt-part="title" href={viewHref(row)}>{row.title}</a>
   {:else}
     <strong>{row.title}</strong>
   {/if}
 {/snippet}
 
 {#snippet statusCell({ row }: { row: ContentListRow })}
-  <span class="badge status-{contentStatusVariant(row.status)}">{row.statusLabel}</span>
+  <span class="smrt-content-list__badge smrt-content-list__status-{contentStatusVariant(row.status)}" data-smrt-part="badge">{row.statusLabel}</span>
 {/snippet}
 
 {#snippet stateCell({ row }: { row: ContentListRow })}
-  <span class="badge state-{contentStateVariant(row.state)}">{row.stateLabel}</span>
+  <span class="smrt-content-list__badge smrt-content-list__state-{contentStateVariant(row.state)}" data-smrt-part="badge">{row.stateLabel}</span>
 {/snippet}
 
 {#snippet publishCell({ row }: { row: ContentListRow })}
@@ -2657,10 +2657,10 @@ const tableColumns: DataTableColumn<ContentListRow>[] = $derived([
 
 {#snippet actionsCell({ row }: { row: ContentListRow })}
   {@const actions = rowActions(row)}
-  <div class="actions-cell">
+  <div class="smrt-content-list__actions-cell" data-smrt-part="cell">
     {#if actions.includes('view')}
       <a
-        class="icon-btn"
+        class="smrt-content-list__icon-btn" data-smrt-part="icon"
         href={viewHref(row)}
         title={t(M['content.content_list.view_published_article'])}
         aria-label={t(M['content.content_list.view_published_article'])}
@@ -2672,7 +2672,7 @@ const tableColumns: DataTableColumn<ContentListRow>[] = $derived([
       <Button
         variant="ghost"
         size="sm"
-        class="icon-btn"
+        class="smrt-content-list__icon-btn"
         type="button"
         disabled={rowPending(row)}
         onclick={() => onEdit(row.content)}
@@ -2686,7 +2686,7 @@ const tableColumns: DataTableColumn<ContentListRow>[] = $derived([
       <Button
         variant="ghost"
         size="sm"
-        class="icon-btn delete-icon"
+        class="smrt-content-list__icon-btn delete-icon"
         type="button"
         disabled={rowPending(row)}
         onclick={() => handleDeleteContent(row)}
@@ -2700,13 +2700,13 @@ const tableColumns: DataTableColumn<ContentListRow>[] = $derived([
 {/snippet}
 
 <div
-  class="content-list-wrapper"
-  class:data-surface-highlighted={surfaceHighlighted}
+  class="smrt-content-list__root"
+  class:smrt-content-list__surface-highlighted={surfaceHighlighted}
   bind:this={surfaceRoot} data-smrt-component="ContentList"
 >
 
-  <div class="content-controls">
-    <div class="search-filters">
+  <div class="smrt-content-list__controls" data-smrt-part="controls">
+    <div class="smrt-content-list__search-filters" data-smrt-part="filters">
       <Input
         type="text"
         placeholder={t(M['content.content_list.search_placeholder'])}
@@ -2770,7 +2770,7 @@ const tableColumns: DataTableColumn<ContentListRow>[] = $derived([
       {/if}
 
       {#if savedViews}
-        <div class="saved-views" role="group" aria-label={t(M['content.content_list.saved_views'])}>
+        <div class="smrt-content-list__saved-views" data-smrt-part="saved-views" role="group" aria-label={t(M['content.content_list.saved_views'])}>
           <Select
             aria-label={t(M['content.content_list.saved_views'])}
             value={selectedSavedViewId}
@@ -2818,8 +2818,8 @@ const tableColumns: DataTableColumn<ContentListRow>[] = $derived([
       {/if}
     </div>
 
-    <div class="actions-group">
-      <div class="view-toggles" role="group" aria-label={t(M['content.content_list.view_mode'])}>
+    <div class="smrt-content-list__actions-group" data-smrt-part="toolbar">
+      <div class="smrt-content-list__view-toggles" data-smrt-part="view-toggles" role="group" aria-label={t(M['content.content_list.view_mode'])}>
         <Button
           variant="ghost"
           size="sm"
@@ -2897,9 +2897,9 @@ const tableColumns: DataTableColumn<ContentListRow>[] = $derived([
   </div>
 
   {#if showDropNotice}
-    <div class="state-notice" role="status">
-      <p class="state-notice__title">{t(M['content.content_list.dropped_title'])}</p>
-      <ul class="state-notice__list">
+    <div class="smrt-content-list__state-notice" data-smrt-part="notice" role="status">
+      <p class="smrt-content-list__state-notice-title" data-smrt-part="title">{t(M['content.content_list.dropped_title'])}</p>
+      <ul class="smrt-content-list__state-notice-list" data-smrt-part="list">
         {#each dropNotices as drop, index (index)}
           <li>{dropNoticeText(drop)}</li>
         {/each}
@@ -2923,7 +2923,7 @@ const tableColumns: DataTableColumn<ContentListRow>[] = $derived([
   {/if}
 
   {#if serverBacked}
-    <div class="content-freshness" aria-live="polite" aria-atomic="true">
+    <div class="smrt-content-list__freshness" data-smrt-part="status" aria-live="polite" aria-atomic="true">
       <span>
         {#if offline}
           {t(M['content.content_list.offline'])}
@@ -2951,11 +2951,11 @@ const tableColumns: DataTableColumn<ContentListRow>[] = $derived([
   {/if}
 
   {#if jobSnapshot.jobs.length > 0}
-    <section class="content-jobs" aria-label={t(M['content.content_list.jobs'])}>
-      <ul class="content-jobs__list" aria-live="polite" aria-atomic="false">
+    <section class="smrt-content-list__jobs" data-smrt-part="jobs" aria-label={t(M['content.content_list.jobs'])}>
+      <ul class="smrt-content-list__jobs-list" data-smrt-part="list" aria-live="polite" aria-atomic="false">
         {#each jobSnapshot.jobs as job (job.jobId)}
-          <li class={`content-job content-job--${job.status}`} data-job-id={job.jobId}>
-            <span class="content-job__identity">
+          <li class={`smrt-content-list__job smrt-content-list__job--${job.status}`} data-smrt-part="item" data-job-id={job.jobId}>
+            <span class="smrt-content-list__job-identity" data-smrt-part="label">
               {t(M['content.content_list.job_identity'], { id: job.jobId })}
             </span>
             <span>{jobStatusLabel(job)}</span>
@@ -2990,9 +2990,9 @@ const tableColumns: DataTableColumn<ContentListRow>[] = $derived([
   {/if}
 
   {#if blockingError}
-    <div class="state-panel state-panel--error" role="alert">
-      <p class="state-panel__title">{t(M['content.content_list.error_title'])}</p>
-      <p class="state-panel__detail">{blockingError}</p>
+    <div class="smrt-content-list__state-panel smrt-content-list__state-panel--error" data-smrt-part="panel" role="alert">
+      <p class="smrt-content-list__state-panel-title" data-smrt-part="title">{t(M['content.content_list.error_title'])}</p>
+      <p class="smrt-content-list__state-panel-detail" data-smrt-part="body">{blockingError}</p>
       {#if retryHandler}
         <Button variant="ghost" type="button" class="retry-button" onclick={() => retryHandler?.()}>
           {t(M['content.content_list.retry'])}
@@ -3001,9 +3001,9 @@ const tableColumns: DataTableColumn<ContentListRow>[] = $derived([
     </div>
   {:else}
     {#if recoverableError}
-      <div class="state-panel state-panel--error state-panel--inline" role="alert">
-        <p class="state-panel__title">{t(M['content.content_list.refresh_error_title'])}</p>
-        <p class="state-panel__detail">{recoverableError}</p>
+      <div class="smrt-content-list__state-panel smrt-content-list__state-panel--error smrt-content-list__state-panel--inline" data-smrt-part="panel" role="alert">
+        <p class="smrt-content-list__state-panel-title" data-smrt-part="title">{t(M['content.content_list.refresh_error_title'])}</p>
+        <p class="smrt-content-list__state-panel-detail" data-smrt-part="body">{recoverableError}</p>
         {#if retryHandler}
           <Button variant="ghost" type="button" class="retry-button" onclick={() => retryHandler?.()}>
             {t(M['content.content_list.retry'])}
@@ -3012,7 +3012,7 @@ const tableColumns: DataTableColumn<ContentListRow>[] = $derived([
       </div>
     {/if}
     {#if pageRows.length > 0 || selectedCount > 0}
-      <div class="content-selection">
+      <div class="smrt-content-list__selection" data-smrt-part="meta">
         {#if viewMode !== 'compact'}
           <Checkbox
             checked={allPageSelected}
@@ -3022,7 +3022,7 @@ const tableColumns: DataTableColumn<ContentListRow>[] = $derived([
             onchange={togglePageSelection}
           />
         {/if}
-        <span class="content-selection__count" aria-live="polite">
+        <span class="smrt-content-list__selection-count" data-smrt-part="label" aria-live="polite">
           {t(M['content.content_list.selection_count'], { count: selectedCount })}
         </span>
         {#if selectedCount > 0}
@@ -3061,7 +3061,7 @@ const tableColumns: DataTableColumn<ContentListRow>[] = $derived([
     {/if}
 
     {#if workflows && (selectedCount > 0 || workflowError || workflowResult)}
-      <section class="content-workflows" aria-label={t(M['content.content_list.bulk_workflows'])}>
+      <section class="smrt-content-list__workflows" data-smrt-part="workflows" aria-label={t(M['content.content_list.bulk_workflows'])}>
         <Select
           aria-label={t(M['content.content_list.bulk_workflow'])}
           value={selectedWorkflow}
@@ -3154,10 +3154,10 @@ const tableColumns: DataTableColumn<ContentListRow>[] = $derived([
         </Button>
 
         {#if workflowError}
-          <p class="content-workflows__error" role="alert">{workflowError}</p>
+          <p class="smrt-content-list__workflows-error" data-smrt-part="error" role="alert">{workflowError}</p>
         {/if}
         {#if workflowResult?.ok}
-          <p class="content-workflows__result" role="status">
+          <p class="smrt-content-list__workflows-result" data-smrt-part="status" role="status">
             {workflowResultMessage(workflowResult)}
             {#if typeof workflowResult.details?.jobId === 'string'}
               {t(M['content.content_list.job_queued_progress'], {
@@ -3171,7 +3171,7 @@ const tableColumns: DataTableColumn<ContentListRow>[] = $derived([
 
     {#if refreshing && viewMode !== 'compact'}
       <!-- DataTable announces its own refresh; the card views need their own. -->
-      <p class="content-refreshing" role="status" aria-live="polite">
+      <p class="smrt-content-list__refreshing" data-smrt-part="hint" role="status" aria-live="polite">
         {t(M['content.content_list.refreshing'])}
       </p>
     {/if}
@@ -3182,7 +3182,7 @@ const tableColumns: DataTableColumn<ContentListRow>[] = $derived([
         table semantics and operator affordances remain stable across queries.
         ContentList itself owns the agent-addressable surface in every view.
       -->
-      <div class="content-table-wrapper">
+      <div class="smrt-content-list__table-wrapper" data-smrt-part="body">
         <DataTable
           data={pageRows}
           columns={tableColumns}
@@ -3197,22 +3197,22 @@ const tableColumns: DataTableColumn<ContentListRow>[] = $derived([
         />
       </div>
     {:else if isLoading && pageRows.length === 0}
-      <div class="state-panel" role="status">
+      <div class="smrt-content-list__state-panel" data-smrt-part="panel" role="status">
         {t(M['content.content_list.loading'])}
       </div>
     {:else if pageRows.length === 0}
-      <div class="state-panel empty-state">
+      <div class="smrt-content-list__state-panel smrt-content-list__empty-state" data-smrt-part="empty">
         {lifecycleMode === 'trash'
           ? t(M['content.content_list.trash_empty'])
           : t(M['content.content_list.empty'])}
       </div>
     {:else if viewMode === 'detailed'}
-      <div class="content-detailed">
+      <div class="smrt-content-list__detailed" data-smrt-part="list">
         {#each pageRows as row (row.id)}
           {@const content = row.content}
           {@const actions = rowActions(row)}
-          <article class="content-row">
-            <div class="content-row__select">
+          <article class="smrt-content-list__row" data-smrt-part="row">
+            <div class="smrt-content-list__row-select" data-smrt-part="select">
               <Checkbox
                 checked={isSelected(row)}
                 disabled={workflowPending || !row.identified || rowPending(row) || allMatchingSelected}
@@ -3226,22 +3226,22 @@ const tableColumns: DataTableColumn<ContentListRow>[] = $derived([
               />
             </div>
 
-            <div class="content-row__main">
-              <div class="content-row__eyebrow">
-                <span class={`type-pill type-pill--${row.type}`}>{row.typeLabel}</span>
+            <div class="smrt-content-list__row-main" data-smrt-part="body">
+              <div class="smrt-content-list__row-eyebrow" data-smrt-part="meta">
+                <span class={`smrt-content-list__type-pill smrt-content-list__type-pill--${row.type}`} data-smrt-part="badge">{row.typeLabel}</span>
                 {#if row.author}
-                  <span class="content-row__author">By {row.author}</span>
+                  <span class="smrt-content-list__row-author" data-smrt-part="author">By {row.author}</span>
                 {/if}
               </div>
 
               <h3>{row.title}</h3>
 
               {#if row.description}
-                <p class="content-row__description">{row.description}</p>
+                <p class="smrt-content-list__row-description" data-smrt-part="description">{row.description}</p>
               {/if}
 
               {#if content.url || content.fileKey}
-                <div class="content-row__links">
+                <div class="smrt-content-list__row-links" data-smrt-part="links">
                   {#if content.url}
                     <a href={content.url} target="_blank" rel="noreferrer">
                       {t(M['content.content_list.source_material'])}
@@ -3254,22 +3254,22 @@ const tableColumns: DataTableColumn<ContentListRow>[] = $derived([
               {/if}
             </div>
 
-            <div class="content-row__meta">
-              <span class="meta-label">{t(M['content.content_list.column_status'])}</span>
-              <span class="badge status-{contentStatusVariant(row.status)}">{row.statusLabel}</span>
-              <span class="meta-label">{t(M['content.content_list.column_state'])}</span>
-              <span class="badge state-{contentStateVariant(row.state)}">{row.stateLabel}</span>
+            <div class="smrt-content-list__row-meta" data-smrt-part="meta">
+              <span class="smrt-content-list__meta-label" data-smrt-part="label">{t(M['content.content_list.column_status'])}</span>
+              <span class="smrt-content-list__badge smrt-content-list__status-{contentStatusVariant(row.status)}" data-smrt-part="badge">{row.statusLabel}</span>
+              <span class="smrt-content-list__meta-label" data-smrt-part="label">{t(M['content.content_list.column_state'])}</span>
+              <span class="smrt-content-list__badge smrt-content-list__state-{contentStateVariant(row.state)}" data-smrt-part="badge">{row.stateLabel}</span>
             </div>
 
-            <div class="content-row__actions">
+            <div class="smrt-content-list__row-actions" data-smrt-part="actions">
               {#if actions.includes('view')}
-                <a href={viewHref(row)} class="quiet-action">{t(M['content.content_list.view_article'])}</a>
+                <a href={viewHref(row)} class="smrt-content-list__quiet-action" data-smrt-part="action">{t(M['content.content_list.view_article'])}</a>
               {/if}
               {#if actions.includes('edit')}
                 <Button
                   variant="ghost"
                   type="button"
-                  class="quiet-action"
+                  class="smrt-content-list__quiet-action"
                   disabled={rowPending(row)}
                   onclick={() => onEdit(content)}
                 >
@@ -3281,7 +3281,7 @@ const tableColumns: DataTableColumn<ContentListRow>[] = $derived([
                   variant="ghost"
                   type="button"
                   disabled={rowPending(row)}
-                  class="quiet-action quiet-action--danger"
+                  class="smrt-content-list__quiet-action smrt-content-list__quiet-action--danger"
                   onclick={() => handleDeleteContent(row)}
                 >
                   {t(M['content.content_list.delete'])}
@@ -3292,21 +3292,21 @@ const tableColumns: DataTableColumn<ContentListRow>[] = $derived([
         {/each}
       </div>
     {:else}
-      <div class="content-grid">
+      <div class="smrt-content-list__grid" data-smrt-part="grid">
         {#each pageRows as row (row.id)}
           {@const content = row.content}
           {@const actions = rowActions(row)}
-          <div class="content-card">
+          <div class="smrt-content-list__card" data-smrt-part="card">
             {#if content.thumbnailAssetId}
-              <div class="card-thumbnail">
+              <div class="smrt-content-list__card-thumbnail" data-smrt-part="thumbnail">
                 <ImageThumbnail
                   apiBaseUrl={apiBaseUrl}
                   assetId={content.thumbnailAssetId}
                 />
               </div>
             {/if}
-            <div class="content-header">
-              <div class="content-header__eyebrow">
+            <div class="smrt-content-list__header" data-smrt-part="header">
+              <div class="smrt-content-list__header-eyebrow" data-smrt-part="meta">
                 <Checkbox
                   checked={isSelected(row)}
                   disabled={workflowPending || !row.identified || rowPending(row) || allMatchingSelected}
@@ -3318,37 +3318,37 @@ const tableColumns: DataTableColumn<ContentListRow>[] = $derived([
                     : t(M['content.content_list.row_not_selectable'])}
                   onchange={() => toggleRow(row)}
                 />
-                <span class={`type-pill type-pill--${row.type}`}>{row.typeLabel}</span>
+                <span class={`smrt-content-list__type-pill smrt-content-list__type-pill--${row.type}`} data-smrt-part="badge">{row.typeLabel}</span>
                 {#if row.author}
-                  <div class="author">{row.author}</div>
+                  <div class="smrt-content-list__author" data-smrt-part="author">{row.author}</div>
                 {/if}
               </div>
               <h3>{row.title}</h3>
             </div>
 
-            <div class="content-meta">
+            <div class="smrt-content-list__meta" data-smrt-part="meta">
               <div>{row.typeLabel}</div>
-              <div class="badges">
-                <span class="badge status-{contentStatusVariant(row.status)}">{row.statusLabel}</span>
-                <span class="badge state-{contentStateVariant(row.state)}">{row.stateLabel}</span>
+              <div class="smrt-content-list__badges" data-smrt-part="badges">
+                <span class="smrt-content-list__badge smrt-content-list__status-{contentStatusVariant(row.status)}" data-smrt-part="badge">{row.statusLabel}</span>
+                <span class="smrt-content-list__badge smrt-content-list__state-{contentStateVariant(row.state)}" data-smrt-part="badge">{row.stateLabel}</span>
               </div>
             </div>
 
-            <p class="content-description">{row.description}</p>
+            <p class="smrt-content-list__description" data-smrt-part="description">{row.description}</p>
 
-            <div class="content-footer">
-              <div class="meta-links">
+            <div class="smrt-content-list__footer" data-smrt-part="footer">
+              <div class="smrt-content-list__meta-links" data-smrt-part="links">
                 {#if content.url}
-                  <div class="source">Source: <a href={content.url} target="_blank" rel="noreferrer">{content.url}</a></div>
+                  <div class="smrt-content-list__source" data-smrt-part="meta">Source: <a href={content.url} target="_blank" rel="noreferrer">{content.url}</a></div>
                 {/if}
                 {#if content.fileKey}
-                  <div class="file">File: {content.fileKey}</div>
+                  <div class="smrt-content-list__file" data-smrt-part="meta">File: {content.fileKey}</div>
                 {/if}
               </div>
 
-              <div class="content-actions">
+              <div class="smrt-content-list__actions" data-smrt-part="actions">
                 {#if actions.includes('view')}
-                  <a href={viewHref(row)} class="view-btn">{t(M['content.content_list.view_article_button'])}</a>
+                  <a href={viewHref(row)} class="smrt-content-list__view-btn" data-smrt-part="action">{t(M['content.content_list.view_article_button'])}</a>
                 {/if}
                 {#if actions.includes('edit')}
                   <Button
@@ -3380,7 +3380,7 @@ const tableColumns: DataTableColumn<ContentListRow>[] = $derived([
     {/if}
 
     {#if showPagination}
-      <div class="content-pagination">
+      <div class="smrt-content-list__pagination" data-smrt-part="pagination">
         <Pagination
           currentPage={tableState.page}
           {totalPages}
@@ -3425,91 +3425,379 @@ const tableColumns: DataTableColumn<ContentListRow>[] = $derived([
 
 <style>
 @layer smrt.reset, smrt.structure, smrt.theme;
-@layer smrt.theme {
-  .content-list-wrapper {
+@layer smrt.structure {
+  .smrt-content-list__root {
     display: flex;
     flex-direction: column;
     width: 100%;
   }
-
-  .content-list-wrapper.data-surface-highlighted {
-    outline: 2px solid var(--smrt-color-primary);
-    outline-offset: 0.25rem;
-  }
-
-  .content-controls {
+  .smrt-content-list__controls {
     display: flex;
     justify-content: space-between;
     align-items: center;
     margin-bottom: 1.25rem;
     flex-wrap: wrap;
     gap: 1rem;
-    background: var(--smrt-color-surface);
     padding: 0.9rem 1.1rem;
-    border-radius: 0.75rem;
-    box-shadow: var(--smrt-elevation-1, 0 1px 3px rgba(0,0,0,0.1));
   }
-
-  .search-filters {
+  .smrt-content-list__search-filters {
     display: flex;
     gap: 1rem;
     flex-wrap: wrap;
     align-items: center;
   }
-
-  .search-filters :global([data-smrt-component="Input"]),
-  .search-filters :global([data-smrt-component="Select"]) {
+  .smrt-content-list__search-filters :global([data-smrt-component="Input"]),
+  .smrt-content-list__search-filters :global([data-smrt-component="Select"]) {
     padding: 0.5rem 0.9rem;
-    border: var(--smrt-hairline-strong);
-    border-radius: 0.5rem;
-    font-size: var(--smrt-typography-body-medium-size, 0.875rem);
     height: 38px;
-    background: var(--smrt-color-surface-container-low);
-    color: var(--smrt-color-on-surface);
   }
-
-  .actions-group {
+  .smrt-content-list__actions-group {
     display: flex;
     gap: 0.75rem;
     align-items: center;
   }
-
-  .view-toggles {
+  .smrt-content-list__view-toggles {
     display: flex;
-    background: var(--smrt-color-surface-container-low);
-    border-radius: 0.5rem;
     padding: 0.25rem;
-    border: var(--smrt-hairline);
   }
-
-  .view-toggles :global(.view-toggle-btn) {
-    background: transparent;
-    border: none;
+  .smrt-content-list__view-toggles :global(.view-toggle-btn) {
     padding: 0.4rem;
-    color: var(--smrt-color-on-surface-variant);
-    border-radius: 0.375rem;
     cursor: pointer;
     display: flex;
     align-items: center;
     justify-content: center;
+  }
+  .smrt-content-list__actions-group :global(.add-button) {
+    display: flex;
+    align-items: center;
+    gap: 0.5rem;
+    padding: 0.5rem 1rem;
+    height: 38px;
+    cursor: pointer;
+  }
+  /* Selection summary shared by every presentation. */
+  .smrt-content-list__selection {
+    display: flex;
+    align-items: center;
+    gap: 0.75rem;
+    padding: 0.35rem 0.1rem 0.75rem;
+  }
+  .smrt-content-list__selection :global(input[type='checkbox']) {
+    cursor: pointer;
+  }
+  .smrt-content-list__workflows {
+    display: flex;
+    align-items: center;
+    flex-wrap: wrap;
+    gap: 0.75rem;
+    margin-bottom: 1rem;
+    padding: 0.75rem;
+  }
+  .smrt-content-list__workflows-error,
+  .smrt-content-list__workflows-result {
+    flex-basis: 100%;
+    margin: 0;
+  }
+  .smrt-content-list__header-eyebrow,
+  .smrt-content-list__row-eyebrow {
+    display: flex;
+    align-items: center;
+    gap: 0.65rem;
+    flex-wrap: wrap;
+    margin-bottom: 0.55rem;
+  }
+  .smrt-content-list__type-pill {
+    display: inline-flex;
+    align-items: center;
+    padding: 0.2rem 0.65rem;
+  }
+  /* Shared Card Styles */
+  .smrt-content-list__card {
+    padding: 1.5rem;
+    display: flex;
+    flex-direction: column;
+  }
+  .smrt-content-list__card-thumbnail {
+    width: calc(100% + 3rem);
+    margin: -1.5rem -1.5rem 1rem -1.5rem;
+    height: 160px;
+    overflow: hidden;
+  }
+  .smrt-content-list__header {
+    margin-bottom: 1rem;
+  }
+  .smrt-content-list__header h3 {
+    margin: 0 0 0.25rem 0;
+  }
+  .smrt-content-list__meta {
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+    margin-bottom: 1rem;
+  }
+  .smrt-content-list__badges {
+    display: flex;
+    gap: 0.5rem;
+    flex-wrap: wrap;
+  }
+  .smrt-content-list__badge {
+    padding: 0.25rem 0.6rem;
+  }
+  .smrt-content-list__description {
+    margin-bottom: 1.5rem;
+    flex: 1;
+  }
+  .smrt-content-list__footer {
+    display: flex;
+    flex-direction: column;
+    gap: 1rem;
+    margin-top: auto;
+  }
+  .smrt-content-list__meta-links {
+    display: flex;
+    flex-direction: column;
+    gap: 0.25rem;
+  }
+  .smrt-content-list__source, .smrt-content-list__file {
+    white-space: nowrap;
+    overflow: hidden;
+    text-overflow: ellipsis;
+  }
+  .smrt-content-list__actions {
+    display: flex;
+    gap: 0.75rem;
+    margin-top: 0.5rem;
+    padding-top: 1rem;
+  }
+  .smrt-content-list__actions :global(.content-action-btn),
+  .smrt-content-list__actions a {
+    flex: 1;
+    padding: 0.5rem 1rem;
+    cursor: pointer;
+  }
+  /* GRID View Specifics */
+  .smrt-content-list__grid {
+    display: grid;
+    grid-template-columns: repeat(auto-fill, minmax(320px, 1fr));
+    gap: 1.5rem;
+  }
+  /* DETAILED View Specifics */
+  .smrt-content-list__detailed {
+    display: flex;
+    flex-direction: column;
+    gap: 0;
+  }
+  .smrt-content-list__row {
+    display: grid;
+    grid-template-columns: auto minmax(0, 1.8fr) auto auto;
+    gap: 1.25rem;
+    align-items: start;
+    padding: 1.1rem 0;
+  }
+  .smrt-content-list__row-select {
+    padding-top: 0.25rem;
+  }
+  .smrt-content-list__row h3 {
+    margin: 0;
+  }
+  .smrt-content-list__row-description {
+    margin: 0.45rem 0 0;
+  }
+  .smrt-content-list__row-meta {
+    display: grid;
+    gap: 0.45rem;
+    justify-items: start;
+    align-content: start;
+    min-width: 7.25rem;
+  }
+  .smrt-content-list__row-actions {
+    display: grid;
+    gap: 0.55rem;
+    justify-items: stretch;
+    min-width: 8.5rem;
+  }
+  .smrt-content-list__row-actions :global(.smrt-content-list__quiet-action) {
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    min-height: 2.4rem;
+    padding: 0 0.85rem;
+    cursor: pointer;
+  }
+  .smrt-content-list__row-links {
+    display: flex;
+    gap: 0.9rem;
+    flex-wrap: wrap;
+    margin-top: 0.8rem;
+  }
+  /* COMPACT View Specifics */
+  .smrt-content-list__table-wrapper {
+    overflow: hidden;
+  }
+  .smrt-content-list__refreshing {
+    margin: 0 0 0.75rem;
+  }
+  .smrt-content-list__freshness {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    gap: 0.75rem;
+    min-height: 2rem;
+    margin-bottom: 0.75rem;
+  }
+  .smrt-content-list__jobs {
+    margin-bottom: 1rem;
+  }
+  .smrt-content-list__jobs-list {
+    display: grid;
+    gap: 0.5rem;
+    margin: 0;
+    padding: 0;
+    list-style: none;
+  }
+  .smrt-content-list__job {
+    display: flex;
+    align-items: center;
+    gap: 0.75rem;
+    padding: 0.65rem 0.75rem;
+  }
+  .smrt-content-list__job progress {
+    min-width: 8rem;
+  }
+  .smrt-content-list__pagination {
+    display: flex;
+    justify-content: center;
+    margin-top: 1.25rem;
+  }
+  .smrt-content-list__table-empty-state {
+    margin: 0;
+    padding: 1.5rem 0;
+  }
+  .smrt-content-list__actions-cell {
+    display: flex;
+    justify-content: flex-end;
+    gap: 0.15rem;
+    white-space: nowrap;
+  }
+  .smrt-content-list__actions-cell :global(.smrt-content-list__icon-btn) {
+    cursor: pointer;
+    padding: 0.25rem;
+  }
+  /* Saved views live beside the search and filters they name. */
+  .smrt-content-list__saved-views {
+    display: flex;
+    gap: 0.5rem;
+    align-items: center;
+    flex-wrap: wrap;
+  }
+  /* Reports what a restored link, saved view, or server query discarded. */
+  .smrt-content-list__state-notice {
+    margin-bottom: 1rem;
+    padding: 0.75rem 1rem;
+  }
+  .smrt-content-list__state-notice-title {
+    margin: 0 0 0.35rem;
+  }
+  .smrt-content-list__state-notice-list {
+    margin: 0 0 0.5rem;
+    padding-left: 1.25rem;
+  }
+  .smrt-content-list__state-notice :global(.state-notice__dismiss) {
+    padding: 0.25rem 0.75rem;
+    cursor: pointer;
+  }
+  /* Shared empty, loading, and error presentation. */
+  .smrt-content-list__state-panel {
+    padding: 4rem;
+  }
+  .smrt-content-list__state-panel--inline {
+    margin-bottom: 1rem;
+    padding: 1rem;
+  }
+  .smrt-content-list__state-panel-title {
+    margin: 0 0 0.5rem;
+  }
+  .smrt-content-list__state-panel-detail {
+    margin: 0 0 1rem;
+  }
+  .smrt-content-list__state-panel :global(.retry-button) {
+    padding: 0.5rem 1rem;
+    cursor: pointer;
+  }
+  @media (max-width: 960px) {
+    .smrt-content-list__row {
+      grid-template-columns: auto minmax(0, 1fr);
+      gap: 0.9rem;
+    }
+    .smrt-content-list__row-actions {
+      grid-auto-flow: column;
+      grid-auto-columns: 1fr;
+      min-width: 0;
+    }
+  }
+  @media (max-width: 720px) {
+    .smrt-content-list__controls {
+      align-items: stretch;
+    }
+    .smrt-content-list__search-filters,
+    .smrt-content-list__actions-group {
+      width: 100%;
+    }
+    .smrt-content-list__search-filters :global([data-smrt-component="Input"]),
+    .smrt-content-list__search-filters :global([data-smrt-component="Select"]),
+    .add-button {
+      width: 100%;
+    }
+    .smrt-content-list__actions-group {
+      justify-content: space-between;
+      flex-wrap: wrap;
+    }
+    .smrt-content-list__row-actions {
+      grid-auto-flow: row;
+    }
+  }
+}
+
+@layer smrt.theme {
+  .smrt-content-list__root.smrt-content-list__surface-highlighted {
+    outline: 2px solid var(--smrt-color-primary);
+    outline-offset: 0.25rem;
+  }
+  .smrt-content-list__controls {
+    background: var(--smrt-color-surface);
+    border-radius: 0.75rem;
+    box-shadow: var(--smrt-elevation-1, 0 1px 3px rgba(0,0,0,0.1));
+  }
+  .smrt-content-list__search-filters :global([data-smrt-component="Input"]),
+  .smrt-content-list__search-filters :global([data-smrt-component="Select"]) {
+    border: var(--smrt-hairline-strong);
+    border-radius: 0.5rem;
+    font-size: var(--smrt-typography-body-medium-size, 0.875rem);
+    background: var(--smrt-color-surface-container-low);
+    color: var(--smrt-color-on-surface);
+  }
+  .smrt-content-list__view-toggles {
+    background: var(--smrt-color-surface-container-low);
+    border-radius: 0.5rem;
+    border: var(--smrt-hairline);
+  }
+  .smrt-content-list__view-toggles :global(.view-toggle-btn) {
+    background: transparent;
+    border: none;
+    color: var(--smrt-color-on-surface-variant);
+    border-radius: 0.375rem;
     transition: all 0.2s;
   }
-
-  .view-toggles :global(.view-toggle-btn:hover) {
+  .smrt-content-list__view-toggles :global(.view-toggle-btn:hover) {
     color: var(--smrt-color-on-surface);
     background: color-mix(in srgb, var(--smrt-color-shadow) 5%, transparent);
   }
-
-  .view-toggles :global(.view-toggle-btn.view-toggle-btn--active) {
+  .smrt-content-list__view-toggles :global(.view-toggle-btn.view-toggle-btn--active) {
     background: var(--smrt-color-surface);
     color: var(--smrt-color-on-surface);
     box-shadow: var(--smrt-elevation-1, 0 1px 2px rgba(0,0,0,0.1));
   }
-
-  .actions-group :global(.add-button) {
-    display: flex;
-    align-items: center;
-    gap: 0.5rem;
+  .smrt-content-list__actions-group :global(.add-button) {
     background: linear-gradient(
       135deg,
       var(--smrt-color-primary) 0%,
@@ -3517,74 +3805,36 @@ const tableColumns: DataTableColumn<ContentListRow>[] = $derived([
     );
     color: var(--smrt-color-on-primary);
     border: none;
-    padding: 0.5rem 1rem;
-    height: 38px;
     border-radius: 0.5rem;
     font-weight: var(--smrt-typography-weight-semibold, 600);
-    cursor: pointer;
     transition: transform 0.2s, box-shadow 0.2s;
   }
-
-  .actions-group :global(.add-button:hover) {
+  .smrt-content-list__actions-group :global(.add-button:hover) {
     transform: translateY(-1px);
     box-shadow: 0 4px 6px -1px color-mix(in srgb, var(--smrt-color-primary) 50%, transparent);
   }
-
   /* Selection summary shared by every presentation. */
-  .content-selection {
-    display: flex;
-    align-items: center;
-    gap: 0.75rem;
-    padding: 0.35rem 0.1rem 0.75rem;
+  .smrt-content-list__selection {
     color: var(--smrt-color-on-surface-variant);
     font-size: var(--smrt-typography-body-medium-size, 0.875rem);
   }
-
-  .content-selection :global(input[type='checkbox']) {
-    cursor: pointer;
-  }
-
-  .content-workflows {
-    display: flex;
-    align-items: center;
-    flex-wrap: wrap;
-    gap: 0.75rem;
-    margin-bottom: 1rem;
-    padding: 0.75rem;
+  .smrt-content-list__workflows {
     border: var(--smrt-hairline);
     border-radius: 0.65rem;
     background: var(--smrt-color-surface-container-low);
   }
-
-  .content-workflows__error,
-  .content-workflows__result {
-    flex-basis: 100%;
-    margin: 0;
+  .smrt-content-list__workflows-error,
+  .smrt-content-list__workflows-result {
     font-size: var(--smrt-typography-body-medium-size, 0.875rem);
   }
-
-  .content-workflows__error {
+  .smrt-content-list__workflows-error {
     color: var(--smrt-color-error);
   }
-
-  .content-workflows__result {
+  .smrt-content-list__workflows-result {
     color: var(--smrt-color-on-surface-variant);
   }
-
-  .content-header__eyebrow,
-  .content-row__eyebrow {
-    display: flex;
-    align-items: center;
-    gap: 0.65rem;
-    flex-wrap: wrap;
-    margin-bottom: 0.55rem;
-  }
-
-  .type-pill {
-    display: inline-flex;
-    align-items: center;
+  .smrt-content-list__type-pill {
     border-radius: var(--smrt-radius-full);
-    padding: 0.2rem 0.65rem;
     font-size: var(--smrt-typography-label-medium-size, 0.72rem);
     font-weight: var(--smrt-typography-weight-bold, 700);
     letter-spacing: var(--smrt-typography-label-medium-tracking, 0.06em);
@@ -3592,520 +3842,286 @@ const tableColumns: DataTableColumn<ContentListRow>[] = $derived([
     background: var(--smrt-color-surface-container-low);
     color: var(--smrt-color-on-surface-variant);
   }
-
-  .type-pill--article {
+  .smrt-content-list__type-pill--article {
     background: color-mix(in srgb, var(--smrt-color-primary) 11%, transparent);
     color: var(--smrt-color-primary);
   }
-
-  .type-pill--document {
+  .smrt-content-list__type-pill--document {
     background: color-mix(in srgb, var(--smrt-color-tertiary) 12%, transparent);
     color: var(--smrt-color-tertiary);
   }
-
-  .type-pill--mirror {
+  .smrt-content-list__type-pill--mirror {
     background: color-mix(in srgb, var(--smrt-color-secondary) 12%, transparent);
     color: var(--smrt-color-secondary);
   }
-
   /* Shared Card Styles */
-  .content-card {
+  .smrt-content-list__card {
     background: var(--smrt-color-surface);
     border-radius: 0.75rem;
-    padding: 1.5rem;
     border: var(--smrt-hairline);
     transition: transform 0.2s, box-shadow 0.2s;
-    display: flex;
-    flex-direction: column;
   }
-
-  .content-card:hover {
+  .smrt-content-list__card:hover {
     transform: translateY(-2px);
     box-shadow: var(--smrt-elevation-3, 0 10px 25px -3px rgba(0, 0, 0, 0.1));
   }
-
-  .card-thumbnail {
-    width: calc(100% + 3rem);
-    margin: -1.5rem -1.5rem 1rem -1.5rem;
-    height: 160px;
+  .smrt-content-list__card-thumbnail {
     border-bottom: var(--smrt-hairline);
-    overflow: hidden;
     background: var(--smrt-color-surface-container-high);
   }
-
-  .content-header {
-    margin-bottom: 1rem;
-  }
-
-  .content-header h3 {
-    margin: 0 0 0.25rem 0;
+  .smrt-content-list__header h3 {
     color: var(--smrt-color-on-surface);
     font-size: var(--smrt-typography-title-large-size, 1.25rem);
     line-height: var(--smrt-typography-title-large-line-height, 1.3);
   }
-
-  .author {
+  .smrt-content-list__author {
     color: var(--smrt-color-on-surface-variant);
     font-size: var(--smrt-typography-body-medium-size, 0.875rem);
   }
-
-  .content-meta {
-    display: flex;
-    justify-content: space-between;
-    align-items: center;
-    margin-bottom: 1rem;
+  .smrt-content-list__meta {
     font-size: var(--smrt-typography-body-medium-size, 0.875rem);
     color: var(--smrt-color-on-surface-variant);
   }
-
-  .badges {
-    display: flex;
-    gap: 0.5rem;
-    flex-wrap: wrap;
-  }
-
-  .badge {
-    padding: 0.25rem 0.6rem;
+  .smrt-content-list__badge {
     border-radius: var(--smrt-radius-full);
     font-size: var(--smrt-typography-label-medium-size, 0.75rem);
     font-weight: var(--smrt-typography-weight-semibold, 600);
     text-transform: uppercase;
     letter-spacing: var(--smrt-typography-label-medium-tracking, 0.05em);
   }
-
-  .status-published { background: var(--smrt-color-success-container); color: var(--smrt-color-on-success-container); border: 1px solid var(--smrt-color-success); }
-  .status-draft { background: var(--smrt-color-warning-container); color: var(--smrt-color-on-warning-container); border: 1px solid var(--smrt-color-warning); }
-  .status-archived { background: var(--smrt-color-surface-container); color: var(--smrt-color-on-surface-variant); border: var(--smrt-hairline); }
-
-  .state-highlighted { background: var(--smrt-color-warning-container); color: var(--smrt-color-on-warning-container); border: 1px solid var(--smrt-color-warning);}
-  .state-active { background: var(--smrt-color-success-container); color: var(--smrt-color-on-success-container); border: 1px solid var(--smrt-color-success); }
-  .state-deprecated { background: var(--smrt-color-error-container); color: var(--smrt-color-on-error-container); border: 1px solid var(--smrt-color-error); }
-
-  .content-description {
+  .smrt-content-list__status-published {
+    background: var(--smrt-color-success-container);
+    color: var(--smrt-color-on-success-container);
+    border: 1px solid var(--smrt-color-success);
+  }
+  .smrt-content-list__status-draft {
+    background: var(--smrt-color-warning-container);
+    color: var(--smrt-color-on-warning-container);
+    border: 1px solid var(--smrt-color-warning);
+  }
+  .smrt-content-list__status-archived {
+    background: var(--smrt-color-surface-container);
+    color: var(--smrt-color-on-surface-variant);
+    border: var(--smrt-hairline);
+  }
+  .smrt-content-list__state-highlighted {
+    background: var(--smrt-color-warning-container);
+    color: var(--smrt-color-on-warning-container);
+    border: 1px solid var(--smrt-color-warning);
+  }
+  .smrt-content-list__state-active {
+    background: var(--smrt-color-success-container);
+    color: var(--smrt-color-on-success-container);
+    border: 1px solid var(--smrt-color-success);
+  }
+  .smrt-content-list__state-deprecated {
+    background: var(--smrt-color-error-container);
+    color: var(--smrt-color-on-error-container);
+    border: 1px solid var(--smrt-color-error);
+  }
+  .smrt-content-list__description {
     color: var(--smrt-color-on-surface-variant);
     line-height: 1.6;
-    margin-bottom: 1.5rem;
-    flex: 1;
   }
-
-  .content-footer {
-    display: flex;
-    flex-direction: column;
-    gap: 1rem;
-    margin-top: auto;
-  }
-
-  .meta-links {
-    display: flex;
-    flex-direction: column;
-    gap: 0.25rem;
-  }
-
-  .source, .file {
+  .smrt-content-list__source, .smrt-content-list__file {
     font-size: var(--smrt-typography-body-small-size, 0.75rem);
     color: var(--smrt-color-on-surface-variant);
-    white-space: nowrap;
-    overflow: hidden;
-    text-overflow: ellipsis;
   }
-
-  .source a {
+  .smrt-content-list__source a {
     color: var(--smrt-color-primary);
     text-decoration: none;
   }
-
-  .source a:hover {
+  .smrt-content-list__source a:hover {
     text-decoration: underline;
   }
-
-  .content-actions {
-    display: flex;
-    gap: 0.75rem;
-    margin-top: 0.5rem;
+  .smrt-content-list__actions {
     border-top: var(--smrt-hairline);
-    padding-top: 1rem;
   }
-
-  .content-actions :global(.content-action-btn),
-  .content-actions a {
-    flex: 1;
-    padding: 0.5rem 1rem;
+  .smrt-content-list__actions :global(.content-action-btn),
+  .smrt-content-list__actions a {
     border: var(--smrt-hairline);
     border-radius: 0.375rem;
     background: var(--smrt-color-surface-container-low);
     color: var(--smrt-color-on-surface);
     font-size: var(--smrt-typography-label-large-size, 0.875rem);
     font-weight: var(--smrt-typography-weight-medium, 500);
-    cursor: pointer;
     transition: all 0.2s;
     text-align: center;
     text-decoration: none;
   }
-
-  .content-actions :global(.content-action-btn:hover),
-  .content-actions a:hover {
+  .smrt-content-list__actions :global(.content-action-btn:hover),
+  .smrt-content-list__actions a:hover {
     background: var(--smrt-color-surface-variant);
     border-color: var(--smrt-hairline-strong-color);
   }
-
-  .content-actions .view-btn {
+  .smrt-content-list__actions .smrt-content-list__view-btn {
     color: var(--smrt-color-primary);
   }
-
-  .content-actions :global(.delete-btn) {
+  .smrt-content-list__actions :global(.delete-btn) {
     color: var(--smrt-color-error);
   }
-
-  .content-actions :global(.content-action-btn.delete-btn:not(:disabled):hover) {
+  .smrt-content-list__actions :global(.content-action-btn.delete-btn:not(:disabled):hover) {
     background: var(--smrt-color-error-container);
     border-color: var(--smrt-color-error);
   }
-
-  /* GRID View Specifics */
-  .content-grid {
-    display: grid;
-    grid-template-columns: repeat(auto-fill, minmax(320px, 1fr));
-    gap: 1.5rem;
-  }
-
   /* DETAILED View Specifics */
-  .content-detailed {
-    display: flex;
-    flex-direction: column;
-    gap: 0;
+  .smrt-content-list__detailed {
     border-top: var(--smrt-hairline);
   }
-
-  .content-row {
-    display: grid;
-    grid-template-columns: auto minmax(0, 1.8fr) auto auto;
-    gap: 1.25rem;
-    align-items: start;
-    padding: 1.1rem 0;
+  .smrt-content-list__row {
     border-bottom: var(--smrt-hairline);
   }
-
-  .content-row__select {
-    padding-top: 0.25rem;
-  }
-
-  .content-row h3 {
-    margin: 0;
+  .smrt-content-list__row h3 {
     font-size: var(--smrt-typography-title-medium-size, 1.1rem);
     line-height: var(--smrt-typography-title-medium-line-height, 1.3);
   }
-
-  .content-row__description {
-    margin: 0.45rem 0 0;
+  .smrt-content-list__row-description {
     color: var(--smrt-color-on-surface-variant);
     line-height: 1.55;
   }
-
-  .content-row__meta {
-    display: grid;
-    gap: 0.45rem;
-    justify-items: start;
-    align-content: start;
-    min-width: 7.25rem;
-  }
-
-  .meta-label {
+  .smrt-content-list__meta-label {
     font-size: var(--smrt-typography-label-medium-size, 0.72rem);
     text-transform: uppercase;
     letter-spacing: var(--smrt-typography-label-medium-tracking, 0.06em);
     font-weight: var(--smrt-typography-weight-bold, 700);
     color: var(--smrt-color-on-surface-variant);
   }
-
-  .content-row__actions {
-    display: grid;
-    gap: 0.55rem;
-    justify-items: stretch;
-    min-width: 8.5rem;
-  }
-
-  .content-row__actions :global(.quiet-action) {
-    display: inline-flex;
-    align-items: center;
-    justify-content: center;
-    min-height: 2.4rem;
-    padding: 0 0.85rem;
+  .smrt-content-list__row-actions :global(.smrt-content-list__quiet-action) {
     border-radius: var(--smrt-radius-full);
     border: var(--smrt-hairline);
     background: transparent;
     color: var(--smrt-color-on-surface);
     font-weight: var(--smrt-typography-weight-semibold, 600);
     text-decoration: none;
-    cursor: pointer;
   }
-
-  .content-row__actions :global(.quiet-action:hover) {
+  .smrt-content-list__row-actions :global(.smrt-content-list__quiet-action:hover) {
     background: var(--smrt-color-surface-container-low);
   }
-
-  .content-row__actions :global(.quiet-action--danger) {
+  .smrt-content-list__row-actions :global(.smrt-content-list__quiet-action--danger) {
     color: var(--smrt-color-error);
   }
-
-  .content-row__links {
-    display: flex;
-    gap: 0.9rem;
-    flex-wrap: wrap;
-    margin-top: 0.8rem;
+  .smrt-content-list__row-links {
     font-size: var(--smrt-typography-body-medium-size, 0.82rem);
     color: var(--smrt-color-on-surface-variant);
   }
-
-  .content-row__links a {
+  .smrt-content-list__row-links a {
     color: var(--smrt-color-primary);
     text-decoration: none;
   }
-
-  .content-row__author {
+  .smrt-content-list__row-author {
     font-size: var(--smrt-typography-body-medium-size, 0.85rem);
     color: var(--smrt-color-on-surface-variant);
   }
-
   /* COMPACT View Specifics */
-  .content-table-wrapper {
+  .smrt-content-list__table-wrapper {
     background: var(--smrt-color-surface);
     border-radius: 0.75rem;
     border: var(--smrt-hairline);
-    overflow: hidden;
     box-shadow: var(--smrt-elevation-1, 0 1px 3px rgba(0,0,0,0.05));
   }
-
-  .content-refreshing {
-    margin: 0 0 0.75rem;
+  .smrt-content-list__refreshing {
     color: var(--smrt-color-on-surface-variant);
     font-size: var(--smrt-typography-body-medium-size, 0.875rem);
   }
-
-  .content-freshness {
-    display: flex;
-    align-items: center;
-    justify-content: space-between;
-    gap: 0.75rem;
-    min-height: 2rem;
-    margin-bottom: 0.75rem;
+  .smrt-content-list__freshness {
     color: var(--smrt-color-on-surface-variant);
     font-size: var(--smrt-typography-body-medium-size, 0.875rem);
   }
-
-  .content-freshness :global(.refresh-button) {
+  .smrt-content-list__freshness :global(.refresh-button) {
     transition: background 0.2s, color 0.2s;
   }
-
-  .content-jobs {
-    margin-bottom: 1rem;
-  }
-
-  .content-jobs__list {
-    display: grid;
-    gap: 0.5rem;
-    margin: 0;
-    padding: 0;
-    list-style: none;
-  }
-
-  .content-job {
-    display: flex;
-    align-items: center;
-    gap: 0.75rem;
-    padding: 0.65rem 0.75rem;
+  .smrt-content-list__job {
     border: var(--smrt-hairline);
     border-radius: 0.5rem;
     background: var(--smrt-color-surface-container-low);
     color: var(--smrt-color-on-surface-variant);
     font-size: var(--smrt-typography-body-medium-size, 0.875rem);
   }
-
-  .content-job--failed {
+  .smrt-content-list__job--failed {
     border-color: var(--smrt-color-error);
   }
-
-  .content-job__identity {
+  .smrt-content-list__job-identity {
     color: var(--smrt-color-on-surface);
     font-weight: var(--smrt-typography-weight-semibold, 600);
   }
-
-  .content-job progress {
-    min-width: 8rem;
-  }
-
-  .content-pagination {
-    display: flex;
-    justify-content: center;
-    margin-top: 1.25rem;
-  }
-
-  .table-empty-state {
-    margin: 0;
-    padding: 1.5rem 0;
+  .smrt-content-list__table-empty-state {
     text-align: center;
     color: var(--smrt-color-on-surface-variant);
   }
-
-  .title-link {
+  .smrt-content-list__title-link {
     color: var(--smrt-color-primary);
     font-weight: var(--smrt-typography-weight-semibold, 600);
     text-decoration: none;
   }
-
-  .title-link:hover {
+  .smrt-content-list__title-link:hover {
     text-decoration: underline;
   }
-
-  .actions-cell {
-    display: flex;
-    justify-content: flex-end;
-    gap: 0.15rem;
-    white-space: nowrap;
-  }
-
-  .actions-cell :global(.icon-btn) {
+  .smrt-content-list__actions-cell :global(.smrt-content-list__icon-btn) {
     background: transparent;
     border: none;
-    cursor: pointer;
     font-size: var(--smrt-typography-title-medium-size, 1.1rem);
-    padding: 0.25rem;
     border-radius: 0.25rem;
     transition: background 0.2s;
     opacity: 0.7;
     text-decoration: none;
   }
-
-  .actions-cell :global(.icon-btn:hover) {
+  .smrt-content-list__actions-cell :global(.smrt-content-list__icon-btn:hover) {
     background: var(--smrt-color-surface-variant);
     opacity: 1;
   }
-
-  .actions-cell :global(.delete-icon:hover) {
+  .smrt-content-list__actions-cell :global(.delete-icon:hover) {
     background: var(--smrt-color-error-container);
   }
-
-  /* Saved views live beside the search and filters they name. */
-  .saved-views {
-    display: flex;
-    gap: 0.5rem;
-    align-items: center;
-    flex-wrap: wrap;
-  }
-
   /* Reports what a restored link, saved view, or server query discarded. */
-  .state-notice {
-    margin-bottom: 1rem;
-    padding: 0.75rem 1rem;
+  .smrt-content-list__state-notice {
     border-radius: 0.5rem;
     border: var(--smrt-hairline);
     background: var(--smrt-color-surface-container-low);
     color: var(--smrt-color-on-surface-variant);
     font-size: var(--smrt-typography-body-medium-size, 0.875rem);
   }
-
-  .state-notice__title {
-    margin: 0 0 0.35rem;
+  .smrt-content-list__state-notice-title {
     font-weight: var(--smrt-typography-weight-semibold, 600);
     color: var(--smrt-color-on-surface);
   }
-
-  .state-notice__list {
-    margin: 0 0 0.5rem;
-    padding-left: 1.25rem;
-  }
-
-  .state-notice :global(.state-notice__dismiss) {
+  .smrt-content-list__state-notice :global(.state-notice__dismiss) {
     border: var(--smrt-hairline);
     border-radius: 0.375rem;
-    padding: 0.25rem 0.75rem;
-    cursor: pointer;
   }
-
   /* Shared empty, loading, and error presentation. */
-  .state-panel {
+  .smrt-content-list__state-panel {
     background: var(--smrt-color-surface);
-    padding: 4rem;
     text-align: center;
     border-radius: 0.75rem;
     border: 1px dashed var(--smrt-color-outline);
     color: var(--smrt-color-on-surface-variant);
     font-size: var(--smrt-typography-body-large-size, 1.1rem);
   }
-
-  .state-panel--error {
+  .smrt-content-list__state-panel--error {
     border-style: solid;
     border-color: var(--smrt-color-error);
     color: var(--smrt-color-on-surface);
   }
-
-  .state-panel--inline {
-    margin-bottom: 1rem;
-    padding: 1rem;
+  .smrt-content-list__state-panel--inline {
     text-align: left;
   }
-
-  .state-panel__title {
-    margin: 0 0 0.5rem;
+  .smrt-content-list__state-panel-title {
     font-weight: var(--smrt-typography-weight-semibold, 600);
   }
-
-  .state-panel__detail {
-    margin: 0 0 1rem;
+  .smrt-content-list__state-panel-detail {
     color: var(--smrt-color-on-surface-variant);
     font-size: var(--smrt-typography-body-medium-size, 0.875rem);
   }
-
-  .state-panel :global(.retry-button) {
+  .smrt-content-list__state-panel :global(.retry-button) {
     border: var(--smrt-hairline-strong);
     border-radius: 0.5rem;
-    padding: 0.5rem 1rem;
-    cursor: pointer;
   }
-
-  @media (max-width: 960px) {
-    .content-row {
-      grid-template-columns: auto minmax(0, 1fr);
-      gap: 0.9rem;
-    }
-
-    .content-row__actions {
-      grid-auto-flow: column;
-      grid-auto-columns: 1fr;
-      min-width: 0;
-    }
-  }
-
-  @media (max-width: 720px) {
-    .content-controls {
-      align-items: stretch;
-    }
-
-    .search-filters,
-    .actions-group {
-      width: 100%;
-    }
-
-    .search-filters :global([data-smrt-component="Input"]),
-    .search-filters :global([data-smrt-component="Select"]),
-    .add-button {
-      width: 100%;
-    }
-
-    .actions-group {
-      justify-content: space-between;
-      flex-wrap: wrap;
-    }
-
-    .content-row__actions {
-      grid-auto-flow: row;
-    }
-  }
-
   @media (prefers-reduced-motion: reduce) {
-    .content-freshness :global(.refresh-button),
-    .actions-cell :global(.icon-btn) {
+    .smrt-content-list__freshness :global(.refresh-button),
+    .smrt-content-list__actions-cell :global(.smrt-content-list__icon-btn) {
       transition: none;
     }
   }
 }
+
 </style>

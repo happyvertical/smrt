@@ -206,9 +206,9 @@ $effect(() => {
 
 // Keyboard and screen-reader users: focus near the end loads more.
 function handleGridFocus(event: FocusEvent) {
-  const tile = (event.target as Element | null)?.closest('.drawer-picture');
+  const tile = (event.target as Element | null)?.closest('.smrt-content-picture-drawer__picture');
   if (!tile || !gridElement) return;
-  const tiles = Array.from(gridElement.querySelectorAll('.drawer-picture'));
+  const tiles = Array.from(gridElement.querySelectorAll('.smrt-content-picture-drawer__picture'));
   if (tiles.indexOf(tile) >= tiles.length - MORE_FOCUS_TILES) requestMore();
 }
 
@@ -276,8 +276,8 @@ function handleFiles(event: Event & { currentTarget: HTMLInputElement }) {
 }
 </script>
 
-<div class="content-picture-drawer" data-smrt-component="ContentPictureDrawer">
-  <header class="drawer-header">
+<div class="smrt-content-picture-drawer__root" data-smrt-component="ContentPictureDrawer">
+  <header class="smrt-content-picture-drawer__header" data-smrt-part="header">
     <h2>{t(M['content.content_picture_drawer.title'])}</h2>
     {#if onClose}
       <Button type="button" variant="secondary" size="sm" class="drawer-done" onclick={onClose}>
@@ -286,10 +286,10 @@ function handleFiles(event: Event & { currentTarget: HTMLInputElement }) {
     {/if}
   </header>
 
-  <p class="drawer-hint">{t(M['content.content_picture_drawer.hint'])}</p>
+  <p class="smrt-content-picture-drawer__hint" data-smrt-part="hint">{t(M['content.content_picture_drawer.hint'])}</p>
 
   {#if mainPictureMode === 'chosen'}
-    <p class="drawer-main">
+    <p class="smrt-content-picture-drawer__main-status" data-smrt-part="notice">
       <span>{t(M['content.content_picture_drawer.main_chosen'])}</span>
       {#if onClearMainChoice}
         <Button type="button" variant="ghost" size="sm" onclick={onClearMainChoice}>
@@ -298,12 +298,12 @@ function handleFiles(event: Event & { currentTarget: HTMLInputElement }) {
       {/if}
     </p>
   {:else if mainPictureMode === 'automatic'}
-    <p class="drawer-main">{t(M['content.content_picture_drawer.main_automatic'])}</p>
+    <p class="smrt-content-picture-drawer__main-status" data-smrt-part="notice">{t(M['content.content_picture_drawer.main_automatic'])}</p>
   {:else}
-    <p class="drawer-main">{t(M['content.content_picture_drawer.main_none'])}</p>
+    <p class="smrt-content-picture-drawer__main-status" data-smrt-part="notice">{t(M['content.content_picture_drawer.main_none'])}</p>
   {/if}
 
-  <div class="drawer-tools">
+  <div class="smrt-content-picture-drawer__tools" data-smrt-part="tools">
     <Input
       type="search"
       bind:value={query}
@@ -325,7 +325,8 @@ function handleFiles(event: Event & { currentTarget: HTMLInputElement }) {
       <!-- raw-primitive-allow: hidden file input opened by the Upload button (needs the DOM element for .click()) -->
       <input
         bind:this={fileInput}
-        class="drawer-file-input"
+        class="smrt-content-picture-drawer__file-input"
+        data-smrt-part="input"
         type="file"
         accept="image/*"
         multiple
@@ -337,25 +338,27 @@ function handleFiles(event: Event & { currentTarget: HTMLInputElement }) {
   </div>
 
   {#if error}
-    <p class="drawer-error" role="alert">{error}</p>
+    <p class="smrt-content-picture-drawer__error" data-smrt-part="error" role="alert">{error}</p>
   {/if}
 
   {#if visible.length > 0}
-    <ul class="drawer-grid" bind:this={gridElement} onfocusin={handleGridFocus}>
+    <ul class="smrt-content-picture-drawer__grid" data-smrt-part="grid" bind:this={gridElement} onfocusin={handleGridFocus}>
       {#each visible as picture (picture.id)}
         {@const isSelected = selectedIds.includes(picture.id)}
         {@const isMain = mainPictureId === picture.id}
         <li
-          class="drawer-picture"
-          class:selected={isSelected}
-          class:main={isMain}
+          class="smrt-content-picture-drawer__picture"
+          data-smrt-part="item"
+          class:smrt-content-picture-drawer__selected={isSelected}
+          class:smrt-content-picture-drawer__main={isMain}
           draggable="true"
           ondragstart={(event) => handleDragStart(event, picture)}
         >
           <!-- raw-primitive-allow: a large picture tile that toggles selection (aria-pressed) and wraps an image; Button would impose its own padding and label layout -->
           <button
             type="button"
-            class="drawer-picture-pick"
+            class="smrt-content-picture-drawer__picture-pick"
+            data-smrt-part="preview"
             aria-pressed={isSelected}
             aria-label={t(M['content.content_picture_drawer.select'], { name: picture.title })}
             onclick={() => toggle(picture)}
@@ -370,44 +373,44 @@ function handleFiles(event: Event & { currentTarget: HTMLInputElement }) {
                 onerror={() => hideBrokenPicture(picture)}
               />
             {:else}
-              <span class="drawer-picture-missing">
+              <span class="smrt-content-picture-drawer__picture-missing" data-smrt-part="empty">
                 {t(M['content.content_picture_drawer.no_preview'])}
               </span>
             {/if}
             {#if isSelected}
-              <span class="drawer-picture-check" aria-hidden="true">
+              <span class="smrt-content-picture-drawer__picture-check" data-smrt-part="badge" aria-hidden="true">
                 {selectedIds.indexOf(picture.id) + 1}
               </span>
             {/if}
           </button>
-          <span class="drawer-picture-title">{picture.title}</span>
-          <span class="drawer-picture-tags">
+          <span class="smrt-content-picture-drawer__picture-title" data-smrt-part="title">{picture.title}</span>
+          <span class="smrt-content-picture-drawer__picture-tags" data-smrt-part="tags">
             {#if isMain}
-              <span class="tag tag-main">{t(M['content.content_picture_drawer.main'])}</span>
+              <span class="smrt-content-picture-drawer__tag smrt-content-picture-drawer__tag--main" data-smrt-part="meta">{t(M['content.content_picture_drawer.main'])}</span>
             {:else if inStory.has(picture.id)}
-              <span class="tag">{t(M['content.content_picture_drawer.in_story'])}</span>
+              <span class="smrt-content-picture-drawer__tag" data-smrt-part="meta">{t(M['content.content_picture_drawer.in_story'])}</span>
             {/if}
           </span>
         </li>
       {/each}
       {#if hasMore && onLoadMore}
-        <li class="drawer-more" aria-hidden="true" bind:this={moreSentinel}>
+        <li class="smrt-content-picture-drawer__more" data-smrt-part="footer" aria-hidden="true" bind:this={moreSentinel}>
           {#if loading}{t(M['content.content_picture_drawer.loading_more'])}{/if}
         </li>
       {/if}
     </ul>
   {:else if loading}
-    <p class="drawer-hint">{t(M['content.content_picture_drawer.loading'])}</p>
+    <p class="smrt-content-picture-drawer__hint" data-smrt-part="hint">{t(M['content.content_picture_drawer.loading'])}</p>
   {:else if pictures.some((picture) => !brokenPreviews[picture.id]) || (onSearch && query.trim())}
-    <p class="drawer-hint">{t(M['content.content_picture_drawer.no_match'])}</p>
+    <p class="smrt-content-picture-drawer__hint" data-smrt-part="hint">{t(M['content.content_picture_drawer.no_match'])}</p>
   {:else}
-    <p class="drawer-hint">{t(M['content.content_picture_drawer.empty'])}</p>
+    <p class="smrt-content-picture-drawer__hint" data-smrt-part="hint">{t(M['content.content_picture_drawer.empty'])}</p>
   {/if}
 
-  <p class="drawer-status" role="status" aria-live="polite">{moreStatus}</p>
+  <p class="smrt-content-picture-drawer__status" data-smrt-part="status" role="status" aria-live="polite">{moreStatus}</p>
 
   {#if selected.length > 0 && (onInsert || onUseAsMain)}
-    <div class="drawer-actions">
+    <div class="smrt-content-picture-drawer__actions" data-smrt-part="actions">
       {#if onInsert}
         <Button type="button" variant="primary" onclick={insertSelected}>
           {selected.length === 1
@@ -429,65 +432,49 @@ function handleFiles(event: Event & { currentTarget: HTMLInputElement }) {
 
 <style>
 @layer smrt.reset, smrt.structure, smrt.theme;
-@layer smrt.theme {
-  .content-picture-drawer {
+@layer smrt.structure {
+  .smrt-content-picture-drawer__root {
     display: grid;
     gap: 0.75rem;
   }
-
-  .drawer-header {
+  .smrt-content-picture-drawer__header {
     display: flex;
     align-items: center;
     justify-content: space-between;
     gap: 0.75rem;
   }
-
-  .drawer-header h2 {
+  .smrt-content-picture-drawer__header h2 {
     margin: 0;
-    font-size: var(--smrt-typography-body-large-size, 1rem);
-    color: var(--smrt-color-on-surface);
   }
-
-  .content-picture-drawer :global(.drawer-done) {
+  .smrt-content-picture-drawer__root :global(.drawer-done) {
     min-height: 2.75rem;
   }
-
-  .drawer-hint,
-  .drawer-main {
+  .smrt-content-picture-drawer__hint,
+  .smrt-content-picture-drawer__main-status {
     margin: 0;
-    color: var(--smrt-color-on-surface-variant);
-    font-size: var(--smrt-typography-body-medium-size, 0.85rem);
   }
-
-  .drawer-main {
+  .smrt-content-picture-drawer__main-status {
     display: flex;
     flex-wrap: wrap;
     align-items: center;
     gap: 0.5rem;
   }
-
-  .drawer-tools {
+  .smrt-content-picture-drawer__tools {
     display: flex;
     flex-wrap: wrap;
     gap: 0.5rem;
   }
-
-  .drawer-tools :global(input) {
+  .smrt-content-picture-drawer__tools :global(input) {
     flex: 1 1 12rem;
     min-height: 2.75rem;
   }
-
-  .drawer-file-input {
+  .smrt-content-picture-drawer__file-input {
     display: none;
   }
-
-  .drawer-error {
+  .smrt-content-picture-drawer__error {
     margin: 0;
-    color: var(--smrt-color-error);
-    font-size: var(--smrt-typography-body-medium-size, 0.85rem);
   }
-
-  .drawer-grid {
+  .smrt-content-picture-drawer__grid {
     /* Scrolls on its own so the story stays in reach for dragging. */
     max-height: min(22rem, 45vh);
     overflow-y: auto;
@@ -498,16 +485,11 @@ function handleFiles(event: Event & { currentTarget: HTMLInputElement }) {
     padding: 0;
     list-style: none;
   }
-
-  .drawer-more {
+  .smrt-content-picture-drawer__more {
     grid-column: 1 / -1;
     min-height: 1.5rem;
-    color: var(--smrt-color-on-surface-variant);
-    font-size: var(--smrt-typography-body-small-size, 0.8rem);
-    text-align: center;
   }
-
-  .drawer-status {
+  .smrt-content-picture-drawer__status {
     position: absolute;
     width: 1px;
     height: 1px;
@@ -515,16 +497,14 @@ function handleFiles(event: Event & { currentTarget: HTMLInputElement }) {
     clip: rect(0 0 0 0);
     white-space: nowrap;
   }
-
-  .drawer-picture {
+  .smrt-content-picture-drawer__picture {
     display: grid;
     gap: 0.25rem;
     align-content: start;
     min-width: 0;
     cursor: grab;
   }
-
-  .drawer-picture-pick {
+  .smrt-content-picture-drawer__picture-pick {
     position: relative;
     display: grid;
     place-items: center;
@@ -532,29 +512,15 @@ function handleFiles(event: Event & { currentTarget: HTMLInputElement }) {
     width: 100%;
     padding: 0;
     overflow: hidden;
-    border: 2px solid var(--smrt-color-outline-variant);
-    border-radius: 0.5rem;
-    background: var(--smrt-color-surface-container-low);
-    color: var(--smrt-color-on-surface-variant);
     cursor: pointer;
   }
-
-  .drawer-picture.selected .drawer-picture-pick {
-    border-color: var(--smrt-color-primary);
-  }
-
-  .drawer-picture.main .drawer-picture-pick {
-    box-shadow: 0 0 0 2px color-mix(in srgb, var(--smrt-color-primary) 30%, transparent);
-  }
-
-  .drawer-picture-pick img {
+  .smrt-content-picture-drawer__picture-pick img {
     width: 100%;
     height: 100%;
     object-fit: cover;
     pointer-events: none;
   }
-
-  .drawer-picture-check {
+  .smrt-content-picture-drawer__picture-check {
     position: absolute;
     top: 0.35rem;
     right: 0.35rem;
@@ -562,55 +528,92 @@ function handleFiles(event: Event & { currentTarget: HTMLInputElement }) {
     place-items: center;
     min-width: 1.5rem;
     height: 1.5rem;
+  }
+  .smrt-content-picture-drawer__picture-missing {
+    padding: 0.25rem;
+  }
+  .smrt-content-picture-drawer__picture-title {
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+  }
+  .smrt-content-picture-drawer__picture-tags {
+    min-height: 0;
+  }
+  .smrt-content-picture-drawer__tag {
+    display: inline-block;
+    padding: 0.05rem 0.4rem;
+  }
+  .smrt-content-picture-drawer__actions {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 0.5rem;
+    padding: 0.5rem 0;
+  }
+  .smrt-content-picture-drawer__actions :global(button) {
+    min-height: 2.75rem;
+  }
+}
+
+@layer smrt.theme {
+  .smrt-content-picture-drawer__header h2 {
+    font-size: var(--smrt-typography-body-large-size, 1rem);
+    color: var(--smrt-color-on-surface);
+  }
+  .smrt-content-picture-drawer__hint,
+  .smrt-content-picture-drawer__main-status {
+    color: var(--smrt-color-on-surface-variant);
+    font-size: var(--smrt-typography-body-medium-size, 0.85rem);
+  }
+  .smrt-content-picture-drawer__error {
+    color: var(--smrt-color-error);
+    font-size: var(--smrt-typography-body-medium-size, 0.85rem);
+  }
+  .smrt-content-picture-drawer__more {
+    color: var(--smrt-color-on-surface-variant);
+    font-size: var(--smrt-typography-body-small-size, 0.8rem);
+    text-align: center;
+  }
+  .smrt-content-picture-drawer__picture-pick {
+    border: 2px solid var(--smrt-color-outline-variant);
+    border-radius: 0.5rem;
+    background: var(--smrt-color-surface-container-low);
+    color: var(--smrt-color-on-surface-variant);
+  }
+  .smrt-content-picture-drawer__picture.smrt-content-picture-drawer__selected .smrt-content-picture-drawer__picture-pick {
+    border-color: var(--smrt-color-primary);
+  }
+  .smrt-content-picture-drawer__picture.smrt-content-picture-drawer__main .smrt-content-picture-drawer__picture-pick {
+    box-shadow: 0 0 0 2px color-mix(in srgb, var(--smrt-color-primary) 30%, transparent);
+  }
+  .smrt-content-picture-drawer__picture-check {
     border-radius: var(--smrt-radius-full);
     background: var(--smrt-color-primary);
     color: var(--smrt-color-on-primary);
     font-size: var(--smrt-typography-body-small-size, 0.8rem);
     font-weight: var(--smrt-typography-weight-bold, 700);
   }
-
-  .drawer-picture-missing {
-    padding: 0.25rem;
+  .smrt-content-picture-drawer__picture-missing {
     font-size: var(--smrt-typography-body-small-size, 0.75rem);
     text-align: center;
   }
-
-  .drawer-picture-title {
-    overflow: hidden;
+  .smrt-content-picture-drawer__picture-title {
     color: var(--smrt-color-on-surface);
     font-size: var(--smrt-typography-body-small-size, 0.8rem);
-    text-overflow: ellipsis;
-    white-space: nowrap;
   }
-
-  .drawer-picture-tags {
-    min-height: 0;
-  }
-
-  .tag {
-    display: inline-block;
-    padding: 0.05rem 0.4rem;
+  .smrt-content-picture-drawer__tag {
     border-radius: var(--smrt-radius-full);
     background: var(--smrt-color-surface-container-high);
     color: var(--smrt-color-on-surface-variant);
     font-size: var(--smrt-typography-body-small-size, 0.72rem);
   }
-
-  .tag-main {
+  .smrt-content-picture-drawer__tag--main {
     background: var(--smrt-color-primary);
     color: var(--smrt-color-on-primary);
   }
-
-  .drawer-actions {
-    display: flex;
-    flex-wrap: wrap;
-    gap: 0.5rem;
-    padding: 0.5rem 0;
+  .smrt-content-picture-drawer__actions {
     background: var(--smrt-color-surface);
   }
-
-  .drawer-actions :global(button) {
-    min-height: 2.75rem;
-  }
 }
+
 </style>

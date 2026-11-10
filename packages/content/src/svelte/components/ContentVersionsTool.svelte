@@ -171,8 +171,8 @@ async function restoreVersion(versionNumber: number) {
 }
 </script>
 
-<div class="governance-tool" data-smrt-component="ContentVersionsTool">
-  <div class="tool-toolbar">
+<div class="smrt-content-versions-tool__root" data-smrt-component="ContentVersionsTool">
+  <div class="smrt-content-versions-tool__toolbar" data-smrt-part="toolbar">
     <Button
       variant="secondary"
       type="button"
@@ -184,30 +184,30 @@ async function restoreVersion(versionNumber: number) {
   </div>
 
   {#if error}
-    <p class="tool-error" role="alert" aria-live="assertive">{error}</p>
+    <p class="smrt-content-versions-tool__error" role="alert" aria-live="assertive" data-smrt-part="error">{error}</p>
   {/if}
 
   {#if notice}
-    <p class="tool-notice" role="status" aria-live="polite">{notice}</p>
+    <p class="smrt-content-versions-tool__notice" role="status" aria-live="polite" data-smrt-part="notice">{notice}</p>
   {/if}
 
   {#if !savedContentId}
-    <p class="empty-copy">{t(M['content.versions_tool.save_to_manage_versions'])}</p>
+    <p class="smrt-content-versions-tool__empty" data-smrt-part="empty">{t(M['content.versions_tool.save_to_manage_versions'])}</p>
   {:else if versions.length === 0}
-    <p class="empty-copy">{t(M['content.versions_tool.no_versions_saved'])}</p>
+    <p class="smrt-content-versions-tool__empty" data-smrt-part="empty">{t(M['content.versions_tool.no_versions_saved'])}</p>
   {:else}
-    <div class="tool-list">
+    <div class="smrt-content-versions-tool__list" data-smrt-part="list">
       {#each versions as version (version.id ?? `version-${version.version ?? 0}`)}
-        <div class="tool-card">
-          <div class="tool-card-header">
+        <div class="smrt-content-versions-tool__card" data-smrt-part="item">
+          <div class="smrt-content-versions-tool__header" data-smrt-part="header">
             <strong>v{version.version}</strong>
-            <span class="pill pill--neutral">{version.kind}</span>
+            <span class="smrt-content-versions-tool__pill smrt-content-versions-tool__pill--neutral" data-smrt-part="badge">{version.kind}</span>
           </div>
           <p>{version.summary || 'Snapshot saved'}</p>
           {#if getVersionProvenanceCopy(version)}
             <span>{getVersionProvenanceCopy(version)}</span>
           {/if}
-          <div class="tool-card-footer">
+          <div class="smrt-content-versions-tool__footer" data-smrt-part="footer">
             <span>{formatTimestamp(version.createdAt)}</span>
             <Button
               variant="secondary"
@@ -242,98 +242,95 @@ async function restoreVersion(versionNumber: number) {
 
 <style>
 @layer smrt.reset, smrt.structure, smrt.theme;
-@layer smrt.theme {
+@layer smrt.structure {
   /* The tool lays itself out by its own width, not the viewport, so it
-     fits a full page, a side panel, the assistant dock or a phone. */
-  .governance-tool {
+  fits a full page, a side panel, the assistant dock or a phone. */
+  .smrt-content-versions-tool__root {
     container-type: inline-size;
     container-name: governance-tool;
   }
-
-  .governance-tool,
-  .tool-list,
-  .tool-card {
+  .smrt-content-versions-tool__root,
+  .smrt-content-versions-tool__list,
+  .smrt-content-versions-tool__card {
     display: flex;
     flex-direction: column;
     gap: 0.75rem;
   }
-
-  .tool-toolbar,
-  .tool-card-header,
-  .tool-card-footer {
+  .smrt-content-versions-tool__toolbar,
+  .smrt-content-versions-tool__header,
+  .smrt-content-versions-tool__footer {
     display: flex;
     align-items: center;
     justify-content: space-between;
     gap: 0.75rem;
   }
-
-  .tool-toolbar {
+  .smrt-content-versions-tool__toolbar {
     justify-content: flex-end;
   }
-
-  .tool-card {
-    background: var(--smrt-card-background, var(--smrt-color-surface));
-    border: var(--smrt-card-border, var(--smrt-hairline));
-    box-shadow: var(--smrt-card-shadow, none);
-    border-radius: 0.75rem;
+  .smrt-content-versions-tool__card {
     padding: 0.85rem;
   }
-
-  .tool-card p {
+  .smrt-content-versions-tool__card p {
     margin: 0;
   }
-
-  .tool-card span,
-  .empty-copy {
-    color: var(--smrt-color-on-surface-variant);
-    font-size: var(--smrt-typography-body-medium-size, 0.85rem);
-  }
-
-  .pill {
-    border-radius: var(--smrt-radius-full);
+  .smrt-content-versions-tool__pill {
     padding: 0.2rem 0.55rem;
-    font-size: var(--smrt-typography-label-medium-size, 0.75rem);
-    font-weight: var(--smrt-typography-weight-bold, 700);
-    text-transform: capitalize;
   }
-
-  .pill--neutral {
-    background: color-mix(in srgb, var(--smrt-color-primary) 14%, transparent);
-    color: var(--smrt-color-on-primary-container);
-  }
-
-  .tool-error,
-  .tool-notice {
+  .smrt-content-versions-tool__error,
+  .smrt-content-versions-tool__notice {
     margin: 0;
-    border-radius: 0.6rem;
     padding: 0.75rem 0.9rem;
-    font-size: var(--smrt-typography-body-medium-size, 0.9rem);
   }
-
-  .tool-error {
-    background: color-mix(in srgb, var(--smrt-color-error) 10%, transparent);
-    color: var(--smrt-color-on-error-container);
-  }
-
-  .tool-notice {
-    background: color-mix(in srgb, var(--smrt-color-primary) 10%, transparent);
-    color: var(--smrt-color-on-primary-container);
-  }
-
   @container governance-tool (max-width: 30rem) {
-    .tool-toolbar {
+    .smrt-content-versions-tool__toolbar {
       justify-content: stretch;
     }
-
-    .tool-toolbar :global(button),
-    .tool-card-footer :global(button) {
+    .smrt-content-versions-tool__toolbar :global(button),
+    .smrt-content-versions-tool__footer :global(button) {
       width: 100%;
     }
-
-    .tool-card-footer {
+    .smrt-content-versions-tool__footer {
       flex-direction: column;
       align-items: stretch;
     }
   }
 }
+
+@layer smrt.theme {
+  .smrt-content-versions-tool__card {
+    background: var(--smrt-card-background, var(--smrt-color-surface));
+    border: var(--smrt-card-border, var(--smrt-hairline));
+    box-shadow: var(--smrt-card-shadow, none);
+    border-radius: 0.75rem;
+  }
+  .smrt-content-versions-tool__card span,
+  .smrt-content-versions-tool__empty {
+    color: var(--smrt-color-on-surface-variant);
+    font-size: var(--smrt-typography-body-medium-size, 0.85rem);
+  }
+  .smrt-content-versions-tool__pill {
+    border-radius: var(--smrt-radius-full);
+    font-size: var(--smrt-typography-label-medium-size, 0.75rem);
+    font-weight: var(--smrt-typography-weight-bold, 700);
+    text-transform: capitalize;
+  }
+  .smrt-content-versions-tool__pill--neutral {
+    background: color-mix(in srgb, var(--smrt-color-primary) 14%, transparent);
+    color: var(--smrt-color-on-primary-container);
+  }
+  .smrt-content-versions-tool__error,
+  .smrt-content-versions-tool__notice {
+    border-radius: 0.6rem;
+    font-size: var(--smrt-typography-body-medium-size, 0.9rem);
+  }
+  .smrt-content-versions-tool__error {
+    background: color-mix(in srgb, var(--smrt-color-error) 10%, transparent);
+    color: var(--smrt-color-on-error-container);
+  }
+  .smrt-content-versions-tool__notice {
+    background: color-mix(in srgb, var(--smrt-color-primary) 10%, transparent);
+    color: var(--smrt-color-on-primary-container);
+  }
+}
+
 </style>
