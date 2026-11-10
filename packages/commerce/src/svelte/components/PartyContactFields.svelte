@@ -65,12 +65,12 @@ const text = $derived({
 });
 </script>
 
-<section class="contacts" aria-labelledby={headingId} data-smrt-component="PartyContactFields">
+<section class="smrt-party-contact-fields__root" aria-labelledby={headingId} data-smrt-component="PartyContactFields">
   {#if !readOnly}
     <!-- Presence marker: the server only treats zero posted rows as "remove all" when this block rendered. -->
     <Input interaction={false} type="hidden" name={names.contactCount} value={String(contacts.length)} />
   {/if}
-  <div class="contacts-heading">
+  <div class="smrt-party-contact-fields__heading" data-smrt-part="header">
     <h2 id={headingId}>{text.heading}</h2>
     {#if !readOnly && canAdd}
       <Button
@@ -84,23 +84,23 @@ const text = $derived({
   </div>
 
   {#if contacts.length === 0}
-    <p class="empty">{text.empty}</p>
+    <p class="smrt-party-contact-fields__empty" data-smrt-part="empty">{text.empty}</p>
   {:else}
-    <div class="contact-list">
+    <div class="smrt-party-contact-fields__list" data-smrt-part="list">
       {#each contacts as contact, index (`${contact.id ?? 'new'}-${index}`)}
         {#if readOnly}
-          <article class="contact-card">
+          <article class="smrt-party-contact-fields__card" data-smrt-part="item">
             <h3>{contact.name || `${text.contact} ${index + 1}`}</h3>
             {#if contact.label}<p>{contact.label}</p>{/if}
             {#if contact.email}<p><a href={`mailto:${contact.email}`}>{contact.email}</a></p>{/if}
             {#if contact.phone}<p><a href={`tel:${contact.phone}`}>{contact.phone}</a></p>{/if}
-            {#if contact.address}<p class="address">{contact.address}</p>{/if}
+            {#if contact.address}<p class="smrt-party-contact-fields__address" data-smrt-part="body">{contact.address}</p>{/if}
           </article>
         {:else}
-          <fieldset class="contact-card">
+          <fieldset class="smrt-party-contact-fields__card" data-smrt-part="item">
             <legend>{text.contact} {index + 1}</legend>
             <Input interaction={false} type="hidden" name={names.contactId} value={contact.id ?? ''} />
-            <div class="field-grid">
+            <div class="smrt-party-contact-fields__field-grid" data-smrt-part="group">
               <FormGroup label={text.name} error={errors[index]?.name}>
                 <Input name={names.contactName} value={contact.name ?? ''} maxlength={160} />
               </FormGroup>
@@ -118,7 +118,7 @@ const text = $derived({
               <Textarea name={names.contactAddress} value={contact.address ?? ''} rows={3} maxlength={500} />
             </FormGroup>
             {#if canRemove}
-              <div class="contact-actions">
+              <div class="smrt-party-contact-fields__actions" data-smrt-part="actions">
                 <Button
                   type="submit"
                   variant="ghost"
@@ -137,24 +137,81 @@ const text = $derived({
 
 <style>
 @layer smrt.reset, smrt.structure, smrt.theme;
-@layer smrt.theme {
-  .contacts { display: grid; gap: var(--smrt-spacing-4); min-inline-size: 0; }
-  .contacts-heading { display: flex; align-items: center; justify-content: space-between; gap: var(--smrt-spacing-3); flex-wrap: wrap; }
-  h2, h3, p { margin: 0; }
-  h2 { font: var(--smrt-typography-title-large-font); color: var(--smrt-color-on-surface); }
-  h3, legend { font: var(--smrt-typography-title-medium-font); color: var(--smrt-color-on-surface); }
-  .contact-list { display: grid; gap: var(--smrt-spacing-4); }
-  .contact-card { min-inline-size: 0; margin: 0; padding: var(--smrt-spacing-4); border: var(--smrt-hairline); border-radius: var(--smrt-radius-medium); background: var(--smrt-color-surface-container-low); overflow-wrap: anywhere; }
-  article.contact-card { display: grid; gap: var(--smrt-spacing-2); }
-  .field-grid { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 0 var(--smrt-spacing-4); }
-  .field-grid :global(.form-group) { min-inline-size: 0; }
-  .contact-actions { display: flex; justify-content: flex-end; }
-  .empty { color: var(--smrt-color-on-surface-variant); }
-  .address { white-space: pre-wrap; }
-  a { color: var(--smrt-color-primary); }
+@layer smrt.structure {
+  .smrt-party-contact-fields__root {
+    display: grid;
+    gap: var(--smrt-spacing-4);
+    min-inline-size: 0;
+  }
+  .smrt-party-contact-fields__heading {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    gap: var(--smrt-spacing-3);
+    flex-wrap: wrap;
+  }
+  h2, h3, p {
+    margin: 0;
+  }
+  .smrt-party-contact-fields__list {
+    display: grid;
+    gap: var(--smrt-spacing-4);
+  }
+  .smrt-party-contact-fields__card {
+    min-inline-size: 0;
+    margin: 0;
+    padding: var(--smrt-spacing-4);
+    overflow-wrap: anywhere;
+  }
+  article.smrt-party-contact-fields__card {
+    display: grid;
+    gap: var(--smrt-spacing-2);
+  }
+  .smrt-party-contact-fields__field-grid {
+    display: grid;
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+    gap: 0 var(--smrt-spacing-4);
+  }
+  .smrt-party-contact-fields__field-grid :global([data-smrt-component="FormGroup"]) {
+    min-inline-size: 0;
+  }
+  .smrt-party-contact-fields__actions {
+    display: flex;
+    justify-content: flex-end;
+  }
+  .smrt-party-contact-fields__address {
+    white-space: pre-wrap;
+  }
   @media (max-width: 30rem) {
-    .field-grid { grid-template-columns: minmax(0, 1fr); }
-    .contact-card { padding: var(--smrt-spacing-3); }
+    .smrt-party-contact-fields__field-grid {
+      grid-template-columns: minmax(0, 1fr);
+    }
+    .smrt-party-contact-fields__card {
+      padding: var(--smrt-spacing-3);
+    }
   }
 }
+
+@layer smrt.theme {
+  h2 {
+    font: var(--smrt-typography-title-large-font);
+    color: var(--smrt-color-on-surface);
+  }
+  h3, legend {
+    font: var(--smrt-typography-title-medium-font);
+    color: var(--smrt-color-on-surface);
+  }
+  .smrt-party-contact-fields__card {
+    border: var(--smrt-hairline);
+    border-radius: var(--smrt-radius-medium);
+    background: var(--smrt-color-surface-container-low);
+  }
+  .smrt-party-contact-fields__empty {
+    color: var(--smrt-color-on-surface-variant);
+  }
+  a {
+    color: var(--smrt-color-primary);
+  }
+}
+
 </style>

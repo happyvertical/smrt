@@ -41,40 +41,41 @@ function stageNameOf(stageId: string | null): string {
 }
 </script>
 
-<div class="sales-opportunity-board" data-smrt-component="OpportunityBoard">
+<div class="smrt-opportunity-board__root" data-smrt-component="OpportunityBoard">
   {#if columns.length === 0}
-    <p class="sales-opportunity-board__empty">No pipeline stages configured.</p>
+    <p class="smrt-opportunity-board__empty" data-smrt-part="empty">No pipeline stages configured.</p>
   {:else}
-    <div class="columns">
+    <div class="smrt-opportunity-board__columns" data-smrt-part="group">
       {#each columns as column (column.stage.id)}
         <section
-          class="column"
-          class:won={column.stage.isWon}
-          class:lost={column.stage.isLost}
+          class="smrt-opportunity-board__column"
+          class:smrt-opportunity-board__won={column.stage.isWon}
+          class:smrt-opportunity-board__lost={column.stage.isLost}
           aria-label={column.stage.name}
+          data-smrt-part="group"
         >
-          <h3 class="column__title">
+          <h3 class="smrt-opportunity-board__title" data-smrt-part="title">
             <span>{column.stage.name}</span>
-            <span class="column__count">{column.opportunities.length}</span>
+            <span class="smrt-opportunity-board__count" data-smrt-part="count">{column.opportunities.length}</span>
           </h3>
-          <ul class="column__cards">
+          <ul class="smrt-opportunity-board__list" data-smrt-part="list">
             {#each column.opportunities as opportunity (opportunity.id)}
               {@const neighbors = adjacentStageIds(stages, opportunity.stageId)}
               {@const movable = onMoveStage && opportunity.status === 'open'}
-              <li class="card" class:card--won={opportunity.status === 'won'} class:card--lost={opportunity.status === 'lost'}>
-                <span class="card__name">{opportunity.name}</span>
+              <li class="smrt-opportunity-board__card" class:smrt-opportunity-board__card-won={opportunity.status === 'won'} class:smrt-opportunity-board__card-lost={opportunity.status === 'lost'} data-smrt-part="item">
+                <span class="smrt-opportunity-board__name" data-smrt-part="title">{opportunity.name}</span>
                 {#if opportunity.ownerName}
-                  <span class="card__owner">{opportunity.ownerName}</span>
+                  <span class="smrt-opportunity-board__owner" data-smrt-part="author">{opportunity.ownerName}</span>
                 {/if}
-                <span class="card__value">
+                <span class="smrt-opportunity-board__value" data-smrt-part="value">
                   {formatCents(opportunity.expectedValueCents, opportunity.currency, locale)}
                 </span>
-                <span class="card__meta">
+                <span class="smrt-opportunity-board__meta" data-smrt-part="meta">
                   <Badge size="sm" variant="default">
                     {formatPercent(opportunity.probability, locale)}
                   </Badge>
                   {#if movable}
-                    <span class="card__moves">
+                    <span class="smrt-opportunity-board__actions" data-smrt-part="actions">
                       {#if neighbors.prevStageId}
                         <Button
                           variant="ghost"
@@ -111,7 +112,7 @@ function stageNameOf(stageId: string | null): string {
               </li>
             {/each}
             {#if column.opportunities.length === 0}
-              <li class="column__placeholder" aria-hidden="true">—</li>
+              <li class="smrt-opportunity-board__placeholder" data-smrt-part="placeholder" aria-hidden="true">—</li>
             {/if}
           </ul>
         </section>
@@ -122,57 +123,32 @@ function stageNameOf(stageId: string | null): string {
 
 <style>
 @layer smrt.reset, smrt.structure, smrt.theme;
-@layer smrt.theme {
-  .sales-opportunity-board {
+@layer smrt.structure {
+  .smrt-opportunity-board__root {
     width: 100%;
     overflow-x: auto;
   }
-
-  .sales-opportunity-board__empty {
+  .smrt-opportunity-board__empty {
     margin: 0;
-    color: var(--smrt-color-on-surface-variant);
-    font-style: italic;
   }
-
-  .columns {
+  .smrt-opportunity-board__columns {
     display: flex;
     gap: var(--smrt-spacing-3, 0.75rem);
     align-items: flex-start;
   }
-
-  .column {
+  .smrt-opportunity-board__column {
     flex: 1 0 14rem;
     min-width: 14rem;
-    background: var(--smrt-color-surface-container-low);
-    border: var(--smrt-hairline);
-    border-radius: var(--smrt-radius-md);
     padding: var(--smrt-spacing-2, 0.5rem);
   }
-
-  .column.won {
-    border-top: 3px solid var(--smrt-color-success);
-  }
-
-  .column.lost {
-    border-top: 3px solid var(--smrt-color-error);
-  }
-
-  .column__title {
+  .smrt-opportunity-board__title {
     display: flex;
     align-items: center;
     justify-content: space-between;
     gap: var(--smrt-spacing-2, 0.5rem);
     margin: 0 0 var(--smrt-spacing-2, 0.5rem);
-    font-size: var(--smrt-typography-title-small-size, 0.875rem);
-    font-weight: var(--smrt-typography-weight-semibold, 600);
   }
-
-  .column__count {
-    color: var(--smrt-color-on-surface-variant);
-    font-weight: var(--smrt-typography-weight-normal, 400);
-  }
-
-  .column__cards {
+  .smrt-opportunity-board__list {
     display: flex;
     flex-direction: column;
     gap: var(--smrt-spacing-2, 0.5rem);
@@ -180,54 +156,76 @@ function stageNameOf(stageId: string | null): string {
     padding: 0;
     list-style: none;
   }
-
-  .column__placeholder {
-    color: var(--smrt-color-on-surface-variant);
-    text-align: center;
+  .smrt-opportunity-board__placeholder {
     padding: var(--smrt-spacing-2, 0.5rem);
   }
-
-  .card {
+  .smrt-opportunity-board__card {
     display: flex;
     flex-direction: column;
     gap: var(--smrt-spacing-1, 0.25rem);
-    background: var(--smrt-color-surface);
-    border: var(--smrt-hairline);
-    border-radius: var(--smrt-radius-sm);
     padding: var(--smrt-spacing-2, 0.5rem);
   }
-
-  .card--won {
-    border-color: var(--smrt-color-success);
-  }
-
-  .card--lost {
-    border-color: var(--smrt-color-error);
-  }
-
-  .card__name {
-    font-weight: var(--smrt-typography-weight-medium, 500);
-  }
-
-  .card__owner {
-    color: var(--smrt-color-on-surface-variant);
-    font-size: var(--smrt-typography-body-small-size, 0.75rem);
-  }
-
-  .card__value {
-    font-weight: var(--smrt-typography-weight-semibold, 600);
-  }
-
-  .card__meta {
+  .smrt-opportunity-board__meta {
     display: flex;
     align-items: center;
     justify-content: space-between;
     gap: var(--smrt-spacing-2, 0.5rem);
   }
-
-  .card__moves {
+  .smrt-opportunity-board__actions {
     display: inline-flex;
     gap: var(--smrt-spacing-1, 0.25rem);
   }
 }
+
+@layer smrt.theme {
+  .smrt-opportunity-board__empty {
+    color: var(--smrt-color-on-surface-variant);
+    font-style: italic;
+  }
+  .smrt-opportunity-board__column {
+    background: var(--smrt-color-surface-container-low);
+    border: var(--smrt-hairline);
+    border-radius: var(--smrt-radius-md);
+  }
+  .smrt-opportunity-board__column.smrt-opportunity-board__won {
+    border-top: 3px solid var(--smrt-color-success);
+  }
+  .smrt-opportunity-board__column.smrt-opportunity-board__lost {
+    border-top: 3px solid var(--smrt-color-error);
+  }
+  .smrt-opportunity-board__title {
+    font-size: var(--smrt-typography-title-small-size, 0.875rem);
+    font-weight: var(--smrt-typography-weight-semibold, 600);
+  }
+  .smrt-opportunity-board__count {
+    color: var(--smrt-color-on-surface-variant);
+    font-weight: var(--smrt-typography-weight-normal, 400);
+  }
+  .smrt-opportunity-board__placeholder {
+    color: var(--smrt-color-on-surface-variant);
+    text-align: center;
+  }
+  .smrt-opportunity-board__card {
+    background: var(--smrt-color-surface);
+    border: var(--smrt-hairline);
+    border-radius: var(--smrt-radius-sm);
+  }
+  .smrt-opportunity-board__card-won {
+    border-color: var(--smrt-color-success);
+  }
+  .smrt-opportunity-board__card-lost {
+    border-color: var(--smrt-color-error);
+  }
+  .smrt-opportunity-board__name {
+    font-weight: var(--smrt-typography-weight-medium, 500);
+  }
+  .smrt-opportunity-board__owner {
+    color: var(--smrt-color-on-surface-variant);
+    font-size: var(--smrt-typography-body-small-size, 0.75rem);
+  }
+  .smrt-opportunity-board__value {
+    font-weight: var(--smrt-typography-weight-semibold, 600);
+  }
+}
+
 </style>

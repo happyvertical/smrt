@@ -384,12 +384,12 @@ onMount(() => {
 <section data-testid="intake-inbox" aria-busy={pending}>
 <h1>{t(M['ingestion.inbox'])}</h1>
 <!-- The upload leads the inbox so it is found on an empty one too (#4587). Keep retry Files separately; an unchanged native FileList must not suppress a deliberate reselection. -->
-<div class="upload" data-testid="intake-upload">
+<div class="smrt-inbox-view__upload" data-smrt-part="field" data-testid="intake-upload">
 <FilePicker bind:files {dropzone} onclick={(event) => { event.currentTarget.value = ''; }} onchangefiles={() => { uploadRequestId = undefined; refusal = undefined; }} accept={accept ?? host.uploadAccept} multiple label={t(M['ingestion.files'])} description={dropzone ? `${t(M['ingestion.filesDrop'])} ${t(M['ingestion.filesHelp'])}` : t(M['ingestion.filesHelp'])} disabled={pending} />
 <Button disabled={pending || !files.length} onclick={upload}>{t(M['ingestion.upload'])}</Button>
 {#if refusal}<p role="alert" data-testid="upload-refused">{refusal}</p>{/if}
 </div>
-<div class="toolbar">
+<div class="smrt-inbox-view__toolbar" data-smrt-part="actions">
 <Select aria-label={t(M['ingestion.filter'])} bind:value={selectedState} disabled={pending} onchange={() => load()}><option value="">{t(M['ingestion.all'])}</option>{#each states as value}<option {value}>{t(M[`ingestion.${value}`])}</option>{/each}</Select>
 {#if host.assignees}<Combobox label={t(M['ingestion.assigneeName'])} options={pickerOptions(t(M['ingestion.anyAssignee']))} bind:value={assignee} valueLabel={assigneeLabels[assignee] ?? assignee} filter={false} busy={assigneeSearching} status={assigneeSearching ? t(M['ingestion.searching']) : undefined} onquery={findAssignees} disabled={pending} />{:else}<Input aria-label={t(M['ingestion.assignee'])} bind:value={assignee} disabled={pending} />{/if}
 <Button onclick={() => load()} disabled={pending}>{t(M['ingestion.refresh'])}</Button>
@@ -397,9 +397,9 @@ onMount(() => {
 {#if error}<p role="alert">{t(M['ingestion.error'])}</p>{/if}
 {#if pending}<p role="status">{t(M['ingestion.loading'])}</p>{/if}
 {#if !pending && !error && !items.length}<p>{t(M['ingestion.empty'])}</p>{/if}
-<ul>{#each items as entry (entry.item.id)}<li data-item-id={entry.item.id} aria-current={entry.item.id === selectedId ? 'true' : undefined} class:selected={entry.item.id === selectedId}>
+<ul>{#each items as entry (entry.item.id)}<li data-item-id={entry.item.id} aria-current={entry.item.id === selectedId ? 'true' : undefined} class:smrt-inbox-view__selected={entry.item.id === selectedId} data-smrt-part="item">
 <h2>{entry.label}</h2><p data-testid="row-status">{status?.(entry) ?? t(M[`ingestion.${entry.state}`])}</p>
-{#if rowAside}<div class="row-aside">{@render rowAside(entry)}</div>{:else if entry.evidence}{@const original = evidenceUrl(entry.evidence.viewUrl)}{@const thumbnail = evidenceUrl(entry.evidence.thumbnailUrl)}{#if thumbnail || original}<div class="row-aside">
+{#if rowAside}<div class="smrt-inbox-view__row-aside" data-smrt-part="group">{@render rowAside(entry)}</div>{:else if entry.evidence}{@const original = evidenceUrl(entry.evidence.viewUrl)}{@const thumbnail = evidenceUrl(entry.evidence.thumbnailUrl)}{#if thumbnail || original}<div class="smrt-inbox-view__row-aside" data-smrt-part="group">
 {#if thumbnail}<img src={thumbnail} alt={entry.evidence.label} loading="lazy" />{/if}
 {#if original}<a href={original} target="_blank" rel="noopener noreferrer" aria-label={`${t(M['ingestion.original'])}: ${entry.label}`}>{t(M['ingestion.original'])}</a>{/if}
 </div>{/if}{/if}
@@ -415,7 +415,59 @@ onMount(() => {
 </section>
 <style>
 @layer smrt.reset, smrt.structure, smrt.theme;
-@layer smrt.theme {
-section{max-width:72rem;margin-inline:auto;padding:1rem;color:var(--smrt-color-on-surface)}.upload{display:grid;gap:.5rem;justify-items:start;margin-block:1rem}.toolbar{display:flex;flex-wrap:wrap;gap:.75rem;margin-block:1rem}ul{list-style:none;padding:0}li{padding:1rem;border-block-end:var(--smrt-hairline);display:grid;gap:.75rem}li.selected{border-inline-start:.25rem solid var(--smrt-color-primary)}h2{font-size:1.1rem}.row-aside{display:flex;flex-wrap:wrap;align-items:center;gap:.75rem}.row-aside img{max-block-size:6rem;max-inline-size:100%;object-fit:contain}
+@layer smrt.structure {
+  section {
+    max-width:72rem;
+    margin-inline:auto;
+    padding:1rem;
+  }
+  .smrt-inbox-view__upload {
+    display:grid;
+    gap:.5rem;
+    justify-items:start;
+    margin-block:1rem;
+  }
+  .smrt-inbox-view__toolbar {
+    display:flex;
+    flex-wrap:wrap;
+    gap:.75rem;
+    margin-block:1rem;
+  }
+  ul {
+    list-style:none;
+    padding:0;
+  }
+  li {
+    padding:1rem;
+    display:grid;
+    gap:.75rem;
+  }
+  .smrt-inbox-view__row-aside {
+    display:flex;
+    flex-wrap:wrap;
+    align-items:center;
+    gap:.75rem;
+  }
+  .smrt-inbox-view__row-aside img {
+    max-block-size:6rem;
+    max-inline-size:100%;
+    object-fit:contain;
+  }
 }
+
+@layer smrt.theme {
+  section {
+    color:var(--smrt-color-on-surface);
+  }
+  li {
+    border-block-end:var(--smrt-hairline);
+  }
+  li.smrt-inbox-view__selected {
+    border-inline-start:.25rem solid var(--smrt-color-primary);
+  }
+  h2 {
+    font-size:1.1rem;
+  }
+}
+
 </style>

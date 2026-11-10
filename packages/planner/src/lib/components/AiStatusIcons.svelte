@@ -15,11 +15,11 @@ const icons: Record<CapabilityId, string> = {
 };
 </script>
 
-<div class="ai-status" role="group" aria-label="AI models">
+<div class="smrt-ai-status-icons__root" role="group" aria-label="AI models" data-smrt-component="AiStatusIcons">
   {#each aiState.capabilities as capability (capability.id)}
     <a
       href={appHref('/ai/')}
-      class="cap"
+      class="smrt-ai-status-icons__cap" data-smrt-part="icon"
       data-state={capability.state}
       aria-label={capability.label}
       title={capability.label}
@@ -31,62 +31,67 @@ const icons: Record<CapabilityId, string> = {
 
 <style>
 @layer smrt.reset, smrt.structure, smrt.theme;
-@layer smrt.theme {
-  .ai-status {
+@layer smrt.structure {
+  .smrt-ai-status-icons__root {
     display: flex;
     gap: var(--smrt-spacing-2);
     padding: var(--smrt-spacing-2);
   }
-
-  .cap {
+  .smrt-ai-status-icons__cap {
     display: inline-grid;
     place-items: center;
     width: 2.25rem;
     height: 2.25rem;
+  }
+  .smrt-ai-status-icons__cap[data-state='off'] {
+    position: relative;
+  }
+  .smrt-ai-status-icons__cap[data-state='off']::after {
+    position: absolute;
+    width: 70%;
+    height: 0;
+    transform: rotate(-45deg);
+  }
+  .smrt-ai-status-icons__cap[data-state='off']::after {
+    content: '';
+  }
+}
+
+@layer smrt.theme {
+  .smrt-ai-status-icons__cap {
     border-radius: 50%;
     border: var(--smrt-hairline);
     border-color: transparent;
     color: var(--smrt-color-on-surface);
     text-decoration: none;
   }
-
-  .cap:hover {
+  .smrt-ai-status-icons__cap:hover {
     background: color-mix(in srgb, currentColor calc(var(--smrt-state-hover) * 100%), transparent);
   }
-
-  .cap:focus-visible {
+  .smrt-ai-status-icons__cap:focus-visible {
     outline: var(--smrt-focus-ring-width) solid var(--smrt-focus-ring-color);
     outline-offset: var(--smrt-focus-ring-offset);
   }
-
-  .cap[data-state='ready'] {
+  .smrt-ai-status-icons__cap[data-state='ready'] {
     background: var(--smrt-color-success-container);
     color: var(--smrt-color-on-success-container);
   }
-
   /* Set up elsewhere but not on: dashed and muted. */
-  .cap[data-state='available'] {
+  .smrt-ai-status-icons__cap[data-state='available'] {
     border: var(--smrt-hairline-strong);
     border-style: dashed;
     color: var(--smrt-color-on-surface-variant);
   }
-
   /* Not possible here: dashed, faded and struck through. */
-  .cap[data-state='off'] {
-    position: relative;
+  .smrt-ai-status-icons__cap[data-state='off'] {
     border: var(--smrt-hairline);
     border-style: dashed;
     color: var(--smrt-color-on-surface-variant);
     opacity: 0.5;
   }
-
-  .cap[data-state='off']::after {
-    content: '';
-    position: absolute;
-    width: 70%;
-    height: 0;
+  .smrt-ai-status-icons__cap[data-state='off']::after {
     border-top: 2px solid currentColor;
-    transform: rotate(-45deg);
   }
 }
+
 </style>

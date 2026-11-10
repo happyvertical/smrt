@@ -154,92 +154,201 @@ const saved = $derived(
 </script>
 
 <article
-  class="saved-report-card"
+  class="smrt-saved-report-card__root"
   data-smrt-component="SavedReportCard"
   data-report-id={report.id}
   data-archived={report.status === 'archived' ? '' : undefined}
 >
-  <div class="saved-report-card__head">
-    <svelte:element this={`h${headingLevel}`} class="saved-report-card__title">
+  <div class="smrt-saved-report-card__header" data-smrt-part="header">
+    <svelte:element this={`h${headingLevel}`} class="smrt-saved-report-card__title" data-smrt-part="title">
       <a href={href}>{report.title}</a>
     </svelte:element>
     {#if report.status === 'archived'}<Badge size="sm">{t(M['reports.archived_badge'])}</Badge>{/if}
     {#if actions.length}
-      <div class="saved-report-card__menu">
+      <div class="smrt-saved-report-card__menu" data-smrt-part="menu">
         <Menu variant="icon" placement="bottom-end" triggerLabel={t(M['reports.more'], { title: report.title })} items={actions}>
           {#snippet trigger()}<span aria-hidden="true">⋯</span>{/snippet}
         </Menu>
       </div>
     {/if}
   </div>
-  <p class="saved-report-card__line">{description.line}</p>
-  <div class="saved-report-card__figure">
+  <p class="smrt-saved-report-card__line" data-smrt-part="meta">{description.line}</p>
+  <div class="smrt-saved-report-card__figure" data-smrt-part="value">
     {#if result === undefined}
       <Skeleton variant="text" lines={2} label={t(M['reports.running'])} />
     {:else if result === null}
-      <p class="saved-report-card__muted">{t(M['reports.run_failed'])}</p>
+      <p class="smrt-saved-report-card__muted" data-smrt-part="empty">{t(M['reports.run_failed'])}</p>
     {:else if result.rows.length === 0}
-      <p class="saved-report-card__muted">{t(M['reports.no_rows'])}</p>
+      <p class="smrt-saved-report-card__muted" data-smrt-part="empty">{t(M['reports.no_rows'])}</p>
     {:else if figure}
-      <p class="saved-report-card__label">{figure.label}</p>
-      <p class="saved-report-card__value">{figure.value}{#if figure.detail}<span class="saved-report-card__detail"> · {figure.detail}</span>{/if}</p>
+      <p class="smrt-saved-report-card__label" data-smrt-part="label">{figure.label}</p>
+      <p class="smrt-saved-report-card__value" data-smrt-part="value">{figure.value}{#if figure.detail}<span class="smrt-saved-report-card__detail" data-smrt-part="description"> · {figure.detail}</span>{/if}</p>
       {#if series && measure}
-        <div class="saved-report-card__spark">
+        <div class="smrt-saved-report-card__spark" data-smrt-part="panel">
           <Chart data={series} style="line" size="compact" title={measure.label} {locale} />
         </div>
       {:else if extra.length}
-        <dl class="saved-report-card__extra">
+        <dl class="smrt-saved-report-card__extra" data-smrt-part="list">
           {#each extra as item (item.label)}<div><dt>{item.label}</dt><dd>{item.value}</dd></div>{/each}
         </dl>
       {:else if groups > 1}
-        <p class="saved-report-card__muted">{t(M['reports.groups_count'], { count: groups })}</p>
+        <p class="smrt-saved-report-card__muted" data-smrt-part="empty">{t(M['reports.groups_count'], { count: groups })}</p>
       {/if}
     {/if}
   </div>
   <!-- Its figures are fresh from this run, so the card says only when it was
        saved; the report's page also says when it last ran. -->
   {#if saved}
-    <p class="saved-report-card__meta">{saved}</p>
+    <p class="smrt-saved-report-card__meta" data-smrt-part="meta">{saved}</p>
   {/if}
 </article>
 
 <style>
 @layer smrt.reset, smrt.structure, smrt.theme;
-@layer smrt.theme {
-  .saved-report-card {
+@layer smrt.structure {
+  .smrt-saved-report-card__root {
     position: relative;
     display: grid;
     grid-template-rows: auto auto 1fr auto;
     gap: var(--smrt-spacing-2);
     min-inline-size: 0;
     padding: var(--smrt-spacing-4);
+  }
+  .smrt-saved-report-card__header {
+    display: flex;
+    align-items: flex-start;
+    gap: var(--smrt-spacing-2);
+    min-inline-size: 0;
+  }
+  .smrt-saved-report-card__title {
+    flex: 1 1 auto;
+    min-inline-size: 0;
+    margin: 0;
+    overflow-wrap: anywhere;
+  }
+  /* The whole card opens the report; the menu sits above the link. */
+  .smrt-saved-report-card__title a::after {
+    content: '';
+    position: absolute;
+    inset: 0;
+  }
+  .smrt-saved-report-card__menu {
+    position: relative;
+    z-index: 1;
+    flex: none;
+    margin-block: calc(var(--smrt-spacing-2) * -1);
+    margin-inline-end: calc(var(--smrt-spacing-2) * -1);
+  }
+  .smrt-saved-report-card__line {
+    margin: 0;
+    overflow-wrap: anywhere;
+  }
+  .smrt-saved-report-card__figure {
+    display: grid;
+    align-content: start;
+    gap: var(--smrt-spacing-1);
+    min-block-size: 4.5rem;
+  }
+  .smrt-saved-report-card__label {
+    margin: 0;
+  }
+  .smrt-saved-report-card__value {
+    margin: 0;
+    overflow-wrap: anywhere;
+  }
+  .smrt-saved-report-card__spark {
+    margin-block-start: var(--smrt-spacing-1);
+  }
+  .smrt-saved-report-card__extra {
+    display: grid;
+    gap: var(--smrt-spacing-1);
+    margin: 0;
+  }
+  .smrt-saved-report-card__extra > div {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 0 var(--smrt-spacing-2);
+  }
+  .smrt-saved-report-card__extra dd {
+    margin: 0;
+  }
+  .smrt-saved-report-card__muted {
+    margin: 0;
+  }
+  .smrt-saved-report-card__meta {
+    margin: 0;
+  }
+}
+
+@layer smrt.theme {
+  .smrt-saved-report-card__root {
     border: var(--smrt-hairline);
     border-radius: var(--smrt-radius-large);
     background: var(--smrt-color-surface-container-low);
     color: var(--smrt-color-on-surface);
     transition: border-color var(--smrt-duration-fast) var(--smrt-easing-standard), background-color var(--smrt-duration-fast) var(--smrt-easing-standard);
   }
-  .saved-report-card:hover { background: var(--smrt-color-surface-container); border-color: var(--smrt-color-outline); }
-  .saved-report-card:focus-within:has(.saved-report-card__title a:focus-visible) { outline: var(--smrt-focus-ring-width) solid var(--smrt-focus-ring-color); outline-offset: var(--smrt-focus-ring-offset); }
-  .saved-report-card[data-archived] { background: var(--smrt-color-surface); }
-  .saved-report-card__head { display: flex; align-items: flex-start; gap: var(--smrt-spacing-2); min-inline-size: 0; }
-  .saved-report-card__title { flex: 1 1 auto; min-inline-size: 0; margin: 0; font: var(--smrt-typography-title-medium-font); overflow-wrap: anywhere; }
-  .saved-report-card__title a { color: inherit; text-decoration: none; outline: none; }
+  .smrt-saved-report-card__root:hover {
+    background: var(--smrt-color-surface-container);
+    border-color: var(--smrt-color-outline);
+  }
+  .smrt-saved-report-card__root:focus-within:has(.smrt-saved-report-card__title a:focus-visible) {
+    outline: var(--smrt-focus-ring-width) solid var(--smrt-focus-ring-color);
+    outline-offset: var(--smrt-focus-ring-offset);
+  }
+  .smrt-saved-report-card__root[data-archived] {
+    background: var(--smrt-color-surface);
+  }
+  .smrt-saved-report-card__title {
+    font: var(--smrt-typography-title-medium-font);
+  }
+  .smrt-saved-report-card__title a {
+    color: inherit;
+    text-decoration: none;
+    outline: none;
+  }
   /* The whole card opens the report; the menu sits above the link. */
-  .saved-report-card__title a::after { content: ''; position: absolute; inset: 0; border-radius: inherit; }
-  .saved-report-card__menu { position: relative; z-index: 1; flex: none; margin-block: calc(var(--smrt-spacing-2) * -1); margin-inline-end: calc(var(--smrt-spacing-2) * -1); }
-  .saved-report-card__line { margin: 0; color: var(--smrt-color-on-surface-variant); font-size: var(--smrt-typography-body-small-size); overflow-wrap: anywhere; }
-  .saved-report-card__figure { display: grid; align-content: start; gap: var(--smrt-spacing-1); min-block-size: 4.5rem; }
-  .saved-report-card__label { margin: 0; color: var(--smrt-color-on-surface-variant); font-size: var(--smrt-typography-label-medium-size); }
-  .saved-report-card__value { margin: 0; font: var(--smrt-typography-headline-small-font); font-variant-numeric: tabular-nums; overflow-wrap: anywhere; }
-  .saved-report-card__detail { color: var(--smrt-color-on-surface-variant); font: var(--smrt-typography-body-small-font); }
-  .saved-report-card__spark { margin-block-start: var(--smrt-spacing-1); }
-  .saved-report-card__extra { display: grid; gap: var(--smrt-spacing-1); margin: 0; font-size: var(--smrt-typography-body-small-size); }
-  .saved-report-card__extra > div { display: flex; flex-wrap: wrap; gap: 0 var(--smrt-spacing-2); }
-  .saved-report-card__extra dt { color: var(--smrt-color-on-surface-variant); }
-  .saved-report-card__extra dd { margin: 0; font-variant-numeric: tabular-nums; }
-  .saved-report-card__muted { margin: 0; color: var(--smrt-color-on-surface-variant); font-size: var(--smrt-typography-body-small-size); }
-  .saved-report-card__meta { margin: 0; color: var(--smrt-color-on-surface-variant); font-size: var(--smrt-typography-label-medium-size); }
-  @media (prefers-reduced-motion: reduce) { .saved-report-card { transition: none; } }
+  .smrt-saved-report-card__title a::after {
+    border-radius: inherit;
+  }
+  .smrt-saved-report-card__line {
+    color: var(--smrt-color-on-surface-variant);
+    font-size: var(--smrt-typography-body-small-size);
+  }
+  .smrt-saved-report-card__label {
+    color: var(--smrt-color-on-surface-variant);
+    font-size: var(--smrt-typography-label-medium-size);
+  }
+  .smrt-saved-report-card__value {
+    font: var(--smrt-typography-headline-small-font);
+    font-variant-numeric: tabular-nums;
+  }
+  .smrt-saved-report-card__detail {
+    color: var(--smrt-color-on-surface-variant);
+    font: var(--smrt-typography-body-small-font);
+  }
+  .smrt-saved-report-card__extra {
+    font-size: var(--smrt-typography-body-small-size);
+  }
+  .smrt-saved-report-card__extra dt {
+    color: var(--smrt-color-on-surface-variant);
+  }
+  .smrt-saved-report-card__extra dd {
+    font-variant-numeric: tabular-nums;
+  }
+  .smrt-saved-report-card__muted {
+    color: var(--smrt-color-on-surface-variant);
+    font-size: var(--smrt-typography-body-small-size);
+  }
+  .smrt-saved-report-card__meta {
+    color: var(--smrt-color-on-surface-variant);
+    font-size: var(--smrt-typography-label-medium-size);
+  }
+  @media (prefers-reduced-motion: reduce) {
+    .smrt-saved-report-card__root {
+      transition: none;
+    }
+  }
 }
+
 </style>

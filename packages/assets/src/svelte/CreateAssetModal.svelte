@@ -151,8 +151,9 @@ const isLargeFile = $derived((file?.size ?? 0) > 2 * 1024 * 1024);
       {#if !file}
         <!-- Dropzone -->
         <div
-          class="dropzone"
-          class:dropzone--active={dragOver}
+          class="smrt-create-asset-modal__dropzone"
+          class:smrt-create-asset-modal__dropzone-active={dragOver}
+          data-smrt-part="panel"
           role="button"
           tabindex="0"
           ondragover={handleDragOver}
@@ -161,53 +162,53 @@ const isLargeFile = $derived((file?.size ?? 0) > 2 * 1024 * 1024);
           onclick={() => document.getElementById('file-input')?.click()}
           onkeydown={(e) => { if (e.key === 'Enter' || e.key === ' ') document.getElementById('file-input')?.click(); }}
         >
-          <svg xmlns="http://www.w3.org/2000/svg" width="40" height="40" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round" class="dropzone__icon">
+          <svg xmlns="http://www.w3.org/2000/svg" width="40" height="40" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round" class="smrt-create-asset-modal__dropzone-icon" data-smrt-part="icon">
             <path d="M21 15v4a2 2 0 01-2 2H5a2 2 0 01-2-2v-4"></path>
             <polyline points="17 8 12 3 7 8"></polyline>
             <line x1="12" y1="3" x2="12" y2="15"></line>
           </svg>
-          <p class="dropzone__text">{t(M['assets.create_asset_modal.dropzone_text'])}</p>
-          <p class="dropzone__hint">{t(M['assets.create_asset_modal.dropzone_hint'])}</p>
+          <p class="smrt-create-asset-modal__dropzone-text" data-smrt-part="title">{t(M['assets.create_asset_modal.dropzone_text'])}</p>
+          <p class="smrt-create-asset-modal__dropzone-hint" data-smrt-part="description">{t(M['assets.create_asset_modal.dropzone_hint'])}</p>
           <!-- raw-primitive-allow: hidden native file input behind the custom drop zone, triggered programmatically; styled Input is unwanted here (visually hidden, opened via the dropzone click/keydown) -->
-          <input id="file-input" type="file" class="dropzone__input" onchange={handleFileSelect} />
+          <input id="file-input" type="file" class="smrt-create-asset-modal__dropzone-input" data-smrt-part="input" onchange={handleFileSelect} />
         </div>
       {:else}
         <!-- File preview + metadata form -->
-        <div class="file-preview">
+        <div class="smrt-create-asset-modal__file-preview" data-smrt-part="panel">
           {#if previewUrl}
-            <img src={previewUrl} alt={t(M['assets.create_asset_modal.preview_alt'])} class="file-preview__image" />
+            <img src={previewUrl} alt={t(M['assets.create_asset_modal.preview_alt'])} class="smrt-create-asset-modal__file-preview-image" data-smrt-part="media" />
           {:else}
-            <div class="file-preview__icon">📎</div>
+            <div class="smrt-create-asset-modal__file-preview-icon" data-smrt-part="icon">📎</div>
           {/if}
-          <div class="file-preview__meta">
-            <span class="file-preview__filename">{file.name}</span>
-            <span class="file-preview__size">{formatSize(file.size)}</span>
+          <div class="smrt-create-asset-modal__file-preview-meta" data-smrt-part="body">
+            <span class="smrt-create-asset-modal__file-preview-filename" data-smrt-part="title">{file.name}</span>
+            <span class="smrt-create-asset-modal__file-preview-size" data-smrt-part="meta">{formatSize(file.size)}</span>
             {#if isLargeFile}
-              <span class="file-preview__warning">{t(M['assets.create_asset_modal.large_file_warning'])}</span>
+              <span class="smrt-create-asset-modal__file-preview-warning" data-smrt-part="description">{t(M['assets.create_asset_modal.large_file_warning'])}</span>
             {/if}
           </div>
-          <Button variant="ghost" size="sm" class="file-preview__remove" onclick={() => { file = null; }} aria-label={t(M['assets.create_asset_modal.remove_file'])}>
+          <Button variant="ghost" size="sm" onclick={() => { file = null; }} aria-label={t(M['assets.create_asset_modal.remove_file'])}>
             <svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><line x1="18" y1="6" x2="6" y2="18"></line><line x1="6" y1="6" x2="18" y2="18"></line></svg>
           </Button>
         </div>
 
-        <div class="form-fields">
-          <div class="form-field">
-            <label for="asset-name" class="form-label">Name</label>
+        <div class="smrt-create-asset-modal__form-fields" data-smrt-part="field">
+          <div class="smrt-create-asset-modal__form-field" data-smrt-part="field">
+            <label for="asset-name" class="smrt-create-asset-modal__form-label" data-smrt-part="label">Name</label>
             <Input id="asset-name" type="text" bind:value={name} placeholder={t(M['assets.create_asset_modal.name_placeholder'])} />
           </div>
 
-          <div class="form-field">
-            <label for="asset-desc" class="form-label">Description</label>
+          <div class="smrt-create-asset-modal__form-field" data-smrt-part="field">
+            <label for="asset-desc" class="smrt-create-asset-modal__form-label" data-smrt-part="label">Description</label>
             <Textarea id="asset-desc" bind:value={description} placeholder={t(M['assets.create_asset_modal.description_placeholder'])} rows={2} />
           </div>
 
           {#if isImage}
-            <div class="form-field">
-              <label for="asset-alt" class="form-label">
+            <div class="smrt-create-asset-modal__form-field" data-smrt-part="field">
+              <label for="asset-alt" class="smrt-create-asset-modal__form-label" data-smrt-part="label">
                 {t(M['assets.create_asset_modal.alt_text'])}
                 {#if !altText}
-                  <span class="form-label__warning">{t(M['assets.create_asset_modal.alt_text_recommended_warning'])}</span>
+                  <span class="smrt-create-asset-modal__form-label-warning" data-smrt-part="description">{t(M['assets.create_asset_modal.alt_text_recommended_warning'])}</span>
                 {/if}
               </label>
               <Input id="asset-alt" type="text" bind:value={altText} placeholder={t(M['assets.create_asset_modal.alt_text_placeholder'])} />
@@ -217,7 +218,7 @@ const isLargeFile = $derived((file?.size ?? 0) > 2 * 1024 * 1024);
       {/if}
 
   {#if error}
-    <p class="create-error" role="alert" aria-live="assertive">{error}</p>
+    <p class="smrt-create-asset-modal__error" data-smrt-part="error" role="alert" aria-live="assertive">{error}</p>
   {/if}
 
   {#snippet footer()}
@@ -230,155 +231,171 @@ const isLargeFile = $derived((file?.size ?? 0) > 2 * 1024 * 1024);
 
 <style>
 @layer smrt.reset, smrt.structure, smrt.theme;
-@layer smrt.theme {
-  .create-error {
+@layer smrt.structure {
+  .smrt-create-asset-modal__error {
     margin: var(--smrt-spacing-2, 0.5rem) 0 0;
     padding: var(--smrt-spacing-2, 0.5rem) var(--smrt-spacing-3, 0.75rem);
-    border-radius: var(--smrt-radius-medium, 0.5rem);
-    background: var(--smrt-color-error-container);
-    color: var(--smrt-color-on-error-container);
-    font-size: var(--smrt-typography-body-small-size, 0.8rem);
   }
-
   /* Dropzone */
-  .dropzone {
+  .smrt-create-asset-modal__dropzone {
     display: flex;
     flex-direction: column;
     align-items: center;
     justify-content: center;
     padding: var(--smrt-spacing-8, 2rem);
-    border: 2px dashed var(--smrt-color-outline-variant);
-    border-radius: var(--smrt-radius-medium, 0.5rem);
     cursor: pointer;
-    transition: all 150ms ease;
-    text-align: center;
   }
-
-  .dropzone:hover, .dropzone--active {
-    border-color: var(--smrt-color-primary);
-    background: var(--smrt-color-primary-container, rgba(0, 90, 193, 0.05));
-  }
-
-  .dropzone__icon {
-    color: var(--smrt-color-on-surface-variant);
+  .smrt-create-asset-modal__dropzone-icon {
     margin-bottom: var(--smrt-spacing-3, 0.75rem);
   }
-
-  .dropzone__text {
+  .smrt-create-asset-modal__dropzone-text {
     margin: 0;
-    font-weight: var(--smrt-typography-weight-medium, 500);
-    color: var(--smrt-color-on-surface);
   }
-
-  .dropzone__hint {
+  .smrt-create-asset-modal__dropzone-hint {
     margin: var(--smrt-spacing-1, 0.25rem) 0 0;
-    font-size: var(--smrt-typography-body-small-size, 0.8rem);
-    color: var(--smrt-color-on-surface-variant);
   }
-
-  .dropzone__input {
+  .smrt-create-asset-modal__dropzone-input {
     display: none;
   }
-
   /* File preview */
-  .file-preview {
+  .smrt-create-asset-modal__file-preview {
     display: flex;
     align-items: center;
     gap: var(--smrt-spacing-3, 0.75rem);
     padding: var(--smrt-spacing-3, 0.75rem);
-    background: var(--smrt-color-surface-container-low);
-    border-radius: var(--smrt-radius-medium, 0.5rem);
     margin-bottom: var(--smrt-spacing-4, 1rem);
   }
-
-  .file-preview__image {
+  .smrt-create-asset-modal__file-preview-image {
     width: 60px;
     height: 60px;
     object-fit: cover;
-    border-radius: var(--smrt-radius-small, 0.25rem);
   }
-
-  .file-preview__icon {
+  .smrt-create-asset-modal__file-preview-icon {
     width: 60px;
     height: 60px;
     display: flex;
     align-items: center;
     justify-content: center;
-    font-size: var(--smrt-typography-headline-small-size, 1.5rem);
-    background: var(--smrt-color-surface-container);
-    border-radius: var(--smrt-radius-small, 0.25rem);
   }
-
-  .file-preview__meta {
+  .smrt-create-asset-modal__file-preview-meta {
     flex: 1;
     min-width: 0;
   }
-
-  .file-preview__filename {
+  .smrt-create-asset-modal__file-preview-filename {
     display: block;
-    font-weight: var(--smrt-typography-weight-medium, 500);
-    font-size: var(--smrt-typography-body-medium-size, 0.875rem);
     white-space: nowrap;
     overflow: hidden;
     text-overflow: ellipsis;
   }
-
-  .file-preview__size {
+  .smrt-create-asset-modal__file-preview-size {
     display: block;
-    font-size: var(--smrt-typography-label-medium-size, 0.75rem);
-    color: var(--smrt-color-on-surface-variant);
   }
-
-  .file-preview__warning {
+  .smrt-create-asset-modal__file-preview-warning {
     display: block;
-    font-size: var(--smrt-typography-body-small-size, 0.75rem);
-    color: var(--smrt-color-error);
     margin-top: var(--smrt-spacing-1);
   }
-
-  /* file-preview__remove renders via <Button class="file-preview__remove">
-     (issue #1589). The overrides shape it into a small round icon button and
-     reach the child <button> via :global() scoping. */
-  .file-preview :global(.file-preview__remove) {
+  /* The remove control renders via <Button> (issue #1589). The overrides shape
+  it into a small round icon button and reach the child <button> via :global()
+  scoping. */
+  .smrt-create-asset-modal__file-preview :global([data-smrt-component="Button"]) {
     width: 28px;
     height: 28px;
     flex-shrink: 0;
     padding: 0;
+  }
+  /* Form fields */
+  .smrt-create-asset-modal__form-fields {
+    display: flex;
+    flex-direction: column;
+    gap: var(--smrt-spacing-3, 0.75rem);
+  }
+  .smrt-create-asset-modal__form-field {
+    display: flex;
+    flex-direction: column;
+    gap: var(--smrt-spacing-1, 0.25rem);
+  }
+  .smrt-create-asset-modal__form-label-warning {
+    margin-left: var(--smrt-spacing-1);
+  }
+}
+
+@layer smrt.theme {
+  .smrt-create-asset-modal__error {
+    border-radius: var(--smrt-radius-medium, 0.5rem);
+    background: var(--smrt-color-error-container);
+    color: var(--smrt-color-on-error-container);
+    font-size: var(--smrt-typography-body-small-size, 0.8rem);
+  }
+  /* Dropzone */
+  .smrt-create-asset-modal__dropzone {
+    border: 2px dashed var(--smrt-color-outline-variant);
+    border-radius: var(--smrt-radius-medium, 0.5rem);
+    transition: all 150ms ease;
+    text-align: center;
+  }
+  .smrt-create-asset-modal__dropzone:hover, .smrt-create-asset-modal__dropzone-active {
+    border-color: var(--smrt-color-primary);
+    background: var(--smrt-color-primary-container, rgba(0, 90, 193, 0.05));
+  }
+  .smrt-create-asset-modal__dropzone-icon {
+    color: var(--smrt-color-on-surface-variant);
+  }
+  .smrt-create-asset-modal__dropzone-text {
+    font-weight: var(--smrt-typography-weight-medium, 500);
+    color: var(--smrt-color-on-surface);
+  }
+  .smrt-create-asset-modal__dropzone-hint {
+    font-size: var(--smrt-typography-body-small-size, 0.8rem);
+    color: var(--smrt-color-on-surface-variant);
+  }
+  /* File preview */
+  .smrt-create-asset-modal__file-preview {
+    background: var(--smrt-color-surface-container-low);
+    border-radius: var(--smrt-radius-medium, 0.5rem);
+  }
+  .smrt-create-asset-modal__file-preview-image {
+    border-radius: var(--smrt-radius-small, 0.25rem);
+  }
+  .smrt-create-asset-modal__file-preview-icon {
+    font-size: var(--smrt-typography-headline-small-size, 1.5rem);
+    background: var(--smrt-color-surface-container);
+    border-radius: var(--smrt-radius-small, 0.25rem);
+  }
+  .smrt-create-asset-modal__file-preview-filename {
+    font-weight: var(--smrt-typography-weight-medium, 500);
+    font-size: var(--smrt-typography-body-medium-size, 0.875rem);
+  }
+  .smrt-create-asset-modal__file-preview-size {
+    font-size: var(--smrt-typography-label-medium-size, 0.75rem);
+    color: var(--smrt-color-on-surface-variant);
+  }
+  .smrt-create-asset-modal__file-preview-warning {
+    font-size: var(--smrt-typography-body-small-size, 0.75rem);
+    color: var(--smrt-color-error);
+  }
+  /* The remove control renders via <Button> (issue #1589). The overrides shape
+  it into a small round icon button and reach the child <button> via :global()
+  scoping. */
+  .smrt-create-asset-modal__file-preview :global([data-smrt-component="Button"]) {
     border: none;
     background: transparent;
     color: var(--smrt-color-on-surface-variant);
     border-radius: var(--smrt-radius-full);
   }
-
-  .file-preview :global(.file-preview__remove:hover) {
+  .smrt-create-asset-modal__file-preview :global([data-smrt-component="Button"]:hover) {
     background: var(--smrt-color-surface-container);
     color: var(--smrt-color-error);
   }
-
-  /* Form fields */
-  .form-fields {
-    display: flex;
-    flex-direction: column;
-    gap: var(--smrt-spacing-3, 0.75rem);
-  }
-
-  .form-field {
-    display: flex;
-    flex-direction: column;
-    gap: var(--smrt-spacing-1, 0.25rem);
-  }
-
-  .form-label {
+  .smrt-create-asset-modal__form-label {
     font-size: var(--smrt-typography-body-medium-size, 0.875rem);
     font-weight: var(--smrt-typography-weight-medium, 500);
     color: var(--smrt-color-on-surface);
   }
-
-  .form-label__warning {
+  .smrt-create-asset-modal__form-label-warning {
     font-weight: var(--smrt-typography-weight-normal, 400);
     font-size: var(--smrt-typography-body-small-size, 0.75rem);
     color: var(--smrt-color-error);
-    margin-left: var(--smrt-spacing-1);
   }
 }
+
 </style>

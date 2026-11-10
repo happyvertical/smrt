@@ -75,7 +75,7 @@ describe('ContentBodyEditor change this picture', () => {
     image.dispatchEvent(new MouseEvent('click', { bubbles: true }));
     flushSync();
     const toolbarButton = target.querySelector(
-      '.image-control-popover button[aria-label="Change this picture"]',
+      '.smrt-content-body-editor__image-control-popover button[aria-label="Change this picture"]',
     ) as HTMLButtonElement;
     expect(toolbarButton.textContent).toContain('Change');
     toolbarButton.click();
@@ -89,7 +89,7 @@ describe('ContentBodyEditor change this picture', () => {
     );
 
     const badge = target.querySelector(
-      'button.image-change-badge',
+      'button.smrt-content-body-editor__image-change-badge',
     ) as HTMLButtonElement;
     expect(badge.getAttribute('aria-label')).toBe('Change this picture');
     badge.click();

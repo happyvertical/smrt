@@ -14,7 +14,8 @@ let { title, href }: Props = $props();
 
 <style>
 @layer smrt.reset, smrt.structure, smrt.theme;
-@layer smrt.theme {
+
+@layer smrt.structure {
   .smrt-shell-title {
     display: inline-flex;
     align-items: center;
@@ -23,20 +24,23 @@ let { title, href }: Props = $props();
     min-block-size: 2.75rem;
     padding: 0 var(--smrt-spacing-2);
     overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+  }
+}
+
+@layer smrt.theme {
+  .smrt-shell-title {
     border-radius: var(--smrt-radius-md);
     color: var(--smrt-color-on-surface);
     font: var(--smrt-typography-title-medium-font);
     /* Themeable: --smrt-shell-title-font-family (a serif masthead, say). */
     font-family: var(--smrt-shell-title-font-family, var(--smrt-typography-title-medium-font-family, inherit));
     text-decoration: none;
-    text-overflow: ellipsis;
-    white-space: nowrap;
   }
-
   .smrt-shell-title:hover {
     background: var(--smrt-color-surface-container-high);
   }
-
   .smrt-shell-title:focus-visible {
     outline: 2px solid var(--smrt-color-primary);
     outline-offset: 2px;

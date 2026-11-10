@@ -126,8 +126,10 @@ describe('CurrencyDisplay', () => {
     const { container } = render(CurrencyDisplay, {
       props: { amount, currency: 'CAD' },
     });
-    const display = container.querySelector('.currency-display');
-    expect(display).toHaveClass('invalid');
+    const display = container.querySelector(
+      '[data-smrt-component="CurrencyDisplay"]',
+    );
+    expect(display).toHaveClass('smrt-currency-display__invalid');
     expect(display).toHaveTextContent('Invalid minor-unit amount');
   });
 
@@ -173,8 +175,10 @@ describe('CurrencyDisplay', () => {
       currency
         .trim()
         .replace(/[a-z]/g, (character) => character.toUpperCase()) || '(empty)';
-    const display = container.querySelector('.currency-display');
-    expect(display).toHaveClass('invalid');
+    const display = container.querySelector(
+      '[data-smrt-component="CurrencyDisplay"]',
+    );
+    expect(display).toHaveClass('smrt-currency-display__invalid');
     expect(display).toHaveTextContent(`Invalid currency code: ${normalized}`);
   });
 
@@ -189,27 +193,27 @@ describe('CurrencyDisplay', () => {
     const { container } = render(CurrencyDisplay, {
       props: { amount: 12345, currency },
     });
-    expect(container.querySelector('.currency-display')).toHaveTextContent(
-      `Invalid currency code: ${diagnostic}`,
-    );
+    expect(
+      container.querySelector('[data-smrt-component="CurrencyDisplay"]'),
+    ).toHaveTextContent(`Invalid currency code: ${diagnostic}`);
   });
 
   it('bounds escaped astral input without splitting a code-point token', () => {
     const { container } = render(CurrencyDisplay, {
       props: { amount: 12345, currency: '😀😀' },
     });
-    expect(container.querySelector('.currency-display')).toHaveTextContent(
-      'Invalid currency code: \\u{1F600}…',
-    );
+    expect(
+      container.querySelector('[data-smrt-component="CurrencyDisplay"]'),
+    ).toHaveTextContent('Invalid currency code: \\u{1F600}…');
   });
 
   it('bounds malformed currency text so one row cannot force table overflow', () => {
     const { container } = render(CurrencyDisplay, {
       props: { amount: 12345, currency: 'invalid-currency-code' },
     });
-    expect(container.querySelector('.currency-display')).toHaveTextContent(
-      'Invalid currency code: INVALID-CURR…',
-    );
+    expect(
+      container.querySelector('[data-smrt-component="CurrencyDisplay"]'),
+    ).toHaveTextContent('Invalid currency code: INVALID-CURR…');
   });
 
   it('rejects a non-string currency from an untyped runtime caller without throwing', () => {
@@ -217,8 +221,10 @@ describe('CurrencyDisplay', () => {
       // @ts-expect-error JavaScript callers can pass values outside the public type.
       props: { amount: 12345, currency: null },
     });
-    const display = container.querySelector('.currency-display');
-    expect(display).toHaveClass('invalid');
+    const display = container.querySelector(
+      '[data-smrt-component="CurrencyDisplay"]',
+    );
+    expect(display).toHaveClass('smrt-currency-display__invalid');
     expect(display).toHaveTextContent('Invalid currency code: (non-string)');
   });
 
@@ -226,14 +232,17 @@ describe('CurrencyDisplay', () => {
     const { rerender } = render(CurrencyDisplay, {
       props: { amount: 12.5, currency: 'XAU' },
     });
-    const display = document.querySelector('.currency-display');
-    expect(display).toHaveClass('invalid');
+    const display = document.querySelector(
+      '[data-smrt-component="CurrencyDisplay"]',
+    );
+    expect(display).toHaveClass('smrt-currency-display__invalid');
     expect(display).toHaveTextContent('Currency code has no minor unit: XAU');
 
     await rerender({ amount: 12.5, currency: 'XAU', unit: 'dollars' });
-    expect(document.querySelector('.currency-display')?.textContent).toBe(
-      money(12.5, 'XAU', 2),
-    );
+    expect(
+      document.querySelector('[data-smrt-component="CurrencyDisplay"]')
+        ?.textContent,
+    ).toBe(money(12.5, 'XAU', 2));
   });
 
   it('resolves invalid-code prose through the active i18n snapshot', () => {
@@ -270,26 +279,32 @@ describe('CurrencyDisplay', () => {
     const { container } = render(CurrencyDisplay, {
       props: { amount: -100, unit: 'dollars', highlightNegative: true },
     });
-    expect(container.querySelector('span')).toHaveClass('negative');
+    expect(container.querySelector('span')).toHaveClass(
+      'smrt-currency-display__negative',
+    );
   });
 
   it('does not apply the negative class to a positive amount', () => {
     const { container } = render(CurrencyDisplay, {
       props: { amount: 100, unit: 'dollars', highlightNegative: true },
     });
-    expect(container.querySelector('span')).not.toHaveClass('negative');
+    expect(container.querySelector('span')).not.toHaveClass(
+      'smrt-currency-display__negative',
+    );
   });
 
   it('applies the positive highlight class only when highlightPositive and amount>0', () => {
     const { container } = render(CurrencyDisplay, {
       props: { amount: 100, unit: 'dollars', highlightPositive: true },
     });
-    expect(container.querySelector('span')).toHaveClass('positive');
+    expect(container.querySelector('span')).toHaveClass(
+      'smrt-currency-display__positive',
+    );
   });
 
   it.each([
-    ['sm', 'sm'],
-    ['lg', 'lg'],
+    ['sm', 'smrt-currency-display__sm'],
+    ['lg', 'smrt-currency-display__lg'],
   ] as const)('applies the %s size class', (size, cls) => {
     const { container } = render(CurrencyDisplay, {
       props: { amount: 100, unit: 'dollars', size },
@@ -302,7 +317,7 @@ describe('CurrencyDisplay', () => {
       props: { amount: 100, unit: 'dollars', class: 'my-money' },
     });
     const span = container.querySelector('span');
-    expect(span).toHaveClass('currency-display');
+    expect(span).toHaveClass('smrt-currency-display__root');
     expect(span).toHaveClass('my-money');
   });
 

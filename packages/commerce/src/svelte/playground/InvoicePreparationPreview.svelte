@@ -97,7 +97,7 @@ function submit(event: SubmitEvent) {
   event.preventDefault();
 }
 </script>
-<div class="preview">
+<div class="smrt-invoice-preparation-preview__root" data-smrt-component="InvoicePreparationPreview">
   <Checkbox label="May edit invoice" bind:checked={canEdit} />
   <Checkbox label="Issued (frozen snapshot)" bind:checked={frozen} />
   {#key frozen}
@@ -106,7 +106,14 @@ function submit(event: SubmitEvent) {
 </div>
 <style>
 @layer smrt.reset, smrt.structure, smrt.theme;
-@layer smrt.theme {
-.preview { display: grid; gap: var(--smrt-spacing-4); }
+@layer smrt.structure {
+  .smrt-invoice-preparation-preview__root {
+    display: grid;
+    gap: var(--smrt-spacing-4);
+  }
 }
+
+@layer smrt.theme {
+}
+
 </style>

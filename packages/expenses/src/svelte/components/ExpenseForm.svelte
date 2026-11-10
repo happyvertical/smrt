@@ -62,11 +62,11 @@ function name(field: keyof ExpenseDraftValues) {
   return fields[field] ?? field;
 }
 </script>
-<section class="expense-form" aria-labelledby={`${formId}-title`} data-smrt-component="ExpenseForm">
-  <h2 id={`${formId}-title`}>{title ?? t(M['expenses.form.title'])}</h2>
+<section class="smrt-expense-form__root" aria-labelledby={`${formId}-title`} data-smrt-component="ExpenseForm">
+  <h2 id={`${formId}-title`} data-smrt-part="title">{title ?? t(M['expenses.form.title'])}</h2>
   {#if !canEdit}<p>{t(M['expenses.form.readonly'])}</p>{/if}
   <Form id={formId} {action} method="post" preventDefault={false} {onsubmit} aria-busy={busy}>
-    <div class="fields">
+    <div class="smrt-expense-form__fields" data-smrt-part="body">
       {#each hiddenFields as field}<Input type="hidden" name={field.name} value={field.value} interaction={false} />{/each}
       {#if message}<p role="alert">{message}</p>{/if}
       {#if retryStatus === 'transport-error'}<p role="status">{t(M['expenses.form.uncertain'])}</p>{/if}
@@ -130,10 +130,30 @@ function name(field: keyof ExpenseDraftValues) {
 </section>
 <style>
 @layer smrt.reset, smrt.structure, smrt.theme;
-@layer smrt.theme {
-  .expense-form, .fields { display: grid; gap: var(--smrt-spacing-4); min-width: 0; }
-  .expense-form { max-width: 48rem; overflow-wrap: anywhere; }
-  fieldset { min-width: 0; border: 0; padding: 0; margin: 0; }
-  h2, p { margin: 0; }
+@layer smrt.structure {
+  .smrt-expense-form__root, .smrt-expense-form__fields {
+    display: grid;
+    gap: var(--smrt-spacing-4);
+    min-width: 0;
+  }
+  .smrt-expense-form__root {
+    max-width: 48rem;
+    overflow-wrap: anywhere;
+  }
+  fieldset {
+    min-width: 0;
+    padding: 0;
+    margin: 0;
+  }
+  h2, p {
+    margin: 0;
+  }
 }
+
+@layer smrt.theme {
+  fieldset {
+    border: 0;
+  }
+}
+
 </style>

@@ -107,35 +107,35 @@ function contactHref(fact: RecordFact, text: string): string | undefined {
 }
 </script>
 
-<header class="smrt-record-header" data-smrt-component="RecordHeader">
+<header class="smrt-record-header__root" data-smrt-component="RecordHeader">
   {#if onback}
     <Button variant="ghost" size="sm" onclick={onback}>
       {backLabel ?? t(M['ui.screens.back'], { name: titles.plural.toLowerCase() })}
     </Button>
   {/if}
-  <div class="smrt-record-header__row">
-    <div class="smrt-record-header__identity">
-      <h1 class="smrt-record-header__title">
+  <div class="smrt-record-header__row" data-smrt-part="row">
+    <div class="smrt-record-header__identity" data-smrt-part="label">
+      <h1 class="smrt-record-header__title" data-smrt-part="title">
         {#if model.headingIdentifier && model.identifier}
           {model.heading.slice(0, model.heading.length - model.identifier.value.length)}<code
-            class="smrt-record-header__id">{model.identifier.value}</code
+            class="smrt-record-header__id" data-smrt-part="label">{model.identifier.value}</code
           >
         {:else}
           {model.heading}
         {/if}
       </h1>
       {#if model.identifier && !model.headingIdentifier}
-        <code class="smrt-record-header__id smrt-record-header__id--chip" title={model.identifier.field.label}
+        <code class="smrt-record-header__id smrt-record-header__id--chip" title={model.identifier.field.label} data-smrt-part="label"
           >{model.identifier.value}</code
         >
       {/if}
       {#if model.status}
         <Badge variant={statusTone(model.status.value, statusTones)}>
-          <span class="smrt-record-header__sr">{model.status.field.label}: </span>{statusLabel(model.status.value)}
+          <span class="smrt-record-header__sr" data-smrt-part="label">{model.status.field.label}: </span>{statusLabel(model.status.value)}
         </Badge>
       {/if}
     </div>
-    <div class="smrt-record-header__actions">
+    <div class="smrt-record-header__actions" data-smrt-part="actions">
       {#if onedit}
         <Button variant="primary" onclick={onedit}>{t(M['ui.screens.edit'])}</Button>
       {/if}
@@ -148,7 +148,7 @@ function contactHref(fact: RecordFact, text: string): string | undefined {
           bind:open={menuOpen}
         >
           {#snippet trigger()}<span aria-hidden="true">⋯</span>{/snippet}
-          <div class="smrt-record-header__menu">
+          <div class="smrt-record-header__menu" data-smrt-part="panel">
             {#if extraActions}{@render extraActions()}{/if}
             {#if ondelete}
               <Button
@@ -167,11 +167,11 @@ function contactHref(fact: RecordFact, text: string): string | undefined {
     </div>
   </div>
   {#if model.facts.length > 0}
-    <dl class="smrt-record-header__facts">
+    <dl class="smrt-record-header__facts" data-smrt-part="list">
       {#each model.facts as fact (fact.field.name)}
         {@const text = factText(fact)}
-        <div class="smrt-record-header__fact">
-          <dt>{fact.field.label}</dt>
+        <div class="smrt-record-header__fact" data-smrt-part="row">
+          <dt data-smrt-part="label">{fact.field.label}</dt>
           <dd>
             {#if fact.kind === 'party'}
               {@const href = hrefFor?.(fact.field, text)}
@@ -216,23 +216,96 @@ function contactHref(fact: RecordFact, text: string): string | undefined {
 
 <style>
 @layer smrt.reset, smrt.structure, smrt.theme;
-@layer smrt.theme {
-  .smrt-record-header { display: grid; gap: var(--smrt-spacing-2); justify-items: start; }
-  .smrt-record-header__row { display: flex; flex-wrap: wrap; align-items: center; justify-content: space-between; gap: var(--smrt-spacing-3); inline-size: 100%; }
-  .smrt-record-header__identity { display: flex; flex-wrap: wrap; align-items: center; gap: var(--smrt-spacing-2) var(--smrt-spacing-3); min-inline-size: 0; }
-  .smrt-record-header__title { margin: 0; font-size: var(--smrt-typography-headline-small-size, 1.5rem); font-weight: var(--smrt-typography-weight-semibold); overflow-wrap: anywhere; }
-  .smrt-record-header__id { font-family: var(--smrt-font-family-mono); }
-  .smrt-record-header__id--chip { padding: 0 var(--smrt-spacing-2); border-radius: var(--smrt-radius-sm); background: var(--smrt-color-surface-container); color: var(--smrt-color-on-surface-variant); }
-  .smrt-record-header__actions { display: flex; align-items: center; gap: var(--smrt-spacing-2); }
-  .smrt-record-header__menu { display: grid; gap: var(--smrt-spacing-2); padding: var(--smrt-spacing-2); min-inline-size: 10rem; }
-  .smrt-record-header__facts { display: flex; flex-wrap: wrap; gap: var(--smrt-spacing-2) var(--smrt-spacing-6); margin: 0; }
-  .smrt-record-header__fact { display: grid; gap: 0; }
-  .smrt-record-header__fact dt { color: var(--smrt-color-on-surface-variant); font-size: var(--smrt-typography-body-small-size, 0.75rem); }
-  .smrt-record-header__fact dd { margin: 0; font-variant-numeric: tabular-nums; }
-  .smrt-record-header__sr { position: absolute; inline-size: 1px; block-size: 1px; overflow: hidden; clip-path: inset(50%); white-space: nowrap; }
+@layer smrt.structure {
+  .smrt-record-header__root {
+    display: grid;
+    gap: var(--smrt-spacing-2);
+    justify-items: start;
+  }
+  .smrt-record-header__row {
+    display: flex;
+    flex-wrap: wrap;
+    align-items: center;
+    justify-content: space-between;
+    gap: var(--smrt-spacing-3);
+    inline-size: 100%;
+  }
+  .smrt-record-header__identity {
+    display: flex;
+    flex-wrap: wrap;
+    align-items: center;
+    gap: var(--smrt-spacing-2) var(--smrt-spacing-3);
+    min-inline-size: 0;
+  }
+  .smrt-record-header__title {
+    margin: 0;
+    overflow-wrap: anywhere;
+  }
+  .smrt-record-header__id--chip {
+    padding: 0 var(--smrt-spacing-2);
+  }
+  .smrt-record-header__actions {
+    display: flex;
+    align-items: center;
+    gap: var(--smrt-spacing-2);
+  }
+  .smrt-record-header__menu {
+    display: grid;
+    gap: var(--smrt-spacing-2);
+    padding: var(--smrt-spacing-2);
+    min-inline-size: 10rem;
+  }
+  .smrt-record-header__facts {
+    display: flex;
+    flex-wrap: wrap;
+    gap: var(--smrt-spacing-2) var(--smrt-spacing-6);
+    margin: 0;
+  }
+  .smrt-record-header__fact {
+    display: grid;
+    gap: 0;
+  }
+  .smrt-record-header__fact dd {
+    margin: 0;
+  }
+  .smrt-record-header__sr {
+    position: absolute;
+    inline-size: 1px;
+    block-size: 1px;
+    overflow: hidden;
+    clip-path: inset(50%);
+    white-space: nowrap;
+  }
   @media (max-width: 47.99rem) {
-    .smrt-record-header__actions { inline-size: 100%; }
-    .smrt-record-header__actions > :global(:first-child) { flex: 1; }
+    .smrt-record-header__actions {
+      inline-size: 100%;
+    }
+    .smrt-record-header__actions > :global(:first-child) {
+      flex: 1;
+    }
   }
 }
+
+@layer smrt.theme {
+  .smrt-record-header__title {
+    font-size: var(--smrt-typography-headline-small-size, 1.5rem);
+    font-weight: var(--smrt-typography-weight-semibold);
+  }
+  .smrt-record-header__id {
+    font-family: var(--smrt-font-family-mono);
+  }
+  .smrt-record-header__id--chip {
+    border-radius: var(--smrt-radius-sm);
+    background: var(--smrt-color-surface-container);
+    color: var(--smrt-color-on-surface-variant);
+  }
+  .smrt-record-header__fact dt {
+    color: var(--smrt-color-on-surface-variant);
+    font-size: var(--smrt-typography-body-small-size, 0.75rem);
+  }
+  .smrt-record-header__fact dd {
+    font-variant-numeric: tabular-nums;
+  }
+}
+
 </style>

@@ -264,8 +264,8 @@ const inApp = $derived(
 </svelte:head>
 
 {#if model && applied}
-  <main>
-    <div class="bar">
+  <main data-smrt-component="ModelPage">
+    <div class="smrt-model-page__bar" data-smrt-part="header">
     <nav aria-label="Breadcrumb">
       {#if navCrumb}
         {#if sameName(navCrumb) || !navCrumb.sectionId}
@@ -279,7 +279,7 @@ const inApp = $derived(
         {model.name}
       {/if}
       {#if cookbookStore.loaded && !inApp}
-        <span class="meta">(not in your app yet)</span>
+        <span class="smrt-model-page__meta" data-smrt-part="meta">(not in your app yet)</span>
       {/if}
     </nav>
     {#if iconSection}
@@ -334,7 +334,7 @@ const inApp = $derived(
 
 <style>
 @layer smrt.reset, smrt.structure, smrt.theme;
-@layer smrt.theme {
+@layer smrt.structure {
   main {
     display: grid;
     gap: var(--smrt-spacing-6);
@@ -342,14 +342,16 @@ const inApp = $derived(
     margin-inline: auto;
     padding: var(--smrt-spacing-6);
   }
-
-  .bar {
+  .smrt-model-page__bar {
     display: flex;
     align-items: center;
   }
+}
 
-  .meta {
+@layer smrt.theme {
+  .smrt-model-page__meta {
     color: var(--smrt-color-on-surface-variant);
   }
 }
+
 </style>

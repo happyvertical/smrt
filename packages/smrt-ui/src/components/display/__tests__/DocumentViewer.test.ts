@@ -148,7 +148,7 @@ describe('DocumentViewer PDF', () => {
     });
     await waitFor(() => expect(btn('Zoom in')).toBeEnabled());
     const sheet = () =>
-      container.querySelector('[data-smrt-part="sheet"]') as HTMLElement;
+      container.querySelector('[data-smrt-part="page"]') as HTMLElement;
     expect(btn('Zoom out')).toBeDisabled();
     expect(btn('Fit')).toBeDisabled();
     await fireEvent.click(btn('Zoom in'));
@@ -186,7 +186,7 @@ describe('DocumentViewer PDF', () => {
     });
     await waitFor(() => expect(btn('Zoom in')).toBeInTheDocument());
     const sheet = container.querySelector(
-      '[data-smrt-part="sheet"]',
+      '[data-smrt-part="page"]',
     ) as HTMLElement;
     await fireEvent.pointerDown(sheet, {
       pointerId: 1,
@@ -227,6 +227,7 @@ describe('DocumentViewer PDF', () => {
       expect(root(container)).toHaveAttribute('data-state', 'failed'),
     );
     expect(screen.getByRole('alert')).toHaveTextContent('could not be opened');
+    expect(btn('Try again')).toHaveAttribute('data-smrt-part', 'retry');
     await expectNoA11yViolations(container);
     await fireEvent.click(btn('Try again'));
     await waitFor(() =>
@@ -490,7 +491,7 @@ describe('DocumentViewer pinch capture', () => {
     });
     await waitFor(() => expect(btn('Zoom in')).toBeInTheDocument());
     const sheet = container.querySelector(
-      '[data-smrt-part="sheet"]',
+      '[data-smrt-part="page"]',
     ) as HTMLElement;
     const capture = vi.fn();
     sheet.setPointerCapture = capture;

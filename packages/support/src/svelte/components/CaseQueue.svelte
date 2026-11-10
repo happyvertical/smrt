@@ -45,23 +45,23 @@ function formatUpdated(iso: string | null): string {
 </script>
 
 {#if cases.length === 0}
-  <p class="case-queue-empty" data-smrt-component="CaseQueue">{emptyMessage}</p>
+  <p class="smrt-case-queue__empty" data-smrt-component="CaseQueue" >{emptyMessage}</p>
 {:else}
-  <ul class="case-queue" data-smrt-component="CaseQueue">
+  <ul class="smrt-case-queue__root" data-smrt-component="CaseQueue">
     {#each cases as item (item.id)}
-      <li class="case-queue-row">
+      <li class="smrt-case-queue__row" data-smrt-part="row">
         <Button
           variant="ghost"
           fullWidth
           onclick={() => onselect?.(item.id)}
           aria-label={`Open case ${item.caseNumber}: ${item.subject}`}
         >
-          <span class="case-queue-line">
-            <span class="case-queue-main">
-              <span class="case-queue-number">{item.caseNumber}</span>
-              <span class="case-queue-subject">{item.subject}</span>
+          <span class="smrt-case-queue__line" data-smrt-part="body">
+            <span class="smrt-case-queue__main" data-smrt-part="title">
+              <span class="smrt-case-queue__number" data-smrt-part="value">{item.caseNumber}</span>
+              <span class="smrt-case-queue__subject" data-smrt-part="title">{item.subject}</span>
             </span>
-            <span class="case-queue-meta">
+            <span class="smrt-case-queue__meta" data-smrt-part="meta">
               <StatusBadge
                 status={priorityBadgeKey(item.priority)}
                 label={item.priority}
@@ -73,15 +73,15 @@ function formatUpdated(iso: string | null): string {
                 size="sm"
               />
               {#if item.channelKind}
-                <span class="case-queue-channel">{item.channelKind}</span>
+                <span class="smrt-case-queue__channel" data-smrt-part="meta">{item.channelKind}</span>
               {/if}
               {#if showAssignee}
-                <span class="case-queue-assignee">
+                <span class="smrt-case-queue__assignee" data-smrt-part="meta">
                   {item.assignedSpecialistName ??
                     (item.assignedSpecialistId ? 'assigned' : 'unassigned')}
                 </span>
               {/if}
-              <span class="case-queue-updated">
+              <span class="smrt-case-queue__updated" data-smrt-part="meta">
                 {formatUpdated(item.updatedAt)}
               </span>
             </span>
@@ -94,8 +94,8 @@ function formatUpdated(iso: string | null): string {
 
 <style>
 @layer smrt.reset, smrt.structure, smrt.theme;
-@layer smrt.theme {
-  .case-queue {
+@layer smrt.structure {
+  .smrt-case-queue__root {
     list-style: none;
     margin: 0;
     padding: 0;
@@ -103,52 +103,55 @@ function formatUpdated(iso: string | null): string {
     flex-direction: column;
     gap: 0.25rem;
   }
-
-  .case-queue-line {
+  .smrt-case-queue__line {
     display: flex;
     width: 100%;
     align-items: center;
     justify-content: space-between;
     gap: 0.75rem;
-    text-align: left;
   }
-
-  .case-queue-main {
+  .smrt-case-queue__main {
     display: flex;
     flex-direction: column;
     gap: 0.125rem;
     min-width: 0;
   }
-
-  .case-queue-number {
-    font-size: 0.75rem;
-    color: var(--smrt-color-on-surface-variant, inherit);
-  }
-
-  .case-queue-subject {
-    font-weight: 500;
+  .smrt-case-queue__subject {
     overflow: hidden;
     text-overflow: ellipsis;
     white-space: nowrap;
   }
-
-  .case-queue-meta {
+  .smrt-case-queue__meta {
     display: flex;
     align-items: center;
     gap: 0.5rem;
     flex-shrink: 0;
   }
-
-  .case-queue-channel,
-  .case-queue-assignee,
-  .case-queue-updated {
-    font-size: 0.75rem;
-    color: var(--smrt-color-on-surface-variant, inherit);
-  }
-
-  .case-queue-empty {
-    color: var(--smrt-color-on-surface-variant, inherit);
+  .smrt-case-queue__empty {
     padding: 1rem 0;
   }
 }
+
+@layer smrt.theme {
+  .smrt-case-queue__line {
+    text-align: left;
+  }
+  .smrt-case-queue__number {
+    font-size: 0.75rem;
+    color: var(--smrt-color-on-surface-variant, inherit);
+  }
+  .smrt-case-queue__subject {
+    font-weight: 500;
+  }
+  .smrt-case-queue__channel,
+  .smrt-case-queue__assignee,
+  .smrt-case-queue__updated {
+    font-size: 0.75rem;
+    color: var(--smrt-color-on-surface-variant, inherit);
+  }
+  .smrt-case-queue__empty {
+    color: var(--smrt-color-on-surface-variant, inherit);
+  }
+}
+
 </style>

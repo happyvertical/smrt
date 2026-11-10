@@ -64,7 +64,7 @@ async function toggle(line: BomEditorLine) {
 }
 </script>
 
-<ul class="bom-tree" aria-label={label} data-smrt-component="BomStructureTree">
+<ul class="smrt-bom-structure-tree__root" aria-label={label} data-smrt-component="BomStructureTree">
   {#each lines as line (line.id)}
     {@const canOpen =
       line.kind === 'assembly' &&
@@ -72,15 +72,15 @@ async function toggle(line: BomEditorLine) {
       loadBill !== undefined &&
       !ancestors.includes(line.subBomId)}
     {@const subId = `${uid}-${line.id}`}
-    <li class="bom-tree-line">
-      <div class="bom-tree-row">
-        <span class="bom-tree-component">{componentText(line)}</span>
+    <li class="smrt-bom-structure-tree__line" data-smrt-part="item">
+      <div class="smrt-bom-structure-tree__row" data-smrt-part="row">
+        <span class="smrt-bom-structure-tree__component" data-smrt-part="title">{componentText(line)}</span>
         <Badge size="sm" variant={line.kind === 'missing' ? 'error' : 'default'}>
           {t(componentKindLabelKey(line.kind))}
         </Badge>
-        <span class="bom-tree-qty">{line.qtyPerUnit} {line.uom}</span>
+        <span class="smrt-bom-structure-tree__qty" data-smrt-part="value">{line.qtyPerUnit} {line.uom}</span>
         {#if line.kind === 'assembly' && line.subBomId === null}
-          <span class="bom-tree-note">{t(M['manufacturing.bom_editor.no_bill'])}</span>
+          <span class="smrt-bom-structure-tree__note" data-smrt-part="description">{t(M['manufacturing.bom_editor.no_bill'])}</span>
         {/if}
         {#if canOpen}
           <Button
@@ -106,7 +106,7 @@ async function toggle(line: BomEditorLine) {
       </div>
       {#if canOpen && open[line.id] && line.subBomId}
         {@const entry = loaded[line.subBomId]}
-        <div id={subId} class="bom-tree-children">
+        <div id={subId} class="smrt-bom-structure-tree__children" data-smrt-part="list">
           {#if entry?.state === 'ready'}
             <BomStructureTree
               lines={entry.lines}
@@ -115,9 +115,9 @@ async function toggle(line: BomEditorLine) {
               label={t(M['manufacturing.bom_editor.sub_bill_label'], { component: line.componentName })}
             />
           {:else if entry?.state === 'failed'}
-            <p class="bom-tree-note" role="alert">{t(M['manufacturing.bom_editor.load_failed'])}</p>
+            <p class="smrt-bom-structure-tree__note" data-smrt-part="description" role="alert">{t(M['manufacturing.bom_editor.load_failed'])}</p>
           {:else}
-            <p class="bom-tree-note" role="status">{t(M['manufacturing.bom_editor.loading'])}</p>
+            <p class="smrt-bom-structure-tree__note" data-smrt-part="description" role="status">{t(M['manufacturing.bom_editor.loading'])}</p>
           {/if}
         </div>
       {/if}
@@ -127,41 +127,43 @@ async function toggle(line: BomEditorLine) {
 
 <style>
 @layer smrt.reset, smrt.structure, smrt.theme;
-@layer smrt.theme {
-  .bom-tree {
+@layer smrt.structure {
+  .smrt-bom-structure-tree__root {
     list-style: none;
     margin: 0;
     padding: 0;
   }
-
-  .bom-tree-line {
+  .smrt-bom-structure-tree__line {
     padding: 0.25rem 0;
   }
-
-  .bom-tree-row {
+  .smrt-bom-structure-tree__row {
     display: flex;
     flex-wrap: wrap;
     align-items: center;
     gap: 0.5rem;
   }
-
-  .bom-tree-component {
-    font-weight: var(--smrt-typography-title-small-weight, 500);
-  }
-
-  .bom-tree-qty {
-    font-variant-numeric: tabular-nums;
-  }
-
-  .bom-tree-note {
+  .smrt-bom-structure-tree__note {
     margin: 0;
-    color: var(--smrt-color-on-surface-variant, inherit);
   }
-
-  .bom-tree-children {
+  .smrt-bom-structure-tree__children {
     margin-left: 1rem;
     padding-left: 0.75rem;
+  }
+}
+
+@layer smrt.theme {
+  .smrt-bom-structure-tree__component {
+    font-weight: var(--smrt-typography-title-small-weight, 500);
+  }
+  .smrt-bom-structure-tree__qty {
+    font-variant-numeric: tabular-nums;
+  }
+  .smrt-bom-structure-tree__note {
+    color: var(--smrt-color-on-surface-variant, inherit);
+  }
+  .smrt-bom-structure-tree__children {
     border-left: 2px solid var(--smrt-color-outline-variant, transparent);
   }
 }
+
 </style>

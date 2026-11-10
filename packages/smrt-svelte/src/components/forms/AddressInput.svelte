@@ -395,15 +395,15 @@ function handleCountryChange(e: Event) {
 }
 </script>
 
-  <div class="smrt-address" data-smrt-field-owner={fieldOwnerToken} data-smrt-component="AddressInput">
+  <div class="smrt-address-input__root" data-smrt-field-owner={fieldOwnerToken} data-smrt-component="AddressInput">
   {#if label}
     <FieldLabel for={primaryFieldId} {label} {required} />
   {/if}
 
-  <div class="address-fields" class:smrt-mode={isSmrt}>
+  <div class="smrt-address-input__fields" class:smrt-address-input__mode={isSmrt} data-smrt-part="body">
     {#if fields.includes('street')}
-      <div class="field-row full-width">
-        <label for="{name}_street" class="field-label">{fieldLabels.street}</label>
+      <div class="smrt-address-input__field-row smrt-address-input__full-width" data-smrt-part="field">
+        <label for="{name}_street" class="smrt-address-input__field-label" data-smrt-part="label">{fieldLabels.street}</label>
         <input
           id="{name}_street"
           name="{name}[street]"
@@ -412,8 +412,9 @@ function handleCountryChange(e: Event) {
           value={street}
           {disabled}
           required={required && fields.includes('street')}
-          class="smrt-input"
-          class:invalid={!!error}
+          class="smrt-address-input__input"
+          data-smrt-part="input"
+          class:smrt-address-input__invalid={!!error}
           aria-invalid={error ? 'true' : undefined}
           aria-describedby={error ? `${name}-error` : undefined}
           oninput={handleStreetInput}
@@ -421,10 +422,10 @@ function handleCountryChange(e: Event) {
       </div>
     {/if}
 
-    <div class="field-row-group">
+    <div class="smrt-address-input__field-row-group" data-smrt-part="row">
       {#if fields.includes('city')}
-        <div class="field-row flex-2">
-          <label for="{name}_city" class="field-label">{fieldLabels.city}</label>
+        <div class="smrt-address-input__field-row smrt-address-input__flex-2" data-smrt-part="field">
+          <label for="{name}_city" class="smrt-address-input__field-label" data-smrt-part="label">{fieldLabels.city}</label>
           <input
             id="{name}_city"
             name="{name}[city]"
@@ -433,8 +434,9 @@ function handleCountryChange(e: Event) {
             value={city}
             {disabled}
             required={required && fields.includes('city')}
-            class="smrt-input"
-            class:invalid={!!error}
+            class="smrt-address-input__input"
+            data-smrt-part="input"
+            class:smrt-address-input__invalid={!!error}
             aria-invalid={error ? 'true' : undefined}
             aria-describedby={error ? `${name}-error` : undefined}
             oninput={handleCityInput}
@@ -443,16 +445,17 @@ function handleCountryChange(e: Event) {
       {/if}
 
       {#if fields.includes('province')}
-        <div class="field-row flex-1">
-          <label for="{name}_province" class="field-label">{fieldLabels.province}</label>
+        <div class="smrt-address-input__field-row smrt-address-input__flex-1" data-smrt-part="field">
+          <label for="{name}_province" class="smrt-address-input__field-label" data-smrt-part="label">{fieldLabels.province}</label>
           <select
             id="{name}_province"
             name="{name}[province]"
             value={province}
             {disabled}
             required={required && fields.includes('province')}
-            class="smrt-input smrt-select"
-            class:invalid={!!error}
+            class="smrt-address-input__input smrt-address-input__select"
+            data-smrt-part="input"
+            class:smrt-address-input__invalid={!!error}
             aria-invalid={error ? 'true' : undefined}
             aria-describedby={error ? `${name}-error` : undefined}
             onchange={handleProvinceChange}
@@ -466,10 +469,10 @@ function handleCountryChange(e: Event) {
       {/if}
     </div>
 
-    <div class="field-row-group">
+    <div class="smrt-address-input__field-row-group" data-smrt-part="row">
       {#if fields.includes('postalCode')}
-        <div class="field-row flex-1">
-          <label for="{name}_postal" class="field-label">{fieldLabels.postalCode}</label>
+        <div class="smrt-address-input__field-row smrt-address-input__flex-1" data-smrt-part="field">
+          <label for="{name}_postal" class="smrt-address-input__field-label" data-smrt-part="label">{fieldLabels.postalCode}</label>
           <input
             id="{name}_postal"
             name="{name}[postalCode]"
@@ -478,8 +481,9 @@ function handleCountryChange(e: Event) {
             value={postalCode}
             {disabled}
             required={required && fields.includes('postalCode')}
-            class="smrt-input"
-            class:invalid={!!error}
+            class="smrt-address-input__input"
+            data-smrt-part="input"
+            class:smrt-address-input__invalid={!!error}
             aria-invalid={error ? 'true' : undefined}
             aria-describedby={error ? `${name}-error` : undefined}
             oninput={handlePostalInput}
@@ -488,16 +492,17 @@ function handleCountryChange(e: Event) {
       {/if}
 
       {#if fields.includes('country')}
-        <div class="field-row flex-1">
-          <label for="{name}_country" class="field-label">{fieldLabels.country}</label>
+        <div class="smrt-address-input__field-row smrt-address-input__flex-1" data-smrt-part="field">
+          <label for="{name}_country" class="smrt-address-input__field-label" data-smrt-part="label">{fieldLabels.country}</label>
           <select
             id="{name}_country"
             name="{name}[country]"
             value={country}
             {disabled}
             required={required && fields.includes('country')}
-            class="smrt-input smrt-select"
-            class:invalid={!!error}
+            class="smrt-address-input__input smrt-address-input__select"
+            data-smrt-part="input"
+            class:smrt-address-input__invalid={!!error}
             aria-invalid={error ? 'true' : undefined}
             aria-describedby={error ? `${name}-error` : undefined}
             onchange={handleCountryChange}
@@ -512,103 +517,100 @@ function handleCountryChange(e: Event) {
   </div>
 
   {#if error}
-    <div id={`${name}-error`} class="validation-error" role="alert">{error}</div>
+    <div id={`${name}-error`} class="smrt-address-input__validation-error" data-smrt-part="error" role="alert">{error}</div>
   {/if}
 </div>
 
 <style>
 @layer smrt.reset, smrt.structure, smrt.theme;
-@layer smrt.theme {
-  .smrt-address {
+@layer smrt.structure {
+  .smrt-address-input__root {
     display: flex;
     flex-direction: column;
     gap: var(--smrt-spacing-2);
   }
-
-  .address-fields {
+  .smrt-address-input__fields {
     display: flex;
     flex-direction: column;
     gap: var(--smrt-spacing-3);
     padding: var(--smrt-spacing-4);
-    background: var(--smrt-color-surface-container-low);
-    border: var(--smrt-hairline);
-    border-radius: var(--smrt-radius-medium);
   }
-
-  .address-fields.smrt-mode {
-    border-color: var(--smrt-color-tertiary);
-    background: var(--smrt-color-tertiary-container);
-  }
-
-  .field-row {
+  .smrt-address-input__field-row {
     display: flex;
     flex-direction: column;
     gap: var(--smrt-spacing-1);
   }
-
-  .field-row-group {
+  .smrt-address-input__field-row-group {
     display: flex;
     gap: var(--smrt-spacing-3);
   }
-
-  .full-width {
+  .smrt-address-input__full-width {
     width: 100%;
   }
-
-  .flex-1 {
+  .smrt-address-input__flex-1 {
     flex: 1;
   }
-
-  .flex-2 {
+  .smrt-address-input__flex-2 {
     flex: 2;
   }
+  .smrt-address-input__input {
+    padding: var(--smrt-spacing-2) var(--smrt-spacing-3);
+  }
+  .smrt-address-input__input:disabled {
+    cursor: not-allowed;
+  }
+  .smrt-address-input__select {
+    cursor: pointer;
+  }
+  .smrt-address-input__validation-error {
+    margin-top: var(--smrt-spacing-1);
+  }
+  @media (max-width: 600px) {
+    .smrt-address-input__field-row-group {
+      flex-direction: column;
+    }
+  }
+}
 
-  .field-label {
+@layer smrt.theme {
+  .smrt-address-input__fields {
+    background: var(--smrt-color-surface-container-low);
+    border: var(--smrt-hairline);
+    border-radius: var(--smrt-radius-medium);
+  }
+  .smrt-address-input__fields.smrt-address-input__mode {
+    border-color: var(--smrt-color-tertiary);
+    background: var(--smrt-color-tertiary-container);
+  }
+  .smrt-address-input__field-label {
     font-size: var(--smrt-typography-body-small-size, 0.75rem);
     font-weight: var(--smrt-typography-body-small-weight, 500);
     color: var(--smrt-color-on-surface-variant);
     text-transform: uppercase;
     letter-spacing: 0.025em;
   }
-
-  .smrt-input {
-    padding: var(--smrt-spacing-2) var(--smrt-spacing-3);
+  .smrt-address-input__input {
     font-size: var(--smrt-typography-body-large-size, 1rem);
     border: var(--smrt-hairline);
     border-radius: var(--smrt-radius-small);
     background: var(--smrt-color-surface);
     transition: all var(--smrt-duration-short2, 150ms) var(--smrt-easing-standard, ease);
   }
-
-  .smrt-input:focus {
+  .smrt-address-input__input:focus {
     outline: none;
     border-color: var(--smrt-color-primary);
     box-shadow: 0 0 0 3px color-mix(in srgb, var(--smrt-color-primary) 10%, transparent);
   }
-
-  .smrt-input:disabled {
+  .smrt-address-input__input:disabled {
     background: var(--smrt-color-surface-container-high);
-    cursor: not-allowed;
   }
-
-  .smrt-input.invalid {
+  .smrt-address-input__input.smrt-address-input__invalid {
     border-color: var(--smrt-color-error);
   }
-
-  .smrt-select {
-    cursor: pointer;
-  }
-
-  .validation-error {
+  .smrt-address-input__validation-error {
     font-size: var(--smrt-typography-body-small-size, 0.75rem);
     color: var(--smrt-color-error);
-    margin-top: var(--smrt-spacing-1);
-  }
-
-  @media (max-width: 600px) {
-    .field-row-group {
-      flex-direction: column;
-    }
   }
 }
+
 </style>

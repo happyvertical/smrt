@@ -140,7 +140,7 @@ describe('NotificationBell iconOnly and placement', () => {
     });
     expect(
       below
-        .querySelector('.smrt-notification-bell')
+        .querySelector('[data-smrt-component="NotificationBell"]')
         ?.getAttribute('data-placement'),
     ).toBe('below');
     const { container: beside } = render(NotificationBell, {
@@ -148,7 +148,7 @@ describe('NotificationBell iconOnly and placement', () => {
     });
     expect(
       beside
-        .querySelector('.smrt-notification-bell')
+        .querySelector('[data-smrt-component="NotificationBell"]')
         ?.getAttribute('data-placement'),
     ).toBe('beside');
   });

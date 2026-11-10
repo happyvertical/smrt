@@ -74,7 +74,7 @@ for (const variant of ['static', 'inline'] as const) {
       const highlight = await systemColor(page, 'Highlight');
       const tokens = await page.evaluate(() => {
         const root = getComputedStyle(
-          document.querySelector('.smrt-theme-root') as Element,
+          document.querySelector('[data-smrt-component="ThemeProvider"]') as Element,
         );
         const read = (name: string) => root.getPropertyValue(name).trim();
         return {
@@ -193,8 +193,8 @@ for (const variant of ['static', 'inline'] as const) {
       // Toggle: checked track fills with Highlight, unchecked does not.
       const trackBg = (label: string) =>
         page
-          .locator('.toggle', { hasText: label })
-          .locator('.toggle__thumb')
+          .locator('[data-smrt-component="Toggle"]', { hasText: label })
+          .locator('[data-smrt-part="thumb"]')
           .evaluate((el) => getComputedStyle(el).backgroundColor);
       expect(await trackBg('Toggle on')).toBe(highlight);
       expect(await trackBg('Toggle off')).not.toBe(highlight);
@@ -202,7 +202,7 @@ for (const variant of ['static', 'inline'] as const) {
       // Checkbox and radio: checked fills with Highlight.
       const checked = page.locator('.smrt-checkbox__root:has(input:checked)');
       expect(await checked.locator('.smrt-checkbox__box').evaluate((el) => getComputedStyle(el).backgroundColor)).toBe(highlight);
-      const radioDot = page.locator('.radio', { hasText: 'Radio B' }).locator('.radio__mark');
+      const radioDot = page.locator('[data-smrt-component="Radio"]', { hasText: 'Radio B' }).locator('[data-smrt-part="control"]');
       expect(await radioDot.evaluate((el) => getComputedStyle(el, '::after').backgroundColor)).toBe(highlight);
       expect(await radioDot.evaluate((el) => getComputedStyle(el, '::after').transform)).not.toBe('matrix(0, 0, 0, 0, 0, 0)');
 
@@ -212,7 +212,7 @@ for (const variant of ['static', 'inline'] as const) {
       expect(await page.locator('.smrt-chip__root:not(.smrt-chip__selected)').first().evaluate((el) => getComputedStyle(el).outlineStyle)).toBe('none');
 
       // DataTable: the selected row is outlined.
-      const row = page.locator('.data-table__row--selected');
+      const row = page.locator('.smrt-data-table__row--selected');
       await expect(row).toHaveCount(1);
       expect(await row.evaluate((el) => getComputedStyle(el).outlineColor)).toBe(highlight);
       expect(await row.evaluate((el) => getComputedStyle(el).outlineStyle)).toBe('solid');
@@ -227,8 +227,8 @@ for (const variant of ['static', 'inline'] as const) {
       // Highlight fill: it reads GrayText on Canvas, like every other disabled control.
       const highlight = await systemColor(page, 'Highlight');
       for (const el of [
-        page.locator('.segmented label.selected'),
-        page.locator('.toggle-button.pressed:disabled'),
+        page.locator('[data-smrt-component="SegmentedControl"] label.smrt-segmented-control__selected'),
+        page.locator('[data-smrt-component="ToggleButton"].smrt-toggle-button__pressed:disabled'),
       ]) {
         const style = await el.evaluate((n) => ({ bg: getComputedStyle(n).backgroundColor, color: getComputedStyle(n).color, opacity: getComputedStyle(n).opacity }));
         expect(style.bg).not.toBe(highlight);
@@ -255,7 +255,7 @@ test('[data-forced-colors] alone applies the token layer without media emulation
   const before = await style(page, CARD, 'border-top-color');
   await page.evaluate(() => {
     document.documentElement.setAttribute('data-forced-colors', '');
-    document.querySelector('.smrt-theme-root')?.setAttribute('data-forced-colors', '');
+    document.querySelector('[data-smrt-component="ThemeProvider"]')?.setAttribute('data-forced-colors', '');
   });
   const canvasText = await systemColor(page, 'CanvasText');
   // Card declares `transition: all`; poll until the change settles.
@@ -265,7 +265,7 @@ test('[data-forced-colors] alone applies the token layer without media emulation
   expect(before).not.toBe(canvasText);
   expect(isInvisibleShadow(await style(page, CARD, 'box-shadow'))).toBe(true);
   expect(
-    await page.locator('.smrt-theme-root').evaluate((el) =>
+    await page.locator('[data-smrt-component="ThemeProvider"]').evaluate((el) =>
       getComputedStyle(el).getPropertyValue('--smrt-focus-ring-color').trim(),
     ),
   ).toBe('Highlight');
@@ -276,7 +276,7 @@ test('standard colours are untouched when forced colors are off', async ({
 }) => {
   await page.goto('/e2e/forced-colors.html');
   await expect(page.getByRole('button', { name: 'Save' })).toBeVisible();
-  const tokens = await page.locator('.smrt-theme-root').evaluate((el) => {
+  const tokens = await page.locator('[data-smrt-component="ThemeProvider"]').evaluate((el) => {
     const s = getComputedStyle(el);
     return {
       ring: s.getPropertyValue('--smrt-focus-ring-color').trim(),

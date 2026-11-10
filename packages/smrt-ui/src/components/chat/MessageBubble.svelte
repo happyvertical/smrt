@@ -94,126 +94,128 @@ const timeText = $derived(
 </script>
 
 <div
-  class="bubble bubble--{effectiveVariant}"
-  class:bubble--own={effectiveOwn}
+  class="smrt-message-bubble__root smrt-message-bubble__{effectiveVariant}"
+  class:smrt-message-bubble__own={effectiveOwn}
   role={hasHeader ? 'group' : undefined}
   aria-label={hasHeader ? groupLabel : undefined} data-smrt-component="MessageBubble"
 >
   {#if hasHeader}
-    <div class="bubble__header">
-      <span class="bubble__author">{headerName}</span>
+    <div class="smrt-message-bubble__header" data-smrt-part="header">
+      <span class="smrt-message-bubble__author" data-smrt-part="author">{headerName}</span>
       {#if timeText}
-        <time class="bubble__time" datetime={isoTime}>{timeText}</time>
+        <time class="smrt-message-bubble__time" data-smrt-part="time" datetime={isoTime}>{timeText}</time>
       {/if}
     </div>
   {/if}
 
-  <div class="bubble__body">
+  <div class="smrt-message-bubble__body" data-smrt-part="body">
     {#if children}
       {@render children()}
     {:else if content !== undefined}
-      <p class="bubble__content">{content}</p>
+      <p class="smrt-message-bubble__content" data-smrt-part="message">{content}</p>
     {/if}
   </div>
 
   {#if reactions}
-    <div class="bubble__reactions">{@render reactions()}</div>
+    <div class="smrt-message-bubble__reactions" data-smrt-part="reactions">{@render reactions()}</div>
   {/if}
 
   {#if actions}
-    <div class="bubble__actions">{@render actions()}</div>
+    <div class="smrt-message-bubble__actions" data-smrt-part="actions">{@render actions()}</div>
   {/if}
 </div>
 
 <style>
 @layer smrt.reset, smrt.structure, smrt.theme;
-@layer smrt.theme {
-  .bubble {
+@layer smrt.structure {
+  .smrt-message-bubble__root {
     display: flex;
     flex-direction: column;
     gap: var(--smrt-spacing-1);
     max-width: 75%;
     padding: var(--smrt-spacing-3) var(--smrt-spacing-4);
-    border-radius: var(--smrt-radius-large);
-    font-size: var(--smrt-typography-body-medium-size, 0.875rem);
-    line-height: 1.4;
     word-break: break-word;
   }
-
-  /* default — a peer message; `own` is the current viewer's message. */
-  .bubble--default {
-    background: var(--smrt-color-surface-container);
-    color: var(--smrt-color-on-surface);
-    border-bottom-left-radius: var(--smrt-radius-small);
-  }
-  .bubble--default.bubble--own {
-    background: var(--smrt-color-primary);
-    color: var(--smrt-color-on-primary);
-    border-bottom-right-radius: var(--smrt-radius-small);
-    border-bottom-left-radius: var(--smrt-radius-large);
-  }
-
-  /* agent — assistant message, accented on the leading edge. */
-  .bubble--agent {
-    background: var(--smrt-color-tertiary-container);
-    color: var(--smrt-color-on-tertiary-container);
-    border-bottom-left-radius: var(--smrt-radius-small);
-    border-left: 3px solid var(--smrt-color-tertiary);
-  }
-  .bubble--agent.bubble--own {
-    border-left: none;
-    border-right: 3px solid var(--smrt-color-tertiary);
-    border-bottom-right-radius: var(--smrt-radius-small);
-    border-bottom-left-radius: var(--smrt-radius-large);
-  }
-
   /* system — centered notice. */
-  .bubble--system {
+  .smrt-message-bubble__system {
     max-width: 100%;
-    background: transparent;
-    color: var(--smrt-color-on-surface-variant);
-    text-align: center;
-    font-size: var(--smrt-typography-body-small-size, 0.75rem);
     padding: var(--smrt-spacing-2) var(--smrt-spacing-4);
-    border-radius: 0;
     align-self: center;
   }
-
   /* Self-align own messages when laid out in a column (card form). In a host
-     row that already aligns own messages this is a harmless no-op. */
-  .bubble--own {
+  row that already aligns own messages this is a harmless no-op. */
+  .smrt-message-bubble__own {
     align-self: flex-end;
   }
-
-  .bubble__header {
+  .smrt-message-bubble__header {
     display: flex;
     align-items: baseline;
     gap: var(--smrt-spacing-2);
   }
-  .bubble__author {
-    font-weight: var(--smrt-typography-weight-semibold, 600);
-    font-size: var(--smrt-typography-label-large-size, 0.875rem);
-  }
-  .bubble__time {
-    font-size: var(--smrt-typography-label-small-size, 0.6875rem);
-    color: var(--smrt-color-on-surface-variant);
-    opacity: 0.8;
-  }
-
-  .bubble__body {
+  .smrt-message-bubble__body {
     white-space: pre-wrap;
     word-break: break-word;
   }
-  .bubble__content {
+  .smrt-message-bubble__content {
     margin: 0;
     white-space: pre-wrap;
   }
-
-  .bubble__reactions,
-  .bubble__actions {
+  .smrt-message-bubble__reactions,
+  .smrt-message-bubble__actions {
     display: flex;
     flex-wrap: wrap;
     gap: var(--smrt-spacing-1);
   }
 }
+
+@layer smrt.theme {
+  .smrt-message-bubble__root {
+    border-radius: var(--smrt-radius-large);
+    font-size: var(--smrt-typography-body-medium-size, 0.875rem);
+    line-height: 1.4;
+  }
+  /* default — a peer message; `own` is the current viewer's message. */
+  .smrt-message-bubble__default {
+    background: var(--smrt-color-surface-container);
+    color: var(--smrt-color-on-surface);
+    border-bottom-left-radius: var(--smrt-radius-small);
+  }
+  .smrt-message-bubble__default.smrt-message-bubble__own {
+    background: var(--smrt-color-primary);
+    color: var(--smrt-color-on-primary);
+    border-bottom-right-radius: var(--smrt-radius-small);
+    border-bottom-left-radius: var(--smrt-radius-large);
+  }
+  /* agent — assistant message, accented on the leading edge. */
+  .smrt-message-bubble__agent {
+    background: var(--smrt-color-tertiary-container);
+    color: var(--smrt-color-on-tertiary-container);
+    border-bottom-left-radius: var(--smrt-radius-small);
+    border-left: 3px solid var(--smrt-color-tertiary);
+  }
+  .smrt-message-bubble__agent.smrt-message-bubble__own {
+    border-left: none;
+    border-right: 3px solid var(--smrt-color-tertiary);
+    border-bottom-right-radius: var(--smrt-radius-small);
+    border-bottom-left-radius: var(--smrt-radius-large);
+  }
+  /* system — centered notice. */
+  .smrt-message-bubble__system {
+    background: transparent;
+    color: var(--smrt-color-on-surface-variant);
+    text-align: center;
+    font-size: var(--smrt-typography-body-small-size, 0.75rem);
+    border-radius: 0;
+  }
+  .smrt-message-bubble__author {
+    font-weight: var(--smrt-typography-weight-semibold, 600);
+    font-size: var(--smrt-typography-label-large-size, 0.875rem);
+  }
+  .smrt-message-bubble__time {
+    font-size: var(--smrt-typography-label-small-size, 0.6875rem);
+    color: var(--smrt-color-on-surface-variant);
+    opacity: 0.8;
+  }
+}
+
 </style>

@@ -44,12 +44,12 @@ describe('AssistantDock layout', () => {
     await userEvent.click(screen.getByRole('button', { name: 'Send' }));
 
     const status = await vi.waitFor(() => {
-      const el = container.querySelector('.assistant-dock-status');
+      const el = container.querySelector('.smrt-assistant-dock__status');
       expect(el).not.toBeNull();
       return el as HTMLElement;
     });
     const composer = container.querySelector(
-      '.assistant-dock-composer',
+      '.smrt-assistant-dock__composer',
     ) as HTMLElement;
     expect(status.nextElementSibling).toBe(composer);
     expect(box).toHaveValue('');

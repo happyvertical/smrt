@@ -1439,9 +1439,9 @@ function structuralCellValue(
 }
 
 const sizeClasses = {
-  sm: 'data-table--sm',
-  md: 'data-table--md',
-  lg: 'data-table--lg',
+  sm: 'smrt-data-table__sm',
+  md: 'smrt-data-table__md',
+  lg: 'smrt-data-table__lg',
 };
 
 $effect(() => {
@@ -1476,18 +1476,18 @@ $effect(() => {
 });
 </script>
 
-{#if toolbar}<div class="data-table-toolbar" data-smrt-component="DataTable">{@render toolbar()}</div>{/if}
+{#if toolbar}<div class="smrt-data-table__toolbar" data-smrt-component="DataTable">{@render toolbar()}</div>{/if}
 <!-- svelte-ignore a11y_no_noninteractive_tabindex: the region provides horizontal or virtual keyboard scrolling. -->
 <div
   bind:this={tableContainer}
   data-density={density}
-  class="data-table-container"
-  class:data-table-container--narrow={isNarrow}
-  class:data-table-container--sticky={stickyHeader || virtualizedBody}
-  class:data-table-container--overflowing={hasHorizontalOverflow}
-  class:data-table-container--virtualized={virtualizationWindow.enabled}
-  class:data-table-container--highlighted={surfaceHighlighted}
-  class:data-table-container--phone-cards={phoneLayout === 'cards'}
+  class="smrt-data-table__container"
+  class:smrt-data-table__container--narrow={isNarrow}
+  class:smrt-data-table__container--sticky={stickyHeader || virtualizedBody}
+  class:smrt-data-table__container--overflowing={hasHorizontalOverflow}
+  class:smrt-data-table__container--virtualized={virtualizationWindow.enabled}
+  class:smrt-data-table__container--highlighted={surfaceHighlighted}
+  class:smrt-data-table__container--phone-cards={phoneLayout === 'cards'}
   style:height={virtualContainerHeight === undefined ? undefined : `${virtualContainerHeight}px`}
   tabindex={virtualizationWindow.enabled || hasHorizontalOverflow ? 0 : dataSurface ? -1 : undefined}
   role={virtualizationWindow.enabled || hasHorizontalOverflow ? 'region' : undefined}
@@ -1508,12 +1508,13 @@ $effect(() => {
   }} data-smrt-component="DataTable"
 >
   <table role={cardsRole('table')}
-    class="data-table {sizeClasses[size]}"
-    class:data-table--striped={striped}
-    class:data-table--virtualized={virtualizationWindow.enabled}
-    class:data-table--hoverable={hoverable}
-    class:data-table--dense={dense}
-    class:data-table--loading={isInitialLoading}
+    class="smrt-data-table__root {sizeClasses[size]}"
+    data-smrt-part="table"
+    class:smrt-data-table__striped={striped}
+    class:smrt-data-table__virtualized={virtualizationWindow.enabled}
+    class:smrt-data-table__hoverable={hoverable}
+    class:smrt-data-table__dense={dense}
+    class:smrt-data-table__loading={isInitialLoading}
     aria-busy={isBusy}
     aria-rowcount={virtualizationWindow.enabled
       ? virtualRowCount + headerRowCount + structuralRowCount
@@ -1521,26 +1522,27 @@ $effect(() => {
     style={`--smrt-data-table-caption-height: ${virtualCaptionHeight}px`}
   >
     {#if caption}
-      <caption bind:this={tableCaption} class="data-table__caption">{caption}</caption>
+      <caption bind:this={tableCaption} class="smrt-data-table__caption" data-smrt-part="caption">{caption}</caption>
     {/if}
 
-    <thead role={cardsRole('rowgroup')} bind:this={tableHead} class="data-table__head">
+    <thead role={cardsRole('rowgroup')} bind:this={tableHead} class="smrt-data-table__head" data-smrt-part="header">
       {#each dataTableLayout.headerRows as headerRow, headerIndex (headerIndex)}
-        <tr role={cardsRole('row')} class="data-table__row data-table__row--header">
+        <tr role={cardsRole('row')} class="smrt-data-table__row smrt-data-table__row--header" data-smrt-part="row">
           {#if headerIndex === 0 && expandedContent}
-            <th role={cardsRole('columnheader')} class="data-table__cell data-table__cell--expand" scope="col" rowspan={headerRowCount}>
-              <span class="sr-only"><Trans key={M['ui.data_table.expand']} /></span>
+            <th role={cardsRole('columnheader')} class="smrt-data-table__cell smrt-data-table__cell--expand" data-smrt-part="cell" scope="col" rowspan={headerRowCount}>
+              <span class="smrt-data-table__visually-hidden" data-smrt-part="label"><Trans key={M['ui.data_table.expand']} /></span>
             </th>
           {/if}
           {#if headerIndex === 0 && selectable}
-            <th role={cardsRole('columnheader')} class="data-table__cell data-table__cell--checkbox" scope="col" rowspan={headerRowCount}>
+            <th role={cardsRole('columnheader')} class="smrt-data-table__cell smrt-data-table__cell--checkbox" data-smrt-part="cell" scope="col" rowspan={headerRowCount}>
               <input
                 type="checkbox"
                 checked={allSelected}
                 use:setIndeterminate={someSelected}
                 onchange={handleSelectAll}
                 aria-label={t(M['ui.data_table.select_current_page'])}
-                class="data-table__checkbox"
+                class="smrt-data-table__checkbox"
+                data-smrt-part="input"
               />
             </th>
           {/if}
@@ -1548,9 +1550,9 @@ $effect(() => {
           {#each headerRow as headerCell, cellIndex (`${headerIndex}:${cellIndex}`)}
             {#if headerCell.kind === 'group'}
               <th role={cardsRole('columnheader')}
-                class="data-table__cell data-table__cell--header data-table__cell--header-group"
-                class:data-table__cell--pinned-start={headerCell.pin === 'start'}
-                class:data-table__cell--pinned-end={headerCell.pin === 'end'}
+                class="smrt-data-table__cell smrt-data-table__cell--header smrt-data-table__cell--header-group" data-smrt-part="cell"
+                class:smrt-data-table__cell--pinned-start={headerCell.pin === 'start'}
+                class:smrt-data-table__cell--pinned-end={headerCell.pin === 'end'}
                 scope="colgroup"
                 colspan={headerCell.colspan}
                 rowspan={headerCell.rowspan}
@@ -1563,11 +1565,11 @@ $effect(() => {
               {@const resolvedColumn = headerCell.column}
               {@const column = resolvedColumn.column}
               <th role={cardsRole('columnheader')}
-                class="data-table__cell data-table__cell--header"
-                class:data-table__cell--sortable={usesAutomaticSortButton(column)}
-                class:data-table__cell--sorted={currentSort.columnId === column.id}
-                class:data-table__cell--pinned-start={resolvedColumn.pin === 'start'}
-                class:data-table__cell--pinned-end={resolvedColumn.pin === 'end'}
+                class="smrt-data-table__cell smrt-data-table__cell--header" data-smrt-part="cell"
+                class:smrt-data-table__cell--sortable={usesAutomaticSortButton(column)}
+                class:smrt-data-table__cell--sorted={currentSort.columnId === column.id}
+                class:smrt-data-table__cell--pinned-start={resolvedColumn.pin === 'start'}
+                class:smrt-data-table__cell--pinned-end={resolvedColumn.pin === 'end'}
                 data-column-id={column.id}
                 data-column-role={column.role}
                 data-responsive-priority={column.responsive?.priority}
@@ -1592,15 +1594,16 @@ $effect(() => {
               >
                 {#if usesAutomaticSortButton(column)}
                   {#if column.header}
-                    <div class="data-table__header-content">
+                    <div class="smrt-data-table__header-content" data-smrt-part="body">
                       {@render column.header({ column })}
                       <button
                         type="button"
-                        class="data-table__sort-button"
+                        class="smrt-data-table__sort-button"
+                        data-smrt-part="sort"
                         onclick={(event) => handleSort(column, event)}
                         aria-label={sortActionLabel(column)}
                       >
-                        <span class="data-table__sort-icon" aria-hidden="true">
+                        <span class="smrt-data-table__sort-icon" data-smrt-part="icon" aria-hidden="true">
                           {#if currentSort.columnId === column.id}
                             {currentSort.direction === 'asc' ? '↑' : '↓'}
                           {:else}
@@ -1612,12 +1615,13 @@ $effect(() => {
                   {:else}
                     <button
                       type="button"
-                      class="data-table__sort-button"
+                      class="smrt-data-table__sort-button"
+                      data-smrt-part="sort"
                       onclick={(event) => handleSort(column, event)}
                       aria-label={sortActionLabel(column)}
                     >
                       <span>{column.label}</span>
-                      <span class="data-table__sort-icon" aria-hidden="true">
+                      <span class="smrt-data-table__sort-icon" data-smrt-part="icon" aria-hidden="true">
                         {#if currentSort.columnId === column.id}
                           {currentSort.direction === 'asc' ? '↑' : '↓'}
                         {:else}
@@ -1634,7 +1638,8 @@ $effect(() => {
                 {#if column.resizable && !isNarrow}
                   <!-- svelte-ignore a11y_no_noninteractive_element_interactions: a focusable ARIA separator is the resize control. -->
                   <span
-                    class="data-table__resize-handle"
+                    class="smrt-data-table__resize-handle"
+                    data-smrt-part="resize"
                     role="separator"
                     aria-orientation="vertical"
                     aria-label={t(M['ui.data_table.resize_column'], { column: column.label })}
@@ -1653,17 +1658,17 @@ $effect(() => {
       {/each}
     </thead>
 
-    <tbody role={cardsRole('rowgroup')} bind:this={tableBody} class="data-table__body">
+    <tbody role={cardsRole('rowgroup')} bind:this={tableBody} class="smrt-data-table__body" data-smrt-part="body">
       {#if errorMessage && !hasRenderedRows}
-        <tr role={cardsRole('row')} class="data-table__row data-table__row--error">
+        <tr role={cardsRole('row')} class="smrt-data-table__row smrt-data-table__row--error">
           <td role={cardsRole('cell')}
-            class="data-table__cell data-table__cell--error"
+            class="smrt-data-table__cell smrt-data-table__cell--error" data-smrt-part="cell"
             colspan={columnCount}
           >
-            <div class="data-table__error-state" role="alert">
+            <div class="smrt-data-table__error-state" data-smrt-part="error" role="alert">
               <span>{errorMessage}</span>
               {#if onRetry}
-                <button type="button" class="data-table__retry-button" onclick={onRetry}>
+                <button type="button" class="smrt-data-table__retry-button" data-smrt-part="retry" onclick={onRetry}>
                   {t(M['ui.data_table.retry'])}
                 </button>
               {/if}
@@ -1671,27 +1676,27 @@ $effect(() => {
           </td>
         </tr>
       {:else if isInitialLoading}
-        <tr role={cardsRole('row')} class="data-table__row data-table__row--loading">
+        <tr role={cardsRole('row')} class="smrt-data-table__row smrt-data-table__row--loading" data-smrt-part="row">
           <td role={cardsRole('cell')}
-            class="data-table__cell data-table__cell--loading"
+            class="smrt-data-table__cell smrt-data-table__cell--loading" data-smrt-part="cell"
             colspan={columnCount}
           >
-            <div class="data-table__loading-indicator" role="status" aria-live="polite">
-              <span class="data-table__spinner"></span>
+            <div class="smrt-data-table__loading-indicator" data-smrt-part="status" role="status" aria-live="polite">
+              <span class="smrt-data-table__spinner" data-smrt-part="spinner"></span>
               <span><Trans key={M['ui.data_table.loading']} /></span>
             </div>
           </td>
         </tr>
       {:else if displayRows.length === 0}
-        <tr role={cardsRole('row')} class="data-table__row data-table__row--empty">
+        <tr role={cardsRole('row')} class="smrt-data-table__row smrt-data-table__row--empty" data-smrt-part="row">
           <td role={cardsRole('cell')}
-            class="data-table__cell data-table__cell--empty"
+            class="smrt-data-table__cell smrt-data-table__cell--empty" data-smrt-part="cell"
             colspan={columnCount}
           >
             {#if empty}
               {@render empty()}
             {:else}
-              <div class="data-table__empty-state">
+              <div class="smrt-data-table__empty-state" data-smrt-part="empty">
                 <span><Trans key={M['ui.data_table.empty']} /></span>
               </div>
             {/if}
@@ -1699,7 +1704,7 @@ $effect(() => {
         </tr>
       {:else}
         {#if virtualizationWindow.topSpacerHeight > 0}
-          <tr role={cardsRole('row')} class="data-table__virtual-spacer" aria-hidden="true">
+          <tr role={cardsRole('row')} class="smrt-data-table__virtual-spacer" data-smrt-part="spacer" aria-hidden="true">
             <td role={cardsRole('cell')} colspan={columnCount} style:height={`${virtualizationWindow.topSpacerHeight}px`}></td>
           </tr>
         {/if}
@@ -1711,12 +1716,12 @@ $effect(() => {
           {@const isExpanded = expandedIds.has(key)}
           {@const rowCanExpand = canExpand?.(row, displayIndex) ?? true}
           <tr role={cardsRole('row')}
-            class="data-table__row {rowClass?.(row, displayIndex) ?? ''}"
-            class:data-table__row--selected={isSelected}
-            class:data-table__row--striped={
+            class="smrt-data-table__row {rowClass?.(row, displayIndex) ?? ''}" data-smrt-part="row"
+            class:smrt-data-table__row--selected={isSelected}
+            class:smrt-data-table__row--striped={
               virtualizationWindow.enabled && striped && displayIndex % 2 === 1
             }
-            class:data-table__row--interactive={Boolean(onRowClick)}
+            class:smrt-data-table__row--interactive={Boolean(onRowClick)}
             data-row-id={dataTableRowIdKey(key)}
             aria-rowindex={virtualizationWindow.enabled
               ? virtualRowOffset + displayIndex + headerRowCount + 1
@@ -1727,19 +1732,20 @@ $effect(() => {
             onkeydown={(event) => handleRowKeydown(event, row, displayIndex)}
           >
             {#if expandedContent}
-              <td role={cardsRole('cell')} class="data-table__cell data-table__cell--expand">
-                {#if rowCanExpand}<button type="button" class="data-table__expand-button" aria-label={isExpanded ? t(M['ui.data_table.collapse_row'], { row: getRowLabel(row, displayIndex) }) : t(M['ui.data_table.expand_row'], { row: getRowLabel(row, displayIndex) })} aria-expanded={isExpanded} aria-controls={expansionContentId(key)} onclick={(event) => handleExpanded(key, event)}>{isExpanded ? '−' : '+'}</button>{/if}
+              <td role={cardsRole('cell')} class="smrt-data-table__cell smrt-data-table__cell--expand" data-smrt-part="cell">
+                {#if rowCanExpand}<button type="button" class="smrt-data-table__expand-button" data-smrt-part="expand" aria-label={isExpanded ? t(M['ui.data_table.collapse_row'], { row: getRowLabel(row, displayIndex) }) : t(M['ui.data_table.expand_row'], { row: getRowLabel(row, displayIndex) })} aria-expanded={isExpanded} aria-controls={expansionContentId(key)} onclick={(event) => handleExpanded(key, event)}>{isExpanded ? '−' : '+'}</button>{/if}
               </td>
             {/if}
             {#if selectable}
-              <td role={cardsRole('cell')} class="data-table__cell data-table__cell--checkbox">
+              <td role={cardsRole('cell')} class="smrt-data-table__cell smrt-data-table__cell--checkbox" data-smrt-part="cell">
                 <input
                   type="checkbox"
                   checked={isSelected}
                   disabled={tableState.selection.scope === 'allMatching'}
                   onchange={(e) => handleRowSelect(key, e)}
                   aria-label={isSelected ? t(M['ui.data_table.deselect_row'], { row: getRowLabel(row, displayIndex) }) : t(M['ui.data_table.select_row'], { row: getRowLabel(row, displayIndex) })}
-                  class="data-table__checkbox"
+                  class="smrt-data-table__checkbox"
+                  data-smrt-part="input"
                 />
               </td>
             {/if}
@@ -1748,10 +1754,10 @@ $effect(() => {
               {@const column = resolvedColumn.column}
               {@const value = getCellValue(row, column)}
               <td role={cardsRole('cell')}
-                class="data-table__cell {column.className ?? ''}"
+                class="smrt-data-table__cell {column.className ?? ''}" data-smrt-part="cell"
                 data-label={phoneLayout === 'cards' ? column.label : undefined}
-                class:data-table__cell--pinned-start={resolvedColumn.pin === 'start'}
-                class:data-table__cell--pinned-end={resolvedColumn.pin === 'end'}
+                class:smrt-data-table__cell--pinned-start={resolvedColumn.pin === 'start'}
+                class:smrt-data-table__cell--pinned-end={resolvedColumn.pin === 'end'}
                 data-column-id={column.id}
                 data-column-role={column.role}
                 data-responsive-priority={column.responsive?.priority}
@@ -1774,13 +1780,13 @@ $effect(() => {
             {/each}
           </tr>
           {#if expandedContent && isExpanded}
-            <tr role={cardsRole('row')} id={expansionContentId(key)} class="data-table__row data-table__row--expanded">
-              <td role={cardsRole('cell')} class="data-table__cell data-table__cell--expanded" colspan={columnCount}>{@render expandedContent({ row, index: displayIndex })}</td>
+            <tr role={cardsRole('row')} id={expansionContentId(key)} class="smrt-data-table__row smrt-data-table__row--expanded" data-smrt-part="row">
+              <td role={cardsRole('cell')} class="smrt-data-table__cell smrt-data-table__cell--expanded" data-smrt-part="cell" colspan={columnCount}>{@render expandedContent({ row, index: displayIndex })}</td>
             </tr>
           {/if}
         {/each}
         {#if virtualizationWindow.bottomSpacerHeight > 0}
-          <tr role={cardsRole('row')} class="data-table__virtual-spacer" aria-hidden="true">
+          <tr role={cardsRole('row')} class="smrt-data-table__virtual-spacer" data-smrt-part="spacer" aria-hidden="true">
             <td role={cardsRole('cell')} colspan={columnCount} style:height={`${virtualizationWindow.bottomSpacerHeight}px`}></td>
           </tr>
         {/if}
@@ -1789,28 +1795,30 @@ $effect(() => {
     {#if dataBodyStructuralRows.length > 0}
       <tbody role={cardsRole('rowgroup')}
         bind:this={tableStructuralBody}
-        class="data-table__body data-table__body--structural"
+        class="smrt-data-table__body smrt-data-table__body--structural"
+        data-smrt-part="body"
       >
         {#each dataBodyStructuralRows as structuralRow, structuralIndex (structuralRow.id)}
           {@const labelColumnId = structuralLabelColumnId(structuralRow)}
           <tr role={cardsRole('row')}
-            class="data-table__row data-table__row--structural"
+            class="smrt-data-table__row smrt-data-table__row--structural"
+            data-smrt-part="row"
             data-row-kind={structuralRow.kind}
             aria-label={structuralRowLabel(structuralRow)}
             aria-rowindex={virtualizationWindow.enabled
               ? virtualRowOffset + displayRows.length + headerRowCount + structuralIndex + 1
               : undefined}
           >
-            {#if expandedContent}<td role={cardsRole('cell')} class="data-table__cell data-table__cell--expand"></td>{/if}
-            {#if selectable}<td role={cardsRole('cell')} class="data-table__cell data-table__cell--checkbox"></td>{/if}
+            {#if expandedContent}<td role={cardsRole('cell')} class="smrt-data-table__cell smrt-data-table__cell--expand" data-smrt-part="cell"></td>{/if}
+            {#if selectable}<td role={cardsRole('cell')} class="smrt-data-table__cell smrt-data-table__cell--checkbox" data-smrt-part="cell"></td>{/if}
             {#each visibleColumns as resolvedColumn (resolvedColumn.column.id)}
               {@const column = resolvedColumn.column}
               {@const value = structuralCellValue(structuralRow, column)}
               {#if column.id === labelColumnId}
                 <th role={cardsRole('rowheader')}
-                  class="data-table__cell data-table__cell--structural-label {column.className ?? ''}"
-                  class:data-table__cell--pinned-start={resolvedColumn.pin === 'start'}
-                  class:data-table__cell--pinned-end={resolvedColumn.pin === 'end'}
+                  class="smrt-data-table__cell smrt-data-table__cell--structural-label {column.className ?? ''}" data-smrt-part="cell"
+                  class:smrt-data-table__cell--pinned-start={resolvedColumn.pin === 'start'}
+                  class:smrt-data-table__cell--pinned-end={resolvedColumn.pin === 'end'}
                   scope="row"
                   data-column-id={column.id}
                   style:width={widthForColumn(resolvedColumn)}
@@ -1820,7 +1828,7 @@ $effect(() => {
                   style:right={resolvedColumn.pin === 'end' ? resolvedColumn.stickyOffset : undefined}
                   style:text-align={column.align}
                 >
-                  <span class="sr-only">{structuralRowLabel(structuralRow)}: </span>
+                  <span class="smrt-data-table__visually-hidden" data-smrt-part="label">{structuralRowLabel(structuralRow)}: </span>
                   {#if structuralRow.cell}
                     {@render structuralRow.cell({ row: structuralRow, column, value })}
                   {:else}
@@ -1829,10 +1837,10 @@ $effect(() => {
                 </th>
               {:else}
                 <td role={cardsRole('cell')}
-                  class="data-table__cell {column.className ?? ''}"
+                  class="smrt-data-table__cell {column.className ?? ''}" data-smrt-part="cell"
                   data-label={phoneLayout === 'cards' ? column.label : undefined}
-                  class:data-table__cell--pinned-start={resolvedColumn.pin === 'start'}
-                  class:data-table__cell--pinned-end={resolvedColumn.pin === 'end'}
+                  class:smrt-data-table__cell--pinned-start={resolvedColumn.pin === 'start'}
+                  class:smrt-data-table__cell--pinned-end={resolvedColumn.pin === 'end'}
                   data-column-id={column.id}
                   style:width={widthForColumn(resolvedColumn)}
                   style:min-width={isNarrow ? undefined : column.minWidth}
@@ -1858,23 +1866,24 @@ $effect(() => {
         {#each footerStructuralRows as structuralRow, structuralIndex (structuralRow.id)}
           {@const labelColumnId = structuralLabelColumnId(structuralRow)}
           <tr role={cardsRole('row')}
-            class="data-table__row data-table__row--structural data-table__row--footer"
+            class="smrt-data-table__row smrt-data-table__row--structural smrt-data-table__row--footer"
+            data-smrt-part="row"
             data-row-kind={structuralRow.kind}
             aria-label={structuralRowLabel(structuralRow)}
             aria-rowindex={virtualizationWindow.enabled
               ? virtualRowCount + headerRowCount + dataBodyStructuralRows.length + structuralIndex + 1
               : undefined}
           >
-            {#if expandedContent}<td role={cardsRole('cell')} class="data-table__cell data-table__cell--expand"></td>{/if}
-            {#if selectable}<td role={cardsRole('cell')} class="data-table__cell data-table__cell--checkbox"></td>{/if}
+            {#if expandedContent}<td role={cardsRole('cell')} class="smrt-data-table__cell smrt-data-table__cell--expand" data-smrt-part="cell"></td>{/if}
+            {#if selectable}<td role={cardsRole('cell')} class="smrt-data-table__cell smrt-data-table__cell--checkbox" data-smrt-part="cell"></td>{/if}
             {#each visibleColumns as resolvedColumn (resolvedColumn.column.id)}
               {@const column = resolvedColumn.column}
               {@const value = structuralCellValue(structuralRow, column)}
               {#if column.id === labelColumnId}
                 <th role={cardsRole('rowheader')}
-                  class="data-table__cell data-table__cell--structural-label {column.className ?? ''}"
-                  class:data-table__cell--pinned-start={resolvedColumn.pin === 'start'}
-                  class:data-table__cell--pinned-end={resolvedColumn.pin === 'end'}
+                  class="smrt-data-table__cell smrt-data-table__cell--structural-label {column.className ?? ''}" data-smrt-part="cell"
+                  class:smrt-data-table__cell--pinned-start={resolvedColumn.pin === 'start'}
+                  class:smrt-data-table__cell--pinned-end={resolvedColumn.pin === 'end'}
                   scope="row"
                   data-column-id={column.id}
                   style:width={widthForColumn(resolvedColumn)}
@@ -1884,7 +1893,7 @@ $effect(() => {
                   style:right={resolvedColumn.pin === 'end' ? resolvedColumn.stickyOffset : undefined}
                   style:text-align={column.align}
                 >
-                  <span class="sr-only">{structuralRowLabel(structuralRow)}: </span>
+                  <span class="smrt-data-table__visually-hidden" data-smrt-part="label">{structuralRowLabel(structuralRow)}: </span>
                   {#if structuralRow.cell}
                     {@render structuralRow.cell({ row: structuralRow, column, value })}
                   {:else}
@@ -1893,10 +1902,10 @@ $effect(() => {
                 </th>
               {:else}
                 <td role={cardsRole('cell')}
-                  class="data-table__cell {column.className ?? ''}"
+                  class="smrt-data-table__cell {column.className ?? ''}" data-smrt-part="cell"
                   data-label={phoneLayout === 'cards' ? column.label : undefined}
-                  class:data-table__cell--pinned-start={resolvedColumn.pin === 'start'}
-                  class:data-table__cell--pinned-end={resolvedColumn.pin === 'end'}
+                  class:smrt-data-table__cell--pinned-start={resolvedColumn.pin === 'start'}
+                  class:smrt-data-table__cell--pinned-end={resolvedColumn.pin === 'end'}
                   data-column-id={column.id}
                   style:width={widthForColumn(resolvedColumn)}
                   style:min-width={isNarrow ? undefined : column.minWidth}
@@ -1919,7 +1928,7 @@ $effect(() => {
           <tr role={cardsRole('row')} aria-rowindex={virtualizationWindow.enabled
             ? virtualRowCount + headerRowCount + structuralRowCount
             : undefined}>
-            <td role={cardsRole('cell')} class="data-table__cell data-table__footer" colspan={columnCount}>
+            <td role={cardsRole('cell')} class="smrt-data-table__cell smrt-data-table__footer" data-smrt-part="cell" colspan={columnCount}>
               {@render footer({ rows: displayRows.map(({ row }) => row) })}
             </td>
           </tr>
@@ -1928,16 +1937,16 @@ $effect(() => {
     {/if}
   </table>
   {#if errorMessage && hasRenderedRows}
-    <div class="data-table__async-status data-table__async-status--error" role="alert">
+    <div class="smrt-data-table__async-status smrt-data-table__async-status--error" data-smrt-part="status" role="alert">
       <span>{errorMessage}</span>
       {#if onRetry}
-        <button type="button" class="data-table__retry-button" onclick={onRetry}>
+        <button type="button" class="smrt-data-table__retry-button" data-smrt-part="retry" onclick={onRetry}>
           {t(M['ui.data_table.retry'])}
         </button>
       {/if}
     </div>
   {:else if isRefreshing || stale || partialResults}
-    <div class="data-table__async-status" role="status" aria-live="polite" aria-atomic="true">
+    <div class="smrt-data-table__async-status" data-smrt-part="status" role="status" aria-live="polite" aria-atomic="true">
       {#if isRefreshing}<span>{t(M['ui.data_table.refreshing'])}</span>{/if}
       {#if stale}<span>{t(M['ui.data_table.stale'])}</span>{/if}
       {#if partialResults}<span>{t(M['ui.data_table.partial_results'])}</span>{/if}
@@ -1945,7 +1954,7 @@ $effect(() => {
   {/if}
 </div>
 {#if hasHorizontalOverflow}
-  <div class="data-table__overflow-cue" aria-hidden="true" data-smrt-component="DataTable">
+  <div class="smrt-data-table__overflow-cue" aria-hidden="true" data-smrt-component="DataTable">
     {#if canScrollLeft}<span>← {t(M['ui.data_table.more_columns'])}</span>{/if}
     {#if canScrollRight}<span>{t(M['ui.data_table.more_columns'])} →</span>{/if}
   </div>
@@ -1954,138 +1963,83 @@ $effect(() => {
 
 <style>
 @layer smrt.reset, smrt.structure, smrt.theme;
-@layer smrt.theme {
-  .data-table-container {
+@layer smrt.structure {
+  .smrt-data-table__container {
     position: relative;
     width: 100%;
     overflow-x: auto;
   }
-
-  .data-table-container--overflowing:focus-visible {
-    outline: var(--smrt-focus-ring-width) solid var(--smrt-focus-ring-color);
-    outline-offset: var(--smrt-focus-ring-offset);
-  }
-
-  .data-table-container--highlighted {
-    outline: var(--smrt-focus-ring-width) solid var(--smrt-focus-ring-color);
-    outline-offset: var(--smrt-focus-ring-offset);
-  }
-
-  .data-table__overflow-cue {
+  .smrt-data-table__overflow-cue {
     display: flex;
     justify-content: space-between;
     padding: var(--smrt-spacing-2, 0.5rem) var(--smrt-spacing-3, 0.75rem);
-    border-top: var(--smrt-hairline);
-    background: var(--smrt-color-surface-container-low);
-    color: var(--smrt-color-on-surface-variant);
-    font-size: var(--smrt-typography-label-small-size, 0.75rem);
-    font-weight: var(--smrt-typography-weight-medium, 500);
     pointer-events: none;
   }
-
-  .data-table-toolbar { margin-bottom: var(--smrt-spacing-2); }
-
-  .sr-only { position: absolute; width: 1px; height: 1px; padding: 0; margin: -1px; overflow: hidden; clip: rect(0, 0, 0, 0); white-space: nowrap; border: 0; }
-
-  .data-table-container--sticky {
+  .smrt-data-table__toolbar {
+    margin-bottom: var(--smrt-spacing-2);
+  }
+  .smrt-data-table__visually-hidden {
+    position: absolute;
+    width: 1px;
+    height: 1px;
+    padding: 0;
+    margin: -1px;
+    overflow: hidden;
+    clip: rect(0, 0, 0, 0);
+    white-space: nowrap;
+  }
+  .smrt-data-table__container--sticky {
     max-height: 100%;
     overflow-y: auto;
   }
-
-  .data-table-container--virtualized {
+  .smrt-data-table__container--virtualized {
     overflow: auto;
   }
-
   /* Keep structural context fixed so scrollTop is measured from data row zero. */
-  .data-table-container--virtualized .data-table__caption {
+  .smrt-data-table__container--virtualized .smrt-data-table__caption {
     position: sticky;
     top: 0;
     z-index: 2;
   }
-
-  .data-table-container--sticky.data-table-container--virtualized .data-table__head {
+  .smrt-data-table__container--sticky.smrt-data-table__container--virtualized .smrt-data-table__head {
     position: sticky;
     top: var(--smrt-data-table-caption-height, 0px);
     z-index: 1;
   }
-
-  .data-table {
+  .smrt-data-table__root {
     width: 100%;
-    border-collapse: collapse;
-    border-spacing: 0;
-    font-family: var(--smrt-font-family, inherit);
-    font-size: var(--smrt-typography-body-medium-size, 0.875rem);
-    color: var(--smrt-color-on-surface);
-    background: var(--smrt-surface-panel);
   }
-
-  .data-table__caption {
+  .smrt-data-table__caption {
     padding: var(--smrt-spacing-3, 0.75rem);
-    font-weight: var(--smrt-typography-weight-medium, 500);
-    text-align: left;
-    color: var(--smrt-color-on-surface-variant);
     caption-side: top;
   }
-
-  /* Header */
-  /* --smrt-data-table-head-bg / -color: sunken is darker than every
-     surface-container level in both themes, so the head stays visible on a
-     surface-container-low page. */
-  .data-table__head {
-    background: var(--smrt-data-table-head-bg, var(--smrt-surface-sunken));
-    color: var(--smrt-data-table-head-color, var(--smrt-color-on-surface));
-  }
-
-  .data-table-container--sticky .data-table__head {
+  .smrt-data-table__container--sticky .smrt-data-table__head {
     position: sticky;
     top: 0;
     z-index: 1;
   }
-
-  .data-table__row--header {
-    border-bottom: var(--smrt-hairline);
-  }
-
-  .data-table__cell--header {
+  .smrt-data-table__cell--header {
     position: relative;
     padding: var(--smrt-spacing-3, 0.75rem) var(--smrt-spacing-4, 1rem);
-    font-weight: var(--smrt-typography-weight-semibold, 600);
-    text-align: left;
     white-space: nowrap;
-    color: inherit;
   }
-
-  .data-table__cell--sortable {
+  .smrt-data-table__cell--sortable {
     cursor: pointer;
     user-select: none;
   }
-
-  .data-table__sort-button {
+  .smrt-data-table__sort-button {
     display: inline-flex;
     align-items: center;
     gap: var(--smrt-spacing-1, 0.25rem);
     padding: 0;
-    border: none;
-    background: none;
-    font: inherit;
-    font-weight: var(--smrt-typography-weight-semibold, 600);
-    color: inherit;
     cursor: pointer;
   }
-
-  .data-table__header-content {
+  .smrt-data-table__header-content {
     display: inline-flex;
     align-items: center;
     gap: var(--smrt-spacing-1, 0.25rem);
   }
-
-  .data-table__cell--header-group {
-    color: var(--smrt-color-on-surface-variant);
-    font: var(--smrt-typography-label-medium-font);
-    letter-spacing: 0.02em;
-  }
-
-  .data-table__resize-handle {
+  .smrt-data-table__resize-handle {
     position: absolute;
     top: 0;
     right: -0.35rem;
@@ -2096,250 +2050,116 @@ $effect(() => {
     cursor: col-resize;
     touch-action: none;
   }
-
-  .data-table__resize-handle::after {
+  .smrt-data-table__resize-handle::after {
+    content: '';
     position: absolute;
     top: 20%;
     right: 0.3rem;
     width: 1px;
     height: 60%;
-    background: var(--smrt-color-outline);
-    content: '';
   }
-
-  .data-table__resize-handle:focus-visible {
-    outline: var(--smrt-focus-ring-width) solid var(--smrt-focus-ring-color);
-    outline-offset: calc(var(--smrt-focus-ring-width) * -1);
-  }
-
-  .data-table__sort-button:hover {
-    color: var(--smrt-color-primary);
-  }
-
-  .data-table__sort-icon {
-    font-size: var(--smrt-typography-label-medium-size, 0.75rem);
-    opacity: 0.5;
-  }
-
-  .data-table__cell--sorted .data-table__sort-icon {
-    opacity: 1;
-    color: var(--smrt-color-primary);
-  }
-
-  /* Body */
-  .data-table__body {
-    background: var(--smrt-surface-panel);
-  }
-
-  .data-table__row {
-    border-bottom: var(--smrt-hairline);
-    transition: background-color var(--smrt-duration-fast, 150ms) var(--smrt-easing-standard, ease);
-  }
-
-  .data-table__virtual-spacer td {
+  .smrt-data-table__virtual-spacer td {
     padding: 0;
-    border: 0;
   }
-
-  .data-table--hoverable .data-table__row:hover:not(.data-table__row--loading):not(.data-table__row--empty):not(.data-table__row--selected) {
-    background: color-mix(
-      in srgb,
-      var(--smrt-color-on-surface) calc(var(--smrt-state-hover) * 100%),
-      var(--smrt-surface-panel)
-    );
-  }
-
-  .data-table__row--selected {
-    background: color-mix(
-      in srgb,
-      var(--smrt-color-primary) calc(var(--smrt-state-selected) * 100%),
-      var(--smrt-surface-panel)
-    );
-  }
-
-  .data-table--striped:not(.data-table--virtualized) .data-table__row:nth-child(even):not(.data-table__row--selected),
-  .data-table__row--striped:not(.data-table__row--selected) {
-    background: var(--smrt-surface-sunken);
-  }
-
-  .data-table__row--interactive {
+  .smrt-data-table__row--interactive {
     cursor: pointer;
   }
-
-  .data-table__row--interactive:focus-visible {
-    outline: var(--smrt-focus-ring-width) solid var(--smrt-focus-ring-color);
-    outline-offset: calc(var(--smrt-focus-ring-width) * -1);
-  }
-
-  .data-table-container--virtualized .data-table__row:focus-visible {
-    outline: var(--smrt-focus-ring-width) solid var(--smrt-focus-ring-color);
-    outline-offset: calc(var(--smrt-focus-ring-width) * -1);
-  }
-
-  .data-table__cell {
+  .smrt-data-table__cell {
     padding: var(--smrt-spacing-3, 0.75rem) var(--smrt-spacing-4, 1rem);
-    vertical-align: middle;
   }
-
-  .data-table__cell--pinned-start,
-  .data-table__cell--pinned-end {
+  .smrt-data-table__cell--pinned-start,
+  .smrt-data-table__cell--pinned-end {
     position: sticky;
     z-index: 1;
-    background: var(--smrt-surface-panel);
   }
-
-  .data-table__cell--header.data-table__cell--pinned-start,
-  .data-table__cell--header.data-table__cell--pinned-end {
+  .smrt-data-table__cell--header.smrt-data-table__cell--pinned-start,
+  .smrt-data-table__cell--header.smrt-data-table__cell--pinned-end {
     z-index: 3;
-    background: var(--smrt-data-table-head-bg, var(--smrt-surface-sunken));
   }
-
-  .data-table__row--selected .data-table__cell--pinned-start,
-  .data-table__row--selected .data-table__cell--pinned-end {
-    background: color-mix(
-      in srgb,
-      var(--smrt-color-primary) calc(var(--smrt-state-selected) * 100%),
-      var(--smrt-surface-panel)
-    );
-  }
-
-  .data-table__cell--checkbox {
+  .smrt-data-table__cell--checkbox {
     width: 48px;
-    text-align: center;
   }
-
-  .data-table__cell--expand { width: 2.75rem; text-align: center; }
-  .data-table__expand-button { width: 1.75rem; height: 1.75rem; border: var(--smrt-hairline-strong); border-radius: var(--smrt-radius-full); background: transparent; color: var(--smrt-color-on-surface); cursor: pointer; }
-  .data-table__expand-button:focus-visible { outline: var(--smrt-focus-ring-width) solid var(--smrt-focus-ring-color); outline-offset: var(--smrt-focus-ring-offset); }
-  .data-table__cell--expanded { padding: var(--smrt-spacing-4); background: var(--smrt-surface-sunken); }
-  .data-table__footer { border-top: var(--smrt-hairline-strong); font-weight: var(--smrt-typography-weight-medium); }
-  .data-table__row--structural { background: var(--smrt-surface-sunken); }
-  .data-table__row--footer { border-top: var(--smrt-hairline-strong); }
-  .data-table__cell--structural-label { font-weight: var(--smrt-typography-weight-semibold, 600); }
-
-  .data-table__checkbox {
+  .smrt-data-table__cell--expand {
+    width: 2.75rem;
+  }
+  .smrt-data-table__expand-button {
+    width: 1.75rem;
+    height: 1.75rem;
+    cursor: pointer;
+  }
+  .smrt-data-table__cell--expanded {
+    padding: var(--smrt-spacing-4);
+  }
+  .smrt-data-table__checkbox {
     width: 18px;
     height: 18px;
     cursor: pointer;
-    accent-color: var(--smrt-color-primary);
   }
-
   /* Loading */
-  .data-table__cell--loading,
-  .data-table__cell--empty,
-  .data-table__cell--error {
+  .smrt-data-table__cell--loading,
+  .smrt-data-table__cell--empty,
+  .smrt-data-table__cell--error {
     padding: var(--smrt-spacing-8, 2rem);
-    text-align: center;
   }
-
-  .data-table__loading-indicator {
+  .smrt-data-table__loading-indicator {
     display: flex;
     align-items: center;
     justify-content: center;
     gap: var(--smrt-spacing-2, 0.5rem);
-    color: var(--smrt-color-on-surface-variant);
   }
-
-  .data-table__spinner {
+  .smrt-data-table__spinner {
     width: 20px;
     height: 20px;
-    border: 2px solid var(--smrt-color-outline-variant);
-    border-top-color: var(--smrt-color-primary);
-    border-radius: var(--smrt-radius-full);
-    animation: spin 0.8s linear infinite;
   }
-
-  @keyframes spin {
-    to {
-      transform: rotate(360deg);
-    }
-  }
-
-  .data-table__empty-state {
-    color: var(--smrt-color-on-surface-variant);
-  }
-
-  .data-table__error-state,
-  .data-table__async-status {
+  .smrt-data-table__error-state,
+  .smrt-data-table__async-status {
     display: flex;
     align-items: center;
     justify-content: center;
     flex-wrap: wrap;
     gap: var(--smrt-spacing-3, 0.75rem);
-    color: var(--smrt-color-on-surface-variant);
   }
-
-  .data-table__error-state,
-  .data-table__async-status--error {
-    color: var(--smrt-color-error);
-  }
-
-  .data-table__async-status {
+  .smrt-data-table__async-status {
     padding: var(--smrt-spacing-3, 0.75rem);
-    border-top: var(--smrt-hairline);
-    font: var(--smrt-typography-body-small-font);
   }
-
-  .data-table__retry-button {
-    border: 1px solid currentColor;
-    border-radius: var(--smrt-radius-small, 0.25rem);
-    background: transparent;
-    color: inherit;
+  .smrt-data-table__retry-button {
     cursor: pointer;
-    font: inherit;
     padding: var(--smrt-spacing-1, 0.25rem) var(--smrt-spacing-3, 0.75rem);
   }
-
-  .data-table__retry-button:focus-visible {
-    outline: var(--smrt-focus-ring-width) solid var(--smrt-focus-ring-color);
-    outline-offset: var(--smrt-focus-ring-offset);
-  }
-
   /* Size variants */
-  .data-table--sm .data-table__cell {
+  .smrt-data-table__sm .smrt-data-table__cell {
     padding: var(--smrt-spacing-2, 0.5rem) var(--smrt-spacing-3, 0.75rem);
   }
-
-  .data-table--sm .data-table__cell--header {
+  .smrt-data-table__sm .smrt-data-table__cell--header {
     padding: var(--smrt-spacing-2, 0.5rem) var(--smrt-spacing-3, 0.75rem);
   }
-
-  .data-table--lg .data-table__cell {
+  .smrt-data-table__lg .smrt-data-table__cell {
     padding: var(--smrt-spacing-4, 1rem) var(--smrt-spacing-5, 1.25rem);
   }
-
-  .data-table--lg .data-table__cell--header {
+  .smrt-data-table__lg .smrt-data-table__cell--header {
     padding: var(--smrt-spacing-4, 1rem) var(--smrt-spacing-5, 1.25rem);
   }
-
   /* Dense mode */
-  .data-table--dense .data-table__cell {
+  .smrt-data-table__dense .smrt-data-table__cell {
     padding: var(--smrt-spacing-1, 0.25rem) var(--smrt-spacing-2, 0.5rem);
   }
-
-  .data-table--dense .data-table__cell--header {
+  .smrt-data-table__dense .smrt-data-table__cell--header {
     padding: var(--smrt-spacing-2, 0.5rem) var(--smrt-spacing-2, 0.5rem);
   }
-
-  /* Loading overlay */
-  .data-table--loading {
-    opacity: 0.7;
-  }
-
   /* Phones with phoneLayout="cards": one block of stacked cells per row. Each cell shows its
-     column's name (data-label) above its value; the header row stays in the accessibility tree,
-     visually hidden, and the explicit roles keep the table structure announced. */
+  column's name (data-label) above its value; the header row stays in the accessibility tree,
+  visually hidden, and the explicit roles keep the table structure announced. */
   @media (max-width: 48rem) {
     /* A virtualized body keeps its own scroller. */
-    .data-table-container--phone-cards:not(.data-table-container--virtualized) {
+    .smrt-data-table__container--phone-cards:not(.smrt-data-table__container--virtualized) {
       overflow: visible;
     }
-    .data-table-container--phone-cards .data-table,
-    .data-table-container--phone-cards .data-table__body {
+    .smrt-data-table__container--phone-cards .smrt-data-table__root,
+    .smrt-data-table__container--phone-cards .smrt-data-table__body {
       display: block;
       width: 100%;
     }
-    .data-table-container--phone-cards .data-table__head {
+    .smrt-data-table__container--phone-cards .smrt-data-table__head {
       position: absolute;
       width: 1px;
       height: 1px;
@@ -2348,49 +2168,305 @@ $effect(() => {
       clip-path: inset(50%);
       white-space: nowrap;
     }
-    .data-table-container--phone-cards .data-table__overflow-cue {
+    .smrt-data-table__container--phone-cards .smrt-data-table__overflow-cue {
       display: none;
     }
-    .data-table-container--phone-cards .data-table__cell[data-label]:not([data-label=''])::before {
+    .smrt-data-table__container--phone-cards .smrt-data-table__cell[data-label]:not([data-label=''])::before {
+      display: block;
       content: attr(data-label);
       /* The header already names the cell for assistive technology. */
       content: attr(data-label) / '';
+    }
+    .smrt-data-table__container--phone-cards .smrt-data-table__row {
+      display: grid;
+      gap: var(--smrt-spacing-1, 0.35rem);
+      padding: var(--smrt-spacing-3, 0.85rem) var(--smrt-spacing-4, 1rem);
+    }
+    .smrt-data-table__container--phone-cards .smrt-data-table__cell {
       display: block;
+      padding: 0;
+    }
+    .smrt-data-table__container--phone-cards .smrt-data-table__cell:empty {
+      display: none;
+    }
+  }
+  .smrt-data-table__sort-button {
+    min-height: var(--smrt-control-target-min);
+    min-width: var(--smrt-control-target-min);
+  }
+  .smrt-data-table__container--narrow .smrt-data-table__cell {
+    white-space: normal;
+    overflow-wrap: anywhere;
+  }
+  .smrt-data-table__container--narrow .smrt-data-table__sort-button {
+    max-width: 100%;
+    white-space: normal;
+    overflow-wrap: anywhere;
+  }
+  .smrt-data-table__container[data-density='touch'] {
+    --smrt-control-target-min: var(--smrt-touch-target-min);
+  }
+  .smrt-data-table__container[data-density='comfortable'] {
+    --smrt-control-target-min: 0px;
+  }
+  .smrt-data-table__container--narrow .smrt-data-table__root {
+    table-layout: fixed;
+  }
+}
+
+@layer smrt.theme {
+  .smrt-data-table__container--overflowing:focus-visible {
+    outline: var(--smrt-focus-ring-width) solid var(--smrt-focus-ring-color);
+    outline-offset: var(--smrt-focus-ring-offset);
+  }
+  .smrt-data-table__container--highlighted {
+    outline: var(--smrt-focus-ring-width) solid var(--smrt-focus-ring-color);
+    outline-offset: var(--smrt-focus-ring-offset);
+  }
+  .smrt-data-table__overflow-cue {
+    border-top: var(--smrt-hairline);
+    background: var(--smrt-color-surface-container-low);
+    color: var(--smrt-color-on-surface-variant);
+    font-size: var(--smrt-typography-label-small-size, 0.75rem);
+    font-weight: var(--smrt-typography-weight-medium, 500);
+  }
+  .smrt-data-table__visually-hidden {
+    border: 0;
+  }
+  .smrt-data-table__root {
+    border-collapse: collapse;
+    border-spacing: 0;
+    font-family: var(--smrt-font-family, inherit);
+    font-size: var(--smrt-typography-body-medium-size, 0.875rem);
+    color: var(--smrt-color-on-surface);
+    background: var(--smrt-surface-panel);
+  }
+  .smrt-data-table__caption {
+    font-weight: var(--smrt-typography-weight-medium, 500);
+    text-align: left;
+    color: var(--smrt-color-on-surface-variant);
+  }
+  /* Header */
+  /* --smrt-data-table-head-bg / -color: sunken is darker than every
+  surface-container level in both themes, so the head stays visible on a
+  surface-container-low page. */
+  .smrt-data-table__head {
+    background: var(--smrt-data-table-head-bg, var(--smrt-surface-sunken));
+    color: var(--smrt-data-table-head-color, var(--smrt-color-on-surface));
+  }
+  .smrt-data-table__row--header {
+    border-bottom: var(--smrt-hairline);
+  }
+  .smrt-data-table__cell--header {
+    font-weight: var(--smrt-typography-weight-semibold, 600);
+    text-align: left;
+    color: inherit;
+  }
+  .smrt-data-table__sort-button {
+    border: none;
+    background: none;
+    font: inherit;
+    font-weight: var(--smrt-typography-weight-semibold, 600);
+    color: inherit;
+  }
+  .smrt-data-table__cell--header-group {
+    color: var(--smrt-color-on-surface-variant);
+    font: var(--smrt-typography-label-medium-font);
+    letter-spacing: 0.02em;
+  }
+  .smrt-data-table__resize-handle::after {
+    background: var(--smrt-color-outline);
+  }
+  .smrt-data-table__resize-handle:focus-visible {
+    outline: var(--smrt-focus-ring-width) solid var(--smrt-focus-ring-color);
+    outline-offset: calc(var(--smrt-focus-ring-width) * -1);
+  }
+  .smrt-data-table__sort-button:hover {
+    color: var(--smrt-color-primary);
+  }
+  .smrt-data-table__sort-icon {
+    font-size: var(--smrt-typography-label-medium-size, 0.75rem);
+    opacity: 0.5;
+  }
+  .smrt-data-table__cell--sorted .smrt-data-table__sort-icon {
+    opacity: 1;
+    color: var(--smrt-color-primary);
+  }
+  /* Body */
+  .smrt-data-table__body {
+    background: var(--smrt-surface-panel);
+  }
+  .smrt-data-table__row {
+    border-bottom: var(--smrt-hairline);
+    transition: background-color var(--smrt-duration-fast, 150ms) var(--smrt-easing-standard, ease);
+  }
+  .smrt-data-table__virtual-spacer td {
+    border: 0;
+  }
+  .smrt-data-table__hoverable .smrt-data-table__row:hover:not(.smrt-data-table__row--loading):not(.smrt-data-table__row--empty):not(.smrt-data-table__row--selected) {
+    background: color-mix(
+      in srgb,
+      var(--smrt-color-on-surface) calc(var(--smrt-state-hover) * 100%),
+      var(--smrt-surface-panel)
+    );
+  }
+  .smrt-data-table__row--selected {
+    background: color-mix(
+      in srgb,
+      var(--smrt-color-primary) calc(var(--smrt-state-selected) * 100%),
+      var(--smrt-surface-panel)
+    );
+  }
+  .smrt-data-table__striped:not(.smrt-data-table__virtualized) .smrt-data-table__row:nth-child(even):not(.smrt-data-table__row--selected),
+  .smrt-data-table__row--striped:not(.smrt-data-table__row--selected) {
+    background: var(--smrt-surface-sunken);
+  }
+  .smrt-data-table__row--interactive:focus-visible {
+    outline: var(--smrt-focus-ring-width) solid var(--smrt-focus-ring-color);
+    outline-offset: calc(var(--smrt-focus-ring-width) * -1);
+  }
+  .smrt-data-table__container--virtualized .smrt-data-table__row:focus-visible {
+    outline: var(--smrt-focus-ring-width) solid var(--smrt-focus-ring-color);
+    outline-offset: calc(var(--smrt-focus-ring-width) * -1);
+  }
+  .smrt-data-table__cell {
+    vertical-align: middle;
+  }
+  .smrt-data-table__cell--pinned-start,
+  .smrt-data-table__cell--pinned-end {
+    background: var(--smrt-surface-panel);
+  }
+  .smrt-data-table__cell--header.smrt-data-table__cell--pinned-start,
+  .smrt-data-table__cell--header.smrt-data-table__cell--pinned-end {
+    background: var(--smrt-data-table-head-bg, var(--smrt-surface-sunken));
+  }
+  .smrt-data-table__row--selected .smrt-data-table__cell--pinned-start,
+  .smrt-data-table__row--selected .smrt-data-table__cell--pinned-end {
+    background: color-mix(
+      in srgb,
+      var(--smrt-color-primary) calc(var(--smrt-state-selected) * 100%),
+      var(--smrt-surface-panel)
+    );
+  }
+  .smrt-data-table__cell--checkbox {
+    text-align: center;
+  }
+  .smrt-data-table__cell--expand {
+    text-align: center;
+  }
+  .smrt-data-table__expand-button {
+    border: var(--smrt-hairline-strong);
+    border-radius: var(--smrt-radius-full);
+    background: transparent;
+    color: var(--smrt-color-on-surface);
+  }
+  .smrt-data-table__expand-button:focus-visible {
+    outline: var(--smrt-focus-ring-width) solid var(--smrt-focus-ring-color);
+    outline-offset: var(--smrt-focus-ring-offset);
+  }
+  .smrt-data-table__cell--expanded {
+    background: var(--smrt-surface-sunken);
+  }
+  .smrt-data-table__footer {
+    border-top: var(--smrt-hairline-strong);
+    font-weight: var(--smrt-typography-weight-medium);
+  }
+  .smrt-data-table__row--structural {
+    background: var(--smrt-surface-sunken);
+  }
+  .smrt-data-table__row--footer {
+    border-top: var(--smrt-hairline-strong);
+  }
+  .smrt-data-table__cell--structural-label {
+    font-weight: var(--smrt-typography-weight-semibold, 600);
+  }
+  .smrt-data-table__checkbox {
+    accent-color: var(--smrt-color-primary);
+  }
+  /* Loading */
+  .smrt-data-table__cell--loading,
+  .smrt-data-table__cell--empty,
+  .smrt-data-table__cell--error {
+    text-align: center;
+  }
+  .smrt-data-table__loading-indicator {
+    color: var(--smrt-color-on-surface-variant);
+  }
+  .smrt-data-table__spinner {
+    border: 2px solid var(--smrt-color-outline-variant);
+    border-top-color: var(--smrt-color-primary);
+    border-radius: var(--smrt-radius-full);
+    animation: spin 0.8s linear infinite;
+  }
+  @keyframes spin {
+    to {
+      transform: rotate(360deg);
+    }
+  }
+  .smrt-data-table__empty-state {
+    color: var(--smrt-color-on-surface-variant);
+  }
+  .smrt-data-table__error-state,
+  .smrt-data-table__async-status {
+    color: var(--smrt-color-on-surface-variant);
+  }
+  .smrt-data-table__error-state,
+  .smrt-data-table__async-status--error {
+    color: var(--smrt-color-error);
+  }
+  .smrt-data-table__async-status {
+    border-top: var(--smrt-hairline);
+    font: var(--smrt-typography-body-small-font);
+  }
+  .smrt-data-table__retry-button {
+    border: 1px solid currentColor;
+    border-radius: var(--smrt-radius-small, 0.25rem);
+    background: transparent;
+    color: inherit;
+    font: inherit;
+  }
+  .smrt-data-table__retry-button:focus-visible {
+    outline: var(--smrt-focus-ring-width) solid var(--smrt-focus-ring-color);
+    outline-offset: var(--smrt-focus-ring-offset);
+  }
+  /* Loading overlay */
+  .smrt-data-table__loading {
+    opacity: 0.7;
+  }
+  /* Phones with phoneLayout="cards": one block of stacked cells per row. Each cell shows its
+  column's name (data-label) above its value; the header row stays in the accessibility tree,
+  visually hidden, and the explicit roles keep the table structure announced. */
+  @media (max-width: 48rem) {
+    .smrt-data-table__container--phone-cards .smrt-data-table__cell[data-label]:not([data-label=''])::before {
       font-size: var(--smrt-typography-label-small-size, 0.75rem);
       font-weight: 600;
       color: var(--smrt-color-on-surface-variant);
     }
-    .data-table-container--phone-cards .data-table__row {
-      display: grid;
-      gap: var(--smrt-spacing-1, 0.35rem);
-      padding: var(--smrt-spacing-3, 0.85rem) var(--smrt-spacing-4, 1rem);
+    .smrt-data-table__container--phone-cards .smrt-data-table__row {
       border-bottom: var(--smrt-hairline);
     }
-    .data-table-container--phone-cards .data-table__cell {
-      display: block;
-      padding: 0;
+    .smrt-data-table__container--phone-cards .smrt-data-table__cell {
       border: 0;
     }
-    .data-table-container--phone-cards .data-table__cell:empty {
-      display: none;
-    }
   }
-
   @media (prefers-reduced-motion: reduce) {
-    .data-table__spinner {
+    .smrt-data-table__spinner {
       animation: none;
     }
   }
-  .data-table-container[data-density='touch'] { --smrt-control-target-min: var(--smrt-touch-target-min); }
-  .data-table-container[data-density='comfortable'] { --smrt-control-target-min: 0px; }
-  .data-table__sort-button { min-height: var(--smrt-control-target-min); min-width: var(--smrt-control-target-min); }
-  .data-table-container--narrow .data-table { table-layout: fixed; }
-  .data-table-container--narrow .data-table__cell { white-space: normal; overflow-wrap: anywhere; }
-  .data-table-container--narrow .data-table__sort-button { max-width: 100%; text-align: left; white-space: normal; overflow-wrap: anywhere; }
+  .smrt-data-table__container--narrow .smrt-data-table__sort-button {
+    text-align: left;
+  }
   /* Forced colors (#3908): system colours where colour alone carries meaning. */
   @media (forced-colors: active) {
-    .data-table__row--selected, .data-table__row--selected .data-table__cell--pinned-start, .data-table__row--selected .data-table__cell--pinned-end { background: Canvas; }
-    .data-table__row--selected { outline: var(--smrt-focus-ring-width) solid Highlight; outline-offset: calc(-1 * var(--smrt-focus-ring-width)); }
+    .smrt-data-table__row--selected, .smrt-data-table__row--selected .smrt-data-table__cell--pinned-start, .smrt-data-table__row--selected .smrt-data-table__cell--pinned-end {
+      background: Canvas;
+    }
+    .smrt-data-table__row--selected {
+      outline: var(--smrt-focus-ring-width) solid Highlight;
+      outline-offset: calc(-1 * var(--smrt-focus-ring-width));
+    }
   }
 }
+
 </style>

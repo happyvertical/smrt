@@ -74,17 +74,13 @@ for (const preset of presets) {
             ),
           );
         });
-        await expect(stage).toHaveScreenshot([
-          preset,
-          scheme,
-          `${entry}-styled.png`,
-        ]);
+        await expect
+          .soft(stage)
+          .toHaveScreenshot([preset, scheme, `${entry}-styled.png`]);
         await page.addStyleTag({ content: unstyledCSS });
-        await expect(stage).toHaveScreenshot([
-          preset,
-          scheme,
-          `${entry}-unstyled.png`,
-        ]);
+        await expect
+          .soft(stage)
+          .toHaveScreenshot([preset, scheme, `${entry}-unstyled.png`]);
         expect(errors).toEqual([]);
       });
     }

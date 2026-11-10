@@ -252,10 +252,11 @@ function formatFileSize(bytes: number): string {
 }
 </script>
 
-<div class="file-upload" class:disabled data-density={density} data-smrt-component="FileUpload">
+<div class="smrt-file-upload__root" class:smrt-file-upload__disabled={disabled} data-density={density} data-smrt-component="FileUpload">
   <div
-    class="drop-zone"
-    class:dragging={isDragging}
+    class="smrt-file-upload__drop-zone"
+    class:smrt-file-upload__dragging={isDragging}
+    data-smrt-part="trigger"
     role="button"
     tabindex={disabled ? -1 : 0}
     ondragenter={handleDragEnter}
@@ -265,15 +266,15 @@ function formatFileSize(bytes: number): string {
     onclick={handleZoneClick}
     onkeydown={handleKeyDown}
   >
-    <div class="drop-zone__icon">
+    <div class="smrt-file-upload__drop-zone-icon" data-smrt-part="icon">
       <svg width="40" height="40" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5">
         <path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4" />
         <polyline points="17 8 12 3 7 8" />
         <line x1="12" y1="3" x2="12" y2="15" />
       </svg>
     </div>
-    <p class="drop-zone__label">{label}</p>
-    <p class="drop-zone__hint">{hint}</p>
+    <p class="smrt-file-upload__drop-zone-label" data-smrt-part="label">{label}</p>
+    <p class="smrt-file-upload__drop-zone-hint" data-smrt-part="description">{hint}</p>
   </div>
   <!-- Visually hidden rather than `hidden`: a hidden control cannot be focused,
        so the browser could not show its `required` validation bubble and would
@@ -281,7 +282,8 @@ function formatFileSize(bytes: number): string {
        to assistive tech and the tab order. -->
   <input
     bind:this={inputRef}
-    class="file-upload__input"
+    class="smrt-file-upload__input"
+    data-smrt-part="input"
     type="file"
     {name}
     {accept}
@@ -298,17 +300,18 @@ function formatFileSize(bytes: number): string {
   {#if error}
     <!-- Live region so async validation/reject errors are announced (C7),
          matching the Form/TextInput announcing pattern. -->
-    <p class="file-upload__error" role="alert" aria-live="assertive">{error}</p>
+    <p class="smrt-file-upload__error" data-smrt-part="error" role="alert" aria-live="assertive">{error}</p>
   {/if}
 
   {#if files.length > 0}
-    <ul class="file-list">
+    <ul class="smrt-file-upload__file-list" data-smrt-part="list">
       {#each files as file, i (file.name)}
-        <li class="file-list__item">
-          <span class="file-list__name">{file.name}</span>
-          <span class="file-list__size">{formatFileSize(file.size)}</span>
+        <li class="smrt-file-upload__file-item" data-smrt-part="row">
+          <span class="smrt-file-upload__file-name" data-smrt-part="title">{file.name}</span>
+          <span class="smrt-file-upload__file-size" data-smrt-part="meta">{formatFileSize(file.size)}</span>
           <button
-            class="file-list__remove"
+            class="smrt-file-upload__file-remove"
+            data-smrt-part="close"
             onclick={() => removeFile(i)}
             aria-label={t(M['ui.file_upload.remove_file'], { name: file.name })}
             type="button"
@@ -327,15 +330,14 @@ function formatFileSize(bytes: number): string {
 
 <style>
 @layer smrt.reset, smrt.structure, smrt.theme;
-@layer smrt.theme {
-  .file-upload {
+@layer smrt.structure {
+  .smrt-file-upload__root {
     position: relative;
     display: flex;
     flex-direction: column;
     gap: var(--smrt-spacing-3, 0.75rem);
   }
-
-  .file-upload__input {
+  .smrt-file-upload__input {
     position: absolute;
     inset-block-start: 0;
     inset-inline-start: 0;
@@ -343,131 +345,144 @@ function formatFileSize(bytes: number): string {
     height: 1px;
     margin: 0;
     padding: 0;
-    border: 0;
     overflow: hidden;
     clip-path: inset(50%);
     white-space: nowrap;
   }
-
-  .file-upload.disabled {
-    opacity: 0.5;
-    pointer-events: none;
-  }
-
-  .drop-zone {
+  .smrt-file-upload__drop-zone {
     display: flex;
     flex-direction: column;
     align-items: center;
     justify-content: center;
     gap: var(--smrt-spacing-2, 0.5rem);
     padding: var(--smrt-spacing-8, 2rem) var(--smrt-spacing-6, 1.5rem);
-    border: 2px dashed var(--smrt-color-outline);
-    border-radius: var(--smrt-radius-lg, 1rem);
-    background: var(--smrt-color-surface-container-low);
     cursor: pointer;
-    transition: all 200ms;
-    text-align: center;
   }
-
-  .drop-zone:hover {
-    border-color: var(--smrt-color-primary);
-    background: var(--smrt-color-surface-container);
-  }
-
-  .drop-zone:focus-visible {
-    outline: 2px solid var(--smrt-color-primary);
-    outline-offset: 2px;
-  }
-
-  .drop-zone.dragging {
-    border-color: var(--smrt-color-primary);
-    background: var(--smrt-color-primary-container);
-    border-style: solid;
-  }
-
-  .drop-zone__icon {
-    color: var(--smrt-color-on-surface-variant);
-  }
-
-  .drop-zone__label {
+  .smrt-file-upload__drop-zone-label {
     margin: 0;
-    font: var(--smrt-typography-body-large-font);
-    color: var(--smrt-color-on-surface);
   }
-
-  .drop-zone__hint {
+  .smrt-file-upload__drop-zone-hint {
     margin: 0;
-    font: var(--smrt-typography-body-small-font);
-    font-size: var(--smrt-typography-body-medium-size, 0.875rem);
-    color: var(--smrt-color-on-surface-variant);
   }
-
-  .file-upload__error {
+  .smrt-file-upload__error {
     margin: 0;
     padding: var(--smrt-spacing-2, 0.5rem) var(--smrt-spacing-3, 0.75rem);
-    background: var(--smrt-color-error-container);
-    color: var(--smrt-color-on-error-container);
-    border-radius: var(--smrt-radius-sm, 0.25rem);
-    font-size: var(--smrt-typography-body-medium-size, 0.875rem);
   }
-
-  .file-list {
+  .smrt-file-upload__file-list {
     list-style: none;
     margin: 0;
     padding: 0;
-    border: var(--smrt-hairline);
-    border-radius: var(--smrt-radius-md, 0.5rem);
     overflow: hidden;
   }
-
-  .file-list__item {
+  .smrt-file-upload__file-item {
     display: flex;
     align-items: center;
     gap: var(--smrt-spacing-3, 0.75rem);
     padding: var(--smrt-spacing-2, 0.5rem) var(--smrt-spacing-3, 0.75rem);
-    border-bottom: var(--smrt-hairline);
   }
-
-  .file-list__item:last-child {
-    border-bottom: none;
-  }
-
-  .file-list__name {
+  .smrt-file-upload__file-name {
     flex: 1;
-    font-size: var(--smrt-typography-body-medium-size, 0.875rem);
-    color: var(--smrt-color-on-surface);
     overflow: hidden;
     text-overflow: ellipsis;
     white-space: nowrap;
   }
-
-  .file-list__size {
-    font-size: var(--smrt-typography-label-medium-size, 0.75rem);
-    color: var(--smrt-color-on-surface-variant);
+  .smrt-file-upload__file-size {
     white-space: nowrap;
   }
-
-  .file-upload[data-density='touch'] { --smrt-control-target-min: var(--smrt-touch-target-min); }
-  .file-upload[data-density='comfortable'] { --smrt-control-target-min: 0px; }
-
-  .file-list__remove {
+  .smrt-file-upload__file-remove {
     display: flex;
     align-items: center;
     justify-content: center;
     width: max(28px, var(--smrt-control-target-min));
     height: max(28px, var(--smrt-control-target-min));
     padding: 0;
+    cursor: pointer;
+  }
+  .smrt-file-upload__root.smrt-file-upload__disabled {
+    pointer-events: none;
+  }
+  .smrt-file-upload__root[data-density='touch'] {
+    --smrt-control-target-min: var(--smrt-touch-target-min);
+  }
+  .smrt-file-upload__root[data-density='comfortable'] {
+    --smrt-control-target-min: 0px;
+  }
+}
+
+@layer smrt.theme {
+  .smrt-file-upload__input {
+    border: 0;
+  }
+  .smrt-file-upload__root.smrt-file-upload__disabled {
+    opacity: 0.5;
+  }
+  .smrt-file-upload__drop-zone {
+    border: 2px dashed var(--smrt-color-outline);
+    border-radius: var(--smrt-radius-lg, 1rem);
+    background: var(--smrt-color-surface-container-low);
+    transition: all 200ms;
+    text-align: center;
+  }
+  .smrt-file-upload__drop-zone:hover {
+    border-color: var(--smrt-color-primary);
+    background: var(--smrt-color-surface-container);
+  }
+  .smrt-file-upload__drop-zone:focus-visible {
+    outline: 2px solid var(--smrt-color-primary);
+    outline-offset: 2px;
+  }
+  .smrt-file-upload__drop-zone.smrt-file-upload__dragging {
+    border-color: var(--smrt-color-primary);
+    background: var(--smrt-color-primary-container);
+    border-style: solid;
+  }
+  .smrt-file-upload__drop-zone-icon {
+    color: var(--smrt-color-on-surface-variant);
+  }
+  .smrt-file-upload__drop-zone-label {
+    font: var(--smrt-typography-body-large-font);
+    color: var(--smrt-color-on-surface);
+  }
+  .smrt-file-upload__drop-zone-hint {
+    font: var(--smrt-typography-body-small-font);
+    font-size: var(--smrt-typography-body-medium-size, 0.875rem);
+    color: var(--smrt-color-on-surface-variant);
+  }
+  .smrt-file-upload__error {
+    background: var(--smrt-color-error-container);
+    color: var(--smrt-color-on-error-container);
+    border-radius: var(--smrt-radius-sm, 0.25rem);
+    font-size: var(--smrt-typography-body-medium-size, 0.875rem);
+  }
+  .smrt-file-upload__file-list {
+    border: var(--smrt-hairline);
+    border-radius: var(--smrt-radius-md, 0.5rem);
+  }
+  .smrt-file-upload__file-item {
+    border-bottom: var(--smrt-hairline);
+  }
+  .smrt-file-upload__file-item:last-child {
+    border-bottom: none;
+  }
+  .smrt-file-upload__file-name {
+    font-size: var(--smrt-typography-body-medium-size, 0.875rem);
+    color: var(--smrt-color-on-surface);
+  }
+  .smrt-file-upload__file-size {
+    font-size: var(--smrt-typography-label-medium-size, 0.75rem);
+    color: var(--smrt-color-on-surface-variant);
+  }
+  .smrt-file-upload__file-remove {
     border: none;
     border-radius: var(--smrt-radius-full);
     background: transparent;
     color: var(--smrt-color-on-surface-variant);
-    cursor: pointer;
     transition: background-color 200ms;
   }
-
-  .file-list__remove:hover {
+  .smrt-file-upload__file-remove:hover {
     background: var(--smrt-color-error-container);
     color: var(--smrt-color-error);
   }
 }
+
 </style>

@@ -20,49 +20,49 @@ const labelText: Record<string, string> = {
 };
 </script>
 
-<span class="presence" aria-label={labelText[status]} data-smrt-component="UserPresence">
-  <span class="presence__dot {status}"></span>
+<span class="smrt-user-presence__root" aria-label={labelText[status]} data-smrt-component="UserPresence">
+  <span class="smrt-user-presence__dot smrt-user-presence__{status}" data-smrt-part="indicator"></span>
   {#if showLabel}
-    <span class="presence__label">{labelText[status]}</span>
+    <span class="smrt-user-presence__label" data-smrt-part="label">{labelText[status]}</span>
   {/if}
 </span>
 
 <style>
 @layer smrt.reset, smrt.structure, smrt.theme;
-@layer smrt.theme {
-  .presence {
+@layer smrt.structure {
+  .smrt-user-presence__root {
     display: inline-flex;
     align-items: center;
     gap: var(--smrt-spacing-2, 0.375rem);
   }
-
-  .presence__dot {
+  .smrt-user-presence__dot {
     width: 8px;
     height: 8px;
-    border-radius: var(--smrt-radius-full);
     flex-shrink: 0;
   }
+}
 
-  .presence__dot.online {
+@layer smrt.theme {
+  .smrt-user-presence__dot {
+    border-radius: var(--smrt-radius-full);
+  }
+  .smrt-user-presence__dot.smrt-user-presence__online {
     background: var(--smrt-color-success);
   }
-
-  .presence__dot.away {
+  .smrt-user-presence__dot.smrt-user-presence__away {
     background: var(--smrt-color-warning);
   }
-
-  .presence__dot.dnd {
+  .smrt-user-presence__dot.smrt-user-presence__dnd {
     background: var(--smrt-color-error);
   }
-
-  .presence__dot.offline {
+  .smrt-user-presence__dot.smrt-user-presence__offline {
     background: var(--smrt-color-outline);
   }
-
-  .presence__label {
+  .smrt-user-presence__label {
     font-size: var(--smrt-typography-body-small-size, 0.75rem);
     color: var(--smrt-color-on-surface-variant);
     line-height: 1;
   }
 }
+
 </style>

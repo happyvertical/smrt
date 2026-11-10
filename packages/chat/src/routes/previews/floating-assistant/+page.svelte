@@ -57,12 +57,18 @@ async function send(content: string) {
 
 <style>
 @layer smrt.reset, smrt.structure, smrt.theme;
-@layer smrt.theme {
+@layer smrt.structure {
   main {
     max-inline-size: 42rem;
     margin: 3rem auto;
     padding: 1rem;
+  }
+}
+
+@layer smrt.theme {
+  main {
     font-family: var(--smrt-font-family, system-ui, sans-serif);
   }
 }
+
 </style>

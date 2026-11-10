@@ -43,7 +43,7 @@ const groups = $derived(
   {/each}
 {/snippet}
 
-<article class="help">
+<article class="smrt-help-view__root" data-smrt-component="HelpView">
   {#each blocks as block}
     {#if block.type === 'heading'}
       <svelte:element this={`h${level(block.level - 2)}`}>
@@ -86,13 +86,12 @@ const groups = $derived(
 
 <style>
 @layer smrt.reset, smrt.structure, smrt.theme;
-@layer smrt.theme {
-  .help {
+@layer smrt.structure {
+  .smrt-help-view__root {
     display: grid;
     gap: var(--smrt-spacing-3);
     max-width: 48rem;
   }
-
   h2,
   h3,
   h4,
@@ -102,31 +101,32 @@ const groups = $derived(
   dl {
     margin: 0;
   }
-
   ol,
   ul {
     display: grid;
     gap: var(--smrt-spacing-2);
     padding-left: var(--smrt-spacing-5);
   }
-
   section {
     display: grid;
     gap: var(--smrt-spacing-3);
   }
-
   dl {
     display: grid;
     gap: var(--smrt-spacing-2);
   }
+  dd {
+    margin: 0;
+  }
+}
 
+@layer smrt.theme {
   dt {
     font-weight: 600;
   }
-
   dd {
-    margin: 0;
     color: var(--smrt-color-on-surface-variant);
   }
 }
+
 </style>

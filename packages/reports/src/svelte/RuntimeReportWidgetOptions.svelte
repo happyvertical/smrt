@@ -42,7 +42,7 @@ function save() {
 }
 </script>
 
-<div class="report-widget-options" data-smrt-component="RuntimeReportWidgetOptions">
+<div class="smrt-runtime-report-widget-options__root" data-smrt-component="RuntimeReportWidgetOptions">
   <ReportPicker
     {client}
     reportId={value.reportId}
@@ -59,8 +59,20 @@ function save() {
 
 <style>
 @layer smrt.reset, smrt.structure, smrt.theme;
-@layer smrt.theme {
-  .report-widget-options { display: grid; gap: var(--smrt-spacing-4); }
-  .report-widget-options > p { margin: 0; color: var(--smrt-color-error); }
+@layer smrt.structure {
+  .smrt-runtime-report-widget-options__root {
+    display: grid;
+    gap: var(--smrt-spacing-4);
+  }
+  .smrt-runtime-report-widget-options__root > p {
+    margin: 0;
+  }
 }
+
+@layer smrt.theme {
+  .smrt-runtime-report-widget-options__root > p {
+    color: var(--smrt-color-error);
+  }
+}
+
 </style>

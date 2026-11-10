@@ -9,9 +9,9 @@ import {
 import Planner from '../src/lib/planner/Planner.svelte';
 
 const headerLinks = (body: string) =>
-  [...body.matchAll(/<a\b[^>]*class="[^"]*header-link[^"]*"[^>]*>/g)].map(
-    (m) => m[0],
-  );
+  [
+    ...body.matchAll(/<a\b[^>]*data-smrt-component="HeaderIconLink"[^>]*>/g),
+  ].map((m) => m[0]);
 
 describe('labelled header navigation', () => {
   it('lists specs as a tab and groups every tab once at most', () => {

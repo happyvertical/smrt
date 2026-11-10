@@ -276,40 +276,40 @@ onDestroy(() => {
 });
 </script>
 
-<div class="smrt-image-uploader" data-smrt-component="ImageUploader">
+<div class="smrt-image-uploader__root" data-smrt-component="ImageUploader">
   {#if selectedImage}
     <!-- Gallery Confirmation Step -->
-    <div class="header">
-      <Button variant="ghost" size="sm" class="back-btn--link" onclick={handleBackToChooser}>
+    <div class="smrt-image-uploader__header" data-smrt-part="header">
+      <Button variant="ghost" size="sm" class="smrt-image-uploader__back" onclick={handleBackToChooser}>
         <svg viewBox="0 0 24 24" width="20" height="20" stroke="currentColor" stroke-width="2" fill="none" stroke-linecap="round" stroke-linejoin="round">
           <polyline points="15 18 9 12 15 6"></polyline>
         </svg>
         Back
       </Button>
       {#if onCancel}
-        <Button variant="ghost" size="sm" class="close-btn--x" onclick={onCancel}>×</Button>
+        <Button variant="ghost" size="sm" class="smrt-image-uploader__close" onclick={onCancel}>×</Button>
       {/if}
     </div>
 
-    <div class="confirm-panel">
-      <div class="confirm-preview-wrapper">
-        <img class="confirm-preview-img" src={selectedImage.sourceUri || selectedImage.url} alt={selectedImage.name} />
+    <div class="smrt-image-uploader__confirm" data-smrt-part="panel">
+      <div class="smrt-image-uploader__preview" data-smrt-part="panel">
+        <img class="smrt-image-uploader__preview-image" data-smrt-part="media" src={selectedImage.sourceUri || selectedImage.url} alt={selectedImage.name} />
       </div>
       
-      <div class="confirm-info">
-        <span class="confirm-name">{selectedImage.name}</span>
-        <span class="confirm-meta">{selectedImage.width} × {selectedImage.height}</span>
+      <div class="smrt-image-uploader__details" data-smrt-part="body">
+        <span class="smrt-image-uploader__name" data-smrt-part="title">{selectedImage.name}</span>
+        <span class="smrt-image-uploader__meta" data-smrt-part="meta">{selectedImage.width} × {selectedImage.height}</span>
       </div>
 
-      <div class="confirm-actions">
-        <Button variant="primary" class="primary-btn--pill" onclick={handleConfirmOriginal}>
+      <div class="smrt-image-uploader__confirm-actions" data-smrt-part="actions">
+        <Button variant="primary" class="smrt-image-uploader__primary-button" onclick={handleConfirmOriginal}>
           {t(M['images.image_uploader.select_image'])}
         </Button>
         <Button
           variant="ghost"
           class={showVariation
-            ? 'variation-toggle--chip variation-toggle--active'
-            : 'variation-toggle--chip'}
+            ? 'smrt-image-uploader__variation-button smrt-image-uploader__variation-active'
+            : 'smrt-image-uploader__variation-button'}
           onclick={() => (showVariation = !showVariation)}
         >
           <svg viewBox="0 0 24 24" width="16" height="16" stroke="currentColor" stroke-width="2" fill="none" stroke-linecap="round" stroke-linejoin="round">
@@ -321,8 +321,8 @@ onDestroy(() => {
       </div>
 
       {#if showVariation}
-        <div class="variation-form">
-          <p class="variation-hint">{t(M['images.image_uploader.variation_hint'])}</p>
+        <div class="smrt-image-uploader__variation" data-smrt-part="field">
+          <p class="smrt-image-uploader__variation-hint" data-smrt-part="description">{t(M['images.image_uploader.variation_hint'])}</p>
           <Textarea
             bind:value={variationPrompt}
             placeholder={t(M['images.image_uploader.variation_prompt_placeholder'])}
@@ -330,16 +330,16 @@ onDestroy(() => {
             disabled={isGenerating}
           />
           {#if variationError}
-            <div class="variation-error">{variationError}</div>
+            <div class="smrt-image-uploader__variation-error" data-smrt-part="error">{variationError}</div>
           {/if}
           <Button
             variant="primary"
-            class="generate-btn--pill"
+            class="smrt-image-uploader__generate-button"
             disabled={isGenerating || !variationPrompt.trim()}
             onclick={handleGenerateVariation}
           >
             {#if isGenerating}
-              <span class="spinner"></span>
+              <span class="smrt-image-uploader__spinner" data-smrt-part="spinner"></span>
               {t(M['images.image_uploader.generating'])}
             {:else}
               {t(M['images.image_uploader.generate_variation'])}
@@ -351,48 +351,48 @@ onDestroy(() => {
 
   {:else}
     <!-- Normal Chooser -->
-    <div class="header">
+    <div class="smrt-image-uploader__header" data-smrt-part="header">
       <h3>{t(M['images.image_uploader.choose_image'])}</h3>
       {#if onCancel}
-        <Button variant="ghost" size="sm" class="close-btn--x" onclick={onCancel}>×</Button>
+        <Button variant="ghost" size="sm" class="smrt-image-uploader__close" onclick={onCancel}>×</Button>
       {/if}
     </div>
     
-    <div class="tabs">
+    <div class="smrt-image-uploader__tabs" data-smrt-part="nav">
       {#if allowedTabs.includes('gallery')}
         <Button
           variant="ghost"
-          class={activeTab === 'gallery' ? 'uploader-tab uploader-tab--active' : 'uploader-tab'}
+          class={activeTab === 'gallery' ? 'smrt-image-uploader__tab smrt-image-uploader__tab-active' : 'smrt-image-uploader__tab'}
           onclick={() => (activeTab = 'gallery')}
         >Pictures</Button>
       {/if}
       {#if allowedTabs.includes('upload')}
         <Button
           variant="ghost"
-          class={activeTab === 'upload' ? 'uploader-tab uploader-tab--active' : 'uploader-tab'}
+          class={activeTab === 'upload' ? 'smrt-image-uploader__tab smrt-image-uploader__tab-active' : 'smrt-image-uploader__tab'}
           onclick={() => (activeTab = 'upload')}
         >Upload</Button>
       {/if}
       {#if allowedTabs.includes('camera')}
         <Button
           variant="ghost"
-          class={activeTab === 'camera' ? 'uploader-tab uploader-tab--active' : 'uploader-tab'}
+          class={activeTab === 'camera' ? 'smrt-image-uploader__tab smrt-image-uploader__tab-active' : 'smrt-image-uploader__tab'}
           onclick={() => (activeTab = 'camera')}
         >Camera</Button>
       {/if}
       {#if allowedTabs.includes('external')}
         <Button
           variant="ghost"
-          class={activeTab === 'external' ? 'uploader-tab uploader-tab--active' : 'uploader-tab'}
+          class={activeTab === 'external' ? 'smrt-image-uploader__tab smrt-image-uploader__tab-active' : 'smrt-image-uploader__tab'}
           onclick={() => (activeTab = 'external')}
         >{t(M['images.image_uploader.external_url'])}</Button>
       {/if}
     </div>
     
-    <div class="tab-content">
+    <div class="smrt-image-uploader__tab-content" data-smrt-part="body">
       
       {#if activeTab === 'gallery'}
-        <div class="gallery-wrapper">
+        <div class="smrt-image-uploader__gallery" data-smrt-part="body">
           <AssetsGallery
             {apiBaseUrl}
             client={galleryClient}
@@ -403,8 +403,8 @@ onDestroy(() => {
         
       {:else if activeTab === 'upload'}
         <div 
-          class="upload-area" 
-          class:dragging={isDragging}
+          class="smrt-image-uploader__dropzone" 
+          class:smrt-image-uploader__dragging={isDragging}
           ondragover={handleDragOver}
           ondragleave={handleDragLeave}
           ondrop={handleDrop}
@@ -412,8 +412,9 @@ onDestroy(() => {
           onkeydown={(e) => e.key === 'Enter' && uploadInput?.click()}
           tabindex="0"
           role="button"
+          data-smrt-part="panel"
         >
-          <div class="upload-icon">
+          <div class="smrt-image-uploader__upload-icon" data-smrt-part="icon">
             <svg viewBox="0 0 24 24" width="48" height="48" stroke="currentColor" stroke-width="2" fill="none" stroke-linecap="round" stroke-linejoin="round">
               <path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"></path>
               <polyline points="17 8 12 3 7 8"></polyline>
@@ -421,8 +422,8 @@ onDestroy(() => {
             </svg>
           </div>
           <p>{t(M['images.image_uploader.drag_and_drop'])}</p>
-          <span class="divider">or</span>
-          <Button variant="primary" class="browse-btn--decorative">{t(M['images.image_uploader.browse_files'])}</Button>
+          <span class="smrt-image-uploader__divider" data-smrt-part="marker">or</span>
+          <Button variant="primary" class="smrt-image-uploader__browse-button">{t(M['images.image_uploader.browse_files'])}</Button>
           <!-- raw-primitive-allow: hidden file input driven imperatively via a DOM ref (bind:this gives uploadInput so the parent can call .click() and onchange reads target.files); the Input primitive exposes a component instance, not the underlying HTMLInputElement -->
           <input
             type="file"
@@ -432,26 +433,26 @@ onDestroy(() => {
             style="display: none;"
           />
           {#if uploadError}
-            <p class="error">{uploadError}</p>
+            <p class="smrt-image-uploader__error" data-smrt-part="error">{uploadError}</p>
           {/if}
         </div>
         
       {:else if activeTab === 'camera'}
-        <div class="camera-area">
+        <div class="smrt-image-uploader__camera" data-smrt-part="panel">
           {#if cameraError}
-            <div class="error-panel">
+            <div class="smrt-image-uploader__camera-error" data-smrt-part="status">
               <p>{cameraError}</p>
-              <Button variant="secondary" class="try-again-btn" onclick={startCamera}>{t(M['images.image_uploader.try_again'])}</Button>
+              <Button variant="secondary" class="smrt-image-uploader__retry-button" onclick={startCamera}>{t(M['images.image_uploader.try_again'])}</Button>
             </div>
           {:else}
-            <div class="video-container">
+            <div class="smrt-image-uploader__video" data-smrt-part="panel">
               <!-- svelte-ignore a11y_media_has_caption -->
               <video bind:this={videoElement} autoplay playsinline></video>
               {#if !isCameraActive}
-                <div class="loading-overlay">{t(M['images.image_uploader.starting_camera'])}</div>
+                <div class="smrt-image-uploader__loading" data-smrt-part="backdrop">{t(M['images.image_uploader.starting_camera'])}</div>
               {/if}
             </div>
-            <Button variant="primary" class="capture-btn--pill" disabled={!isCameraActive} onclick={takePicture}>
+            <Button variant="primary" class="smrt-image-uploader__capture-button" disabled={!isCameraActive} onclick={takePicture}>
               {t(M['images.image_uploader.take_picture'])}
             </Button>
             <canvas bind:this={canvasElement} style="display: none;"></canvas>
@@ -459,19 +460,19 @@ onDestroy(() => {
         </div>
         
       {:else if activeTab === 'external'}
-        <div class="external-area">
-          <p class="hint">{t(M['images.image_uploader.external_hint'])}</p>
-          <div class="input-group">
+        <div class="smrt-image-uploader__external" data-smrt-part="panel">
+          <p class="smrt-image-uploader__hint" data-smrt-part="description">{t(M['images.image_uploader.external_hint'])}</p>
+          <div class="smrt-image-uploader__input-group" data-smrt-part="group">
             <Input
               type="url"
-              class="external-url-input"
+              class="smrt-image-uploader__url-input"
               bind:value={externalUrl}
               placeholder={t(M['images.image_uploader.external_url_placeholder'])}
               onkeydown={(e) => e.key === 'Enter' && handleExternalSubmit()}
             />
             <Button
               variant="primary"
-              class="submit-btn--inline"
+              class="smrt-image-uploader__submit-button"
               disabled={!externalUrl.trim()}
               onclick={handleExternalSubmit}
             >
@@ -487,59 +488,271 @@ onDestroy(() => {
 
 <style>
 @layer smrt.reset, smrt.structure, smrt.theme;
-@layer smrt.theme {
-  .smrt-image-uploader {
+@layer smrt.structure {
+  .smrt-image-uploader__root {
     display: flex;
     flex-direction: column;
-    background: var(--smrt-color-surface-container);
-    color: var(--smrt-color-on-surface);
-    border-radius: var(--smrt-radius-lg);
-    border: var(--smrt-hairline);
     overflow: hidden;
     height: 100%;
     min-height: 500px;
   }
-
-  .header {
+  .smrt-image-uploader__header {
     display: flex;
     justify-content: space-between;
     align-items: center;
     padding: 1rem 1.5rem;
+  }
+  .smrt-image-uploader__header h3 {
+    margin: 0;
+  }
+  .smrt-image-uploader__tabs {
+    display: flex;
+  }
+  /* The tab strip is migrated to ghost Buttons; the active state is the bottom
+  underline rather than a filled variant. :global() pierces into each
+  Button's rendered <button> (see #1589 scoping rule). */
+  .smrt-image-uploader__tabs :global(.smrt-image-uploader__tab) {
+    flex: 1;
+    padding: 1rem;
+  }
+  .smrt-image-uploader__tab-content {
+    flex: 1;
+    display: flex;
+    flex-direction: column;
+    position: relative;
+    overflow: hidden;
+  }
+  /* Gallery Tab */
+  .smrt-image-uploader__gallery {
+    flex: 1;
+    display: flex;
+    flex-direction: column;
+    overflow: hidden;
+  }
+  /* Upload Tab */
+  .smrt-image-uploader__dropzone {
+    flex: 1;
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    justify-content: center;
+    padding: 3rem;
+    margin: 1.5rem;
+    cursor: pointer;
+  }
+  .smrt-image-uploader__upload-icon {
+    margin-bottom: 1rem;
+  }
+  .smrt-image-uploader__dropzone p {
+    margin: 0 0 0.5rem 0;
+  }
+  .smrt-image-uploader__divider {
+    margin-bottom: 1rem;
+  }
+  /* Decorative label inside the click-catching upload area; the parent handles
+  clicks, so this migrated Button stays inert. :global() pierces into the
+  Button child's rendered <button> (see #1589 scoping rule). */
+  .smrt-image-uploader__dropzone :global(.smrt-image-uploader__browse-button) {
+    padding: 0.5rem 1.5rem;
+    pointer-events: none;
+    /* Let parent handle clicks */
+  }
+  .smrt-image-uploader__error {
+    margin-top: 1rem;
+  }
+  /* Camera Tab */
+  .smrt-image-uploader__camera {
+    flex: 1;
+    display: flex;
+    flex-direction: column;
+    padding: 1.5rem;
+    gap: 1.5rem;
+    align-items: center;
+    justify-content: center;
+  }
+  .smrt-image-uploader__video {
+    position: relative;
+    width: 100%;
+    max-width: 600px;
+    aspect-ratio: 4/3;
+    overflow: hidden;
+  }
+  video {
+    width: 100%;
+    height: 100%;
+    object-fit: contain;
+  }
+  .smrt-image-uploader__loading {
+    position: absolute;
+    top: 0;
+    left: 0;
+    right: 0;
+    bottom: 0;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+  }
+  /* Large primary capture action; keeps its oversized pill sizing over the
+  primary variant. :global() pierces into the Button child (see #1589). */
+  .smrt-image-uploader__camera :global(.smrt-image-uploader__capture-button) {
+    padding: 1rem 3rem;
+  }
+  .smrt-image-uploader__camera-error {
+    padding: 2rem;
+  }
+  .smrt-image-uploader__camera-error p {
+    margin-bottom: 1rem;
+  }
+  /* Migrated "try again" Button keeps its surface-tinted look over the
+  secondary variant. :global() pierces into the Button child (see #1589). */
+  .smrt-image-uploader__camera-error :global(.smrt-image-uploader__retry-button) {
+    padding: 0.5rem 1rem;
+  }
+  /* External Tab */
+  .smrt-image-uploader__external {
+    flex: 1;
+    display: flex;
+    flex-direction: column;
+    padding: 3rem 2rem;
+    align-items: center;
+  }
+  .smrt-image-uploader__hint {
+    margin-bottom: 2rem;
+  }
+  .smrt-image-uploader__input-group {
+    display: flex;
+    width: 100%;
+    max-width: 500px;
+    gap: 0.5rem;
+  }
+  /* Layout-only override: let the migrated URL Input flex-grow to fill the row
+  beside the Add button. The Input primitive owns the visual styling; this
+  :global() rule only pierces its rendered <input> (see #1589 scoping rule). */
+  .smrt-image-uploader__input-group :global(.smrt-image-uploader__url-input) {
+    flex: 1;
+  }
+  /* Migrated Add Button sits in the URL input group; keeps square-ish radius
+  and zero vertical padding. :global() pierces into the Button child
+  (see #1589 scoping rule). */
+  .smrt-image-uploader__input-group :global(.smrt-image-uploader__submit-button) {
+    padding: 0 1.5rem;
+  }
+  /* --- Back Button --- */
+  /* Migrated ghost Button keeps the icon+label inline layout and tinted hover.
+  :global() pierces into the Button child (see #1589 scoping rule). */
+  .smrt-image-uploader__header :global(.smrt-image-uploader__back) {
+    display: flex;
+    align-items: center;
+    gap: 0.35rem;
+    padding: 0.25rem 0.5rem;
+  }
+  .smrt-image-uploader__confirm {
+    flex: 1;
+    display: flex;
+    flex-direction: column;
+    overflow: hidden;
+  }
+  .smrt-image-uploader__preview {
+    flex: 1;
+    min-height: 0;
+    padding: 1.5rem 1.5rem 0;
+    display: flex;
+    justify-content: center;
+    align-items: center;
+  }
+  .smrt-image-uploader__preview-image {
+    width: 100%;
+    height: 100%;
+    min-height: 200px;
+    max-width: 100%;
+    max-height: 400px;
+    object-fit: contain;
+  }
+  .smrt-image-uploader__details {
+    padding: 1rem 1.5rem 0.5rem;
+    display: flex;
+    flex-direction: column;
+    gap: 0.25rem;
+  }
+  .smrt-image-uploader__confirm-actions {
+    padding: 1rem 1.5rem 1.5rem;
+    display: flex;
+    gap: 0.75rem;
+    flex-wrap: wrap;
+    margin-top: 0.5rem;
+  }
+  /* Migrated confirm-action Buttons keep their pill / chip looks. :global()
+  pierces into each Button's rendered <button> (see #1589 scoping rule). */
+  .smrt-image-uploader__confirm-actions :global(.smrt-image-uploader__primary-button) {
+    padding: 0.65rem 1.5rem;
+  }
+  .smrt-image-uploader__confirm-actions :global(.smrt-image-uploader__variation-button) {
+    display: flex;
+    align-items: center;
+    gap: 0.4rem;
+    padding: 0.65rem 1.25rem;
+  }
+  /* --- Variation Form --- */
+  .smrt-image-uploader__variation {
+    display: flex;
+    flex-direction: column;
+    gap: 0.75rem;
+    padding: 1.25rem;
+    margin: 0 1.5rem 1.5rem;
+  }
+  .smrt-image-uploader__variation-hint {
+    margin: 0;
+  }
+  .smrt-image-uploader__variation-error {
+    padding: 0.5rem 0.75rem;
+  }
+  /* Migrated generate Button keeps its left-aligned pill look and inline
+  spinner. :global() pierces into the Button child (see #1589 scoping rule). */
+  .smrt-image-uploader__variation :global(.smrt-image-uploader__generate-button) {
+    align-self: flex-start;
+    padding: 0.65rem 1.5rem;
+  }
+  .smrt-image-uploader__spinner {
+    display: inline-block;
+    width: 14px;
+    height: 14px;
+  }
+}
+
+@layer smrt.theme {
+  .smrt-image-uploader__root {
+    background: var(--smrt-color-surface-container);
+    color: var(--smrt-color-on-surface);
+    border-radius: var(--smrt-radius-lg);
+    border: var(--smrt-hairline);
+  }
+  .smrt-image-uploader__header {
     border-bottom: var(--smrt-hairline);
   }
-  
-  .header h3 {
-    margin: 0;
+  .smrt-image-uploader__header h3 {
     font-size: var(--smrt-typography-title-medium-size, 1.15rem);
   }
-
   /* Migrated close Button keeps its muted ghost look; only the × glyph sizing
-     is custom. :global() pierces into the Button child's rendered <button>
-     (see #1589 scoping rule). */
-  .header :global(.close-btn--x) {
+  is custom. :global() pierces into the Button child's rendered <button>
+  (see #1589 scoping rule). */
+  .smrt-image-uploader__header :global(.smrt-image-uploader__close) {
     color: var(--smrt-color-outline);
     font-size: var(--smrt-typography-headline-small-size, 1.5rem);
     line-height: 1;
   }
-
-  .header :global(.close-btn--x:hover) {
+  .smrt-image-uploader__header :global(.smrt-image-uploader__close:hover) {
     color: var(--smrt-color-on-surface);
   }
-
-  .tabs {
-    display: flex;
+  .smrt-image-uploader__tabs {
     background: var(--smrt-color-surface-container-high);
     border-bottom: var(--smrt-hairline);
   }
-
   /* The tab strip is migrated to ghost Buttons; the active state is the bottom
-     underline rather than a filled variant. :global() pierces into each
-     Button's rendered <button> (see #1589 scoping rule). */
-  .tabs :global(.uploader-tab) {
-    flex: 1;
+  underline rather than a filled variant. :global() pierces into each
+  Button's rendered <button> (see #1589 scoping rule). */
+  .smrt-image-uploader__tabs :global(.smrt-image-uploader__tab) {
     border: none;
     border-bottom: 2px solid var(--smrt-color-outline-variant);
-    padding: 1rem;
     color: var(--smrt-color-outline);
     font-weight: var(--smrt-typography-weight-medium, 500);
     border-radius: 0;
@@ -548,372 +761,206 @@ onDestroy(() => {
     font-size: var(--smrt-typography-label-large-size, 0.85rem);
     letter-spacing: var(--smrt-typography-label-large-tracking);
   }
-
-  .tabs :global(.uploader-tab:hover) {
+  .smrt-image-uploader__tabs :global(.smrt-image-uploader__tab:hover) {
     color: var(--smrt-color-on-surface-variant);
     background: color-mix(in srgb, var(--smrt-color-on-surface) 2%, transparent);
   }
-
-  .tabs :global(.uploader-tab--active) {
+  .smrt-image-uploader__tabs :global(.smrt-image-uploader__tab-active) {
     color: var(--smrt-color-primary);
     border-bottom: 2px solid var(--smrt-color-primary);
     background: transparent;
   }
-
-  .tab-content {
-    flex: 1;
-    display: flex;
-    flex-direction: column;
-    position: relative;
-    overflow: hidden;
-  }
-
   /* Gallery Tab */
-  .gallery-wrapper {
-    flex: 1;
-    display: flex;
-    flex-direction: column;
-    overflow: hidden;
+  .smrt-image-uploader__gallery {
     /* Gallery internal scroll handles the rest */
   }
-
   /* Upload Tab */
-  .upload-area {
-    flex: 1;
-    display: flex;
-    flex-direction: column;
-    align-items: center;
-    justify-content: center;
-    padding: 3rem;
-    margin: 1.5rem;
+  .smrt-image-uploader__dropzone {
     border: 2px dashed var(--smrt-color-outline-variant);
     border-radius: var(--smrt-radius-lg);
     background: var(--smrt-color-surface-container-high);
-    cursor: pointer;
     transition: all 0.2s;
   }
-
-  .upload-area:hover, .upload-area:focus {
+  .smrt-image-uploader__dropzone:hover, .smrt-image-uploader__dropzone:focus {
     border-color: var(--smrt-hairline-strong-color);
     background: var(--smrt-color-surface-container-highest);
     outline: none;
   }
-
-  .upload-area.dragging {
+  .smrt-image-uploader__dropzone.smrt-image-uploader__dragging {
     border-color: var(--smrt-color-primary);
     background: color-mix(in srgb, var(--smrt-color-primary) 5%, transparent);
+    /* Drag-over emphasis: decorative scale, no layout effect. */
     transform: scale(1.02);
   }
-
-  .upload-icon {
+  .smrt-image-uploader__upload-icon {
     color: var(--smrt-color-primary);
-    margin-bottom: 1rem;
   }
-
-  .upload-area p {
+  .smrt-image-uploader__dropzone p {
     font-size: var(--smrt-typography-body-large-size, 1.1rem);
-    margin: 0 0 0.5rem 0;
   }
-
-  .divider {
+  .smrt-image-uploader__divider {
     font-size: var(--smrt-typography-label-large-size, 0.85rem);
     color: var(--smrt-color-outline);
-    margin-bottom: 1rem;
   }
-
   /* Decorative label inside the click-catching upload area; the parent handles
-     clicks, so this migrated Button stays inert. :global() pierces into the
-     Button child's rendered <button> (see #1589 scoping rule). */
-  .upload-area :global(.browse-btn--decorative) {
-    padding: 0.5rem 1.5rem;
+  clicks, so this migrated Button stays inert. :global() pierces into the
+  Button child's rendered <button> (see #1589 scoping rule). */
+  .smrt-image-uploader__dropzone :global(.smrt-image-uploader__browse-button) {
     border-radius: var(--smrt-radius-full);
     font-weight: var(--smrt-typography-weight-medium, 500);
-    pointer-events: none; /* Let parent handle clicks */
   }
-
-  .error {
-    margin-top: 1rem;
+  .smrt-image-uploader__error {
     color: var(--smrt-color-error);
     font-size: var(--smrt-typography-body-medium-size, 0.9rem);
   }
-
   /* Camera Tab */
-  .camera-area {
-    flex: 1;
-    display: flex;
-    flex-direction: column;
-    padding: 1.5rem;
-    gap: 1.5rem;
-    align-items: center;
-    justify-content: center;
+  .smrt-image-uploader__camera {
     background: var(--smrt-color-surface-dim);
   }
-
-  .video-container {
-    position: relative;
-    width: 100%;
-    max-width: 600px;
-    aspect-ratio: 4/3;
+  .smrt-image-uploader__video {
     background: var(--smrt-color-surface-container-lowest);
     border-radius: var(--smrt-radius-md);
-    overflow: hidden;
   }
-
-  video {
-    width: 100%;
-    height: 100%;
-    object-fit: contain;
-  }
-
-  .loading-overlay {
-    position: absolute;
-    top: 0; left: 0; right: 0; bottom: 0;
-    display: flex;
-    align-items: center;
-    justify-content: center;
+  .smrt-image-uploader__loading {
     background: var(--smrt-color-scrim, rgba(0, 0, 0, 0.7));
     color: white;
   }
-
   /* Large primary capture action; keeps its oversized pill sizing over the
-     primary variant. :global() pierces into the Button child (see #1589). */
-  .camera-area :global(.capture-btn--pill) {
-    padding: 1rem 3rem;
+  primary variant. :global() pierces into the Button child (see #1589). */
+  .smrt-image-uploader__camera :global(.smrt-image-uploader__capture-button) {
     border-radius: var(--smrt-radius-full);
     font-size: var(--smrt-typography-body-large-size, 1.1rem);
     font-weight: var(--smrt-typography-weight-semibold, 600);
   }
-
-  .camera-area :global(.capture-btn--pill:disabled) {
+  .smrt-image-uploader__camera :global(.smrt-image-uploader__capture-button:disabled) {
     background: var(--smrt-color-outline-variant);
     color: var(--smrt-color-outline);
   }
-
-  .error-panel {
+  .smrt-image-uploader__camera-error {
     text-align: center;
-    padding: 2rem;
     background: var(--smrt-color-surface-container);
     border-radius: var(--smrt-radius-md);
   }
-
-  .error-panel p {
+  .smrt-image-uploader__camera-error p {
     color: var(--smrt-color-error);
-    margin-bottom: 1rem;
   }
-
   /* Migrated "try again" Button keeps its surface-tinted look over the
-     secondary variant. :global() pierces into the Button child (see #1589). */
-  .error-panel :global(.try-again-btn) {
+  secondary variant. :global() pierces into the Button child (see #1589). */
+  .smrt-image-uploader__camera-error :global(.smrt-image-uploader__retry-button) {
     background: var(--smrt-color-surface-container-high);
     color: white;
     border: var(--smrt-hairline);
-    padding: 0.5rem 1rem;
     border-radius: var(--smrt-radius-sm);
   }
-
-  /* External Tab */
-  .external-area {
-    flex: 1;
-    display: flex;
-    flex-direction: column;
-    padding: 3rem 2rem;
-    align-items: center;
-  }
-
-  .hint {
+  .smrt-image-uploader__hint {
     color: var(--smrt-color-outline);
-    margin-bottom: 2rem;
     text-align: center;
   }
-
-  .input-group {
-    display: flex;
-    width: 100%;
-    max-width: 500px;
-    gap: 0.5rem;
-  }
-
-  /* Layout-only override: let the migrated URL Input flex-grow to fill the row
-     beside the Add button. The Input primitive owns the visual styling; this
-     :global() rule only pierces its rendered <input> (see #1589 scoping rule). */
-  .input-group :global(.external-url-input) {
-    flex: 1;
-  }
-
   /* Migrated Add Button sits in the URL input group; keeps square-ish radius
-     and zero vertical padding. :global() pierces into the Button child
-     (see #1589 scoping rule). */
-  .input-group :global(.submit-btn--inline) {
-    padding: 0 1.5rem;
+  and zero vertical padding. :global() pierces into the Button child
+  (see #1589 scoping rule). */
+  .smrt-image-uploader__input-group :global(.smrt-image-uploader__submit-button) {
     border-radius: var(--smrt-radius-md);
     font-weight: var(--smrt-typography-weight-medium, 500);
   }
-
-  .input-group :global(.submit-btn--inline:disabled) {
+  .smrt-image-uploader__input-group :global(.smrt-image-uploader__submit-button:disabled) {
     background: var(--smrt-color-surface-container-highest);
     color: var(--smrt-color-outline);
   }
-
   /* --- Back Button --- */
   /* Migrated ghost Button keeps the icon+label inline layout and tinted hover.
-     :global() pierces into the Button child (see #1589 scoping rule). */
-  .header :global(.back-btn--link) {
-    display: flex;
-    align-items: center;
-    gap: 0.35rem;
+  :global() pierces into the Button child (see #1589 scoping rule). */
+  .smrt-image-uploader__header :global(.smrt-image-uploader__back) {
     color: var(--smrt-color-primary);
     font-weight: var(--smrt-typography-weight-medium, 500);
-    padding: 0.25rem 0.5rem;
     border-radius: var(--smrt-radius-sm);
     transition: background 0.15s;
   }
-
-  .header :global(.back-btn--link:hover) {
+  .smrt-image-uploader__header :global(.smrt-image-uploader__back:hover) {
     background: color-mix(in srgb, var(--smrt-color-primary) 8%, transparent);
   }
-
-  .confirm-panel {
-    flex: 1;
-    display: flex;
-    flex-direction: column;
-    overflow: hidden; /* Prevent body scroll, let preview wrapper handle it */
+  .smrt-image-uploader__confirm {
+    /* Prevent body scroll, let preview wrapper handle it */
   }
-
-  .confirm-preview-wrapper {
-    flex: 1;
-    min-height: 0;
-    padding: 1.5rem 1.5rem 0;
-    display: flex;
-    justify-content: center;
-    align-items: center;
-  }
-
-  .confirm-preview-img {
-    width: 100%;
-    height: 100%;
-    min-height: 200px;
-    max-width: 100%;
-    max-height: 400px;
-    object-fit: contain;
+  .smrt-image-uploader__preview-image {
     border-radius: var(--smrt-radius-md);
     border: var(--smrt-hairline);
     background-color: var(--smrt-color-surface-container-high);
   }
-
-  .confirm-info {
-    padding: 1rem 1.5rem 0.5rem;
-    display: flex;
-    flex-direction: column;
-    gap: 0.25rem;
-  }
-
-  .confirm-name {
+  .smrt-image-uploader__name {
     font-weight: var(--smrt-typography-weight-medium, 500);
     font-size: var(--smrt-typography-title-medium-size, 1.05rem);
   }
-
-  .confirm-meta {
+  .smrt-image-uploader__meta {
     font-size: var(--smrt-typography-label-large-size, 0.85rem);
     color: var(--smrt-color-outline);
   }
-
-  .confirm-actions {
-    padding: 1rem 1.5rem 1.5rem;
-    display: flex;
-    gap: 0.75rem;
-    flex-wrap: wrap;
+  .smrt-image-uploader__confirm-actions {
     border-top: var(--smrt-hairline);
-    margin-top: 0.5rem;
   }
-
   /* Migrated confirm-action Buttons keep their pill / chip looks. :global()
-     pierces into each Button's rendered <button> (see #1589 scoping rule). */
-  .confirm-actions :global(.primary-btn--pill) {
-    padding: 0.65rem 1.5rem;
+  pierces into each Button's rendered <button> (see #1589 scoping rule). */
+  .smrt-image-uploader__confirm-actions :global(.smrt-image-uploader__primary-button) {
     border-radius: var(--smrt-radius-full);
     font-weight: var(--smrt-typography-weight-medium, 500);
     transition: filter 0.15s;
   }
-
-  .confirm-actions :global(.primary-btn--pill:hover) {
+  .smrt-image-uploader__confirm-actions :global(.smrt-image-uploader__primary-button:hover) {
     filter: brightness(1.1);
   }
-
-  .confirm-actions :global(.variation-toggle--chip) {
-    display: flex;
-    align-items: center;
-    gap: 0.4rem;
+  .smrt-image-uploader__confirm-actions :global(.smrt-image-uploader__variation-button) {
     background: var(--smrt-color-surface-container-highest);
     color: var(--smrt-color-on-surface-variant);
     border: var(--smrt-hairline);
-    padding: 0.65rem 1.25rem;
     border-radius: var(--smrt-radius-full);
     font-weight: var(--smrt-typography-weight-medium, 500);
     transition: all 0.2s;
   }
-
-  .confirm-actions :global(.variation-toggle--chip:hover) {
+  .smrt-image-uploader__confirm-actions :global(.smrt-image-uploader__variation-button:hover) {
     background: var(--smrt-color-surface-container-high);
   }
-
-  .confirm-actions :global(.variation-toggle--active) {
+  .smrt-image-uploader__confirm-actions :global(.smrt-image-uploader__variation-active) {
     color: var(--smrt-color-primary);
     border-color: var(--smrt-color-primary);
     background: color-mix(in srgb, var(--smrt-color-primary) 8%, transparent);
   }
-
   /* --- Variation Form --- */
-  .variation-form {
-    display: flex;
-    flex-direction: column;
-    gap: 0.75rem;
-    padding: 1.25rem;
-    margin: 0 1.5rem 1.5rem;
+  .smrt-image-uploader__variation {
     background: var(--smrt-color-surface-container-high);
     border-radius: var(--smrt-radius-md);
     border: var(--smrt-hairline);
   }
-
-  .variation-hint {
+  .smrt-image-uploader__variation-hint {
     font-size: var(--smrt-typography-body-medium-size, 0.85rem);
     color: var(--smrt-color-outline);
-    margin: 0;
   }
-
-  .variation-error {
+  .smrt-image-uploader__variation-error {
     color: var(--smrt-color-error);
     background: color-mix(in srgb, var(--smrt-color-error) 10%, transparent);
-    padding: 0.5rem 0.75rem;
     border-radius: var(--smrt-radius-sm);
     font-size: var(--smrt-typography-body-medium-size, 0.85rem);
   }
-
   /* Migrated generate Button keeps its left-aligned pill look and inline
-     spinner. :global() pierces into the Button child (see #1589 scoping rule). */
-  .variation-form :global(.generate-btn--pill) {
-    align-self: flex-start;
-    padding: 0.65rem 1.5rem;
+  spinner. :global() pierces into the Button child (see #1589 scoping rule). */
+  .smrt-image-uploader__variation :global(.smrt-image-uploader__generate-button) {
     border-radius: var(--smrt-radius-full);
     font-weight: var(--smrt-typography-weight-medium, 500);
     transition: filter 0.15s, opacity 0.15s;
   }
-
-  .variation-form :global(.generate-btn--pill:hover:not(:disabled)) {
+  .smrt-image-uploader__variation :global(.smrt-image-uploader__generate-button:hover:not(:disabled)) {
     filter: brightness(1.1);
   }
-
   @keyframes spin {
-    to { transform: rotate(360deg); }
+    to {
+      transform: rotate(360deg);
+    }
   }
-
-  .spinner {
-    display: inline-block;
-    width: 14px;
-    height: 14px;
+  .smrt-image-uploader__spinner {
     border: 2px solid color-mix(in srgb, var(--smrt-color-on-primary) 30%, transparent);
     border-top-color: white;
     border-radius: var(--smrt-radius-full);
     animation: spin 0.6s linear infinite;
   }
 }
+
 </style>

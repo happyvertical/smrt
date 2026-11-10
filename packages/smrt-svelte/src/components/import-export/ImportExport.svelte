@@ -319,7 +319,7 @@ async function startExport() {
 }
 </script>
 
-<section class="smrt-import-export" aria-label={collectionLabel ? `${t(M['ui.importExport.label'])}: ${collectionLabel}` : t(M['ui.importExport.label'])} data-smrt-component="ImportExport">
+<section class="smrt-import-export__root" aria-label={collectionLabel ? `${t(M['ui.importExport.label'])}: ${collectionLabel}` : t(M['ui.importExport.label'])} data-smrt-component="ImportExport">
   {#if canImport && canExport}
     <SegmentedControl
       label={t(M['ui.importExport.mode'])}
@@ -335,7 +335,7 @@ async function startExport() {
   {/if}
 
   {#if tab === 'import' && canImport}
-    <div class="smrt-import-export__panel">
+    <div class="smrt-import-export__panel" data-smrt-part="panel">
       <FilePicker
         bind:files
         label={t(M['ui.importExport.import.file'])}
@@ -347,14 +347,14 @@ async function startExport() {
       />
 
       {#if reading}
-        <p role="status">{t(M['ui.importExport.import.reading'], { name: fileName })}</p>
+        <p role="status" data-smrt-part="status">{t(M['ui.importExport.import.reading'], { name: fileName })}</p>
       {/if}
       {#if fileError}
         <Alert variant="error">{fileError}</Alert>
       {/if}
 
       {#if table && validation}
-        <p role="status">
+        <p role="status" data-smrt-part="status">
           {t(M['ui.importExport.import.parsed'], {
             name: fileName,
             rows: table.rows.length,
@@ -368,7 +368,7 @@ async function startExport() {
             <h3>{t(M['ui.importExport.map.heading'])}</h3>
           {/snippet}
           <p>{t(M['ui.importExport.map.help'])}</p>
-          <div class="smrt-import-export__scroll">
+          <div class="smrt-import-export__scroll" data-smrt-part="body">
             <table>
               <thead>
                 <tr>
@@ -413,7 +413,7 @@ async function startExport() {
           {#snippet header()}
             <h3>{t(M['ui.importExport.check.heading'])}</h3>
           {/snippet}
-          <p role="status">
+          <p role="status" data-smrt-part="status">
             {t(M['ui.importExport.check.summary'], {
               valid: readyCount,
               total: validation.totalRows,
@@ -432,7 +432,7 @@ async function startExport() {
 
           {#if mappedColumns.length > 0}
             <h4>{t(M['ui.importExport.check.preview'], { count: Math.min(PREVIEW_ROWS, table.rows.length) })}</h4>
-            <div class="smrt-import-export__scroll">
+            <div class="smrt-import-export__scroll" data-smrt-part="body">
               <table>
                 <thead>
                   <tr>
@@ -467,7 +467,7 @@ async function startExport() {
 
           {#if rowIssueCap.length > 0}
             <h4>{t(M['ui.importExport.check.problems'])}</h4>
-            <div class="smrt-import-export__scroll">
+            <div class="smrt-import-export__scroll" data-smrt-part="body">
               <table>
                 <thead>
                   <tr>
@@ -494,7 +494,7 @@ async function startExport() {
             {/if}
           {/if}
 
-          <div class="smrt-import-export__actions">
+          <div class="smrt-import-export__actions" data-smrt-part="actions">
             <Button
               onclick={startImport}
               disabled={locked || mappingBlocked || readyCount === 0}
@@ -562,12 +562,12 @@ async function startExport() {
   {/if}
 
   {#if tab === 'export' && canExport}
-    <div class="smrt-import-export__panel">
+    <div class="smrt-import-export__panel" data-smrt-part="panel">
       <Card>
         {#snippet header()}
           <h3>{t(M['ui.importExport.export.heading'])}</h3>
         {/snippet}
-        <div class="smrt-import-export__actions">
+        <div class="smrt-import-export__actions" data-smrt-part="actions">
           <Button variant="ghost" size="sm" onclick={() => (selected = exportable.map((f) => f.name))}>
             {t(M['ui.importExport.export.all'])}
           </Button>
@@ -575,7 +575,7 @@ async function startExport() {
             {t(M['ui.importExport.export.none'])}
           </Button>
         </div>
-        <fieldset class="smrt-import-export__columns">
+        <fieldset class="smrt-import-export__columns" data-smrt-part="field">
           <legend>{t(M['ui.importExport.export.columns'])}</legend>
           {#each exportable as field (field.name)}
             <Checkbox
@@ -613,7 +613,7 @@ async function startExport() {
           </Select>
         {/if}
 
-        <div class="smrt-import-export__actions">
+        <div class="smrt-import-export__actions" data-smrt-part="actions">
           <Button
             onclick={startExport}
             disabled={exporting || selectedColumns.length === 0}
@@ -626,7 +626,7 @@ async function startExport() {
           <p>{t(M['ui.importExport.export.noColumns'])}</p>
         {/if}
         {#if exporting}
-          <p role="status">{t(M['ui.importExport.export.loading'])}</p>
+          <p role="status" data-smrt-part="status">{t(M['ui.importExport.export.loading'])}</p>
         {/if}
         {#if exportMessage}
           <Alert variant={exportMessage.kind}>{exportMessage.text}</Alert>
@@ -638,8 +638,8 @@ async function startExport() {
 
 <style>
 @layer smrt.reset, smrt.structure, smrt.theme;
-@layer smrt.theme {
-  .smrt-import-export {
+@layer smrt.structure {
+  .smrt-import-export__root {
     display: flex;
     flex-direction: column;
     gap: var(--smrt-spacing-4);
@@ -653,15 +653,11 @@ async function startExport() {
     overflow-x: auto;
   }
   .smrt-import-export__scroll table {
-    border-collapse: collapse;
     width: 100%;
   }
   .smrt-import-export__scroll th,
   .smrt-import-export__scroll td {
     padding: var(--smrt-spacing-2);
-    text-align: start;
-    vertical-align: top;
-    border-block-end: var(--smrt-hairline);
   }
   .smrt-import-export__actions {
     display: flex;
@@ -673,9 +669,24 @@ async function startExport() {
     display: grid;
     grid-template-columns: repeat(auto-fill, minmax(14rem, 1fr));
     gap: var(--smrt-spacing-2);
-    border: 0;
     padding: 0;
     margin: 0;
   }
 }
+
+@layer smrt.theme {
+  .smrt-import-export__scroll table {
+    border-collapse: collapse;
+  }
+  .smrt-import-export__scroll th,
+  .smrt-import-export__scroll td {
+    text-align: start;
+    vertical-align: top;
+    border-block-end: var(--smrt-hairline);
+  }
+  .smrt-import-export__columns {
+    border: 0;
+  }
+}
+
 </style>

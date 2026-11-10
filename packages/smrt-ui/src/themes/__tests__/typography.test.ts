@@ -34,7 +34,7 @@ describe('heading role mapping in base.css', () => {
   for (const [tag, role] of Object.entries(HEADINGS)) {
     it(`${tag} uses the ${role} role`, () => {
       const rule = new RegExp(
-        `:is\\(body, \\.smrt-theme-root\\) ${tag}\\s*{([^}]*)}`,
+        `:is\\(body, \\.smrt-theme-provider__root\\) ${tag}\\s*{([^}]*)}`,
       ).exec(baseCss);
       expect(rule, `${tag} rule`).not.toBeNull();
       const body = rule?.[1] ?? '';
@@ -78,7 +78,7 @@ describe('body face painting', () => {
 
   it('ThemeProvider paints --smrt-font-family on its root', () => {
     expect(provider).toMatch(
-      /\.smrt-theme-root\s*{[^}]*font-family:\s*var\(--smrt-font-family\)/s,
+      /\.smrt-theme-provider__root\s*{[^}]*font-family:\s*var\(--smrt-font-family\)/s,
     );
   });
 });

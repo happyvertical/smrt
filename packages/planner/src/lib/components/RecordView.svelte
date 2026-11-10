@@ -298,7 +298,7 @@ const widgetContext = $derived({ source, href, relations, viewAllHref });
 {#if !loaded}
   <p>Loading...</p>
 {:else if !catalogModel || !definition || !record || !overview}
-  <div class="missing">
+  <div class="smrt-record-view__missing" data-smrt-component="RecordView">
     <h1>Record not found</h1>
     <p>
       This record is not in your app's sample data.
@@ -307,7 +307,7 @@ const widgetContext = $derived({ source, href, relations, viewAllHref });
   </div>
 {:else}
   {#key `${overviewId}:${inApp.size}`}
-    <div class="record-view" data-record-view={record.id} data-mode={mode}>
+    <div class="smrt-record-view__root" data-record-view={record.id} data-mode={mode} data-smrt-component="RecordView">
       <RecordScreen
         {definition}
         {policy}
@@ -342,14 +342,17 @@ const widgetContext = $derived({ source, href, relations, viewAllHref });
 
 <style>
 @layer smrt.reset, smrt.structure, smrt.theme;
-@layer smrt.theme {
-  .record-view {
+@layer smrt.structure {
+  .smrt-record-view__root {
     display: grid;
     gap: var(--smrt-spacing-4);
   }
-
-  .missing h1 {
+  .smrt-record-view__missing h1 {
     margin: 0 0 var(--smrt-spacing-2);
   }
 }
+
+@layer smrt.theme {
+}
+
 </style>

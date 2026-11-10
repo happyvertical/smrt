@@ -33,7 +33,7 @@ const names = $derived({
   ...fields,
 });
 </script>
-<div class="allocations" data-smrt-component="InvoiceAllocationFields">
+<div class="smrt-invoice-allocation-fields__root" data-smrt-component="InvoiceAllocationFields">
   {#if !mayReadSources}<p>{t(M['commerce.preparation.restricted'])}</p>
   {:else if sources.length === 0}<p>{t(M['commerce.preparation.empty'])}</p>{/if}
       {#if allocations.length === 0}<p>{t(M['commerce.preparation.no_rows'])}</p>{/if}
@@ -67,9 +67,27 @@ const names = $derived({
 </div>
 <style>
 @layer smrt.reset, smrt.structure, smrt.theme;
-@layer smrt.theme {
-.allocations { display: grid; gap: var(--smrt-spacing-4); min-width: 0; }
-fieldset { min-width: 0; margin: 0; padding: var(--smrt-spacing-4); border: var(--smrt-hairline-strong); border-radius: var(--smrt-radius-small); }
-p { margin: 0; }
+@layer smrt.structure {
+  .smrt-invoice-allocation-fields__root {
+    display: grid;
+    gap: var(--smrt-spacing-4);
+    min-width: 0;
+  }
+  fieldset {
+    min-width: 0;
+    margin: 0;
+    padding: var(--smrt-spacing-4);
+  }
+  p {
+    margin: 0;
+  }
 }
+
+@layer smrt.theme {
+  fieldset {
+    border: var(--smrt-hairline-strong);
+    border-radius: var(--smrt-radius-small);
+  }
+}
+
 </style>

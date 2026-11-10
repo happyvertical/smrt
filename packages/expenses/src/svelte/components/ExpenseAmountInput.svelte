@@ -48,12 +48,12 @@ async function press(key: string) {
   field.setSelectionRange(caret.start, caret.end);
 }
 </script>
-<div bind:this={input} class="amount-entry">
+<div bind:this={input} class="smrt-expense-amount-input__root" data-smrt-component="ExpenseAmountInput">
   <Input {name} bind:value={text} inputmode="decimal" {disabled} oninput={() => { caret = undefined; }} onselect={() => { if (input.querySelector("input") === document.activeElement) caret = undefined; }} />
   {#if mounted && keypad}
     <Button type="button" {disabled} aria-expanded={open} aria-controls={`keypad-${id}`} onclick={() => { open = !open; }}>{t(M['expenses.keypad.open'])}</Button>
     {#if open}
-      <div class="keypad" id={`keypad-${id}`} role="group" aria-label={t(M['expenses.keypad.open'])}>
+      <div class="smrt-expense-amount-input__keypad" data-smrt-part="panel" id={`keypad-${id}`} role="group" aria-label={t(M['expenses.keypad.open'])}>
         {#each ['1','2','3','4','5','6','7','8','9','.','0','delete'] as key}
           <Button type="button" {disabled} aria-label={key === 'delete' ? t(M['expenses.keypad.delete']) : key === '.' ? t(M['expenses.keypad.decimal']) : key} onclick={() => press(key)}>{key === 'delete' ? '⌫' : key}</Button>
         {/each}
@@ -63,9 +63,22 @@ async function press(key: string) {
 </div>
 <style>
 @layer smrt.reset, smrt.structure, smrt.theme;
-@layer smrt.theme {
-  .amount-entry { display: grid; gap: var(--smrt-spacing-2); }
-  .keypad { display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: var(--smrt-spacing-2); }
-  .keypad :global(button) { min-height: var(--smrt-touch-target-min); }
+@layer smrt.structure {
+  .smrt-expense-amount-input__root {
+    display: grid;
+    gap: var(--smrt-spacing-2);
+  }
+  .smrt-expense-amount-input__keypad {
+    display: grid;
+    grid-template-columns: repeat(3, minmax(0, 1fr));
+    gap: var(--smrt-spacing-2);
+  }
+  .smrt-expense-amount-input__keypad :global(button) {
+    min-height: var(--smrt-touch-target-min);
+  }
 }
+
+@layer smrt.theme {
+}
+
 </style>

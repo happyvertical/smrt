@@ -276,29 +276,29 @@ $effect(() => {
     onclick={() => (open ? closeMenu(false) : openMenu())}
     onkeydown={onTriggerKeydown}
   >
-    <span class="smrt-workspace-account-menu__open">
+    <span class="smrt-workspace-account-menu__open" data-smrt-part="icon">
       {t(M['ui.workspace_account_menu.open'])}
     </span>
     <Avatar src={avatarUrl} name={userName} size="sm" aria-hidden="true" />
-    <span class="smrt-workspace-account-menu__identity">
-      <span class="smrt-workspace-account-menu__summary">{identityLabel}</span>
+    <span class="smrt-workspace-account-menu__identity" data-smrt-part="body">
+      <span class="smrt-workspace-account-menu__summary" data-smrt-part="label">{identityLabel}</span>
       {#if accountContext}
-        <span class="smrt-workspace-account-menu__context">{accountContext}</span>
+        <span class="smrt-workspace-account-menu__context" data-smrt-part="description">{accountContext}</span>
       {/if}
     </span>
-    <span class="smrt-workspace-account-menu__indicator" aria-hidden="true">•••</span>
+    <span class="smrt-workspace-account-menu__indicator" aria-hidden="true" data-smrt-part="indicator">•••</span>
   </Button>
 
   {#if open}
     <div class="smrt-workspace-account-menu__popover smrt-workspace-account-menu__popover--{placement}" data-smrt-part="panel">
       {#if identityLabel || showEmail}
-        <div class="smrt-workspace-account-menu__header">
-          <span class="smrt-workspace-account-menu__name">{identityLabel}</span>
-          {#if showEmail}<span class="smrt-workspace-account-menu__email">{email}</span>{/if}
+        <div class="smrt-workspace-account-menu__header" data-smrt-part="header">
+          <span class="smrt-workspace-account-menu__name" data-smrt-part="title">{identityLabel}</span>
+          {#if showEmail}<span class="smrt-workspace-account-menu__email" data-smrt-part="description">{email}</span>{/if}
         </div>
       {/if}
       <!-- svelte-ignore a11y_interactive_supports_focus -->
-      <div id={menuId} role="menu" tabindex="-1" class="smrt-workspace-account-menu__menu" aria-label={t(M['ui.app_shell.account_item'])} onkeydown={onMenuKeydown}>
+      <div id={menuId} role="menu" tabindex="-1" class="smrt-workspace-account-menu__menu" aria-label={t(M['ui.app_shell.account_item'])} onkeydown={onMenuKeydown} data-smrt-part="list">
         {#each entries as entry, i (entry.id)}
           {#if entry.href}
             <a
@@ -307,7 +307,7 @@ $effect(() => {
               class="smrt-workspace-account-menu__item"
               href={entry.href}
               tabindex="-1"
-              onclick={() => select(entry)}
+              onclick={() => select(entry)} data-smrt-part="item"
             >{entry.label}</a>
           {:else}
             <!-- raw-primitive-allow: role="menuitem" with roving tabindex inside a role="menu"; not a content button -->
@@ -319,7 +319,7 @@ $effect(() => {
               disabled={entry.disabled || (entry.id === SIGN_OUT_ID && signingOut)}
               aria-busy={entry.id === SIGN_OUT_ID && signingOut ? 'true' : undefined}
               tabindex="-1"
-              onclick={() => select(entry)}
+              onclick={() => select(entry)} data-smrt-part="item"
             >{entry.label}</button>
           {/if}
         {/each}
@@ -335,21 +335,20 @@ $effect(() => {
 
 <style>
 @layer smrt.reset, smrt.structure, smrt.theme;
-@layer smrt.theme {
+
+@layer smrt.structure {
   .smrt-workspace-account-menu {
     position: relative;
     display: flex;
     min-width: 0;
     width: 100%;
   }
-
   .smrt-workspace-account-menu[data-density='touch'] {
     --smrt-control-target-min: var(--smrt-touch-target-min);
   }
   .smrt-workspace-account-menu[data-density='comfortable'] {
     --smrt-control-target-min: 0px;
   }
-
   /* The trigger is a Button; its label span carries the grid layout. */
   .smrt-workspace-account-menu :global(.smrt-workspace-account-menu__trigger .smrt-button__content) {
     display: grid;
@@ -367,29 +366,14 @@ $effect(() => {
     min-height: max(2.75rem, var(--smrt-control-target-min));
     padding: var(--smrt-spacing-2);
     position: relative;
-    border: var(--smrt-hairline);
-    border-radius: var(--smrt-control-radius);
-    background: var(--smrt-surface-control);
-    color: var(--smrt-color-on-surface);
-    font: inherit;
-    text-align: start;
     cursor: pointer;
   }
-  /* Button supplies hover, pressed, focus and disabled states; add the open one. */
-  .smrt-workspace-account-menu :global(.smrt-workspace-account-menu__trigger[aria-expanded='true']::after) {
-    background: currentColor;
-    opacity: var(--smrt-state-selected);
-  }
-
   .smrt-workspace-account-menu[data-compact] {
     width: auto;
   }
   .smrt-workspace-account-menu[data-compact] :global(.smrt-workspace-account-menu__trigger) {
     min-width: max(2.75rem, var(--smrt-control-target-min));
     padding: var(--smrt-spacing-1);
-    border-color: transparent;
-    border-radius: var(--smrt-radius-full);
-    background: transparent;
   }
   .smrt-workspace-account-menu[data-compact] :global(.smrt-workspace-account-menu__trigger .smrt-button__content) {
     place-items: center;
@@ -399,7 +383,6 @@ $effect(() => {
   .smrt-workspace-account-menu[data-compact] .smrt-workspace-account-menu__indicator {
     display: none;
   }
-
   .smrt-workspace-account-menu__popover {
     position: absolute;
     z-index: var(--smrt-z-index-dropdown);
@@ -409,52 +392,123 @@ $effect(() => {
     overflow-y: auto;
     margin: var(--smrt-spacing-1) 0;
     padding: var(--smrt-spacing-1);
-    border: var(--smrt-hairline);
-    border-radius: var(--smrt-radius-medium);
-    background: var(--smrt-surface-raised);
-    box-shadow: var(--smrt-elevation-3), var(--smrt-inset-highlight);
   }
-  .smrt-workspace-account-menu__popover--bottom-start { inset-block-start: 100%; inset-inline-start: 0; }
-  .smrt-workspace-account-menu__popover--bottom-end { inset-block-start: 100%; inset-inline-end: 0; }
-  .smrt-workspace-account-menu__popover--top-start { inset-block-end: 100%; inset-inline-start: 0; }
-  .smrt-workspace-account-menu__popover--top-end { inset-block-end: 100%; inset-inline-end: 0; }
+  .smrt-workspace-account-menu__popover--bottom-start {
+    inset-block-start: 100%;
+    inset-inline-start: 0;
+  }
+  .smrt-workspace-account-menu__popover--bottom-end {
+    inset-block-start: 100%;
+    inset-inline-end: 0;
+  }
+  .smrt-workspace-account-menu__popover--top-start {
+    inset-block-end: 100%;
+    inset-inline-start: 0;
+  }
+  .smrt-workspace-account-menu__popover--top-end {
+    inset-block-end: 100%;
+    inset-inline-end: 0;
+  }
   .smrt-workspace-account-menu__popover--inline-end {
     inset-block-end: 0;
     inset-inline-start: 100%;
     margin: 0 var(--smrt-spacing-2);
   }
-
   .smrt-workspace-account-menu__header {
     display: grid;
     gap: var(--smrt-spacing-1);
     padding: var(--smrt-spacing-2) var(--smrt-spacing-3);
-    border-block-end: var(--smrt-hairline);
     margin-block-end: var(--smrt-spacing-1);
   }
   .smrt-workspace-account-menu__name {
-    color: var(--smrt-color-on-surface);
-    font-size: var(--smrt-typography-body-small-size);
-    font-weight: var(--smrt-typography-weight-medium);
     overflow-wrap: anywhere;
   }
   .smrt-workspace-account-menu__email {
-    color: var(--smrt-color-on-surface-variant);
-    font-size: var(--smrt-typography-label-small-size);
     overflow-wrap: anywhere;
   }
-
   .smrt-workspace-account-menu__menu {
     display: flex;
     flex-direction: column;
     gap: var(--smrt-spacing-1);
   }
   .smrt-workspace-account-menu__item {
-    appearance: none;
     display: flex;
     align-items: center;
     box-sizing: border-box;
     min-block-size: max(2.75rem, var(--smrt-control-target-min));
     padding: var(--smrt-spacing-2) var(--smrt-spacing-3);
+    white-space: nowrap;
+    cursor: pointer;
+  }
+  .smrt-workspace-account-menu__item:disabled {
+    cursor: default;
+  }
+  .smrt-workspace-account-menu__error {
+    margin: 0;
+    padding: var(--smrt-spacing-2) var(--smrt-spacing-3);
+  }
+  .smrt-workspace-account-menu__identity {
+    display: grid;
+    gap: var(--smrt-spacing-1);
+    min-width: 0;
+  }
+  .smrt-workspace-account-menu__summary,
+  .smrt-workspace-account-menu__context {
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+  }
+  .smrt-workspace-account-menu__open {
+    position: absolute;
+    width: 1px;
+    height: 1px;
+    padding: 0;
+    margin: -1px;
+    overflow: hidden;
+    clip: rect(0, 0, 0, 0);
+    white-space: nowrap;
+  }
+}
+
+@layer smrt.theme {
+  .smrt-workspace-account-menu :global(.smrt-workspace-account-menu__trigger) {
+    border: var(--smrt-hairline);
+    border-radius: var(--smrt-control-radius);
+    background: var(--smrt-surface-control);
+    color: var(--smrt-color-on-surface);
+    font: inherit;
+    text-align: start;
+  }
+  /* Button supplies hover, pressed, focus and disabled states; add the open one. */
+  .smrt-workspace-account-menu :global(.smrt-workspace-account-menu__trigger[aria-expanded='true']::after) {
+    background: currentColor;
+    opacity: var(--smrt-state-selected);
+  }
+  .smrt-workspace-account-menu[data-compact] :global(.smrt-workspace-account-menu__trigger) {
+    border-color: transparent;
+    border-radius: var(--smrt-radius-full);
+    background: transparent;
+  }
+  .smrt-workspace-account-menu__popover {
+    border: var(--smrt-hairline);
+    border-radius: var(--smrt-radius-medium);
+    background: var(--smrt-surface-raised);
+    box-shadow: var(--smrt-elevation-3), var(--smrt-inset-highlight);
+  }
+  .smrt-workspace-account-menu__header {
+    border-block-end: var(--smrt-hairline);
+  }
+  .smrt-workspace-account-menu__name {
+    color: var(--smrt-color-on-surface);
+    font-size: var(--smrt-typography-body-small-size);
+    font-weight: var(--smrt-typography-weight-medium);
+  }
+  .smrt-workspace-account-menu__email {
+    color: var(--smrt-color-on-surface-variant);
+    font-size: var(--smrt-typography-label-small-size);
+  }
+  .smrt-workspace-account-menu__item {
+    appearance: none;
     border: none;
     border-radius: var(--smrt-control-radius-small);
     background: none;
@@ -462,8 +516,6 @@ $effect(() => {
     font: inherit;
     text-align: start;
     text-decoration: none;
-    white-space: nowrap;
-    cursor: pointer;
   }
   .smrt-workspace-account-menu__item:hover:not(:disabled) {
     background: color-mix(in srgb, currentColor calc(var(--smrt-state-hover) * 100%), transparent);
@@ -477,61 +529,38 @@ $effect(() => {
   }
   .smrt-workspace-account-menu__item:disabled {
     opacity: var(--smrt-state-disabled);
-    cursor: default;
   }
-
   .smrt-workspace-account-menu__error {
-    margin: 0;
-    padding: var(--smrt-spacing-2) var(--smrt-spacing-3);
     color: var(--smrt-color-error);
     font-size: var(--smrt-typography-label-small-size);
   }
-
-  .smrt-workspace-account-menu__identity {
-    display: grid;
-    gap: var(--smrt-spacing-1);
-    min-width: 0;
-  }
-
-  .smrt-workspace-account-menu__summary,
-  .smrt-workspace-account-menu__context {
-    overflow: hidden;
-    text-overflow: ellipsis;
-    white-space: nowrap;
-  }
-
   .smrt-workspace-account-menu__summary {
     color: var(--smrt-color-on-surface);
     font-size: var(--smrt-typography-body-small-size);
     font-weight: var(--smrt-typography-weight-medium);
   }
-
   .smrt-workspace-account-menu__context {
     color: var(--smrt-color-on-surface-variant);
     font-size: var(--smrt-typography-label-small-size);
   }
-
   .smrt-workspace-account-menu__indicator {
     color: var(--smrt-color-on-surface-variant);
     font-size: var(--smrt-typography-label-small-size);
     letter-spacing: 0.08em;
   }
-
   .smrt-workspace-account-menu__open {
-    position: absolute;
-    width: 1px;
-    height: 1px;
-    padding: 0;
-    margin: -1px;
-    overflow: hidden;
-    clip: rect(0, 0, 0, 0);
-    white-space: nowrap;
     border: 0;
   }
   /* Forced colors (#3908): selected and open states keep a non-colour indicator. */
   @media (forced-colors: active) {
-    .smrt-workspace-account-menu :global(.smrt-workspace-account-menu__trigger[aria-expanded='true']:not(:focus-visible)) { outline: var(--smrt-focus-ring-width) solid Highlight; outline-offset: calc(-1 * var(--smrt-focus-ring-width)); }
-    .smrt-workspace-account-menu :global(.smrt-workspace-account-menu__trigger:disabled) { opacity: 1; color: GrayText; }
+    .smrt-workspace-account-menu :global(.smrt-workspace-account-menu__trigger[aria-expanded='true']:not(:focus-visible)) {
+      outline: var(--smrt-focus-ring-width) solid Highlight;
+      outline-offset: calc(-1 * var(--smrt-focus-ring-width));
+    }
+    .smrt-workspace-account-menu :global(.smrt-workspace-account-menu__trigger:disabled) {
+      opacity: 1;
+      color: GrayText;
+    }
   }
 }
 </style>

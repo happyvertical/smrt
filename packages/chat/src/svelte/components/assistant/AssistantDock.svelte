@@ -484,7 +484,11 @@ function closeThreads() {
 async function openThreads() {
   threadsOpen = true;
   await tick();
-  threadsEl?.querySelector<HTMLElement>('.assistant-thread-list-item')?.focus();
+  threadsEl
+    ?.querySelector<HTMLElement>(
+      '[data-smrt-component="AssistantThreadList"] li [data-smrt-component="Button"]',
+    )
+    ?.focus();
 }
 
 // Single-conversation mode: open straight into one conversation. Runs once
@@ -710,17 +714,18 @@ async function handleConfirmAction(requestId: string) {
   {:else if messageFormat === 'markdown'}
     <!-- Only the escaping renderer's output is injected (#4505): it escapes
          all input HTML and emits a fixed tag set with checked http(s) hrefs. -->
-    <div class="assistant-dock-message-content assistant-dock-markdown">
+    <div class="smrt-assistant-dock__message-content smrt-assistant-dock__markdown" data-smrt-part="message">
       {@html renderAssistantMarkdown(message.content)}
     </div>
   {:else}
-    <p class="assistant-dock-message-content">{message.content}</p>
+    <p class="smrt-assistant-dock__message-content" data-smrt-part="message">{message.content}</p>
   {/if}
 {/snippet}
 
-<div class="assistant-dock" data-smrt-component="AssistantDock">
+<div class="smrt-assistant-dock__root" data-smrt-component="AssistantDock">
   <div
-    class="assistant-dock-layout"
+    class="smrt-assistant-dock__layout"
+    data-smrt-part="group"
     data-threads-open={threadsOpen || undefined}
   >
     {#if presentation === 'full' && conversations !== 'single' && threadList}
@@ -728,8 +733,7 @@ async function handleConfirmAction(requestId: string) {
         type="button"
         variant="ghost"
         id={threadsToggleId}
-        class="assistant-dock-threads-toggle"
-        aria-expanded={threadsOpen}
+          aria-expanded={threadsOpen}
         aria-controls={threadsId}
         onclick={() => (threadsOpen = !threadsOpen)}
       >
@@ -737,7 +741,8 @@ async function handleConfirmAction(requestId: string) {
       </Button>
 
       <div
-        class="assistant-dock-threads"
+        class="smrt-assistant-dock__threads"
+        data-smrt-part="nav"
         id={threadsId}
         bind:this={threadsEl}
       >
@@ -750,12 +755,12 @@ async function handleConfirmAction(requestId: string) {
       </div>
     {/if}
 
-    <div class="assistant-dock-main">
+    <div class="smrt-assistant-dock__main" data-smrt-part="body">
       {#if aiUnavailable}
         <AiUnavailableNotice status={aiUnavailable} settingsHref={aiSettingsHref} />
       {/if}
       {#if controller.error}
-        <p class="assistant-dock-error" role="alert">
+        <p class="smrt-assistant-dock__error" data-smrt-part="error" role="alert">
           {t(M['chat.assistant_dock.error'], { message: controller.error })}
           {#if conversations === 'single' && !controller.activeThreadId}
             <Button
@@ -771,7 +776,7 @@ async function handleConfirmAction(requestId: string) {
       {/if}
 
       {#if controller.run && (presentation === 'controls' || controller.run.state === 'paused')}
-        <div class="assistant-dock-run" role="status" aria-live="polite">
+        <div class="smrt-assistant-dock__run" data-smrt-part="summary" role="status" aria-live="polite">
           <span>{controller.run.goal}</span>
           {#if controller.run.state === 'running'}
             <Button type="button" size="sm" variant="ghost" onclick={() => controller.pauseRun()}>
@@ -788,12 +793,11 @@ async function handleConfirmAction(requestId: string) {
       {/if}
 
       {#if conversations === 'single' && controller.activeThreadId && transport.createThread && controller.messages.length > 0}
-        <div class="assistant-dock-single-actions">
+        <div class="smrt-assistant-dock__single-actions" data-smrt-part="actions">
           <Button
             type="button"
             size="sm"
             variant="ghost"
-            class="assistant-dock-clear"
             onclick={handleClearConversation}
             aria-label={t(M['chat.assistant_dock.clear_conversation'])}
             title={t(M['chat.assistant_dock.clear_conversation'])}
@@ -813,17 +817,18 @@ async function handleConfirmAction(requestId: string) {
       {/if}
 
       {#if contextMode === 'data-surfaces' && controller.surfaces.length === 0 && !pageTools}
-        <p class="assistant-dock-empty">
+        <p class="smrt-assistant-dock__empty" data-smrt-part="empty">
           {t(M['chat.assistant_dock.no_surfaces'])}
         </p>
       {/if}
 
-      <div class="assistant-dock-scroll">
+      <div class="smrt-assistant-dock__scroll" data-smrt-part="body">
         {#if presentation === 'full'}
         {#if conversations === 'single'}
           {#if !controller.activeThreadId && !controller.error}
             <div
-              class="assistant-dock-thread-state assistant-dock-thread-loading"
+              class="smrt-assistant-dock__thread-state smrt-assistant-dock__thread-loading"
+            data-smrt-part="status"
               role="status"
               aria-label={t(M['chat.assistant_dock.opening_conversation'])}
             >
@@ -832,7 +837,8 @@ async function handleConfirmAction(requestId: string) {
           {/if}
         {:else if !controller.activeThreadId && controller.threadsLoading}
           <div
-            class="assistant-dock-thread-state assistant-dock-thread-loading"
+            class="smrt-assistant-dock__thread-state smrt-assistant-dock__thread-loading"
+            data-smrt-part="status"
             role="status"
             aria-label={t(M['chat.assistant_dock.loading_conversations'])}
           >
@@ -840,7 +846,8 @@ async function handleConfirmAction(requestId: string) {
           </div>
         {:else if !controller.activeThreadId && !controller.error}
           <section
-            class="assistant-dock-thread-state"
+            class="smrt-assistant-dock__thread-state"
+            data-smrt-part="status"
             aria-labelledby={`${threadsId}-empty-title`}
           >
             {#if threadList && controller.threads.length > 0}
@@ -848,7 +855,7 @@ async function handleConfirmAction(requestId: string) {
                 {t(M['chat.assistant_dock.choose_conversation'])}
               </h2>
               <p>{t(M['chat.assistant_dock.choose_conversation_hint'])}</p>
-              <div class="assistant-dock-thread-state-actions">
+              <div class="smrt-assistant-dock__thread-state-actions" data-smrt-part="actions">
                 <Button
                   type="button"
                   aria-controls={threadsId}
@@ -880,7 +887,7 @@ async function handleConfirmAction(requestId: string) {
         {/if}
 
         {#if controller.activeThreadId && !controller.threadsLoading && !controller.messages.some((message) => message.role === 'user' || message.role === 'tool') && controller.pendingSends.length === 0 && suggestions.length > 0}
-          <div class="assistant-dock-suggestions" role="group" aria-label={t(M['chat.assistant_dock.conversation_starters'])}>
+          <div class="smrt-assistant-dock__suggestions" data-smrt-part="actions" role="group" aria-label={t(M['chat.assistant_dock.conversation_starters'])}>
             {#each suggestions as suggestion (suggestion.prompt)}
               <Button variant="secondary" disabled={composerDisabled} onclick={() => { void handleSend(suggestion.prompt, []).catch(() => {}); }}>
                 {suggestion.label}
@@ -888,14 +895,14 @@ async function handleConfirmAction(requestId: string) {
             {/each}
           </div>
         {/if}
-        <ul class="assistant-dock-messages">
+        <ul class="smrt-assistant-dock__messages" data-smrt-part="list">
           {#each controller.messages as message (message.id)}
             {@const ResultComponent = message.role === 'tool' ? toolResultComponent?.(message) : undefined}
             {@const question = message.role === 'assistant' ? assistantQuestionFromMessage(message) : null}
-            <li data-role={message.role}>
+            <li data-role={message.role} data-smrt-part="row">
               {#if ResultComponent}
                 <!-- Structured results are cards spanning the thread, not bubbles. -->
-                <div class="assistant-dock-card">
+                <div class="smrt-assistant-dock__card" data-smrt-part="item">
                   <ResultComponent {message} />
                 </div>
               {:else}
@@ -907,32 +914,34 @@ async function handleConfirmAction(requestId: string) {
                     {#if message.role === 'assistant'}
                       {@render assistantText(message, false)}
                     {:else}
-                      <p class="assistant-dock-message-content">{message.content}</p>
+                      <p class="smrt-assistant-dock__message-content" data-smrt-part="message">{message.content}</p>
                     {/if}
                   {#if message.attachments && message.attachments.length > 0}
                     <ul
-                      class="assistant-dock-attachments"
+                      class="smrt-assistant-dock__attachments"
+                      data-smrt-part="list"
                       aria-label={t(M['chat.assistant_dock.attachments'])}
                     >
                       {#each message.attachments as attachment (attachment.id)}
                         {@const href = safeAttachmentHref(attachment.url)}
-                        <li class="assistant-dock-attachment">
+                        <li class="smrt-assistant-dock__attachment" data-smrt-part="item">
                           {#if href}
                             <a
                               {href}
                               target="_blank"
                               rel="noopener noreferrer"
-                              class="assistant-dock-attachment-link"
+                              class="smrt-assistant-dock__attachment-link"
+                              data-smrt-part="action"
                             >
                               {attachment.name}
                             </a>
                           {:else}
-                            <span class="assistant-dock-attachment-name">
+                            <span class="smrt-assistant-dock__attachment-name" data-smrt-part="title">
                               {attachment.name}
                             </span>
                           {/if}
                           {#if attachment.size !== undefined}
-                            <span class="assistant-dock-attachment-size">
+                            <span class="smrt-assistant-dock__attachment-size" data-smrt-part="meta">
                               {formatAttachmentSize(attachment.size)}
                             </span>
                           {/if}
@@ -944,7 +953,7 @@ async function handleConfirmAction(requestId: string) {
                 </MessageBubble>
               {/if}
               {#if question}
-                <div class="assistant-dock-card">
+                <div class="smrt-assistant-dock__card" data-smrt-part="item">
                   <AssistantQuestionForm
                     {question}
                     answered={controller.answeredQuestions[`${message.id}:${question.id}`] ?? null}
@@ -956,7 +965,7 @@ async function handleConfirmAction(requestId: string) {
               {#if toolCall && message.toolCallData != null}
                 <!-- A host's cards (a report preview, an offer) span the thread
                      under the message's text bubble. -->
-                <div class="assistant-dock-card assistant-dock-tool-call">
+                <div class="smrt-assistant-dock__card smrt-assistant-dock__tool-call" data-smrt-part="panel">
                   {@render toolCall(message)}
                 </div>
               {/if}
@@ -966,7 +975,8 @@ async function handleConfirmAction(requestId: string) {
 
         {#if controller.streamingText}
           <div
-            class="assistant-dock-streaming"
+            class="smrt-assistant-dock__streaming"
+            data-smrt-part="status"
             aria-label={t(M['chat.assistant_dock.reply_in_progress'])}
           >
             <MessageBubble variant="agent" own={false}>
@@ -989,21 +999,21 @@ async function handleConfirmAction(requestId: string) {
         {/if}
 
         {#each controller.toolRequests.filter((r) => r.status === 'waiting') as request (request.id)}
-          <div class="assistant-dock-tool-request" role="group" aria-label={t(M['chat.assistant_dock.tool_request_title'])}>
-            <p class="assistant-dock-tool-request-title">
+          <div class="smrt-assistant-dock__tool-request" data-smrt-part="panel" role="group" aria-label={t(M['chat.assistant_dock.tool_request_title'])}>
+            <p class="smrt-assistant-dock__tool-request-title" data-smrt-part="title">
               {t(M['chat.assistant_dock.tool_request_title'])}
             </p>
-            <p class="assistant-dock-tool-request-description">{request.description || request.name}</p>
+            <p class="smrt-assistant-dock__tool-request-description" data-smrt-part="description">{request.description || request.name}</p>
             {#if request.effect === 'destructive'}
-              <p class="assistant-dock-tool-request-warning">
+              <p class="smrt-assistant-dock__tool-request-warning" data-smrt-part="description">
                 {t(M['chat.assistant_dock.tool_request_destructive'])}
               </p>
             {/if}
-            <details class="assistant-dock-tool-request-details">
+            <details class="smrt-assistant-dock__tool-request-details" data-smrt-part="body">
               <summary>{t(M['chat.assistant_dock.tool_request_details'])}</summary>
               <pre>{formatToolArgs(request.args)}</pre>
             </details>
-            <div class="assistant-dock-tool-request-actions">
+            <div class="smrt-assistant-dock__tool-request-actions" data-smrt-part="actions">
               <Button type="button" size="sm" onclick={() => controller.approveToolRequest(request.id)}>
                 {t(M['chat.assistant_dock.tool_request_allow'])}
               </Button>
@@ -1024,7 +1034,7 @@ async function handleConfirmAction(requestId: string) {
         />
 
         {#if controller.actions.size > 0}
-          <ul class="assistant-dock-actions">
+          <ul class="smrt-assistant-dock__actions" data-smrt-part="actions">
             {#each [...controller.actions.entries()] as [requestId, action] (requestId)}
               <li>
                 <ToolCallDisplay
@@ -1053,7 +1063,7 @@ async function handleConfirmAction(requestId: string) {
                        landed. Reject is withdrawn (ToolCallDisplay only
                        offers it for a live preview); the only affordance is a
                        same-key retry. -->
-                  <div class="assistant-dock-action-unknown" role="status">
+                  <div class="smrt-assistant-dock__action-unknown" data-smrt-part="status" role="status">
                     <p>{t(M['chat.assistant_dock.action_outcome_unknown'])}</p>
                     <Button
                       type="button"
@@ -1071,7 +1081,7 @@ async function handleConfirmAction(requestId: string) {
         {/if}
 
         {#if controller.pendingSends.some((p) => p.status === 'stale')}
-          <div class="assistant-dock-stale">
+          <div class="smrt-assistant-dock__stale" data-smrt-part="status">
             <p>{t(M['chat.assistant_dock.taking_longer'])}</p>
             {#each controller.pendingSends.filter((p) => p.status === 'stale') as pending (pending.clientRequestId)}
               <Button
@@ -1091,7 +1101,7 @@ async function handleConfirmAction(requestId: string) {
                all — only 'stale' rendered above. retry(clientRequestId)
                already exists and reuses the same id, so it's the same
                affordance as the stale case. -->
-          <div class="assistant-dock-failed">
+          <div class="smrt-assistant-dock__failed" data-smrt-part="error">
             <p>{t(M['chat.assistant_dock.send_failed'])}</p>
             {#each controller.pendingSends.filter((p) => p.status === 'failed') as pending (pending.clientRequestId)}
               <Button
@@ -1107,8 +1117,8 @@ async function handleConfirmAction(requestId: string) {
       </div>
 
       {#if controller.status.state === 'working'}
-        <div class="assistant-dock-status" role="status" aria-live="polite">
-          <span class="assistant-dock-status-label">{controller.status.label}</span>
+        <div class="smrt-assistant-dock__status" data-smrt-part="status" role="status" aria-live="polite">
+          <span class="smrt-assistant-dock__status-label" data-smrt-part="label">{controller.status.label}</span>
           {#if controller.status.cancellable}
             <Button type="button" size="sm" variant="ghost" onclick={() => controller.cancel()}>
               {t(M['chat.assistant_dock.stop'])}
@@ -1118,9 +1128,9 @@ async function handleConfirmAction(requestId: string) {
       {/if}
 
       {#if presentation === 'full'}
-      <div class="assistant-dock-composer">
+      <div class="smrt-assistant-dock__composer" data-smrt-part="panel">
         {#if controller.models.length > 0}
-          <div class="assistant-dock-composer-header">
+          <div class="smrt-assistant-dock__composer-header" data-smrt-part="header">
             <ModelPicker
               models={controller.models}
               value={controller.selectedModel ?? controller.models[0].id}
@@ -1156,82 +1166,54 @@ async function handleConfirmAction(requestId: string) {
 
 <style>
 @layer smrt.reset, smrt.structure, smrt.theme;
-@layer smrt.theme {
+@layer smrt.structure {
   /* #3000: the dock sizes itself against its own container (a shell dock
-   * edge can be ~250px wide) rather than the viewport. A container cannot
-   * query itself, so the flex layout lives on an inner wrapper. */
-  .assistant-dock {
+  * edge can be ~250px wide) rather than the viewport. A container cannot
+  * query itself, so the flex layout lives on an inner wrapper. */
+  .smrt-assistant-dock__root {
     container-type: inline-size;
     height: 100%;
     min-height: 0;
-    font-family: var(--smrt-font-family, system-ui, sans-serif);
-    background: var(--smrt-color-surface);
-    color: var(--smrt-color-on-surface);
   }
-
-  .assistant-dock-layout {
+  .smrt-assistant-dock__layout {
     display: flex;
     height: 100%;
     min-height: 0;
   }
-
-  .assistant-dock-status {
+  .smrt-assistant-dock__status {
     display: flex;
     align-items: center;
     justify-content: space-between;
     gap: 0.5rem;
     padding: 0.35rem 0.75rem;
-    border-top: var(--smrt-hairline);
-    font-size: var(--smrt-typography-body-medium-size, 0.85rem);
-    color: var(--smrt-color-on-surface-variant);
   }
-
-  .assistant-dock-run {
+  .smrt-assistant-dock__run {
     display: flex;
     align-items: center;
     justify-content: space-between;
     gap: 0.5rem;
     padding: 0.35rem 0.75rem;
-    border-bottom: var(--smrt-hairline);
-    font-size: var(--smrt-typography-body-medium-size, 0.85rem);
   }
-
-  .assistant-dock-tool-request {
+  .smrt-assistant-dock__tool-request {
     margin: 0.5rem 0;
     padding: 0.75rem;
-    border: var(--smrt-hairline);
-    border-radius: var(--smrt-radius-md);
-    background: var(--smrt-color-surface-container);
   }
-
-  .assistant-dock-tool-request p {
+  .smrt-assistant-dock__tool-request p {
     margin: 0 0 0.4rem;
   }
-
-  .assistant-dock-tool-request-title {
-    font-weight: var(--smrt-typography-weight-semibold, 600);
-  }
-
-  .assistant-dock-tool-request-warning {
-    color: var(--smrt-color-error);
-  }
-
-  .assistant-dock-tool-request-details pre {
+  .smrt-assistant-dock__tool-request-details pre {
     max-height: 10rem;
     overflow: auto;
-    font-size: var(--smrt-typography-body-small-size, 0.75rem);
     white-space: pre-wrap;
     word-break: break-word;
   }
-
-  .assistant-dock-tool-request-actions {
+  .smrt-assistant-dock__tool-request-actions {
     display: flex;
     flex-wrap: wrap;
     gap: 0.5rem;
     margin-top: 0.5rem;
   }
-
-  .assistant-dock-threads {
+  .smrt-assistant-dock__threads {
     display: flex;
     flex-shrink: 0;
     min-height: 0;
@@ -1239,17 +1221,14 @@ async function handleConfirmAction(requestId: string) {
     max-width: min(16rem, 40%);
     min-width: 0;
   }
-
-  .assistant-dock .assistant-dock-layout > :global(.assistant-dock-threads-toggle) {
+  .smrt-assistant-dock__root .smrt-assistant-dock__layout > :global([data-smrt-component="Button"]) {
     display: none;
   }
-
   @container (max-width: 479px) {
-    .assistant-dock-layout {
+    .smrt-assistant-dock__layout {
       flex-direction: column;
     }
-
-    .assistant-dock .assistant-dock-layout > :global(.assistant-dock-threads-toggle) {
+    .smrt-assistant-dock__root .smrt-assistant-dock__layout > :global([data-smrt-component="Button"]) {
       display: flex;
       justify-content: flex-start;
       align-items: center;
@@ -1258,68 +1237,39 @@ async function handleConfirmAction(requestId: string) {
       width: 100%;
       min-height: 44px;
       padding: var(--smrt-spacing-2) var(--smrt-spacing-3);
-      border: none;
-      border-bottom: var(--smrt-hairline);
-      background: var(--smrt-color-surface-container-low);
-      color: var(--smrt-color-on-surface);
-      font: var(--smrt-typography-label-large-font, 500 0.875rem/1.25 sans-serif);
-      font-family: inherit;
-      border-radius: 0;
-      text-align: left;
       cursor: pointer;
     }
-
-    .assistant-dock .assistant-dock-layout > :global(.assistant-dock-threads-toggle::before) {
-      content: '▸' / '';
-      color: var(--smrt-color-on-surface-variant);
-    }
-
-    .assistant-dock .assistant-dock-layout[data-threads-open]
-      > :global(.assistant-dock-threads-toggle::before) {
-      content: '▾' / '';
-    }
-
-    .assistant-dock .assistant-dock-layout > :global(.assistant-dock-threads-toggle:focus-visible) {
-      outline: 2px solid var(--smrt-color-primary);
-      outline-offset: -2px;
-    }
-
-    .assistant-dock-threads {
+    .smrt-assistant-dock__threads {
       display: none;
     }
-
-    .assistant-dock-layout[data-threads-open] .assistant-dock-threads {
+    .smrt-assistant-dock__layout[data-threads-open] .smrt-assistant-dock__threads {
       display: flex;
       max-width: none;
       max-height: 40%;
-      border-bottom: var(--smrt-hairline);
     }
-
-    .assistant-dock-threads > :global(.assistant-thread-list) {
+    .smrt-assistant-dock__threads > :global([data-smrt-component="AssistantThreadList"]) {
       flex: 1;
       min-width: 0;
-      border-right: none;
+    }
+    .smrt-assistant-dock__root .smrt-assistant-dock__layout > :global([data-smrt-component="Button"]::before) {
+      content: '▸' / '';
+    }
+    .smrt-assistant-dock__root .smrt-assistant-dock__layout[data-threads-open] > :global([data-smrt-component="Button"]::before) {
+      content: '▾' / '';
     }
   }
-
-  .assistant-dock-main {
+  .smrt-assistant-dock__main {
     flex: 1;
     display: flex;
     flex-direction: column;
     min-height: 0;
     min-width: 0;
   }
-
-  .assistant-dock-empty {
+  .smrt-assistant-dock__empty {
     margin: 0;
     padding: var(--smrt-spacing-2) var(--smrt-spacing-3);
-    font: var(--smrt-typography-body-small-font, 0.8125rem/1.4 sans-serif);
-    color: var(--smrt-color-on-surface-variant);
-    background: var(--smrt-color-surface-container-low);
-    border-bottom: var(--smrt-hairline);
   }
-
-  .assistant-dock-scroll {
+  .smrt-assistant-dock__scroll {
     flex: 1;
     overflow-y: auto;
     display: flex;
@@ -1328,15 +1278,13 @@ async function handleConfirmAction(requestId: string) {
     padding: var(--smrt-spacing-3);
     min-height: 0;
   }
-
-  .assistant-dock-suggestions {
+  .smrt-assistant-dock__suggestions {
     display: flex;
     flex-wrap: wrap;
     gap: var(--smrt-spacing-2);
     padding: var(--smrt-spacing-3);
   }
-
-  .assistant-dock-messages {
+  .smrt-assistant-dock__messages {
     list-style: none;
     margin: 0;
     padding: 0;
@@ -1344,46 +1292,32 @@ async function handleConfirmAction(requestId: string) {
     flex-direction: column;
     gap: var(--smrt-spacing-2);
   }
-
   /* Narrow-dock friendly bubbles: the user's message sits right, the
-   * assistant's left, each at most ~85% of the thread width in calm tokens. */
-  .assistant-dock-messages > li {
+  * assistant's left, each at most ~85% of the thread width in calm tokens. */
+  .smrt-assistant-dock__messages > li {
     display: flex;
     flex-direction: column;
     min-width: 0;
   }
-
-  .assistant-dock-messages > li :global(.bubble),
-  .assistant-dock-streaming :global(.bubble) {
+  .smrt-assistant-dock__messages > li :global([data-smrt-component="MessageBubble"]),
+  .smrt-assistant-dock__streaming :global([data-smrt-component="MessageBubble"]) {
     max-width: 85%;
     padding: var(--smrt-spacing-2) var(--smrt-spacing-3);
-    border-radius: var(--smrt-radius-large);
     overflow-wrap: anywhere;
   }
-
-  .assistant-dock-messages > li[data-role='user'] :global(.bubble),
-  .assistant-dock-messages > li[data-role='user'] :global(.bubble--own) {
+  .smrt-assistant-dock__messages > li[data-role='user'] :global([data-smrt-component="MessageBubble"]),
+  .smrt-assistant-dock__messages > li[data-role='user'] :global(.smrt-message-bubble__own) {
     align-self: flex-end;
-    background: var(--smrt-color-primary-container);
-    color: var(--smrt-color-on-primary-container);
-    border-radius: var(--smrt-radius-large);
   }
-
-  .assistant-dock-messages > li:not([data-role='user']) :global(.bubble--agent),
-  .assistant-dock-streaming :global(.bubble--agent) {
+  .smrt-assistant-dock__messages > li:not([data-role='user']) :global(.smrt-message-bubble__agent),
+  .smrt-assistant-dock__streaming :global(.smrt-message-bubble__agent) {
     align-self: flex-start;
-    background: var(--smrt-color-surface-container);
-    color: var(--smrt-color-on-surface);
-    border-left: none;
-    border-radius: var(--smrt-radius-large);
   }
-
-  .assistant-dock-streaming {
+  .smrt-assistant-dock__streaming {
     display: flex;
     flex-direction: column;
   }
-
-  .assistant-dock-thread-state {
+  .smrt-assistant-dock__thread-state {
     flex: 1;
     min-height: 10rem;
     display: flex;
@@ -1392,98 +1326,56 @@ async function handleConfirmAction(requestId: string) {
     justify-content: center;
     gap: var(--smrt-spacing-2);
     padding: var(--smrt-spacing-5);
-    color: var(--smrt-color-on-surface-variant);
-    text-align: center;
   }
-
-  .assistant-dock-thread-state h2,
-  .assistant-dock-thread-state p {
+  .smrt-assistant-dock__thread-state h2,
+  .smrt-assistant-dock__thread-state p {
     margin: 0;
   }
-
-  .assistant-dock-thread-state h2 {
-    color: var(--smrt-color-on-surface);
-    font: var(--smrt-typography-title-medium-font, 600 1rem/1.4 sans-serif);
-  }
-
-  .assistant-dock-thread-state p {
+  .smrt-assistant-dock__thread-state p {
     max-width: 28rem;
-    font: var(--smrt-typography-body-medium-font, 0.875rem/1.5 sans-serif);
   }
-
-  .assistant-dock-thread-state-actions {
+  .smrt-assistant-dock__thread-state-actions {
     display: flex;
     flex-wrap: wrap;
     justify-content: center;
     gap: var(--smrt-spacing-2);
   }
-
-  .assistant-dock-thread-loading {
+  .smrt-assistant-dock__thread-loading {
     min-height: 4rem;
   }
-
   /* Structured cards (results, questions, a host's previews) use the full
-   * thread width; the components inside draw their own card surface. */
-  .assistant-dock-card {
+  * thread width; the components inside draw their own card surface. */
+  .smrt-assistant-dock__card {
     align-self: stretch;
     inline-size: 100%;
     min-inline-size: 0;
     margin-top: var(--smrt-spacing-2);
   }
-
-  .assistant-dock-message-content {
+  .smrt-assistant-dock__message-content {
     margin: 0;
     white-space: pre-wrap;
   }
-
   /* Markdown answers (#4505): block spacing comes from the elements, and the
-     rendered HTML is not scoped, so its rules are :global under the wrapper. */
-  .assistant-dock-markdown {
+  rendered HTML is not scoped, so its rules are :global under the wrapper. */
+  .smrt-assistant-dock__markdown {
     white-space: normal;
     overflow-wrap: anywhere;
   }
-
-  .assistant-dock-markdown :global(:is(p, ul, ol, pre, h1, h2, h3)) {
+  .smrt-assistant-dock__markdown :global(:is(p, ul, ol, pre, h1, h2, h3)) {
     margin: 0 0 var(--smrt-spacing-2);
   }
-
-  .assistant-dock-markdown :global(:is(p, ul, ol, pre, h1, h2, h3):last-child) {
+  .smrt-assistant-dock__markdown :global(:is(p, ul, ol, pre, h1, h2, h3):last-child) {
     margin-bottom: 0;
   }
-
-  .assistant-dock-markdown :global(:is(h1, h2, h3)) {
-    font-size: 1em;
-    font-weight: var(--smrt-typography-weight-semibold, 600);
-    line-height: inherit;
-  }
-
-  .assistant-dock-markdown :global(h1) {
-    font-size: 1.15em;
-  }
-
-  .assistant-dock-markdown :global(:is(ul, ol)) {
+  .smrt-assistant-dock__markdown :global(:is(ul, ol)) {
     padding-inline-start: 1.25em;
   }
-
-  .assistant-dock-markdown :global(code) {
-    font-family: var(--smrt-font-family-mono, ui-monospace, monospace);
-    font-size: 0.9em;
-  }
-
-  .assistant-dock-markdown :global(pre) {
+  .smrt-assistant-dock__markdown :global(pre) {
     overflow-x: auto;
     white-space: pre;
     padding: var(--smrt-spacing-2);
-    border-radius: var(--smrt-radius-sm);
-    background: var(--smrt-color-surface-container-low);
   }
-
-  .assistant-dock-markdown :global(a) {
-    color: inherit;
-    text-decoration: underline;
-  }
-
-  .assistant-dock-attachments {
+  .smrt-assistant-dock__attachments {
     list-style: none;
     margin: var(--smrt-spacing-2) 0 0;
     padding: 0;
@@ -1491,31 +1383,17 @@ async function handleConfirmAction(requestId: string) {
     flex-direction: column;
     gap: var(--smrt-spacing-1);
   }
-
-  .assistant-dock-attachment {
+  .smrt-assistant-dock__attachment {
     display: flex;
     align-items: baseline;
     gap: var(--smrt-spacing-1);
-    font: var(--smrt-typography-body-small-font, 0.8125rem/1.4 sans-serif);
   }
-
-  .assistant-dock-attachment-link {
-    color: inherit;
-    text-decoration: underline;
-  }
-
-  .assistant-dock-attachment-name {
+  .smrt-assistant-dock__attachment-name {
     overflow: hidden;
     text-overflow: ellipsis;
     white-space: nowrap;
   }
-
-  .assistant-dock-attachment-size {
-    opacity: 0.75;
-    font-size: var(--smrt-typography-label-small-size, 0.6875rem);
-  }
-
-  .assistant-dock-actions {
+  .smrt-assistant-dock__actions {
     list-style: none;
     margin: 0;
     padding: 0;
@@ -1523,62 +1401,186 @@ async function handleConfirmAction(requestId: string) {
     flex-direction: column;
     gap: var(--smrt-spacing-2);
   }
-
-  .assistant-dock-action-unknown {
+  .smrt-assistant-dock__action-unknown {
     margin-top: var(--smrt-spacing-2);
     padding: var(--smrt-spacing-2) var(--smrt-spacing-3);
+  }
+  .smrt-assistant-dock__action-unknown p {
+    margin: 0 0 var(--smrt-spacing-2);
+  }
+  .smrt-assistant-dock__stale {
+    padding: var(--smrt-spacing-2) var(--smrt-spacing-3);
+  }
+  .smrt-assistant-dock__stale p {
+    margin: 0 0 var(--smrt-spacing-2);
+  }
+  .smrt-assistant-dock__failed {
+    padding: var(--smrt-spacing-2) var(--smrt-spacing-3);
+  }
+  .smrt-assistant-dock__failed p {
+    margin: 0 0 var(--smrt-spacing-2);
+  }
+  .smrt-assistant-dock__error {
+    margin: 0;
+    padding: var(--smrt-spacing-2) var(--smrt-spacing-3);
+  }
+  .smrt-assistant-dock__single-actions {
+    display: flex;
+    justify-content: flex-end;
+    padding: var(--smrt-spacing-1) var(--smrt-spacing-2) 0;
+  }
+  .smrt-assistant-dock__composer-header {
+    padding: 0 var(--smrt-spacing-2);
+    padding-top: var(--smrt-spacing-2);
+  }
+}
+
+@layer smrt.theme {
+  /* #3000: the dock sizes itself against its own container (a shell dock
+  * edge can be ~250px wide) rather than the viewport. A container cannot
+  * query itself, so the flex layout lives on an inner wrapper. */
+  .smrt-assistant-dock__root {
+    font-family: var(--smrt-font-family, system-ui, sans-serif);
+    background: var(--smrt-color-surface);
+    color: var(--smrt-color-on-surface);
+  }
+  .smrt-assistant-dock__status {
+    border-top: var(--smrt-hairline);
+    font-size: var(--smrt-typography-body-medium-size, 0.85rem);
+    color: var(--smrt-color-on-surface-variant);
+  }
+  .smrt-assistant-dock__run {
+    border-bottom: var(--smrt-hairline);
+    font-size: var(--smrt-typography-body-medium-size, 0.85rem);
+  }
+  .smrt-assistant-dock__tool-request {
+    border: var(--smrt-hairline);
+    border-radius: var(--smrt-radius-md);
+    background: var(--smrt-color-surface-container);
+  }
+  .smrt-assistant-dock__tool-request-title {
+    font-weight: var(--smrt-typography-weight-semibold, 600);
+  }
+  .smrt-assistant-dock__tool-request-warning {
+    color: var(--smrt-color-error);
+  }
+  .smrt-assistant-dock__tool-request-details pre {
+    font-size: var(--smrt-typography-body-small-size, 0.75rem);
+  }
+  @container (max-width: 479px) {
+    .smrt-assistant-dock__root .smrt-assistant-dock__layout > :global([data-smrt-component="Button"]) {
+      border: none;
+      border-bottom: var(--smrt-hairline);
+      background: var(--smrt-color-surface-container-low);
+      color: var(--smrt-color-on-surface);
+      font: var(--smrt-typography-label-large-font, 500 0.875rem/1.25 sans-serif);
+      font-family: inherit;
+      border-radius: 0;
+      text-align: left;
+    }
+    .smrt-assistant-dock__root .smrt-assistant-dock__layout > :global([data-smrt-component="Button"]::before) {
+      color: var(--smrt-color-on-surface-variant);
+    }
+    .smrt-assistant-dock__root .smrt-assistant-dock__layout > :global([data-smrt-component="Button"]:focus-visible) {
+      outline: 2px solid var(--smrt-color-primary);
+      outline-offset: -2px;
+    }
+    .smrt-assistant-dock__layout[data-threads-open] .smrt-assistant-dock__threads {
+      border-bottom: var(--smrt-hairline);
+    }
+    .smrt-assistant-dock__threads > :global([data-smrt-component="AssistantThreadList"]) {
+      border-right: none;
+    }
+  }
+  .smrt-assistant-dock__empty {
+    font: var(--smrt-typography-body-small-font, 0.8125rem/1.4 sans-serif);
+    color: var(--smrt-color-on-surface-variant);
+    background: var(--smrt-color-surface-container-low);
+    border-bottom: var(--smrt-hairline);
+  }
+  .smrt-assistant-dock__messages > li :global([data-smrt-component="MessageBubble"]),
+  .smrt-assistant-dock__streaming :global([data-smrt-component="MessageBubble"]) {
+    border-radius: var(--smrt-radius-large);
+  }
+  .smrt-assistant-dock__messages > li[data-role='user'] :global([data-smrt-component="MessageBubble"]),
+  .smrt-assistant-dock__messages > li[data-role='user'] :global(.smrt-message-bubble__own) {
+    background: var(--smrt-color-primary-container);
+    color: var(--smrt-color-on-primary-container);
+    border-radius: var(--smrt-radius-large);
+  }
+  .smrt-assistant-dock__messages > li:not([data-role='user']) :global(.smrt-message-bubble__agent),
+  .smrt-assistant-dock__streaming :global(.smrt-message-bubble__agent) {
+    background: var(--smrt-color-surface-container);
+    color: var(--smrt-color-on-surface);
+    border-left: none;
+    border-radius: var(--smrt-radius-large);
+  }
+  .smrt-assistant-dock__thread-state {
+    color: var(--smrt-color-on-surface-variant);
+    text-align: center;
+  }
+  .smrt-assistant-dock__thread-state h2 {
+    color: var(--smrt-color-on-surface);
+    font: var(--smrt-typography-title-medium-font, 600 1rem/1.4 sans-serif);
+  }
+  .smrt-assistant-dock__thread-state p {
+    font: var(--smrt-typography-body-medium-font, 0.875rem/1.5 sans-serif);
+  }
+  .smrt-assistant-dock__markdown :global(:is(h1, h2, h3)) {
+    font-size: 1em;
+    font-weight: var(--smrt-typography-weight-semibold, 600);
+    line-height: inherit;
+  }
+  .smrt-assistant-dock__markdown :global(h1) {
+    font-size: 1.15em;
+  }
+  .smrt-assistant-dock__markdown :global(code) {
+    font-family: var(--smrt-font-family-mono, ui-monospace, monospace);
+    font-size: 0.9em;
+  }
+  .smrt-assistant-dock__markdown :global(pre) {
+    border-radius: var(--smrt-radius-sm);
+    background: var(--smrt-color-surface-container-low);
+  }
+  .smrt-assistant-dock__markdown :global(a) {
+    color: inherit;
+    text-decoration: underline;
+  }
+  .smrt-assistant-dock__attachment {
+    font: var(--smrt-typography-body-small-font, 0.8125rem/1.4 sans-serif);
+  }
+  .smrt-assistant-dock__attachment-link {
+    color: inherit;
+    text-decoration: underline;
+  }
+  .smrt-assistant-dock__attachment-size {
+    opacity: 0.75;
+    font-size: var(--smrt-typography-label-small-size, 0.6875rem);
+  }
+  .smrt-assistant-dock__action-unknown {
     border-radius: var(--smrt-radius-medium);
     background: var(--smrt-color-tertiary-container);
     color: var(--smrt-color-on-tertiary-container);
     font: var(--smrt-typography-body-small-font, 0.8125rem/1.4 sans-serif);
   }
-
-  .assistant-dock-action-unknown p {
-    margin: 0 0 var(--smrt-spacing-2);
-  }
-
-  .assistant-dock-stale {
-    padding: var(--smrt-spacing-2) var(--smrt-spacing-3);
+  .smrt-assistant-dock__stale {
     border-radius: var(--smrt-radius-medium);
     background: var(--smrt-color-tertiary-container);
     color: var(--smrt-color-on-tertiary-container);
     font: var(--smrt-typography-body-small-font, 0.8125rem/1.4 sans-serif);
   }
-
-  .assistant-dock-stale p {
-    margin: 0 0 var(--smrt-spacing-2);
-  }
-
-  .assistant-dock-failed {
-    padding: var(--smrt-spacing-2) var(--smrt-spacing-3);
+  .smrt-assistant-dock__failed {
     border-radius: var(--smrt-radius-medium);
     background: var(--smrt-color-error-container);
     color: var(--smrt-color-on-error-container);
     font: var(--smrt-typography-body-small-font, 0.8125rem/1.4 sans-serif);
   }
-
-  .assistant-dock-failed p {
-    margin: 0 0 var(--smrt-spacing-2);
-  }
-
-  .assistant-dock-error {
-    margin: 0;
-    padding: var(--smrt-spacing-2) var(--smrt-spacing-3);
+  .smrt-assistant-dock__error {
     font: var(--smrt-typography-body-small-font, 0.8125rem/1.4 sans-serif);
     color: var(--smrt-color-on-error-container);
     background: var(--smrt-color-error-container);
     border-bottom: var(--smrt-hairline);
   }
-
-  .assistant-dock-single-actions {
-    display: flex;
-    justify-content: flex-end;
-    padding: var(--smrt-spacing-1) var(--smrt-spacing-2) 0;
-  }
-
-  .assistant-dock-composer-header {
-    padding: 0 var(--smrt-spacing-2);
-    padding-top: var(--smrt-spacing-2);
-  }
 }
+
 </style>

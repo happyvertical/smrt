@@ -202,7 +202,7 @@ const formError = $derived(
       />
     </FormGroup>
   {:else if field.kind === 'boolean'}
-    <div class="smrt-edit-form__check">
+    <div class="smrt-edit-form__check" data-smrt-part="field">
       <Checkbox
         name={field.name}
         label={field.label}
@@ -210,10 +210,10 @@ const formError = $derived(
         bind:checked={() => draft[field.name] === true, (v) => (draft[field.name] = v)}
       />
       {#if field.help}
-        <small class="smrt-edit-form__hint">{field.help}</small>
+        <small class="smrt-edit-form__hint" data-smrt-part="description">{field.help}</small>
       {/if}
       {#if messageFor(field)}
-        <small class="smrt-edit-form__error" role="alert">{messageFor(field)}</small>
+        <small class="smrt-edit-form__error" data-smrt-part="error" role="alert">{messageFor(field)}</small>
       {/if}
     </div>
   {:else}
@@ -275,7 +275,7 @@ const formError = $derived(
 
 {#snippet fieldList(list: ScreenField[])}
   {#each groupScreenFields(list) as [group, groupFields] (group ?? '')}
-    <fieldset class="smrt-edit-form__group">
+    <fieldset class="smrt-edit-form__group" data-smrt-part="group">
       {#if group}<legend>{group}</legend>{/if}
       {#each groupFields as field (field.name)}
         {@render control(field)}
@@ -288,7 +288,7 @@ const formError = $derived(
   <PageHeader title={heading} />
 {/if}
 
-<section class="smrt-edit-form" aria-label={heading} data-smrt-component="EditForm">
+<section class="smrt-edit-form__root" aria-label={heading} data-smrt-component="EditForm">
   {#if sourceError}
     <Alert variant="error">{sourceError}</Alert>
   {:else}
@@ -321,12 +321,11 @@ const formError = $derived(
 
 <style>
 @layer smrt.reset, smrt.structure, smrt.theme;
-@layer smrt.theme {
-  .smrt-edit-form {
+@layer smrt.structure {
+  .smrt-edit-form__root {
     max-width: 40rem;
   }
   .smrt-edit-form__group {
-    border: 0;
     margin: 0 0 var(--smrt-spacing-md, 1rem);
     padding: 0;
     display: flex;
@@ -334,13 +333,21 @@ const formError = $derived(
     gap: var(--smrt-spacing-md, 1rem);
   }
   .smrt-edit-form__group legend {
-    font-weight: var(--smrt-typography-weight-semibold, 600);
     margin-bottom: var(--smrt-spacing-sm, 0.5rem);
   }
   .smrt-edit-form__check {
     display: flex;
     flex-direction: column;
     gap: var(--smrt-spacing-xs, 0.25rem);
+  }
+}
+
+@layer smrt.theme {
+  .smrt-edit-form__group {
+    border: 0;
+  }
+  .smrt-edit-form__group legend {
+    font-weight: var(--smrt-typography-weight-semibold, 600);
   }
   .smrt-edit-form__hint {
     color: var(--smrt-color-on-surface-variant);
@@ -349,4 +356,5 @@ const formError = $derived(
     color: var(--smrt-color-error);
   }
 }
+
 </style>

@@ -31,7 +31,7 @@ const money = (amount = 0, currency = 'USD') => {
 </script>
 
 <section
-  class="evidence"
+  class="smrt-service-evidence-list__root"
   aria-label={t(M['projects.service_evidence.aria'])} data-smrt-component="ServiceEvidenceList"
 >
   {#each entries as entry (entry.id)}
@@ -70,53 +70,65 @@ const money = (amount = 0, currency = 'USD') => {
 
 <style>
 @layer smrt.reset, smrt.structure, smrt.theme;
-@layer smrt.theme {
-  .evidence {
-    border-top: var(--smrt-hairline);
-  }
-  .evidence article {
+@layer smrt.structure {
+  .smrt-service-evidence-list__root article {
     align-items: center;
-    border-bottom: var(--smrt-hairline);
     display: grid;
     gap: var(--smrt-spacing-4);
     grid-template-columns: 1fr auto;
     padding: var(--smrt-spacing-4) var(--smrt-spacing-1);
   }
-  .evidence article > div {
+  .smrt-service-evidence-list__root article > div {
     display: grid;
     gap: var(--smrt-spacing-1);
   }
-  .evidence small,
-  .evidence dt {
-    color: var(--smrt-color-on-surface-variant);
-  }
-  .evidence dl {
+  .smrt-service-evidence-list__root dl {
     display: flex;
     gap: var(--smrt-spacing-5);
     margin: 0;
   }
-  .evidence dl div {
+  .smrt-service-evidence-list__root dl div {
     display: grid;
     gap: var(--smrt-spacing-1);
-    text-align: right;
   }
-  .evidence dt {
-    font-size: var(--smrt-typography-label-medium-size);
-  }
-  .evidence dd {
-    font-variant-numeric: tabular-nums;
+  .smrt-service-evidence-list__root dd {
     margin: 0;
   }
   @media (max-width: 40rem) {
-    .evidence article {
+    .smrt-service-evidence-list__root article {
       grid-template-columns: 1fr;
     }
-    .evidence dl {
+    .smrt-service-evidence-list__root dl {
       justify-content: space-between;
     }
-    .evidence dl div {
+  }
+}
+
+@layer smrt.theme {
+  .smrt-service-evidence-list__root {
+    border-top: var(--smrt-hairline);
+  }
+  .smrt-service-evidence-list__root article {
+    border-bottom: var(--smrt-hairline);
+  }
+  .smrt-service-evidence-list__root small,
+  .smrt-service-evidence-list__root dt {
+    color: var(--smrt-color-on-surface-variant);
+  }
+  .smrt-service-evidence-list__root dl div {
+    text-align: right;
+  }
+  .smrt-service-evidence-list__root dt {
+    font-size: var(--smrt-typography-label-medium-size);
+  }
+  .smrt-service-evidence-list__root dd {
+    font-variant-numeric: tabular-nums;
+  }
+  @media (max-width: 40rem) {
+    .smrt-service-evidence-list__root dl div {
       text-align: left;
     }
   }
 }
+
 </style>

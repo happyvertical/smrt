@@ -47,7 +47,7 @@ const cardLabel = (card: DevelopmentBoardCard) =>
 
 {#if requests.length === 0}
   <section
-    class="empty"
+    class="smrt-development-board__root"
     aria-label={t(M['projects.development_board.aria'])} data-smrt-component="DevelopmentBoard"
   >
     <p>{t(M['projects.development_board.empty'])}</p>
@@ -76,14 +76,20 @@ const cardLabel = (card: DevelopmentBoardCard) =>
 
 <style>
 @layer smrt.reset, smrt.structure, smrt.theme;
-@layer smrt.theme {
-  .empty {
-    color: var(--smrt-color-on-surface-variant);
+@layer smrt.structure {
+  .smrt-development-board__root {
     margin: 0;
     padding: var(--smrt-spacing-5) var(--smrt-spacing-1);
+  }
+}
+
+@layer smrt.theme {
+  .smrt-development-board__root {
+    color: var(--smrt-color-on-surface-variant);
   }
   small {
     color: var(--smrt-color-on-surface-variant);
   }
 }
+
 </style>

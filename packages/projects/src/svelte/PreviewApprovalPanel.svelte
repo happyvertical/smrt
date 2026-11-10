@@ -29,7 +29,7 @@ $effect(() =>
 );
 </script>
 
-<section class="preview" data-smrt-component="PreviewApprovalPanel">
+<section class="smrt-preview-approval-panel__root" data-smrt-component="PreviewApprovalPanel">
   <div>
     <span>{t(M['projects.preview.label'], { id: preview.previewId })}</span>
     <strong>{preview.status}</strong>
@@ -57,25 +57,31 @@ $effect(() =>
 
 <style>
 @layer smrt.reset, smrt.structure, smrt.theme;
-@layer smrt.theme {
-  .preview {
-    border-block: var(--smrt-hairline);
+@layer smrt.structure {
+  .smrt-preview-approval-panel__root {
     display: grid;
     gap: var(--smrt-spacing-4);
     padding: var(--smrt-spacing-4) 0;
   }
-  .preview > div {
+  .smrt-preview-approval-panel__root > div {
     display: flex;
     justify-content: space-between;
   }
-  .preview a {
-    color: var(--smrt-color-primary);
-    font-weight: 600;
-  }
-  .preview footer {
+  .smrt-preview-approval-panel__root footer {
     display: flex;
     gap: var(--smrt-spacing-3);
     justify-content: flex-end;
   }
 }
+
+@layer smrt.theme {
+  .smrt-preview-approval-panel__root {
+    border-block: var(--smrt-hairline);
+  }
+  .smrt-preview-approval-panel__root a {
+    color: var(--smrt-color-primary);
+    font-weight: 600;
+  }
+}
+
 </style>

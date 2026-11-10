@@ -40,74 +40,78 @@ const _icon = $derived.by(() => {
 </script>
 
 <span
-  class="avatar avatar--{size}"
-  class:avatar--email={['imap', 'smtp', 'pop3', 'gmail'].includes(providerType)}
-  class:avatar--slack={providerType === 'slack'}
-  class:avatar--twitter={providerType === 'twitter'}
+  class="smrt-account-avatar__root smrt-account-avatar__{size}"
+  class:smrt-account-avatar__email={['imap', 'smtp', 'pop3', 'gmail'].includes(providerType)}
+  class:smrt-account-avatar__slack={providerType === 'slack'}
+  class:smrt-account-avatar__twitter={providerType === 'twitter'}
   title={name}
   aria-label={`${name} (${providerType})`} data-smrt-component="AccountAvatar"
 >
   {#if _icon}
-    <span class="icon">{_icon}</span>
+    <span class="smrt-account-avatar__icon" data-smrt-part="icon">{_icon}</span>
   {:else}
-    <span class="initials">{_initials}</span>
+    <span class="smrt-account-avatar__initials" data-smrt-part="label">{_initials}</span>
   {/if}
 </span>
 
 <style>
 @layer smrt.reset, smrt.structure, smrt.theme;
-@layer smrt.theme {
-  .avatar {
+@layer smrt.structure {
+  .smrt-account-avatar__root {
     display: inline-flex;
     align-items: center;
     justify-content: center;
+    flex-shrink: 0;
+  }
+  .smrt-account-avatar__sm {
+    width: 1.5rem;
+    height: 1.5rem;
+  }
+  .smrt-account-avatar__md {
+    width: 2rem;
+    height: 2rem;
+  }
+  .smrt-account-avatar__lg {
+    width: 2.5rem;
+    height: 2.5rem;
+  }
+}
+
+@layer smrt.theme {
+  .smrt-account-avatar__root {
     border-radius: var(--smrt-radius-full);
     background: var(--smrt-color-secondary-container);
     color: var(--smrt-color-on-secondary-container);
     font-weight: var(--smrt-typography-weight-medium, 500);
-    flex-shrink: 0;
   }
-
-  .avatar--sm {
-    width: 1.5rem;
-    height: 1.5rem;
+  .smrt-account-avatar__sm {
     font-size: var(--smrt-typography-label-small-size, 0.625rem);
   }
-
-  .avatar--md {
-    width: 2rem;
-    height: 2rem;
+  .smrt-account-avatar__md {
     font-size: var(--smrt-typography-label-medium-size, 0.75rem);
   }
-
-  .avatar--lg {
-    width: 2.5rem;
-    height: 2.5rem;
+  .smrt-account-avatar__lg {
     font-size: var(--smrt-typography-label-large-size, 0.875rem);
   }
-
-  .avatar--email {
+  .smrt-account-avatar__email {
     background: var(--smrt-color-primary-container);
     color: var(--smrt-color-on-primary-container);
   }
-
-  .avatar--slack {
+  .smrt-account-avatar__slack {
     background: var(--smrt-color-tertiary-container);
     color: var(--smrt-color-on-tertiary-container);
   }
-
-  .avatar--twitter {
+  .smrt-account-avatar__twitter {
     background: var(--smrt-color-secondary-container);
     color: var(--smrt-color-on-secondary-container);
   }
-
-  .icon {
+  .smrt-account-avatar__icon {
     font-size: 1.1em;
   }
-
-  .initials {
+  .smrt-account-avatar__initials {
     text-transform: uppercase;
     letter-spacing: 0.02em;
   }
 }
+
 </style>

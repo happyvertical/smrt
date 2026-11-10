@@ -61,11 +61,12 @@ function nameFor(emoji: string): string {
 </script>
 
 {#if isOpen}
-  <div class="reactions" role="group" aria-label={groupLabel} data-smrt-component="ReactionPicker">
+  <div class="smrt-reaction-picker__root" role="group" aria-label={groupLabel} data-smrt-component="ReactionPicker">
     {#each emojis as emoji (emoji)}
       <button
         type="button"
-        class="reactions__btn"
+        class="smrt-reaction-picker__btn"
+        data-smrt-part="option"
         aria-label={nameFor(emoji)}
         onclick={() => onpick?.(emoji)}
       >
@@ -77,48 +78,54 @@ function nameFor(emoji: string): string {
 
 <style>
 @layer smrt.reset, smrt.structure, smrt.theme;
-@layer smrt.theme {
-  .reactions {
+@layer smrt.structure {
+  .smrt-reaction-picker__root {
     display: inline-flex;
     flex-wrap: wrap;
     gap: var(--smrt-spacing-1);
     padding: var(--smrt-spacing-1);
     max-width: 16rem;
-    border-radius: var(--smrt-radius-large);
-    background: var(--smrt-color-surface-container);
   }
-
-  .reactions__btn {
-    appearance: none;
+  .smrt-reaction-picker__btn {
     display: inline-flex;
     align-items: center;
     justify-content: center;
     width: 2rem;
     height: 2rem;
+    cursor: pointer;
+  }
+}
+
+@layer smrt.theme {
+  .smrt-reaction-picker__root {
+    border-radius: var(--smrt-radius-large);
+    background: var(--smrt-color-surface-container);
+  }
+  .smrt-reaction-picker__btn {
+    appearance: none;
     border: none;
     border-radius: var(--smrt-radius-full);
     background: none;
     font-size: var(--smrt-typography-title-medium-size, 1.1rem);
     line-height: 1;
-    cursor: pointer;
     transition: transform 0.1s ease, background 0.1s ease;
   }
-  .reactions__btn:hover {
+  .smrt-reaction-picker__btn:hover {
     background: var(--smrt-color-surface-container-highest);
     transform: scale(1.15);
   }
-  .reactions__btn:focus-visible {
+  .smrt-reaction-picker__btn:focus-visible {
     outline: var(--smrt-focus-ring-width) solid var(--smrt-focus-ring-color);
     outline-offset: var(--smrt-focus-ring-offset);
   }
-
   @media (prefers-reduced-motion: reduce) {
-    .reactions__btn {
+    .smrt-reaction-picker__btn {
       transition: none;
     }
-    .reactions__btn:hover {
+    .smrt-reaction-picker__btn:hover {
       transform: none;
     }
   }
 }
+
 </style>

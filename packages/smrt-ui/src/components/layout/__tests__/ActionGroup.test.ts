@@ -13,9 +13,9 @@ describe('ActionGroup', () => {
   it('uses a compact, start-aligned row by default', () => {
     const { container } = render(ActionGroup, { props: { children: actions } });
     expect(container.firstElementChild).toHaveClass(
-      'action-group',
-      'gap-sm',
-      'justify-start',
+      'smrt-action-group__root',
+      'smrt-action-group__gap-sm',
+      'smrt-action-group__justify-start',
     );
   });
 
@@ -23,7 +23,10 @@ describe('ActionGroup', () => {
     const { container } = render(ActionGroup, {
       props: { gap: 'md', justify: 'end', children: actions },
     });
-    expect(container.firstElementChild).toHaveClass('gap-md', 'justify-end');
+    expect(container.firstElementChild).toHaveClass(
+      'smrt-action-group__gap-md',
+      'smrt-action-group__justify-end',
+    );
   });
 
   it('forwards native attributes and consumer classes', () => {
@@ -36,7 +39,7 @@ describe('ActionGroup', () => {
       },
     });
     expect(screen.getByRole('group', { name: 'Project actions' })).toHaveClass(
-      'action-group',
+      'smrt-action-group__root',
       'card-actions',
     );
   });

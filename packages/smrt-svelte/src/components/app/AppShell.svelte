@@ -867,7 +867,7 @@ const EDGE_OF_REGION: Record<ShellRegion, PanelEdge> = {
 {/snippet}
 
 {#snippet layoutToggle()}
-  <span use:target={SHELL_LAYOUT_EDIT_ITEM_ID} class="smrt-layout-toggle" class:smrt-layout-toggle--floating={layoutFloating} data-testid="layout-edit-toggle">
+  <span use:target={SHELL_LAYOUT_EDIT_ITEM_ID} class="smrt-layout-toggle" class:smrt-layout-toggle--floating={layoutFloating} data-testid="layout-edit-toggle" data-smrt-part="trigger">
     <ShellIconButton
       icon="edit"
       pressed={editing}
@@ -887,7 +887,7 @@ const EDGE_OF_REGION: Record<ShellRegion, PanelEdge> = {
 {/snippet}
 
 {#snippet editZone(slot: ShellSlot)}
-  <span class="smrt-edit-zone__label">{zoneLabel(slot)}</span>
+  <span class="smrt-edit-zone__label" data-smrt-part="label">{zoneLabel(slot)}</span>
   {#each zoneEntries(slot) as entry (entry.id)}
     {#if entry.fixed}
       {@render entryBody(entry)}
@@ -896,7 +896,7 @@ const EDGE_OF_REGION: Record<ShellRegion, PanelEdge> = {
       <span
         class="smrt-edit-item"
         class:smrt-edit-item--dragging={dragging}
-        data-smrt-edit-item={entry.id}
+        data-smrt-edit-item={entry.id} data-smrt-part="item"
       >
         <!-- raw-primitive-allow: native button owns keyboard pickup and HTML drag/drop -->
         <button
@@ -915,9 +915,9 @@ const EDGE_OF_REGION: Record<ShellRegion, PanelEdge> = {
           onpointerup={(event) => slotSortable.pointerUp(event)}
           onpointercancel={(event) => slotSortable.pointerCancel(event)}
           ondragstart={(event) => slotSortable.dragStart(event, entry.id)}
-          ondragend={() => slotSortable.dragEnd()}
+          ondragend={() => slotSortable.dragEnd()} data-smrt-part="handle"
         ><span aria-hidden="true">⠿</span></button>
-        <span class="smrt-edit-item__body" inert>{@render entryBody(entry)}</span>
+        <span class="smrt-edit-item__body" inert data-smrt-part="body">{@render entryBody(entry)}</span>
       </span>
     {/if}
   {/each}
@@ -953,7 +953,7 @@ const EDGE_OF_REGION: Record<ShellRegion, PanelEdge> = {
   {#if commandPalette}
     <span
       class="smrt-app-shell-palette"
-      data-search={shell.viewport === 'phone' ? undefined : ''}
+      data-search={shell.viewport === 'phone' ? undefined : ''} data-smrt-part="search"
     >
       <CommandPalette
         providers={commandPalette.providers}
@@ -1089,9 +1089,9 @@ const EDGE_OF_REGION: Record<ShellRegion, PanelEdge> = {
         {/if}
       {/snippet}
 
-      <div class="smrt-layout-live" role="status" aria-live="polite">{modeMessage}</div>
+      <div class="smrt-layout-live" role="status" aria-live="polite" data-smrt-part="status">{modeMessage}</div>
       {#if editing}
-        <div class="smrt-layout-live" aria-live="assertive" aria-atomic="true">{slotSortable.announcement}</div>
+        <div class="smrt-layout-live" aria-live="assertive" aria-atomic="true" data-smrt-part="status">{slotSortable.announcement}</div>
       {/if}
       {#if layoutFloating}
         {@render layoutToggle()}
@@ -1107,35 +1107,143 @@ const EDGE_OF_REGION: Record<ShellRegion, PanelEdge> = {
 
 <style>
 @layer smrt.reset, smrt.structure, smrt.theme;
+
+@layer smrt.structure {
+  .smrt-layout-toggle {
+    display: inline-flex;
+    align-items: center;
+    gap: var(--smrt-spacing-1);
+  }
+  .smrt-layout-toggle--floating {
+    position: fixed;
+    z-index: 45;
+    inset-block-start: max(var(--smrt-spacing-3), env(safe-area-inset-top));
+    inset-inline-end: max(var(--smrt-spacing-3), env(safe-area-inset-right));
+  }
+  .smrt-app-shell-palette {
+    display: inline-flex;
+    min-inline-size: 0;
+  }
+  .smrt-app-shell-palette[data-search] :global(.smrt-command-palette-trigger) {
+    inline-size: min(28rem, 40vw);
+    justify-content: flex-start;
+  }
+  .smrt-app-shell-palette[data-search] :global(.smrt-command-palette-trigger__hint) {
+    margin-inline-start: auto;
+  }
+  .smrt-layout-live {
+    position: absolute;
+    inline-size: 1px;
+    block-size: 1px;
+    overflow: hidden;
+    clip: rect(0 0 0 0);
+    clip-path: inset(50%);
+    white-space: nowrap;
+  }
+  .smrt-edit-zone__label {
+    flex: 0 0 auto;
+    white-space: nowrap;
+  }
+  .smrt-edit-item {
+    display: inline-flex;
+    align-items: center;
+    min-inline-size: 0;
+  }
+  .smrt-edit-item__body {
+    display: inline-flex;
+    align-items: center;
+    min-inline-size: 0;
+    pointer-events: none;
+  }
+  .smrt-edit-item__grip {
+    display: inline-grid;
+    place-items: center;
+    flex: 0 0 auto;
+    inline-size: 1.5rem;
+    block-size: 2rem;
+    padding: 0;
+    cursor: grab;
+    touch-action: none;
+  }
+}
+
 @layer smrt.theme {
   a {
     color: var(--smrt-color-primary);
   }
-  .smrt-layout-toggle:global([data-smrt-highlighted='true']) { outline: var(--smrt-focus-ring-width) solid var(--smrt-color-primary); outline-offset: var(--smrt-focus-ring-offset); }
-  .smrt-layout-toggle { display: inline-flex; align-items: center; gap: var(--smrt-spacing-1); }
-  .smrt-layout-toggle--floating { position: fixed; z-index: 45; inset-block-start: max(var(--smrt-spacing-3), env(safe-area-inset-top)); inset-inline-end: max(var(--smrt-spacing-3), env(safe-area-inset-right)); border: var(--smrt-hairline); border-radius: var(--smrt-radius-full); background: var(--smrt-surface-raised); box-shadow: var(--smrt-elevation-3), var(--smrt-inset-highlight); }
-  .smrt-layout-toggle--floating :global(.smrt-shell-icon-button) { border-radius: var(--smrt-radius-full); }
-  .smrt-layout-toggle :global(.smrt-shell-icon-button[aria-pressed='true']) { background: var(--smrt-color-primary-container); color: var(--smrt-color-on-primary-container); }
-  .smrt-app-shell-palette { display: inline-flex; min-inline-size: 0; }
-  .smrt-app-shell-palette[data-search] :global(.smrt-command-palette-trigger) { inline-size: min(28rem, 40vw); justify-content: flex-start; border: var(--smrt-hairline-strong); border-radius: var(--smrt-radius-full); background: var(--smrt-surface-control); color: var(--smrt-color-on-surface-variant); }
-  .smrt-app-shell-palette[data-search] :global(.smrt-command-palette-trigger__hint) { margin-inline-start: auto; }
-  .smrt-layout-live { position: absolute; inline-size: 1px; block-size: 1px; overflow: hidden; clip: rect(0 0 0 0); clip-path: inset(50%); white-space: nowrap; }
-  .smrt-edit-zone__label { flex: 0 0 auto; color: var(--smrt-color-on-surface-variant); font: var(--smrt-typography-label-small-font); white-space: nowrap; }
-  .smrt-edit-item { display: inline-flex; align-items: center; min-inline-size: 0; border: var(--smrt-hairline); border-radius: var(--smrt-control-radius); background: var(--smrt-surface-raised); }
-  .smrt-edit-item--dragging { opacity: var(--smrt-state-disabled); }
-  @media (prefers-reduced-motion: no-preference) {
-    .smrt-edit-item { animation: smrt-edit-item-in var(--smrt-duration-short2) var(--smrt-easing-standard) backwards; }
+  .smrt-layout-toggle:global([data-smrt-highlighted='true']) {
+    outline: var(--smrt-focus-ring-width) solid var(--smrt-color-primary);
+    outline-offset: var(--smrt-focus-ring-offset);
   }
-  @keyframes smrt-edit-item-in { from { opacity: 0; transform: scale(0.96); } }
-  .smrt-edit-item__body { display: inline-flex; align-items: center; min-inline-size: 0; pointer-events: none; }
-  .smrt-edit-item__grip { display: inline-grid; place-items: center; flex: 0 0 auto; inline-size: 1.5rem; block-size: 2rem; padding: 0; border: 0; border-radius: var(--smrt-radius-sm); background: transparent; color: var(--smrt-color-on-surface-variant); cursor: grab; touch-action: none; }
-  .smrt-edit-item__grip:hover { background: color-mix(in srgb, currentColor calc(var(--smrt-state-hover) * 100%), transparent); }
-  .smrt-edit-item__grip:focus-visible { outline: var(--smrt-focus-ring-width) solid var(--smrt-focus-ring-color); outline-offset: var(--smrt-focus-ring-offset); }
-  .smrt-edit-item__grip[aria-pressed='true'] { background: var(--smrt-color-primary-container); color: var(--smrt-color-on-primary-container); }
+  .smrt-layout-toggle--floating {
+    border: var(--smrt-hairline);
+    border-radius: var(--smrt-radius-full);
+    background: var(--smrt-surface-raised);
+    box-shadow: var(--smrt-elevation-3), var(--smrt-inset-highlight);
+  }
+  .smrt-layout-toggle--floating :global(.smrt-shell-icon-button) {
+    border-radius: var(--smrt-radius-full);
+  }
+  .smrt-layout-toggle :global(.smrt-shell-icon-button[aria-pressed='true']) {
+    background: var(--smrt-color-primary-container);
+    color: var(--smrt-color-on-primary-container);
+  }
+  .smrt-app-shell-palette[data-search] :global(.smrt-command-palette-trigger) {
+    border: var(--smrt-hairline-strong);
+    border-radius: var(--smrt-radius-full);
+    background: var(--smrt-surface-control);
+    color: var(--smrt-color-on-surface-variant);
+  }
+  .smrt-edit-zone__label {
+    color: var(--smrt-color-on-surface-variant);
+    font: var(--smrt-typography-label-small-font);
+  }
+  .smrt-edit-item {
+    border: var(--smrt-hairline);
+    border-radius: var(--smrt-control-radius);
+    background: var(--smrt-surface-raised);
+  }
+  .smrt-edit-item--dragging {
+    opacity: var(--smrt-state-disabled);
+  }
+  @media (prefers-reduced-motion: no-preference) {
+    .smrt-edit-item {
+      animation: smrt-edit-item-in var(--smrt-duration-short2) var(--smrt-easing-standard) backwards;
+    }
+  }
+  @keyframes smrt-edit-item-in {
+    from {
+      opacity: 0;
+      transform: scale(0.96);
+    }
+  }
+  .smrt-edit-item__grip {
+    border: 0;
+    border-radius: var(--smrt-radius-sm);
+    background: transparent;
+    color: var(--smrt-color-on-surface-variant);
+  }
+  .smrt-edit-item__grip:hover {
+    background: color-mix(in srgb, currentColor calc(var(--smrt-state-hover) * 100%), transparent);
+  }
+  .smrt-edit-item__grip:focus-visible {
+    outline: var(--smrt-focus-ring-width) solid var(--smrt-focus-ring-color);
+    outline-offset: var(--smrt-focus-ring-offset);
+  }
+  .smrt-edit-item__grip[aria-pressed='true'] {
+    background: var(--smrt-color-primary-container);
+    color: var(--smrt-color-on-primary-container);
+  }
   /* Forced colors (#3908): selected and open states keep a non-colour indicator. */
   @media (forced-colors: active) {
-    .smrt-layout-toggle :global(.smrt-shell-icon-button[aria-pressed='true']) { background: Highlight; color: HighlightText; }
-    .smrt-edit-item__grip[aria-pressed='true'] { background: Highlight; color: HighlightText; }
+    .smrt-layout-toggle :global(.smrt-shell-icon-button[aria-pressed='true']) {
+      background: Highlight;
+      color: HighlightText;
+    }
+    .smrt-edit-item__grip[aria-pressed='true'] {
+      background: Highlight;
+      color: HighlightText;
+    }
   }
 }
 </style>

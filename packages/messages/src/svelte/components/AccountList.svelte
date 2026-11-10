@@ -56,13 +56,13 @@ function handleAccountKeydown(event: KeyboardEvent, account: AccountData) {
 }
 </script>
 
-<div class="account-list" role="list" aria-label={t(M['messages.account_list.accounts'])} data-smrt-component="AccountList">
+<div class="smrt-account-list__root" role="list" aria-label={t(M['messages.account_list.accounts'])} data-smrt-component="AccountList">
   {#if loading}
-    <div class="loading" role="status" aria-live="polite">
+    <div class="smrt-account-list__message" role="status" aria-live="polite" data-smrt-part="message">
       <p>{t(M['messages.account_list.loading'])}</p>
     </div>
   {:else if accounts.length === 0}
-    <div class="empty" role="status" aria-live="polite">
+    <div class="smrt-account-list__empty" role="status" aria-live="polite" data-smrt-part="empty">
       <p>{t(M['messages.account_list.empty'])}</p>
     </div>
   {:else}
@@ -91,17 +91,23 @@ function handleAccountKeydown(event: KeyboardEvent, account: AccountData) {
 
 <style>
 @layer smrt.reset, smrt.structure, smrt.theme;
-@layer smrt.theme {
-  .loading,
-  .empty {
-    text-align: center;
+@layer smrt.structure {
+  .smrt-account-list__message,
+  .smrt-account-list__empty {
     padding: var(--smrt-spacing-3xl, 3rem);
+  }
+}
+
+@layer smrt.theme {
+  .smrt-account-list__message,
+  .smrt-account-list__empty {
+    text-align: center;
     color: var(--smrt-color-on-surface-variant);
   }
-
-  .loading p,
-  .empty p {
+  .smrt-account-list__message p,
+  .smrt-account-list__empty p {
     font: var(--smrt-typography-body-large-font, 1.125rem / 1.5 sans-serif);
   }
 }
+
 </style>

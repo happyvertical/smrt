@@ -99,15 +99,15 @@ const _slackMeta = $derived.by(() => {
 </script>
 
 <div
-  class="message-card"
-  class:message-card--selected={selected}
-  class:message-card--unread={!message.isRead}
-  class:message-card--compact={compact}
+  class="smrt-message-card__root"
+  class:smrt-message-card__selected={selected}
+  class:smrt-message-card__unread={!message.isRead}
+  class:smrt-message-card__compact={compact}
   role="row"
   aria-selected={selected} data-smrt-component="MessageCard"
 >
   {#if onselect}
-    <div class="select-col">
+    <div class="smrt-message-card__select" data-smrt-part="field">
       <!-- raw-primitive-allow: native checkbox; no Provider-free checkbox primitive (Toggle is a switch with different semantics, CheckboxInput requires a Provider) -->
       <input
         type="checkbox"
@@ -120,56 +120,57 @@ const _slackMeta = $derived.by(() => {
 
   <!-- raw-primitive-allow: large pressable message row wrapping rich header/subject/preview content (a structural selection surface with descendant compact-mode layout rules), not a standard action button -->
   <button
-    class="message-content"
+    class="smrt-message-card__content"
+    data-smrt-part="body"
     type="button"
     onclick={() => onclick?.(message)}
   >
-    <div class="header-row">
-      <div class="sender">
-        <span class="sender-name" class:sender-name--unread={!message.isRead}>
+    <div class="smrt-message-card__header" data-smrt-part="header">
+      <div class="smrt-message-card__sender" data-smrt-part="author">
+        <span class="smrt-message-card__name" data-smrt-part="title" class:smrt-message-card__name--unread={!message.isRead}>
           {message.senderName || message.senderAddress}
         </span>
         {#if showAccount && account}
-          <span class="account-label">{account.name}</span>
+          <span class="smrt-message-card__account" data-smrt-part="meta">{account.name}</span>
         {/if}
       </div>
-      <div class="header-right">
+      <div class="smrt-message-card__meta" data-smrt-part="meta">
         <MessageStatusIndicator
           isRead={message.isRead}
           isFlagged={message.isFlagged}
           hasAttachments={message.hasAttachments}
         />
-        <time class="date">{_formattedDate}</time>
+        <time class="smrt-message-card__date" data-smrt-part="meta">{_formattedDate}</time>
       </div>
     </div>
 
-    <div class="subject-row">
+    <div class="smrt-message-card__subject-row" data-smrt-part="title">
       {#if showType}
         <MessageTypeBadge type={message.type} />
       {/if}
-      <span class="subject" class:subject--unread={!message.isRead}>
+      <span class="smrt-message-card__subject-text" class:smrt-message-card__subject-text--unread={!message.isRead} data-smrt-part="title">
         {message.subject || '(no subject)'}
       </span>
     </div>
 
     {#if !compact}
-      <div class="preview-row">
+      <div class="smrt-message-card__preview" data-smrt-part="panel">
         {#if typeContent}
           {@render typeContent({ message })}
         {:else if _tweetMeta}
-          <span class="meta-inline">
+          <span class="smrt-message-card__meta-inline" data-smrt-part="meta">
             🔄 {_tweetMeta.retweetCount}
             ❤ {_tweetMeta.likeCount}
             💬 {_tweetMeta.replyCount}
           </span>
         {:else if _slackMeta && _slackMeta.channelName}
-          <span class="meta-inline">
+          <span class="smrt-message-card__meta-inline" data-smrt-part="meta">
             #{_slackMeta.channelName}
           </span>
         {:else if _emailMeta?.folderPath}
-          <span class="meta-inline">{_emailMeta.folderPath}</span>
+          <span class="smrt-message-card__meta-inline" data-smrt-part="meta">{_emailMeta.folderPath}</span>
         {/if}
-        <span class="preview">{_preview}</span>
+        <span class="smrt-message-card__preview-text" data-smrt-part="message">{_preview}</span>
       </div>
     {/if}
   </button>
@@ -189,151 +190,164 @@ const _slackMeta = $derived.by(() => {
 
 <style>
 @layer smrt.reset, smrt.structure, smrt.theme;
-@layer smrt.theme {
-  .message-card {
+@layer smrt.structure {
+  .smrt-message-card__root {
     display: flex;
     align-items: stretch;
-    border-bottom: var(--smrt-hairline);
-    transition: background var(--smrt-duration-short2, 150ms) var(--smrt-easing-standard, ease);
   }
-
-  .message-card:hover {
-    background: var(--smrt-color-surface-variant);
-  }
-
-  .message-card--selected {
-    background: var(--smrt-color-secondary-container);
-  }
-
-  .message-card--unread {
-    background: var(--smrt-color-surface);
-  }
-
-  .select-col {
+  .smrt-message-card__select {
     display: flex;
     align-items: center;
     padding: 0.75rem 0.5rem 0.75rem 0.75rem;
   }
-
-  .message-content {
+  .smrt-message-card__content {
     flex: 1;
     display: flex;
     flex-direction: column;
     gap: 0.25rem;
     padding: 0.75rem 0.75rem 0.75rem 0.5rem;
-    border: none;
-    background: none;
-    text-align: left;
     cursor: pointer;
     min-width: 0;
-    color: inherit;
-    font: inherit;
   }
-
-  .message-content:focus-visible {
-    outline: 2px solid var(--smrt-color-primary);
-    outline-offset: -2px;
-  }
-
-  .header-row {
+  .smrt-message-card__header {
     display: flex;
     justify-content: space-between;
     align-items: center;
     gap: 0.5rem;
   }
-
-  .sender {
+  .smrt-message-card__sender {
     display: flex;
     align-items: center;
     gap: 0.5rem;
     min-width: 0;
   }
-
-  .sender-name {
-    font: var(--smrt-typography-body-medium-font, 0.875rem / 1.25 sans-serif);
-    color: var(--smrt-color-on-surface);
+  .smrt-message-card__name {
     overflow: hidden;
     text-overflow: ellipsis;
     white-space: nowrap;
   }
-
-  .sender-name--unread {
-    font-weight: var(--smrt-typography-weight-semibold, 600);
-  }
-
-  .account-label {
-    font: var(--smrt-typography-label-small-font, 500 0.6875rem / 1 sans-serif);
-    color: var(--smrt-color-on-surface-variant);
-    background: var(--smrt-color-surface-variant);
+  .smrt-message-card__account {
     padding: 0.125rem 0.375rem;
-    border-radius: var(--smrt-radius-small, 0.25rem);
     white-space: nowrap;
   }
-
-  .header-right {
+  .smrt-message-card__meta {
     display: flex;
     align-items: center;
     gap: 0.5rem;
     flex-shrink: 0;
   }
-
-  .date {
-    font: var(--smrt-typography-label-small-font, 500 0.6875rem / 1 sans-serif);
-    color: var(--smrt-color-on-surface-variant);
+  .smrt-message-card__date {
     white-space: nowrap;
   }
-
-  .subject-row {
+  .smrt-message-card__subject-row {
     display: flex;
     align-items: center;
     gap: 0.375rem;
     min-width: 0;
   }
-
-  .subject {
-    font: var(--smrt-typography-body-medium-font, 0.875rem / 1.25 sans-serif);
-    color: var(--smrt-color-on-surface);
+  .smrt-message-card__subject-text {
     overflow: hidden;
     text-overflow: ellipsis;
     white-space: nowrap;
   }
-
-  .subject--unread {
-    font-weight: var(--smrt-typography-weight-semibold, 600);
-  }
-
-  .preview-row {
+  .smrt-message-card__preview {
     display: flex;
     align-items: center;
     gap: 0.5rem;
     min-width: 0;
   }
-
-  .preview {
-    font: var(--smrt-typography-body-small-font, 0.75rem / 1.33 sans-serif);
-    color: var(--smrt-color-on-surface-variant);
+  .smrt-message-card__preview-text {
     overflow: hidden;
     text-overflow: ellipsis;
     white-space: nowrap;
   }
-
-  .meta-inline {
+  .smrt-message-card__meta-inline {
     flex-shrink: 0;
-    font: var(--smrt-typography-label-small-font, 500 0.6875rem / 1 sans-serif);
-    color: var(--smrt-color-on-surface-variant);
   }
-
   /*
-   * The flag toggle now renders through smrt-ui's <Button variant="ghost">.
-   * `.message-card :global(.flag-btn)` anchors on the real `.message-card`
-   * element and pierces the Button child scope to keep the dimmed icon-toggle
-   * styling (issue #1589).
-   */
-  .message-card :global(.flag-btn) {
+  * The flag toggle now renders through smrt-ui's <Button variant="ghost">.
+  * `.smrt-message-card__root :global(.flag-btn)` anchors on the real `.smrt-message-card__root`
+  * element and pierces the Button child scope to keep the dimmed icon-toggle
+  * styling (issue #1589).
+  */
+  .smrt-message-card__root :global(.flag-btn) {
     display: flex;
     align-items: center;
     justify-content: center;
     width: 2rem;
+  }
+  .smrt-message-card__compact .smrt-message-card__content {
+    padding: 0.5rem 0.75rem 0.5rem 0.5rem;
+  }
+  .smrt-message-card__compact .smrt-message-card__preview {
+    display: none;
+  }
+}
+
+@layer smrt.theme {
+  .smrt-message-card__root {
+    border-bottom: var(--smrt-hairline);
+    transition: background var(--smrt-duration-short2, 150ms) var(--smrt-easing-standard, ease);
+  }
+  .smrt-message-card__root:hover {
+    background: var(--smrt-color-surface-variant);
+  }
+  .smrt-message-card__selected {
+    background: var(--smrt-color-secondary-container);
+  }
+  .smrt-message-card__unread {
+    background: var(--smrt-color-surface);
+  }
+  .smrt-message-card__content {
+    border: none;
+    background: none;
+    text-align: left;
+    color: inherit;
+    font: inherit;
+  }
+  .smrt-message-card__content:focus-visible {
+    outline: 2px solid var(--smrt-color-primary);
+    outline-offset: -2px;
+  }
+  .smrt-message-card__name {
+    font: var(--smrt-typography-body-medium-font, 0.875rem / 1.25 sans-serif);
+    color: var(--smrt-color-on-surface);
+  }
+  .smrt-message-card__name--unread {
+    font-weight: var(--smrt-typography-weight-semibold, 600);
+  }
+  .smrt-message-card__account {
+    font: var(--smrt-typography-label-small-font, 500 0.6875rem / 1 sans-serif);
+    color: var(--smrt-color-on-surface-variant);
+    background: var(--smrt-color-surface-variant);
+    border-radius: var(--smrt-radius-small, 0.25rem);
+  }
+  .smrt-message-card__date {
+    font: var(--smrt-typography-label-small-font, 500 0.6875rem / 1 sans-serif);
+    color: var(--smrt-color-on-surface-variant);
+  }
+  .smrt-message-card__subject-text {
+    font: var(--smrt-typography-body-medium-font, 0.875rem / 1.25 sans-serif);
+    color: var(--smrt-color-on-surface);
+  }
+  .smrt-message-card__subject-text--unread {
+    font-weight: var(--smrt-typography-weight-semibold, 600);
+  }
+  .smrt-message-card__preview-text {
+    font: var(--smrt-typography-body-small-font, 0.75rem / 1.33 sans-serif);
+    color: var(--smrt-color-on-surface-variant);
+  }
+  .smrt-message-card__meta-inline {
+    font: var(--smrt-typography-label-small-font, 500 0.6875rem / 1 sans-serif);
+    color: var(--smrt-color-on-surface-variant);
+  }
+  /*
+  * The flag toggle now renders through smrt-ui's <Button variant="ghost">.
+  * `.smrt-message-card__root :global(.flag-btn)` anchors on the real `.smrt-message-card__root`
+  * element and pierces the Button child scope to keep the dimmed icon-toggle
+  * styling (issue #1589).
+  */
+  .smrt-message-card__root :global(.flag-btn) {
     border: none;
     background: none;
     font-size: var(--smrt-typography-body-large-size, 1rem);
@@ -341,17 +355,9 @@ const _slackMeta = $derived.by(() => {
     opacity: 0.5;
     transition: opacity var(--smrt-duration-short2, 150ms);
   }
-
-  .message-card :global(.flag-btn):hover {
+  .smrt-message-card__root :global(.flag-btn):hover {
     opacity: 1;
   }
-
-  .message-card--compact .message-content {
-    padding: 0.5rem 0.75rem 0.5rem 0.5rem;
-  }
-
-  .message-card--compact .preview-row {
-    display: none;
-  }
 }
+
 </style>

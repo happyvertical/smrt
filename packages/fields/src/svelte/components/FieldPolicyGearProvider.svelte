@@ -158,19 +158,31 @@ $effect(() => {
 
 {@render children?.()}
 {#if error && !open}
-  <p class="field-policy-gear__error" role="alert" data-smrt-component="FieldPolicyGearProvider">{error}</p>
+  <p class="smrt-field-policy-gear-provider__error" role="alert" data-smrt-component="FieldPolicyGearProvider">{error}</p>
 {/if}
 {#if open && editorState}
   <FieldPolicyEditor state={editorState} {adapter} {fields} {inputRegistry} {organizationScope} onclose={() => controller.hide()} onmutated={reload} />
 {/if}
 {#if loading}
-  <span class="field-policy-gear__loading" aria-live="polite" data-smrt-component="FieldPolicyGearProvider">Loading field settings…</span>
+  <span class="smrt-field-policy-gear-provider__loading" aria-live="polite" data-smrt-component="FieldPolicyGearProvider">Loading field settings…</span>
 {/if}
 
 <style>
 @layer smrt.reset, smrt.structure, smrt.theme;
-@layer smrt.theme {
-  .field-policy-gear__error { color: var(--smrt-color-error); }
-  .field-policy-gear__loading { position: absolute; inline-size: 1px; block-size: 1px; overflow: hidden; clip-path: inset(50%); }
+@layer smrt.structure {
+  .smrt-field-policy-gear-provider__loading {
+    position: absolute;
+    inline-size: 1px;
+    block-size: 1px;
+    overflow: hidden;
+    clip-path: inset(50%);
+  }
 }
+
+@layer smrt.theme {
+  .smrt-field-policy-gear-provider__error {
+    color: var(--smrt-color-error);
+  }
+}
+
 </style>

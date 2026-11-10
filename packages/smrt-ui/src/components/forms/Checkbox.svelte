@@ -147,7 +147,7 @@ useControlRegistration(() => {
     onchange={handleChange}
     {...rest} data-smrt-part="input"
   />
-  <span class="smrt-checkbox__box" data-smrt-part="box" aria-hidden="true">
+  <span class="smrt-checkbox__box" data-smrt-part="control" aria-hidden="true">
     {#if indeterminate}<span class="smrt-checkbox__dash" data-smrt-part="indicator"></span>{:else if checked}<span class="smrt-checkbox__check" data-smrt-part="indicator">✓</span>{/if}
   </span>
   {#if label}<span class="smrt-checkbox__label" data-smrt-part="label">{label}</span>{/if}

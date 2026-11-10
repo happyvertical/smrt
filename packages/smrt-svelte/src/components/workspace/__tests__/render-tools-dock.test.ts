@@ -44,7 +44,7 @@ describe('<ToolsDock> rail layout', () => {
       ],
     });
 
-    const buttons = target.querySelectorAll('.tools-dock__rail-button');
+    const buttons = target.querySelectorAll('.smrt-tools-dock__rail-button');
     expect(buttons.length).toBe(2);
     expect(buttons[0].getAttribute('aria-label')).toBe('Chat tool');
     expect(buttons[1].getAttribute('aria-label')).toBe('Jobs tool');
@@ -59,12 +59,12 @@ describe('<ToolsDock> rail layout', () => {
     });
 
     const chatBtn = target.querySelectorAll<HTMLButtonElement>(
-      '.tools-dock__rail-button',
+      '.smrt-tools-dock__rail-button',
     )[0];
     chatBtn.click();
     flushSync();
 
-    expect(chatBtn.classList.contains('active')).toBe(true);
+    expect(chatBtn.classList.contains('smrt-tools-dock__active')).toBe(true);
     // aria-pressed is the right semantics for a toggle button. aria-current
     // is reserved for navigation sets (breadcrumbs, paginators, etc.) — using
     // both on the same control conflicts and should not appear here.
@@ -72,7 +72,7 @@ describe('<ToolsDock> rail layout', () => {
     expect(chatBtn.getAttribute('aria-current')).toBeNull();
 
     // Panel header reflects the active tool.
-    const heading = target.querySelector('.tools-dock__panel-header h3');
+    const heading = target.querySelector('.smrt-tools-dock__panel-header h3');
     expect(heading?.textContent).toBe('Chat');
   });
 
@@ -81,7 +81,7 @@ describe('<ToolsDock> rail layout', () => {
       tools: [{ id: 'chat', label: 'Chat' }],
     });
 
-    const panel = target.querySelector('.tools-dock__panel') as
+    const panel = target.querySelector('.smrt-tools-dock__panel') as
       | (HTMLElement & { inert: boolean })
       | null;
     expect(panel?.getAttribute('role')).toBe('dialog');
@@ -91,7 +91,7 @@ describe('<ToolsDock> rail layout', () => {
     expect(panel?.inert === true || panel?.hasAttribute('inert')).toBe(true);
 
     const chatBtn = target.querySelector<HTMLButtonElement>(
-      '.tools-dock__rail-button',
+      '.smrt-tools-dock__rail-button',
     );
     chatBtn?.click();
     flushSync();
@@ -107,15 +107,18 @@ describe('<ToolsDock> rail layout', () => {
       activateOnMount: 'chat',
     });
 
-    const aside = target.querySelector('.tools-dock--rail');
-    expect(aside?.classList.contains('tools-dock--open')).toBe(true);
+    const aside = target.querySelector(
+      '[data-smrt-component="ToolsDock"].smrt-tools-dock__rail-mode',
+    );
+    expect(aside?.classList.contains('smrt-tools-dock__open')).toBe(true);
 
-    const closeBtn =
-      target.querySelector<HTMLButtonElement>('.tools-dock__close');
+    const closeBtn = target.querySelector<HTMLButtonElement>(
+      '[data-smrt-component="ToolsDock"] button[aria-label="Close tools panel"]',
+    );
     closeBtn?.click();
     flushSync();
 
-    expect(aside?.classList.contains('tools-dock--open')).toBe(false);
+    expect(aside?.classList.contains('smrt-tools-dock__open')).toBe(false);
   });
 
   it('forwards a late-populated `context` prop into the dock', async () => {
@@ -167,7 +170,7 @@ describe('<ToolsDock> rail layout', () => {
         tools: [{ id: 'chat', label: 'Chat', iconComponent: TestIcon }],
       });
 
-      const glyph = target.querySelector('.tools-dock__rail-glyph');
+      const glyph = target.querySelector('.smrt-tools-dock__rail-glyph');
       expect(glyph).not.toBeNull();
       // iconComponent rendered → SVG present, first-letter fallback absent.
       const svg = glyph?.querySelector('svg[data-testid="custom-icon"]');
@@ -181,7 +184,7 @@ describe('<ToolsDock> rail layout', () => {
         tools: [{ id: 'chat', label: 'Chat', icon: 'X' }],
       });
 
-      const glyph = target.querySelector('.tools-dock__rail-glyph');
+      const glyph = target.querySelector('.smrt-tools-dock__rail-glyph');
       expect(glyph?.textContent?.trim()).toBe('X');
       // No iconComponent rendered.
       expect(glyph?.querySelector('svg')).toBeNull();
@@ -192,7 +195,7 @@ describe('<ToolsDock> rail layout', () => {
         tools: [{ id: 'chat', label: 'chat' }],
       });
 
-      const glyph = target.querySelector('.tools-dock__rail-glyph');
+      const glyph = target.querySelector('.smrt-tools-dock__rail-glyph');
       // First letter, uppercased — existing behaviour preserved.
       expect(glyph?.textContent?.trim()).toBe('C');
     });
@@ -204,7 +207,7 @@ describe('<ToolsDock> rail layout', () => {
         ],
       });
 
-      const glyph = target.querySelector('.tools-dock__rail-glyph');
+      const glyph = target.querySelector('.smrt-tools-dock__rail-glyph');
       // iconComponent wins; the icon string is not rendered.
       expect(
         glyph?.querySelector('svg[data-testid="custom-icon"]'),
@@ -221,11 +224,11 @@ describe('<ToolsDock> rail layout', () => {
       });
 
       const btn = target.querySelector<HTMLButtonElement>(
-        '.tools-dock__topbar-button',
+        '.smrt-tools-dock__topbar-button',
       );
       expect(btn).not.toBeNull();
-      const icon = btn?.querySelector('.tools-dock__topbar-button-icon');
-      const label = btn?.querySelector('.tools-dock__topbar-button-label');
+      const icon = btn?.querySelector('.smrt-tools-dock__topbar-button-icon');
+      const label = btn?.querySelector('.smrt-tools-dock__topbar-button-label');
       expect(icon).not.toBeNull();
       expect(label?.textContent).toBe('Chat');
       // Icon hosts the test SVG.
@@ -249,9 +252,9 @@ describe('<ToolsDock> rail layout', () => {
       });
 
       const btn = target.querySelector<HTMLButtonElement>(
-        '.tools-dock__topbar-button',
+        '.smrt-tools-dock__topbar-button',
       );
-      const icon = btn?.querySelector('.tools-dock__topbar-button-icon');
+      const icon = btn?.querySelector('.smrt-tools-dock__topbar-button-icon');
       expect(icon?.textContent?.trim()).toBe('X');
       // No SVG when only the string icon was supplied.
       expect(icon?.querySelector('svg')).toBeNull();
@@ -264,10 +267,10 @@ describe('<ToolsDock> rail layout', () => {
       });
 
       const btn = target.querySelector<HTMLButtonElement>(
-        '.tools-dock__topbar-button',
+        '.smrt-tools-dock__topbar-button',
       );
-      const icon = btn?.querySelector('.tools-dock__topbar-button-icon');
-      const label = btn?.querySelector('.tools-dock__topbar-button-label');
+      const icon = btn?.querySelector('.smrt-tools-dock__topbar-button-icon');
+      const label = btn?.querySelector('.smrt-tools-dock__topbar-button-label');
       // Topbar buttons stay label-only when no icon is provided — unlike
       // the rail, where we fall back to the first letter of the label.
       expect(icon).toBeNull();
@@ -283,9 +286,9 @@ describe('<ToolsDock> rail layout', () => {
       });
 
       const btn = target.querySelector<HTMLButtonElement>(
-        '.tools-dock__topbar-button',
+        '.smrt-tools-dock__topbar-button',
       );
-      const icon = btn?.querySelector('.tools-dock__topbar-button-icon');
+      const icon = btn?.querySelector('.smrt-tools-dock__topbar-button-icon');
       // SVG wins, the string "X" must not appear.
       expect(
         icon?.querySelector('svg[data-testid="custom-icon"]'),
@@ -308,10 +311,10 @@ describe('<ToolsDock> rail layout', () => {
     await new Promise((r) => setTimeout(r, 0));
     flushSync();
 
-    const buttons = target.querySelectorAll('.tools-dock__rail-button');
+    const buttons = target.querySelectorAll('.smrt-tools-dock__rail-button');
     expect(buttons.length).toBe(0);
     // When forced open, the panel body renders the empty state.
-    const empty = target.querySelector('.tools-dock__empty');
+    const empty = target.querySelector('.smrt-tools-dock__empty');
     expect(empty?.textContent).toContain('No tools');
   });
 
@@ -328,14 +331,14 @@ describe('<ToolsDock> rail layout', () => {
     flushSync();
 
     const chatButton = target.querySelector<HTMLButtonElement>(
-      '.tools-dock__rail-button',
+      '.smrt-tools-dock__rail-button',
     );
     expect(chatButton).not.toBeNull();
     chatButton?.click();
     flushSync();
     expect(chatButton?.getAttribute('aria-pressed')).toBe('true');
     expect(
-      target.querySelector('.tools-dock__panel-header h3')?.textContent,
+      target.querySelector('.smrt-tools-dock__panel-header h3')?.textContent,
     ).toBe('Chat');
   });
 });

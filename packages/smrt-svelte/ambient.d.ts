@@ -6,3 +6,8 @@ declare module '*.svelte' {
 }
 
 declare module '@happyvertical/smrt-ui/themes/styles/*.css';
+
+declare module '*.css?inline' {
+  const content: string;
+  export default content;
+}

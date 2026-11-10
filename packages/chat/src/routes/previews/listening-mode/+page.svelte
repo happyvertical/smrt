@@ -254,20 +254,20 @@ onDestroy(() => {
 <main>
   <h1>Watch the app, talk to your assistant</h1>
   <p>Starts with synthetic voice and playback events. To talk to the app, choose Real microphone before starting and say “Mark the project ready.” Browser speech support is required.</p>
-  <section class="app" aria-label="Observed application">
+  <section class="smrt-listening-mode__app" data-smrt-part="body" aria-label="Observed application">
     <h2>Project status</h2>
     <Input aria-label="Project name" value="Listening demo" readonly />
     <Input aria-label="Project status" value={projectStatus} readonly />
     <p>Application revision: <output data-testid="revision">{revision}</output></p>
   </section>
-  <section class="controls" aria-label="Caption controls">
+  <section class="smrt-listening-mode__controls" data-smrt-part="actions" aria-label="Caption controls">
     <Checkbox bind:checked={heardEnabled} label="Show what I said" />
     <Checkbox bind:checked={spokenEnabled} label="Show assistant speech" />
     <Checkbox bind:checked={listeningMode} label="Hide conversation history" />
   </section>
   <Checkbox bind:checked={realMicrophone} disabled={sourceLocked} label="Real microphone and browser speech (opt in)" />
   <p>{realMicrophone ? 'The Start listening button requests browser speech access. Browser speech may use its speech service.' : 'Synthetic mode: no microphone, provider, or audio device.'} Reload to change voice source after starting.</p>
-  <section class="controls" aria-label="Voice controls">
+  <section class="smrt-listening-mode__controls" data-smrt-part="actions" aria-label="Voice controls">
     <DictationButton {dictation} disabled={!ready} label="Start listening" stopLabel="Stop listening" title={realMicrophone ? "Start browser speech recognition" : "Start the synthetic speech source"} />
     <DictationStatus {dictation} />
     <Button disabled={!ready || realMicrophone} onclick={() => speech.emit('Mark the project', false)}>Synthetic interim</Button>
@@ -289,13 +289,43 @@ onDestroy(() => {
 
 <style>
 @layer smrt.reset, smrt.structure, smrt.theme;
-@layer smrt.theme {
-  main { max-inline-size: 60rem; font-family: var(--smrt-font-family, system-ui, sans-serif); color: var(--smrt-color-on-surface); margin: 2rem auto; padding: 1rem 1rem 6rem; }
-  .controls { display: flex; gap: .75rem; flex-wrap: wrap; align-items: center; margin-block: 1rem; }
-  .app { display: grid; gap: .75rem; border: var(--smrt-hairline-strong); padding: 1rem; border-radius: var(--smrt-radius-medium, .5rem); }
-  h1 { font-size: clamp(1.5rem, 4vw, 2.5rem); }
+@layer smrt.structure {
+  main {
+    max-inline-size: 60rem;
+    margin: 2rem auto;
+    padding: 1rem 1rem 6rem;
+  }
+  .smrt-listening-mode__controls {
+    display: flex;
+    gap: .75rem;
+    flex-wrap: wrap;
+    align-items: center;
+    margin-block: 1rem;
+  }
+  .smrt-listening-mode__app {
+    display: grid;
+    gap: .75rem;
+    padding: 1rem;
+  }
   @media (min-width: 48rem) {
-    main { padding-inline-end: 30rem; }
+    main {
+      padding-inline-end: 30rem;
+    }
   }
 }
+
+@layer smrt.theme {
+  main {
+    font-family: var(--smrt-font-family, system-ui, sans-serif);
+    color: var(--smrt-color-on-surface);
+  }
+  .smrt-listening-mode__app {
+    border: var(--smrt-hairline-strong);
+    border-radius: var(--smrt-radius-medium, .5rem);
+  }
+  h1 {
+    font-size: clamp(1.5rem, 4vw, 2.5rem);
+  }
+}
+
 </style>

@@ -270,12 +270,12 @@ function handleSubmit(event?: Event) {
 }
 </script>
 
-<div class="assembly-form-shell" data-smrt-component="AssemblyForm">
+<div class="smrt-assembly-form__root" data-smrt-component="AssemblyForm">
   <Form class="assembly-form" onsubmit={handleSubmit}>
     {#if shown('name')}
-      <div class="field">
+      <div class="smrt-assembly-form__field" data-smrt-part="field">
         <label for="{uid}-name">
-          {t(M['manufacturing.assembly_form.name'])}<span class="required" aria-hidden="true">*</span>
+          {t(M['manufacturing.assembly_form.name'])}<span class="smrt-assembly-form__required" data-smrt-part="marker" aria-hidden="true">*</span>
         </label>
         <Input
           id="{uid}-name"
@@ -292,7 +292,7 @@ function handleSubmit(event?: Event) {
     {/if}
 
     {#if shown('description')}
-      <div class="field">
+      <div class="smrt-assembly-form__field" data-smrt-part="field">
         <label for="{uid}-description">{t(M['manufacturing.assembly_form.description'])}</label>
         <Textarea
           id="{uid}-description"
@@ -305,7 +305,7 @@ function handleSubmit(event?: Event) {
     {/if}
 
     {#if shown('partReference')}
-      <div class="field">
+      <div class="smrt-assembly-form__field" data-smrt-part="field">
         <label for="{uid}-part-reference">{t(M['manufacturing.assembly_form.part_reference'])}</label>
         <Input
           id="{uid}-part-reference"
@@ -316,16 +316,16 @@ function handleSubmit(event?: Event) {
           disabled={loading}
           aria-describedby="{uid}-part-reference-hint"
         />
-        <span class="hint" id="{uid}-part-reference-hint">
+        <span class="smrt-assembly-form__hint" data-smrt-part="description" id="{uid}-part-reference-hint">
           {t(M['manufacturing.assembly_form.part_reference_help'])}
         </span>
       </div>
     {/if}
 
     {#if shown('skuCode')}
-      <div class="field">
+      <div class="smrt-assembly-form__field" data-smrt-part="field">
         <label for="{uid}-sku-code">
-          {t(M['manufacturing.assembly_form.sku_code'])}<span class="required" aria-hidden="true">*</span>
+          {t(M['manufacturing.assembly_form.sku_code'])}<span class="smrt-assembly-form__required" data-smrt-part="marker" aria-hidden="true">*</span>
         </label>
         <Input
           id="{uid}-sku-code"
@@ -339,14 +339,14 @@ function handleSubmit(event?: Event) {
           aria-invalid={errors.some((error) => error.field === 'skuCode') ? 'true' : undefined}
           aria-describedby={describedBy('skuCode', `${uid}-sku-code-hint`)}
         />
-        <span class="hint" id="{uid}-sku-code-hint">
+        <span class="smrt-assembly-form__hint" data-smrt-part="description" id="{uid}-sku-code-hint">
           {t(M['manufacturing.assembly_form.sku_code_help'])}
         </span>
       </div>
     {/if}
 
     {#if shown('category')}
-      <div class="field">
+      <div class="smrt-assembly-form__field" data-smrt-part="field">
         <label for="{uid}-category">{t(M['manufacturing.assembly_form.category'])}</label>
         <Input
           id="{uid}-category"
@@ -360,7 +360,7 @@ function handleSubmit(event?: Event) {
     {/if}
 
     {#if shown('price')}
-      <div class="field">
+      <div class="smrt-assembly-form__field" data-smrt-part="field">
         <label for="{uid}-price">{t(M['manufacturing.assembly_form.price'])}</label>
         <Input
           id="{uid}-price"
@@ -374,14 +374,14 @@ function handleSubmit(event?: Event) {
           aria-invalid={invalid.includes('price') ? 'true' : undefined}
           aria-describedby={describedBy('price', `${uid}-price-hint`)}
         />
-        <span class="hint" id="{uid}-price-hint">
+        <span class="smrt-assembly-form__hint" data-smrt-part="description" id="{uid}-price-hint">
           {t(M['manufacturing.assembly_form.price_help'], { currency })}
         </span>
       </div>
     {/if}
 
     {#if shown('estimatedLabourMinutes')}
-      <div class="field">
+      <div class="smrt-assembly-form__field" data-smrt-part="field">
         <label for="{uid}-labour">{t(M['manufacturing.assembly_form.labour'])}</label>
         <Input
           id="{uid}-labour"
@@ -395,14 +395,14 @@ function handleSubmit(event?: Event) {
           aria-invalid={invalid.includes('estimatedLabourMinutes') ? 'true' : undefined}
           aria-describedby={describedBy('estimatedLabourMinutes', `${uid}-labour-hint`)}
         />
-        <span class="hint" id="{uid}-labour-hint">
+        <span class="smrt-assembly-form__hint" data-smrt-part="description" id="{uid}-labour-hint">
           {t(M['manufacturing.assembly_form.labour_help'])}
         </span>
       </div>
     {/if}
 
     {#if shown('defaultOperationId')}
-      <div class="field">
+      <div class="smrt-assembly-form__field" data-smrt-part="field">
         <label for="{uid}-operation">{t(M['manufacturing.assembly_form.operation'])}</label>
         <Select
           id="{uid}-operation"
@@ -416,14 +416,14 @@ function handleSubmit(event?: Event) {
             <option value={choice.id}>{choice.label}</option>
           {/each}
         </Select>
-        <span class="hint" id="{uid}-operation-hint">
+        <span class="smrt-assembly-form__hint" data-smrt-part="description" id="{uid}-operation-hint">
           {t(M['manufacturing.assembly_form.operation_help'])}
         </span>
       </div>
     {/if}
 
     {#if shown('tags')}
-      <div class="field">
+      <div class="smrt-assembly-form__field" data-smrt-part="field">
         <label for="{uid}-tags">{t(M['manufacturing.assembly_form.tags'])}</label>
         <Input
           id="{uid}-tags"
@@ -435,7 +435,7 @@ function handleSubmit(event?: Event) {
           disabled={loading}
           aria-describedby="{uid}-tags-hint"
         />
-        <span class="hint" id="{uid}-tags-hint">
+        <span class="smrt-assembly-form__hint" data-smrt-part="description" id="{uid}-tags-hint">
           {t(M['manufacturing.assembly_form.tags_help'])}
         </span>
       </div>
@@ -444,11 +444,11 @@ function handleSubmit(event?: Event) {
     {@render extraFields?.()}
 
     {#if hostErrors.form}
-      <p class="errors" role="alert">{hostErrors.form}</p>
+      <p class="smrt-assembly-form__errors" data-smrt-part="error" role="alert">{hostErrors.form}</p>
     {/if}
 
     {#if errors.length > 0}
-      <div class="errors" role="alert">
+      <div class="smrt-assembly-form__errors" data-smrt-part="error" role="alert">
         <ul>
           {#each errors as error (error.field)}
             <li id={errorId(error.field)}>{error.message}</li>
@@ -457,7 +457,7 @@ function handleSubmit(event?: Event) {
       </div>
     {/if}
 
-    <div class="actions">
+    <div class="smrt-assembly-form__actions" data-smrt-part="actions">
       {#if oncancel}
         <Button variant="secondary" type="button" onclick={oncancel} disabled={loading}>
           {t(M['manufacturing.assembly_form.cancel'])}
@@ -478,47 +478,44 @@ function handleSubmit(event?: Event) {
 
 <style>
 @layer smrt.reset, smrt.structure, smrt.theme;
-@layer smrt.theme {
-  .assembly-form-shell :global(.assembly-form) {
+@layer smrt.structure {
+  .smrt-assembly-form__root :global(.assembly-form) {
     display: flex;
     flex-direction: column;
     gap: var(--smrt-spacing-md, 1rem);
   }
-
-  .field {
+  .smrt-assembly-form__field {
     display: flex;
     flex-direction: column;
     gap: 0.25rem;
   }
-
-  label {
-    font: var(--smrt-typography-body-medium-font, 500 0.875rem / 1.25 sans-serif);
-    color: var(--smrt-color-on-surface-variant, inherit);
-  }
-
-  .required {
-    color: var(--smrt-color-error, inherit);
-  }
-
-  .hint {
-    font: var(--smrt-typography-body-small-font, 0.75rem / 1.25 sans-serif);
-    color: var(--smrt-color-on-surface-variant, inherit);
-  }
-
-  .errors {
-    color: var(--smrt-color-error, inherit);
-  }
-
-  .errors ul {
+  .smrt-assembly-form__errors ul {
     margin: 0;
     padding-left: 1.25rem;
   }
-
-  .actions {
+  .smrt-assembly-form__actions {
     display: flex;
     justify-content: flex-end;
     gap: var(--smrt-spacing-sm, 0.5rem);
     margin-top: var(--smrt-spacing-sm, 0.5rem);
   }
 }
+
+@layer smrt.theme {
+  label {
+    font: var(--smrt-typography-body-medium-font, 500 0.875rem / 1.25 sans-serif);
+    color: var(--smrt-color-on-surface-variant, inherit);
+  }
+  .smrt-assembly-form__required {
+    color: var(--smrt-color-error, inherit);
+  }
+  .smrt-assembly-form__hint {
+    font: var(--smrt-typography-body-small-font, 0.75rem / 1.25 sans-serif);
+    color: var(--smrt-color-on-surface-variant, inherit);
+  }
+  .smrt-assembly-form__errors {
+    color: var(--smrt-color-error, inherit);
+  }
+}
+
 </style>

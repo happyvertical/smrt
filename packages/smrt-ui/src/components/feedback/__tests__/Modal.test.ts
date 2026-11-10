@@ -52,15 +52,15 @@ describe('Modal', () => {
   it('defaults to centered placement', () => {
     render(Modal, { props: { open: true, title: 'X' } });
     expect(screen.getByRole('dialog', { hidden: true })).toHaveClass(
-      'modal--center',
+      'smrt-modal__center',
     );
   });
 
   it('applies the end (drawer) placement variant', () => {
     render(Modal, { props: { open: true, title: 'X', placement: 'end' } });
     const dialog = screen.getByRole('dialog', { hidden: true });
-    expect(dialog).toHaveClass('modal--end');
-    expect(dialog).not.toHaveClass('modal--center');
+    expect(dialog).toHaveClass('smrt-modal__end');
+    expect(dialog).not.toHaveClass('smrt-modal__center');
   });
 
   it('is axe-clean', async () => {

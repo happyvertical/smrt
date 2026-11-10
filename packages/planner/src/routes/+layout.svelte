@@ -470,7 +470,7 @@ function flushOnHide() {
   />
 {/snippet}
 
-<div class="shell-host" inert={liveLocked}>
+<div class="smrt-planner-layout__root" inert={liveLocked} data-smrt-component="PlannerLayout">
 <AppShell
   storageKey={SHELL_STORAGE_KEY}
   {title}
@@ -528,15 +528,15 @@ function flushOnHide() {
     </ShellDockTool>
   {/snippet}
   {#if cookbookStore.persist === 'memory'}
-    <p class="storage-notice" role="status">
+    <p class="smrt-planner-layout__notice" role="status" data-smrt-part="status">
       This browser is not saving your cookbook, so it is kept in memory only. Export it from the Planner's Export tab to keep a copy.
     </p>
   {/if}
   {#if cookbookStore.loadNotice}
-    <p class="storage-notice" role="status">{cookbookStore.loadNotice}</p>
+    <p class="smrt-planner-layout__notice" role="status" data-smrt-part="status">{cookbookStore.loadNotice}</p>
   {/if}
   {#if cookbookStore.unavailableNotice}
-    <p class="storage-notice" role="status">
+    <p class="smrt-planner-layout__notice" role="status" data-smrt-part="status">
       {cookbookStore.unavailableNotice}
       <button type="button" onclick={() => cookbookStore.removeUnavailable()}>
         Remove them
@@ -551,26 +551,32 @@ function flushOnHide() {
 
 <style>
 @layer smrt.reset, smrt.structure, smrt.theme;
-@layer smrt.theme {
-  .shell-host { display: contents; }
+@layer smrt.structure {
+  .smrt-planner-layout__root {
+    display: contents;
+  }
   /* The shell lays a footer slot out as one row; the planner's `ai-status`
-     item shares it with the shell's `item:account`, so stack them (checked
-     against 0.55.17: without this the account squashes beside the icons). */
+  item shares it with the shell's `item:account`, so stack them (checked
+  against 0.55.17: without this the account squashes beside the icons). */
   :global(.smrt-admin-shell__slot--leftSidebar-footer) {
     flex-direction: column;
     align-items: stretch;
     gap: var(--smrt-spacing-2);
   }
-
   :global(.smrt-admin-shell__slot--leftSidebar-footer > *) {
     inline-size: 100%;
   }
-
-  .storage-notice {
+  .smrt-planner-layout__notice {
     margin: 0;
     padding: var(--smrt-spacing-2) var(--smrt-spacing-6);
+  }
+}
+
+@layer smrt.theme {
+  .smrt-planner-layout__notice {
     background: var(--smrt-color-surface-container);
     color: var(--smrt-color-on-surface-variant);
   }
 }
+
 </style>

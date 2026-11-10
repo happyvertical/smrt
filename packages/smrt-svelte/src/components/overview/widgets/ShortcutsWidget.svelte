@@ -76,20 +76,20 @@ const cards = $derived.by((): Card[] => {
 {#if cards.length === 0}
   <p class="smrt-shortcuts__empty" data-smrt-component="ShortcutsWidget">{t(M['ui.overview.shortcuts.empty'])}</p>
 {:else}
-  <ul class="smrt-shortcuts" data-presentation={presentation} data-smrt-component="ShortcutsWidget">
+  <ul class="smrt-shortcuts__root" data-presentation={presentation} data-smrt-component="ShortcutsWidget">
     {#each cards as card (card.id)}
-      <li class="smrt-shortcuts__card">
-        <a class="smrt-shortcuts__link" href={card.href}>
-          <span class="smrt-shortcuts__heading">
-            <span class="smrt-shortcuts__icon">
+      <li class="smrt-shortcuts__card" data-smrt-part="panel">
+        <a class="smrt-shortcuts__link" href={card.href} data-smrt-part="action">
+          <span class="smrt-shortcuts__heading" data-smrt-part="header">
+            <span class="smrt-shortcuts__icon" data-smrt-part="icon">
               <ShellSectionIcon name={card.icon} size={28} {iconComponent} />
             </span>
-            <span class="smrt-shortcuts__title">{card.label}</span>
+            <span class="smrt-shortcuts__title" data-smrt-part="title">{card.label}</span>
           </span>
           <!-- Clamped to two lines; the tooltip carries the rest. -->
-          {#if card.description}<span class="smrt-shortcuts__desc" title={card.description}>{card.description}</span>{/if}
+          {#if card.description}<span class="smrt-shortcuts__desc" data-smrt-part="body" title={card.description}>{card.description}</span>{/if}
           {#if card.count !== undefined}
-            <span class="smrt-shortcuts__foot"><span class="smrt-shortcuts__count">{countLabel(card.count)}</span></span>
+            <span class="smrt-shortcuts__foot" data-smrt-part="footer"><span class="smrt-shortcuts__count" data-smrt-part="meta">{countLabel(card.count)}</span></span>
           {/if}
         </a>
       </li>
@@ -99,23 +99,118 @@ const cards = $derived.by((): Card[] => {
 
 <style>
 @layer smrt.reset, smrt.structure, smrt.theme;
-@layer smrt.theme {
-  .smrt-shortcuts { display: grid; grid-template-columns: repeat(auto-fill, minmax(min(12rem, 100%), 1fr)); gap: var(--smrt-spacing-3); margin: 0; padding: 0; list-style: none; }
-  .smrt-shortcuts__card { position: relative; display: flex; min-inline-size: 0; border: var(--smrt-hairline); border-radius: var(--smrt-radius-large, var(--smrt-radius-medium)); background: var(--smrt-color-surface); transition: background-color 120ms, border-color 120ms; }
-  .smrt-shortcuts__card:hover { background: var(--smrt-color-surface-container-high); border-color: var(--smrt-hairline-strong-color); }
-  .smrt-shortcuts__link { flex: 1 1 auto; display: flex; flex-direction: column; gap: var(--smrt-spacing-2); padding: var(--smrt-spacing-3); color: var(--smrt-color-on-surface); text-decoration: none; }
-  .smrt-shortcuts__link:focus-visible { outline: 2px solid var(--smrt-color-primary); outline-offset: 2px; border-radius: inherit; }
-  .smrt-shortcuts__heading { display: flex; align-items: center; gap: var(--smrt-spacing-2); min-inline-size: 0; }
-  .smrt-shortcuts__icon { display: inline-grid; place-items: center; flex: 0 0 28px; inline-size: 28px; block-size: 28px; color: var(--smrt-color-primary); }
-  .smrt-shortcuts__icon :global(.smrt-shell-section-icon) { inline-size: 28px; block-size: 28px; }
-  .smrt-shortcuts__title { flex: 1 1 auto; min-inline-size: 0; font-weight: var(--smrt-typography-weight-medium, 500); overflow-wrap: break-word; }
-  .smrt-shortcuts__desc { display: -webkit-box; -webkit-line-clamp: 2; line-clamp: 2; -webkit-box-orient: vertical; overflow: hidden; color: var(--smrt-color-on-surface-variant); font-size: var(--smrt-typography-body-medium-size, 0.875rem); }
-  .smrt-shortcuts__foot { display: flex; flex-wrap: wrap; align-items: center; gap: var(--smrt-spacing-2); margin-block-start: auto; }
-  .smrt-shortcuts__count { color: var(--smrt-color-on-surface-variant); font-size: var(--smrt-typography-body-small-size, 0.75rem); font-variant-numeric: tabular-nums; }
+@layer smrt.structure {
+  .smrt-shortcuts__root {
+    display: grid;
+    grid-template-columns: repeat(auto-fill, minmax(min(12rem, 100%), 1fr));
+    gap: var(--smrt-spacing-3);
+    margin: 0;
+    padding: 0;
+    list-style: none;
+  }
+  .smrt-shortcuts__card {
+    position: relative;
+    display: flex;
+    min-inline-size: 0;
+  }
+  .smrt-shortcuts__link {
+    flex: 1 1 auto;
+    display: flex;
+    flex-direction: column;
+    gap: var(--smrt-spacing-2);
+    padding: var(--smrt-spacing-3);
+  }
+  .smrt-shortcuts__heading {
+    display: flex;
+    align-items: center;
+    gap: var(--smrt-spacing-2);
+    min-inline-size: 0;
+  }
+  .smrt-shortcuts__icon {
+    display: inline-grid;
+    place-items: center;
+    flex: 0 0 28px;
+    inline-size: 28px;
+    block-size: 28px;
+  }
+  .smrt-shortcuts__icon :global([data-smrt-component="ShellSectionIcon"]) {
+    inline-size: 28px;
+    block-size: 28px;
+  }
+  .smrt-shortcuts__title {
+    flex: 1 1 auto;
+    min-inline-size: 0;
+    overflow-wrap: break-word;
+  }
+  .smrt-shortcuts__desc {
+    display: -webkit-box;
+    -webkit-line-clamp: 2;
+    line-clamp: 2;
+    overflow: hidden;
+    -webkit-box-orient: vertical;
+  }
+  .smrt-shortcuts__foot {
+    display: flex;
+    flex-wrap: wrap;
+    align-items: center;
+    gap: var(--smrt-spacing-2);
+    margin-block-start: auto;
+  }
   /* Plain: entries sit directly on the panel, no frame per entry. */
-  .smrt-shortcuts[data-presentation='plain'] { gap: var(--smrt-spacing-1); }
-  .smrt-shortcuts[data-presentation='plain'] .smrt-shortcuts__card { border: 0; border-radius: var(--smrt-radius-medium); background: transparent; }
-  .smrt-shortcuts[data-presentation='plain'] .smrt-shortcuts__card:hover { background: color-mix(in srgb, var(--smrt-color-on-surface) calc(var(--smrt-state-hover) * 100%), transparent); }
-  .smrt-shortcuts__empty { margin: 0; color: var(--smrt-color-on-surface-variant); }
+  .smrt-shortcuts__root[data-presentation='plain'] {
+    gap: var(--smrt-spacing-1);
+  }
+  .smrt-shortcuts__empty {
+    margin: 0;
+  }
 }
+
+@layer smrt.theme {
+  .smrt-shortcuts__card {
+    border: var(--smrt-hairline);
+    border-radius: var(--smrt-radius-large, var(--smrt-radius-medium));
+    background: var(--smrt-color-surface);
+    transition: background-color 120ms, border-color 120ms;
+  }
+  .smrt-shortcuts__card:hover {
+    background: var(--smrt-color-surface-container-high);
+    border-color: var(--smrt-hairline-strong-color);
+  }
+  .smrt-shortcuts__link {
+    color: var(--smrt-color-on-surface);
+    text-decoration: none;
+  }
+  .smrt-shortcuts__link:focus-visible {
+    outline: 2px solid var(--smrt-color-primary);
+    outline-offset: 2px;
+    border-radius: inherit;
+  }
+  .smrt-shortcuts__icon {
+    color: var(--smrt-color-primary);
+  }
+  .smrt-shortcuts__title {
+    font-weight: var(--smrt-typography-weight-medium, 500);
+  }
+  .smrt-shortcuts__desc {
+    color: var(--smrt-color-on-surface-variant);
+    font-size: var(--smrt-typography-body-medium-size, 0.875rem);
+  }
+  .smrt-shortcuts__count {
+    color: var(--smrt-color-on-surface-variant);
+    font-size: var(--smrt-typography-body-small-size, 0.75rem);
+    font-variant-numeric: tabular-nums;
+  }
+  .smrt-shortcuts__root[data-presentation='plain'] .smrt-shortcuts__card {
+    border: 0;
+    border-radius: var(--smrt-radius-medium);
+    background: transparent;
+  }
+  .smrt-shortcuts__root[data-presentation='plain'] .smrt-shortcuts__card:hover {
+    background: color-mix(in srgb, var(--smrt-color-on-surface) calc(var(--smrt-state-hover) * 100%), transparent);
+  }
+  .smrt-shortcuts__empty {
+    color: var(--smrt-color-on-surface-variant);
+  }
+}
+
 </style>

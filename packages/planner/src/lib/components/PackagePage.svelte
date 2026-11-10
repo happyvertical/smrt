@@ -21,13 +21,13 @@ const pkg = $derived(getPackage(id));
 </script>
 
 {#if pkg}
-  <main>
+  <main data-smrt-component="PackagePage">
     <header>
       <h1>{humanize(pkg.id)}</h1>
-      <p class="meta"><code>{pkg.packageName}@{pkg.version}</code></p>
+      <p class="smrt-package-page__meta" data-smrt-part="meta"><code>{pkg.packageName}@{pkg.version}</code></p>
       <p>{pkg.description}</p>
       {#if pkg.dependencies.length}
-        <p class="meta">
+        <p class="smrt-package-page__meta" data-smrt-part="meta">
           Needs:
           {#each pkg.dependencies as dependency, i (dependency)}
             {#if i > 0},
@@ -43,7 +43,7 @@ const pkg = $derived(getPackage(id));
         {#each exposedModels(pkg) as model (model.id)}
           <li>
             <a href={appHref(`/m/${pkg.id}/${model.name}/`)}>{model.name}</a>
-            <span class="meta">{model.fields.filter((f) => !f.system).length} fields</span>
+            <span class="smrt-package-page__meta" data-smrt-part="meta">{model.fields.filter((f) => !f.system).length} fields</span>
           </li>
         {/each}
       </ul>
@@ -52,7 +52,7 @@ const pkg = $derived(getPackage(id));
     <ConnectTools models={pkg.models} />
   </main>
 {:else}
-  <main>
+  <main data-smrt-component="PackagePage">
     <h1>Unknown package</h1>
     <p>No package is called <code>{id}</code>.{#if backHref} <a href={backHref}>Back to the Planner</a>{/if}</p>
   </main>
@@ -60,7 +60,7 @@ const pkg = $derived(getPackage(id));
 
 <style>
 @layer smrt.reset, smrt.structure, smrt.theme;
-@layer smrt.theme {
+@layer smrt.structure {
   main {
     display: grid;
     gap: var(--smrt-spacing-6);
@@ -68,24 +68,17 @@ const pkg = $derived(getPackage(id));
     margin-inline: auto;
     padding: var(--smrt-spacing-6);
   }
-
   header,
   section {
     display: grid;
     gap: var(--smrt-spacing-2);
     justify-items: start;
   }
-
   h1,
   h2,
   p {
     margin: 0;
   }
-
-  .meta {
-    color: var(--smrt-color-on-surface-variant);
-  }
-
   ul {
     display: grid;
     gap: var(--smrt-spacing-1);
@@ -93,4 +86,11 @@ const pkg = $derived(getPackage(id));
     padding-left: var(--smrt-spacing-5);
   }
 }
+
+@layer smrt.theme {
+  .smrt-package-page__meta {
+    color: var(--smrt-color-on-surface-variant);
+  }
+}
+
 </style>

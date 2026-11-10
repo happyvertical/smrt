@@ -71,10 +71,11 @@ function errorText(kind: DictationErrorKind | null): string {
 }
 </script>
 
-<div class={`smrt-dictation-status ${className}`.trim()} data-smrt-component="DictationStatus">
+<div class={`smrt-dictation-status__root ${className}`.trim()} data-smrt-component="DictationStatus">
   <p
-    class="smrt-dictation-status-line"
-    class:smrt-dictation-status--empty={!showLine || announceOnly}
+    class="smrt-dictation-status__line"
+    class:smrt-dictation-status__empty={!showLine || announceOnly}
+    data-smrt-part="status"
     role="status"
     aria-live="polite"
   >
@@ -93,19 +94,20 @@ function errorText(kind: DictationErrorKind | null): string {
         {t(M['ui.dictation.listening_short'])}
       {/if}
     {:else if dictation.state === 'listening' || dictation.state === 'stopping'}
-      <span class="smrt-dictation-status-dot" aria-hidden="true"></span>
+      <span class="smrt-dictation-status__dot" data-smrt-part="indicator" aria-hidden="true"></span>
       {t(M['ui.dictation.listening'])}
       {#if dictation.interim}
-        <span class="smrt-dictation-status-interim">“{dictation.interim}”</span>
+        <span class="smrt-dictation-status__interim" data-smrt-part="message">“{dictation.interim}”</span>
       {/if}
     {:else if dictation.state === 'transcribing'}
-      <span class="smrt-dictation-status-spinner" aria-hidden="true"></span>
+      <span class="smrt-dictation-status__spinner" data-smrt-part="spinner" aria-hidden="true"></span>
       {t(M['ui.dictation.transcribing'])}
     {/if}
   </p>
   <p
-    class="smrt-dictation-status-error"
-    class:smrt-dictation-status--empty={dictation.state !== 'error'}
+    class="smrt-dictation-status__error"
+    class:smrt-dictation-status__empty={dictation.state !== 'error'}
+    data-smrt-part="error"
     role="alert"
     data-dictation-error={dictation.state === 'error'
       ? (dictation.errorCode ?? dictation.errorKind)
@@ -119,30 +121,24 @@ function errorText(kind: DictationErrorKind | null): string {
 
 <style>
 @layer smrt.reset, smrt.structure, smrt.theme;
-@layer smrt.theme {
-  .smrt-dictation-status {
+@layer smrt.structure {
+  .smrt-dictation-status__root {
     display: contents;
   }
-
-  .smrt-dictation-status-line,
-  .smrt-dictation-status-error {
+  .smrt-dictation-status__line,
+  .smrt-dictation-status__error {
     margin: 0;
-    font: var(--smrt-typography-body-small-font, 0.8125rem / 1.4 sans-serif);
   }
-
-
-  .smrt-dictation-status-line {
+  .smrt-dictation-status__line {
     display: flex;
     flex-wrap: wrap;
     align-items: center;
     gap: 0.4rem;
     padding: 0.25rem 0;
-    color: var(--smrt-color-on-surface);
   }
-
   /* Kept mounted while empty (live regions must exist before they speak),
-     but take no room. */
-  .smrt-dictation-status--empty {
+  but take no room. */
+  .smrt-dictation-status__empty {
     position: absolute;
     inline-size: 1px;
     block-size: 1px;
@@ -151,45 +147,56 @@ function errorText(kind: DictationErrorKind | null): string {
     padding: 0;
     white-space: nowrap;
   }
-
-  .smrt-dictation-status-dot {
+  .smrt-dictation-status__dot {
     inline-size: 8px;
     block-size: 8px;
+  }
+  .smrt-dictation-status__spinner {
+    inline-size: 12px;
+    block-size: 12px;
+  }
+  .smrt-dictation-status__error {
+    padding: 0.4rem 0.6rem;
+  }
+}
+
+@layer smrt.theme {
+  .smrt-dictation-status__line,
+  .smrt-dictation-status__error {
+    font: var(--smrt-typography-body-small-font, 0.8125rem / 1.4 sans-serif);
+  }
+  .smrt-dictation-status__line {
+    color: var(--smrt-color-on-surface);
+  }
+  .smrt-dictation-status__dot {
     border-radius: 50%;
     background: var(--smrt-color-error);
   }
-
-  .smrt-dictation-status-spinner {
-    inline-size: 12px;
-    block-size: 12px;
+  .smrt-dictation-status__spinner {
     border-radius: 50%;
     border: 2px solid var(--smrt-color-outline-variant);
     border-block-start-color: var(--smrt-color-primary);
     animation: smrt-dictation-spin 0.9s linear infinite;
   }
-
   @keyframes smrt-dictation-spin {
     to {
       transform: rotate(360deg);
     }
   }
-
   @media (prefers-reduced-motion: reduce) {
-    .smrt-dictation-status-spinner {
+    .smrt-dictation-status__spinner {
       animation: none;
     }
   }
-
-  .smrt-dictation-status-interim {
+  .smrt-dictation-status__interim {
     color: var(--smrt-color-on-surface-variant);
     font-style: italic;
   }
-
-  .smrt-dictation-status-error {
-    padding: 0.4rem 0.6rem;
+  .smrt-dictation-status__error {
     border-radius: var(--smrt-radius-medium);
     background: var(--smrt-color-error-container);
     color: var(--smrt-color-on-error-container);
   }
 }
+
 </style>

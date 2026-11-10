@@ -170,9 +170,9 @@ function fallbackIcon(label: string): string {
     <span
       class="smrt-tenant-nav__attention"
       data-attention
-      aria-hidden="true"
+      aria-hidden="true" data-smrt-part="indicator"
     ></span>
-    <span class="smrt-tenant-nav__sr-only">({label})</span>
+    <span class="smrt-tenant-nav__sr-only" data-smrt-part="label">({label})</span>
   {/if}
 {/snippet}
 
@@ -181,30 +181,30 @@ function fallbackIcon(label: string): string {
     {@const action = showAction(item, groupCurrent ?? isItemCurrent(item))
       ? item.action
       : undefined}
-    <div class="smrt-tenant-nav__section" in:fly={reveal()} animate:flipRow>
-      <div class="smrt-tenant-nav__row">
+    <div class="smrt-tenant-nav__section" in:fly={reveal()} animate:flipRow data-smrt-part="section">
+      <div class="smrt-tenant-nav__row" data-smrt-part="row">
       <a
         use:target={item.id ?? item.href}
         href={item.href}
         class:smrt-tenant-nav__link--visible-active={isVisibleActive(item)}
         aria-current={isActive(item) ? 'page' : undefined}
         title={collapsed ? item.label : item.description}
-        onclick={onNavigate}
+        onclick={onNavigate} data-smrt-part="link"
       >
         {#if item.icon}
-          <span class="smrt-tenant-nav__icon" aria-hidden="true">
+          <span class="smrt-tenant-nav__icon" aria-hidden="true" data-smrt-part="icon">
             {@render glyph(item.icon, 18)}
           </span>
         {:else if collapsed}
           <span
             class="smrt-tenant-nav__icon smrt-tenant-nav__icon--placeholder"
-            aria-hidden="true"
+            aria-hidden="true" data-smrt-part="icon"
           >
             <ShellSectionIcon name={SHELL_PLACEHOLDER_ICON} size={18} />
           </span>
         {/if}
         {#if collapsed}
-          <span class="smrt-tenant-nav__sr-only">{item.label}</span>
+          <span class="smrt-tenant-nav__sr-only" data-smrt-part="label">{item.label}</span>
         {:else}
           <strong>{item.label}</strong>
           {#if item.badge !== null && item.badge !== undefined}
@@ -220,16 +220,16 @@ function fallbackIcon(label: string): string {
           aria-label={action.label}
           aria-current={isActive(action) ? 'page' : undefined}
           title={action.label}
-          onclick={onNavigate}
+          onclick={onNavigate} data-smrt-part="actions"
         >
-          <span class="smrt-tenant-nav__icon" aria-hidden="true">
+          <span class="smrt-tenant-nav__icon" aria-hidden="true" data-smrt-part="icon">
             {@render glyph(action.icon ?? DEFAULT_ACTION_ICON, 16)}
           </span>
         </a>
       {/if}
       </div>
       {#if item.children?.length && !collapsed}
-        <div class="smrt-tenant-nav__children">
+        <div class="smrt-tenant-nav__children" data-smrt-part="list">
           {#each item.children as child (child.href)}
             <a
               href={child.href}
@@ -237,7 +237,7 @@ function fallbackIcon(label: string): string {
               onclick={onNavigate}
             >
               {#if child.icon}
-                <span class="smrt-tenant-nav__icon" aria-hidden="true">
+                <span class="smrt-tenant-nav__icon" aria-hidden="true" data-smrt-part="icon">
                   {@render glyph(child.icon, 16)}
                 </span>
               {/if}
@@ -266,8 +266,8 @@ function fallbackIcon(label: string): string {
     {#if navMode === 'sections' || navMode === 'sections-with-items'}
       {@const href = groupHref(group)}
       {#if href}
-        <div class="smrt-tenant-nav__section" data-nav-section={groupId(group)} in:fly={reveal()}>
-          <div class="smrt-tenant-nav__row">
+        <div class="smrt-tenant-nav__section" data-nav-section={groupId(group)} in:fly={reveal()} data-smrt-part="section">
+          <div class="smrt-tenant-nav__row" data-smrt-part="row">
             <a
               use:target={groupId(group)}
               {href}
@@ -275,9 +275,9 @@ function fallbackIcon(label: string): string {
               class:smrt-tenant-nav__link--visible-active={isSectionCurrent(group)}
               aria-current={href === currentHref ? 'page' : isSectionCurrent(group) ? 'true' : undefined}
               title={collapsed ? group.heading : undefined}
-              onclick={onNavigate}
+              onclick={onNavigate} data-smrt-part="link"
             >
-              <span class="smrt-tenant-nav__icon" aria-hidden="true">
+              <span class="smrt-tenant-nav__icon" aria-hidden="true" data-smrt-part="icon">
                 <ShellSectionIcon
                   name={group.icon ?? SHELL_DEFAULT_SECTION_ICON}
                   size={18}
@@ -285,34 +285,34 @@ function fallbackIcon(label: string): string {
                 />
               </span>
               {#if collapsed}
-                <span class="smrt-tenant-nav__sr-only">{group.heading}</span>
+                <span class="smrt-tenant-nav__sr-only" data-smrt-part="label">{group.heading}</span>
               {:else}
                 <strong>{group.heading}</strong>
               {/if}
             </a>
           </div>
           {#if navMode === 'sections-with-items' && !collapsed && group.items.length}
-            <div class="smrt-tenant-nav__subnav">
+            <div class="smrt-tenant-nav__subnav" data-smrt-part="list">
               {@render navItems(group.items, isGroupCurrent(group))}
             </div>
           {/if}
         </div>
       {/if}
     {:else if group.showTitle === false}
-      <div class="smrt-tenant-nav__group smrt-tenant-nav__group--flat" role="group" aria-label={group.heading}>
-        <div class="smrt-tenant-nav__group-items">{@render navItems(group.items, isGroupCurrent(group))}</div>
+      <div class="smrt-tenant-nav__group smrt-tenant-nav__group--flat" role="group" aria-label={group.heading} data-smrt-part="group">
+        <div class="smrt-tenant-nav__group-items" data-smrt-part="list">{@render navItems(group.items, isGroupCurrent(group))}</div>
       </div>
     {:else}
-    <details class="smrt-tenant-nav__group" aria-label={group.heading} open>
-      <summary class="smrt-tenant-nav__heading">
+    <details class="smrt-tenant-nav__group" aria-label={group.heading} open data-smrt-part="group">
+      <summary class="smrt-tenant-nav__heading" data-smrt-part="header">
         {#if collapsed}
           <span aria-hidden="true">{fallbackIcon(group.heading)}</span>
-          <span class="smrt-tenant-nav__sr-only">{group.heading}</span>
+          <span class="smrt-tenant-nav__sr-only" data-smrt-part="label">{group.heading}</span>
         {:else}
           <span>{group.heading}</span>
         {/if}
       </summary>
-      <div class="smrt-tenant-nav__group-items">{@render navItems(group.items, isGroupCurrent(group))}</div>
+      <div class="smrt-tenant-nav__group-items" data-smrt-part="list">{@render navItems(group.items, isGroupCurrent(group))}</div>
     </details>
     {/if}
   {/each}
@@ -320,8 +320,8 @@ function fallbackIcon(label: string): string {
 
 <style>
 @layer smrt.reset, smrt.structure, smrt.theme;
-@layer smrt.theme {
-  a:global([data-smrt-highlighted='true']) { outline: var(--smrt-focus-ring-width) solid var(--smrt-color-primary); outline-offset: var(--smrt-focus-ring-offset); }
+
+@layer smrt.structure {
   .smrt-tenant-nav,
   .smrt-tenant-nav__section,
   .smrt-tenant-nav__children,
@@ -329,14 +329,16 @@ function fallbackIcon(label: string): string {
     display: grid;
     gap: var(--smrt-spacing-1);
   }
-
   .smrt-tenant-nav__row {
     display: flex;
     align-items: center;
     gap: var(--smrt-spacing-1);
     min-inline-size: 0;
   }
-  .smrt-tenant-nav__row > a:first-child { flex: 1 1 auto; min-inline-size: 0; }
+  .smrt-tenant-nav__row > a:first-child {
+    flex: 1 1 auto;
+    min-inline-size: 0;
+  }
   .smrt-tenant-nav a.smrt-tenant-nav__action {
     flex: 0 0 auto;
     display: inline-grid;
@@ -345,28 +347,16 @@ function fallbackIcon(label: string): string {
     inline-size: max(2rem, var(--smrt-control-target-min));
     block-size: max(2rem, var(--smrt-control-target-min));
     padding: 0;
-    color: var(--smrt-color-on-surface-variant);
   }
-  .smrt-tenant-nav a.smrt-tenant-nav__action:focus-visible {
-    outline: var(--smrt-focus-ring-width) solid var(--smrt-focus-ring-color);
-    outline-offset: var(--smrt-focus-ring-offset);
-  }
-
   .smrt-tenant-nav__heading {
     box-sizing: border-box;
     min-block-size: var(--smrt-control-target-min);
     padding: var(--smrt-spacing-2) var(--smrt-spacing-3);
-    color: var(--smrt-color-on-surface-variant);
-    font-size: var(--smrt-typography-label-large-size);
-    font-weight: var(--smrt-typography-weight-semibold);
-    border-radius: var(--smrt-control-radius);
     cursor: pointer;
   }
-  .smrt-tenant-nav__heading:focus-visible {
-    outline: var(--smrt-focus-ring-width) solid var(--smrt-focus-ring-color);
-    outline-offset: var(--smrt-focus-ring-offset);
+  .smrt-tenant-nav__group-items {
+    margin-block-start: var(--smrt-spacing-1);
   }
-  .smrt-tenant-nav__group-items { margin-block-start: var(--smrt-spacing-1); }
   .smrt-tenant-nav__subnav {
     display: grid;
     gap: var(--smrt-spacing-1);
@@ -380,14 +370,21 @@ function fallbackIcon(label: string): string {
     block-size: max(2.25rem, var(--smrt-control-target-min));
     padding: 0;
   }
-  .smrt-tenant-nav--collapsed .smrt-tenant-nav__heading::-webkit-details-marker { display: none; }
-
+  .smrt-tenant-nav--collapsed .smrt-tenant-nav__heading::-webkit-details-marker {
+    display: none;
+  }
   /* Phone rows use the touch target; comfortable density opts back out. */
   @media (max-width: 48rem) {
-    .smrt-tenant-nav { --smrt-control-target-min: var(--smrt-touch-target-min); }
+    .smrt-tenant-nav {
+      --smrt-control-target-min: var(--smrt-touch-target-min);
+    }
   }
-  .smrt-tenant-nav[data-density='touch'] { --smrt-control-target-min: var(--smrt-touch-target-min); }
-  .smrt-tenant-nav[data-density='comfortable'] { --smrt-control-target-min: 0px; }
+  .smrt-tenant-nav[data-density='touch'] {
+    --smrt-control-target-min: var(--smrt-touch-target-min);
+  }
+  .smrt-tenant-nav[data-density='comfortable'] {
+    --smrt-control-target-min: 0px;
+  }
   .smrt-tenant-nav a {
     box-sizing: border-box;
     min-block-size: var(--smrt-control-target-min);
@@ -400,16 +397,11 @@ function fallbackIcon(label: string): string {
     gap: var(--smrt-spacing-2);
     min-inline-size: 0;
     padding: var(--smrt-spacing-2) var(--smrt-spacing-3);
-    border-radius: var(--smrt-control-radius);
-    color: var(--smrt-color-on-surface);
-    text-decoration: none;
   }
-
   .smrt-tenant-nav--collapsed,
   .smrt-tenant-nav--collapsed .smrt-tenant-nav__section {
     justify-items: center;
   }
-
   .smrt-tenant-nav--collapsed a {
     grid-template-columns: minmax(0, 1fr);
     place-items: center;
@@ -417,22 +409,109 @@ function fallbackIcon(label: string): string {
     block-size: max(2.25rem, var(--smrt-control-target-min));
     padding: 0;
   }
-
   /* One state layer for every row: a currentColor veil driven by the
-     theme's hover / pressed tokens. The selected container fill and the
-     start indicator below sit under it, so hover still reads on a selected
-     row. */
+  theme's hover / pressed tokens. The selected container fill and the
+  start indicator below sit under it, so hover still reads on a selected
+  row. */
+  .smrt-tenant-nav a::after,
+  .smrt-tenant-nav__heading::after {
+    position: absolute;
+    inset: 0;
+    pointer-events: none;
+  }
+  .smrt-tenant-nav__heading {
+    position: relative;
+  }
+  .smrt-tenant-nav a[aria-disabled='true'] {
+    pointer-events: none;
+  }
+  .smrt-tenant-nav a[aria-current='page']::before,
+  .smrt-tenant-nav a.smrt-tenant-nav__link--visible-active::before {
+    position: absolute;
+    inset-block: var(--smrt-spacing-2);
+    inset-inline-start: 0;
+    inline-size: var(--smrt-spacing-1);
+  }
+  .smrt-tenant-nav__icon {
+    display: inline-grid;
+    place-items: center;
+    inline-size: 1.25rem;
+    block-size: 1.25rem;
+    min-inline-size: 1.25rem;
+  }
+  .smrt-tenant-nav strong,
+  .smrt-tenant-nav span {
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+  }
+  .smrt-tenant-nav__children {
+    padding-inline-start: var(--smrt-spacing-4);
+  }
+  .smrt-tenant-nav a {
+    position: relative;
+  }
+  .smrt-tenant-nav__attention {
+    inline-size: 0.5rem;
+    block-size: 0.5rem;
+    justify-self: end;
+  }
+  /* Collapsed: the dot sits on the icon's corner. */
+  .smrt-tenant-nav--collapsed .smrt-tenant-nav__attention {
+    position: absolute;
+    inset-block-start: 0.125rem;
+    inset-inline-end: 0.125rem;
+  }
+  .smrt-tenant-nav__sr-only {
+    position: absolute;
+    inline-size: 1px;
+    block-size: 1px;
+    padding: 0;
+    margin: -1px;
+    overflow: hidden;
+    clip: rect(0, 0, 0, 0);
+    white-space: nowrap;
+  }
+}
+
+@layer smrt.theme {
+  a:global([data-smrt-highlighted='true']) {
+    outline: var(--smrt-focus-ring-width) solid var(--smrt-color-primary);
+    outline-offset: var(--smrt-focus-ring-offset);
+  }
+  .smrt-tenant-nav a.smrt-tenant-nav__action {
+    color: var(--smrt-color-on-surface-variant);
+  }
+  .smrt-tenant-nav a.smrt-tenant-nav__action:focus-visible {
+    outline: var(--smrt-focus-ring-width) solid var(--smrt-focus-ring-color);
+    outline-offset: var(--smrt-focus-ring-offset);
+  }
+  .smrt-tenant-nav__heading {
+    color: var(--smrt-color-on-surface-variant);
+    font-size: var(--smrt-typography-label-large-size);
+    font-weight: var(--smrt-typography-weight-semibold);
+    border-radius: var(--smrt-control-radius);
+  }
+  .smrt-tenant-nav__heading:focus-visible {
+    outline: var(--smrt-focus-ring-width) solid var(--smrt-focus-ring-color);
+    outline-offset: var(--smrt-focus-ring-offset);
+  }
+  .smrt-tenant-nav a {
+    border-radius: var(--smrt-control-radius);
+    color: var(--smrt-color-on-surface);
+    text-decoration: none;
+  }
+  /* One state layer for every row: a currentColor veil driven by the
+  theme's hover / pressed tokens. The selected container fill and the
+  start indicator below sit under it, so hover still reads on a selected
+  row. */
   .smrt-tenant-nav a::after,
   .smrt-tenant-nav__heading::after {
     content: '';
-    position: absolute;
-    inset: 0;
     border-radius: inherit;
     background: currentColor;
     opacity: 0;
-    pointer-events: none;
   }
-  .smrt-tenant-nav__heading { position: relative; }
   .smrt-tenant-nav a:hover::after,
   .smrt-tenant-nav__heading:hover::after {
     opacity: var(--smrt-state-hover);
@@ -443,7 +522,6 @@ function fallbackIcon(label: string): string {
   }
   .smrt-tenant-nav a[aria-disabled='true'] {
     opacity: var(--smrt-state-disabled);
-    pointer-events: none;
   }
   /* Selected: container fill plus a start indicator bar, not just weight. */
   .smrt-tenant-nav a[aria-current='page'],
@@ -454,10 +532,6 @@ function fallbackIcon(label: string): string {
   .smrt-tenant-nav a[aria-current='page']::before,
   .smrt-tenant-nav a.smrt-tenant-nav__link--visible-active::before {
     content: '';
-    position: absolute;
-    inset-block: var(--smrt-spacing-2);
-    inset-inline-start: 0;
-    inline-size: var(--smrt-spacing-1);
     border-radius: var(--smrt-radius-full);
     background: var(--smrt-color-primary);
   }
@@ -465,72 +539,39 @@ function fallbackIcon(label: string): string {
   .smrt-tenant-nav a.smrt-tenant-nav__link--visible-active small {
     color: inherit;
   }
-
-  .smrt-tenant-nav__icon {
-    display: inline-grid;
-    place-items: center;
-    inline-size: 1.25rem;
-    block-size: 1.25rem;
-    min-inline-size: 1.25rem;
-  }
-
   .smrt-tenant-nav__icon--placeholder {
     color: var(--smrt-color-on-surface-variant);
   }
-
-  .smrt-tenant-nav strong,
-  .smrt-tenant-nav span {
-    overflow: hidden;
-    text-overflow: ellipsis;
-    white-space: nowrap;
-  }
-
   .smrt-tenant-nav small {
     color: var(--smrt-color-on-surface-variant);
   }
-
-  .smrt-tenant-nav__children {
-    padding-inline-start: var(--smrt-spacing-4);
-  }
-
-  .smrt-tenant-nav a {
-    position: relative;
-  }
-
   .smrt-tenant-nav__attention {
-    inline-size: 0.5rem;
-    block-size: 0.5rem;
     border-radius: var(--smrt-radius-full);
     background: var(--smrt-color-error);
-    justify-self: end;
   }
-
   /* Collapsed: the dot sits on the icon's corner. */
   .smrt-tenant-nav--collapsed .smrt-tenant-nav__attention {
-    position: absolute;
-    inset-block-start: 0.125rem;
-    inset-inline-end: 0.125rem;
     box-shadow: 0 0 0 var(--smrt-focus-ring-width) var(--smrt-surface-panel);
   }
-
   .smrt-tenant-nav__sr-only {
-    position: absolute;
-    inline-size: 1px;
-    block-size: 1px;
-    padding: 0;
-    margin: -1px;
-    overflow: hidden;
-    clip: rect(0, 0, 0, 0);
-    white-space: nowrap;
     border: 0;
   }
   /* Forced colors (#3908): selected and open states keep a non-colour indicator. */
   @media (forced-colors: active) {
     .smrt-tenant-nav a[aria-current='page'],
-    .smrt-tenant-nav a.smrt-tenant-nav__link--visible-active { background: Canvas; color: CanvasText; font-weight: var(--smrt-typography-weight-bold); }
+    .smrt-tenant-nav a.smrt-tenant-nav__link--visible-active {
+      background: Canvas;
+      color: CanvasText;
+      font-weight: var(--smrt-typography-weight-bold);
+    }
     .smrt-tenant-nav a[aria-current='page']::before,
-    .smrt-tenant-nav a.smrt-tenant-nav__link--visible-active::before { background: Highlight; }
-    .smrt-tenant-nav a[aria-disabled='true'] { opacity: 1; color: GrayText; }
+    .smrt-tenant-nav a.smrt-tenant-nav__link--visible-active::before {
+      background: Highlight;
+    }
+    .smrt-tenant-nav a[aria-disabled='true'] {
+      opacity: 1;
+      color: GrayText;
+    }
   }
 }
 </style>

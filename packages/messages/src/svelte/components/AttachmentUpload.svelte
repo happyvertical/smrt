@@ -57,13 +57,13 @@ export interface Props {
   }
 </script>
 
-<div class="attachment-upload" data-smrt-component="AttachmentUpload">
+<div class="smrt-attachment-upload__root" data-smrt-component="AttachmentUpload">
   {#if attachments.length > 0}
-    <div class="attachment-list">
+    <div class="smrt-attachment-upload__list" data-smrt-part="list">
       {#each attachments as attachment, i}
-        <div class="attachment-item">
-          <span class="filename">{attachment.filename}</span>
-          <span class="size">{formatSize(attachment.size)}</span>
+        <div class="smrt-attachment-upload__item" data-smrt-part="item">
+          <span class="smrt-attachment-upload__name" data-smrt-part="title">{attachment.filename}</span>
+          <span class="smrt-attachment-upload__size" data-smrt-part="meta">{formatSize(attachment.size)}</span>
           <Button
             variant="ghost"
             size="sm"
@@ -77,103 +77,110 @@ export interface Props {
 
   <!-- svelte-ignore a11y_no_static_element_interactions -->
   <div
-    class="drop-zone"
-    class:drag-over={isDragOver}
+    class="smrt-attachment-upload__field"
+    class:smrt-attachment-upload__drag-over={isDragOver}
     ondrop={handleDrop}
     ondragover={handleDragOver}
-    ondragleave={handleDragLeave}
+    ondragleave={handleDragLeave} data-smrt-part="field"
   >
-    <label class="upload-label">
+    <label class="smrt-attachment-upload__label" data-smrt-part="label">
       <!-- raw-primitive-allow: native file input — the Input primitive binds value, which is invalid for type=file (throws InvalidStateError on the bind write-back) and renders a visible control; this hidden picker behind the drop zone stays native -->
       <input
         type="file"
         multiple
-        class="file-input"
+        class="smrt-attachment-upload__input"
+        data-smrt-part="input"
         onchange={(e) => handleFiles((e.currentTarget as HTMLInputElement).files)}
       />
-      <span class="upload-text">{t(M['messages.attachment_upload.drop_files'])}</span>
+      <span class="smrt-attachment-upload__message" data-smrt-part="message">{t(M['messages.attachment_upload.drop_files'])}</span>
     </label>
   </div>
 </div>
 
 <style>
 @layer smrt.reset, smrt.structure, smrt.theme;
-@layer smrt.theme {
-  .attachment-upload {
+@layer smrt.structure {
+  .smrt-attachment-upload__root {
     display: flex;
     flex-direction: column;
     gap: var(--smrt-spacing-2);
   }
-
-  .attachment-list {
+  .smrt-attachment-upload__list {
     display: flex;
     flex-wrap: wrap;
     gap: var(--smrt-spacing-1);
   }
-
-  .attachment-item {
+  .smrt-attachment-upload__item {
     display: inline-flex;
     align-items: center;
     gap: var(--smrt-spacing-2);
     padding: var(--smrt-spacing-1) var(--smrt-spacing-2);
+  }
+  /*
+  * The remove button now renders through smrt-ui's <Button variant="ghost">.
+  * The <button> lives inside the Button child, so `.smrt-attachment-upload__item :global(.remove)`
+  * anchors on the real `.smrt-attachment-upload__item` element and pierces the child scope to
+  * keep the compact error-colored icon styling (issue #1589).
+  */
+  .smrt-attachment-upload__item :global(.remove) {
+    padding: 0 var(--smrt-spacing-1);
+  }
+  .smrt-attachment-upload__field {
+    padding: var(--smrt-spacing-3);
+  }
+  .smrt-attachment-upload__label {
+    cursor: pointer;
+  }
+  /*
+  * The native file input stays visually hidden — the visible affordance is the
+  * `.smrt-attachment-upload__message` label inside the styled drop-zone (issue #1589).
+  */
+  .smrt-attachment-upload__label .smrt-attachment-upload__input {
+    display: none;
+  }
+}
+
+@layer smrt.theme {
+  .smrt-attachment-upload__item {
     border-radius: var(--smrt-radius-sm);
     background: var(--smrt-color-surface-variant);
     font-size: var(--smrt-typography-body-medium-size);
     font-family: var(--smrt-font-family, system-ui);
   }
-
-  .filename {
+  .smrt-attachment-upload__name {
     color: var(--smrt-color-on-surface-variant);
   }
-
-  .size {
+  .smrt-attachment-upload__size {
     color: var(--smrt-color-outline);
     font-size: var(--smrt-typography-label-small-size);
   }
-
   /*
-   * The remove button now renders through smrt-ui's <Button variant="ghost">.
-   * The <button> lives inside the Button child, so `.attachment-item :global(.remove)`
-   * anchors on the real `.attachment-item` element and pierces the child scope to
-   * keep the compact error-colored icon styling (issue #1589).
-   */
-  .attachment-item :global(.remove) {
+  * The remove button now renders through smrt-ui's <Button variant="ghost">.
+  * The <button> lives inside the Button child, so `.smrt-attachment-upload__item :global(.remove)`
+  * anchors on the real `.smrt-attachment-upload__item` element and pierces the child scope to
+  * keep the compact error-colored icon styling (issue #1589).
+  */
+  .smrt-attachment-upload__item :global(.remove) {
     background: none;
     border: none;
-    padding: 0 var(--smrt-spacing-1);
     color: var(--smrt-color-error);
     font-size: var(--smrt-typography-label-large-size);
   }
-
-  .drop-zone {
+  .smrt-attachment-upload__field {
     border: 2px dashed var(--smrt-color-outline-variant);
     border-radius: var(--smrt-radius-md);
-    padding: var(--smrt-spacing-3);
     text-align: center;
     transition: border-color var(--smrt-duration-fast, 150ms) var(--smrt-easing-standard, ease);
   }
-
-  .drop-zone.drag-over {
+  .smrt-attachment-upload__field.smrt-attachment-upload__drag-over {
     border-color: var(--smrt-color-primary);
     background: var(--smrt-color-primary-container);
   }
-
-  .upload-label {
-    cursor: pointer;
-  }
-
-  /*
-   * The native file input stays visually hidden — the visible affordance is the
-   * `.upload-text` label inside the styled drop-zone (issue #1589).
-   */
-  .upload-label .file-input {
-    display: none;
-  }
-
-  .upload-text {
+  .smrt-attachment-upload__message {
     color: var(--smrt-color-outline);
     font-size: var(--smrt-typography-body-medium-size);
     font-family: var(--smrt-font-family, system-ui);
   }
 }
+
 </style>

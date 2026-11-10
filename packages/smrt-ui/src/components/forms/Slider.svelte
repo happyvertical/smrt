@@ -137,28 +137,73 @@ useControlRegistration(() => {
   };
 });
 </script>
-<div class="slider {className}" data-smrt-control={controlId} data-smrt-form={interactionContext?.formId}
+<div class="smrt-slider__root {className}" data-smrt-control={controlId} data-smrt-form={interactionContext?.formId}
   data-smrt-subject-type={resolvedInteraction === false ? undefined : resolvedInteraction.subject?.type}
   data-smrt-subject-id={resolvedInteraction === false ? undefined : resolvedInteraction.subject?.id} data-smrt-component="Slider">
-  {#if label}<div class="slider__header"><label for={resolvedId}>{label}</label><output for={resolvedId}>{formatValue(value)}</output></div>{/if}
-  <div class="slider__controls">
+  {#if label}<div class="smrt-slider__header" data-smrt-part="header"><label for={resolvedId}>{label}</label><output for={resolvedId}>{formatValue(value)}</output></div>{/if}
+  <div class="smrt-slider__controls" data-smrt-part="control">
     <input bind:this={rangeEl} id={resolvedId} type="range" {name} {min} {max} {step} {disabled} value={value}
       style={`--smrt-slider-percent: ${percent}%`} aria-valuetext={formatValue(value)} aria-describedby={formGroup?.().describedBy}
       oninput={handleInput} onchange={handleChange} {...rest} />
-    {#if showInput}<input class="slider__number" type="number" {min} {max} {step} {disabled} value={value}
+    {#if showInput}<input class="smrt-slider__number" data-smrt-part="input" type="number" {min} {max} {step} {disabled} value={value}
       aria-label={label ? `${label} value` : 'Slider value'} onchange={(event) => setValue(event.currentTarget.value)} />{/if}
   </div>
 </div>
 <style>
 @layer smrt.reset, smrt.structure, smrt.theme;
-@layer smrt.theme {
-  .slider { display: grid; gap: var(--smrt-spacing-2); color: var(--smrt-color-on-surface); }
-  .slider__header, .slider__controls { display: flex; align-items: center; gap: var(--smrt-spacing-3); }
-  .slider__header { justify-content: space-between; font: var(--smrt-typography-label-large-font); }
-  output { color: var(--smrt-color-primary); font-variant-numeric: tabular-nums; }
-  input[type='range'] { flex: 1; min-width: 8rem; accent-color: var(--smrt-color-primary); cursor: pointer; }
-  .slider__number { width: 5.5rem; padding: var(--smrt-spacing-2); border: var(--smrt-hairline-strong); border-radius: var(--smrt-radius-small); background: var(--smrt-color-surface); color: var(--smrt-color-on-surface); }
-  input:focus-visible { outline: var(--smrt-focus-ring-width) solid var(--smrt-focus-ring-color); outline-offset: var(--smrt-focus-ring-offset); }
-  .slider[data-smrt-highlighted='true'] { outline: 3px solid var(--smrt-color-tertiary); outline-offset: 4px; border-radius: var(--smrt-radius-small); }
+@layer smrt.structure {
+  .smrt-slider__root {
+    display: grid;
+    gap: var(--smrt-spacing-2);
+  }
+  .smrt-slider__header, .smrt-slider__controls {
+    display: flex;
+    align-items: center;
+    gap: var(--smrt-spacing-3);
+  }
+  .smrt-slider__header {
+    justify-content: space-between;
+  }
+  input[type='range'] {
+    flex: 1;
+    min-width: 8rem;
+    cursor: pointer;
+  }
+  .smrt-slider__number {
+    width: 5.5rem;
+    padding: var(--smrt-spacing-2);
+  }
 }
+
+@layer smrt.theme {
+  .smrt-slider__root {
+    color: var(--smrt-color-on-surface);
+  }
+  .smrt-slider__header {
+    font: var(--smrt-typography-label-large-font);
+  }
+  output {
+    color: var(--smrt-color-primary);
+    font-variant-numeric: tabular-nums;
+  }
+  input[type='range'] {
+    accent-color: var(--smrt-color-primary);
+  }
+  .smrt-slider__number {
+    border: var(--smrt-hairline-strong);
+    border-radius: var(--smrt-radius-small);
+    background: var(--smrt-color-surface);
+    color: var(--smrt-color-on-surface);
+  }
+  input:focus-visible {
+    outline: var(--smrt-focus-ring-width) solid var(--smrt-focus-ring-color);
+    outline-offset: var(--smrt-focus-ring-offset);
+  }
+  .smrt-slider__root[data-smrt-highlighted='true'] {
+    outline: 3px solid var(--smrt-color-tertiary);
+    outline-offset: 4px;
+    border-radius: var(--smrt-radius-small);
+  }
+}
+
 </style>

@@ -223,18 +223,18 @@ function handleInput(e: Event) {
 </script>
 
 <div 
-  class="smrt-text-field multiline" 
-  class:smrt-mode={isSmrt} 
-  class:focused={isFocused} 
-  class:disabled
-  class:has-value={!!value}
-  class:listening={isHolding} data-smrt-component="TextareaInput"
+  class="smrt-textarea-input__root smrt-textarea-input__multiline" 
+  class:smrt-textarea-input__mode={isSmrt} 
+  class:smrt-textarea-input__focused={isFocused} 
+  class:smrt-textarea-input__disabled={disabled}
+  class:smrt-textarea-input__has-value={!!value}
+  class:smrt-textarea-input__listening={isHolding} data-smrt-component="TextareaInput"
 >
   {#if label}
     <FieldLabel id={labelId} for={name} {label} {required} />
   {/if}
-  <div class="container">
-    <div class="content">
+  <div class="smrt-textarea-input__container" data-smrt-part="field">
+    <div class="smrt-textarea-input__content" data-smrt-part="body">
       <textarea
         bind:this={textareaEl}
         id={name}
@@ -245,7 +245,8 @@ function handleInput(e: Event) {
         {rows}
         disabled={disabled || isProcessing}
         {required}
-        class="input"
+        class="smrt-textarea-input__input"
+        data-smrt-part="input"
         aria-invalid={processError ? 'true' : undefined}
         aria-describedby={`${name}-supporting`}
         oninput={handleInput}
@@ -262,8 +263,9 @@ function handleInput(e: Event) {
     {#if isSmrt}
       <button
         type="button"
-        class="mic-btn"
-        class:active={isHolding}
+        class="smrt-textarea-input__mic-btn"
+        class:smrt-textarea-input__active={isHolding}
+        data-smrt-part="trigger"
         {disabled}
         use:ripple
         onkeydown={handleMicKeydown}
@@ -278,130 +280,138 @@ function handleInput(e: Event) {
       </button>
     {/if}
 
-    <div class="active-indicator"></div>
+    <div class="smrt-textarea-input__active-indicator" data-smrt-part="indicator"></div>
   </div>
 
-  <div id={`${name}-supporting`} class="supporting-text" aria-live="polite">
+  <div id={`${name}-supporting`} class="smrt-textarea-input__supporting-text" data-smrt-part="description" aria-live="polite">
     {#if isInitializing}
-      <span class="info">{t(M['ui.textarea_input.downloading_model'], { progress: downloadProgress })}</span>
+      <span class="smrt-textarea-input__info" data-smrt-part="description">{t(M['ui.textarea_input.downloading_model'], { progress: downloadProgress })}</span>
     {:else if isHolding}
-      <span class="success">Recording...</span>
+      <span class="smrt-textarea-input__success" data-smrt-part="status">Recording...</span>
     {:else if isProcessing}
-      <span class="info">Processing...</span>
+      <span class="smrt-textarea-input__info" data-smrt-part="description">Processing...</span>
     {:else if processError}
-      <span class="error">{processError}</span>
+      <span class="smrt-textarea-input__error" data-smrt-part="error">{processError}</span>
     {:else if description && isFocused}
-      <span class="info">{description}</span>
+      <span class="smrt-textarea-input__info" data-smrt-part="description">{description}</span>
     {/if}
   </div>
 </div>
 
 <style>
 @layer smrt.reset, smrt.structure, smrt.theme;
-@layer smrt.theme {
-  .smrt-text-field {
-    --smrt-textarea-input-field-color: var(--smrt-color-on-surface-variant);
-    --smrt-textarea-input-field-bg: var(--smrt-color-surface-container-highest);
-    --smrt-textarea-input-field-active: var(--smrt-color-primary);
-    
+@layer smrt.structure {
+  .smrt-textarea-input__root {
     display: flex;
     flex-direction: column;
     width: 100%;
     min-width: 0;
   }
-
-  .container {
+  .smrt-textarea-input__container {
     position: relative;
     display: flex;
     align-items: flex-start;
-    background-color: var(--smrt-color-surface);
-    border: var(--smrt-hairline);
-    border-radius: var(--smrt-radius-small);
     min-height: 40px;
     padding: 0 var(--smrt-spacing-3);
-    transition: background-color var(--smrt-duration-short3, 200ms) var(--smrt-easing-standard, cubic-bezier(0.2, 0, 0, 1));
   }
-
-  .container:hover {
-    background-color: var(--smrt-color-surface-container-high);
-  }
-
-  .content {
+  .smrt-textarea-input__content {
     flex: 1;
     display: flex;
     flex-direction: column;
     padding-top: var(--smrt-spacing-2);
     padding-bottom: var(--smrt-spacing-2);
   }
+  .smrt-textarea-input__input {
+    width: 100%;
+    padding: 0;
+    margin: 0;
+    resize: vertical;
+  }
+  .smrt-textarea-input__active-indicator {
+    display: none;
+  }
+  .smrt-textarea-input__mic-btn {
+    width: 40px;
+    height: 40px;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    cursor: pointer;
+    margin-right: -8px;
+    margin-top: var(--smrt-spacing-2);
+  }
+  .smrt-textarea-input__supporting-text {
+    padding: var(--smrt-spacing-1) 0 0;
+    min-height: 16px;
+  }
+  .smrt-textarea-input__disabled {
+    pointer-events: none;
+  }
+}
 
-
-  .input {
+@layer smrt.theme {
+  .smrt-textarea-input__root {
+    --smrt-textarea-input-field-color: var(--smrt-color-on-surface-variant);
+    --smrt-textarea-input-field-bg: var(--smrt-color-surface-container-highest);
+    --smrt-textarea-input-field-active: var(--smrt-color-primary);
+  }
+  .smrt-textarea-input__container {
+    background-color: var(--smrt-color-surface);
+    border: var(--smrt-hairline);
+    border-radius: var(--smrt-radius-small);
+    transition: background-color var(--smrt-duration-short3, 200ms) var(--smrt-easing-standard, cubic-bezier(0.2, 0, 0, 1));
+  }
+  .smrt-textarea-input__container:hover {
+    background-color: var(--smrt-color-surface-container-high);
+  }
+  .smrt-textarea-input__input {
     border: none;
     background: transparent;
     font-size: var(--smrt-typography-body-large-size, 1rem);
     line-height: var(--smrt-typography-body-large-line-height, 1.5);
     letter-spacing: var(--smrt-typography-body-large-tracking);
     color: var(--smrt-color-on-surface);
-    width: 100%;
-    padding: 0;
-    margin: 0;
-    resize: vertical;
     font-family: inherit;
   }
-
-  .input:focus {
+  .smrt-textarea-input__input:focus {
     outline: none;
   }
-
-  .active-indicator { display: none; }
-
-  .focused .container {
+  .smrt-textarea-input__focused .smrt-textarea-input__container {
     border-color: var(--smrt-textarea-input-field-active);
     box-shadow: 0 0 0 3px color-mix(in srgb, var(--smrt-textarea-input-field-active) 10%, transparent);
   }
-
-  .mic-btn {
-    width: 40px;
-    height: 40px;
-    display: flex;
-    align-items: center;
-    justify-content: center;
+  .smrt-textarea-input__mic-btn {
     border: none;
     background: transparent;
     color: var(--smrt-textarea-input-field-color);
     border-radius: var(--smrt-radius-full);
-    cursor: pointer;
-    margin-right: -8px;
-    margin-top: var(--smrt-spacing-2);
     transition: all 200ms;
   }
-
-  .mic-btn.active {
+  .smrt-textarea-input__mic-btn.smrt-textarea-input__active {
     color: var(--smrt-color-primary);
     background-color: var(--smrt-color-primary-container);
   }
-
-  .supporting-text {
-    padding: var(--smrt-spacing-1) 0 0;
+  .smrt-textarea-input__supporting-text {
     font-size: var(--smrt-typography-body-small-size, 0.75rem);
-    min-height: 16px;
   }
-
-  .info { color: var(--smrt-color-on-surface-variant); }
-  .error { color: var(--smrt-color-error); }
-  .success { color: var(--smrt-color-primary); }
-
-  .listening {
+  .smrt-textarea-input__info {
+    color: var(--smrt-color-on-surface-variant);
+  }
+  .smrt-textarea-input__error {
+    color: var(--smrt-color-error);
+  }
+  .smrt-textarea-input__success {
+    color: var(--smrt-color-primary);
+  }
+  .smrt-textarea-input__listening {
     background-color: var(--smrt-color-primary-container);
   }
-
-  .disabled {
+  .smrt-textarea-input__disabled {
     opacity: 0.38;
-    pointer-events: none;
   }
-
-  .smrt-mode {
+  .smrt-textarea-input__mode {
     --smrt-textarea-input-field-active: var(--smrt-color-tertiary);
   }
 }
+
 </style>

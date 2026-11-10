@@ -6,13 +6,21 @@ import AttachmentUpload from './AttachmentUpload.svelte';
 export interface Props extends AttachmentPanelProps {}
 let { upload, ...list }: Props = $props();
 </script>
-<div class="attachment-panel" data-smrt-component="AttachmentPanel">
+<div class="smrt-attachment-panel__root" data-smrt-component="AttachmentPanel">
   <AttachmentList {...list} />
   {#if upload}<AttachmentUpload {...upload} />{/if}
 </div>
 <style>
 @layer smrt.reset, smrt.structure, smrt.theme;
-@layer smrt.theme {
-.attachment-panel { display: grid; gap: var(--smrt-spacing-4); min-width: 0; }
+@layer smrt.structure {
+  .smrt-attachment-panel__root {
+    display: grid;
+    gap: var(--smrt-spacing-4);
+    min-width: 0;
+  }
 }
+
+@layer smrt.theme {
+}
+
 </style>

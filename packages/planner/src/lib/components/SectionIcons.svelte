@@ -36,7 +36,7 @@ const helpHref = $derived(
 );
 </script>
 
-<div class="icons" class:compact>
+<div class="smrt-section-icons__root" class:smrt-section-icons__compact={compact} data-smrt-component="SectionIcons">
   <a
     href={helpHref}
     title={`${label} help`}
@@ -57,49 +57,47 @@ const helpHref = $derived(
 
 <style>
 @layer smrt.reset, smrt.structure, smrt.theme;
-@layer smrt.theme {
-  .icons {
+@layer smrt.structure {
+  .smrt-section-icons__root {
     display: flex;
     gap: var(--smrt-spacing-1);
     margin-inline-start: auto;
   }
-
   a {
     display: inline-grid;
     place-items: center;
     width: 2.5rem;
     height: 2.5rem;
+  }
+  .smrt-section-icons__compact {
+    margin-inline-start: 0;
+    gap: 0;
+  }
+  .smrt-section-icons__compact a {
+    width: 1.75rem;
+    height: 1.75rem;
+  }
+}
+
+@layer smrt.theme {
+  a {
     border-radius: 50%;
     color: var(--smrt-color-on-surface-variant);
   }
-
   a:hover {
     background: color-mix(in srgb, currentColor calc(var(--smrt-state-hover) * 100%), transparent);
     color: var(--smrt-color-on-surface);
   }
-
   a:focus-visible {
     outline: var(--smrt-focus-ring-width) solid var(--smrt-focus-ring-color);
     outline-offset: var(--smrt-focus-ring-offset);
   }
-
   a[aria-current='page'] {
     background: var(--smrt-color-secondary-container, rgb(0 0 0 / 12%));
     color: var(--smrt-color-primary);
   }
-
-  .compact {
-    margin-inline-start: 0;
-    gap: 0;
-  }
-
-  .compact a {
-    width: 1.75rem;
-    height: 1.75rem;
-  }
-
   /* Forced colours: the current page's background is replaced, so it is drawn
-     as a selected item. */
+  as a selected item. */
   @media (forced-colors: active) {
     a[aria-current='page'] {
       background: Highlight;
@@ -107,4 +105,5 @@ const helpHref = $derived(
     }
   }
 }
+
 </style>

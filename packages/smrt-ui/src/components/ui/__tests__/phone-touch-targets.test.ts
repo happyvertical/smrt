@@ -42,13 +42,17 @@ describe('phone touch targets', () => {
     );
     expect(start).toBeGreaterThan(-1);
     const block = source.slice(start, source.indexOf('\n  }', start));
-    expect(block).toMatch(/\.tag button\s*\{[^}]*min-inline-size:\s*2\.75rem/);
-    expect(block).toMatch(/\.tag button\s*\{[^}]*min-block-size:\s*2\.75rem/);
+    expect(block).toMatch(
+      /\.smrt-tags-input__tag button\s*\{[^}]*min-inline-size:\s*2\.75rem/,
+    );
+    expect(block).toMatch(
+      /\.smrt-tags-input__tag button\s*\{[^}]*min-block-size:\s*2\.75rem/,
+    );
   });
 
   it('Dropdown menu rows are at least 44px tall', () => {
     expect(read('ui/Dropdown.svelte')).toMatch(
-      /\.dropdown__item\s*\{[^}]*min-block-size:\s*2\.75rem/,
+      /\.smrt-dropdown__item\s*\{[^}]*min-block-size:\s*2\.75rem/,
     );
   });
 });

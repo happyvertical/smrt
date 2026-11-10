@@ -219,22 +219,22 @@ const menu = $derived([
 
 <section
   bind:this={root}
-  class="report-detail"
+  class="smrt-report-detail__root"
   data-smrt-component="ReportDetail"
   data-report-id={id}
   aria-label={report?.title ?? t(M['reports.title'])}
 >
-  <header class="report-detail__head">
-    <div class="report-detail__heading">
-      <div class="report-detail__title-row">
-        <h1 class="report-detail__title">{report?.title ?? t(M['reports.title'])}</h1>
+  <header class="smrt-report-detail__header" data-smrt-part="header">
+    <div class="smrt-report-detail__heading" data-smrt-part="body">
+      <div class="smrt-report-detail__title-row" data-smrt-part="header">
+        <h1 class="smrt-report-detail__title" data-smrt-part="title">{report?.title ?? t(M['reports.title'])}</h1>
         {#if archived}<Badge>{t(M['reports.archived_badge'])}</Badge>{/if}
       </div>
-      {#if description}<p class="report-detail__line">{description.line}</p>{/if}
-      {#if report?.description}<p class="report-detail__description">{report.description}</p>{/if}
+      {#if description}<p class="smrt-report-detail__line" data-smrt-part="meta">{description.line}</p>{/if}
+      {#if report?.description}<p class="smrt-report-detail__description" data-smrt-part="description">{report.description}</p>{/if}
     </div>
     {#if client && report}
-      <div class="report-detail__actions">
+      <div class="smrt-report-detail__actions" data-smrt-part="actions">
         {#if archived}
           {#if report.canArchive}<Button variant="primary" disabled={archiving} onclick={() => setArchived(false)}>{t(M['reports.restore'])}</Button>{/if}
         {:else if error}
@@ -252,14 +252,14 @@ const menu = $derived([
     {/if}
   </header>
   {#if !client}
-    <p class="report-detail__note">{t(M['reports.unavailable'])}</p>
+    <p class="smrt-report-detail__note" data-smrt-part="description">{t(M['reports.unavailable'])}</p>
   {:else}
     {#if description}
-      <dl class="report-detail__facts" aria-label={t(M['reports.details'])}>
+      <dl class="smrt-report-detail__facts" data-smrt-part="meta" aria-label={t(M['reports.details'])}>
         <div><dt>{t(M['reports.source'])}</dt><dd>{description.source}</dd></div>
         <div><dt>{t(M['reports.groupings'])}</dt><dd>{description.groupings || t(M['reports.none'])}</dd></div>
         {#if description.period}
-          <div><dt>{t(M['reports.period'])}</dt><dd>{description.period.range}<span class="report-detail__aside">{' · '}{description.period.field}</span></dd></div>
+          <div><dt>{t(M['reports.period'])}</dt><dd>{description.period.range}<span class="smrt-report-detail__aside" data-smrt-part="group">{' · '}{description.period.field}</span></dd></div>
         {/if}
         <div><dt>{t(M['reports.measures'])}</dt><dd>{description.measures.join(', ')}</dd></div>
         {#if description.filters.length}
@@ -269,15 +269,15 @@ const menu = $derived([
           <div><dt>{t(M['reports.having'])}</dt><dd>{description.having.join('; ')}</dd></div>
         {/if}
         {#if savedText || ranText}
-          <div class="report-detail__meta"><dt class="report-detail__sr">{t(M['reports.author'])}</dt><dd>{[savedText, ranText].filter(Boolean).join(' · ')}</dd></div>
+          <div class="smrt-report-detail__meta" data-smrt-part="meta"><dt class="smrt-report-detail__visually-hidden" data-smrt-part="label">{t(M['reports.author'])}</dt><dd>{[savedText, ranText].filter(Boolean).join(' · ')}</dd></div>
         {/if}
       </dl>
     {/if}
-    {#if askNote}<p class="report-detail__note" role="status">{t(M['reports.ask_where'])}</p>{/if}
-    {#if loading && !result}<p class="report-detail__note" role="status">{t(M['reports.running'])}</p>{/if}
-    {#if error}<p class="report-detail__error" role="alert">{t(M[error])}</p>{/if}
+    {#if askNote}<p class="smrt-report-detail__note" data-smrt-part="description" role="status">{t(M['reports.ask_where'])}</p>{/if}
+    {#if loading && !result}<p class="smrt-report-detail__note" data-smrt-part="description" role="status">{t(M['reports.running'])}</p>{/if}
+    {#if error}<p class="smrt-report-detail__error" data-smrt-part="error" role="alert">{t(M[error])}</p>{/if}
     {#if result && report}
-      <div class="report-detail__result">
+      <div class="smrt-report-detail__result" data-smrt-part="status">
         <ReportResult {result} spec={report.spec} variant="full" bind:view {locale} {currency} />
       </div>
     {/if}
@@ -296,25 +296,132 @@ const menu = $derived([
 
 <style>
 @layer smrt.reset, smrt.structure, smrt.theme;
-@layer smrt.theme {
-  .report-detail { display: grid; gap: var(--smrt-spacing-5); min-inline-size: 0; }
-  .report-detail__head { display: flex; flex-wrap: wrap; align-items: flex-start; justify-content: space-between; gap: var(--smrt-spacing-3) var(--smrt-spacing-5); }
-  .report-detail__heading { display: grid; gap: var(--smrt-spacing-1); flex: 1 1 20rem; min-inline-size: 0; }
-  .report-detail__title-row { display: flex; flex-wrap: wrap; align-items: center; gap: var(--smrt-spacing-2); }
-  .report-detail__title { margin: 0; font: var(--smrt-typography-headline-medium-font); overflow-wrap: anywhere; }
-  .report-detail__line { margin: 0; color: var(--smrt-color-on-surface-variant); font-size: var(--smrt-typography-body-medium-size); }
-  .report-detail__description { margin: 0; max-inline-size: 65ch; font-size: var(--smrt-typography-body-medium-size); }
-  .report-detail__actions { display: flex; flex-wrap: nowrap; align-items: center; gap: var(--smrt-spacing-2); }
-  .report-detail__facts { display: grid; grid-template-columns: repeat(auto-fill, minmax(min(100%, 13rem), 1fr)); gap: var(--smrt-spacing-3) var(--smrt-spacing-5); margin: 0; padding: var(--smrt-spacing-4); border: var(--smrt-hairline); border-radius: var(--smrt-radius-large); background: var(--smrt-color-surface-container-low); }
-  .report-detail__facts > div { display: grid; gap: var(--smrt-spacing-1); min-inline-size: 0; }
-  .report-detail__facts dt { color: var(--smrt-color-on-surface-variant); font-size: var(--smrt-typography-label-medium-size); }
-  .report-detail__facts dd { margin: 0; overflow-wrap: anywhere; font-size: var(--smrt-typography-body-medium-size); }
-  .report-detail__meta { grid-column: 1 / -1; padding-block-start: var(--smrt-spacing-3); border-block-start: var(--smrt-hairline); }
-  .report-detail__meta dd { color: var(--smrt-color-on-surface-variant); font-size: var(--smrt-typography-body-small-size); }
-  .report-detail__aside { color: var(--smrt-color-on-surface-variant); }
-  .report-detail__sr { position: absolute; inline-size: 1px; block-size: 1px; overflow: hidden; clip: rect(0 0 0 0); clip-path: inset(50%); white-space: nowrap; }
-  .report-detail__note { margin: 0; color: var(--smrt-color-on-surface-variant); }
-  .report-detail__error { margin: 0; color: var(--smrt-color-error); }
-  .report-detail__result { padding: var(--smrt-spacing-4); border: var(--smrt-hairline); border-radius: var(--smrt-radius-large); background: var(--smrt-color-surface); }
+@layer smrt.structure {
+  .smrt-report-detail__root {
+    display: grid;
+    gap: var(--smrt-spacing-5);
+    min-inline-size: 0;
+  }
+  .smrt-report-detail__header {
+    display: flex;
+    flex-wrap: wrap;
+    align-items: flex-start;
+    justify-content: space-between;
+    gap: var(--smrt-spacing-3) var(--smrt-spacing-5);
+  }
+  .smrt-report-detail__heading {
+    display: grid;
+    gap: var(--smrt-spacing-1);
+    flex: 1 1 20rem;
+    min-inline-size: 0;
+  }
+  .smrt-report-detail__title-row {
+    display: flex;
+    flex-wrap: wrap;
+    align-items: center;
+    gap: var(--smrt-spacing-2);
+  }
+  .smrt-report-detail__title {
+    margin: 0;
+    overflow-wrap: anywhere;
+  }
+  .smrt-report-detail__line {
+    margin: 0;
+  }
+  .smrt-report-detail__description {
+    margin: 0;
+    max-inline-size: 65ch;
+  }
+  .smrt-report-detail__actions {
+    display: flex;
+    flex-wrap: nowrap;
+    align-items: center;
+    gap: var(--smrt-spacing-2);
+  }
+  .smrt-report-detail__facts {
+    display: grid;
+    grid-template-columns: repeat(auto-fill, minmax(min(100%, 13rem), 1fr));
+    gap: var(--smrt-spacing-3) var(--smrt-spacing-5);
+    margin: 0;
+    padding: var(--smrt-spacing-4);
+  }
+  .smrt-report-detail__facts > div {
+    display: grid;
+    gap: var(--smrt-spacing-1);
+    min-inline-size: 0;
+  }
+  .smrt-report-detail__facts dd {
+    margin: 0;
+    overflow-wrap: anywhere;
+  }
+  .smrt-report-detail__meta {
+    grid-column: 1 / -1;
+    padding-block-start: var(--smrt-spacing-3);
+  }
+  .smrt-report-detail__visually-hidden {
+    position: absolute;
+    inline-size: 1px;
+    block-size: 1px;
+    overflow: hidden;
+    clip: rect(0 0 0 0);
+    clip-path: inset(50%);
+    white-space: nowrap;
+  }
+  .smrt-report-detail__note {
+    margin: 0;
+  }
+  .smrt-report-detail__error {
+    margin: 0;
+  }
+  .smrt-report-detail__result {
+    padding: var(--smrt-spacing-4);
+  }
 }
+
+@layer smrt.theme {
+  .smrt-report-detail__title {
+    font: var(--smrt-typography-headline-medium-font);
+  }
+  .smrt-report-detail__line {
+    color: var(--smrt-color-on-surface-variant);
+    font-size: var(--smrt-typography-body-medium-size);
+  }
+  .smrt-report-detail__description {
+    font-size: var(--smrt-typography-body-medium-size);
+  }
+  .smrt-report-detail__facts {
+    border: var(--smrt-hairline);
+    border-radius: var(--smrt-radius-large);
+    background: var(--smrt-color-surface-container-low);
+  }
+  .smrt-report-detail__facts dt {
+    color: var(--smrt-color-on-surface-variant);
+    font-size: var(--smrt-typography-label-medium-size);
+  }
+  .smrt-report-detail__facts dd {
+    font-size: var(--smrt-typography-body-medium-size);
+  }
+  .smrt-report-detail__meta {
+    border-block-start: var(--smrt-hairline);
+  }
+  .smrt-report-detail__meta dd {
+    color: var(--smrt-color-on-surface-variant);
+    font-size: var(--smrt-typography-body-small-size);
+  }
+  .smrt-report-detail__aside {
+    color: var(--smrt-color-on-surface-variant);
+  }
+  .smrt-report-detail__note {
+    color: var(--smrt-color-on-surface-variant);
+  }
+  .smrt-report-detail__error {
+    color: var(--smrt-color-error);
+  }
+  .smrt-report-detail__result {
+    border: var(--smrt-hairline);
+    border-radius: var(--smrt-radius-large);
+    background: var(--smrt-color-surface);
+  }
+}
+
 </style>

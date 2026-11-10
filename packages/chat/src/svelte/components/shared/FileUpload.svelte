@@ -107,20 +107,21 @@ function getFileIcon(type: string): string {
 }
 </script>
 
-<div class="file-upload" class:file-upload--disabled={disabled} data-smrt-component="FileUpload">
+<div class="smrt-file-upload__root" data-smrt-component="FileUpload"
+  class:smrt-file-upload__disabled={disabled}
+>
   {#if pendingFiles.length > 0}
-    <div class="file-upload__preview" aria-label={t(M['chat.file_upload.preview'])}>
+    <div class="smrt-file-upload__preview" data-smrt-part="panel" aria-label={t(M['chat.file_upload.preview'])}>
       {#each pendingFiles as file, i (file.name + i)}
-        <div class="file-upload__file">
-          <span class="file-upload__file-icon">{getFileIcon(file.type)}</span>
-          <div class="file-upload__file-info">
-            <span class="file-upload__file-name">{file.name}</span>
-            <span class="file-upload__file-size">{formatSize(file.size)}</span>
+        <div class="smrt-file-upload__file" data-smrt-part="row">
+          <span class="smrt-file-upload__file-icon" data-smrt-part="icon">{getFileIcon(file.type)}</span>
+          <div class="smrt-file-upload__file-info" data-smrt-part="body">
+            <span class="smrt-file-upload__file-name" data-smrt-part="label">{file.name}</span>
+            <span class="smrt-file-upload__file-size" data-smrt-part="meta">{formatSize(file.size)}</span>
           </div>
           <Button
             variant="ghost"
             size="sm"
-            class="file-upload__file-remove"
             type="button"
             onclick={() => removePending(i)}
             aria-label={t(M['chat.file_upload.remove'], { name: file.name })}
@@ -132,7 +133,7 @@ function getFileIcon(type: string): string {
         </div>
       {/each}
 
-      <div class="file-upload__preview-actions">
+      <div class="smrt-file-upload__preview-actions" data-smrt-part="actions">
         <Button
           variant="primary"
           size="sm"
@@ -154,201 +155,203 @@ function getFileIcon(type: string): string {
   {/if}
 
   {#if sizeError}
-    <div class="file-upload__error" role="alert">
+    <div class="smrt-file-upload__error" data-smrt-part="error" role="alert">
       {sizeError}
     </div>
   {/if}
 
   <!-- svelte-ignore a11y_no_static_element_interactions -->
   <div
-    class="file-upload__drop-zone"
-    class:file-upload__drop-zone--active={isDragOver}
-    class:file-upload__drop-zone--disabled={disabled}
+    class="smrt-file-upload__dropzone"
+    data-smrt-part="field"
     ondrop={handleDrop}
     ondragover={handleDragOver}
     ondragleave={handleDragLeave}
-  >
-    <label class="file-upload__label">
+  
+  class:smrt-file-upload__dropzone--active={isDragOver}
+  class:smrt-file-upload__dropzone--disabled={disabled}
+>
+    <label class="smrt-file-upload__trigger" data-smrt-part="trigger">
       <!-- raw-primitive-allow: visually-hidden native file input that backs a custom drag-and-drop zone; the base Input primitive renders a visible bordered control and cannot be the hidden picker behind this drop zone -->
       <input
         type="file"
-        class="file-upload__input"
+        class="smrt-file-upload__input"
+        data-smrt-part="input"
         {accept}
         multiple
         {disabled}
         onchange={handleInputChange}
       />
-      <svg class="file-upload__icon" width="24" height="24" viewBox="0 0 24 24" fill="currentColor" aria-hidden="true">
+      <svg class="smrt-file-upload__icon" data-smrt-part="icon" width="24" height="24" viewBox="0 0 24 24" fill="currentColor" aria-hidden="true">
         <path d="M9 16h6v-6h4l-7-7-7 7h4zm-4 2h14v2H5z" />
       </svg>
-      <span class="file-upload__text">
+      <span class="smrt-file-upload__message" data-smrt-part="message">
         {#if disabled}
           {t(M['chat.file_upload.disabled'])}
         {:else}
           {t(M['chat.file_upload.drop_files'])}
         {/if}
       </span>
-      <span class="file-upload__hint">{t(M['chat.file_upload.max_size'], { size: formatSize(maxSize) })}</span>
+      <span class="smrt-file-upload__hint" data-smrt-part="description">{t(M['chat.file_upload.max_size'], { size: formatSize(maxSize) })}</span>
     </label>
   </div>
 </div>
 
 <style>
 @layer smrt.reset, smrt.structure, smrt.theme;
-@layer smrt.theme {
-  .file-upload {
+@layer smrt.structure {
+  .smrt-file-upload__root {
     display: flex;
     flex-direction: column;
     gap: var(--smrt-spacing-2);
   }
-
-  .file-upload--disabled {
-    opacity: 0.5;
+  .smrt-file-upload__disabled {
     pointer-events: none;
   }
-
-  .file-upload__drop-zone {
-    border: 2px dashed var(--smrt-color-outline-variant);
-    border-radius: var(--smrt-radius-large);
+  .smrt-file-upload__dropzone {
     padding: var(--smrt-spacing-5);
-    text-align: center;
-    transition:
-      border-color var(--smrt-duration-short2, 150ms),
-      background var(--smrt-duration-short2, 150ms);
   }
-
-  .file-upload__drop-zone--active {
-    border-color: var(--smrt-color-primary);
-    background: var(--smrt-color-primary-container);
-  }
-
-  .file-upload__drop-zone--disabled {
+  .smrt-file-upload__dropzone--disabled {
     cursor: not-allowed;
   }
-
-  .file-upload__label {
+  .smrt-file-upload__trigger {
     display: flex;
     flex-direction: column;
     align-items: center;
     gap: var(--smrt-spacing-2);
     cursor: pointer;
   }
-
-  .file-upload__drop-zone--disabled .file-upload__label {
+  .smrt-file-upload__dropzone--disabled .smrt-file-upload__trigger {
     cursor: not-allowed;
   }
-
-  .file-upload__input {
+  .smrt-file-upload__input {
     display: none;
   }
-
-  .file-upload__icon {
-    color: var(--smrt-color-outline);
-  }
-
-  .file-upload__text {
-    font: var(--smrt-typography-body-medium-font, 0.875rem/1.4 sans-serif);
-    color: var(--smrt-color-on-surface);
-  }
-
-  .file-upload__hint {
-    font: var(--smrt-typography-label-small-font, 500 0.6875rem/1 sans-serif);
-    color: var(--smrt-color-outline);
-  }
-
-  .file-upload__preview {
+  .smrt-file-upload__preview {
     display: flex;
     flex-direction: column;
     gap: var(--smrt-spacing-1);
     padding: var(--smrt-spacing-2);
-    background: var(--smrt-color-surface-container-low);
-    border-radius: var(--smrt-radius-medium);
-    border: var(--smrt-hairline);
   }
-
-  .file-upload__file {
+  .smrt-file-upload__file {
     display: flex;
     align-items: center;
     gap: var(--smrt-spacing-2);
     padding: var(--smrt-spacing-2);
-    border-radius: var(--smrt-radius-small);
-    background: var(--smrt-color-surface);
   }
-
-  .file-upload__file-icon {
+  .smrt-file-upload__file-icon {
     display: inline-flex;
     align-items: center;
     justify-content: center;
     width: 28px;
     height: 28px;
-    border-radius: var(--smrt-radius-small);
-    background: var(--smrt-color-surface-variant);
-    font: var(--smrt-typography-label-small-font, 500 0.6875rem/1 sans-serif);
-    color: var(--smrt-color-on-surface-variant);
-    text-transform: uppercase;
     flex-shrink: 0;
   }
-
-  .file-upload__file-info {
+  .smrt-file-upload__file-info {
     flex: 1;
     display: flex;
     flex-direction: column;
     gap: var(--smrt-spacing-1);
     min-width: 0;
   }
-
-  .file-upload__file-name {
-    font: var(--smrt-typography-body-small-font, 0.8125rem/1.4 sans-serif);
-    color: var(--smrt-color-on-surface);
+  .smrt-file-upload__file-name {
     white-space: nowrap;
     overflow: hidden;
     text-overflow: ellipsis;
   }
-
-  .file-upload__file-size {
-    font: var(--smrt-typography-label-small-font, 500 0.6875rem/1 sans-serif);
-    color: var(--smrt-color-outline);
-  }
-
   /* :global() pierces into the Button child's rendered <button> (see #1589). */
-  .file-upload__file :global(.file-upload__file-remove) {
+  .smrt-file-upload__file :global([data-smrt-component="Button"]) {
     width: 24px;
     height: 24px;
     padding: 0;
-    background: none;
-    color: var(--smrt-color-on-surface-variant);
-    border-radius: var(--smrt-radius-full);
     flex-shrink: 0;
-    transition: background var(--smrt-duration-short2, 150ms);
   }
-
-  .file-upload__file :global(.file-upload__file-remove:hover) {
-    background: var(--smrt-color-error-container);
-    color: var(--smrt-color-error);
-  }
-
-  .file-upload__preview-actions {
+  .smrt-file-upload__preview-actions {
     display: flex;
     gap: var(--smrt-spacing-2);
     padding-top: var(--smrt-spacing-1);
   }
-
-  .file-upload__error {
+  .smrt-file-upload__error {
     padding: var(--smrt-spacing-2) var(--smrt-spacing-3);
+  }
+}
+
+@layer smrt.theme {
+  .smrt-file-upload__disabled {
+    opacity: 0.5;
+  }
+  .smrt-file-upload__dropzone {
+    border: 2px dashed var(--smrt-color-outline-variant);
+    border-radius: var(--smrt-radius-large);
+    text-align: center;
+    transition:
+      border-color var(--smrt-duration-short2, 150ms),
+      background var(--smrt-duration-short2, 150ms);
+  }
+  .smrt-file-upload__dropzone--active {
+    border-color: var(--smrt-color-primary);
+    background: var(--smrt-color-primary-container);
+  }
+  .smrt-file-upload__icon {
+    color: var(--smrt-color-outline);
+  }
+  .smrt-file-upload__message {
+    font: var(--smrt-typography-body-medium-font, 0.875rem/1.4 sans-serif);
+    color: var(--smrt-color-on-surface);
+  }
+  .smrt-file-upload__hint {
+    font: var(--smrt-typography-label-small-font, 500 0.6875rem/1 sans-serif);
+    color: var(--smrt-color-outline);
+  }
+  .smrt-file-upload__preview {
+    background: var(--smrt-color-surface-container-low);
+    border-radius: var(--smrt-radius-medium);
+    border: var(--smrt-hairline);
+  }
+  .smrt-file-upload__file {
+    border-radius: var(--smrt-radius-small);
+    background: var(--smrt-color-surface);
+  }
+  .smrt-file-upload__file-icon {
+    border-radius: var(--smrt-radius-small);
+    background: var(--smrt-color-surface-variant);
+    font: var(--smrt-typography-label-small-font, 500 0.6875rem/1 sans-serif);
+    color: var(--smrt-color-on-surface-variant);
+    text-transform: uppercase;
+  }
+  .smrt-file-upload__file-name {
+    font: var(--smrt-typography-body-small-font, 0.8125rem/1.4 sans-serif);
+    color: var(--smrt-color-on-surface);
+  }
+  .smrt-file-upload__file-size {
+    font: var(--smrt-typography-label-small-font, 500 0.6875rem/1 sans-serif);
+    color: var(--smrt-color-outline);
+  }
+  /* :global() pierces into the Button child's rendered <button> (see #1589). */
+  .smrt-file-upload__file :global([data-smrt-component="Button"]) {
+    background: none;
+    color: var(--smrt-color-on-surface-variant);
+    border-radius: var(--smrt-radius-full);
+    transition: background var(--smrt-duration-short2, 150ms);
+  }
+  .smrt-file-upload__file :global([data-smrt-component="Button"]:hover) {
+    background: var(--smrt-color-error-container);
+    color: var(--smrt-color-error);
+  }
+  .smrt-file-upload__error {
     border-radius: var(--smrt-radius-small);
     background: var(--smrt-color-error-container);
     color: var(--smrt-color-on-error-container);
     font: var(--smrt-typography-body-small-font, 0.8125rem/1.4 sans-serif);
   }
-
   @media (prefers-reduced-motion: reduce) {
-    .file-upload__drop-zone {
+    .smrt-file-upload__dropzone {
       transition: none;
     }
-
-    .file-upload__file :global(.file-upload__file-remove) {
+    .smrt-file-upload__file :global([data-smrt-component="Button"]) {
       transition: none;
     }
   }
 }
+
 </style>

@@ -34,13 +34,35 @@ let {
   class: className = '',
 }: Props = $props();
 </script>
-<div class="meter {className}" data-smrt-component="Meter"><div class="meter__header"><span>{label}</span>{#if showValue}<span>{formatValue(value)}</span>{/if}</div>
+<div class="smrt-meter__root {className}" data-smrt-component="Meter"><div class="smrt-meter__header" data-smrt-part="header"><span>{label}</span>{#if showValue}<span>{formatValue(value)}</span>{/if}</div>
   <meter {value} {min} {max} {low} {high} {optimum}>{formatValue(value)}</meter></div>
 <style>
 @layer smrt.reset, smrt.structure, smrt.theme;
-@layer smrt.theme {
-  .meter { display: grid; gap: var(--smrt-spacing-2); color: var(--smrt-color-on-surface); }
-  .meter__header { display: flex; justify-content: space-between; font: var(--smrt-typography-label-large-font); }
-  meter { width: 100%; height: .75rem; accent-color: var(--smrt-color-primary); }
+@layer smrt.structure {
+  .smrt-meter__root {
+    display: grid;
+    gap: var(--smrt-spacing-2);
+  }
+  .smrt-meter__header {
+    display: flex;
+    justify-content: space-between;
+  }
+  meter {
+    width: 100%;
+    height: .75rem;
+  }
 }
+
+@layer smrt.theme {
+  .smrt-meter__root {
+    color: var(--smrt-color-on-surface);
+  }
+  .smrt-meter__header {
+    font: var(--smrt-typography-label-large-font);
+  }
+  meter {
+    accent-color: var(--smrt-color-primary);
+  }
+}
+
 </style>

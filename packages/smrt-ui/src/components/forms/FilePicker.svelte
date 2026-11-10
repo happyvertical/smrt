@@ -106,24 +106,75 @@ useControlRegistration(() => {
   };
 });
 </script>
-<label bind:this={rootEl} for={resolvedId} class="file-picker {className}" class:dropzone class:dragging class:disabled
+<label bind:this={rootEl} for={resolvedId} class="smrt-file-picker__root {className}" class:smrt-file-picker__dropzone={dropzone} class:smrt-file-picker__dragging={dragging} class:smrt-file-picker__disabled={disabled}
   data-smrt-control={controlId} data-smrt-form={interactionContext?.formId}
   data-smrt-subject-type={interaction === false ? undefined : interaction?.subject?.type}
   data-smrt-subject-id={interaction === false ? undefined : interaction?.subject?.id}
   ondragenter={(event) => { event.preventDefault(); dragging = true; }}
   ondragover={(event) => event.preventDefault()} ondragleave={() => dragging = false} ondrop={handleDrop} data-smrt-component="FilePicker">
   <input bind:this={inputEl} id={resolvedId} type="file" {name} {accept} {multiple} {disabled} {required} onchange={handleChange} {...rest} />
-  <span class="label">{label}</span><span class="description">{files.length ? `${files.length} file${files.length === 1 ? '' : 's'} selected` : description}</span>
+  <span class="smrt-file-picker__label" data-smrt-part="label">{label}</span><span class="smrt-file-picker__description" data-smrt-part="description">{files.length ? `${files.length} file${files.length === 1 ? '' : 's'} selected` : description}</span>
 </label>
 <style>
 @layer smrt.reset, smrt.structure, smrt.theme;
-@layer smrt.theme {
-  .file-picker { display: inline-flex; flex-direction: column; gap: var(--smrt-spacing-1); padding: var(--smrt-spacing-3) var(--smrt-spacing-4); border: var(--smrt-hairline-strong); border-radius: var(--smrt-radius-small); background: var(--smrt-color-surface); color: var(--smrt-color-on-surface); cursor: pointer; }
-  .file-picker.dropzone { width: 100%; min-height: 8rem; align-items: center; justify-content: center; border-style: dashed; text-align: center; }
-  .file-picker.dragging { border-color: var(--smrt-color-primary); background: var(--smrt-color-primary-container); }
-  .file-picker.disabled { opacity: .5; cursor: not-allowed; } input { position: absolute; width: 1px; height: 1px; opacity: 0; }
-  input:focus-visible ~ .label { outline: var(--smrt-focus-ring-width) solid var(--smrt-focus-ring-color); outline-offset: var(--smrt-focus-ring-offset); }
-  .label { font: var(--smrt-typography-label-large-font); } .description { font: var(--smrt-typography-body-small-font); color: var(--smrt-color-on-surface-variant); }
-  .file-picker[data-smrt-highlighted='true'] { outline: 3px solid var(--smrt-color-tertiary); outline-offset: 4px; }
+@layer smrt.structure {
+  .smrt-file-picker__root {
+    display: inline-flex;
+    flex-direction: column;
+    gap: var(--smrt-spacing-1);
+    padding: var(--smrt-spacing-3) var(--smrt-spacing-4);
+    cursor: pointer;
+  }
+  .smrt-file-picker__root.smrt-file-picker__dropzone {
+    width: 100%;
+    min-height: 8rem;
+    align-items: center;
+    justify-content: center;
+  }
+  .smrt-file-picker__root.smrt-file-picker__disabled {
+    cursor: not-allowed;
+  }
+  input {
+    position: absolute;
+    width: 1px;
+    height: 1px;
+    opacity: 0;
+  }
 }
+
+@layer smrt.theme {
+  .smrt-file-picker__root {
+    border: var(--smrt-hairline-strong);
+    border-radius: var(--smrt-radius-small);
+    background: var(--smrt-color-surface);
+    color: var(--smrt-color-on-surface);
+  }
+  .smrt-file-picker__root.smrt-file-picker__dropzone {
+    border-style: dashed;
+    text-align: center;
+  }
+  .smrt-file-picker__root.smrt-file-picker__dragging {
+    border-color: var(--smrt-color-primary);
+    background: var(--smrt-color-primary-container);
+  }
+  .smrt-file-picker__root.smrt-file-picker__disabled {
+    opacity: .5;
+  }
+  input:focus-visible ~ .smrt-file-picker__label {
+    outline: var(--smrt-focus-ring-width) solid var(--smrt-focus-ring-color);
+    outline-offset: var(--smrt-focus-ring-offset);
+  }
+  .smrt-file-picker__label {
+    font: var(--smrt-typography-label-large-font);
+  }
+  .smrt-file-picker__description {
+    font: var(--smrt-typography-body-small-font);
+    color: var(--smrt-color-on-surface-variant);
+  }
+  .smrt-file-picker__root[data-smrt-highlighted='true'] {
+    outline: 3px solid var(--smrt-color-tertiary);
+    outline-offset: 4px;
+  }
+}
+
 </style>

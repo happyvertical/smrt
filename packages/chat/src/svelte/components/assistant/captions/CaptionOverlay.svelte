@@ -51,14 +51,14 @@ $effect(() => {
 });
 </script>
 
-<section bind:this={group} class="caption-overlay" aria-label={label} data-smrt-component="CaptionOverlay">
-  <div bind:this={viewport} class="caption-overlay-viewport" onscroll={updatePosition}>
-    <div bind:this={content} class="caption-overlay-content">
+<section bind:this={group} class="smrt-caption-overlay__root" aria-label={label} data-smrt-component="CaptionOverlay">
+  <div bind:this={viewport} class="smrt-caption-overlay__viewport" data-smrt-part="body" onscroll={updatePosition}>
+    <div bind:this={content} class="smrt-caption-overlay__list" data-smrt-part="list">
       {@render children()}
     </div>
   </div>
   {#if overflowing}
-    <div class="caption-overlay-controls">
+    <div class="smrt-caption-overlay__controls" data-smrt-part="actions">
       <Button size="sm" disabled={atStart} onclick={() => scroll(-1)}>{t(M['chat.caption_overlay.scroll_up'])}</Button>
       <Button size="sm" disabled={atEnd} onclick={() => scroll(1)}>{t(M['chat.caption_overlay.scroll_down'])}</Button>
     </div>
@@ -67,8 +67,8 @@ $effect(() => {
 
 <style>
 @layer smrt.reset, smrt.structure, smrt.theme;
-@layer smrt.theme {
-  .caption-overlay {
+@layer smrt.structure {
+  .smrt-caption-overlay__root {
     position: fixed;
     z-index: var(--smrt-z-index-sticky, 1100);
     inset-inline-start: max(var(--smrt-spacing-4, 1rem), env(safe-area-inset-left));
@@ -82,27 +82,33 @@ $effect(() => {
     margin-inline: auto;
     overflow: hidden;
   }
-
-  .caption-overlay:not(:has(.caption-overlay-content > *)) { display: none; }
-
-  .caption-overlay-viewport {
+  .smrt-caption-overlay__root:not(:has(.smrt-caption-overlay__list > *)) {
+    display: none;
+  }
+  .smrt-caption-overlay__viewport {
     min-block-size: 0;
     overflow: auto;
     overscroll-behavior: contain;
-    scroll-behavior: auto;
   }
-
-  .caption-overlay-content {
+  .smrt-caption-overlay__list {
     display: grid;
     gap: var(--smrt-spacing-3, .75rem);
   }
-
-  .caption-overlay-controls {
+  .smrt-caption-overlay__controls {
     display: flex;
     justify-content: space-between;
     gap: var(--smrt-spacing-3, .75rem);
     padding-block-start: var(--smrt-spacing-2, .5rem);
+  }
+}
+
+@layer smrt.theme {
+  .smrt-caption-overlay__viewport {
+    scroll-behavior: auto;
+  }
+  .smrt-caption-overlay__controls {
     background: var(--smrt-color-surface, Canvas);
   }
 }
+
 </style>

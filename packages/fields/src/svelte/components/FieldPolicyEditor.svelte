@@ -291,10 +291,10 @@ async function reset(fieldName: string): Promise<void> {
 </script>
 
 <Modal open={true} onClose={onclose} title="Field settings" size="xl" ariaDescribedBy="field-policy-editor-description">
-<div class="field-policy-editor">
+<div class="smrt-field-policy-editor__root" data-smrt-part="body">
   <p id="field-policy-editor-description">Overrides are sparse. Reset removes this scope’s row and inherits the effective policy.</p>
 
-  <div class="field-policy-editor__tabs" role="tablist" aria-label="Field policy scope">
+  <div class="smrt-field-policy-editor__tabs" data-smrt-part="list" role="tablist" aria-label="Field policy scope">
     {#if editorState.capabilities.manage}
       <Button
         type="button"
@@ -326,7 +326,7 @@ async function reset(fieldName: string): Promise<void> {
   </div>
 
   {#if error}
-    <p class="field-policy-editor__error" role="alert">{error}</p>
+    <p class="smrt-field-policy-editor__error" data-smrt-part="error" role="alert">{error}</p>
   {/if}
 
   <div
@@ -340,13 +340,13 @@ async function reset(fieldName: string): Promise<void> {
       {@const defaultScope = scope}
       {@const draft = draftFor(fieldName)}
       {@const InputComponent = inputFor(fieldName)}
-      <fieldset class="field-policy-editor__field" disabled={userLocked(fieldName) || saving === fieldName}>
+      <fieldset class="smrt-field-policy-editor__field" data-smrt-part="field" disabled={userLocked(fieldName) || saving === fieldName}>
         <legend>{policyField.label ?? fieldName}</legend>
         {#if userLocked(fieldName)}
-          <p class="field-policy-editor__notice">This field is locked by your organization and cannot be personalized.</p>
+          <p class="smrt-field-policy-editor__notice" data-smrt-part="meta">This field is locked by your organization and cannot be personalized.</p>
         {/if}
         {#if policyField.required}
-          <p id={`${fieldName}-required-invariant`} class="field-policy-editor__notice">
+          <p id={`${fieldName}-required-invariant`} class="smrt-field-policy-editor__notice" data-smrt-part="meta">
             Required fields without a usable default must remain Basic.
           </p>
         {/if}
@@ -364,7 +364,7 @@ async function reset(fieldName: string): Promise<void> {
           </Select>
         </label>
         {#if invalidRequiredDemotion(fieldName)}
-          <p class="field-policy-editor__error" role="status">Add a usable default before making this required field advanced or hidden.</p>
+          <p class="smrt-field-policy-editor__error" data-smrt-part="error" role="status">Add a usable default before making this required field advanced or hidden.</p>
         {/if}
         <Toggle
           checked={draft.defaultEnabled}
@@ -390,7 +390,7 @@ async function reset(fieldName: string): Promise<void> {
             />
           {/key}
           {#if defaultSerializationError(fieldName)}
-            <p class="field-policy-editor__error" role="status">
+            <p class="smrt-field-policy-editor__error" data-smrt-part="error" role="status">
               {defaultSerializationError(fieldName)}
             </p>
           {/if}
@@ -402,7 +402,7 @@ async function reset(fieldName: string): Promise<void> {
           <Toggle checked={draft.locked === true} ariaLabel={`Lock ${policyField.label ?? fieldName}`} onchange={(value) => setDraft(fieldName, { locked: value ? true : null })} />
           <span>Lock personal overrides</span>
         {/if}
-        <div class="field-policy-editor__actions">
+        <div class="smrt-field-policy-editor__actions" data-smrt-part="actions">
           <Button type="button" onclick={() => save(fieldName)} disabled={invalidRequiredDemotion(fieldName) || !!defaultSerializationError(fieldName)}>{saving === fieldName ? 'Saving…' : 'Save'}</Button>
           {#if rowForScope(editorState, fieldName, scope)}
             <Button type="button" variant="ghost" onclick={() => reset(fieldName)}>Reset to inherited</Button>
@@ -416,12 +416,46 @@ async function reset(fieldName: string): Promise<void> {
 
 <style>
 @layer smrt.reset, smrt.structure, smrt.theme;
-@layer smrt.theme {
-  .field-policy-editor { background: var(--smrt-color-surface, white); color: var(--smrt-color-on-surface); display: grid; gap: var(--smrt-spacing-4, 1rem); max-block-size: min(90vh, 56rem); overflow: auto; padding: var(--smrt-spacing-5, 1.25rem); }
-  .field-policy-editor__actions, .field-policy-editor__tabs { align-items: center; display: flex; gap: var(--smrt-spacing-2, .5rem); justify-content: space-between; }
-  .field-policy-editor__field { border: var(--smrt-hairline-strong); display: grid; gap: var(--smrt-spacing-3, .75rem); margin: 0 0 var(--smrt-spacing-3, .75rem); padding: var(--smrt-spacing-3, .75rem); }
-  .field-policy-editor__field label { display: grid; gap: var(--smrt-spacing-1, .25rem); }
-  .field-policy-editor__error { color: var(--smrt-color-error); }
-  .field-policy-editor__notice { margin: 0; }
+@layer smrt.structure {
+  .smrt-field-policy-editor__root {
+    display: grid;
+    gap: var(--smrt-spacing-4, 1rem);
+    max-block-size: min(90vh, 56rem);
+    overflow: auto;
+    padding: var(--smrt-spacing-5, 1.25rem);
+  }
+  .smrt-field-policy-editor__actions, .smrt-field-policy-editor__tabs {
+    align-items: center;
+    display: flex;
+    gap: var(--smrt-spacing-2, .5rem);
+    justify-content: space-between;
+  }
+  .smrt-field-policy-editor__field {
+    display: grid;
+    gap: var(--smrt-spacing-3, .75rem);
+    margin: 0 0 var(--smrt-spacing-3, .75rem);
+    padding: var(--smrt-spacing-3, .75rem);
+  }
+  .smrt-field-policy-editor__field label {
+    display: grid;
+    gap: var(--smrt-spacing-1, .25rem);
+  }
+  .smrt-field-policy-editor__notice {
+    margin: 0;
+  }
 }
+
+@layer smrt.theme {
+  .smrt-field-policy-editor__root {
+    background: var(--smrt-color-surface, white);
+    color: var(--smrt-color-on-surface);
+  }
+  .smrt-field-policy-editor__field {
+    border: var(--smrt-hairline-strong);
+  }
+  .smrt-field-policy-editor__error {
+    color: var(--smrt-color-error);
+  }
+}
+
 </style>

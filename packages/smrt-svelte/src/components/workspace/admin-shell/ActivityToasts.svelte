@@ -62,7 +62,7 @@ onDestroy(() => {
 {#if toasts.length > 0}
   <div class="smrt-activity-toasts" aria-live="polite" data-smrt-component="ActivityToasts">
     {#each toasts as toast (toast.id)}
-      <article class="smrt-activity-toast" data-status={toast.activity.status}>
+      <article class="smrt-activity-toast" data-status={toast.activity.status} data-smrt-part="item">
         <div>
           <strong>{toast.activity.label}</strong>
           <span>{toast.activity.status}</span>
@@ -82,7 +82,8 @@ onDestroy(() => {
 
 <style>
 @layer smrt.reset, smrt.structure, smrt.theme;
-@layer smrt.theme {
+
+@layer smrt.structure {
   .smrt-activity-toasts {
     position: fixed;
     inset-block-start: var(--smrt-spacing-4);
@@ -92,46 +93,45 @@ onDestroy(() => {
     gap: var(--smrt-spacing-3);
     inline-size: min(24rem, calc(100vw - var(--smrt-spacing-8)));
   }
-
   .smrt-activity-toast {
     display: flex;
     align-items: center;
     justify-content: space-between;
     gap: var(--smrt-spacing-3);
+    padding: var(--smrt-spacing-3);
+  }
+  .smrt-activity-toast div {
+    display: grid;
+    gap: var(--smrt-spacing-1);
+    min-width: 0;
+  }
+  .smrt-activity-toast strong,
+  .smrt-activity-toast span {
+    overflow-wrap: anywhere;
+  }
+}
+
+@layer smrt.theme {
+  .smrt-activity-toast {
     border: var(--smrt-hairline);
     border-radius: var(--smrt-radius-medium);
     background: var(--smrt-glass-surface-strong);
     -webkit-backdrop-filter: blur(var(--smrt-glass-blur)) saturate(var(--smrt-glass-saturation));
     backdrop-filter: blur(var(--smrt-glass-blur)) saturate(var(--smrt-glass-saturation));
     color: var(--smrt-color-on-surface);
-    padding: var(--smrt-spacing-3);
     box-shadow: var(--smrt-elevation-3), var(--smrt-inset-highlight);
   }
-
-  .smrt-activity-toast div {
-    display: grid;
-    gap: var(--smrt-spacing-1);
-    min-width: 0;
-  }
-
-  .smrt-activity-toast strong,
-  .smrt-activity-toast span {
-    overflow-wrap: anywhere;
-  }
-
   .smrt-activity-toast span {
     color: var(--smrt-color-on-surface-variant);
     font-size: var(--smrt-typography-body-small-size);
     text-transform: uppercase;
   }
-
   @media (prefers-reduced-motion: no-preference) {
     .smrt-activity-toast {
       animation: smrt-activity-toast-in var(--smrt-duration-short3)
         var(--smrt-easing-emphasized-decelerate);
     }
   }
-
   @keyframes smrt-activity-toast-in {
     from {
       opacity: 0;

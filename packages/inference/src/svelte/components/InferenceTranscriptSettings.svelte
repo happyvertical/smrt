@@ -60,20 +60,20 @@ function revert(): void {
 }
 </script>
 
-<div class="its" data-testid="inference-transcripts">
+<div class="smrt-inference-transcript-settings__root" data-testid="inference-transcripts" data-smrt-component="InferenceTranscriptSettings">
   {#if settings.envEnabled !== null && settings.envEnabled !== undefined}
-    <p class="its-hint" data-testid="inference-transcripts-env">
+    <p class="smrt-inference-transcript-settings__hint" data-smrt-part="description" data-testid="inference-transcripts-env">
       SMRT_INFERENCE_TRANSCRIPTS turns transcripts {settings.envEnabled ? 'on' : 'off'} over this setting.
     </p>
   {/if}
   {#if editable}
-    <form class="its-form" onsubmit={save} data-testid="inference-transcripts-form">
+    <form class="smrt-inference-transcript-settings__form" data-smrt-part="field" onsubmit={save} data-testid="inference-transcripts-form">
       <label>
         <input type="checkbox" name="enabled" checked={settings.enabled} disabled={busy} />
         Store transcripts
       </label>
       <label>
-        <span class="its-hint">Success sample rate (0–1)</span>
+        <span class="smrt-inference-transcript-settings__hint" data-smrt-part="description">Success sample rate (0–1)</span>
         <input
           type="number"
           name="sample"
@@ -86,7 +86,7 @@ function revert(): void {
         />
       </label>
       <label>
-        <span class="its-hint">Max bytes per call</span>
+        <span class="smrt-inference-transcript-settings__hint" data-smrt-part="description">Max bytes per call</span>
         <input
           type="number"
           name="maxBytes"
@@ -107,7 +107,7 @@ function revert(): void {
       {/if}
     </form>
   {/if}
-  <dl class="its-values">
+  <dl class="smrt-inference-transcript-settings__values" data-smrt-part="list">
     {#if !editable}
       <dt>Stored</dt>
       <dd data-testid="inference-transcripts-enabled">{settings.enabled ? 'On' : 'Off'}</dd>
@@ -124,42 +124,48 @@ function revert(): void {
     {/if}
   </dl>
   {#if settings.promptOverrides && settings.promptOverrides.length > 0}
-    <p class="its-hint">
+    <p class="smrt-inference-transcript-settings__hint" data-smrt-part="description">
       Config sets its own sample rate for {settings.promptOverrides.length} prompt key(s).
     </p>
   {/if}
   {#if !editable}
-    <p class="its-hint">App-wide setting; tenants cannot change it.</p>
+    <p class="smrt-inference-transcript-settings__hint" data-smrt-part="description">App-wide setting; tenants cannot change it.</p>
   {/if}
 </div>
 
 <style>
 @layer smrt.reset, smrt.structure, smrt.theme;
-@layer smrt.theme {
-  .its {
+@layer smrt.structure {
+  .smrt-inference-transcript-settings__root {
     display: flex;
     flex-direction: column;
     gap: 0.5rem;
   }
-  .its-form {
+  .smrt-inference-transcript-settings__form {
     display: flex;
     gap: 0.75rem;
     align-items: flex-end;
     flex-wrap: wrap;
   }
-  .its-values {
+  .smrt-inference-transcript-settings__values {
     display: grid;
     grid-template-columns: max-content 1fr;
     gap: 0.25rem 0.75rem;
     margin: 0;
   }
-  .its-values dd {
+  .smrt-inference-transcript-settings__values dd {
     margin: 0;
   }
-  .its-hint {
+  .smrt-inference-transcript-settings__hint {
     margin: 0;
+  }
+}
+
+@layer smrt.theme {
+  .smrt-inference-transcript-settings__hint {
     font-size: 0.8125rem;
     color: var(--smrt-color-on-surface-variant);
   }
 }
+
 </style>

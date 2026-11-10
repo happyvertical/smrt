@@ -100,7 +100,9 @@ describe('AssistantDock message format (#4505)', () => {
     const { view } = dock([message('a1', 'assistant', ANSWER)]);
     expect(await screen.findByText(ANSWER)).toBeTruthy();
     expect(view.container.querySelector('strong')).toBeNull();
-    expect(view.container.querySelector('.assistant-dock-markdown')).toBeNull();
+    expect(
+      view.container.querySelector('div[data-smrt-part="message"]'),
+    ).toBeNull();
   });
 
   it('renders assistant Markdown escaped, and leaves user text plain', async () => {
@@ -112,10 +114,11 @@ describe('AssistantDock message format (#4505)', () => {
       { messageFormat: 'markdown' },
     );
     await until(
-      () => view.container.querySelector('.assistant-dock-markdown') !== null,
+      () =>
+        view.container.querySelector('div[data-smrt-part="message"]') !== null,
     );
     const answer = view.container.querySelector(
-      '.assistant-dock-markdown',
+      'div[data-smrt-part="message"]',
     ) as HTMLElement;
     expect(answer.querySelector('strong')?.textContent).toBe('bold');
     expect(answer.querySelector('code')?.textContent).toBe('code');
@@ -124,7 +127,7 @@ describe('AssistantDock message format (#4505)', () => {
     expect(answer.textContent).toContain('<img src=x onerror="alert(1)">');
     expect(screen.getByText('Is **this** bold?')).toBeTruthy();
     expect(
-      view.container.querySelectorAll('.assistant-dock-markdown'),
+      view.container.querySelectorAll('div[data-smrt-part="message"]'),
     ).toHaveLength(1);
   });
 
@@ -139,11 +142,11 @@ describe('AssistantDock message format (#4505)', () => {
     const sent = controller()?.send('hi');
     await until(
       () =>
-        view.container.querySelector('.assistant-dock-streaming strong') !==
+        view.container.querySelector('[data-smrt-part="status"] strong') !==
         null,
     );
     expect(
-      view.container.querySelector('.assistant-dock-streaming strong')
+      view.container.querySelector('[data-smrt-part="status"] strong')
         ?.textContent,
     ).toBe('answer');
     release();
@@ -168,7 +171,9 @@ describe('AssistantDock message format (#4505)', () => {
     );
     expect(await screen.findByText('stored')).toBeTruthy();
     // The hook wins over messageFormat; user messages keep the default.
-    expect(view.container.querySelector('.assistant-dock-markdown')).toBeNull();
+    expect(
+      view.container.querySelector('div[data-smrt-part="message"]'),
+    ).toBeNull();
     expect(screen.getByText('question')).toBeTruthy();
     await until(() => controller()?.activeThreadId === 't1');
     const sent = controller()?.send('hi');

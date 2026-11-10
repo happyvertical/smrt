@@ -308,12 +308,12 @@ function handleBlur() {
 }
 </script>
 
-<div class="smrt-money" data-smrt-component="MoneyInput">
+<div class="smrt-money-input__root" data-smrt-component="MoneyInput">
   {#if label}
     <FieldLabel id={labelId} for={name} {label} {required} />
   {/if}
 
-  <div class="input-wrapper">
+  <div class="smrt-money-input__input-wrapper" data-smrt-part="field">
     <input
       id={name}
         aria-labelledby={label ? labelId : undefined}
@@ -324,25 +324,26 @@ function handleBlur() {
       value={displayValue}
       {disabled}
       {required}
-      class="smrt-input"
-      class:smrt-mode={isSmrt}
-      class:invalid={showInvalid}
+      class="smrt-money-input__input"
+      data-smrt-part="input"
+      class:smrt-money-input__mode={isSmrt}
+      class:smrt-money-input__invalid={showInvalid}
       aria-invalid={showInvalid ? 'true' : undefined}
       aria-describedby={showInvalid ? `${name}-error` : undefined}
       oninput={handleInput}
       onfocus={handleFocus}
       onblur={handleBlur}
     />
-    <span class="currency-code">{currency}</span>
+    <span class="smrt-money-input__currency-code" data-smrt-part="unit">{currency}</span>
   </div>
 
   <!-- Hidden input for form submission with cents value -->
   <input type="hidden" name="{name}_cents" value={value ?? ''} />
 
   {#if error}
-    <div id={`${name}-error`} class="validation-error" role="alert">{error}</div>
+    <div id={`${name}-error`} class="smrt-money-input__validation-error" data-smrt-part="error" role="alert">{error}</div>
   {:else if showInvalid && !isInRange}
-    <div id={`${name}-error`} class="validation-error" role="alert">
+    <div id={`${name}-error`} class="smrt-money-input__validation-error" data-smrt-part="error" role="alert">
       {#if min !== undefined && value !== null && value < min}
         {t(M['ui.money_input.value_at_least'], { min: `${currencySymbol}${(min / 100).toFixed(2)}` })}
       {:else if max !== undefined && value !== null && value > max}
@@ -354,31 +355,41 @@ function handleBlur() {
 
 <style>
 @layer smrt.reset, smrt.structure, smrt.theme;
-@layer smrt.theme {
-  .smrt-money {
+@layer smrt.structure {
+  .smrt-money-input__root {
     display: flex;
     flex-direction: column;
     gap: var(--smrt-spacing-1);
   }
-
-  .input-wrapper {
+  .smrt-money-input__input-wrapper {
     display: flex;
     position: relative;
     align-items: center;
   }
-
-  .currency-code {
+  .smrt-money-input__currency-code {
     position: absolute;
     right: 12px;
+    pointer-events: none;
+  }
+  .smrt-money-input__input {
+    flex: 1;
+    padding: var(--smrt-spacing-2) var(--smrt-spacing-12) var(--smrt-spacing-2) var(--smrt-spacing-3);
+  }
+  .smrt-money-input__input:disabled {
+    cursor: not-allowed;
+  }
+  .smrt-money-input__validation-error {
+    margin-top: var(--smrt-spacing-1);
+  }
+}
+
+@layer smrt.theme {
+  .smrt-money-input__currency-code {
     color: var(--smrt-color-on-surface-variant);
     font-size: var(--smrt-typography-label-medium-size, 0.75rem);
     text-transform: uppercase;
-    pointer-events: none;
   }
-
-  .smrt-input {
-    flex: 1;
-    padding: var(--smrt-spacing-2) var(--smrt-spacing-12) var(--smrt-spacing-2) var(--smrt-spacing-3);
+  .smrt-money-input__input {
     font-size: var(--smrt-typography-body-large-size, 1rem);
     border: var(--smrt-hairline);
     border-radius: var(--smrt-radius-small);
@@ -386,35 +397,28 @@ function handleBlur() {
     transition: all var(--smrt-duration-short2, 150ms) var(--smrt-easing-standard, ease);
     text-align: right;
   }
-
-  .smrt-input:focus {
+  .smrt-money-input__input:focus {
     outline: none;
     border-color: var(--smrt-color-primary);
     box-shadow: 0 0 0 3px color-mix(in srgb, var(--smrt-color-primary) 10%, transparent);
   }
-
-  .smrt-input:disabled {
+  .smrt-money-input__input:disabled {
     background: var(--smrt-color-surface-container-high);
-    cursor: not-allowed;
   }
-
-  .smrt-input.smrt-mode {
+  .smrt-money-input__input.smrt-money-input__mode {
     border-color: var(--smrt-color-tertiary);
   }
-
-  .smrt-input.invalid {
+  .smrt-money-input__input.smrt-money-input__invalid {
     border-color: var(--smrt-color-error);
   }
-
-  .smrt-input.invalid:focus {
+  .smrt-money-input__input.smrt-money-input__invalid:focus {
     border-color: var(--smrt-color-error);
     box-shadow: 0 0 0 3px color-mix(in srgb, var(--smrt-color-error) 10%, transparent);
   }
-
-  .validation-error {
+  .smrt-money-input__validation-error {
     font-size: var(--smrt-typography-body-small-size, 0.75rem);
     color: var(--smrt-color-error);
-    margin-top: var(--smrt-spacing-1);
   }
 }
+
 </style>

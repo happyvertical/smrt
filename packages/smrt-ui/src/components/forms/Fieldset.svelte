@@ -30,15 +30,47 @@ const descriptionId = $derived(
 );
 const errorId = $derived(error ? `fieldset-${instanceId}-error` : undefined);
 </script>
-<fieldset class="fieldset {className}" aria-describedby={[descriptionId, errorId].filter(Boolean).join(' ') || undefined} {...rest} data-smrt-component="Fieldset">
-  <legend>{legend}</legend>{#if description}<p id={descriptionId} class="description">{description}</p>{/if}<div class="content" class:content--stack={stack}>{@render children()}</div>{#if error}<p id={errorId} class="error" role="alert">{error}</p>{/if}
+<fieldset class="smrt-fieldset__root {className}" aria-describedby={[descriptionId, errorId].filter(Boolean).join(' ') || undefined} {...rest} data-smrt-component="Fieldset">
+  <legend>{legend}</legend>{#if description}<p id={descriptionId} class="smrt-fieldset__description" data-smrt-part="description">{description}</p>{/if}<div class="smrt-fieldset__body" class:smrt-fieldset__body--stack={stack} data-smrt-part="body">{@render children()}</div>{#if error}<p id={errorId} class="smrt-fieldset__error" data-smrt-part="error" role="alert">{error}</p>{/if}
 </fieldset>
 <style>
 @layer smrt.reset, smrt.structure, smrt.theme;
-@layer smrt.theme {
-  .fieldset { margin: 0; padding: var(--smrt-spacing-4); border: var(--smrt-hairline); border-radius: var(--smrt-radius-medium); }
-  legend { padding: 0 var(--smrt-spacing-2); color: var(--smrt-color-on-surface); font: var(--smrt-typography-title-small-font); }
-  .content--stack { display: grid; gap: var(--smrt-spacing-4); }
-  .description, .error { margin: 0 0 var(--smrt-spacing-3); font: var(--smrt-typography-body-small-font); color: var(--smrt-color-on-surface-variant); } .error { margin: var(--smrt-spacing-3) 0 0; color: var(--smrt-color-error); }
+@layer smrt.structure {
+  .smrt-fieldset__root {
+    margin: 0;
+    padding: var(--smrt-spacing-4);
+  }
+  legend {
+    padding: 0 var(--smrt-spacing-2);
+  }
+  .smrt-fieldset__body--stack {
+    display: grid;
+    gap: var(--smrt-spacing-4);
+  }
+  .smrt-fieldset__description, .smrt-fieldset__error {
+    margin: 0 0 var(--smrt-spacing-3);
+  }
+  .smrt-fieldset__error {
+    margin: var(--smrt-spacing-3) 0 0;
+  }
 }
+
+@layer smrt.theme {
+  .smrt-fieldset__root {
+    border: var(--smrt-hairline);
+    border-radius: var(--smrt-radius-medium);
+  }
+  legend {
+    color: var(--smrt-color-on-surface);
+    font: var(--smrt-typography-title-small-font);
+  }
+  .smrt-fieldset__description, .smrt-fieldset__error {
+    font: var(--smrt-typography-body-small-font);
+    color: var(--smrt-color-on-surface-variant);
+  }
+  .smrt-fieldset__error {
+    color: var(--smrt-color-error);
+  }
+}
+
 </style>

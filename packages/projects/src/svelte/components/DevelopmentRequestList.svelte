@@ -54,22 +54,22 @@ function formatWhen(value?: Date | string): string {
 </script>
 
 {#if visibleRequests.length === 0}
-  <div class="empty-state" data-smrt-component="DevelopmentRequestList">
+  <div class="smrt-development-request-list__empty" data-smrt-component="DevelopmentRequestList">
     <p>{emptyMessage}</p>
   </div>
 {:else}
-  <div class="request-list" data-smrt-component="DevelopmentRequestList">
+  <div class="smrt-development-request-list__root" data-smrt-component="DevelopmentRequestList">
     {#each visibleRequests as request (request.id)}
-      <article class="request-card">
+      <article class="smrt-development-request-list__card" data-smrt-part="item">
         <header>
           <div>
-            <p class="eyebrow">{request.type}</p>
+            <p class="smrt-development-request-list__eyebrow" data-smrt-part="label">{request.type}</p>
             <h3>{request.description}</h3>
           </div>
-          <span class="status status-{request.status}">{request.status}</span>
+          <span class="smrt-development-request-list__status smrt-development-request-list__status-{request.status}" data-smrt-part="status">{request.status}</span>
         </header>
 
-        <dl class="meta">
+        <dl class="smrt-development-request-list__meta" data-smrt-part="meta">
           <div>
             <dt>Visibility</dt>
             <dd>{request.visibility ?? 'requester'}</dd>
@@ -93,11 +93,11 @@ function formatWhen(value?: Date | string): string {
         </dl>
 
         {#if request.discussion}
-          <p class="discussion">{request.discussion}</p>
+          <p class="smrt-development-request-list__discussion" data-smrt-part="body">{request.discussion}</p>
         {/if}
 
         {#if request.evidence?.length}
-          <ul class="evidence-list">
+          <ul class="smrt-development-request-list__evidence-list" data-smrt-part="list">
             {#each request.evidence as item, index (item.url + index)}
               <li>
                 <a href={item.url}>{item.label ?? item.url}</a>
@@ -112,20 +112,65 @@ function formatWhen(value?: Date | string): string {
 
 <style>
 @layer smrt.reset, smrt.structure, smrt.theme;
-@layer smrt.theme {
-  .empty-state {
+@layer smrt.structure {
+  .smrt-development-request-list__empty {
     padding: 2rem 1rem;
-    text-align: center;
-    color: var(--smrt-color-on-surface-variant);
   }
-
-  .request-list {
+  .smrt-development-request-list__root {
     display: grid;
     gap: 1rem;
   }
-
-  .request-card {
+  .smrt-development-request-list__card {
     padding: 1rem;
+  }
+  header {
+    display: flex;
+    justify-content: space-between;
+    gap: 1rem;
+    align-items: start;
+  }
+  h3 {
+    margin: 0.15rem 0 0;
+  }
+  .smrt-development-request-list__eyebrow {
+    margin: 0;
+  }
+  .smrt-development-request-list__status {
+    padding: 0.3rem 0.65rem;
+    white-space: nowrap;
+  }
+  .smrt-development-request-list__meta {
+    display: grid;
+    gap: 0.75rem;
+    grid-template-columns: repeat(auto-fit, minmax(8rem, 1fr));
+    margin: 1rem 0 0;
+  }
+  .smrt-development-request-list__meta div {
+    margin: 0;
+  }
+  dd {
+    margin: 0.15rem 0 0;
+  }
+  .smrt-development-request-list__discussion {
+    margin: 1rem 0 0;
+  }
+  .smrt-development-request-list__evidence-list {
+    margin: 0.85rem 0 0;
+    padding-left: 1.2rem;
+  }
+  @media (max-width: 700px) {
+    header {
+      flex-direction: column;
+    }
+  }
+}
+
+@layer smrt.theme {
+  .smrt-development-request-list__empty {
+    text-align: center;
+    color: var(--smrt-color-on-surface-variant);
+  }
+  .smrt-development-request-list__card {
     border: var(--smrt-hairline);
     border-radius: var(--smrt-radius-large);
     background: linear-gradient(
@@ -134,91 +179,45 @@ function formatWhen(value?: Date | string): string {
       var(--smrt-color-surface-container-lowest)
     );
   }
-
-  header {
-    display: flex;
-    justify-content: space-between;
-    gap: 1rem;
-    align-items: start;
-  }
-
   h3 {
-    margin: 0.15rem 0 0;
     font-size: 1rem;
   }
-
-  .eyebrow {
-    margin: 0;
+  .smrt-development-request-list__eyebrow {
     text-transform: uppercase;
     letter-spacing: 0.08em;
     font-size: 0.75rem;
     color: var(--smrt-color-on-surface-variant);
   }
-
-  .status {
-    padding: 0.3rem 0.65rem;
+  .smrt-development-request-list__status {
     border-radius: 999px;
     background: var(--smrt-color-primary-container);
     color: var(--smrt-color-on-primary-container);
     font-size: 0.82rem;
-    white-space: nowrap;
   }
-
-  .status-completed {
+  .smrt-development-request-list__status-completed {
     background: var(--smrt-color-success-container);
     color: var(--smrt-color-on-success-container);
   }
-
-  .status-declined {
+  .smrt-development-request-list__status-declined {
     background: var(--smrt-color-error-container);
     color: var(--smrt-color-on-error-container);
   }
-
-  .status-in_progress {
+  .smrt-development-request-list__status-in_progress {
     background: var(--smrt-color-warning-container);
     color: var(--smrt-color-on-warning-container);
   }
-
-  .meta {
-    display: grid;
-    gap: 0.75rem;
-    grid-template-columns: repeat(auto-fit, minmax(8rem, 1fr));
-    margin: 1rem 0 0;
-  }
-
-  .meta div {
-    margin: 0;
-  }
-
   dt {
     font-size: 0.75rem;
     text-transform: uppercase;
     letter-spacing: 0.06em;
     color: var(--smrt-color-on-surface-variant);
   }
-
-  dd {
-    margin: 0.15rem 0 0;
-  }
-
-  .discussion {
-    margin: 1rem 0 0;
+  .smrt-development-request-list__discussion {
     color: var(--smrt-color-on-surface-variant);
   }
-
-  .evidence-list {
-    margin: 0.85rem 0 0;
-    padding-left: 1.2rem;
-  }
-
   a {
     color: var(--smrt-color-primary);
   }
-
-  @media (max-width: 700px) {
-    header {
-      flex-direction: column;
-    }
-  }
 }
+
 </style>

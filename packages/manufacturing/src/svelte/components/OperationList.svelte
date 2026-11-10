@@ -40,13 +40,13 @@ const showActions = $derived(Boolean(onretire || onreinstate));
 </script>
 
 {#if operations.length === 0}
-  <p class="operation-list-empty" data-smrt-component="OperationList">
+  <p class="smrt-operation-list__empty" data-smrt-component="OperationList">
     {emptyMessage ?? t(M['manufacturing.operation_list.empty'])}
   </p>
 {:else}
-  <div class="operation-list-scroll" data-smrt-component="OperationList">
-    <table class="operation-list">
-      <caption class="operation-list-caption">{t(M['manufacturing.operation_list.caption'])}</caption>
+  <div class="smrt-operation-list__root" data-smrt-component="OperationList">
+    <table class="smrt-operation-list__table" data-smrt-part="table">
+      <caption class="smrt-operation-list__caption" data-smrt-part="caption">{t(M['manufacturing.operation_list.caption'])}</caption>
       <thead>
         <tr>
           <th scope="col">{t(M['manufacturing.operation_list.code'])}</th>
@@ -61,7 +61,7 @@ const showActions = $derived(Boolean(onretire || onreinstate));
       <tbody>
         {#each operations as operation (operation.id)}
           <tr>
-            <th scope="row" class="operation-list-code">{operation.code}</th>
+            <th scope="row" class="smrt-operation-list__code" data-smrt-part="body">{operation.code}</th>
             <td>
               {#if onselect}
                 <Button
@@ -80,7 +80,7 @@ const showActions = $derived(Boolean(onretire || onreinstate));
               {#if operation.category}
                 {operation.category}
               {:else}
-                <span class="operation-list-none">{t(M['manufacturing.operation_list.none'])}</span>
+                <span class="smrt-operation-list__none" data-smrt-part="empty">{t(M['manufacturing.operation_list.none'])}</span>
               {/if}
             </td>
             <td>
@@ -124,17 +124,14 @@ const showActions = $derived(Boolean(onretire || onreinstate));
 
 <style>
 @layer smrt.reset, smrt.structure, smrt.theme;
-@layer smrt.theme {
-  .operation-list-scroll {
+@layer smrt.structure {
+  .smrt-operation-list__root {
     overflow-x: auto;
   }
-
-  .operation-list {
+  .smrt-operation-list__table {
     width: 100%;
-    border-collapse: collapse;
   }
-
-  .operation-list-caption {
+  .smrt-operation-list__caption {
     position: absolute;
     width: 1px;
     height: 1px;
@@ -142,32 +139,37 @@ const showActions = $derived(Boolean(onretire || onreinstate));
     clip-path: inset(50%);
     white-space: nowrap;
   }
-
-  .operation-list th,
-  .operation-list td {
+  .smrt-operation-list__table th,
+  .smrt-operation-list__table td {
     padding: 0.5rem 0.75rem;
+  }
+  .smrt-operation-list__empty {
+    padding: 1rem 0;
+  }
+}
+
+@layer smrt.theme {
+  .smrt-operation-list__table {
+    border-collapse: collapse;
+  }
+  .smrt-operation-list__table th,
+  .smrt-operation-list__table td {
     text-align: left;
     border-bottom: var(--smrt-hairline);
   }
-
-  .operation-list thead th {
+  .smrt-operation-list__table thead th {
     font-size: var(--smrt-typography-label-small-size, 0.75rem);
     font-weight: var(--smrt-typography-label-small-weight, 500);
     color: var(--smrt-color-on-surface-variant, inherit);
   }
-
-  .operation-list-code {
+  .smrt-operation-list__code {
     font-weight: var(--smrt-typography-title-small-weight, 500);
     font-variant-numeric: tabular-nums;
   }
-
-  .operation-list-none,
-  .operation-list-empty {
+  .smrt-operation-list__none,
+  .smrt-operation-list__empty {
     color: var(--smrt-color-on-surface-variant, inherit);
   }
-
-  .operation-list-empty {
-    padding: 1rem 0;
-  }
 }
+
 </style>

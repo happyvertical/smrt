@@ -61,7 +61,9 @@ describe('ActivityTicker', () => {
       props: { activities: [activity('one', 'running', 42.4)] },
     });
     expect(screen.getByRole('listitem')).toHaveTextContent('Process one · 42%');
-    expect(container.querySelector('.multiple')).toBeNull();
+    expect(
+      container.querySelector('.smrt-activity-ticker__multiple'),
+    ).toBeNull();
     expect(container.querySelector('.smrt-activity-ticker__copy')).toBeNull();
     expect(screen.queryByRole('button')).toBeNull();
   });
@@ -93,13 +95,13 @@ describe('ActivityTicker', () => {
       screen.getByRole('button', { name: 'Pause scrolling activities' }),
     );
     expect(container.querySelector('.smrt-activity-ticker')).toHaveClass(
-      'paused',
+      'smrt-activity-ticker__paused',
     );
     await user.click(
       screen.getByRole('button', { name: 'Resume scrolling activities' }),
     );
     expect(container.querySelector('.smrt-activity-ticker')).not.toHaveClass(
-      'paused',
+      'smrt-activity-ticker__paused',
     );
   });
   it('reacts when actual activities start and finish', async () => {
@@ -107,7 +109,9 @@ describe('ActivityTicker', () => {
       props: { activities: [activity('one')] },
     });
     await rerender({ activities: [activity('one'), activity('two')] });
-    expect(container.querySelector('.multiple')).not.toBeNull();
+    expect(
+      container.querySelector('.smrt-activity-ticker__multiple'),
+    ).not.toBeNull();
     await rerender({
       activities: [activity('one', 'completed'), activity('two', 'failed')],
     });

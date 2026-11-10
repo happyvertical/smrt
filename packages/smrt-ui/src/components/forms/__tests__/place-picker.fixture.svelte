@@ -30,4 +30,4 @@ useControlRegistration(() => ({
 }));
 </script>
 
-<div class="place-picker"><span>{value?.name ?? 'Pick a town'}</span></div>
+<div class="smrt-place-picker-fixture__root" data-smrt-component="PlacePickerFixture"><span>{value?.name ?? 'Pick a town'}</span></div>

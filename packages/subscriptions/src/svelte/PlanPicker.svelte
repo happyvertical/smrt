@@ -91,13 +91,13 @@ let {
     <!-- raw-primitive-allow: pressable selection card (aria-pressed toggle with multi-line plan summary), not a standard action button -->
     <button
       aria-pressed={plan.planKey === selectedPlanKey}
-      class:selected={plan.planKey === selectedPlanKey}
+      class:smrt-plan-picker__selected={plan.planKey === selectedPlanKey}
       class="smrt-plan-picker__plan"
       type="button"
-      onclick={() => onSelect?.(plan)}
+      onclick={() => onSelect?.(plan)} data-smrt-part="trigger"
     >
-      <span class="smrt-plan-picker__name">{plan.name}</span>
-      <span class="smrt-plan-picker__price">
+      <span class="smrt-plan-picker__name" data-smrt-part="title">{plan.name}</span>
+      <span class="smrt-plan-picker__price" data-smrt-part="value">
         {#if plan.pricingMode === 'free'}
           {t(M['subscriptions.picker.free'])}
         {:else if plan.pricingMode === 'pay_what_you_can'}
@@ -112,9 +112,9 @@ let {
         {/if}
       </span>
       {#if plan.description}
-        <span class="smrt-plan-picker__description">{plan.description}</span>
+        <span class="smrt-plan-picker__description" data-smrt-part="description">{plan.description}</span>
       {/if}
-      <span class="smrt-plan-picker__features">
+      <span class="smrt-plan-picker__features" data-smrt-part="group">
         {featureCount(plan)} features
       </span>
     </button>
@@ -123,40 +123,40 @@ let {
 
 <style>
 @layer smrt.reset, smrt.structure, smrt.theme;
-@layer smrt.theme {
+@layer smrt.structure {
   .smrt-plan-picker {
     display: grid;
     gap: 0.75rem;
     grid-template-columns: repeat(auto-fit, minmax(14rem, 1fr));
   }
-
   .smrt-plan-picker__plan {
     align-items: flex-start;
-    background: var(--smrt-color-surface);
-    border: var(--smrt-hairline);
-    border-radius: var(--smrt-radius-md);
-    color: inherit;
     cursor: pointer;
     display: grid;
     gap: 0.45rem;
     padding: 1rem;
+  }
+}
+
+@layer smrt.theme {
+  .smrt-plan-picker__plan {
+    background: var(--smrt-color-surface);
+    border: var(--smrt-hairline);
+    border-radius: var(--smrt-radius-md);
+    color: inherit;
     text-align: left;
   }
-
-  .smrt-plan-picker__plan.selected {
+  .smrt-plan-picker__plan.smrt-plan-picker__selected {
     border-color: var(--smrt-color-primary);
     box-shadow: 0 0 0 1px var(--smrt-color-primary);
   }
-
   .smrt-plan-picker__name {
     font-weight: var(--smrt-typography-weight-bold, 650);
   }
-
   .smrt-plan-picker__price {
     font-size: var(--smrt-typography-title-large-size, 1.25rem);
     font-weight: var(--smrt-typography-weight-bold, 700);
   }
-
   .smrt-plan-picker__price small,
   .smrt-plan-picker__description,
   .smrt-plan-picker__features {
@@ -164,4 +164,5 @@ let {
     font-size: var(--smrt-typography-body-medium-size, 0.875rem);
   }
 }
+
 </style>

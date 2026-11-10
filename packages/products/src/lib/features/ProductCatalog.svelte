@@ -58,7 +58,7 @@ async function handleDeleteProduct(id: string) {
       await productStore.deleteProduct(id);
     } catch {
       // deleteProduct already recorded the message on productStore.error;
-      // the error-state region below renders it. Swallow the re-thrown
+      // the error region below renders it. Swallow the re-thrown
       // rejection so it doesn't become an unhandled promise rejection.
     }
   }
@@ -75,7 +75,7 @@ async function handleSubmitProduct(productData: Partial<ProductData>) {
     editingProduct = null;
   } catch {
     // Keep the form open on failure; productStore.error holds the message
-    // and the error-state region renders it.
+    // and the error region renders it.
   }
 }
 
@@ -85,34 +85,34 @@ function handleCancelForm() {
 }
 </script>
 
-<div class="product-catalog">
-  <div class="catalog-header">
+<div class="smrt-product-catalog__root" data-smrt-component="ProductCatalog">
+  <div class="smrt-product-catalog__header" data-smrt-part="header">
     <h2>{t(M['products.product_catalog.title'])}</h2>
     
-    <div class="catalog-stats">
-      <span class="stat">
+    <div class="smrt-product-catalog__stats" data-smrt-part="meta">
+      <span class="smrt-product-catalog__stat" data-smrt-part="item">
         <strong>{productStore.items.length}</strong> products
       </span>
-      <span class="stat">
+      <span class="smrt-product-catalog__stat" data-smrt-part="item">
         <strong>{productStore.inStockCount}</strong> {t(M['products.product_catalog.in_stock'])}
       </span>
-      <span class="stat">
+      <span class="smrt-product-catalog__stat" data-smrt-part="item">
         {t(M['products.product_catalog.total_value'])} <strong>${productStore.totalValue.toFixed(2)}</strong>
       </span>
     </div>
   </div>
   
-  <div class="catalog-controls">
-    <div class="search-filters">
+  <div class="smrt-product-catalog__controls" data-smrt-part="actions">
+    <div class="smrt-product-catalog__filters" data-smrt-part="group">
       <Input
         type="text"
         bind:value={searchQuery}
         placeholder={t(M['products.product_catalog.search_placeholder'])}
         aria-label={t(M['products.product_catalog.search_placeholder'])}
-        class="search-input"
+        class="smrt-product-catalog__search-input"
       />
 
-      <Select bind:value={selectedCategory} class="category-filter">
+      <Select bind:value={selectedCategory} class="smrt-product-catalog__category-filter">
         <option value="">{t(M['products.product_catalog.all_categories'])}</option>
         {#each productStore.categories as category}
           <option value={category}>{category}</option>
@@ -132,18 +132,18 @@ function handleCancelForm() {
   </div>
   
   {#if productStore.loading}
-    <div class="loading-state" role="status" aria-live="polite">
+    <div class="smrt-product-catalog__loading" data-smrt-part="status" role="status" aria-live="polite">
       <p>{t(M['products.product_catalog.loading'])}</p>
     </div>
   {:else if productStore.error}
-    <div class="error-state" role="alert" aria-live="assertive">
+    <div class="smrt-product-catalog__error" data-smrt-part="error" role="alert" aria-live="assertive">
       <p>Error: {productStore.error}</p>
       <Button type="button" variant="danger" onclick={() => productStore.loadProducts()}>
         Retry
       </Button>
     </div>
   {:else if filteredProducts.length === 0}
-    <div class="empty-state" role="status" aria-live="polite">
+    <div class="smrt-product-catalog__empty" data-smrt-part="empty" role="status" aria-live="polite">
       {#if productStore.items.length === 0}
         <p>{t(M['products.product_catalog.empty'])}</p>
         {#if !readonly}
@@ -156,7 +156,7 @@ function handleCancelForm() {
       {/if}
     </div>
   {:else}
-    <div class="products-grid">
+    <div class="smrt-product-catalog__grid" data-smrt-part="list">
       {#each filteredProducts as product (product.id)}
         <ProductCard 
           {product}
@@ -168,8 +168,8 @@ function handleCancelForm() {
   {/if}
   
   {#if showForm && !readonly}
-    <div class="form-overlay">
-      <div class="form-container">
+    <div class="smrt-product-catalog__overlay" data-smrt-part="backdrop">
+      <div class="smrt-product-catalog__form-container" data-smrt-part="panel">
         <h3>{editingProduct ? 'Edit Product' : 'Create New Product'}</h3>
         <ProductForm
           product={editingProduct ?? undefined}
@@ -184,111 +184,116 @@ function handleCancelForm() {
 
 <style>
 @layer smrt.reset, smrt.structure, smrt.theme;
-@layer smrt.theme {
-  .product-catalog {
+@layer smrt.structure {
+  .smrt-product-catalog__root {
     max-width: 1200px;
     margin: 0 auto;
     padding: 1rem;
   }
-  
-  .catalog-header {
+  .smrt-product-catalog__header {
     display: flex;
     justify-content: space-between;
     align-items: center;
     margin-bottom: 1.5rem;
     padding-bottom: 1rem;
-    border-bottom: 2px solid var(--smrt-color-outline-variant);
   }
-
-  .catalog-header h2 {
+  .smrt-product-catalog__header h2 {
     margin: 0;
-    color: var(--smrt-color-on-surface);
-    font-size: var(--smrt-typography-headline-large-size, 1.875rem);
-    font-weight: var(--smrt-typography-weight-bold, 700);
   }
-
-  .catalog-stats {
+  .smrt-product-catalog__stats {
     display: flex;
     gap: 1.5rem;
-    font-size: var(--smrt-typography-label-large-size, 0.875rem);
-    color: var(--smrt-color-on-surface-variant);
   }
-  
-  .catalog-controls {
+  .smrt-product-catalog__controls {
     display: flex;
     justify-content: space-between;
     align-items: center;
     margin-bottom: 1.5rem;
     gap: 1rem;
   }
-  
-  .search-filters {
+  .smrt-product-catalog__filters {
     display: flex;
     gap: 0.75rem;
     flex: 1;
   }
-
-  /* Layout sizing for the migrated <Input>/<Select>. The primitives render the
-     inner element with the forwarded class, so pierce with :global to keep the
-     flex sizing the old scoped rules supplied (#1589); padding/border/font come
-     from the primitives' tokenised styling now. */
-  .search-filters :global(.search-input) {
+  /* Layout sizing for the migrated <Input>/<Select>. The primitives own their
+  inner elements, so target them through the component hooks to keep the
+  flex sizing the old scoped rules supplied (#1589); padding/border/font come
+  from the primitives' tokenised styling now. */
+  .smrt-product-catalog__filters :global([data-smrt-component="Input"]) {
     flex: 1;
     max-width: 300px;
   }
-
-  .search-filters :global(.category-filter) {
+  .smrt-product-catalog__filters :global([data-smrt-component="Select"]) {
     min-width: 150px;
   }
-  
-  .products-grid {
+  .smrt-product-catalog__grid {
     display: grid;
     grid-template-columns: repeat(auto-fill, minmax(300px, 1fr));
     gap: 1.5rem;
   }
-  
-  .loading-state, .error-state, .empty-state {
-    text-align: center;
+  .smrt-product-catalog__loading, .smrt-product-catalog__error, .smrt-product-catalog__empty {
     padding: 3rem 1rem;
-    color: var(--smrt-color-on-surface-variant);
   }
-
   /* Restore the retry button's spacing from the error message. The old
-     `.error-state button` rule can't reach the <button> rendered inside the
-     smrt-ui <Button>, so pierce into it with `:global` (#1589); the danger
-     variant already supplies the background/color the old rule set. */
-  .error-state :global([data-smrt-component="Button"]) {
+  `.smrt-product-catalog__error button` rule can't reach the <button> rendered inside the
+  smrt-ui <Button>, so pierce into it with `:global` (#1589); the danger
+  variant already supplies the background/color the old rule set. */
+  .smrt-product-catalog__error :global([data-smrt-component="Button"]) {
     margin-top: 0.5rem;
   }
-
-  .form-overlay {
+  .smrt-product-catalog__overlay {
     position: fixed;
     top: 0;
     left: 0;
     right: 0;
     bottom: 0;
-    background: var(--smrt-color-scrim, rgba(0, 0, 0, 0.5));
     display: flex;
     align-items: center;
     justify-content: center;
     z-index: var(--smrt-z-index-dialog, 1300);
   }
-  
-  .form-container {
-    background: var(--smrt-color-surface);
-    border-radius: var(--smrt-radius-md);
+  .smrt-product-catalog__form-container {
     max-width: 500px;
     width: 90vw;
     max-height: 90vh;
     overflow-y: auto;
   }
-  
-  .form-container h3 {
+  .smrt-product-catalog__form-container h3 {
     margin: 0 0 1rem 0;
     padding: 1.5rem 1.5rem 0 1.5rem;
+  }
+}
+
+@layer smrt.theme {
+  .smrt-product-catalog__header {
+    border-bottom: 2px solid var(--smrt-color-outline-variant);
+  }
+  .smrt-product-catalog__header h2 {
+    color: var(--smrt-color-on-surface);
+    font-size: var(--smrt-typography-headline-large-size, 1.875rem);
+    font-weight: var(--smrt-typography-weight-bold, 700);
+  }
+  .smrt-product-catalog__stats {
+    font-size: var(--smrt-typography-label-large-size, 0.875rem);
+    color: var(--smrt-color-on-surface-variant);
+  }
+  .smrt-product-catalog__loading, .smrt-product-catalog__error, .smrt-product-catalog__empty {
+    text-align: center;
+    color: var(--smrt-color-on-surface-variant);
+  }
+  .smrt-product-catalog__overlay {
+    background: var(--smrt-color-scrim, rgba(0, 0, 0, 0.5));
+  }
+  .smrt-product-catalog__form-container {
+    background: var(--smrt-color-surface);
+    border-radius: var(--smrt-radius-md);
+  }
+  .smrt-product-catalog__form-container h3 {
     color: var(--smrt-color-on-surface);
     font-size: var(--smrt-typography-title-large-size, 1.25rem);
     font-weight: var(--smrt-typography-weight-semibold, 600);
   }
 }
+
 </style>

@@ -80,10 +80,10 @@ const items: CalendarItem[] = [
 ];
 </script>
 
-<div class="workbench">
+<div class="smrt-calendar-preview__root" data-smrt-component="CalendarPreview">
   <header>
     <div>
-      <p class="eyebrow">Calendar</p>
+      <p class="smrt-calendar-preview__eyebrow" data-smrt-part="label">Calendar</p>
       <h4>Month grid, all-day bands, and the phone agenda ({zone})</h4>
     </div>
     <SegmentedControl
@@ -105,40 +105,43 @@ const items: CalendarItem[] = [
     timeZone={zone}
     onItemSelect={(item) => (picked = item.title)}
   />
-  <p class="picked" aria-live="polite">{picked ? `Selected: ${picked}` : ''}</p>
+  <p class="smrt-calendar-preview__picked" data-smrt-part="status" aria-live="polite">{picked ? `Selected: ${picked}` : ''}</p>
 </div>
 
 <style>
 @layer smrt.reset, smrt.structure, smrt.theme;
-@layer smrt.theme {
-  .workbench {
+@layer smrt.structure {
+  .smrt-calendar-preview__root {
     display: grid;
     gap: var(--smrt-spacing-4, 1rem);
   }
-
   header {
     display: flex;
     flex-wrap: wrap;
     justify-content: space-between;
     gap: var(--smrt-spacing-3, 0.75rem);
   }
-
-  .eyebrow {
+  .smrt-calendar-preview__eyebrow {
     margin: 0;
+  }
+  h4 {
+    margin: 0;
+  }
+  .smrt-calendar-preview__picked {
+    margin: 0;
+    min-height: 1.5rem;
+  }
+}
+
+@layer smrt.theme {
+  .smrt-calendar-preview__eyebrow {
     color: var(--smrt-color-on-surface-variant);
     font-size: var(--smrt-typography-label-medium-size, 0.75rem);
     text-transform: uppercase;
   }
-
-  h4 {
-    margin: 0;
-  }
-
-
-  .picked {
-    margin: 0;
-    min-height: 1.5rem;
+  .smrt-calendar-preview__picked {
     color: var(--smrt-color-on-surface-variant);
   }
 }
+
 </style>

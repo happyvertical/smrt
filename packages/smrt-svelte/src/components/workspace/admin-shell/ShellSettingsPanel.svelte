@@ -129,7 +129,7 @@ function conflictFor(edge: PanelEdge): string | null {
   {#if appearance}
     <section data-smrt-part="appearance" aria-labelledby="smrt-shell-settings-appearance">
       <h3 id="smrt-shell-settings-appearance">{t(M['ui.shell_settings.appearance'])}</h3>
-      <div class="smrt-shell-settings-panel__controls">
+      <div class="smrt-shell-settings-panel__controls" data-smrt-part="controls">
         <ThemeSwitcher label={t(M['ui.shell_settings.theme'])} />
         <ColorSchemeToggle ariaLabel={t(M['ui.shell_settings.color_scheme'])} />
       </div>
@@ -179,7 +179,7 @@ function conflictFor(edge: PanelEdge): string | null {
     <h3 id="smrt-shell-settings-layout">{t(M['ui.shell_settings.layout'])}</h3>
     <p>{t(M['ui.shell_settings_panel.description'])}</p>
     {#if layout?.editable}
-      <div class="smrt-shell-settings-panel__controls">
+      <div class="smrt-shell-settings-panel__controls" data-smrt-part="controls">
         <Button
           variant={layout.editing ? 'primary' : 'secondary'}
           size="sm"
@@ -200,7 +200,7 @@ function conflictFor(edge: PanelEdge): string | null {
         </Button>
       </div>
     {:else if layout}
-      <div class="smrt-shell-settings-panel__controls">
+      <div class="smrt-shell-settings-panel__controls" data-smrt-part="controls">
         <Button
           variant="ghost"
           size="sm"
@@ -211,10 +211,10 @@ function conflictFor(edge: PanelEdge): string | null {
         </Button>
       </div>
     {/if}
-    <div class="smrt-shell-settings-panel__grid">
+    <div class="smrt-shell-settings-panel__grid" data-smrt-part="list">
       {#each rows as row (row.edge)}
         {@const label = regionLabel(row.edge)}
-        <div class="smrt-shell-settings-panel__row" data-edge={row.edge}>
+        <div class="smrt-shell-settings-panel__row" data-edge={row.edge} data-smrt-part="row">
           <div>
             <strong>{label}</strong>
             <span>
@@ -223,7 +223,7 @@ function conflictFor(edge: PanelEdge): string | null {
                 : t(M['ui.shell_settings.region_hidden'])}
             </span>
           </div>
-          <div class="smrt-shell-settings-panel__actions">
+          <div class="smrt-shell-settings-panel__actions" data-smrt-part="actions">
             {#if layout}
               <Button
                 variant="ghost"
@@ -277,9 +277,9 @@ function conflictFor(edge: PanelEdge): string | null {
             : t(M['ui.shell_settings_panel.enable_hotkeys'])}
         </Button>
       </header>
-      <div class="smrt-shell-settings-panel__grid">
+      <div class="smrt-shell-settings-panel__grid" data-smrt-part="list">
         {#each shortcutRows as row (row.edge)}
-          <div class="smrt-shell-settings-panel__row" data-edge={row.edge}>
+          <div class="smrt-shell-settings-panel__row" data-edge={row.edge} data-smrt-part="row">
             <strong>{regionLabel(row.edge)}</strong>
             <HotkeyInput
               value={bindingFor(row.edge)}
@@ -297,7 +297,8 @@ function conflictFor(edge: PanelEdge): string | null {
 
 <style>
 @layer smrt.reset, smrt.structure, smrt.theme;
-@layer smrt.theme {
+
+@layer smrt.structure {
   .smrt-shell-settings-panel {
     display: grid;
     grid-template-columns: minmax(0, 1fr);
@@ -305,7 +306,6 @@ function conflictFor(edge: PanelEdge): string | null {
     overflow-wrap: anywhere;
     gap: var(--smrt-spacing-4);
   }
-
   .smrt-shell-settings-panel header,
   .smrt-shell-settings-panel__row,
   .smrt-shell-settings-panel__actions {
@@ -313,63 +313,47 @@ function conflictFor(edge: PanelEdge): string | null {
     align-items: center;
     gap: var(--smrt-spacing-3);
   }
-
   .smrt-shell-settings-panel header,
   .smrt-shell-settings-panel__row {
     justify-content: space-between;
   }
-
   .smrt-shell-settings-panel h3,
   .smrt-shell-settings-panel p,
   .smrt-shell-settings-panel dl,
   .smrt-shell-settings-panel dd {
     margin: 0;
   }
-
   .smrt-shell-settings-panel > section {
     display: grid;
     gap: var(--smrt-spacing-3);
     justify-items: start;
   }
-
   .smrt-shell-settings-panel > section > .smrt-shell-settings-panel__grid,
   .smrt-shell-settings-panel > section > header {
     justify-self: stretch;
   }
-
   .smrt-shell-settings-panel__controls {
     display: flex;
     flex-wrap: wrap;
     align-items: center;
     gap: var(--smrt-spacing-3);
   }
-
   .smrt-shell-settings-panel dl {
     display: grid;
     grid-template-columns: auto 1fr;
     gap: var(--smrt-spacing-1) var(--smrt-spacing-4);
   }
-
-  .smrt-shell-settings-panel p,
-  .smrt-shell-settings-panel span {
-    color: var(--smrt-color-on-surface-variant);
-  }
-
   .smrt-shell-settings-panel__grid {
     display: grid;
     gap: var(--smrt-spacing-3);
   }
-
   .smrt-shell-settings-panel__row {
     padding-block: var(--smrt-spacing-3);
-    border-block-start: var(--smrt-hairline);
   }
-
   .smrt-shell-settings-panel__row > div:first-child {
     display: grid;
     gap: var(--smrt-spacing-1);
   }
-
   @media (max-width: 42rem) {
     .smrt-shell-settings-panel header,
     .smrt-shell-settings-panel__row,
@@ -377,6 +361,16 @@ function conflictFor(edge: PanelEdge): string | null {
       align-items: stretch;
       flex-direction: column;
     }
+  }
+}
+
+@layer smrt.theme {
+  .smrt-shell-settings-panel p,
+  .smrt-shell-settings-panel span {
+    color: var(--smrt-color-on-surface-variant);
+  }
+  .smrt-shell-settings-panel__row {
+    border-block-start: var(--smrt-hairline);
   }
 }
 </style>

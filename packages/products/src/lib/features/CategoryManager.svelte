@@ -16,13 +16,13 @@ const _categories = $state<CategoryData[]>([]);
 const _loading = $state(false);
 </script>
 
-<div class="category-manager">
-  <div class="manager-header">
+<div class="smrt-category-manager__root" data-smrt-component="CategoryManager">
+  <div class="smrt-category-manager__header" data-smrt-part="header">
     <h2>{t(M['products.category_manager.title'])}</h2>
     <p>{t(M['products.category_manager.subtitle'])}</p>
   </div>
 
-  <div class="placeholder-content">
+  <div class="smrt-category-manager__content" data-smrt-part="body">
     <p>{t(M['products.category_manager.coming_soon'])}</p>
     <p>{t(M['products.category_manager.will_include'])}</p>
     <ul>
@@ -36,48 +36,58 @@ const _loading = $state(false);
 
 <style>
 @layer smrt.reset, smrt.structure, smrt.theme;
-@layer smrt.theme {
-  .category-manager {
+@layer smrt.structure {
+  .smrt-category-manager__root {
     max-width: 800px;
     margin: 0 auto;
     padding: 1rem;
   }
-  
-  .manager-header {
-    text-align: center;
+  .smrt-category-manager__header {
     margin-bottom: 2rem;
   }
-  
-  .manager-header h2 {
+  .smrt-category-manager__header h2 {
     margin: 0 0 0.5rem 0;
+  }
+  .smrt-category-manager__header p {
+    margin: 0;
+  }
+  .smrt-category-manager__content {
+    padding: 2rem;
+  }
+  .smrt-category-manager__content p {
+    margin: 0 0 1rem 0;
+  }
+  .smrt-category-manager__content ul {
+    margin: 1rem 0 0 0;
+    display: inline-block;
+  }
+}
+
+@layer smrt.theme {
+  .smrt-category-manager__header {
+    text-align: center;
+  }
+  .smrt-category-manager__header h2 {
     color: var(--smrt-color-on-surface);
     font-size: var(--smrt-typography-headline-small-size, 1.5rem);
     font-weight: var(--smrt-typography-weight-semibold, 600);
   }
-
-  .manager-header p {
-    margin: 0;
+  .smrt-category-manager__header p {
     color: var(--smrt-color-on-surface-variant);
   }
-
-  .placeholder-content {
+  .smrt-category-manager__content {
     background: var(--smrt-color-surface-container-low);
     border: var(--smrt-hairline);
     border-radius: var(--smrt-radius-md);
-    padding: 2rem;
     text-align: center;
   }
-
-  .placeholder-content p {
-    margin: 0 0 1rem 0;
+  .smrt-category-manager__content p {
     color: var(--smrt-color-on-surface-variant);
   }
-
-  .placeholder-content ul {
-    margin: 1rem 0 0 0;
+  .smrt-category-manager__content ul {
     text-align: left;
-    display: inline-block;
     color: var(--smrt-color-on-surface-variant);
   }
 }
+
 </style>

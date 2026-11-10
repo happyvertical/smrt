@@ -54,47 +54,46 @@ const roomTypeLabel = $derived.by(() => {
 });
 </script>
 
-<header class="room-header" aria-label={t(M['chat.room_header.room_label'], { name: room.name })} data-smrt-component="RoomHeader">
-  <div class="room-header__info">
-    <div class="room-header__title-row">
+<header class="smrt-room-header__root" aria-label={t(M['chat.room_header.room_label'], { name: room.name })} data-smrt-component="RoomHeader">
+  <div class="smrt-room-header__info" data-smrt-part="meta">
+    <div class="smrt-room-header__title" data-smrt-part="title">
       {#if room.roomType !== 'dm'}
-        <span class="room-header__icon" aria-hidden="true">{roomIcon}</span>
+        <span class="smrt-room-header__icon" data-smrt-part="icon" aria-hidden="true">{roomIcon}</span>
       {:else if room.avatarUrl}
-        <img class="room-header__avatar" src={room.avatarUrl} alt="" />
+        <img class="smrt-room-header__avatar" data-smrt-part="media" src={room.avatarUrl} alt="" />
       {:else}
-        <span class="room-header__avatar-placeholder">
+        <span class="smrt-room-header__avatar-placeholder" data-smrt-part="icon">
           {room.name.charAt(0).toUpperCase()}
         </span>
       {/if}
-      <h1 class="room-header__name">{room.name}</h1>
-      <span class="room-header__type-badge">{roomTypeLabel}</span>
+      <h1 class="smrt-room-header__heading" data-smrt-part="title">{room.name}</h1>
+      <span class="smrt-room-header__badge" data-smrt-part="badge">{roomTypeLabel}</span>
     </div>
 
     {#if room.topic}
-      <p class="room-header__topic" title={room.topic}>
+      <p class="smrt-room-header__meta" data-smrt-part="meta" title={room.topic}>
         {room.topic}
       </p>
     {/if}
   </div>
 
-  <div class="room-header__actions">
+  <div class="smrt-room-header__actions" data-smrt-part="actions">
     {#if onshowmembers}
       <Button
         variant="ghost"
         size="sm"
-        class="header-btn"
         type="button"
         onclick={onshowmembers}
         aria-label={t(M['chat.room_header.show_members'], { count: participantCount })}
         title={t(M['chat.room_header.members'])}
       >
-        <svg class="header-btn__icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
+        <svg class="smrt-room-header__action-icon" data-smrt-part="icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
           <path d="M17 21v-2a4 4 0 0 0-4-4H5a4 4 0 0 0-4 4v2" />
           <circle cx="9" cy="7" r="4" />
           <path d="M23 21v-2a4 4 0 0 0-3-3.87" />
           <path d="M16 3.13a4 4 0 0 1 0 7.75" />
         </svg>
-        <span class="header-btn__count">{participantCount}</span>
+        <span class="smrt-room-header__action-count" data-smrt-part="count">{participantCount}</span>
       </Button>
     {/if}
 
@@ -102,13 +101,12 @@ const roomTypeLabel = $derived.by(() => {
       <Button
         variant="ghost"
         size="sm"
-        class="header-btn"
         type="button"
         onclick={onshowsearch}
         aria-label={t(M['chat.room_header.search_messages'])}
         title={t(M['chat.room_header.search'])}
       >
-        <svg class="header-btn__icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
+        <svg class="smrt-room-header__action-icon" data-smrt-part="icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
           <circle cx="11" cy="11" r="8" />
           <path d="m21 21-4.35-4.35" />
         </svg>
@@ -119,123 +117,130 @@ const roomTypeLabel = $derived.by(() => {
 
 <style>
 @layer smrt.reset, smrt.structure, smrt.theme;
-@layer smrt.theme {
-  .room-header {
+@layer smrt.structure {
+  .smrt-room-header__root {
     display: flex;
     align-items: center;
     justify-content: space-between;
     gap: 1rem;
     padding: 0.75rem 1rem;
-    background: var(--smrt-color-surface);
-    border-bottom: var(--smrt-hairline);
     min-height: 3.5rem;
   }
-
-  .room-header__info {
+  .smrt-room-header__info {
     flex: 1;
     min-width: 0;
     display: flex;
     flex-direction: column;
     gap: 0.125rem;
   }
-
-  .room-header__title-row {
+  .smrt-room-header__title {
     display: flex;
     align-items: center;
     gap: 0.5rem;
   }
-
-  .room-header__icon {
+  .smrt-room-header__icon {
     flex-shrink: 0;
-    font-size: var(--smrt-typography-title-medium-size, 1.125rem);
-    font-weight: var(--smrt-typography-weight-bold, 700);
-    color: var(--smrt-color-on-surface-variant);
   }
-
-  .room-header__avatar {
+  .smrt-room-header__avatar {
     flex-shrink: 0;
     width: 1.75rem;
     height: 1.75rem;
-    border-radius: var(--smrt-radius-full);
     object-fit: cover;
   }
-
-  .room-header__avatar-placeholder {
+  .smrt-room-header__avatar-placeholder {
     flex-shrink: 0;
     width: 1.75rem;
     height: 1.75rem;
-    border-radius: var(--smrt-radius-full);
-    background: var(--smrt-color-primary-container);
-    color: var(--smrt-color-on-primary-container);
     display: inline-flex;
     align-items: center;
     justify-content: center;
-    font: var(--smrt-typography-label-medium-font, 500 0.75rem / 1 sans-serif);
   }
-
-  .room-header__name {
+  .smrt-room-header__heading {
     margin: 0;
-    font: var(--smrt-typography-title-medium-font, 600 1rem / 1.5 sans-serif);
-    color: var(--smrt-color-on-surface);
     overflow: hidden;
     text-overflow: ellipsis;
     white-space: nowrap;
   }
-
-  .room-header__type-badge {
+  .smrt-room-header__badge {
     flex-shrink: 0;
     padding: 0.125rem 0.5rem;
-    border-radius: var(--smrt-radius-full);
-    background: var(--smrt-color-surface-container);
-    color: var(--smrt-color-on-surface-variant);
-    font: var(--smrt-typography-label-small-font, 500 0.6875rem / 1 sans-serif);
   }
-
-  .room-header__topic {
+  .smrt-room-header__meta {
     margin: 0;
-    font: var(--smrt-typography-body-small-font, 0.75rem / 1.25 sans-serif);
-    color: var(--smrt-color-on-surface-variant);
     overflow: hidden;
     text-overflow: ellipsis;
     white-space: nowrap;
     padding-left: 1.75rem;
   }
-
-  .room-header__actions {
+  .smrt-room-header__actions {
     flex-shrink: 0;
     display: flex;
     align-items: center;
     gap: 0.25rem;
   }
-
   /* :global() pierces into each Button's rendered <button> (see #1589). */
-  .room-header__actions :global(.header-btn) {
+  .smrt-room-header__actions :global([data-smrt-component="Button"]) {
     gap: 0.25rem;
     padding: 0.375rem 0.5rem;
+  }
+  .smrt-room-header__action-icon {
+    width: 1.25rem;
+    height: 1.25rem;
+  }
+}
+
+@layer smrt.theme {
+  .smrt-room-header__root {
+    background: var(--smrt-color-surface);
+    border-bottom: var(--smrt-hairline);
+  }
+  .smrt-room-header__icon {
+    font-size: var(--smrt-typography-title-medium-size, 1.125rem);
+    font-weight: var(--smrt-typography-weight-bold, 700);
+    color: var(--smrt-color-on-surface-variant);
+  }
+  .smrt-room-header__avatar {
+    border-radius: var(--smrt-radius-full);
+  }
+  .smrt-room-header__avatar-placeholder {
+    border-radius: var(--smrt-radius-full);
+    background: var(--smrt-color-primary-container);
+    color: var(--smrt-color-on-primary-container);
+    font: var(--smrt-typography-label-medium-font, 500 0.75rem / 1 sans-serif);
+  }
+  .smrt-room-header__heading {
+    font: var(--smrt-typography-title-medium-font, 600 1rem / 1.5 sans-serif);
+    color: var(--smrt-color-on-surface);
+  }
+  .smrt-room-header__badge {
+    border-radius: var(--smrt-radius-full);
+    background: var(--smrt-color-surface-container);
+    color: var(--smrt-color-on-surface-variant);
+    font: var(--smrt-typography-label-small-font, 500 0.6875rem / 1 sans-serif);
+  }
+  .smrt-room-header__meta {
+    font: var(--smrt-typography-body-small-font, 0.75rem / 1.25 sans-serif);
+    color: var(--smrt-color-on-surface-variant);
+  }
+  /* :global() pierces into each Button's rendered <button> (see #1589). */
+  .smrt-room-header__actions :global([data-smrt-component="Button"]) {
     background: none;
     border-radius: var(--smrt-radius-medium, 0.5rem);
     color: var(--smrt-color-on-surface-variant);
     transition: background var(--smrt-duration-short2, 150ms);
   }
-
-  .room-header__actions :global(.header-btn:hover) {
+  .smrt-room-header__actions :global([data-smrt-component="Button"]:hover) {
     background: var(--smrt-color-surface-variant);
   }
-
-  .header-btn__icon {
-    width: 1.25rem;
-    height: 1.25rem;
-  }
-
-  .header-btn__count {
+  .smrt-room-header__action-count {
     font: var(--smrt-typography-label-medium-font, 500 0.75rem / 1 sans-serif);
     color: var(--smrt-color-on-surface-variant);
   }
-
   @media (prefers-reduced-motion: reduce) {
-    .room-header__actions :global(.header-btn) {
+    .smrt-room-header__actions :global([data-smrt-component="Button"]) {
       transition: none;
     }
   }
 }
+
 </style>

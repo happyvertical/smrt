@@ -31,14 +31,14 @@ const { employees, onselect, emptyMessage }: EmployeeListProps = $props();
 </script>
 
 {#if employees.length === 0}
-  <p class="employee-list-empty" data-smrt-component="EmployeeList">
+  <p class="smrt-employee-list__empty" data-smrt-component="EmployeeList" >
     {emptyMessage ?? t(M['human_resources.employee_list.empty'])}
   </p>
 {:else}
-  <div class="employee-list-scroll" data-smrt-component="EmployeeList">
-    <table class="employee-list">
-      <caption class="employee-list-caption">{t(M['human_resources.employee_list.caption'])}</caption>
-      <thead>
+  <div class="smrt-employee-list__root" data-smrt-component="EmployeeList">
+    <table class="smrt-employee-list__table" data-smrt-part="table">
+      <caption class="smrt-employee-list__caption" data-smrt-part="caption">{t(M['human_resources.employee_list.caption'])}</caption>
+      <thead data-smrt-part="header">
         <tr>
           <th scope="col">{t(M['human_resources.employee_list.name'])}</th>
           <th scope="col">{t(M['human_resources.employee_list.employee_number'])}</th>
@@ -48,10 +48,10 @@ const { employees, onselect, emptyMessage }: EmployeeListProps = $props();
           <th scope="col">{t(M['human_resources.employee_list.started_on'])}</th>
         </tr>
       </thead>
-      <tbody>
+      <tbody data-smrt-part="body">
         {#each employees as employee (employee.id)}
-          <tr>
-            <th scope="row" class="employee-list-name">
+          <tr data-smrt-part="row">
+            <th scope="row" class="smrt-employee-list__name" data-smrt-part="cell">
               {#if onselect}
                 <Button
                   variant="ghost"
@@ -65,12 +65,12 @@ const { employees, onselect, emptyMessage }: EmployeeListProps = $props();
                 {employee.displayName}
               {/if}
             </th>
-            <td class="employee-list-number">{employee.employeeNumber}</td>
+            <td class="smrt-employee-list__number" data-smrt-part="cell">{employee.employeeNumber}</td>
             <td>
               {#if employee.position}
                 {employee.position}
               {:else}
-                <span class="employee-list-none">{t(M['human_resources.employee_list.none'])}</span>
+                <span class="smrt-employee-list__none" data-smrt-part="meta">{t(M['human_resources.employee_list.none'])}</span>
               {/if}
             </td>
             <td>{employee.workerType}</td>
@@ -81,7 +81,7 @@ const { employees, onselect, emptyMessage }: EmployeeListProps = $props();
                 size="sm"
               />
               {#if employee.endsOn}
-                <span class="employee-list-last-day">
+                <span class="smrt-employee-list__last-day" data-smrt-part="meta">
                   {t(M['human_resources.employee_list.last_day'], { date: employee.endsOn })}
                 </span>
               {/if}
@@ -90,7 +90,7 @@ const { employees, onselect, emptyMessage }: EmployeeListProps = $props();
               {#if employee.startedOn}
                 <time datetime={employee.startedOn}>{employee.startedOn}</time>
               {:else}
-                <span class="employee-list-none">{t(M['human_resources.employee_list.none'])}</span>
+                <span class="smrt-employee-list__none" data-smrt-part="meta">{t(M['human_resources.employee_list.none'])}</span>
               {/if}
             </td>
           </tr>
@@ -102,17 +102,14 @@ const { employees, onselect, emptyMessage }: EmployeeListProps = $props();
 
 <style>
 @layer smrt.reset, smrt.structure, smrt.theme;
-@layer smrt.theme {
-  .employee-list-scroll {
+@layer smrt.structure {
+  .smrt-employee-list__root {
     overflow-x: auto;
   }
-
-  .employee-list {
+  .smrt-employee-list__table {
     width: 100%;
-    border-collapse: collapse;
   }
-
-  .employee-list-caption {
+  .smrt-employee-list__caption {
     position: absolute;
     width: 1px;
     height: 1px;
@@ -120,42 +117,47 @@ const { employees, onselect, emptyMessage }: EmployeeListProps = $props();
     clip-path: inset(50%);
     white-space: nowrap;
   }
-
-  .employee-list th,
-  .employee-list td {
+  .smrt-employee-list__table th,
+  .smrt-employee-list__table td {
     padding: 0.5rem 0.75rem;
-    text-align: left;
-    border-bottom: var(--smrt-hairline);
   }
-
-  .employee-list thead th {
-    font-size: 0.75rem;
-    font-weight: 500;
-    color: var(--smrt-color-on-surface-variant, inherit);
-  }
-
-  .employee-list-name {
-    font-weight: 500;
-  }
-
-  .employee-list-number {
-    font-variant-numeric: tabular-nums;
-  }
-
-  .employee-list-last-day {
+  .smrt-employee-list__last-day {
     margin-left: 0.5rem;
-    font-size: 0.75rem;
     white-space: nowrap;
-    color: var(--smrt-color-on-surface-variant, inherit);
   }
-
-  .employee-list-none,
-  .employee-list-empty {
-    color: var(--smrt-color-on-surface-variant, inherit);
-  }
-
-  .employee-list-empty {
+  .smrt-employee-list__empty {
     padding: 1rem 0;
   }
 }
+
+@layer smrt.theme {
+  .smrt-employee-list__table {
+    border-collapse: collapse;
+  }
+  .smrt-employee-list__table th,
+  .smrt-employee-list__table td {
+    text-align: left;
+    border-bottom: var(--smrt-hairline);
+  }
+  .smrt-employee-list__table thead th {
+    font-size: 0.75rem;
+    font-weight: 500;
+    color: var(--smrt-color-on-surface-variant, inherit);
+  }
+  .smrt-employee-list__name {
+    font-weight: 500;
+  }
+  .smrt-employee-list__number {
+    font-variant-numeric: tabular-nums;
+  }
+  .smrt-employee-list__last-day {
+    font-size: 0.75rem;
+    color: var(--smrt-color-on-surface-variant, inherit);
+  }
+  .smrt-employee-list__none,
+  .smrt-employee-list__empty {
+    color: var(--smrt-color-on-surface-variant, inherit);
+  }
+}
+
 </style>

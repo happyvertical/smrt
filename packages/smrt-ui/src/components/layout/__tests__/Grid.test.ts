@@ -15,9 +15,9 @@ function textSnippet(text: string) {
   return createRawSnippet(() => ({ render: () => `<span>${text}</span>` }));
 }
 
-/** The grid element is the `.grid` div (the header lives in a sibling div). */
+/** The grid element is the `.smrt-grid__root` div (the header lives in a sibling div). */
 function gridEl(container: HTMLElement): HTMLElement {
-  const el = container.querySelector<HTMLElement>('div.grid');
+  const el = container.querySelector<HTMLElement>('div.smrt-grid__root');
   if (!el) throw new Error('grid element not found');
   return el;
 }
@@ -51,7 +51,7 @@ describe('Grid', () => {
       props: { columns: { md: 2, xl: 4 }, children: textSnippet('x') },
     });
     const el = gridEl(container);
-    expect(el).toHaveClass('grid-responsive');
+    expect(el).toHaveClass('smrt-grid__responsive');
     const style = el.getAttribute('style') ?? '';
     expect(style).toContain('--smrt-grid-columns-md: 2');
     expect(style).toContain('--smrt-grid-columns-xl: 4');
@@ -63,7 +63,7 @@ describe('Grid', () => {
     const { container } = render(Grid, {
       props: { children: textSnippet('x') },
     });
-    expect(gridEl(container)).toHaveClass('gap-md');
+    expect(gridEl(container)).toHaveClass('smrt-grid__gap-md');
   });
 
   it.each([
@@ -75,7 +75,7 @@ describe('Grid', () => {
     const { container } = render(Grid, {
       props: { gap, children: textSnippet('x') },
     });
-    expect(gridEl(container)).toHaveClass(`gap-${gap}`);
+    expect(gridEl(container)).toHaveClass(`smrt-grid__gap-${gap}`);
   });
 
   it('splits row/column gap classes when they differ', () => {
@@ -83,8 +83,8 @@ describe('Grid', () => {
       props: { gap: { row: 'sm', column: 'lg' }, children: textSnippet('x') },
     });
     const el = gridEl(container);
-    expect(el).toHaveClass('row-gap-sm', 'col-gap-lg');
-    expect(el).not.toHaveClass('gap-sm');
+    expect(el).toHaveClass('smrt-grid__row-gap-sm', 'smrt-grid__col-gap-lg');
+    expect(el).not.toHaveClass('smrt-grid__gap-sm');
   });
 
   it('maps alignItems / justifyItems / autoFlow to inline styles', () => {

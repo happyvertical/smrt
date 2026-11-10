@@ -28,7 +28,8 @@ const { t } = useI18n();
 
 <style>
 @layer smrt.reset, smrt.structure, smrt.theme;
-@layer smrt.theme {
+
+@layer smrt.structure {
   .smrt-shell-settings-page {
     display: grid;
     gap: var(--smrt-spacing-6, 1.5rem);
@@ -43,5 +44,8 @@ const { t } = useI18n();
   p {
     margin: 0;
   }
+}
+
+@layer smrt.theme {
 }
 </style>

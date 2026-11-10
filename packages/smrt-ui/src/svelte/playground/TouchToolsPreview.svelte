@@ -13,9 +13,9 @@ const previewFetch: typeof fetch = async () =>
   new Response(sheet, { headers: { 'content-type': 'image/svg+xml' } });
 </script>
 
-<div class="workbench">
+<div class="smrt-touch-tools-preview__root" data-smrt-component="TouchToolsPreview">
   <header>
-    <p class="eyebrow">Touch density</p>
+    <p class="smrt-touch-tools-preview__eyebrow" data-smrt-part="label">Touch density</p>
     <h4>Keypad and document viewer</h4>
     <p>Every key and control is at least 4rem. Money is carried as integer minor units; the viewer reads through an injected fetch and never points an element at the API.</p>
   </header>
@@ -26,7 +26,7 @@ const previewFetch: typeof fetch = async () =>
   <section>
     <h5>Money (USD)</h5>
     <NumericKeypad bind:value={amount} mode="money" currency="USD" prefix="$" onChange={(detail) => (lastMoney = detail)} onSubmit={(detail) => (lastMoney = detail)} />
-    <p class="posted" role="status">{lastMoney?.minorUnits == null ? 'Type an amount.' : `${lastMoney.minorUnits} minor units`}</p>
+    <p class="smrt-touch-tools-preview__posted" data-smrt-part="status" role="status">{lastMoney?.minorUnits == null ? 'Type an amount.' : `${lastMoney.minorUnits} minor units`}</p>
   </section>
   <section>
     <h5>Document</h5>
@@ -36,12 +36,40 @@ const previewFetch: typeof fetch = async () =>
 
 <style>
 @layer smrt.reset, smrt.structure, smrt.theme;
-@layer smrt.theme {
-  .workbench { display: grid; gap: var(--smrt-spacing-5); color: var(--smrt-color-on-surface); }
-  header, section { display: grid; gap: var(--smrt-spacing-3); min-width: 0; }
-  h4, h5, p { margin: 0; } h4 { font: var(--smrt-typography-headline-small-font); }
-  h5 { font: var(--smrt-typography-title-medium-font); }
-  header p:not(.eyebrow), .posted { color: var(--smrt-color-on-surface-variant); }
-  .eyebrow { color: var(--smrt-color-primary); font: var(--smrt-typography-label-small-font); letter-spacing: .1em; text-transform: uppercase; }
+@layer smrt.structure {
+  .smrt-touch-tools-preview__root {
+    display: grid;
+    gap: var(--smrt-spacing-5);
+  }
+  header, section {
+    display: grid;
+    gap: var(--smrt-spacing-3);
+    min-width: 0;
+  }
+  h4, h5, p {
+    margin: 0;
+  }
 }
+
+@layer smrt.theme {
+  .smrt-touch-tools-preview__root {
+    color: var(--smrt-color-on-surface);
+  }
+  h4 {
+    font: var(--smrt-typography-headline-small-font);
+  }
+  h5 {
+    font: var(--smrt-typography-title-medium-font);
+  }
+  header p:not(.smrt-touch-tools-preview__eyebrow), .smrt-touch-tools-preview__posted {
+    color: var(--smrt-color-on-surface-variant);
+  }
+  .smrt-touch-tools-preview__eyebrow {
+    color: var(--smrt-color-primary);
+    font: var(--smrt-typography-label-small-font);
+    letter-spacing: .1em;
+    text-transform: uppercase;
+  }
+}
+
 </style>

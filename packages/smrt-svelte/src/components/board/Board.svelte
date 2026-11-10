@@ -213,9 +213,9 @@ function toggleColumn(columnId: string): void {
 }
 </script>
 
-<section bind:this={root} class="smrt-board" aria-label={label ?? t(M['ui.board.label'])} aria-roledescription="board" style:--smrt-board-lane-width={laneWidth}
+<section bind:this={root} class="smrt-board__root" aria-label={label ?? t(M['ui.board.label'])} aria-roledescription="board" style:--smrt-board-lane-width={laneWidth}
   data-smrt-component="Board">
-  <div class="smrt-board__lanes">
+  <div class="smrt-board__lanes" data-smrt-part="list">
     {#each columns as column, columnIndex (column.id)}
       {@const items = cardsInColumn(column.id)}
       {@const isCollapsed = collapsed.has(column.id)}
@@ -223,8 +223,9 @@ function toggleColumn(columnId: string): void {
         class:smrt-board__lane--disabled={column.disabled}
         class="smrt-board__lane"
         aria-label={t(M['ui.board.column'], { label: column.label, count: items.length })}
+        data-smrt-part="panel"
       >
-        <header class="smrt-board__header">
+        <header class="smrt-board__header" data-smrt-part="header">
           {#if collapsible}
             <!-- raw-primitive-allow: native button owns collapsible-lane ARIA state -->
             <button
@@ -234,11 +235,12 @@ function toggleColumn(columnId: string): void {
               aria-controls={laneListId(columnIndex)}
               aria-label={t(isCollapsed ? M['ui.board.expand_column'] : M['ui.board.collapse_column'], { label: column.label })}
               onclick={() => toggleColumn(column.id)}
+              data-smrt-part="trigger"
             >
               <span>{column.label}</span><span aria-hidden="true">{items.length}</span>
             </button>
           {:else}
-            <div class="smrt-board__title"><span>{column.label}</span><span>{items.length}</span></div>
+            <div class="smrt-board__title" data-smrt-part="title"><span>{column.label}</span><span>{items.length}</span></div>
           {/if}
           {#if columnHeader}
             {@render columnHeader({ column, count: items.length, collapsed: isCollapsed })}
@@ -249,6 +251,7 @@ function toggleColumn(columnId: string): void {
             id={laneListId(columnIndex)}
             class="smrt-board__cards"
             role="list"
+            data-smrt-part="list"
             data-smrt-board-column-id={column.id}
             ondragover={(event) => event.preventDefault()}
             ondrop={(event) => sortable.dropOnContainer(event, column.id)}
@@ -262,6 +265,7 @@ function toggleColumn(columnId: string): void {
                   class:smrt-board__card--touch-drag={sortable.movable}
                   class="smrt-board__card"
                   data-smrt-board-card-id={item.id}
+                  data-smrt-part="row"
                   draggable={sortable.nativeDraggable}
                   aria-pressed={sortable.drag?.itemId === item.id}
                   aria-describedby={sortable.drag?.itemId === item.id ? liveId : undefined}
@@ -280,7 +284,7 @@ function toggleColumn(columnId: string): void {
                 </button>
               </div>
             {:else}
-              <div role="listitem" class="smrt-board__empty">
+              <div role="listitem" class="smrt-board__empty" data-smrt-part="empty">
                 {t(M['ui.board.empty_column'], { column: column.label })}
               </div>
             {/each}
@@ -289,27 +293,128 @@ function toggleColumn(columnId: string): void {
       </section>
     {/each}
   </div>
-  <div id={liveId} class="smrt-board__live" aria-live="assertive" aria-atomic="true">{sortable.announcement}</div>
+  <div id={liveId} class="smrt-board__live" aria-live="assertive" aria-atomic="true" data-smrt-part="status">{sortable.announcement}</div>
 </section>
 
 <style>
 @layer smrt.reset, smrt.structure, smrt.theme;
-@layer smrt.theme {
-  .smrt-board { min-width: 0; }
-  .smrt-board__lanes { display: flex; gap: var(--smrt-spacing-4); overflow-x: auto; overscroll-behavior-x: contain; padding-block-end: var(--smrt-spacing-2); }
-  .smrt-board__lane { display: grid; grid-template-rows: auto minmax(0, 1fr); flex: 0 0 var(--smrt-board-lane-width, min(18rem, 82vw)); min-block-size: 12rem; max-block-size: min(42rem, 70vh); border: var(--smrt-hairline); border-radius: var(--smrt-radius-md); background: var(--smrt-color-surface-container); overflow: hidden; }
-  .smrt-board__lane--disabled { opacity: 0.6; }
-  .smrt-board__header { display: flex; align-items: center; justify-content: space-between; gap: var(--smrt-spacing-2); min-block-size: 2.75rem; padding: 0 var(--smrt-spacing-3); border-block-end: var(--smrt-hairline); }
-  .smrt-board__title, .smrt-board__collapse { display: flex; align-items: center; justify-content: space-between; gap: var(--smrt-spacing-2); inline-size: 100%; color: inherit; font: var(--smrt-typography-label-large-font); }
-  .smrt-board__collapse { padding: 0; border: 0; background: transparent; cursor: pointer; text-align: start; }
-  .smrt-board__collapse:focus-visible, .smrt-board__card:focus-visible { outline: 2px solid var(--smrt-color-primary); outline-offset: 2px; }
-  .smrt-board__cards { display: grid; align-content: start; gap: var(--smrt-spacing-2); min-block-size: 0; overflow-y: auto; overscroll-behavior-y: contain; padding: var(--smrt-spacing-3); }
-  .smrt-board__card { display: block; inline-size: 100%; padding: var(--smrt-spacing-3); border: var(--smrt-hairline); border-radius: var(--smrt-radius-sm); background: var(--smrt-color-surface); color: inherit; cursor: grab; text-align: start; }
-  .smrt-board__card--touch-drag { touch-action: none; }
-  .smrt-board__card:active { cursor: grabbing; }
-  .smrt-board__card--dragging { opacity: 0.55; }
-  .smrt-board__empty { margin: 0; color: var(--smrt-color-on-surface-variant); font: var(--smrt-typography-body-small-font); }
-  .smrt-board__live { position: absolute; inline-size: 1px; block-size: 1px; overflow: hidden; clip: rect(0 0 0 0); clip-path: inset(50%); white-space: nowrap; }
-  @media (prefers-reduced-motion: reduce) { .smrt-board__card { scroll-behavior: auto; } }
+@layer smrt.structure {
+  .smrt-board__root {
+    min-width: 0;
+  }
+  .smrt-board__lanes {
+    display: flex;
+    gap: var(--smrt-spacing-4);
+    overflow-x: auto;
+    overscroll-behavior-x: contain;
+    padding-block-end: var(--smrt-spacing-2);
+  }
+  .smrt-board__lane {
+    display: grid;
+    grid-template-rows: auto minmax(0, 1fr);
+    flex: 0 0 var(--smrt-board-lane-width, min(18rem, 82vw));
+    min-block-size: 12rem;
+    max-block-size: min(42rem, 70vh);
+    overflow: hidden;
+  }
+  .smrt-board__header {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    gap: var(--smrt-spacing-2);
+    min-block-size: 2.75rem;
+    padding: 0 var(--smrt-spacing-3);
+  }
+  .smrt-board__title, .smrt-board__collapse {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    gap: var(--smrt-spacing-2);
+    inline-size: 100%;
+  }
+  .smrt-board__collapse {
+    padding: 0;
+    cursor: pointer;
+  }
+  .smrt-board__cards {
+    display: grid;
+    align-content: start;
+    gap: var(--smrt-spacing-2);
+    min-block-size: 0;
+    overflow-y: auto;
+    overscroll-behavior-y: contain;
+    padding: var(--smrt-spacing-3);
+  }
+  .smrt-board__card {
+    display: block;
+    inline-size: 100%;
+    padding: var(--smrt-spacing-3);
+    cursor: grab;
+  }
+  .smrt-board__card--touch-drag {
+    touch-action: none;
+  }
+  .smrt-board__card:active {
+    cursor: grabbing;
+  }
+  .smrt-board__empty {
+    margin: 0;
+  }
+  .smrt-board__live {
+    position: absolute;
+    inline-size: 1px;
+    block-size: 1px;
+    overflow: hidden;
+    clip: rect(0 0 0 0);
+    clip-path: inset(50%);
+    white-space: nowrap;
+  }
+  @media (prefers-reduced-motion: reduce) {
+    .smrt-board__card {
+      scroll-behavior: auto;
+    }
+  }
 }
+
+@layer smrt.theme {
+  .smrt-board__lane {
+    border: var(--smrt-hairline);
+    border-radius: var(--smrt-radius-md);
+    background: var(--smrt-color-surface-container);
+  }
+  .smrt-board__lane--disabled {
+    opacity: 0.6;
+  }
+  .smrt-board__header {
+    border-block-end: var(--smrt-hairline);
+  }
+  .smrt-board__title, .smrt-board__collapse {
+    color: inherit;
+    font: var(--smrt-typography-label-large-font);
+  }
+  .smrt-board__collapse {
+    border: 0;
+    background: transparent;
+    text-align: start;
+  }
+  .smrt-board__collapse:focus-visible, .smrt-board__card:focus-visible {
+    outline: 2px solid var(--smrt-color-primary);
+    outline-offset: 2px;
+  }
+  .smrt-board__card {
+    border: var(--smrt-hairline);
+    border-radius: var(--smrt-radius-sm);
+    background: var(--smrt-color-surface);
+    color: inherit;
+    text-align: start;
+  }
+  .smrt-board__card--dragging {
+    opacity: 0.55;
+  }
+  .smrt-board__empty {
+    color: var(--smrt-color-on-surface-variant);
+    font: var(--smrt-typography-body-small-font);
+  }
+}
+
 </style>

@@ -20,30 +20,30 @@ const pending = $derived(approval.status === 'pending');
 const uid = $derived(`ap-${approval.id}`);
 const badge = $derived(
   approval.status === 'approved'
-    ? 'sh-badge-ok'
+    ? 'smrt-app-shell__badge-ok'
     : approval.status === 'pending'
-      ? 'sh-badge-warn'
-      : 'sh-badge-bad',
+      ? 'smrt-app-shell__badge-warn'
+      : 'smrt-app-shell__badge-bad',
 );
 </script>
 
-<article class="sh-card" aria-labelledby="{uid}-title">
-  <header class="top">
+<article class="smrt-app-shell__card" aria-labelledby="{uid}-title" data-smrt-component="ApprovalCard">
+  <header class="smrt-approval-card__top" data-smrt-part="header">
     <h3 id="{uid}-title">{approval.summary}</h3>
-    <span class="sh-badge {badge}">{statusLabel(approval.status)}</span>
+    <span class="smrt-app-shell__badge {badge}" data-smrt-part="badge">{statusLabel(approval.status)}</span>
   </header>
 
   {#each detail.lines as line, i (i)}
-    <p class:warn={detail.destructive && i === detail.lines.length - 1}>{line}</p>
+    <p class:smrt-approval-card__warn={detail.destructive && i === detail.lines.length - 1} data-smrt-part="description">{line}</p>
   {/each}
 
   {#each detail.blocks as block, i (i)}
-    <p class="sh-muted" id="{uid}-code-{i}">Code for {block.title}</p>
+    <p class="smrt-app-shell__muted" id="{uid}-code-{i}" data-smrt-part="description">Code for {block.title}</p>
     <!-- svelte-ignore a11y_no_noninteractive_tabindex (keyboard scrolling of long code) -->
-    <pre class="sh-code" tabindex="0" aria-labelledby="{uid}-code-{i}"><code>{block.code}</code></pre>
+    <pre class="smrt-app-shell__code" tabindex="0" aria-labelledby="{uid}-code-{i}" data-smrt-part="code"><code>{block.code}</code></pre>
   {/each}
 
-  <p class="sh-muted">
+  <p class="smrt-app-shell__muted" data-smrt-part="description">
     Asked <time datetime={approval.createdAt} title={fullTime(approval.createdAt)}
       >{timeAgo(approval.createdAt)}</time
     >{#if approval.requestedBy}
@@ -55,26 +55,26 @@ const badge = $derived(
         by {approval.decidedBy}{/if}{/if}
   </p>
 
-  {#if failed}<p class="sh-alert sh-alert-error">{failed}</p>{/if}
-  {#if message}<p class="sh-alert sh-alert-error" role="alert">{message}</p>{/if}
+  {#if failed}<p class="smrt-app-shell__alert smrt-app-shell__alert-error" data-smrt-part="status">{failed}</p>{/if}
+  {#if message}<p class="smrt-app-shell__alert smrt-app-shell__alert-error" role="alert" data-smrt-part="status">{message}</p>{/if}
 
   {#if pending && ondecide}
-    <div class="sh-actions">
+    <div class="smrt-app-shell__actions" data-smrt-part="actions">
       <button
         type="button"
-        class="sh-btn sh-btn-primary"
+        class="smrt-app-shell__btn smrt-app-shell__btn-primary"
         disabled={busy}
-        onclick={() => ondecide(true)}
+        onclick={() => ondecide(true)} data-smrt-part="trigger"
       >
-        {busy ? 'Working…' : 'Approve'}<span class="sr-only">: {approval.summary}</span>
+        {busy ? 'Working…' : 'Approve'}<span class="smrt-approval-card__sr-only" data-smrt-part="label">: {approval.summary}</span>
       </button>
       <button
         type="button"
-        class="sh-btn"
+        class="smrt-app-shell__btn"
         disabled={busy}
-        onclick={() => ondecide(false)}
+        onclick={() => ondecide(false)} data-smrt-part="trigger"
       >
-        Deny<span class="sr-only">: {approval.summary}</span>
+        Deny<span class="smrt-approval-card__sr-only" data-smrt-part="label">: {approval.summary}</span>
       </button>
     </div>
   {/if}
@@ -82,8 +82,9 @@ const badge = $derived(
 
 <style>
 @layer smrt.reset, smrt.structure, smrt.theme;
-@layer smrt.theme {
-  .top {
+
+@layer smrt.structure {
+  .smrt-approval-card__top {
     display: flex;
     flex-wrap: wrap;
     align-items: baseline;
@@ -92,21 +93,26 @@ const badge = $derived(
   }
   h3 {
     margin: 0;
-    font-size: 1.0625rem;
   }
   p {
     margin: var(--smrt-spacing-sm, 0.5rem) 0;
   }
-  .warn {
-    font-weight: 600;
-  }
-  .sr-only {
+  .smrt-approval-card__sr-only {
     position: absolute;
     width: 1px;
     height: 1px;
     overflow: hidden;
     clip-path: inset(50%);
     white-space: nowrap;
+  }
+}
+
+@layer smrt.theme {
+  h3 {
+    font-size: 1.0625rem;
+  }
+  .smrt-approval-card__warn {
+    font-weight: 600;
   }
 }
 </style>

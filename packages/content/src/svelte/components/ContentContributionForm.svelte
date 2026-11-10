@@ -127,7 +127,7 @@ function handleSubmit(event: SubmitEvent) {
 }
 </script>
 
-<div class="contribution-form-shell" data-smrt-component="ContentContributionForm">
+<div class="smrt-content-contribution-form__root" data-smrt-component="ContentContributionForm">
   <Form
     class="contribution-form"
     method="post"
@@ -148,7 +148,7 @@ function handleSubmit(event: SubmitEvent) {
     </label>
 
     {#if showContributorFields}
-      <div class="grid">
+      <div class="smrt-content-contribution-form__grid" data-smrt-part="grid">
         <label>
           Email
           <Input name="contributorEmail" type="email" bind:value={draft.contributorEmail} required />
@@ -187,7 +187,7 @@ function handleSubmit(event: SubmitEvent) {
         />
       </label>
       {#if draft.files.length > 0}
-        <div class="file-list">
+        <div class="smrt-content-contribution-form__file-list" data-smrt-part="list">
           {#each draft.files as file (file.name + file.size)}
             <span>{file.name} ({Math.max(1, Math.round(file.size / 1024))} KB)</span>
           {/each}
@@ -195,7 +195,7 @@ function handleSubmit(event: SubmitEvent) {
       {/if}
     {/if}
 
-    <div class="actions">
+    <div class="smrt-content-contribution-form__actions" data-smrt-part="actions">
       <Button variant="primary" type="submit">{submitLabel}</Button>
       {#if onCancel}
         <Button variant="secondary" type="button" onclick={() => onCancel?.()}>
@@ -208,35 +208,37 @@ function handleSubmit(event: SubmitEvent) {
 
 <style>
 @layer smrt.reset, smrt.structure, smrt.theme;
-@layer smrt.theme {
-  .contribution-form-shell :global(.contribution-form) {
+@layer smrt.structure {
+  .smrt-content-contribution-form__root :global(.contribution-form) {
     display: grid;
     gap: 0.85rem;
   }
-
-  .grid {
+  .smrt-content-contribution-form__grid {
     display: grid;
     gap: 0.75rem;
     grid-template-columns: repeat(auto-fit, minmax(12rem, 1fr));
   }
-
   label {
     display: grid;
     gap: 0.35rem;
   }
-
-  .file-list {
+  .smrt-content-contribution-form__file-list {
     display: flex;
     gap: 0.5rem;
     flex-wrap: wrap;
-    font-size: var(--smrt-typography-body-medium-size, 0.9rem);
-    color: var(--smrt-color-on-surface-variant);
   }
-
-  .actions {
+  .smrt-content-contribution-form__actions {
     display: flex;
     gap: 0.75rem;
     flex-wrap: wrap;
   }
 }
+
+@layer smrt.theme {
+  .smrt-content-contribution-form__file-list {
+    font-size: var(--smrt-typography-body-medium-size, 0.9rem);
+    color: var(--smrt-color-on-surface-variant);
+  }
+}
+
 </style>

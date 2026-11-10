@@ -140,12 +140,12 @@ async function testConnection(): Promise<void> {
 }
 </script>
 
-<div class="isp-default" data-testid="inference-default-view">
-  <form class="isp-form" onsubmit={saveChoices} data-testid="inference-choices-form">
-    <fieldset class="isp-modes" disabled={busy}>
+<div class="smrt-inference-default-view__root" data-testid="inference-default-view" data-smrt-component="InferenceDefaultView">
+  <form class="smrt-inference-default-view__form" data-smrt-part="field" onsubmit={saveChoices} data-testid="inference-choices-form">
+    <fieldset class="smrt-inference-default-view__modes" data-smrt-part="list" disabled={busy}>
       <legend>Inference</legend>
       {#each INFERENCE_SETTINGS_MODES as option (option)}
-        <label class="isp-radio">
+        <label class="smrt-inference-default-view__radio" data-smrt-part="control">
           <input type="radio" name="mode" value={option} bind:group={mode} />
           {MODE_LABELS[option]}
         </label>
@@ -153,7 +153,7 @@ async function testConnection(): Promise<void> {
     </fieldset>
 
     {#if needsProvider}
-      <label class="isp-field">
+      <label class="smrt-inference-default-view__field" data-smrt-part="field">
         <span>Provider</span>
         <select name="provider" bind:value={provider} disabled={busy}>
           <option value="">Choose a provider</option>
@@ -163,7 +163,7 @@ async function testConnection(): Promise<void> {
         </select>
       </label>
 
-      <label class="isp-field">
+      <label class="smrt-inference-default-view__field" data-smrt-part="field">
         <span>Base URL</span>
         <input
           name="baseUrl"
@@ -174,7 +174,7 @@ async function testConnection(): Promise<void> {
         />
       </label>
 
-      <label class="isp-field">
+      <label class="smrt-inference-default-view__field" data-smrt-part="field">
         <span>Model</span>
         <input
           name="model"
@@ -189,13 +189,13 @@ async function testConnection(): Promise<void> {
         </datalist>
       </label>
       {#if onDiscoverModels}
-        <button type="button" class="isp-link" onclick={() => onDiscoverModels?.()} disabled={busy}>
+        <button type="button" class="smrt-inference-default-view__link" data-smrt-part="action" onclick={() => onDiscoverModels?.()} disabled={busy}>
           Find local models
         </button>
       {/if}
     {/if}
 
-    <label class="isp-field">
+    <label class="smrt-inference-default-view__field" data-smrt-part="field">
       <span>Default tier</span>
       <select name="defaultTier" bind:value={defaultTier} disabled={busy}>
         {#each INFERENCE_SETTINGS_TIERS as tier (tier)}
@@ -204,7 +204,7 @@ async function testConnection(): Promise<void> {
       </select>
     </label>
 
-    <div class="isp-actions">
+    <div class="smrt-inference-default-view__actions" data-smrt-part="actions">
       <button type="submit" disabled={busy || !onSaveDefaults}>Save</button>
       {#if needsProvider && onTestConnection}
         <button
@@ -218,8 +218,8 @@ async function testConnection(): Promise<void> {
     </div>
     {#if testResult}
       <p
-        class="isp-result"
-        class:isp-result-ok={testResult.reachable}
+        class="smrt-inference-default-view__result" data-smrt-part="message"
+        class:smrt-inference-default-view__result-ok={testResult.reachable}
         role="status"
         data-testid="inference-test-result"
       >
@@ -233,11 +233,11 @@ async function testConnection(): Promise<void> {
     <!-- Remount on a provider or endpoint change: a typed key never carries
          over to another endpoint. -->
     {#key `${provider}\n${baseUrl.trim()}`}
-    <form class="isp-key" onsubmit={saveKey} autocomplete="off" data-testid="inference-key-form">
-      <span class="isp-key-status" data-testid="inference-key-status">
+    <form class="smrt-inference-default-view__key" data-smrt-part="panel" onsubmit={saveKey} autocomplete="off" data-testid="inference-key-form">
+      <span class="smrt-inference-default-view__key-status" data-smrt-part="meta" data-testid="inference-key-status">
         API key: {keySet ? 'set' : 'not set'}
       </span>
-      <label class="isp-field">
+      <label class="smrt-inference-default-view__field" data-smrt-part="field">
         <span>{keySet ? 'Replace key' : 'Add key'}</span>
         <input
           name="apiKey"
@@ -250,11 +250,11 @@ async function testConnection(): Promise<void> {
       <button type="submit" disabled={busy || !onSaveKey}>
         {keySet ? 'Replace key' : 'Save key'}
       </button>
-      <p class="isp-hint">
+      <p class="smrt-inference-default-view__hint" data-smrt-part="description">
         The key is stored on the server and only ever sent to this provider's endpoint.
       </p>
       {#if keyError}
-        <p class="isp-result" role="alert">{keyError}</p>
+        <p class="smrt-inference-default-view__result" data-smrt-part="message" role="alert">{keyError}</p>
       {/if}
     </form>
     {/key}
@@ -263,68 +263,84 @@ async function testConnection(): Promise<void> {
 
 <style>
 @layer smrt.reset, smrt.structure, smrt.theme;
-@layer smrt.theme {
-  .isp-default {
+@layer smrt.structure {
+  .smrt-inference-default-view__root {
     display: flex;
     flex-direction: column;
     gap: 1rem;
   }
-  .isp-form,
-  .isp-key {
+  .smrt-inference-default-view__form,
+  .smrt-inference-default-view__key {
     display: flex;
     flex-direction: column;
     gap: 0.75rem;
   }
-  .isp-modes {
+  .smrt-inference-default-view__modes {
     display: flex;
     flex-wrap: wrap;
     gap: 0.75rem;
-    border: none;
     padding: 0;
     margin: 0;
   }
-  .isp-modes legend {
-    font-weight: 600;
+  .smrt-inference-default-view__modes legend {
     margin-bottom: 0.25rem;
   }
-  .isp-radio {
+  .smrt-inference-default-view__radio {
     display: flex;
     align-items: center;
     gap: 0.375rem;
   }
-  .isp-field {
+  .smrt-inference-default-view__field {
     display: flex;
     flex-direction: column;
     gap: 0.25rem;
+  }
+  .smrt-inference-default-view__field input,
+  .smrt-inference-default-view__field select {
+    padding: 0.4rem 0.5rem;
+  }
+  .smrt-inference-default-view__actions {
+    display: flex;
+    gap: 0.5rem;
+  }
+  .smrt-inference-default-view__link {
+    align-self: flex-start;
+  }
+  .smrt-inference-default-view__hint,
+  .smrt-inference-default-view__result {
+    margin: 0;
+  }
+}
+
+@layer smrt.theme {
+  .smrt-inference-default-view__modes {
+    border: none;
+  }
+  .smrt-inference-default-view__modes legend {
+    font-weight: 600;
+  }
+  .smrt-inference-default-view__field {
     font-size: 0.875rem;
   }
-  .isp-field input,
-  .isp-field select {
-    padding: 0.4rem 0.5rem;
+  .smrt-inference-default-view__field input,
+  .smrt-inference-default-view__field select {
     border: var(--smrt-hairline);
     border-radius: 0.375rem;
     background: var(--smrt-color-surface);
     color: inherit;
     font: inherit;
   }
-  .isp-actions {
-    display: flex;
-    gap: 0.5rem;
-  }
-  .isp-link {
-    align-self: flex-start;
-  }
-  .isp-key-status {
+  .smrt-inference-default-view__key-status {
     font-weight: 600;
   }
-  .isp-hint,
-  .isp-result {
-    margin: 0;
+  .smrt-inference-default-view__hint,
+  .smrt-inference-default-view__result {
     font-size: 0.8125rem;
     color: var(--smrt-color-on-surface-variant);
   }
-  .isp-result-ok {
+  .smrt-inference-default-view__result-ok {
     color: var(--smrt-color-success, inherit);
   }
 }
+
 </style>

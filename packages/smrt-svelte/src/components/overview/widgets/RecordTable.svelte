@@ -129,7 +129,7 @@ const tableSummaries = $derived.by(() => {
   {@const text = meta ? formatRecordCell(meta, value, context) : String(value ?? '')}
   {@const shown = text === '' && column.id === firstKey ? row.title : text}
   {#if column.id === firstKey && row.href && shown !== ''}
-    <a class="smrt-record-table__link" href={row.href}>
+    <a class="smrt-record-table__link" data-smrt-part="title" href={row.href}>
       {#if meta?.role === 'identifier'}<code>{shown}</code>{:else}{shown}{/if}
     </a>
   {:else if meta?.role === 'status' && shown !== ''}
@@ -141,7 +141,7 @@ const tableSummaries = $derived.by(() => {
   {/if}
 {/snippet}
 
-<div class="smrt-record-table" data-smrt-component="RecordTable" role="group" aria-label={label}>
+<div class="smrt-record-table__root" data-smrt-component="RecordTable" role="group" aria-label={label}>
   <DataTable
     data={tableRows}
     columns={tableColumns}
@@ -158,10 +158,26 @@ const tableSummaries = $derived.by(() => {
 
 <style>
 @layer smrt.reset, smrt.structure, smrt.theme;
-@layer smrt.theme {
-  .smrt-record-table { min-inline-size: 0; font-variant-numeric: tabular-nums; }
-  .smrt-record-table code { font-family: var(--smrt-font-family-mono); }
-  .smrt-record-table__link { color: var(--smrt-color-primary); text-decoration: none; }
-  .smrt-record-table__link:hover { text-decoration: underline; }
+@layer smrt.structure {
+  .smrt-record-table__root {
+    min-inline-size: 0;
+  }
 }
+
+@layer smrt.theme {
+  .smrt-record-table__root {
+    font-variant-numeric: tabular-nums;
+  }
+  .smrt-record-table__root code {
+    font-family: var(--smrt-font-family-mono);
+  }
+  .smrt-record-table__link {
+    color: var(--smrt-color-primary);
+    text-decoration: none;
+  }
+  .smrt-record-table__link:hover {
+    text-decoration: underline;
+  }
+}
+
 </style>

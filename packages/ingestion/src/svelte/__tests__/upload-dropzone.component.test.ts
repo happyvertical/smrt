@@ -37,7 +37,7 @@ it('leads an empty inbox with a drop zone that keeps the accept hint; dropped fi
   await waitFor(() => expect(callbacks.list).toHaveBeenCalledOnce());
   await tick();
   const zone = picker(container);
-  expect(zone.classList.contains('dropzone')).toBe(true);
+  expect(zone.classList.contains('smrt-file-picker__dropzone')).toBe(true);
   expect(zone.textContent).toContain(
     'Drop files here, or browse. Select documents, images, email, or audio.',
   );
@@ -50,14 +50,14 @@ it('leads an empty inbox with a drop zone that keeps the accept hint; dropped fi
   const inbox = screen.getByTestId('intake-inbox');
   const order = [...inbox.querySelectorAll('*')];
   expect(order.indexOf(zone)).toBeLessThan(
-    order.indexOf(inbox.querySelector('.toolbar') as Element),
+    order.indexOf(inbox.querySelector('[data-smrt-part="actions"]') as Element),
   );
   expect(button().disabled).toBe(true);
   const file = new File(['bytes'], 'receipt.pdf', { type: 'application/pdf' });
   await fireEvent.dragEnter(zone);
-  expect(zone.classList.contains('dragging')).toBe(true);
+  expect(zone.classList.contains('smrt-file-picker__dragging')).toBe(true);
   await fireEvent.drop(zone, { dataTransfer: { files: [file] } });
-  expect(zone.classList.contains('dragging')).toBe(false);
+  expect(zone.classList.contains('smrt-file-picker__dragging')).toBe(false);
   await waitFor(() => expect(button().disabled).toBe(false));
   await fireEvent.click(button());
   await waitFor(() => expect(callbacks.upload).toHaveBeenCalledOnce());
@@ -96,7 +96,9 @@ it('dropzone={false} keeps the plain picker, on the workspace too', async () => 
   const callbacks = host();
   const inbox = render(IntakeInbox, { host: callbacks, dropzone: false });
   await waitFor(() => expect(callbacks.list).toHaveBeenCalledOnce());
-  expect(picker(inbox.container).classList.contains('dropzone')).toBe(false);
+  expect(
+    picker(inbox.container).classList.contains('smrt-file-picker__dropzone'),
+  ).toBe(false);
   expect(picker(inbox.container).textContent).not.toContain('Drop files');
   expect(picker(inbox.container).textContent).toContain(
     'Select documents, images, email, or audio.',
@@ -107,11 +109,17 @@ it('dropzone={false} keeps the plain picker, on the workspace too', async () => 
     dropzone: false,
   });
   await waitFor(() => expect(callbacks.list).toHaveBeenCalledTimes(2));
-  expect(picker(workspace.container).classList.contains('dropzone')).toBe(
-    false,
-  );
+  expect(
+    picker(workspace.container).classList.contains(
+      'smrt-file-picker__dropzone',
+    ),
+  ).toBe(false);
   cleanup();
   const byDefault = render(IntakeWorkspace, { host: callbacks });
   await waitFor(() => expect(callbacks.list).toHaveBeenCalledTimes(3));
-  expect(picker(byDefault.container).classList.contains('dropzone')).toBe(true);
+  expect(
+    picker(byDefault.container).classList.contains(
+      'smrt-file-picker__dropzone',
+    ),
+  ).toBe(true);
 });

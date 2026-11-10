@@ -125,21 +125,21 @@ function readOnlyEffectLabel(feature: FeatureSettingsView): string {
 }
 </script>
 
-<section class="feature-settings" data-testid="feature-settings-panel" data-smrt-component="FeatureSettingsPanel">
+<section class="smrt-feature-settings-panel__root" data-testid="feature-settings-panel" data-smrt-component="FeatureSettingsPanel">
   {#if message}
-    <p class="fs-flash" role="status">{message}</p>
+    <p class="smrt-feature-settings-panel__flash" data-smrt-part="message" role="status">{message}</p>
   {/if}
   {#if error}
-    <p class="fs-flash fs-flash-error" role="alert">{error}</p>
+    <p class="smrt-feature-settings-panel__flash smrt-feature-settings-panel__flash-error" data-smrt-part="message" role="alert">{error}</p>
   {/if}
 
   {#key resetKey}
     {#each features as feature (feature.featureKey)}
       <Card variant="outlined">
-        <div class="fs-row">
-          <div class="fs-copy">
-            <div class="fs-title-row">
-              <h3 class="fs-title">{feature.label || feature.featureKey}</h3>
+        <div class="smrt-feature-settings-panel__row" data-smrt-part="row">
+          <div class="smrt-feature-settings-panel__copy" data-smrt-part="body">
+            <div class="smrt-feature-settings-panel__title-row" data-smrt-part="header">
+              <h3 class="smrt-feature-settings-panel__title" data-smrt-part="title">{feature.label || feature.featureKey}</h3>
               <Badge
                 variant={feature.effectiveEnabled ? 'success' : 'default'}
                 size="sm"
@@ -147,17 +147,17 @@ function readOnlyEffectLabel(feature: FeatureSettingsView): string {
                 {effectiveStateLabel(feature.effectiveEnabled)}
               </Badge>
             </div>
-            <p class="fs-description">{feature.description || feature.featureKey}</p>
+            <p class="smrt-feature-settings-panel__description" data-smrt-part="description">{feature.description || feature.featureKey}</p>
             {#if showKeys}
-              <code class="fs-key">{feature.featureKey}</code>
+              <code class="smrt-feature-settings-panel__key" data-smrt-part="key">{feature.featureKey}</code>
               {#if feature.packageName}
-                <span class="fs-package">{feature.packageName}</span>
+                <span class="smrt-feature-settings-panel__package" data-smrt-part="meta">{feature.packageName}</span>
               {/if}
             {/if}
           </div>
 
           <form
-            class="fs-controls"
+            class="smrt-feature-settings-panel__controls" data-smrt-part="actions"
             method="POST"
             action={formAction}
             onsubmit={(event) => submit(event, feature)}
@@ -166,8 +166,8 @@ function readOnlyEffectLabel(feature: FeatureSettingsView): string {
 
             {#if showGlobal}
               {#if globalIsEditable}
-                <label class="fs-field">
-                  <span class="fs-field-label">{globalLabel}</span>
+                <label class="smrt-feature-settings-panel__field" data-smrt-part="field">
+                  <span class="smrt-feature-settings-panel__field-label" data-smrt-part="label">{globalLabel}</span>
                   <select name="globalEffect" disabled={busy}>
                     <option
                       value="inherit"
@@ -191,15 +191,15 @@ function readOnlyEffectLabel(feature: FeatureSettingsView): string {
                   </select>
                 </label>
               {:else}
-                <div class="fs-field">
-                  <span class="fs-field-label">{globalLabel}</span>
-                  <p class="fs-readonly">{readOnlyEffectLabel(feature)}</p>
+                <div class="smrt-feature-settings-panel__field" data-smrt-part="field">
+                  <span class="smrt-feature-settings-panel__field-label" data-smrt-part="label">{globalLabel}</span>
+                  <p class="smrt-feature-settings-panel__readonly" data-smrt-part="value">{readOnlyEffectLabel(feature)}</p>
                 </div>
               {/if}
             {/if}
 
-            <label class="fs-field">
-              <span class="fs-field-label">{tenantLabel}</span>
+            <label class="smrt-feature-settings-panel__field" data-smrt-part="field">
+              <span class="smrt-feature-settings-panel__field-label" data-smrt-part="label">{tenantLabel}</span>
               <select name="tenantEffect" disabled={busy}>
                 <option
                   value="inherit"
@@ -229,121 +229,124 @@ function readOnlyEffectLabel(feature: FeatureSettingsView): string {
         </div>
       </Card>
     {:else}
-      <p class="fs-empty">{emptyMessage}</p>
+      <p class="smrt-feature-settings-panel__empty" data-smrt-part="empty">{emptyMessage}</p>
     {/each}
   {/key}
 </section>
 
 <style>
 @layer smrt.reset, smrt.structure, smrt.theme;
-@layer smrt.theme {
-  .feature-settings {
+@layer smrt.structure {
+  .smrt-feature-settings-panel__root {
     display: flex;
     flex-direction: column;
     gap: 1rem;
   }
-
-  .fs-flash {
+  .smrt-feature-settings-panel__flash {
     margin: 0;
     padding: 0.625rem 0.75rem;
-    border-radius: 0.375rem;
-    background: var(--smrt-color-surface-variant);
   }
-
-  .fs-flash-error {
-    color: var(--smrt-color-error);
-    background: var(--smrt-color-error-container);
-  }
-
-  .fs-empty {
+  .smrt-feature-settings-panel__empty {
     margin: 0;
-    color: var(--smrt-color-on-surface-variant);
-    font-style: italic;
   }
-
-  .fs-row {
+  .smrt-feature-settings-panel__row {
     display: grid;
     grid-template-columns: minmax(0, 1fr) minmax(16rem, 22rem);
     gap: 1rem;
     align-items: start;
   }
-
-  .fs-copy {
+  .smrt-feature-settings-panel__copy {
     min-width: 0;
     display: flex;
     flex-direction: column;
     gap: 0.25rem;
   }
-
-  .fs-title-row {
+  .smrt-feature-settings-panel__title-row {
     display: flex;
     align-items: center;
     justify-content: space-between;
     gap: 0.5rem;
   }
-
-  .fs-title {
+  .smrt-feature-settings-panel__title {
     margin: 0;
-    font-size: 1rem;
-    line-height: 1.25;
   }
-
-  .fs-description {
+  .smrt-feature-settings-panel__description {
     margin: 0;
-    color: var(--smrt-color-on-surface-variant);
-    line-height: 1.45;
   }
-
-  .fs-key,
-  .fs-package {
-    font-size: 0.8125rem;
-    color: var(--smrt-color-on-surface-variant);
+  .smrt-feature-settings-panel__key,
+  .smrt-feature-settings-panel__package {
     overflow-wrap: anywhere;
   }
-
-  .fs-controls {
+  .smrt-feature-settings-panel__controls {
     display: flex;
     align-items: flex-end;
     gap: 0.5rem;
   }
-
-  .fs-field {
+  .smrt-feature-settings-panel__field {
     min-width: 0;
     flex: 1 1 0;
     display: flex;
     flex-direction: column;
     gap: 0.25rem;
   }
+  .smrt-feature-settings-panel__field select {
+    width: 100%;
+    padding: 0.375rem 0.5rem;
+  }
+  .smrt-feature-settings-panel__readonly {
+    margin: 0;
+  }
+  @media (max-width: 860px) {
+    .smrt-feature-settings-panel__row {
+      grid-template-columns: 1fr;
+    }
+    .smrt-feature-settings-panel__controls {
+      flex-direction: column;
+      align-items: stretch;
+    }
+  }
+}
 
-  .fs-field-label {
+@layer smrt.theme {
+  .smrt-feature-settings-panel__flash {
+    border-radius: 0.375rem;
+    background: var(--smrt-color-surface-variant);
+  }
+  .smrt-feature-settings-panel__flash-error {
+    color: var(--smrt-color-error);
+    background: var(--smrt-color-error-container);
+  }
+  .smrt-feature-settings-panel__empty {
+    color: var(--smrt-color-on-surface-variant);
+    font-style: italic;
+  }
+  .smrt-feature-settings-panel__title {
+    font-size: 1rem;
+    line-height: 1.25;
+  }
+  .smrt-feature-settings-panel__description {
+    color: var(--smrt-color-on-surface-variant);
+    line-height: 1.45;
+  }
+  .smrt-feature-settings-panel__key,
+  .smrt-feature-settings-panel__package {
     font-size: 0.8125rem;
     color: var(--smrt-color-on-surface-variant);
   }
-
-  .fs-field select {
-    width: 100%;
-    padding: 0.375rem 0.5rem;
+  .smrt-feature-settings-panel__field-label {
+    font-size: 0.8125rem;
+    color: var(--smrt-color-on-surface-variant);
+  }
+  .smrt-feature-settings-panel__field select {
     border: var(--smrt-hairline);
     border-radius: 0.375rem;
     background: var(--smrt-color-surface);
     color: inherit;
     font: inherit;
   }
-
-  .fs-readonly {
-    margin: 0;
+  .smrt-feature-settings-panel__readonly {
     line-height: 1.45;
   }
-
-  @media (max-width: 860px) {
-    .fs-row {
-      grid-template-columns: 1fr;
-    }
-
-    .fs-controls {
-      flex-direction: column;
-      align-items: stretch;
-    }
-  }
 }
+
 </style>

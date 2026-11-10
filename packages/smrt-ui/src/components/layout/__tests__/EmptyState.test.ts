@@ -37,7 +37,9 @@ describe('EmptyState', () => {
     const { container } = render(EmptyState, {
       props: { title: 'Empty', icon: 'search' },
     });
-    expect(container.querySelector('.icon-container svg')).not.toBeNull();
+    expect(
+      container.querySelector('[data-smrt-part="icon"] svg'),
+    ).not.toBeNull();
   });
 
   it('renders a custom icon snippet', () => {
@@ -78,7 +80,9 @@ describe('EmptyState', () => {
     const { container } = render(EmptyState, {
       props: { title: 'Empty', size: 'sm' },
     });
-    expect(container.querySelector('.empty-state')).toHaveClass('sm');
+    expect(
+      container.querySelector('[data-smrt-component="EmptyState"]'),
+    ).toHaveClass('smrt-empty-state__sm');
   });
 
   it('is axe-clean with a description and button action', async () => {

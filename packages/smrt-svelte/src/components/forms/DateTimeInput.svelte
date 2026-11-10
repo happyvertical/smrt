@@ -349,12 +349,12 @@ function handleNativeChange(e: Event) {
 }
 </script>
 
-<div class="smrt-datetime" class:listening={isHolding} class:parsing={isParsing} data-smrt-component="DateTimeInput">
+<div class="smrt-date-time-input__root" class:smrt-date-time-input__listening={isHolding} class:smrt-date-time-input__parsing={isParsing} data-smrt-component="DateTimeInput">
   {#if label}
     <FieldLabel id={labelId} for={name} {label} {required} />
   {/if}
 
-  <div class="input-wrapper">
+  <div class="smrt-date-time-input__input-wrapper" data-smrt-part="field">
     {#if isSmrt}
       <!-- In SMRT mode: text input with voice -->
       <input
@@ -367,7 +367,8 @@ function handleNativeChange(e: Event) {
         value={displayValue}
         disabled={disabled || isParsing}
         {required}
-        class="smrt-input smrt-mode"
+        class="smrt-date-time-input__input smrt-date-time-input__mode"
+        data-smrt-part="input"
         aria-invalid={parseError ? 'true' : undefined}
         aria-describedby={parseError ? `${name}-error` : undefined}
         readonly
@@ -380,8 +381,9 @@ function handleNativeChange(e: Event) {
 
       <button
         type="button"
-        class="mic-btn"
-        class:active={isHolding}
+        class="smrt-date-time-input__mic-btn"
+        class:smrt-date-time-input__active={isHolding}
+        data-smrt-part="trigger"
         disabled={disabled || isParsing}
         onclick={handleMicClick}
         onkeydown={handleMicKeydown}
@@ -400,7 +402,8 @@ function handleNativeChange(e: Event) {
             fill="none"
             stroke="currentColor"
             stroke-width="2"
-            class="spinner"
+            class="smrt-date-time-input__spinner"
+            data-smrt-part="spinner"
           >
             <circle cx="12" cy="12" r="10" stroke-dasharray="32" stroke-dashoffset="12"/>
           </svg>
@@ -432,7 +435,8 @@ function handleNativeChange(e: Event) {
         value={value}
         {disabled}
         {required}
-        class="smrt-input"
+        class="smrt-date-time-input__input"
+        data-smrt-part="input"
         aria-invalid={parseError ? 'true' : undefined}
         aria-describedby={parseError ? `${name}-error` : undefined}
         onchange={handleNativeChange}
@@ -441,18 +445,18 @@ function handleNativeChange(e: Event) {
   </div>
 
   {#if isHolding}
-    <div class="listening-indicator">Recording...</div>
+    <div class="smrt-date-time-input__listening-indicator" data-smrt-part="status">Recording...</div>
   {:else if isParsing}
-    <div class="parsing-indicator">{t(M['ui.date_time_input.parsing'])}</div>
+    <div class="smrt-date-time-input__parsing-indicator" data-smrt-part="status">{t(M['ui.date_time_input.parsing'])}</div>
   {:else if parseError}
-    <div id={`${name}-error`} class="error-indicator" role="alert">{parseError}</div>
+    <div id={`${name}-error`} class="smrt-date-time-input__error-indicator" data-smrt-part="error" role="alert">{parseError}</div>
   {/if}
 </div>
 
 <style>
 @layer smrt.reset, smrt.structure, smrt.theme;
-@layer smrt.theme {
-  .smrt-datetime {
+@layer smrt.structure {
+  .smrt-date-time-input__root {
     display: flex;
     flex-direction: column;
     width: 100%;
@@ -460,52 +464,75 @@ function handleNativeChange(e: Event) {
     gap: var(--smrt-spacing-1);
     position: relative;
   }
-
-  .input-wrapper {
+  .smrt-date-time-input__input-wrapper {
     display: flex;
     position: relative;
   }
-
-  .smrt-input {
+  .smrt-date-time-input__input {
     flex: 1;
     box-sizing: border-box;
     min-width: 0;
     width: 100%;
     padding: var(--smrt-spacing-2) var(--smrt-spacing-3);
+  }
+  .smrt-date-time-input__input.smrt-date-time-input__mode {
+    padding-right: var(--smrt-spacing-11);
+    cursor: pointer;
+  }
+  .smrt-date-time-input__input:disabled {
+    cursor: not-allowed;
+  }
+  .smrt-date-time-input__mic-btn {
+    position: absolute;
+    right: 4px;
+    top: 50%;
+    width: 32px;
+    height: 32px;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    cursor: pointer;
+    transform: translateY(-50%);
+  }
+  .smrt-date-time-input__mic-btn:disabled {
+    cursor: not-allowed;
+  }
+  .smrt-date-time-input__listening-indicator {
+    margin-top: var(--smrt-spacing-1);
+  }
+  .smrt-date-time-input__parsing-indicator {
+    margin-top: var(--smrt-spacing-1);
+  }
+  .smrt-date-time-input__error-indicator {
+    margin-top: var(--smrt-spacing-1);
+  }
+}
+
+@layer smrt.theme {
+  .smrt-date-time-input__input {
     font-size: var(--smrt-typography-body-large-size, 1rem);
     border: var(--smrt-hairline);
     border-radius: var(--smrt-radius-small);
     background: var(--smrt-color-surface);
     transition: all var(--smrt-duration-short2, 150ms) var(--smrt-easing-standard, ease);
   }
-
-  .smrt-input:focus {
+  .smrt-date-time-input__input:focus {
     outline: none;
     border-color: var(--smrt-color-primary);
     box-shadow: 0 0 0 3px color-mix(in srgb, var(--smrt-color-primary) 10%, transparent);
   }
-
-  .smrt-input.smrt-mode {
-    padding-right: var(--smrt-spacing-11);
-    cursor: pointer;
-  }
-
-  .smrt-input:disabled {
+  .smrt-date-time-input__input:disabled {
     background: var(--smrt-color-surface-container-high);
-    cursor: not-allowed;
   }
-
-  .smrt-datetime.listening .smrt-input {
+  .smrt-date-time-input__root.smrt-date-time-input__listening .smrt-date-time-input__input {
     border-color: var(--smrt-color-success);
     box-shadow: 0 0 0 3px color-mix(in srgb, var(--smrt-color-success) 30%, transparent);
     animation: pulse-green 1.5s var(--smrt-easing-standard, ease-in-out) infinite;
   }
-
-  .smrt-datetime.parsing .smrt-input {
+  .smrt-date-time-input__root.smrt-date-time-input__parsing .smrt-date-time-input__input {
     border-color: var(--smrt-color-warning);
     box-shadow: 0 0 0 3px color-mix(in srgb, var(--smrt-color-warning) 20%, transparent);
   }
-
   @keyframes pulse-green {
     0%, 100% {
       box-shadow: 0 0 0 3px color-mix(in srgb, var(--smrt-color-success) 30%, transparent);
@@ -514,72 +541,49 @@ function handleNativeChange(e: Event) {
       box-shadow: 0 0 0 6px color-mix(in srgb, var(--smrt-color-success) 15%, transparent);
     }
   }
-
-  .mic-btn {
-    position: absolute;
-    right: 4px;
-    top: 50%;
-    transform: translateY(-50%);
-    width: 32px;
-    height: 32px;
-    display: flex;
-    align-items: center;
-    justify-content: center;
+  .smrt-date-time-input__mic-btn {
     background: transparent;
     border: none;
     border-radius: var(--smrt-radius-sm);
     color: var(--smrt-color-on-surface-variant);
-    cursor: pointer;
     transition: all var(--smrt-duration-short2, 150ms) var(--smrt-easing-standard, ease);
   }
-
-  .mic-btn:hover {
+  .smrt-date-time-input__mic-btn:hover {
     background: var(--smrt-color-surface-container);
     color: var(--smrt-color-on-surface);
   }
-
-  .mic-btn.active {
+  .smrt-date-time-input__mic-btn.smrt-date-time-input__active {
     background: var(--smrt-color-primary);
     color: var(--smrt-color-on-primary, white);
   }
-
-  .mic-btn:disabled {
+  .smrt-date-time-input__mic-btn:disabled {
     opacity: 0.5;
-    cursor: not-allowed;
   }
-
-  .spinner {
+  .smrt-date-time-input__spinner {
     animation: spin 1s linear infinite;
   }
-
   @keyframes spin {
     to {
       transform: rotate(360deg);
     }
   }
-
   @media (prefers-reduced-motion: reduce) {
-    .spinner {
+    .smrt-date-time-input__spinner {
       animation: none;
     }
   }
-
-  .listening-indicator {
+  .smrt-date-time-input__listening-indicator {
     font-size: var(--smrt-typography-body-small-size, 0.75rem);
     color: var(--smrt-color-primary);
-    margin-top: var(--smrt-spacing-1);
   }
-
-  .parsing-indicator {
+  .smrt-date-time-input__parsing-indicator {
     font-size: var(--smrt-typography-body-small-size, 0.75rem);
     color: var(--smrt-color-secondary);
-    margin-top: var(--smrt-spacing-1);
   }
-
-  .error-indicator {
+  .smrt-date-time-input__error-indicator {
     font-size: var(--smrt-typography-body-small-size, 0.75rem);
     color: var(--smrt-color-error);
-    margin-top: var(--smrt-spacing-1);
   }
 }
+
 </style>

@@ -32,8 +32,9 @@ function held(
 }
 
 function stateOf(container: HTMLElement, id: number): string | undefined {
-  return container.querySelectorAll<HTMLElement>('.person-qualification')[id]
-    ?.dataset.state;
+  return container.querySelectorAll<HTMLElement>(
+    '.smrt-person-qualifications__row',
+  )[id]?.dataset.state;
 }
 
 describe('PersonQualifications', () => {

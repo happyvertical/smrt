@@ -65,7 +65,7 @@ async function submit() {
 </script>
 <Card>
   <section aria-labelledby={`${uid}-title`} aria-busy={busy}>
-    <h2 id={`${uid}-title`}>Outbound webhooks</h2>
+    <h2 id={`${uid}-title`} data-smrt-part="title">Outbound webhooks</h2>
     <form onsubmit={(event) => { event.preventDefault(); void submit(); }}>
       <label for={`${uid}-url`}>Endpoint</label>
       <Input id={`${uid}-url`} bind:value={url} type="url" required placeholder="https://partner.example/webhooks" disabled={busy} />
@@ -80,7 +80,7 @@ async function submit() {
     </form>
     {#if error}<Alert variant="error">{error}</Alert>{/if}
     <h3>Subscriptions</h3>
-    <ul aria-label="Webhook subscriptions">
+    <ul data-smrt-part="list" aria-label="Webhook subscriptions">
       {#each subscriptions as subscription (subscription.id)}
         <li><code>{subscription.url}</code>
           <Button disabled={busy} aria-label={`${subscription.enabled ? 'Disable' : 'Enable'} ${subscription.url}`} onclick={() => action(() => onToggle(subscription.id, !subscription.enabled))}>
@@ -90,11 +90,11 @@ async function submit() {
       {:else}<li>No subscriptions yet.</li>{/each}
     </ul>
     <h3>Delivery log</h3>
-    <div class="table-scroll">
+    <div class="smrt-webhook-admin__table-scroll" data-smrt-part="body">
       <table>
         <caption>Recent webhook deliveries</caption>
-        <thead><tr><th scope="col">Delivery</th><th scope="col">Status</th><th scope="col">Attempts</th><th scope="col">Response</th><th scope="col">Actions</th></tr></thead>
-        <tbody>{#each deliveries as delivery (delivery.id)}
+        <thead data-smrt-part="header"><tr><th scope="col">Delivery</th><th scope="col">Status</th><th scope="col">Attempts</th><th scope="col">Response</th><th scope="col">Actions</th></tr></thead>
+        <tbody data-smrt-part="body">{#each deliveries as delivery (delivery.id)}
           <tr><td>{delivery.id}</td><td>{delivery.status}</td><td>{delivery.attempts}</td><td>{delivery.responseStatus ?? '—'}</td><td>
             {#if delivery.status === 'failed'}<Button disabled={busy} onclick={() => action(() => onReplay(delivery.id))}>Retry delivery</Button>{/if}
           </td></tr>
@@ -105,12 +105,35 @@ async function submit() {
 </Card>
 <style>
 @layer smrt.reset, smrt.structure, smrt.theme;
-@layer smrt.theme {
-  form { display: grid; gap: var(--smrt-spacing-2, 0.5rem); }
-  li { display: flex; gap: var(--smrt-spacing-2, 0.5rem); align-items: center; flex-wrap: wrap; }
-  code { overflow-wrap: anywhere; }
-  .table-scroll { overflow-x: auto; }
-  table { width: 100%; text-align: left; }
-  th, td { padding: var(--smrt-spacing-2, 0.5rem); }
+@layer smrt.structure {
+  form {
+    display: grid;
+    gap: var(--smrt-spacing-2, 0.5rem);
+  }
+  li {
+    display: flex;
+    gap: var(--smrt-spacing-2, 0.5rem);
+    align-items: center;
+    flex-wrap: wrap;
+  }
+  code {
+    overflow-wrap: anywhere;
+  }
+  .smrt-webhook-admin__table-scroll {
+    overflow-x: auto;
+  }
+  table {
+    width: 100%;
+  }
+  th, td {
+    padding: var(--smrt-spacing-2, 0.5rem);
+  }
 }
+
+@layer smrt.theme {
+  table {
+    text-align: left;
+  }
+}
+
 </style>

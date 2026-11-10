@@ -33,7 +33,9 @@ function drop(page: Page, form: string, names: string[]) {
       for (const n of fileNames) {
         transfer.items.add(new File(['abcd'], n, { type: 'text/plain' }));
       }
-      const zone = document.querySelector(`#${formId} .drop-zone`);
+      const zone = document.querySelector(
+        `#${formId} [data-smrt-component="FileUpload"] [data-smrt-part="trigger"]`,
+      );
       if (!zone) throw new Error(`drop zone not found in #${formId}`);
       zone.dispatchEvent(
         new DragEvent('drop', {
@@ -101,7 +103,11 @@ test('a native form reset empties the list and what posts', async ({
   // success) empties the native input; the list must empty with it.
   await page.locator('#native-reset').click();
   await expect.poll(() => posted(page, 'multi', 'docs')).toEqual([]);
-  await expect(page.locator('#multi .file-list')).toHaveCount(0);
+  await expect(
+    page.locator(
+      '#multi [data-smrt-component="FileUpload"] [data-smrt-part="list"]',
+    ),
+  ).toHaveCount(0);
 
   // The next pick posts alone: the old list is never mirrored back.
   await input.setInputFiles(file('b.txt'));

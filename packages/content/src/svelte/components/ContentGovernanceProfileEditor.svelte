@@ -87,7 +87,7 @@ function handleSubmit() {
 }
 </script>
 
-<div class="governance-editor-shell" data-smrt-component="ContentGovernanceProfileEditor">
+<div class="smrt-content-governance-profile-editor__root" data-smrt-component="ContentGovernanceProfileEditor">
   <Form class="governance-editor" onsubmit={(event) => {
     event.preventDefault();
     handleSubmit();
@@ -104,14 +104,14 @@ function handleSubmit() {
       Description
       <Textarea rows={2} bind:value={draft.description}></Textarea>
     </label>
-    <label class="checkbox">
+    <label class="smrt-content-governance-profile-editor__checkbox" data-smrt-part="field">
       <!-- raw-primitive-allow: native checkbox; no Provider-free checkbox primitive (Toggle is a switch with different semantics, CheckboxInput requires a Provider) -->
       <input type="checkbox" bind:checked={draft.enabled} />
       Enabled
     </label>
 
-    <div class="requirements">
-      <div class="requirements__header">
+    <div class="smrt-content-governance-profile-editor__requirements" data-smrt-part="list">
+      <div class="smrt-content-governance-profile-editor__requirements-header" data-smrt-part="header">
         <strong>Requirements</strong>
         <Button variant="secondary" type="button" onclick={addRequirement}>
           {t(M['content.governance_profile_editor.add_requirement'])}
@@ -119,7 +119,7 @@ function handleSubmit() {
       </div>
 
       {#each draft.requirements as requirement, index (`${requirement.policyKey}-${index}`)}
-        <div class="requirement-row">
+        <div class="smrt-content-governance-profile-editor__requirement-row" data-smrt-part="row">
           <label>
             Policy
             <Select bind:value={requirement.policyKey}>
@@ -132,7 +132,7 @@ function handleSubmit() {
             Label
             <Input type="text" bind:value={requirement.label} />
           </label>
-          <label class="checkbox">
+          <label class="smrt-content-governance-profile-editor__checkbox" data-smrt-part="field">
             <!-- raw-primitive-allow: native checkbox; no Provider-free checkbox primitive (Toggle is a switch with different semantics, CheckboxInput requires a Provider) -->
             <input type="checkbox" bind:checked={requirement.blocking} />
             Blocking
@@ -144,7 +144,7 @@ function handleSubmit() {
       {/each}
     </div>
 
-    <div class="actions">
+    <div class="smrt-content-governance-profile-editor__actions" data-smrt-part="actions">
       <Button variant="primary" type="submit">{t(M['content.governance_profile_editor.save_profile'])}</Button>
       {#if onCancel}
         <Button variant="secondary" type="button" onclick={() => onCancel?.()}>
@@ -157,36 +157,38 @@ function handleSubmit() {
 
 <style>
 @layer smrt.reset, smrt.structure, smrt.theme;
-@layer smrt.theme {
-  .governance-editor-shell :global(.governance-editor) {
+@layer smrt.structure {
+  .smrt-content-governance-profile-editor__root :global(.governance-editor) {
     display: grid;
     gap: 0.75rem;
   }
-
   label {
     display: grid;
     gap: 0.35rem;
-    font-size: var(--smrt-typography-label-large-size, 0.9rem);
   }
-
-  .checkbox {
+  .smrt-content-governance-profile-editor__checkbox {
     display: flex;
     align-items: center;
     gap: 0.5rem;
   }
-
-  .requirements {
+  .smrt-content-governance-profile-editor__requirements {
     display: grid;
     gap: 0.75rem;
   }
-
-  .requirements__header,
-  .requirement-row,
-  .actions {
+  .smrt-content-governance-profile-editor__requirements-header,
+  .smrt-content-governance-profile-editor__requirement-row,
+  .smrt-content-governance-profile-editor__actions {
     display: flex;
     gap: 0.75rem;
     align-items: center;
     flex-wrap: wrap;
   }
 }
+
+@layer smrt.theme {
+  label {
+    font-size: var(--smrt-typography-label-large-size, 0.9rem);
+  }
+}
+
 </style>

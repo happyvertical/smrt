@@ -57,9 +57,9 @@ describe('the mounted Planner section page', () => {
       '[data-smrt-component="CookbookSectionPage"]',
     );
     expect(page).not.toBeNull();
-    expect(page?.querySelector('header.section-heading h1')?.textContent).toBe(
-      'Sales',
-    );
+    expect(
+      page?.querySelector('header.smrt-section-heading__root h1')?.textContent,
+    ).toBe('Sales');
     const grid = page?.querySelector('[data-smrt-component="OverviewGrid"]');
     expect(grid?.getAttribute('data-presentation')).toBe('card');
     const counts = [

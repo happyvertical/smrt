@@ -60,8 +60,8 @@ export interface Props {
   }
 </script>
 
-<div class="reply-form" data-smrt-component="ReplyForm">
-  <div class="reply-header">
+<div class="smrt-reply-form__root" data-smrt-component="ReplyForm">
+  <div class="smrt-reply-form__header" data-smrt-part="header">
     {replyAll ? 'Reply All' : 'Reply'} to {originalMessage.senderName || originalMessage.senderAddress}
   </div>
 
@@ -71,17 +71,17 @@ export interface Props {
     rows={5}
   />
 
-  <div class="quoted-original">
-    <pre class="quoted-text">{quotedBody}</pre>
+  <div class="smrt-reply-form__body" data-smrt-part="body">
+    <pre class="smrt-reply-form__content" data-smrt-part="body">{quotedBody}</pre>
   </div>
 
   {#if sendError}
-    <div class="send-error" role="alert" aria-live="assertive">
+    <div class="smrt-reply-form__message" role="alert" aria-live="assertive" data-smrt-part="message">
       {sendError}
     </div>
   {/if}
 
-  <div class="actions">
+  <div class="smrt-reply-form__actions" data-smrt-part="actions">
     <Button
       variant="primary"
       disabled={isSending || !body.trim()}
@@ -97,62 +97,68 @@ export interface Props {
 
 <style>
 @layer smrt.reset, smrt.structure, smrt.theme;
-@layer smrt.theme {
-  .reply-form {
+@layer smrt.structure {
+  .smrt-reply-form__root {
     display: flex;
     flex-direction: column;
     gap: var(--smrt-spacing-2);
     padding: var(--smrt-spacing-3);
+  }
+  .smrt-reply-form__body {
+    padding: var(--smrt-spacing-2);
+    max-height: 200px;
+    overflow-y: auto;
+  }
+  .smrt-reply-form__content {
+    margin: 0;
+    white-space: pre-wrap;
+  }
+  .smrt-reply-form__message {
+    padding: var(--smrt-spacing-2) var(--smrt-spacing-3);
+  }
+  .smrt-reply-form__actions {
+    display: flex;
+    gap: var(--smrt-spacing-2);
+  }
+}
+
+@layer smrt.theme {
+  .smrt-reply-form__root {
     border: var(--smrt-hairline);
     border-radius: var(--smrt-radius-md);
     background: var(--smrt-color-surface);
     font-family: var(--smrt-font-family, system-ui);
   }
-
-  .reply-header {
+  .smrt-reply-form__header {
     font-size: var(--smrt-typography-title-small-size);
     color: var(--smrt-color-on-surface-variant);
     font-weight: var(--smrt-typography-weight-medium, 500);
   }
-
-  .quoted-original {
-    padding: var(--smrt-spacing-2);
+  .smrt-reply-form__body {
     border-left: 3px solid var(--smrt-color-outline-variant);
     background: var(--smrt-color-surface-variant);
     border-radius: 0 var(--smrt-radius-sm) var(--smrt-radius-sm) 0;
-    max-height: 200px;
-    overflow-y: auto;
   }
-
-  .quoted-text {
-    margin: 0;
+  .smrt-reply-form__content {
     font-size: var(--smrt-typography-body-small-size);
     color: var(--smrt-color-on-surface-variant);
-    white-space: pre-wrap;
     font-family: var(--smrt-font-family, system-ui);
   }
-
-  .send-error {
-    padding: var(--smrt-spacing-2) var(--smrt-spacing-3);
+  .smrt-reply-form__message {
     border-radius: var(--smrt-radius-sm);
     background: var(--smrt-color-error-container);
     color: var(--smrt-color-on-error-container);
     font-size: var(--smrt-typography-body-small-size);
   }
-
-  .actions {
-    display: flex;
-    gap: var(--smrt-spacing-2);
-  }
-
   /*
-   * Send Reply now uses Button's primary variant directly (dead .btn-primary CSS
-   * removed). The Cancel button keeps its neutral on-surface-variant text via
-   * `.actions :global(.btn-text)` (Button's ghost uses the primary color) —
-   * issue #1589.
-   */
-  .actions :global(.btn-text) {
+  * Send Reply now uses Button's primary variant directly (dead .btn-primary CSS
+  * removed). The Cancel button keeps its neutral on-surface-variant text via
+  * `.smrt-reply-form__actions :global(.btn-text)` (Button's ghost uses the primary color) —
+  * issue #1589.
+  */
+  .smrt-reply-form__actions :global(.btn-text) {
     color: var(--smrt-color-on-surface-variant);
   }
 }
+
 </style>

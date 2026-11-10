@@ -307,16 +307,16 @@ function selectAllMatching() {
 }
 </script>
 
-<div class="workbench">
-  <div class="workbench__header">
+<div class="smrt-data-table-preview__root" data-smrt-component="DataTablePreview">
+  <div class="smrt-data-table-preview__header" data-smrt-part="header">
     <div>
-      <p class="eyebrow">Interactive data</p>
+      <p class="smrt-data-table-preview__eyebrow" data-smrt-part="label">Interactive data</p>
       <h4>Workspace users</h4>
-      <p class="supporting">
+      <p class="smrt-data-table-preview__supporting" data-smrt-part="description">
         Sort columns, select rows, and toggle the loading or dense states.
       </p>
     </div>
-    <div class="summary" aria-live="polite">
+    <div class="smrt-data-table-preview__summary" data-smrt-part="meta" aria-live="polite">
       <Badge variant={tableState.selectedRowIds.length > 0 ? 'primary' : 'default'}>
         {tableState.selectedRowIds.length} selected
       </Badge>
@@ -331,7 +331,7 @@ function selectAllMatching() {
     </div>
   </div>
 
-  <div class="table-controls" aria-label="Table display controls">
+  <div class="smrt-data-table-preview__table-controls" data-smrt-part="row" aria-label="Table display controls">
     <Toggle label="Dense rows" size="sm" bind:checked={dense} />
     <Toggle label="Loading state" size="sm" bind:checked={loading} />
     <Button variant="ghost" size="sm" onclick={toggleActiveFilter}>
@@ -344,7 +344,7 @@ function selectAllMatching() {
     </span>
   </div>
 
-  <div class="table-frame">
+  <div class="smrt-data-table-preview__table-frame" data-smrt-part="body">
     <DataTable
       data={users}
       {columns}
@@ -361,12 +361,12 @@ function selectAllMatching() {
     />
   </div>
 
-  <section class="report-fixture" aria-labelledby="report-fixture-title">
-    <div class="report-fixture__header">
+  <section class="smrt-data-table-preview__report-fixture" data-smrt-part="cell" aria-labelledby="report-fixture-title">
+    <div class="smrt-data-table-preview__report-fixture-header" data-smrt-part="header">
       <div>
-        <p class="eyebrow">Report structure</p>
+        <p class="smrt-data-table-preview__eyebrow" data-smrt-part="label">Report structure</p>
         <h4 id="report-fixture-title">Forecast report</h4>
-        <p class="supporting">
+        <p class="smrt-data-table-preview__supporting" data-smrt-part="description">
           Grouped headers, structural totals, restored widths, and pinned status/action columns.
         </p>
       </div>
@@ -374,7 +374,7 @@ function selectAllMatching() {
         Restore saved layout
       </Button>
     </div>
-    <div class="table-frame">
+    <div class="smrt-data-table-preview__table-frame" data-smrt-part="body">
       <DataTable
         data={reportRows}
         columns={reportColumns}
@@ -388,12 +388,12 @@ function selectAllMatching() {
     </div>
   </section>
 
-  <section class="manual-fixture" aria-labelledby="manual-fixture-title">
-    <div class="report-fixture__header">
+  <section class="smrt-data-table-preview__manual-fixture" data-smrt-part="cell" aria-labelledby="manual-fixture-title">
+    <div class="smrt-data-table-preview__report-fixture-header" data-smrt-part="header">
       <div>
-        <p class="eyebrow">Manual query and async states</p>
+        <p class="smrt-data-table-preview__eyebrow" data-smrt-part="label">Manual query and async states</p>
         <h4 id="manual-fixture-title">Server-owned results</h4>
-        <p class="supporting">
+        <p class="smrt-data-table-preview__supporting" data-smrt-part="description">
           Supplied rows remain usable through refresh, stale, and error states. The caller owns
           query revisions and discards late responses.
         </p>
@@ -402,7 +402,7 @@ function selectAllMatching() {
         Revision {manualQueryRevision}
       </Badge>
     </div>
-    <div class="table-controls" aria-label="Manual query controls">
+    <div class="smrt-data-table-preview__table-controls" data-smrt-part="row" aria-label="Manual query controls">
       <Button variant="ghost" size="sm" onclick={showStaleManualResult}>
         Show stale result
       </Button>
@@ -422,7 +422,7 @@ function selectAllMatching() {
         <span>All matching selection is bound to {manualState.selection.queryRevision}.</span>
       {/if}
     </div>
-    <div class="table-frame">
+    <div class="smrt-data-table-preview__table-frame" data-smrt-part="body">
       <DataTable
         data={dataTableConformanceRows}
         columns={dataTableConformanceColumns}
@@ -442,16 +442,16 @@ function selectAllMatching() {
     </div>
   </section>
 
-  <section class="scale-fixture" aria-labelledby="scale-fixture-title">
+  <section class="smrt-data-table-preview__scale-fixture" data-smrt-part="cell" aria-labelledby="scale-fixture-title">
     <div>
-      <p class="eyebrow">Scale boundary</p>
+      <p class="smrt-data-table-preview__eyebrow" data-smrt-part="label">Scale boundary</p>
       <h4 id="scale-fixture-title">Virtualized result window</h4>
-      <p class="supporting">
+      <p class="smrt-data-table-preview__supporting" data-smrt-part="description">
         A fixed-height, keyboard-scrollable body renders a stable row-key window while its
         semantic header remains visible.
       </p>
     </div>
-    <div class="table-frame table-frame--virtual">
+    <div class="smrt-data-table-preview__table-frame smrt-data-table-preview__table-frame-virtual" data-smrt-part="body">
       <DataTable
         data={virtualRows}
         columns={virtualColumns}
@@ -464,9 +464,9 @@ function selectAllMatching() {
     </div>
   </section>
 
-  <section class="coverage-fixture" aria-labelledby="coverage-fixture-title">
+  <section class="smrt-data-table-preview__coverage-fixture" data-smrt-part="cell" aria-labelledby="coverage-fixture-title">
     <div>
-      <p class="eyebrow">Release conformance</p>
+      <p class="smrt-data-table-preview__eyebrow" data-smrt-part="label">Release conformance</p>
       <h4 id="coverage-fixture-title">Every supported DataTable surface</h4>
     </div>
     <ul>
@@ -476,12 +476,12 @@ function selectAllMatching() {
     </ul>
   </section>
 
-  <div class="empty-state">
+  <div class="smrt-data-table-preview__empty-state" data-smrt-part="cell">
     <div>
       <strong>Empty state</strong>
       <span>The same columns with no records.</span>
     </div>
-    <div class="table-frame">
+    <div class="smrt-data-table-preview__table-frame" data-smrt-part="body">
       <DataTable
         data={[]}
         columns={columns.slice(0, 3)}
@@ -495,146 +495,153 @@ function selectAllMatching() {
 
 <style>
 @layer smrt.reset, smrt.structure, smrt.theme;
-@layer smrt.theme {
-  .workbench {
+@layer smrt.structure {
+  .smrt-data-table-preview__root {
     display: grid;
     gap: var(--smrt-spacing-5);
-    color: var(--smrt-color-on-surface);
   }
-
-  .workbench__header,
-  .summary,
-  .table-controls,
-  .empty-state > div:first-child {
+  .smrt-data-table-preview__header,
+  .smrt-data-table-preview__summary,
+  .smrt-data-table-preview__table-controls,
+  .smrt-data-table-preview__empty-state > div:first-child {
     display: flex;
     align-items: center;
   }
-
-  .workbench__header {
+  .smrt-data-table-preview__header {
     justify-content: space-between;
     gap: var(--smrt-spacing-4);
     padding-bottom: var(--smrt-spacing-4);
-    border-bottom: var(--smrt-hairline);
   }
-
   h4,
   p {
     margin: 0;
   }
-
-  h4 {
-    font: var(--smrt-typography-headline-small-font);
-  }
-
-  .eyebrow {
+  .smrt-data-table-preview__eyebrow {
     margin-bottom: var(--smrt-spacing-1);
-    color: var(--smrt-color-primary);
-    font: var(--smrt-typography-label-small-font);
-    letter-spacing: 0.1em;
-    text-transform: uppercase;
   }
-
-  .supporting {
+  .smrt-data-table-preview__supporting {
     margin-top: var(--smrt-spacing-1);
-    color: var(--smrt-color-on-surface-variant);
-    font: var(--smrt-typography-body-medium-font);
   }
-
-  .summary,
-  .table-controls {
+  .smrt-data-table-preview__summary,
+  .smrt-data-table-preview__table-controls {
     flex-wrap: wrap;
     gap: var(--smrt-spacing-3);
   }
-
-  .table-controls {
+  .smrt-data-table-preview__table-controls {
     padding: var(--smrt-spacing-3) var(--smrt-spacing-4);
-    border-radius: var(--smrt-radius-medium);
-    background: var(--smrt-color-surface-container-low);
   }
-
-  .table-controls > span {
+  .smrt-data-table-preview__table-controls > span {
     margin-left: auto;
-    color: var(--smrt-color-on-surface-variant);
-    font: var(--smrt-typography-body-small-font);
   }
-
-  .table-frame {
+  .smrt-data-table-preview__table-frame {
     overflow: auto;
     max-width: 100%;
-    border: var(--smrt-hairline);
-    border-radius: var(--smrt-radius-medium);
   }
-
-  .empty-state {
+  .smrt-data-table-preview__empty-state {
     display: grid;
     gap: var(--smrt-spacing-3);
     padding-top: var(--smrt-spacing-4);
-    border-top: var(--smrt-hairline);
   }
-
-  .report-fixture {
+  .smrt-data-table-preview__report-fixture {
     display: grid;
     gap: var(--smrt-spacing-3);
     padding-top: var(--smrt-spacing-4);
-    border-top: var(--smrt-hairline);
   }
-
-  .manual-fixture,
-  .scale-fixture,
-  .coverage-fixture {
+  .smrt-data-table-preview__manual-fixture,
+  .smrt-data-table-preview__scale-fixture,
+  .smrt-data-table-preview__coverage-fixture {
     display: grid;
     gap: var(--smrt-spacing-3);
     padding-top: var(--smrt-spacing-4);
-    border-top: var(--smrt-hairline);
   }
-
-  .table-frame--virtual {
+  .smrt-data-table-preview__table-frame-virtual {
     max-height: 20rem;
   }
-
-  .coverage-fixture ul {
+  .smrt-data-table-preview__coverage-fixture ul {
     display: grid;
     gap: var(--smrt-spacing-2);
     padding: 0;
     margin: 0;
-    color: var(--smrt-color-on-surface-variant);
-    font: var(--smrt-typography-body-small-font);
     list-style: none;
   }
-
-  .coverage-fixture strong {
-    color: var(--smrt-color-on-surface);
-  }
-
-  .report-fixture__header {
+  .smrt-data-table-preview__report-fixture-header {
     display: flex;
     align-items: flex-start;
     justify-content: space-between;
     gap: var(--smrt-spacing-4);
   }
-
-  .empty-state > div:first-child {
+  .smrt-data-table-preview__empty-state > div:first-child {
     justify-content: space-between;
     gap: var(--smrt-spacing-4);
   }
-
-  .empty-state span {
-    color: var(--smrt-color-on-surface-variant);
-    font: var(--smrt-typography-body-small-font);
-  }
-
   @media (max-width: 760px) {
-    .workbench__header,
-    .report-fixture__header,
-    .empty-state > div:first-child {
+    .smrt-data-table-preview__header,
+    .smrt-data-table-preview__report-fixture-header,
+    .smrt-data-table-preview__empty-state > div:first-child {
       align-items: flex-start;
       flex-direction: column;
     }
-
-    .table-controls > span {
+    .smrt-data-table-preview__table-controls > span {
       width: 100%;
       margin-left: 0;
     }
   }
 }
+
+@layer smrt.theme {
+  .smrt-data-table-preview__root {
+    color: var(--smrt-color-on-surface);
+  }
+  .smrt-data-table-preview__header {
+    border-bottom: var(--smrt-hairline);
+  }
+  h4 {
+    font: var(--smrt-typography-headline-small-font);
+  }
+  .smrt-data-table-preview__eyebrow {
+    color: var(--smrt-color-primary);
+    font: var(--smrt-typography-label-small-font);
+    letter-spacing: 0.1em;
+    text-transform: uppercase;
+  }
+  .smrt-data-table-preview__supporting {
+    color: var(--smrt-color-on-surface-variant);
+    font: var(--smrt-typography-body-medium-font);
+  }
+  .smrt-data-table-preview__table-controls {
+    border-radius: var(--smrt-radius-medium);
+    background: var(--smrt-color-surface-container-low);
+  }
+  .smrt-data-table-preview__table-controls > span {
+    color: var(--smrt-color-on-surface-variant);
+    font: var(--smrt-typography-body-small-font);
+  }
+  .smrt-data-table-preview__table-frame {
+    border: var(--smrt-hairline);
+    border-radius: var(--smrt-radius-medium);
+  }
+  .smrt-data-table-preview__empty-state {
+    border-top: var(--smrt-hairline);
+  }
+  .smrt-data-table-preview__report-fixture {
+    border-top: var(--smrt-hairline);
+  }
+  .smrt-data-table-preview__manual-fixture,
+  .smrt-data-table-preview__scale-fixture,
+  .smrt-data-table-preview__coverage-fixture {
+    border-top: var(--smrt-hairline);
+  }
+  .smrt-data-table-preview__coverage-fixture ul {
+    color: var(--smrt-color-on-surface-variant);
+    font: var(--smrt-typography-body-small-font);
+  }
+  .smrt-data-table-preview__coverage-fixture strong {
+    color: var(--smrt-color-on-surface);
+  }
+  .smrt-data-table-preview__empty-state span {
+    color: var(--smrt-color-on-surface-variant);
+    font: var(--smrt-typography-body-small-font);
+  }
+}
+
 </style>
