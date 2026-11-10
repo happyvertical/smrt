@@ -780,7 +780,10 @@ export function composeSmrtSvelteKitRuntime(
     const readiness: ProviderReadinessFactory =
       options.providerReadiness ??
       ((component, context) =>
-        createProviderReadinessProbe(component, context, { environment: env }));
+        createProviderReadinessProbe(component, context, {
+          environment: env,
+          sourceRoot,
+        }));
     deployedPromise ??= initializeDeployed({
       profile,
       providers: {

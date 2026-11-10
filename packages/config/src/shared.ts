@@ -205,7 +205,12 @@ export function resolveEffectiveApplicationRuntime(
     !declaresRuntime(config ?? null) &&
     !declaresRuntime(getRuntimeConfig())
   ) {
-    return _resolveApplicationRuntime(runtimeFromEnvironment(process.env));
+    return _resolveApplicationRuntime(
+      runtimeFromEnvironment(
+        // Browsers have no `process`: the environment layer is Node-only.
+        typeof process === 'undefined' ? {} : process.env,
+      ),
+    );
   }
   return resolveRuntimeLayers(config ?? null);
 }
