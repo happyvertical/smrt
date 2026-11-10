@@ -75,17 +75,17 @@ const handsFreeAvailable = $derived(voice.status === 'ready');
 </script>
 
 {#if aiState.notice}
-  <p class="notice" role="status">{aiState.notice}</p>
+  <p class="smrt-ai-setup__notice" data-smrt-part="notice" role="status">{aiState.notice}</p>
 {/if}
 
-<div class="cards">
+<div class="smrt-ai-setup__root" data-smrt-component="AiSetup">
   {#if show.includes('think')}
-    <section class="card" data-state={capabilityState('think')} aria-labelledby="ai-think">
+    <section class="smrt-ai-setup__card" data-smrt-part="card" data-state={capabilityState('think')} aria-labelledby="ai-think">
       <header>
-        <span class="badge"><Icon path={THINK_ICON} size={22} /></span>
+        <span class="smrt-ai-setup__badge" data-smrt-part="icon"><Icon path={THINK_ICON} size={22} /></span>
         <div>
           <h2 id="ai-think">Think</h2>
-          <p class="sub">
+          <p class="smrt-ai-setup__sub" data-smrt-part="description">
             The assistant's language model{thinkWhere ? `: ${thinkWhere}` : ''}
           </p>
         </div>
@@ -103,17 +103,17 @@ const handsFreeAvailable = $derived(voice.status === 'ready');
             {/each}
           </Select>
         </label>
-        <p class="meta">Changing modes happens only when you choose it here.</p>
+        <p class="smrt-ai-setup__meta" data-smrt-part="meta">Changing modes happens only when you choose it here.</p>
       {/if}
       {#if mode === 'manual'}
-        <p class="status">Inference off</p>
-        <p class="meta">
+        <p class="smrt-ai-setup__status" data-smrt-part="status">Inference off</p>
+        <p class="smrt-ai-setup__meta" data-smrt-part="meta">
           Build, edit, validate and export your cookbook without a model. No
           provider is contacted and no browser model is downloaded.
         </p>
       {:else if mode === 'host'}
-        <p class="status">Server</p>
-        <p class="meta">
+        <p class="smrt-ai-setup__status" data-smrt-part="status">Server</p>
+        <p class="smrt-ai-setup__meta" data-smrt-part="meta">
           This site's server answers the assistant. What you type, and a short
           summary of your plan, is sent to it. Nothing is downloaded.
         </p>
@@ -130,7 +130,7 @@ const handsFreeAvailable = $derived(voice.status === 'ready');
             {/each}
           </Select>
         </label>
-        <div class="field">
+        <div class="smrt-ai-setup__field" data-smrt-part="field">
           <FieldLabel for="byo-url" label="Address" />
           <Input
             id="byo-url"
@@ -143,7 +143,7 @@ const handsFreeAvailable = $derived(voice.status === 'ready');
             oninput={(event) => byo.setBaseUrl(event.currentTarget.value)}
           />
         </div>
-        <div class="field">
+        <div class="smrt-ai-setup__field" data-smrt-part="field">
           <FieldLabel for="byo-model" label="Model" />
           <Input
             id="byo-model"
@@ -155,7 +155,7 @@ const handsFreeAvailable = $derived(voice.status === 'ready');
           />
         </div>
         {#if !preset?.keyless}
-          <div class="field">
+          <div class="smrt-ai-setup__field" data-smrt-part="field">
             <FieldLabel for="byo-key" label="Key" />
             <Input
               id="byo-key"
@@ -168,38 +168,38 @@ const handsFreeAvailable = $derived(voice.status === 'ready');
             />
           </div>
           {#if byo.keyForOtherAddress}
-            <p class="meta">
+            <p class="smrt-ai-setup__meta" data-smrt-part="meta">
               A key is saved for another address, so it is not used here. Paste it again for this address.
             </p>
           {/if}
-          <p class="meta">
+          <p class="smrt-ai-setup__meta" data-smrt-part="meta">
             {aiState.inference.credentialPersistence === 'memory'
               ? 'Kept only in this tab until reload'
               : 'Stored only in this browser'}, and sent only to {byo.baseUrl || 'the address above'} (https, or this computer).
-            <button class="link" type="button" onclick={() => byo.forgetKey()}>
+            <button class="smrt-ai-setup__link" data-smrt-part="action" type="button" onclick={() => byo.forgetKey()}>
               Forget the key
             </button>
           </p>
         {/if}
         {#if preset?.cors}
-          <p class="meta"><strong>Browser access.</strong> {preset.cors}</p>
+          <p class="smrt-ai-setup__meta" data-smrt-part="meta"><strong>Browser access.</strong> {preset.cors}</p>
         {/if}
-        <p class="meta">
+        <p class="smrt-ai-setup__meta" data-smrt-part="meta">
           What you type, and a short summary of your plan, is sent to this
           endpoint.
         </p>
         {#if byo.testStatus === 'ok' || byo.testStatus === 'failed' || byo.testStatus === 'testing'}
           <p
-            class={byo.testStatus === 'failed' ? 'error' : 'status'}
+            class={byo.testStatus === 'failed' ? 'smrt-ai-setup__error' : 'smrt-ai-setup__status'} data-smrt-part="status"
             role={byo.testStatus === 'failed' ? 'alert' : 'status'}
           >
             {byo.testStatus === 'testing' ? 'Testing…' : byo.testMessage}
           </p>
         {/if}
         {#if byo.active}
-          <p class="status" role="status">Using {byo.model}.</p>
+          <p class="smrt-ai-setup__status" data-smrt-part="status" role="status">Using {byo.model}.</p>
         {/if}
-        <div class="actions">
+        <div class="smrt-ai-setup__actions" data-smrt-part="actions">
           <Button
             variant="secondary"
             disabled={byo.testStatus === 'testing'}
@@ -232,14 +232,14 @@ const handsFreeAvailable = $derived(voice.status === 'ready');
           </Select>
         </label>
         {#if model}
-          <p class="meta">
+          <p class="smrt-ai-setup__meta" data-smrt-part="meta">
             {formatSize(model.downloadMB)} to download once; needs
             {formatSize(model.vramMB)} of graphics memory. Use Wi-Fi on a
             metered connection.
           </p>
         {/if}
         {#if suggestRoomy && roomy}
-          <p class="meta">
+          <p class="smrt-ai-setup__meta" data-smrt-part="meta">
             Your graphics card has room for {shortLabel(roomy)}, which
             understands more.
             <Button variant="secondary" onclick={() => session.select(ROOMY_MODEL_ID)}>
@@ -248,10 +248,10 @@ const handsFreeAvailable = $derived(voice.status === 'ready');
           </p>
         {/if}
         {#if session.status === 'ready'}
-          <p class="status" role="status">
+          <p class="smrt-ai-setup__status" data-smrt-part="status" role="status">
             {model ? shortLabel(model) : 'The model'} is ready.
           </p>
-          <div class="actions">
+          <div class="smrt-ai-setup__actions" data-smrt-part="actions">
             <Button variant="secondary" onclick={() => session.unload()}>Unload</Button>
           </div>
         {:else if session.status === 'loading'}
@@ -259,21 +259,21 @@ const handsFreeAvailable = $derived(voice.status === 'ready');
             <progress max="100" value={thinkPercent} aria-label="Model download progress"
               >{thinkPercent}%</progress
             >
-            <p class="meta">{thinkPercent}%. {session.progress.text}</p>
+            <p class="smrt-ai-setup__meta" data-smrt-part="meta">{thinkPercent}%. {session.progress.text}</p>
           </div>
-          <div class="actions">
+          <div class="smrt-ai-setup__actions" data-smrt-part="actions">
             <Button variant="secondary" onclick={() => session.cancel()}>Cancel</Button>
           </div>
         {:else}
-          <p class="status">
+          <p class="smrt-ai-setup__status" data-smrt-part="status">
             {session.consented ? 'Downloaded. Load it to start.' : 'Not downloaded.'}
           </p>
           {#if session.status === 'error'}
-            <p class="error" role="alert">
+            <p class="smrt-ai-setup__error" data-smrt-part="error" role="alert">
               The model could not start: {session.error}
             </p>
           {/if}
-          <div class="actions">
+          <div class="smrt-ai-setup__actions" data-smrt-part="actions">
             <Button onclick={() => void session.start()}>
               {session.consented ? 'Load' : 'Download'}
             </Button>
@@ -284,40 +284,40 @@ const handsFreeAvailable = $derived(voice.status === 'ready');
   {/if}
 
   {#if show.includes('hear')}
-    <section class="card" data-state={capabilityState('hear')} aria-labelledby="ai-hear">
+    <section class="smrt-ai-setup__card" data-smrt-part="card" data-state={capabilityState('hear')} aria-labelledby="ai-hear">
       <header>
-        <span class="badge"><Icon path={HEAR_ICON} size={22} /></span>
+        <span class="smrt-ai-setup__badge" data-smrt-part="icon"><Icon path={HEAR_ICON} size={22} /></span>
         <div>
           <h2 id="ai-hear">Hear</h2>
-          <p class="sub">Voice typing, speech to text</p>
+          <p class="smrt-ai-setup__sub" data-smrt-part="description">Voice typing, speech to text</p>
         </div>
       </header>
       {#if voice.status === 'checking'}
-        <p class="meta" role="status">Checking this browser.</p>
+        <p class="smrt-ai-setup__meta" data-smrt-part="meta" role="status">Checking this browser.</p>
       {:else if voice.status === 'browser'}
-        <p class="status">Built into your browser.</p>
+        <p class="smrt-ai-setup__status" data-smrt-part="status">Built into your browser.</p>
       {:else if voice.status === 'downloading'}
         <div role="status" aria-live="polite">
           {#if voice.preparing}
-            <p class="meta">Getting ready…</p>
+            <p class="smrt-ai-setup__meta" data-smrt-part="meta">Getting ready…</p>
           {:else}
             <progress max="100" value={hearPercent} aria-label="Speech model download"
               >{hearPercent}%</progress
             >
-            <p class="meta">
+            <p class="smrt-ai-setup__meta" data-smrt-part="meta">
               {voice.cached ? 'Turning on' : 'Downloading'} {hearPercent}%
             </p>
           {/if}
         </div>
-        <div class="actions">
+        <div class="smrt-ai-setup__actions" data-smrt-part="actions">
           <Button variant="secondary" onclick={() => voice.cancel()}>Cancel</Button>
         </div>
       {:else if voice.status === 'ready'}
-        <p class="status">
+        <p class="smrt-ai-setup__status" data-smrt-part="status">
           {speechChoice.label}, running on this device.
         </p>
       {:else}
-        <p class="meta">
+        <p class="smrt-ai-setup__meta" data-smrt-part="meta">
           {voice.browserWorks
             ? 'You chose the downloadable model.'
             : "Your browser can't do voice typing on its own."}
@@ -325,11 +325,11 @@ const handsFreeAvailable = $derived(voice.status === 'ready');
           {voice.cached ? 'It is already on this device.' : ''}
         </p>
         {#if voice.status === 'error'}
-          <p class="error" role="alert">
+          <p class="smrt-ai-setup__error" data-smrt-part="error" role="alert">
             Voice typing could not start: {voice.error}
           </p>
         {/if}
-        <div class="actions">
+        <div class="smrt-ai-setup__actions" data-smrt-part="actions">
           <Button onclick={() => void voice.enable()}>
             {voice.cached ? 'Turn on' : 'Download'}
           </Button>
@@ -351,7 +351,7 @@ const handsFreeAvailable = $derived(voice.status === 'ready');
             {/each}
           </Select>
         </label>
-        <p class="meta">{speechChoice.note}.</p>
+        <p class="smrt-ai-setup__meta" data-smrt-part="meta">{speechChoice.note}.</p>
       {/if}
       {#if voice.browserWorks && voice.status !== 'downloading'}
         <Switch
@@ -367,7 +367,7 @@ const handsFreeAvailable = $derived(voice.status === 'ready');
           label="Hands-free"
           onchange={(event) => aiState.setHandsFree(event.currentTarget.checked)}
         />
-        <p class="meta">
+        <p class="smrt-ai-setup__meta" data-smrt-part="meta">
           Start when I talk, stop when I pause.
           {handsFreeAvailable ? '' : 'Needs the downloaded speech model.'}
         </p>
@@ -377,7 +377,7 @@ const handsFreeAvailable = $derived(voice.status === 'ready');
           label="Send when I stop talking"
           onchange={(event) => aiState.setSendOnPause(event.currentTarget.checked)}
         />
-        <p class="meta">
+        <p class="smrt-ai-setup__meta" data-smrt-part="meta">
           Sends your message after a short pause. Needs Hands-free.
         </p>
       {/if}
@@ -385,22 +385,22 @@ const handsFreeAvailable = $derived(voice.status === 'ready');
   {/if}
 
   {#if show.includes('speak')}
-    <section class="card" data-state={capabilityState('speak')} aria-labelledby="ai-speak">
+    <section class="smrt-ai-setup__card" data-smrt-part="card" data-state={capabilityState('speak')} aria-labelledby="ai-speak">
       <header>
-        <span class="badge"><Icon path={SPEAK_ICON} size={22} /></span>
+        <span class="smrt-ai-setup__badge" data-smrt-part="icon"><Icon path={SPEAK_ICON} size={22} /></span>
         <div>
           <h2 id="ai-speak">Speak</h2>
-          <p class="sub">Read replies aloud, text to speech</p>
+          <p class="smrt-ai-setup__sub" data-smrt-part="description">Read replies aloud, text to speech</p>
         </div>
       </header>
       {#if aiState.speakSupported}
-        <p class="status">Browser voices</p>
+        <p class="smrt-ai-setup__status" data-smrt-part="status">Browser voices</p>
         <Switch
           checked={aiState.prefs.readAloud}
           label="Read replies aloud"
           onchange={(event) => aiState.setReadAloud(event.currentTarget.checked)}
         />
-        <p class="meta">A better voice you can download is coming.</p>
+        <p class="smrt-ai-setup__meta" data-smrt-part="meta">A better voice you can download is coming.</p>
       {:else}
         <p role="status">This browser has no speech synthesis.</p>
       {/if}
@@ -410,124 +410,123 @@ const handsFreeAvailable = $derived(voice.status === 'ready');
 
 <style>
 @layer smrt.reset, smrt.structure, smrt.theme;
-@layer smrt.theme {
-  .cards {
+@layer smrt.structure {
+  .smrt-ai-setup__root {
     display: grid;
     grid-template-columns: repeat(auto-fit, minmax(16rem, 1fr));
     gap: var(--smrt-spacing-4);
     min-width: 0;
   }
-
-  .card {
+  .smrt-ai-setup__card {
     display: grid;
     align-content: start;
     gap: var(--smrt-spacing-3);
     padding: var(--smrt-spacing-4);
     min-width: 0;
     overflow-wrap: anywhere;
-    border: var(--smrt-hairline);
-    border-radius: var(--smrt-radius-lg);
-    background: var(--smrt-surface-panel, transparent);
   }
-
   header {
     display: flex;
     align-items: center;
     gap: var(--smrt-spacing-3);
   }
-
-  .badge {
+  .smrt-ai-setup__badge {
     display: inline-grid;
     place-items: center;
     flex: none;
     width: 2.5rem;
     height: 2.5rem;
-    border-radius: 50%;
-    border: var(--smrt-hairline);
   }
-
-  .card[data-state='ready'] .badge {
-    background: var(--smrt-color-success-container);
-    color: var(--smrt-color-on-success-container);
-    border-color: transparent;
-  }
-
-  .card[data-state='available'] .badge {
-    border: var(--smrt-hairline-strong);
-    border-style: dashed;
-    color: var(--smrt-color-on-surface-variant);
-  }
-
-  .card[data-state='off'] .badge {
+  .smrt-ai-setup__card[data-state='off'] .smrt-ai-setup__badge {
     position: relative;
-    border: var(--smrt-hairline);
-    border-style: dashed;
-    opacity: 0.5;
   }
-
-  .card[data-state='off'] .badge::after {
-    content: '';
+  .smrt-ai-setup__card[data-state='off'] .smrt-ai-setup__badge::after {
     position: absolute;
     width: 70%;
     height: 0;
-    border-top: 2px solid currentColor;
     transform: rotate(-45deg);
   }
-
   h2,
   p {
     margin: 0;
   }
-
-  .sub,
-  .meta,
-  label {
-    color: var(--smrt-color-on-surface-variant);
-  }
-
-  .status {
-    font-weight: 600;
-  }
-
   label {
     display: grid;
     gap: var(--smrt-spacing-1);
   }
-
-  .actions {
+  .smrt-ai-setup__actions {
     display: flex;
     flex-wrap: wrap;
     gap: var(--smrt-spacing-2);
   }
-
   progress {
     width: 100%;
   }
-
-  .error {
-    color: var(--smrt-color-error);
-  }
-
-  .notice {
+  .smrt-ai-setup__notice {
     margin: 0 0 var(--smrt-spacing-3);
     padding: var(--smrt-spacing-3);
-    border: var(--smrt-hairline);
-    border-radius: var(--smrt-radius-md);
   }
-
-  .field {
+  .smrt-ai-setup__field {
     display: grid;
     gap: var(--smrt-spacing-1);
   }
-
-  .link {
+  .smrt-ai-setup__link {
     padding: 0;
+    cursor: pointer;
+  }
+}
+
+@layer smrt.theme {
+  .smrt-ai-setup__card {
+    border: var(--smrt-hairline);
+    border-radius: var(--smrt-radius-lg);
+    background: var(--smrt-surface-panel, transparent);
+  }
+  .smrt-ai-setup__badge {
+    border-radius: 50%;
+    border: var(--smrt-hairline);
+  }
+  .smrt-ai-setup__card[data-state='ready'] .smrt-ai-setup__badge {
+    background: var(--smrt-color-success-container);
+    color: var(--smrt-color-on-success-container);
+    border-color: transparent;
+  }
+  .smrt-ai-setup__card[data-state='available'] .smrt-ai-setup__badge {
+    border: var(--smrt-hairline-strong);
+    border-style: dashed;
+    color: var(--smrt-color-on-surface-variant);
+  }
+  .smrt-ai-setup__card[data-state='off'] .smrt-ai-setup__badge {
+    border: var(--smrt-hairline);
+    border-style: dashed;
+    opacity: 0.5;
+  }
+  .smrt-ai-setup__card[data-state='off'] .smrt-ai-setup__badge::after {
+    content: '';
+    border-top: 2px solid currentColor;
+  }
+  .smrt-ai-setup__sub,
+  .smrt-ai-setup__meta,
+  label {
+    color: var(--smrt-color-on-surface-variant);
+  }
+  .smrt-ai-setup__status {
+    font-weight: 600;
+  }
+  .smrt-ai-setup__error {
+    color: var(--smrt-color-error);
+  }
+  .smrt-ai-setup__notice {
+    border: var(--smrt-hairline);
+    border-radius: var(--smrt-radius-md);
+  }
+  .smrt-ai-setup__link {
     border: 0;
     background: none;
     color: var(--smrt-color-primary);
     text-decoration: underline;
-    cursor: pointer;
     font: inherit;
   }
 }
+
 </style>

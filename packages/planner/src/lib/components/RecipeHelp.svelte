@@ -20,10 +20,10 @@ const rendered = $derived(
 );
 </script>
 
-<section aria-label={recipe.label}>
+<section aria-label={recipe.label} data-smrt-component="RecipeHelp">
   {#if titled}
     <h2 id={`help-${recipe.id}`}>{recipe.label}</h2>
-    <p class="meta">{recipe.summary}</p>
+    <p class="smrt-recipe-help__meta" data-smrt-part="meta">{recipe.summary}</p>
   {/if}
   {#if rendered}
     <HelpView
@@ -39,19 +39,21 @@ const rendered = $derived(
 
 <style>
 @layer smrt.reset, smrt.structure, smrt.theme;
-@layer smrt.theme {
+@layer smrt.structure {
   section {
     display: grid;
     gap: var(--smrt-spacing-3);
   }
-
   h2,
   p {
     margin: 0;
   }
+}
 
-  .meta {
+@layer smrt.theme {
+  .smrt-recipe-help__meta {
     color: var(--smrt-color-on-surface-variant);
   }
 }
+
 </style>

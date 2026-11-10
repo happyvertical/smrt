@@ -34,16 +34,16 @@ const requiredHref = (id: string) => {
 };
 </script>
 
-<section class="recipe" aria-label={recipe.label}>
+<section class="smrt-recipe-options__root" aria-label={recipe.label} data-smrt-component="RecipeOptions">
   <header>
     {#if titled}<h2>{recipe.label}</h2>{/if}
     <p>{recipe.summary}</p>
-    <p class="meta">
+    <p class="smrt-recipe-options__meta" data-smrt-part="meta">
       <code>{recipe.id}</code> · from
       {recipePackage(recipe) ? humanize(recipePackage(recipe)?.id ?? '') : 'unknown package'}
     </p>
     {#if recipe.requires.length}
-      <p class="meta">
+      <p class="smrt-recipe-options__meta" data-smrt-part="meta">
         Needs:
         {#each recipe.requires as required, i (required)}
           {#if i > 0},
@@ -51,10 +51,11 @@ const requiredHref = (id: string) => {
         {/each}
       </p>
     {/if}
-    <div class="actions">
+    <div class="smrt-recipe-options__actions" data-smrt-part="actions">
       <button
         type="button"
-        class:secondary={added}
+        class:smrt-recipe-options__secondary={added}
+        data-smrt-part="action"
         disabled={neededBy.length > 0}
         onclick={() =>
           added ? recipeState.remove(recipe.id) : recipeState.add(recipe.id)}
@@ -68,7 +69,7 @@ const requiredHref = (id: string) => {
     </div>
   </header>
 
-  <div class="adds">
+  <div class="smrt-recipe-options__adds" data-smrt-part="list">
     <svelte:element this={part}>What it adds</svelte:element>
     <ul>
       {#each recipeNav(recipe) as entry (entry.model.id)}
@@ -78,16 +79,16 @@ const requiredHref = (id: string) => {
           {:else}
             {entry.label}
           {/if}
-          <span class="meta">list, create, edit and delete views for {entry.model.name}</span>
+          <span class="smrt-recipe-options__meta" data-smrt-part="meta">list, create, edit and delete views for {entry.model.name}</span>
         </li>
       {/each}
     </ul>
   </div>
 
   {#if added}
-    <div class="options">
+    <div class="smrt-recipe-options__options" data-smrt-part="panel">
       <svelte:element this={part}>Options</svelte:element>
-      <p class="meta">
+      <p class="smrt-recipe-options__meta" data-smrt-part="meta">
         Generated from the parameters {recipe.label}'s models declare. Saving
         writes field policies, held in memory for now.
       </p>
@@ -100,66 +101,67 @@ const requiredHref = (id: string) => {
       {/each}
     </div>
   {:else}
-    <p class="meta">Add this recipe to set its options.</p>
+    <p class="smrt-recipe-options__meta" data-smrt-part="meta">Add this recipe to set its options.</p>
   {/if}
 </section>
 
 <style>
 @layer smrt.reset, smrt.structure, smrt.theme;
-@layer smrt.theme {
-  .recipe,
+@layer smrt.structure {
+  .smrt-recipe-options__root,
   header,
-  .adds,
-  .options {
+  .smrt-recipe-options__adds,
+  .smrt-recipe-options__options {
     display: grid;
     gap: var(--smrt-spacing-3);
     justify-items: start;
   }
-
-  .options {
+  .smrt-recipe-options__options {
     justify-items: stretch;
   }
-
   h2,
   h3,
   p,
-  .adds > :first-child,
-  .options > :first-child {
+  .smrt-recipe-options__adds > :first-child,
+  .smrt-recipe-options__options > :first-child {
     margin: 0;
   }
-
-  .meta {
-    color: var(--smrt-color-on-surface-variant);
-  }
-
   ul {
     display: grid;
     gap: var(--smrt-spacing-1);
     margin: 0;
     padding-left: var(--smrt-spacing-5);
   }
-
   button {
     padding: var(--smrt-spacing-2) var(--smrt-spacing-3);
+    cursor: pointer;
+  }
+  button:disabled {
+    cursor: not-allowed;
+  }
+}
+
+@layer smrt.theme {
+  .smrt-recipe-options__meta {
+    color: var(--smrt-color-on-surface-variant);
+  }
+  button {
     border: 0;
     border-radius: var(--smrt-radius-medium);
     background: var(--smrt-color-primary);
     color: var(--smrt-color-on-primary);
     font: inherit;
-    cursor: pointer;
   }
-
-  button.secondary {
+  button.smrt-recipe-options__secondary {
     border: var(--smrt-control-border);
     background: transparent;
     color: var(--smrt-color-on-surface);
   }
-
+  /* Decorative dimming of a disabled control; forced colours express it as
+  GrayText instead, so the dimming is dropped there. */
   button:disabled {
-    cursor: not-allowed;
     opacity: 0.6;
   }
-
   /* Forced colours: a disabled button reads as GrayText, not by opacity. */
   @media (forced-colors: active) {
     button:disabled {
@@ -169,4 +171,5 @@ const requiredHref = (id: string) => {
     }
   }
 }
+
 </style>

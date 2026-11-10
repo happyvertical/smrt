@@ -49,8 +49,8 @@ const rates = (code: SampleTaxCode) =>
   `No tax, reported as ${code.kind.replace(/-/g, ' ')}`;
 </script>
 
-<div class="settings">
-  <div class="field">
+<div class="smrt-app-settings__root" data-smrt-component="AppSettings">
+  <div class="smrt-app-settings__field" data-smrt-part="field">
     <FieldLabel for="{idPrefix}-currency" label="Currency" />
     <CurrencySelect
       id="{idPrefix}-currency"
@@ -59,7 +59,7 @@ const rates = (code: SampleTaxCode) =>
     />
   </div>
 
-  <div class="percent">
+  <div class="smrt-app-settings__percent" data-smrt-part="field">
     <NumberInput
       name="{idPrefix}-tax-rate"
       label="Default tax rate"
@@ -68,10 +68,10 @@ const rates = (code: SampleTaxCode) =>
       value={fractionToPercent(value.taxRate)}
       onchange={(percent) => set({ taxRate: percentToFraction(percent) ?? 0 })}
     />
-    <span class="percent-sign" aria-hidden="true">%</span>
+    <span class="smrt-app-settings__percent-sign" data-smrt-part="value" aria-hidden="true">%</span>
   </div>
 
-  <div class="field">
+  <div class="smrt-app-settings__field" data-smrt-part="field">
     <FieldLabel for="{idPrefix}-rounding" label="Tax rounding" />
     <Select
       id="{idPrefix}-rounding"
@@ -84,7 +84,7 @@ const rates = (code: SampleTaxCode) =>
     </Select>
   </div>
 
-  <div class="field switch">
+  <div class="smrt-app-settings__field smrt-app-settings__switch" data-smrt-part="field">
     <Switch
       checked={value.pricesIncludeTax}
       onchange={(event) =>
@@ -98,7 +98,7 @@ const rates = (code: SampleTaxCode) =>
     </small>
   </div>
 
-  <div class="field">
+  <div class="smrt-app-settings__field" data-smrt-part="field">
     <FieldLabel for="{idPrefix}-terms" label="Default payment terms" />
     <Input
       id="{idPrefix}-terms"
@@ -117,9 +117,9 @@ const rates = (code: SampleTaxCode) =>
   </div>
 </div>
 
-<section class="tax-codes" aria-labelledby="{idPrefix}-tax-codes">
+<section class="smrt-app-settings__tax-codes" aria-labelledby="{idPrefix}-tax-codes" data-smrt-component="AppSettings">
   <h3 id="{idPrefix}-tax-codes">Tax codes</h3>
-  <p class="meta">
+  <p class="smrt-app-settings__meta" data-smrt-part="meta">
     New documents use <strong>{fallback.name}</strong> ({rates(fallback)}),
     from the default tax rate. A line can choose another code; an exempt
     customer pays none.
@@ -127,63 +127,50 @@ const rates = (code: SampleTaxCode) =>
   <ul>
     {#each others as code (code.id)}
       <li data-tax-code={code.code}>
-        <span class="name">{code.name}</span>
-        <span class="rates">{rates(code)}</span>
+        <span class="smrt-app-settings__name" data-smrt-part="name">{code.name}</span>
+        <span class="smrt-app-settings__rates" data-smrt-part="description">{rates(code)}</span>
       </li>
     {/each}
   </ul>
-  <p class="meta">
+  <p class="smrt-app-settings__meta" data-smrt-part="meta">
     The country codes are smrt’s examples; check they apply before using one.
   </p>
 </section>
 
 <style>
 @layer smrt.reset, smrt.structure, smrt.theme;
-@layer smrt.theme {
-  .settings {
+@layer smrt.structure {
+  .smrt-app-settings__root {
     display: grid;
     grid-template-columns: repeat(auto-fit, minmax(14rem, 1fr));
     gap: var(--smrt-spacing-4);
     align-items: end;
   }
-
-  .field {
+  .smrt-app-settings__field {
     display: grid;
     gap: var(--smrt-spacing-1);
   }
-
-  .percent {
+  .smrt-app-settings__percent {
     display: flex;
     align-items: flex-end;
     gap: var(--smrt-spacing-2);
   }
-
-  .percent :global([data-smrt-component="NumberInput"]) {
+  .smrt-app-settings__percent :global([data-smrt-component="NumberInput"]) {
     flex: 1;
   }
-
-  .percent-sign {
+  .smrt-app-settings__percent-sign {
     padding-bottom: var(--smrt-spacing-2);
-    color: var(--smrt-color-on-surface-variant);
   }
-
-  .switch small,
-  .meta {
-    color: var(--smrt-color-on-surface-variant);
-  }
-
-  .tax-codes {
+  .smrt-app-settings__tax-codes {
     display: grid;
     gap: var(--smrt-spacing-2);
     margin-top: var(--smrt-spacing-4);
   }
-
-  .tax-codes h3,
-  .tax-codes p {
+  .smrt-app-settings__tax-codes h3,
+  .smrt-app-settings__tax-codes p {
     margin: 0;
   }
-
-  .tax-codes ul {
+  .smrt-app-settings__tax-codes ul {
     display: grid;
     grid-template-columns: repeat(auto-fill, minmax(14rem, 1fr));
     gap: var(--smrt-spacing-1) var(--smrt-spacing-4);
@@ -191,14 +178,23 @@ const rates = (code: SampleTaxCode) =>
     padding: 0;
     list-style: none;
   }
-
-  .tax-codes li {
+  .smrt-app-settings__tax-codes li {
     display: grid;
   }
+}
 
-  .tax-codes .rates {
+@layer smrt.theme {
+  .smrt-app-settings__percent-sign {
+    color: var(--smrt-color-on-surface-variant);
+  }
+  .smrt-app-settings__switch small,
+  .smrt-app-settings__meta {
+    color: var(--smrt-color-on-surface-variant);
+  }
+  .smrt-app-settings__tax-codes .smrt-app-settings__rates {
     font-size: 0.875rem;
     color: var(--smrt-color-on-surface-variant);
   }
 }
+
 </style>

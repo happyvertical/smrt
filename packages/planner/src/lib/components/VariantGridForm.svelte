@@ -118,14 +118,14 @@ async function save(event: SubmitEvent) {
         setCell(combo.key, field.id, numberFrom(event.currentTarget.value))}
     />
   {:else}
-    <span class="sku">{skuCode(productName, combo)}</span>
+    <span class="smrt-variant-grid-form__sku" data-smrt-part="value">{skuCode(productName, combo)}</span>
   {/each}
 {/snippet}
 
 {#if !loaded}
-  <p>Loading...</p>
+  <p data-smrt-component="VariantGridForm">Loading...</p>
 {:else}
-  <form class="planner-form" onsubmit={save}>
+  <form class="planner-form" onsubmit={save} data-smrt-component="VariantGridForm">
     <h3>{id === undefined ? `New ${active.form.label.toLowerCase()}` : `Edit ${active.form.label.toLowerCase()}`}</h3>
     {#each productInputs as { field, catalogField } (field.id)}
       <FieldInput
@@ -156,16 +156,16 @@ async function save(event: SubmitEvent) {
         </small>
       </h4>
       {#if combos.length === 0}
-        <p class="meta">Add sizes or colors above to build the grid.</p>
+        <p class="smrt-variant-grid-form__meta" data-smrt-part="meta">Add sizes or colors above to build the grid.</p>
       {:else if matrix && rowAxis && colAxis}
-        <div class="scroll">
+        <div class="smrt-variant-grid-form__scroll" data-smrt-part="panel">
           <table>
-            <caption class="visually-hidden">
+            <caption class="smrt-variant-grid-form__visually-hidden" data-smrt-part="label">
               {rowAxis.label} by {colAxis.label.toLowerCase()}
             </caption>
             <thead>
               <tr>
-                <td><span class="visually-hidden">{rowAxis.label}</span></td>
+                <td><span class="smrt-variant-grid-form__visually-hidden" data-smrt-part="label">{rowAxis.label}</span></td>
                 {#each colValues as color (color)}
                   <th scope="col">{color}</th>
                 {/each}
@@ -185,9 +185,9 @@ async function save(event: SubmitEvent) {
           </table>
         </div>
       {:else}
-        <div class="scroll">
+        <div class="smrt-variant-grid-form__scroll" data-smrt-part="panel">
           <table>
-            <caption class="visually-hidden">Combinations</caption>
+            <caption class="smrt-variant-grid-form__visually-hidden" data-smrt-part="label">Combinations</caption>
             <thead>
               <tr>
                 {#each usedAxes as axis (axis.name)}
@@ -214,87 +214,43 @@ async function save(event: SubmitEvent) {
     {#if error}<p class="error" role="alert">{error}</p>{/if}
     <div class="actions">
       <button type="submit">Save</button>
-      <button type="button" class="secondary" onclick={oncancel}>Cancel</button>
+      <button type="button" class="smrt-variant-grid-form__secondary" onclick={oncancel} data-smrt-part="actions">Cancel</button>
     </div>
   </form>
 {/if}
 
 <style>
 @layer smrt.reset, smrt.structure, smrt.theme;
-@layer smrt.theme {
+@layer smrt.structure {
   h3,
   h4,
   p {
     margin: 0;
   }
-
-  small,
-  .meta,
-  .sku {
-    color: var(--smrt-color-on-surface-variant);
-    font-weight: 400;
-  }
-
   .grid {
     display: grid;
     gap: var(--smrt-spacing-2);
   }
-
-  .scroll {
+  .smrt-variant-grid-form__scroll {
     overflow-x: auto;
   }
-
-  table {
-    border-collapse: collapse;
-  }
-
   th,
   td {
     padding: var(--smrt-spacing-1) var(--smrt-spacing-2);
-    border: var(--smrt-hairline);
-    text-align: left;
   }
-
   td input {
     width: 6rem;
     padding: var(--smrt-spacing-1) var(--smrt-spacing-2);
-    border: var(--smrt-control-border);
-    border-radius: var(--smrt-radius-medium);
-    background: var(--smrt-surface-control);
-    color: var(--smrt-color-on-surface);
-    font: inherit;
   }
-
-  .sku {
-    font-size: 0.85rem;
-  }
-
   .actions {
     display: flex;
     gap: var(--smrt-spacing-2);
   }
-
-  .error {
-    color: var(--smrt-color-error);
-  }
-
   button {
     padding: var(--smrt-spacing-2) var(--smrt-spacing-3);
-    border: 0;
-    border-radius: var(--smrt-radius-medium);
-    background: var(--smrt-color-primary);
-    color: var(--smrt-color-on-primary);
-    font: inherit;
     cursor: pointer;
   }
-
-  button.secondary {
-    border: var(--smrt-control-border);
-    background: transparent;
-    color: var(--smrt-color-on-surface);
-  }
-
-  .visually-hidden {
+  .smrt-variant-grid-form__visually-hidden {
     position: absolute;
     width: 1px;
     height: 1px;
@@ -302,4 +258,47 @@ async function save(event: SubmitEvent) {
     clip-path: inset(50%);
   }
 }
+
+@layer smrt.theme {
+  small,
+  .smrt-variant-grid-form__meta,
+  .smrt-variant-grid-form__sku {
+    color: var(--smrt-color-on-surface-variant);
+    font-weight: 400;
+  }
+  table {
+    border-collapse: collapse;
+  }
+  th,
+  td {
+    border: var(--smrt-hairline);
+    text-align: left;
+  }
+  td input {
+    border: var(--smrt-control-border);
+    border-radius: var(--smrt-radius-medium);
+    background: var(--smrt-surface-control);
+    color: var(--smrt-color-on-surface);
+    font: inherit;
+  }
+  .smrt-variant-grid-form__sku {
+    font-size: 0.85rem;
+  }
+  .error {
+    color: var(--smrt-color-error);
+  }
+  button {
+    border: 0;
+    border-radius: var(--smrt-radius-medium);
+    background: var(--smrt-color-primary);
+    color: var(--smrt-color-on-primary);
+    font: inherit;
+  }
+  button.smrt-variant-grid-form__secondary {
+    border: var(--smrt-control-border);
+    background: transparent;
+    color: var(--smrt-color-on-surface);
+  }
+}
+
 </style>

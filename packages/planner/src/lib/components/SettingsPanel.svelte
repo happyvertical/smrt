@@ -63,9 +63,9 @@ $effect(() => {
 });
 </script>
 
-<div class="pane">
+<div class="smrt-settings-panel__root" data-smrt-component="SettingsPanel">
   <ProjectControls {projectPersistence} {controller} {nativeAssistant} {onreset} {resetDisabledReason} />
-  <p class="meta">
+  <p class="smrt-settings-panel__meta" data-smrt-part="meta">
     Defaults for this app. They apply to new records only; existing records
     keep their values.
   </p>
@@ -76,15 +76,20 @@ $effect(() => {
 
 <style>
 @layer smrt.reset, smrt.structure, smrt.theme;
-@layer smrt.theme {
-  .pane {
+@layer smrt.structure {
+  .smrt-settings-panel__root {
     display: grid;
     gap: var(--smrt-spacing-4);
   }
-
-  .meta {
+  .smrt-settings-panel__meta {
     margin: 0;
+  }
+}
+
+@layer smrt.theme {
+  .smrt-settings-panel__meta {
     color: var(--smrt-color-on-surface-variant);
   }
 }
+
 </style>

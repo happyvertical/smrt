@@ -24,7 +24,7 @@ let { label, groups }: SectionActionsProps = $props();
 {#if groups.length === 1}
   <SectionIcons section={groups[0].id} label={groups[0].label} compact />
 {:else if groups.length > 1}
-  <details class="menu">
+  <details class="smrt-section-actions__root" data-smrt-component="SectionActions">
     <summary title={`${label} options and help`} aria-label={`${label} options and help`}>
       <Icon path={SETTINGS} size={16} />
     </summary>
@@ -39,31 +39,21 @@ let { label, groups }: SectionActionsProps = $props();
 
 <style>
 @layer smrt.reset, smrt.structure, smrt.theme;
-@layer smrt.theme {
-  .menu {
+@layer smrt.structure {
+  .smrt-section-actions__root {
     position: relative;
   }
-
   summary {
     display: inline-grid;
     place-items: center;
     width: 1.75rem;
     height: 1.75rem;
-    border-radius: var(--smrt-radius-small, 0.25rem);
     list-style: none;
     cursor: pointer;
-    color: var(--smrt-color-on-surface-variant);
   }
-
   summary::-webkit-details-marker {
     display: none;
   }
-
-  summary:focus-visible {
-    outline: var(--smrt-focus-ring-width) solid var(--smrt-focus-ring-color);
-    outline-offset: var(--smrt-focus-ring-offset);
-  }
-
   ul {
     position: absolute;
     inset-inline-end: 0;
@@ -72,23 +62,37 @@ let { label, groups }: SectionActionsProps = $props();
     margin: var(--smrt-spacing-1) 0 0;
     padding: var(--smrt-spacing-1);
     list-style: none;
+  }
+  a {
+    display: block;
+    padding: var(--smrt-spacing-1) var(--smrt-spacing-2);
+    white-space: nowrap;
+  }
+}
+
+@layer smrt.theme {
+  summary {
+    border-radius: var(--smrt-radius-small, 0.25rem);
+    color: var(--smrt-color-on-surface-variant);
+  }
+  summary:focus-visible {
+    outline: var(--smrt-focus-ring-width) solid var(--smrt-focus-ring-color);
+    outline-offset: var(--smrt-focus-ring-offset);
+  }
+  ul {
     background: var(--smrt-surface-raised);
     border: var(--smrt-hairline);
     border-radius: var(--smrt-radius-medium);
   }
-
   a {
-    display: block;
-    padding: var(--smrt-spacing-1) var(--smrt-spacing-2);
     border-radius: var(--smrt-radius-small, 0.25rem);
     color: var(--smrt-color-on-surface);
     text-decoration: none;
-    white-space: nowrap;
   }
-
   a:hover,
   a:focus-visible {
     background: color-mix(in srgb, currentColor calc(var(--smrt-state-hover) * 100%), transparent);
   }
 }
+
 </style>

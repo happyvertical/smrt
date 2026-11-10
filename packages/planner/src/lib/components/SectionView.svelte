@@ -116,7 +116,7 @@ $effect(() => source.onReset?.(() => void loadCounts()));
 {/snippet}
 
 {#if cookbookStore.loaded}
-  <main class="section-view">
+  <main class="smrt-section-view__root" data-smrt-component="SectionView">
     {#if section}
       <SectionHeading {icon} {title} {description}>
         {#snippet actions()}{@render headerActions?.({ title, itemIds })}{/snippet}
@@ -132,7 +132,7 @@ $effect(() => source.onReset?.(() => void loadCounts()));
           />
         {/key}
         {#if shell.editing}
-          <section class="entries" aria-labelledby="section-entries">
+          <section class="smrt-section-view__entries" aria-labelledby="section-entries" data-smrt-part="list">
             <h2 id="section-entries">Menu entries</h2>
             <ShellSectionMenu {sectionId} {meta} />
           </section>
@@ -149,7 +149,7 @@ $effect(() => source.onReset?.(() => void loadCounts()));
 
 <style>
 @layer smrt.reset, smrt.structure, smrt.theme;
-@layer smrt.theme {
+@layer smrt.structure {
   main {
     display: grid;
     gap: var(--smrt-spacing-6);
@@ -157,16 +157,20 @@ $effect(() => source.onReset?.(() => void loadCounts()));
     margin-inline: auto;
     padding: var(--smrt-spacing-6);
   }
-
-  .entries {
+  .smrt-section-view__entries {
     display: grid;
     gap: var(--smrt-spacing-3);
   }
-
-  .entries h2 {
+  .smrt-section-view__entries h2 {
     margin: 0;
+  }
+}
+
+@layer smrt.theme {
+  .smrt-section-view__entries h2 {
     font: var(--smrt-typography-title-medium-font);
     letter-spacing: var(--smrt-typography-title-medium-tracking);
   }
 }
+
 </style>

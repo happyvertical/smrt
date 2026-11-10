@@ -18,9 +18,9 @@ $effect(() => {
 const count = $derived(Array.from(value).length);
 </script>
 
-<section class="specs" aria-labelledby="planner-specs-heading">
+<section class="smrt-specs-panel__root" aria-labelledby="planner-specs-heading" data-smrt-component="SpecsPanel">
   <h2 id="planner-specs-heading">Specs</h2>
-  <p id="planner-specs-help" class="help">
+  <p id="planner-specs-help" class="smrt-specs-panel__help" data-smrt-part="hint">
     What your app must also do beyond its features: unique rules, workflows,
     integrations. They go into your build prompt and exported cookbook.
   </p>
@@ -37,18 +37,55 @@ const count = $derived(Array.from(value).length);
       cookbookStore.setSpecs(value);
     }}
   ></textarea>
-  <p id="planner-specs-count" class="count">{count.toLocaleString('en-US')} / {LIMIT.toLocaleString('en-US')}</p>
+  <p id="planner-specs-count" class="smrt-specs-panel__count" data-smrt-part="count">{count.toLocaleString('en-US')} / {LIMIT.toLocaleString('en-US')}</p>
 </section>
 
 <style>
 @layer smrt.reset, smrt.structure, smrt.theme;
-@layer smrt.theme {
-  .specs { display: grid; gap: var(--smrt-spacing-3); max-inline-size: 48rem; }
-  h2, .help, .count { margin: 0; }
-  .help { color: var(--smrt-color-on-surface-variant); }
-  textarea { box-sizing: border-box; inline-size: 100%; min-block-size: 16rem; padding: var(--smrt-spacing-3); border: var(--smrt-control-border); border-radius: var(--smrt-radius-large, 0.75rem); background: var(--smrt-surface-control); color: var(--smrt-color-on-surface); font: inherit; line-height: 1.5; resize: vertical; }
-  textarea:focus-visible { outline: var(--smrt-focus-ring-width) solid var(--smrt-focus-ring-color); outline-offset: var(--smrt-focus-ring-offset); }
-  textarea::placeholder { color: var(--smrt-color-on-surface-variant); }
-  .count { justify-self: end; color: var(--smrt-color-on-surface-variant); font-size: 0.875rem; }
+@layer smrt.structure {
+  .smrt-specs-panel__root {
+    display: grid;
+    gap: var(--smrt-spacing-3);
+    max-inline-size: 48rem;
+  }
+  h2, .smrt-specs-panel__help, .smrt-specs-panel__count {
+    margin: 0;
+  }
+  textarea {
+    box-sizing: border-box;
+    inline-size: 100%;
+    min-block-size: 16rem;
+    padding: var(--smrt-spacing-3);
+    resize: vertical;
+  }
+  .smrt-specs-panel__count {
+    justify-self: end;
+  }
 }
+
+@layer smrt.theme {
+  .smrt-specs-panel__help {
+    color: var(--smrt-color-on-surface-variant);
+  }
+  textarea {
+    border: var(--smrt-control-border);
+    border-radius: var(--smrt-radius-large, 0.75rem);
+    background: var(--smrt-surface-control);
+    color: var(--smrt-color-on-surface);
+    font: inherit;
+    line-height: 1.5;
+  }
+  textarea:focus-visible {
+    outline: var(--smrt-focus-ring-width) solid var(--smrt-focus-ring-color);
+    outline-offset: var(--smrt-focus-ring-offset);
+  }
+  textarea::placeholder {
+    color: var(--smrt-color-on-surface-variant);
+  }
+  .smrt-specs-panel__count {
+    color: var(--smrt-color-on-surface-variant);
+    font-size: 0.875rem;
+  }
+}
+
 </style>
