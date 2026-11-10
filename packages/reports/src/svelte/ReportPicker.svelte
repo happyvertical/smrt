@@ -71,7 +71,7 @@ $effect(() => {
 });
 </script>
 
-<div class="report-picker" data-smrt-component="ReportPicker">
+<div class="smrt-report-picker__root" data-smrt-component="ReportPicker">
   {#if !client}<p>{t(M['reports.unavailable'])}</p>
   {:else}
     {#if loading}<p role="status">{t(M['reports.loading'])}</p>{/if}
@@ -99,8 +99,21 @@ $effect(() => {
 
 <style>
 @layer smrt.reset, smrt.structure, smrt.theme;
-@layer smrt.theme {
-  .report-picker { display: grid; gap: var(--smrt-spacing-3); }
-  .report-picker > p { margin: 0; color: var(--smrt-color-on-surface-variant); font-size: var(--smrt-typography-body-small-size); }
+@layer smrt.structure {
+  .smrt-report-picker__root {
+    display: grid;
+    gap: var(--smrt-spacing-3);
+  }
+  .smrt-report-picker__root > p {
+    margin: 0;
+  }
 }
+
+@layer smrt.theme {
+  .smrt-report-picker__root > p {
+    color: var(--smrt-color-on-surface-variant);
+    font-size: var(--smrt-typography-body-small-size);
+  }
+}
+
 </style>
