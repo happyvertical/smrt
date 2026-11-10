@@ -1,5 +1,11 @@
 # @happyvertical/smrt-desktop
 
+## 0.60.16
+
+### Patch Changes
+
+- @happyvertical/smrt-app-runtime@0.60.16
+
 ## 0.60.15
 
 No changes in this release.

@@ -1,5 +1,36 @@
 # @happyvertical/smrt-core
 
+## 0.60.16
+
+### Patch Changes
+
+- ### Features
+  
+  - build and run a person's own smrt app from definitions (#4884) (app-shell)
+  - platform train for tokens, launcher, vault, step-up, Windows and first run (#4886)
+  - run settings-panel fusions through the executor (#4855) (inference)
+  - put the smrt knowledge base into consumer AGENTS.md and monorepo roots (#4882) (cli)
+  - finish hosted key lifecycle on SDK 0.111.7 (#4876) (inference)
+  - compare prompt versions and models (ai:compare) (#4880) (core,cli)
+  - compose deployment contract with x-happyvertical schema v1 (#4862) (config)
+  - wave 1 contracts, bundler, release pipeline, Windows custody (#4842) (desktop)
+  - transcript toggle and usage links in settings panel (#4853) (inference)
+  - wave 2 vault distribution — snapshots, relay, keys, restore, migration (#4839)
+  - opt-in AI call transcripts linked to usage rows (#4848) (core)
+  
+  ### Bug Fixes
+  
+  - load STI families with their base, settle unpersisted job writes (#4861) (core, jobs)
+  
+  ### Other Changes
+  
+  - refactor: collapse into one thin smrt-desktop package, rename shell to wrapper (#4870) (desktop)
+  - ci: build the docs site on PRs that touch its inputs (#4849)
+  - docs: fix broken internal links on s-m-r-t.dev and gate the build (#4831)
+- @happyvertical/smrt-config@0.60.16
+  - @happyvertical/smrt-scanner@0.60.16
+  - @happyvertical/smrt-types@0.60.16
+
 ## 0.60.15
 
 ### Patch Changes

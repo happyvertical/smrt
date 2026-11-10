@@ -1,6 +1,6 @@
 {
   "name": "@happyvertical/smrt-reactions",
-  "version": "0.60.15",
+  "version": "0.60.16",
   "description": "Tenant-scoped reactions and lightweight polls with shared participation enforcement",
   "type": "module",
   "main": "./dist/index.js",
