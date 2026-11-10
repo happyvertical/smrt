@@ -12,15 +12,28 @@ let { review }: Props = $props();
 const { t } = useI18n();
 </script>
 
-<section aria-label={t(M['commerce.preparation.review'])} class="invoice-review" aria-live="polite" data-smrt-component="InvoiceReview">
+<section aria-label={t(M['commerce.preparation.review'])} class="smrt-invoice-review__root" aria-live="polite" data-smrt-component="InvoiceReview">
   <strong>{review.label}</strong>
   {#if review.message}<p>{review.message}</p>{/if}
 </section>
 
 <style>
 @layer smrt.reset, smrt.structure, smrt.theme;
-@layer smrt.theme {
-  .invoice-review { padding: var(--smrt-spacing-3); border: var(--smrt-hairline-strong); border-radius: var(--smrt-radius-small); overflow-wrap: anywhere; }
-  p { margin-block: var(--smrt-spacing-2) 0; }
+@layer smrt.structure {
+  .smrt-invoice-review__root {
+    padding: var(--smrt-spacing-3);
+    overflow-wrap: anywhere;
+  }
+  p {
+    margin-block: var(--smrt-spacing-2) 0;
+  }
 }
+
+@layer smrt.theme {
+  .smrt-invoice-review__root {
+    border: var(--smrt-hairline-strong);
+    border-radius: var(--smrt-radius-small);
+  }
+}
+
 </style>

@@ -79,29 +79,29 @@ function getAltText(asset: PersistedAsset): string {
 }
 </script>
 
-<div class="asset-grid" class:asset-grid--loading={loading} data-smrt-component="AssetGrid">
+<div class="smrt-asset-grid__root" class:smrt-asset-grid__loading={loading} data-smrt-component="AssetGrid">
   {#if loading}
-    <div class="asset-grid__loading">
-      <span class="spinner"></span>
+    <div class="smrt-asset-grid__loading-panel" data-smrt-part="status">
+      <span class="smrt-asset-grid__spinner" data-smrt-part="icon"></span>
       <span>{t(M['assets.asset_grid.loading'])}</span>
     </div>
   {:else if assets.length === 0}
-    <div class="empty-state">
-      <div class="empty-state__icon">
+    <div class="smrt-asset-grid__empty" data-smrt-part="empty">
+      <div class="smrt-asset-grid__empty-icon" data-smrt-part="icon">
         <svg xmlns="http://www.w3.org/2000/svg" width="48" height="48" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round">
           <rect x="3" y="3" width="18" height="18" rx="2" ry="2"></rect>
           <circle cx="8.5" cy="8.5" r="1.5"></circle>
           <polyline points="21 15 16 10 5 21"></polyline>
         </svg>
       </div>
-      <p class="empty-state__title">{t(M['assets.asset_grid.no_assets_found'])}</p>
-      <p class="empty-state__desc">{t(M['assets.asset_grid.empty_hint'])}</p>
+      <p class="smrt-asset-grid__empty-title" data-smrt-part="title">{t(M['assets.asset_grid.no_assets_found'])}</p>
+      <p class="smrt-asset-grid__empty-desc" data-smrt-part="hint">{t(M['assets.asset_grid.empty_hint'])}</p>
     </div>
   {:else}
-    <div class="grid">
+    <div class="smrt-asset-grid__grid" data-smrt-part="list">
       {#each assets as asset (asset.id)}
         {@const selected = selectedIds.has(asset.id)}
-        <div class="asset-card" class:asset-card--selected={selected}>
+        <div class="smrt-asset-grid__card" class:smrt-asset-grid__card-selected={selected} data-smrt-part="item">
           <!-- Whole-card "open" action. A stretched, transparent button (vs. a
                role="button" on the card) avoids nesting the interactive checkbox
                inside an interactive control (axe nested-interactive). It sits
@@ -110,7 +110,8 @@ function getAltText(asset: PersistedAsset): string {
           <!-- raw-primitive-allow: stretched transparent click-catching card overlay positioned absolute inset 0, layered under the checkbox by z-index; not a styled action button -->
           <button
             type="button"
-            class="asset-card__open"
+            class="smrt-asset-grid__card-open"
+            data-smrt-part="trigger"
             aria-label={openCardLabel(asset.name || 'Untitled')}
             title={asset.name || 'Untitled'}
             onclick={() => handleClick(asset)}
@@ -118,7 +119,7 @@ function getAltText(asset: PersistedAsset): string {
           ></button>
 
           <!-- Selection checkbox -->
-          <div class="asset-card__checkbox">
+          <div class="smrt-asset-grid__checkbox" data-smrt-part="selection">
             <!-- raw-primitive-allow: native checkbox; no Provider-free checkbox primitive (Toggle is a switch with different semantics, CheckboxInput requires a Provider) -->
             <input
               type="checkbox"
@@ -130,33 +131,34 @@ function getAltText(asset: PersistedAsset): string {
           </div>
 
           <!-- Thumbnail area -->
-          <div class="asset-card__thumb">
+          <div class="smrt-asset-grid__thumb" data-smrt-part="thumbnail">
             {#if isImage(asset) && asset.sourceUri}
               <img
                 src={asset.sourceUri}
                 alt={getAltText(asset) || asset.name}
-                class="asset-card__image"
+                class="smrt-asset-grid__image"
+                data-smrt-part="content"
                 loading="lazy"
               />
             {:else}
-              <span class="asset-card__type-icon">{getTypeIcon(asset)}</span>
+              <span class="smrt-asset-grid__type-icon" data-smrt-part="icon">{getTypeIcon(asset)}</span>
             {/if}
           </div>
 
           <!-- Info bar -->
-          <div class="asset-card__info">
-            <span class="asset-card__name" title={asset.name}>{asset.name || 'Untitled'}</span>
+          <div class="smrt-asset-grid__info" data-smrt-part="details">
+            <span class="smrt-asset-grid__name" data-smrt-part="title" title={asset.name}>{asset.name || 'Untitled'}</span>
 
-            <div class="asset-card__meta">
+            <div class="smrt-asset-grid__meta" data-smrt-part="meta">
               {#if asset.mimeType}
-                <span class="asset-card__type">{asset.mimeType.split('/')[1]?.toUpperCase()}</span>
+                <span class="smrt-asset-grid__type" data-smrt-part="value">{asset.mimeType.split('/')[1]?.toUpperCase()}</span>
               {/if}
             </div>
           </div>
 
           <!-- Badges / warnings -->
           {#if isMissingAlt(asset)}
-            <span class="asset-card__badge asset-card__badge--warning" title={t(M['assets.asset_grid.missing_alt_text'])}>{t(M['assets.asset_grid.no_alt'])}</span>
+            <span class="smrt-asset-grid__badge smrt-asset-grid__badge-warning" data-smrt-part="badge" title={t(M['assets.asset_grid.missing_alt_text'])}>{t(M['assets.asset_grid.no_alt'])}</span>
           {/if}
         </div>
       {/each}
@@ -166,197 +168,206 @@ function getAltText(asset: PersistedAsset): string {
 
 <style>
 @layer smrt.reset, smrt.structure, smrt.theme;
-@layer smrt.theme {
-  .asset-grid {
+@layer smrt.structure {
+  .smrt-asset-grid__root {
     padding: var(--smrt-spacing-4, 1rem);
   }
-
-  .asset-grid--loading {
-    opacity: 0.6;
+  /* Loading state blocks interaction while a fetch is in flight. */
+  .smrt-asset-grid__loading {
     pointer-events: none;
   }
-
-  .grid {
+  .smrt-asset-grid__grid {
     display: grid;
     grid-template-columns: repeat(auto-fill, minmax(180px, 1fr));
     gap: var(--smrt-spacing-4, 1rem);
   }
-
   /* Card */
-  .asset-card {
+  .smrt-asset-grid__card {
     position: relative;
     display: flex;
     flex-direction: column;
-    background: var(--smrt-color-surface);
-    border: var(--smrt-hairline);
-    border-radius: var(--smrt-radius-medium, 0.5rem);
     overflow: hidden;
     cursor: pointer;
-    transition: all 150ms ease;
   }
-
-  .asset-card:hover {
-    box-shadow: var(--smrt-elevation-2, 0 1px 3px rgba(0,0,0,0.1));
-    transform: translateY(-1px);
-  }
-
   /* Stretched whole-card open action. Transparent, covers the card, sits above
-     the non-interactive content (z-index 1) but below the checkbox (z-index 2). */
-  .asset-card__open {
+  the non-interactive content (z-index 1) but below the checkbox (z-index 2). */
+  .smrt-asset-grid__card-open {
     position: absolute;
     inset: 0;
     width: 100%;
     height: 100%;
     margin: 0;
     padding: 0;
-    border: none;
-    background: transparent;
     cursor: pointer;
     z-index: 1;
-    border-radius: inherit;
   }
-
-  .asset-card__open:focus-visible {
-    outline: 2px solid var(--smrt-color-primary);
-    /* Inset so the card's `overflow: hidden` doesn't clip the focus ring. */
-    outline-offset: -2px;
-  }
-
-  .asset-card--selected {
-    border-color: var(--smrt-color-primary);
-    background: var(--smrt-color-primary-container);
-  }
-
   /* Checkbox */
-  .asset-card__checkbox {
+  .smrt-asset-grid__checkbox {
     position: absolute;
     top: var(--smrt-spacing-2, 0.5rem);
     left: var(--smrt-spacing-2, 0.5rem);
     z-index: 2;
     opacity: 0;
-    transition: opacity 150ms ease;
   }
-
-  .asset-card:hover .asset-card__checkbox,
-  .asset-card--selected .asset-card__checkbox {
-    opacity: 1;
-  }
-
-  .asset-card__checkbox input {
+  .smrt-asset-grid__checkbox input {
     width: 18px;
     height: 18px;
     cursor: pointer;
-    accent-color: var(--smrt-color-primary);
   }
-
+  .smrt-asset-grid__card:hover .smrt-asset-grid__checkbox,
+  .smrt-asset-grid__card-selected .smrt-asset-grid__checkbox {
+    opacity: 1;
+  }
   /* Thumbnail */
-  .asset-card__thumb {
+  .smrt-asset-grid__thumb {
     display: flex;
     align-items: center;
     justify-content: center;
     height: 140px;
-    background: var(--smrt-color-surface-container-low);
     overflow: hidden;
   }
-
-  .asset-card__image {
+  .smrt-asset-grid__image {
     width: 100%;
     height: 100%;
     object-fit: cover;
   }
-
-  .asset-card__type-icon {
-    font-size: var(--smrt-typography-display-medium-size, 2.5rem);
-  }
-
   /* Info */
-  .asset-card__info {
+  .smrt-asset-grid__info {
     padding: var(--smrt-spacing-2, 0.5rem) var(--smrt-spacing-3, 0.75rem);
   }
-
-  .asset-card__name {
+  .smrt-asset-grid__name {
     display: block;
-    font-size: var(--smrt-typography-body-medium-size, 0.875rem);
-    font-weight: var(--smrt-typography-weight-medium, 500);
-    color: var(--smrt-color-on-surface);
     white-space: nowrap;
     overflow: hidden;
     text-overflow: ellipsis;
   }
-
-  .asset-card__meta {
+  .smrt-asset-grid__meta {
     display: flex;
     align-items: center;
     gap: var(--smrt-spacing-1, 0.25rem);
     margin-top: var(--smrt-spacing-1);
   }
+  /* Badge */
+  .smrt-asset-grid__badge {
+    position: absolute;
+    top: var(--smrt-spacing-2, 0.5rem);
+    right: var(--smrt-spacing-2, 0.5rem);
+    padding: var(--smrt-spacing-1) var(--smrt-spacing-2);
+    z-index: 2;
+    /* Informational only — let clicks fall through to the stretched open button
+    below so the badge corner isn't a dead zone for opening the asset. */
+    pointer-events: none;
+  }
+  /* Loading */
+  .smrt-asset-grid__loading-panel {
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    gap: var(--smrt-spacing-2, 0.5rem);
+    padding: var(--smrt-spacing-8, 2rem);
+  }
+  .smrt-asset-grid__spinner {
+    width: 20px;
+    height: 20px;
+  }
+  @media (max-width: 640px) {
+    .smrt-asset-grid__grid {
+      grid-template-columns: repeat(auto-fill, minmax(140px, 1fr));
+      gap: var(--smrt-spacing-3, 0.75rem);
+    }
+    .smrt-asset-grid__thumb {
+      height: 100px;
+    }
+  }
+}
 
-  .asset-card__type {
+@layer smrt.theme {
+  .smrt-asset-grid__loading {
+    opacity: 0.6;
+  }
+  /* Card */
+  .smrt-asset-grid__card {
+    background: var(--smrt-color-surface);
+    border: var(--smrt-hairline);
+    border-radius: var(--smrt-radius-medium, 0.5rem);
+    transition: all 150ms ease;
+  }
+  .smrt-asset-grid__card:hover {
+    box-shadow: var(--smrt-elevation-2, 0 1px 3px rgba(0,0,0,0.1));
+    transform: translateY(-1px);
+  }
+  /* Stretched whole-card open action. Transparent, covers the card, sits above
+  the non-interactive content (z-index 1) but below the checkbox (z-index 2). */
+  .smrt-asset-grid__card-open {
+    border: none;
+    background: transparent;
+    border-radius: inherit;
+  }
+  .smrt-asset-grid__card-open:focus-visible {
+    outline: 2px solid var(--smrt-color-primary);
+    /* Inset so the card's `overflow: hidden` doesn't clip the focus ring. */
+    outline-offset: -2px;
+  }
+  .smrt-asset-grid__card-selected {
+    border-color: var(--smrt-color-primary);
+    background: var(--smrt-color-primary-container);
+  }
+  /* Checkbox */
+  .smrt-asset-grid__checkbox {
+    transition: opacity 150ms ease;
+  }
+  .smrt-asset-grid__checkbox input {
+    accent-color: var(--smrt-color-primary);
+  }
+  /* Thumbnail */
+  .smrt-asset-grid__thumb {
+    background: var(--smrt-color-surface-container-low);
+  }
+  .smrt-asset-grid__type-icon {
+    font-size: var(--smrt-typography-display-medium-size, 2.5rem);
+  }
+  .smrt-asset-grid__name {
+    font-size: var(--smrt-typography-body-medium-size, 0.875rem);
+    font-weight: var(--smrt-typography-weight-medium, 500);
+    color: var(--smrt-color-on-surface);
+  }
+  .smrt-asset-grid__type {
     font-size: var(--smrt-typography-label-small-size, 0.7rem);
     font-weight: var(--smrt-typography-weight-semibold, 600);
     color: var(--smrt-color-on-surface-variant);
     text-transform: uppercase;
     letter-spacing: var(--smrt-typography-label-small-tracking, 0.05em);
   }
-
   /* Badge */
-  .asset-card__badge {
-    position: absolute;
-    top: var(--smrt-spacing-2, 0.5rem);
-    right: var(--smrt-spacing-2, 0.5rem);
-    padding: var(--smrt-spacing-1) var(--smrt-spacing-2);
+  .smrt-asset-grid__badge {
     font-size: var(--smrt-typography-label-small-size, 0.65rem);
     font-weight: var(--smrt-typography-weight-semibold, 600);
     border-radius: var(--smrt-radius-small, 0.25rem);
-    z-index: 2;
-    /* Informational only — let clicks fall through to the stretched open button
-       below so the badge corner isn't a dead zone for opening the asset. */
-    pointer-events: none;
   }
-
-  .asset-card__badge--warning {
+  .smrt-asset-grid__badge-warning {
     background: var(--smrt-color-error-container);
     color: var(--smrt-color-on-error-container);
   }
-
   /* Loading */
-  .asset-grid__loading {
-    display: flex;
-    align-items: center;
-    justify-content: center;
-    gap: var(--smrt-spacing-2, 0.5rem);
-    padding: var(--smrt-spacing-8, 2rem);
+  .smrt-asset-grid__loading-panel {
     color: var(--smrt-color-on-surface-variant);
   }
-
-  .spinner {
-    width: 20px;
-    height: 20px;
+  .smrt-asset-grid__spinner {
     border: 2px solid var(--smrt-color-outline-variant);
     border-top-color: var(--smrt-color-primary);
     border-radius: var(--smrt-radius-full);
     animation: spin 0.8s linear infinite;
   }
-
   @keyframes spin {
-    to { transform: rotate(360deg); }
+    to {
+      transform: rotate(360deg);
+    }
   }
-
   @media (prefers-reduced-motion: reduce) {
-    .spinner {
+    .smrt-asset-grid__spinner {
       animation: none;
     }
   }
-
-  @media (max-width: 640px) {
-    .grid {
-      grid-template-columns: repeat(auto-fill, minmax(140px, 1fr));
-      gap: var(--smrt-spacing-3, 0.75rem);
-    }
-
-    .asset-card__thumb {
-      height: 100px;
-    }
-  }
 }
+
 </style>

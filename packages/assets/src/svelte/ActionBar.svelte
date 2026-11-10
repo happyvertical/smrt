@@ -54,9 +54,9 @@ const count = $derived(selectedAssets.length);
 </script>
 
 {#if count > 0}
-  <div class="action-bar" data-smrt-component="ActionBar">
-    <div class="action-bar__left">
-      <span class="action-bar__count">{count} selected</span>
+  <div class="smrt-action-bar__root" data-smrt-component="ActionBar">
+    <div class="smrt-action-bar__left" data-smrt-part="group">
+      <span class="smrt-action-bar__count" data-smrt-part="count">{count} selected</span>
       <Button
         variant="ghost"
         size="sm"
@@ -66,7 +66,7 @@ const count = $derived(selectedAssets.length);
       </Button>
     </div>
 
-    <div class="action-bar__actions">
+    <div class="smrt-action-bar__actions" data-smrt-part="actions">
       {#each customActions as ca (ca.label)}
         {#if ca.multi !== false || count === 1}
           <Button
@@ -117,45 +117,52 @@ const count = $derived(selectedAssets.length);
 
 <style>
 @layer smrt.reset, smrt.structure, smrt.theme;
-@layer smrt.theme {
-  .action-bar {
+@layer smrt.structure {
+  .smrt-action-bar__root {
     display: flex;
     align-items: center;
     justify-content: space-between;
     gap: var(--smrt-spacing-3, 0.75rem);
     padding: var(--smrt-spacing-2, 0.5rem) var(--smrt-spacing-4, 1rem);
+  }
+  .smrt-action-bar__left {
+    display: flex;
+    align-items: center;
+    gap: var(--smrt-spacing-2, 0.5rem);
+  }
+  .smrt-action-bar__actions {
+    display: flex;
+    align-items: center;
+    gap: var(--smrt-spacing-2, 0.5rem);
+  }
+}
+
+@layer smrt.theme {
+  .smrt-action-bar__root {
     background: var(--smrt-color-primary-container);
     border-bottom: var(--smrt-hairline);
     animation: slideDown 200ms ease;
   }
-
   @keyframes slideDown {
-    from { transform: translateY(-100%); opacity: 0; }
-    to { transform: translateY(0); opacity: 1; }
+    from {
+      transform: translateY(-100%);
+      opacity: 0;
+    }
+    to {
+      transform: translateY(0);
+      opacity: 1;
+    }
   }
-
-  .action-bar__left {
-    display: flex;
-    align-items: center;
-    gap: var(--smrt-spacing-2, 0.5rem);
-  }
-
-  .action-bar__count {
+  .smrt-action-bar__count {
     font-size: var(--smrt-typography-body-medium-size, 0.875rem);
     font-weight: var(--smrt-typography-weight-semibold, 600);
     color: var(--smrt-color-on-primary-container);
   }
-
-  .action-bar__actions {
-    display: flex;
-    align-items: center;
-    gap: var(--smrt-spacing-2, 0.5rem);
-  }
-
   @media (prefers-reduced-motion: reduce) {
-    .action-bar {
+    .smrt-action-bar__root {
       animation: none;
     }
   }
 }
+
 </style>

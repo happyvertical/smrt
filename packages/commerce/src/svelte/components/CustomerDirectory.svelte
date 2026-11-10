@@ -138,7 +138,7 @@ function customerTypeLabel(value: string | undefined): string {
 }
 </script>
 
-<section class="party-directory" data-smrt-component="CustomerDirectory">
+<section class="smrt-customer-directory__root" data-smrt-component="CustomerDirectory">
   {#if header && !headless}
     {@render header()}
   {:else if !headless}
@@ -149,7 +149,7 @@ function customerTypeLabel(value: string | undefined): string {
     </PageHeader>
   {/if}
 
-  <Form class="directory-search" method="get" action={searchAction} preventDefault={false} stagedReview={false}>
+  <Form class="smrt-customer-directory__search" method="get" action={searchAction} preventDefault={false} stagedReview={false}>
     {#each searchHiddenFields as [name, value]}
       <Input interaction={false} type="hidden" {name} {value} />
     {/each}
@@ -174,25 +174,25 @@ function customerTypeLabel(value: string | undefined): string {
   {#if errorMessage}
     <Alert variant="error" title={t(M['commerce.customer.unable_to_load'])}>{errorMessage}</Alert>
   {:else if loading}
-    <div class="loading" role="status" aria-label={labels.loading ?? t(M['commerce.customer.loading'])}>
+    <div class="smrt-customer-directory__loading" role="status" aria-label={labels.loading ?? t(M['commerce.customer.loading'])} data-smrt-part="status">
       <Skeleton height="6rem" /><Skeleton height="6rem" /><Skeleton height="6rem" />
     </div>
   {:else if items.length === 0}
     <EmptyState title={labels.empty ?? t(M['commerce.customer.no_results'])} description={resolvedEmptyDescription} />
   {:else}
-    <p class="result-count">
+    <p class="smrt-customer-directory__count" data-smrt-part="count">
       {pageSize === undefined
         ? t(M['commerce.party.showing_count'], { count: items.length, total })
         : t(M['commerce.party.showing'], { first, last, total })}
     </p>
-    <div class="party-list">
+    <div class="smrt-customer-directory__list" data-smrt-part="list">
       {#each items as item (item.data.id)}
         <Card padding="md" hoverable data-party-id={item.data.id}>
-          <div class="party-row">
-            <div class="party-copy">
+          <div class="smrt-customer-directory__row" data-smrt-part="row">
+            <div class="smrt-customer-directory__copy" data-smrt-part="body">
               <h2>{#if item.href}<a href={item.href}>{item.data.profile.name}</a>{:else}{item.data.profile.name}{/if}</h2>
               <p>{item.data.profile.email || t(M['commerce.party.no_contact_details'])}</p>
-              <p class="meta">{customerTypeLabel(item.data.customerType)}{item.data.paymentTerms ? ` · ${item.data.paymentTerms}` : ''}</p>
+              <p class="smrt-customer-directory__meta" data-smrt-part="meta">{customerTypeLabel(item.data.customerType)}{item.data.paymentTerms ? ` · ${item.data.paymentTerms}` : ''}</p>
             </div>
             <StatusBadge status={item.data.status} label={statusLabel(item.data.status)} />
           </div>
@@ -200,7 +200,7 @@ function customerTypeLabel(value: string | undefined): string {
         </Card>
       {/each}
     </div>
-    <nav class="pagination" aria-label={t(M['commerce.party.pagination'], { singular })}>
+    <nav class="smrt-customer-directory__pagination" data-smrt-part="navigation" aria-label={t(M['commerce.party.pagination'], { singular })}>
       {#if previousHref}<Button href={previousHref} variant="secondary">{labels.previous ?? t(M['commerce.party.previous'])}</Button>{/if}
       <span>{t(M['commerce.party.page'], { page })}</span>
       {#if nextHref}<Button href={nextHref} variant="secondary">{labels.next ?? t(M['commerce.party.next'])}</Button>{/if}
@@ -210,19 +210,79 @@ function customerTypeLabel(value: string | undefined): string {
 
 <style>
 @layer smrt.reset, smrt.structure, smrt.theme;
-@layer smrt.theme {
-  .party-directory { display: grid; gap: var(--smrt-spacing-5); max-inline-size: 64rem; min-inline-size: 0; }
-  :global(.directory-search) { display: grid; grid-template-columns: minmax(12rem, 2fr) minmax(10rem, 1fr) auto; align-items: end; gap: var(--smrt-spacing-3); }
-  :global(.directory-search [data-smrt-component="FormGroup"]) { margin: 0; min-inline-size: 0; }
-  .loading, .party-list { display: grid; gap: var(--smrt-spacing-3); }
-  .result-count { margin: 0; color: var(--smrt-color-on-surface-variant); }
-  .party-row { display: flex; align-items: start; justify-content: space-between; gap: var(--smrt-spacing-4); }
-  .party-copy { min-inline-size: 0; }
-  h2, p { margin: 0; }
-  h2 { font: var(--smrt-typography-title-medium-font); }
-  h2 a { color: var(--smrt-color-primary); text-decoration-thickness: 1px; text-underline-offset: 0.15em; }
-  .meta { margin-block-start: var(--smrt-spacing-2); color: var(--smrt-color-on-surface-variant); }
-  .pagination { display: flex; align-items: center; justify-content: center; gap: var(--smrt-spacing-3); }
-  @media (max-width: 42rem) { :global(.directory-search) { grid-template-columns: minmax(0, 1fr); } :global(.directory-search [data-smrt-component="Button"]) { inline-size: 100%; } .party-row { align-items: start; } }
+@layer smrt.structure {
+  .smrt-customer-directory__root {
+    display: grid;
+    gap: var(--smrt-spacing-5);
+    max-inline-size: 64rem;
+    min-inline-size: 0;
+  }
+  :global(.smrt-customer-directory__search) {
+    display: grid;
+    grid-template-columns: minmax(12rem, 2fr) minmax(10rem, 1fr) auto;
+    align-items: end;
+    gap: var(--smrt-spacing-3);
+  }
+  :global(.smrt-customer-directory__search [data-smrt-component="FormGroup"]) {
+    margin: 0;
+    min-inline-size: 0;
+  }
+  .smrt-customer-directory__loading, .smrt-customer-directory__list {
+    display: grid;
+    gap: var(--smrt-spacing-3);
+  }
+  .smrt-customer-directory__count {
+    margin: 0;
+  }
+  .smrt-customer-directory__row {
+    display: flex;
+    align-items: start;
+    justify-content: space-between;
+    gap: var(--smrt-spacing-4);
+  }
+  .smrt-customer-directory__copy {
+    min-inline-size: 0;
+  }
+  h2, p {
+    margin: 0;
+  }
+  .smrt-customer-directory__meta {
+    margin-block-start: var(--smrt-spacing-2);
+  }
+  .smrt-customer-directory__pagination {
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    gap: var(--smrt-spacing-3);
+  }
+  @media (max-width: 42rem) {
+    :global(.smrt-customer-directory__search) {
+      grid-template-columns: minmax(0, 1fr);
+    }
+    :global(.smrt-customer-directory__search [data-smrt-component="Button"]) {
+      inline-size: 100%;
+    }
+    .smrt-customer-directory__row {
+      align-items: start;
+    }
+  }
 }
+
+@layer smrt.theme {
+  .smrt-customer-directory__count {
+    color: var(--smrt-color-on-surface-variant);
+  }
+  h2 {
+    font: var(--smrt-typography-title-medium-font);
+  }
+  h2 a {
+    color: var(--smrt-color-primary);
+    text-decoration-thickness: 1px;
+    text-underline-offset: 0.15em;
+  }
+  .smrt-customer-directory__meta {
+    color: var(--smrt-color-on-surface-variant);
+  }
+}
+
 </style>

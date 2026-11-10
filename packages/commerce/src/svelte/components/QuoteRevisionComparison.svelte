@@ -28,9 +28,9 @@ const delta = $derived.by(() => {
   }
 });
 </script>
-<section class="quote-comparison" aria-label={title ?? t(Q['commerce.quote.compare'])} data-smrt-component="QuoteRevisionComparison">
+<section class="smrt-quote-revision-comparison__root" aria-label={title ?? t(Q['commerce.quote.compare'])} data-smrt-component="QuoteRevisionComparison">
   <h2>{title ?? t(Q['commerce.quote.compare'])}</h2>
-  <div class="versions">
+  <div class="smrt-quote-revision-comparison__versions" data-smrt-part="group">
     <QuoteRevisionHistory revisions={[previous]} title={t(Q['commerce.quote.before'])} />
     <QuoteRevisionHistory revisions={[current]} title={t(Q['commerce.quote.after'])} />
   </div>
@@ -40,8 +40,22 @@ const delta = $derived.by(() => {
 </section>
 <style>
 @layer smrt.reset, smrt.structure, smrt.theme;
-@layer smrt.theme {
-.quote-comparison { min-width: 0; color: var(--smrt-color-on-surface); overflow-wrap: anywhere; }
-.versions { display: grid; grid-template-columns: repeat(auto-fit, minmax(min(100%, 20rem), 1fr)); gap: var(--smrt-spacing-4, 1rem); }
+@layer smrt.structure {
+  .smrt-quote-revision-comparison__root {
+    min-width: 0;
+    overflow-wrap: anywhere;
+  }
+  .smrt-quote-revision-comparison__versions {
+    display: grid;
+    grid-template-columns: repeat(auto-fit, minmax(min(100%, 20rem), 1fr));
+    gap: var(--smrt-spacing-4, 1rem);
+  }
 }
+
+@layer smrt.theme {
+  .smrt-quote-revision-comparison__root {
+    color: var(--smrt-color-on-surface);
+  }
+}
+
 </style>

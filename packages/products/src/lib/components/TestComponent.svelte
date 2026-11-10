@@ -10,19 +10,25 @@ const { message = 'Hello Federation!' }: Props = $props();
 const { t } = useI18n();
 </script>
 
-<div class="test-component">
+<div class="smrt-test-component__root" data-smrt-component="TestComponent">
   <h3>{t(M['products.test_component.title'])}</h3>
   <p>{message}</p>
 </div>
 
 <style>
 @layer smrt.reset, smrt.structure, smrt.theme;
-@layer smrt.theme {
-  .test-component {
+@layer smrt.structure {
+  .smrt-test-component__root {
     padding: 1rem;
+  }
+}
+
+@layer smrt.theme {
+  .smrt-test-component__root {
     border: var(--smrt-hairline);
     border-radius: var(--smrt-radius-sm);
     background: var(--smrt-color-surface-container-low);
   }
 }
+
 </style>

@@ -44,7 +44,7 @@ const showCreditAction = $derived(
 
 {#snippet relatedCredits()}
   {#if data.creditNotes.length > 0}
-    <section class="invoice-record-screen__credits" aria-label={t(M['commerce.invoice_record.credit_notes'])}>
+    <section class="smrt-invoice-record-screen__credits" data-smrt-part="details" aria-label={t(M['commerce.invoice_record.credit_notes'])}>
       <h2>{t(M['commerce.invoice_record.credit_notes'])}</h2>
       <ul>
         {#each data.creditNotes as credit (credit.id)}
@@ -80,15 +80,38 @@ const showCreditAction = $derived(
 
 <style>
 @layer smrt.reset, smrt.structure, smrt.theme;
-@layer smrt.theme {
-  .invoice-record-screen__credits {
+@layer smrt.structure {
+  .smrt-invoice-record-screen__credits {
     display: grid;
     gap: var(--smrt-spacing-sm, 0.5rem);
     margin-block-start: var(--smrt-spacing-md, 1rem);
   }
-  .invoice-record-screen__credits h2 { margin: 0; font: var(--smrt-typography-title-small-font); }
-  .invoice-record-screen__credits ul { display: grid; gap: var(--smrt-spacing-xs, 0.25rem); margin: 0; padding-inline-start: 1.25rem; }
-  .invoice-record-screen__credits li { display: flex; flex-wrap: wrap; gap: var(--smrt-spacing-sm, 0.5rem); color: var(--smrt-color-on-surface); }
-  .invoice-record-screen__credits li span, .invoice-record-screen__credits time { color: var(--smrt-color-on-surface-variant); }
+  .smrt-invoice-record-screen__credits h2 {
+    margin: 0;
+  }
+  .smrt-invoice-record-screen__credits ul {
+    display: grid;
+    gap: var(--smrt-spacing-xs, 0.25rem);
+    margin: 0;
+    padding-inline-start: 1.25rem;
+  }
+  .smrt-invoice-record-screen__credits li {
+    display: flex;
+    flex-wrap: wrap;
+    gap: var(--smrt-spacing-sm, 0.5rem);
+  }
 }
+
+@layer smrt.theme {
+  .smrt-invoice-record-screen__credits h2 {
+    font: var(--smrt-typography-title-small-font);
+  }
+  .smrt-invoice-record-screen__credits li {
+    color: var(--smrt-color-on-surface);
+  }
+  .smrt-invoice-record-screen__credits li span, .smrt-invoice-record-screen__credits time {
+    color: var(--smrt-color-on-surface-variant);
+  }
+}
+
 </style>

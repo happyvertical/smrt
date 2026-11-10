@@ -87,10 +87,10 @@ function handleObjectInput(event: Event) {
 }
 </script>
 
-<div class="field-renderer">
-  <label for={fieldId} class="field-label">
+<div class="smrt-field-renderer__root" data-smrt-component="FieldRenderer">
+  <label for={fieldId} class="smrt-field-renderer__label" data-smrt-part="label">
     {displayLabel}
-    {#if required}<span class="required">*</span>{/if}
+    {#if required}<span class="smrt-field-renderer__required" data-smrt-part="marker">*</span>{/if}
   </label>
 
   {#if fieldType === 'string'}
@@ -118,7 +118,7 @@ function handleObjectInput(event: Event) {
     <input
       id={fieldId}
       type="checkbox"
-      class="field-checkbox"
+      class="smrt-field-renderer__checkbox" data-smrt-part="input"
       checked={Boolean(value)}
       {readonly}
       onchange={handleBooleanInput}
@@ -132,7 +132,7 @@ function handleObjectInput(event: Event) {
       {required}
       oninput={handleArrayInput}
     ></Textarea>
-    <div class="field-hint">{t(M['products.field_renderer.array_hint'])}</div>
+    <div class="smrt-field-renderer__hint" data-smrt-part="hint">{t(M['products.field_renderer.array_hint'])}</div>
   {:else if fieldType === 'object'}
     <Textarea
       id={fieldId}
@@ -142,39 +142,39 @@ function handleObjectInput(event: Event) {
       {required}
       oninput={handleObjectInput}
     ></Textarea>
-    <div class="field-hint">{t(M['products.field_renderer.object_hint'])}</div>
+    <div class="smrt-field-renderer__hint" data-smrt-part="hint">{t(M['products.field_renderer.object_hint'])}</div>
   {/if}
 </div>
 
 <style>
 @layer smrt.reset, smrt.structure, smrt.theme;
-@layer smrt.theme {
-  .field-renderer {
+@layer smrt.structure {
+  .smrt-field-renderer__root {
     display: flex;
     flex-direction: column;
     gap: 0.5rem;
     margin-bottom: 1rem;
   }
+  .smrt-field-renderer__checkbox {
+    width: 1rem;
+    height: 1rem;
+  }
+}
 
-  .field-label {
+@layer smrt.theme {
+  .smrt-field-renderer__label {
     font-weight: var(--smrt-typography-weight-medium, 500);
     color: var(--smrt-color-on-surface);
     font-size: var(--smrt-typography-label-large-size, 0.875rem);
   }
-
-  .required {
+  .smrt-field-renderer__required {
     color: var(--smrt-color-error);
   }
-
-  .field-checkbox {
-    width: 1rem;
-    height: 1rem;
-  }
-
-  .field-hint {
+  .smrt-field-renderer__hint {
     font-size: var(--smrt-typography-body-small-size, 0.75rem);
     color: var(--smrt-color-on-surface-variant);
     font-style: italic;
   }
 }
+
 </style>
