@@ -53,9 +53,9 @@ onMount(() => () => live.stop());
 >
   {@render children()}
   <!-- Screen readers hear changes made elsewhere (the assistant, another tab). -->
-  <div class="sr-only" aria-live="polite" role="status">{live.announcement}</div>
+  <div class="smrt-app-shell-layout__sr-only" aria-live="polite" role="status" data-smrt-part="label">{live.announcement}</div>
   {#if isOwner && live.status === 'reconnecting'}
-    <p class="live-note" role="status">Reconnecting to your app…</p>
+    <p class="smrt-app-shell-layout__live-note" role="status" data-smrt-part="status">Reconnecting to your app…</p>
   {/if}
   {#if isOwner}
     <AssistantDock />
@@ -64,8 +64,9 @@ onMount(() => () => live.stop());
 
 <style>
 @layer smrt.reset, smrt.structure, smrt.theme;
-@layer smrt.theme {
-  .sr-only {
+
+@layer smrt.structure {
+  .smrt-app-shell-layout__sr-only {
     position: absolute;
     width: 1px;
     height: 1px;
@@ -74,20 +75,27 @@ onMount(() => () => live.stop());
     overflow: hidden;
     clip-path: inset(50%);
     white-space: nowrap;
-    border: 0;
   }
-  .live-note {
+  .smrt-app-shell-layout__live-note {
     position: fixed;
     inset-block-end: var(--smrt-spacing-md, 0.75rem);
     inset-inline-start: 50%;
     transform: translateX(-50%);
     margin: 0;
     padding: var(--smrt-spacing-xs, 0.25rem) var(--smrt-spacing-md, 0.75rem);
+    z-index: 50;
+  }
+}
+
+@layer smrt.theme {
+  .smrt-app-shell-layout__sr-only {
+    border: 0;
+  }
+  .smrt-app-shell-layout__live-note {
     border-radius: var(--smrt-radius-full);
     background: var(--smrt-color-inverse-surface);
     color: var(--smrt-color-inverse-on-surface);
     font-size: 0.8125rem;
-    z-index: 50;
   }
 }
 </style>

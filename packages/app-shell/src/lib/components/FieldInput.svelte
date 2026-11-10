@@ -40,9 +40,9 @@ function hintFor(s: FieldSpec): string {
 }
 </script>
 
-<div class="sh-field">
+<div class="sh-field" data-smrt-component="FieldInput">
   {#if spec.kind === 'checkbox'}
-    <label class="sh-check">
+    <label class="sh-check" data-smrt-part="label">
       <input
         {id}
         type="checkbox"
@@ -55,8 +55,8 @@ function hintFor(s: FieldSpec): string {
     </label>
   {:else}
     <label for={id}>
-      {spec.label}{#if spec.required}<span class="sh-req" aria-hidden="true"> *</span
-        ><span class="sh-sr"> (required)</span>{/if}
+      {spec.label}{#if spec.required}<span class="sh-req" aria-hidden="true" data-smrt-part="label"> *</span
+        ><span class="smrt-field-input__sr" data-smrt-part="label"> (required)</span>{/if}
     </label>
     {#if spec.kind === 'select'}
       <select
@@ -66,7 +66,7 @@ function hintFor(s: FieldSpec): string {
         bind:value
         aria-invalid={error ? 'true' : undefined}
         aria-required={spec.required}
-        aria-describedby={describedBy}
+        aria-describedby={describedBy} data-smrt-part="input"
       >
         <option value="">{spec.required ? 'Choose…' : 'None'}</option>
         {#each spec.choices as choice (choice)}
@@ -81,7 +81,7 @@ function hintFor(s: FieldSpec): string {
         bind:value
         aria-invalid={error ? 'true' : undefined}
         aria-required={spec.required}
-        aria-describedby={describedBy}
+        aria-describedby={describedBy} data-smrt-part="input"
       >
         <option value="">{spec.required ? 'Choose…' : 'None'}</option>
         {#each options as option (option.id)}
@@ -100,7 +100,7 @@ function hintFor(s: FieldSpec): string {
         bind:value
         aria-invalid={error ? 'true' : undefined}
         aria-required={spec.required}
-        aria-describedby={describedBy}
+        aria-describedby={describedBy} data-smrt-part="input"
       ></textarea>
     {:else}
       <input
@@ -117,18 +117,19 @@ function hintFor(s: FieldSpec): string {
         inputmode={spec.kind === 'money' ? 'decimal' : undefined}
         aria-invalid={error ? 'true' : undefined}
         aria-required={spec.required}
-        aria-describedby={describedBy}
+        aria-describedby={describedBy} data-smrt-part="input"
       />
     {/if}
   {/if}
-  {#if hintFor(spec)}<p class="sh-hint" id={hintId}>{hintFor(spec)}</p>{/if}
-  {#if error}<p class="sh-error" id={errorId}>{error}</p>{/if}
+  {#if hintFor(spec)}<p class="sh-hint" id={hintId} data-smrt-part="hint">{hintFor(spec)}</p>{/if}
+  {#if error}<p class="sh-error" id={errorId} data-smrt-part="error">{error}</p>{/if}
 </div>
 
 <style>
 @layer smrt.reset, smrt.structure, smrt.theme;
-@layer smrt.theme {
-  .sh-sr {
+
+@layer smrt.structure {
+  .smrt-field-input__sr {
     position: absolute;
     width: 1px;
     height: 1px;
@@ -136,5 +137,8 @@ function hintFor(s: FieldSpec): string {
     clip-path: inset(50%);
     white-space: nowrap;
   }
+}
+
+@layer smrt.theme {
 }
 </style>
