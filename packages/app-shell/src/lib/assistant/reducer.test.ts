@@ -180,7 +180,8 @@ describe('dock reducer', () => {
     });
     expect(s).toMatchObject({
       availability: 'unavailable',
-      engineLabel: 'Claude Code',
+      // An engine that cannot answer is not "in use".
+      engineLabel: '',
       unavailableAction: { href: '/welcome' },
     });
     s = reduce(s, { type: 'reset' });

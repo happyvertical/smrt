@@ -123,7 +123,8 @@ export function reduce(state: DockState, action: Action): DockState {
             unavailableMessage:
               action.status.message ?? 'The assistant is not available.',
             unavailableAction: action.status.action ?? null,
-            engineLabel: action.status.engineLabel ?? '',
+            // Never claim an engine is "in use" when it cannot answer.
+            engineLabel: '',
           };
     case 'unavailable':
       return {

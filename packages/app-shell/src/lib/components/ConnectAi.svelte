@@ -5,6 +5,7 @@
 // opens the vendor's page in the browser). This app never sees a login.
 import { onDestroy, onMount } from 'svelte';
 import {
+  apiRow,
   chooseEngine,
   connectTool,
   engineReady,
@@ -171,15 +172,18 @@ onDestroy(() => {
       {/each}
     </ul>
 
-    {#if info.apiReady}
+    {@const api = apiRow(info)}
+    {#if api === 'in-use'}
       <p class="api">
-        {#if info.engine === 'api'}
-          <span class="sh-badge sh-badge-ok">In use</span> Your saved API key.
-        {:else}
-          You also have an API key saved.
-          <button type="button" class="sh-btn sh-btn-small" disabled={busy !== null} onclick={useApi}>Use my API key</button>
-        {/if}
+        <span class="sh-badge sh-badge-ok">In use</span> An API key (saved here, or found in this computer's settings).
       </p>
+    {:else if api === 'available'}
+      <p class="api">
+        You also have an API key available.
+        <button type="button" class="sh-btn sh-btn-small" disabled={busy !== null} onclick={useApi}>Use my API key</button>
+      </p>
+    {:else if !ready}
+      <p class="api sh-muted">Nothing connected yet.</p>
     {/if}
 
     <p class="sh-muted legal">

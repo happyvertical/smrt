@@ -95,6 +95,16 @@ export function engineReady(info: OnboardingInfo): boolean {
   return !!tool?.installed && tool.signedIn === true;
 }
 
+/**
+ * The API-key line under the tools: "in-use" only when the API engine is the
+ * one in effect AND a key resolves; "available" when a key resolves but
+ * another engine is chosen; "none" when nothing works yet.
+ */
+export function apiRow(info: OnboardingInfo): 'in-use' | 'available' | 'none' {
+  if (!info.apiReady) return 'none';
+  return info.engine === 'api' ? 'in-use' : 'available';
+}
+
 export type ToolAction =
   | { kind: 'in-use'; label: string }
   | { kind: 'use'; label: string }

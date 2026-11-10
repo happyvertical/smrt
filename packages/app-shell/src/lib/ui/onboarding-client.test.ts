@@ -1,5 +1,6 @@
 import { describe, expect, it } from 'vitest';
 import {
+  apiRow,
   engineReady,
   needsWelcome,
   type OnboardingInfo,
@@ -62,6 +63,16 @@ describe('engineReady', () => {
         }),
       ),
     ).toBe(false);
+  });
+});
+
+describe('apiRow', () => {
+  it('claims "in use" only for an API key that resolves', () => {
+    expect(apiRow(info())).toBe('none');
+    expect(apiRow(info({ engine: 'api', apiReady: false }))).toBe('none');
+    expect(apiRow(info({ engine: 'api', apiReady: true }))).toBe('in-use');
+    expect(apiRow(info({ engine: 'codex', apiReady: true }))).toBe('available');
+    expect(apiRow(info({ engine: 'codex', apiReady: false }))).toBe('none');
   });
 });
 
