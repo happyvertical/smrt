@@ -116,12 +116,12 @@ async function handleSave(slotId: string, config: unknown) {
 }
 </script>
 
-<div class="agent-settings-shell" class:single-agent={agents.length === 1} data-smrt-component="AgentSettingsShell">
+<div class="smrt-agent-settings-shell__root" class:smrt-agent-settings-shell__single-agent={agents.length === 1} data-smrt-component="AgentSettingsShell">
 	{#if agents.length > 1}
-		<aside class="agents-sidebar">
-			<h3 class="sidebar-title" id="{idBase}-agents-title">Agents</h3>
+		<aside class="smrt-agent-settings-shell__sidebar" data-smrt-part="sidebar">
+			<h3 class="smrt-agent-settings-shell__sidebar-title" data-smrt-part="label" id="{idBase}-agents-title">Agents</h3>
 			<div
-				class="agents-list"
+				class="smrt-agent-settings-shell__list" data-smrt-part="list"
 				role="tablist"
 				aria-orientation="vertical"
 				aria-labelledby="{idBase}-agents-title"
@@ -130,8 +130,8 @@ async function handleSave(slotId: string, config: unknown) {
 				{#each agents as agent}
 					<!-- raw-primitive-allow: tab control in a hand-rolled ARIA tablist with roving tabindex and bind:this keyboard navigation, driving an externally-rendered aria-controls panel; this is a tab role (not a standard action button) and adopting the Tabs primitive would require restructuring the agent/panel wiring -->
 					<button
-						class="agent-button"
-						class:active={activeAgentId === agent.id}
+						class="smrt-agent-settings-shell__tab" data-smrt-part="tab"
+						class:smrt-agent-settings-shell__active={activeAgentId === agent.id}
 						role="tab"
 						aria-selected={activeAgentId === agent.id}
 						aria-controls="{idBase}-panel"
@@ -141,9 +141,9 @@ async function handleSave(slotId: string, config: unknown) {
 						onclick={() => handleAgentClick(agent.id)}
 						onkeydown={(e) => handleAgentKeydown(e, agent.id)}
 					>
-						<span class="agent-class">{agent.agentClass}</span>
+						<span class="smrt-agent-settings-shell__agent-class" data-smrt-part="name">{agent.agentClass}</span>
 						{#if agent.name}
-							<span class="agent-name">{agent.name}</span>
+							<span class="smrt-agent-settings-shell__agent-name" data-smrt-part="meta">{agent.name}</span>
 						{/if}
 					</button>
 				{/each}
@@ -152,7 +152,7 @@ async function handleSave(slotId: string, config: unknown) {
 	{/if}
 
 	<main
-		class="agent-content"
+		class="smrt-agent-settings-shell__content" data-smrt-part="body"
 		id="{idBase}-panel"
 		role={agents.length > 1 ? 'tabpanel' : undefined}
 		aria-labelledby={agents.length > 1 && activeAgentId
@@ -160,10 +160,10 @@ async function handleSave(slotId: string, config: unknown) {
 			: undefined}
 	>
 		{#if activeAgent}
-			<header class="agent-header">
-				<h2 class="agent-title">{activeAgent.agentClass}</h2>
+			<header class="smrt-agent-settings-shell__header" data-smrt-part="header">
+				<h2 class="smrt-agent-settings-shell__title" data-smrt-part="title">{activeAgent.agentClass}</h2>
 				{#if activeAgent.name}
-					<p class="agent-subtitle">{activeAgent.name}</p>
+					<p class="smrt-agent-settings-shell__subtitle" data-smrt-part="meta">{activeAgent.name}</p>
 				{/if}
 			</header>
 
@@ -178,10 +178,10 @@ async function handleSave(slotId: string, config: unknown) {
 				dbConfigs={dbConfigs[activeAgent.id]}
 			/>
 		{:else if agents.length === 0}
-			<div class="no-agents">
-				<div class="no-agents-icon">🤖</div>
-				<p class="no-agents-message">{t(M['ui.agent_settings_shell.no_agents_message'])}</p>
-				<p class="no-agents-hint">
+			<div class="smrt-agent-settings-shell__empty" data-smrt-part="empty">
+				<div class="smrt-agent-settings-shell__empty-icon" data-smrt-part="icon">🤖</div>
+				<p class="smrt-agent-settings-shell__empty-message" data-smrt-part="message">{t(M['ui.agent_settings_shell.no_agents_message'])}</p>
+				<p class="smrt-agent-settings-shell__empty-hint" data-smrt-part="hint">
 					{t(M['ui.agent_settings_shell.no_agents_hint'])}
 				</p>
 			</div>
@@ -191,136 +191,142 @@ async function handleSave(slotId: string, config: unknown) {
 
 <style>
 @layer smrt.reset, smrt.structure, smrt.theme;
+@layer smrt.structure {
+  .smrt-agent-settings-shell__root {
+    display: grid;
+    grid-template-columns: 220px 1fr;
+    gap: 1.5rem;
+    min-height: 400px;
+  }
+  .smrt-agent-settings-shell__root.smrt-agent-settings-shell__single-agent {
+    grid-template-columns: 1fr;
+  }
+  .smrt-agent-settings-shell__sidebar {
+    padding: var(--smrt-spacing-4, 1rem);
+  }
+  .smrt-agent-settings-shell__sidebar-title {
+    margin: 0 0 0.75rem 0;
+    padding: 0 0.5rem 0.75rem;
+  }
+  .smrt-agent-settings-shell__list {
+    display: flex;
+    flex-direction: column;
+    gap: 0.25rem;
+  }
+  .smrt-agent-settings-shell__tab {
+    display: flex;
+    flex-direction: column;
+    align-items: flex-start;
+    gap: 0.125rem;
+    padding: 0.625rem 0.75rem;
+    cursor: pointer;
+    width: 100%;
+  }
+  .smrt-agent-settings-shell__content {
+    min-width: 0;
+  }
+  .smrt-agent-settings-shell__header {
+    margin-bottom: 1.5rem;
+    padding-bottom: 1rem;
+  }
+  .smrt-agent-settings-shell__title {
+    margin: 0;
+  }
+  .smrt-agent-settings-shell__subtitle {
+    margin: 0.25rem 0 0;
+  }
+  .smrt-agent-settings-shell__empty {
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    justify-content: center;
+    padding: 4rem 2rem;
+    min-height: 300px;
+  }
+  .smrt-agent-settings-shell__empty-icon {
+    margin-bottom: 1rem;
+  }
+  .smrt-agent-settings-shell__empty-message {
+    margin: 0 0 0.5rem 0;
+  }
+  .smrt-agent-settings-shell__empty-hint {
+    margin: 0;
+    max-width: 400px;
+  }
+}
+
 @layer smrt.theme {
-	.agent-settings-shell {
-		display: grid;
-		grid-template-columns: 220px 1fr;
-		gap: 1.5rem;
-		min-height: 400px;
-	}
-
-	.agent-settings-shell.single-agent {
-		grid-template-columns: 1fr;
-	}
-
-	.agents-sidebar {
-		background: var(--smrt-color-surface-container-low);
-		border-radius: var(--smrt-radius-medium);
-		padding: var(--smrt-spacing-4, 1rem);
-		border: var(--smrt-hairline);
-	}
-
-	.sidebar-title {
-		margin: 0 0 0.75rem 0;
-		padding: 0 0.5rem 0.75rem;
-		font-size: var(--smrt-typography-label-medium-size, 0.75rem);
-		font-weight: var(--smrt-typography-weight-semibold, 600);
-		text-transform: uppercase;
-		letter-spacing: var(--smrt-typography-label-medium-tracking, 0.05em);
-		color: var(--smrt-color-on-surface-variant);
-		border-bottom: var(--smrt-hairline);
-	}
-
-	.agents-list {
-		display: flex;
-		flex-direction: column;
-		gap: 0.25rem;
-	}
-
-	.agent-button {
-		display: flex;
-		flex-direction: column;
-		align-items: flex-start;
-		gap: 0.125rem;
-		padding: 0.625rem 0.75rem;
-		border: none;
-		background: transparent;
-		border-radius: var(--smrt-radius-md);
-		cursor: pointer;
-		text-align: left;
-		width: 100%;
-		transition:
+  .smrt-agent-settings-shell__sidebar {
+    background: var(--smrt-color-surface-container-low);
+    border-radius: var(--smrt-radius-medium);
+    border: var(--smrt-hairline);
+  }
+  .smrt-agent-settings-shell__sidebar-title {
+    font-size: var(--smrt-typography-label-medium-size, 0.75rem);
+    font-weight: var(--smrt-typography-weight-semibold, 600);
+    text-transform: uppercase;
+    letter-spacing: var(--smrt-typography-label-medium-tracking, 0.05em);
+    color: var(--smrt-color-on-surface-variant);
+    border-bottom: var(--smrt-hairline);
+  }
+  .smrt-agent-settings-shell__tab {
+    border: none;
+    background: transparent;
+    border-radius: var(--smrt-radius-md);
+    text-align: left;
+    transition:
 			background-color var(--smrt-duration-short2, 150ms) var(--smrt-easing-standard, ease),
 			color var(--smrt-duration-short2, 150ms) var(--smrt-easing-standard, ease);
-	}
-
-	.agent-button:hover {
-		background: var(--smrt-color-surface-container-high);
-	}
-
-	.agent-button.active {
-		background: var(--smrt-color-primary);
-	}
-
-	.agent-button.active .agent-class,
-	.agent-button.active .agent-name {
-		color: var(--smrt-color-on-primary, white);
-	}
-
-	.agent-class {
-		font-size: var(--smrt-typography-title-small-size, 0.875rem);
-		font-weight: var(--smrt-typography-weight-semibold, 600);
-		color: var(--smrt-color-on-surface);
-	}
-
-	.agent-name {
-		font-size: var(--smrt-typography-body-small-size, 0.75rem);
-		color: var(--smrt-color-on-surface-variant);
-	}
-
-	.agent-content {
-		min-width: 0;
-	}
-
-	.agent-header {
-		margin-bottom: 1.5rem;
-		padding-bottom: 1rem;
-		border-bottom: var(--smrt-hairline);
-	}
-
-	.agent-title {
-		margin: 0;
-		font-size: var(--smrt-typography-headline-medium-size, 1.5rem);
-		font-weight: var(--smrt-typography-weight-semibold, 600);
-		color: var(--smrt-color-on-surface);
-	}
-
-	.agent-subtitle {
-		margin: 0.25rem 0 0;
-		font-size: var(--smrt-typography-body-medium-size, 0.9375rem);
-		color: var(--smrt-color-on-surface-variant);
-	}
-
-	.no-agents {
-		display: flex;
-		flex-direction: column;
-		align-items: center;
-		justify-content: center;
-		padding: 4rem 2rem;
-		text-align: center;
-		background: var(--smrt-color-surface-variant);
-		border: 1px dashed var(--smrt-color-outline-variant);
-		border-radius: var(--smrt-radius-md);
-		min-height: 300px;
-	}
-
-	.no-agents-icon {
-		font-size: var(--smrt-typography-display-medium-size, 3rem);
-		margin-bottom: 1rem;
-		opacity: 0.5;
-	}
-
-	.no-agents-message {
-		margin: 0 0 0.5rem 0;
-		font-size: var(--smrt-typography-body-large-size, 1rem);
-		color: var(--smrt-color-on-surface-variant);
-	}
-
-	.no-agents-hint {
-		margin: 0;
-		font-size: var(--smrt-typography-body-medium-size, 0.875rem);
-		color: var(--smrt-color-on-surface-variant);
-		max-width: 400px;
-	}
+  }
+  .smrt-agent-settings-shell__tab:hover {
+    background: var(--smrt-color-surface-container-high);
+  }
+  .smrt-agent-settings-shell__tab.smrt-agent-settings-shell__active {
+    background: var(--smrt-color-primary);
+  }
+  .smrt-agent-settings-shell__tab.smrt-agent-settings-shell__active .smrt-agent-settings-shell__agent-class,
+  .smrt-agent-settings-shell__tab.smrt-agent-settings-shell__active .smrt-agent-settings-shell__agent-name {
+    color: var(--smrt-color-on-primary, white);
+  }
+  .smrt-agent-settings-shell__agent-class {
+    font-size: var(--smrt-typography-title-small-size, 0.875rem);
+    font-weight: var(--smrt-typography-weight-semibold, 600);
+    color: var(--smrt-color-on-surface);
+  }
+  .smrt-agent-settings-shell__agent-name {
+    font-size: var(--smrt-typography-body-small-size, 0.75rem);
+    color: var(--smrt-color-on-surface-variant);
+  }
+  .smrt-agent-settings-shell__header {
+    border-bottom: var(--smrt-hairline);
+  }
+  .smrt-agent-settings-shell__title {
+    font-size: var(--smrt-typography-headline-medium-size, 1.5rem);
+    font-weight: var(--smrt-typography-weight-semibold, 600);
+    color: var(--smrt-color-on-surface);
+  }
+  .smrt-agent-settings-shell__subtitle {
+    font-size: var(--smrt-typography-body-medium-size, 0.9375rem);
+    color: var(--smrt-color-on-surface-variant);
+  }
+  .smrt-agent-settings-shell__empty {
+    text-align: center;
+    background: var(--smrt-color-surface-variant);
+    border: 1px dashed var(--smrt-color-outline-variant);
+    border-radius: var(--smrt-radius-md);
+  }
+  .smrt-agent-settings-shell__empty-icon {
+    font-size: var(--smrt-typography-display-medium-size, 3rem);
+    opacity: 0.5;
+  }
+  .smrt-agent-settings-shell__empty-message {
+    font-size: var(--smrt-typography-body-large-size, 1rem);
+    color: var(--smrt-color-on-surface-variant);
+  }
+  .smrt-agent-settings-shell__empty-hint {
+    font-size: var(--smrt-typography-body-medium-size, 0.875rem);
+    color: var(--smrt-color-on-surface-variant);
+  }
 }
+
 </style>
