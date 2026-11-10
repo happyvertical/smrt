@@ -215,3 +215,67 @@ describe('undoTo', () => {
     }
   });
 });
+
+// A removal that was added again afterwards (a draft does this as easily as a
+// person): undoing a define or an add keeps its table or column, so undoing
+// the removal must not collide with what is there now.
+describe('undo across a removal that was added again', () => {
+  it('a field removed and added again: undoing all three brings the archived values back', async () => {
+    const host = await AppHost.open(join(root, `h${n++}`), {
+      store: new MemoryVersionStore(),
+    });
+    try {
+      await host.execute(
+        {
+          type: 'defineModel',
+          name: 'Chore',
+          fields: { title: { type: 'text' } },
+        },
+        AUTHOR,
+      );
+      const defined = host.version;
+      const addSize = {
+        type: 'addField',
+        model: 'Chore',
+        field: 'size',
+        definition: { type: 'text' },
+      } as const;
+      await host.execute(addSize, AUTHOR);
+      const made = await host.create('Chore', { title: 'a', size: 'big' });
+      await host.execute(
+        { type: 'removeField', model: 'Chore', field: 'size' },
+        OK,
+      );
+      await host.execute(addSize, AUTHOR);
+      await host.execute({ type: 'undoTo', version: defined }, AUTHOR);
+      expect(host.version).toBe(defined);
+      expect(host.describe().models.Chore.fields).not.toHaveProperty('size');
+      expect((await host.get('Chore', made.id as string)).title).toBe('a');
+    } finally {
+      await host.close();
+    }
+  });
+
+  it('a model removed and defined again: undoing all of it returns the original table and rows', async () => {
+    const host = await AppHost.open(join(root, `h${n++}`), {
+      store: new MemoryVersionStore(),
+    });
+    try {
+      const gizmo = {
+        type: 'defineModel',
+        name: 'Gizmo',
+        fields: { name: { type: 'text' } },
+      } as const;
+      await host.execute(gizmo, AUTHOR);
+      const first = host.version;
+      const row = await host.create('Gizmo', { name: 'original' });
+      await host.execute({ type: 'removeModel', model: 'Gizmo' }, OK);
+      await host.execute(gizmo, AUTHOR);
+      await host.execute({ type: 'undoTo', version: first }, AUTHOR);
+      expect(host.version).toBe(first);
+      expect((await host.get('Gizmo', row.id as string)).name).toBe('original');
+    } finally {
+      await host.close();
+    }
+  });
+});

@@ -144,6 +144,12 @@ is documented here; the shell's tables, approvals and UI sit on top.
   before anything changes. Each step is its own consistent state, so a failure
   part-way leaves the app at the version reached and the error says
   "undid k of n". `from` pins the current version as `undo`'s pin does.
+- **Undo over a re-added name.** Undoing an add or a define keeps its column or
+  table (data is never dropped by an undo). So when a removal is undone after
+  the same field or model was added again, the archived values go back into the
+  column that is there, and an EMPTY table of the model's name is dropped so the
+  archived table (with its rows) can return; a table holding rows is never
+  dropped and the undo stops with the database's own message.
 - **Queued calls.** `onApp` (records, tools, REST) waits until the change queue
   is idle and stable, then runs in the same synchronous step; it counts
   in-flight calls so a change can wait for them (needed for consistent copies).

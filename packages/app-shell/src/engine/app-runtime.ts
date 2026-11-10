@@ -245,6 +245,18 @@ export class AppRuntime {
         );
         break;
       case 'archiveTable':
+        // Undoing a removal puts the archived table back. A model that was
+        // defined again since leaves an EMPTY table of that name (undoing a
+        // define keeps its table): drop it so the original, with its rows,
+        // can return. A table with rows is never dropped; the rename then
+        // fails and says so.
+        if (
+          !up &&
+          (await this.tableExists(tx, step.table)) &&
+          (await tx.query(`SELECT 1 FROM ${q(step.table)} LIMIT 1`)).rows
+            .length === 0
+        )
+          await exec(`DROP TABLE ${q(step.table)}`);
         await exec(
           `ALTER TABLE ${q(up ? step.table : step.archivedAs)} RENAME TO ${q(up ? step.archivedAs : step.table)}`,
         );
@@ -260,9 +272,12 @@ export class AppRuntime {
             `ALTER TABLE ${q(step.table)} DROP COLUMN ${q(step.column)}`,
           );
         } else {
-          await exec(
-            `ALTER TABLE ${q(step.table)} ADD COLUMN ${q(step.column)} ${sqlType(step.type)}`,
-          );
+          // Undoing an add keeps its column, so a field added again after the
+          // removal is still there: put the archived values back into it.
+          if (!(await this.columnTypes(tx, step.table)).has(step.column))
+            await exec(
+              `ALTER TABLE ${q(step.table)} ADD COLUMN ${q(step.column)} ${sqlType(step.type)}`,
+            );
           await exec(
             `UPDATE ${q(step.table)} SET ${q(step.column)} = (SELECT value FROM _archive a WHERE a.version = ? AND a.tbl = ? AND a.col = ? AND a.record_id = ${q(step.table)}.${q(step.key)})`,
             [m.version, step.table, step.column],
