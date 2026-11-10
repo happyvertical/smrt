@@ -20,6 +20,7 @@ export default defineConfig({
         'activity-ticker',
         'phone-heading',
         'forced-colors',
+        'styleless',
       ].map((entry) =>
         fileURLToPath(new URL(`./${entry}.html`, import.meta.url)),
       ),

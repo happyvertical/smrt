@@ -9,10 +9,8 @@
  * consumer CSS still wins, whatever the import order. Restyle with unlayered
  * CSS, the --smrt-* tokens, or the data-smrt-component / data-smrt-part hooks.
  *
- * The reverted property list is explicit on purpose. `all: revert-layer` would
- * also drop layout from unsorted components, including those nested inside
- * the ten wave-2 pilot primitives. Keep this list in
- * step with the "Styleless mode" section of agents/styling.md.
+ * Every reachable component is sorted: reverting the entire theme layer keeps
+ * structure, including nested slot content and pseudo-elements.
  */
 @layer smrt.reset, smrt.structure, smrt.theme;
 
@@ -47,19 +45,9 @@
  * class selectors without !important.
  */
 @layer smrt.theme {
-  :is([data-smrt-component], [data-smrt-component] *):not(#\#):not(#\#):not(#\#) {
-    background: revert-layer;
-    border: revert-layer;
-    border-radius: revert-layer;
-    box-shadow: revert-layer;
-    color: revert-layer;
-    font: revert-layer;
-    letter-spacing: revert-layer;
-    text-decoration: revert-layer;
-    text-transform: revert-layer;
-    text-shadow: revert-layer;
-    outline: revert-layer;
-    filter: revert-layer;
-    backdrop-filter: revert-layer;
+  :is([data-smrt-component], [data-smrt-component] *):not(#\#):not(#\#):not(#\#),
+  :is([data-smrt-component], [data-smrt-component] *):not(#\#):not(#\#):not(#\#)::before,
+  :is([data-smrt-component], [data-smrt-component] *):not(#\#):not(#\#):not(#\#)::after {
+    all: revert-layer;
   }
 }

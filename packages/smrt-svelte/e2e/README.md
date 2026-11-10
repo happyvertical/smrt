@@ -9,7 +9,7 @@ build or occupied port fails startup. The fixture build writes to ignored
 The build includes every HTML entry in the `input` list of `e2e/vite.config.ts`:
 the shell (`index.html`), the legacy dock, the MCP binding and bridge pages with
 their iframe children, and one page per focused fixture (notifications,
-`FileUpload`, activity ticker, phone heading, forced colors). A new fixture page must be added to the `input` list in
+`FileUpload`, activity ticker, phone heading, forced colors, styleless shell). A new fixture page must be added to the `input` list in
 `e2e/vite.config.ts`, or preview serves nothing for it. Bundled assets avoid hundreds of development-module
 requests during repeated browser navigations. All maintained browser assertions
 run against these compiled fixtures without retries.

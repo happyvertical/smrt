@@ -52,25 +52,6 @@ function findRevertRule(rules: CSSRule[]): CSSStyleRule {
   return rule;
 }
 
-const REVERTED = [
-  'background',
-  'border',
-  'border-radius',
-  'box-shadow',
-  'color',
-  'font',
-  'outline',
-  'filter',
-];
-const KEPT = [
-  'display',
-  'gap',
-  'padding',
-  'position',
-  'width',
-  'grid-template-columns',
-];
-
 describe('smrt styleless mode (unstyled.css)', () => {
   afterEach(() => {
     document.querySelectorAll('style[id^="unstyled-test-"]').forEach((node) => {
@@ -78,7 +59,7 @@ describe('smrt styleless mode (unstyled.css)', () => {
     });
   });
 
-  it('a pilot component compiles both structure and theme layers', () => {
+  it('a component compiles both structure and theme layers', () => {
     const out = compile(BUTTON_SOURCE, {
       filename: resolve(process.cwd(), 'src/components/ui/Button.svelte'),
       generate: 'client',
@@ -96,17 +77,16 @@ describe('smrt styleless mode (unstyled.css)', () => {
     expect(declared).toEqual(expect.arrayContaining(['display', 'background']));
   });
 
-  it('the revert rule targets themed properties, not layout', () => {
+  it('reverts every theme property, including motion, on elements and pseudo-elements', () => {
     const rule = findRevertRule(
       insertCss('unstyled-test-revert', UNSTYLED_CSS),
     );
-
-    for (const property of REVERTED) {
-      expect(rule.style.getPropertyValue(property)).toBe('revert-layer');
-    }
-    for (const property of KEPT) {
-      expect(rule.style.getPropertyValue(property)).toBe('');
-    }
+    expect(rule.style.length).toBe(1);
+    expect(rule.style.getPropertyValue('all')).toBe('revert-layer');
+    const selectors = rule.selectorText.split(/,\s*(?![^()]*\))/);
+    expect(selectors).toHaveLength(3);
+    expect(selectors[1]).toBe(`${selectors[0]}::before`);
+    expect(selectors[2]).toBe(`${selectors[0]}::after`);
   });
 
   it('the revert rule sits in smrt.theme and carries the specificity boost', () => {
@@ -120,7 +100,7 @@ describe('smrt styleless mode (unstyled.css)', () => {
 
     const rules = insertCss('unstyled-test-layers', UNSTYLED_CSS);
     const selector = findRevertRule(rules).selectorText;
-    expect((selector.match(/:not\(#\\#\)/g) ?? []).length).toBe(3);
+    expect((selector.match(/:not\(#\\#\)/g) ?? []).length).toBe(9);
   });
 
   it('the reset keeps the UA form-control chrome out of component trees', () => {
