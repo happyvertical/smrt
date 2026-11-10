@@ -136,6 +136,14 @@ is documented here; the shell's tables, approvals and UI sit on top.
   written to the new file, and the draft stays open to publish again. An
   unreadable journal refuses to start rather than guess. Stray
   `publish-rehearsal-*` directories are removed.
+- **`undoTo`** is a command (`{ type: 'undoTo', version, from? }`, structural, so
+  frozen hosts refuse it): the same step as `undo` repeated newest first for
+  every version after `version` on the current path, one plan, one decision.
+  It is `risky` (approval) when any of them has a `convertColumn` step, with the
+  summed `countOverwrites` preview; a purged version in the span refuses it
+  before anything changes. Each step is its own consistent state, so a failure
+  part-way leaves the app at the version reached and the error says
+  "undid k of n". `from` pins the current version as `undo`'s pin does.
 - **Queued calls.** `onApp` (records, tools, REST) waits until the change queue
   is idle and stable, then runs in the same synchronous step; it counts
   in-flight calls so a change can wait for them (needed for consistent copies).

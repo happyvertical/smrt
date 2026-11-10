@@ -885,3 +885,44 @@ describe('moveAside / restoreAside', () => {
     });
   });
 });
+
+describe('undoTo after a publish', () => {
+  it('restores every archived value in one approved step', async () => {
+    const w = await world();
+    try {
+      await w.draft.execute(
+        { type: 'removeField', model: 'Chore', field: 'notes' },
+        AUTHOR,
+      );
+      await w.draft.execute(
+        {
+          type: 'changeFieldType',
+          model: 'Chore',
+          field: 'points',
+          to: { type: 'integer' },
+        },
+        AUTHOR,
+      );
+      await w.draft.execute({ type: 'removeModel', model: 'Other' }, AUTHOR);
+      const base = w.live.version;
+      const { digest } = await w.live.previewPublish(w.draft);
+      await w.live.publishDraft(w.draft, { ...OK, expect: digest });
+      w.live.setFrozen(false);
+      const cmd = { type: 'undoTo', version: base, from: base + 3 } as const;
+      expect((await w.live.plan(cmd)).risky).toBe(true);
+      await expect(w.live.execute(cmd, AUTHOR)).rejects.toBeInstanceOf(
+        ApprovalRequiredError,
+      );
+      await w.live.execute(cmd, OK);
+      expect(w.live.version).toBe(base);
+      const rows = await w.live.list('Chore');
+      expect(rows.find((x) => x.title === 'Garage')).toMatchObject({
+        notes: 'big job',
+        points: 'lots',
+      });
+      expect(await w.live.list('Other')).toHaveLength(2);
+    } finally {
+      await close(w);
+    }
+  });
+});

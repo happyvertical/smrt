@@ -791,6 +791,8 @@ export class AppHost extends EventEmitter {
       }
       case 'undo':
         return this.analyseUndo(cmd.version);
+      case 'undoTo':
+        return this.analyseUndoTo(cmd.version, cmd.from);
       case 'cleanUp':
         return this.analyseCleanUp(cmd.keep);
       case 'exportTemplate':
@@ -887,6 +889,107 @@ export class AppHost extends EventEmitter {
           statements: swapped.statements,
           snapshot: swapped.snapshot,
           appRestartMs: swapped.swapMs,
+        };
+      },
+    };
+  }
+
+  /**
+   * Undo back to `target`: the same step as `undo`, repeated newest first, as
+   * one command with one decision. Each step is its own consistent state (its
+   * own swap and store write), so a failure part-way leaves the app at the
+   * version it had reached, and says so.
+   */
+  private async analyseUndoTo(
+    target: number,
+    from?: number,
+  ): Promise<Analysis> {
+    if (!Number.isInteger(target))
+      throw new EngineError('undoTo needs a version number');
+    if (from !== undefined && from !== this.version)
+      throw new EngineError(
+        `the app has changed since this undo was asked for (now at version ${this.version}); ask again`,
+        'refused',
+      );
+    if (target === this.version)
+      throw new EngineError(
+        `the app is already at version ${target}`,
+        'refused',
+      );
+    const chain = await this.chain(); // newest first
+    const at = chain.findIndex((r) => r.version === target);
+    if (at < 0)
+      throw new EngineError(
+        `version ${target} is not in the history leading to version ${this.version}`,
+        'refused',
+      );
+    if (this.draft && target < this.draft.baseVersion)
+      throw new EngineError(
+        'the draft cannot go back past its base',
+        'refused',
+      );
+    const undone = chain.slice(0, at); // newest first
+    const purged = undone.find((r) => r.migration?.purged);
+    if (purged)
+      throw new EngineError(
+        `can't undo "${purged.summary}": its archived data was cleaned up`,
+        'refused',
+      );
+    const converting = undone.filter((r) =>
+      r.migration?.steps.some(overwritesOnUndo),
+    );
+    let preview: Record<string, unknown> = {
+      to: target,
+      versions: undone.map((r) => ({ version: r.version, summary: r.summary })),
+    };
+    if (converting.length) {
+      const fields: { model: string; field: string; rows: number }[] = [];
+      for (const r of converting) {
+        const counts = await this.callApp<
+          { table: string; column: string; replaced: number }[]
+        >('countOverwrites', r.version, r.migration?.steps ?? []);
+        for (const c of counts)
+          fields.push({
+            ...this.locate(r.definition, c.table, c.column),
+            rows: c.replaced,
+          });
+      }
+      preview = {
+        ...preview,
+        fields,
+        replaced: fields.reduce((n, f) => n + f.rows, 0),
+        note: 'Going back restores the original value of every row in these fields. Values written since the type change are replaced.',
+      };
+    }
+    const summary = `undo ${undone.length} change${undone.length === 1 ? '' : 's'} back to version ${target}`;
+    return {
+      plan: { summary, risky: converting.length > 0, preview },
+      apply: async () => {
+        const statements: string[] = [];
+        let snapshot: string | null = null;
+        let appRestartMs = 0;
+        for (const [i, r] of undone.entries()) {
+          try {
+            const step = await (await this.analyseUndo(r.version)).apply('');
+            const c = step as ChangeResult;
+            statements.push(...c.statements);
+            snapshot = c.snapshot ?? snapshot;
+            appRestartMs += c.appRestartMs;
+          } catch (e) {
+            const code = e instanceof EngineError ? e.code : 'migration_failed';
+            throw new EngineError(
+              `undid ${i} of ${undone.length} changes; the app is now at version ${this.version}: ${(e as Error).message}`,
+              code,
+            );
+          }
+        }
+        return {
+          version: target,
+          summary,
+          undid: undone.map((r) => r.summary).join('; '),
+          statements,
+          snapshot,
+          appRestartMs,
         };
       },
     };

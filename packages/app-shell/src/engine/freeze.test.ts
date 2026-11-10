@@ -53,6 +53,7 @@ const SAMPLES: Record<CommandType, Command> = {
   },
   enableRecipe: { type: 'enableRecipe', recipe: 'profiles' },
   undo: { type: 'undo' },
+  undoTo: { type: 'undoTo', version: 0 },
   cleanUp: { type: 'cleanUp', keep: 0 },
   exportTemplate: { type: 'exportTemplate', includeRecords: true },
   importTemplate: {

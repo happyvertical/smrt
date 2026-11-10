@@ -10,7 +10,7 @@ SvelteKit or `src/lib`). README has the route and JSON contracts.
 
 | Path | What |
 |---|---|
-| `src/engine/` | `AppHost`, worker thread, migrations, QuickJS sandbox. Finished and tested on its own. |
+| `src/engine/` | `AppHost`, worker thread, migrations, QuickJS sandbox, drafts (`forkDraft`/`previewPublish`/`publishDraft`/`undoTo`, frozen host, draft-only `autoApprove`; see engine.md "Drafts"). Finished and tested on its own. |
 | `src/lib/objects/` | Shell models (`objectsDir` in `vite.config.ts`): `App`, `AppVersion`, `Approval`, `AssistantThread`, `AssistantMessage`. |
 | `src/lib/server/smrt.ts` | `createSmrtSvelteKitRuntime`, `prepareDatabase`, `configureShell`. |
 | `src/lib/server/registry.ts` | The ONE startup registration path (permissions, preference kinds); `smrt.ts` imports it before the runtime. app-runtime grants newly registered permissions to an existing owner on every start. `registry.test.ts` guards it. |

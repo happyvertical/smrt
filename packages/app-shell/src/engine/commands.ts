@@ -24,6 +24,14 @@ export type Command =
    * caller means; the host refuses if the app has moved on since.
    */
   | { type: 'undo'; version?: number }
+  /**
+   * Undo every version after `version` (an ancestor of the current one) in one
+   * command, newest first. It needs approval when any of them has a
+   * `convertColumn` step, decided by the host from the stored versions.
+   * `from` pins the version the caller saw as current; the host refuses if the
+   * app has moved on.
+   */
+  | { type: 'undoTo'; version: number; from?: number }
   | { type: 'cleanUp'; keep: number }
   | { type: 'exportTemplate'; includeRecords?: boolean }
   | { type: 'importTemplate'; data: Template };
@@ -99,6 +107,7 @@ export const STRUCTURAL_COMMANDS: Readonly<Record<CommandType, boolean>> = {
   addMethod: true,
   enableRecipe: true,
   undo: true,
+  undoTo: true,
   cleanUp: true,
   exportTemplate: false,
   importTemplate: true,

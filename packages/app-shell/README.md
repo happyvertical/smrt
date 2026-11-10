@@ -328,6 +328,32 @@ and not a tier target of core's inference model). **Settings > Assistant**
 `GET`/`POST /api/shell/onboarding/chatgpt` (start, sign-out, model;
 `lib/server/onboarding.ts`).
 
+## Draft then publish (engine API)
+
+The engine can run a second host, a draft, over a copy of the live data and
+later replay the draft's changes onto live. Rules and failure behaviour are in
+[agents/engine.md](agents/engine.md); the API on `AppHost` (exported from
+`src/engine`):
+
+```ts
+const live = await AppHost.open(dir, { store });
+const draft = await live.forkDraft(draftDir, { store: emptyDraftStore }); // autoApprove on
+live.setFrozen(true); // live keeps serving records; structural commands are refused
+// ...build in `draft` (draft.execute / draft.create ...)...
+const preview = await live.previewPublish(draft); // diff, archives, all method code, digest
+await live.publishDraft(draft, {
+  author, approved: true, expect: preview.digest, draftName: 'Spring cleanup',
+}); // N ordinary live versions; any failure leaves live's app.db untouched
+live.setFrozen(false);
+await draft.discard(); // closes it and deletes only the directory fork made
+await live.execute({ type: 'undoTo', version: base, from: live.version }, { author });
+```
+
+`AppHost.open(dir, { store, autoApprove: true })` only works on a directory the
+engine marked as a draft. A host start reconciles an interrupted publish
+(`host.recovery`). A `VersionStore` may implement the optional atomic
+`commit(records, current)`.
+
 ## First-run schema
 
 `prepareShellSchema(db)` (`src/lib/server/schema.ts`) creates the tables of every
