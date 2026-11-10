@@ -285,6 +285,7 @@ export {
 } from './generated-collection-access';
 // Code generators (tree-shakeable)
 export * from './generators/index';
+export { toProviderToolSchema } from './generators/provider-tool-schema.js';
 export { type HierarchyView, SmrtHierarchical } from './hierarchical';
 // Inference tiers and the binding resolver seam (#4750). Browser-safe; keep
 // this list identical in index.ts and browser.ts.
@@ -598,6 +599,7 @@ export {
 export * from './run-once';
 // Runtime utilities
 export * from './runtime/index';
+export * from './runtime-model';
 export { detectEngine, generateDDLForEngine } from './schema/ddl';
 // Per-foreign-key orphan count report (#2753) — read-only, COUNT(*) probe of
 // every manifest foreign key, reusing the same predicate the migration

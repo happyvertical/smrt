@@ -10,6 +10,9 @@ import { fileURLToPath } from 'node:url';
 // field (`isFrameworkPkgByJson`). Without either, `vite dev` in a consumer
 // fails with `No loader is configured for ".svelte" files` (#3843).
 const root = join(dirname(fileURLToPath(import.meta.url)), '..');
+// Applications publish a built server bundle (`build/`), not source that a
+// consumer's Vite compiles, so they have no library condition to declare.
+const APPLICATIONS = new Set(['@happyvertical/smrt-app-shell']);
 const NOT_SHIPPED = /(^|\/)(__tests__|__fixtures__|fixtures|tests?|stories)\//;
 
 function shipsSvelte(dir, prefix = '') {
@@ -56,7 +59,8 @@ test('every published package that ships .svelte declares a svelte condition or 
     } catch {
       continue;
     }
-    if (manifest.private || !shipsSvelte(join(dir, 'src'))) continue;
+    if (manifest.private || APPLICATIONS.has(manifest.name)) continue;
+    if (!shipsSvelte(join(dir, 'src'))) continue;
     checked++;
     if (!declaresSvelte(manifest)) offenders.push(manifest.name);
   }

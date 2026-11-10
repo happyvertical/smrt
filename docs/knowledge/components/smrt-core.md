@@ -5,10 +5,10 @@ description: "Core SMRT framework for business objects, persistence, and generat
 status: "stable"
 generated:
   by: "smrt/scripts/generate-knowledge-okf.ts"
-  at: "2026-11-09T19:02:46Z"
+  at: "2026-11-09T22:28:45Z"
 audience: "internal"
 evidence_level: "source-inspected"
-source_revision: "sha256:c9ac2fce737109bca21eeabfeddf18470fdf955786896bff2787034d8eaa348d"
+source_revision: "sha256:a37c2b3684fa99010d048c2ec9b500ebc506da4f844368c0badbcca81e29a071"
 sources:
   - id: "manifest"
     resource: "https://github.com/happyvertical/smrt/blob/main/packages/core/package.json"
@@ -77,12 +77,15 @@ sources:
     resource: "https://github.com/happyvertical/smrt/blob/main/packages/core/agents/run-once.md"
     title: "@happyvertical/smrt-core packages/core/agents/run-once.md"
   - id: "agents-22"
+    resource: "https://github.com/happyvertical/smrt/blob/main/packages/core/agents/runtime-model.md"
+    title: "@happyvertical/smrt-core packages/core/agents/runtime-model.md"
+  - id: "agents-23"
     resource: "https://github.com/happyvertical/smrt/blob/main/packages/core/agents/schema-paths.md"
     title: "@happyvertical/smrt-core packages/core/agents/schema-paths.md"
-  - id: "agents-23"
+  - id: "agents-24"
     resource: "https://github.com/happyvertical/smrt/blob/main/packages/core/agents/system-diagnostics.md"
     title: "@happyvertical/smrt-core packages/core/agents/system-diagnostics.md"
-  - id: "agents-24"
+  - id: "agents-25"
     resource: "https://github.com/happyvertical/smrt/blob/main/packages/core/agents/test-types.md"
     title: "@happyvertical/smrt-core packages/core/agents/test-types.md"
 ---
@@ -119,6 +122,7 @@ sources:
 - `packages/core/agents/registry-snapshot.md`
 - `packages/core/agents/revision-guard.md`
 - `packages/core/agents/run-once.md`
+- `packages/core/agents/runtime-model.md`
 - `packages/core/agents/schema-paths.md`
 - `packages/core/agents/system-diagnostics.md`
 - `packages/core/agents/test-types.md`

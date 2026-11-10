@@ -67,7 +67,12 @@ const EXEMPTIONS = {
   //   - planner's prerendered static app is `app/` because released smrt CLIs
   //     (`smrt kitchen`) resolve `<package>/app/index.html` from whichever
   //     planner version they fetch; moving it would break them.
-  buildOutputsInFiles: new Map([['planner', new Set(['app'])]]),
+  //   - app-shell is an adapter-node application: its SvelteKit server bundle is
+  //     `build/`, which `pnpm start` runs (the desktop shell's sidecar, #4663).
+  buildOutputsInFiles: new Map([
+    ['planner', new Set(['app'])],
+    ['app-shell', new Set(['build'])],
+  ]),
   // Templates ship plain JS scaffolding helpers (`./index.js`) rather than
   // typed module APIs, so the conditional `{ types, import }` shape does not
   // apply to their root export.

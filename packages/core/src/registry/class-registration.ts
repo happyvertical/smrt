@@ -2743,15 +2743,35 @@ function mergeManifestIntoExistingRegistration(
   invalidateInheritanceEntries(existing);
 }
 
+/**
+ * Options for a run-time model registration (`registerRuntimeModel()`), as
+ * opposed to a consumed package's manifest stub.
+ */
+export interface RuntimeManifestRegistrationOptions {
+  /**
+   * Qualified key of a registered class the entry extends. When that class
+   * has a real constructor, the registered class extends it (inherited
+   * methods and field accessors work) and the entry may share its simple
+   * name without the STI child-wins rule replacing the parent's registration.
+   */
+  extendsRegistered?: string;
+}
+
 export function registerFromManifest(
   name: string,
   objectDef: SmartObjectDefinition,
   manifestPackageName?: string,
+  runtimeOptions?: RuntimeManifestRegistrationOptions,
 ): void {
   // Same invalidation contract as register() (#3047).
   bumpRegistryGeneration();
   try {
-    registerFromManifestUntracked(name, objectDef, manifestPackageName);
+    registerFromManifestUntracked(
+      name,
+      objectDef,
+      manifestPackageName,
+      runtimeOptions,
+    );
   } finally {
     reconcileSubtypeLineage();
     applyRuntimeOverrides();
@@ -2763,6 +2783,7 @@ function registerFromManifestUntracked(
   name: string,
   objectDef: SmartObjectDefinition,
   manifestPackageName?: string,
+  runtimeOptions?: RuntimeManifestRegistrationOptions,
 ): void {
   // Issue #2970: `manifestPackageName` identifies the package that owns the
   // manifest FILE this entry was read from, which is not always the package
@@ -2791,7 +2812,11 @@ function registerFromManifestUntracked(
   const registrationKey = (qualifiedNameEarly || name) as string;
   const replacedQualifiedNames = new Set<string>();
   const manifestParent = objectDef.extendsQualified ?? objectDef.extends;
-  recordSubtypeParent(registrationKey, manifestParent);
+  // A run-time subclass keeps its same-named parent registered next to it, so
+  // the lineage that lets a descendant replace its parent is not recorded.
+  if (!runtimeOptions?.extendsRegistered) {
+    recordSubtypeParent(registrationKey, manifestParent);
+  }
 
   // Release C (#1134): collision resolution routes through
   // decideCollisionPolicy. See collision-policy.ts for the 16-row decision
@@ -2808,7 +2833,13 @@ function registerFromManifestUntracked(
   // It falls through both checks into the new-registration code below,
   // preserving issue #951's coexistence semantics.
   const existingCanonical = getCanonicalClassName(simpleClassName);
-  if (existingCanonical) {
+  // A run-time subclass deliberately shares its parent's simple name
+  // (`@local/app:Profile` extends `@pkg:Profile`); the parent stays registered.
+  const sharesParentName =
+    runtimeOptions?.extendsRegistered !== undefined &&
+    existingCanonical === runtimeOptions.extendsRegistered &&
+    existingCanonical !== registrationKey;
+  if (existingCanonical && !sharesParentName) {
     const existing = getClasses().get(existingCanonical);
     if (existing) {
       const outcome = applyManifestCollisionPolicy({
@@ -2861,7 +2892,16 @@ function registerFromManifestUntracked(
   // Create stub constructor - not needed for CLI command generation
   // The CLI only needs metadata (fields, methods, config)
   // Mark as manifest stub so real class can replace it during decorator registration
-  const stubConstructor = class extends SmrtObject {
+  const parentRegistration = runtimeOptions?.extendsRegistered
+    ? getClasses().get(runtimeOptions.extendsRegistered)
+    : undefined;
+  const parentConstructor =
+    parentRegistration &&
+    (parentRegistration.constructor as { _isManifestStub?: boolean })
+      ._isManifestStub !== true
+      ? (parentRegistration.constructor as typeof SmrtObject)
+      : SmrtObject;
+  const stubConstructor = class extends parentConstructor {
     static readonly _isManifestStub = true;
   } as typeof SmrtObject;
   Object.defineProperty(stubConstructor, 'name', { value: simpleClassName });
@@ -3018,6 +3058,10 @@ function registerFromManifestUntracked(
   // #3338: a deprecated alias must never name a second live class.
   assertQualifiedNameAliasesAvailable(registrationKey, registration);
   getClasses().set(registrationKey, registration);
+  // A run-time class is looked up by constructor to resolve its own identity
+  // (`_meta_type`, fields); by simple name it could be its same-named parent.
+  if (runtimeOptions)
+    getConstructorIndex().set(stubConstructor, registrationKey);
   // Tag the synthetic stub constructor with the qualified name so the
   // same constructor-side identity convention holds for manifest-loaded
   // classes as well as decorator-registered ones.
