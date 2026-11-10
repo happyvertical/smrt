@@ -234,11 +234,11 @@ useControlRegistration(() => {
   };
 });
 </script>
-<div bind:this={rootEl} data-density={density} class="segmented {className}" class:full-width={fullWidth} role="radiogroup" tabindex="-1" aria-label={label} aria-required={required} onkeydown={handleKeydown} data-smrt-control={controlId} data-smrt-form={interactionContext?.formId}
+<div bind:this={rootEl} data-density={density} class="smrt-segmented-control__root {className}" class:smrt-segmented-control__full-width={fullWidth} role="radiogroup" tabindex="-1" aria-label={label} aria-required={required} onkeydown={handleKeydown} data-smrt-control={controlId} data-smrt-form={interactionContext?.formId}
   data-smrt-subject-type={interaction === false ? undefined : interaction?.subject?.type}
   data-smrt-subject-id={interaction === false ? undefined : interaction?.subject?.id} data-smrt-component="SegmentedControl">
   {#each options as option, index (option.value)}
-    <label class:selected={selectedOption === option} class:disabled={disabled || option.disabled}>
+    <label class:smrt-segmented-control__selected={selectedOption === option} class:smrt-segmented-control__disabled={disabled || option.disabled} data-smrt-part="option">
       <input type="radio" {name} value={option.value} disabled={disabled || option.disabled}
         required={required && validationOption === option} aria-label={option.label}
         checked={selectedOption === option} aria-checked={selectedOption === option}
@@ -251,25 +251,98 @@ useControlRegistration(() => {
 </div>
 <style>
 @layer smrt.reset, smrt.structure, smrt.theme;
-@layer smrt.theme {
-  .segmented { display: inline-flex; flex-wrap: wrap; max-inline-size: 100%; border: var(--smrt-hairline-strong); border-radius: var(--smrt-radius-full); overflow: hidden; }
-  .segmented.full-width { display: flex; width: 100%; }
-  label { position: relative; display: inline-flex; align-items: center; justify-content: center; flex: 1 1 0%; min-width: max-content; text-align: center; min-height: 2.5rem; padding: 0 var(--smrt-spacing-4); border: 0; border-right: var(--smrt-hairline-strong); background: var(--smrt-color-surface); color: var(--smrt-color-on-surface); cursor: pointer; }
-  /* Options share the row equally while they fit; one that would clip wraps onto a further row instead (#4462). */
-  label:last-child { border-right: 0; } label.selected { background: var(--smrt-color-secondary-container); color: var(--smrt-color-on-secondary-container); }
-  label:has(input:focus-visible) { outline: var(--smrt-focus-ring-width) solid var(--smrt-focus-ring-color); outline-offset: calc(var(--smrt-focus-ring-width) * -1); } label.disabled, label:has(input:disabled) { opacity: .5; cursor: not-allowed; }
-  :global(.segmented[data-smrt-highlighted='true']) { outline: 3px solid var(--smrt-color-tertiary); outline-offset: 4px; }
-
-  .segmented[data-density='touch'] { --smrt-control-target-min: var(--smrt-touch-target-min); }
-  .segmented[data-density='comfortable'] { --smrt-control-target-min: 0px; }
-  label { min-height: max(2.5rem, var(--smrt-control-target-min)); }
+@layer smrt.structure {
+  .smrt-segmented-control__root {
+    display: inline-flex;
+    flex-wrap: wrap;
+    max-inline-size: 100%;
+    overflow: hidden;
+  }
+  .smrt-segmented-control__root.smrt-segmented-control__full-width {
+    display: flex;
+    width: 100%;
+  }
+  label {
+    position: relative;
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    flex: 1 1 0%;
+    min-width: max-content;
+    min-height: 2.5rem;
+    padding: 0 var(--smrt-spacing-4);
+    cursor: pointer;
+  }
+  label.smrt-segmented-control__disabled, label:has(input:disabled) {
+    cursor: not-allowed;
+  }
+  label {
+    min-height: max(2.5rem, var(--smrt-control-target-min));
+  }
   /* The touch target width rides on the text so the label keeps its content minimum (a negative calc clamps to 0). */
-  label > span { min-width: calc(var(--smrt-control-target-min) - 2 * var(--smrt-spacing-4)); }
-  input { position: absolute; inset: 0; width: 100%; height: 100%; margin: 0; opacity: 0; cursor: inherit; }
-  /* Forced colors (#3908): system colours where colour alone carries meaning. */
-  @media (forced-colors: active) {
-    label.selected { background: Highlight; color: HighlightText; }
-    label.disabled, label:has(input:disabled), label.selected.disabled, label.selected:has(input:disabled) { opacity: 1; background: Canvas; color: GrayText; }
+  label > span {
+    min-width: calc(var(--smrt-control-target-min) - 2 * var(--smrt-spacing-4));
+  }
+  input {
+    position: absolute;
+    inset: 0;
+    width: 100%;
+    height: 100%;
+    margin: 0;
+    cursor: inherit;
+    opacity: 0;
+  }
+  .smrt-segmented-control__root[data-density='touch'] {
+    --smrt-control-target-min: var(--smrt-touch-target-min);
+  }
+  .smrt-segmented-control__root[data-density='comfortable'] {
+    --smrt-control-target-min: 0px;
   }
 }
+
+@layer smrt.theme {
+  .smrt-segmented-control__root {
+    border: var(--smrt-hairline-strong);
+    border-radius: var(--smrt-radius-full);
+  }
+  label {
+    text-align: center;
+    border: 0;
+    border-right: var(--smrt-hairline-strong);
+    background: var(--smrt-color-surface);
+    color: var(--smrt-color-on-surface);
+  }
+  /* Options share the row equally while they fit; one that would clip wraps onto a further row instead (#4462). */
+  label:last-child {
+    border-right: 0;
+  }
+  label.smrt-segmented-control__selected {
+    background: var(--smrt-color-secondary-container);
+    color: var(--smrt-color-on-secondary-container);
+  }
+  label:has(input:focus-visible) {
+    outline: var(--smrt-focus-ring-width) solid var(--smrt-focus-ring-color);
+    outline-offset: calc(var(--smrt-focus-ring-width) * -1);
+  }
+  label.smrt-segmented-control__disabled, label:has(input:disabled) {
+    opacity: .5;
+  }
+  :global(.smrt-segmented-control__root[data-smrt-highlighted='true']) {
+    outline: 3px solid var(--smrt-color-tertiary);
+    outline-offset: 4px;
+  }
+  /* Forced colors (#3908): system colours where colour alone carries meaning. */
+  @media (forced-colors: active) {
+    label.smrt-segmented-control__selected {
+      background: Highlight;
+      color: HighlightText;
+    }
+    label.smrt-segmented-control__disabled, label:has(input:disabled), label.smrt-segmented-control__selected.smrt-segmented-control__disabled, label.smrt-segmented-control__selected:has(input:disabled) {
+      opacity: 1;
+      background: Canvas;
+      color: GrayText;
+    }
+  }
+}
+
 </style>

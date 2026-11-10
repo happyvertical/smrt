@@ -24,7 +24,9 @@ const columns = [{ id: 'name', label: 'Name', accessor: 'name' }];
 const virtualization = { rowHeight: 20, viewportHeight: 100, overscan: 1 };
 
 function getScrollContainer(container: HTMLElement): HTMLDivElement {
-  const node = container.querySelector<HTMLDivElement>('.data-table-container');
+  const node = container.querySelector<HTMLDivElement>(
+    '.smrt-data-table__container',
+  );
   if (!node) throw new Error('Expected DataTable scroll container');
   return node;
 }
@@ -49,7 +51,7 @@ describe('DataTable virtualization seam', () => {
     );
     expect(screen.queryByText('Record 00020')).not.toBeInTheDocument();
     expect(
-      container.querySelectorAll('.data-table__virtual-spacer'),
+      container.querySelectorAll('[data-smrt-part="spacer"]'),
     ).toHaveLength(1);
 
     scrollContainer.scrollTop = 200;
@@ -64,7 +66,7 @@ describe('DataTable virtualization seam', () => {
       '12',
     );
     expect(
-      container.querySelectorAll('.data-table__virtual-spacer'),
+      container.querySelectorAll('[data-smrt-part="spacer"]'),
     ).toHaveLength(2);
   });
 
@@ -199,10 +201,10 @@ describe('DataTable virtualization seam', () => {
       expect(screen.getByText('Record 00001')).toBeInTheDocument(),
     );
     expect(screen.getByText('Record 00001').closest('tr')).toHaveClass(
-      'data-table__row--striped',
+      'smrt-data-table__row--striped',
     );
     expect(screen.getByText('Record 00002').closest('tr')).not.toHaveClass(
-      'data-table__row--striped',
+      'smrt-data-table__row--striped',
     );
   });
 
@@ -246,7 +248,7 @@ describe('DataTable virtualization seam', () => {
         if (this.tagName === 'TFOOT') return 24;
         if (
           this.tagName === 'TBODY' &&
-          this.classList.contains('data-table__body--structural')
+          this.classList.contains('smrt-data-table__body--structural')
         ) {
           return 20;
         }
@@ -316,7 +318,7 @@ describe('DataTable virtualization seam', () => {
 
     expect(screen.getByText('Record 00099')).toBeInTheDocument();
     expect(screen.getByText('Summary total')).toBeInTheDocument();
-    expect(container.querySelector('.data-table__virtual-spacer')).toBeNull();
+    expect(container.querySelector('[data-smrt-part="spacer"]')).toBeNull();
     const scrollContainer = getScrollContainer(container);
     expect(scrollContainer).not.toHaveAttribute('tabindex');
     scrollContainer.scrollTop = 200;

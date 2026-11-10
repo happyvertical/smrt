@@ -34,7 +34,9 @@ function canvas(container: HTMLElement): HTMLCanvasElement {
 }
 
 function root(container: HTMLElement): HTMLElement {
-  return container.querySelector('.signature-pad') as HTMLElement;
+  return container.querySelector(
+    '[data-smrt-component="SignaturePad"]',
+  ) as HTMLElement;
 }
 
 async function stroke(

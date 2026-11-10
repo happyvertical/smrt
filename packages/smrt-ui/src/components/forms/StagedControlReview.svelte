@@ -534,7 +534,7 @@ async function discardAll(event: MouseEvent): Promise<void> {
 {#if summary && snapshots.length > 0}
   <section
     bind:this={reviewElement}
-    class="staged-review"
+    class="smrt-staged-control-review__root"
     data-staged-control-review
     aria-label={text.region} data-smrt-component="StagedControlReview"
   >
@@ -543,9 +543,9 @@ async function discardAll(event: MouseEvent): Promise<void> {
         <h2>{text.heading}</h2>
         <p>{text.description}</p>
       </div>
-      <div class="batch-actions">
+      <div class="smrt-staged-control-review__batch-actions" data-smrt-part="actions">
         <button type="button" onclick={applyAll}>{text.applyAll}</button>
-        <button type="button" class="secondary" onclick={discardAll}>{text.discardAll}</button>
+        <button type="button" class="smrt-staged-control-review__secondary" onclick={discardAll}>{text.discardAll}</button>
       </div>
     </header>
 
@@ -554,9 +554,9 @@ async function discardAll(event: MouseEvent): Promise<void> {
         {@const staged = snapshot.state.staged}
         {@const label = plainLabel(snapshot)}
         {@const actionName = actionIdentity(snapshot)}
-        <li data-staged-review-item class:stale={staged?.stale} class:invalid={staged?.valid === false}>
-          <div class="proposal-heading">
-            <div><strong>{label}</strong>{#if snapshot.identity.subject?.label}<span class="subject">{snapshot.identity.subject.label}</span>{/if}</div>
+        <li data-staged-review-item class:smrt-staged-control-review__stale={staged?.stale} class:smrt-staged-control-review__invalid={staged?.valid === false} data-smrt-part="item">
+          <div class="smrt-staged-control-review__proposal-heading" data-smrt-part="heading">
+            <div><strong>{label}</strong>{#if snapshot.identity.subject?.label}<span class="smrt-staged-control-review__subject" data-smrt-part="meta">{snapshot.identity.subject.label}</span>{/if}</div>
             <span>{text.proposedBy} {staged?.provenance.actorId ?? staged?.provenance.source} · {text.stagedAt} {staged ? new Date(staged.stagedAt).toLocaleString() : ''}</span>
           </div>
           <dl>
@@ -604,17 +604,17 @@ async function discardAll(event: MouseEvent): Promise<void> {
               </dd>
             </div>
           </dl>
-          {#if staged?.stale}<p class="problem" role="alert">{text.stale}</p>{/if}
-          {#if staged?.valid === false}<p class="problem" role="alert">{text.invalid}</p>{/if}
-          {#if feedback[draftKeyOf(snapshot)]}<p class="problem" role="alert">{feedback[draftKeyOf(snapshot)]}</p>{/if}
-          <div class="item-actions">
+          {#if staged?.stale}<p class="smrt-staged-control-review__problem" data-smrt-part="problem" role="alert">{text.stale}</p>{/if}
+          {#if staged?.valid === false}<p class="smrt-staged-control-review__problem" data-smrt-part="problem" role="alert">{text.invalid}</p>{/if}
+          {#if feedback[draftKeyOf(snapshot)]}<p class="smrt-staged-control-review__problem" data-smrt-part="problem" role="alert">{feedback[draftKeyOf(snapshot)]}</p>{/if}
+          <div class="smrt-staged-control-review__item-actions" data-smrt-part="actions">
             <button
               type="button"
               aria-label={`${text.apply} ${actionName}`}
               disabled={staged?.stale || snapshot.state.disabled || snapshot.state.readonly}
               onclick={(event) => applyOne(snapshot, event)}
             >{text.apply}</button>
-            <button type="button" class="secondary" aria-label={`${text.discard} ${actionName}`} onclick={(event) => discardOne(snapshot, event)}>{text.discard}</button>
+            <button type="button" class="smrt-staged-control-review__secondary" aria-label={`${text.discard} ${actionName}`} onclick={(event) => discardOne(snapshot, event)}>{text.discard}</button>
           </div>
         </li>
       {/each}
@@ -623,34 +623,156 @@ async function discardAll(event: MouseEvent): Promise<void> {
 {/if}
 
 {#if summary && reviewActivated}
-  <p class="status visually-hidden" role="status" aria-live="polite" aria-atomic="true" data-smrt-component="StagedControlReview">{status}</p>
+  <p class="smrt-staged-control-review__status smrt-staged-control-review__visually-hidden" role="status" aria-live="polite" aria-atomic="true" data-smrt-component="StagedControlReview">{status}</p>
 {/if}
 
 <style>
 @layer smrt.reset, smrt.structure, smrt.theme;
-@layer smrt.theme {
-  .staged-review { margin-block-start: var(--smrt-spacing-5, 1.25rem); padding: var(--smrt-spacing-4, 1rem); color: var(--smrt-color-on-surface); background: var(--smrt-color-surface-container-low); border: var(--smrt-hairline); border-inline-start: 4px solid var(--smrt-color-tertiary); border-radius: var(--smrt-radius-medium, .5rem); }
-  header, .proposal-heading, .batch-actions, .item-actions { display: flex; align-items: center; gap: var(--smrt-spacing-2, .5rem); }
-  header { justify-content: space-between; align-items: flex-start; gap: var(--smrt-spacing-4, 1rem); }
-  h2, p { margin: 0; } h2 { font: var(--smrt-typography-title-medium-font, 600 1rem/1.4 system-ui); }
-  header p, .proposal-heading span, dt { color: var(--smrt-color-on-surface-variant); font-size: .875rem; }
-  .proposal-heading strong, .proposal-heading .subject { display: block; }
-  ul { display: grid; gap: var(--smrt-spacing-3, .75rem); padding: 0; list-style: none; }
-  li { padding: var(--smrt-spacing-3, .75rem); background: var(--smrt-color-surface); border: var(--smrt-hairline); border-radius: var(--smrt-radius-small, .375rem); }
-  li.stale, li.invalid { border-color: var(--smrt-color-error); }
-  .proposal-heading { justify-content: space-between; }
-  dl { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: var(--smrt-spacing-3, .75rem); }
-  dt { font-weight: 600; } dd { margin: .25rem 0 0; overflow-wrap: anywhere; }
-  input, textarea { width: 100%; box-sizing: border-box; padding: .4rem .5rem; color: inherit; background: var(--smrt-color-surface); border: var(--smrt-hairline-strong); border-radius: var(--smrt-radius-small, .375rem); }
-  input[type="checkbox"] { width: auto; }
-  button { min-height: 2.25rem; padding: .4rem .75rem; color: var(--smrt-color-on-primary); background: var(--smrt-color-primary); border: 1px solid transparent; border-radius: var(--smrt-radius-small, .375rem); cursor: pointer; }
-  button.secondary { color: var(--smrt-color-primary); background: transparent; border-color: var(--smrt-hairline-strong-color); }
-  button:focus-visible, input:focus-visible, textarea:focus-visible { outline: var(--smrt-focus-ring-width) solid var(--smrt-focus-ring-color); outline-offset: var(--smrt-focus-ring-offset); }
-  button:disabled { cursor: not-allowed; opacity: .55; }
-  .item-actions { margin-block-start: var(--smrt-spacing-3, .75rem); }
-  .problem { margin-block-start: var(--smrt-spacing-2, .5rem); color: var(--smrt-color-error); }
-  .visually-hidden { position: absolute; width: 1px; height: 1px; padding: 0; margin: -1px; overflow: hidden; clip: rect(0, 0, 0, 0); white-space: nowrap; border: 0; }
-  :global([data-smrt-staged='true']) { outline: 3px solid var(--smrt-color-tertiary); outline-offset: 3px; }
-  @media (max-width: 40rem) { header, .proposal-heading { align-items: stretch; flex-direction: column; } dl { grid-template-columns: 1fr; } }
+@layer smrt.structure {
+  .smrt-staged-control-review__root {
+    margin-block-start: var(--smrt-spacing-5, 1.25rem);
+    padding: var(--smrt-spacing-4, 1rem);
+  }
+  header, .smrt-staged-control-review__proposal-heading, .smrt-staged-control-review__batch-actions, .smrt-staged-control-review__item-actions {
+    display: flex;
+    align-items: center;
+    gap: var(--smrt-spacing-2, .5rem);
+  }
+  header {
+    justify-content: space-between;
+    align-items: flex-start;
+    gap: var(--smrt-spacing-4, 1rem);
+  }
+  h2, p {
+    margin: 0;
+  }
+  .smrt-staged-control-review__proposal-heading strong, .smrt-staged-control-review__proposal-heading .smrt-staged-control-review__subject {
+    display: block;
+  }
+  ul {
+    display: grid;
+    gap: var(--smrt-spacing-3, .75rem);
+    padding: 0;
+    list-style: none;
+  }
+  li {
+    padding: var(--smrt-spacing-3, .75rem);
+  }
+  .smrt-staged-control-review__proposal-heading {
+    justify-content: space-between;
+  }
+  dl {
+    display: grid;
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+    gap: var(--smrt-spacing-3, .75rem);
+  }
+  dd {
+    margin: .25rem 0 0;
+    overflow-wrap: anywhere;
+  }
+  input, textarea {
+    width: 100%;
+    box-sizing: border-box;
+    padding: .4rem .5rem;
+  }
+  input[type="checkbox"] {
+    width: auto;
+  }
+  button {
+    min-height: 2.25rem;
+    padding: .4rem .75rem;
+    cursor: pointer;
+  }
+  button:disabled {
+    cursor: not-allowed;
+  }
+  .smrt-staged-control-review__item-actions {
+    margin-block-start: var(--smrt-spacing-3, .75rem);
+  }
+  .smrt-staged-control-review__problem {
+    margin-block-start: var(--smrt-spacing-2, .5rem);
+  }
+  .smrt-staged-control-review__visually-hidden {
+    position: absolute;
+    width: 1px;
+    height: 1px;
+    padding: 0;
+    margin: -1px;
+    overflow: hidden;
+    clip: rect(0, 0, 0, 0);
+    white-space: nowrap;
+  }
+  @media (max-width: 40rem) {
+    header, .smrt-staged-control-review__proposal-heading {
+      align-items: stretch;
+      flex-direction: column;
+    }
+    dl {
+      grid-template-columns: 1fr;
+    }
+  }
 }
+
+@layer smrt.theme {
+  .smrt-staged-control-review__root {
+    color: var(--smrt-color-on-surface);
+    background: var(--smrt-color-surface-container-low);
+    border: var(--smrt-hairline);
+    border-inline-start: 4px solid var(--smrt-color-tertiary);
+    border-radius: var(--smrt-radius-medium, .5rem);
+  }
+  h2 {
+    font: var(--smrt-typography-title-medium-font, 600 1rem/1.4 system-ui);
+  }
+  header p, .smrt-staged-control-review__proposal-heading span, dt {
+    color: var(--smrt-color-on-surface-variant);
+    font-size: .875rem;
+  }
+  li {
+    background: var(--smrt-color-surface);
+    border: var(--smrt-hairline);
+    border-radius: var(--smrt-radius-small, .375rem);
+  }
+  li.smrt-staged-control-review__stale, li.smrt-staged-control-review__invalid {
+    border-color: var(--smrt-color-error);
+  }
+  dt {
+    font-weight: 600;
+  }
+  input, textarea {
+    color: inherit;
+    background: var(--smrt-color-surface);
+    border: var(--smrt-hairline-strong);
+    border-radius: var(--smrt-radius-small, .375rem);
+  }
+  button {
+    color: var(--smrt-color-on-primary);
+    background: var(--smrt-color-primary);
+    border: 1px solid transparent;
+    border-radius: var(--smrt-radius-small, .375rem);
+  }
+  button.smrt-staged-control-review__secondary {
+    color: var(--smrt-color-primary);
+    background: transparent;
+    border-color: var(--smrt-hairline-strong-color);
+  }
+  button:focus-visible, input:focus-visible, textarea:focus-visible {
+    outline: var(--smrt-focus-ring-width) solid var(--smrt-focus-ring-color);
+    outline-offset: var(--smrt-focus-ring-offset);
+  }
+  button:disabled {
+    opacity: .55;
+  }
+  .smrt-staged-control-review__problem {
+    color: var(--smrt-color-error);
+  }
+  .smrt-staged-control-review__visually-hidden {
+    border: 0;
+  }
+  :global([data-smrt-staged='true']) {
+    outline: 3px solid var(--smrt-color-tertiary);
+    outline-offset: 3px;
+  }
+}
+
 </style>

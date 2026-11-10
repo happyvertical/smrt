@@ -460,7 +460,7 @@ function isOpenTask(activity: SalesActivityView): boolean {
     flex-basis: min(100%, 24rem);
   }
 
-  .sales-lead-detail :global(.form-group) {
+  .sales-lead-detail :global([data-smrt-component="FormGroup"]) {
     flex: 1 1 10rem;
     margin-bottom: 0;
   }
@@ -533,7 +533,7 @@ function isOpenTask(activity: SalesActivityView): boolean {
       flex-direction: column;
     }
 
-    .sales-lead-detail :global(.form-group),
+    .sales-lead-detail :global([data-smrt-component="FormGroup"]),
     .sales-lead-detail :global(.control-form),
     .sales-lead-detail :global(.control-form--disqualify) {
       width: 100%;

@@ -30,9 +30,11 @@ test('renders the descriptor-backed A/B report with currency-scaled minor units 
     });
   await page.setViewportSize({ width: 375, height: 844 });
   await page.goto('/e2e/invoices/index.html?report=tax-summary');
-  await expect(page.locator('.data-table__body')).toContainText('$110.78');
+  await expect(
+    page.locator('[data-smrt-component="DataTable"] [data-smrt-part="body"]'),
+  ).toContainText('$110.78');
   await expect(page.getByRole('columnheader')).toHaveCount(9);
-  await expect(page.locator('.data-table-container--phone-cards')).toBeVisible();
+  await expect(page.locator('.smrt-data-table__container--phone-cards')).toBeVisible();
   expect(await page.evaluate(() => document.documentElement.scrollWidth <= innerWidth)).toBe(true);
   if (evidence)
     await page.screenshot({

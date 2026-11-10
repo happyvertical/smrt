@@ -112,9 +112,9 @@ function clear() {
 onDestroy(cancel);
 </script>
 
-<div class="search-input {className}" role="search" data-smrt-component="SearchInput">
-  <label class="search-input__label" for={inputId}>{label}</label>
-  <span class="search-input__icon" aria-hidden="true">
+<div class="smrt-search-input__root {className}" role="search" data-smrt-component="SearchInput">
+  <label class="smrt-search-input__label" data-smrt-part="label" for={inputId}>{label}</label>
+  <span class="smrt-search-input__icon" data-smrt-part="icon" aria-hidden="true">
     <svg viewBox="0 0 24 24" width="18" height="18" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="11" cy="11" r="7" /><path d="m20 20-3.5-3.5" /></svg>
   </span>
   <Input
@@ -124,13 +124,13 @@ onDestroy(cancel);
     {placeholder}
     enterkeyhint="search"
     autocomplete="off"
-    class="search-input__field"
+    class="smrt-search-input__field"
     bind:value={text}
     oninput={handleInput}
     onkeydown={handleKeydown}
   />
   {#if text}
-    <button type="button" class="search-input__clear" aria-label={clearLabel} onclick={clear}>
+    <button type="button" class="smrt-search-input__clear" data-smrt-part="clear" aria-label={clearLabel} onclick={clear}>
       <svg viewBox="0 0 24 24" width="18" height="18" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M18 6 6 18" /><path d="m6 6 12 12" /></svg>
     </button>
   {/if}
@@ -138,8 +138,8 @@ onDestroy(cancel);
 
 <style>
 @layer smrt.reset, smrt.structure, smrt.theme;
-@layer smrt.theme {
-  .search-input {
+@layer smrt.structure {
+  .smrt-search-input__root {
     position: relative;
     display: flex;
     align-items: center;
@@ -147,7 +147,7 @@ onDestroy(cancel);
     max-inline-size: 28rem;
     min-inline-size: 0;
   }
-  .search-input__label {
+  .smrt-search-input__label {
     position: absolute;
     inline-size: 1px;
     block-size: 1px;
@@ -156,27 +156,20 @@ onDestroy(cancel);
     overflow: hidden;
     clip: rect(0 0 0 0);
     white-space: nowrap;
-    border: 0;
   }
-  .search-input :global(.search-input__field) {
+  .smrt-search-input__root :global(.smrt-search-input__field) {
     inline-size: 100%;
     min-block-size: 2.75rem;
     padding-inline: 2.4rem 2.75rem;
   }
-  /* The browser's own clear button would sit on top of ours. */
-  .search-input :global(.search-input__field::-webkit-search-cancel-button) {
-    -webkit-appearance: none;
-    appearance: none;
-  }
-  .search-input__icon {
+  .smrt-search-input__icon {
     position: absolute;
     inset-inline-start: 0.8rem;
     z-index: 1;
     display: inline-flex;
-    color: var(--smrt-color-on-surface-variant);
     pointer-events: none;
   }
-  .search-input__clear {
+  .smrt-search-input__clear {
     position: absolute;
     inset-inline-end: 0;
     z-index: 1;
@@ -186,25 +179,42 @@ onDestroy(cancel);
     inline-size: 2.75rem;
     block-size: 2.75rem;
     padding: 0;
-    border: none;
-    border-radius: var(--smrt-radius-full);
-    background: transparent;
-    color: var(--smrt-color-on-surface-variant);
     cursor: pointer;
-  }
-  .search-input__clear:hover {
-    color: var(--smrt-color-on-surface);
-  }
-  .search-input__clear:focus-visible {
-    outline: var(--smrt-focus-ring-width) solid var(--smrt-focus-ring-color);
-    outline-offset: calc(var(--smrt-focus-ring-width) * -1);
   }
   /* Phones: full width. */
   @media (max-width: 48rem) {
-    .search-input {
+    .smrt-search-input__root {
       flex-basis: 100%;
       max-inline-size: none;
     }
   }
 }
+
+@layer smrt.theme {
+  .smrt-search-input__label {
+    border: 0;
+  }
+  /* The browser's own clear button would sit on top of ours. */
+  .smrt-search-input__root :global(.smrt-search-input__field::-webkit-search-cancel-button) {
+    -webkit-appearance: none;
+    appearance: none;
+  }
+  .smrt-search-input__icon {
+    color: var(--smrt-color-on-surface-variant);
+  }
+  .smrt-search-input__clear {
+    border: none;
+    border-radius: var(--smrt-radius-full);
+    background: transparent;
+    color: var(--smrt-color-on-surface-variant);
+  }
+  .smrt-search-input__clear:hover {
+    color: var(--smrt-color-on-surface);
+  }
+  .smrt-search-input__clear:focus-visible {
+    outline: var(--smrt-focus-ring-width) solid var(--smrt-focus-ring-color);
+    outline-offset: calc(var(--smrt-focus-ring-width) * -1);
+  }
+}
+
 </style>

@@ -178,7 +178,7 @@ function updateTags(value: string) {
     gap: 1rem;
   }
 
-  .content-metadata-fields :global(.form-group) {
+  .content-metadata-fields :global([data-smrt-component="FormGroup"]) {
     margin: 0;
   }
 

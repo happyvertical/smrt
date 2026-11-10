@@ -156,7 +156,7 @@ function submitCreate() {
     gap: var(--smrt-spacing-2, 0.5rem);
   }
 
-  .sales-referral-links :global(.sales-referral-links-create .form-group) {
+  .sales-referral-links :global(.sales-referral-links-create [data-smrt-component="FormGroup"]) {
     margin-bottom: 0;
     flex: 1 1 14rem;
   }

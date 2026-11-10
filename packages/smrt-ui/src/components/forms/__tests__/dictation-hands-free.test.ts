@@ -436,7 +436,7 @@ describe('hands-free in the button and the status line', () => {
     const stop = screen.getByRole('button', { name: 'Stop listening' });
     expect(stop).toHaveAttribute('aria-pressed', 'true');
     expect(stop).toHaveAttribute('data-dictation-mode', 'hands-free');
-    expect(stop.className).toContain('smrt-dictation-button--hands-free');
+    expect(stop.className).toContain('smrt-dictation-button__hands-free');
     // The help text is the tooltip and the description, not a line of text;
     // the live region only says the state, and is visually hidden.
     expect(stop).toHaveAttribute(
@@ -451,7 +451,7 @@ describe('hands-free in the button and the status line', () => {
     const live = screen.getByRole('status');
     expect(live).toHaveTextContent('Listening');
     expect(live).not.toHaveTextContent(/Just talk/);
-    expect(live.className).toContain('smrt-dictation-status--empty');
+    expect(live.className).toContain('smrt-dictation-status__empty');
     expect(stop).not.toHaveAttribute('data-dictation-speaking');
 
     // Someone speaks: the halo follows the level, and the live region says so.
@@ -460,7 +460,7 @@ describe('hands-free in the button and the status line', () => {
     flushSync();
     expect(stop).toHaveAttribute('data-dictation-speaking', 'true');
     expect(stop.getAttribute('style')).toContain('--smrt-dictation-level: 0.6');
-    expect(stop.className).toContain('smrt-dictation-button--speaking');
+    expect(stop.className).toContain('smrt-dictation-button__speaking');
     expect(screen.getByRole('status')).toHaveTextContent('Hearing you…');
     await expectNoA11yViolations(container);
 
@@ -469,12 +469,14 @@ describe('hands-free in the button and the status line', () => {
     mic.say();
     flushSync();
     expect(screen.getByRole('status')).toHaveTextContent('Writing it down…');
-    expect(container.querySelector('.smrt-dictation-writing')).not.toBeNull();
+    expect(
+      container.querySelector('[data-smrt-part="writing"]'),
+    ).not.toBeNull();
     await vi.waitFor(() => expect(src.pending.length).toBe(1));
     src.pending[0]?.resolve('hello');
     await vi.waitFor(() => expect(dictation.queued).toBe(0));
     flushSync();
-    expect(container.querySelector('.smrt-dictation-writing')).toBeNull();
+    expect(container.querySelector('[data-smrt-part="writing"]')).toBeNull();
 
     await userEvent.click(stop);
     await vi.waitFor(() => expect(dictation.state).toBe('idle'));
@@ -489,8 +491,8 @@ describe('hands-free in the button and the status line', () => {
       'utf8',
     );
     const reduced = source.slice(source.indexOf('prefers-reduced-motion'));
-    expect(reduced).toContain('.smrt-dictation-writing');
-    expect(reduced).toContain('.smrt-dictation-button--speaking');
+    expect(reduced).toContain('.smrt-dictation-button__writing');
+    expect(reduced).toContain('.smrt-dictation-button__speaking');
     expect(reduced).toMatch(/animation:\s*none/);
     expect(reduced).toMatch(/transition:\s*none/);
   });
@@ -504,7 +506,7 @@ describe('DictationStatus sending hint', () => {
     });
     const live = screen.getByRole('status');
     expect(live).toHaveTextContent('Sending…');
-    expect(live.className).not.toContain('smrt-dictation-status--empty');
+    expect(live.className).not.toContain('smrt-dictation-status__empty');
     await expectNoA11yViolations(container);
   });
 });

@@ -25,10 +25,21 @@ let {
 const instanceId = $props.id();
 const resolvedId = $derived(id ?? `smrt-time-${instanceId}`);
 </script>
-<label class="picker {className}" for={resolvedId} data-smrt-component="TimePicker"><span>{label}</span><Input id={resolvedId} {name} type="time" aria-label={label} {interaction} bind:value {...rest} /></label>
+<label class="smrt-time-picker__root {className}" for={resolvedId} data-smrt-component="TimePicker"><span>{label}</span><Input id={resolvedId} {name} type="time" aria-label={label} {interaction} bind:value {...rest} /></label>
 <style>
 @layer smrt.reset, smrt.structure, smrt.theme;
-@layer smrt.theme {
-.picker { display: grid; gap: var(--smrt-spacing-1); color: var(--smrt-color-on-surface); font: var(--smrt-typography-label-large-font); }
+@layer smrt.structure {
+  .smrt-time-picker__root {
+    display: grid;
+    gap: var(--smrt-spacing-1);
+  }
 }
+
+@layer smrt.theme {
+  .smrt-time-picker__root {
+    color: var(--smrt-color-on-surface);
+    font: var(--smrt-typography-label-large-font);
+  }
+}
+
 </style>
