@@ -1464,7 +1464,7 @@ function apiTabCount(
     gap: 0.55rem;
   }
 
-  .theme-controls :global(.smrt-theme-switcher) {
+  .theme-controls :global([data-smrt-component="ThemeSwitcher"]) {
     flex: 1;
   }
 

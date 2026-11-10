@@ -1045,7 +1045,7 @@ function selectEntry(entry: ResolvedSmrtPlaygroundEntry) {
   }
 
   @media (max-width: 600px) {
-    .theme-controls :global(.smrt-theme-switcher) {
+    .theme-controls :global([data-smrt-component="ThemeSwitcher"]) {
       display: none;
     }
 

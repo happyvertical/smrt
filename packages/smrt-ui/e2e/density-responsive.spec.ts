@@ -22,7 +22,7 @@ for (const width of [390, 768]) {
       ).toBeVisible();
       const sizes = await page
         .locator(
-          '[data-smrt-component="Input"]:not([data-density="comfortable"]), [data-smrt-component="Select"], .textarea, [data-smrt-component="Checkbox"], [data-smrt-component="Switch"], .radio, [data-smrt-component="Button"], .filter-chip, .segmented label, .data-table__sort-button',
+          '[data-smrt-component="Input"]:not([data-density="comfortable"]), [data-smrt-component="Select"], .textarea, [data-smrt-component="Checkbox"], [data-smrt-component="Switch"], .radio, [data-smrt-component="Button"], .smrt-filter-chips__chip, .segmented label, .data-table__sort-button',
         )
         .evaluateAll((elements) =>
           elements.map((element) => ({
@@ -106,7 +106,7 @@ for (const width of [390, 768]) {
       ).toBeVisible();
       const measure = (pager: string) =>
         page
-          .locator(`[data-pager="${pager}"] .page-link`)
+          .locator(`[data-pager="${pager}"] .smrt-pagination__link`)
           .evaluateAll((elements) =>
             elements
               .map((element) => element.getBoundingClientRect())

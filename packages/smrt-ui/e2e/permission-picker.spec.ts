@@ -5,7 +5,7 @@ for (const width of [320, 390]) {
     test(`permission picker fits ${width}px in ${scheme} theme with keyboard and touch defaults`, async ({ page }) => {
       await page.setViewportSize({ width, height: 800 });
       await page.goto(`/e2e/density-responsive.html?surface=permissions&scheme=${scheme}`);
-      const picker = page.locator('.permission-picker');
+      const picker = page.locator('[data-smrt-component="PermissionPicker"]');
       await expect(picker).toBeVisible();
       expect(await page.evaluate(() => document.documentElement.scrollWidth <= innerWidth)).toBe(true);
       const search = page.getByRole('searchbox', { name: 'Search permissions' });
@@ -24,7 +24,7 @@ for (const width of [320, 390]) {
       const slug = page.locator('code').filter({ hasText: 'extraordinarily_long_unbroken' });
       await expect(slug).toBeVisible();
       expect(await slug.evaluate((element) => element.scrollWidth <= element.clientWidth)).toBe(true);
-      const hitSize = await page.locator('.choice [data-smrt-component="Checkbox"]').first().evaluate((element) => getComputedStyle(element, '::before').blockSize);
+      const hitSize = await page.locator('[data-smrt-part="option"] [data-smrt-component="Checkbox"]').first().evaluate((element) => getComputedStyle(element, '::before').blockSize);
       expect(Number.parseFloat(hitSize)).toBeGreaterThanOrEqual(44);
       const surface = await page.locator('main').evaluate((element) => ({
         background: getComputedStyle(element).backgroundColor,
