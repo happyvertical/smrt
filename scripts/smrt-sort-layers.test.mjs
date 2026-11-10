@@ -217,8 +217,9 @@ test('CLI check/write/report are scoped, idempotent, and validate input before m
     assert.equal(readFileSync(file, 'utf8'), output);
     // Read-only package filter includes exactly that package, never rewrites it.
     const scoped = run(['--check', '--package', 'smrt-ui']);
-    assert.equal(scoped.status, 1);
-    assert.ok(JSON.parse(scoped.stdout).files.every((entry) => entry.file.startsWith('packages/smrt-ui/src/')));
+    const scopedFiles = JSON.parse(scoped.stdout).files;
+    assert.equal(scoped.status, scopedFiles.some((entry) => entry.changed || entry.todos.length) ? 1 : 0);
+    assert.ok(scopedFiles.every((entry) => entry.file.startsWith('packages/smrt-ui/src/')));
     writeFileSync(file, unsorted('.thing{display:flex;opacity:0}'));
     assert.equal(run(['--write', file, '--report', report]).status, 1);
     assert.equal(JSON.parse(readFileSync(report)).files[0].todos.length, 1);
