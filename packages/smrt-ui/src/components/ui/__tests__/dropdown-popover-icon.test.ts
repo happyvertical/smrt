@@ -1,7 +1,7 @@
 /**
  * Dropdown menu items take an icon, and Dropdown and Popover each offer an
  * icon-only trigger look (a borderless 44px round button in the surrounding
- * colour), so an app does not restyle `.dropdown__trigger` / `.popover__trigger`.
+ * colour), so an app does not restyle `.smrt-dropdown__trigger` / `.smrt-popover__trigger`.
  */
 
 import { readFileSync } from 'node:fs';
@@ -34,14 +34,14 @@ describe('Dropdown icons', () => {
     });
     await userEvent.click(screen.getByRole('button', { name: 'Actions' }));
     const edit = screen.getByRole('menuitem', { name: 'Edit' });
-    const icon = edit.querySelector('.dropdown__item-icon');
+    const icon = edit.querySelector('[data-smrt-part="icon"]');
     expect(icon).not.toBeNull();
     expect(icon).toHaveAttribute('aria-hidden', 'true');
     expect(icon?.querySelector('svg')).not.toBeNull();
     expect(
       screen
         .getByRole('menuitem', { name: 'Plain' })
-        .querySelector('.dropdown__item-icon'),
+        .querySelector('[data-smrt-part="icon"]'),
     ).toBeNull();
   });
 
@@ -57,7 +57,7 @@ describe('Dropdown icons', () => {
     const trigger = screen.getByRole('button', {
       name: 'Actions for July 14 Council',
     });
-    expect(trigger).toHaveClass('dropdown__trigger--icon');
+    expect(trigger).toHaveClass('smrt-dropdown__trigger-icon');
     expect(trigger).toHaveAttribute('aria-haspopup', 'menu');
     await userEvent.click(trigger);
     await expectNoA11yViolations(container);
@@ -74,7 +74,7 @@ describe('Dropdown icons', () => {
       },
     });
     expect(screen.getByRole('button', { name: 'Row actions' })).toHaveClass(
-      'dropdown__trigger--icon',
+      'smrt-dropdown__trigger-icon',
     );
     expect(warn).not.toHaveBeenCalled();
     render(Dropdown, {
@@ -93,7 +93,7 @@ describe('Dropdown icons', () => {
       props: { label: 'Actions', items: [{ id: 'a', label: 'A' }] },
     });
     expect(screen.getByRole('button', { name: 'Actions' })).not.toHaveClass(
-      'dropdown__trigger--icon',
+      'smrt-dropdown__trigger-icon',
     );
   });
 });
@@ -110,7 +110,7 @@ describe('Popover icon variant', () => {
       },
     });
     const trigger = screen.getByRole('button', { name: '2 issues' });
-    expect(trigger).toHaveClass('popover__trigger--icon');
+    expect(trigger).toHaveClass('smrt-popover__trigger-icon');
     await userEvent.click(trigger);
     expect(screen.getByRole('dialog', { name: 'Issues' })).toHaveTextContent(
       'Details',
@@ -127,7 +127,7 @@ describe('Popover icon variant', () => {
       },
     });
     expect(screen.getByRole('button', { name: 'Issues' })).toHaveClass(
-      'popover__trigger--icon',
+      'smrt-popover__trigger-icon',
     );
   });
 
@@ -138,18 +138,18 @@ describe('Popover icon variant', () => {
     );
     const css = source.slice(source.indexOf('<style>'));
     expect(css).toMatch(
-      /\.popover__trigger:focus-visible[^{]*\{ outline: var\(--smrt-focus-ring-width\) solid var\(--smrt-focus-ring-color\)/,
+      /\.smrt-popover__trigger:focus-visible[^{]*\{\s*outline:\s*var\(--smrt-focus-ring-width\)\s+solid\s+var\(--smrt-focus-ring-color\)/,
     );
     // No icon-specific outline override (a currentColor ring under 3:1).
     expect(css).not.toMatch(
-      /\.popover__trigger--icon:focus-visible \{[^}]*outline/,
+      /\.smrt-popover__trigger-icon:focus-visible \{[^}]*outline/,
     );
   });
 
   it('keeps the bordered button look by default', () => {
     render(Popover, { props: { label: 'Filters', children: body } });
     expect(screen.getByRole('button', { name: 'Filters' })).not.toHaveClass(
-      'popover__trigger--icon',
+      'smrt-popover__trigger-icon',
     );
   });
 });

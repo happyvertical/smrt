@@ -26,7 +26,9 @@ describe('IconToggle', () => {
     const button = screen.getByRole('button', { name: 'Draft (12)' });
     expect(button).toHaveAttribute('aria-pressed', 'false');
     expect(screen.getByRole('tooltip')).toHaveTextContent('Draft (12)');
-    expect(button.querySelector('.count')).toHaveTextContent('12');
+    expect(button.querySelector('[data-smrt-part="count"]')).toHaveTextContent(
+      '12',
+    );
   });
 
   it('keeps no state of its own: it calls onclick and the owner decides', async () => {
@@ -56,7 +58,7 @@ describe('IconToggle tone', () => {
       props: { label: 'Draft', tone: 'var(--status-draft)', children: icon },
     });
     const button = screen.getByRole('button', { name: 'Draft' });
-    expect(button).toHaveClass('toned');
+    expect(button).toHaveClass('smrt-icon-toggle__toned');
     expect(button.style.getPropertyValue('--smrt-icon-toggle-tone')).toBe(
       'var(--status-draft)',
     );
@@ -65,7 +67,7 @@ describe('IconToggle tone', () => {
   it('has no tone styling unless asked', () => {
     render(IconToggle, { props: { label: 'Grid', children: icon } });
     const button = screen.getByRole('button', { name: 'Grid' });
-    expect(button).not.toHaveClass('toned');
+    expect(button).not.toHaveClass('smrt-icon-toggle__toned');
     expect(button.style.getPropertyValue('--smrt-icon-toggle-tone')).toBe('');
   });
 });

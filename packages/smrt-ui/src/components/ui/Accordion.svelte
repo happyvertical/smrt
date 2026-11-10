@@ -42,11 +42,22 @@ function toggle(item: string) {
 setAccordionContext({ isOpen, toggle });
 </script>
 
-<div class="accordion {className}" data-smrt-component="Accordion">{#if children}{@render children()}{/if}</div>
+<div class="smrt-accordion__root {className}" data-smrt-component="Accordion">{#if children}{@render children()}{/if}</div>
 
 <style>
 @layer smrt.reset, smrt.structure, smrt.theme;
-@layer smrt.theme {
-  .accordion { overflow: hidden; border: var(--smrt-hairline); border-radius: var(--smrt-radius-large); background: var(--smrt-color-surface); }
+@layer smrt.structure {
+  .smrt-accordion__root {
+    overflow: hidden;
+  }
 }
+
+@layer smrt.theme {
+  .smrt-accordion__root {
+    border: var(--smrt-hairline);
+    border-radius: var(--smrt-radius-large);
+    background: var(--smrt-color-surface);
+  }
+}
+
 </style>

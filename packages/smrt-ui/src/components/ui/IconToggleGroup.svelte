@@ -21,39 +21,43 @@ export interface Props {
 const { label, children, class: className = '' }: Props = $props();
 </script>
 
-<div class="icon-toggle-group {className}" role="group" aria-label={label} data-smrt-component="IconToggleGroup">
+<div class="smrt-icon-toggle-group__root {className}" role="group" aria-label={label} data-smrt-component="IconToggleGroup">
   {@render children()}
 </div>
 
 <style>
 @layer smrt.reset, smrt.structure, smrt.theme;
-@layer smrt.theme {
-  .icon-toggle-group {
+@layer smrt.structure {
+  .smrt-icon-toggle-group__root {
     display: inline-flex;
     flex-wrap: wrap;
     max-width: 100%;
     isolation: isolate;
   }
-  /* Shared edges: one border between neighbours, square inside, round ends.
-     Each toggle sits in tooltip wrappers, so the rules reach it by descendant. */
-  .icon-toggle-group :global(.icon-toggle) {
-    border-radius: 0;
-  }
-  .icon-toggle-group > :global(* + *) {
+  .smrt-icon-toggle-group__root > :global(* + *) {
     margin-inline-start: -1px;
   }
-  .icon-toggle-group > :global(:first-child .icon-toggle) {
-    border-start-start-radius: var(--smrt-radius-full);
-    border-end-start-radius: var(--smrt-radius-full);
-  }
-  .icon-toggle-group > :global(:last-child .icon-toggle) {
-    border-start-end-radius: var(--smrt-radius-full);
-    border-end-end-radius: var(--smrt-radius-full);
-  }
   /* The pressed one sits above its neighbours so its tint is not clipped by them. */
-  .icon-toggle-group :global(.icon-toggle.pressed),
-  .icon-toggle-group :global(.icon-toggle:focus-visible) {
+  .smrt-icon-toggle-group__root :global([data-smrt-component="IconToggle"][aria-pressed="true"]),
+  .smrt-icon-toggle-group__root :global([data-smrt-component="IconToggle"]:focus-visible) {
     z-index: 1;
   }
 }
+
+@layer smrt.theme {
+  /* Shared edges: one border between neighbours, square inside, round ends.
+  Each toggle sits in tooltip wrappers, so the rules reach it by descendant. */
+  .smrt-icon-toggle-group__root :global([data-smrt-component="IconToggle"]) {
+    border-radius: 0;
+  }
+  .smrt-icon-toggle-group__root > :global(:first-child [data-smrt-component="IconToggle"]) {
+    border-start-start-radius: var(--smrt-radius-full);
+    border-end-start-radius: var(--smrt-radius-full);
+  }
+  .smrt-icon-toggle-group__root > :global(:last-child [data-smrt-component="IconToggle"]) {
+    border-start-end-radius: var(--smrt-radius-full);
+    border-end-end-radius: var(--smrt-radius-full);
+  }
+}
+
 </style>

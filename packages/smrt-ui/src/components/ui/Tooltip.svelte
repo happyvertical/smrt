@@ -53,72 +53,75 @@ function onKeydown(event: KeyboardEvent) {
      bubble; the real interactive element is the consumer's trigger child. -->
 <!-- svelte-ignore a11y_no_static_element_interactions -->
 <span
-  class="tooltip-wrap"
+  class="smrt-tooltip__root"
   onmouseenter={show}
   onmouseleave={hide}
   onfocusin={show}
   onfocusout={hide}
   onkeydown={onKeydown} data-smrt-component="Tooltip"
 >
-  <span class="tooltip-trigger" aria-describedby={tipId}>
+  <span class="smrt-tooltip__trigger" data-smrt-part="trigger" aria-describedby={tipId}>
     {@render children()}
   </span>
-  <span id={tipId} role="tooltip" class="tooltip tooltip--{placement}" class:open>
+  <span id={tipId} role="tooltip" class="smrt-tooltip__panel smrt-tooltip__panel-{placement}" class:smrt-tooltip__open={open} data-smrt-part="panel">
     {text}
   </span>
 </span>
 
 <style>
 @layer smrt.reset, smrt.structure, smrt.theme;
-@layer smrt.theme {
-  .tooltip-wrap {
+@layer smrt.structure {
+  .smrt-tooltip__root {
     position: relative;
     display: inline-flex;
   }
-
-  .tooltip {
+  .smrt-tooltip__panel {
     position: absolute;
     z-index: var(--smrt-z-index-tooltip, 1080);
     display: none;
     width: max-content;
     max-width: 16rem;
     padding: var(--smrt-spacing-1) var(--smrt-spacing-2);
+    pointer-events: none;
+  }
+  .smrt-tooltip__panel.smrt-tooltip__open {
+    display: block;
+  }
+  .smrt-tooltip__panel-top {
+    bottom: 100%;
+    left: 50%;
+    margin-bottom: var(--smrt-spacing-1);
+    transform: translateX(-50%);
+  }
+  .smrt-tooltip__panel-bottom {
+    top: 100%;
+    left: 50%;
+    margin-top: var(--smrt-spacing-1);
+    transform: translateX(-50%);
+  }
+  .smrt-tooltip__panel-left {
+    right: 100%;
+    top: 50%;
+    margin-right: var(--smrt-spacing-1);
+    transform: translateY(-50%);
+  }
+  .smrt-tooltip__panel-right {
+    left: 100%;
+    top: 50%;
+    margin-left: var(--smrt-spacing-1);
+    transform: translateY(-50%);
+  }
+}
+
+@layer smrt.theme {
+  .smrt-tooltip__panel {
     border-radius: var(--smrt-radius-small);
     background: var(--smrt-color-inverse-surface);
     color: var(--smrt-color-inverse-on-surface);
     font-size: var(--smrt-typography-body-small-size, 0.75rem);
     line-height: var(--smrt-typography-body-small-line-height, 1.4);
     box-shadow: var(--smrt-elevation-3);
-    pointer-events: none;
-  }
-
-  .tooltip.open {
-    display: block;
-  }
-
-  .tooltip--top {
-    bottom: 100%;
-    left: 50%;
-    transform: translateX(-50%);
-    margin-bottom: var(--smrt-spacing-1);
-  }
-  .tooltip--bottom {
-    top: 100%;
-    left: 50%;
-    transform: translateX(-50%);
-    margin-top: var(--smrt-spacing-1);
-  }
-  .tooltip--left {
-    right: 100%;
-    top: 50%;
-    transform: translateY(-50%);
-    margin-right: var(--smrt-spacing-1);
-  }
-  .tooltip--right {
-    left: 100%;
-    top: 50%;
-    transform: translateY(-50%);
-    margin-left: var(--smrt-spacing-1);
   }
 }
+
 </style>

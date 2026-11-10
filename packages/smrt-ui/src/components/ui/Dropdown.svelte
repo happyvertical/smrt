@@ -147,12 +147,13 @@ $effect(() => {
 });
 </script>
 
-<span class="dropdown" bind:this={wrapEl} data-smrt-component="Dropdown">
+<span class="smrt-dropdown__root" bind:this={wrapEl} data-smrt-component="Dropdown">
   <button
     bind:this={triggerEl}
     type="button"
-    class="dropdown__trigger"
-    class:dropdown__trigger--icon={variant === 'icon'}
+    class="smrt-dropdown__trigger"
+    class:smrt-dropdown__trigger-icon={variant === 'icon'}
+    data-smrt-part="trigger"
     aria-label={triggerLabel ?? (variant === 'icon' ? label : undefined)}
     aria-haspopup="menu"
     aria-expanded={open}
@@ -169,7 +170,8 @@ $effect(() => {
       id={menuId}
       role="menu"
       tabindex={-1}
-      class="dropdown__menu dropdown__menu--{placement}"
+      class="smrt-dropdown__menu smrt-dropdown__menu-{placement}"
+      data-smrt-part="panel"
       onkeydown={onMenuKeydown}
     >
       {#each items as item, i (item.id)}
@@ -177,15 +179,16 @@ $effect(() => {
           bind:this={itemEls[i]}
           type="button"
           role="menuitem"
-          class="dropdown__item"
+          class="smrt-dropdown__item"
+          data-smrt-part="item"
           disabled={item.disabled}
           tabindex={-1}
           onclick={() => selectItem(item)}
         >
           {#if item.icon}
-            <span class="dropdown__item-icon" aria-hidden="true">{@render item.icon()}</span>
+            <span class="smrt-dropdown__icon" data-smrt-part="icon" aria-hidden="true">{@render item.icon()}</span>
           {/if}
-          <span class="dropdown__item-label">{item.label}</span>
+          <span class="smrt-dropdown__label" data-smrt-part="label">{item.label}</span>
         </button>
       {/each}
     </div>
@@ -194,29 +197,17 @@ $effect(() => {
 
 <style>
 @layer smrt.reset, smrt.structure, smrt.theme;
-@layer smrt.theme {
-  .dropdown {
+@layer smrt.structure {
+  .smrt-dropdown__root {
     position: relative;
     display: inline-flex;
   }
-
-  .dropdown__trigger {
-    appearance: none;
-    font: inherit;
+  .smrt-dropdown__trigger {
     cursor: pointer;
     padding: var(--smrt-spacing-2) var(--smrt-spacing-3);
-    border-radius: var(--smrt-control-radius);
-    border: var(--smrt-hairline-strong);
-    background: var(--smrt-surface-control);
-    color: var(--smrt-color-on-surface);
-    font-weight: var(--smrt-control-weight);
-  }
-  .dropdown__trigger:focus-visible {
-    outline: var(--smrt-focus-ring-width) solid var(--smrt-focus-ring-color);
-    outline-offset: var(--smrt-focus-ring-offset);
   }
   /* Icon trigger: a 44px round "more" button in the surrounding text colour. */
-  .dropdown__trigger--icon {
+  .smrt-dropdown__trigger-icon {
     display: inline-flex;
     align-items: center;
     justify-content: center;
@@ -224,21 +215,11 @@ $effect(() => {
     inline-size: 2.75rem;
     block-size: 2.75rem;
     padding: 0;
-    border: none;
-    border-radius: var(--smrt-radius-full);
-    background: transparent;
-    color: inherit;
   }
-  .dropdown__trigger--icon:hover:not(:disabled),
-  .dropdown__trigger--icon[aria-expanded='true'] {
-    background: color-mix(in srgb, currentColor calc(var(--smrt-state-hover) * 100%), transparent);
-  }
-  .dropdown__trigger:disabled {
-    opacity: var(--smrt-state-disabled);
+  .smrt-dropdown__trigger:disabled {
     cursor: not-allowed;
   }
-
-  .dropdown__menu {
+  .smrt-dropdown__menu {
     position: absolute;
     z-index: var(--smrt-z-index-dropdown, 1000);
     min-width: 10rem;
@@ -247,72 +228,109 @@ $effect(() => {
     display: flex;
     flex-direction: column;
     gap: var(--smrt-spacing-1);
-    border-radius: var(--smrt-radius-medium);
-    background: var(--smrt-glass-surface-strong);
-    backdrop-filter: blur(var(--smrt-glass-blur)) saturate(var(--smrt-glass-saturation));
-    border: var(--smrt-hairline);
-    box-shadow: var(--smrt-inset-highlight), var(--smrt-elevation-3);
   }
-
-  .dropdown__menu--bottom-start {
+  .smrt-dropdown__menu-bottom-start {
     top: 100%;
     left: 0;
   }
-  .dropdown__menu--bottom-end {
+  .smrt-dropdown__menu-bottom-end {
     top: 100%;
     right: 0;
   }
-  .dropdown__menu--top-start {
+  .smrt-dropdown__menu-top-start {
     bottom: 100%;
     left: 0;
   }
-  .dropdown__menu--top-end {
+  .smrt-dropdown__menu-top-end {
     bottom: 100%;
     right: 0;
   }
-
-  .dropdown__item {
-    appearance: none;
+  .smrt-dropdown__item {
     display: flex;
     align-items: center;
     gap: var(--smrt-spacing-2);
     /* A touch target: menu rows are at least 44px tall. */
     min-block-size: 2.75rem;
     box-sizing: border-box;
-    font: inherit;
-    text-align: left;
     cursor: pointer;
     padding: var(--smrt-spacing-2) var(--smrt-spacing-3);
+    white-space: nowrap;
+  }
+  .smrt-dropdown__icon {
+    display: inline-flex;
+    flex: none;
+  }
+  .smrt-dropdown__item:disabled {
+    cursor: not-allowed;
+  }
+}
+
+@layer smrt.theme {
+  .smrt-dropdown__trigger {
+    appearance: none;
+    font: inherit;
+    border-radius: var(--smrt-control-radius);
+    border: var(--smrt-hairline-strong);
+    background: var(--smrt-surface-control);
+    color: var(--smrt-color-on-surface);
+    font-weight: var(--smrt-control-weight);
+  }
+  .smrt-dropdown__trigger:focus-visible {
+    outline: var(--smrt-focus-ring-width) solid var(--smrt-focus-ring-color);
+    outline-offset: var(--smrt-focus-ring-offset);
+  }
+  /* Icon trigger: a 44px round "more" button in the surrounding text colour. */
+  .smrt-dropdown__trigger-icon {
+    border: none;
+    border-radius: var(--smrt-radius-full);
+    background: transparent;
+    color: inherit;
+  }
+  .smrt-dropdown__trigger-icon:hover:not(:disabled),
+  .smrt-dropdown__trigger-icon[aria-expanded='true'] {
+    background: color-mix(in srgb, currentColor calc(var(--smrt-state-hover) * 100%), transparent);
+  }
+  .smrt-dropdown__trigger:disabled {
+    opacity: var(--smrt-state-disabled);
+  }
+  .smrt-dropdown__menu {
+    border-radius: var(--smrt-radius-medium);
+    background: var(--smrt-glass-surface-strong);
+    backdrop-filter: blur(var(--smrt-glass-blur)) saturate(var(--smrt-glass-saturation));
+    border: var(--smrt-hairline);
+    box-shadow: var(--smrt-inset-highlight), var(--smrt-elevation-3);
+  }
+  .smrt-dropdown__item {
+    appearance: none;
+    font: inherit;
+    text-align: left;
     border: none;
     border-radius: var(--smrt-radius-small);
     background: none;
     color: var(--smrt-color-on-surface);
-    white-space: nowrap;
   }
-  .dropdown__item-icon {
-    display: inline-flex;
-    flex: none;
+  .smrt-dropdown__icon {
     color: var(--smrt-color-on-surface-variant);
   }
-  .dropdown__item:hover:not(:disabled) {
+  .smrt-dropdown__item:hover:not(:disabled) {
     background: color-mix(in srgb, currentColor calc(var(--smrt-state-hover) * 100%), transparent);
   }
-  .dropdown__item:active:not(:disabled) {
+  .smrt-dropdown__item:active:not(:disabled) {
     background: color-mix(in srgb, currentColor calc(var(--smrt-state-pressed) * 100%), transparent);
   }
   /* Keyboard focus needs its own indicator: the hover background alone is a
-     ~1.1:1 change against the menu surface in every preset (1.00:1 in glass
-     light), which is invisible and fails WCAG 2.4.11. The ring is inset so it
-     sits inside the item's padding box rather than overlapping the neighbouring
-     item or the menu's edge (#2322). */
-  .dropdown__item:focus-visible {
+  ~1.1:1 change against the menu surface in every preset (1.00:1 in glass
+  light), which is invisible and fails WCAG 2.4.11. The ring is inset so it
+  sits inside the item's padding box rather than overlapping the neighbouring
+  item or the menu's edge (#2322). */
+  .smrt-dropdown__item:focus-visible {
     background: color-mix(in srgb, currentColor calc(var(--smrt-state-hover) * 100%), transparent);
     outline: var(--smrt-focus-ring-width) solid var(--smrt-focus-ring-color);
     outline-offset: calc(var(--smrt-focus-ring-width) * -1);
   }
-  .dropdown__item:disabled {
+  .smrt-dropdown__item:disabled {
     opacity: var(--smrt-state-disabled);
-    cursor: not-allowed;
   }
 }
+
 </style>
