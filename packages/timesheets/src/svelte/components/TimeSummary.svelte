@@ -59,129 +59,119 @@ let {
 const { t } = useI18n();
 </script>
 
-<div class="time-summary" class:horizontal={layout === 'horizontal'} data-smrt-component="TimeSummary">
-  <div class="summary-card">
-    <span class="label">{t(M['projects.time_summary.total_hours'])}</span>
-    <span class="value">{hoursFormatter(totalHours)}</span>
+<div class="smrt-time-summary__root" class:smrt-time-summary__horizontal={layout === 'horizontal'} data-smrt-component="TimeSummary">
+  <div class="smrt-time-summary__card" data-smrt-part="card">
+    <span class="smrt-time-summary__label" data-smrt-part="label">{t(M['projects.time_summary.total_hours'])}</span>
+    <span class="smrt-time-summary__value" data-smrt-part="value">{hoursFormatter(totalHours)}</span>
     {#if entryCount !== undefined}
-      <span class="count">{entryCount} {entryCount === 1 ? 'entry' : 'entries'}</span>
+      <span class="smrt-time-summary__count" data-smrt-part="count">{entryCount} {entryCount === 1 ? 'entry' : 'entries'}</span>
     {/if}
   </div>
 
-  <div class="summary-card">
-    <span class="label">{t(M['projects.time_summary.total_value'])}</span>
-    <span class="value">{formatCurrency(totalAmount, currency)}</span>
+  <div class="smrt-time-summary__card" data-smrt-part="card">
+    <span class="smrt-time-summary__label" data-smrt-part="label">{t(M['projects.time_summary.total_value'])}</span>
+    <span class="smrt-time-summary__value" data-smrt-part="value">{formatCurrency(totalAmount, currency)}</span>
   </div>
 
   {#if showPending && (pendingHours > 0 || pendingAmount > 0)}
-    <div class="summary-card highlight">
-      <span class="label">{t(M['projects.time_summary.pending_approval'])}</span>
-      <span class="value">{hoursFormatter(pendingHours)}</span>
-      <span class="sub-value">{formatCurrency(pendingAmount, currency)}</span>
+    <div class="smrt-time-summary__card smrt-time-summary__highlight" data-smrt-part="card">
+      <span class="smrt-time-summary__label" data-smrt-part="label">{t(M['projects.time_summary.pending_approval'])}</span>
+      <span class="smrt-time-summary__value" data-smrt-part="value">{hoursFormatter(pendingHours)}</span>
+      <span class="smrt-time-summary__sub-value" data-smrt-part="meta">{formatCurrency(pendingAmount, currency)}</span>
     </div>
   {/if}
 
   {#if showApproved && (approvedHours > 0 || approvedAmount > 0)}
-    <div class="summary-card success">
-      <span class="label">Approved</span>
-      <span class="value">{hoursFormatter(approvedHours)}</span>
-      <span class="sub-value">{formatCurrency(approvedAmount, currency)}</span>
+    <div class="smrt-time-summary__card smrt-time-summary__success" data-smrt-part="card">
+      <span class="smrt-time-summary__label" data-smrt-part="label">Approved</span>
+      <span class="smrt-time-summary__value" data-smrt-part="value">{hoursFormatter(approvedHours)}</span>
+      <span class="smrt-time-summary__sub-value" data-smrt-part="meta">{formatCurrency(approvedAmount, currency)}</span>
     </div>
   {/if}
 </div>
 
 <style>
 @layer smrt.reset, smrt.structure, smrt.theme;
-@layer smrt.theme {
-  .time-summary {
+@layer smrt.structure {
+  .smrt-time-summary__root {
     display: grid;
     grid-template-columns: repeat(auto-fit, minmax(140px, 1fr));
     gap: 1rem;
   }
-
-  .time-summary.horizontal {
+  .smrt-time-summary__root.smrt-time-summary__horizontal {
     display: flex;
     flex-wrap: wrap;
     gap: 1rem;
   }
-
-  .time-summary.horizontal .summary-card {
+  .smrt-time-summary__root.smrt-time-summary__horizontal .smrt-time-summary__card {
     flex: 1 1 140px;
     min-width: 140px;
   }
-
-  .summary-card {
-    background: var(--smrt-color-surface);
-    border: var(--smrt-hairline);
-    border-radius: var(--smrt-radius-medium);
+  .smrt-time-summary__card {
     padding: 1rem;
     display: flex;
     flex-direction: column;
     gap: 0.25rem;
   }
+  @media (max-width: 480px) {
+    .smrt-time-summary__root {
+      grid-template-columns: 1fr 1fr;
+    }
+  }
+}
 
-  .summary-card.highlight {
+@layer smrt.theme {
+  .smrt-time-summary__card {
+    background: var(--smrt-color-surface);
+    border: var(--smrt-hairline);
+    border-radius: var(--smrt-radius-medium);
+  }
+  .smrt-time-summary__card.smrt-time-summary__highlight {
     background: var(--smrt-color-tertiary-container);
     border-color: var(--smrt-color-tertiary);
   }
-
-  .summary-card.success {
+  .smrt-time-summary__card.smrt-time-summary__success {
     background: var(--smrt-color-primary-container);
     border-color: var(--smrt-color-primary);
   }
-
-  .label {
+  .smrt-time-summary__label {
     font-size: var(--smrt-typography-label-small-size, 0.75rem);
     font-weight: var(--smrt-typography-label-small-weight, 500);
     color: var(--smrt-color-on-surface-variant);
     text-transform: uppercase;
     letter-spacing: var(--smrt-typography-label-small-tracking);
   }
-
-  .value {
+  .smrt-time-summary__value {
     font-size: var(--smrt-typography-headline-small-size, 1.5rem);
     font-weight: var(--smrt-typography-headline-small-weight, 400);
     color: var(--smrt-color-on-surface);
   }
-
-  .sub-value {
+  .smrt-time-summary__sub-value {
     font-size: var(--smrt-typography-body-medium-size, 0.875rem);
     color: var(--smrt-color-on-surface-variant);
   }
-
-  .count {
+  .smrt-time-summary__count {
     font-size: var(--smrt-typography-body-small-size, 0.75rem);
     color: var(--smrt-color-on-surface-variant);
   }
-
-  .highlight .label {
+  .smrt-time-summary__highlight .smrt-time-summary__label {
     color: var(--smrt-color-on-tertiary-container);
   }
-
-  .highlight .value {
+  .smrt-time-summary__highlight .smrt-time-summary__value {
     color: var(--smrt-color-tertiary);
   }
-
-  .highlight .sub-value {
+  .smrt-time-summary__highlight .smrt-time-summary__sub-value {
     color: var(--smrt-color-on-tertiary-container);
   }
-
-  .success .label {
+  .smrt-time-summary__success .smrt-time-summary__label {
     color: var(--smrt-color-on-primary-container);
   }
-
-  .success .value {
+  .smrt-time-summary__success .smrt-time-summary__value {
     color: var(--smrt-color-primary);
   }
-
-  .success .sub-value {
+  .smrt-time-summary__success .smrt-time-summary__sub-value {
     color: var(--smrt-color-on-primary-container);
   }
-
-  @media (max-width: 480px) {
-    .time-summary {
-      grid-template-columns: 1fr 1fr;
-    }
-  }
 }
+
 </style>

@@ -82,13 +82,13 @@ function handleKeydown(event: KeyboardEvent) {
 </script>
 
 <div
-  class="time-entry-card"
-  class:selectable
-  class:selected
-  class:clickable={!!href || !!onclick} data-smrt-component="TimeEntryCard"
+  class="smrt-time-entry-card__root"
+  class:smrt-time-entry-card__selectable={selectable}
+  class:smrt-time-entry-card__selected={selected}
+  class:smrt-time-entry-card__clickable={!!href || !!onclick} data-smrt-component="TimeEntryCard"
 >
   {#if selectable}
-    <div class="checkbox-wrapper">
+    <div class="smrt-time-entry-card__checkbox" data-smrt-part="checkbox">
       <!-- raw-primitive-allow: native checkbox; no Provider-free checkbox primitive, kept native to match the indeterminate select-all in TimeEntryList -->
       <input
         type="checkbox"
@@ -102,7 +102,7 @@ function handleKeydown(event: KeyboardEvent) {
   {#if href}
     <a
       {href}
-      class="card-content"
+      class="smrt-time-entry-card__content" data-smrt-part="body"
       onclick={handleCardClick}
       onkeydown={handleKeydown}
     >
@@ -112,53 +112,53 @@ function handleKeydown(event: KeyboardEvent) {
     <!-- raw-primitive-allow: pressable selection card wrapping rich content; structural, not a standard action button -->
     <button
       type="button"
-      class="card-content"
+      class="smrt-time-entry-card__content" data-smrt-part="body"
       onclick={() => onclick?.()}
     >
       {@render cardBody()}
     </button>
   {:else}
-    <div class="card-content">
+    <div class="smrt-time-entry-card__content" data-smrt-part="body">
       {@render cardBody()}
     </div>
   {/if}
 
   {#if actions}
-    <div class="card-actions">
+    <div class="smrt-time-entry-card__actions" data-smrt-part="actions">
       {@render actions()}
     </div>
   {/if}
 </div>
 
 {#snippet cardBody()}
-  <div class="entry-header">
-    <span class="date">{formatDate(entry.date)}</span>
-    <span class="status-badge" style="--smrt-time-entry-card-status-color: {statusColors[entry.status]}">
+  <div class="smrt-time-entry-card__header" data-smrt-part="header">
+    <span class="smrt-time-entry-card__date" data-smrt-part="date">{formatDate(entry.date)}</span>
+    <span class="smrt-time-entry-card__status" data-smrt-part="badge" style="--smrt-time-entry-card-status-color: {statusColors[entry.status]}">
       {entry.status.toUpperCase()}
     </span>
   </div>
 
-  <div class="entry-body">
-    <p class="description">{entry.description}</p>
+  <div class="smrt-time-entry-card__body" data-smrt-part="body">
+    <p class="smrt-time-entry-card__description" data-smrt-part="description">{entry.description}</p>
     {#if entry.workerName}
-      <p class="worker">{entry.workerName}</p>
+      <p class="smrt-time-entry-card__worker" data-smrt-part="meta">{entry.workerName}</p>
     {/if}
   </div>
 
-  <div class="entry-footer">
-    <div class="hours">
-      <span class="hours-value">{hoursFormatter(entry.hours)}</span>
+  <div class="smrt-time-entry-card__footer" data-smrt-part="footer">
+    <div class="smrt-time-entry-card__hours" data-smrt-part="hours">
+      <span class="smrt-time-entry-card__hours-value" data-smrt-part="value">{hoursFormatter(entry.hours)}</span>
       {#if entry.hourlyRate}
-        <span class="rate">@ {formatCurrency(entry.hourlyRate, currency)}/hr</span>
+        <span class="smrt-time-entry-card__rate" data-smrt-part="meta">@ {formatCurrency(entry.hourlyRate, currency)}/hr</span>
       {/if}
     </div>
     {#if entry.amount !== undefined}
-      <span class="amount">{formatCurrency(entry.amount, currency)}</span>
+      <span class="smrt-time-entry-card__amount" data-smrt-part="amount">{formatCurrency(entry.amount, currency)}</span>
     {/if}
   </div>
 
   {#if entry.mileage && entry.mileage > 0}
-    <div class="mileage">
+    <div class="smrt-time-entry-card__mileage" data-smrt-part="mileage">
       {t(M['projects.time_entry_card.mileage'], { mileage: entry.mileage })}
     </div>
   {/if}
@@ -168,149 +168,150 @@ function handleKeydown(event: KeyboardEvent) {
 
 <style>
 @layer smrt.reset, smrt.structure, smrt.theme;
-@layer smrt.theme {
-  .time-entry-card {
+@layer smrt.structure {
+  .smrt-time-entry-card__root {
     display: flex;
     align-items: stretch;
-    background: var(--smrt-color-surface);
-    border: var(--smrt-hairline);
-    border-radius: var(--smrt-radius-medium);
     overflow: hidden;
-    transition: all 0.2s var(--smrt-easing-standard);
   }
-
-  .time-entry-card:hover {
-    border-color: var(--smrt-hairline-strong-color);
-  }
-
-  .time-entry-card.selected {
-    border-color: var(--smrt-color-primary);
-    background: var(--smrt-color-primary-container);
-  }
-
-  .time-entry-card.clickable .card-content {
+  .smrt-time-entry-card__root.smrt-time-entry-card__clickable .smrt-time-entry-card__content {
     cursor: pointer;
   }
-
-  .time-entry-card.clickable:hover {
-    box-shadow: var(--smrt-elevation-1);
-  }
-
-  .checkbox-wrapper {
+  .smrt-time-entry-card__checkbox {
     display: flex;
     align-items: center;
     padding: 1rem;
-    background: var(--smrt-color-surface-container-low);
-    border-right: var(--smrt-hairline);
   }
-
-  .checkbox-wrapper input[type='checkbox'] {
+  .smrt-time-entry-card__checkbox input[type='checkbox'] {
     width: 1.25rem;
     height: 1.25rem;
     cursor: pointer;
-    accent-color: var(--smrt-color-primary);
   }
-
-  .card-content {
+  .smrt-time-entry-card__content {
     flex: 1;
     padding: 1rem;
     min-width: 0;
+    display: block;
+    width: 100%;
+  }
+  .smrt-time-entry-card__header {
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+    margin-bottom: 0.5rem;
+  }
+  .smrt-time-entry-card__status {
+    padding: 0.25rem 0.5rem;
+  }
+  .smrt-time-entry-card__body {
+    margin-bottom: 0.75rem;
+  }
+  .smrt-time-entry-card__description {
+    margin: 0;
+  }
+  .smrt-time-entry-card__worker {
+    margin: 0.25rem 0 0;
+  }
+  .smrt-time-entry-card__footer {
+    display: flex;
+    justify-content: space-between;
+    align-items: baseline;
+  }
+  .smrt-time-entry-card__hours {
+    display: flex;
+    align-items: baseline;
+    gap: 0.5rem;
+  }
+  .smrt-time-entry-card__mileage {
+    margin-top: 0.5rem;
+  }
+  .smrt-time-entry-card__actions {
+    display: flex;
+    align-items: center;
+    padding: 0.5rem;
+  }
+}
+
+@layer smrt.theme {
+  .smrt-time-entry-card__root {
+    background: var(--smrt-color-surface);
+    border: var(--smrt-hairline);
+    border-radius: var(--smrt-radius-medium);
+    transition: all 0.2s var(--smrt-easing-standard);
+  }
+  .smrt-time-entry-card__root:hover {
+    border-color: var(--smrt-hairline-strong-color);
+  }
+  .smrt-time-entry-card__root.smrt-time-entry-card__selected {
+    border-color: var(--smrt-color-primary);
+    background: var(--smrt-color-primary-container);
+  }
+  .smrt-time-entry-card__root.smrt-time-entry-card__clickable:hover {
+    box-shadow: var(--smrt-elevation-1);
+  }
+  .smrt-time-entry-card__checkbox {
+    background: var(--smrt-color-surface-container-low);
+    border-right: var(--smrt-hairline);
+  }
+  .smrt-time-entry-card__checkbox input[type='checkbox'] {
+    accent-color: var(--smrt-color-primary);
+  }
+  .smrt-time-entry-card__content {
     text-decoration: none;
     color: inherit;
     background: transparent;
     border: none;
     text-align: left;
     font: inherit;
-    display: block;
-    width: 100%;
   }
-
-  a.card-content:focus,
-  button.card-content:focus {
+  a.smrt-time-entry-card__content:focus,
+  button.smrt-time-entry-card__content:focus {
     outline: 2px solid var(--smrt-color-primary);
     outline-offset: -2px;
     border-radius: var(--smrt-radius-small);
   }
-
-  .entry-header {
-    display: flex;
-    justify-content: space-between;
-    align-items: center;
-    margin-bottom: 0.5rem;
-  }
-
-  .date {
+  .smrt-time-entry-card__date {
     font-size: var(--smrt-typography-body-medium-size, 0.875rem);
     color: var(--smrt-color-on-surface-variant);
   }
-
-  .status-badge {
+  .smrt-time-entry-card__status {
     font-size: var(--smrt-typography-label-small-size, 0.625rem);
     font-weight: var(--smrt-typography-label-small-weight, 500);
-    padding: 0.25rem 0.5rem;
     border-radius: var(--smrt-radius-small);
     background: var(--smrt-time-entry-card-status-color);
     color: var(--smrt-color-on-primary);
     letter-spacing: var(--smrt-typography-label-small-tracking);
   }
-
-  .entry-body {
-    margin-bottom: 0.75rem;
-  }
-
-  .description {
-    margin: 0;
+  .smrt-time-entry-card__description {
     font-size: var(--smrt-typography-body-large-size, 0.9375rem);
     color: var(--smrt-color-on-surface);
     line-height: var(--smrt-typography-body-large-line-height, 1.5);
   }
-
-  .worker {
-    margin: 0.25rem 0 0;
+  .smrt-time-entry-card__worker {
     font-size: var(--smrt-typography-body-small-size, 0.8125rem);
     color: var(--smrt-color-on-surface-variant);
   }
-
-  .entry-footer {
-    display: flex;
-    justify-content: space-between;
-    align-items: baseline;
-  }
-
-  .hours {
-    display: flex;
-    align-items: baseline;
-    gap: 0.5rem;
-  }
-
-  .hours-value {
+  .smrt-time-entry-card__hours-value {
     font-size: var(--smrt-typography-body-large-size, 1rem);
     font-weight: var(--smrt-typography-title-medium-weight, 500);
     color: var(--smrt-color-primary);
   }
-
-  .rate {
+  .smrt-time-entry-card__rate {
     font-size: var(--smrt-typography-body-small-size, 0.75rem);
     color: var(--smrt-color-on-surface-variant);
   }
-
-  .amount {
+  .smrt-time-entry-card__amount {
     font-size: var(--smrt-typography-body-large-size, 1rem);
     font-weight: var(--smrt-typography-title-medium-weight, 500);
     color: var(--smrt-color-on-surface);
   }
-
-  .mileage {
-    margin-top: 0.5rem;
+  .smrt-time-entry-card__mileage {
     font-size: var(--smrt-typography-body-small-size, 0.75rem);
     color: var(--smrt-color-on-surface-variant);
   }
-
-  .card-actions {
-    display: flex;
-    align-items: center;
-    padding: 0.5rem;
+  .smrt-time-entry-card__actions {
     border-left: var(--smrt-hairline);
   }
 }
+
 </style>
