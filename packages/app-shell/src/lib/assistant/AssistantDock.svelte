@@ -250,13 +250,13 @@ $effect(() => {
     <button
       bind:this={toggle}
       type="button"
-      class="sh-btn sh-btn-primary smrt-assistant-dock__toggle"
+      class="smrt-app-shell__btn smrt-app-shell__btn-primary smrt-assistant-dock__toggle"
       aria-expanded="false"
       aria-controls="assistant-panel"
       onclick={openDock} data-smrt-part="trigger"
     >
       Assistant{#if waiting > 0}
-        <span class="sh-badge sh-badge-warn" data-smrt-part="badge">{waiting}<span class="smrt-assistant-dock__sr-only" data-smrt-part="label"> waiting for you</span></span>
+        <span class="smrt-app-shell__badge smrt-app-shell__badge-warn" data-smrt-part="badge">{waiting}<span class="smrt-assistant-dock__sr-only" data-smrt-part="label"> waiting for you</span></span>
       {/if}
     </button>
   {:else}
@@ -270,8 +270,8 @@ $effect(() => {
       <header class="smrt-assistant-dock__bar" data-smrt-part="header">
         <h2>Assistant</h2>
         <div class="smrt-assistant-dock__bar-actions" data-smrt-part="actions">
-          <button type="button" class="sh-btn" onclick={newChat} disabled={dock.items.length === 0 && !dock.running} data-smrt-part="trigger">New chat</button>
-          <button type="button" class="sh-btn" aria-expanded="true" aria-controls="assistant-panel" onclick={closeDock} data-smrt-part="trigger">Close<span class="smrt-assistant-dock__sr-only" data-smrt-part="label"> assistant</span></button>
+          <button type="button" class="smrt-app-shell__btn" onclick={newChat} disabled={dock.items.length === 0 && !dock.running} data-smrt-part="trigger">New chat</button>
+          <button type="button" class="smrt-app-shell__btn" aria-expanded="true" aria-controls="assistant-panel" onclick={closeDock} data-smrt-part="trigger">Close<span class="smrt-assistant-dock__sr-only" data-smrt-part="label"> assistant</span></button>
         </div>
       </header>
 
@@ -285,12 +285,12 @@ $effect(() => {
         tabindex="0" data-smrt-part="list"
       >
         {#if dock.availability === 'unavailable'}
-          <div class="sh-alert sh-alert-warn" role="status" data-smrt-part="status">
+          <div class="smrt-app-shell__alert smrt-app-shell__alert-warn" role="status" data-smrt-part="status">
             <strong>The assistant is off.</strong>
             {dock.unavailableMessage}
           </div>
         {:else if dock.items.length === 0 && dock.availability === 'ready'}
-          <p class="sh-muted smrt-assistant-dock__hint" data-smrt-part="hint">
+          <p class="smrt-app-shell__muted smrt-assistant-dock__hint" data-smrt-part="hint">
             Tell me what you want to keep track of, or what to change in your app.
           </p>
         {/if}
@@ -308,7 +308,7 @@ $effect(() => {
             >
               <span aria-hidden="true">{item.state === 'running' ? '…' : item.state === 'ok' ? '✓' : '!'}</span>
               <span>{toolLabel(item.name)}</span>
-              {#if item.summary}<span class="sh-muted smrt-assistant-dock__sum" data-smrt-part="description">{item.summary}</span>{/if}
+              {#if item.summary}<span class="smrt-app-shell__muted smrt-assistant-dock__sum" data-smrt-part="description">{item.summary}</span>{/if}
               <span class="smrt-assistant-dock__sr-only" data-smrt-part="label">{item.state === 'running' ? 'running' : item.state === 'ok' ? 'done' : 'did not work'}</span>
             </p>
           {:else if item.kind === 'approval'}
@@ -322,11 +322,11 @@ $effect(() => {
                   : undefined}
               />
               {#if item.detached && item.state === 'pending'}
-                <p class="sh-muted" data-smrt-part="description">This was asked earlier. Approve it to apply it now.</p>
+                <p class="smrt-app-shell__muted" data-smrt-part="description">This was asked earlier. Approve it to apply it now.</p>
               {/if}
             </div>
           {:else}
-            <p class="sh-alert {item.tone === 'error' ? 'sh-alert-error' : ''}" role={item.tone === 'error' ? 'alert' : 'status'} data-smrt-part="status">{item.text}</p>
+            <p class="smrt-app-shell__alert {item.tone === 'error' ? 'smrt-app-shell__alert-error' : ''}" role={item.tone === 'error' ? 'alert' : 'status'} data-smrt-part="status">{item.text}</p>
           {/if}
         {/each}
       </div>
@@ -337,7 +337,7 @@ $effect(() => {
         <label class="smrt-assistant-dock__sr-only" for="assistant-input" data-smrt-part="label">Message the assistant</label>
         <textarea
           id="assistant-input"
-          class="sh-input"
+          class="smrt-app-shell__input"
           bind:this={field}
           bind:value={draft}
           rows="2"
@@ -347,9 +347,9 @@ $effect(() => {
           onkeydown={onKey} data-smrt-part="input"
         ></textarea>
         {#if dock.running}
-          <button type="button" class="sh-btn" onclick={stop} data-smrt-part="trigger">Stop</button>
+          <button type="button" class="smrt-app-shell__btn" onclick={stop} data-smrt-part="trigger">Stop</button>
         {:else}
-          <button type="submit" class="sh-btn sh-btn-primary" disabled={!canSend} data-smrt-part="trigger">Send</button>
+          <button type="submit" class="smrt-app-shell__btn smrt-app-shell__btn-primary" disabled={!canSend} data-smrt-part="trigger">Send</button>
         {/if}
       </form>
     </section>

@@ -12,11 +12,11 @@ const info = $derived(description?.models[data.model]);
 <svelte:head><title>{info ? recordLabel(info, data.record) : data.model}</title></svelte:head>
 
 {#if description && info}
-  <div class="sh-page">
-    <header class="sh-head">
+  <div class="smrt-app-shell__page">
+    <header class="smrt-app-shell__head">
       <div>
         <h1>{recordLabel(info, data.record)}</h1>
-        <p class="sh-sub">{info.label}</p>
+        <p class="smrt-app-shell__sub">{info.label}</p>
       </div>
     </header>
     <RecordForm

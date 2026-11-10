@@ -63,7 +63,7 @@ const lastIndex = $derived(crumbs.length - 1);
 <nav class="smrt-breadcrumbs" aria-label={ariaLabel} data-smrt-component="Breadcrumbs">
   <ol class="smrt-breadcrumbs__crumb-list" data-smrt-part="list">
     {#each crumbs as crumb, i (`${i}:${crumb.href ?? crumb.label}`)}
-      <li class="crumb-item" data-smrt-part="item">
+      <li class="smrt-breadcrumbs__crumb-item" data-smrt-part="item">
         {#if i > 0}
           <span class="smrt-breadcrumbs__separator" aria-hidden="true" data-smrt-part="separator">/</span>
         {/if}
@@ -74,7 +74,7 @@ const lastIndex = $derived(crumbs.length - 1);
             >{crumb.label}</span
           >
         {:else}
-          <a href={crumb.href} class="crumb-link" data-smrt-part="link">{crumb.label}</a>
+          <a href={crumb.href} class="smrt-breadcrumbs__crumb-link" data-smrt-part="link">{crumb.label}</a>
         {/if}
       </li>
     {/each}
@@ -96,7 +96,7 @@ const lastIndex = $derived(crumbs.length - 1);
     padding: 0;
     margin: 0;
   }
-  .crumb-item {
+  .smrt-breadcrumbs__crumb-item {
     display: inline-flex;
     align-items: center;
   }
@@ -111,7 +111,7 @@ const lastIndex = $derived(crumbs.length - 1);
 }
 
 @layer smrt.theme {
-  .crumb-item {
+  .smrt-breadcrumbs__crumb-item {
     font-size: var(--smrt-typography-body-medium-size, 0.875rem);
     color: var(--smrt-color-on-surface-variant);
   }
@@ -123,22 +123,22 @@ const lastIndex = $derived(crumbs.length - 1);
     font-weight: var(--smrt-typography-weight-medium, 500);
     color: var(--smrt-color-on-surface);
   }
-  .crumb-link {
+  .smrt-breadcrumbs__crumb-link {
     color: var(--smrt-color-on-surface-variant);
     text-decoration: none;
     transition: color 0.15s ease;
   }
-  .crumb-link:hover {
+  .smrt-breadcrumbs__crumb-link:hover {
     color: var(--smrt-color-on-surface);
     text-decoration: underline;
   }
-  .crumb-link:focus-visible {
+  .smrt-breadcrumbs__crumb-link:focus-visible {
     outline: 2px solid var(--smrt-color-primary);
     outline-offset: 2px;
     border-radius: var(--smrt-radius-sm);
   }
   @media (max-width: 640px) {
-    .crumb-item {
+    .smrt-breadcrumbs__crumb-item {
       font-size: var(--smrt-typography-body-medium-size, 0.8125rem);
     }
   }

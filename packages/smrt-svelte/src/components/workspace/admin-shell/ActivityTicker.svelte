@@ -42,7 +42,7 @@ function activityLabel(activity: ShellActivity): string {
 </script>
 
 <div class="smrt-activity-ticker-shell" data-smrt-component="ActivityTicker">
-<div class="smrt-activity-ticker" class:multiple class:paused role="region" aria-label={label ?? t(M['ui.activity_ticker.label'])} style:--smrt-activity-ticker-duration={`${Math.max(20, running.length * 10)}s`} data-smrt-part="body">
+<div class="smrt-activity-ticker" class:smrt-activity-ticker__multiple={multiple} class:smrt-activity-ticker__paused={paused} role="region" aria-label={label ?? t(M['ui.activity_ticker.label'])} style:--smrt-activity-ticker-duration={`${Math.max(20, running.length * 10)}s`} data-smrt-part="body">
   {#if running.length === 0}
     <span class="smrt-activity-ticker__empty" data-smrt-part="empty">{emptyLabel ?? t(M['ui.activity_ticker.empty'])}</span>
   {:else}
@@ -98,7 +98,7 @@ function activityLabel(activity: ShellActivity): string {
     gap:var(--smrt-spacing-6);
     flex-shrink:0;
   }
-  .multiple .smrt-activity-ticker__group {
+  .smrt-activity-ticker__multiple .smrt-activity-ticker__group {
     padding-inline-end:var(--smrt-spacing-6);
   }
   .smrt-activity-ticker__accessible {
@@ -126,10 +126,10 @@ function activityLabel(activity: ShellActivity): string {
     color:var(--smrt-color-on-surface-variant);
     font-size:var(--smrt-typography-body-small-size);
   }
-  .multiple .smrt-activity-ticker__track {
+  .smrt-activity-ticker__multiple .smrt-activity-ticker__track {
     animation:smrt-activity-scroll var(--smrt-activity-ticker-duration) linear infinite;
   }
-  .smrt-activity-ticker.paused .smrt-activity-ticker__track,
+  .smrt-activity-ticker.smrt-activity-ticker__paused .smrt-activity-ticker__track,
   .smrt-activity-ticker:hover .smrt-activity-ticker__track,
   .smrt-activity-ticker-shell:focus-within .smrt-activity-ticker__track {
     animation-play-state:paused;
@@ -140,7 +140,7 @@ function activityLabel(activity: ShellActivity): string {
     }
   }
   @media (prefers-reduced-motion:reduce) {
-    .multiple .smrt-activity-ticker__track {
+    .smrt-activity-ticker__multiple .smrt-activity-ticker__track {
       animation:none;
     }
   }

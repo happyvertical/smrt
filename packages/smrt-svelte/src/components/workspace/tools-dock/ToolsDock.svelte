@@ -163,8 +163,8 @@
   <!-- raw-primitive-allow: dock tool-selector toggle (aria-pressed) with variant-dependent rail/topbar styling, part of the ToolsDock segmented control; not a standard action button -->
   <button
     type="button"
-    class:active={isActive}
-    class={variant === 'rail' ? 'tools-dock__rail-button' : 'tools-dock__topbar-button'}
+    class:smrt-tools-dock__active={isActive}
+    class={variant === 'rail' ? 'smrt-tools-dock__rail-button' : 'smrt-tools-dock__topbar-button'}
     data-smrt-part="trigger"
     aria-pressed={isActive}
     aria-label={`${label} tool`}
@@ -173,17 +173,17 @@
   >
     {#if variant === 'topbar'}
       {#if IconComponent}
-        <span class="tools-dock__topbar-button-icon" aria-hidden="true" data-smrt-part="icon">
+        <span class="smrt-tools-dock__topbar-button-icon" aria-hidden="true" data-smrt-part="icon">
           <IconComponent />
         </span>
       {:else if iconString}
-        <span class="tools-dock__topbar-button-icon" aria-hidden="true" data-smrt-part="icon">
+        <span class="smrt-tools-dock__topbar-button-icon" aria-hidden="true" data-smrt-part="icon">
           {iconString}
         </span>
       {/if}
-      <span class="tools-dock__topbar-button-label" data-smrt-part="label">{label}</span>
+      <span class="smrt-tools-dock__topbar-button-label" data-smrt-part="label">{label}</span>
     {:else}
-      <span class="tools-dock__rail-glyph" aria-hidden="true" data-smrt-part="icon">
+      <span class="smrt-tools-dock__rail-glyph" aria-hidden="true" data-smrt-part="icon">
         {#if IconComponent}
           <IconComponent />
         {:else if iconString}
@@ -202,7 +202,7 @@
 {#snippet panel()}
   {@const ActiveTool = activeToolDef()?.component}
   <div
-    class="tools-dock__panel"
+    class="smrt-tools-dock__panel"
     class:smrt-tools-dock__panel--open={dock.isOpen}
     role="dialog"
     aria-label={dock.activeTool ? `${labelFor(dock.activeTool)} tool panel` : 'Tools panel'}
@@ -210,12 +210,12 @@
     aria-hidden={!dock.isOpen}
     inert={!dock.isOpen} data-smrt-part="panel"
   >
-    <header class="tools-dock__panel-header" data-smrt-part="header">
+    <header class="smrt-tools-dock__panel-header" data-smrt-part="header">
       <h3>{dock.activeTool ? labelFor(dock.activeTool) : 'Tools'}</h3>
       <Button
         variant="ghost"
         size="sm"
-        class="tools-dock__close"
+        class="smrt-tools-dock__close"
         onclick={handleClose}
         aria-label={closeLabel}
         title={closeLabel}
@@ -226,14 +226,14 @@
 
     <div class="smrt-tools-dock__panel-body" data-smrt-part="body">
       {#if dock.availableTools.length === 0}
-        <div class="tools-dock__empty" data-smrt-part="empty">
+        <div class="smrt-tools-dock__empty" data-smrt-part="empty">
           <strong>{t(M['ui.tools_dock.no_tools_available'])}</strong>
           <p>{t(M['ui.tools_dock.no_tools_context'])}</p>
         </div>
       {:else if ActiveTool}
         <ActiveTool context={dock.context} {dock} />
       {:else}
-        <div class="tools-dock__empty" data-smrt-part="empty">
+        <div class="smrt-tools-dock__empty" data-smrt-part="empty">
           <p>{t(M['ui.tools_dock.select_tool'])}</p>
         </div>
       {/if}
@@ -256,7 +256,7 @@
     {/if}
   </div>
 {:else}
-  <aside class="smrt-tools-dock__root tools-dock--rail" class:tools-dock--open={dock.isOpen} data-smrt-component="ToolsDock">
+  <aside class="smrt-tools-dock__root smrt-tools-dock__rail-mode" class:smrt-tools-dock__open={dock.isOpen} data-smrt-component="ToolsDock">
     {#if dock.isOpen}
       <!-- raw-primitive-allow: click-catching overlay/backdrop that closes the dock; a structural full-bleed surface, not a styled action button -->
       <button
@@ -285,7 +285,7 @@
     box-sizing: border-box;
   }
   /* ---------- Rail layout ---------- */
-  .tools-dock--rail {
+  .smrt-tools-dock__rail-mode {
     position: sticky;
     top: 0;
     align-self: flex-start;
@@ -306,7 +306,7 @@
     gap: 0.35rem;
     padding: 0.6rem 0.45rem;
   }
-  .tools-dock__rail-button {
+  .smrt-tools-dock__rail-button {
     position: relative;
     width: 2.25rem;
     height: 2.25rem;
@@ -327,7 +327,7 @@
     justify-content: center;
   }
   /* ---------- Panel ---------- */
-  .tools-dock__panel {
+  .smrt-tools-dock__panel {
     position: absolute;
     inset: 0 var(--smrt-tools-dock-rail-width) 0 auto;
     height: 100%;
@@ -344,19 +344,19 @@
     will-change: transform;
     contain: layout paint style;
   }
-  .tools-dock--rail.tools-dock--open .tools-dock__panel,
+  .smrt-tools-dock__rail-mode.smrt-tools-dock__open .smrt-tools-dock__panel,
   .smrt-tools-dock__panel--open {
     transform: translateX(0);
     opacity: 1;
     pointer-events: auto;
   }
-  .tools-dock__panel-header {
+  .smrt-tools-dock__panel-header {
     display: flex;
     align-items: flex-start;
     justify-content: space-between;
     gap: 0.75rem;
   }
-  .tools-dock__panel-header h3 {
+  .smrt-tools-dock__panel-header h3 {
     margin: 0;
   }
   .smrt-tools-dock__panel-body {
@@ -366,20 +366,20 @@
   }
   /* The close control now renders through smrt-ui <Button>; pierce Svelte
   scoping into the child-rendered <button> with `:global` (#1589). */
-  .tools-dock__panel-header :global(.tools-dock__close) {
+  .smrt-tools-dock__panel-header :global(.smrt-tools-dock__close) {
     width: 2rem;
     height: 2rem;
     display: inline-grid;
     place-items: center;
   }
-  .tools-dock__empty {
+  .smrt-tools-dock__empty {
     display: grid;
     align-content: center;
     gap: 0.45rem;
     min-height: 12rem;
     padding: 1rem;
   }
-  .tools-dock__empty p {
+  .smrt-tools-dock__empty p {
     margin: 0;
   }
   .smrt-tools-dock__overlay {
@@ -394,7 +394,7 @@
     align-items: center;
     gap: 0.35rem;
   }
-  .tools-dock__topbar-button {
+  .smrt-tools-dock__topbar-button {
     position: relative;
     display: inline-flex;
     align-items: center;
@@ -405,12 +405,12 @@
   /* Leading glyph in the topbar layout. Sized to match the surrounding
   text — consumers wanting a different size can wrap their icon
   component to hard-code dimensions (see ToolDef.iconComponent docs). */
-  .tools-dock__topbar-button-icon {
+  .smrt-tools-dock__topbar-button-icon {
     display: inline-flex;
     align-items: center;
     justify-content: center;
   }
-  .smrt-tools-dock__topbar-mode .tools-dock__panel {
+  .smrt-tools-dock__topbar-mode .smrt-tools-dock__panel {
     position: fixed;
     inset: auto 1rem 1rem auto;
     height: min(70vh, 600px);
@@ -439,7 +439,7 @@
       padding: 0;
       cursor: default;
     }
-    .tools-dock--rail {
+    .smrt-tools-dock__rail-mode {
       position: fixed;
       top: 0;
       right: 0;
@@ -454,7 +454,7 @@
     tool UI. The overlay sits at z-index 65 and previously rendered above
     the panel (no z-index) and rail (z-index: 2) within the same stacking
     context — every tap hit the close button instead of the tool. */
-    .tools-dock__panel {
+    .smrt-tools-dock__panel {
       z-index: var(--smrt-z-index-modal, 1300);
     }
     .smrt-tools-dock__rail {
@@ -462,10 +462,10 @@
     }
   }
   @media (max-width: 640px) {
-    .tools-dock--rail {
+    .smrt-tools-dock__rail-mode {
       --smrt-tools-dock-panel-width: calc(100vw - var(--smrt-tools-dock-rail-width));
     }
-    .tools-dock__panel {
+    .smrt-tools-dock__panel {
       padding: 0.85rem;
     }
   }
@@ -479,23 +479,23 @@
     background: var(--smrt-color-surface-container-low);
     border-left: var(--smrt-hairline);
   }
-  .tools-dock__rail-button {
+  .smrt-tools-dock__rail-button {
     border: 1px solid transparent;
     border-radius: 0.45rem;
     background: transparent;
     color: var(--smrt-color-on-surface-variant);
   }
-  .tools-dock__rail-button:hover,
-  .tools-dock__rail-button.active {
+  .smrt-tools-dock__rail-button:hover,
+  .smrt-tools-dock__rail-button.smrt-tools-dock__active {
     background: var(--smrt-color-surface-container-high);
     color: var(--smrt-color-on-surface);
   }
-  .tools-dock__rail-button:focus-visible,
-  .tools-dock__topbar-button:focus-visible {
+  .smrt-tools-dock__rail-button:focus-visible,
+  .smrt-tools-dock__topbar-button:focus-visible {
     outline: 2px solid var(--smrt-color-primary);
     outline-offset: 2px;
   }
-  .tools-dock__rail-glyph {
+  .smrt-tools-dock__rail-glyph {
     font-size: var(--smrt-typography-body-large-size, 0.95rem);
     font-weight: var(--smrt-typography-weight-bold, 700);
     line-height: 1;
@@ -509,7 +509,7 @@
     line-height: 1;
   }
   /* ---------- Panel ---------- */
-  .tools-dock__panel {
+  .smrt-tools-dock__panel {
     background: var(--smrt-color-surface);
     color: var(--smrt-color-on-surface);
     border-left: var(--smrt-hairline);
@@ -520,13 +520,13 @@
       transform 180ms cubic-bezier(0.2, 0, 0, 1),
       opacity 120ms ease;
   }
-  .tools-dock__panel-header h3 {
+  .smrt-tools-dock__panel-header h3 {
     font-size: var(--smrt-typography-title-medium-size, 1.05rem);
     line-height: var(--smrt-typography-title-medium-line-height, 1.15);
   }
   /* The close control now renders through smrt-ui <Button>; pierce Svelte
   scoping into the child-rendered <button> with `:global` (#1589). */
-  .tools-dock__panel-header :global(.tools-dock__close) {
+  .smrt-tools-dock__panel-header :global(.smrt-tools-dock__close) {
     border: var(--smrt-hairline);
     border-radius: 0.5rem;
     background: var(--smrt-color-surface-container-high);
@@ -534,17 +534,17 @@
     font-size: var(--smrt-typography-title-large-size, 1.2rem);
     line-height: 1;
   }
-  .tools-dock__empty {
+  .smrt-tools-dock__empty {
     color: var(--smrt-color-on-surface-variant);
     text-align: center;
   }
-  .tools-dock__empty strong {
+  .smrt-tools-dock__empty strong {
     color: var(--smrt-color-on-surface);
   }
-  .tools-dock__empty p {
+  .smrt-tools-dock__empty p {
     line-height: 1.45;
   }
-  .tools-dock__topbar-button {
+  .smrt-tools-dock__topbar-button {
     border: var(--smrt-hairline);
     background: var(--smrt-color-surface-container-low);
     color: var(--smrt-color-on-surface-variant);
@@ -552,19 +552,19 @@
     font-size: var(--smrt-typography-label-large-size, 0.84rem);
     font-weight: var(--smrt-typography-weight-semibold, 600);
   }
-  .tools-dock__topbar-button.active,
-  .tools-dock__topbar-button:hover {
+  .smrt-tools-dock__topbar-button.smrt-tools-dock__active,
+  .smrt-tools-dock__topbar-button:hover {
     background: var(--smrt-color-surface-container-high);
     color: var(--smrt-color-on-surface);
   }
   /* Leading glyph in the topbar layout. Sized to match the surrounding
   text — consumers wanting a different size can wrap their icon
   component to hard-code dimensions (see ToolDef.iconComponent docs). */
-  .tools-dock__topbar-button-icon {
+  .smrt-tools-dock__topbar-button-icon {
     line-height: 1;
     font-size: var(--smrt-typography-body-large-size, 0.95rem);
   }
-  .smrt-tools-dock__topbar-mode .tools-dock__panel {
+  .smrt-tools-dock__topbar-mode .smrt-tools-dock__panel {
     border-radius: 0.75rem;
   }
   /* ---------- A11y helpers ---------- */

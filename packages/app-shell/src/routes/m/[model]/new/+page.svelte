@@ -11,8 +11,8 @@ const info = $derived(description?.models[data.model]);
 <svelte:head><title>New {info?.label ?? data.model}</title></svelte:head>
 
 {#if description && info}
-  <div class="sh-page">
-    <header class="sh-head">
+  <div class="smrt-app-shell__page">
+    <header class="smrt-app-shell__head">
       <h1>New {info.label.toLowerCase()}</h1>
     </header>
     <RecordForm

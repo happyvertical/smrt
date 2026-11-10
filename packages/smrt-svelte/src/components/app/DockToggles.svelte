@@ -102,7 +102,7 @@ function press(event: MouseEvent, toggle: DockToggle): void {
       <button
         type="button"
         class="smrt-dock-toggles__button"
-        class:active={open}
+        class:smrt-dock-toggles__active={open}
         data-dock-tool={toggle.tool}
         aria-label={name}
         title={name}
@@ -178,7 +178,7 @@ function press(event: MouseEvent, toggle: DockToggle): void {
     outline: var(--smrt-focus-ring-width) solid var(--smrt-focus-ring-color);
     outline-offset: var(--smrt-focus-ring-offset);
   }
-  .smrt-dock-toggles__button.active {
+  .smrt-dock-toggles__button.smrt-dock-toggles__active {
     background: var(--smrt-color-primary-container);
     color: var(--smrt-color-on-primary-container);
   }
@@ -187,7 +187,7 @@ function press(event: MouseEvent, toggle: DockToggle): void {
   }
   /* Forced colors (#3908): selected and open states keep a non-colour indicator. */
   @media (forced-colors: active) {
-    .smrt-dock-toggles__button.active {
+    .smrt-dock-toggles__button.smrt-dock-toggles__active {
       background: Highlight;
       color: HighlightText;
       border-color: Highlight;

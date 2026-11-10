@@ -255,7 +255,7 @@ function handleNavigate(): void {
           <h1>{resolvedTitle}</h1>
         {/if}
         {#if resolvedSubtitle}
-          <p class="subtitle" data-smrt-part="description">{resolvedSubtitle}</p>
+          <p class="smrt-role-shell__subtitle" data-smrt-part="description">{resolvedSubtitle}</p>
         {/if}
       {/if}
     {/snippet}

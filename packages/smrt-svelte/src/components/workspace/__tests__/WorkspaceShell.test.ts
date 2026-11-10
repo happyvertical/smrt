@@ -100,7 +100,9 @@ describe('WorkspaceShell', () => {
     });
 
     try {
-      const brand = container.querySelector('.brand');
+      const brand = container.querySelector(
+        '[data-smrt-component="WorkspaceShell"] [data-smrt-part="brand"]',
+      );
       expect(brand?.textContent).toContain('MyBrand');
     } finally {
       unmount(component);
@@ -119,7 +121,9 @@ describe('WorkspaceShell', () => {
     });
 
     try {
-      const brand = container.querySelector('.brand');
+      const brand = container.querySelector(
+        '[data-smrt-component="WorkspaceShell"] [data-smrt-part="brand"]',
+      );
       expect(brand?.textContent).toContain('Workspace');
       expect(brand?.textContent).toContain('Engineering');
       expect(brand?.textContent).toContain('SMRT');
@@ -138,7 +142,7 @@ describe('WorkspaceShell', () => {
     });
 
     try {
-      const navRegion = container.querySelector('nav.nav-region');
+      const navRegion = container.querySelector('nav[data-smrt-part="body"]');
       expect(navRegion).not.toBeNull();
       expect(navRegion?.getAttribute('aria-label')).toBe(
         'Workspace navigation',
@@ -159,7 +163,7 @@ describe('WorkspaceShell', () => {
     });
 
     try {
-      const footer = container.querySelector('.sidebar-footer');
+      const footer = container.querySelector('[data-smrt-part="footer"]');
       expect(footer?.textContent).toContain('account-menu');
     } finally {
       unmount(component);
@@ -178,16 +182,20 @@ describe('WorkspaceShell', () => {
 
     try {
       const sidebar = container.querySelector('.smrt-workspace-sidebar');
-      const navRegion = container.querySelector('.nav-region');
-      const footer = container.querySelector('.sidebar-footer');
+      const navRegion = container.querySelector('nav[data-smrt-part="body"]');
+      const footer = container.querySelector('[data-smrt-part="footer"]');
 
       expect(sidebar).not.toBeNull();
       expect(navRegion).not.toBeNull();
       expect(footer).not.toBeNull();
 
       const sidebarStyle = getWorkspaceShellStyle('.smrt-workspace-sidebar');
-      const navStyle = getWorkspaceShellStyle('.nav-region');
-      const footerStyle = getWorkspaceShellStyle('.sidebar-footer');
+      const navStyle = getWorkspaceShellStyle(
+        '.smrt-workspace-shell__nav-region',
+      );
+      const footerStyle = getWorkspaceShellStyle(
+        '.smrt-workspace-shell__sidebar-footer',
+      );
 
       expect(sidebarStyle?.position).toBe('sticky');
       expect(sidebarStyle?.overflow).toBe('hidden');
@@ -209,7 +217,7 @@ describe('WorkspaceShell', () => {
     });
 
     try {
-      const actions = container.querySelector('.topbar-actions');
+      const actions = container.querySelector('[data-smrt-part="actions"]');
       expect(actions?.textContent).toContain('action-button');
     } finally {
       unmount(component);
@@ -229,7 +237,9 @@ describe('WorkspaceShell', () => {
     try {
       expect(container.querySelector('.smrt-workspace-inspector')).toBeNull();
       const shell = container.querySelector('.smrt-workspace-shell');
-      expect(shell?.classList.contains('has-inspector')).toBe(false);
+      expect(
+        shell?.classList.contains('smrt-workspace-shell__has-inspector'),
+      ).toBe(false);
     } finally {
       unmount(component);
     }
@@ -250,7 +260,9 @@ describe('WorkspaceShell', () => {
       expect(inspector).not.toBeNull();
       expect(inspector?.textContent).toContain('inspector-content');
       const shell = container.querySelector('.smrt-workspace-shell');
-      expect(shell?.classList.contains('has-inspector')).toBe(true);
+      expect(
+        shell?.classList.contains('smrt-workspace-shell__has-inspector'),
+      ).toBe(true);
     } finally {
       unmount(component);
     }
@@ -370,7 +382,9 @@ describe('WorkspaceShell', () => {
 
     try {
       const shell = container.querySelector('.smrt-workspace-shell');
-      expect(shell?.classList.contains('sidebar-collapsed')).toBe(true);
+      expect(
+        shell?.classList.contains('smrt-workspace-shell__sidebar-collapsed'),
+      ).toBe(true);
     } finally {
       unmount(component);
     }
@@ -387,7 +401,9 @@ describe('WorkspaceShell', () => {
     });
 
     try {
-      const badge = container.querySelector('.mode-badge');
+      const badge = container.querySelector(
+        '[data-smrt-component="WorkspaceShell"] [data-smrt-part="badge"]',
+      );
       expect(badge).not.toBeNull();
       expect(badge?.getAttribute('data-status')).toBe('local-only');
       expect(badge?.textContent).toContain('Local-first mode');
@@ -405,7 +421,11 @@ describe('WorkspaceShell', () => {
     });
 
     try {
-      expect(container.querySelector('.mode-badge')).toBeNull();
+      expect(
+        container.querySelector(
+          '[data-smrt-component="WorkspaceShell"] [data-smrt-part="badge"]',
+        ),
+      ).toBeNull();
     } finally {
       unmount(component);
     }
@@ -446,7 +466,9 @@ describe('WorkspaceShell', () => {
     });
 
     try {
-      const backdrop = container.querySelector('.inspector-backdrop');
+      const backdrop = container.querySelector(
+        '.smrt-workspace-shell__inspector-backdrop',
+      );
       expect(backdrop).not.toBeNull();
       expect(backdrop?.tagName).toBe('BUTTON');
     } finally {
@@ -465,7 +487,9 @@ describe('WorkspaceShell', () => {
     });
 
     try {
-      const backdrop = container.querySelector('.inspector-backdrop');
+      const backdrop = container.querySelector(
+        '.smrt-workspace-shell__inspector-backdrop',
+      );
       expect(backdrop).not.toBeNull();
       expect(backdrop?.tagName).toBe('DIV');
       expect(backdrop?.getAttribute('aria-hidden')).toBe('true');
@@ -485,7 +509,9 @@ describe('WorkspaceShell', () => {
     });
 
     try {
-      const title = container.querySelector('.inspector-title');
+      const title = container.querySelector(
+        '[data-smrt-part="right-sidebar"] [data-smrt-part="title"]',
+      );
       expect(title?.textContent).toBe('Inspector');
     } finally {
       unmount(component);
@@ -507,7 +533,9 @@ describe('WorkspaceShell', () => {
     });
 
     try {
-      const title = container.querySelector('.inspector-title');
+      const title = container.querySelector(
+        '[data-smrt-part="right-sidebar"] [data-smrt-part="title"]',
+      );
       expect(title?.textContent).toBe('Properties');
       const aside = container.querySelector('.smrt-workspace-inspector');
       expect(aside?.getAttribute('aria-label')).toBe('Properties');
@@ -573,16 +601,22 @@ describe('WorkspaceShell', () => {
       try {
         await tick();
         const shell = container.querySelector('.smrt-workspace-shell');
-        expect(shell?.classList.contains('nav-open')).toBe(false);
+        expect(
+          shell?.classList.contains('smrt-workspace-shell__nav-open'),
+        ).toBe(false);
 
         controls.setMobileNavOpen(true);
         await tick();
-        expect(shell?.classList.contains('nav-open')).toBe(true);
+        expect(
+          shell?.classList.contains('smrt-workspace-shell__nav-open'),
+        ).toBe(true);
         expect(controls.getMobileNavOpen()).toBe(true);
 
         controls.setMobileNavOpen(false);
         await tick();
-        expect(shell?.classList.contains('nav-open')).toBe(false);
+        expect(
+          shell?.classList.contains('smrt-workspace-shell__nav-open'),
+        ).toBe(false);
         expect(controls.getMobileNavOpen()).toBe(false);
       } finally {
         unmount(component);
@@ -641,8 +675,9 @@ describe('WorkspaceShell', () => {
         await tick();
         expect(controls.getMobileNavOpen()).toBe(true);
 
-        const backdrop =
-          container.querySelector<HTMLButtonElement>('.mobile-backdrop');
+        const backdrop = container.querySelector<HTMLButtonElement>(
+          '.smrt-workspace-shell__mobile-backdrop',
+        );
         expect(backdrop).not.toBeNull();
         backdrop?.click();
         await tick();
@@ -670,7 +705,9 @@ describe('WorkspaceShell', () => {
       try {
         await tick();
         const shell = container.querySelector('.smrt-workspace-shell');
-        expect(shell?.classList.contains('nav-open')).toBe(true);
+        expect(
+          shell?.classList.contains('smrt-workspace-shell__nav-open'),
+        ).toBe(true);
         expect(controls.getMobileNavOpen()).toBe(true);
       } finally {
         unmount(component);

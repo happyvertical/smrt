@@ -4,10 +4,9 @@ import { mkdtempSync, readFileSync, rmSync, writeFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { test } from 'node:test';
-import { compareRatchet, inspectFiles } from './check-smrt-sort-layers.mjs';
+import { inspectFiles } from './check-smrt-sort-layers.mjs';
 import { codemodSource, reportCounts } from './codemod-smrt-sort-layers.mjs';
-import { comparePilot, normalizeRecord } from './compare-smrt-sort-pilot.mjs';
-import { declarationRecords, internalClasses, layerViolations, parseComponent, ROOT } from './smrt-sort-layers-lib.mjs';
+import { declarationRecords, internalClasses, layerViolations, parseComponent, SHARED_CLASS_EXCEPTIONS, ROOT } from './smrt-sort-layers-lib.mjs';
 
 const source = (css) => `<div class="thing"/><style>@layer smrt.reset, smrt.structure, smrt.theme;${css}</style>`;
 const unsorted = (css) => source(`@layer smrt.theme {${css}}`);
@@ -18,7 +17,7 @@ const paths = ['ui/Button', 'ui/Badge', 'ui/Chip', 'ui/Card', 'feedback/Alert',
 for (const path of paths) test(`hand-sorted pilot ${path} passes without edits`, () => {
   const original = readFileSync(join(ROOT, `packages/smrt-ui/src/components/${path}.svelte`), 'utf8');
   assert.deepEqual(layerViolations(original), []);
-  assert.deepEqual(inspectFiles({ pilot: original }).snapshot.files, {});
+  assert.deepEqual(inspectFiles({ pilot: original }).errors, []);
   assert.equal(codemodSource(original).source, original);
 });
 
@@ -32,17 +31,13 @@ test('layout in theme and paint in structure fail through nested conditions', ()
   assert.match(layerViolations(source('@layer smrt { @layer structure {} @layer theme {.thing{padding:0}} }'))[0], /padding/);
 });
 
-test('ratchet reports exact debt, stale shrink/deletion, sorted regression and growth', () => {
-  const old = inspectFiles({ a: unsorted('.thing {display:flex}'), b: sorted('', '') }).snapshot;
-  assert.deepEqual(compareRatchet(old, old), []);
-  const shrink = { version: 1, files: {} };
-  assert.match(compareRatchet(shrink, old).join('\n'), /stale/);
-  assert.deepEqual(compareRatchet(shrink, old, { write: true }), []);
-  for (const write of [true, false]) {
-    assert.match(compareRatchet(old, shrink, { write }).join('\n'), /regressed/);
-    assert.match(compareRatchet(old, shrink, { write }).join('\n'), /grew/);
-  }
-  assert.match(compareRatchet(old, { version: 2 }).join(), /schema/);
+test('strict gate rejects every new unsorted component and private class without a write escape', () => {
+  assert.match(inspectFiles({ a: unsorted('.thing {display:flex}') }).errors.join(), /unsorted component/);
+  assert.match(inspectFiles({ a: sorted('', '') }).errors.join(), /un-namespaced owned class thing/);
+  assert.deepEqual(inspectFiles({ a: sorted('', '').replace('class="thing"', 'class="smrt-thing__root"') }).errors, []);
+  const result = spawnSync(process.execPath, [join(ROOT, 'scripts/check-smrt-sort-layers.mjs'), '--write'], { encoding: 'utf8' });
+  assert.equal(result.status, 1);
+  assert.match(result.stderr, /Usage/);
 });
 
 test('named, anonymous and dotted sublayers inherit structure/theme placement enforcement', () => {
@@ -60,25 +55,26 @@ test('classes count distinct local CSS/static markup/directives but not global o
     <style>.thing, .thing:hover, :global(.third-party) .local:is(.other) {color:red} :global {.external {color:red}}</style>`);
   assert.deepEqual(internalClasses(ast), ['active', 'local', 'other', 'thing', 'unused']);
   // A script string mentioning style markup is not a component style block.
-  assert.deepEqual(inspectFiles({ x: '<script>const x = "<style>.x{color:red}</style>";</script><div/>' }).snapshot.files, {});
+  assert.deepEqual(inspectFiles({ x: '<script>const x = "<style>.x{color:red}</style>";</script><div/>' }).errors, []);
 });
 
 test('published shell class families are preserved only in shell source directories', () => {
-  const input = `<div class="smrt-admin-shell smrt-workspace-sidebar smrt-phone-bottom-bar smrt-app-shell-palette smrt-layout-toggle--floating smrt-edit-item smrt-tenant-nav" class:active={true}><span class="private-helper"/></div>
+  const input = `<div class="smrt-admin-shell smrt-workspace-sidebar smrt-phone-bottom-bar smrt-app-shell-palette smrt-layout-toggle--floating smrt-edit-item smrt-tenant-nav smrt-recipe-screens" class:active={true}><span class="private-helper"/></div>
     <style>@layer smrt.structure {} @layer smrt.theme {.smrt-admin-shell__slot--leftSidebar-header {color:red}}</style>`;
   const ast = parseComponent(input);
   for (const file of ['packages/smrt-svelte/src/components/workspace/admin-shell/AdminShell.svelte',
-    'packages/smrt-svelte/src/components/app/AppShell.svelte']) {
+    'packages/smrt-svelte/src/components/app/AppShell.svelte',
+    'packages/smrt-svelte/src/components/screens/RecipeScreens.svelte']) {
     assert.deepEqual(internalClasses(ast, file), ['active', 'private-helper']);
-    assert.equal(inspectFiles({ [file]: input }).snapshot.files[file].internalClasses, 2);
+    assert.equal(inspectFiles({ [file]: input }).errors.length, 2);
   }
   for (const file of ['', 'packages/smrt-ui/src/components/ui/Other.svelte',
     'packages/smrt-svelte/src/components/app-other/Other.svelte']) {
     assert.ok(internalClasses(ast, file).includes('smrt-admin-shell'));
   }
-  const unknown = parseComponent('<div class="smrt-unknown-shell smrt-admin-shellfish"/>');
+  const unknown = parseComponent('<div class="smrt-unknown-shell smrt-admin-shellfish smrt-recipe-screensish"/>');
   assert.deepEqual(internalClasses(unknown, 'packages/smrt-svelte/src/components/app/Other.svelte'),
-    ['smrt-admin-shellfish', 'smrt-unknown-shell']);
+    ['smrt-admin-shellfish', 'smrt-recipe-screensish', 'smrt-unknown-shell']);
 });
 
 test('split preserves declaration values, selector order, nesting, scoping, comments, and markup', () => {
@@ -228,7 +224,7 @@ test('CLI check/write/report are scoped, idempotent, and validate input before m
     assert.equal(readFileSync(file, 'utf8'), output);
     for (const args of [[], ['--write'], ['--write', '--report'], ['--file'], ['--nope'], ['--check', '--write', file], ['--package', 'missing'], ['--write', file, '--report', file]]) assert.equal(run(args).status, 1);
     const repository = run(['--report']);
-    assert.equal(repository.status, 1); // Pending changes/TODOs remain reportable debt.
+    assert.equal(repository.status, JSON.parse(repository.stdout).files.some((entry) => entry.changed || entry.todos.length) ? 1 : 0);
     const inventory = JSON.parse(repository.stdout).files;
     assert.ok(inventory.some((entry) => entry.file.startsWith('packages/planner/src/')));
     assert.ok(inventory.some((entry) => entry.file.startsWith('packages/smrt-ui/src/')));
@@ -244,18 +240,31 @@ test('CLI check/write/report are scoped, idempotent, and validate input before m
   } finally { rmSync(dir, { recursive: true, force: true }); }
 });
 
-test('checked-in repository ratchet is fresh', () => {
+test('repository has no sort or namespacing debt', () => {
   execFileSync(process.execPath, [join(ROOT, 'scripts/check-smrt-sort-layers.mjs')], { cwd: ROOT });
 });
 
-test('pilot comparison accounts for exact matches, token changes, role TODOs and additions', () => {
-  const result = comparePilot(unsorted('.button{display:flex;color:red;opacity:.5}'),
-    sorted('.smrt-button__root{display:flex}', '.smrt-button__root{color:blue;opacity:.5;border:0}'), 'Button');
-  assert.equal(result.identical.length, 1);
-  assert.equal(result.differences.length, 1);
-  assert.equal(result.differences[0].reason, 'value differs');
-  assert.equal(result.todos.length, 1);
-  assert.equal(result.handOnly.length, 1);
-  assert.equal(result.sourceDeclarations, 3);
-  assert.equal(normalizeRecord({ path: [], value: '"a   b"' }, 'Button').value, '"a   b"');
+test('published subscription roots are scoped to their owning files', () => {
+  for (const [file, root] of [['PlanPicker', 'smrt-plan-picker'], ['SubscriptionSummary', 'smrt-subscription-summary'], ['UsageThresholds', 'smrt-usage-thresholds']]) {
+    const ast = parseComponent(`<div class="${root} ${root}--compact ${root}fish generic"/>`);
+    assert.deepEqual(internalClasses(ast, `packages/subscriptions/src/svelte/${file}.svelte`), ['generic', `${root}fish`]);
+    assert.ok(internalClasses(ast, 'packages/smrt-ui/src/Other.svelte').includes(root));
+  }
+});
+
+test('planner shared-style exceptions enumerate exact file/name pairs and reject additions', () => {
+  assert.deepEqual(SHARED_CLASS_EXCEPTIONS, {
+    'packages/planner/src/lib/components/ChildRecords.svelte': ['planner-list', 'sort-button', 'sort-icon'],
+    'packages/planner/src/lib/components/FieldInput.svelte': ['field'],
+    'packages/planner/src/lib/components/FieldMapForm.svelte': ['actions', 'error', 'planner-form'],
+    'packages/planner/src/lib/components/FormWorkspace.svelte': ['planner-list', 'sort-button', 'sort-icon'],
+    'packages/planner/src/lib/components/ModelWorkspace.svelte': ['actions', 'derived', 'error', 'planner-form', 'planner-list', 'sort-button', 'sort-icon', 'totals'],
+    'packages/planner/src/lib/components/VariantGridForm.svelte': ['actions', 'error', 'grid', 'planner-form'],
+  });
+  for (const [file, names] of Object.entries(SHARED_CLASS_EXCEPTIONS)) {
+    const ast = parseComponent(`<div class="${names.join(' ')} new-private"/>`);
+    assert.deepEqual(internalClasses(ast, file), ['new-private']);
+    assert.deepEqual(internalClasses(ast, 'packages/planner/src/lib/components/New.svelte'), [...names, 'new-private'].sort());
+    assert.deepEqual(internalClasses(parseComponent(readFileSync(join(ROOT, file), 'utf8')), file), []);
+  }
 });

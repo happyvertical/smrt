@@ -1422,7 +1422,7 @@ function buildLayoutStyle(shell: ModuleShellState): string {
           {#if showToggle('top')}{@render edgeToggle('top')}{/if}
         {/if}
         {#if !(layoutEdit?.active && !isPhone) && shell.config.panels.left.initial !== 'hidden' && shell.layoutPanels.left?.visible !== false && (!isPhone || shell.phonePresentation('left') !== 'hidden')}
-          <div class="smrt-admin-shell__tenant-opener" class:restore-hidden={panelState('left') === 'hidden'} data-smrt-part="trigger">
+          <div class="smrt-admin-shell__tenant-opener" class:smrt-admin-shell__restore-hidden={panelState('left') === 'hidden'} data-smrt-part="trigger">
             {@render menuOpener()}
           </div>
         {/if}
@@ -1678,7 +1678,7 @@ function buildLayoutStyle(shell: ModuleShellState): string {
               <button
                 type="button"
                 class="smrt-admin-shell__focus-tool"
-                class:active={shell.activeFocusToolId ===
+                class:smrt-admin-shell__active={shell.activeFocusToolId ===
                   tool.id && edgeExpanded('right')}
                 aria-pressed={shell.activeFocusToolId ===
                   tool.id && edgeExpanded('right')}
@@ -2101,7 +2101,7 @@ function buildLayoutStyle(shell: ModuleShellState): string {
     display: none;
     flex-shrink: 0;
   }
-  .smrt-admin-shell__tenant-opener.restore-hidden {
+  .smrt-admin-shell__tenant-opener.smrt-admin-shell__restore-hidden {
     display: block;
   }
   .smrt-admin-shell__edge--left[data-state='collapsed'] .smrt-admin-shell__rail {
@@ -2575,7 +2575,7 @@ function buildLayoutStyle(shell: ModuleShellState): string {
     block-size: 100dvh;
   }
   @media (max-width: 48rem) {
-    .smrt-admin-shell__band--top :global(.smrt-admin-shell__brand.compact) {
+    .smrt-admin-shell__band--top :global(.smrt-admin-shell__brand.smrt-shell-brand__compact) {
       margin-block-end: 0;
     }
     .smrt-admin-shell__band--top {
@@ -2786,10 +2786,10 @@ function buildLayoutStyle(shell: ModuleShellState): string {
   .smrt-admin-shell__focus-tool:hover {
     color: var(--smrt-color-on-surface);
   }
-  .smrt-admin-shell__focus-tool.active {
+  .smrt-admin-shell__focus-tool.smrt-admin-shell__active {
     color: var(--smrt-color-primary);
   }
-  .smrt-admin-shell__focus-tool.active::after {
+  .smrt-admin-shell__focus-tool.smrt-admin-shell__active::after {
     opacity: var(--smrt-state-selected);
   }
   .smrt-admin-shell__focus-tool:active::after,
@@ -3187,12 +3187,12 @@ function buildLayoutStyle(shell: ModuleShellState): string {
   }
   /* Forced colors (#3908): selected and open states keep a non-colour indicator. */
   @media (forced-colors: active) {
-    .smrt-admin-shell__focus-tool.active {
+    .smrt-admin-shell__focus-tool.smrt-admin-shell__active {
       background: Highlight;
       color: HighlightText;
       border-color: Highlight;
     }
-    .smrt-admin-shell__focus-tool:disabled, .smrt-admin-shell__focus-tool.active:disabled {
+    .smrt-admin-shell__focus-tool:disabled, .smrt-admin-shell__focus-tool.smrt-admin-shell__active:disabled {
       opacity: 1;
       background: Canvas;
       color: GrayText;

@@ -56,11 +56,11 @@ async function decide(id: string, summary: string, approve: boolean) {
 
 <svelte:head><title>Approvals</title></svelte:head>
 
-<div class="sh-page" data-smrt-component="AppShellApprovals">
-  <header class="sh-head" data-smrt-part="header">
+<div class="smrt-app-shell__page" data-smrt-component="AppShellApprovals">
+  <header class="smrt-app-shell__head" data-smrt-part="header">
     <div>
       <h1>Approvals</h1>
-      <p class="sh-sub" data-smrt-part="description">Risky changes wait here until you decide.</p>
+      <p class="smrt-app-shell__sub" data-smrt-part="description">Risky changes wait here until you decide.</p>
     </div>
   </header>
 
@@ -71,7 +71,7 @@ async function decide(id: string, summary: string, approve: boolean) {
       Waiting for you{#if groups.pending.length} ({groups.pending.length}){/if}
     </h2>
     {#if groups.pending.length === 0}
-      <div class="sh-empty" data-smrt-part="empty"><p class="sh-muted" data-smrt-part="description">Nothing is waiting for a decision.</p></div>
+      <div class="smrt-app-shell__empty" data-smrt-part="empty"><p class="smrt-app-shell__muted" data-smrt-part="description">Nothing is waiting for a decision.</p></div>
     {:else}
       <div aria-live="polite">
         {#each groups.pending as approval (approval.id)}

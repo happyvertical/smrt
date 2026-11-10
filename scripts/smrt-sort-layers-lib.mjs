@@ -119,14 +119,36 @@ const PUBLISHED_SHELL_PREFIXES = [
   'smrt-section-menu', 'smrt-shortcuts-overlay', 'smrt-system-scope-panel',
   'smrt-system-status-chips', 'smrt-tenant-nav', 'smrt-role-shell', 'smrt-nav-tree',
   'smrt-breadcrumbs', 'smrt-dock-toggles', 'smrt-app-shell', 'smrt-layout-',
-  'smrt-edit-', 'smrt-owner-setup',
+  'smrt-edit-', 'smrt-owner-setup', 'smrt-recipe-screens',
 ];
 
 function publishedShellClass(name, file) {
-  if (!/^packages\/smrt-svelte\/src\/components\/(?:workspace|app)\//.test(file)) return false;
+  if (!/^packages\/smrt-svelte\/src\/components\/(?:workspace|app|screens)\//.test(file)) return false;
   return PUBLISHED_SHELL_PREFIXES.some((prefix) => prefix.endsWith('-')
     ? name.startsWith(prefix)
     : name === prefix || name.startsWith(`${prefix}-`) || name.startsWith(`${prefix}__`));
+}
+
+// Shared planner styles target these exact legacy classes across component boundaries.
+// Keep the file/name pairs bounded: a new helper or another component is rejected.
+export const SHARED_CLASS_EXCEPTIONS = {
+  'packages/planner/src/lib/components/ChildRecords.svelte': ['planner-list', 'sort-button', 'sort-icon'],
+  'packages/planner/src/lib/components/FieldInput.svelte': ['field'],
+  'packages/planner/src/lib/components/FieldMapForm.svelte': ['actions', 'error', 'planner-form'],
+  'packages/planner/src/lib/components/FormWorkspace.svelte': ['planner-list', 'sort-button', 'sort-icon'],
+  'packages/planner/src/lib/components/ModelWorkspace.svelte': ['actions', 'derived', 'error', 'planner-form', 'planner-list', 'sort-button', 'sort-icon', 'totals'],
+  'packages/planner/src/lib/components/VariantGridForm.svelte': ['actions', 'error', 'grid', 'planner-form'],
+};
+
+function publishedClass(name, file) {
+  if (publishedShellClass(name, file)) return true;
+  const roots = {
+    'packages/subscriptions/src/svelte/PlanPicker.svelte': 'smrt-plan-picker',
+    'packages/subscriptions/src/svelte/SubscriptionSummary.svelte': 'smrt-subscription-summary',
+    'packages/subscriptions/src/svelte/UsageThresholds.svelte': 'smrt-usage-thresholds',
+  };
+  const root = roots[file];
+  return !!root && (name === root || name.startsWith(`${root}__`) || name.startsWith(`${root}--`));
 }
 
 /** Distinct owned class names, not selector occurrences or consumer :global() classes. */
@@ -173,7 +195,7 @@ export function internalClasses(ast, file = '') {
   }
   markup(ast.fragment);
   return [...names].filter((name) => !/^smrt-[a-z0-9]+(?:-[a-z0-9]+)*__[a-z0-9][a-z0-9_-]*$/.test(name)
-    && !publishedShellClass(name, file)).sort();
+    && !publishedClass(name, file) && !SHARED_CLASS_EXCEPTIONS[file]?.includes(name)).sort();
 }
 
 export function layerViolations(source, ast = parseComponent(source)) {
