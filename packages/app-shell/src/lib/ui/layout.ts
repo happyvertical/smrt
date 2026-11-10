@@ -5,6 +5,14 @@
 /** Sent (by the welcome steps) to ask the layout to open the chat column. */
 export const ASSISTANT_OPEN_EVENT = 'smrt-app-shell:open-assistant';
 
+// Connection settings notify the mounted dock without resetting its conversation.
+export const ASSISTANT_STATUS_EVENT = 'smrt-app-shell:assistant-status';
+
+export function refreshAssistantStatus(): void {
+  if (typeof window !== 'undefined')
+    window.dispatchEvent(new Event(ASSISTANT_STATUS_EVENT));
+}
+
 const OPEN_KEY = 'smrt-app-shell:assistant-open';
 
 /** The storage key for one owner's chat column choice. */

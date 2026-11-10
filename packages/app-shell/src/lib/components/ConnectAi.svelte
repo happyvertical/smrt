@@ -5,7 +5,9 @@
 // never sees a password or token), plus the Advanced door to the full
 // inference setup. Codex, also a local tool, is an advanced option shown on
 // the Settings variant only.
+
 import { onDestroy, onMount } from 'svelte';
+import { refreshAssistantStatus } from '$lib/ui/layout';
 import {
   apiRow,
   type ChatGPTState,
@@ -69,7 +71,14 @@ function say(text: string, error = false) {
 
 async function refresh(fresh = false) {
   try {
+    const previous = info;
     info = await fetchOnboarding(fresh);
+    if (
+      !previous ||
+      previous.engine !== info.engine ||
+      engineReady(previous) !== engineReady(info)
+    )
+      refreshAssistantStatus();
     onchange?.(info, engineReady(info));
     if (awaitingChatGPT && busy === null) await finishChatGPT(info);
     if (variant === 'settings' && info.chatgpt?.signedIn) {

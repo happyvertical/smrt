@@ -12,6 +12,7 @@ export default defineConfig({
     conditions: ['browser'],
     alias: {
       $lib: here('./src/lib'),
+      '$app/forms': here('./src/test/app-forms.ts'),
       '$app/state': here('./src/test/app-state.ts'),
       '$app/navigation': here('./src/test/app-navigation.ts'),
     },

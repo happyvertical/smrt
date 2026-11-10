@@ -1,7 +1,8 @@
 <script lang="ts">
 import { Badge } from '@happyvertical/smrt-ui';
-import { onDestroy, tick, untrack } from 'svelte';
+import { onDestroy, onMount, tick, untrack } from 'svelte';
 import ApprovalCard from '$lib/components/ApprovalCard.svelte';
+import { ASSISTANT_STATUS_EVENT } from '$lib/ui/layout';
 import type { ApprovalView } from '$lib/ui/types';
 import {
   AssistantRequestError,
@@ -64,32 +65,27 @@ async function loadViews() {
   }
 }
 
-// Runs whenever the panel is shown: the first time loads the thread, later
-// ones check again whether an assistant that was off is on now.
-async function activate(focus: boolean) {
-  // An assistant that was off is checked again on every open: the owner may
-  // have saved a key in Settings since (no restart, no reload).
-  if (loadedOnce && dock.availability === 'unavailable') {
-    try {
-      send({ type: 'status', status: await fetchStatus() });
-    } catch {
-      // keep showing the last answer
-    }
+// Ignore stale responses when connection changes overlap an initial status check.
+let statusRequest = 0;
+async function refreshStatus() {
+  const request = ++statusRequest;
+  try {
+    const status = await fetchStatus();
+    if (request === statusRequest) send({ type: 'status', status });
+  } catch {
+    // Keep the last known status; connection controls report their own failures.
   }
+}
+onMount(() => {
+  const changed = () => void refreshStatus();
+  window.addEventListener(ASSISTANT_STATUS_EVENT, changed);
+  return () => window.removeEventListener(ASSISTANT_STATUS_EVENT, changed);
+});
+
+async function activate(focus: boolean) {
+  await refreshStatus();
   if (!loadedOnce) {
     loadedOnce = true;
-    try {
-      send({ type: 'status', status: await fetchStatus() });
-    } catch (error) {
-      send({
-        type: 'note',
-        tone: 'error',
-        text:
-          error instanceof AssistantRequestError
-            ? error.message
-            : 'Could not check the assistant.',
-      });
-    }
     try {
       const [latest] = await fetchThreads();
       if (latest) {

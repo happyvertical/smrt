@@ -35,3 +35,22 @@ Started another draft and confirmed Discard. At 390×844, the content controls
 wrapped without horizontal overflow and retained the warning; the new marker
 used the warning token. Stopped the server by PID and removed session cookies
 and temporary runtime data. No browser page errors were observed.
+
+## Desktop QA regressions
+
+All rows below use the signed-in owner, Node 26 and in-process SQLite where
+persistence is involved; no transaction or schema behavior changes. DOM cases
+run with `vitest run -c vitest.dom.config.ts`, server cases with `vitest run`.
+The package `test` command runs both. Each regression is checked against its
+pre-fix implementation as well as the fixed code.
+
+| Behavior | Reachable trigger / positive | Negative / failure | Executor / edge | Level |
+|---|---|---|---|---|
+| Assistant readiness | Connect Claude Code or ChatGPT, save key; open composer updates | Sign out disables composer; failed requests preserve known state | Browser connection controls and status route; no credentials in events | DOM |
+| Onboarding chat | Welcome or unfinished onboarding hides panel | Finished/skipped onboarding restores saved chat choice; plugin stays hidden | Layout server data and browser layout | DOM |
+| Draft bar routes | Home, model list/record, history and review show controls | Welcome and all settings pages hide controls | Browser pathname | DOM |
+| Per-turn mode | Start draft after existing conversation, change viewed copy, resume CLI | No draft after discard/publish replaces stale draft context | Stub model and Claude Code/Codex subprocesses; same tool scopes | Node |
+| Tool summaries | Builder summary and describe/list phrase | No raw JSON, SQL or snapshot paths; unknown tools get generic phrase | API and CLI events, stored thread replay, HTTP responses | Node + DOM |
+| Attribution | Owner id resolves to profile name; recorded assistant and engine remain | Unknown identity uses neutral label; spacing survives DOM rendering | Session profile, approval cards and history | DOM |
+| Phone navigation | 375px starts on content, drawer can open on demand | Desktop expanded preference never opens phone drawer; title can ellipsize | Shared shell responsive state | DOM + browser |
+| Publish review | Added/Removed/Changed/Archived groups, counts, ordered changes, full code | Empty groups show zero; conversions and archives remain visible | Existing preview payload; UI primitives and tokens | DOM |

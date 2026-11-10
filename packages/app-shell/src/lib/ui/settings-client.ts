@@ -1,5 +1,6 @@
 import { deserialize } from '$app/forms';
 import { invalidateAll } from '$app/navigation';
+import { refreshAssistantStatus } from './layout.ts';
 
 export interface SettingOutcome {
   ok: boolean;
@@ -33,6 +34,7 @@ export async function postSetting(
   }
   const result = deserialize(await response.text());
   if (result.type === 'success') {
+    if (options.reload !== false) refreshAssistantStatus();
     if (options.reload !== false) await invalidateAll();
     return { ok: true, data: result.data as Record<string, unknown> };
   }
