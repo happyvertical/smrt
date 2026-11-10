@@ -59,7 +59,7 @@ const { t } = useI18n();
 const id = $props.id();
 </script>
 
-<section class="pricing-decision" data-smrt-component="PricingVersionDecision">
+<section class="smrt-pricing-version-decision__root" data-smrt-component="PricingVersionDecision">
   <PricingVersionSummary {version} />
   {#if error}<p role="alert">{error}</p>{/if}
   {#if readOnly}
@@ -74,7 +74,7 @@ const id = $props.id();
         <Textarea id={`${id}-reason`} name={reasonName} value={reason} required={reasonRequired} readonly={busy} />
       </FormGroup>
       {#if children}{@render children()}{/if}
-      <div class="decisions">{#each actions as decision}
+      <div class="smrt-pricing-version-decision__actions" data-smrt-part="actions">{#each actions as decision}
         <Button type="submit" name={decision.name} value={decision.value} formaction={decision.formAction} disabled={busy || decision.disabled}>{decision.label}</Button>
       {/each}</div>
     </Form>
@@ -83,9 +83,24 @@ const id = $props.id();
 
 <style>
 @layer smrt.reset, smrt.structure, smrt.theme;
-@layer smrt.theme {
-.pricing-decision { min-width: 0; overflow-wrap: anywhere; }
-.decisions { display: flex; flex-wrap: wrap; gap: var(--smrt-spacing-3); margin-top: var(--smrt-spacing-3); }
-.decisions :global(button) { max-width: 100%; white-space: normal; }
+@layer smrt.structure {
+  .smrt-pricing-version-decision__root {
+    min-width: 0;
+    overflow-wrap: anywhere;
+  }
+  .smrt-pricing-version-decision__actions {
+    display: flex;
+    flex-wrap: wrap;
+    gap: var(--smrt-spacing-3);
+    margin-top: var(--smrt-spacing-3);
+  }
+  .smrt-pricing-version-decision__actions :global(button) {
+    max-width: 100%;
+    white-space: normal;
+  }
 }
+
+@layer smrt.theme {
+}
+
 </style>

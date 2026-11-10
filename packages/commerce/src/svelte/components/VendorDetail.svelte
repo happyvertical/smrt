@@ -87,7 +87,7 @@ function minimumOrder(amountMinor: number): string {
 }
 </script>
 
-<section class="party-detail" data-smrt-component="VendorDetail">
+<section class="smrt-vendor-detail__root" data-smrt-component="VendorDetail">
   {#if backHref}<Button href={backHref} variant="ghost">{t(M['commerce.party.back_to'], { plural })}</Button>{/if}
   {#if header && !headless}
     {@render header()}
@@ -99,7 +99,7 @@ function minimumOrder(amountMinor: number): string {
     </PageHeader>
   {/if}
 
-  <div class="summary-grid">
+  <div class="smrt-vendor-detail__summary-grid" data-smrt-part="summary">
     <Card padding="md">
       <h2>{t(M['commerce.party.identity'])}</h2>
       <dl>
@@ -128,21 +128,66 @@ function minimumOrder(amountMinor: number): string {
   </Card>
 
   <PartyContactFields contacts={vendor.contacts ?? []} labels={contactLabels} readOnly />
-  {#if vendor.notes}<Card padding="md"><h2>{t(M['commerce.party.notes'])}</h2><p class="notes">{vendor.notes}</p></Card>{/if}
+  {#if vendor.notes}<Card padding="md"><h2>{t(M['commerce.party.notes'])}</h2><p class="smrt-vendor-detail__notes" data-smrt-part="content">{vendor.notes}</p></Card>{/if}
   {@render extension?.(vendor)}
 </section>
 
 <style>
 @layer smrt.reset, smrt.structure, smrt.theme;
-@layer smrt.theme {
-  .party-detail { display: grid; gap: var(--smrt-spacing-5); max-inline-size: 64rem; min-inline-size: 0; overflow-wrap: anywhere; }
-  .summary-grid { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: var(--smrt-spacing-4); }
-  h2 { margin: 0 0 var(--smrt-spacing-4); font: var(--smrt-typography-title-medium-font); color: var(--smrt-color-on-surface); }
-  dl { display: grid; grid-template-columns: minmax(7rem, max-content) minmax(0, 1fr); gap: var(--smrt-spacing-2) var(--smrt-spacing-4); margin: 0; }
-  dt { color: var(--smrt-color-on-surface-variant); }
-  dd { margin: 0; }
-  a { color: var(--smrt-color-primary); }
-  .notes { margin: 0; white-space: pre-wrap; }
-  @media (max-width: 42rem) { .summary-grid { grid-template-columns: minmax(0, 1fr); } dl { grid-template-columns: minmax(0, 1fr); gap: var(--smrt-spacing-1); } dd { margin-block-end: var(--smrt-spacing-2); } }
+@layer smrt.structure {
+  .smrt-vendor-detail__root {
+    display: grid;
+    gap: var(--smrt-spacing-5);
+    max-inline-size: 64rem;
+    min-inline-size: 0;
+    overflow-wrap: anywhere;
+  }
+  .smrt-vendor-detail__summary-grid {
+    display: grid;
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+    gap: var(--smrt-spacing-4);
+  }
+  h2 {
+    margin: 0 0 var(--smrt-spacing-4);
+  }
+  dl {
+    display: grid;
+    grid-template-columns: minmax(7rem, max-content) minmax(0, 1fr);
+    gap: var(--smrt-spacing-2) var(--smrt-spacing-4);
+    margin: 0;
+  }
+  dd {
+    margin: 0;
+  }
+  .smrt-vendor-detail__notes {
+    margin: 0;
+    white-space: pre-wrap;
+  }
+  @media (max-width: 42rem) {
+    .smrt-vendor-detail__summary-grid {
+      grid-template-columns: minmax(0, 1fr);
+    }
+    dl {
+      grid-template-columns: minmax(0, 1fr);
+      gap: var(--smrt-spacing-1);
+    }
+    dd {
+      margin-block-end: var(--smrt-spacing-2);
+    }
+  }
 }
+
+@layer smrt.theme {
+  h2 {
+    font: var(--smrt-typography-title-medium-font);
+    color: var(--smrt-color-on-surface);
+  }
+  dt {
+    color: var(--smrt-color-on-surface-variant);
+  }
+  a {
+    color: var(--smrt-color-primary);
+  }
+}
+
 </style>

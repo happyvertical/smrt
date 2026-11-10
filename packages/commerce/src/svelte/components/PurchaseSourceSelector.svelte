@@ -39,7 +39,7 @@ let {
 }: Props = $props();
 const { t } = useI18n();
 </script>
-<div class="purchase-source" data-smrt-component="PurchaseSourceSelector">
+<div class="smrt-purchase-source-selector__root" data-smrt-component="PurchaseSourceSelector">
  <Form {action} {onsubmit} method="get" preventDefault={false}>
   {#each hiddenFields as field}<Input type="hidden" name={field.name} value={field.value} />{/each}
   <FormGroup label={label ?? t(P['commerce.purchase.source'])} {error} required>
@@ -55,7 +55,18 @@ const { t } = useI18n();
 </div>
 <style>
 @layer smrt.reset, smrt.structure, smrt.theme;
-@layer smrt.theme {
-.purchase-source{max-width:48rem;min-width:0;overflow-wrap:anywhere;color:var(--smrt-color-on-surface)}
+@layer smrt.structure {
+  .smrt-purchase-source-selector__root {
+    max-width:48rem;
+    min-width:0;
+    overflow-wrap:anywhere;
+  }
 }
+
+@layer smrt.theme {
+  .smrt-purchase-source-selector__root {
+    color:var(--smrt-color-on-surface);
+  }
+}
+
 </style>

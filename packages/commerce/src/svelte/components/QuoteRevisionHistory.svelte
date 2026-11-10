@@ -28,7 +28,7 @@ function amount(money: QuoteMoneyMinor): string {
   }
 }
 </script>
-<section class="quote-history" aria-label={title ?? t(Q['commerce.quote.history'])} data-smrt-component="QuoteRevisionHistory">
+<section class="smrt-quote-revision-history__root" aria-label={title ?? t(Q['commerce.quote.history'])} data-smrt-component="QuoteRevisionHistory">
   <h2>{title ?? t(Q['commerce.quote.history'])}</h2>
   <ol>
     {#each revisions as revision (revision.id)}
@@ -49,10 +49,30 @@ function amount(money: QuoteMoneyMinor): string {
 </section>
 <style>
 @layer smrt.reset, smrt.structure, smrt.theme;
-@layer smrt.theme {
-.quote-history { min-width: 0; color: var(--smrt-color-on-surface); overflow-wrap: anywhere; }
-ol { padding-inline-start: var(--smrt-spacing-6, 1.5rem); }
-li { margin-block: var(--smrt-spacing-4, 1rem); }
-article { padding: var(--smrt-spacing-4, 1rem); border: var(--smrt-hairline); border-radius: var(--smrt-radius-md, 0.5rem); }
+@layer smrt.structure {
+  .smrt-quote-revision-history__root {
+    min-width: 0;
+    overflow-wrap: anywhere;
+  }
+  ol {
+    padding-inline-start: var(--smrt-spacing-6, 1.5rem);
+  }
+  li {
+    margin-block: var(--smrt-spacing-4, 1rem);
+  }
+  article {
+    padding: var(--smrt-spacing-4, 1rem);
+  }
 }
+
+@layer smrt.theme {
+  .smrt-quote-revision-history__root {
+    color: var(--smrt-color-on-surface);
+  }
+  article {
+    border: var(--smrt-hairline);
+    border-radius: var(--smrt-radius-md, 0.5rem);
+  }
+}
+
 </style>

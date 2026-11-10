@@ -63,7 +63,7 @@ $effect(() => {
 });
 </script>
 
-<fieldset class="address-fields">
+<fieldset class="smrt-party-address-fields__root" data-smrt-component="PartyAddressFields">
   <legend>{heading}</legend>
   <FormGroup label={t(M['commerce.party.street_address'])} error={errors.street1}>
     <Input name={names.street1} value={value.street1 ?? ''} maxlength={160} readonly={readOnly} />
@@ -71,7 +71,7 @@ $effect(() => {
   <FormGroup label={t(M['commerce.party.address_line_2'])} error={errors.street2}>
     <Input name={names.street2} value={value.street2 ?? ''} maxlength={160} readonly={readOnly} />
   </FormGroup>
-  <div class="address-grid">
+  <div class="smrt-party-address-fields__grid" data-smrt-part="group">
     <FormGroup label={t(M['commerce.party.city'])} error={errors.city}>
       <Input name={names.city} value={value.city ?? ''} maxlength={100} readonly={readOnly} />
     </FormGroup>
@@ -89,10 +89,36 @@ $effect(() => {
 
 <style>
 @layer smrt.reset, smrt.structure, smrt.theme;
-@layer smrt.theme {
-  .address-fields { min-inline-size: 0; margin: 0; padding: var(--smrt-spacing-4); border: var(--smrt-hairline); border-radius: var(--smrt-radius-medium); }
-  legend { padding-inline: var(--smrt-spacing-2); font: var(--smrt-typography-title-medium-font); color: var(--smrt-color-on-surface); }
-  .address-grid { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 0 var(--smrt-spacing-4); }
-  @media (max-width: 30rem) { .address-grid { grid-template-columns: minmax(0, 1fr); } }
+@layer smrt.structure {
+  .smrt-party-address-fields__root {
+    min-inline-size: 0;
+    margin: 0;
+    padding: var(--smrt-spacing-4);
+  }
+  legend {
+    padding-inline: var(--smrt-spacing-2);
+  }
+  .smrt-party-address-fields__grid {
+    display: grid;
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+    gap: 0 var(--smrt-spacing-4);
+  }
+  @media (max-width: 30rem) {
+    .smrt-party-address-fields__grid {
+      grid-template-columns: minmax(0, 1fr);
+    }
+  }
 }
+
+@layer smrt.theme {
+  .smrt-party-address-fields__root {
+    border: var(--smrt-hairline);
+    border-radius: var(--smrt-radius-medium);
+  }
+  legend {
+    font: var(--smrt-typography-title-medium-font);
+    color: var(--smrt-color-on-surface);
+  }
+}
+
 </style>

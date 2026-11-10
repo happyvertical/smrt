@@ -23,7 +23,7 @@ function amount(value: number | null): string {
 }
 </script>
 
-<section class="pricing-summary" aria-label={version.label} data-smrt-component="PricingVersionSummary">
+<section class="smrt-pricing-version-summary__root" aria-label={version.label} data-smrt-component="PricingVersionSummary">
   <h3>{version.label}</h3>
   <p>{version.counterparty} · {version.status}</p>
   <p><strong>{t(M['commerce.pricing.total'])}: {amount(version.total.amountMinor)} {version.total.currency}</strong></p>
@@ -40,10 +40,25 @@ function amount(value: number | null): string {
 
 <style>
 @layer smrt.reset, smrt.structure, smrt.theme;
-@layer smrt.theme {
-.pricing-summary { min-width: 0; overflow-wrap: anywhere; }
-.pricing-summary ul { display: grid; gap: var(--smrt-spacing-3); padding-inline-start: var(--smrt-spacing-5); }
-.pricing-summary li { min-width: 0; }
-.pricing-summary li strong { display: block; }
+@layer smrt.structure {
+  .smrt-pricing-version-summary__root {
+    min-width: 0;
+    overflow-wrap: anywhere;
+  }
+  .smrt-pricing-version-summary__root ul {
+    display: grid;
+    gap: var(--smrt-spacing-3);
+    padding-inline-start: var(--smrt-spacing-5);
+  }
+  .smrt-pricing-version-summary__root li {
+    min-width: 0;
+  }
+  .smrt-pricing-version-summary__root li strong {
+    display: block;
+  }
 }
+
+@layer smrt.theme {
+}
+
 </style>
