@@ -122,6 +122,39 @@ Environment values written in the Compose file are local values. Version 1
 does not carry them into a deployment: bindings supply their own connection
 settings, and everything else is configured where the application is hosted.
 
+## Running a deployed profile without app glue
+
+An app that declares no `runtime` block in `smrt.config.ts` takes its runtime
+from the environment, so one image can run `local` on a laptop and
+`self-hosted` in a container:
+
+| Variable | Selects |
+|---|---|
+| `SMRT_RUNTIME_PROFILE` | `local` (unset), `self-hosted`, or `cloud` |
+| `SMRT_AUTHENTICATION_PROVIDER` | `oidc`, `magic-link` or `password` (self-hosted) |
+| `SMRT_ASSETS_PROVIDER` | `local-files` or `s3-compatible` (self-hosted) |
+| `SMRT_SECRETS_PROVIDER` | `environment`, `local-file` or `external` (self-hosted) |
+
+An unknown value, or a provider the profile forbids, fails closed. A declared
+`runtime` block wins over the environment.
+
+`createSmrtSvelteKitRuntime()` needs no `providerReadiness` option either. The
+default probe loads the module named by `SMRT_AUTH_READINESS_MODULE`,
+`SMRT_ASSETS_READINESS_MODULE` or `SMRT_SECRETS_READINESS_MODULE` and, when the
+setting is unset, a default for the configured provider:
+
+| Provider | Default readiness |
+|---|---|
+| authentication `password` | `@happyvertical/smrt-users` (the PostgreSQL password schema) |
+| assets `local-files` | `SMRT_ASSETS_DIR` is an existing absolute directory (a mounted volume) the process can write |
+| secrets `environment` | every variable listed in `SMRT_SECRETS_REQUIRED` (comma list, optional) is set |
+
+These are working stand-ins for trying an app out, not production providers:
+`local-files` keeps assets on one volume, `environment` keeps secrets in the
+process environment, and `password` sign-in has no federation. Name your own
+readiness module (an OIDC provider, S3-compatible storage, an external secret
+store) before real use.
+
 ## Two shapes
 
 Version 1 is written for two application shapes.
