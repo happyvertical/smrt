@@ -282,7 +282,6 @@ function handleKeydown(event: KeyboardEvent, tabId: string) {
     width: 100%;
     /* Tabs keep their minimum width; a row wider than a phone scrolls. */
     overflow-x: auto;
-    scrollbar-width: thin;
   }
   .smrt-tabs__tab-button {
     flex: 1;
@@ -407,6 +406,7 @@ function handleKeydown(event: KeyboardEvent, tabId: string) {
 }
 @layer smrt.theme {
   .smrt-tabs__nav {
+    scrollbar-width: thin;
     border-bottom: var(--smrt-hairline);
   }
   .smrt-tabs__tab-button {
