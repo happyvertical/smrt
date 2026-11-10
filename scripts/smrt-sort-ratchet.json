@@ -33,30 +33,6 @@
       "unsorted": true,
       "internalClasses": 17
     },
-    "packages/analytics/src/svelte/AnalyticsSummary.svelte": {
-      "unsorted": true,
-      "internalClasses": 2
-    },
-    "packages/analytics/src/svelte/EventsTable.svelte": {
-      "unsorted": true,
-      "internalClasses": 13
-    },
-    "packages/analytics/src/svelte/PropertyInfo.svelte": {
-      "unsorted": true,
-      "internalClasses": 5
-    },
-    "packages/analytics/src/svelte/PropertyStatusBadge.svelte": {
-      "unsorted": true,
-      "internalClasses": 5
-    },
-    "packages/analytics/src/svelte/StatCard.svelte": {
-      "unsorted": true,
-      "internalClasses": 5
-    },
-    "packages/analytics/src/svelte/TrendBadge.svelte": {
-      "unsorted": true,
-      "internalClasses": 6
-    },
     "packages/app-shell/src/lib/assistant/AssistantDock.svelte": {
       "unsorted": true,
       "internalClasses": 25
