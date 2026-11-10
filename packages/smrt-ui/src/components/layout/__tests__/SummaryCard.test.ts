@@ -27,21 +27,25 @@ describe('SummaryCard', () => {
     const { container } = render(SummaryCard, {
       props: { label: 'Tasks', value: 'Open', count: 7 },
     });
-    expect(container.querySelector('.card-count')).toHaveTextContent('7');
+    expect(
+      container.querySelector('[data-smrt-part="count"]'),
+    ).toHaveTextContent('7');
   });
 
   it('renders a count badge of 0 (undefined check, not falsy)', () => {
     const { container } = render(SummaryCard, {
       props: { label: 'Tasks', value: 'Done', count: 0 },
     });
-    expect(container.querySelector('.card-count')).toHaveTextContent('0');
+    expect(
+      container.querySelector('[data-smrt-part="count"]'),
+    ).toHaveTextContent('0');
   });
 
   it('omits the count badge when count is undefined', () => {
     const { container } = render(SummaryCard, {
       props: { label: 'Tasks', value: 'Open' },
     });
-    expect(container.querySelector('.card-count')).toBeNull();
+    expect(container.querySelector('[data-smrt-part="count"]')).toBeNull();
   });
 
   it('renders an icon via the Icon component when icon is a known name', () => {
@@ -51,7 +55,9 @@ describe('SummaryCard', () => {
       // unknown name would still render an <svg> but with an empty path).
       props: { label: 'Visitors', value: 99, icon: 'search' },
     });
-    const iconPath = container.querySelector('.card-icon svg path');
+    const iconPath = container.querySelector(
+      '[data-smrt-part="icon"] svg path',
+    );
     expect(iconPath?.getAttribute('d')).toBeTruthy();
   });
 
@@ -76,7 +82,9 @@ describe('SummaryCard', () => {
       props: { label: 'Starred', value: 1, iconContent },
     });
     expect(
-      container.querySelector('.card-icon [data-testid="custom-icon"]'),
+      container.querySelector(
+        '[data-smrt-part="icon"] [data-testid="custom-icon"]',
+      ),
     ).not.toBeNull();
   });
 
@@ -86,26 +94,30 @@ describe('SummaryCard', () => {
     });
     const link = screen.getByRole('link');
     expect(link).toHaveAttribute('href', '/reports');
-    expect(link).toHaveClass('clickable');
+    expect(link).toHaveClass('smrt-summary-card__clickable');
   });
 
   it('applies the highlight class when highlight is set', () => {
     const { container } = render(SummaryCard, {
       props: { label: 'Featured', value: 1, highlight: true },
     });
-    expect(container.querySelector('.summary-card')).toHaveClass('highlight');
+    expect(
+      container.querySelector('[data-smrt-component="SummaryCard"]'),
+    ).toHaveClass('smrt-summary-card__highlight');
   });
 
   it.each([
-    ['default', 'color-default'],
-    ['success', 'color-success'],
-    ['warning', 'color-warning'],
-    ['danger', 'color-error'],
+    ['default', 'smrt-summary-card__color-default'],
+    ['success', 'smrt-summary-card__color-success'],
+    ['warning', 'smrt-summary-card__color-warning'],
+    ['danger', 'smrt-summary-card__color-error'],
   ] as const)('maps variant=%s to the %s value class', (variant, expected) => {
     const { container } = render(SummaryCard, {
       props: { label: 'Metric', value: 5, variant },
     });
-    expect(container.querySelector('.card-value')).toHaveClass(expected);
+    expect(container.querySelector('[data-smrt-part="value"]')).toHaveClass(
+      expected,
+    );
   });
 
   it.each([

@@ -21,7 +21,7 @@ const {
 }: Props = $props();
 </script>
 
-<dl class="description-list {className}" {...rest} data-smrt-component="DescriptionList">
+<dl class="smrt-description-list__root {className}" {...rest} data-smrt-component="DescriptionList">
   {#each items as item, index (index)}
     <dt>{item.term}</dt>
     <dd>{item.description}</dd>
@@ -31,8 +31,8 @@ const {
 
 <style>
 @layer smrt.reset, smrt.structure, smrt.theme;
-@layer smrt.theme {
-  .description-list {
+@layer smrt.structure {
+  .smrt-description-list__root {
     display: grid;
     grid-template-columns: minmax(8rem, max-content) minmax(0, 1fr);
     column-gap: var(--smrt-spacing-6);
@@ -40,19 +40,28 @@ const {
     margin: 0;
     min-inline-size: 0;
   }
-  .description-list :global(dt) {
-    color: var(--smrt-color-on-surface-variant);
-    font-weight: var(--smrt-control-weight);
-  }
-  .description-list :global(dd) {
+  .smrt-description-list__root :global(dd) {
     margin: 0;
     min-inline-size: 0;
     overflow-wrap: anywhere;
   }
   /* Collapse to one column on narrow screens. */
   @media (max-width: 40rem) {
-    .description-list { grid-template-columns: minmax(0, 1fr); row-gap: 0; }
-    .description-list :global(dd) { margin-block-end: var(--smrt-spacing-3); }
+    .smrt-description-list__root {
+      grid-template-columns: minmax(0, 1fr);
+      row-gap: 0;
+    }
+    .smrt-description-list__root :global(dd) {
+      margin-block-end: var(--smrt-spacing-3);
+    }
   }
 }
+
+@layer smrt.theme {
+  .smrt-description-list__root :global(dt) {
+    color: var(--smrt-color-on-surface-variant);
+    font-weight: var(--smrt-control-weight);
+  }
+}
+
 </style>

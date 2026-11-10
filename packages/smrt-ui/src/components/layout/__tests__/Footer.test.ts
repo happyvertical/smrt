@@ -26,7 +26,7 @@ describe('Footer', () => {
     const year = String(new Date().getFullYear());
     const copyright = screen.getByText(
       (_, el) =>
-        el?.classList.contains('copyright') === true &&
+        el?.classList.contains('smrt-footer__copyright') === true &&
         el.textContent?.includes(year) === true &&
         el.textContent?.includes('All rights reserved.') === true,
     );
@@ -45,7 +45,7 @@ describe('Footer', () => {
 
   it('omits the footer-links container when no children are provided', () => {
     const { container } = render(Footer, { props: {} });
-    expect(container.querySelector('.footer-links')).toBeNull();
+    expect(container.querySelector('[data-smrt-part="list"]')).toBeNull();
   });
 
   it('is axe-clean with footer links', async () => {

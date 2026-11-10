@@ -51,7 +51,7 @@ describe('Masthead', () => {
 
   it('omits the location link when location is empty', () => {
     const { container } = render(Masthead, { props: { location: '' } });
-    expect(container.querySelector('.location')).toBeNull();
+    expect(container.querySelector('[data-smrt-part="meta"]')).toBeNull();
   });
 
   it('renders the nav snippet inside a navigation landmark', () => {

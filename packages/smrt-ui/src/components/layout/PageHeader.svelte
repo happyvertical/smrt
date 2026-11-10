@@ -91,9 +91,9 @@ const trail = $derived<readonly PageHeaderCrumb[]>(
 $effect(() => shell?.report?.({ title: shortTitle ?? title, parents }));
 </script>
 
-<header class="page-header" data-page-header data-smrt-component="PageHeader">
+<header class="smrt-page-header__root" data-page-header data-smrt-component="PageHeader">
   {#if trail.length > 0}
-    <nav class="page-crumbs" aria-label={crumbsLabel} data-shell-breadcrumbs>
+    <nav class="smrt-page-header__crumbs" data-smrt-part="list" aria-label={crumbsLabel} data-shell-breadcrumbs>
       <ol>
         {#each trail as crumb, index (`${index}:${crumb.href}`)}
           <li><a href={crumb.href}>{crumb.label}</a></li>
@@ -102,38 +102,38 @@ $effect(() => shell?.report?.({ title: shortTitle ?? title, parents }));
     </nav>
   {/if}
 
-  <div class="header-main">
-    <div class="header-content">
+  <div class="smrt-page-header__main" data-smrt-part="header">
+    <div class="smrt-page-header__content" data-smrt-part="content">
       {#if backHref}
-        <a href={backHref} class="back-link" use:ripple>
+        <a href={backHref} class="smrt-page-header__back-link" data-smrt-part="trigger" use:ripple>
           <Icon name="chevron-left" size={20} />
           <span>{backLabel}</span>
         </a>
       {/if}
       {#if titleField}
-        <h1 class="page-title page-title-field" data-page-title-field>
+        <h1 class="smrt-page-header__title smrt-page-header__title-field" data-smrt-part="title" data-page-title-field>
           {@render titleField()}
         </h1>
       {:else}
-        <h1 class="page-title" data-shell-page-title>{title}</h1>
+        <h1 class="smrt-page-header__title" data-smrt-part="title" data-shell-page-title>{title}</h1>
       {/if}
       {#if subtitle}
-        <p class="page-subtitle">{subtitle}</p>
+        <p class="smrt-page-header__subtitle" data-smrt-part="description">{subtitle}</p>
       {/if}
       {#if meta}
-        <div class="page-meta">{@render meta()}</div>
+        <div class="smrt-page-header__meta" data-smrt-part="meta">{@render meta()}</div>
       {/if}
     </div>
 
     {#if actions}
-      <div class="header-actions">
+      <div class="smrt-page-header__actions" data-smrt-part="actions">
         {@render actions()}
       </div>
     {/if}
   </div>
 
   {#if children}
-    <div class="header-extra" data-page-header-extra>
+    <div class="smrt-page-header__extra" data-smrt-part="body" data-page-header-extra>
       {@render children()}
     </div>
   {/if}
@@ -141,19 +141,14 @@ $effect(() => shell?.report?.({ title: shortTitle ?? title, parents }));
 
 <style>
 @layer smrt.reset, smrt.structure, smrt.theme;
-@layer smrt.theme {
-  .page-header {
+@layer smrt.structure {
+  .smrt-page-header__root {
     margin-bottom: 1.5rem;
   }
-
-  .page-crumbs {
+  .smrt-page-header__crumbs {
     margin-bottom: var(--smrt-spacing-1);
-    color: var(--smrt-color-on-surface-variant);
-    font: var(--smrt-typography-body-small-font);
-    font-size: 0.84rem;
   }
-
-  .page-crumbs ol {
+  .smrt-page-header__crumbs ol {
     display: flex;
     flex-wrap: wrap;
     align-items: center;
@@ -162,107 +157,114 @@ $effect(() => shell?.report?.({ title: shortTitle ?? title, parents }));
     padding: 0;
     list-style: none;
   }
-
-  .page-crumbs li {
+  .smrt-page-header__crumbs li {
     display: flex;
     align-items: center;
     min-width: 0;
   }
-
-  .page-crumbs li + li::before {
-    content: '/';
+  .smrt-page-header__crumbs li + li::before {
     margin-inline-end: 0.35rem;
-    color: var(--smrt-color-outline);
   }
-
-  .page-crumbs a {
-    color: inherit;
-    text-decoration: none;
+  .smrt-page-header__crumbs a {
     overflow-wrap: anywhere;
   }
-
-  .page-crumbs a:hover {
-    color: var(--smrt-color-primary);
-    text-decoration: underline;
-  }
-
-  .page-crumbs a:focus-visible {
-    outline: var(--smrt-focus-ring-width) solid var(--smrt-focus-ring-color);
-    outline-offset: var(--smrt-focus-ring-offset);
-    border-radius: var(--smrt-radius-sm);
-  }
-
-  .header-main {
+  .smrt-page-header__main {
     display: flex;
     justify-content: space-between;
     align-items: flex-start;
     gap: 0.75rem 1.5rem;
     flex-wrap: wrap;
   }
-
-  .header-content {
+  .smrt-page-header__content {
     display: flex;
     flex-direction: column;
     gap: var(--smrt-spacing-1);
     flex: 1;
     min-width: min(100%, 200px);
   }
-
-  .back-link {
+  .smrt-page-header__back-link {
     display: inline-flex;
     align-items: center;
     gap: var(--smrt-spacing-1);
-    color: var(--smrt-color-primary);
-    font: var(--smrt-typography-label-large-font);
-    text-decoration: none;
     margin-bottom: 0.75rem;
     padding: var(--smrt-spacing-1) var(--smrt-spacing-2) var(--smrt-spacing-1) var(--smrt-spacing-1);
-    border-radius: var(--smrt-radius-md);
-    margin-left: -4px; /* Align icon with text below */
-    transition: background-color 200ms;
+    margin-left: -4px;
   }
-
-  .back-link:hover {
-    background-color: var(--smrt-color-surface-container-high);
-  }
-
-  .page-title {
-    font: var(--smrt-typography-headline-medium-font);
-    color: var(--smrt-color-on-surface);
+  .smrt-page-header__title {
     margin: 0;
-    letter-spacing: -0.5px;
     overflow-wrap: anywhere;
   }
-
-  .page-title-field {
+  .smrt-page-header__title-field {
     min-width: 0;
   }
-
-  .page-subtitle {
-    font: var(--smrt-typography-body-medium-font);
-    color: var(--smrt-color-on-surface-variant);
+  .smrt-page-header__subtitle {
     margin: 0;
   }
-
-  .page-meta {
+  .smrt-page-header__meta {
     display: flex;
     flex-wrap: wrap;
     align-items: center;
     gap: 0.5rem;
-    font: var(--smrt-typography-body-small-font);
-    color: var(--smrt-color-on-surface-variant);
   }
-
-  .header-actions {
+  .smrt-page-header__actions {
     display: flex;
     gap: 0.75rem;
     align-items: center;
     flex-wrap: wrap;
     margin-inline-start: auto;
   }
-
-  .header-extra {
+  .smrt-page-header__extra {
     margin-top: 1rem;
   }
 }
+
+@layer smrt.theme {
+  .smrt-page-header__crumbs {
+    color: var(--smrt-color-on-surface-variant);
+    font: var(--smrt-typography-body-small-font);
+    font-size: 0.84rem;
+  }
+  .smrt-page-header__crumbs li + li::before {
+    content: '/';
+    color: var(--smrt-color-outline);
+  }
+  .smrt-page-header__crumbs a {
+    color: inherit;
+    text-decoration: none;
+  }
+  .smrt-page-header__crumbs a:hover {
+    color: var(--smrt-color-primary);
+    text-decoration: underline;
+  }
+  .smrt-page-header__crumbs a:focus-visible {
+    outline: var(--smrt-focus-ring-width) solid var(--smrt-focus-ring-color);
+    outline-offset: var(--smrt-focus-ring-offset);
+    border-radius: var(--smrt-radius-sm);
+  }
+  .smrt-page-header__back-link {
+    color: var(--smrt-color-primary);
+    font: var(--smrt-typography-label-large-font);
+    text-decoration: none;
+    border-radius: var(--smrt-radius-md);
+    /* Align icon with text below */
+    transition: background-color 200ms;
+  }
+  .smrt-page-header__back-link:hover {
+    background-color: var(--smrt-color-surface-container-high);
+  }
+  .smrt-page-header__title {
+    font: var(--smrt-typography-headline-medium-font);
+    color: var(--smrt-color-on-surface);
+    letter-spacing: -0.5px;
+  }
+  .smrt-page-header__subtitle {
+    font: var(--smrt-typography-body-medium-font);
+    color: var(--smrt-color-on-surface-variant);
+  }
+  .smrt-page-header__meta {
+    font: var(--smrt-typography-body-small-font);
+    color: var(--smrt-color-on-surface-variant);
+  }
+}
+
 </style>
