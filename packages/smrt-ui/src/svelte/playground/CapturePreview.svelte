@@ -25,9 +25,9 @@ function describeSubmission(
 }
 </script>
 
-<div class="workbench">
+<div class="smrt-capture-preview__root" data-smrt-component="CapturePreview">
   <header>
-    <p class="eyebrow">Native form capture</p>
+    <p class="smrt-capture-preview__eyebrow" data-smrt-part="label">Native form capture</p>
     <h4>Camera and signature</h4>
     <p>Both controls post their file through a plain multipart form; no hidden input is wired by the page.</p>
   </header>
@@ -41,19 +41,51 @@ function describeSubmission(
       <SignaturePad name="signature" {stylusOnly} />
     </section>
     <Button type="submit">Submit</Button>
-    <p class="posted" role="status">{posted}</p>
+    <p class="smrt-capture-preview__posted" data-smrt-part="status" role="status">{posted}</p>
   </form>
 </div>
 
 <style>
 @layer smrt.reset, smrt.structure, smrt.theme;
-@layer smrt.theme {
-  .workbench { display: grid; gap: var(--smrt-spacing-5); color: var(--smrt-color-on-surface); }
-  header { display: grid; gap: var(--smrt-spacing-2); }
-  h4, p { margin: 0; } h4 { font: var(--smrt-typography-headline-small-font); }
-  header p:not(.eyebrow), .posted { color: var(--smrt-color-on-surface-variant); }
-  .eyebrow { color: var(--smrt-color-primary); font: var(--smrt-typography-label-small-font); letter-spacing: .1em; text-transform: uppercase; }
-  form { display: grid; gap: var(--smrt-spacing-6); }
-  section { display: grid; gap: var(--smrt-spacing-3); min-width: 0; }
+@layer smrt.structure {
+  .smrt-capture-preview__root {
+    display: grid;
+    gap: var(--smrt-spacing-5);
+  }
+  header {
+    display: grid;
+    gap: var(--smrt-spacing-2);
+  }
+  h4, p {
+    margin: 0;
+  }
+  form {
+    display: grid;
+    gap: var(--smrt-spacing-6);
+  }
+  section {
+    display: grid;
+    gap: var(--smrt-spacing-3);
+    min-width: 0;
+  }
 }
+
+@layer smrt.theme {
+  .smrt-capture-preview__root {
+    color: var(--smrt-color-on-surface);
+  }
+  h4 {
+    font: var(--smrt-typography-headline-small-font);
+  }
+  header p:not(.smrt-capture-preview__eyebrow), .smrt-capture-preview__posted {
+    color: var(--smrt-color-on-surface-variant);
+  }
+  .smrt-capture-preview__eyebrow {
+    color: var(--smrt-color-primary);
+    font: var(--smrt-typography-label-small-font);
+    letter-spacing: .1em;
+    text-transform: uppercase;
+  }
+}
+
 </style>

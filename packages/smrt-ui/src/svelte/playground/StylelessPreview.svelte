@@ -58,32 +58,32 @@ const tabs = [
 
 
 
-<div class="workbench">
+<div class="smrt-styleless-preview__root" data-smrt-component="StylelessPreview">
   <header>
     <div>
-      <p class="eyebrow">Styleless mode</p>
+      <p class="smrt-styleless-preview__eyebrow" data-smrt-part="label">Styleless mode</p>
       <h4>Layout kept, look removed</h4>
     </div>
-    <label class="toggle">
+    <label class="smrt-styleless-preview__toggle" data-smrt-part="label">
       <input type="checkbox" bind:checked={styleless} />
       Apply unstyled.css
     </label>
   </header>
 
-  <p class="note">
+  <p class="smrt-styleless-preview__note" data-smrt-part="description">
     With the toggle on, every component below keeps its layout and loses its
     themed look. The page chrome is not a smrt component, so it is unaffected.
   </p>
 
-  <label class="toggle">
+  <label class="smrt-styleless-preview__toggle" data-smrt-part="label">
     <input type="checkbox" bind:checked={allProperties} />
     Try all: revert-layer on the ten pilot primitives
   </label>
 
-  <div class="catalogue">
+  <div class="smrt-styleless-preview__catalogue" data-smrt-part="body">
     <section>
       <h5>Buttons and badges</h5>
-      <div class="row">
+      <div class="smrt-styleless-preview__row" data-smrt-part="row">
         <Button>Primary</Button>
         <Button variant="secondary">Secondary</Button>
         <Badge>Draft</Badge>
@@ -107,7 +107,7 @@ const tabs = [
 
     <section>
       <h5>Form controls</h5>
-      <div class="row">
+      <div class="smrt-styleless-preview__row" data-smrt-part="row">
         <Input name="styleless-name" placeholder="Name" />
         <Select name="styleless-role">
           <option value="owner">Owner</option>
@@ -127,17 +127,70 @@ const tabs = [
 
 <style>
 @layer smrt.reset, smrt.structure, smrt.theme;
-@layer smrt.theme {
-  .workbench { display: grid; gap: var(--smrt-spacing-6); color: var(--smrt-color-on-surface); }
-  header { display: flex; align-items: center; justify-content: space-between; gap: var(--smrt-spacing-3); padding-bottom: var(--smrt-spacing-4); border-bottom: var(--smrt-hairline); }
-  h4, h5, p { margin: 0; }
-  h4 { font: var(--smrt-typography-headline-small-font); }
-  h5 { margin-bottom: var(--smrt-spacing-3); font: var(--smrt-typography-title-medium-font); }
-  .eyebrow { color: var(--smrt-color-primary); font: var(--smrt-typography-label-small-font); letter-spacing: .1em; text-transform: uppercase; }
-  .note { color: var(--smrt-color-on-surface-variant); font: var(--smrt-typography-body-medium-font); }
-  .toggle { display: inline-flex; align-items: center; gap: var(--smrt-spacing-2); }
-  .catalogue { display: grid; grid-template-columns: repeat(auto-fit, minmax(16rem, 1fr)); gap: var(--smrt-spacing-5); }
-  .catalogue > section { display: grid; align-content: start; gap: var(--smrt-spacing-2); }
-  .row { display: flex; flex-wrap: wrap; align-items: center; gap: var(--smrt-spacing-3); }
+@layer smrt.structure {
+  .smrt-styleless-preview__root {
+    display: grid;
+    gap: var(--smrt-spacing-6);
+  }
+  header {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    gap: var(--smrt-spacing-3);
+    padding-bottom: var(--smrt-spacing-4);
+  }
+  h4, h5, p {
+    margin: 0;
+  }
+  h5 {
+    margin-bottom: var(--smrt-spacing-3);
+  }
+  .smrt-styleless-preview__toggle {
+    display: inline-flex;
+    align-items: center;
+    gap: var(--smrt-spacing-2);
+  }
+  .smrt-styleless-preview__catalogue {
+    display: grid;
+    grid-template-columns: repeat(auto-fit, minmax(16rem, 1fr));
+    gap: var(--smrt-spacing-5);
+  }
+  .smrt-styleless-preview__catalogue > section {
+    display: grid;
+    align-content: start;
+    gap: var(--smrt-spacing-2);
+  }
+  .smrt-styleless-preview__row {
+    display: flex;
+    flex-wrap: wrap;
+    align-items: center;
+    gap: var(--smrt-spacing-3);
+  }
 }
+
+@layer smrt.theme {
+  .smrt-styleless-preview__root {
+    color: var(--smrt-color-on-surface);
+  }
+  header {
+    border-bottom: var(--smrt-hairline);
+  }
+  h4 {
+    font: var(--smrt-typography-headline-small-font);
+  }
+  h5 {
+    font: var(--smrt-typography-title-medium-font);
+  }
+  .smrt-styleless-preview__eyebrow {
+    color: var(--smrt-color-primary);
+    font: var(--smrt-typography-label-small-font);
+    letter-spacing: .1em;
+    text-transform: uppercase;
+  }
+  .smrt-styleless-preview__note {
+    color: var(--smrt-color-on-surface-variant);
+    font: var(--smrt-typography-body-medium-font);
+  }
+}
+
 </style>
