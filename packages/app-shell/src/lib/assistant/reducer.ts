@@ -36,7 +36,14 @@ export type Item =
       /** Left over from an earlier turn (the turn that asked is gone). */
       detached: boolean;
     }
-  | { kind: 'note'; id: string; tone: 'error' | 'info'; text: string };
+  | {
+      kind: 'note';
+      id: string;
+      tone: 'error' | 'info';
+      text: string;
+      /** A fix for the problem ("Sign in again"), when there is one. */
+      action?: { label: string; href: string };
+    };
 
 export interface DockState {
   threadId: string | null;
@@ -373,6 +380,7 @@ function onEvent(state: DockState, e: TurnEvent): DockState {
             id: next(state, 'n'),
             tone: 'error',
             text: e.message,
+            ...(e.action ? { action: e.action } : {}),
           },
         ],
       };

@@ -144,7 +144,7 @@ Owner session required on all of them (401/403); the POST is same-origin.
 
 | Route | Body | Response |
 |---|---|---|
-| `GET /api/assistant/status` | | `{ configured: boolean, engine?, engineLabel?, code?, message?, action? }`; never a key, provider, endpoint or path. `engine` is `api`, `claude-code` or `codex`. `code` is `assistant_not_configured` (no API key), `assistant_provider_refused` (subscription provider configured), `ai_unavailable` (inference off), `agent_cli_missing` or `agent_cli_signed_out` (a local CLI engine that is not ready); `action` is the link that fixes it |
+| `GET /api/assistant/status` | | `{ configured: boolean, engine?, engineLabel?, code?, message?, action? }`; never a key, provider, endpoint or path. `engine` is `api`, `claude-code`, `codex` or `chatgpt`. `code` is `assistant_not_configured` (no API key), `assistant_provider_refused` (subscription provider configured), `ai_unavailable` (inference off), `agent_cli_missing` or `agent_cli_signed_out` (a local CLI engine that is not ready), `chatgpt_signed_out` (Sign in with ChatGPT not done); `action` is the link that fixes it |
 | `GET /api/assistant/threads` | | `{ threads: { id, title, updatedAt }[] }` newest first |
 | `GET /api/assistant/threads/<id>` | | `{ thread, messages: ThreadMessage[] }`; 404 for a missing or foreign thread |
 | `POST /api/assistant/turn` | `{ message, threadId? }` | `text/event-stream`, `event: turn`, JSON `TurnEvent` (below). **503** `{ type: 'unavailable', configured: false, code, error }` when the assistant cannot run; 409 while another turn is running |
@@ -152,7 +152,7 @@ Owner session required on all of them (401/403); the POST is same-origin.
 `TurnEvent` (`src/lib/assistant/events.ts`): `thread {threadId}`, `text {delta}`,
 `tool_call {id,name,args}`, `tool_result {id,name,ok,summary}`,
 `approval_required {id,name,approvalId,summary,preview}`,
-`approval_decided {id,approvalId,status}`, `error {code,message}`,
+`approval_decided {id,approvalId,status}`, `error {code,message,action?}`,
 `done {stop}` (`complete | max_steps | max_tokens | timeout | aborted | waiting | error`).
 Closing the request (the dock's Stop button, a closed tab) aborts the model
 call, the running tool and any wait.
@@ -168,8 +168,9 @@ call, the running tool and any wait.
   wait times out or the client leaves, the model is told it is waiting, the
   turn ends as `waiting`/`aborted`, and the Approval stays pending, unapplied.
   The assistant has no way to set the engine's `approved` flag.
-- **Engines.** Two, chosen by the owner (the non-secret `assistant`
-  preference, `engine` = `api` | `claude-code` | `codex`; default `api`):
+- **Engines.** Three, chosen by the owner (the non-secret `assistant`
+  preference, `engine` = `api` | `claude-code` | `codex` | `chatgpt`; default
+  `api`):
   - **API key** (`api`): `@happyvertical/ai` through core's inference tiers
     (`resolveInferenceTarget`, tier `good`, override
     `SMRT_APP_SHELL_ASSISTANT_TIER`). The key is the owner's, pasted once in
@@ -179,10 +180,13 @@ call, the running tool and any wait.
     stored tier bindings, then config/env, so a desktop app launched from
     Finder works with no environment. The key is read only server side, never
     logged or sent to the browser. Subscription providers (`claude-cli`,
-    `chatgpt-plan`) are refused here: no in-app subscription login.
+    `chatgpt-plan` from configuration) are refused here, as is any in-app
+    Claude subscription login.
   - **Local agent CLI** (`claude-code`, `codex`): the turn runs through the
     person's own, already installed and signed-in Claude Code or Codex
     (`src/lib/server/agent-cli/`, `assistant/agent-turn.ts`). See below.
+  - **ChatGPT** (`chatgpt`): the owner's own ChatGPT plan through OpenAI's
+    official Sign in with ChatGPT flow (see below).
   With no usable engine, status/turn answer the typed not-configured state, the
   dock shows it with a link to fix it, and it checks again each time it is
   opened, so a saved key or a finished sign-in needs no restart.
@@ -193,10 +197,52 @@ call, the running tool and any wait.
 - **Threads** persist in shell.db (`assistant_threads`, `assistant_messages`).
 - **Tests** inject a stub model (`modelFactory` option, `test-helpers.ts`).
 
+### Sign in with ChatGPT (a preview for open source apps)
+
+OpenAI's official flow for local open source apps, a **preview**: the
+authorization basis and its limits are in OpenAI's
+[preview limitations](https://developers.openai.com/siwc/token-sharing-open-source/preview-limitations).
+Claude has no equivalent here: its subscription stays on the Claude Code
+engine below, and `claude-cli` and any in-app Claude subscription login stay
+refused.
+
+- **Sign-in** (`lib/server/chatgpt.ts`, smrt-inference's
+  `createChatGPTPlanConnection`): "Sign in with ChatGPT" on `/welcome` and in
+  Settings > Assistant. Under the desktop wrapper this process opens the system
+  browser (`open` / `xdg-open` / `cmd /c start`) after checking the address is
+  https on `auth.openai.com`; in a plain browser session the page shows a normal
+  link. The SDK's loopback listener (127.0.0.1, PKCE, dynamic client
+  registration, OIDC validation) receives the callback, the page polls until it
+  is signed in and then selects the engine.
+- **Credentials** live only in the SDK's own owner-only file,
+  `<data root>/chatgpt/chatgpt.json` (directory `0700`, file `0600`, outside any
+  source tree; the encrypted backup that seals the data root seals it too).
+  This app never reads it and never logs, returns or copies a token: the
+  provider gets a `{ accessToken(clientId) }` handle, the browser sees
+  signed in / signing in / an account label. Sign out clears it and asks OpenAI
+  to revoke. `SMRT_APP_SHELL_NAME` sets the app name OpenAI's page shows.
+- **The turn** (`assistant/model.ts`): the `chatgpt` engine asks the resolver
+  smrt-inference composed (`installShellInference`) with its own request name,
+  and runs ONLY on the `chatgpt-plan` target that sign-in produced; with nobody
+  signed in it is unavailable ("Sign in with ChatGPT"), never an API key, never
+  another provider. The loop uses `chat()` with `onProgress` (the provider's
+  `stream()` rejects tools) and a tool namespace (`shell_tools`); it sends no
+  `maxTokens`, sampling, `user`, response format, reasoning option or forced
+  tool choice, which the preview refuses. The model is the owner's pick in
+  Settings > Assistant, else the first model in the account's catalog.
+  Approvals, the offer gate and the deny list are unchanged.
+- **Failures** become dock messages: usage limit, revoked session and workspace
+  refusals (the last two with "Sign in again", linking to
+  Settings > Assistant), "unavailable, still signed in", and the preview's
+  unsupported-capability refusal. Only the error class and code are logged.
+- **Tests** stub the provider (`assistant/chatgpt-engine.test.ts`), the
+  connection (`routes/onboarding-chatgpt.test.ts`) and the opener
+  (`lib/server/chatgpt.test.ts`); nothing signs in.
+
 ### The local agent CLI engine
 
-**Rule (two lines).** No in-app subscription login: this app never offers
-Claude.ai or ChatGPT sign-in and never collects, stores or passes on those
+**Rule (two lines).** No in-app Claude subscription login: this app never
+offers Claude.ai sign-in and never collects, stores or passes on those
 credentials. The local-CLI engine only runs the person's own, unmodified Claude
 Code or Codex, signed in through the vendor's own flow and billed to them
 ([Claude Code legal and compliance](https://code.claude.com/docs/en/legal-and-compliance)).
@@ -257,9 +303,10 @@ Product names appear as plain text, no logos.
 ## Onboarding
 
 `/welcome` (owner only; an owner with an empty app who has not finished or
-skipped it is sent there once): **1. Connect your AI** (one button per local
-tool, plus Advanced: the full inference setup at `/settings/inference`, which
-links back) and **2. How do you want to start?** (Fresh: an empty app with the
+skipped it is sent there once): **1. Connect your AI** (Use Claude Code,
+Sign in with ChatGPT, plus Advanced: the full inference setup at
+`/settings/inference`, which links back; Codex is an advanced option under
+Settings > Assistant, not on this page) and **2. How do you want to start?** (Fresh: an empty app with the
 assistant dock open; Wizard: shown, disabled, coming soon). Skippable. Finished
 or skipped is stored as `onboarding` in the `assistant` preference
 (`agent-cli/settings.ts`, the smrt-preferences store smrt-inference also uses;
@@ -267,7 +314,9 @@ not a member of the `inference` payload, which the settings panel replaces whole
 and not a tier target of core's inference model). **Settings > Assistant**
 (`/settings/assistant`) switches engine and re-opens the steps. JSON routes
 (owner only, same-origin writes): `GET /api/shell/onboarding[?fresh=1]`,
-`POST /api/shell/onboarding/{connect,engine,complete,skip}` (`lib/server/onboarding.ts`).
+`POST /api/shell/onboarding/{connect,engine,complete,skip}`, and
+`GET`/`POST /api/shell/onboarding/chatgpt` (start, sign-out, model;
+`lib/server/onboarding.ts`).
 
 ## First-run schema
 

@@ -86,24 +86,46 @@ node scripts/launch-smoke.mjs --wrapper /path/outside/the/checkout/wrapper-targe
 To use the app, run the staged debug wrapper (`launch-smoke.mjs --keep` leaves
 the layout) and the window opens on the owner setup page.
 
-## The assistant: your own Claude Code or Codex, or an API key
+## The assistant: your own Claude Code or ChatGPT plan, or an API key
 
 On first run the owner lands on a short welcome: **Connect your AI**, then
 **How do you want to start?** (Fresh, or the project Wizard, coming soon).
-Connecting uses the Claude Code or Codex already installed and signed in on
-this computer, or starts that tool's own sign-in (it opens the vendor's page in
-your browser). The assistant then runs through that tool, billed to your own
-account, and can only use the app's own tools; a change that needs approval
-waits for your Approve or Deny. If neither is installed, the page links to the
-vendor's install page. **Settings > Assistant** switches the engine and
-re-opens the welcome steps.
+There are two ways to connect:
 
-No in-app subscription login: Tricia never offers Claude.ai or ChatGPT sign-in
-and never sees those credentials; the local-CLI engine runs your own Claude
-Code or Codex, signed in the way its maker requires
+- **Use Claude Code**: the Claude Code already installed and signed in on this
+  computer, or that tool's own sign-in (it opens the vendor's page in your
+  browser). The assistant then runs through that tool, billed to your own
+  account, and can only use the app's own tools.
+- **Sign in with ChatGPT**: OpenAI's official sign-in for open source apps, so
+  the assistant runs on your own ChatGPT plan. Tricia opens OpenAI's page in
+  your system browser (the app process starts `open` / `xdg-open` /
+  `cmd /c start`, only for an https address on `auth.openai.com`), the page shows
+  "signed in" when you return, and the engine is selected. This is a **preview**
+  for open source apps; its limits are in OpenAI's
+  [preview limitations](https://developers.openai.com/siwc/token-sharing-open-source/preview-limitations).
+  The credentials stay in the SDK's own owner-only file under the app's data
+  directory (`chatgpt/chatgpt.json`, mode `0600`); Tricia never reads, logs or
+  copies a token. Sign out under **Settings > Assistant**.
+
+A change that needs approval waits for your Approve or Deny on either engine.
+If Claude Code is not installed, the page links to the vendor's install page.
+**Settings > Assistant** switches the engine, lets you pick the ChatGPT model
+(the first model in your account's catalog by default), re-opens the welcome
+steps, and lists **Codex**, the other local tool, under Advanced.
+
+No in-app Claude subscription login: Tricia never offers Claude.ai sign-in and
+never sees those credentials; the local-CLI engine runs your own Claude Code,
+signed in the way its maker requires
 ([Claude Code legal and compliance](https://code.claude.com/docs/en/legal-and-compliance)).
 Details and the lock-down are in the
-[app shell README](../../../app-shell/README.md#the-local-agent-cli-engine).
+[app shell README](../../../app-shell/README.md#sign-in-with-chatgpt-a-preview-for-open-source-apps)
+and its [local agent CLI section](../../../app-shell/README.md#the-local-agent-cli-engine).
+
+The bundle needs nothing extra for this: the ChatGPT provider talks to OpenAI
+over plain `fetch` (no provider SDK, so `ai-providers` is unrelated), and the
+sign-in runs on `@happyvertical/auth`, a dependency of the inference package
+that the feature flags never remove; it uses Node's built-in `node:sqlite`,
+which the bundled Node 26 has.
 
 ### Or an API key
 

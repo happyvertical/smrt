@@ -9,10 +9,10 @@ import ConnectAi from '$lib/components/ConnectAi.svelte';
 
 <ShellSettingsPage basePath="/settings" title="Assistant">
   <p>
-    Choose what runs the assistant: the Claude Code or Codex you already have
-    installed, or an API key.
+    Choose what runs the assistant: the Claude Code you already have installed,
+    your ChatGPT plan, or an API key. Codex is under Advanced.
   </p>
-  <ConnectAi advancedHref="/settings/inference" />
+  <ConnectAi variant="settings" advancedHref="/settings/inference" />
   <p class="again">
     <a class="sh-link" href="/welcome">Run the welcome steps again</a>
   </p>

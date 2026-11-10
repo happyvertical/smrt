@@ -351,7 +351,7 @@ $effect(() => {
               {/if}
             </div>
           {:else}
-            <p class="sh-alert {item.tone === 'error' ? 'sh-alert-error' : ''}" role={item.tone === 'error' ? 'alert' : 'status'}>{item.text}</p>
+            <p class="sh-alert {item.tone === 'error' ? 'sh-alert-error' : ''}" role={item.tone === 'error' ? 'alert' : 'status'}>{item.text}{#if item.action} <a class="sh-link" href={item.action.href}>{item.action.label}</a>{/if}</p>
           {/if}
         {/each}
       </div>

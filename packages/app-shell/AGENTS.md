@@ -89,9 +89,16 @@ SvelteKit or `src/lib`). README has the route and JSON contracts.
   decides approvals (`approval_decide` is not in the catalog, and
   `ASSISTANT_DENIED_TOOLS` repeats it): only the signed-in owner does, in the UI. A risky call is held (`holdForUser`) on its Approval; only the
   owner's `Approval.decide` applies it. The loop is bounded (`DEFAULT_LIMITS`),
-  serial, aborts on disconnect. Two engines (`assistant` preference): `api`
-  (`config.ts` refuses `claude-cli`/`chatgpt-plan`: no in-app subscription
-  login) and a local agent CLI (`claude-code`/`codex`, the person's own signed-in
+  serial, aborts on disconnect. Three engines (`assistant` preference): `api`
+  (`config.ts` refuses `claude-cli` and any configured `chatgpt-plan`; no
+  in-app Claude subscription login), `chatgpt` (the owner's Sign in with
+  ChatGPT, a PREVIEW for open source apps: `chatgpt.ts`, `assistant/model.ts`,
+  README "Sign in with ChatGPT"; runs only on the target smrt-inference's
+  sign-in resolver made for the `AppShellAssistantChatGPT` request, never an
+  API key; `chat()` + `onProgress`, none of `maxTokens`/sampling/`user`/
+  response format/reasoning/forced tool choice; the SDK keeps the credentials
+  in `<data root>/chatgpt/chatgpt.json`, never read, logged or returned here)
+  and a local agent CLI (`claude-code`/`codex`, the person's own signed-in
   tool; `agent-cli/`, README "The local agent CLI engine"). The CLI engine gets
   tools only through `/mcp` under a short-lived owner-bound `assistant.use`
   token in the child env (never argv, file or log), with every machine-touching

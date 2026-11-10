@@ -115,6 +115,23 @@ describe('dock reducer', () => {
     expect(s.items[0]).toMatchObject({ detached: true, state: 'pending' });
   });
 
+  it('keeps the fix an error offers ("Sign in again") on its note', () => {
+    const s = run([
+      { type: 'send', text: 'x' },
+      ev({
+        type: 'error',
+        code: 'chatgpt_session_revoked',
+        message: 'Your ChatGPT sign-in is no longer valid.',
+        action: { label: 'Sign in again', href: '/settings/assistant#chatgpt' },
+      }),
+    ]);
+    expect(s.items.at(-1)).toMatchObject({
+      kind: 'note',
+      tone: 'error',
+      action: { label: 'Sign in again', href: '/settings/assistant#chatgpt' },
+    });
+  });
+
   it('turns stream errors into notes and loads stored threads', () => {
     let s = run([
       { type: 'send', text: 'x' },

@@ -15,10 +15,20 @@ export interface ToolInfo {
   login: 'idle' | 'running' | 'finished' | 'failed';
 }
 
+/** Sign in with ChatGPT, as the server reports it. Never a token. */
+export interface ChatGPTInfo {
+  signedIn: boolean;
+  signingIn: boolean;
+  account?: { label: string };
+  error?: { code: string; message: string };
+}
+
 export interface OnboardingInfo {
   onboarding: 'fresh' | 'skipped' | null;
   engine: AssistantEngineId;
   apiReady: boolean;
+  /** Absent from an older server: treated as not signed in. */
+  chatgpt?: ChatGPTInfo;
   tools: ToolInfo[];
 }
 
@@ -77,6 +87,43 @@ export const connectTool = (tool: ToolInfo['tool'], doFetch: Fetch = fetch) =>
     doFetch,
   ) as Promise<ConnectResult>;
 
+export type ChatGPTStart = {
+  result: 'login_started';
+  /** The app opened the system browser itself (desktop). */
+  opened: boolean;
+  /** Set when the page must open it: a normal new-tab link. */
+  authorizationUrl?: string;
+};
+
+export const startChatGPT = (doFetch: Fetch = fetch) =>
+  post(
+    '/api/shell/onboarding/chatgpt',
+    { action: 'start' },
+    doFetch,
+  ) as Promise<ChatGPTStart>;
+
+export const signOutChatGPT = (doFetch: Fetch = fetch) =>
+  post('/api/shell/onboarding/chatgpt', { action: 'sign-out' }, doFetch);
+
+export interface ChatGPTState {
+  chatgpt: ChatGPTInfo;
+  model: string | null;
+  models?: { id: string; label: string }[];
+}
+
+export const fetchChatGPT = (doFetch: Fetch = fetch) =>
+  call<ChatGPTState>('/api/shell/onboarding/chatgpt', undefined, doFetch);
+
+export const chooseChatGPTModel = (
+  model: string | null,
+  doFetch: Fetch = fetch,
+) =>
+  post(
+    '/api/shell/onboarding/chatgpt',
+    { action: 'model', model: model ?? '' },
+    doFetch,
+  );
+
 export const chooseEngine = (
   engine: AssistantEngineId,
   doFetch: Fetch = fetch,
@@ -91,6 +138,7 @@ export const skipOnboarding = (doFetch: Fetch = fetch) =>
 /** Whether the engine in effect can answer right now. */
 export function engineReady(info: OnboardingInfo): boolean {
   if (info.engine === 'api') return info.apiReady;
+  if (info.engine === 'chatgpt') return info.chatgpt?.signedIn === true;
   const tool = info.tools.find((t) => t.tool === info.engine);
   return !!tool?.installed && tool.signedIn === true;
 }
@@ -98,11 +146,58 @@ export function engineReady(info: OnboardingInfo): boolean {
 /**
  * The API-key line under the tools: "in-use" only when the API engine is the
  * one in effect AND a key resolves; "available" when a key resolves but
- * another engine is chosen; "none" when nothing works yet.
+ * another engine is chosen (or the chosen one is not working); "none" when
+ * nothing works yet. Covers every engine: with `chatgpt` chosen and signed in,
+ * the API key is "available", never "in use".
  */
 export function apiRow(info: OnboardingInfo): 'in-use' | 'available' | 'none' {
   if (!info.apiReady) return 'none';
   return info.engine === 'api' ? 'in-use' : 'available';
+}
+
+/**
+ * Which tools each page lists. The welcome step offers Claude Code (and the
+ * ChatGPT row); Codex is an advanced option that lives under Settings >
+ * Assistant only.
+ */
+export function visibleTools(
+  info: OnboardingInfo,
+  variant: 'welcome' | 'settings',
+): { main: ToolInfo[]; advanced: ToolInfo[] } {
+  if (variant === 'settings')
+    return {
+      main: info.tools.filter((t) => t.tool !== 'codex'),
+      advanced: info.tools.filter((t) => t.tool === 'codex'),
+    };
+  return { main: info.tools.filter((t) => t.tool !== 'codex'), advanced: [] };
+}
+
+export type ChatGPTAction =
+  | { kind: 'in-use'; label: string }
+  | { kind: 'use'; label: string }
+  | { kind: 'sign-in'; label: string }
+  | { kind: 'waiting'; label: string };
+
+/** The one button the ChatGPT row gets, and its words. */
+export function chatgptAction(info: OnboardingInfo): ChatGPTAction {
+  const chatgpt = info.chatgpt;
+  if (chatgpt?.signedIn)
+    return info.engine === 'chatgpt'
+      ? { kind: 'in-use', label: 'In use' }
+      : { kind: 'use', label: 'Use ChatGPT' };
+  if (chatgpt?.signingIn)
+    return { kind: 'waiting', label: 'Waiting for sign-in…' };
+  return { kind: 'sign-in', label: 'Sign in with ChatGPT' };
+}
+
+/** The line under the ChatGPT row's name. */
+export function chatgptDescription(info: OnboardingInfo): string {
+  const chatgpt = info.chatgpt;
+  if (chatgpt?.signedIn)
+    return `Signed in${chatgpt.account ? ` as ${chatgpt.account.label}` : ''}.`;
+  if (chatgpt?.signingIn) return 'Finish signing in in your browser.';
+  if (chatgpt?.error) return chatgpt.error.message;
+  return 'Use your own ChatGPT plan. A preview for open source apps.';
 }
 
 export type ToolAction =

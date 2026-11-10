@@ -80,7 +80,7 @@ async function skip() {
     <section class="sh-card" aria-labelledby="connect-intro">
       <p id="connect-intro">
         The assistant builds and changes your app for you. It runs on your own
-        Claude Code or Codex.
+        Claude Code, or on your ChatGPT plan.
       </p>
       <ConnectAi onchange={(_info, ok) => (ready = ok)} />
     </section>
