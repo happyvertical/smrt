@@ -19,6 +19,12 @@ export interface ShellContext {
   db: () => Promise<DatabaseInterface>;
   /** The app-runtime data root. */
   dataRoot: () => Promise<string>;
+  /**
+   * The runtime's secrets master key (created once on the local profile and
+   * kept in its vault key store; `SMRT_SECRET_MASTER_KEY` always wins). Never
+   * logged or sent anywhere.
+   */
+  secretMasterKey?: () => Promise<string | null>;
   /** Override the app worker entry (tests; defaults to the engine's own). */
   workerUrl?: URL | string;
 }
@@ -43,6 +49,12 @@ export async function getShellDb(): Promise<DatabaseInterface> {
   const db = await requireContext().db();
   syncDb = db;
   return db;
+}
+
+/** The runtime's secrets master key, or null when it supplies none. */
+export async function getShellSecretMasterKey(): Promise<string | null> {
+  const provide = requireContext().secretMasterKey;
+  return provide ? provide() : null;
 }
 
 /** The shell database once `getShellDb()` has resolved. For sync thunks. */

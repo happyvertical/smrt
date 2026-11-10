@@ -43,14 +43,17 @@ describe('inference and prompt settings sections', () => {
 
   it('applies stored bindings through a lazy override resolver', () => {
     expect(read('lib/server/settings.ts')).toContain(
-      "db: () => runtime.classOptions('InferenceOverride')",
+      "overrides: () => runtime.classOptions('InferenceOverride')",
     );
     expect(read('hooks.server.ts')).toContain('installInferenceOverrides()');
   });
 
   it('keeps the permission decision on the server, never in the panel', () => {
     const settings = read('lib/server/settings.ts');
-    expect(settings).toContain('session.can(permission)');
+    // The session's own check is the permission snapshot; the authorizer that
+    // gates writes on it lives in smrt-inference's host.
+    expect(settings).toContain('can: (permission) => permissions.has(permission)');
+    expect(settings).toContain('session.can(PROMPTS_CUSTOMIZE_PERMISSION)');
     expect(settings).toContain('PROMPTS_CUSTOMIZE_PERMISSION');
     for (const route of ['inference', 'prompts']) {
       expect(read(`routes/settings/${route}/+page.server.ts`)).toContain(

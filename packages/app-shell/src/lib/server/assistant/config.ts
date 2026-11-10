@@ -1,11 +1,13 @@
-// Where the assistant's model comes from. An API key from config or the
-// environment, resolved through core's inference tiers; NEVER a subscription
-// login (claude.ai / ChatGPT plan): those providers are refused here, before
-// any client is built. Until bring-your-own (#4666) lands the key is the
-// deployment's own (`smrt.config.ts` `ai` block, `SMRT_AI_*`, or the
-// provider's conventional variable such as `ANTHROPIC_API_KEY`). The key is
+// Where the assistant's model comes from. An API key resolved through core's
+// inference tiers; NEVER a subscription login (claude.ai / ChatGPT plan):
+// those providers are refused here, before any client is built. The chain is
+// the owner's key saved in Settings (smrt-inference's user resolver, over
+// smrt-secrets), then the stored tier bindings, then the deployment's config
+// (`smrt.config.ts` `ai` block, `SMRT_AI_*`, or the provider's conventional
+// variable such as `ANTHROPIC_API_KEY`), which stays the base. The key is
 // read here only, handed to the provider SDK, and never logged or sent to a
-// browser.
+// browser. The resolver is registered at startup (`installShellInference`),
+// and a saved key invalidates its cache, so the next turn uses it.
 import {
   type AIProviderClientOptions,
   toAIClientOptions,
@@ -47,7 +49,7 @@ export class SubscriptionProviderError extends Error {
 export class AssistantNotConfiguredError extends Error {
   readonly code = 'assistant_not_configured';
   constructor(
-    message = 'The assistant needs an API key. Set one in the app configuration to turn it on.',
+    message = 'The assistant needs an API key. Add one in Settings to turn it on.',
   ) {
     super(message);
     this.name = 'AssistantNotConfiguredError';
@@ -104,8 +106,8 @@ function baseOptions(
 }
 
 /**
- * The `getAI()` options for `principal`'s assistant: config/env key, bound by
- * core's tier resolution (a per-user binding wins once #4666 lands). Throws
+ * The `getAI()` options for `principal`'s assistant: the config/env key as
+ * `base`, bound by core's tier resolution (the principal's saved key wins). Throws
  * {@link AssistantNotConfiguredError}, {@link SubscriptionProviderError} or
  * core's `InferenceUnavailableError`. Never calls a model. The result may hold
  * the key: pass it to `getAI()` and drop it.

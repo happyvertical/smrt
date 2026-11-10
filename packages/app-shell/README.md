@@ -114,6 +114,22 @@ or an outside MCP client) can approve its own call. The risky ones
 - `callTool(principal, name, args)`: authorize and run. A risky call returns a `PendingApproval`.
 - `Principal = { id, tenantId, scopes? }`; get one from the request with `principalFromLocals(locals)` (`owner.ts`).
 
+## Settings
+
+`/settings` is the section menu (`ShellSettingsPage`): Appearance, Account,
+Layout and Shortcuts, plus **Inference** (`/settings/inference`), the
+`InferenceSettingsPanel` from smrt-inference. Owner only: every load and action
+runs as the verified owner (a member or a stranger gets 403 before any body is
+read). Saving a provider key (`saveKey`) binds it to its endpoint, stores it in
+smrt-secrets (sealed under the app-runtime master key, created once into the
+vault key store; `SMRT_SECRET_MASTER_KEY` wins), and `keySet` is read back from
+the resolver's redacted view; the key itself never returns to the browser. The
+shell registers smrt-inference's user resolver at startup, which is what the
+assistant resolves through. The inference, preferences and secrets tables are
+created by `prepareShellSchema` on first start (`consumer.packages` in
+`smrt.config.ts` lists their packages). The load and writes are smrt-inference's
+`createInferenceSettingsController`, shared with the template.
+
 ## The assistant
 
 The dock (`src/lib/assistant/AssistantDock.svelte`, mounted for the owner in
@@ -148,11 +164,16 @@ call, the running tool and any wait.
   The assistant has no way to set the engine's `approved` flag.
 - **Engine.** `@happyvertical/ai` through core's inference tiers
   (`resolveInferenceTarget`, tier `good`, override `SMRT_APP_SHELL_ASSISTANT_TIER`).
-  The key comes from the `ai` block of `smrt.config.ts`, `SMRT_AI_*` or the
-  provider's own variable (`ANTHROPIC_API_KEY`), read only server side, never
-  logged or sent to the browser, until bring-your-own (#4666) lands. Subscription
-  providers (`claude-cli`, `chatgpt-plan`) are refused. With no key,
-  status/turn answer the typed not-configured state and the dock shows it.
+  The key is the owner's, pasted once in **Settings > Inference**
+  (`/settings/inference`, see below), or the deployment's: the `ai` block of
+  `smrt.config.ts`, `SMRT_AI_*` or the provider's own variable
+  (`ANTHROPIC_API_KEY`). The saved key wins, then the stored tier bindings, then
+  config/env, so a desktop app launched from Finder works with no environment.
+  The key is read only server side, never logged or sent to the browser.
+  Subscription providers (`claude-cli`, `chatgpt-plan`) are refused. With no
+  key, status/turn answer the typed not-configured state, the dock shows it
+  with a link to Settings, and it checks again each time it is opened, so a
+  saved key needs no restart.
 - **Bounds** (`DEFAULT_LIMITS` in `turn.ts`): 8 model rounds, 2048 output
   tokens per call, 60 000 tokens per turn, 4 calls per round, 60 s per model
   call, 180 s of model/tool time per turn, 15 min per approval wait.

@@ -5,10 +5,10 @@ description: "A smrt app that builds and runs a person's own smrt app from defin
 status: "stable"
 generated:
   by: "smrt/scripts/generate-knowledge-okf.ts"
-  at: "2026-11-10T02:12:11Z"
+  at: "2026-11-10T02:33:12Z"
 audience: "internal"
 evidence_level: "source-inspected"
-source_revision: "sha256:b11f75c20cf7865eb7a4475f21c784d9188fffaf65c78fa81532b3d124f923db"
+source_revision: "sha256:91ee3dbd1bbdd1bc5fd585b3beee4d95c4cffb6df38bf18d377cea872217ec1e"
 sources:
   - id: "manifest"
     resource: "https://github.com/happyvertical/smrt/blob/main/packages/app-shell/package.json"
@@ -27,7 +27,7 @@ sources:
 
 - Directory: `packages/app-shell`
 - Private: no
-- Object source: `scanner`
+- Object source: `manifest`
 - Evidence level: `source-inspected`
 
 ## Documentation
@@ -41,7 +41,10 @@ sources:
 - [smrt-app-runtime](/components/smrt-app-runtime.md)
 - [smrt-config](/components/smrt-config.md)
 - [smrt-core](/components/smrt-core.md)
+- [smrt-inference](/components/smrt-inference.md)
+- [smrt-preferences](/components/smrt-preferences.md)
 - [smrt-profiles](/components/smrt-profiles.md)
+- [smrt-secrets](/components/smrt-secrets.md)
 - [smrt-svelte](/components/smrt-svelte.md)
 - [smrt-tenancy](/components/smrt-tenancy.md)
 - [smrt-ui](/components/smrt-ui.md)
@@ -64,10 +67,15 @@ sources:
 ## Models
 
 - `App` (collection `apps`, extends `SmrtObject`)
+- `AppCollection` (collection `apps`, extends `SmrtCollection`)
 - `AppVersion` (collection `appversions`, extends `SmrtObject`)
+- `AppVersionCollection` (collection `appversions`, extends `SmrtCollection`)
 - `Approval` (collection `approvals`, extends `SmrtObject`)
+- `ApprovalCollection` (collection `approvals`, extends `SmrtCollection`)
 - `AssistantMessage` (collection `assistantmessages`, extends `SmrtObject`)
+- `AssistantMessageCollection` (collection `assistantmessages`, extends `SmrtCollection`)
 - `AssistantThread` (collection `assistantthreads`, extends `SmrtObject`)
+- `AssistantThreadCollection` (collection `assistantthreads`, extends `SmrtCollection`)
 
 ## MCP tools
 

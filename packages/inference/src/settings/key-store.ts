@@ -1,5 +1,5 @@
 /**
- * Provider API keys for the Inference settings page.
+ * Provider API keys for an Inference settings page.
  *
  * A key is stored once, as the `inference.provider-config` secret the user
  * resolver reads (`docs/content/inference-settings.md`): the page's
@@ -8,15 +8,12 @@
  * key is the key inference calls use. The browser never receives a key back,
  * only whether one is set.
  *
- * Kept free of the runtime and SvelteKit so it is tested with a real
- * resolver over a real secret store; `./settings` wires it to the app.
+ * Free of any runtime or web framework, so a template app and the app shell
+ * share it, tested with a real resolver over a real secret store.
  */
 
-import type { UserInferenceResolver } from '@happyvertical/smrt-inference/resolver';
-import {
-  bindInferenceKey,
-  inferenceProviderConfigFromKey,
-} from '@happyvertical/smrt-inference/server';
+import type { UserInferenceResolver } from '../resolver.js';
+import { bindInferenceKey, inferenceProviderConfigFromKey } from './keys.js';
 
 /** What the panel's `onSaveKey` posts. */
 export interface InferenceKeyPayload {

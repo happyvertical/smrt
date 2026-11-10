@@ -48,6 +48,7 @@ onMount(() => () => live.stop());
   runtimeDiagnostics={isOwner}
   user={data.session.user}
   onSignOut={signOut}
+  settingsHref={isOwner ? '/settings' : undefined}
   phoneTabBar
   chrome={!page.route.id?.startsWith('/setup')}
 >

@@ -5,10 +5,10 @@ description: "Minimal SvelteKit project template with s-m-r-t framework integrat
 status: "stable"
 generated:
   by: "smrt/scripts/generate-knowledge-okf.ts"
-  at: "2026-11-10T02:12:11Z"
+  at: "2026-11-10T02:33:12Z"
 audience: "internal"
 evidence_level: "source-inspected"
-source_revision: "sha256:bda418822152534bebcd9aa1321b59fb5fe2a1c7497beba81798f1214b65f460"
+source_revision: "sha256:fd109830cacd65292b13c76677ccaad726b89c8cf67ab633773936787a4f22ac"
 sources:
   - id: "manifest"
     resource: "https://github.com/happyvertical/smrt/blob/main/packages/template-sveltekit/package.json"
@@ -76,14 +76,11 @@ sources:
 ## MCP tools
 
 - `archive_referenceworkitems`: archive on `@happyvertical/smrt-template-sveltekit:ReferenceWorkItem`
-- `create_notes`: create on `@happyvertical/smrt-template-sveltekit:Note`
 - `create_referenceworkitems`: create on `@happyvertical/smrt-template-sveltekit:ReferenceWorkItem`
-- `delete_notes`: delete on `@happyvertical/smrt-template-sveltekit:Note`
 - `delete_referenceworkitems`: delete on `@happyvertical/smrt-template-sveltekit:ReferenceWorkItem`
 - `get_notes`: get on `@happyvertical/smrt-template-sveltekit:Note`
 - `get_referenceworkitems`: get on `@happyvertical/smrt-template-sveltekit:ReferenceWorkItem`
 - `list_notes`: list on `@happyvertical/smrt-template-sveltekit:Note`
 - `list_referenceworkitems`: list on `@happyvertical/smrt-template-sveltekit:ReferenceWorkItem`
 - `prepareForReview_referenceworkitems`: prepareForReview on `@happyvertical/smrt-template-sveltekit:ReferenceWorkItem`
-- `update_notes`: update on `@happyvertical/smrt-template-sveltekit:Note`
 - `update_referenceworkitems`: update on `@happyvertical/smrt-template-sveltekit:ReferenceWorkItem`

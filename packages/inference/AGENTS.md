@@ -195,6 +195,13 @@ app-only `transcripts` row, editable in the panel only with `appEditable`,
 applied as core's transcript app settings layer; the Usage tab shows
 transcript counts and links to a host route, never content. Details: [agents/settings.md](agents/settings.md),
 consumer guide [docs/content/inference-settings.md](../../docs/content/inference-settings.md).
+`./server` also ships the framework-free host wiring both the template and
+the app shell use: `createInferenceSettingsHost` (secret store under the
+runtime's master key, user resolver over the override resolver, settings
+service with its authorizer), `createInferenceSettingsController` (the
+panel's `load` and writes, gated on `inference.customize`; a refusal and a
+key-origin error name no key), and `saveInferenceKey` / `inferenceKeyIsSet`.
+A host supplies only its session check, preference store and routes.
 
 ## Validation
 

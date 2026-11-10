@@ -89,12 +89,13 @@ the layout) and the window opens on the owner setup page.
 ## The assistant needs an API key
 
 The assistant answers only with an API key (never a subscription login). The
-key comes from the `ai` block of `smrt.config.ts`, `SMRT_AI_*` or the provider's
-own variable (`ANTHROPIC_API_KEY`), read from the sidecar's environment. The
-wrapper's sidecar inherits the wrapper process's environment, so today a key
-reaches it only when Tricia is started from a terminal that has the variable
-set (the app's executable, or the debug wrapper, run directly).
-An app opened from Finder or the Dock does not see shell variables, and there is
-no settings screen yet (bring-your-own key is smrt#4666), so an ordinary desktop
-user cannot supply a key today. Without a key the dock shows its "not
-configured" state; the rest of the shell works.
+owner pastes one once: open **Settings > Inference** (the user menu, or the
+"Open Inference settings" link in the assistant dock), choose the provider and
+save the key. It is sealed in the app's data directory under a master key the
+app created into its vault key store (today an owner-only file beside the data
+directory; an OS keychain provider for the wrapper is not built yet), so an app opened from Finder or the Dock needs no environment
+variable, and the next assistant turn uses the key with no restart. A key from
+the `ai` block of `smrt.config.ts`, `SMRT_AI_*` or the provider's own variable
+(`ANTHROPIC_API_KEY`) still works as the fallback; a saved key wins over it.
+Without any key the dock shows its "not configured" state; the rest of the shell
+works.

@@ -11,17 +11,11 @@
  */
 
 import {
-  createUserInferenceResolver,
-  type InferenceSecretStore,
-  registerUserInferenceResolver,
-  type UserInferenceResolver,
-} from '@happyvertical/smrt-inference/resolver';
-import {
-  createInferenceOverrideResolver,
-  type InferenceOverrideAuthorizer,
-  InferenceSettingsService,
+  createInferenceSettingsController,
+  createInferenceSettingsHost,
+  type InferenceSettingsController,
+  inferenceSettingsFailure,
 } from '@happyvertical/smrt-inference/server';
-import { SecretService } from '@happyvertical/smrt-secrets';
 import { createPreferenceStore } from '@happyvertical/smrt-preferences';
 import { PromptSettingsService } from '@happyvertical/smrt-prompts';
 import type { SmrtRuntimeLocals } from '@happyvertical/smrt-app-runtime/sveltekit';
@@ -57,78 +51,44 @@ export function requireSettingsSession(locals: SettingsLocals): SettingsSession 
 }
 
 /**
- * The secrets the user resolver reads and writes. `SMRT_SECRET_MASTER_KEY`
- * wins where it is set (servers); otherwise the local runtime creates the
- * master key on first run and keeps it in its vault key store, so the owner
- * never types or sees it (`runtime.secretMasterKey()` is `null` on deployed
- * profiles, which need the variable). Built on first use: the database
- * resolves after `src/hooks.server.ts` imports this module.
+ * Secrets, the user resolver and the settings service, from smrt-inference's
+ * host. `SMRT_SECRET_MASTER_KEY` wins where it is set (servers); otherwise
+ * the local runtime creates the master key on first run and keeps it in its
+ * vault key store, so the owner never types or sees it
+ * (`runtime.secretMasterKey()` is `null` on deployed profiles, which need the
+ * variable). Nothing touches the database until first use: it resolves after
+ * `src/hooks.server.ts` imports this module.
  */
-let secretService: Promise<SecretService> | undefined;
-function secrets(): Promise<SecretService> {
-  secretService ??= (async () =>
-    SecretService.create({
-      db: await runtime.database(),
-      masterKeyProvider: () => runtime.secretMasterKey(),
-    }))().catch((cause: unknown) => {
-    secretService = undefined;
-    throw cause;
-  });
-  return secretService;
-}
-
-const lazySecrets: InferenceSecretStore = {
-  retrieve: async (name) => (await secrets()).retrieve(name),
-  store: async (name, value, options) =>
-    (await secrets()).store(name, value, options),
-  delete: async (name) => (await secrets()).delete(name),
-};
-
-let userResolver: UserInferenceResolver | undefined;
-
-/**
- * The resolver stored API keys are written through and read from: the
- * signed-in user's key, then the tenant's, then the stored tier bindings
- * (`createInferenceOverrideResolver`), then config.
- */
-export function inferenceUserResolver(): UserInferenceResolver {
-  userResolver ??= createUserInferenceResolver({
-    secrets: lazySecrets,
-    fallback: createInferenceOverrideResolver({
-      db: () => runtime.classOptions('InferenceOverride'),
-    }),
-  });
-  return userResolver;
-}
+const inference = createInferenceSettingsHost({
+  database: () => runtime.database(),
+  masterKeyProvider: () => runtime.secretMasterKey(),
+  overrides: () => runtime.classOptions('InferenceOverride'),
+});
 
 /**
  * Stored API keys, tier bindings, aliases and fusions apply to every
- * inference call in this process. `registerUserInferenceResolver` keeps the
- * chain validation outermost.
+ * inference call in this process (the signed-in user's key, then the
+ * tenant's, then the stored tier bindings, then config).
+ * `registerUserInferenceResolver` keeps the chain validation outermost.
  */
 export function installInferenceOverrides(): void {
-  registerUserInferenceResolver(inferenceUserResolver());
+  inference.install();
 }
 
-/** Inference settings reads, plus writes for a session that may customize. */
-export function inferenceSettingsService(
-  session: SettingsSession,
-  permission: string,
-): Promise<InferenceSettingsService> {
-  // The owner edits the app scope; a tenant scope write is only ever for the
-  // session's own tenant.
-  const authorize: InferenceOverrideAuthorizer = (request) =>
-    session.can(permission) &&
-    (request.scopeType === 'app' || request.scopeId === session.tenantId);
-  return InferenceSettingsService.create(
-    runtime.classOptions('InferenceOverride'),
-    { authorize },
-  );
-}
+let controller: InferenceSettingsController | undefined;
 
-/** The `inference` preference store for the request's principal. */
-export async function inferencePreferenceStore() {
-  return createPreferenceStore({ db: await runtime.database() });
+/**
+ * What the Inference page loads and saves, shared with the app shell
+ * (smrt-inference's controller). The session's `can()` is this app's own
+ * check: its permission snapshot.
+ */
+export function inferenceSettingsController(): InferenceSettingsController {
+  controller ??= createInferenceSettingsController({
+    host: inference,
+    preferenceStore: async () =>
+      createPreferenceStore({ db: await runtime.database() }),
+  });
+  return controller;
 }
 
 /** Prompt settings reads, plus writes for a session that may customize. */
@@ -148,17 +108,10 @@ export function promptSettingsService(
 
 /** A `{ error }` body for a failed write: the message names no key or secret. */
 export function settingsFailure(cause: unknown): { status: number; error: string } {
-  const named = cause as { name?: string; status?: number; message?: string };
-  if (
-    named?.name === 'InferenceOverrideAuthorizationError' ||
-    named?.name === 'PromptOverrideAuthorizationError'
-  ) {
+  if ((cause as { name?: string })?.name === 'PromptOverrideAuthorizationError') {
     return { status: 403, error: 'You are not allowed to change this setting.' };
   }
-  return {
-    status: typeof named?.status === 'number' ? named.status : 400,
-    error: cause instanceof Error ? cause.message : 'The change was refused.',
-  };
+  return inferenceSettingsFailure(cause);
 }
 
 /** Parse the JSON `payload` form field the settings pages post. */

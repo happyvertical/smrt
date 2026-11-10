@@ -82,9 +82,11 @@ export const actions = {
 <InferenceSettingsPanel {...data} onSaveKey={saveKey} onSaveDefaults={saveChoices} />
 ```
 
-The generated app does this in `src/lib/server/inference-keys.ts` (the
-bind, store and "is it set" steps) and `src/lib/server/settings.ts`
-(`inferenceUserResolver()`, with `masterKeyProvider` above). Its `saveKey`
+The generated app does this with `createInferenceSettingsHost()` and
+`createInferenceSettingsController()` from `@happyvertical/smrt-inference/server`
+(the secret store with `masterKeyProvider` above, the user resolver, the
+bind, store and "is it set" steps behind `saveKey`), wired in
+`src/lib/server/settings.ts`; the app shell uses the same two. Its `saveKey`
 action is owner-only: it refuses a session without
 `inference.customize` before reading the body, writes the key at the `user`
 level, and takes a preset key's model from the owner's saved default

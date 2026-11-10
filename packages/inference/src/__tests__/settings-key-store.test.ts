@@ -12,7 +12,6 @@ import { fileURLToPath } from 'node:url';
 
 import { ObjectRegistry, resolveInference } from '@happyvertical/smrt-core';
 import { getTestDatabase } from '@happyvertical/smrt-core/testing';
-import { createUserInferenceResolver } from '@happyvertical/smrt-inference/resolver';
 import {
   Secret,
   SecretAuditLog,
@@ -23,10 +22,8 @@ import { enableTenancy, withTenant } from '@happyvertical/smrt-tenancy';
 import type { DatabaseInterface } from '@happyvertical/sql';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 
-import {
-  inferenceKeyIsSet,
-  saveInferenceKey,
-} from '../template/src/lib/server/inference-keys.js';
+import { createUserInferenceResolver } from '../resolver.js';
+import { inferenceKeyIsSet, saveInferenceKey } from '../settings/key-store.js';
 
 const TENANT = '11111111-1111-4111-8111-111111111111';
 const ALICE = '33333333-3333-4333-8333-333333333333';
@@ -35,7 +32,7 @@ const ENV_AMK = 'fe'.repeat(32);
 
 const here = dirname(fileURLToPath(import.meta.url));
 const secretsManifest = JSON.parse(
-  readFileSync(resolve(here, '../../secrets/dist/manifest.json'), 'utf8'),
+  readFileSync(resolve(here, '../../../secrets/dist/manifest.json'), 'utf8'),
 );
 const registrationManifest = {
   ...secretsManifest,

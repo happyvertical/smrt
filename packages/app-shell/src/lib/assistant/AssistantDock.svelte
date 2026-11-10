@@ -73,6 +73,15 @@ async function loadViews() {
 async function openDock() {
   open = true;
   remember(true);
+  // An assistant that was off is checked again on every open: the owner may
+  // have saved a key in Settings since (no restart, no reload).
+  if (loadedOnce && dock.availability === 'unavailable') {
+    try {
+      send({ type: 'status', status: await fetchStatus() });
+    } catch {
+      // keep showing the last answer
+    }
+  }
   if (!loadedOnce) {
     loadedOnce = true;
     try {
@@ -288,6 +297,7 @@ $effect(() => {
           <div class="sh-alert sh-alert-warn" role="status">
             <strong>The assistant is off.</strong>
             {dock.unavailableMessage}
+            <a href="/settings/inference">Open Inference settings</a>
           </div>
         {:else if dock.items.length === 0 && dock.availability === 'ready'}
           <p class="sh-muted hint">

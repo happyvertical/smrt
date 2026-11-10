@@ -23,6 +23,26 @@ export {
   type InferenceOverrideScopeType,
 } from './models/InferenceOverrideCollection.js';
 export {
+  createInferenceSettingsController,
+  type InferenceControllerSession,
+  type InferenceSettingsController,
+  type InferenceSettingsControllerOptions,
+  type InferenceSettingsOutcome,
+  type InferenceSettingsPageData,
+} from './settings/controller.js';
+export {
+  createInferenceSettingsHost,
+  type InferenceSettingsHost,
+  type InferenceSettingsHostOptions,
+  type InferenceSettingsSession,
+  inferenceSettingsFailure,
+} from './settings/host.js';
+export {
+  type InferenceKeyPayload,
+  inferenceKeyIsSet,
+  saveInferenceKey,
+} from './settings/key-store.js';
+export {
   bindInferenceKey,
   InferenceKeyOriginError,
   type InferenceKeyRecord,
