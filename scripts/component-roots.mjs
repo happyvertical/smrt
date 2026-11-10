@@ -25,6 +25,7 @@ import { existsSync, readdirSync, readFileSync, statSync, writeFileSync } from '
 import { createRequire } from 'node:module';
 import { basename, dirname, join, relative, resolve } from 'node:path';
 import { fileURLToPath } from 'node:url';
+import ts from 'typescript';
 
 const ROOT = resolve(dirname(fileURLToPath(import.meta.url)), '..');
 export const HOOK = 'data-smrt-component';
@@ -112,8 +113,8 @@ export const TRANSPARENT_COMPONENTS = new Set(
 const requireFromUi = createRequire(join(ROOT, 'packages/smrt-ui/package.json'));
 const { parse } = requireFromUi('svelte/compiler');
 
-function listPackages() {
-  const dir = join(ROOT, 'packages');
+function listPackages(root) {
+  const dir = join(root, 'packages');
   return readdirSync(dir)
     .map((name) => join(dir, name))
     .filter((p) => existsSync(join(p, 'package.json')) && existsSync(join(p, 'src')));
@@ -131,6 +132,10 @@ function exportTargets(pkgDir) {
   const sources = new Set();
   for (const t of targets) {
     if (!t.startsWith('./dist/')) continue;
+    if (t.endsWith('.svelte')) {
+      sources.add(join(pkgDir, 'src', t.slice('./dist/'.length)));
+      continue;
+    }
     const rel = t.slice('./dist/'.length).replace(/\.(d\.ts|js)$/, '');
     for (const ext of ['.ts', '.js']) {
       const candidate = join(pkgDir, 'src', rel + ext);
@@ -142,12 +147,11 @@ function exportTargets(pkgDir) {
   return [...sources];
 }
 
-const EXPORT_FROM = /export\s*(?:\*|\{[\s\S]*?\})\s*from\s*['"]([^'"]+)['"]/g;
 
 function resolveSpecifier(fromFile, spec) {
   if (!spec.startsWith('.')) return null;
   const base = resolve(dirname(fromFile), spec);
-  if (base.endsWith('.svelte')) return { kind: 'svelte', path: base };
+  if (base.endsWith('.svelte') && !existsSync(base + '.ts')) return { kind: 'svelte', path: base };
   const stripped = base.replace(/\.(js|ts)$/, '');
   for (const cand of [stripped + '.ts', stripped + '.js', join(stripped, 'index.ts')]) {
     if (existsSync(cand) && statSync(cand).isFile()) return { kind: 'ts', path: cand };
@@ -156,45 +160,41 @@ function resolveSpecifier(fromFile, spec) {
 }
 
 /** Map of absolute .svelte path -> component name (basename). */
-export function exportedComponents() {
+export function exportedComponents(root = ROOT) {
   const found = new Map();
   const seen = new Set();
-  const queue = listPackages().flatMap(exportTargets);
+  const queue = listPackages(root).flatMap(exportTargets);
   while (queue.length) {
     const file = queue.pop();
     if (seen.has(file)) continue;
     seen.add(file);
-    const text = readFileSync(file, 'utf8');
-    for (const m of text.matchAll(EXPORT_FROM)) {
-      const hit = resolveSpecifier(file, m[1]);
-      if (!hit) continue;
-      if (hit.kind === 'svelte') found.set(hit.path, basename(hit.path, '.svelte'));
-      else queue.push(hit.path);
+    if (file.endsWith('.svelte')) {
+      found.set(file, basename(file, '.svelte'));
+      continue;
     }
-    // Import-then-export: `import X from './X.svelte'; export { X };`
-    const reexported = localExportNames(text);
-    for (const m of text.matchAll(SVELTE_DEFAULT_IMPORT)) {
-      if (!reexported.has(m[1])) continue;
-      const hit = resolveSpecifier(file, m[2]);
+    // Parse actual statements: commented examples and strings are not exports.
+    const source = ts.createSourceFile(file, readFileSync(file, 'utf8'), ts.ScriptTarget.Latest, true);
+    const reexported = new Set();
+    for (const statement of source.statements) {
+      if (!ts.isExportDeclaration(statement)) continue;
+      if (statement.moduleSpecifier && ts.isStringLiteral(statement.moduleSpecifier)) {
+        const hit = resolveSpecifier(file, statement.moduleSpecifier.text);
+        if (hit?.kind === 'svelte') found.set(hit.path, basename(hit.path, '.svelte'));
+        else if (hit) queue.push(hit.path);
+      } else if (statement.exportClause && ts.isNamedExports(statement.exportClause)) {
+        for (const entry of statement.exportClause.elements) {
+          reexported.add((entry.propertyName ?? entry.name).text);
+        }
+      }
+    }
+    for (const statement of source.statements) {
+      if (!ts.isImportDeclaration(statement) || !ts.isStringLiteral(statement.moduleSpecifier)) continue;
+      if (!reexported.has(statement.importClause?.name?.text)) continue;
+      const hit = resolveSpecifier(file, statement.moduleSpecifier.text);
       if (hit?.kind === 'svelte') found.set(hit.path, basename(hit.path, '.svelte'));
     }
   }
   return found;
-}
-
-const SVELTE_DEFAULT_IMPORT = /import\s+([A-Za-z_$][\w$]*)\s+from\s*['"]([^'"]+\.svelte)['"]/g;
-const LOCAL_EXPORT_LIST = /export\s*\{([^}]*)\}(?!\s*from)/g;
-
-/** Local names listed in `export { a, b as c }` (no `from`); `a` and `b` are the local names. */
-function localExportNames(text) {
-  const names = new Set();
-  for (const m of text.matchAll(LOCAL_EXPORT_LIST)) {
-    for (const part of m[1].split(',')) {
-      const local = part.trim().split(/\s+as\s+/)[0].trim();
-      if (local) names.add(local);
-    }
-  }
-  return names;
 }
 
 /**
@@ -278,12 +278,12 @@ function parseComponent(file) {
 }
 
 /** Lint: { file, name, problems[] } for every exported component. */
-export function checkAll() {
+export function checkAll(root = ROOT) {
   const results = [];
-  for (const [file, name] of exportedComponents()) {
-    const rel = relative(ROOT, file);
+  for (const [file, name] of exportedComponents(root)) {
+    const rel = relative(root, file);
     if (!existsSync(file)) {
-      results.push({ rel, name, problems: [], generated: true });
+      results.push({ rel, name, problems: ['exported component source is missing; build its generator before checking roots'], generated: true });
       continue;
     }
     const roots = rootElements(parseComponent(file).fragment);

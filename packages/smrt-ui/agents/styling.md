@@ -27,6 +27,10 @@ breaking change, so follow these rules rather than improvising names.
 The gate is `pnpm check:component-roots` (part of `pnpm lint`). It fails when an
 exported component's root lacks its hook. Add the hook when you add a component;
 the codemod `node scripts/component-roots.mjs --write` is idempotent.
+The gate follows real TypeScript export statements (including direct `.svelte`
+exports), ignores commented examples and rune `.svelte.ts` modules, and fails
+if an exported component source is missing. Build generated sources before
+running it; generated components obey the same root and layer contract.
 
 ## Part hook: `data-smrt-part`
 
