@@ -18,7 +18,7 @@ const tabs = Array.from({ length: 12 }, (_, index) => ({
 <div data-theme="smrt" data-color-scheme="light">
   <PageLayout maxWidth="xl">
     <section aria-label="Project workspace">
-      <PageHeader title="Construction project" />
+      <PageHeader title="Construction project" crumbs={[{ label: "Home", href: "/" }, { label: "Projects", href: "/projects" }]} />
       <Tabs {tabs} active="section0" aria-label="Project sections" />
       <Card padding="none"><DataTable {columns} {data} caption="Project records" /></Card>
     </section>

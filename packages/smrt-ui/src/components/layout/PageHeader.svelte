@@ -182,6 +182,9 @@ $effect(() => shell?.report?.({ title: shortTitle ?? title, parents }));
     flex: 1;
     min-width: min(100%, 200px);
   }
+  .smrt-page-header__crumbs li + li::before {
+    content: '/';
+  }
   .smrt-page-header__back-link {
     display: inline-flex;
     align-items: center;
@@ -225,7 +228,6 @@ $effect(() => shell?.report?.({ title: shortTitle ?? title, parents }));
     font-size: 0.84rem;
   }
   .smrt-page-header__crumbs li + li::before {
-    content: '/';
     color: var(--smrt-color-outline);
   }
   .smrt-page-header__crumbs a {
