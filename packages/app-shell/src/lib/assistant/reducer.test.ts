@@ -166,6 +166,33 @@ describe('dock reducer', () => {
     expect(s.availability).toBe('ready');
   });
 
+  it('carries the engine caption and the link that fixes an unavailable assistant', () => {
+    let s = reduce(initialState, {
+      type: 'status',
+      status: {
+        configured: false,
+        engine: 'claude-code',
+        engineLabel: 'Claude Code',
+        code: 'agent_cli_signed_out',
+        message: 'Claude Code is not signed in.',
+        action: { label: 'Set up the assistant', href: '/welcome' },
+      },
+    });
+    expect(s).toMatchObject({
+      availability: 'unavailable',
+      engineLabel: 'Claude Code',
+      unavailableAction: { href: '/welcome' },
+    });
+    s = reduce(s, { type: 'reset' });
+    expect(s.unavailableAction).toMatchObject({ href: '/welcome' });
+    s = reduce(s, {
+      type: 'status',
+      status: { configured: true, engineLabel: 'Claude Code' },
+    });
+    expect(s).toMatchObject({ availability: 'ready', unavailableAction: null });
+    expect(s.engineLabel).toBe('Claude Code');
+  });
+
   it('labels tools and stops plainly', () => {
     expect(toolLabel('app_addfield')).toBe('Addfield');
     expect(toolLabel('chore_create')).toBe('Chore create');

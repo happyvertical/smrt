@@ -40,12 +40,28 @@ export type TurnEvent =
   | { type: 'error'; code: string; message: string }
   | { type: 'done'; stop: TurnStop };
 
+/**
+ * Which engine runs the assistant: `api` (an API key through smrt-inference)
+ * or a local agent CLI (the person's own, signed-in `claude-code` / `codex`).
+ */
+export const ASSISTANT_ENGINES = ['api', 'claude-code', 'codex'] as const;
+export type AssistantEngineId = (typeof ASSISTANT_ENGINES)[number];
+
 /** `GET /api/assistant/status`. Never carries a key, provider or endpoint. */
 export interface AssistantStatus {
   configured: boolean;
-  /** Set when not configured: `assistant_not_configured` or `ai_unavailable`. */
+  /** The engine in effect. */
+  engine?: AssistantEngineId;
+  /** Plain-text name of that engine for the dock (`Claude Code`, `an API key`). */
+  engineLabel?: string;
+  /**
+   * Set when not configured: `assistant_not_configured`, `ai_unavailable`,
+   * `agent_cli_missing` or `agent_cli_signed_out`.
+   */
   code?: string;
   message?: string;
+  /** Where to fix it, when there is somewhere. */
+  action?: { label: string; href: string };
 }
 
 /** Body of a 503 when the assistant cannot run (not a crash). */

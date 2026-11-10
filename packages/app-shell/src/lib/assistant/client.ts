@@ -16,6 +16,7 @@ export class UnavailableError extends Error {
   constructor(
     message: string,
     readonly code: string,
+    readonly action?: { label: string; href: string },
   ) {
     super(message);
   }
@@ -132,11 +133,13 @@ export async function streamTurn(
       type?: string;
       code?: string;
       error?: string;
+      action?: { label: string; href: string };
     } | null;
     if (response.status === 503 && body?.type === 'unavailable')
       throw new UnavailableError(
         body.error ?? 'The assistant is not available.',
         body.code ?? 'unavailable',
+        body.action,
       );
     throw new AssistantRequestError(
       response.status,

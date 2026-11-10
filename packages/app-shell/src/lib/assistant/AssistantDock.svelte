@@ -142,7 +142,11 @@ async function submit() {
     );
   } catch (error) {
     if (error instanceof UnavailableError)
-      send({ type: 'unavailable', message: error.message });
+      send({
+        type: 'unavailable',
+        message: error.message,
+        ...(error.action ? { action: error.action } : {}),
+      });
     else
       send({
         type: 'note',
@@ -277,7 +281,7 @@ $effect(() => {
       onkeydown={onPanelKey}
     >
       <header class="bar">
-        <h2>Assistant</h2>
+        <h2>Assistant{#if dock.engineLabel}<span class="sh-muted engine"> · {dock.engineLabel}</span>{/if}</h2>
         <div class="bar-actions">
           <button type="button" class="sh-btn" onclick={newChat} disabled={dock.items.length === 0 && !dock.running}>New chat</button>
           <button type="button" class="sh-btn" aria-expanded="true" aria-controls="assistant-panel" onclick={closeDock}>Close<span class="sr-only"> assistant</span></button>
@@ -297,7 +301,7 @@ $effect(() => {
           <div class="sh-alert sh-alert-warn" role="status">
             <strong>The assistant is off.</strong>
             {dock.unavailableMessage}
-            <a href="/settings/inference">Open Inference settings</a>
+            <a href={dock.unavailableAction?.href ?? '/settings/inference'}>{dock.unavailableAction?.label ?? 'Open Inference settings'}</a>
           </div>
         {:else if dock.items.length === 0 && dock.availability === 'ready'}
           <p class="sh-muted hint">
@@ -404,6 +408,10 @@ $effect(() => {
   .bar h2 {
     margin: 0;
     font-size: 1rem;
+  }
+  .engine {
+    font-size: 0.8125rem;
+    font-weight: normal;
   }
   .bar-actions {
     display: flex;

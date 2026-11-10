@@ -72,7 +72,8 @@ export interface NewMessage {
   content: string;
   toolCalls?: AIToolCall[];
   toolCallId?: string;
-  meta?: ThreadMessage['tool'];
+  /** A tool chip, or (assistant messages) `{ cliSession: { tool, id } }`. */
+  meta?: ThreadMessage['tool'] | { cliSession: { tool: string; id: string } };
 }
 
 export async function appendMessage(
@@ -177,4 +178,22 @@ export async function historyFor(threadId: string): Promise<AIMessage[]> {
   // The window may start mid-exchange: begin at the first user message.
   const first = out.findIndex((m) => m.role === 'user');
   return first <= 0 ? out : out.slice(first);
+}
+
+/**
+ * The local agent CLI's own session id for this thread (stored on the last
+ * assistant message of a turn that ran through `tool`), so the next turn can
+ * resume it. `null` for a thread that never ran through that tool.
+ */
+export async function lastCliSession(
+  threadId: string,
+  tool: string,
+): Promise<string | null> {
+  for (const m of (await rows(threadId)).reverse()) {
+    if (m.role !== 'assistant') continue;
+    const meta = parse<{ cliSession?: { tool?: string; id?: string } }>(m.meta);
+    if (meta?.cliSession?.tool === tool && meta.cliSession.id)
+      return meta.cliSession.id;
+  }
+  return null;
 }

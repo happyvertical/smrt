@@ -46,6 +46,10 @@ export interface DockState {
   /** `unknown` until the first status answer. */
   availability: 'unknown' | 'ready' | 'unavailable';
   unavailableMessage: string;
+  /** Where to fix an unavailable assistant (a link in the dock), if anywhere. */
+  unavailableAction: { label: string; href: string } | null;
+  /** Plain-text name of the engine in effect, for the dock's caption. */
+  engineLabel: string;
   seq: number;
 }
 
@@ -56,6 +60,8 @@ export const initialState: DockState = {
   stop: null,
   availability: 'unknown',
   unavailableMessage: '',
+  unavailableAction: null,
+  engineLabel: '',
   seq: 0,
 };
 
@@ -77,7 +83,11 @@ export type Action =
       message: string;
     }
   | { type: 'note'; tone: 'error' | 'info'; text: string }
-  | { type: 'unavailable'; message: string }
+  | {
+      type: 'unavailable';
+      message: string;
+      action?: { label: string; href: string };
+    }
   | { type: 'ended' };
 
 const next = (s: DockState, prefix: string) => `${prefix}${s.seq + 1}`;
@@ -100,12 +110,20 @@ export function reduce(state: DockState, action: Action): DockState {
   switch (action.type) {
     case 'status':
       return action.status.configured
-        ? { ...state, availability: 'ready', unavailableMessage: '' }
+        ? {
+            ...state,
+            availability: 'ready',
+            unavailableMessage: '',
+            unavailableAction: null,
+            engineLabel: action.status.engineLabel ?? '',
+          }
         : {
             ...state,
             availability: 'unavailable',
             unavailableMessage:
               action.status.message ?? 'The assistant is not available.',
+            unavailableAction: action.status.action ?? null,
+            engineLabel: action.status.engineLabel ?? '',
           };
     case 'unavailable':
       return {
@@ -113,6 +131,7 @@ export function reduce(state: DockState, action: Action): DockState {
         running: false,
         availability: 'unavailable',
         unavailableMessage: action.message,
+        unavailableAction: action.action ?? state.unavailableAction,
         items: state.items.filter(
           (i) => !(i.kind === 'user' && i.id === `u${state.seq}`),
         ),
@@ -133,6 +152,8 @@ export function reduce(state: DockState, action: Action): DockState {
         ...initialState,
         availability: state.availability,
         unavailableMessage: state.unavailableMessage,
+        unavailableAction: state.unavailableAction,
+        engineLabel: state.engineLabel,
         seq: state.seq,
       };
     case 'ended':
