@@ -51,40 +51,40 @@ async function undo() {
 
 <svelte:head><title>History</title></svelte:head>
 
-<div class="sh-page">
-  <header class="sh-head">
+<div class="smrt-app-shell__page" data-smrt-component="AppShellHistory">
+  <header class="smrt-app-shell__head" data-smrt-part="header">
     <div>
       <h1>History</h1>
-      <p class="sh-sub">Every change to your app, newest first.</p>
+      <p class="smrt-app-shell__sub" data-smrt-part="description">Every change to your app, newest first.</p>
     </div>
   </header>
 
-  <p class="sr-only" role="status" aria-live="polite">{status}</p>
+  <p class="smrt-app-shell-history__sr-only" role="status" aria-live="polite" data-smrt-part="label">{status}</p>
   {#if status}
-    <p class="sh-alert sh-alert-ok">
+    <p class="smrt-app-shell__alert smrt-app-shell__alert-ok" data-smrt-part="status">
       {status}
       {#if waiting}<a href="/approvals">Review it on the approvals page</a>.{/if}
     </p>
   {/if}
 
   {#if data.versions.length === 0}
-    <div class="sh-empty">
+    <div class="smrt-app-shell__empty" data-smrt-part="empty">
       <p><strong>No changes yet</strong></p>
-      <p class="sh-muted">Changes to your app will be listed here, and you can undo the latest one.</p>
+      <p class="smrt-app-shell__muted" data-smrt-part="description">Changes to your app will be listed here, and you can undo the latest one.</p>
     </div>
   {:else}
-    <ol class="sh-list">
+    <ol class="smrt-app-shell__list" data-smrt-part="list">
       {#each data.versions as v (v.version)}
         <li>
-          <article class="sh-card" aria-current={v.current ? 'true' : undefined}>
-            <div class="row">
+          <article class="smrt-app-shell__card" aria-current={v.current ? 'true' : undefined} data-smrt-part="panel">
+            <div class="smrt-app-shell-history__row" data-smrt-part="row">
               <h2>{v.summary || `Version ${v.version}`}</h2>
-              <div class="badges">
-                {#if v.current}<span class="sh-badge sh-badge-ok">Current</span>{/if}
-                {#if v.purged}<span class="sh-badge sh-badge-warn">Cannot be undone</span>{/if}
+              <div class="smrt-app-shell-history__badges" data-smrt-part="badges">
+                {#if v.current}<span class="smrt-app-shell__badge smrt-app-shell__badge-ok" data-smrt-part="badge">Current</span>{/if}
+                {#if v.purged}<span class="smrt-app-shell__badge smrt-app-shell__badge-warn" data-smrt-part="badge">Cannot be undone</span>{/if}
               </div>
             </div>
-            <p class="sh-muted">
+            <p class="smrt-app-shell__muted" data-smrt-part="description">
               Version {v.version}{#if v.author}
                 · by {v.author}{/if}
               ·
@@ -93,18 +93,18 @@ async function undo() {
               >
             </p>
             {#if v.purged}
-              <p class="sh-muted">
+              <p class="smrt-app-shell__muted" data-smrt-part="description">
                 Its saved data was cleaned up, so going back past this change is no longer possible.
               </p>
             {/if}
             {#if v.current && canUndo}
               <button
                 type="button"
-                class="sh-btn"
+                class="smrt-app-shell__btn"
                 onclick={() => {
                   error = '';
                   confirming = true;
-                }}
+                }} data-smrt-part="trigger"
               >
                 Undo this change
               </button>
@@ -133,8 +133,9 @@ async function undo() {
 
 <style>
 @layer smrt.reset, smrt.structure, smrt.theme;
-@layer smrt.theme {
-  .row {
+
+@layer smrt.structure {
+  .smrt-app-shell-history__row {
     display: flex;
     flex-wrap: wrap;
     align-items: baseline;
@@ -143,22 +144,27 @@ async function undo() {
   }
   h2 {
     margin: 0;
-    font-size: 1.0625rem;
   }
-  .badges {
+  .smrt-app-shell-history__badges {
     display: flex;
     gap: 0.4rem;
   }
-  .sh-card p {
+  .smrt-app-shell__card p {
     margin: var(--smrt-spacing-sm, 0.5rem) 0;
   }
-  .sr-only {
+  .smrt-app-shell-history__sr-only {
     position: absolute;
     width: 1px;
     height: 1px;
     overflow: hidden;
     clip-path: inset(50%);
     white-space: nowrap;
+  }
+}
+
+@layer smrt.theme {
+  h2 {
+    font-size: 1.0625rem;
   }
 }
 </style>

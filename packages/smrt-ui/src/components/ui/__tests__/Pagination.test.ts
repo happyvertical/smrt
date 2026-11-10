@@ -19,7 +19,9 @@ describe('Pagination', () => {
     const { container } = render(Pagination, {
       props: { currentPage: 1, totalPages: 1 },
     });
-    expect(container.querySelector('.pagination')).toBeNull();
+    expect(
+      container.querySelector('[data-smrt-component="Pagination"]'),
+    ).toBeNull();
   });
 
   it('renders a navigation landmark with the provided aria-label', () => {
@@ -104,11 +106,15 @@ describe('Pagination', () => {
     const { container, rerender } = render(Pagination, {
       props: { currentPage: 10, totalPages: 20, onPageChange },
     });
-    expect(container.querySelectorAll('.ellipsis')).toHaveLength(2);
+    expect(
+      container.querySelectorAll('[data-smrt-part="marker"]'),
+    ).toHaveLength(2);
 
     // Re-render to an adjacent deep page: still two ellipses, still one current.
     await rerender({ currentPage: 11, totalPages: 20, onPageChange });
-    expect(container.querySelectorAll('.ellipsis')).toHaveLength(2);
+    expect(
+      container.querySelectorAll('[data-smrt-part="marker"]'),
+    ).toHaveLength(2);
     expect(container.querySelectorAll('[aria-current="page"]')).toHaveLength(1);
     expect(screen.getByText('11')).toHaveAttribute('aria-current', 'page');
   });

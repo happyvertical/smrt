@@ -79,8 +79,8 @@ function onkeydown(event: KeyboardEvent): void {
 <div
   bind:this={root}
   {id}
-  class="phone-sheet phone-sheet--{variant}"
-  class:open
+  class="smrt-phone-sheet__root smrt-phone-sheet__{variant}"
+  class:smrt-phone-sheet__open={open}
   role="dialog"
   aria-modal="false"
   aria-labelledby={headingId}
@@ -92,7 +92,8 @@ function onkeydown(event: KeyboardEvent): void {
   {onkeydown} data-smrt-component="PhoneSheet"
 >
   <header
-    class="phone-sheet__header"
+    class="smrt-phone-sheet__header"
+    data-smrt-part="header"
     use:swipeDismiss={{
       direction: 'down',
       onDismiss: onclose,
@@ -100,12 +101,13 @@ function onkeydown(event: KeyboardEvent): void {
     }}
   >
     {#if variant === 'sheet'}
-      <span class="phone-sheet__grabber" aria-hidden="true"></span>
+      <span class="smrt-phone-sheet__grabber" data-smrt-part="grabber" aria-hidden="true"></span>
     {/if}
-    <h2 id={headingId}>{title}</h2>
+    <h2 id={headingId} data-smrt-part="title">{title}</h2>
     <button
       type="button"
-      class="phone-sheet__close"
+      class="smrt-phone-sheet__close"
+      data-smrt-part="close"
       aria-label={closeLabel ?? t(M['ui.phone_sheet.close'], { title })}
       onclick={onclose}
     >
@@ -123,44 +125,30 @@ function onkeydown(event: KeyboardEvent): void {
       </svg>
     </button>
   </header>
-  <div class="phone-sheet__body">
+  <div class="smrt-phone-sheet__body" data-smrt-part="body">
     {@render children()}
   </div>
 </div>
 
 <style>
 @layer smrt.reset, smrt.structure, smrt.theme;
-@layer smrt.theme {
-  .phone-sheet {
+@layer smrt.structure {
+  .smrt-phone-sheet__root {
     position: absolute;
     inset: 0;
     z-index: 30;
     display: grid;
     grid-template-rows: auto minmax(0, 1fr);
-    background: var(--smrt-color-surface);
-    color: var(--smrt-color-on-surface);
+    /* Closed state: off-screen and hidden. Both express show/hide geometry,
+    so they stay with layout; only the transition animating them is theme. */
     transform: translateY(100%);
     visibility: hidden;
-    transition:
-      transform var(--smrt-duration-medium1, 250ms) var(--smrt-easing-standard, ease),
-      visibility 0s linear var(--smrt-duration-medium1, 250ms);
-    outline: none;
   }
-
-  .phone-sheet.open {
+  .smrt-phone-sheet__root.smrt-phone-sheet__open {
     transform: none;
     visibility: visible;
-    transition: transform var(--smrt-duration-medium1, 250ms)
-      var(--smrt-easing-standard, ease);
   }
-
-  .phone-sheet--sheet {
-    border-start-start-radius: var(--smrt-radius-lg);
-    border-start-end-radius: var(--smrt-radius-lg);
-    box-shadow: var(--smrt-elevation-3);
-  }
-
-  .phone-sheet__header {
+  .smrt-phone-sheet__header {
     position: relative;
     display: flex;
     align-items: center;
@@ -169,59 +157,82 @@ function onkeydown(event: KeyboardEvent): void {
     min-block-size: 3.5rem;
     padding-block: 0;
     padding-inline: var(--smrt-spacing-4) var(--smrt-spacing-2);
-    border-block-end: var(--smrt-hairline);
     touch-action: pan-x;
   }
-
-  .phone-sheet__grabber {
+  .smrt-phone-sheet__grabber {
     position: absolute;
     inset-block-start: var(--smrt-spacing-1);
     inset-inline-start: 50%;
     inline-size: 2.5rem;
     block-size: 0.25rem;
-    border-radius: var(--smrt-radius-full);
-    background: var(--smrt-color-outline-variant);
+    /* Centres the handle on the inset-inline-start anchor. */
     transform: translateX(-50%);
   }
-
-  .phone-sheet__header h2 {
+  .smrt-phone-sheet__header h2 {
     margin: 0;
-    font: var(--smrt-typography-title-medium-font);
   }
-
-  .phone-sheet__close {
+  .smrt-phone-sheet__close {
     display: inline-grid;
     place-items: center;
     inline-size: 2.75rem;
     block-size: 2.75rem;
-    border: 0;
-    border-radius: var(--smrt-radius-full);
-    background: transparent;
-    color: inherit;
     cursor: pointer;
   }
-
-  .phone-sheet__close:hover,
-  .phone-sheet__close:focus-visible {
-    background: var(--smrt-color-surface-container-high);
-  }
-
-  .phone-sheet__close:focus-visible {
-    outline: var(--smrt-focus-ring-width) solid var(--smrt-focus-ring-color);
-    outline-offset: calc(var(--smrt-focus-ring-width) * -1);
-  }
-
-  .phone-sheet__body {
+  .smrt-phone-sheet__body {
     min-block-size: 0;
     overflow: auto;
     overscroll-behavior: contain;
   }
+}
 
+@layer smrt.theme {
+  .smrt-phone-sheet__root {
+    background: var(--smrt-color-surface);
+    color: var(--smrt-color-on-surface);
+    transition:
+      transform var(--smrt-duration-medium1, 250ms) var(--smrt-easing-standard, ease),
+      visibility 0s linear var(--smrt-duration-medium1, 250ms);
+    outline: none;
+  }
+  .smrt-phone-sheet__root.smrt-phone-sheet__open {
+    transition: transform var(--smrt-duration-medium1, 250ms)
+      var(--smrt-easing-standard, ease);
+  }
+  .smrt-phone-sheet__sheet {
+    border-start-start-radius: var(--smrt-radius-lg);
+    border-start-end-radius: var(--smrt-radius-lg);
+    box-shadow: var(--smrt-elevation-3);
+  }
+  .smrt-phone-sheet__header {
+    border-block-end: var(--smrt-hairline);
+  }
+  .smrt-phone-sheet__grabber {
+    border-radius: var(--smrt-radius-full);
+    background: var(--smrt-color-outline-variant);
+  }
+  .smrt-phone-sheet__header h2 {
+    font: var(--smrt-typography-title-medium-font);
+  }
+  .smrt-phone-sheet__close {
+    border: 0;
+    border-radius: var(--smrt-radius-full);
+    background: transparent;
+    color: inherit;
+  }
+  .smrt-phone-sheet__close:hover,
+  .smrt-phone-sheet__close:focus-visible {
+    background: var(--smrt-color-surface-container-high);
+  }
+  .smrt-phone-sheet__close:focus-visible {
+    outline: var(--smrt-focus-ring-width) solid var(--smrt-focus-ring-color);
+    outline-offset: calc(var(--smrt-focus-ring-width) * -1);
+  }
   @media (prefers-reduced-motion: reduce) {
-    .phone-sheet,
-    .phone-sheet.open {
+    .smrt-phone-sheet__root,
+    .smrt-phone-sheet__root.smrt-phone-sheet__open {
       transition: none;
     }
   }
 }
+
 </style>

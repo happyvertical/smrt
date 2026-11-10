@@ -28,8 +28,8 @@ const { t } = useI18n();
 </script>
 
 <div
-  class="form-action-bar"
-  class:plain
+  class="smrt-form-action-bar__root"
+  class:smrt-form-action-bar__plain={plain}
   role="group"
   aria-label={label ?? t(M['ui.form_action_bar.label'])}
   data-form-action-bar
@@ -40,8 +40,8 @@ const { t } = useI18n();
 
 <style>
 @layer smrt.reset, smrt.structure, smrt.theme;
-@layer smrt.theme {
-  .form-action-bar {
+@layer smrt.structure {
+  .smrt-form-action-bar__root {
     display: flex;
     flex-wrap: wrap;
     justify-content: flex-end;
@@ -49,18 +49,14 @@ const { t } = useI18n();
     gap: var(--smrt-spacing-3);
     margin-block-start: var(--smrt-spacing-6);
     padding-block-start: var(--smrt-spacing-4);
-    border-block-start: var(--smrt-hairline);
   }
-
-  .form-action-bar.plain {
+  .smrt-form-action-bar__root.smrt-form-action-bar__plain {
     margin: 0;
     padding: 0;
-    border: 0;
   }
-
   @media (max-width: 48rem) {
-    .form-action-bar,
-    .form-action-bar.plain {
+    .smrt-form-action-bar__root,
+    .smrt-form-action-bar__root.smrt-form-action-bar__plain {
       position: fixed;
       inset: auto 0 0;
       z-index: 12;
@@ -69,19 +65,32 @@ const { t } = useI18n();
       margin: 0;
       padding: var(--smrt-spacing-2) var(--smrt-spacing-4)
         calc(var(--smrt-spacing-2) + env(safe-area-inset-bottom));
-      border-block-start: var(--smrt-hairline);
-      background: var(--smrt-color-surface);
-      box-shadow: var(--smrt-elevation-2);
     }
-
-    .form-action-bar > :global(*) {
+    .smrt-form-action-bar__root > :global(*) {
       flex: 1 1 0;
       min-block-size: 2.75rem;
     }
-
-    :global(:root[data-keyboard-open]) .form-action-bar {
+    :global(:root[data-keyboard-open]) .smrt-form-action-bar__root {
       display: none;
     }
   }
 }
+
+@layer smrt.theme {
+  .smrt-form-action-bar__root {
+    border-block-start: var(--smrt-hairline);
+  }
+  .smrt-form-action-bar__root.smrt-form-action-bar__plain {
+    border: 0;
+  }
+  @media (max-width: 48rem) {
+    .smrt-form-action-bar__root,
+    .smrt-form-action-bar__root.smrt-form-action-bar__plain {
+      border-block-start: var(--smrt-hairline);
+      background: var(--smrt-color-surface);
+      box-shadow: var(--smrt-elevation-2);
+    }
+  }
+}
+
 </style>

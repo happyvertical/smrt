@@ -51,7 +51,7 @@ function cycle(delta: number) {
 </script>
 
 {#if activeImage}
-  <div class="content-image-chooser" aria-label={t(M['content.content_image_chooser.body_images'])} data-smrt-component="ContentImageChooser">
+  <div class="smrt-content-image-chooser__root" aria-label={t(M['content.content_image_chooser.body_images'])} data-smrt-component="ContentImageChooser">
     {#if hasMultiple}
       <Button
         variant="ghost"
@@ -98,51 +98,59 @@ function cycle(delta: number) {
 
 <style>
 @layer smrt.reset, smrt.structure, smrt.theme;
-@layer smrt.theme {
-  .content-image-chooser {
+@layer smrt.structure {
+  .smrt-content-image-chooser__root {
     display: inline-flex;
     align-items: center;
     gap: 0.4rem;
     min-height: 2.75rem;
   }
-
-  .content-image-chooser :global(.chooser-arrow),
-  .content-image-chooser :global(.chooser-preview) {
-    border: var(--smrt-hairline);
-    background: var(--smrt-color-surface-container);
-    color: var(--smrt-color-on-surface);
-    border-radius: var(--smrt-radius-full);
+  .smrt-content-image-chooser__root :global(.chooser-arrow),
+  .smrt-content-image-chooser__root :global(.chooser-preview) {
     cursor: pointer;
   }
-
-  .content-image-chooser :global(.chooser-arrow) {
+  .smrt-content-image-chooser__root :global(.chooser-arrow) {
     width: 2.25rem;
     height: 2.25rem;
     display: grid;
     place-items: center;
     padding: 0;
   }
-
-  .content-image-chooser :global(.chooser-arrow:disabled) {
+  .smrt-content-image-chooser__root :global(.chooser-arrow:disabled) {
     cursor: not-allowed;
-    opacity: 0.38;
   }
-
-  .content-image-chooser :global(.chooser-preview) {
+  .smrt-content-image-chooser__root :global(.chooser-preview) {
     display: inline-flex;
     align-items: center;
     gap: 0.45rem;
     padding: 0.25rem 0.65rem 0.25rem 0.3rem;
+  }
+  .smrt-content-image-chooser__root :global(.chooser-preview img) {
+    width: 2rem;
+    height: 2rem;
+    object-fit: cover;
+  }
+}
+
+@layer smrt.theme {
+  .smrt-content-image-chooser__root :global(.chooser-arrow),
+  .smrt-content-image-chooser__root :global(.chooser-preview) {
+    border: var(--smrt-hairline);
+    background: var(--smrt-color-surface-container);
+    color: var(--smrt-color-on-surface);
+    border-radius: var(--smrt-radius-full);
+  }
+  .smrt-content-image-chooser__root :global(.chooser-arrow:disabled) {
+    opacity: 0.38;
+  }
+  .smrt-content-image-chooser__root :global(.chooser-preview) {
     font-size: var(--smrt-typography-label-large-size, 0.82rem);
     font-weight: var(--smrt-typography-weight-bold, 650);
   }
-
-  .content-image-chooser :global(.chooser-preview img) {
-    width: 2rem;
-    height: 2rem;
+  .smrt-content-image-chooser__root :global(.chooser-preview img) {
     border-radius: var(--smrt-radius-full);
-    object-fit: cover;
     background: var(--smrt-color-surface-container-high);
   }
 }
+
 </style>

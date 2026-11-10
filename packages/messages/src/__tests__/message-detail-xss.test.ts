@@ -43,7 +43,9 @@ describe('MessageDetail XSS hardening', () => {
   });
 
   it('renders the message body through a <pre> text interpolation', () => {
-    expect(source).toMatch(/<pre class="body-text">\{[^}]+\}<\/pre>/);
+    expect(source).toMatch(
+      /<pre[^>]*data-smrt-part="message"[^>]*>\{[^}]+\}<\/pre>/,
+    );
   });
 
   it('reduces an unclosed <script> payload to inert text', () => {

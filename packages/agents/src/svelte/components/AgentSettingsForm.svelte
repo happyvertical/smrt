@@ -110,7 +110,7 @@ async function handleSubmit() {
 
 <Form class="agent-settings-form" onsubmit={handleSubmit}>
   {#each schema.fields as field (field.id)}
-    <div class="field">
+    <div class="smrt-agent-settings-form__field" data-smrt-part="field">
       {#if field.type === 'boolean'}
         <Checkbox
           id={field.id}
@@ -159,12 +159,12 @@ async function handleSubmit() {
         {/if}
       {/if}
       {#if field.description}<small>{field.description}</small>{/if}
-      {#if errors[field.id]}<p class="error">{errors[field.id]}</p>{/if}
+      {#if errors[field.id]}<p class="smrt-agent-settings-form__error" data-smrt-part="error">{errors[field.id]}</p>{/if}
     </div>
   {/each}
 
   {#if !readonly}
-    <div class="actions">
+    <div class="smrt-agent-settings-form__actions" data-smrt-part="actions">
       <Button type="submit" disabled={saving}>{saving ? 'Saving…' : 'Save settings'}</Button>
     </div>
   {/if}
@@ -172,36 +172,37 @@ async function handleSubmit() {
 
 <style>
 @layer smrt.reset, smrt.structure, smrt.theme;
-@layer smrt.theme {
+@layer smrt.structure {
   :global(.agent-settings-form) {
     display: grid;
     gap: var(--smrt-spacing-5, 1.25rem);
   }
-
-  .field {
+  .smrt-agent-settings-form__field {
     display: grid;
     gap: var(--smrt-spacing-2, 0.5rem);
   }
+  .smrt-agent-settings-form__error {
+    margin: 0;
+  }
+  .smrt-agent-settings-form__actions {
+    display: flex;
+    justify-content: flex-end;
+  }
+}
 
+@layer smrt.theme {
   label {
     font-weight: var(--smrt-typography-weight-semibold, 600);
   }
-
   small {
     color: var(--smrt-color-on-surface-variant);
   }
-
-  .error {
-    margin: 0;
+  .smrt-agent-settings-form__error {
     color: var(--smrt-color-error);
     font-size: var(--smrt-typography-body-medium-size, 0.875rem);
     line-height: var(--smrt-typography-body-medium-line-height, 1.25rem);
     letter-spacing: var(--smrt-typography-body-medium-tracking, 0.015625rem);
   }
-
-  .actions {
-    display: flex;
-    justify-content: flex-end;
-  }
 }
+
 </style>

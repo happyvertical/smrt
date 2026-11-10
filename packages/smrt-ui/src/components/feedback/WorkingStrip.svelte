@@ -144,94 +144,98 @@ function handleKeydown(event: KeyboardEvent) {
 }
 </script>
 
-<div class="working-strip__live" aria-live="polite" aria-atomic="true" data-smrt-component="WorkingStrip">
+<div class="smrt-working-strip__live" aria-live="polite" aria-atomic="true" data-smrt-component="WorkingStrip">
   {politeText}
 </div>
-<div class="working-strip__live" aria-live="assertive" aria-atomic="true" data-smrt-component="WorkingStrip">
+<div class="smrt-working-strip__live" aria-live="assertive" aria-atomic="true" data-smrt-component="WorkingStrip">
   {visible && assertive ? accessibleSummary : ''}
 </div>
 
 {#if visible}
   <!-- svelte-ignore a11y_no_static_element_interactions -->
   <div
-    class="working-strip working-strip--{variant}"
+    class="smrt-working-strip__root smrt-working-strip__{variant}"
     data-phase={phase}
     data-testid="working-strip"
     onkeydown={handleKeydown} data-smrt-component="WorkingStrip"
   >
     {#snippet content()}
-      <span class="working-strip__icon" aria-hidden="true">
+      <span class="smrt-working-strip__icon" data-smrt-part="icon" aria-hidden="true">
         {#if phase === 'working'}
-          <span class="working-strip__spinner"></span>
+          <span class="smrt-working-strip__spinner" data-smrt-part="spinner"></span>
         {:else if phase === 'paused'}
-          <span class="working-strip__glyph">&#10074;&#10074;</span>
+          <span class="smrt-working-strip__glyph">&#10074;&#10074;</span>
         {:else if phase === 'waiting'}
-          <span class="working-strip__glyph">!</span>
+          <span class="smrt-working-strip__glyph">!</span>
         {:else if phase === 'done'}
-          <span class="working-strip__glyph">&#10003;</span>
+          <span class="smrt-working-strip__glyph">&#10003;</span>
         {:else if phase === 'failed'}
-          <span class="working-strip__glyph">&#10005;</span>
+          <span class="smrt-working-strip__glyph">&#10005;</span>
         {:else if phase === 'cancelled'}
-          <span class="working-strip__glyph">&#9632;</span>
+          <span class="smrt-working-strip__glyph">&#9632;</span>
         {/if}
       </span>
-      <span class="working-strip__text" aria-hidden="true">
+      <span class="smrt-working-strip__text" data-smrt-part="body" aria-hidden="true">
         {#if goal && variant === 'floating'}
-          <span class="working-strip__goal">{goal}</span>
+          <span class="smrt-working-strip__goal" data-smrt-part="title">{goal}</span>
         {/if}
-        <span class="working-strip__label">{label}</span>
+        <span class="smrt-working-strip__label" data-smrt-part="label">{label}</span>
       </span>
     {/snippet}
 
     {#if variant !== 'inline' && onopen}
       <button
         type="button"
-        class="working-strip__main"
+        class="smrt-working-strip__main"
+        data-smrt-part="summary"
         aria-label={`${accessibleSummary}. ${openLabel ?? t(M['ui.working_strip.open'])}`}
         onclick={onopen}
       >
         {@render content()}
       </button>
     {:else}
-      <div class="working-strip__main">
-        <span class="working-strip__sr">{accessibleSummary}</span>
+      <div class="smrt-working-strip__main" data-smrt-part="summary">
+        <span class="smrt-working-strip__sr" data-smrt-part="description">{accessibleSummary}</span>
         {@render content()}
       </div>
     {/if}
 
-    <div class="working-strip__actions">
+    <div class="smrt-working-strip__actions" data-smrt-part="actions">
       {#if phase === 'waiting' && onreview}
         <button
           type="button"
-          class="working-strip__button working-strip__button--primary"
+          class="smrt-working-strip__button smrt-working-strip__button--primary"
+          data-smrt-part="action"
           onclick={onreview}
         >
           {reviewLabel ?? t(M['ui.working_strip.review'])}
         </button>
       {/if}
       {#if phase === 'working' && onpause}
-        <button type="button" class="working-strip__button" onclick={onpause}>
+        <button type="button" class="smrt-working-strip__button" data-smrt-part="action" onclick={onpause}>
           {pauseLabel ?? t(M['ui.working_strip.pause'])}
         </button>
       {/if}
       {#if phase === 'paused' && onresume}
         <button
           type="button"
-          class="working-strip__button working-strip__button--primary"
+          class="smrt-working-strip__button smrt-working-strip__button--primary"
+          data-smrt-part="action"
           onclick={onresume}
         >
           {resumeLabel ?? t(M['ui.working_strip.resume'])}
         </button>
       {/if}
       {#if canStop && running}
-        <button type="button" class="working-strip__button" onclick={onstop}>
+        <button type="button" class="smrt-working-strip__button" data-smrt-part="action" onclick={onstop}>
           {stopLabel ?? t(M['ui.working_strip.stop'])}
         </button>
       {/if}
       {#if terminal && ondismiss}
         <button
           type="button"
-          class="working-strip__button working-strip__button--icon"
+          class="smrt-working-strip__button smrt-working-strip__button--icon"
+          data-smrt-part="action"
           aria-label={t(M['ui.working_strip.dismiss'])}
           onclick={ondismiss}
         >
@@ -244,9 +248,9 @@ function handleKeydown(event: KeyboardEvent) {
 
 <style>
 @layer smrt.reset, smrt.structure, smrt.theme;
-@layer smrt.theme {
-  .working-strip__live,
-  .working-strip__sr {
+@layer smrt.structure {
+  .smrt-working-strip__live,
+  .smrt-working-strip__sr {
     position: absolute;
     inline-size: 1px;
     block-size: 1px;
@@ -254,57 +258,28 @@ function handleKeydown(event: KeyboardEvent) {
     clip-path: inset(50%);
     white-space: nowrap;
   }
-
-  .working-strip {
+  .smrt-working-strip__root {
     display: flex;
     align-items: center;
     gap: var(--smrt-spacing-2);
     min-inline-size: 0;
-    background: var(--smrt-color-surface-container-high);
-    color: var(--smrt-color-on-surface);
-    font: var(--smrt-typography-body-medium-font);
   }
-
-  .working-strip--strip {
+  .smrt-working-strip__strip {
     box-sizing: border-box;
     min-block-size: 2.75rem;
     padding-inline-end: var(--smrt-spacing-2);
-    border-block-start: var(--smrt-hairline);
-    box-shadow: var(--smrt-elevation-2);
   }
-
-  .working-strip--floating {
+  .smrt-working-strip__floating {
     box-sizing: border-box;
     min-block-size: 3.5rem;
     max-inline-size: min(34rem, calc(100vw - 2rem));
     padding-block: var(--smrt-spacing-1);
     padding-inline-end: var(--smrt-spacing-2);
-    border: var(--smrt-hairline);
-    border-radius: var(--smrt-radius-xl, 1.25rem);
-    box-shadow: var(--smrt-elevation-3);
   }
-
-  .working-strip--inline {
+  .smrt-working-strip__inline {
     padding: var(--smrt-spacing-2) var(--smrt-spacing-3);
-    border-block-end: var(--smrt-hairline);
   }
-
-  .working-strip[data-phase='waiting'] {
-    background: var(--smrt-color-tertiary-container, var(--smrt-color-primary-container));
-    color: var(--smrt-color-on-tertiary-container, var(--smrt-color-on-primary-container));
-  }
-
-  .working-strip[data-phase='done'] {
-    background: var(--smrt-color-success-container, var(--smrt-color-primary-container));
-    color: var(--smrt-color-on-success-container, var(--smrt-color-on-primary-container));
-  }
-
-  .working-strip[data-phase='failed'] {
-    background: var(--smrt-color-error-container);
-    color: var(--smrt-color-on-error-container);
-  }
-
-  .working-strip__main {
+  .smrt-working-strip__main {
     display: flex;
     flex: 1;
     align-items: center;
@@ -312,6 +287,92 @@ function handleKeydown(event: KeyboardEvent) {
     min-inline-size: 0;
     min-block-size: 2.75rem;
     padding: 0 var(--smrt-spacing-4);
+  }
+  button.smrt-working-strip__main {
+    cursor: pointer;
+  }
+  .smrt-working-strip__inline .smrt-working-strip__main {
+    min-block-size: 0;
+    padding: 0;
+  }
+  .smrt-working-strip__icon {
+    display: inline-grid;
+    flex: none;
+    place-items: center;
+    inline-size: 1.25rem;
+  }
+  .smrt-working-strip__text {
+    display: flex;
+    flex-direction: column;
+    min-inline-size: 0;
+  }
+  .smrt-working-strip__goal {
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+  }
+  .smrt-working-strip__label {
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+  }
+  .smrt-working-strip__spinner {
+    display: block;
+    inline-size: 1rem;
+    block-size: 1rem;
+  }
+  .smrt-working-strip__actions {
+    display: flex;
+    flex: none;
+    align-items: center;
+    gap: var(--smrt-spacing-1);
+  }
+  .smrt-working-strip__button {
+    flex: none;
+    min-inline-size: 2.75rem;
+    min-block-size: 2.75rem;
+    padding: 0 var(--smrt-spacing-4);
+    cursor: pointer;
+  }
+  .smrt-working-strip__button--icon {
+    padding: 0;
+  }
+  .smrt-working-strip__inline .smrt-working-strip__button {
+    min-block-size: 2rem;
+  }
+}
+
+@layer smrt.theme {
+  .smrt-working-strip__root {
+    background: var(--smrt-color-surface-container-high);
+    color: var(--smrt-color-on-surface);
+    font: var(--smrt-typography-body-medium-font);
+  }
+  .smrt-working-strip__strip {
+    border-block-start: var(--smrt-hairline);
+    box-shadow: var(--smrt-elevation-2);
+  }
+  .smrt-working-strip__floating {
+    border: var(--smrt-hairline);
+    border-radius: var(--smrt-radius-xl, 1.25rem);
+    box-shadow: var(--smrt-elevation-3);
+  }
+  .smrt-working-strip__inline {
+    border-block-end: var(--smrt-hairline);
+  }
+  .smrt-working-strip__root[data-phase='waiting'] {
+    background: var(--smrt-color-tertiary-container, var(--smrt-color-primary-container));
+    color: var(--smrt-color-on-tertiary-container, var(--smrt-color-on-primary-container));
+  }
+  .smrt-working-strip__root[data-phase='done'] {
+    background: var(--smrt-color-success-container, var(--smrt-color-primary-container));
+    color: var(--smrt-color-on-success-container, var(--smrt-color-on-primary-container));
+  }
+  .smrt-working-strip__root[data-phase='failed'] {
+    background: var(--smrt-color-error-container);
+    color: var(--smrt-color-on-error-container);
+  }
+  .smrt-working-strip__main {
     border: 0;
     border-radius: inherit;
     background: transparent;
@@ -319,111 +380,50 @@ function handleKeydown(event: KeyboardEvent) {
     font: inherit;
     text-align: start;
   }
-
-  button.working-strip__main {
-    cursor: pointer;
-  }
-
-  .working-strip--inline .working-strip__main {
-    min-block-size: 0;
-    padding: 0;
-  }
-
-  .working-strip__main:focus-visible,
-  .working-strip__button:focus-visible {
+  .smrt-working-strip__main:focus-visible,
+  .smrt-working-strip__button:focus-visible {
     outline: 2px solid currentColor;
     outline-offset: -2px;
   }
-
-  .working-strip__icon {
-    display: inline-grid;
-    flex: none;
-    place-items: center;
-    inline-size: 1.25rem;
-  }
-
-  .working-strip__glyph {
+  .smrt-working-strip__glyph {
     font-weight: 700;
     line-height: 1;
   }
-
-  .working-strip__text {
-    display: flex;
-    flex-direction: column;
-    min-inline-size: 0;
-  }
-
-  .working-strip__goal {
-    overflow: hidden;
+  .smrt-working-strip__goal {
     font: var(--smrt-typography-label-medium-font);
     opacity: 0.8;
-    text-overflow: ellipsis;
-    white-space: nowrap;
   }
-
-  .working-strip__label {
-    overflow: hidden;
-    text-overflow: ellipsis;
-    white-space: nowrap;
-  }
-
-  .working-strip__spinner {
-    display: block;
-    inline-size: 1rem;
-    block-size: 1rem;
+  .smrt-working-strip__spinner {
     border: 2px solid
       color-mix(in srgb, currentColor 25%, transparent);
     border-block-start-color: currentColor;
     border-radius: var(--smrt-radius-full);
     animation: working-strip-spin 0.8s linear infinite;
   }
-
-  .working-strip__actions {
-    display: flex;
-    flex: none;
-    align-items: center;
-    gap: var(--smrt-spacing-1);
-  }
-
-  .working-strip__button {
-    flex: none;
-    min-inline-size: 2.75rem;
-    min-block-size: 2.75rem;
-    padding: 0 var(--smrt-spacing-4);
+  .smrt-working-strip__button {
     border: var(--smrt-hairline);
     border-radius: var(--smrt-radius-full);
     background: var(--smrt-color-surface);
     color: var(--smrt-color-on-surface);
     font: var(--smrt-typography-label-large-font);
-    cursor: pointer;
   }
-
-  .working-strip__button--primary {
+  .smrt-working-strip__button--primary {
     border-color: transparent;
     background: var(--smrt-color-primary);
     color: var(--smrt-color-on-primary);
   }
-
-  .working-strip__button--icon {
-    padding: 0;
-  }
-
-  .working-strip--inline .working-strip__button {
-    min-block-size: 2rem;
-  }
-
   @keyframes working-strip-spin {
     to {
       transform: rotate(360deg);
     }
   }
-
   @media (prefers-reduced-motion: reduce) {
-    .working-strip__spinner {
+    .smrt-working-strip__spinner {
       animation: none;
       border-block-start-color: color-mix(in srgb, currentColor 25%, transparent);
       border-inline-start-color: currentColor;
     }
   }
 }
+
 </style>

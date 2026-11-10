@@ -105,7 +105,7 @@ let record = $state<Record<string, unknown>>({});
   />
 {/snippet}
 
-<section class="object-form-preview">
+<section class="smrt-object-form-preview__root" data-smrt-component="ObjectFormPreview">
   <h2>Generated ObjectForm</h2>
   <p>
     This single form is driven by browser-safe fields and resolved policy. Basic
@@ -119,14 +119,30 @@ let record = $state<Record<string, unknown>>({});
       renderers={{ sku: skuRenderer }}
     />
   </ObjectFormSourceProvider>
-  <output class="record-preview">{JSON.stringify(record)}</output>
+  <output class="smrt-object-form-preview__output" data-smrt-part="status">{JSON.stringify(record)}</output>
 </section>
 
 <style>
 @layer smrt.reset, smrt.structure, smrt.theme;
-@layer smrt.theme {
-  .object-form-preview { display: grid; gap: var(--smrt-spacing-3, 0.75rem); max-width: 40rem; }
-  h2, p { margin: 0; }
-  .record-preview { font: var(--smrt-typography-body-small-font, monospace); color: var(--smrt-color-on-surface-variant, currentColor); overflow-wrap: anywhere; }
+@layer smrt.structure {
+  .smrt-object-form-preview__root {
+    display: grid;
+    gap: var(--smrt-spacing-3, 0.75rem);
+    max-width: 40rem;
+  }
+  h2, p {
+    margin: 0;
+  }
+  .smrt-object-form-preview__output {
+    overflow-wrap: anywhere;
+  }
 }
+
+@layer smrt.theme {
+  .smrt-object-form-preview__output {
+    font: var(--smrt-typography-body-small-font, monospace);
+    color: var(--smrt-color-on-surface-variant, currentColor);
+  }
+}
+
 </style>

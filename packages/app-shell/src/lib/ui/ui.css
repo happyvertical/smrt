@@ -1,6 +1,6 @@
 /* Page-level styles for the shell's own pages. Colors and spacing come from
    the smrt-ui tokens (light and dark follow the theme provider). */
-.sh-page {
+.smrt-app-shell__page {
   box-sizing: border-box;
   width: 100%;
   max-width: 64rem;
@@ -9,12 +9,12 @@
   color: var(--smrt-color-on-surface, inherit);
   overflow-wrap: anywhere;
 }
-.sh-page *,
-.sh-page *::before,
-.sh-page *::after {
+.smrt-app-shell__page *,
+.smrt-app-shell__page *::before,
+.smrt-app-shell__page *::after {
   box-sizing: border-box;
 }
-.sh-head {
+.smrt-app-shell__head {
   display: flex;
   flex-wrap: wrap;
   align-items: center;
@@ -22,20 +22,20 @@
   gap: var(--smrt-spacing-md, 0.75rem);
   margin-block-end: var(--smrt-spacing-lg, 1rem);
 }
-.sh-head h1 {
+.smrt-app-shell__head h1 {
   margin: 0;
   font-size: 1.5rem;
 }
-.sh-sub {
+.smrt-app-shell__sub {
   margin: 0.25rem 0 0;
   color: var(--smrt-color-on-surface-variant, inherit);
 }
-.sh-actions {
+.smrt-app-shell__actions {
   display: flex;
   flex-wrap: wrap;
   gap: var(--smrt-spacing-sm, 0.5rem);
 }
-.sh-btn {
+.smrt-app-shell__btn {
   display: inline-flex;
   align-items: center;
   justify-content: center;
@@ -50,92 +50,92 @@
   text-decoration: none;
   cursor: pointer;
 }
-.sh-btn:hover:not(:disabled) {
+.smrt-app-shell__btn:hover:not(:disabled) {
   background: var(--smrt-color-surface-container-high, rgb(128 128 128 / 0.15));
 }
-.sh-btn:focus-visible,
-.sh-input:focus-visible,
-.sh-link:focus-visible,
-.sh-tile:focus-visible {
+.smrt-app-shell__btn:focus-visible,
+.smrt-app-shell__input:focus-visible,
+.smrt-app-shell__link:focus-visible,
+.smrt-app-shell__tile:focus-visible {
   outline: 2px solid var(--smrt-color-primary, currentColor);
   outline-offset: 2px;
 }
-.sh-btn:disabled {
+.smrt-app-shell__btn:disabled {
   opacity: 0.55;
   cursor: not-allowed;
 }
-.sh-btn-primary {
+.smrt-app-shell__btn-primary {
   background: var(--smrt-color-primary);
   border-color: var(--smrt-color-primary);
   color: var(--smrt-color-on-primary);
 }
-.sh-btn-primary:hover:not(:disabled) {
+.smrt-app-shell__btn-primary:hover:not(:disabled) {
   background: var(--smrt-color-primary);
   filter: brightness(1.1);
 }
-.sh-btn-danger {
+.smrt-app-shell__btn-danger {
   border-color: var(--smrt-color-error);
   color: var(--smrt-color-error);
 }
-.sh-btn-small {
+.smrt-app-shell__btn-small {
   min-height: 2rem;
   padding: 0 var(--smrt-spacing-md, 0.75rem);
   font-size: 0.875rem;
 }
-.sh-link {
+.smrt-app-shell__link {
   color: var(--smrt-color-primary);
 }
-.sh-card {
+.smrt-app-shell__card {
   padding: var(--smrt-spacing-lg, 1rem);
   border: 1px solid var(--smrt-color-outline-variant);
   border-radius: var(--smrt-radius-lg, 0.75rem);
   background: var(--smrt-color-surface-container-low, transparent);
 }
-.sh-card + .sh-card {
+.smrt-app-shell__card + .smrt-app-shell__card {
   margin-block-start: var(--smrt-spacing-md, 0.75rem);
 }
-.sh-muted {
+.smrt-app-shell__muted {
   color: var(--smrt-color-on-surface-variant, inherit);
   font-size: 0.875rem;
 }
-.sh-empty {
+.smrt-app-shell__empty {
   padding: var(--smrt-spacing-2xl, 2rem) var(--smrt-spacing-lg, 1rem);
   text-align: center;
   border: 1px dashed var(--smrt-color-outline-variant);
   border-radius: var(--smrt-radius-lg, 0.75rem);
 }
-.sh-alert {
+.smrt-app-shell__alert {
   margin: 0 0 var(--smrt-spacing-md, 0.75rem);
   padding: var(--smrt-spacing-md, 0.75rem);
   border-radius: var(--smrt-radius-md, 0.5rem);
   background: var(--smrt-color-surface-container, rgb(128 128 128 / 0.12));
 }
-.sh-alert-error {
+.smrt-app-shell__alert-error {
   background: var(--smrt-color-error-container);
   color: var(--smrt-color-on-error-container);
 }
-.sh-alert-warn {
+.smrt-app-shell__alert-warn {
   background: var(--smrt-color-warning-container);
   color: var(--smrt-color-on-warning-container);
 }
-.sh-alert-ok {
+.smrt-app-shell__alert-ok {
   background: var(--smrt-color-success-container);
   color: var(--smrt-color-on-success-container);
 }
-.sh-field {
+.smrt-app-shell__field {
   display: flex;
   flex-direction: column;
   gap: 0.25rem;
   margin-block-end: var(--smrt-spacing-lg, 1rem);
 }
-.sh-field label,
-.sh-label {
+.smrt-app-shell__field label,
+.smrt-app-shell__label {
   font-weight: 600;
 }
-.sh-req {
+.smrt-app-shell__req {
   color: var(--smrt-color-error);
 }
-.sh-input {
+.smrt-app-shell__input {
   width: 100%;
   min-height: var(--smrt-control-target-min, 2.5rem);
   padding: 0.4rem 0.6rem;
@@ -145,62 +145,62 @@
   color: var(--smrt-color-on-surface, inherit);
   font: inherit;
 }
-textarea.sh-input {
+textarea.smrt-app-shell__input {
   min-height: 7rem;
   resize: vertical;
 }
-.sh-input[aria-invalid='true'] {
+.smrt-app-shell__input[aria-invalid='true'] {
   border-color: var(--smrt-color-error);
 }
-.sh-check {
+.smrt-app-shell__check {
   display: inline-flex;
   align-items: center;
   gap: 0.5rem;
   min-height: var(--smrt-control-target-min, 2.5rem);
 }
-.sh-check input {
+.smrt-app-shell__check input {
   width: 1.25rem;
   height: 1.25rem;
 }
-.sh-error {
+.smrt-app-shell__error {
   margin: 0;
   color: var(--smrt-color-error);
   font-size: 0.875rem;
 }
-.sh-hint {
+.smrt-app-shell__hint {
   margin: 0;
   color: var(--smrt-color-on-surface-variant, inherit);
   font-size: 0.8125rem;
 }
-.sh-tablewrap {
+.smrt-app-shell__tablewrap {
   overflow-x: auto;
   border: 1px solid var(--smrt-color-outline-variant);
   border-radius: var(--smrt-radius-lg, 0.75rem);
 }
-.sh-table {
+.smrt-app-shell__table {
   width: 100%;
   border-collapse: collapse;
 }
-.sh-table th,
-.sh-table td {
+.smrt-app-shell__table th,
+.smrt-app-shell__table td {
   padding: 0.6rem 0.75rem;
   text-align: start;
   vertical-align: top;
   border-block-end: 1px solid var(--smrt-color-outline-variant);
 }
-.sh-table tbody tr:last-child td {
+.smrt-app-shell__table tbody tr:last-child td {
   border-block-end: 0;
 }
-.sh-table th {
+.smrt-app-shell__table th {
   font-size: 0.8125rem;
   color: var(--smrt-color-on-surface-variant, inherit);
   white-space: nowrap;
 }
-.sh-table td.sh-row-actions {
+.smrt-app-shell__table td.smrt-app-shell__row-actions {
   white-space: nowrap;
   text-align: end;
 }
-.sh-tiles {
+.smrt-app-shell__tiles {
   display: grid;
   gap: var(--smrt-spacing-md, 0.75rem);
   grid-template-columns: repeat(auto-fill, minmax(min(100%, 12rem), 1fr));
@@ -208,7 +208,7 @@ textarea.sh-input {
   padding: 0;
   list-style: none;
 }
-.sh-tile {
+.smrt-app-shell__tile {
   display: block;
   height: 100%;
   padding: var(--smrt-spacing-lg, 1rem);
@@ -218,15 +218,15 @@ textarea.sh-input {
   color: inherit;
   text-decoration: none;
 }
-.sh-tile:hover {
+.smrt-app-shell__tile:hover {
   background: var(--smrt-color-surface-container-high, rgb(128 128 128 / 0.15));
 }
-.sh-tile strong {
+.smrt-app-shell__tile strong {
   display: block;
   font-size: 1.75rem;
   line-height: 1.2;
 }
-.sh-code {
+.smrt-app-shell__code {
   max-height: 20rem;
   margin: var(--smrt-spacing-sm, 0.5rem) 0;
   padding: var(--smrt-spacing-md, 0.75rem);
@@ -237,7 +237,7 @@ textarea.sh-input {
   font-size: 0.8125rem;
   white-space: pre;
 }
-.sh-badge {
+.smrt-app-shell__badge {
   display: inline-block;
   padding: 0.1rem 0.5rem;
   border-radius: var(--smrt-radius-full);
@@ -246,27 +246,27 @@ textarea.sh-input {
   font-size: 0.75rem;
   font-weight: 600;
 }
-.sh-badge-warn {
+.smrt-app-shell__badge-warn {
   background: var(--smrt-color-warning-container);
   color: var(--smrt-color-on-warning-container);
 }
-.sh-badge-ok {
+.smrt-app-shell__badge-ok {
   background: var(--smrt-color-success-container);
   color: var(--smrt-color-on-success-container);
 }
-.sh-badge-bad {
+.smrt-app-shell__badge-bad {
   background: var(--smrt-color-error-container);
   color: var(--smrt-color-on-error-container);
 }
-.sh-list {
+.smrt-app-shell__list {
   margin: 0;
   padding: 0;
   list-style: none;
 }
-.sh-list > li + li {
+.smrt-app-shell__list > li + li {
   margin-block-start: var(--smrt-spacing-md, 0.75rem);
 }
-.sh-dialog {
+.smrt-app-shell__dialog {
   max-width: min(28rem, calc(100vw - 2rem));
   padding: var(--smrt-spacing-lg, 1rem);
   border: 1px solid var(--smrt-color-outline);
@@ -274,21 +274,21 @@ textarea.sh-input {
   background: var(--smrt-color-surface, Canvas);
   color: var(--smrt-color-on-surface, CanvasText);
 }
-.sh-dialog::backdrop {
+.smrt-app-shell__dialog::backdrop {
   background: var(--smrt-color-scrim, rgb(0 0 0 / 0.5));
 }
-.sh-dialog h2 {
+.smrt-app-shell__dialog h2 {
   margin-block-start: 0;
   font-size: 1.125rem;
 }
-.sh-dialog-actions {
+.smrt-app-shell__dialog-actions {
   display: flex;
   flex-wrap: wrap;
   justify-content: flex-end;
   gap: var(--smrt-spacing-sm, 0.5rem);
   margin-block-start: var(--smrt-spacing-lg, 1rem);
 }
-.sh-grid2 {
+.smrt-app-shell__grid2 {
   display: grid;
   gap: var(--smrt-spacing-lg, 1rem);
   grid-template-columns: repeat(auto-fit, minmax(min(100%, 16rem), 1fr));

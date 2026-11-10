@@ -15,6 +15,11 @@
       "import": "./dist/index.js",
       "default": "./dist/index.js"
     },
+    "./playground": {
+      "types": "./dist/svelte/playground.d.ts",
+      "svelte": "./dist/svelte/playground.js",
+      "import": "./dist/svelte/playground.js"
+    },
     "./forms": {
       "types": "./dist/components/forms/index.d.ts",
       "svelte": "./dist/components/forms/index.js",

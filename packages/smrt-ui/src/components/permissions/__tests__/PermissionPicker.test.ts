@@ -44,7 +44,7 @@ describe('PermissionPicker', () => {
       'project',
     );
     expect(
-      screen.getByText('Read settings').closest('.choice'),
+      screen.getByText('Read settings').closest('[data-smrt-part="option"]'),
     ).toHaveAttribute('hidden');
     expect(screen.getByText('Projects')).toBeVisible();
     expect(screen.getByText('Projects').closest('details')).toHaveAttribute(
@@ -57,7 +57,7 @@ describe('PermissionPicker', () => {
 
     await user.clear(screen.getByRole('searchbox'));
     expect(
-      screen.getByText('Read settings').closest('.choice'),
+      screen.getByText('Read settings').closest('[data-smrt-part="option"]'),
     ).not.toHaveAttribute('hidden');
     expect(
       screen.getByText('Read settings').closest('details'),
@@ -72,9 +72,9 @@ describe('PermissionPicker', () => {
 
     await user.type(search, 'configuration');
     expect(screen.getByText('Read settings')).toBeVisible();
-    expect(screen.getByText('Projects').closest('.group')).toHaveAttribute(
-      'hidden',
-    );
+    expect(
+      screen.getByText('Projects').closest('[data-smrt-part="group"]'),
+    ).toHaveAttribute('hidden');
     await user.clear(search);
     await user.type(search, 'missing capability');
     expect(screen.getByRole('status')).toHaveTextContent(

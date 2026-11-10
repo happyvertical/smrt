@@ -173,36 +173,101 @@ useControlRegistration(() => {
   };
 });
 </script>
-<div bind:this={rootEl} class="range-slider {className}" class:disabled data-smrt-control={controlId} data-smrt-form={interactionContext?.formId}
+<div bind:this={rootEl} class="smrt-range-slider__root {className}" class:smrt-range-slider__disabled={disabled} data-smrt-control={controlId} data-smrt-form={interactionContext?.formId}
   data-smrt-subject-type={resolvedInteraction === false ? undefined : resolvedInteraction.subject?.type}
   data-smrt-subject-id={resolvedInteraction === false ? undefined : resolvedInteraction.subject?.id} role="group" aria-label={label ?? formGroup?.().label ?? 'Range'} data-smrt-component="RangeSlider">
-  {#if label}<div class="range-slider__header"><span>{label}</span><output>{value.min}{unit ?? ''} – {value.max}{unit ?? ''}</output></div>{/if}
-  <div class="range-slider__track">
+  {#if label}<div class="smrt-range-slider__header" data-smrt-part="header"><span>{label}</span><output>{value.min}{unit ?? ''} – {value.max}{unit ?? ''}</output></div>{/if}
+  <div class="smrt-range-slider__track" data-smrt-part="track">
     <input bind:this={minEl} id={minId} type="range" name={name ? `${name}[min]` : undefined} {min} max={value.max} {step} {disabled} value={value.min}
       aria-label={minLabel} aria-valuetext={`${value.min}${unit ?? ''}`} oninput={(event) => setMin(Number(event.currentTarget.value))} />
     <input bind:this={maxEl} id={maxId} type="range" name={name ? `${name}[max]` : undefined} min={value.min} {max} {step} {disabled} value={value.max}
       aria-label={maxLabel} aria-valuetext={`${value.max}${unit ?? ''}`} oninput={(event) => setMax(Number(event.currentTarget.value))} />
   </div>
-  <div class="range-slider__inputs">
+  <div class="smrt-range-slider__inputs" data-smrt-part="control">
     <label for={`${minId}-number`}>{minLabel}<input id={`${minId}-number`} type="number" {min} max={value.max} {step} {disabled} value={value.min} onchange={(event) => setMin(Number(event.currentTarget.value))} /></label>
     <label for={`${maxId}-number`}>{maxLabel}<input id={`${maxId}-number`} type="number" min={value.min} {max} {step} {disabled} value={value.max} onchange={(event) => setMax(Number(event.currentTarget.value))} /></label>
   </div>
 </div>
 <style>
 @layer smrt.reset, smrt.structure, smrt.theme;
-@layer smrt.theme {
-  .range-slider { display: grid; gap: var(--smrt-spacing-3); color: var(--smrt-color-on-surface); }
-  .range-slider.disabled { opacity: .5; }
-  .range-slider__header { display: flex; justify-content: space-between; font: var(--smrt-typography-label-large-font); }
-  output { color: var(--smrt-color-primary); font-variant-numeric: tabular-nums; }
-  .range-slider__track { position: relative; min-height: 1.75rem; display: grid; align-items: center; }
-  .range-slider__track input { grid-area: 1 / 1; width: 100%; pointer-events: none; accent-color: var(--smrt-color-primary); background: transparent; }
-  .range-slider__track input::-webkit-slider-thumb { pointer-events: auto; }
-  .range-slider__track input::-moz-range-thumb { pointer-events: auto; }
-  .range-slider__inputs { display: flex; gap: var(--smrt-spacing-3); }
-  .range-slider__inputs label { display: grid; gap: var(--smrt-spacing-1); flex: 1; font: var(--smrt-typography-label-small-font); color: var(--smrt-color-on-surface-variant); }
-  .range-slider__inputs input { width: 100%; padding: var(--smrt-spacing-2); border: var(--smrt-hairline-strong); border-radius: var(--smrt-radius-small); background: var(--smrt-color-surface); color: var(--smrt-color-on-surface); }
-  input:focus-visible { outline: var(--smrt-focus-ring-width) solid var(--smrt-focus-ring-color); outline-offset: var(--smrt-focus-ring-offset); }
-  :global(.range-slider[data-smrt-highlighted='true']) { outline: 3px solid var(--smrt-color-tertiary); outline-offset: 4px; border-radius: var(--smrt-radius-small); }
+@layer smrt.structure {
+  .smrt-range-slider__root {
+    display: grid;
+    gap: var(--smrt-spacing-3);
+  }
+  .smrt-range-slider__header {
+    display: flex;
+    justify-content: space-between;
+  }
+  .smrt-range-slider__track {
+    position: relative;
+    min-height: 1.75rem;
+    display: grid;
+    align-items: center;
+  }
+  .smrt-range-slider__track input {
+    grid-area: 1 / 1;
+    width: 100%;
+    pointer-events: none;
+  }
+  .smrt-range-slider__track input::-webkit-slider-thumb {
+    pointer-events: auto;
+  }
+  .smrt-range-slider__track input::-moz-range-thumb {
+    pointer-events: auto;
+  }
+  .smrt-range-slider__inputs {
+    display: flex;
+    gap: var(--smrt-spacing-3);
+  }
+  .smrt-range-slider__inputs label {
+    display: grid;
+    gap: var(--smrt-spacing-1);
+    flex: 1;
+  }
+  .smrt-range-slider__inputs input {
+    width: 100%;
+    padding: var(--smrt-spacing-2);
+  }
 }
+
+@layer smrt.theme {
+  .smrt-range-slider__root {
+    color: var(--smrt-color-on-surface);
+  }
+  .smrt-range-slider__root.smrt-range-slider__disabled {
+    opacity: .5;
+  }
+  .smrt-range-slider__header {
+    font: var(--smrt-typography-label-large-font);
+  }
+  output {
+    color: var(--smrt-color-primary);
+    font-variant-numeric: tabular-nums;
+  }
+  .smrt-range-slider__track input {
+    accent-color: var(--smrt-color-primary);
+    background: transparent;
+  }
+  .smrt-range-slider__inputs label {
+    font: var(--smrt-typography-label-small-font);
+    color: var(--smrt-color-on-surface-variant);
+  }
+  .smrt-range-slider__inputs input {
+    border: var(--smrt-hairline-strong);
+    border-radius: var(--smrt-radius-small);
+    background: var(--smrt-color-surface);
+    color: var(--smrt-color-on-surface);
+  }
+  input:focus-visible {
+    outline: var(--smrt-focus-ring-width) solid var(--smrt-focus-ring-color);
+    outline-offset: var(--smrt-focus-ring-offset);
+  }
+  :global(.smrt-range-slider__root[data-smrt-highlighted='true']) {
+    outline: 3px solid var(--smrt-color-tertiary);
+    outline-offset: 4px;
+    border-radius: var(--smrt-radius-small);
+  }
+}
+
 </style>

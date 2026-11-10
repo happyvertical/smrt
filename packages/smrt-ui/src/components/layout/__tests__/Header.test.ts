@@ -38,8 +38,8 @@ describe('Header', () => {
 
   it('omits logo and nav when their snippets are not provided', () => {
     const { container } = render(Header, { props: {} });
-    expect(container.querySelector('.logo')).toBeNull();
-    expect(container.querySelector('.nav')).toBeNull();
+    expect(container.querySelector('[data-smrt-part="title"]')).toBeNull();
+    expect(container.querySelector('[data-smrt-part="list"]')).toBeNull();
   });
 
   it('is axe-clean with logo and nav', async () => {

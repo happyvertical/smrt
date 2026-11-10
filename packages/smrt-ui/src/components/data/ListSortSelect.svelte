@@ -84,11 +84,12 @@ function handleChange(event: Event) {
 }
 </script>
 
-<div class={`list-sort-select ${className}`} data-smrt-component="ListSortSelect">
-  <label class="list-sort-select__label" for={id}>{label}</label>
+<div class={`smrt-list-sort-select__root ${className}`} data-smrt-component="ListSortSelect">
+  <label class="smrt-list-sort-select__label" data-smrt-part="label" for={id}>{label}</label>
   <select
     {id}
-    class="list-sort-select__control"
+    class="smrt-list-sort-select__control"
+    data-smrt-part="input"
     value={`${sort.columnId}:${sort.direction}`}
     onchange={handleChange}
   >
@@ -100,20 +101,27 @@ function handleChange(event: Event) {
 
 <style>
 @layer smrt.reset, smrt.structure, smrt.theme;
-@layer smrt.theme {
-  .list-sort-select {
+@layer smrt.structure {
+  .smrt-list-sort-select__root {
     display: inline-flex;
     align-items: center;
     gap: 0.5rem;
   }
-  .list-sort-select__label {
-    font-size: 0.875rem;
-    color: var(--smrt-color-on-surface-variant, inherit);
+  .smrt-list-sort-select__label {
     white-space: nowrap;
   }
-  .list-sort-select__control {
+  .smrt-list-sort-select__control {
     min-height: 2.75rem;
     padding: 0.25rem 0.5rem;
+  }
+}
+
+@layer smrt.theme {
+  .smrt-list-sort-select__label {
+    font-size: 0.875rem;
+    color: var(--smrt-color-on-surface-variant, inherit);
+  }
+  .smrt-list-sort-select__control {
     border: var(--smrt-hairline);
     border-radius: var(--smrt-radius-md, 0.375rem);
     background: var(--smrt-color-surface, transparent);
@@ -121,4 +129,5 @@ function handleChange(event: Event) {
     font: inherit;
   }
 }
+
 </style>

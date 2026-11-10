@@ -106,10 +106,9 @@ describe('OverviewGrid (view)', () => {
     expect(
       screen.getAllByRole('link', { name: 'Open section' })[0],
     ).toHaveAttribute('href', '/records');
-    expect(container.querySelector('.smrt-overview')).toHaveAttribute(
-      'data-presentation',
-      'plain',
-    );
+    expect(
+      container.querySelector('[data-smrt-component="OverviewGrid"]'),
+    ).toHaveAttribute('data-presentation', 'plain');
     expect(screen.queryByRole('toolbar')).toBeNull();
     await expectNoA11yViolations(container);
     await rerender({
@@ -117,9 +116,9 @@ describe('OverviewGrid (view)', () => {
       gridProps: { heading, presentation: 'plain', editing: true },
     });
     expect(screen.getByRole('toolbar')).toBeInTheDocument();
-    expect(container.querySelector('.smrt-overview')).toHaveAttribute(
-      'data-editing',
-    );
+    expect(
+      container.querySelector('[data-smrt-component="OverviewGrid"]'),
+    ).toHaveAttribute('data-editing');
     expect(container.querySelector('.smrt-overview__inert')).toHaveAttribute(
       'inert',
     );

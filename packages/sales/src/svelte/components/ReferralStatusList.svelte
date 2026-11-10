@@ -21,12 +21,12 @@ export interface Props {
 let { referrals = [], locale }: Props = $props();
 </script>
 
-<div class="sales-referral-status" data-smrt-component="ReferralStatusList">
+<div class="smrt-referral-status-list__root" data-smrt-component="ReferralStatusList">
   {#if referrals.length === 0}
-    <p class="empty">No referrals yet.</p>
+    <p class="smrt-referral-status-list__empty" data-smrt-part="empty">No referrals yet.</p>
   {:else}
     <table>
-      <thead>
+      <thead data-smrt-part="header">
         <tr>
           <th scope="col">Status</th>
           <th scope="col">Target</th>
@@ -37,21 +37,21 @@ let { referrals = [], locale }: Props = $props();
           <th scope="col">Expires</th>
         </tr>
       </thead>
-      <tbody>
+      <tbody data-smrt-part="body">
         {#each referrals as referral (referral.id)}
-          <tr>
+          <tr data-smrt-part="row">
             <td>
               <Badge variant={referralStatusBadgeVariant(referral.status)} size="sm">
                 {referral.status.replace('_', ' ')}
               </Badge>
             </td>
             <td>
-              <span class="target-kind">{referral.targetKind}</span>
+              <span class="smrt-referral-status-list__target-kind" data-smrt-part="meta">{referral.targetKind}</span>
               {#if referral.targetLabel}
-                <span class="secondary">{referral.targetLabel}</span>
+                <span class="smrt-referral-status-list__secondary" data-smrt-part="meta">{referral.targetLabel}</span>
               {/if}
             </td>
-            <td class="credit">
+            <td class="smrt-referral-status-list__credit" data-smrt-part="cell">
               {formatPercent(referral.creditFraction, locale)}
               {#if referral.splitGroupId}
                 <Badge variant="info" size="sm">split</Badge>
@@ -70,52 +70,61 @@ let { referrals = [], locale }: Props = $props();
 
 <style>
 @layer smrt.reset, smrt.structure, smrt.theme;
-@layer smrt.theme {
-  .sales-referral-status {
+@layer smrt.structure {
+  .smrt-referral-status-list__root {
     width: 100%;
     overflow-x: auto;
   }
-
-  .empty {
+  .smrt-referral-status-list__empty {
     margin: 0;
+  }
+  table {
+    width: 100%;
+  }
+  th {
+    padding: var(--smrt-spacing-2, 0.5rem) var(--smrt-spacing-3, 0.75rem);
+    white-space: nowrap;
+  }
+  td {
+    padding: var(--smrt-spacing-2, 0.5rem) var(--smrt-spacing-3, 0.75rem);
+  }
+  .smrt-referral-status-list__target-kind {
+    display: block;
+  }
+  .smrt-referral-status-list__secondary {
+    display: block;
+  }
+  .smrt-referral-status-list__credit {
+    white-space: nowrap;
+  }
+}
+
+@layer smrt.theme {
+  .smrt-referral-status-list__empty {
     color: var(--smrt-color-on-surface-variant);
     font-style: italic;
   }
-
   table {
-    width: 100%;
     border-collapse: collapse;
     font-size: var(--smrt-typography-body-medium-size, 0.875rem);
   }
-
   th {
-    padding: var(--smrt-spacing-2, 0.5rem) var(--smrt-spacing-3, 0.75rem);
     text-align: left;
     font-weight: var(--smrt-typography-weight-semibold, 600);
     background: var(--smrt-color-surface-container);
     border-bottom: var(--smrt-hairline);
-    white-space: nowrap;
   }
-
   td {
-    padding: var(--smrt-spacing-2, 0.5rem) var(--smrt-spacing-3, 0.75rem);
     border-bottom: var(--smrt-hairline);
     vertical-align: top;
   }
-
-  .target-kind {
-    display: block;
+  .smrt-referral-status-list__target-kind {
     font-weight: var(--smrt-typography-weight-medium, 500);
   }
-
-  .secondary {
-    display: block;
+  .smrt-referral-status-list__secondary {
     color: var(--smrt-color-on-surface-variant);
     font-size: var(--smrt-typography-body-small-size, 0.75rem);
   }
-
-  .credit {
-    white-space: nowrap;
-  }
 }
+
 </style>

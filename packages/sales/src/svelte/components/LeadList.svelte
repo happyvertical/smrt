@@ -105,9 +105,9 @@ function handleAssign(leadId: string, event: Event) {
 }
 </script>
 
-<div class="sales-lead-list" data-smrt-component="LeadList">
-  <nav class="inbox-controls" aria-label="Lead inbox filters">
-    <div class="filters" role="group" aria-label="Filter leads">
+<div class="smrt-lead-list__root" data-smrt-component="LeadList">
+  <nav class="smrt-lead-list__toolbar" data-smrt-part="actions" aria-label="Lead inbox filters">
+    <div class="smrt-lead-list__filters" data-smrt-part="filters" role="group" aria-label="Filter leads">
       {#each filters as filter (filter.value)}
         <Button
           variant="ghost"
@@ -116,11 +116,11 @@ function handleAssign(leadId: string, event: Event) {
           aria-pressed={statusFilter === filter.value}
           onclick={() => onStatusFilterChange?.(filter.value)}
         >
-          {filter.label}<span class="count">{statusCounts[filter.value] ?? 0}</span>
+          {filter.label}<span class="smrt-lead-list__count" data-smrt-part="count">{statusCounts[filter.value] ?? 0}</span>
         </Button>
       {/each}
     </div>
-    <label class="sort-control">Sort
+    <label class="smrt-lead-list__sort" data-smrt-part="field">Sort
       <Select value={sort} disabled={!onSortChange} onchange={(event) => onSortChange?.((event.currentTarget as HTMLSelectElement).value as LeadInboxSort)}>
         <option value="created">Recently received</option>
         <option value="next_action">Next action due</option>
@@ -129,10 +129,10 @@ function handleAssign(leadId: string, event: Event) {
     </label>
   </nav>
   {#if leads.length === 0}
-    <p class="sales-lead-list__empty">No leads yet.</p>
+    <p class="smrt-lead-list__empty" data-smrt-part="empty">No leads yet.</p>
   {:else}
     <table>
-      <thead>
+      <thead data-smrt-part="header">
         <tr>
           <th scope="col">Lead</th>
           <th scope="col">Contact</th>
@@ -140,16 +140,16 @@ function handleAssign(leadId: string, event: Event) {
           <th scope="col">Owner</th>
           <th scope="col">Status</th>
           <th scope="col">Next action</th>
-          <th scope="col"><span class="visually-hidden">Actions</span></th>
+          <th scope="col"><span class="smrt-lead-list__visually-hidden" data-smrt-part="label">Actions</span></th>
         </tr>
       </thead>
-      <tbody>
+      <tbody data-smrt-part="body">
         {#each leads as lead (lead.id)}
           {@const merged = lead.status === 'merged'}
-          <tr class:merged class:selected={selectedLeadId === lead.id}>
+          <tr class:smrt-lead-list__merged={merged} class:smrt-lead-list__selected={selectedLeadId === lead.id} data-smrt-part="row">
             <td>
               {#if hrefForLead}
-                <a class="lead-name" href={hrefForLead(lead.id)} onclick={() => onSelect?.(lead.id)} aria-current={selectedLeadId === lead.id ? 'page' : undefined}>{lead.name}</a>
+                <a class="smrt-lead-list__name" href={hrefForLead(lead.id)} onclick={() => onSelect?.(lead.id)} aria-current={selectedLeadId === lead.id ? 'page' : undefined} data-smrt-part="action">{lead.name}</a>
               {:else if onSelect}
                 <Button
                   class="lead-name select-lead"
@@ -161,29 +161,29 @@ function handleAssign(leadId: string, event: Event) {
                   {lead.name}
                 </Button>
               {:else}
-                <span class="lead-name">{lead.name}</span>
+                <span class="smrt-lead-list__name" data-smrt-part="title">{lead.name}</span>
               {/if}
               {#if lead.organizationName}
-                <span class="secondary">{lead.organizationName}</span>
+                <span class="smrt-lead-list__secondary" data-smrt-part="meta">{lead.organizationName}</span>
               {/if}
               {#if lead.receivedLabel || lead.createdAt}
-                <span class="secondary">{lead.receivedLabel ?? `Received ${formatDate(lead.createdAt, locale)}`}</span>
+                <span class="smrt-lead-list__secondary" data-smrt-part="meta">{lead.receivedLabel ?? `Received ${formatDate(lead.createdAt, locale)}`}</span>
               {/if}
               {#if merged && lead.mergedIntoId}
-                <span class="merged-note">
+                <span class="smrt-lead-list__merged-note" data-smrt-part="meta">
                   merged into <code>{lead.mergedIntoId.slice(0, 8)}</code>
                 </span>
               {/if}
             </td>
             <td>
               {#if lead.contactName}
-                <span class="secondary">{lead.contactName}</span>
+                <span class="smrt-lead-list__secondary" data-smrt-part="meta">{lead.contactName}</span>
               {/if}
               {#if lead.email}
-                <span class="secondary">{lead.email}</span>
+                <span class="smrt-lead-list__secondary" data-smrt-part="meta">{lead.email}</span>
               {/if}
               {#if lead.phone}
-                <span class="secondary">{lead.phone}</span>
+                <span class="smrt-lead-list__secondary" data-smrt-part="meta">{lead.phone}</span>
               {/if}
             </td>
             <td>{lead.sourceLabel ?? '—'}</td>
@@ -211,11 +211,11 @@ function handleAssign(leadId: string, event: Event) {
             </td>
             <td>
               {#if lead.nextAction}
-                <span class="next-action" class:overdue={isOverdue(lead.nextAction.dueAt)}>
+                <span class="smrt-lead-list__next-action" class:smrt-lead-list__overdue={isOverdue(lead.nextAction.dueAt)} data-smrt-part="description">
                   {lead.nextAction.summary}
                 </span>
                 {#if lead.nextAction.dueAt}
-                  <span class="secondary">
+                  <span class="smrt-lead-list__secondary" data-smrt-part="meta">
                     due {formatDate(lead.nextAction.dueAt, locale)}
                   </span>
                 {/if}
@@ -223,7 +223,7 @@ function handleAssign(leadId: string, event: Event) {
                 —
               {/if}
             </td>
-            <td class="actions">
+            <td class="smrt-lead-list__actions" data-smrt-part="actions">
               {#if onQualify && canQualifyLead(lead.status)}
                 <Button
                   variant="secondary"
@@ -247,7 +247,7 @@ function handleAssign(leadId: string, event: Event) {
     </table>
   {/if}
   {#if total > pageSize || page > 1}
-    <div class="pagination" aria-label="Lead list pagination">
+    <div class="smrt-lead-list__pagination" data-smrt-part="footer" aria-label="Lead list pagination">
       <Button variant="secondary" size="sm" disabled={busy || page <= 1} onclick={() => onPageChange?.(page - 1)}>Previous</Button>
       <span>Page {page} of {pageCount} · {total} leads</span>
       <Button variant="secondary" size="sm" disabled={busy || page >= pageCount} onclick={() => onPageChange?.(page + 1)}>Next</Button>
@@ -257,91 +257,76 @@ function handleAssign(leadId: string, event: Event) {
 
 <style>
 @layer smrt.reset, smrt.structure, smrt.theme;
-@layer smrt.theme {
-  .sales-lead-list {
+@layer smrt.structure {
+  .smrt-lead-list__root {
     width: 100%;
     overflow-x: auto;
   }
-
-  .sales-lead-list__empty {
+  .smrt-lead-list__empty {
     margin: 0;
-    color: var(--smrt-color-on-surface-variant);
-    font-style: italic;
   }
-
-  .inbox-controls { display: flex; flex-wrap: wrap; justify-content: space-between; align-items: center; gap: var(--smrt-spacing-3, 0.75rem); margin-bottom: var(--smrt-spacing-3, 0.75rem); }
-  .filters { display: flex; flex-wrap: wrap; gap: var(--smrt-spacing-1, 0.25rem); }
-  .filters :global(.filter-tab) { border: var(--smrt-hairline); border-radius: var(--smrt-radius-sm, 0.25rem); padding: var(--smrt-spacing-1, 0.25rem) var(--smrt-spacing-2, 0.5rem); background: var(--smrt-color-surface); color: var(--smrt-color-on-surface); cursor: pointer; }
-  .filters :global(.filter-tab.active) { background: var(--smrt-color-primary-container); border-color: var(--smrt-color-primary); }
-  .count { margin-left: var(--smrt-spacing-1, 0.25rem); color: var(--smrt-color-on-surface-variant); }
-  .sort-control { display: flex; align-items: center; gap: var(--smrt-spacing-2, 0.5rem); }
-  .pagination { display: flex; align-items: center; justify-content: flex-end; gap: var(--smrt-spacing-3, 0.75rem); padding-top: var(--smrt-spacing-3, 0.75rem); }
-
+  .smrt-lead-list__toolbar {
+    display: flex;
+    flex-wrap: wrap;
+    justify-content: space-between;
+    align-items: center;
+    gap: var(--smrt-spacing-3, 0.75rem);
+    margin-bottom: var(--smrt-spacing-3, 0.75rem);
+  }
+  .smrt-lead-list__filters {
+    display: flex;
+    flex-wrap: wrap;
+    gap: var(--smrt-spacing-1, 0.25rem);
+  }
+  .smrt-lead-list__filters :global(.filter-tab) {
+    padding: var(--smrt-spacing-1, 0.25rem) var(--smrt-spacing-2, 0.5rem);
+    cursor: pointer;
+  }
+  .smrt-lead-list__count {
+    margin-left: var(--smrt-spacing-1, 0.25rem);
+  }
+  .smrt-lead-list__sort {
+    display: flex;
+    align-items: center;
+    gap: var(--smrt-spacing-2, 0.5rem);
+  }
+  .smrt-lead-list__pagination {
+    display: flex;
+    align-items: center;
+    justify-content: flex-end;
+    gap: var(--smrt-spacing-3, 0.75rem);
+    padding-top: var(--smrt-spacing-3, 0.75rem);
+  }
   table {
     width: 100%;
-    border-collapse: collapse;
-    font-size: var(--smrt-typography-body-medium-size, 0.875rem);
   }
-
   th {
     padding: var(--smrt-spacing-2, 0.5rem) var(--smrt-spacing-3, 0.75rem);
-    text-align: left;
-    font-weight: var(--smrt-typography-weight-semibold, 600);
-    background: var(--smrt-color-surface-container);
-    border-bottom: var(--smrt-hairline);
     white-space: nowrap;
   }
-
   td {
     padding: var(--smrt-spacing-2, 0.5rem) var(--smrt-spacing-3, 0.75rem);
-    border-bottom: var(--smrt-hairline);
-    vertical-align: top;
   }
-
-  tr.merged td {
-    opacity: 0.65;
-  }
-
-  .lead-name {
-    display: block;
-    font-weight: var(--smrt-typography-weight-medium, 500);
-  }
-  a.lead-name { color: inherit; text-decoration: none; }
-  a.lead-name:hover, :global(.select-lead:hover) { text-decoration: underline; }
-  :global(.select-lead) { padding: 0; border: 0; background: none; text-align: left; cursor: pointer; color: inherit; }
-  tr.selected td { background: var(--smrt-color-primary-container); }
-
-  .secondary {
-    display: block;
-    color: var(--smrt-color-on-surface-variant);
-    font-size: var(--smrt-typography-body-small-size, 0.75rem);
-  }
-
-  .merged-note {
-    display: block;
-    color: var(--smrt-color-on-surface-variant);
-    font-size: var(--smrt-typography-body-small-size, 0.75rem);
-  }
-
-  .merged-note code {
-    font-family: var(--smrt-font-family-mono, ui-monospace, monospace);
-  }
-
-  .next-action {
+  .smrt-lead-list__name {
     display: block;
   }
-
-  .next-action.overdue {
-    color: var(--smrt-color-error);
-    font-weight: var(--smrt-typography-weight-medium, 500);
+  :global(.select-lead) {
+    padding: 0;
+    cursor: pointer;
   }
-
-  .actions {
+  .smrt-lead-list__secondary {
+    display: block;
+  }
+  .smrt-lead-list__merged-note {
+    display: block;
+  }
+  .smrt-lead-list__next-action {
+    display: block;
+  }
+  .smrt-lead-list__actions {
     white-space: nowrap;
-    text-align: right;
   }
-
-  .visually-hidden {
+  .smrt-lead-list__visually-hidden {
     position: absolute;
     width: 1px;
     height: 1px;
@@ -350,4 +335,79 @@ function handleAssign(leadId: string, event: Event) {
     white-space: nowrap;
   }
 }
+
+@layer smrt.theme {
+  .smrt-lead-list__empty {
+    color: var(--smrt-color-on-surface-variant);
+    font-style: italic;
+  }
+  .smrt-lead-list__filters :global(.filter-tab) {
+    border: var(--smrt-hairline);
+    border-radius: var(--smrt-radius-sm, 0.25rem);
+    background: var(--smrt-color-surface);
+    color: var(--smrt-color-on-surface);
+  }
+  .smrt-lead-list__filters :global(.filter-tab.active) {
+    background: var(--smrt-color-primary-container);
+    border-color: var(--smrt-color-primary);
+  }
+  .smrt-lead-list__count {
+    color: var(--smrt-color-on-surface-variant);
+  }
+  table {
+    border-collapse: collapse;
+    font-size: var(--smrt-typography-body-medium-size, 0.875rem);
+  }
+  th {
+    text-align: left;
+    font-weight: var(--smrt-typography-weight-semibold, 600);
+    background: var(--smrt-color-surface-container);
+    border-bottom: var(--smrt-hairline);
+  }
+  td {
+    border-bottom: var(--smrt-hairline);
+    vertical-align: top;
+  }
+  tr.smrt-lead-list__merged td {
+    opacity: 0.65;
+  }
+  .smrt-lead-list__name {
+    font-weight: var(--smrt-typography-weight-medium, 500);
+  }
+  a.smrt-lead-list__name {
+    color: inherit;
+    text-decoration: none;
+  }
+  a.smrt-lead-list__name:hover, :global(.select-lead:hover) {
+    text-decoration: underline;
+  }
+  :global(.select-lead) {
+    border: 0;
+    background: none;
+    text-align: left;
+    color: inherit;
+  }
+  tr.smrt-lead-list__selected td {
+    background: var(--smrt-color-primary-container);
+  }
+  .smrt-lead-list__secondary {
+    color: var(--smrt-color-on-surface-variant);
+    font-size: var(--smrt-typography-body-small-size, 0.75rem);
+  }
+  .smrt-lead-list__merged-note {
+    color: var(--smrt-color-on-surface-variant);
+    font-size: var(--smrt-typography-body-small-size, 0.75rem);
+  }
+  .smrt-lead-list__merged-note code {
+    font-family: var(--smrt-font-family-mono, ui-monospace, monospace);
+  }
+  .smrt-lead-list__next-action.smrt-lead-list__overdue {
+    color: var(--smrt-color-error);
+    font-weight: var(--smrt-typography-weight-medium, 500);
+  }
+  .smrt-lead-list__actions {
+    text-align: right;
+  }
+}
+
 </style>

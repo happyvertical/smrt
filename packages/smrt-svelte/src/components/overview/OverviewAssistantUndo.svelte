@@ -44,9 +44,9 @@ $effect(() => {
 });
 </script>
 
-<div class="smrt-overview-assistant-undo {className}" data-active={batch ? '' : undefined} data-smrt-component="OverviewAssistantUndo">
+<div class="smrt-overview-assistant-undo__root {className}" data-active={batch ? '' : undefined} data-smrt-component="OverviewAssistantUndo">
   <!-- The live region stays mounted so each new message is announced. -->
-  <span class="smrt-overview-assistant-undo__message" role="status" aria-live="polite">
+  <span class="smrt-overview-assistant-undo__message" data-smrt-part="status" role="status" aria-live="polite">
     {#if batch}
       {message ? message(batch) : t(M['ui.overview.assistant_applied'])}
     {:else}
@@ -65,16 +65,19 @@ $effect(() => {
 
 <style>
 @layer smrt.reset, smrt.structure, smrt.theme;
-@layer smrt.theme {
-  .smrt-overview-assistant-undo {
+@layer smrt.structure {
+  .smrt-overview-assistant-undo__root {
     display: flex;
     flex-wrap: wrap;
     align-items: center;
     gap: var(--smrt-spacing-2, 0.5rem);
   }
-
   .smrt-overview-assistant-undo__message {
     flex: 1 1 12rem;
   }
 }
+
+@layer smrt.theme {
+}
+
 </style>

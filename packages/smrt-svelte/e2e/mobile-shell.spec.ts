@@ -334,7 +334,11 @@ test('sidebar-only chrome keeps brand and account access across rail states', as
   const account = page.getByRole('button', {
     name: /Open account menu Dana(?: ·)? Welder/,
   });
-  await expect(rail.locator('.smrt-admin-shell__brand.compact')).toBeVisible();
+  await expect(
+    rail.locator(
+      '[data-smrt-component="ShellBrand"].smrt-shell-brand__compact',
+    ),
+  ).toBeVisible();
   await expect(account).toHaveCount(1);
   await account.click();
   const signOut = page.getByRole('menuitem', { name: 'Sign out' });
@@ -348,7 +352,9 @@ test('sidebar-only chrome keeps brand and account access across rail states', as
 
   await rail.getByRole('button', { name: 'Expand sidebar' }).click();
   await expect(
-    rail.locator('.smrt-admin-shell__brand:not(.compact)'),
+    rail.locator(
+      '[data-smrt-component="ShellBrand"]:not(.smrt-shell-brand__compact)',
+    ),
   ).toContainText('Mobile shell fixture');
   await expect(account).toHaveCount(1);
 });

@@ -84,7 +84,7 @@ function submit() {
 }
 </script>
 
-<section class="sales-lead-create" aria-label="Create lead" data-smrt-component="LeadCreateForm">
+<section class="smrt-lead-create-form__root" aria-label="Create lead" data-smrt-component="LeadCreateForm">
   <Form class="sales-lead-create__form" onsubmit={submit}>
     <FormGroup label="Lead name" required>
       <Input value={name} required disabled={busy} oninput={(event) => (name = event.currentTarget.value)} />
@@ -124,12 +124,12 @@ function submit() {
       </FormGroup>
     {/if}
     {#if validationError || error}
-      <p class="sales-lead-create__error" role="alert">{validationError || error}</p>
+      <p class="smrt-lead-create-form__error" data-smrt-part="message" role="alert">{validationError || error}</p>
     {/if}
     {#if duplicate}
-      <p class="sales-lead-create__duplicate" role="status">Possible duplicate: {duplicate.name}</p>
+      <p class="smrt-lead-create-form__duplicate" data-smrt-part="message" role="status">Possible duplicate: {duplicate.name}</p>
     {/if}
-    <div class="sales-lead-create__actions">
+    <div class="smrt-lead-create-form__actions" data-smrt-part="actions">
       {#if onCancel}
         <Button type="button" variant="secondary" disabled={busy} onclick={() => onCancel?.()}>Cancel</Button>
       {/if}
@@ -140,10 +140,31 @@ function submit() {
 
 <style>
 @layer smrt.reset, smrt.structure, smrt.theme;
-@layer smrt.theme {
-  :global(.sales-lead-create__form) { display: grid; gap: var(--smrt-spacing-3, 0.75rem); }
-  .sales-lead-create__actions { display: flex; justify-content: flex-end; gap: var(--smrt-spacing-2, 0.5rem); }
-  .sales-lead-create__error { color: var(--smrt-color-error); margin: 0; }
-  .sales-lead-create__duplicate { color: var(--smrt-color-warning); margin: 0; }
+@layer smrt.structure {
+  :global(.sales-lead-create__form) {
+    display: grid;
+    gap: var(--smrt-spacing-3, 0.75rem);
+  }
+  .smrt-lead-create-form__actions {
+    display: flex;
+    justify-content: flex-end;
+    gap: var(--smrt-spacing-2, 0.5rem);
+  }
+  .smrt-lead-create-form__error {
+    margin: 0;
+  }
+  .smrt-lead-create-form__duplicate {
+    margin: 0;
+  }
 }
+
+@layer smrt.theme {
+  .smrt-lead-create-form__error {
+    color: var(--smrt-color-error);
+  }
+  .smrt-lead-create-form__duplicate {
+    color: var(--smrt-color-warning);
+  }
+}
+
 </style>

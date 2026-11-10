@@ -114,7 +114,7 @@ describe('ImageThumbnail component', () => {
 
     await vi.waitFor(() => {
       const fallback = target.querySelector(
-        '.smrt-thumbnail-missing',
+        '.smrt-image-thumbnail__missing',
       ) as HTMLElement | null;
       expect(fallback?.textContent).toContain('Preview unavailable');
     });
@@ -140,7 +140,7 @@ describe('ImageThumbnail component', () => {
 
     await vi.waitFor(() => {
       const fallback = firstTarget.querySelector(
-        '.smrt-thumbnail-missing',
+        '.smrt-image-thumbnail__missing',
       ) as HTMLElement | null;
       expect(fallback?.textContent).toContain('Preview unavailable');
     });
@@ -151,7 +151,7 @@ describe('ImageThumbnail component', () => {
 
     expect(fetch).toHaveBeenCalledTimes(1);
     expect(
-      secondTarget.querySelector('.smrt-thumbnail-missing'),
+      secondTarget.querySelector('.smrt-image-thumbnail__missing'),
     ).not.toBeNull();
 
     await vi.advanceTimersByTimeAsync(THUMBNAIL_FAILURE_TTL_MS + 1);

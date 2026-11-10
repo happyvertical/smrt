@@ -78,27 +78,27 @@ function handleEditorSave(image: StudioImage) {
 }
 </script>
 
-<div class="images-route">
-  <header class="images-route__header">
+<div class="smrt-image-studio-route__root" data-smrt-component="ImageStudioRoute">
+  <header class="smrt-image-studio-route__header" data-smrt-part="header">
     <div>
-      <p class="images-route__eyebrow">{t(M['images.image_studio_route.eyebrow'])}</p>
+      <p class="smrt-image-studio-route__eyebrow" data-smrt-part="label">{t(M['images.image_studio_route.eyebrow'])}</p>
       <h1>{t(M['images.image_studio_route.title'])}</h1>
-      <p class="images-route__lede">
+      <p class="smrt-image-studio-route__lede" data-smrt-part="summary">
         {t(M['images.image_studio_route.lede'])}
       </p>
     </div>
   </header>
 
-  <section class="images-route__uploader">
-    <div class="images-route__section-copy">
+  <section class="smrt-image-studio-route__uploader" data-smrt-part="group">
+    <div class="smrt-image-studio-route__section-copy" data-smrt-part="body">
       <h2>{t(M['images.image_studio_route.acquire_images'])}</h2>
       <p>
         {t(M['images.image_studio_route.acquire_images_description'])}
       </p>
-      <p class="images-route__status">{uploaderStatus}</p>
+      <p class="smrt-image-studio-route__status" data-smrt-part="status">{uploaderStatus}</p>
     </div>
 
-    <div class="images-route__card">
+    <div class="smrt-image-studio-route__card" data-smrt-part="panel">
       <ImageUploader
         {apiBaseUrl}
         {galleryClient}
@@ -108,16 +108,16 @@ function handleEditorSave(image: StudioImage) {
     </div>
   </section>
 
-  <section class="images-route__workspace">
-    <div class="images-route__section-copy">
+  <section class="smrt-image-studio-route__workspace" data-smrt-part="group">
+    <div class="smrt-image-studio-route__section-copy" data-smrt-part="body">
       <h2>{t(M['images.image_studio_route.browse_and_edit'])}</h2>
       <p>
         {t(M['images.image_studio_route.browse_and_edit_description'])}
       </p>
     </div>
 
-    <div class="images-route__workspace-grid">
-      <div class="images-route__card images-route__gallery">
+    <div class="smrt-image-studio-route__workspace-grid" data-smrt-part="body">
+      <div class="smrt-image-studio-route__card smrt-image-studio-route__gallery" data-smrt-part="panel">
         <AssetsGallery
           {apiBaseUrl}
           client={galleryClient}
@@ -125,7 +125,7 @@ function handleEditorSave(image: StudioImage) {
         />
       </div>
 
-      <div class="images-route__card images-route__editor">
+      <div class="smrt-image-studio-route__card smrt-image-studio-route__editor" data-smrt-part="panel">
         <ImageEditor
           {apiBaseUrl}
           client={editorClient}
@@ -139,99 +139,101 @@ function handleEditorSave(image: StudioImage) {
 
 <style>
 @layer smrt.reset, smrt.structure, smrt.theme;
-@layer smrt.theme {
-  .images-route {
+@layer smrt.structure {
+  .smrt-image-studio-route__root {
     max-width: 1440px;
     margin: 0 auto;
     padding: 2rem;
     display: flex;
     flex-direction: column;
     gap: 1.75rem;
+    min-height: 100vh;
+  }
+  .smrt-image-studio-route__eyebrow {
+    margin: 0 0 0.5rem;
+  }
+  .smrt-image-studio-route__header h1,
+  .smrt-image-studio-route__section-copy h2 {
+    margin: 0;
+  }
+  .smrt-image-studio-route__lede,
+  .smrt-image-studio-route__section-copy p {
+    margin: 0.75rem 0 0;
+    max-width: 60rem;
+  }
+  .smrt-image-studio-route__uploader,
+  .smrt-image-studio-route__workspace {
+    display: flex;
+    flex-direction: column;
+    gap: 1rem;
+  }
+  .smrt-image-studio-route__status {
+    margin-top: 1rem;
+    padding: 0.875rem 1rem;
+  }
+  .smrt-image-studio-route__workspace-grid {
+    display: grid;
+    grid-template-columns: minmax(0, 1.15fr) minmax(0, 1fr);
+    gap: 1rem;
+    align-items: start;
+  }
+  .smrt-image-studio-route__card {
+    overflow: hidden;
+  }
+  .smrt-image-studio-route__gallery {
+    min-height: 720px;
+  }
+  .smrt-image-studio-route__editor {
+    min-height: 720px;
+  }
+  @media (max-width: 1024px) {
+    .smrt-image-studio-route__root {
+      padding: 1.25rem;
+    }
+    .smrt-image-studio-route__workspace-grid {
+      grid-template-columns: 1fr;
+    }
+    .smrt-image-studio-route__gallery,
+    .smrt-image-studio-route__editor {
+      min-height: 560px;
+    }
+  }
+}
+
+@layer smrt.theme {
+  .smrt-image-studio-route__root {
     color: var(--smrt-color-on-surface);
     background:
       radial-gradient(circle at top, color-mix(in srgb, var(--smrt-color-primary) 22%, transparent), transparent 40%),
       var(--smrt-color-background);
-    min-height: 100vh;
   }
-
-  .images-route__eyebrow {
-    margin: 0 0 0.5rem;
+  .smrt-image-studio-route__eyebrow {
     color: var(--smrt-color-primary);
     font-size: var(--smrt-typography-label-medium-size, 0.75rem);
     font-weight: var(--smrt-typography-weight-bold, 700);
     letter-spacing: var(--smrt-typography-label-medium-tracking, 0.08em);
     text-transform: uppercase;
   }
-
-  .images-route__header h1,
-  .images-route__section-copy h2 {
-    margin: 0;
-  }
-
-  .images-route__header h1 {
+  .smrt-image-studio-route__header h1 {
     font-size: clamp(2rem, 3vw, 2.8rem);
   }
-
-  .images-route__lede,
-  .images-route__section-copy p {
-    margin: 0.75rem 0 0;
+  .smrt-image-studio-route__lede,
+  .smrt-image-studio-route__section-copy p {
     color: var(--smrt-color-on-surface-variant);
     line-height: 1.6;
-    max-width: 60rem;
   }
-
-  .images-route__uploader,
-  .images-route__workspace {
-    display: flex;
-    flex-direction: column;
-    gap: 1rem;
-  }
-
-  .images-route__status {
-    margin-top: 1rem;
-    padding: 0.875rem 1rem;
+  .smrt-image-studio-route__status {
     border-radius: 0.85rem;
     background: color-mix(in srgb, var(--smrt-color-surface-container) 72%, transparent);
     border: 1px solid color-mix(in srgb, var(--smrt-color-primary) 20%, transparent);
     color: var(--smrt-color-on-surface);
   }
-
-  .images-route__workspace-grid {
-    display: grid;
-    grid-template-columns: minmax(0, 1.15fr) minmax(0, 1fr);
-    gap: 1rem;
-    align-items: start;
-  }
-
-  .images-route__card {
+  .smrt-image-studio-route__card {
     border-radius: 1rem;
     border: 1px solid color-mix(in srgb, var(--smrt-color-outline-variant) 18%, transparent);
     background: color-mix(in srgb, var(--smrt-color-surface-container) 72%, transparent);
     box-shadow: var(--smrt-elevation-5, 0 24px 60px color-mix(in srgb, var(--smrt-color-shadow) 35%, transparent));
-    overflow: hidden;
-  }
-
-  .images-route__gallery {
-    min-height: 720px;
-  }
-
-  .images-route__editor {
-    min-height: 720px;
-  }
-
-  @media (max-width: 1024px) {
-    .images-route {
-      padding: 1.25rem;
-    }
-
-    .images-route__workspace-grid {
-      grid-template-columns: 1fr;
-    }
-
-    .images-route__gallery,
-    .images-route__editor {
-      min-height: 560px;
-    }
   }
 }
+
 </style>

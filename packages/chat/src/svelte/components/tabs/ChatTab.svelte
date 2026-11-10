@@ -42,11 +42,12 @@ const {
 </script>
 
 {#if tab.isExpanded}
-  <div class="chat-tab chat-tab--expanded" aria-label={t(M['chat.chat_tab.chat_with'], { name: tab.room.name })} data-smrt-component="ChatTab">
-    <div class="chat-tab__header">
+  <div class="smrt-chat-tab__root smrt-chat-tab__expanded" aria-label={t(M['chat.chat_tab.chat_with'], { name: tab.room.name })} data-smrt-component="ChatTab">
+    <div class="smrt-chat-tab__header" data-smrt-part="header">
       <!-- raw-primitive-allow: pressable header title wrapping rich content (room avatar component and name) that collapses the chat window on click; no Button primitive owns this structural avatar-header pattern -->
       <button
-        class="chat-tab__header-btn"
+        class="smrt-chat-tab__trigger"
+        data-smrt-part="trigger"
         type="button"
         onclick={oncollapse}
         aria-label={t(M['chat.chat_tab.collapse'])}
@@ -56,14 +57,13 @@ const {
           avatarUrl={tab.room.avatarUrl}
           size="sm"
         />
-        <span class="chat-tab__name">{tab.room.name}</span>
+        <span class="smrt-chat-tab__title" data-smrt-part="title">{tab.room.name}</span>
       </button>
 
-      <div class="chat-tab__actions">
+      <div class="smrt-chat-tab__actions" data-smrt-part="actions">
         <Button
           variant="ghost"
           size="sm"
-          class="chat-tab__icon-btn"
           type="button"
           onclick={oncollapse}
           aria-label={t(M['chat.chat_tab.minimize'])}
@@ -76,7 +76,6 @@ const {
         <Button
           variant="ghost"
           size="sm"
-          class="chat-tab__icon-btn"
           type="button"
           onclick={onclose}
           aria-label={t(M['chat.chat_tab.close'])}
@@ -89,7 +88,7 @@ const {
       </div>
     </div>
 
-    <div class="chat-tab__body">
+    <div class="smrt-chat-tab__body" data-smrt-part="body">
       <MiniChat
         {messages}
         {currentProfileId}
@@ -101,7 +100,7 @@ const {
 {:else}
   <!-- raw-primitive-allow: large pressable collapsed-tab card wrapping rich content (room avatar component, name, unread badge) that expands the chat window on click; no Button primitive owns this structural selection-card pattern -->
   <button
-    class="chat-tab chat-tab--collapsed"
+    class="smrt-chat-tab__root smrt-chat-tab__collapsed"
     type="button"
     onclick={onexpand}
     aria-label={t(M['chat.chat_tab.open_chat_with'], { name: tab.room.name })} data-smrt-component="ChatTab"
@@ -111,119 +110,125 @@ const {
       avatarUrl={tab.room.avatarUrl}
       size="sm"
     />
-    <span class="chat-tab__name">{tab.room.name}</span>
+    <span class="smrt-chat-tab__title" data-smrt-part="title">{tab.room.name}</span>
     {#if tab.unreadCount > 0}
-      <span class="chat-tab__badge" aria-label={t(M['chat.chat_tab.unread'], { count: tab.unreadCount })}>{tab.unreadCount}</span>
+      <span class="smrt-chat-tab__badge" data-smrt-part="badge" aria-label={t(M['chat.chat_tab.unread'], { count: tab.unreadCount })}>{tab.unreadCount}</span>
     {/if}
   </button>
 {/if}
 
 <style>
 @layer smrt.reset, smrt.structure, smrt.theme;
-@layer smrt.theme {
-  .chat-tab--expanded {
+@layer smrt.structure {
+  .smrt-chat-tab__expanded {
     display: flex;
     flex-direction: column;
     width: 328px;
-    background: var(--smrt-color-surface);
-    border-radius: var(--smrt-radius-large) var(--smrt-radius-large) 0 0;
-    box-shadow: var(--smrt-elevation-3, 0 4px 8px rgba(0, 0, 0, 0.15));
     overflow: hidden;
   }
-
-  .chat-tab__header {
+  .smrt-chat-tab__header {
     display: flex;
     align-items: center;
     justify-content: space-between;
     padding: var(--smrt-spacing-2) var(--smrt-spacing-3);
-    background: var(--smrt-color-primary);
-    color: var(--smrt-color-on-primary);
     min-height: 44px;
   }
-
-  .chat-tab__header-btn {
+  .smrt-chat-tab__trigger {
     display: flex;
     align-items: center;
     gap: var(--smrt-spacing-2);
-    background: none;
-    border: none;
-    color: inherit;
     cursor: pointer;
     padding: 0;
     min-width: 0;
   }
-
-  .chat-tab__header-btn:focus-visible {
-    outline: 2px solid var(--smrt-color-on-primary);
-    outline-offset: 2px;
-    border-radius: var(--smrt-radius-small);
-  }
-
-  .chat-tab__name {
-    font: var(--smrt-typography-label-large-font, 500 0.875rem/1.25 sans-serif);
+  .smrt-chat-tab__title {
     white-space: nowrap;
     overflow: hidden;
     text-overflow: ellipsis;
   }
-
-  .chat-tab__actions {
+  .smrt-chat-tab__actions {
     display: flex;
     align-items: center;
     gap: var(--smrt-spacing-1);
     flex-shrink: 0;
   }
-
   /* :global() pierces into each Button's rendered <button> (see #1589). */
-  .chat-tab__actions :global(.chat-tab__icon-btn) {
+  .smrt-chat-tab__actions :global([data-smrt-component="Button"]) {
     width: 28px;
     height: 28px;
     padding: 0;
-    background: none;
-    color: inherit;
-    border-radius: var(--smrt-radius-full);
-    transition: background var(--smrt-duration-short2, 150ms);
   }
-
-  .chat-tab__actions :global(.chat-tab__icon-btn:hover) {
-    background: color-mix(in srgb, var(--smrt-color-on-primary) 15%, transparent);
-  }
-
-  .chat-tab__body {
+  .smrt-chat-tab__body {
     flex: 1;
     min-height: 0;
   }
-
-  .chat-tab--collapsed {
+  .smrt-chat-tab__collapsed {
     display: flex;
     align-items: center;
     gap: var(--smrt-spacing-2);
     padding: var(--smrt-spacing-2) var(--smrt-spacing-3);
-    background: var(--smrt-color-surface-container);
-    border: none;
-    border-radius: var(--smrt-radius-large) var(--smrt-radius-large) 0 0;
     cursor: pointer;
-    box-shadow: var(--smrt-elevation-2, 0 2px 6px rgba(0, 0, 0, 0.1));
-    color: var(--smrt-color-on-surface);
-    transition: background var(--smrt-duration-short2, 150ms);
     white-space: nowrap;
   }
-
-  .chat-tab--collapsed:hover {
-    background: var(--smrt-color-surface-container-high);
-  }
-
-  .chat-tab--collapsed:focus-visible {
-    outline: 2px solid var(--smrt-color-primary);
-    outline-offset: -2px;
-  }
-
-  .chat-tab__badge {
+  .smrt-chat-tab__badge {
     display: inline-flex;
     align-items: center;
     justify-content: center;
     min-width: 18px;
     height: 18px;
     padding: 0 var(--smrt-spacing-1);
+  }
+}
+
+@layer smrt.theme {
+  .smrt-chat-tab__expanded {
+    background: var(--smrt-color-surface);
+    border-radius: var(--smrt-radius-large) var(--smrt-radius-large) 0 0;
+    box-shadow: var(--smrt-elevation-3, 0 4px 8px rgba(0, 0, 0, 0.15));
+  }
+  .smrt-chat-tab__header {
+    background: var(--smrt-color-primary);
+    color: var(--smrt-color-on-primary);
+  }
+  .smrt-chat-tab__trigger {
+    background: none;
+    border: none;
+    color: inherit;
+  }
+  .smrt-chat-tab__trigger:focus-visible {
+    outline: 2px solid var(--smrt-color-on-primary);
+    outline-offset: 2px;
+    border-radius: var(--smrt-radius-small);
+  }
+  .smrt-chat-tab__title {
+    font: var(--smrt-typography-label-large-font, 500 0.875rem/1.25 sans-serif);
+  }
+  /* :global() pierces into each Button's rendered <button> (see #1589). */
+  .smrt-chat-tab__actions :global([data-smrt-component="Button"]) {
+    background: none;
+    color: inherit;
+    border-radius: var(--smrt-radius-full);
+    transition: background var(--smrt-duration-short2, 150ms);
+  }
+  .smrt-chat-tab__actions :global([data-smrt-component="Button"]:hover) {
+    background: color-mix(in srgb, var(--smrt-color-on-primary) 15%, transparent);
+  }
+  .smrt-chat-tab__collapsed {
+    background: var(--smrt-color-surface-container);
+    border: none;
+    border-radius: var(--smrt-radius-large) var(--smrt-radius-large) 0 0;
+    box-shadow: var(--smrt-elevation-2, 0 2px 6px rgba(0, 0, 0, 0.1));
+    color: var(--smrt-color-on-surface);
+    transition: background var(--smrt-duration-short2, 150ms);
+  }
+  .smrt-chat-tab__collapsed:hover {
+    background: var(--smrt-color-surface-container-high);
+  }
+  .smrt-chat-tab__collapsed:focus-visible {
+    outline: 2px solid var(--smrt-color-primary);
+    outline-offset: -2px;
+  }
+  .smrt-chat-tab__badge {
     border-radius: var(--smrt-radius-full);
     background: var(--smrt-color-error);
     color: var(--smrt-color-on-error);
@@ -231,15 +236,14 @@ const {
     font-weight: var(--smrt-typography-weight-semibold, 600);
     line-height: 1;
   }
-
   @media (prefers-reduced-motion: reduce) {
-    .chat-tab--collapsed {
+    .smrt-chat-tab__collapsed {
       transition: none;
     }
-
-    .chat-tab__actions :global(.chat-tab__icon-btn) {
+    .smrt-chat-tab__actions :global([data-smrt-component="Button"]) {
       transition: none;
     }
   }
 }
+
 </style>

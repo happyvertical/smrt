@@ -146,11 +146,11 @@ function date(value: string): string {
 }
 </script>
 
-<section aria-label={label ?? t(M['ui.audit.history'])} aria-busy={loading} class="smrt-record-history" data-smrt-component="RecordHistory">
-  {#if error}<p role="alert">{error}</p>{/if}
-  {#if loading}<p role="status">{t(M['ui.audit.loading'])}</p>{/if}
-  {#if !loading && visible.length === 0}<p>{t(M['ui.audit.empty'])}</p>{/if}
-  <ol role="list">
+<section aria-label={label ?? t(M['ui.audit.history'])} aria-busy={loading} class="smrt-record-history__root" data-smrt-component="RecordHistory">
+  {#if error}<p role="alert" data-smrt-part="error">{error}</p>{/if}
+  {#if loading}<p role="status" data-smrt-part="status">{t(M['ui.audit.loading'])}</p>{/if}
+  {#if !loading && visible.length === 0}<p data-smrt-part="empty">{t(M['ui.audit.empty'])}</p>{/if}
+  <ol role="list" data-smrt-part="list">
     {#each visible as entry (entry.id)}
       {@const resolvedResourceLabel = entryLabel(resourceLabel, entry, `${entry.resourceType} / ${entry.resourceId}`)}
       {@const resolvedResourceHref = safeResourceHref(entry)}
@@ -160,11 +160,11 @@ function date(value: string): string {
           · {entryLabel(actionLabel, entry, entry.action)} ·
           {#if resolvedResourceHref}<a href={resolvedResourceHref}>{resolvedResourceLabel}</a>{:else}{resolvedResourceLabel}{/if}
         </p>
-        <time datetime={entry.occurredAt}>{date(entry.occurredAt)}</time>
+        <time datetime={entry.occurredAt} data-smrt-part="meta">{date(entry.occurredAt)}</time>
         {#if entry.onBehalfOfId}<p>{t(M['ui.audit.behalf'], { actor: entry.onBehalfOfId })}</p>{/if}
         {#if entry.reason}<p>{t(M['ui.audit.reason'], { reason: entry.reason })}</p>{/if}
         {#if entry.changes && Object.keys(entry.changes).length}
-          <ul role="list">
+          <ul role="list" data-smrt-part="list">
             {#each Object.entries(entry.changes) as [field, change] (field)}
               <li>{t(M['ui.audit.change'], {
                 field: changedFieldLabel(field, entry),
@@ -181,57 +181,69 @@ function date(value: string): string {
 
 <style>
 @layer smrt.reset, smrt.structure, smrt.theme;
-@layer smrt.theme {
-  .smrt-record-history > ol {
+@layer smrt.structure {
+  .smrt-record-history__root > ol {
     display: grid;
     margin: 0;
     padding: 0;
     list-style: none;
   }
-
-  .smrt-record-history > ol > li {
+  .smrt-record-history__root > ol > li {
     min-inline-size: 0;
     padding-block: var(--smrt-spacing-3);
-    border-block-end: var(--smrt-hairline);
     overflow-wrap: anywhere;
   }
-
-  .smrt-record-history > ol > li:first-child { padding-block-start: 0; }
-  .smrt-record-history > ol > li:last-child {
+  .smrt-record-history__root > ol > li:first-child {
+    padding-block-start: 0;
+  }
+  .smrt-record-history__root > ol > li:last-child {
     padding-block-end: 0;
+  }
+  .smrt-record-history__root p {
+    margin-block: var(--smrt-spacing-1);
+  }
+  .smrt-record-history__root time {
+    display: block;
+  }
+  .smrt-record-history__root ul {
+    display: grid;
+    gap: var(--smrt-spacing-1);
+    margin-block: var(--smrt-spacing-2) 0;
+    padding: var(--smrt-spacing-2) var(--smrt-spacing-3);
+    list-style: none;
+  }
+}
+
+@layer smrt.theme {
+  .smrt-record-history__root > ol > li {
+    border-block-end: var(--smrt-hairline);
+  }
+  .smrt-record-history__root > ol > li:last-child {
     border-block-end: 0;
   }
-
-  .smrt-record-history p { margin-block: var(--smrt-spacing-1); }
-  .smrt-record-history time {
-    display: block;
+  .smrt-record-history__root time {
     color: var(--smrt-color-on-surface-variant);
     font: var(--smrt-typography-label-medium-font);
   }
-
-  .smrt-record-history a {
+  .smrt-record-history__root a {
     color: var(--smrt-color-on-surface);
     text-decoration-color: var(--smrt-color-primary);
     text-decoration-thickness: .08em;
     text-underline-offset: .18em;
   }
-
-  .smrt-record-history a:hover { text-decoration-thickness: .14em; }
-  .smrt-record-history a:focus-visible {
+  .smrt-record-history__root a:hover {
+    text-decoration-thickness: .14em;
+  }
+  .smrt-record-history__root a:focus-visible {
     border-radius: var(--smrt-radius-extra-small, .25rem);
     outline: 2px solid var(--smrt-color-primary);
     outline-offset: 2px;
   }
-
-  .smrt-record-history ul {
-    display: grid;
-    gap: var(--smrt-spacing-1);
-    margin-block: var(--smrt-spacing-2) 0;
-    padding: var(--smrt-spacing-2) var(--smrt-spacing-3);
+  .smrt-record-history__root ul {
     border-inline-start: 2px solid var(--smrt-color-outline);
     border-radius: var(--smrt-radius-small, .375rem);
     background: var(--smrt-color-surface-container-low);
-    list-style: none;
   }
 }
+
 </style>

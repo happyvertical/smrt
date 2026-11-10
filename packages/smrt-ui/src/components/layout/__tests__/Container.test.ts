@@ -25,9 +25,9 @@ describe('Container', () => {
     const { container } = render(Container, {
       props: { children: textSnippet('x') },
     });
-    const div = container.querySelector('div.container');
+    const div = container.querySelector('[data-smrt-component="Container"]');
     expect(div).not.toBeNull();
-    expect(div).toHaveClass('container', 'max-w-lg');
+    expect(div).toHaveClass('smrt-container__root', 'smrt-container__max-w-lg');
   });
 
   it.each([
@@ -40,9 +40,9 @@ describe('Container', () => {
     const { container } = render(Container, {
       props: { maxWidth, children: textSnippet('x') },
     });
-    expect(container.querySelector('div.container')).toHaveClass(
-      `max-w-${maxWidth}`,
-    );
+    expect(
+      container.querySelector('[data-smrt-component="Container"]'),
+    ).toHaveClass(`smrt-container__max-w-${maxWidth}`);
   });
 
   it('passes ...rest attributes through to the root element', () => {
@@ -55,7 +55,7 @@ describe('Container', () => {
         'aria-label': 'Main content',
       },
     });
-    const div = container.querySelector('div.container');
+    const div = container.querySelector('[data-smrt-component="Container"]');
     expect(div).toHaveAttribute('id', 'main-region');
     expect(div).toHaveAttribute('data-testid', 'wrap');
     expect(screen.getByRole('region', { name: 'Main content' })).toBe(div);

@@ -21,8 +21,8 @@ describe('Stack', () => {
     const { container } = render(Stack, { props: { children: kids } });
     expect(screen.getByText('One')).toBeInTheDocument();
     const el = stackEl(container);
-    expect(el).toHaveClass('stack-vertical', 'gap-md');
-    expect(el).not.toHaveClass('wrap');
+    expect(el).toHaveClass('smrt-stack__vertical', 'smrt-stack__gap-md');
+    expect(el).not.toHaveClass('smrt-stack__wrap');
     expect(el).not.toHaveAttribute('data-align');
   });
 
@@ -38,7 +38,11 @@ describe('Stack', () => {
       },
     });
     const el = stackEl(container);
-    expect(el).toHaveClass('stack-horizontal', 'gap-lg', 'wrap');
+    expect(el).toHaveClass(
+      'smrt-stack__horizontal',
+      'smrt-stack__gap-lg',
+      'smrt-stack__wrap',
+    );
     expect(el).toHaveAttribute('data-align', 'center');
     expect(el).toHaveAttribute('data-justify', 'between');
   });

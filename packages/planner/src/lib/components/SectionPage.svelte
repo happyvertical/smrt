@@ -64,7 +64,7 @@ function startNew(entry: ShellSectionMenuEntry) {
 {#snippet menuActions(entry: ShellSectionMenuEntry)}
   {@const noun = newNoun(entry)}
   {#if noun}
-    <a class="new" href={entry.href} onclick={() => startNew(entry)}>New {noun}</a>
+    <a class="smrt-section-page__new" href={entry.href} onclick={() => startNew(entry)} data-smrt-part="actions">New {noun}</a>
   {/if}
 {/snippet}
 
@@ -72,19 +72,24 @@ function startNew(entry: ShellSectionMenuEntry) {
 
 <style>
 @layer smrt.reset, smrt.structure, smrt.theme;
-@layer smrt.theme {
-  .new {
+@layer smrt.structure {
+  .smrt-section-page__new {
     padding: var(--smrt-spacing-1) var(--smrt-spacing-3);
+    white-space: nowrap;
+  }
+}
+
+@layer smrt.theme {
+  .smrt-section-page__new {
     border: var(--smrt-hairline);
     border-radius: var(--smrt-radius-full);
     color: var(--smrt-color-primary);
     text-decoration: none;
-    white-space: nowrap;
   }
-
-  .new:hover,
-  .new:focus-visible {
+  .smrt-section-page__new:hover,
+  .smrt-section-page__new:focus-visible {
     background: color-mix(in srgb, currentColor calc(var(--smrt-state-hover) * 100%), transparent);
   }
 }
+
 </style>

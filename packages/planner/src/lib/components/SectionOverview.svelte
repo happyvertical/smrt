@@ -95,7 +95,7 @@ onDestroy(() => controller.destroy());
 </script>
 
 {#snippet heading(_widget: OverviewWidget, title: string)}
-  <span class="section-heading">{title}</span>
+  <span class="smrt-section-overview__heading" data-smrt-part="header">{title}</span>
 {/snippet}
 
 <!-- Drawn once its widgets' components resolve, so a recipe widget never
@@ -106,10 +106,14 @@ onDestroy(() => controller.destroy());
 
 <style>
 @layer smrt.reset, smrt.structure, smrt.theme;
+@layer smrt.structure {
+}
+
 @layer smrt.theme {
-  .section-heading {
+  .smrt-section-overview__heading {
     font-size: var(--smrt-typography-title-medium-size, 1rem);
     font-weight: var(--smrt-typography-title-medium-weight, 600);
   }
 }
+
 </style>

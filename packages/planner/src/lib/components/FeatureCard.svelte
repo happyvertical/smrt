@@ -27,15 +27,15 @@ const secrets = $derived([
 const id = $derived(`feature-${card.id}`);
 </script>
 
-<li class="card" class:selected={on}>
-  <div class="head">
+<li class="smrt-feature-card__root" class:smrt-feature-card__selected={on} data-smrt-component="FeatureCard">
+  <div class="smrt-feature-card__head" data-smrt-part="header">
     <h3>{card.label}</h3>
     {#if demo}
       <Badge variant={demo.variant} size="sm" title={demo.meaning}>{demo.label}</Badge>
     {/if}
   </div>
-  <p class="summary" id={`${id}-summary`}>{card.summary}</p>
-  <p class="meta">
+  <p class="smrt-feature-card__summary" data-smrt-part="summary" id={`${id}-summary`}>{card.summary}</p>
+  <p class="smrt-feature-card__meta" data-smrt-part="meta">
     {#if demo}
       {demo.meaning}
     {:else}
@@ -44,28 +44,28 @@ const id = $derived(`feature-${card.id}`);
   </p>
 
   {#if card.agentAccess}
-    <p class="meta agent-access">{card.agentAccess}</p>
+    <p class="smrt-feature-card__meta smrt-feature-card__agent-access" data-smrt-part="meta">{card.agentAccess}</p>
   {/if}
 
   <h4>You get</h4>
-  <ul class="plain" aria-label={`${card.label}: what you get`}>
+  <ul class="smrt-feature-card__plain" data-smrt-part="list" aria-label={`${card.label}: what you get`}>
     {#each card.gets as item (`${item.kind}:${item.label}`)}
       <li>
-        <span class="kind">{item.kindLabel}</span>
-        {item.label}{#if item.where}<span class="meta where">({item.where})</span>{/if}
+        <span class="smrt-feature-card__kind" data-smrt-part="badge">{item.kindLabel}</span>
+        {item.label}{#if item.where}<span class="smrt-feature-card__meta smrt-feature-card__where" data-smrt-part="meta">({item.where})</span>{/if}
       </li>
     {/each}
   </ul>
 
   {#if card.providers.length}
     <h4>Needs</h4>
-    <ul class="plain" aria-label={`${card.label}: providers`}>
+    <ul class="smrt-feature-card__plain" data-smrt-part="list" aria-label={`${card.label}: providers`}>
       {#each card.providers as provider (provider.id)}
         <li>
-          <span class="kind">{provider.kindLabel}</span>
+          <span class="smrt-feature-card__kind" data-smrt-part="badge">{provider.kindLabel}</span>
           {provider.required ? 'Required' : 'Optional'}: {optionList(provider.options)}.
           {#if provider.browserOptions.length}
-            <span class="meta">
+            <span class="smrt-feature-card__meta" data-smrt-part="meta">
               {optionList(provider.browserOptions, 'and')}
               {provider.browserOptions.length === 1 ? 'runs' : 'run'} in the
               browser with no key.
@@ -75,7 +75,7 @@ const id = $derived(`feature-${card.id}`);
       {/each}
     </ul>
     {#if secrets.length}
-      <p class="meta">
+      <p class="smrt-feature-card__meta" data-smrt-part="meta">
         Secrets (names only):
         {#each secrets as name, index (name)}<code>{name}</code>{index < secrets.length - 1 ? ', ' : ''}{/each}
       </p>
@@ -83,24 +83,24 @@ const id = $derived(`feature-${card.id}`);
   {/if}
 
   {#if !on && alsoAdds.length}
-    <p class="meta">Also adds {alsoAdds.join(', ')}.</p>
+    <p class="smrt-feature-card__meta" data-smrt-part="meta">Also adds {alsoAdds.join(', ')}.</p>
   {/if}
 
   {#if why}
     <Disclosure title={demo ? `Why ${demo.label}?` : 'Details'}>
       {#if demo?.reasons.length}
-        <ul class="plain reasons" aria-label={`${card.label}: reasons`}>
+        <ul class="smrt-feature-card__plain smrt-feature-card__reasons" data-smrt-part="list" aria-label={`${card.label}: reasons`}>
           {#each demo.reasons as reason (reason)}<li>{reason}</li>{/each}
         </ul>
       {/if}
       {#if card.ownMode && demo}
-        <p class="meta">On its own it would be {card.ownMode}; what it needs sets {demo.label}.</p>
+        <p class="smrt-feature-card__meta" data-smrt-part="meta">On its own it would be {card.ownMode}; what it needs sets {demo.label}.</p>
       {/if}
-      {#if card.packageNote}<p class="meta">{card.packageNote}</p>{/if}
+      {#if card.packageNote}<p class="smrt-feature-card__meta" data-smrt-part="meta">{card.packageNote}</p>{/if}
     </Disclosure>
   {/if}
 
-  <div class="foot">
+  <div class="smrt-feature-card__foot" data-smrt-part="footer">
     <Switch
       label={card.label}
       checked={on}
@@ -109,104 +109,102 @@ const id = $derived(`feature-${card.id}`);
       onchange={(event) => onchange(event.currentTarget.checked)}
     />
     {#if lockedBy.length}
-      <p class="meta" id={`${id}-locked`}>Stays on while {lockedBy.join(', ')} needs it.</p>
+      <p class="smrt-feature-card__meta" data-smrt-part="meta" id={`${id}-locked`}>Stays on while {lockedBy.join(', ')} needs it.</p>
     {/if}
   </div>
 </li>
 
 <style>
 @layer smrt.reset, smrt.structure, smrt.theme;
-@layer smrt.theme {
+@layer smrt.structure {
   h3,
   h4,
   p {
     margin: 0;
   }
-
-  .card {
+  .smrt-feature-card__root {
     display: grid;
     align-content: start;
     gap: var(--smrt-spacing-2);
     padding: var(--smrt-spacing-4);
-    border: var(--smrt-hairline);
-    border-radius: var(--smrt-radius-large);
   }
-
-  .card.selected {
-    border-color: var(--smrt-color-primary);
-  }
-
-  .head {
+  .smrt-feature-card__head {
     display: flex;
     align-items: center;
     justify-content: space-between;
     gap: var(--smrt-spacing-2);
   }
-
-  h3 {
-    font: var(--smrt-typography-title-medium-font); letter-spacing: var(--smrt-typography-title-medium-tracking);
-  }
-
-  h4 {
-    color: var(--smrt-color-on-surface-variant);
-    font: var(--smrt-typography-label-medium-font); letter-spacing: var(--smrt-typography-label-medium-tracking);
-    font-weight: var(--smrt-typography-weight-semibold);
-    text-transform: uppercase;
-  }
-
-  .meta {
-    color: var(--smrt-color-on-surface-variant);
-    font-size: var(--smrt-typography-body-small-size);
-  }
-
-  .plain {
+  .smrt-feature-card__plain {
     display: grid;
     gap: var(--smrt-spacing-1);
     margin: 0;
     padding: 0;
     list-style: none;
-    font-size: var(--smrt-typography-body-medium-size);
   }
-
-  .kind {
+  .smrt-feature-card__kind {
     margin-inline-end: var(--smrt-spacing-1);
     padding: 0 var(--smrt-spacing-2);
+  }
+  .smrt-feature-card__reasons {
+    margin-block-end: var(--smrt-spacing-2);
+  }
+  .smrt-feature-card__foot {
+    display: grid;
+    gap: var(--smrt-spacing-1);
+    margin-top: var(--smrt-spacing-2);
+  }
+  .smrt-feature-card__where {
+    margin-inline-start: 0.35em;
+  }
+}
+
+@layer smrt.theme {
+  .smrt-feature-card__root {
+    border: var(--smrt-hairline);
+    border-radius: var(--smrt-radius-large);
+  }
+  .smrt-feature-card__root.smrt-feature-card__selected {
+    border-color: var(--smrt-color-primary);
+  }
+  h3 {
+    font: var(--smrt-typography-title-medium-font);
+    letter-spacing: var(--smrt-typography-title-medium-tracking);
+  }
+  h4 {
+    color: var(--smrt-color-on-surface-variant);
+    font: var(--smrt-typography-label-medium-font);
+    letter-spacing: var(--smrt-typography-label-medium-tracking);
+    font-weight: var(--smrt-typography-weight-semibold);
+    text-transform: uppercase;
+  }
+  .smrt-feature-card__meta {
+    color: var(--smrt-color-on-surface-variant);
+    font-size: var(--smrt-typography-body-small-size);
+  }
+  .smrt-feature-card__plain {
+    font-size: var(--smrt-typography-body-medium-size);
+  }
+  .smrt-feature-card__kind {
     border: var(--smrt-hairline);
     border-radius: var(--smrt-radius-large);
     color: var(--smrt-color-on-surface-variant);
     font-size: var(--smrt-typography-label-small-size);
   }
-
-  .reasons {
-    margin-block-end: var(--smrt-spacing-2);
-  }
-
-  .foot {
-    display: grid;
-    gap: var(--smrt-spacing-1);
-    margin-top: var(--smrt-spacing-2);
-  }
-
   code {
     font-family: var(--smrt-font-family-mono, ui-monospace, monospace);
     font-size: 0.85em;
   }
-
-  .where {
-    margin-inline-start: 0.35em;
-  }
-
-  .summary {
+  .smrt-feature-card__summary {
     font-size: var(--smrt-typography-body-medium-size);
   }
-
   /* Forced colours: a switched-on feature's border colour is replaced, so it
-     gets a Highlight frame. */
+  gets a Highlight frame. */
   @media (forced-colors: active) {
-    .card.selected {
+    .smrt-feature-card__root.smrt-feature-card__selected {
       border-color: Highlight;
       outline: 0.125rem solid Highlight;
     }
   }
 }
+
 </style>

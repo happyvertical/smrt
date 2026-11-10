@@ -57,13 +57,14 @@ function handleClick(value: string) {
 }
 </script>
 
-<div data-density={density} class="filter-chips" class:sm={size === 'sm'} role="radiogroup" data-smrt-component="FilterChips">
+<div data-density={density} class="smrt-filter-chips__root" class:smrt-filter-chips__sm={size === 'sm'} role="radiogroup" data-smrt-component="FilterChips">
   {#each allOptions as option (option.value)}
     {@const isActive = option.value === selected}
     <button
       type="button"
-      class="filter-chip"
-      class:active={isActive}
+      class="smrt-filter-chips__chip"
+      class:smrt-filter-chips__active={isActive}
+      data-smrt-part="option"
       disabled={option.disabled}
       role="radio"
       aria-checked={isActive}
@@ -71,13 +72,13 @@ function handleClick(value: string) {
       use:ripple
     >
       {#if isActive}
-        <span class="chip-icon">
+        <span class="smrt-filter-chips__icon" data-smrt-part="icon">
           <Icon name="check" size={18} />
         </span>
       {/if}
-      <span class="chip-label">{option.label}</span>
+      <span class="smrt-filter-chips__label" data-smrt-part="label">{option.label}</span>
       {#if option.count !== undefined}
-        <span class="chip-count">{option.count}</span>
+        <span class="smrt-filter-chips__count" data-smrt-part="count">{option.count}</span>
       {/if}
     </button>
   {/each}
@@ -85,83 +86,105 @@ function handleClick(value: string) {
 
 <style>
 @layer smrt.reset, smrt.structure, smrt.theme;
-@layer smrt.theme {
-  .filter-chips {
+@layer smrt.structure {
+  .smrt-filter-chips__root {
     display: flex;
     gap: var(--smrt-spacing-2);
     flex-wrap: wrap;
   }
-
-  .filter-chip {
+  .smrt-filter-chips__chip {
     display: inline-flex;
     align-items: center;
     gap: var(--smrt-spacing-2);
     height: 32px;
     padding: 0 var(--smrt-spacing-4);
+    cursor: pointer;
+    white-space: nowrap;
+    position: relative;
+    overflow: hidden;
+  }
+  .smrt-filter-chips__sm .smrt-filter-chips__chip {
+    height: 28px;
+    padding: 0 var(--smrt-spacing-3);
+    gap: var(--smrt-spacing-2);
+  }
+  .smrt-filter-chips__chip.smrt-filter-chips__active {
+    padding-left: var(--smrt-spacing-3);
+  }
+  .smrt-filter-chips__sm .smrt-filter-chips__chip.smrt-filter-chips__active {
+    padding-left: var(--smrt-spacing-2);
+  }
+  .smrt-filter-chips__chip:disabled {
+    cursor: not-allowed;
+  }
+  .smrt-filter-chips__icon {
+    display: flex;
+    align-items: center;
+    justify-content: center;
+  }
+  .smrt-filter-chips__count {
+    margin-left: -2px;
+  }
+  .smrt-filter-chips__chip {
+    min-height: var(--smrt-control-target-min);
+    min-width: var(--smrt-control-target-min);
+  }
+  .smrt-filter-chips__root[data-density='touch'] {
+    --smrt-control-target-min: var(--smrt-touch-target-min);
+  }
+  .smrt-filter-chips__root[data-density='comfortable'] {
+    --smrt-control-target-min: 0px;
+  }
+}
+
+@layer smrt.theme {
+  .smrt-filter-chips__chip {
     font: var(--smrt-typography-label-large-font);
     font-weight: var(--smrt-typography-weight-medium, 500);
     color: var(--smrt-color-on-surface-variant);
     background-color: transparent;
     border: var(--smrt-hairline-strong);
     border-radius: var(--smrt-radius-md);
-    cursor: pointer;
     transition: all 200ms cubic-bezier(0.2, 0, 0, 1);
-    white-space: nowrap;
-    position: relative;
-    overflow: hidden;
   }
-
-  .sm .filter-chip {
-    height: 28px;
-    padding: 0 var(--smrt-spacing-3);
+  .smrt-filter-chips__sm .smrt-filter-chips__chip {
     font: var(--smrt-typography-label-medium-font);
-    gap: var(--smrt-spacing-2);
   }
-
-  .filter-chip:hover:not(:disabled) {
+  .smrt-filter-chips__chip:hover:not(:disabled) {
     background-color: var(--smrt-color-surface-container-high);
   }
-
-  .filter-chip.active {
+  .smrt-filter-chips__chip.smrt-filter-chips__active {
     background-color: var(--smrt-color-secondary-container);
     border-color: transparent;
     color: var(--smrt-color-on-secondary-container);
-    padding-left: var(--smrt-spacing-3);
   }
-
-  .sm .filter-chip.active {
-    padding-left: var(--smrt-spacing-2);
-  }
-
-  .filter-chip:disabled {
+  .smrt-filter-chips__chip:disabled {
     opacity: 0.38;
-    cursor: not-allowed;
   }
-
-  .chip-icon {
-    display: flex;
-    align-items: center;
-    justify-content: center;
+  .smrt-filter-chips__icon {
     color: var(--smrt-color-on-secondary-container);
   }
-
-  .chip-count {
+  .smrt-filter-chips__count {
     font: var(--smrt-typography-label-small-font);
     opacity: 0.7;
-    margin-left: -2px;
   }
-
-  .active .chip-count {
+  .smrt-filter-chips__active .smrt-filter-chips__count {
     color: var(--smrt-color-on-secondary-container);
   }
-
-  .filter-chips[data-density='touch'] { --smrt-control-target-min: var(--smrt-touch-target-min); }
-  .filter-chips[data-density='comfortable'] { --smrt-control-target-min: 0px; }
-  .filter-chip { min-height: var(--smrt-control-target-min); min-width: var(--smrt-control-target-min); }
   /* Forced colors (#3908): system colours where colour alone carries meaning. */
   @media (forced-colors: active) {
-    .filter-chip.active { background-color: Highlight; color: HighlightText; border-color: Highlight; }
-    .filter-chip:disabled, .filter-chip.active:disabled { opacity: 1; background: Canvas; color: GrayText; border-color: GrayText; }
+    .smrt-filter-chips__chip.smrt-filter-chips__active {
+      background-color: Highlight;
+      color: HighlightText;
+      border-color: Highlight;
+    }
+    .smrt-filter-chips__chip:disabled, .smrt-filter-chips__chip.smrt-filter-chips__active:disabled {
+      opacity: 1;
+      background: Canvas;
+      color: GrayText;
+      border-color: GrayText;
+    }
   }
 }
+
 </style>

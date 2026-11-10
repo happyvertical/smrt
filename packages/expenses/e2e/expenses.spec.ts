@@ -109,7 +109,7 @@ test('receipt CameraCapture denied state offers native picker recovery', async (
   await page.addInitScript(() => { Object.defineProperty(navigator, 'mediaDevices', { value: { getUserMedia: async () => { throw new DOMException('Denied', 'NotAllowedError'); } } }); });
   await page.goto('http://127.0.0.1:5589/e2e/index.html?lifecycle=1');
   await page.getByRole('button', { name: 'Use camera', exact: true }).click();
-  await expect(page.locator('.camera-capture')).toHaveAttribute('data-state', 'permission-denied');
+  await expect(page.locator('[data-smrt-component="CameraCapture"]')).toHaveAttribute('data-state', 'permission-denied');
   await page.getByRole('button', { name: 'Use camera', exact: true }).click();
   await expect(page.getByLabel('Receipt file', { exact: true })).toBeVisible();
 });
@@ -126,11 +126,11 @@ test('committed CameraCapture photo posts through the receipt multipart form', a
   });
   await page.goto('http://127.0.0.1:5589/e2e/index.html?lifecycle=1');
   await page.getByRole('button', { name: 'Use camera', exact: true }).click();
-  await expect(page.locator('.camera-capture')).toHaveAttribute('data-state', 'streaming');
-  await page.locator('.camera-capture button.primary').click();
-  await expect(page.locator('.camera-capture')).toHaveAttribute('data-state', 'reviewing');
-  await page.locator('.camera-capture button.primary').click();
-  await expect(page.locator('.camera-capture')).toHaveAttribute('data-state', 'committed');
+  await expect(page.locator('[data-smrt-component="CameraCapture"]')).toHaveAttribute('data-state', 'streaming');
+  await page.locator('[data-smrt-component="CameraCapture"] .smrt-camera-capture__primary').click();
+  await expect(page.locator('[data-smrt-component="CameraCapture"]')).toHaveAttribute('data-state', 'reviewing');
+  await page.locator('[data-smrt-component="CameraCapture"] .smrt-camera-capture__primary').click();
+  await expect(page.locator('[data-smrt-component="CameraCapture"]')).toHaveAttribute('data-state', 'committed');
   const sent = page.waitForRequest(req => req.url().endsWith('/attach') && req.method() === 'POST');
   await page.getByRole('button', { name: 'Attach receipt', exact: true }).click();
   const request = await sent;

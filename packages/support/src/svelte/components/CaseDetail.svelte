@@ -40,11 +40,11 @@ function formatWhen(iso: string): string {
 }
 </script>
 
-<article class="case-detail" data-smrt-component="CaseDetail">
-  <header class="case-detail-header">
-    <p class="case-detail-number">{caseView.caseNumber}</p>
-    <h2 class="case-detail-subject">{caseView.subject}</h2>
-    <div class="case-detail-badges">
+<article class="smrt-case-detail__root" data-smrt-component="CaseDetail">
+  <header class="smrt-case-detail__header" data-smrt-part="header">
+    <p class="smrt-case-detail__number" data-smrt-part="value">{caseView.caseNumber}</p>
+    <h2 class="smrt-case-detail__subject" data-smrt-part="title">{caseView.subject}</h2>
+    <div class="smrt-case-detail__badges" data-smrt-part="meta">
       <StatusBadge
         status={priorityBadgeKey(caseView.priority)}
         label={caseView.priority}
@@ -56,17 +56,17 @@ function formatWhen(iso: string): string {
         size="sm"
       />
       {#if caseView.severity}
-        <span class="case-detail-severity">{caseView.severity}</span>
+        <span class="smrt-case-detail__severity" data-smrt-part="meta">{caseView.severity}</span>
       {/if}
       {#if caseView.reopenCount > 0}
-        <span class="case-detail-reopens">
+        <span class="smrt-case-detail__reopens" data-smrt-part="meta">
           reopened ×{caseView.reopenCount}
         </span>
       {/if}
     </div>
   </header>
 
-  <dl class="case-detail-meta">
+  <dl class="smrt-case-detail__meta" data-smrt-part="meta">
     <div>
       <dt>Assigned</dt>
       <dd>
@@ -89,19 +89,19 @@ function formatWhen(iso: string): string {
   </dl>
 
   {#if caseView.resolutionSummary}
-    <section class="case-detail-resolution" aria-label="Resolution">
+    <section class="smrt-case-detail__resolution" data-smrt-part="description" aria-label="Resolution">
       <h3>Resolution</h3>
       <p>{caseView.resolutionSummary}</p>
     </section>
   {/if}
 
   {#if workLinks.length > 0}
-    <section class="case-detail-work" aria-label="Linked work">
+    <section class="smrt-case-detail__work" data-smrt-part="group" aria-label="Linked work">
       <h3>Linked work</h3>
       <ul>
         {#each workLinks as link (link.id)}
           <li>
-            <span class="case-detail-work-kind">
+            <span class="smrt-case-detail__work-kind" data-smrt-part="meta">
               {link.linkKind === 'development_work_item'
                 ? 'delivery'
                 : 'support'}
@@ -120,17 +120,17 @@ function formatWhen(iso: string): string {
     </section>
   {/if}
 
-  <section class="case-detail-timeline" aria-label="Case history">
+  <section class="smrt-case-detail__timeline" data-smrt-part="list" aria-label="Case history">
     <h3>History</h3>
     {#if timeline.length === 0}
-      <p class="case-detail-empty">No activity yet</p>
+      <p class="smrt-case-detail__empty" data-smrt-part="empty">No activity yet</p>
     {:else}
       <ol>
         {#each timeline as item, index (index)}
-          <li class="timeline-item" data-kind={item.kind}>
-            <div class="timeline-item-head">
-              <span class="timeline-actor">{item.actorKind}</span>
-              <span class="timeline-summary">
+          <li class="smrt-case-detail__timeline-item" data-kind={item.kind} data-smrt-part="row">
+            <div class="smrt-case-detail__timeline-item-head" data-smrt-part="header">
+              <span class="smrt-case-detail__timeline-actor" data-smrt-part="author">{item.actorKind}</span>
+              <span class="smrt-case-detail__timeline-summary" data-smrt-part="summary">
                 {item.kind === 'event'
                   ? item.summary
                   : humanizeStatus(item.summary)}
@@ -140,7 +140,7 @@ function formatWhen(iso: string): string {
               </time>
             </div>
             {#if item.body}
-              <p class="timeline-body">{item.body}</p>
+              <p class="smrt-case-detail__timeline-body" data-smrt-part="body">{item.body}</p>
             {/if}
           </li>
         {/each}
@@ -151,63 +151,39 @@ function formatWhen(iso: string): string {
 
 <style>
 @layer smrt.reset, smrt.structure, smrt.theme;
-@layer smrt.theme {
-  .case-detail {
+@layer smrt.structure {
+  .smrt-case-detail__root {
     display: flex;
     flex-direction: column;
     gap: 1rem;
   }
-
-  .case-detail-number {
+  .smrt-case-detail__number {
     margin: 0;
-    font-size: 0.75rem;
-    color: var(--smrt-color-on-surface-variant, inherit);
   }
-
-  .case-detail-subject {
+  .smrt-case-detail__subject {
     margin: 0.125rem 0 0.5rem;
-    font-size: 1.25rem;
   }
-
-  .case-detail-badges {
+  .smrt-case-detail__badges {
     display: flex;
     align-items: center;
     gap: 0.5rem;
     flex-wrap: wrap;
   }
-
-  .case-detail-severity,
-  .case-detail-reopens {
-    font-size: 0.75rem;
-    color: var(--smrt-color-on-surface-variant, inherit);
-  }
-
-  .case-detail-meta {
+  .smrt-case-detail__meta {
     display: flex;
     gap: 1.5rem;
     margin: 0;
     flex-wrap: wrap;
   }
-
-  .case-detail-meta dt {
-    font-size: 0.6875rem;
-    text-transform: uppercase;
-    letter-spacing: 0.04em;
-    color: var(--smrt-color-on-surface-variant, inherit);
-  }
-
-  .case-detail-meta dd {
+  .smrt-case-detail__meta dd {
     margin: 0;
   }
-
-  .case-detail-resolution h3,
-  .case-detail-work h3,
-  .case-detail-timeline h3 {
+  .smrt-case-detail__resolution h3,
+  .smrt-case-detail__work h3,
+  .smrt-case-detail__timeline h3 {
     margin: 0 0 0.5rem;
-    font-size: 0.875rem;
   }
-
-  .case-detail-work ul {
+  .smrt-case-detail__work ul {
     list-style: none;
     margin: 0;
     padding: 0;
@@ -215,21 +191,12 @@ function formatWhen(iso: string): string {
     flex-direction: column;
     gap: 0.375rem;
   }
-
-  .case-detail-work li {
+  .smrt-case-detail__work li {
     display: flex;
     align-items: center;
     gap: 0.5rem;
   }
-
-  .case-detail-work-kind {
-    font-size: 0.6875rem;
-    text-transform: uppercase;
-    letter-spacing: 0.04em;
-    color: var(--smrt-color-on-surface-variant, inherit);
-  }
-
-  .case-detail-timeline ol {
+  .smrt-case-detail__timeline ol {
     list-style: none;
     margin: 0;
     padding: 0;
@@ -237,47 +204,76 @@ function formatWhen(iso: string): string {
     flex-direction: column;
     gap: 0.625rem;
   }
-
-  .timeline-item {
-    border-left: 2px solid var(--smrt-color-outline-variant, currentColor);
+  .smrt-case-detail__timeline-item {
     padding-left: 0.75rem;
   }
-
-  .timeline-item[data-kind='interaction'] {
-    border-left-color: var(--smrt-color-primary, currentColor);
-  }
-
-  .timeline-item-head {
+  .smrt-case-detail__timeline-item-head {
     display: flex;
     align-items: baseline;
     gap: 0.5rem;
     flex-wrap: wrap;
   }
+  .smrt-case-detail__timeline-item time {
+    margin-left: auto;
+  }
+  .smrt-case-detail__timeline-body {
+    margin: 0.25rem 0 0;
+    white-space: pre-wrap;
+  }
+}
 
-  .timeline-actor {
+@layer smrt.theme {
+  .smrt-case-detail__number {
+    font-size: 0.75rem;
+    color: var(--smrt-color-on-surface-variant, inherit);
+  }
+  .smrt-case-detail__subject {
+    font-size: 1.25rem;
+  }
+  .smrt-case-detail__severity,
+  .smrt-case-detail__reopens {
+    font-size: 0.75rem;
+    color: var(--smrt-color-on-surface-variant, inherit);
+  }
+  .smrt-case-detail__meta dt {
     font-size: 0.6875rem;
     text-transform: uppercase;
     letter-spacing: 0.04em;
     color: var(--smrt-color-on-surface-variant, inherit);
   }
-
-  .timeline-summary {
+  .smrt-case-detail__resolution h3,
+  .smrt-case-detail__work h3,
+  .smrt-case-detail__timeline h3 {
+    font-size: 0.875rem;
+  }
+  .smrt-case-detail__work-kind {
+    font-size: 0.6875rem;
+    text-transform: uppercase;
+    letter-spacing: 0.04em;
+    color: var(--smrt-color-on-surface-variant, inherit);
+  }
+  .smrt-case-detail__timeline-item {
+    border-left: 2px solid var(--smrt-color-outline-variant, currentColor);
+  }
+  .smrt-case-detail__timeline-item[data-kind='interaction'] {
+    border-left-color: var(--smrt-color-primary, currentColor);
+  }
+  .smrt-case-detail__timeline-actor {
+    font-size: 0.6875rem;
+    text-transform: uppercase;
+    letter-spacing: 0.04em;
+    color: var(--smrt-color-on-surface-variant, inherit);
+  }
+  .smrt-case-detail__timeline-summary {
     font-weight: 500;
   }
-
-  .timeline-item time {
+  .smrt-case-detail__timeline-item time {
     font-size: 0.75rem;
     color: var(--smrt-color-on-surface-variant, inherit);
-    margin-left: auto;
   }
-
-  .timeline-body {
-    margin: 0.25rem 0 0;
-    white-space: pre-wrap;
-  }
-
-  .case-detail-empty {
+  .smrt-case-detail__empty {
     color: var(--smrt-color-on-surface-variant, inherit);
   }
 }
+
 </style>

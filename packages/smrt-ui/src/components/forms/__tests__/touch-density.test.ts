@@ -107,7 +107,9 @@ describe('touch density', () => {
 
   it('inherits global density while preserving native size and local overrides', () => {
     const { container } = render(TouchDensityFixture);
-    expect(container.querySelector('.smrt-theme-root')).toHaveAttribute(
+    expect(
+      container.querySelector('[data-smrt-component="ThemeProvider"]'),
+    ).toHaveAttribute(
       'style',
       expect.stringContaining(
         // No hex/px fallback: --smrt-touch-target-min is theme-required (#3826).

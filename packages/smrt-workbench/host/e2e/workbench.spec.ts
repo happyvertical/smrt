@@ -3,23 +3,23 @@ import { expect, test } from '@playwright/test';
 test('root aggregate workbench shows package metadata', async ({ page }) => {
   await page.goto('/');
 
-  await expect(page.locator('.workbench-shell-root')).toHaveAttribute(
+  await expect(page.locator('.smrt-workbench-host__root')).toHaveAttribute(
     'data-hydrated',
     'true',
   );
-  await expect(page.locator('.tabs')).toHaveCount(0);
-  await expect(page.locator('.workbench-brand')).toContainText('s-m-r-t');
+  await expect(page.locator('[data-smrt-component="Tabs"]')).toHaveCount(0);
+  await expect(page.locator('.smrt-workbench-host__brand')).toContainText('s-m-r-t');
   await expect(page.getByRole('heading', { name: 'Workbench' })).toBeVisible();
-  await expect(page.locator('.workbench-brand')).not.toContainText(
+  await expect(page.locator('.smrt-workbench-host__brand')).not.toContainText(
     'workspace scope',
   );
-  await expect(page.locator('.brand-badge svg')).toHaveCount(1);
+  await expect(page.locator('.smrt-workbench-host__badge svg')).toHaveCount(1);
   await expect(page.locator('.smrt-admin-shell')).toBeVisible();
   await expect(page.locator('#smrt-admin-shell-left-panel')).toHaveAttribute(
     'data-state',
     'expanded',
   );
-  await expect(page.locator('.root-nav')).toContainText('Workspace Packages');
+  await expect(page.locator('.smrt-workbench-host__root-nav')).toContainText('Workspace Packages');
   await expect(page.getByTestId('workbench-tab-packages')).toContainText(
     'Content processing module for SMRT framework',
   );
@@ -56,7 +56,7 @@ test('root aggregate workbench shows package metadata', async ({ page }) => {
   await expect(contentPackage).toBeVisible();
   await expect(contentPackage).toHaveClass(/selected/);
 
-  const packageIndexItem = page.locator('.package-index-item');
+  const packageIndexItem = page.locator('.smrt-workbench-host__index-item');
   await expect(packageIndexItem).toHaveCount(1);
   await packageIndexItem.click();
   await expect(page.getByTestId('workbench-tab-docs')).toBeVisible();
@@ -64,7 +64,7 @@ test('root aggregate workbench shows package metadata', async ({ page }) => {
     '@happyvertical/smrt-content',
   );
 
-  const sectionList = page.locator('.package-node--selected .section-list');
+  const sectionList = page.locator('.smrt-workbench-host__node-selected .smrt-workbench-host__section-list');
   await expect(sectionList).not.toContainText('Overview');
   const sectionButtons = await sectionList.locator('button').evaluateAll((buttons) =>
     buttons.map((button) => button.textContent?.trim() || ''),
@@ -155,7 +155,7 @@ test('root aggregate workbench shows package metadata', async ({ page }) => {
   await expect(adsPackage).toBeVisible();
   await expect(adsPackage).toHaveClass(/selected/);
 
-  const adsSectionList = page.locator('.package-node--selected .section-list');
+  const adsSectionList = page.locator('.smrt-workbench-host__node-selected .smrt-workbench-host__section-list');
   if ((await adsSectionList.count()) === 0) {
     await adsPackage.click();
   }
@@ -224,8 +224,8 @@ test('root aggregate workbench shows package metadata', async ({ page }) => {
 
   await sectionList.getByRole('button', { name: 'Playground' }).click();
   await expect(page.getByTestId('workbench-tab-playground')).toBeVisible();
-  await expect(page.locator('.playground-shell--embedded')).toHaveCount(1);
-  await expect(page.locator('.playground-shell--embedded .sidebar')).toHaveCount(
+  await expect(page.locator('.smrt-playground-host__root-embedded')).toHaveCount(1);
+  await expect(page.locator('[data-smrt-component="PlaygroundHost"] > aside[data-smrt-part="nav"]')).toHaveCount(
     0,
   );
   await expect(page.getByTestId('playground-entries')).toHaveCount(0);
@@ -280,7 +280,7 @@ test('root aggregate workbench shows package metadata', async ({ page }) => {
   await expect(imagesPackage).toBeVisible();
   await expect(imagesPackage).toHaveClass(/selected/);
 
-  const imagesSectionList = page.locator('.package-node--selected .section-list');
+  const imagesSectionList = page.locator('.smrt-workbench-host__node-selected .smrt-workbench-host__section-list');
   if ((await imagesSectionList.count()) === 0) {
     await imagesPackage.click();
   }
@@ -304,9 +304,9 @@ for (const entry of ['invoice-actions', 'quote-editor']) {
   test(`390px host contains ${entry} after navigation closes`, async ({ page }) => {
     await page.setViewportSize({ width: 390, height: 844 });
     await page.goto('/');
-    await expect(page.locator('.workbench-shell-root')).toHaveAttribute('data-hydrated', 'true');
+    await expect(page.locator('.smrt-workbench-host__root')).toHaveAttribute('data-hydrated', 'true');
     await page.getByPlaceholder('Package name or description').fill('smrt-commerce');
-    const sectionList = page.locator('.package-node--selected .section-list');
+    const sectionList = page.locator('.smrt-workbench-host__node-selected .smrt-workbench-host__section-list');
     if (!(await sectionList.count())) {
       await page.locator('[data-workbench-package="@happyvertical/smrt-commerce"]').click();
     }
@@ -319,7 +319,7 @@ for (const entry of ['invoice-actions', 'quote-editor']) {
     await page.getByTestId('workbench-scope').evaluate(element => {
       element.textContent = `/workspace/${'longcheckoutdirectory'.repeat(5)}`;
     });
-    await expect.poll(() => page.locator('.workbench-main').evaluate(element => element.scrollWidth <= element.clientWidth)).toBe(true);
+    await expect.poll(() => page.locator('.smrt-workbench-host__main').evaluate(element => element.scrollWidth <= element.clientWidth)).toBe(true);
     const bounds = await preview.boundingBox();
     expect(bounds).not.toBeNull();
     expect(bounds!.x).toBeGreaterThanOrEqual(0);

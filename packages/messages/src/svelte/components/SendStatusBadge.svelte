@@ -31,39 +31,46 @@ export interface Props {
 </script>
 
 <span
-  class="send-status-badge {size}"
+  class="smrt-send-status-badge__root smrt-send-status-badge__{size}"
   style="--smrt-send-status-badge-color: {statusConfig.color}" data-smrt-component="SendStatusBadge"
 >
-  <span class="icon">{statusConfig.icon}</span>
-  <span class="label">{statusConfig.label}</span>
+  <span class="smrt-send-status-badge__icon" data-smrt-part="icon">{statusConfig.icon}</span>
+  <span class="smrt-send-status-badge__label" data-smrt-part="label">{statusConfig.label}</span>
 </span>
 
 <style>
 @layer smrt.reset, smrt.structure, smrt.theme;
-@layer smrt.theme {
-  .send-status-badge {
+@layer smrt.structure {
+  .smrt-send-status-badge__root {
     display: inline-flex;
     align-items: center;
     gap: var(--smrt-spacing-1);
+    white-space: nowrap;
+  }
+  .smrt-send-status-badge__sm {
+    padding: var(--smrt-spacing-1) var(--smrt-spacing-2);
+  }
+  .smrt-send-status-badge__md {
+    padding: var(--smrt-spacing-1) var(--smrt-spacing-3);
+  }
+}
+
+@layer smrt.theme {
+  .smrt-send-status-badge__root {
     border-radius: var(--smrt-radius-sm);
     border: 1px solid var(--smrt-send-status-badge-color);
     color: var(--smrt-send-status-badge-color);
     font-family: var(--smrt-font-family, system-ui);
-    white-space: nowrap;
   }
-
-  .sm {
-    padding: var(--smrt-spacing-1) var(--smrt-spacing-2);
+  .smrt-send-status-badge__sm {
     font-size: var(--smrt-typography-label-small-size);
   }
-
-  .md {
-    padding: var(--smrt-spacing-1) var(--smrt-spacing-3);
+  .smrt-send-status-badge__md {
     font-size: var(--smrt-typography-label-large-size);
   }
-
-  .icon {
+  .smrt-send-status-badge__icon {
     font-size: inherit;
   }
 }
+
 </style>

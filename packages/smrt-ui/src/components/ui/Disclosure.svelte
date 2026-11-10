@@ -39,27 +39,74 @@ function handleToggle(event: Event) {
 }
 </script>
 
-<details class="disclosure {className}" data-density={density} bind:open ontoggle={handleToggle} data-smrt-component="Disclosure">
+<details class="smrt-disclosure__root {className}" data-density={density} bind:open ontoggle={handleToggle} data-smrt-component="Disclosure">
   <summary aria-disabled={disabled} onclick={(event) => disabled && event.preventDefault()}>
-    <span>{title}</span><span class="chevron" aria-hidden="true">⌄</span>
+    <span>{title}</span><span class="smrt-disclosure__chevron" data-smrt-part="indicator" aria-hidden="true">⌄</span>
   </summary>
-  <div class="content">{#if children}{@render children()}{/if}</div>
+  <div class="smrt-disclosure__content" data-smrt-part="panel">{#if children}{@render children()}{/if}</div>
 </details>
 
 <style>
 @layer smrt.reset, smrt.structure, smrt.theme;
-@layer smrt.theme {
-  .disclosure { border-bottom: var(--smrt-hairline); color: var(--smrt-color-on-surface); }
-  .disclosure[data-density='touch'] { --smrt-control-target-min: var(--smrt-touch-target-min); }
-  .disclosure[data-density='comfortable'] { --smrt-control-target-min: 0px; }
-  .disclosure[data-density='touch'] summary { align-items: center; }
-  summary { display: flex; min-height: var(--smrt-control-target-min); justify-content: space-between; gap: var(--smrt-spacing-3); padding: var(--smrt-spacing-3) 0; font: var(--smrt-typography-title-small-font); cursor: pointer; list-style: none; }
-  summary::-webkit-details-marker { display: none; }
-  summary:focus-visible { outline: var(--smrt-focus-ring-width) solid var(--smrt-focus-ring-color); outline-offset: var(--smrt-focus-ring-offset); }
-  summary[aria-disabled='true'] { opacity: .5; cursor: not-allowed; }
-  .chevron { transition: transform var(--smrt-duration-short4) var(--smrt-easing-standard); }
-  details[open] .chevron { transform: rotate(180deg); }
-  .content { padding: 0 0 var(--smrt-spacing-4); color: var(--smrt-color-on-surface-variant); }
-  @media (prefers-reduced-motion: reduce) { .chevron { transition: none; } }
+@layer smrt.structure {
+  .smrt-disclosure__root[data-density='touch'] {
+    --smrt-control-target-min: var(--smrt-touch-target-min);
+  }
+  .smrt-disclosure__root[data-density='comfortable'] {
+    --smrt-control-target-min: 0px;
+  }
+  .smrt-disclosure__root[data-density='touch'] summary {
+    align-items: center;
+  }
+  summary {
+    display: flex;
+    min-height: var(--smrt-control-target-min);
+    justify-content: space-between;
+    gap: var(--smrt-spacing-3);
+    padding: var(--smrt-spacing-3) 0;
+    cursor: pointer;
+    list-style: none;
+  }
+  summary::-webkit-details-marker {
+    display: none;
+  }
+  summary[aria-disabled='true'] {
+    cursor: not-allowed;
+  }
+  .smrt-disclosure__content {
+    padding: 0 0 var(--smrt-spacing-4);
+  }
 }
+
+@layer smrt.theme {
+  .smrt-disclosure__root {
+    border-bottom: var(--smrt-hairline);
+    color: var(--smrt-color-on-surface);
+  }
+  summary {
+    font: var(--smrt-typography-title-small-font);
+  }
+  summary:focus-visible {
+    outline: var(--smrt-focus-ring-width) solid var(--smrt-focus-ring-color);
+    outline-offset: var(--smrt-focus-ring-offset);
+  }
+  summary[aria-disabled='true'] {
+    opacity: .5;
+  }
+  .smrt-disclosure__chevron {
+    transition: transform var(--smrt-duration-short4) var(--smrt-easing-standard);
+  }
+  details[open] .smrt-disclosure__chevron {
+    transform: rotate(180deg);
+  }
+  .smrt-disclosure__content {
+    color: var(--smrt-color-on-surface-variant);
+  }
+  @media (prefers-reduced-motion: reduce) {
+    .smrt-disclosure__chevron {
+      transition: none;
+    }
+  }
+}
+
 </style>

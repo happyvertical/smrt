@@ -14,14 +14,21 @@ function submit(event: SubmitEvent & { currentTarget: HTMLFormElement }) {
     'Simulated server rejection. Your description and request identity are retained; this preview does not upload files.';
 }
 </script>
-<div class="preview">
+<div class="smrt-attachment-panel-preview__root" data-smrt-component="AttachmentPanelPreview">
   <Checkbox label="May upload attachments" bind:checked={canUpload} />
   <AttachmentPanel attachments={assetAttachmentMockAttachments}
     upload={{ action: '', canUpload, description, message, help: 'Preview accepts a local file but never sends it.', hiddenFields: [{ name: 'requestId', value: 'preview-request-retained' }], onsubmit: submit }} />
 </div>
 <style>
 @layer smrt.reset, smrt.structure, smrt.theme;
-@layer smrt.theme {
-.preview { display: grid; gap: var(--smrt-spacing-4); }
+@layer smrt.structure {
+  .smrt-attachment-panel-preview__root {
+    display: grid;
+    gap: var(--smrt-spacing-4);
+  }
 }
+
+@layer smrt.theme {
+}
+
 </style>

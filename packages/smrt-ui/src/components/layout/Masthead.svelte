@@ -36,25 +36,25 @@ const {
 }: Props = $props();
 </script>
 
-<div class="masthead" data-smrt-component="Masthead">
+<div class="smrt-masthead__root" data-smrt-component="Masthead">
   <Container>
     <!-- Desktop layout -->
-    <div class="subheader desktop">
-      <div class="left">
+    <div class="smrt-masthead__subheader smrt-masthead__desktop" data-smrt-part="row">
+      <div class="smrt-masthead__left" data-smrt-part="cell">
         {#if location}
-          <a href={locationHref} class="location">{location}</a>
+          <a href={locationHref} class="smrt-masthead__location" data-smrt-part="meta">{location}</a>
         {/if}
       </div>
-      <div class="center">
+      <div class="smrt-masthead__center" data-smrt-part="cell">
         {#if dateHref}
-          <a href={dateHref} class="date-link"><time>{date}</time></a>
+          <a href={dateHref} class="smrt-masthead__date-link" data-smrt-part="time"><time>{date}</time></a>
         {:else}
           <time>{date}</time>
         {/if}
       </div>
-      <div class="right">
+      <div class="smrt-masthead__right" data-smrt-part="cell">
         {#if nav}
-          <nav class="nav" aria-label={t(M['ui.masthead.primary_nav'])}>
+          <nav class="smrt-masthead__nav" data-smrt-part="list" aria-label={t(M['ui.masthead.primary_nav'])}>
             {@render nav()}
           </nav>
         {/if}
@@ -62,22 +62,22 @@ const {
     </div>
 
     <!-- Mobile layout -->
-    <div class="subheader mobile">
-      <div class="left">
-        <a href={locationHref} class="home-icon" aria-label={t(M['ui.masthead.home'])}>
+    <div class="smrt-masthead__subheader smrt-masthead__mobile" data-smrt-part="row">
+      <div class="smrt-masthead__left" data-smrt-part="cell">
+        <a href={locationHref} class="smrt-masthead__home-icon" data-smrt-part="icon" aria-label={t(M['ui.masthead.home'])}>
           <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
             <path d="M15 21v-8a1 1 0 0 0-1-1h-4a1 1 0 0 0-1 1v8"/>
             <path d="M3 10a2 2 0 0 1 .709-1.528l7-5.999a2 2 0 0 1 2.582 0l7 5.999A2 2 0 0 1 21 10v9a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2z"/>
           </svg>
         </a>
       </div>
-      <div class="right">
+      <div class="smrt-masthead__right" data-smrt-part="cell">
         {#if mobileNav}
-          <nav class="nav mobile-nav" aria-label={t(M['ui.masthead.mobile_nav'])}>
+          <nav class="smrt-masthead__nav smrt-masthead__mobile-nav" data-smrt-part="list" aria-label={t(M['ui.masthead.mobile_nav'])}>
             {@render mobileNav()}
           </nav>
         {:else if nav}
-          <nav class="nav" aria-label={t(M['ui.masthead.mobile_nav'])}>
+          <nav class="smrt-masthead__nav" data-smrt-part="list" aria-label={t(M['ui.masthead.mobile_nav'])}>
             {@render nav()}
           </nav>
         {/if}
@@ -88,59 +88,96 @@ const {
 
 <style>
 @layer smrt.reset, smrt.structure, smrt.theme;
-@layer smrt.theme {
-  .masthead {
-    border-bottom: var(--smrt-hairline);
-    background: var(--smrt-color-surface);
-  }
-
-  .subheader {
+@layer smrt.structure {
+  .smrt-masthead__subheader {
     display: grid;
     grid-template-columns: 1fr auto 1fr;
     align-items: center;
     padding: var(--smrt-spacing-4) 0;
-    font-size: var(--smrt-typography-body-medium-size);
   }
-
-  .subheader.desktop {
+  .smrt-masthead__subheader.smrt-masthead__desktop {
     display: grid;
   }
-
-  .subheader.mobile {
+  .smrt-masthead__subheader.smrt-masthead__mobile {
     display: none;
   }
-
-  .left {
+  .smrt-masthead__left {
     justify-self: start;
   }
-
-  .center {
+  .smrt-masthead__center {
     justify-self: center;
   }
-
-  .right {
+  .smrt-masthead__right {
     justify-self: end;
   }
+  .smrt-masthead__nav {
+    display: flex;
+    gap: var(--smrt-spacing-6);
+  }
+  /* Mobile icon nav */
+  .smrt-masthead__home-icon {
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    padding: var(--smrt-spacing-1);
+  }
+  .smrt-masthead__home-icon svg {
+    width: 20px;
+    height: 20px;
+  }
+  .smrt-masthead__mobile-nav {
+    gap: var(--smrt-spacing-6);
+  }
+  .smrt-masthead__mobile-nav :global(a) {
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    padding: var(--smrt-spacing-1);
+  }
+  .smrt-masthead__mobile-nav :global(svg) {
+    width: 20px;
+    height: 20px;
+  }
+  @media (max-width: 640px) {
+    .smrt-masthead__subheader.smrt-masthead__desktop {
+      display: none;
+    }
+    .smrt-masthead__subheader.smrt-masthead__mobile {
+      display: flex;
+      justify-content: space-between;
+      align-items: center;
+      grid-template-columns: unset;
+    }
+    .smrt-masthead__mobile .smrt-masthead__left,
+    .smrt-masthead__mobile .smrt-masthead__right {
+      justify-self: unset;
+    }
+  }
+}
 
+@layer smrt.theme {
+  .smrt-masthead__root {
+    border-bottom: var(--smrt-hairline);
+    background: var(--smrt-color-surface);
+  }
+  .smrt-masthead__subheader {
+    font-size: var(--smrt-typography-body-medium-size);
+  }
   time {
     color: var(--smrt-color-on-surface-variant);
     font-style: italic;
   }
-
-  .date-link {
+  .smrt-masthead__date-link {
     text-decoration: none;
     transition: color var(--smrt-duration-short2) var(--smrt-easing-standard);
   }
-
-  .date-link:hover {
+  .smrt-masthead__date-link:hover {
     color: var(--smrt-color-primary);
   }
-
-  .date-link:hover time {
+  .smrt-masthead__date-link:hover time {
     color: var(--smrt-color-primary);
   }
-
-  .location {
+  .smrt-masthead__location {
     color: var(--smrt-color-on-surface-variant);
     font-weight: var(--smrt-typography-body-medium-weight);
     text-transform: uppercase;
@@ -149,80 +186,28 @@ const {
     text-decoration: none;
     transition: color var(--smrt-duration-short2) var(--smrt-easing-standard);
   }
-
-  .location:hover {
+  .smrt-masthead__location:hover {
     color: var(--smrt-color-primary);
   }
-
-  .nav {
-    display: flex;
-    gap: var(--smrt-spacing-6);
-  }
-
-  .nav :global(a) {
+  .smrt-masthead__nav :global(a) {
     color: var(--smrt-color-on-surface);
     text-decoration: none;
     font-weight: var(--smrt-typography-body-medium-weight);
     transition: color var(--smrt-duration-short2) var(--smrt-easing-standard);
     font-size: var(--smrt-typography-body-medium-size);
   }
-
-  .nav :global(a:hover) {
+  .smrt-masthead__nav :global(a:hover) {
     color: var(--smrt-color-primary);
   }
-
   /* Mobile icon nav */
-  .home-icon {
-    display: flex;
-    align-items: center;
-    justify-content: center;
+  .smrt-masthead__home-icon {
     color: var(--smrt-color-on-surface);
     text-decoration: none;
-    padding: var(--smrt-spacing-1);
     transition: color var(--smrt-duration-short2) var(--smrt-easing-standard);
   }
-
-  .home-icon:hover {
+  .smrt-masthead__home-icon:hover {
     color: var(--smrt-color-primary);
   }
-
-  .home-icon svg {
-    width: 20px;
-    height: 20px;
-  }
-
-  .mobile-nav {
-    gap: var(--smrt-spacing-6);
-  }
-
-  .mobile-nav :global(a) {
-    display: flex;
-    align-items: center;
-    justify-content: center;
-    padding: var(--smrt-spacing-1);
-  }
-
-  .mobile-nav :global(svg) {
-    width: 20px;
-    height: 20px;
-  }
-
-  @media (max-width: 640px) {
-    .subheader.desktop {
-      display: none;
-    }
-
-    .subheader.mobile {
-      display: flex;
-      justify-content: space-between;
-      align-items: center;
-      grid-template-columns: unset;
-    }
-
-    .mobile .left,
-    .mobile .right {
-      justify-self: unset;
-    }
-  }
 }
+
 </style>

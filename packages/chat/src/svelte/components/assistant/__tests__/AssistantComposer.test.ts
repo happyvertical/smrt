@@ -35,7 +35,9 @@ describe('AssistantComposer', () => {
     ).not.toBeInTheDocument();
     expect(container.querySelector('input[type="file"]')).toBeNull();
 
-    const root = container.querySelector('.assistant-composer');
+    const root = container.querySelector(
+      '[data-smrt-component="AssistantComposer"]',
+    );
     if (!root) throw new Error('composer root not found');
     const drop = new Event('drop', { bubbles: true, cancelable: true });
     Object.defineProperty(drop, 'dataTransfer', {
@@ -58,7 +60,9 @@ describe('AssistantComposer', () => {
     const { container, rerender } = render(AssistantComposer, {
       props: { onsend: vi.fn(), onupload, disabled: true },
     });
-    const root = container.querySelector('.assistant-composer');
+    const root = container.querySelector(
+      '[data-smrt-component="AssistantComposer"]',
+    );
     if (!root) throw new Error('composer root not found');
     const drop = () => {
       const event = new Event('drop', { bubbles: true, cancelable: true });

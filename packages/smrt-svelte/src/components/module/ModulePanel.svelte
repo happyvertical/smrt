@@ -56,25 +56,25 @@ const slotMeta = $derived(moduleMeta?.uiSlots?.[slotId]);
     class={className}
   />
 {:else}
-  <div class="module-panel-placeholder {className}" data-smrt-component="ModulePanel">
-    <div class="module-panel-placeholder__icon">
+  <div class="smrt-module-panel__placeholder {className}" data-smrt-component="ModulePanel">
+    <div class="smrt-module-panel__placeholder-icon" data-smrt-part="icon">
       <svg xmlns="http://www.w3.org/2000/svg" width="48" height="48" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round">
         <path d="M21 16V8a2 2 0 0 0-1-1.73l-7-4a2 2 0 0 0-2 0l-7 4A2 2 0 0 0 3 8v8a2 2 0 0 0 1 1.73l7 4a2 2 0 0 0 2 0l7-4A2 2 0 0 0 21 16z"/>
         <polyline points="3.29 7 12 12 20.71 7"/>
         <line x1="12" y1="22" x2="12" y2="12"/>
       </svg>
     </div>
-    <p class="module-panel-placeholder__title">
+    <p class="smrt-module-panel__placeholder-title" data-smrt-part="title">
       {t(M['ui.module_panel.component_not_registered'])}
     </p>
-    <code class="module-panel-placeholder__code">
+    <code class="smrt-module-panel__placeholder-code" data-smrt-part="body">
       {moduleName}/{slotId}
     </code>
-    <p class="module-panel-placeholder__hint">
+    <p class="smrt-module-panel__placeholder-hint" data-smrt-part="description">
       {t(M['ui.module_panel.register_hint'])}
     </p>
     {#if slotMeta}
-      <p class="module-panel-placeholder__meta">
+      <p class="smrt-module-panel__placeholder-meta" data-smrt-part="meta">
         Expected: <strong>{slotMeta.label}</strong>
         {#if slotMeta.description}
           — {slotMeta.description}
@@ -86,52 +86,61 @@ const slotMeta = $derived(moduleMeta?.uiSlots?.[slotId]);
 
 <style>
 @layer smrt.reset, smrt.structure, smrt.theme;
-@layer smrt.theme {
-  .module-panel-placeholder {
+@layer smrt.structure {
+  .smrt-module-panel__placeholder {
     display: flex;
     flex-direction: column;
     align-items: center;
     justify-content: center;
     padding: 2rem;
+    min-height: 150px;
+    gap: 0.75rem;
+  }
+  .smrt-module-panel__placeholder-title {
+    margin: 0;
+  }
+  .smrt-module-panel__placeholder-code {
+    padding: var(--smrt-spacing-1, 0.25rem) var(--smrt-spacing-2, 0.5rem);
+  }
+  .smrt-module-panel__placeholder-hint {
+    margin: 0;
+  }
+  .smrt-module-panel__placeholder-meta {
+    margin: 0;
+  }
+}
+
+@layer smrt.theme {
+  .smrt-module-panel__placeholder {
     text-align: center;
     background: var(--smrt-color-surface-container-low);
     border: 1px dashed var(--smrt-color-outline-variant);
     border-radius: var(--smrt-radius-medium);
-    min-height: 150px;
-    gap: 0.75rem;
   }
-
-  .module-panel-placeholder__icon {
+  .smrt-module-panel__placeholder-icon {
     color: var(--smrt-color-on-surface-variant);
     opacity: 0.6;
   }
-
-  .module-panel-placeholder__title {
-    margin: 0;
+  .smrt-module-panel__placeholder-title {
     font-size: var(--smrt-typography-title-medium-size, 1rem);
     font-weight: var(--smrt-typography-weight-semibold, 600);
     color: var(--smrt-color-on-surface);
   }
-
-  .module-panel-placeholder__code {
+  .smrt-module-panel__placeholder-code {
     font-family: var(--smrt-font-family-mono, 'SF Mono', 'Monaco', 'Consolas', monospace);
     font-size: var(--smrt-typography-body-medium-size, 0.875rem);
-    padding: var(--smrt-spacing-1, 0.25rem) var(--smrt-spacing-2, 0.5rem);
     background: var(--smrt-color-surface-container-high);
     border-radius: var(--smrt-radius-small);
     color: var(--smrt-color-on-surface-variant);
   }
-
-  .module-panel-placeholder__hint {
-    margin: 0;
+  .smrt-module-panel__placeholder-hint {
     font-size: var(--smrt-typography-body-medium-size, 0.875rem);
     color: var(--smrt-color-on-surface-variant);
   }
-
-  .module-panel-placeholder__meta {
-    margin: 0;
+  .smrt-module-panel__placeholder-meta {
     font-size: var(--smrt-typography-body-small-size, 0.75rem);
     color: var(--smrt-color-on-surface-variant);
   }
 }
+
 </style>

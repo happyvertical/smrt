@@ -56,7 +56,7 @@ function handleKeydown(event: KeyboardEvent): void {
     {formatHotkeyBinding(value)}
   </Button>
   {#if conflictsWith}
-    <span class="smrt-hotkey-input__conflict">
+    <span class="smrt-hotkey-input__conflict" data-smrt-part="error">
       {t(M['ui.hotkey_input.conflicts_with'])} {conflictsWith}
     </span>
   {/if}
@@ -64,18 +64,23 @@ function handleKeydown(event: KeyboardEvent): void {
 
 <style>
 @layer smrt.reset, smrt.structure, smrt.theme;
-@layer smrt.theme {
+
+@layer smrt.structure {
   .smrt-hotkey-input {
     display: flex;
     align-items: center;
     gap: var(--smrt-spacing-2);
     min-width: 0;
   }
+  .smrt-hotkey-input__conflict {
+    overflow-wrap: anywhere;
+  }
+}
 
+@layer smrt.theme {
   .smrt-hotkey-input__conflict {
     color: var(--smrt-color-error);
     font-size: var(--smrt-typography-body-small-size);
-    overflow-wrap: anywhere;
   }
 }
 </style>

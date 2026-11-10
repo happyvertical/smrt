@@ -32,91 +32,91 @@ async function handleLoadingConfirm() {
 </script>
 
 <h1>Feedback Components</h1>
-<p class="description">Components for user feedback and status indicators.</p>
+<p class="smrt-feedback-page__description" data-smrt-component="FeedbackPage">Components for user feedback and status indicators.</p>
 
 <section>
   <h2>ProgressBar</h2>
-  <p class="section-desc">Visual progress indicator with status-based coloring.</p>
+  <p class="smrt-feedback-page__section-desc" data-smrt-part="description">Visual progress indicator with status-based coloring.</p>
 
   <h3>Basic Progress</h3>
-  <div class="demo-col">
-    <div class="progress-demo">
-      <span class="progress-label">0%</span>
+  <div class="smrt-feedback-page__demo-col" data-smrt-part="group">
+    <div class="smrt-feedback-page__progress-demo" data-smrt-part="indicator">
+      <span class="smrt-feedback-page__progress-label" data-smrt-part="label">0%</span>
       <ProgressBar value={0} />
     </div>
-    <div class="progress-demo">
-      <span class="progress-label">25%</span>
+    <div class="smrt-feedback-page__progress-demo" data-smrt-part="indicator">
+      <span class="smrt-feedback-page__progress-label" data-smrt-part="label">25%</span>
       <ProgressBar value={25} />
     </div>
-    <div class="progress-demo">
-      <span class="progress-label">50%</span>
+    <div class="smrt-feedback-page__progress-demo" data-smrt-part="indicator">
+      <span class="smrt-feedback-page__progress-label" data-smrt-part="label">50%</span>
       <ProgressBar value={50} />
     </div>
-    <div class="progress-demo">
-      <span class="progress-label">75%</span>
+    <div class="smrt-feedback-page__progress-demo" data-smrt-part="indicator">
+      <span class="smrt-feedback-page__progress-label" data-smrt-part="label">75%</span>
       <ProgressBar value={75} />
     </div>
-    <div class="progress-demo">
-      <span class="progress-label">100%</span>
+    <div class="smrt-feedback-page__progress-demo" data-smrt-part="indicator">
+      <span class="smrt-feedback-page__progress-label" data-smrt-part="label">100%</span>
       <ProgressBar value={100} />
     </div>
   </div>
 
   <h3>Auto Status (Budget Tracking)</h3>
-  <p class="hint">Colors automatically based on percentage: green (0-75%), yellow (75-90%), red (90%+)</p>
-  <div class="demo-col">
-    <div class="progress-demo">
+  <p class="smrt-feedback-page__hint" data-smrt-part="description">Colors automatically based on percentage: green (0-75%), yellow (75-90%), red (90%+)</p>
+  <div class="smrt-feedback-page__demo-col" data-smrt-part="group">
+    <div class="smrt-feedback-page__progress-demo" data-smrt-part="indicator">
       <ProgressBar value={45} max={100} showLabel />
     </div>
-    <div class="progress-demo">
+    <div class="smrt-feedback-page__progress-demo" data-smrt-part="indicator">
       <ProgressBar value={78} max={100} showLabel />
     </div>
-    <div class="progress-demo">
+    <div class="smrt-feedback-page__progress-demo" data-smrt-part="indicator">
       <ProgressBar value={95} max={100} showLabel />
     </div>
-    <div class="progress-demo">
+    <div class="smrt-feedback-page__progress-demo" data-smrt-part="indicator">
       <ProgressBar value={115} max={100} showLabel />
     </div>
   </div>
 
   <h3>With Value Display</h3>
-  <div class="demo-col">
+  <div class="smrt-feedback-page__demo-col" data-smrt-part="group">
     <ProgressBar value={7500} max={10000} showValue />
     <ProgressBar value={12500} max={10000} showValue />
   </div>
 
   <h3>Custom Status</h3>
-  <div class="demo-col">
-    <div class="progress-demo">
-      <span class="progress-label">Healthy</span>
+  <div class="smrt-feedback-page__demo-col" data-smrt-part="group">
+    <div class="smrt-feedback-page__progress-demo" data-smrt-part="indicator">
+      <span class="smrt-feedback-page__progress-label" data-smrt-part="label">Healthy</span>
       <ProgressBar value={60} status="healthy" />
     </div>
-    <div class="progress-demo">
-      <span class="progress-label">Warning</span>
+    <div class="smrt-feedback-page__progress-demo" data-smrt-part="indicator">
+      <span class="smrt-feedback-page__progress-label" data-smrt-part="label">Warning</span>
       <ProgressBar value={60} status="warning" />
     </div>
-    <div class="progress-demo">
-      <span class="progress-label">Critical</span>
+    <div class="smrt-feedback-page__progress-demo" data-smrt-part="indicator">
+      <span class="smrt-feedback-page__progress-label" data-smrt-part="label">Critical</span>
       <ProgressBar value={60} status="critical" />
     </div>
-    <div class="progress-demo">
-      <span class="progress-label">Over</span>
+    <div class="smrt-feedback-page__progress-demo" data-smrt-part="indicator">
+      <span class="smrt-feedback-page__progress-label" data-smrt-part="label">Over</span>
       <ProgressBar value={60} status="over" />
     </div>
   </div>
 
   <h3>Sizes</h3>
-  <div class="demo-col">
-    <div class="progress-demo">
-      <span class="progress-label">sm</span>
+  <div class="smrt-feedback-page__demo-col" data-smrt-part="group">
+    <div class="smrt-feedback-page__progress-demo" data-smrt-part="indicator">
+      <span class="smrt-feedback-page__progress-label" data-smrt-part="label">sm</span>
       <ProgressBar value={65} size="sm" />
     </div>
-    <div class="progress-demo">
-      <span class="progress-label">md</span>
+    <div class="smrt-feedback-page__progress-demo" data-smrt-part="indicator">
+      <span class="smrt-feedback-page__progress-label" data-smrt-part="label">md</span>
       <ProgressBar value={65} size="md" />
     </div>
-    <div class="progress-demo">
-      <span class="progress-label">lg</span>
+    <div class="smrt-feedback-page__progress-demo" data-smrt-part="indicator">
+      <span class="smrt-feedback-page__progress-label" data-smrt-part="label">lg</span>
       <ProgressBar value={65} size="lg" />
     </div>
   </div>
@@ -124,11 +124,11 @@ async function handleLoadingConfirm() {
 
 <section>
   <h2>ConfirmDialog</h2>
-  <p class="section-desc">Modal confirmation dialog for important actions.</p>
+  <p class="smrt-feedback-page__section-desc" data-smrt-part="description">Modal confirmation dialog for important actions.</p>
 
   <h3>Basic Confirmation</h3>
-  <div class="demo-box">
-    <button class="btn-primary" onclick={() => showBasicDialog = true}>
+  <div class="smrt-feedback-page__demo-box" data-smrt-part="group">
+    <button class="smrt-feedback-page__btn-primary" onclick={() => showBasicDialog = true} data-smrt-part="trigger">
       Open Confirm Dialog
     </button>
   </div>
@@ -142,8 +142,8 @@ async function handleLoadingConfirm() {
   />
 
   <h3>Destructive Action</h3>
-  <div class="demo-box">
-    <button class="btn-danger" onclick={() => showDestructiveDialog = true}>
+  <div class="smrt-feedback-page__demo-box" data-smrt-part="group">
+    <button class="smrt-feedback-page__btn-danger" onclick={() => showDestructiveDialog = true} data-smrt-part="trigger">
       Delete Item
     </button>
   </div>
@@ -159,8 +159,8 @@ async function handleLoadingConfirm() {
   />
 
   <h3>With Loading State</h3>
-  <div class="demo-box">
-    <button class="btn-primary" onclick={() => showLoadingDialog = true}>
+  <div class="smrt-feedback-page__demo-box" data-smrt-part="group">
+    <button class="smrt-feedback-page__btn-primary" onclick={() => showLoadingDialog = true} data-smrt-part="trigger">
       Submit with Loading
     </button>
   </div>
@@ -178,11 +178,11 @@ async function handleLoadingConfirm() {
 
 <section>
   <h2>Modal</h2>
-  <p class="section-desc">Accessible dialog component using native dialog element.</p>
+  <p class="smrt-feedback-page__section-desc" data-smrt-part="description">Accessible dialog component using native dialog element.</p>
 
   <h3>Basic Modal</h3>
-  <div class="demo-box">
-    <button class="btn-primary" onclick={() => showBasicModal = true}>
+  <div class="smrt-feedback-page__demo-box" data-smrt-part="group">
+    <button class="smrt-feedback-page__btn-primary" onclick={() => showBasicModal = true} data-smrt-part="trigger">
       Open Modal
     </button>
   </div>
@@ -198,8 +198,8 @@ async function handleLoadingConfirm() {
   </Modal>
 
   <h3>Large Modal with Footer</h3>
-  <div class="demo-box">
-    <button class="btn-primary" onclick={() => showLargeModal = true}>
+  <div class="smrt-feedback-page__demo-box" data-smrt-part="group">
+    <button class="smrt-feedback-page__btn-primary" onclick={() => showLargeModal = true} data-smrt-part="trigger">
       Open Large Modal
     </button>
   </div>
@@ -215,18 +215,18 @@ async function handleLoadingConfirm() {
       <p>Lorem ipsum dolor sit amet, consectetur adipiscing elit. Sed do eiusmod tempor incididunt ut labore et dolore magna aliqua.</p>
     {/snippet}
     {#snippet footer()}
-      <button class="btn-secondary" onclick={() => showLargeModal = false}>Cancel</button>
-      <button class="btn-primary" onclick={() => showLargeModal = false}>Save Changes</button>
+      <button class="smrt-feedback-page__btn-secondary" onclick={() => showLargeModal = false} data-smrt-part="trigger">Cancel</button>
+      <button class="smrt-feedback-page__btn-primary" onclick={() => showLargeModal = false} data-smrt-part="trigger">Save Changes</button>
     {/snippet}
   </Modal>
 
   <h3>Size Variants</h3>
-  <div class="demo-box size-demos">
-    <button class="btn-secondary" onclick={() => {}}>SM (24rem)</button>
-    <button class="btn-secondary" onclick={() => {}}>MD (32rem)</button>
-    <button class="btn-secondary" onclick={() => {}}>LG (48rem)</button>
-    <button class="btn-secondary" onclick={() => {}}>XL (64rem)</button>
-    <button class="btn-secondary" onclick={() => {}}>Full</button>
+  <div class="smrt-feedback-page__demo-box smrt-feedback-page__size-demos" data-smrt-part="group">
+    <button class="smrt-feedback-page__btn-secondary" onclick={() => {}} data-smrt-part="trigger">SM (24rem)</button>
+    <button class="smrt-feedback-page__btn-secondary" onclick={() => {}} data-smrt-part="trigger">MD (32rem)</button>
+    <button class="smrt-feedback-page__btn-secondary" onclick={() => {}} data-smrt-part="trigger">LG (48rem)</button>
+    <button class="smrt-feedback-page__btn-secondary" onclick={() => {}} data-smrt-part="trigger">XL (64rem)</button>
+    <button class="smrt-feedback-page__btn-secondary" onclick={() => {}} data-smrt-part="trigger">Full</button>
   </div>
 </section>
 
@@ -234,7 +234,7 @@ async function handleLoadingConfirm() {
   <h2>Props Reference</h2>
 
   <h3>ProgressBar</h3>
-  <table class="props-table">
+  <table class="smrt-feedback-page__props-table" data-smrt-part="table">
     <thead>
       <tr><th>Prop</th><th>Type</th><th>Default</th><th>Description</th></tr>
     </thead>
@@ -250,7 +250,7 @@ async function handleLoadingConfirm() {
   </table>
 
   <h3>ConfirmDialog</h3>
-  <table class="props-table">
+  <table class="smrt-feedback-page__props-table" data-smrt-part="table">
     <thead>
       <tr><th>Prop</th><th>Type</th><th>Default</th><th>Description</th></tr>
     </thead>
@@ -268,7 +268,7 @@ async function handleLoadingConfirm() {
   </table>
 
   <h3>Modal</h3>
-  <table class="props-table">
+  <table class="smrt-feedback-page__props-table" data-smrt-part="table">
     <thead>
       <tr><th>Prop</th><th>Type</th><th>Default</th><th>Description</th></tr>
     </thead>
@@ -288,153 +288,168 @@ async function handleLoadingConfirm() {
 </section>
 
 <style>
+@layer smrt.reset, smrt.structure, smrt.theme;
+
+@layer smrt.structure {
   h1 {
-    font-size: 1.75rem;
     margin-bottom: 8px;
   }
-
-  .description {
-    color: var(--smrt-color-on-surface-variant);
+  .smrt-feedback-page__description {
     margin-bottom: 32px;
   }
-
   section {
     margin-bottom: 48px;
   }
-
   h2 {
-    font-size: 1.25rem;
-    color: var(--smrt-color-on-surface);
     margin-bottom: 8px;
     padding-bottom: 8px;
-    border-bottom: 1px solid var(--smrt-color-outline-variant);
   }
-
   h3 {
-    font-size: 0.875rem;
-    color: var(--smrt-color-on-surface-variant);
     margin: 24px 0 12px;
-    font-weight: 500;
   }
-
-  .section-desc {
-    color: var(--smrt-color-on-surface-variant);
-    font-size: 0.875rem;
+  .smrt-feedback-page__section-desc {
     margin-bottom: 16px;
   }
-
-  .hint {
-    font-size: 0.75rem;
-    color: var(--smrt-color-on-surface-variant);
+  .smrt-feedback-page__hint {
     margin-bottom: 12px;
   }
-
-  .demo-box {
-    background: var(--smrt-color-surface-container);
-    border: 1px solid var(--smrt-color-outline-variant);
-    border-radius: var(--smrt-radius-md, 8px);
+  .smrt-feedback-page__demo-box {
     padding: 16px;
     margin-bottom: 16px;
   }
-
-  .demo-col {
+  .smrt-feedback-page__demo-col {
     display: flex;
     flex-direction: column;
     gap: 16px;
   }
-
-  .progress-demo {
+  .smrt-feedback-page__progress-demo {
     display: flex;
     align-items: center;
     gap: 16px;
   }
-
-  .progress-demo .progress-label {
+  .smrt-feedback-page__progress-demo .smrt-feedback-page__progress-label {
     width: 60px;
+  }
+  .smrt-feedback-page__progress-demo :global([data-smrt-component="ProgressBar"]) {
+    flex: 1;
+  }
+  .smrt-feedback-page__btn-primary {
+    padding: 8px 16px;
+    cursor: pointer;
+  }
+  .smrt-feedback-page__btn-danger {
+    padding: 8px 16px;
+    cursor: pointer;
+  }
+  .smrt-feedback-page__btn-secondary {
+    padding: 8px 16px;
+    cursor: pointer;
+  }
+  .smrt-feedback-page__size-demos {
+    display: flex;
+    gap: 8px;
+    flex-wrap: wrap;
+  }
+  .smrt-feedback-page__props-table {
+    width: 100%;
+    margin-top: 8px;
+    margin-bottom: 24px;
+  }
+  .smrt-feedback-page__props-table th,
+  .smrt-feedback-page__props-table td {
+    padding: 8px 12px;
+  }
+  code {
+    padding: 2px 6px;
+  }
+}
+
+@layer smrt.theme {
+  h1 {
+    font-size: 1.75rem;
+  }
+  .smrt-feedback-page__description {
+    color: var(--smrt-color-on-surface-variant);
+  }
+  h2 {
+    font-size: 1.25rem;
+    color: var(--smrt-color-on-surface);
+    border-bottom: 1px solid var(--smrt-color-outline-variant);
+  }
+  h3 {
+    font-size: 0.875rem;
+    color: var(--smrt-color-on-surface-variant);
+    font-weight: 500;
+  }
+  .smrt-feedback-page__section-desc {
+    color: var(--smrt-color-on-surface-variant);
+    font-size: 0.875rem;
+  }
+  .smrt-feedback-page__hint {
+    font-size: 0.75rem;
+    color: var(--smrt-color-on-surface-variant);
+  }
+  .smrt-feedback-page__demo-box {
+    background: var(--smrt-color-surface-container);
+    border: 1px solid var(--smrt-color-outline-variant);
+    border-radius: var(--smrt-radius-md, 8px);
+  }
+  .smrt-feedback-page__progress-demo .smrt-feedback-page__progress-label {
     font-size: 0.75rem;
     color: var(--smrt-color-on-surface-variant);
     text-align: right;
   }
-
-  .progress-demo :global(.progress-container) {
-    flex: 1;
-  }
-
-  .btn-primary {
-    padding: 8px 16px;
+  .smrt-feedback-page__btn-primary {
     background: var(--smrt-color-primary);
     color: var(--smrt-color-on-primary);
     border: none;
     border-radius: var(--smrt-radius-md, 8px);
     font-size: 0.875rem;
     font-weight: 500;
-    cursor: pointer;
   }
-
-  .btn-primary:hover {
+  .smrt-feedback-page__btn-primary:hover {
     background: var(--smrt-color-primary);
   }
-
-  .btn-danger {
-    padding: 8px 16px;
+  .smrt-feedback-page__btn-danger {
     background: var(--smrt-color-error);
     color: var(--smrt-color-on-error);
     border: none;
     border-radius: var(--smrt-radius-md, 8px);
     font-size: 0.875rem;
     font-weight: 500;
-    cursor: pointer;
   }
-
-  .btn-danger:hover {
+  .smrt-feedback-page__btn-danger:hover {
     background: var(--smrt-color-error);
   }
-
-  .btn-secondary {
-    padding: 8px 16px;
+  .smrt-feedback-page__btn-secondary {
     background: var(--smrt-color-surface-container);
     color: var(--smrt-color-on-surface);
     border: 1px solid var(--smrt-color-outline-variant);
     border-radius: var(--smrt-radius-md, 8px);
     font-size: 0.875rem;
     font-weight: 500;
-    cursor: pointer;
   }
-
-  .btn-secondary:hover {
+  .smrt-feedback-page__btn-secondary:hover {
     background: var(--smrt-color-surface-container-high);
   }
-
-  .size-demos {
-    display: flex;
-    gap: 8px;
-    flex-wrap: wrap;
-  }
-
-  .props-table {
-    width: 100%;
+  .smrt-feedback-page__props-table {
     border-collapse: collapse;
     font-size: 0.875rem;
-    margin-top: 8px;
-    margin-bottom: 24px;
   }
-
-  .props-table th,
-  .props-table td {
+  .smrt-feedback-page__props-table th,
+  .smrt-feedback-page__props-table td {
     text-align: left;
-    padding: 8px 12px;
     border-bottom: 1px solid var(--smrt-color-outline-variant);
   }
-
-  .props-table th {
+  .smrt-feedback-page__props-table th {
     background: var(--smrt-color-surface-container);
     font-weight: 500;
   }
-
   code {
     background: var(--smrt-color-surface-container);
-    padding: 2px 6px;
     border-radius: var(--smrt-radius-sm, 4px);
     font-size: 0.8rem;
   }
+}
+
 </style>

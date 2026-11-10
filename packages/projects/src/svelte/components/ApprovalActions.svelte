@@ -55,7 +55,7 @@ const canEdit = $derived(
 const canDelete = $derived(status === 'draft' && ondelete);
 </script>
 
-<div class="approval-actions" class:vertical={layout === 'vertical'} data-smrt-component="ApprovalActions">
+<div class="smrt-approval-actions__root" class:smrt-approval-actions__vertical={layout === 'vertical'} data-smrt-component="ApprovalActions">
   {#if canSubmit}
     <Button variant="primary" onclick={onsubmit} disabled={disabled || loading}>
       {loading ? 'Submitting...' : 'Submit for Approval'}
@@ -87,13 +87,13 @@ const canDelete = $derived(status === 'draft' && ondelete);
   {/if}
 
   {#if status === 'approved'}
-    <span class="status-message success">
+    <span class="smrt-approval-actions__message smrt-approval-actions__success" data-smrt-part="message">
       {t(M['projects.approval_actions.approved_message'])}
     </span>
   {/if}
 
   {#if status === 'rejected'}
-    <span class="status-message error">
+    <span class="smrt-approval-actions__message smrt-approval-actions__error" data-smrt-part="message">
       {t(M['projects.approval_actions.rejected_message'])}
     </span>
   {/if}
@@ -101,34 +101,36 @@ const canDelete = $derived(status === 'draft' && ondelete);
 
 <style>
 @layer smrt.reset, smrt.structure, smrt.theme;
-@layer smrt.theme {
-  .approval-actions {
+@layer smrt.structure {
+  .smrt-approval-actions__root {
     display: flex;
     flex-wrap: wrap;
     gap: 0.75rem;
     align-items: center;
   }
-
-  .approval-actions.vertical {
+  .smrt-approval-actions__root.smrt-approval-actions__vertical {
     flex-direction: column;
     align-items: stretch;
   }
+  .smrt-approval-actions__message {
+    padding: 0.5rem 1rem;
+  }
+}
 
-  .status-message {
+@layer smrt.theme {
+  .smrt-approval-actions__message {
     font-size: var(--smrt-typography-body-medium-size, 0.875rem);
     font-weight: var(--smrt-typography-label-large-weight, 500);
-    padding: 0.5rem 1rem;
     border-radius: var(--smrt-radius-small);
   }
-
-  .status-message.success {
+  .smrt-approval-actions__message.smrt-approval-actions__success {
     background: var(--smrt-color-primary-container);
     color: var(--smrt-color-on-primary-container);
   }
-
-  .status-message.error {
+  .smrt-approval-actions__message.smrt-approval-actions__error {
     background: var(--smrt-color-error-container);
     color: var(--smrt-color-on-error-container);
   }
 }
+
 </style>

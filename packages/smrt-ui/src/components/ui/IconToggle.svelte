@@ -55,22 +55,23 @@ const name = $derived(count === undefined ? label : `${label} (${count})`);
     {...rest}
     {type}
     {disabled}
-    class="icon-toggle {className}"
-    class:pressed
-    class:toned={tone !== undefined}
+    class="smrt-icon-toggle__root {className}"
+    class:smrt-icon-toggle__pressed={pressed}
+    class:smrt-icon-toggle__toned={tone !== undefined}
     style:--smrt-icon-toggle-tone={tone}
     aria-pressed={pressed}
     aria-label={name}
+    data-smrt-component="IconToggle"
   >
-    <span class="icon" aria-hidden="true">{@render children()}</span>
-    {#if count !== undefined}<span class="count" aria-hidden="true">{count}</span>{/if}
+    <span class="smrt-icon-toggle__icon" data-smrt-part="icon" aria-hidden="true">{@render children()}</span>
+    {#if count !== undefined}<span class="smrt-icon-toggle__count" data-smrt-part="count" aria-hidden="true">{count}</span>{/if}
   </button>
 </Tooltip>
 
 <style>
 @layer smrt.reset, smrt.structure, smrt.theme;
-@layer smrt.theme {
-  .icon-toggle {
+@layer smrt.structure {
+  .smrt-icon-toggle__root {
     position: relative;
     display: inline-flex;
     align-items: center;
@@ -79,45 +80,15 @@ const name = $derived(count === undefined ? label : `${label} (${count})`);
     min-width: 2.75rem;
     min-height: 2.75rem;
     padding: 0;
-    border: var(--smrt-hairline);
-    border-radius: var(--smrt-radius-full);
-    background: var(--smrt-color-surface-container, var(--smrt-color-surface));
-    color: var(--smrt-color-on-surface);
-    font: inherit;
     cursor: pointer;
   }
-  .icon-toggle:hover:not(:disabled) {
-    background: var(--smrt-color-surface-container-high, var(--smrt-color-surface-container));
-  }
-  /* Pressed is not told by colour alone (WCAG 1.4.1): it also draws a 2px ring
-     in its text colour, where unpressed has a 1px outline. */
-  .icon-toggle.pressed {
-    border-color: transparent;
-    background: var(--smrt-color-primary-container, var(--smrt-color-secondary-container));
-    color: var(--smrt-color-on-primary-container, var(--smrt-color-on-secondary-container));
-    box-shadow: inset 0 0 0 2px currentColor;
-  }
-  /* A toned toggle is neutral until pressed, then wears its tone. */
-  .icon-toggle.toned {
-    color: var(--smrt-color-on-surface-variant, var(--smrt-color-on-surface));
-  }
-  .icon-toggle.toned.pressed {
-    background: color-mix(in srgb, var(--smrt-icon-toggle-tone) 16%, var(--smrt-color-surface));
-    color: var(--smrt-icon-toggle-tone);
-    box-shadow: inset 0 0 0 2px var(--smrt-icon-toggle-tone);
-  }
-  .icon-toggle:focus-visible {
-    outline: var(--smrt-focus-ring-width) solid var(--smrt-focus-ring-color);
-    outline-offset: var(--smrt-focus-ring-offset);
-  }
-  .icon-toggle:disabled {
-    opacity: 0.5;
+  .smrt-icon-toggle__root:disabled {
     cursor: not-allowed;
   }
-  .icon {
+  .smrt-icon-toggle__icon {
     display: inline-flex;
   }
-  .count {
+  .smrt-icon-toggle__count {
     position: absolute;
     z-index: 2;
     top: -0.3rem;
@@ -125,10 +96,49 @@ const name = $derived(count === undefined ? label : `${label} (${count})`);
     box-sizing: border-box;
     min-width: 1.15rem;
     padding: 0 0.3rem;
+  }
+}
+
+@layer smrt.theme {
+  .smrt-icon-toggle__root {
+    border: var(--smrt-hairline);
+    border-radius: var(--smrt-radius-full);
+    background: var(--smrt-color-surface-container, var(--smrt-color-surface));
+    color: var(--smrt-color-on-surface);
+    font: inherit;
+  }
+  .smrt-icon-toggle__root:hover:not(:disabled) {
+    background: var(--smrt-color-surface-container-high, var(--smrt-color-surface-container));
+  }
+  /* Pressed is not told by colour alone (WCAG 1.4.1): it also draws a 2px ring
+  in its text colour, where unpressed has a 1px outline. */
+  .smrt-icon-toggle__root.smrt-icon-toggle__pressed {
+    border-color: transparent;
+    background: var(--smrt-color-primary-container, var(--smrt-color-secondary-container));
+    color: var(--smrt-color-on-primary-container, var(--smrt-color-on-secondary-container));
+    box-shadow: inset 0 0 0 2px currentColor;
+  }
+  /* A toned toggle is neutral until pressed, then wears its tone. */
+  .smrt-icon-toggle__root.smrt-icon-toggle__toned {
+    color: var(--smrt-color-on-surface-variant, var(--smrt-color-on-surface));
+  }
+  .smrt-icon-toggle__root.smrt-icon-toggle__toned.smrt-icon-toggle__pressed {
+    background: color-mix(in srgb, var(--smrt-icon-toggle-tone) 16%, var(--smrt-color-surface));
+    color: var(--smrt-icon-toggle-tone);
+    box-shadow: inset 0 0 0 2px var(--smrt-icon-toggle-tone);
+  }
+  .smrt-icon-toggle__root:focus-visible {
+    outline: var(--smrt-focus-ring-width) solid var(--smrt-focus-ring-color);
+    outline-offset: var(--smrt-focus-ring-offset);
+  }
+  .smrt-icon-toggle__root:disabled {
+    opacity: 0.5;
+  }
+  .smrt-icon-toggle__count {
     border-radius: var(--smrt-radius-full);
     /* Outlined, not filled: a surface-coloured face (so the button's edge does
-       not show through where the badge overlaps it), a 1px theme outline and
-       neutral text, readable on light and dark themes alike. */
+    not show through where the badge overlaps it), a 1px theme outline and
+    neutral text, readable on light and dark themes alike. */
     border: var(--smrt-hairline-strong);
     background: var(--smrt-color-surface);
     color: var(--smrt-color-on-surface-variant);
@@ -140,9 +150,22 @@ const name = $derived(count === undefined ? label : `${label} (${count})`);
   }
   /* Forced colors (#3908): system colours where colour alone carries meaning. */
   @media (forced-colors: active) {
-    .icon-toggle.pressed { background: Highlight; color: HighlightText; border-color: Highlight; }
-    .icon-toggle.pressed:not(:focus-visible) { outline: var(--smrt-focus-ring-width) solid CanvasText; outline-offset: calc(-2 * var(--smrt-focus-ring-width)); }
-    .icon-toggle:disabled, .icon-toggle.pressed:disabled { opacity: 1; background: Canvas; color: GrayText; border-color: GrayText; }
+    .smrt-icon-toggle__root.smrt-icon-toggle__pressed {
+      background: Highlight;
+      color: HighlightText;
+      border-color: Highlight;
+    }
+    .smrt-icon-toggle__root.smrt-icon-toggle__pressed:not(:focus-visible) {
+      outline: var(--smrt-focus-ring-width) solid CanvasText;
+      outline-offset: calc(-2 * var(--smrt-focus-ring-width));
+    }
+    .smrt-icon-toggle__root:disabled, .smrt-icon-toggle__root.smrt-icon-toggle__pressed:disabled {
+      opacity: 1;
+      background: Canvas;
+      color: GrayText;
+      border-color: GrayText;
+    }
   }
 }
+
 </style>

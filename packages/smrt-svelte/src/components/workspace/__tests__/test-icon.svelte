@@ -1,7 +1,7 @@
 <script lang="ts">
 /**
  * Trivial icon component used by render-tools-dock tests to verify that
- * `ToolDef.iconComponent` is rendered inside `.tools-dock__rail-glyph`
+ * `ToolDef.iconComponent` is rendered inside `[data-smrt-part="icon"]`
  * instead of the first-letter fallback.
  */
 </script>

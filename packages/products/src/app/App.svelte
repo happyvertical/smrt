@@ -30,7 +30,7 @@ onMount(() => {
 });
 </script>
 
-<div class="app">
+<div class="smrt-app__root" data-smrt-component="App">
   {#if currentPage === 'demo'}
     <DemoPage />
   {:else if currentPage === 'products'}
@@ -38,12 +38,12 @@ onMount(() => {
   {:else if currentPage === 'live'}
     <LiveProductsPage />
   {:else if currentPage === 'categories'}
-    <div class="placeholder-page">
+    <div class="smrt-app__placeholder" data-smrt-part="body">
       <h2>Categories</h2>
       <p>{t(M['products.app.categories_coming_soon'])}</p>
     </div>
   {:else if currentPage === 'dashboard'}
-    <div class="placeholder-page">
+    <div class="smrt-app__placeholder" data-smrt-part="body">
       <h2>Dashboard</h2>
       <p>{t(M['products.app.analytics_coming_soon'])}</p>
     </div>
@@ -54,29 +54,36 @@ onMount(() => {
 
 <style>
 @layer smrt.reset, smrt.structure, smrt.theme;
-@layer smrt.theme {
-  .app {
+@layer smrt.structure {
+  .smrt-app__root {
     width: 100%;
     min-height: 100vh;
   }
-  
-  .placeholder-page {
+  .smrt-app__placeholder {
     max-width: 1200px;
     margin: 0 auto;
     padding: 3rem 1rem;
+  }
+  .smrt-app__placeholder h2 {
+    margin: 0 0 1rem 0;
+  }
+  .smrt-app__placeholder p {
+    margin: 0;
+  }
+}
+
+@layer smrt.theme {
+  .smrt-app__placeholder {
     text-align: center;
   }
-  
-  .placeholder-page h2 {
-    margin: 0 0 1rem 0;
+  .smrt-app__placeholder h2 {
     font-size: var(--smrt-typography-headline-large-size, 2rem);
     color: var(--smrt-color-on-surface);
   }
-
-  .placeholder-page p {
-    margin: 0;
+  .smrt-app__placeholder p {
     color: var(--smrt-color-on-surface-variant);
     font-size: var(--smrt-typography-body-large-size, 1.125rem);
   }
 }
+
 </style>

@@ -139,7 +139,9 @@ describe('TypingIndicator', () => {
 
   it('renders nothing when nobody is typing', () => {
     const { container } = render(TypingIndicator, { props: { names: [] } });
-    expect(container.querySelector('.typing')).toBeNull();
+    expect(
+      container.querySelector('[data-smrt-component="TypingIndicator"]'),
+    ).toBeNull();
   });
 
   it('is axe-clean', async () => {

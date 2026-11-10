@@ -14,7 +14,7 @@ const { t } = useI18n();
 </script>
 
 <article class="smrt-activity-item" data-status={activity.status} data-smrt-component="ActivityItem">
-  <div class="smrt-activity-item__main">
+  <div class="smrt-activity-item__main" data-smrt-part="body">
     <strong>{activity.label}</strong>
     <span>{activity.status}</span>
     {#if activity.message}
@@ -26,7 +26,7 @@ const { t } = useI18n();
       </progress>
     {/if}
   </div>
-  <div class="smrt-activity-item__actions">
+  <div class="smrt-activity-item__actions" data-smrt-part="actions">
     {#if activity.detailHref}
       <Button variant="ghost" size="sm" href={activity.detailHref}>
         {t(M['ui.activity_item.view'])}
@@ -42,48 +42,50 @@ const { t } = useI18n();
 
 <style>
 @layer smrt.reset, smrt.structure, smrt.theme;
-@layer smrt.theme {
+
+@layer smrt.structure {
   .smrt-activity-item {
     display: flex;
     align-items: flex-start;
     justify-content: space-between;
     gap: var(--smrt-spacing-3);
     padding: var(--smrt-spacing-3) 0;
-    border-block-end: var(--smrt-hairline);
   }
-
   .smrt-activity-item__main {
     display: grid;
     gap: var(--smrt-spacing-1);
     min-width: 0;
   }
-
   .smrt-activity-item strong,
   .smrt-activity-item span,
   .smrt-activity-item p {
     overflow-wrap: anywhere;
   }
-
-  .smrt-activity-item span {
-    color: var(--smrt-color-on-surface-variant);
-    font-size: var(--smrt-typography-body-small-size);
-    text-transform: uppercase;
-  }
-
   .smrt-activity-item p {
     margin: 0;
-    color: var(--smrt-color-on-surface-variant);
   }
-
   .smrt-activity-item progress {
     width: min(16rem, 100%);
   }
-
   .smrt-activity-item__actions {
     display: flex;
     flex-wrap: wrap;
     gap: var(--smrt-spacing-2);
     justify-content: flex-end;
+  }
+}
+
+@layer smrt.theme {
+  .smrt-activity-item {
+    border-block-end: var(--smrt-hairline);
+  }
+  .smrt-activity-item span {
+    color: var(--smrt-color-on-surface-variant);
+    font-size: var(--smrt-typography-body-small-size);
+    text-transform: uppercase;
+  }
+  .smrt-activity-item p {
+    color: var(--smrt-color-on-surface-variant);
   }
 }
 </style>

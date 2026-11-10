@@ -32,8 +32,8 @@ const connect = $derived.by(() => {
 {#if section}
   <main>
     <header>
-      <div class="bar">
-        <p class="meta">
+      <div class="smrt-recipe-help-page__bar" data-smrt-part="actions">
+        <p class="smrt-recipe-help-page__meta" data-smrt-part="meta">
           <a href={appHref('/')}>Planner</a> /
           <a href={appHref(`/recipes/${section.id}/`)}>{section.label}</a> / Help
         </p>
@@ -52,7 +52,7 @@ const connect = $derived.by(() => {
 
 <style>
 @layer smrt.reset, smrt.structure, smrt.theme;
-@layer smrt.theme {
+@layer smrt.structure {
   main {
     display: grid;
     gap: var(--smrt-spacing-6);
@@ -60,24 +60,24 @@ const connect = $derived.by(() => {
     margin-inline: auto;
     padding: var(--smrt-spacing-6);
   }
-
   header {
     display: grid;
     gap: var(--smrt-spacing-3);
   }
-
-  .bar {
+  .smrt-recipe-help-page__bar {
     display: flex;
     align-items: center;
   }
-
   h1,
   p {
     margin: 0;
   }
+}
 
-  .meta {
+@layer smrt.theme {
+  .smrt-recipe-help-page__meta {
     color: var(--smrt-color-on-surface-variant);
   }
 }
+
 </style>

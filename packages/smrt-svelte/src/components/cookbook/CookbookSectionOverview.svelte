@@ -84,7 +84,7 @@ $effect(() => {
 onDestroy(() => controller.destroy());
 </script>
 
-<div class="cookbook-section-overview" data-smrt-component="CookbookSectionOverview">
+<div class="smrt-cookbook-section-overview__root" data-smrt-component="CookbookSectionOverview">
   {#if heading && section}{@render heading({ section })}{/if}
   <OverviewGrid {controller} {components} {models} {label} {presentation} />
 </div>

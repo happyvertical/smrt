@@ -24,16 +24,16 @@ const { tabs, onselect, onclose }: Props = $props();
 </script>
 
 {#if tabs.length > 0}
-  <nav class="tab-list" aria-label={t(M['chat.chat_tab_list.minimized_chats'])} data-smrt-component="ChatTabList">
+  <nav class="smrt-chat-tab-list__root" aria-label={t(M['chat.chat_tab_list.minimized_chats'])} data-smrt-component="ChatTabList">
     {#each tabs as tab (tab.roomId)}
-      <div class="tab-list__item">
+      <div class="smrt-chat-tab-list__item" data-smrt-part="item">
         <!-- raw-primitive-allow: pressable circular avatar tab wrapping rich content (room avatar component and overlaid unread badge) that opens the chat on click; no Button primitive owns this structural avatar-tab pattern -->
         <button
-          class="tab-list__btn"
+          class="smrt-chat-tab-list__tab"
           type="button"
           onclick={() => onselect(tab.roomId)}
           aria-label={t(M['chat.chat_tab_list.open_chat_with'], { name: tab.room.name })}
-          title={tab.room.name}
+          title={tab.room.name} data-smrt-part="trigger"
         >
           <Avatar
             name={tab.room.name}
@@ -41,7 +41,7 @@ const { tabs, onselect, onclose }: Props = $props();
             size="sm"
           />
           {#if tab.unreadCount > 0}
-            <span class="tab-list__badge" aria-label={t(M['chat.chat_tab_list.unread'], { count: tab.unreadCount })}>
+            <span class="smrt-chat-tab-list__badge" data-smrt-part="badge" aria-label={t(M['chat.chat_tab_list.unread'], { count: tab.unreadCount })}>
               {tab.unreadCount > 99 ? '99+' : tab.unreadCount}
             </span>
           {/if}
@@ -49,7 +49,6 @@ const { tabs, onselect, onclose }: Props = $props();
         <Button
           variant="ghost"
           size="sm"
-          class="tab-list__close"
           type="button"
           onclick={(e) => { e.stopPropagation(); onclose(tab.roomId); }}
           aria-label={t(M['chat.chat_tab_list.close_chat_with'], { name: tab.room.name })}
@@ -66,47 +65,28 @@ const { tabs, onselect, onclose }: Props = $props();
 
 <style>
 @layer smrt.reset, smrt.structure, smrt.theme;
-@layer smrt.theme {
-  .tab-list {
+@layer smrt.structure {
+  .smrt-chat-tab-list__root {
     display: flex;
     align-items: flex-end;
     gap: var(--smrt-spacing-1);
     pointer-events: auto;
   }
-
-  .tab-list__item {
+  .smrt-chat-tab-list__item {
     position: relative;
     display: flex;
     flex-direction: column;
     align-items: center;
   }
-
-  .tab-list__btn {
+  .smrt-chat-tab-list__tab {
     position: relative;
     display: inline-flex;
     align-items: center;
     justify-content: center;
     padding: var(--smrt-spacing-2);
-    border: none;
-    background: var(--smrt-color-surface-container);
-    border-radius: var(--smrt-radius-full);
     cursor: pointer;
-    transition: background var(--smrt-duration-short2, 150ms),
-      box-shadow var(--smrt-duration-short2, 150ms);
-    box-shadow: var(--smrt-elevation-1, 0 1px 3px rgba(0, 0, 0, 0.1));
   }
-
-  .tab-list__btn:hover {
-    background: var(--smrt-color-surface-container-high);
-    box-shadow: var(--smrt-elevation-2, 0 2px 6px rgba(0, 0, 0, 0.15));
-  }
-
-  .tab-list__btn:focus-visible {
-    outline: 2px solid var(--smrt-color-primary);
-    outline-offset: 2px;
-  }
-
-  .tab-list__badge {
+  .smrt-chat-tab-list__badge {
     position: absolute;
     top: -2px;
     right: -2px;
@@ -116,6 +96,45 @@ const { tabs, onselect, onclose }: Props = $props();
     min-width: 16px;
     height: 16px;
     padding: 0 var(--smrt-spacing-1);
+  }
+  /* :global() pierces into the Button child's rendered <button> (see #1589). */
+  .smrt-chat-tab-list__item :global([data-smrt-component="Button"]) {
+    display: none;
+    position: absolute;
+    top: -4px;
+    right: -4px;
+    width: 18px;
+    height: 18px;
+    padding: 0;
+  }
+  .smrt-chat-tab-list__item:hover :global([data-smrt-component="Button"]),
+  .smrt-chat-tab-list__item:focus-within :global([data-smrt-component="Button"]) {
+    display: inline-flex;
+  }
+  .smrt-chat-tab-list__item:hover .smrt-chat-tab-list__badge,
+  .smrt-chat-tab-list__item:focus-within .smrt-chat-tab-list__badge {
+    display: none;
+  }
+}
+
+@layer smrt.theme {
+  .smrt-chat-tab-list__tab {
+    border: none;
+    background: var(--smrt-color-surface-container);
+    border-radius: var(--smrt-radius-full);
+    transition: background var(--smrt-duration-short2, 150ms),
+      box-shadow var(--smrt-duration-short2, 150ms);
+    box-shadow: var(--smrt-elevation-1, 0 1px 3px rgba(0, 0, 0, 0.1));
+  }
+  .smrt-chat-tab-list__tab:hover {
+    background: var(--smrt-color-surface-container-high);
+    box-shadow: var(--smrt-elevation-2, 0 2px 6px rgba(0, 0, 0, 0.15));
+  }
+  .smrt-chat-tab-list__tab:focus-visible {
+    outline: 2px solid var(--smrt-color-primary);
+    outline-offset: 2px;
+  }
+  .smrt-chat-tab-list__badge {
     border-radius: var(--smrt-radius-full);
     background: var(--smrt-color-error);
     color: var(--smrt-color-on-error);
@@ -124,41 +143,22 @@ const { tabs, onselect, onclose }: Props = $props();
     line-height: 1;
     border: 2px solid var(--smrt-color-surface);
   }
-
   /* :global() pierces into the Button child's rendered <button> (see #1589). */
-  .tab-list__item :global(.tab-list__close) {
-    display: none;
-    position: absolute;
-    top: -4px;
-    right: -4px;
-    width: 18px;
-    height: 18px;
+  .smrt-chat-tab-list__item :global([data-smrt-component="Button"]) {
     background: var(--smrt-color-surface-variant);
     color: var(--smrt-color-on-surface-variant);
     border-radius: var(--smrt-radius-full);
-    padding: 0;
     font-size: 0;
   }
-
-  .tab-list__item:hover :global(.tab-list__close),
-  .tab-list__item:focus-within :global(.tab-list__close) {
-    display: inline-flex;
-  }
-
-  .tab-list__item:hover .tab-list__badge,
-  .tab-list__item:focus-within .tab-list__badge {
-    display: none;
-  }
-
-  .tab-list__item :global(.tab-list__close:hover) {
+  .smrt-chat-tab-list__item :global([data-smrt-component="Button"]:hover) {
     background: var(--smrt-color-error-container);
     color: var(--smrt-color-on-error-container);
   }
-
   @media (prefers-reduced-motion: reduce) {
-    .tab-list__btn {
+    .smrt-chat-tab-list__tab {
       transition: none;
     }
   }
 }
+
 </style>

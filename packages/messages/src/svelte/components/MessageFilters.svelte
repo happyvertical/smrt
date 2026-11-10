@@ -89,8 +89,8 @@ const _hasActiveFilters = $derived(
 );
 </script>
 
-<div class="message-filters" role="search" aria-label={t(M['messages.message_filters.filters_label'])} data-smrt-component="MessageFilters">
-  <div class="search-row">
+<div class="smrt-message-filters__root" role="search" aria-label={t(M['messages.message_filters.filters_label'])} data-smrt-component="MessageFilters">
+  <div class="smrt-message-filters__search" data-smrt-part="search">
     <Input
       type="search"
       class="search-input"
@@ -102,7 +102,7 @@ const _hasActiveFilters = $derived(
     <Button variant="primary" class="search-btn" onclick={handleSearch}>Search</Button>
   </div>
 
-  <div class="filter-row">
+  <div class="smrt-message-filters__filters" data-smrt-part="filters">
     <Select
       class="filter-select"
       value={filters.type || ''}
@@ -143,7 +143,7 @@ const _hasActiveFilters = $derived(
       <option value="read">{t(M['messages.message_filters.read_only'])}</option>
     </Select>
 
-    <label class="filter-checkbox">
+    <label class="smrt-message-filters__label" data-smrt-part="label">
       <!-- raw-primitive-allow: native checkbox; no Provider-free checkbox primitive (Toggle is a switch with different semantics, CheckboxInput requires a Provider) -->
       <input
         type="checkbox"
@@ -163,80 +163,104 @@ const _hasActiveFilters = $derived(
 
 <style>
 @layer smrt.reset, smrt.structure, smrt.theme;
-@layer smrt.theme {
-  .message-filters {
+@layer smrt.structure {
+  .smrt-message-filters__root {
     display: flex;
     flex-direction: column;
     gap: 0.5rem;
     padding: 0.75rem;
-    background: var(--smrt-color-surface);
-    border: var(--smrt-hairline);
-    border-radius: var(--smrt-radius-medium, 0.5rem);
   }
-
-  .search-row {
+  .smrt-message-filters__search {
     display: flex;
     gap: 0.5rem;
   }
-
   /*
-   * The search field now renders through smrt-ui's <Input>. The primitive owns
-   * border / background / focus; `.search-row :global(.search-input)` only
-   * re-asserts `flex: 1` so it shares the row with the Search button, piercing
-   * the Input child scope (issue #1589).
-   */
-  .search-row :global(.search-input) {
+  * The search field now renders through smrt-ui's <Input>. The primitive owns
+  * border / background / focus; `.smrt-message-filters__search :global(.search-input)` only
+  * re-asserts `flex: 1` so it shares the row with the Search button, piercing
+  * the Input child scope (issue #1589).
+  */
+  .smrt-message-filters__search :global(.search-input) {
     flex: 1;
   }
-
   /*
-   * Search now renders through smrt-ui's <Button variant="primary">. The variant
-   * owns the filled-primary background + hover; `.search-row :global(.search-btn)`
-   * only re-asserts the original small radius and label font/padding by piercing
-   * the Button child scope (issue #1589).
-   */
-  .search-row :global(.search-btn) {
+  * Search now renders through smrt-ui's <Button variant="primary">. The variant
+  * owns the filled-primary background + hover; `.smrt-message-filters__search :global(.search-btn)`
+  * only re-asserts the original small radius and label font/padding by piercing
+  * the Button child scope (issue #1589).
+  */
+  .smrt-message-filters__search :global(.search-btn) {
     padding: 0.5rem 1rem;
-    border-radius: var(--smrt-radius-small, 0.25rem);
-    font: var(--smrt-typography-label-large-font, 500 0.875rem / 1.25 sans-serif);
   }
-
-  .filter-row {
+  .smrt-message-filters__filters {
     display: flex;
     flex-wrap: wrap;
     align-items: center;
     gap: 0.5rem;
   }
-
   /*
-   * The filter dropdowns now render through smrt-ui's <Select>. The primitive
-   * owns border / background / focus / chevron; `.filter-row :global(.filter-select)`
-   * re-asserts the compact filter-bar sizing (auto width, tighter padding, small
-   * font) by piercing the Select child scope (issue #1589).
-   */
-  .filter-row :global(.filter-select) {
+  * The filter dropdowns now render through smrt-ui's <Select>. The primitive
+  * owns border / background / focus / chevron; `.smrt-message-filters__filters :global(.filter-select)`
+  * re-asserts the compact filter-bar sizing (auto width, tighter padding, small
+  * font) by piercing the Select child scope (issue #1589).
+  */
+  .smrt-message-filters__filters :global(.filter-select) {
     width: auto;
     padding: 0.375rem 2rem 0.375rem 0.5rem;
-    font: var(--smrt-typography-body-small-font, 0.75rem / 1.33 sans-serif);
   }
-
-  .filter-checkbox {
+  .smrt-message-filters__label {
     display: flex;
     align-items: center;
     gap: 0.25rem;
-    font: var(--smrt-typography-body-small-font, 0.75rem / 1.33 sans-serif);
-    color: var(--smrt-color-on-surface);
     cursor: pointer;
   }
-
   /*
-   * Clear filters now renders through smrt-ui's <Button variant="ghost">.
-   * `.filter-row :global(.clear-btn)` anchors on the real `.filter-row` element
-   * and pierces the Button child scope to keep the underlined text-link look
-   * (issue #1589).
-   */
-  .filter-row :global(.clear-btn) {
+  * Clear filters now renders through smrt-ui's <Button variant="ghost">.
+  * `.smrt-message-filters__filters :global(.clear-btn)` anchors on the real `.smrt-message-filters__filters` element
+  * and pierces the Button child scope to keep the underlined text-link look
+  * (issue #1589).
+  */
+  .smrt-message-filters__filters :global(.clear-btn) {
     padding: 0.25rem 0.5rem;
+  }
+}
+
+@layer smrt.theme {
+  .smrt-message-filters__root {
+    background: var(--smrt-color-surface);
+    border: var(--smrt-hairline);
+    border-radius: var(--smrt-radius-medium, 0.5rem);
+  }
+  /*
+  * Search now renders through smrt-ui's <Button variant="primary">. The variant
+  * owns the filled-primary background + hover; `.smrt-message-filters__search :global(.search-btn)`
+  * only re-asserts the original small radius and label font/padding by piercing
+  * the Button child scope (issue #1589).
+  */
+  .smrt-message-filters__search :global(.search-btn) {
+    border-radius: var(--smrt-radius-small, 0.25rem);
+    font: var(--smrt-typography-label-large-font, 500 0.875rem / 1.25 sans-serif);
+  }
+  /*
+  * The filter dropdowns now render through smrt-ui's <Select>. The primitive
+  * owns border / background / focus / chevron; `.smrt-message-filters__filters :global(.filter-select)`
+  * re-asserts the compact filter-bar sizing (auto width, tighter padding, small
+  * font) by piercing the Select child scope (issue #1589).
+  */
+  .smrt-message-filters__filters :global(.filter-select) {
+    font: var(--smrt-typography-body-small-font, 0.75rem / 1.33 sans-serif);
+  }
+  .smrt-message-filters__label {
+    font: var(--smrt-typography-body-small-font, 0.75rem / 1.33 sans-serif);
+    color: var(--smrt-color-on-surface);
+  }
+  /*
+  * Clear filters now renders through smrt-ui's <Button variant="ghost">.
+  * `.smrt-message-filters__filters :global(.clear-btn)` anchors on the real `.smrt-message-filters__filters` element
+  * and pierces the Button child scope to keep the underlined text-link look
+  * (issue #1589).
+  */
+  .smrt-message-filters__filters :global(.clear-btn) {
     border: none;
     background: none;
     font: var(--smrt-typography-label-medium-font, 500 0.75rem / 1.33 sans-serif);
@@ -244,4 +268,5 @@ const _hasActiveFilters = $derived(
     text-decoration: underline;
   }
 }
+
 </style>

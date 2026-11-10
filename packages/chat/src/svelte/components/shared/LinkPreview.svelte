@@ -26,56 +26,43 @@ const hostname = $derived.by(() => {
 });
 </script>
 
-<a class="link-preview" href={url} target="_blank" rel="noopener noreferrer" data-smrt-component="LinkPreview">
+<a class="smrt-link-preview__root" href={url} target="_blank" rel="noopener noreferrer" data-smrt-component="LinkPreview">
   {#if imageUrl}
-    <div class="link-preview__image">
+    <div class="smrt-link-preview__image" data-smrt-part="media">
       <img src={imageUrl} alt={title ?? ''} />
     </div>
   {/if}
-  <div class="link-preview__body">
+  <div class="smrt-link-preview__body" data-smrt-part="body">
     {#if title}
-      <span class="link-preview__title">{title}</span>
+      <span class="smrt-link-preview__title" data-smrt-part="title">{title}</span>
     {/if}
     {#if description}
-      <span class="link-preview__description">{description}</span>
+      <span class="smrt-link-preview__description" data-smrt-part="message">{description}</span>
     {/if}
-    <span class="link-preview__domain">{hostname}</span>
+    <span class="smrt-link-preview__domain" data-smrt-part="meta">{hostname}</span>
   </div>
 </a>
 
 <style>
 @layer smrt.reset, smrt.structure, smrt.theme;
-@layer smrt.theme {
-  .link-preview {
+@layer smrt.structure {
+  .smrt-link-preview__root {
     display: flex;
-    border: var(--smrt-hairline);
-    border-radius: var(--smrt-radius-medium, 0.5rem);
     overflow: hidden;
-    text-decoration: none;
-    color: inherit;
     max-width: 360px;
-    transition: box-shadow var(--smrt-duration-short2, 150ms) var(--smrt-easing-standard, ease);
   }
-
-  .link-preview:hover {
-    box-shadow: var(--smrt-elevation-1, 0 1px 3px rgba(0, 0, 0, 0.12));
-  }
-
-  .link-preview__image {
+  .smrt-link-preview__image {
     width: 80px;
     min-height: 60px;
     flex-shrink: 0;
     overflow: hidden;
-    background: var(--smrt-color-surface-container);
   }
-
-  .link-preview__image img {
+  .smrt-link-preview__image img {
     width: 100%;
     height: 100%;
     object-fit: cover;
   }
-
-  .link-preview__body {
+  .smrt-link-preview__body {
     display: flex;
     flex-direction: column;
     gap: var(--smrt-spacing-1, 0.25rem);
@@ -83,29 +70,47 @@ const hostname = $derived.by(() => {
     min-width: 0;
     overflow: hidden;
   }
-
-  .link-preview__title {
-    font-size: var(--smrt-typography-body-medium-size, 0.875rem);
-    font-weight: var(--smrt-typography-weight-medium, 500);
-    color: var(--smrt-color-on-surface);
+  .smrt-link-preview__title {
     white-space: nowrap;
     overflow: hidden;
     text-overflow: ellipsis;
   }
-
-  .link-preview__description {
-    font-size: var(--smrt-typography-body-small-size, 0.75rem);
-    color: var(--smrt-color-on-surface-variant);
+  .smrt-link-preview__description {
     display: -webkit-box;
+    -webkit-box-orient: vertical;
     -webkit-line-clamp: 2;
     line-clamp: 2;
-    -webkit-box-orient: vertical;
     overflow: hidden;
   }
+}
 
-  .link-preview__domain {
+@layer smrt.theme {
+  .smrt-link-preview__root {
+    border: var(--smrt-hairline);
+    border-radius: var(--smrt-radius-medium, 0.5rem);
+    text-decoration: none;
+    color: inherit;
+    transition: box-shadow var(--smrt-duration-short2, 150ms) var(--smrt-easing-standard, ease);
+  }
+  .smrt-link-preview__root:hover {
+    box-shadow: var(--smrt-elevation-1, 0 1px 3px rgba(0, 0, 0, 0.12));
+  }
+  .smrt-link-preview__image {
+    background: var(--smrt-color-surface-container);
+  }
+  .smrt-link-preview__title {
+    font-size: var(--smrt-typography-body-medium-size, 0.875rem);
+    font-weight: var(--smrt-typography-weight-medium, 500);
+    color: var(--smrt-color-on-surface);
+  }
+  .smrt-link-preview__description {
+    font-size: var(--smrt-typography-body-small-size, 0.75rem);
+    color: var(--smrt-color-on-surface-variant);
+  }
+  .smrt-link-preview__domain {
     font-size: var(--smrt-typography-label-small-size, 0.6875rem);
     color: var(--smrt-color-outline);
   }
 }
+
 </style>

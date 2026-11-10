@@ -36,8 +36,8 @@ const {
 </script>
 
 <div
-  class="stack stack-{direction} gap-{gap} {className}"
-  class:wrap
+  class="smrt-stack__root smrt-stack__{direction} smrt-stack__gap-{gap} {className}"
+  class:smrt-stack__wrap={wrap}
   data-align={align}
   data-justify={justify}
   {...rest}
@@ -48,30 +48,65 @@ const {
 
 <style>
 @layer smrt.reset, smrt.structure, smrt.theme;
-@layer smrt.theme {
-  .stack {
+@layer smrt.structure {
+  .smrt-stack__root {
     display: flex;
     min-inline-size: 0;
   }
-  .stack-vertical { flex-direction: column; }
-  .stack-horizontal { flex-direction: row; }
-  .wrap { flex-wrap: wrap; }
-
-  .gap-xs { gap: var(--smrt-spacing-1); }
-  .gap-sm { gap: var(--smrt-spacing-2); }
-  .gap-md { gap: var(--smrt-spacing-4); }
-  .gap-lg { gap: var(--smrt-spacing-6); }
-  .gap-xl { gap: var(--smrt-spacing-8); }
-
-  .stack[data-align='start'] { align-items: flex-start; }
-  .stack[data-align='center'] { align-items: center; }
-  .stack[data-align='end'] { align-items: flex-end; }
-  .stack[data-align='stretch'] { align-items: stretch; }
-  .stack[data-align='baseline'] { align-items: baseline; }
-
-  .stack[data-justify='start'] { justify-content: flex-start; }
-  .stack[data-justify='center'] { justify-content: center; }
-  .stack[data-justify='end'] { justify-content: flex-end; }
-  .stack[data-justify='between'] { justify-content: space-between; }
+  .smrt-stack__vertical {
+    flex-direction: column;
+  }
+  .smrt-stack__horizontal {
+    flex-direction: row;
+  }
+  .smrt-stack__wrap {
+    flex-wrap: wrap;
+  }
+  .smrt-stack__gap-xs {
+    gap: var(--smrt-spacing-1);
+  }
+  .smrt-stack__gap-sm {
+    gap: var(--smrt-spacing-2);
+  }
+  .smrt-stack__gap-md {
+    gap: var(--smrt-spacing-4);
+  }
+  .smrt-stack__gap-lg {
+    gap: var(--smrt-spacing-6);
+  }
+  .smrt-stack__gap-xl {
+    gap: var(--smrt-spacing-8);
+  }
+  .smrt-stack__root[data-align='start'] {
+    align-items: flex-start;
+  }
+  .smrt-stack__root[data-align='center'] {
+    align-items: center;
+  }
+  .smrt-stack__root[data-align='end'] {
+    align-items: flex-end;
+  }
+  .smrt-stack__root[data-align='stretch'] {
+    align-items: stretch;
+  }
+  .smrt-stack__root[data-align='baseline'] {
+    align-items: baseline;
+  }
+  .smrt-stack__root[data-justify='start'] {
+    justify-content: flex-start;
+  }
+  .smrt-stack__root[data-justify='center'] {
+    justify-content: center;
+  }
+  .smrt-stack__root[data-justify='end'] {
+    justify-content: flex-end;
+  }
+  .smrt-stack__root[data-justify='between'] {
+    justify-content: space-between;
+  }
 }
+
+@layer smrt.theme {
+}
+
 </style>

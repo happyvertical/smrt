@@ -87,83 +87,83 @@ const sourceLabels: Record<string, string> = {
 const total = $derived(items.reduce((sum, item) => sum + item.amount, 0));
 </script>
 
-<div class="line-items-container" data-smrt-component="InvoiceLineItems">
+<div class="smrt-invoice-line-items__root" data-smrt-component="InvoiceLineItems">
   {#if retained}
     {#if retained.lines.length === 0}
-      <div class="empty-state"><p>{emptyMessage}</p></div>
+      <div class="smrt-invoice-line-items__empty" data-smrt-part="empty"><p>{emptyMessage}</p></div>
     {:else}
-      <table class="line-items-table">
-        <thead><tr><th class="col-description">Description</th><th class="col-source">Source</th><th class="col-qty">Qty</th><th class="col-price">{t(M['commerce.invoice_line_items.unit_price'])}</th><th class="col-amount">Amount</th></tr></thead>
+      <table class="smrt-invoice-line-items__table" data-smrt-part="list">
+        <thead><tr><th class="smrt-invoice-line-items__cell-description" data-smrt-part="cell">Description</th><th class="smrt-invoice-line-items__cell-source" data-smrt-part="cell">Source</th><th class="smrt-invoice-line-items__cell-qty" data-smrt-part="cell">Qty</th><th class="smrt-invoice-line-items__cell-price" data-smrt-part="cell">{t(M['commerce.invoice_line_items.unit_price'])}</th><th class="smrt-invoice-line-items__cell-amount" data-smrt-part="cell">Amount</th></tr></thead>
         <tbody>
           {#each retained.lines as line (line.id)}
             <tr>
-              <td class="col-description">
-                {#if line.category}<span class="item-category">{line.category}</span>{/if}
-                <span class="item-description">{line.description}</span>
+              <td class="smrt-invoice-line-items__cell-description" data-smrt-part="cell">
+                {#if line.category}<span class="smrt-invoice-line-items__category" data-smrt-part="label">{line.category}</span>{/if}
+                <span class="smrt-invoice-line-items__description" data-smrt-part="title">{line.description}</span>
                 {#if line.discountLabel}<span>{line.discountLabel}</span>{/if}
                 {#each line.taxLabels ?? [] as tax}<span>{tax}</span>{/each}
                 {#if line.correctionLabel}<span>{line.correctionLabel}</span>{/if}
                 {@render details?.(line)}
               </td>
-              <td class="col-source">{line.sourceLabel ?? '—'}</td>
-              <td class="col-qty">{line.quantity}</td>
-              <td class="col-price">{line.unitPriceMinor === undefined || line.unitPriceMinor === null ? '—' : formatInvoiceMinorUnits(line.unitPriceMinor, retained.currency)}</td>
-              <td class="col-amount">{formatInvoiceMinorUnits(line.amountMinor, retained.currency)}</td>
+              <td class="smrt-invoice-line-items__cell-source" data-smrt-part="cell">{line.sourceLabel ?? '—'}</td>
+              <td class="smrt-invoice-line-items__cell-qty" data-smrt-part="cell">{line.quantity}</td>
+              <td class="smrt-invoice-line-items__cell-price" data-smrt-part="cell">{line.unitPriceMinor === undefined || line.unitPriceMinor === null ? '—' : formatInvoiceMinorUnits(line.unitPriceMinor, retained.currency)}</td>
+              <td class="smrt-invoice-line-items__cell-amount" data-smrt-part="cell">{formatInvoiceMinorUnits(line.amountMinor, retained.currency)}</td>
             </tr>
           {/each}
         </tbody>
-        <tfoot><tr class="total-row"><td colspan="4" class="total-label">Subtotal</td><td class="col-amount">{formatInvoiceMinorUnits(retained.subtotalMinor, retained.currency)}</td></tr></tfoot>
+        <tfoot><tr class="smrt-invoice-line-items__total-row" data-smrt-part="row"><td colspan="4" class="smrt-invoice-line-items__total-label" data-smrt-part="label">Subtotal</td><td class="smrt-invoice-line-items__cell-amount" data-smrt-part="cell">{formatInvoiceMinorUnits(retained.subtotalMinor, retained.currency)}</td></tr></tfoot>
       </table>
     {/if}
   {:else if items.length === 0}
-    <div class="empty-state">
+    <div class="smrt-invoice-line-items__empty" data-smrt-part="empty">
       <p>{emptyMessage}</p>
       {#if editable && onadd}
-        <Button variant="ghost" class="add-btn" onclick={onadd}>
+        <Button class="smrt-invoice-line-items__add" variant="ghost" onclick={onadd}>
           {t(M['commerce.invoice_line_items.add_item'])}
         </Button>
       {/if}
     </div>
   {:else}
-    <table class="line-items-table">
+    <table class="smrt-invoice-line-items__table" data-smrt-part="list">
       <thead>
         <tr>
-          <th class="col-description">Description</th>
+          <th class="smrt-invoice-line-items__cell-description" data-smrt-part="cell">Description</th>
           {#if showSource}
-            <th class="col-source">Source</th>
+            <th class="smrt-invoice-line-items__cell-source" data-smrt-part="cell">Source</th>
           {/if}
-          <th class="col-qty">Qty</th>
-          <th class="col-price">{t(M['commerce.invoice_line_items.unit_price'])}</th>
-          <th class="col-amount">Amount</th>
+          <th class="smrt-invoice-line-items__cell-qty" data-smrt-part="cell">Qty</th>
+          <th class="smrt-invoice-line-items__cell-price" data-smrt-part="cell">{t(M['commerce.invoice_line_items.unit_price'])}</th>
+          <th class="smrt-invoice-line-items__cell-amount" data-smrt-part="cell">Amount</th>
           {#if editable}
-            <th class="col-actions"></th>
+            <th class="smrt-invoice-line-items__cell-actions" data-smrt-part="cell"></th>
           {/if}
         </tr>
       </thead>
       <tbody>
         {#each items as item (item.id)}
           <tr>
-            <td class="col-description">
+            <td class="smrt-invoice-line-items__cell-description" data-smrt-part="cell">
               {#if item.category}
-                <span class="item-category">{item.category}</span>
+                <span class="smrt-invoice-line-items__category" data-smrt-part="label">{item.category}</span>
               {/if}
-              <span class="item-description">{item.description}</span>
+              <span class="smrt-invoice-line-items__description" data-smrt-part="title">{item.description}</span>
             </td>
             {#if showSource}
-              <td class="col-source">
-                <span class="source-badge source-{item.sourceType ?? 'manual'}">
+              <td class="smrt-invoice-line-items__cell-source" data-smrt-part="cell">
+                <span class="smrt-invoice-line-items__badge smrt-invoice-line-items__source-{item.sourceType ?? 'manual'}" data-smrt-part="badge">
                   {sourceLabels[item.sourceType ?? 'manual']}
                 </span>
               </td>
             {/if}
-            <td class="col-qty">{item.quantity}</td>
-            <td class="col-price">{formatMoney(item.unitPrice)}</td>
-            <td class="col-amount">{formatMoney(item.amount)}</td>
+            <td class="smrt-invoice-line-items__cell-qty" data-smrt-part="cell">{item.quantity}</td>
+            <td class="smrt-invoice-line-items__cell-price" data-smrt-part="cell">{formatMoney(item.unitPrice)}</td>
+            <td class="smrt-invoice-line-items__cell-amount" data-smrt-part="cell">{formatMoney(item.amount)}</td>
             {#if editable}
-              <td class="col-actions">
+              <td class="smrt-invoice-line-items__cell-actions" data-smrt-part="cell">
                 <Button
                   variant="ghost"
-                  class="action-btn delete"
+                  class="smrt-invoice-line-items__delete"
                   title={t(M['commerce.invoice_line_items.remove_item'])}
                   onclick={() => ondelete?.(item.id)}
                 >
@@ -177,9 +177,9 @@ const total = $derived(items.reduce((sum, item) => sum + item.amount, 0));
         {/each}
       </tbody>
       <tfoot>
-        <tr class="total-row">
-          <td colspan={showSource ? 4 : 3} class="total-label">{t(M['commerce.invoice_line_items.line_total'])}</td>
-          <td class="col-amount">{formatMoney(total)}</td>
+        <tr class="smrt-invoice-line-items__total-row" data-smrt-part="row">
+          <td colspan={showSource ? 4 : 3} class="smrt-invoice-line-items__total-label" data-smrt-part="label">{t(M['commerce.invoice_line_items.line_total'])}</td>
+          <td class="smrt-invoice-line-items__cell-amount" data-smrt-part="cell">{formatMoney(total)}</td>
           {#if editable}
             <td></td>
           {/if}
@@ -188,7 +188,7 @@ const total = $derived(items.reduce((sum, item) => sum + item.amount, 0));
     </table>
 
     {#if editable && onadd}
-      <Button variant="ghost" class="add-btn add-btn-below" onclick={onadd}>
+      <Button class="smrt-invoice-line-items__add" variant="ghost" onclick={onadd}>
         <svg width="16" height="16" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="2">
           <path d="M8 3v10M3 8h10" />
         </svg>
@@ -200,161 +200,185 @@ const total = $derived(items.reduce((sum, item) => sum + item.amount, 0));
 
 <style>
 @layer smrt.reset, smrt.structure, smrt.theme;
-@layer smrt.theme {
-  .line-items-container {
+@layer smrt.structure {
+  .smrt-invoice-line-items__root {
     width: 100%;
   }
-
-  .empty-state {
+  .smrt-invoice-line-items__empty {
     display: flex;
     flex-direction: column;
     align-items: center;
     padding: var(--smrt-spacing-8, 2rem) var(--smrt-spacing-4, 1rem);
-    background: var(--smrt-color-surface-container-low);
-    border: 1px dashed var(--smrt-color-outline);
-    border-radius: var(--smrt-radius-medium, 0.5rem);
-    text-align: center;
   }
-
-  .empty-state p {
-    color: var(--smrt-color-on-surface-variant);
+  .smrt-invoice-line-items__empty p {
     margin: 0 0 var(--smrt-spacing-4, 1rem);
   }
-
-  .line-items-table {
+  .smrt-invoice-line-items__table {
     width: 100%;
-    border-collapse: collapse;
-    font: var(--smrt-typography-body-medium-font);
   }
-
-  .line-items-table th {
-    text-align: left;
-    font-weight: var(--smrt-typography-weight-medium, 500);
-    color: var(--smrt-color-on-surface-variant);
+  .smrt-invoice-line-items__table th {
     padding: var(--smrt-spacing-3, 0.75rem) var(--smrt-spacing-2, 0.5rem);
-    border-bottom: var(--smrt-hairline);
   }
-
-  .line-items-table td {
+  .smrt-invoice-line-items__table td {
     padding: var(--smrt-spacing-3, 0.75rem) var(--smrt-spacing-2, 0.5rem);
-    border-bottom: 1px solid var(--smrt-color-surface-variant);
-    vertical-align: top;
   }
-
-  .col-description {
+  .smrt-invoice-line-items__cell-description {
     width: 50%;
   }
-
-  .col-source {
+  .smrt-invoice-line-items__cell-source {
     width: 80px;
   }
-
-  .col-qty {
+  .smrt-invoice-line-items__cell-qty {
     width: 60px;
-    text-align: right;
   }
-
-  .col-price,
-  .col-amount {
+  .smrt-invoice-line-items__cell-price,
+  .smrt-invoice-line-items__cell-amount {
     width: 100px;
-    text-align: right;
-    font-variant-numeric: tabular-nums;
   }
-
-  .col-actions {
+  .smrt-invoice-line-items__cell-actions {
     width: 40px;
-    text-align: center;
   }
-
-  .item-category {
+  .smrt-invoice-line-items__category {
     display: block;
-    font: var(--smrt-typography-label-small-font);
-    color: var(--smrt-color-on-surface-variant);
-    text-transform: uppercase;
-    letter-spacing: 0.025em;
   }
-
-  .item-description {
-    color: var(--smrt-color-on-surface);
-  }
-
-  .source-badge {
+  .smrt-invoice-line-items__badge {
     display: inline-block;
     padding: var(--smrt-spacing-0_5, 0.125rem) var(--smrt-spacing-2, 0.5rem);
-    font: var(--smrt-typography-label-small-font);
-    font-weight: var(--smrt-typography-weight-medium, 500);
-    border-radius: var(--smrt-radius-full);
   }
-
-  .source-expense {
-    background: var(--smrt-color-tertiary-container);
-    color: var(--smrt-color-on-tertiary-container);
-  }
-
-  .source-time {
-    background: var(--smrt-color-primary-container);
-    color: var(--smrt-color-on-primary-container);
-  }
-
-  .source-manual {
-    background: var(--smrt-color-surface-variant);
-    color: var(--smrt-color-on-surface-variant);
-  }
-
-  .total-row td {
-    border-top: 2px solid var(--smrt-color-outline-variant);
-    border-bottom: none;
-    font-weight: var(--smrt-typography-weight-semibold, 600);
+  .smrt-invoice-line-items__total-row td {
     padding-top: var(--smrt-spacing-4, 1rem);
   }
-
-  .total-label {
-    text-align: right;
-    color: var(--smrt-color-on-surface);
-  }
-
   /*
-   * These rules style the <button> rendered *inside* the smrt-ui <Button>
-   * child component (issue #1589). A plain scoped `.action-btn {}` rule would
-   * not reach it (no parent scope hash), so each is written as
-   * `.line-items-container :global(.class)` — Svelte compiles the ancestor to
-   * `.line-items-container.svelte-HASH .class`, which pierces into the child.
-   * Overrides cover sizing/shape/color; the ghost variant owns the base.
-   */
-  .line-items-container :global(.action-btn) {
+  * These rules style the <button> rendered *inside* the smrt-ui <Button>
+  * child component (issue #1589). A plain scoped `.smrt-invoice-line-items__root
+  * [data-smrt-component="Button"] {}` rule would not reach it (no parent scope
+  * hash), so each is written as `.smrt-invoice-line-items__root
+  * :global([data-smrt-component="Button"])` — Svelte compiles the ancestor to
+  * `.smrt-invoice-line-items__root.svelte-HASH [data-smrt-component="Button"]`,
+  * which pierces into the child. Each rule anchors on the container that owns
+  * the button so the delete and add actions stay distinct.
+  * Overrides cover sizing/shape/color; the ghost variant owns the base.
+  */
+  .smrt-invoice-line-items__cell-actions :global([data-smrt-component="Button"]) {
     display: inline-flex;
     align-items: center;
     justify-content: center;
     width: 28px;
     height: 28px;
+  }
+  .smrt-invoice-line-items__root :global(.smrt-invoice-line-items__add) {
+    display: inline-flex;
+    align-items: center;
+    gap: var(--smrt-spacing-2, 0.5rem);
+    padding: var(--smrt-spacing-2, 0.5rem) var(--smrt-spacing-4, 1rem);
+  }
+  .smrt-invoice-line-items__root > :global([data-smrt-component="Button"]) {
+    margin-top: var(--smrt-spacing-3, 0.75rem);
+  }
+}
+
+@layer smrt.theme {
+  .smrt-invoice-line-items__empty {
+    background: var(--smrt-color-surface-container-low);
+    border: 1px dashed var(--smrt-color-outline);
+    border-radius: var(--smrt-radius-medium, 0.5rem);
+    text-align: center;
+  }
+  .smrt-invoice-line-items__empty p {
+    color: var(--smrt-color-on-surface-variant);
+  }
+  .smrt-invoice-line-items__table {
+    border-collapse: collapse;
+    font: var(--smrt-typography-body-medium-font);
+  }
+  .smrt-invoice-line-items__table th {
+    text-align: left;
+    font-weight: var(--smrt-typography-weight-medium, 500);
+    color: var(--smrt-color-on-surface-variant);
+    border-bottom: var(--smrt-hairline);
+  }
+  .smrt-invoice-line-items__table td {
+    border-bottom: 1px solid var(--smrt-color-surface-variant);
+    vertical-align: top;
+  }
+  .smrt-invoice-line-items__cell-qty {
+    text-align: right;
+  }
+  .smrt-invoice-line-items__cell-price,
+  .smrt-invoice-line-items__cell-amount {
+    text-align: right;
+    font-variant-numeric: tabular-nums;
+  }
+  .smrt-invoice-line-items__cell-actions {
+    text-align: center;
+  }
+  .smrt-invoice-line-items__category {
+    font: var(--smrt-typography-label-small-font);
+    color: var(--smrt-color-on-surface-variant);
+    text-transform: uppercase;
+    letter-spacing: 0.025em;
+  }
+  .smrt-invoice-line-items__description {
+    color: var(--smrt-color-on-surface);
+  }
+  .smrt-invoice-line-items__badge {
+    font: var(--smrt-typography-label-small-font);
+    font-weight: var(--smrt-typography-weight-medium, 500);
+    border-radius: var(--smrt-radius-full);
+  }
+  .smrt-invoice-line-items__source-expense {
+    background: var(--smrt-color-tertiary-container);
+    color: var(--smrt-color-on-tertiary-container);
+  }
+  .smrt-invoice-line-items__source-time {
+    background: var(--smrt-color-primary-container);
+    color: var(--smrt-color-on-primary-container);
+  }
+  .smrt-invoice-line-items__source-manual {
+    background: var(--smrt-color-surface-variant);
+    color: var(--smrt-color-on-surface-variant);
+  }
+  .smrt-invoice-line-items__total-row td {
+    border-top: 2px solid var(--smrt-color-outline-variant);
+    border-bottom: none;
+    font-weight: var(--smrt-typography-weight-semibold, 600);
+  }
+  .smrt-invoice-line-items__total-label {
+    text-align: right;
+    color: var(--smrt-color-on-surface);
+  }
+  /*
+  * These rules style the <button> rendered *inside* the smrt-ui <Button>
+  * child component (issue #1589). A plain scoped `.smrt-invoice-line-items__root
+  * [data-smrt-component="Button"] {}` rule would not reach it (no parent scope
+  * hash), so each is written as `.smrt-invoice-line-items__root
+  * :global([data-smrt-component="Button"])` — Svelte compiles the ancestor to
+  * `.smrt-invoice-line-items__root.svelte-HASH [data-smrt-component="Button"]`,
+  * which pierces into the child. Each rule anchors on the container that owns
+  * the button so the delete and add actions stay distinct.
+  * Overrides cover sizing/shape/color; the ghost variant owns the base.
+  */
+  .smrt-invoice-line-items__cell-actions :global([data-smrt-component="Button"]) {
     background: transparent;
     border: none;
     border-radius: var(--smrt-radius-extra-small, 0.25rem);
     color: var(--smrt-color-on-surface-variant);
     transition: all var(--smrt-duration-fast, 150ms) var(--smrt-easing-standard, cubic-bezier(0.2, 0, 0, 1));
   }
-
   @media (prefers-reduced-motion: reduce) {
-    .line-items-container :global(.action-btn) {
+    .smrt-invoice-line-items__cell-actions :global([data-smrt-component="Button"]) {
       transition: none;
     }
   }
-
-  .line-items-container :global(.action-btn:hover) {
+  .smrt-invoice-line-items__cell-actions :global([data-smrt-component="Button"]:hover) {
     background: var(--smrt-color-surface-variant);
     color: var(--smrt-color-on-surface);
   }
-
-  .line-items-container :global(.action-btn.delete:hover) {
+  .smrt-invoice-line-items__cell-actions :global([data-smrt-component="Button"].smrt-invoice-line-items__delete:hover) {
     background: var(--smrt-color-error-container);
     color: var(--smrt-color-error);
   }
-
-  .line-items-container :global(.add-btn) {
-    display: inline-flex;
-    align-items: center;
-    gap: var(--smrt-spacing-2, 0.5rem);
-    padding: var(--smrt-spacing-2, 0.5rem) var(--smrt-spacing-4, 1rem);
+  .smrt-invoice-line-items__root :global(.smrt-invoice-line-items__add) {
     font: var(--smrt-typography-label-large-font);
     font-weight: var(--smrt-typography-weight-medium, 500);
     color: var(--smrt-color-primary);
@@ -363,19 +387,14 @@ const total = $derived(items.reduce((sum, item) => sum + item.amount, 0));
     border-radius: var(--smrt-radius-small, 0.375rem);
     transition: all var(--smrt-duration-fast, 150ms) var(--smrt-easing-standard, cubic-bezier(0.2, 0, 0, 1));
   }
-
   @media (prefers-reduced-motion: reduce) {
-    .line-items-container :global(.add-btn) {
+    .smrt-invoice-line-items__root :global(.smrt-invoice-line-items__add) {
       transition: none;
     }
   }
-
-  .line-items-container :global(.add-btn:hover) {
+  .smrt-invoice-line-items__root :global(.smrt-invoice-line-items__add:hover) {
     background: var(--smrt-color-primary-container);
   }
-
-  .line-items-container :global(.add-btn-below) {
-    margin-top: var(--smrt-spacing-3, 0.75rem);
-  }
 }
+
 </style>

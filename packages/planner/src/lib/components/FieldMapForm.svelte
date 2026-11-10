@@ -107,7 +107,7 @@ async function save(event: SubmitEvent) {
 {#if !loaded}
   <p>Loading...</p>
 {:else}
-  <form class="planner-form" onsubmit={save} novalidate>
+  <form class="planner-form" onsubmit={save} novalidate data-smrt-component="FieldMapForm">
     <h3>{id === undefined ? 'New' : 'Edit'} {createNoun(active.form.label, noun, noun !== undefined)}</h3>
     {#each inputs as { field, catalogField, modelId } (field.id)}
       <FieldInput
@@ -128,42 +128,46 @@ async function save(event: SubmitEvent) {
     {#if error}<p class="error" role="alert">{error}</p>{/if}
     <div class="actions">
       <button type="submit">Save</button>
-      <button type="button" class="secondary" onclick={oncancel}>Cancel</button>
+      <button type="button" class="smrt-field-map-form__secondary" data-smrt-part="action" onclick={oncancel}>Cancel</button>
     </div>
   </form>
 {/if}
 
 <style>
 @layer smrt.reset, smrt.structure, smrt.theme;
-@layer smrt.theme {
+@layer smrt.structure {
   h3 {
     margin: 0;
   }
-
   .actions {
     display: flex;
     gap: var(--smrt-spacing-2);
   }
-
   .error {
     margin: 0;
-    color: var(--smrt-color-error);
   }
-
   button {
     padding: var(--smrt-spacing-2) var(--smrt-spacing-3);
+    cursor: pointer;
+  }
+}
+
+@layer smrt.theme {
+  .error {
+    color: var(--smrt-color-error);
+  }
+  button {
     border: 0;
     border-radius: var(--smrt-radius-medium);
     background: var(--smrt-color-primary);
     color: var(--smrt-color-on-primary);
     font: inherit;
-    cursor: pointer;
   }
-
-  button.secondary {
+  button.smrt-field-map-form__secondary {
     border: var(--smrt-control-border);
     background: transparent;
     color: var(--smrt-color-on-surface);
   }
 }
+
 </style>

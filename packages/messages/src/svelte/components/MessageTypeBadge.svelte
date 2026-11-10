@@ -42,23 +42,26 @@ const _variant = $derived.by(() => {
 </script>
 
 <Badge variant={_variant} {size}>
-  <span class="type-badge">
-    <span class="type-icon">{type === 'email' ? '✉' : type === 'tweet' ? '𝕏' : type === 'slack' ? '#' : '✉'}</span>
+  <span class="smrt-message-type-badge__label" data-smrt-part="label">
+    <span class="smrt-message-type-badge__icon" data-smrt-part="icon">{type === 'email' ? '✉' : type === 'tweet' ? '𝕏' : type === 'slack' ? '#' : '✉'}</span>
     {_label}
   </span>
 </Badge>
 
 <style>
 @layer smrt.reset, smrt.structure, smrt.theme;
-@layer smrt.theme {
-  .type-badge {
+@layer smrt.structure {
+  .smrt-message-type-badge__label {
     display: inline-flex;
     align-items: center;
     gap: 0.25rem;
   }
+}
 
-  .type-icon {
+@layer smrt.theme {
+  .smrt-message-type-badge__icon {
     font-size: 0.85em;
   }
 }
+
 </style>

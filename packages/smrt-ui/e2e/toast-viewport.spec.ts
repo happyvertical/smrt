@@ -46,7 +46,7 @@ test('follows modal opening order, nested confirmation and reopening, then resto
   await first.getByRole('button', { name: 'Close modal' }).click();
   expect(await viewport.evaluate((node) => node.parentElement?.id)).toBe('normal-host');
   await page.getByRole('button', { name: 'Unmount viewport' }).click();
-  await expect(page.locator('.viewport')).toHaveCount(0);
+  await expect(page.locator('[data-smrt-component="ToastViewport"]')).toHaveCount(0);
 });
 
 test('hover and keyboard focus independently pause remaining auto-dismiss time', async ({ page }) => {

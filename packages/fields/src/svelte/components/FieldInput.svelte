@@ -121,7 +121,7 @@ function setDateTime(event: Event): void {
     oninput={setJson}
   />
   {#if jsonError}
-    <p id={`${id}-json-error`} class="field-input__error" role="alert">{jsonError}</p>
+    <p id={`${id}-json-error`} class="smrt-field-input__error"  role="alert" data-smrt-component="FieldInput">{jsonError}</p>
   {/if}
 {:else if field.definition.type === 'integer' || field.definition.type === 'decimal'}
   <Input
@@ -158,7 +158,16 @@ function setDateTime(event: Event): void {
 
 <style>
 @layer smrt.reset, smrt.structure, smrt.theme;
-@layer smrt.theme {
-.field-input__error { color: var(--smrt-color-error); margin: 0; }
+@layer smrt.structure {
+  .smrt-field-input__error {
+    margin: 0;
+  }
 }
+
+@layer smrt.theme {
+  .smrt-field-input__error {
+    color: var(--smrt-color-error);
+  }
+}
+
 </style>

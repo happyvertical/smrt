@@ -224,7 +224,7 @@ function handleNavigate(): void {
 }
 </script>
 
-<div class="smrt-role-shell" data-role-id={role.id} style={wrapperStyle}>
+<div class="smrt-role-shell" data-role-id={role.id} style={wrapperStyle} data-smrt-component="RoleShell">
   <WorkspaceShell
     title={resolvedTitle}
     subtitle={resolvedSubtitle}
@@ -249,13 +249,13 @@ function handleNavigate(): void {
         {@render consumerBrand()}
       {:else}
         {#if role.icon}
-          <span class="smrt-role-shell-icon" aria-hidden="true">{role.icon}</span>
+          <span class="smrt-role-shell-icon" aria-hidden="true" data-smrt-part="icon">{role.icon}</span>
         {/if}
         {#if resolvedTitle}
           <h1>{resolvedTitle}</h1>
         {/if}
         {#if resolvedSubtitle}
-          <p class="subtitle">{resolvedSubtitle}</p>
+          <p class="smrt-role-shell__subtitle" data-smrt-part="description">{resolvedSubtitle}</p>
         {/if}
       {/if}
     {/snippet}
@@ -284,26 +284,37 @@ function handleNavigate(): void {
 
 <style>
 @layer smrt.reset, smrt.structure, smrt.theme;
-@layer smrt.theme {
+
+@layer smrt.structure {
   /*
-   * Display: contents lets the WorkspaceShell drive the grid/layout while
-   * still giving us a single DOM node to hang `--smrt-role-color` off.
-   * The wrapper element exists purely to scope the custom property; it
-   * never participates in layout.
-   */
+  * Display: contents lets the WorkspaceShell drive the grid/layout while
+  * still giving us a single DOM node to hang `--smrt-role-color` off.
+  * The wrapper element exists purely to scope the custom property; it
+  * never participates in layout.
+  */
   .smrt-role-shell {
     display: contents;
   }
-
   /*
-   * The default brand snippet renders the role icon as a leading glyph.
-   * Sized to match `<h1>` line-height so the icon stays vertically aligned
-   * with the title baseline. Consumer-provided `brand` snippets bypass
-   * this entirely.
-   */
+  * The default brand snippet renders the role icon as a leading glyph.
+  * Sized to match `<h1>` line-height so the icon stays vertically aligned
+  * with the title baseline. Consumer-provided `brand` snippets bypass
+  * this entirely.
+  */
   .smrt-role-shell-icon {
     display: inline-block;
     margin-right: 0.4rem;
+  }
+}
+
+@layer smrt.theme {
+  /*
+  * The default brand snippet renders the role icon as a leading glyph.
+  * Sized to match `<h1>` line-height so the icon stays vertically aligned
+  * with the title baseline. Consumer-provided `brand` snippets bypass
+  * this entirely.
+  */
+  .smrt-role-shell-icon {
     font-size: var(--smrt-typography-title-medium-size, 1.1rem);
     line-height: 1;
     color: var(--smrt-role-color, var(--smrt-color-on-surface));

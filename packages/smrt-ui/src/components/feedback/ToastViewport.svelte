@@ -160,7 +160,7 @@ async function runAction(toast: Toast) {
 }
 </script>
 
-<section use:followModal class="viewport viewport--{position} {className}" aria-label="Notifications" aria-live="polite"
+<section use:followModal class="smrt-toast-viewport__root smrt-toast-viewport__{position} {className}" aria-label="Notifications" aria-live="polite"
   style:--smrt-toast-viewport-inset={inset}
   style:--smrt-toast-viewport-top={bounds ? `${bounds.top}px` : undefined}
   style:--smrt-toast-viewport-right={bounds ? `${bounds.right}px` : undefined}
@@ -187,16 +187,65 @@ async function runAction(toast: Toast) {
 
 <style>
 @layer smrt.reset, smrt.structure, smrt.theme;
-@layer smrt.theme {
-  .viewport { position: fixed; z-index: var(--smrt-z-index-toast, 1200); display: grid; width: min(24rem, calc(var(--smrt-toast-viewport-region-width, 100vw) - 2 * var(--smrt-toast-viewport-inset))); gap: var(--smrt-spacing-2); pointer-events: none; }
-  .viewport :global([data-smrt-component="Alert"]) { pointer-events: auto; background: color-mix(in srgb, var(--smrt-alert-color) 8%, var(--smrt-glass-surface-strong)); backdrop-filter: blur(var(--smrt-glass-blur)) saturate(var(--smrt-glass-saturation)); box-shadow: var(--smrt-inset-highlight), var(--smrt-elevation-3); }
-  .viewport--top-start { top: calc(var(--smrt-toast-viewport-top, 0px) + var(--smrt-toast-viewport-inset)); left: calc(var(--smrt-toast-viewport-left, 0px) + var(--smrt-toast-viewport-inset)); }
-  .viewport--top-end { top: calc(var(--smrt-toast-viewport-top, 0px) + var(--smrt-toast-viewport-inset)); right: calc(var(--smrt-toast-viewport-right, 0px) + var(--smrt-toast-viewport-inset)); }
-  .viewport--bottom-start { bottom: calc(var(--smrt-toast-viewport-bottom, 0px) + var(--smrt-toast-viewport-inset)); left: calc(var(--smrt-toast-viewport-left, 0px) + var(--smrt-toast-viewport-inset)); }
-  .viewport--bottom-end { right: calc(var(--smrt-toast-viewport-right, 0px) + var(--smrt-toast-viewport-inset)); bottom: calc(var(--smrt-toast-viewport-bottom, 0px) + var(--smrt-toast-viewport-inset)); }
-  .viewport--top-center, .viewport--bottom-center { left: calc(var(--smrt-toast-viewport-left, 0px) + var(--smrt-toast-viewport-region-width, 100vw) / 2); transform: translateX(-50%); }
-  .viewport--top-center { top: calc(var(--smrt-toast-viewport-top, 0px) + var(--smrt-toast-viewport-inset)); }
-  .viewport--bottom-center { bottom: calc(var(--smrt-toast-viewport-bottom, 0px) + var(--smrt-toast-viewport-inset)); }
-  button { padding: var(--smrt-spacing-1) var(--smrt-spacing-2); border: 1px solid currentColor; border-radius: var(--smrt-radius-small); background: transparent; color: inherit; font: inherit; cursor: pointer; }
+@layer smrt.structure {
+  .smrt-toast-viewport__root {
+    position: fixed;
+    z-index: var(--smrt-z-index-toast, 1200);
+    display: grid;
+    width: min(24rem, calc(var(--smrt-toast-viewport-region-width, 100vw) - 2 * var(--smrt-toast-viewport-inset)));
+    gap: var(--smrt-spacing-2);
+    /* The viewport is a pass-through region: only the toasts take clicks. */
+    pointer-events: none;
+  }
+  .smrt-toast-viewport__root :global([data-smrt-component="Alert"]) {
+    pointer-events: auto;
+  }
+  .smrt-toast-viewport__top-start {
+    top: calc(var(--smrt-toast-viewport-top, 0px) + var(--smrt-toast-viewport-inset));
+    left: calc(var(--smrt-toast-viewport-left, 0px) + var(--smrt-toast-viewport-inset));
+  }
+  .smrt-toast-viewport__top-end {
+    top: calc(var(--smrt-toast-viewport-top, 0px) + var(--smrt-toast-viewport-inset));
+    right: calc(var(--smrt-toast-viewport-right, 0px) + var(--smrt-toast-viewport-inset));
+  }
+  .smrt-toast-viewport__bottom-start {
+    bottom: calc(var(--smrt-toast-viewport-bottom, 0px) + var(--smrt-toast-viewport-inset));
+    left: calc(var(--smrt-toast-viewport-left, 0px) + var(--smrt-toast-viewport-inset));
+  }
+  .smrt-toast-viewport__bottom-end {
+    right: calc(var(--smrt-toast-viewport-right, 0px) + var(--smrt-toast-viewport-inset));
+    bottom: calc(var(--smrt-toast-viewport-bottom, 0px) + var(--smrt-toast-viewport-inset));
+  }
+  .smrt-toast-viewport__top-center, .smrt-toast-viewport__bottom-center {
+    left: calc(var(--smrt-toast-viewport-left, 0px) + var(--smrt-toast-viewport-region-width, 100vw) / 2);
+    /* Centres the column on the computed left anchor. */
+    transform: translateX(-50%);
+  }
+  .smrt-toast-viewport__top-center {
+    top: calc(var(--smrt-toast-viewport-top, 0px) + var(--smrt-toast-viewport-inset));
+  }
+  .smrt-toast-viewport__bottom-center {
+    bottom: calc(var(--smrt-toast-viewport-bottom, 0px) + var(--smrt-toast-viewport-inset));
+  }
+  button {
+    padding: var(--smrt-spacing-1) var(--smrt-spacing-2);
+    cursor: pointer;
+  }
 }
+
+@layer smrt.theme {
+  .smrt-toast-viewport__root :global([data-smrt-component="Alert"]) {
+    background: color-mix(in srgb, var(--smrt-alert-color) 8%, var(--smrt-glass-surface-strong));
+    backdrop-filter: blur(var(--smrt-glass-blur)) saturate(var(--smrt-glass-saturation));
+    box-shadow: var(--smrt-inset-highlight), var(--smrt-elevation-3);
+  }
+  button {
+    border: 1px solid currentColor;
+    border-radius: var(--smrt-radius-small);
+    background: transparent;
+    color: inherit;
+    font: inherit;
+  }
+}
+
 </style>

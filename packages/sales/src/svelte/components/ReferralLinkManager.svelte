@@ -54,7 +54,7 @@ function submitCreate() {
 }
 </script>
 
-<div class="sales-referral-links" data-smrt-component="ReferralLinkManager">
+<div class="smrt-referral-link-manager__root" data-smrt-component="ReferralLinkManager">
   {#if onCreate}
     <Form class="sales-referral-links-create" onsubmit={submitCreate}>
       <FormGroup
@@ -88,38 +88,38 @@ function submitCreate() {
   {/if}
 
   {#if links.length === 0}
-    <p class="empty">No share links yet.</p>
+    <p class="smrt-referral-link-manager__empty" data-smrt-part="empty">No share links yet.</p>
   {:else}
     <table>
-      <thead>
+      <thead data-smrt-part="header">
         <tr>
           <th scope="col">Label</th>
           <th scope="col">Code</th>
           <th scope="col">Share URL</th>
           <th scope="col">Clicks</th>
           <th scope="col">Status</th>
-          <th scope="col"><span class="visually-hidden">Actions</span></th>
+          <th scope="col"><span class="smrt-referral-link-manager__visually-hidden" data-smrt-part="label">Actions</span></th>
         </tr>
       </thead>
-      <tbody>
+      <tbody data-smrt-part="body">
         {#each links as link (link.id)}
-          <tr>
+          <tr data-smrt-part="row">
             <td>{link.label ?? '—'}</td>
             <td><code>{link.code}</code></td>
-            <td class="share-url">
+            <td class="smrt-referral-link-manager__share-url" data-smrt-part="action">
               {#if shareBaseUrl}
                 <code>{buildShareUrl(shareBaseUrl, link.code)}</code>
               {:else}
                 —
               {/if}
             </td>
-            <td class="clicks">{link.clickCount}</td>
+            <td class="smrt-referral-link-manager__clicks" data-smrt-part="cell">{link.clickCount}</td>
             <td>
               <Badge variant={referralLinkStatusBadgeVariant(link.status)} size="sm">
                 {link.status}
               </Badge>
             </td>
-            <td class="actions">
+            <td class="smrt-referral-link-manager__actions" data-smrt-part="actions">
               {#if onSetEnabled}
                 <Button
                   variant="secondary"
@@ -140,74 +140,44 @@ function submitCreate() {
 
 <style>
 @layer smrt.reset, smrt.structure, smrt.theme;
-@layer smrt.theme {
-  .sales-referral-links {
+@layer smrt.structure {
+  .smrt-referral-link-manager__root {
     display: flex;
     flex-direction: column;
     gap: var(--smrt-spacing-4, 1rem);
     width: 100%;
     overflow-x: auto;
   }
-
-  .sales-referral-links :global(.sales-referral-links-create) {
+  .smrt-referral-link-manager__root :global(.sales-referral-links-create) {
     display: flex;
     flex-wrap: wrap;
     align-items: flex-end;
     gap: var(--smrt-spacing-2, 0.5rem);
   }
-
-  .sales-referral-links :global(.sales-referral-links-create .form-group) {
+  .smrt-referral-link-manager__root :global(.sales-referral-links-create [data-smrt-component="FormGroup"]) {
     margin-bottom: 0;
     flex: 1 1 14rem;
   }
-
-  .empty {
+  .smrt-referral-link-manager__empty {
     margin: 0;
-    color: var(--smrt-color-on-surface-variant);
-    font-style: italic;
   }
-
   table {
     width: 100%;
-    border-collapse: collapse;
-    font-size: var(--smrt-typography-body-medium-size, 0.875rem);
   }
-
   th {
     padding: var(--smrt-spacing-2, 0.5rem) var(--smrt-spacing-3, 0.75rem);
-    text-align: left;
-    font-weight: var(--smrt-typography-weight-semibold, 600);
-    background: var(--smrt-color-surface-container);
-    border-bottom: var(--smrt-hairline);
     white-space: nowrap;
   }
-
   td {
     padding: var(--smrt-spacing-2, 0.5rem) var(--smrt-spacing-3, 0.75rem);
-    border-bottom: var(--smrt-hairline);
-    vertical-align: middle;
   }
-
-  code {
-    font-family: var(--smrt-font-family-mono, ui-monospace, monospace);
-    font-size: var(--smrt-typography-body-small-size, 0.8125rem);
-  }
-
-  .share-url {
+  .smrt-referral-link-manager__share-url {
     word-break: break-all;
   }
-
-  .clicks {
-    text-align: right;
-    font-family: var(--smrt-font-family-mono, ui-monospace, monospace);
-  }
-
-  .actions {
+  .smrt-referral-link-manager__actions {
     white-space: nowrap;
-    text-align: right;
   }
-
-  .visually-hidden {
+  .smrt-referral-link-manager__visually-hidden {
     position: absolute;
     width: 1px;
     height: 1px;
@@ -216,4 +186,37 @@ function submitCreate() {
     white-space: nowrap;
   }
 }
+
+@layer smrt.theme {
+  .smrt-referral-link-manager__empty {
+    color: var(--smrt-color-on-surface-variant);
+    font-style: italic;
+  }
+  table {
+    border-collapse: collapse;
+    font-size: var(--smrt-typography-body-medium-size, 0.875rem);
+  }
+  th {
+    text-align: left;
+    font-weight: var(--smrt-typography-weight-semibold, 600);
+    background: var(--smrt-color-surface-container);
+    border-bottom: var(--smrt-hairline);
+  }
+  td {
+    border-bottom: var(--smrt-hairline);
+    vertical-align: middle;
+  }
+  code {
+    font-family: var(--smrt-font-family-mono, ui-monospace, monospace);
+    font-size: var(--smrt-typography-body-small-size, 0.8125rem);
+  }
+  .smrt-referral-link-manager__clicks {
+    text-align: right;
+    font-family: var(--smrt-font-family-mono, ui-monospace, monospace);
+  }
+  .smrt-referral-link-manager__actions {
+    text-align: right;
+  }
+}
+
 </style>

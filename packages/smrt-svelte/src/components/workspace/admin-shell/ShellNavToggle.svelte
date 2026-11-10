@@ -64,25 +64,29 @@ const name = $derived(label ?? t(M['ui.shell_nav_toggle.navigation']));
 
 <style>
 @layer smrt.reset, smrt.structure, smrt.theme;
-@layer smrt.theme {
+
+@layer smrt.structure {
   .smrt-shell-nav-toggle {
     display: inline-grid;
     place-items: center;
     flex: none;
     inline-size: 2.75rem;
     block-size: 2.75rem;
+    cursor: pointer;
+  }
+}
+
+@layer smrt.theme {
+  .smrt-shell-nav-toggle {
     border: 0;
     border-radius: var(--smrt-control-radius);
     background: transparent;
     color: var(--smrt-color-on-surface-variant);
-    cursor: pointer;
   }
-
   .smrt-shell-nav-toggle:hover {
     background: color-mix(in srgb, currentColor calc(var(--smrt-state-hover) * 100%), transparent);
     color: var(--smrt-color-on-surface);
   }
-
   .smrt-shell-nav-toggle:focus-visible {
     outline: var(--smrt-focus-ring-width) solid var(--smrt-focus-ring-color);
     outline-offset: var(--smrt-focus-ring-offset);

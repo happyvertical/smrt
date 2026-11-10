@@ -153,8 +153,12 @@ describe('FieldPolicyProvider + PolicyField', () => {
       props: { policy, mode: 'basic' },
     });
 
-    const nameField = screen.getByText('Name').closest('.policy-field');
-    expect(nameField?.querySelector('.policy-field__required')).not.toBeNull();
+    const nameField = screen
+      .getByText('Name')
+      .closest('[data-smrt-component="PolicyField"]');
+    expect(
+      nameField?.querySelector('[data-smrt-part="marker"]'),
+    ).not.toBeNull();
   });
 
   it('does not render required marker for optional fields', () => {
@@ -163,8 +167,10 @@ describe('FieldPolicyProvider + PolicyField', () => {
       props: { policy, mode: 'basic' },
     });
 
-    const skuField = screen.getByText('SKU').closest('.policy-field');
-    expect(skuField?.querySelector('.policy-field__required')).toBeNull();
+    const skuField = screen
+      .getByText('SKU')
+      .closest('[data-smrt-component="PolicyField"]');
+    expect(skuField?.querySelector('[data-smrt-part="marker"]')).toBeNull();
   });
 
   it('exposes default value via snippet props for prefill signal', () => {
@@ -211,7 +217,9 @@ describe('FieldPolicyProvider + PolicyField', () => {
     expect(screen.queryByText('The widget name')).not.toBeInTheDocument();
     // No visible hint element (query the component's stable class rather than
     // a role — `<p>` has no ARIA role, so a role query is unreliable).
-    expect(document.querySelectorAll('.policy-field__hint').length).toBe(0);
+    expect(
+      document.querySelectorAll('[data-smrt-part="description"]').length,
+    ).toBe(0);
   });
 
   it('links the help hint to the input via aria-describedby', async () => {

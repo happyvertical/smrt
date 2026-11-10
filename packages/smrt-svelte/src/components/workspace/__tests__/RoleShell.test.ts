@@ -86,7 +86,7 @@ describe('RoleShell', () => {
     });
 
     try {
-      const brand = container.querySelector('.brand');
+      const brand = container.querySelector('[data-smrt-part="brand"]');
       expect(brand?.textContent).toContain('Super Admin');
       expect(brand?.textContent).toContain('Cross-network operations');
     } finally {
@@ -106,7 +106,9 @@ describe('RoleShell', () => {
     });
 
     try {
-      const navItems = container.querySelectorAll('.smrt-nav-tree .nav-item');
+      const navItems = container.querySelectorAll(
+        '.smrt-nav-tree [data-smrt-part="item"]',
+      );
       const labels = Array.from(navItems).map((el) => el.textContent ?? '');
       // The nav-item textContent includes the icon glyph + label, so match
       // with substring contains rather than strict equality.
@@ -206,7 +208,7 @@ describe('RoleShell', () => {
     });
 
     try {
-      const brand = container.querySelector('.brand');
+      const brand = container.querySelector('[data-smrt-part="brand"]');
       expect(brand?.textContent).toContain('Custom Title');
       expect(brand?.textContent).toContain('Custom Subtitle');
       expect(brand?.textContent).not.toContain('Super Admin');
@@ -230,7 +232,7 @@ describe('RoleShell', () => {
       const crumbs = container.querySelector('.smrt-breadcrumbs');
       expect(crumbs).not.toBeNull();
       // The first crumb is the rootCrumb (role label).
-      const items = crumbs?.querySelectorAll('.crumb-item');
+      const items = crumbs?.querySelectorAll('[data-smrt-part="item"]');
       expect(items?.[0]?.textContent).toContain('Super Admin');
     } finally {
       unmount(component);
@@ -269,7 +271,7 @@ describe('RoleShell', () => {
     });
 
     try {
-      const brand = container.querySelector('.brand');
+      const brand = container.querySelector('[data-smrt-part="brand"]');
       expect(brand?.textContent).toContain('MyBrand');
       // The brand snippet should override the default title rendering.
       expect(brand?.textContent).not.toContain('Super Admin');
@@ -292,9 +294,9 @@ describe('RoleShell', () => {
     });
 
     try {
-      const footer = container.querySelector('.sidebar-footer');
+      const footer = container.querySelector('[data-smrt-part="footer"]');
       expect(footer?.textContent).toContain('account-menu');
-      const actions = container.querySelector('.topbar-actions');
+      const actions = container.querySelector('[data-smrt-part="actions"]');
       expect(actions?.textContent).toContain('action-button');
     } finally {
       unmount(component);
@@ -358,7 +360,7 @@ describe('RoleShell', () => {
     });
     try {
       const inspector = container.querySelector(
-        '.smrt-workspace-inspector .inspector-body',
+        '.smrt-workspace-inspector .smrt-workspace-shell__inspector-body',
       );
       expect(inspector?.textContent).toContain('inspector-body');
     } finally {
@@ -385,12 +387,15 @@ describe('RoleShell', () => {
     try {
       // The collapse state surfaces as a class on the shell root.
       const shell = container.querySelector('.smrt-workspace-shell');
-      expect(shell?.classList.contains('sidebar-collapsed')).toBe(true);
+      expect(
+        shell?.classList.contains('smrt-workspace-shell__sidebar-collapsed'),
+      ).toBe(true);
 
       // The toggle button only renders when `onToggleCollapsed` is provided —
       // clicking it should invoke our callback.
-      const toggle =
-        container.querySelector<HTMLButtonElement>('.shell-toggle');
+      const toggle = container.querySelector<HTMLButtonElement>(
+        'button[data-smrt-component="Button"][aria-label$=" sidebar"]',
+      );
       expect(toggle).not.toBeNull();
       toggle?.click();
       expect(toggled).toBe(1);
@@ -418,12 +423,15 @@ describe('RoleShell', () => {
       const topbar = container.querySelector('.smrt-workspace-topbar');
       expect(topbar?.textContent).toContain('Local-first mode');
       expect(topbar?.textContent).toContain('detail line');
-      const badge = topbar?.querySelector<HTMLElement>('.mode-badge');
+      const badge = topbar?.querySelector<HTMLElement>(
+        '[data-smrt-part="badge"]',
+      );
       expect(badge?.dataset.status).toBe('local-only');
       // The eyebrow appears in the topbar's eyebrow slot.
-      expect(topbar?.querySelector('.topbar-eyebrow')?.textContent).toContain(
-        'EYE',
-      );
+      expect(
+        topbar?.querySelector('.smrt-workspace-shell__topbar-eyebrow')
+          ?.textContent,
+      ).toContain('EYE');
     } finally {
       unmount(component);
     }
@@ -447,7 +455,7 @@ describe('RoleShell', () => {
     try {
       const crumbs = container.querySelector('.smrt-breadcrumbs');
       const labels = Array.from(
-        crumbs?.querySelectorAll('.crumb-item') ?? [],
+        crumbs?.querySelectorAll('[data-smrt-part="item"]') ?? [],
       ).map((el) => (el.textContent ?? '').trim());
 
       expect(labels[0]).toContain('Super Admin');
@@ -478,7 +486,7 @@ describe('RoleShell', () => {
     try {
       const crumbs = container.querySelector('.smrt-breadcrumbs');
       const labels = Array.from(
-        crumbs?.querySelectorAll('.crumb-item') ?? [],
+        crumbs?.querySelectorAll('[data-smrt-part="item"]') ?? [],
       ).map((el) => (el.textContent ?? '').trim());
       // Explicit override skips `dashboard/super`, leaving Dashboard (root)
       // + Tenants — the role-id default is not used.
@@ -507,7 +515,7 @@ describe('RoleShell', () => {
     try {
       const crumbs = container.querySelector('.smrt-breadcrumbs');
       const labels = Array.from(
-        crumbs?.querySelectorAll('.crumb-item') ?? [],
+        crumbs?.querySelectorAll('[data-smrt-part="item"]') ?? [],
       ).map((el) => (el.textContent ?? '').trim());
       // With the default skip disabled, the `super` segment renders as a
       // fallback crumb: Super Admin (root) / Super / Tenants. We use
@@ -516,7 +524,9 @@ describe('RoleShell', () => {
       expect(labels.length).toBe(3);
       expect(labels[0]).toContain('Super Admin');
       const links = Array.from(
-        crumbs?.querySelectorAll<HTMLAnchorElement>('.crumb-link') ?? [],
+        crumbs?.querySelectorAll<HTMLAnchorElement>(
+          '[data-smrt-part="link"]',
+        ) ?? [],
       );
       const hrefs = links.map((a) => a.getAttribute('href'));
       // Both `/super` (from rootCrumb) and `/super` (fallback walk) collapse
@@ -547,7 +557,9 @@ describe('RoleShell', () => {
     try {
       const navTree = container.querySelector('.smrt-nav-tree');
       expect(navTree).not.toBeNull();
-      expect(navTree?.classList.contains('collapsed')).toBe(true);
+      expect(navTree?.classList.contains('smrt-nav-tree__collapsed')).toBe(
+        true,
+      );
     } finally {
       unmount(component);
     }
@@ -567,7 +579,9 @@ describe('RoleShell', () => {
     try {
       const navTree = container.querySelector('.smrt-nav-tree');
       expect(navTree).not.toBeNull();
-      expect(navTree?.classList.contains('collapsed')).toBe(false);
+      expect(navTree?.classList.contains('smrt-nav-tree__collapsed')).toBe(
+        false,
+      );
     } finally {
       unmount(component);
     }
@@ -590,7 +604,7 @@ describe('RoleShell', () => {
       const crumbs = container.querySelector('.smrt-breadcrumbs');
       expect(crumbs).not.toBeNull();
       const first = crumbs?.querySelector<HTMLAnchorElement>(
-        '.crumb-item:first-child .crumb-link',
+        '[data-smrt-part="item"]:first-child [data-smrt-part="link"]',
       );
       expect(first?.textContent).toBe('Dashboard');
       expect(first?.getAttribute('href')).toBe('/dashboard');
@@ -598,7 +612,7 @@ describe('RoleShell', () => {
       // prefix and the resulting trail should NOT contain a duplicate
       // `Dashboard` fallback crumb.
       const labels = Array.from(
-        crumbs?.querySelectorAll('.crumb-item') ?? [],
+        crumbs?.querySelectorAll('[data-smrt-part="item"]') ?? [],
       ).map((el) => el.textContent ?? '');
       const dashboardCrumbs = labels.filter((l) => l.includes('Dashboard'));
       expect(dashboardCrumbs.length).toBe(1);
@@ -642,7 +656,7 @@ describe('RoleShell', () => {
 
     try {
       expect(container.querySelector('.smrt-role-shell-icon')).toBeNull();
-      const brand = container.querySelector('.brand');
+      const brand = container.querySelector('[data-smrt-part="brand"]');
       expect(brand?.textContent).toContain('CustomBrand');
     } finally {
       unmount(component);
@@ -702,7 +716,7 @@ describe('RoleShell', () => {
       expect(controls.getMobileNavOpen()).toBe(true);
 
       const navLink = container.querySelector<HTMLAnchorElement>(
-        '.smrt-nav-tree .nav-item',
+        '.smrt-nav-tree [data-smrt-part="item"]',
       );
       navLink?.addEventListener('click', (e) => e.preventDefault());
       navLink?.click();
@@ -756,16 +770,22 @@ describe('RoleShell', () => {
       try {
         await tick();
         const shell = container.querySelector('.smrt-workspace-shell');
-        expect(shell?.classList.contains('nav-open')).toBe(false);
+        expect(
+          shell?.classList.contains('smrt-workspace-shell__nav-open'),
+        ).toBe(false);
 
         controls.setMobileNavOpen(true);
         await tick();
-        expect(shell?.classList.contains('nav-open')).toBe(true);
+        expect(
+          shell?.classList.contains('smrt-workspace-shell__nav-open'),
+        ).toBe(true);
         expect(controls.getMobileNavOpen()).toBe(true);
 
         controls.setMobileNavOpen(false);
         await tick();
-        expect(shell?.classList.contains('nav-open')).toBe(false);
+        expect(
+          shell?.classList.contains('smrt-workspace-shell__nav-open'),
+        ).toBe(false);
       } finally {
         unmount(component);
       }
@@ -794,7 +814,7 @@ describe('RoleShell', () => {
         expect(controls.getMobileNavOpen()).toBe(true);
 
         const navLink = container.querySelector<HTMLAnchorElement>(
-          '.smrt-nav-tree .nav-item',
+          '.smrt-nav-tree [data-smrt-part="item"]',
         );
         expect(navLink).not.toBeNull();
         // Prevent jsdom from actually navigating away while clicking.
@@ -833,7 +853,7 @@ describe('RoleShell', () => {
     try {
       await tick();
       let labels = Array.from(
-        container.querySelectorAll('.smrt-nav-tree .nav-item'),
+        container.querySelectorAll('.smrt-nav-tree [data-smrt-part="item"]'),
       ).map((el) => el.textContent ?? '');
       expect(labels.some((l) => l.includes('Tenants'))).toBe(true);
       expect(labels.some((l) => l.includes('Campaigns'))).toBe(false);
@@ -841,7 +861,7 @@ describe('RoleShell', () => {
       setCurrentRole('advertiser');
       await tick();
       labels = Array.from(
-        container.querySelectorAll('.smrt-nav-tree .nav-item'),
+        container.querySelectorAll('.smrt-nav-tree [data-smrt-part="item"]'),
       ).map((el) => el.textContent ?? '');
       expect(labels.some((l) => l.includes('Campaigns'))).toBe(true);
       expect(labels.some((l) => l.includes('Tenants'))).toBe(false);

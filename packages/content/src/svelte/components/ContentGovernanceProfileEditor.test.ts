@@ -114,7 +114,9 @@ describe('ContentGovernanceProfileEditor component', () => {
     const inputs = target.querySelectorAll('input[type="text"]');
     const textarea = target.querySelector('textarea');
     const checkboxes = target.querySelectorAll('input[type="checkbox"]');
-    const policySelect = target.querySelector('.requirement-row select');
+    const policySelect = target.querySelector(
+      '.smrt-content-governance-profile-editor__requirement-row select',
+    );
     const form = target.querySelector('form.governance-editor');
 
     setInputValue(inputs[0] as HTMLInputElement, 'publication');

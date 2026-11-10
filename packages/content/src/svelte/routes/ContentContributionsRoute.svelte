@@ -313,18 +313,18 @@ async function handleDeleteContributor(data: Partial<ContentContributorData>) {
 }
 </script>
 
-<div class:page={true} class:page--embedded={embedded} data-smrt-component="ContentContributionsRoute">
-  <header class="page-header">
-    <div class="container">
-      <div class="page-header__copy">
-        <div class="eyebrow">{t(M['content.contributions.eyebrow'])}</div>
+<div class="smrt-content-contributions-route__root" class:smrt-content-contributions-route__page--embedded={embedded} data-smrt-component="ContentContributionsRoute">
+  <header class="smrt-content-contributions-route__header" data-smrt-part="header">
+    <div class="smrt-content-contributions-route__container" data-smrt-part="body">
+      <div class="smrt-content-contributions-route__header-copy" data-smrt-part="body">
+        <div class="smrt-content-contributions-route__eyebrow" data-smrt-part="label">{t(M['content.contributions.eyebrow'])}</div>
         <h1>{t(M['content.contributions.heading'])}</h1>
         <p>
           {t(M['content.contributions.intro'])}
         </p>
       </div>
 
-      <nav class="page-nav" aria-label={t(M['content.contributions.nav_aria'])}>
+      <nav class="smrt-content-contributions-route__nav" data-smrt-part="nav" aria-label={t(M['content.contributions.nav_aria'])}>
         {#each navigation as item (item.routeId)}
           <a
             href={item.href}
@@ -339,59 +339,59 @@ async function handleDeleteContributor(data: Partial<ContentContributorData>) {
     </div>
   </header>
 
-  <main class="container page-main">
-    <section class="callout">
-      <div class="callout__header">
+  <main class="smrt-content-contributions-route__container smrt-content-contributions-route__main" data-smrt-part="body">
+    <section class="smrt-content-contributions-route__callout" data-smrt-part="status">
+      <div class="smrt-content-contributions-route__callout-header" data-smrt-part="header">
         <div>
           <strong>{t(M['content.contributions.callout_title'])}</strong>
           <p>
             {t(M['content.contributions.callout_body'])}
           </p>
         </div>
-        <span class="pill">Live</span>
+        <span class="smrt-content-contributions-route__pill" data-smrt-part="badge">Live</span>
       </div>
 
-      <div class="callout__chips" aria-label={t(M['content.contributions.chips_aria'])}>
+      <div class="smrt-content-contributions-route__callout-chips" data-smrt-part="list" aria-label={t(M['content.contributions.chips_aria'])}>
         <span>{t(M['content.contributions.chip_held_intake'])}</span>
         <span>{t(M['content.contributions.chip_portal_actions'])}</span>
         <span>{t(M['content.contributions.chip_inbox_decisions'])}</span>
         <span>{t(M['content.contributions.chip_type_trust'])}</span>
       </div>
 
-      <p class="callout__note">
+      <p class="smrt-content-contributions-route__callout-note" data-smrt-part="description">
         {t(M['content.contributions.email_note_prefix'])}
         <code>/api/v1/contentcontributions/ingest-email</code> {t(M['content.contributions.email_note_suffix'])}
       </p>
     </section>
 
     {#if loading}
-      <section class="panel">
+      <section class="smrt-content-contributions-route__panel" data-smrt-part="panel">
         <p>{t(M['content.contributions.loading'])}</p>
       </section>
     {:else}
       {#if error}
-        <section class="panel panel--error">
+        <section class="smrt-content-contributions-route__panel smrt-content-contributions-route__panel--error" data-smrt-part="panel">
           <strong>Error</strong>
           <p>{error}</p>
         </section>
       {/if}
 
       {#if notice}
-        <section class="panel panel--notice">
+        <section class="smrt-content-contributions-route__panel smrt-content-contributions-route__panel--notice" data-smrt-part="panel">
           <strong>{t(M['content.contributions.latest_action'])}</strong>
           <p>{notice}</p>
         </section>
       {/if}
 
       {#if busyMessage}
-        <section class="panel">
+        <section class="smrt-content-contributions-route__panel" data-smrt-part="panel">
           <p>{busyMessage}</p>
         </section>
       {/if}
 
-      <div class="qa-grid">
-        <section class="panel">
-          <div class="section-heading">
+      <div class="smrt-content-contributions-route__grid" data-smrt-part="grid">
+        <section class="smrt-content-contributions-route__panel" data-smrt-part="panel">
+          <div class="smrt-content-contributions-route__section-heading" data-smrt-part="header">
             <div>
               <h2>{t(M['content.contributions.submission_title'])}</h2>
               <p>
@@ -407,15 +407,15 @@ async function handleDeleteContributor(data: Partial<ContentContributorData>) {
           />
         </section>
 
-        <section class="panel">
-          <div class="section-heading">
+        <section class="smrt-content-contributions-route__panel" data-smrt-part="panel">
+          <div class="smrt-content-contributions-route__section-heading" data-smrt-part="header">
             <div>
               <h2>{t(M['content.contributions.portal_title'])}</h2>
               <p>
                 {t(M['content.contributions.portal_body'])}
               </p>
             </div>
-            <div class="inline-form-shell">
+            <div class="smrt-content-contributions-route__form-shell" data-smrt-part="field">
               <Form
                 class="inline-form"
                 onsubmit={(event) => {
@@ -452,8 +452,8 @@ async function handleDeleteContributor(data: Partial<ContentContributorData>) {
         </section>
       </div>
 
-      <section class="panel">
-        <div class="section-heading">
+      <section class="smrt-content-contributions-route__panel" data-smrt-part="panel">
+        <div class="smrt-content-contributions-route__section-heading" data-smrt-part="header">
           <div>
             <h2>{t(M['content.contributions.inbox_title'])}</h2>
             <p>
@@ -474,16 +474,16 @@ async function handleDeleteContributor(data: Partial<ContentContributorData>) {
         />
       </section>
 
-      <div class="qa-grid">
-        <section class="panel">
-          <div class="section-heading">
+      <div class="smrt-content-contributions-route__grid" data-smrt-part="grid">
+        <section class="smrt-content-contributions-route__panel" data-smrt-part="panel">
+          <div class="smrt-content-contributions-route__section-heading" data-smrt-part="header">
             <div>
               <h2>{t(M['content.contributions.types_title'])}</h2>
               <p>
                 {t(M['content.contributions.types_body'])}
               </p>
             </div>
-            <span class="pill">{contributionTypes?.effective.length || 0}</span>
+            <span class="smrt-content-contributions-route__pill" data-smrt-part="badge">{contributionTypes?.effective.length || 0}</span>
           </div>
 
           <ContentContributionTypeManager
@@ -493,15 +493,15 @@ async function handleDeleteContributor(data: Partial<ContentContributorData>) {
           />
         </section>
 
-        <section class="panel">
-          <div class="section-heading">
+        <section class="smrt-content-contributions-route__panel" data-smrt-part="panel">
+          <div class="smrt-content-contributions-route__section-heading" data-smrt-part="header">
             <div>
               <h2>{t(M['content.contributions.trust_title'])}</h2>
               <p>
                 {t(M['content.contributions.trust_body'])}
               </p>
             </div>
-            <span class="pill">{contributors.length}</span>
+            <span class="smrt-content-contributions-route__pill" data-smrt-part="badge">{contributors.length}</span>
           </div>
 
           <ContentContributorManager
@@ -517,9 +517,170 @@ async function handleDeleteContributor(data: Partial<ContentContributorData>) {
 
 <style>
 @layer smrt.reset, smrt.structure, smrt.theme;
-@layer smrt.theme {
-  :global(body:has(.page:not(.page--embedded))) {
+@layer smrt.structure {
+  :global(body:has(.smrt-content-contributions-route__root:not(.smrt-content-contributions-route__page--embedded))) {
     margin: 0;
+    min-height: 100vh;
+  }
+  .smrt-content-contributions-route__root {
+    min-height: 100vh;
+    padding: 2rem 1.25rem 3rem;
+  }
+  .smrt-content-contributions-route__page--embedded {
+    min-height: auto;
+    padding: 0;
+  }
+  .smrt-content-contributions-route__container {
+    max-width: 1400px;
+    margin: 0 auto;
+  }
+  .smrt-content-contributions-route__header {
+    margin-bottom: 1.5rem;
+  }
+  .smrt-content-contributions-route__header .smrt-content-contributions-route__container {
+    display: flex;
+    justify-content: space-between;
+    gap: 1rem;
+    align-items: flex-start;
+    flex-wrap: wrap;
+  }
+  .smrt-content-contributions-route__header-copy {
+    max-width: 56rem;
+  }
+  .smrt-content-contributions-route__header h1 {
+    margin: 0.35rem 0 0.65rem;
+  }
+  .smrt-content-contributions-route__header p {
+    margin: 0;
+    max-width: 52rem;
+  }
+  .smrt-content-contributions-route__nav {
+    display: flex;
+    gap: 0.75rem;
+    flex-wrap: wrap;
+    align-items: center;
+  }
+  .smrt-content-contributions-route__nav a {
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    min-height: 2.5rem;
+    padding: 0 1rem;
+  }
+  .smrt-content-contributions-route__main {
+    display: grid;
+    gap: 1rem;
+  }
+  .smrt-content-contributions-route__callout,
+  .smrt-content-contributions-route__panel {
+    padding: 1.25rem;
+  }
+  .smrt-content-contributions-route__callout {
+    display: grid;
+    gap: 0.8rem;
+  }
+  .smrt-content-contributions-route__callout-header {
+    display: flex;
+    gap: 1rem;
+    justify-content: space-between;
+    align-items: flex-start;
+    flex-wrap: wrap;
+  }
+  .smrt-content-contributions-route__callout-header p,
+  .smrt-content-contributions-route__callout-note {
+    margin: 0;
+  }
+  .smrt-content-contributions-route__callout-chips {
+    display: flex;
+    gap: 0.6rem;
+    flex-wrap: wrap;
+  }
+  .smrt-content-contributions-route__callout-chips span {
+    display: inline-flex;
+    align-items: center;
+    min-height: 2rem;
+    padding: 0 0.8rem;
+  }
+  .smrt-content-contributions-route__grid {
+    display: grid;
+    gap: 1rem;
+  }
+  .smrt-content-contributions-route__section-heading {
+    display: flex;
+    gap: 1rem;
+    justify-content: space-between;
+    align-items: flex-start;
+    margin-bottom: 1rem;
+    flex-wrap: wrap;
+  }
+  .smrt-content-contributions-route__section-heading h2 {
+    margin: 0 0 0.25rem;
+  }
+  .smrt-content-contributions-route__section-heading p {
+    margin: 0;
+  }
+  .smrt-content-contributions-route__form-shell :global(.inline-form) {
+    display: flex;
+    gap: 0.5rem;
+    flex-wrap: wrap;
+    align-items: center;
+  }
+  .smrt-content-contributions-route__form-shell :global([data-smrt-component="Input"]) {
+    min-width: min(22rem, 100%);
+    padding: 0.7rem 0.85rem;
+  }
+  .smrt-content-contributions-route__form-shell :global(.load-button) {
+    padding: 0.65rem 0.95rem;
+    cursor: pointer;
+  }
+  .smrt-content-contributions-route__pill {
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    min-width: 2rem;
+    min-height: 2rem;
+    padding: 0 0.8rem;
+  }
+  @media (min-width: 1024px) {
+    .smrt-content-contributions-route__grid {
+      grid-template-columns: repeat(2, minmax(0, 1fr));
+    }
+  }
+  @media (max-width: 720px) {
+    .smrt-content-contributions-route__root {
+      padding: 1rem 0.85rem 2rem;
+    }
+    .smrt-content-contributions-route__header {
+      margin-bottom: 1rem;
+    }
+    .smrt-content-contributions-route__header h1 {
+      margin-top: 0.25rem;
+    }
+    .smrt-content-contributions-route__callout,
+    .smrt-content-contributions-route__panel {
+      padding: 1rem;
+    }
+    .smrt-content-contributions-route__callout-chips {
+      display: none;
+    }
+    .smrt-content-contributions-route__callout-header {
+      gap: 0.5rem;
+      align-items: center;
+    }
+    .smrt-content-contributions-route__pill {
+      min-height: 1.7rem;
+      min-width: 0;
+      padding: 0 0.65rem;
+    }
+    .smrt-content-contributions-route__section-heading {
+      gap: 0.75rem;
+      margin-bottom: 0.85rem;
+    }
+  }
+}
+
+@layer smrt.theme {
+  :global(body:has(.smrt-content-contributions-route__root:not(.smrt-content-contributions-route__page--embedded))) {
     font-family:
       var(--smrt-font-family, 'Inter', -apple-system, BlinkMacSystemFont,
       'Segoe UI', Roboto, sans-serif);
@@ -531,74 +692,23 @@ async function handleDeleteContributor(data: Partial<ContentContributorData>) {
       ),
       var(--smrt-color-background);
     color: var(--smrt-color-on-background);
-    min-height: 100vh;
   }
-
-  .page {
-    min-height: 100vh;
-    padding: 2rem 1.25rem 3rem;
-  }
-
-  .page--embedded {
-    min-height: auto;
-    padding: 0;
-  }
-
-  .container {
-    max-width: 1400px;
-    margin: 0 auto;
-  }
-
-  .page-header {
-    margin-bottom: 1.5rem;
-  }
-
-  .page-header .container {
-    display: flex;
-    justify-content: space-between;
-    gap: 1rem;
-    align-items: flex-start;
-    flex-wrap: wrap;
-  }
-
-  .page-header__copy {
-    max-width: 56rem;
-  }
-
-  .eyebrow {
+  .smrt-content-contributions-route__eyebrow {
     color: var(--smrt-color-on-surface-variant);
     text-transform: uppercase;
     letter-spacing: var(--smrt-typography-label-medium-tracking, 0.08em);
     font-size: var(--smrt-typography-label-medium-size, 0.78rem);
     font-weight: var(--smrt-typography-weight-bold, 700);
   }
-
-  .page-header h1 {
-    margin: 0.35rem 0 0.65rem;
+  .smrt-content-contributions-route__header h1 {
     font-size: clamp(2rem, 5vw, 3rem);
     line-height: 1.05;
   }
-
-  .page-header p {
-    margin: 0;
+  .smrt-content-contributions-route__header p {
     color: var(--smrt-color-on-surface-variant);
     font-size: var(--smrt-typography-body-large-size, 1rem);
-    max-width: 52rem;
   }
-
-  .page-nav {
-    display: flex;
-    gap: 0.75rem;
-    flex-wrap: wrap;
-    align-items: center;
-  }
-
-  .page-nav a {
-    display: inline-flex;
-    align-items: center;
-    justify-content: center;
-    min-height: 2.5rem;
-    padding: 0 1rem;
+  .smrt-content-contributions-route__nav a {
     border-radius: var(--smrt-radius-full);
     border: var(--smrt-hairline);
     background: color-mix(
@@ -610,8 +720,7 @@ async function handleDeleteContributor(data: Partial<ContentContributorData>) {
     text-decoration: none;
     font-weight: var(--smrt-typography-weight-semibold, 600);
   }
-
-  .page-nav a[aria-current='page'] {
+  .smrt-content-contributions-route__nav a[aria-current='page'] {
     color: var(--smrt-color-primary);
     border-color: color-mix(
       in srgb,
@@ -624,14 +733,8 @@ async function handleDeleteContributor(data: Partial<ContentContributorData>) {
       var(--smrt-color-surface)
     );
   }
-
-  .page-main {
-    display: grid;
-    gap: 1rem;
-  }
-
-  .callout,
-  .panel {
+  .smrt-content-contributions-route__callout,
+  .smrt-content-contributions-route__panel {
     border: var(--smrt-hairline);
     background: color-mix(
       in srgb,
@@ -640,47 +743,18 @@ async function handleDeleteContributor(data: Partial<ContentContributorData>) {
     );
     box-shadow: var(--smrt-elevation-1, 0 8px 24px rgba(15, 23, 42, 0.05));
     border-radius: 1rem;
-    padding: 1.25rem;
   }
-
-  .panel--error {
+  .smrt-content-contributions-route__panel--error {
     border-color: color-mix(in srgb, var(--smrt-color-error) 30%, transparent);
   }
-
-  .panel--notice {
+  .smrt-content-contributions-route__panel--notice {
     border-color: color-mix(in srgb, var(--smrt-color-primary) 30%, transparent);
   }
-
-  .callout {
-    display: grid;
-    gap: 0.8rem;
-  }
-
-  .callout__header {
-    display: flex;
-    gap: 1rem;
-    justify-content: space-between;
-    align-items: flex-start;
-    flex-wrap: wrap;
-  }
-
-  .callout__header p,
-  .callout__note {
-    margin: 0;
+  .smrt-content-contributions-route__callout-header p,
+  .smrt-content-contributions-route__callout-note {
     color: var(--smrt-color-on-surface-variant);
   }
-
-  .callout__chips {
-    display: flex;
-    gap: 0.6rem;
-    flex-wrap: wrap;
-  }
-
-  .callout__chips span {
-    display: inline-flex;
-    align-items: center;
-    min-height: 2rem;
-    padding: 0 0.8rem;
+  .smrt-content-contributions-route__callout-chips span {
     border-radius: var(--smrt-radius-full);
     background: color-mix(
       in srgb,
@@ -691,8 +765,7 @@ async function handleDeleteContributor(data: Partial<ContentContributorData>) {
     font-size: var(--smrt-typography-label-large-size, 0.83rem);
     font-weight: var(--smrt-typography-weight-semibold, 600);
   }
-
-  .callout code {
+  .smrt-content-contributions-route__callout code {
     font-family: var(
       --smrt-font-family-mono,
       'JetBrains Mono', ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas,
@@ -700,47 +773,16 @@ async function handleDeleteContributor(data: Partial<ContentContributorData>) {
     );
     font-size: 0.9em;
   }
-
-  .qa-grid {
-    display: grid;
-    gap: 1rem;
-  }
-
-  .section-heading {
-    display: flex;
-    gap: 1rem;
-    justify-content: space-between;
-    align-items: flex-start;
-    margin-bottom: 1rem;
-    flex-wrap: wrap;
-  }
-
-  .section-heading h2 {
-    margin: 0 0 0.25rem;
-  }
-
-  .section-heading p {
-    margin: 0;
+  .smrt-content-contributions-route__section-heading p {
     color: var(--smrt-color-on-surface-variant);
   }
-
-  .inline-form-shell :global(.inline-form) {
-    display: flex;
-    gap: 0.5rem;
-    flex-wrap: wrap;
-    align-items: center;
-  }
-
-  .inline-form-shell :global([data-smrt-component="Input"]) {
-    min-width: min(22rem, 100%);
-    padding: 0.7rem 0.85rem;
+  .smrt-content-contributions-route__form-shell :global([data-smrt-component="Input"]) {
     border-radius: 0.75rem;
     border: var(--smrt-hairline);
     background: var(--smrt-color-surface);
     color: var(--smrt-color-on-surface);
   }
-
-  .inline-form-shell :global(.load-button) {
+  .smrt-content-contributions-route__form-shell :global(.load-button) {
     border-radius: var(--smrt-radius-full);
     border: 1px solid color-mix(
       in srgb,
@@ -750,16 +792,8 @@ async function handleDeleteContributor(data: Partial<ContentContributorData>) {
     background: transparent;
     color: var(--smrt-color-primary);
     font-weight: var(--smrt-typography-weight-semibold, 600);
-    padding: 0.65rem 0.95rem;
-    cursor: pointer;
   }
-
-  .pill {
-    display: inline-flex;
-    align-items: center;
-    justify-content: center;
-    min-width: 2rem;
-    min-height: 2rem;
+  .smrt-content-contributions-route__pill {
     border-radius: var(--smrt-radius-full);
     background: color-mix(
       in srgb,
@@ -768,61 +802,24 @@ async function handleDeleteContributor(data: Partial<ContentContributorData>) {
     );
     color: var(--smrt-color-primary);
     font-weight: var(--smrt-typography-weight-bold, 700);
-    padding: 0 0.8rem;
   }
-
-  @media (min-width: 1024px) {
-    .qa-grid {
-      grid-template-columns: repeat(2, minmax(0, 1fr));
-    }
-  }
-
   @media (max-width: 720px) {
-    .page {
-      padding: 1rem 0.85rem 2rem;
-    }
-
-    .page-header {
-      margin-bottom: 1rem;
-    }
-
-    .page-header h1 {
-      margin-top: 0.25rem;
+    .smrt-content-contributions-route__header h1 {
       font-size: clamp(1.6rem, 9vw, 2.2rem);
     }
-
-    .callout,
-    .panel {
-      padding: 1rem;
+    .smrt-content-contributions-route__callout,
+    .smrt-content-contributions-route__panel {
       border-radius: 0.85rem;
     }
-
-    .callout__chips {
-      display: none;
-    }
-
-    .callout__header {
-      gap: 0.5rem;
-      align-items: center;
-    }
-
-    .callout__header p,
-    .callout__note {
+    .smrt-content-contributions-route__callout-header p,
+    .smrt-content-contributions-route__callout-note {
       font-size: var(--smrt-typography-body-medium-size, 0.82rem);
       line-height: var(--smrt-typography-body-medium-line-height, 1.5);
     }
-
-    .pill {
-      min-height: 1.7rem;
-      min-width: 0;
-      padding: 0 0.65rem;
+    .smrt-content-contributions-route__pill {
       font-size: var(--smrt-typography-label-medium-size, 0.78rem);
-    }
-
-    .section-heading {
-      gap: 0.75rem;
-      margin-bottom: 0.85rem;
     }
   }
 }
+
 </style>

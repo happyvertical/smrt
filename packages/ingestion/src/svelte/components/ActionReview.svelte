@@ -263,7 +263,7 @@ function choose(field: string, id: string) {
 {#if action.origin === 'reviewer-selected'}<p>{t(M['ingestion.reviewerSelected'])}</p>{/if}
 <p data-testid="review-state">{t(M['ingestion.state'])}: {stateKey ? t(M[stateKey]) : action.review.state}</p>
 {#if action.args !== undefined}
-<h4>{t(M['ingestion.effects'])}</h4>{#if effects.length}<dl class="effects" data-testid="effects">{#each effects as [name, value] (name)}<dt>{name}</dt><dd>{value}</dd>{/each}</dl>{/if}
+<h4>{t(M['ingestion.effects'])}</h4>{#if effects.length}<dl class="smrt-action-review__effects" data-smrt-part="group" data-testid="effects">{#each effects as [name, value] (name)}<dt>{name}</dt><dd>{value}</dd>{/each}</dl>{/if}
 <ArgumentFields bind:value={args} label={t(M['ingestion.args'])} catalog={fields} {candidates} {evidence} readonly={!editable || !!action.plan} {host} {itemId} {deny} />
 {#if editable}
 {#if missing.length}<h4>{t(M['ingestion.missing'])}</h4><ul>{#each missing as name (name)}<li>{name}</li>{/each}</ul>{/if}
@@ -271,7 +271,7 @@ function choose(field: string, id: string) {
 {#if !action.plan && catalog && !drawsFields}<CandidatePicker {host} {itemId} {catalog} {deny} onchoose={choose} />{/if}
 {#if dirty}<p>{t(M['ingestion.reviewAgain'])}</p>{/if}
 {#if invalid}<p role="alert">{t(M['ingestion.invalid'])}</p>{/if}
-<div class="controls">{#if waiting && !resolved}<Button disabled={dirty} onclick={() => decide('approve')}>{t(M['ingestion.approve'])}</Button>{/if}{#if !action.plan && !resolved}<Button disabled={!dirty} onclick={saveEdits}>{t(M['ingestion.correct'])}</Button>{/if}{#if waiting}<Button onclick={() => decide('reject')}>{t(M['ingestion.reject'])}</Button>{#if !resolved}<Button onclick={() => decide('defer')}>{t(M['ingestion.defer'])}</Button>{/if}{/if}</div>
+<div class="smrt-action-review__controls" data-smrt-part="actions">{#if waiting && !resolved}<Button disabled={dirty} onclick={() => decide('approve')}>{t(M['ingestion.approve'])}</Button>{/if}{#if !action.plan && !resolved}<Button disabled={!dirty} onclick={saveEdits}>{t(M['ingestion.correct'])}</Button>{/if}{#if waiting}<Button onclick={() => decide('reject')}>{t(M['ingestion.reject'])}</Button>{#if !resolved}<Button onclick={() => decide('defer')}>{t(M['ingestion.defer'])}</Button>{/if}{/if}</div>
 {/if}
 {#if action.plan?.stepIndex === 0 && action.plan.args && host.editPlan && planEditable && !resolved}
 <Textarea aria-label={t(M['ingestion.planArgs'])} bind:value={planArgs} rows={8} />
@@ -298,7 +298,44 @@ function choose(field: string, id: string) {
 </article>
 <style>
 @layer smrt.reset, smrt.structure, smrt.theme;
-@layer smrt.theme {
-article{min-width:0;overflow-wrap:anywhere;border-block-start:var(--smrt-hairline);padding-block:1rem}.controls{display:flex;flex-wrap:wrap;gap:.5rem;margin-block:.75rem}pre{white-space:pre-wrap;overflow-wrap:anywhere}fieldset{margin-block:1rem;min-width:0}.effects{display:grid;grid-template-columns:minmax(0,max-content) minmax(0,1fr);gap:.25rem 1rem;margin-block:.5rem}.effects dt{font-weight:600}.effects dd{margin:0}
+@layer smrt.structure {
+  article {
+    min-width:0;
+    overflow-wrap:anywhere;
+    padding-block:1rem;
+  }
+  .smrt-action-review__controls {
+    display:flex;
+    flex-wrap:wrap;
+    gap:.5rem;
+    margin-block:.75rem;
+  }
+  pre {
+    white-space:pre-wrap;
+    overflow-wrap:anywhere;
+  }
+  fieldset {
+    margin-block:1rem;
+    min-width:0;
+  }
+  .smrt-action-review__effects {
+    display:grid;
+    grid-template-columns:minmax(0,max-content) minmax(0,1fr);
+    gap:.25rem 1rem;
+    margin-block:.5rem;
+  }
+  .smrt-action-review__effects dd {
+    margin:0;
+  }
 }
+
+@layer smrt.theme {
+  article {
+    border-block-start:var(--smrt-hairline);
+  }
+  .smrt-action-review__effects dt {
+    font-weight:600;
+  }
+}
+
 </style>

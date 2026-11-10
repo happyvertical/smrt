@@ -304,8 +304,8 @@ useControlRegistration(() => {
 <div
   bind:this={rootEl}
   id={resolvedId}
-  class="signature-pad {className}"
-  class:disabled
+  class="smrt-signature-pad__root {className}"
+  class:smrt-signature-pad__disabled={disabled}
   role="group"
   aria-label={text.region}
   data-state={padState}
@@ -329,14 +329,15 @@ useControlRegistration(() => {
     onpointercancel={endStroke}
   ></canvas>
 
-  <p id={hintId} class="hint">{stylusOnly ? text.hintStylus : text.hintAny}</p>
-  <p class="message" role="status">{padState === 'committed' ? text.committed : ''}</p>
+  <p id={hintId} class="smrt-signature-pad__hint" data-smrt-part="description">{stylusOnly ? text.hintStylus : text.hintAny}</p>
+  <p class="smrt-signature-pad__message" data-smrt-part="message" role="status">{padState === 'committed' ? text.committed : ''}</p>
 
-  <div class="actions">
-    <button type="button" class="action" onclick={clear} {disabled}>{text.clear}</button>
+  <div class="smrt-signature-pad__actions" data-smrt-part="actions">
+    <button type="button" class="smrt-signature-pad__action" data-smrt-part="action" onclick={clear} {disabled}>{text.clear}</button>
     <button
       type="button"
-      class="action primary"
+      class="smrt-signature-pad__action smrt-signature-pad__primary"
+      data-smrt-part="action"
       onclick={accept}
       disabled={disabled || encoding || padState !== 'signed'}
     >
@@ -347,7 +348,7 @@ useControlRegistration(() => {
   {#if name}
     <input
       bind:this={fieldEl}
-      class="field"
+      class="smrt-signature-pad__field"
       type="file"
       hidden
       tabindex="-1"
@@ -359,81 +360,95 @@ useControlRegistration(() => {
 
 <style>
 @layer smrt.reset, smrt.structure, smrt.theme;
-@layer smrt.theme {
-  .signature-pad {
+@layer smrt.structure {
+  .smrt-signature-pad__root {
     display: grid;
     gap: var(--smrt-spacing-3);
     width: 100%;
     max-width: 40rem;
-    color: var(--smrt-color-on-surface);
   }
   canvas {
     display: block;
     width: 100%;
     height: auto;
-    border: 2px solid var(--smrt-color-outline);
-    border-radius: var(--smrt-radius-medium);
     cursor: crosshair;
     touch-action: none;
   }
-  .disabled canvas,
+  .smrt-signature-pad__disabled canvas,
   [data-state='committed'] canvas {
     cursor: default;
   }
-  .disabled canvas {
-    opacity: 0.5;
-  }
-  .hint,
-  .message {
+  .smrt-signature-pad__hint,
+  .smrt-signature-pad__message {
     margin: 0;
   }
-  .hint {
-    font: var(--smrt-typography-body-medium-font);
-    color: var(--smrt-color-on-surface-variant);
-  }
-  .message {
-    font: var(--smrt-typography-body-large-font);
-  }
-  .message:empty,
-  .field {
+  .smrt-signature-pad__message:empty,
+  .smrt-signature-pad__field {
     display: none;
   }
-  .actions {
+  .smrt-signature-pad__actions {
     display: flex;
     flex-wrap: wrap;
     gap: var(--smrt-spacing-3);
   }
-  .action {
+  .smrt-signature-pad__action {
     flex: 1 1 auto;
     /* Capture is a touch flow: its actions are touch targets at every
-       density, on the shared scale (smrt#3252). */
+    density, on the shared scale (smrt#3252). */
     min-width: var(--smrt-touch-target-min);
     min-height: var(--smrt-touch-target-min);
     padding: 0 var(--smrt-spacing-4);
+    cursor: pointer;
+  }
+  .smrt-signature-pad__action.smrt-signature-pad__primary {
+    flex-grow: 2;
+  }
+  .smrt-signature-pad__action:disabled {
+    cursor: not-allowed;
+  }
+}
+
+@layer smrt.theme {
+  .smrt-signature-pad__root {
+    color: var(--smrt-color-on-surface);
+  }
+  canvas {
+    border: 2px solid var(--smrt-color-outline);
+    border-radius: var(--smrt-radius-medium);
+  }
+  .smrt-signature-pad__disabled canvas {
+    opacity: 0.5;
+  }
+  .smrt-signature-pad__hint {
+    font: var(--smrt-typography-body-medium-font);
+    color: var(--smrt-color-on-surface-variant);
+  }
+  .smrt-signature-pad__message {
+    font: var(--smrt-typography-body-large-font);
+  }
+  .smrt-signature-pad__action {
     border: var(--smrt-hairline-strong);
     border-radius: var(--smrt-radius-small);
     background: var(--smrt-color-surface);
     color: var(--smrt-color-on-surface);
     font: var(--smrt-typography-label-large-font);
-    cursor: pointer;
   }
-  .action.primary {
-    flex-grow: 2;
+  .smrt-signature-pad__action.smrt-signature-pad__primary {
     border-color: var(--smrt-color-primary);
     background: var(--smrt-color-primary);
     color: var(--smrt-color-on-primary);
   }
-  .action:focus-visible {
+  .smrt-signature-pad__action:focus-visible {
     outline: var(--smrt-focus-ring-width) solid var(--smrt-focus-ring-color);
     outline-offset: var(--smrt-focus-ring-offset);
   }
-  .action:disabled {
+  .smrt-signature-pad__action:disabled {
     opacity: 0.5;
-    cursor: not-allowed;
   }
-  :global(.signature-pad[data-smrt-highlighted='true']) {
+  :global(.smrt-signature-pad__root[data-smrt-highlighted='true']) {
     outline: 3px solid var(--smrt-color-tertiary);
     outline-offset: 4px;
   }
 }
+
 </style>

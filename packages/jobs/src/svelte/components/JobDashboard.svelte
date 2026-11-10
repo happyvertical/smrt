@@ -49,18 +49,18 @@ let {
 }: Props = $props();
 </script>
 
-<div class="job-dashboard" class:loading data-smrt-component="JobDashboard">
+<div class="smrt-job-dashboard__root" class:smrt-job-dashboard__loading={loading} data-smrt-component="JobDashboard">
   <!-- Stats Overview -->
-  <section class="job-dashboard__section">
+  <section class="smrt-job-dashboard__section" data-smrt-part="group">
     <JobStatsSummary {stats} {queues} {loading} />
   </section>
 
-  <div class="job-dashboard__panels">
+  <div class="smrt-job-dashboard__panels" data-smrt-part="group">
     <!-- Recent Jobs -->
-    <section class="job-dashboard__section">
+    <section class="smrt-job-dashboard__section" data-smrt-part="group">
       <Card>
         {#snippet header()}
-          <div class="panel-header">
+          <div class="smrt-job-dashboard__header" data-smrt-part="header">
             <h2>{t(M['jobs.job_dashboard.recent_jobs'])}</h2>
             {#if onViewAll}
               <Button variant="ghost" size="sm" onclick={onViewAll}>{t(M['jobs.job_dashboard.view_all'])}</Button>
@@ -75,7 +75,7 @@ let {
           {onJobClick}
         >
           {#snippet empty()}
-            <p class="empty-message">{t(M['jobs.job_dashboard.no_recent_jobs'])}</p>
+            <p class="smrt-job-dashboard__empty-message" data-smrt-part="empty">{t(M['jobs.job_dashboard.no_recent_jobs'])}</p>
           {/snippet}
         </JobList>
       </Card>
@@ -83,10 +83,10 @@ let {
 
     <!-- Failed Jobs -->
     {#if failedJobs.length > 0 || stats.failed > 0}
-      <section class="job-dashboard__section">
+      <section class="smrt-job-dashboard__section" data-smrt-part="group">
         <Card>
           {#snippet header()}
-            <div class="panel-header panel-header--error">
+            <div class="smrt-job-dashboard__header smrt-job-dashboard__header-error" data-smrt-part="header">
               <h2>{t(M['jobs.job_dashboard.failed_jobs'])}</h2>
               {#if onViewFailed}
                 <Button variant="ghost" size="sm" onclick={onViewFailed}>
@@ -105,7 +105,7 @@ let {
             {onCancel}
           >
             {#snippet empty()}
-              <p class="empty-message empty-message--success">
+              <p class="smrt-job-dashboard__empty-message smrt-job-dashboard__empty-message-success" data-smrt-part="empty">
                 {t(M['jobs.job_dashboard.no_failed_jobs'])}
               </p>
             {/snippet}
@@ -118,64 +118,64 @@ let {
 
 <style>
 @layer smrt.reset, smrt.structure, smrt.theme;
-@layer smrt.theme {
-  .job-dashboard {
+@layer smrt.structure {
+  .smrt-job-dashboard__root {
     width: 100%;
     display: flex;
     flex-direction: column;
     gap: var(--smrt-spacing-lg, 1.5rem);
   }
-
-  .job-dashboard.loading {
-    opacity: 0.7;
-    pointer-events: none;
-  }
-
-  @media (prefers-reduced-motion: reduce) {
-    .job-dashboard.loading {
-      transition: none;
-    }
-  }
-
-  .job-dashboard__section {
+  .smrt-job-dashboard__section {
     width: 100%;
   }
-
-  .job-dashboard__panels {
+  .smrt-job-dashboard__panels {
     display: grid;
     grid-template-columns: repeat(auto-fit, minmax(400px, 1fr));
     gap: var(--smrt-spacing-lg, 1.5rem);
   }
-
   @media (max-width: 900px) {
-    .job-dashboard__panels {
+    .smrt-job-dashboard__panels {
       grid-template-columns: 1fr;
     }
   }
-
-  .panel-header {
+  .smrt-job-dashboard__header {
     display: flex;
     justify-content: space-between;
     align-items: center;
   }
-
-  .panel-header h2 {
+  .smrt-job-dashboard__header h2 {
     margin: 0;
+  }
+  .smrt-job-dashboard__empty-message {
+    padding: var(--smrt-spacing-md, 1rem);
+  }
+  .smrt-job-dashboard__root.smrt-job-dashboard__loading {
+    pointer-events: none;
+  }
+}
+
+@layer smrt.theme {
+  .smrt-job-dashboard__root.smrt-job-dashboard__loading {
+    opacity: 0.7;
+  }
+  @media (prefers-reduced-motion: reduce) {
+    .smrt-job-dashboard__root.smrt-job-dashboard__loading {
+      transition: none;
+    }
+  }
+  .smrt-job-dashboard__header h2 {
     font: var(--smrt-typography-title-medium-font, 600 1rem / 1.5 sans-serif);
   }
-
-  .panel-header--error h2 {
+  .smrt-job-dashboard__header-error h2 {
     color: var(--smrt-color-error);
   }
-
-  .empty-message {
-    padding: var(--smrt-spacing-md, 1rem);
+  .smrt-job-dashboard__empty-message {
     text-align: center;
     color: var(--smrt-color-on-surface-variant);
   }
-
-  .empty-message--success {
+  .smrt-job-dashboard__empty-message-success {
     color: var(--smrt-color-tertiary);
   }
 }
+
 </style>

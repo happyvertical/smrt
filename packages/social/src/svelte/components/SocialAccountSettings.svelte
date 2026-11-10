@@ -40,8 +40,8 @@ function statusLabel(account: SocialAccountSettingsItem): string {
 }
 </script>
 
-<section class="social-settings" data-smrt-component="SocialAccountSettings">
-  <header class="toolbar">
+<section class="smrt-social-account-settings__root" data-smrt-component="SocialAccountSettings">
+  <header class="smrt-social-account-settings__toolbar" data-smrt-part="header">
     <div>
       <h2>{t(M['social.account_settings.heading'])}</h2>
       <p>{accounts.length === 1 ? t(M['social.account_settings.configured_one'], { count: accounts.length }) : t(M['social.account_settings.configured_other'], { count: accounts.length })}</p>
@@ -52,7 +52,7 @@ function statusLabel(account: SocialAccountSettingsItem): string {
   </header>
 
   {#if !readonly}
-    <div class="connect-row" aria-label={t(M['social.account_settings.connect_aria'])}>
+    <div class="smrt-social-account-settings__connect" data-smrt-part="actions" aria-label={t(M['social.account_settings.connect_aria'])}>
       {#each platforms as item}
         {#if connectHrefs[item.platform]}
           <Button variant="primary" href={connectHrefs[item.platform]}>{item.label}</Button>
@@ -64,15 +64,15 @@ function statusLabel(account: SocialAccountSettingsItem): string {
   {/if}
 
   {#if loading}
-    <div class="empty">{t(M['social.account_settings.loading'])}</div>
+    <div class="smrt-social-account-settings__empty" data-smrt-part="empty">{t(M['social.account_settings.loading'])}</div>
   {:else if accounts.length === 0}
-    <div class="empty">{t(M['social.account_settings.empty'])}</div>
+    <div class="smrt-social-account-settings__empty" data-smrt-part="empty">{t(M['social.account_settings.empty'])}</div>
   {:else}
-    <div class="account-list">
+    <div class="smrt-social-account-settings__list" data-smrt-part="list">
       {#each accounts as account (account.id)}
-        <article class="account-row" data-status={account.status}>
-          <div class="account-main">
-            <div class="account-title">
+        <article class="smrt-social-account-settings__row" data-smrt-part="row" data-status={account.status}>
+          <div class="smrt-social-account-settings__main" data-smrt-part="body">
+            <div class="smrt-social-account-settings__title" data-smrt-part="title">
               <h3>{account.name}</h3>
               <span>{account.platform}</span>
             </div>
@@ -86,12 +86,12 @@ function statusLabel(account: SocialAccountSettingsItem): string {
               </p>
             {/if}
             {#if account.missingPermissions?.length}
-              <p class="warning">Missing: {account.missingPermissions.join(', ')}</p>
+              <p class="smrt-social-account-settings__warning" data-smrt-part="description">Missing: {account.missingPermissions.join(', ')}</p>
             {/if}
           </div>
 
-          <div class="account-actions">
-            <span class:attention={account.needsAttention} class="status">{statusLabel(account)}</span>
+          <div class="smrt-social-account-settings__actions" data-smrt-part="actions">
+            <span class:smrt-social-account-settings__attention={account.needsAttention} class="smrt-social-account-settings__status" data-smrt-part="badge">{statusLabel(account)}</span>
             {#if account.platformUrl}
               <Button variant="secondary" href={account.platformUrl} target="_blank" rel="noreferrer">Open</Button>
             {/if}
@@ -110,105 +110,101 @@ function statusLabel(account: SocialAccountSettingsItem): string {
 
 <style>
 @layer smrt.reset, smrt.structure, smrt.theme;
-@layer smrt.theme {
-  .social-settings {
+@layer smrt.structure {
+  .smrt-social-account-settings__root {
     display: grid;
     gap: 1rem;
   }
-
-  .toolbar,
-  .account-row {
+  .smrt-social-account-settings__toolbar,
+  .smrt-social-account-settings__row {
     display: flex;
     align-items: flex-start;
     justify-content: space-between;
     gap: 1rem;
   }
-
   h2,
   h3,
   p {
     margin: 0;
   }
-
-  h2 {
-    font-size: var(--smrt-typography-title-medium-size, 1.1rem);
-    color: var(--smrt-color-on-surface);
-  }
-
-  h3 {
-    font-size: var(--smrt-typography-title-medium-size, 0.95rem);
-    color: var(--smrt-color-on-surface);
-  }
-
-  p {
-    color: var(--smrt-color-on-surface-variant);
-    font-size: var(--smrt-typography-body-medium-size, 0.85rem);
-  }
-
-  .connect-row {
+  .smrt-social-account-settings__connect {
     display: flex;
     flex-wrap: wrap;
     gap: 0.5rem;
   }
-
-  .account-list {
+  .smrt-social-account-settings__list {
     display: grid;
     gap: 0.75rem;
   }
-
-  .account-row {
-    border: var(--smrt-hairline);
-    border-radius: var(--smrt-radius-md);
-    background: var(--smrt-color-surface);
+  .smrt-social-account-settings__row {
     padding: 1rem;
   }
-
-  .account-title {
+  .smrt-social-account-settings__title {
     display: flex;
     align-items: center;
     gap: 0.5rem;
   }
-
-  .account-title span,
-  .status {
-    border-radius: var(--smrt-radius-full);
-    background: var(--smrt-color-surface-container);
-    color: var(--smrt-color-on-surface-variant);
-    font-size: var(--smrt-typography-label-medium-size, 0.75rem);
+  .smrt-social-account-settings__title span,
+  .smrt-social-account-settings__status {
     padding: 0.15rem 0.5rem;
-    text-transform: capitalize;
   }
-
-  .status.attention,
-  .warning {
-    color: var(--smrt-color-error);
-  }
-
-  .account-actions {
+  .smrt-social-account-settings__actions {
     display: flex;
     align-items: center;
     justify-content: flex-end;
     flex-wrap: wrap;
     gap: 0.5rem;
   }
-
-  .empty {
-    border: 1px dashed var(--smrt-color-outline-variant);
-    border-radius: var(--smrt-radius-md);
-    color: var(--smrt-color-on-surface-variant);
+  .smrt-social-account-settings__empty {
     padding: 1.25rem;
-    text-align: center;
   }
-
   @media (max-width: 720px) {
-    .toolbar,
-    .account-row {
+    .smrt-social-account-settings__toolbar,
+    .smrt-social-account-settings__row {
       display: grid;
     }
-
-    .account-actions {
+    .smrt-social-account-settings__actions {
       justify-content: flex-start;
     }
   }
 }
+
+@layer smrt.theme {
+  h2 {
+    font-size: var(--smrt-typography-title-medium-size, 1.1rem);
+    color: var(--smrt-color-on-surface);
+  }
+  h3 {
+    font-size: var(--smrt-typography-title-medium-size, 0.95rem);
+    color: var(--smrt-color-on-surface);
+  }
+  p {
+    color: var(--smrt-color-on-surface-variant);
+    font-size: var(--smrt-typography-body-medium-size, 0.85rem);
+  }
+  .smrt-social-account-settings__row {
+    border: var(--smrt-hairline);
+    border-radius: var(--smrt-radius-md);
+    background: var(--smrt-color-surface);
+  }
+  .smrt-social-account-settings__title span,
+  .smrt-social-account-settings__status {
+    border-radius: var(--smrt-radius-full);
+    background: var(--smrt-color-surface-container);
+    color: var(--smrt-color-on-surface-variant);
+    font-size: var(--smrt-typography-label-medium-size, 0.75rem);
+    text-transform: capitalize;
+  }
+  .smrt-social-account-settings__status.smrt-social-account-settings__attention,
+  .smrt-social-account-settings__warning {
+    color: var(--smrt-color-error);
+  }
+  .smrt-social-account-settings__empty {
+    border: 1px dashed var(--smrt-color-outline-variant);
+    border-radius: var(--smrt-radius-md);
+    color: var(--smrt-color-on-surface-variant);
+    text-align: center;
+  }
+}
+
 </style>

@@ -25,7 +25,7 @@ describe('StatusBadge', () => {
     const badge = screen.getByTestId('badge');
     expect(badge.getAttribute('data-value')).toBe('awaiting_cert');
     expect(badge.getAttribute('aria-describedby')).toBe('why');
-    expect(badge.classList.contains('status-badge')).toBe(true);
+    expect(badge.classList.contains('smrt-status-badge__root')).toBe(true);
     expect(badge.getAttribute('data-smrt-component')).toBe('StatusBadge');
   });
 
@@ -80,7 +80,10 @@ describe('StatusBadge', () => {
     expect(span.style.getPropertyValue('--smrt-badge-bg')).toBe(
       'var(--smrt-color-success-container)',
     );
-    expect(span).toHaveClass('outline', 'sm');
+    expect(span).toHaveClass(
+      'smrt-status-badge__outline',
+      'smrt-status-badge__sm',
+    );
     expect(screen.getByText('Reviewed')).toBeInTheDocument();
     await rerender({ status: 'overdue', type: 'invoice', tone: 'warning' });
     expect(span.style.getPropertyValue('--smrt-badge-bg')).toBe(
@@ -139,12 +142,14 @@ describe('StatusBadge', () => {
 
   it('always carries the base status-badge class', () => {
     const { container } = render(StatusBadge, { props: { status: 'active' } });
-    expect(container.querySelector('span')).toHaveClass('status-badge');
+    expect(container.querySelector('span')).toHaveClass(
+      'smrt-status-badge__root',
+    );
   });
 
   it.each([
-    ['sm', 'sm'],
-    ['lg', 'lg'],
+    ['sm', 'smrt-status-badge__sm'],
+    ['lg', 'smrt-status-badge__lg'],
   ] as const)('applies the %s size class', (size, cls) => {
     const { container } = render(StatusBadge, {
       props: { status: 'active', size },
@@ -155,15 +160,17 @@ describe('StatusBadge', () => {
   it('omits a size class for the default md size', () => {
     const { container } = render(StatusBadge, { props: { status: 'active' } });
     const span = container.querySelector('span');
-    expect(span).not.toHaveClass('sm');
-    expect(span).not.toHaveClass('lg');
+    expect(span).not.toHaveClass('smrt-status-badge__sm');
+    expect(span).not.toHaveClass('smrt-status-badge__lg');
   });
 
   it('applies the outline class for the outline variant', () => {
     const { container } = render(StatusBadge, {
       props: { status: 'active', variant: 'outline' },
     });
-    expect(container.querySelector('span')).toHaveClass('outline');
+    expect(container.querySelector('span')).toHaveClass(
+      'smrt-status-badge__outline',
+    );
   });
 
   it('maps a known status to its scheme colors via CSS custom properties', () => {
@@ -249,7 +256,11 @@ describe('StatusBadge', () => {
     render(StatusBadge, {
       props: { status: 'ok', case: 'as-is', 'data-testid': 'b' } as never,
     });
-    expect(screen.getByTestId('a').classList.contains('as-is')).toBe(false);
-    expect(screen.getByTestId('b').classList.contains('as-is')).toBe(true);
+    expect(
+      screen.getByTestId('a').classList.contains('smrt-status-badge__as-is'),
+    ).toBe(false);
+    expect(
+      screen.getByTestId('b').classList.contains('smrt-status-badge__as-is'),
+    ).toBe(true);
   });
 });

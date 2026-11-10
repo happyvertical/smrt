@@ -263,7 +263,7 @@ describe('ContentList presentations', () => {
   it('renders grid cards by default', () => {
     const target = renderList();
 
-    expect(target.querySelectorAll('.content-card')).toHaveLength(2);
+    expect(target.querySelectorAll('.smrt-content-list__card')).toHaveLength(2);
     expect(rowTitles(target)).toEqual([
       'Council budget explained',
       'Zoning appendix',
@@ -273,8 +273,8 @@ describe('ContentList presentations', () => {
   it('renders the detailed rows when seeded with the detailed mode', () => {
     const target = renderList({ defaultViewMode: 'detailed' });
 
-    expect(target.querySelectorAll('.content-row')).toHaveLength(2);
-    expect(target.querySelector('.content-card')).toBeNull();
+    expect(target.querySelectorAll('.smrt-content-list__row')).toHaveLength(2);
+    expect(target.querySelector('.smrt-content-list__card')).toBeNull();
   });
 
   it('renders the compact mode as a semantic table with column headers', () => {
@@ -2123,7 +2123,9 @@ describe('ContentList callbacks', () => {
         content.status === 'published' ? `/articles/${content.id}` : null,
     });
 
-    const viewLinks = Array.from(target.querySelectorAll('a.view-btn'));
+    const viewLinks = Array.from(
+      target.querySelectorAll('a.smrt-content-list__view-btn'),
+    );
     expect(viewLinks).toHaveLength(1);
     expect(viewLinks[0].getAttribute('href')).toBe('/articles/content-1');
   });
@@ -2138,7 +2140,7 @@ describe('ContentList callbacks', () => {
     });
 
     expect(target.textContent).toContain('Odd content');
-    expect(target.querySelector('a.title-link')).toBeNull();
+    expect(target.querySelector('a.smrt-content-list__title-link')).toBeNull();
     expect(target.querySelector('tbody strong')?.textContent).toBe(
       'Odd content',
     );
@@ -2146,7 +2148,9 @@ describe('ContentList callbacks', () => {
 
   it('renders the passed controls snippet host actions', () => {
     const target = renderList();
-    expect(target.querySelector('.search-filters')).toBeTruthy();
+    expect(
+      target.querySelector('.smrt-content-list__search-filters'),
+    ).toBeTruthy();
   });
 });
 
@@ -2157,7 +2161,7 @@ describe('ContentList async states', () => {
 
     const alert = target.querySelector('[role="alert"]');
     expect(alert?.textContent).toContain('Network unavailable');
-    expect(target.querySelector('.content-card')).toBeNull();
+    expect(target.querySelector('.smrt-content-list__card')).toBeNull();
 
     click(buttonsByText(target, 'Retry')[0]);
     expect(onRetry).toHaveBeenCalled();
@@ -2610,8 +2614,8 @@ describe('ContentList data surface', () => {
       flushSync();
       expect(
         first
-          .querySelector('.content-list-wrapper')
-          ?.classList.contains('data-surface-highlighted'),
+          .querySelector('.smrt-content-list__root')
+          ?.classList.contains('smrt-content-list__surface-highlighted'),
       ).toBe(true);
 
       vi.advanceTimersByTime(100);
@@ -2631,16 +2635,16 @@ describe('ContentList data surface', () => {
       flushSync();
       expect(
         replacement
-          .querySelector('.content-list-wrapper')
-          ?.classList.contains('data-surface-highlighted'),
+          .querySelector('.smrt-content-list__root')
+          ?.classList.contains('smrt-content-list__surface-highlighted'),
       ).toBe(true);
 
       vi.advanceTimersByTime(100);
       flushSync();
       expect(
         replacement
-          .querySelector('.content-list-wrapper')
-          ?.classList.contains('data-surface-highlighted'),
+          .querySelector('.smrt-content-list__root')
+          ?.classList.contains('smrt-content-list__surface-highlighted'),
       ).toBe(false);
     } finally {
       vi.useRealTimers();
@@ -3136,9 +3140,11 @@ describe('ContentList empty results', () => {
 
     typeText(searchInput(target), 'no-such-content');
 
-    expect(target.querySelector('.empty-state')?.textContent?.trim()).toBe(
-      'No contents match your filters.',
-    );
+    expect(
+      target
+        .querySelector('.smrt-content-list__empty-state')
+        ?.textContent?.trim(),
+    ).toBe('No contents match your filters.');
     expect(target.querySelector('table')).toBeNull();
   });
 });
@@ -3187,7 +3193,7 @@ describe('ContentList paging and refreshing in the card presentations', () => {
     const status = target.querySelector('[role="status"]');
     expect(status?.textContent?.trim()).toBe('Refreshing contents...');
     expect(status?.getAttribute('aria-live')).toBe('polite');
-    expect(target.querySelectorAll('.content-card')).toHaveLength(2);
+    expect(target.querySelectorAll('.smrt-content-list__card')).toHaveLength(2);
   });
 
   it('keeps the initial-load panel when no rows are available yet', () => {
@@ -3481,7 +3487,7 @@ describe('ContentList URL state (#2452)', () => {
       urlState: { params: 'legacyScore.gt=5' },
     });
 
-    const notice = target.querySelector('.state-notice');
+    const notice = target.querySelector('.smrt-content-list__state-notice');
     expect(notice?.textContent).toContain(
       'Part of this view could not be applied',
     );
@@ -3489,7 +3495,7 @@ describe('ContentList URL state (#2452)', () => {
     expect(notice?.textContent).toContain('that column no longer exists');
 
     click(buttonsByText(target, 'Dismiss')[0]);
-    expect(target.querySelector('.state-notice')).toBeNull();
+    expect(target.querySelector('.smrt-content-list__state-notice')).toBeNull();
   });
 
   it('lets the `type` prop lock win over a restored type filter', () => {
@@ -3621,7 +3627,7 @@ describe('ContentList saved views (#2452)', () => {
     expect(searchInput(target).value).toBe('zoning');
     expect(rowTitles(target)).toEqual(['Zoning appendix']);
     // And the stale column was reported rather than silently discarded.
-    const notice = target.querySelector('.state-notice');
+    const notice = target.querySelector('.smrt-content-list__state-notice');
     expect(notice?.textContent).toContain('legacyScore');
   });
 
@@ -3706,7 +3712,7 @@ describePaging(
 
       // Page controls render, so the other three rows are reachable.
       expect(paginationNav(target)).toBeTruthy();
-      const notice = target.querySelector('.state-notice');
+      const notice = target.querySelector('.smrt-content-list__state-notice');
       expect(notice?.textContent).toContain(
         'an unpaginated list is not available from the server',
       );
@@ -3746,7 +3752,9 @@ describePaging(
 
       expect(paginationNav(target)).toBeTruthy();
       // Nothing was refused, so the operator is not told anything.
-      expect(target.querySelector('.state-notice')).toBeNull();
+      expect(
+        target.querySelector('.smrt-content-list__state-notice'),
+      ).toBeNull();
     });
 
     it('omits `size` from a published link while at the default', () => {
@@ -3780,7 +3788,9 @@ describePaging(
 
       expect(visibleRowTitles(target)).toHaveLength(2);
       expect(paginationNav(target)).toBeNull();
-      expect(target.querySelector('.state-notice')).toBeNull();
+      expect(
+        target.querySelector('.smrt-content-list__state-notice'),
+      ).toBeNull();
     });
   },
 );
@@ -3800,7 +3810,7 @@ describe('ContentList server completeness reporting (#2452)', () => {
     typeText(searchInput(target), 'budget');
     await settle();
 
-    const notice = target.querySelector('.state-notice');
+    const notice = target.querySelector('.smrt-content-list__state-notice');
     expect(notice?.textContent).toContain(
       'The server shortened this answer to fit its size limit',
     );
@@ -3834,7 +3844,7 @@ describe('ContentList server completeness reporting (#2452)', () => {
     };
     const target = renderList({ query: { bind: () => binding } });
 
-    const notice = target.querySelector('.state-notice');
+    const notice = target.querySelector('.smrt-content-list__state-notice');
     expect(notice?.textContent).toContain('shortened over-long values');
   });
 
@@ -3843,7 +3853,7 @@ describe('ContentList server completeness reporting (#2452)', () => {
     const target = renderList({ query: { bind: () => query.binding } });
     query.resolve([serverRow('content-1', 'Council budget explained')]);
     flushSync();
-    expect(target.querySelector('.state-notice')).toBeNull();
+    expect(target.querySelector('.smrt-content-list__state-notice')).toBeNull();
 
     query.publishLive([serverRow('content-1', 'Council budget updated')], {
       truncated: true,
@@ -3851,9 +3861,9 @@ describe('ContentList server completeness reporting (#2452)', () => {
     });
     flushSync();
 
-    expect(target.querySelector('.state-notice')?.textContent).toContain(
-      'live result was shortened',
-    );
+    expect(
+      target.querySelector('.smrt-content-list__state-notice')?.textContent,
+    ).toContain('live result was shortened');
   });
 
   it('says nothing when the answer was complete', async () => {
@@ -3863,7 +3873,7 @@ describe('ContentList server completeness reporting (#2452)', () => {
     typeText(searchInput(target), 'budget');
     await settle();
 
-    expect(target.querySelector('.state-notice')).toBeNull();
+    expect(target.querySelector('.smrt-content-list__state-notice')).toBeNull();
   });
 });
 
@@ -3918,9 +3928,9 @@ describePaging('ContentList restore limits (#2452)', (render) => {
       offset: 0,
       limit: 25,
     });
-    expect(target.querySelector('.state-notice')?.textContent).toContain(
-      'that value was outside the allowed range',
-    );
+    expect(
+      target.querySelector('.smrt-content-list__state-notice')?.textContent,
+    ).toContain('that value was outside the allowed range');
   });
 });
 
@@ -3960,7 +3970,7 @@ describe('ContentList page-size ceiling (#2452 batch 2)', () => {
     expect(oversized.ok).toBe(false);
     const limit = requestLimit(query.requests.at(-1));
     expect(limit).toBe(10);
-    expect(target.querySelector('.state-notice')).toBeNull();
+    expect(target.querySelector('.smrt-content-list__state-notice')).toBeNull();
 
     const unreachablePage = await registry.execute({
       version: 1,
@@ -3990,7 +4000,7 @@ describe('ContentList page-size ceiling (#2452 batch 2)', () => {
     expect((query.requests[0].page as { limit: number }).limit).toBe(200);
     // The seed itself is clamped, so a mis-configured host does not get a
     // spurious "outside the allowed range" notice on first paint.
-    expect(target.querySelector('.state-notice')).toBeNull();
+    expect(target.querySelector('.smrt-content-list__state-notice')).toBeNull();
 
     query.resolve([serverRow('a', 'Alpha')], 201);
     flushSync();
@@ -4079,9 +4089,9 @@ describe('ContentList retry refreshes the completeness notice (#2452 batch 2)', 
     query.setEnvelope({ truncated: true, warnings: ['rows were dropped'] });
     typeText(searchInput(target), 'budget');
     await settle();
-    expect(target.querySelector('.state-notice')?.textContent).toContain(
-      'rows were dropped',
-    );
+    expect(
+      target.querySelector('.smrt-content-list__state-notice')?.textContent,
+    ).toContain('rows were dropped');
 
     // The retry answers completely; the notice must not outlive the rows it
     // described. The query signature is unchanged, so only the retry path can.
@@ -4092,7 +4102,7 @@ describe('ContentList retry refreshes the completeness notice (#2452 batch 2)', 
     await settle();
 
     expect(query.retries).toBe(1);
-    expect(target.querySelector('.state-notice')).toBeNull();
+    expect(target.querySelector('.smrt-content-list__state-notice')).toBeNull();
   });
 
   it('raises a notice when a retry comes back truncated', async () => {
@@ -4101,7 +4111,7 @@ describe('ContentList retry refreshes the completeness notice (#2452 batch 2)', 
     query.setEnvelope({ truncated: false, warnings: [] });
     typeText(searchInput(target), 'budget');
     await settle();
-    expect(target.querySelector('.state-notice')).toBeNull();
+    expect(target.querySelector('.smrt-content-list__state-notice')).toBeNull();
 
     query.setEnvelope({ truncated: true, warnings: [] });
     query.fail(new Error('transient'));
@@ -4109,9 +4119,9 @@ describe('ContentList retry refreshes the completeness notice (#2452 batch 2)', 
     click(buttonsByText(target, 'Retry')[0]);
     await settle();
 
-    expect(target.querySelector('.state-notice')?.textContent).toContain(
-      'The server shortened this answer',
-    );
+    expect(
+      target.querySelector('.smrt-content-list__state-notice')?.textContent,
+    ).toContain('The server shortened this answer');
   });
 });
 
@@ -4250,7 +4260,7 @@ describePaging(
       const page = query.requests.at(-1)?.page as { offset: number };
       expect(page.offset).toBeLessThanOrEqual(1_000_000);
       // The redirect survives the corrective re-translation that follows it.
-      const notice = target.querySelector('.state-notice');
+      const notice = target.querySelector('.smrt-content-list__state-notice');
       expect(notice?.textContent).toContain('page 9000 cannot be loaded');
       expect(notice?.textContent).toContain('the list stops at page 5001');
     });
@@ -4263,7 +4273,9 @@ describePaging(
       });
       query.resolve([serverRow('a', 'Alpha')], 2_000_000);
       flushSync();
-      expect(target.querySelector('.state-notice')).not.toBeNull();
+      expect(
+        target.querySelector('.smrt-content-list__state-notice'),
+      ).not.toBeNull();
 
       // Moved through the pager the operator actually sees, which now renders in
       // every presentation rather than only in the card modes.
@@ -4272,7 +4284,9 @@ describePaging(
       ).find((button) => button.textContent?.trim() === '1');
       click(first as HTMLButtonElement);
 
-      expect(target.querySelector('.state-notice')).toBeNull();
+      expect(
+        target.querySelector('.smrt-content-list__state-notice'),
+      ).toBeNull();
     });
 
     it('keeps a restored page when the compact table mounts', () => {
@@ -4380,7 +4394,7 @@ describe('ContentList toolbar vocabulary (#2452 batch 4)', () => {
     expect(select.value).toBe('review');
     expect(select.selectedIndex).toBeGreaterThanOrEqual(0);
     // Nothing was refused, so nothing is reported.
-    expect(target.querySelector('.state-notice')).toBeNull();
+    expect(target.querySelector('.smrt-content-list__state-notice')).toBeNull();
   });
 
   it('shows AND reports a status token the vocabulary does not cover', () => {
@@ -4392,7 +4406,9 @@ describe('ContentList toolbar vocabulary (#2452 batch 4)', () => {
     expect(optionValues(select)).toContain('embargoed');
     // … and the operator is told why it is empty.
     expect(rowTitles(target)).toEqual([]);
-    expect(target.querySelector('.state-notice')?.textContent).toContain(
+    expect(
+      target.querySelector('.smrt-content-list__state-notice')?.textContent,
+    ).toContain(
       'filtered by "embargoed", which is not one of the listed options',
     );
   });
@@ -4403,7 +4419,9 @@ describe('ContentList toolbar vocabulary (#2452 batch 4)', () => {
     const select = selectByLabel(target, 'Filter by type');
     expect(select.value).toBe('artcile');
     expect(rowTitles(target)).toEqual([]);
-    expect(target.querySelector('.state-notice')?.textContent).toContain(
+    expect(
+      target.querySelector('.smrt-content-list__state-notice')?.textContent,
+    ).toContain(
       'filtered by "artcile", which is not one of the listed options',
     );
   });
@@ -4413,7 +4431,7 @@ describe('ContentList toolbar vocabulary (#2452 batch 4)', () => {
     expect(
       target.querySelector('select[aria-label="Filter by type"]'),
     ).toBeNull();
-    expect(target.querySelector('.state-notice')).toBeNull();
+    expect(target.querySelector('.smrt-content-list__state-notice')).toBeNull();
   });
 });
 
@@ -4614,9 +4632,9 @@ describe('ContentList toolbar never misstates the live predicate', () => {
         )?.disabled,
       ).toBe(true);
       // … and the operator is told.
-      expect(target.querySelector('.state-notice')?.textContent).toContain(
-        testCase.detail,
-      );
+      expect(
+        target.querySelector('.smrt-content-list__state-notice')?.textContent,
+      ).toContain(testCase.detail);
     });
   }
 
@@ -4627,9 +4645,9 @@ describe('ContentList toolbar never misstates the live predicate', () => {
     const select = selectByLabel(target, 'Filter by type');
 
     expect(select.value).not.toBe('article');
-    expect(target.querySelector('.state-notice')?.textContent).toContain(
-      'notEquals article',
-    );
+    expect(
+      target.querySelector('.smrt-content-list__state-notice')?.textContent,
+    ).toContain('notEquals article');
   });
 
   it('reports two filters on one column, which a single select cannot show', () => {
@@ -4637,9 +4655,9 @@ describe('ContentList toolbar never misstates the live predicate', () => {
       urlState: { params: 'status=draft&status.notEquals=archived' },
     });
     expect(selectByLabel(target, 'Filter by status').value).not.toBe('draft');
-    expect(target.querySelector('.state-notice')?.textContent).toContain(
-      'equals draft; notEquals archived',
-    );
+    expect(
+      target.querySelector('.smrt-content-list__state-notice')?.textContent,
+    ).toContain('equals draft; notEquals archived');
   });
 
   it('lets the operator replace an unrepresentable filter from the select', () => {
@@ -4648,7 +4666,9 @@ describe('ContentList toolbar never misstates the live predicate', () => {
       query: { bind: () => query.binding },
       urlState: { params: 'status.in=draft,review' },
     });
-    expect(target.querySelector('.state-notice')).not.toBeNull();
+    expect(
+      target.querySelector('.smrt-content-list__state-notice'),
+    ).not.toBeNull();
 
     selectOption(selectByLabel(target, 'Filter by status'), 'published');
 
@@ -4656,13 +4676,13 @@ describe('ContentList toolbar never misstates the live predicate', () => {
     const filter = JSON.stringify(query.requests.at(-1)?.filter);
     expect(filter).toContain('"published"');
     expect(filter).not.toContain('"draft"');
-    expect(target.querySelector('.state-notice')).toBeNull();
+    expect(target.querySelector('.smrt-content-list__state-notice')).toBeNull();
   });
 
   it('stays silent for a plain, representable, in-vocabulary filter', () => {
     const target = renderList({ urlState: { params: 'status=draft' } });
     expect(selectByLabel(target, 'Filter by status').value).toBe('draft');
-    expect(target.querySelector('.state-notice')).toBeNull();
+    expect(target.querySelector('.smrt-content-list__state-notice')).toBeNull();
   });
 
   it('says nothing about a locked type, which renders no select', () => {
@@ -4673,7 +4693,7 @@ describe('ContentList toolbar never misstates the live predicate', () => {
     expect(
       target.querySelector('select[aria-label="Filter by type"]'),
     ).toBeNull();
-    expect(target.querySelector('.state-notice')).toBeNull();
+    expect(target.querySelector('.smrt-content-list__state-notice')).toBeNull();
   });
 });
 
@@ -4760,9 +4780,9 @@ describe('the unrepresentable-option sentinel survives HTML parsing', () => {
     expect(select.value).toBe(CONTENT_LIST_UNREPRESENTABLE_OPTION);
     // Enabled, i.e. the representable path — not the disabled summary.
     expect(selected?.disabled).toBe(false);
-    expect(target.querySelector('.state-notice')?.textContent).toContain(
-      'is not one of the listed options',
-    );
+    expect(
+      target.querySelector('.smrt-content-list__state-notice')?.textContent,
+    ).toContain('is not one of the listed options');
   });
 });
 

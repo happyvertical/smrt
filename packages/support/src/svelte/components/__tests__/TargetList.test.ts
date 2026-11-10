@@ -68,7 +68,7 @@ describe('TargetList', () => {
       },
     });
     expect(
-      screen.getByText('paused', { selector: '.target-list-paused' }),
+      screen.getByText('paused', { selector: '.smrt-target-list__paused' }),
     ).toBeInTheDocument();
     expect(screen.getByText('cycle 2')).toBeInTheDocument();
     await expectNoA11yViolations(container);

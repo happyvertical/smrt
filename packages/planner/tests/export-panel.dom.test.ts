@@ -99,7 +99,7 @@ describe('the export panel', () => {
       'Copy prompt',
       'Copy command',
     ]);
-    const build = target.querySelector('.build-step');
+    const build = target.querySelector('.smrt-export-panel__build-step');
     const cards = [...target.querySelectorAll('[data-smrt-component="Card"]')];
     expect(build?.textContent).toContain('Build your app');
     expect(cards).toHaveLength(2);

@@ -259,20 +259,20 @@ onDestroy(() => surfaceRegistration?.cleanup());
 
 <div
   bind:this={toolbarElement}
-  class="toolbar {className}"
-  class:toolbar--highlighted={surfaceHighlighted}
+  class="smrt-collection-toolbar__root {className}"
+  class:smrt-collection-toolbar__highlighted={surfaceHighlighted}
   role="search"
   tabindex="-1" data-smrt-component="CollectionToolbar"
   data-density={density}
 >
-  <div class="search">
+  <div class="smrt-collection-toolbar__search" data-smrt-part="search">
     <Input type="search" name="collection-search" {density} aria-label={searchLabel} placeholder={searchPlaceholder} value={controllerState?.search ?? search} oninput={(event) => changeSearch(event.currentTarget.value)} />
   </div>
-  {#if filters}<div class="filters">{@render filters()}</div>{/if}
-  {#if resultCount !== undefined}<span class="count" aria-live="polite">{resultCount} {resultCount === 1 ? 'result' : 'results'}</span>{/if}
-  <span class="spacer"></span>
-  {#if selectedCount > 0 && bulkActions}<div class="bulk"><span>{selectedCount} selected</span>{@render bulkActions()}</div>{/if}
-  {#if actions}<div class="actions">{@render actions()}</div>{/if}
+  {#if filters}<div class="smrt-collection-toolbar__filters" data-smrt-part="filters">{@render filters()}</div>{/if}
+  {#if resultCount !== undefined}<span class="smrt-collection-toolbar__count" data-smrt-part="count" aria-live="polite">{resultCount} {resultCount === 1 ? 'result' : 'results'}</span>{/if}
+  <span class="smrt-collection-toolbar__spacer" data-smrt-part="spacer"></span>
+  {#if selectedCount > 0 && bulkActions}<div class="smrt-collection-toolbar__bulk" data-smrt-part="actions"><span>{selectedCount} selected</span>{@render bulkActions()}</div>{/if}
+  {#if actions}<div class="smrt-collection-toolbar__actions" data-smrt-part="actions">{@render actions()}</div>{/if}
   {#if viewOptions.length > 1}
     <SegmentedControl label="View" {density} options={viewOptions} value={view} interaction={false} onvaluechange={changeView} />
   {/if}
@@ -280,16 +280,55 @@ onDestroy(() => surfaceRegistration?.cleanup());
 
 <style>
 @layer smrt.reset, smrt.structure, smrt.theme;
-@layer smrt.theme {
-  .toolbar { display: flex; flex-wrap: wrap; align-items: center; gap: var(--smrt-spacing-2); padding: var(--smrt-spacing-2) 0; color: var(--smrt-color-on-surface); }
-  .toolbar--highlighted { outline: var(--smrt-focus-ring-width) solid var(--smrt-focus-ring-color); outline-offset: var(--smrt-focus-ring-offset); }
-  .search { flex: 1 1 14rem; max-width: 24rem; }
-  .filters, .actions, .bulk { display: flex; align-items: center; gap: var(--smrt-spacing-2); }
-  .bulk { padding: var(--smrt-spacing-1) var(--smrt-spacing-2); border-radius: var(--smrt-radius-small); background: var(--smrt-color-secondary-container); color: var(--smrt-color-on-secondary-container); }
-  .count { color: var(--smrt-color-on-surface-variant); font: var(--smrt-typography-label-medium-font); }
-  .spacer { flex: 1; }
+@layer smrt.structure {
+  .smrt-collection-toolbar__root {
+    display: flex;
+    flex-wrap: wrap;
+    align-items: center;
+    gap: var(--smrt-spacing-2);
+    padding: var(--smrt-spacing-2) 0;
+  }
+  .smrt-collection-toolbar__search {
+    flex: 1 1 14rem;
+    max-width: 24rem;
+  }
+  .smrt-collection-toolbar__filters, .smrt-collection-toolbar__actions, .smrt-collection-toolbar__bulk {
+    display: flex;
+    align-items: center;
+    gap: var(--smrt-spacing-2);
+  }
+  .smrt-collection-toolbar__bulk {
+    padding: var(--smrt-spacing-1) var(--smrt-spacing-2);
+  }
+  .smrt-collection-toolbar__spacer {
+    flex: 1;
+  }
   /* Controls a host renders in the filters/actions snippets inherit it too. */
-  .toolbar[data-density='touch'] { --smrt-control-target-min: var(--smrt-touch-target-min); }
-  .toolbar[data-density='comfortable'] { --smrt-control-target-min: calc(var(--smrt-touch-target-min) * 0); }
+  .smrt-collection-toolbar__root[data-density='touch'] {
+    --smrt-control-target-min: var(--smrt-touch-target-min);
+  }
+  .smrt-collection-toolbar__root[data-density='comfortable'] {
+    --smrt-control-target-min: calc(var(--smrt-touch-target-min) * 0);
+  }
 }
+
+@layer smrt.theme {
+  .smrt-collection-toolbar__root {
+    color: var(--smrt-color-on-surface);
+  }
+  .smrt-collection-toolbar__highlighted {
+    outline: var(--smrt-focus-ring-width) solid var(--smrt-focus-ring-color);
+    outline-offset: var(--smrt-focus-ring-offset);
+  }
+  .smrt-collection-toolbar__bulk {
+    border-radius: var(--smrt-radius-small);
+    background: var(--smrt-color-secondary-container);
+    color: var(--smrt-color-on-secondary-container);
+  }
+  .smrt-collection-toolbar__count {
+    color: var(--smrt-color-on-surface-variant);
+    font: var(--smrt-typography-label-medium-font);
+  }
+}
+
 </style>

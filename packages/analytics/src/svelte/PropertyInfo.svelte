@@ -47,102 +47,109 @@ const lastSyncFormatted = $derived.by(() => {
 });
 </script>
 
-<div class="property-info" data-smrt-component="PropertyInfo">
-	<div class="property-header">
+<div class="smrt-property-info__root" data-smrt-component="PropertyInfo">
+	<div class="smrt-property-info__header" data-smrt-part="header">
 		<h3>{t(M['analytics.property_info.title'])}</h3>
 		<PropertyStatusBadge {status} />
 	</div>
 
 	{#if propertyId}
-		<dl class="property-details">
-			<div class="detail-row">
+		<dl class="smrt-property-info__details" data-smrt-part="body">
+			<div class="smrt-property-info__row" data-smrt-part="row">
 				<dt>Provider</dt>
 				<dd>{providerLabel}</dd>
 			</div>
 			{#if measurementId}
-				<div class="detail-row">
+				<div class="smrt-property-info__row" data-smrt-part="row">
 					<dt>{t(M['analytics.property_info.measurement_id'])}</dt>
 					<dd><code>{measurementId}</code></dd>
 				</div>
 			{/if}
 			{#if siteDomain}
-				<div class="detail-row">
+				<div class="smrt-property-info__row" data-smrt-part="row">
 					<dt>Domain</dt>
 					<dd>{siteDomain}</dd>
 				</div>
 			{/if}
-			<div class="detail-row">
+			<div class="smrt-property-info__row" data-smrt-part="row">
 				<dt>{t(M['analytics.property_info.last_synced'])}</dt>
 				<dd>{lastSyncFormatted}</dd>
 			</div>
 		</dl>
 	{:else}
-		<p class="no-property">{t(M['analytics.property_info.no_property'])}</p>
+		<p class="smrt-property-info__empty" data-smrt-part="empty">{t(M['analytics.property_info.no_property'])}</p>
 	{/if}
 </div>
 
 <style>
 @layer smrt.reset, smrt.structure, smrt.theme;
-@layer smrt.theme {
-	.property-info {
-		padding: 1rem;
-		background: var(--smrt-color-surface);
-		border: var(--smrt-hairline);
-		border-radius: 0.5rem;
-	}
-
-	.property-header {
-		display: flex;
-		align-items: center;
-		justify-content: space-between;
-		margin-bottom: 0.75rem;
-	}
-
-	.property-header h3 {
-		margin: 0;
-		font-size: var(--smrt-typography-title-medium-size, 1rem);
-		font-weight: var(--smrt-typography-weight-semibold, 600);
-	}
-
-	.property-details {
-		margin: 0;
-	}
-
-	.detail-row {
-		display: flex;
-		justify-content: space-between;
-		padding: 0.375rem 0;
-		border-bottom: var(--smrt-hairline);
-	}
-
-	.detail-row:last-child {
-		border-bottom: none;
-	}
-
-	dt {
-		font-size: var(--smrt-typography-label-large-size, 0.8125rem);
-		color: var(--smrt-color-on-surface-variant);
-	}
-
-	dd {
-		margin: 0;
-		font-size: var(--smrt-typography-body-medium-size, 0.8125rem);
-		font-weight: var(--smrt-typography-weight-medium, 500);
-		color: var(--smrt-color-on-surface);
-	}
-
-	code {
-		font-family: var(--smrt-font-family-mono, monospace);
-		font-size: var(--smrt-typography-body-small-size, 0.75rem);
-		padding: 0.125rem 0.25rem;
-		background: var(--smrt-color-surface-container);
-		border-radius: 0.25rem;
-	}
-
-	.no-property {
-		margin: 0;
-		color: var(--smrt-color-on-surface-variant);
-		font-size: var(--smrt-typography-body-medium-size, 0.875rem);
-	}
+@layer smrt.structure {
+  .smrt-property-info__root {
+    padding: 1rem;
+  }
+  .smrt-property-info__header {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    margin-bottom: 0.75rem;
+  }
+  .smrt-property-info__header h3 {
+    margin: 0;
+  }
+  .smrt-property-info__details {
+    margin: 0;
+  }
+  .smrt-property-info__row {
+    display: flex;
+    justify-content: space-between;
+    padding: 0.375rem 0;
+  }
+  dd {
+    margin: 0;
+  }
+  code {
+    padding: 0.125rem 0.25rem;
+  }
+  .smrt-property-info__empty {
+    margin: 0;
+  }
 }
+
+@layer smrt.theme {
+  .smrt-property-info__root {
+    background: var(--smrt-color-surface);
+    border: var(--smrt-hairline);
+    border-radius: 0.5rem;
+  }
+  .smrt-property-info__header h3 {
+    font-size: var(--smrt-typography-title-medium-size, 1rem);
+    font-weight: var(--smrt-typography-weight-semibold, 600);
+  }
+  .smrt-property-info__row {
+    border-bottom: var(--smrt-hairline);
+  }
+  .smrt-property-info__row:last-child {
+    border-bottom: none;
+  }
+  dt {
+    font-size: var(--smrt-typography-label-large-size, 0.8125rem);
+    color: var(--smrt-color-on-surface-variant);
+  }
+  dd {
+    font-size: var(--smrt-typography-body-medium-size, 0.8125rem);
+    font-weight: var(--smrt-typography-weight-medium, 500);
+    color: var(--smrt-color-on-surface);
+  }
+  code {
+    font-family: var(--smrt-font-family-mono, monospace);
+    font-size: var(--smrt-typography-body-small-size, 0.75rem);
+    background: var(--smrt-color-surface-container);
+    border-radius: 0.25rem;
+  }
+  .smrt-property-info__empty {
+    color: var(--smrt-color-on-surface-variant);
+    font-size: var(--smrt-typography-body-medium-size, 0.875rem);
+  }
+}
+
 </style>

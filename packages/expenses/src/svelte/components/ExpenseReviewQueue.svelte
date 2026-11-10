@@ -20,12 +20,12 @@ let {
 const { t } = useI18n();
 const id = $props.id();
 </script>
-<section class="queue" aria-label={t(M['expenses.queue.title'])} data-smrt-component="ExpenseReviewQueue">
-  <h2>{t(M['expenses.queue.title'])}</h2>
+<section class="smrt-expense-review-queue__root" aria-label={t(M['expenses.queue.title'])} data-smrt-component="ExpenseReviewQueue">
+  <h2 data-smrt-part="title">{t(M['expenses.queue.title'])}</h2>
   {#if message}<p role="alert">{message}</p>{/if}
-  {#if !expenses.length}<p>{t(M['expenses.queue.empty'])}</p>{/if}
+  {#if !expenses.length}<p data-smrt-part="empty">{t(M['expenses.queue.empty'])}</p>{/if}
   {#each expenses as row, index (row.id)}
-    <article aria-label={row.description}>
+    <article aria-label={row.description} data-smrt-part="row">
       <h3>{row.description}</h3>
       <p><CurrencyDisplay amount={row.amount} currency={row.currency} unit="cents" /> · {row.incurredOn}</p>
       <p>{row.statusLabel}</p>
@@ -38,7 +38,7 @@ const id = $props.id();
           <FormGroup id={`reason-${id}-${index}`} label={t(M['expenses.queue.reason'])}>
             <Textarea name={reasonField} value={row.reason ?? ''} required disabled={row.pending} />
           </FormGroup>
-          <div class="actions">
+          <div class="smrt-expense-review-queue__actions" data-smrt-part="actions">
             <Button type="submit" name={intentField} value={approveIntent} formnovalidate disabled={row.pending}>{t(M['expenses.queue.approve'])}</Button>
             <Button type="submit" name={intentField} value={rejectIntent} disabled={row.pending}>{t(M['expenses.queue.reject'])}</Button>
           </div>
@@ -49,9 +49,24 @@ const id = $props.id();
 </section>
 <style>
 @layer smrt.reset, smrt.structure, smrt.theme;
-@layer smrt.theme {
-  .queue, article { display: grid; gap: var(--smrt-spacing-3); min-width: 0; overflow-wrap: anywhere; }
-  .actions { display: flex; flex-wrap: wrap; gap: var(--smrt-spacing-3); }
-  h2, h3, p { margin: 0; }
+@layer smrt.structure {
+  .smrt-expense-review-queue__root, article {
+    display: grid;
+    gap: var(--smrt-spacing-3);
+    min-width: 0;
+    overflow-wrap: anywhere;
+  }
+  .smrt-expense-review-queue__actions {
+    display: flex;
+    flex-wrap: wrap;
+    gap: var(--smrt-spacing-3);
+  }
+  h2, h3, p {
+    margin: 0;
+  }
 }
+
+@layer smrt.theme {
+}
+
 </style>

@@ -35,17 +35,17 @@ const {
 }: Props = $props();
 </script>
 
-<div class="toolbar" role="toolbar" aria-label={t(M['messages.message_toolbar.actions_label'])} data-smrt-component="MessageToolbar">
-  <div class="selection-info">
+<div class="smrt-message-toolbar__root" role="toolbar" aria-label={t(M['messages.message_toolbar.actions_label'])} data-smrt-component="MessageToolbar">
+  <div class="smrt-message-toolbar__selection" data-smrt-part="control">
     {#if selectedCount > 0}
-      <span class="count">{t(M['messages.message_toolbar.count_selected'], { selectedCount, totalCount })}</span>
+      <span class="smrt-message-toolbar__count" data-smrt-part="count">{t(M['messages.message_toolbar.count_selected'], { selectedCount, totalCount })}</span>
       {#if onclearselection}
         <Button variant="ghost" size="sm" class="link-btn" onclick={onclearselection}>
           Clear
         </Button>
       {/if}
     {:else}
-      <span class="count">{totalCount} messages</span>
+      <span class="smrt-message-toolbar__count" data-smrt-part="count">{totalCount} messages</span>
     {/if}
     {#if onselectall && selectedCount < totalCount}
       <Button variant="ghost" size="sm" class="link-btn" onclick={onselectall}>
@@ -55,7 +55,7 @@ const {
   </div>
 
   {#if selectedCount > 0 && onaction}
-    <div class="actions">
+    <div class="smrt-message-toolbar__actions" data-smrt-part="actions">
       <Button variant="ghost" size="sm" class="action-btn" onclick={() => onaction?.('markRead')}>
         {t(M['messages.message_toolbar.mark_read'])}
       </Button>
@@ -80,69 +80,81 @@ const {
 
 <style>
 @layer smrt.reset, smrt.structure, smrt.theme;
-@layer smrt.theme {
-  .toolbar {
+@layer smrt.structure {
+  .smrt-message-toolbar__root {
     display: flex;
     align-items: center;
     justify-content: space-between;
     padding: 0.5rem 0.75rem;
-    background: var(--smrt-color-surface-variant);
-    border-radius: var(--smrt-radius-small, 0.25rem);
     gap: 1rem;
     flex-wrap: wrap;
   }
-
-  .selection-info {
+  .smrt-message-toolbar__selection {
     display: flex;
     align-items: center;
     gap: 0.5rem;
   }
+  /*
+  * The link and action buttons now render through smrt-ui's <Button
+  * variant="ghost">. The <button> is emitted inside the Button child, so a
+  * plain scoped rule would not match — anchoring on the real `.smrt-message-toolbar__selection`
+  * / `.smrt-message-toolbar__actions` elements and piercing with `:global(...)` keeps the original
+  * text-link / outlined-surface styling (issue #1589). The destructive button's
+  * modifier is `action-btn--danger`, NOT `danger`, so it never collides with
+  * Button's own `.danger` variant class.
+  */
+  .smrt-message-toolbar__selection :global(.link-btn) {
+    padding: 0;
+  }
+  .smrt-message-toolbar__actions {
+    display: flex;
+    gap: 0.375rem;
+    flex-wrap: wrap;
+  }
+  .smrt-message-toolbar__actions :global(.action-btn) {
+    padding: 0.25rem 0.625rem;
+  }
+}
 
-  .count {
+@layer smrt.theme {
+  .smrt-message-toolbar__root {
+    background: var(--smrt-color-surface-variant);
+    border-radius: var(--smrt-radius-small, 0.25rem);
+  }
+  .smrt-message-toolbar__count {
     font: var(--smrt-typography-body-small-font, 0.75rem / 1.33 sans-serif);
     color: var(--smrt-color-on-surface-variant);
   }
-
   /*
-   * The link and action buttons now render through smrt-ui's <Button
-   * variant="ghost">. The <button> is emitted inside the Button child, so a
-   * plain scoped rule would not match — anchoring on the real `.selection-info`
-   * / `.actions` elements and piercing with `:global(...)` keeps the original
-   * text-link / outlined-surface styling (issue #1589). The destructive button's
-   * modifier is `action-btn--danger`, NOT `danger`, so it never collides with
-   * Button's own `.danger` variant class.
-   */
-  .selection-info :global(.link-btn) {
+  * The link and action buttons now render through smrt-ui's <Button
+  * variant="ghost">. The <button> is emitted inside the Button child, so a
+  * plain scoped rule would not match — anchoring on the real `.smrt-message-toolbar__selection`
+  * / `.smrt-message-toolbar__actions` elements and piercing with `:global(...)` keeps the original
+  * text-link / outlined-surface styling (issue #1589). The destructive button's
+  * modifier is `action-btn--danger`, NOT `danger`, so it never collides with
+  * Button's own `.danger` variant class.
+  */
+  .smrt-message-toolbar__selection :global(.link-btn) {
     border: none;
     background: none;
     font: var(--smrt-typography-label-medium-font, 500 0.75rem / 1.33 sans-serif);
     color: var(--smrt-color-primary);
     text-decoration: underline;
-    padding: 0;
   }
-
-  .actions {
-    display: flex;
-    gap: 0.375rem;
-    flex-wrap: wrap;
-  }
-
-  .actions :global(.action-btn) {
-    padding: 0.25rem 0.625rem;
+  .smrt-message-toolbar__actions :global(.action-btn) {
     border: var(--smrt-hairline-strong);
     border-radius: var(--smrt-radius-small, 0.25rem);
     background: var(--smrt-color-surface);
     color: var(--smrt-color-on-surface);
     font: var(--smrt-typography-label-small-font, 500 0.6875rem / 1 sans-serif);
   }
-
-  .actions :global(.action-btn):hover {
+  .smrt-message-toolbar__actions :global(.action-btn):hover {
     background: var(--smrt-color-surface-variant);
   }
-
-  .actions :global(.action-btn--danger) {
+  .smrt-message-toolbar__actions :global(.action-btn--danger) {
     color: var(--smrt-color-error);
     border-color: var(--smrt-color-error);
   }
 }
+
 </style>

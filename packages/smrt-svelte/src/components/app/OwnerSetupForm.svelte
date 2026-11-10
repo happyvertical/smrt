@@ -103,7 +103,8 @@ function enhanceForm(form: HTMLFormElement) {
 
 <style>
 @layer smrt.reset, smrt.structure, smrt.theme;
-@layer smrt.theme {
+
+@layer smrt.structure {
   .smrt-owner-setup {
     display: grid;
     gap: var(--smrt-spacing-5);
@@ -121,7 +122,6 @@ function enhanceForm(form: HTMLFormElement) {
     display: flex;
     align-items: center;
     gap: var(--smrt-spacing-3);
-    color: var(--smrt-color-on-surface);
   }
   .smrt-owner-setup__brand img {
     block-size: var(--smrt-control-target-min);
@@ -139,12 +139,18 @@ function enhanceForm(form: HTMLFormElement) {
   dd {
     margin: 0;
   }
-  dt {
-    color: var(--smrt-color-on-surface-variant);
-  }
   label {
     display: grid;
     gap: var(--smrt-spacing-2);
+  }
+}
+
+@layer smrt.theme {
+  .smrt-owner-setup__brand {
+    color: var(--smrt-color-on-surface);
+  }
+  dt {
+    color: var(--smrt-color-on-surface-variant);
   }
   [role='alert'] {
     color: var(--smrt-color-error);

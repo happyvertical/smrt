@@ -12,13 +12,13 @@ const info = $derived(description?.models[data.model]);
 <svelte:head><title>{info?.label ?? data.model}</title></svelte:head>
 
 {#if description && info}
-  <div class="sh-page">
-    <header class="sh-head">
+  <div class="smrt-app-shell__page">
+    <header class="smrt-app-shell__head">
       <div>
         <h1>{info.label}</h1>
-        <p class="sh-sub">{data.rows.length} {data.rows.length === 1 ? 'record' : 'records'}</p>
+        <p class="smrt-app-shell__sub">{data.rows.length} {data.rows.length === 1 ? 'record' : 'records'}</p>
       </div>
-      <a class="sh-btn sh-btn-primary" href="{modelHref(data.model)}/new">
+      <a class="smrt-app-shell__btn smrt-app-shell__btn-primary" href="{modelHref(data.model)}/new">
         New {info.label.toLowerCase()}
       </a>
     </header>

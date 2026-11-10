@@ -44,7 +44,7 @@ function handleSubmit() {
 }
 </script>
 
-<section class="manager" data-smrt-component="ContentContributorManager">
+<section class="smrt-content-contributor-manager__root" data-smrt-component="ContentContributorManager">
   <header>
     <div>
       <h3>Contributors</h3>
@@ -53,15 +53,15 @@ function handleSubmit() {
     <Button variant="ghost" type="button" onclick={() => (editing = {})}>{t(M['content.contributor_manager.add_contributor'])}</Button>
   </header>
 
-  <div class="layout">
-    <div class="list">
+  <div class="smrt-content-contributor-manager__layout" data-smrt-part="group">
+    <div class="smrt-content-contributor-manager__list" data-smrt-part="list">
       {#each contributors as contributor (contributor.id ?? contributor.email)}
-        <article class="card">
+        <article class="smrt-content-contributor-manager__card" data-smrt-part="item">
           <div>
             <strong>{contributor.name || contributor.email}</strong>
             <div>{contributor.trustLevel || 'standard'}</div>
           </div>
-          <div class="actions">
+          <div class="smrt-content-contributor-manager__actions" data-smrt-part="actions">
             <Button variant="secondary" type="button" onclick={() => (editing = contributor)}>Edit</Button>
             {#if onDelete}
               <Button variant="danger" type="button" onclick={() => onDelete?.(contributor)}>Delete</Button>
@@ -71,7 +71,7 @@ function handleSubmit() {
       {/each}
     </div>
 
-    <div class="editor-shell">
+    <div class="smrt-content-contributor-manager__editor-shell" data-smrt-part="panel">
       <Form
         class="editor"
         onsubmit={(event) => {
@@ -96,7 +96,7 @@ function handleSubmit() {
           </Select>
         </label>
 
-        <div class="actions">
+        <div class="smrt-content-contributor-manager__actions" data-smrt-part="actions">
           <Button variant="primary" type="submit">{t(M['content.contributor_manager.save_contributor'])}</Button>
         </div>
       </Form>
@@ -106,45 +106,47 @@ function handleSubmit() {
 
 <style>
 @layer smrt.reset, smrt.structure, smrt.theme;
-@layer smrt.theme {
-  .manager,
-  .layout,
-  .list,
-  .editor-shell :global(.editor) {
+@layer smrt.structure {
+  .smrt-content-contributor-manager__root,
+  .smrt-content-contributor-manager__layout,
+  .smrt-content-contributor-manager__list,
+  .smrt-content-contributor-manager__editor-shell :global(.editor) {
     display: grid;
     gap: 1rem;
   }
-
-  .layout {
+  .smrt-content-contributor-manager__layout {
     grid-template-columns: minmax(14rem, 20rem) minmax(0, 1fr);
   }
-
-  .card,
-  .editor-shell :global(.editor) {
-    border: var(--smrt-hairline);
-    border-radius: 0.75rem;
+  .smrt-content-contributor-manager__card,
+  .smrt-content-contributor-manager__editor-shell :global(.editor) {
     padding: 0.9rem;
-    background: var(--smrt-color-surface);
   }
-
-  .card,
-  .actions,
+  .smrt-content-contributor-manager__card,
+  .smrt-content-contributor-manager__actions,
   header {
     display: flex;
     justify-content: space-between;
     gap: 0.75rem;
     flex-wrap: wrap;
   }
-
-  .editor-shell label {
+  .smrt-content-contributor-manager__editor-shell label {
     display: grid;
     gap: 0.35rem;
   }
-
   @media (max-width: 720px) {
-    .layout {
+    .smrt-content-contributor-manager__layout {
       grid-template-columns: 1fr;
     }
   }
 }
+
+@layer smrt.theme {
+  .smrt-content-contributor-manager__card,
+  .smrt-content-contributor-manager__editor-shell :global(.editor) {
+    border: var(--smrt-hairline);
+    border-radius: 0.75rem;
+    background: var(--smrt-color-surface);
+  }
+}
+
 </style>

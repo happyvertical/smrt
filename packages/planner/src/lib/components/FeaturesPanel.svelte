@@ -43,8 +43,8 @@ function toggle(id: string, on: boolean) {
 }
 </script>
 
-<div class="features">
-  <p class="meta">
+<div class="smrt-features-panel__root" data-smrt-component="FeaturesPanel">
+  <p class="smrt-features-panel__meta" data-smrt-part="meta">
     Everything s-m-r-t can add to your app. Switch a feature on to add it, with
     what it needs, to your cookbook. Each label says how far it runs in this
     browser-only demo; menu entries appear in the sidebar, while widgets, pages
@@ -62,7 +62,7 @@ function toggle(id: string, on: boolean) {
   />
 
   {#if groups.length > 1}
-    <div class="chips" role="group" aria-label="Browse by group">
+    <div class="smrt-features-panel__chips" data-smrt-part="list" role="group" aria-label="Browse by group">
       <ToggleButton pressed={groupId === null} onclick={() => (groupId = null)}>
         All
       </ToggleButton>
@@ -77,7 +77,7 @@ function toggle(id: string, on: boolean) {
     </div>
   {/if}
 
-  <p class="count" aria-live="polite">
+  <p class="smrt-features-panel__count" data-smrt-part="count" aria-live="polite">
     {results.length} {results.length === 1 ? 'feature' : 'features'}
   </p>
 
@@ -85,9 +85,9 @@ function toggle(id: string, on: boolean) {
     <section aria-labelledby={`group-${section.group.id}`}>
       <h2 id={`group-${section.group.id}`}>{section.group.label}</h2>
       {#if section.group.summary}
-        <p class="meta">{section.group.summary}</p>
+        <p class="smrt-features-panel__meta" data-smrt-part="meta">{section.group.summary}</p>
       {/if}
-      <ul class="cards" aria-label={`${section.group.label} features`}>
+      <ul class="smrt-features-panel__cards" data-smrt-part="list" aria-label={`${section.group.label} features`}>
         {#each section.cards as card (card.id)}
           <FeatureCard
             {card}
@@ -100,9 +100,9 @@ function toggle(id: string, on: boolean) {
       </ul>
     </section>
   {:else}
-    <p class="meta">No features match "{query}".</p>
+    <p class="smrt-features-panel__meta" data-smrt-part="meta">No features match "{query}".</p>
   {/each}
-  <p class="notice meta" role="status" aria-live="polite">{notice}</p>
+  <p class="smrt-features-panel__notice smrt-features-panel__meta" data-smrt-part="status" role="status" aria-live="polite">{notice}</p>
 
   <Disclosure title="Single records">
     <RecordFeatures />
@@ -111,42 +111,28 @@ function toggle(id: string, on: boolean) {
 
 <style>
 @layer smrt.reset, smrt.structure, smrt.theme;
-@layer smrt.theme {
-  .features {
+@layer smrt.structure {
+  .smrt-features-panel__root {
     display: grid;
     gap: var(--smrt-spacing-3);
   }
-
   h2,
   p {
     margin: 0;
   }
-
   section {
     display: grid;
     gap: var(--smrt-spacing-2);
   }
-
-  .meta,
-  .count {
-    color: var(--smrt-color-on-surface-variant);
-  }
-
-  .count {
-    font-size: var(--smrt-typography-body-medium-size);
-  }
-
-  .notice:empty {
+  .smrt-features-panel__notice:empty {
     display: none;
   }
-
-  .chips {
+  .smrt-features-panel__chips {
     display: flex;
     flex-wrap: wrap;
     gap: var(--smrt-spacing-2);
   }
-
-  .cards {
+  .smrt-features-panel__cards {
     display: grid;
     grid-template-columns: repeat(auto-fill, minmax(19rem, 1fr));
     gap: var(--smrt-spacing-3);
@@ -155,4 +141,15 @@ function toggle(id: string, on: boolean) {
     list-style: none;
   }
 }
+
+@layer smrt.theme {
+  .smrt-features-panel__meta,
+  .smrt-features-panel__count {
+    color: var(--smrt-color-on-surface-variant);
+  }
+  .smrt-features-panel__count {
+    font-size: var(--smrt-typography-body-medium-size);
+  }
+}
+
 </style>

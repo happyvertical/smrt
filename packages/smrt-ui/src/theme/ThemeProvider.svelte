@@ -195,16 +195,20 @@ $effect(() => {
 });
 </script>
 
-<div class="smrt-theme-root" class:dark={isDark} style={styleString()} data-theme={resolvedScheme}>
+<div class="smrt-theme-provider__root" class:smrt-theme-provider__dark={isDark} style={styleString()} data-theme={resolvedScheme} data-smrt-component="ThemeProvider">
   {@render children()}
 </div>
 
 <style>
 @layer smrt.reset, smrt.structure, smrt.theme;
-@layer smrt.theme {
-  .smrt-theme-root {
+@layer smrt.structure {
+  .smrt-theme-provider__root {
     /* Ensure theme variables cascade to all children */
     display: contents;
   }
 }
+
+@layer smrt.theme {
+}
+
 </style>

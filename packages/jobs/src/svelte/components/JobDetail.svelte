@@ -46,15 +46,15 @@ const duration = $derived.by(() => {
 const formattedArgs = $derived(JSON.stringify(job.args, null, 2));
 </script>
 
-<div class="job-detail" data-smrt-component="JobDetail">
+<div class="smrt-job-detail__root" data-smrt-component="JobDetail">
   <Card>
     {#snippet header()}
-      <div class="job-detail__header">
-        <div class="job-detail__title">
+      <div class="smrt-job-detail__header" data-smrt-part="header">
+        <div class="smrt-job-detail__title" data-smrt-part="title">
           <h2>{job.objectType}.{job.method}()</h2>
           <JobStatusBadge status={job.status} size="md" />
         </div>
-        <div class="job-detail__actions">
+        <div class="smrt-job-detail__actions" data-smrt-part="actions">
           <JobActions
             {job}
             showDelete={!!onDelete}
@@ -66,12 +66,12 @@ const formattedArgs = $derived(JSON.stringify(job.args, null, 2));
       </div>
     {/snippet}
 
-    <div class="job-detail__content">
-      <div class="job-detail__grid">
+    <div class="smrt-job-detail__content" data-smrt-part="body">
+      <div class="smrt-job-detail__grid" data-smrt-part="grid">
         <!-- Basic Info -->
-        <div class="job-detail__section">
+        <div class="smrt-job-detail__section" data-smrt-part="group">
           <h3>{t(M['jobs.job_detail.job_info'])}</h3>
-          <dl class="job-detail__list">
+          <dl class="smrt-job-detail__list" data-smrt-part="list">
             <dt>ID</dt>
             <dd><code>{job.id}</code></dd>
 
@@ -95,9 +95,9 @@ const formattedArgs = $derived(JSON.stringify(job.args, null, 2));
         </div>
 
         <!-- Timing -->
-        <div class="job-detail__section">
+        <div class="smrt-job-detail__section" data-smrt-part="group">
           <h3>Timing</h3>
-          <dl class="job-detail__list">
+          <dl class="smrt-job-detail__list" data-smrt-part="list">
             <dt>Created</dt>
             <dd>{formatRelativeTime(job.createdAt)}</dd>
 
@@ -125,9 +125,9 @@ const formattedArgs = $derived(JSON.stringify(job.args, null, 2));
         </div>
 
         <!-- Execution -->
-        <div class="job-detail__section">
+        <div class="smrt-job-detail__section" data-smrt-part="group">
           <h3>Execution</h3>
-          <dl class="job-detail__list">
+          <dl class="smrt-job-detail__list" data-smrt-part="list">
             <dt>Attempts</dt>
             <dd>{job.attempts} / {job.maxAttempts}</dd>
 
@@ -145,16 +145,16 @@ const formattedArgs = $derived(JSON.stringify(job.args, null, 2));
       </div>
 
       <!-- Arguments -->
-      <div class="job-detail__section job-detail__section--full">
+      <div class="smrt-job-detail__section smrt-job-detail__section-full" data-smrt-part="group">
         <h3>Arguments</h3>
-        <pre class="job-detail__code">{formattedArgs}</pre>
+        <pre class="smrt-job-detail__code" data-smrt-part="body">{formattedArgs}</pre>
       </div>
 
       <!-- Error -->
       {#if job.lastError}
-        <div class="job-detail__section job-detail__section--full job-detail__section--error">
+        <div class="smrt-job-detail__section smrt-job-detail__section-full smrt-job-detail__section-error" data-smrt-part="group">
           <h3>{t(M['jobs.job_detail.last_error'])}</h3>
-          <pre class="job-detail__code job-detail__code--error">{job.lastError}</pre>
+          <pre class="smrt-job-detail__code smrt-job-detail__code-error" data-smrt-part="body">{job.lastError}</pre>
         </div>
       {/if}
     </div>
@@ -163,97 +163,97 @@ const formattedArgs = $derived(JSON.stringify(job.args, null, 2));
 
 <style>
 @layer smrt.reset, smrt.structure, smrt.theme;
-@layer smrt.theme {
-  .job-detail {
+@layer smrt.structure {
+  .smrt-job-detail__root {
     width: 100%;
   }
-
-  .job-detail__header {
+  .smrt-job-detail__header {
     display: flex;
     justify-content: space-between;
     align-items: center;
     gap: var(--smrt-spacing-md, 1rem);
   }
-
-  .job-detail__title {
+  .smrt-job-detail__title {
     display: flex;
     align-items: center;
     gap: var(--smrt-spacing-md, 1rem);
   }
-
-  .job-detail__title h2 {
+  .smrt-job-detail__title h2 {
     margin: 0;
-    font: var(--smrt-typography-title-large-font, 1.125rem / 1.25 sans-serif);
-    font-family: var(--smrt-font-family-mono, ui-monospace, monospace);
   }
-
-  .job-detail__content {
+  .smrt-job-detail__content {
     padding: var(--smrt-spacing-md, 1rem) 0;
   }
-
-  .job-detail__grid {
+  .smrt-job-detail__grid {
     display: grid;
     grid-template-columns: repeat(auto-fit, minmax(250px, 1fr));
     gap: var(--smrt-spacing-lg, 1.5rem);
     margin-bottom: var(--smrt-spacing-lg, 1.5rem);
   }
-
-  .job-detail__section h3 {
+  .smrt-job-detail__section h3 {
     margin: 0 0 var(--smrt-spacing-sm, 0.5rem) 0;
+  }
+  .smrt-job-detail__section-full {
+    grid-column: 1 / -1;
+  }
+  .smrt-job-detail__list {
+    display: grid;
+    grid-template-columns: auto 1fr;
+    gap: var(--smrt-spacing-xs, 0.25rem) var(--smrt-spacing-md, 1rem);
+    margin: 0;
+  }
+  .smrt-job-detail__list dd {
+    margin: 0;
+  }
+  .smrt-job-detail__list code {
+    padding: 0.125rem 0.375rem;
+  }
+  .smrt-job-detail__code {
+    margin: 0;
+    padding: var(--smrt-spacing-md, 1rem);
+    overflow-x: auto;
+    white-space: pre-wrap;
+    word-break: break-word;
+  }
+}
+
+@layer smrt.theme {
+  .smrt-job-detail__title h2 {
+    font: var(--smrt-typography-title-large-font, 1.125rem / 1.25 sans-serif);
+    font-family: var(--smrt-font-family-mono, ui-monospace, monospace);
+  }
+  .smrt-job-detail__section h3 {
     font-size: var(--smrt-typography-title-small-size, 0.875rem);
     font-weight: var(--smrt-typography-weight-semibold, 600);
     color: var(--smrt-color-on-surface-variant);
     text-transform: uppercase;
     letter-spacing: var(--smrt-typography-title-small-tracking, 0.05em);
   }
-
-  .job-detail__section--full {
-    grid-column: 1 / -1;
-  }
-
-  .job-detail__section--error h3 {
+  .smrt-job-detail__section-error h3 {
     color: var(--smrt-color-error);
   }
-
-  .job-detail__list {
-    display: grid;
-    grid-template-columns: auto 1fr;
-    gap: var(--smrt-spacing-xs, 0.25rem) var(--smrt-spacing-md, 1rem);
-    margin: 0;
-  }
-
-  .job-detail__list dt {
+  .smrt-job-detail__list dt {
     color: var(--smrt-color-on-surface-variant);
     font: var(--smrt-typography-body-medium-font, 0.875rem / 1.25 sans-serif);
   }
-
-  .job-detail__list dd {
-    margin: 0;
+  .smrt-job-detail__list dd {
     font: var(--smrt-typography-body-medium-font, 0.875rem / 1.25 sans-serif);
   }
-
-  .job-detail__list code {
-    padding: 0.125rem 0.375rem;
+  .smrt-job-detail__list code {
     background: var(--smrt-color-surface-container);
     border-radius: var(--smrt-radius-small, 0.25rem);
     font: var(--smrt-typography-body-small-font, 0.75rem / 1.25 sans-serif);
   }
-
-  .job-detail__code {
-    margin: 0;
-    padding: var(--smrt-spacing-md, 1rem);
+  .smrt-job-detail__code {
     background: var(--smrt-color-surface-container);
     border-radius: var(--smrt-radius-medium, 0.5rem);
     font-family: var(--smrt-font-family-mono, ui-monospace, monospace);
     font: var(--smrt-typography-body-medium-font, 0.875rem / 1.25 sans-serif);
-    overflow-x: auto;
-    white-space: pre-wrap;
-    word-break: break-word;
   }
-
-  .job-detail__code--error {
+  .smrt-job-detail__code-error {
     background: var(--smrt-color-error-container);
     color: var(--smrt-color-on-error-container);
   }
 }
+
 </style>

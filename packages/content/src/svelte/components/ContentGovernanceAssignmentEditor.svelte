@@ -100,7 +100,7 @@ function handleSubmit() {
 }
 </script>
 
-<div class="governance-editor-shell" data-smrt-component="ContentGovernanceAssignmentEditor">
+<div class="smrt-content-governance-assignment-editor__root" data-smrt-component="ContentGovernanceAssignmentEditor">
   <Form class="governance-editor" onsubmit={(event) => {
     event.preventDefault();
     handleSubmit();
@@ -145,30 +145,30 @@ function handleSubmit() {
       </Select>
     </label>
 
-    <div class="checkbox-grid">
-      <label class="checkbox">
+    <div class="smrt-content-governance-assignment-editor__checkbox-grid" data-smrt-part="grid">
+      <label class="smrt-content-governance-assignment-editor__checkbox" data-smrt-part="field">
         <!-- raw-primitive-allow: native checkbox; no Provider-free checkbox primitive (Toggle is a switch with different semantics, CheckboxInput requires a Provider) -->
         <input type="checkbox" bind:checked={draft.enabled} />
         Enabled
       </label>
-      <label class="checkbox">
+      <label class="smrt-content-governance-assignment-editor__checkbox" data-smrt-part="field">
         <!-- raw-primitive-allow: native checkbox; no Provider-free checkbox primitive (Toggle is a switch with different semantics, CheckboxInput requires a Provider) -->
         <input type="checkbox" bind:checked={draft.factLinkingEnabled} />
         {t(M['content.governance_assignment_editor.fact_linking'])}
       </label>
-      <label class="checkbox">
+      <label class="smrt-content-governance-assignment-editor__checkbox" data-smrt-part="field">
         <!-- raw-primitive-allow: native checkbox; no Provider-free checkbox primitive (Toggle is a switch with different semantics, CheckboxInput requires a Provider) -->
         <input type="checkbox" bind:checked={draft.transparencyEnabled} />
         Transparency
       </label>
-      <label class="checkbox">
+      <label class="smrt-content-governance-assignment-editor__checkbox" data-smrt-part="field">
         <!-- raw-primitive-allow: native checkbox; no Provider-free checkbox primitive (Toggle is a switch with different semantics, CheckboxInput requires a Provider) -->
         <input type="checkbox" bind:checked={draft.enforcePublishReadiness} />
         {t(M['content.governance_assignment_editor.enforce_publish_readiness'])}
       </label>
     </div>
 
-    <div class="actions">
+    <div class="smrt-content-governance-assignment-editor__actions" data-smrt-part="actions">
       <Button variant="primary" type="submit">{t(M['content.governance_assignment_editor.save_assignment'])}</Button>
       {#if onCancel}
         <Button variant="secondary" type="button" onclick={() => onCancel?.()}>
@@ -181,29 +181,32 @@ function handleSubmit() {
 
 <style>
 @layer smrt.reset, smrt.structure, smrt.theme;
-@layer smrt.theme {
-  .governance-editor-shell :global(.governance-editor) {
+@layer smrt.structure {
+  .smrt-content-governance-assignment-editor__root :global(.governance-editor) {
     display: grid;
     gap: 0.75rem;
   }
-
   label {
     display: grid;
     gap: 0.35rem;
-    font-size: var(--smrt-typography-label-large-size, 0.9rem);
   }
-
-  .checkbox-grid,
-  .actions {
+  .smrt-content-governance-assignment-editor__checkbox-grid,
+  .smrt-content-governance-assignment-editor__actions {
     display: flex;
     gap: 0.75rem;
     flex-wrap: wrap;
   }
-
-  .checkbox {
+  .smrt-content-governance-assignment-editor__checkbox {
     display: flex;
     align-items: center;
     gap: 0.5rem;
   }
 }
+
+@layer smrt.theme {
+  label {
+    font-size: var(--smrt-typography-label-large-size, 0.9rem);
+  }
+}
+
 </style>

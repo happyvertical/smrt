@@ -92,14 +92,14 @@ function getEntryHref(entry: TimeEntry): string | undefined {
 </script>
 
 {#if entries.length === 0}
-  <div class="empty-state" data-smrt-component="TimeEntryList">
+  <div class="smrt-time-entry-list__empty" data-smrt-component="TimeEntryList">
     <p>{emptyMessage}</p>
   </div>
 {:else}
-  <div class="time-entry-list" data-smrt-component="TimeEntryList">
+  <div class="smrt-time-entry-list__root" data-smrt-component="TimeEntryList">
     {#if selectable && selectableEntries.length > 0}
-      <div class="list-header">
-        <label class="select-all">
+      <div class="smrt-time-entry-list__header" data-smrt-part="header">
+        <label class="smrt-time-entry-list__select-all" data-smrt-part="label">
           <!-- raw-primitive-allow: select-all checkbox needs the indeterminate state; must stay native -->
           <input
             type="checkbox"
@@ -110,25 +110,25 @@ function getEntryHref(entry: TimeEntry): string | undefined {
           />
           <span>{t(M['projects.time_entry_list.select_all'])}</span>
         </label>
-        <span class="selection-count">
+        <span class="smrt-time-entry-list__count" data-smrt-part="count">
           {t(M['projects.time_entry_list.selection_count'], { selected: selectedIds.length, total: selectableEntries.length })}
         </span>
       </div>
     {/if}
 
-    <div class="entries">
+    <div class="smrt-time-entry-list__entries" data-smrt-part="list">
       {#each entries as entry (entry.id)}
         {@const isSelected = selectedIds.includes(entry.id)}
         {@const isSelectable = selectable && canSelect(entry)}
         {@const entryHref = getEntryHref(entry)}
         <div
-          class="entry-row"
-          class:selected={isSelected}
-          class:selectable={isSelectable}
-          class:has-checkbox={selectable && selectableEntries.length > 0}
+          class="smrt-time-entry-list__row" data-smrt-part="row"
+          class:smrt-time-entry-list__selected={isSelected}
+          class:smrt-time-entry-list__selectable={isSelectable}
+          class:smrt-time-entry-list__has-checkbox={selectable && selectableEntries.length > 0}
         >
           {#if selectable && selectableEntries.length > 0}
-            <div class="checkbox-cell">
+            <div class="smrt-time-entry-list__cell-checkbox" data-smrt-part="cell">
               {#if isSelectable}
                 <!-- raw-primitive-allow: native row checkbox; no Provider-free checkbox primitive, kept native to match the indeterminate select-all -->
                 <input
@@ -142,11 +142,11 @@ function getEntryHref(entry: TimeEntry): string | undefined {
           {/if}
 
           {#if entryHref}
-            <a href={entryHref} class="entry-content">
+            <a href={entryHref} class="smrt-time-entry-list__content" data-smrt-part="body">
               {@render entryDetails(entry)}
             </a>
           {:else}
-            <div class="entry-content">
+            <div class="smrt-time-entry-list__content" data-smrt-part="body">
               {@render entryDetails(entry)}
             </div>
           {/if}
@@ -157,29 +157,29 @@ function getEntryHref(entry: TimeEntry): string | undefined {
 {/if}
 
 {#snippet entryDetails(entry: TimeEntry)}
-  <div class="date-cell">
+  <div class="smrt-time-entry-list__cell-date" data-smrt-part="cell">
     {formatDate(entry.date)}
   </div>
 
-  <div class="description-cell">
-    <span class="description">{entry.description}</span>
+  <div class="smrt-time-entry-list__cell-description" data-smrt-part="cell">
+    <span class="smrt-time-entry-list__description" data-smrt-part="description">{entry.description}</span>
     {#if entry.workerName}
-      <span class="worker">{entry.workerName}</span>
+      <span class="smrt-time-entry-list__worker" data-smrt-part="meta">{entry.workerName}</span>
     {/if}
   </div>
 
-  <div class="hours-cell">
+  <div class="smrt-time-entry-list__cell-hours" data-smrt-part="cell">
     {hoursFormatter(entry.hours)}
   </div>
 
-  <div class="status-cell">
-    <span class="status-badge" style="--smrt-time-entry-list-status-color: {statusColors[entry.status]}">
+  <div class="smrt-time-entry-list__cell-status" data-smrt-part="cell">
+    <span class="smrt-time-entry-list__status" data-smrt-part="badge" style="--smrt-time-entry-list-status-color: {statusColors[entry.status]}">
       {entry.status}
     </span>
   </div>
 
   {#if entry.amount !== undefined}
-    <div class="amount-cell">
+    <div class="smrt-time-entry-list__cell-amount" data-smrt-part="cell">
       {formatCurrency(entry.amount, currency)}
     </div>
   {/if}
@@ -189,185 +189,194 @@ function getEntryHref(entry: TimeEntry): string | undefined {
 
 <style>
 @layer smrt.reset, smrt.structure, smrt.theme;
-@layer smrt.theme {
-  .empty-state {
+@layer smrt.structure {
+  .smrt-time-entry-list__empty {
     padding: 3rem 1rem;
-    text-align: center;
-    color: var(--smrt-color-on-surface-variant);
   }
-
-  .time-entry-list {
-    background: var(--smrt-color-surface);
-    border-radius: var(--smrt-radius-large);
+  .smrt-time-entry-list__root {
     overflow: hidden;
-    border: var(--smrt-hairline);
   }
-
-  .list-header {
+  .smrt-time-entry-list__header {
     display: flex;
     justify-content: space-between;
     align-items: center;
     padding: 0.75rem 1rem;
-    background: var(--smrt-color-surface-container-low);
-    border-bottom: var(--smrt-hairline);
   }
-
-  .select-all {
+  .smrt-time-entry-list__select-all {
     display: flex;
     align-items: center;
     gap: 0.5rem;
     cursor: pointer;
-    font-size: var(--smrt-typography-body-medium-size, 0.875rem);
-    font-weight: var(--smrt-typography-label-large-weight, 500);
   }
-
-  .select-all input[type='checkbox'] {
+  .smrt-time-entry-list__select-all input[type='checkbox'] {
     width: 1rem;
     height: 1rem;
     cursor: pointer;
-    accent-color: var(--smrt-color-primary);
   }
-
-  .selection-count {
-    font-size: var(--smrt-typography-body-medium-size, 0.875rem);
-    color: var(--smrt-color-on-surface-variant);
-  }
-
-  .entries {
+  .smrt-time-entry-list__entries {
     display: flex;
     flex-direction: column;
   }
-
-  .entry-row {
+  .smrt-time-entry-list__row {
     display: flex;
     align-items: center;
-    border-bottom: var(--smrt-hairline);
-    transition: background 0.15s var(--smrt-easing-standard);
   }
-
-  .entry-row:last-child {
-    border-bottom: none;
-  }
-
-  .entry-row:hover {
-    background: var(--smrt-color-surface-container-lowest);
-  }
-
-  .entry-row.selected {
-    background: var(--smrt-color-primary-container);
-  }
-
-  .checkbox-cell {
+  .smrt-time-entry-list__cell-checkbox {
     width: 2rem;
     flex-shrink: 0;
     padding-left: 1rem;
   }
-
-  .checkbox-cell input[type='checkbox'] {
+  .smrt-time-entry-list__cell-checkbox input[type='checkbox'] {
     width: 1rem;
     height: 1rem;
     cursor: pointer;
-    accent-color: var(--smrt-color-primary);
   }
-
-  .entry-content {
+  .smrt-time-entry-list__content {
     display: flex;
     align-items: center;
     flex: 1;
     padding: 0.875rem 1rem;
-    text-decoration: none;
-    color: inherit;
     min-width: 0;
   }
-
-  a.entry-content:focus {
-    outline: 2px solid var(--smrt-color-primary);
-    outline-offset: -2px;
-  }
-
-  .date-cell {
+  .smrt-time-entry-list__cell-date {
     width: 4.5rem;
     flex-shrink: 0;
-    font-size: var(--smrt-typography-body-medium-size, 0.875rem);
-    color: var(--smrt-color-on-surface-variant);
   }
-
-  .description-cell {
+  .smrt-time-entry-list__cell-description {
     flex: 1;
     min-width: 0;
     padding-right: 1rem;
   }
-
-  .description {
+  .smrt-time-entry-list__description {
     display: block;
-    font-size: var(--smrt-typography-body-large-size, 0.9375rem);
-    color: var(--smrt-color-on-surface);
     white-space: nowrap;
     overflow: hidden;
     text-overflow: ellipsis;
   }
-
-  .worker {
+  .smrt-time-entry-list__worker {
     display: block;
-    font-size: var(--smrt-typography-body-small-size, 0.75rem);
-    color: var(--smrt-color-on-surface-variant);
     margin-top: 0.125rem;
   }
-
-  .hours-cell {
+  .smrt-time-entry-list__cell-hours {
     width: 4rem;
     flex-shrink: 0;
+    padding-right: 1rem;
+  }
+  .smrt-time-entry-list__cell-status {
+    width: 6rem;
+    flex-shrink: 0;
+  }
+  .smrt-time-entry-list__status {
+    display: inline-block;
+    padding: 0.25rem 0.5rem;
+  }
+  .smrt-time-entry-list__cell-amount {
+    width: 6rem;
+    flex-shrink: 0;
+  }
+  @media (max-width: 640px) {
+    .smrt-time-entry-list__content {
+      flex-wrap: wrap;
+      gap: 0.5rem;
+    }
+    .smrt-time-entry-list__cell-description {
+      order: 1;
+      width: 100%;
+      padding-right: 0;
+    }
+    .smrt-time-entry-list__cell-date,
+    .smrt-time-entry-list__cell-hours,
+    .smrt-time-entry-list__cell-status,
+    .smrt-time-entry-list__cell-amount {
+      flex: none;
+    }
+  }
+}
+
+@layer smrt.theme {
+  .smrt-time-entry-list__empty {
+    text-align: center;
+    color: var(--smrt-color-on-surface-variant);
+  }
+  .smrt-time-entry-list__root {
+    background: var(--smrt-color-surface);
+    border-radius: var(--smrt-radius-large);
+    border: var(--smrt-hairline);
+  }
+  .smrt-time-entry-list__header {
+    background: var(--smrt-color-surface-container-low);
+    border-bottom: var(--smrt-hairline);
+  }
+  .smrt-time-entry-list__select-all {
+    font-size: var(--smrt-typography-body-medium-size, 0.875rem);
+    font-weight: var(--smrt-typography-label-large-weight, 500);
+  }
+  .smrt-time-entry-list__select-all input[type='checkbox'] {
+    accent-color: var(--smrt-color-primary);
+  }
+  .smrt-time-entry-list__count {
+    font-size: var(--smrt-typography-body-medium-size, 0.875rem);
+    color: var(--smrt-color-on-surface-variant);
+  }
+  .smrt-time-entry-list__row {
+    border-bottom: var(--smrt-hairline);
+    transition: background 0.15s var(--smrt-easing-standard);
+  }
+  .smrt-time-entry-list__row:last-child {
+    border-bottom: none;
+  }
+  .smrt-time-entry-list__row:hover {
+    background: var(--smrt-color-surface-container-lowest);
+  }
+  .smrt-time-entry-list__row.smrt-time-entry-list__selected {
+    background: var(--smrt-color-primary-container);
+  }
+  .smrt-time-entry-list__cell-checkbox input[type='checkbox'] {
+    accent-color: var(--smrt-color-primary);
+  }
+  .smrt-time-entry-list__content {
+    text-decoration: none;
+    color: inherit;
+  }
+  a.smrt-time-entry-list__content:focus {
+    outline: 2px solid var(--smrt-color-primary);
+    outline-offset: -2px;
+  }
+  .smrt-time-entry-list__cell-date {
+    font-size: var(--smrt-typography-body-medium-size, 0.875rem);
+    color: var(--smrt-color-on-surface-variant);
+  }
+  .smrt-time-entry-list__description {
+    font-size: var(--smrt-typography-body-large-size, 0.9375rem);
+    color: var(--smrt-color-on-surface);
+  }
+  .smrt-time-entry-list__worker {
+    font-size: var(--smrt-typography-body-small-size, 0.75rem);
+    color: var(--smrt-color-on-surface-variant);
+  }
+  .smrt-time-entry-list__cell-hours {
     font-size: var(--smrt-typography-body-large-size, 0.9375rem);
     font-weight: var(--smrt-typography-title-medium-weight, 500);
     color: var(--smrt-color-primary);
     text-align: right;
-    padding-right: 1rem;
   }
-
-  .status-cell {
-    width: 6rem;
-    flex-shrink: 0;
+  .smrt-time-entry-list__cell-status {
     text-align: center;
   }
-
-  .status-badge {
-    display: inline-block;
+  .smrt-time-entry-list__status {
     font-size: var(--smrt-typography-label-small-size, 0.625rem);
     font-weight: var(--smrt-typography-label-small-weight, 500);
-    padding: 0.25rem 0.5rem;
     border-radius: var(--smrt-radius-small);
     background: var(--smrt-time-entry-list-status-color);
     color: var(--smrt-color-on-primary);
     text-transform: uppercase;
     letter-spacing: var(--smrt-typography-label-small-tracking);
   }
-
-  .amount-cell {
-    width: 6rem;
-    flex-shrink: 0;
+  .smrt-time-entry-list__cell-amount {
     font-size: var(--smrt-typography-body-large-size, 0.9375rem);
     font-weight: var(--smrt-typography-title-medium-weight, 500);
     text-align: right;
   }
-
-  @media (max-width: 640px) {
-    .entry-content {
-      flex-wrap: wrap;
-      gap: 0.5rem;
-    }
-
-    .description-cell {
-      order: 1;
-      width: 100%;
-      padding-right: 0;
-    }
-
-    .date-cell,
-    .hours-cell,
-    .status-cell,
-    .amount-cell {
-      flex: none;
-    }
-  }
 }
+
 </style>

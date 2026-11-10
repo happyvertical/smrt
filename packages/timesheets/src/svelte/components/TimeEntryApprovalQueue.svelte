@@ -93,30 +93,30 @@ function formatAmount(amount: number, currency = 'USD'): string {
 </script>
 
 {#if entries.length === 0}
-  <p class="time-approval-empty" data-smrt-component="TimeEntryApprovalQueue">
+  <p class="smrt-time-entry-approval-queue__empty" data-smrt-component="TimeEntryApprovalQueue">
     {emptyMessage ?? t(M['timesheets.approval_queue.empty'])}
   </p>
 {:else}
-  <ul class="time-approval-queue" data-smrt-component="TimeEntryApprovalQueue">
+  <ul class="smrt-time-entry-approval-queue__root" data-smrt-component="TimeEntryApprovalQueue">
     {#each entries as entry (entry.id)}
-      <li class="time-approval-row">
-        <div class="time-approval-line">
-          <span class="time-approval-date">{entry.date}</span>
-          <span class="time-approval-main">
-            <span class="time-approval-description">{entry.description}</span>
+      <li class="smrt-time-entry-approval-queue__row" data-smrt-part="row">
+        <div class="smrt-time-entry-approval-queue__line" data-smrt-part="body">
+          <span class="smrt-time-entry-approval-queue__date" data-smrt-part="meta">{entry.date}</span>
+          <span class="smrt-time-entry-approval-queue__main" data-smrt-part="title">
+            <span class="smrt-time-entry-approval-queue__description" data-smrt-part="description">{entry.description}</span>
             {#if entry.workerName}
-              <span class="time-approval-worker">{entry.workerName}</span>
+              <span class="smrt-time-entry-approval-queue__worker" data-smrt-part="meta">{entry.workerName}</span>
             {/if}
           </span>
-          <span class="time-approval-meta">
-            <span class="time-approval-hours">{hoursFormatter(entry.hours)}</span>
+          <span class="smrt-time-entry-approval-queue__meta" data-smrt-part="group">
+            <span class="smrt-time-entry-approval-queue__hours" data-smrt-part="value">{hoursFormatter(entry.hours)}</span>
             <StatusBadge
               status={timeEntryStatusBadgeKey(entry.status)}
               label={humanizeTimeEntryStatus(entry.status)}
               size="sm"
             />
             {#if entry.amount !== undefined}
-              <span class="time-approval-amount">
+              <span class="smrt-time-entry-approval-queue__amount" data-smrt-part="value">
                 {formatAmount(entry.amount, entry.currency)}
               </span>
             {/if}
@@ -124,7 +124,7 @@ function formatAmount(amount: number, currency = 'USD'): string {
         </div>
         {@render details?.(entry)}
         {#if entry.status === 'submitted'}
-          <div class="time-approval-actions">
+          <div class="smrt-time-entry-approval-queue__actions" data-smrt-part="actions">
             {#if actions}
               {@render actions(entry)}
             {:else if rejectingId === entry.id}
@@ -177,8 +177,8 @@ function formatAmount(amount: number, currency = 'USD'): string {
 
 <style>
 @layer smrt.reset, smrt.structure, smrt.theme;
-@layer smrt.theme {
-  .time-approval-queue {
+@layer smrt.structure {
+  .smrt-time-entry-approval-queue__root {
     list-style: none;
     margin: 0;
     padding: 0;
@@ -186,81 +186,83 @@ function formatAmount(amount: number, currency = 'USD'): string {
     flex-direction: column;
     gap: 0.25rem;
   }
-
-  .time-approval-row {
+  .smrt-time-entry-approval-queue__row {
     display: flex;
     flex-direction: column;
     gap: 0.375rem;
     padding: 0.5rem 0.25rem;
-    border-bottom: var(--smrt-hairline);
   }
-
-  .time-approval-row:last-child {
-    border-bottom: none;
-  }
-
-  .time-approval-line {
+  .smrt-time-entry-approval-queue__line {
     display: flex;
     width: 100%;
     align-items: center;
     justify-content: space-between;
     gap: 0.75rem;
-    text-align: left;
   }
-
-  .time-approval-date {
+  .smrt-time-entry-approval-queue__date {
     flex-shrink: 0;
-    font-size: 0.75rem;
-    color: var(--smrt-color-on-surface-variant, inherit);
   }
-
-  .time-approval-main {
+  .smrt-time-entry-approval-queue__main {
     display: flex;
     flex-direction: column;
     gap: 0.125rem;
     min-width: 0;
     flex: 1;
   }
-
-  .time-approval-description {
-    font-weight: 500;
+  .smrt-time-entry-approval-queue__description {
     overflow: hidden;
     text-overflow: ellipsis;
     white-space: nowrap;
   }
-
-  .time-approval-worker {
-    font-size: 0.75rem;
-    color: var(--smrt-color-on-surface-variant, inherit);
-  }
-
-  .time-approval-meta {
+  .smrt-time-entry-approval-queue__meta {
     display: flex;
     align-items: center;
     gap: 0.5rem;
     flex-shrink: 0;
   }
-
-  .time-approval-hours {
-    font-weight: 500;
-    color: var(--smrt-color-primary, inherit);
-  }
-
-  .time-approval-amount {
-    font-variant-numeric: tabular-nums;
-    font-weight: 500;
-  }
-
-  .time-approval-actions {
+  .smrt-time-entry-approval-queue__actions {
     display: flex;
     align-items: center;
     gap: 0.5rem;
     justify-content: flex-end;
   }
-
-  .time-approval-empty {
-    color: var(--smrt-color-on-surface-variant, inherit);
+  .smrt-time-entry-approval-queue__empty {
     padding: 1rem 0;
   }
 }
+
+@layer smrt.theme {
+  .smrt-time-entry-approval-queue__row {
+    border-bottom: var(--smrt-hairline);
+  }
+  .smrt-time-entry-approval-queue__row:last-child {
+    border-bottom: none;
+  }
+  .smrt-time-entry-approval-queue__line {
+    text-align: left;
+  }
+  .smrt-time-entry-approval-queue__date {
+    font-size: 0.75rem;
+    color: var(--smrt-color-on-surface-variant, inherit);
+  }
+  .smrt-time-entry-approval-queue__description {
+    font-weight: 500;
+  }
+  .smrt-time-entry-approval-queue__worker {
+    font-size: 0.75rem;
+    color: var(--smrt-color-on-surface-variant, inherit);
+  }
+  .smrt-time-entry-approval-queue__hours {
+    font-weight: 500;
+    color: var(--smrt-color-primary, inherit);
+  }
+  .smrt-time-entry-approval-queue__amount {
+    font-variant-numeric: tabular-nums;
+    font-weight: 500;
+  }
+  .smrt-time-entry-approval-queue__empty {
+    color: var(--smrt-color-on-surface-variant, inherit);
+  }
+}
+
 </style>

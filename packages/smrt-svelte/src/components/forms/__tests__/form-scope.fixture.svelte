@@ -19,7 +19,7 @@ let secret = $state('');
 </script>
 
 <FormScope formId="new-site" purpose="Start a new town site" {interactionRegistry}>
-  <div class="wizard">
+  <div class="smrt-form-scope-fixture__root" data-smrt-component="FormScopeFixture">
     <FormGroup label="Site name" id="site-name"><Input name="name" bind:value={name} /></FormGroup>
     {#if showTown}
       <FormGroup label="Town" id="site-town"><Input name="town" bind:value={town} /></FormGroup>

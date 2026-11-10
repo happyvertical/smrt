@@ -37,7 +37,7 @@ describe('ContentBodyEditor toolbar icons', () => {
   it('draws every toolbar icon at one size', () => {
     const target = renderEditor();
     const icons = Array.from(
-      target.querySelectorAll('.body-editor-toolbar svg'),
+      target.querySelectorAll('.smrt-content-body-editor__toolbar svg'),
     );
     expect(icons.length).toBeGreaterThanOrEqual(2);
     const sizes = new Set(
@@ -58,18 +58,18 @@ describe('ContentBodyEditor toolbar icons', () => {
       'utf8',
     );
     const buttonRule =
-      /\.body-editor-toolbar :global\(\.editor-toolbar-button\) \{([^}]*)\}/.exec(
+      /\.smrt-content-body-editor__toolbar :global\(\.editor-toolbar-button\) \{([^}]*)\}/.exec(
         source,
       )?.[1] ?? '';
     // smrt-ui's size="sm" padding would leave ~6px for the icon in a 2rem box.
     expect(buttonRule).toMatch(/padding:\s*0;/);
     const popoverRule =
-      /\.image-control-popover :global\(\.editor-popover-button\) \{([^}]*)\}/.exec(
+      /\.smrt-content-body-editor__image-control-popover :global\(\.editor-popover-button\) \{([^}]*)\}/.exec(
         source,
       )?.[1] ?? '';
     expect(popoverRule).toMatch(/padding:\s*0;/);
     const iconRule =
-      /:global\(\.editor-toolbar-button svg\),\s*\.image-control-popover :global\(\.editor-popover-button svg\) \{([^}]*)\}/.exec(
+      /:global\(\.editor-toolbar-button svg\),\s*\.smrt-content-body-editor__image-control-popover :global\(\.editor-popover-button svg\) \{([^}]*)\}/.exec(
         source,
       )?.[1] ?? '';
     expect(iconRule).toMatch(/flex-shrink:\s*0;/);
@@ -88,13 +88,17 @@ describe('ContentBodyEditor toolbar icons', () => {
 describe('ContentBodyEditor format picker', () => {
   it('is hidden by default', () => {
     const target = renderEditor();
-    expect(target.querySelector('.format-select')).toBeNull();
+    expect(
+      target.querySelector('.smrt-content-body-editor__format-select'),
+    ).toBeNull();
   });
 
   it('shows the HTML/Markdown picker when the host opts in', () => {
     const target = renderEditor({ showFormatPicker: true });
     const options = Array.from(
-      target.querySelectorAll('.format-select option'),
+      target.querySelectorAll(
+        '.smrt-content-body-editor__format-select option',
+      ),
     ).map((option) => option.getAttribute('value'));
     expect(options).toEqual(['html', 'markdown']);
   });
@@ -103,16 +107,16 @@ describe('ContentBodyEditor format picker', () => {
 describe('ContentBodyEditor image panel', () => {
   it('opens between the toolbar and the text, labelled and linked to its button', async () => {
     const target = renderEditor({ imagePanel: panel, imagePanelOpen: true });
-    const root = target.querySelector('.content-body-editor');
+    const root = target.querySelector('.smrt-content-body-editor__root');
     const children = Array.from(root?.children ?? []);
     const toolbarIndex = children.findIndex((el) =>
-      el.classList.contains('body-editor-toolbar'),
+      el.classList.contains('smrt-content-body-editor__toolbar'),
     );
     const panelIndex = children.findIndex((el) =>
-      el.classList.contains('body-editor-image-panel'),
+      el.classList.contains('smrt-content-body-editor__image-panel'),
     );
     const surfaceIndex = children.findIndex((el) =>
-      el.classList.contains('body-editor-surface'),
+      el.classList.contains('smrt-content-body-editor__surface'),
     );
     expect(toolbarIndex).toBe(0);
     expect(panelIndex).toBeGreaterThan(toolbarIndex);
@@ -133,7 +137,9 @@ describe('ContentBodyEditor image panel', () => {
 
   it('stays closed until asked and reports aria-expanded=false', () => {
     const target = renderEditor({ imagePanel: panel, imagePanelOpen: false });
-    expect(target.querySelector('.body-editor-image-panel')).toBeNull();
+    expect(
+      target.querySelector('.smrt-content-body-editor__image-panel'),
+    ).toBeNull();
     const button = target.querySelector('button[aria-label="Insert image"]');
     expect(button?.getAttribute('aria-expanded')).toBe('false');
   });
@@ -148,7 +154,7 @@ describe('ContentBodyEditor image panel', () => {
       onOpenImageChooser,
     });
     const region = target.querySelector(
-      '.body-editor-image-panel',
+      '.smrt-content-body-editor__image-panel',
     ) as HTMLElement;
     region
       .querySelector('button')

@@ -68,10 +68,10 @@ function discard() {
 }
 </script>
 
-<section class="project" aria-label="Project">
+<section class="smrt-project-controls__root" aria-label="Project" data-smrt-component="ProjectControls">
   {#if !resetOnly && projectPersistence}
     <h2>Project</h2>
-    <p class="meta">Your plan, sample records and settings stay in this browser session by default. Conversations and contact or request drafts stay in the current tab session.</p>
+    <p class="smrt-project-controls__meta" data-smrt-part="meta">Your plan, sample records and settings stay in this browser session by default. Conversations and contact or request drafts stay in the current tab session.</p>
     <Switch
       label="Remember this plan"
       bind:checked={remembering}
@@ -83,21 +83,21 @@ function discard() {
         input.checked = remembering;
       }}
     />
-    <p class="meta">Remembering keeps your cookbook, sample records and settings on this device after the session ends. Conversations and contact or request drafts still stay in the current tab session. Turn it off to remove the remembered project copy.</p>
+    <p class="smrt-project-controls__meta" data-smrt-part="meta">Remembering keeps your cookbook, sample records and settings on this device after the session ends. Conversations and contact or request drafts still stay in the current tab session. Turn it off to remove the remembered project copy.</p>
     {#if projectPersistence?.recoveryAvailable}
       <Alert variant="info" title="Previous saved plan available">
         An earlier project has been kept as a recovery copy of its cookbook, sample records and settings. Recover it to replace this project, or discard the copy. Conversations are not remembered.
       </Alert>
-      <div class="actions">
+      <div class="smrt-project-controls__actions" data-smrt-part="actions">
         <Button variant="secondary" onclick={() => (recovering = true)} disabled={!!resetDisabledReason}>Recover previous plan</Button>
         <Button variant="ghost" onclick={discard}>Discard saved copy</Button>
       </div>
     {/if}
   {/if}
-  <div class="actions">
+  <div class="smrt-project-controls__actions" data-smrt-part="actions">
     <Button variant="ghost" disabled={!!resetDisabledReason} onclick={() => (confirming = true)}>Reset project</Button>
   </div>
-  {#if resetDisabledReason}<p class="meta" role="status">{resetDisabledReason}</p>{/if}
+  {#if resetDisabledReason}<p class="smrt-project-controls__meta" data-smrt-part="meta" role="status">{resetDisabledReason}</p>{/if}
   {#if error}<Alert variant="error" title="Project action could not finish">{error}</Alert>{/if}
   {#if notice}<p role="status">{notice}</p>{/if}
 </section>
@@ -124,10 +124,25 @@ function discard() {
 
 <style>
 @layer smrt.reset, smrt.structure, smrt.theme;
-@layer smrt.theme {
-  .project { display: grid; gap: var(--smrt-spacing-3); }
-  h2, p { margin: 0; }
-  .meta { color: var(--smrt-color-on-surface-variant); }
-  .actions { display: flex; flex-wrap: wrap; gap: var(--smrt-spacing-2); }
+@layer smrt.structure {
+  .smrt-project-controls__root {
+    display: grid;
+    gap: var(--smrt-spacing-3);
+  }
+  h2, p {
+    margin: 0;
+  }
+  .smrt-project-controls__actions {
+    display: flex;
+    flex-wrap: wrap;
+    gap: var(--smrt-spacing-2);
+  }
 }
+
+@layer smrt.theme {
+  .smrt-project-controls__meta {
+    color: var(--smrt-color-on-surface-variant);
+  }
+}
+
 </style>

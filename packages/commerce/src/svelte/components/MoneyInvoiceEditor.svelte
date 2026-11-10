@@ -170,7 +170,7 @@ function changeMode(event: Event) {
 }
 </script>
 
-<section class="invoice-editor money-editor" aria-label={t(M['commerce.invoice_money.aria_label'])} data-smrt-component="MoneyInvoiceEditor" data-money-model="v2">
+<section class="smrt-money-invoice-editor__root" aria-label={t(M['commerce.invoice_money.aria_label'])} data-smrt-component="MoneyInvoiceEditor" data-money-model="v2">
   {#if frozen}
     <p role="status">Frozen{money.status ? ` · ${money.status}` : ''}</p>
     {#if money.kind !== 'credit_note'}
@@ -183,7 +183,7 @@ function changeMode(event: Event) {
     {/if}
   {/if}
   {#if money.sellerTaxRegistrations?.length || money.partyTaxId}
-    <p class="tax-registrations">
+    <p class="smrt-money-invoice-editor__tax-registrations" data-smrt-part="meta">
       {#each money.sellerTaxRegistrations ?? [] as registration}{registration}{#if money.partyTaxId || registration !== money.sellerTaxRegistrations?.at(-1)} · {/if}{/each}
       {#if money.partyTaxId}{money.partyTaxId}{/if}
     </p>
@@ -202,7 +202,7 @@ function changeMode(event: Event) {
       <Input type="hidden" name={names.roundingScope} value={money.draft.roundingScope} interaction={false} />
       {#if money.customerTaxExempt && lineAmountType === 'inclusive'}<p>{t(M['commerce.invoice_money.exempt_inclusive'])}</p>{/if}
       {#each lines as line, index (line.id)}
-        <fieldset class="money-line">
+        <fieldset class="smrt-money-invoice-editor__line" data-smrt-part="group">
           <legend>{t(M['commerce.invoice_money.line'], { number: index + 1 })}</legend>
           <Input type="hidden" name={names.lineId} value={line.id} interaction={false} />
           <label>Description <Input name={names.lineDescription} value={line.description} oninput={(event) => patchLine(index, { description: (event.currentTarget as HTMLInputElement).value })} /></label>
@@ -230,19 +230,19 @@ function changeMode(event: Event) {
   {#if !totals}
     <p role="alert">{calculation?.valid || frozen ? 'Stored totals are required for a frozen document.' : calculation?.message}</p>
   {:else}
-    <dl class="summary" aria-live="polite">
+    <dl class="smrt-money-invoice-editor__summary" data-smrt-part="summary" aria-live="polite">
       {#if totals.lineAmountType !== 'inclusive' || totals.taxMinor === 0}
         <div><dt>Subtotal</dt><dd><CurrencyDisplay amount={totals.subtotalMinor} currency={money.draft.currency} unit="cents" /></dd></div>
       {/if}
-      {#if totals.discountTotalMinor !== 0}<div class="muted"><dt>{t(M['commerce.invoice_money.includes_discounts'])} <CurrencyDisplay amount={Math.abs(totals.discountTotalMinor)} currency={money.draft.currency} unit="cents" /></dt></div>{/if}
+      {#if totals.discountTotalMinor !== 0}<div class="smrt-money-invoice-editor__muted" data-smrt-part="row"><dt>{t(M['commerce.invoice_money.includes_discounts'])} <CurrencyDisplay amount={Math.abs(totals.discountTotalMinor)} currency={money.draft.currency} unit="cents" /></dt></div>{/if}
       {#each groupedTaxes(totals.taxes).filter((tax) => tax.taxMinor !== 0) as tax (tax.id)}
-        <div class:muted={totals.lineAmountType === 'inclusive'}>
+        <div class:smrt-money-invoice-editor__muted={totals.lineAmountType === 'inclusive'} data-smrt-part="meta">
           <dt>{totals.lineAmountType === 'inclusive' ? `Includes ${tax.name} ${tax.percent}% of` : `${tax.name} ${tax.percent}% on`} <CurrencyDisplay amount={totals.lineAmountType === 'inclusive' ? tax.taxMinor : tax.taxableMinor} currency={money.draft.currency} unit="cents" /></dt>
           {#if totals.lineAmountType !== 'inclusive'}<dd><CurrencyDisplay amount={tax.taxMinor} currency={money.draft.currency} unit="cents" /></dd>{/if}
         </div>
       {/each}
-      {#if totals.roundingScope === 'document'}<div class="muted"><dt>{t(M['commerce.invoice_money.rounded_document'])}</dt></div>{/if}
-      <div class="total"><dt>Total</dt><dd><CurrencyDisplay amount={totals.totalMinor} currency={money.draft.currency} unit="cents" /></dd></div>
+      {#if totals.roundingScope === 'document'}<div class="smrt-money-invoice-editor__muted" data-smrt-part="row"><dt>{t(M['commerce.invoice_money.rounded_document'])}</dt></div>{/if}
+      <div class="smrt-money-invoice-editor__total" data-smrt-part="row"><dt>Total</dt><dd><CurrencyDisplay amount={totals.totalMinor} currency={money.draft.currency} unit="cents" /></dd></div>
       {#if totals.lineAmountType === 'inclusive' && totals.taxMinor !== 0 && money.showNetSubtotal}<div><dt>Subtotal (excl. tax)</dt><dd><CurrencyDisplay amount={totals.subtotalMinor} currency={money.draft.currency} unit="cents" /></dd></div>{/if}
     </dl>
   {/if}
@@ -250,13 +250,42 @@ function changeMode(event: Event) {
 
 <style>
 @layer smrt.reset, smrt.structure, smrt.theme;
-@layer smrt.theme {
-  .money-editor, .money-editor :global(.form), fieldset, .money-line { display: grid; gap: var(--smrt-spacing-3); min-width: 0; }
-  .money-editor { max-width: 48rem; overflow-wrap: anywhere; }
-  .summary { display: grid; gap: var(--smrt-spacing-2); }
-  .summary > div { display: flex; justify-content: space-between; gap: var(--smrt-spacing-4); }
-  .summary .muted { color: var(--smrt-color-on-surface-variant); font-size: var(--smrt-typography-body-small-size); }
-  .summary .total { border-top: var(--smrt-hairline-strong); padding-top: var(--smrt-spacing-2); font-weight: var(--smrt-typography-weight-semibold); }
-  dd { margin: 0; }
+@layer smrt.structure {
+  .smrt-money-invoice-editor__root, .smrt-money-invoice-editor__root :global([data-smrt-component="Form"]), fieldset, .smrt-money-invoice-editor__line {
+    display: grid;
+    gap: var(--smrt-spacing-3);
+    min-width: 0;
+  }
+  .smrt-money-invoice-editor__root {
+    max-width: 48rem;
+    overflow-wrap: anywhere;
+  }
+  .smrt-money-invoice-editor__summary {
+    display: grid;
+    gap: var(--smrt-spacing-2);
+  }
+  .smrt-money-invoice-editor__summary > div {
+    display: flex;
+    justify-content: space-between;
+    gap: var(--smrt-spacing-4);
+  }
+  .smrt-money-invoice-editor__summary .smrt-money-invoice-editor__total {
+    padding-top: var(--smrt-spacing-2);
+  }
+  dd {
+    margin: 0;
+  }
 }
+
+@layer smrt.theme {
+  .smrt-money-invoice-editor__summary .smrt-money-invoice-editor__muted {
+    color: var(--smrt-color-on-surface-variant);
+    font-size: var(--smrt-typography-body-small-size);
+  }
+  .smrt-money-invoice-editor__summary .smrt-money-invoice-editor__total {
+    border-top: var(--smrt-hairline-strong);
+    font-weight: var(--smrt-typography-weight-semibold);
+  }
+}
+
 </style>

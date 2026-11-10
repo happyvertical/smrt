@@ -39,7 +39,9 @@ describe('ActionBar', () => {
         onDelete: vi.fn(),
       },
     });
-    expect(container.querySelector('.action-bar')).toBeNull();
+    expect(
+      container.querySelector('[data-smrt-component="ActionBar"]'),
+    ).toBeNull();
   });
 
   it('confirms deletion through the inline dialog', async () => {

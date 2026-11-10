@@ -163,9 +163,9 @@ const inputLabel = $derived(label ?? t(M['ui.command_palette.input_label']));
   showClose={false}
   size="md"
 >
-  <div class="smrt-command-palette">
-    <div class="smrt-command-palette__field">
-      <svg class="smrt-command-palette__search-icon" viewBox="0 0 24 24" width="18" height="18" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true" focusable="false"><circle cx="11" cy="11" r="7" /><path d="m20 20-3.5-3.5" /></svg>
+  <div class="smrt-command-palette-dialog__root" data-smrt-part="body">
+    <div class="smrt-command-palette-dialog__field" data-smrt-part="field">
+      <svg class="smrt-command-palette-dialog__search-icon" data-smrt-part="icon" viewBox="0 0 24 24" width="18" height="18" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true" focusable="false"><circle cx="11" cy="11" r="7" /><path d="m20 20-3.5-3.5" /></svg>
       <Input
         bind:this={input}
         type="text"
@@ -181,29 +181,30 @@ const inputLabel = $derived(label ?? t(M['ui.command_palette.input_label']));
         enterkeyhint="go"
         placeholder={placeholder ?? t(M['ui.command_palette.placeholder'])}
         interaction={false}
-        class="smrt-command-palette__input"
+        class="smrt-command-palette-dialog__input"
         bind:value={() => palette.query, (next) => palette.setQuery(String(next))}
         onkeydown={onInputKeydown}
       />
     </div>
 
     <div
-      class="smrt-command-palette__list"
+      class="smrt-command-palette-dialog__list"
       id={listId}
       role="listbox"
       aria-label={t(M['ui.command_palette.results'])}
       aria-busy={palette.busy}
+      data-smrt-part="list"
     >
       {#each palette.sections as section, sectionIndex (section.id)}
-        <div class="smrt-command-palette__group" role="group" aria-labelledby={`${listId}-g${sectionIndex}`}>
-          <div class="smrt-command-palette__heading" id={`${listId}-g${sectionIndex}`}>{section.label}</div>
+        <div class="smrt-command-palette-dialog__group" role="group" aria-labelledby={`${listId}-g${sectionIndex}`} data-smrt-part="group">
+          <div class="smrt-command-palette-dialog__heading" id={`${listId}-g${sectionIndex}`} data-smrt-part="label">{section.label}</div>
           {#each section.results as result (result.key)}
             {@const path = iconPath(result.item.icon)}
             {@const shortcut = result.item.shortcut ? formatPaletteHotkey(result.item.shortcut, apple) : ''}
             <!-- The combobox input owns the keyboard (aria-activedescendant); rows are pointer targets. -->
             <!-- svelte-ignore a11y_click_events_have_key_events -->
             <div
-              class="smrt-command-palette__option"
+              class="smrt-command-palette-dialog__option"
               id={optionId(result)}
               role="option"
               tabindex="-1"
@@ -215,26 +216,27 @@ const inputLabel = $derived(label ?? t(M['ui.command_palette.input_label']));
               onmousedown={(event) => event.preventDefault()}
               onpointermove={() => palette.setActive(result.key)}
               onclick={() => void palette.activate(result)}
+              data-smrt-part="row"
             >
-              <span class="smrt-command-palette__icon" aria-hidden="true">
+              <span class="smrt-command-palette-dialog__icon" aria-hidden="true" data-smrt-part="icon">
                 {#if path}
                   <svg viewBox="0 0 24 24" width="18" height="18" fill="currentColor" focusable="false"><path d={path} /></svg>
                 {/if}
               </span>
-              <span class="smrt-command-palette__text">
-                <span class="smrt-command-palette__title">
+              <span class="smrt-command-palette-dialog__text" data-smrt-part="body">
+                <span class="smrt-command-palette-dialog__title" data-smrt-part="title">
                   {#each highlightSegments(result.item.title, result.titleRanges) as segment}
                     {#if segment.match}<mark>{segment.text}</mark>{:else}{segment.text}{/if}
                   {/each}
                 </span>
                 {#if result.item.subtitle}
-                  <span class="smrt-command-palette__subtitle">{result.item.subtitle}</span>
+                  <span class="smrt-command-palette-dialog__subtitle" data-smrt-part="meta">{result.item.subtitle}</span>
                 {/if}
               </span>
               {#if typeof result.item.disabled === 'string'}
-                <span class="smrt-command-palette__note">{t(M['ui.command_palette.unavailable'])}</span>
+                <span class="smrt-command-palette-dialog__note" data-smrt-part="meta">{t(M['ui.command_palette.unavailable'])}</span>
               {:else if shortcut}
-                <kbd class="smrt-command-palette__shortcut">{shortcut}</kbd>
+                <kbd class="smrt-command-palette-dialog__shortcut" data-smrt-part="description">{shortcut}</kbd>
               {/if}
             </div>
           {/each}
@@ -242,49 +244,42 @@ const inputLabel = $derived(label ?? t(M['ui.command_palette.input_label']));
       {/each}
     </div>
     {#if !hasRows}
-      <p class="smrt-command-palette__empty">{statusText}</p>
+      <p class="smrt-command-palette-dialog__empty" data-smrt-part="empty">{statusText}</p>
     {/if}
 
-    <div class="smrt-command-palette__hints" aria-hidden="true">
+    <div class="smrt-command-palette-dialog__hints" aria-hidden="true" data-smrt-part="description">
       <span><kbd>↑</kbd><kbd>↓</kbd> {t(M['ui.command_palette.hint_move'])}</span>
       <span><kbd>↵</kbd> {t(M['ui.command_palette.hint_select'])}</span>
       <span><kbd>Esc</kbd> {t(M['ui.command_palette.hint_close'])}</span>
     </div>
 
-    <div class="smrt-command-palette__live" role="status" aria-live="polite">{statusText}</div>
+    <div class="smrt-command-palette-dialog__live" role="status" aria-live="polite" data-smrt-part="status">{statusText}</div>
   </div>
 </Modal>
 
 <style>
 @layer smrt.reset, smrt.structure, smrt.theme;
-@layer smrt.theme {
-  .smrt-command-palette {
+@layer smrt.structure {
+  .smrt-command-palette-dialog__root {
     display: flex;
     flex-direction: column;
     gap: var(--smrt-spacing-2, 0.5rem);
     min-block-size: 0;
   }
-
-  .smrt-command-palette__field {
+  .smrt-command-palette-dialog__field {
     position: relative;
     display: flex;
     align-items: center;
   }
-
-  .smrt-command-palette__search-icon {
+  .smrt-command-palette-dialog__search-icon {
     position: absolute;
     inset-inline-start: 0.75rem;
-    color: var(--smrt-color-on-surface-variant);
     pointer-events: none;
   }
-
-  .smrt-command-palette__field :global(.smrt-command-palette__input) {
+  .smrt-command-palette-dialog__field :global(.smrt-command-palette-dialog__input) {
     padding-inline-start: 2.5rem;
-    /* 16px keeps iOS from zooming when the box takes focus. */
-    font-size: max(1rem, var(--smrt-typography-body-medium-size, 0.875rem));
   }
-
-  .smrt-command-palette__list {
+  .smrt-command-palette-dialog__list {
     max-block-size: min(24rem, 55vh);
     overflow-y: auto;
     overscroll-behavior: contain;
@@ -292,112 +287,59 @@ const inputLabel = $derived(label ?? t(M['ui.command_palette.input_label']));
     flex-direction: column;
     gap: var(--smrt-spacing-2, 0.5rem);
   }
-
-  .smrt-command-palette__heading {
+  .smrt-command-palette-dialog__heading {
     padding: 0.25rem 0.75rem;
-    font-size: var(--smrt-typography-label-small-size, 0.75rem);
-    font-weight: var(--smrt-typography-weight-semibold, 600);
-    letter-spacing: 0.04em;
-    text-transform: uppercase;
-    color: var(--smrt-color-on-surface-variant);
   }
-
-  .smrt-command-palette__option {
+  .smrt-command-palette-dialog__option {
     display: flex;
     align-items: center;
     gap: 0.75rem;
     min-block-size: max(2.5rem, var(--smrt-control-target-min));
     padding: 0.375rem 0.75rem;
-    border-radius: var(--smrt-radius-medium, 0.5rem);
-    color: var(--smrt-color-on-surface);
     cursor: pointer;
   }
-
-  .smrt-command-palette__option[data-active] {
-    background: var(--smrt-color-surface-container-high);
-    box-shadow: inset 3px 0 0 var(--smrt-color-primary);
-  }
-
-  .smrt-command-palette__option[aria-disabled='true'] {
-    opacity: 0.55;
+  .smrt-command-palette-dialog__option[aria-disabled='true'] {
     cursor: not-allowed;
   }
-
-  .smrt-command-palette__icon {
+  .smrt-command-palette-dialog__icon {
     flex: 0 0 1.125rem;
     inline-size: 1.125rem;
-    color: var(--smrt-color-on-surface-variant);
     display: inline-grid;
     place-items: center;
   }
-
-  .smrt-command-palette__text {
+  .smrt-command-palette-dialog__text {
     flex: 1 1 auto;
     min-inline-size: 0;
     display: flex;
     flex-direction: column;
   }
-
-  .smrt-command-palette__title,
-  .smrt-command-palette__subtitle {
+  .smrt-command-palette-dialog__title,
+  .smrt-command-palette-dialog__subtitle {
     overflow: hidden;
     text-overflow: ellipsis;
     white-space: nowrap;
   }
-
-  .smrt-command-palette__subtitle {
-    font-size: var(--smrt-typography-body-small-size, 0.75rem);
-    color: var(--smrt-color-on-surface-variant);
-  }
-
-  .smrt-command-palette mark {
-    background: color-mix(in srgb, var(--smrt-color-primary) 18%, transparent);
-    color: inherit;
-    font-weight: var(--smrt-typography-weight-bold, 700);
-    border-radius: 0.125rem;
-  }
-
-  .smrt-command-palette__note {
-    font-size: var(--smrt-typography-label-small-size, 0.75rem);
-    color: var(--smrt-color-on-surface-variant);
-  }
-
-  .smrt-command-palette kbd {
-    font: inherit;
-    font-size: var(--smrt-typography-label-small-size, 0.75rem);
+  .smrt-command-palette-dialog__root kbd {
     padding: 0.0625rem 0.375rem;
-    border: var(--smrt-hairline);
-    border-radius: var(--smrt-radius-small, 0.375rem);
-    color: var(--smrt-color-on-surface-variant);
-    background: var(--smrt-color-surface-container);
   }
-
-  .smrt-command-palette__empty {
+  .smrt-command-palette-dialog__empty {
     margin: 0;
     padding: 1.5rem 0.75rem;
-    text-align: center;
-    color: var(--smrt-color-on-surface-variant);
   }
-
-  .smrt-command-palette__hints {
+  .smrt-command-palette-dialog__hints {
     display: flex;
     gap: 1rem;
     padding: 0.25rem 0.75rem 0;
-    font-size: var(--smrt-typography-label-small-size, 0.75rem);
-    color: var(--smrt-color-on-surface-variant);
   }
-
-  .smrt-command-palette__hints kbd + kbd {
+  .smrt-command-palette-dialog__hints kbd + kbd {
     margin-inline-start: 0.125rem;
   }
-
   @media (max-width: 48rem) {
-    .smrt-command-palette__hints {
+    .smrt-command-palette-dialog__hints {
       display: none;
     }
   }
-
-  .smrt-command-palette__live {
+  .smrt-command-palette-dialog__live {
     position: absolute;
     inline-size: 1px;
     block-size: 1px;
@@ -406,4 +348,66 @@ const inputLabel = $derived(label ?? t(M['ui.command_palette.input_label']));
     white-space: nowrap;
   }
 }
+
+@layer smrt.theme {
+  .smrt-command-palette-dialog__search-icon {
+    color: var(--smrt-color-on-surface-variant);
+  }
+  .smrt-command-palette-dialog__field :global(.smrt-command-palette-dialog__input) {
+    /* 16px keeps iOS from zooming when the box takes focus. */
+    font-size: max(1rem, var(--smrt-typography-body-medium-size, 0.875rem));
+  }
+  .smrt-command-palette-dialog__heading {
+    font-size: var(--smrt-typography-label-small-size, 0.75rem);
+    font-weight: var(--smrt-typography-weight-semibold, 600);
+    letter-spacing: 0.04em;
+    text-transform: uppercase;
+    color: var(--smrt-color-on-surface-variant);
+  }
+  .smrt-command-palette-dialog__option {
+    border-radius: var(--smrt-radius-medium, 0.5rem);
+    color: var(--smrt-color-on-surface);
+  }
+  .smrt-command-palette-dialog__option[data-active] {
+    background: var(--smrt-color-surface-container-high);
+    box-shadow: inset 3px 0 0 var(--smrt-color-primary);
+  }
+  .smrt-command-palette-dialog__option[aria-disabled='true'] {
+    opacity: 0.55;
+  }
+  .smrt-command-palette-dialog__icon {
+    color: var(--smrt-color-on-surface-variant);
+  }
+  .smrt-command-palette-dialog__subtitle {
+    font-size: var(--smrt-typography-body-small-size, 0.75rem);
+    color: var(--smrt-color-on-surface-variant);
+  }
+  .smrt-command-palette-dialog__root mark {
+    background: color-mix(in srgb, var(--smrt-color-primary) 18%, transparent);
+    color: inherit;
+    font-weight: var(--smrt-typography-weight-bold, 700);
+    border-radius: 0.125rem;
+  }
+  .smrt-command-palette-dialog__note {
+    font-size: var(--smrt-typography-label-small-size, 0.75rem);
+    color: var(--smrt-color-on-surface-variant);
+  }
+  .smrt-command-palette-dialog__root kbd {
+    font: inherit;
+    font-size: var(--smrt-typography-label-small-size, 0.75rem);
+    border: var(--smrt-hairline);
+    border-radius: var(--smrt-radius-small, 0.375rem);
+    color: var(--smrt-color-on-surface-variant);
+    background: var(--smrt-color-surface-container);
+  }
+  .smrt-command-palette-dialog__empty {
+    text-align: center;
+    color: var(--smrt-color-on-surface-variant);
+  }
+  .smrt-command-palette-dialog__hints {
+    font-size: var(--smrt-typography-label-small-size, 0.75rem);
+    color: var(--smrt-color-on-surface-variant);
+  }
+}
+
 </style>

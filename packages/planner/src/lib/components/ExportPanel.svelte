@@ -164,33 +164,33 @@ function confirmImport() {
 }
 </script>
 
-<div class="export">
-  <div class="export-intro">
+<div class="smrt-export-panel__root" data-smrt-component="ExportPanel">
+  <div class="smrt-export-panel__intro" data-smrt-part="header">
     <h2>Export</h2>
-    <p class="meta">Your recipes, theme, layout and customised pages travel together as a cookbook. Sample records stay in this preview.</p>
+    <p class="smrt-export-panel__meta" data-smrt-part="meta">Your recipes, theme, layout and customised pages travel together as a cookbook. Sample records stay in this preview.</p>
   </div>
 
   {#if exportAction}
-    <div class="build-step" data-export-actions="primary">
+    <div class="smrt-export-panel__build-step" data-export-actions="primary" data-smrt-part="panel">
       <h3>Build your app</h3>
-      <p class="meta">Continue with your current plan.</p>
-      <div class="actions">
+      <p class="smrt-export-panel__meta" data-smrt-part="meta">Continue with your current plan.</p>
+      <div class="smrt-export-panel__actions" data-smrt-part="actions">
         <Button disabled={actionPending || assistantBusy} onclick={runExportAction}>{exportAction.label}</Button>
       </div>
     </div>
   {/if}
   {#if actionError}<Alert variant="error" title="Export action failed">{actionError}</Alert>{/if}
-  {#if exportAction && assistantBusy}<p class="meta" role="status">Wait for the assistant to finish, or stop it, before continuing.</p>{/if}
+  {#if exportAction && assistantBusy}<p class="smrt-export-panel__meta" data-smrt-part="meta" role="status">Wait for the assistant to finish, or stop it, before continuing.</p>{/if}
 
-  <section class="block" aria-labelledby="summary-heading" data-export-section="summary">
+  <section class="smrt-export-panel__block" aria-labelledby="summary-heading" data-export-section="summary" data-smrt-part="panel">
     <h3 id="summary-heading">In this cookbook</h3>
     {#if summary.length}
-      <dl class="summary">
+      <dl class="smrt-export-panel__summary" data-smrt-part="summary">
         {#each summary as line (line.id)}
           <dt>{line.label}</dt>
           <dd>
             {#if line.chips}
-              <ul class="chips">
+              <ul class="smrt-export-panel__chips" data-smrt-part="list">
                 {#each line.chips as chip, i (`${chip}:${i}`)}
                   <li><Chip label={chip} size="sm" /></li>
                 {/each}
@@ -202,19 +202,19 @@ function confirmImport() {
         {/each}
       </dl>
     {:else}
-      <p class="quiet">Nothing customised yet. Add recipes or apply a cookbook first.</p>
+      <p class="smrt-export-panel__quiet" data-smrt-part="empty">Nothing customised yet. Add recipes or apply a cookbook first.</p>
     {/if}
   </section>
 
   <Card padding="sm" role="group" aria-labelledby="prompt-heading" data-export-section="prompt">
-    <div class="card-body">
+    <div class="smrt-export-panel__card-body" data-smrt-part="body">
       <h3 id="prompt-heading">Copy prompt</h3>
-      <p class="meta" id="prompt-note">
+      <p class="smrt-export-panel__meta" data-smrt-part="meta" id="prompt-note">
         Paste it into Claude Code, Codex or another coding agent. The prompt
         carries the cookbook, creates the app <code>{appName}</code> with the smrt CLI {prompt.version} and
         starts it. About {formatSize(prompt.bytes)}.
       </p>
-      <div class="actions">
+      <div class="smrt-export-panel__actions" data-smrt-part="actions">
         <CopyButton
           text={() => prompt.text}
           label="Copy prompt"
@@ -226,7 +226,7 @@ function confirmImport() {
       </div>
       <Textarea
         bind:this={promptBox}
-        class="prompt"
+        class="smrt-export-panel__prompt"
         value={prompt.text}
         readonly
         rows={7}
@@ -236,18 +236,18 @@ function confirmImport() {
         aria-describedby="prompt-note"
         interaction={false}
       />
-      <p class="notice" role="status" aria-live="polite">{promptNotice}</p>
+      <p class="smrt-export-panel__notice" data-smrt-part="status" role="status" aria-live="polite">{promptNotice}</p>
     </div>
   </Card>
 
   <Card padding="sm" role="group" aria-labelledby="file-heading" data-export-section="file">
-    <div class="card-body">
+    <div class="smrt-export-panel__card-body" data-smrt-part="body">
       <h3 id="file-heading">Download cookbook</h3>
-      <p class="meta">
+      <p class="smrt-export-panel__meta" data-smrt-part="meta">
         Download writes <code>{fileName}</code> ({fileSize}). To make the app from
         it yourself, run this where the file is:
       </p>
-      <div class="command">
+      <div class="smrt-export-panel__command" data-smrt-part="actions">
         <code bind:this={commandLine} data-export-command>{command}</code>
         <CopyButton
           text={() => command}
@@ -258,8 +258,8 @@ function confirmImport() {
           onfail={commandCopyFailed}
         />
       </div>
-      <p class="notice" role="status" aria-live="polite">{commandNotice}</p>
-      <div class="actions" data-export-actions="download">
+      <p class="smrt-export-panel__notice" data-smrt-part="status" role="status" aria-live="polite">{commandNotice}</p>
+      <div class="smrt-export-panel__actions" data-export-actions="download" data-smrt-part="actions">
         <Button variant={exportAction ? 'secondary' : 'primary'} onclick={downloadCurrent}>Download cookbook</Button>
         {#if kitchenState.config}
           <Button
@@ -270,7 +270,7 @@ function confirmImport() {
         {/if}
       </div>
       <Disclosure title="Preview JSON">
-        <pre class="json">{serializeCookbook(current)}</pre>
+        <pre class="smrt-export-panel__json" data-smrt-part="panel">{serializeCookbook(current)}</pre>
       </Disclosure>
     </div>
   </Card>
@@ -292,7 +292,7 @@ function confirmImport() {
     </Alert>
   {/if}
   {#if kitchenState.outcome}
-    <div class="kitchen" role="status" aria-live="polite">
+    <div class="smrt-export-panel__kitchen" role="status" aria-live="polite" data-smrt-part="status">
       {#if kitchenState.outcome.ok}
         <Alert variant="success" title="Sent to the kitchen">
           {kitchenState.outcome.result.mode === 'update' ? 'Updated' : 'Created'} the project{kitchenState.outcome.result.dir ? ` in ${kitchenState.outcome.result.dir}` : ''}.
@@ -317,16 +317,16 @@ function confirmImport() {
     </div>
   {/if}
 
-  <section class="block replace" aria-label="Import or reset project" data-export-section="replace">
+  <section class="smrt-export-panel__block smrt-export-panel__replace" aria-label="Import or reset project" data-export-section="replace" data-smrt-part="panel">
     <Disclosure title="Import or reset project">
-      <p class="meta">
+      <p class="smrt-export-panel__meta" data-smrt-part="meta">
         Both replace everything listed above; download a copy first to keep it.
       </p>
-      <div class="actions" data-export-actions="replace">
+      <div class="smrt-export-panel__actions" data-export-actions="replace" data-smrt-part="actions">
         <Button variant="secondary" onclick={() => fileInput?.click()}>Import cookbook…</Button>
 
       </div>
-      <p class="meta">
+      <p class="smrt-export-panel__meta" data-smrt-part="meta">
         Import swaps this cookbook for one from a file. Reset project also clears
         your conversation, sample records and current Build it draft.
       </p>
@@ -342,7 +342,7 @@ function confirmImport() {
       {#if error}
         <Alert variant="error" title="Import failed">{error}</Alert>
       {/if}
-      <p class="notice" role="status" aria-live="polite">{notice}</p>
+      <p class="smrt-export-panel__notice" data-smrt-part="status" role="status" aria-live="polite">{notice}</p>
     </Disclosure>
   </section>
 </div>
@@ -361,13 +361,12 @@ function confirmImport() {
 
 <style>
 @layer smrt.reset, smrt.structure, smrt.theme;
-@layer smrt.theme {
-  .export {
+@layer smrt.structure {
+  .smrt-export-panel__root {
     display: grid;
     gap: var(--smrt-spacing-5);
     min-inline-size: 0;
   }
-
   h2,
   h3,
   p,
@@ -376,48 +375,35 @@ function confirmImport() {
   pre {
     margin: 0;
   }
-
-  h2 {
-    font: var(--smrt-typography-title-medium-font);
-  }
-
-  h3 { font: var(--smrt-typography-title-small-font); }
-  .export-intro, .build-step, .card-body { display: grid; gap: var(--smrt-spacing-3); min-inline-size: 0; }
-  .build-step { padding: var(--smrt-spacing-4); border: var(--smrt-hairline); border-radius: var(--smrt-control-radius); background: var(--smrt-surface-sunken); }
-
-  .export :global([data-smrt-component='Card']) {
-    min-inline-size: 0;
-  }
-
-  .block {
+  .smrt-export-panel__intro, .smrt-export-panel__build-step, .smrt-export-panel__card-body {
     display: grid;
     gap: var(--smrt-spacing-3);
     min-inline-size: 0;
   }
-
-  .meta,
-  .notice,
-  .quiet {
-    color: var(--smrt-color-on-surface-variant);
+  .smrt-export-panel__build-step {
+    padding: var(--smrt-spacing-4);
   }
-
-  .notice:empty {
+  .smrt-export-panel__root :global([data-smrt-component='Card']) {
+    min-inline-size: 0;
+  }
+  .smrt-export-panel__block {
+    display: grid;
+    gap: var(--smrt-spacing-3);
+    min-inline-size: 0;
+  }
+  .smrt-export-panel__notice:empty {
     display: none;
   }
-
-  .summary {
+  .smrt-export-panel__summary {
     display: grid;
     grid-template-columns: max-content minmax(0, 1fr);
     gap: var(--smrt-spacing-2) var(--smrt-spacing-4);
     align-items: baseline;
   }
-
   dt {
-    font-weight: var(--smrt-typography-weight-semibold);
     white-space: nowrap;
   }
-
-  .chips {
+  .smrt-export-panel__chips {
     display: flex;
     flex-wrap: wrap;
     gap: var(--smrt-spacing-2);
@@ -425,94 +411,117 @@ function confirmImport() {
     padding: 0;
     list-style: none;
   }
-
-  .actions {
+  .smrt-export-panel__actions {
     display: flex;
     flex-wrap: wrap;
     gap: var(--smrt-spacing-2);
   }
-
   /* The prompt: monospace, wrapped so it fits any width, scrolls vertically. */
-  .export :global(.prompt) {
-    font-family: var(--smrt-font-family-mono, ui-monospace, monospace);
+  .smrt-export-panel__root :global(.smrt-export-panel__prompt) {
     white-space: pre-wrap;
     overflow-wrap: anywhere;
     overflow: auto;
     max-block-size: 20rem;
     resize: none;
   }
-
   code {
-    font-family: var(--smrt-font-family-mono, ui-monospace, monospace);
     overflow-wrap: anywhere;
   }
-
-  .command {
+  .smrt-export-panel__command {
     display: flex;
     flex-wrap: wrap;
     align-items: center;
     gap: var(--smrt-spacing-2) var(--smrt-spacing-3);
   }
-
-  .command code {
+  .smrt-export-panel__command code {
     flex: 1 1 16rem;
     min-inline-size: 0;
     padding: var(--smrt-spacing-2) var(--smrt-spacing-3);
+  }
+  .smrt-export-panel__json {
+    max-block-size: 20rem;
+    overflow: auto;
+    padding: var(--smrt-spacing-3);
+    white-space: pre-wrap;
+    overflow-wrap: anywhere;
+  }
+  /* Import and Reset: set apart from the actions above. */
+  .smrt-export-panel__replace {
+    padding-block-start: var(--smrt-spacing-4);
+  }
+  /* Phones: one control per row, the summary in one column. */
+  @media (max-width: 30rem) {
+    .smrt-export-panel__summary {
+      grid-template-columns: minmax(0, 1fr);
+    }
+    .smrt-export-panel__actions,
+    .smrt-export-panel__command {
+      flex-direction: column;
+      align-items: stretch;
+    }
+    /* In a column the 16rem flex-basis would set the height, not the width. */
+    .smrt-export-panel__command code {
+      flex: 0 0 auto;
+    }
+    .smrt-export-panel__actions > :global([data-smrt-component='Button']),
+    .smrt-export-panel__command > :global([data-smrt-component='Button']) {
+      inline-size: 100%;
+    }
+  }
+}
+
+@layer smrt.theme {
+  h2 {
+    font: var(--smrt-typography-title-medium-font);
+  }
+  h3 {
+    font: var(--smrt-typography-title-small-font);
+  }
+  .smrt-export-panel__build-step {
     border: var(--smrt-hairline);
     border-radius: var(--smrt-control-radius);
     background: var(--smrt-surface-sunken);
   }
-
-  .json {
-    max-block-size: 20rem;
-    overflow: auto;
-    padding: var(--smrt-spacing-3);
+  .smrt-export-panel__meta,
+  .smrt-export-panel__notice,
+  .smrt-export-panel__quiet {
+    color: var(--smrt-color-on-surface-variant);
+  }
+  dt {
+    font-weight: var(--smrt-typography-weight-semibold);
+  }
+  /* The prompt: monospace, wrapped so it fits any width, scrolls vertically. */
+  .smrt-export-panel__root :global(.smrt-export-panel__prompt) {
+    font-family: var(--smrt-font-family-mono, ui-monospace, monospace);
+  }
+  code {
+    font-family: var(--smrt-font-family-mono, ui-monospace, monospace);
+  }
+  .smrt-export-panel__command code {
+    border: var(--smrt-hairline);
+    border-radius: var(--smrt-control-radius);
+    background: var(--smrt-surface-sunken);
+  }
+  .smrt-export-panel__json {
     border: var(--smrt-hairline);
     border-radius: var(--smrt-control-radius);
     background: var(--smrt-surface-sunken);
     font-family: var(--smrt-font-family-mono, ui-monospace, monospace);
     font-size: var(--smrt-typography-body-small-size);
-    white-space: pre-wrap;
-    overflow-wrap: anywhere;
   }
-
   /* Import and Reset: set apart from the actions above. */
-  .replace {
-    padding-block-start: var(--smrt-spacing-4);
+  .smrt-export-panel__replace {
     border-block-start: var(--smrt-hairline);
   }
-
-  /* Phones: one control per row, the summary in one column. */
-  @media (max-width: 30rem) {
-    .summary {
-      grid-template-columns: minmax(0, 1fr);
-    }
-
-    .actions,
-    .command {
-      flex-direction: column;
-      align-items: stretch;
-    }
-
-    /* In a column the 16rem flex-basis would set the height, not the width. */
-    .command code {
-      flex: 0 0 auto;
-    }
-
-    .actions > :global([data-smrt-component='Button']),
-    .command > :global([data-smrt-component='Button']) {
-      inline-size: 100%;
-    }
-  }
-
   /* Forced colours: the command and preview boxes keep a visible edge. */
   @media (forced-colors: active) {
-    .build-step,
-    .export :global([data-smrt-component='Card']),
-    .command code,
-    .json {
+    .smrt-export-panel__build-step,
+    .smrt-export-panel__root :global([data-smrt-component='Card']),
+    .smrt-export-panel__command code,
+    .smrt-export-panel__json {
       border-color: CanvasText;
     }
   }
 }
+
 </style>

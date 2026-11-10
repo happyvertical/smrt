@@ -41,11 +41,11 @@ function formatCharge(metric: CommercialMetricView): string {
 }
 </script>
 
-<section class="commercial-overview" aria-label={t(M['subscriptions.commercial.overview_label'])} data-smrt-component="CommercialOverview">
+<section class="smrt-commercial-overview__root" aria-label={t(M['subscriptions.commercial.overview_label'])} data-smrt-component="CommercialOverview">
   {#each metrics as metric (metric.metricKey)}
-    <article>
-      <header><strong>{metric.metricKey}</strong><span class:blocked={metric.thresholdState === 'blocked'}>{metric.thresholdState ?? 'ok'}</span></header>
-      <dl>
+    <article data-smrt-part="row">
+      <header data-smrt-part="header"><strong>{metric.metricKey}</strong><span class:smrt-commercial-overview__blocked={metric.thresholdState === 'blocked'} data-smrt-part="indicator">{metric.thresholdState ?? 'ok'}</span></header>
+      <dl data-smrt-part="body">
         <div><dt>Usage</dt><dd>{metric.usage}</dd></div>
         <div><dt>Allowance</dt><dd>{metric.allowance ?? '—'}</dd></div>
         <div><dt>Forecast</dt><dd>{metric.forecast ?? '—'}</dd></div>
@@ -57,13 +57,39 @@ function formatCharge(metric: CommercialMetricView): string {
 
 <style>
 @layer smrt.reset, smrt.structure, smrt.theme;
-@layer smrt.theme {
-.commercial-overview { display:grid; gap:.75rem; }
-article { border:var(--smrt-hairline); border-radius:var(--smrt-radius-md); padding:1rem; }
-header, dl, dl div { display:flex; justify-content:space-between; gap:1rem; }
-dl { flex-wrap:wrap; margin:.75rem 0 0; }
-dt { color:var(--smrt-color-on-surface-variant); }
-dd { margin:0; }
-.blocked { color:var(--smrt-color-error); }
+@layer smrt.structure {
+  .smrt-commercial-overview__root {
+    display:grid;
+    gap:.75rem;
+  }
+  article {
+    padding:1rem;
+  }
+  header, dl, dl div {
+    display:flex;
+    justify-content:space-between;
+    gap:1rem;
+  }
+  dl {
+    flex-wrap:wrap;
+    margin:.75rem 0 0;
+  }
+  dd {
+    margin:0;
+  }
 }
+
+@layer smrt.theme {
+  article {
+    border:var(--smrt-hairline);
+    border-radius:var(--smrt-radius-md);
+  }
+  dt {
+    color:var(--smrt-color-on-surface-variant);
+  }
+  .smrt-commercial-overview__blocked {
+    color:var(--smrt-color-error);
+  }
+}
+
 </style>

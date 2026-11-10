@@ -1531,7 +1531,7 @@ export function getInteractionRegistry(): ControlInteractionRegistry {
   bind:this={formElement}
   {id}
   {name}
-  class="smrt-form {className}"
+  class="smrt-form__root {className}"
   data-smrt-form={resolvedFormId}
   onsubmit={handleSubmit}
   {method}
@@ -1544,7 +1544,7 @@ export function getInteractionRegistry(): ControlInteractionRegistry {
     label change isn't reliably announced. Visually hidden — the button still
     shows the same state to sighted users.
   -->
-  <div class="smrt-form__status" role="status" aria-live="polite">
+  <div class="smrt-form__status" data-smrt-part="status" role="status" aria-live="polite">
     {#if isExtracting}
       {t(M['ui.form.extracting'])}
     {:else if isFormListening}
@@ -1553,22 +1553,22 @@ export function getInteractionRegistry(): ControlInteractionRegistry {
   </div>
 
   {#if showModeToggle || showFormListen}
-    <div class="form-controls">
+    <div class="smrt-form__controls" data-smrt-part="actions">
       {#if showModeToggle}
-        <div class="mode-toggle">
+        <div class="smrt-form__mode-toggle" data-smrt-part="group">
           <button
             type="button"
-            class="mode-btn"
-            class:active={!isSmrt}
-            onclick={handleModeToggle}
+            class="smrt-form__mode-btn"
+            class:smrt-form__active={!isSmrt}
+            onclick={handleModeToggle} data-smrt-part="option"
           >
             Dumb
           </button>
           <button
             type="button"
-            class="mode-btn"
-            class:active={isSmrt}
-            onclick={handleModeToggle}
+            class="smrt-form__mode-btn"
+            class:smrt-form__active={isSmrt}
+            onclick={handleModeToggle} data-smrt-part="option"
           >
             s-m-r-t
           </button>
@@ -1578,9 +1578,10 @@ export function getInteractionRegistry(): ControlInteractionRegistry {
       {#if showFormListen && isSmrt}
         <button
           type="button"
-          class="form-listen-btn"
-          class:listening={isFormListening}
-          class:extracting={isExtracting}
+          class="smrt-form__listen-btn"
+          class:smrt-form__listening={isFormListening}
+          class:smrt-form__extracting={isExtracting}
+          data-smrt-part="trigger"
           onclick={toggleFormListening}
         >
           {#if isExtracting}
@@ -1591,7 +1592,8 @@ export function getInteractionRegistry(): ControlInteractionRegistry {
               fill="none"
               stroke="currentColor"
               stroke-width="2"
-              class="spinner"
+              class="smrt-form__spinner"
+              data-smrt-part="spinner"
             >
               <circle cx="12" cy="12" r="10" stroke-dasharray="32" stroke-dashoffset="12"/>
             </svg>
@@ -1634,10 +1636,10 @@ export function getInteractionRegistry(): ControlInteractionRegistry {
   {/if}
 
   {#if extractError}
-    <div class="extract-error" role="alert">{extractError}</div>
+    <div class="smrt-form__extract-error" data-smrt-part="error" role="alert">{extractError}</div>
   {/if}
 
-  <div class="form-fields">
+  <div class="smrt-form__fields" data-smrt-part="body">
     {@render children()}
   </div>
   <StagedControlReview
@@ -1649,20 +1651,19 @@ export function getInteractionRegistry(): ControlInteractionRegistry {
 </form>
 
 {#if isFormListening && spokenText}
-  <div class="spoken-toaster" data-smrt-component="Form">
+  <div class="smrt-form__spoken-toaster"  data-smrt-component="Form">
     <strong>{t(M['ui.form.you_said'])}</strong> {spokenText}
   </div>
 {/if}
 
 <style>
 @layer smrt.reset, smrt.structure, smrt.theme;
-@layer smrt.theme {
-  .smrt-form {
+@layer smrt.structure {
+  .smrt-form__root {
     display: flex;
     flex-direction: column;
     gap: var(--smrt-spacing-4);
   }
-
   /* Visually-hidden live region (L1 #1420) — announced to screen readers only. */
   .smrt-form__status {
     position: absolute;
@@ -1673,81 +1674,98 @@ export function getInteractionRegistry(): ControlInteractionRegistry {
     overflow: hidden;
     clip: rect(0, 0, 0, 0);
     white-space: nowrap;
-    border: 0;
   }
-
-  .form-controls {
+  .smrt-form__controls {
     display: flex;
     align-items: center;
     gap: var(--smrt-spacing-4);
     flex-wrap: wrap;
   }
-
-  .mode-toggle {
+  .smrt-form__mode-toggle {
     display: flex;
-    background: var(--smrt-color-surface-container-high);
     padding: var(--smrt-spacing-1);
-    border-radius: var(--smrt-radius-md);
   }
-
-  .mode-btn {
+  .smrt-form__mode-btn {
     padding: var(--smrt-spacing-2) var(--smrt-spacing-4);
-    border: none;
-    background: transparent;
-    color: var(--smrt-color-on-surface-variant);
-    border-radius: var(--smrt-radius-md);
     cursor: pointer;
-    font-size: var(--smrt-typography-label-large-size, 0.875rem);
-    font-weight: var(--smrt-typography-weight-medium, 500);
-    transition: all var(--smrt-duration-short2, 150ms) var(--smrt-easing-standard, ease);
   }
-
-  .mode-btn:hover {
-    color: var(--smrt-color-on-surface);
-  }
-
-  .mode-btn.active {
-    background: var(--smrt-color-surface);
-    color: var(--smrt-color-primary);
-    box-shadow: var(--smrt-elevation-1, 0 1px 3px color-mix(in srgb, var(--smrt-color-shadow) 10%, transparent));
-  }
-
-  .form-listen-btn {
+  .smrt-form__listen-btn {
     display: flex;
     align-items: center;
     gap: var(--smrt-spacing-2);
     padding: var(--smrt-spacing-3) var(--smrt-spacing-5);
-    border: 2px solid var(--smrt-color-primary);
-    background: var(--smrt-color-surface);
-    color: var(--smrt-color-primary);
-    border-radius: var(--smrt-radius-md);
     cursor: pointer;
+  }
+  .smrt-form__listen-btn:disabled {
+    cursor: not-allowed;
+  }
+  .smrt-form__spoken-toaster {
+    position: fixed;
+    bottom: 0;
+    left: 0;
+    right: 0;
+    padding: var(--smrt-spacing-3) var(--smrt-spacing-6);
+    z-index: var(--smrt-z-index-toast, 1500);
+  }
+  .smrt-form__extract-error {
+    padding: var(--smrt-spacing-3) var(--smrt-spacing-4);
+  }
+  .smrt-form__fields {
+    display: flex;
+    flex-direction: column;
+    gap: var(--smrt-spacing-4);
+  }
+}
+
+@layer smrt.theme {
+  /* Visually-hidden live region (L1 #1420) — announced to screen readers only. */
+  .smrt-form__status {
+    border: 0;
+  }
+  .smrt-form__mode-toggle {
+    background: var(--smrt-color-surface-container-high);
+    border-radius: var(--smrt-radius-md);
+  }
+  .smrt-form__mode-btn {
+    border: none;
+    background: transparent;
+    color: var(--smrt-color-on-surface-variant);
+    border-radius: var(--smrt-radius-md);
     font-size: var(--smrt-typography-label-large-size, 0.875rem);
     font-weight: var(--smrt-typography-weight-medium, 500);
     transition: all var(--smrt-duration-short2, 150ms) var(--smrt-easing-standard, ease);
   }
-
-  .form-listen-btn:hover {
+  .smrt-form__mode-btn:hover {
+    color: var(--smrt-color-on-surface);
+  }
+  .smrt-form__mode-btn.smrt-form__active {
+    background: var(--smrt-color-surface);
+    color: var(--smrt-color-primary);
+    box-shadow: var(--smrt-elevation-1, 0 1px 3px color-mix(in srgb, var(--smrt-color-shadow) 10%, transparent));
+  }
+  .smrt-form__listen-btn {
+    border: 2px solid var(--smrt-color-primary);
+    background: var(--smrt-color-surface);
+    color: var(--smrt-color-primary);
+    border-radius: var(--smrt-radius-md);
+    font-size: var(--smrt-typography-label-large-size, 0.875rem);
+    font-weight: var(--smrt-typography-weight-medium, 500);
+    transition: all var(--smrt-duration-short2, 150ms) var(--smrt-easing-standard, ease);
+  }
+  .smrt-form__listen-btn:hover {
     background: var(--smrt-color-primary-container);
   }
-
-  .form-listen-btn.listening {
+  .smrt-form__listen-btn.smrt-form__listening {
     background: var(--smrt-color-primary);
     border-color: var(--smrt-color-primary);
     color: var(--smrt-color-on-primary);
     animation: pulse-btn 1.5s var(--smrt-easing-standard, ease-in-out) infinite;
   }
-
-  .form-listen-btn.extracting {
+  .smrt-form__listen-btn.smrt-form__extracting {
     background: var(--smrt-color-secondary);
     border-color: var(--smrt-color-secondary);
     color: var(--smrt-color-on-secondary);
   }
-
-  .form-listen-btn:disabled {
-    cursor: not-allowed;
-  }
-
   @keyframes pulse-btn {
     0%, 100% {
       box-shadow: 0 0 0 0 color-mix(in srgb, var(--smrt-color-success) 40%, transparent);
@@ -1756,46 +1774,34 @@ export function getInteractionRegistry(): ControlInteractionRegistry {
       box-shadow: 0 0 0 8px transparent;
     }
   }
-
   @media (prefers-reduced-motion: reduce) {
-    .form-listen-btn.listening {
+    .smrt-form__listen-btn.smrt-form__listening {
       animation: none;
     }
   }
-
-  .spinner {
+  .smrt-form__spinner {
     animation: spin 1s linear infinite;
   }
-
   @keyframes spin {
     to {
       transform: rotate(360deg);
     }
   }
-
-  .spoken-toaster {
-    position: fixed;
-    bottom: 0;
-    left: 0;
-    right: 0;
-    padding: var(--smrt-spacing-3) var(--smrt-spacing-6);
+  .smrt-form__spoken-toaster {
     /* 90%-opacity primary. The old `--smrt-color-primary-rgb` channel token
-       was never emitted (issue #1431); color-mix derives the alpha from the
-       emitted `--smrt-color-primary` token instead. */
+    was never emitted (issue #1431); color-mix derives the alpha from the
+    emitted `--smrt-color-primary` token instead. */
     background: color-mix(in srgb, var(--smrt-color-primary) 90%, transparent);
     color: var(--smrt-color-on-primary);
     font-size: var(--smrt-typography-body-medium-size, 0.875rem);
     box-shadow: 0 -2px 12px color-mix(in srgb, var(--smrt-color-shadow) 15%, transparent);
-    z-index: var(--smrt-z-index-toast, 1500);
     text-align: center;
     backdrop-filter: blur(8px);
     animation: slideUp 0.2s ease-out;
   }
-
-  .spoken-toaster strong {
+  .smrt-form__spoken-toaster strong {
     color: var(--smrt-color-on-primary-container);
   }
-
   @keyframes slideUp {
     from {
       opacity: 0;
@@ -1806,20 +1812,13 @@ export function getInteractionRegistry(): ControlInteractionRegistry {
       transform: translateY(0);
     }
   }
-
-  .extract-error {
-    padding: var(--smrt-spacing-3) var(--smrt-spacing-4);
+  .smrt-form__extract-error {
     background: var(--smrt-color-error-container);
     border: 1px solid var(--smrt-color-error);
     border-radius: var(--smrt-radius-md);
     font-size: var(--smrt-typography-body-medium-size, 0.875rem);
     color: var(--smrt-color-error);
   }
-
-  .form-fields {
-    display: flex;
-    flex-direction: column;
-    gap: var(--smrt-spacing-4);
-  }
 }
+
 </style>

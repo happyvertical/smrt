@@ -43,15 +43,15 @@ function handleCustomSubmit(data: ProductData) {
 }
 </script>
 
-<div class="demo-page">
-  <header class="demo-header">
+<div class="smrt-demo-page__root" data-smrt-component="DemoPage">
+  <header class="smrt-demo-page__header" data-smrt-part="header">
     <h1>{t(M['products.demo_page.title'])}</h1>
-    <p class="demo-subtitle">
+    <p class="smrt-demo-page__subtitle" data-smrt-part="meta">
       {t(M['products.demo_page.subtitle'])}
     </p>
   </header>
 
-  <nav class="demo-nav">
+  <nav class="smrt-demo-page__nav" data-smrt-part="nav">
     <Button
       variant={currentTab === 'auto' ? 'primary' : 'secondary'}
       onclick={() => currentTab = 'auto'}
@@ -72,16 +72,16 @@ function handleCustomSubmit(data: ProductData) {
     </Button>
   </nav>
 
-  <main class="demo-content">
+  <main class="smrt-demo-page__content" data-smrt-part="body">
     {#if currentTab === 'auto'}
-      <section class="demo-section">
+      <section class="smrt-demo-page__section" data-smrt-part="group">
         <h2>{t(M['products.demo_page.auto_generated_heading'])}</h2>
-        <p class="section-description">
+        <p class="smrt-demo-page__section-description" data-smrt-part="meta">
           {t(M['products.demo_page.auto_generated_description'])}
         </p>
 
-        <div class="demo-grid">
-          <div class="demo-column">
+        <div class="smrt-demo-page__grid" data-smrt-part="list">
+          <div class="smrt-demo-page__column" data-smrt-part="item">
             <h3>{t(M['products.demo_page.generated_form_heading'])}</h3>
             <AutoForm
               data={autoFormData}
@@ -91,7 +91,7 @@ function handleCustomSubmit(data: ProductData) {
             />
           </div>
 
-          <div class="demo-column">
+          <div class="smrt-demo-page__column" data-smrt-part="item">
             <h3>{t(M['products.demo_page.generated_display_heading'])}</h3>
             <ProductCard
               product={autoFormData}
@@ -102,14 +102,14 @@ function handleCustomSubmit(data: ProductData) {
       </section>
 
     {:else if currentTab === 'custom'}
-      <section class="demo-section">
+      <section class="smrt-demo-page__section" data-smrt-part="group">
         <h2>{t(M['products.demo_page.custom_components_heading'])}</h2>
-        <p class="section-description">
+        <p class="smrt-demo-page__section-description" data-smrt-part="meta">
           {t(M['products.demo_page.custom_components_description'])}
         </p>
 
-        <div class="demo-grid">
-          <div class="demo-column">
+        <div class="smrt-demo-page__grid" data-smrt-part="list">
+          <div class="smrt-demo-page__column" data-smrt-part="item">
             <h3>{t(M['products.demo_page.custom_form_heading'])}</h3>
             <ProductForm
               product={customFormData}
@@ -117,7 +117,7 @@ function handleCustomSubmit(data: ProductData) {
             />
           </div>
 
-          <div class="demo-column">
+          <div class="smrt-demo-page__column" data-smrt-part="item">
             <h3>{t(M['products.demo_page.custom_display_heading'])}</h3>
             <ProductCard
               product={customFormData}
@@ -128,20 +128,20 @@ function handleCustomSubmit(data: ProductData) {
       </section>
 
     {:else if currentTab === 'comparison'}
-      <section class="demo-section">
+      <section class="smrt-demo-page__section" data-smrt-part="group">
         <h2>{t(M['products.demo_page.progressive_heading'])}</h2>
-        <p class="section-description">
+        <p class="smrt-demo-page__section-description" data-smrt-part="meta">
           {t(M['products.demo_page.progressive_description'])}
         </p>
 
-        <div class="comparison-grid">
-          <div class="comparison-column">
+        <div class="smrt-demo-page__comparison-grid" data-smrt-part="list">
+          <div class="smrt-demo-page__comparison-column" data-smrt-part="item">
             <h3>🤖 Auto-Generated</h3>
-            <div class="feature-list">
-              <div class="feature">{t(M['products.demo_page.feature_zero_config'])}</div>
-              <div class="feature">{t(M['products.demo_page.feature_instant_ui'])}</div>
-              <div class="feature">{t(M['products.demo_page.feature_type_safe'])}</div>
-              <div class="feature">{t(M['products.demo_page.feature_prototyping'])}</div>
+            <div class="smrt-demo-page__feature-list" data-smrt-part="list">
+              <div class="smrt-demo-page__feature" data-smrt-part="item">{t(M['products.demo_page.feature_zero_config'])}</div>
+              <div class="smrt-demo-page__feature" data-smrt-part="item">{t(M['products.demo_page.feature_instant_ui'])}</div>
+              <div class="smrt-demo-page__feature" data-smrt-part="item">{t(M['products.demo_page.feature_type_safe'])}</div>
+              <div class="smrt-demo-page__feature" data-smrt-part="item">{t(M['products.demo_page.feature_prototyping'])}</div>
             </div>
             <AutoForm
               data={autoFormData}
@@ -150,13 +150,13 @@ function handleCustomSubmit(data: ProductData) {
             />
           </div>
 
-          <div class="comparison-column">
+          <div class="smrt-demo-page__comparison-column" data-smrt-part="item">
             <h3>{t(M['products.demo_page.custom_components_label'])}</h3>
-            <div class="feature-list">
-              <div class="feature">{t(M['products.demo_page.feature_tailored_ux'])}</div>
-              <div class="feature">{t(M['products.demo_page.feature_business_workflows'])}</div>
-              <div class="feature">{t(M['products.demo_page.feature_advanced_interactions'])}</div>
-              <div class="feature">⚡ Production-ready</div>
+            <div class="smrt-demo-page__feature-list" data-smrt-part="list">
+              <div class="smrt-demo-page__feature" data-smrt-part="item">{t(M['products.demo_page.feature_tailored_ux'])}</div>
+              <div class="smrt-demo-page__feature" data-smrt-part="item">{t(M['products.demo_page.feature_business_workflows'])}</div>
+              <div class="smrt-demo-page__feature" data-smrt-part="item">{t(M['products.demo_page.feature_advanced_interactions'])}</div>
+              <div class="smrt-demo-page__feature" data-smrt-part="item">⚡ Production-ready</div>
             </div>
             <ProductForm
               product={customFormData}
@@ -168,8 +168,8 @@ function handleCustomSubmit(data: ProductData) {
     {/if}
   </main>
 
-  <footer class="demo-footer">
-    <div class="framework-info">
+  <footer class="smrt-demo-page__footer" data-smrt-part="footer">
+    <div class="smrt-demo-page__framework-info" data-smrt-part="body">
       <h4>{t(M['products.demo_page.benefits_heading'])}</h4>
       <ul>
         <li><strong>{t(M['products.demo_page.benefit_define_once_label'])}</strong> {t(M['products.demo_page.benefit_define_once_text'])}</li>
@@ -184,9 +184,99 @@ function handleCustomSubmit(data: ProductData) {
 
 <style>
 @layer smrt.reset, smrt.structure, smrt.theme;
-@layer smrt.theme {
-  .demo-page {
+@layer smrt.structure {
+  .smrt-demo-page__root {
     min-height: 100vh;
+  }
+  .smrt-demo-page__header {
+    padding: 2rem 1rem;
+    margin-bottom: 2rem;
+  }
+  .smrt-demo-page__header h1 {
+    margin: 0 0 0.5rem 0;
+  }
+  .smrt-demo-page__subtitle {
+    margin: 0;
+  }
+  .smrt-demo-page__nav {
+    display: flex;
+    justify-content: center;
+    gap: 1rem;
+    margin-bottom: 2rem;
+    padding: 0 1rem;
+  }
+  .smrt-demo-page__content {
+    padding: 0 1rem 2rem;
+  }
+  .smrt-demo-page__section {
+    max-width: 1200px;
+    margin: 0 auto;
+    padding: 2rem;
+    margin-bottom: 2rem;
+  }
+  .smrt-demo-page__section-description {
+    margin-bottom: 2rem;
+  }
+  .smrt-demo-page__grid {
+    display: grid;
+    grid-template-columns: 1fr 1fr;
+    gap: 2rem;
+  }
+  .smrt-demo-page__column h3 {
+    margin-bottom: 1rem;
+  }
+  .smrt-demo-page__comparison-grid {
+    display: grid;
+    grid-template-columns: 1fr 1fr;
+    gap: 2rem;
+  }
+  .smrt-demo-page__comparison-column {
+    padding: 1.5rem;
+  }
+  .smrt-demo-page__comparison-column h3 {
+    margin-bottom: 1rem;
+  }
+  .smrt-demo-page__feature-list {
+    margin-bottom: 1.5rem;
+    display: flex;
+    flex-direction: column;
+    gap: 0.5rem;
+  }
+  .smrt-demo-page__footer {
+    padding: 2rem;
+    margin-top: 2rem;
+  }
+  .smrt-demo-page__framework-info {
+    max-width: 800px;
+    margin: 0 auto;
+  }
+  .smrt-demo-page__framework-info h4 {
+    margin-bottom: 1rem;
+  }
+  .smrt-demo-page__framework-info ul {
+    list-style: none;
+    padding: 0;
+    display: grid;
+    grid-template-columns: repeat(auto-fit, minmax(250px, 1fr));
+    gap: 0.75rem;
+  }
+  .smrt-demo-page__framework-info li {
+    padding: 0.75rem;
+  }
+  @media (max-width: 768px) {
+    .smrt-demo-page__grid,
+    .smrt-demo-page__comparison-grid {
+      grid-template-columns: 1fr;
+    }
+    .smrt-demo-page__nav {
+      flex-direction: column;
+      align-items: center;
+    }
+  }
+}
+
+@layer smrt.theme {
+  .smrt-demo-page__root {
     background: linear-gradient(
       135deg,
       var(--smrt-color-primary) 0%,
@@ -194,146 +284,66 @@ function handleCustomSubmit(data: ProductData) {
     );
     color: var(--smrt-color-on-surface);
   }
-
-  .demo-header {
+  .smrt-demo-page__header {
     text-align: center;
-    padding: 2rem 1rem;
     background: color-mix(in srgb, var(--smrt-color-surface) 95%, transparent);
-    margin-bottom: 2rem;
   }
-
-  .demo-header h1 {
+  .smrt-demo-page__header h1 {
     font-size: var(--smrt-typography-display-medium-size, 2.5rem);
     font-weight: var(--smrt-typography-weight-bold, 700);
     color: var(--smrt-color-on-surface);
-    margin: 0 0 0.5rem 0;
   }
-
-  .demo-subtitle {
+  .smrt-demo-page__subtitle {
     font-size: var(--smrt-typography-body-large-size, 1.125rem);
     color: var(--smrt-color-on-surface-variant);
-    margin: 0;
   }
-
-  .demo-nav {
-    display: flex;
-    justify-content: center;
-    gap: 1rem;
-    margin-bottom: 2rem;
-    padding: 0 1rem;
-  }
-
-  .demo-content {
-    padding: 0 1rem 2rem;
-  }
-
-  .demo-section {
-    max-width: 1200px;
-    margin: 0 auto;
+  .smrt-demo-page__section {
     background: color-mix(in srgb, var(--smrt-color-surface) 95%, transparent);
     border-radius: var(--smrt-radius-xl, 1rem);
-    padding: 2rem;
-    margin-bottom: 2rem;
   }
-
-  .section-description {
+  .smrt-demo-page__section-description {
     font-size: var(--smrt-typography-body-large-size, 1rem);
     color: var(--smrt-color-on-surface-variant);
-    margin-bottom: 2rem;
     text-align: center;
   }
-
-  .demo-grid {
-    display: grid;
-    grid-template-columns: 1fr 1fr;
-    gap: 2rem;
-  }
-
-  .demo-column h3 {
+  .smrt-demo-page__column h3 {
     text-align: center;
-    margin-bottom: 1rem;
     color: var(--smrt-color-on-surface);
   }
-
-  .comparison-grid {
-    display: grid;
-    grid-template-columns: 1fr 1fr;
-    gap: 2rem;
-  }
-
-  .comparison-column {
-    padding: 1.5rem;
+  .smrt-demo-page__comparison-column {
     background: var(--smrt-color-surface-container-low);
     border-radius: var(--smrt-radius-md, 0.5rem);
     border: var(--smrt-hairline);
   }
-
-  .comparison-column h3 {
+  .smrt-demo-page__comparison-column h3 {
     text-align: center;
-    margin-bottom: 1rem;
     font-size: var(--smrt-typography-title-large-size, 1.25rem);
   }
-
-  .feature-list {
-    margin-bottom: 1.5rem;
-    display: flex;
-    flex-direction: column;
-    gap: 0.5rem;
-  }
-
-  .feature {
+  .smrt-demo-page__feature {
     font-size: var(--smrt-typography-body-medium-size, 0.875rem);
     color: var(--smrt-color-on-surface);
   }
-
-  .demo-footer {
+  .smrt-demo-page__footer {
     background: color-mix(in srgb, var(--smrt-color-surface) 95%, transparent);
-    padding: 2rem;
-    margin-top: 2rem;
   }
-
-  .framework-info {
-    max-width: 800px;
-    margin: 0 auto;
+  .smrt-demo-page__framework-info {
     text-align: center;
   }
-
-  .framework-info h4 {
+  .smrt-demo-page__framework-info h4 {
     font-size: var(--smrt-typography-title-large-size, 1.25rem);
     font-weight: var(--smrt-typography-weight-semibold, 600);
-    margin-bottom: 1rem;
     color: var(--smrt-color-on-surface);
   }
-
-  .framework-info ul {
-    list-style: none;
-    padding: 0;
-    display: grid;
-    grid-template-columns: repeat(auto-fit, minmax(250px, 1fr));
-    gap: 0.75rem;
-  }
-
-  .framework-info li {
-    padding: 0.75rem;
+  .smrt-demo-page__framework-info li {
     background: var(--smrt-color-surface-container);
     border-radius: var(--smrt-radius-sm, 0.375rem);
     font-size: var(--smrt-typography-body-medium-size, 0.875rem);
   }
-
   @media (max-width: 768px) {
-    .demo-grid,
-    .comparison-grid {
-      grid-template-columns: 1fr;
-    }
-
-    .demo-nav {
-      flex-direction: column;
-      align-items: center;
-    }
-
-    .demo-header h1 {
+    .smrt-demo-page__header h1 {
       font-size: var(--smrt-typography-headline-large-size, 2rem);
     }
   }
 }
+
 </style>
