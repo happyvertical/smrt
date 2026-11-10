@@ -429,7 +429,7 @@ pub fn run() {
 mod tests {
     use super::*;
 
-    /// D7 (assumed, pending owner confirmation): the data directory and the
+    /// D7 (owner-confirmed): the data directory and the
     /// log live under `app_local_data_dir`. Tauri's `app_data_dir` is Roaming
     /// on Windows; SQLite and pid/socket state must not roam. This guards the
     /// non-test source from calling the roaming resolver again.

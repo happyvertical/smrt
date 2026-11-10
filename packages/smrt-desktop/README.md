@@ -101,12 +101,13 @@ Three locations are never conflated:
 
 #### Data root and roaming
 
-> **Assumed decision D7, pending owner confirmation.** The wrapper resolves the
+> **Decision D7 (owner-confirmed 2026-11-10).** The wrapper resolves the
 > sidecar data directory (`SMRT_DATA_DIR`) and its own log
 > (`<app_local_data_dir>/.desktop-wrapper/supervisor.log`) under Tauri's
 > `app_local_data_dir` on every platform, the same root the installed-product
-> contracts already use for private state. Alternative: keep Tauri's
-> `app_data_dir`, which on Windows is the roaming `%APPDATA%` profile.
+> contracts already use for private state, never Tauri's `app_data_dir` (the
+> roaming `%APPDATA%` profile on Windows). Users get their data back through
+> encrypted backups and restore (smrt#4668), not through a roaming profile.
 
 Reason: the runtime keeps SQLite files, a writer lease and process state in the
 data directory, and none of that may follow a user to another machine through a

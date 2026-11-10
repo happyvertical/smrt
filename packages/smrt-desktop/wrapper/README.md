@@ -22,7 +22,7 @@ signing secret in a URL query is deliberately not carried over.
      manifest `env`, then the supervisor values, which always win:
      `HOST=127.0.0.1`, `PORT=<port>`, `ORIGIN=http://127.0.0.1:<port>`,
      `SMRT_DATA_DIR=<app_local_data_dir>/<dataDirectory>` (machine-local, never the
-     roaming `app_data_dir`; assumed decision D7, see the parent README), and
+     roaming `app_data_dir`; decision D7, see the parent README), and
      `SMRT_DESKTOP_OWNER_LINK_SECRET=<launch secret>` (see Owner link). The
      secret is set on the sidecar command only.
      Inherited names that collide case-insensitively with a reserved or
