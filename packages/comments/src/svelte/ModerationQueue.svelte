@@ -32,16 +32,16 @@ async function moderate(commentId: string, status: ModerationStatus) {
 }
 </script>
 
-<section aria-label={heading} class="moderation-queue" data-smrt-component="ModerationQueue">
-  <h2>{heading}</h2>
+<section aria-label={heading} class="smrt-moderation-queue__root" data-smrt-component="ModerationQueue">
+  <h2 data-smrt-part="title">{heading}</h2>
   {#if error}<p role="alert">{error}</p>{/if}
-  <ol>
+  <ol data-smrt-part="list">
     {#each comments as comment (comment.id)}
-      <li>
+      <li data-smrt-part="row">
         <strong>{comment.authorLabel}</strong><p>{comment.body}</p>
-        <small>{comment.status}{#if comment.reportCount} · {comment.reportCount} reports{/if}</small>
+        <small data-smrt-part="meta">{comment.status}{#if comment.reportCount} · {comment.reportCount} reports{/if}</small>
         {#if onmoderate}
-          <div aria-label={`Moderate ${comment.authorLabel}'s comment`}>
+          <div data-smrt-part="actions" aria-label={`Moderate ${comment.authorLabel}'s comment`}>
             <button disabled={pendingId !== null} onclick={() => void moderate(comment.id, 'visible')}>Approve</button>
             <button disabled={pendingId !== null} onclick={() => void moderate(comment.id, 'hidden')}>Hide</button>
             <button disabled={pendingId !== null} onclick={() => void moderate(comment.id, 'deleted')}>Delete</button>
@@ -54,7 +54,27 @@ async function moderate(commentId: string, status: ModerationStatus) {
 
 <style>
 @layer smrt.reset, smrt.structure, smrt.theme;
-@layer smrt.theme {
-.moderation-queue { display: grid; gap: var(--smrt-spacing-3, 0.75rem); } ol { display: grid; gap: var(--smrt-spacing-3, 0.75rem); list-style: none; margin: 0; padding: 0; } li { border-block-end: var(--smrt-hairline); } button { margin-inline-end: var(--smrt-spacing-2, 0.5rem); }
+@layer smrt.structure {
+  .smrt-moderation-queue__root {
+    display: grid;
+    gap: var(--smrt-spacing-3, 0.75rem);
+  }
+  ol {
+    display: grid;
+    gap: var(--smrt-spacing-3, 0.75rem);
+    list-style: none;
+    margin: 0;
+    padding: 0;
+  }
+  button {
+    margin-inline-end: var(--smrt-spacing-2, 0.5rem);
+  }
 }
+
+@layer smrt.theme {
+  li {
+    border-block-end: var(--smrt-hairline);
+  }
+}
+
 </style>
