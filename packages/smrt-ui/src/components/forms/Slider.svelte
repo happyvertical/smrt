@@ -141,11 +141,11 @@ useControlRegistration(() => {
   data-smrt-subject-type={resolvedInteraction === false ? undefined : resolvedInteraction.subject?.type}
   data-smrt-subject-id={resolvedInteraction === false ? undefined : resolvedInteraction.subject?.id} data-smrt-component="Slider">
   {#if label}<div class="smrt-slider__header" data-smrt-part="header"><label for={resolvedId}>{label}</label><output for={resolvedId}>{formatValue(value)}</output></div>{/if}
-  <div class="smrt-slider__controls" data-smrt-part="controls">
+  <div class="smrt-slider__controls" data-smrt-part="control">
     <input bind:this={rangeEl} id={resolvedId} type="range" {name} {min} {max} {step} {disabled} value={value}
       style={`--smrt-slider-percent: ${percent}%`} aria-valuetext={formatValue(value)} aria-describedby={formGroup?.().describedBy}
       oninput={handleInput} onchange={handleChange} {...rest} />
-    {#if showInput}<input class="smrt-slider__number" data-smrt-part="number" type="number" {min} {max} {step} {disabled} value={value}
+    {#if showInput}<input class="smrt-slider__number" data-smrt-part="input" type="number" {min} {max} {step} {disabled} value={value}
       aria-label={label ? `${label} value` : 'Slider value'} onchange={(event) => setValue(event.currentTarget.value)} />{/if}
   </div>
 </div>

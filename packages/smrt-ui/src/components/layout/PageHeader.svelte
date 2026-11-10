@@ -103,7 +103,7 @@ $effect(() => shell?.report?.({ title: shortTitle ?? title, parents }));
   {/if}
 
   <div class="smrt-page-header__main" data-smrt-part="header">
-    <div class="smrt-page-header__content" data-smrt-part="content">
+    <div class="smrt-page-header__content" data-smrt-part="body">
       {#if backHref}
         <a href={backHref} class="smrt-page-header__back-link" data-smrt-part="trigger" use:ripple>
           <Icon name="chevron-left" size={20} />

@@ -164,20 +164,20 @@ function handleKeydown(event: KeyboardEvent) {
         {#if phase === 'working'}
           <span class="smrt-working-strip__spinner" data-smrt-part="spinner"></span>
         {:else if phase === 'paused'}
-          <span class="smrt-working-strip__glyph" data-smrt-part="glyph">&#10074;&#10074;</span>
+          <span class="smrt-working-strip__glyph">&#10074;&#10074;</span>
         {:else if phase === 'waiting'}
-          <span class="smrt-working-strip__glyph" data-smrt-part="glyph">!</span>
+          <span class="smrt-working-strip__glyph">!</span>
         {:else if phase === 'done'}
-          <span class="smrt-working-strip__glyph" data-smrt-part="glyph">&#10003;</span>
+          <span class="smrt-working-strip__glyph">&#10003;</span>
         {:else if phase === 'failed'}
-          <span class="smrt-working-strip__glyph" data-smrt-part="glyph">&#10005;</span>
+          <span class="smrt-working-strip__glyph">&#10005;</span>
         {:else if phase === 'cancelled'}
-          <span class="smrt-working-strip__glyph" data-smrt-part="glyph">&#9632;</span>
+          <span class="smrt-working-strip__glyph">&#9632;</span>
         {/if}
       </span>
       <span class="smrt-working-strip__text" data-smrt-part="body" aria-hidden="true">
         {#if goal && variant === 'floating'}
-          <span class="smrt-working-strip__goal" data-smrt-part="goal">{goal}</span>
+          <span class="smrt-working-strip__goal" data-smrt-part="title">{goal}</span>
         {/if}
         <span class="smrt-working-strip__label" data-smrt-part="label">{label}</span>
       </span>
@@ -187,15 +187,15 @@ function handleKeydown(event: KeyboardEvent) {
       <button
         type="button"
         class="smrt-working-strip__main"
-        data-smrt-part="main"
+        data-smrt-part="summary"
         aria-label={`${accessibleSummary}. ${openLabel ?? t(M['ui.working_strip.open'])}`}
         onclick={onopen}
       >
         {@render content()}
       </button>
     {:else}
-      <div class="smrt-working-strip__main" data-smrt-part="main">
-        <span class="smrt-working-strip__sr" data-smrt-part="summary">{accessibleSummary}</span>
+      <div class="smrt-working-strip__main" data-smrt-part="summary">
+        <span class="smrt-working-strip__sr" data-smrt-part="description">{accessibleSummary}</span>
         {@render content()}
       </div>
     {/if}

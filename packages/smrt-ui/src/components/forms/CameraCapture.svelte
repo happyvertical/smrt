@@ -453,7 +453,7 @@ useControlRegistration(() => {
   data-smrt-subject-type={interaction === false ? undefined : interaction?.subject?.type}
   data-smrt-subject-id={interaction === false ? undefined : interaction?.subject?.id} data-smrt-component="CameraCapture"
 >
-  <div class="smrt-camera-capture__stage" data-smrt-part="stage" class:smrt-camera-capture__empty={cameraState !== 'streaming' && !previewUrl}>
+  <div class="smrt-camera-capture__stage" data-smrt-part="body" class:smrt-camera-capture__empty={cameraState !== 'streaming' && !previewUrl}>
     <video
       bind:this={videoEl}
       class="smrt-camera-capture__media"

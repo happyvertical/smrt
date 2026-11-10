@@ -61,7 +61,7 @@ const statusLabels: Record<AvatarStatus, string> = {
   {#if src && !imgFailed}
     <img
       class="smrt-avatar__img"
-      data-smrt-part="content"
+      data-smrt-part="body"
       {src}
       alt={name}
       onerror={() => {
@@ -69,7 +69,7 @@ const statusLabels: Record<AvatarStatus, string> = {
       }}
     />
   {:else}
-    <span class="smrt-avatar__initials" data-smrt-part="content" role="img" aria-label={name}>
+    <span class="smrt-avatar__initials" data-smrt-part="body" role="img" aria-label={name}>
       {initialsOf(name)}
     </span>
   {/if}

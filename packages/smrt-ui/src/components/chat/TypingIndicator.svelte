@@ -42,9 +42,9 @@ const text = $derived.by(() => {
   <div class="smrt-typing-indicator__root" role="status" aria-live="polite" data-smrt-component="TypingIndicator">
     <span class="smrt-typing-indicator__text" data-smrt-part="label">{text}</span>
     <span class="smrt-typing-indicator__dots" data-smrt-part="indicator" aria-hidden="true">
-      <span class="smrt-typing-indicator__dot" data-smrt-part="dot"></span>
-      <span class="smrt-typing-indicator__dot" data-smrt-part="dot"></span>
-      <span class="smrt-typing-indicator__dot" data-smrt-part="dot"></span>
+      <span class="smrt-typing-indicator__dot" data-smrt-part="marker"></span>
+      <span class="smrt-typing-indicator__dot" data-smrt-part="marker"></span>
+      <span class="smrt-typing-indicator__dot" data-smrt-part="marker"></span>
     </span>
   </div>
 {/if}

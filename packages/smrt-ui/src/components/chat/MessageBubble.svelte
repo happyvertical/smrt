@@ -112,7 +112,7 @@ const timeText = $derived(
     {#if children}
       {@render children()}
     {:else if content !== undefined}
-      <p class="smrt-message-bubble__content" data-smrt-part="content">{content}</p>
+      <p class="smrt-message-bubble__content" data-smrt-part="message">{content}</p>
     {/if}
   </div>
 

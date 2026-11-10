@@ -327,7 +327,7 @@ $effect(() => () => clearTimeout(timer));
       </Button>
     {/if}
   </div>
-  {#if description}<p id={hintId} class="smrt-relation-input__hint" data-smrt-part="hint">{description}</p>{/if}
+  {#if description}<p id={hintId} class="smrt-relation-input__hint" data-smrt-part="description">{description}</p>{/if}
   {#if onCreate}
     <Button
       variant="ghost"

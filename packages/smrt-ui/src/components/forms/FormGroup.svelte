@@ -66,7 +66,7 @@ setFormGroupContext(
 	<FieldLabel for={fieldId} {label} {required} />
 	{@render children()}
 	{#if hintId}
-		<p id={hintId} class="smrt-form-group__hint" data-smrt-part="hint">{hint}</p>
+		<p id={hintId} class="smrt-form-group__hint" data-smrt-part="description">{hint}</p>
 	{/if}
 	{#if errorId}
 		<p id={errorId} class="smrt-form-group__error" data-smrt-part="error" role="alert">{error}</p>

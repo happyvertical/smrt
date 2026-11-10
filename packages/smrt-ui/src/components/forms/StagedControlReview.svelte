@@ -555,7 +555,7 @@ async function discardAll(event: MouseEvent): Promise<void> {
         {@const label = plainLabel(snapshot)}
         {@const actionName = actionIdentity(snapshot)}
         <li data-staged-review-item class:smrt-staged-control-review__stale={staged?.stale} class:smrt-staged-control-review__invalid={staged?.valid === false} data-smrt-part="item">
-          <div class="smrt-staged-control-review__proposal-heading" data-smrt-part="heading">
+          <div class="smrt-staged-control-review__proposal-heading" data-smrt-part="header">
             <div><strong>{label}</strong>{#if snapshot.identity.subject?.label}<span class="smrt-staged-control-review__subject" data-smrt-part="meta">{snapshot.identity.subject.label}</span>{/if}</div>
             <span>{text.proposedBy} {staged?.provenance.actorId ?? staged?.provenance.source} · {text.stagedAt} {staged ? new Date(staged.stagedAt).toLocaleString() : ''}</span>
           </div>
@@ -604,9 +604,9 @@ async function discardAll(event: MouseEvent): Promise<void> {
               </dd>
             </div>
           </dl>
-          {#if staged?.stale}<p class="smrt-staged-control-review__problem" data-smrt-part="problem" role="alert">{text.stale}</p>{/if}
-          {#if staged?.valid === false}<p class="smrt-staged-control-review__problem" data-smrt-part="problem" role="alert">{text.invalid}</p>{/if}
-          {#if feedback[draftKeyOf(snapshot)]}<p class="smrt-staged-control-review__problem" data-smrt-part="problem" role="alert">{feedback[draftKeyOf(snapshot)]}</p>{/if}
+          {#if staged?.stale}<p class="smrt-staged-control-review__problem" data-smrt-part="error" role="alert">{text.stale}</p>{/if}
+          {#if staged?.valid === false}<p class="smrt-staged-control-review__problem" data-smrt-part="error" role="alert">{text.invalid}</p>{/if}
+          {#if feedback[draftKeyOf(snapshot)]}<p class="smrt-staged-control-review__problem" data-smrt-part="error" role="alert">{feedback[draftKeyOf(snapshot)]}</p>{/if}
           <div class="smrt-staged-control-review__item-actions" data-smrt-part="actions">
             <button
               type="button"

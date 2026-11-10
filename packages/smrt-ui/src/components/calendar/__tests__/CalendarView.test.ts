@@ -71,7 +71,9 @@ describe('CalendarView (month)', () => {
     const { container } = renderMonth({ onSelectDate });
     // Sat Sep 5 - Mon Sep 7 wraps: one segment per week row.
     const bands = [
-      ...container.querySelectorAll<HTMLElement>('[data-smrt-part="band"]'),
+      ...container.querySelectorAll<HTMLElement>(
+        '[data-smrt-part="event"][title="Fall Fair"]',
+      ),
     ];
     expect(bands.map((b) => b.textContent?.trim())).toEqual([
       'Fall Fair',
@@ -319,7 +321,7 @@ describe('CalendarView (week)', () => {
     expect(screen.getAllByRole('columnheader')).toHaveLength(7);
     expect(
       container
-        .querySelector('[data-smrt-part="band"]')
+        .querySelector('[data-smrt-part="event"][title="Holiday"]')
         ?.getAttribute('data-tone'),
     ).toBe('warning');
     expect(
@@ -362,7 +364,7 @@ describe('CalendarView (week)', () => {
     );
     await userEvent.click(screen.getByText('+2 more'));
     const panel = container.querySelector(
-      '[data-smrt-part="day-panel"]',
+      '[data-smrt-part="panel"]',
     ) as HTMLElement;
     expect(within(panel).getByText('Hidden event')).toBeTruthy();
 
@@ -379,7 +381,7 @@ describe('CalendarView (week)', () => {
       date: '2027-01-08',
       selectedDate: '2027-01-01',
     });
-    expect(container.querySelector('[data-smrt-part="day-panel"]')).toBeNull();
+    expect(container.querySelector('[data-smrt-part="panel"]')).toBeNull();
   });
 
   it('reports date-based navigation within a month, today and controlled changes', async () => {

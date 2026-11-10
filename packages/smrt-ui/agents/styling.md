@@ -71,14 +71,123 @@ Notes:
 - `Tabs` uses `tab` for both the tablist button and the link-mode anchor,
   `list` for the tablist and the link-mode nav, and `trigger` for the overflow
   `<summary>`.
-- The wave-2 pilot also exposes Chip `body`/`close`; Alert `marker`/`body`/`title`/`message`/`actions`/`close`; Checkbox `input`/`box`/`indicator`/`label`; Switch `input`/`control`/`track`/`thumb`/`label`; and Tabs `row`/`overflow`/`body`/`indicator`/`marker`/`description`. Checkbox reuses `indicator` for the check and indeterminate dash. Badge, Input and Select have no owned internal parts. Other packages add parts incrementally under the same rules.
+- The wave-2 pilot also exposes Chip `body`/`close`; Alert `marker`/`body`/`title`/`message`/`actions`/`close`; Checkbox `input`/`control`/`indicator`/`label`; Switch `input`/`control`/`track`/`thumb`/`label`; and Tabs `row`/`overflow`/`body`/`indicator`/`marker`/`description`. Checkbox reuses `indicator` for the check and indeterminate dash. Badge, Input and Select have no owned internal parts. Other packages add parts incrementally under the same rules.
+
+### smrt-ui part vocabulary (wave 3)
+
+Use these names for the same roles throughout smrt-ui. Internal class names may
+be more specific; public parts describe the role. Repeat a part for repeated
+items or responsive alternatives, and scope it through its parent part or native
+attributes when needed. A component root, including a conditional or sibling
+root, carries only `data-smrt-component`, never `data-smrt-part`.
+
+`body` replaces generic `content`/`details`; `header` replaces `heading`;
+`description` replaces `hint`; `control` names the Checkbox/Radio mark shell.
+Calendar event representations share `event`, and their children share `time`,
+`title`, `body`, `meta`, and `label`. Responsive label lengths, required state,
+and dictation state do not create new part names. `empty`, `error`, and `status`
+name feedback regions; they do not replace native/ARIA state attributes.
+
+| Part | Role | Examples |
+| --- | --- | --- |
+| `action` | An individual secondary command. | `CameraCapture`, `DocumentViewer` |
+| `actions` | A group of commands or toolbar actions. | `Alert`, `CameraCapture` |
+| `adornment` | Content attached before or after a field. | `InputGroup` |
+| `author` | The author identity of a message. | `MessageBubble` |
+| `axis` | Chart category-axis labels. | `Chart` |
+| `back` | Navigation to the parent or previous surface. | `DayView` |
+| `backdrop` | The overlay scrim behind a panel. | `LoadingOverlay` |
+| `badge` | An auxiliary badge attached to a label. | `RoleSelector`, `Tabs` |
+| `bar` | A chart datum rendered against a track. | `Chart` |
+| `body` | The primary content region of a component or item. | `Alert`, `Avatar` |
+| `cancel` | The dialog cancellation command. | `ConfirmDialog` |
+| `caption` | The accessible title of a table. | `DataTable` |
+| `cell` | A cell in a table, grid, or repeated layout row. | `Calendar`, `CalendarView` |
+| `clear` | The command that clears a field. | `SearchInput` |
+| `close` | The command that dismisses a surface. | `Alert`, `CalendarView` |
+| `confirm` | The dialog confirmation command. | `ConfirmDialog` |
+| `control` | The field or choice-control shell, including its visible mark. | `Checkbox`, `CollectionList` |
+| `count` | A count attached to a label or collection. | `CollectionToolbar`, `DayView` |
+| `description` | Supporting prose or accessible instructions. | `Chart`, `DayView` |
+| `display` | The formatted keypad readout, including its affixes. | `NumericKeypad` |
+| `empty` | The region explaining an empty collection. | `CalendarView`, `DataTable` |
+| `error` | Validation or failure feedback; a semantic feedback region, not a state modifier. | `DataTable`, `DictationStatus` |
+| `event` | A calendar event, whether shown in a cell, across days, or in an agenda. | `Calendar`, `CalendarView` |
+| `expand` | The command that reveals details of a table row. | `DataTable` |
+| `field` | A field-registration or form-submission boundary. | `CameraCapture`, `RelationInput` |
+| `filters` | The collection-filter surface. | `CollectionToolbar` |
+| `footer` | The concluding region of a surface. | `Card`, `Modal` |
+| `frame` | The chart coordinate frame around its axis and plot. | `Chart` |
+| `grabber` | The sheet drag handle. | `PhoneSheet` |
+| `graph` | The rendered chart graphic. | `Chart` |
+| `grid` | The calendar/keypad grid or chart reference grid. | `Calendar`, `CalendarView` |
+| `group` | A labelled group of related entries. | `CalendarView`, `DayView` |
+| `guide` | The chart reference line for the explored datum. | `Chart` |
+| `header` | The introductory or heading region of a surface or item. | `Calendar`, `CalendarView` |
+| `high` | The forecast maximum temperature. | `DayView` |
+| `icon` | A content or command icon. | `ColorSchemeToggle`, `DataTable` |
+| `indicator` | A selected, progress, status, or expansion indicator; state stays on its owner. | `AccordionItem`, `Avatar` |
+| `input` | A native form input or select. | `CameraCapture`, `Checkbox` |
+| `item` | An entry in a list, menu, legend, or tree. | `Chart`, `CollectionList` |
+| `key` | A keypad key. | `NumericKeypad` |
+| `label` | A control or item label, including responsive and accessible alternatives. | `Avatar`, `Button` |
+| `legend` | The chart series/datum legend. | `Chart` |
+| `list` | A collection of related entries, options, or navigation links. | `Calendar`, `CalendarView` |
+| `low` | The forecast minimum temperature. | `DayView` |
+| `marker` | An auxiliary meaning-bearing marker, including required-field and typing markers. | `Alert`, `Chart` |
+| `media` | Captured photo or camera preview media. | `CameraCapture` |
+| `menu` | An overflow menu. | `Tabs` |
+| `message` | Message text, transcript text, or status feedback. | `Alert`, `CameraCapture` |
+| `meta` | Supplementary metadata. | `CalendarView`, `DayView` |
+| `month` | The calendar month selector. | `Calendar` |
+| `more` | The affordance or count for additional entries. | `Calendar`, `CalendarView` |
+| `nav` | Calendar navigation and date-selection controls. | `Calendar`, `CalendarView` |
+| `next` | Navigation to the next calendar period. | `Calendar`, `CalendarView` |
+| `option` | A selectable option in a choice surface. | `Combobox`, `FilterChips` |
+| `overflow` | The tab-overflow region. | `Tabs` |
+| `page` | The rendered document page. | `DocumentViewer` |
+| `panel` | A disclosed, popup, dialog, or selected-content region. | `AccordionItem`, `CalendarView` |
+| `picker` | The trigger for native file selection. | `CameraCapture` |
+| `placeholder` | A skeleton content placeholder, independent of its shape. | `Skeleton` |
+| `plot` | The chart plotting/interaction surface. | `Chart` |
+| `prefix` | The prefix affix of a numeric readout. | `NumericKeypad` |
+| `previous` | Navigation to the preceding calendar period. | `Calendar`, `CalendarView` |
+| `progress` | The aggregate progress readout. | `LoadingOverlay` |
+| `reactions` | The reactions attached to a message. | `MessageBubble` |
+| `readout` | The chart or keypad value readout region. | `Chart`, `NumericKeypad` |
+| `resize` | The table-column resize handle. | `DataTable` |
+| `retry` | The command that retries a failed operation. | `DataTable` |
+| `role` | The membership role. | `MembershipCard` |
+| `row` | A repeated table, grid, or layout row. | `Calendar`, `CalendarView` |
+| `scale` | The chart value-axis scale labels. | `Chart` |
+| `search` | The collection or permission search region. | `CollectionToolbar`, `PermissionPicker` |
+| `slice` | A datum in a proportional chart. | `Chart` |
+| `sort` | The command that changes column sorting. | `DataTable`, `SortableHeader` |
+| `spacer` | An intentional layout or virtual-scroll spacer. | `CollectionToolbar`, `DataTable` |
+| `spinner` | An indeterminate activity indicator. | `Button`, `CollectionList` |
+| `status` | The live or supplementary status region. | `Chart`, `Combobox` |
+| `submit` | The keypad submission command. | `NumericKeypad` |
+| `summary` | The aggregate working-status summary, optionally interactive. | `WorkingStrip` |
+| `swatch` | The legend key identifying a chart datum. | `Chart` |
+| `tab` | A tab-navigation option. | `Tabs` |
+| `table` | A data table or accessible chart-data alternative. | `Chart`, `DataTable` |
+| `thumb` | The movable switch/toggle thumb. | `Switch`, `Toggle` |
+| `time` | An event, message, or metadata timestamp. | `CalendarView`, `DayView` |
+| `title` | The heading or name of a surface, group, or item. | `Alert`, `Calendar` |
+| `today` | Navigation to the current date. | `Calendar`, `CalendarView` |
+| `track` | The track behind an indicator, thumb, or chart bar. | `Chart`, `LoadingOverlay` |
+| `trigger` | The primary command that opens, selects, or activates a surface/date. | `Calendar`, `CalendarView` |
+| `unit` | The unit affix of a numeric readout. | `NumericKeypad` |
+| `value` | The presented numeric, progress, page, or selected value. | `Chart`, `ConfidenceBadge` |
+| `venue` | The event location. | `DayView` |
+| `weather` | The aggregate forecast readout. | `DayView` |
+| `year` | The calendar year selector. | `Calendar` |
 
 ## Cascade layers
 
 Every component `<style>` block declares and uses the smrt layers, lowest to
-highest: `smrt.reset < smrt.structure < smrt.theme`. Button, Badge, Chip, Card, Alert, Input, Select, Checkbox, Switch and Tabs
-split their rules between `smrt.structure` and `smrt.theme`; other components
-still put their rules in `smrt.theme`. Unlayered consumer CSS always beats every smrt
+highest: `smrt.reset < smrt.structure < smrt.theme`. smrt-ui components split layout and interaction rules into `smrt.structure`
+and paint and motion into `smrt.theme`. Other packages migrate incrementally. Unlayered consumer CSS always beats every smrt
 layer, so restyling needs no `:global()` and no `!important`. The declaration is
 [`src/styles/layers.css`](../src/styles/layers.css)
 (`@happyvertical/smrt-ui/styles/layers.css`), injected by `ThemeProvider`. Keep

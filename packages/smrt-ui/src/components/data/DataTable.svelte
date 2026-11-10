@@ -1542,7 +1542,7 @@ $effect(() => {
                 onchange={handleSelectAll}
                 aria-label={t(M['ui.data_table.select_current_page'])}
                 class="smrt-data-table__checkbox"
-                data-smrt-part="checkbox"
+                data-smrt-part="input"
               />
             </th>
           {/if}
@@ -1594,7 +1594,7 @@ $effect(() => {
               >
                 {#if usesAutomaticSortButton(column)}
                   {#if column.header}
-                    <div class="smrt-data-table__header-content" data-smrt-part="header-content">
+                    <div class="smrt-data-table__header-content" data-smrt-part="body">
                       {@render column.header({ column })}
                       <button
                         type="button"
@@ -1681,7 +1681,7 @@ $effect(() => {
             class="smrt-data-table__cell smrt-data-table__cell--loading" data-smrt-part="cell"
             colspan={columnCount}
           >
-            <div class="smrt-data-table__loading-indicator" data-smrt-part="loading" role="status" aria-live="polite">
+            <div class="smrt-data-table__loading-indicator" data-smrt-part="status" role="status" aria-live="polite">
               <span class="smrt-data-table__spinner" data-smrt-part="spinner"></span>
               <span><Trans key={M['ui.data_table.loading']} /></span>
             </div>
@@ -1745,7 +1745,7 @@ $effect(() => {
                   onchange={(e) => handleRowSelect(key, e)}
                   aria-label={isSelected ? t(M['ui.data_table.deselect_row'], { row: getRowLabel(row, displayIndex) }) : t(M['ui.data_table.select_row'], { row: getRowLabel(row, displayIndex) })}
                   class="smrt-data-table__checkbox"
-                  data-smrt-part="checkbox"
+                  data-smrt-part="input"
                 />
               </td>
             {/if}

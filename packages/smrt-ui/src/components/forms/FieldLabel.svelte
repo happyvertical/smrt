@@ -19,9 +19,9 @@ let { label, for: forId, id, required = false }: Props = $props();
 </script>
 
 {#if forId}
-  <label {id} for={forId} class="smrt-field-label__root" data-smrt-component="FieldLabel">{label}{#if required}<span class="smrt-field-label__required" data-smrt-part="required" aria-hidden="true">*</span>{/if}</label>
+  <label {id} for={forId} class="smrt-field-label__root" data-smrt-component="FieldLabel">{label}{#if required}<span class="smrt-field-label__required" data-smrt-part="marker" aria-hidden="true">*</span>{/if}</label>
 {:else}
-  <span {id} class="smrt-field-label__root" data-smrt-component="FieldLabel">{label}{#if required}<span class="smrt-field-label__required" data-smrt-part="required" aria-hidden="true">*</span>{/if}</span>
+  <span {id} class="smrt-field-label__root" data-smrt-component="FieldLabel">{label}{#if required}<span class="smrt-field-label__required" data-smrt-part="marker" aria-hidden="true">*</span>{/if}</span>
 {/if}
 
 <style>

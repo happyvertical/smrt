@@ -85,7 +85,7 @@ test('320px and reduced motion retain visible, keyboard reachable approval', asy
   const confirm = page.getByRole('button', { name: 'Confirm', exact: true });
   await expect(confirm).toBeVisible();
   expect(await page.evaluate(() => document.documentElement.scrollWidth <= window.innerWidth)).toBe(true);
-  expect(await page.locator('[data-smrt-part="dot"]').evaluate((el) => getComputedStyle(el).animationName)).toBe('none');
+  expect(await page.getByRole('button', { name: 'Stop listening', exact: true }).locator('[data-smrt-part="indicator"]').evaluate((el) => getComputedStyle(el).animationName)).toBe('none');
   await page.getByRole('button', { name: 'Playback started', exact: true }).press('Enter');
   await page.getByRole('button', { name: 'Playback boundary', exact: true }).press('Enter');
   await expect(page.locator('.caption-overlay')).toHaveCount(1);

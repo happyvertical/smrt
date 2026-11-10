@@ -43,7 +43,7 @@ function handleToggle(event: Event) {
   <summary aria-disabled={disabled} onclick={(event) => disabled && event.preventDefault()}>
     <span>{title}</span><span class="smrt-disclosure__chevron" data-smrt-part="indicator" aria-hidden="true">⌄</span>
   </summary>
-  <div class="smrt-disclosure__content" data-smrt-part="content">{#if children}{@render children()}{/if}</div>
+  <div class="smrt-disclosure__content" data-smrt-part="panel">{#if children}{@render children()}{/if}</div>
 </details>
 
 <style>

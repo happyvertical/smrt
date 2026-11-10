@@ -282,7 +282,7 @@ function step(event: KeyboardEvent) {
     <span class="smrt-chart__dot" data-smrt-part="marker" style:inset-inline-start="{activePoint.x}%" style:inset-block-start="{(activePoint.y / 40) * 100}%" aria-hidden="true"></span>
     <span
       class="smrt-chart__tip"
-      data-smrt-part="tip"
+      data-smrt-part="panel"
       data-edge={activePoint.x < 15 ? 'start' : activePoint.x > 85 ? 'end' : undefined}
       style:inset-inline-start="{activePoint.x}%"
       aria-hidden="true"
@@ -334,7 +334,7 @@ function step(event: KeyboardEvent) {
       </svg>
       <ul class="smrt-chart__legend" data-smrt-part="legend" aria-hidden="true">
         {#each slices as slice (slice.index)}
-          <li class="smrt-chart__legend-item" data-smrt-part="legend-item">
+          <li class="smrt-chart__legend-item" data-smrt-part="item">
             <span class="smrt-chart__swatch" data-smrt-part="swatch" data-slot={slice.index % 8}></span>
             <span class="smrt-chart__label" data-smrt-part="label">{slice.label}</span>
             <span class="smrt-chart__value" data-smrt-part="value">{fmt(slice.value)} · {percent(slice.share)}</span>

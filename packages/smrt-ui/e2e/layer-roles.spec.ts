@@ -4,7 +4,7 @@ test('radio selection survives removal of the theme layer', async ({ page }) => 
   await page.goto('/e2e/forced-colors.html');
   await page.addStyleTag({ content: '*, *::before, *::after { transition: none; animation: none; }' });
   const radio = page.locator('[data-smrt-component="Radio"]', { hasText: 'Radio B' });
-  const marker = radio.locator('[data-smrt-part="mark"]');
+  const marker = radio.locator('[data-smrt-part="control"]');
   const transform = () => marker.evaluate((element) => getComputedStyle(element, '::after').transform);
   await expect(radio.locator('input')).toBeChecked();
   expect(await transform()).toBe('matrix(1, 0, 0, 1, 0, 0)');

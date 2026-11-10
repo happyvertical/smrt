@@ -23,7 +23,7 @@ function handleChange(event: Event & { currentTarget: HTMLInputElement }) {
 <label class="smrt-radio__root" class:smrt-radio__disabled={disabled || group.disabled} data-smrt-hit-target data-smrt-component="Radio">
   <input id={resolvedId} type="radio" name={group.name} {value} disabled={disabled || group.disabled} required={group.required}
     checked={group.value === value} onchange={handleChange} {...rest} />
-  <span class="smrt-radio__mark" data-smrt-part="mark" aria-hidden="true"></span><span class="smrt-radio__label" data-smrt-part="label">{label}</span>
+  <span class="smrt-radio__mark" data-smrt-part="control" aria-hidden="true"></span><span class="smrt-radio__label" data-smrt-part="label">{label}</span>
 </label>
 <style>
 @layer smrt.reset, smrt.structure, smrt.theme;

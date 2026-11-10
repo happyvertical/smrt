@@ -96,7 +96,7 @@ const actionLabel = $derived(listSortActionLabel(sort, columnId, label, spec));
 >
   {#if href}
     <a
-      class="smrt-sortable-header__control" data-smrt-part="control"
+      class="smrt-sortable-header__control" data-smrt-part="sort"
       {href}
       aria-label={actionLabel}
       data-sveltekit-noscroll
@@ -109,7 +109,7 @@ const actionLabel = $derived(listSortActionLabel(sort, columnId, label, spec));
   {:else}
     <button
       type="button"
-      class="smrt-sortable-header__control" data-smrt-part="control"
+      class="smrt-sortable-header__control" data-smrt-part="sort"
       aria-label={actionLabel}
       onclick={() => onSort?.(columnId)}
     >

@@ -94,10 +94,10 @@ function errorText(kind: DictationErrorKind | null): string {
         {t(M['ui.dictation.listening_short'])}
       {/if}
     {:else if dictation.state === 'listening' || dictation.state === 'stopping'}
-      <span class="smrt-dictation-status__dot" data-smrt-part="dot" aria-hidden="true"></span>
+      <span class="smrt-dictation-status__dot" data-smrt-part="indicator" aria-hidden="true"></span>
       {t(M['ui.dictation.listening'])}
       {#if dictation.interim}
-        <span class="smrt-dictation-status__interim" data-smrt-part="interim">“{dictation.interim}”</span>
+        <span class="smrt-dictation-status__interim" data-smrt-part="message">“{dictation.interim}”</span>
       {/if}
     {:else if dictation.state === 'transcribing'}
       <span class="smrt-dictation-status__spinner" data-smrt-part="spinner" aria-hidden="true"></span>

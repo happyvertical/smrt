@@ -106,7 +106,7 @@ function handleKeydown(e: KeyboardEvent) {
 			{/if}
 
 			{#if items.length > 0}
-				<div class="smrt-loading-overlay__items" data-smrt-part="items" id="loading-items">
+				<div class="smrt-loading-overlay__items" data-smrt-part="list" id="loading-items">
 					{#each items as item}
 						<span class="smrt-loading-overlay__item" data-smrt-part="item">{item}</span>
 					{/each}
