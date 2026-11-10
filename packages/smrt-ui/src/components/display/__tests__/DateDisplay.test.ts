@@ -201,7 +201,7 @@ describe('DateDisplay', () => {
     });
     expect(container.querySelector('time')).not.toBeInTheDocument();
     const span = screen.getByText('No date');
-    expect(span).toHaveClass('date-fallback');
+    expect(span).toHaveClass('smrt-date-display__fallback');
   });
 
   it('renders the fallback for an invalid Date instance', () => {
