@@ -89,83 +89,86 @@ function formatDuration(ms: number | undefined): string {
 }
 </script>
 
-<div class="tool-call tool-call--{effectiveStatus}" aria-label={t(M['chat.tool_call_display.tool_call'], { toolName: toolCall.toolName })} data-smrt-component="ToolCallDisplay">
+<div class="smrt-tool-call-display__root smrt-tool-call-display__root--{effectiveStatus}" aria-label={t(M['chat.tool_call_display.tool_call'], { toolName: toolCall.toolName })} data-smrt-component="ToolCallDisplay">
   <!-- raw-primitive-allow: full-width disclosure trigger with aria-expanded and aria-controls toggling an externally-rendered collapsible panel, wrapping rich content (status dot, name, duration, status label, rotating chevron); structural accordion header no Button primitive owns -->
   <button
-    class="tool-call__header"
+    class="smrt-tool-call-display__header"
+    data-smrt-part="trigger"
     type="button"
     onclick={() => userToggledExpanded = !isExpanded}
     aria-expanded={isExpanded}
     aria-controls="tool-call-body-{toolCall.toolCallId}"
   >
-    <div class="tool-call__status-dot" aria-label="{statusLabel}"></div>
+    <div class="smrt-tool-call-display__status-dot" data-smrt-part="indicator" aria-label="{statusLabel}"></div>
 
-    <span class="tool-call__name">{toolCall.toolName}</span>
+    <span class="smrt-tool-call-display__name" data-smrt-part="label">{toolCall.toolName}</span>
 
-    <div class="tool-call__header-right">
+    <div class="smrt-tool-call-display__header-right" data-smrt-part="meta">
       {#if toolCall.duration !== undefined}
-        <span class="tool-call__duration">{formatDuration(toolCall.duration)}</span>
+        <span class="smrt-tool-call-display__duration" data-smrt-part="duration">{formatDuration(toolCall.duration)}</span>
       {/if}
-      <span class="tool-call__status-label">{statusLabel}</span>
+      <span class="smrt-tool-call-display__status-label" data-smrt-part="status">{statusLabel}</span>
       <svg
-        class="tool-call__chevron"
-        class:tool-call__chevron--open={isExpanded}
+        class="smrt-tool-call-display__chevron"
+        data-smrt-part="chevron"
         width="16"
         height="16"
         viewBox="0 0 24 24"
         fill="currentColor"
         aria-hidden="true"
-      >
+      
+  class:smrt-tool-call-display__chevron--open={isExpanded}
+>
         <path d="M7.41 8.59L12 13.17l4.59-4.58L18 10l-6 6-6-6z" />
       </svg>
     </div>
   </button>
 
   {#if isExpanded}
-    <div class="tool-call__body" id="tool-call-body-{toolCall.toolCallId}">
+    <div class="smrt-tool-call-display__body" data-smrt-part="body" id="tool-call-body-{toolCall.toolCallId}">
       {#if toolCall.arguments && Object.keys(toolCall.arguments).length > 0}
-        <div class="tool-call__section">
-          <span class="tool-call__section-label">Arguments</span>
-          <pre class="tool-call__json">{formatJson(toolCall.arguments)}</pre>
+        <div class="smrt-tool-call-display__section" data-smrt-part="section">
+          <span class="smrt-tool-call-display__section-label" data-smrt-part="section-label">Arguments</span>
+          <pre class="smrt-tool-call-display__json" data-smrt-part="json">{formatJson(toolCall.arguments)}</pre>
         </div>
       {/if}
 
       {#if toolCall.status === 'success' && toolCall.result !== undefined}
-        <div class="tool-call__section">
-          <span class="tool-call__section-label">Result</span>
-          <pre class="tool-call__json tool-call__json--result">{formatJson(toolCall.result)}</pre>
+        <div class="smrt-tool-call-display__section" data-smrt-part="section">
+          <span class="smrt-tool-call-display__section-label" data-smrt-part="section-label">Result</span>
+          <pre class="smrt-tool-call-display__json smrt-tool-call-display__json--result" data-smrt-part="json">{formatJson(toolCall.result)}</pre>
         </div>
       {/if}
 
       {#if toolCall.status === 'error' && toolCall.error}
-        <div class="tool-call__section">
-          <span class="tool-call__section-label">Error</span>
-          <pre class="tool-call__json tool-call__json--error">{toolCall.error}</pre>
+        <div class="smrt-tool-call-display__section" data-smrt-part="section">
+          <span class="smrt-tool-call-display__section-label" data-smrt-part="section-label">Error</span>
+          <pre class="smrt-tool-call-display__json smrt-tool-call-display__json--error" data-smrt-part="json">{toolCall.error}</pre>
         </div>
       {/if}
 
       {#if toolCall.status === 'running'}
-        <div class="tool-call__running">
-          <div class="tool-call__spinner" aria-label={t(M['chat.tool_call_display.running'])}></div>
+        <div class="smrt-tool-call-display__running" data-smrt-part="running">
+          <div class="smrt-tool-call-display__spinner" data-smrt-part="spinner" aria-label={t(M['chat.tool_call_display.running'])}></div>
           <span>Executing...</span>
         </div>
       {/if}
 
       {#if actionResult}
-        <div class="tool-call__section tool-call__data-surface-action" data-phase={actionResult.phase} data-ok={actionResult.ok}>
-          <span class="tool-call__section-label">
+        <div class="smrt-tool-call-display__section smrt-tool-call-display__action" data-smrt-part="action" data-phase={actionResult.phase} data-ok={actionResult.ok}>
+          <span class="smrt-tool-call-display__section-label" data-smrt-part="section-label">
             {actionResult.phase === 'preview' ? 'Proposed change' : 'Applied change'}
           </span>
           {#if actionResult.ok}
             {#if actionResult.details}
-              <pre class="tool-call__json">{formatJson(actionResult.details)}</pre>
+              <pre class="smrt-tool-call-display__json" data-smrt-part="json">{formatJson(actionResult.details)}</pre>
             {:else if actionResult.phase === 'apply'}
-              <p class="tool-call__applied-fallback">
+              <p class="smrt-tool-call-display__applied-fallback" data-smrt-part="message">
                 {t(M['chat.tool_call_display.applied_successfully'])}
               </p>
             {/if}
             {#if actionResult.phase === 'preview'}
-              <div class="tool-call__data-surface-action-buttons">
+              <div class="smrt-tool-call-display__actions" data-smrt-part="actions">
                 <Button type="button" size="sm" onclick={() => onconfirmaction?.()}>
                   {t(M['chat.tool_call_display.confirm'])}
                 </Button>
@@ -180,7 +183,7 @@ function formatDuration(ms: number | undefined): string {
               </div>
             {/if}
           {:else}
-            <pre class="tool-call__json tool-call__json--error">{actionResult.reason ?? 'Action failed'}</pre>
+            <pre class="smrt-tool-call-display__json smrt-tool-call-display__json--error" data-smrt-part="json">{actionResult.reason ?? 'Action failed'}</pre>
           {/if}
         </div>
       {/if}
@@ -190,208 +193,196 @@ function formatDuration(ms: number | undefined): string {
 
 <style>
 @layer smrt.reset, smrt.structure, smrt.theme;
-@layer smrt.theme {
-  .tool-call {
-    border: var(--smrt-hairline);
-    border-radius: var(--smrt-radius-medium);
+@layer smrt.structure {
+  .smrt-tool-call-display__root {
     overflow: hidden;
-    font-family: var(--smrt-font-family, system-ui);
   }
-
-  .tool-call--pending {
-    border-left: 3px solid var(--smrt-color-outline);
-  }
-
-  .tool-call--running {
-    border-left: 3px solid var(--smrt-color-primary);
-  }
-
-  .tool-call--success {
-    border-left: 3px solid var(--smrt-color-success);
-  }
-
-  .tool-call--error {
-    border-left: 3px solid var(--smrt-color-error);
-  }
-
-  .tool-call--awaiting-confirmation {
-    border-left: 3px solid var(--smrt-color-tertiary);
-  }
-
-  .tool-call--applied {
-    border-left: 3px solid var(--smrt-color-success);
-  }
-
-  .tool-call__header {
+  .smrt-tool-call-display__header {
     display: flex;
     align-items: center;
     gap: var(--smrt-spacing-2);
     width: 100%;
     padding: var(--smrt-spacing-2) var(--smrt-spacing-3);
-    border: none;
-    background: var(--smrt-color-surface-container-low);
     cursor: pointer;
-    text-align: left;
-    color: var(--smrt-color-on-surface);
-    font: inherit;
-    transition: background var(--smrt-duration-short2, 150ms);
   }
-
-  .tool-call__header:hover {
-    background: var(--smrt-color-surface-container);
-  }
-
-  .tool-call__header:focus-visible {
-    outline: 2px solid var(--smrt-color-primary);
-    outline-offset: -2px;
-  }
-
-  .tool-call__status-dot {
+  .smrt-tool-call-display__status-dot {
     width: 8px;
     height: 8px;
-    border-radius: var(--smrt-radius-full);
     flex-shrink: 0;
   }
-
-  .tool-call--pending .tool-call__status-dot {
-    background: var(--smrt-color-outline);
-  }
-
-  .tool-call--running .tool-call__status-dot {
-    background: var(--smrt-color-primary);
-    animation: pulse 1.5s ease-in-out infinite;
-  }
-
-  .tool-call--success .tool-call__status-dot {
-    background: var(--smrt-color-success);
-  }
-
-  .tool-call--error .tool-call__status-dot {
-    background: var(--smrt-color-error);
-  }
-
-  .tool-call--awaiting-confirmation .tool-call__status-dot {
-    background: var(--smrt-color-tertiary);
-  }
-
-  .tool-call--applied .tool-call__status-dot {
-    background: var(--smrt-color-success);
-  }
-
-  .tool-call__applied-fallback {
+  .smrt-tool-call-display__applied-fallback {
     margin: 0;
-    font: var(--smrt-typography-body-small-font, 0.8125rem/1.4 sans-serif);
-    color: var(--smrt-color-on-surface-variant);
   }
-
-  .tool-call__name {
-    font: var(--smrt-typography-label-large-font, 500 0.875rem/1.25 sans-serif);
-    font-family: var(--smrt-font-family-mono, 'SF Mono', 'Fira Code', 'Cascadia Code', monospace);
+  .smrt-tool-call-display__name {
     flex: 1;
     min-width: 0;
     white-space: nowrap;
     overflow: hidden;
     text-overflow: ellipsis;
   }
-
-  .tool-call__header-right {
+  .smrt-tool-call-display__header-right {
     display: flex;
     align-items: center;
     gap: var(--smrt-spacing-2);
     flex-shrink: 0;
   }
-
-  .tool-call__duration {
-    font: var(--smrt-typography-label-small-font, 500 0.6875rem/1 sans-serif);
-    color: var(--smrt-color-outline);
-  }
-
-  .tool-call__status-label {
-    font: var(--smrt-typography-label-small-font, 500 0.6875rem/1 sans-serif);
-    color: var(--smrt-color-on-surface-variant);
-  }
-
-  .tool-call__chevron {
-    color: var(--smrt-color-on-surface-variant);
-    transition: transform var(--smrt-duration-short2, 150ms);
-  }
-
-  .tool-call__chevron--open {
-    transform: rotate(180deg);
-  }
-
-  .tool-call__body {
+  .smrt-tool-call-display__body {
     padding: var(--smrt-spacing-2) var(--smrt-spacing-3) var(--smrt-spacing-3);
     display: flex;
     flex-direction: column;
     gap: var(--smrt-spacing-2);
-    border-top: var(--smrt-hairline);
-    background: var(--smrt-color-surface);
   }
-
-  .tool-call__section {
+  .smrt-tool-call-display__section {
     display: flex;
     flex-direction: column;
     gap: var(--smrt-spacing-1);
   }
-
-  .tool-call__section-label {
-    font: var(--smrt-typography-label-small-font, 500 0.6875rem/1 sans-serif);
-    color: var(--smrt-color-on-surface-variant);
-    text-transform: uppercase;
-    letter-spacing: var(--smrt-typography-label-small-tracking);
-  }
-
-  .tool-call__json {
+  .smrt-tool-call-display__json {
     margin: 0;
     padding: var(--smrt-spacing-2);
-    border-radius: var(--smrt-radius-small);
-    background: var(--smrt-color-surface-container-low);
-    color: var(--smrt-color-on-surface);
-    font-family: var(--smrt-font-family-mono, 'SF Mono', 'Fira Code', 'Cascadia Code', monospace);
-    font-size: var(--smrt-typography-body-small-size, 0.75rem);
-    line-height: var(--smrt-typography-body-small-line-height, 1.5);
     overflow-x: auto;
     white-space: pre-wrap;
     word-break: break-all;
     max-height: 200px;
     overflow-y: auto;
   }
-
-  .tool-call__json--result {
-    background: var(--smrt-color-success-container);
-    color: var(--smrt-color-on-success-container);
-  }
-
-  .tool-call__json--error {
-    background: var(--smrt-color-error-container);
-    color: var(--smrt-color-on-error-container);
-  }
-
-  .tool-call__running {
+  .smrt-tool-call-display__running {
     display: flex;
     align-items: center;
     gap: var(--smrt-spacing-2);
     padding: var(--smrt-spacing-2);
+  }
+  .smrt-tool-call-display__spinner {
+    width: 16px;
+    height: 16px;
+  }
+}
+
+@layer smrt.theme {
+  .smrt-tool-call-display__root {
+    border: var(--smrt-hairline);
+    border-radius: var(--smrt-radius-medium);
+    font-family: var(--smrt-font-family, system-ui);
+  }
+  .smrt-tool-call-display__root--pending {
+    border-left: 3px solid var(--smrt-color-outline);
+  }
+  .smrt-tool-call-display__root--running {
+    border-left: 3px solid var(--smrt-color-primary);
+  }
+  .smrt-tool-call-display__root--success {
+    border-left: 3px solid var(--smrt-color-success);
+  }
+  .smrt-tool-call-display__root--error {
+    border-left: 3px solid var(--smrt-color-error);
+  }
+  .smrt-tool-call-display__root--awaiting-confirmation {
+    border-left: 3px solid var(--smrt-color-tertiary);
+  }
+  .smrt-tool-call-display__root--applied {
+    border-left: 3px solid var(--smrt-color-success);
+  }
+  .smrt-tool-call-display__header {
+    border: none;
+    background: var(--smrt-color-surface-container-low);
+    text-align: left;
+    color: var(--smrt-color-on-surface);
+    font: inherit;
+    transition: background var(--smrt-duration-short2, 150ms);
+  }
+  .smrt-tool-call-display__header:hover {
+    background: var(--smrt-color-surface-container);
+  }
+  .smrt-tool-call-display__header:focus-visible {
+    outline: 2px solid var(--smrt-color-primary);
+    outline-offset: -2px;
+  }
+  .smrt-tool-call-display__status-dot {
+    border-radius: var(--smrt-radius-full);
+  }
+  .smrt-tool-call-display__root--pending .smrt-tool-call-display__status-dot {
+    background: var(--smrt-color-outline);
+  }
+  .smrt-tool-call-display__root--running .smrt-tool-call-display__status-dot {
+    background: var(--smrt-color-primary);
+    animation: pulse 1.5s ease-in-out infinite;
+  }
+  .smrt-tool-call-display__root--success .smrt-tool-call-display__status-dot {
+    background: var(--smrt-color-success);
+  }
+  .smrt-tool-call-display__root--error .smrt-tool-call-display__status-dot {
+    background: var(--smrt-color-error);
+  }
+  .smrt-tool-call-display__root--awaiting-confirmation .smrt-tool-call-display__status-dot {
+    background: var(--smrt-color-tertiary);
+  }
+  .smrt-tool-call-display__root--applied .smrt-tool-call-display__status-dot {
+    background: var(--smrt-color-success);
+  }
+  .smrt-tool-call-display__applied-fallback {
+    font: var(--smrt-typography-body-small-font, 0.8125rem/1.4 sans-serif);
+    color: var(--smrt-color-on-surface-variant);
+  }
+  .smrt-tool-call-display__name {
+    font: var(--smrt-typography-label-large-font, 500 0.875rem/1.25 sans-serif);
+    font-family: var(--smrt-font-family-mono, 'SF Mono', 'Fira Code', 'Cascadia Code', monospace);
+  }
+  .smrt-tool-call-display__duration {
+    font: var(--smrt-typography-label-small-font, 500 0.6875rem/1 sans-serif);
+    color: var(--smrt-color-outline);
+  }
+  .smrt-tool-call-display__status-label {
+    font: var(--smrt-typography-label-small-font, 500 0.6875rem/1 sans-serif);
+    color: var(--smrt-color-on-surface-variant);
+  }
+  .smrt-tool-call-display__chevron {
+    color: var(--smrt-color-on-surface-variant);
+    transition: transform var(--smrt-duration-short2, 150ms);
+  }
+  .smrt-tool-call-display__chevron--open {
+    transform: rotate(180deg);
+  }
+  .smrt-tool-call-display__body {
+    border-top: var(--smrt-hairline);
+    background: var(--smrt-color-surface);
+  }
+  .smrt-tool-call-display__section-label {
+    font: var(--smrt-typography-label-small-font, 500 0.6875rem/1 sans-serif);
+    color: var(--smrt-color-on-surface-variant);
+    text-transform: uppercase;
+    letter-spacing: var(--smrt-typography-label-small-tracking);
+  }
+  .smrt-tool-call-display__json {
+    border-radius: var(--smrt-radius-small);
+    background: var(--smrt-color-surface-container-low);
+    color: var(--smrt-color-on-surface);
+    font-family: var(--smrt-font-family-mono, 'SF Mono', 'Fira Code', 'Cascadia Code', monospace);
+    font-size: var(--smrt-typography-body-small-size, 0.75rem);
+    line-height: var(--smrt-typography-body-small-line-height, 1.5);
+  }
+  .smrt-tool-call-display__json--result {
+    background: var(--smrt-color-success-container);
+    color: var(--smrt-color-on-success-container);
+  }
+  .smrt-tool-call-display__json--error {
+    background: var(--smrt-color-error-container);
+    color: var(--smrt-color-on-error-container);
+  }
+  .smrt-tool-call-display__running {
     font: var(--smrt-typography-body-small-font, 0.8125rem/1.4 sans-serif);
     color: var(--smrt-color-primary);
   }
-
-  .tool-call__spinner {
-    width: 16px;
-    height: 16px;
+  .smrt-tool-call-display__spinner {
     border: 2px solid var(--smrt-color-primary-container);
     border-top-color: var(--smrt-color-primary);
     border-radius: var(--smrt-radius-full);
     animation: spin 0.8s linear infinite;
   }
-
   @keyframes spin {
     to {
       transform: rotate(360deg);
     }
   }
-
   @keyframes pulse {
     0%, 100% {
       opacity: 1;
@@ -400,21 +391,19 @@ function formatDuration(ms: number | undefined): string {
       opacity: 0.4;
     }
   }
-
   @media (prefers-reduced-motion: reduce) {
-    .tool-call__chevron,
-    .tool-call__header {
+    .smrt-tool-call-display__chevron,
+    .smrt-tool-call-display__header {
       transition: none;
     }
-
-    .tool-call__spinner {
+    .smrt-tool-call-display__spinner {
       animation: none;
       border-top-color: var(--smrt-color-primary);
     }
-
-    .tool-call--running .tool-call__status-dot {
+    .smrt-tool-call-display__root--running .smrt-tool-call-display__status-dot {
       animation: none;
     }
   }
 }
+
 </style>

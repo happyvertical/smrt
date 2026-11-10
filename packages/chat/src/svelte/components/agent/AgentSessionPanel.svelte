@@ -46,13 +46,12 @@ const statusLabel: Record<string, string> = {
 };
 </script>
 
-<aside class="session-panel" aria-label={t(M['chat.agent_session_panel.sessions'])} data-smrt-component="AgentSessionPanel">
-  <div class="session-panel__header">
-    <h2 class="session-panel__title">Sessions</h2>
+<aside class="smrt-agent-session-panel__root" aria-label={t(M['chat.agent_session_panel.sessions'])} data-smrt-component="AgentSessionPanel">
+  <div class="smrt-agent-session-panel__header" data-smrt-part="header">
+    <h2 class="smrt-agent-session-panel__title" data-smrt-part="title">Sessions</h2>
     {#if onnewsession}
       <Button
         variant="ghost"
-        class="session-panel__new-btn"
         type="button"
         onclick={onnewsession}
         aria-label={t(M['chat.agent_session_panel.new_session'])}
@@ -65,17 +64,19 @@ const statusLabel: Record<string, string> = {
     {/if}
   </div>
 
-  <div class="session-panel__list" role="listbox" aria-label={t(M['chat.agent_session_panel.session_list'])}>
+  <div class="smrt-agent-session-panel__list" data-smrt-part="list" role="listbox" aria-label={t(M['chat.agent_session_panel.session_list'])}>
     {#each sessions as session (session.id)}
       {@const isCurrent = session.id === currentSessionId}
       <!-- raw-primitive-allow: large pressable selection card with role=option wrapping rich content (avatar, name, date, status, message count, tool chips) inside a role=listbox; no Button primitive owns this structural listbox-option pattern -->
       <button
-        class="session-panel__item"
-        class:session-panel__item--active={isCurrent}
+        class="smrt-agent-session-panel__item"
+        data-smrt-part="option"
         type="button"
         role="option"
         aria-selected={isCurrent}
         onclick={() => onselectsession(session.id)}
+  class:smrt-agent-session-panel__item--active={isCurrent}
+
       >
         <Avatar
           name={session.agentName}
@@ -83,35 +84,37 @@ const statusLabel: Record<string, string> = {
           size="sm"
         />
 
-        <div class="session-panel__item-body">
-          <div class="session-panel__item-header">
-            <span class="session-panel__item-name">{session.agentName}</span>
-            <time class="session-panel__item-date">
+        <div class="smrt-agent-session-panel__item-body" data-smrt-part="body">
+          <div class="smrt-agent-session-panel__item-header" data-smrt-part="heading">
+            <span class="smrt-agent-session-panel__item-name" data-smrt-part="label">{session.agentName}</span>
+            <time class="smrt-agent-session-panel__item-date" data-smrt-part="time">
               {formatDate(session.createdAt)}
             </time>
           </div>
 
-          <div class="session-panel__item-meta">
+          <div class="smrt-agent-session-panel__item-meta" data-smrt-part="meta">
             <span
-              class="session-panel__item-status"
-              class:session-panel__item-status--active={session.status === 'active'}
-              class:session-panel__item-status--closed={session.status === 'closed'}
-              class:session-panel__item-status--expired={session.status === 'expired'}
-            >
+              class="smrt-agent-session-panel__item-status"
+              data-smrt-part="status"
+            
+  class:smrt-agent-session-panel__item-status--active={session.status === 'active'}
+  class:smrt-agent-session-panel__item-status--closed={session.status === 'closed'}
+  class:smrt-agent-session-panel__item-status--expired={session.status === 'expired'}
+>
               {statusLabel[session.status] ?? session.status}
             </span>
-            <span class="session-panel__item-count">
+            <span class="smrt-agent-session-panel__item-count" data-smrt-part="count">
               {session.messageCount} msg{session.messageCount !== 1 ? 's' : ''}
             </span>
           </div>
 
           {#if session.allowedTools.length > 0}
-            <div class="session-panel__item-tools">
+            <div class="smrt-agent-session-panel__item-tools" data-smrt-part="tools">
               {#each session.allowedTools.slice(0, 3) as tool}
-                <span class="session-panel__tool-chip">{tool}</span>
+                <span class="smrt-agent-session-panel__tool-chip" data-smrt-part="chip">{tool}</span>
               {/each}
               {#if session.allowedTools.length > 3}
-                <span class="session-panel__tool-chip session-panel__tool-chip--more">
+                <span class="smrt-agent-session-panel__tool-chip smrt-agent-session-panel__tool-chip--more" data-smrt-part="chip">
                   +{session.allowedTools.length - 3}
                 </span>
               {/if}
@@ -122,8 +125,8 @@ const statusLabel: Record<string, string> = {
     {/each}
 
     {#if sessions.length === 0}
-      <div class="session-panel__empty">
-        <span class="session-panel__empty-text">{t(M['chat.agent_session_panel.empty'])}</span>
+      <div class="smrt-agent-session-panel__empty" data-smrt-part="empty">
+        <span class="smrt-agent-session-panel__empty-text" data-smrt-part="message">{t(M['chat.agent_session_panel.empty'])}</span>
       </div>
     {/if}
   </div>
@@ -131,49 +134,31 @@ const statusLabel: Record<string, string> = {
 
 <style>
 @layer smrt.reset, smrt.structure, smrt.theme;
-@layer smrt.theme {
-  .session-panel {
+@layer smrt.structure {
+  .smrt-agent-session-panel__root {
     display: flex;
     flex-direction: column;
     height: 100%;
     width: 280px;
-    background: var(--smrt-color-surface-container);
-    border-right: var(--smrt-hairline);
     overflow: hidden;
   }
-
-  .session-panel__header {
+  .smrt-agent-session-panel__header {
     display: flex;
     align-items: center;
     justify-content: space-between;
     padding: var(--smrt-spacing-4);
-    border-bottom: var(--smrt-hairline);
     flex-shrink: 0;
   }
-
-  .session-panel__title {
-    font: var(--smrt-typography-title-medium-font, 600 1rem/1.25 sans-serif);
-    color: var(--smrt-color-on-surface);
+  .smrt-agent-session-panel__title {
     margin: 0;
   }
-
   /* :global() pierces into the Button child's rendered <button> (see #1589). */
-  .session-panel__header :global(.session-panel__new-btn) {
+  .smrt-agent-session-panel__header :global([data-smrt-component="Button"]) {
     width: 36px;
     height: 36px;
     padding: 0;
-    background: var(--smrt-color-primary);
-    color: var(--smrt-color-on-primary);
-    border-radius: var(--smrt-radius-full);
-    transition: opacity var(--smrt-duration-short2, 150ms);
   }
-
-  .session-panel__header :global(.session-panel__new-btn:hover) {
-    background: var(--smrt-color-primary);
-    opacity: 0.85;
-  }
-
-  .session-panel__list {
+  .smrt-agent-session-panel__list {
     flex: 1;
     overflow-y: auto;
     padding: var(--smrt-spacing-2);
@@ -181,144 +166,158 @@ const statusLabel: Record<string, string> = {
     flex-direction: column;
     gap: var(--smrt-spacing-1);
   }
-
-  .session-panel__item {
+  .smrt-agent-session-panel__item {
     display: flex;
     align-items: flex-start;
     gap: var(--smrt-spacing-3);
     width: 100%;
     padding: var(--smrt-spacing-3);
-    border: none;
-    background: transparent;
-    border-radius: var(--smrt-radius-medium);
     cursor: pointer;
-    text-align: left;
-    color: var(--smrt-color-on-surface);
-    transition: background var(--smrt-duration-short2, 150ms);
   }
-
-  .session-panel__item:hover {
-    background: var(--smrt-color-surface-container-high);
-  }
-
-  .session-panel__item--active {
-    background: var(--smrt-color-secondary-container);
-  }
-
-  .session-panel__item--active:hover {
-    background: var(--smrt-color-secondary-container);
-  }
-
-  .session-panel__item:focus-visible {
-    outline: 2px solid var(--smrt-color-primary);
-    outline-offset: -2px;
-  }
-
-  .session-panel__item-body {
+  .smrt-agent-session-panel__item-body {
     flex: 1;
     display: flex;
     flex-direction: column;
     gap: var(--smrt-spacing-1);
     min-width: 0;
   }
-
-  .session-panel__item-header {
+  .smrt-agent-session-panel__item-header {
     display: flex;
     align-items: center;
     justify-content: space-between;
     gap: var(--smrt-spacing-2);
   }
-
-  .session-panel__item-name {
-    font: var(--smrt-typography-label-large-font, 500 0.875rem/1.25 sans-serif);
+  .smrt-agent-session-panel__item-name {
     white-space: nowrap;
     overflow: hidden;
     text-overflow: ellipsis;
   }
-
-  .session-panel__item-date {
-    font: var(--smrt-typography-label-small-font, 500 0.6875rem/1 sans-serif);
-    color: var(--smrt-color-outline);
+  .smrt-agent-session-panel__item-date {
     flex-shrink: 0;
   }
-
-  .session-panel__item-meta {
+  .smrt-agent-session-panel__item-meta {
     display: flex;
     align-items: center;
     gap: var(--smrt-spacing-2);
   }
-
-  .session-panel__item-status {
-    font: var(--smrt-typography-label-small-font, 500 0.6875rem/1 sans-serif);
+  .smrt-agent-session-panel__item-status {
     padding: var(--smrt-spacing-1) var(--smrt-spacing-2);
-    border-radius: var(--smrt-radius-full);
-    background: var(--smrt-color-surface-variant);
-    color: var(--smrt-color-on-surface-variant);
   }
-
-  .session-panel__item-status--active {
-    background: var(--smrt-color-success-container);
-    color: var(--smrt-color-on-success-container);
-  }
-
-  .session-panel__item-status--closed {
-    background: var(--smrt-color-surface-variant);
-    color: var(--smrt-color-on-surface-variant);
-  }
-
-  .session-panel__item-status--expired {
-    background: var(--smrt-color-error-container);
-    color: var(--smrt-color-on-error-container);
-  }
-
-  .session-panel__item-count {
-    font: var(--smrt-typography-label-small-font, 500 0.6875rem/1 sans-serif);
-    color: var(--smrt-color-outline);
-  }
-
-  .session-panel__item-tools {
+  .smrt-agent-session-panel__item-tools {
     display: flex;
     flex-wrap: wrap;
     gap: var(--smrt-spacing-1);
     margin-top: var(--smrt-spacing-1);
   }
-
-  .session-panel__tool-chip {
-    font-size: var(--smrt-typography-label-small-size, 0.625rem);
-    font-weight: var(--smrt-typography-weight-medium, 500);
+  .smrt-agent-session-panel__tool-chip {
     padding: var(--smrt-spacing-1) var(--smrt-spacing-2);
-    border-radius: var(--smrt-radius-small);
-    background: var(--smrt-color-surface-container-highest);
-    color: var(--smrt-color-on-surface-variant);
     white-space: nowrap;
   }
-
-  .session-panel__tool-chip--more {
-    background: var(--smrt-color-primary-container);
-    color: var(--smrt-color-on-primary-container);
-  }
-
-  .session-panel__empty {
+  .smrt-agent-session-panel__empty {
     display: flex;
     align-items: center;
     justify-content: center;
     height: 100%;
     min-height: 80px;
   }
+}
 
-  .session-panel__empty-text {
+@layer smrt.theme {
+  .smrt-agent-session-panel__root {
+    background: var(--smrt-color-surface-container);
+    border-right: var(--smrt-hairline);
+  }
+  .smrt-agent-session-panel__header {
+    border-bottom: var(--smrt-hairline);
+  }
+  .smrt-agent-session-panel__title {
+    font: var(--smrt-typography-title-medium-font, 600 1rem/1.25 sans-serif);
+    color: var(--smrt-color-on-surface);
+  }
+  /* :global() pierces into the Button child's rendered <button> (see #1589). */
+  .smrt-agent-session-panel__header :global([data-smrt-component="Button"]) {
+    background: var(--smrt-color-primary);
+    color: var(--smrt-color-on-primary);
+    border-radius: var(--smrt-radius-full);
+    transition: opacity var(--smrt-duration-short2, 150ms);
+  }
+  .smrt-agent-session-panel__header :global([data-smrt-component="Button"]:hover) {
+    background: var(--smrt-color-primary);
+    opacity: 0.85;
+  }
+  .smrt-agent-session-panel__item {
+    border: none;
+    background: transparent;
+    border-radius: var(--smrt-radius-medium);
+    text-align: left;
+    color: var(--smrt-color-on-surface);
+    transition: background var(--smrt-duration-short2, 150ms);
+  }
+  .smrt-agent-session-panel__item:hover {
+    background: var(--smrt-color-surface-container-high);
+  }
+  .smrt-agent-session-panel__item--active {
+    background: var(--smrt-color-secondary-container);
+  }
+  .smrt-agent-session-panel__item--active:hover {
+    background: var(--smrt-color-secondary-container);
+  }
+  .smrt-agent-session-panel__item:focus-visible {
+    outline: 2px solid var(--smrt-color-primary);
+    outline-offset: -2px;
+  }
+  .smrt-agent-session-panel__item-name {
+    font: var(--smrt-typography-label-large-font, 500 0.875rem/1.25 sans-serif);
+  }
+  .smrt-agent-session-panel__item-date {
+    font: var(--smrt-typography-label-small-font, 500 0.6875rem/1 sans-serif);
+    color: var(--smrt-color-outline);
+  }
+  .smrt-agent-session-panel__item-status {
+    font: var(--smrt-typography-label-small-font, 500 0.6875rem/1 sans-serif);
+    border-radius: var(--smrt-radius-full);
+    background: var(--smrt-color-surface-variant);
+    color: var(--smrt-color-on-surface-variant);
+  }
+  .smrt-agent-session-panel__item-status--active {
+    background: var(--smrt-color-success-container);
+    color: var(--smrt-color-on-success-container);
+  }
+  .smrt-agent-session-panel__item-status--closed {
+    background: var(--smrt-color-surface-variant);
+    color: var(--smrt-color-on-surface-variant);
+  }
+  .smrt-agent-session-panel__item-status--expired {
+    background: var(--smrt-color-error-container);
+    color: var(--smrt-color-on-error-container);
+  }
+  .smrt-agent-session-panel__item-count {
+    font: var(--smrt-typography-label-small-font, 500 0.6875rem/1 sans-serif);
+    color: var(--smrt-color-outline);
+  }
+  .smrt-agent-session-panel__tool-chip {
+    font-size: var(--smrt-typography-label-small-size, 0.625rem);
+    font-weight: var(--smrt-typography-weight-medium, 500);
+    border-radius: var(--smrt-radius-small);
+    background: var(--smrt-color-surface-container-highest);
+    color: var(--smrt-color-on-surface-variant);
+  }
+  .smrt-agent-session-panel__tool-chip--more {
+    background: var(--smrt-color-primary-container);
+    color: var(--smrt-color-on-primary-container);
+  }
+  .smrt-agent-session-panel__empty-text {
     font: var(--smrt-typography-body-small-font, 0.8125rem/1.4 sans-serif);
     color: var(--smrt-color-outline);
   }
-
   @media (prefers-reduced-motion: reduce) {
-    .session-panel__item {
+    .smrt-agent-session-panel__item {
       transition: none;
     }
-
-    .session-panel__header :global(.session-panel__new-btn) {
+    .smrt-agent-session-panel__header :global([data-smrt-component="Button"]) {
       transition: none;
     }
   }
 }
+
 </style>

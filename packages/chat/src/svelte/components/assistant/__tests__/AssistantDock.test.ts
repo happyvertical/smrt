@@ -1018,7 +1018,7 @@ describe('AssistantDock (mounted component)', () => {
     expect(
       region?.querySelector('nav[aria-label="Assistant conversations"]'),
     ).not.toBeNull();
-    const layout = container.querySelector('.assistant-dock-layout');
+    const layout = container.querySelector('[data-smrt-part="layout"]');
     expect(layout).not.toHaveAttribute('data-threads-open');
 
     await userEvent.click(toggle);
@@ -1078,9 +1078,11 @@ describe('AssistantDock (mounted component)', () => {
     expect(
       container.querySelector('nav[aria-label="Assistant conversations"]'),
     ).toBeNull();
-    expect(container.querySelector('.assistant-dock-threads')).toBeNull();
+    expect(container.querySelector('[data-smrt-part="threads"]')).toBeNull();
     expect(
-      container.querySelector('.assistant-dock-threads-toggle'),
+      container.querySelector(
+        '[data-smrt-part="layout"] > [data-smrt-component="Button"]',
+      ),
     ).toBeNull();
     expect(screen.queryByText('Existing chat')).not.toBeInTheDocument();
     // Never points at the omitted list.
@@ -1088,7 +1090,7 @@ describe('AssistantDock (mounted component)', () => {
       screen.queryByRole('button', { name: 'View conversations' }),
     ).not.toBeInTheDocument();
     expect(container.querySelector('[aria-controls]')).toBeNull();
-    expect(container.querySelector('.assistant-dock-main')).not.toBeNull();
+    expect(container.querySelector('[data-smrt-part="main"]')).not.toBeNull();
     await expectNoA11yViolations(container);
   });
 
@@ -1105,7 +1107,9 @@ describe('AssistantDock (mounted component)', () => {
       expect(
         screen.getByRole('button', { name: 'Conversations' }),
       ).toBeInTheDocument();
-      expect(container.querySelector('.assistant-dock-threads')).not.toBeNull();
+      expect(
+        container.querySelector('[data-smrt-part="threads"]'),
+      ).not.toBeNull();
       unmount();
     }
   });
@@ -1134,7 +1138,7 @@ describe('AssistantDock (mounted component)', () => {
     expect(
       screen.queryByRole('heading', { name: 'Start a conversation' }),
     ).not.toBeInTheDocument();
-    expect(container.querySelector('.assistant-dock-threads')).toBeNull();
+    expect(container.querySelector('[data-smrt-part="threads"]')).toBeNull();
     await userEvent.type(composer, 'hello');
     await userEvent.click(screen.getByRole('button', { name: /send/i }));
     expect(await screen.findByText('hello')).toBeInTheDocument();
@@ -1192,7 +1196,9 @@ describe('AssistantDock (mounted component)', () => {
       await sendThroughDock('tool');
       expect(await screen.findByText('with tool')).toBeInTheDocument();
 
-      const regions = container.querySelectorAll('.assistant-dock-tool-call');
+      const regions = container.querySelectorAll(
+        '[data-smrt-part="tool-card"]',
+      );
       expect(regions).toHaveLength(1);
       expect(regions[0].textContent).toBe(`imageEditCandidate: ${hostile}`);
       // Rendered as text, never parsed as markup.
@@ -1200,7 +1206,7 @@ describe('AssistantDock (mounted component)', () => {
       expect(
         regions[0]
           .closest('li')
-          ?.querySelector('.assistant-dock-message-content')?.textContent,
+          ?.querySelector('.smrt-assistant-dock__message-content')?.textContent,
       ).toBe('with tool');
       expect(seen.every((m) => m.toolCallData != null)).toBe(true);
     });
@@ -1217,7 +1223,9 @@ describe('AssistantDock (mounted component)', () => {
       );
       await sendThroughDock('tool');
       expect(await screen.findByText('with tool')).toBeInTheDocument();
-      expect(container.querySelector('.assistant-dock-tool-call')).toBeNull();
+      expect(
+        container.querySelector('[data-smrt-part="tool-card"]'),
+      ).toBeNull();
       expect(container.innerHTML).not.toContain('imageEditCandidate');
       expect(container.querySelector('img')).toBeNull();
     });

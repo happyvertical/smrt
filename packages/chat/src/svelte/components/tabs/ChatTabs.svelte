@@ -42,8 +42,8 @@ const expandedTabs = $derived(tabs.filter((t) => t.isExpanded));
 const collapsedTabs = $derived(tabs.filter((t) => !t.isExpanded));
 </script>
 
-<div class="chat-tabs" aria-label={t(M['chat.chat_tabs.tabs_label'])} data-smrt-component="ChatTabs">
-  <div class="chat-tabs__expanded">
+<div class="smrt-chat-tabs__root" aria-label={t(M['chat.chat_tabs.tabs_label'])} data-smrt-component="ChatTabs">
+  <div class="smrt-chat-tabs__expanded" data-smrt-part="body">
     {#each expandedTabs as tab (tab.roomId)}
       <ChatTab
         {tab}
@@ -68,8 +68,8 @@ const collapsedTabs = $derived(tabs.filter((t) => !t.isExpanded));
 
 <style>
 @layer smrt.reset, smrt.structure, smrt.theme;
-@layer smrt.theme {
-  .chat-tabs {
+@layer smrt.structure {
+  .smrt-chat-tabs__root {
     position: fixed;
     bottom: 0;
     right: 0;
@@ -80,12 +80,12 @@ const collapsedTabs = $derived(tabs.filter((t) => !t.isExpanded));
     z-index: var(--smrt-z-index-sticky, 1100);
     pointer-events: none;
   }
-
-  .chat-tabs__expanded {
+  .smrt-chat-tabs__expanded {
     display: flex;
     align-items: flex-end;
     gap: var(--smrt-spacing-2);
     pointer-events: auto;
   }
 }
+
 </style>

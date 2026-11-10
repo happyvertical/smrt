@@ -71,58 +71,59 @@ const { t } = useI18n();
   {@const cards = preview && set.original ? [set.original, ...set.options] : set.options}
   <!-- svelte-ignore a11y_no_noninteractive_element_interactions -->
   <div
-    class="assistant-dock-choices"
+    class="smrt-assistant-choice-cards__root"
     role="group"
     aria-label={set.title}
     aria-busy={making ? 'true' : undefined}
     onkeydown={(event) => onkeydown(event, set)} data-smrt-component="AssistantChoiceCards"
   >
-    <p class="assistant-dock-choices-title">{set.title}</p>
+    <p class="smrt-assistant-choice-cards__title" data-smrt-part="title">{set.title}</p>
     {#if making}
-      <p class="assistant-dock-choices-status assistant-dock-choices-making" role="status">{making.message}</p>
+      <p class="smrt-assistant-choice-cards__status smrt-assistant-choice-cards__making" data-smrt-part="status" role="status">{making.message}</p>
     {/if}
     {#if !(preview && set.status === 'applied')}
-    <ul class="assistant-dock-choice-list">
+    <ul class="smrt-assistant-choice-cards__list" data-smrt-part="list">
       {#each cards as option (option.id)}
         <li>
           <!-- raw-primitive-allow: a picture card that is itself the choice (image, label and description inside one pressable target); Button's single-label layout does not fit -->
           <button
             type="button"
-            class="assistant-dock-choice"
-            class:chosen={preview ? previewed === option.id : set.chosenOptionId === option.id}
+            class="smrt-assistant-choice-cards__card"
+            data-smrt-part="option"
             aria-pressed={preview ? previewed === option.id : set.chosenOptionId === option.id}
             aria-busy={previewing && set.previewPendingId === option.id ? 'true' : undefined}
             disabled={!open || previewing}
             onclick={() => (preview ? onpreview?.(set.id, option.id) : onchoose(set.id, option.id))}
+  class:smrt-assistant-choice-cards__chosen={preview ? previewed === option.id : set.chosenOptionId === option.id}
+
           >
             {#if option.imageUrl}
               <img src={option.imageUrl} alt={option.imageAlt ?? option.label} loading="lazy" />
             {/if}
-            <span class="assistant-dock-choice-label">{option.label}</span>
+            <span class="smrt-assistant-choice-cards__label" data-smrt-part="label">{option.label}</span>
             {#if option.description}
-              <span class="assistant-dock-choice-description">{option.description}</span>
+              <span class="smrt-assistant-choice-cards__description" data-smrt-part="meta">{option.description}</span>
             {/if}
           </button>
         </li>
       {/each}
       {#if making}
         {#each { length: making.expected } as _, index (index)}
-          <li class="assistant-dock-choice-pending" aria-hidden="true">
-            <span class="assistant-dock-choice-placeholder"></span>
-            <span class="assistant-dock-choice-label">{t(M['chat.assistant_dock.choices_making'])}</span>
+          <li class="smrt-assistant-choice-cards__pending" data-smrt-part="pending" aria-hidden="true">
+            <span class="smrt-assistant-choice-cards__placeholder" data-smrt-part="placeholder"></span>
+            <span class="smrt-assistant-choice-cards__label" data-smrt-part="label">{t(M['chat.assistant_dock.choices_making'])}</span>
           </li>
         {/each}
       {/if}
     </ul>
     {/if}
     {#if set.note && set.status === 'waiting'}
-      <p class="assistant-dock-choices-status">{set.note}</p>
+      <p class="smrt-assistant-choice-cards__status" data-smrt-part="status">{set.note}</p>
     {/if}
     {#if preview && open}
-      <div class="assistant-dock-choices-actions assistant-dock-choices-commit">
+      <div class="smrt-assistant-choice-cards__actions smrt-assistant-choice-cards__commit" data-smrt-part="commit">
         <Button
           type="button"
-          class="assistant-dock-choices-use"
           disabled={previewing || !previewed || previewed === set.original?.id}
           onclick={() => oncommit?.(set.id)}
         >
@@ -133,30 +134,30 @@ const { t } = useI18n();
         </Button>
       </div>
       {#if set.status === 'failed'}
-        <p class="assistant-dock-choices-status assistant-dock-choices-error" role="alert">
+        <p class="smrt-assistant-choice-cards__status smrt-assistant-choice-cards__error" data-smrt-part="status" role="alert">
           {t(M['chat.assistant_dock.choices_failed'], { message: set.error ?? '' })}
         </p>
       {/if}
     {:else if set.status === 'waiting'}
-      <div class="assistant-dock-choices-actions">
+      <div class="smrt-assistant-choice-cards__actions" data-smrt-part="actions">
         <span>{set.options.length > 0 ? t(M['chat.assistant_dock.choices_pick']) : ''}</span>
         <Button type="button" size="sm" variant="ghost" onclick={() => ondismiss(set.id)}>
           {t(M['chat.assistant_dock.choices_none'])}
         </Button>
       </div>
     {:else if set.status === 'applying'}
-      <p class="assistant-dock-choices-status" role="status">{t(M['chat.assistant_dock.choices_applying'])}</p>
+      <p class="smrt-assistant-choice-cards__status" data-smrt-part="status" role="status">{t(M['chat.assistant_dock.choices_applying'])}</p>
     {:else if set.status === 'applied'}
-      <p class="assistant-dock-choices-status" role="status">
+      <p class="smrt-assistant-choice-cards__status" data-smrt-part="status" role="status">
         {set.outcome ?? t(M['chat.assistant_dock.choices_applied'], { label: chosen?.label ?? '' })}
       </p>
     {:else if set.status === 'failed' && !preview}
-      <p class="assistant-dock-choices-status assistant-dock-choices-error" role="alert">
+      <p class="smrt-assistant-choice-cards__status smrt-assistant-choice-cards__error" data-smrt-part="status" role="alert">
         {t(M['chat.assistant_dock.choices_failed'], { message: set.error ?? '' })}
       </p>
     {:else if set.status === 'unavailable'}
-      <div class="assistant-dock-choices-actions">
-        <p class="assistant-dock-choices-status assistant-dock-choices-error" role="alert">
+      <div class="smrt-assistant-choice-cards__actions" data-smrt-part="actions">
+        <p class="smrt-assistant-choice-cards__status smrt-assistant-choice-cards__error" data-smrt-part="status" role="alert">
           {t(M['chat.assistant_dock.choices_unavailable'], { message: set.error ?? '' })}
         </p>
         <Button type="button" size="sm" variant="ghost" onclick={() => ondismiss(set.id)}>
@@ -169,23 +170,17 @@ const { t } = useI18n();
 
 <style>
 @layer smrt.reset, smrt.structure, smrt.theme;
-@layer smrt.theme {
-  .assistant-dock-choices {
+@layer smrt.structure {
+  .smrt-assistant-choice-cards__root {
     display: grid;
     gap: 0.5rem;
     margin: 0.5rem 0;
     padding: 0.75rem;
-    border: var(--smrt-hairline);
-    border-radius: 0.75rem;
-    background: var(--smrt-color-surface-container-low);
   }
-
-  .assistant-dock-choices-title {
+  .smrt-assistant-choice-cards__title {
     margin: 0;
-    font-weight: var(--smrt-typography-weight-semibold, 600);
   }
-
-  .assistant-dock-choice-list {
+  .smrt-assistant-choice-cards__list {
     display: grid;
     grid-template-columns: repeat(2, minmax(0, 1fr));
     gap: 0.5rem;
@@ -193,119 +188,131 @@ const { t } = useI18n();
     padding: 0;
     list-style: none;
   }
-
-  .assistant-dock-choice {
+  .smrt-assistant-choice-cards__card {
     display: grid;
     gap: 0.25rem;
     align-content: start;
     width: 100%;
     min-height: 44px;
     padding: 0.35rem;
+    cursor: pointer;
+  }
+  .smrt-assistant-choice-cards__card:disabled:not(.smrt-assistant-choice-cards__chosen) {
+    cursor: default;
+  }
+  .smrt-assistant-choice-cards__card img {
+    width: 100%;
+    aspect-ratio: 4 / 3;
+    object-fit: cover;
+  }
+  .smrt-assistant-choice-cards__actions {
+    display: flex;
+    flex-wrap: wrap;
+    align-items: center;
+    justify-content: space-between;
+    gap: 0.5rem;
+  }
+  /* The buttons stay in view while the cards scroll. */
+  .smrt-assistant-choice-cards__commit {
+    position: sticky;
+    inset-block-end: 0;
+    padding-block: 0.25rem;
+  }
+  .smrt-assistant-choice-cards__commit :global(button) {
+    min-block-size: 44px;
+  }
+  .smrt-assistant-choice-cards__commit > :global([data-smrt-component="Button"]:first-of-type) {
+    flex: 1 1 auto;
+  }
+  .smrt-assistant-choice-cards__status {
+    margin: 0;
+  }
+  .smrt-assistant-choice-cards__pending {
+    display: grid;
+    gap: 0.25rem;
+    align-content: start;
+    min-height: 44px;
+    padding: 0.35rem;
+  }
+  .smrt-assistant-choice-cards__placeholder {
+    width: 100%;
+    aspect-ratio: 4 / 3;
+  }
+}
+
+@layer smrt.theme {
+  .smrt-assistant-choice-cards__root {
+    border: var(--smrt-hairline);
+    border-radius: 0.75rem;
+    background: var(--smrt-color-surface-container-low);
+  }
+  .smrt-assistant-choice-cards__title {
+    font-weight: var(--smrt-typography-weight-semibold, 600);
+  }
+  .smrt-assistant-choice-cards__card {
     border: 2px solid var(--smrt-color-outline-variant);
     border-radius: 0.6rem;
     background: var(--smrt-color-surface);
     color: var(--smrt-color-on-surface);
     font: inherit;
     text-align: left;
-    cursor: pointer;
   }
-
-  .assistant-dock-choice:hover:not(:disabled),
-  .assistant-dock-choice:focus-visible {
+  .smrt-assistant-choice-cards__card:hover:not(:disabled),
+  .smrt-assistant-choice-cards__card:focus-visible {
     border-color: var(--smrt-color-primary);
   }
-
-  .assistant-dock-choice.chosen {
+  .smrt-assistant-choice-cards__card.smrt-assistant-choice-cards__chosen {
     border-color: var(--smrt-color-primary);
     background: var(--smrt-color-primary-container);
   }
-
-  .assistant-dock-choice:disabled:not(.chosen) {
+  .smrt-assistant-choice-cards__card:disabled:not(.smrt-assistant-choice-cards__chosen) {
     opacity: 0.55;
-    cursor: default;
   }
-
-  .assistant-dock-choice img {
-    width: 100%;
-    aspect-ratio: 4 / 3;
-    object-fit: cover;
+  .smrt-assistant-choice-cards__card img {
     border-radius: 0.4rem;
     background: var(--smrt-color-surface-container);
   }
-
-  .assistant-dock-choice-label {
+  .smrt-assistant-choice-cards__label {
     font-size: var(--smrt-typography-body-medium-size, 0.85rem);
     font-weight: var(--smrt-typography-weight-semibold, 600);
   }
-
-  .assistant-dock-choice-description {
+  .smrt-assistant-choice-cards__description {
     color: var(--smrt-color-on-surface-variant);
     font-size: var(--smrt-typography-body-small-size, 0.78rem);
   }
-
-  .assistant-dock-choices-actions {
-    display: flex;
-    flex-wrap: wrap;
-    align-items: center;
-    justify-content: space-between;
-    gap: 0.5rem;
+  .smrt-assistant-choice-cards__actions {
     font-size: var(--smrt-typography-body-medium-size, 0.85rem);
   }
-
   /* The buttons stay in view while the cards scroll. */
-  .assistant-dock-choices-commit {
-    position: sticky;
-    inset-block-end: 0;
-    padding-block: 0.25rem;
+  .smrt-assistant-choice-cards__commit {
     background: var(--smrt-color-surface-container-low);
   }
-
-  .assistant-dock-choices-commit :global(button) {
-    min-block-size: 44px;
-  }
-
-  .assistant-dock-choices-commit :global(.assistant-dock-choices-use) {
-    flex: 1 1 auto;
-  }
-
-  .assistant-dock-choices-status {
-    margin: 0;
+  .smrt-assistant-choice-cards__status {
     font-size: var(--smrt-typography-body-medium-size, 0.85rem);
   }
-
-  .assistant-dock-choices-error {
+  .smrt-assistant-choice-cards__error {
     color: var(--smrt-color-error);
   }
-
-  .assistant-dock-choice-pending {
-    display: grid;
-    gap: 0.25rem;
-    align-content: start;
-    min-height: 44px;
-    padding: 0.35rem;
+  .smrt-assistant-choice-cards__pending {
     border: 2px dashed var(--smrt-color-outline-variant);
     border-radius: 0.6rem;
     color: var(--smrt-color-on-surface-variant);
   }
-
-  .assistant-dock-choice-placeholder {
-    width: 100%;
-    aspect-ratio: 4 / 3;
+  .smrt-assistant-choice-cards__placeholder {
     border-radius: 0.4rem;
     background: var(--smrt-color-surface-container);
     animation: assistant-dock-choice-pulse 1.4s ease-in-out infinite;
   }
-
   @keyframes assistant-dock-choice-pulse {
     50% {
       opacity: 0.45;
     }
   }
-
   @media (prefers-reduced-motion: reduce) {
-    .assistant-dock-choice-placeholder {
+    .smrt-assistant-choice-cards__placeholder {
       animation: none;
     }
   }
 }
+
 </style>

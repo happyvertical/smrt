@@ -338,27 +338,27 @@ async function customSaved(offering: HelperOffering) {
 }
 </script>
 
-<section class="helper-panel" aria-busy={loading || saving} aria-labelledby="helper-panel-title" data-smrt-component="HelperControlPanel">
+<section class="smrt-helper-control-panel__root" aria-busy={loading || saving} aria-labelledby="helper-panel-title" data-smrt-component="HelperControlPanel">
   <h2 id="helper-panel-title">{t(M['chat.helper.title'])}</h2>
-  {#if message}<p class="message" role={messageIsError ? 'alert' : 'status'} aria-live={messageIsError ? 'assertive' : 'polite'}>{message}</p>{/if}
-  {#if snapshot?.recovery}<p class="message" role="status">{snapshot.recovery.message}</p>{/if}
+  {#if message}<p class="smrt-helper-control-panel__message" data-smrt-part="message" role={messageIsError ? 'alert' : 'status'} aria-live={messageIsError ? 'assertive' : 'polite'}>{message}</p>{/if}
+  {#if snapshot?.recovery}<p class="smrt-helper-control-panel__message" data-smrt-part="message" role="status">{snapshot.recovery.message}</p>{/if}
   {#if loading}<p>{t(M['chat.helper.loading'])}</p>
   {:else if !snapshot}<p>{t(M['chat.helper.unavailable'])}</p>
   {:else}
     <fieldset disabled={saving}>
       <legend>{t(M['chat.helper.gallery'])}</legend>
-      <div class="gallery" role="radiogroup" tabindex="-1" aria-label={t(M['chat.helper.gallery'])} onkeydown={moveGallerySelection}>
+      <div class="smrt-helper-control-panel__gallery" data-smrt-part="list" role="radiogroup" tabindex="-1" aria-label={t(M['chat.helper.gallery'])} onkeydown={moveGallerySelection}>
         {#each availableOfferings as offering, index (offering.id)}
-          <Button id={`${panelInstanceId}-offering-${index}`} tabindex={galleryTabStopIndex === index ? 0 : -1} type="button" variant="secondary" class={draft?.offeringId === offering.id ? 'selected' : ''} role="radio" aria-checked={draft?.offeringId === offering.id}
+          <Button id={`${panelInstanceId}-offering-${index}`} tabindex={galleryTabStopIndex === index ? 0 : -1} type="button" variant="secondary"  role="radio" aria-checked={draft?.offeringId === offering.id}
             disabled={!draft || !editable('offeringId')} onclick={() => update('offeringId', offering.id)}>{offering.label}</Button>
         {/each}
       </div>
       {#if previewOffering}
-        <div class="preview" aria-label={t(M['chat.helper.preview'])} bind:this={previewTarget}></div>
+        <div class="smrt-helper-control-panel__preview" data-smrt-part="preview" aria-label={t(M['chat.helper.preview'])} bind:this={previewTarget}></div>
       {/if}
-      {#if previewError}<p class="message" role="status">{previewError}</p>{/if}
+      {#if previewError}<p class="smrt-helper-control-panel__message" data-smrt-part="message" role="status">{previewError}</p>{/if}
       {#if availableSetups.length}
-        <div class="setup-actions">
+        <div class="smrt-helper-control-panel__setup-actions" data-smrt-part="setup-actions">
           {#each availableSetups as style (style.id)}
             <Button id={`${panelInstanceId}-setup-${style.id}`} type="button" variant="secondary" disabled={!editable('offeringId')} onclick={() => openSetup(style.id)}>{t(M['chat.helper.add_style'], { style: style.label })}</Button>
           {/each}
@@ -366,7 +366,7 @@ async function customSaved(offering: HelperOffering) {
       {/if}
       {#if setupStyleId && registry.get(setupStyleId)?.Setup}
         {@const Setup = registry.get(setupStyleId)?.Setup}
-        <section bind:this={setupTarget} class="custom-setup" aria-label={t(M['chat.helper.custom_setup'])}>
+        <section bind:this={setupTarget} class="smrt-helper-control-panel__custom-setup" data-smrt-part="custom-setup" aria-label={t(M['chat.helper.custom_setup'])}>
           <Button type="button" variant="secondary" onclick={closeSetup}>{t(M['chat.helper.back_to_settings'])}</Button>
           {#if Setup}<Setup onsaved={customSaved} oncancel={closeSetup} />{/if}
         </section>
@@ -378,27 +378,97 @@ async function customSaved(offering: HelperOffering) {
         <Switch label={t(M['chat.helper.heard_subtitles'])} checked={draft.heardSubtitles} disabled={!editable('heardSubtitles')} onchange={(event) => update('heardSubtitles', event.currentTarget.checked)} />
         <Switch label={t(M['chat.helper.spoken_subtitles'])} checked={draft.spokenSubtitles} disabled={!editable('spokenSubtitles')} onchange={(event) => update('spokenSubtitles', event.currentTarget.checked)} />
       {:else}
-        <p class="message">{t(M['chat.helper.unavailable'])}</p>
+        <p class="smrt-helper-control-panel__message" data-smrt-part="message">{t(M['chat.helper.unavailable'])}</p>
       {/if}
     </fieldset>
-    {#if dirty}<p class="message" role="status">{t(M['chat.helper.unsaved_changes'])}</p>{/if}
-    <div class="actions">{#if canSave}<Button type="button" onclick={save} disabled={saving || !dirty}>{saving ? t(M['chat.helper.saving']) : t(M['chat.helper.save_changes'])}</Button>{/if}{#if snapshot.permissions.canReset}<Button type="button" variant="secondary" onclick={reset} disabled={saving}>{t(M['chat.helper.reset_button'])}</Button>{/if}</div>
+    {#if dirty}<p class="smrt-helper-control-panel__message" data-smrt-part="message" role="status">{t(M['chat.helper.unsaved_changes'])}</p>{/if}
+    <div class="smrt-helper-control-panel__actions" data-smrt-part="actions">{#if canSave}<Button type="button" onclick={save} disabled={saving || !dirty}>{saving ? t(M['chat.helper.saving']) : t(M['chat.helper.save_changes'])}</Button>{/if}{#if snapshot.permissions.canReset}<Button type="button" variant="secondary" onclick={reset} disabled={saving}>{t(M['chat.helper.reset_button'])}</Button>{/if}</div>
   {/if}
 </section>
 
 <style>
 @layer smrt.reset, smrt.structure, smrt.theme;
-@layer smrt.theme {
-  .helper-panel { display: grid; gap: var(--smrt-spacing-4); max-width: 42rem; padding: var(--smrt-spacing-4); color: var(--smrt-color-on-surface); }
-  fieldset { display: grid; gap: var(--smrt-spacing-3); border: 0; margin: 0; padding: 0; }
-  label { display: grid; gap: var(--smrt-spacing-1); font: var(--smrt-typography-label-large-font); }
-  .gallery { display: grid; grid-template-columns: repeat(auto-fit, minmax(9rem, 1fr)); gap: var(--smrt-spacing-2); }
-  .gallery :global([data-smrt-component="Button"]) { min-height: 3rem; border-color: var(--smrt-hairline-strong-color); background: var(--smrt-color-surface); color: inherit; }
-  .gallery :global([data-smrt-component="Button"].selected) { border-color: var(--smrt-color-primary); background: var(--smrt-color-primary-container); }
-  .preview { min-height: 5rem; display: grid; place-items: center; overflow: hidden; border: var(--smrt-hairline); border-radius: var(--smrt-radius-small); background: var(--smrt-color-surface-container-low); }
-  .preview :global(svg), .preview :global(img) { max-width: 100%; max-height: 12rem; }
-  .setup-actions, .actions { display: flex; flex-wrap: wrap; gap: var(--smrt-spacing-2); }
-  .custom-setup { display: grid; gap: var(--smrt-spacing-3); padding: var(--smrt-spacing-3); border: var(--smrt-hairline); border-radius: var(--smrt-radius-small); }
-  .message { margin: 0; color: var(--smrt-color-on-surface-variant); }
+@layer smrt.structure {
+  .smrt-helper-control-panel__root {
+    display: grid;
+    gap: var(--smrt-spacing-4);
+    max-width: 42rem;
+    padding: var(--smrt-spacing-4);
+  }
+  fieldset {
+    display: grid;
+    gap: var(--smrt-spacing-3);
+    margin: 0;
+    padding: 0;
+  }
+  label {
+    display: grid;
+    gap: var(--smrt-spacing-1);
+  }
+  .smrt-helper-control-panel__gallery {
+    display: grid;
+    grid-template-columns: repeat(auto-fit, minmax(9rem, 1fr));
+    gap: var(--smrt-spacing-2);
+  }
+  .smrt-helper-control-panel__gallery :global([data-smrt-component="Button"]) {
+    min-height: 3rem;
+  }
+  .smrt-helper-control-panel__preview {
+    min-height: 5rem;
+    display: grid;
+    place-items: center;
+    overflow: hidden;
+  }
+  .smrt-helper-control-panel__preview :global(svg), .smrt-helper-control-panel__preview :global(img) {
+    max-width: 100%;
+    max-height: 12rem;
+  }
+  .smrt-helper-control-panel__setup-actions, .smrt-helper-control-panel__actions {
+    display: flex;
+    flex-wrap: wrap;
+    gap: var(--smrt-spacing-2);
+  }
+  .smrt-helper-control-panel__custom-setup {
+    display: grid;
+    gap: var(--smrt-spacing-3);
+    padding: var(--smrt-spacing-3);
+  }
+  .smrt-helper-control-panel__message {
+    margin: 0;
+  }
 }
+
+@layer smrt.theme {
+  .smrt-helper-control-panel__root {
+    color: var(--smrt-color-on-surface);
+  }
+  fieldset {
+    border: 0;
+  }
+  label {
+    font: var(--smrt-typography-label-large-font);
+  }
+  .smrt-helper-control-panel__gallery :global([data-smrt-component="Button"]) {
+    border-color: var(--smrt-hairline-strong-color);
+    background: var(--smrt-color-surface);
+    color: inherit;
+  }
+  .smrt-helper-control-panel__gallery :global([data-smrt-component="Button"][aria-checked="true"]) {
+    border-color: var(--smrt-color-primary);
+    background: var(--smrt-color-primary-container);
+  }
+  .smrt-helper-control-panel__preview {
+    border: var(--smrt-hairline);
+    border-radius: var(--smrt-radius-small);
+    background: var(--smrt-color-surface-container-low);
+  }
+  .smrt-helper-control-panel__custom-setup {
+    border: var(--smrt-hairline);
+    border-radius: var(--smrt-radius-small);
+  }
+  .smrt-helper-control-panel__message {
+    color: var(--smrt-color-on-surface-variant);
+  }
+}
+
 </style>

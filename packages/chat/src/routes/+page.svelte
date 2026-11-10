@@ -1030,20 +1030,20 @@ onMount(() => {
     />
   </div>
   <div hidden={workbenchTab !== 'chat'}>
-  <div class="chat-dev">
-    <header class="topbar">
-      <div class="title-block">
-        <p class="eyebrow">@happyvertical/smrt-chat</p>
+  <div class="smrt-chat-page__root">
+    <header class="smrt-chat-page__topbar" data-smrt-part="header">
+      <div class="smrt-chat-page__title-block" data-smrt-part="title-block">
+        <p class="smrt-chat-page__eyebrow" data-smrt-part="eyebrow">@happyvertical/smrt-chat</p>
         <h1>Chat Dev</h1>
       </div>
 
-      <nav class="topbar__actions" aria-label="Chat dev navigation">
-        <div class="mode-toggle" role="group" aria-label="Input mode">
+      <nav class="smrt-chat-page__topbar-actions" data-smrt-part="actions" aria-label="Chat dev navigation">
+        <div class="smrt-chat-page__mode-toggle" data-smrt-part="controls" role="group" aria-label="Input mode">
           <Button
             variant="ghost"
             size="sm"
             type="button"
-            class={workbenchMode === 'text' ? 'mode-button active' : 'mode-button'}
+            class={workbenchMode === 'text' ? 'smrt-chat-page__mode-button smrt-chat-page__mode-button--active' : 'smrt-chat-page__mode-button'}
             aria-pressed={workbenchMode === 'text'}
             onclick={() => setWorkbenchMode('text')}
           >
@@ -1053,14 +1053,14 @@ onMount(() => {
             variant="ghost"
             size="sm"
             type="button"
-            class={workbenchMode === 'voice' ? 'mode-button active' : 'mode-button'}
+            class={workbenchMode === 'voice' ? 'smrt-chat-page__mode-button smrt-chat-page__mode-button--active' : 'smrt-chat-page__mode-button'}
             aria-pressed={workbenchMode === 'voice'}
             onclick={() => setWorkbenchMode('voice')}
           >
             Voice
           </Button>
         </div>
-        <a class="preview-link" href="/previews">Previews</a>
+        <a class="smrt-chat-page__preview-link" data-smrt-part="link" href="/previews">Previews</a>
         <Button variant="ghost" size="sm" type="button" onclick={resetConversation}>
           Reset
         </Button>
@@ -1068,8 +1068,8 @@ onMount(() => {
       </nav>
     </header>
 
-    <main class="workspace">
-      <section class="chat-frame" aria-label="Chat workbench">
+    <main class="smrt-chat-page__workspace" data-smrt-part="body">
+      <section class="smrt-chat-page__chat" data-smrt-part="chat" aria-label="Chat workbench">
         <ChatLayout
           {rooms}
           {currentRoomId}
@@ -1077,7 +1077,7 @@ onMount(() => {
           onselectroom={(roomId) => (currentRoomId = roomId)}
         >
           <RoomHeader room={currentRoom} participantCount={currentRoom.participantCount} />
-          <div class="transcript">
+          <div class="smrt-chat-page__transcript" data-smrt-part="transcript">
             <MessageList
               {messages}
               {currentProfileId}
@@ -1085,10 +1085,10 @@ onMount(() => {
               onreact={() => undefined}
             />
             {#if pending}
-              <div class="typing-row" role="status">Assistant is replying...</div>
+              <div class="smrt-chat-page__typing" data-smrt-part="status" role="status">Assistant is replying...</div>
             {/if}
             {#if workbenchMode === 'voice' && voiceConnected}
-              <div class="typing-row" role="status">{voiceTurnState}</div>
+              <div class="smrt-chat-page__typing" data-smrt-part="status" role="status">{voiceTurnState}</div>
             {/if}
           </div>
           <MessageInput
@@ -1099,33 +1099,33 @@ onMount(() => {
         </ChatLayout>
       </section>
 
-      <aside class="status-panel" aria-label="Dev chat status">
-        <div class="status-row">
-          <span class="status-label">Input</span>
+      <aside class="smrt-chat-page__status-panel" data-smrt-part="meta" aria-label="Dev chat status">
+        <div class="smrt-chat-page__status-row" data-smrt-part="row">
+          <span class="smrt-chat-page__status-label" data-smrt-part="label">Input</span>
           <strong>{workbenchMode === 'voice' ? 'Voice conversation' : 'Text chat'}</strong>
         </div>
-        <div class="status-row">
-          <span class="status-label">Mode</span>
+        <div class="smrt-chat-page__status-row" data-smrt-part="row">
+          <span class="smrt-chat-page__status-label" data-smrt-part="label">Mode</span>
           <strong>{backendMode === 'ai' ? 'AI' : 'Local'}</strong>
         </div>
-        <div class="status-row">
-          <span class="status-label">Backend</span>
+        <div class="smrt-chat-page__status-row" data-smrt-part="row">
+          <span class="smrt-chat-page__status-label" data-smrt-part="label">Backend</span>
           <strong>{backendDetail}</strong>
         </div>
-        <div class="status-row">
-          <span class="status-label">Status</span>
+        <div class="smrt-chat-page__status-row" data-smrt-part="row">
+          <span class="smrt-chat-page__status-label" data-smrt-part="label">Status</span>
           <strong>{statusText}</strong>
         </div>
-        <div class="status-row">
-          <span class="status-label">Messages</span>
+        <div class="smrt-chat-page__status-row" data-smrt-part="row">
+          <span class="smrt-chat-page__status-label" data-smrt-part="label">Messages</span>
           <strong>{totalMessages}</strong>
         </div>
 
         {#if workbenchMode === 'text'}
-          <section class="side-panel" aria-label="Inference backend controls">
-            <label class="side-field">
-              <span class="status-label">Inference</span>
-              <Select bind:value={inferencePreference} class="voice-select">
+          <section class="smrt-chat-page__side-panel" data-smrt-part="panel" aria-label="Inference backend controls">
+            <label class="smrt-chat-page__side-field" data-smrt-part="field">
+              <span class="smrt-chat-page__status-label" data-smrt-part="label">Inference</span>
+              <Select bind:value={inferencePreference} class="smrt-chat-page__voice-select">
                 <option value="auto">Auto</option>
                 <option value="bitgpu">Bonsai 1.7B (bitgpu)</option>
                 <option value="local">On-device model</option>
@@ -1136,11 +1136,11 @@ onMount(() => {
             <ModelStatusControl backend={localBackend} label="On-device model — WebLLM" />
           </section>
 
-          <section class="side-panel" aria-label="Agent-addressable draft form">
-            <span class="status-label">Draft form — agent addressable</span>
+          <section class="smrt-chat-page__side-panel" data-smrt-part="panel" aria-label="Agent-addressable draft form">
+            <span class="smrt-chat-page__status-label" data-smrt-part="label">Draft form — agent addressable</span>
             <Form formId={DRAFT_FORM_ID} interactionRegistry={draftRegistry}>
-              <label class="side-field">
-                <span class="status-label">Draft subject</span>
+              <label class="smrt-chat-page__side-field" data-smrt-part="field">
+                <span class="smrt-chat-page__status-label" data-smrt-part="label">Draft subject</span>
                 <Input
                   id={DRAFT_CONTROL_ID}
                   bind:value={draftSubject}
@@ -1159,53 +1159,53 @@ onMount(() => {
         {/if}
 
         {#if workbenchMode === 'voice'}
-          <section class="side-panel" aria-label="Voice conversation controls">
-            <label class="side-field">
-              <span class="status-label">Voice target</span>
-              <Select bind:value={voiceTarget} disabled={voiceConnected} class="voice-select">
+          <section class="smrt-chat-page__side-panel" data-smrt-part="panel" aria-label="Voice conversation controls">
+            <label class="smrt-chat-page__side-field" data-smrt-part="field">
+              <span class="smrt-chat-page__status-label" data-smrt-part="label">Voice target</span>
+              <Select bind:value={voiceTarget} disabled={voiceConnected} class="smrt-chat-page__voice-select">
                 {#each voiceTargetNames as target (target)}
                   <option value={target}>{target}</option>
                 {/each}
               </Select>
             </label>
 
-            <div class="voice-actions">
+            <div class="smrt-chat-page__voice-actions" data-smrt-part="actions">
               {#if voiceConnected}
-                <Button variant="danger" size="sm" type="button" class="voice-button" onclick={stopVoiceConversation}>
+                <Button variant="danger" size="sm" type="button" class="smrt-chat-page__voice-button" onclick={stopVoiceConversation}>
                   Stop
                 </Button>
               {:else}
-                <Button variant="primary" size="sm" type="button" class="voice-button" onclick={startVoiceConversation}>
+                <Button variant="primary" size="sm" type="button" class="smrt-chat-page__voice-button" onclick={startVoiceConversation}>
                   Start
                 </Button>
               {/if}
-              <Button variant="secondary" size="sm" type="button" class="voice-button" onclick={loadVoiceConfig} disabled={voiceConnected}>
+              <Button variant="secondary" size="sm" type="button" class="smrt-chat-page__voice-button" onclick={loadVoiceConfig} disabled={voiceConnected}>
                 Reload
               </Button>
             </div>
 
-            <div class="voice-readout">
-              <span class:active={voiceConnected} aria-hidden="true"></span>
+            <div class="smrt-chat-page__voice-readout" data-smrt-part="indicator">
+              <span class:smrt-chat-page__active={voiceConnected} aria-hidden="true"></span>
               <strong>{voiceStatus}</strong>
             </div>
 
-            <div class="voice-meta">
-              <span class="status-label">Session</span>
+            <div class="smrt-chat-page__voice-meta" data-smrt-part="meta">
+              <span class="smrt-chat-page__status-label" data-smrt-part="label">Session</span>
               <strong>{voiceSessionId ?? 'Not started'}</strong>
             </div>
-            <div class="voice-meta">
-              <span class="status-label">Transcript</span>
+            <div class="smrt-chat-page__voice-meta" data-smrt-part="meta">
+              <span class="smrt-chat-page__status-label" data-smrt-part="label">Transcript</span>
               <strong>{voiceTranscript}</strong>
             </div>
 
             {#if voiceWarning}
-              <p class="warning">{voiceWarning}</p>
+              <p class="smrt-chat-page__warning" data-smrt-part="warning">{voiceWarning}</p>
             {/if}
           </section>
         {/if}
 
         {#if warning}
-          <p class="warning">{warning}</p>
+          <p class="smrt-chat-page__warning" data-smrt-part="warning">{warning}</p>
         {/if}
       </aside>
     </main>
@@ -1216,72 +1216,189 @@ onMount(() => {
 
 <style>
 @layer smrt.reset, smrt.structure, smrt.theme;
-@layer smrt.theme {
+@layer smrt.structure {
   :global(body) {
     margin: 0;
     min-height: 100vh;
   }
-
-  :global(a) {
-    color: inherit;
-  }
-
-  .chat-dev {
+  .smrt-chat-page__root {
     display: grid;
     grid-template-rows: auto minmax(0, 1fr);
     min-height: 100vh;
-    background: var(--smrt-color-background);
-    color: var(--smrt-color-on-background);
-    font-family: var(--smrt-font-family);
   }
-
-  .topbar {
+  .smrt-chat-page__topbar {
     display: flex;
     align-items: center;
     justify-content: space-between;
     gap: 1rem;
     padding: 0.8rem 1rem;
-    border-bottom: var(--smrt-hairline);
-    background: var(--smrt-color-surface);
-    color: var(--smrt-color-on-surface);
   }
-
-  .title-block {
+  .smrt-chat-page__title-block {
     min-width: 0;
   }
-
-  .eyebrow {
+  .smrt-chat-page__eyebrow {
     margin: 0 0 0.15rem;
-    font-size: var(--smrt-typography-label-medium-size, 0.75rem);
-    color: var(--smrt-color-on-surface-variant);
   }
-
   h1 {
     margin: 0;
-    font-size: var(--smrt-typography-title-medium-size, 1rem);
-    line-height: var(--smrt-typography-title-medium-line-height, 1.5);
-    letter-spacing: 0;
   }
-
-  .topbar__actions {
+  .smrt-chat-page__topbar-actions {
     display: flex;
     align-items: center;
     gap: 0.55rem;
     flex-wrap: wrap;
     justify-content: flex-end;
   }
-
-  .mode-toggle {
+  .smrt-chat-page__mode-toggle {
     display: inline-flex;
     padding: 0.16rem;
+  }
+  .smrt-chat-page__mode-toggle :global(.smrt-chat-page__mode-button) {
+    min-height: 2rem;
+    padding: 0 0.68rem;
+  }
+  .smrt-chat-page__preview-link {
+    display: inline-flex;
+    align-items: center;
+    min-height: 2rem;
+    padding: 0 0.7rem;
+  }
+  .smrt-chat-page__workspace {
+    display: grid;
+    grid-template-columns: minmax(0, 1fr) 17rem;
+    gap: 1rem;
+    min-height: 0;
+    padding: 1rem;
+  }
+  .smrt-chat-page__chat {
+    min-width: 0;
+    min-height: 32rem;
+    height: calc(100vh - 5.1rem);
+    overflow: hidden;
+  }
+  .smrt-chat-page__transcript {
+    display: flex;
+    flex: 1;
+    min-height: 0;
+    flex-direction: column;
+  }
+  .smrt-chat-page__typing {
+    margin: 0 1rem 0.75rem;
+    padding: 0.55rem 0.7rem;
+    align-self: flex-start;
+  }
+  .smrt-chat-page__status-panel {
+    display: grid;
+    align-content: start;
+    gap: 0.75rem;
+    height: max-content;
+    padding: 0.9rem;
+  }
+  .smrt-chat-page__status-row {
+    display: grid;
+    gap: 0.2rem;
+    padding-bottom: 0.65rem;
+  }
+  .smrt-chat-page__status-row:last-of-type {
+    padding-bottom: 0;
+  }
+  .smrt-chat-page__status-panel strong {
+    min-width: 0;
+    overflow-wrap: anywhere;
+  }
+  .smrt-chat-page__side-panel {
+    display: grid;
+    gap: 0.75rem;
+    padding-top: 0.15rem;
+  }
+  .smrt-chat-page__side-field {
+    display: grid;
+    gap: 0.35rem;
+  }
+  .smrt-chat-page__side-field :global(.smrt-chat-page__voice-select) {
+    min-height: 2.2rem;
+  }
+  .smrt-chat-page__voice-actions {
+    display: grid;
+    grid-template-columns: 1fr 1fr;
+    gap: 0.55rem;
+  }
+  .smrt-chat-page__voice-actions :global(.smrt-chat-page__voice-button) {
+    width: 100%;
+    min-height: 2rem;
+  }
+  .smrt-chat-page__voice-readout {
+    display: flex;
+    align-items: center;
+    gap: 0.45rem;
+  }
+  .smrt-chat-page__voice-readout span {
+    width: 0.6rem;
+    height: 0.6rem;
+    flex: 0 0 auto;
+  }
+  .smrt-chat-page__voice-meta {
+    display: grid;
+    gap: 0.2rem;
+  }
+  .smrt-chat-page__warning {
+    margin: 0;
+    padding: 0.7rem;
+  }
+  @media (max-width: 820px) {
+    .smrt-chat-page__workspace {
+      grid-template-columns: 1fr;
+    }
+    .smrt-chat-page__chat {
+      height: 36rem;
+    }
+  }
+  @media (max-width: 600px) {
+    .smrt-chat-page__topbar {
+      align-items: flex-start;
+    }
+    .smrt-chat-page__topbar-actions {
+      max-width: 12rem;
+    }
+    .smrt-chat-page__workspace {
+      padding: 0.75rem;
+    }
+    .smrt-chat-page__chat {
+      height: 34rem;
+      min-height: 28rem;
+    }
+  }
+}
+
+@layer smrt.theme {
+  :global(a) {
+    color: inherit;
+  }
+  .smrt-chat-page__root {
+    background: var(--smrt-color-background);
+    color: var(--smrt-color-on-background);
+    font-family: var(--smrt-font-family);
+  }
+  .smrt-chat-page__topbar {
+    border-bottom: var(--smrt-hairline);
+    background: var(--smrt-color-surface);
+    color: var(--smrt-color-on-surface);
+  }
+  .smrt-chat-page__eyebrow {
+    font-size: var(--smrt-typography-label-medium-size, 0.75rem);
+    color: var(--smrt-color-on-surface-variant);
+  }
+  h1 {
+    font-size: var(--smrt-typography-title-medium-size, 1rem);
+    line-height: var(--smrt-typography-title-medium-line-height, 1.5);
+    letter-spacing: 0;
+  }
+  .smrt-chat-page__mode-toggle {
     border: var(--smrt-hairline);
     border-radius: var(--smrt-radius-md);
     background: var(--smrt-color-surface-container-high);
   }
-
-  .mode-toggle :global(.mode-button) {
-    min-height: 2rem;
-    padding: 0 0.68rem;
+  .smrt-chat-page__mode-toggle :global(.smrt-chat-page__mode-button) {
     border: 0;
     border-radius: var(--smrt-radius-sm);
     background: transparent;
@@ -1289,17 +1406,11 @@ onMount(() => {
     font-size: var(--smrt-typography-label-large-size, 0.875rem);
     font-weight: var(--smrt-typography-weight-bold, 700);
   }
-
-  .mode-toggle :global(.mode-button.active) {
+  .smrt-chat-page__mode-toggle :global(.smrt-chat-page__mode-button--active) {
     background: var(--smrt-color-primary);
     color: var(--smrt-color-on-primary);
   }
-
-  .preview-link {
-    display: inline-flex;
-    align-items: center;
-    min-height: 2rem;
-    padding: 0 0.7rem;
+  .smrt-chat-page__preview-link {
     border: var(--smrt-hairline);
     border-radius: var(--smrt-radius-md);
     background: var(--smrt-color-surface-container-lowest);
@@ -1308,136 +1419,54 @@ onMount(() => {
     font-size: var(--smrt-typography-label-large-size, 0.875rem);
     font-weight: var(--smrt-typography-weight-semibold, 600);
   }
-
-  .preview-link:hover {
+  .smrt-chat-page__preview-link:hover {
     background: var(--smrt-color-surface-container-low);
   }
-
-  .workspace {
-    display: grid;
-    grid-template-columns: minmax(0, 1fr) 17rem;
-    gap: 1rem;
-    min-height: 0;
-    padding: 1rem;
-  }
-
-  .chat-frame {
-    min-width: 0;
-    min-height: 32rem;
-    height: calc(100vh - 5.1rem);
-    overflow: hidden;
+  .smrt-chat-page__chat {
     border: var(--smrt-hairline);
     border-radius: var(--smrt-radius-md);
     background: var(--smrt-color-surface);
   }
-
-  .transcript {
-    display: flex;
-    flex: 1;
-    min-height: 0;
-    flex-direction: column;
+  .smrt-chat-page__transcript {
     background: var(--smrt-color-surface-container-low);
   }
-
-  .typing-row {
-    margin: 0 1rem 0.75rem;
-    padding: 0.55rem 0.7rem;
-    align-self: flex-start;
+  .smrt-chat-page__typing {
     border: var(--smrt-hairline);
     border-radius: var(--smrt-radius-md);
     background: var(--smrt-color-surface);
     color: var(--smrt-color-on-surface-variant);
     font-size: var(--smrt-typography-body-small-size, 0.75rem);
   }
-
-  .status-panel {
-    display: grid;
-    align-content: start;
-    gap: 0.75rem;
-    height: max-content;
-    padding: 0.9rem;
+  .smrt-chat-page__status-panel {
     border: var(--smrt-hairline);
     border-radius: var(--smrt-radius-md);
     background: var(--smrt-color-surface);
     color: var(--smrt-color-on-surface);
   }
-
-  .status-row {
-    display: grid;
-    gap: 0.2rem;
-    padding-bottom: 0.65rem;
+  .smrt-chat-page__status-row {
     border-bottom: var(--smrt-hairline);
   }
-
-  .status-row:last-of-type {
-    padding-bottom: 0;
+  .smrt-chat-page__status-row:last-of-type {
     border-bottom: 0;
   }
-
-  .status-label {
+  .smrt-chat-page__status-label {
     font-size: var(--smrt-typography-label-medium-size, 0.75rem);
     color: var(--smrt-color-on-surface-variant);
   }
-
-  .status-panel strong {
-    min-width: 0;
-    overflow-wrap: anywhere;
+  .smrt-chat-page__status-panel strong {
     font-size: var(--smrt-typography-body-medium-size, 0.875rem);
   }
-
-  .side-panel {
-    display: grid;
-    gap: 0.75rem;
-    padding-top: 0.15rem;
-  }
-
-  .side-field {
-    display: grid;
-    gap: 0.35rem;
-  }
-
-  .side-field :global(.voice-select) {
-    min-height: 2.2rem;
+  .smrt-chat-page__side-field :global(.smrt-chat-page__voice-select) {
     background-color: var(--smrt-color-surface-container-lowest);
   }
-
-  .voice-actions {
-    display: grid;
-    grid-template-columns: 1fr 1fr;
-    gap: 0.55rem;
-  }
-
-  .voice-actions :global(.voice-button) {
-    width: 100%;
-    min-height: 2rem;
-  }
-
-  .voice-readout {
-    display: flex;
-    align-items: center;
-    gap: 0.45rem;
-  }
-
-  .voice-readout span {
-    width: 0.6rem;
-    height: 0.6rem;
-    flex: 0 0 auto;
+  .smrt-chat-page__voice-readout span {
     border-radius: var(--smrt-radius-full);
     background: var(--smrt-color-outline);
   }
-
-  .voice-readout span.active {
+  .smrt-chat-page__voice-readout span.smrt-chat-page__active {
     background: var(--smrt-color-success);
   }
-
-  .voice-meta {
-    display: grid;
-    gap: 0.2rem;
-  }
-
-  .warning {
-    margin: 0;
-    padding: 0.7rem;
+  .smrt-chat-page__warning {
     border: 1px solid var(--smrt-color-warning);
     border-radius: var(--smrt-radius-md);
     background: var(--smrt-color-warning-container);
@@ -1445,34 +1474,6 @@ onMount(() => {
     font-size: var(--smrt-typography-body-small-size, 0.75rem);
     line-height: 1.45;
   }
-
-  @media (max-width: 820px) {
-    .workspace {
-      grid-template-columns: 1fr;
-    }
-
-    .chat-frame {
-      height: 36rem;
-    }
-  }
-
-  @media (max-width: 600px) {
-    .topbar {
-      align-items: flex-start;
-    }
-
-    .topbar__actions {
-      max-width: 12rem;
-    }
-
-    .workspace {
-      padding: 0.75rem;
-    }
-
-    .chat-frame {
-      height: 34rem;
-      min-height: 28rem;
-    }
-  }
 }
+
 </style>

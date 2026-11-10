@@ -110,21 +110,21 @@ function handleEscape(event: KeyboardEvent) {
 />
 
 {#if message.messageType === 'system' || message.messageType === 'action'}
-  <div class="message-item message-item--system" data-smrt-component="MessageItem">
+  <div class="smrt-message-item__root smrt-message-item__system" data-smrt-component="MessageItem">
     <MessageBubble content={message.content} own={false} variant="system" />
   </div>
 {:else}
   <div
-    class="message-item"
-    class:message-item--own={isOwn}
+    class="smrt-message-item__root"
     role="article"
     aria-label={t(M['chat.message_item.message_from'], { name: message.senderName })}
     onmouseenter={() => showActions = true}
+    class:smrt-message-item__own={isOwn}
     onmouseleave={() => { showActions = false; showReactionPicker = false; }}
     onfocusout={handleFocusOut} data-smrt-component="MessageItem"
   >
     {#if !isOwn}
-      <div class="message-item__avatar">
+      <div class="smrt-message-item__avatar" data-smrt-part="avatar">
         <Avatar
           name={message.senderName}
           avatarUrl={message.senderAvatarUrl}
@@ -133,15 +133,15 @@ function handleEscape(event: KeyboardEvent) {
       </div>
     {/if}
 
-    <div class="message-item__body">
+    <div class="smrt-message-item__body" data-smrt-part="body">
       {#if !isOwn}
-        <span class="message-item__sender">{message.senderName}</span>
+        <span class="smrt-message-item__sender" data-smrt-part="label">{message.senderName}</span>
       {/if}
 
       {#if message.replyTo}
-        <div class="message-item__reply-preview">
-          <span class="message-item__reply-name">{message.replyTo.senderName}</span>
-          <span class="message-item__reply-text">{message.replyTo.content}</span>
+        <div class="smrt-message-item__reply" data-smrt-part="reply">
+          <span class="smrt-message-item__reply-label" data-smrt-part="reply-label">{message.replyTo.senderName}</span>
+          <span class="smrt-message-item__reply-message" data-smrt-part="reply-message">{message.replyTo.content}</span>
         </div>
       {/if}
 
@@ -152,46 +152,46 @@ function handleEscape(event: KeyboardEvent) {
       />
 
       {#if message.toolCallData}
-        <div class="message-item__tool-call">
-          <span class="message-item__tool-name">
+        <div class="smrt-message-item__tool" data-smrt-part="tool">
+          <span class="smrt-message-item__tool-name" data-smrt-part="tool-name">
             {message.toolCallData.toolName}
           </span>
-          <span class="message-item__tool-status {message.toolCallData.status}">
+          <span class="smrt-message-item__status smrt-message-item__{message.toolCallData.status}" data-smrt-part="status">
             {message.toolCallData.status}
           </span>
           {#if message.toolCallData.duration}
-            <span class="message-item__tool-duration">
+            <span class="smrt-message-item__duration" data-smrt-part="duration">
               {message.toolCallData.duration}ms
             </span>
           {/if}
           {#if message.toolCallData.error}
-            <span class="message-item__tool-error">{message.toolCallData.error}</span>
+            <span class="smrt-message-item__error" data-smrt-part="error">{message.toolCallData.error}</span>
           {/if}
         </div>
       {/if}
 
       {#if message.reactions.length > 0}
-        <div class="message-item__reactions">
+        <div class="smrt-message-item__reactions" data-smrt-part="reactions">
           {#each message.reactions as reaction}
             <Button
               variant="ghost"
               size="sm"
-              class="message-item__reaction{reaction.reacted ? ' message-item__reaction--active' : ''}"
+              class={reaction.reacted ? 'smrt-message-item__reaction--active' : ''}
               type="button"
               onclick={() => onreact?.(message.id, reaction.emoji)}
               aria-label="{reaction.emoji} {reaction.count}"
             >
-              <span class="message-item__reaction-emoji">{reaction.emoji}</span>
-              <span class="message-item__reaction-count">{reaction.count}</span>
+              <span class="smrt-message-item__emoji" data-smrt-part="emoji">{reaction.emoji}</span>
+              <span class="smrt-message-item__count" data-smrt-part="count">{reaction.count}</span>
             </Button>
           {/each}
         </div>
       {/if}
 
-      <div class="message-item__meta">
-        <span class="message-item__time">{formattedTime}</span>
+      <div class="smrt-message-item__meta" data-smrt-part="meta">
+        <span class="smrt-message-item__time" data-smrt-part="time">{formattedTime}</span>
         {#if message.isEdited}
-          <span class="message-item__edited">(edited)</span>
+          <span class="smrt-message-item__edited" data-smrt-part="edited">(edited)</span>
         {/if}
       </div>
     </div>
@@ -200,7 +200,6 @@ function handleEscape(event: KeyboardEvent) {
       <Button
         variant="ghost"
         size="sm"
-        class="message-item__more-btn"
         type="button"
         onclick={openActions}
         onfocus={openActions}
@@ -214,7 +213,8 @@ function handleEscape(event: KeyboardEvent) {
 
     {#if showActions}
       <div
-        class="message-item__actions"
+        class="smrt-message-item__actions"
+        data-smrt-part="actions"
         role="group"
         id={actionsId}
         aria-label={t(M['chat.message_item.more_actions'])}
@@ -223,7 +223,6 @@ function handleEscape(event: KeyboardEvent) {
           <Button
             variant="ghost"
             size="sm"
-            class="message-item__action-btn"
             type="button"
             onclick={toggleReactionPicker}
             aria-label={t(M['chat.message_item.add_reaction'])}
@@ -235,7 +234,6 @@ function handleEscape(event: KeyboardEvent) {
           <Button
             variant="ghost"
             size="sm"
-            class="message-item__action-btn"
             type="button"
             onclick={() => onreply?.(message.id)}
             aria-label={t(M['chat.message_item.reply'])}
@@ -247,7 +245,6 @@ function handleEscape(event: KeyboardEvent) {
           <Button
             variant="ghost"
             size="sm"
-            class="message-item__action-btn"
             type="button"
             onclick={() => onedit?.(message.id)}
             aria-label={t(M['chat.message_item.edit'])}
@@ -259,7 +256,6 @@ function handleEscape(event: KeyboardEvent) {
           <Button
             variant="ghost"
             size="sm"
-            class="message-item__action-btn"
             type="button"
             onclick={() => ondelete?.(message.id)}
             aria-label={t(M['chat.message_item.delete'])}
@@ -270,7 +266,7 @@ function handleEscape(event: KeyboardEvent) {
       </div>
 
       {#if showReactionPicker}
-        <div class="message-item__picker-popover">
+        <div class="smrt-message-item__picker" data-smrt-part="picker">
           <ReactionPicker isOpen={true} onreact={handleReact} />
         </div>
       {/if}
@@ -280,278 +276,283 @@ function handleEscape(event: KeyboardEvent) {
 
 <style>
 @layer smrt.reset, smrt.structure, smrt.theme;
-@layer smrt.theme {
-  .message-item {
+@layer smrt.structure {
+  .smrt-message-item__root {
     display: flex;
     align-items: flex-start;
     gap: var(--smrt-spacing-2, 0.375rem);
     padding: var(--smrt-spacing-1, 0.25rem) var(--smrt-spacing-4, 1rem);
     position: relative;
   }
-
-  .message-item--own {
+  .smrt-message-item__own {
     flex-direction: row-reverse;
   }
-
-  .message-item--system {
+  .smrt-message-item__system {
     justify-content: center;
     padding: var(--smrt-spacing-1, 0.25rem) var(--smrt-spacing-4, 1rem);
   }
-
-  .message-item__avatar {
+  .smrt-message-item__avatar {
     flex-shrink: 0;
     margin-top: var(--smrt-spacing-1, 0.25rem);
   }
-
-  .message-item__body {
+  .smrt-message-item__body {
     display: flex;
     flex-direction: column;
     gap: var(--smrt-spacing-1, 0.25rem);
     min-width: 0;
     max-width: 75%;
   }
-
-  .message-item--own .message-item__body {
+  .smrt-message-item__own .smrt-message-item__body {
     align-items: flex-end;
   }
-
-  .message-item__sender {
-    font-size: var(--smrt-typography-body-small-size, 0.75rem);
-    font-weight: var(--smrt-typography-weight-medium, 500);
-    color: var(--smrt-color-on-surface-variant);
+  .smrt-message-item__sender {
     padding-left: var(--smrt-spacing-1, 0.25rem);
   }
-
-  .message-item__reply-preview {
+  .smrt-message-item__reply {
     display: flex;
     flex-direction: column;
     gap: var(--smrt-spacing-1);
     padding: var(--smrt-spacing-1, 0.25rem) var(--smrt-spacing-3, 0.75rem);
-    border-left: 2px solid var(--smrt-color-primary);
-    border-radius: var(--smrt-radius-small, 0.25rem);
-    background: var(--smrt-color-surface-container-low);
-    font-size: var(--smrt-typography-body-small-size, 0.75rem);
     max-width: 100%;
     overflow: hidden;
   }
-
-  .message-item__reply-name {
-    font-weight: var(--smrt-typography-weight-medium, 500);
-    color: var(--smrt-color-primary);
-  }
-
-  .message-item__reply-text {
-    color: var(--smrt-color-on-surface-variant);
+  .smrt-message-item__reply-message {
     white-space: nowrap;
     overflow: hidden;
     text-overflow: ellipsis;
   }
-
-  .message-item__tool-call {
+  .smrt-message-item__tool {
     display: flex;
     align-items: center;
     gap: var(--smrt-spacing-2, 0.375rem);
     padding: var(--smrt-spacing-2, 0.375rem) var(--smrt-spacing-3, 0.75rem);
+  }
+  .smrt-message-item__status {
+    padding: var(--smrt-spacing-1) var(--smrt-spacing-2);
+  }
+  .smrt-message-item__reactions {
+    display: flex;
+    flex-wrap: wrap;
+    gap: var(--smrt-spacing-1, 0.25rem);
+  }
+  /* :global() pierces into each Button's rendered <button> (see #1589). */
+  .smrt-message-item__reactions :global([data-smrt-component="Button"]) {
+    gap: var(--smrt-spacing-1);
+    padding: var(--smrt-spacing-1) var(--smrt-spacing-2);
+  }
+  .smrt-message-item__meta {
+    display: flex;
+    align-items: center;
+    gap: var(--smrt-spacing-1, 0.25rem);
+    padding-left: var(--smrt-spacing-1, 0.25rem);
+  }
+  /* :global() pierces into the Button child's rendered <button> (see #1589). */
+  .smrt-message-item__root > :global([data-smrt-component="Button"]) {
+    width: 26px;
+    height: 26px;
+    padding: 0;
+    position: absolute;
+    top: 0;
+    right: var(--smrt-spacing-4, 1rem);
+    opacity: 0;
+  }
+  .smrt-message-item__own > :global([data-smrt-component="Button"]) {
+    right: auto;
+    left: var(--smrt-spacing-4, 1rem);
+  }
+  .smrt-message-item__actions {
+    display: flex;
+    align-items: center;
+    gap: var(--smrt-spacing-1);
+    position: absolute;
+    top: 0;
+    right: var(--smrt-spacing-4, 1rem);
+    padding: var(--smrt-spacing-1);
+    z-index: 1;
+  }
+  .smrt-message-item__own .smrt-message-item__actions {
+    right: auto;
+    left: var(--smrt-spacing-4, 1rem);
+  }
+  /* :global() pierces into each Button's rendered <button> (see #1589). */
+  .smrt-message-item__actions :global([data-smrt-component="Button"]) {
+    width: 26px;
+    height: 26px;
+    padding: 0;
+  }
+  /* Reveal the keyboard/touch affordance on hover OR when focus is inside the
+  row, so it is never strictly hover-only (a11y blocker, T2 #1391). Always
+  visible to coarse pointers (touch) which cannot hover. */
+  .smrt-message-item__root:hover > :global([data-smrt-component="Button"]),
+  .smrt-message-item__root:focus-within > :global([data-smrt-component="Button"]) {
+    opacity: 1;
+  }
+  .smrt-message-item__root > :global([data-smrt-component="Button"]:focus-visible) {
+    opacity: 1;
+  }
+  @media (hover: none) {
+    .smrt-message-item__root > :global([data-smrt-component="Button"]) {
+      opacity: 1;
+    }
+  }
+  .smrt-message-item__picker {
+    position: absolute;
+    top: -8px;
+    right: var(--smrt-spacing-4, 1rem);
+    z-index: 10;
+    transform: translateY(-100%);
+  }
+  .smrt-message-item__own .smrt-message-item__picker {
+    right: auto;
+    left: var(--smrt-spacing-4, 1rem);
+  }
+}
+
+@layer smrt.theme {
+  .smrt-message-item__sender {
+    font-size: var(--smrt-typography-body-small-size, 0.75rem);
+    font-weight: var(--smrt-typography-weight-medium, 500);
+    color: var(--smrt-color-on-surface-variant);
+  }
+  .smrt-message-item__reply {
+    border-left: 2px solid var(--smrt-color-primary);
+    border-radius: var(--smrt-radius-small, 0.25rem);
+    background: var(--smrt-color-surface-container-low);
+    font-size: var(--smrt-typography-body-small-size, 0.75rem);
+  }
+  .smrt-message-item__reply-label {
+    font-weight: var(--smrt-typography-weight-medium, 500);
+    color: var(--smrt-color-primary);
+  }
+  .smrt-message-item__reply-message {
+    color: var(--smrt-color-on-surface-variant);
+  }
+  .smrt-message-item__tool {
     background: var(--smrt-color-surface-container);
     border-radius: var(--smrt-radius-small, 0.25rem);
     font-size: var(--smrt-typography-body-small-size, 0.75rem);
     font-family: var(--smrt-font-family-mono, ui-monospace, monospace);
   }
-
-  .message-item__tool-name {
+  .smrt-message-item__tool-name {
     font-weight: var(--smrt-typography-weight-medium, 500);
     color: var(--smrt-color-on-surface);
   }
-
-  .message-item__tool-status {
-    padding: var(--smrt-spacing-1) var(--smrt-spacing-2);
+  .smrt-message-item__status {
     border-radius: var(--smrt-radius-small, 0.25rem);
     font-size: var(--smrt-typography-label-small-size, 0.625rem);
     text-transform: uppercase;
     font-weight: var(--smrt-typography-weight-semibold, 600);
   }
-
-  .message-item__tool-status.pending {
+  .smrt-message-item__status.smrt-message-item__pending {
     background: var(--smrt-color-surface-container-high);
     color: var(--smrt-color-on-surface-variant);
   }
-
-  .message-item__tool-status.running {
+  .smrt-message-item__status.smrt-message-item__running {
     background: var(--smrt-color-primary-container);
     color: var(--smrt-color-on-primary-container);
   }
-
-  .message-item__tool-status.success {
+  .smrt-message-item__status.smrt-message-item__success {
     background: var(--smrt-color-success-container);
     color: var(--smrt-color-on-success-container);
   }
-
-  .message-item__tool-status.error {
+  .smrt-message-item__status.smrt-message-item__error {
     background: var(--smrt-color-error-container);
     color: var(--smrt-color-on-error-container);
   }
-
-  .message-item__tool-duration {
+  .smrt-message-item__duration {
     color: var(--smrt-color-outline);
   }
-
-  .message-item__tool-error {
+  .smrt-message-item__error {
     color: var(--smrt-color-on-error-container);
   }
-
-  .message-item__reactions {
-    display: flex;
-    flex-wrap: wrap;
-    gap: var(--smrt-spacing-1, 0.25rem);
-  }
-
   /* :global() pierces into each Button's rendered <button> (see #1589). */
-  .message-item__reactions :global(.message-item__reaction) {
-    gap: var(--smrt-spacing-1);
-    padding: var(--smrt-spacing-1) var(--smrt-spacing-2);
+  .smrt-message-item__reactions :global([data-smrt-component="Button"]) {
     border: var(--smrt-hairline);
     border-radius: var(--smrt-radius-full);
     background: var(--smrt-color-surface);
     font-size: var(--smrt-typography-label-medium-size, 0.75rem);
     transition: background var(--smrt-duration-short2, 150ms) var(--smrt-easing-standard, ease);
   }
-
-  .message-item__reactions :global(.message-item__reaction:hover) {
+  .smrt-message-item__reactions :global([data-smrt-component="Button"]:hover) {
     background: var(--smrt-color-surface-container-high);
   }
-
-  .message-item__reactions :global(.message-item__reaction--active) {
+  .smrt-message-item__reactions :global(.smrt-message-item__reaction--active) {
     border-color: var(--smrt-color-primary);
     background: var(--smrt-color-primary-container);
   }
-
-  .message-item__reaction-emoji {
+  .smrt-message-item__emoji {
     font-size: var(--smrt-typography-label-large-size, 0.8125rem);
     line-height: 1;
   }
-
-  .message-item__reaction-count {
+  .smrt-message-item__count {
     font-size: var(--smrt-typography-label-small-size, 0.6875rem);
     color: var(--smrt-color-on-surface-variant);
   }
-
-  .message-item__meta {
-    display: flex;
-    align-items: center;
-    gap: var(--smrt-spacing-1, 0.25rem);
-    padding-left: var(--smrt-spacing-1, 0.25rem);
-  }
-
-  .message-item__time {
+  .smrt-message-item__time {
     font-size: var(--smrt-typography-label-small-size, 0.625rem);
     color: var(--smrt-color-outline);
   }
-
-  .message-item__edited {
+  .smrt-message-item__edited {
     font-size: var(--smrt-typography-label-small-size, 0.625rem);
     color: var(--smrt-color-outline);
     font-style: italic;
   }
-
   /* :global() pierces into the Button child's rendered <button> (see #1589). */
-  .message-item :global(.message-item__more-btn) {
-    width: 26px;
-    height: 26px;
-    padding: 0;
-    position: absolute;
-    top: 0;
-    right: var(--smrt-spacing-4, 1rem);
+  .smrt-message-item__root > :global([data-smrt-component="Button"]) {
     border: var(--smrt-hairline);
     border-radius: var(--smrt-radius-small, 0.25rem);
     background: var(--smrt-color-surface);
     color: var(--smrt-color-on-surface-variant);
-    opacity: 0;
     transition: opacity var(--smrt-duration-short2, 150ms) var(--smrt-easing-standard, ease);
   }
-
-  .message-item--own :global(.message-item__more-btn) {
-    right: auto;
-    left: var(--smrt-spacing-4, 1rem);
-  }
-
-  /* Reveal the keyboard/touch affordance on hover OR when focus is inside the
-     row, so it is never strictly hover-only (a11y blocker, T2 #1391). Always
-     visible to coarse pointers (touch) which cannot hover. */
-  .message-item:hover :global(.message-item__more-btn),
-  .message-item:focus-within :global(.message-item__more-btn) {
-    opacity: 1;
-  }
-
-  .message-item :global(.message-item__more-btn:focus-visible) {
-    opacity: 1;
+  .smrt-message-item__root > :global([data-smrt-component="Button"]:focus-visible) {
     outline: 2px solid var(--smrt-color-primary);
     outline-offset: 1px;
   }
-
-  @media (hover: none) {
-    .message-item :global(.message-item__more-btn) {
-      opacity: 1;
-    }
-  }
-
-  .message-item__actions {
-    display: flex;
-    align-items: center;
-    gap: var(--smrt-spacing-1);
-    position: absolute;
-    top: 0;
-    right: var(--smrt-spacing-4, 1rem);
+  .smrt-message-item__actions {
     background: var(--smrt-color-surface);
     border: var(--smrt-hairline);
     border-radius: var(--smrt-radius-small, 0.25rem);
-    padding: var(--smrt-spacing-1);
     box-shadow: var(--smrt-elevation-1, 0 1px 3px rgba(0, 0, 0, 0.12));
-    z-index: 1;
   }
-
-  .message-item--own .message-item__actions {
-    right: auto;
-    left: var(--smrt-spacing-4, 1rem);
-  }
-
   /* :global() pierces into each Button's rendered <button> (see #1589). */
-  .message-item__actions :global(.message-item__action-btn) {
-    width: 26px;
-    height: 26px;
-    padding: 0;
+  .smrt-message-item__actions :global([data-smrt-component="Button"]) {
     border-radius: var(--smrt-radius-small, 0.25rem);
     background: transparent;
     color: var(--smrt-color-on-surface-variant);
     transition: background var(--smrt-duration-short2, 150ms) var(--smrt-easing-standard, ease);
   }
-
-  .message-item__actions :global(.message-item__action-btn:hover) {
+  .smrt-message-item__actions :global([data-smrt-component="Button"]:hover) {
     background: var(--smrt-color-surface-container-high);
   }
-
-  .message-item__picker-popover {
-    position: absolute;
-    top: -8px;
-    right: var(--smrt-spacing-4, 1rem);
-    z-index: 10;
-    transform: translateY(-100%);
+  /* Reveal the keyboard/touch affordance on hover OR when focus is inside the
+  row, so it is never strictly hover-only (a11y blocker, T2 #1391). Always
+  visible to coarse pointers (touch) which cannot hover. */
+  .smrt-message-item__root:hover > :global([data-smrt-component="Button"]),
+  .smrt-message-item__root:focus-within > :global([data-smrt-component="Button"]) {
+    opacity: 1;
+  }
+  .smrt-message-item__root > :global([data-smrt-component="Button"]:focus-visible) {
+    opacity: 1;
+  }
+  @media (hover: none) {
+    .smrt-message-item__root > :global([data-smrt-component="Button"]) {
+      opacity: 1;
+    }
+  }
+  .smrt-message-item__picker {
     /* The picker primitive supplies its own surface + radius; the popover
-       wrapper lifts it off the conversation with matching elevation. */
+    wrapper lifts it off the conversation with matching elevation. */
     border-radius: var(--smrt-radius-large, 0.75rem);
     box-shadow: var(--smrt-elevation-2, 0 2px 6px rgba(0, 0, 0, 0.15));
   }
-
-  .message-item--own .message-item__picker-popover {
-    right: auto;
-    left: var(--smrt-spacing-4, 1rem);
-  }
-
   @media (prefers-reduced-motion: reduce) {
-    .message-item :global(.message-item__more-btn),
-    .message-item__actions :global(.message-item__action-btn),
-    .message-item__reactions :global(.message-item__reaction) {
+    .smrt-message-item__root > :global([data-smrt-component="Button"]),
+    .smrt-message-item__actions :global([data-smrt-component="Button"]),
+    .smrt-message-item__reactions :global([data-smrt-component="Button"]) {
       transition: none;
     }
   }
 }
+
 </style>

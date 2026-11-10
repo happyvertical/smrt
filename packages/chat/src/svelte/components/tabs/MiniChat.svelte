@@ -56,9 +56,10 @@ $effect(() => {
 });
 </script>
 
-<div class="mini-chat" data-smrt-component="MiniChat">
+<div class="smrt-mini-chat__root" data-smrt-component="MiniChat">
   <div
-    class="mini-chat__messages"
+    class="smrt-mini-chat__messages"
+    data-smrt-part="body"
     style:max-height="{maxHeight}px"
     bind:this={messageContainer}
     role="log"
@@ -66,30 +67,33 @@ $effect(() => {
   >
     {#each messages as msg (msg.id)}
       {@const isOwn = msg.senderProfileId === currentProfileId}
-      <div class="mini-chat__msg" class:mini-chat__msg--own={isOwn}>
+      <div class="smrt-mini-chat__msg" data-smrt-part="row"
+  class:smrt-mini-chat__msg--own={isOwn}
+>
         {#if !isOwn}
           <Avatar name={msg.senderName} avatarUrl={msg.senderAvatarUrl} size="sm" />
         {/if}
-        <div class="mini-chat__bubble" class:mini-chat__bubble--own={isOwn}>
+        <div class="smrt-mini-chat__bubble" data-smrt-part="bubble"
+  class:smrt-mini-chat__bubble--own={isOwn}
+>
           {#if !isOwn}
-            <span class="mini-chat__sender">{msg.senderName}</span>
+            <span class="smrt-mini-chat__sender" data-smrt-part="label">{msg.senderName}</span>
           {/if}
-          <span class="mini-chat__text">{msg.content}</span>
-          <time class="mini-chat__time">{formatTime(msg.createdAt)}</time>
+          <span class="smrt-mini-chat__text" data-smrt-part="message">{msg.content}</span>
+          <time class="smrt-mini-chat__time" data-smrt-part="meta">{formatTime(msg.createdAt)}</time>
         </div>
       </div>
     {/each}
 
     {#if messages.length === 0}
-      <div class="mini-chat__empty">
-        <span class="mini-chat__empty-text">{t(M['chat.mini_chat.no_messages'])}</span>
+      <div class="smrt-mini-chat__empty" data-smrt-part="empty">
+        <span class="smrt-mini-chat__empty-text" data-smrt-part="message">{t(M['chat.mini_chat.no_messages'])}</span>
       </div>
     {/if}
   </div>
 
-  <Form class="mini-chat__input-bar" onsubmit={handleSubmit}>
+  <Form onsubmit={handleSubmit}>
     <Input
-      class="mini-chat__input"
       type="text"
       placeholder={t(M['chat.mini_chat.placeholder'])}
       bind:value={inputValue}
@@ -98,7 +102,6 @@ $effect(() => {
     />
     <Button
       variant="ghost"
-      class="mini-chat__send-btn"
       type="submit"
       disabled={!inputValue.trim()}
       aria-label={t(M['chat.mini_chat.send'])}
@@ -112,129 +115,133 @@ $effect(() => {
 
 <style>
 @layer smrt.reset, smrt.structure, smrt.theme;
-@layer smrt.theme {
-  .mini-chat {
+@layer smrt.structure {
+  .smrt-mini-chat__root {
     display: flex;
     flex-direction: column;
     height: 100%;
   }
-
-  .mini-chat__messages {
+  .smrt-mini-chat__messages {
     flex: 1;
     overflow-y: auto;
     padding: var(--smrt-spacing-2);
     display: flex;
     flex-direction: column;
     gap: var(--smrt-spacing-2);
-    scroll-behavior: smooth;
   }
-
-  .mini-chat__msg {
+  .smrt-mini-chat__msg {
     display: flex;
     align-items: flex-end;
     gap: var(--smrt-spacing-2);
     max-width: 85%;
   }
-
-  .mini-chat__msg--own {
+  .smrt-mini-chat__msg--own {
     align-self: flex-end;
     flex-direction: row-reverse;
   }
-
-  .mini-chat__bubble {
+  .smrt-mini-chat__bubble {
     display: flex;
     flex-direction: column;
     gap: var(--smrt-spacing-1);
     padding: var(--smrt-spacing-2) var(--smrt-spacing-3);
-    border-radius: var(--smrt-radius-medium);
-    background: var(--smrt-color-surface-container);
-    color: var(--smrt-color-on-surface);
     word-break: break-word;
   }
-
-  .mini-chat__bubble--own {
-    background: var(--smrt-color-primary-container);
-    color: var(--smrt-color-on-primary-container);
-  }
-
-  .mini-chat__sender {
-    font-size: var(--smrt-typography-label-small-size, 0.6875rem);
-    font-weight: var(--smrt-typography-weight-semibold, 600);
-    color: var(--smrt-color-primary);
-    line-height: 1;
-  }
-
-  .mini-chat__text {
-    font: var(--smrt-typography-body-small-font, 0.8125rem/1.4 sans-serif);
-  }
-
-  .mini-chat__time {
-    font-size: var(--smrt-typography-label-small-size, 0.625rem);
-    color: var(--smrt-color-outline);
+  .smrt-mini-chat__time {
     align-self: flex-end;
-    line-height: 1;
   }
-
-  .mini-chat__empty {
+  .smrt-mini-chat__empty {
     display: flex;
     align-items: center;
     justify-content: center;
     height: 100%;
     min-height: 80px;
   }
-
-  .mini-chat__empty-text {
-    font: var(--smrt-typography-body-small-font, 0.8125rem/1.4 sans-serif);
-    color: var(--smrt-color-outline);
-  }
-
   /* :global() targets the Form primitive's rendered <form> (see #1589 scoping trap). */
-  :global(.mini-chat__input-bar) {
+  .smrt-mini-chat__root :global([data-smrt-component="Form"]) {
     display: flex;
     align-items: center;
     gap: var(--smrt-spacing-1);
     padding: var(--smrt-spacing-2);
-    border-top: var(--smrt-hairline);
-    background: var(--smrt-color-surface);
   }
-
   /* Layout for the Input primitive's rendered <input> (tokenised styling comes
-     from the primitive; this only sizes/shapes it within the input bar). */
-  :global(.mini-chat__input) {
+  from the primitive; this only sizes/shapes it within the input bar). */
+  .smrt-mini-chat__root :global([data-smrt-component="Input"]) {
     flex: 1;
-    border-radius: var(--smrt-radius-full);
   }
-
   /* :global() pierces into the Button child's rendered <button> (see #1589).
-     The ancestor is the Form primitive's <form>, also global. */
-  :global(.mini-chat__input-bar .mini-chat__send-btn) {
+  The ancestor is the Form primitive's <form>, also global. */
+  .smrt-mini-chat__root :global([data-smrt-component="Form"] [data-smrt-component="Button"]) {
     width: 32px;
     height: 32px;
     padding: 0;
+    flex-shrink: 0;
+  }
+}
+
+@layer smrt.theme {
+  .smrt-mini-chat__messages {
+    scroll-behavior: smooth;
+  }
+  .smrt-mini-chat__bubble {
+    border-radius: var(--smrt-radius-medium);
+    background: var(--smrt-color-surface-container);
+    color: var(--smrt-color-on-surface);
+  }
+  .smrt-mini-chat__bubble--own {
+    background: var(--smrt-color-primary-container);
+    color: var(--smrt-color-on-primary-container);
+  }
+  .smrt-mini-chat__sender {
+    font-size: var(--smrt-typography-label-small-size, 0.6875rem);
+    font-weight: var(--smrt-typography-weight-semibold, 600);
+    color: var(--smrt-color-primary);
+    line-height: 1;
+  }
+  .smrt-mini-chat__text {
+    font: var(--smrt-typography-body-small-font, 0.8125rem/1.4 sans-serif);
+  }
+  .smrt-mini-chat__time {
+    font-size: var(--smrt-typography-label-small-size, 0.625rem);
+    color: var(--smrt-color-outline);
+    line-height: 1;
+  }
+  .smrt-mini-chat__empty-text {
+    font: var(--smrt-typography-body-small-font, 0.8125rem/1.4 sans-serif);
+    color: var(--smrt-color-outline);
+  }
+  /* :global() targets the Form primitive's rendered <form> (see #1589 scoping trap). */
+  .smrt-mini-chat__root :global([data-smrt-component="Form"]) {
+    border-top: var(--smrt-hairline);
+    background: var(--smrt-color-surface);
+  }
+  /* Layout for the Input primitive's rendered <input> (tokenised styling comes
+  from the primitive; this only sizes/shapes it within the input bar). */
+  .smrt-mini-chat__root :global([data-smrt-component="Input"]) {
+    border-radius: var(--smrt-radius-full);
+  }
+  /* :global() pierces into the Button child's rendered <button> (see #1589).
+  The ancestor is the Form primitive's <form>, also global. */
+  .smrt-mini-chat__root :global([data-smrt-component="Form"] [data-smrt-component="Button"]) {
     background: var(--smrt-color-primary);
     color: var(--smrt-color-on-primary);
     border-radius: var(--smrt-radius-full);
-    flex-shrink: 0;
     transition: opacity var(--smrt-duration-short2, 150ms);
   }
-
-  :global(.mini-chat__input-bar .mini-chat__send-btn:disabled) {
+  .smrt-mini-chat__root :global([data-smrt-component="Form"] [data-smrt-component="Button"]:disabled) {
     opacity: 0.4;
   }
-
-  :global(.mini-chat__input-bar .mini-chat__send-btn:not(:disabled):hover) {
+  .smrt-mini-chat__root :global([data-smrt-component="Form"] [data-smrt-component="Button"]:not(:disabled):hover) {
     background: var(--smrt-color-primary);
     opacity: 0.85;
   }
-
   @media (prefers-reduced-motion: reduce) {
-    .mini-chat__messages {
+    .smrt-mini-chat__messages {
       scroll-behavior: auto;
     }
-
-    :global(.mini-chat__input-bar .mini-chat__send-btn) {
+    .smrt-mini-chat__root :global([data-smrt-component="Form"] [data-smrt-component="Button"]) {
       transition: none;
     }
   }
 }
+
 </style>

@@ -69,13 +69,12 @@ function formatTimestamp(date?: string | Date | null): string {
 }
 </script>
 
-<nav class="room-list" aria-label={t(M['chat.room_list.rooms_label'])} data-smrt-component="RoomList">
+<nav class="smrt-room-list__root" aria-label={t(M['chat.room_list.rooms_label'])} data-smrt-component="RoomList">
   {#if oncreateroom}
-    <div class="room-list__header">
+    <div class="smrt-room-list__header" data-smrt-part="header">
       <Button
         variant="ghost"
         fullWidth
-        class="create-room-btn"
         type="button"
         onclick={oncreateroom}
         aria-label={t(M['chat.room_list.create_new_room'])}
@@ -86,38 +85,43 @@ function formatTimestamp(date?: string | Date | null): string {
   {/if}
 
   {#if channels.length > 0}
-    <section class="room-group">
+    <section class="smrt-room-list__group" data-smrt-part="group">
       <!-- raw-primitive-allow: section disclosure trigger with aria-expanded toggling a collapsible room list, wrapping rich content (rotating chevron, group label, room count); structural accordion header no Button primitive owns -->
       <button
-        class="room-group__header"
+        class="smrt-room-list__group-header"
+        data-smrt-part="trigger"
         type="button"
         onclick={() => toggleGroup('channels')}
         aria-expanded={!collapsedGroups['channels']}
       >
-        <span class="room-group__chevron" class:room-group__chevron--collapsed={collapsedGroups['channels']}>
+        <span class="smrt-room-list__group-chevron" data-smrt-part="chevron"
+  class:smrt-room-list__group-chevron--collapsed={collapsedGroups['channels']}
+>
           &#9662;
         </span>
-        <span class="room-group__label">Channels</span>
-        <span class="room-group__count">{channels.length}</span>
+        <span class="smrt-room-list__group-label" data-smrt-part="group-label">Channels</span>
+        <span class="smrt-room-list__group-count" data-smrt-part="group-count">{channels.length}</span>
       </button>
 
       {#if !collapsedGroups['channels']}
-        <ul class="room-group__list" role="list">
+        <ul class="smrt-room-list__group-list" data-smrt-part="list" role="list">
           {#each channels as room (room.id)}
             <li>
               <!-- raw-primitive-allow: pressable room-selection row with active and aria-current state, wrapping rich content (type icon, name, unread badge); no Button primitive owns this structural nav-selection pattern -->
               <button
-                class="room-item"
-                class:room-item--active={room.id === currentRoomId}
-                class:room-item--muted={room.isMuted}
+                class="smrt-room-list__item"
+                data-smrt-part="row"
                 type="button"
                 onclick={() => onselectroom(room.id)}
+  class:smrt-room-list__item--active={room.id === currentRoomId}
+  class:smrt-room-list__item--muted={room.isMuted}
+
                 aria-current={room.id === currentRoomId ? 'true' : undefined}
               >
-                <span class="room-item__icon">{getRoomIcon(room)}</span>
-                <span class="room-item__name">{room.name}</span>
+                <span class="smrt-room-list__item-icon" data-smrt-part="icon">{getRoomIcon(room)}</span>
+                <span class="smrt-room-list__item-name" data-smrt-part="label">{room.name}</span>
                 {#if room.unreadCount > 0}
-                  <span class="unread-badge" aria-label={t(M['chat.room_list.unread_messages'], { count: room.unreadCount })}>
+                  <span class="smrt-room-list__badge" data-smrt-part="badge" aria-label={t(M['chat.room_list.unread_messages'], { count: room.unreadCount })}>
                     {room.unreadCount > 99 ? '99+' : room.unreadCount}
                   </span>
                 {/if}
@@ -130,53 +134,58 @@ function formatTimestamp(date?: string | Date | null): string {
   {/if}
 
   {#if directMessages.length > 0}
-    <section class="room-group">
+    <section class="smrt-room-list__group" data-smrt-part="group">
       <!-- raw-primitive-allow: section disclosure trigger with aria-expanded toggling a collapsible room list, wrapping rich content (rotating chevron, group label, room count); structural accordion header no Button primitive owns -->
       <button
-        class="room-group__header"
+        class="smrt-room-list__group-header"
+        data-smrt-part="trigger"
         type="button"
         onclick={() => toggleGroup('dms')}
         aria-expanded={!collapsedGroups['dms']}
       >
-        <span class="room-group__chevron" class:room-group__chevron--collapsed={collapsedGroups['dms']}>
+        <span class="smrt-room-list__group-chevron" data-smrt-part="chevron"
+  class:smrt-room-list__group-chevron--collapsed={collapsedGroups['dms']}
+>
           &#9662;
         </span>
-        <span class="room-group__label">{t(M['chat.room_list.direct_messages'])}</span>
-        <span class="room-group__count">{directMessages.length}</span>
+        <span class="smrt-room-list__group-label" data-smrt-part="group-label">{t(M['chat.room_list.direct_messages'])}</span>
+        <span class="smrt-room-list__group-count" data-smrt-part="group-count">{directMessages.length}</span>
       </button>
 
       {#if !collapsedGroups['dms']}
-        <ul class="room-group__list" role="list">
+        <ul class="smrt-room-list__group-list" data-smrt-part="list" role="list">
           {#each directMessages as room (room.id)}
             <li>
               <!-- raw-primitive-allow: pressable room-selection row with active and aria-current state, wrapping rich content (avatar, name, last-message preview, timestamp, unread badge); no Button primitive owns this structural nav-selection pattern -->
               <button
-                class="room-item"
-                class:room-item--active={room.id === currentRoomId}
-                class:room-item--muted={room.isMuted}
+                class="smrt-room-list__item"
+                data-smrt-part="row"
                 type="button"
                 onclick={() => onselectroom(room.id)}
+  class:smrt-room-list__item--active={room.id === currentRoomId}
+  class:smrt-room-list__item--muted={room.isMuted}
+
                 aria-current={room.id === currentRoomId ? 'true' : undefined}
               >
                 {#if room.avatarUrl}
-                  <img class="room-item__avatar" src={room.avatarUrl} alt="" />
+                  <img class="smrt-room-list__item-avatar" data-smrt-part="avatar" src={room.avatarUrl} alt="" />
                 {:else}
-                  <span class="room-item__avatar-placeholder">
+                  <span class="smrt-room-list__item-avatar-placeholder" data-smrt-part="avatar">
                     {room.name.charAt(0).toUpperCase()}
                   </span>
                 {/if}
-                <span class="room-item__details">
-                  <span class="room-item__name">{room.name}</span>
+                <span class="smrt-room-list__item-body" data-smrt-part="body">
+                  <span class="smrt-room-list__item-name" data-smrt-part="label">{room.name}</span>
                   {#if room.lastMessage}
-                    <span class="room-item__preview">{room.lastMessage.content}</span>
+                    <span class="smrt-room-list__item-preview" data-smrt-part="preview">{room.lastMessage.content}</span>
                   {/if}
                 </span>
-                <span class="room-item__meta">
+                <span class="smrt-room-list__item-meta" data-smrt-part="meta">
                   {#if room.lastMessageAt}
-                    <span class="room-item__time">{formatTimestamp(room.lastMessageAt)}</span>
+                    <span class="smrt-room-list__item-time" data-smrt-part="time">{formatTimestamp(room.lastMessageAt)}</span>
                   {/if}
                   {#if room.unreadCount > 0}
-                    <span class="unread-badge" aria-label={t(M['chat.room_list.unread_messages'], { count: room.unreadCount })}>
+                    <span class="smrt-room-list__badge" data-smrt-part="badge" aria-label={t(M['chat.room_list.unread_messages'], { count: room.unreadCount })}>
                       {room.unreadCount > 99 ? '99+' : room.unreadCount}
                     </span>
                   {/if}
@@ -190,37 +199,42 @@ function formatTimestamp(date?: string | Date | null): string {
   {/if}
 
   {#if agentRooms.length > 0}
-    <section class="room-group">
+    <section class="smrt-room-list__group" data-smrt-part="group">
       <!-- raw-primitive-allow: section disclosure trigger with aria-expanded toggling a collapsible room list, wrapping rich content (rotating chevron, group label, room count); structural accordion header no Button primitive owns -->
       <button
-        class="room-group__header"
+        class="smrt-room-list__group-header"
+        data-smrt-part="trigger"
         type="button"
         onclick={() => toggleGroup('agents')}
         aria-expanded={!collapsedGroups['agents']}
       >
-        <span class="room-group__chevron" class:room-group__chevron--collapsed={collapsedGroups['agents']}>
+        <span class="smrt-room-list__group-chevron" data-smrt-part="chevron"
+  class:smrt-room-list__group-chevron--collapsed={collapsedGroups['agents']}
+>
           &#9662;
         </span>
-        <span class="room-group__label">Agents</span>
-        <span class="room-group__count">{agentRooms.length}</span>
+        <span class="smrt-room-list__group-label" data-smrt-part="group-label">Agents</span>
+        <span class="smrt-room-list__group-count" data-smrt-part="group-count">{agentRooms.length}</span>
       </button>
 
       {#if !collapsedGroups['agents']}
-        <ul class="room-group__list" role="list">
+        <ul class="smrt-room-list__group-list" data-smrt-part="list" role="list">
           {#each agentRooms as room (room.id)}
             <li>
               <!-- raw-primitive-allow: pressable room-selection row with active and aria-current state, wrapping rich content (agent icon, name, unread badge); no Button primitive owns this structural nav-selection pattern -->
               <button
-                class="room-item"
-                class:room-item--active={room.id === currentRoomId}
+                class="smrt-room-list__item"
+                data-smrt-part="row"
                 type="button"
                 onclick={() => onselectroom(room.id)}
+  class:smrt-room-list__item--active={room.id === currentRoomId}
+
                 aria-current={room.id === currentRoomId ? 'true' : undefined}
               >
-                <span class="room-item__agent-icon" aria-hidden="true">&#9881;</span>
-                <span class="room-item__name">{room.name}</span>
+                <span class="smrt-room-list__item-agent-icon" data-smrt-part="icon" aria-hidden="true">&#9881;</span>
+                <span class="smrt-room-list__item-name" data-smrt-part="label">{room.name}</span>
                 {#if room.unreadCount > 0}
-                  <span class="unread-badge" aria-label={t(M['chat.room_list.unread_messages'], { count: room.unreadCount })}>
+                  <span class="smrt-room-list__badge" data-smrt-part="badge" aria-label={t(M['chat.room_list.unread_messages'], { count: room.unreadCount })}>
                     {room.unreadCount > 99 ? '99+' : room.unreadCount}
                   </span>
                 {/if}
@@ -233,10 +247,10 @@ function formatTimestamp(date?: string | Date | null): string {
   {/if}
 
   {#if rooms.length === 0}
-    <div class="room-list__empty">
+    <div class="smrt-room-list__empty" data-smrt-part="empty">
       <p>{t(M['chat.room_list.no_rooms'])}</p>
       {#if oncreateroom}
-        <Button variant="ghost" size="sm" class="create-link" type="button" onclick={oncreateroom}>
+        <Button variant="ghost" size="sm" type="button" onclick={oncreateroom}>
           {t(M['chat.room_list.create_first_room'])}
         </Button>
       {/if}
@@ -246,21 +260,119 @@ function formatTimestamp(date?: string | Date | null): string {
 
 <style>
 @layer smrt.reset, smrt.structure, smrt.theme;
-@layer smrt.theme {
-  .room-list {
+@layer smrt.structure {
+  .smrt-room-list__root {
     display: flex;
     flex-direction: column;
     height: 100%;
     padding: 0.5rem 0;
   }
-
-  .room-list__header {
+  .smrt-room-list__header {
     padding: 0.5rem 0.75rem;
   }
-
   /* :global() pierces into the Button child's rendered <button> (see #1589). */
-  .room-list__header :global(.create-room-btn) {
+  .smrt-room-list__header :global([data-smrt-component="Button"]) {
     padding: 0.5rem 0.75rem;
+  }
+  .smrt-room-list__group {
+    margin-top: 0.25rem;
+  }
+  .smrt-room-list__group-header {
+    display: flex;
+    align-items: center;
+    gap: 0.25rem;
+    width: 100%;
+    padding: 0.375rem 0.75rem;
+    cursor: pointer;
+  }
+  .smrt-room-list__group-label {
+    flex: 1;
+  }
+  .smrt-room-list__group-list {
+    list-style: none;
+    margin: 0;
+    padding: 0;
+  }
+  .smrt-room-list__item {
+    display: flex;
+    align-items: center;
+    gap: 0.5rem;
+    width: 100%;
+    padding: 0.375rem 0.75rem;
+    cursor: pointer;
+  }
+  .smrt-room-list__item-icon {
+    flex-shrink: 0;
+    width: 1.25rem;
+  }
+  .smrt-room-list__item-agent-icon {
+    flex-shrink: 0;
+    width: 1.25rem;
+  }
+  .smrt-room-list__item-avatar {
+    flex-shrink: 0;
+    width: 2rem;
+    height: 2rem;
+    object-fit: cover;
+  }
+  .smrt-room-list__item-avatar-placeholder {
+    flex-shrink: 0;
+    width: 2rem;
+    height: 2rem;
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+  }
+  .smrt-room-list__item-body {
+    flex: 1;
+    min-width: 0;
+    display: flex;
+    flex-direction: column;
+    gap: 0.125rem;
+  }
+  .smrt-room-list__item-name {
+    flex: 1;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+  }
+  .smrt-room-list__item-preview {
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+  }
+  .smrt-room-list__item-meta {
+    flex-shrink: 0;
+    display: flex;
+    flex-direction: column;
+    align-items: flex-end;
+    gap: 0.25rem;
+  }
+  .smrt-room-list__badge {
+    flex-shrink: 0;
+    min-width: 1.25rem;
+    height: 1.25rem;
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    padding: 0 0.25rem;
+  }
+  .smrt-room-list__empty {
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    justify-content: center;
+    gap: 0.5rem;
+    padding: 2rem 1rem;
+  }
+  .smrt-room-list__empty p {
+    margin: 0;
+  }
+}
+
+@layer smrt.theme {
+  /* :global() pierces into the Button child's rendered <button> (see #1589). */
+  .smrt-room-list__header :global([data-smrt-component="Button"]) {
     border: 1px dashed var(--smrt-color-outline);
     border-radius: var(--smrt-radius-medium, 0.5rem);
     background: transparent;
@@ -268,216 +380,115 @@ function formatTimestamp(date?: string | Date | null): string {
     font: var(--smrt-typography-label-large-font, 500 0.875rem / 1.25 sans-serif);
     transition: background var(--smrt-duration-short2, 150ms);
   }
-
-  .room-list__header :global(.create-room-btn:hover) {
+  .smrt-room-list__header :global([data-smrt-component="Button"]:hover) {
     background: var(--smrt-color-primary-container);
   }
-
-  .room-group {
-    margin-top: 0.25rem;
-  }
-
-  .room-group__header {
-    display: flex;
-    align-items: center;
-    gap: 0.25rem;
-    width: 100%;
-    padding: 0.375rem 0.75rem;
+  .smrt-room-list__group-header {
     border: none;
     background: none;
-    cursor: pointer;
     font: var(--smrt-typography-label-small-font, 500 0.6875rem / 1 sans-serif);
     color: var(--smrt-color-on-surface-variant);
     text-transform: uppercase;
     letter-spacing: var(--smrt-typography-label-small-tracking, 0.05em);
   }
-
-  .room-group__header:hover {
+  .smrt-room-list__group-header:hover {
     color: var(--smrt-color-on-surface);
   }
-
-  .room-group__chevron {
+  .smrt-room-list__group-chevron {
     font-size: var(--smrt-typography-label-small-size, 0.625rem);
     transition: transform var(--smrt-duration-short2, 150ms);
   }
-
-  .room-group__chevron--collapsed {
+  .smrt-room-list__group-chevron--collapsed {
     transform: rotate(-90deg);
   }
-
-  .room-group__label {
-    flex: 1;
+  .smrt-room-list__group-label {
     text-align: left;
   }
-
-  .room-group__count {
+  .smrt-room-list__group-count {
     color: var(--smrt-color-outline);
     font-size: var(--smrt-typography-label-small-size, 0.625rem);
   }
-
-  .room-group__list {
-    list-style: none;
-    margin: 0;
-    padding: 0;
-  }
-
-  .room-item {
-    display: flex;
-    align-items: center;
-    gap: 0.5rem;
-    width: 100%;
-    padding: 0.375rem 0.75rem;
+  .smrt-room-list__item {
     border: none;
     background: none;
-    cursor: pointer;
     font: var(--smrt-typography-body-medium-font, 0.875rem / 1.25 sans-serif);
     color: var(--smrt-color-on-surface);
     border-radius: var(--smrt-radius-small, 0.25rem);
     text-align: left;
     transition: background var(--smrt-duration-short2, 150ms);
   }
-
-  .room-item:hover {
+  .smrt-room-list__item:hover {
     background: var(--smrt-color-surface-variant);
   }
-
-  .room-item--active {
+  .smrt-room-list__item--active {
     background: var(--smrt-color-secondary-container);
     font-weight: var(--smrt-typography-weight-medium, 500);
   }
-
-  .room-item--muted {
+  .smrt-room-list__item--muted {
     opacity: 0.6;
   }
-
-  .room-item:focus-visible {
+  .smrt-room-list__item:focus-visible {
     outline: 2px solid var(--smrt-color-primary);
     outline-offset: -2px;
   }
-
-  .room-item__icon {
-    flex-shrink: 0;
-    width: 1.25rem;
+  .smrt-room-list__item-icon {
     text-align: center;
     color: var(--smrt-color-on-surface-variant);
     font-weight: var(--smrt-typography-weight-semibold, 600);
   }
-
-  .room-item__agent-icon {
-    flex-shrink: 0;
-    width: 1.25rem;
+  .smrt-room-list__item-agent-icon {
     text-align: center;
     font-size: var(--smrt-typography-body-large-size, 1rem);
   }
-
-  .room-item__avatar {
-    flex-shrink: 0;
-    width: 2rem;
-    height: 2rem;
+  .smrt-room-list__item-avatar {
     border-radius: var(--smrt-radius-full);
-    object-fit: cover;
   }
-
-  .room-item__avatar-placeholder {
-    flex-shrink: 0;
-    width: 2rem;
-    height: 2rem;
+  .smrt-room-list__item-avatar-placeholder {
     border-radius: var(--smrt-radius-full);
     background: var(--smrt-color-primary-container);
     color: var(--smrt-color-on-primary-container);
-    display: inline-flex;
-    align-items: center;
-    justify-content: center;
     font: var(--smrt-typography-label-medium-font, 500 0.75rem / 1 sans-serif);
   }
-
-  .room-item__details {
-    flex: 1;
-    min-width: 0;
-    display: flex;
-    flex-direction: column;
-    gap: 0.125rem;
-  }
-
-  .room-item__name {
-    flex: 1;
-    overflow: hidden;
-    text-overflow: ellipsis;
-    white-space: nowrap;
-  }
-
-  .room-item__preview {
+  .smrt-room-list__item-preview {
     font: var(--smrt-typography-body-small-font, 0.75rem / 1.25 sans-serif);
     color: var(--smrt-color-on-surface-variant);
-    overflow: hidden;
-    text-overflow: ellipsis;
-    white-space: nowrap;
   }
-
-  .room-item__meta {
-    flex-shrink: 0;
-    display: flex;
-    flex-direction: column;
-    align-items: flex-end;
-    gap: 0.25rem;
-  }
-
-  .room-item__time {
+  .smrt-room-list__item-time {
     font: var(--smrt-typography-label-small-font, 500 0.6875rem / 1 sans-serif);
     color: var(--smrt-color-on-surface-variant);
   }
-
-  .unread-badge {
-    flex-shrink: 0;
-    min-width: 1.25rem;
-    height: 1.25rem;
-    display: inline-flex;
-    align-items: center;
-    justify-content: center;
+  .smrt-room-list__badge {
     border-radius: var(--smrt-radius-full);
     background: var(--smrt-color-primary);
     color: var(--smrt-color-on-primary);
     font: var(--smrt-typography-label-small-font, 500 0.6875rem / 1 sans-serif);
-    padding: 0 0.25rem;
   }
-
-  .room-list__empty {
-    display: flex;
-    flex-direction: column;
-    align-items: center;
-    justify-content: center;
-    gap: 0.5rem;
-    padding: 2rem 1rem;
+  .smrt-room-list__empty {
     text-align: center;
     color: var(--smrt-color-on-surface-variant);
   }
-
-  .room-list__empty p {
-    margin: 0;
+  .smrt-room-list__empty p {
     font: var(--smrt-typography-body-medium-font, 0.875rem / 1.25 sans-serif);
   }
-
   /* :global() pierces into the Button child's rendered <button> (see #1589). */
-  .room-list__empty :global(.create-link) {
+  .smrt-room-list__empty :global([data-smrt-component="Button"]) {
     background: none;
     color: var(--smrt-color-primary);
     font: var(--smrt-typography-label-large-font, 500 0.875rem / 1.25 sans-serif);
     text-decoration: underline;
   }
-
-  .room-list__empty :global(.create-link:hover) {
+  .smrt-room-list__empty :global([data-smrt-component="Button"]:hover) {
     background: none;
   }
-
   @media (prefers-reduced-motion: reduce) {
-    .room-item,
-    .room-group__chevron {
+    .smrt-room-list__item,
+    .smrt-room-list__group-chevron {
       transition: none;
     }
-
-    .room-list__header :global(.create-room-btn) {
+    .smrt-room-list__header :global([data-smrt-component="Button"]) {
       transition: none;
     }
   }
 }
+
 </style>

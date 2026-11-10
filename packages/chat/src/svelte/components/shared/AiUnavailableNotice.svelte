@@ -33,10 +33,10 @@ const MESSAGES = {
 const message = $derived(t(MESSAGES[status.reason] ?? MESSAGES.off));
 </script>
 
-<p class="ai-unavailable" role="status" data-reason={status.reason} data-smrt-component="AiUnavailableNotice">
+<p class="smrt-ai-unavailable-notice__root" role="status" data-reason={status.reason} data-smrt-component="AiUnavailableNotice">
   <span>{message}</span>
   {#if settingsHref}
-    <a class="ai-unavailable-link" href={settingsHref}>
+    <a class="smrt-ai-unavailable-notice__link" data-smrt-part="link" href={settingsHref}>
       {settingsLabel ?? t(M['chat.ai_unavailable.open_settings'])}
     </a>
   {/if}
@@ -44,23 +44,28 @@ const message = $derived(t(MESSAGES[status.reason] ?? MESSAGES.off));
 
 <style>
 @layer smrt.reset, smrt.structure, smrt.theme;
-@layer smrt.theme {
-  .ai-unavailable {
+@layer smrt.structure {
+  .smrt-ai-unavailable-notice__root {
     display: flex;
     flex-wrap: wrap;
     align-items: center;
     gap: var(--smrt-spacing-2);
     margin: 0;
     padding: var(--smrt-spacing-2) var(--smrt-spacing-3);
+  }
+}
+
+@layer smrt.theme {
+  .smrt-ai-unavailable-notice__root {
     font: var(--smrt-typography-body-small-font, 0.8125rem/1.4 sans-serif);
     color: var(--smrt-color-on-surface);
     background: var(--smrt-color-surface-container);
     border-bottom: var(--smrt-hairline);
   }
-
-  .ai-unavailable-link {
+  .smrt-ai-unavailable-notice__link {
     color: var(--smrt-color-primary);
     font-weight: var(--smrt-typography-weight-semibold);
   }
 }
+
 </style>
