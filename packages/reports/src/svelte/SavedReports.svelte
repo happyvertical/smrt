@@ -180,22 +180,22 @@ const headingLevel = $derived(variant === 'page' ? 2 : 3);
 
 <section
   bind:this={root}
-  class="saved-reports"
+  class="smrt-saved-reports__root"
   data-smrt-component="SavedReports"
   data-variant={variant}
   aria-label={t(M['reports.title'])}
 >
   {#if variant === 'page'}
-    <header class="saved-reports__head">
-      <h1 class="saved-reports__title">{t(M['reports.title'])}</h1>
+    <header class="smrt-saved-reports__header" data-smrt-part="header">
+      <h1 class="smrt-saved-reports__title" data-smrt-part="title">{t(M['reports.title'])}</h1>
       {#if client}<Button variant="primary" onclick={newReport}>{t(M['reports.new'])}</Button>{/if}
     </header>
   {/if}
   {#if !client}
-    <p class="saved-reports__note">{t(M['reports.unavailable'])}</p>
+    <p class="smrt-saved-reports__note" data-smrt-part="note">{t(M['reports.unavailable'])}</p>
   {:else}
     {#if variant === 'page'}
-      <div class="saved-reports__toolbar">
+      <div class="smrt-saved-reports__toolbar" data-smrt-part="toolbar">
         <SegmentedControl
           label={t(M['reports.filter_label'])}
           options={[
@@ -208,25 +208,25 @@ const headingLevel = $derived(variant === 'page' ? 2 : 3);
         <Switch bind:checked={includeArchived} label={t(M['reports.archived'])} size="sm" />
       </div>
     {:else if rows.length > 0}
-      <div class="saved-reports__toolbar">
-        <p class="saved-reports__hint">{t(M['reports.hint'])}</p>
-        <div class="saved-reports__actions">
+      <div class="smrt-saved-reports__toolbar" data-smrt-part="toolbar">
+        <p class="smrt-saved-reports__hint" data-smrt-part="hint">{t(M['reports.hint'])}</p>
+        <div class="smrt-saved-reports__actions" data-smrt-part="actions">
           {#if listHref && total > rows.length}<Button variant="ghost" size="sm" href={listHref}>{t(M['reports.view_all'])}</Button>{/if}
           <Button variant="primary" size="sm" onclick={newReport}>{t(M['reports.new'])}</Button>
         </div>
       </div>
     {/if}
-    {#if askNote}<p class="saved-reports__note" role="status">{t(M['reports.ask_where'])}</p>{/if}
+    {#if askNote}<p class="smrt-saved-reports__note" data-smrt-part="note" role="status">{t(M['reports.ask_where'])}</p>{/if}
     {#if error}
-      <div class="saved-reports__error">
+      <div class="smrt-saved-reports__error" data-smrt-part="error">
         <p role="alert">{t(M[error])}</p>
         <Button variant="secondary" size="sm" onclick={() => refresh++}>{t(M['reports.retry'])}</Button>
       </div>
     {/if}
     {#if loading}
-      <ul class="saved-reports__grid" aria-busy="true" aria-label={t(M['reports.loading'])}>
+      <ul class="smrt-saved-reports__grid" data-smrt-part="list" aria-busy="true" aria-label={t(M['reports.loading'])}>
         {#each [0, 1, 2] as index (index)}
-          <li class="saved-reports__placeholder"><Skeleton variant="text" lines={4} /></li>
+          <li class="smrt-saved-reports__placeholder" data-smrt-part="placeholder"><Skeleton variant="text" lines={4} /></li>
         {/each}
       </ul>
     {:else if rows.length === 0 && !error}
@@ -239,7 +239,7 @@ const headingLevel = $derived(variant === 'page' ? 2 : 3);
         size={variant === 'page' ? 'md' : 'sm'}
       />
     {:else if rows.length > 0}
-      <ul class="saved-reports__grid">
+      <ul class="smrt-saved-reports__grid" data-smrt-part="list">
         {#each rows as report (report.id)}
           <li>
             <SavedReportCard
@@ -272,18 +272,82 @@ const headingLevel = $derived(variant === 'page' ? 2 : 3);
 
 <style>
 @layer smrt.reset, smrt.structure, smrt.theme;
-@layer smrt.theme {
-  .saved-reports { display: grid; gap: var(--smrt-spacing-4); min-inline-size: 0; container-type: inline-size; }
-  .saved-reports[data-variant='section'] { gap: var(--smrt-spacing-3); }
-  .saved-reports__head { display: flex; flex-wrap: wrap; align-items: center; justify-content: space-between; gap: var(--smrt-spacing-3); }
-  .saved-reports__title { margin: 0; font: var(--smrt-typography-headline-medium-font); }
-  .saved-reports__toolbar { display: flex; flex-wrap: wrap; align-items: center; justify-content: space-between; gap: var(--smrt-spacing-2) var(--smrt-spacing-4); }
-  .saved-reports__actions { display: flex; flex-wrap: wrap; gap: var(--smrt-spacing-2); }
-  .saved-reports__hint, .saved-reports__note { margin: 0; color: var(--smrt-color-on-surface-variant); font-size: var(--smrt-typography-body-medium-size); }
-  .saved-reports__error { display: flex; flex-wrap: wrap; align-items: center; gap: var(--smrt-spacing-3); color: var(--smrt-color-error); }
-  .saved-reports__error p { margin: 0; }
-  .saved-reports__grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(min(100%, 17rem), 1fr)); gap: var(--smrt-spacing-3); margin: 0; padding: 0; list-style: none; }
-  .saved-reports__grid > li { display: grid; min-inline-size: 0; }
-  .saved-reports__placeholder { padding: var(--smrt-spacing-4); border: var(--smrt-hairline); border-radius: var(--smrt-radius-large); }
+@layer smrt.structure {
+  .smrt-saved-reports__root {
+    display: grid;
+    gap: var(--smrt-spacing-4);
+    min-inline-size: 0;
+    container-type: inline-size;
+  }
+  .smrt-saved-reports__root[data-variant='section'] {
+    gap: var(--smrt-spacing-3);
+  }
+  .smrt-saved-reports__header {
+    display: flex;
+    flex-wrap: wrap;
+    align-items: center;
+    justify-content: space-between;
+    gap: var(--smrt-spacing-3);
+  }
+  .smrt-saved-reports__title {
+    margin: 0;
+  }
+  .smrt-saved-reports__toolbar {
+    display: flex;
+    flex-wrap: wrap;
+    align-items: center;
+    justify-content: space-between;
+    gap: var(--smrt-spacing-2) var(--smrt-spacing-4);
+  }
+  .smrt-saved-reports__actions {
+    display: flex;
+    flex-wrap: wrap;
+    gap: var(--smrt-spacing-2);
+  }
+  .smrt-saved-reports__hint, .smrt-saved-reports__note {
+    margin: 0;
+  }
+  .smrt-saved-reports__error {
+    display: flex;
+    flex-wrap: wrap;
+    align-items: center;
+    gap: var(--smrt-spacing-3);
+  }
+  .smrt-saved-reports__error p {
+    margin: 0;
+  }
+  .smrt-saved-reports__grid {
+    display: grid;
+    grid-template-columns: repeat(auto-fill, minmax(min(100%, 17rem), 1fr));
+    gap: var(--smrt-spacing-3);
+    margin: 0;
+    padding: 0;
+    list-style: none;
+  }
+  .smrt-saved-reports__grid > li {
+    display: grid;
+    min-inline-size: 0;
+  }
+  .smrt-saved-reports__placeholder {
+    padding: var(--smrt-spacing-4);
+  }
 }
+
+@layer smrt.theme {
+  .smrt-saved-reports__title {
+    font: var(--smrt-typography-headline-medium-font);
+  }
+  .smrt-saved-reports__hint, .smrt-saved-reports__note {
+    color: var(--smrt-color-on-surface-variant);
+    font-size: var(--smrt-typography-body-medium-size);
+  }
+  .smrt-saved-reports__error {
+    color: var(--smrt-color-error);
+  }
+  .smrt-saved-reports__placeholder {
+    border: var(--smrt-hairline);
+    border-radius: var(--smrt-radius-large);
+  }
+}
+
 </style>

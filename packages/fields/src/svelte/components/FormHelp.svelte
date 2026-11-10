@@ -79,97 +79,101 @@ const glossary = $derived.by(() => {
 });
 </script>
 
-<details class="form-help {className}" data-smrt-component="FormHelp">
-  <summary class="form-help__toggle">
-    <span class="form-help__icon" aria-hidden="true">?</span>
-    <span class="form-help__label">{label}</span>
+<details class="smrt-form-help__root {className}" data-smrt-component="FormHelp">
+  <summary class="smrt-form-help__toggle" data-smrt-part="trigger">
+    <span class="smrt-form-help__icon" data-smrt-part="icon" aria-hidden="true">?</span>
+    <span class="smrt-form-help__label" data-smrt-part="label">{label}</span>
   </summary>
-  <div class="form-help__panel">
+  <div class="smrt-form-help__panel" data-smrt-part="panel">
     {#if objectDescription}
-      <p class="form-help__description">{objectDescription}</p>
+      <p class="smrt-form-help__description" data-smrt-part="meta">{objectDescription}</p>
     {/if}
     {#if glossary.length > 0}
-      <dl class="form-help__glossary">
+      <dl class="smrt-form-help__glossary" data-smrt-part="list">
         {#each glossary as entry}
-          <dt class="form-help__term">{entry.label}</dt>
-          <dd class="form-help__definition">{entry.help}</dd>
+          <dt class="smrt-form-help__term" data-smrt-part="term">{entry.label}</dt>
+          <dd class="smrt-form-help__definition" data-smrt-part="definition">{entry.help}</dd>
         {/each}
       </dl>
     {:else}
-      <p class="form-help__empty">No field help available.</p>
+      <p class="smrt-form-help__empty" data-smrt-part="empty">No field help available.</p>
     {/if}
   </div>
 </details>
 
 <style>
 @layer smrt.reset, smrt.structure, smrt.theme;
-@layer smrt.theme {
-  .form-help {
+@layer smrt.structure {
+  .smrt-form-help__root {
     display: inline-block;
   }
-
-  .form-help__toggle {
+  .smrt-form-help__toggle {
     display: inline-flex;
     align-items: center;
     gap: var(--smrt-spacing-1, 0.25rem);
     cursor: pointer;
     list-style: none;
-    font: var(--smrt-typography-label-medium-font, inherit);
-    color: var(--smrt-color-on-surface-variant, currentColor);
   }
-
-  .form-help__toggle::-webkit-details-marker {
+  .smrt-form-help__toggle::-webkit-details-marker {
     display: none;
   }
-
-  .form-help__toggle:focus-visible {
-    outline: 2px solid var(--smrt-color-primary);
-    outline-offset: 2px;
-    border-radius: var(--smrt-radius-sm);
-  }
-
-  .form-help__icon {
+  .smrt-form-help__icon {
     display: inline-flex;
     align-items: center;
     justify-content: center;
     width: 1.25em;
     height: 1.25em;
+  }
+  .smrt-form-help__panel {
+    padding: var(--smrt-spacing-3, 0.75rem) 0;
+  }
+  .smrt-form-help__description {
+    margin: 0 0 var(--smrt-spacing-2, 0.5rem);
+  }
+  .smrt-form-help__glossary {
+    margin: 0;
+    display: grid;
+    gap: var(--smrt-spacing-1, 0.25rem);
+  }
+  .smrt-form-help__definition {
+    margin: 0 0 var(--smrt-spacing-2, 0.5rem);
+  }
+}
+
+@layer smrt.theme {
+  .smrt-form-help__toggle {
+    font: var(--smrt-typography-label-medium-font, inherit);
+    color: var(--smrt-color-on-surface-variant, currentColor);
+  }
+  .smrt-form-help__toggle:focus-visible {
+    outline: 2px solid var(--smrt-color-primary);
+    outline-offset: 2px;
+    border-radius: var(--smrt-radius-sm);
+  }
+  .smrt-form-help__icon {
     border-radius: 50%;
     border: 1px solid currentColor;
     font: var(--smrt-typography-label-small-font, inherit);
     line-height: 1;
   }
-
-  .form-help__panel {
-    padding: var(--smrt-spacing-3, 0.75rem) 0;
+  .smrt-form-help__panel {
     color: var(--smrt-color-on-surface, currentColor);
   }
-
-  .form-help__description {
-    margin: 0 0 var(--smrt-spacing-2, 0.5rem);
+  .smrt-form-help__description {
     font: var(--smrt-typography-body-medium-font, inherit);
   }
-
-  .form-help__glossary {
-    margin: 0;
-    display: grid;
-    gap: var(--smrt-spacing-1, 0.25rem);
-  }
-
-  .form-help__term {
+  .smrt-form-help__term {
     font: var(--smrt-typography-label-medium-font, inherit);
     font-weight: 600;
   }
-
-  .form-help__definition {
-    margin: 0 0 var(--smrt-spacing-2, 0.5rem);
+  .smrt-form-help__definition {
     font: var(--smrt-typography-body-small-font, inherit);
     color: var(--smrt-color-on-surface-variant, currentColor);
   }
-
-  .form-help__empty {
+  .smrt-form-help__empty {
     font: var(--smrt-typography-body-small-font, inherit);
     color: var(--smrt-color-on-surface-variant, currentColor);
   }
 }
+
 </style>

@@ -92,20 +92,20 @@ function submit(event: SubmitEvent): void {
 }
 </script>
 
-<form class="itr" onsubmit={submit} data-testid={`inference-tier-${row.tier}`}>
-  <div class="itr-head">
-    <strong class="itr-tier">{row.tier}</strong>
-    <span class="itr-effective">{row.effectiveLabel}</span>
-    <span class="itr-level">{inferenceLevelLabel(row.supplyingLevel)}</span>
+<form class="smrt-inference-tier-row__root" onsubmit={submit} data-testid={`inference-tier-${row.tier}`}>
+  <div class="smrt-inference-tier-row__header" data-smrt-part="header">
+    <strong class="smrt-inference-tier-row__tier" data-smrt-part="title">{row.tier}</strong>
+    <span class="smrt-inference-tier-row__effective" data-smrt-part="value">{row.effectiveLabel}</span>
+    <span class="smrt-inference-tier-row__level" data-smrt-part="level">{inferenceLevelLabel(row.supplyingLevel)}</span>
   </div>
   {#if restricted && row.tenantBlocked}
-    <p class="itr-note" role="note">
+    <p class="smrt-inference-tier-row__note" data-smrt-part="note" role="note">
       This tenant binding is no longer on the allow-list and is not in effect.
     </p>
   {/if}
-  <div class="itr-controls">
+  <div class="smrt-inference-tier-row__controls" data-smrt-part="actions">
     <label>
-      <span class="itr-label">Target for {row.tier}</span>
+      <span class="smrt-inference-tier-row__label" data-smrt-part="label">Target for {row.tier}</span>
       <select name="kind" bind:value={kind} disabled={busy}>
         <option value="default">Same as default</option>
         <option value="model" disabled={!modelAllowed}>Model</option>
@@ -115,7 +115,7 @@ function submit(event: SubmitEvent): void {
     </label>
     {#if kind === 'model'}
       <label>
-        <span class="itr-label">Provider</span>
+        <span class="smrt-inference-tier-row__label" data-smrt-part="label">Provider</span>
         <select name="provider" bind:value={provider} disabled={busy}>
           <option value="">Configured provider</option>
           {#each providers.filter((option) => option.kind === 'provider') as option (option.id)}
@@ -124,12 +124,12 @@ function submit(event: SubmitEvent): void {
         </select>
       </label>
       <label>
-        <span class="itr-label">Model</span>
+        <span class="smrt-inference-tier-row__label" data-smrt-part="label">Model</span>
         <input name="model" bind:value={model} required disabled={busy} />
       </label>
     {:else if kind === 'alias'}
       <label>
-        <span class="itr-label">Alias</span>
+        <span class="smrt-inference-tier-row__label" data-smrt-part="label">Alias</span>
         <select name="alias" bind:value={alias} required disabled={busy}>
           <option value="" disabled>Choose an alias</option>
           {#each aliases as entry (entry.name)}
@@ -139,7 +139,7 @@ function submit(event: SubmitEvent): void {
       </label>
     {:else if kind === 'fusion'}
       <label>
-        <span class="itr-label">Fusion</span>
+        <span class="smrt-inference-tier-row__label" data-smrt-part="label">Fusion</span>
         <select name="fusion" bind:value={fusion} required disabled={busy}>
           <option value="" disabled>Choose a fusion</option>
           {#each fusions as entry (entry.name)}
@@ -152,48 +152,56 @@ function submit(event: SubmitEvent): void {
     {/if}
     <button type="submit" disabled={busy || !onSaveTier}>Save</button>
   </div>
-  <p class="itr-hint">"Same as default" reverts to: {tierRevertPreview(row, scope)}</p>
+  <p class="smrt-inference-tier-row__hint" data-smrt-part="hint">"Same as default" reverts to: {tierRevertPreview(row, scope)}</p>
 </form>
 
 <style>
 @layer smrt.reset, smrt.structure, smrt.theme;
-@layer smrt.theme {
-  .itr {
+@layer smrt.structure {
+  .smrt-inference-tier-row__root {
     display: flex;
     flex-direction: column;
     gap: 0.375rem;
     padding: 0.5rem 0;
-    border-bottom: var(--smrt-hairline);
   }
-  .itr-head {
+  .smrt-inference-tier-row__header {
     display: flex;
     gap: 0.75rem;
     align-items: baseline;
     flex-wrap: wrap;
   }
-  .itr-tier {
-    text-transform: capitalize;
+  .smrt-inference-tier-row__tier {
     min-width: 4rem;
   }
-  .itr-level,
-  .itr-hint,
-  .itr-note,
-  .itr-label {
-    font-size: 0.8125rem;
-    color: var(--smrt-color-on-surface-variant);
-  }
-  .itr-hint,
-  .itr-note {
+  .smrt-inference-tier-row__hint,
+  .smrt-inference-tier-row__note {
     margin: 0;
   }
-  .itr-label {
+  .smrt-inference-tier-row__label {
     display: block;
   }
-  .itr-controls {
+  .smrt-inference-tier-row__controls {
     display: flex;
     gap: 0.5rem;
     align-items: flex-end;
     flex-wrap: wrap;
   }
 }
+
+@layer smrt.theme {
+  .smrt-inference-tier-row__root {
+    border-bottom: var(--smrt-hairline);
+  }
+  .smrt-inference-tier-row__tier {
+    text-transform: capitalize;
+  }
+  .smrt-inference-tier-row__level,
+  .smrt-inference-tier-row__hint,
+  .smrt-inference-tier-row__note,
+  .smrt-inference-tier-row__label {
+    font-size: 0.8125rem;
+    color: var(--smrt-color-on-surface-variant);
+  }
+}
+
 </style>

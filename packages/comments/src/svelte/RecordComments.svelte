@@ -65,15 +65,15 @@ async function submit() {
 }
 </script>
 
-<section aria-label={heading} class="record-comments" data-smrt-component="RecordComments">
-  <h2>{heading}</h2>
-  <ol aria-live="polite">
+<section aria-label={heading} class="smrt-record-comments__root" data-smrt-component="RecordComments">
+  <h2 data-smrt-part="title">{heading}</h2>
+  <ol data-smrt-part="list" aria-live="polite">
     {#each comments as comment (comment.id)}
-      <li data-parent={comment.parentCommentId ?? undefined}><strong>{comment.authorLabel}</strong><p>{comment.body}</p>{#if comment.createdAtLabel}<small>{comment.createdAtLabel}</small>{/if}{#if comment.parentCommentId}<small>Reply to {comments.find(parent => parent.id === comment.parentCommentId)?.authorLabel ?? 'comment'}</small>{/if}{#if onreply}<button type="button" disabled={pending} onclick={() => { replyTo = comment.id; }}>Reply to {comment.authorLabel}</button>{/if}</li>
+      <li data-smrt-part="row" data-parent={comment.parentCommentId ?? undefined}><strong>{comment.authorLabel}</strong><p>{comment.body}</p>{#if comment.createdAtLabel}<small>{comment.createdAtLabel}</small>{/if}{#if comment.parentCommentId}<small>Reply to {comments.find(parent => parent.id === comment.parentCommentId)?.authorLabel ?? 'comment'}</small>{/if}{#if onreply}<button type="button" disabled={pending} onclick={() => { replyTo = comment.id; }}>Reply to {comment.authorLabel}</button>{/if}</li>
     {/each}
   </ol>
   {#if onsubmit || (onreply && replyTo)}
-    <form onsubmit={(event) => { event.preventDefault(); void submit(); }}>
+    <form data-smrt-part="body" onsubmit={(event) => { event.preventDefault(); void submit(); }}>
       {#if replyTo}<p>Replying to {comments.find(comment => comment.id === replyTo)?.authorLabel ?? 'comment'} <button type="button" disabled={pending} onclick={() => { replyTo = null; }}>Cancel reply</button></p>{/if}
       <label for={inputId}>Add a comment</label>
       <textarea id={inputId} bind:value={body} disabled={pending}></textarea>
@@ -85,7 +85,29 @@ async function submit() {
 
 <style>
 @layer smrt.reset, smrt.structure, smrt.theme;
-@layer smrt.theme {
-.record-comments { display: grid; gap: var(--smrt-spacing-3, 0.75rem); } ol { display: grid; gap: var(--smrt-spacing-3, 0.75rem); list-style: none; margin: 0; padding: 0; } li { border-block-end: 1px solid var(--smrt-color-on-surface-variant); } textarea { display: block; min-height: 5rem; width: 100%; }
+@layer smrt.structure {
+  .smrt-record-comments__root {
+    display: grid;
+    gap: var(--smrt-spacing-3, 0.75rem);
+  }
+  ol {
+    display: grid;
+    gap: var(--smrt-spacing-3, 0.75rem);
+    list-style: none;
+    margin: 0;
+    padding: 0;
+  }
+  textarea {
+    display: block;
+    min-height: 5rem;
+    width: 100%;
+  }
 }
+
+@layer smrt.theme {
+  li {
+    border-block-end: 1px solid var(--smrt-color-on-surface-variant);
+  }
+}
+
 </style>

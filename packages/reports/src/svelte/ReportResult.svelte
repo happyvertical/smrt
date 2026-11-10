@@ -125,14 +125,14 @@ const measureOptions = $derived(
 );
 </script>
 
-<div class="report-result" data-smrt-component="ReportResult" data-variant={variant}>
+<div class="smrt-report-result__root" data-smrt-component="ReportResult" data-variant={variant}>
   {#if !valid}
     <p role="alert">{t(M['reports.invalid'])}</p>
   {:else if result.rows.length === 0}
-    <p class="report-result__empty">{t(M['reports.no_rows'])}</p>
+    <p class="smrt-report-result__empty" data-smrt-part="empty">{t(M['reports.no_rows'])}</p>
   {:else}
     {#if variant === 'full'}
-      <div class="report-result__controls">
+      <div class="smrt-report-result__controls" data-smrt-part="controls">
         {#if !tableOnly}
           <SegmentedControl
             label={t(M['reports.view'])}
@@ -164,28 +164,28 @@ const measureOptions = $derived(
         {/if}
       </div>
       {#if figures.length > 0 && !showTable}
-        <dl class="report-result__figures" aria-label={t(M['reports.figures'])}>
+        <dl class="smrt-report-result__figures" data-smrt-part="list" aria-label={t(M['reports.figures'])}>
           {#each figures as figure (figure.label)}
-            <div class="report-result__figure">
-              <dt>{figure.label}{#if figure.detail}<span class="report-result__figure-detail">{' · '}{figure.detail}</span>{/if}</dt>
-              <dd><span class="report-result__figure-value">{figure.value}</span></dd>
+            <div class="smrt-report-result__figure" data-smrt-part="figure">
+              <dt>{figure.label}{#if figure.detail}<span class="smrt-report-result__figure-detail" data-smrt-part="detail">{' · '}{figure.detail}</span>{/if}</dt>
+              <dd><span class="smrt-report-result__figure-value" data-smrt-part="value">{figure.value}</span></dd>
             </div>
           {/each}
         </dl>
       {/if}
     {:else if !tableOnly}
-      <div class="report-result__toggle">
+      <div class="smrt-report-result__toggle" data-smrt-part="toggle">
         <Button type="button" variant="ghost" size="sm" aria-pressed={view === 'table'} onclick={() => (view = view === 'table' ? 'chart' : 'table')}>{t(M[view === 'table' ? 'reports.chart' : 'reports.table'])}</Button>
       </div>
     {/if}
     {#if showTable}
-      <div class="report-result__table">
+      <div class="smrt-report-result__table" data-smrt-part="table">
         <table>
           <caption>{result.title}</caption>
           <thead>
             <tr>
               {#each result.columns as column (column.id)}
-                <th scope="col" class:report-result__num={numeric(column)}>{column.label}</th>
+                <th scope="col" class:smrt-report-result__num={numeric(column)}>{column.label}</th>
               {/each}
             </tr>
           </thead>
@@ -193,7 +193,7 @@ const measureOptions = $derived(
             {#each result.rows as row, i (i)}
               <tr>
                 {#each result.columns as column (column.id)}
-                  <td class:report-result__num={numeric(column)}>{cell(row[column.id], column)}</td>
+                  <td class:smrt-report-result__num={numeric(column)}>{cell(row[column.id], column)}</td>
                 {/each}
               </tr>
             {/each}
@@ -202,7 +202,7 @@ const measureOptions = $derived(
       </div>
     {:else if measure && chartData}
       {#if variant === 'full' || measures.length > 1}
-        <p class="report-result__series">{seriesLabel}</p>
+        <p class="smrt-report-result__series" data-smrt-part="meta">{seriesLabel}</p>
       {/if}
       <Chart
         title={measure.label}
@@ -214,37 +214,135 @@ const measureOptions = $derived(
         data={chartData}
       />
       {#if variant === 'compact' && measures.length > 1}
-        <p class="report-result__more">
+        <p class="smrt-report-result__more" data-smrt-part="note">
           {measures.slice(1).map((c) => c.label).join(', ')} · {t(M['reports.table']).toLowerCase()}
         </p>
       {/if}
     {/if}
-    {#if result.truncated}<p class="report-result__empty">{t(M['reports.truncated'])}</p>{/if}
+    {#if result.truncated}<p class="smrt-report-result__empty" data-smrt-part="empty">{t(M['reports.truncated'])}</p>{/if}
   {/if}
 </div>
 
 <style>
 @layer smrt.reset, smrt.structure, smrt.theme;
-@layer smrt.theme {
-  .report-result { display: grid; gap: var(--smrt-spacing-3); inline-size: 100%; min-inline-size: 0; }
-  .report-result[data-variant='full'] { gap: var(--smrt-spacing-4); }
-  .report-result__controls { display: flex; flex-wrap: wrap; align-items: center; justify-content: space-between; gap: var(--smrt-spacing-2) var(--smrt-spacing-4); }
-  .report-result__toggle { display: flex; justify-content: flex-end; }
-  .report-result__empty, .report-result__more { margin: 0; color: var(--smrt-color-on-surface-variant); font-size: var(--smrt-typography-body-small-size); }
-  .report-result__series { margin: 0; color: var(--smrt-color-on-surface-variant); font: var(--smrt-typography-label-large-font); }
-  .report-result__figures { display: grid; grid-template-columns: repeat(auto-fit, minmax(min(100%, 10rem), 1fr)); gap: var(--smrt-spacing-3); margin: 0; }
-  .report-result__figure { display: grid; gap: var(--smrt-spacing-1); padding: var(--smrt-spacing-3) var(--smrt-spacing-4); border: var(--smrt-hairline); border-radius: var(--smrt-radius-medium); background: var(--smrt-color-surface-container-low); }
-  .report-result__figure dt { color: var(--smrt-color-on-surface-variant); font-size: var(--smrt-typography-label-medium-size); }
-  .report-result__figure dd { display: grid; margin: 0; }
-  .report-result__figure-value { font: var(--smrt-typography-headline-small-font); font-variant-numeric: tabular-nums; overflow-wrap: anywhere; }
-  .report-result__figure-detail { color: var(--smrt-color-on-surface-variant); }
-  .report-result__table { overflow-x: auto; border: var(--smrt-hairline); border-radius: var(--smrt-radius-medium); }
-  table { border-collapse: collapse; inline-size: 100%; font-size: var(--smrt-typography-body-small-size); }
-  caption { position: absolute; inline-size: 1px; block-size: 1px; overflow: hidden; clip: rect(0 0 0 0); clip-path: inset(50%); white-space: nowrap; }
-  th, td { padding: var(--smrt-spacing-2) var(--smrt-spacing-3); border-block-end: var(--smrt-hairline); text-align: start; white-space: nowrap; }
-  thead th { background: var(--smrt-surface-sunken); color: var(--smrt-color-on-surface-variant); font-weight: var(--smrt-typography-label-large-weight); }
-  tbody tr:last-child td { border-block-end: none; }
-  .report-result__num { text-align: end; font-variant-numeric: tabular-nums; }
-  .report-result[data-variant='compact'] th, .report-result[data-variant='compact'] td { padding: var(--smrt-spacing-1) var(--smrt-spacing-2); }
+@layer smrt.structure {
+  .smrt-report-result__root {
+    display: grid;
+    gap: var(--smrt-spacing-3);
+    inline-size: 100%;
+    min-inline-size: 0;
+  }
+  .smrt-report-result__root[data-variant='full'] {
+    gap: var(--smrt-spacing-4);
+  }
+  .smrt-report-result__controls {
+    display: flex;
+    flex-wrap: wrap;
+    align-items: center;
+    justify-content: space-between;
+    gap: var(--smrt-spacing-2) var(--smrt-spacing-4);
+  }
+  .smrt-report-result__toggle {
+    display: flex;
+    justify-content: flex-end;
+  }
+  .smrt-report-result__empty, .smrt-report-result__more {
+    margin: 0;
+  }
+  .smrt-report-result__series {
+    margin: 0;
+  }
+  .smrt-report-result__figures {
+    display: grid;
+    grid-template-columns: repeat(auto-fit, minmax(min(100%, 10rem), 1fr));
+    gap: var(--smrt-spacing-3);
+    margin: 0;
+  }
+  .smrt-report-result__figure {
+    display: grid;
+    gap: var(--smrt-spacing-1);
+    padding: var(--smrt-spacing-3) var(--smrt-spacing-4);
+  }
+  .smrt-report-result__figure dd {
+    display: grid;
+    margin: 0;
+  }
+  .smrt-report-result__figure-value {
+    overflow-wrap: anywhere;
+  }
+  .smrt-report-result__table {
+    overflow-x: auto;
+  }
+  table {
+    inline-size: 100%;
+  }
+  caption {
+    position: absolute;
+    inline-size: 1px;
+    block-size: 1px;
+    overflow: hidden;
+    clip: rect(0 0 0 0);
+    clip-path: inset(50%);
+    white-space: nowrap;
+  }
+  th, td {
+    padding: var(--smrt-spacing-2) var(--smrt-spacing-3);
+    white-space: nowrap;
+  }
+  .smrt-report-result__root[data-variant='compact'] th, .smrt-report-result__root[data-variant='compact'] td {
+    padding: var(--smrt-spacing-1) var(--smrt-spacing-2);
+  }
 }
+
+@layer smrt.theme {
+  .smrt-report-result__empty, .smrt-report-result__more {
+    color: var(--smrt-color-on-surface-variant);
+    font-size: var(--smrt-typography-body-small-size);
+  }
+  .smrt-report-result__series {
+    color: var(--smrt-color-on-surface-variant);
+    font: var(--smrt-typography-label-large-font);
+  }
+  .smrt-report-result__figure {
+    border: var(--smrt-hairline);
+    border-radius: var(--smrt-radius-medium);
+    background: var(--smrt-color-surface-container-low);
+  }
+  .smrt-report-result__figure dt {
+    color: var(--smrt-color-on-surface-variant);
+    font-size: var(--smrt-typography-label-medium-size);
+  }
+  .smrt-report-result__figure-value {
+    font: var(--smrt-typography-headline-small-font);
+    font-variant-numeric: tabular-nums;
+  }
+  .smrt-report-result__figure-detail {
+    color: var(--smrt-color-on-surface-variant);
+  }
+  .smrt-report-result__table {
+    border: var(--smrt-hairline);
+    border-radius: var(--smrt-radius-medium);
+  }
+  table {
+    border-collapse: collapse;
+    font-size: var(--smrt-typography-body-small-size);
+  }
+  th, td {
+    border-block-end: var(--smrt-hairline);
+    text-align: start;
+  }
+  thead th {
+    background: var(--smrt-surface-sunken);
+    color: var(--smrt-color-on-surface-variant);
+    font-weight: var(--smrt-typography-label-large-weight);
+  }
+  tbody tr:last-child td {
+    border-block-end: none;
+  }
+  .smrt-report-result__num {
+    text-align: end;
+    font-variant-numeric: tabular-nums;
+  }
+}
+
 </style>

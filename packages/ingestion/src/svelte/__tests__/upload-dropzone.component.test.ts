@@ -50,7 +50,7 @@ it('leads an empty inbox with a drop zone that keeps the accept hint; dropped fi
   const inbox = screen.getByTestId('intake-inbox');
   const order = [...inbox.querySelectorAll('*')];
   expect(order.indexOf(zone)).toBeLessThan(
-    order.indexOf(inbox.querySelector('.toolbar') as Element),
+    order.indexOf(inbox.querySelector('[data-smrt-part="toolbar"]') as Element),
   );
   expect(button().disabled).toBe(true);
   const file = new File(['bytes'], 'receipt.pdf', { type: 'application/pdf' });

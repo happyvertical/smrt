@@ -22,12 +22,12 @@ function handleChange(event: Event) {
 }
 </script>
 
-<div class="tenant-switcher" data-smrt-component="TenantSwitcher">
+<div class="smrt-tenant-switcher__root" data-smrt-component="TenantSwitcher">
   {#if memberships.length <= 1}
-    <span class="tenant-name">{currentTenant?.name ?? 'Unknown'}</span>
+    <span class="smrt-tenant-switcher__name" data-smrt-part="title">{currentTenant?.name ?? 'Unknown'}</span>
   {:else}
     <!-- raw-primitive-allow: the Select form primitive lives in @happyvertical/smrt-svelte, which transitively depends on smrt-tenancy (smrt-svelte to smrt-languages to smrt-tenancy), so importing it would create a DAG cycle (#1582); the native select element retains full keyboard/AT a11y -->
-    <select value={currentTenantId} onchange={handleChange} class="tenant-select">
+    <select value={currentTenantId} onchange={handleChange} class="smrt-tenant-switcher__select">
       {#each memberships as membership}
         {#if membership.tenantId}
           {@const tenant = tenants.get(membership.tenantId)}
@@ -42,35 +42,37 @@ function handleChange(event: Event) {
 
 <style>
 @layer smrt.reset, smrt.structure, smrt.theme;
-@layer smrt.theme {
-  .tenant-switcher {
+@layer smrt.structure {
+  .smrt-tenant-switcher__root {
     display: inline-flex;
     align-items: center;
   }
+  .smrt-tenant-switcher__select {
+    padding: var(--smrt-spacing-sm, 0.5rem) var(--smrt-spacing-md, 1rem);
+    cursor: pointer;
+  }
+}
 
-  .tenant-name {
+@layer smrt.theme {
+  .smrt-tenant-switcher__name {
     font-weight: var(--smrt-typography-weight-medium, 500);
   }
-
-  .tenant-select {
-    padding: var(--smrt-spacing-sm, 0.5rem) var(--smrt-spacing-md, 1rem);
+  .smrt-tenant-switcher__select {
     border: var(--smrt-hairline);
     border-radius: var(--smrt-radius-medium, 0.5rem);
     background: var(--smrt-color-surface, white);
     font: var(--smrt-typography-body-medium-font, 0.875rem / 1.25 sans-serif);
-    cursor: pointer;
     transition: border-color var(--smrt-duration-short2, 150ms) var(--smrt-easing-standard, ease);
   }
-
-  .tenant-select:focus {
+  .smrt-tenant-switcher__select:focus {
     outline: 2px solid var(--smrt-color-primary);
     outline-offset: 2px;
   }
-
   @media (prefers-reduced-motion: reduce) {
-    .tenant-select {
+    .smrt-tenant-switcher__select {
       transition: none;
     }
   }
 }
+
 </style>

@@ -134,13 +134,13 @@ function text(input: unknown): string {
 }
 </script>
 {#if fields.length}
-<fieldset class="argument-fields" data-testid="argument-fields" disabled={readonly}>
+<fieldset class="smrt-argument-fields__root" data-testid="argument-fields" disabled={readonly}>
 <legend>{t(M['ingestion.fields'])}</legend>
 {#if !parsed}<p role="status">{t(M['ingestion.fieldsUnavailable'])}</p>{/if}
 {#each fields as field (field.name)}
 {@const current = parsed?.[field.name]}
 {@const name = field.required ? `${field.title} *` : field.title}
-<div class="field" data-field={field.name}>
+<div class="smrt-argument-fields__field" data-smrt-part="field" data-field={field.name}>
 {#if field.kind === 'candidate'}
 {@const options = (found[field.name] ?? []).map((entry) => ({ value: entry.id, label: entry.label }))}
 <Combobox label={name} {options} value={text(current)} valueLabel={candidateLabel(field.model, current) ?? text(current)} filter={false} disabled={readonly || !parsed} busy={!!searching[field.name]} status={searching[field.name] ? t(M['ingestion.searching']) : options.length ? undefined : t(M['ingestion.noMatches'])} onquery={(query) => search(field, query)} onvaluechange={(id) => choose(field, id)} />
@@ -162,7 +162,7 @@ function text(input: unknown): string {
 </div>
 {/each}
 </fieldset>
-<details class="advanced" data-testid="advanced-arguments"><summary>{t(M['ingestion.advanced'])}</summary>
+<details class="smrt-argument-fields__advanced" data-smrt-part="advanced" data-testid="advanced-arguments"><summary>{t(M['ingestion.advanced'])}</summary>
 <Textarea aria-label={label} bind:value {readonly} {rows} />
 </details>
 {:else}
@@ -170,7 +170,22 @@ function text(input: unknown): string {
 {/if}
 <style>
 @layer smrt.reset, smrt.structure, smrt.theme;
-@layer smrt.theme {
-.argument-fields{display:grid;gap:.75rem;min-width:0;margin-block:.5rem}.field{min-width:0}.advanced{margin-block:.5rem}
+@layer smrt.structure {
+  .smrt-argument-fields__root {
+    display:grid;
+    gap:.75rem;
+    min-width:0;
+    margin-block:.5rem;
+  }
+  .smrt-argument-fields__field {
+    min-width:0;
+  }
+  .smrt-argument-fields__advanced {
+    margin-block:.5rem;
+  }
 }
+
+@layer smrt.theme {
+}
+
 </style>

@@ -97,10 +97,10 @@ function description(suggestion: FieldPolicySuggestion): string {
 }
 </script>
 
-<section class="field-policy-suggestion-queue" aria-label={heading} data-smrt-component="FieldPolicySuggestionQueue">
-  <header>
+<section class="smrt-field-policy-suggestion-queue__root" aria-label={heading} data-smrt-component="FieldPolicySuggestionQueue">
+  <header data-smrt-part="header">
     <h2>{heading}</h2>
-    {#if !loading}<span class="field-policy-suggestion-queue__count">{total}</span>{/if}
+    {#if !loading}<span class="smrt-field-policy-suggestion-queue__count" data-smrt-part="count">{total}</span>{/if}
   </header>
   {#if loading}
     <p role="status" aria-live="polite">Loading pending suggestions…</p>
@@ -109,14 +109,14 @@ function description(suggestion: FieldPolicySuggestion): string {
   {:else if suggestions.length === 0}
     <p>No pending field suggestions.</p>
   {:else}
-    <ul>
+    <ul data-smrt-part="list">
       {#each suggestions as suggestion (suggestion.id)}
-        <li>
+        <li data-smrt-part="row">
           <article>
             <h3>{suggestion.objectRef} · {suggestion.fieldName}</h3>
             <p>{description(suggestion)}</p>
             <p>{fieldPolicySuggestionEvidence(suggestion)}</p>
-            <div class="field-policy-suggestion-queue__actions">
+            <div class="smrt-field-policy-suggestion-queue__actions" data-smrt-part="actions">
               <Button type="button" disabled={busyId !== null} onclick={() => decide(suggestion, 'approve')}>Approve</Button>
               <Button type="button" variant="ghost" disabled={busyId !== null} onclick={() => decide(suggestion, 'dismiss')}>Dismiss</Button>
             </div>
@@ -129,14 +129,55 @@ function description(suggestion: FieldPolicySuggestion): string {
 
 <style>
 @layer smrt.reset, smrt.structure, smrt.theme;
-@layer smrt.theme {
-  .field-policy-suggestion-queue { display: grid; gap: var(--smrt-spacing-3, 0.75rem); }
-  .field-policy-suggestion-queue header { align-items: center; display: flex; gap: var(--smrt-spacing-2, 0.5rem); }
-  .field-policy-suggestion-queue h2, .field-policy-suggestion-queue h3 { margin: 0; }
-  .field-policy-suggestion-queue__count { border-radius: 999px; background: var(--smrt-color-secondary-container); min-inline-size: 1.5rem; padding: 0.125rem 0.4rem; text-align: center; }
-  .field-policy-suggestion-queue ul { display: grid; gap: var(--smrt-spacing-3, 0.75rem); list-style: none; margin: 0; padding: 0; }
-  .field-policy-suggestion-queue article { border: var(--smrt-hairline); border-radius: var(--smrt-radius-small, 0.25rem); display: grid; gap: var(--smrt-spacing-2, 0.5rem); padding: var(--smrt-spacing-3, 0.75rem); }
-  .field-policy-suggestion-queue article p { margin: 0; }
-  .field-policy-suggestion-queue__actions { display: flex; flex-wrap: wrap; gap: var(--smrt-spacing-2, 0.5rem); }
+@layer smrt.structure {
+  .smrt-field-policy-suggestion-queue__root {
+    display: grid;
+    gap: var(--smrt-spacing-3, 0.75rem);
+  }
+  .smrt-field-policy-suggestion-queue__root header {
+    align-items: center;
+    display: flex;
+    gap: var(--smrt-spacing-2, 0.5rem);
+  }
+  .smrt-field-policy-suggestion-queue__root h2, .smrt-field-policy-suggestion-queue__root h3 {
+    margin: 0;
+  }
+  .smrt-field-policy-suggestion-queue__count {
+    min-inline-size: 1.5rem;
+    padding: 0.125rem 0.4rem;
+  }
+  .smrt-field-policy-suggestion-queue__root ul {
+    display: grid;
+    gap: var(--smrt-spacing-3, 0.75rem);
+    list-style: none;
+    margin: 0;
+    padding: 0;
+  }
+  .smrt-field-policy-suggestion-queue__root article {
+    display: grid;
+    gap: var(--smrt-spacing-2, 0.5rem);
+    padding: var(--smrt-spacing-3, 0.75rem);
+  }
+  .smrt-field-policy-suggestion-queue__root article p {
+    margin: 0;
+  }
+  .smrt-field-policy-suggestion-queue__actions {
+    display: flex;
+    flex-wrap: wrap;
+    gap: var(--smrt-spacing-2, 0.5rem);
+  }
 }
+
+@layer smrt.theme {
+  .smrt-field-policy-suggestion-queue__count {
+    border-radius: 999px;
+    background: var(--smrt-color-secondary-container);
+    text-align: center;
+  }
+  .smrt-field-policy-suggestion-queue__root article {
+    border: var(--smrt-hairline);
+    border-radius: var(--smrt-radius-small, 0.25rem);
+  }
+}
+
 </style>

@@ -2640,7 +2640,7 @@ describe('intake review host boundary', () => {
     // Not a landmark per row.
     expect(container.querySelector('aside')).toBeNull();
     const image = container.querySelector(
-      'li .row-aside img',
+      'li [data-smrt-part="aside"] img',
     ) as HTMLImageElement;
     expect(image.getAttribute('src')).toBe(`${location.origin}/thumbnail.png`);
     expect(image.getAttribute('alt')).toBe('Email original');
@@ -2658,12 +2658,14 @@ describe('intake review host boundary', () => {
     await screen.findByText('Private invoice');
     expect(screen.queryByRole('link', { name: /^Open original/ })).toBeNull();
     // With both URLs refused there is nothing to show, so no empty wrapper.
-    expect(container.querySelector('li .row-aside')).toBeNull();
+    expect(container.querySelector('li [data-smrt-part="aside"]')).toBeNull();
     unmount();
     const bare = page();
     const second = render(IntakeInbox, { host: host(bare) });
     await screen.findByText('Private invoice');
-    expect(second.container.querySelector('li .row-aside')).toBeNull();
+    expect(
+      second.container.querySelector('li [data-smrt-part="aside"]'),
+    ).toBeNull();
   });
   it('renders a host rowAside snippet with the page entry instead of the default aside', async () => {
     const view = page();
@@ -2683,7 +2685,9 @@ describe('intake review host boundary', () => {
     await screen.findByText('Private invoice');
     expect(screen.getByTestId('row-aside').textContent).toBe('item:original');
     expect(screen.queryByRole('link', { name: /^Open original/ })).toBeNull();
-    expect(container.querySelectorAll('li .row-aside')).toHaveLength(1);
+    expect(
+      container.querySelectorAll('li [data-smrt-part="aside"]'),
+    ).toHaveLength(1);
     expect(container.querySelector('aside')).toBeNull();
   });
   it('filters and assigns using the host assignment version', async () => {

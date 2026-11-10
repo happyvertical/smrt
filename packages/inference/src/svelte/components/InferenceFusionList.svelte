@@ -47,17 +47,17 @@ function save(event: SubmitEvent, existing?: string): void {
 }
 </script>
 
-<div class="ifl" data-testid="inference-fusions">
+<div class="smrt-inference-fusion-list__root" data-testid="inference-fusions">
   {#each fusions as fusion (fusion.name)}
-    <div class="ifl-item">
-      <div class="ifl-head">
+    <div class="smrt-inference-fusion-list__item" data-smrt-part="row">
+      <div class="smrt-inference-fusion-list__header" data-smrt-part="header">
         <strong>{fusion.name}</strong>
-        <span class="ifl-label">{fusion.source}</span>
-        {#if fusion.shadows?.length}<span class="ifl-label">replaces {fusion.shadows.join(', ')}</span>{/if}
-        {#if fusion.description}<span class="ifl-label">{fusion.description}</span>{/if}
+        <span class="smrt-inference-fusion-list__label" data-smrt-part="label">{fusion.source}</span>
+        {#if fusion.shadows?.length}<span class="smrt-inference-fusion-list__label" data-smrt-part="label">replaces {fusion.shadows.join(', ')}</span>{/if}
+        {#if fusion.description}<span class="smrt-inference-fusion-list__label" data-smrt-part="label">{fusion.description}</span>{/if}
       </div>
       {#if fusion.issues?.length}
-        <ul class="ifl-label" role="alert" data-testid="inference-fusion-issues">
+        <ul class="smrt-inference-fusion-list__label" data-smrt-part="label" role="alert" data-testid="inference-fusion-issues">
           {#each fusion.issues as issue (issue.path + issue.message)}<li>{issue.message}</li>{/each}
         </ul>
       {/if}
@@ -70,8 +70,8 @@ function save(event: SubmitEvent, existing?: string): void {
             disabled={busy}
             value={JSON.stringify(fusion.definition, null, 2)}
           ></textarea>
-          {#if errors[fusion.name]}<p class="ifl-label" role="alert">{errors[fusion.name]}</p>{/if}
-          <div class="ifl-actions">
+          {#if errors[fusion.name]}<p class="smrt-inference-fusion-list__label" data-smrt-part="label" role="alert">{errors[fusion.name]}</p>{/if}
+          <div class="smrt-inference-fusion-list__actions" data-smrt-part="actions">
             <button type="submit" disabled={busy || !onSaveFusion}>Save</button>
             <button
               type="button"
@@ -83,20 +83,20 @@ function save(event: SubmitEvent, existing?: string): void {
           </div>
         </form>
       {:else}
-        <pre class="ifl-pre">{JSON.stringify(fusion.definition, null, 2)}</pre>
+        <pre class="smrt-inference-fusion-list__pre">{JSON.stringify(fusion.definition, null, 2)}</pre>
       {/if}
     </div>
   {:else}
-    <p class="ifl-label">No fusions are defined.</p>
+    <p class="smrt-inference-fusion-list__label" data-smrt-part="label">No fusions are defined.</p>
   {/each}
   {#if editable && onSaveFusion}
-    <form class="ifl-item" onsubmit={(event) => save(event)} data-testid="inference-fusion-new">
+    <form class="smrt-inference-fusion-list__item" data-smrt-part="row" onsubmit={(event) => save(event)} data-testid="inference-fusion-new">
       <label>
-        <span class="ifl-label">New config entry</span>
+        <span class="smrt-inference-fusion-list__label" data-smrt-part="label">New config entry</span>
         <input name="fusionName" required disabled={busy} />
       </label>
       <textarea name="definition" aria-label="New fusion JSON" rows="4" disabled={busy}>{'{}'}</textarea>
-      {#if errors.__new__}<p class="ifl-label" role="alert">{errors.__new__}</p>{/if}
+      {#if errors.__new__}<p class="smrt-inference-fusion-list__label" data-smrt-part="label" role="alert">{errors.__new__}</p>{/if}
       <button type="submit" disabled={busy}>Add</button>
     </form>
   {/if}
@@ -104,38 +104,47 @@ function save(event: SubmitEvent, existing?: string): void {
 
 <style>
 @layer smrt.reset, smrt.structure, smrt.theme;
-@layer smrt.theme {
-  .ifl {
+@layer smrt.structure {
+  .smrt-inference-fusion-list__root {
     display: flex;
     flex-direction: column;
     gap: 0.75rem;
   }
-  .ifl-item {
+  .smrt-inference-fusion-list__item {
     display: flex;
     flex-direction: column;
     gap: 0.375rem;
   }
-  .ifl-head,
-  .ifl-actions {
+  .smrt-inference-fusion-list__header,
+  .smrt-inference-fusion-list__actions {
     display: flex;
     gap: 0.5rem;
     align-items: center;
   }
-  .ifl-pre,
+  .smrt-inference-fusion-list__pre,
   textarea {
     margin: 0;
     padding: 0.5rem;
+    white-space: pre-wrap;
+    width: 100%;
+  }
+  .smrt-inference-fusion-list__label {
+    margin: 0;
+  }
+}
+
+@layer smrt.theme {
+  .smrt-inference-fusion-list__pre,
+  textarea {
     border-radius: 0.375rem;
     background: var(--smrt-color-surface-variant);
     font-family: ui-monospace, monospace;
     font-size: 0.8125rem;
-    white-space: pre-wrap;
-    width: 100%;
   }
-  .ifl-label {
-    margin: 0;
+  .smrt-inference-fusion-list__label {
     font-size: 0.8125rem;
     color: var(--smrt-color-on-surface-variant);
   }
 }
+
 </style>

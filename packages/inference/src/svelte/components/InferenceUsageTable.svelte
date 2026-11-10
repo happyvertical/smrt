@@ -70,15 +70,15 @@ function regroup(event: Event): void {
 }
 </script>
 
-<div class="iut" data-testid="inference-usage">
+<div class="smrt-inference-usage-table__root" data-testid="inference-usage">
   {#if transcriptsEnabled === false}
-    <p class="iut-label" role="status" data-testid="inference-transcripts-off">
+    <p class="smrt-inference-usage-table__label" data-smrt-part="label" role="status" data-testid="inference-transcripts-off">
       Transcripts are off; turn them on with <code>inference.transcripts.enabled</code> (Advanced, Transcripts) or <code>SMRT_INFERENCE_TRANSCRIPTS=1</code>.
     </p>
   {/if}
   {#if onUsageGroupBy}
-    <form class="iut-group">
-      <span class="iut-label">Group by</span>
+    <form class="smrt-inference-usage-table__group" data-smrt-part="form">
+      <span class="smrt-inference-usage-table__label" data-smrt-part="label">Group by</span>
       {#each DIMENSIONS as dimension (dimension.id)}
         <label>
           <input
@@ -95,10 +95,10 @@ function regroup(event: Event): void {
     </form>
   {/if}
   {#if !usage || usage.buckets.length === 0}
-    <p class="iut-label">No usage recorded yet.</p>
+    <p class="smrt-inference-usage-table__label" data-smrt-part="label">No usage recorded yet.</p>
   {:else}
-    <table class="iut-table">
-      <thead>
+    <table class="smrt-inference-usage-table__table" data-smrt-part="table">
+      <thead data-smrt-part="header">
         <tr>
           {#each columns as column (column)}
             <th scope="col">{DIMENSIONS.find((entry) => entry.id === column)?.label ?? column}</th>
@@ -110,7 +110,7 @@ function regroup(event: Event): void {
           {#if showTranscripts}<th scope="col">Transcripts</th>{/if}
         </tr>
       </thead>
-      <tbody>
+      <tbody data-smrt-part="body">
         {#each usage.buckets as bucket, index (index)}
           <tr>
             {#each columns as column (column)}
@@ -120,7 +120,7 @@ function regroup(event: Event): void {
             <td>{bucket.totalTokens}</td>
             <td>
               ${bucket.estimatedCost.toFixed(4)}
-              {#if bucket.uncostedCalls}<span class="iut-label">({bucket.uncostedCalls} uncosted)</span>{/if}
+              {#if bucket.uncostedCalls}<span class="smrt-inference-usage-table__label" data-smrt-part="label">({bucket.uncostedCalls} uncosted)</span>{/if}
             </td>
             <td>
               {#each outcomeEntries(bucket.outcomes) as [label, count], position (label)}
@@ -141,37 +141,46 @@ function regroup(event: Event): void {
         {/each}
       </tbody>
     </table>
-    {#if usage.costBasis}<p class="iut-label">{usage.costBasis}</p>{/if}
+    {#if usage.costBasis}<p class="smrt-inference-usage-table__label" data-smrt-part="label">{usage.costBasis}</p>{/if}
   {/if}
 </div>
 
 <style>
 @layer smrt.reset, smrt.structure, smrt.theme;
-@layer smrt.theme {
-  .iut {
+@layer smrt.structure {
+  .smrt-inference-usage-table__root {
     display: flex;
     flex-direction: column;
     gap: 0.75rem;
   }
-  .iut-group {
+  .smrt-inference-usage-table__group {
     display: flex;
     gap: 0.75rem;
     align-items: center;
   }
-  .iut-table {
+  .smrt-inference-usage-table__table th,
+  .smrt-inference-usage-table__table td {
+    padding: 0.25rem 0.75rem 0.25rem 0;
+  }
+  .smrt-inference-usage-table__label {
+    margin: 0;
+  }
+}
+
+@layer smrt.theme {
+  .smrt-inference-usage-table__table {
     border-collapse: collapse;
     font-size: 0.875rem;
   }
-  .iut-table th,
-  .iut-table td {
+  .smrt-inference-usage-table__table th,
+  .smrt-inference-usage-table__table td {
     text-align: left;
-    padding: 0.25rem 0.75rem 0.25rem 0;
     border-bottom: var(--smrt-hairline);
   }
-  .iut-label {
-    margin: 0;
+  .smrt-inference-usage-table__label {
     font-size: 0.8125rem;
     color: var(--smrt-color-on-surface-variant);
   }
 }
+
 </style>

@@ -289,18 +289,18 @@ $effect(() => {
 {#if renderSnippet}
   {@render renderSnippet(snippetProps)}
 {:else if visible}
-  <div class="policy-field {className}" bind:this={rootEl} data-smrt-component="PolicyField">
+  <div class="smrt-policy-field__root {className}" bind:this={rootEl} data-smrt-component="PolicyField">
     {#if label !== null}
       <!-- `for` tracks the repaired label↔control association: the `name`
            convention before the first effect pass (SSR / first paint), the
            repaired control id afterwards; Svelte omits the attribute entirely
            when it resolves to null (no wrapped control). -->
       <label
-        class="policy-field__label"
+        class="smrt-policy-field__label" data-smrt-part="label"
         for={controlId === undefined ? id : controlId}
         title={helpDensity === 'tooltip' && help !== null ? help : undefined}
       >
-        {label}{#if required}<span class="policy-field__required" aria-hidden="true">*</span>{/if}
+        {label}{#if required}<span class="smrt-policy-field__required" data-smrt-part="required" aria-hidden="true">*</span>{/if}
       </label>
     {/if}
     {@render children?.()}
@@ -308,34 +308,39 @@ $effect(() => {
       <!-- Hint text density, or tooltip density with no label to attach the
            title attribute to (fall back to visible help rather than dropping
            it). -->
-      <p class="policy-field__hint" id={helpId}>{help}</p>
+      <p class="smrt-policy-field__hint" data-smrt-part="hint" id={helpId}>{help}</p>
     {/if}
   </div>
 {/if}
 
 <style>
 @layer smrt.reset, smrt.structure, smrt.theme;
-@layer smrt.theme {
-  .policy-field {
+@layer smrt.structure {
+  .smrt-policy-field__root {
     display: flex;
     flex-direction: column;
     gap: var(--smrt-spacing-1, 0.25rem);
   }
-
-  .policy-field__label {
-    font: var(--smrt-typography-label-large-font, inherit);
-    color: var(--smrt-color-on-surface, currentColor);
-  }
-
-  .policy-field__required {
-    color: var(--smrt-color-error);
+  .smrt-policy-field__required {
     margin-left: 0.25em;
   }
-
-  .policy-field__hint {
-    font: var(--smrt-typography-body-small-font, inherit);
-    color: var(--smrt-color-on-surface-variant, currentColor);
+  .smrt-policy-field__hint {
     margin: 0;
   }
 }
+
+@layer smrt.theme {
+  .smrt-policy-field__label {
+    font: var(--smrt-typography-label-large-font, inherit);
+    color: var(--smrt-color-on-surface, currentColor);
+  }
+  .smrt-policy-field__required {
+    color: var(--smrt-color-error);
+  }
+  .smrt-policy-field__hint {
+    font: var(--smrt-typography-body-small-font, inherit);
+    color: var(--smrt-color-on-surface-variant, currentColor);
+  }
+}
+
 </style>

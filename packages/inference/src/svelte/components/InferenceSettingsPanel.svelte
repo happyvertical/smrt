@@ -184,12 +184,12 @@ function tierAllowed(tier: InferenceSettingsTier): boolean {
 }
 </script>
 
-<section class="isp" data-testid="inference-settings-panel" data-smrt-component="InferenceSettingsPanel">
-  {#if message}<p class="isp-flash" role="status">{message}</p>{/if}
-  {#if error}<p class="isp-flash isp-flash-error" role="alert">{error}</p>{/if}
+<section class="smrt-inference-settings-panel__root" data-testid="inference-settings-panel" data-smrt-component="InferenceSettingsPanel">
+  {#if message}<p class="smrt-inference-settings-panel__flash" data-smrt-part="message" role="status">{message}</p>{/if}
+  {#if error}<p class="smrt-inference-settings-panel__flash smrt-inference-settings-panel__flash-error" data-smrt-part="message" role="alert">{error}</p>{/if}
 
   {#if showUsage}
-    <div class="isp-tabs" role="tablist">
+    <div class="smrt-inference-settings-panel__tabs" data-smrt-part="list" role="tablist">
       <button
         type="button"
         role="tab"
@@ -220,7 +220,7 @@ function tierAllowed(tier: InferenceSettingsTier): boolean {
       />
     </div>
   {:else}
-    <div role={showUsage ? 'tabpanel' : undefined} class="isp-settings">
+    <div role={showUsage ? 'tabpanel' : undefined} class="smrt-inference-settings-panel__settings" data-smrt-part="body">
       {#key defaultsKey}
         <InferenceDefaultView
           {defaults}
@@ -236,7 +236,7 @@ function tierAllowed(tier: InferenceSettingsTier): boolean {
 
       <button
         type="button"
-        class="isp-advanced-toggle"
+        class="smrt-inference-settings-panel__advanced-toggle" data-smrt-part="trigger"
         aria-expanded={advanced}
         aria-controls="isp-advanced"
         onclick={() => (advanced = !advanced)}
@@ -245,9 +245,9 @@ function tierAllowed(tier: InferenceSettingsTier): boolean {
       </button>
 
       {#if advanced}
-        <div id="isp-advanced" class="isp-advanced" data-testid="inference-advanced">
+        <div id="isp-advanced" class="smrt-inference-settings-panel__advanced" data-smrt-part="panel" data-testid="inference-advanced">
           {#key advancedKey}
-            <section class="isp-section">
+            <section class="smrt-inference-settings-panel__section" data-smrt-part="section">
               <h3>Tier ladder</h3>
               {#each tiers as row (row.tier)}
                 <InferenceTierRow
@@ -260,19 +260,19 @@ function tierAllowed(tier: InferenceSettingsTier): boolean {
                   {onSaveTier}
                 />
               {:else}
-                <p class="isp-hint">No tier rows were provided.</p>
+                <p class="smrt-inference-settings-panel__hint" data-smrt-part="hint">No tier rows were provided.</p>
               {/each}
             </section>
 
             {#if defaultTier}
-              <section class="isp-section">
+              <section class="smrt-inference-settings-panel__section" data-smrt-part="section">
                 <h3><code>auto</code> default tier</h3>
-                <form class="isp-auto" onsubmit={saveDefaultTier} data-testid="inference-auto-tier">
+                <form class="smrt-inference-settings-panel__auto" data-smrt-part="form" onsubmit={saveDefaultTier} data-testid="inference-auto-tier">
                   <span>
                     Now {defaultTier.effectiveTier} ({inferenceLevelLabel(defaultTier.supplyingLevel)})
                   </span>
                   <label>
-                    <span class="isp-hint">auto resolves to</span>
+                    <span class="smrt-inference-settings-panel__hint" data-smrt-part="hint">auto resolves to</span>
                     <select
                       name="autoTier"
                       disabled={busy}
@@ -289,7 +289,7 @@ function tierAllowed(tier: InferenceSettingsTier): boolean {
               </section>
             {/if}
 
-            <section class="isp-section">
+            <section class="smrt-inference-settings-panel__section" data-smrt-part="section">
               <h3>Aliases</h3>
               {#each aliases as alias (alias.name)}
                 <InferenceAliasEditor
@@ -300,7 +300,7 @@ function tierAllowed(tier: InferenceSettingsTier): boolean {
                   {onTestCandidate}
                 />
               {:else}
-                <p class="isp-hint">No aliases are defined.</p>
+                <p class="smrt-inference-settings-panel__hint" data-smrt-part="hint">No aliases are defined.</p>
               {/each}
               {#if definitionsEditable && onSaveAlias}
                 <InferenceAliasEditor
@@ -314,7 +314,7 @@ function tierAllowed(tier: InferenceSettingsTier): boolean {
               {/if}
             </section>
 
-            <section class="isp-section">
+            <section class="smrt-inference-settings-panel__section" data-smrt-part="section">
               <h3>Fusions</h3>
               <InferenceFusionList
                 {fusions}
@@ -325,7 +325,7 @@ function tierAllowed(tier: InferenceSettingsTier): boolean {
             </section>
 
             {#if transcripts}
-              <section class="isp-section">
+              <section class="smrt-inference-settings-panel__section" data-smrt-part="section">
                 <h3>Transcripts</h3>
                 <InferenceTranscriptSettings
                   settings={transcripts}
@@ -344,49 +344,61 @@ function tierAllowed(tier: InferenceSettingsTier): boolean {
 
 <style>
 @layer smrt.reset, smrt.structure, smrt.theme;
-@layer smrt.theme {
-  .isp,
-  .isp-settings,
-  .isp-advanced {
+@layer smrt.structure {
+  .smrt-inference-settings-panel__root,
+  .smrt-inference-settings-panel__settings,
+  .smrt-inference-settings-panel__advanced {
     display: flex;
     flex-direction: column;
     gap: 1rem;
   }
-  .isp-tabs {
+  .smrt-inference-settings-panel__tabs {
     display: flex;
     gap: 0.5rem;
-    border-bottom: var(--smrt-hairline);
   }
-  .isp-tabs [aria-selected='true'] {
-    font-weight: 600;
-  }
-  .isp-flash {
+  .smrt-inference-settings-panel__flash {
     margin: 0;
     padding: 0.625rem 0.75rem;
-    border-radius: 0.375rem;
-    background: var(--smrt-color-surface-variant);
   }
-  .isp-flash-error {
-    color: var(--smrt-color-error);
-    background: var(--smrt-color-error-container);
-  }
-  .isp-advanced-toggle {
+  .smrt-inference-settings-panel__advanced-toggle {
     align-self: flex-start;
   }
-  .isp-section h3 {
+  .smrt-inference-settings-panel__section h3 {
     margin: 0 0 0.5rem;
-    font-size: 1rem;
   }
-  .isp-auto {
+  .smrt-inference-settings-panel__auto {
     display: flex;
     gap: 0.75rem;
     align-items: flex-end;
     flex-wrap: wrap;
   }
-  .isp-hint {
+  .smrt-inference-settings-panel__hint {
     margin: 0;
+  }
+}
+
+@layer smrt.theme {
+  .smrt-inference-settings-panel__tabs {
+    border-bottom: var(--smrt-hairline);
+  }
+  .smrt-inference-settings-panel__tabs [aria-selected='true'] {
+    font-weight: 600;
+  }
+  .smrt-inference-settings-panel__flash {
+    border-radius: 0.375rem;
+    background: var(--smrt-color-surface-variant);
+  }
+  .smrt-inference-settings-panel__flash-error {
+    color: var(--smrt-color-error);
+    background: var(--smrt-color-error-container);
+  }
+  .smrt-inference-settings-panel__section h3 {
+    font-size: 1rem;
+  }
+  .smrt-inference-settings-panel__hint {
     font-size: 0.8125rem;
     color: var(--smrt-color-on-surface-variant);
   }
 }
+
 </style>

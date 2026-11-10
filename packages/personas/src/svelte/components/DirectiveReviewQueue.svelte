@@ -46,18 +46,18 @@ function approve(proposal: DirectiveProposalView): void {
 }
 </script>
 
-<section class="directive-review-queue" data-smrt-component="DirectiveReviewQueue">
+<section class="smrt-directive-review-queue__root" data-smrt-component="DirectiveReviewQueue">
   {#if proposals.length === 0}
-    <p class="dq-empty">No directive proposals awaiting review.</p>
+    <p class="smrt-directive-review-queue__empty" data-smrt-part="empty">No directive proposals awaiting review.</p>
   {:else}
     {#each proposals as proposal (proposal.id)}
       {@const locked = busy || proposal.status !== 'pending'}
       <Card variant="outlined">
-        <div class="dq-head">
-          <span class="dq-title">
+        <div class="smrt-directive-review-queue__header" data-smrt-part="header">
+          <span class="smrt-directive-review-queue__title" data-smrt-part="title">
             {proposal.personaName ?? proposal.agentClass ?? 'Persona directive'}
           </span>
-          <span class="dq-badges">
+          <span class="smrt-directive-review-queue__badges" data-smrt-part="badges">
             {#if proposal.confidence != null}
               <Badge variant="info" size="sm">
                 {confidencePercent(proposal.confidence)} confidence
@@ -69,15 +69,15 @@ function approve(proposal: DirectiveProposalView): void {
           </span>
         </div>
 
-        <p class="dq-rationale">{proposal.rationale}</p>
+        <p class="smrt-directive-review-queue__rationale" data-smrt-part="meta">{proposal.rationale}</p>
 
-        <div class="dq-diff">
-          <div class="dq-col">
-            <h4 class="dq-col-title">Current</h4>
-            <pre class="dq-pre">{proposal.currentInstructions || '(none)'}</pre>
+        <div class="smrt-directive-review-queue__diff" data-smrt-part="diff">
+          <div class="smrt-directive-review-queue__column" data-smrt-part="column">
+            <h4 class="smrt-directive-review-queue__column-title" data-smrt-part="label">Current</h4>
+            <pre class="smrt-directive-review-queue__pre" data-smrt-part="body">{proposal.currentInstructions || '(none)'}</pre>
           </div>
-          <div class="dq-col">
-            <h4 class="dq-col-title">Proposed</h4>
+          <div class="smrt-directive-review-queue__column" data-smrt-part="column">
+            <h4 class="smrt-directive-review-queue__column-title" data-smrt-part="label">Proposed</h4>
             <Textarea
               value={draftFor(proposal)}
               rows={5}
@@ -91,7 +91,7 @@ function approve(proposal: DirectiveProposalView): void {
           </div>
         </div>
 
-        <div class="dq-actions">
+        <div class="smrt-directive-review-queue__actions" data-smrt-part="actions">
           <Button
             variant="primary"
             size="sm"
@@ -116,73 +116,71 @@ function approve(proposal: DirectiveProposalView): void {
 
 <style>
 @layer smrt.reset, smrt.structure, smrt.theme;
-@layer smrt.theme {
-  .directive-review-queue {
+@layer smrt.structure {
+  .smrt-directive-review-queue__root {
     display: flex;
     flex-direction: column;
     gap: 1rem;
   }
-
-  .dq-empty {
-    color: var(--smrt-color-on-surface-variant);
-    font-style: italic;
-  }
-
-  .dq-head {
+  .smrt-directive-review-queue__header {
     display: flex;
     align-items: center;
     justify-content: space-between;
     gap: 0.5rem;
     margin-bottom: 0.5rem;
   }
-
-  .dq-title {
-    font-weight: 600;
-  }
-
-  .dq-badges {
+  .smrt-directive-review-queue__badges {
     display: inline-flex;
     gap: 0.375rem;
   }
-
-  .dq-rationale {
+  .smrt-directive-review-queue__rationale {
     margin: 0 0 0.75rem;
   }
-
-  .dq-diff {
+  .smrt-directive-review-queue__diff {
     display: grid;
     grid-template-columns: 1fr 1fr;
     gap: 0.75rem;
   }
-
   @media (max-width: 640px) {
-    .dq-diff {
+    .smrt-directive-review-queue__diff {
       grid-template-columns: 1fr;
     }
   }
-
-  .dq-col-title {
+  .smrt-directive-review-queue__column-title {
     margin: 0 0 0.25rem;
-    font-size: 0.8125rem;
-    text-transform: uppercase;
-    letter-spacing: 0.04em;
-    color: var(--smrt-color-on-surface-variant);
   }
-
-  .dq-pre {
+  .smrt-directive-review-queue__pre {
     margin: 0;
     padding: 0.5rem;
     white-space: pre-wrap;
     word-break: break-word;
-    background: var(--smrt-color-surface-variant);
-    border-radius: 0.375rem;
-    font-size: 0.875rem;
   }
-
-  .dq-actions {
+  .smrt-directive-review-queue__actions {
     display: flex;
     gap: 0.5rem;
     margin-top: 0.75rem;
   }
 }
+
+@layer smrt.theme {
+  .smrt-directive-review-queue__empty {
+    color: var(--smrt-color-on-surface-variant);
+    font-style: italic;
+  }
+  .smrt-directive-review-queue__title {
+    font-weight: 600;
+  }
+  .smrt-directive-review-queue__column-title {
+    font-size: 0.8125rem;
+    text-transform: uppercase;
+    letter-spacing: 0.04em;
+    color: var(--smrt-color-on-surface-variant);
+  }
+  .smrt-directive-review-queue__pre {
+    background: var(--smrt-color-surface-variant);
+    border-radius: 0.375rem;
+    font-size: 0.875rem;
+  }
+}
+
 </style>

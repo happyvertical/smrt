@@ -223,19 +223,19 @@ async function suggestionChanged(): Promise<void> {
 </script>
 
 {#if canManage}
-  <section class="field-policy-control-panel" aria-label={heading} data-smrt-component="FieldPolicyControlPanel">
+  <section class="smrt-field-policy-control-panel__root" aria-label={heading} data-smrt-component="FieldPolicyControlPanel">
     <header>
       <h1>{heading}</h1>
       <p>Manage inherited defaults, visibility, help, labels, order, and locks for every registered field.</p>
     </header>
-    {#if error}<p class="field-policy-control-panel__error" role="alert">{error}</p>{/if}
+    {#if error}<p class="smrt-field-policy-control-panel__error" data-smrt-part="error" role="alert">{error}</p>{/if}
     <Catalog page={decoratedPage} {baseUrl} {preservedParams} searchPlaceholder="Search fields">
       {#snippet detail({ item }: { item: FieldPolicyDetailItem })}
         {@const rollup = fieldPolicyRollup(visibleAudit, item.objectRef, item.fieldName)}
-        <article class="field-policy-control-panel__detail">
+        <article class="smrt-field-policy-control-panel__detail" data-smrt-part="body">
           <h2>{rollup.resolved?.label ?? item.label}</h2>
           <p>{rollup.resolved?.help ?? item.description ?? 'No help text.'}</p>
-          <dl class="field-policy-control-panel__layers">
+          <dl class="smrt-field-policy-control-panel__layers" data-smrt-part="layers">
             <div><dt>Code {rollup.code.contributed ? 'override' : 'inherited'}</dt><dd><code>{valueText(rollup.code)}</code> · {rollup.code.visibility}{rollup.code.locked ? ' · locked' : ''}</dd></div>
             <div><dt>App {rollup.app.contributed ? 'override' : 'inherited'}</dt><dd><code>{valueText(rollup.app)}</code> · {rollup.app.visibility}{rollup.app.locked ? ' · locked' : ''}</dd></div>
             <div><dt>Organization {rollup.org.contributed ? 'override' : 'inherited'}</dt><dd><code>{valueText(rollup.org)}</code> · {rollup.org.visibility}{rollup.org.locked ? ' · locked' : ''}</dd></div>
@@ -243,7 +243,7 @@ async function suggestionChanged(): Promise<void> {
           </dl>
           {#if rollup.orgRow}<p>Organization row last changed {rollup.orgRow.updatedAt ?? 'unknown'}{rollup.orgRow.updatedBy ? ` by ${rollup.orgRow.updatedBy}` : ''}.</p>{/if}
           {#if rollup.appRow}<p>App row is read-only{rollup.appRow.updatedBy ? ` (last changed by ${rollup.appRow.updatedBy})` : ''}.</p>{/if}
-          <div class="field-policy-control-panel__actions">
+          <div class="smrt-field-policy-control-panel__actions" data-smrt-part="actions">
             <Button type="button" disabled={busy || loadingEditor || !editorState} onclick={() => editorOpen = true}>Edit settings</Button>
             <Button type="button" variant="ghost" disabled={busy || orgRowIdsForObject(visibleAudit, item.objectRef).length === 0} onclick={resetOrganization}>Reset all organization overrides for this object</Button>
           </div>
@@ -267,7 +267,7 @@ async function suggestionChanged(): Promise<void> {
       />
     {/if}
     {#if prunableDriftRows(visibleAudit).length}
-      <section class="field-policy-control-panel__drift" aria-label="Manifest drift">
+      <section class="smrt-field-policy-control-panel__drift" data-smrt-part="drift" aria-label="Manifest drift">
         <h2>Manifest drift</h2>
         <p>These policy rows no longer match a registered field and are ignored by the resolver.</p>
         <ul>
@@ -282,15 +282,45 @@ async function suggestionChanged(): Promise<void> {
 
 <style>
 @layer smrt.reset, smrt.structure, smrt.theme;
-@layer smrt.theme {
-  .field-policy-control-panel { display: grid; gap: var(--smrt-spacing-4); }
-  .field-policy-control-panel header p, .field-policy-control-panel__detail > p { color: var(--smrt-color-on-surface-variant); }
-  .field-policy-control-panel__error { color: var(--smrt-color-error); }
-  .field-policy-control-panel__layers { display: grid; gap: var(--smrt-spacing-2); }
-  .field-policy-control-panel__layers div { display: grid; grid-template-columns: 10rem minmax(0, 1fr); gap: var(--smrt-spacing-2); }
-  .field-policy-control-panel__layers dt { font-weight: 600; }
-  .field-policy-control-panel__layers dd { margin: 0; }
-  .field-policy-control-panel__actions { display: flex; flex-wrap: wrap; gap: var(--smrt-spacing-2); }
-  .field-policy-control-panel__drift ul { display: grid; gap: var(--smrt-spacing-2); padding-inline-start: var(--smrt-spacing-5); }
+@layer smrt.structure {
+  .smrt-field-policy-control-panel__root {
+    display: grid;
+    gap: var(--smrt-spacing-4);
+  }
+  .smrt-field-policy-control-panel__layers {
+    display: grid;
+    gap: var(--smrt-spacing-2);
+  }
+  .smrt-field-policy-control-panel__layers div {
+    display: grid;
+    grid-template-columns: 10rem minmax(0, 1fr);
+    gap: var(--smrt-spacing-2);
+  }
+  .smrt-field-policy-control-panel__layers dd {
+    margin: 0;
+  }
+  .smrt-field-policy-control-panel__actions {
+    display: flex;
+    flex-wrap: wrap;
+    gap: var(--smrt-spacing-2);
+  }
+  .smrt-field-policy-control-panel__drift ul {
+    display: grid;
+    gap: var(--smrt-spacing-2);
+    padding-inline-start: var(--smrt-spacing-5);
+  }
 }
+
+@layer smrt.theme {
+  .smrt-field-policy-control-panel__root header p, .smrt-field-policy-control-panel__detail > p {
+    color: var(--smrt-color-on-surface-variant);
+  }
+  .smrt-field-policy-control-panel__error {
+    color: var(--smrt-color-error);
+  }
+  .smrt-field-policy-control-panel__layers dt {
+    font-weight: 600;
+  }
+}
+
 </style>

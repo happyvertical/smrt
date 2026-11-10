@@ -45,7 +45,7 @@ function submit(event: SubmitEvent & { currentTarget: HTMLFormElement }) {
     'Example server rejection: a receipt is required by this application. Your entries and request token are retained.';
 }
 </script>
-<div class="preview">
+<div class="smrt-expense-workflow-preview__root">
   <Checkbox label="May edit expense" bind:checked={canEdit} />
   <Checkbox label="Correction workflow" bind:checked={correcting} />
   <ExpenseForm action="" {values} {costObject} {canEdit} {correcting} {message} vendors={[{ id: 'vendor-a', label: 'Supplier A' }]} hiddenFields={[{ name: 'requestId', value: 'demo-expense-request' }]} onsubmit={submit} />
@@ -56,7 +56,14 @@ function submit(event: SubmitEvent & { currentTarget: HTMLFormElement }) {
 </div>
 <style>
 @layer smrt.reset, smrt.structure, smrt.theme;
-@layer smrt.theme {
-.preview { display: grid; gap: var(--smrt-spacing-4); }
+@layer smrt.structure {
+  .smrt-expense-workflow-preview__root {
+    display: grid;
+    gap: var(--smrt-spacing-4);
+  }
 }
+
+@layer smrt.theme {
+}
+
 </style>

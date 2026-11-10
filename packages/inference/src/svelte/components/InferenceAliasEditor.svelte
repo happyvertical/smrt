@@ -104,25 +104,25 @@ function save(event: SubmitEvent): void {
 }
 </script>
 
-<form class="iae" onsubmit={save} data-testid={`inference-alias-${isNew ? 'new' : alias.name}`}>
-  <div class="iae-head">
+<form class="smrt-inference-alias-editor__root" onsubmit={save} data-testid={`inference-alias-${isNew ? 'new' : alias.name}`}>
+  <div class="smrt-inference-alias-editor__header" data-smrt-part="header">
     {#if isNew}
       <label>
-        <span class="iae-label">New alias name</span>
+        <span class="smrt-inference-alias-editor__label" data-smrt-part="label">New alias name</span>
         <input name="aliasName" bind:value={name} required disabled={busy} />
       </label>
     {:else}
       <strong>{alias.name}</strong>
-      <span class="iae-label">{alias.source === 'app' ? 'App' : 'Config'}</span>
-      {#if alias.description}<span class="iae-label">{alias.description}</span>{/if}
+      <span class="smrt-inference-alias-editor__label" data-smrt-part="label">{alias.source === 'app' ? 'App' : 'Config'}</span>
+      {#if alias.description}<span class="smrt-inference-alias-editor__label" data-smrt-part="label">{alias.description}</span>{/if}
     {/if}
   </div>
-  <ol class="iae-list">
+  <ol class="smrt-inference-alias-editor__list" data-smrt-part="list">
     {#each candidates as candidate, index (index)}
       {@const result = results[index]}
-      <li class="iae-candidate">
+      <li class="smrt-inference-alias-editor__candidate" data-smrt-part="row">
         <code>{candidateViewLabel(candidate)}</code>
-        {#if candidate.apiKeyEnv}<span class="iae-label">key from {candidate.apiKeyEnv}</span>{/if}
+        {#if candidate.apiKeyEnv}<span class="smrt-inference-alias-editor__label" data-smrt-part="label">key from {candidate.apiKeyEnv}</span>{/if}
         {#if onTestCandidate && !candidate.alias}
           <button type="button" onclick={() => test(index)} disabled={busy || result === 'pending'}>
             Test
@@ -134,18 +134,18 @@ function save(event: SubmitEvent): void {
           <button type="button" aria-label={`Remove ${candidateViewLabel(candidate)}`} onclick={() => remove(index)} disabled={busy}>Remove</button>
         {/if}
         {#if result && result !== 'pending'}
-          <span class="iae-label" role="status">
+          <span class="smrt-inference-alias-editor__label" data-smrt-part="label" role="status">
             {result.reachable ? 'Reachable' : result.skipped ? 'Not tested' : 'Failed'}: {result.detail}
           </span>
         {/if}
       </li>
     {:else}
-      <li class="iae-label">No candidates yet.</li>
+      <li class="smrt-inference-alias-editor__label" data-smrt-part="label">No candidates yet.</li>
     {/each}
   </ol>
   {#if editable}
-    <fieldset class="iae-add" disabled={busy}>
-      <legend class="iae-label">Add candidate</legend>
+    <fieldset class="smrt-inference-alias-editor__add" data-smrt-part="field" disabled={busy}>
+      <legend class="smrt-inference-alias-editor__label" data-smrt-part="label">Add candidate</legend>
       <input aria-label="Provider" placeholder="provider" bind:value={draft.provider} />
       <input aria-label="Preset" placeholder="preset" bind:value={draft.preset} />
       <input aria-label="Nested alias" placeholder="alias" bind:value={draft.alias} />
@@ -154,7 +154,7 @@ function save(event: SubmitEvent): void {
       <input aria-label="Key variable" placeholder="key variable (e.g. OPENROUTER_API_KEY)" bind:value={draft.apiKeyEnv} />
       <button type="button" onclick={add}>Add</button>
     </fieldset>
-    <div class="iae-actions">
+    <div class="smrt-inference-alias-editor__actions" data-smrt-part="actions">
       <button type="submit" disabled={busy || !onSaveAlias || candidates.length === 0}>Save alias</button>
       {#if !isNew && alias.source === 'app'}
         <button
@@ -171,40 +171,48 @@ function save(event: SubmitEvent): void {
 
 <style>
 @layer smrt.reset, smrt.structure, smrt.theme;
-@layer smrt.theme {
-  .iae {
+@layer smrt.structure {
+  .smrt-inference-alias-editor__root {
     display: flex;
     flex-direction: column;
     gap: 0.375rem;
     padding: 0.5rem 0;
-    border-bottom: var(--smrt-hairline);
   }
-  .iae-head,
-  .iae-candidate,
-  .iae-actions {
+  .smrt-inference-alias-editor__header,
+  .smrt-inference-alias-editor__candidate,
+  .smrt-inference-alias-editor__actions {
     display: flex;
     gap: 0.5rem;
     align-items: center;
     flex-wrap: wrap;
   }
-  .iae-list {
+  .smrt-inference-alias-editor__list {
     margin: 0;
     padding-left: 1.25rem;
     display: flex;
     flex-direction: column;
     gap: 0.25rem;
   }
-  .iae-add {
+  .smrt-inference-alias-editor__add {
     display: flex;
     flex-wrap: wrap;
     gap: 0.375rem;
-    border: none;
     padding: 0;
     margin: 0;
   }
-  .iae-label {
+}
+
+@layer smrt.theme {
+  .smrt-inference-alias-editor__root {
+    border-bottom: var(--smrt-hairline);
+  }
+  .smrt-inference-alias-editor__add {
+    border: none;
+  }
+  .smrt-inference-alias-editor__label {
     font-size: 0.8125rem;
     color: var(--smrt-color-on-surface-variant);
   }
 }
+
 </style>

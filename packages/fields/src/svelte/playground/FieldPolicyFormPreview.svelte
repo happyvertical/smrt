@@ -96,7 +96,7 @@ function handleSubmit() {
 }
 </script>
 
-<section class="field-policy-preview">
+<section class="smrt-field-policy-form-preview__root">
   <!--
     ONE provider, extended over the header too. FormHelp assembles its glossary
     from the provider context and must live inside it; the provider renders no
@@ -104,9 +104,9 @@ function handleSubmit() {
     second provider to reach it — a nested one shadows this mode store — #2272.
   -->
   <FieldPolicyProvider policy={resolvedPolicy} mode="basic">
-    <header class="preview-header">
+    <header class="smrt-field-policy-form-preview__header" data-smrt-part="header">
       <h2>Hand-written form adopting PolicyField</h2>
-      <p class="preview-desc">
+      <p class="smrt-field-policy-form-preview__description" data-smrt-part="description">
         A developer-authored product form. Two fields (name, SKU) adopt
         PolicyField for help, defaults, and progressive disclosure; the rest stay
         hand-written. Toggle the mode switch to reveal advanced-tier fields.
@@ -116,11 +116,11 @@ function handleSubmit() {
       />
     </header>
 
-    <div class="toolbar">
+    <div class="smrt-field-policy-form-preview__toolbar" data-smrt-part="toolbar">
       <ModeSwitch />
     </div>
 
-    <form class="widget-form" onsubmit={(e) => { e.preventDefault(); handleSubmit(); }}>
+    <form class="smrt-field-policy-form-preview__form" data-smrt-part="body" onsubmit={(e) => { e.preventDefault(); handleSubmit(); }}>
       <!-- Adopted field: gets label, help hint, required marker from the policy -->
       <PolicyField name="name">
         <Input id="name" name="name" bind:value={name} placeholder="Widget Deluxe" />
@@ -132,7 +132,7 @@ function handleSubmit() {
       </PolicyField>
 
       <!-- Unwrapped hand-written field — keeps working untouched -->
-      <div class="raw-field">
+      <div class="smrt-field-policy-form-preview__field" data-smrt-part="field">
         <label for="rawNotes">Notes (unwrapped, hand-written)</label>
         <Textarea
           id="rawNotes"
@@ -152,70 +152,70 @@ function handleSubmit() {
         </PolicyField>
       </AdvancedFields>
 
-      <div class="actions">
+      <div class="smrt-field-policy-form-preview__actions" data-smrt-part="actions">
         <Button type="submit">Save product</Button>
       </div>
     </form>
 
     {#if submitted}
-      <p class="status" role="status">{submitted}</p>
+      <p class="smrt-field-policy-form-preview__status" data-smrt-part="status" role="status">{submitted}</p>
     {/if}
   </FieldPolicyProvider>
 </section>
 
 <style>
 @layer smrt.reset, smrt.structure, smrt.theme;
-@layer smrt.theme {
-  .field-policy-preview {
+@layer smrt.structure {
+  .smrt-field-policy-form-preview__root {
     display: flex;
     flex-direction: column;
     gap: var(--smrt-spacing-4, 1rem);
     max-width: 40rem;
   }
-
-  .preview-header h2 {
-    font: var(--smrt-typography-headline-small-font, inherit);
+  .smrt-field-policy-form-preview__header h2 {
     margin: 0 0 var(--smrt-spacing-1, 0.25rem);
   }
-
-  .preview-desc {
-    font: var(--smrt-typography-body-medium-font, inherit);
-    color: var(--smrt-color-on-surface-variant, currentColor);
+  .smrt-field-policy-form-preview__description {
     margin: 0 0 var(--smrt-spacing-2, 0.5rem);
   }
-
-  .toolbar {
+  .smrt-field-policy-form-preview__toolbar {
     display: flex;
     justify-content: flex-end;
     margin-bottom: var(--smrt-spacing-3, 0.75rem);
   }
-
-  .widget-form {
+  .smrt-field-policy-form-preview__form {
     display: flex;
     flex-direction: column;
     gap: var(--smrt-spacing-3, 0.75rem);
   }
-
-  .raw-field {
+  .smrt-field-policy-form-preview__field {
     display: flex;
     flex-direction: column;
     gap: var(--smrt-spacing-1, 0.25rem);
   }
-
-  .raw-field label {
-    font: var(--smrt-typography-label-large-font, inherit);
-    color: var(--smrt-color-on-surface, currentColor);
-  }
-
-  .actions {
+  .smrt-field-policy-form-preview__actions {
     display: flex;
     gap: var(--smrt-spacing-2, 0.5rem);
     padding-top: var(--smrt-spacing-2, 0.5rem);
   }
+}
 
-  .status {
+@layer smrt.theme {
+  .smrt-field-policy-form-preview__header h2 {
+    font: var(--smrt-typography-headline-small-font, inherit);
+  }
+  .smrt-field-policy-form-preview__description {
+    font: var(--smrt-typography-body-medium-font, inherit);
+    color: var(--smrt-color-on-surface-variant, currentColor);
+  }
+  .smrt-field-policy-form-preview__field label {
+    font: var(--smrt-typography-label-large-font, inherit);
+    color: var(--smrt-color-on-surface, currentColor);
+  }
+  .smrt-field-policy-form-preview__status {
     font: var(--smrt-typography-body-medium-font, inherit);
     color: var(--smrt-color-primary);
   }
 }
+
 </style>
