@@ -2,8 +2,15 @@
 // directory next to the live one. The directory carries a marker file that only
 // the engine writes; it is what makes a directory a draft (and therefore what
 // allows `autoApprove`, and what lets a discard delete it).
-import { existsSync, readFileSync, realpathSync, writeFileSync } from 'node:fs';
-import { join, resolve } from 'node:path';
+import {
+  existsSync,
+  lstatSync,
+  readFileSync,
+  realpathSync,
+  rmSync,
+  writeFileSync,
+} from 'node:fs';
+import { dirname, join, resolve, sep } from 'node:path';
 import { EngineError } from './errors.ts';
 
 export const DRAFT_MARKER_FILE = '.smrt-draft.json';
@@ -74,4 +81,51 @@ export function writeDraftMarker(
     flag: 'wx',
   });
   return marker;
+}
+
+/** True when `inner` is `outer` or lies under it. */
+export function isInside(inner: string, outer: string): boolean {
+  const a = realDir(inner);
+  const b = realDir(outer);
+  return a === b || a.startsWith(b.endsWith(sep) ? b : b + sep);
+}
+
+/**
+ * Where a new draft may go: a path that does not exist yet, whose parent does
+ * (or can), that is neither the live directory nor inside it nor contains it
+ * (a discard deletes the whole draft directory, so it must never reach live).
+ */
+export function checkDraftPath(draftDir: string, liveDir: string): string {
+  const abs = resolve(draftDir);
+  const target = join(realDir(dirname(abs)), abs.slice(dirname(abs).length));
+  if (isInside(target, liveDir) || isInside(liveDir, target))
+    throw new EngineError(
+      'the draft directory must be separate from the live data directory',
+      'refused',
+    );
+  if (existsSync(abs))
+    throw new EngineError(`${abs} already exists`, 'refused');
+  return abs;
+}
+
+/**
+ * Delete a draft directory. Only a directory that holds the draft marker (so
+ * one the engine made), is not a symlink and does not contain the live
+ * directory it names. Nothing else is ever removed.
+ */
+export function removeDraftDirectory(dataDir: string): void {
+  const marker = readDraftMarker(dataDir);
+  if (!marker)
+    throw new EngineError(
+      `${dataDir} is not a draft directory, so it is not removed`,
+      'refused',
+    );
+  if (lstatSync(dataDir).isSymbolicLink())
+    throw new EngineError(`${dataDir} is a symlink; not removed`, 'refused');
+  if (isInside(marker.liveDir, dataDir))
+    throw new EngineError(
+      `${dataDir} contains the live data directory; not removed`,
+      'refused',
+    );
+  rmSync(dataDir, { recursive: true, force: true });
 }

@@ -42,6 +42,10 @@ export {
   validate,
 } from './definition.ts';
 export {
+  type DraftMarker,
+  removeDraftDirectory as discardDraftDirectory,
+} from './draft.ts';
+export {
   AppError,
   ApprovalRequiredError,
   EngineError,
@@ -53,6 +57,7 @@ export {
   type ChangeResult,
   type CleanUpResult,
   type ExecuteResult,
+  type ForkDraftOptions,
   type HostOptions,
   type MethodResult,
   type RestResult,

@@ -93,6 +93,19 @@ is documented here; the shell's tables, approvals and UI sit on top.
   refuses it unless the directory holds the engine's draft marker
   (`.smrt-draft.json`, written only by `forkDraft`) naming a different live
   directory. A live directory never has a marker.
+- **`live.forkDraft(draftDir, { store })`** (queue, calls drained): worker op
+  `copyTo(path)` is `VACUUM INTO` (one consistent state, no -wal/-shm needed).
+  The call creates `draftDir` (must not exist, must not be/contain/lie inside
+  live), copies `app.db`, writes the marker, seeds the EMPTY draft store with
+  a copy of live's current record (the draft's BASE, same version number; not
+  a draft version) and returns a draft host (`host.draft` is the marker,
+  `autoApprove` on). Failure removes only the directory it just created. A
+  draft can neither fork nor `undo` below its base. Draft versions are
+  numbered `maxVersion + 1` in the draft store. `draft.discard()` closes the
+  host and deletes its directory, only if it holds the marker, is not a symlink
+  and does not contain the live directory (`discardDraftDirectory(dir)` does the
+  same for an orphan). A restart reopens a draft with
+  `AppHost.open(dir, { store, autoApprove: true })`.
 - **Queued calls.** `onApp` (records, tools, REST) waits until the change queue
   is idle and stable, then runs in the same synchronous step; it counts
   in-flight calls so a change can wait for them (needed for consistent copies).

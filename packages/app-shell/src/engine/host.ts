@@ -7,8 +7,8 @@
 // The host touches only `dataDir`: app.db, snapshots/*.db, and the archives
 // inside app.db. Plain files, no symlinks.
 import { EventEmitter } from 'node:events';
-import { existsSync, mkdirSync } from 'node:fs';
-import { join } from 'node:path';
+import { existsSync, mkdirSync, rmSync } from 'node:fs';
+import { dirname, join } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import {
   type Command,
@@ -38,7 +38,14 @@ import {
   toolNamesFor,
   validate,
 } from './definition.ts';
-import { type DraftMarker, readDraftMarker, sameDir } from './draft.ts';
+import {
+  checkDraftPath,
+  type DraftMarker,
+  readDraftMarker,
+  removeDraftDirectory,
+  sameDir,
+  writeDraftMarker,
+} from './draft.ts';
 import { ApprovalRequiredError, EngineError } from './errors.ts';
 import { checkSyntax } from './sandbox.ts';
 import type { VersionRecord, VersionStore } from './store.ts';
@@ -66,6 +73,16 @@ export interface HostOptions {
    * there is no setter, so it cannot be turned on later or for the live host.
    */
   autoApprove?: boolean;
+}
+
+export interface ForkDraftOptions {
+  /**
+   * The new draft's version store, EMPTY. `forkDraft` seeds it with a copy of
+   * the live current version (the draft's BASE record, same version number)
+   * and points `current` at it; every draft version after that has a higher
+   * number. The base record is not a draft version.
+   */
+  store: VersionStore;
 }
 
 export interface ChangeResult {
@@ -152,7 +169,7 @@ export class AppHost extends EventEmitter {
   private frozenNow = false;
   /** Set when this host is a draft copy (its directory holds the draft marker). */
   readonly draft: DraftMarker | null;
-  /** Record/tool/REST calls currently inside the worker. */
+  /** Record/tool/REST calls currently inside the worker (see {@link drainInflight}). */
   private inflight = 0;
   private idleWaiters: (() => void)[] = [];
   /** Changes are applied one at a time. Work inside the queue must not wait on it. */
@@ -706,6 +723,9 @@ export class AppHost extends EventEmitter {
   }
 
   private async analyseUndo(pin?: number): Promise<Analysis> {
+    // The base of a draft is a live version: its archives are live's, not this copy's.
+    if (this.draft && this.version === this.draft.baseVersion)
+      throw new EngineError('nothing to undo in the draft', 'refused');
     const rec = await this.store.get(this.version);
     if (!rec || rec.parent == null)
       throw new EngineError('nothing to undo', 'refused');
@@ -981,6 +1001,77 @@ export class AppHost extends EventEmitter {
         for (const w of waiters) w();
       }
     }
+  }
+
+  /**
+   * Wait for the calls already inside the worker to finish. Used inside the
+   * change queue, where no new call can start (see {@link onApp}), before a
+   * consistent copy of the data is taken.
+   */
+  private async drainInflight() {
+    while (this.inflight > 0)
+      await new Promise<void>((r) => this.idleWaiters.push(r));
+  }
+
+  // ---------- drafts ----------
+
+  /**
+   * Start a draft: copy the live data into `draftDir` (a directory that must
+   * not exist yet; this call creates it) and return a second host over the
+   * copy, with `autoApprove` on. The copy is a `VACUUM INTO` taken in the
+   * change queue with no call in flight, so it is one consistent state; live is
+   * only read. If anything fails, the directory this call created is removed.
+   * Only an ordinary (live) host can fork. Live may keep serving records while
+   * the draft is open; the caller freezes live structure with `setFrozen`.
+   */
+  forkDraft(draftDir: string, opts: ForkDraftOptions): Promise<AppHost> {
+    if (this.draft)
+      return Promise.reject(
+        new EngineError('a draft cannot be forked again', 'refused'),
+      );
+    return this.run(async () => {
+      const dir = checkDraftPath(draftDir, this.dataDir);
+      if ((await opts.store.current()) !== null)
+        throw new EngineError(
+          'the draft needs an empty version store',
+          'refused',
+        );
+      const base = await this.store.get(this.version);
+      if (!base)
+        throw new EngineError(
+          `version ${this.version} is missing`,
+          'not_found',
+        );
+      await this.drainInflight();
+      mkdirSync(dirname(dir), { recursive: true });
+      mkdirSync(dir); // EEXIST: someone else made it first; not ours to remove
+      try {
+        await this.callApp('copyTo', join(dir, 'app.db'));
+        writeDraftMarker(dir, this.dataDir, base.version);
+        await opts.store.append(structuredClone(base));
+        await opts.store.setCurrent(base.version);
+        return await AppHost.open(dir, {
+          store: opts.store,
+          workerUrl: this.workerUrl,
+          autoApprove: true,
+        });
+      } catch (e) {
+        rmSync(dir, { recursive: true, force: true });
+        throw e;
+      }
+    });
+  }
+
+  /**
+   * Throw this draft away: stop its app and delete its directory (only a
+   * directory holding the draft marker is ever deleted). The caller discards
+   * the draft's version store.
+   */
+  async discard(): Promise<void> {
+    if (!this.draft)
+      throw new EngineError('only a draft can be discarded', 'refused');
+    await this.close();
+    removeDraftDirectory(this.dataDir);
   }
 
   list(model: string, limit = 200) {

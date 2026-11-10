@@ -3,8 +3,8 @@
 //
 // Migrations here are SQLite-shaped (RENAME/DROP COLUMN, VACUUM INTO,
 // pragma_table_info). Postgres is future work.
-import { mkdirSync } from 'node:fs';
-import { join } from 'node:path';
+import { existsSync, mkdirSync } from 'node:fs';
+import { isAbsolute, join } from 'node:path';
 import {
   ObjectRegistry,
   planRuntimeModelDDL,
@@ -458,6 +458,20 @@ export class AppRuntime {
     if (safe.startsWith('method-'))
       pruneMethodSnapshots(join(this.dataDir, 'snapshots'));
     return file;
+  }
+
+  /**
+   * A consistent, standalone copy of app.db at `path` (VACUUM INTO: one
+   * statement, so it sees a single committed state, and it needs no -wal or
+   * -shm file next to it). Refuses a path that exists. The host calls it with
+   * no change running and no call in flight.
+   */
+  async copyTo(path: string) {
+    if (typeof path !== 'string' || !isAbsolute(path))
+      throw new AppError('copyTo needs an absolute path');
+    if (existsSync(path)) throw new AppError(`${path} already exists`);
+    await this.db.query(`VACUUM INTO '${path.replace(/'/g, "''")}'`);
+    return path;
   }
 
   /** Delete migrate/schema snapshots taken before `beforeMs` (clean up). */
