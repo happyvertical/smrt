@@ -172,13 +172,13 @@ async function confirmAction() {
 </script>
 
 {#if runs.length === 0}
-  <p class="run-list-empty" data-smrt-component="ProductionRunList">
+  <p class="smrt-production-run-list__empty" data-smrt-component="ProductionRunList">
     {emptyMessage ?? t(M['manufacturing.production_run_list.empty'])}
   </p>
 {:else}
-  <div class="run-list-scroll" data-smrt-component="ProductionRunList">
-    <table class="run-list">
-      <caption class="run-list-caption">{t(M['manufacturing.production_run_list.caption'])}</caption>
+  <div class="smrt-production-run-list__root" data-smrt-component="ProductionRunList">
+    <table class="smrt-production-run-list__table" data-smrt-part="table">
+      <caption class="smrt-production-run-list__caption" data-smrt-part="caption">{t(M['manufacturing.production_run_list.caption'])}</caption>
       <thead>
         <tr>
           <th scope="col">{t(M['manufacturing.production_run_list.build'])}</th>
@@ -201,7 +201,7 @@ async function confirmAction() {
           {@const errorId = `${uid}-${run.id}-error`}
           <tr>
             <th scope="row">{run.label}</th>
-            <td class="run-list-progress">
+            <td class="smrt-production-run-list__progress" data-smrt-part="progress">
               <ProgressBar
                 value={run.completedQty}
                 max={run.targetQty > 0 ? run.targetQty : 1}
@@ -247,7 +247,7 @@ async function confirmAction() {
                     </Button>
                   </Form>
                   {#if errors[run.id]}
-                    <p class="run-list-error" id={errorId} role="alert">{errors[run.id]}</p>
+                    <p class="smrt-production-run-list__error" data-smrt-part="error" id={errorId} role="alert">{errors[run.id]}</p>
                   {/if}
                 {/if}
               </td>
@@ -256,7 +256,7 @@ async function confirmAction() {
               {@const manageErrorId = `${uid}-${run.id}-manage-error`}
               <td>
                 {#if isProductionRunOpen(run.status)}
-                  <div class="run-list-manage">
+                  <div class="smrt-production-run-list__manage" data-smrt-part="form">
                     {#if onsettarget}
                       <Form class="run-list-report" onsubmit={() => setTarget(run)}>
                         <Input
@@ -286,7 +286,7 @@ async function confirmAction() {
                       </Form>
                     {/if}
                     {#if onfinish || oncancel}
-                      <div class="run-list-actions">
+                      <div class="smrt-production-run-list__actions" data-smrt-part="actions">
                         {#if onfinish}
                           <Button
                             type="button"
@@ -315,7 +315,7 @@ async function confirmAction() {
                     {/if}
                   </div>
                   {#if manageErrors[run.id]}
-                    <p class="run-list-error" id={manageErrorId} role="alert">{manageErrors[run.id]}</p>
+                    <p class="smrt-production-run-list__error" data-smrt-part="error" id={manageErrorId} role="alert">{manageErrors[run.id]}</p>
                   {/if}
                 {/if}
               </td>
@@ -349,64 +349,69 @@ async function confirmAction() {
 
 <style>
 @layer smrt.reset, smrt.structure, smrt.theme;
-@layer smrt.theme {
-  .run-list-scroll {
+@layer smrt.structure {
+  .smrt-production-run-list__root {
     overflow-x: auto;
   }
-
-  .run-list {
+  .smrt-production-run-list__table {
     width: 100%;
-    border-collapse: collapse;
   }
-
-  .run-list-caption {
-    text-align: left;
-    font-weight: var(--smrt-typography-title-medium-weight, 500);
+  .smrt-production-run-list__caption {
     padding-bottom: 0.5rem;
   }
-
-  .run-list th,
-  .run-list td {
+  .smrt-production-run-list__table th,
+  .smrt-production-run-list__table td {
     padding: 0.5rem;
-    text-align: left;
-    vertical-align: top;
-    border-bottom: var(--smrt-hairline);
   }
-
-  .run-list-progress {
+  .smrt-production-run-list__progress {
     min-width: 10rem;
   }
-
-  .run-list :global(.run-list-report) {
+  .smrt-production-run-list__table :global(.run-list-report) {
     display: flex;
     gap: 0.5rem;
     align-items: center;
   }
-
-  .run-list :global(.run-list-report input) {
+  .smrt-production-run-list__table :global(.run-list-report input) {
     width: 6rem;
   }
-
-  .run-list-manage {
+  .smrt-production-run-list__manage {
     display: flex;
     flex-wrap: wrap;
     gap: 0.5rem;
     align-items: center;
   }
-
-  .run-list-actions {
+  .smrt-production-run-list__actions {
     display: flex;
     gap: 0.5rem;
   }
-
-  .run-list-error {
+  .smrt-production-run-list__error {
     margin: 0.25rem 0 0;
+  }
+  .smrt-production-run-list__empty {
+    margin: 0;
+  }
+}
+
+@layer smrt.theme {
+  .smrt-production-run-list__table {
+    border-collapse: collapse;
+  }
+  .smrt-production-run-list__caption {
+    text-align: left;
+    font-weight: var(--smrt-typography-title-medium-weight, 500);
+  }
+  .smrt-production-run-list__table th,
+  .smrt-production-run-list__table td {
+    text-align: left;
+    vertical-align: top;
+    border-bottom: var(--smrt-hairline);
+  }
+  .smrt-production-run-list__error {
     color: var(--smrt-color-error, inherit);
   }
-
-  .run-list-empty {
-    margin: 0;
+  .smrt-production-run-list__empty {
     color: var(--smrt-color-on-surface-variant, inherit);
   }
 }
+
 </style>
