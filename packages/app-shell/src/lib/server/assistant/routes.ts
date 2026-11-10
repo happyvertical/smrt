@@ -228,7 +228,11 @@ export function mountAssistantRoutes(
                       thread,
                       text: message,
                       tool,
-                      mcpUrl: new URL('/mcp', event.url.origin).href,
+                      // `scope=assistant`: the copies are resolved per call
+                      // from the owner's state (draft open, view), see
+                      // assistant/scope.ts. A plain /mcp is live-only.
+                      mcpUrl: new URL('/mcp?scope=assistant', event.url.origin)
+                        .href,
                       signal: event.request.signal,
                       emit,
                       deps: agent(),

@@ -5,7 +5,7 @@ import { createServer, type Server } from 'node:http';
 import type { AddressInfo } from 'node:net';
 import { createLocalMcpTokenAuth } from '@happyvertical/smrt-app-mcp/auth';
 import { mountMcpRoute } from '@happyvertical/smrt-app-mcp/sveltekit';
-import { createShellMcpServer } from '../mcp-server.ts';
+import { createShellMcpServer, type ScopeResolver } from '../mcp-server.ts';
 import { type Principal, runAs } from '../owner.ts';
 
 export interface TestMcp {
@@ -17,10 +17,17 @@ export interface TestMcp {
   close(): Promise<void>;
 }
 
-export async function startTestMcp(owner: Principal): Promise<TestMcp> {
+/**
+ * `resolve` is the copy the URL names (default live); `assistantScope` is
+ * what `/mcp?scope=assistant` uses.
+ */
+export async function startTestMcp(
+  owner: Principal,
+  resolve?: ScopeResolver,
+): Promise<TestMcp> {
   let live: string | null = null;
   let url = '';
-  const handler = mountMcpRoute(createShellMcpServer(), {
+  const handler = mountMcpRoute(createShellMcpServer(resolve), {
     checkOrigin: true,
     auth: () =>
       createLocalMcpTokenAuth({

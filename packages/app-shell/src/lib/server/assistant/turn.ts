@@ -20,6 +20,7 @@ import { getApprovalView } from '../approvals.ts';
 import type { CatalogResponse, CatalogTool } from '../catalog.ts';
 import { PolicyError, type Principal } from '../owner.ts';
 import { callTool, toolsFor } from '../policy.ts';
+import { type CallScope, LIVE_SCOPE, type Target } from '../target.ts';
 import { describeModelError } from './diagnostics.ts';
 import { systemPrompt } from './guidance.ts';
 import { type HoldOutcome, holdForUser } from './hold.ts';
@@ -28,6 +29,12 @@ import {
   ModelFailure,
   type ModelToolCall,
 } from './model.ts';
+import {
+  assistantMode,
+  copyNote,
+  type ModeContext,
+  STRUCTURAL_TOOLS,
+} from './scope.ts';
 import { appendMessage, historyFor } from './threads.ts';
 
 export interface TurnLimits {
@@ -67,11 +74,15 @@ export const ASSISTANT_DENIED_TOOLS: ReadonlySet<string> = new Set([
 
 const TOOL_NAME = /^[A-Za-z0-9_-]{1,64}$/;
 
-/** The tools offered to the model: the owner's allow-list minus the deny list. */
+/**
+ * The tools offered to the model: the owner's allow-list minus the deny list,
+ * for the copies `scope` names (see scope.ts).
+ */
 export async function assistantTools(
   principal: Principal,
+  scope: CallScope = LIVE_SCOPE,
 ): Promise<CatalogTool[]> {
-  return (await toolsFor(principal)).filter(
+  return (await toolsFor(principal, scope)).filter(
     (t) => TOOL_NAME.test(t.name) && !ASSISTANT_DENIED_TOOLS.has(t.name),
   );
 }
@@ -159,6 +170,8 @@ interface CallOutcome {
   ok: boolean;
   summary: string;
   approvalId?: string;
+  /** Which copy the call acted on, when a draft is open. */
+  copy?: Target;
   /** Stop the turn after this call (an approval left undecided / aborted). */
   stop?: TurnStop;
 }
@@ -174,7 +187,16 @@ export async function runTurn(options: RunTurnOptions): Promise<TurnStop> {
   await appendMessage(thread, { role: 'user', content: options.text });
   const history: AIMessage[] = await historyFor(thread.id as string);
 
-  const finish = (stop: TurnStop): TurnStop => {
+  // The mode of the last structural change made while a draft was open: the
+  // turn ends by telling the person which copy it was.
+  let changedIn: ModeContext | null = null;
+  const finish = async (stop: TurnStop): Promise<TurnStop> => {
+    const note = changedIn ? copyNote(changedIn) : null;
+    if (note) {
+      changedIn = null;
+      emit({ type: 'text', delta: `\n\n${note}` });
+      await appendMessage(thread, { role: 'assistant', content: note });
+    }
     emit({ type: 'done', stop });
     return stop;
   };
@@ -198,19 +220,24 @@ export async function runTurn(options: RunTurnOptions): Promise<TurnStop> {
     } catch {
       return refuse('The arguments were not a JSON object. Nothing was run.');
     }
+    // Which copies this call acts on, resolved NOW (a draft started earlier in
+    // this turn already counts) and passed down explicitly.
+    const mode = await assistantMode(principal);
     // Offer gate: only what was offered, re-checked against a fresh listing
     // (the catalog changes with the app) and the deny list.
     if (
       !offered.has(call.name) ||
       ASSISTANT_DENIED_TOOLS.has(call.name) ||
-      !(await assistantTools(principal)).some((t) => t.name === call.name)
+      !(await assistantTools(principal, mode.scope)).some(
+        (t) => t.name === call.name,
+      )
     )
       return refuse(`There is no tool named ${call.name}. Nothing was run.`);
     let response: CatalogResponse;
     const started = Date.now();
     try {
       // Execution gate: callTool authorizes again (owner, catalog).
-      response = await callTool(principal, call.name, args);
+      response = await callTool(principal, call.name, args, mode.scope);
     } catch (error) {
       activeMs += Date.now() - started;
       if (error instanceof PolicyError) return refuse(error.message);
@@ -227,7 +254,28 @@ export async function runTurn(options: RunTurnOptions): Promise<TurnStop> {
     if (!pending) {
       const text = cut(textOf(response), limits.toolResultChars);
       const ok = response.isError !== true;
-      return { ok, summary: oneLine(text), content: text };
+      const structural = STRUCTURAL_TOOLS.has(call.name);
+      const copy: Target | undefined = !mode.draft
+        ? undefined
+        : structural
+          ? mode.scope.structure
+          : offered.get(call.name)?.side === 'app'
+            ? mode.scope.records
+            : undefined;
+      if (ok && structural && mode.draft) changedIn = mode;
+      // The model is told which copy it acted on, so it can say so.
+      const where =
+        copy === 'draft'
+          ? `[This acted on the draft "${mode.draft}", not the live app.] `
+          : copy === 'live'
+            ? '[This acted on the live app.] '
+            : '';
+      return {
+        ok,
+        summary: oneLine(text),
+        content: `${where}${text}`,
+        ...(copy ? { copy } : {}),
+      };
     }
     emit({
       type: 'approval_required',
@@ -351,7 +399,8 @@ export async function runTurn(options: RunTurnOptions): Promise<TurnStop> {
       return finish('timeout');
     }
 
-    const tools = await assistantTools(principal);
+    const mode = await assistantMode(principal);
+    const tools = await assistantTools(principal, mode.scope);
     const offered = new Map(tools.map((t) => [t.name, t]));
 
     let streamed = false;
@@ -365,7 +414,7 @@ export async function runTurn(options: RunTurnOptions): Promise<TurnStop> {
     let reply: Awaited<ReturnType<AssistantModel['complete']>>;
     try {
       reply = await options.model.complete({
-        messages: [{ role: 'system', content: systemPrompt() }, ...history],
+        messages: [{ role: 'system', content: systemPrompt(mode) }, ...history],
         tools: tools.map(toAiTool),
         maxTokens: limits.maxTokensPerCall,
         signal: callSignal,
@@ -455,6 +504,7 @@ export async function runTurn(options: RunTurnOptions): Promise<TurnStop> {
         name: call.name,
         ok: outcome.ok,
         summary: outcome.summary,
+        ...(outcome.copy ? { copy: outcome.copy } : {}),
       });
       const meta = {
         id: call.id,

@@ -24,6 +24,13 @@ import { getApprovalView } from '../approvals.ts';
 import { subscribe } from '../events.ts';
 import type { Principal } from '../owner.ts';
 import { systemPrompt } from './guidance.ts';
+import {
+  assistantMode,
+  copyNote,
+  LIVE_MODE,
+  type ModeContext,
+  STRUCTURAL_TOOLS,
+} from './scope.ts';
 import { appendMessage, lastCliSession } from './threads.ts';
 import { ASSISTANT_DENIED_TOOLS } from './turn.ts';
 
@@ -58,8 +65,8 @@ files and no web. If a tool answers \`pending_approval\`, the change is waiting
 for the person's Approve or Deny card: say in one sentence what is waiting, then
 stop. Do not call it again and do not look for another way to apply it.`;
 
-export function agentSystemPrompt(): string {
-  return `${systemPrompt()}\n${ADDENDUM}`;
+export function agentSystemPrompt(mode: ModeContext = LIVE_MODE): string {
+  return `${systemPrompt(mode)}\n${ADDENDUM}`;
 }
 
 function cut(text: string, max: number): string {
@@ -158,6 +165,7 @@ export async function runAgentTurn(
       });
   });
 
+  let changedIn: ModeContext | null = null;
   let pendingText = '';
   let streamedAny = false;
   let sawTool = false;
@@ -254,12 +262,25 @@ export async function runAgentTurn(
         const summary = approvalId
           ? 'Waiting for your decision'
           : oneLine(text);
+        // Which copy it acted on (the /mcp scope=assistant request resolved it
+        // from the same state), so the card and the closing note can say so.
+        const mode = approvalId ? null : await assistantMode(options.principal);
+        const structural = STRUCTURAL_TOOLS.has(name);
+        const copy = !mode?.draft
+          ? undefined
+          : structural
+            ? mode.scope.structure
+            : /^(app|approval)_/.test(name)
+              ? undefined
+              : mode.scope.records;
+        if (mode?.draft && structural && event.ok) changedIn = mode;
         emit({
           type: 'tool_result',
           id: event.id,
           name,
           ok: event.ok,
           summary,
+          ...(copy ? { copy } : {}),
         });
         await appendMessage(thread, {
           role: 'tool',
@@ -288,7 +309,7 @@ export async function runAgentTurn(
       stateDir: await deps.stateDir(),
       mcpUrl: options.mcpUrl,
       token,
-      systemPrompt: agentSystemPrompt(),
+      systemPrompt: agentSystemPrompt(await assistantMode(options.principal)),
       prompt: options.text,
       resumeId: resume,
       ...(deps.baseEnv ? { baseEnv: deps.baseEnv } : {}),
@@ -380,6 +401,12 @@ export async function runAgentTurn(
           waiting = true;
       }
       stop = waiting ? 'waiting' : 'complete';
+    }
+    // A structural change made while a draft was open: say which copy it was.
+    const note = changedIn ? copyNote(changedIn) : null;
+    if (note) {
+      pendingText += `${pendingText ? '\n\n' : ''}${note}`;
+      emit({ type: 'text', delta: `\n\n${note}` });
     }
     if (pendingText || sessionId)
       await appendMessage(thread, {

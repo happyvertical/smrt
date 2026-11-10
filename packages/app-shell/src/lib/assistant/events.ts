@@ -22,6 +22,12 @@ export type TurnEvent =
       name: string;
       ok: boolean;
       summary: string;
+      /**
+       * Which copy of the app the call acted on. Only set while a draft is
+       * open (builder tools: the draft; the app's record tools: the copy the
+       * person is viewing).
+       */
+      copy?: 'live' | 'draft';
     }
   | {
       type: 'approval_required';
