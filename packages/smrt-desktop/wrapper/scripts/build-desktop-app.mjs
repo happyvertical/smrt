@@ -1,6 +1,10 @@
 #!/usr/bin/env node
-// Builds the generic desktop example app (examples/generic-app) from this
-// checkout and bundles it with `smrt desktop bundle`.
+// Builds a desktop example app from this checkout and bundles it with
+// `smrt desktop bundle`. Two apps are known (APPS below):
+//
+//   generic  examples/generic-app: the repository's own SvelteKit template.
+//   tricia   examples/tricia: the app shell (packages/app-shell), the
+//            desktop MVP product.
 //
 // Why a registry. The bundler installs production dependencies from the app's
 // own pnpm-lock.yaml and refuses anything that is not a registry package
@@ -13,12 +17,14 @@
 // the app against that registry, and bundles it. Nothing is published
 // anywhere else, no credential is read, and everything lives under --out.
 //
-//   node build-generic-app.mjs --out <dir outside the checkout> \
+//   node build-desktop-app.mjs --out <dir outside the checkout> \
+//     [--app generic|tricia] \
 //     [--targets aarch64-apple-darwin,x86_64-unknown-linux-gnu] [--measure] \
 //     [--port <n>] [--bridge <file>]
 //
-// Prerequisite: the workspace is installed and built for the template
-// (`pnpm turbo run build --filter=@happyvertical/smrt-template-sveltekit...`).
+// Prerequisite: the workspace is installed and the app's packages are built
+// (generic: `pnpm turbo run build --filter=@happyvertical/smrt-template-sveltekit...`;
+// tricia: `--filter=@happyvertical/smrt-app-shell...` plus the cli and app-cli).
 // POSIX hosts only (the CI job runs on Linux; the targets are cross-bundled).
 
 import { spawn, spawnSync } from 'node:child_process';
@@ -38,6 +44,25 @@ import { fileURLToPath, pathToFileURL } from 'node:url';
 
 const here = dirname(fileURLToPath(import.meta.url));
 const repoRoot = resolve(here, '..', '..', '..', '..');
+
+/**
+ * The apps this script can build. `source` says where the application tree
+ * comes from: the SvelteKit template, or a copy of the app shell. `example` is
+ * the directory under examples/ with `smrt-desktop.json` (and an optional
+ * `overlay/`).
+ */
+export const APPS = Object.freeze({
+  generic: Object.freeze({
+    example: 'generic-app',
+    source: 'template',
+    packageName: 'generic-smrt-app',
+  }),
+  tricia: Object.freeze({
+    example: 'tricia',
+    source: 'app-shell',
+    packageName: '@happyvertical/tricia-app',
+  }),
+});
 
 /** Exact Verdaccio release (older than two weeks), installed with no scripts. */
 export const VERDACCIO_VERSION = '6.2.4';
@@ -147,8 +172,135 @@ export function isInside(parent, child) {
   return rel === '' || (!rel.startsWith('..') && !rel.startsWith(sep));
 }
 
+/**
+ * The `catalog:` block of a pnpm-workspace.yaml as name -> range. Only the
+ * flat `name: range` form the repository uses (optionally quoted).
+ */
+export function parseCatalog(yamlText) {
+  const catalog = new Map();
+  let inside = false;
+  for (const line of yamlText.split('\n')) {
+    if (/^catalog:\s*$/.test(line)) {
+      inside = true;
+      continue;
+    }
+    if (!inside) continue;
+    if (/^\S/.test(line)) break;
+    const match = /^\s+(?:'([^']+)'|"([^"]+)"|([^\s:'"]+)):\s*(.+?)\s*$/.exec(line);
+    if (match) {
+      catalog.set(match[1] ?? match[2] ?? match[3], match[4].replace(/^['"]|['"]$/g, ''));
+    }
+  }
+  return catalog;
+}
+
+/** Dev dependencies the built app does not need (they only run its tests). */
+const SHELL_DROPPED_DEV = new Set(['@happyvertical/smrt-vitest', 'vitest']);
+
+/**
+ * The `package.json` of the Tricia application tree, derived from the app
+ * shell's: `workspace:*` and `catalog:` become the ranges `pnpm pack` would
+ * publish (the local registry serves exactly the workspace versions), the test
+ * tooling is dropped, and the shell package itself is added as a dependency.
+ * The shell's build marks `@happyvertical/smrt-app-shell` external and
+ * resolves its engine worker from that package at run time, so the bundle
+ * must contain it as a registry package, exactly as any consumer app would.
+ */
+export function shellAppManifest(shell, packages, catalog, { packageName, packageManager }) {
+  const resolveRange = (name, range) => {
+    if (range === 'catalog:' || range === 'catalog:default') {
+      const resolved = catalog.get(name);
+      if (!resolved) throw new Error(`${name} has no catalog entry`);
+      return resolved;
+    }
+    if (range.startsWith('workspace:')) {
+      const workspace = packages.get(name);
+      if (!workspace) throw new Error(`${name} is not a workspace package`);
+      return `^${workspace.json.version}`;
+    }
+    return range;
+  };
+  const resolveAll = (map, drop = new Set()) =>
+    Object.fromEntries(
+      Object.entries(map ?? {})
+        .filter(([name]) => !drop.has(name))
+        .map(([name, range]) => [name, resolveRange(name, range)]),
+    );
+  const dependencies = resolveAll(shell.json.dependencies);
+  dependencies[shell.json.name] = `^${shell.json.version}`;
+  return {
+    name: packageName,
+    version: shell.json.version,
+    private: true,
+    type: 'module',
+    packageManager,
+    engines: shell.json.engines,
+    scripts: {
+      build: 'svelte-kit sync && vite build',
+      start: 'node build',
+    },
+    dependencies: Object.fromEntries(
+      Object.entries(dependencies).sort(([a], [b]) => a.localeCompare(b)),
+    ),
+    devDependencies: resolveAll(shell.json.devDependencies, SHELL_DROPPED_DEV),
+  };
+}
+
+/**
+ * Whether a path (relative to the app shell, POSIX separators) belongs in the
+ * Tricia application tree: its source, config and static files, without its
+ * tests, its package-only tooling or anything generated (the smrt() Vite plugin
+ * regenerates the generated routes and types in the copy).
+ */
+export function shellFileWanted(rel) {
+  if (/\.test\.(?:ts|mjs|js)$/.test(rel)) return false;
+  const generated = [
+    'src/lib/server/smrt-register.ts',
+    'src/lib/types/smrt-generated/',
+    'src/types/smrt-generated/',
+    'src/routes/api/apps/',
+    'src/routes/api/approvals/',
+    'src/routes/api/_changes/',
+    'src/routes/api/_events/',
+    'src/routes/api/_resources/',
+  ];
+  if (generated.some((prefix) => rel === prefix || rel.startsWith(prefix))) return false;
+  return (
+    rel === 'smrt.config.ts' ||
+    rel === 'svelte.config.js' ||
+    rel === 'tsconfig.json' ||
+    rel === 'vite.config.ts' ||
+    rel === 'tools/manifest-guard.ts' ||
+    rel.startsWith('src/') ||
+    rel.startsWith('static/')
+  );
+}
+
+/** Every wanted file under the app shell, relative, sorted. */
+export function listShellFiles(shellDir) {
+  const found = [];
+  const walk = (dir, prefix) => {
+    for (const entry of readdirSync(dir, { withFileTypes: true })) {
+      const rel = `${prefix}/${entry.name}`;
+      if (entry.isDirectory()) walk(join(dir, entry.name), rel);
+      else if (entry.isFile() && shellFileWanted(rel)) found.push(rel);
+    }
+  };
+  for (const top of ['src', 'static', 'tools']) {
+    if (existsSync(join(shellDir, top))) walk(join(shellDir, top), top);
+  }
+  for (const file of ['smrt.config.ts', 'svelte.config.js', 'tsconfig.json', 'vite.config.ts']) {
+    if (existsSync(join(shellDir, file))) found.push(file);
+  }
+  return found.sort();
+}
+
+/** The pnpm workspace file of an app tree: only the build scripts it needs. */
+export const SHELL_APP_WORKSPACE_YAML = 'allowBuilds:\n  esbuild: true\n  protobufjs: true\n';
+
 function parseArgs(argv) {
   const options = {
+    app: 'generic',
     out: undefined,
     targets: [],
     measure: false,
@@ -163,11 +315,15 @@ function parseArgs(argv) {
       return argv[i];
     };
     if (flag === '--out') options.out = value();
+    else if (flag === '--app') options.app = value();
     else if (flag === '--targets') options.targets = value().split(',');
     else if (flag === '--measure') options.measure = true;
     else if (flag === '--port') options.port = Number(value());
     else if (flag === '--bridge') options.bridge = value();
     else throw new Error(`unknown argument ${flag}`);
+  }
+  if (!Object.hasOwn(APPS, options.app)) {
+    throw new Error(`--app must be one of ${Object.keys(APPS).join(', ')}`);
   }
   if (!options.out) throw new Error('--out is required');
   if (options.targets.length === 0) throw new Error('--targets is required');
@@ -302,18 +458,50 @@ function backdateLocalRegistry(root, names) {
   }
 }
 
-async function instantiateApp(root, registryUrl) {
-  const app = join(root, 'app');
-  const templateIndex = join(repoRoot, 'packages', 'template-sveltekit', 'index.js');
-  const { copyTemplate } = await import(pathToFileURL(templateIndex).href);
-  copyTemplate(app, { name: 'generic-smrt-app' });
-  const example = join(repoRoot, 'packages', 'smrt-desktop', 'examples', 'generic-app');
-  cpSync(join(example, 'overlay'), app, { recursive: true });
-  cpSync(join(example, 'smrt-desktop.json'), join(app, 'smrt-desktop.json'));
+/** The app's package.json, from which the workspace closure is computed. */
+function appRootManifest(app, packages) {
+  if (app.source === 'template') {
+    return JSON.parse(
+      readFileSync(
+        join(repoRoot, 'packages', 'template-sveltekit', 'template', 'package.json'),
+        'utf8',
+      ),
+    );
+  }
+  const shell = packages.get('@happyvertical/smrt-app-shell');
+  if (!shell) throw new Error('packages/app-shell is missing');
+  const catalog = parseCatalog(readFileSync(join(repoRoot, 'pnpm-workspace.yaml'), 'utf8'));
+  const { packageManager } = JSON.parse(readFileSync(join(repoRoot, 'package.json'), 'utf8'));
+  return shellAppManifest(shell, packages, catalog, {
+    packageName: app.packageName,
+    packageManager,
+  });
+}
+
+async function instantiateApp(app, root, registryUrl, manifest) {
+  const dir = join(root, 'app');
+  const example = join(repoRoot, 'packages', 'smrt-desktop', 'examples', app.example);
+  if (app.source === 'template') {
+    const templateIndex = join(repoRoot, 'packages', 'template-sveltekit', 'index.js');
+    const { copyTemplate } = await import(pathToFileURL(templateIndex).href);
+    copyTemplate(dir, { name: app.packageName });
+  } else {
+    const shellDir = join(repoRoot, 'packages', 'app-shell');
+    for (const rel of listShellFiles(shellDir)) {
+      mkdirSync(dirname(join(dir, rel)), { recursive: true });
+      cpSync(join(shellDir, rel), join(dir, rel));
+    }
+    writeFileSync(join(dir, 'package.json'), `${JSON.stringify(manifest, null, 2)}\n`);
+    writeFileSync(join(dir, 'pnpm-workspace.yaml'), SHELL_APP_WORKSPACE_YAML);
+  }
+  if (existsSync(join(example, 'overlay'))) {
+    cpSync(join(example, 'overlay'), dir, { recursive: true });
+  }
+  cpSync(join(example, 'smrt-desktop.json'), join(dir, 'smrt-desktop.json'));
   // copyTemplate points the scope at the organisation registry; this app
   // resolves everything through the local one.
-  writeFileSync(join(app, '.npmrc'), appNpmrc(registryUrl));
-  return app;
+  writeFileSync(join(dir, '.npmrc'), appNpmrc(registryUrl));
+  return dir;
 }
 
 function buildBridge(root, given) {
@@ -344,25 +532,27 @@ async function main() {
   if (isInside(realpathSync(repoRoot), root)) {
     throw new Error('--out must be outside the repository checkout');
   }
+  const appSpec = APPS[options.app];
   const packages = readWorkspacePackages(repoRoot);
-  const template = JSON.parse(
-    readFileSync(
-      join(repoRoot, 'packages', 'template-sveltekit', 'template', 'package.json'),
-      'utf8',
-    ),
-  );
-  const names = workspaceClosure(packages, template);
+  const manifest = appRootManifest(appSpec, packages);
+  const names = workspaceClosure(packages, manifest);
   console.error(`workspace packages to serve locally: ${names.length}`);
 
   const registry = await startRegistry(root, options.port || (await freePort()));
   try {
     publishWorkspace(packages, names, registry, root);
     backdateLocalRegistry(root, names);
-    const app = await instantiateApp(root, registry.url);
+    const app = await instantiateApp(appSpec, root, registry.url, manifest);
     // The first install resolves the lock against the local registry; the
-    // build runs the app's own `smrt app build` (adapter-node).
+    // build is adapter-node's (`smrt app build` for the template, the same
+    // Vite build for the shell).
     run('pnpm', ['install', '--ignore-scripts'], { cwd: app });
-    run('pnpm', ['exec', 'smrt', 'app', 'build'], { cwd: app });
+    if (appSpec.source === 'template') {
+      run('pnpm', ['exec', 'smrt', 'app', 'build'], { cwd: app });
+    } else {
+      run('pnpm', ['exec', 'svelte-kit', 'sync'], { cwd: app });
+      run('pnpm', ['exec', 'vite', 'build'], { cwd: app });
+    }
     const bridge = buildBridge(root, options.bridge);
     const smrt = join(repoRoot, 'packages', 'cli', 'bin', 'smrt.js');
     for (const target of options.targets) {
@@ -392,7 +582,7 @@ async function main() {
 
 if (process.argv[1] && resolve(process.argv[1]) === fileURLToPath(import.meta.url)) {
   main().catch((error) => {
-    console.error(`build-generic-app: ${error.message}`);
+    console.error(`build-desktop-app: ${error.message}`);
     process.exit(1);
   });
 }

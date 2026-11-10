@@ -10,6 +10,14 @@ Owner sign-in is app-runtime's loopback onboarding URL and `claimOwner()`, and
 local MCP credentials are app-runtime's token store (`openLocalMcpTokenStore`);
 this package does not duplicate either.
 
+## Tricia
+
+[`examples/tricia`](examples/tricia/README.md) is the desktop MVP product: the
+app shell (`packages/app-shell`) with the identity `Tricia`,
+`com.happyvertical.tricia`, built and bundled by the same script
+(`wrapper/scripts/build-desktop-app.mjs --app tricia`). Release and update home:
+GitHub Releases of `happyvertical/tricia`.
+
 ## Generic example app
 
 [`examples/generic-app`](examples/generic-app/README.md) is the first app

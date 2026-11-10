@@ -11,7 +11,20 @@ import {
   redact,
   stagePlan,
   tokenFromSetupLocation,
+  wrapperIdentifier,
 } from './launch-smoke.mjs';
+
+test('the wrapper identifier is the configured one unless a valid override is given', () => {
+  const configured = 'placeholder.invalid.smrt-desktop-wrapper';
+  assert.equal(wrapperIdentifier(configured, undefined), configured);
+  assert.equal(
+    wrapperIdentifier(configured, 'com.happyvertical.tricia.debug'),
+    'com.happyvertical.tricia.debug',
+  );
+  for (const bad of ['', 'nodots', '../x', 'a/b.c', 'a b.c', '.a.b']) {
+    assert.throws(() => wrapperIdentifier(configured, bad), /reverse-domain/, bad);
+  }
+});
 
 test('the data root follows the platform conventions of Tauri app_local_data_dir', () => {
   const identifier = 'placeholder.invalid.smrt-desktop-wrapper';

@@ -532,6 +532,13 @@ matrix) and the signing half of #4836 are `status: blocked` on them.
 4. **Product identity strings** (bundle identifier, display name) in the
    product's `smrt-desktop.json`, plus real product icons: the icons in
    `icons/` are placeholders and no product icons are supplied by the bundle.
+   Tricia's identity is decided and committed
+   (`../examples/tricia/smrt-desktop.json`: `Tricia`, `com.happyvertical.tricia`,
+   `tricia`); its icons are still the placeholders. Its release and update home
+   is GitHub Releases of the public repository `happyvertical/tricia`, where the
+   `latest.json` feed (smrt#4836) will be served. This workflow still publishes
+   to this repository's `desktop-latest` release, so pointing the publish step at
+   that repository is open, and so are the signing secrets and the updater key.
 5. **A gpg-verified Node pin.** The only pin, Node 26.8.1, is `unverified` (see
    `../README.md`, Node pin provenance); a maintainer with `gpg` must run
    `scripts/update-node-pins.mjs`. The signing job reads this committed record,
@@ -608,9 +615,12 @@ cargo test --locked
   under Release pipeline.
 - `.github/workflows/desktop-launch.yml` (path filtered, not required, not part
   of the `Verify build` legs) is the launch smoke for the generic example app
-  (`../examples/generic-app`, smrt#4835). Job `Bundle generic app` builds the
-  app from the repository's template and bundles it for the three desktop
-  targets (`scripts/build-generic-app.mjs`); `Launch generic app (macos |
+  (`../examples/generic-app`, smrt#4835) and for Tricia
+  (`../examples/tricia`, the app shell; macOS arm64 only, triggered by
+  `packages/app-shell/**` too). Job `Bundle <app> app` builds the app (the
+  generic one from the repository's template, Tricia from a copy of
+  `packages/app-shell`) and bundles it for its targets
+  (`scripts/build-desktop-app.mjs --app generic|tricia`); `Launch <app> app (macos |
   windows | linux)` compiles the wrapper without a product (`cargo build
   --locked`) and runs `scripts/launch-smoke.mjs` against that bundle from an
   empty data directory: ready origin in the log, window opened on origin plus
@@ -627,7 +637,7 @@ cargo test --locked
   fixtures of the GitHub API), the minisign verification (keys generated in the
   test), the release asset and feed assembly, and the workflow-structure test
   that keeps the signing secrets out of every build step, plus the pure parts of
-  the launch smoke and the generic app build.
+  the launch smoke and the desktop app build (generic and Tricia).
 
 Manual smoke run: in a debug build the resource directory is the executable directory, so put a
 `sidecar-manifest.json`, the sidecar script and a symlink named like the

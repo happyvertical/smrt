@@ -19,14 +19,14 @@ What is here (the rest is the template):
 
 The bundler installs production dependencies from the app's lockfile and takes
 only registry packages, but this commit's workspace packages are not published.
-`wrapper/scripts/build-generic-app.mjs` therefore serves them from a throwaway
+`wrapper/scripts/build-desktop-app.mjs` therefore serves them from a throwaway
 Verdaccio on a loopback port, copies the template (`copyTemplate`), applies the
 overlay, resolves and builds the app (`smrt app build`, adapter-node) and runs
 `smrt desktop bundle` per target:
 
 ```sh
 pnpm turbo run build --filter='@happyvertical/smrt-template-sveltekit...'
-node packages/smrt-desktop/wrapper/scripts/build-generic-app.mjs \
+node packages/smrt-desktop/wrapper/scripts/build-desktop-app.mjs \
   --out "$(mktemp -d)" --targets aarch64-apple-darwin --measure
 ```
 

@@ -321,7 +321,7 @@ const DESKTOP_LAUNCH_JOBS = Object.freeze({
   bundle: 'ubuntu-latest',
   launch: DESKTOP_MATRIX_RUNS_ON,
 });
-const DESKTOP_LAUNCH_MATRIX_KEYS = ['label', 'runner', 'target', 'binary', 'experimental'];
+const DESKTOP_LAUNCH_MATRIX_KEYS = ['app', 'label', 'runner', 'target', 'binary', 'experimental'];
 
 /** Violations of the rules for desktop-launch.yml (exact jobs, hosted runners only). */
 function desktopLaunchViolations(text) {
@@ -389,7 +389,7 @@ test('desktop-launch jobs and matrix runners come from the explicit list', () =>
   };
   for (const runner of ['self-hosted', 'macos-latest', '[self-hosted, macOS]']) {
     assert.ok(
-      desktopLaunchViolations(mutate('runner: macos-15\n', `runner: ${runner}\n`)).length > 0,
+      desktopLaunchViolations(mutate('app: generic\n            label: macos\n            runner: macos-15\n', `app: generic\n            label: macos\n            runner: ${runner}\n`)).length > 0,
       runner,
     );
   }
@@ -399,7 +399,7 @@ test('desktop-launch jobs and matrix runners come from the explicit list', () =>
     ).length > 0,
   );
   assert.ok(
-    desktopLaunchViolations(mutate('    name: Bundle generic app (${{ matrix.target }})\n    runs-on: ubuntu-latest', '    name: Bundle generic app (${{ matrix.target }})\n    runs-on: macos-15')).length > 0,
+    desktopLaunchViolations(mutate('    name: Bundle ${{ matrix.app }} app (${{ matrix.target }})\n    runs-on: ubuntu-latest', '    name: Bundle ${{ matrix.app }} app (${{ matrix.target }})\n    runs-on: macos-15')).length > 0,
   );
   assert.ok(
     desktopLaunchViolations(`${text}\n  extra:\n    runs-on: ubuntu-latest\n    steps: []\n`).some((v) =>

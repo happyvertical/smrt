@@ -2,7 +2,7 @@
 // Launch smoke for the generic desktop app (smrt#4835).
 //
 // Runs an already built, UNSIGNED wrapper binary against a bundle made by
-// `smrt desktop bundle` (see build-generic-app.mjs) and checks, from an EMPTY
+// `smrt desktop bundle` (see build-desktop-app.mjs) and checks, from an EMPTY
 // data directory, that:
 //   1. the wrapper starts the sidecar and logs the ready origin;
 //   2. the sidecar's health route answers 200 (the app created its schema on
@@ -17,7 +17,7 @@
 //   5. the wrapper quits on request and no process of the sidecar is left.
 //
 //   node launch-smoke.mjs --wrapper <exe> --bundle <bundle dir> \
-//     --triple <rust triple> [--timeout-ms 120000] [--keep]
+//     --triple <rust triple> [--timeout-ms 120000] [--keep] [--identifier <id>]
 //
 // Linux needs a display: run it under `xvfb-run -a`. The wrapper is the
 // debug/no-bundle binary; the bundle's resources and sidecar are placed next
@@ -66,6 +66,22 @@ export function appLocalDataDir({ platform, env, home, identifier }) {
   }
   const base = env.XDG_DATA_HOME || join(home, '.local', 'share');
   return join(base, identifier);
+}
+
+/**
+ * The identifier the wrapper under test was built with: `tauri.conf.json`'s
+ * unless `--identifier` says otherwise. A debug wrapper built with another
+ * identifier (the `identifier` key of the `TAURI_CONFIG` environment variable
+ * at build time) gets its own data directory and its own single-instance socket
+ * (`/tmp/<identifier>_si.sock`), so it can run next to another debug wrapper;
+ * a second launch with the same identifier forwards to the first and exits.
+ */
+export function wrapperIdentifier(configIdentifier, override) {
+  if (override === undefined) return configIdentifier;
+  if (!/^[A-Za-z0-9-]+(?:\.[A-Za-z0-9-]+)+$/.test(override)) {
+    throw new Error('--identifier must be a reverse-domain identifier');
+  }
+  return override;
 }
 
 /** The origin from the wrapper log's `sidecar ready origin=...` line. */
@@ -173,6 +189,7 @@ function parseArgs(argv) {
     else if (flag === '--triple') options.triple = value();
     else if (flag === '--timeout-ms') options.timeoutMs = Number(value());
     else if (flag === '--keep') options.keep = true;
+    else if (flag === '--identifier') options.identifier = value();
     else throw new Error(`unknown argument ${flag}`);
   }
   for (const required of ['wrapper', 'bundle', 'triple']) {
@@ -264,7 +281,7 @@ async function main() {
     readFileSync(join(bundle, 'resources', 'sidecar-manifest.json'), 'utf8'),
   );
   const tauriConfig = JSON.parse(readFileSync(join(wrapperDir, 'tauri.conf.json'), 'utf8'));
-  const identifier = tauriConfig.identifier;
+  const identifier = wrapperIdentifier(tauriConfig.identifier, options.identifier);
 
   const dataRoot = appLocalDataDir({
     platform: process.platform,
