@@ -684,21 +684,21 @@ function keydown(event: KeyboardEvent) {
 }
 </script>
 <svelte:window onkeydown={keydown} />
-<div class="workspace" bind:this={root} data-testid="intake-workspace">
-<div class="list-pane">
+<div class="smrt-triage-view__workspace" data-smrt-part="body" bind:this={root} data-testid="intake-workspace">
+<div class="smrt-triage-view__list" data-smrt-part="list">
 <InboxView bind:this={inbox} {host} {rowAside} {accept} {dropzone} {listPollMs} selectedId={selected} onselect={(id) => request(id)} onitems={listed} onreadstart={readStarted} {stamp} status={rowStatus} resolveInRow={false} />
 </div>
-<section class="item-pane" bind:this={pane} tabindex="-1" aria-label={label ?? t(M['ingestion.selectedItem'])} data-testid="workspace-item" onfocusin={noteField}>
-<div class="queue-nav" role="group" aria-label={t(M['ingestion.workspace'])}>
+<section class="smrt-triage-view__item" data-smrt-part="panel" bind:this={pane} tabindex="-1" aria-label={label ?? t(M['ingestion.selectedItem'])} data-testid="workspace-item" onfocusin={noteField}>
+<div class="smrt-triage-view__queue-nav" data-smrt-part="toolbar" role="group" aria-label={t(M['ingestion.workspace'])}>
 <Button disabled={position === 0 || !rows.length} aria-keyshortcuts="K Alt+ArrowUp" onclick={() => move(-1)}>{t(M['ingestion.previousItem'])}</Button>
 {#if position >= 0}<p data-testid="queue-position">{t(M['ingestion.itemOf'], { index: position + 1, count: rows.length })}</p>{/if}
 <Button disabled={(position >= rows.length - 1 && !more) || !rows.length} aria-keyshortcuts="J Alt+ArrowDown" onclick={() => move(1)}>{t(M['ingestion.nextItem'])}</Button>
 </div>
-<p class="hint">{t(M['ingestion.keyboardHelp'])}</p>
+<p class="smrt-triage-view__hint" data-smrt-part="hint">{t(M['ingestion.keyboardHelp'])}</p>
 <p role="status" data-testid="background-update">{announcement}</p>
 <!-- One persistent live region whose text changes, so the notes are announced reliably. -->
-<p role="status" class="pane-note" data-testid="pane-note">{#if held}<span data-testid="advance-held">{t(M[held === 'unsent' ? 'ingestion.finishedUnsent' : held === 'failed' ? 'ingestion.advanceFailed' : 'ingestion.advanceRetry'])}</span>{:else if done && !selected}<span data-testid="queue-done">{t(M['ingestion.queueDone'])}</span>{/if}</p>
-{#if leaving}<div class="leave" role="group" aria-labelledby="unsaved-leave-note" bind:this={stay} data-testid="unsaved-leave"><p id="unsaved-leave-note">{t(M['ingestion.unsavedLeave'])}</p><Button data-stay onclick={keepEditing}>{t(M['ingestion.stay'])}</Button><Button onclick={discardAndLeave}>{t(M['ingestion.discardLeave'])}</Button></div>{/if}
+<p role="status" class="smrt-triage-view__note" data-smrt-part="message" data-testid="pane-note">{#if held}<span data-testid="advance-held">{t(M[held === 'unsent' ? 'ingestion.finishedUnsent' : held === 'failed' ? 'ingestion.advanceFailed' : 'ingestion.advanceRetry'])}</span>{:else if done && !selected}<span data-testid="queue-done">{t(M['ingestion.queueDone'])}</span>{/if}</p>
+{#if leaving}<div class="smrt-triage-view__leave" data-smrt-part="dialog" role="group" aria-labelledby="unsaved-leave-note" bind:this={stay} data-testid="unsaved-leave"><p id="unsaved-leave-note">{t(M['ingestion.unsavedLeave'])}</p><Button data-stay onclick={keepEditing}>{t(M['ingestion.stay'])}</Button><Button onclick={discardAndLeave}>{t(M['ingestion.discardLeave'])}</Button></div>{/if}
 {#if selected}
 {#key selected}<ReviewView {host} itemId={selected} {pollMs} layout="stacked" {stamp} onview={paneChanged} ondirty={(dirty: boolean) => { paneDirty = dirty; }} onoutcome={outcome} />{/key}
 {:else if !done}<p>{t(M['ingestion.selectItem'])}</p>{/if}
@@ -706,7 +706,70 @@ function keydown(event: KeyboardEvent) {
 </div>
 <style>
 @layer smrt.reset, smrt.structure, smrt.theme;
-@layer smrt.theme {
-.workspace{display:grid;grid-template-columns:minmax(0,1fr);gap:1rem;color:var(--smrt-color-on-surface)}.list-pane,.item-pane{min-width:0}.item-pane{outline-offset:.25rem}.queue-nav{display:flex;flex-wrap:wrap;align-items:center;gap:.5rem;padding-inline:1rem}.queue-nav p,.hint{margin:0}.leave{display:flex;flex-wrap:wrap;align-items:center;gap:.5rem;padding:.75rem 1rem;border:var(--smrt-hairline)}.leave p{margin:0;flex-basis:100%}.hint{padding-inline:1rem;font-size:.875rem}[data-testid='background-update'],.pane-note{padding-inline:1rem;margin:0}@media(min-width:64rem){.workspace{grid-template-columns:minmax(18rem,26rem) minmax(0,1fr)}.list-pane{position:sticky;inset-block-start:0;align-self:start;max-block-size:100vh;overflow:auto}}
+@layer smrt.structure {
+  .smrt-triage-view__workspace {
+    display:grid;
+    grid-template-columns:minmax(0,1fr);
+    gap:1rem;
+  }
+  .smrt-triage-view__list,.smrt-triage-view__item {
+    min-width:0;
+  }
+  .smrt-triage-view__queue-nav {
+    display:flex;
+    flex-wrap:wrap;
+    align-items:center;
+    gap:.5rem;
+    padding-inline:1rem;
+  }
+  .smrt-triage-view__queue-nav p,.smrt-triage-view__hint {
+    margin:0;
+  }
+  .smrt-triage-view__leave {
+    display:flex;
+    flex-wrap:wrap;
+    align-items:center;
+    gap:.5rem;
+    padding:.75rem 1rem;
+  }
+  .smrt-triage-view__leave p {
+    margin:0;
+    flex-basis:100%;
+  }
+  .smrt-triage-view__hint {
+    padding-inline:1rem;
+  }
+  [data-testid='background-update'],.smrt-triage-view__note {
+    padding-inline:1rem;
+    margin:0;
+  }
+  @media(min-width:64rem) {
+    .smrt-triage-view__workspace {
+      grid-template-columns:minmax(18rem,26rem) minmax(0,1fr);
+    }
+    .smrt-triage-view__list {
+      position:sticky;
+      inset-block-start:0;
+      align-self:start;
+      max-block-size:100vh;
+      overflow:auto;
+    }
+  }
 }
+
+@layer smrt.theme {
+  .smrt-triage-view__workspace {
+    color:var(--smrt-color-on-surface);
+  }
+  .smrt-triage-view__item {
+    outline-offset:.25rem;
+  }
+  .smrt-triage-view__leave {
+    border:var(--smrt-hairline);
+  }
+  .smrt-triage-view__hint {
+    font-size:.875rem;
+  }
+}
+
 </style>
