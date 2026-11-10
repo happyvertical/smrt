@@ -72,7 +72,7 @@ describe('CookbookApp', () => {
     ).toBeTruthy();
     await waitFor(() => {
       const main = document.querySelector(
-        'main.cookbook-section',
+        'main[data-smrt-component="CookbookSectionPage"]',
       ) as HTMLElement;
       expect(within(main).getByText('Orders')).toBeTruthy();
       expect(within(main).getByText('Customers')).toBeTruthy();

@@ -103,7 +103,11 @@ test('a native form reset empties the list and what posts', async ({
   // success) empties the native input; the list must empty with it.
   await page.locator('#native-reset').click();
   await expect.poll(() => posted(page, 'multi', 'docs')).toEqual([]);
-  await expect(page.locator('#multi .file-list')).toHaveCount(0);
+  await expect(
+    page.locator(
+      '#multi [data-smrt-component="FileUpload"] [data-smrt-part="list"]',
+    ),
+  ).toHaveCount(0);
 
   // The next pick posts alone: the old list is never mirrored back.
   await input.setInputFiles(file('b.txt'));
