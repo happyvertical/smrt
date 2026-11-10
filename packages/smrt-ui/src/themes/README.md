@@ -788,7 +788,7 @@ were folded into the glass surface colours above.
 ### Typography
 
 `themes/styles/base.css` (import once at the app entry) maps headings to type roles
-inside `@layer smrt.structure`, scoped under `body` and `.smrt-theme-root`, so presets'
+inside `@layer smrt.structure`, scoped under `body` and `.smrt-theme-provider__root`, so presets'
 display faces reach plain markup. Hosts restyle with unlayered CSS.
 
 | Element | Role |

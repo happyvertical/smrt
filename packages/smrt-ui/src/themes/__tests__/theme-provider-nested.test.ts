@@ -61,7 +61,9 @@ describe('ThemeProvider document scope (#4485)', () => {
     const html = document.documentElement;
     await waitFor(() => expect(html.dataset.theme).toBe('smrt'));
 
-    const roots = container.querySelectorAll<HTMLElement>('.smrt-theme-root');
+    const roots = container.querySelectorAll<HTMLElement>(
+      '[data-smrt-component="ThemeProvider"]',
+    );
     expect(roots).toHaveLength(2);
     const inner = roots[1];
     expect(inner.dataset.theme).toBe('material');
