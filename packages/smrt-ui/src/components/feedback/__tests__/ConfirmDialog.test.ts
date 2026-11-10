@@ -203,14 +203,14 @@ describe('ConfirmDialog', () => {
       props: { ...baseProps, destructive: true, confirmLabel: 'Delete' },
     });
     expect(screen.getByRole('button', { name: 'Delete' })).toHaveClass(
-      'destructive',
+      'smrt-confirm-dialog__button--destructive',
     );
   });
 
   it('omits destructive styling by default', () => {
     render(ConfirmDialog, { props: baseProps });
     expect(screen.getByRole('button', { name: 'Confirm' })).not.toHaveClass(
-      'destructive',
+      'smrt-confirm-dialog__button--destructive',
     );
   });
 

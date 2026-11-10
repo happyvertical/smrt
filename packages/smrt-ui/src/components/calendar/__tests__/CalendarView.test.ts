@@ -70,15 +70,21 @@ describe('CalendarView (month)', () => {
     const onSelectDate = vi.fn();
     const { container } = renderMonth({ onSelectDate });
     // Sat Sep 5 - Mon Sep 7 wraps: one segment per week row.
-    const bands = [...container.querySelectorAll<HTMLElement>('.cv-band')];
+    const bands = [
+      ...container.querySelectorAll<HTMLElement>('[data-smrt-part="band"]'),
+    ];
     expect(bands.map((b) => b.textContent?.trim())).toEqual([
       'Fall Fair',
       'Fall Fair',
     ]);
     expect(bands[0].style.gridColumn).toBe('7 / span 1');
-    expect(bands[0].classList.contains('cv-band--after')).toBe(true);
+    expect(bands[0].classList.contains('smrt-calendar-view__band--after')).toBe(
+      true,
+    );
     expect(bands[1].style.gridColumn).toBe('1 / span 2');
-    expect(bands[1].classList.contains('cv-band--before')).toBe(true);
+    expect(
+      bands[1].classList.contains('smrt-calendar-view__band--before'),
+    ).toBe(true);
 
     const more = screen.getByText('+2 more');
     await userEvent.click(more);
@@ -311,9 +317,11 @@ describe('CalendarView (week)', () => {
     });
     expect(screen.getAllByRole('gridcell')).toHaveLength(7);
     expect(screen.getAllByRole('columnheader')).toHaveLength(7);
-    expect(container.querySelector('.cv-band')?.getAttribute('data-tone')).toBe(
-      'warning',
-    );
+    expect(
+      container
+        .querySelector('[data-smrt-part="band"]')
+        ?.getAttribute('data-tone'),
+    ).toBe('warning');
     expect(
       screen
         .getByRole('link', { name: /Monday, September 28, 2026, 2 items/ })
@@ -353,7 +361,9 @@ describe('CalendarView (week)', () => {
       screen.getByRole('button', { name: /Close.*Thursday, October 1, 2026/ }),
     );
     await userEvent.click(screen.getByText('+2 more'));
-    const panel = container.querySelector('.cv-day-panel') as HTMLElement;
+    const panel = container.querySelector(
+      '[data-smrt-part="day-panel"]',
+    ) as HTMLElement;
     expect(within(panel).getByText('Hidden event')).toBeTruthy();
 
     await rerender({
@@ -369,7 +379,7 @@ describe('CalendarView (week)', () => {
       date: '2027-01-08',
       selectedDate: '2027-01-01',
     });
-    expect(container.querySelector('.cv-day-panel')).toBeNull();
+    expect(container.querySelector('[data-smrt-part="day-panel"]')).toBeNull();
   });
 
   it('reports date-based navigation within a month, today and controlled changes', async () => {

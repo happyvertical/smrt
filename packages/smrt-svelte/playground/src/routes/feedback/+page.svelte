@@ -356,7 +356,7 @@ async function handleLoadingConfirm() {
     text-align: right;
   }
 
-  .progress-demo :global(.progress-container) {
+  .progress-demo :global([data-smrt-component="ProgressBar"]) {
     flex: 1;
   }
 

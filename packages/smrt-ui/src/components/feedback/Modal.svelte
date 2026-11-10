@@ -110,42 +110,42 @@ function handleCancel(event: Event) {
 }
 
 const sizeClasses = {
-  sm: 'modal--sm',
-  md: 'modal--md',
-  lg: 'modal--lg',
-  xl: 'modal--xl',
-  full: 'modal--full',
+  sm: 'smrt-modal__sm',
+  md: 'smrt-modal__md',
+  lg: 'smrt-modal__lg',
+  xl: 'smrt-modal__xl',
+  full: 'smrt-modal__full',
 };
 
-const placementClass = $derived(`modal--${placement}`);
+const placementClass = $derived(`smrt-modal__${placement}`);
 </script>
 
 <!-- svelte-ignore a11y_no_noninteractive_element_interactions -->
 <dialog
   bind:this={dialogEl}
-  class="modal {sizeClasses[size]} {placementClass}"
+  class="smrt-modal__root {sizeClasses[size]} {placementClass}"
   onclick={handleBackdropClick}
   onkeydown={handleKeydown}
   oncancel={handleCancel}
   aria-label={ariaLabel ?? title}
   aria-describedby={ariaDescribedBy} data-density={density} data-smrt-component="Modal"
 >
-  <div class="modal__container">
+  <div class="smrt-modal__container" data-smrt-part="panel">
     {#if header}
-      <header class="modal__header modal__header--custom" data-smrt-part="header">
+      <header class="smrt-modal__header smrt-modal__header--custom" data-smrt-part="header">
         {@render header()}
       </header>
     {:else if title || showClose}
-      <header class="modal__header" data-smrt-part="header">
+      <header class="smrt-modal__header" data-smrt-part="header">
         {#if title}
-          <h2 class="modal__title" data-smrt-part="title">{title}</h2>
+          <h2 class="smrt-modal__title" data-smrt-part="title">{title}</h2>
         {:else}
           <span></span>
         {/if}
         {#if showClose}
           <button
             type="button"
-            class="modal__close" data-smrt-part="close"
+            class="smrt-modal__close" data-smrt-part="close"
             onclick={handleClose}
             aria-label={t(M['ui.modal.close'])}
           >
@@ -169,14 +169,14 @@ const placementClass = $derived(`modal--${placement}`);
       </header>
     {/if}
 
-    <div class="modal__body" data-smrt-part="body">
+    <div class="smrt-modal__body" data-smrt-part="body">
       {#if children}
         {@render children()}
       {/if}
     </div>
 
     {#if footer}
-      <footer class="modal__footer" data-smrt-part="footer">
+      <footer class="smrt-modal__footer" data-smrt-part="footer">
         {@render footer()}
       </footer>
     {/if}
@@ -185,8 +185,8 @@ const placementClass = $derived(`modal--${placement}`);
 
 <style>
 @layer smrt.reset, smrt.structure, smrt.theme;
-@layer smrt.theme {
-  .modal {
+@layer smrt.structure {
+  .smrt-modal__root {
     position: fixed;
     inset: 0;
     width: 100%;
@@ -195,37 +195,159 @@ const placementClass = $derived(`modal--${placement}`);
     max-height: 100%;
     margin: 0;
     padding: 0;
-    border: none;
-    background: transparent;
     overflow: hidden;
     display: flex;
     align-items: center;
     justify-content: center;
   }
-
-  .modal::backdrop {
-    background: var(--smrt-surface-overlay);
-    backdrop-filter: blur(var(--smrt-glass-blur));
-  }
-
-  .modal:not([open]) {
+  .smrt-modal__root:not([open]) {
     display: none;
   }
-
-  .modal__container {
+  /* Density overrides the hit size of the close control and any control it
+  contains, so they belong with the other hit-area geometry. */
+  .smrt-modal__root[data-density='touch'] {
+    --smrt-control-target-min: var(--smrt-touch-target-min);
+  }
+  .smrt-modal__root[data-density='comfortable'] {
+    --smrt-control-target-min: 0px;
+  }
+  .smrt-modal__container {
     display: flex;
     flex-direction: column;
     max-height: calc(100vh - var(--smrt-spacing-8, 2rem));
     max-width: calc(100vw - var(--smrt-spacing-8, 2rem));
+    overflow: hidden;
+  }
+  /* Size variants */
+  .smrt-modal__sm .smrt-modal__container {
+    width: 100%;
+    max-width: 24rem;
+  }
+  .smrt-modal__md .smrt-modal__container {
+    width: 100%;
+    max-width: 32rem;
+  }
+  .smrt-modal__lg .smrt-modal__container {
+    width: 100%;
+    max-width: 48rem;
+  }
+  .smrt-modal__xl .smrt-modal__container {
+    width: 100%;
+    max-width: 64rem;
+  }
+  .smrt-modal__full .smrt-modal__container {
+    width: calc(100vw - var(--smrt-spacing-8, 2rem));
+    height: calc(100vh - var(--smrt-spacing-8, 2rem));
+    max-width: none;
+    max-height: none;
+  }
+  /* Placement: end = right-anchored, full-height drawer (e.g. detail panels).
+  The size variant still sets the panel width. */
+  .smrt-modal__start,
+  .smrt-modal__end {
+    justify-content: flex-end;
+    align-items: stretch;
+  }
+  .smrt-modal__start {
+    justify-content: flex-start;
+  }
+  .smrt-modal__start .smrt-modal__container,
+  .smrt-modal__end .smrt-modal__container {
+    height: 100%;
+    max-height: 100%;
+  }
+  /* Header */
+  .smrt-modal__header {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    gap: var(--smrt-spacing-3, 0.75rem);
+    padding: var(--smrt-spacing-4, 1rem) var(--smrt-spacing-5, 1.25rem);
+    flex-shrink: 0;
+  }
+  .smrt-modal__header--custom {
+    padding: 0;
+  }
+  .smrt-modal__title {
+    margin: 0;
+  }
+  .smrt-modal__close {
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    width: max(32px, var(--smrt-control-target-min));
+    height: max(32px, var(--smrt-control-target-min));
+    padding: 0;
+    cursor: pointer;
+    flex-shrink: 0;
+  }
+  /* Body */
+  .smrt-modal__body {
+    flex: 1;
+    padding: var(--smrt-spacing-5, 1.25rem);
+    overflow-y: auto;
+  }
+  /* A form's action bar in the body (a dialog that is one form, such as a
+  widget's options) stays in view at the foot of the scrolling body, as a
+  footer does, however long the form. Phones already pin it to the screen. */
+  @media (width > 48rem) {
+    .smrt-modal__body :global([data-form-action-bar]) {
+      position: sticky;
+      inset-block-end: calc(-1 * var(--smrt-spacing-5, 1.25rem));
+      z-index: 1;
+      margin-inline: calc(-1 * var(--smrt-spacing-5, 1.25rem));
+      margin-block-end: calc(-1 * var(--smrt-spacing-5, 1.25rem));
+      padding: var(--smrt-spacing-4, 1rem) var(--smrt-spacing-5, 1.25rem);
+    }
+  }
+  /* Footer */
+  .smrt-modal__footer {
+    display: flex;
+    align-items: center;
+    justify-content: flex-end;
+    gap: var(--smrt-spacing-3, 0.75rem);
+    padding: var(--smrt-spacing-4, 1rem) var(--smrt-spacing-5, 1.25rem);
+    flex-shrink: 0;
+  }
+  /* Responsive */
+  @media (max-width: 640px) {
+    .smrt-modal__container {
+      max-height: calc(100vh - var(--smrt-spacing-4, 1rem));
+      max-width: calc(100vw - var(--smrt-spacing-4, 1rem));
+    }
+    .smrt-modal__sm .smrt-modal__container,
+    .smrt-modal__md .smrt-modal__container,
+    .smrt-modal__lg .smrt-modal__container,
+    .smrt-modal__xl .smrt-modal__container {
+      max-width: calc(100vw - var(--smrt-spacing-4, 1rem));
+    }
+    /* A drawer goes full-bleed on mobile — no backdrop strip. Declared after the
+    size-cap rule above so it wins for end placement regardless of size. */
+    .smrt-modal__end .smrt-modal__container {
+      width: 100%;
+      max-width: 100%;
+      max-height: 100%;
+    }
+  }
+}
+
+@layer smrt.theme {
+  .smrt-modal__root {
+    border: none;
+    background: transparent;
+  }
+  .smrt-modal__root::backdrop {
+    background: var(--smrt-surface-overlay);
+    backdrop-filter: blur(var(--smrt-glass-blur));
+  }
+  .smrt-modal__container {
     background: var(--smrt-glass-surface-strong);
     backdrop-filter: blur(var(--smrt-glass-blur)) saturate(var(--smrt-glass-saturation));
     border: var(--smrt-hairline);
     border-radius: var(--smrt-radius-large, 0.75rem);
     box-shadow: var(--smrt-inset-highlight), var(--smrt-elevation-4);
-    overflow: hidden;
     animation: modal-enter var(--smrt-duration-medium2, 300ms) var(--smrt-easing-emphasized, cubic-bezier(0.2, 0, 0, 1));
   }
-
   @keyframes modal-enter {
     from {
       opacity: 0;
@@ -236,63 +358,21 @@ const placementClass = $derived(`modal--${placement}`);
       transform: scale(1) translateY(0);
     }
   }
-
   @media (prefers-reduced-motion: reduce) {
-    .modal__container {
+    .smrt-modal__container {
       animation: none;
     }
   }
-
   /* Size variants */
-  .modal--sm .modal__container {
-    width: 100%;
-    max-width: 24rem; /* 384px */
-  }
-
-  .modal--md .modal__container {
-    width: 100%;
-    max-width: 32rem; /* 512px */
-  }
-
-  .modal--lg .modal__container {
-    width: 100%;
-    max-width: 48rem; /* 768px */
-  }
-
-  .modal--xl .modal__container {
-    width: 100%;
-    max-width: 64rem; /* 1024px */
-  }
-
-  .modal--full .modal__container {
-    width: calc(100vw - var(--smrt-spacing-8, 2rem));
-    height: calc(100vh - var(--smrt-spacing-8, 2rem));
-    max-width: none;
-    max-height: none;
+  .smrt-modal__full .smrt-modal__container {
     border-radius: var(--smrt-radius-medium, 0.5rem);
   }
-
-  /* Placement: end = right-anchored, full-height drawer (e.g. detail panels).
-     The size variant still sets the panel width. */
-  .modal--start,
-  .modal--end {
-    justify-content: flex-end;
-    align-items: stretch;
-  }
-
-  .modal--start {
-    justify-content: flex-start;
-  }
-
-  .modal--start .modal__container,
-  .modal--end .modal__container {
-    height: 100%;
-    max-height: 100%;
+  .smrt-modal__start .smrt-modal__container,
+  .smrt-modal__end .smrt-modal__container {
     border-radius: var(--smrt-radius-none, 0);
     animation: modal-slide-end var(--smrt-duration-medium2, 300ms)
       var(--smrt-easing-emphasized, cubic-bezier(0.2, 0, 0, 1));
   }
-
   @keyframes modal-slide-end {
     from {
       opacity: 0;
@@ -303,122 +383,56 @@ const placementClass = $derived(`modal--${placement}`);
       transform: translateX(0);
     }
   }
-
   @media (prefers-reduced-motion: reduce) {
-    .modal--end .modal__container {
+    .smrt-modal__end .smrt-modal__container {
       animation: none;
     }
   }
-
   /* Header */
-  .modal__header {
-    display: flex;
-    align-items: center;
-    justify-content: space-between;
-    gap: var(--smrt-spacing-3, 0.75rem);
-    padding: var(--smrt-spacing-4, 1rem) var(--smrt-spacing-5, 1.25rem);
+  .smrt-modal__header {
     border-bottom: var(--smrt-hairline);
-    flex-shrink: 0;
   }
-
-  .modal__header--custom {
-    padding: 0;
+  .smrt-modal__header--custom {
     border-bottom: none;
   }
-
-  .modal__title {
-    margin: 0;
+  .smrt-modal__title {
     font-size: var(--smrt-typography-headline-small-size, 1.125rem);
     font-weight: var(--smrt-typography-weight-semibold, 600);
     color: var(--smrt-color-on-surface);
     line-height: var(--smrt-typography-headline-small-line-height, 1.4);
   }
-
-  .modal[data-density='touch'] { --smrt-control-target-min: var(--smrt-touch-target-min); }
-  .modal[data-density='comfortable'] { --smrt-control-target-min: 0px; }
-
-  .modal__close {
-    display: flex;
-    align-items: center;
-    justify-content: center;
-    width: max(32px, var(--smrt-control-target-min));
-    height: max(32px, var(--smrt-control-target-min));
-    padding: 0;
+  .smrt-modal__close {
     border: none;
     background: transparent;
     border-radius: var(--smrt-radius-full);
     color: var(--smrt-color-on-surface-variant);
-    cursor: pointer;
     transition: all var(--smrt-duration-short3, 150ms) var(--smrt-easing-standard, cubic-bezier(0.2, 0, 0, 1));
-    flex-shrink: 0;
   }
-
-  .modal__close:hover {
+  .smrt-modal__close:hover {
     background: color-mix(in srgb, currentColor calc(var(--smrt-state-hover) * 100%), transparent);
     color: var(--smrt-color-on-surface);
   }
-
-  .modal__close:focus-visible {
+  .smrt-modal__close:focus-visible {
     outline: var(--smrt-focus-ring-width) solid var(--smrt-focus-ring-color);
     outline-offset: var(--smrt-focus-ring-offset);
   }
-
   /* Body */
-  .modal__body {
-    flex: 1;
-    padding: var(--smrt-spacing-5, 1.25rem);
-    overflow-y: auto;
+  .smrt-modal__body {
     color: var(--smrt-color-on-surface);
   }
-
   /* A form's action bar in the body (a dialog that is one form, such as a
-     widget's options) stays in view at the foot of the scrolling body, as a
-     footer does, however long the form. Phones already pin it to the screen. */
+  widget's options) stays in view at the foot of the scrolling body, as a
+  footer does, however long the form. Phones already pin it to the screen. */
   @media (width > 48rem) {
-    .modal__body :global([data-form-action-bar]) {
-      position: sticky;
-      inset-block-end: calc(-1 * var(--smrt-spacing-5, 1.25rem));
-      z-index: 1;
-      margin-inline: calc(-1 * var(--smrt-spacing-5, 1.25rem));
-      margin-block-end: calc(-1 * var(--smrt-spacing-5, 1.25rem));
-      padding: var(--smrt-spacing-4, 1rem) var(--smrt-spacing-5, 1.25rem);
+    .smrt-modal__body :global([data-form-action-bar]) {
       background: var(--smrt-glass-surface-strong);
       backdrop-filter: blur(var(--smrt-glass-blur)) saturate(var(--smrt-glass-saturation));
     }
   }
-
   /* Footer */
-  .modal__footer {
-    display: flex;
-    align-items: center;
-    justify-content: flex-end;
-    gap: var(--smrt-spacing-3, 0.75rem);
-    padding: var(--smrt-spacing-4, 1rem) var(--smrt-spacing-5, 1.25rem);
+  .smrt-modal__footer {
     border-top: var(--smrt-hairline);
-    flex-shrink: 0;
-  }
-
-  /* Responsive */
-  @media (max-width: 640px) {
-    .modal__container {
-      max-height: calc(100vh - var(--smrt-spacing-4, 1rem));
-      max-width: calc(100vw - var(--smrt-spacing-4, 1rem));
-    }
-
-    .modal--sm .modal__container,
-    .modal--md .modal__container,
-    .modal--lg .modal__container,
-    .modal--xl .modal__container {
-      max-width: calc(100vw - var(--smrt-spacing-4, 1rem));
-    }
-
-    /* A drawer goes full-bleed on mobile — no backdrop strip. Declared after the
-       size-cap rule above so it wins for end placement regardless of size. */
-    .modal--end .modal__container {
-      width: 100%;
-      max-width: 100%;
-      max-height: 100%;
-    }
   }
 }
+
 </style>
