@@ -97,41 +97,41 @@ function isOpenNextAction(activity: SalesActivityView): boolean {
 }
 </script>
 
-<article class="sales-opportunity-detail" data-smrt-component="OpportunityDetail">
-  <header class="head">
-    <h2 class="head__name">{opportunity.name}</h2>
+<article class="smrt-opportunity-detail__root" data-smrt-component="OpportunityDetail">
+  <header class="smrt-opportunity-detail__header" data-smrt-part="header">
+    <h2 class="smrt-opportunity-detail__title" data-smrt-part="title">{opportunity.name}</h2>
     <Badge variant={opportunityStatusBadgeVariant(opportunity.status)} size="sm">
       {opportunity.status}
     </Badge>
   </header>
 
-  <dl class="facts">
-    <div class="facts__item">
+  <dl class="smrt-opportunity-detail__facts" data-smrt-part="facts">
+    <div class="smrt-opportunity-detail__fact" data-smrt-part="field">
       <dt>Expected value</dt>
       <dd>
         {formatCents(opportunity.expectedValueCents, opportunity.currency, locale)}
       </dd>
     </div>
-    <div class="facts__item">
+    <div class="smrt-opportunity-detail__fact" data-smrt-part="field">
       <dt>Probability</dt>
       <dd>{formatPercent(opportunity.probability, locale)}</dd>
     </div>
-    <div class="facts__item">
+    <div class="smrt-opportunity-detail__fact" data-smrt-part="field">
       <dt>Expected close</dt>
       <dd>{formatDate(opportunity.expectedCloseAt, locale)}</dd>
     </div>
-    <div class="facts__item">
+    <div class="smrt-opportunity-detail__fact" data-smrt-part="field">
       <dt>Stage</dt>
       <dd>{opportunity.stageName ?? '—'}</dd>
     </div>
-    <div class="facts__item">
+    <div class="smrt-opportunity-detail__fact" data-smrt-part="field">
       <dt>Owner</dt>
       <dd>{opportunity.ownerName ?? '—'}</dd>
     </div>
   </dl>
 
   {#if !isOpen}
-    <p class="outcome" class:outcome--won={opportunity.status === 'won'} class:outcome--lost={opportunity.status === 'lost'}>
+    <p class="smrt-opportunity-detail__outcome" class:smrt-opportunity-detail__won={opportunity.status === 'won'} class:smrt-opportunity-detail__lost={opportunity.status === 'lost'} data-smrt-part="outcome">
       Closed {opportunity.status}
       {#if opportunity.status === 'won'}
         on {formatDate(opportunity.wonAt, locale)}
@@ -145,9 +145,9 @@ function isOpenNextAction(activity: SalesActivityView): boolean {
   {/if}
 
   {#if isOpen && (onMoveStage || onClose)}
-    <div class="controls">
+    <div class="smrt-opportunity-detail__controls" data-smrt-part="controls">
       {#if onMoveStage && stages.length > 0}
-        <div class="controls__group">
+        <div class="smrt-opportunity-detail__group" data-smrt-part="group">
           <FormGroup label="Move to stage">
             <Select
               value={moveTargetStageId}
@@ -176,7 +176,7 @@ function isOpenNextAction(activity: SalesActivityView): boolean {
       {/if}
 
       {#if onClose}
-        <div class="controls__group">
+        <div class="smrt-opportunity-detail__group" data-smrt-part="group">
           <FormGroup label="Outcome reason" hint="Recorded with the close (recommended when losing).">
             <Input
               value={closeReason}
@@ -186,7 +186,7 @@ function isOpenNextAction(activity: SalesActivityView): boolean {
               }}
             />
           </FormGroup>
-          <span class="controls__buttons">
+          <span class="smrt-opportunity-detail__buttons" data-smrt-part="buttons">
             <Button variant="primary" size="sm" disabled={busy} onclick={() => close('won')}>
               Close won
             </Button>
@@ -199,20 +199,20 @@ function isOpenNextAction(activity: SalesActivityView): boolean {
     </div>
   {/if}
 
-  <section class="timeline" aria-label="Activity timeline">
+  <section class="smrt-opportunity-detail__timeline" data-smrt-part="timeline" aria-label="Activity timeline">
     <h3>Activity</h3>
     {#if activities.length === 0}
-      <p class="empty">No activity recorded yet.</p>
+      <p class="smrt-opportunity-detail__empty" data-smrt-part="empty">No activity recorded yet.</p>
     {:else}
-      <ol class="timeline__list">
+      <ol class="smrt-opportunity-detail__timeline-list" data-smrt-part="timeline-list">
         {#each activities as activity (activity.id)}
           {@const open = isOpenNextAction(activity)}
-          <li class="timeline__item" class:next-action={open}>
-            <span class="timeline__kind">{activity.activityKind}</span>
-            <span class="timeline__summary">{activity.summary}</span>
-            <span class="timeline__dates">
+          <li class="smrt-opportunity-detail__item" class:smrt-opportunity-detail__next-action={open} data-smrt-part="item">
+            <span class="smrt-opportunity-detail__kind" data-smrt-part="kind">{activity.activityKind}</span>
+            <span class="smrt-opportunity-detail__summary" data-smrt-part="summary">{activity.summary}</span>
+            <span class="smrt-opportunity-detail__dates" data-smrt-part="dates">
               {#if activity.dueAt}
-                <span class:overdue={open && isOverdue(activity.dueAt)}>
+                <span class:smrt-opportunity-detail__overdue={open && isOverdue(activity.dueAt)}>
                   due {formatDate(activity.dueAt, locale)}
                 </span>
               {/if}
@@ -276,19 +276,19 @@ function isOpenNextAction(activity: SalesActivityView): boolean {
   </section>
 
   {#if conversions.length > 0}
-    <section class="conversions" aria-label="Conversions">
+    <section class="smrt-opportunity-detail__conversions" data-smrt-part="conversions" aria-label="Conversions">
       <h3>Conversions</h3>
-      <ul class="conversions__list">
+      <ul class="smrt-opportunity-detail__conversions-list" data-smrt-part="conversions-list">
         {#each conversions as conversion (conversion.id)}
           <li>
-            <span class="conversions__kind">{conversion.targetKind}</span>
+            <span class="smrt-opportunity-detail__conversion-kind" data-smrt-part="conversion-kind">{conversion.targetKind}</span>
             {#if conversion.href}
               <a href={conversion.href}><code>{conversion.targetId}</code></a>
             {:else}
               <code>{conversion.targetId}</code>
             {/if}
             {#if conversion.note}
-              <span class="conversions__note">{conversion.note}</span>
+              <span class="smrt-opportunity-detail__note" data-smrt-part="note">{conversion.note}</span>
             {/if}
           </li>
         {/each}
@@ -299,98 +299,61 @@ function isOpenNextAction(activity: SalesActivityView): boolean {
 
 <style>
 @layer smrt.reset, smrt.structure, smrt.theme;
-@layer smrt.theme {
-  .sales-opportunity-detail {
+@layer smrt.structure {
+  .smrt-opportunity-detail__root {
     display: flex;
     flex-direction: column;
     gap: var(--smrt-spacing-4, 1rem);
   }
-
-  .head {
+  .smrt-opportunity-detail__header {
     display: flex;
     align-items: center;
     gap: var(--smrt-spacing-2, 0.5rem);
   }
-
-  .head__name {
+  .smrt-opportunity-detail__title {
     margin: 0;
-    font-size: var(--smrt-typography-title-large-size, 1.25rem);
   }
-
-  .facts {
+  .smrt-opportunity-detail__facts {
     display: flex;
     flex-wrap: wrap;
     gap: var(--smrt-spacing-4, 1rem);
     margin: 0;
   }
-
-  .facts__item dt {
-    color: var(--smrt-color-on-surface-variant);
-    font-size: var(--smrt-typography-label-medium-size, 0.75rem);
-  }
-
-  .facts__item dd {
+  .smrt-opportunity-detail__fact dd {
     margin: 0;
-    font-weight: var(--smrt-typography-weight-semibold, 600);
   }
-
-  .outcome {
+  .smrt-opportunity-detail__outcome {
     margin: 0;
     padding: var(--smrt-spacing-2, 0.5rem) var(--smrt-spacing-3, 0.75rem);
-    border-radius: var(--smrt-radius-sm);
-    background: var(--smrt-color-surface-container);
   }
-
-  .outcome--won {
-    background: var(--smrt-color-success-container);
-    color: var(--smrt-color-on-success-container);
-  }
-
-  .outcome--lost {
-    background: var(--smrt-color-error-container);
-    color: var(--smrt-color-on-error-container);
-  }
-
-  .controls {
+  .smrt-opportunity-detail__controls {
     display: flex;
     flex-wrap: wrap;
     gap: var(--smrt-spacing-4, 1rem);
     align-items: flex-end;
   }
-
-  .controls__group {
+  .smrt-opportunity-detail__group {
     display: flex;
     align-items: flex-end;
     gap: var(--smrt-spacing-2, 0.5rem);
   }
-
-  .controls__buttons {
+  .smrt-opportunity-detail__buttons {
     display: inline-flex;
     gap: var(--smrt-spacing-2, 0.5rem);
   }
-
   /* The base FormGroup carries a bottom margin for stacked forms; inside these
-     inline action rows it would misalign the adjacent buttons. */
-  .controls__group :global(.form-group),
-  .sales-opportunity-detail :global(.record .form-group) {
+  inline action rows it would misalign the adjacent buttons. */
+  .smrt-opportunity-detail__group :global(.form-group),
+  .smrt-opportunity-detail__root :global(.record .form-group) {
     margin-bottom: 0;
   }
-
   h3 {
     margin: 0 0 var(--smrt-spacing-2, 0.5rem);
-    font-size: var(--smrt-typography-title-small-size, 0.875rem);
-    text-transform: uppercase;
-    letter-spacing: 0.04em;
-    color: var(--smrt-color-on-surface-variant);
   }
-
-  .empty {
+  .smrt-opportunity-detail__empty {
     margin: 0;
-    color: var(--smrt-color-on-surface-variant);
-    font-style: italic;
   }
-
-  .timeline__list {
+  .smrt-opportunity-detail__timeline-list {
     margin: 0;
     padding: 0;
     list-style: none;
@@ -398,54 +361,28 @@ function isOpenNextAction(activity: SalesActivityView): boolean {
     flex-direction: column;
     gap: var(--smrt-spacing-2, 0.5rem);
   }
-
-  .timeline__item {
+  .smrt-opportunity-detail__item {
     display: flex;
     flex-wrap: wrap;
     align-items: baseline;
     gap: var(--smrt-spacing-2, 0.5rem);
     padding: var(--smrt-spacing-2, 0.5rem);
-    border: var(--smrt-hairline);
-    border-radius: var(--smrt-radius-sm);
   }
-
-  .timeline__item.next-action {
-    border-color: var(--smrt-color-primary);
-    background: var(--smrt-color-primary-container);
-  }
-
-  .timeline__kind {
-    font-size: var(--smrt-typography-label-medium-size, 0.75rem);
-    text-transform: uppercase;
-    letter-spacing: 0.04em;
-    color: var(--smrt-color-on-surface-variant);
-  }
-
-  .timeline__summary {
+  .smrt-opportunity-detail__summary {
     flex: 1 1 12rem;
   }
-
-  .timeline__dates {
+  .smrt-opportunity-detail__dates {
     display: inline-flex;
     gap: var(--smrt-spacing-2, 0.5rem);
-    color: var(--smrt-color-on-surface-variant);
-    font-size: var(--smrt-typography-body-small-size, 0.75rem);
   }
-
-  .timeline__dates .overdue {
-    color: var(--smrt-color-error);
-    font-weight: var(--smrt-typography-weight-medium, 500);
-  }
-
-  .sales-opportunity-detail :global(.record) {
+  .smrt-opportunity-detail__root :global(.record) {
     display: flex;
     flex-wrap: wrap;
     align-items: flex-end;
     gap: var(--smrt-spacing-2, 0.5rem);
     margin-top: var(--smrt-spacing-3, 0.75rem);
   }
-
-  .conversions__list {
+  .smrt-opportunity-detail__conversions-list {
     margin: 0;
     padding: 0;
     list-style: none;
@@ -453,23 +390,82 @@ function isOpenNextAction(activity: SalesActivityView): boolean {
     flex-direction: column;
     gap: var(--smrt-spacing-1, 0.25rem);
   }
+  .smrt-opportunity-detail__conversion-kind {
+    margin-right: var(--smrt-spacing-1, 0.25rem);
+  }
+  .smrt-opportunity-detail__note {
+    margin-left: var(--smrt-spacing-1, 0.25rem);
+  }
+}
 
-  .conversions__kind {
+@layer smrt.theme {
+  .smrt-opportunity-detail__title {
+    font-size: var(--smrt-typography-title-large-size, 1.25rem);
+  }
+  .smrt-opportunity-detail__fact dt {
+    color: var(--smrt-color-on-surface-variant);
+    font-size: var(--smrt-typography-label-medium-size, 0.75rem);
+  }
+  .smrt-opportunity-detail__fact dd {
+    font-weight: var(--smrt-typography-weight-semibold, 600);
+  }
+  .smrt-opportunity-detail__outcome {
+    border-radius: var(--smrt-radius-sm);
+    background: var(--smrt-color-surface-container);
+  }
+  .smrt-opportunity-detail__won {
+    background: var(--smrt-color-success-container);
+    color: var(--smrt-color-on-success-container);
+  }
+  .smrt-opportunity-detail__lost {
+    background: var(--smrt-color-error-container);
+    color: var(--smrt-color-on-error-container);
+  }
+  h3 {
+    font-size: var(--smrt-typography-title-small-size, 0.875rem);
+    text-transform: uppercase;
+    letter-spacing: 0.04em;
+    color: var(--smrt-color-on-surface-variant);
+  }
+  .smrt-opportunity-detail__empty {
+    color: var(--smrt-color-on-surface-variant);
+    font-style: italic;
+  }
+  .smrt-opportunity-detail__item {
+    border: var(--smrt-hairline);
+    border-radius: var(--smrt-radius-sm);
+  }
+  .smrt-opportunity-detail__item.smrt-opportunity-detail__next-action {
+    border-color: var(--smrt-color-primary);
+    background: var(--smrt-color-primary-container);
+  }
+  .smrt-opportunity-detail__kind {
     font-size: var(--smrt-typography-label-medium-size, 0.75rem);
     text-transform: uppercase;
     letter-spacing: 0.04em;
     color: var(--smrt-color-on-surface-variant);
-    margin-right: var(--smrt-spacing-1, 0.25rem);
   }
-
-  .conversions__note {
+  .smrt-opportunity-detail__dates {
     color: var(--smrt-color-on-surface-variant);
-    margin-left: var(--smrt-spacing-1, 0.25rem);
+    font-size: var(--smrt-typography-body-small-size, 0.75rem);
   }
-
+  .smrt-opportunity-detail__dates .smrt-opportunity-detail__overdue {
+    color: var(--smrt-color-error);
+    font-weight: var(--smrt-typography-weight-medium, 500);
+  }
+  .smrt-opportunity-detail__conversion-kind {
+    font-size: var(--smrt-typography-label-medium-size, 0.75rem);
+    text-transform: uppercase;
+    letter-spacing: 0.04em;
+    color: var(--smrt-color-on-surface-variant);
+  }
+  .smrt-opportunity-detail__note {
+    color: var(--smrt-color-on-surface-variant);
+  }
   code {
     font-family: var(--smrt-font-family-mono, ui-monospace, monospace);
     font-size: var(--smrt-typography-body-small-size, 0.8125rem);
   }
 }
+
 </style>

@@ -38,41 +38,41 @@ function detailsId(id: string): string {
 }
 </script>
 
-<div class="sales-commission-breakdown" data-smrt-component="CommissionBreakdown">
+<div class="smrt-commission-breakdown__root" data-smrt-component="CommissionBreakdown">
   {#if commissions.length === 0}
-    <p class="empty">No commissions yet.</p>
+    <p class="smrt-commission-breakdown__empty" data-smrt-part="empty">No commissions yet.</p>
   {:else}
-    <table>
-      <thead>
+    <table data-smrt-part="table">
+      <thead data-smrt-part="header">
         <tr>
           <th scope="col">Event</th>
           <th scope="col">Basis</th>
-          <th scope="col" class="num">Base</th>
-          <th scope="col" class="num">Rate</th>
-          <th scope="col" class="num">Share</th>
-          <th scope="col" class="num">Amount</th>
+          <th scope="col" class="smrt-commission-breakdown__number">Base</th>
+          <th scope="col" class="smrt-commission-breakdown__number">Rate</th>
+          <th scope="col" class="smrt-commission-breakdown__number">Share</th>
+          <th scope="col" class="smrt-commission-breakdown__number">Amount</th>
           <th scope="col">Status</th>
           <th scope="col">Clears</th>
-          <th scope="col"><span class="visually-hidden">Explanation</span></th>
+          <th scope="col"><span class="smrt-commission-breakdown__visually-hidden" data-smrt-part="label">Explanation</span></th>
         </tr>
       </thead>
-      <tbody>
+      <tbody data-smrt-part="body">
         {#each commissions as row (row.id)}
           {@const isExpanded = !!expanded[row.id]}
-          <tr>
+          <tr data-smrt-part="row">
             <td>
-              <span class="event-kind">{row.eventKind.replace(/_/g, ' ')}</span>
+              <span class="smrt-commission-breakdown__event-kind">{row.eventKind.replace(/_/g, ' ')}</span>
               {#if row.sourceLabel}
-                <span class="secondary">{row.sourceLabel}</span>
+                <span class="smrt-commission-breakdown__secondary">{row.sourceLabel}</span>
               {/if}
             </td>
             <td>{row.basis}</td>
-            <td class="num">{formatCents(row.baseAmountCents, row.currency, locale)}</td>
-            <td class="num">
+            <td class="smrt-commission-breakdown__number">{formatCents(row.baseAmountCents, row.currency, locale)}</td>
+            <td class="smrt-commission-breakdown__number">
               {row.basis === 'fixed' ? '—' : formatPercent(row.rate, locale)}
             </td>
-            <td class="num">{formatPercent(row.shareFraction, locale)}</td>
-            <td class="num amount" class:negative={row.amountCents < 0}>
+            <td class="smrt-commission-breakdown__number">{formatPercent(row.shareFraction, locale)}</td>
+            <td class="smrt-commission-breakdown__number smrt-commission-breakdown__amount" class:smrt-commission-breakdown__negative={row.amountCents < 0}>
               {formatCents(row.amountCents, row.currency, locale)}
             </td>
             <td>
@@ -81,7 +81,7 @@ function detailsId(id: string): string {
               </Badge>
             </td>
             <td>{formatDate(row.clearingEndsAt, locale)}</td>
-            <td class="toggle-cell">
+            <td class="smrt-commission-breakdown__actions" data-smrt-part="actions">
               <Button
                 variant="ghost"
                 size="sm"
@@ -94,16 +94,16 @@ function detailsId(id: string): string {
             </td>
           </tr>
           {#if isExpanded}
-            <tr class="details-row">
+            <tr class="smrt-commission-breakdown__details-row" data-smrt-part="row">
               <td colspan="9" id={detailsId(row.id)}>
-                <div class="details">
+                <div class="smrt-commission-breakdown__details" data-smrt-part="panel">
                   {#if row.trace}
-                    <p class="details__ref">
+                    <p class="smrt-commission-breakdown__details-ref" data-smrt-part="meta">
                       Plan <code>{formatPlanRef(row.trace.planKey, row.trace.planVersion)}</code>
                       · component <code>{row.trace.componentKey}</code>
                     </p>
                   {/if}
-                  <p class="details__formula">
+                  <p class="smrt-commission-breakdown__details-formula">
                     <code>
                       {formatCommissionFormula(
                         {
@@ -119,14 +119,14 @@ function detailsId(id: string): string {
                     </code>
                   </p>
                   {#if row.adjustments && row.adjustments.length > 0}
-                    <table class="adjustments">
-                      <caption class="visually-hidden">
+                    <table class="smrt-commission-breakdown__adjustments">
+                      <caption class="smrt-commission-breakdown__visually-hidden">
                         Adjustments against this commission
                       </caption>
                       <thead>
                         <tr>
                           <th scope="col">Kind</th>
-                          <th scope="col" class="num">Amount</th>
+                          <th scope="col" class="smrt-commission-breakdown__number">Amount</th>
                           <th scope="col">Reason</th>
                           <th scope="col">Recorded</th>
                         </tr>
@@ -135,7 +135,7 @@ function detailsId(id: string): string {
                         {#each row.adjustments as adjustment (adjustment.id)}
                           <tr>
                             <td>{adjustment.adjustmentKind}</td>
-                            <td class="num" class:negative={adjustment.amountCents < 0}>
+                            <td class="smrt-commission-breakdown__number" class:smrt-commission-breakdown__negative={adjustment.amountCents < 0}>
                               {formatCents(adjustment.amountCents, adjustment.currency, locale)}
                             </td>
                             <td>{adjustment.reason}</td>
@@ -145,7 +145,7 @@ function detailsId(id: string): string {
                       </tbody>
                     </table>
                   {:else}
-                    <p class="details__none">No adjustments.</p>
+                    <p class="smrt-commission-breakdown__details-none" data-smrt-part="empty">No adjustments.</p>
                   {/if}
                 </div>
               </td>
@@ -159,96 +159,100 @@ function detailsId(id: string): string {
 
 <style>
 @layer smrt.reset, smrt.structure, smrt.theme;
-@layer smrt.theme {
-  .sales-commission-breakdown {
+@layer smrt.structure {
+  .smrt-commission-breakdown__root {
     width: 100%;
     overflow-x: auto;
   }
-
-  .empty {
+  .smrt-commission-breakdown__empty {
     margin: 0;
-    color: var(--smrt-color-on-surface-variant);
-    font-style: italic;
   }
-
   table {
     width: 100%;
-    border-collapse: collapse;
-    font-size: var(--smrt-typography-body-medium-size, 0.875rem);
   }
-
   th {
     padding: var(--smrt-spacing-2, 0.5rem) var(--smrt-spacing-3, 0.75rem);
-    text-align: left;
-    font-weight: var(--smrt-typography-weight-semibold, 600);
-    background: var(--smrt-color-surface-container);
-    border-bottom: var(--smrt-hairline);
     white-space: nowrap;
   }
-
   td {
     padding: var(--smrt-spacing-2, 0.5rem) var(--smrt-spacing-3, 0.75rem);
-    border-bottom: var(--smrt-hairline);
-    vertical-align: top;
   }
-
-  .num {
-    text-align: right;
+  .smrt-commission-breakdown__number {
     white-space: nowrap;
   }
-
-  .amount {
-    font-weight: var(--smrt-typography-weight-semibold, 600);
-  }
-
-  .negative {
-    color: var(--smrt-color-error);
-  }
-
-  .event-kind {
+  .smrt-commission-breakdown__event-kind {
     display: block;
-    font-weight: var(--smrt-typography-weight-medium, 500);
   }
-
-  .secondary {
+  .smrt-commission-breakdown__secondary {
     display: block;
-    color: var(--smrt-color-on-surface-variant);
-    font-size: var(--smrt-typography-body-small-size, 0.75rem);
   }
-
-  .toggle-cell {
-    text-align: right;
+  .smrt-commission-breakdown__actions {
     white-space: nowrap;
   }
-
-  .details-row td {
-    background: var(--smrt-color-surface-container-low);
-  }
-
-  .details {
+  .smrt-commission-breakdown__details {
     display: flex;
     flex-direction: column;
     gap: var(--smrt-spacing-2, 0.5rem);
   }
-
-  .details__ref,
-  .details__formula,
-  .details__none {
+  .smrt-commission-breakdown__details-ref,
+  .smrt-commission-breakdown__details-formula,
+  .smrt-commission-breakdown__details-none {
     margin: 0;
   }
+}
 
-  .details__none {
+@layer smrt.theme {
+  .smrt-commission-breakdown__empty {
     color: var(--smrt-color-on-surface-variant);
     font-style: italic;
   }
-
+  table {
+    border-collapse: collapse;
+    font-size: var(--smrt-typography-body-medium-size, 0.875rem);
+  }
+  th {
+    text-align: left;
+    font-weight: var(--smrt-typography-weight-semibold, 600);
+    background: var(--smrt-color-surface-container);
+    border-bottom: var(--smrt-hairline);
+  }
+  td {
+    border-bottom: var(--smrt-hairline);
+    vertical-align: top;
+  }
+  .smrt-commission-breakdown__number {
+    text-align: right;
+  }
+  .smrt-commission-breakdown__amount {
+    font-weight: var(--smrt-typography-weight-semibold, 600);
+  }
+  .smrt-commission-breakdown__negative {
+    color: var(--smrt-color-error);
+  }
+  .smrt-commission-breakdown__event-kind {
+    font-weight: var(--smrt-typography-weight-medium, 500);
+  }
+  .smrt-commission-breakdown__secondary {
+    color: var(--smrt-color-on-surface-variant);
+    font-size: var(--smrt-typography-body-small-size, 0.75rem);
+  }
+  .smrt-commission-breakdown__actions {
+    text-align: right;
+  }
+  .smrt-commission-breakdown__details-row td {
+    background: var(--smrt-color-surface-container-low);
+  }
+  .smrt-commission-breakdown__details-none {
+    color: var(--smrt-color-on-surface-variant);
+    font-style: italic;
+  }
   code {
     font-family: var(--smrt-font-family-mono, ui-monospace, monospace);
     font-size: var(--smrt-typography-body-small-size, 0.8125rem);
   }
-
-  .adjustments th {
+  .smrt-commission-breakdown__adjustments th {
     background: transparent;
   }
 }
+
 </style>

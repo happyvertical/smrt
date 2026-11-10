@@ -45,15 +45,15 @@ const tiles = $derived.by((): Tile[] => {
 });
 </script>
 
-<div class="sales-earnings-summary" data-smrt-component="ReferrerEarningsSummary">
+<div class="smrt-referrer-earnings-summary__root" data-smrt-component="ReferrerEarningsSummary">
   {#if !balance}
-    <p class="empty">No earnings yet.</p>
+    <p class="smrt-referrer-earnings-summary__empty" data-smrt-part="empty">No earnings yet.</p>
   {:else}
-    <dl class="tiles">
+    <dl class="smrt-referrer-earnings-summary__tiles" data-smrt-part="list">
       {#each tiles as tile (tile.label)}
-        <div class="tile" class:tile--emphasis={tile.emphasis}>
+        <div class="smrt-referrer-earnings-summary__tile" class:smrt-referrer-earnings-summary__emphasis={tile.emphasis} data-smrt-part="tile">
           <dt>{tile.label}</dt>
-          <dd class:negative={tile.amountCents < 0}>
+          <dd class:smrt-referrer-earnings-summary__negative={tile.amountCents < 0}>
             {formatCents(tile.amountCents, balance.currency, locale)}
           </dd>
         </div>
@@ -64,46 +64,50 @@ const tiles = $derived.by((): Tile[] => {
 
 <style>
 @layer smrt.reset, smrt.structure, smrt.theme;
-@layer smrt.theme {
-  .empty {
+@layer smrt.structure {
+  .smrt-referrer-earnings-summary__empty {
     margin: 0;
-    color: var(--smrt-color-on-surface-variant);
-    font-style: italic;
   }
-
-  .tiles {
+  .smrt-referrer-earnings-summary__tiles {
     display: grid;
     grid-template-columns: repeat(auto-fit, minmax(10rem, 1fr));
     gap: var(--smrt-spacing-3, 0.75rem);
     margin: 0;
   }
+  .smrt-referrer-earnings-summary__tile {
+    padding: var(--smrt-spacing-3, 0.75rem);
+  }
+  .smrt-referrer-earnings-summary__tile dd {
+    margin: var(--smrt-spacing-1, 0.25rem) 0 0;
+  }
+}
 
-  .tile {
+@layer smrt.theme {
+  .smrt-referrer-earnings-summary__empty {
+    color: var(--smrt-color-on-surface-variant);
+    font-style: italic;
+  }
+  .smrt-referrer-earnings-summary__tile {
     background: var(--smrt-color-surface);
     border: var(--smrt-hairline);
     border-radius: var(--smrt-radius-md);
-    padding: var(--smrt-spacing-3, 0.75rem);
   }
-
-  .tile--emphasis {
+  .smrt-referrer-earnings-summary__emphasis {
     border-color: var(--smrt-color-primary);
   }
-
-  .tile dt {
+  .smrt-referrer-earnings-summary__tile dt {
     color: var(--smrt-color-on-surface-variant);
     font-size: var(--smrt-typography-label-medium-size, 0.75rem);
     text-transform: uppercase;
     letter-spacing: 0.04em;
   }
-
-  .tile dd {
-    margin: var(--smrt-spacing-1, 0.25rem) 0 0;
+  .smrt-referrer-earnings-summary__tile dd {
     font-size: var(--smrt-typography-title-medium-size, 1rem);
     font-weight: var(--smrt-typography-weight-bold, 700);
   }
-
-  .tile dd.negative {
+  .smrt-referrer-earnings-summary__tile dd.smrt-referrer-earnings-summary__negative {
     color: var(--smrt-color-error);
   }
 }
+
 </style>

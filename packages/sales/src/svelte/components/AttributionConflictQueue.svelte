@@ -98,9 +98,9 @@ function resolve(exception: AttributionExceptionView) {
 }
 </script>
 
-<section class="sales-attribution-queue" data-smrt-component="AttributionConflictQueue">
+<section class="smrt-attribution-conflict-queue__root" data-smrt-component="AttributionConflictQueue">
   {#if exceptions.length === 0}
-    <p class="empty">No attribution exceptions to review.</p>
+    <p class="smrt-attribution-conflict-queue__empty" data-smrt-part="empty">No attribution exceptions to review.</p>
   {:else}
     {#each exceptions as exception (exception.id)}
       {@const open = exception.status === 'open'}
@@ -108,12 +108,12 @@ function resolve(exception: AttributionExceptionView) {
       {@const validation = validateAwards(awards)}
       {@const reason = (reasonDrafts[exception.id] ?? '').trim()}
       <Card variant="outlined">
-        <div class="head">
-          <span class="head__target">
-            <span class="head__kind">{exception.targetKind}</span>
+        <div class="smrt-attribution-conflict-queue__header" data-smrt-part="header">
+          <span class="smrt-attribution-conflict-queue__target" data-smrt-part="target">
+            <span class="smrt-attribution-conflict-queue__kind" data-smrt-part="kind">{exception.targetKind}</span>
             {exception.targetLabel ?? exception.targetId}
           </span>
-          <span class="head__badges">
+          <span class="smrt-attribution-conflict-queue__badges" data-smrt-part="badges">
             {#if exception.programName}
               <Badge variant="default" size="sm">{exception.programName}</Badge>
             {/if}
@@ -123,10 +123,10 @@ function resolve(exception: AttributionExceptionView) {
           </span>
         </div>
 
-        <p class="conflict-reason">{exception.conflictReason}</p>
+        <p class="smrt-attribution-conflict-queue__message" data-smrt-part="message">{exception.conflictReason}</p>
 
-        <table class="candidates">
-          <caption class="visually-hidden">Competing candidate touches</caption>
+        <table class="smrt-attribution-conflict-queue__candidates" data-smrt-part="candidates">
+          <caption class="smrt-attribution-conflict-queue__visually-hidden" data-smrt-part="label">Competing candidate touches</caption>
           <thead>
             <tr>
               <th scope="col">Referrer</th>
@@ -146,11 +146,11 @@ function resolve(exception: AttributionExceptionView) {
         </table>
 
         {#if open && onResolve}
-          <div class="award-editor">
+          <div class="smrt-attribution-conflict-queue__editor" data-smrt-part="editor">
             <h4>Award credit</h4>
             {#each awards as award (award.referrerId)}
-              <div class="award-editor__row">
-                <span class="award-editor__name">
+              <div class="smrt-attribution-conflict-queue__row" data-smrt-part="row">
+                <span class="smrt-attribution-conflict-queue__name" data-smrt-part="name">
                   {referrerLabel(exception, award.referrerId)}
                 </span>
                 <Input
@@ -171,8 +171,9 @@ function resolve(exception: AttributionExceptionView) {
               </div>
             {/each}
             <p
-              class="award-editor__total"
-              class:invalid={!validation.valid}
+              class="smrt-attribution-conflict-queue__total"
+              class:smrt-attribution-conflict-queue__invalid={!validation.valid}
+              data-smrt-part="total"
               role="status"
             >
               Total: {formatPercent(validation.totalFraction, locale)}
@@ -208,20 +209,20 @@ function resolve(exception: AttributionExceptionView) {
             </Button>
           </div>
         {:else if !open}
-          <dl class="audit">
-            <div class="audit__item">
+          <dl class="smrt-attribution-conflict-queue__audit" data-smrt-part="audit">
+            <div class="smrt-attribution-conflict-queue__audit-item" data-smrt-part="audit-item">
               <dt>Mode</dt>
               <dd>{exception.resolutionMode ?? '—'}</dd>
             </div>
-            <div class="audit__item">
+            <div class="smrt-attribution-conflict-queue__audit-item" data-smrt-part="audit-item">
               <dt>Reason</dt>
               <dd>{exception.resolutionReason ?? '—'}</dd>
             </div>
-            <div class="audit__item">
+            <div class="smrt-attribution-conflict-queue__audit-item" data-smrt-part="audit-item">
               <dt>Resolved by</dt>
               <dd>{exception.resolvedByName ?? '—'}</dd>
             </div>
-            <div class="audit__item">
+            <div class="smrt-attribution-conflict-queue__audit-item" data-smrt-part="audit-item">
               <dt>Resolved at</dt>
               <dd>{formatDate(exception.resolvedAt, locale)}</dd>
             </div>
@@ -234,125 +235,75 @@ function resolve(exception: AttributionExceptionView) {
 
 <style>
 @layer smrt.reset, smrt.structure, smrt.theme;
-@layer smrt.theme {
-  .sales-attribution-queue {
+@layer smrt.structure {
+  .smrt-attribution-conflict-queue__root {
     display: flex;
     flex-direction: column;
     gap: var(--smrt-spacing-4, 1rem);
   }
-
-  .empty {
+  .smrt-attribution-conflict-queue__empty {
     margin: 0;
-    color: var(--smrt-color-on-surface-variant);
-    font-style: italic;
   }
-
-  .head {
+  .smrt-attribution-conflict-queue__header {
     display: flex;
     align-items: center;
     justify-content: space-between;
     gap: var(--smrt-spacing-2, 0.5rem);
     margin-bottom: var(--smrt-spacing-2, 0.5rem);
   }
-
-  .head__target {
-    font-weight: var(--smrt-typography-weight-semibold, 600);
-  }
-
-  .head__kind {
-    text-transform: uppercase;
-    letter-spacing: 0.04em;
-    font-size: var(--smrt-typography-label-medium-size, 0.75rem);
-    color: var(--smrt-color-on-surface-variant);
+  .smrt-attribution-conflict-queue__kind {
     margin-right: var(--smrt-spacing-1, 0.25rem);
   }
-
-  .head__badges {
+  .smrt-attribution-conflict-queue__badges {
     display: inline-flex;
     gap: var(--smrt-spacing-1, 0.25rem);
   }
-
-  .conflict-reason {
+  .smrt-attribution-conflict-queue__message {
     margin: 0 0 var(--smrt-spacing-3, 0.75rem);
   }
-
-  .candidates {
+  .smrt-attribution-conflict-queue__candidates {
     width: 100%;
-    border-collapse: collapse;
-    font-size: var(--smrt-typography-body-medium-size, 0.875rem);
     margin-bottom: var(--smrt-spacing-3, 0.75rem);
   }
-
-  .candidates th {
+  .smrt-attribution-conflict-queue__candidates th {
     padding: var(--smrt-spacing-1, 0.25rem) var(--smrt-spacing-2, 0.5rem);
-    text-align: left;
-    font-weight: var(--smrt-typography-weight-semibold, 600);
-    border-bottom: var(--smrt-hairline);
     white-space: nowrap;
   }
-
-  .candidates td {
+  .smrt-attribution-conflict-queue__candidates td {
     padding: var(--smrt-spacing-1, 0.25rem) var(--smrt-spacing-2, 0.5rem);
-    border-bottom: var(--smrt-hairline);
   }
-
-  .award-editor {
+  .smrt-attribution-conflict-queue__editor {
     display: flex;
     flex-direction: column;
     gap: var(--smrt-spacing-2, 0.5rem);
   }
-
-  .award-editor h4 {
+  .smrt-attribution-conflict-queue__editor h4 {
     margin: 0;
-    font-size: var(--smrt-typography-label-large-size, 0.875rem);
-    text-transform: uppercase;
-    letter-spacing: 0.04em;
-    color: var(--smrt-color-on-surface-variant);
   }
-
-  .award-editor__row {
+  .smrt-attribution-conflict-queue__row {
     display: flex;
     align-items: center;
     gap: var(--smrt-spacing-2, 0.5rem);
   }
-
-  .award-editor__name {
+  .smrt-attribution-conflict-queue__name {
     flex: 0 0 12rem;
   }
-
-  .award-editor__total {
+  .smrt-attribution-conflict-queue__total {
     margin: 0;
-    font-size: var(--smrt-typography-body-small-size, 0.8125rem);
-    color: var(--smrt-color-on-surface-variant);
   }
-
-  .award-editor__total.invalid {
-    color: var(--smrt-color-error);
-  }
-
-  .award-editor :global(.form-group) {
+  .smrt-attribution-conflict-queue__editor :global(.form-group) {
     margin-bottom: 0;
   }
-
-  .audit {
+  .smrt-attribution-conflict-queue__audit {
     display: flex;
     flex-wrap: wrap;
     gap: var(--smrt-spacing-4, 1rem);
     margin: 0;
   }
-
-  .audit__item dt {
-    color: var(--smrt-color-on-surface-variant);
-    font-size: var(--smrt-typography-label-medium-size, 0.75rem);
-    text-transform: uppercase;
-    letter-spacing: 0.04em;
-  }
-
-  .audit__item dd {
+  .smrt-attribution-conflict-queue__audit-item dd {
     margin: 0;
   }
-
-  .visually-hidden {
+  .smrt-attribution-conflict-queue__visually-hidden {
     position: absolute;
     width: 1px;
     height: 1px;
@@ -361,4 +312,52 @@ function resolve(exception: AttributionExceptionView) {
     white-space: nowrap;
   }
 }
+
+@layer smrt.theme {
+  .smrt-attribution-conflict-queue__empty {
+    color: var(--smrt-color-on-surface-variant);
+    font-style: italic;
+  }
+  .smrt-attribution-conflict-queue__target {
+    font-weight: var(--smrt-typography-weight-semibold, 600);
+  }
+  .smrt-attribution-conflict-queue__kind {
+    text-transform: uppercase;
+    letter-spacing: 0.04em;
+    font-size: var(--smrt-typography-label-medium-size, 0.75rem);
+    color: var(--smrt-color-on-surface-variant);
+  }
+  .smrt-attribution-conflict-queue__candidates {
+    border-collapse: collapse;
+    font-size: var(--smrt-typography-body-medium-size, 0.875rem);
+  }
+  .smrt-attribution-conflict-queue__candidates th {
+    text-align: left;
+    font-weight: var(--smrt-typography-weight-semibold, 600);
+    border-bottom: var(--smrt-hairline);
+  }
+  .smrt-attribution-conflict-queue__candidates td {
+    border-bottom: var(--smrt-hairline);
+  }
+  .smrt-attribution-conflict-queue__editor h4 {
+    font-size: var(--smrt-typography-label-large-size, 0.875rem);
+    text-transform: uppercase;
+    letter-spacing: 0.04em;
+    color: var(--smrt-color-on-surface-variant);
+  }
+  .smrt-attribution-conflict-queue__total {
+    font-size: var(--smrt-typography-body-small-size, 0.8125rem);
+    color: var(--smrt-color-on-surface-variant);
+  }
+  .smrt-attribution-conflict-queue__total.smrt-attribution-conflict-queue__invalid {
+    color: var(--smrt-color-error);
+  }
+  .smrt-attribution-conflict-queue__audit-item dt {
+    color: var(--smrt-color-on-surface-variant);
+    font-size: var(--smrt-typography-label-medium-size, 0.75rem);
+    text-transform: uppercase;
+    letter-spacing: 0.04em;
+  }
+}
+
 </style>
