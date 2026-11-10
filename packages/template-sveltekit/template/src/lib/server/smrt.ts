@@ -14,13 +14,12 @@
  * call them per request and never keep the result.
  */
 
-import { createProviderReadinessProbe } from '@happyvertical/smrt-app-runtime';
 import { createSmrtSvelteKitRuntime } from '@happyvertical/smrt-app-runtime/sveltekit';
 
 export const runtime = createSmrtSvelteKitRuntime({
   // Deployed profiles prove authentication, asset, and secret readiness
-  // through the installed modules named by SMRT_*_READINESS_MODULE.
-  providerReadiness: createProviderReadinessProbe,
+  // through the modules named by SMRT_*_READINESS_MODULE, or the default for the
+  // configured provider; pass `providerReadiness` only to replace that.
   // Per-object overrides, for example:
   //   AuditLog: { db: { type: 'postgres', url: process.env.AUDIT_DB_URL! } }
   classOverrides: {},

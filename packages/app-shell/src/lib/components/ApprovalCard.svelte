@@ -20,17 +20,17 @@ const pending = $derived(approval.status === 'pending');
 const uid = $derived(`ap-${approval.id}`);
 const badge = $derived(
   approval.status === 'approved'
-    ? 'sh-badge-ok'
+    ? 'smrt-app-shell__badge-ok'
     : approval.status === 'pending'
-      ? 'sh-badge-warn'
-      : 'sh-badge-bad',
+      ? 'smrt-app-shell__badge-warn'
+      : 'smrt-app-shell__badge-bad',
 );
 </script>
 
-<article class="sh-card" aria-labelledby="{uid}-title" data-smrt-component="ApprovalCard">
+<article class="smrt-app-shell__card" aria-labelledby="{uid}-title" data-smrt-component="ApprovalCard">
   <header class="smrt-approval-card__top" data-smrt-part="header">
     <h3 id="{uid}-title">{approval.summary}</h3>
-    <span class="sh-badge {badge}" data-smrt-part="badge">{statusLabel(approval.status)}</span>
+    <span class="smrt-app-shell__badge {badge}" data-smrt-part="badge">{statusLabel(approval.status)}</span>
   </header>
 
   {#each detail.lines as line, i (i)}
@@ -38,12 +38,12 @@ const badge = $derived(
   {/each}
 
   {#each detail.blocks as block, i (i)}
-    <p class="sh-muted" id="{uid}-code-{i}" data-smrt-part="description">Code for {block.title}</p>
+    <p class="smrt-app-shell__muted" id="{uid}-code-{i}" data-smrt-part="description">Code for {block.title}</p>
     <!-- svelte-ignore a11y_no_noninteractive_tabindex (keyboard scrolling of long code) -->
-    <pre class="sh-code" tabindex="0" aria-labelledby="{uid}-code-{i}" data-smrt-part="code"><code>{block.code}</code></pre>
+    <pre class="smrt-app-shell__code" tabindex="0" aria-labelledby="{uid}-code-{i}" data-smrt-part="code"><code>{block.code}</code></pre>
   {/each}
 
-  <p class="sh-muted" data-smrt-part="description">
+  <p class="smrt-app-shell__muted" data-smrt-part="description">
     Asked <time datetime={approval.createdAt} title={fullTime(approval.createdAt)}
       >{timeAgo(approval.createdAt)}</time
     >{#if approval.requestedBy}
@@ -55,14 +55,14 @@ const badge = $derived(
         by {approval.decidedBy}{/if}{/if}
   </p>
 
-  {#if failed}<p class="sh-alert sh-alert-error" data-smrt-part="status">{failed}</p>{/if}
-  {#if message}<p class="sh-alert sh-alert-error" role="alert" data-smrt-part="status">{message}</p>{/if}
+  {#if failed}<p class="smrt-app-shell__alert smrt-app-shell__alert-error" data-smrt-part="status">{failed}</p>{/if}
+  {#if message}<p class="smrt-app-shell__alert smrt-app-shell__alert-error" role="alert" data-smrt-part="status">{message}</p>{/if}
 
   {#if pending && ondecide}
-    <div class="sh-actions" data-smrt-part="actions">
+    <div class="smrt-app-shell__actions" data-smrt-part="actions">
       <button
         type="button"
-        class="sh-btn sh-btn-primary"
+        class="smrt-app-shell__btn smrt-app-shell__btn-primary"
         disabled={busy}
         onclick={() => ondecide(true)} data-smrt-part="trigger"
       >
@@ -70,7 +70,7 @@ const badge = $derived(
       </button>
       <button
         type="button"
-        class="sh-btn"
+        class="smrt-app-shell__btn"
         disabled={busy}
         onclick={() => ondecide(false)} data-smrt-part="trigger"
       >

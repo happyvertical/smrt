@@ -13,30 +13,6 @@ import unstyledCss from '../../styles/unstyled.css?inline';
 
 // Native checkbox, outside the catalogue, so the toggle itself is never stripped.
 let styleless = $state(false);
-let allProperties = $state(false);
-// Experimental wave-2 reset. Keep production unstyled.css on its explicit
-// property list until unsorted components nested inside these roots migrate.
-const pilotRoots = [
-  'Button',
-  'Badge',
-  'Chip',
-  'Card',
-  'Alert',
-  'Input',
-  'Select',
-  'Checkbox',
-  'Switch',
-  'Tabs',
-]
-  .map((name) => `[data-smrt-component="${name}"]`)
-  .join(', ');
-const pilotScope = `:is(${pilotRoots})`;
-const pilotSelector = `:is(${pilotScope}, ${pilotScope} *):not(#\\#):not(#\\#):not(#\\#)`;
-const pilotCss = `@layer smrt.theme {
-  ${pilotSelector}, ${pilotSelector}::before, ${pilotSelector}::after {
-    all: revert-layer;
-  }
-}`;
 let active = $state('overview');
 
 // Svelte does not interpolate text inside a style element, so the stylesheet is
@@ -45,7 +21,7 @@ $effect(() => {
   if (!styleless) return;
   const style = document.createElement('style');
   style.setAttribute('data-smrt-styleless', '');
-  style.textContent = unstyledCss + (allProperties ? pilotCss : '');
+  style.textContent = unstyledCss;
   document.head.appendChild(style);
   return () => style.remove();
 });
@@ -74,11 +50,6 @@ const tabs = [
     With the toggle on, every component below keeps its layout and loses its
     themed look. The page chrome is not a smrt component, so it is unaffected.
   </p>
-
-  <label class="smrt-styleless-preview__toggle" data-smrt-part="label">
-    <input type="checkbox" bind:checked={allProperties} />
-    Try all: revert-layer on the ten pilot primitives
-  </label>
 
   <div class="smrt-styleless-preview__catalogue" data-smrt-part="body">
     <section>

@@ -40,9 +40,9 @@ function hintFor(s: FieldSpec): string {
 }
 </script>
 
-<div class="sh-field" data-smrt-component="FieldInput">
+<div class="smrt-app-shell__field" data-smrt-component="FieldInput">
   {#if spec.kind === 'checkbox'}
-    <label class="sh-check" data-smrt-part="label">
+    <label class="smrt-app-shell__check" data-smrt-part="label">
       <input
         {id}
         type="checkbox"
@@ -55,13 +55,13 @@ function hintFor(s: FieldSpec): string {
     </label>
   {:else}
     <label for={id}>
-      {spec.label}{#if spec.required}<span class="sh-req" aria-hidden="true" data-smrt-part="label"> *</span
+      {spec.label}{#if spec.required}<span class="smrt-app-shell__req" aria-hidden="true" data-smrt-part="label"> *</span
         ><span class="smrt-field-input__sr" data-smrt-part="label"> (required)</span>{/if}
     </label>
     {#if spec.kind === 'select'}
       <select
         {id}
-        class="sh-input"
+        class="smrt-app-shell__input"
         {disabled}
         bind:value
         aria-invalid={error ? 'true' : undefined}
@@ -76,7 +76,7 @@ function hintFor(s: FieldSpec): string {
     {:else if spec.kind === 'reference'}
       <select
         {id}
-        class="sh-input"
+        class="smrt-app-shell__input"
         {disabled}
         bind:value
         aria-invalid={error ? 'true' : undefined}
@@ -94,7 +94,7 @@ function hintFor(s: FieldSpec): string {
     {:else if spec.kind === 'json'}
       <textarea
         {id}
-        class="sh-input"
+        class="smrt-app-shell__input"
         {disabled}
         spellcheck="false"
         bind:value
@@ -105,7 +105,7 @@ function hintFor(s: FieldSpec): string {
     {:else}
       <input
         {id}
-        class="sh-input"
+        class="smrt-app-shell__input"
         {disabled}
         bind:value
         type={spec.kind === 'date'
@@ -121,8 +121,8 @@ function hintFor(s: FieldSpec): string {
       />
     {/if}
   {/if}
-  {#if hintFor(spec)}<p class="sh-hint" id={hintId} data-smrt-part="hint">{hintFor(spec)}</p>{/if}
-  {#if error}<p class="sh-error" id={errorId} data-smrt-part="error">{error}</p>{/if}
+  {#if hintFor(spec)}<p class="smrt-app-shell__hint" id={hintId} data-smrt-part="hint">{hintFor(spec)}</p>{/if}
+  {#if error}<p class="smrt-app-shell__error" id={errorId} data-smrt-part="error">{error}</p>{/if}
 </div>
 
 <style>

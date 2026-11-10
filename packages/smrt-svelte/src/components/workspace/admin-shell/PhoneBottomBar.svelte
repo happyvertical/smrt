@@ -71,7 +71,7 @@ function accessibleName(item: PhoneBottomBarEntry): string {
     {#if item.href}
       <a
         class="smrt-phone-bottom-bar__item"
-        class:active={item.active}
+        class:smrt-phone-bottom-bar__active={item.active}
         href={item.href}
         aria-label={accessibleName(item)}
         aria-current={item.active ? 'page' : undefined}
@@ -85,7 +85,7 @@ function accessibleName(item: PhoneBottomBarEntry): string {
       <button
         type="button"
         class="smrt-phone-bottom-bar__item"
-        class:active={item.active}
+        class:smrt-phone-bottom-bar__active={item.active}
         aria-label={accessibleName(item)}
         aria-expanded={item.expanded}
         aria-controls={item.controls}
@@ -190,10 +190,10 @@ function accessibleName(item: PhoneBottomBarEntry): string {
   .smrt-phone-bottom-bar__item[aria-disabled='true'] {
     opacity: var(--smrt-state-disabled);
   }
-  .smrt-phone-bottom-bar__item.active {
+  .smrt-phone-bottom-bar__item.smrt-phone-bottom-bar__active {
     color: var(--smrt-color-primary);
   }
-  .smrt-phone-bottom-bar__item.active .smrt-phone-bottom-bar__icon {
+  .smrt-phone-bottom-bar__item.smrt-phone-bottom-bar__active .smrt-phone-bottom-bar__icon {
     background: var(--smrt-color-primary-container);
     color: var(--smrt-color-on-primary-container);
   }
@@ -222,11 +222,11 @@ function accessibleName(item: PhoneBottomBarEntry): string {
   }
   /* Forced colors (#3908): selected and open states keep a non-colour indicator. */
   @media (forced-colors: active) {
-    .smrt-phone-bottom-bar__item.active {
+    .smrt-phone-bottom-bar__item.smrt-phone-bottom-bar__active {
       color: CanvasText;
       font-weight: var(--smrt-typography-weight-bold);
     }
-    .smrt-phone-bottom-bar__item.active .smrt-phone-bottom-bar__icon {
+    .smrt-phone-bottom-bar__item.smrt-phone-bottom-bar__active .smrt-phone-bottom-bar__icon {
       background: Highlight;
       color: HighlightText;
     }
@@ -238,12 +238,12 @@ function accessibleName(item: PhoneBottomBarEntry): string {
       background: Highlight;
       border-color: Canvas;
     }
-    .smrt-phone-bottom-bar__item:disabled, .smrt-phone-bottom-bar__item.active:disabled {
+    .smrt-phone-bottom-bar__item:disabled, .smrt-phone-bottom-bar__item.smrt-phone-bottom-bar__active:disabled {
       opacity: 1;
       color: GrayText;
       font-weight: inherit;
     }
-    .smrt-phone-bottom-bar__item.active:disabled .smrt-phone-bottom-bar__icon {
+    .smrt-phone-bottom-bar__item.smrt-phone-bottom-bar__active:disabled .smrt-phone-bottom-bar__icon {
       background: Canvas;
       color: GrayText;
     }

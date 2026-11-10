@@ -187,7 +187,7 @@ name feedback regions; they do not replace native/ARIA state attributes.
 
 Every component `<style>` block declares and uses the smrt layers, lowest to
 highest: `smrt.reset < smrt.structure < smrt.theme`. smrt-ui components split layout and interaction rules into `smrt.structure`
-and paint and motion into `smrt.theme`. Other packages migrate incrementally. Unlayered consumer CSS always beats every smrt
+and paint and motion into `smrt.theme`. All component style blocks across the repository are sorted. Unlayered consumer CSS always beats every smrt
 layer, so restyling needs no `:global()` and no `!important`. The declaration is
 [`src/styles/layers.css`](../src/styles/layers.css)
 (`@happyvertical/smrt-ui/styles/layers.css`), injected by `ThemeProvider`. Keep
@@ -243,7 +243,8 @@ Consumers depend on three public things only: **token names** (`--smrt-*`),
    changes.
 2. Target a root or part from unlayered CSS for one-off changes:
    `[data-smrt-component="Card"]`, `[data-smrt-component="Modal"] [data-smrt-part="header"]`.
-3. Use your own classes on your own elements.
+3. Use role-named `data-smrt-part` hooks for internal regions, scoped through the component root.
+4. Import `unstyled.css` and supply an unlayered theme when replacing all component paint.
 
 Do not reach into hashed Svelte classes (`.svelte-1x2y3z`); they change on every
 build.
@@ -268,32 +269,35 @@ its layout:
 import '@happyvertical/smrt-ui/styles/unstyled.css';
 ```
 
-- **Kept (layout):** `display`, flex/grid, `gap`, `padding`, `position`, sizing,
-  and everything else not in the list below. Shells, editors, and chat threads
-  depend on this layout CSS.
-- **Reverted (look):** `background`, `border`, `border-radius`, `box-shadow`,
-  `color`, `font`, `letter-spacing`, `text-decoration`, `text-transform`,
-  `text-shadow`, `outline`, `filter`, `backdrop-filter`. Each one falls back to
-  `smrt.structure`, then to the browser default.
-- **Reset:** buttons, inputs, selects, and textareas inside component trees get
-  `margin`, `padding`, `border`, `background`, `color`, and `font` reset, so a
-  stripped control does not show UA chrome such as the 2px outset border.
-- **Specificity:** the revert selector carries three `:not(#\#)` boosts (specificity
-  `(3,1,0)`), which beats Svelte's hashed `.svelte-*` selectors without
-  `!important`.
-- **Consumer CSS wins:** unlayered rules override the revert. Style stripped
-  components with unlayered CSS, `--smrt-*` tokens, or the hooks above.
+- **Structure survives:** `display`, `flex-direction`, `grid-template-columns`,
+  `gap`, `padding`, `margin`, `width`, `height`, `position`, `inset`, `overflow`,
+  `white-space`, `cursor`, and `pointer-events`. Transparent hit areas, hidden
+  native inputs (`opacity: 0`), and stateful Switch thumb `transform` are
+  structural too. Nested components in slots retain their own structure.
+- **Theme is removed exactly:** `all: revert-layer` in `smrt.theme` targets
+  `[data-smrt-component]` roots, every descendant, and `::before` / `::after`.
+  `background`, complete `border` declarations, `border-radius`, `box-shadow`,
+  `color`, `font`, `outline`, `filter`, `transition`, and `animation` fall back
+  through `smrt.structure` to `smrt.reset` and browser defaults. Typography
+  changes can change text wrapping and intrinsic dimensions; authored layout
+  remains. CSS `all` does not reset custom properties, `direction`, or
+  `unicode-bidi`.
+- **Reset:** component text uses `font: inherit`; buttons, inputs, selects, and
+  textareas also reset `margin`, `padding`, `border`, `border-radius`,
+  `background`, and `color`, removing native control chrome. Higher structure
+  declarations restore control spacing and hit targets.
+- **Specificity:** each selector has three `:not(#\#)` boosts, `(3,1,0)` on
+  elements and `(3,1,1)` on pseudo-elements. This beats Svelte's scoped selectors
+  without `!important`.
+- **Restyle:** tokens such as `--smrt-color-primary` and `--smrt-radius-md`
+  customize the stock theme. Unlayered CSS wins over every smrt layer. Scope
+  `[data-smrt-part="header"]` through `[data-smrt-component="Card"]` to style
+  a role. For a complete theme replacement, import `unstyled.css` and supply
+  your own unlayered `background`, `border`, `color`, and `font` rules.
 
-The reverted list is explicit on purpose. `all: revert-layer` would also drop
-layout declarations until per-package structure/theme sorting lands, in components that have not been sorted yet. The ten pilot primitives retain
-their layout with `all`, but a pilot root can contain an unsorted component in
-a snippet. The Chromium regression demonstrates that the candidate reset strips
-that nested component's layout. Keep the production list until the entire
-reachable subtree is sorted; the playground's **Try all: revert-layer** toggle
-exercises the candidate on the ten pilot subtrees, including pseudo-elements.
-
-With the production explicit list, component `transition` declarations still run, so a stripped Card or Button
-fades to its unstyled colours over its usual duration.
+The Styleless Mode entry has one toggle for the production stylesheet. The
+Styleless Shell entry in smrt-svelte covers shell regions and a Disclosure inside
+a Card slot. There is no experimental reset or component allow-list.
 
 Verification: the jsdom contract test
 (`src/themes/__tests__/unstyled-css.test.ts`) asserts the declared rule and its
@@ -374,15 +378,12 @@ applicable layer; put animation keyframes with their animation in theme.
   modifiers, as `smrt-<component>__<part-or-modifier>`. Consumer classes passed
   through props remain untouched. Use role-based part attributes in consumer
   CSS and tests; keep state on existing native/ARIA attributes.
-- Keep the explicit reset during incremental rollout. A root allowlist alone
-  cannot protect an unsorted nested component. `all` also needs pseudo-element
-  coverage; keep transparent hit targets in structure so they survive it.
+- Every reachable component is now sorted. The production reset uses
+  `all: revert-layer` on complete component subtrees and their pseudo-elements;
+  transparent hit targets remain in structure.
 
-The Styleless Mode fixture now includes all ten primitives. Its second checkbox
-is experimental and only takes effect while **Apply unstyled.css** is enabled.
-The candidate strips transition and decorative opacity too; production retains
-its prior behavior. Pixel baselines for the original fixture establish that the
-split itself does not change rendering; fixture additions are reviewed separately.
+The Styleless Mode fixture includes all ten primitives and one production toggle.
+The previous candidate stylesheet and experimental checkbox are removed.
 
 ## Sorting a wave-3 slice
 
@@ -432,32 +433,49 @@ forced-colors rules. Complete those judgment steps under the pilot rules above.
 component uses a `smrt.structure` block, layout in theme or paint in structure
 fails. `opacity`, `transform`, `visibility`, and `content` are allowed in either;
 keyframe declarations are exempt from ordinary property placement checks.
-The checked-in `scripts/smrt-sort-ratchet.json` records unsorted files and distinct
-un-namespaced owned class names per file (local CSS selectors, static native-element
-class attributes and class directives; repeated selectors count once, and
-`:global()` classes and classes passed to child components do not count).
-Dynamic class expressions are covered where they have local CSS selectors; this
-inventory does not prove all runtime-generated class names are namespaced.
-Published shell class families (for example `smrt-admin-shell__*`,
-`smrt-workspace-*`, `smrt-phone-*`, `smrt-tenant-nav`, and the app shell's
-`smrt-layout-*` / `smrt-edit-*`) keep their existing names. A bounded prefix
-allow-list in `scripts/smrt-sort-layers-lib.mjs`, scoped to smrt-svelte's
-`workspace/` and `app/` sources, counts these as namespaced. It does not exempt
-generic helpers or classes in other packages. Preserve externally consumed
-legacy helpers and state modifiers too; their existing ratchet debt remains
-until a compatible migration is agreed. Add role-based parts alongside them.
-After completing and namespacing a slice, run
-`node scripts/check-smrt-sort-layers.mjs --write`. Stale entries fail lint;
-`--write` accepts shrinking debt but refuses increased counts or a sorted/new
-file becoming unsorted. An empty `smrt.structure` block explicitly marks a
-paint-only component as sorted. The existing cascade-layer gate still enforces
-layer ownership and order.
+The gate is strict: any unsorted component or new un-namespaced owned class
+fails. There is no ratchet file or `--write` escape. Empty `smrt.structure`
+explicitly marks a paint-only component as sorted. Local CSS selectors, static
+native-element class attributes and class directives count; repeated selectors
+count once. `:global()` consumer classes and classes passed to child components
+do not count. Dynamic expressions are checked through their local CSS selectors;
+the gate does not prove every runtime-generated string is namespaced.
 
-Reproduce the ten-primitive experiment with
-`node scripts/compare-smrt-sort-pilot.mjs --report /tmp/smrt-sort-pilot.json`.
-It reads pre-pilot sources from `716e55114`, writes temporary before/after files,
-and compares declarations against the working-tree pilots using
-`scripts/smrt-sort-pilot-map.json`. It reports exact-value matches, value changes,
-wrong-layer placements, TODOs and hand-only additions separately, without sorting
-any repository component. Value differences from removed token fallbacks or
-private density overrides remain visible in the generated PR table and details.
+New private classes use `smrt-<component>__<part-or-modifier>`. Published class
+families retain their names through a bounded allow-list in
+`scripts/smrt-sort-layers-lib.mjs`, with boundary and source-scope tests:
+
+- In smrt-svelte `workspace/`, `app/`, and `screens/`: `smrt-admin-shell`,
+  `smrt-workspace-`, `smrt-phone-`, `smrt-shell-`, `smrt-activity-`,
+  `smrt-app-scope-panel`, `smrt-hotkey-input`, `smrt-nav-editor`,
+  `smrt-section-menu`, `smrt-shortcuts-overlay`, `smrt-system-scope-panel`,
+  `smrt-system-status-chips`, `smrt-tenant-nav`, `smrt-role-shell`,
+  `smrt-nav-tree`, `smrt-breadcrumbs`, `smrt-dock-toggles`, `smrt-app-shell`,
+  `smrt-layout-`, `smrt-edit-`, `smrt-owner-setup`, `smrt-recipe-screens`.
+  Names ending in `-` are family prefixes; other names accept only the exact
+  root or a `-` / `__` boundary. These published names are already namespaced;
+  generic helpers and state classes are not exempt.
+- Subscription roots, each only in its matching `.svelte` file under
+  `packages/subscriptions/src/svelte/`: `PlanPicker` → `smrt-plan-picker`,
+  `SubscriptionSummary` → `smrt-subscription-summary`, `UsageThresholds` →
+  `smrt-usage-thresholds`. Only the root and `__` / `--` descendants qualify.
+
+The only legacy private exceptions are the exact file/name pairs below in
+`packages/planner/src/lib/components/`. They are shared across component
+boundaries by the app's unlayered `planner-forms.css` / `planner-lists.css`,
+which are consumer theme/layout overrides rather than component style blocks.
+Keeping these selectors preserves that shared stylesheet contract. No wildcard
+or numeric debt is accepted; tests reject a new name or a new owning file.
+
+| File | Exact classes | Shared stylesheet / reason |
+| --- | --- | --- |
+| `ChildRecords.svelte` | `planner-list`, `sort-button`, `sort-icon` | `planner-lists.css`: table and sortable-header treatment |
+| `FieldInput.svelte` | `field` | `planner-forms.css`: field spanning across the generated form boundary |
+| `FieldMapForm.svelte` | `actions`, `error`, `planner-form` | `planner-forms.css`: form grid, full-width commands and errors |
+| `FormWorkspace.svelte` | `planner-list`, `sort-button`, `sort-icon` | `planner-lists.css`: shared record table treatment |
+| `ModelWorkspace.svelte` | `actions`, `derived`, `error`, `planner-form`, `planner-list`, `sort-button`, `sort-icon`, `totals` | Both sheets: generated form spans and sortable record tables |
+| `VariantGridForm.svelte` | `actions`, `error`, `grid`, `planner-form` | `planner-forms.css`: variant grid and full-width commands/errors |
+
+The old pilot comparator and its mapping file are retired. The script tests
+retain the ten hand-sorted primitives as idempotence fixtures and exercise strict
+rejection, scoped published families, and the enumerated exceptions.

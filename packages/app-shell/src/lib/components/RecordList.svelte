@@ -58,21 +58,21 @@ async function confirmDelete() {
 </script>
 
 {#if pending}
-  <p class="sh-alert sh-alert-warn" role="status" data-smrt-part="status">
+  <p class="smrt-app-shell__alert smrt-app-shell__alert-warn" role="status" data-smrt-part="status">
     Waiting for your approval: {pending.summary}. Nothing is deleted yet.
-    <a class="sh-link" href="/approvals" data-smrt-part="link">Review it on the Approvals page</a>.
+    <a class="smrt-app-shell__link" href="/approvals" data-smrt-part="link">Review it on the Approvals page</a>.
   </p>
 {/if}
 
 {#if sorted.length === 0}
-  <div class="sh-empty" data-smrt-part="empty">
+  <div class="smrt-app-shell__empty" data-smrt-part="empty">
     <p><strong>No {info.label.toLowerCase()} yet</strong></p>
-    <p class="sh-muted" data-smrt-part="description">Add the first one to get started.</p>
-    <a class="sh-btn sh-btn-primary" href="{base}/new" data-smrt-part="trigger">New {info.label.toLowerCase()}</a>
+    <p class="smrt-app-shell__muted" data-smrt-part="description">Add the first one to get started.</p>
+    <a class="smrt-app-shell__btn smrt-app-shell__btn-primary" href="{base}/new" data-smrt-part="trigger">New {info.label.toLowerCase()}</a>
   </div>
 {:else}
-  <div class="sh-tablewrap" data-smrt-part="body">
-    <table class="sh-table" data-smrt-part="table">
+  <div class="smrt-app-shell__tablewrap" data-smrt-part="body">
+    <table class="smrt-app-shell__table" data-smrt-part="table">
       <caption class="smrt-record-list__sr-only" data-smrt-part="label">{info.label}, newest first</caption>
       <thead>
         <tr>
@@ -86,7 +86,7 @@ async function confirmDelete() {
             {#each columns as col, c (col.name)}
               <td>
                 {#if c === 0}
-                  <a class="sh-link" href="{base}/{encodeURIComponent(row.id)}" data-smrt-part="link">
+                  <a class="smrt-app-shell__link" href="{base}/{encodeURIComponent(row.id)}" data-smrt-part="link">
                     {cellText(col.def, row[col.name], description.models, lookup) ||
                       recordLabel(info, row)}
                   </a>
@@ -96,15 +96,15 @@ async function confirmDelete() {
               </td>
             {/each}
             {#if columns.length === 0}
-              <td><a class="sh-link" href="{base}/{encodeURIComponent(row.id)}" data-smrt-part="link">{recordLabel(info, row)}</a></td>
+              <td><a class="smrt-app-shell__link" href="{base}/{encodeURIComponent(row.id)}" data-smrt-part="link">{recordLabel(info, row)}</a></td>
             {/if}
-            <td class="sh-row-actions" data-smrt-part="actions">
-              <a class="sh-btn sh-btn-small" href="{base}/{encodeURIComponent(row.id)}" data-smrt-part="trigger">
+            <td class="smrt-app-shell__row-actions" data-smrt-part="actions">
+              <a class="smrt-app-shell__btn smrt-app-shell__btn-small" href="{base}/{encodeURIComponent(row.id)}" data-smrt-part="trigger">
                 Edit<span class="smrt-record-list__sr-only" data-smrt-part="label"> {recordLabel(info, row)}</span>
               </a>
               <button
                 type="button"
-                class="sh-btn sh-btn-small sh-btn-danger"
+                class="smrt-app-shell__btn smrt-app-shell__btn-small smrt-app-shell__btn-danger"
                 onclick={() => {
                   deleteError = '';
                   target = row;

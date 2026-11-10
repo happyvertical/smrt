@@ -256,15 +256,15 @@ const sidebarInert = $derived(isMobileViewport && !mobileNavOpen);
 
 <div
   class="smrt-workspace-shell"
-  class:sidebar-collapsed={collapsed}
-  class:nav-open={mobileNavOpen}
-  class:has-inspector={hasInspector}
-  class:has-inspector-rail={hasInspectorRail} data-smrt-component="WorkspaceShell"
+  class:smrt-workspace-shell__sidebar-collapsed={collapsed}
+  class:smrt-workspace-shell__nav-open={mobileNavOpen}
+  class:smrt-workspace-shell__has-inspector={hasInspector}
+  class:smrt-workspace-shell__has-inspector-rail={hasInspectorRail} data-smrt-component="WorkspaceShell"
 >
   <!-- Mobile sidebar backdrop -->
   <!-- raw-primitive-allow: full-bleed click-catching navigation backdrop/scrim; a structural overlay surface, not a styled action button -->
   <button
-    class="mobile-backdrop"
+    class="smrt-workspace-shell__mobile-backdrop"
     type="button"
     aria-label={t(M['ui.workspace_shell.close_navigation'])}
     tabindex={mobileNavOpen ? 0 : -1}
@@ -281,13 +281,13 @@ const sidebarInert = $derived(isMobileViewport && !mobileNavOpen);
     {#if onCloseInspector}
       <!-- raw-primitive-allow: full-bleed click-catching inspector backdrop/scrim; a structural overlay surface, not a styled action button -->
       <button
-        class="inspector-backdrop"
+        class="smrt-workspace-shell__inspector-backdrop"
         type="button"
         aria-label={t(M['ui.workspace_shell.close_inspector'])}
         onclick={handleInspectorClose} data-smrt-part="scrim"
       ></button>
     {:else}
-      <div class="inspector-backdrop" aria-hidden="true" data-smrt-part="scrim"></div>
+      <div class="smrt-workspace-shell__inspector-backdrop" aria-hidden="true" data-smrt-part="scrim"></div>
     {/if}
   {/if}
 
@@ -297,7 +297,7 @@ const sidebarInert = $derived(isMobileViewport && !mobileNavOpen);
     inert={sidebarInert} data-smrt-part="left-sidebar"
   >
     <div class="smrt-workspace-shell__brand-row" data-smrt-part="header">
-      <div class="brand" data-smrt-part="brand">
+      <div class="smrt-workspace-shell__brand" data-smrt-part="brand">
         {#if brand}
           {@render brand()}
         {:else}
@@ -308,7 +308,7 @@ const sidebarInert = $derived(isMobileViewport && !mobileNavOpen);
             <h1>{title}</h1>
           {/if}
           {#if subtitle}
-            <p class="subtitle" data-smrt-part="description">{subtitle}</p>
+            <p class="smrt-workspace-shell__subtitle" data-smrt-part="description">{subtitle}</p>
           {/if}
         {/if}
       </div>
@@ -317,7 +317,7 @@ const sidebarInert = $derived(isMobileViewport && !mobileNavOpen);
         <Button
           variant="ghost"
           size="sm"
-          class="shell-toggle"
+          class="smrt-workspace-shell__shell-toggle"
           onclick={handleCollapseToggle}
           aria-label={collapsed ? 'Expand sidebar' : 'Collapse sidebar'}
           aria-expanded={!collapsed}
@@ -330,13 +330,13 @@ const sidebarInert = $derived(isMobileViewport && !mobileNavOpen);
     </div>
 
     {#if nav}
-      <nav class="nav-region" aria-label={t(M['ui.workspace_shell.workspace_navigation'])} data-smrt-part="body">
+      <nav class="smrt-workspace-shell__nav-region" aria-label={t(M['ui.workspace_shell.workspace_navigation'])} data-smrt-part="body">
         {@render nav()}
       </nav>
     {/if}
 
     {#if sidebarFooter}
-      <div class="sidebar-footer" data-smrt-part="footer">
+      <div class="smrt-workspace-shell__sidebar-footer" data-smrt-part="footer">
         {@render sidebarFooter()}
       </div>
     {/if}
@@ -348,7 +348,7 @@ const sidebarInert = $derived(isMobileViewport && !mobileNavOpen);
         <Button
           variant="ghost"
           size="sm"
-          class="mobile-menu"
+          class="smrt-workspace-shell__mobile-menu"
           onclick={toggleMobileNav}
           aria-label={mobileNavOpen ? 'Close navigation' : 'Open navigation'}
           aria-expanded={mobileNavOpen}
@@ -357,7 +357,7 @@ const sidebarInert = $derived(isMobileViewport && !mobileNavOpen);
         </Button>
         <div class="smrt-workspace-shell__topbar-brand" data-smrt-part="brand">
           {#if eyebrow}
-            <div class="smrt-workspace-shell__eyebrow topbar-eyebrow" data-smrt-part="label">{eyebrow}</div>
+            <div class="smrt-workspace-shell__eyebrow smrt-workspace-shell__topbar-eyebrow" data-smrt-part="label">{eyebrow}</div>
           {/if}
           {#if modeLabel}
             <p class="smrt-workspace-shell__mode-title" data-smrt-part="title">{modeLabel}</p>
@@ -367,13 +367,13 @@ const sidebarInert = $derived(isMobileViewport && !mobileNavOpen);
 
       <div class="smrt-workspace-shell__topbar-right" data-smrt-part="right">
         {#if topbarActions}
-          <div class="topbar-actions" data-smrt-part="actions">
+          <div class="smrt-workspace-shell__topbar-actions" data-smrt-part="actions">
             {@render topbarActions()}
           </div>
         {/if}
         {#if modeLabel || modeStatus}
           <span
-            class="mode-badge"
+            class="smrt-workspace-shell__mode-badge"
             data-status={modeStatus || 'default'}
             role="status"
             aria-live="polite" data-smrt-part="badge"
@@ -399,12 +399,12 @@ const sidebarInert = $derived(isMobileViewport && !mobileNavOpen);
           aria-label={inspectorTitle} data-smrt-part="right-sidebar"
         >
           <div class="smrt-workspace-shell__inspector-header" data-smrt-part="header">
-            <span class="inspector-title" data-smrt-part="title">{inspectorTitle}</span>
+            <span class="smrt-workspace-shell__inspector-title" data-smrt-part="title">{inspectorTitle}</span>
             {#if onCloseInspector}
               <Button
                 variant="ghost"
                 size="sm"
-                class="inspector-close"
+                class="smrt-workspace-shell__inspector-close"
                 onclick={handleInspectorClose}
                 aria-label={t(M['ui.workspace_shell.close_inspector'])}
               >
@@ -412,7 +412,7 @@ const sidebarInert = $derived(isMobileViewport && !mobileNavOpen);
               </Button>
             {/if}
           </div>
-          <div class="inspector-body" data-smrt-part="body">
+          <div class="smrt-workspace-shell__inspector-body" data-smrt-part="body">
             {@render inspector!()}
           </div>
         </aside>
@@ -450,7 +450,7 @@ const sidebarInert = $derived(isMobileViewport && !mobileNavOpen);
     min-height: 100dvh;
     isolation: isolate;
   }
-  .smrt-workspace-shell.sidebar-collapsed {
+  .smrt-workspace-shell.smrt-workspace-shell__sidebar-collapsed {
     grid-template-columns: var(--smrt-ws-sidebar-collapsed-width) 1fr;
     /*
     * When the sidebar is collapsed, recompute the inspector-width clamp
@@ -487,23 +487,23 @@ const sidebarInert = $derived(isMobileViewport && !mobileNavOpen);
     align-items: flex-start;
     gap: 0.75rem;
   }
-  .brand {
+  .smrt-workspace-shell__brand {
     display: grid;
     gap: 0.35rem;
     min-width: 0;
   }
-  .brand :global(h1),
-  .brand h1 {
+  .smrt-workspace-shell__brand :global(h1),
+  .smrt-workspace-shell__brand h1 {
     margin: 0;
   }
-  .brand .subtitle {
+  .smrt-workspace-shell__brand .smrt-workspace-shell__subtitle {
     margin: 0;
   }
   /* These shell-chrome controls now render through smrt-ui <Button>; pierce
   Svelte scoping into the child <button> with `.smrt-workspace-shell
   :global(.class)` (#1589). Button owns focus-visible, so those rules are
   dropped. The responsive `display` toggles below are preserved. */
-  .smrt-workspace-shell :global(.shell-toggle) {
+  .smrt-workspace-shell :global(.smrt-workspace-shell__shell-toggle) {
     width: 2rem;
     height: 2rem;
     display: inline-flex;
@@ -511,7 +511,7 @@ const sidebarInert = $derived(isMobileViewport && !mobileNavOpen);
     justify-content: center;
     flex-shrink: 0;
   }
-  .nav-region {
+  .smrt-workspace-shell__nav-region {
     display: flex;
     flex-direction: column;
     flex: 1 1 auto;
@@ -521,7 +521,7 @@ const sidebarInert = $derived(isMobileViewport && !mobileNavOpen);
     overscroll-behavior: contain;
     scrollbar-gutter: stable;
   }
-  .sidebar-footer {
+  .smrt-workspace-shell__sidebar-footer {
     margin-top: auto;
     flex: 0 0 auto;
     display: grid;
@@ -558,7 +558,7 @@ const sidebarInert = $derived(isMobileViewport && !mobileNavOpen);
     justify-content: flex-end;
     flex-wrap: wrap;
   }
-  .topbar-actions {
+  .smrt-workspace-shell__topbar-actions {
     display: flex;
     align-items: center;
     gap: 0.4rem;
@@ -576,7 +576,7 @@ const sidebarInert = $derived(isMobileViewport && !mobileNavOpen);
   .smrt-workspace-shell__mode-detail {
     max-width: 18rem;
   }
-  .mode-badge {
+  .smrt-workspace-shell__mode-badge {
     display: inline-flex;
     align-items: center;
     gap: 0.4rem;
@@ -588,7 +588,7 @@ const sidebarInert = $derived(isMobileViewport && !mobileNavOpen);
     height: 0.55rem;
     flex-shrink: 0;
   }
-  .smrt-workspace-shell :global(.mobile-menu) {
+  .smrt-workspace-shell :global(.smrt-workspace-shell__mobile-menu) {
     display: none;
     width: 2.35rem;
     height: 2.35rem;
@@ -621,14 +621,14 @@ const sidebarInert = $derived(isMobileViewport && !mobileNavOpen);
     justify-content: space-between;
     padding: 0.85rem 1rem;
   }
-  .smrt-workspace-shell :global(.inspector-close) {
+  .smrt-workspace-shell :global(.smrt-workspace-shell__inspector-close) {
     width: 2rem;
     height: 2rem;
     display: inline-flex;
     align-items: center;
     justify-content: center;
   }
-  .inspector-body {
+  .smrt-workspace-shell__inspector-body {
     flex: 1;
     min-height: 0;
     overflow-y: auto;
@@ -648,18 +648,18 @@ const sidebarInert = $derived(isMobileViewport && !mobileNavOpen);
     z-index: 18;
   }
   /* When both inspector + rail are present, push rail off the panel. */
-  .smrt-workspace-shell.has-inspector.has-inspector-rail .smrt-workspace-inspector-rail {
+  .smrt-workspace-shell.smrt-workspace-shell__has-inspector.smrt-workspace-shell__has-inspector-rail .smrt-workspace-inspector-rail {
     right: var(--smrt-ws-inspector-width);
   }
   /* Reserve room on the right side so content doesn't slide under panel/rail. */
   @media (min-width: 961px) {
-    .smrt-workspace-shell.has-inspector .smrt-workspace-content,
-    .smrt-workspace-shell.has-inspector .smrt-workspace-topbar {
+    .smrt-workspace-shell.smrt-workspace-shell__has-inspector .smrt-workspace-content,
+    .smrt-workspace-shell.smrt-workspace-shell__has-inspector .smrt-workspace-topbar {
       padding-right: calc(var(--smrt-ws-inspector-width) + 1rem);
     }
-    .smrt-workspace-shell.has-inspector-rail:not(.has-inspector)
+    .smrt-workspace-shell.smrt-workspace-shell__has-inspector-rail:not(.smrt-workspace-shell__has-inspector)
     .smrt-workspace-content,
-    .smrt-workspace-shell.has-inspector-rail:not(.has-inspector)
+    .smrt-workspace-shell.smrt-workspace-shell__has-inspector-rail:not(.smrt-workspace-shell__has-inspector)
     .smrt-workspace-topbar {
       padding-right: calc(var(--smrt-ws-rail-width) + 1rem);
     }
@@ -670,9 +670,9 @@ const sidebarInert = $derived(isMobileViewport && !mobileNavOpen);
     * room for both, otherwise the rail overlaps the right edge of content
     * and topbar.
     */
-    .smrt-workspace-shell.has-inspector.has-inspector-rail
+    .smrt-workspace-shell.smrt-workspace-shell__has-inspector.smrt-workspace-shell__has-inspector-rail
     .smrt-workspace-content,
-    .smrt-workspace-shell.has-inspector.has-inspector-rail
+    .smrt-workspace-shell.smrt-workspace-shell__has-inspector.smrt-workspace-shell__has-inspector-rail
     .smrt-workspace-topbar {
       padding-right: calc(
         var(--smrt-ws-inspector-width) + var(--smrt-ws-rail-width) + 1rem
@@ -686,8 +686,8 @@ const sidebarInert = $derived(isMobileViewport && !mobileNavOpen);
   * `pointer-events: none` ensures the backdrop can never intercept clicks
   * on the desktop even if it slips back into the rendering tree.
   */
-  .mobile-backdrop,
-  .inspector-backdrop {
+  .smrt-workspace-shell__mobile-backdrop,
+  .smrt-workspace-shell__inspector-backdrop {
     display: none;
     pointer-events: none;
   }
@@ -699,24 +699,24 @@ const sidebarInert = $derived(isMobileViewport && !mobileNavOpen);
     .smrt-workspace-shell .smrt-workspace-shell__brand-row {
       justify-content: center;
     }
-    .smrt-workspace-shell :global(.shell-toggle) {
+    .smrt-workspace-shell :global(.smrt-workspace-shell__shell-toggle) {
       display: none;
     }
-    .smrt-workspace-shell .brand .subtitle,
-    .smrt-workspace-shell.sidebar-collapsed .brand .subtitle {
+    .smrt-workspace-shell .smrt-workspace-shell__brand .smrt-workspace-shell__subtitle,
+    .smrt-workspace-shell.smrt-workspace-shell__sidebar-collapsed .smrt-workspace-shell__brand .smrt-workspace-shell__subtitle {
       display: none;
     }
   }
   /* ─── Mobile — drawer sidebar, drawer inspector ───────── */
   @media (max-width: 960px) {
     .smrt-workspace-shell,
-    .smrt-workspace-shell.sidebar-collapsed {
+    .smrt-workspace-shell.smrt-workspace-shell__sidebar-collapsed {
       grid-template-columns: 1fr;
     }
-    .smrt-workspace-shell :global(.mobile-menu) {
+    .smrt-workspace-shell :global(.smrt-workspace-shell__mobile-menu) {
       display: inline-flex;
     }
-    .smrt-workspace-shell :global(.shell-toggle) {
+    .smrt-workspace-shell :global(.smrt-workspace-shell__shell-toggle) {
       display: none;
     }
     .smrt-workspace-sidebar {
@@ -726,10 +726,10 @@ const sidebarInert = $derived(isMobileViewport && !mobileNavOpen);
       transform: translateX(-100%);
       z-index: 30;
     }
-    .smrt-workspace-shell.nav-open .smrt-workspace-sidebar {
+    .smrt-workspace-shell.smrt-workspace-shell__nav-open .smrt-workspace-sidebar {
       transform: translateX(0);
     }
-    .mobile-backdrop {
+    .smrt-workspace-shell__mobile-backdrop {
       display: block;
       position: fixed;
       inset: 0;
@@ -737,7 +737,7 @@ const sidebarInert = $derived(isMobileViewport && !mobileNavOpen);
       pointer-events: none;
       z-index: 25;
     }
-    .smrt-workspace-shell.nav-open .mobile-backdrop {
+    .smrt-workspace-shell.smrt-workspace-shell__nav-open .smrt-workspace-shell__mobile-backdrop {
       opacity: 1;
       pointer-events: auto;
     }
@@ -748,22 +748,22 @@ const sidebarInert = $derived(isMobileViewport && !mobileNavOpen);
     .smrt-workspace-shell {
       --smrt-ws-inspector-width: min(100vw, 420px);
     }
-    .smrt-workspace-shell.has-inspector .smrt-workspace-inspector-rail,
-    .smrt-workspace-shell.has-inspector-rail:not(.has-inspector)
+    .smrt-workspace-shell.smrt-workspace-shell__has-inspector .smrt-workspace-inspector-rail,
+    .smrt-workspace-shell.smrt-workspace-shell__has-inspector-rail:not(.smrt-workspace-shell__has-inspector)
     .smrt-workspace-inspector-rail {
       top: 0;
     }
-    .smrt-workspace-shell.has-inspector .smrt-workspace-content,
-    .smrt-workspace-shell.has-inspector .smrt-workspace-topbar {
+    .smrt-workspace-shell.smrt-workspace-shell__has-inspector .smrt-workspace-content,
+    .smrt-workspace-shell.smrt-workspace-shell__has-inspector .smrt-workspace-topbar {
       padding-right: var(--smrt-ws-page-pad);
     }
-    .smrt-workspace-shell.has-inspector-rail:not(.has-inspector)
+    .smrt-workspace-shell.smrt-workspace-shell__has-inspector-rail:not(.smrt-workspace-shell__has-inspector)
     .smrt-workspace-content,
-    .smrt-workspace-shell.has-inspector-rail:not(.has-inspector)
+    .smrt-workspace-shell.smrt-workspace-shell__has-inspector-rail:not(.smrt-workspace-shell__has-inspector)
     .smrt-workspace-topbar {
       padding-right: calc(var(--smrt-ws-rail-width) + var(--smrt-ws-page-pad));
     }
-    .inspector-backdrop {
+    .smrt-workspace-shell__inspector-backdrop {
       display: block;
       pointer-events: auto;
       position: fixed;
@@ -786,14 +786,14 @@ const sidebarInert = $derived(isMobileViewport && !mobileNavOpen);
     background: var(--smrt-color-surface);
     border-right: var(--smrt-hairline);
   }
-  .brand :global(h1),
-  .brand h1 {
+  .smrt-workspace-shell__brand :global(h1),
+  .smrt-workspace-shell__brand h1 {
     font-size: var(--smrt-typography-title-large-size, 1.25rem);
     line-height: var(--smrt-typography-title-large-line-height, 1.1);
     color: var(--smrt-color-on-surface);
     font-weight: var(--smrt-typography-weight-semibold, 600);
   }
-  .brand .subtitle {
+  .smrt-workspace-shell__brand .smrt-workspace-shell__subtitle {
     color: var(--smrt-color-on-surface-variant);
     line-height: var(--smrt-typography-body-medium-line-height, 1.4);
     font-size: var(--smrt-typography-body-medium-size, 0.9rem);
@@ -809,7 +809,7 @@ const sidebarInert = $derived(isMobileViewport && !mobileNavOpen);
   Svelte scoping into the child <button> with `.smrt-workspace-shell
   :global(.class)` (#1589). Button owns focus-visible, so those rules are
   dropped. The responsive `display` toggles below are preserved. */
-  .smrt-workspace-shell :global(.shell-toggle) {
+  .smrt-workspace-shell :global(.smrt-workspace-shell__shell-toggle) {
     border: var(--smrt-hairline);
     background: var(--smrt-color-surface-container);
     color: var(--smrt-color-on-surface);
@@ -818,14 +818,14 @@ const sidebarInert = $derived(isMobileViewport && !mobileNavOpen);
       background-color 150ms ease,
       color 150ms ease;
   }
-  .smrt-workspace-shell :global(.shell-toggle):hover {
+  .smrt-workspace-shell :global(.smrt-workspace-shell__shell-toggle):hover {
     background: var(--smrt-color-surface-container-high);
   }
   .smrt-workspace-shell__shell-toggle-glyph {
     font-size: var(--smrt-typography-body-large-size, 1rem);
     line-height: 1;
   }
-  .sidebar-footer {
+  .smrt-workspace-shell__sidebar-footer {
     background: var(--smrt-color-surface);
     border-top: var(--smrt-hairline);
   }
@@ -834,7 +834,7 @@ const sidebarInert = $derived(isMobileViewport && !mobileNavOpen);
     border-bottom: var(--smrt-hairline);
     box-shadow: var(--smrt-elevation-1, 0 1px 2px rgb(0 0 0 / 0.05));
   }
-  .topbar-eyebrow {
+  .smrt-workspace-shell__topbar-eyebrow {
     color: var(--smrt-color-on-surface-variant);
   }
   .smrt-workspace-shell__mode-title {
@@ -847,7 +847,7 @@ const sidebarInert = $derived(isMobileViewport && !mobileNavOpen);
     text-align: right;
     font-size: var(--smrt-typography-body-medium-size, 0.85rem);
   }
-  .mode-badge {
+  .smrt-workspace-shell__mode-badge {
     border-radius: var(--smrt-radius-full);
     border: var(--smrt-hairline);
     background: var(--smrt-color-surface-container);
@@ -860,19 +860,19 @@ const sidebarInert = $derived(isMobileViewport && !mobileNavOpen);
     border-radius: var(--smrt-radius-full);
     background: var(--smrt-color-on-surface-variant);
   }
-  .mode-badge[data-status='active'] .smrt-workspace-shell__mode-dot {
+  .smrt-workspace-shell__mode-badge[data-status='active'] .smrt-workspace-shell__mode-dot {
     background: var(--smrt-color-success);
   }
-  .mode-badge[data-status='offline'] .smrt-workspace-shell__mode-dot {
+  .smrt-workspace-shell__mode-badge[data-status='offline'] .smrt-workspace-shell__mode-dot {
     background: var(--smrt-color-on-surface-variant);
   }
-  .mode-badge[data-status='local-only'] .smrt-workspace-shell__mode-dot {
+  .smrt-workspace-shell__mode-badge[data-status='local-only'] .smrt-workspace-shell__mode-dot {
     background: var(--smrt-color-primary);
   }
-  .mode-badge[data-status='attention'] .smrt-workspace-shell__mode-dot {
+  .smrt-workspace-shell__mode-badge[data-status='attention'] .smrt-workspace-shell__mode-dot {
     background: var(--smrt-color-warning);
   }
-  .smrt-workspace-shell :global(.mobile-menu) {
+  .smrt-workspace-shell :global(.smrt-workspace-shell__mobile-menu) {
     border: var(--smrt-hairline);
     background: var(--smrt-color-surface);
     color: var(--smrt-color-on-surface);
@@ -888,12 +888,12 @@ const sidebarInert = $derived(isMobileViewport && !mobileNavOpen);
   .smrt-workspace-shell__inspector-header {
     border-bottom: var(--smrt-hairline);
   }
-  .inspector-title {
+  .smrt-workspace-shell__inspector-title {
     font-weight: var(--smrt-typography-weight-semibold, 600);
     color: var(--smrt-color-on-surface);
     font-size: var(--smrt-typography-title-medium-size, 0.95rem);
   }
-  .smrt-workspace-shell :global(.inspector-close) {
+  .smrt-workspace-shell :global(.smrt-workspace-shell__inspector-close) {
     border: 1px solid transparent;
     background: transparent;
     color: var(--smrt-color-on-surface-variant);
@@ -904,7 +904,7 @@ const sidebarInert = $derived(isMobileViewport && !mobileNavOpen);
       background-color 150ms ease,
       color 150ms ease;
   }
-  .smrt-workspace-shell :global(.inspector-close):hover {
+  .smrt-workspace-shell :global(.smrt-workspace-shell__inspector-close):hover {
     background: var(--smrt-color-surface-container-high);
     color: var(--smrt-color-on-surface);
   }
@@ -917,12 +917,12 @@ const sidebarInert = $derived(isMobileViewport && !mobileNavOpen);
     .smrt-workspace-sidebar {
       transition: transform 180ms ease;
     }
-    .mobile-backdrop {
+    .smrt-workspace-shell__mobile-backdrop {
       background: var(--smrt-color-scrim);
       transition: opacity 180ms ease;
       border: 0;
     }
-    .inspector-backdrop {
+    .smrt-workspace-shell__inspector-backdrop {
       background: var(--smrt-color-scrim);
       border: 0;
     }

@@ -43,23 +43,23 @@ const { t } = useI18n();
     {#if compact}
       {#if !logoSrc}<span aria-hidden="true">{title.charAt(0)}</span>{/if}
     {:else}
-      <div class="smrt-admin-shell__brand-text" class:wordmark={Boolean(logoSrc) && !subtitle} data-smrt-part="label"><strong>{title}</strong>{#if subtitle}<span>{subtitle}</span>{/if}</div>
+      <div class="smrt-admin-shell__brand-text" class:smrt-shell-brand__wordmark={Boolean(logoSrc) && !subtitle} data-smrt-part="label"><strong>{title}</strong>{#if subtitle}<span>{subtitle}</span>{/if}</div>
     {/if}
   {/if}
 {/snippet}
 
 {#snippet brandNode()}
 {#if homeHref}
-  <a class="smrt-admin-shell__brand smrt-admin-shell__brand-link" class:compact href={homeHref} aria-label={title || t(M['ui.admin_shell.home'])} data-smrt-component="ShellBrand">
+  <a class="smrt-admin-shell__brand smrt-admin-shell__brand-link" class:smrt-shell-brand__compact={compact} href={homeHref} aria-label={title || t(M['ui.admin_shell.home'])} data-smrt-component="ShellBrand">
     {@render content()}
   </a>
 {:else}
-  <div class="smrt-admin-shell__brand" class:compact data-smrt-component="ShellBrand">{@render content()}</div>
+  <div class="smrt-admin-shell__brand" class:smrt-shell-brand__compact={compact} data-smrt-component="ShellBrand">{@render content()}</div>
 {/if}
 {/snippet}
 
 {#if brandEnd}
-  <div class="smrt-admin-shell__brand-row" class:compact data-smrt-component="ShellBrand">
+  <div class="smrt-admin-shell__brand-row" class:smrt-shell-brand__compact={compact} data-smrt-component="ShellBrand">
     {@render brandNode()}
     {@render brandEnd({ compact })}
   </div>
@@ -87,18 +87,18 @@ const { t } = useI18n();
   .smrt-admin-shell__brand-row > :global(.smrt-admin-shell__brand) {
     flex: 1 1 auto;
   }
-  .smrt-admin-shell__brand-row.compact {
+  .smrt-admin-shell__brand-row.smrt-shell-brand__compact {
     flex-direction: column;
     margin-block-end: var(--smrt-spacing-2);
   }
-  .smrt-admin-shell__brand-row.compact > :global(.smrt-admin-shell__brand.compact) {
+  .smrt-admin-shell__brand-row.smrt-shell-brand__compact > :global(.smrt-admin-shell__brand.smrt-shell-brand__compact) {
     margin-block-end: 0;
   }
   .smrt-admin-shell__brand-text {
     display: grid;
     min-width: 0;
   }
-  .smrt-admin-shell__brand.compact {
+  .smrt-admin-shell__brand.smrt-shell-brand__compact {
     justify-content: center;
     margin-block-end: var(--smrt-spacing-2);
   }
@@ -130,7 +130,7 @@ const { t } = useI18n();
   }
   /* Logo and title alone ([logo] Planner): the title reads as a wordmark,
   its line as tall as the 2rem logo. */
-  .smrt-admin-shell__brand-text.wordmark strong {
+  .smrt-admin-shell__brand-text.smrt-shell-brand__wordmark strong {
     font: var(--smrt-typography-headline-small-font, 500 1.5rem/2rem sans-serif);
   }
 }

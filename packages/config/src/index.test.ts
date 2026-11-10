@@ -795,6 +795,31 @@ describe('@smrt/config', () => {
       expect(resolved).toEqual(resolveConfiguredApplicationRuntime());
     });
 
+    it('selects the profile and providers from the environment when no runtime is declared (#4864)', () => {
+      const saved = { ...process.env };
+      try {
+        process.env.SMRT_RUNTIME_PROFILE = 'self-hosted';
+        process.env.SMRT_AUTHENTICATION_PROVIDER = 'password';
+        process.env.SMRT_ASSETS_PROVIDER = 'local-files';
+        process.env.SMRT_SECRETS_PROVIDER = 'environment';
+        const resolved = resolveEffectiveApplicationRuntime({});
+        expect(resolved.profile).toBe('self-hosted');
+        expect(resolved.providers.authentication.provider).toBe('password');
+        expect(resolved.providers.assets.provider).toBe('local-files');
+        expect(resolved.providers.secrets.provider).toBe('environment');
+        process.env.SMRT_RUNTIME_PROFILE = 'bogus';
+        expect(() => resolveEffectiveApplicationRuntime({})).toThrow();
+        process.env.SMRT_RUNTIME_PROFILE = 'local';
+        expect(() => resolveEffectiveApplicationRuntime({})).toThrow();
+        delete process.env.SMRT_AUTHENTICATION_PROVIDER;
+        delete process.env.SMRT_SECRETS_PROVIDER;
+        expect(resolveEffectiveApplicationRuntime({}).profile).toBe('local');
+      } finally {
+        for (const k of Object.keys(process.env)) delete process.env[k];
+        Object.assign(process.env, saved);
+      }
+    });
+
     it('honours a setConfig runtime override when the file declares none', () => {
       setConfig({ runtime: { profile: 'self-hosted' } });
       expect(resolveEffectiveApplicationRuntime({}).profile).toBe(
