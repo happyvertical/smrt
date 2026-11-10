@@ -1,4 +1,5 @@
 <script lang="ts">
+import { greeting } from '$lib/ui/greeting';
 import { modelHref } from '$lib/ui/menu';
 import type { PageProps } from './$types';
 
@@ -6,9 +7,7 @@ let { data }: PageProps = $props();
 
 const description = $derived(data.description);
 const models = $derived(Object.entries(description?.models ?? {}));
-const who = $derived(
-  data.session.user?.name || data.session.user?.email || 'there',
-);
+const hello = $derived(greeting(data.session.user));
 </script>
 
 <svelte:head><title>{description?.name ?? 'My app'}</title></svelte:head>
@@ -38,7 +37,7 @@ const who = $derived(
     <header class="sh-head">
       <div>
         <h1>{description.name}</h1>
-        <p class="sh-sub">Hello, {who}.</p>
+        <p class="sh-sub">{hello}</p>
       </div>
       {#if description.pendingApprovals > 0}
         <a class="sh-btn sh-btn-primary" href="/approvals">

@@ -702,6 +702,12 @@ describe('local SvelteKit runtime', () => {
         load({ locals: { user: { id: 'u1', email: 'a@b.test' } } }).session
           .user,
       ).toEqual({ id: 'u1', email: 'a@b.test' });
+      // The runtime reads the profile name into locals.userName.
+      expect(
+        load({
+          locals: { user: { id: 'u1', email: '' }, userName: 'Will' },
+        }).session.user,
+      ).toEqual({ id: 'u1', email: '', name: 'Will' });
       expect(load({ locals: { user: null } }).session.user).toBeNull();
       expect(load({ locals: { user: { id: 'u1' } } }).session.user).toBeNull();
     });
@@ -1151,6 +1157,8 @@ describe('local SvelteKit runtime', () => {
         user: {
           id: expect.any(String),
           email: 'owner@example.com',
+          // From the linked profile (the claim above names it).
+          name: expect.any(String),
         },
       },
     });
@@ -2488,6 +2496,26 @@ describe('desktop owner link auto sign-in', () => {
       .rows as Array<{ name: string; email: string | null }>;
     expect(person.map((row) => row.name)).toContain('Ada Lovelace');
     expect(await runtime.ownerSetupLocation()).toBe('/');
+  });
+
+  it('carries the owner name (not the empty email) into the session layout', async () => {
+    const { runtime } = await localRuntime('link-auto-layout-name');
+    await runtime.init();
+    const handler = createOwnerLinkHandler(runtime, {
+      ...OPTIONS,
+      ownerName: 'Ada Lovelace',
+    });
+    const event = linkEvent();
+    await handler(event as never);
+    const sid = event.setCookies[0]?.value as string;
+    const observed = await runHandle(
+      runtime.handle,
+      testEvent('http://127.0.0.1/', { sid }),
+    );
+    expect(observed.locals.userName).toBe('Ada Lovelace');
+    expect(
+      createSessionLayoutLoad()({ locals: observed.locals }).session.user,
+    ).toMatchObject({ email: '', name: 'Ada Lovelace' });
   });
 
   it('names the owner after the OS account when no name is given', async () => {

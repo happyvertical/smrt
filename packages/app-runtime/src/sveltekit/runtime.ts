@@ -31,7 +31,10 @@ import {
   type SmrtCollection,
   type SmrtObject,
 } from '@happyvertical/smrt-core';
-import { OidcIdentityCollection } from '@happyvertical/smrt-profiles';
+import {
+  OidcIdentityCollection,
+  ProfileCollection,
+} from '@happyvertical/smrt-profiles';
 import {
   enableTenancy,
   getCurrentTenant,
@@ -122,6 +125,12 @@ export interface SmrtRuntimeLocals extends SessionLocals {
   selectedTenantSlug: string | null;
   /** Full context for the authorized session tenant, when present. */
   tenantContext?: MinimalTenantContext;
+  /**
+   * Display name of the signed-in user, read from the linked profile (the
+   * `User` model has no name; a desktop owner has a name and an empty email).
+   * `null` when signed out or the profile has none. Display only.
+   */
+  userName?: string | null;
 }
 
 /** Provider component whose readiness a deployed web process must prove. */
@@ -1264,6 +1273,23 @@ export function composeSmrtSvelteKitRuntime(
     return sessionServicePromise;
   };
 
+  /** The linked profile's name for the layout greeting; never throws. */
+  const profileNameOf = async (
+    user: { profileId?: string } | null,
+  ): Promise<string | null> => {
+    if (!user?.profileId) return null;
+    try {
+      const profiles = await ProfileCollection.create(
+        baseClassOptions('Profile'),
+      );
+      const profile = await profiles.get(user.profileId);
+      const name = (profile as { name?: unknown } | null)?.name;
+      return typeof name === 'string' && name.trim() ? name.trim() : null;
+    } catch {
+      return null;
+    }
+  };
+
   /**
    * Step 2. Downstream code runs at most once: a downstream throw (or a
    * failure after `resolve` was entered, such as an RLS commit) propagates
@@ -1301,6 +1327,7 @@ export function composeSmrtSvelteKitRuntime(
         async (context) => {
           if (context.session) {
             locals.user = context.user;
+            locals.userName = await profileNameOf(context.user);
             locals.membership = context.membership ?? null;
             locals.permissions = context.permissions;
             locals.tenantId = context.tenantId;
@@ -1435,6 +1462,7 @@ function clearSessionLocals(locals: SmrtRuntimeLocals): void {
   locals.sessionId = null;
   locals.authMethod = null;
   locals.sessionParent = null;
+  locals.userName = null;
   locals.tenantContext = undefined;
   verifiedSessionTenants.delete(locals);
 }
