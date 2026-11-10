@@ -1,6 +1,7 @@
 /**
  * The shell's SMRT runtime: app-runtime local profile, smrt-users owner
- * sign-in (the owner is created on the loopback `/setup` page), and the
+ * sign-in (the desktop owner link creates the owner and signs them in; the
+ * loopback `/setup` page serves the terminal flow), and the
  * shell's own first-run schema through the `prepareDatabase` hook.
  *
  * `PORT` and `SMRT_DATA_DIR` are honored (the desktop sidecar contract):

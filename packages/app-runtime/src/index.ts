@@ -10,7 +10,7 @@
  */
 
 import { createHash, createHmac, randomBytes } from 'node:crypto';
-import { homedir, platform } from 'node:os';
+import { homedir, platform, userInfo } from 'node:os';
 import { parse, resolve, win32 } from 'node:path';
 import {
   type ResolvedApplicationRuntime,
@@ -588,6 +588,37 @@ export interface LocalOwnerClaimResult {
   readonly sessionId: string;
 }
 
+/** Input of {@link LocalApplicationRuntime.signInOwner}. */
+export interface SignInLocalOwnerInput {
+  /**
+   * Display name for an owner created by this call. Defaults to the OS
+   * account's user name (`Owner` when none is readable). Ignored when the
+   * owner already exists.
+   */
+  readonly name?: string;
+  /**
+   * The user id of the request's valid session, if any. When it is the sole
+   * owner, no new session is issued.
+   */
+  readonly currentUserId?: string | null;
+  readonly userAgent?: string;
+  readonly ipAddress?: string;
+}
+
+/** Result of {@link LocalApplicationRuntime.signInOwner}. */
+export interface LocalOwnerSignInResult {
+  /**
+   * `claimed`: the owner did not exist and was created with a session.
+   * `session_issued`: the sole owner exists and got a new session.
+   * `session_present`: the caller's session already belongs to the owner.
+   */
+  readonly outcome: 'claimed' | 'session_issued' | 'session_present';
+  readonly userId: string;
+  readonly tenantId: string;
+  /** The new session id, or null for `session_present`. Never log it. */
+  readonly sessionId: string | null;
+}
+
 export type LocalBootstrapStatus =
   | 'available'
   | 'expired'
@@ -887,6 +918,17 @@ export interface LocalApplicationRuntime {
   ensureBootstrapInvitation(): Promise<LocalOwnerBootstrapInvitation | null>;
   rotateBootstrapInvitation(): Promise<LocalOwnerBootstrapInvitation>;
   claimOwner(input: ClaimLocalOwnerInput): Promise<LocalOwnerClaimResult>;
+  /**
+   * Desktop sign-in without a form: the caller has already proven it is the
+   * local person (the wrapper's launch secret on a loopback request) and this
+   * method trusts that. Creates the owner through the same claim transaction as
+   * {@link claimOwner} when none exists (with no email), issues a new session
+   * for the sole active owner when one does, and does nothing when
+   * `currentUserId` is already that owner. Calls are serialized per process.
+   * Fails closed with `owner_unavailable` unless exactly one active owner
+   * exists. Optional only so structural test doubles stay valid.
+   */
+  signInOwner?(input: SignInLocalOwnerInput): Promise<LocalOwnerSignInResult>;
   restoreSession(
     sessionId: string,
   ): ReturnType<SessionService['loadSessionContext']>;
@@ -1027,7 +1069,90 @@ class InitializedLocalApplicationRuntime implements LocalApplicationRuntime {
   async claimOwner(
     input: ClaimLocalOwnerInput,
   ): Promise<LocalOwnerClaimResult> {
-    validateOwnerInput(input);
+    return this.claimOwnerRecords(input, false);
+  }
+
+  private ownerSignInQueue: Promise<unknown> = Promise.resolve();
+
+  signInOwner(input: SignInLocalOwnerInput): Promise<LocalOwnerSignInResult> {
+    const run = this.ownerSignInQueue.then(
+      () => this.signInOwnerSerialized(input),
+      () => this.signInOwnerSerialized(input),
+    );
+    this.ownerSignInQueue = run.catch(() => undefined);
+    return run;
+  }
+
+  private async signInOwnerSerialized(
+    input: SignInLocalOwnerInput,
+  ): Promise<LocalOwnerSignInResult> {
+    const unavailable = () =>
+      new LocalRuntimeError(
+        'owner_unavailable',
+        'Exactly one active local owner is required.',
+      );
+    let owners = await findActiveOwners(this.db);
+    if (owners.length === 0) {
+      // Reuse the claim transaction: a fresh invitation whose plaintext never
+      // leaves this call, consumed immediately.
+      const invitation = await this.rotateBootstrapInvitation();
+      const claimed = await this.claimOwnerRecords(
+        {
+          token: invitation.token,
+          name: input.name?.trim() || defaultOwnerName(),
+          email: '',
+          userAgent: input.userAgent,
+          ipAddress: input.ipAddress,
+        },
+        true,
+      );
+      owners = await findActiveOwners(this.db);
+      if (owners.length !== 1 || owners[0]?.userId !== claimed.userId) {
+        throw unavailable();
+      }
+      return Object.freeze({
+        outcome: 'claimed' as const,
+        userId: claimed.userId,
+        tenantId: claimed.tenantId,
+        sessionId: claimed.sessionId,
+      });
+    }
+    const owner = owners[0];
+    if (owners.length !== 1 || !owner) throw unavailable();
+    const users = await UserCollection.create({ db: this.db });
+    const user = await users.get(owner.userId);
+    if (!user || user.status !== UserStatus.ACTIVE) throw unavailable();
+    if (input.currentUserId && input.currentUserId === owner.userId) {
+      return Object.freeze({
+        outcome: 'session_present' as const,
+        userId: owner.userId,
+        tenantId: owner.tenantId,
+        sessionId: null,
+      });
+    }
+    const sessions = await SessionCollection.create({ db: this.db });
+    const session = await sessions.createSession({
+      userId: owner.userId,
+      tenantId: owner.tenantId,
+      ttl: this.sessionTtlSeconds,
+      userAgent: input.userAgent,
+      ipAddress: input.ipAddress,
+      data: { localOwner: true },
+      authMethod: 'local-bootstrap',
+    });
+    return Object.freeze({
+      outcome: 'session_issued' as const,
+      userId: owner.userId,
+      tenantId: owner.tenantId,
+      sessionId: requireId(session.id, 'Session'),
+    });
+  }
+
+  private async claimOwnerRecords(
+    input: ClaimLocalOwnerInput,
+    allowNoEmail: boolean,
+  ): Promise<LocalOwnerClaimResult> {
+    validateOwnerInput(input, allowNoEmail);
     if (await findExistingOwner(this.db)) {
       throw new LocalRuntimeError(
         'bootstrap_claimed',
@@ -1091,6 +1216,7 @@ class InitializedLocalApplicationRuntime implements LocalApplicationRuntime {
         this.ownerTenant,
         this.identity,
         this.passwordPolicy,
+        allowNoEmail,
       );
     });
   }
@@ -1221,6 +1347,7 @@ async function createLocalOwnerRecords(
   ownerTenant: ResolvedOwnerTenant,
   identity: LocalInstallationIdentity,
   passwordPolicy?: PasswordPolicyOptions,
+  allowNoEmail = false,
 ): Promise<LocalOwnerClaimResult> {
   // Resolve the tenant before writing anything: `Tenant` upserts on its slug,
   // so creating over an existing slug would replace that row with a new id
@@ -1238,9 +1365,10 @@ async function createLocalOwnerRecords(
     );
   }
   const users = await UserCollection.create({ db });
+  const ownerEmail = input.email.trim();
   if (
     (await users.get(identity.ownerId)) ||
-    (await users.findByEmail(input.email.trim()))
+    (ownerEmail && (await users.findByEmail(ownerEmail)))
   ) {
     throw new LocalRuntimeError(
       'owner_identity_conflict',
@@ -1266,7 +1394,9 @@ async function createLocalOwnerRecords(
     typeId: requireId(personType.id, 'Person profile type'),
     tenantId: null,
     name: input.name.trim(),
-    email: input.email.trim(),
+    // No email yet (desktop sign-in): leave the Profile email unset so its
+    // lookup key stays null instead of reserving an invented address.
+    ...(ownerEmail ? { email: ownerEmail } : {}),
   });
   await person.initialize();
   person.requireInsertOnSave({ preserveDerivedSlug: true });
@@ -1276,7 +1406,7 @@ async function createLocalOwnerRecords(
     id: identity.ownerId,
     _insertOnly: true,
     profileId: requireId(person.id, 'Person'),
-    email: input.email.trim(),
+    email: ownerEmail,
     status: UserStatus.ACTIVE,
     lastLoginAt: new Date(),
   });
@@ -1409,25 +1539,56 @@ function resolveOwnerTenant(
   });
 }
 
+async function findActiveOwners(
+  db: DatabaseInterface,
+): Promise<readonly ExistingOwner[]> {
+  const roles = await RoleCollection.create({ db });
+  const ownerRole = await roles.findSystemRoleBySlug(DEFAULT_ROLE_SLUGS.OWNER);
+  if (!ownerRole?.id) return [];
+  const memberships = await MembershipCollection.create({ db });
+  const ownerMemberships = await memberships.findByRole(ownerRole.id);
+  return ownerMemberships
+    .filter(
+      (membership) =>
+        membership.status === MembershipStatus.ACTIVE &&
+        typeof membership.userId === 'string' &&
+        typeof membership.tenantId === 'string',
+    )
+    .map((membership) => ({
+      userId: membership.userId as string,
+      tenantId: membership.tenantId as string,
+    }));
+}
+
 async function findExistingOwner(
   db: DatabaseInterface,
   requireUnique = false,
 ): Promise<ExistingOwner | null> {
-  const roles = await RoleCollection.create({ db });
-  const ownerRole = await roles.findSystemRoleBySlug(DEFAULT_ROLE_SLUGS.OWNER);
-  if (!ownerRole?.id) return null;
-  const memberships = await MembershipCollection.create({ db });
-  const ownerMemberships = await memberships.findByRole(ownerRole.id);
-  const activeOwners = ownerMemberships.filter(
-    (membership) =>
-      membership.status === MembershipStatus.ACTIVE &&
-      typeof membership.userId === 'string' &&
-      typeof membership.tenantId === 'string',
-  );
+  const activeOwners = await findActiveOwners(db);
   const active = activeOwners[0];
   return active && (!requireUnique || activeOwners.length === 1)
-    ? { userId: active.userId as string, tenantId: active.tenantId as string }
+    ? active
     : null;
+}
+
+/**
+ * The OS account's user name, for an owner created without a form. Never an
+ * email address; `Owner` when the account name cannot be read.
+ */
+function defaultOwnerName(): string {
+  let raw = '';
+  try {
+    raw = userInfo().username;
+  } catch {
+    // No passwd entry (containers): fall back to the environment.
+  }
+  raw ||= process.env.USER || process.env.USERNAME || '';
+  const cleaned = Array.from(raw)
+    .filter((char) => char >= ' ' && char !== '\u007f')
+    .join('')
+    .trim()
+    .slice(0, 80);
+  return cleaned || 'Owner';
 }
 
 async function throwBootstrapClaimFailure(
@@ -1534,8 +1695,15 @@ function validateSessionTtl(value: number): number {
   return value;
 }
 
-function validateOwnerInput(input: ClaimLocalOwnerInput): void {
-  if (!input.token || !input.name.trim() || !input.email.trim()) {
+function validateOwnerInput(
+  input: ClaimLocalOwnerInput,
+  allowNoEmail = false,
+): void {
+  if (
+    !input.token ||
+    !input.name.trim() ||
+    (!allowNoEmail && !input.email.trim())
+  ) {
     throw new LocalRuntimeError(
       'bootstrap_invalid',
       'Owner bootstrap requires a token, name, and email address.',

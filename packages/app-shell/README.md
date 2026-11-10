@@ -37,7 +37,12 @@ single use. Health: `GET /api/_runtime/health`.
 Desktop: the shell also mounts `GET /api/_runtime/owner-link`
 (`createOwnerLinkHandler`), the route the desktop wrapper opens its window on.
 It is loopback-only and answers 403 without the wrapper's per-launch secret, so
-it does nothing outside the wrapper. Tricia, the packaged desktop product, is
+it does nothing outside the wrapper. With that secret it uses `autoClaim`: the
+first launch creates the local owner (named after the OS account, no email) and
+signs them in, a later launch with a lost session cookie signs the sole owner
+back in, and the window lands on `/`. No owner form is shown. Under the wrapper
+the signed-out and `/setup` pages say to quit and reopen the app instead of
+naming terminal commands. Tricia, the packaged desktop product, is
 [`smrt-desktop/examples/tricia`](../smrt-desktop/examples/tricia/README.md).
 
 ## Builder operations (MCP tools and `POST /api/apps/<operation>`)

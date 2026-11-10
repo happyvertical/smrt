@@ -18,10 +18,16 @@ const who = $derived(
     <header class="sh-head"><h1>My app</h1></header>
     <div class="sh-card">
       <p><strong>You are signed out.</strong></p>
-      <p class="sh-muted">
-        Open this app from your desktop app to sign in. On a first run,
-        <a class="sh-link" href="/setup">set up the owner</a> from this computer.
-      </p>
+      {#if data.desktop}
+        <p class="sh-muted">
+          Quit and reopen the app to sign back in.
+        </p>
+      {:else}
+        <p class="sh-muted">
+          Open this app from your desktop app to sign in. On a first run,
+          <a class="sh-link" href="/setup">set up the owner</a> from this computer.
+        </p>
+      {/if}
     </div>
   {:else if !description}
     <header class="sh-head"><h1>My app</h1></header>

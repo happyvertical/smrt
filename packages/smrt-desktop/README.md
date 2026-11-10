@@ -81,11 +81,13 @@ const sidecar = parseSidecarManifest(
   the wrapper opens its window on (origin plus this path, never an absolute
   URL). It follows exactly the `healthRoute` grammar and loopback rules. A
   s-m-r-t app declares app-runtime's `/api/_runtime/owner-link`
-  (`createOwnerLinkHandler`), which redirects to the one-time `/setup?token=`
-  page while the owner is unclaimed and to `/` afterwards, but only for a
-  request that carries the per-launch `?launch=<secret>` the wrapper adds (403
-  otherwise). The wrapper never sees or logs the token; claiming it belongs to
-  the runtime.
+  (`createOwnerLinkHandler`), only for a request that carries the per-launch
+  `?launch=<secret>` the wrapper adds (403 otherwise). With `autoClaim` (the
+  generic app and the shell opt in) it creates the local owner on the first
+  launch, signs the sole owner back in when the session cookie is lost, sets
+  the cookie and redirects to `/`, so there is no owner form; without it, it
+  redirects to the one-time `/setup?token=` page while the owner is unclaimed.
+  The wrapper never sees or logs a token or session; the runtime owns both.
 - `dataDirectory` is a portable path relative to Tauri's stable
   `app_local_data_dir` (the per-app, machine-local OS data root; see
   [Data root and roaming](#data-root-and-roaming)). The supervisor supplies its

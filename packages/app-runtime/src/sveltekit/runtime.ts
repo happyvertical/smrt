@@ -79,8 +79,10 @@ import {
   type LocalApplicationRuntime,
   type LocalMcpTokenPrincipal,
   type LocalOwnerBootstrapInvitation,
+  type LocalOwnerSignInResult,
   type LocalOwnerTenantOptions,
   resolveLocalRuntimePaths,
+  type SignInLocalOwnerInput,
   validateApplicationId,
 } from '../index.js';
 import { windowsSecureFileCustody } from '../local-custody.js';
@@ -99,6 +101,7 @@ import {
 } from '../runtime-diagnostics.js';
 import {
   prepareApplicationStateRoot,
+  removeOnboardingHandoff,
   resolveApplicationStateRoot,
 } from '../state-root.js';
 import type { VaultKeyStore } from '../vault-key-store.js';
@@ -497,6 +500,19 @@ export interface SmrtSvelteKitRuntime {
    * `claimOwner()`.
    */
   ownerSetupLocation(): Promise<string>;
+  /**
+   * Form-free desktop sign-in for `createOwnerLinkHandler({ autoClaim: true })`:
+   * creates the local owner when none exists, issues a session for the sole
+   * active owner otherwise, and issues nothing when `currentUserId` already is
+   * that owner (see `LocalApplicationRuntime.signInOwner`). Resolves `null`
+   * outside the `local` profile. Rejects (`owner_unavailable`) unless exactly
+   * one active owner exists. The caller must already have proven the local
+   * person: never mount this behind anything but the launch-secret owner link.
+   * The returned session id is for the cookie only; never log it.
+   */
+  signInLocalOwner(
+    input: SignInLocalOwnerInput,
+  ): Promise<LocalOwnerSignInResult | null>;
   /** The deployed runtime. Rejects in the `local` profile. */
   deployedRuntime(): Promise<DeployedApplicationRuntime>;
   /** Liveness body for the health route (awaits startup). */
@@ -804,6 +820,34 @@ export function composeSmrtSvelteKitRuntime(
       // Claimed in the meantime or not issuable: the home page is the answer.
       return '/';
     }
+  };
+
+  const signInLocalOwner = async (
+    input: SignInLocalOwnerInput,
+  ): Promise<LocalOwnerSignInResult | null> => {
+    if ((await resolvedRuntime()).profile !== 'local') return null;
+    const local = await localRuntime();
+    if (!local.signInOwner) {
+      throw new Error('owner_sign_in_unavailable');
+    }
+    const result = await local.signInOwner(input);
+    if (result.outcome === 'claimed') {
+      // The owner now exists: the in-memory invitation and the `smrt app`
+      // hand-off files are spent, exactly as after a form claim.
+      startupInvitation = undefined;
+      try {
+        removeOnboardingHandoff(
+          resolveApplicationStateRoot({
+            appId: applicationId(),
+            dataDirectory,
+            sourceRoot,
+          }),
+        );
+      } catch {
+        // Best effort: the spent token already fails closed.
+      }
+    }
+    return result;
   };
 
   let deployedPromise: Promise<DeployedApplicationRuntime> | undefined;
@@ -1328,6 +1372,7 @@ export function composeSmrtSvelteKitRuntime(
     localRuntime,
     secretMasterKey,
     ownerSetupLocation,
+    signInLocalOwner,
     deployedRuntime,
     health,
     readDiagnostics,

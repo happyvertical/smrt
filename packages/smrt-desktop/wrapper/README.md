@@ -134,16 +134,23 @@ is passed only in the sidecar child's environment as
 that URL; its `Debug` output is redacted and it is never logged. The route
 compares it in constant time and answers `403` without it, so another process
 or OS user on the machine cannot fetch the owner link. A generic s-m-r-t app declares `/api/_runtime/owner-link`, which
-app-runtime serves (`createOwnerLinkHandler`) as a loopback-only `302` to its
-existing one-time `/setup?token=...` page while the owner is unclaimed, and to
-`/` afterwards. The wrapper never requests that route itself: the webview
-follows the redirect, so the token is never in the wrapper's memory, argv,
-environment or log. The log line is `window origin=<origin> route=<route>`
-(`window_log_line`; never the query or the full URL); the `Location` header is
-never read. The owner then claims through app-runtime's
-`/setup` page and `claimOwner()`; the wrapper holds no credential. After a
-sidecar restart the window is navigated to the same route again, which hands out
-a fresh invitation if the owner is still unclaimed.
+app-runtime serves (`createOwnerLinkHandler`). The secret already proves the
+local person, so an app that opts in with `autoClaim` (the shell and the generic
+app do) shows no form: with a valid secret the route creates the local owner on
+the first launch (named after the OS account, no email; app-runtime's single
+`claimOwner()` transaction), signs the sole owner in again when the session
+cookie is gone, sets the session cookie and redirects to `/`. The user goes from
+starting the app to being signed in as the owner. Without `autoClaim` the route
+instead answers a loopback-only `302` to the one-time `/setup?token=...` page
+while the owner is unclaimed, and to `/` afterwards. The wrapper never requests
+that route itself: the webview follows the redirect, so no token or session is
+ever in the wrapper's memory, argv, environment or log. The log line is
+`window origin=<origin> route=<route>` (`window_log_line`; never the query or
+the full URL); the `Location` header and `Set-Cookie` are never read. The
+wrapper holds no credential. After a sidecar restart the window is navigated to
+the same route again, which signs the owner back in. If a signed-out page is
+ever shown, it says to quit and reopen the app (the desktop pages never name
+terminal commands).
 
 ## Modules
 
@@ -648,8 +655,8 @@ manifest's `executable` (pointing at a `node` binary) in
 ## Deferred to later slices (clean seams only)
 
 - **Owner sign-in** is done (see Owner link): the window opens on
-  `ownerClaimRoute`, and sign-in stays app-runtime's loopback onboarding URL and
-  `claimOwner()`; the wrapper carries no credential (#4835).
+  `ownerClaimRoute`, and sign-in is app-runtime's launch-secret-gated
+  `autoClaim` owner link (no form); the wrapper carries no credential (#4835).
 - **Bundling the Node binary** is done by `smrt desktop bundle`. Signing,
   notarisation and releases are described under Release pipeline and are
   blocked on owner inputs.

@@ -1,3 +1,4 @@
+import { isDesktopWrapper } from '$lib/server/desktop';
 import { DEPENDS } from '$lib/ui/events';
 import { loadRecords } from '$lib/ui/load';
 import type { PageServerLoad } from './$types';
@@ -23,5 +24,6 @@ export const load: PageServerLoad = async ({ parent, depends, fetch }) => {
       }),
     );
   }
-  return { counts };
+  // The signed-out card words its way back in differently under the wrapper.
+  return { counts, desktop: isDesktopWrapper() };
 };

@@ -10,8 +10,10 @@
 //   3. the owner link route answers 403 with an empty body to a loopback
 //      request that lacks the per-launch secret (the secret is known only to
 //      the wrapper window and the sidecar, so this script cannot redirect),
-//      answers 403 to a wrong secret and to a foreign Host, and the /setup
-//      page loads;
+//      answers 403 to a wrong secret and to a foreign Host, and the /setup and
+//      home pages load without an owner form or a terminal command (the
+//      window itself is signed in by the owner link, which this script cannot
+//      follow without the secret);
 //   4. the wrapper log shows the window origin and route and contains no
 //      secret-looking 64-hex string, no `launch=` query and no token;
 //   5. the wrapper quits on request and no process of the sidecar is left.
@@ -381,9 +383,23 @@ async function main() {
     }
     console.log('owner link: 403 for a foreign Host');
 
+    // The window signs the owner in on its own (the owner link creates the
+    // owner and a session; a person never fills in a form), so a visitor
+    // without a session sees no owner form and no terminal command, only the
+    // "quit and reopen" wording. This script has no session, so it can only
+    // observe those two pages, not the signed-in shell.
     const setup = await get(origin, '/setup');
     if (setup.status !== 200) throw new Error(`/setup answered ${setup.status}`);
-    console.log('setup page: 200');
+    if (/pnpm /.test(setup.body) || /name="email"/.test(setup.body)) {
+      throw new Error('/setup shows an owner form or a terminal command under the desktop wrapper');
+    }
+    console.log('setup page: 200, no owner form and no terminal command');
+
+    const home = await get(origin, '/');
+    if (home.status !== 200 || /pnpm /.test(home.body)) {
+      throw new Error(`/ answered ${home.status} or shows a terminal command under the desktop wrapper`);
+    }
+    console.log('home page: 200, no terminal command');
 
     const log = readIfExists(logPath);
     if (

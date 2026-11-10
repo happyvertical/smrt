@@ -1001,6 +1001,37 @@ wrapper never reads or logs. The secret and the query string are never logged
 or echoed, and the runtime writes no access log. `runtime.ownerSetupLocation()`
 is the underlying method; never log or serialize its result.
 
+##### `autoClaim`: no form, never locked out
+
+`createOwnerLinkHandler(runtime, { autoClaim: true })` (opt-in; default off, so
+other consumers keep the `/setup` redirect above) uses the launch secret as the
+proof that the local person is at the keyboard and signs them in directly. After
+every check above passes (secret, loopback peer, own-origin Host and `Origin`,
+local profile), `runtime.signInLocalOwner()` runs serialized per process:
+
+- no owner yet: the owner is created through the same `claimOwner()` transaction
+  (Person, User, Tenant, owner Role and Membership, Session) with a fresh
+  invitation that never leaves the call, then the `smrt app` hand-off files are
+  removed;
+- an owner exists and the request carries no session of that owner (the cookie
+  was lost): a new session is issued for the sole active owner;
+- the request already carries the owner's session: nothing is issued.
+
+The handler sets the session cookie with the `/setup` attributes and answers
+`302` to `/`. Anything but exactly one active owner (none after a spent
+invitation, several memberships with the owner role, an inactive user) fails
+closed with `owner_unavailable`: no session is issued and the handler redirects
+to `/`, which shows the signed-out page. Outside the `local` profile it issues
+nothing. Concurrent first requests create one owner. The terminal flow
+(`smrt app setup`/`open`/`recover`, `/setup?token=`) is unchanged.
+
+The auto-created owner has no email: `User.email` is `''` (its unique
+`emailKey` stays `NULL`, so nothing collides or reserves an address) and the
+Person profile has no email. The name is `autoClaim`'s `ownerName` option,
+else the OS account's user name, else `Owner`. Neither is a secret. The owner
+adds a real name or email later; the shell does not yet have an Account editor
+for that.
+
 Password-based applications should pass `{ requirePassword: true }` to
 `createOwnerSetupPage` and include a password field in their setup form. The
 password is stored in the owner-claim transaction; a rejected password leaves

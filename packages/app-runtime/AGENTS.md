@@ -254,6 +254,14 @@ Application infrastructure composition for the validated runtime profiles in
   request origin, then `destroySessionCookie` with the runtime's cookie
   name/path/domain (cookie cleared even if the session row is gone); 204, or
   303 to `/` when the request accepts HTML.
+- `createOwnerLinkHandler(runtime, { autoClaim: true })` (opt-in) signs the
+  desktop person in after every launch-secret/loopback check via
+  `runtime.signInLocalOwner` -> `LocalApplicationRuntime.signInOwner`
+  (serialized): creates the owner through `claimOwner`'s transaction with an
+  internal invitation and no email (`User.email = ''`, `emailKey` null), else
+  issues a session for the sole active owner unless the request has it;
+  anything but exactly one active owner fails closed (`owner_unavailable`, no
+  session, redirect `/`). Never add a second owner-creation path.
 - Owner setup re-checks loopback peer and loopback URL host per request and
   returns only fixed `{ code, message }` failures.
 - `verifyLocalMcpToken` (local only) and `resolveMcpPrincipal` (hosted only:
