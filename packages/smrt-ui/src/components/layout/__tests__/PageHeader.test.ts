@@ -41,6 +41,7 @@ describe('PageHeader', () => {
       props: { title: 'Detail', backHref: '/list' },
     });
     const link = screen.getByRole('link', { name: 'Back' });
+    expect(link).toHaveAttribute('data-smrt-part', 'back');
     expect(link).toHaveAttribute('href', '/list');
   });
 

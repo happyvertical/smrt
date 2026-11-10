@@ -330,7 +330,7 @@ function pointerUp(event: PointerEvent): void {
         <button
           type="button"
           class="smrt-document-viewer__ctl smrt-document-viewer__retry"
-          data-smrt-part="action"
+          data-smrt-part="retry"
           data-control="retry"
           onclick={() => (attempt += 1)}
         >

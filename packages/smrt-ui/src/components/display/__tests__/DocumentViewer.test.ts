@@ -227,6 +227,7 @@ describe('DocumentViewer PDF', () => {
       expect(root(container)).toHaveAttribute('data-state', 'failed'),
     );
     expect(screen.getByRole('alert')).toHaveTextContent('could not be opened');
+    expect(btn('Try again')).toHaveAttribute('data-smrt-part', 'retry');
     await expectNoA11yViolations(container);
     await fireEvent.click(btn('Try again'));
     await waitFor(() =>

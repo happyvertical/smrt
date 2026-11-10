@@ -95,7 +95,7 @@ name feedback regions; they do not replace native/ARIA state attributes.
 | `adornment` | Content attached before or after a field. | `InputGroup` |
 | `author` | The author identity of a message. | `MessageBubble` |
 | `axis` | Chart category-axis labels. | `Chart` |
-| `back` | Navigation to the parent or previous surface. | `DayView` |
+| `back` | Navigation to the parent or previous surface. | `DayView`, `PageHeader` |
 | `backdrop` | The overlay scrim behind a panel. | `LoadingOverlay` |
 | `badge` | An auxiliary badge attached to a label. | `RoleSelector`, `Tabs` |
 | `bar` | A chart datum rendered against a track. | `Chart` |
@@ -156,7 +156,7 @@ name feedback regions; they do not replace native/ARIA state attributes.
 | `reactions` | The reactions attached to a message. | `MessageBubble` |
 | `readout` | The chart or keypad value readout region. | `Chart`, `NumericKeypad` |
 | `resize` | The table-column resize handle. | `DataTable` |
-| `retry` | The command that retries a failed operation. | `DataTable` |
+| `retry` | The command that retries a failed operation. | `DataTable`, `DocumentViewer` |
 | `role` | The membership role. | `MembershipCard` |
 | `row` | A repeated table, grid, or layout row. | `Calendar`, `CalendarView` |
 | `scale` | The chart value-axis scale labels. | `Chart` |
