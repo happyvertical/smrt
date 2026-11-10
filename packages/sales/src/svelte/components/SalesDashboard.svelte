@@ -49,38 +49,38 @@ const rate = $derived(winRate(opportunities));
 </script>
 
 <div class="smrt-sales-dashboard__root" data-smrt-component="SalesDashboard">
-  <dl class="smrt-sales-dashboard__tiles" data-smrt-part="tiles">
-    <div class="smrt-sales-dashboard__tile" data-smrt-part="tile">
+  <dl class="smrt-sales-dashboard__tiles" data-smrt-part="group">
+    <div class="smrt-sales-dashboard__tile" data-smrt-part="item">
       <dt>Open opportunities</dt>
       <dd>{openCount}</dd>
     </div>
-    <div class="smrt-sales-dashboard__tile" data-smrt-part="tile">
+    <div class="smrt-sales-dashboard__tile" data-smrt-part="item">
       <dt>Open pipeline value</dt>
       <dd>
         {#if totals.length === 0}
           —
         {:else}
           {#each totals as total (total.currency)}
-            <span class="smrt-sales-dashboard__line" data-smrt-part="line">
+            <span class="smrt-sales-dashboard__line" data-smrt-part="value">
               {formatCents(total.amountCents, total.currency, locale)}
             </span>
           {/each}
         {/if}
       </dd>
     </div>
-    <div class="smrt-sales-dashboard__tile" data-smrt-part="tile">
+    <div class="smrt-sales-dashboard__tile" data-smrt-part="item">
       <dt>Win rate</dt>
       <dd>{rate === null ? '—' : formatPercent(rate, locale)}</dd>
     </div>
   </dl>
 
   {#if byStage.length > 0}
-    <section class="smrt-sales-dashboard__stages" data-smrt-part="stages" aria-label="Pipeline value by stage">
+    <section class="smrt-sales-dashboard__stages" data-smrt-part="group" aria-label="Pipeline value by stage">
       <h3>Pipeline by stage</h3>
       <ul class="smrt-sales-dashboard__list" data-smrt-part="list">
         {#each byStage as stage (stage.stageId)}
           <li class="smrt-sales-dashboard__row" data-smrt-part="row">
-            <span class="smrt-sales-dashboard__name" data-smrt-part="name">{stage.stageName}</span>
+            <span class="smrt-sales-dashboard__name" data-smrt-part="title">{stage.stageName}</span>
             <span class="smrt-sales-dashboard__count" data-smrt-part="count">{stage.openCount} open</span>
             <span class="smrt-sales-dashboard__value" data-smrt-part="value">
               {#if stage.totals.length === 0}

@@ -235,7 +235,7 @@ async function suggestionChanged(): Promise<void> {
         <article class="smrt-field-policy-control-panel__detail" data-smrt-part="body">
           <h2>{rollup.resolved?.label ?? item.label}</h2>
           <p>{rollup.resolved?.help ?? item.description ?? 'No help text.'}</p>
-          <dl class="smrt-field-policy-control-panel__layers" data-smrt-part="layers">
+          <dl class="smrt-field-policy-control-panel__layers" data-smrt-part="group">
             <div><dt>Code {rollup.code.contributed ? 'override' : 'inherited'}</dt><dd><code>{valueText(rollup.code)}</code> · {rollup.code.visibility}{rollup.code.locked ? ' · locked' : ''}</dd></div>
             <div><dt>App {rollup.app.contributed ? 'override' : 'inherited'}</dt><dd><code>{valueText(rollup.app)}</code> · {rollup.app.visibility}{rollup.app.locked ? ' · locked' : ''}</dd></div>
             <div><dt>Organization {rollup.org.contributed ? 'override' : 'inherited'}</dt><dd><code>{valueText(rollup.org)}</code> · {rollup.org.visibility}{rollup.org.locked ? ' · locked' : ''}</dd></div>
@@ -267,7 +267,7 @@ async function suggestionChanged(): Promise<void> {
       />
     {/if}
     {#if prunableDriftRows(visibleAudit).length}
-      <section class="smrt-field-policy-control-panel__drift" data-smrt-part="drift" aria-label="Manifest drift">
+      <section class="smrt-field-policy-control-panel__drift" data-smrt-part="group" aria-label="Manifest drift">
         <h2>Manifest drift</h2>
         <p>These policy rows no longer match a registered field and are ignored by the resolver.</p>
         <ul>

@@ -26,7 +26,7 @@ const { label, value, trend, trendPercent, subtitle }: Props = $props();
 		{/if}
 	</div>
 	{#if subtitle}
-		<div class="smrt-stat-card__subtitle" data-smrt-part="subtitle">{subtitle}</div>
+		<div class="smrt-stat-card__subtitle" data-smrt-part="description">{subtitle}</div>
 	{/if}
 </div>
 

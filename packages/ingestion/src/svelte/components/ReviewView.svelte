@@ -929,7 +929,7 @@ onMount(() => {
 {/if}
 {:else}
 {#if host.startAction && view.catalog?.some((entry) => entry.kind === 'operation')}
-<fieldset class="smrt-review-view__start" data-smrt-part="start"><legend>{t(M['ingestion.startAs'])}</legend>
+<fieldset class="smrt-review-view__start" data-smrt-part="submit"><legend>{t(M['ingestion.startAs'])}</legend>
 <Select aria-label={t(M['ingestion.startHandler'])} bind:value={startHandler} onchange={draftStart} disabled={pending}><option value="">{t(M['ingestion.startHandler'])}</option>{#each view.catalog as entry (`${entry.id}@${entry.version}`)}{#if entry.kind === 'operation'}<option value={`${entry.id}@${entry.version}`}>{entry.label ?? entry.id}</option>{/if}{/each}</Select>
 {#if startEntry}
 <p>{startEntry.description}</p>
@@ -944,7 +944,7 @@ onMount(() => {
 </fieldset>
 {/if}
 {#if host.resolve}
-<fieldset class="smrt-review-view__resolve" data-smrt-part="resolve"><legend>{t(M['ingestion.resolveNoAction'])}</legend>
+<fieldset class="smrt-review-view__resolve" data-smrt-part="confirm"><legend>{t(M['ingestion.resolveNoAction'])}</legend>
 <Input aria-label={t(M['ingestion.resolveReason'])} bind:value={resolveReason} disabled={pending} />
 <Button disabled={pending} onclick={resolve}>{t(M['ingestion.resolveNoAction'])}</Button>
 </fieldset>

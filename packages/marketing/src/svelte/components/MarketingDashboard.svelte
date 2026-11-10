@@ -31,43 +31,43 @@ const summary = $derived(summarizeMarketingDashboard(campaigns));
 <section class="smrt-marketing-dashboard__root" data-smrt-component="MarketingDashboard">
   <div class="smrt-marketing-dashboard__tiles" data-smrt-part="list">
     <Card padding="sm">
-      <dl class="smrt-marketing-dashboard__tile" data-smrt-part="tile">
+      <dl class="smrt-marketing-dashboard__tile" data-smrt-part="item">
         <dt>Campaigns</dt>
         <dd>{summary.activeCampaignCount} active</dd>
-        <dd class="smrt-marketing-dashboard__secondary">{summary.campaignCount} total</dd>
+        <dd class="smrt-marketing-dashboard__secondary" data-smrt-part="value">{summary.campaignCount} total</dd>
       </dl>
     </Card>
     <Card padding="sm">
-      <dl class="smrt-marketing-dashboard__tile" data-smrt-part="tile">
+      <dl class="smrt-marketing-dashboard__tile" data-smrt-part="item">
         <dt>Channels</dt>
         <dd>{summary.channelCount}</dd>
-        <dd class="smrt-marketing-dashboard__secondary">linked executions</dd>
+        <dd class="smrt-marketing-dashboard__secondary" data-smrt-part="value">linked executions</dd>
       </dl>
     </Card>
     <Card padding="sm">
-      <dl class="smrt-marketing-dashboard__tile" data-smrt-part="tile">
+      <dl class="smrt-marketing-dashboard__tile" data-smrt-part="item">
         <dt>Leads</dt>
         <dd>{formatNumber(summary.leads, locale)}</dd>
-        <dd class="smrt-marketing-dashboard__secondary">{formatNumber(summary.conversions, locale)} conversions</dd>
+        <dd class="smrt-marketing-dashboard__secondary" data-smrt-part="value">{formatNumber(summary.conversions, locale)} conversions</dd>
       </dl>
     </Card>
     <Card padding="sm">
-      <dl class="smrt-marketing-dashboard__tile" data-smrt-part="tile">
+      <dl class="smrt-marketing-dashboard__tile" data-smrt-part="item">
         <dt>Reach</dt>
         <dd>{formatNumber(summary.impressions, locale)}</dd>
-        <dd class="smrt-marketing-dashboard__secondary">{formatNumber(summary.clicks, locale)} clicks</dd>
+        <dd class="smrt-marketing-dashboard__secondary" data-smrt-part="value">{formatNumber(summary.clicks, locale)} clicks</dd>
       </dl>
     </Card>
   </div>
 
   {#if summary.currencyTotals.length > 0}
     <Card padding="sm">
-      <div class="smrt-marketing-dashboard__currency-totals" data-smrt-part="currency">
+      <div class="smrt-marketing-dashboard__currency-totals" data-smrt-part="meta">
         {#each summary.currencyTotals as total (total.currency)}
-          <dl class="smrt-marketing-dashboard__currency-total">
+          <dl class="smrt-marketing-dashboard__currency-total" data-smrt-part="value">
             <dt>{total.currency}</dt>
             <dd>{formatCents(total.spendCents, total.currency, locale)} spent</dd>
-            <dd class="smrt-marketing-dashboard__secondary">
+            <dd class="smrt-marketing-dashboard__secondary" data-smrt-part="value">
               of {formatCents(total.budgetCents, total.currency, locale)} budget
             </dd>
           </dl>

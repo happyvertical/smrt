@@ -143,7 +143,7 @@ function isOpenTask(activity: SalesActivityView): boolean {
     <div>
       <h2 class="smrt-lead-detail__title" data-smrt-part="title">{lead.name}</h2>
       {#if lead.organizationName}
-        <p class="smrt-lead-detail__organization">{lead.organizationName}</p>
+        <p class="smrt-lead-detail__organization" data-smrt-part="meta">{lead.organizationName}</p>
       {/if}
     </div>
     <Badge variant={leadStatusBadgeVariant(lead.status)} size="sm">
@@ -151,31 +151,31 @@ function isOpenTask(activity: SalesActivityView): boolean {
     </Badge>
   </header>
 
-  <dl class="smrt-lead-detail__facts" data-smrt-part="facts">
-    <div class="smrt-lead-detail__fact">
+  <dl class="smrt-lead-detail__facts" data-smrt-part="meta">
+    <div class="smrt-lead-detail__fact" data-smrt-part="item">
       <dt>Contact</dt>
       <dd>{lead.contactName ?? '—'}</dd>
     </div>
-    <div class="smrt-lead-detail__fact">
+    <div class="smrt-lead-detail__fact" data-smrt-part="item">
       <dt>Email</dt>
       <dd>{lead.email ?? '—'}</dd>
     </div>
-    <div class="smrt-lead-detail__fact">
+    <div class="smrt-lead-detail__fact" data-smrt-part="item">
       <dt>Phone</dt>
       <dd>{lead.phone ?? '—'}</dd>
     </div>
-    <div class="smrt-lead-detail__fact">
+    <div class="smrt-lead-detail__fact" data-smrt-part="item">
       <dt>Owner</dt>
       <dd>{lead.ownerName ?? 'Unassigned'}</dd>
     </div>
   </dl>
 
   {#if lead.status === 'merged' && lead.mergedIntoId}
-    <p class="smrt-lead-detail__merged-note">This lead was merged into <code>{lead.mergedIntoId}</code>.</p>
+    <p class="smrt-lead-detail__merged-note" data-smrt-part="meta">This lead was merged into <code>{lead.mergedIntoId}</code>.</p>
   {/if}
 
   {#if opportunity}
-    <section class="smrt-lead-detail__opportunity" data-smrt-part="opportunity" aria-label="Linked opportunity">
+    <section class="smrt-lead-detail__opportunity" data-smrt-part="panel" aria-label="Linked opportunity">
       {#if opportunitySummary}
         {@render opportunitySummary(opportunity)}
       {:else}
@@ -186,7 +186,7 @@ function isOpenTask(activity: SalesActivityView): boolean {
           <span>{opportunity.name}</span>
         {/if}
         <Badge variant={opportunity.status === 'won' ? 'success' : opportunity.status === 'lost' ? 'error' : 'default'} size="sm">{opportunity.status}</Badge>
-        {#if opportunity.stageName}<span class="smrt-lead-detail__secondary">{opportunity.stageName}</span>{/if}
+        {#if opportunity.stageName}<span class="smrt-lead-detail__secondary" data-smrt-part="meta">{opportunity.stageName}</span>{/if}
       {/if}
     </section>
   {/if}
@@ -259,7 +259,7 @@ function isOpenTask(activity: SalesActivityView): boolean {
     </section>
   {/if}
 
-  <section class="smrt-lead-detail__timeline" data-smrt-part="timeline" aria-label="Lead activity timeline">
+  <section class="smrt-lead-detail__timeline" data-smrt-part="list" aria-label="Lead activity timeline">
     <h3>Activity timeline</h3>
     {#if activities.length === 0}
       <p class="smrt-lead-detail__empty" data-smrt-part="empty">No activity recorded yet.</p>
@@ -268,16 +268,16 @@ function isOpenTask(activity: SalesActivityView): boolean {
         {#each activities as activity (activity.id)}
           {@const openTask = isOpenTask(activity)}
           <li class="smrt-lead-detail__timeline-item" class:smrt-lead-detail__next-action={openTask} data-smrt-part="item">
-            <div class="smrt-lead-detail__timeline-content" data-smrt-part="content">
-              <span class="smrt-lead-detail__timeline-kind">{activity.activityKind}</span>
-              <span class="smrt-lead-detail__timeline-summary">{activity.summary}</span>
+            <div class="smrt-lead-detail__timeline-content" data-smrt-part="body">
+              <span class="smrt-lead-detail__timeline-kind" data-smrt-part="meta">{activity.activityKind}</span>
+              <span class="smrt-lead-detail__timeline-summary" data-smrt-part="message">{activity.summary}</span>
             </div>
-            <div class="smrt-lead-detail__timeline-meta">
+            <div class="smrt-lead-detail__timeline-meta" data-smrt-part="meta">
               {#if activity.createdAt}
                 <span>recorded {formatDate(activity.createdAt, locale)}</span>
               {/if}
               {#if activity.dueAt}
-                <span class:smrt-lead-detail__overdue={openTask && isOverdue(activity.dueAt)}>
+                <span class:smrt-lead-detail__overdue={openTask && isOverdue(activity.dueAt)} data-smrt-part="meta">
                   due {formatDate(activity.dueAt, locale)}
                 </span>
               {/if}
@@ -305,7 +305,7 @@ function isOpenTask(activity: SalesActivityView): boolean {
   </section>
 
   {#if actions.canRecordActivity && onRecordActivity}
-    <section class="smrt-lead-detail__composer" data-smrt-part="composer" aria-label="Record follow-up activity">
+    <section class="smrt-lead-detail__composer" data-smrt-part="panel" aria-label="Record follow-up activity">
       <h3>Record follow-up</h3>
       <Form class="composer__form" onsubmit={submitHumanActivity}>
         <FormGroup label="Kind">
@@ -346,7 +346,7 @@ function isOpenTask(activity: SalesActivityView): boolean {
   {/if}
 
   {#if actions.canScheduleNextAction && onScheduleNextAction}
-    <section class="smrt-lead-detail__composer" data-smrt-part="composer" aria-label="Schedule next action">
+    <section class="smrt-lead-detail__composer" data-smrt-part="panel" aria-label="Schedule next action">
       <h3>Schedule next action</h3>
       <Form class="composer__form" onsubmit={submitNextAction}>
         <FormGroup label="Summary" required>

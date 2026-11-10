@@ -44,7 +44,7 @@ const showCreditAction = $derived(
 
 {#snippet relatedCredits()}
   {#if data.creditNotes.length > 0}
-    <section class="smrt-invoice-record-screen__credits" data-smrt-part="details" aria-label={t(M['commerce.invoice_record.credit_notes'])}>
+    <section class="smrt-invoice-record-screen__credits" data-smrt-part="body" aria-label={t(M['commerce.invoice_record.credit_notes'])}>
       <h2>{t(M['commerce.invoice_record.credit_notes'])}</h2>
       <ul>
         {#each data.creditNotes as credit (credit.id)}

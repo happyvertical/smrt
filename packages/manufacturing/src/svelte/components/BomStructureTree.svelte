@@ -74,13 +74,13 @@ async function toggle(line: BomEditorLine) {
     {@const subId = `${uid}-${line.id}`}
     <li class="smrt-bom-structure-tree__line" data-smrt-part="item">
       <div class="smrt-bom-structure-tree__row" data-smrt-part="row">
-        <span class="smrt-bom-structure-tree__component" data-smrt-part="name">{componentText(line)}</span>
+        <span class="smrt-bom-structure-tree__component" data-smrt-part="title">{componentText(line)}</span>
         <Badge size="sm" variant={line.kind === 'missing' ? 'error' : 'default'}>
           {t(componentKindLabelKey(line.kind))}
         </Badge>
         <span class="smrt-bom-structure-tree__qty" data-smrt-part="value">{line.qtyPerUnit} {line.uom}</span>
         {#if line.kind === 'assembly' && line.subBomId === null}
-          <span class="smrt-bom-structure-tree__note" data-smrt-part="note">{t(M['manufacturing.bom_editor.no_bill'])}</span>
+          <span class="smrt-bom-structure-tree__note" data-smrt-part="description">{t(M['manufacturing.bom_editor.no_bill'])}</span>
         {/if}
         {#if canOpen}
           <Button
@@ -115,9 +115,9 @@ async function toggle(line: BomEditorLine) {
               label={t(M['manufacturing.bom_editor.sub_bill_label'], { component: line.componentName })}
             />
           {:else if entry?.state === 'failed'}
-            <p class="smrt-bom-structure-tree__note" data-smrt-part="note" role="alert">{t(M['manufacturing.bom_editor.load_failed'])}</p>
+            <p class="smrt-bom-structure-tree__note" data-smrt-part="description" role="alert">{t(M['manufacturing.bom_editor.load_failed'])}</p>
           {:else}
-            <p class="smrt-bom-structure-tree__note" data-smrt-part="note" role="status">{t(M['manufacturing.bom_editor.loading'])}</p>
+            <p class="smrt-bom-structure-tree__note" data-smrt-part="description" role="status">{t(M['manufacturing.bom_editor.loading'])}</p>
           {/if}
         </div>
       {/if}

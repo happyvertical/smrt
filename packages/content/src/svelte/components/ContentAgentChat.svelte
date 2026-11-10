@@ -460,7 +460,7 @@ async function handleSendMessage(content: string) {
       {/if}
     </div>
   {:else if session}
-    <div class="smrt-content-agent-chat__model-bar" data-smrt-part="toolbar">
+    <div class="smrt-content-agent-chat__model-bar" data-smrt-part="actions">
       <Select class="smrt-select model-select" bind:value={selectedModelId}>
         {#each availableAIModels as model}
           <option value={model.id}>{model.label}</option>
@@ -469,7 +469,7 @@ async function handleSendMessage(content: string) {
     </div>
     
     <div class="smrt-content-agent-chat__main" data-smrt-part="body">
-      <div class="smrt-content-agent-chat__host" data-smrt-part="host">
+      <div class="smrt-content-agent-chat__host" data-smrt-part="body">
         {#if loadingMessages || isCreatingTopic}
            <div class="smrt-content-agent-chat__loading-state" data-smrt-part="status">
              <span class="smrt-content-agent-chat__spinner" data-smrt-part="spinner"></span> {t(M['content.content_agent_chat.loading_topic'])}

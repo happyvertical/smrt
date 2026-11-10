@@ -87,7 +87,7 @@ function submitDecision(event: SubmitEvent, decision: ProjectDecisionView) {
 </script>
 
 <section class="smrt-project-questions-and-decisions__root" data-smrt-component="ProjectQuestionsAndDecisions">
-  <div class="smrt-project-questions-and-decisions__heading" data-smrt-part="heading">
+  <div class="smrt-project-questions-and-decisions__heading" data-smrt-part="header">
     <div>
       <h2>{t(M['projects.governance.questions'])}</h2>
       <p>{t(M['projects.governance.questions_description'])}</p>
@@ -110,7 +110,7 @@ function submitDecision(event: SubmitEvent, decision: ProjectDecisionView) {
           </header>
           {#if question.answer}<p class="smrt-project-questions-and-decisions__response" data-smrt-part="body">{question.answer}</p>{/if}
           {#if question.contextReferences?.length}
-            <ul class="smrt-project-questions-and-decisions__references" data-smrt-part="references" aria-label={t(M['projects.governance.question_context'])}>
+            <ul class="smrt-project-questions-and-decisions__references" data-smrt-part="list" aria-label={t(M['projects.governance.question_context'])}>
               {#each question.contextReferences as reference (`${reference.kind}:${reference.ref}`)}
                 <li>{reference.label ?? reference.ref} <small>{reference.kind}</small></li>
               {/each}
@@ -122,14 +122,14 @@ function submitDecision(event: SubmitEvent, decision: ProjectDecisionView) {
                 <fieldset disabled={busy}>
                   <legend>{t(M['projects.governance.answer'])}</legend>
                   {#each question.options.filter((option) => option.id !== 'other') as option (option.id)}
-                    <label class="smrt-project-questions-and-decisions__choice" data-smrt-part="choice">
+                    <label class="smrt-project-questions-and-decisions__choice" data-smrt-part="trigger">
                       <Input type="radio" name="selectedOptionId" value={option.id} required interaction={false} checked={selections[question.id] === option.id} onchange={() => selections[question.id] = option.id} />
                       <span>{option.label}{#if option.recommended} <strong>{t(M['projects.governance.recommended'])}</strong>{/if}
                         {#if option.description}<small>{option.description}</small>{/if}
                       </span>
                     </label>
                   {/each}
-                  <label class="smrt-project-questions-and-decisions__choice" data-smrt-part="choice">
+                  <label class="smrt-project-questions-and-decisions__choice" data-smrt-part="trigger">
                     <Input type="radio" name="selectedOptionId" value="other" required interaction={false} checked={selections[question.id] === 'other'} onchange={() => selections[question.id] = 'other'} />
                     <span>{t(M['projects.governance.other'])}</span>
                   </label>
@@ -148,7 +148,7 @@ function submitDecision(event: SubmitEvent, decision: ProjectDecisionView) {
     </div>
   {/if}
 
-  <div class="smrt-project-questions-and-decisions__heading smrt-project-questions-and-decisions__decisions-heading" data-smrt-part="heading">
+  <div class="smrt-project-questions-and-decisions__heading smrt-project-questions-and-decisions__decisions-heading" data-smrt-part="header">
     <div>
       <h2>{t(M['projects.governance.decisions'])}</h2>
       <p>{t(M['projects.governance.decisions_description'])}</p>
@@ -176,7 +176,7 @@ function submitDecision(event: SubmitEvent, decision: ProjectDecisionView) {
             </p>
           {/if}
           {#if decision.contextReferences?.length}
-            <ul class="smrt-project-questions-and-decisions__references" data-smrt-part="references" aria-label={t(M['projects.governance.decision_context'])}>
+            <ul class="smrt-project-questions-and-decisions__references" data-smrt-part="list" aria-label={t(M['projects.governance.decision_context'])}>
               {#each decision.contextReferences as reference (`${reference.kind}:${reference.ref}`)}
                 <li>{reference.label ?? reference.ref} <small>{reference.kind}</small></li>
               {/each}

@@ -106,14 +106,14 @@ function submitCreate() {
           <tr data-smrt-part="row">
             <td>{link.label ?? '—'}</td>
             <td><code>{link.code}</code></td>
-            <td class="smrt-referral-link-manager__share-url" data-smrt-part="share-url">
+            <td class="smrt-referral-link-manager__share-url" data-smrt-part="action">
               {#if shareBaseUrl}
                 <code>{buildShareUrl(shareBaseUrl, link.code)}</code>
               {:else}
                 —
               {/if}
             </td>
-            <td class="smrt-referral-link-manager__clicks">{link.clickCount}</td>
+            <td class="smrt-referral-link-manager__clicks" data-smrt-part="cell">{link.clickCount}</td>
             <td>
               <Badge variant={referralLinkStatusBadgeVariant(link.status)} size="sm">
                 {link.status}

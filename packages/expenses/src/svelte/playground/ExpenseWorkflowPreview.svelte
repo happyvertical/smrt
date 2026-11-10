@@ -45,7 +45,7 @@ function submit(event: SubmitEvent & { currentTarget: HTMLFormElement }) {
     'Example server rejection: a receipt is required by this application. Your entries and request token are retained.';
 }
 </script>
-<div class="smrt-expense-workflow-preview__root">
+<div class="smrt-expense-workflow-preview__root" data-smrt-component="ExpenseWorkflowPreview">
   <Checkbox label="May edit expense" bind:checked={canEdit} />
   <Checkbox label="Correction workflow" bind:checked={correcting} />
   <ExpenseForm action="" {values} {costObject} {canEdit} {correcting} {message} vendors={[{ id: 'vendor-a', label: 'Supplier A' }]} hiddenFields={[{ name: 'requestId', value: 'demo-expense-request' }]} onsubmit={submit} />

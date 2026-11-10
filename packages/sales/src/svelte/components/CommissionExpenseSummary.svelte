@@ -29,7 +29,7 @@ const totals = $derived(sumExpenseRowsByCurrency(rows));
 <div class="smrt-commission-expense-summary__root" data-smrt-component="CommissionExpenseSummary">
   <header class="smrt-commission-expense-summary__header" data-smrt-part="header">
     <h3 data-smrt-part="title">Commission expense{periodLabel ? ` — ${periodLabel}` : ''}</h3>
-    <p class="smrt-commission-expense-summary__note" data-smrt-part="note">
+    <p class="smrt-commission-expense-summary__note" data-smrt-part="description">
       Amounts owed to earners (operator reconciliation). This is commission
       expense — distinct from client invoices and client revenue.
     </p>
@@ -40,23 +40,23 @@ const totals = $derived(sumExpenseRowsByCurrency(rows));
   {:else}
     <dl class="smrt-commission-expense-summary__tiles" data-smrt-part="list">
       {#each totals as total (total.currency)}
-        <div class="smrt-commission-expense-summary__tile" data-smrt-part="tile">
+        <div class="smrt-commission-expense-summary__tile" data-smrt-part="item">
           <dt>Expense ({total.currency})</dt>
           <dd>{formatCents(total.commissionExpenseCents, total.currency, locale)}</dd>
         </div>
-        <div class="smrt-commission-expense-summary__tile" data-smrt-part="tile">
+        <div class="smrt-commission-expense-summary__tile" data-smrt-part="item">
           <dt>Adjustments ({total.currency})</dt>
-          <dd class:smrt-commission-expense-summary__negative={total.adjustmentCents < 0}>
+          <dd class:smrt-commission-expense-summary__negative={total.adjustmentCents < 0} data-smrt-part="value">
             {formatCents(total.adjustmentCents, total.currency, locale)}
           </dd>
         </div>
-        <div class="smrt-commission-expense-summary__tile" data-smrt-part="tile">
+        <div class="smrt-commission-expense-summary__tile" data-smrt-part="item">
           <dt>Paid out ({total.currency})</dt>
           <dd>{formatCents(total.payoutCents, total.currency, locale)}</dd>
         </div>
-        <div class="smrt-commission-expense-summary__tile smrt-commission-expense-summary__tile--net" data-smrt-part="tile">
+        <div class="smrt-commission-expense-summary__tile smrt-commission-expense-summary__tile--net" data-smrt-part="item">
           <dt>Net accrued ({total.currency})</dt>
-          <dd class:smrt-commission-expense-summary__negative={total.netAccruedCents < 0}>
+          <dd class:smrt-commission-expense-summary__negative={total.netAccruedCents < 0} data-smrt-part="value">
             {formatCents(total.netAccruedCents, total.currency, locale)}
           </dd>
         </div>
@@ -67,10 +67,10 @@ const totals = $derived(sumExpenseRowsByCurrency(rows));
       <thead>
         <tr>
           <th scope="col">Segment</th>
-          <th scope="col" class="smrt-commission-expense-summary__number">Expense</th>
-          <th scope="col" class="smrt-commission-expense-summary__number">Adjustments</th>
-          <th scope="col" class="smrt-commission-expense-summary__number">Paid out</th>
-          <th scope="col" class="smrt-commission-expense-summary__number">Net accrued</th>
+          <th scope="col" class="smrt-commission-expense-summary__number" data-smrt-part="cell">Expense</th>
+          <th scope="col" class="smrt-commission-expense-summary__number" data-smrt-part="cell">Adjustments</th>
+          <th scope="col" class="smrt-commission-expense-summary__number" data-smrt-part="cell">Paid out</th>
+          <th scope="col" class="smrt-commission-expense-summary__number" data-smrt-part="cell">Net accrued</th>
         </tr>
       </thead>
       <tbody data-smrt-part="body">
@@ -78,14 +78,14 @@ const totals = $derived(sumExpenseRowsByCurrency(rows));
           {@const net = row.commissionExpenseCents + row.adjustmentCents - row.payoutCents}
           <tr data-smrt-part="row">
             <td>{row.label}</td>
-            <td class="smrt-commission-expense-summary__number">
+            <td class="smrt-commission-expense-summary__number" data-smrt-part="cell">
               {formatCents(row.commissionExpenseCents, row.currency, locale)}
             </td>
-            <td class="smrt-commission-expense-summary__number" class:smrt-commission-expense-summary__negative={row.adjustmentCents < 0}>
+            <td class="smrt-commission-expense-summary__number" class:smrt-commission-expense-summary__negative={row.adjustmentCents < 0} data-smrt-part="cell">
               {formatCents(row.adjustmentCents, row.currency, locale)}
             </td>
-            <td class="smrt-commission-expense-summary__number">{formatCents(row.payoutCents, row.currency, locale)}</td>
-            <td class="smrt-commission-expense-summary__number smrt-commission-expense-summary__net" class:smrt-commission-expense-summary__negative={net < 0}>
+            <td class="smrt-commission-expense-summary__number" data-smrt-part="cell">{formatCents(row.payoutCents, row.currency, locale)}</td>
+            <td class="smrt-commission-expense-summary__number smrt-commission-expense-summary__net" class:smrt-commission-expense-summary__negative={net < 0} data-smrt-part="cell">
               {formatCents(net, row.currency, locale)}
             </td>
           </tr>

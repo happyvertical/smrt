@@ -54,7 +54,7 @@ const fileHelp = $derived(
 
 {#if canUpload}
   <Form id={formId} {action} method="post" enctype="multipart/form-data" preventDefault={false} {onsubmit} aria-busy={busy}>
-    <div class="smrt-attachment-upload__fields" data-smrt-part="form">
+    <div class="smrt-attachment-upload__fields" data-smrt-part="field">
       {#each hiddenFields as field}<Input type="hidden" name={field.name} value={field.value} interaction={false} />{/each}
       {#if message}<p role="alert">{message}</p>{/if}
       {#if retryStatus === 'transport-error'}<p role="status">{t(M['assets.attachments.uncertain'])}</p>{/if}

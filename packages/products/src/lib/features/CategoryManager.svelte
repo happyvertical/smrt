@@ -22,7 +22,7 @@ const _loading = $state(false);
     <p>{t(M['products.category_manager.subtitle'])}</p>
   </div>
 
-  <div class="smrt-category-manager__content" data-smrt-part="content">
+  <div class="smrt-category-manager__content" data-smrt-part="body">
     <p>{t(M['products.category_manager.coming_soon'])}</p>
     <p>{t(M['products.category_manager.will_include'])}</p>
     <ul>

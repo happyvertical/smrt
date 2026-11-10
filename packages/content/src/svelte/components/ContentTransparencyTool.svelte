@@ -123,26 +123,26 @@ async function loadTransparency(contentIdToLoad = savedContentId) {
       {t(M['content.transparency_tool.transparency_preview_explainer'])}
     </p>
 
-    <div class="smrt-content-transparency-tool__stats" data-smrt-part="stats">
-      <div class="smrt-content-transparency-tool__stat" data-smrt-part="stat">
+    <div class="smrt-content-transparency-tool__stats" data-smrt-part="group">
+      <div class="smrt-content-transparency-tool__stat" data-smrt-part="value">
         <strong>{transparencyPreview.factsUsed.length}</strong>
         <span>{t(M['content.transparency_tool.facts_used'])}</span>
       </div>
-      <div class="smrt-content-transparency-tool__stat" data-smrt-part="stat">
+      <div class="smrt-content-transparency-tool__stat" data-smrt-part="value">
         <strong>{transparencyPreview.references.length}</strong>
         <span>References</span>
       </div>
-      <div class="smrt-content-transparency-tool__stat" data-smrt-part="stat">
+      <div class="smrt-content-transparency-tool__stat" data-smrt-part="value">
         <strong>{transparencyPreview.otherExtractedFacts.length}</strong>
         <span>{t(M['content.transparency_tool.other_extracted_facts'])}</span>
       </div>
-      <div class="smrt-content-transparency-tool__stat" data-smrt-part="stat">
+      <div class="smrt-content-transparency-tool__stat" data-smrt-part="value">
         <strong>{transparencyPreview.corrections.length}</strong>
         <span>{t(M['content.transparency_tool.public_corrections'])}</span>
       </div>
     </div>
 
-    <div class="smrt-content-transparency-tool__card" data-smrt-part="card">
+    <div class="smrt-content-transparency-tool__card" data-smrt-part="item">
       <div class="smrt-content-transparency-tool__header" data-smrt-part="header">
         <strong>{t(M['content.transparency_tool.current_preview'])}</strong>
         <span class="smrt-content-transparency-tool__pill smrt-content-transparency-tool__pill--neutral" data-smrt-part="badge">{transparencyPreview.snapshotKind}</span>
@@ -155,13 +155,13 @@ async function loadTransparency(contentIdToLoad = savedContentId) {
         {/if}
       </span>
       {#if transparencyPreview.generation.publicPrompt}
-        <p class="smrt-content-transparency-tool__prompt" data-smrt-part="prompt">
+        <p class="smrt-content-transparency-tool__prompt" data-smrt-part="field">
           {transparencyPreview.generation.publicPrompt}
         </p>
       {/if}
 
       <div class="smrt-content-transparency-tool__list" data-smrt-part="list">
-        <div class="smrt-content-transparency-tool__list-section" data-smrt-part="section">
+        <div class="smrt-content-transparency-tool__list-section" data-smrt-part="group">
           <div class="smrt-content-transparency-tool__caption" data-smrt-part="caption">{t(M['content.transparency_tool.facts_used_in_article'])}</div>
           {#if transparencyPreview.factsUsed.length === 0}
             <p class="smrt-content-transparency-tool__empty" data-smrt-part="empty">{t(M['content.transparency_tool.no_used_facts_public'])}</p>
@@ -180,7 +180,7 @@ async function loadTransparency(contentIdToLoad = savedContentId) {
           {/if}
         </div>
 
-        <div class="smrt-content-transparency-tool__list-section" data-smrt-part="section">
+        <div class="smrt-content-transparency-tool__list-section" data-smrt-part="group">
           <div class="smrt-content-transparency-tool__caption" data-smrt-part="caption">{t(M['content.transparency_tool.source_material'])}</div>
           {#if transparencyPreview.references.length === 0}
             <p class="smrt-content-transparency-tool__empty" data-smrt-part="empty">{t(M['content.transparency_tool.no_references_public'])}</p>
@@ -198,7 +198,7 @@ async function loadTransparency(contentIdToLoad = savedContentId) {
       </div>
     </div>
 
-    <div class="smrt-content-transparency-tool__card" data-smrt-part="card">
+    <div class="smrt-content-transparency-tool__card" data-smrt-part="item">
       <div class="smrt-content-transparency-tool__header" data-smrt-part="header">
         <strong>{t(M['content.transparency_tool.latest_published_snapshot'])}</strong>
         {#if publishedTransparency?.publicationVersion?.version !== null && publishedTransparency?.publicationVersion?.version !== undefined}

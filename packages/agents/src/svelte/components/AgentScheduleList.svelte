@@ -124,12 +124,12 @@ function handleRunNow(schedule: AgentScheduleData, event: Event) {
                   {schedule.agentType}
                 </Button>
               {:else}
-                <span class="smrt-agent-schedule-list__agent-type" data-smrt-part="name">{schedule.agentType}</span>
+                <span class="smrt-agent-schedule-list__agent-type" data-smrt-part="title">{schedule.agentType}</span>
               {/if}
               {#if schedule.agentId}
-                <span class="smrt-agent-schedule-list__agent-id" data-smrt-part="identifier">#{schedule.agentId.slice(0, 8)}</span>
+                <span class="smrt-agent-schedule-list__agent-id" data-smrt-part="meta">#{schedule.agentId.slice(0, 8)}</span>
               {/if}
-              <span class="smrt-agent-schedule-list__agent-method" data-smrt-part="method">.{schedule.method}()</span>
+              <span class="smrt-agent-schedule-list__agent-method" data-smrt-part="meta">.{schedule.method}()</span>
             </td>
             <td class="smrt-agent-schedule-list__cell smrt-agent-schedule-list__cell-schedule" data-smrt-part="cell">
               <span class="smrt-agent-schedule-list__cron-human" data-smrt-part="label">{formatCronExpression(schedule.cron)}</span>

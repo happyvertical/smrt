@@ -102,7 +102,7 @@ function handleCancelForm() {
     </div>
   </div>
   
-  <div class="smrt-product-catalog__controls" data-smrt-part="toolbar">
+  <div class="smrt-product-catalog__controls" data-smrt-part="actions">
     <div class="smrt-product-catalog__filters" data-smrt-part="group">
       <Input
         type="text"
@@ -168,7 +168,7 @@ function handleCancelForm() {
   {/if}
   
   {#if showForm && !readonly}
-    <div class="smrt-product-catalog__overlay" data-smrt-part="overlay">
+    <div class="smrt-product-catalog__overlay" data-smrt-part="backdrop">
       <div class="smrt-product-catalog__form-container" data-smrt-part="panel">
         <h3>{editingProduct ? 'Edit Product' : 'Create New Product'}</h3>
         <ProductForm

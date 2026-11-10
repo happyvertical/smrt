@@ -61,7 +61,7 @@ const showActions = $derived(Boolean(onretire || onreinstate));
       <tbody>
         {#each operations as operation (operation.id)}
           <tr>
-            <th scope="row" class="smrt-operation-list__code" data-smrt-part="code">{operation.code}</th>
+            <th scope="row" class="smrt-operation-list__code" data-smrt-part="body">{operation.code}</th>
             <td>
               {#if onselect}
                 <Button

@@ -119,7 +119,7 @@ const total = $derived(items.reduce((sum, item) => sum + item.amount, 0));
     <div class="smrt-invoice-line-items__empty" data-smrt-part="empty">
       <p>{emptyMessage}</p>
       {#if editable && onadd}
-        <Button variant="ghost" onclick={onadd}>
+        <Button class="smrt-invoice-line-items__add" variant="ghost" onclick={onadd}>
           {t(M['commerce.invoice_line_items.add_item'])}
         </Button>
       {/if}
@@ -188,7 +188,7 @@ const total = $derived(items.reduce((sum, item) => sum + item.amount, 0));
     </table>
 
     {#if editable && onadd}
-      <Button variant="ghost" onclick={onadd}>
+      <Button class="smrt-invoice-line-items__add" variant="ghost" onclick={onadd}>
         <svg width="16" height="16" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="2">
           <path d="M8 3v10M3 8h10" />
         </svg>
@@ -266,8 +266,7 @@ const total = $derived(items.reduce((sum, item) => sum + item.amount, 0));
     width: 28px;
     height: 28px;
   }
-  .smrt-invoice-line-items__empty :global([data-smrt-component="Button"]),
-  .smrt-invoice-line-items__root > :global([data-smrt-component="Button"]) {
+  .smrt-invoice-line-items__root :global(.smrt-invoice-line-items__add) {
     display: inline-flex;
     align-items: center;
     gap: var(--smrt-spacing-2, 0.5rem);
@@ -379,8 +378,7 @@ const total = $derived(items.reduce((sum, item) => sum + item.amount, 0));
     background: var(--smrt-color-error-container);
     color: var(--smrt-color-error);
   }
-  .smrt-invoice-line-items__empty :global([data-smrt-component="Button"]),
-  .smrt-invoice-line-items__root > :global([data-smrt-component="Button"]) {
+  .smrt-invoice-line-items__root :global(.smrt-invoice-line-items__add) {
     font: var(--smrt-typography-label-large-font);
     font-weight: var(--smrt-typography-weight-medium, 500);
     color: var(--smrt-color-primary);
@@ -390,13 +388,11 @@ const total = $derived(items.reduce((sum, item) => sum + item.amount, 0));
     transition: all var(--smrt-duration-fast, 150ms) var(--smrt-easing-standard, cubic-bezier(0.2, 0, 0, 1));
   }
   @media (prefers-reduced-motion: reduce) {
-    .smrt-invoice-line-items__empty :global([data-smrt-component="Button"]),
-    .smrt-invoice-line-items__root > :global([data-smrt-component="Button"]) {
+    .smrt-invoice-line-items__root :global(.smrt-invoice-line-items__add) {
       transition: none;
     }
   }
-  .smrt-invoice-line-items__empty :global([data-smrt-component="Button"]:hover),
-  .smrt-invoice-line-items__root > :global([data-smrt-component="Button"]:hover) {
+  .smrt-invoice-line-items__root :global(.smrt-invoice-line-items__add:hover) {
     background: var(--smrt-color-primary-container);
   }
 }

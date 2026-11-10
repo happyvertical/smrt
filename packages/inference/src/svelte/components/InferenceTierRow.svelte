@@ -92,14 +92,14 @@ function submit(event: SubmitEvent): void {
 }
 </script>
 
-<form class="smrt-inference-tier-row__root" onsubmit={submit} data-testid={`inference-tier-${row.tier}`}>
+<form class="smrt-inference-tier-row__root" onsubmit={submit} data-testid={`inference-tier-${row.tier}`} data-smrt-component="InferenceTierRow">
   <div class="smrt-inference-tier-row__header" data-smrt-part="header">
     <strong class="smrt-inference-tier-row__tier" data-smrt-part="title">{row.tier}</strong>
     <span class="smrt-inference-tier-row__effective" data-smrt-part="value">{row.effectiveLabel}</span>
-    <span class="smrt-inference-tier-row__level" data-smrt-part="level">{inferenceLevelLabel(row.supplyingLevel)}</span>
+    <span class="smrt-inference-tier-row__level" data-smrt-part="progress">{inferenceLevelLabel(row.supplyingLevel)}</span>
   </div>
   {#if restricted && row.tenantBlocked}
-    <p class="smrt-inference-tier-row__note" data-smrt-part="note" role="note">
+    <p class="smrt-inference-tier-row__note" data-smrt-part="description" role="note">
       This tenant binding is no longer on the allow-list and is not in effect.
     </p>
   {/if}
@@ -152,7 +152,7 @@ function submit(event: SubmitEvent): void {
     {/if}
     <button type="submit" disabled={busy || !onSaveTier}>Save</button>
   </div>
-  <p class="smrt-inference-tier-row__hint" data-smrt-part="hint">"Same as default" reverts to: {tierRevertPreview(row, scope)}</p>
+  <p class="smrt-inference-tier-row__hint" data-smrt-part="description">"Same as default" reverts to: {tierRevertPreview(row, scope)}</p>
 </form>
 
 <style>

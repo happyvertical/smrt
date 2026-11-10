@@ -1017,7 +1017,7 @@ function removeAsset(id: string) {
 </script>
 
 <div class="smrt-content-editor__root" data-smrt-component="ContentEditor">
-  <div class="smrt-content-editor__grid" class:smrt-content-editor__grid--with-sidebar={showChatSidebar} data-smrt-part="shell">
+  <div class="smrt-content-editor__grid" class:smrt-content-editor__grid--with-sidebar={showChatSidebar} data-smrt-part="body">
     <!-- LEFT COLUMN (Document Canvas) -->
     <Form
       id={formId}
@@ -1041,8 +1041,8 @@ function removeAsset(id: string) {
           </Button>
         </div>
       {/if}
-      <div class="smrt-content-editor__toolbar" data-smrt-part="toolbar">
-        <div class="smrt-content-editor__toolbar-left" data-smrt-part="controls">
+      <div class="smrt-content-editor__toolbar" data-smrt-part="actions">
+        <div class="smrt-content-editor__toolbar-left" data-smrt-part="actions">
           {#if !simpleMode}
           <div class="smrt-content-editor__field" data-smrt-part="field">
             <Select id="type-select" name="type" bind:value={formData.type} class="mui-input">
@@ -1085,7 +1085,7 @@ function removeAsset(id: string) {
       </div>
 
       {#if saveNotice}
-        <p class="smrt-content-editor__save-notice" data-smrt-part="notice">{saveNotice}</p>
+        <p class="smrt-content-editor__save-notice" data-smrt-part="status">{saveNotice}</p>
       {/if}
 
       <Input
@@ -1099,7 +1099,7 @@ function removeAsset(id: string) {
       />
 
       {#if showUndoBanner}
-        <div class="smrt-content-editor__undo-banner" data-smrt-part="banner">
+        <div class="smrt-content-editor__undo-banner" data-smrt-part="status">
           <span class="smrt-content-editor__undo-banner-text" data-smrt-part="message">
             <svg viewBox="0 0 24 24" width="16" height="16" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M9 14l-4-4 4-4"/><path d="M5 10h11a4 4 0 0 1 0 8h-1"/></svg>
             {t(M['content.content_editor.ai_updated_fields'], {
@@ -1132,7 +1132,7 @@ function removeAsset(id: string) {
           onResolveImage={resolveBodyDropImage}
         />
 
-        <div class="smrt-content-editor__document-body-media-row" data-smrt-part="preview">
+        <div class="smrt-content-editor__document-body-media-row" data-smrt-part="panel">
           <ContentImageChooser
             body={formData.body || ''}
             format={formData.bodyFormat}
@@ -1155,8 +1155,8 @@ function removeAsset(id: string) {
       </div>
 
       <!-- Images & Media -->
-      <details class="smrt-content-editor__drawer" open data-smrt-part="drawer">
-          <summary class="smrt-content-editor__drawer-header" data-smrt-part="drawer-header">
+      <details class="smrt-content-editor__drawer" open data-smrt-part="panel">
+          <summary class="smrt-content-editor__drawer-header" data-smrt-part="trigger">
             Images & Media
             <svg class="smrt-content-editor__drawer-icon" data-smrt-part="icon" viewBox="0 0 24 24" width="20" height="20" stroke="currentColor" stroke-width="2" fill="none" stroke-linecap="round" stroke-linejoin="round"><polyline points="6 9 12 15 18 9"></polyline></svg>
           </summary>
@@ -1167,10 +1167,10 @@ function removeAsset(id: string) {
             ondragover={handleImageDragOver}
             ondragleave={handleImageDragLeave}
             ondrop={handleImageDrop}
-            data-smrt-part="drawer-body"
+            data-smrt-part="body"
           >
              {#if imageDragOver}
-               <div class="smrt-content-editor__drop-overlay" data-smrt-part="overlay">
+               <div class="smrt-content-editor__drop-overlay" data-smrt-part="backdrop">
                  <svg viewBox="0 0 24 24" width="32" height="32" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"><rect x="3" y="3" width="18" height="18" rx="2" ry="2"/><circle cx="8.5" cy="8.5" r="1.5"/><polyline points="21 15 16 10 5 21"/></svg>
                </div>
              {/if}
@@ -1190,12 +1190,12 @@ function removeAsset(id: string) {
                       >
                         <img
                           class="smrt-content-editor__media-item-image"
-                          data-smrt-part="preview"
+                          data-smrt-part="panel"
                           src={getAssetImageSource(asset)}
                           alt={asset.name || 'Asset image'}
                           onerror={() => hideBrokenAssetImage(assetId)}
                         />
-                        <div class="smrt-content-editor__media-item-overlay" data-smrt-part="overlay">
+                        <div class="smrt-content-editor__media-item-overlay" data-smrt-part="backdrop">
                            {#if assetId && assetId !== formData.thumbnailAssetId}
                              <Button variant="ghost" size="sm" type="button" class="btn-make-thumbnail" aria-label={t(M['content.content_editor.make_thumbnail'])} title={t(M['content.content_editor.make_thumbnail'])} onclick={() => setThumbnail(assetId)}>
                                <svg viewBox="0 0 24 24" width="14" height="14" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect x="3" y="3" width="18" height="18" rx="2"/><circle cx="8.5" cy="8.5" r="1.5"/><polyline points="21 15 16 10 5 21"/></svg>
@@ -1243,12 +1243,12 @@ function removeAsset(id: string) {
       </details>
 
       <!-- Metadata Panel ("Details", collapsed, in simple mode) -->
-      <details class="smrt-content-editor__drawer" open={!simpleMode} data-smrt-part="drawer">
-        <summary class="smrt-content-editor__drawer-header" data-smrt-part="drawer-header">
+      <details class="smrt-content-editor__drawer" open={!simpleMode} data-smrt-part="panel">
+        <summary class="smrt-content-editor__drawer-header" data-smrt-part="trigger">
           {#if simpleMode}{t(M['content.content_fields.details'])}{:else}Metadata{/if}
           <svg class="smrt-content-editor__drawer-icon" data-smrt-part="icon" viewBox="0 0 24 24" width="20" height="20" stroke="currentColor" stroke-width="2" fill="none" stroke-linecap="round" stroke-linejoin="round"><polyline points="6 9 12 15 18 9"></polyline></svg>
         </summary>
-        <div class="smrt-content-editor__drawer-content" data-smrt-part="drawer-body">
+        <div class="smrt-content-editor__drawer-content" data-smrt-part="body">
           <label>
             {simpleMode ? optionalLabel(t(M['content.content_fields.author'])) : 'Author:'}
             <Input type="text" name="author" aria-label={optionalLabel(t(M['content.content_fields.author']))} bind:value={formData.author} placeholder={t(M['content.content_editor.author_name_placeholder'])} />
@@ -1273,8 +1273,8 @@ function removeAsset(id: string) {
 
       <!-- References Panel (hidden in simple mode) -->
       {#if !simpleMode}
-      <details class="smrt-content-editor__drawer" open data-smrt-part="drawer">
-          <summary class="smrt-content-editor__drawer-header" data-smrt-part="drawer-header">
+      <details class="smrt-content-editor__drawer" open data-smrt-part="panel">
+          <summary class="smrt-content-editor__drawer-header" data-smrt-part="trigger">
             References
             <svg class="smrt-content-editor__drawer-icon" data-smrt-part="icon" viewBox="0 0 24 24" width="20" height="20" stroke="currentColor" stroke-width="2" fill="none" stroke-linecap="round" stroke-linejoin="round"><polyline points="6 9 12 15 18 9"></polyline></svg>
           </summary>
@@ -1285,14 +1285,14 @@ function removeAsset(id: string) {
             ondragover={handleRefDragOver}
             ondragleave={handleRefDragLeave}
             ondrop={handleRefDrop}
-            data-smrt-part="drawer-body"
+            data-smrt-part="body"
           >
             {#if refDragOver}
-              <div class="smrt-content-editor__drop-overlay" data-smrt-part="overlay">
+              <div class="smrt-content-editor__drop-overlay" data-smrt-part="backdrop">
                 <svg viewBox="0 0 24 24" width="32" height="32" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"><path d="M14 2H6a2 2 0 00-2 2v16a2 2 0 002 2h12a2 2 0 002-2V8z"/><polyline points="14 2 14 8 20 8"/><line x1="16" y1="13" x2="8" y2="13"/><line x1="16" y1="17" x2="8" y2="17"/><polyline points="10 9 9 9 8 9"/></svg>
               </div>
             {/if}
-            <div class="smrt-content-editor__references-section" data-smrt-part="section">
+            <div class="smrt-content-editor__references-section" data-smrt-part="group">
                <div class="smrt-content-editor__references-list" data-smrt-part="list">
                   {#each formData.referenceIds as refId}
                     <div class="smrt-content-editor__reference-badge" data-smrt-part="badge">
@@ -1312,7 +1312,7 @@ function removeAsset(id: string) {
                    {#if evidenceNotice}
                      <p class="smrt-content-editor__evidence-message smrt-content-editor__evidence-message--notice" data-smrt-part="message">{evidenceNotice}</p>
                    {/if}
-                   <div class="smrt-content-editor__evidence-bulk-toolbar" data-smrt-part="toolbar">
+                   <div class="smrt-content-editor__evidence-bulk-toolbar" data-smrt-part="actions">
                      <span>{t(M['content.content_editor.evidence_items_selected'], {
                        count: selectedEvidenceCount,
                        itemLabel: t(
@@ -1492,7 +1492,7 @@ function removeAsset(id: string) {
     </Form>
 
     {#if showChatSidebar}
-      <aside class="smrt-content-editor__sidebar-col" data-smrt-part="sidebar">
+      <aside class="smrt-content-editor__sidebar-col" data-smrt-part="panel">
         <div class="smrt-content-editor__chat-sidebar-section" data-smrt-part="panel">
           {#if showAgentChat}
             <ContentAgentChat
@@ -1921,6 +1921,9 @@ function removeAsset(id: string) {
     gap: 0.75rem;
     pointer-events: none;
   }
+  .smrt-content-editor__drawer[open] .smrt-content-editor__drawer-icon {
+    transform: rotate(180deg);
+  }
 }
 
 @layer smrt.theme {
@@ -1977,9 +1980,6 @@ function removeAsset(id: string) {
   .smrt-content-editor__drawer-icon {
     color: var(--smrt-color-outline);
     transition: transform 0.3s ease;
-  }
-  .smrt-content-editor__drawer[open] .smrt-content-editor__drawer-icon {
-    transform: rotate(180deg);
   }
   .smrt-content-editor__chat-sidebar-section {
     background: var(--smrt-color-surface);
@@ -2256,7 +2256,7 @@ function removeAsset(id: string) {
     transform: scale(1.1);
     background: var(--smrt-color-surface);
   }
-  .smrt-content-editor__media-item-overlay :global(.btn-remove-asset:hover:not(:disabled):not(.disabled)) {
+  .smrt-content-editor__media-item-overlay :global(.btn-remove-asset:hover:not(:disabled):not([aria-disabled="true"])) {
     background: var(--smrt-color-error-container);
     color: var(--smrt-color-error);
     border-color: var(--smrt-color-error);

@@ -300,7 +300,7 @@ $effect(() => {
         for={controlId === undefined ? id : controlId}
         title={helpDensity === 'tooltip' && help !== null ? help : undefined}
       >
-        {label}{#if required}<span class="smrt-policy-field__required" data-smrt-part="required" aria-hidden="true">*</span>{/if}
+        {label}{#if required}<span class="smrt-policy-field__required" data-smrt-part="marker" aria-hidden="true">*</span>{/if}
       </label>
     {/if}
     {@render children?.()}
@@ -308,7 +308,7 @@ $effect(() => {
       <!-- Hint text density, or tooltip density with no label to attach the
            title attribute to (fall back to visible help rather than dropping
            it). -->
-      <p class="smrt-policy-field__hint" data-smrt-part="hint" id={helpId}>{help}</p>
+      <p class="smrt-policy-field__hint" data-smrt-part="description" id={helpId}>{help}</p>
     {/if}
   </div>
 {/if}

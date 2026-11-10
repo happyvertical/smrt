@@ -157,7 +157,7 @@ function handleDragStart(event: DragEvent, image: ImageLike) {
   <div class="smrt-assets-gallery__header" data-smrt-part="header">
     <h3>{t(M['images.assets_gallery.title'])}</h3>
     
-    <div class="smrt-assets-gallery__toolbar" data-smrt-part="toolbar">
+    <div class="smrt-assets-gallery__toolbar" data-smrt-part="actions">
       <div class="smrt-assets-gallery__search" data-smrt-part="field">
         <Input
           type="search"
@@ -207,20 +207,20 @@ function handleDragStart(event: DragEvent, image: ImageLike) {
           onclick={() => handleSelect(image)}
           data-smrt-part="item"
         >
-          <div class="smrt-assets-gallery__thumbnail" data-smrt-part="thumbnail">
+          <div class="smrt-assets-gallery__thumbnail" data-smrt-part="media">
             <img src={image.sourceUri || image.url} alt={image.alt || image.name} loading="lazy" />
           </div>
-          <div class="smrt-assets-gallery__details" data-smrt-part="details">
+          <div class="smrt-assets-gallery__details" data-smrt-part="body">
             <span class="smrt-assets-gallery__name" data-smrt-part="title" title={image.name}>{image.name}</span>
             <span class="smrt-assets-gallery__meta" data-smrt-part="meta">{image.width} × {image.height}</span>
           </div>
         </button>
       {:else}
         <div class="smrt-assets-gallery__item" data-smrt-part="item">
-          <div class="smrt-assets-gallery__thumbnail" data-smrt-part="thumbnail">
+          <div class="smrt-assets-gallery__thumbnail" data-smrt-part="media">
             <img src={image.sourceUri || image.url} alt={image.alt || image.name} loading="lazy" />
           </div>
-          <div class="smrt-assets-gallery__details" data-smrt-part="details">
+          <div class="smrt-assets-gallery__details" data-smrt-part="body">
             <span class="smrt-assets-gallery__name" data-smrt-part="title" title={image.name}>{image.name}</span>
             <span class="smrt-assets-gallery__meta" data-smrt-part="meta">{image.width} × {image.height}</span>
           </div>

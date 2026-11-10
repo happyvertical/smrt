@@ -175,7 +175,7 @@ function retryPreview() {
   class="smrt-content-list-lifecycle-panel__root"
   aria-label={mode === 'trash'
     ? t(M['content.content_list.trash_actions'])
-    : t(M['content.content_list.lifecycle_actions'])}
+    : t(M['content.content_list.lifecycle_actions'])} data-smrt-component="ContentListLifecyclePanel"
 >
   {#if mode === 'active'}
     <Button
@@ -219,12 +219,12 @@ function retryPreview() {
   {/if}
 </section>
 {#if mode === 'trash' && matchingSelectionTooLarge}
-  <p class="smrt-content-list-lifecycle-panel__selection-limit" role="status">
+  <p class="smrt-content-list-lifecycle-panel__selection-limit" role="status" data-smrt-component="ContentListLifecyclePanel">
     {t(M['content.content_list.empty_trash_limit'], { count: selectionLimit })}
   </p>
 {/if}
 {#if lastResult}
-  <div class="smrt-content-list-lifecycle-panel__result" aria-live="polite">
+  <div class="smrt-content-list-lifecycle-panel__result" aria-live="polite" data-smrt-component="ContentListLifecyclePanel">
     <p>
       {t(M['content.content_list.lifecycle_completed_summary'], {
         accepted: lastResult.accepted,
@@ -257,7 +257,7 @@ function retryPreview() {
   onClose={close}
   ariaDescribedBy="content-lifecycle-summary"
 >
-  <div class="smrt-content-list-lifecycle-panel__preview" aria-live="polite" aria-busy={busy}>
+  <div class="smrt-content-list-lifecycle-panel__preview" aria-live="polite" aria-busy={busy} data-smrt-part="panel">
     {#if snapshot.status === 'previewing'}
       <p id="content-lifecycle-summary">
         {t(M['content.content_list.lifecycle_resolving'])}
@@ -306,7 +306,7 @@ function retryPreview() {
     {/if}
 
     {#if snapshot.error}
-      <p class="smrt-content-list-lifecycle-panel__error" role="alert">{snapshot.error}</p>
+      <p class="smrt-content-list-lifecycle-panel__error" role="alert" data-smrt-part="error">{snapshot.error}</p>
     {/if}
     {#if snapshot.status === 'succeeded' && snapshot.summary}
       <p role="status">
@@ -323,7 +323,7 @@ function retryPreview() {
       {/if}
     {/if}
 
-    <div class="smrt-content-list-lifecycle-panel__actions">
+    <div class="smrt-content-list-lifecycle-panel__actions" data-smrt-part="actions">
       <Button variant="ghost" type="button" disabled={busy} onclick={close}>
         {snapshot.status === 'succeeded'
           ? t(M['content.content_list.lifecycle_close'])

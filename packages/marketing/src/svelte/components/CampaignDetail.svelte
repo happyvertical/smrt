@@ -35,13 +35,13 @@ let {
 </script>
 
 {#if !campaign}
-  <p class="smrt-campaign-detail__empty" data-smrt-component="CampaignDetail" data-smrt-part="empty">Select a campaign to see its details.</p>
+  <p class="smrt-campaign-detail__empty" data-smrt-component="CampaignDetail" >Select a campaign to see its details.</p>
 {:else}
   <article class="smrt-campaign-detail__root" data-smrt-component="CampaignDetail">
     <Card variant="outlined">
       <header class="smrt-campaign-detail__header" data-smrt-part="header">
         <div>
-          <p class="smrt-campaign-detail__eyebrow">{campaign.campaignKey}</p>
+          <p class="smrt-campaign-detail__eyebrow" data-smrt-part="label">{campaign.campaignKey}</p>
           <h2 data-smrt-part="title">{campaign.name}</h2>
           {#if campaign.description}<p class="smrt-campaign-detail__description" data-smrt-part="description">{campaign.description}</p>{/if}
         </div>
@@ -50,7 +50,7 @@ let {
         </Badge>
       </header>
 
-      <dl class="smrt-campaign-detail__facts" data-smrt-part="facts">
+      <dl class="smrt-campaign-detail__facts" data-smrt-part="meta">
         <div>
           <dt>Objective</dt>
           <dd>{campaign.objective ? humanizeKey(campaign.objective) : '—'}</dd>
@@ -80,14 +80,14 @@ let {
 
     {#if channels.length > 0}
       <Card padding="sm">
-        <section class="smrt-campaign-detail__channels" data-smrt-part="channels" aria-label="Campaign channels">
+        <section class="smrt-campaign-detail__channels" data-smrt-part="group" aria-label="Campaign channels">
           <h3>Executions</h3>
           <ul>
             {#each channels as channel (channel.id)}
               <li data-smrt-part="row">
                 <span>
-                  <span class="smrt-campaign-detail__channel-name">{channel.label ?? humanizeKey(channel.channelKind)}</span>
-                  <span class="smrt-campaign-detail__channel-ref">{channel.channelRef}</span>
+                  <span class="smrt-campaign-detail__channel-name" data-smrt-part="title">{channel.label ?? humanizeKey(channel.channelKind)}</span>
+                  <span class="smrt-campaign-detail__channel-ref" data-smrt-part="meta">{channel.channelRef}</span>
                 </span>
                 <Badge variant={campaignStatusBadgeVariant(channel.status)} size="sm">
                   {humanizeKey(channel.status)}

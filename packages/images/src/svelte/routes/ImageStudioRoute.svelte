@@ -90,7 +90,7 @@ function handleEditorSave(image: StudioImage) {
   </header>
 
   <section class="smrt-image-studio-route__uploader" data-smrt-part="group">
-    <div class="smrt-image-studio-route__section-copy" data-smrt-part="content">
+    <div class="smrt-image-studio-route__section-copy" data-smrt-part="body">
       <h2>{t(M['images.image_studio_route.acquire_images'])}</h2>
       <p>
         {t(M['images.image_studio_route.acquire_images_description'])}
@@ -109,14 +109,14 @@ function handleEditorSave(image: StudioImage) {
   </section>
 
   <section class="smrt-image-studio-route__workspace" data-smrt-part="group">
-    <div class="smrt-image-studio-route__section-copy" data-smrt-part="content">
+    <div class="smrt-image-studio-route__section-copy" data-smrt-part="body">
       <h2>{t(M['images.image_studio_route.browse_and_edit'])}</h2>
       <p>
         {t(M['images.image_studio_route.browse_and_edit_description'])}
       </p>
     </div>
 
-    <div class="smrt-image-studio-route__workspace-grid" data-smrt-part="content">
+    <div class="smrt-image-studio-route__workspace-grid" data-smrt-part="body">
       <div class="smrt-image-studio-route__card smrt-image-studio-route__gallery" data-smrt-part="panel">
         <AssetsGallery
           {apiBaseUrl}

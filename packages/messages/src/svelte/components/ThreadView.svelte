@@ -114,10 +114,10 @@ const _sortedMessages = $derived(
           class="collapsed-header"
           onclick={() => toggleCollapse(message.id)}
         >
-          <span class="smrt-thread-view__sender" data-smrt-part="sender">
+          <span class="smrt-thread-view__sender" data-smrt-part="author">
             {message.senderName || message.senderAddress}
           </span>
-          <span class="smrt-thread-view__preview" data-smrt-part="preview">
+          <span class="smrt-thread-view__preview" data-smrt-part="panel">
             {message.body?.slice(0, 80) || '(no content)'}...
           </span>
           <span class="smrt-thread-view__date" data-smrt-part="time">
@@ -127,7 +127,7 @@ const _sortedMessages = $derived(
           </span>
         </Button>
       {:else}
-        <div class="smrt-thread-view__content" data-smrt-part="content">
+        <div class="smrt-thread-view__content" data-smrt-part="body">
           {#if messages.length > 1}
             <Button
               variant="ghost"
@@ -163,7 +163,7 @@ const _sortedMessages = $derived(
       {/if}
 
       {#if i < _sortedMessages.length - 1}
-        <div class="smrt-thread-view__connector"></div>
+        <div class="smrt-thread-view__connector" data-smrt-part="marker"></div>
       {/if}
     </div>
   {/each}

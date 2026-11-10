@@ -134,7 +134,7 @@ function text(input: unknown): string {
 }
 </script>
 {#if fields.length}
-<fieldset class="smrt-argument-fields__root" data-testid="argument-fields" disabled={readonly}>
+<fieldset class="smrt-argument-fields__root" data-testid="argument-fields" disabled={readonly} data-smrt-component="ArgumentFields">
 <legend>{t(M['ingestion.fields'])}</legend>
 {#if !parsed}<p role="status">{t(M['ingestion.fieldsUnavailable'])}</p>{/if}
 {#each fields as field (field.name)}
@@ -162,7 +162,7 @@ function text(input: unknown): string {
 </div>
 {/each}
 </fieldset>
-<details class="smrt-argument-fields__advanced" data-smrt-part="advanced" data-testid="advanced-arguments"><summary>{t(M['ingestion.advanced'])}</summary>
+<details class="smrt-argument-fields__advanced"  data-testid="advanced-arguments" data-smrt-component="ArgumentFields"><summary>{t(M['ingestion.advanced'])}</summary>
 <Textarea aria-label={label} bind:value {readonly} {rows} />
 </details>
 {:else}

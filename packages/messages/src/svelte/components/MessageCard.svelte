@@ -107,7 +107,7 @@ const _slackMeta = $derived.by(() => {
   aria-selected={selected} data-smrt-component="MessageCard"
 >
   {#if onselect}
-    <div class="smrt-message-card__select" data-smrt-part="select">
+    <div class="smrt-message-card__select" data-smrt-part="field">
       <!-- raw-primitive-allow: native checkbox; no Provider-free checkbox primitive (Toggle is a switch with different semantics, CheckboxInput requires a Provider) -->
       <input
         type="checkbox"
@@ -121,17 +121,17 @@ const _slackMeta = $derived.by(() => {
   <!-- raw-primitive-allow: large pressable message row wrapping rich header/subject/preview content (a structural selection surface with descendant compact-mode layout rules), not a standard action button -->
   <button
     class="smrt-message-card__content"
-    data-smrt-part="content"
+    data-smrt-part="body"
     type="button"
     onclick={() => onclick?.(message)}
   >
     <div class="smrt-message-card__header" data-smrt-part="header">
-      <div class="smrt-message-card__sender" data-smrt-part="sender">
-        <span class="smrt-message-card__name" data-smrt-part="name" class:smrt-message-card__name--unread={!message.isRead}>
+      <div class="smrt-message-card__sender" data-smrt-part="author">
+        <span class="smrt-message-card__name" data-smrt-part="title" class:smrt-message-card__name--unread={!message.isRead}>
           {message.senderName || message.senderAddress}
         </span>
         {#if showAccount && account}
-          <span class="smrt-message-card__account" data-smrt-part="account">{account.name}</span>
+          <span class="smrt-message-card__account" data-smrt-part="meta">{account.name}</span>
         {/if}
       </div>
       <div class="smrt-message-card__meta" data-smrt-part="meta">
@@ -140,37 +140,37 @@ const _slackMeta = $derived.by(() => {
           isFlagged={message.isFlagged}
           hasAttachments={message.hasAttachments}
         />
-        <time class="smrt-message-card__date" data-smrt-part="date">{_formattedDate}</time>
+        <time class="smrt-message-card__date" data-smrt-part="meta">{_formattedDate}</time>
       </div>
     </div>
 
-    <div class="smrt-message-card__subject-row" data-smrt-part="subject">
+    <div class="smrt-message-card__subject-row" data-smrt-part="title">
       {#if showType}
         <MessageTypeBadge type={message.type} />
       {/if}
-      <span class="smrt-message-card__subject-text" class:smrt-message-card__subject-text--unread={!message.isRead}>
+      <span class="smrt-message-card__subject-text" class:smrt-message-card__subject-text--unread={!message.isRead} data-smrt-part="title">
         {message.subject || '(no subject)'}
       </span>
     </div>
 
     {#if !compact}
-      <div class="smrt-message-card__preview" data-smrt-part="preview">
+      <div class="smrt-message-card__preview" data-smrt-part="panel">
         {#if typeContent}
           {@render typeContent({ message })}
         {:else if _tweetMeta}
-          <span class="smrt-message-card__meta-inline">
+          <span class="smrt-message-card__meta-inline" data-smrt-part="meta">
             🔄 {_tweetMeta.retweetCount}
             ❤ {_tweetMeta.likeCount}
             💬 {_tweetMeta.replyCount}
           </span>
         {:else if _slackMeta && _slackMeta.channelName}
-          <span class="smrt-message-card__meta-inline">
+          <span class="smrt-message-card__meta-inline" data-smrt-part="meta">
             #{_slackMeta.channelName}
           </span>
         {:else if _emailMeta?.folderPath}
-          <span class="smrt-message-card__meta-inline">{_emailMeta.folderPath}</span>
+          <span class="smrt-message-card__meta-inline" data-smrt-part="meta">{_emailMeta.folderPath}</span>
         {/if}
-        <span class="smrt-message-card__preview-text">{_preview}</span>
+        <span class="smrt-message-card__preview-text" data-smrt-part="message">{_preview}</span>
       </div>
     {/if}
   </button>

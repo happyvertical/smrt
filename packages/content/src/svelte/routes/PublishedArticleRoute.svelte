@@ -36,13 +36,13 @@ function formatTimestamp(value: string | null | undefined) {
 </script>
 
 <div class="smrt-published-article-route__root" data-smrt-component="PublishedArticleRoute">
-  <header class="smrt-published-article-route__hero" data-smrt-part="hero">
-    <div class="smrt-published-article-route__hero-inner" data-smrt-part="copy">
-      <a href={backHref} class="smrt-published-article-route__back-link" data-smrt-part="link">{backLabel}</a>
-      <div class="smrt-published-article-route__eyebrow" data-smrt-part="eyebrow">{t(M['content.published_article.eyebrow'])}</div>
+  <header class="smrt-published-article-route__hero" data-smrt-part="header">
+    <div class="smrt-published-article-route__hero-inner" data-smrt-part="body">
+      <a href={backHref} class="smrt-published-article-route__back-link" data-smrt-part="action">{backLabel}</a>
+      <div class="smrt-published-article-route__eyebrow" data-smrt-part="label">{t(M['content.published_article.eyebrow'])}</div>
       <h1>{data.content.title || t(M['content.published_article.untitled'])}</h1>
       {#if data.content.description}
-        <p class="smrt-published-article-route__dek" data-smrt-part="dek">{data.content.description}</p>
+        <p class="smrt-published-article-route__dek" data-smrt-part="description">{data.content.description}</p>
       {/if}
 
       <div class="smrt-published-article-route__meta" data-smrt-part="meta">
@@ -55,7 +55,7 @@ function formatTimestamp(value: string | null | undefined) {
     </div>
   </header>
 
-  <main class="smrt-published-article-route__layout" data-smrt-part="layout">
+  <main class="smrt-published-article-route__layout" data-smrt-part="group">
     <article class="smrt-published-article-route__body" data-smrt-part="body">
       <ContentBodyRenderer
         content={data.content.body || ''}
@@ -63,7 +63,7 @@ function formatTimestamp(value: string | null | undefined) {
       />
     </article>
 
-    <aside class="smrt-published-article-route__sidebar" data-smrt-part="sidebar">
+    <aside class="smrt-published-article-route__sidebar" data-smrt-part="panel">
       <ContentTransparencyReport
         transparency={data.transparency}
         title={t(M['content.published_article.transparency_title'])}

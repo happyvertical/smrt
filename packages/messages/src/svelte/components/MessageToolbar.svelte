@@ -36,7 +36,7 @@ const {
 </script>
 
 <div class="smrt-message-toolbar__root" role="toolbar" aria-label={t(M['messages.message_toolbar.actions_label'])} data-smrt-component="MessageToolbar">
-  <div class="smrt-message-toolbar__selection" data-smrt-part="selection">
+  <div class="smrt-message-toolbar__selection" data-smrt-part="control">
     {#if selectedCount > 0}
       <span class="smrt-message-toolbar__count" data-smrt-part="count">{t(M['messages.message_toolbar.count_selected'], { selectedCount, totalCount })}</span>
       {#if onclearselection}

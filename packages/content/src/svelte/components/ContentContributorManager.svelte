@@ -53,7 +53,7 @@ function handleSubmit() {
     <Button variant="ghost" type="button" onclick={() => (editing = {})}>{t(M['content.contributor_manager.add_contributor'])}</Button>
   </header>
 
-  <div class="smrt-content-contributor-manager__layout" data-smrt-part="layout">
+  <div class="smrt-content-contributor-manager__layout" data-smrt-part="group">
     <div class="smrt-content-contributor-manager__list" data-smrt-part="list">
       {#each contributors as contributor (contributor.id ?? contributor.email)}
         <article class="smrt-content-contributor-manager__card" data-smrt-part="item">

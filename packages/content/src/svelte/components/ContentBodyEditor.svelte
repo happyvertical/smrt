@@ -1634,7 +1634,7 @@ function handleEditorDragEnd() {
 
 <!-- svelte-ignore a11y_no_static_element_interactions -->
 <div bind:this={rootElement} class="smrt-content-body-editor__root" onpointerleave={handleRootPointerLeave} data-smrt-component="ContentBodyEditor">
-  <div class="smrt-content-body-editor__toolbar" data-smrt-part="toolbar" aria-label={t(M['content.content_body_editor.toolbar'])}>
+  <div class="smrt-content-body-editor__toolbar" data-smrt-part="actions" aria-label={t(M['content.content_body_editor.toolbar'])}>
     <Button variant="ghost" size="sm" class="editor-toolbar-button" type="button" title={t(M['content.content_body_editor.bold'])} aria-label={t(M['content.content_body_editor.bold'])} onclick={() => runCommand('bold')}>
       <strong>B</strong>
     </Button>
@@ -1718,7 +1718,7 @@ function handleEditorDragEnd() {
   {#if selectedImageBox}
     <div
       class="smrt-content-body-editor__image-control-popover"
-      data-smrt-part="controls"
+      data-smrt-part="actions"
       style={`top: ${Math.max(44, selectedImageBox.top + 8)}px; left: ${selectedImageBox.left + selectedImageBox.width / 2}px;`}
       aria-label={t(M['content.content_body_editor.selected_image_controls'])}
     >
@@ -1754,7 +1754,7 @@ function handleEditorDragEnd() {
           <path d="m19 12-7 7-7-7"></path>
         </svg>
       </Button>
-      <span class="smrt-content-body-editor__image-control-divider" data-smrt-part="divider"></span>
+      <span class="smrt-content-body-editor__image-control-divider" data-smrt-part="marker"></span>
       <Button
         variant="ghost"
         size="sm"
@@ -1823,7 +1823,7 @@ function handleEditorDragEnd() {
           <path d="M3 19h18"></path>
         </svg>
       </Button>
-      <span class="smrt-content-body-editor__image-control-divider" data-smrt-part="divider"></span>
+      <span class="smrt-content-body-editor__image-control-divider" data-smrt-part="marker"></span>
       <Button variant="ghost" size="sm" class="editor-popover-button" type="button" title={t(M['content.content_body_editor.make_smaller'])} aria-label={t(M['content.content_body_editor.make_image_smaller'])} onclick={() => resizeSelectedImage(-IMAGE_WIDTH_STEP)}>
         <svg viewBox="0 0 24 24" width="15" height="15" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round">
           <path d="M5 12h14"></path>
@@ -1858,7 +1858,7 @@ function handleEditorDragEnd() {
     <button
       type="button"
       class="smrt-content-body-editor__image-resize-handle"
-      data-smrt-part="handle"
+      data-smrt-part="meta"
       title={t(M['content.content_body_editor.resize_image'])}
       aria-label={t(M['content.content_body_editor.resize_selected_image'])}
       style={`top: ${selectedImageBox.top + selectedImageBox.height - 12}px; left: ${selectedImageBox.left + selectedImageBox.width - 12}px;`}

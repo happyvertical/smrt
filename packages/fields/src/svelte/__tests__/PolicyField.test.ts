@@ -157,7 +157,7 @@ describe('FieldPolicyProvider + PolicyField', () => {
       .getByText('Name')
       .closest('[data-smrt-component="PolicyField"]');
     expect(
-      nameField?.querySelector('[data-smrt-part="required"]'),
+      nameField?.querySelector('[data-smrt-part="marker"]'),
     ).not.toBeNull();
   });
 
@@ -170,7 +170,7 @@ describe('FieldPolicyProvider + PolicyField', () => {
     const skuField = screen
       .getByText('SKU')
       .closest('[data-smrt-component="PolicyField"]');
-    expect(skuField?.querySelector('[data-smrt-part="required"]')).toBeNull();
+    expect(skuField?.querySelector('[data-smrt-part="marker"]')).toBeNull();
   });
 
   it('exposes default value via snippet props for prefill signal', () => {
@@ -217,7 +217,9 @@ describe('FieldPolicyProvider + PolicyField', () => {
     expect(screen.queryByText('The widget name')).not.toBeInTheDocument();
     // No visible hint element (query the component's stable class rather than
     // a role — `<p>` has no ARIA role, so a role query is unreliable).
-    expect(document.querySelectorAll('[data-smrt-part="hint"]').length).toBe(0);
+    expect(
+      document.querySelectorAll('[data-smrt-part="description"]').length,
+    ).toBe(0);
   });
 
   it('links the help hint to the input via aria-describedby', async () => {

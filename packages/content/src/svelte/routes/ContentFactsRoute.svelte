@@ -96,8 +96,8 @@ onMount(() => {
 <div class="smrt-content-facts-route__root" class:smrt-content-facts-route__page--embedded={embedded} data-smrt-component="ContentFactsRoute">
   <header class="smrt-content-facts-route__header" data-smrt-part="header">
     <div class="smrt-content-facts-route__container" data-smrt-part="body">
-      <div class="smrt-content-facts-route__header-copy" data-smrt-part="copy">
-        <div class="smrt-content-facts-route__eyebrow" data-smrt-part="eyebrow">{t(M['content.facts.eyebrow'])}</div>
+      <div class="smrt-content-facts-route__header-copy" data-smrt-part="body">
+        <div class="smrt-content-facts-route__eyebrow" data-smrt-part="label">{t(M['content.facts.eyebrow'])}</div>
         <h1>{t(M['content.facts.heading'])}</h1>
         <p>
           {t(M['content.facts.intro'])}
@@ -119,13 +119,13 @@ onMount(() => {
         </nav>
 
         {#if createHref}
-          <a class="smrt-content-facts-route__cta" data-smrt-part="cta" href={createHref}>{t(M['content.facts.create_cta'])}</a>
+          <a class="smrt-content-facts-route__cta" data-smrt-part="submit" href={createHref}>{t(M['content.facts.create_cta'])}</a>
         {/if}
       </div>
     </div>
   </header>
 
-  <main class="smrt-content-facts-route__container smrt-content-facts-route__main" data-smrt-part="main">
+  <main class="smrt-content-facts-route__container smrt-content-facts-route__main" data-smrt-part="body">
     <section class="smrt-content-facts-route__filters" data-smrt-part="filters">
       <Form class="filters" onsubmit={handleSubmit}>
         <label class="smrt-content-facts-route__search-field" data-smrt-part="search">
@@ -137,7 +137,7 @@ onMount(() => {
           />
         </label>
 
-        <label class="smrt-content-facts-route__toggle" data-smrt-part="toggle">
+        <label class="smrt-content-facts-route__toggle" data-smrt-part="trigger">
           <!-- raw-primitive-allow: native checkbox; no Provider-free checkbox primitive (Toggle is a switch with different semantics, CheckboxInput requires a Provider) -->
           <input
             type="checkbox"
@@ -147,7 +147,7 @@ onMount(() => {
           <span>{t(M['content.facts.latest_only'])}</span>
         </label>
 
-        <label class="smrt-content-facts-route__toggle" data-smrt-part="toggle">
+        <label class="smrt-content-facts-route__toggle" data-smrt-part="trigger">
           <!-- raw-primitive-allow: native checkbox; no Provider-free checkbox primitive (Toggle is a switch with different semantics, CheckboxInput requires a Provider) -->
           <input
             type="checkbox"
@@ -180,13 +180,13 @@ onMount(() => {
         </p>
       </section>
     {:else}
-      <section class="smrt-content-facts-route__panel smrt-content-facts-route__results-panel" data-smrt-part="results">
+      <section class="smrt-content-facts-route__panel smrt-content-facts-route__results-panel" data-smrt-part="list">
         <div class="smrt-content-facts-route__results-meta" data-smrt-part="meta">
           <div>
             <strong>{facts.length}</strong>
             <span>{facts.length === 1 ? 'fact loaded' : 'facts loaded'}</span>
           </div>
-          <div class="smrt-content-facts-route__results-hints" data-smrt-part="hints">
+          <div class="smrt-content-facts-route__results-hints" data-smrt-part="description">
             <span>{latestOnly ? 'Latest versions' : 'All versions'}</span>
             <span>{includeSuperseded ? 'Superseded included' : 'Superseded hidden'}</span>
           </div>
@@ -196,7 +196,7 @@ onMount(() => {
           {#each facts as fact (fact.id ?? `${fact.textRefined}-${fact.createdAt}`)}
             <article class="smrt-content-facts-route__fact-row" data-smrt-part="row">
               <div class="smrt-content-facts-route__fact-row-header" data-smrt-part="header">
-                <div class="smrt-content-facts-route__fact-row-badges" data-smrt-part="badges">
+                <div class="smrt-content-facts-route__fact-row-badges" data-smrt-part="meta">
                   {#if fact.status}
                     <span class="smrt-content-facts-route__badge" data-smrt-part="badge">{fact.status}</span>
                   {/if}
@@ -205,7 +205,7 @@ onMount(() => {
                   {/if}
                 </div>
 
-                <div class="smrt-content-facts-route__fact-row-stats" data-smrt-part="stats">
+                <div class="smrt-content-facts-route__fact-row-stats" data-smrt-part="group">
                   <span>Confidence {formatConfidence(fact.confidence)}</span>
                   <span>Sources {fact.sourceCount ?? 0}</span>
                   <span>{formatDate(fact.updatedAt || fact.createdAt)}</span>

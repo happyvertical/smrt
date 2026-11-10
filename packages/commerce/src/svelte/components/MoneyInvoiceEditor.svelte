@@ -236,7 +236,7 @@ function changeMode(event: Event) {
       {/if}
       {#if totals.discountTotalMinor !== 0}<div class="smrt-money-invoice-editor__muted" data-smrt-part="row"><dt>{t(M['commerce.invoice_money.includes_discounts'])} <CurrencyDisplay amount={Math.abs(totals.discountTotalMinor)} currency={money.draft.currency} unit="cents" /></dt></div>{/if}
       {#each groupedTaxes(totals.taxes).filter((tax) => tax.taxMinor !== 0) as tax (tax.id)}
-        <div class:smrt-money-invoice-editor__muted={totals.lineAmountType === 'inclusive'}>
+        <div class:smrt-money-invoice-editor__muted={totals.lineAmountType === 'inclusive'} data-smrt-part="meta">
           <dt>{totals.lineAmountType === 'inclusive' ? `Includes ${tax.name} ${tax.percent}% of` : `${tax.name} ${tax.percent}% on`} <CurrencyDisplay amount={totals.lineAmountType === 'inclusive' ? tax.taxMinor : tax.taxableMinor} currency={money.draft.currency} unit="cents" /></dt>
           {#if totals.lineAmountType !== 'inclusive'}<dd><CurrencyDisplay amount={tax.taxMinor} currency={money.draft.currency} unit="cents" /></dd>{/if}
         </div>

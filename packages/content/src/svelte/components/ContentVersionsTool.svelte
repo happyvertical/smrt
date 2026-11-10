@@ -172,7 +172,7 @@ async function restoreVersion(versionNumber: number) {
 </script>
 
 <div class="smrt-content-versions-tool__root" data-smrt-component="ContentVersionsTool">
-  <div class="smrt-content-versions-tool__toolbar" data-smrt-part="toolbar">
+  <div class="smrt-content-versions-tool__toolbar" data-smrt-part="actions">
     <Button
       variant="secondary"
       type="button"
@@ -188,7 +188,7 @@ async function restoreVersion(versionNumber: number) {
   {/if}
 
   {#if notice}
-    <p class="smrt-content-versions-tool__notice" role="status" aria-live="polite" data-smrt-part="notice">{notice}</p>
+    <p class="smrt-content-versions-tool__notice" role="status" aria-live="polite" data-smrt-part="status">{notice}</p>
   {/if}
 
   {#if !savedContentId}

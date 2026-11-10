@@ -43,14 +43,14 @@ const _formattedSize = $derived.by(() => {
     title={`${attachment.filename} (${_formattedSize})`}
   >
     <span class="smrt-attachment-chip__icon" data-smrt-part="icon">{_icon}</span>
-    <span class="smrt-attachment-chip__name" data-smrt-part="name">{attachment.filename}</span>
-    <span class="smrt-attachment-chip__size" data-smrt-part="size">{_formattedSize}</span>
+    <span class="smrt-attachment-chip__name" data-smrt-part="title">{attachment.filename}</span>
+    <span class="smrt-attachment-chip__size" data-smrt-part="meta">{_formattedSize}</span>
   </Button>
 {:else}
   <span class="smrt-attachment-chip__root" title={`${attachment.filename} (${_formattedSize})`} data-smrt-component="AttachmentChip">
     <span class="smrt-attachment-chip__icon" data-smrt-part="icon">{_icon}</span>
-    <span class="smrt-attachment-chip__name" data-smrt-part="name">{attachment.filename}</span>
-    <span class="smrt-attachment-chip__size" data-smrt-part="size">{_formattedSize}</span>
+    <span class="smrt-attachment-chip__name" data-smrt-part="title">{attachment.filename}</span>
+    <span class="smrt-attachment-chip__size" data-smrt-part="meta">{_formattedSize}</span>
   </span>
 {/if}
 

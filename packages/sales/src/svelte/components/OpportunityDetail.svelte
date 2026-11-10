@@ -105,7 +105,7 @@ function isOpenNextAction(activity: SalesActivityView): boolean {
     </Badge>
   </header>
 
-  <dl class="smrt-opportunity-detail__facts" data-smrt-part="facts">
+  <dl class="smrt-opportunity-detail__facts" data-smrt-part="meta">
     <div class="smrt-opportunity-detail__fact" data-smrt-part="field">
       <dt>Expected value</dt>
       <dd>
@@ -131,7 +131,7 @@ function isOpenNextAction(activity: SalesActivityView): boolean {
   </dl>
 
   {#if !isOpen}
-    <p class="smrt-opportunity-detail__outcome" class:smrt-opportunity-detail__won={opportunity.status === 'won'} class:smrt-opportunity-detail__lost={opportunity.status === 'lost'} data-smrt-part="outcome">
+    <p class="smrt-opportunity-detail__outcome" class:smrt-opportunity-detail__won={opportunity.status === 'won'} class:smrt-opportunity-detail__lost={opportunity.status === 'lost'} data-smrt-part="description">
       Closed {opportunity.status}
       {#if opportunity.status === 'won'}
         on {formatDate(opportunity.wonAt, locale)}
@@ -145,7 +145,7 @@ function isOpenNextAction(activity: SalesActivityView): boolean {
   {/if}
 
   {#if isOpen && (onMoveStage || onClose)}
-    <div class="smrt-opportunity-detail__controls" data-smrt-part="controls">
+    <div class="smrt-opportunity-detail__controls" data-smrt-part="actions">
       {#if onMoveStage && stages.length > 0}
         <div class="smrt-opportunity-detail__group" data-smrt-part="group">
           <FormGroup label="Move to stage">
@@ -186,7 +186,7 @@ function isOpenNextAction(activity: SalesActivityView): boolean {
               }}
             />
           </FormGroup>
-          <span class="smrt-opportunity-detail__buttons" data-smrt-part="buttons">
+          <span class="smrt-opportunity-detail__buttons" data-smrt-part="actions">
             <Button variant="primary" size="sm" disabled={busy} onclick={() => close('won')}>
               Close won
             </Button>
@@ -199,20 +199,20 @@ function isOpenNextAction(activity: SalesActivityView): boolean {
     </div>
   {/if}
 
-  <section class="smrt-opportunity-detail__timeline" data-smrt-part="timeline" aria-label="Activity timeline">
+  <section class="smrt-opportunity-detail__timeline" data-smrt-part="list" aria-label="Activity timeline">
     <h3>Activity</h3>
     {#if activities.length === 0}
       <p class="smrt-opportunity-detail__empty" data-smrt-part="empty">No activity recorded yet.</p>
     {:else}
-      <ol class="smrt-opportunity-detail__timeline-list" data-smrt-part="timeline-list">
+      <ol class="smrt-opportunity-detail__timeline-list" data-smrt-part="list">
         {#each activities as activity (activity.id)}
           {@const open = isOpenNextAction(activity)}
           <li class="smrt-opportunity-detail__item" class:smrt-opportunity-detail__next-action={open} data-smrt-part="item">
-            <span class="smrt-opportunity-detail__kind" data-smrt-part="kind">{activity.activityKind}</span>
+            <span class="smrt-opportunity-detail__kind" data-smrt-part="meta">{activity.activityKind}</span>
             <span class="smrt-opportunity-detail__summary" data-smrt-part="summary">{activity.summary}</span>
-            <span class="smrt-opportunity-detail__dates" data-smrt-part="dates">
+            <span class="smrt-opportunity-detail__dates" data-smrt-part="group">
               {#if activity.dueAt}
-                <span class:smrt-opportunity-detail__overdue={open && isOverdue(activity.dueAt)}>
+                <span class:smrt-opportunity-detail__overdue={open && isOverdue(activity.dueAt)} data-smrt-part="meta">
                   due {formatDate(activity.dueAt, locale)}
                 </span>
               {/if}
@@ -276,19 +276,19 @@ function isOpenNextAction(activity: SalesActivityView): boolean {
   </section>
 
   {#if conversions.length > 0}
-    <section class="smrt-opportunity-detail__conversions" data-smrt-part="conversions" aria-label="Conversions">
+    <section class="smrt-opportunity-detail__conversions" data-smrt-part="group" aria-label="Conversions">
       <h3>Conversions</h3>
-      <ul class="smrt-opportunity-detail__conversions-list" data-smrt-part="conversions-list">
+      <ul class="smrt-opportunity-detail__conversions-list" data-smrt-part="list">
         {#each conversions as conversion (conversion.id)}
           <li>
-            <span class="smrt-opportunity-detail__conversion-kind" data-smrt-part="conversion-kind">{conversion.targetKind}</span>
+            <span class="smrt-opportunity-detail__conversion-kind" data-smrt-part="meta">{conversion.targetKind}</span>
             {#if conversion.href}
               <a href={conversion.href}><code>{conversion.targetId}</code></a>
             {:else}
               <code>{conversion.targetId}</code>
             {/if}
             {#if conversion.note}
-              <span class="smrt-opportunity-detail__note" data-smrt-part="note">{conversion.note}</span>
+              <span class="smrt-opportunity-detail__note" data-smrt-part="description">{conversion.note}</span>
             {/if}
           </li>
         {/each}

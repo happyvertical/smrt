@@ -37,7 +37,7 @@ let { agreements = [], locale, artifactHref }: Props = $props();
           <th scope="col">Status</th>
           <th scope="col">Effective</th>
           <th scope="col">Commission plan</th>
-          <th scope="col" class="smrt-executed-agreements-list__number">Clearing</th>
+          <th scope="col" class="smrt-executed-agreements-list__number" data-smrt-part="cell">Clearing</th>
           <th scope="col">Approval</th>
           <th scope="col">Executed artifact</th>
         </tr>
@@ -63,7 +63,7 @@ let { agreements = [], locale, artifactHref }: Props = $props();
             <td>
               <code>{formatPlanRef(agreement.planKey, agreement.planVersion)}</code>
             </td>
-            <td class="smrt-executed-agreements-list__number">{agreement.clearingDays} days</td>
+            <td class="smrt-executed-agreements-list__number" data-smrt-part="cell">{agreement.clearingDays} days</td>
             <td>{agreement.approvalMode}</td>
             <td>
               {#if agreement.signedDocumentAssetId}
@@ -79,14 +79,14 @@ let { agreements = [], locale, artifactHref }: Props = $props();
                 {#if agreement.signedDocumentSha256}
                   <code
                     class="smrt-executed-agreements-list__hash"
-                    data-smrt-part="hash"
+                    data-smrt-part="meta"
                     title={agreement.signedDocumentSha256}
                   >
                     {agreement.signedDocumentSha256.slice(0, 12)}…
                   </code>
                 {/if}
                 {#if agreement.auditTrailAssetId}
-                  <span class="smrt-executed-agreements-list__separator">·</span>
+                  <span class="smrt-executed-agreements-list__separator" data-smrt-part="indicator">·</span>
                   {#if artifactHref}
                     <a
                       href={artifactHref(agreement.id, 'audit_trail')}

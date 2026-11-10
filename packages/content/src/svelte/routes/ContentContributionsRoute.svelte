@@ -316,8 +316,8 @@ async function handleDeleteContributor(data: Partial<ContentContributorData>) {
 <div class="smrt-content-contributions-route__root" class:smrt-content-contributions-route__page--embedded={embedded} data-smrt-component="ContentContributionsRoute">
   <header class="smrt-content-contributions-route__header" data-smrt-part="header">
     <div class="smrt-content-contributions-route__container" data-smrt-part="body">
-      <div class="smrt-content-contributions-route__header-copy" data-smrt-part="copy">
-        <div class="smrt-content-contributions-route__eyebrow" data-smrt-part="eyebrow">{t(M['content.contributions.eyebrow'])}</div>
+      <div class="smrt-content-contributions-route__header-copy" data-smrt-part="body">
+        <div class="smrt-content-contributions-route__eyebrow" data-smrt-part="label">{t(M['content.contributions.eyebrow'])}</div>
         <h1>{t(M['content.contributions.heading'])}</h1>
         <p>
           {t(M['content.contributions.intro'])}
@@ -339,8 +339,8 @@ async function handleDeleteContributor(data: Partial<ContentContributorData>) {
     </div>
   </header>
 
-  <main class="smrt-content-contributions-route__container smrt-content-contributions-route__main" data-smrt-part="main">
-    <section class="smrt-content-contributions-route__callout" data-smrt-part="callout">
+  <main class="smrt-content-contributions-route__container smrt-content-contributions-route__main" data-smrt-part="body">
+    <section class="smrt-content-contributions-route__callout" data-smrt-part="status">
       <div class="smrt-content-contributions-route__callout-header" data-smrt-part="header">
         <div>
           <strong>{t(M['content.contributions.callout_title'])}</strong>
@@ -351,14 +351,14 @@ async function handleDeleteContributor(data: Partial<ContentContributorData>) {
         <span class="smrt-content-contributions-route__pill" data-smrt-part="badge">Live</span>
       </div>
 
-      <div class="smrt-content-contributions-route__callout-chips" data-smrt-part="chips" aria-label={t(M['content.contributions.chips_aria'])}>
+      <div class="smrt-content-contributions-route__callout-chips" data-smrt-part="list" aria-label={t(M['content.contributions.chips_aria'])}>
         <span>{t(M['content.contributions.chip_held_intake'])}</span>
         <span>{t(M['content.contributions.chip_portal_actions'])}</span>
         <span>{t(M['content.contributions.chip_inbox_decisions'])}</span>
         <span>{t(M['content.contributions.chip_type_trust'])}</span>
       </div>
 
-      <p class="smrt-content-contributions-route__callout-note" data-smrt-part="note">
+      <p class="smrt-content-contributions-route__callout-note" data-smrt-part="description">
         {t(M['content.contributions.email_note_prefix'])}
         <code>/api/v1/contentcontributions/ingest-email</code> {t(M['content.contributions.email_note_suffix'])}
       </p>
@@ -415,7 +415,7 @@ async function handleDeleteContributor(data: Partial<ContentContributorData>) {
                 {t(M['content.contributions.portal_body'])}
               </p>
             </div>
-            <div class="smrt-content-contributions-route__form-shell" data-smrt-part="form">
+            <div class="smrt-content-contributions-route__form-shell" data-smrt-part="field">
               <Form
                 class="inline-form"
                 onsubmit={(event) => {

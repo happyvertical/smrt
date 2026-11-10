@@ -118,8 +118,8 @@ async function handleSave(slotId: string, config: unknown) {
 
 <div class="smrt-agent-settings-shell__root" class:smrt-agent-settings-shell__single-agent={agents.length === 1} data-smrt-component="AgentSettingsShell">
 	{#if agents.length > 1}
-		<aside class="smrt-agent-settings-shell__sidebar" data-smrt-part="sidebar">
-			<h3 class="smrt-agent-settings-shell__sidebar-title" data-smrt-part="label" id="{idBase}-agents-title">Agents</h3>
+		<aside class="smrt-agent-settings-shell__sidebar" data-smrt-part="panel">
+			<h3 class="smrt-agent-settings-shell__sidebar-title" data-smrt-part="title" id="{idBase}-agents-title">Agents</h3>
 			<div
 				class="smrt-agent-settings-shell__list" data-smrt-part="list"
 				role="tablist"
@@ -141,7 +141,7 @@ async function handleSave(slotId: string, config: unknown) {
 						onclick={() => handleAgentClick(agent.id)}
 						onkeydown={(e) => handleAgentKeydown(e, agent.id)}
 					>
-						<span class="smrt-agent-settings-shell__agent-class" data-smrt-part="name">{agent.agentClass}</span>
+						<span class="smrt-agent-settings-shell__agent-class" data-smrt-part="title">{agent.agentClass}</span>
 						{#if agent.name}
 							<span class="smrt-agent-settings-shell__agent-name" data-smrt-part="meta">{agent.name}</span>
 						{/if}
@@ -181,7 +181,7 @@ async function handleSave(slotId: string, config: unknown) {
 			<div class="smrt-agent-settings-shell__empty" data-smrt-part="empty">
 				<div class="smrt-agent-settings-shell__empty-icon" data-smrt-part="icon">🤖</div>
 				<p class="smrt-agent-settings-shell__empty-message" data-smrt-part="message">{t(M['ui.agent_settings_shell.no_agents_message'])}</p>
-				<p class="smrt-agent-settings-shell__empty-hint" data-smrt-part="hint">
+				<p class="smrt-agent-settings-shell__empty-hint" data-smrt-part="description">
 					{t(M['ui.agent_settings_shell.no_agents_hint'])}
 				</p>
 			</div>

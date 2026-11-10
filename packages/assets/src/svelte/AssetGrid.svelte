@@ -82,7 +82,7 @@ function getAltText(asset: PersistedAsset): string {
 <div class="smrt-asset-grid__root" class:smrt-asset-grid__loading={loading} data-smrt-component="AssetGrid">
   {#if loading}
     <div class="smrt-asset-grid__loading-panel" data-smrt-part="status">
-      <span class="smrt-asset-grid__spinner" data-smrt-part="icon"></span>
+      <span class="smrt-asset-grid__spinner" data-smrt-part="spinner"></span>
       <span>{t(M['assets.asset_grid.loading'])}</span>
     </div>
   {:else if assets.length === 0}
@@ -95,7 +95,7 @@ function getAltText(asset: PersistedAsset): string {
         </svg>
       </div>
       <p class="smrt-asset-grid__empty-title" data-smrt-part="title">{t(M['assets.asset_grid.no_assets_found'])}</p>
-      <p class="smrt-asset-grid__empty-desc" data-smrt-part="hint">{t(M['assets.asset_grid.empty_hint'])}</p>
+      <p class="smrt-asset-grid__empty-desc" data-smrt-part="description">{t(M['assets.asset_grid.empty_hint'])}</p>
     </div>
   {:else}
     <div class="smrt-asset-grid__grid" data-smrt-part="list">
@@ -119,7 +119,7 @@ function getAltText(asset: PersistedAsset): string {
           ></button>
 
           <!-- Selection checkbox -->
-          <div class="smrt-asset-grid__checkbox" data-smrt-part="selection">
+          <div class="smrt-asset-grid__checkbox" data-smrt-part="control">
             <!-- raw-primitive-allow: native checkbox; no Provider-free checkbox primitive (Toggle is a switch with different semantics, CheckboxInput requires a Provider) -->
             <input
               type="checkbox"
@@ -131,13 +131,13 @@ function getAltText(asset: PersistedAsset): string {
           </div>
 
           <!-- Thumbnail area -->
-          <div class="smrt-asset-grid__thumb" data-smrt-part="thumbnail">
+          <div class="smrt-asset-grid__thumb" data-smrt-part="media">
             {#if isImage(asset) && asset.sourceUri}
               <img
                 src={asset.sourceUri}
                 alt={getAltText(asset) || asset.name}
                 class="smrt-asset-grid__image"
-                data-smrt-part="content"
+                data-smrt-part="media"
                 loading="lazy"
               />
             {:else}
@@ -146,7 +146,7 @@ function getAltText(asset: PersistedAsset): string {
           </div>
 
           <!-- Info bar -->
-          <div class="smrt-asset-grid__info" data-smrt-part="details">
+          <div class="smrt-asset-grid__info" data-smrt-part="body">
             <span class="smrt-asset-grid__name" data-smrt-part="title" title={asset.name}>{asset.name || 'Untitled'}</span>
 
             <div class="smrt-asset-grid__meta" data-smrt-part="meta">

@@ -61,7 +61,7 @@ function turn(id: string, offset: number) {
 <section data-testid="evidence-viewer" aria-label={t(M['ingestion.evidence'])} data-smrt-component="EvidenceViewer">
 <h2>{t(M['ingestion.evidence'])}</h2>
 {#if layout === 'pager' && evidence.length > 1 && position >= 0}
-<div class="smrt-evidence-viewer__pager" data-smrt-part="pager" data-testid="evidence-pager"><Button disabled={position <= 0} onclick={() => step(-1)}>{t(M['ingestion.previousOriginal'])}</Button><p role="status">{t(M['ingestion.originalOf'], { index: position + 1, count: evidence.length })}</p><Button disabled={position >= evidence.length - 1} onclick={() => step(1)}>{t(M['ingestion.nextOriginal'])}</Button></div>
+<div class="smrt-evidence-viewer__pager" data-smrt-part="nav" data-testid="evidence-pager"><Button disabled={position <= 0} onclick={() => step(-1)}>{t(M['ingestion.previousOriginal'])}</Button><p role="status">{t(M['ingestion.originalOf'], { index: position + 1, count: evidence.length })}</p><Button disabled={position >= evidence.length - 1} onclick={() => step(1)}>{t(M['ingestion.nextOriginal'])}</Button></div>
 {/if}
 {#each shown as view (view.evidence.id)}
 {@const url = evidenceUrl(view.viewUrl)}
@@ -72,7 +72,7 @@ function turn(id: string, offset: number) {
 {#if view.evidence.mediaType.startsWith('image/')}<img src={url} alt={view.label} />
 {:else if view.evidence.mediaType === 'application/pdf'}
 {@const src = pageUrl(url, view.evidence.id)}
-{#if count > 1}{@const current = page[view.evidence.id] ?? 1}<div class="smrt-evidence-viewer__pager" data-smrt-part="pager" data-testid="page-pager"><Button disabled={current <= 1} onclick={() => turn(view.evidence.id, -1)}>{t(M['ingestion.previousPage'])}</Button><p role="status">{t(M['ingestion.pageOf'], { page: current, count })}</p><Button disabled={current >= count} onclick={() => turn(view.evidence.id, 1)}>{t(M['ingestion.nextPage'])}</Button></div>{/if}
+{#if count > 1}{@const current = page[view.evidence.id] ?? 1}<div class="smrt-evidence-viewer__pager" data-smrt-part="nav" data-testid="page-pager"><Button disabled={current <= 1} onclick={() => turn(view.evidence.id, -1)}>{t(M['ingestion.previousPage'])}</Button><p role="status">{t(M['ingestion.pageOf'], { page: current, count })}</p><Button disabled={current >= count} onclick={() => turn(view.evidence.id, 1)}>{t(M['ingestion.nextPage'])}</Button></div>{/if}
 <!-- A fragment-only change does not reliably move an embedded PDF viewer; a new frame does. -->
 {#key src}<iframe {src} title={view.label}></iframe>{/key}
 {:else if view.evidence.mediaType.startsWith('audio/')}<audio controls src={url} aria-label={view.label}></audio>{/if}

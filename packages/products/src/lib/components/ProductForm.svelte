@@ -138,7 +138,7 @@ function handleSubmit(event: Event) {
         disabled={loading}
         placeholder={t(M['products.product_form.tags_placeholder'])}
       />
-      <small class="smrt-product-form__hint" data-smrt-part="hint">{t(M['products.product_form.tags_hint'])}</small>
+      <small class="smrt-product-form__hint" data-smrt-part="description">{t(M['products.product_form.tags_hint'])}</small>
     </div>
 
     <div class="smrt-product-form__field" data-smrt-part="field">

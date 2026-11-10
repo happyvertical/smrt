@@ -62,8 +62,8 @@ export interface Props {
     <div class="smrt-attachment-upload__list" data-smrt-part="list">
       {#each attachments as attachment, i}
         <div class="smrt-attachment-upload__item" data-smrt-part="item">
-          <span class="smrt-attachment-upload__name" data-smrt-part="name">{attachment.filename}</span>
-          <span class="smrt-attachment-upload__size" data-smrt-part="size">{formatSize(attachment.size)}</span>
+          <span class="smrt-attachment-upload__name" data-smrt-part="title">{attachment.filename}</span>
+          <span class="smrt-attachment-upload__size" data-smrt-part="meta">{formatSize(attachment.size)}</span>
           <Button
             variant="ghost"
             size="sm"
@@ -81,7 +81,7 @@ export interface Props {
     class:smrt-attachment-upload__drag-over={isDragOver}
     ondrop={handleDrop}
     ondragover={handleDragOver}
-    ondragleave={handleDragLeave}
+    ondragleave={handleDragLeave} data-smrt-part="field"
   >
     <label class="smrt-attachment-upload__label" data-smrt-part="label">
       <!-- raw-primitive-allow: native file input — the Input primitive binds value, which is invalid for type=file (throws InvalidStateError on the bind write-back) and renders a visible control; this hidden picker behind the drop zone stays native -->

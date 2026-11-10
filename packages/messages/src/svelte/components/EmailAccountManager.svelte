@@ -188,7 +188,7 @@ function getProviderLabel(type: string): string {
   </div>
 
   {#if showForm}
-    <div class="smrt-email-account-manager__form" data-smrt-part="form">
+    <div class="smrt-email-account-manager__form" data-smrt-part="field">
       <div class="smrt-email-account-manager__form-title" data-smrt-part="title">{editingId ? 'Edit' : 'Add'} {t(M['messages.email_account_manager.mail_account'])}</div>
 
       <div class="smrt-email-account-manager__row" data-smrt-part="row">
@@ -211,7 +211,7 @@ function getProviderLabel(type: string): string {
         </div>
       </div>
 
-      <div class="smrt-email-account-manager__group-title" data-smrt-part="group-title">{t(M['messages.email_account_manager.incoming_mail'])}</div>
+      <div class="smrt-email-account-manager__group-title" data-smrt-part="title">{t(M['messages.email_account_manager.incoming_mail'])}</div>
       <div class="smrt-email-account-manager__row" data-smrt-part="row">
         <div class="smrt-email-account-manager__field" data-smrt-part="field" style="flex: 2;">
           <label class="smrt-email-account-manager__label" data-smrt-part="label" for="ea-imap-host">Host</label>
@@ -231,7 +231,7 @@ function getProviderLabel(type: string): string {
         </div>
       </div>
 
-      <div class="smrt-email-account-manager__group-title" data-smrt-part="group-title">{t(M['messages.email_account_manager.outgoing_mail'])}</div>
+      <div class="smrt-email-account-manager__group-title" data-smrt-part="title">{t(M['messages.email_account_manager.outgoing_mail'])}</div>
       <div class="smrt-email-account-manager__row" data-smrt-part="row">
         <div class="smrt-email-account-manager__field" data-smrt-part="field" style="flex: 2;">
           <label class="smrt-email-account-manager__label" data-smrt-part="label" for="ea-smtp-host">Host</label>
@@ -251,7 +251,7 @@ function getProviderLabel(type: string): string {
         </div>
       </div>
 
-      <div class="smrt-email-account-manager__group-title" data-smrt-part="group-title">Credentials</div>
+      <div class="smrt-email-account-manager__group-title" data-smrt-part="title">Credentials</div>
       <div class="smrt-email-account-manager__row" data-smrt-part="row">
         <div class="smrt-email-account-manager__field" data-smrt-part="field" style="flex: 1;">
           <label class="smrt-email-account-manager__label" data-smrt-part="label" for="ea-username">Username</label>
@@ -326,14 +326,14 @@ function getProviderLabel(type: string): string {
           <div class="smrt-email-account-manager__entry-main" data-smrt-part="body">
             <span class="smrt-email-account-manager__type-badge smrt-email-account-manager__provider" data-smrt-part="badge" title={acct.providerType}>{getProviderLabel(acct.providerType)}</span>
             <div class="smrt-email-account-manager__entry-info" data-smrt-part="meta">
-              <span class="smrt-email-account-manager__entry-pattern" data-smrt-part="name">{acct.name}</span>
+              <span class="smrt-email-account-manager__entry-pattern" data-smrt-part="title">{acct.name}</span>
               <span class="smrt-email-account-manager__entry-description" data-smrt-part="description">{acct.email}</span>
             </div>
             {#if acct.imapHost}
-              <span class="smrt-email-account-manager__host-tag" data-smrt-part="host" title={t(M['messages.email_account_manager.imap_host_title'], { host: acct.imapHost, port: acct.imapPort })}>{acct.imapHost}</span>
+              <span class="smrt-email-account-manager__host-tag" data-smrt-part="body" title={t(M['messages.email_account_manager.imap_host_title'], { host: acct.imapHost, port: acct.imapPort })}>{acct.imapHost}</span>
             {/if}
             {#if !acct.isActive}
-              <span class="smrt-email-account-manager__inactive-tag">inactive</span>
+              <span class="smrt-email-account-manager__inactive-tag" data-smrt-part="badge">inactive</span>
             {/if}
           </div>
           {#if !isReadonly}

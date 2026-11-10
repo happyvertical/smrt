@@ -42,9 +42,9 @@ function formatWhen(iso: string): string {
 
 <article class="smrt-case-detail__root" data-smrt-component="CaseDetail">
   <header class="smrt-case-detail__header" data-smrt-part="header">
-    <p class="smrt-case-detail__number" data-smrt-part="number">{caseView.caseNumber}</p>
+    <p class="smrt-case-detail__number" data-smrt-part="value">{caseView.caseNumber}</p>
     <h2 class="smrt-case-detail__subject" data-smrt-part="title">{caseView.subject}</h2>
-    <div class="smrt-case-detail__badges" data-smrt-part="badges">
+    <div class="smrt-case-detail__badges" data-smrt-part="meta">
       <StatusBadge
         status={priorityBadgeKey(caseView.priority)}
         label={caseView.priority}
@@ -56,10 +56,10 @@ function formatWhen(iso: string): string {
         size="sm"
       />
       {#if caseView.severity}
-        <span class="smrt-case-detail__severity">{caseView.severity}</span>
+        <span class="smrt-case-detail__severity" data-smrt-part="meta">{caseView.severity}</span>
       {/if}
       {#if caseView.reopenCount > 0}
-        <span class="smrt-case-detail__reopens">
+        <span class="smrt-case-detail__reopens" data-smrt-part="meta">
           reopened ×{caseView.reopenCount}
         </span>
       {/if}
@@ -89,19 +89,19 @@ function formatWhen(iso: string): string {
   </dl>
 
   {#if caseView.resolutionSummary}
-    <section class="smrt-case-detail__resolution" data-smrt-part="resolution" aria-label="Resolution">
+    <section class="smrt-case-detail__resolution" data-smrt-part="description" aria-label="Resolution">
       <h3>Resolution</h3>
       <p>{caseView.resolutionSummary}</p>
     </section>
   {/if}
 
   {#if workLinks.length > 0}
-    <section class="smrt-case-detail__work" data-smrt-part="work" aria-label="Linked work">
+    <section class="smrt-case-detail__work" data-smrt-part="group" aria-label="Linked work">
       <h3>Linked work</h3>
       <ul>
         {#each workLinks as link (link.id)}
           <li>
-            <span class="smrt-case-detail__work-kind">
+            <span class="smrt-case-detail__work-kind" data-smrt-part="meta">
               {link.linkKind === 'development_work_item'
                 ? 'delivery'
                 : 'support'}
@@ -120,7 +120,7 @@ function formatWhen(iso: string): string {
     </section>
   {/if}
 
-  <section class="smrt-case-detail__timeline" data-smrt-part="history" aria-label="Case history">
+  <section class="smrt-case-detail__timeline" data-smrt-part="list" aria-label="Case history">
     <h3>History</h3>
     {#if timeline.length === 0}
       <p class="smrt-case-detail__empty" data-smrt-part="empty">No activity yet</p>
@@ -128,8 +128,8 @@ function formatWhen(iso: string): string {
       <ol>
         {#each timeline as item, index (index)}
           <li class="smrt-case-detail__timeline-item" data-kind={item.kind} data-smrt-part="row">
-            <div class="smrt-case-detail__timeline-item-head" data-smrt-part="row-header">
-              <span class="smrt-case-detail__timeline-actor" data-smrt-part="actor">{item.actorKind}</span>
+            <div class="smrt-case-detail__timeline-item-head" data-smrt-part="header">
+              <span class="smrt-case-detail__timeline-actor" data-smrt-part="author">{item.actorKind}</span>
               <span class="smrt-case-detail__timeline-summary" data-smrt-part="summary">
                 {item.kind === 'event'
                   ? item.summary

@@ -47,7 +47,7 @@ function save(event: SubmitEvent, existing?: string): void {
 }
 </script>
 
-<div class="smrt-inference-fusion-list__root" data-testid="inference-fusions">
+<div class="smrt-inference-fusion-list__root" data-testid="inference-fusions" data-smrt-component="InferenceFusionList">
   {#each fusions as fusion (fusion.name)}
     <div class="smrt-inference-fusion-list__item" data-smrt-part="row">
       <div class="smrt-inference-fusion-list__header" data-smrt-part="header">
@@ -83,7 +83,7 @@ function save(event: SubmitEvent, existing?: string): void {
           </div>
         </form>
       {:else}
-        <pre class="smrt-inference-fusion-list__pre">{JSON.stringify(fusion.definition, null, 2)}</pre>
+        <pre class="smrt-inference-fusion-list__pre" data-smrt-part="message">{JSON.stringify(fusion.definition, null, 2)}</pre>
       {/if}
     </div>
   {:else}

@@ -118,18 +118,18 @@ function updateField(key: string, value: unknown) {
     min-width: 8.5rem;
     margin: 0;
   }
-  .smrt-content-status-fields__root :global(.form-label) {
+  .smrt-content-status-fields__root :global([data-smrt-component="FieldLabel"]) {
     margin: 0;
   }
 }
 
 @layer smrt.theme {
-  .smrt-content-status-fields__root :global(.form-label) {
+  .smrt-content-status-fields__root :global([data-smrt-component="FieldLabel"]) {
     color: var(--smrt-color-on-surface-variant);
     font-size: var(--smrt-typography-label-medium-size, 0.75rem);
     font-weight: var(--smrt-typography-weight-semibold, 600);
   }
-  .smrt-content-status-fields__root.smrt-content-status-fields__simple :global(.form-label) {
+  .smrt-content-status-fields__root.smrt-content-status-fields__simple :global([data-smrt-component="FieldLabel"]) {
     font-size: var(--smrt-typography-label-large-size, 0.875rem);
   }
 }

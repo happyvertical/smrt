@@ -179,7 +179,7 @@ function cancelEditing() {
         {/if}
         <div class="smrt-content-governance-manager__list" data-smrt-part="list">
           {#each definitions.effective.policies as policy (policy.key)}
-            <article class="smrt-content-governance-manager__card" data-smrt-part="card">
+            <article class="smrt-content-governance-manager__card" data-smrt-part="item">
               <div>
                 <strong>{policy.label}</strong>
                 <span>{policy.key} · {policy.kind}</span>
@@ -224,7 +224,7 @@ function cancelEditing() {
         {/if}
         <div class="smrt-content-governance-manager__list" data-smrt-part="list">
           {#each definitions.effective.profiles as profile (profile.key)}
-            <article class="smrt-content-governance-manager__card" data-smrt-part="card">
+            <article class="smrt-content-governance-manager__card" data-smrt-part="item">
               <div>
                 <strong>{profile.label}</strong>
                 <span>{profile.key} · {profile.requirements.length} requirement(s)</span>
@@ -269,7 +269,7 @@ function cancelEditing() {
         {/if}
         <div class="smrt-content-governance-manager__list" data-smrt-part="list">
           {#each definitions.effective.assignments as assignment (assignment.key)}
-            <article class="smrt-content-governance-manager__card" data-smrt-part="card">
+            <article class="smrt-content-governance-manager__card" data-smrt-part="item">
               <div>
                 <strong>{assignment.label || assignment.contentType}</strong>
                 <span>

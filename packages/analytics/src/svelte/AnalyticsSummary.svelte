@@ -38,7 +38,7 @@ const { stats }: Props = $props();
 		/>
 	</div>
 {:else}
-	<div class="smrt-analytics-summary__empty" data-smrt-component="AnalyticsSummary" data-smrt-part="empty">
+	<div class="smrt-analytics-summary__empty" data-smrt-component="AnalyticsSummary" >
 		<p>{t(M['analytics.analytics_summary.empty'])}</p>
 	</div>
 {/if}

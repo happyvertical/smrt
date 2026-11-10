@@ -316,10 +316,10 @@ function handleSave(data: ContentData) {
 
 <div class="smrt-governed-content-editor__root" data-smrt-component="GovernedContentEditor">
   {#if publishReadinessState}
-    <div class={`smrt-governed-content-editor__card smrt-governed-content-editor__card--${publishReadinessState.level}`} data-smrt-part="card">
+    <div class={`smrt-governed-content-editor__card smrt-governed-content-editor__card--${publishReadinessState.level}`} data-smrt-part="item">
       <div class="smrt-governed-content-editor__header" data-smrt-part="header">
         <strong>{publishReadinessState.title}</strong>
-        <span class="smrt-governed-content-editor__profile" data-smrt-part="profile">
+        <span class="smrt-governed-content-editor__profile" data-smrt-part="meta">
           {activeReviewProfileKey}
         </span>
       </div>

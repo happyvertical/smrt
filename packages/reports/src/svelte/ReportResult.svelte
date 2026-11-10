@@ -132,7 +132,7 @@ const measureOptions = $derived(
     <p class="smrt-report-result__empty" data-smrt-part="empty">{t(M['reports.no_rows'])}</p>
   {:else}
     {#if variant === 'full'}
-      <div class="smrt-report-result__controls" data-smrt-part="controls">
+      <div class="smrt-report-result__controls" data-smrt-part="actions">
         {#if !tableOnly}
           <SegmentedControl
             label={t(M['reports.view'])}
@@ -166,15 +166,15 @@ const measureOptions = $derived(
       {#if figures.length > 0 && !showTable}
         <dl class="smrt-report-result__figures" data-smrt-part="list" aria-label={t(M['reports.figures'])}>
           {#each figures as figure (figure.label)}
-            <div class="smrt-report-result__figure" data-smrt-part="figure">
-              <dt>{figure.label}{#if figure.detail}<span class="smrt-report-result__figure-detail" data-smrt-part="detail">{' · '}{figure.detail}</span>{/if}</dt>
+            <div class="smrt-report-result__figure" data-smrt-part="value">
+              <dt>{figure.label}{#if figure.detail}<span class="smrt-report-result__figure-detail" data-smrt-part="description">{' · '}{figure.detail}</span>{/if}</dt>
               <dd><span class="smrt-report-result__figure-value" data-smrt-part="value">{figure.value}</span></dd>
             </div>
           {/each}
         </dl>
       {/if}
     {:else if !tableOnly}
-      <div class="smrt-report-result__toggle" data-smrt-part="toggle">
+      <div class="smrt-report-result__toggle" data-smrt-part="trigger">
         <Button type="button" variant="ghost" size="sm" aria-pressed={view === 'table'} onclick={() => (view = view === 'table' ? 'chart' : 'table')}>{t(M[view === 'table' ? 'reports.chart' : 'reports.table'])}</Button>
       </div>
     {/if}
@@ -185,7 +185,7 @@ const measureOptions = $derived(
           <thead>
             <tr>
               {#each result.columns as column (column.id)}
-                <th scope="col" class:smrt-report-result__num={numeric(column)}>{column.label}</th>
+                <th scope="col" class:smrt-report-result__num={numeric(column)} data-smrt-part="cell">{column.label}</th>
               {/each}
             </tr>
           </thead>
@@ -193,7 +193,7 @@ const measureOptions = $derived(
             {#each result.rows as row, i (i)}
               <tr>
                 {#each result.columns as column (column.id)}
-                  <td class:smrt-report-result__num={numeric(column)}>{cell(row[column.id], column)}</td>
+                  <td class:smrt-report-result__num={numeric(column)} data-smrt-part="cell">{cell(row[column.id], column)}</td>
                 {/each}
               </tr>
             {/each}
@@ -214,7 +214,7 @@ const measureOptions = $derived(
         data={chartData}
       />
       {#if variant === 'compact' && measures.length > 1}
-        <p class="smrt-report-result__more" data-smrt-part="note">
+        <p class="smrt-report-result__more" data-smrt-part="description">
           {measures.slice(1).map((c) => c.label).join(', ')} · {t(M['reports.table']).toLowerCase()}
         </p>
       {/if}

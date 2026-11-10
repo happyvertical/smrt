@@ -237,19 +237,19 @@ function submitDecision(event: SubmitEvent, decision: ProjectDecisionView) {
     </div>
 
     {#key current?.key ?? 'complete'}
-      <article class="smrt-project-interview__step" data-smrt-part="step" data-interview-step={current?.key ?? 'complete'}>
+      <article class="smrt-project-interview__step" data-smrt-part="item" data-interview-step={current?.key ?? 'complete'}>
         {#if current}
           {@const frame = framing[current.record.id] ?? {}}
           {@const prompt = current.kind === 'question' ? current.record.prompt : current.record.question}
           <h2 tabindex="-1" bind:this={heading}>{prompt}</h2>
           {#if frame.why}
-            <div class="smrt-project-interview__framing" data-smrt-part="framing">
+            <div class="smrt-project-interview__framing" data-smrt-part="description">
               <h3>{t(M['projects.interview.why'])}</h3>
               <p>{frame.why}</p>
             </div>
           {/if}
           {#if frame.unblocks?.length}
-            <div class="smrt-project-interview__framing" data-smrt-part="framing">
+            <div class="smrt-project-interview__framing" data-smrt-part="description">
               <h3 id={`unblocks-${current.key}`}>{t(M['projects.interview.unblocks'])}</h3>
               <ul aria-labelledby={`unblocks-${current.key}`}>
                 {#each frame.unblocks as label, index (`${index}:${label}`)}
@@ -282,14 +282,14 @@ function submitDecision(event: SubmitEvent, decision: ProjectDecisionView) {
                 <fieldset disabled={busy}>
                   <legend>{t(M['projects.interview.your_answer'])}</legend>
                   {#each options as option (option.id)}
-                    <label class="smrt-project-interview__choice" data-smrt-part="choice" class:smrt-project-interview__recommended={option.isRecommended}>
+                    <label class="smrt-project-interview__choice" data-smrt-part="trigger" class:smrt-project-interview__recommended={option.isRecommended}>
                       <Input type="radio" name="selectedOptionId" value={option.id} required interaction={false} checked={selections[current.key] === option.id} onchange={() => (selections[current.key] = option.id)} />
                       <span>{option.label}{#if option.isRecommended} <strong>{t(M['projects.governance.recommended'])}</strong>{/if}
                         {#if option.description}<small>{option.description}</small>{/if}
                       </span>
                     </label>
                   {/each}
-                  <label class="smrt-project-interview__choice" data-smrt-part="choice">
+                  <label class="smrt-project-interview__choice" data-smrt-part="trigger">
                     <Input type="radio" name="selectedOptionId" value="other" required interaction={false} checked={selections[current.key] === 'other'} onchange={() => (selections[current.key] = 'other')} />
                     <span>{t(M['projects.governance.other'])}</span>
                   </label>
@@ -310,7 +310,7 @@ function submitDecision(event: SubmitEvent, decision: ProjectDecisionView) {
                 <fieldset disabled={busy}>
                   <legend>{t(M['projects.interview.your_choice'])}</legend>
                   {#each options as option (option.id)}
-                    <label class="smrt-project-interview__choice" data-smrt-part="choice" class:smrt-project-interview__recommended={option.isRecommended}>
+                    <label class="smrt-project-interview__choice" data-smrt-part="trigger" class:smrt-project-interview__recommended={option.isRecommended}>
                       <Input type="radio" name="outcome" value={option.id} required interaction={false} />
                       <span>{option.label}{#if option.isRecommended} <strong>{t(M['projects.governance.recommended'])}</strong>{/if}
                         {#if option.description}<small>{option.description}</small>{/if}

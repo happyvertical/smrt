@@ -139,12 +139,12 @@ function creditLimit(amountMinor: number): string {
   </div>
 
   <div class="smrt-customer-detail__summary-grid" data-smrt-part="summary">
-    <Card padding="md"><h2>{t(M['commerce.party.shipping_address'])}</h2><p class="smrt-customer-detail__address" data-smrt-part="content">{shippingAddress || notRecorded}</p></Card>
-    <Card padding="md"><h2>{t(M['commerce.party.billing_address'])}</h2><p class="smrt-customer-detail__address" data-smrt-part="content">{billingAddress || notRecorded}</p></Card>
+    <Card padding="md"><h2>{t(M['commerce.party.shipping_address'])}</h2><p class="smrt-customer-detail__address" data-smrt-part="body">{shippingAddress || notRecorded}</p></Card>
+    <Card padding="md"><h2>{t(M['commerce.party.billing_address'])}</h2><p class="smrt-customer-detail__address" data-smrt-part="body">{billingAddress || notRecorded}</p></Card>
   </div>
 
   <PartyContactFields contacts={customer.contacts ?? []} labels={contactLabels} readOnly />
-  {#if customer.notes}<Card padding="md"><h2>{t(M['commerce.party.notes'])}</h2><p class="smrt-customer-detail__notes" data-smrt-part="content">{customer.notes}</p></Card>{/if}
+  {#if customer.notes}<Card padding="md"><h2>{t(M['commerce.party.notes'])}</h2><p class="smrt-customer-detail__notes" data-smrt-part="body">{customer.notes}</p></Card>{/if}
   {@render extension?.(customer)}
 </section>
 

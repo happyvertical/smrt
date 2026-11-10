@@ -116,7 +116,7 @@ function _getFieldType(
     </div>
   </header>
 
-  <div class="smrt-auto-form__content-shell" data-smrt-part="content">
+  <div class="smrt-auto-form__content-shell" data-smrt-part="body">
     <Form class="smrt-auto-form__content" onsubmit={handleSubmit}>
       {#each fieldSchema as field}
         <FieldRenderer
@@ -145,7 +145,7 @@ function _getFieldType(
   </div>
 
   <!-- Demo: Show current form state -->
-  <details class="smrt-auto-form__debug" data-smrt-part="details">
+  <details class="smrt-auto-form__debug" data-smrt-part="panel">
     <summary>{t(M['products.auto_form.debug_summary'])}</summary>
     <pre>{JSON.stringify(formData, null, 2)}</pre>
   </details>

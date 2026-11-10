@@ -109,11 +109,11 @@ function resolve(exception: AttributionExceptionView) {
       {@const reason = (reasonDrafts[exception.id] ?? '').trim()}
       <Card variant="outlined">
         <div class="smrt-attribution-conflict-queue__header" data-smrt-part="header">
-          <span class="smrt-attribution-conflict-queue__target" data-smrt-part="target">
-            <span class="smrt-attribution-conflict-queue__kind" data-smrt-part="kind">{exception.targetKind}</span>
+          <span class="smrt-attribution-conflict-queue__target" data-smrt-part="label">
+            <span class="smrt-attribution-conflict-queue__kind" data-smrt-part="meta">{exception.targetKind}</span>
             {exception.targetLabel ?? exception.targetId}
           </span>
-          <span class="smrt-attribution-conflict-queue__badges" data-smrt-part="badges">
+          <span class="smrt-attribution-conflict-queue__badges" data-smrt-part="meta">
             {#if exception.programName}
               <Badge variant="default" size="sm">{exception.programName}</Badge>
             {/if}
@@ -125,8 +125,8 @@ function resolve(exception: AttributionExceptionView) {
 
         <p class="smrt-attribution-conflict-queue__message" data-smrt-part="message">{exception.conflictReason}</p>
 
-        <table class="smrt-attribution-conflict-queue__candidates" data-smrt-part="candidates">
-          <caption class="smrt-attribution-conflict-queue__visually-hidden" data-smrt-part="label">Competing candidate touches</caption>
+        <table class="smrt-attribution-conflict-queue__candidates" data-smrt-part="list">
+          <caption class="smrt-attribution-conflict-queue__visually-hidden" data-smrt-part="caption">Competing candidate touches</caption>
           <thead>
             <tr>
               <th scope="col">Referrer</th>
@@ -146,11 +146,11 @@ function resolve(exception: AttributionExceptionView) {
         </table>
 
         {#if open && onResolve}
-          <div class="smrt-attribution-conflict-queue__editor" data-smrt-part="editor">
+          <div class="smrt-attribution-conflict-queue__editor" data-smrt-part="body">
             <h4>Award credit</h4>
             {#each awards as award (award.referrerId)}
               <div class="smrt-attribution-conflict-queue__row" data-smrt-part="row">
-                <span class="smrt-attribution-conflict-queue__name" data-smrt-part="name">
+                <span class="smrt-attribution-conflict-queue__name" data-smrt-part="title">
                   {referrerLabel(exception, award.referrerId)}
                 </span>
                 <Input
@@ -173,7 +173,7 @@ function resolve(exception: AttributionExceptionView) {
             <p
               class="smrt-attribution-conflict-queue__total"
               class:smrt-attribution-conflict-queue__invalid={!validation.valid}
-              data-smrt-part="total"
+              data-smrt-part="value"
               role="status"
             >
               Total: {formatPercent(validation.totalFraction, locale)}
@@ -209,20 +209,20 @@ function resolve(exception: AttributionExceptionView) {
             </Button>
           </div>
         {:else if !open}
-          <dl class="smrt-attribution-conflict-queue__audit" data-smrt-part="audit">
-            <div class="smrt-attribution-conflict-queue__audit-item" data-smrt-part="audit-item">
+          <dl class="smrt-attribution-conflict-queue__audit" data-smrt-part="group">
+            <div class="smrt-attribution-conflict-queue__audit-item" data-smrt-part="item">
               <dt>Mode</dt>
               <dd>{exception.resolutionMode ?? '—'}</dd>
             </div>
-            <div class="smrt-attribution-conflict-queue__audit-item" data-smrt-part="audit-item">
+            <div class="smrt-attribution-conflict-queue__audit-item" data-smrt-part="item">
               <dt>Reason</dt>
               <dd>{exception.resolutionReason ?? '—'}</dd>
             </div>
-            <div class="smrt-attribution-conflict-queue__audit-item" data-smrt-part="audit-item">
+            <div class="smrt-attribution-conflict-queue__audit-item" data-smrt-part="item">
               <dt>Resolved by</dt>
               <dd>{exception.resolvedByName ?? '—'}</dd>
             </div>
-            <div class="smrt-attribution-conflict-queue__audit-item" data-smrt-part="audit-item">
+            <div class="smrt-attribution-conflict-queue__audit-item" data-smrt-part="item">
               <dt>Resolved at</dt>
               <dd>{formatDate(exception.resolvedAt, locale)}</dd>
             </div>

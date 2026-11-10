@@ -72,7 +72,7 @@ const _tags = $derived.by(() => {
       <h3 class="smrt-article-card__title" data-smrt-part="title">{article.title}</h3>
 
       {#if showExcerpt && article.description}
-        <p class="smrt-article-card__excerpt" data-smrt-part="copy">{article.description}</p>
+        <p class="smrt-article-card__excerpt" data-smrt-part="body">{article.description}</p>
       {/if}
 
       <div class="smrt-article-card__meta" data-smrt-part="meta">

@@ -37,8 +37,8 @@ const { t } = useI18n();
 <div class="smrt-content-governance-route__root" class:smrt-content-governance-route__root--embedded={embedded} data-smrt-component="ContentGovernanceRoute">
   <header class="smrt-content-governance-route__header" data-smrt-part="header">
     <div class="smrt-content-governance-route__container" data-smrt-part="row">
-      <div class="smrt-content-governance-route__copy" data-smrt-part="copy">
-        <div class="smrt-content-governance-route__eyebrow" data-smrt-part="eyebrow">{t(M['content.governance.eyebrow'])}</div>
+      <div class="smrt-content-governance-route__copy" data-smrt-part="body">
+        <div class="smrt-content-governance-route__eyebrow" data-smrt-part="label">{t(M['content.governance.eyebrow'])}</div>
         <h1>{t(M['content.governance.heading'])}</h1>
         <p>
           {t(M['content.governance.intro'])}
@@ -60,8 +60,8 @@ const { t } = useI18n();
     </div>
   </header>
 
-  <main class="smrt-content-governance-route__container smrt-content-governance-route__main" data-smrt-part="main">
-    <section class="smrt-content-governance-route__callout" data-smrt-part="callout">
+  <main class="smrt-content-governance-route__container smrt-content-governance-route__main" data-smrt-part="body">
+    <section class="smrt-content-governance-route__callout" data-smrt-part="status">
       <strong>{t(M['content.governance.controls_title'])}</strong>
       <ul>
         <li>{t(M['content.governance.controls_policies'])}</li>

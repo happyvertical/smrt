@@ -37,7 +37,7 @@ function formatDue(iso: string | null): string {
 </script>
 
 {#if targets.length === 0}
-  <p class="smrt-target-list__empty" data-smrt-component="TargetList" data-smrt-part="empty">{emptyMessage}</p>
+  <p class="smrt-target-list__empty" data-smrt-component="TargetList" >{emptyMessage}</p>
 {:else}
   <ul class="smrt-target-list__root" data-smrt-component="TargetList">
     {#each targets as target (target.id)}
@@ -46,16 +46,16 @@ function formatDue(iso: string | null): string {
           <span class="smrt-target-list__type" data-smrt-part="title">
             {humanizeStatus(target.targetType)}
             {#if target.cycle > 0}
-              <span class="smrt-target-list__cycle" data-smrt-part="cycle">cycle {target.cycle}</span>
+              <span class="smrt-target-list__cycle" data-smrt-part="meta">cycle {target.cycle}</span>
             {/if}
           </span>
           {#if target.dueAt}
-            <span class="smrt-target-list__due">due {formatDue(target.dueAt)}</span>
+            <span class="smrt-target-list__due" data-smrt-part="meta">due {formatDue(target.dueAt)}</span>
           {/if}
         </span>
         <span class="smrt-target-list__meta" data-smrt-part="meta">
           {#if target.paused}
-            <span class="smrt-target-list__paused">paused</span>
+            <span class="smrt-target-list__paused" data-smrt-part="meta">paused</span>
           {/if}
           <StatusBadge
             status={targetStatusBadgeKey(target.status)}

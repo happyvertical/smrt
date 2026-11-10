@@ -173,7 +173,7 @@ const saved = $derived(
     {/if}
   </div>
   <p class="smrt-saved-report-card__line" data-smrt-part="meta">{description.line}</p>
-  <div class="smrt-saved-report-card__figure" data-smrt-part="figure">
+  <div class="smrt-saved-report-card__figure" data-smrt-part="value">
     {#if result === undefined}
       <Skeleton variant="text" lines={2} label={t(M['reports.running'])} />
     {:else if result === null}
@@ -182,9 +182,9 @@ const saved = $derived(
       <p class="smrt-saved-report-card__muted" data-smrt-part="empty">{t(M['reports.no_rows'])}</p>
     {:else if figure}
       <p class="smrt-saved-report-card__label" data-smrt-part="label">{figure.label}</p>
-      <p class="smrt-saved-report-card__value" data-smrt-part="value">{figure.value}{#if figure.detail}<span class="smrt-saved-report-card__detail" data-smrt-part="detail"> · {figure.detail}</span>{/if}</p>
+      <p class="smrt-saved-report-card__value" data-smrt-part="value">{figure.value}{#if figure.detail}<span class="smrt-saved-report-card__detail" data-smrt-part="description"> · {figure.detail}</span>{/if}</p>
       {#if series && measure}
-        <div class="smrt-saved-report-card__spark" data-smrt-part="chart">
+        <div class="smrt-saved-report-card__spark" data-smrt-part="panel">
           <Chart data={series} style="line" size="compact" title={measure.label} {locale} />
         </div>
       {:else if extra.length}

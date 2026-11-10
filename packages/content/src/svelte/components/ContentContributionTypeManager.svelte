@@ -124,7 +124,7 @@ function handleSubmit() {
     <Button variant="ghost" type="button" onclick={() => (editing = {})}>{t(M['content.contribution_type_manager.add_type'])}</Button>
   </header>
 
-  <div class="smrt-content-contribution-type-manager__layout" data-smrt-part="layout">
+  <div class="smrt-content-contribution-type-manager__layout" data-smrt-part="group">
     <div class="smrt-content-contribution-type-manager__list" data-smrt-part="list">
       {#each types as type (type.id ?? type.key)}
         <article class="smrt-content-contribution-type-manager__card" data-smrt-part="item">

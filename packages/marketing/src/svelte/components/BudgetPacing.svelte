@@ -19,7 +19,7 @@ const progress = $derived(pacing ? cappedBudgetProgress(pacing) : 0);
 </script>
 
 {#if !pacing}
-  <p class="smrt-budget-pacing__empty" data-smrt-component="BudgetPacing" data-smrt-part="empty">No budget pacing is available.</p>
+  <p class="smrt-budget-pacing__empty" data-smrt-component="BudgetPacing" >No budget pacing is available.</p>
 {:else}
   <Card padding="sm" variant="outlined">
     <section class="smrt-budget-pacing__root" data-smrt-part="body">
@@ -40,14 +40,14 @@ const progress = $derived(pacing ? cappedBudgetProgress(pacing) : 0);
       </div>
       <Progress value={progress} max={1} label={label} />
 
-      <dl class="smrt-budget-pacing__facts" data-smrt-part="facts">
+      <dl class="smrt-budget-pacing__facts" data-smrt-part="meta">
         <div>
           <dt>Budget</dt>
           <dd>{formatCents(pacing.budgetCents, pacing.currency, locale)}</dd>
         </div>
         <div>
           <dt>Remaining</dt>
-          <dd class:smrt-budget-pacing__negative={pacing.remainingCents < 0}>
+          <dd class:smrt-budget-pacing__negative={pacing.remainingCents < 0} data-smrt-part="value">
             {formatCents(pacing.remainingCents, pacing.currency, locale)}
           </dd>
         </div>
@@ -61,7 +61,7 @@ const progress = $derived(pacing ? cappedBudgetProgress(pacing) : 0);
         </div>
         <div>
           <dt>Variance</dt>
-          <dd class:smrt-budget-pacing__negative={(pacing.varianceCents ?? 0) > 0}>
+          <dd class:smrt-budget-pacing__negative={(pacing.varianceCents ?? 0) > 0} data-smrt-part="value">
             {pacing.varianceCents === null
               ? '—'
               : formatCents(pacing.varianceCents, pacing.currency, locale)}

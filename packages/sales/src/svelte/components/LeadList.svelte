@@ -106,7 +106,7 @@ function handleAssign(leadId: string, event: Event) {
 </script>
 
 <div class="smrt-lead-list__root" data-smrt-component="LeadList">
-  <nav class="smrt-lead-list__toolbar" data-smrt-part="toolbar" aria-label="Lead inbox filters">
+  <nav class="smrt-lead-list__toolbar" data-smrt-part="actions" aria-label="Lead inbox filters">
     <div class="smrt-lead-list__filters" data-smrt-part="filters" role="group" aria-label="Filter leads">
       {#each filters as filter (filter.value)}
         <Button
@@ -149,7 +149,7 @@ function handleAssign(leadId: string, event: Event) {
           <tr class:smrt-lead-list__merged={merged} class:smrt-lead-list__selected={selectedLeadId === lead.id} data-smrt-part="row">
             <td>
               {#if hrefForLead}
-                <a class="smrt-lead-list__name" href={hrefForLead(lead.id)} onclick={() => onSelect?.(lead.id)} aria-current={selectedLeadId === lead.id ? 'page' : undefined}>{lead.name}</a>
+                <a class="smrt-lead-list__name" href={hrefForLead(lead.id)} onclick={() => onSelect?.(lead.id)} aria-current={selectedLeadId === lead.id ? 'page' : undefined} data-smrt-part="action">{lead.name}</a>
               {:else if onSelect}
                 <Button
                   class="lead-name select-lead"
@@ -161,29 +161,29 @@ function handleAssign(leadId: string, event: Event) {
                   {lead.name}
                 </Button>
               {:else}
-                <span class="smrt-lead-list__name">{lead.name}</span>
+                <span class="smrt-lead-list__name" data-smrt-part="title">{lead.name}</span>
               {/if}
               {#if lead.organizationName}
-                <span class="smrt-lead-list__secondary">{lead.organizationName}</span>
+                <span class="smrt-lead-list__secondary" data-smrt-part="meta">{lead.organizationName}</span>
               {/if}
               {#if lead.receivedLabel || lead.createdAt}
-                <span class="smrt-lead-list__secondary">{lead.receivedLabel ?? `Received ${formatDate(lead.createdAt, locale)}`}</span>
+                <span class="smrt-lead-list__secondary" data-smrt-part="meta">{lead.receivedLabel ?? `Received ${formatDate(lead.createdAt, locale)}`}</span>
               {/if}
               {#if merged && lead.mergedIntoId}
-                <span class="smrt-lead-list__merged-note">
+                <span class="smrt-lead-list__merged-note" data-smrt-part="meta">
                   merged into <code>{lead.mergedIntoId.slice(0, 8)}</code>
                 </span>
               {/if}
             </td>
             <td>
               {#if lead.contactName}
-                <span class="smrt-lead-list__secondary">{lead.contactName}</span>
+                <span class="smrt-lead-list__secondary" data-smrt-part="meta">{lead.contactName}</span>
               {/if}
               {#if lead.email}
-                <span class="smrt-lead-list__secondary">{lead.email}</span>
+                <span class="smrt-lead-list__secondary" data-smrt-part="meta">{lead.email}</span>
               {/if}
               {#if lead.phone}
-                <span class="smrt-lead-list__secondary">{lead.phone}</span>
+                <span class="smrt-lead-list__secondary" data-smrt-part="meta">{lead.phone}</span>
               {/if}
             </td>
             <td>{lead.sourceLabel ?? '—'}</td>
@@ -211,11 +211,11 @@ function handleAssign(leadId: string, event: Event) {
             </td>
             <td>
               {#if lead.nextAction}
-                <span class="smrt-lead-list__next-action" class:smrt-lead-list__overdue={isOverdue(lead.nextAction.dueAt)}>
+                <span class="smrt-lead-list__next-action" class:smrt-lead-list__overdue={isOverdue(lead.nextAction.dueAt)} data-smrt-part="description">
                   {lead.nextAction.summary}
                 </span>
                 {#if lead.nextAction.dueAt}
-                  <span class="smrt-lead-list__secondary">
+                  <span class="smrt-lead-list__secondary" data-smrt-part="meta">
                     due {formatDate(lead.nextAction.dueAt, locale)}
                   </span>
                 {/if}

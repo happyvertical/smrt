@@ -189,7 +189,7 @@ export interface Props {
     {/if}
 
     {#if !showCc || !showBcc}
-      <div class="smrt-compose-form__toggles" data-smrt-part="toggles">
+      <div class="smrt-compose-form__toggles" data-smrt-part="actions">
         {#if !showCc}
           <Button variant="ghost" size="sm" class="link-btn" onclick={() => showCc = true}>Cc</Button>
         {/if}
@@ -261,7 +261,7 @@ export interface Props {
   {/if}
 
   {#if sendError}
-    <div class="smrt-compose-form__message" role="alert" aria-live="assertive">
+    <div class="smrt-compose-form__message" role="alert" aria-live="assertive" data-smrt-part="message">
       {sendError}
     </div>
   {/if}

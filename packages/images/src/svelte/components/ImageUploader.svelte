@@ -292,11 +292,11 @@ onDestroy(() => {
     </div>
 
     <div class="smrt-image-uploader__confirm" data-smrt-part="panel">
-      <div class="smrt-image-uploader__preview" data-smrt-part="preview">
-        <img class="smrt-image-uploader__preview-image" data-smrt-part="thumbnail" src={selectedImage.sourceUri || selectedImage.url} alt={selectedImage.name} />
+      <div class="smrt-image-uploader__preview" data-smrt-part="panel">
+        <img class="smrt-image-uploader__preview-image" data-smrt-part="media" src={selectedImage.sourceUri || selectedImage.url} alt={selectedImage.name} />
       </div>
       
-      <div class="smrt-image-uploader__details" data-smrt-part="details">
+      <div class="smrt-image-uploader__details" data-smrt-part="body">
         <span class="smrt-image-uploader__name" data-smrt-part="title">{selectedImage.name}</span>
         <span class="smrt-image-uploader__meta" data-smrt-part="meta">{selectedImage.width} × {selectedImage.height}</span>
       </div>
@@ -321,8 +321,8 @@ onDestroy(() => {
       </div>
 
       {#if showVariation}
-        <div class="smrt-image-uploader__variation" data-smrt-part="form">
-          <p class="smrt-image-uploader__variation-hint" data-smrt-part="hint">{t(M['images.image_uploader.variation_hint'])}</p>
+        <div class="smrt-image-uploader__variation" data-smrt-part="field">
+          <p class="smrt-image-uploader__variation-hint" data-smrt-part="description">{t(M['images.image_uploader.variation_hint'])}</p>
           <Textarea
             bind:value={variationPrompt}
             placeholder={t(M['images.image_uploader.variation_prompt_placeholder'])}
@@ -339,7 +339,7 @@ onDestroy(() => {
             onclick={handleGenerateVariation}
           >
             {#if isGenerating}
-              <span class="smrt-image-uploader__spinner" data-smrt-part="status"></span>
+              <span class="smrt-image-uploader__spinner" data-smrt-part="spinner"></span>
               {t(M['images.image_uploader.generating'])}
             {:else}
               {t(M['images.image_uploader.generate_variation'])}
@@ -358,7 +358,7 @@ onDestroy(() => {
       {/if}
     </div>
     
-    <div class="smrt-image-uploader__tabs" data-smrt-part="tabs">
+    <div class="smrt-image-uploader__tabs" data-smrt-part="nav">
       {#if allowedTabs.includes('gallery')}
         <Button
           variant="ghost"
@@ -392,7 +392,7 @@ onDestroy(() => {
     <div class="smrt-image-uploader__tab-content" data-smrt-part="body">
       
       {#if activeTab === 'gallery'}
-        <div class="smrt-image-uploader__gallery" data-smrt-part="content">
+        <div class="smrt-image-uploader__gallery" data-smrt-part="body">
           <AssetsGallery
             {apiBaseUrl}
             client={galleryClient}
@@ -422,7 +422,7 @@ onDestroy(() => {
             </svg>
           </div>
           <p>{t(M['images.image_uploader.drag_and_drop'])}</p>
-          <span class="smrt-image-uploader__divider" data-smrt-part="divider">or</span>
+          <span class="smrt-image-uploader__divider" data-smrt-part="marker">or</span>
           <Button variant="primary" class="smrt-image-uploader__browse-button">{t(M['images.image_uploader.browse_files'])}</Button>
           <!-- raw-primitive-allow: hidden file input driven imperatively via a DOM ref (bind:this gives uploadInput so the parent can call .click() and onchange reads target.files); the Input primitive exposes a component instance, not the underlying HTMLInputElement -->
           <input
@@ -440,16 +440,16 @@ onDestroy(() => {
       {:else if activeTab === 'camera'}
         <div class="smrt-image-uploader__camera" data-smrt-part="panel">
           {#if cameraError}
-            <div class="smrt-image-uploader__camera-error" data-smrt-part="notice">
+            <div class="smrt-image-uploader__camera-error" data-smrt-part="status">
               <p>{cameraError}</p>
               <Button variant="secondary" class="smrt-image-uploader__retry-button" onclick={startCamera}>{t(M['images.image_uploader.try_again'])}</Button>
             </div>
           {:else}
-            <div class="smrt-image-uploader__video" data-smrt-part="preview">
+            <div class="smrt-image-uploader__video" data-smrt-part="panel">
               <!-- svelte-ignore a11y_media_has_caption -->
               <video bind:this={videoElement} autoplay playsinline></video>
               {#if !isCameraActive}
-                <div class="smrt-image-uploader__loading" data-smrt-part="overlay">{t(M['images.image_uploader.starting_camera'])}</div>
+                <div class="smrt-image-uploader__loading" data-smrt-part="backdrop">{t(M['images.image_uploader.starting_camera'])}</div>
               {/if}
             </div>
             <Button variant="primary" class="smrt-image-uploader__capture-button" disabled={!isCameraActive} onclick={takePicture}>
@@ -461,7 +461,7 @@ onDestroy(() => {
         
       {:else if activeTab === 'external'}
         <div class="smrt-image-uploader__external" data-smrt-part="panel">
-          <p class="smrt-image-uploader__hint" data-smrt-part="hint">{t(M['images.image_uploader.external_hint'])}</p>
+          <p class="smrt-image-uploader__hint" data-smrt-part="description">{t(M['images.image_uploader.external_hint'])}</p>
           <div class="smrt-image-uploader__input-group" data-smrt-part="group">
             <Input
               type="url"

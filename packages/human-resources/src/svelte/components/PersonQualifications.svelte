@@ -46,7 +46,7 @@ function distance(daysUntilExpiry: number): string {
 </script>
 
 {#if qualifications.length === 0}
-  <p class="smrt-person-qualifications__empty" data-smrt-component="PersonQualifications" data-smrt-part="empty">
+  <p class="smrt-person-qualifications__empty" data-smrt-component="PersonQualifications" >
     {emptyMessage ?? t(M['human_resources.person_qualifications.empty'])}
   </p>
 {:else}
@@ -65,9 +65,9 @@ function distance(daysUntilExpiry: number): string {
               {qualification.name}
             </Button>
           {:else}
-            <span class="smrt-person-qualifications__name">{qualification.name}</span>
+            <span class="smrt-person-qualifications__name" data-smrt-part="title">{qualification.name}</span>
           {/if}
-          <span class="smrt-person-qualifications__detail">
+          <span class="smrt-person-qualifications__detail" data-smrt-part="description">
             <span>{t(qualificationKindLabelKey(qualification.kind))}</span>
             {#if qualification.issuingBody}
               <span>{qualification.issuingBody}</span>
@@ -86,7 +86,7 @@ function distance(daysUntilExpiry: number): string {
           {:else}
             <span>{t(M['human_resources.person_qualifications.expires_on'], { date: qualification.expiresOn })}</span>
             {#if qualification.daysUntilExpiry !== null && (state === 'valid' || state === 'expiring-soon' || state === 'expired')}
-              <span class="smrt-person-qualifications__distance">{distance(qualification.daysUntilExpiry)}</span>
+              <span class="smrt-person-qualifications__distance" data-smrt-part="meta">{distance(qualification.daysUntilExpiry)}</span>
             {/if}
           {/if}
         </div>

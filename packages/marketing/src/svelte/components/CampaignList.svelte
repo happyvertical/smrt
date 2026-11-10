@@ -28,8 +28,8 @@ let { campaigns = [], selectedCampaignId, locale, onSelect }: Props = $props();
           <th scope="col">Campaign</th>
           <th scope="col">Status</th>
           <th scope="col">Schedule</th>
-          <th scope="col" class="smrt-campaign-list__number">Spend / budget</th>
-          <th scope="col" class="smrt-campaign-list__number">Channels</th>
+          <th scope="col" class="smrt-campaign-list__number" data-smrt-part="cell">Spend / budget</th>
+          <th scope="col" class="smrt-campaign-list__number" data-smrt-part="cell">Channels</th>
           {#if onSelect}<th scope="col"><span class="smrt-campaign-list__visually-hidden" data-smrt-part="label">Actions</span></th>{/if}
         </tr>
       </thead>
@@ -37,10 +37,10 @@ let { campaigns = [], selectedCampaignId, locale, onSelect }: Props = $props();
         {#each campaigns as campaign (campaign.id)}
           <tr class:smrt-campaign-list__selected={campaign.id === selectedCampaignId} data-smrt-part="row">
             <td>
-              <span class="smrt-campaign-list__name">{campaign.name}</span>
-              <span class="smrt-campaign-list__secondary">{campaign.campaignKey}</span>
+              <span class="smrt-campaign-list__name" data-smrt-part="title">{campaign.name}</span>
+              <span class="smrt-campaign-list__secondary" data-smrt-part="meta">{campaign.campaignKey}</span>
               {#if campaign.objective}
-                <span class="smrt-campaign-list__secondary">{humanizeKey(campaign.objective)}</span>
+                <span class="smrt-campaign-list__secondary" data-smrt-part="meta">{humanizeKey(campaign.objective)}</span>
               {/if}
             </td>
             <td>
@@ -49,15 +49,15 @@ let { campaigns = [], selectedCampaignId, locale, onSelect }: Props = $props();
               </Badge>
             </td>
             <td>{formatDateRange(campaign.startAt, campaign.endAt, locale)}</td>
-            <td class="smrt-campaign-list__number">
-              <span class="smrt-campaign-list__name">
+            <td class="smrt-campaign-list__number" data-smrt-part="cell">
+              <span class="smrt-campaign-list__name" data-smrt-part="title">
                 {formatCents(campaign.spendCents ?? 0, campaign.currency, locale)}
               </span>
-              <span class="smrt-campaign-list__secondary">
+              <span class="smrt-campaign-list__secondary" data-smrt-part="meta">
                 of {formatCents(campaign.budgetCents, campaign.currency, locale)}
               </span>
             </td>
-            <td class="smrt-campaign-list__number">{campaign.channelCount ?? 0}</td>
+            <td class="smrt-campaign-list__number" data-smrt-part="cell">{campaign.channelCount ?? 0}</td>
             {#if onSelect}
               <td class="smrt-campaign-list__action" data-smrt-part="actions">
                 <Button

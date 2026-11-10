@@ -461,7 +461,7 @@ function closeTry() {
 }
 </script>
 
-<div class="smrt-api-explorer__root">
+<div class="smrt-api-explorer__root" data-smrt-component="ApiExplorer">
   <div class="smrt-api-explorer__header" data-smrt-part="header">
     <h1>🔌 API Explorer</h1>
     <p>Browse and test the {groups.reduce((n, g) => n + g.endpoints.length, 0)} auto-generated REST endpoints from the Content Service.</p>
@@ -490,8 +490,8 @@ function closeTry() {
         {#each activeGroupData.endpoints as endpoint}
           <div class="smrt-api-explorer__row" data-smrt-part="row">
             <span class="smrt-api-explorer__badge" data-smrt-part="badge" style="background: {methodColor(endpoint.method)}">{endpoint.method}</span>
-            <code class="smrt-api-explorer__path" data-smrt-part="path">{endpoint.path}</code>
-            <span class="smrt-api-explorer__desc" data-smrt-part="desc">{endpoint.description}</span>
+            <code class="smrt-api-explorer__path" data-smrt-part="meta">{endpoint.path}</code>
+            <span class="smrt-api-explorer__desc" data-smrt-part="description">{endpoint.description}</span>
             {#if canTry(endpoint)}
               <Button variant="ghost" size="sm" class="try-btn" onclick={() => void handleTry(endpoint)}>Try</Button>
             {/if}
@@ -500,8 +500,8 @@ function closeTry() {
       </div>
 
       {#if tryEndpoint}
-        <div class="smrt-api-explorer__try-panel" data-smrt-part="section">
-          <div class="smrt-api-explorer__try-header" data-smrt-part="toolbar">
+        <div class="smrt-api-explorer__try-panel" data-smrt-part="group">
+          <div class="smrt-api-explorer__try-header" data-smrt-part="actions">
             <span class="smrt-api-explorer__badge" data-smrt-part="badge" style="background: {methodColor(tryEndpoint.method)}">{tryEndpoint.method}</span>
             <code>{tryEndpoint.path}</code>
             <Button variant="ghost" size="sm" class="close-btn" onclick={closeTry} aria-label="Close" title="Close">✕</Button>
@@ -511,7 +511,7 @@ function closeTry() {
           {:else if tryError}
             <pre class="smrt-api-explorer__try-error" data-smrt-part="error">{tryError}</pre>
           {:else if tryResult}
-            <pre class="smrt-api-explorer__try-result" data-smrt-part="preview">{tryResult}</pre>
+            <pre class="smrt-api-explorer__try-result" data-smrt-part="panel">{tryResult}</pre>
           {/if}
         </div>
       {/if}

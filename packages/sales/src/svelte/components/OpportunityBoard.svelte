@@ -45,14 +45,14 @@ function stageNameOf(stageId: string | null): string {
   {#if columns.length === 0}
     <p class="smrt-opportunity-board__empty" data-smrt-part="empty">No pipeline stages configured.</p>
   {:else}
-    <div class="smrt-opportunity-board__columns" data-smrt-part="columns">
+    <div class="smrt-opportunity-board__columns" data-smrt-part="group">
       {#each columns as column (column.stage.id)}
         <section
           class="smrt-opportunity-board__column"
           class:smrt-opportunity-board__won={column.stage.isWon}
           class:smrt-opportunity-board__lost={column.stage.isLost}
           aria-label={column.stage.name}
-          data-smrt-part="column"
+          data-smrt-part="group"
         >
           <h3 class="smrt-opportunity-board__title" data-smrt-part="title">
             <span>{column.stage.name}</span>
@@ -62,10 +62,10 @@ function stageNameOf(stageId: string | null): string {
             {#each column.opportunities as opportunity (opportunity.id)}
               {@const neighbors = adjacentStageIds(stages, opportunity.stageId)}
               {@const movable = onMoveStage && opportunity.status === 'open'}
-              <li class="smrt-opportunity-board__card" class:smrt-opportunity-board__card-won={opportunity.status === 'won'} class:smrt-opportunity-board__card-lost={opportunity.status === 'lost'} data-smrt-part="card">
-                <span class="smrt-opportunity-board__name" data-smrt-part="name">{opportunity.name}</span>
+              <li class="smrt-opportunity-board__card" class:smrt-opportunity-board__card-won={opportunity.status === 'won'} class:smrt-opportunity-board__card-lost={opportunity.status === 'lost'} data-smrt-part="item">
+                <span class="smrt-opportunity-board__name" data-smrt-part="title">{opportunity.name}</span>
                 {#if opportunity.ownerName}
-                  <span class="smrt-opportunity-board__owner" data-smrt-part="owner">{opportunity.ownerName}</span>
+                  <span class="smrt-opportunity-board__owner" data-smrt-part="author">{opportunity.ownerName}</span>
                 {/if}
                 <span class="smrt-opportunity-board__value" data-smrt-part="value">
                   {formatCents(opportunity.expectedValueCents, opportunity.currency, locale)}

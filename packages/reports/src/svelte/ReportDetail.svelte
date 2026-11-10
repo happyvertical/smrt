@@ -226,7 +226,7 @@ const menu = $derived([
 >
   <header class="smrt-report-detail__header" data-smrt-part="header">
     <div class="smrt-report-detail__heading" data-smrt-part="body">
-      <div class="smrt-report-detail__title-row">
+      <div class="smrt-report-detail__title-row" data-smrt-part="header">
         <h1 class="smrt-report-detail__title" data-smrt-part="title">{report?.title ?? t(M['reports.title'])}</h1>
         {#if archived}<Badge>{t(M['reports.archived_badge'])}</Badge>{/if}
       </div>
@@ -252,14 +252,14 @@ const menu = $derived([
     {/if}
   </header>
   {#if !client}
-    <p class="smrt-report-detail__note" data-smrt-part="note">{t(M['reports.unavailable'])}</p>
+    <p class="smrt-report-detail__note" data-smrt-part="description">{t(M['reports.unavailable'])}</p>
   {:else}
     {#if description}
-      <dl class="smrt-report-detail__facts" data-smrt-part="facts" aria-label={t(M['reports.details'])}>
+      <dl class="smrt-report-detail__facts" data-smrt-part="meta" aria-label={t(M['reports.details'])}>
         <div><dt>{t(M['reports.source'])}</dt><dd>{description.source}</dd></div>
         <div><dt>{t(M['reports.groupings'])}</dt><dd>{description.groupings || t(M['reports.none'])}</dd></div>
         {#if description.period}
-          <div><dt>{t(M['reports.period'])}</dt><dd>{description.period.range}<span class="smrt-report-detail__aside">{' · '}{description.period.field}</span></dd></div>
+          <div><dt>{t(M['reports.period'])}</dt><dd>{description.period.range}<span class="smrt-report-detail__aside" data-smrt-part="group">{' · '}{description.period.field}</span></dd></div>
         {/if}
         <div><dt>{t(M['reports.measures'])}</dt><dd>{description.measures.join(', ')}</dd></div>
         {#if description.filters.length}
@@ -269,15 +269,15 @@ const menu = $derived([
           <div><dt>{t(M['reports.having'])}</dt><dd>{description.having.join('; ')}</dd></div>
         {/if}
         {#if savedText || ranText}
-          <div class="smrt-report-detail__meta" data-smrt-part="meta"><dt class="smrt-report-detail__visually-hidden">{t(M['reports.author'])}</dt><dd>{[savedText, ranText].filter(Boolean).join(' · ')}</dd></div>
+          <div class="smrt-report-detail__meta" data-smrt-part="meta"><dt class="smrt-report-detail__visually-hidden" data-smrt-part="label">{t(M['reports.author'])}</dt><dd>{[savedText, ranText].filter(Boolean).join(' · ')}</dd></div>
         {/if}
       </dl>
     {/if}
-    {#if askNote}<p class="smrt-report-detail__note" data-smrt-part="note" role="status">{t(M['reports.ask_where'])}</p>{/if}
-    {#if loading && !result}<p class="smrt-report-detail__note" data-smrt-part="note" role="status">{t(M['reports.running'])}</p>{/if}
+    {#if askNote}<p class="smrt-report-detail__note" data-smrt-part="description" role="status">{t(M['reports.ask_where'])}</p>{/if}
+    {#if loading && !result}<p class="smrt-report-detail__note" data-smrt-part="description" role="status">{t(M['reports.running'])}</p>{/if}
     {#if error}<p class="smrt-report-detail__error" data-smrt-part="error" role="alert">{t(M[error])}</p>{/if}
     {#if result && report}
-      <div class="smrt-report-detail__result" data-smrt-part="result">
+      <div class="smrt-report-detail__result" data-smrt-part="status">
         <ReportResult {result} spec={report.spec} variant="full" bind:view {locale} {currency} />
       </div>
     {/if}

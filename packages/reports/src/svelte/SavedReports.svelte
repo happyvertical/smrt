@@ -192,10 +192,10 @@ const headingLevel = $derived(variant === 'page' ? 2 : 3);
     </header>
   {/if}
   {#if !client}
-    <p class="smrt-saved-reports__note" data-smrt-part="note">{t(M['reports.unavailable'])}</p>
+    <p class="smrt-saved-reports__note" data-smrt-part="description">{t(M['reports.unavailable'])}</p>
   {:else}
     {#if variant === 'page'}
-      <div class="smrt-saved-reports__toolbar" data-smrt-part="toolbar">
+      <div class="smrt-saved-reports__toolbar" data-smrt-part="actions">
         <SegmentedControl
           label={t(M['reports.filter_label'])}
           options={[
@@ -208,15 +208,15 @@ const headingLevel = $derived(variant === 'page' ? 2 : 3);
         <Switch bind:checked={includeArchived} label={t(M['reports.archived'])} size="sm" />
       </div>
     {:else if rows.length > 0}
-      <div class="smrt-saved-reports__toolbar" data-smrt-part="toolbar">
-        <p class="smrt-saved-reports__hint" data-smrt-part="hint">{t(M['reports.hint'])}</p>
+      <div class="smrt-saved-reports__toolbar" data-smrt-part="actions">
+        <p class="smrt-saved-reports__hint" data-smrt-part="description">{t(M['reports.hint'])}</p>
         <div class="smrt-saved-reports__actions" data-smrt-part="actions">
           {#if listHref && total > rows.length}<Button variant="ghost" size="sm" href={listHref}>{t(M['reports.view_all'])}</Button>{/if}
           <Button variant="primary" size="sm" onclick={newReport}>{t(M['reports.new'])}</Button>
         </div>
       </div>
     {/if}
-    {#if askNote}<p class="smrt-saved-reports__note" data-smrt-part="note" role="status">{t(M['reports.ask_where'])}</p>{/if}
+    {#if askNote}<p class="smrt-saved-reports__note" data-smrt-part="description" role="status">{t(M['reports.ask_where'])}</p>{/if}
     {#if error}
       <div class="smrt-saved-reports__error" data-smrt-part="error">
         <p role="alert">{t(M[error])}</p>

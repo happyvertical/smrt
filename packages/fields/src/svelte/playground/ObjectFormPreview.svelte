@@ -105,7 +105,7 @@ let record = $state<Record<string, unknown>>({});
   />
 {/snippet}
 
-<section class="smrt-object-form-preview__root">
+<section class="smrt-object-form-preview__root" data-smrt-component="ObjectFormPreview">
   <h2>Generated ObjectForm</h2>
   <p>
     This single form is driven by browser-safe fields and resolved policy. Basic
@@ -119,7 +119,7 @@ let record = $state<Record<string, unknown>>({});
       renderers={{ sku: skuRenderer }}
     />
   </ObjectFormSourceProvider>
-  <output class="smrt-object-form-preview__output">{JSON.stringify(record)}</output>
+  <output class="smrt-object-form-preview__output" data-smrt-part="status">{JSON.stringify(record)}</output>
 </section>
 
 <style>

@@ -140,7 +140,7 @@ function setIndeterminate(node: HTMLInputElement, value: boolean) {
         <tr>
           <td colspan="6" class="smrt-asset-list__empty-cell" data-smrt-part="empty">
             <div class="smrt-asset-list__loading-panel" data-smrt-part="status">
-              <span class="smrt-asset-list__spinner" data-smrt-part="icon"></span>
+              <span class="smrt-asset-list__spinner" data-smrt-part="spinner"></span>
               <span>{t(M['assets.asset_list.loading'])}</span>
             </div>
           </td>
@@ -160,7 +160,7 @@ function setIndeterminate(node: HTMLInputElement, value: boolean) {
                 </svg>
               </div>
               <p class="smrt-asset-list__empty-title" data-smrt-part="title">{t(M['assets.asset_list.no_assets_found'])}</p>
-              <p class="smrt-asset-list__empty-desc" data-smrt-part="hint">{t(M['assets.asset_list.empty_hint'])}</p>
+              <p class="smrt-asset-list__empty-desc" data-smrt-part="description">{t(M['assets.asset_list.empty_hint'])}</p>
             </div>
           </td>
         </tr>
@@ -184,9 +184,9 @@ function setIndeterminate(node: HTMLInputElement, value: boolean) {
             </td>
             <td class="smrt-asset-list__col-thumb" data-smrt-part="cell">
               {#if isImage(asset) && asset.sourceUri}
-                <img src={asset.sourceUri} alt={(asset as any).alt || asset.name} class="smrt-asset-list__row-thumb" data-smrt-part="thumbnail" loading="lazy" />
+                <img src={asset.sourceUri} alt={(asset as any).alt || asset.name} class="smrt-asset-list__row-thumb" data-smrt-part="media" loading="lazy" />
               {:else}
-                <span class="smrt-asset-list__row-thumb-placeholder" data-smrt-part="thumbnail">{getTypeBadge(asset)}</span>
+                <span class="smrt-asset-list__row-thumb-placeholder" data-smrt-part="media">{getTypeBadge(asset)}</span>
               {/if}
             </td>
             <td class="smrt-asset-list__col-name" data-smrt-part="cell">
@@ -201,7 +201,7 @@ function setIndeterminate(node: HTMLInputElement, value: boolean) {
                 {asset.name || 'Untitled'}
               </Button>
               {#if asset.description}
-                <span class="smrt-asset-list__row-desc" data-smrt-part="details">{asset.description}</span>
+                <span class="smrt-asset-list__row-desc" data-smrt-part="body">{asset.description}</span>
               {/if}
             </td>
             <td class="smrt-asset-list__col-type" data-smrt-part="cell">

@@ -38,12 +38,12 @@ onMount(() => {
   {:else if currentPage === 'live'}
     <LiveProductsPage />
   {:else if currentPage === 'categories'}
-    <div class="smrt-app__placeholder" data-smrt-part="content">
+    <div class="smrt-app__placeholder" data-smrt-part="body">
       <h2>Categories</h2>
       <p>{t(M['products.app.categories_coming_soon'])}</p>
     </div>
   {:else if currentPage === 'dashboard'}
-    <div class="smrt-app__placeholder" data-smrt-part="content">
+    <div class="smrt-app__placeholder" data-smrt-part="body">
       <h2>Dashboard</h2>
       <p>{t(M['products.app.analytics_coming_soon'])}</p>
     </div>

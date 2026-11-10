@@ -35,15 +35,15 @@ function factorChips(
 </script>
 
 {#if ranking.length === 0}
-  <p class="smrt-routing-rationale__empty" data-smrt-component="RoutingRationale" data-smrt-part="empty">{emptyMessage}</p>
+  <p class="smrt-routing-rationale__empty" data-smrt-component="RoutingRationale" >{emptyMessage}</p>
 {:else}
   <ul class="smrt-routing-rationale__root" data-smrt-component="RoutingRationale">
     {#each ranking as entry (entry.specialistId)}
       <li class="smrt-routing-rationale__row" data-smrt-part="row">
         <span class="smrt-routing-rationale__main" data-smrt-part="body">
           <span class="smrt-routing-rationale__head" data-smrt-part="header">
-            <span class="smrt-routing-rationale__name" data-smrt-part="name">{entry.displayName}</span>
-            <span class="smrt-routing-rationale__score" data-smrt-part="score">score {entry.score}</span>
+            <span class="smrt-routing-rationale__name" data-smrt-part="title">{entry.displayName}</span>
+            <span class="smrt-routing-rationale__score" data-smrt-part="value">score {entry.score}</span>
             <StatusBadge
               status={entry.eligible ? 'success' : 'inactive'}
               label={entry.eligible ? 'eligible' : 'ineligible'}
@@ -52,7 +52,7 @@ function factorChips(
           </span>
           <span class="smrt-routing-rationale__factors" data-smrt-part="list">
             {#each factorChips(entry.factors) as chip (chip)}
-              <span class="smrt-routing-rationale__factor" data-smrt-part="factor">{chip}</span>
+              <span class="smrt-routing-rationale__factor" data-smrt-part="badge">{chip}</span>
             {/each}
           </span>
         </span>

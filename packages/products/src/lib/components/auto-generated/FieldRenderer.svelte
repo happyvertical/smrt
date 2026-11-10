@@ -132,7 +132,7 @@ function handleObjectInput(event: Event) {
       {required}
       oninput={handleArrayInput}
     ></Textarea>
-    <div class="smrt-field-renderer__hint" data-smrt-part="hint">{t(M['products.field_renderer.array_hint'])}</div>
+    <div class="smrt-field-renderer__hint" data-smrt-part="description">{t(M['products.field_renderer.array_hint'])}</div>
   {:else if fieldType === 'object'}
     <Textarea
       id={fieldId}
@@ -142,7 +142,7 @@ function handleObjectInput(event: Event) {
       {required}
       oninput={handleObjectInput}
     ></Textarea>
-    <div class="smrt-field-renderer__hint" data-smrt-part="hint">{t(M['products.field_renderer.object_hint'])}</div>
+    <div class="smrt-field-renderer__hint" data-smrt-part="description">{t(M['products.field_renderer.object_hint'])}</div>
   {/if}
 </div>
 

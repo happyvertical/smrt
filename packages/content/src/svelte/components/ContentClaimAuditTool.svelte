@@ -192,13 +192,13 @@ async function recheckFactClaims(claimIds: string[]) {
   {/if}
 
   {#if notice}
-    <p class="smrt-content-claim-audit-tool__notice" data-smrt-part="notice" role="status" aria-live="polite">{notice}</p>
+    <p class="smrt-content-claim-audit-tool__notice" data-smrt-part="status" role="status" aria-live="polite">{notice}</p>
   {/if}
 
   {#if !savedContentId}
     <p class="smrt-content-claim-audit-tool__empty" data-smrt-part="empty">{t(M['content.claim_audit_tool.save_to_audit_claims'])}</p>
   {:else}
-    <div class="smrt-content-claim-audit-tool__toolbar" data-smrt-part="toolbar">
+    <div class="smrt-content-claim-audit-tool__toolbar" data-smrt-part="actions">
       <div class="smrt-content-claim-audit-tool__counts" data-smrt-part="meta">
         <span><strong>{factAudit?.counts.total ?? 0}</strong> {t(M['content.claim_audit_tool.article_claims'])}</span>
         <span><strong>{factAudit?.counts.supported ?? 0}</strong> supported</span>
@@ -228,7 +228,7 @@ async function recheckFactClaims(claimIds: string[]) {
     </p>
 
     {#if actionableWarnings.length}
-      <div class="smrt-content-claim-audit-tool__warning" data-smrt-part="warning">
+      <div class="smrt-content-claim-audit-tool__warning" data-smrt-part="description">
         {#each actionableWarnings as warning}
           <p>{warning}</p>
         {/each}
@@ -250,7 +250,7 @@ async function recheckFactClaims(claimIds: string[]) {
           <div class="smrt-content-claim-audit-tool__list" data-smrt-part="list">
             <div class="smrt-content-claim-audit-tool__caption" data-smrt-part="caption">{t(M['content.claim_audit_tool.group_article_claims'], { group: group[1] })}</div>
             {#each groupClaims as claim (claim.id ?? claim.claimQuote ?? claim.fact.textRefined)}
-              <details class="smrt-content-claim-audit-tool__card" data-smrt-part="card">
+              <details class="smrt-content-claim-audit-tool__card" data-smrt-part="item">
                 <summary>
                   <label class="smrt-content-claim-audit-tool__select" data-smrt-part="label">
                     <!-- raw-primitive-allow: native checkbox; no Provider-free checkbox primitive (Toggle is a switch with different semantics, CheckboxInput requires a Provider) -->
@@ -290,7 +290,7 @@ async function recheckFactClaims(claimIds: string[]) {
                     <div class="smrt-content-claim-audit-tool__list" data-smrt-part="list">
                       <div class="smrt-content-claim-audit-tool__caption" data-smrt-part="caption">{t(M['content.claim_audit_tool.based_on_source_evidence'])}</div>
                       {#each claim.matchedFacts as matched (matched.fact.id ?? matched.fact.textRefined)}
-                        <div class="smrt-content-claim-audit-tool__card smrt-content-claim-audit-tool__card--nested" data-smrt-part="card">
+                        <div class="smrt-content-claim-audit-tool__card smrt-content-claim-audit-tool__card--nested" data-smrt-part="item">
                           <strong>{t(M['content.claim_audit_tool.source_claim_label'])} {matched.fact.textRefined || matched.fact.textRaw || matched.fact.id}</strong>
                           {#each matched.evidence ?? [] as evidence (evidence.id ?? evidence.evidenceKey)}
                             <span>

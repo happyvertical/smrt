@@ -72,11 +72,11 @@ export interface Props {
   />
 
   <div class="smrt-reply-form__body" data-smrt-part="body">
-    <pre class="smrt-reply-form__content" data-smrt-part="content">{quotedBody}</pre>
+    <pre class="smrt-reply-form__content" data-smrt-part="body">{quotedBody}</pre>
   </div>
 
   {#if sendError}
-    <div class="smrt-reply-form__message" role="alert" aria-live="assertive">
+    <div class="smrt-reply-form__message" role="alert" aria-live="assertive" data-smrt-part="message">
       {sendError}
     </div>
   {/if}

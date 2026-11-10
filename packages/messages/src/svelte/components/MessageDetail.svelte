@@ -135,17 +135,17 @@ const _displayBody = $derived.by(() => {
     </header>
 
     {#if typeDetail}
-      <div class="smrt-message-detail__type-detail" data-smrt-part="content">
+      <div class="smrt-message-detail__type-detail" data-smrt-part="body">
         {@render typeDetail({ message })}
       </div>
     {:else if _tweetMeta}
-      <div class="smrt-message-detail__type-specific" data-smrt-part="metrics">
+      <div class="smrt-message-detail__type-specific" data-smrt-part="group">
         <span>🔄 {_tweetMeta.retweetCount || 0}</span>
         <span>❤ {_tweetMeta.likeCount || 0}</span>
         <span>💬 {_tweetMeta.replyCount || 0}</span>
       </div>
     {:else if _slackMeta}
-      <div class="smrt-message-detail__type-specific" data-smrt-part="metrics">
+      <div class="smrt-message-detail__type-specific" data-smrt-part="group">
         {#if _slackMeta.channelName}
           <span>#{_slackMeta.channelName}</span>
         {/if}
@@ -153,12 +153,12 @@ const _displayBody = $derived.by(() => {
     {/if}
 
     <div class="smrt-message-detail__body" data-smrt-part="body">
-      <pre class="smrt-message-detail__body-text" data-smrt-part="text">{_displayBody}</pre>
+      <pre class="smrt-message-detail__body-text" data-smrt-part="message">{_displayBody}</pre>
     </div>
 
     {#if attachments.length > 0}
-      <div class="smrt-message-detail__attachments" data-smrt-part="attachments">
-        <h3 class="smrt-message-detail__attachments-label" data-smrt-part="label">Attachments ({attachments.length})</h3>
+      <div class="smrt-message-detail__attachments" data-smrt-part="group">
+        <h3 class="smrt-message-detail__attachments-label" data-smrt-part="title">Attachments ({attachments.length})</h3>
         <div class="smrt-message-detail__attachments-list" data-smrt-part="list">
           {#each attachments as attachment (attachment.id)}
             <AttachmentChip {attachment} />

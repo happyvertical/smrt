@@ -267,9 +267,9 @@ const sortColumns = $derived([
               {job.queue}
             </td>
             <td class="smrt-job-list__cell smrt-job-list__cell-object" data-smrt-part="cell">
-              <span class="smrt-job-list__object-type" data-smrt-part="name">{job.objectType}</span>
+              <span class="smrt-job-list__object-type" data-smrt-part="title">{job.objectType}</span>
               {#if job.objectId}
-                <span class="smrt-job-list__object-id" data-smrt-part="identifier">#{job.objectId.slice(0, 8)}</span>
+                <span class="smrt-job-list__object-id" data-smrt-part="meta">#{job.objectId.slice(0, 8)}</span>
               {/if}
             </td>
             <td class="smrt-job-list__cell smrt-job-list__cell-method" data-smrt-part="cell">
