@@ -46,15 +46,15 @@ function distance(daysUntilExpiry: number): string {
 </script>
 
 {#if qualifications.length === 0}
-  <p class="person-qualifications-empty" data-smrt-component="PersonQualifications">
+  <p class="smrt-person-qualifications__empty" data-smrt-component="PersonQualifications" data-smrt-part="empty">
     {emptyMessage ?? t(M['human_resources.person_qualifications.empty'])}
   </p>
 {:else}
-  <ul class="person-qualifications" data-smrt-component="PersonQualifications">
+  <ul class="smrt-person-qualifications__root" data-smrt-component="PersonQualifications">
     {#each qualifications as qualification (qualification.id)}
       {@const state = qualificationExpiryState(qualification, expiringSoonDays)}
-      <li class="person-qualification" data-state={state}>
-        <div class="person-qualification-main">
+      <li class="smrt-person-qualifications__row" data-state={state} data-smrt-part="row">
+        <div class="smrt-person-qualifications__main" data-smrt-part="body">
           {#if onselect}
             <Button
               variant="ghost"
@@ -65,9 +65,9 @@ function distance(daysUntilExpiry: number): string {
               {qualification.name}
             </Button>
           {:else}
-            <span class="person-qualification-name">{qualification.name}</span>
+            <span class="smrt-person-qualifications__name">{qualification.name}</span>
           {/if}
-          <span class="person-qualification-detail">
+          <span class="smrt-person-qualifications__detail">
             <span>{t(qualificationKindLabelKey(qualification.kind))}</span>
             {#if qualification.issuingBody}
               <span>{qualification.issuingBody}</span>
@@ -79,14 +79,14 @@ function distance(daysUntilExpiry: number): string {
             {/if}
           </span>
         </div>
-        <div class="person-qualification-dates">
+        <div class="smrt-person-qualifications__dates" data-smrt-part="meta">
           <span>{t(M['human_resources.person_qualifications.issued_on'], { date: qualification.issuedOn })}</span>
           {#if qualification.expiresOn === null}
             <span>{t(M['human_resources.person_qualifications.no_expiry'])}</span>
           {:else}
             <span>{t(M['human_resources.person_qualifications.expires_on'], { date: qualification.expiresOn })}</span>
             {#if qualification.daysUntilExpiry !== null && (state === 'valid' || state === 'expiring-soon' || state === 'expired')}
-              <span class="person-qualification-distance">{distance(qualification.daysUntilExpiry)}</span>
+              <span class="smrt-person-qualifications__distance">{distance(qualification.daysUntilExpiry)}</span>
             {/if}
           {/if}
         </div>
@@ -102,58 +102,76 @@ function distance(daysUntilExpiry: number): string {
 
 <style>
 @layer smrt.reset, smrt.structure, smrt.theme;
-@layer smrt.theme {
-  .person-qualifications {
-    list-style: none;
-    margin: 0;
-    padding: 0;
-    display: flex;
-    flex-direction: column;
-  }
+@layer smrt.structure {
 
-  .person-qualification {
-    display: flex;
-    flex-wrap: wrap;
-    align-items: center;
-    justify-content: space-between;
-    gap: 0.75rem;
-    padding: 0.5rem 0.25rem;
-    border-bottom: var(--smrt-hairline);
-  }
+.smrt-person-qualifications__root {
+list-style: none;
+margin: 0;
+padding: 0;
+display: flex;
+flex-direction: column;
 
-  .person-qualification:last-child {
-    border-bottom: none;
-  }
-
-  .person-qualification-main {
-    display: flex;
-    flex-direction: column;
-    align-items: flex-start;
-    gap: 0.125rem;
-    min-width: 0;
-    flex: 1;
-  }
-
-  .person-qualification-name {
-    font-weight: 500;
-  }
-
-  .person-qualification-detail,
-  .person-qualification-dates {
-    display: flex;
-    flex-wrap: wrap;
-    gap: 0.5rem;
-    font-size: 0.75rem;
-    color: var(--smrt-color-on-surface-variant, inherit);
-  }
-
-  .person-qualification-distance {
-    font-weight: 500;
-  }
-
-  .person-qualifications-empty {
-    color: var(--smrt-color-on-surface-variant, inherit);
-    padding: 1rem 0;
-  }
 }
+.smrt-person-qualifications__row {
+display: flex;
+flex-wrap: wrap;
+align-items: center;
+justify-content: space-between;
+gap: 0.75rem;
+padding: 0.5rem 0.25rem;
+
+}
+.smrt-person-qualifications__main {
+display: flex;
+flex-direction: column;
+align-items: flex-start;
+gap: 0.125rem;
+min-width: 0;
+flex: 1;
+
+}
+.smrt-person-qualifications__detail,
+  .smrt-person-qualifications__dates {
+display: flex;
+flex-wrap: wrap;
+gap: 0.5rem;
+
+}
+.smrt-person-qualifications__empty {
+padding: 1rem 0;
+
+}
+
+}
+@layer smrt.theme {
+
+.smrt-person-qualifications__row {
+border-bottom: var(--smrt-hairline);
+
+}
+.smrt-person-qualifications__row:last-child {
+border-bottom: none;
+
+}
+.smrt-person-qualifications__name {
+font-weight: 500;
+
+}
+.smrt-person-qualifications__detail,
+  .smrt-person-qualifications__dates {
+font-size: 0.75rem;
+color: var(--smrt-color-on-surface-variant, inherit);
+
+}
+.smrt-person-qualifications__distance {
+font-weight: 500;
+
+}
+.smrt-person-qualifications__empty {
+color: var(--smrt-color-on-surface-variant, inherit);
+
+}
+
+}
+
 </style>

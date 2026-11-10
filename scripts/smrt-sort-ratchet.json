@@ -673,22 +673,6 @@
       "unsorted": true,
       "internalClasses": 2
     },
-    "packages/human-resources/src/svelte/components/EmployeeForm.svelte": {
-      "unsorted": true,
-      "internalClasses": 6
-    },
-    "packages/human-resources/src/svelte/components/EmployeeList.svelte": {
-      "unsorted": true,
-      "internalClasses": 8
-    },
-    "packages/human-resources/src/svelte/components/ExpiringQualificationsList.svelte": {
-      "unsorted": true,
-      "internalClasses": 8
-    },
-    "packages/human-resources/src/svelte/components/PersonQualifications.svelte": {
-      "unsorted": true,
-      "internalClasses": 8
-    },
     "packages/images/src/svelte/components/AssetsGallery.svelte": {
       "unsorted": true,
       "internalClasses": 15

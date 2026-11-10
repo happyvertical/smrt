@@ -170,11 +170,11 @@ function handleSubmit() {
 }
 </script>
 
-<div class="employee-form-shell" data-smrt-component="EmployeeForm">
+<div class="smrt-employee-form__root" data-smrt-component="EmployeeForm">
   <Form class="employee-form" onsubmit={handleSubmit}>
-    <div class="field">
+    <div class="smrt-employee-form__field" data-smrt-part="field">
       <label for="{uid}-employee-number">
-        {t(M['human_resources.employee_form.employee_number'])}<span class="required" aria-hidden="true">*</span>
+        {t(M['human_resources.employee_form.employee_number'])}<span class="smrt-employee-form__required" aria-hidden="true">*</span>
       </label>
       <Input
         id="{uid}-employee-number"
@@ -191,15 +191,15 @@ function handleSubmit() {
         )}
       />
       {#if !isNew}
-        <span class="hint" id="{uid}-employee-number-hint">
+        <span class="smrt-employee-form__hint" id="{uid}-employee-number-hint">
           {t(M['human_resources.employee_form.employee_number_edit_help'])}
         </span>
       {/if}
     </div>
 
-    <div class="field">
+    <div class="smrt-employee-form__field" data-smrt-part="field">
       <label for="{uid}-worker-type">
-        {t(M['human_resources.employee_form.worker_type'])}<span class="required" aria-hidden="true">*</span>
+        {t(M['human_resources.employee_form.worker_type'])}<span class="smrt-employee-form__required" aria-hidden="true">*</span>
       </label>
       <Input
         id="{uid}-worker-type"
@@ -218,20 +218,20 @@ function handleSubmit() {
           <option value={suggestion}></option>
         {/each}
       </datalist>
-      <span class="hint" id="{uid}-worker-type-hint">
+      <span class="smrt-employee-form__hint" id="{uid}-worker-type-hint">
         {t(M['human_resources.employee_form.worker_type_help'])}
       </span>
     </div>
 
-    <div class="field">
+    <div class="smrt-employee-form__field" data-smrt-part="field">
       <label for="{uid}-position">{t(M['human_resources.employee_form.position'])}</label>
       <Input id="{uid}-position" name="position" type="text" bind:value={position} disabled={loading} />
     </div>
 
     {#if isNew}
-      <div class="field">
+      <div class="smrt-employee-form__field" data-smrt-part="field">
         <label for="{uid}-started-on">
-          {t(M['human_resources.employee_form.started_on'])}<span class="required" aria-hidden="true">*</span>
+          {t(M['human_resources.employee_form.started_on'])}<span class="smrt-employee-form__required" aria-hidden="true">*</span>
         </label>
         <Input
           id="{uid}-started-on"
@@ -245,9 +245,9 @@ function handleSubmit() {
         />
       </div>
     {:else}
-      <div class="field">
+      <div class="smrt-employee-form__field" data-smrt-part="field">
         <label for="{uid}-effective-on">
-          {t(M['human_resources.employee_form.effective_on'])}<span class="required" aria-hidden="true">*</span>
+          {t(M['human_resources.employee_form.effective_on'])}<span class="smrt-employee-form__required" aria-hidden="true">*</span>
         </label>
         <Input
           id="{uid}-effective-on"
@@ -259,13 +259,13 @@ function handleSubmit() {
           aria-invalid={invalid.includes('effectiveOn') ? 'true' : undefined}
           aria-describedby={describedBy('effectiveOn', `${uid}-effective-on-hint`)}
         />
-        <span class="hint" id="{uid}-effective-on-hint">
+        <span class="smrt-employee-form__hint" id="{uid}-effective-on-hint">
           {t(M['human_resources.employee_form.effective_on_help'])}
         </span>
       </div>
     {/if}
 
-    <div class="field">
+    <div class="smrt-employee-form__field" data-smrt-part="field">
       <label for="{uid}-login">{t(M['human_resources.employee_form.login'])}</label>
       {#if loginOptions}
         <Select
@@ -290,13 +290,13 @@ function handleSubmit() {
           aria-describedby="{uid}-login-hint"
         />
       {/if}
-      <span class="hint" id="{uid}-login-hint">
+      <span class="smrt-employee-form__hint" id="{uid}-login-hint">
         {t(M['human_resources.employee_form.login_help'])}
       </span>
     </div>
 
     {#if errors.length > 0}
-      <div class="errors" role="alert">
+      <div class="smrt-employee-form__errors" data-smrt-part="errors" role="alert">
         <ul>
           {#each errors as error (error.field)}
             <li id={errorId(error.field)}>{error.message}</li>
@@ -305,7 +305,7 @@ function handleSubmit() {
       </div>
     {/if}
 
-    <div class="actions">
+    <div class="smrt-employee-form__actions" data-smrt-part="actions">
       {#if oncancel}
         <Button variant="secondary" type="button" onclick={oncancel} disabled={loading}>
           {t(M['human_resources.employee_form.cancel'])}
@@ -326,47 +326,55 @@ function handleSubmit() {
 
 <style>
 @layer smrt.reset, smrt.structure, smrt.theme;
-@layer smrt.theme {
-  .employee-form-shell :global(.employee-form) {
-    display: flex;
-    flex-direction: column;
-    gap: var(--smrt-spacing-md, 1rem);
-  }
+@layer smrt.structure {
 
-  .field {
-    display: flex;
-    flex-direction: column;
-    gap: 0.25rem;
-  }
+.smrt-employee-form__root :global([data-smrt-component="Form"]) {
+display: flex;
+flex-direction: column;
+gap: var(--smrt-spacing-md, 1rem);
 
-  label {
-    font: var(--smrt-typography-body-medium-font, 500 0.875rem / 1.25 sans-serif);
-    color: var(--smrt-color-on-surface-variant, inherit);
-  }
-
-  .required {
-    color: var(--smrt-color-error, inherit);
-  }
-
-  .hint {
-    font: var(--smrt-typography-body-small-font, 0.75rem / 1.25 sans-serif);
-    color: var(--smrt-color-on-surface-variant, inherit);
-  }
-
-  .errors {
-    color: var(--smrt-color-error, inherit);
-  }
-
-  .errors ul {
-    margin: 0;
-    padding-left: 1.25rem;
-  }
-
-  .actions {
-    display: flex;
-    justify-content: flex-end;
-    gap: var(--smrt-spacing-sm, 0.5rem);
-    margin-top: var(--smrt-spacing-sm, 0.5rem);
-  }
 }
+.smrt-employee-form__field {
+display: flex;
+flex-direction: column;
+gap: 0.25rem;
+
+}
+.smrt-employee-form__errors ul {
+margin: 0;
+padding-left: 1.25rem;
+
+}
+.smrt-employee-form__actions {
+display: flex;
+justify-content: flex-end;
+gap: var(--smrt-spacing-sm, 0.5rem);
+margin-top: var(--smrt-spacing-sm, 0.5rem);
+
+}
+
+}
+@layer smrt.theme {
+
+label {
+font: var(--smrt-typography-body-medium-font, 500 0.875rem / 1.25 sans-serif);
+color: var(--smrt-color-on-surface-variant, inherit);
+
+}
+.smrt-employee-form__required {
+color: var(--smrt-color-error, inherit);
+
+}
+.smrt-employee-form__hint {
+font: var(--smrt-typography-body-small-font, 0.75rem / 1.25 sans-serif);
+color: var(--smrt-color-on-surface-variant, inherit);
+
+}
+.smrt-employee-form__errors {
+color: var(--smrt-color-error, inherit);
+
+}
+
+}
+
 </style>
