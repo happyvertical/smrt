@@ -106,12 +106,12 @@ function clearLogs() {
 }
 </script>
 
-<div class="stt-test" data-smrt-component="STTTest">
-  <h3>{t(M['ui.stt_test.heading'])}</h3>
+<div class="smrt-stt-test__root" data-smrt-component="STTTest">
+  <h3 data-smrt-part="title">{t(M['ui.stt_test.heading'])}</h3>
 
-  <div class="controls">
-    <div class="adapter-select">
-      <label for="adapter">Adapter:</label>
+  <div class="smrt-stt-test__controls" data-smrt-part="actions">
+    <div class="smrt-stt-test__adapter-select" data-smrt-part="field">
+      <label for="adapter" data-smrt-part="label">Adapter:</label>
       <Select
         id="adapter"
         bind:value={
@@ -137,8 +137,8 @@ function clearLogs() {
     </Button>
   </div>
 
-  <div class="status">
-    <span class="status-item">
+  <div class="smrt-stt-test__status" data-smrt-part="status">
+    <span class="smrt-stt-test__status-item" data-smrt-part="meta">
       <strong>Status:</strong>
       {#if isInitializing}
         {t(M['ui.stt_test.status_initializing'])}
@@ -148,10 +148,10 @@ function clearLogs() {
         {t(M['ui.stt_test.status_not_initialized'])}
       {/if}
     </span>
-    <span class="status-item">
+    <span class="smrt-stt-test__status-item" data-smrt-part="meta">
       <strong>Current:</strong> {currentAdapterType}
     </span>
-    <span class="status-item">
+    <span class="smrt-stt-test__status-item" data-smrt-part="meta">
       <strong>Recording:</strong> {isRecording ? 'Yes' : 'No'}
     </span>
   </div>
@@ -163,40 +163,41 @@ function clearLogs() {
     />
   {/if}
 
-  <div class="record-controls">
+  <div class="smrt-stt-test__record-controls" data-smrt-part="row">
     <!-- raw-primitive-allow: press-and-hold record control driven by mousedown/up/leave + touchstart/end (push-to-talk), not a click action; Button has no press-and-hold model so this stays a native button -->
     <button
       type="button"
-      class="record-btn"
-      class:recording={isRecording}
+      class="smrt-stt-test__record-btn"
+      class:smrt-stt-test__recording={isRecording}
       onmousedown={startRecording}
       onmouseup={stopRecording}
       onmouseleave={stopRecording}
       ontouchstart={startRecording}
       ontouchend={stopRecording}
       disabled={isInitializing}
+      data-smrt-part="trigger"
     >
       {isRecording ? 'Recording...' : 'Hold to Record'}
     </button>
   </div>
 
   {#if error}
-    <div class="error">{error}</div>
+    <div class="smrt-stt-test__error" data-smrt-part="error">{error}</div>
   {/if}
 
-  <div class="result">
+  <div class="smrt-stt-test__result" data-smrt-part="content">
     <strong>Transcript:</strong>
-    <div class="transcript">{transcript || '(no result yet)'}</div>
+    <div class="smrt-stt-test__transcript" data-smrt-part="body">{transcript || '(no result yet)'}</div>
   </div>
 
-  <div class="logs">
-    <div class="logs-header">
+  <div class="smrt-stt-test__logs" data-smrt-part="panel">
+    <div class="smrt-stt-test__logs-header" data-smrt-part="header">
       <strong>Logs:</strong>
       <Button variant="ghost" size="sm" onclick={clearLogs}>Clear</Button>
     </div>
-    <div class="log-list">
+    <div class="smrt-stt-test__log-list" data-smrt-part="list">
       {#each logs as logEntry}
-        <div class="log-entry">{logEntry}</div>
+        <div class="smrt-stt-test__log-entry" data-smrt-part="row">{logEntry}</div>
       {/each}
     </div>
   </div>
@@ -204,147 +205,150 @@ function clearLogs() {
 
 <style>
 @layer smrt.reset, smrt.structure, smrt.theme;
-@layer smrt.theme {
-  .stt-test {
+@layer smrt.structure {
+  .smrt-stt-test__root {
     padding: var(--smrt-spacing-md);
-    border: var(--smrt-hairline);
-    border-radius: var(--smrt-radius-medium);
-    background: var(--smrt-color-surface-container-low);
     max-width: 500px;
   }
-
   h3 {
     margin: 0 0 var(--smrt-spacing-md);
-    font: var(--smrt-typography-title-large-font, 1.125rem / 1.25 sans-serif);
   }
-
-  .controls {
+  .smrt-stt-test__controls {
     display: flex;
     gap: var(--smrt-spacing-sm);
     align-items: flex-end;
     margin-bottom: var(--smrt-spacing-md);
   }
-
-  .adapter-select {
+  .smrt-stt-test__adapter-select {
     display: flex;
     flex-direction: column;
     gap: var(--smrt-spacing-1);
     flex: 1;
   }
-
-  .adapter-select label {
-    font: var(--smrt-typography-body-medium-font, 500 0.875rem / 1.25 sans-serif);
-  }
-
-  .status {
+  .smrt-stt-test__status {
     display: flex;
     gap: var(--smrt-spacing-md);
-    font: var(--smrt-typography-body-medium-font, 0.875rem / 1.25 sans-serif);
     margin-bottom: var(--smrt-spacing-md);
     padding: var(--smrt-spacing-sm);
-    background: var(--smrt-color-surface, white);
-    border-radius: var(--smrt-radius-small);
   }
-
-  .status-item {
+  .smrt-stt-test__status-item {
     display: flex;
     gap: var(--smrt-spacing-1);
   }
-
-  .record-controls {
+  .smrt-stt-test__record-controls {
     display: flex;
     justify-content: center;
     margin: var(--smrt-spacing-md) 0;
   }
-
-  .record-btn {
+  .smrt-stt-test__record-btn {
     padding: var(--smrt-spacing-md) var(--smrt-spacing-xl);
-    font: var(--smrt-typography-label-large-font, 500 1rem / 1.25 sans-serif);
-    background: var(--smrt-color-tertiary);
-    color: var(--smrt-color-on-tertiary);
-    border: none;
-    border-radius: var(--smrt-radius-medium);
     cursor: pointer;
-    transition: all var(--smrt-duration-short3, 200ms) var(--smrt-easing-standard, ease);
   }
-
-  .record-btn:hover:not(:disabled) {
-    background: var(--smrt-color-tertiary-container);
-    opacity: 0.9;
-  }
-
-  .record-btn.recording {
-    background: var(--smrt-color-error);
-    animation: pulse 1s infinite;
-  }
-
-  .record-btn:disabled {
-    opacity: 0.5;
+  .smrt-stt-test__record-btn:disabled {
     cursor: not-allowed;
   }
-
-  @keyframes pulse {
-    0%, 100% { transform: scale(1); }
-    50% { transform: scale(1.02); }
-  }
-
-  .error {
+  .smrt-stt-test__error {
     padding: var(--smrt-spacing-md);
-    background: var(--smrt-color-error-container);
-    border: 1px solid var(--smrt-color-error);
-    border-radius: var(--smrt-radius-small);
-    color: var(--smrt-color-on-error-container);
-    font: var(--smrt-typography-body-medium-font, 0.875rem / 1.25 sans-serif);
     margin-bottom: var(--smrt-spacing-md);
   }
-
-  .result {
+  .smrt-stt-test__result {
     margin-bottom: var(--smrt-spacing-md);
   }
-
-  .transcript {
+  .smrt-stt-test__transcript {
     margin-top: var(--smrt-spacing-sm);
     padding: var(--smrt-spacing-md);
-    background: var(--smrt-color-surface, white);
-    border: var(--smrt-hairline);
-    border-radius: var(--smrt-radius-small);
     min-height: 60px;
-    font: var(--smrt-typography-body-large-font, 1rem / 1.5 sans-serif);
   }
-
-  .logs {
-    font: var(--smrt-typography-body-small-font, 0.75rem / 1.25 sans-serif);
-  }
-
-  .logs-header {
+  .smrt-stt-test__logs-header {
     display: flex;
     justify-content: space-between;
     align-items: center;
     margin-bottom: var(--smrt-spacing-sm);
   }
-
-  .log-list {
-    background: var(--smrt-color-inverse-surface);
-    color: var(--smrt-color-inverse-on-surface);
+  .smrt-stt-test__log-list {
     padding: var(--smrt-spacing-sm);
-    border-radius: var(--smrt-radius-small);
     max-height: 150px;
     overflow-y: auto;
-    font-family: var(--smrt-font-family-mono, ui-monospace, monospace);
   }
-
-  .log-entry {
+  .smrt-stt-test__log-entry {
     padding: var(--smrt-spacing-1) 0;
   }
+}
 
+@layer smrt.theme {
+  .smrt-stt-test__root {
+    border: var(--smrt-hairline);
+    border-radius: var(--smrt-radius-medium);
+    background: var(--smrt-color-surface-container-low);
+  }
+  h3 {
+    font: var(--smrt-typography-title-large-font, 1.125rem / 1.25 sans-serif);
+  }
+  .smrt-stt-test__adapter-select label {
+    font: var(--smrt-typography-body-medium-font, 500 0.875rem / 1.25 sans-serif);
+  }
+  .smrt-stt-test__status {
+    font: var(--smrt-typography-body-medium-font, 0.875rem / 1.25 sans-serif);
+    background: var(--smrt-color-surface, white);
+    border-radius: var(--smrt-radius-small);
+  }
+  .smrt-stt-test__record-btn {
+    font: var(--smrt-typography-label-large-font, 500 1rem / 1.25 sans-serif);
+    background: var(--smrt-color-tertiary);
+    color: var(--smrt-color-on-tertiary);
+    border: none;
+    border-radius: var(--smrt-radius-medium);
+    transition: all var(--smrt-duration-short3, 200ms) var(--smrt-easing-standard, ease);
+  }
+  .smrt-stt-test__record-btn:hover:not(:disabled) {
+    background: var(--smrt-color-tertiary-container);
+    opacity: 0.9;
+  }
+  .smrt-stt-test__record-btn.smrt-stt-test__recording {
+    background: var(--smrt-color-error);
+    animation: pulse 1s infinite;
+  }
+  .smrt-stt-test__record-btn:disabled {
+    opacity: 0.5;
+  }
+  @keyframes pulse {
+    0%, 100% {
+      transform: scale(1);
+    }
+    50% {
+      transform: scale(1.02);
+    }
+  }
+  .smrt-stt-test__error {
+    background: var(--smrt-color-error-container);
+    border: 1px solid var(--smrt-color-error);
+    border-radius: var(--smrt-radius-small);
+    color: var(--smrt-color-on-error-container);
+    font: var(--smrt-typography-body-medium-font, 0.875rem / 1.25 sans-serif);
+  }
+  .smrt-stt-test__transcript {
+    background: var(--smrt-color-surface, white);
+    border: var(--smrt-hairline);
+    border-radius: var(--smrt-radius-small);
+    font: var(--smrt-typography-body-large-font, 1rem / 1.5 sans-serif);
+  }
+  .smrt-stt-test__logs {
+    font: var(--smrt-typography-body-small-font, 0.75rem / 1.25 sans-serif);
+  }
+  .smrt-stt-test__log-list {
+    background: var(--smrt-color-inverse-surface);
+    color: var(--smrt-color-inverse-on-surface);
+    border-radius: var(--smrt-radius-small);
+    font-family: var(--smrt-font-family-mono, ui-monospace, monospace);
+  }
   @media (prefers-reduced-motion: reduce) {
-    .record-btn {
+    .smrt-stt-test__record-btn {
       transition: none;
     }
-    
-    .record-btn.recording {
+    .smrt-stt-test__record-btn.smrt-stt-test__recording {
       animation: none;
     }
   }
 }
+
 </style>

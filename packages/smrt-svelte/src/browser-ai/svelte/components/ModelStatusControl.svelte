@@ -97,14 +97,14 @@ async function run(
 }
 </script>
 
-<div class="model-status {className}" data-status={snapshot.status} data-smrt-component="ModelStatusControl">
-  <div class="header">
-    <span class="label">{label}</span>
-    <span class="state" role="status">{STATUS_LABEL[snapshot.status]}</span>
+<div class="smrt-model-status-control__root {className}" data-status={snapshot.status} data-smrt-component="ModelStatusControl">
+  <div class="smrt-model-status-control__header" data-smrt-part="header">
+    <span class="smrt-model-status-control__label" data-smrt-part="label">{label}</span>
+    <span class="smrt-model-status-control__state" data-smrt-part="status" role="status">{STATUS_LABEL[snapshot.status]}</span>
   </div>
 
   {#if snapshot.status === 'unavailable'}
-    <p class="hint">
+    <p class="smrt-model-status-control__hint" data-smrt-part="hint">
       {t(M['ui.model_status.webgpu_unavailable'])}
     </p>
   {:else if snapshot.status === 'loading'}
@@ -117,10 +117,10 @@ async function run(
   {/if}
 
   {#if failure}
-    <p class="error" role="alert">{failure}</p>
+    <p class="smrt-model-status-control__error" data-smrt-part="error" role="alert">{failure}</p>
   {/if}
 
-  <div class="actions">
+  <div class="smrt-model-status-control__actions" data-smrt-part="actions">
     {#if (snapshot.status === 'idle' || snapshot.status === 'error') && backend.load}
       <Button onclick={() => run(() => backend.load?.())} disabled={busy}>
         {snapshot.status === 'error' ? 'Retry' : 'Load model'}
@@ -139,55 +139,56 @@ async function run(
 
 <style>
 @layer smrt.reset, smrt.structure, smrt.theme;
-@layer smrt.theme {
-  .model-status {
+@layer smrt.structure {
+  .smrt-model-status-control__root {
     display: flex;
     flex-direction: column;
     gap: var(--smrt-spacing-sm);
     padding: var(--smrt-spacing-md);
-    background: var(--smrt-color-surface-container-low);
-    border-radius: var(--smrt-radius-medium);
   }
-
-  .header {
+  .smrt-model-status-control__header {
     display: flex;
     justify-content: space-between;
     align-items: baseline;
     gap: var(--smrt-spacing-sm);
   }
-
-  .label {
-    font-weight: var(--smrt-typography-weight-semibold, 600);
-    color: var(--smrt-color-on-surface);
-  }
-
-  .state {
-    font: var(--smrt-typography-body-small-font, 0.8125rem / 1.2 sans-serif);
-    color: var(--smrt-color-on-surface-variant);
-  }
-
-  .model-status[data-status='ready'] .state {
-    color: var(--smrt-color-primary);
-  }
-
-  .model-status[data-status='error'] .state {
-    color: var(--smrt-color-error);
-  }
-
-  .hint,
-  .error {
+  .smrt-model-status-control__hint,
+  .smrt-model-status-control__error {
     margin: 0;
-    font: var(--smrt-typography-body-small-font, 0.8125rem / 1.2 sans-serif);
-    color: var(--smrt-color-on-surface-variant);
   }
-
-  .error {
-    color: var(--smrt-color-error);
-  }
-
-  .actions {
+  .smrt-model-status-control__actions {
     display: flex;
     gap: var(--smrt-spacing-sm);
   }
 }
+
+@layer smrt.theme {
+  .smrt-model-status-control__root {
+    background: var(--smrt-color-surface-container-low);
+    border-radius: var(--smrt-radius-medium);
+  }
+  .smrt-model-status-control__label {
+    font-weight: var(--smrt-typography-weight-semibold, 600);
+    color: var(--smrt-color-on-surface);
+  }
+  .smrt-model-status-control__state {
+    font: var(--smrt-typography-body-small-font, 0.8125rem / 1.2 sans-serif);
+    color: var(--smrt-color-on-surface-variant);
+  }
+  .smrt-model-status-control__root[data-status='ready'] .smrt-model-status-control__state {
+    color: var(--smrt-color-primary);
+  }
+  .smrt-model-status-control__root[data-status='error'] .smrt-model-status-control__state {
+    color: var(--smrt-color-error);
+  }
+  .smrt-model-status-control__hint,
+  .smrt-model-status-control__error {
+    font: var(--smrt-typography-body-small-font, 0.8125rem / 1.2 sans-serif);
+    color: var(--smrt-color-on-surface-variant);
+  }
+  .smrt-model-status-control__error {
+    color: var(--smrt-color-error);
+  }
+}
+
 </style>
