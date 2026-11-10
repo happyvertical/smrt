@@ -304,6 +304,8 @@ interface Props {
    * exist. Pass `true` (or a per-edge map) for the previous behaviour.
    */
   edgeToggles?: AdminShellProps['edgeToggles'];
+  /** Hairline above the sidebar footer (default true); see `AdminShell`. */
+  sidebarFooterDivider?: AdminShellProps['sidebarFooterDivider'];
   /** Keyboard shortcuts; default follows `edgeToggles` (see `AdminShell`). */
   hotkeys?: boolean;
   /**
@@ -385,6 +387,7 @@ let {
   sectionHref,
   iconComponent,
   edgeToggles = false,
+  sidebarFooterDivider = true,
   hotkeys,
   phoneTabBar = false,
   phoneDock,
@@ -1190,6 +1193,7 @@ const EDGE_OF_REGION: Record<ShellRegion, PanelEdge> = {
       slots={shellSlots}
       layoutEdit={editSurface}
       {edgeToggles}
+      {sidebarFooterDivider}
       {hotkeys}
       brandInSlot
       phoneDockOpener={dockToggles.length === 0 && !tabBarOn}

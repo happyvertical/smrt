@@ -240,6 +240,7 @@ function buildLayoutStyle(shell: ModuleShellState): string {
     homeHref,
     showTenantToggle,
     edgeToggles = false,
+    sidebarFooterDivider = true,
     hotkeys,
     brandInSlot = false,
     logoSrc,
@@ -1450,6 +1451,7 @@ function buildLayoutStyle(shell: ModuleShellState): string {
   data-right-state={panelState('right')}
   data-bottom-state={panelState('bottom')}
   data-viewport={viewport}
+  data-footer-divider={sidebarFooterDivider ? undefined : 'off'}
   data-bottom-bar={bottomBar}
   data-phone-top={showPhoneTop ? '' : undefined}
   data-chrome-hidden={chromeHidden ? '' : undefined}
@@ -2414,6 +2416,14 @@ function buildLayoutStyle(shell: ModuleShellState): string {
   .smrt-admin-shell__slot--rightSidebar-footer {
     padding-block-start: var(--smrt-spacing-3);
     border-block-start: var(--smrt-hairline);
+  }
+
+  /* `sidebarFooterDivider={false}`: the host draws its own line at this height. */
+  .smrt-admin-shell[data-footer-divider='off'] .smrt-admin-shell__slot--leftSidebar-footer,
+  .smrt-admin-shell[data-footer-divider='off'] .smrt-admin-shell__slot--rightSidebar-footer,
+  .smrt-admin-shell[data-footer-divider='off'] .smrt-admin-shell__tenant-rail-footer {
+    padding-block-start: 0;
+    border-block-start: 0;
   }
 
   /* Icon controls share a row; the full-width account menu takes its own. */

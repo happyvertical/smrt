@@ -429,6 +429,14 @@ export interface AdminShellProps {
    */
   edgeToggles?: boolean | Partial<Record<PanelEdge, boolean>>;
   /**
+   * Draw the hairline above the sidebar footer slots (`leftSidebar.footer`,
+   * `rightSidebar.footer`) and above the footer of the collapsed left rail.
+   * Default `true`. A host whose neighbouring column
+   * draws its own line at that height (a docked panel's composer) turns it
+   * off so the two do not clash.
+   */
+  sidebarFooterDivider?: boolean;
+  /**
    * Keyboard shortcuts (WASD, `?`). Default: active only for edges that have
    * toggles. `true` enables them for every edge (the panels then behave as
    * drop-downs without a button); `false` disables them.

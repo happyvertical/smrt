@@ -51,6 +51,19 @@ describe('AppShell docked panel', () => {
     expect(q('[data-testid="chat-body"]')).toBeTruthy();
   });
 
+  it('draws the sidebar footer divider unless the host opts out', async () => {
+    await render();
+    expect(q('.smrt-admin-shell')).not.toHaveAttribute('data-footer-divider');
+    unmount(component as never);
+    component = undefined;
+    container.innerHTML = '';
+    await render({ sidebarFooterDivider: false });
+    expect(q('.smrt-admin-shell')).toHaveAttribute(
+      'data-footer-divider',
+      'off',
+    );
+  });
+
   it('adds nothing without a panel', async () => {
     await render({ withPanel: false });
     expect(panel()).toBeNull();

@@ -188,6 +188,8 @@ reset, `role="separator"` with `aria-valuenow|min|max`, `data-testid`
 (`sanitizeShellSettingsDelta` accepts that key only for `sizes`). On phones the
 panel is a full-size view over main (main is `inert`), no separator.
 
+`sidebarFooterDivider` (default `true`, `AdminShell` and `AppShell`) draws the hairline above the sidebar footer slots and the collapsed rail's footer; `false` sets `data-footer-divider="off"` on the shell root and removes them, for a host whose neighbouring column draws its own line at that height.
+
 `AppShell` builds on it: `panelToggle: { label, icon?, slot? }` is the built-in
 `item:panel-toggle` (icon `ShellIconButton`, `aria-pressed`, default slot
 `leftSidebar.footer`); on a phone with `phoneTabBar` it is the "panel" tab

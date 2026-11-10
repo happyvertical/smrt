@@ -18,6 +18,7 @@ let {
   withPanel = true,
   currentHref = '/',
   edgeToggles = false,
+  sidebarFooterDivider = true,
   voiceState = 'off',
   onvoice,
 }: {
@@ -28,6 +29,7 @@ let {
   withPanel?: boolean;
   currentHref?: string;
   edgeToggles?: boolean;
+  sidebarFooterDivider?: boolean;
   voiceState?: 'off' | 'on' | 'unavailable';
   onvoice?: () => void;
 } = $props();
@@ -51,6 +53,7 @@ const nav = [
   {config}
   {phoneTabBar}
   {edgeToggles}
+  {sidebarFooterDivider}
   {currentHref}
   settingsHref="/settings"
   colorSchemeToggle={false}
