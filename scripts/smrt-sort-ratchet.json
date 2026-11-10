@@ -1649,18 +1649,6 @@
       "unsorted": true,
       "internalClasses": 5
     },
-    "packages/smrt-ui/src/components/calendar/Calendar.svelte": {
-      "unsorted": true,
-      "internalClasses": 21
-    },
-    "packages/smrt-ui/src/components/calendar/CalendarView.svelte": {
-      "unsorted": true,
-      "internalClasses": 49
-    },
-    "packages/smrt-ui/src/components/calendar/DayView.svelte": {
-      "unsorted": true,
-      "internalClasses": 26
-    },
     "packages/smrt-ui/src/components/chat/MessageBubble.svelte": {
       "unsorted": true,
       "internalClasses": 12
@@ -1716,46 +1704,6 @@
     "packages/smrt-ui/src/components/display/StatusBadge.svelte": {
       "unsorted": true,
       "internalClasses": 5
-    },
-    "packages/smrt-ui/src/components/feedback/ConfirmDialog.svelte": {
-      "unsorted": true,
-      "internalClasses": 10
-    },
-    "packages/smrt-ui/src/components/feedback/LoadingOverlay.svelte": {
-      "unsorted": true,
-      "internalClasses": 16
-    },
-    "packages/smrt-ui/src/components/feedback/Meter.svelte": {
-      "unsorted": true,
-      "internalClasses": 2
-    },
-    "packages/smrt-ui/src/components/feedback/Modal.svelte": {
-      "unsorted": true,
-      "internalClasses": 15
-    },
-    "packages/smrt-ui/src/components/feedback/PhoneSheet.svelte": {
-      "unsorted": true,
-      "internalClasses": 7
-    },
-    "packages/smrt-ui/src/components/feedback/Progress.svelte": {
-      "unsorted": true,
-      "internalClasses": 8
-    },
-    "packages/smrt-ui/src/components/feedback/ProgressBar.svelte": {
-      "unsorted": true,
-      "internalClasses": 11
-    },
-    "packages/smrt-ui/src/components/feedback/Spinner.svelte": {
-      "unsorted": true,
-      "internalClasses": 5
-    },
-    "packages/smrt-ui/src/components/feedback/ToastViewport.svelte": {
-      "unsorted": true,
-      "internalClasses": 7
-    },
-    "packages/smrt-ui/src/components/feedback/WorkingStrip.svelte": {
-      "unsorted": true,
-      "internalClasses": 17
     },
     "packages/smrt-ui/src/components/forms/__tests__/place-picker.fixture.svelte": {
       "unsorted": false,
