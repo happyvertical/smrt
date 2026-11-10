@@ -19,3 +19,19 @@ export async function persistRollup<T extends SmrtObject>(
     permitted.delete(object);
   }
 }
+
+// Second capability: only reopen() may move a confirmed/submitted card back.
+const reopening = new WeakSet<SmrtObject>();
+export function isReopenWrite(object: SmrtObject): boolean {
+  return reopening.has(object);
+}
+export async function persistReopen<T extends SmrtObject>(
+  object: T,
+): Promise<T> {
+  reopening.add(object);
+  try {
+    return await persistRollup(object);
+  } finally {
+    reopening.delete(object);
+  }
+}

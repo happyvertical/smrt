@@ -1,6 +1,6 @@
 import { existsSync } from 'node:fs';
 import { isAbsolute, resolve } from 'node:path';
-import fg from 'fast-glob';
+import { glob } from 'tinyglobby';
 import { normalizePath, type Plugin } from 'vite';
 import {
   detectPlaygroundMode,
@@ -55,10 +55,11 @@ async function discoverWorkspaceSpecifiers(
     return [];
   }
 
-  const matches = await fg(
+  const matches = await glob(
     options.packagesPattern || 'packages/*/src/svelte/playground.ts',
     {
       cwd: workspaceRoot,
+      expandDirectories: false,
       absolute: true,
     },
   );

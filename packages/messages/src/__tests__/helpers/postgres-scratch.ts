@@ -14,6 +14,8 @@ const HOOK_TIMEOUT_MS = 60_000;
 export function withScratchDatabase(beforeEach: Hook, afterEach: Hook) {
   const connections: DatabaseInterface[] = [];
   let admin: DatabaseInterface | undefined;
+  let cleanupAdmin: DatabaseInterface | undefined;
+  let createdBy = '';
   let baseUrl = '';
   let databaseName = '';
 
@@ -25,16 +27,78 @@ export function withScratchDatabase(beforeEach: Hook, afterEach: Hook) {
       classes: [],
       includeSystemTables: false,
     });
+    createdBy = String(
+      (await admin.query('SELECT current_user AS owner')).rows[0]?.owner ?? '',
+    );
+    if (!createdBy) throw new Error('Scratch database owner is unknown.');
     databaseName = `smrt_messages_${crypto.randomUUID().replace(/-/g, '').slice(0, 16)}`;
     await admin.query(`CREATE DATABASE ${databaseName}`);
   }, HOOK_TIMEOUT_MS);
 
   afterEach(async () => {
-    for (const db of connections.splice(0)) {
-      await (db as { close?: () => Promise<void> }).close?.();
+    // Settle every owned handle even if one close fails; never leave the rest open.
+    const closed = await Promise.allSettled(
+      connections
+        .splice(0)
+        .map((db) => (db as { close?: () => Promise<void> }).close?.()),
+    );
+    const failures: unknown[] = closed.flatMap((result) =>
+      result.status === 'rejected' ? [result.reason] : [],
+    );
+    try {
+      const cleanupUrl = process.env.SMRT_TEST_POSTGRES_ADMIN_URL;
+      if (cleanupUrl) {
+        const runtime = new URL(baseUrl),
+          control = new URL(cleanupUrl);
+        if (
+          runtime.protocol !== control.protocol ||
+          runtime.host !== control.host
+        )
+          throw new Error(
+            'Scratch cleanup administrator must belong to the test PostgreSQL cluster.',
+          );
+        cleanupAdmin = await getTestDatabase({
+          type: 'postgres',
+          url: cleanupUrl,
+          classes: [],
+          includeSystemTables: false,
+        });
+      }
+      const owner = cleanupAdmin ?? admin;
+      if (owner && databaseName) {
+        if (!/^smrt_messages_[a-f0-9]{16}$/.test(databaseName))
+          throw new Error('Unowned scratch database name.');
+        const inventory = await owner.query(
+          'SELECT pg_get_userbyid(datdba) AS owner FROM pg_database WHERE datname=?',
+          databaseName,
+        );
+        if (inventory.rows.length && inventory.rows[0]?.owner !== createdBy)
+          throw new Error(
+            'Scratch database ownership changed; cleanup refused.',
+          );
+        // The documented administrator is cleanup-only. Application/schema tests retain their test role.
+        await owner.query(
+          `DROP DATABASE IF EXISTS ${databaseName} WITH (FORCE)`,
+        );
+      }
+    } catch (failure) {
+      failures.push(failure);
     }
-    await admin?.query(`DROP DATABASE IF EXISTS ${databaseName} WITH (FORCE)`);
-    await (admin as { close?: () => Promise<void> } | undefined)?.close?.();
+    const released = await Promise.allSettled(
+      [
+        ...new Set(
+          [cleanupAdmin, admin].filter((db): db is DatabaseInterface =>
+            Boolean(db),
+          ),
+        ),
+      ].map((db) => (db as { close?: () => Promise<void> }).close?.()),
+    );
+    for (const result of released)
+      if (result.status === 'rejected') failures.push(result.reason);
+    admin = undefined;
+    cleanupAdmin = undefined;
+    if (failures.length)
+      throw new AggregateError(failures, 'Scratch database cleanup failed.');
   }, HOOK_TIMEOUT_MS);
 
   const url = (): string => {

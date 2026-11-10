@@ -965,6 +965,15 @@ describe('delete() referential integrity (#2371)', () => {
       const docsB = await collectionOn(AmbiguousDocBCollection);
       const tags = await collectionOn(AmbiguousDocTagCollection);
 
+      // The dynamically registered external model has no scanner manifest.
+      // Bring its physical fixture up to the current base sync schema.
+      await db.query(
+        'ALTER TABLE cascade_2371_ambiguous_doc_b ADD COLUMN _sync_origin_device_id TEXT',
+      );
+      await db.query(
+        'ALTER TABLE cascade_2371_ambiguous_doc_b ADD COLUMN _sync_revision INTEGER',
+      );
+
       const docB = await docsB.create({ title: 'ambiguous-b' } as any);
       await docB.save();
 

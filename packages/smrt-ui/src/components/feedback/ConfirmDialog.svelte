@@ -202,7 +202,7 @@ function handleKeydown(e: KeyboardEvent) {
 
   .dialog-content {
     background-color: var(--smrt-color-surface-container-high);
-    border-radius: var(--smrt-radius-3xl, 32px);
+    border-radius: var(--smrt-radius-3xl);
     padding: var(--smrt-spacing-6);
     max-width: 400px;
     width: 100%;

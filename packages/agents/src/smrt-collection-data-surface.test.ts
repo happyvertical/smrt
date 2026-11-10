@@ -181,11 +181,13 @@ describe('createSmrtCollectionDataSurfaceDefinition', () => {
       exclude: ['cachedTotal', 'context', 'created_at', 'slug', 'updated_at'],
       collection: fakeCollection(rows),
       scope: (execution) => ({ tenantId: execution.principal.tenantId }),
+      rowCountHint: '~1k',
     });
 
     expect(definition).toMatchObject({
       collection: 'events',
       className: QUALIFIED_NAME,
+      rowCountHint: '~1k',
     });
     expect(definition.schema.fields.map((field) => field.id).sort()).toEqual([
       'id',

@@ -103,7 +103,10 @@ describe('getSystemTableShapes', () => {
     const shapes = getSystemTableShapes('sqlite');
 
     expect([...shapes.keys()].sort()).toEqual([
+      '_smrt_ai_runs',
+      '_smrt_ai_transcripts',
       '_smrt_ai_usage',
+      '_smrt_ai_usage_outcomes',
       '_smrt_backfills',
       '_smrt_changes',
       '_smrt_contexts',
@@ -113,6 +116,38 @@ describe('getSystemTableShapes', () => {
       '_smrt_migrations',
       '_smrt_run_once_claims',
       '_smrt_schema_migrations',
+      '_smrt_sync_tombstones',
+    ]);
+  });
+
+  it.each([
+    'sqlite',
+    'postgres',
+    'duckdb',
+  ] as const)('recovers the durable tombstone identity and revision on %s', (engine) => {
+    const tombstones = getSystemTableShapes(engine).get(
+      '_smrt_sync_tombstones',
+    );
+    expect(
+      tombstones?.columns.map(({ name, type, primaryKey, notNull }) => [
+        name,
+        type,
+        primaryKey,
+        notNull,
+      ]),
+    ).toEqual([
+      ['table_name', 'TEXT', true, true],
+      ['row_id', 'TEXT', true, true],
+      ['model', 'TEXT', false, true],
+      ['tenant_id', 'TEXT', false, false],
+      ['origin_device_id', 'TEXT', false, true],
+      ['revision', engine === 'sqlite' ? 'INTEGER' : 'BIGINT', false, true],
+      [
+        'deleted_at',
+        engine === 'postgres' ? 'TIMESTAMPTZ' : 'TIMESTAMP',
+        false,
+        true,
+      ],
     ]);
   });
 

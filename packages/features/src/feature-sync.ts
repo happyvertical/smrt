@@ -1,6 +1,7 @@
 import { ObjectRegistry } from '@happyvertical/smrt-core';
 import type { SmartObjectManifest } from '@happyvertical/smrt-core/manifest';
 import { FeatureDefinitionCollection } from './feature-definitions.js';
+import { listFrameworkFeatures } from './framework-features.js';
 import { type FeatureHostOptions, withoutListBounds } from './list-bounds.js';
 import type {
   FeatureDefinitionSeed,
@@ -53,6 +54,31 @@ export class FeatureSyncService {
       touchedPackages,
       options.pruneStale ?? true,
     );
+  }
+
+  /**
+   * Mirror framework feature definitions (the standard paid keys and any
+   * `defineFrameworkFeature()` registrations, #4761) into
+   * `_smrt_feature_definitions` so the settings screen can list and override
+   * them. Framework rows have an empty `qualifiedClassName`; this method only
+   * upserts them and class syncs never prune them.
+   */
+  async syncFrameworkDefinitions(): Promise<FeatureSyncResult> {
+    await this.ensureInitialized();
+    const definitions: FeatureDefinitionSeed[] = listFrameworkFeatures().map(
+      (definition) => ({
+        featureKey: definition.featureKey,
+        packageName: definition.packageName,
+        qualifiedClassName: '',
+        className: '',
+        localId: definition.featureKey,
+        defaultEnabled: definition.defaultEnabled,
+        label: definition.label,
+        description: definition.description,
+        metadata: definition.metadata ? { ...definition.metadata } : undefined,
+      }),
+    );
+    return this.applyDefinitions(definitions, new Set(), false);
   }
 
   private async ensureInitialized(): Promise<void> {
@@ -169,7 +195,11 @@ export class FeatureSyncService {
 
       const staleDefinitions = existingByPackage.flatMap((existing) =>
         existing.filter(
-          (definition) => !currentKeys.has(definition.featureKey),
+          (definition) =>
+            // Framework rows (no owning class) belong to
+            // syncFrameworkDefinitions(), never to a class sync's prune.
+            definition.qualifiedClassName !== '' &&
+            !currentKeys.has(definition.featureKey),
         ),
       );
 

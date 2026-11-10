@@ -7,6 +7,10 @@
 import { mkdir, writeFile } from 'node:fs/promises';
 import { dirname, resolve } from 'node:path';
 import { SmrtCollection } from '../collection';
+import {
+  type McpGetSerializer,
+  resolveMcpGetSerializer,
+} from '../mcp-serializer.js';
 import type { PublicJsonOptions, SmrtObject } from '../object';
 import {
   buildDefaultListOrderBy,
@@ -16,7 +20,10 @@ import {
 import { ObjectRegistry } from '../registry';
 import { isFrameworkBaseClass } from '../registry/framework-base-classes.js';
 import { readFieldEnum } from '../registry/manifest-field-merge.js';
-import type { RegisteredClass } from '../registry/types.js';
+import type {
+  ApiSerializerReference,
+  RegisteredClass,
+} from '../registry/types.js';
 import type { FieldDefinition, MethodDefinition } from '../scanner/types.js';
 import { resolveDisplayLabelField } from '../ui-metadata.js';
 import { isQualifiedName } from '../utils/qualified-names.js';
@@ -60,6 +67,11 @@ import {
   type ToolJsonSchema,
 } from './tool-schema.js';
 
+export {
+  type McpGetSerializer,
+  type McpGetSerializerReference,
+  resolveMcpGetSerializer,
+} from '../mcp-serializer.js';
 export type { ToolEffect } from './custom-action.js';
 export {
   assertMcpJsonSchemaSafety,
@@ -97,6 +109,21 @@ type ToolArgs = Record<string, unknown>;
  * type at the call boundary after a `typeof === 'function'` guard.
  */
 type InstanceCallable = (...args: unknown[]) => unknown;
+
+function normalizePublicToolError(
+  error: unknown,
+): { code: string; message: string } | undefined {
+  if (!error || typeof error !== 'object') return undefined;
+  const candidate = error as { code?: unknown; publicMessage?: unknown };
+  if (
+    typeof candidate.code !== 'string' ||
+    !/^[A-Za-z][A-Za-z0-9_.:-]{0,127}$/.test(candidate.code) ||
+    typeof candidate.publicMessage !== 'string' ||
+    candidate.publicMessage.length === 0
+  )
+    return undefined;
+  return { code: candidate.code, message: candidate.publicMessage };
+}
 
 export interface MCPConfig {
   name?: string;
@@ -457,6 +484,7 @@ export class MCPGenerator {
   private config: MCPConfig;
   private context: MCPContext;
   private collections = new Map<string, SmrtCollection<SmrtObject>>();
+  private getSerializers = new Map<string, Promise<McpGetSerializer>>();
 
   constructor(config: MCPConfig = {}, context: MCPContext = {}) {
     this.config = {
@@ -538,6 +566,9 @@ export class MCPGenerator {
         typeof mcpConfig === 'object' ? mcpConfig?.include : undefined;
 
       const shouldInclude = (endpoint: string) => {
+        if (config.abstract && endpoint !== 'list' && endpoint !== 'get') {
+          return false;
+        }
         if (included && !included.includes(endpoint)) return false;
         if (excluded.includes(endpoint)) return false;
         return true;
@@ -681,8 +712,9 @@ export class MCPGenerator {
       });
     }
 
-    // CUSTOM METHODS - discover from manifest and show by default
-    if (classInfo) {
+    // Abstract resources expose reads only, including when a manifest still
+    // lists an explicitly included custom method.
+    if (classInfo && !ObjectRegistry.getConfig(objectName).abstract) {
       const config = ObjectRegistry.getConfig(objectName);
       const mcpConfig = config.mcp;
       const included: string[] | undefined =
@@ -1306,7 +1338,10 @@ export class MCPGenerator {
           },
         };
       }
-      const message = error instanceof Error ? error.message : 'Unknown error';
+      const publicError = normalizePublicToolError(error);
+      const message =
+        publicError?.message ??
+        (error instanceof Error ? error.message : 'Unknown error');
       return {
         content: [
           {
@@ -1315,7 +1350,7 @@ export class MCPGenerator {
           },
         ],
         isError: true,
-        structuredContent: { error: { message } },
+        structuredContent: { error: publicError ?? { message } },
       };
     }
   }
@@ -1836,7 +1871,7 @@ export class MCPGenerator {
           throw new Error('Object not found');
         }
 
-        return this.toPublicData(item);
+        return this.serializeGetResult(objectName, item);
       }
 
       case 'create': {
@@ -1923,6 +1958,52 @@ export class MCPGenerator {
     }
   }
 
+  private getSerializerReference(
+    objectName: string | undefined,
+  ): ApiSerializerReference | undefined {
+    if (!objectName) return undefined;
+    const mcp = ObjectRegistry.getConfig(objectName)?.mcp;
+    return mcp && typeof mcp === 'object' ? mcp.serializers?.get : undefined;
+  }
+
+  private async serializeGetResult(
+    objectName: string | undefined,
+    item: SmrtObject,
+  ): Promise<unknown> {
+    const reference = this.getSerializerReference(objectName);
+    if (!reference) return this.toPublicData(item);
+    const cacheKey = `${objectName ?? ''}\u0000${reference.importPath}\u0000${reference.exportName}`;
+    let serializerPromise = this.getSerializers.get(cacheKey);
+    if (!serializerPromise) {
+      serializerPromise = resolveMcpGetSerializer(reference, {
+        parentUrl: import.meta.url,
+        ownerRegistryKey: objectName,
+      });
+      this.getSerializers.set(cacheKey, serializerPromise);
+    }
+    const serializer = await serializerPromise;
+    const options = this.getPublicJsonOptions();
+    return this.toPublicData(
+      await serializer(item, options),
+      new WeakSet(),
+      options,
+    );
+  }
+
+  private runtimeGetSerializers(
+    tools: MCPTool[],
+  ): Record<string, ApiSerializerReference> {
+    const serializers: Record<string, ApiSerializerReference> = {};
+    for (const tool of tools) {
+      const target = this.toolTarget(tool);
+      if (target.action !== 'get') continue;
+      const owner = this.toolClass(tool);
+      const reference = this.getSerializerReference(owner?.key);
+      if (reference) serializers[tool.name] = reference;
+    }
+    return serializers;
+  }
+
   /**
    * Execute a custom action on a collection/object
    */
@@ -1988,10 +2069,20 @@ export class MCPGenerator {
         }
       } else if (metadata.isStatic && objectName) {
         const classInfo = ObjectRegistry.getClass(objectName);
+        // Manifest-backed collection entries retain a stub model constructor;
+        // generated registration binds their executable collection separately.
+        // Keep model statics first when both receivers define the action.
+        const classConstructor = [
+          classInfo?.constructor,
+          classInfo?.collectionConstructor,
+        ].find(
+          (receiver) =>
+            typeof (
+              receiver as unknown as Record<string, unknown> | undefined
+            )?.[methodName] === 'function',
+        );
         const classMethod = (
-          classInfo?.constructor as unknown as
-            | Record<string, unknown>
-            | undefined
+          classConstructor as unknown as Record<string, unknown> | undefined
         )?.[methodName];
         if (typeof classMethod !== 'function') {
           throw new Error(
@@ -1999,7 +2090,7 @@ export class MCPGenerator {
           );
         }
         const result = await (classMethod as InstanceCallable).call(
-          classInfo?.constructor,
+          classConstructor,
           ...methodArgs,
         );
         const failure = normalizeCustomActionFailure(result);
@@ -2149,6 +2240,7 @@ export class MCPGenerator {
         debug,
         tools,
         toolTargets: this.runtimeToolTargets(tools),
+        getSerializers: this.runtimeGetSerializers(tools),
         customActions: await this.runtimeCustomActions(tools),
         taskActions: await this.runtimeTaskActions(tools),
         tenantScopedObjects,
@@ -2511,7 +2603,7 @@ ${indent}  if (!item) {
 ${indent}    throw new Error('Object not found');
 ${indent}  }
 
-${indent}  return successResult(item.toPublicJSON(PUBLIC_JSON_OPTIONS));
+${indent}  return successResult(await serializeGetResult(${JSON.stringify(tool.name)}, item));
 ${indent}}`;
 
             case 'create':
@@ -2621,10 +2713,13 @@ ${indent}    persistence: { type: process.env.DATABASE_TYPE || 'sqlite', url: pr
 ${indent}    ai: aiConfig
 ${indent}  });
 
+${indent}  const classInfo = ${metadata.isStatic} ? ObjectRegistry.getClass(${JSON.stringify(registeredName)}) : undefined;
+${indent}  const staticTarget = [classInfo?.constructor, classInfo?.collectionConstructor]
+${indent}    .find((receiver) => typeof receiver?.[${JSON.stringify(methodName)}] === 'function');
 ${indent}  const target = ${JSON.stringify(metadata.scope)} === 'item'
 ${indent}    ? await collection.get(id)
 ${indent}    : ${metadata.isStatic}
-${indent}      ? ObjectRegistry.getClass(${JSON.stringify(registeredName)})?.constructor
+${indent}      ? staticTarget
 ${indent}      : collection;
 ${indent}  if (!target) {
 ${indent}    throw new Error(${JSON.stringify(
@@ -2672,6 +2767,7 @@ ${indent}}`;
     const switchCases = await this.generateToolSwitchCases('        ', tools);
     const stiTargets = this.runtimeStiTargets(tools);
     const toolTargets = this.runtimeToolTargets(tools);
+    const getSerializers = this.runtimeGetSerializers(tools);
     const tenantScopedSet = Array.from(
       new Set(tenantScopedObjects.map((n) => n.toLowerCase())),
     );
@@ -2713,7 +2809,21 @@ const PUBLIC_JSON_OPTIONS = {
     .map((permission) => permission.trim())
     .filter(Boolean),
 };
+const GET_SERIALIZERS: Record<string, { importPath: string; exportName: string }> = ${JSON.stringify(getSerializers)};
 const STI_TARGETS: Record<string, Record<string, string>> = ${JSON.stringify(stiTargets)};
+
+async function serializeGetResult(toolName: string, item: any): Promise<any> {
+  const reference = GET_SERIALIZERS[toolName];
+  if (!reference) return item.toPublicJSON(PUBLIC_JSON_OPTIONS);
+  const serializerModule = await import(reference.importPath);
+  const serializer = serializerModule[reference.exportName];
+  if (typeof serializer !== 'function') {
+    throw new Error(
+      \`MCP get serializer '\${reference.exportName}' was not exported by '\${reference.importPath}'\`,
+    );
+  }
+  return toPublicResult(await serializer(item, PUBLIC_JSON_OPTIONS));
+}
 
 /**
  * Mass-assignment guard (#1540): strip framework/server-managed and
@@ -2805,6 +2915,17 @@ function errorResult(structuredContent: any, text: string, _meta?: Record<string
   };
 }
 
+function normalizePublicToolError(error: any): { code: string; message: string } | undefined {
+  if (!error || typeof error !== 'object') return undefined;
+  if (
+    typeof error.code !== 'string' ||
+    !/^[A-Za-z][A-Za-z0-9_.:-]{0,127}$/.test(error.code) ||
+    typeof error.publicMessage !== 'string' ||
+    error.publicMessage.length === 0
+  ) return undefined;
+  return { code: error.code, message: error.publicMessage };
+}
+
 /**
  * Handle tool call request
  */
@@ -2842,10 +2963,11 @@ ${
 
     return result;
   } catch (error) {
-    const errorMessage = error instanceof Error ? error.message : 'Unknown error';
+    const publicError = normalizePublicToolError(error);
+    const errorMessage = publicError?.message ?? (error instanceof Error ? error.message : 'Unknown error');
 
     return errorResult(
-      { error: { message: errorMessage } },
+      { error: publicError ?? { message: errorMessage } },
       \`Error executing tool \${name}: \${errorMessage}\`,
     );
   }

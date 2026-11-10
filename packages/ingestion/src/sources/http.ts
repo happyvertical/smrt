@@ -3,6 +3,7 @@ import {
   boundedBytes,
   deliver,
   keys,
+  presentedFilename,
   record,
   type SourceBinding,
   SourceInputError,
@@ -108,6 +109,7 @@ export function createSourceDeliveryHandler(
           const snapshots = await binding.snapshotReference(reference);
           if (!snapshots.length)
             throw new SourceInputError('unavailable_bytes');
+          // A host snapshot may carry a `filename`; `deliver` cleans it.
           for (const part of snapshots)
             parts.push({
               ...part,
@@ -137,6 +139,11 @@ export function createSourceDeliveryHandler(
           } else {
             if (name !== 'file' || parts.length)
               throw new SourceInputError('invalid');
+            // Keep the original name for labels; it never becomes identity.
+            // `blob` is the name a nameless Blob part gets, not a real one;
+            // it is compared after cleaning, and `deliver` cleans the rest.
+            const presented = presentedFilename(value.name);
+            const original = presented === 'blob' ? undefined : presented;
             parts.push({
               partId: 'file',
               parentPartId: 'capture',
@@ -145,6 +152,7 @@ export function createSourceDeliveryHandler(
                 value.stream(),
                 binding.limits.maxBytes,
               ),
+              ...(original ? { filename: original } : {}),
             });
           }
         }

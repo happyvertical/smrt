@@ -35,12 +35,14 @@
  */
 
 import { createHash } from 'node:crypto';
+import { createLogger, type Logger } from '@happyvertical/logger';
 import {
   canonicalizeDataQuery,
   createDataQueryFingerprint,
   DataQueryValidationError,
   getClassName,
   MAX_DATA_QUERY_OFFSET,
+  normalizeDataQueryFieldValues,
   normalizeDataQueryRequest,
   normalizeDataQueryResult,
   normalizeDataQuerySchema,
@@ -57,6 +59,7 @@ import {
   withTenant,
 } from '@happyvertical/smrt-tenancy';
 import type {
+  DataQueryAllowedValue,
   DataQueryFacetResult,
   DataQueryFieldDescriptor,
   DataQueryFilter,
@@ -124,6 +127,8 @@ export interface CreateSmrtCollectionDataSurfaceOptions {
   label?: string;
   description?: string;
   metadata?: NonNullable<DataSurfaceDefinition['metadata']>;
+  /** Host-supplied discovery size hint; never computed by querying. */
+  rowCountHint?: DataSurfaceDefinition['rowCountHint'];
   /** Row identity field. Defaults to `id`. */
   identityField?: string;
   /** Extra field ids to exclude beyond the standard field-policy exclusions. */
@@ -171,6 +176,14 @@ export interface CreateSmrtCollectionDataSurfaceOptions {
         | Promise<SmrtCollectionQueryScope | undefined>);
   /** Trusted policy override; defaults to the registry-derived schema. */
   schema?: DataSurfaceSchema;
+  /**
+   * Enforce field values derived from scanner-declared enums (#4381). By
+   * default they are advisory (`valuesEnforced: false`): the ORM does not
+   * validate enums on save, so stored rows may hold other values and filters
+   * on them keep working. Set `true` once the stored data is known to match.
+   * Ignored with a `schema` override, which declares its own `values`.
+   */
+  enforceDerivedValues?: boolean;
 }
 
 const DEFAULT_PAGE_LIMIT = 50;
@@ -253,6 +266,40 @@ export const ID_FIELD_FILTER_OPERATORS: DataQueryFilterOperator[] = [
   'notIn',
 ];
 
+/** Null tests (#4448), declared only on a field whose column can hold null. */
+export const NULL_TEST_FILTER_OPERATORS: DataQueryFilterOperator[] = [
+  'isNotNull',
+  'isNull',
+];
+
+function isNullTest(operator: DataQueryFilterOperator): boolean {
+  return operator === 'isNull' || operator === 'isNotNull';
+}
+
+/**
+ * The declared field ids of `qualifiedName` whose column can hold null (#4448),
+ * read from the manifest schema: a column that is neither `notNull` nor the
+ * primary key. A field with no schema column is left out, so a null test is
+ * never advertised on storage nobody has described.
+ */
+export function nullableColumnFieldIds(
+  qualifiedName: string,
+  fieldIds: Iterable<string>,
+): Set<string> {
+  const schema =
+    ObjectRegistry.getSchema(qualifiedName) ??
+    ObjectRegistry.getSchema(getClassName(qualifiedName));
+  const columns = schema?.columns ?? {};
+  const ids = new Set<string>();
+  for (const id of fieldIds) {
+    const column = columns[toSnakeCase(id)] ?? columns[id];
+    if (column && column.notNull !== true && column.primaryKey !== true) {
+      ids.add(id);
+    }
+  }
+  return ids;
+}
+
 /** Canonical UUID text: the only value a native UUID column can equal. */
 const UUID_VALUE =
   /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
@@ -293,6 +340,8 @@ export function assertIdFieldConditions(
   if (!filter || idFields.size === 0) return;
   if (filter.kind === 'condition') {
     if (!idFields.has(filter.field)) return;
+    // A null test compares no id value, and IS NULL is valid on any UUID column.
+    if (isNullTest(filter.operator)) return;
     if (!ID_FIELD_FILTER_OPERATORS.includes(filter.operator)) {
       queryFail(
         `Data query operator ${filter.operator} is not allowed for ${filter.field}: it holds ids, which support only ${ID_FIELD_FILTER_OPERATORS.join(', ')}`,
@@ -406,6 +455,59 @@ function isPolicyExcludedField(
 }
 
 /**
+ * Allowed values for an enum- or literal-union-typed field (#4381), taken
+ * from the scanner-declared `enum` (top level, or mirrored under `_meta`) —
+ * never from row data.
+ *
+ * A declaration the core bounds reject (too many values, an over-long or
+ * unsafe member, a type mismatch) yields no values at all: a partial list
+ * would read as a complete closed set and, when enforced, reject stored
+ * values the type does declare. When the host opted into enforcement that
+ * is a configuration error and throws; otherwise the field stays usable
+ * without values and the reason is reported as a logger warning (once per
+ * memoized schema build).
+ */
+let schemaLogger: Logger | undefined;
+
+/** Shared `@happyvertical/logger` sink for schema-derivation diagnostics. */
+function dataSurfaceLog(): Logger {
+  schemaLogger ??= createLogger({ level: 'info' });
+  return schemaLogger;
+}
+
+function declaredEnumValues(
+  qualifiedName: string,
+  name: string,
+  field: RegistryFieldLike,
+  type: DataQueryFieldDescriptor['type'],
+  enforce: boolean,
+): DataQueryAllowedValue[] | undefined {
+  const declared = field.enum ?? meta(field).enum;
+  if (!Array.isArray(declared) || declared.length === 0) return undefined;
+  try {
+    return normalizeDataQueryFieldValues(
+      declared.map((value) => ({ value })),
+      type,
+      name,
+    );
+  } catch (error) {
+    if (!(error instanceof DataQueryValidationError)) throw error;
+    const reason = `${qualifiedName}.${name} enum cannot become data-query values: ${error.message}`;
+    if (enforce) {
+      throw new Error(`${reason} (enforceDerivedValues is set)`);
+    }
+    dataSurfaceLog().warn(
+      `${reason}; the field is advertised without values.`,
+      {
+        qualifiedName,
+        field: name,
+      },
+    );
+    return undefined;
+  }
+}
+
+/**
  * The set of registry field ids a host-supplied `options.schema` override
  * must never be able to re-advertise: restricted (`sensitive`/
  * `readPermission`), transient, the configured tenant field, `_`-prefixed
@@ -453,6 +555,7 @@ async function buildQuerySchemaForClass(
     defaultSort?: DataQuerySort[];
     cursorPagination: boolean;
     facets: boolean;
+    enforceDerivedValues: boolean;
   },
 ): Promise<DataQuerySchema> {
   const registered = (await ObjectRegistry.getAllFields(qualifiedName)) as Map<
@@ -461,15 +564,33 @@ async function buildQuerySchemaForClass(
   >;
   const tenantField = getTenantScopedConfig(qualifiedName)?.field ?? 'tenantId';
   const idFields = uuidColumnFieldIds(qualifiedName, registered.keys());
+  const nullableFields = nullableColumnFieldIds(
+    qualifiedName,
+    registered.keys(),
+  );
   const fields: DataQueryFieldDescriptor[] = [];
   for (const [name, field] of registered) {
     if (isPolicyExcludedField(name, field, tenantField, options.exclude))
       continue;
     const type = queryFieldType(field.type);
     if (!type) continue;
-    const filterOperators = idFields.has(name)
+    const valueOperators = idFields.has(name)
       ? [...ID_FIELD_FILTER_OPERATORS]
       : filterOperatorsFor(type);
+    // JSON stays unfilterable: no value operator, so no null test either.
+    const filterOperators =
+      valueOperators && nullableFields.has(name)
+        ? [...valueOperators, ...NULL_TEST_FILTER_OPERATORS]
+        : valueOperators;
+    const values = idFields.has(name)
+      ? undefined
+      : declaredEnumValues(
+          qualifiedName,
+          name,
+          field,
+          type,
+          options.enforceDerivedValues,
+        );
     fields.push({
       id: name,
       type,
@@ -479,6 +600,12 @@ async function buildQuerySchemaForClass(
         name !== options.identityField &&
         (type === 'string' || type === 'boolean' || type === 'number'),
       ...(filterOperators ? { filterOperators } : {}),
+      ...(values
+        ? {
+            values,
+            ...(options.enforceDerivedValues ? {} : { valuesEnforced: false }),
+          }
+        : {}),
     });
   }
 
@@ -528,6 +655,8 @@ export function buildDataQuerySchemaForClass(
     defaultSort?: DataQuerySort[];
     cursorPagination?: boolean;
     facets?: boolean;
+    /** See `CreateSmrtCollectionDataSurfaceOptions.enforceDerivedValues`. */
+    enforceDerivedValues?: boolean;
   } = {},
 ): Promise<DataQuerySchema> {
   const identityField = options.identityField ?? 'id';
@@ -538,6 +667,7 @@ export function buildDataQuerySchemaForClass(
   const maxResultBytes = options.maxResultBytes ?? DEFAULT_MAX_RESULT_BYTES;
   const cursorPagination = options.cursorPagination ?? true;
   const facets = options.facets ?? true;
+  const enforceDerivedValues = options.enforceDerivedValues === true;
   const canonicalDefaultSort = (options.defaultSort ?? [])
     .map((term) => `${term.field}:${term.direction}`)
     .join(',');
@@ -551,6 +681,7 @@ export function buildDataQuerySchemaForClass(
     canonicalDefaultSort,
     cursorPagination,
     facets,
+    enforceDerivedValues,
   ].join('::');
   const cached = schemaCache.get(key);
   if (cached) return cached;
@@ -563,6 +694,7 @@ export function buildDataQuerySchemaForClass(
     defaultSort: options.defaultSort,
     cursorPagination,
     facets,
+    enforceDerivedValues,
   }).catch((cause) => {
     schemaCache.delete(key);
     throw cause;
@@ -656,6 +788,10 @@ function inverseOperator(
       return 'notIn';
     case 'notIn':
       return 'in';
+    case 'isNull':
+      return 'isNotNull';
+    case 'isNotNull':
+      return 'isNull';
     case 'like':
       return queryFail(
         'Data queries cannot negate a like predicate',
@@ -675,6 +811,11 @@ function conditionToDnf(
   const single = (whereKey: string, whereValue: unknown): WhereDnf => [
     [{ [whereKey]: whereValue }],
   ];
+
+  // Null tests (#4448): `{ field: null }` is IS NULL and `{ 'field !=': null }`
+  // IS NOT NULL, so each is the exact complement of the other under negation.
+  if (operator === 'isNull') return single(field, null);
+  if (operator === 'isNotNull') return single(key('!='), null);
 
   if (operator === 'in') {
     const values = (value as unknown[]) ?? [];
@@ -706,7 +847,7 @@ function conditionToDnf(
   }
 
   const suffixes: Record<
-    Exclude<DataQueryFilterOperator, 'in' | 'notIn'>,
+    Exclude<DataQueryFilterOperator, 'in' | 'notIn' | 'isNull' | 'isNotNull'>,
     string
   > = {
     eq: '',
@@ -1523,6 +1664,7 @@ export async function createSmrtCollectionDataSurfaceDefinition(
         (typeof options.collection === 'function'
           ? true
           : typeof options.collection.facets === 'function'),
+      enforceDerivedValues: options.enforceDerivedValues,
     })) as DataSurfaceSchema;
   }
   const executableSchema = redactedQuerySchema(schema);
@@ -1544,6 +1686,9 @@ export async function createSmrtCollectionDataSurfaceDefinition(
     description:
       options.description ??
       'Bounded, tenant-safe rows, counts, facets, and continuations.',
+    ...(options.rowCountHint !== undefined
+      ? { rowCountHint: options.rowCountHint }
+      : {}),
     metadata: {
       domain: 'smrt-collection',
       adapter: 'SmrtCollection',

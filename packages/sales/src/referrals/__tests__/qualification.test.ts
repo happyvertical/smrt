@@ -131,6 +131,98 @@ describe('ReferralQualificationService', () => {
     });
   }
 
+  async function amendToWaterfall() {
+    const amendment = await plans.createAmendment('referral-standard', {
+      components: [],
+      steps: [
+        {
+          key: 'member',
+          base: 'gross',
+          amount: { kind: 'percent', rate: 0.1 },
+          recipient: { kind: 'member' },
+        },
+      ],
+      remainderSink: { kind: 'treasury' },
+    });
+    amendment.activate();
+    await amendment.save();
+    return amendment;
+  }
+
+  it.each([
+    0, 2,
+  ])('refuses v2 plans for pin %s without freezing zero commission, then permits compatible retry', async (pin) => {
+    await makeActivePlan();
+    await amendToWaterfall();
+    await makeActiveAgreement({ commissionPlanVersion: pin });
+    const referral = await makeAttributedReferral();
+    for (let attempt = 0; attempt < 2; attempt++) {
+      const result = await service.qualify({
+        referralId: referral.id ?? '',
+        now: NOW,
+      });
+      expect(result).toMatchObject({
+        qualified: false,
+        created: false,
+        snapshot: null,
+        reason: 'unsupported_plan_engine',
+      });
+      expect((await referrals.get({ id: referral.id }))?.status).toBe(
+        'attributed',
+      );
+      expect(
+        await snapshots.list({ where: { referralId: referral.id } }),
+      ).toHaveLength(0);
+    }
+    const compatible = await agreements.createAmendment(referrerId, programId, {
+      commissionPlanVersion: 1,
+    });
+    compatible.executionId = 'test-agreement-execution';
+    compatible.executedAgreementId = 'test-executed-agreement';
+    compatible.activate();
+    await compatible.save();
+    const result = await service.qualify({
+      referralId: referral.id ?? '',
+      now: NOW,
+    });
+    expect(result.qualified).toBe(true);
+    expect(result.snapshot?.getComponents()).toEqual(COMPONENTS);
+  });
+
+  it('refuses v2 requalification while preserving the prior snapshot, history and qualification replay', async () => {
+    await makeActivePlan();
+    await makeActiveAgreement();
+    const referral = await makeAttributedReferral();
+    const original = await service.qualify({
+      referralId: referral.id ?? '',
+      now: NOW,
+    });
+    const prior = (await referrals.get({ id: referral.id }))?.toJSON();
+    await amendToWaterfall();
+    const result = await service.requalify({
+      referralId: referral.id ?? '',
+      reason: 'new terms',
+      now: NOW,
+    });
+    expect(result).toMatchObject({
+      requalified: false,
+      snapshot: null,
+      previousSnapshotId: original.snapshot?.id,
+      reason: 'unsupported_plan_engine',
+    });
+    expect((await referrals.get({ id: referral.id }))?.toJSON()).toEqual(prior);
+    expect(
+      await snapshots.list({ where: { referralId: referral.id } }),
+    ).toHaveLength(1);
+    const replay = await service.qualify({
+      referralId: referral.id ?? '',
+      now: NOW,
+    });
+    expect(replay.created).toBe(false);
+    expect(replay.snapshot?.id).toBe(original.snapshot?.id);
+    expect(replay.snapshot?.getComponents()).toEqual(COMPONENTS);
+  });
+
   it('refuses referrals that are not attributed', async () => {
     const pending = await referrals.create({
       referrerId,

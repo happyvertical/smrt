@@ -41,6 +41,7 @@ export type {
 // Cross-package identity & tenancy data contracts (zero-runtime structural
 // interfaces; runtime classes live in smrt-users / smrt-profiles)
 export type {
+  DataQueryAllowedValue,
   DataQueryCondition,
   DataQueryConsistency,
   DataQueryConsistencyMode,
@@ -53,6 +54,8 @@ export type {
   DataQueryFilter,
   DataQueryFilterOperator,
   DataQueryFreshness,
+  DataQueryNullCondition,
+  DataQueryNullOperator,
   DataQueryOffsetPage,
   DataQueryPage,
   DataQueryRequest,
@@ -63,6 +66,8 @@ export type {
   DataQuerySort,
   DataQuerySortDirection,
   DataQueryTotal,
+  DataQueryValueCondition,
+  DataQueryValueOperator,
 } from './data-query.js';
 export type {
   DataSurfaceActionDescriptor,
@@ -144,6 +149,7 @@ export type {
   RecipeDemoMode,
   RecipeDemoSeed,
   RecipeExportRef,
+  RecipeExposure,
   RecipeExposureNarrowing,
   RecipeFieldOptions,
   RecipeFieldVisibility,

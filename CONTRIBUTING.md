@@ -1,51 +1,98 @@
 # Contributing to SMRT
 
-Read [AGENTS.md](AGENTS.md), the affected package's AGENTS, and
-[WORKFLOW.md](WORKFLOW.md) before starting. The shared workflow owns tracking,
-claims, review, and shipping; this guide covers repository setup.
+Thanks for trying the framework. Feedback is the most useful contribution right
+now: if something on [s-m-r-t.dev](https://s-m-r-t.dev) confused you, broke,
+or took longer than it should have, tell us.
+
+## Ways to help
+
+- **Questions, first impressions, "I tried X and…"**: start a
+  [discussion](https://github.com/happyvertical/smrt/discussions).
+- **Bugs**: open an [issue](https://github.com/happyvertical/smrt/issues/new/choose)
+  with a minimal reproduction.
+- **Docs and examples**: small fixes are welcome as pull requests directly.
+- **Code**: look for [`good first issue`](https://github.com/happyvertical/smrt/labels/good%20first%20issue)
+  and [`help wanted`](https://github.com/happyvertical/smrt/labels/help%20wanted).
+  For anything bigger than a focused bug fix, open or comment on an issue
+  first so we can agree on the approach before you spend time on it.
+
+Please discuss before opening a PR that changes core decorators, the scanner or
+schema generation, adds or upgrades a dependency, adds a package, or changes
+anything under `.github/`. Fork PRs that touch `.github/` cannot pass the
+approval gate; a maintainer re-lands them from a branch in this repository.
 
 ## Setup
 
 Use Node >=26.0.0 and pnpm >=11.13.1, as specified by `package.json`.
-The floor excludes 11.13.0 deliberately: pnpm's own `BROKEN_RELEASES` list
-rejects that version, so every command in this repository fails closed on it.
-Git and GitHub CLI are needed for contribution management.
+(pnpm 11.13.0 is excluded on purpose: pnpm itself marks it broken.)
 
 ```bash
-git clone https://github.com/happyvertical/smrt.git
+git clone https://github.com/<you>/smrt.git
 cd smrt
 pnpm install
 pnpm build
 ```
 
-Workspace packages consume built artifacts. Build before running checks in a
-fresh checkout. Run the narrow package commands documented in its AGENTS,
-then the applicable root checks listed in root AGENTS.
+Packages consume each other's built output, so build once before running any
+checks in a fresh clone.
 
-## Changes and validation
+## Making a change
 
-- Find or create an issue with a reproduction or acceptance criteria. Keep
-  changes focused; use the shared workflow's patch-train rules when applicable.
-- Use TypeScript, ESM, and the repository Biome configuration. Run `pnpm format`
-  to format and `pnpm format-check` to verify. Public APIs need accurate types.
-- Follow [TESTING_STANDARD.md](TESTING_STANDARD.md), including real-resource
-  tests, bug regressions, README example coverage, full touched-package suites,
-  and maintained browser harnesses where applicable.
-- Update user-facing API guidance in package README files and non-obvious
-  maintainer constraints in AGENTS or its linked module references. CLAUDE files
-  are compatibility adapters, not an editing destination.
-- Preserve distinct invariants; remove duplicate explanations and obsolete
-  history. Prefer a source/test pointer to restating implementation details.
-- Use conventional commits such as `fix(core): preserve tenant scope`.
-  Reference issues with `Refs #N` in commits; declare intended closing issues
-  in the PR body. Do not manually create changesets; release automation does it.
+- Work on a branch in your fork. Keep each PR to one concern.
+- Run the tests for the package you touched, by its package name:
+  `pnpm --filter @happyvertical/smrt-core test`. Directory names under
+  `packages/` drop the `smrt-` prefix, and pnpm silently runs nothing for a
+  name that matches no package.
+- Add a regression test for a bug fix and tests for new behavior.
+  [TESTING_STANDARD.md](TESTING_STANDARD.md) has the details.
+- Run `pnpm format`, then `pnpm lint`, before pushing.
+- Use [conventional commits](https://www.conventionalcommits.org/), for example
+  `fix(core): preserve tenant scope`. Keep the PR title under 100 characters in
+  the same form; it becomes the squash commit.
+- Do not add `.changeset/` files. Release automation writes them.
+- Update the package README when you change user-facing behavior.
 
-## Review and help
+The package's `AGENTS.md` lists its non-obvious invariants and any extra checks.
 
-Prepare a ready-for-review PR with the concrete behavior change, validation,
-and any remaining limitations. Address actionable feedback through the shared
-workflow. Do not merge without authorization.
+## Using an AI coding agent
 
-Use [issues](https://github.com/happyvertical/smrt/issues) for bugs and proposals,
-and [discussions](https://github.com/happyvertical/smrt/discussions) for questions.
-Be constructive and respectful. Contributions are licensed under MIT.
+You are welcome to use one. This repository is built to be read by agents:
+point yours at the [`smrt-contribute`](.agents/skills/smrt-contribute/SKILL.md)
+skill (the same steps as this guide, with the traps agents hit from a fork),
+[AGENTS.md](AGENTS.md) and the affected package's `AGENTS.md`.
+Two rules apply:
+
+- You submit the PR, so you need to have read and understood every line of it.
+- AGENTS.md and [WORKFLOW.md](WORKFLOW.md) also describe the maintainers'
+  internal agent lifecycle: claim labels, dispatch labels, patch trains and
+  review cycles. Contributors don't need any of that; skip it, and do not try
+  to load the `implement` or `claim-issue` skills they name.
+
+## What happens to your pull request
+
+1. Open the PR against `main` and describe the behavior change and how you
+   tested it.
+2. A maintainer approves the **Fork PR Validation** run. It runs the full test
+   suite and the PostgreSQL suites against your branch in a sandbox with no
+   secrets. If your PR changes `.github/`, the **Fork Workflow Change Guard**
+   check fails and a maintainer re-lands the change from a branch in this
+   repository instead, keeping your commits and authorship.
+3. A maintainer reviews the change. Until it is approved, the `Required CI` and
+   `postgres-required` checks fail with an "awaiting maintainer approval"
+   message. That is expected.
+4. Once the sandbox run passes, a maintainer approves the review on your latest
+   commit and applies `ci: fork-approved`; the required checks then re-run and
+   pass. Approval covers that exact commit: pushing new commits removes the
+   label, and the new head needs another review and approval.
+5. The maintainer adds the PR to the merge queue, which runs the full
+   validation once more before merging.
+
+We aim to give every new issue and pull request a first response within a few
+business days.
+
+## Conduct, security and license
+
+Participation is covered by the [Code of Conduct](CODE_OF_CONDUCT.md). Report
+security vulnerabilities privately through
+[GitHub security advisories](https://github.com/happyvertical/smrt/security/advisories/new),
+never in a public issue. Contributions are licensed under the [MIT License](LICENSE).

@@ -19,8 +19,8 @@
  * All three live in and are enforced by this package (`@happyvertical/smrt-jobs`).
  * Other packages apply the marker (`smrt-reports`, `smrt-support`,
  * `smrt-fields`), but the only thing that reads it is `TaskRunner`'s dispatch in
- * `runner.ts`. `@happyvertical/smrt-agents` neither imports nor honours it, and
- * does not depend on this package. Marking a method does **not** make it
+ * `runner.ts`. `@happyvertical/smrt-agents` neither imports nor honours it (it depends on
+ * this package only for the cron parser). Marking a method does **not** make it
  * background-eligible anywhere outside the jobs runner.
  */
 

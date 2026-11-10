@@ -6,9 +6,18 @@
  * explicit package list, and `smrtPlugin({...})` with the SvelteKit path
  * options. `smrtConsumer` and `smrtPlugin` stay public and unchanged.
  */
-import type { Plugin, UserConfig } from 'vite';
+
 import { smrtConsumer } from '../consumer-plugin/index.js';
-import { type SmrtPluginOptions, smrtPlugin } from '../vite-plugin/index.js';
+import {
+  type HostToolNameDeclaration,
+  type SmrtPluginOptions,
+  smrtPlugin,
+} from '../vite-plugin/index.js';
+import type {
+  SmrtDecoratorConfig,
+  SmrtUserConfig,
+  SmrtVitePlugin,
+} from '../vite-plugin/plugin-contract.js';
 import { resolveCookbookHostedObjects } from './cookbook-exposure.js';
 
 export interface SmrtPresetOptions {
@@ -51,6 +60,14 @@ export interface SmrtPresetOptions {
    * under `oxc.decorator` itself are never overwritten.
    */
   decorators?: boolean;
+  /**
+   * Host-declared agent tool names (workflow, bespoke WebMCP and MCP tools),
+   * forwarded unchanged to `smrtPlugin({ hostToolNames })`. A name two
+   * different declarations claim, or that shadows a generated model tool,
+   * fails the build; one operation (`declaredBy`) on several surfaces is
+   * allowed. Omit to skip the check.
+   */
+  hostToolNames?: readonly HostToolNameDeclaration[];
 }
 
 export const SMRT_PRESET_DEFAULTS = {
@@ -106,22 +123,20 @@ async function resolvePackages(
   return validatePackages(declared, 'smrt.config `consumer.packages`');
 }
 
-function decoratorPlugin(): Plugin {
+function decoratorPlugin(): SmrtVitePlugin {
   return {
     name: 'smrt:decorators',
     // Vite merges a hook's result over the user config, so fill only the
     // values the app has not set itself.
-    config(user: UserConfig) {
-      const decorator = (
-        user as { oxc?: { decorator?: Record<string, unknown> } }
-      ).oxc?.decorator;
-      const fill: Record<string, boolean> = {};
+    config(user: SmrtUserConfig) {
+      const decorator = user.oxc ? user.oxc.decorator : undefined;
+      const fill: SmrtDecoratorConfig = {};
       if (decorator?.legacy === undefined) fill.legacy = true;
       if (decorator?.emitDecoratorMetadata === undefined) {
         fill.emitDecoratorMetadata = true;
       }
       return Object.keys(fill).length
-        ? ({ oxc: { decorator: fill } } as UserConfig)
+        ? { oxc: { decorator: fill } }
         : undefined;
     },
   };
@@ -131,17 +146,40 @@ function decoratorPlugin(): Plugin {
  * Packages SMRT's SvelteKit entries share with the app by identity. SvelteKit
  * recognizes `redirect()`/`fail()` results by class, so a server entry such as
  * `@happyvertical/smrt-app-runtime/sveltekit` must import the app's own copy.
- * A registry install already resolves that peer from the app; a linked or
- * workspace package resolves it from its own directory instead, and its
- * redirects then surface as 500s. Deduping makes both layouts identical.
+ * Deduping selects the app peer for linked/workspace packages. The runtime
+ * must also enter the SSR bundle: adapter-node bundles Kit itself, so leaving
+ * runtime external would import a second Kit class through Node even when
+ * both resolve to the same installed version.
  */
 export const SMRT_SHARED_RUNTIME_PACKAGES = ['@sveltejs/kit'] as const;
 
-function sharedRuntimePlugin(): Plugin {
+function sharedRuntimePlugin(): SmrtVitePlugin {
+  let isBuild = false;
   return {
     name: 'smrt:shared-runtime',
-    config() {
-      return { resolve: { dedupe: [...SMRT_SHARED_RUNTIME_PACKAGES] } };
+    enforce: 'pre',
+    resolveId(id, _importer, options) {
+      // ssr.external on the package root would externalize every subpath.
+      // Keep only this exact entry external, preserving native dependencies.
+      if (isBuild && options.ssr && id === '@happyvertical/smrt-app-runtime') {
+        return { id, external: true };
+      }
+    },
+    config(_user, { command }) {
+      // Only adapter builds need this split. Dev import analysis ignores a
+      // resolver's external flag, so it must retain normal externalization.
+      isBuild = command === 'build';
+      return {
+        resolve: { dedupe: [...SMRT_SHARED_RUNTIME_PACKAGES] },
+        ...(isBuild
+          ? {
+              ssr: {
+                noExternal: ['@happyvertical/smrt-app-runtime'],
+                external: ['@happyvertical/smrt-app-runtime/sveltekit-runtime'],
+              },
+            }
+          : {}),
+      };
     },
   };
 }
@@ -151,7 +189,9 @@ function sharedRuntimePlugin(): Plugin {
  * generation in one entry. Returns a promise because the package list is read
  * from `smrt.config.ts`; Vite accepts promised plugins.
  */
-export async function smrt(options: SmrtPresetOptions = {}): Promise<Plugin[]> {
+export async function smrt(
+  options: SmrtPresetOptions = {},
+): Promise<SmrtVitePlugin<unknown>[]> {
   const D = SMRT_PRESET_DEFAULTS;
   const objectsDir = options.objectsDir ?? D.objectsDir;
   const typesDir = options.typesDir ?? D.typesDir;
@@ -167,7 +207,7 @@ export async function smrt(options: SmrtPresetOptions = {}): Promise<Plugin[]> {
     options.projectRoot ?? process.cwd(),
   );
 
-  const plugins: Plugin[] = [];
+  const plugins: SmrtVitePlugin<unknown>[] = [];
   if (options.decorators !== false) plugins.push(decoratorPlugin());
   plugins.push(sharedRuntimePlugin());
   // smrtConsumer must precede smrtPlugin, as in the template's hand-written form.
@@ -213,6 +253,8 @@ export async function smrt(options: SmrtPresetOptions = {}): Promise<Plugin[]> {
       configFileName,
     },
   };
+  if (options.hostToolNames)
+    pluginOptions.hostToolNames = options.hostToolNames;
   plugins.push(smrtPlugin(pluginOptions));
   return plugins;
 }

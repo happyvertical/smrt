@@ -54,6 +54,9 @@ import type {
 } from '@happyvertical/smrt-types';
 import { TOOLS } from '../tool-catalog.js';
 import { checkMcpToolDocumentation } from './mcp-docs.js';
+import { checkOkfBundleFreshness } from './okf-bundle.js';
+
+export * from './okf-bundle.js';
 
 export type KnowledgePackageKind = 'smrt' | 'sdk' | 'workspace';
 export type KnowledgeIssueSeverity = 'info' | 'error' | 'warning';
@@ -854,11 +857,15 @@ export async function checkKnowledgeFreshnessFromIndex(
       });
     }
 
+    // Like `dist`, a `files` entry the package's own .gitignore names is a
+    // build output, absent on a clean checkout until the package is built.
+    const ignoredOutputs = gitignoredTopLevelEntries(pkg.directory);
     for (const entry of pkg.files) {
       if (
         entry === 'dist' ||
         entry.startsWith('dist/') ||
-        entry.includes('*')
+        entry.includes('*') ||
+        ignoredOutputs.has(entry.replace(/^\.?\/|\/$/g, ''))
       ) {
         continue;
       }
@@ -920,6 +927,12 @@ export async function checkKnowledgeFreshnessFromIndex(
 
   issues.push(...findAgentSurfaceDriftIssues(authoredPackages));
   issues.push(...findKnowledgeGraphIssues(index.rootDir));
+  // Exported consumer bundle (#4689): age plus drift against node_modules.
+  issues.push(
+    ...checkOkfBundleFreshness(index.rootDir, {
+      installRoots: listConsumerWorkspaceInstallRoots(index.rootDir),
+    }),
+  );
   issues.push(...findStalePatternIssues(index.rootDir, changedFiles));
   issues.push(
     ...findNumericPrecisionIssues(index, authoredPackages, changedFiles),
@@ -2084,6 +2097,27 @@ function globToRegExp(glob: string): RegExp {
   return new RegExp(`^${source}$`);
 }
 
+/**
+ * Directories whose `node_modules/@happyvertical` make up a consumer's
+ * installed set: `rootDir` alone, or for a pnpm workspace root (it has
+ * `pnpm-workspace.yaml`) the root followed by every member package directory.
+ * pnpm installs per member, so the root's own `node_modules` holds none of them.
+ *
+ * The smrt repository itself (root package `@happyvertical/smrt`) is not a
+ * consumer: it resolves from `rootDir` only, as it always has.
+ */
+export function listConsumerWorkspaceInstallRoots(rootDir: string): string[] {
+  if (!existsSync(join(rootDir, 'pnpm-workspace.yaml'))) return [rootDir];
+  if (
+    objectRecord(readJson(join(rootDir, 'package.json'))).name ===
+    '@happyvertical/smrt'
+  ) {
+    return [rootDir];
+  }
+  const { dirs } = discoverProjectPackageDirs(rootDir);
+  return [rootDir, ...dirs.filter((dir) => resolve(dir) !== resolve(rootDir))];
+}
+
 function discoverProjectPackageDirs(rootDir: string): {
   globs: string[];
   globSource: WorkspaceGlobSource;
@@ -2338,14 +2372,57 @@ function readKnowledgePackage(
   };
 }
 
+/**
+ * Artifact locations a package declares through its own export map: a direct
+ * `./smrt-knowledge.json` target, and the directory of its `./manifest.json`
+ * target (the Vite plugin writes both artifacts beside each other in the
+ * library `outDir`). A package that builds its library into `dist/lib` and
+ * maps `"./manifest.json": "./dist/lib/manifest.json"` (#2923) is otherwise
+ * invisible to the conventional probes below, and the index silently falls
+ * back to the scanner view — which a turbo cache replay (`dist/**` restored,
+ * `.smrt/` not) turns into a gate that depends on cache state.
+ */
+function exportedArtifactCandidates(directory: string): {
+  knowledge: string[];
+  manifest: string[];
+} {
+  const exportsMap = objectRecord(
+    objectRecord(readJson(join(directory, 'package.json'))).exports,
+  );
+  const target = (subpath: string): string | undefined => {
+    const entry = exportsMap[subpath];
+    const value =
+      typeof entry === 'string'
+        ? entry
+        : ['smrt', 'node', 'import', 'default']
+            .map((condition) => objectRecord(entry)[condition])
+            .find((candidate) => typeof candidate === 'string');
+    return typeof value === 'string' && value.startsWith('./')
+      ? join(directory, value)
+      : undefined;
+  };
+  const knowledge = target('./smrt-knowledge.json');
+  const manifest = target('./manifest.json') ?? target('./manifest');
+  return {
+    knowledge: [
+      ...(knowledge ? [knowledge] : []),
+      ...(manifest ? [join(dirname(manifest), 'smrt-knowledge.json')] : []),
+    ],
+    manifest: manifest ? [manifest] : [],
+  };
+}
+
 /** Artifact paths consulted for a package's objects, in precedence order. */
 function objectArtifactCandidates(directory: string): string[] {
+  const exported = exportedArtifactCandidates(directory);
   return [
     join(directory, '.smrt', 'smrt-knowledge.json'),
+    ...exported.knowledge,
     join(directory, 'dist', 'smrt-knowledge.json'),
     join(directory, 'src', 'manifest', 'smrt-knowledge.json'),
     join(directory, 'src', 'manifest', 'manifest.json'),
     join(directory, '.smrt', 'manifest.json'),
+    ...exported.manifest,
     join(directory, 'dist', 'manifest.json'),
   ];
 }
@@ -2547,6 +2624,7 @@ function readDomainKnowledge(
 ): { path: string; content: DomainKnowledgeManifest } | null {
   for (const path of [
     join(directory, '.smrt', 'smrt-knowledge.json'),
+    ...exportedArtifactCandidates(directory).knowledge,
     join(directory, 'dist', 'smrt-knowledge.json'),
     join(directory, 'src', 'manifest', 'smrt-knowledge.json'),
   ]) {
@@ -2574,10 +2652,18 @@ function readManifest(
   for (const path of [
     join(directory, 'src', 'manifest', 'manifest.json'),
     join(directory, '.smrt', 'manifest.json'),
+    ...exportedArtifactCandidates(directory).manifest,
     join(directory, 'dist', 'manifest.json'),
   ]) {
     const content = readJson(path);
-    if (content) return { path, content: objectRecord(content) };
+    // A test run's manifest lists inline test fixtures as if they were the
+    // package's objects (#2760); only build outputs describe a package.
+    if (
+      content &&
+      (content as { artifactPurpose?: unknown }).artifactPurpose !== 'test'
+    ) {
+      return { path, content: objectRecord(content) };
+    }
   }
   return null;
 }
@@ -4582,4 +4668,32 @@ function compactKnowledgePackage(pkg: KnowledgePackage) {
     ),
     mcpToolCount: pkg.mcpTools.length,
   };
+}
+
+/**
+ * Plain top-level names (`app`, `/app`, `app/`) a package .gitignore ignores.
+ * Lines apply in order, so a later `!name` un-ignores `name`, as in git. Other
+ * patterns, `.`/`..`, and dot-names are never treated as build outputs. An
+ * absent or unreadable .gitignore ignores nothing.
+ */
+function gitignoredTopLevelEntries(directory: string): Set<string> {
+  let text: string;
+  try {
+    text = readFileSync(join(directory, '.gitignore'), 'utf8');
+  } catch {
+    return new Set();
+  }
+  const ignored = new Set<string>();
+  for (const rawLine of text.split(/\r?\n/)) {
+    // Git ignores unescaped trailing spaces; leading ones are significant.
+    const line = rawLine.replace(/[ \t]+$/, '');
+    const negated = line.startsWith('!');
+    const name = (negated ? line.slice(1) : line)
+      .replace(/^\//, '')
+      .replace(/\/$/, '');
+    if (!/^\w[\w.-]*$/.test(name)) continue;
+    if (negated) ignored.delete(name);
+    else ignored.add(name);
+  }
+  return ignored;
 }

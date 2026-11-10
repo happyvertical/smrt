@@ -50,7 +50,9 @@ await ingestion.ingest({
   conversions: 35,
   leads: 20,
   source: 'ad-platform',
-  dedupeKey: `${tenantId}:summer-demand-2026:ad-group-42:2026-07-01`,
+  // Unique per tenant: (tenant_id, dedupe_key). A replay by the same owner
+  // returns the original snapshot unchanged.
+  dedupeKey: 'summer-demand-2026:ad-group-42:2026-07-01',
 });
 
 // Channel-scoped evidence is accepted only when the channel belongs to the

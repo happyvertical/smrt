@@ -57,6 +57,7 @@ import {
   TerminalAuthService,
   type TerminalAuthServiceOptions,
 } from '../services/TerminalAuthService.js';
+import type { SessionLocals } from './types.js';
 
 export {
   type AppResultContract,
@@ -114,6 +115,12 @@ export {
   type MobileRequestHandler,
   resolveMobileUploadDedupKey,
 } from './mobile-handlers.js';
+export {
+  type CreatePasskeyCredentialHandlersOptions,
+  createPasskeyCredentialHandlers,
+  type PasskeyCredentialHandlers,
+  type PasskeyRequestEvent,
+} from './passkey-handlers.js';
 export {
   type CreatePasswordCredentialHandlersOptions,
   createPasswordCredentialHandlers,
@@ -176,11 +183,14 @@ type HandleInput = {
       set: (
         name: string,
         value: string,
-        options?: Record<string, unknown>,
+        options: Record<string, unknown> & { path: string },
       ) => void;
-      delete: (name: string, options?: Record<string, unknown>) => void;
+      delete: (
+        name: string,
+        options: Record<string, unknown> & { path: string },
+      ) => void;
     };
-    locals: Record<string, unknown>;
+    locals: Partial<SessionLocals>;
     url: { pathname: string; protocol?: string };
     request: { headers: Headers };
   };
@@ -1271,7 +1281,7 @@ export interface TerminalLoginApproveSuccess {
   userCode: string;
 }
 
-/** Shape returned by the approve action on failure (HTTP 4xx). */
+/** Shape returned by the approve action on failure (HTTP 4xx or 5xx). */
 export interface TerminalLoginApproveFailure {
   status: number;
   error: string;
@@ -1399,16 +1409,15 @@ export function mountTerminalLoginPage(
             data: { status: 429, error: error.message, userCode },
           };
         }
-        const message =
-          error instanceof TerminalAuthError
-            ? error.message
-            : error instanceof Error
-              ? error.message
-              : 'Unable to approve terminal login.';
+        const expected = error instanceof TerminalAuthError;
+        const status = expected ? 400 : 500;
+        const message = expected
+          ? error.message
+          : 'Unable to approve terminal login.';
         return {
           type: 'failure',
-          status: 400,
-          data: { status: 400, error: message, userCode },
+          status,
+          data: { status, error: message, userCode },
         };
       }
     },

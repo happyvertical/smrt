@@ -1,5 +1,321 @@
 # @happyvertical/smrt-mobile-contract
 
+## 0.60.16
+
+No changes in this release.
+
+## 0.60.15
+
+No changes in this release.
+
+## 0.60.14
+
+No changes in this release.
+
+## 0.60.13
+
+No changes in this release.
+
+## 0.60.12
+
+No changes in this release.
+
+## 0.60.11
+
+No changes in this release.
+
+## 0.60.10
+
+No changes in this release.
+
+## 0.60.9
+
+No changes in this release.
+
+## 0.60.8
+
+No changes in this release.
+
+## 0.60.7
+
+No changes in this release.
+
+## 0.60.6
+
+No changes in this release.
+
+## 0.60.5
+
+No changes in this release.
+
+## 0.60.4
+
+No changes in this release.
+
+## 0.60.3
+
+No changes in this release.
+
+## 0.60.2
+
+No changes in this release.
+
+## 0.60.1
+
+No changes in this release.
+
+## 0.60.0
+
+No changes in this release.
+
+## 0.59.1
+
+No changes in this release.
+
+## 0.59.0
+
+No changes in this release.
+
+## 0.58.0
+
+No changes in this release.
+
+## 0.57.52
+
+No changes in this release.
+
+## 0.57.51
+
+No changes in this release.
+
+## 0.57.50
+
+No changes in this release.
+
+## 0.57.49
+
+No changes in this release.
+
+## 0.57.48
+
+No changes in this release.
+
+## 0.57.47
+
+No changes in this release.
+
+## 0.57.46
+
+No changes in this release.
+
+## 0.57.45
+
+No changes in this release.
+
+## 0.57.44
+
+No changes in this release.
+
+## 0.57.43
+
+No changes in this release.
+
+## 0.57.42
+
+No changes in this release.
+
+## 0.57.41
+
+No changes in this release.
+
+## 0.57.40
+
+No changes in this release.
+
+## 0.57.39
+
+No changes in this release.
+
+## 0.57.38
+
+No changes in this release.
+
+## 0.57.37
+
+No changes in this release.
+
+## 0.57.36
+
+No changes in this release.
+
+## 0.57.35
+
+No changes in this release.
+
+## 0.57.34
+
+No changes in this release.
+
+## 0.57.33
+
+No changes in this release.
+
+## 0.57.32
+
+No changes in this release.
+
+## 0.57.31
+
+No changes in this release.
+
+## 0.57.30
+
+No changes in this release.
+
+## 0.57.29
+
+No changes in this release.
+
+## 0.57.28
+
+No changes in this release.
+
+## 0.57.27
+
+No changes in this release.
+
+## 0.57.26
+
+No changes in this release.
+
+## 0.57.25
+
+No changes in this release.
+
+## 0.57.24
+
+No changes in this release.
+
+## 0.57.23
+
+No changes in this release.
+
+## 0.57.22
+
+No changes in this release.
+
+## 0.57.21
+
+No changes in this release.
+
+## 0.57.20
+
+No changes in this release.
+
+## 0.57.19
+
+No changes in this release.
+
+## 0.57.18
+
+No changes in this release.
+
+## 0.57.17
+
+No changes in this release.
+
+## 0.57.16
+
+No changes in this release.
+
+## 0.57.15
+
+No changes in this release.
+
+## 0.57.14
+
+No changes in this release.
+
+## 0.57.13
+
+No changes in this release.
+
+## 0.57.12
+
+No changes in this release.
+
+## 0.57.11
+
+No changes in this release.
+
+## 0.57.10
+
+No changes in this release.
+
+## 0.57.9
+
+No changes in this release.
+
+## 0.57.8
+
+No changes in this release.
+
+## 0.57.7
+
+No changes in this release.
+
+## 0.57.6
+
+No changes in this release.
+
+## 0.57.5
+
+No changes in this release.
+
+## 0.57.4
+
+No changes in this release.
+
+## 0.57.3
+
+No changes in this release.
+
+## 0.57.2
+
+No changes in this release.
+
+## 0.57.1
+
+No changes in this release.
+
+## 0.57.0
+
+No changes in this release.
+
+## 0.56.2
+
+No changes in this release.
+
+## 0.56.1
+
+No changes in this release.
+
+## 0.56.0
+
+No changes in this release.
+
+## 0.55.24
+
+No changes in this release.
+
+## 0.55.23
+
+No changes in this release.
+
+## 0.55.22
+
+No changes in this release.
+
 ## 0.55.21
 
 No changes in this release.

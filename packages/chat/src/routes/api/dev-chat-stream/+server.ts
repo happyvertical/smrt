@@ -12,12 +12,13 @@
  */
 
 import type { AIInterface, AIMessage } from '@happyvertical/ai';
+import { isInferenceUnavailableError } from '@happyvertical/smrt-core/inference-availability';
 import type { RequestHandler } from '@sveltejs/kit';
 import {
   type ChatStreamContext,
   createChatStreamHandler,
 } from '../../../chat-stream.js';
-import { resolveDevAIConfig } from '../dev-ai.js';
+import { devAIClientOptions, resolveDevAIConfig } from '../dev-ai.js';
 
 function nonEmpty(value: unknown): string | undefined {
   return typeof value === 'string' && value.trim().length > 0
@@ -58,14 +59,12 @@ async function resolveAI(): Promise<AIInterface> {
   if (!config) return localStreamAI();
   try {
     const { getAI } = await import('@happyvertical/ai');
-    return (await getAI({
-      type: config.provider,
-      provider: config.provider,
-      apiKey: config.apiKey,
-      baseUrl: config.baseUrl,
-      defaultModel: config.model,
-    } as never)) as AIInterface;
-  } catch {
+    return (await getAI(
+      (await devAIClientOptions(config)) as never,
+    )) as AIInterface;
+  } catch (error) {
+    // AI off (#4757) reaches the handler, which answers a structured 503.
+    if (isInferenceUnavailableError(error)) throw error;
     return localStreamAI();
   }
 }

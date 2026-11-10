@@ -1,0 +1,28 @@
+{
+  "skill": "smrt-catalog",
+  "note": "Trigger eval set. A harness (or a reviewer) runs each prompt in a consumer project that depends on smrt packages and checks whether the skill fires. src/agent-skills.test.ts asserts the description covers every positive signal class.",
+  "positive": [
+    { "prompt": "add a nightly cleanup job", "signal": "jobs" },
+    { "prompt": "retry failed webhook deliveries with backoff", "signal": "jobs" },
+    { "prompt": "send the customer a receipt email", "signal": "email" },
+    { "prompt": "notify the owner when an invoice is overdue", "signal": "email" },
+    { "prompt": "upload the logo to storage", "signal": "storage" },
+    { "prompt": "let users attach PDFs to a ticket", "signal": "storage" },
+    { "prompt": "make this tenant-aware", "signal": "tenancy" },
+    { "prompt": "scope these records per organization", "signal": "tenancy" },
+    { "prompt": "add a price field", "signal": "money" },
+    { "prompt": "store the refund amount and currency", "signal": "money" },
+    { "prompt": "require a manager to approve discounts", "signal": "approvals" },
+    { "prompt": "record who changed each order and when", "signal": "audit" },
+    { "prompt": "generate a PDF invoice", "signal": "documents" }
+  ],
+  "negative": [
+    { "prompt": "rename the Article title label to Headline", "reason": "ordinary change inside an existing @smrt() object" },
+    { "prompt": "add a unit test for Order.total()", "reason": "tests of an existing object" },
+    { "prompt": "validate that Product.slug is lowercase", "reason": "validation inside an existing object" },
+    { "prompt": "fix the off-by-one in the pagination component", "reason": "UI bug, no new plumbing" },
+    { "prompt": "add a description text field to Customer", "reason": "plain field on an existing object" },
+    { "prompt": "explain what the Invoice class does", "reason": "read-only question" },
+    { "prompt": "bump vitest to the latest minor", "reason": "tooling" }
+  ]
+}

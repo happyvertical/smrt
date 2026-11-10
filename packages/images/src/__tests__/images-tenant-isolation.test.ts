@@ -19,7 +19,13 @@
  * `.claude/rules/testing.md`.
  */
 
-import { AssetCollection } from '@happyvertical/smrt-assets';
+import {
+  AssetCollection,
+  withPrivateAssetAccess,
+} from '@happyvertical/smrt-assets';
+import type { SmrtCollection, SmrtObject } from '@happyvertical/smrt-core';
+import { MCPGenerator } from '@happyvertical/smrt-core/generators/mcp';
+import { APIGenerator } from '@happyvertical/smrt-core/generators/rest';
 import { getTestDatabase } from '@happyvertical/smrt-core/testing';
 import {
   disableTenancy,
@@ -94,6 +100,66 @@ describe('ImageCollection tenant isolation (#1407)', () => {
       ).save();
     });
   }
+
+  it('global helpers retain STI isolation and exclude private images', async () => {
+    await seed();
+    await withTenant({ tenantId: 'tenant-1', userId: 'actor' }, async () => {
+      const id = '00000000-0000-4000-8000-000000000777';
+      await withPrivateAssetAccess(
+        {
+          tenantId: 'tenant-1',
+          actorUserId: 'actor',
+          ownerProfileId: 'owner',
+          assetIds: [id],
+        },
+        () =>
+          images.create({
+            id,
+            name: 'private.jpg',
+            accessMode: 'private',
+            ownerProfileId: 'owner',
+          }),
+      );
+      const result = await images.findWithGlobals('tenant-1');
+      expect(result).toHaveLength(4);
+      expect(result.every((image) => image instanceof Image)).toBe(true);
+      expect(result.some((image) => image.id === id)).toBe(false);
+      expect(await images.findGlobal()).toEqual([]);
+      const api = new APIGenerator(
+        {
+          basePath: '/api/v1',
+          authMiddleware: () => async (request) => request,
+        },
+        { db },
+      );
+      api.registerCollection(
+        'images',
+        images as unknown as SmrtCollection<SmrtObject>,
+      );
+      const rest = api.generateHandler();
+      const listed = await rest(new Request('http://local/api/v1/images'));
+      expect(listed.status).toBe(200);
+      expect(await listed.text()).not.toContain('private.jpg');
+      expect(
+        (await rest(new Request(`http://local/api/v1/images/${id}`))).status,
+      ).toBe(404);
+      const mcp = new MCPGenerator(
+        { classNames: ['Image'] },
+        { db, tenantId: 'tenant-1', user: { id: 'actor' } },
+      );
+      const list = await mcp.handleToolCall({
+        method: 'tools/call',
+        params: { name: 'image_list', arguments: {} },
+      });
+      expect(list.isError).not.toBe(true);
+      expect(JSON.stringify(list)).not.toContain('private.jpg');
+      const get = await mcp.handleToolCall({
+        method: 'tools/call',
+        params: { name: 'image_get', arguments: { id } },
+      });
+      expect(get.isError).toBe(true);
+    });
+  });
 
   it('getLandscape() returns only the current tenant landscape images (no throw)', async () => {
     await seed();

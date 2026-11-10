@@ -83,6 +83,36 @@ function permutations<T>(values: T[]): T[][] {
 }
 
 describe('selectApiClientEntries', () => {
+  it('withholds collection methods attached to an abstract item', () => {
+    const item = {
+      ...agreementExecution,
+      decoratorConfig: { abstract: true, api: { include: ['list', 'get'] } },
+    } as SmartObjectDefinition;
+    const collection = {
+      ...agreementExecutionCollection,
+      decoratorConfig: { api: { include: ['browse'] } },
+      methods: {
+        browse: {
+          name: 'browse',
+          async: true,
+          parameters: [],
+          returnType: 'void',
+          isStatic: false,
+          isPublic: true,
+        },
+      },
+    } as SmartObjectDefinition;
+    const entries = selectApiClientEntries({
+      version: '1.0.0',
+      timestamp: 1,
+      objects: {
+        AgreementExecution: item,
+        AgreementExecutionCollection: collection,
+      },
+    });
+    expect(entries.flatMap((entry) => entry.customMethods)).toEqual([]);
+  });
+
   it('renders required typed custom-action parameters as required client options', () => {
     expect(
       renderApiClientCustomMethodParameters(

@@ -32,7 +32,7 @@ import type {
  * `FRAMEWORK_ABSTRACT_BASE_NAMES`, far cheaper than the generalization's
  * new failure surface. Extend this list instead.
  */
-const FRAMEWORK_BASE_CLASSES = new Set([
+export const FRAMEWORK_BASE_CLASSES: ReadonlySet<string> = new Set([
   'SmrtObject',
   'SmrtClass',
   'SmrtCollection',
@@ -388,8 +388,8 @@ export class InheritanceResolver {
    *
    * Iterates from the root base class to the leaf class so that base class
    * fields appear first in the returned array.  If a field name is declared in
-   * both an ancestor and a descendant, the ancestor's definition takes
-   * precedence (first-seen wins), preserving the base-class column layout.
+   * both an ancestor and a descendant, the descendant's definition takes
+   * precedence while preserving the base-class column position.
    *
    * @param chain - Ordered inheritance chain (base → leaf) as returned by
    *   {@link resolveInheritanceChain}.
@@ -398,22 +398,63 @@ export class InheritanceResolver {
    */
   mergeFieldsForSTI(chain: string[]): RawFieldDefinition[] {
     const allFields: RawFieldDefinition[] = [];
-    const seenNames = new Set<string>();
+    const positions = new Map<string, number>();
 
     for (const className of chain) {
       const classDef = this.findClassDefinition(className);
       if (!classDef) continue;
 
       for (const field of classDef.fields) {
-        // Skip if already seen (child overrides parent)
-        if (seenNames.has(field.name)) continue;
-
-        seenNames.add(field.name);
-        allFields.push(field);
+        const position = positions.get(field.name);
+        if (position === undefined) {
+          positions.set(field.name, allFields.length);
+          allFields.push(field);
+        } else {
+          allFields[position] = this.mergeSTIFieldOverride(
+            allFields[position],
+            field,
+          );
+        }
       }
     }
 
     return allFields;
+  }
+
+  /**
+   * Merge a descendant's redeclared STI field with the entry it replaces.
+   *
+   * Leaf-wins: the descendant's own declaration (its initializer, type
+   * annotation, decorators, optionality) always takes precedence — a
+   * redeclaration that carries its own options keeps them. But a bare
+   * `override fieldName = value` redeclaration (no type annotation, no
+   * decorators) carries no metadata source of its own, so everything the
+   * declaring ancestor attached — an enum type annotation, a
+   * `@field({ description })` decorator — would otherwise be dropped from
+   * the merged raw field and, with it, from the converted manifest. Fill
+   * that missing metadata in from the ancestor entry being replaced so a
+   * grandchild's bare override keeps the inherited field's `enum` and
+   * `description` (#4005).
+   *
+   * @param ancestor - The previously merged (nearest declaring ancestor)
+   *   field entry being replaced.
+   * @param descendant - The descendant's own redeclaration, which wins.
+   * @returns The descendant's field with missing `typeAnnotation` and
+   *   `decorators` filled from the ancestor.
+   */
+  private mergeSTIFieldOverride(
+    ancestor: RawFieldDefinition,
+    descendant: RawFieldDefinition,
+  ): RawFieldDefinition {
+    return {
+      ...descendant,
+      ...(descendant.typeAnnotation === null && ancestor.typeAnnotation !== null
+        ? { typeAnnotation: ancestor.typeAnnotation }
+        : {}),
+      ...(descendant.decorators.length === 0 && ancestor.decorators.length > 0
+        ? { decorators: ancestor.decorators }
+        : {}),
+    };
   }
 
   /**

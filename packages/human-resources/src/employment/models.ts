@@ -4,6 +4,7 @@ import {
   foreignKey,
   SmrtCollection,
   SmrtObject,
+  type SmrtSaveOptions,
   smrt,
 } from '@happyvertical/smrt-core';
 import { TenantScoped, tenantId } from '@happyvertical/smrt-tenancy';
@@ -58,6 +59,7 @@ const PACKAGE_OWNED_COLUMNS = [
 export class Employment extends SmrtObject {
   @tenantId() tenantId = '';
   /** The person employed. */
+  @field({ description: 'The person who works for you.' })
   @crossPackageRef('@happyvertical/smrt-profiles:Profile', {
     onDelete: 'RESTRICT',
   })
@@ -72,13 +74,23 @@ export class Employment extends SmrtObject {
   })
   employerProfileId: string | null = null;
   /** Free text, unique per tenant. */
+  @field({
+    description: 'Your own reference for this person, such as a staff number.',
+  })
   employeeNumber = '';
-  @field({ type: 'text' }) workerType: WorkerType = 'employee';
+  @field({
+    type: 'text',
+    description:
+      'Whether they are an employee, contractor or another kind of worker.',
+  })
+  workerType: WorkerType = 'employee';
   /** Position or trade label; latest recorded value. */
-  @field({ type: 'text', nullable: true }) position: string | null = null;
-  @field({ type: 'text' }) status: EmploymentStatus = 'active';
+  @field({ type: 'text', nullable: true, description: 'Their role or trade.' })
+  position: string | null = null;
+  @field({ type: 'text', description: 'Whether they currently work for you.' })
+  status: EmploymentStatus = 'active';
 
-  override async save(): Promise<this> {
+  override async save(options?: SmrtSaveOptions): Promise<this> {
     const prior = this.id
       ? await this.db.get(this.tableName, { id: this.id })
       : null;
@@ -105,7 +117,7 @@ export class Employment extends SmrtObject {
         'HR_HISTORY_IMMUTABLE',
         'Employment identity is immutable.',
       );
-    return (await super.save()) as this;
+    return (await super.save(options)) as this;
   }
   override async delete(): Promise<void> {
     throw new HrError(
@@ -136,12 +148,22 @@ export class Employment extends SmrtObject {
 })
 export class EmploymentTerm extends SmrtObject {
   @tenantId() tenantId = '';
-  @foreignKey('Employment', { onDelete: 'RESTRICT' }) employmentId = '';
-  @field({ type: 'text' }) startedOn: IsoDate = '';
-  @field({ type: 'text', nullable: true }) endedOn: IsoDate | null = null;
+  @field({ description: 'The person this period of work belongs to.' })
+  @foreignKey('Employment', { onDelete: 'RESTRICT' })
+  employmentId = '';
+  @field({ type: 'text', description: 'The first day of this period of work.' })
+  startedOn: IsoDate = '';
+  @field({
+    type: 'text',
+    nullable: true,
+    description:
+      'The last day of this period of work. Empty while it continues.',
+  })
+  endedOn: IsoDate | null = null;
+  @field({ description: 'Why the period of work ended.' })
   endReason = '';
 
-  override async save(): Promise<this> {
+  override async save(options?: SmrtSaveOptions): Promise<this> {
     assertHrWrite(this);
     const prior = this.id
       ? await this.db.get(this.tableName, { id: this.id })
@@ -156,7 +178,7 @@ export class EmploymentTerm extends SmrtObject {
         'HR_HISTORY_IMMUTABLE',
         'A term can only be closed once; its start and employment never change.',
       );
-    return (await super.save()) as this;
+    return (await super.save(options)) as this;
   }
   override async delete(): Promise<void> {
     throw new HrError(
@@ -194,7 +216,7 @@ export class EmploymentChange extends SmrtObject {
   })
   actorProfileId = '';
 
-  override async save(): Promise<this> {
+  override async save(options?: SmrtSaveOptions): Promise<this> {
     assertHrWrite(this);
     if (this.id && (await this.db.get(this.tableName, { id: this.id })))
       throw new HrError(
@@ -202,7 +224,7 @@ export class EmploymentChange extends SmrtObject {
         'Employment changes are append-only.',
       );
     this.requireInsertOnSave();
-    return (await super.save()) as this;
+    return (await super.save(options)) as this;
   }
   override async delete(): Promise<void> {
     throw new HrError(

@@ -53,6 +53,10 @@ import {
 } from './discovery.js';
 
 export {
+  type DesktopPluginLauncher,
+  generateDesktopPluginArtifacts,
+} from './desktop-plugins.js';
+export {
   type CliResource,
   type CommandDefinition,
   type CommandKind,

@@ -26,7 +26,27 @@ export const DEFAULT_AI_COST_RATES: Record<
 };
 
 /**
- * Estimate the cost of a single AI usage event.
+ * Rate-card keys to try for a call, most specific first: `provider:model`,
+ * `model`, then for a gateway-routed id such as Bifrost's
+ * `openai/gpt-4.1-mini` each `vendor:rest` / `rest` pair, stripping one
+ * leading path segment at a time (#3077).
+ */
+export function aiCostRateKeys(provider: string, model: string): string[] {
+  const keys = [`${provider}:${model}`, model];
+  let rest = model;
+  let slash = rest.indexOf('/');
+  while (slash > 0 && slash < rest.length - 1) {
+    const vendor = rest.slice(0, slash);
+    rest = rest.slice(slash + 1);
+    keys.push(`${vendor}:${rest}`, rest);
+    slash = rest.indexOf('/');
+  }
+  return [...new Set(keys)];
+}
+
+/**
+ * Estimate the cost of a single AI usage event. Gateway-prefixed model ids
+ * (`vendor/model`) fall back to the vendor's rate (see {@link aiCostRateKeys}).
  */
 export function estimateAiUsageCost(
   provider: string,
@@ -42,8 +62,13 @@ export function estimateAiUsageCost(
   };
 
   const exactKey = `${provider}:${model}`;
-  const fallbackKey = model;
-  const rate = rates[exactKey] ?? rates[fallbackKey];
+  let rate: { input: number; output: number } | undefined;
+  for (const key of aiCostRateKeys(provider, model)) {
+    if (Object.hasOwn(rates, key)) {
+      rate = rates[key];
+      break;
+    }
+  }
 
   if (!rate) {
     const warningKey = exactKey;

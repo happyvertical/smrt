@@ -163,8 +163,10 @@ const VALUE_SECRET_PATTERNS: Array<{ re: RegExp; replace: string }> = [
 /**
  * Redact credentials embedded in a string value: URL userinfo plus any
  * high-confidence secret-token shape (see {@link VALUE_SECRET_PATTERNS}).
+ * Exported as `redactSecretValues()` for other redactors (core's AI
+ * transcript redactor, #4780).
  */
-function redactValueSecrets(value: string): string {
+export function redactValueSecrets(value: string): string {
   let out = value.replace(CREDENTIAL_URL_RE, '$1***@');
   for (const { re, replace } of VALUE_SECRET_PATTERNS) {
     out = out.replace(re, replace);

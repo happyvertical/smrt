@@ -1,5 +1,6 @@
 import { spawnSync } from 'node:child_process';
 import {
+  existsSync,
   mkdirSync,
   mkdtempSync,
   readFileSync,
@@ -9,10 +10,20 @@ import {
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { fileURLToPath, pathToFileURL } from 'node:url';
+import type { AIClient } from '@happyvertical/ai';
+import { clearCache, loadConfig } from '@happyvertical/smrt-config';
 import { build } from 'esbuild';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
+import { SmrtCollection } from '../collection.js';
+import { clearManifestCache } from '../manifest/manifest-loader.js';
+import { SmrtObject } from '../object.js';
+import { ObjectRegistry, smrt } from '../registry.js';
 import type { SmartObjectManifest } from '../scanner/types.js';
+import { snapshotObjectRegistryState } from '../test-utils.js';
 import { generateSvelteKitRoutes } from './sveltekit-generator.js';
+
+// Canonical instance injection prevents provider/env/file configuration fallback.
+const fixtureAi = { embed: async () => [] } as unknown as AIClient;
 
 function createManifest(
   projectRoot: string,
@@ -70,8 +81,12 @@ function writeWorkspaceTenancyShim(projectRoot: string): void {
     join(packageDir, 'index.js'),
     [
       'globalThis.__smrtGeneratedTenantContexts ??= [];',
-      'export function hasTenantContext() { return false; }',
+      'export function getCurrentTenant() { return globalThis.__smrtGeneratedActiveTenantContext; }',
+      'export function hasTenantContext() { return Boolean(globalThis.__smrtGeneratedActiveTenantContext); }',
+      'export function isSuperAdminBypass() { return false; }',
+      'export function isTenancyEnabled() { return true; }',
       'export function enterTenantContext(context) {',
+      '  globalThis.__smrtGeneratedActiveTenantContext = context;',
       '  globalThis.__smrtGeneratedTenantContexts.push(context);',
       '}',
     ].join('\n'),
@@ -98,7 +113,12 @@ function writeWorkspaceUsersShim(projectRoot: string): void {
     join(packageDir, 'package.json'),
     JSON.stringify(
       {
-        exports: { './sveltekit': './sveltekit.js' },
+        exports: {
+          './sveltekit': {
+            types: './sveltekit.d.ts',
+            import: './sveltekit.js',
+          },
+        },
         name: '@happyvertical/smrt-users',
         type: 'module',
         version: '1.0.0',
@@ -121,6 +141,10 @@ function writeWorkspaceUsersShim(projectRoot: string): void {
       '  };',
       '}',
     ].join('\n'),
+  );
+  writeFileSync(
+    join(packageDir, 'sveltekit.d.ts'),
+    'export declare function createResourceListHandler(options: { ensureRegistry: () => void | Promise<void>; kebabRoutes?: boolean }): () => Promise<Response>;\n',
   );
 }
 
@@ -155,10 +179,17 @@ function writeWorkspaceCoreShim(projectRoot: string): void {
       'export const ObjectRegistry = {',
       '  async getCollection(...args) {',
       '    globalThis.__smrtGeneratedHelperCalls.push(args);',
+      '    if (globalThis.__smrtGeneratedCollectionResolver) return globalThis.__smrtGeneratedCollectionResolver(...args);',
       '    if (globalThis.__smrtGeneratedRouteCollection) {',
       '      return globalThis.__smrtGeneratedRouteCollection;',
       '    }',
       "    return { marker: 'collection' };",
+      '  },',
+      '  registerCollection(...args) {',
+      '    return globalThis.__smrtGeneratedCollectionBinding?.(...args);',
+      '  },',
+      '  registerPackageManifest(manifest) {',
+      '    return globalThis.__smrtGeneratedCollectionMetadata?.(manifest);',
       '  },',
       '  register(...args) {',
       '    globalThis.__smrtGeneratedHelperRegistrations.push(args);',
@@ -214,7 +245,7 @@ describe('generated SvelteKit helper runtime', () => {
   const originalScopedDbGetter = globalThis.__smrtGetRequestScopedDatabase;
   let projectRoot = '';
 
-  beforeEach(() => {
+  beforeEach(async () => {
     (globalThis as Record<string, unknown>).__smrtGeneratedHelperCalls = [];
     (globalThis as Record<string, unknown>).__smrtGeneratedHelperRegistrations =
       [];
@@ -240,11 +271,29 @@ describe('generated SvelteKit helper runtime', () => {
     );
     writeWorkspaceCoreShim(projectRoot);
     writeWorkspaceTenancyShim(projectRoot);
+    const fixtureConfig = join(projectRoot, 'smrt.config.json');
+    writeFileSync(
+      fixtureConfig,
+      JSON.stringify({
+        ai: {
+          provider: 'openai',
+          apiKeyEnv: 'SMRT_AI_API_KEY',
+          baseUrl: 'http://127.0.0.1:9',
+          model: 'fixture-model',
+        },
+      }),
+    );
+    await loadConfig({
+      configPath: fixtureConfig,
+      searchParents: false,
+      cache: false,
+    });
     initializeGitRepository(projectRoot);
   });
 
   afterEach(() => {
     vi.restoreAllMocks();
+    clearCache();
 
     if (originalScopedDbGetter) {
       globalThis.__smrtGetRequestScopedDatabase = originalScopedDbGetter;
@@ -261,6 +310,8 @@ describe('generated SvelteKit helper runtime', () => {
       .__smrtGeneratedRouteCollection;
     delete (globalThis as Record<string, unknown>)
       .__smrtGeneratedTenantContexts;
+    delete (globalThis as Record<string, unknown>)
+      .__smrtGeneratedActiveTenantContext;
   });
 
   async function importGeneratedHelper() {
@@ -381,6 +432,52 @@ describe('generated SvelteKit helper runtime', () => {
     return await bundleGeneratedRoute(
       'src/routes/api/widgets/[id]/inspect/+server.ts',
       'generated-item-action-post-route.mjs',
+    );
+  }
+
+  async function importGeneratedRuntimeReportAction(
+    actionName: 'run' | 'archive',
+  ) {
+    const objectFilePath = join(projectRoot, 'src/lib/objects/Widget.ts');
+    const manifest = createManifest(projectRoot, objectFilePath, [actionName]);
+    manifest.objects.Widget.methods = {
+      [actionName]: {
+        async: true,
+        isStatic: false,
+        isPublic: true,
+        name: actionName,
+        parameters:
+          actionName === 'archive'
+            ? [{ name: 'options', type: 'any', optional: false }]
+            : [],
+        returnType: 'Promise<unknown>',
+      },
+    };
+    manifest.objects.Widget.decoratorConfig = {
+      api: {
+        include: [actionName],
+        principalContext: true,
+        routes: {
+          [actionName]: { method: 'POST', path: actionName, scope: 'item' },
+        },
+      },
+      operationPermissions: {
+        [actionName]: { action: actionName === 'run' ? 'read' : 'create' },
+      },
+      tenantScoped: { mode: 'required' },
+    };
+
+    await generateSvelteKitRoutes(projectRoot, manifest, {
+      configFileName: 'smrt.ts',
+      configPath: 'src/lib/server',
+      enabled: true,
+      objectsDir: 'src/lib/objects',
+      routesDir: 'src/routes/api',
+    });
+
+    return await bundleGeneratedRoute(
+      `src/routes/api/widgets/[id]/${actionName}/+server.ts`,
+      `generated-runtime-report-${actionName}-route.mjs`,
     );
   }
 
@@ -564,6 +661,242 @@ describe('generated SvelteKit helper runtime', () => {
     expect(receivedOptions).toEqual(expectedOptions);
   });
 
+  it.each([
+    'run',
+    'archive',
+  ] as const)('rejects conflicting ambient authority before generated %s action lookup', async (actionName) => {
+    const route = await importGeneratedRuntimeReportAction(actionName);
+    let lookups = 0;
+    (globalThis as Record<string, unknown>).__smrtGeneratedRouteCollection = {
+      get: async () => {
+        lookups += 1;
+        return { [actionName]: async () => ({ ok: true }) };
+      },
+    };
+    (globalThis as Record<string, unknown>).__smrtGeneratedActiveTenantContext =
+      {
+        permissions: new Set(['widgets.read', 'widgets.create']),
+        tenantId: 'tenant-b',
+        userId: 'user-b',
+      };
+
+    await expect(
+      route.POST({
+        locals: {
+          permissions: ['widgets.read', 'widgets.create'],
+          tenantId: 'tenant-a',
+          user: { id: 'user-a' },
+        },
+        params: { id: 'report-b' },
+        request: new Request(
+          `http://localhost/api/widgets/report-b/${actionName}`,
+          {
+            ...(actionName === 'archive'
+              ? {
+                  body: JSON.stringify({ archived: true }),
+                  headers: { 'content-type': 'application/json' },
+                }
+              : {}),
+            method: 'POST',
+          },
+        ),
+      }),
+    ).rejects.toMatchObject({ status: 403 });
+    expect(lookups).toBe(0);
+  });
+
+  it.each(
+    (['run', 'archive'] as const).flatMap((actionName) =>
+      (
+        [
+          [
+            'permissionSet',
+            { permissionSet: ['widgets.read', 'widgets.create'] },
+          ],
+          [
+            'smrtPermissions',
+            { smrtPermissions: ['widgets.read', 'widgets.create'] },
+          ],
+          [
+            'tenantContext.permissions',
+            {
+              tenantContext: {
+                permissions: new Set(['widgets.read', 'widgets.create']),
+              },
+            },
+          ],
+        ] as const
+      ).map(([permissionSource, permissionLocals]) => ({
+        actionName,
+        permissionLocals,
+        permissionSource,
+      })),
+    ),
+  )('rejects conflicting ambient authority before generated $actionName lookup with $permissionSource', async ({
+    actionName,
+    permissionLocals,
+  }) => {
+    const route = await importGeneratedRuntimeReportAction(actionName);
+    let lookups = 0;
+    (globalThis as Record<string, unknown>).__smrtGeneratedRouteCollection = {
+      get: async () => {
+        lookups += 1;
+        return { [actionName]: async () => ({ ok: true }) };
+      },
+    };
+    (globalThis as Record<string, unknown>).__smrtGeneratedActiveTenantContext =
+      {
+        permissions: new Set(['widgets.read', 'widgets.create']),
+        tenantId: 'tenant-b',
+        userId: 'user-b',
+      };
+
+    await expect(
+      route.POST({
+        locals: {
+          ...permissionLocals,
+          tenantId: 'tenant-a',
+          user: { id: 'user-a' },
+        },
+        params: { id: 'report-b' },
+        request: new Request(
+          `http://localhost/api/widgets/report-b/${actionName}`,
+          {
+            ...(actionName === 'archive'
+              ? {
+                  body: JSON.stringify({ archived: true }),
+                  headers: { 'content-type': 'application/json' },
+                }
+              : {}),
+            method: 'POST',
+          },
+        ),
+      }),
+    ).rejects.toMatchObject({ status: 403 });
+    expect(lookups).toBe(0);
+  });
+
+  it('rejects an incomplete generated-action principal before lookup', async () => {
+    const route = await importGeneratedRuntimeReportAction('run');
+    let lookups = 0;
+    (globalThis as Record<string, unknown>).__smrtGeneratedRouteCollection = {
+      get: async () => {
+        lookups += 1;
+        return { run: async () => ({ ok: true }) };
+      },
+    };
+    (globalThis as Record<string, unknown>).__smrtGeneratedActiveTenantContext =
+      {
+        permissions: new Set(['widgets.read']),
+        tenantId: 'tenant-b',
+        userId: 'user-b',
+      };
+
+    await expect(
+      route.POST({
+        locals: {
+          permissionSet: ['widgets.read'],
+          user: { id: 'user-a' },
+        },
+        params: { id: 'report-b' },
+        request: new Request('http://localhost/api/widgets/report-b/run', {
+          method: 'POST',
+        }),
+      }),
+    ).rejects.toMatchObject({ status: 403 });
+    expect(lookups).toBe(0);
+  });
+
+  it('preserves verified active context capabilities while refreshing generated-action authority', async () => {
+    const route = await importGeneratedRuntimeReportAction('run');
+    const database = { marker: 'tenant-database' };
+    const user = { id: 'loaded-user' };
+    const metadata = { requestId: 'request-1' };
+    let actionContext: Record<string, unknown> | undefined;
+    (globalThis as Record<string, unknown>).__smrtGeneratedRouteCollection = {
+      get: async () => ({
+        run: async () => {
+          actionContext = (globalThis as Record<string, unknown>)
+            .__smrtGeneratedActiveTenantContext as Record<string, unknown>;
+          return { ok: true };
+        },
+      }),
+    };
+    (globalThis as Record<string, unknown>).__smrtGeneratedActiveTenantContext =
+      {
+        database,
+        metadata,
+        permissions: new Set(['stale.permission']),
+        superAdminBypass: true,
+        tenantId: 'tenant-a',
+        user,
+        userId: 'user-a',
+      };
+
+    const response = await route.POST({
+      locals: {
+        tenantContext: {
+          permissions: new Set(['widgets.read']),
+          superAdminBypass: true,
+          tenantId: 'tenant-a',
+          userId: 'user-a',
+        },
+        user: { id: 'user-a' },
+      },
+      params: { id: 'report-a' },
+      request: new Request('http://localhost/api/widgets/report-a/run', {
+        method: 'POST',
+      }),
+    });
+
+    expect(response.status).toBe(200);
+    expect(actionContext).toMatchObject({
+      database,
+      metadata,
+      superAdminBypass: true,
+      tenantId: 'tenant-a',
+      user,
+      userId: 'user-a',
+    });
+    expect(actionContext).toBeDefined();
+    expect([
+      ...((actionContext as Record<string, unknown>)
+        .permissions as Set<string>),
+    ]).toEqual(['widgets.read']);
+  });
+
+  it('rejects an unbound ambient super-admin context before generated-action lookup', async () => {
+    const route = await importGeneratedRuntimeReportAction('run');
+    let lookups = 0;
+    (globalThis as Record<string, unknown>).__smrtGeneratedRouteCollection = {
+      get: async () => {
+        lookups += 1;
+        return { run: async () => ({ ok: true }) };
+      },
+    };
+    (globalThis as Record<string, unknown>).__smrtGeneratedActiveTenantContext =
+      {
+        permissions: new Set<string>(),
+        superAdminBypass: true,
+        tenantId: 'tenant-a',
+      };
+
+    await expect(
+      route.POST({
+        locals: {
+          permissions: ['widgets.read'],
+          tenantId: 'tenant-a',
+          user: { id: 'user-a' },
+        },
+        params: { id: 'report-a' },
+        request: new Request('http://localhost/api/widgets/report-a/run', {
+          method: 'POST',
+        }),
+      }),
+    ).rejects.toMatchObject({ status: 403 });
+    expect(lookups).toBe(0);
+  });
+
   it('executes emitted DELETE routes with safe typed 4xx errors and opaque 5xx errors', async () => {
     const route = await importGeneratedItemDelete();
     const routeCollection = globalThis as Record<string, unknown>;
@@ -649,6 +982,544 @@ describe('generated SvelteKit helper runtime', () => {
       'widgets.create',
     ]);
     expect(JSON.stringify(contexts[0])).not.toContain('forged');
+  });
+
+  it.each([
+    {
+      label: 'named HTTP CLI',
+      cli: { include: ['inspect', 'peek', 'submit'] },
+    },
+    { label: 'REST only with CLI disabled', cli: false as const },
+    { label: 'REST only with CLI omitted', cli: undefined },
+    {
+      label: 'external named HTTP CLI',
+      cli: { include: ['inspect', 'peek', 'submit'] },
+      external: true,
+    },
+    {
+      label: 'external REST with CLI disabled',
+      cli: false as const,
+      external: true,
+    },
+    { label: 'external REST with CLI omitted', cli: undefined, external: true },
+  ])('initializes the exact cross-package collection resource without rebuilding its item namespace (#4320): $label', async ({
+    cli,
+    ...fixture
+  }) => {
+    const external = 'external' in fixture && fixture.external;
+    clearManifestCache();
+    const restore = snapshotObjectRegistryState();
+    const itemKey = '@fixture/model4320:RouteItem4320';
+    const resourceKey = '@fixture/resource4320:RouteResource4320';
+    class RouteItem4320 extends SmrtObject {}
+    class DecoyItem4320 extends SmrtObject {}
+    Object.defineProperty(DecoyItem4320, 'name', { value: 'RouteItem4320' });
+    class ItemCollection4320 extends SmrtCollection<RouteItem4320> {
+      static readonly _itemClass = RouteItem4320;
+    }
+    class RouteResource4320 extends ItemCollection4320 {
+      async inspect() {
+        return { count: await this.count(), receiver: this.constructor.name };
+      }
+      static async peek() {
+        return { receiver: this.name };
+      }
+      async submit() {
+        return { count: await this.count() };
+      }
+    }
+    let db:
+      | Awaited<
+          ReturnType<typeof import('../testing/database.js')['getTestDatabase']>
+        >
+      | undefined;
+    const state = globalThis as Record<string, unknown>;
+    try {
+      smrt({
+        packageName: '@fixture/model4320',
+        tableName: 'route_items_4320',
+        collection: 'routeitems4320',
+        api: { include: ['list', 'get'] },
+      })(RouteItem4320);
+      smrt({
+        packageName: '@fixture/decoy4320',
+        tableName: 'decoy_items_4320',
+        api: false,
+      })(DecoyItem4320);
+      smrt({
+        packageName: '@fixture/resource4320',
+        collection: 'routeresources4320',
+        api: {
+          include: ['inspect', 'peek', 'submit'],
+          routes: {
+            inspect: { method: 'GET' },
+            peek: { method: 'GET' },
+            submit: { method: 'POST' },
+          },
+        },
+        cli,
+      })(RouteResource4320);
+      expect(
+        ObjectRegistry.getClassByConstructor(RouteItem4320)?.qualifiedName,
+      ).toBe(itemKey);
+      expect(
+        ObjectRegistry.getClassByConstructor(DecoyItem4320)
+          ?.collectionConstructor,
+      ).toBeUndefined();
+      ObjectRegistry.registerCollection(itemKey, ItemCollection4320);
+      const { getTestDatabase } = await import('../testing/database.js');
+      db = await getTestDatabase({ classes: [itemKey] });
+      await db.insert('route_items_4320', {
+        id: '00000000-0000-4000-8000-000000004320',
+        slug: 'owned',
+        context: '',
+      });
+      const { MCPGenerator } = await import('../generators/mcp.js');
+      const resourceTools = async () =>
+        (await new MCPGenerator({ classNames: [resourceKey] }).generateTools())
+          .map((tool) => tool.name)
+          .filter((name) => name.startsWith('routeresource4320_'))
+          .sort();
+      const previousResourceTools = await resourceTools();
+      state.__smrt4320Core = await import('../index.js');
+      state.__smrt4320Constructors = {
+        RouteItem4320,
+        RouteResource4320,
+        ItemCollection4320,
+      };
+      state.__smrt4320Db = db;
+      state.__smrt4320Ai = fixtureAi;
+      state.__smrt4320FactoryKeys = [];
+      state.__smrt4320Instances = [];
+      // The emitted module receives the actual core exports and registry, not
+      // a mocked factory. It must construct and initialize against this DB.
+      writeFileSync(
+        join(projectRoot, 'node_modules/@happyvertical/smrt-core/index.js'),
+        `export const { ObjectRegistry, createGeneratedCollectionAccess, normalizeCustomActionFailure, normalizeTypedHttpError, canonicalReadRepresentation, computeTableVersionEtag, getTableVersion, ifNoneMatchHasConcreteMatch, ifNoneMatchSatisfied } = globalThis.__smrt4320Core;`,
+      );
+      const objectFilePath = join(projectRoot, 'src/lib/objects/Widget.ts');
+      writeFileSync(
+        objectFilePath,
+        'export const { RouteItem4320, RouteResource4320, ItemCollection4320 } = globalThis.__smrt4320Constructors;',
+      );
+      const method = (name: string, isStatic = false) => ({
+        name,
+        isStatic,
+        isPublic: true,
+        async: true,
+        returnType: 'Promise<unknown>',
+        parameters: [],
+      });
+      const manifest: SmartObjectManifest = {
+        version: '1',
+        timestamp: 0,
+        packageName: '@fixture/resource4320',
+        objects: {
+          [itemKey]: {
+            className: 'RouteItem4320',
+            name: 'RouteItem4320',
+            qualifiedName: itemKey,
+            packageName: '@fixture/model4320',
+            collection: 'routeitems4320',
+            fields: {},
+            methods: {},
+            filePath: objectFilePath,
+            decoratorConfig: {
+              tableName: 'route_items_4320',
+              api: { include: ['list', 'get'] },
+            },
+          },
+          '@fixture/model4320:ItemCollection4320': {
+            className: 'ItemCollection4320',
+            name: 'ItemCollection4320',
+            qualifiedName: '@fixture/model4320:ItemCollection4320',
+            packageName: '@fixture/model4320',
+            collection: 'routeitems4320',
+            extends: 'SmrtCollection',
+            extendsTypeArg: itemKey,
+            fields: {},
+            methods: {},
+            filePath: objectFilePath,
+            decoratorConfig: { api: false },
+          },
+          [resourceKey]: {
+            className: 'RouteResource4320',
+            name: 'RouteResource4320',
+            qualifiedName: resourceKey,
+            packageName: '@fixture/resource4320',
+            collection: 'routeresources4320',
+            extends: 'ItemCollection4320',
+            extendsQualified: '@fixture/model4320:ItemCollection4320',
+            fields: {},
+            methods: {
+              inspect: method('inspect'),
+              peek: method('peek', true),
+              submit: method('submit'),
+            },
+            filePath: objectFilePath,
+            decoratorConfig: {
+              api: {
+                include: ['inspect', 'peek', 'submit'],
+                routes: {
+                  inspect: { method: 'GET' },
+                  peek: { method: 'GET' },
+                  submit: { method: 'POST' },
+                },
+              },
+              cli,
+            },
+          },
+        },
+      };
+      if (external) {
+        const modelDir = join(projectRoot, 'node_modules/@fixture/model4320');
+        const resourceDir = join(
+          projectRoot,
+          'node_modules/@fixture/resource4320',
+        );
+        for (const [name, directory, exports] of [
+          ['@fixture/model4320', modelDir, 'RouteItem4320, ItemCollection4320'],
+          ['@fixture/resource4320', resourceDir, 'RouteResource4320'],
+        ]) {
+          mkdirSync(join(directory, 'dist'), { recursive: true });
+          writeFileSync(
+            join(directory, 'package.json'),
+            JSON.stringify({
+              name,
+              version: '1.0.0',
+              type: 'module',
+              exports: { '.': './index.js' },
+            }),
+          );
+          writeFileSync(
+            join(directory, 'index.js'),
+            `export const { ${exports} } = globalThis.__smrt4320Constructors;`,
+          );
+        }
+        manifest.packageName = '@test/generated-helper-app';
+        manifest.smrtDependencies = ['@fixture/resource4320'];
+        for (const [key, definition] of Object.entries(manifest.objects)) {
+          definition.filePath = join(
+            key === resourceKey ? resourceDir : modelDir,
+            'index.js',
+          );
+        }
+        writeFileSync(
+          join(resourceDir, 'dist/manifest.json'),
+          JSON.stringify({
+            ...manifest,
+            packageName: '@fixture/resource4320',
+          }),
+        );
+        const { smrtConsumer } = await import('../consumer-plugin/index.js');
+        const consumer = smrtConsumer({
+          packages: ['@fixture/resource4320'],
+          projectRoot,
+          generateTypes: false,
+          disableScanning: true,
+        });
+        const hook = consumer.buildStart;
+        if (!hook) throw new Error('Consumer buildStart missing');
+        const handler = typeof hook === 'function' ? hook : hook.handler;
+        await handler.call(
+          {} as ThisParameterType<typeof handler>,
+          {} as Parameters<typeof handler>[0],
+        );
+        expect(existsSync(join(projectRoot, '.smrt/register.js'))).toBe(true);
+      }
+      await generateSvelteKitRoutes(projectRoot, manifest, {
+        configFileName: 'smrt.ts',
+        configPath: 'src/lib/server',
+        enabled: true,
+        objectsDir: 'src/lib/objects',
+        routesDir: 'src/routes/api',
+      });
+      writeFileSync(
+        join(projectRoot, 'src/lib/server/smrt.ts'),
+        `import {ObjectRegistry} from '@happyvertical/smrt-core'; export const runtime = { classOptions(){ return {db:globalThis.__smrt4320Db,ai:globalThis.__smrt4320Ai}; }, async getCollection(name){ globalThis.__smrt4320FactoryKeys.push(name); const value = await ObjectRegistry.getCollection(name,{db:globalThis.__smrt4320Db,ai:globalThis.__smrt4320Ai}); globalThis.__smrt4320Instances.push(value); return value; } };`,
+      );
+      const inspect = await bundleGeneratedRoute(
+        'src/routes/api/routeresources4320/inspect/+server.ts',
+        'cross-package-inspect.mjs',
+      );
+      const request = (path: string, method = 'GET') =>
+        new Request(`http://localhost/api/${path}`, { method });
+      await expect(
+        inspect.GET({
+          locals: {},
+          request: request('routeresources4320/inspect'),
+        }),
+      ).rejects.toMatchObject({ status: 401 });
+      expect(state.__smrt4320FactoryKeys).toEqual([]);
+      const response = await inspect.GET({
+        locals: { user: { id: 'human' } },
+        request: request('routeresources4320/inspect'),
+      });
+      expect(response.status, JSON.stringify(state.__smrt4320FactoryKeys)).toBe(
+        200,
+      );
+      expect(await response.json()).toMatchObject({
+        result: { count: 1, receiver: 'RouteResource4320' },
+      });
+      expect(state.__smrt4320FactoryKeys).toEqual([resourceKey]);
+      if (!cli) {
+        expect(ObjectRegistry.getClass(resourceKey)).toBeUndefined();
+        expect(await resourceTools()).toEqual(previousResourceTools);
+      }
+      const [actual] =
+        state.__smrt4320Instances as SmrtCollection<SmrtObject>[];
+      expect(actual).toBeInstanceOf(RouteResource4320);
+      expect(actual.db).toBe(db);
+      expect(actual.tableName).toBe('route_items_4320');
+      expect(
+        ObjectRegistry.getClassByConstructor(RouteItem4320)?.qualifiedName,
+      ).toBe(itemKey);
+      expect(
+        ObjectRegistry.getClass('@fixture/resource4320:RouteItem4320'),
+      ).toBeUndefined();
+      const peek = await bundleGeneratedRoute(
+        'src/routes/api/routeresources4320/peek/+server.ts',
+        'cross-package-peek.mjs',
+      );
+      expect(
+        await (
+          await peek.GET({
+            locals: { user: { id: 'service' } },
+            request: request('routeresources4320/peek'),
+          })
+        ).json(),
+      ).toMatchObject({ result: { receiver: 'RouteResource4320' } });
+      const submit = await bundleGeneratedRoute(
+        'src/routes/api/routeresources4320/submit/+server.ts',
+        'cross-package-submit.mjs',
+      );
+      await expect(
+        submit.POST({
+          locals: {
+            user: { id: 'actor' },
+            permissions: ['routeresources4320.submit'],
+          },
+          request: request('routeresources4320/submit', 'POST'),
+        }),
+      ).rejects.toMatchObject({ status: 403 });
+      expect(
+        (
+          await submit.POST({
+            locals: {
+              user: { id: 'actor' },
+              permissions: ['routeitems4320.submit'],
+            },
+            request: request('routeresources4320/submit', 'POST'),
+          })
+        ).status,
+      ).toBe(200);
+      const ordinary = await bundleGeneratedRoute(
+        'src/routes/api/routeitems4320/+server.ts',
+        'ordinary-model4320.mjs',
+      );
+      const listed = await ordinary.GET({
+        locals: { user: { id: 'human' } },
+        request: request('routeitems4320'),
+        url: new URL('http://localhost/api/routeitems4320'),
+      });
+      expect(listed.status).toBe(200);
+      expect(JSON.stringify(await listed.json())).toContain(
+        '00000000-0000-4000-8000-000000004320',
+      );
+      expect((state.__smrt4320FactoryKeys as string[]).at(-1)).toBe(itemKey);
+      const instances =
+        state.__smrt4320Instances as SmrtCollection<SmrtObject>[];
+      expect(instances.at(-1)).not.toBe(actual);
+    } finally {
+      await db?.close?.();
+      restore();
+      clearManifestCache();
+      for (const key of Object.keys(state))
+        if (key.startsWith('__smrt4320')) delete state[key];
+    }
+  });
+
+  it('executes an explicitly named collection action through its real registered constructor and item authority', async () => {
+    const restore = snapshotObjectRegistryState();
+    class ActionItem4171 extends SmrtObject {}
+    class ActionFacade4171 extends SmrtCollection<ActionItem4171> {
+      static readonly _itemClass = ActionItem4171;
+      static calls: unknown[] = [];
+      static async submit(options: Record<string, unknown>) {
+        this.calls.push(options);
+        if (options.fail)
+          throw Object.assign(new Error('Rejected by domain action'), {
+            status: 409,
+            code: 'domain_conflict',
+          });
+        return { accepted: options };
+      }
+    }
+    try {
+      smrt({
+        packageName: '@fixture/collection-actions',
+        collection: 'actionitems',
+        api: false,
+        cli: false,
+      })(ActionItem4171);
+      smrt({
+        packageName: '@fixture/collection-actions',
+        collection: 'actionfacades',
+        api: { include: ['submit'], principalContext: true },
+        cli: { include: ['submit'] },
+      })(ActionFacade4171);
+      const key =
+        ObjectRegistry.getClassByConstructor(ActionItem4171)?.qualifiedName;
+      if (!key)
+        throw new Error('Expected qualified collection item registration');
+      expect(key).toBe('@fixture/collection-actions:ActionItem4171');
+      const actual = await ObjectRegistry.getCollection(key, {
+        db: { type: 'sqlite', url: ':memory:' },
+        ai: fixtureAi,
+      });
+      (globalThis as Record<string, unknown>).__smrt4171Constructors = {
+        ActionItem4171,
+        ActionFacade4171,
+      };
+      expect(actual.constructor).toBe(ActionFacade4171);
+      (
+        globalThis as Record<string, unknown>
+      ).__smrtGeneratedCollectionMetadata = (manifest: SmartObjectManifest) =>
+        ObjectRegistry.registerPackageManifest(manifest);
+      (globalThis as Record<string, unknown>).__smrtGeneratedCollectionBinding =
+        (
+          name: string,
+          ctor: Parameters<typeof ObjectRegistry.registerCollection>[1],
+        ) => ObjectRegistry.registerCollection(name, ctor);
+      const objectFilePath = join(projectRoot, 'src/lib/objects/Widget.ts');
+      writeFileSync(
+        objectFilePath,
+        'export const { ActionItem4171, ActionFacade4171 } = globalThis.__smrt4171Constructors;',
+      );
+      const manifest = createManifest(projectRoot, objectFilePath);
+      manifest.objects.Widget.className = 'ActionItem4171';
+      manifest.objects.Widget.collection = 'actionitems';
+      manifest.objects.Widget.decoratorConfig = { api: false };
+      manifest.objects.Widget.qualifiedName = key;
+      manifest.objects[key] = manifest.objects.Widget;
+      delete manifest.objects.Widget;
+      manifest.objects.ActionFacade4171 = {
+        className: 'ActionFacade4171',
+        name: 'ActionFacade4171',
+        collection: 'actionfacades',
+        extends: 'SmrtCollection',
+        extendsTypeArg: 'ActionItem4171',
+        fields: {},
+        filePath: objectFilePath,
+        decoratorConfig: {
+          collection: 'actionfacades',
+          api: { include: ['submit'], principalContext: true },
+          cli: { include: ['submit'] },
+        },
+        methods: {
+          submit: {
+            name: 'submit',
+            isStatic: true,
+            isPublic: true,
+            async: true,
+            returnType: 'Promise<unknown>',
+            parameters: [
+              {
+                name: 'options',
+                type: 'Record<string, unknown>',
+                optional: false,
+              },
+            ],
+          },
+        },
+      };
+      await generateSvelteKitRoutes(projectRoot, manifest, {
+        configFileName: 'smrt.ts',
+        configPath: 'src/lib/server',
+        enabled: true,
+        objectsDir: 'src/lib/objects',
+        routesDir: 'src/routes/api',
+      });
+      (
+        globalThis as Record<string, unknown>
+      ).__smrtGeneratedCollectionResolver = (
+        name: string,
+        options: Parameters<typeof ObjectRegistry.getCollection>[1],
+      ) =>
+        ObjectRegistry.getCollection(name, {
+          ...options,
+          db: actual.db,
+          ai: fixtureAi,
+        });
+      const route = await bundleGeneratedRoute(
+        'src/routes/api/actionfacades/submit/+server.ts',
+        'collection-action.mjs',
+      );
+      const request = () =>
+        new Request('http://localhost/api/actionfacades/submit', {
+          method: 'POST',
+          body: JSON.stringify({
+            opaque: { nested: 'unchanged' },
+            tenantId: 'forged',
+          }),
+        });
+      await expect(
+        route.POST({ locals: {}, request: request() }),
+      ).rejects.toMatchObject({ status: 401 });
+      await expect(
+        route.POST({
+          locals: {
+            user: { id: 'actor' },
+            permissions: ['actionfacades.submit'],
+          },
+          request: request(),
+        }),
+      ).rejects.toMatchObject({ status: 403 });
+      expect(ActionFacade4171.calls).toEqual([]);
+      const response = await route.POST({
+        locals: {
+          user: { id: 'actor' },
+          tenantId: 'trusted-tenant',
+          permissions: ['actionitems.submit'],
+        },
+        request: request(),
+      });
+      expect(response.status).toBe(200);
+      expect(ActionFacade4171.calls).toEqual([
+        { opaque: { nested: 'unchanged' }, tenantId: 'forged' },
+      ]);
+      expect(
+        (globalThis as Record<string, unknown>)
+          .__smrtGeneratedActiveTenantContext,
+      ).toMatchObject({ tenantId: 'trusted-tenant', userId: 'actor' });
+      const failed = await route.POST({
+        locals: {
+          user: { id: 'actor' },
+          tenantId: 'trusted-tenant',
+          permissions: ['actionitems.submit'],
+        },
+        request: new Request('http://localhost/api/actionfacades/submit', {
+          method: 'POST',
+          body: JSON.stringify({ fail: true }),
+        }),
+      });
+      expect(failed.status).toBe(409);
+      const helperCalls = (globalThis as Record<string, unknown>)
+        .__smrtGeneratedHelperCalls as Array<[string, unknown]>;
+      expect(helperCalls.map(([name]) => name)).toEqual([
+        '@test/generated-helper-app:ActionFacade4171',
+        '@test/generated-helper-app:ActionFacade4171',
+      ]);
+    } finally {
+      restore();
+      delete (globalThis as Record<string, unknown>).__smrt4171Constructors;
+      delete (globalThis as Record<string, unknown>)
+        .__smrtGeneratedCollectionBinding;
+      delete (globalThis as Record<string, unknown>)
+        .__smrtGeneratedCollectionResolver;
+      delete (globalThis as Record<string, unknown>)
+        .__smrtGeneratedCollectionMetadata;
+    }
   });
 
   describe('generated write routes enforce operation permissions (#2977)', () => {
@@ -953,7 +1824,7 @@ describe('generated SvelteKit helper runtime', () => {
     ).toBe(false);
   });
 
-  it('generates and executes the _resources route when smrt-users is resolvable (#2663)', async () => {
+  it('generates and executes the _resources route for import-only smrt-users (#2663, #4493)', async () => {
     writeWorkspaceUsersShim(projectRoot);
     writeFileSync(
       join(projectRoot, '.gitignore'),

@@ -6,7 +6,9 @@
 import { getPackageConfig } from '@happyvertical/smrt-config';
 import {
   findManifestEntryByQualifiedName,
+  inheritedCollectionSurface,
   ObjectRegistry,
+  resolveOperationPermissionAlias,
   type SmartObjectDefinition,
   type SmrtClassOptions,
 } from '@happyvertical/smrt-core';
@@ -18,36 +20,23 @@ import {
   type Permission,
   parsePermissionSlug,
 } from '../models/Permission.js';
+import type {
+  PermissionCatalogSource,
+  PermissionDefinition,
+  PostgresPermissionAction,
+  PostgresPermissionBinding,
+} from '../permission-registry.js';
 
-export type PermissionCatalogSource = 'manifest' | 'config' | 'runtime';
+import { getRuntimePermissionRegistrations } from '../permission-registry-state.js';
+import { withoutListBounds } from './authorization-read-options.js';
 
-export type PostgresPermissionAction =
-  | 'SELECT'
-  | 'INSERT'
-  | 'UPDATE'
-  | 'DELETE';
-
-export interface PostgresPermissionBinding {
-  action: Lowercase<PostgresPermissionAction> | PostgresPermissionAction;
-  permission?: string;
-  schemaName?: string;
-  tableName: string;
-  tenantField?: string;
-}
-
-export interface PermissionDefinition {
-  category?: string;
-  className?: string;
-  collection?: string;
-  description?: string;
-  name?: string;
-  postgres?: {
-    bindings?: PostgresPermissionBinding[];
-  };
-  qualifiedName?: string;
-  slug: string;
-  source?: PermissionCatalogSource;
-}
+export {
+  type PermissionCatalogSource,
+  type PermissionDefinition,
+  type PostgresPermissionAction,
+  type PostgresPermissionBinding,
+  registerPermissionDefinitions,
+} from '../permission-registry.js';
 
 export interface PermissionCatalog {
   customPermissions: PermissionDefinition[];
@@ -86,26 +75,6 @@ export type OperationPermissionCollectionInput =
   | ConstructorLike
   | CollectionLike
   | object;
-
-declare global {
-  // eslint-disable-next-line no-var
-  var __smrtUsersPermissionRegistrations:
-    | Map<number, PermissionDefinition[]>
-    | undefined;
-  // eslint-disable-next-line no-var
-  var __smrtUsersPermissionRegistrationCounter: number | undefined;
-}
-
-function getRuntimePermissionRegistrations(): Map<
-  number,
-  PermissionDefinition[]
-> {
-  globalThis.__smrtUsersPermissionRegistrations ??= new Map<
-    number,
-    PermissionDefinition[]
-  >();
-  return globalThis.__smrtUsersPermissionRegistrations;
-}
 
 function toSnakeCase(value: string): string {
   return value
@@ -259,7 +228,74 @@ export function deriveOperationPermissionSlug(
   action: string,
 ): string {
   const collectionName = deriveOperationPermissionCollectionName(collection);
-  const normalizedAction = normalizeOperationPermissionAction(action);
+  const standard = normalizeOperationPermissionAction(action);
+  if (['read', 'create', 'update', 'delete'].includes(standard)) {
+    return `${collectionName}.${standard}`;
+  }
+  const ctor =
+    typeof collection === 'string' ? undefined : resolveConstructor(collection);
+  const registered = ctor
+    ? (ObjectRegistry.getClassByConstructor(
+        ctor as Parameters<typeof ObjectRegistry.getClassByConstructor>[0],
+      ) ?? ObjectRegistry.getClass(ctor.name ?? ''))
+    : undefined;
+  if (registered) {
+    const entry = manifestEntryFor(registered);
+    const alias = resolveOperationPermissionAlias(
+      entry?.decoratorConfig ?? registered.config,
+      action,
+    );
+    const normalizedAction = normalizeOperationPermissionAction(
+      alias?.action ?? action,
+    );
+    if (!normalizedAction) {
+      throw new Error('Operation permission action must not be empty.');
+    }
+    return `${collectionName}.${normalizedAction}`;
+  }
+  // Resolve by the catalog slug even for string callers (CLI/MCP/tool runs).
+  // Two models sharing a collection must agree. An unaliased matching method
+  // conflicts with an alias rather than silently inheriting its broader grant.
+  const actions = new Set<string>();
+  for (const registered of new Set(ObjectRegistry.getAllClasses().values())) {
+    const entry = manifestEntryFor(registered);
+    const owner =
+      entry && isCollectionClass(registered, entry)
+        ? resolveCollectionItemRegistration(registered, entry)
+        : registered;
+    if (
+      !owner ||
+      resolveCatalogCollectionName(owner, manifestEntryFor(owner)) !==
+        collectionName
+    )
+      continue;
+    const alias = resolveOperationPermissionAlias(
+      entry?.decoratorConfig ?? registered.config,
+      action,
+    );
+    if (alias) {
+      actions.add(alias.action);
+      continue;
+    }
+    const methodEntries = entry?.methods
+      ? Object.values(entry.methods)
+      : Array.from(registered.methods.entries());
+    if (
+      getPublicCustomMethodNames(methodEntries, [
+        'list',
+        'get',
+        'create',
+        'update',
+        'delete',
+      ]).includes(action)
+    ) {
+      actions.add(action);
+    }
+  }
+  if (actions.size > 1) throw new Error('Ambiguous operation permission alias');
+  const normalizedAction = normalizeOperationPermissionAction(
+    [...actions][0] ?? action,
+  );
   if (!normalizedAction) {
     throw new Error('Operation permission action must not be empty.');
   }
@@ -447,16 +483,86 @@ function getCollectionClassActionDefinitions(
   const methodEntries = manifestEntry.methods
     ? Object.values(manifestEntry.methods)
     : Array.from(registered.methods.entries());
+  const catalogApi = ownCollectionApiConfig(
+    objectConfig?.api,
+    manifestEntry,
+    itemEntry,
+  );
   return getPublicCustomMethodNames(methodEntries, standardActions)
-    .filter((methodName) => isOperationEnabled(objectConfig?.api, methodName))
-    .map((methodName) => ({
-      className: item.name,
-      collection,
-      description: `Allows ${methodName} on ${humanizeResource(collection).toLowerCase()}`,
-      name: `${capitalize(methodName)} ${humanizeResource(collection)}`,
-      qualifiedName: item.qualifiedName,
-      slug: `${collection}.${methodName}`,
-    }));
+    .filter((methodName) => isOperationEnabled(catalogApi, methodName))
+    .map((methodName) => {
+      const alias = resolveOperationPermissionAlias(objectConfig, methodName);
+      const action = alias?.action ?? methodName;
+      const definition: PermissionDefinition = {
+        className: item.name,
+        collection,
+        description: `Allows ${action} on ${humanizeResource(collection).toLowerCase()}`,
+        name: `${capitalize(action)} ${humanizeResource(collection)}`,
+        qualifiedName: item.qualifiedName,
+        slug: `${collection}.${action}`,
+      };
+      addAliasDatabaseBindings(definition, alias, item, itemEntry);
+      return definition;
+    });
+}
+
+/**
+ * The collection's own `api` config for cataloguing its operation slugs. A
+ * collection's unset surface inherits its model's (smrt-core
+ * `inheritedCollectionSurface`), which gates the generated routes; the
+ * services in this package still assert the collection's operation slugs
+ * (`tenants.moveToParent`, ...), so an inherited include list reads as unset
+ * here, exactly as before the collection inherited it. An inherited `false`
+ * stays `false`, as it always has.
+ */
+function ownCollectionApiConfig(
+  apiConfig: unknown,
+  collectionEntry: SmartObjectDefinition,
+  itemEntry: SmartObjectDefinition | undefined,
+): unknown {
+  if (apiConfig === undefined || apiConfig === false || !itemEntry) {
+    return apiConfig;
+  }
+  const inherited = inheritedCollectionSurface(
+    'api',
+    itemEntry.decoratorConfig ?? {},
+    {
+      collection: new Set(Object.keys(collectionEntry.methods ?? {})),
+      item: new Set(Object.keys(itemEntry.methods ?? {})),
+    },
+  );
+  return inherited !== undefined &&
+    inherited !== false &&
+    JSON.stringify(inherited) === JSON.stringify(apiConfig)
+    ? undefined
+    : apiConfig;
+}
+
+function addAliasDatabaseBindings(
+  definition: PermissionDefinition,
+  alias: ReturnType<typeof resolveOperationPermissionAlias>,
+  registered: RegisteredCatalogClass,
+  manifestEntry: SmartObjectDefinition | undefined,
+): void {
+  if (!alias?.databaseActions?.length) return;
+  const tableName =
+    manifestEntry?.schema?.tableName ??
+    registered.schema?.tableName ??
+    registered.config.tableName;
+  if (!tableName)
+    throw new Error('Permission SQL binding requires a table name');
+  mergeBindings(definition, {
+    slug: definition.slug,
+    postgres: {
+      bindings: alias.databaseActions.map((action) => ({
+        action,
+        tableName,
+        ...(registered.tenantScopedConfig?.field
+          ? { tenantField: toSnakeCase(registered.tenantScopedConfig.field) }
+          : {}),
+      })),
+    },
+  });
 }
 
 function isCollectionManifestEntry(objectDef?: SmartObjectDefinition): boolean {
@@ -765,19 +871,6 @@ function mergeDefinitionSet(
   }
 }
 
-export function registerPermissionDefinitions(
-  definitions: PermissionDefinition[],
-): () => void {
-  globalThis.__smrtUsersPermissionRegistrationCounter =
-    (globalThis.__smrtUsersPermissionRegistrationCounter ?? 0) + 1;
-  const registrationId = globalThis.__smrtUsersPermissionRegistrationCounter;
-  getRuntimePermissionRegistrations().set(registrationId, definitions);
-
-  return () => {
-    getRuntimePermissionRegistrations().delete(registrationId);
-  };
-}
-
 /** Whether syncing `definition` would change the persisted row. */
 function definitionChangesPermission(
   existing: Permission,
@@ -846,7 +939,9 @@ export class PermissionCatalogService {
 
   async syncPermissionCatalog(): Promise<PermissionCatalogSyncResult> {
     const catalog = this.getCatalog();
-    const permissions = await PermissionCollection.create(this.options);
+    const permissions = await PermissionCollection.create(
+      withoutListBounds(this.options),
+    );
 
     const created: string[] = [];
     const unchanged: string[] = [];
@@ -960,7 +1055,9 @@ export class PermissionCatalogService {
           manifestEntry,
           standardActions,
         )) {
-          definitions.set(definition.slug, definition);
+          const existing = definitions.get(definition.slug);
+          if (existing) mergeBindings(existing, definition);
+          else definitions.set(definition.slug, definition);
         }
         continue;
       }
@@ -988,6 +1085,7 @@ export class PermissionCatalogService {
         isOperationEnabled(objectConfig.mcp, 'get');
       if (readExposed) {
         definitions.set(`${collection}.read`, {
+          ...definitions.get(`${collection}.read`),
           className,
           collection,
           qualifiedName,
@@ -1031,6 +1129,7 @@ export class PermissionCatalogService {
         }
 
         definitions.set(`${collection}.${action}`, {
+          ...definitions.get(`${collection}.${action}`),
           className,
           collection,
           qualifiedName,
@@ -1068,14 +1167,19 @@ export class PermissionCatalogService {
       ]);
 
       for (const methodName of customMethods) {
-        definitions.set(`${collection}.${methodName}`, {
+        const alias = resolveOperationPermissionAlias(objectConfig, methodName);
+        const permissionAction = alias?.action ?? methodName;
+        const slug = `${collection}.${permissionAction}`;
+        const definition = definitions.get(slug) ?? {
           className,
           collection,
-          description: `Allows ${methodName} on ${humanizeResource(collection).toLowerCase()}`,
-          name: `${capitalize(methodName)} ${humanizeResource(collection)}`,
           qualifiedName,
-          slug: `${collection}.${methodName}`,
-        });
+          slug,
+          description: `Allows ${permissionAction} on ${humanizeResource(collection).toLowerCase()}`,
+          name: `${capitalize(permissionAction)} ${humanizeResource(collection)}`,
+        };
+        addAliasDatabaseBindings(definition, alias, registered, manifestEntry);
+        definitions.set(slug, definition);
       }
     }
 

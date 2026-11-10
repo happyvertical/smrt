@@ -6,5 +6,8 @@ import { defineConfig } from 'vite';
 // the packages listed in `smrt.config.ts` (`consumer.packages`), and generates
 // this app's object registration, types, and API routes.
 export default defineConfig({
-  plugins: [sveltekit(), smrt()],
+  plugins: [
+    sveltekit(),
+    smrt({ expose: ['@happyvertical/smrt-reports:RuntimeReport'] }),
+  ],
 });

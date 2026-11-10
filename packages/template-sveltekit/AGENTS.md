@@ -1,7 +1,7 @@
 # template-sveltekit
 
 Minimal SvelteKit project template used by `smrt gnode create --template=sveltekit`.
-It is the ground-up alternative to `smrt-saas-starter`.
+It is the ground-up alternative to `smrt-start`.
 
 ## Exports
 
@@ -12,6 +12,12 @@ It is the ground-up alternative to `smrt-saas-starter`.
   tenancy, and permission foundation.
 
 ## Current generated-project contract
+
+- `template/compose.yaml` carries the `x-happyvertical` deployment declaration
+  (contract v1, `@happyvertical/smrt-config/deployment`). It is the source of
+  `charts/smrt-app/fixtures/starter.json`: after changing its services or
+  annotations run `node scripts/compose-contract-fixture.mjs --write` and
+  commit the fixture; `scripts/compose-contract.test.mjs` fails on drift.
 
 - Node `>=26.0.0`; pnpm `11.25.0` via `packageManager` and `engines`. Node 25+
   images ship no Corepack, so the Dockerfile installs a pinned copy.
@@ -67,7 +73,7 @@ It is the ground-up alternative to `smrt-saas-starter`.
   CLI's or core's transitive dependencies to the app root — its strict layout
   does not (#2297).
 - `vite.config.ts` is `[sveltekit(), smrt()]`. The preset consumes exactly the
-  packages in `smrt.config.ts` `consumer.packages` (profiles, tenancy, users),
+  packages in `smrt.config.ts` `consumer.packages` (profiles, tenancy, users, reports),
   scans `src/lib/objects`, and generates Vite virtual definitions, SvelteKit
   routes, runtime registration, and knowledge artifacts. With a
   `smrt.cookbook.json` it also hosts the cookbook's package models over REST
@@ -82,6 +88,14 @@ It is the ground-up alternative to `smrt-saas-starter`.
 - `src/hooks.server.ts` re-exports the runtime's `handle`/`init`: URL tenant
   selection stays a separate candidate and only the verified session
   establishes tenant context. Never turn an untrusted header into authority.
+- Commerce is optional and never a template dependency.
+  `src/lib/server/commerce.ts` (`bootstrapCommerceTenant`) calls
+  `ensureCommerceTenant()` only when the app has installed
+  `@happyvertical/smrt-commerce` (resolved from its own `node_modules`, with a
+  variable import specifier), passing `smrt.cookbook.json` when present. The
+  `/setup` page runs it from `onOwnerClaimed`, after the owner claim created the
+  tenant, and logs a failure because the runtime ignores hook errors. Any other
+  tenant-creation path an app adds should call it too (#4009).
 - App code uses `runtime.getCollection()`/`runtime.classOptions()`, which are
   request-scoped (RLS transaction) and must never be retained.
 - `Note` is the single example object (the canonical Notes starter, matching
@@ -218,3 +232,12 @@ presented as WebMCP execution.
 
 See [the M5 reference fixture gate](../../docs/content/m5-reference-fixture.md)
 for what the milestone proves, what it does not, and the recovery commands.
+
+Runtime report confirmation mounts the reports-owned Fetch handler at
+`/api/_reports/runtime/confirm`. It passes verified locals and the request's
+collection database; smrt-app-runtime has no reports dependency. The template
+consumes the reports manifest for migrations and explicitly hosts only
+`@happyvertical/smrt-reports:RuntimeReport` through the Vite preset’s `expose` option. Apps enabling
+`reports.runtime` configure `packages.reports.runtime.sources`; the default
+empty allow-list exposes no report sources. The authored route is preserved by
+the template's `.gitignore` exception.

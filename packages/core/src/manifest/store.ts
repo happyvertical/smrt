@@ -36,6 +36,7 @@ import {
   isQualifiedName,
   parseQualifiedName,
 } from '../utils/qualified-names.js';
+import { isRefusedTestArtifact } from './test-artifacts.js';
 
 const logger = createLogger({ level: 'info' });
 
@@ -489,7 +490,18 @@ export function resolveWorkspaceSourceManifestPathSync(
   ];
 
   for (const candidate of candidates) {
-    if (builtins.fs.existsSync(candidate)) {
+    if (!builtins.fs.existsSync(candidate)) continue;
+    let refused = false;
+    try {
+      refused = isRefusedTestArtifact(
+        JSON.parse(builtins.fs.readFileSync(candidate, 'utf-8')),
+        candidate,
+      );
+    } catch {
+      // The caller's own read reports an unreadable manifest.
+    }
+    // A test artifact's inline fixtures are never a package's objects (#2760).
+    if (!refused) {
       return candidate;
     }
   }
@@ -698,6 +710,15 @@ export function loadExternalManifestSyncWithNode(
       return null;
     }
 
+    if (isRefusedTestArtifact(manifest, manifestPath)) {
+      if (options.warn ?? true) {
+        logger.warn(
+          `Ignoring test artifact ${manifestPath} for package ${packageName}; test manifests are never dependency manifests`,
+        );
+      }
+      return null;
+    }
+
     const cachedManifest = manifest.packageName
       ? manifest
       : { ...manifest, packageName };
@@ -736,6 +757,13 @@ export function loadManifestFromPathSyncWithNode(
 
     if (!manifest.objects || typeof manifest.objects !== 'object') {
       logger.warn(`Invalid manifest structure at ${manifestPath}`);
+      return null;
+    }
+
+    if (isRefusedTestArtifact(manifest, manifestPath)) {
+      logger.warn(
+        `Ignoring test artifact ${manifestPath}; it is not this process's active test manifest`,
+      );
       return null;
     }
 

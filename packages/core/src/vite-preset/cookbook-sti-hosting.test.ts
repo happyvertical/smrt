@@ -174,6 +174,65 @@ describe('separateHostedStiCollections', () => {
     );
   });
 
+  it('skips an abstract intermediate when inheriting hosted leaf API exposure', () => {
+    const abstractManifest = {
+      version: '1',
+      objects: {
+        ...manifestObjects(),
+        [ref('SalesContract')]: stiChild('SalesContract', {
+          abstract: true,
+          api: { exclude: ['create', 'update', 'delete'] },
+        }),
+        [ref('Order')]: {
+          ...stiChild('Order'),
+          extends: 'SalesContract',
+        },
+      },
+    };
+    (
+      abstractManifest.objects[ref('SalesContract')] as any
+    ).abstractDeclaredApi = null;
+    const next = separateHostedStiCollections(
+      abstractManifest,
+      [ref('Order')],
+      refOf,
+    ) as typeof abstractManifest;
+    expect(next.objects[ref('Order')].collection).toBe('orders');
+    expect((next.objects[ref('Order')] as any).decoratorConfig.api).toEqual({
+      include: ['list', 'get', 'create', 'update'],
+    });
+    expect(
+      (next.objects[ref('SalesContract')] as any).decoratorConfig.api,
+    ).toEqual({
+      exclude: ['create', 'update', 'delete'],
+    });
+  });
+
+  it.each([
+    [false, false],
+    [{ exclude: ['delete', 'create', 'update'] }, { exclude: ['delete'] }],
+  ])('preserves authored API restrictions on an abstract STI parent', (api, declared) => {
+    const restricted = {
+      version: '1',
+      objects: {
+        ...manifestObjects(),
+        [ref('SalesContract')]: {
+          ...stiChild('SalesContract', { abstract: true, api }),
+          abstractDeclaredApi: declared,
+        },
+        [ref('Order')]: { ...stiChild('Order'), extends: 'SalesContract' },
+      },
+    };
+    const next = separateHostedStiCollections(
+      restricted,
+      [ref('Order')],
+      refOf,
+    ) as typeof restricted;
+    expect((next.objects[ref('Order')] as any).decoratorConfig.api).toEqual(
+      declared,
+    );
+  });
+
   it('keeps the STI base permission namespace on a moved subclass (#3770)', () => {
     const next = separateHostedStiCollections(
       manifest,

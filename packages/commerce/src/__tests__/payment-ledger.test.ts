@@ -15,12 +15,16 @@ import {
   AccountCollection,
   JournalCollection,
 } from '@happyvertical/smrt-ledgers';
-import { afterEach, beforeEach, describe, expect, it } from 'vitest';
+import { afterEach, beforeEach, describe, expect } from 'vitest';
 import { ContractCollection } from '../collections/ContractCollection.js';
 import { CustomerCollection } from '../collections/CustomerCollection.js';
 import { PaymentCollection } from '../collections/PaymentCollection.js';
 import type { Payment } from '../models/Payment.js';
 import { PaymentMethod, PaymentStatus } from '../types/index.js';
+import { tenantIt } from './helpers/v2-tenant.js';
+
+// Commerce money documents require a tenant (#4021).
+const it = tenantIt();
 
 /**
  * Drive a payment to COMPLETED through the verified `recordPayment()`
@@ -90,6 +94,7 @@ describe('Payment', () => {
       await customer.save();
 
       const contract = await contracts.create({
+        _meta_type: 'Order',
         customerId: customer.id,
         totalAmount: 1000,
       });
@@ -116,6 +121,7 @@ describe('Payment', () => {
       await customer.save();
 
       const contract = await contracts.create({
+        _meta_type: 'Order',
         customerId: customer.id,
       });
       await contract.save();
@@ -147,6 +153,7 @@ describe('Payment', () => {
       await customer.save();
 
       const contract = await contracts.create({
+        _meta_type: 'Order',
         customerId: customer.id,
       });
       await contract.save();
@@ -178,6 +185,7 @@ describe('Payment', () => {
       await customer.save();
 
       const contract = await contracts.create({
+        _meta_type: 'Order',
         customerId: customer.id,
       });
       await contract.save();
@@ -199,6 +207,7 @@ describe('Payment', () => {
       await customer.save();
 
       const contract = await contracts.create({
+        _meta_type: 'Order',
         customerId: customer.id,
       });
       await contract.save();
@@ -220,6 +229,7 @@ describe('Payment', () => {
       await customer.save();
 
       const contract = await contracts.create({
+        _meta_type: 'Order',
         customerId: customer.id,
       });
       await contract.save();
@@ -245,11 +255,13 @@ describe('Payment', () => {
       await customer.save();
 
       const contract1 = await contracts.create({
+        _meta_type: 'Order',
         customerId: customer.id,
       });
       await contract1.save();
 
       const contract2 = await contracts.create({
+        _meta_type: 'Order',
         customerId: customer.id,
       });
       await contract2.save();
@@ -288,6 +300,7 @@ describe('Payment', () => {
       await customer2.save();
 
       const contract = await contracts.create({
+        _meta_type: 'Order',
         customerId: customer1.id,
       });
       await contract.save();
@@ -316,6 +329,7 @@ describe('Payment', () => {
       await customer.save();
 
       const contract = await contracts.create({
+        _meta_type: 'Order',
         customerId: customer.id,
         totalAmount: 1000,
       });
@@ -355,6 +369,7 @@ describe('Payment', () => {
       await customer.save();
 
       const contract = await contracts.create({
+        _meta_type: 'Order',
         customerId: customer.id,
       });
       await contract.save();
@@ -428,6 +443,7 @@ describe('Payment Ledger Integration', () => {
     await customer.save();
 
     const contract = await contracts.create({
+      _meta_type: 'Order',
       customerId: customer.id,
       totalAmount: 1000,
     });
@@ -491,6 +507,7 @@ describe('Payment Ledger Integration', () => {
     await customer.save();
 
     const contract = await contracts.create({
+      _meta_type: 'Order',
       customerId: customer.id,
     });
     await contract.save();
@@ -538,6 +555,7 @@ describe('Payment Ledger Integration', () => {
     await customer.save();
 
     const contract = await contracts.create({
+      _meta_type: 'Order',
       customerId: customer.id,
     });
     await contract.save();
@@ -579,6 +597,7 @@ describe('Payment Ledger Integration', () => {
     await customer.save();
 
     const contract = await contracts.create({
+      _meta_type: 'Order',
       customerId: customer.id,
     });
     await contract.save();

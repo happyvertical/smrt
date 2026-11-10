@@ -1,6 +1,6 @@
 {
   "name": "@happyvertical/smrt-tenancy",
-  "version": "0.55.21",
+  "version": "0.60.16",
   "smrtJsdoc": "strict",
   "description": "Production-ready multi-tenancy framework for SMRT with automatic tenant isolation and enforcement",
   "type": "module",
@@ -39,6 +39,10 @@
       "types": "./dist/svelte/index.d.ts",
       "svelte": "./dist/svelte/index.js",
       "import": "./dist/svelte/index.js"
+    },
+    "./decorators": {
+      "types": "./dist/decorators.d.ts",
+      "import": "./dist/decorators.js"
     }
   },
   "scripts": {
@@ -78,7 +82,7 @@
     "svelte": "^5.57.1",
     "svelte-check": "^4.7.6",
     "typescript": "6.0.3",
-    "vite": "8.1.4",
+    "vite": "8.1.6",
     "vitest": "4.1.10"
   },
   "keywords": [

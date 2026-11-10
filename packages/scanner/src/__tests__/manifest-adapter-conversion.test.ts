@@ -292,6 +292,20 @@ describe('ManifestAdapter conversion', () => {
       expect(result?._meta?.onUpdate).toBe('RESTRICT');
     });
 
+    it.each([
+      'foreignKey',
+      'crossPackageRef',
+    ])('carries a line-items role from %s into field metadata (#3718)', (name) => {
+      const result = adapter.convertField(
+        field({
+          name: 'orderId',
+          typeAnnotation: 'string',
+          decorators: [{ name, arguments: ["'Order'", "{ role: 'items' }"] }],
+        }),
+      );
+      expect(result?._meta?.role).toBe('items');
+    });
+
     it('preserves the explicit engine allowlist in field metadata (#2504)', () => {
       const result = adapter.convertField(
         field({

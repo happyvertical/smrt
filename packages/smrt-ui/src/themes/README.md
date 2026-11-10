@@ -421,7 +421,12 @@ Modern Google Material Design 3 with refined colors and typography.
 
 ### Glass
 
-Apple-inspired glass morphism with backdrop blur effects.
+Apple-inspired glass morphism with backdrop blur effects. The light primary
+is `#0066cc`, not Apple's `#007aff`: `primary` is text on ghost buttons and
+links, and `#007aff` was 3.6:1 on the light background (#4567). Every preset
+is pinned by `__tests__/primary-text-contrast.test.ts`; Glass dark, Studio
+light and SMRT light still sit below AA on some surfaces and are pinned at
+their current ratios there (#4575).
 
 - **Colors**: Translucent surfaces, system colors, layered depth
 - **Effects**: Backdrop blur, saturation boost, frosted glass

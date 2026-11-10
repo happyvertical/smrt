@@ -63,6 +63,9 @@ await issue.rollback();
 | `Issue` | Issue/ticket (STI base). Methods: `sync()`, `incorporateFeedback()`, `rollback()`, `suggestLabels()`, `close()`, `addLabels()`, `addComment()` |
 | `PullRequest` | Pull request (STI subclass of Issue). Methods: `sync()`, `summarize()`, `merge()`, `markReady()`, `convertToDraft()`, `requestReviewers()`, `findLinkedIssue()` |
 | `Project` | Project board (GitHub Projects V2). Methods: `sync()`, `addItem()`, `moveItem()`, `listItems()`, `updateItemStatus()`, `analyzeHealth()` |
+| `ProjectQuestion` | A requested fact whose lifecycle is `open`, `answered`, `deferred`, or `superseded`. |
+| `ProjectDecision` | An owner choice with options, outcome, and rationale whose lifecycle is `open`, `decided`, `deferred`, or `superseded`. |
+| `ProjectGovernanceEvent` | Immutable question/decision history with actor, action, status transition, and revision. |
 | `Comment` | Comment on an issue or PR. AI methods: `isQuestion()`, `isApproval()`, `requestsChanges()`, `extractActionItems()`, `summarize()`, `getSentiment()` |
 | `Label` | Label/tag for issues; optionally scoped to a repository or a `Project`. Methods: `isTypeLabel()`, `isPriorityLabel()`, `getCategory()`, `createInRepository()` |
 
@@ -75,6 +78,91 @@ await issue.rollback();
 | `IssueCollection` | `discover()`, `findByProject()`, `findByRepository()`, `findOpen()`, `findByLabel()`, `findByAssignee()`, `findNeedingReview()`, `findWithUnincorporatedFeedback()`, `batchSync()` |
 | `PullRequestCollection` | `discover()`, `findByRepository()`, `findOpen()`, `batchSync()` |
 | `ProjectCollection` | Standard CRUD, `findByTitle()` |
+| `ProjectQuestionCollection` | Tenant-safe project listing and lookup. |
+| `ProjectDecisionCollection` | Tenant-safe project listing and lookup. |
+| `ProjectGovernanceEventCollection` | Ordered history for a question or decision. |
+
+### Project questions and decisions
+
+`ProjectGovernanceService` is the write boundary for owner questions and
+decisions. Host applications pass a qualified project record type and id, so
+the same contract can attach to the provider-backed `Project` in this package
+or to an application-owned project model. The service requires a tenant scope,
+a trusted actor projection, and an `expectedRevision` for every mutation. Only
+the assigned owner or a host-authorized manager may answer or decide;
+assignment, deferral, reopening, and supersession require manager authority.
+
+Records default to `visibility: 'internal'`; explicitly choose `client` for
+client-facing records and pass `{ visibility: 'client' }` to `listForProject`.
+Hosts authorize project access and strip private context references before
+projecting client views. Lifecycle history rejects updates and deletion. Assignment events retain the
+previous and next owner identities, including explicit owner clearing.
+
+Questions and decisions retain typed references to the spec, cookbook,
+conversation, asset, or URL that raised them. They do not replace facts: an
+extracted `open_question` fact may seed a `ProjectQuestion`, but fact provenance
+and question answer state remain separate lifecycles.
+
+`ProjectQuestionsAndDecisions` from `@happyvertical/smrt-projects/svelte`
+renders authorized projections and emits typed answer/decision callbacks. It
+does not fetch records or decide application permissions.
+
+`ProjectInterview` (registry slot `project-interview`) is the guided,
+one-record-at-a-time surface over the same `ProjectQuestionView` /
+`ProjectDecisionView` projections and `onanswer` / `ondecide` callbacks. It
+also does not fetch. Props: `questions`, `decisions` (asked after the
+questions, each in the host's order), `busy`, `framing` (keyed by record id:
+`why`, `unblocks` labels, `recommendedOptionId`), `startIndex` (read once on
+mount; defaults to the first open record) and `onadvance`, which receives a
+`ProjectInterviewAdvanceDetail` (`index`, `total`, `id`, `kind`, `reason`) on
+every move so hosts can persist resume position. The recommended option
+(`framing.recommendedOptionId`, else the option's `recommended` flag) is listed
+first but never preselected, and question choices keep the Other text box. The
+interview only advances after the host re-renders the submitted record with a
+non-`open` status (or withdraws it), so a failed save leaves the person on that
+question. Skip moves on without calling a callback; Back revisits earlier
+records, showing recorded answers read-only. Progress shows the position and
+answered count; when no record remains open it shows a completion state,
+otherwise a summary that returns to skipped records. Focus moves to each new
+record's heading. The entry animation runs only when the browser reports no
+reduced-motion preference.
+
+### Canonical project specification
+
+`ProjectSpecificationService` persists one canonical specification per tenant
+and qualified project target. Its `cookbook` is validated and canonicalized by
+`@happyvertical/smrt-core/cookbook`; `getCookbook()` returns the portable
+`Cookbook` from `@happyvertical/smrt-types`, including its `specs` requirements.
+`saveForProject({ ...scope, title, summary, cookbook, expectedRevision, actor })`
+requires a trusted manager actor. `expectedRevision: null` means create-only;
+updates require the currently observed revision. Validation rejects with
+`ProjectSpecificationValidationError` (`status: 400`); stale revisions reject
+with `ProjectGovernanceConflictError`.
+
+When project creation already owns a transaction, use
+`ProjectSpecificationService.create({ db: tx, transaction: 'caller' })` so the
+specification rolls back with the project. The default mode owns its transaction.
+An active caller tenant must match the target; hosts creating a child project
+enter that authorized child tenant context before saving.
+
+### Participant development requests
+
+`ParticipantDevelopmentRequestService.create({ db }).submit()` accepts a trusted
+server-authorized participant identity, tenant/project, `requestKey`, type and
+description. It records participant provenance with a nullable `integrationId`;
+managed integration intake still requires a nonempty integration ID. Repeating
+the same actor/project/key returns the accepted request; changed payloads reject
+with `ParticipantDevelopmentRequestConflictError`. Request and initial history
+share one transaction. Hosts enforce project participation before calling this
+service and expose their own safe DTOs, never the collection mutation API.
+
+Existing databases must apply the generated migration that relaxes
+`development_requests.integration_id` to nullable and adds the specification,
+question, decision and history tables before enabling these surfaces. Run the
+normal manifest-based `db:migrate` and verify schema parity; existing managed
+request provenance is unchanged. `pnpm --filter @happyvertical/smrt-projects
+test:postgres` exercises all three workflows with the repository disposable
+PostgreSQL database wrapper.
 
 ### STI Hierarchy
 
@@ -134,3 +222,42 @@ await withRepositoryClient(
 
 See [`AGENTS.md`](./AGENTS.md) for package architecture, invariants, validation,
 and contributor guidance.
+
+### Structured project questions
+
+`ProjectGovernanceService.createQuestion({ ..., options })` accepts optional
+single-choice suggestions (`ProjectQuestionOption`: stable `id`, `label`, optional
+`description`, optional boolean `recommended`). Recommendations are presentation
+only: creation leaves the question open, with no answer or selection. IDs must be
+unique and nonempty; `other` (case insensitive) is reserved and cannot be authored.
+`question.getOptions()` appends `{ id: 'other', label: 'Other' }` to structured
+questions. Omitting options, or supplying an empty array, keeps the existing
+free-text question flow.
+
+`answerQuestion` continues to require a nonempty string `answer`. It additionally
+accepts optional `selectedOptionId` and `idempotencyKey`. An explicit selection
+must match an offered ID, including `other`; an Other answer requires text. Hosts
+should send the chosen label as `answer` for ordinary choices and the person's
+text for Other. The generic `ProjectQuestionsAndDecisions` component supplies
+these values, uses an unselected radio group, marks recommendations, and always
+shows the Other text box. Only explicit form submission invokes `onanswer`.
+
+Existing free-text API clients remain compatible, including when answering a
+structured question without a selection: the service stores their answer and
+leaves `selectedOptionId` empty. It never guesses an option from text. Existing
+questions and immutable history are not rewritten or backfilled. New answer
+history has a `getAnswerSelection()` snapshot with answer text, observed revision,
+and explicit option ID/label when supplied; older events return `null`.
+
+The optional idempotency key is scoped to a question. After tenant/project and
+current owner/manager authorization, an identical actor, answer, selection,
+expected revision, and note replays without a new revision or history event.
+Reusing the key with different input conflicts. Without a key, the existing
+expected-revision conflict behavior applies. Transaction rollback covers both
+question and history writes. Hosts retain responsibility for affected-task
+reconciliation after persistence and replay.
+
+This additive contract adds `question_options` and `selected_option_id` columns
+to `project_questions`, and `answer_selection` to `project_governance_events`.
+Consumers must run their normal manifest-driven database migration before using
+the new released surface. It introduces no new model or table.

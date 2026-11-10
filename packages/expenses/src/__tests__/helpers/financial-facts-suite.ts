@@ -432,8 +432,8 @@ export function defineFinancialFactsSuite(getWorld: () => ExpenseWorld): void {
     it('freezes every new fact when reviewed, including alongside reopen, then permits explicit correction', async () => {
       const world = getWorld();
       await world.inTenant(async () => {
-        const source = await world.expense();
-        const anotherSource = await world.expense();
+        const source = await world.expense({ amount: 11000 });
+        const anotherSource = await world.expense({ amount: 11000 });
         const expense = await world.expense({
           amount: -11000,
           refundOfId: source.id,
@@ -469,6 +469,10 @@ export function defineFinancialFactsSuite(getWorld: () => ExpenseWorld): void {
         await loaded.reopen({ reviewerProfileId });
         loaded.paidByName = 'Corrected funder';
         loaded.setFinancialBreakdown(null);
+        await expect(loaded.save()).rejects.toMatchObject({
+          code: 'EXPENSE_INVALID',
+        });
+        loaded.setFinancialBreakdown(expense.getFinancialBreakdown());
         await loaded.save();
         await loaded.review({ reviewerProfileId });
         expect((await world.expenses.get({ id: expense.id }))?.paidByName).toBe(

@@ -99,6 +99,7 @@ interface ImportDeclaration extends BaseNode {
   type: 'ImportDeclaration';
   specifiers?: ImportSpecifierLike[];
   source: Literal;
+  importKind?: 'value' | 'type';
 }
 
 type ImportSpecifierLike =
@@ -110,6 +111,7 @@ interface ImportSpecifier extends BaseNode {
   type: 'ImportSpecifier';
   imported: Identifier;
   local: Identifier;
+  importKind?: 'value' | 'type';
 }
 
 interface ImportNamespaceSpecifier extends BaseNode {
@@ -579,6 +581,7 @@ export function parseFile(filePath: string): FileScanResult {
         constants: extractModuleObjectConstants(program.body, sourceText),
         unresolved: [],
         importAliases,
+        importBindings: extractImportBindings(program.body),
       };
       for (const node of program.body) {
         const extracted = extractClassFromNode(
@@ -592,6 +595,7 @@ export function parseFile(filePath: string): FileScanResult {
           classes.push(extracted);
         }
       }
+      resolveLocalParameterAliases(classes, typeAliases);
       reportUnresolvedSpreads(ctx.unresolved, filePath, sourceText, errors);
       agentSurface = maybeExtractAgentSurface(program, sourceText, filePath);
       if (sourceMayDeclareRecipe(sourceText)) {
@@ -820,6 +824,7 @@ export function parseSource(
         constants: extractModuleObjectConstants(program.body, sourceText),
         unresolved: [],
         importAliases,
+        importBindings: extractImportBindings(program.body),
       };
       for (const node of program.body) {
         const extracted = extractClassFromNode(
@@ -833,6 +838,7 @@ export function parseSource(
           classes.push(extracted);
         }
       }
+      resolveLocalParameterAliases(classes, typeAliases);
       reportUnresolvedSpreads(ctx.unresolved, filename, sourceText, errors);
       agentSurface = maybeExtractAgentSurface(program, sourceText, filename);
       if (sourceMayDeclareRecipe(sourceText)) {
@@ -924,6 +930,42 @@ function extractImportAliases(body: Statement[]): Map<string, string> {
     }
   }
   return aliases;
+}
+
+/**
+ * Where one local import binding comes from (#4145).
+ * `imported` is the exported name for a named import, `null` for a namespace
+ * import (`import * as ns`).
+ */
+interface ImportBinding {
+  source: string;
+  imported: string | null;
+}
+
+/**
+ * Map each local name bound by a named or namespace VALUE import to its
+ * module specifier. Default imports are left out (the exported class name is
+ * unknown) and so are type-only imports (they cannot be extended).
+ */
+function extractImportBindings(body: Statement[]): Map<string, ImportBinding> {
+  const bindings = new Map<string, ImportBinding>();
+  for (const node of body) {
+    if (node.type !== 'ImportDeclaration' || node.importKind === 'type') {
+      continue;
+    }
+    const source = node.source?.value;
+    if (typeof source !== 'string' || !node.specifiers) continue;
+    for (const spec of node.specifiers) {
+      if (!spec.local?.name) continue;
+      if (spec.type === 'ImportSpecifier') {
+        if (spec.importKind === 'type' || !spec.imported?.name) continue;
+        bindings.set(spec.local.name, { source, imported: spec.imported.name });
+      } else if (spec.type === 'ImportNamespaceSpecifier') {
+        bindings.set(spec.local.name, { source, imported: null });
+      }
+    }
+  }
+  return bindings;
 }
 
 /**
@@ -1067,6 +1109,69 @@ export function extractTypeAliases(body: Statement[]): Record<string, string> {
     }
   }
   return aliases;
+}
+
+/** Alias-chain bound; a longer chain is treated like a cycle. */
+const MAX_PARAMETER_ALIAS_DEPTH = 8;
+
+const BARE_TYPE_IDENTIFIER = /^[A-Za-z_$][\w$]*$/;
+
+/**
+ * Resolve a method parameter whose declared type is a bare identifier naming
+ * a type alias (or enum) declared in the SAME module (#4327).
+ *
+ * The manifest keeps the authored name in `type` (generated code and docs
+ * still read it) and records the alias target as `resolvedType`, which the
+ * schema and coercion consumers read instead. Only the declaring module's own
+ * aliases are consulted -- never the project-wide flattened map -- so a
+ * same-named alias in another file or package cannot leak in, and an
+ * inherited method keeps the resolution made in its declaring file. A cyclic
+ * or over-long chain sets `aliasUnresolved` instead of guessing. An imported
+ * or otherwise unknown name is left untouched.
+ *
+ * @internal Exported for testing
+ */
+export function resolveParameterAlias(
+  type: string | null,
+  aliases: Record<string, string>,
+): { resolvedType: string } | { aliasUnresolved: true } | undefined {
+  if (
+    !type ||
+    !BARE_TYPE_IDENTIFIER.test(type) ||
+    !Object.hasOwn(aliases, type)
+  ) {
+    return undefined;
+  }
+  const seen = new Set<string>();
+  let current = type;
+  while (
+    BARE_TYPE_IDENTIFIER.test(current) &&
+    Object.hasOwn(aliases, current)
+  ) {
+    if (seen.has(current) || seen.size >= MAX_PARAMETER_ALIAS_DEPTH) {
+      return { aliasUnresolved: true };
+    }
+    seen.add(current);
+    current = aliases[current].trim();
+  }
+  return { resolvedType: current };
+}
+
+/** Apply {@link resolveParameterAlias} to every method parameter of `classes`. */
+function resolveLocalParameterAliases(
+  classes: RawClassDefinition[],
+  aliases: Record<string, string>,
+): void {
+  if (Object.keys(aliases).length === 0) return;
+  for (const classDef of classes) {
+    for (const method of classDef.methods) {
+      for (const parameter of method.parameters) {
+        if (parameter.typeUnresolved) continue;
+        const resolution = resolveParameterAlias(parameter.type, aliases);
+        if (resolution) Object.assign(parameter, resolution);
+      }
+    }
+  }
 }
 
 /**
@@ -1223,6 +1328,12 @@ interface DecoratorConfigContext {
    * would silently keep its generated route (#2686).
    */
   importAliases?: Map<string, string>;
+  /**
+   * Local name -> import source for this file's named and namespace value
+   * imports, so a class's `extends` can be traced to the module that
+   * exports its parent (#4145).
+   */
+  importBindings?: Map<string, ImportBinding>;
 }
 
 /**
@@ -1835,9 +1946,10 @@ function extractClassDeclaration(
       : smrtConfig;
 
   // Extract extends clause
-  const { extendsClause, extendsTypeArg } = extractExtendsClause(
+  const { extendsClause, extendsTypeArg, extendsSource } = extractExtendsClause(
     node,
     importAliases,
+    ctx?.importBindings,
   );
 
   // Extract fields and methods
@@ -1877,6 +1989,7 @@ function extractClassDeclaration(
     filePath,
     extendsClause,
     extendsTypeArg,
+    ...(extendsSource ? { extendsSource } : {}),
     decoratorConfig,
     hasSmartDecorator,
     ...(description ? { description } : {}),
@@ -2246,9 +2359,11 @@ function extractValue(
 function extractExtendsClause(
   node: ClassDeclaration,
   importAliases: Map<string, string>,
+  importBindings?: Map<string, ImportBinding>,
 ): {
   extendsClause: string | null;
   extendsTypeArg: string | null;
+  extendsSource?: string;
 } {
   if (!node.superClass) {
     return { extendsClause: null, extendsTypeArg: null };
@@ -2256,17 +2371,43 @@ function extractExtendsClause(
 
   let extendsClause: string | null = null;
   let extendsTypeArg: string | null = null;
+  let extendsSource: string | undefined;
 
   // Get class name
   if (node.superClass.type === 'Identifier') {
     extendsClause = node.superClass.name;
+    const binding = importBindings?.get(extendsClause);
+    if (binding?.imported) extendsSource = binding.source;
   } else if (node.superClass.type === 'MemberExpression') {
-    // Handle Namespace.Class
-    extendsClause = getMemberExpressionString(node.superClass);
+    const member = node.superClass;
+    const namespace =
+      !member.computed &&
+      member.object.type === 'Identifier' &&
+      member.property.type === 'Identifier'
+        ? importBindings?.get(member.object.name)
+        : undefined;
+    if (
+      namespace &&
+      namespace.imported === null &&
+      member.property.type === 'Identifier'
+    ) {
+      // `ns.Class` through `import * as ns from '...'`: the parent is that
+      // module's export `Class` (#4145).
+      extendsClause = member.property.name;
+      extendsSource = namespace.source;
+    } else {
+      // Handle Namespace.Class
+      extendsClause = getMemberExpressionString(member);
+    }
   }
 
-  // Resolve import aliases (e.g., import { Performer as PerformerBase })
-  if (extendsClause && importAliases.has(extendsClause)) {
+  // Resolve import aliases (e.g., import { Performer as PerformerBase }).
+  // A namespace member's name is an export name, never a local alias.
+  if (
+    node.superClass.type === 'Identifier' &&
+    extendsClause &&
+    importAliases.has(extendsClause)
+  ) {
     const aliasedExtends = importAliases.get(extendsClause);
     if (aliasedExtends) {
       extendsClause = aliasedExtends;
@@ -2282,7 +2423,11 @@ function extractExtendsClause(
     extendsTypeArg = extractTypeName(typeParam);
   }
 
-  return { extendsClause, extendsTypeArg };
+  return {
+    extendsClause,
+    extendsTypeArg,
+    ...(extendsSource ? { extendsSource } : {}),
+  };
 }
 
 /**

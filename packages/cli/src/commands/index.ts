@@ -2,6 +2,9 @@
  * CLI Commands - Export all command modules
  */
 
+export { aiCompareCommand, promptsHistoryCommand } from './ai-compare.js';
+export { aiTranscriptCommand } from './ai-transcript.js';
+export { aiUsageCommand } from './ai-usage.js';
 export { configExportCommand } from './config-export.js';
 // Config commands
 export { cookbookCommands } from './cookbook.js';
@@ -14,6 +17,7 @@ export { dbPermissionsCommand } from './db-permissions.js';
 export { dbPruneCommand } from './db-prune.js';
 export { dbRollbackCommand } from './db-rollback.js';
 export { dbStatusCommand } from './db-status.js';
+export { desktopCommands } from './desktop.js';
 export { dispatchCommands } from './dispatch.js';
 export { docsCommands } from './docs-claude.js';
 // Data export command
@@ -21,6 +25,11 @@ export { exportCommand } from './export.js';
 export { generateCommands } from './generate.js';
 export { gitCommands } from './git.js';
 export { gnodeCommands } from './gnode.js';
+export {
+  INFERENCE_HOSTED_SUBCOMMANDS,
+  inferenceHostedCommand,
+} from './inference-hosted.js';
+export { inferenceHostedProvisionSubcommands } from './inference-hosted-provision.js';
 export { initCommands } from './init.js';
 export { kitchenCommands } from './kitchen.js';
 export { mcpAppsCommands } from './mcp-apps-packaging.js';

@@ -280,6 +280,9 @@ function handleKeydown(event: KeyboardEvent, tabId: string) {
   .smrt-tabs__nav {
     display: flex;
     width: 100%;
+    /* Tabs keep their minimum width; a row wider than a phone scrolls. */
+    overflow-x: auto;
+    scrollbar-width: thin;
   }
   .smrt-tabs__tab-button {
     flex: 1;

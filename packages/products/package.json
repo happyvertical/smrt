@@ -1,6 +1,6 @@
 {
   "name": "@happyvertical/smrt-products",
-  "version": "0.55.21",
+  "version": "0.60.16",
   "smrtJsdoc": "strict",
   "description": "SMRT products module: triple-purpose microservice template for standalone apps, federated modules, and NPM libraries",
   "author": "HappyVertical",
@@ -13,7 +13,10 @@
     "dist/app",
     "dist/federation",
     "dist/lib",
-    "AGENTS.md"
+    "AGENTS.md",
+    "agents",
+    "scripts/prepare.mjs",
+    "dist/smrt-knowledge.okf.md"
   ],
   "exports": {
     ".": {
@@ -27,10 +30,12 @@
     },
     "./components": {
       "types": "./dist/lib/components.d.ts",
+      "svelte": "./dist/lib/components.js",
       "default": "./dist/lib/components.js"
     },
     "./stores": {
       "types": "./dist/lib/stores.d.ts",
+      "svelte": "./dist/lib/stores.js",
       "default": "./dist/lib/stores.js"
     },
     "./stores/product-collection": {
@@ -89,7 +94,7 @@
     "svelte": "^5.57.1",
     "svelte-check": "^4.7.6",
     "typescript": "6.0.3",
-    "vite": "8.1.4",
+    "vite": "8.1.6",
     "vitest": "4.1.10"
   },
   "scripts": {
@@ -100,7 +105,7 @@
     "dev:library": "vite build --mode library --watch",
     "generate": "node scripts/generate-smrt-types.js",
     "typecheck": "npm run generate && tsc --noEmit -p tsconfig.json",
-    "build": "npm run build:lib",
+    "build": "npm run generate && npm run build:lib",
     "build:all": "npm run clean && npm run generate && npm run build:lib && npm run build:app && npm run build:federation",
     "build:lib": "vite build --mode library && svelte-package -i src/lib/components -o dist/lib/lib/components --tsconfig tsconfig.svelte.json && svelte-package -i src/lib/features -o dist/lib/lib/features --tsconfig tsconfig.svelte.json && svelte-package -i src/lib/stores -o dist/lib/lib/stores --tsconfig tsconfig.svelte.json && node ../../scripts/prune-svelte-package-artifacts.js dist",
     "build:app": "vite build --mode standalone",
@@ -112,13 +117,13 @@
     "start:federation": "node dist/federation/main.js",
     "preview": "vite preview",
     "prepack": "node ../../scripts/prepack-package.js",
-    "test": "vitest run",
+    "test": "node --test scripts/prepare.test.mjs && vitest run",
     "test:postgres": "node ../../scripts/run-with-ci-postgres.mjs -- pnpm exec vitest run src/price-field.postgres.test.ts",
     "test:watch": "vitest",
     "test:code-split": "node scripts/check-web-engine-code-split.mjs",
     "verify:pack": "node ../../scripts/verify-package-types-exports.js .",
     "clean": "rm -rf dist src/lib/types/smrt-generated",
-    "prepare": "test -f ../smrt/dist/vite-plugin/index.js && npm run build:lib || echo 'Skipping products build:lib (smrt vite-plugin not available yet)'"
+    "prepare": "node scripts/prepare.mjs"
   },
   "keywords": [
     "smrt",

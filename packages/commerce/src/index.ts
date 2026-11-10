@@ -68,17 +68,26 @@ import './__smrt-register__.js';
 
 // Billing-period close, provider events, prepaid credit (#3060)
 export * from './billing/index.js';
-// Collections
+export {
+  HistoricalCustomerFundsAllocationCollection,
+  HistoricalCustomerFundsCollection,
+} from './collections/HistoricalCustomerFundsCollections.js';
+export { HistoricalSalesLineCollection } from './collections/HistoricalSalesLineCollection.js';
 export {
   ContractCollection,
   ContractLineItemCollection,
   type CreatePayoutFromPaymentArgs,
   CustomerCollection,
+  DocumentTaxCollection,
+  type DocumentTaxReportFact,
+  type DocumentTaxReportFactsOptions,
   FulfillmentCollection,
   FulfillmentLineItemCollection,
   InvoiceCollection,
   InvoiceLineItemCollection,
   type InvoiceNumberOptions,
+  type InvoiceTaxReportFact,
+  type InvoiceTaxReportFactsOptions,
   PaymentAllocationCollection,
   PaymentCollection,
   PaymentInstrumentCollection,
@@ -86,9 +95,190 @@ export {
   type PaymentIntentIdempotencyArgs,
   type PaymentIntentSeed,
   PayoutCollection,
+  PurchaseContractCollection,
+  type RefreshTaxSummaryReportOptions,
+  SalesContractCollection,
+  TaxCodeCollection,
+  TaxComponentCollection,
+  TaxSettingsCollection,
+  type TaxSummaryContributorDrilldown,
+  type TaxSummaryContributorDrilldownOptions,
+  type TaxSummaryDrilldownContributor,
+  type TaxSummaryDrilldownPending,
+  type TaxSummaryExpenseSource,
+  type TaxSummaryInvoiceDrilldownOptions,
+  type TaxSummaryLedgerDrilldownFact,
+  type TaxSummaryLedgerDrilldownSource,
+  type TaxSummaryLedgerSource,
+  TaxSummaryReportCollection,
+  type TaxSummaryReportMeasure,
+  type TaxSummaryReportRefreshResult,
+  TenantPaymentAccountCollection,
   UNPAID_STATUSES,
   VendorCollection,
 } from './collections/index.js';
+export { PurchasePriceObservationCollection } from './collections/PurchasePriceObservationCollection.js';
+export {
+  COMMERCE_INVOICE_LINE_ADD_TOOL_SLUG,
+  COMMERCE_INVOICE_LINE_UPDATE_TOOL_SLUG,
+  COMMERCE_INVOICE_PREVIEW_TOOL_SLUG,
+  COMMERCE_TAX_CODES_LIST_TOOL_SLUG,
+  createCommerceMoneyTools,
+} from './commerce-money-tools.js';
+// Tenant-owned connected payment accounts (#3831)
+export {
+  CONNECTED_PAYMENTS_DEFAULT_BACKEND,
+  type ConnectedCheckout,
+  ConnectedPaymentError,
+  type ConnectedPaymentErrorCode,
+  type ConnectedPaymentGateway,
+  type ConnectedPaymentSecretReader,
+  type ConnectedPaymentWebhookResult,
+  type ConnectedRefund,
+  type ConnectedSettlementAccounts,
+  type CreateConnectedCheckoutInput,
+  type CreateStripeConnectGatewayInput,
+  type CreateTenantOnboardingLinkInput,
+  createConnectedCheckout,
+  createStripeConnectGateway,
+  createTenantOnboardingLink,
+  getTenantPaymentAccount,
+  type HandleConnectedPaymentWebhookInput,
+  handleConnectedPaymentWebhook,
+  type LinkTenantPaymentAccountInput,
+  linkTenantPaymentAccount,
+  type OnboardTenantPaymentAccountInput,
+  onboardTenantPaymentAccount,
+  type RefundConnectedPaymentInput,
+  type ResolveConnectedSettlementAccounts,
+  refreshTenantPaymentAccount,
+  refundConnectedPayment,
+  requireEnabledTenantPaymentAccount,
+  setTenantPaymentAccountDisabled,
+  setTenantPaymentFeePolicy,
+  stripeConnectSecretNames,
+  type TenantPaymentAccountKey,
+} from './connected-payments.js';
+export type {
+  ApproveContractBillingScheduleInput,
+  ContractBillingMilestone,
+  ContractBillingSchedule,
+  ContractBillingScheduleRevision,
+  ContractMilestoneClaim,
+  ContractMilestoneInvoiceMoney,
+  IssueContractMilestoneInvoiceInput,
+} from './contract-billing-schedule.js';
+export {
+  allocateContractMilestones,
+  approveContractBillingSchedule,
+  getContractBillingSchedule,
+  issueContractMilestoneInvoice,
+} from './contract-billing-schedule.js';
+export {
+  type AvailableRefundInput,
+  allocateFrozenCredit,
+  calculateAvailableRefund,
+  type FrozenCreditAllocation,
+  type FrozenCreditAllocationResult,
+  type FrozenCreditRequest,
+  type FrozenCreditSourceLine,
+  type IssuedCreditConsumption,
+} from './credit-allocation.js';
+export {
+  type AllocateCustomerFundsInput,
+  allocateCustomerFunds,
+  type CustomerFundsFacts,
+  type CustomerFundsOperation,
+  type CustomerFundsPolicy,
+  type CustomerFundsReleaseEvidence,
+  getCustomerFundsFacts,
+  type RecordCustomerFundsInput,
+  type RefundCustomerFundsInput,
+  type ReverseCustomerFundsAllocationInput,
+  recordCustomerFunds,
+  refundCustomerFunds,
+  reverseCustomerFundsAllocation,
+} from './customer-funds.js';
+export {
+  type GetInvoiceMoneyFactsInput,
+  getInvoiceMoneyFacts,
+  type InvoiceMoneyFacts,
+  type PreviewInvoiceMoneyInput,
+  type PreviewInvoiceMoneyResult,
+  previewInvoiceMoney,
+} from './document-money.js';
+export type {
+  ConvertEstimateToOrderInput,
+  ConvertedEstimateOrder,
+} from './estimate-conversion.js';
+export {
+  convertEstimateToOrder,
+  findOrderForEstimate,
+} from './estimate-conversion.js';
+export {
+  applyHistoricalCustomerFunds,
+  getHistoricalCustomerFundsPosition,
+  getHistoricalCustomerFundsSnapshot,
+  recordHistoricalCustomerAllocation,
+  recordHistoricalCustomerFunds,
+  refundHistoricalCustomerFunds,
+} from './historical-customer-funds.js';
+export type * from './historical-customer-funds-types.js';
+export {
+  getHistoricalSalesMoney,
+  readHistoricalSalesLines,
+  recordHistoricalSalesMoney,
+  validateHistoricalSalesMoneyFacts,
+} from './historical-sales-money.js';
+export {
+  type HistoricalSalesHeaderReportFact,
+  HistoricalSalesTaxClassificationRequired,
+  listHistoricalSalesHeaderFacts,
+} from './historical-sales-reports.js';
+export type * from './historical-sales-types.js';
+export {
+  type FrozenAccountingReconciliationReady,
+  type FrozenAccountingSyncResult,
+  type FrozenInvoiceAccountingInput,
+  type FrozenInvoiceAccountingOptions,
+  type FrozenInvoiceAccountingSnapshot,
+  loadFrozenInvoiceAccountingSnapshot,
+  type QuickBooksFrozenInvoiceMapping,
+  type QuickBooksPilotCommand,
+  type QuickBooksPilotFixture,
+  type ReconcileFrozenInvoiceAccountingInput,
+  readFrozenAccountingSyncState,
+  reconcileFrozenInvoiceAccountingSync,
+  runQuickBooksPilot,
+  type SyncFrozenInvoiceToAccountingInput,
+  syncFrozenInvoiceToAccounting,
+  toFrozenInvoiceAccountingInput,
+} from './invoice-accounting-sync.js';
+export {
+  type InvoiceMcpGetResult,
+  serializeInvoiceMcpGet,
+} from './invoice-mcp.js';
+// Collections
+export {
+  type InvoiceRecordCreditNote,
+  type InvoiceRecordScreenData,
+  type InvoiceRecordStoredTotals,
+  type InvoiceRecordTaxComponent,
+  invoiceRecordStoredTotals,
+  type LoadInvoiceRecordScreenDataInput,
+  loadInvoiceRecordScreenData,
+} from './invoice-record-screen.js';
+export {
+  configureInvoiceRetention,
+  type InvoiceRetentionCommand,
+  releaseInvoiceRetention,
+} from './invoice-retention.js';
+export {
+  bindInvoiceLineSource,
+  type InvoiceSourceBindingHandler,
+  registerInvoiceSourceBinding,
+  unbindInvoiceLineSource,
+} from './invoice-source-binding.js';
 export {
   type InvoiceEditorStorageEngine,
   type InvoiceEditorStorageMigrationResult,
@@ -104,6 +294,25 @@ export {
   migrateCommerceMoneyToMinorUnits,
   preflightCommerceMoneyMinorUnits,
 } from './migrations/moneyMinorUnits.js';
+export {
+  type CommerceContractTypeGroup,
+  type CommercePartyLinkRow,
+  type CommercePartyLinksPreflight,
+  preflightCommercePartyLinks,
+} from './migrations/partyLinks.js';
+export {
+  HistoricalCustomerFunds,
+  type HistoricalCustomerFundsOptions,
+} from './models/HistoricalCustomerFunds.js';
+export {
+  HistoricalCustomerFundsAllocation,
+  type HistoricalCustomerFundsAllocationOptions,
+} from './models/HistoricalCustomerFundsAllocation.js';
+// Exact original issued-sales money and immutable source line identities.
+export {
+  HistoricalSalesLine,
+  type HistoricalSalesLineOptions,
+} from './models/HistoricalSalesLine.js';
 // Models
 export {
   Agreement,
@@ -119,9 +328,13 @@ export {
   type BillingPeriodCloseStatus,
   type BillingStanding,
   Cart,
+  type CommerceDocumentType,
   Contract,
   ContractLineItem,
   Customer,
+  DocumentTax,
+  type DocumentTaxOptions,
+  deriveTenantPaymentAccountStatus,
   Estimate,
   Fulfillment,
   FulfillmentLineItem,
@@ -137,11 +350,115 @@ export {
   PaymentIntent,
   Payout,
   ProductionOrder,
+  PurchaseContract,
   PurchaseOrder,
+  SalesContract,
+  SupplierQuote,
+  TaxCode,
+  TaxComponent,
+  TaxSettings,
+  TaxSummaryReport,
+  type TaxSummaryReportRowKind,
+  TenantPaymentAccount,
+  type TenantPaymentAccountOptions,
+  type TenantPaymentAccountStatus,
+  type TenantPaymentCapabilitySnapshot,
+  TenantPaymentDispute,
+  type TenantPaymentEnvironment,
+  TenantPaymentWebhookEvent,
+  type TenantPaymentWebhookOutcome,
   Vendor,
   WholesaleOrder,
 } from './models/index.js';
-export { assertIntegerMinorUnits } from './money.js';
+export { PurchasePriceObservation } from './models/PurchasePriceObservation.js';
+export {
+  assertIntegerMinorUnits,
+  calculateMoneyDocument,
+  type LineAmountType,
+  type MoneyDiscountInput,
+  type MoneyDocumentResult,
+  type MoneyDocumentTaxResult,
+  type MoneyLineInput,
+  type MoneyLineResult,
+  type MoneyTaxCodeInput,
+  type MoneyValidationCode,
+  MoneyValidationError,
+  type ResolvableTaxCodeInput,
+  type ResolvedLineTaxCode,
+  type ResolveLineTaxCodeContext,
+  type ResolveLineTaxCodeInput,
+  resolveLineTaxCode,
+  type TaxCodeAppliesTo,
+  type TaxCodeKind,
+  type TaxCodeResolutionSource,
+  type TaxComponentInput,
+  type TaxRoundingScope,
+} from './money.js';
+export * from './observed-purchase-price.js';
+export {
+  loadOrdinaryCreditAccountingSnapshot,
+  type OrdinaryCreditReviewScope,
+  type OrdinaryInvoiceAccountingState,
+  type ReconcileOrdinaryAccountingStepInput,
+  type ReconcileOrdinaryCreditAccountingInput,
+  readOrdinaryInvoiceAccountingState,
+  reconcileOrdinaryAccountingStep,
+  reconcileOrdinaryBaseInvoice,
+  reconcileOrdinaryCreditAccounting,
+  type SyncOrdinaryCreditToAccountingInput,
+  type SyncOrdinaryInvoiceToAccountingInput,
+  type SyncOrdinaryRefundToAccountingInput,
+  syncOrdinaryCreditToAccounting,
+  syncOrdinaryInvoiceToAccounting,
+  syncOrdinaryRefundToAccounting,
+  toOrdinaryCreditAccountingInput,
+} from './ordinary-accounting.js';
+// Customer and vendor contact rows posted by the party forms (#3501)
+export {
+  applyPartyContactIntent,
+  DEFAULT_PARTY_CONTACT_FIELD_NAMES,
+  normalizePartyContacts,
+  PARTY_CONTACT_MAX_LENGTHS,
+  type PartyContactErrorCode,
+  type PartyContactField,
+  type PartyContactFieldNames,
+  type PartyContactFormSource,
+  type PartyContactInput,
+  type PartyContactIntents,
+  PartyContactPartyNotFoundError,
+  PartyContactPayloadError,
+  type PartyContactRowErrors,
+  PartyContactValidationError,
+  readPartyContactRows,
+  type SavePartyContactsOptions,
+  savePartyContacts,
+  validatePartyContactRows,
+} from './party-contacts.js';
+export {
+  type QuickBooksPilotAcceptance,
+  type QuickBooksPilotInvoiceEvidence,
+  type QuickBooksPilotProjection,
+  type QuickBooksPilotScope,
+  type QuickBooksPilotTransaction,
+  quickBooksPilotInvoiceId,
+} from './quickbooks-pilot-evidence.js';
+export {
+  getReceivedPurchaseMoney,
+  getReceivedSalesContractMoney,
+  type ReceivedPurchaseMoneyFacts,
+  type ReceivedPurchaseMoneyLine,
+  type ReceivedPurchaseMoneySnapshot,
+  type ReceivedPurchaseQuoteSource,
+  ReceivedPurchaseTaxClassificationRequired,
+  type ReceivedPurchaseTaxComponent,
+  type ReceivedSalesContractMoneyFacts,
+  type ReceivedSalesContractMoneySnapshot,
+  type RecordReceivedPurchaseMoneyInput,
+  type RecordReceivedSalesContractMoneyInput,
+  recordReceivedPurchaseMoney,
+  recordReceivedSalesContractMoney,
+  validateReceivedPurchaseMoneyFacts,
+} from './received-purchase-money.js';
 export {
   AgreementsRecipe,
   CustomersRecipe,
@@ -155,10 +472,85 @@ export {
   VendorsRecipe,
   WholesaleRecipe,
 } from './recipes.js';
-
+export type {
+  ReconcileRetainedAccountingStepInput,
+  ReconcileRetainedCreditAccountingInput,
+  ReleaseRetainedInvoiceToAccountingInput,
+  RetainedInvoiceAccountingState,
+  SyncRetainedCreditToAccountingInput,
+  SyncRetainedInvoiceToAccountingInput,
+  SyncRetainedRefundToAccountingInput,
+} from './retention-accounting.js';
+export {
+  loadRetainedCreditAccountingSnapshot,
+  loadRetainedInvoiceAccountingSnapshot,
+  readRetainedInvoiceAccountingState,
+  reconcileRetainedAccountingStep,
+  reconcileRetainedBaseInvoice,
+  reconcileRetainedCreditAccounting,
+  releaseRetainedInvoiceToAccounting,
+  syncRetainedCreditToAccounting,
+  syncRetainedInvoiceToAccounting,
+  syncRetainedRefundToAccounting,
+  toRetainedCreditAccountingInput,
+  toRetainedInvoiceAccountingInput,
+} from './retention-accounting.js';
+export {
+  calculateInvoicePayable,
+  type InvoicePayableFacts,
+  type InvoiceRetentionState,
+} from './retention-money.js';
+export {
+  buildRevenueJournalEntries,
+  type RevenueJournalDocumentInput,
+  type RevenueJournalEntry,
+  type RevenueJournalLineInput,
+  type RevenueJournalOptions,
+  type RevenueJournalResult,
+  type RevenueJournalTaxInput,
+} from './revenue-journal.js';
+export {
+  applyCommerceCookbookSettings,
+  applyCookbookTaxSettings,
+  applyTaxCodeExamplePack,
+  COMMON_TAX_CODE_EXAMPLE_PACK,
+  type CommerceTenantBootstrap,
+  type CookbookTaxSettingsInput,
+  cookbookTaxSettings,
+  type EnsureCommerceTenantOptions,
+  ensureCommerceTenant,
+  ensureTenantTaxCodes,
+  STANDARD_TAX_CODES,
+  type TaxCodeExamplePack,
+} from './tax/index.js';
+export {
+  aggregateTaxSummary,
+  type TaxSummaryComponentMapping,
+  type TaxSummaryComponentRow,
+  type TaxSummaryDirection,
+  type TaxSummaryExpenseFact,
+  type TaxSummaryInput,
+  type TaxSummaryKindRow,
+  type TaxSummaryLedgerMovement,
+  type TaxSummaryReconciliationRow,
+  type TaxSummaryResult,
+  type TaxSummarySourceScope,
+  type TaxSummaryStoredFact,
+  type TaxSummaryWarning,
+} from './tax-summary.js';
+export {
+  buildTaxSummaryReportAdapterDescriptor,
+  createTaxSummaryMaterializedReportHost,
+  drilldownTaxSummaryContributors,
+  drilldownTaxSummaryInvoiceFacts,
+  TAX_SUMMARY_REPORT_ADAPTER,
+  type TaxSummaryMaterializedReportDrilldownSources,
+  type TaxSummaryMaterializedReportHostOptions,
+} from './tax-summary-report-adapter.js';
 // Types
 export {
   type Address,
+  type CancelRevenueOptions,
   ContractStatus,
   ContractType,
   CustomerStatus,
@@ -166,18 +558,40 @@ export {
   FulfillmentStatus,
   FulfillmentType,
   type InvoiceCollectionMethod,
+  type InvoiceCreditCalculationBasis,
+  type InvoiceKind,
   InvoiceStatus,
+  type PartyContact,
   PaymentInstrumentStatus,
   PaymentIntentStatus,
+  type PaymentKind,
   PaymentMethod,
   type PaymentOption,
   PaymentStatus,
   PayoutStatus,
+  type PurchaseContractOptions,
   type PurchaseOrderOptions,
   type RecognizeRevenueOptions,
   type RecordPaymentOptions,
+  type SalesContractOptions,
   VendorStatus,
 } from './types/index.js';
-
 // UI metadata (no Svelte dependency - import ./svelte for components)
 export { COMMERCE_MODULE_META, COMMERCE_UI_SLOTS } from './ui.js';
+export {
+  assertCommerceMoneySchemaCurrent,
+  assertTenantMoneyCurrent,
+  COMMERCE_DATA_NEEDS_UPGRADE,
+  CommerceDataNeedsUpgradeError,
+  type CommerceMoneyUpgradeStatus,
+  commerceMoneyUpgradeCommand,
+  findCommerceMoneyUpgradeNeeds,
+  type TenantlessMoneyDocument,
+  type TenantMoneyUpgradeNeed,
+} from './upgrade/detect.js';
+export {
+  type CommerceMoneyUpgradeFailure,
+  type CommerceMoneyUpgradeResult,
+  type UpgradeCommerceMoneyOptions,
+  upgradeCommerceMoney,
+} from './upgrade/money-v2.js';

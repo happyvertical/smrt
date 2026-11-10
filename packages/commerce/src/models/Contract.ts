@@ -8,16 +8,27 @@ import {
   foreignKey,
   type Meta,
   SmrtObject,
+  type SmrtSaveOptions,
   smrt,
 } from '@happyvertical/smrt-core';
+import type { DatabaseInterface } from '@happyvertical/smrt-core/migrations';
 import { TenantScoped, tenantId } from '@happyvertical/smrt-tenancy';
+import {
+  DOCUMENT_MONEY_READ_REBIND,
+  DOCUMENT_MONEY_WRITE,
+  type DocumentMoneyReadRebindCapability,
+  type DocumentMoneyWriteCapability,
+} from '../document-money-internal.js';
 import { assertIntegerMinorUnits } from '../money.js';
 import {
   type ContractOptions,
   ContractStatus,
   ContractType,
   type LicenseSaleOptions,
+  type PurchaseContractOptions,
   type PurchaseOrderOptions,
+  type SalesContractOptions,
+  type TaxRegistrationOptions,
 } from '../types/index.js';
 import { Customer } from './Customer.js';
 import { Vendor } from './Vendor.js';
@@ -61,15 +72,27 @@ const CONTRACT_STATUS_TRANSITIONS: Record<ContractStatus, ContractStatus[]> = {
  */
 const loadedContractStatus = new WeakMap<Contract, ContractStatus>();
 
+/** Whether a Contract belongs to the purchase STI branch, including descendants. */
+export function classifyContractPurchase(contract: Contract): boolean {
+  return 'vendorId' in contract;
+}
+
+/** Frozen snapshots are reportable except cancelled contracts and supplier quotes. */
+export function isContractSnapshotReportEligible(contract: Contract): boolean {
+  return (
+    !(contract instanceof SupplierQuote) &&
+    contract.status !== ContractStatus.DRAFT &&
+    contract.status !== ContractStatus.CANCELLED
+  );
+}
+
 /**
  * Contract is the base class for all commercial agreements.
  *
- * Uses Single Table Inheritance (STI) to support different contract types:
- * - Estimate: Quote/proposal for customer
- * - Order: Customer purchase order
- * - Lease: Rental/lease agreement
- * - Agreement: Service/maintenance agreement
- * - PurchaseOrder: Order to vendor/supplier
+ * Uses Single Table Inheritance (STI) for ten leaf types. SalesContract owns
+ * the customer link for Estimate, Order, WholesaleOrder, Cart, Lease,
+ * Agreement, and LicenseSale. PurchaseContract owns the vendor link for
+ * SupplierQuote, PurchaseOrder and ProductionOrder. Both branches share `contracts`.
  *
  * @example
  * ```typescript
@@ -98,6 +121,18 @@ const loadedContractStatus = new WeakMap<Contract, ContractStatus>();
   cli: { skipApiCheck: true },
 })
 export class Contract extends SmrtObject {
+  /** @internal Collection read guard returns this snapshot on its root DB. */
+  rebindMoneyRead(
+    capability: DocumentMoneyReadRebindCapability,
+    db: DatabaseInterface,
+  ): this {
+    if (capability !== DOCUMENT_MONEY_READ_REBIND)
+      throw new Error('Contract read rebinding requires the owning capability');
+    this._db = db;
+    this.options.db = db;
+    return this;
+  }
+
   /**
    * Tenant ID for multi-tenant isolation
    * Nullable to support both tenant-scoped and global contracts
@@ -124,22 +159,6 @@ export class Contract extends SmrtObject {
   status: ContractStatus = ContractStatus.DRAFT;
 
   /**
-   * Customer ID (for sales contracts: Estimate, Order, Agreement)
-   */
-  @foreignKey(Customer, {
-    description: 'The customer a sales order or agreement is for.',
-  })
-  customerId: string | null = null;
-
-  /**
-   * Vendor ID (for purchase contracts: PurchaseOrder)
-   */
-  @foreignKey(Vendor, {
-    description: 'The vendor a purchase order is placed with.',
-  })
-  vendorId: string | null = null;
-
-  /**
    * Subtotal before tax, in **integer minor units** (cents, satoshis).
    *
    * The `= 0` initializer is load-bearing: SMRT maps an integer literal to
@@ -147,19 +166,26 @@ export class Contract extends SmrtObject {
    * as minor units and never as a float — `$19.99` is `1999`, not `19.99`
    * (#2401).
    */
-  @field({ description: 'The amount before tax.' })
+  @field({ description: 'The amount before tax.', ui: { format: 'money' } })
   subtotal: number = 0;
+
+  /** Informational sum of resolved line discounts, in integer minor units. */
+  @field({ ui: { format: 'money' } })
+  discountTotal: number = 0;
 
   /**
    * Tax amount, in integer minor units (#2401).
    */
-  @field({ description: 'The tax charged.' })
+  @field({ description: 'The tax charged.', ui: { format: 'money' } })
   taxAmount: number = 0;
 
   /**
    * Total amount including tax, in integer minor units (#2401).
    */
-  @field({ description: 'The full amount, tax included.' })
+  @field({
+    description: 'The full amount, tax included.',
+    ui: { format: 'money' },
+  })
   totalAmount: number = 0;
 
   /**
@@ -171,10 +197,69 @@ export class Contract extends SmrtObject {
   })
   currency: string = 'USD';
 
+  /** Calculated pricing or immutable source-declared purchase evidence. */
+  @field({
+    description:
+      'Whether amounts were calculated or recorded from reviewed original paperwork.',
+  })
+  moneyAuthority: 'calculated' | 'received' = 'calculated';
+
+  /** Guarded received evidence; write through the public received purchase/sales contract commands only. */
+  receivedPurchaseMoneyJson = '';
+
+  /**
+   * Append-only approved milestone schedule and issued claim evidence.
+   * `''` means no schedule; the column defaults to it, and a NULL stored by an
+   * earlier writer hydrates as `''` (#4155).
+   */
+  @field({ type: 'text', default: '' })
+  billingScheduleJson = '';
+
+  /** Pricing interpretation fixed before the Contract leaves draft. */
+  lineAmountType: 'exclusive' | 'inclusive' | 'none' = 'exclusive';
+
+  /** Component rounding scope fixed before the Contract leaves draft. */
+  taxRoundingScope: 'line' | 'document' = 'line';
+
+  /** Immutable seller registration snapshot once the Contract leaves draft. */
+  sellerTaxRegistrationsJson = '[]';
+
+  get sellerTaxRegistrations(): TaxRegistrationOptions[] {
+    try {
+      const value: unknown = JSON.parse(this.sellerTaxRegistrationsJson);
+      if (!Array.isArray(value)) return [];
+      return value.filter(
+        (entry): entry is TaxRegistrationOptions =>
+          !!entry &&
+          typeof entry === 'object' &&
+          typeof (entry as TaxRegistrationOptions).taxComponentId ===
+            'string' &&
+          typeof (entry as TaxRegistrationOptions).number === 'string' &&
+          typeof (entry as TaxRegistrationOptions).label === 'string',
+      );
+    } catch {
+      return [];
+    }
+  }
+
+  set sellerTaxRegistrations(value: TaxRegistrationOptions[]) {
+    this.sellerTaxRegistrationsJson = JSON.stringify(value);
+  }
+
+  /** Immutable customer or vendor tax identifier snapshot after issue. */
+  partyTaxId = '';
+
+  /** Stable issue/freeze identity, independent of lifecycle updated_at. */
+  moneySnapshotId = '';
+
   /**
    * Date contract was issued
    */
-  @field({ description: 'The date it was issued or placed.' })
+  @field({
+    description: 'The date it was issued or placed.',
+    // A business date: the natural time axis of contract reports (#4100).
+    ui: { format: 'date' },
+  })
   issueDate: Date = new Date();
 
   /**
@@ -241,13 +326,32 @@ export class Contract extends SmrtObject {
     if (options.contractType !== undefined)
       this.contractType = options.contractType;
     if (options.status !== undefined) this.status = options.status;
-    if (options.customerId !== undefined) this.customerId = options.customerId;
-    if (options.vendorId !== undefined) this.vendorId = options.vendorId;
+    if (options.billingScheduleJson !== undefined)
+      this.billingScheduleJson = options.billingScheduleJson;
+    if (options.moneyAuthority !== undefined)
+      this.moneyAuthority = options.moneyAuthority;
+    if (options.receivedPurchaseMoneyJson !== undefined)
+      this.receivedPurchaseMoneyJson = options.receivedPurchaseMoneyJson;
     if (options.subtotal !== undefined) this.subtotal = options.subtotal;
+    if (options.discountTotal !== undefined)
+      this.discountTotal = options.discountTotal;
     if (options.taxAmount !== undefined) this.taxAmount = options.taxAmount;
     if (options.totalAmount !== undefined)
       this.totalAmount = options.totalAmount;
     if (options.currency !== undefined) this.currency = options.currency;
+    if (options.lineAmountType !== undefined)
+      this.lineAmountType = options.lineAmountType;
+    if (options.taxRoundingScope !== undefined)
+      this.taxRoundingScope = options.taxRoundingScope;
+    if (options.sellerTaxRegistrationsJson !== undefined)
+      this.sellerTaxRegistrationsJson = options.sellerTaxRegistrationsJson;
+    if (options.sellerTaxRegistrations !== undefined)
+      this.sellerTaxRegistrations = structuredClone(
+        options.sellerTaxRegistrations,
+      );
+    if (options.partyTaxId !== undefined) this.partyTaxId = options.partyTaxId;
+    if (options.moneySnapshotId !== undefined)
+      this.moneySnapshotId = options.moneySnapshotId;
     if (options.issueDate !== undefined) this.issueDate = options.issueDate;
     if (options.dueDate !== undefined) this.dueDate = options.dueDate;
     if (options.expiryDate !== undefined) this.expiryDate = options.expiryDate;
@@ -299,9 +403,8 @@ export class Contract extends SmrtObject {
    * Calculate and update totals from line items
    */
   async recalculateTotals(): Promise<void> {
-    // This would typically query ContractLineItems and sum them
-    // For now, just ensure totalAmount = subtotal + taxAmount
-    this.totalAmount = this.subtotal + this.taxAmount;
+    const { recalculateContractTotals } = await import('../contract-money.js');
+    await recalculateContractTotals(this);
   }
 
   /**
@@ -312,6 +415,16 @@ export class Contract extends SmrtObject {
    */
   override async initialize(): Promise<this> {
     await super.initialize();
+    // No schedule is `''`; a row written before the column had a default
+    // holds NULL, which means the same thing (#4155).
+    this.billingScheduleJson ??= '';
+    // A row read from the database must not be old-format money data.
+    if (this.isPersisted) {
+      const { assertHydratedMoneyRowCurrent } = await import(
+        '../upgrade/detect.js'
+      );
+      await assertHydratedMoneyRowCurrent(this);
+    }
     if (await this.isSaved()) {
       loadedContractStatus.set(this, this.status);
     }
@@ -322,22 +435,52 @@ export class Contract extends SmrtObject {
    * Validate the amounts and the status transition before persisting, then
    * save. Inherited by every STI subtype (Estimate/Order/Lease/.../LicenseSale),
    * so a forged `status` on any of them is caught here. LicenseSale layers its
-   * own rights-immutability guard on top via `super.save()`. See S5 audit
+   * own rights-immutability guard on top via `super.save(options)`. See S5 audit
    * #1390.
    *
    * `subtotal` / `taxAmount` / `totalAmount` are mass-assignable on the
    * generated create/update routes, so the minor-units check runs on every
    * write surface (#2401).
    */
-  override async save(): Promise<this> {
+  override async save(options?: SmrtSaveOptions): Promise<this> {
+    const { saveContract } = await import('../contract-money.js');
+    return (await saveContract(this, options)) as this;
+  }
+
+  /** Received purchase monetary history cannot be deleted. */
+  override async delete(
+    options: { expectedUpdatedAt?: Date | string } = {},
+  ): Promise<void> {
+    const { deleteContract } = await import('../contract-money.js');
+    await deleteContract(this, options);
+  }
+
+  /** @internal Contract aggregate persistence only. */
+  async deleteDerived(
+    capability: DocumentMoneyWriteCapability,
+    options: { expectedUpdatedAt?: Date | string } = {},
+  ): Promise<void> {
+    if (capability !== DOCUMENT_MONEY_WRITE)
+      throw new Error('Contract money write capability is required');
+    await super.delete(options);
+  }
+
+  /** @internal Contract aggregate persistence only. */
+  async saveDerived(
+    capability: DocumentMoneyWriteCapability,
+    options?: SmrtSaveOptions,
+  ): Promise<this> {
+    if (capability !== DOCUMENT_MONEY_WRITE)
+      throw new Error('Contract money write capability is required');
     assertIntegerMinorUnits('Contract', this.reference || this.id || '<new>', [
       ['subtotal', this.subtotal],
+      ['discountTotal', this.discountTotal],
       ['taxAmount', this.taxAmount],
       ['totalAmount', this.totalAmount],
     ]);
     const prior = await this.resolvePriorStatus();
     this.assertContractStatusTransition(prior);
-    const result = (await super.save()) as this;
+    const result = (await super.save(options)) as this;
     loadedContractStatus.set(this, this.status);
     return result;
   }
@@ -400,13 +543,50 @@ export class Contract extends SmrtObject {
 // `tenantId: null` (the row becomes global / invisible to tenant-scoped
 // queries) and lists return rows across tenants.
 
+/** Customer-side contracts, including orders, estimates, and licenses. */
+@TenantScoped({ mode: 'optional' })
+@smrt({ abstract: true })
+export abstract class SalesContract extends Contract {
+  @foreignKey(Customer, {
+    description: 'The customer a sales order or agreement is for.',
+  })
+  customerId: string | null = null;
+
+  constructor(options: SalesContractOptions = {}) {
+    super(options);
+    if (options.customerId !== undefined) this.customerId = options.customerId;
+  }
+}
+
+/** Supplier-side contracts, including supplier quotes, purchase and production orders. */
+@TenantScoped({ mode: 'optional' })
+@smrt({ abstract: true })
+export abstract class PurchaseContract extends Contract {
+  @foreignKey(Vendor, {
+    description: 'The vendor supplying this quote or purchase contract.',
+  })
+  vendorId: string | null = null;
+
+  constructor(options: PurchaseContractOptions = {}) {
+    super(options);
+    if (options.vendorId !== undefined) this.vendorId = options.vendorId;
+  }
+}
+
 /**
  * Estimate - Quote or proposal for a customer
  */
 @TenantScoped({ mode: 'optional' })
 @smrt()
-export class Estimate extends Contract {
+export class Estimate extends SalesContract {
+  @foreignKey(Customer, { required: true })
+  override customerId: string | null = null;
   override contractType = ContractType.ESTIMATE;
+
+  constructor(options: SalesContractOptions = {}) {
+    super(options);
+    if (options.customerId !== undefined) this.customerId = options.customerId;
+  }
 }
 
 /**
@@ -414,8 +594,35 @@ export class Estimate extends Contract {
  */
 @TenantScoped({ mode: 'optional' })
 @smrt()
-export class Order extends Contract {
+export class Order extends SalesContract {
+  @foreignKey(Customer, { required: true })
+  override customerId: string | null = null;
   override contractType = ContractType.ORDER;
+
+  /** Accepted Estimate this Order was converted from; empty for a direct Order. */
+  @field({
+    description: 'The accepted estimate this order was converted from, if any.',
+  })
+  sourceEstimateId: Meta<string> = '';
+
+  /** Idempotency identity of the conversion that created this Order. */
+  @field({
+    description:
+      'The request identity of the conversion that created this order.',
+  })
+  conversionRequestId: Meta<string> = '';
+
+  /** Host-owned evidence reference for the customer's acceptance of the Estimate. */
+  @field({
+    description:
+      'Where the proof of the customer accepting the estimate is kept.',
+  })
+  acceptanceEvidenceRef: Meta<string> = '';
+
+  constructor(options: SalesContractOptions = {}) {
+    super(options);
+    if (options.customerId !== undefined) this.customerId = options.customerId;
+  }
 }
 
 /**
@@ -423,8 +630,15 @@ export class Order extends Contract {
  */
 @TenantScoped({ mode: 'optional' })
 @smrt()
-export class Lease extends Contract {
+export class Lease extends SalesContract {
+  @foreignKey(Customer, { required: true })
+  override customerId: string | null = null;
   override contractType = ContractType.LEASE;
+
+  constructor(options: SalesContractOptions = {}) {
+    super(options);
+    if (options.customerId !== undefined) this.customerId = options.customerId;
+  }
 }
 
 /**
@@ -432,8 +646,29 @@ export class Lease extends Contract {
  */
 @TenantScoped({ mode: 'optional' })
 @smrt()
-export class Agreement extends Contract {
+export class Agreement extends SalesContract {
+  @foreignKey(Customer, { required: true })
+  override customerId: string | null = null;
   override contractType = ContractType.AGREEMENT;
+
+  constructor(options: SalesContractOptions = {}) {
+    super(options);
+    if (options.customerId !== undefined) this.customerId = options.customerId;
+  }
+}
+
+/** Supplier quotation received from a vendor; acceptance does not create an order. */
+@TenantScoped({ mode: 'optional' })
+@smrt()
+export class SupplierQuote extends PurchaseContract {
+  @foreignKey(Vendor, { required: true })
+  override vendorId: string | null = null;
+  override contractType = ContractType.SUPPLIER_QUOTE;
+
+  constructor(options: PurchaseContractOptions = {}) {
+    super(options);
+    if (options.vendorId !== undefined) this.vendorId = options.vendorId;
+  }
 }
 
 /**
@@ -441,7 +676,9 @@ export class Agreement extends Contract {
  */
 @TenantScoped({ mode: 'optional' })
 @smrt()
-export class PurchaseOrder extends Contract {
+export class PurchaseOrder extends PurchaseContract {
+  @foreignKey(Vendor, { required: true })
+  override vendorId: string | null = null;
   override contractType = ContractType.PURCHASE_ORDER;
 
   /** Expected delivery calendar date (YYYY-MM-DD), or empty when unspecified. */
@@ -461,6 +698,7 @@ export class PurchaseOrder extends Contract {
   /** Construct a purchase order with its optional delivery header. */
   constructor(options: PurchaseOrderOptions = {}) {
     super(options);
+    if (options.vendorId !== undefined) this.vendorId = options.vendorId;
     if (options.expectedDate !== undefined)
       this.expectedDate = options.expectedDate;
     if (options.shipTo !== undefined) this.shipTo = options.shipTo;
@@ -476,8 +714,15 @@ export class PurchaseOrder extends Contract {
  */
 @TenantScoped({ mode: 'optional' })
 @smrt()
-export class WholesaleOrder extends Contract {
+export class WholesaleOrder extends SalesContract {
+  @foreignKey(Customer, { required: true })
+  override customerId: string | null = null;
   override contractType = ContractType.WHOLESALE_ORDER;
+
+  constructor(options: SalesContractOptions = {}) {
+    super(options);
+    if (options.customerId !== undefined) this.customerId = options.customerId;
+  }
 }
 
 /**
@@ -508,7 +753,7 @@ export class WholesaleOrder extends Contract {
  */
 @TenantScoped({ mode: 'optional' })
 @smrt()
-export class ProductionOrder extends Contract {
+export class ProductionOrder extends PurchaseContract {
   override contractType = ContractType.PRODUCTION_ORDER;
 
   /**
@@ -537,13 +782,12 @@ export class ProductionOrder extends Contract {
  *
  * A Cart starts in {@link ContractStatus.DRAFT} via the base `Contract.status`
  * default — the subclass doesn't need its own override. Application code
- * is responsible for promoting the row to `ContractStatus.PENDING` /
- * `ACCEPTED` at checkout time; the framework doesn't enforce a state
- * machine on the cart → order transition.
+ * is responsible for assigning the appropriate Order status at checkout;
+ * the framework doesn't enforce a state machine on the cart → order transition.
  */
 @TenantScoped({ mode: 'optional' })
 @smrt()
-export class Cart extends Contract {
+export class Cart extends SalesContract {
   override contractType = ContractType.CART;
 }
 
@@ -613,7 +857,7 @@ const issuedRightsSnapshot = new WeakMap<LicenseSale, string>();
  */
 @TenantScoped({ mode: 'optional' })
 @smrt()
-export class LicenseSale extends Contract {
+export class LicenseSale extends SalesContract {
   override contractType = ContractType.LICENSE_SALE;
 
   /**
@@ -786,9 +1030,9 @@ export class LicenseSale extends Contract {
    * caller transitions to `ACCEPTED` and saves — `validateImmutable`
    * picks that up post-save on the next call.
    */
-  override async save(): Promise<this> {
+  override async save(options?: SmrtSaveOptions): Promise<this> {
     this.validateImmutable();
-    const result = (await super.save()) as this;
+    const result = (await super.save(options)) as this;
     // If this save transitioned the row to ACCEPTED, freeze the
     // snapshot for future saves.
     if (

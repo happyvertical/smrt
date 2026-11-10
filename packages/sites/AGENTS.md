@@ -16,3 +16,4 @@ Stateless lifecycle ops: `activate()`, `suspend()`, `archive()`. `bindAgent()` h
 - **Required tenancy**: both models use `@TenantScoped({ mode: 'required' })` — must have tenant context
 - **portalConfig accepts both object and JSON string** in constructor
 - **SiteAgentBinding.config is nullable**: auto-parsed from JSON on init
+- **Status tracking only; nothing is provisioned here**: `markProvisioned()` / `markProvisioningFailed()` record `provisioningStatus` for a host that does the real provisioning and deployment (infrastructure, credentials, content UI)

@@ -1,10 +1,14 @@
+import { isSystemContext } from '@happyvertical/smrt-tenancy';
 import { SubscriptionPlanCollection } from '../collections/SubscriptionPlanCollection.js';
+import { SubscriptionPlanVersionCollection } from '../collections/SubscriptionPlanVersionCollection.js';
 import { TenantSubscriptionCollection } from '../collections/TenantSubscriptionCollection.js';
 import type { SubscriptionPlan } from '../models/SubscriptionPlan.js';
+import type { SubscriptionPlanVersion } from '../models/SubscriptionPlanVersion.js';
 import type { TenantSubscription } from '../models/TenantSubscription.js';
 import type {
   EntitlementResolution,
   EntitlementResolutionContext,
+  PlanFeatureGrant,
   PlanThreshold,
   SmrtClassOptions,
   Subscriber,
@@ -23,6 +27,19 @@ import { TenantUsageMeter } from './usage-meter.js';
 
 export interface SubscriptionPlanReader {
   get(criteria: { id: string }): Promise<SubscriptionPlan | null>;
+}
+
+/**
+ * Reader for effective-dated plan versions (#4032). `findInForce` resolves
+ * subscriptions that have no pinned version yet (rows written before
+ * versioning and not yet migrated).
+ */
+export interface SubscriptionPlanVersionReader {
+  get(criteria: { id: string }): Promise<SubscriptionPlanVersion | null>;
+  findInForce?(
+    planId: string,
+    at: Date,
+  ): Promise<SubscriptionPlanVersion | null>;
 }
 
 /**
@@ -76,6 +93,12 @@ export interface SubscriptionResolverReaders {
   plans: SubscriptionPlanReader;
   subscriptions: TenantSubscriptionReader;
   usage: UsageSummaryReader;
+  /**
+   * Plan versions. When present, entitlements come from the version frozen
+   * for the subscription's current period instead of the live plan row.
+   * Omitting it keeps the pre-#4032 live-plan behavior.
+   */
+  planVersions?: SubscriptionPlanVersionReader;
 }
 
 export class SubscriptionResolver {
@@ -88,12 +111,23 @@ export class SubscriptionResolver {
   static async create(
     classOptions: SmrtClassOptions = {},
   ): Promise<SubscriptionResolver> {
-    const [plans, subscriptions, usage] = await Promise.all([
+    const [plans, subscriptions, usage, planVersions] = await Promise.all([
       SubscriptionPlanCollection.create(classOptions),
       TenantSubscriptionCollection.create(classOptions),
       TenantUsageMeter.create(classOptions),
+      SubscriptionPlanVersionCollection.create(classOptions),
     ]);
-    return new SubscriptionResolver({ plans, subscriptions, usage });
+    return new SubscriptionResolver({
+      plans,
+      subscriptions,
+      usage,
+      // Pinned versions of legacy global plans stay readable under a tenant
+      // context through the collection's bounded global fallback.
+      planVersions: {
+        get: ({ id }) => planVersions.findVisibleById(id),
+        findInForce: (planId, at) => planVersions.findInForce(planId, at),
+      },
+    });
   }
 
   /**
@@ -113,7 +147,121 @@ export class SubscriptionResolver {
       options.context,
     );
     const plan = await this.resolvePlan(subscription, options.context);
-    return { subscription, plan };
+    const planVersion = await this.resolvePlanVersion(
+      subscription,
+      options.context,
+    );
+    return { subscription, plan, planVersion };
+  }
+
+  /**
+   * Feature keys the subscriber's entitled terms grant, without evaluating
+   * usage thresholds (#4761). Same subscription, plan-version and entitlement
+   * rules as {@link resolveEntitlements}; used by `SubscriptionFeatureSource`
+   * so a flag check never reads usage meters.
+   */
+  async resolveFeatureGrants(
+    subscriber: Subscriber,
+    options: SubscriptionResolverOptions = {},
+  ): Promise<{
+    featureKeys: string[];
+    /** The entitled terms' grants with their `metadata` (#4759). */
+    grants: PlanFeatureGrant[];
+    planId: string | null;
+    planKey: string | null;
+  }> {
+    const now = options.now ?? new Date();
+    const { identity, terms } = await this.resolveEntitledTerms(
+      subscriber,
+      now,
+      options,
+    );
+    return {
+      featureKeys: terms ? terms.getFeatureKeys() : [],
+      grants: terms ? terms.getFeatureGrants() : [],
+      planId: identity?.planId ?? null,
+      planKey: identity?.planKey ?? null,
+    };
+  }
+
+  /**
+   * The entitled plan terms' thresholds, without reading any usage meter
+   * (#4760). Same subscription, plan-version and entitlement rules as
+   * {@link resolveEntitlements}; `entitled` is false when there is no
+   * current subscription or it does not entitle now (thresholds are then
+   * empty). The hosted inference gate reads its spend caps from here and
+   * meters `_smrt_ai_usage` itself. Thresholds are returned as stored, valid
+   * or not (the models' `getThresholds()` drops invalid entries), so a caller
+   * can refuse a malformed cap instead of skipping it; thresholds JSON that
+   * is not an array throws.
+   */
+  async resolvePlanThresholds(
+    subscriber: Subscriber,
+    options: SubscriptionResolverOptions = {},
+  ): Promise<{
+    entitled: boolean;
+    thresholds: PlanThreshold[];
+    planId: string | null;
+    planKey: string | null;
+    planVersionId: string | null;
+    subscriptionId: string | null;
+  }> {
+    const now = options.now ?? new Date();
+    const { identity, terms } = await this.resolveEntitledTerms(
+      subscriber,
+      now,
+      options,
+    );
+    return {
+      entitled: terms !== null,
+      thresholds: terms ? rawThresholds(terms.thresholds) : [],
+      planId: identity?.planId ?? null,
+      planKey: identity?.planKey ?? null,
+      planVersionId: identity?.planVersionId ?? null,
+      subscriptionId: identity?.subscriptionId ?? null,
+    };
+  }
+
+  private async resolveEntitledTerms(
+    subscriber: Subscriber,
+    now: Date,
+    options: SubscriptionResolverOptions,
+  ): Promise<{
+    identity: EntitlementIdentity | null;
+    terms: SubscriptionPlan | SubscriptionPlanVersion | null;
+  }> {
+    const { subscription, plan, planVersion } =
+      await this.loadEntitlementContext(subscriber, { ...options, now });
+
+    if (!subscription) {
+      return { identity: null, terms: null };
+    }
+
+    // With versioning the frozen version is authoritative: a later edit,
+    // archive or entitlement removal on the live plan never reaches a paid
+    // period. A pinned version that cannot be found fails closed; only an
+    // unpinned subscription to a plan with no versions (unmigrated legacy
+    // data) falls back to the live plan.
+    // Without a version reader or context (custom pre-#4032 readers) the
+    // live plan stays authoritative.
+    const terms =
+      planVersion === undefined
+        ? plan
+        : (planVersion ?? (subscription.planVersionId ? null : plan));
+    const identity = {
+      planId: plan?.id ?? planVersion?.planId ?? subscription.planId ?? null,
+      planKey: plan?.planKey ?? planVersion?.planKey ?? null,
+      planVersionId: terms === planVersion ? (planVersion?.id ?? null) : null,
+      planVersion:
+        terms === planVersion ? (planVersion?.version ?? null) : null,
+      subscriptionId: subscription.id ?? null,
+      status: subscription.status,
+    };
+
+    if (!terms?.isActive() || !subscription.isEntitled(now)) {
+      return { identity, terms: null };
+    }
+    return { identity, terms };
   }
 
   /**
@@ -126,26 +274,17 @@ export class SubscriptionResolver {
     options: SubscriptionResolverOptions = {},
   ): Promise<EntitlementResolution> {
     const now = options.now ?? new Date();
-    const { subscription, plan } = await this.loadEntitlementContext(
-      subscriber,
-      { ...options, now },
-    );
+    const entitled = await this.resolveEntitledTerms(subscriber, now, options);
 
-    if (!subscription) {
+    if (!entitled.identity) {
       return emptyResolution(subscriber);
     }
-
-    if (!plan?.isActive() || !subscription.isEntitled(now)) {
-      return {
-        ...emptyResolution(subscriber),
-        planId: plan?.id ?? subscription.planId ?? null,
-        planKey: plan?.planKey ?? null,
-        subscriptionId: subscription.id ?? null,
-        status: subscription.status,
-      };
+    const { identity, terms } = entitled;
+    if (!terms) {
+      return { ...emptyResolution(subscriber), ...identity };
     }
 
-    const thresholds = plan.getThresholds().filter(isValidThreshold);
+    const thresholds = terms.getThresholds().filter(isValidThreshold);
     const thresholdEvaluations = await this.resolveThresholdEvaluations(
       subscriber,
       thresholds,
@@ -156,11 +295,8 @@ export class SubscriptionResolver {
     return {
       tenantId: subscriber.tenantId,
       subscriber,
-      planId: plan.id ?? null,
-      planKey: plan.planKey,
-      subscriptionId: subscription.id ?? null,
-      status: subscription.status,
-      featureKeys: plan.getFeatureKeys(),
+      ...identity,
+      featureKeys: terms.getFeatureKeys(),
       thresholds,
       thresholdEvaluations,
       allowed: thresholdEvaluations.every((evaluation) => evaluation.allowed),
@@ -236,7 +372,42 @@ export class SubscriptionResolver {
       assertPlanMatchesSubscription(plan, subscription);
       return plan;
     }
-    return this.readers.plans.get({ id: subscription.planId });
+    const plan = await this.readers.plans.get({ id: subscription.planId });
+    assertPlanMatchesSubscription(plan, subscription);
+    return plan;
+  }
+
+  /**
+   * The version frozen for the subscription's current period: its pinned
+   * `planVersionId`, or — for rows not yet pinned — the version in force at
+   * its period start. Null when the subscription has no plan or a pinned
+   * version is missing (the resolver then fails closed); undefined when no
+   * version reader or context is available.
+   */
+  private async resolvePlanVersion(
+    subscription: TenantSubscription | null,
+    context?: EntitlementResolutionContext,
+  ): Promise<SubscriptionPlanVersion | null | undefined> {
+    if (!subscription?.planId) {
+      return null;
+    }
+    if (hasContextValue(context, 'planVersion')) {
+      const planVersion = context?.planVersion ?? null;
+      assertPlanVersionMatchesSubscription(planVersion, subscription);
+      return planVersion;
+    }
+    const reader = this.readers.planVersions;
+    if (!reader) {
+      return undefined;
+    }
+    const planVersion = subscription.planVersionId
+      ? await reader.get({ id: subscription.planVersionId })
+      : ((await reader.findInForce?.(
+          subscription.planId,
+          new Date(subscription.currentPeriodStart ?? subscription.startedAt),
+        )) ?? null);
+    assertPlanVersionMatchesSubscription(planVersion, subscription);
+    return planVersion;
   }
 
   /**
@@ -349,6 +520,16 @@ export class SubscriptionResolver {
   }
 }
 
+type EntitlementIdentity = Pick<
+  EntitlementResolution,
+  | 'planId'
+  | 'planKey'
+  | 'planVersionId'
+  | 'planVersion'
+  | 'subscriptionId'
+  | 'status'
+>;
+
 function toSubscriber(input: Subscriber | string): Subscriber {
   if (typeof input === 'string') {
     return { kind: 'tenant', tenantId: input };
@@ -362,6 +543,8 @@ function emptyResolution(subscriber: Subscriber): EntitlementResolution {
     subscriber,
     planId: null,
     planKey: null,
+    planVersionId: null,
+    planVersion: null,
     subscriptionId: null,
     status: 'none',
     featureKeys: [],
@@ -403,9 +586,44 @@ function assertPlanMatchesSubscription(
   if (!plan) {
     return;
   }
+  if (
+    !isSystemContext() &&
+    plan.tenantId !== null &&
+    plan.tenantId !== subscription.tenantId
+  ) {
+    throw new Error('Entitlement plan does not belong to subscription tenant');
+  }
   if (!plan.id || plan.id !== subscription.planId) {
     throw new Error(
       'Provided entitlement context plan does not match subscription.planId',
+    );
+  }
+}
+
+function assertPlanVersionMatchesSubscription(
+  planVersion: SubscriptionPlanVersion | null,
+  subscription: TenantSubscription,
+): void {
+  if (!planVersion) {
+    return;
+  }
+  if (
+    !isSystemContext() &&
+    planVersion.tenantId !== null &&
+    planVersion.tenantId !== subscription.tenantId
+  ) {
+    throw new Error(
+      'Entitlement plan version does not belong to subscription tenant',
+    );
+  }
+  if (
+    !planVersion.id ||
+    planVersion.planId !== subscription.planId ||
+    (subscription.planVersionId !== null &&
+      planVersion.id !== subscription.planVersionId)
+  ) {
+    throw new Error(
+      'Provided entitlement plan version does not match the subscription',
     );
   }
 }
@@ -447,3 +665,20 @@ function emptyUsageSummary(
 }
 
 export type { PlanThreshold };
+
+/**
+ * Every stored threshold object, without the validity filter the plan
+ * models apply (#4760). Unparseable or non-array JSON throws: a broken
+ * plan must never read as "no caps".
+ */
+function rawThresholds(value: string | null | undefined): PlanThreshold[] {
+  if (value === null || value === undefined || value.trim() === '') return [];
+  const parsed: unknown = JSON.parse(value);
+  if (!Array.isArray(parsed)) {
+    throw new Error('Plan thresholds are not a JSON array.');
+  }
+  return parsed.filter(
+    (entry): entry is PlanThreshold =>
+      entry !== null && typeof entry === 'object' && !Array.isArray(entry),
+  );
+}

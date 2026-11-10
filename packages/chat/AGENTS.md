@@ -31,7 +31,7 @@ principals, tenancy, and authorization to the owning services.
 ## Models
 
 All seven models expose only generated REST/MCP `list`/`get`; structural tests
-check the registry for accidental mutating operations. Writes go through
+check the registry for mutating operations. Writes go through
 membership/owner-checked `ChatService` or the binding-checked voice adapter.
 
 `ChatService` is a closed facade. Its collections and security-sensitive
@@ -97,6 +97,19 @@ fail-closed `allowedTools` offer/execution gates; RBAC, tenant, redaction,
 bounded query results, and audit authority remain in the authenticated
 `PrincipalRun` supplied by `@happyvertical/smrt-agents`.
 
+## Commerce money tools (#3937)
+
+Hosts that offer invoice money work must explicitly register
+`createCommerceMoneyTools()` from `@happyvertical/smrt-commerce` in
+their authenticated assistant route's `extraTools` (for example, `extraTools: () => createCommerceMoneyTools()`) and
+add only the desired `commerce.*` slugs to the persona's `allowedTools`.
+They are not generic manifest CRUD tools: tax codes are selected by code,
+preview is calculator-only, and line writes run through the document-money
+coordinator. Each execution reasserts the principal allow-list and required
+`Invoice`, `InvoiceLineItem`, `DocumentTax`, and `TaxCode` operations. The
+generated MCP invoice `get` serializer remains commerce-owned; use its
+stored-facts integration when that serializer exposes `DocumentTax` rows.
+
 ## Runtime report tools (#3711)
 
 `createRuntimeReportTools()` (`runtime-report-tools.ts`) returns four
@@ -108,8 +121,8 @@ server-owned allow-list gated by `run.assertOperation(collection, 'read')`, and
 field policy, `readPermission`, and tenancy are enforced by the compiler against
 the live run on every compile and every stored-report run. `apply` needs the
 `specHash` of the previewed spec plus an app-owned `confirmation` host that
-resolves only after a human approved that exact spec; with no host the tools are
-propose-only and a model-supplied `confirmed` flag is ignored. Saving also needs
+resolves only after a human approved that exact spec; with no host apply returns an `awaiting_confirmation` proposal for the
+same-origin browser confirm route and stores nothing and a model-supplied `confirmed` flag is ignored. Saving also needs
 `create` on the `RuntimeReport` collection, and `list`/`run` need `read`; the
 default `reportsCollection` is the `RuntimeReport` class itself, which resolves
 to the catalog slug. A string `collection`/`reportsCollection` is used verbatim
@@ -137,7 +150,7 @@ The host opens a page per `PrincipalRun` (smrt-svelte's
 The `AgentSession` runtime depends on personas, agents, and users. Keep those
 edges acyclic: none of those packages may depend back on chat.
 
-- **`runToolLoop(options)`** (`tool-loop.ts`) — a bounded `tool_call → observe → respond` loop. Tools are **manifest operations** of installed packages: `buildManifestToolCatalog({ allowedTools })` reads the `PermissionCatalogService` catalog and keeps only the `(collection, action)` entries named in the persona's allow-list (the **offer gate**; absent/empty ⇒ NO tools). The loop runs inside one `executeAsPrincipal` context, and `invokeManifestTool` executes each op **in-process ("side door")** against `run.context.database` (the RLS tx when Postgres RLS is on), after re-asserting the fail-closed allow-list (`run.assertToolAllowed`) AND the catalog permission (`run.assertOperation`) — the **execution gate**. Bounded by a max-steps ceiling (`DEFAULT_MAX_STEPS = 8`): on the ceiling it disables tools for one final completion so the turn always terminates with text. A thrown tool error is classified (`classifyToolError`): permission denials and 401/403 are `not_permitted`; a `ValidationError` or 400/404/409/422 is `invalid_request` (observation: actionable message, `publicMessage` first, `code`, fix-and-retry hint); else (incl. 429) `execution_error`.
+- **`runToolLoop(options)`** (`tool-loop.ts`) — a bounded `tool_call → observe → respond` loop. Tools are **manifest operations** of installed packages: `buildManifestToolCatalog({ allowedTools })` reads the `PermissionCatalogService` catalog and keeps only the `(collection, action)` entries named in the persona's allow-list (the **offer gate**; absent/empty ⇒ NO tools). The loop runs inside one `executeAsPrincipal` context, and `invokeManifestTool` executes each op **in-process ("side door")** against `run.context.database` (the RLS tx when Postgres RLS is on), after re-asserting the fail-closed allow-list (`run.assertToolAllowed`) AND the catalog permission (`run.assertOperation`) — the **execution gate**. Bounded by `DEFAULT_MAX_STEPS = 8`, an optional token budget and a deadline. Termination, the forced final call, observation caps, argument validation and tool-error classification: [agents/tool-loop.md](agents/tool-loop.md).
 - **`runPersonaConversationTurn(options)`** (`persona-conversation.ts`) — binds a conversation to an `AgentPersona`/`ResolvedPersona`: runs as its principal (`runAsUserId`), offers only its `allowedTools`, speaks its instructions (`resolvePersonaInstructions`, layering approved learned directives), and injects its **recalled learning memory** (`personaLearningMemory`, isolated per `memoryScope`) into the system prompt. `bindPersonaToSession()` mirrors the persona's `allowedTools`/instructions onto the `AgentSession` so the chat authoring gate agrees with the loop's offer gate. Authors the reply (and each executed tool) via the internal `sendAgentReply` bridge. Tools run with the run-as user's **live** permissions unless the host passes a `permissions` snapshot (#2978), which `runToolLoop` forwards to `executeAsPrincipal` so a narrowed principal (e.g. a shared station) cannot reach grants — such as `readPermission`-gated data-surface fields — beyond that snapshot, including through `agents.invoke` delegation (the snapshot becomes the worker's permission ceiling).
 - **Agent orchestration** (L3, #1892) — the loop accepts non-manifest **`extraTools`** (`PrincipalTool[]`, from `@happyvertical/smrt-agents`), gated by the *same* fail-closed allow-list. The standard **`invoke-agent`** tool (`createInvokeAgentTool`, slug `agents.invoke`) lets a conversational agent delegate to a **worker agent under its own principal** — the worker runs via `executeAsPrincipal` as the originating user (never its own authority), the principal is immutable along the chain, and its completion is surfaced back into the conversation. `runPersonaConversationTurn` filters `extraTools` by the persona's `allowedTools` (offer gate); the tool's `execute` re-asserts `assertToolAllowed` (execution gate). See `@happyvertical/smrt-agents` for the delegation envelope + transports.
 - **Chat feedback capture** (`chat-feedback.ts`) — `captureChatFeedback()` + `acceptAppliedChange`/`rejectAppliedChange`/`correctResponse`/`rateResponse`/`thumbsUp`/`thumbsDown` write a `Feedback` row (personas) carrying the conversation's **correlation-id**, and (by default) reinforce the persona's learning memory (`reinforceFromFeedback`). So an in-chat reject decays a strategy below the reuse floor and it stops being recalled; a correction supersedes its stored value.
@@ -190,10 +203,19 @@ dock from one `[...path]` route; `createAssistantHttp{Transport,ActionClient}`
 `resolvePrincipal`; threads only from the actor's keyed session room in that
 tenant (else 404). `allowedTools` is fail-closed; without `tools` it offers
 those manifest ops (an unprovided name is an error, #3414). `ai` defaults to
-the config `ai` block. Pass `runtime`: a turn never keeps the RLS request tx
+the principal's stored inference binding over the config `ai` block (#4756,
+[core inference.md](../core/agents/inference.md#raw-clients-and-binding-source-4756)). Pass `runtime`: a turn never keeps the RLS request tx
 (own `runAsPrincipal` tx). `clientRequestId` makes the row id a UUIDv5
 (`clientRequestMessageId`): the PK is the retry reservation. See
 [docs](../../docs/assistant-dock.md).
+
+AI off / not set up (#4757): routes answer a structured `ai_unavailable` 503;
+dock `aiSettingsHref` ([agents/ai-unavailable.md](agents/ai-unavailable.md)).
+
+#4505: `messageFormat="markdown"` / `renderMessage` ([docs](../../docs/assistant-dock.md));
+`collapseRecoveredFailures` ([tool-loop](agents/tool-loop.md#failed-calls-are-persisted-4383)).
+
+Structured questions and page requests (#4100): [agents/assistant-questions.md](agents/assistant-questions.md).
 
 ## Recipes (#3719)
 

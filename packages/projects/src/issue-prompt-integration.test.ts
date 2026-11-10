@@ -1,6 +1,9 @@
 import { getAI } from '@happyvertical/ai';
 import { clearCache, setConfig } from '@happyvertical/smrt-config';
-import { getTestDatabase } from '@happyvertical/smrt-core';
+import {
+  getTestDatabase,
+  setInferenceResolver,
+} from '@happyvertical/smrt-core';
 import {
   clearPromptCache,
   PromptOverrideCollection,
@@ -117,6 +120,12 @@ describe('Issue prompt integration', () => {
         model: 'claude-3-5-haiku',
         temperature: 0.4,
         maxTokens: 333,
+        // Prompt-run usage tags (#4751): the app override supplied the template.
+        usageTags: {
+          promptKey: issueIncorporateFeedbackPrompt.key,
+          promptLayer: 'app',
+          templateHash: expect.stringMatching(/^[0-9a-f]{12}$/),
+        },
       }),
     );
 
@@ -125,6 +134,54 @@ describe('Issue prompt integration', () => {
       '- alice: Please add analytics instrumentation.',
     );
     expect(promptText).toContain('- bob: Clarify the rollout plan.');
+  });
+
+  it('takes a stored inference binding over the prompt provider (#4756)', async () => {
+    await overrides.create({
+      key: issueIncorporateFeedbackPrompt.key,
+      tenantId: null,
+      template: 'Spec:\n{body}\n{comments}',
+      profile: 'deep',
+    });
+    setInferenceResolver({
+      resolve: (request) => ({
+        tierResolved: request.tier === 'auto' ? 'good' : request.tier,
+        target: {
+          provider: 'openai',
+          baseUrl: 'https://openrouter.ai/api/v1',
+          apiKey: 'sk-user-binding',
+          model: 'user/model',
+          source: 'byo',
+        },
+        via: 'resolver',
+      }),
+    });
+    try {
+      const issue = new Issue({ db, tenantId: null, body: 'Body' });
+      vi.spyOn(issue, 'getComments').mockResolvedValue([
+        { author: 'a', body: 'x', createdAt: new Date() },
+      ] as any);
+      const messageSpy = vi.fn(async () => 'Updated');
+      vi.mocked(getAI).mockResolvedValue({ message: messageSpy } as any);
+
+      await issue.incorporateFeedback();
+
+      expect(getAI).toHaveBeenCalledWith(
+        expect.objectContaining({
+          provider: 'openai',
+          baseUrl: 'https://openrouter.ai/api/v1',
+          apiKey: 'sk-user-binding',
+          model: 'user/model',
+          onUsage: expect.any(Function),
+        }),
+      );
+      expect(messageSpy).toHaveBeenCalledWith(
+        expect.any(String),
+        expect.objectContaining({ model: 'user/model' }),
+      );
+    } finally {
+      setInferenceResolver(undefined);
+    }
   });
 
   it('keeps an explicitly injected AI client as the highest-precedence runtime override', async () => {
@@ -158,6 +215,48 @@ describe('Issue prompt integration', () => {
     expect(result.synthesized).toBe('Explicit client synthesis');
     expect(explicitMessage).toHaveBeenCalledTimes(1);
     expect(getAI).not.toHaveBeenCalled();
+    const [, explicitOptions] = explicitMessage.mock.calls[0] as unknown as [
+      string,
+      Record<string, unknown>,
+    ];
+    expect(explicitOptions.usageTags).toEqual({
+      promptKey: issueIncorporateFeedbackPrompt.key,
+      promptLayer: 'default',
+      templateHash: expect.stringMatching(/^[0-9a-f]{12}$/),
+    });
+  });
+
+  it('forwards the usage tags on the do() fallback when no provider resolves (#4751)', async () => {
+    const issue = new Issue({
+      db,
+      tenantId: null,
+      body: 'Current specification body',
+    });
+    vi.spyOn(issue, 'getComments').mockResolvedValue([
+      {
+        author: 'alice',
+        body: 'Please add analytics instrumentation.',
+        createdAt: new Date('2026-01-02T00:00:00.000Z'),
+      },
+    ] as any);
+    const message = vi.fn(
+      async (_prompt: string, _options?: Record<string, unknown>) =>
+        'Fallback synthesis',
+    );
+    vi.spyOn(issue as any, 'getAiClient').mockResolvedValue({ message });
+
+    const result = await issue.incorporateFeedback();
+
+    expect(result.synthesized).toBe('Fallback synthesis');
+    expect(getAI).not.toHaveBeenCalled();
+    expect(message).toHaveBeenCalledTimes(1);
+    expect(message.mock.calls[0][1]?.usageTags).toEqual({
+      promptKey: issueIncorporateFeedbackPrompt.key,
+      promptLayer: 'default',
+      templateHash: expect.stringMatching(/^[0-9a-f]{12}$/),
+      tierRequested: 'great',
+      tierResolved: 'great',
+    });
   });
 
   it('keeps incorporateFeedback curated (no object-dump injection) so the body is not duplicated (#1567)', async () => {

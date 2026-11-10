@@ -7,11 +7,13 @@
 
 import type { RecipeDefinition } from '@happyvertical/smrt-types';
 import { type EnumValue, resolveEnumValues } from './enum-values.js';
+import { FRAMEWORK_BASE_CLASSES } from './inheritance-resolver.js';
 import { isSafeObjectKey } from './oxc-parser.js';
 import type {
   FieldTypeInference,
   InferredFieldType,
   ParameterTypeBranch,
+  RawClassDefinition,
   RawFieldDefinition,
   RawMethodDefinition,
   ResolvedClassDefinition,
@@ -118,6 +120,10 @@ interface MethodDefinition {
     memberTypes?: string[];
     /** See `RawParameterDefinition.unionBranches` (#2686). */
     unionBranches?: ParameterTypeBranch[];
+    /** See `RawParameterDefinition.resolvedType` (#4327). */
+    resolvedType?: string;
+    /** See `RawParameterDefinition.aliasUnresolved` (#4327). */
+    aliasUnresolved?: boolean;
   }>;
   returnType: string;
   description?: string;
@@ -176,6 +182,8 @@ interface SmartObjectDefinition {
   methods: Record<string, MethodDefinition>;
   decoratorConfig: SmartObjectConfig;
   extends?: string;
+  /** Parent's qualified name when it is imported from another package (#4145). */
+  extendsQualified?: string;
   extendsTypeArg?: string;
   staticProperties?: Record<string, unknown>;
 }
@@ -373,6 +381,44 @@ function createQualifiedName(
   className: string,
 ): QualifiedClassName {
   return `${packageName}:${className}` as QualifiedClassName;
+}
+
+/**
+ * npm package name of a bare, scoped module specifier
+ * (`@scope/pkg` or `@scope/pkg/subpath` → `@scope/pkg`), else `undefined`.
+ * Relative, absolute, protocol (`node:`), unscoped, and alias-like specifiers
+ * (`@/lib`, `$lib/…`) name no SMRT package: qualified names are always scoped.
+ */
+export function scopedPackageOfSpecifier(
+  specifier: string,
+): string | undefined {
+  const match = /^(@[a-z0-9][\w.~-]*\/[a-z0-9][\w.~-]*)(?:\/.*)?$/i.exec(
+    specifier,
+  );
+  return match?.[1];
+}
+
+/**
+ * Qualified name of a class's parent when the scanner traced it to a named or
+ * namespace import from ANOTHER scoped package (#4145): two packages may
+ * export the same class name (`Agreement` in smrt-commerce and smrt-sales),
+ * and only the import says which one is meant.
+ *
+ * Returns `undefined` (the simple `extends` stays authoritative, as before)
+ * for framework bases, for parents declared in this package (same file,
+ * relative import, or a self-import, which runtime resolution already
+ * qualifies same-package first), and for anything it cannot trace.
+ */
+export function importedParentQualifiedName(
+  classDef: Pick<RawClassDefinition, 'extendsClause' | 'extendsSource'>,
+  ownPackageName: string | undefined,
+): QualifiedClassName | undefined {
+  const parent = classDef.extendsClause;
+  if (!parent || !classDef.extendsSource) return undefined;
+  if (FRAMEWORK_BASE_CLASSES.has(parent)) return undefined;
+  const parentPackage = scopedPackageOfSpecifier(classDef.extendsSource);
+  if (!parentPackage || parentPackage === ownPackageName) return undefined;
+  return createQualifiedName(parentPackage, parent);
 }
 
 /**
@@ -665,6 +711,10 @@ export class ManifestAdapter {
     const qualifiedName = packageName
       ? createQualifiedName(packageName, classDef.className)
       : undefined;
+    const extendsQualified = importedParentQualifiedName(
+      classDef,
+      packageName || undefined,
+    );
 
     return {
       name: classDef.className.toLowerCase(),
@@ -678,6 +728,7 @@ export class ManifestAdapter {
       methods,
       decoratorConfig: (classDef.decoratorConfig || {}) as SmartObjectConfig,
       extends: classDef.extendsClause || undefined,
+      ...(extendsQualified ? { extendsQualified } : {}),
       extendsTypeArg: classDef.extendsTypeArg || undefined,
       exportName: classDef.className,
       collectionExportName: `${classDef.className}Collection`,
@@ -870,7 +921,10 @@ export class ManifestAdapter {
    *    and type alias resolution (up to depth 5).
    * 4. **Numeric literal without annotation** — `version = 1` → `integer`.
    * 5. **Boolean literal without annotation** — `isRead = false` → `boolean`.
-   * 6. **Default** — falls back to `text`.
+   * 6. **Boolean `@field({ default })` with no annotation or initializer** —
+   *    `@field({ default: false }) archived;` → `boolean`, matching runtime
+   *    decorator-only inference (#4295; code step 3.7).
+   * 7. **Default** — falls back to `text`.
    *
    * @param field - The raw field definition to analyse.
    * @returns A {@link FieldTypeInference} describing the inferred type,
@@ -927,6 +981,20 @@ export class ManifestAdapter {
       };
     }
 
+    // 3.7. Infer from a boolean `@field({ default })` when nothing else names
+    // a type (`@field({ default: false }) archived;`). Compiled-runtime
+    // registration without a manifest reads only the decorator options, and
+    // infers BOOLEAN from the same boolean default, so both paths agree (#4295).
+    const booleanDefault = this.decoratorBooleanDefault(field);
+    if (booleanDefault !== undefined) {
+      return {
+        type: 'boolean',
+        required: false,
+        defaultValue: booleanDefault,
+        source: 'decorator',
+      };
+    }
+
     // 4. Default to text
     // A field is only required if it has no default value AND is not optional (?)
     // Fields with initializers (default values) should NOT be required
@@ -948,6 +1016,22 @@ export class ManifestAdapter {
    */
   private inferFromHelper(_initializer: string): FieldTypeInference | null {
     return null;
+  }
+
+  /**
+   * The boolean `default` of a `@field()` decorator on `field`, if any.
+   */
+  private decoratorBooleanDefault(
+    field: RawFieldDefinition,
+  ): boolean | undefined {
+    for (const decorator of field.decorators) {
+      if (decorator.name !== 'field') continue;
+      const fieldDefault = this.parseFieldDecoratorOptions(
+        decorator.arguments[0],
+      )?.default;
+      if (typeof fieldDefault === 'boolean') return fieldDefault;
+    }
+    return undefined;
   }
 
   /**
@@ -1043,6 +1127,10 @@ export class ManifestAdapter {
         // runtime decorator.
         'onDelete',
         'onUpdate',
+        'validateSubtype',
+        // #3718: `role: 'items'` marks the declaring model as the target's
+        // line items; it rides the generated web relationship edge.
+        'role',
       ] as const;
       if (parsedOptions) {
         for (const key of META_KEYS) {
@@ -1121,6 +1209,10 @@ export class ManifestAdapter {
         // consumers, matching the runtime decorator.
         'onDelete',
         'onUpdate',
+        'validateSubtype',
+        // #3718: `role: 'items'` marks the declaring model as the target's
+        // line items; it rides the generated web relationship edge.
+        'role',
       ] as const;
       if (parsedOptions) {
         for (const key of META_KEYS) {
@@ -1222,6 +1314,10 @@ export class ManifestAdapter {
     field: RawFieldDefinition,
   ): Record<string, unknown> | null {
     if (decorator.name === 'groupBy') {
+      const options = this.parseFieldDecoratorOptions(decorator.arguments[0]);
+      if (options && typeof options.expr === 'object' && options.expr) {
+        return { kind: 'group', expr: options.expr };
+      }
       return {
         kind: 'group',
         sourceColumn: stripQuotes(decorator.arguments[0]?.trim()) ?? field.name,
@@ -1254,6 +1350,7 @@ export class ManifestAdapter {
         kind: 'aggregate',
         fn: parsed.fn,
         ...(typeof parsed.column === 'string' ? { column: parsed.column } : {}),
+        ...this.reportOperandOptions(parsed),
         ...(typeof parsed.distinct === 'boolean'
           ? { distinct: parsed.distinct }
           : {}),
@@ -1262,14 +1359,19 @@ export class ManifestAdapter {
 
     const aggregateNames = new Set(['sum', 'avg', 'min', 'max']);
     if (aggregateNames.has(decorator.name)) {
-      const column = stripQuotes(decorator.arguments[0]?.trim());
-      const parsedOptions = this.parseFieldDecoratorOptions(
-        decorator.arguments[1],
+      const firstOptions = this.parseFieldDecoratorOptions(
+        decorator.arguments[0],
       );
+      const column = firstOptions
+        ? undefined
+        : stripQuotes(decorator.arguments[0]?.trim());
+      const parsedOptions =
+        firstOptions ?? this.parseFieldDecoratorOptions(decorator.arguments[1]);
       return {
         kind: 'aggregate',
         fn: decorator.name,
         ...(column ? { column } : {}),
+        ...this.reportOperandOptions(parsedOptions),
         ...(typeof parsedOptions?.distinct === 'boolean'
           ? { distinct: parsedOptions.distinct }
           : {}),
@@ -1288,6 +1390,7 @@ export class ManifestAdapter {
         kind: 'aggregate',
         fn: 'count',
         ...(column ? { column } : {}),
+        ...this.reportOperandOptions(options),
         ...(typeof options?.distinct === 'boolean'
           ? { distinct: options.distinct }
           : {}),
@@ -1295,6 +1398,20 @@ export class ManifestAdapter {
     }
 
     return null;
+  }
+
+  /** The `expr` and `filter` of an aggregate decorator: literal expression nodes. */
+  private reportOperandOptions(
+    options: FieldDecoratorOptions | null | undefined,
+  ): Record<string, unknown> {
+    const out: Record<string, unknown> = {};
+    for (const key of ['expr', 'filter'] as const) {
+      const value = options?.[key];
+      if (value && typeof value === 'object' && !Array.isArray(value)) {
+        out[key] = value;
+      }
+    }
+    return out;
   }
 
   private parseFieldDecoratorOptions(
@@ -1618,6 +1735,8 @@ export class ManifestAdapter {
         ...(p.typeUnresolved ? { typeUnresolved: true } : {}),
         ...(p.memberTypes ? { memberTypes: p.memberTypes } : {}),
         ...(p.unionBranches ? { unionBranches: p.unionBranches } : {}),
+        ...(p.resolvedType ? { resolvedType: p.resolvedType } : {}),
+        ...(p.aliasUnresolved ? { aliasUnresolved: true } : {}),
       })),
       returnType: method.returnType || 'any',
       description: method.description || undefined,

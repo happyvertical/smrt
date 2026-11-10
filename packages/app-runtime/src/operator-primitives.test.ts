@@ -134,7 +134,10 @@ describe('operation lock', () => {
         await withOperationLock(process.argv[1], 'race', () => new Promise((r) => setTimeout(r, 1500)));
         process.stdout.write('won');
       } catch (error) {
-        process.stdout.write(error.message.includes('Another application operation is active') ? 'lost' : 'error:' + error.message);
+        // Exclusive creation can be observed before its owner record is written.
+        const denied = error.message.includes('Another application operation is active')
+          || error.message === 'An application operation lock exists but cannot be verified; inspect the private state directory.';
+        process.stdout.write(denied ? 'lost' : 'error:' + error.message);
       }`;
     const runs = Array.from({ length: 4 }, () => {
       const child = spawn(
@@ -361,7 +364,33 @@ describe('application state custody', () => {
         ...options,
         environment: { XDG_STATE_HOME: redirected },
       }),
-    ).toThrow(/unsafe/);
+    ).toThrow(
+      `Application state path component is unsafe: ${redirected} (symbolic link). Select an explicit trusted canonical path; on macOS /tmp is commonly /private/tmp. Do not automatically trust symlink targets.`,
+    );
+    expect(
+      existsSync(join(options.sourceRoot, '.smrt-state-state-proof')),
+    ).toBe(false);
+  });
+
+  it('accepts an explicitly selected canonical state directory', () => {
+    const directory = temporary('state-canonical');
+    const options = stateOptions(directory);
+    const canonical = join(directory, 'canonical-state');
+    mkdirSync(canonical, { mode: 0o700 });
+    const alias = join(directory, 'state-alias');
+    symlinkSync(canonical, alias);
+    expect(() =>
+      prepareApplicationStateRoot({
+        ...options,
+        environment: { XDG_STATE_HOME: alias },
+      }),
+    ).toThrow(/symbolic link/);
+    const stateRoot = prepareApplicationStateRoot({
+      ...options,
+      environment: { XDG_STATE_HOME: realpathSync(alias) },
+    });
+    expect(stateRoot.startsWith(canonical)).toBe(true);
+    expect(statSync(stateRoot).mode & 0o777).toBe(0o700);
   });
 
   it('rejects a group/world-writable state ancestor', () => {

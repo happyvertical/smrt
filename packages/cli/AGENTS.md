@@ -8,17 +8,20 @@ CLI with lazy-loaded commands, manifest discovery, and class introspection.
 smrt introspect              # Discover SMRT objects in project
 smrt doctor                  # Umbrella diagnostics; can verify a generation snapshot
 smrt doctor --db             # Add the live-schema parity section (see below)
+smrt doctor --ai [--probe]   # Inference tier/alias bindings, offline unless --probe (src/commands/doctor-ai.ts; ../inference/AGENTS.md); unresolvable binding exits 1
 smrt db:status               # Pending schema changes + failed migration classification (+ tenant natural-key findings: a missing tenant-led unique exits 1, a surviving legacy global unique warns until `db:migrate --drop-legacy-natural-key`: src/commands/tenant-natural-keys.ts)
 smrt db:status --parity      # Same, plus live-schema parity (see below)
 smrt db:orphans              # agents/db-orphans.md
+smrt users:provision-owner   # Trusted PostgreSQL owner provisioning; password from private file/stdin, never argv/env (users README)
 smrt db:migrate              # agents/type-drift.md, agents/db-migrate-concurrency.md
 smrt db:migrate --postgres-safe # PostgreSQL concurrent-index mode (see below)
 smrt db:migrate --force-migration <exact-id> [--force-migration <exact-id>...] # Force exact generated migrations in one atomic batch
 smrt db:migrate --apply-unblocked / --null-orphans # agents/db-migrate-partial-apply.md
-smrt db:migrate-uuid         # Convert schema-declared UUID text columns after data remap
+smrt db:migrate-uuid         # Convert schema-declared UUID text columns after data remap (incl. PG system tenant ids, #3297)
 smrt db:migrate-int8
 smrt db:migrate-null-equal-indexes # ../core/agents/null-equal-indexes.md
 smrt db:migrate-ledger-accounts [--dry-run] # Move pre-#3098 ledger rows out of `accounts` (smrt-ledgers README)
+smrt db:upgrade-commerce-money # agents/commerce-money-upgrade.md
 smrt db:migrate-qualified-names [--dry-run] # Opt-in old→current name backfill; doctor --db counts (../core/agents/model-moves.md)
 smrt db:materialize-tenant-hierarchy [--dry-run] # smrt-users tenant hierarchy_path backfill (#3036)
 smrt db:drop-framework-base-tables # One-time drop of the five #2644-orphaned framework-base tables
@@ -28,6 +31,12 @@ smrt db:rollback             # Roll back migrations by executing their recorded 
 smrt db:rollback --mark-only # Record-only flip; schema untouched
 smrt db:prune                # Prune framework system tables to their retention windows
 smrt db:prune --dry-run      # Same predicates, counted rather than deleted
+smrt ai:usage [--by prompt,model,tier,class,tenant,fusion,source] [--since 7d] [--tenant <id>] [--json] # agents/ai-commands.md
+smrt ai:transcript <callId> --tenant <id>|--all-tenants # Audited read (#4780), ai:usage --with-transcripts
+smrt ai:compare --prompt <key> --a hash:<h> --b model:<m>|tier:<t> --tenant <id>|--all-tenants [--transcripts N] # agents/ai-commands.md
+smrt prompts:history <key> --tenant <id>|--all-tenants # Template hashes seen (#4782)
+smrt inference:hosted provision|revoke --tenant <id> --user <id> [--budget-usd 20|--budget-micros N] [--window month] [--json] # Hosted gateway keys (#4759, ../inference/AGENTS.md)
+smrt inference:hosted disable|enable|status [--tenant <id>] [--json] # Hosted AI kill switch (#4760); one group, shared map: agents/inference-hosted.md
 smrt docs:agents             # Generate .agents/smrt-framework.md
 smrt docs:claude             # Deprecated alias writing .claude/smrt-framework.md
 smrt dev:knowledge-*         # Deterministic agent knowledge index/check/diff
@@ -93,23 +102,15 @@ it in the same migration also run outside the transaction, in order.
   resumes at the index build — their `error_message` carries a
   `[smrt: concurrent-index phase 1 committed]` marker, so the non-index
   statements that already committed are not re-run.
-- INVALID indexes — the stump a cancelled or timed-out
-  `CREATE INDEX CONCURRENTLY` leaves, which `pg_indexes` still reports as
-  present — are detected via `pg_index.indisvalid` and dropped before the
-  rebuild.
-- `migrations.postgres.useConcurrently: false` vetoes the flag; index DDL then
-  runs inside the atomic transaction (still bounded by the timeouts).
-- Without the flag, a batch containing explicit `CONCURRENTLY` DDL is rejected
-  before the transaction opens — PostgreSQL cannot run it there.
+- INVALID-index cleanup, the `useConcurrently: false` veto, and the explicit-`CONCURRENTLY` rejection:
+  agents/db-migrate-concurrency.md.
 
 ## `doctor`'s agent-surface section (#2591)
 
 `smrt doctor` reports the application's complete agent-addressable surface —
 generated model tools, declared view intents, registered playbooks — **from
 build artifacts alone**. No route is mounted, no server starts, and no
-application module is imported. That is the whole point: before this, the only
-way to answer "what can an agent do in this app" was to mount every route and
-enumerate, which is not an answer a build, a review, or a CI gate can use.
+application module is imported.
 
 `readAgentSurfaceReport(cwd)` reads the first of `.smrt/smrt-knowledge.json`
 then `dist/smrt-knowledge.json`. Model tools come from the artifact's `mcp`
@@ -283,51 +284,8 @@ exactly those five hardcoded names and nothing else — **never** derived from
 drop `includeDroppedTables` (default `false`, both call sites explicit —
 `differ.ts:450`, `db-diff.ts:210`) deliberately refuses to be.
 
-- Execute-or-refuse, like `db:rollback`: it refuses (non-zero exit, nothing
-  dropped) if any target table has rows, has anything but that table's own
-  expected columns and types, or is referenced by a foreign key anywhere in
-  the live database. A consumer's own unrelated table sharing one of these
-  five names is exactly what the shape check protects.
-- The expected shape is **per table, not one universal baseline**:
-  `smrt_objects`/`smrt_classes`/`smrt_collections` are exactly `id`/`slug`/
-  `context`/`created_at`/`updated_at`, but `smrt_hierarchicals` also
-  requires `parent_id` and `smrt_polymorphic_associations` also requires
-  `meta_type`/`meta_id`/`role`/`sort_order` — `SmrtHierarchical`'s and
-  `SmrtPolymorphicAssociation`'s own real fields, confirmed against a
-  genuine pre-#2644 `db:migrate` run. A table under either of those two
-  names with *only* the plain five columns is refused as unexpected shape,
-  not treated as safe.
-- Companion indexes are enumerated from each table's live schema (never
-  guessed). `smrt_hierarchicals`/`smrt_polymorphic_associations` do not
-  carry the `created_at` list-ordering index the other three do (also
-  empirically confirmed, not assumed).
-- Bounded PostgreSQL execution reuses the same `SET LOCAL lock_timeout` /
-  `statement_timeout` pattern as every other DDL path (#2362). Every target
-  is locked `IN ACCESS EXCLUSIVE MODE` before re-checking it — a plain
-  `SELECT COUNT(*)` alone would not block a concurrent writer — and shape,
-  type, and emptiness are all re-verified inside that transaction
-  immediately before dropping anything, via raw `information_schema.columns`
-  / `PRAGMA table_info` (`getTableSchema()` is not available on the
-  transaction-scoped connection). Only `DROP TABLE` is ever executed —
-  never a `DROP INDEX` by name — so `DROP TABLE`'s own cascade removes the
-  table's indexes identity-safely instead of trusting a possibly-stale
-  planned index name.
-- `--dry-run` prints the exact plan (which tables exist, their companion
-  indexes, and the DROP statements) without executing.
-- Skipping it is safe: a table left behind is inert and permanently orphaned,
-  never written to or read from again. Documented, narrow residual risk, all
-  schema-integrity (never data loss — the target is always verified empty
-  first): DuckDB's adapter does not report foreign keys through
-  `getTableSchema()` at all; this module's reverse-FK scan (like every other
-  PostgreSQL schema tool in this package) only looks at the `public` schema;
-  and foreign keys are checked at planning time only, not re-scanned inside
-  the execution transaction. On PostgreSQL a foreign key that appeared after
-  planning is still caught there — `DROP TABLE` refuses when a real
-  dependent exists, dependency-based, empty parent or not. **This does not
-  hold on SQLite**: its FK enforcement on `DROP TABLE` is row-based, so an
-  empty parent (this command's precondition) drops cleanly past a real
-  foreign key, verified directly. The plan-time scan is the only gate on
-  SQLite/DuckDB, narrower than PostgreSQL's.
+Execute-or-refuse, per-table shape checks, lock/timeout behavior, `--dry-run`, and the residual risks of
+skipping it: agents/db-drop-framework-base-tables.md.
 
 ## Architecture
 
@@ -344,6 +302,26 @@ drop `includeDroppedTables` (default `false`, both call sites explicit —
 - `src/loaders/` — class-loader, local-loader, npm-loader, git-loader, template-loader
 - `src/discovery/manifest-discovery.ts` — manifest auto-discovery
 - `src/commands/docs-claude.ts` — downstream AGENTS.md generation + Claude alias; no object scanning
+- `src/commands/docs-knowledge-bundle.ts`, `docs-skills-install.ts` (#4708) — bundle and skill halves of `docs:agents`
+- `src/commands/docs-agents-block.ts` — AGENTS.md block (#4878)
+
+## docs:agents knowledge bundle (consumer contract)
+
+Beside the output file, `docs:agents` writes `smrt-knowledge/` (`.agents/smrt-knowledge/`; `docs:claude` → `.claude/`):
+`bundle.json` (`smrt-okf-bundle/1`: `exportedAt` kept while content is unchanged, `packages[{name,version,concept}]`,
+`intents`), `components/<unscoped>.md` per installed package shipping `dist/smrt-knowledge.okf.md` with
+`package_version` re-stamped from the installed `package.json`, and `intents/*` limited to intents with ≥1 installed
+home. `smrt-framework.md` leads with `## Find it by intent` over those same intents. Pages come from the published
+artifacts — `scripts/ship-knowledge-pages.mjs` (root `pnpm build`, `prepack-package.js`) copies the committed
+`docs/knowledge` pages into `dist/`; intents ship in smrt-cli `dist/knowledge/intents/` — never from a checkout (monorepo
+runs fall back to `docs/knowledge`). Links to uninstalled packages' pages dangle by design. The shape lives in
+`@happyvertical/smrt-dev-mcp/knowledge` (`okf-bundle.ts`); `dev:knowledge-check` reads it (`stale-okf-bundle`).
+
+Skill install (#4708): unless `--no-install-skills`, `docs:agents` also writes the `smrt-catalog` skill from
+`@happyvertical/smrt-dev-mcp` to `.claude/skills/smrt-catalog/SKILL.md` and `.agents/skills/smrt-catalog/SKILL.md`
+under the working directory (skipped on `--dry-run`). The copy carries a `<!-- smrt-generated: … smrt-dev-mcp@<version> … -->`
+marker after the frontmatter: a rerun replaces a marked copy, a copy without the marker is left alone with a warning.
+Workspace roots, AGENTS.md block: `agents/docs-agents.md`. The shipped text names `.agents/smrt-knowledge/`; the installer substitutes the real bundle dir (`docs:claude`, custom `--output`). Only the smrt repository itself (root package `@happyvertical/smrt`) also gets `smrt-contribute`; an unmarked copy byte-identical to the shipped skill counts as current. Destinations go through `containedPath` and are refused when any path segment is a symlink.
 
 ## Gotchas
 

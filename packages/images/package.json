@@ -1,6 +1,6 @@
 {
   "name": "@happyvertical/smrt-images",
-  "version": "0.55.21",
+  "version": "0.60.16",
   "description": "Image asset management with AI-powered categorization, search, editing, and metadata extraction for SMRT framework",
   "type": "module",
   "smrtRawPrimitives": "strict",
@@ -28,6 +28,7 @@
     },
     "./workbench": {
       "types": "./dist/workbench.d.ts",
+      "svelte": "./dist/workbench.js",
       "import": "./dist/workbench.js"
     },
     "./svelte": {
@@ -50,8 +51,8 @@
     "verify:pack": "node ../../scripts/verify-package-types-exports.js ."
   },
   "dependencies": {
-    "@happyvertical/animation": "0.5.0",
     "@happyvertical/ai": "catalog:",
+    "@happyvertical/animation": "0.5.0",
     "@happyvertical/images": "catalog:",
     "@happyvertical/smrt-assets": "workspace:*",
     "@happyvertical/smrt-core": "workspace:*",
@@ -60,7 +61,6 @@
     "@happyvertical/smrt-types": "workspace:*",
     "@happyvertical/smrt-ui": "workspace:*",
     "@happyvertical/utils": "catalog:",
-    "jimp": "catalog:",
     "sharp": "catalog:"
   },
   "peerDependencies": {
@@ -78,7 +78,7 @@
     "svelte": "^5.57.1",
     "svelte-check": "^4.7.6",
     "typescript": "6.0.3",
-    "vite": "8.1.4",
+    "vite": "8.1.6",
     "vitest": "4.1.10"
   },
   "keywords": [

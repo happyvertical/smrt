@@ -35,7 +35,7 @@ describe('assets feature recipes (#3725)', () => {
     ]);
     expect(AssetLibraryRecipe.nav).toEqual([
       {
-        label: 'Assets',
+        label: 'Files & media',
         model: Asset,
         icon: 'archive',
         description: 'Files and media you can organize, reuse and share.',

@@ -1,0 +1,39 @@
+# Structured assistant questions (#4100)
+
+Part of the [smrt-chat guidance](../AGENTS.md).
+
+An assistant turn that asks the person to choose is data, not prose. A
+transport attaches an `{ kind: 'assistant-question', id, prompt, fields }`
+object to an assistant message's `toolCallData` (alone or in an array). Fields
+are choice fields: `options` (`value`, `label`, `hint?`, `keywords?`),
+`multiple?`, `default?`, `required?`. `assistant-question.ts` validates it
+(`parseAssistantQuestion`, `assistantQuestionFromMessage`), seeds defaults,
+validates answers and describes them in one line.
+
+The dock renders structured cards (a question, a tool result component, a
+host's `toolCall` content) under the message's text bubble at the full thread
+width; plain text stays in bubbles. `AssistantDock` renders it as `AssistantQuestionForm`: one fieldset whose
+legend is the prompt; a single choice is a smrt-ui radio group (a select past
+six options), several choices are checkboxes; the default is preselected and
+focus moves into the newest form. Once answered it is a read-only summary.
+
+Submitting calls the optional `AssistantTransport.answerQuestion({ threadId,
+messageId, questionId, values, clientRequestId })`, so the transport continues
+the turn in code with no model round-trip, and the dock merges its result like
+a send. A transport without it gets the answer as an ordinary message
+(`describeAssistantQuestionAnswer`, "Group by: Status"). A typed reply still
+works: `matchAssistantQuestionText` resolves free text against the options
+(shared words with label, value, hint and keywords; earlier option on a tie).
+
+Options always come from code that knows the domain (a report source's
+dimensions, for example), never from a model's free text. The planner's
+runtime-report follow-ups are the first user.
+
+## Page requests
+
+`AssistantDock` takes smrt-ui's `requestAssistant(element, { prompt })` (the bubbling,
+cancelable `smrt-assistant-request` event), as a "New report" button sends: it fills the
+composer with the prompt and focuses it, never sends it, and marks the event taken
+(`preventDefault`), so the requester knows an assistant heard it. A request another listener
+already took is left alone. smrt-svelte's `AdminShell` opens a closed dock first and
+re-dispatches the request from inside it, because a dock's content mounts only when open.

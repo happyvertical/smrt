@@ -11,8 +11,11 @@ import { join, resolve } from 'node:path';
 import { pathToFileURL } from 'node:url';
 import { createLogger } from '@happyvertical/logger';
 import type { SmartObjectDefinition } from '@happyvertical/smrt-core';
-import { ObjectRegistry } from '@happyvertical/smrt-core';
-import glob from 'fast-glob';
+import {
+  isRefusedTestArtifact,
+  ObjectRegistry,
+} from '@happyvertical/smrt-core';
+import { glob } from 'tinyglobby';
 import { resolveManifestEntryPackageName } from './manifest-identity.js';
 
 const logger = createLogger({ level: 'info' });
@@ -159,7 +162,9 @@ async function findProjectManifests(
     const manifestPath = resolve(projectRoot, candidate);
     try {
       const manifest = await loadManifestFile(manifestPath);
-      if (manifest?.objects) {
+      // A test run's manifest describes inline test fixtures; it is never
+      // the project's build output (#2760).
+      if (manifest?.objects && !isRefusedTestArtifact(manifest, manifestPath)) {
         const objectNames = Object.keys(manifest.objects);
         discovered.push({
           path: manifestPath,
@@ -210,6 +215,7 @@ async function findPackageManifests(
     // (which create symlinks in node_modules) are discovered.
     const packageJsonFiles = await glob('**/package.json', {
       cwd: nodeModulesPath,
+      expandDirectories: false,
       ignore: ['**/node_modules/**'],
       absolute: true,
       followSymbolicLinks: true,
@@ -257,7 +263,10 @@ async function findPackageManifests(
           for (const manifestPath of manifestCandidates) {
             try {
               const manifest = await loadManifestFile(manifestPath);
-              if (manifest?.objects) {
+              if (
+                manifest?.objects &&
+                !isRefusedTestArtifact(manifest, manifestPath)
+              ) {
                 const objectNames = Object.keys(manifest.objects);
                 // Mark this package as seen AFTER we successfully load a manifest
                 seenPackages.add(packageKey);

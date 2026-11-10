@@ -11,6 +11,7 @@ import type { DatabaseInterface } from '@happyvertical/sql';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { extractAnalysis } from '../extraction.js';
 import {
+  type ExtractionProviders,
   emptyExtraction,
   extractWithProviders,
 } from '../extraction-providers.js';
@@ -606,6 +607,62 @@ export function extractionServiceSuite(dialect: 'sqlite' | 'postgres') {
         ),
       ).rejects.toThrow('lease');
     });
+    it('persists normalized vision derivative provenance without changing retained originals', async () => {
+      await receive(65536, 'tiff');
+      const evidence = await service.getEvidence(lease.itemId);
+      const original = Buffer.from(
+        await service.readEvidence(lease.itemId, evidence[0].id),
+      );
+      const secret = 'derivative-host-secret-marker';
+      const providers: ExtractionProviders = {
+        imageMode: 'vision',
+        vision: {
+          identity: { provider: 'fixture', model: 'scene', version: '1' },
+          client: {
+            getCapabilities: async () =>
+              ({ vision: true, chat: true }) as Awaited<
+                ReturnType<
+                  NonNullable<
+                    ExtractionProviders['vision']
+                  >['client']['getCapabilities']
+                >
+              >,
+            chat: async () => ({
+              content: 'Synthetic page observations',
+              model: 'scene',
+            }),
+          },
+        },
+      };
+      expect(
+        await extractAnalysis(
+          service,
+          lease,
+          {
+            extract: async (request) => {
+              const result = await extractWithProviders(request, providers);
+              for (const image of result.imagePreparations ?? [])
+                Object.assign(image, { apiKey: secret });
+              return result;
+            },
+          },
+          extraction,
+        ),
+      ).toBe(true);
+      const rows = await db.query(
+        'SELECT data FROM intake_analysis_attempts WHERE id=?',
+        lease.attemptId,
+      );
+      const persisted = JSON.stringify(rows.rows);
+      expect(persisted).toContain('vision-image-v1');
+      expect(persisted).toContain('sourceOrientation');
+      expect(persisted).not.toContain(secret);
+      expect(persisted).not.toContain('apiKey');
+      expect(await service.getEvidence(lease.itemId)).toEqual(evidence);
+      expect(
+        Buffer.from(await service.readEvidence(lease.itemId, evidence[0].id)),
+      ).toEqual(original);
+    });
     it('denies actor, tenant, scope, expired/wrong/stale lease and config before provider', async () => {
       const extract = vi.fn(
         (request: Parameters<typeof extractWithProviders>[0]) =>
@@ -670,7 +727,11 @@ export function extractionServiceSuite(dialect: 'sqlite' | 'postgres') {
       expect(snapshot.evidence).toHaveLength(2);
     });
     it('rejects unknown adapter status and forged evidence provenance before publication', async () => {
-      for (const corruption of ['status', 'evidence'] as const) {
+      for (const corruption of [
+        'status',
+        'evidence',
+        'imagePreparations',
+      ] as const) {
         await expect(
           extractAnalysis(
             service,
@@ -679,7 +740,25 @@ export function extractionServiceSuite(dialect: 'sqlite' | 'postgres') {
               extract: async (request) => {
                 const result = await extractWithProviders(request, {});
                 if (corruption === 'status') result.status = 'unknown' as never;
-                else result.evidence.contentHash = 'forged';
+                else if (corruption === 'evidence')
+                  result.evidence.contentHash = 'forged';
+                else
+                  result.imagePreparations = [
+                    {
+                      policy: 'vision-image-v1',
+                      location: { kind: 'source' },
+                      maxEdge: 2048,
+                      maxEncodedBytes: 524288,
+                      sourceOrientation: 6,
+                      sourceWidth: 4000,
+                      sourceHeight: 3000,
+                      width: 1536,
+                      height: 2048,
+                      format: 'jpeg',
+                      quality: 85,
+                      encodedBytes: 524289,
+                    },
+                  ];
                 return result;
               },
             },

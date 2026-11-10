@@ -126,6 +126,91 @@ describe('smrt#3060 billing-period close', () => {
     expect('BillingPaymentAttemptCollection' in commerceRoot).toBe(false);
   });
 
+  it.each([
+    'free',
+    'pay_what_you_can',
+  ] as const)('bills %s using explicit subscription pricing', async (mode) => {
+    await system(async () => {
+      const [subscription] = await world.subscriptions.list({
+        where: { tenantId: SOLO },
+      });
+      if (!subscription) throw new Error('missing subscription');
+      const plan = await world.plans.create({
+        planKey: `explicit-${mode}`,
+        name: 'Explicit membership',
+        pricingMode: mode,
+        priceAmount: 0,
+        minimumAmount: mode === 'pay_what_you_can' ? 500 : 0,
+        suggestedAmount: mode === 'pay_what_you_can' ? 1500 : 0,
+      });
+      subscription.planId = String(plan.id);
+      subscription.agreedAmount = mode === 'pay_what_you_can' ? 750 : null;
+      await subscription.save();
+    });
+    await world.provider.closePeriod(period);
+    const invoices = await invoiceFor(world, PROVIDER, SOLO);
+    if (mode === 'free') expect(invoices).toEqual([]);
+    else expect(invoices[0]?.subtotal).toBe(750);
+    await world.provider.closePeriod(period);
+    expect(await invoiceFor(world, PROVIDER, SOLO)).toHaveLength(
+      mode === 'free' ? 0 : 1,
+    );
+  });
+
+  it('isolates invalid legacy PWYC terms to their payer and recovers on retry', async () => {
+    let subscriptionId = '';
+    await system(async () => {
+      const plan = await world.plans.create({
+        planKey: 'legacy-pwyc',
+        name: 'Legacy membership',
+        priceAmount: 800,
+      });
+      const [subscription] = await world.subscriptions.list({
+        where: { tenantId: SOLO },
+      });
+      if (!subscription) throw new Error('missing subscription');
+      subscription.planId = String(plan.id);
+      await subscription.save();
+      subscriptionId = String(subscription.id);
+      await expect(
+        world.plans.update(String(plan.id), {
+          pricingMode: 'pay_what_you_can',
+          priceAmount: 0,
+          minimumAmount: 500,
+        }),
+      ).rejects.toThrow();
+      // Simulate a legacy/direct write that bypassed model validation.
+      await world.db.update(
+        plan.tableName,
+        { id: plan.id },
+        {
+          pricing_mode: 'pay_what_you_can',
+          price_amount: 0,
+          minimum_amount: 500,
+        },
+      );
+    });
+    const error = await world.provider
+      .closePeriod(period)
+      .catch((caught: unknown) => caught);
+    expect(error).toBeInstanceOf(BillingPeriodCloseError);
+    const groups = (error as BillingPeriodCloseError).result.groups;
+    expect(groups.find((group) => group.payerTenantId === SOLO)).toMatchObject({
+      outcome: 'failed',
+      error: expect.stringContaining(subscriptionId),
+    });
+    expect(
+      groups.find((group) => group.payerTenantId === NETWORK)?.outcome,
+    ).toBe('completed');
+    expect(await invoiceFor(world, PROVIDER, SOLO)).toHaveLength(0);
+    await system(() =>
+      world.subscriptions.update(subscriptionId, { agreedAmount: 800 }),
+    );
+    await world.provider.closePeriod(period);
+    expect((await invoiceFor(world, PROVIDER, SOLO))[0]?.subtotal).toBe(800);
+    expect(await invoiceFor(world, PROVIDER, NETWORK)).toHaveLength(1);
+  });
+
   it('invoices flat and usage lines per billing owner, pushes them with provider tax, and posts revenue', async () => {
     await world.usage(SITE);
     await world.usage(SITE);
@@ -1080,26 +1165,6 @@ describe('smrt#3060 billing-period close', () => {
     });
   });
 
-  describe('accounting-provider input', () => {
-    it('converts invoice money to the major units the SDK expects', async () => {
-      await world.usage(SOLO);
-      await world.provider.closePeriod(period);
-      const [solo] = await invoiceFor(world, PROVIDER, SOLO);
-      const input = await withTenant({ tenantId: PROVIDER }, async () =>
-        solo?.toAccountingInput(),
-      );
-      expect(input).toMatchObject({
-        subtotal: 25.7,
-        taxAmount: 1.29,
-        totalAmount: 26.99,
-        currency: 'USD',
-      });
-      expect(
-        input?.lineItems.map((line) => line.unitPrice).sort((a, b) => a - b),
-      ).toEqual([0.7, 25]);
-    });
-  });
-
   describe('minor-unit conversion', () => {
     it('converts with the ISO exponent and rejects fractional provider amounts', () => {
       expect(currencyMinorUnitExponent('usd')).toBe(2);
@@ -1113,5 +1178,83 @@ describe('smrt#3060 billing-period close', () => {
       expect(() => minorToMajorUnits(1.5, 'USD')).toThrow(/safe integer/);
       expect(() => currencyMinorUnitExponent('usdx')).toThrow();
     });
+  });
+
+  it('bills a seller with a taxing default code without taxing billing lines twice (#4013)', async () => {
+    // The seller's default sales code taxes at 8.25%; billing lines are
+    // provider-taxed, so they must stay out of scope.
+    await commerceRoot.ensureCommerceTenant(world.db, PROVIDER, {
+      cookbook: {
+        policies: [
+          {
+            objectRef: '@happyvertical/smrt-commerce:InvoiceLineItem',
+            fieldName: 'taxRate',
+            scopeType: 'app',
+            defaultValue: '0.0825',
+          },
+        ] as never,
+      },
+    });
+    await world.usage(SITE);
+    await world.usage(SITE);
+    const result = await world.provider.closePeriod(period);
+    expect(
+      result.groups.find((group) => group.payerTenantId === NETWORK)?.outcome,
+    ).toBe('completed');
+    const [network] = await invoiceFor(world, PROVIDER, NETWORK);
+    expect(network).toMatchObject({
+      status: InvoiceStatus.SENT,
+      subtotal: 2540,
+      providerTaxAmount: 330,
+      taxAmount: 330,
+      totalAmount: 2870,
+    });
+    expect(network?.moneySnapshotId).toBeTruthy();
+    expect(network?.arJournalId).toBeTruthy();
+    const lines = await withTenant({ tenantId: PROVIDER }, async () =>
+      (await InvoiceLineItemCollection.create({ db: world.db })).findByInvoice(
+        String(network?.id),
+      ),
+    );
+    expect(lines.map((line) => [line.taxCodeCode, line.taxAmount])).toEqual([
+      ['out-of-scope', 0],
+      ['out-of-scope', 0],
+    ]);
+  });
+  it('refuses to bill through a standard out-of-scope code made taxable (#4021)', async () => {
+    await commerceRoot.ensureCommerceTenant(world.db, PROVIDER);
+    await withTenant({ tenantId: PROVIDER }, async () => {
+      const component = await (
+        await commerceRoot.TaxComponentCollection.create({ db: world.db })
+      ).create({ tenantId: PROVIDER, name: 'Sneaky', percent: '5' });
+      const codes = await commerceRoot.TaxCodeCollection.create({
+        db: world.db,
+      });
+      const outOfScope = await codes.findByCode('out-of-scope', PROVIDER);
+      if (!outOfScope) throw new Error('Expected the standard code');
+      outOfScope.kind = 'taxable';
+      outOfScope.components = [
+        { taxComponentId: String(component.id), compound: false },
+      ];
+      await outOfScope.save();
+    });
+    await world.usage(SITE);
+    await expect(world.provider.closePeriod(period)).rejects.toThrow(
+      /Standard tax code 'out-of-scope' was changed/,
+    );
+    expect(await invoiceFor(world, PROVIDER, NETWORK)).toEqual([]);
+  });
+  it('refuses an unsupported ledger book currency before any billing work (#4021)', async () => {
+    for (const bookCurrency of ['ZZZ', 'usd'])
+      await expect(
+        BillingRuntime.create({
+          db: world.db,
+          sellerTenantId: PROVIDER,
+          kind: 'provider',
+          provider: world.provider.provider,
+          billingRelationships: world.relationships,
+          ledger: { ...world.ledger, bookCurrency },
+        }),
+      ).rejects.toThrow(/not a supported ISO 4217 currency code/);
   });
 });

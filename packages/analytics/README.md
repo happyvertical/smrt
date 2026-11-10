@@ -151,3 +151,7 @@ Re-exported from `./types` for SDK compatibility: `AnalyticsInterface`, `Analyti
 
 See [`AGENTS.md`](./AGENTS.md) for package architecture, invariants, validation,
 and contributor guidance.
+
+## Browser tracking
+
+Use the isolated `@happyvertical/smrt-analytics/browser` entry for opt-in browser/SPA tracking and the Matomo adapter. Shared components emit static standard events through the optional `@happyvertical/smrt-ui/analytics` context. See [browser integration and privacy contract](agents/browser.md).

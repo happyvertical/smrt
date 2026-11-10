@@ -32,6 +32,16 @@ export type {
   UsersAuthEndpointOptions,
 } from './auth.js';
 export { createUsersAuthAdapter } from './auth.js';
+export type {
+  CreatePasskeySignInCeremonyOptions,
+  RegisterPasskeyOptions,
+} from './passkey.js';
+export {
+  browserSupportsPasskeys,
+  createPasskeySignInCeremony,
+  PasskeyRequestError,
+  registerPasskey,
+} from './passkey.js';
 // Export components
 export {
   AccountSecurityPanel,

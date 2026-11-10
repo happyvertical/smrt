@@ -18,6 +18,8 @@ export class DevelopmentRequestCollection extends SmrtCollection<DevelopmentRequ
       integrationId: string;
     } & ManagedDevelopmentRequestCreateInput,
   ): Promise<DevelopmentRequest> {
+    if (!input.integrationId?.trim())
+      throw new TypeError('Managed requests require an integration.');
     const request = await withTenant({ tenantId: input.tenantId }, () =>
       this.create({
         tenantId: input.tenantId,

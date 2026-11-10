@@ -584,6 +584,47 @@ export function isTransientDatabaseError(error: unknown): boolean {
   return classifyDatabaseError(error).retryable;
 }
 
+/**
+ * Codes that mean the connection itself failed or the server would not take
+ * it yet: SQLSTATE class `08`, server shutdown/startup `57P01`–`57P03`,
+ * `53300 too_many_connections`, and the socket codes a server that is still
+ * starting or settling produces. Deliberately narrower than
+ * `TRANSIENT_NETWORK_CODES`: an unresolvable or unreachable host
+ * (`ENOTFOUND`, `EHOSTUNREACH`, `ENETUNREACH`) is a configuration error and
+ * must fail at once (#3657).
+ */
+const CONNECTION_SQLSTATES = new Set(['53300', '57P01', '57P02', '57P03']);
+const CONNECTION_SOCKET_CODES = new Set([
+  'ECONNREFUSED',
+  'ECONNRESET',
+  'ETIMEDOUT',
+  'EAI_AGAIN',
+]);
+const CONNECTION_MESSAGE =
+  /connection terminated|server closed the connection|too many clients|the database system is (?:starting up|shutting down|in recovery mode)/i;
+
+/**
+ * True when the failure is a transient *connection* failure: the database
+ * dropped, refused or could not yet accept the connection (#3657). Narrower
+ * than {@link isTransientDatabaseError}, which also covers contention
+ * (deadlocks, serialization, locks). Used to retry startup bootstrap only.
+ */
+export function isTransientConnectionError(error: unknown): boolean {
+  const classification = classifyDatabaseError(error);
+  if (classification.deterministic) return false;
+  return (
+    classification.driverCodes.some(
+      (code) =>
+        CONNECTION_SQLSTATES.has(code) ||
+        CONNECTION_SOCKET_CODES.has(code) ||
+        /^08[0-9A-Z]{3}$/.test(code),
+    ) ||
+    classification.driverMessages.some((message) =>
+      CONNECTION_MESSAGE.test(message),
+    )
+  );
+}
+
 /** True when a unique or primary-key constraint was violated. */
 export function isUniqueViolationError(error: unknown): boolean {
   return classifyDatabaseError(error).kind === 'unique_violation';

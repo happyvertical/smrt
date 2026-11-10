@@ -33,21 +33,25 @@ export const DEFAULT_ROLE_SLUGS = {
 export const DEFAULT_ROLES = [
   {
     slug: DEFAULT_ROLE_SLUGS.OWNER,
+    id: '566aef94-1328-4876-b291-b7cf18d4df01',
     name: 'Owner',
     description: 'Full access to all resources',
   },
   {
     slug: DEFAULT_ROLE_SLUGS.ADMIN,
+    id: '566aef94-1328-4876-b291-b7cf18d4df02',
     name: 'Administrator',
     description: 'Manage users and settings',
   },
   {
     slug: DEFAULT_ROLE_SLUGS.MEMBER,
+    id: '566aef94-1328-4876-b291-b7cf18d4df03',
     name: 'Member',
     description: 'Standard access',
   },
   {
     slug: DEFAULT_ROLE_SLUGS.VIEWER,
+    id: '566aef94-1328-4876-b291-b7cf18d4df04',
     name: 'Viewer',
     description: 'Read-only access',
   },

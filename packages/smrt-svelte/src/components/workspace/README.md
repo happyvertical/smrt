@@ -48,6 +48,15 @@ single-line tenant/account control pinned below scrolling tenant navigation.
 Tenant switching and sign-out stay app-owned callbacks, so the workspace core
 remains independent of SvelteKit and `smrt-users` route conventions.
 
+Spacing custom properties (set on the shell or an ancestor; defaults are the
+current theme tokens): `--smrt-admin-shell-band-padding-inline` (top and bottom
+band side padding, `--smrt-spacing-4`), `--smrt-admin-shell-left-rail-padding`
+(expanded left rail, `--smrt-spacing-3`),
+`--smrt-admin-shell-left-rail-padding-collapsed` (collapsed left rail inline
+padding, `--smrt-spacing-2`) and `--smrt-admin-shell-tenant-gap` (gap between
+tenant panel rows, `--smrt-spacing-3`). The tenant panel only spaces rows it
+renders, so with no `tenantFooter` there is no empty footer-row gap.
+
 Keep the `appBar` snippet for content in the center header band. Side-aligned
 identity and action content belongs in `topLeftCorner` / `topRightCorner`,
 wrapped in `ShellCorner side="left"` or `ShellCorner side="right"` so it follows

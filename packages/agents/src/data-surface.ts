@@ -41,6 +41,41 @@ export const DATA_QUERY_FUNCTION_NAME = 'data-query';
 export const DEFAULT_DATA_SURFACE_DEADLINE_MS = 5_000;
 export const MAX_DATA_SURFACE_DEADLINE_MS = 30_000;
 
+/** Longest summary-mode `description`, in characters, including the ellipsis. */
+export const MAX_DATA_SURFACE_SUMMARY_DESCRIPTION_CHARS = 160;
+/** Longest accepted string `rowCountHint` label, in characters. */
+export const MAX_DATA_SURFACE_ROW_COUNT_HINT_CHARS = 32;
+
+/**
+ * How much `data.discover` returns per surface (#4329).
+ *
+ * - `full` (default): the complete descriptor `data.inspect` returns.
+ * - `summary`: `id`, `label`, a one-line `description`, and `rowCountHint`
+ *   only; the model calls `data.inspect` for fields, operators, and limits.
+ */
+export type DataSurfaceDiscoverDetail = 'full' | 'summary';
+
+/**
+ * Host-supplied size hint shown at discovery: a non-negative safe integer, or
+ * a short single-line label such as `"~2k"` or `"1k-10k"` of at most
+ * {@link MAX_DATA_SURFACE_ROW_COUNT_HINT_CHARS} characters. It is never
+ * computed by querying the surface, so it reveals only what the host chooses.
+ */
+export type DataSurfaceRowCountHint = number | string;
+
+/** Summary-mode `data.discover` entry. */
+export interface DataSurfaceSummary {
+  id: string;
+  /**
+   * The same value as `id`, under the argument name `data.inspect` and
+   * `data.query` take (#4507), so a model copies the key it is asked for.
+   */
+  surfaceId?: string;
+  label: string;
+  description?: string;
+  rowCountHint?: DataSurfaceRowCountHint;
+}
+
 /** Declarative, non-authoritative metadata that a server-owned catalog may expose. */
 export type DataSurfaceMetadataValue =
   | string
@@ -82,6 +117,11 @@ export interface DataSurfaceDefinition {
   description?: string;
   /** Safe catalog metadata, returned only after the read gate succeeds. */
   metadata?: DataSurfaceMetadata;
+  /**
+   * Optional host-supplied size hint, returned by discovery and inspection
+   * after the read gate succeeds. Invalid values are omitted, never fatal.
+   */
+  rowCountHint?: DataSurfaceRowCountHint;
   schema: DataSurfaceSchema;
   /** Optional surface-specific executor. */
   execute?: DataSurfaceExecutor;
@@ -130,6 +170,51 @@ export interface DataSurfaceAuditEntry {
   tenantId: string | null;
   rowCount?: number;
   truncated?: boolean;
+  /** Set on a refused call (#4387); `reason` says why. */
+  denied?: boolean;
+  reason?: DataSurfaceDenialReason;
+}
+
+/** A data tool action. */
+export type DataSurfaceAction = 'discover' | 'inspect' | 'query';
+
+/**
+ * Why a data tool call was refused (#4387), value-free:
+ * - `not_visible`: the surface does not exist for this principal, or the
+ *   request named no visible surface (indistinguishable on purpose);
+ * - `action_not_permitted`: the surface is visible for a lesser action
+ *   (discover / inspect) but not for this one;
+ * - `tool_not_allowed`: the tool itself is not on the principal's
+ *   allow-list (no surface involved).
+ */
+export type DataSurfaceDenialReason =
+  | 'not_visible'
+  | 'action_not_permitted'
+  | 'tool_not_allowed';
+
+/** What the host's {@link DataSurfaceToolsOptions.onDenied} sink receives. */
+export interface DataSurfaceDeniedEntry {
+  action: DataSurfaceAction;
+  /** Only for a surface visible to the principal; never an unknown id. */
+  surfaceId?: string;
+  /** The model-supplied `request.requestId`, when it sent one (≤ 256 chars). */
+  requestId?: string;
+  /**
+   * The run's user. Omitted when the run has none (success entries cannot
+   * occur then: they resolve the same principal and refuse without a user).
+   */
+  userId?: string;
+  tenantId: string | null;
+  reason: DataSurfaceDenialReason;
+}
+
+export type DataSurfaceDeniedSink = (
+  entry: DataSurfaceDeniedEntry,
+) => void | Promise<void>;
+
+/** Passed to a function catalog: the action it is evaluated for (#4387). */
+export interface DataSurfaceCatalogContext {
+  action: DataSurfaceAction;
 }
 
 export type DataSurfaceAuditSink = (
@@ -144,6 +229,7 @@ export interface DataSurfaceToolsOptions {
     | readonly DataSurfaceDefinition[]
     | ((
         run: PrincipalRun,
+        context: DataSurfaceCatalogContext,
       ) =>
         | readonly DataSurfaceDefinition[]
         | Promise<readonly DataSurfaceDefinition[]>);
@@ -155,6 +241,23 @@ export interface DataSurfaceToolsOptions {
   deadlineMs?: number;
   /** Receives detailed server-side failures; never surfaced to the model. */
   onFailure?: DataSurfaceFailureSink;
+  /**
+   * Per-surface detail of `data.discover`. Defaults to `'full'`; `'summary'`
+   * returns {@link DataSurfaceSummary} entries for two-step discovery with
+   * `data.inspect`. Permissions, audit, and failures are identical in both.
+   */
+  discoverDetail?: DataSurfaceDiscoverDetail;
+
+  /**
+   * Receives every refused data tool call (#4387) — allow-list refusals and
+   * surface denials — with the action, the surface id only when visible, the
+   * principal and a value-free reason. Request-validation errors (including
+   * hidden fields) are not denials and never reach it. A separate sink from `onFailure`
+   * because a denial is an authorization outcome, not a server failure: it
+   * carries no error object, and hosts route it to access logs instead of
+   * incident alerts. A throw is ignored.
+   */
+  onDenied?: DataSurfaceDeniedSink;
 }
 
 export interface DataSurfaceFailureEntry {
@@ -177,6 +280,23 @@ export class DataSurfaceDeniedError extends Error {
     // Deliberately generic: callers must not learn whether a surface exists.
     super('Data surface is not available.');
     this.name = 'DataSurfaceDeniedError';
+  }
+}
+
+/**
+ * A surface the principal can see for a lesser action (discover / inspect)
+ * but not for this one (#4387). Unlike {@link DataSurfaceDeniedError} it names
+ * the action and the surface — only one the principal can already see — so
+ * the model stops retrying. A surface the principal cannot see at all keeps
+ * the generic denial.
+ */
+export class DataSurfaceActionDeniedError extends DataSurfaceDeniedError {
+  readonly code = 'DATA_SURFACE_ACTION_DENIED';
+
+  constructor(action: 'inspect' | 'query', surfaceId: string) {
+    super();
+    this.message = `${action === 'query' ? 'Querying' : 'Inspecting'} '${surfaceId}' is not permitted for you; answer without this data or ask an administrator.`;
+    this.name = 'DataSurfaceActionDeniedError';
   }
 }
 
@@ -247,6 +367,7 @@ export class DataSurfaceRequestError extends Error {
 const DATA_QUERY_REQUEST_SHAPE_HINT =
   'Request shape: {"mode":"rows"|"count"|"facets", "projection":[field], ' +
   '"filter":{"kind":"condition","field":f,"operator":op,"value":v} | ' +
+  '{"kind":"condition","field":f,"operator":"isNull"|"isNotNull"} | ' +
   '{"kind":"all"|"any","filters":[filter]} | {"kind":"not","filter":filter}, ' +
   '"sort":[{"field":f,"direction":"asc"|"desc"}], ' +
   '"page":{"kind":"offset","offset":0,"limit":n}, "facets":[{"field":f,"limit":n}]}. ' +
@@ -263,6 +384,17 @@ const EXECUTOR_REQUEST_ERROR_CODES = new Set([
   'DATA_QUERY_VALUE_INVALID',
   'DATA_QUERY_OPERATOR_NOT_ALLOWED',
   'DATA_QUERY_UNSUPPORTED',
+]);
+
+/**
+ * Core error codes a malformed filter raises — the only failures that can
+ * stem from a null-test attempt, so the only ones that carry its hint.
+ */
+const NULL_HINT_ERROR_CODES: ReadonlySet<string> = new Set([
+  'INVALID_DATA_QUERY',
+  'FORBIDDEN_DATA_QUERY',
+  'DATA_QUERY_OPERATOR_NOT_ALLOWED',
+  'DATA_QUERY_VALUE_NOT_ALLOWED',
 ]);
 
 function fieldList(
@@ -301,16 +433,217 @@ function disallowedCondition(
 }
 
 /**
+ * A one-line valid `data.query` call for this surface (#4378), appended to
+ * every request error so a small model can copy the shape. Built only from
+ * the surface id and the caller-visible schema (field ids, operators) with
+ * `<value>` placeholders — never from the caller's own arguments. The mode
+ * follows the failed request's mode (count when unknown).
+ */
+function validQueryExample(
+  surfaceId: string,
+  schema: DataQuerySchema,
+  request: unknown,
+): string {
+  const mode =
+    isRecord(request) && (request.mode === 'rows' || request.mode === 'facets')
+      ? request.mode
+      : 'count';
+  const filterable = schema.fields.filter(
+    (field) => (field.filterOperators?.length ?? 0) > 0,
+  );
+  const inField = filterable.find((field) =>
+    field.filterOperators?.includes('in'),
+  );
+  const field = inField ?? filterable[0];
+  const nullTest = nullTestAttempt(request, schema);
+  const firstOperator = field?.filterOperators?.[0];
+  const filter = nullTest
+    ? `,"filter":${nullTestFilter(nullTest)}`
+    : field
+      ? inField
+        ? `,"filter":{"kind":"condition","field":${JSON.stringify(field.id)},"operator":"in","value":["<value>","<value>"]}`
+        : `,"filter":{"kind":"condition","field":${JSON.stringify(field.id)},"operator":${JSON.stringify(firstOperator)}${
+            firstOperator && NULL_TEST_OPERATORS.has(firstOperator)
+              ? ''
+              : ',"value":"<value>"'
+          }}`
+      : '';
+  let body: string;
+  if (mode === 'facets') {
+    const facet = schema.fields.find((candidate) => candidate.facetable);
+    body = facet
+      ? `"mode":"facets","facets":[{"field":${JSON.stringify(facet.id)},"limit":10}]`
+      : `"mode":"count"${filter}`;
+  } else if (mode === 'rows') {
+    body = `"mode":"rows","projection":[${JSON.stringify(schema.identityField)}]${filter},"page":{"kind":"offset","offset":0,"limit":${Math.min(10, schema.maxPageLimit ?? 10)}}`;
+  } else {
+    body = `"mode":"count"${filter}`;
+  }
+  return `Valid example: {"surfaceId":${JSON.stringify(surfaceId)},"request":{${body}}}`;
+}
+
+const FILTER_KINDS = new Set(['condition', 'all', 'any', 'not']);
+
+/** Null tests (#4448): condition operators that take no value. */
+const NULL_TEST_OPERATORS: ReadonlySet<string> = new Set([
+  'isNull',
+  'isNotNull',
+]);
+
+/** Strings a model writes when it means "no value" rather than the literal text. */
+const NULL_LIKE_TEXT = /^\s*(?:null|nil|none|undefined|empty|missing)?\s*$/i;
+
+/**
+ * Operator or kind names a model reaches for when it wants a null test. Any
+ * name in this vocabulary that the field does not declare is read as one.
+ */
+const NULL_TEST_NAME =
+  /^(?:is_?)?(?:not_?)?(?:null|nil|none|empty|missing|blank|exists?|present|defined|undefined|set|unset)$/i;
+
+/** Names whose intent is "has a value", so the example uses `isNotNull`. */
+const NOT_NULL_INTENT =
+  /not_?(?:null|nil|none|empty|missing|blank)|^(?:is_?)?(?:exists?|present|defined|set)$/i;
+
+interface NullTestAttempt {
+  field: string;
+  operator: 'isNull' | 'isNotNull';
+}
+
+/**
+ * The first filter node that looks like an attempt to test a nullable field
+ * for an empty value (#4448): `eq`/`ne` with `null`, `"null"`, `""`, or `[]`;
+ * a `not` filter naming a `field` directly; or a kind/operator such as
+ * `"exists"` or `"is_null"`. Only fields that declare `isNull` in the visible
+ * schema qualify, and only the schema's field id and a fixed operator ever
+ * reach the message — never caller text.
+ */
+function nullTestAttempt(
+  request: unknown,
+  schema: DataQuerySchema,
+): NullTestAttempt | undefined {
+  let found: NullTestAttempt | undefined;
+  // `negated` counts enclosing `not` filters, so `not(eq "null")` suggests
+  // isNotNull rather than its opposite.
+  const walk = (filter: unknown, depth: number, negated: boolean) => {
+    if (found || !isRecord(filter) || depth > 16) return;
+    const descriptor =
+      typeof filter.field === 'string'
+        ? schema.fields.find((field) => field.id === filter.field)
+        : undefined;
+    if (descriptor?.filterOperators?.includes('isNull')) {
+      const operator =
+        typeof filter.operator === 'string' ? filter.operator : undefined;
+      const kind = typeof filter.kind === 'string' ? filter.kind : undefined;
+      const value = filter.value;
+      const nullLikeValue =
+        value === undefined ||
+        value === null ||
+        (typeof value === 'string' && NULL_LIKE_TEXT.test(value)) ||
+        (Array.isArray(value) && value.length === 0);
+      const declared = (name: string | undefined) =>
+        name !== undefined &&
+        (descriptor.filterOperators as readonly string[]).includes(name);
+      const nullName = (name: string | undefined) =>
+        name !== undefined && !declared(name) && NULL_TEST_NAME.test(name);
+      const attempted =
+        (kind === 'condition' &&
+          (operator === 'eq' || operator === 'ne') &&
+          nullLikeValue) ||
+        (kind === 'not' && filter.filter === undefined) ||
+        nullName(kind) ||
+        nullName(operator);
+      if (attempted) {
+        const notNull =
+          operator === 'ne' ||
+          [kind, operator].some(
+            (name) => name !== undefined && NOT_NULL_INTENT.test(name),
+          );
+        // A `not` that names the field itself negates its own operator, if any.
+        const flip = negated !== (kind === 'not' && operator !== undefined);
+        found = {
+          field: descriptor.id,
+          operator: notNull !== flip ? 'isNotNull' : 'isNull',
+        };
+        return;
+      }
+    }
+    const children = Array.isArray(filter.filters)
+      ? filter.filters
+      : [filter.filter];
+    const childNegated = filter.kind === 'not' ? !negated : negated;
+    for (const child of children) walk(child, depth + 1, childNegated);
+  };
+  walk(isRecord(request) ? request.filter : undefined, 0, false);
+  return found;
+}
+
+function nullTestFilter(attempt: NullTestAttempt): string {
+  return `{"kind":"condition","field":${JSON.stringify(attempt.field)},"operator":"${attempt.operator}"}`;
+}
+
+/** The hint naming the null-test operators for a detected attempt (#4448). */
+function nullTestHint(request: unknown, schema: DataQuerySchema): string {
+  const attempt = nullTestAttempt(request, schema);
+  if (!attempt) return '';
+  return (
+    `To test whether ${attempt.field} is empty, use operator "isNull" with no value ` +
+    `(or "isNotNull" for rows that have one): ${nullTestFilter(attempt)}. `
+  );
+}
+
+/**
+ * A targeted hint when a filter's `kind` is not one of the four (#4378):
+ * small models write `"kind":"in"` or `"kind":"or"`. Names a misused
+ * operator only from the fixed operator vocabulary, never free model text.
+ */
+function filterKindHint(request: unknown): string {
+  const seen = new Set<string>();
+  const walk = (filter: unknown, depth: number) => {
+    if (!isRecord(filter) || depth > 16) return;
+    if (typeof filter.kind === 'string' && !FILTER_KINDS.has(filter.kind)) {
+      seen.add(filter.kind);
+    }
+    const children = Array.isArray(filter.filters)
+      ? filter.filters
+      : [filter.filter];
+    for (const child of children) walk(child, depth + 1);
+  };
+  walk(isRecord(request) ? request.filter : undefined, 0);
+  if (seen.size === 0) return '';
+  const operators = [...seen].filter((kind) =>
+    (DATA_QUERY_OPERATORS as readonly string[]).includes(kind),
+  );
+  const logical = [...seen].some((kind) => kind === 'or' || kind === 'and');
+  return (
+    'A filter kind is condition, all, any or not. ' +
+    (operators.length > 0
+      ? `${operators.join(', ')} is an operator: use {"kind":"condition","field":f,"operator":${JSON.stringify(operators[0])}${
+          NULL_TEST_OPERATORS.has(operators[0]) ? '' : ',"value":v'
+        }}. `
+      : '') +
+    (logical
+      ? 'For OR use {"kind":"any","filters":[...]}; for AND use {"kind":"all","filters":[...]}. '
+      : '')
+  );
+}
+
+/**
  * Turn a core `DataQueryValidationError` into an actionable
  * `DataSurfaceRequestError`: the original reason plus what the visible schema
- * does allow in its place.
+ * does allow in its place, and a one-line valid example for the surface.
  */
 function explainRequestError(
   error: DataQueryValidationError,
   schema: DataQuerySchema,
   request: unknown,
+  surfaceId: string,
 ): DataSurfaceRequestError {
   const reason = error.publicMessage.replace(/\.?$/, '.');
+  // A rejected filter that looks like a null test on a nullable field points
+  // at isNull/isNotNull first (#4448); other request errors keep their hint.
+  const nullHint = NULL_HINT_ERROR_CODES.has(error.code)
+    ? nullTestHint(request, schema)
+    : '';
   let hint: string;
   switch (error.code) {
     case 'DATA_QUERY_FIELD_NOT_ALLOWED':
@@ -360,6 +693,9 @@ function explainRequestError(
         'This surface has no facetable fields; use mode "count" or "rows".',
       );
       break;
+    case 'DATA_QUERY_VALUE_NOT_ALLOWED':
+      hint = 'Call data.inspect for each field’s values and their labels.';
+      break;
     case 'DATA_QUERY_UNSUPPORTED': {
       const supports = schema.supports ?? {};
       hint = `This surface supports offset paging${
@@ -370,20 +706,24 @@ function explainRequestError(
       break;
     }
     default:
-      hint = DATA_QUERY_REQUEST_SHAPE_HINT;
+      hint = `${requestAliasHint(request)}${filterKindHint(request)}${DATA_QUERY_REQUEST_SHAPE_HINT}`;
   }
-  return new DataSurfaceRequestError(`${reason} ${hint}`, error.code);
+  return new DataSurfaceRequestError(
+    `${reason} ${nullHint}${hint} ${validQueryExample(surfaceId, schema, request)}`,
+    error.code,
+  );
 }
 
 function normalizeSurfaceRequest(
   value: unknown,
   schema: DataQuerySchema,
+  surfaceId: string,
 ): DataQueryRequest {
   try {
     return normalizeDataQueryRequest(value, schema);
   } catch (error) {
     if (error instanceof DataQueryValidationError) {
-      throw explainRequestError(error, schema, value);
+      throw explainRequestError(error, schema, value, surfaceId);
     }
     throw error;
   }
@@ -444,6 +784,96 @@ function visibleSchema(
   return normalizeDataQuerySchema(coreSchema({ ...schema, fields }));
 }
 
+/**
+ * Control, format (bidi overrides, zero-width, BOM, soft hyphen, tag
+ * characters), and line/paragraph-separator code points: never valid in a hint.
+ */
+const ROW_COUNT_HINT_FORBIDDEN = /[\p{Cc}\p{Cf}\p{Zl}\p{Zp}]/u;
+/** Separators plus Unicode "blank" letters/symbols that render as nothing. */
+const INVISIBLE_CHARACTERS = /[\p{Z}\u115F\u1160\u2800\u3164\uFFA0]/gu;
+
+/**
+ * Validate a host-supplied row-count hint: a non-negative safe integer, or a
+ * trimmed single-line label of 1-32 characters with no control, format, or
+ * separator characters and at least one visible character. Anything else is
+ * `undefined`.
+ */
+export function normalizeDataSurfaceRowCountHint(
+  value: unknown,
+): DataSurfaceRowCountHint | undefined {
+  if (typeof value === 'number') {
+    return Number.isSafeInteger(value) && value >= 0 ? value : undefined;
+  }
+  // Check the raw value: `trim()` would silently drop an edge U+FEFF/U+2028.
+  if (typeof value !== 'string' || ROW_COUNT_HINT_FORBIDDEN.test(value)) {
+    return undefined;
+  }
+  const label = value.trim();
+  if (
+    label.replace(INVISIBLE_CHARACTERS, '').length === 0 ||
+    Array.from(label).length > MAX_DATA_SURFACE_ROW_COUNT_HINT_CHARS
+  ) {
+    return undefined;
+  }
+  return label;
+}
+
+function rowCountHintEntry(surface: DataSurfaceDefinition): {
+  rowCountHint?: DataSurfaceRowCountHint;
+} {
+  const rowCountHint = normalizeDataSurfaceRowCountHint(surface.rowCountHint);
+  return rowCountHint === undefined ? {} : { rowCountHint };
+}
+
+/** CRLF, LF, VT, FF, CR, NEL, and the Unicode line/paragraph separators. */
+const SUMMARY_LINE_BREAK = /\r\n|[\n\v\f\r\u0085\u2028\u2029]/;
+/** Format characters: bidi controls, zero-width characters, BOM, soft hyphen. */
+const FORMAT_CHARACTERS = /\p{Cf}/gu;
+
+/** Remaining control characters (tabs, NUL, ESC, ...), each made a space. */
+const CONTROL_CHARACTERS = /\p{Cc}/gu;
+
+/**
+ * First non-empty line of model-facing summary text, with format characters
+ * removed and control characters replaced by spaces.
+ */
+function firstSummaryLine(text: unknown): string | undefined {
+  if (typeof text !== 'string') return undefined;
+  for (const rawLine of text.split(SUMMARY_LINE_BREAK)) {
+    const line = rawLine
+      .replace(FORMAT_CHARACTERS, '')
+      .replace(CONTROL_CHARACTERS, ' ')
+      .trim();
+    if (line.length > 0) return line;
+  }
+  return undefined;
+}
+
+/** Summary description: its first non-empty line, bounded with an ellipsis. */
+function summaryDescription(description: unknown): string | undefined {
+  const line = firstSummaryLine(description);
+  if (line === undefined) return undefined;
+  const characters = Array.from(line);
+  if (characters.length <= MAX_DATA_SURFACE_SUMMARY_DESCRIPTION_CHARS) {
+    return line;
+  }
+  return `${characters
+    .slice(0, MAX_DATA_SURFACE_SUMMARY_DESCRIPTION_CHARS - 1)
+    .join('')
+    .trimEnd()}\u2026`;
+}
+
+function summary(surface: DataSurfaceDefinition): DataSurfaceSummary {
+  const description = summaryDescription(surface.description);
+  return {
+    id: surface.id,
+    surfaceId: surface.id,
+    label: firstSummaryLine(surface.label) ?? surface.id,
+    ...(description ? { description } : {}),
+    ...rowCountHintEntry(surface),
+  };
+}
+
 function descriptor(surface: DataSurfaceDefinition, schema: DataQuerySchema) {
   const metadataByFieldId = new Map(
     surface.schema.fields.map((field) => [field.id, field.metadata]),
@@ -452,6 +882,7 @@ function descriptor(surface: DataSurfaceDefinition, schema: DataQuerySchema) {
     id: surface.id,
     label: surface.label ?? surface.id,
     ...(surface.description ? { description: surface.description } : {}),
+    ...rowCountHintEntry(surface),
     ...(surface.metadata ? { metadata: surface.metadata } : {}),
     collection: surface.collection,
     identityField: schema.identityField,
@@ -462,6 +893,12 @@ function descriptor(surface: DataSurfaceDefinition, schema: DataQuerySchema) {
       sortable: field.sortable === true,
       facetable: field.facetable === true,
       filterOperators: [...(field.filterOperators ?? [])].sort(),
+      ...(field.values
+        ? {
+            values: field.values.map((entry) => ({ ...entry })),
+            valuesEnforced: field.valuesEnforced !== false,
+          }
+        : {}),
       ...(metadataByFieldId.get(field.id)
         ? { metadata: metadataByFieldId.get(field.id) }
         : {}),
@@ -478,10 +915,11 @@ function descriptor(surface: DataSurfaceDefinition, schema: DataQuerySchema) {
 async function availableSurfaces(
   options: DataSurfaceToolsOptions,
   run: PrincipalRun,
+  action: DataSurfaceAction,
 ): Promise<Array<{ surface: DataSurfaceDefinition; schema: DataQuerySchema }>> {
   const configured =
     typeof options.surfaces === 'function'
-      ? await options.surfaces(run)
+      ? await options.surfaces(run, { action })
       : options.surfaces;
   const result: Array<{
     surface: DataSurfaceDefinition;
@@ -963,27 +1401,276 @@ async function bounded<T>(
  * `normalizeDataQueryRequest` against the visible schema. A flat call (the
  * request's keys beside `surfaceId`, no `request` object) is accepted too.
  */
-function requestFromArgs(args: Record<string, unknown>): unknown {
+/** Request-grammar keys a model sometimes misplaces next to `request`. */
+const DATA_QUERY_REQUEST_KEYS = [
+  'mode',
+  'projection',
+  'filter',
+  'sort',
+  'page',
+  'facets',
+  'version',
+  'requestId',
+  // SQL-ish aliases (#4505), mapped once they are inside request.
+  'select',
+  'where',
+  'orderBy',
+  'limit',
+  'offset',
+] as const;
+
+/**
+ * SQL-ish request keys a model reaches for first (#4505), and the canonical
+ * key each one stands for. {@link applyRequestAliases} maps an alias only
+ * when its canonical key is absent (for `limit`/`offset`, when `page` has no
+ * such entry); otherwise the alias stays in place and fails validation as an
+ * unsupported key, with {@link requestAliasHint} naming the canonical key.
+ */
+const DATA_QUERY_REQUEST_ALIASES = {
+  select: 'projection',
+  where: 'filter',
+  orderBy: 'sort',
+  limit: 'page.limit',
+  offset: 'page.offset',
+} as const;
+
+type DataQueryRequestAlias = keyof typeof DATA_QUERY_REQUEST_ALIASES;
+
+/** `"updated_at desc"` / `{field}` / `[...]` as canonical sort terms. */
+function sortFromOrderBy(value: unknown): unknown {
+  const term = (entry: unknown): unknown => {
+    if (typeof entry === 'string') {
+      const [field, direction, ...extra] = entry.trim().split(/\s+/);
+      const lower = direction?.toLowerCase();
+      if (
+        !field ||
+        extra.length > 0 ||
+        (lower !== undefined && lower !== 'asc' && lower !== 'desc')
+      ) {
+        return entry;
+      }
+      return { field, direction: lower ?? 'asc' };
+    }
+    if (isRecord(entry) && entry.direction === undefined) {
+      return { ...entry, direction: 'asc' };
+    }
+    return entry;
+  };
+  if (typeof value === 'string') {
+    return value
+      .split(',')
+      .map((part) => part.trim())
+      .filter(Boolean)
+      .map(term);
+  }
+  if (Array.isArray(value)) return value.map(term);
+  if (isRecord(value)) return [term(value)];
+  return value;
+}
+
+/**
+ * Map the SQL-ish aliases in a raw request onto the canonical grammar
+ * (#4505) before validation. Values are moved, never invented or dropped:
+ * whatever lands in the canonical key is still validated against the visible
+ * schema exactly as if the model had written it there.
+ */
+function applyRequestAliases(
+  raw: Record<string, unknown>,
+): Record<string, unknown> {
+  const next: Record<string, unknown> = { ...raw };
+  if (Object.hasOwn(next, 'select') && !Object.hasOwn(next, 'projection')) {
+    const { select } = next;
+    next.projection =
+      typeof select === 'string'
+        ? select
+            .split(',')
+            .map((part) => part.trim())
+            .filter(Boolean)
+        : select;
+    delete next.select;
+  }
+  if (Object.hasOwn(next, 'where') && !Object.hasOwn(next, 'filter')) {
+    next.filter = next.where;
+    delete next.where;
+  }
+  if (Object.hasOwn(next, 'orderBy') && !Object.hasOwn(next, 'sort')) {
+    next.sort = sortFromOrderBy(next.orderBy);
+    delete next.orderBy;
+  }
+  for (const key of ['limit', 'offset'] as const) {
+    if (!Object.hasOwn(next, key)) continue;
+    if (next.page === undefined) {
+      next.page = { [key]: next[key] };
+    } else if (isRecord(next.page) && !Object.hasOwn(next.page, key)) {
+      next.page = { ...next.page, [key]: next[key] };
+    } else {
+      continue;
+    }
+    delete next[key];
+  }
+  return next;
+}
+
+/** A hint for an alias left in place beside its canonical key (#4505). */
+function requestAliasHint(request: unknown): string {
+  if (!isRecord(request)) return '';
+  const left = (
+    Object.keys(DATA_QUERY_REQUEST_ALIASES) as DataQueryRequestAlias[]
+  ).filter((alias) => Object.hasOwn(request, alias));
+  if (left.length === 0) return '';
+  return `${left
+    .map(
+      (alias) =>
+        `${alias} is an alias of ${DATA_QUERY_REQUEST_ALIASES[alias]}, which the request already sets`,
+    )
+    .join('; ')}: send only ${left
+    .map((alias) => DATA_QUERY_REQUEST_ALIASES[alias])
+    .join(', ')}. `;
+}
+
+/** Valid-shape example used before the surface is known. */
+const GENERIC_QUERY_EXAMPLE =
+  'Valid example: {"surfaceId":"<surface id from data.discover>","request":{"mode":"count",' +
+  '"filter":{"kind":"condition","field":"<field>","operator":"in","value":["<value>","<value>"]}}}';
+
+/**
+ * Put `surfaceId` where `data.query` / `data.inspect` read it (#4378). Small
+ * models nest it inside `request` (or wrap the request in `query`), and a
+ * missing top-level id used to surface as the generic "not available"
+ * denial, which reads as a permission problem.
+ *
+ * - A `request.surfaceId` string is lifted to the top level and removed
+ *   from `request` (the value is used, nothing is dropped). A top-level
+ *   `query` object standing in for `request`, or a `query` object that is
+ *   `request`'s only key, is unwrapped the same way: the intent is
+ *   unambiguous and every key inside it is then validated as usual.
+ * - A lone top-level `id` string (#4507) — `data.discover` lists each
+ *   surface under `id` — stands for `surfaceId` when no top-level
+ *   `surfaceId` was given and nothing else sits beside it except, for
+ *   query, `request` (or its `query` wrapper). Any other `id` is left alone.
+ * - Two different ids (top level vs nested) are a request error.
+ * - No id at all is a request error, never a denial.
+ *
+ * Only an id that names no visible surface still gets the generic denial.
+ * Messages never echo the ids or other values.
+ */
+function placeSurfaceId(
+  args: Record<string, unknown>,
+  tool: 'query' | 'inspect',
+): Record<string, unknown> {
+  let next: Record<string, unknown> = { ...args };
+  if (
+    !Object.hasOwn(next, 'surfaceId') &&
+    typeof next.id === 'string' &&
+    next.id &&
+    Object.keys(next).every(
+      (key) =>
+        key === 'id' ||
+        (tool === 'query' && (key === 'request' || key === 'query')),
+    )
+  ) {
+    const { id, ...rest } = next;
+    next = { ...rest, surfaceId: id };
+  }
+  if (
+    tool === 'query' &&
+    !Object.hasOwn(next, 'request') &&
+    isRecord(next.query) &&
+    Object.keys(next).every((key) => key === 'surfaceId' || key === 'query')
+  ) {
+    const { query, ...rest } = next;
+    next = { ...rest, request: query };
+  }
+  const nested: unknown[] = [];
+  if (isRecord(next.request)) {
+    let request: Record<string, unknown> = { ...next.request };
+    const keys = Object.keys(request).filter((key) => key !== 'surfaceId');
+    if (keys.length === 1 && keys[0] === 'query' && isRecord(request.query)) {
+      const { query, ...rest } = request;
+      if (Object.hasOwn(query as Record<string, unknown>, 'surfaceId')) {
+        nested.push((query as Record<string, unknown>).surfaceId);
+      }
+      request = { ...(query as Record<string, unknown>), ...rest };
+    }
+    if (Object.hasOwn(request, 'surfaceId')) {
+      nested.push(request.surfaceId);
+      delete request.surfaceId;
+    }
+    next.request = request;
+  }
+  const top = next.surfaceId;
+  const candidates = [
+    ...(top !== undefined && top !== null ? [top] : []),
+    ...nested,
+  ];
+  const example =
+    tool === 'inspect'
+      ? 'Valid example: {"surfaceId":"<surface id from data.discover>"}'
+      : GENERIC_QUERY_EXAMPLE;
+  if (
+    candidates.length === 0 ||
+    candidates.some((id) => typeof id !== 'string' || !id)
+  ) {
+    throw new DataSurfaceRequestError(
+      `surfaceId is required at the top level${tool === 'query' ? ', next to request' : ''}, as a surface id string from data.discover. ${example}`,
+      'DATA_QUERY_SURFACE_ID_REQUIRED',
+    );
+  }
+  if (new Set(candidates).size > 1) {
+    throw new DataSurfaceRequestError(
+      `surfaceId was given twice with different values. Give it once, at the top level${tool === 'query' ? ', next to request' : ''}. ${example}`,
+      'DATA_QUERY_SURFACE_ID_CONFLICT',
+    );
+  }
+  next.surfaceId = candidates[0];
+  return next;
+}
+
+function requestFromArgs(
+  args: Record<string, unknown>,
+  example: () => string,
+): unknown {
   let raw: unknown;
   if (Object.hasOwn(args, 'request')) {
+    // `data.query` takes exactly {surfaceId, request} (#4378): a `filter`
+    // beside `request` used to be dropped silently, so a filtered count
+    // counted every row. Name only the fixed grammar keys that were
+    // misplaced — never the model's own keys or values.
+    const stray = Object.keys(args).filter(
+      (key) => key !== 'surfaceId' && key !== 'request',
+    );
+    if (stray.length > 0) {
+      const misplaced = DATA_QUERY_REQUEST_KEYS.filter((key) =>
+        stray.includes(key),
+      );
+      throw new DataSurfaceRequestError(
+        'data.query accepts only surfaceId and request at the top level' +
+          (misplaced.length > 0
+            ? `; move ${misplaced.join(', ')} inside request.`
+            : '; put every query option inside request.') +
+          ` ${example()}`,
+        'DATA_QUERY_ARGUMENTS_UNEXPECTED',
+      );
+    }
     raw = args.request;
   } else {
     const { surfaceId: _surfaceId, ...rest } = args;
     raw = rest;
   }
   if (!isRecord(raw)) return raw;
+  const aliased = applyRequestAliases(raw);
   const request: Record<string, unknown> = {
-    ...raw,
-    version: raw.version ?? 1,
-    requestId: raw.requestId ?? `dq_${randomUUID()}`,
-    mode: raw.mode ?? (raw.facets !== undefined ? 'facets' : 'rows'),
+    ...aliased,
+    version: aliased.version ?? 1,
+    requestId: aliased.requestId ?? `dq_${randomUUID()}`,
+    mode: aliased.mode ?? (aliased.facets !== undefined ? 'facets' : 'rows'),
   };
-  if (isRecord(raw.page)) {
-    const kind = raw.page.kind ?? 'offset';
+  if (isRecord(aliased.page)) {
+    const kind = aliased.page.kind ?? 'offset';
     request.page = {
-      ...raw.page,
+      ...aliased.page,
       kind,
-      ...(kind === 'offset' ? { offset: raw.page.offset ?? 0 } : {}),
+      ...(kind === 'offset' ? { offset: aliased.page.offset ?? 0 } : {}),
     };
   }
   return request;
@@ -999,6 +1686,8 @@ const DATA_QUERY_OPERATORS = [
   'in',
   'notIn',
   'like',
+  'isNull',
+  'isNotNull',
 ] as const;
 
 const DATA_QUERY_SCALAR_SCHEMA = [
@@ -1038,7 +1727,8 @@ export const DATA_QUERY_TOOL_PARAMETERS: Record<string, unknown> = {
           items: { type: 'string' },
           maxItems: 50,
           description:
-            'rows only. Projectable fields to return; the identity field is always included.',
+            'rows only. Projectable fields to return; the identity field is always included. ' +
+            'Alias: select (an array or a comma-separated string), when projection is absent.',
         },
         filter: {
           type: 'object',
@@ -1046,8 +1736,10 @@ export const DATA_QUERY_TOOL_PARAMETERS: Record<string, unknown> = {
             'Optional. A condition {"kind":"condition","field":f,"operator":op,"value":v}; ' +
             '{"kind":"all"|"any","filters":[...]} to AND/OR nested filters; or {"kind":"not","filter":{...}}. ' +
             'field must list op in its filterOperators (data.inspect). value is a scalar, or a non-empty array (max 100) for in/notIn. ' +
+            'isNull/isNotNull test for an empty value and take no value: {"kind":"condition","field":f,"operator":"isNull"}. ' +
             'like takes SQL wildcards (%council%) on string fields. Datetimes are RFC 3339 instants (2026-09-01T00:00:00Z). ' +
-            'String fields whose only operators are eq/ne/in/notIn hold ids: compare them with complete id values.',
+            'String fields whose only value operators are eq/ne/in/notIn (isNull/isNotNull aside) hold ids: compare them with complete id values. ' +
+            'Alias: where, when filter is absent.',
           properties: {
             kind: { type: 'string', enum: ['condition', 'all', 'any', 'not'] },
             field: { type: 'string' },
@@ -1069,7 +1761,8 @@ export const DATA_QUERY_TOOL_PARAMETERS: Record<string, unknown> = {
         sort: {
           type: 'array',
           description:
-            'rows only. Sortable fields, earlier terms first. Empty values sort first ascending and last descending.',
+            'rows only. Sortable fields, earlier terms first. Empty values sort first ascending and last descending. ' +
+            'Alias: orderBy, when sort is absent; it also takes "field desc" strings (comma-separated) and defaults direction to asc.',
           items: {
             type: 'object',
             additionalProperties: false,
@@ -1085,7 +1778,8 @@ export const DATA_QUERY_TOOL_PARAMETERS: Record<string, unknown> = {
           additionalProperties: false,
           description:
             'rows only. {"kind":"offset","offset":0,"limit":10}; kind defaults to offset and offset to 0. limit is capped at the surface maxPageLimit. ' +
-            'Use {"kind":"cursor","after":nextCursor,"limit":n} only where supports.cursorPagination.',
+            'Use {"kind":"cursor","after":nextCursor,"limit":n} only where supports.cursorPagination. ' +
+            'Aliases: limit and offset beside page (inside request) fill page.limit/page.offset when page does not set them.',
           properties: {
             kind: { type: 'string', enum: ['offset', 'cursor'] },
             offset: { type: 'integer', minimum: 0 },
@@ -1130,6 +1824,29 @@ const DATA_QUERY_TOOL_DESCRIPTION =
   '"filter":{"kind":"condition","field":"status","operator":"eq","value":"published"},' +
   '"sort":[{"field":"updated_at","direction":"desc"}],"page":{"kind":"offset","offset":0,"limit":10}}. ' +
   'An invalid request fails with a message naming what was wrong and what is allowed.';
+
+const DATA_DISCOVER_FULL_TOOL_DESCRIPTION =
+  'List data surfaces and their safe, readable fields.';
+const DATA_DISCOVER_SUMMARY_TOOL_DESCRIPTION =
+  'List the data surfaces you can read (surfaceId, label, short description). ' +
+  'Call data.inspect with {"surfaceId": <surfaceId>} for a surface\'s fields and operators before querying.';
+
+const DATA_INSPECT_TOOL_DESCRIPTION =
+  'Inspect one readable data surface schema: its fields, filter operators, sort and facet fields, and page limits. ' +
+  'Takes {"surfaceId": <the id data.discover lists for the surface>}.';
+
+/** JSON schema for `data.inspect`'s arguments (#4507). */
+export const DATA_INSPECT_TOOL_PARAMETERS: Record<string, unknown> = {
+  type: 'object',
+  required: ['surfaceId'],
+  properties: {
+    surfaceId: {
+      type: 'string',
+      description: 'The id data.discover lists for the surface.',
+    },
+  },
+  additionalProperties: false,
+};
 
 function tool(
   slug: string,
@@ -1179,40 +1896,159 @@ export function createDataSurfaceTools(
     action: DataSurfaceFailureEntry['action'],
   ) => {
     try {
-      return await availableSurfaces(options, run);
+      return await availableSurfaces(options, run, action);
     } catch (error) {
       await reportFailure(options, run, action, undefined, undefined, error);
       throw new DataSurfaceQueryError();
     }
   };
+  /**
+   * Refuse a call (#4387): report it to `onDenied` and the audit sink, and
+   * return the error the model sees. A requested id that is visible for a
+   * lesser action gets the action-specific denial; anything else keeps the
+   * generic one, so a hidden surface is never revealed. Lesser catalogs are
+   * evaluated only for a function catalog that takes the `{ action }`
+   * context (a static or one-argument catalog is the same for every action,
+   * so the miss already answers), at most once per action per call; a
+   * throwing lookup is reported to `onFailure` and counts as not visible.
+   * Sink failures never change the outcome.
+   */
+  const deny = async (
+    run: PrincipalRun,
+    action: DataSurfaceAction,
+    requestedId: unknown,
+    reason?: DataSurfaceDenialReason,
+    requestId?: unknown,
+  ): Promise<DataSurfaceDeniedError> => {
+    let surfaceId: string | undefined;
+    let finalReason: DataSurfaceDenialReason = reason ?? 'not_visible';
+    // Only a function catalog can differ per action. Its lesser catalogs
+    // are evaluated on this denial path only — at most two calls, each
+    // once — whatever the function's declared arity (default or rest
+    // parameters and wrappers make arity detection unreliable).
+    if (
+      !reason &&
+      typeof options.surfaces === 'function' &&
+      typeof requestedId === 'string' &&
+      requestedId
+    ) {
+      const lesser: Array<[DataSurfaceAction, string]> =
+        action === 'query'
+          ? [
+              ['inspect', DATA_INSPECT_TOOL_SLUG],
+              ['discover', DATA_DISCOVER_TOOL_SLUG],
+            ]
+          : [['discover', DATA_DISCOVER_TOOL_SLUG]];
+      for (const [lesserAction, lesserSlug] of lesser) {
+        // A lesser action counts only when its own tool is allowed, so a
+        // query-only principal cannot probe which surfaces exist.
+        if (!run.isToolAllowed(lesserSlug)) continue;
+        let visible: Awaited<ReturnType<typeof availableSurfaces>>;
+        try {
+          visible = await availableSurfaces(options, run, lesserAction);
+        } catch (error) {
+          await reportFailure(
+            options,
+            run,
+            lesserAction,
+            undefined,
+            undefined,
+            error,
+          );
+          continue;
+        }
+        const entry = findSurface(visible, requestedId);
+        if (entry) {
+          surfaceId = entry.surface.id;
+          finalReason = 'action_not_permitted';
+          break;
+        }
+      }
+    }
+    const userId = run.context.userId || undefined;
+    const tenantId = run.context.tenantId ?? null;
+    try {
+      await options.onDenied?.({
+        action,
+        ...(surfaceId ? { surfaceId } : {}),
+        ...(typeof requestId === 'string' && requestId
+          ? { requestId: requestId.slice(0, 256) }
+          : {}),
+        ...(userId ? { userId } : {}),
+        tenantId,
+        reason: finalReason,
+      });
+    } catch {
+      // Host telemetry never changes the denial.
+    }
+    // The audit entry needs a user, as success entries do; a run without
+    // one is reported to `onDenied` only.
+    if (userId) {
+      try {
+        await options.audit?.({
+          action,
+          ...(surfaceId ? { surfaceId } : {}),
+          userId,
+          tenantId,
+          denied: true,
+          reason: finalReason,
+        });
+      } catch (error) {
+        // The refusal stands; the broken audit sink is a server failure.
+        await reportFailure(options, run, action, surfaceId, undefined, error);
+      }
+    }
+    // `discover` is only ever refused at the allow-list (no surface), so
+    // this guard is type narrowing for the action-specific constructor.
+    return surfaceId && action !== 'discover'
+      ? new DataSurfaceActionDeniedError(action, surfaceId)
+      : new DataSurfaceDeniedError();
+  };
+  /** The allow-list gate, with the refusal reported (#4387). */
+  const assertAllowed = async (
+    run: PrincipalRun,
+    action: DataSurfaceAction,
+    slug: string,
+  ) => {
+    try {
+      run.assertToolAllowed(slug);
+    } catch (error) {
+      await deny(run, action, undefined, 'tool_not_allowed');
+      throw error;
+    }
+  };
 
+  const summaryDiscovery = options.discoverDetail === 'summary';
   const discover = tool(
     DATA_DISCOVER_TOOL_SLUG,
     DATA_DISCOVER_FUNCTION_NAME,
-    'List data surfaces and their safe, readable fields.',
+    summaryDiscovery
+      ? DATA_DISCOVER_SUMMARY_TOOL_DESCRIPTION
+      : DATA_DISCOVER_FULL_TOOL_DESCRIPTION,
     { type: 'object', properties: {}, additionalProperties: false },
     async ({ run }) => {
-      run.assertToolAllowed(DATA_DISCOVER_TOOL_SLUG);
+      await assertAllowed(run, 'discover', DATA_DISCOVER_TOOL_SLUG);
       const entries = await catalog(run, 'discover');
       await audit({ action: 'discover' }, run);
-      return entries.map(({ surface, schema }) => descriptor(surface, schema));
+      return entries.map(({ surface, schema }) =>
+        summaryDiscovery ? summary(surface) : descriptor(surface, schema),
+      );
     },
   );
 
   const inspect = tool(
     DATA_INSPECT_TOOL_SLUG,
     DATA_INSPECT_FUNCTION_NAME,
-    'Inspect one readable data surface schema.',
-    {
-      type: 'object',
-      required: ['surfaceId'],
-      properties: { surfaceId: { type: 'string' } },
-      additionalProperties: false,
-    },
+    DATA_INSPECT_TOOL_DESCRIPTION,
+    DATA_INSPECT_TOOL_PARAMETERS,
     async ({ run, args }) => {
-      run.assertToolAllowed(DATA_INSPECT_TOOL_SLUG);
-      const entry = findSurface(await catalog(run, 'inspect'), args.surfaceId);
-      if (!entry) throw new DataSurfaceDeniedError();
+      await assertAllowed(run, 'inspect', DATA_INSPECT_TOOL_SLUG);
+      const placed = placeSurfaceId(args, 'inspect');
+      const entry = findSurface(
+        await catalog(run, 'inspect'),
+        placed.surfaceId,
+      );
+      if (!entry) throw await deny(run, 'inspect', placed.surfaceId);
       await audit({ action: 'inspect', surfaceId: entry.surface.id }, run);
       return descriptor(entry.surface, entry.schema);
     },
@@ -1224,17 +2060,49 @@ export function createDataSurfaceTools(
     DATA_QUERY_TOOL_DESCRIPTION,
     DATA_QUERY_TOOL_PARAMETERS,
     async ({ run, args, db }) => {
-      run.assertToolAllowed(DATA_QUERY_TOOL_SLUG);
-      const entry = findSurface(await catalog(run, 'query'), args.surfaceId);
-      if (!entry) throw new DataSurfaceDeniedError();
+      await assertAllowed(run, 'query', DATA_QUERY_TOOL_SLUG);
+      const queryArgs = placeSurfaceId(args, 'query');
+      const entry = findSurface(
+        await catalog(run, 'query'),
+        queryArgs.surfaceId,
+      );
+      if (!entry) {
+        throw await deny(
+          run,
+          'query',
+          queryArgs.surfaceId,
+          undefined,
+          isRecord(queryArgs.request) ? queryArgs.request.requestId : undefined,
+        );
+      }
+      const surfaceId = entry.surface.id;
+      const example = (raw?: unknown) =>
+        validQueryExample(
+          surfaceId,
+          entry.schema,
+          raw ?? (isRecord(queryArgs.request) ? queryArgs.request : queryArgs),
+        );
       const request = normalizeSurfaceRequest(
-        requestFromArgs(args),
+        requestFromArgs(queryArgs, () => example()),
         entry.schema,
+        surfaceId,
       );
       const principal = principalFromRun(run);
       const signal = new AbortController();
       const executor = entry.surface.execute ?? options.execute;
-      if (!executor) throw new DataSurfaceDeniedError();
+      if (!executor) {
+        // A visible surface with nothing to run it is a host configuration
+        // error, not a denial (#4387 review).
+        await reportFailure(
+          options,
+          run,
+          'query',
+          surfaceId,
+          undefined,
+          new Error('Data surface has no executor.'),
+        );
+        throw new DataSurfaceQueryError();
+      }
       try {
         const internal = buildInternalQuery(request, entry.schema);
         const raw = await bounded(
@@ -1252,7 +2120,7 @@ export function createDataSurfaceTools(
               EXECUTOR_REQUEST_ERROR_CODES.has(error.code)
             ) {
               throw new DataSurfaceRequestError(
-                error.publicMessage,
+                `${error.publicMessage.replace(/\.?$/, '.')} ${example(request)}`,
                 error.code,
               );
             }

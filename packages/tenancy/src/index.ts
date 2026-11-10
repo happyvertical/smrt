@@ -155,6 +155,14 @@ export {
   withTenantGlobalRead,
 } from './tenant-global-queries.js';
 
+// Trusted hierarchy list-read scope. Authorization is owned by smrt-users or
+// another owning package; this package only enforces its bounded capability.
+export {
+  getTenantHierarchyReadScope,
+  runTenantHierarchyReadScope,
+  type TenantHierarchyReadScope,
+} from './tenant-hierarchy-read-scope.js';
+
 // ─────────────────────────────────────────────────────────────────────────────
 // Testing Utilities
 // ─────────────────────────────────────────────────────────────────────────────

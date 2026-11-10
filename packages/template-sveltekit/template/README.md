@@ -1,6 +1,6 @@
 # s-m-r-t SvelteKit starter
 
-This is the small, ground-up starting point for s-m-r-t 0.43.10. It contains
+This is the small, ground-up starting point for s-m-r-t. It contains
 one Notes object and a profile-aware operational surface for local, self-hosted, and
 managed-cloud environments. It does not provision external providers.
 
@@ -387,13 +387,13 @@ hydrated rows so the first render does not issue a duplicate request:
 Import the live runtime only from routes that use it. Static pages and the root
 layout should keep using server loads and should not pay for browser data tools.
 
-## 10. Graduate to smrt-saas-starter
+## 10. Graduate to smrt-start
 
 Stay here while you are learning the object model or building a focused app
-from first principles. Move to `smrt-saas-starter` when you want a
-production-shaped SaaS baseline with onboarding, billing/subscriptions,
-background workers, provider configuration, deployment conventions, and
-mobile surfaces. Those concerns are intentionally absent here.
+from first principles. Move to
+[`smrt-start`](https://github.com/happyvertical/smrt-start), the canonical
+application template, when you want a production-shaped baseline. Those
+concerns are intentionally absent here.
 
 ## Runtime profiles and deployment
 
@@ -408,6 +408,18 @@ mobile surfaces. Those concerns are intentionally absent here.
   must probe its real provider before web or workers can start.
 - `cloud`: hosted identity, managed providers, required tenant context, and
   scalable workers. `.env.cloud.example` records the composition boundary.
+
+`compose.yaml` is also the app's deployment declaration. Its `x-happyvertical`
+fields name the web service and its health path, the two workers, the
+migration command, and the `database` service as a stand-in for a platform's
+PostgreSQL. Compose ignores them, so the file runs unchanged; `pnpm
+deploy:check` validates the declaration against the supported platform subset,
+and `pnpm exec smrt deploy:chart-values` renders it for the `smrt-app` chart.
+The one-shot `migrate` service has no annotation and stays local: a platform
+runs the declared migration command inside the web image instead. The three
+application services set `entrypoint` to the node image's own entrypoint, which
+changes nothing for Compose and lets a rendering that replaces the entrypoint
+start the same process.
 
 The adapter-node `Dockerfile` and `compose.yaml` provide the production path.
 Compose gates the web and both workers on the one-shot, idempotent migration

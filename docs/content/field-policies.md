@@ -358,8 +358,9 @@ endpoints: unscoped reads could enumerate tenant or user preferences.
 
 ## Owner and member walkthrough
 
-The [SMRT SaaS starter field-policy walkthrough](https://github.com/happyvertical/smrt-saas-starter/pull/51)
-uses SMRT `0.40.61` and demonstrates a full host integration:
+The field-policy walkthrough in the now-archived `smrt-saas-starter`
+([pinned pull request](https://github.com/happyvertical/smrt-saas-starter/pull/51),
+SMRT `0.40.61`; `smrt-start` is the current template) demonstrated a full host integration:
 
 1. An owner or organization administrator opens the field settings destination
    and uses the gear or control panel to set organization defaults.
@@ -457,7 +458,8 @@ installer creates them dormant by default; enablement is a deployment decision,
 not an automatic side effect.
 
 The default maintenance schedule runs daily at 02:30 and the suggestion run
-every Monday at 03:00, both in the scheduler host’s local time. Maintenance
+every Monday at 03:00, both in UTC (the schedule row’s default `timezone`,
+which operators may change). Maintenance
 keeps usage counters for 90 days and at most 100,000 rows, and removes accepted
 suggestions after 180 days. The suggestion window is 30 days: promotion needs
 five distinct users, while a default needs 10 submissions with at least 80%

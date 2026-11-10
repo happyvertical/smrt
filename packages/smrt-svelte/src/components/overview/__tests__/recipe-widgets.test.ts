@@ -10,8 +10,13 @@ import {
   parseRecipeExportRef,
   type RecipeExportResolver,
   registerRecipeWidgets,
+  sectionDefaultWidget,
 } from '../recipe-widgets.js';
-import { createWidgetRegistry, resolveWidgetComponents } from '../registry.js';
+import {
+  createWidgetRegistry,
+  resolveWidgetComponents,
+  resolveWidgetOptionsEditors,
+} from '../registry.js';
 import type { OverviewDefinition, WidgetOptionType } from '../types.js';
 import { w } from './fixtures.js';
 
@@ -24,6 +29,7 @@ type Equal<A, B> =
 const sameOptionTypes: Equal<RecipeWidgetOptionType, WidgetOptionType> = true;
 
 const FakeComponent = () => {};
+const FakeEditor = () => {};
 
 const surface: RecipeWidgetSurface = {
   kind: 'widget',
@@ -133,6 +139,30 @@ describe('registerRecipeWidgets (#3727)', () => {
     expect(
       calls.filter((call) => call === '@acme/shop/svelte#SalesTotal'),
     ).toHaveLength(1);
+  });
+
+  it('resolves a custom options editor lazily without coupling it to the server host', async () => {
+    const registry = createWidgetRegistry();
+    const custom = {
+      ...surface,
+      optionsEditor: '@acme/shop/svelte#SalesOptions' as const,
+    };
+    const { resolveExport, calls } = resolver({
+      '@acme/shop/svelte#SalesOptions': FakeEditor,
+    });
+    const registered = await registerRecipeWidgets(
+      registry,
+      [recipe('shop.sales', custom)],
+      resolveExport,
+    );
+    expect(registered.skipped).toEqual([]);
+    expect(calls).toEqual([]);
+    const editors = await resolveWidgetOptionsEditors(
+      ['sales-total'],
+      registry,
+    );
+    expect(editors.get('sales-total')).toBe(FakeEditor);
+    expect(calls).toEqual(['@acme/shop/svelte#SalesOptions']);
   });
 
   it('leaves a component that cannot resolve out, to render as unavailable', async () => {
@@ -375,5 +405,52 @@ describe('parseRecipeExportRef', () => {
     'pk g#Name',
   ])('refuses %s', (ref) => {
     expect(parseRecipeExportRef(ref)).toBeNull();
+  });
+});
+
+describe('sectionDefaultWidget (#4100)', () => {
+  it("places the recipe's section page full width with no options", () => {
+    expect(
+      sectionDefaultWidget({
+        id: 'reports.runtime',
+        surfaces: [
+          {
+            kind: 'route',
+            path: '/reports',
+            export: '@acme/r/svelte#R',
+            label: 'R',
+          },
+          {
+            kind: 'widget',
+            type: 'saved-reports',
+            export: '@acme/r/svelte#SavedReports',
+            label: 'Saved reports',
+            sectionDefault: true,
+          },
+        ],
+      }),
+    ).toEqual({
+      id: 'saved-reports',
+      type: 'saved-reports',
+      span: 4,
+      options: {},
+    });
+  });
+
+  it('is undefined for a recipe without one', () => {
+    expect(
+      sectionDefaultWidget({
+        id: 'shop.sales',
+        surfaces: [
+          {
+            kind: 'widget',
+            type: 'sales',
+            export: '@acme/s/svelte#S',
+            label: 'S',
+          },
+        ],
+      }),
+    ).toBeUndefined();
+    expect(sectionDefaultWidget(undefined)).toBeUndefined();
   });
 });

@@ -42,3 +42,13 @@ export {
   type ResolveActiveEarnerResult,
   type ResolveActiveEarnersBySourcesResult,
 } from './EarnerAttributionService.js';
+export {
+  type CalculateWaterfallOptions,
+  calculateWaterfall,
+  calculateWaterfallWithPools,
+  type PrepareWaterfallPoolsOptions,
+  prepareWaterfallPools,
+  validateWaterfallPlan,
+  type WaterfallRecipientResolver,
+  WaterfallRecipientResolverRegistry,
+} from './WaterfallCalculationService.js';

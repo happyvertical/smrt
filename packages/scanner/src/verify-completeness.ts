@@ -87,6 +87,13 @@ export interface VerifyManifestCompletenessOptions {
   exclude?: string[];
   /** Package directory basenames to skip (default: framework infrastructure). */
   skipPackages?: string[];
+  /**
+   * Release mode (issue #2853): when the package publishes no `./manifest`
+   * export, scan its source anyway and report `missing-manifest` if it declares
+   * `@smrt()` objects, instead of skipping. Without this, a package can leave
+   * the guard by omitting the export, and consumers never discover its objects.
+   */
+  requireManifestExport?: boolean;
 }
 
 export interface VerifyManifestCompletenessResult {
@@ -180,7 +187,7 @@ export async function verifyManifestCompleteness(
   }
 
   const manifestPath = resolveManifestPath(packageDir, pkgJson);
-  if (!manifestPath) {
+  if (!manifestPath && !options.requireManifestExport) {
     return {
       status: 'skipped',
       packageName,
@@ -214,7 +221,7 @@ export async function verifyManifestCompleteness(
     return {
       status: 'scan-error',
       packageName,
-      manifestPath,
+      manifestPath: manifestPath ?? undefined,
       missing: [],
       expectedCount: 0,
       distCount: 0,
@@ -236,11 +243,24 @@ export async function verifyManifestCompleteness(
     return {
       status: 'skipped',
       packageName,
-      manifestPath,
+      manifestPath: manifestPath ?? undefined,
       missing: [],
       expectedCount: 0,
       distCount: 0,
-      reason: 'no @smrt() objects found in source',
+      reason: manifestPath
+        ? 'no @smrt() objects found in source'
+        : 'package does not publish a ./manifest export and declares no @smrt() objects',
+    };
+  }
+
+  if (!manifestPath) {
+    return {
+      status: 'missing-manifest',
+      packageName,
+      missing: expectedKeys,
+      expectedCount: expectedKeys.length,
+      distCount: 0,
+      reason: `source declares ${expectedKeys.length} @smrt() object(s) but package.json publishes no ./manifest export`,
     };
   }
 

@@ -116,6 +116,16 @@ export {
   registerDurableResource,
   wipeDurableStore,
 } from './durable-store.js';
+// Shared-device sweep (#3234): enumerate namespaces by name and age out a
+// namespace's queued items without mounting its queue or attaching a transport.
+export type {
+  PruneDurableNamespaceOptions,
+  PruneDurableNamespaceResult,
+} from './durable-store-sweep.js';
+export {
+  listDurableNamespaces,
+  pruneDurableNamespace,
+} from './durable-store-sweep.js';
 // The durable offline outbox capability (#1762) — the first concrete capability
 // over the seam above. A hand-rolled IndexedDB queue + Web Locks leader election
 // (NOT @tanstack/offline-transactions, which would leak an engine type into the
@@ -989,6 +999,17 @@ function projectChanges(changes: unknown): unknown {
   });
 }
 
+/** Keep engine settlement behind the stable SMRT transaction surface. */
+function adaptTransaction(transaction: {
+  when(state: 'settled'): Promise<unknown>;
+}): SmrtWebTransaction {
+  const promise = transaction.when('settled');
+  // Reactive-only callers may never await this promise. Mark it handled while
+  // retaining the original rejection for callers that do await it.
+  void promise.catch(() => {});
+  return { isPersisted: { promise } };
+}
+
 /**
  * A pending optimistic mutation. Await {@link isPersisted} to observe the
  * server outcome: it resolves once the write has been persisted through the
@@ -1009,7 +1030,11 @@ export interface SmrtWebSubscription {
  * own type is never named here so it stays swappable.
  */
 export interface SmrtWebCollection<TData extends object> {
-  /** All rows currently in the collection (plain DTOs, insertion order). */
+  /**
+   * All rows currently in the collection (plain DTOs), in the order of the
+   * latest list result — the server's sort. Rows the list has not returned
+   * (optimistic inserts) follow in insertion order.
+   */
   readonly toArray: ReadonlyArray<SmrtWebRow<TData>>;
   /** Number of rows currently in the collection. */
   readonly size: number;
@@ -1276,13 +1301,8 @@ export function createSmrtCollection<TData extends object>(
     // it here is safe. They mirror the public handle's `toArray` /
     // `subscribeChanges` exactly — projecting to plain DTOs so the engine's
     // virtual props never cross the seam.
-    snapshot: () => collection.toArray.map((row) => toPlainRow<TData>(row)),
-    subscribe: (callback) => {
-      const subscription = collection.subscribeChanges((changes: unknown) =>
-        callback(projectChanges(changes)),
-      );
-      return { unsubscribe: () => subscription.unsubscribe() };
-    },
+    snapshot: () => listOrderedRows(),
+    subscribe: (callback) => subscribeWithListOrder(callback),
   };
 
   // contributeCacheKey (#1755): fold each capability's returned segments into
@@ -1483,7 +1503,7 @@ export function createSmrtCollection<TData extends object>(
       queryFn: async () =>
         unwrapListResult(await fetchers.list(), definition.name) as Array<Row>,
       getKey: (row) => String((row as Record<string, unknown>)[idField]),
-      onInsert: async ({ transaction }) => {
+      onInsert: async ({ transaction, collection }) => {
         let anyHandled = false;
         for (const mutation of transaction.mutations) {
           const modified = mutation.modified as Record<string, unknown>;
@@ -1508,20 +1528,19 @@ export function createSmrtCollection<TData extends object>(
           mutationResults.set(envelope.key, outcome.result);
           anyHandled = anyHandled || outcome.handled;
         }
-        // If a capability handled the write offline (#1762) it never reached the
-        // server, so BOTH the engine's own post-mutation refetch (suppressed via
-        // `{ refetch: false }`) and `invalidateRelated()` are skipped — else the
-        // server list, which lacks the offline row, would drop the optimistic
-        // row the outbox must keep until it replays. A mixed batch (some
-        // handled, some not) is conservative: if ANY mutation was handled we
-        // suppress, so an unsent row is never dropped; the common case is one
-        // mutation per transaction. An UNHANDLED batch behaves exactly as
-        // before: refetch runs and related caches invalidate.
-        if (anyHandled) return { refetch: false };
+        // Confirm every row before removing optimistic state. A mixed batch
+        // stays local when any write was queued: refetching could erase it.
+        if (anyHandled) {
+          await collection.utils.writeUpsert(
+            transaction.mutations.map((mutation) => mutation.modified),
+          );
+          return;
+        }
+        await collection.utils.refetch();
         invalidateRelated();
       },
       onUpdate: fetchers.update
-        ? async ({ transaction }) => {
+        ? async ({ transaction, collection }) => {
             let anyHandled = false;
             for (const mutation of transaction.mutations) {
               const key = String(mutation.key);
@@ -1542,12 +1561,18 @@ export function createSmrtCollection<TData extends object>(
               mutationResults.set(envelope.key, outcome.result);
               anyHandled = anyHandled || outcome.handled;
             }
-            if (anyHandled) return { refetch: false };
+            if (anyHandled) {
+              await collection.utils.writeUpsert(
+                transaction.mutations.map((mutation) => mutation.modified),
+              );
+              return;
+            }
+            await collection.utils.refetch();
             invalidateRelated();
           }
         : undefined,
       onDelete: fetchers.delete
-        ? async ({ transaction }) => {
+        ? async ({ transaction, collection }) => {
             let anyHandled = false;
             for (const mutation of transaction.mutations) {
               const key = String(mutation.key);
@@ -1567,12 +1592,86 @@ export function createSmrtCollection<TData extends object>(
               mutationResults.set(envelope.key, outcome.result);
               anyHandled = anyHandled || outcome.handled;
             }
-            if (anyHandled) return { refetch: false };
+            if (anyHandled) {
+              await collection.utils.writeDelete(
+                transaction.mutations.map((mutation) => String(mutation.key)),
+              );
+              return;
+            }
+            await collection.utils.refetch();
             invalidateRelated();
           }
         : undefined,
     }),
   );
+
+  // The engine keeps rows in insertion order and updates them in place, so a
+  // list fetched in a new order (or a warm-started cache saved in an old one)
+  // would keep the old order. The cached list result is the server's order:
+  // rows in it come first, in that order; any others keep insertion order.
+  function listOrderedRows(): SmrtWebRow<TData>[] {
+    const rows = collection.toArray.map((row) => toPlainRow<TData>(row));
+    const listed = queryClient.getQueryData<Row[]>(queryKey);
+    if (!Array.isArray(listed) || listed.length === 0) return rows;
+    const position = new Map<string, number>();
+    listed.forEach((row, index) => {
+      const key = String((row as Record<string, unknown>)[idField]);
+      if (!position.has(key)) position.set(key, index);
+    });
+    const at = (row: SmrtWebRow<TData>) =>
+      position.get(String((row as Record<string, unknown>)[idField])) ??
+      Number.POSITIVE_INFINITY;
+    // Array.prototype.sort is stable, so unlisted rows keep insertion order.
+    return rows.sort((left, right) => {
+      const a = at(left);
+      const b = at(right);
+      return a === b ? 0 : a < b ? -1 : 1;
+    });
+  }
+
+  // Engine row changes do not cover a revalidation that returns the same rows
+  // in a different order (the adapter only writes rows that changed), yet
+  // `toArray` follows that order. Watch the cached list result and notify
+  // subscribers (and so persistence flush) when the relative order of rows
+  // present both before and after differs. An empty payload marks a pure
+  // reorder; adds/removes are already reported by the engine.
+  function subscribeWithListOrder(
+    callback: (changes: unknown) => void,
+  ): SmrtWebSubscription {
+    const idsOf = (): string[] => {
+      const listed = queryClient.getQueryData<Row[]>(queryKey);
+      return Array.isArray(listed)
+        ? listed.map((row) => String((row as Record<string, unknown>)[idField]))
+        : [];
+    };
+    let lastIds = idsOf();
+    const subscription = collection.subscribeChanges((changes: unknown) =>
+      callback(projectChanges(changes)),
+    );
+    const unwatch = queryClient.getQueryCache().subscribe((event) => {
+      if (event.type !== 'updated') return;
+      if (JSON.stringify(event.query.queryKey) !== JSON.stringify(queryKey)) {
+        return;
+      }
+      const nextIds = idsOf();
+      const before = new Set(lastIds);
+      const after = new Set(nextIds);
+      const common = (ids: string[], other: Set<string>) =>
+        ids.filter((id) => other.has(id));
+      const prev = common(lastIds, after);
+      const next = common(nextIds, before);
+      lastIds = nextIds;
+      if (prev.length > 1 && prev.some((id, index) => id !== next[index])) {
+        callback(projectChanges([]));
+      }
+    });
+    return {
+      unsubscribe: () => {
+        unwatch();
+        subscription.unsubscribe();
+      },
+    };
+  }
 
   // Wrap the engine collection in the SMRT-owned public surface. The wrapper
   // projects rows to plain DTOs at every read boundary (toArray/get and change
@@ -1580,7 +1679,7 @@ export function createSmrtCollection<TData extends object>(
   // engine's own types to this module.
   const handle: SmrtWebCollection<TData> = {
     get toArray() {
-      return collection.toArray.map((row) => toPlainRow<TData>(row));
+      return listOrderedRows();
     },
     get size() {
       return collection.size;
@@ -1622,7 +1721,7 @@ export function createSmrtCollection<TData extends object>(
       // cleanup() resolves. Per-capability try/catch so one rejecting teardown
       // does not skip the others nor reject cleanup(). With no capabilities this
       // awaits nothing extra.
-      await collection.cleanup();
+      await collection.cleanup({ dependents: true });
       for (const capability of capabilities) {
         try {
           await capability.teardown?.(ctx);
@@ -1632,37 +1731,27 @@ export function createSmrtCollection<TData extends object>(
       }
     },
     subscribeChanges(callback) {
-      const subscription = collection.subscribeChanges((changes: unknown) =>
-        callback(projectChanges(changes)),
-      );
-      return { unsubscribe: () => subscription.unsubscribe() };
+      return subscribeWithListOrder(callback);
     },
     insert(row) {
-      return collection.insert(row) as unknown as SmrtWebTransaction;
+      return adaptTransaction(collection.insert(row));
     },
     update(key, changes) {
       if (!fetchers.update) {
         throw new Error(`${definition.name} has no update action`);
       }
       const { id: _id, ...safeChanges } = changes as Record<string, unknown>;
-      const engine = collection as unknown as {
-        update: (
-          key: string,
-          updater: (draft: Record<string, unknown>) => void,
-        ) => unknown;
-      };
-      return engine.update(key, (draft) => {
-        Object.assign(draft, safeChanges);
-      }) as SmrtWebTransaction;
+      return adaptTransaction(
+        collection.update(key, (draft) => {
+          Object.assign(draft, safeChanges);
+        }),
+      );
     },
     delete(key) {
       if (!fetchers.delete) {
         throw new Error(`${definition.name} has no delete action`);
       }
-      const engine = collection as unknown as {
-        delete: (key: string) => unknown;
-      };
-      return engine.delete(key) as SmrtWebTransaction;
+      return adaptTransaction(collection.delete(key));
     },
     async action(action, args, route) {
       if (!fetchers.custom) {
@@ -1681,7 +1770,7 @@ export function createSmrtCollection<TData extends object>(
   persistedMutationResults.set(handle as object, mutationResults);
   mutationTargetHydrators.set(handle as object, async (row) => {
     await collection.preload();
-    collection.utils.writeUpsert(row as Partial<Row>);
+    await collection.utils.writeUpsert(row as Partial<Row>);
   });
 
   engineCollections.set(handle, collection);

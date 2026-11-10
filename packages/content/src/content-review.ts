@@ -1,5 +1,5 @@
 import type { SmrtObjectOptions } from '@happyvertical/smrt-core';
-import { foreignKey, SmrtObject, smrt } from '@happyvertical/smrt-core';
+import { field, foreignKey, SmrtObject, smrt } from '@happyvertical/smrt-core';
 import { TenantScoped, tenantId } from '@happyvertical/smrt-tenancy';
 import type {
   ContentReviewFinding,
@@ -31,21 +31,36 @@ export interface ContentReviewOptions extends SmrtObjectOptions {
 })
 export class ContentReview extends SmrtObject {
   @foreignKey('Content', { required: true, onDelete: 'CASCADE' })
+  @field({ description: 'The piece that was reviewed.' })
   contentId = '';
 
   @foreignKey('ContentVersion', { onDelete: 'CASCADE' })
   contentVersionId = '';
+  @field({
+    description: 'What the review checked: facts, safety or a custom policy.',
+  })
   kind: ContentReviewKind = 'custom';
+
+  @field({ description: 'The policy the piece was checked against.' })
   policyKey = '';
+
+  @field({
+    description: 'The outcome: pending, passed, flagged, failed or waived.',
+  })
   status: ContentReviewStatus = 'pending';
+
+  @field({ description: 'A short account of what the review found.' })
   summary = '';
   findings = '[]';
+
+  @field({ description: 'Who or what carried out the review.' })
   reviewer = 'system';
   metadata = '';
 
   @tenantId({ nullable: true })
   tenantId: string | null = null;
 
+  @field({ description: 'When the review was done.' })
   createdAt = new Date();
   updatedAt = new Date();
 

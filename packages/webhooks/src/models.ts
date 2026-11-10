@@ -3,6 +3,7 @@ import {
   foreignKey,
   SmrtCollection,
   SmrtObject,
+  type SmrtSaveOptions,
   smrt,
 } from '@happyvertical/smrt-core';
 import {
@@ -28,7 +29,7 @@ export class WebhookSubscription extends SmrtObject {
   @field({ type: 'text', sensitive: true, required: true }) secret: string = '';
   @field({ type: 'boolean', default: true }) enabled: boolean = true;
 
-  override async save(): Promise<this> {
+  override async save(options?: SmrtSaveOptions): Promise<this> {
     assertWebhookUrl(this.url);
     assertHmacSecret(this.secret);
     for (const values of [this.events, this.models]) {
@@ -40,7 +41,7 @@ export class WebhookSubscription extends SmrtObject {
         throw new Error('Webhook filters must be lists of nonempty names.');
       }
     }
-    return super.save();
+    return super.save(options);
   }
 }
 export class WebhookSubscriptionCollection extends SmrtCollection<WebhookSubscription> {

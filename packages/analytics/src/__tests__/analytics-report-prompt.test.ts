@@ -143,13 +143,21 @@ describe('AnalyticsReport.analyzeResults()', () => {
     expect(text).toContain('pii-pseudo-id-leak-9999');
   });
 
-  it('passes empty AI options for the default registered prompt (no ai config)', async () => {
+  it('passes only the prompt-run usage tags for the default registered prompt (no ai config, #4751)', async () => {
     const { report, aiMessageMock } = makeReport();
 
     await report.analyzeResults();
 
     const [, options] = aiMessageMock.mock.calls[0];
-    expect(options).toEqual({});
+    expect(options).toEqual({
+      usageTags: {
+        promptKey: 'smrtAnalytics.report.analyzeResults',
+        promptLayer: 'default',
+        templateHash: expect.stringMatching(/^[0-9a-f]{12}$/),
+        tierRequested: 'good',
+        tierResolved: 'good',
+      },
+    });
   });
 });
 
@@ -188,6 +196,23 @@ describe('AnalyticsReport.hasPositiveTrends()', () => {
 
     expect(result).toBe(false);
     expect(aiMessageMock).toHaveBeenCalledTimes(1);
+  });
+
+  it('forwards the prompt-run usage tags to the AI call (#4751)', async () => {
+    const { report, aiMessageMock } = makeReport({ aiResponse: 'Yes' });
+
+    await report.hasPositiveTrends();
+
+    const [, options] = aiMessageMock.mock.calls[0];
+    expect(options).toEqual({
+      usageTags: {
+        promptKey: 'smrtAnalytics.report.hasPositiveTrends',
+        promptLayer: 'default',
+        templateHash: expect.stringMatching(/^[0-9a-f]{12}$/),
+        tierRequested: 'cheap',
+        tierResolved: 'cheap',
+      },
+    });
   });
 
   it('substitutes metrics and result data into the registered prompt', async () => {

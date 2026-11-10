@@ -346,8 +346,14 @@ async function applyInvoiceEvent(
       invoice.status !== InvoiceStatus.CANCELLED &&
       invoice.status !== InvoiceStatus.WRITTEN_OFF
     ) {
-      invoice.cancel();
-      await invoice.save();
+      if (invoice.arJournalId) {
+        await invoice.cancelWithRevenueReversal({
+          bookCurrency: runtime.ledger.bookCurrency,
+        });
+      } else {
+        invoice.cancel();
+        await invoice.save();
+      }
     }
   } else if (state.status === 'uncollectible') {
     // Written off at the provider (#3139): written off here too, so it no
@@ -364,6 +370,11 @@ async function applyInvoiceEvent(
       invoice.status === InvoiceStatus.PARTIAL ||
       invoice.status === InvoiceStatus.OVERDUE
     ) {
+      // Leaving DRAFT freezes the invoice, so a parked close's invoice takes
+      // the provider's tax in the same save; its total then matches the
+      // provider's, and a later recovery payment of that total fits.
+      if (invoice.status === InvoiceStatus.DRAFT)
+        invoice.providerTaxAmount = state.taxAmount;
       invoice.status = InvoiceStatus.WRITTEN_OFF;
       await invoice.save();
       standing = 'uncollectible';

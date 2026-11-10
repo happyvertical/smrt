@@ -37,6 +37,10 @@ import {
 } from './DataTableLayout.js';
 import { responsiveColumns } from './DataTableResponsive.js';
 import {
+  buildDataTableSummaryRow,
+  isNumericSummary,
+} from './DataTableSummaries.js';
+import {
   maximumDataTableVirtualScrollTop,
   resolveDataTableVirtualWindow,
   scrollTopForDataTableRow,
@@ -56,7 +60,8 @@ import type {
 } from './types.js';
 import { defaultSort, getNestedValue } from './types.js';
 
-const { t } = useI18n();
+const i18n = useI18n();
+const { t } = i18n;
 
 interface ExtendedProps<T> extends DataTableProps<T> {
   /** Global cell renderer - takes precedence over column.cell */
@@ -67,7 +72,7 @@ interface ExtendedProps<T> extends DataTableProps<T> {
 
 let {
   data = [],
-  columns = [],
+  columns: declaredColumns = [],
   rowKey,
   agentAddressable = false,
   selectable = false,
@@ -94,6 +99,8 @@ let {
   toolbar,
   footer,
   structuralRows = [],
+  summaries,
+  summaryLabel,
   visibleColumnIds,
   loading = false,
   refreshing = false,
@@ -124,6 +131,18 @@ let {
 }: ExtendedProps<T> = $props();
 
 const dataTableId = $props.id();
+
+// A `sum` / `avg` summary marks a numeric column: right-aligned unless the
+// column says otherwise, so figures and their total line up.
+const columns = $derived(
+  summaries
+    ? declaredColumns.map((column) =>
+        column.align === undefined && isNumericSummary(summaries[column.id])
+          ? { ...column, align: 'right' as const }
+          : column,
+      )
+    : declaredColumns,
+);
 
 function legacyModes(): DataTableModes {
   return {
@@ -870,9 +889,22 @@ const visibleColumns = $derived(dataTableLayout.columns);
 const dataBodyStructuralRows = $derived(
   structuralRows.filter((row) => row.kind !== 'footer'),
 );
-const footerStructuralRows = $derived(
-  structuralRows.filter((row) => row.kind === 'footer'),
+const summaryRow = $derived.by(() =>
+  buildDataTableSummaryRow(
+    filteredRows.map(({ row }) => row),
+    visibleColumns.map((entry) => entry.column),
+    summaries,
+    {
+      id: `${dataTableId}-summary`,
+      label: summaryLabel ?? t(M['ui.data_table.total']),
+      locale: i18n.locale,
+    },
+  ),
 );
+const footerStructuralRows = $derived([
+  ...structuralRows.filter((row) => row.kind === 'footer'),
+  ...(summaryRow ? [summaryRow] : []),
+]);
 const structuralRowCount = $derived(
   dataBodyStructuralRows.length +
     footerStructuralRows.length +
@@ -1918,7 +1950,7 @@ $effect(() => {
     {#if canScrollRight}<span>{t(M['ui.data_table.more_columns'])} →</span>{/if}
   </div>
 {/if}
-{#if tableState.pageSize && totalPages && totalPages > 1}<Pagination currentPage={tableState.page} {totalPages} onPageChange={handlePageChange} aria-label={t(M['ui.data_table.pagination'])} />{/if}
+{#if tableState.pageSize && totalPages && totalPages > 1}<Pagination currentPage={tableState.page} {totalPages} {density} onPageChange={handlePageChange} aria-label={t(M['ui.data_table.pagination'])} />{/if}
 
 <style>
 @layer smrt.reset, smrt.structure, smrt.theme;
@@ -1996,8 +2028,12 @@ $effect(() => {
   }
 
   /* Header */
+  /* --smrt-data-table-head-bg / -color: sunken is darker than every
+     surface-container level in both themes, so the head stays visible on a
+     surface-container-low page. */
   .data-table__head {
-    background: var(--smrt-surface-sunken);
+    background: var(--smrt-data-table-head-bg, var(--smrt-surface-sunken));
+    color: var(--smrt-data-table-head-color, var(--smrt-color-on-surface));
   }
 
   .data-table-container--sticky .data-table__head {
@@ -2016,7 +2052,7 @@ $effect(() => {
     font-weight: var(--smrt-typography-weight-semibold, 600);
     text-align: left;
     white-space: nowrap;
-    color: var(--smrt-color-on-surface);
+    color: inherit;
   }
 
   .data-table__cell--sortable {
@@ -2155,7 +2191,7 @@ $effect(() => {
   .data-table__cell--header.data-table__cell--pinned-start,
   .data-table__cell--header.data-table__cell--pinned-end {
     z-index: 3;
-    background: var(--smrt-surface-sunken);
+    background: var(--smrt-data-table-head-bg, var(--smrt-surface-sunken));
   }
 
   .data-table__row--selected .data-table__cell--pinned-start,
@@ -2347,7 +2383,7 @@ $effect(() => {
   }
   .data-table-container[data-density='touch'] { --smrt-control-target-min: var(--smrt-touch-target-min); }
   .data-table-container[data-density='comfortable'] { --smrt-control-target-min: 0px; }
-  .data-table__sort-button { min-height: var(--smrt-control-target-min, 0px); min-width: var(--smrt-control-target-min, 0px); }
+  .data-table__sort-button { min-height: var(--smrt-control-target-min); min-width: var(--smrt-control-target-min); }
   .data-table-container--narrow .data-table { table-layout: fixed; }
   .data-table-container--narrow .data-table__cell { white-space: normal; overflow-wrap: anywhere; }
   .data-table-container--narrow .data-table__sort-button { max-width: 100%; text-align: left; white-space: normal; overflow-wrap: anywhere; }

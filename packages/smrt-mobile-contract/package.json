@@ -1,6 +1,6 @@
 {
   "name": "@happyvertical/smrt-mobile-contract",
-  "version": "0.55.21",
+  "version": "0.60.16",
   "description": "SMRT mobile contract codegen: manifest + allowlist → mobile-contract.json → Kotlin/Swift DTOs, plus the generated framework contract for @happyvertical/smrt-mobile",
   "author": "HappyVertical",
   "license": "MIT",
@@ -36,7 +36,7 @@
     "@happyvertical/smrt-core": "workspace:*",
     "@types/node": "24.13.6",
     "typescript": "6.0.3",
-    "vite": "8.1.4",
+    "vite": "8.1.6",
     "vitest": "4.1.10"
   },
   "publishConfig": {

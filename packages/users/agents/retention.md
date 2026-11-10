@@ -24,8 +24,9 @@ reap them.
   optionally for exactly that reason. Registering is not scheduling: nothing is
   deleted until something runs a sweep.
 - **Task names** are `users-sessions`, `users-magic-link-tokens`,
-  `users-cli-auth-requests`, `users-login-attempts`, `users-login-audit-events`
-  — prefixed with the package's short name because the retention registry is
+  `users-cli-auth-requests`, `users-login-attempts`, `users-login-audit-events`,
+  `users-passkey-challenges` (consumed passkey ceremony challenges past their
+  expiry, #3275) — prefixed with the package's short name because the retention registry is
   one process-global namespace. Opt one out with
   `runRetentionSweep(db, { tasks: { 'users-sessions': false } })` or
   `smrt db:prune --skip users-sessions`; `unregisterUserRetentionTasks()`

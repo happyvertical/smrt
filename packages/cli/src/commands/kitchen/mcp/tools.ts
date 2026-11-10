@@ -456,7 +456,7 @@ export function describeSnapshot(snapshot: PlanSnapshot): string {
     ...(snapshot.unavailable.length
       ? [`unavailable: ${snapshot.unavailable.join(', ')}`]
       : []),
-    `settings: ${snapshot.settings.currency}, tax ${snapshot.settings.taxRate}%, ${snapshot.settings.paymentTerms}`,
+    `settings: ${snapshot.settings.currency}, tax ${snapshot.settings.taxRate}% ${snapshot.settings.pricesIncludeTax ? 'included' : 'excluded'}, ${snapshot.settings.taxRounding} rounding, ${snapshot.settings.paymentTerms}`,
     `theme: ${snapshot.theme.text}`,
     `menu: ${menu || 'empty'}`,
   ].join('\n');

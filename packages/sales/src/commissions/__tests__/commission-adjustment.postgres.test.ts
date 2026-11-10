@@ -14,6 +14,7 @@ import {
 import type { DatabaseInterface } from '@happyvertical/sql';
 import { afterEach, beforeEach, describe, expect, it } from 'vitest';
 import { CommissionAdjustmentCollection } from '../collections/CommissionAdjustmentCollection.js';
+import { CommissionAdjustmentOperationCollection } from '../collections/CommissionAdjustmentOperationCollection.js';
 import { CommissionCollection } from '../collections/CommissionCollection.js';
 import { EarnerCollection } from '../collections/EarnerCollection.js';
 import {
@@ -56,7 +57,9 @@ describePostgres('CommissionAdjustmentService on PostgreSQL', () => {
     isolated = undefined;
   });
 
-  it('serializes concurrent transactions as one create and one exact replay', async () => {
+  it.each(
+    Array.from({ length: 12 }, (_, index) => index),
+  )('serializes concurrent transactions as one create and one exact replay (%i)', async () => {
     const tenantId = randomUUID();
     const baseEarners = await EarnerCollection.create({ db });
     const baseCommissions = await CommissionCollection.create({ db });
@@ -123,5 +126,71 @@ describePostgres('CommissionAdjustmentService on PostgreSQL', () => {
     expect(persisted).toHaveLength(1);
     expect(persisted[0].amountCents).toBe(-1_250);
     expect(persisted[0].reason).toBe('Processor chargeback');
+
+    const service = await CommissionAdjustmentService.create({ db });
+    await expect(
+      withTenant({ tenantId }, () =>
+        service.createAdjustment({ ...input, amountCents: -900 }),
+      ),
+    ).rejects.toMatchObject({
+      code: 'COMMISSION_ADJUSTMENT_REPLAY_CONFLICT',
+      mismatches: ['amountCents'],
+    });
+    const otherTenantId = randomUUID();
+    await withTenant({ tenantId: otherTenantId }, async () => {
+      const earner = await baseEarners.create({
+        profileId: randomUUID(),
+        displayName: 'Other tenant',
+        status: 'active',
+      });
+      const commission = await baseCommissions.create({
+        earnerId: earner.id as string,
+        amountCents: 4000,
+        currency: 'USD',
+        status: 'payable',
+        dedupeKey: randomUUID(),
+      });
+      await expect(
+        service.createAdjustment({
+          ...input,
+          tenantId: otherTenantId,
+          earnerId: earner.id as string,
+          commissionId: commission.id as string,
+        }),
+      ).rejects.toMatchObject({
+        code: 'COMMISSION_ADJUSTMENT_REPLAY_CONFLICT',
+        mismatches: ['tenantId'],
+      });
+      expect(await baseAdjustments.list()).toHaveLength(0);
+    });
+  });
+
+  it('keeps a transaction usable when the slug/context arbiter wins', async () => {
+    const tenantId = randomUUID();
+    const operationId = randomUUID();
+    const existingId = randomUUID();
+    await db.query(
+      `INSERT INTO commission_adjustment_operations
+         (id, slug, context, tenant_id, adjustment_id)
+       VALUES (?, ?, '', ?, ?)`,
+      [existingId, operationId, tenantId, randomUUID()],
+    );
+    await withTenant({ tenantId }, () =>
+      db.transaction(async (tx) => {
+        const operations = await CommissionAdjustmentOperationCollection.create(
+          {
+            db: tx,
+          },
+        );
+        const result = await operations.claim({
+          operationId,
+          tenantId,
+          adjustmentId: randomUUID(),
+        });
+        // A conflicting slug is never authority to return another operation.
+        expect(result).toEqual({ claimed: false, operation: null });
+        expect(await operations.findByOperationId(existingId)).not.toBeNull();
+      }),
+    );
   });
 });

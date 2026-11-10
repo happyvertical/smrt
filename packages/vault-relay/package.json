@@ -1,0 +1,58 @@
+{
+  "name": "@happyvertical/smrt-vault-relay",
+  "version": "0.60.16",
+  "description": "Blind snapshot relay: device-signed, per-account encrypted blob store gated by backup.vault",
+  "type": "module",
+  "author": "HappyVertical",
+  "license": "MIT",
+  "main": "./dist/index.js",
+  "types": "./dist/index.d.ts",
+  "exports": {
+    ".": {
+      "types": "./dist/index.d.ts",
+      "import": "./dist/index.js"
+    }
+  },
+  "files": [
+    "dist",
+    "AGENTS.md",
+    "CLAUDE.md"
+  ],
+  "scripts": {
+    "build": "vite build --mode library",
+    "clean": "rm -rf dist",
+    "prepack": "node ../../scripts/prepack-package.js",
+    "start": "node dist/cli.js serve",
+    "test": "vitest run",
+    "test:postgres": "node ../../scripts/run-with-ci-postgres.mjs -- pnpm exec vitest run postgres.optional.test.ts",
+    "typecheck": "tsc --noEmit && tsc -p tsconfig.test.json",
+    "verify:pack": "node ../../scripts/verify-package-types-exports.js ."
+  },
+  "dependencies": {
+    "@happyvertical/files": "catalog:",
+    "@happyvertical/smrt-features": "workspace:*",
+    "@happyvertical/smrt-subscriptions": "workspace:*",
+    "@happyvertical/sql": "catalog:"
+  },
+  "devDependencies": {
+    "@happyvertical/encryption": "catalog:",
+    "@happyvertical/smrt-app-runtime": "workspace:*",
+    "@happyvertical/smrt-cli": "workspace:*",
+    "@happyvertical/smrt-config": "workspace:*",
+    "@happyvertical/smrt-core": "workspace:*",
+    "@happyvertical/smrt-vitest": "workspace:*",
+    "@types/node": "24.13.6",
+    "typescript": "6.0.3",
+    "vite": "8.1.6",
+    "vitest": "4.1.10"
+  },
+  "publishConfig": {
+    "registry": "https://registry.npmjs.org",
+    "access": "public"
+  },
+  "repository": {
+    "type": "git",
+    "url": "https://github.com/happyvertical/smrt.git",
+    "directory": "packages/vault-relay"
+  }
+}

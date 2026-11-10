@@ -29,6 +29,8 @@ export interface ContentListDataSurfaceOptions {
   label?: string;
   description?: string;
   metadata?: NonNullable<DataSurfaceDefinition['metadata']>;
+  /** Host-supplied discovery size hint; never computed by querying. */
+  rowCountHint?: DataSurfaceDefinition['rowCountHint'];
   /** Resolve a collection from the live principal context, never model input. */
   collection:
     | ContentQueryCollection
@@ -136,6 +138,9 @@ export async function createContentListDataSurfaceDefinition(
     description:
       options.description ??
       'Bounded, tenant-safe content rows, counts, facets, and continuations.',
+    ...(options.rowCountHint !== undefined
+      ? { rowCountHint: options.rowCountHint }
+      : {}),
     metadata: {
       domain: 'content',
       adapter: 'ContentList',

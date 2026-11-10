@@ -665,7 +665,9 @@ function sortTableContributors(contributors: TableContributor[]) {
  * both produce the same merged shape. The result depends only on what is
  * registered, never on the order it was registered in.
  */
-function buildMergedTableSchemas(): Record<string, MergedTableSchema> {
+function buildMergedTableSchemas(
+  scope?: ReadonlySet<string>,
+): Record<string, MergedTableSchema> {
   assertRuntimeTableBindings();
   // Pass 1: group contributing classes by physical table.
   const contributorsByTable = new Map<string, TableContributor[]>();
@@ -702,10 +704,20 @@ function buildMergedTableSchemas(): Record<string, MergedTableSchema> {
     }
   }
 
-  // Pass 2: merge each table's contributors in deterministic order.
+  // Pass 2: merge each table's contributors in deterministic order. A scoped
+  // build merges (and ownership-checks) only the requested tables and the
+  // tables their foreign keys reach, so an unrelated collision elsewhere in
+  // the registry cannot abort it; every table it does build stays strict
+  // (#3956).
   const tableSchemas: Record<string, MergedTableSchema> = {};
+  const pending = scope
+    ? [...scope].filter((tableName) => contributorsByTable.has(tableName))
+    : [...contributorsByTable.keys()];
+  const queued = new Set(pending);
 
-  for (const [tableName, contributors] of contributorsByTable) {
+  for (let next = 0; next < pending.length; next++) {
+    const tableName = pending[next];
+    const contributors = contributorsByTable.get(tableName) ?? [];
     assertSingleTableFamily(tableName, contributors);
     const orderedContributors = sortTableContributors(contributors);
     for (const contributor of orderedContributors) {
@@ -815,6 +827,19 @@ function buildMergedTableSchemas(): Record<string, MergedTableSchema> {
         );
         if (existing >= 0) tableSchema.indexes[existing] = childIndex;
         else tableSchema.indexes.push(childIndex);
+      }
+    }
+    if (scope) {
+      for (const foreignKey of schemaForeignKeys({
+        columns: tableSchema.columns,
+        foreignKeys: [],
+      })) {
+        const dependency = foreignKey.referencesTable;
+        if (queued.has(dependency) || !contributorsByTable.has(dependency)) {
+          continue;
+        }
+        queued.add(dependency);
+        pending.push(dependency);
       }
     }
   }
@@ -939,10 +964,19 @@ export function getAllSchemas(
  *
  * @returns Map of tableName to SchemaDefinition
  */
-export function getAllSchemasAsDefinitions(): Record<string, SchemaDefinition> {
+export function getAllSchemasAsDefinitions(options?: {
+  /**
+   * Build only these tables and the tables their foreign keys reach. Table
+   * ownership is still enforced for every table built; collisions among
+   * tables outside that closure do not abort the build (#3956).
+   */
+  tables?: Iterable<string>;
+}): Record<string, SchemaDefinition> {
   // Step 1: Assemble every table from its contributing classes. The merge is
   // deterministic, so the shape does not depend on registration order (#2372).
-  const tableSchemas = buildMergedTableSchemas();
+  const tableSchemas = buildMergedTableSchemas(
+    options?.tables ? new Set(options.tables) : undefined,
+  );
 
   // Step 2: Convert to SchemaDefinition format
   const schemas: Record<string, SchemaDefinition> = {};

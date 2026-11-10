@@ -576,7 +576,7 @@ exports[`runtime-profile generated-surface and policy parity > emits one identic
           },
           "options": {
             "description": "Options for the custom action",
-            "type": "string"
+            "type": "object"
           }
         },
         "required": [
@@ -1257,6 +1257,13 @@ exports[`runtime-profile generated-surface and policy parity > emits one identic
     {
       "generated": false,
       "methods": [
+        "POST"
+      ],
+      "route": "_reports/runtime/confirm"
+    },
+    {
+      "generated": false,
+      "methods": [
         "GET"
       ],
       "route": "_runtime/health"
@@ -1816,7 +1823,7 @@ exports[`runtime-profile generated-surface and policy parity > emits one identic
           },
           "options": {
             "description": "Options for the custom action",
-            "type": "string"
+            "type": "object"
           }
         },
         "required": [

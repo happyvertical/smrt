@@ -49,11 +49,19 @@ export type {
   PromptPackageConfig,
   PromptParams,
   PromptProfileConfig,
+  PromptSourceLayer,
+  PromptUsageTags,
   ResolvedPrompt,
   ResolvedPromptAI,
   ResolvePromptOptions,
 } from './types.js';
 export { APP_PROMPT_SCOPE_ID } from './types.js';
+export {
+  type PromptMessageOptions,
+  type PromptMessageOptionsExtra,
+  promptMessageOptions,
+  promptTemplateHash,
+} from './utils.js';
 
 /** @internal */
 export const PACKAGE_VERSION_INITIALIZED = true;

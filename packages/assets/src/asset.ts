@@ -28,6 +28,7 @@ import { AssetAssociationCollection } from './asset-associations';
 import { AssetStatus } from './asset-status';
 import { AssetType } from './asset-type';
 import type { AssetOptions } from './types';
+import './private-asset-access';
 
 export interface AssetExternalReference {
   provider: string;
@@ -74,6 +75,13 @@ export class Asset extends SmrtObject {
   // Tenant isolation (optional - assets can be global or tenant-specific)
   @tenantId({ nullable: true })
   tenantId: string | null = null;
+
+  /** Private records require an exact trusted capability for every operation. */
+  @field({
+    description:
+      'Whether this record is public to ordinary asset APIs or private.',
+  })
+  accessMode: 'public' | 'private' = 'public';
 
   // Core fields
   @field({ description: 'A recognizable name for this file or media item.' })
@@ -177,6 +185,7 @@ export class Asset extends SmrtObject {
 
   constructor(options: AssetOptions = {}) {
     super(options);
+    if (options.accessMode !== undefined) this.accessMode = options.accessMode;
     if (options.name) this.name = options.name;
     if (options.slug) this.slug = options.slug;
     if (options.sourceUri) this.sourceUri = options.sourceUri;

@@ -1,7 +1,7 @@
 /**
  * NPM Loader — config-loading and discovery tests.
  *
- * Complements npm-loader.spec.ts (which mocks fs/fast-glob) by driving the real
+ * Complements npm-loader.spec.ts (which mocks fs/tinyglobby) by driving the real
  * dynamic-import + validation paths against on-disk template.config.js files in
  * a temp directory. We chdir into the temp project so resolveNpmPackage,
  * findTemplateInPackages, and discoverInstalledTemplates resolve real paths.
@@ -50,7 +50,7 @@ const validConfig = {
 describe('npm-loader (real filesystem)', () => {
   beforeEach(() => {
     // realpathSync resolves macOS's /var -> /private/var symlink so paths
-    // returned by fast-glob (which canonicalizes) match our expectations.
+    // returned by tinyglobby (which canonicalizes) match our expectations.
     tempDir = realpathSync(mkdtempSync(join(tmpdir(), 'smrt-npm-loader-')));
     originalCwd = process.cwd();
     process.chdir(tempDir);
@@ -158,10 +158,10 @@ describe('npm-loader (real filesystem)', () => {
     // exercising the new `require.resolve.paths` code path rather than the
     // node_modules/<cwd> access fallback.
     it('resolves an installed dependency via require.resolve (not cwd access)', async () => {
-      // `fast-glob` is a real dependency of this package but is NOT under the
+      // `tinyglobby` is a real dependency of this package but is NOT under the
       // temp project cwd, so the access() fallback cannot find it.
-      const resolved = await resolveNpmPackage('fast-glob');
-      expect(resolved).toContain('fast-glob');
+      const resolved = await resolveNpmPackage('tinyglobby');
+      expect(resolved).toContain('tinyglobby');
       // The access() fallback would return `${cwd}/node_modules/...`; the
       // require.resolve path points at the real install location instead.
       expect(resolved).not.toContain(join(tempDir, 'node_modules'));

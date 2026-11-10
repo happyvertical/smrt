@@ -65,16 +65,33 @@ describe('compatible tenant junction batches', () => {
       true,
     );
     expect(probe.supportsJunctionBatch()).toBe(true);
-    const query = vi.spyOn(db, 'query');
-    await withTenant({ tenantId: A }, () =>
-      links.setLinks('owner', ['shared', 'mine']),
+    const transactionOriginal = db.transaction?.bind(db);
+    if (!transactionOriginal)
+      throw new Error('Transaction support is required');
+    const statements: string[] = [];
+    const transaction = vi.spyOn(db, 'transaction').mockImplementation((work) =>
+      transactionOriginal(async (tx) => {
+        const query = vi.spyOn(tx, 'query');
+        try {
+          return await work(tx);
+        } finally {
+          statements.push(...query.mock.calls.map(([sql]) => sql));
+          query.mockRestore();
+        }
+      }),
     );
+    try {
+      await withTenant({ tenantId: A }, () =>
+        links.setLinks('owner', ['shared', 'mine']),
+      );
+    } finally {
+      transaction.mockRestore();
+    }
     expect(
-      query.mock.calls.filter(([sql]) =>
-        String(sql).startsWith('INSERT INTO "tenant_batch_links"'),
+      statements.filter((sql) =>
+        sql.startsWith('INSERT INTO "tenant_batch_links"'),
       ),
     ).toHaveLength(1);
-    query.mockRestore();
     await withTenant({ tenantId: A }, async () => {
       const rows = await links.byLeft('owner');
       expect(rows.every((row) => row.tenantId === A)).toBe(true);

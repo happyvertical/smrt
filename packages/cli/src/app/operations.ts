@@ -31,15 +31,19 @@ import { pathToFileURL } from 'node:url';
 import {
   acquireWriterLease,
   createProviderReadinessProbe,
+  ensurePrivateDirectorySync,
   type OperationLock,
   withOperationLock,
 } from '@happyvertical/smrt-app-runtime';
 import type { ResolvedApplicationRuntime } from '@happyvertical/smrt-config';
+import { refreshAgentDocsOnInstall } from './agent-docs.js';
+import { backupToTarget, extractOption } from './backup-command.js';
 import {
   ApplicationStartError,
   boundedTail,
   errorCode,
   redactSecrets,
+  WindowsOperatorCopyUnsupportedError,
 } from './errors.js';
 import {
   assertExternalArtifactPath,
@@ -59,10 +63,18 @@ import {
 } from './process-record.js';
 import {
   type AppContext,
+  hostPlatform,
   preparedStateRoot,
   runtimeEnvironment,
   webLauncherPath,
 } from './runtime.js';
+import { planDataRootArchive } from './snapshot-archive.js';
+import {
+  ENCRYPTED_SNAPSHOT_EXTENSION,
+  type EncryptedSnapshotSummary,
+  type SnapshotKeyProvider,
+  writeEncryptedSnapshot,
+} from './snapshot-framing.js';
 
 /** Operations implemented by this module. */
 export const APP_OPERATIONS = [
@@ -103,10 +115,6 @@ function printOnboardingUrl(context: AppContext, url: string | null): void {
   context.io.operatorTerminal(
     `Open this one-time owner setup link on this device (it works once and expires):\n  ${url}\n`,
   );
-}
-
-function ensurePrivateDirectory(path: string): void {
-  mkdirSync(path, { recursive: true, mode: 0o700 });
 }
 
 function nearestExistingAncestor(path: string): string {
@@ -155,7 +163,7 @@ function saveOnboardingLaunch(context: AppContext, url: string): void {
 }
 
 function saveOnboardingUrl(context: AppContext, url: string): void {
-  ensurePrivateDirectory(preparedStateRoot(context));
+  ensurePrivateDirectorySync(preparedStateRoot(context));
   saveOnboardingLaunch(context, url);
   writePrivateAtomic(
     onboardingPath(context),
@@ -403,7 +411,7 @@ async function start(
     });
     return existing.pid;
   }
-  ensurePrivateDirectory(preparedStateRoot(context));
+  ensurePrivateDirectorySync(preparedStateRoot(context));
   const instance = randomBytes(16).toString('hex');
   const childEnv: NodeJS.ProcessEnv = {
     ...env,
@@ -830,17 +838,97 @@ async function doctor(context: AppContext): Promise<number> {
   return report.status === 'error' ? 1 : 0;
 }
 
+/**
+ * Split the `--encrypted` flag from positional arguments. Any other argument
+ * that looks like an option is refused: a misspelled `--encrypt` must never
+ * be taken as a path and silently write a plaintext backup. `--` ends option
+ * parsing, so a path that starts with a dash stays expressible.
+ */
+function snapshotArguments(
+  operation: 'backup' | 'export' | 'import',
+  args: string[],
+): {
+  encrypted: boolean;
+  positional: string[];
+} {
+  let encrypted = false;
+  let literal = false;
+  const positional: string[] = [];
+  for (const arg of args) {
+    if (!literal && arg === '--') {
+      literal = true;
+    } else if (!literal && arg === '--encrypted') {
+      encrypted = true;
+    } else if (!literal && arg.startsWith('-')) {
+      throw new Error(
+        `Unknown option for app ${operation}: ${JSON.stringify(arg)}. ` +
+          `Nothing was written. The only option is --encrypted; put -- before a path that starts with a dash.`,
+      );
+    } else {
+      positional.push(arg);
+    }
+  }
+  return { encrypted, positional };
+}
+
+function requireSnapshotKeys(context: AppContext): SnapshotKeyProvider {
+  const keys = context.deps.snapshotKeys;
+  if (!keys) {
+    throw new Error(
+      'Encrypted snapshots need a vault key provider, and none is configured for this installation.',
+    );
+  }
+  return keys;
+}
+
+/** Secret-free snapshot details for command output (no plaintext digest). */
+function snapshotReport(snapshot: EncryptedSnapshotSummary) {
+  const { digest: _digest, ...report } = snapshot;
+  return report;
+}
+
+/**
+ * Refuse every operator copy that writes data-root contents outside the data
+ * root (`backup`, `export`, `import`) on Windows. Their privacy relies on
+ * POSIX modes, which Windows ignores, so a copy would inherit the destination
+ * parent's ACL. Runs before the state root, operation lock, or destination is
+ * touched, and only for the local profile: a deployed profile reads no local
+ * data root (deployed `backup` is delegated to the operator and throws its own
+ * error; deployed `export`/`import` are not refused here).
+ */
+async function refuseWindowsOperatorCopy(context: AppContext): Promise<void> {
+  if (hostPlatform(context) !== 'win32') return;
+  const runtime = await context.deps.resolveRuntime(context.sourceRoot);
+  if (runtime.profile !== 'local') return;
+  throw new WindowsOperatorCopyUnsupportedError();
+}
+
 async function backup(context: AppContext, args: string[]): Promise<void> {
+  const { value: targetName, rest } = extractOption(args, '--target');
+  const { encrypted, positional } = snapshotArguments('backup', rest);
+  if (targetName !== undefined) {
+    if (!encrypted) {
+      throw new Error(
+        'Backup targets accept only encrypted snapshots; add --encrypted.',
+      );
+    }
+    if (positional.length > 0) {
+      throw new Error(
+        'A backup destination path cannot be combined with --target.',
+      );
+    }
+  }
   const runtime = await context.deps.resolveRuntime(context.sourceRoot);
   if (runtime.profile !== 'local') {
     throw new Error(
       'This scaffold delegates deployed backups to the selected operator or managed provider.',
     );
   }
-  const explicitDestination = args[0]
+  const snapshotKeys = encrypted ? requireSnapshotKeys(context) : null;
+  const explicitDestination = positional[0]
     ? assertExternalArtifactPath({
         sourceRoot: context.sourceRoot,
-        path: resolve(args[0]),
+        path: resolve(positional[0]),
         label: 'Backup destination',
       })
     : null;
@@ -857,6 +945,17 @@ async function backup(context: AppContext, args: string[]): Promise<void> {
         operationInstance: lock.instance,
       });
       try {
+        if (targetName !== undefined) {
+          printJson(
+            context,
+            await backupToTarget(context, {
+              targetName,
+              dataRoot: paths.root,
+              snapshotKeys: snapshotKeys as SnapshotKeyProvider,
+            }),
+          );
+          return;
+        }
         const destination = assertExternalArtifactPath({
           sourceRoot: context.sourceRoot,
           path:
@@ -864,7 +963,7 @@ async function backup(context: AppContext, args: string[]): Promise<void> {
             join(
               dirname(paths.root),
               'backups',
-              `${context.appId}-${new Date().toISOString().replaceAll(':', '-')}`,
+              `${context.appId}-${new Date().toISOString().replaceAll(':', '-')}${snapshotKeys ? ENCRYPTED_SNAPSHOT_EXTENSION : ''}`,
             ),
           label: 'Backup destination',
         });
@@ -879,7 +978,33 @@ async function backup(context: AppContext, args: string[]): Promise<void> {
             'Backup destination must remain outside local storage.',
           );
         }
-        ensurePrivateDirectory(dirname(destination));
+        ensurePrivateDirectorySync(dirname(destination));
+        if (snapshotKeys) {
+          if (existsSync(destination)) {
+            throw new Error(
+              `Backup destination already exists: ${destination}`,
+            );
+          }
+          // Streamed archive of the quiescent data root; only ciphertext is
+          // written, so the snapshot avoids the logical export limits.
+          const archive = planDataRootArchive(paths.root);
+          const snapshot = await writeEncryptedSnapshot({
+            destination,
+            kind: 'data-root',
+            totalLength: archive.totalLength,
+            source: archive.chunks(),
+            sealing: await snapshotKeys.sealingKey(),
+            label: 'Backup destination',
+          });
+          printJson(context, {
+            schemaVersion: 1,
+            status: 'backed-up',
+            destination,
+            encrypted: true,
+            snapshot: snapshotReport(snapshot),
+          });
+          return;
+        }
         try {
           mkdirSync(destination, { mode: 0o700 });
         } catch (error) {
@@ -942,10 +1067,27 @@ async function portability(
   args: string[],
   operationLock?: OperationLock,
 ): Promise<void> {
+  const { encrypted, positional } = snapshotArguments(operation, args);
+  let snapshotKeys: SnapshotKeyProvider | null = null;
+  if (encrypted) {
+    if (operation === 'import') {
+      throw new Error(
+        'Encrypted bundles cannot be imported directly yet; decrypt the snapshot first.',
+      );
+    }
+    if (
+      existsSync(join(context.sourceRoot, 'scripts', 'smrt-portability.mjs'))
+    ) {
+      throw new Error(
+        'Encrypted export is not available with a custom scripts/smrt-portability.mjs adapter.',
+      );
+    }
+    snapshotKeys = requireSnapshotKeys(context);
+  }
   const adapter = await loadPortabilityAdapter(context);
   const runtime = await context.deps.resolveRuntime(context.sourceRoot);
   const environment = runtimeEnvironment(context, runtime);
-  const requestedPath = args[0] ? resolve(args[0]) : undefined;
+  const requestedPath = positional[0] ? resolve(positional[0]) : undefined;
   const artifactPath = requestedPath
     ? assertExternalArtifactPath({
         sourceRoot: context.sourceRoot,
@@ -970,6 +1112,21 @@ async function portability(
     env: environment.env,
     paths: environment.paths,
     assetRoot: environment.assetRoot,
+    ...(snapshotKeys
+      ? {
+          sealBundle: async (bundle: Buffer, destination: string) => {
+            const snapshot = await writeEncryptedSnapshot({
+              destination,
+              kind: 'export-bundle',
+              totalLength: bundle.length,
+              source: [bundle],
+              sealing: await (snapshotKeys as SnapshotKeyProvider).sealingKey(),
+              label: 'Export destination',
+            });
+            return snapshotReport(snapshot);
+          },
+        }
+      : {}),
   };
   let operatorLease: { release(): void } | null = null;
   if (operation === 'import') {
@@ -1010,9 +1167,16 @@ export async function runApplicationOperation(
   operation: AppOperation,
   args: string[],
 ): Promise<number> {
+  // The copies (`backup`, `export`, `import`) refuse the local profile on
+  // Windows for their destination custody (`refuseWindowsOperatorCopy`).
   switch (operation) {
     case 'install': {
       await assertLocalOperation(context, 'app:install');
+      await refreshAgentDocsOnInstall(
+        context.sourceRoot,
+        context.io,
+        context.deps.agentDocs,
+      );
       await withOperationLock(
         preparedStateRoot(context),
         'install',
@@ -1066,10 +1230,12 @@ export async function runApplicationOperation(
       );
       return 0;
     case 'backup':
+      await refuseWindowsOperatorCopy(context);
       await backup(context, args);
       return 0;
     case 'export':
     case 'import':
+      await refuseWindowsOperatorCopy(context);
       await withOperationLock(preparedStateRoot(context), operation, (lock) =>
         portability(context, operation, args, lock),
       );

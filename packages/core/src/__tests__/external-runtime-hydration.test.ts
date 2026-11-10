@@ -261,6 +261,67 @@ describe('external runtime field hydration', () => {
     );
   });
 
+  it("does not take a same-named class from the child's manifest for an imported STI parent (#4176)", async () => {
+    const commerce = '@test4176/commerce';
+    const sales = '@test4176/sales';
+    const app = '@test4176/app';
+    const agreement = (packageName: string, tableName: string) => ({
+      className: 'Agreement',
+      qualifiedName: `${packageName}:Agreement`,
+      packageName,
+      collection: tableName,
+      decoratorConfig: {
+        tableStrategy: 'sti',
+        tableName,
+        api: false,
+        cli: false,
+        mcp: false,
+      },
+      fields: { title: { type: 'text' } },
+    });
+
+    writeScopedPackage(appDir, commerce, {
+      ...fixtureManifest(commerce, {}),
+      objects: {
+        [`${commerce}:Agreement`]: agreement(commerce, 'contracts4176'),
+      },
+    });
+    // A consumer manifest also carries the package objects it consumed: here
+    // sales' same-named Agreement, which the subtype does not extend.
+    writeScopedPackage(appDir, app, {
+      ...fixtureManifest(app, {}),
+      objects: {
+        [`${sales}:Agreement`]: agreement(sales, 'agreements4176'),
+        [`${app}:AdvertisingProductContract`]: {
+          className: 'AdvertisingProductContract',
+          qualifiedName: `${app}:AdvertisingProductContract`,
+          packageName: app,
+          extends: 'Agreement',
+          extendsQualified: `${commerce}:Agreement`,
+          collection: 'contracts4176',
+          decoratorConfig: {
+            tableStrategy: 'sti',
+            tableName: 'contracts4176',
+            api: false,
+            cli: false,
+            mcp: false,
+          },
+          fields: { placement: { type: 'text' } },
+        },
+      },
+    });
+
+    const consumer = createQualifiedName(app, 'AdvertisingProductContract');
+    await ObjectRegistry.ensureManifestLoaded(consumer);
+
+    expect(ObjectRegistry.getClassByQualifiedName(`${sales}:Agreement`)).toBe(
+      undefined,
+    );
+    expect(ObjectRegistry.getClass(consumer)?.extends).toBe(
+      `${commerce}:Agreement`,
+    );
+  });
+
   it('hydrates manifest metadata even when runtime field counts and types already match', async () => {
     const packageName = '@happyvertical/smrt-runtime-fixture-metadata';
 

@@ -15,5 +15,10 @@ export {
   InventoryLocation,
   type InventoryLocationOptions,
 } from './InventoryLocation.js';
+export { Lot, type LotOptions } from './Lot.js';
+export { LotCorrection, type LotCorrectionOptions } from './LotCorrection.js';
+export { LotDocument, type LotDocumentOptions } from './LotDocument.js';
+export { LotStockLevel, type LotStockLevelOptions } from './LotStockLevel.js';
+export { LotUsage, type LotUsageOptions } from './LotUsage.js';
 export { StockLevel, type StockLevelOptions } from './StockLevel.js';
 export { StockMovement, type StockMovementOptions } from './StockMovement.js';

@@ -79,7 +79,7 @@ jobs:
       - name: Setup Node.js
         uses: actions/setup-node@820762786026740c76f36085b0efc47a31fe5020 # v7
         with:
-          node-version: '26.9.0'
+          node-version: '26.12.1'
 
       - name: Validate commit messages
         env:
@@ -261,7 +261,7 @@ jobs:
       - name: Set up Node
         uses: actions/setup-node@820762786026740c76f36085b0efc47a31fe5020 # v7
         with:
-          node-version: '26.9.0'
+          node-version: '26.12.1'
 
       - name: Install trusted standards validator dependencies
         run: |
@@ -408,7 +408,7 @@ jobs:
       - name: Setup Node.js
         uses: actions/setup-node@820762786026740c76f36085b0efc47a31fe5020 # v7
         with:
-          node-version: '26.9.0'
+          node-version: '26.12.1'
 
       - name: Setup pnpm
         uses: pnpm/action-setup@0977fd99725f1db4007ccb2928dbb4e90d06cc86 # v6
@@ -431,6 +431,53 @@ jobs:
       - name: Check dependency-advisory policy
         if: success() || failure()
         run: node scripts/check-audit-policy.mjs
+
+  ci-control-plane:
+    name: CI Control Plane Regression
+    if: >-
+      github.event_name == 'merge_group' ||
+      (github.event_name == 'pull_request_target' &&
+      github.event.pull_request.head.repo.full_name == github.repository &&
+      contains(fromJSON('["opened","synchronize","reopened"]'), github.event.action))
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    steps:
+      - name: Checkout validated revision
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7
+        with:
+          ref: ${{ env.CHECKOUT_REF }}
+          fetch-depth: 0
+
+      # Root script tests exercise selectors, receipts and workflow contracts.
+      # The production-manifest regression also loads core's built dependencies.
+      - name: Setup environment
+        uses: ./.github/actions/setup-environment
+        with:
+          node-version: '26.12.1'
+          install-deps: 'true'
+          setup-playwright: 'false'
+          registry-url: 'https://npm.pkg.github.com'
+          auth-token: ${{ secrets.GITHUB_TOKEN }}
+
+      - name: Build manifest-regression prerequisites
+        run: pnpm turbo run build --filter='@happyvertical/smrt-core^...'
+
+      # Record proposed coverage before using it to narrow any existing gate.
+      # Unknown inputs remain full validation in the planner and current lanes.
+      - name: Record validation impact inventory
+        env:
+          BASE_SHA: ${{ github.event.merge_group.base_sha || github.event.pull_request.base.sha }}
+        run: node scripts/ci-impact.mjs --base "$BASE_SHA" --head "$(git rev-parse HEAD)" --output ci-impact.json
+
+      - name: Upload validation impact inventory
+        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7
+        with:
+          name: validation-impact-${{ github.run_id }}-${{ github.run_attempt }}
+          path: ci-impact.json
+          if-no-files-found: error
+
+      - name: Run CI control-plane regressions
+        run: pnpm test:ci-scripts
 
   test:
     name: Validate Changes
@@ -516,7 +563,7 @@ jobs:
           persist-credentials: false
       - uses: ./.github/actions/setup-environment
         with:
-          node-version: '26.10.0'
+          node-version: '26.12.1'
           setup-playwright: 'false'
           github-packages-token: ${{ secrets.GITHUB_TOKEN }}
       - name: Build playground dependencies
@@ -544,6 +591,139 @@ jobs:
           path: packages/smrt-playground/e2e/__screenshots__
           if-no-files-found: error
 
+  planner-scope:
+    name: Detect Planner Browser Scope
+    if: >-
+      github.event_name == 'merge_group' ||
+      (github.event_name == 'pull_request_target' &&
+      github.event.pull_request.head.repo.full_name == github.repository)
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    outputs:
+      planner: ${{ steps.filter.outputs.planner }}
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7
+        with:
+          ref: ${{ env.CHECKOUT_REF }}
+          persist-credentials: false
+      # The planner's browser suites drive its built app and MCP widget, so
+      # they follow the planner and the shell packages it mounts (#4056). Its
+      # unit tests and library cookbook validation run in Validate Changes on
+      # every PR whose change reaches it (every catalog source package is a
+      # planner devDependency, so Turbo's affected filter selects it).
+      - uses: dorny/paths-filter@ceb8a2b8f2d89434be7ff52d3de7ec3738c5cc9d # v4
+        id: filter
+        with:
+          base: ${{ github.event.merge_group.base_sha || github.event.repository.default_branch }}
+          filters: |
+            planner:
+              - 'packages/planner/**'
+              - 'packages/smrt-svelte/src/**'
+              - 'packages/smrt-ui/src/**'
+              - 'packages/core/src/cookbook.ts'
+              - 'packages/core/src/cookbook/**'
+              - 'packages/cli/src/commands/kitchen/**'
+              - 'scripts/planner-release-gate.mjs'
+              - '.github/workflows/on-pull-request.yml'
+              - '.github/actions/setup-environment/**'
+              - 'pnpm-lock.yaml'
+              - 'pnpm-workspace.yaml'
+
+  planner-browser:
+    name: Planner Browser Suites
+    needs: planner-scope
+    if: needs.planner-scope.outputs.planner == 'true'
+    runs-on: ubuntu-latest
+    timeout-minutes: 45
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7
+        with:
+          ref: ${{ env.CHECKOUT_REF }}
+          persist-credentials: false
+      - name: Setup environment
+        id: setup-environment
+        uses: ./.github/actions/setup-environment
+        with:
+          node-version: '26.12.1'
+          setup-playwright: 'true'
+          github-packages-token: ${{ secrets.GITHUB_TOKEN }}
+      - name: Install Playwright system dependencies after a browser cache hit
+        if: steps.setup-environment.outputs.playwright-cache-hit == 'true'
+        run: pnpm exec playwright install-deps chromium
+      # The planner's build generates its catalog from every catalog source
+      # package's manifest, so this builds those first.
+      - name: Build the planner and its catalog sources
+        run: pnpm turbo run build --filter='@happyvertical/smrt-planner...'
+      - name: Run the MCP widget browser suite
+        run: pnpm --filter @happyvertical/smrt-planner test:mcp-browser
+      - name: Run the live preview browser suite
+        run: pnpm --filter @happyvertical/smrt-planner test:live-preview-browser
+
+  docs-scope:
+    name: Detect Docs Site Scope
+    if: >-
+      github.event_name == 'merge_group' ||
+      (github.event_name == 'pull_request_target' &&
+      github.event.pull_request.head.repo.full_name == github.repository)
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    outputs:
+      docs: ${{ steps.filter.outputs.docs }}
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7
+        with:
+          ref: ${{ env.CHECKOUT_REF }}
+          persist-credentials: false
+      # The Docusaurus site throws on a broken internal link (#4831), so build
+      # it before merge whenever its inputs change (#4846): authored docs and
+      # config, the workspace READMEs docs/scripts/copy-readmes.js copies (and
+      # the workspace discovery it uses), a new workspace (whose README it then
+      # requires), and any deletion, because a README or doc may link to the
+      # deleted path. scripts/docs-site-scope.test.mjs pins this list.
+      - uses: dorny/paths-filter@ceb8a2b8f2d89434be7ff52d3de7ec3738c5cc9d # v4
+        id: filter
+        with:
+          base: ${{ github.event.merge_group.base_sha || github.event.repository.default_branch }}
+          filters: |
+            docs:
+              - 'docs/**'
+              - 'packages/*/README.md'
+              - 'packages/smrt-playground/host/README.md'
+              - 'packages/smrt-workbench/host/README.md'
+              - added: 'packages/*/package.json'
+              - added: 'packages/smrt-playground/host/package.json'
+              - added: 'packages/smrt-workbench/host/package.json'
+              - deleted: '**'
+              - 'pnpm-workspace.yaml'
+              - 'scripts/workspaces.mjs'
+              - '.github/workflows/on-pull-request.yml'
+              - '.github/actions/setup-environment/**'
+
+  docs-site-build:
+    name: Docs Site Build
+    needs: docs-scope
+    if: needs.docs-scope.outputs.docs == 'true'
+    runs-on: ubuntu-latest
+    timeout-minutes: 45
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7
+        with:
+          ref: ${{ env.CHECKOUT_REF }}
+          persist-credentials: false
+      # Same setup and build as publish.yml's deploy-docs job, which stays the
+      # only place the site is uploaded and deployed.
+      - name: Setup environment
+        uses: ./.github/actions/setup-environment
+        with:
+          node-version: '26.12.1'
+          install-deps: 'false'
+          setup-playwright: 'false'
+          registry-url: 'https://registry.npmjs.org'
+      - name: Install docs dependencies
+        run: pnpm --dir docs install --frozen-lockfile
+      - name: Build documentation site
+        run: pnpm docs:site:build
+
   required-ci:
     name: Required CI
     if: always() && github.event_name != 'workflow_dispatch'
@@ -554,10 +734,15 @@ jobs:
       - secret-scan
       - check-standards
       - dependency-audit
+      - ci-control-plane
       - test
       - publish-dry-run
       - visual-scope
       - visual-regression
+      - planner-scope
+      - planner-browser
+      - docs-scope
+      - docs-site-build
     runs-on: ubuntu-latest
     # Deliberately below the 45-minute standard. This aggregator does no
     # checkout and no work beyond reading `needs.*.result`, and it is
@@ -565,8 +750,35 @@ jobs:
     # seconds; if it has not finished in five minutes it is stuck, and failing
     # fast is correct for a job that only reports other jobs' results.
     timeout-minutes: 5
+    permissions:
+      actions: read
+      contents: read
+      pull-requests: read
+      statuses: read
+    env:
+      # External fork PRs skip trusted validation above; they pass only on a
+      # maintainer approval of the current head (#4558, .github/CI.md).
+      FORK_PR: >-
+        ${{ github.event_name == 'pull_request_target' &&
+        github.event.pull_request.head.repo.full_name != github.repository }}
     steps:
+      - name: Checkout trusted fork approval gate
+        if: env.FORK_PR == 'true'
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7
+        with:
+          ref: ${{ github.sha }}
+          persist-credentials: false
+          sparse-checkout: scripts/fork-pr-approval.mjs
+          sparse-checkout-cone-mode: false
+      - name: Require maintainer approval of the fork head
+        if: env.FORK_PR == 'true'
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          PR_NUMBER: ${{ github.event.pull_request.number }}
+          HEAD_SHA: ${{ github.event.pull_request.head.sha }}
+        run: node scripts/fork-pr-approval.mjs gate
       - name: Require full validation success
+        if: env.FORK_PR != 'true'
         env:
           VALIDATE_COMMITS: ${{ needs.validate-commits.result }}
           VALIDATE_WORKFLOWS: ${{ needs.validate-workflows.result }}
@@ -574,18 +786,25 @@ jobs:
           SECRET_SCAN: ${{ needs.secret-scan.result }}
           CHECK_STANDARDS: ${{ needs.check-standards.result }}
           DEPENDENCY_AUDIT: ${{ needs.dependency-audit.result }}
+          CI_CONTROL_PLANE: ${{ needs.ci-control-plane.result }}
           TEST_SUITE: ${{ needs.test.result }}
           PUBLISH_DRY_RUN: ${{ needs.publish-dry-run.result }}
           VISUAL_SCOPE: ${{ needs.visual-scope.result }}
           VISUAL_SELECTED: ${{ needs.visual-scope.outputs.visual }}
           VISUAL_RESULT: ${{ needs.visual-regression.result }}
+          PLANNER_SCOPE: ${{ needs.planner-scope.result }}
+          PLANNER_SELECTED: ${{ needs.planner-scope.outputs.planner }}
+          PLANNER_RESULT: ${{ needs.planner-browser.result }}
+          DOCS_SCOPE: ${{ needs.docs-scope.result }}
+          DOCS_SELECTED: ${{ needs.docs-scope.outputs.docs }}
+          DOCS_RESULT: ${{ needs.docs-site-build.result }}
           EVENT_NAME: ${{ github.event_name }}
         run: |
           set -euo pipefail
           for result in \
             "$VALIDATE_COMMITS" "$VALIDATE_WORKFLOWS" "$CHECK_SDK" \
             "$SECRET_SCAN" "$CHECK_STANDARDS" "$DEPENDENCY_AUDIT" \
-            "$TEST_SUITE"; do
+            "$CI_CONTROL_PLANE" "$TEST_SUITE"; do
             if [ "$result" != success ]; then
               echo "::error::full validation did not succeed"
               exit 1
@@ -603,6 +822,34 @@ jobs:
             fi
           elif [ "$VISUAL_RESULT" != skipped ]; then
             echo "::error::unexpected visual regression result: $VISUAL_RESULT"
+            exit 1
+          fi
+
+          if [ "$PLANNER_SCOPE" != success ] && [ "$PLANNER_SCOPE" != skipped ]; then
+            echo "::error::planner browser scope detection failed"
+            exit 1
+          fi
+          if [ "$PLANNER_SELECTED" = true ]; then
+            if [ "$PLANNER_RESULT" != success ]; then
+              echo "::error::planner browser suites did not succeed"
+              exit 1
+            fi
+          elif [ "$PLANNER_RESULT" != skipped ]; then
+            echo "::error::unexpected planner browser result: $PLANNER_RESULT"
+            exit 1
+          fi
+
+          if [ "$DOCS_SCOPE" != success ] && [ "$DOCS_SCOPE" != skipped ]; then
+            echo "::error::docs site scope detection failed"
+            exit 1
+          fi
+          if [ "$DOCS_SELECTED" = true ]; then
+            if [ "$DOCS_RESULT" != success ]; then
+              echo "::error::docs site build did not succeed"
+              exit 1
+            fi
+          elif [ "$DOCS_RESULT" != skipped ]; then
+            echo "::error::unexpected docs site build result: $DOCS_RESULT"
             exit 1
           fi
 

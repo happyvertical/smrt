@@ -1,0 +1,109 @@
+name: Consumer Knowledge Review
+
+# Reusable workflow (#4690): runs the intent-driven duplicate-detection pass of
+# `review-smrt-project` on a consumer checkout and writes the advisory findings
+# to the job summary. Findings never fail the job unless the caller sets
+# `fail-on-findings: true`.
+#
+# Why the published package and not a checkout of this repository: the package
+# is public on npmjs, so a private consumer (ergot.io, anytown.ai) can run it
+# with no token and no secrets, and the `smrt-version` input pins exactly which
+# tool runs. Checking out happyvertical/smrt at a ref would execute and build
+# unreviewed monorepo code inside the consumer's job.
+#
+# Trust boundary: the duplicate-detection rules (including `regex:` tokens)
+# come from the full intent index packaged inside the pinned smrt-dev-mcp
+# release, never from the consumer tree, so a pull request cannot delete the
+# rules or inject a pattern. There is deliberately no input to override it.
+# The job fails (exit 2) if the pinned package carries no index.
+#
+# Caller example:
+#   jobs:
+#     knowledge-review:
+#       permissions:
+#         contents: read
+#       uses: happyvertical/smrt/.github/workflows/consumer-knowledge-review.yml@<sha>
+#       with:
+#         smrt-version: 0.61.0
+
+on:
+  workflow_call:
+    inputs:
+      consumer-path:
+        description: 'Directory of the consumer project, relative to the repository root'
+        required: false
+        type: string
+        default: '.'
+      smrt-version:
+        description: 'Exact @happyvertical/smrt-dev-mcp version to run (pin it; no ranges or tags)'
+        required: true
+        type: string
+      fail-on-findings:
+        description: 'Fail the job when any duplicate-detection finding is reported'
+        required: false
+        type: boolean
+        default: false
+
+env:
+  FORCE_JAVASCRIPT_ACTIONS_TO_NODE24: 'true'
+
+permissions:
+  contents: read
+
+jobs:
+  review:
+    name: smrt knowledge review
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    permissions:
+      contents: read
+
+    steps:
+      - name: Checkout consumer
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7
+        with:
+          persist-credentials: false
+
+      - name: Setup Node.js
+        uses: actions/setup-node@820762786026740c76f36085b0efc47a31fe5020 # v7
+        with:
+          node-version: '26.12.1'
+
+      - name: Run duplicate detection
+        env:
+          CONSUMER_PATH: ${{ inputs.consumer-path }}
+          SMRT_VERSION: ${{ inputs.smrt-version }}
+          FAIL_ON_FINDINGS: ${{ inputs.fail-on-findings }}
+          NPM_CONFIG_REGISTRY: https://registry.npmjs.org
+        run: |
+          set -euo pipefail
+
+          if ! printf '%s' "$SMRT_VERSION" | grep -Eq '^[0-9]+\.[0-9]+\.[0-9]+([-+][0-9A-Za-z.+-]+)?$'; then
+            echo "smrt-version must be an exact version such as 0.61.0" >&2
+            exit 2
+          fi
+          # An empty consumer-path means the repository root; only a non-empty
+          # value can be absolute or climb out with '..'.
+          if [ -n "$CONSUMER_PATH" ]; then
+            case "/$CONSUMER_PATH/" in
+              */../*|//*)
+                echo "consumer-path must be relative and must not contain '..'" >&2
+                exit 2
+                ;;
+            esac
+          fi
+
+          args=(review --directory "$GITHUB_WORKSPACE/${CONSUMER_PATH:-.}" --format summary)
+          if [ "$FAIL_ON_FINDINGS" = "true" ]; then
+            args+=(--fail-on-findings)
+          fi
+
+          # Run outside the consumer tree so its .npmrc and node_modules/.bin
+          # cannot redirect the registry or shadow the pinned package.
+          cd "$RUNNER_TEMP"
+          status=0
+          npx --yes --package "@happyvertical/smrt-dev-mcp@${SMRT_VERSION}" \
+            smrt-dev-mcp "${args[@]}" > "$RUNNER_TEMP/smrt-review-summary.md" || status=$?
+
+          cat "$RUNNER_TEMP/smrt-review-summary.md" >> "$GITHUB_STEP_SUMMARY"
+          exit "$status"

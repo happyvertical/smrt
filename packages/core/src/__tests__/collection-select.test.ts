@@ -229,8 +229,14 @@ describe('SmrtCollection.list({ select })', () => {
         const projectionSql = queries.find((sql) =>
           sql.includes(`FROM ${opportunities.tableName}`),
         );
+        // DuckDB reads the default id as VARCHAR: its native UUID would
+        // otherwise surface as a lossy `{ hugeint }` (#4459).
+        const idSql =
+          adapterConfig.type === 'duckdb' || adapterConfig.type === 'json'
+            ? 'CAST("id" AS VARCHAR)'
+            : '"id"';
         expect(projectionSql).toContain(
-          'SELECT "id" AS "id", "title" AS "title", "account_id" AS "accountId"',
+          `SELECT ${idSql} AS "id", "title" AS "title", "account_id" AS "accountId"`,
         );
         expect(projectionSql).not.toContain('SELECT *');
       });

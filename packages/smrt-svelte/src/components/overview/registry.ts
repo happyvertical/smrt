@@ -118,6 +118,10 @@ export function registerWidget<Data>(
 
 /** A resolved component for each widget type that has one. */
 export type WidgetComponents = Map<string, Component<WidgetComponentProps>>;
+export type WidgetOptionsEditors = Map<
+  string,
+  Component<import('./types.js').WidgetOptionsEditorProps>
+>;
 
 function isModule(
   value: WidgetComponentModule<unknown>,
@@ -156,6 +160,39 @@ export async function resolveWidgetComponents(
         );
       } catch {
         // Left out: the grid shows the widget as unavailable.
+      }
+    }),
+  );
+  return out;
+}
+
+/** Resolve custom recipe option editors only in a browser or universal UI host. */
+export async function resolveWidgetOptionsEditors(
+  types: Iterable<string>,
+  registry: WidgetRegistry = defaultWidgetRegistry,
+): Promise<WidgetOptionsEditors> {
+  const out: WidgetOptionsEditors = new Map();
+  await Promise.all(
+    [...new Set(types)].map(async (type) => {
+      const def = registry.get(type);
+      if (!def) return;
+      if (def.optionsEditor) {
+        out.set(type, def.optionsEditor);
+        return;
+      }
+      if (!def.loadOptionsEditor) return;
+      try {
+        const loaded = await def.loadOptionsEditor();
+        out.set(
+          type,
+          (typeof loaded === 'object' && loaded !== null && 'default' in loaded
+            ? loaded.default
+            : loaded) as Component<
+            import('./types.js').WidgetOptionsEditorProps
+          >,
+        );
+      } catch {
+        // The descriptor-driven editor remains available as a safe fallback.
       }
     }),
   );

@@ -22,8 +22,10 @@ key revoke actions must verify the current account owns the selected record
 before calling `SessionService.destroySession()` or the profile API-key
 service. Passkey sign-in is deliberately hidden unless the host passes a
 `passkeyCeremony` callback to `createUsersAuthAdapter()`. An endpoint alone
-cannot enable it: the callback must perform the #3275 WebAuthn browser ceremony
-and delegate its verified result to an authorized server action.
+cannot enable it: the callback must perform the WebAuthn browser ceremony and
+delegate its verified result to an authorized server action. Build it with
+`createPasskeySignInCeremony()` against the routes of
+`createPasskeyCredentialHandlers()` (see "Passkey sign-in").
 
 Auth components display safe, registered `users.auth.*` messages when an
 adapter rejects; callback diagnostics are never rendered. Configure these
@@ -51,6 +53,54 @@ auth action. Default English messages are registered by the auth module.
 
 The endpoint in this example is application-owned. It must call the package
 handler/service on the server; it is not a generated public identity API.
+
+### Source-bound mailbox enrollment
+
+`MailboxEnrollmentService` proves mailbox ownership before an application
+creates a destination. Unlike returning-user mailbox authentication, it needs
+no existing User or membership. It creates no session or membership. Both calls
+require an initialized caller transaction executor:
+
+```typescript
+const enrollment = await MailboxEnrollmentService.create({
+  db: tx, transaction: 'caller', secret, loginLimiter: rootLimiter,
+});
+await enrollment.request({
+  email: storedSubmission.recipient,
+  binding: canonicalSourceBinding,
+  sourceKey: trustedClientAddress,
+  deliver: sendMailboxProof,
+}); // { requested: true }; proof goes only to the normalized mailbox callback
+
+const identity = await enrollment.authenticate({
+  token: submittedProof,
+  binding: canonicalSourceBinding,
+  expectedUserId: currentUser?.id,
+  sessionId: currentSession?.id,
+}); // { userId, profileId, email }; active canonical global User + Person
+// Authorize and write host destination/membership using this same tx.
+```
+
+Recompute `binding` from trusted immutable source data on every call, for
+example `JSON.stringify(['host:submission:v1', workspaceId, submissionId,
+payloadSha256, normalizedRecipient])`. Never trust a posted binding, workspace,
+recipient or destination. The proof signs its SHA-256 digest with the isolated
+`smrt:mailbox-enrollment:v1` issuer, expires in ten minutes, and is single use.
+It cannot authenticate through login or invitation endpoints.
+
+`rootLimiter` must persist independently of `tx`; request budgets survive
+transport failure and rollback. SQLite's single connection needs an independent
+limiter store. The trusted `deliver` callback must send only to its supplied
+`email`, never return or log the token, and reject on transport failure. A proof
+mailed by a rolled-back request is unusable. There is no durable outbox here.
+
+Authenticate reuses only an active, unambiguous, canonically owned global
+identity. It refuses pending/suspended/inactive Users and unowned matching
+Profiles instead of adopting them. Existing actor/session constraints use the
+same first-class-session policy as mailbox login. Keep proof consumption,
+identity creation and all host writes in one transaction and roll back on any
+error. Concurrent distinct proofs may hit canonical identity conflicts: retry
+the entire transaction after rollback. The failed proof remains available.
 
 ### Application discovery conformance
 
@@ -749,6 +799,48 @@ limiter for approvals, keyed on the approving user only under its own subject
 prefix, so that budget never pools with the same person's PIN or password
 budget; pass `loginLimiter` to share one instance and audit sink.
 
+#### Separate account and address budgets (#3531)
+
+By default both budgets use `maxAttempts`, `windowSeconds` and `lockout`.
+Size them independently with `subject` and `source` (each field falls back to
+the top-level option), or turn the address budget off with `source: false`:
+
+```ts
+const limiter = await LoginAttemptLimiter.create({
+  db,
+  subject: { maxFailures: 5, lockout: { baseSeconds: 60, maxSeconds: 3600 } },
+  source: { maxFailures: 100, windowSeconds: 300, lockout: false },
+  // or: source: false,
+});
+```
+
+When a failure starts a **source** lockout the audit sink also receives one
+`source-locked` entry carrying the source hash and `retryAfterSeconds` but no
+subject hash and none of the caller's metadata, so it attributes an outage to
+an address or device without naming the accounts that were tried. It is
+reported at most once per source per `sourceLockoutAuditSeconds` (default 300)
+per limiter instance. Refusals are recorded as `denied` entries with the
+refusing `scope` in their metadata.
+
+**Deployments without a trustworthy client address.** If the app sits behind
+a reverse proxy that does not forward a client address you can trust, every
+browser shares one `source`, and a handful of failures from anyone — including
+for emails that do not exist — locks password sign-in out for everyone.
+Prefer, in order:
+
+1. Make the proxy set a client address you trust (and strip any the client
+   sent), and pass that, not a raw `X-Forwarded-For`, as `ipAddress`.
+2. Otherwise give the source budget a much larger allowance with no lockout
+   (`source: { maxFailures: 200, lockout: false }`), so it only caps bursts.
+3. Or disable it (`source: false`) and rate limit `/signin` at the proxy
+   instead. The per-account budget still applies to every attempt.
+
+`source: false` applies to every credential kind using that limiter. A PIN
+sign-in keys its source on the enrolled device, which is what stops guessing
+across many people's short PINs on one tablet, so if PIN and password share an
+instance, prefer option 2 or give `PasswordCredentialService` its own
+`limiter` options rather than disabling the source budget for both.
+
 ### Per-person PIN on an enrolled device
 
 A shared tablet enrolled through the terminal device-code grant holds a
@@ -862,13 +954,38 @@ Other credential kinds (a fob or badge reader, say) implement
 
 ### Password sign-in
 
+For a self-hosted public password deployment, set
+`SMRT_AUTH_READINESS_MODULE=@happyvertical/smrt-users`. The existing
+app-runtime provider-readiness factory then opens the configured PostgreSQL
+database and requires the password, session, membership, and login-limiter
+schema used by `PasswordCredentialService`; it never creates schema. Browser
+owner bootstrap remains local-only, so production owners are provisioned by a
+separate operator path.
+
 `PasswordCredentialService` (#3274) gives an app without an identity provider
-email + password sign-in for **existing, active** users. It never creates a
+email-or-username + password sign-in for **existing, active** users. It never creates a
 user. The password lives in its own object, `UsersPasswordCredential`
 (`users_password_credentials`, one row per person), not on `User`: it is
 `sensitive`, has no generated REST/MCP/CLI surface, never enters the change
 feed, and `toPublicJSON()` omits the hash. The service and the handlers below
 are its only read and write paths.
+
+Username rollout: run the normal explicit application schema migration before
+serving the updated users package. The additive nullable `username` and unique
+`username_key` columns leave existing accounts unchanged; no username is inferred
+from an email or profile, and no data backfill is needed. Assign usernames through
+`User.save()` so the canonical key is maintained. Usernames are global, NFKC
+normalized, trimmed, lowercased, and limited to 1–64 ASCII letters/digits with
+internal dots, underscores or hyphens; `@` remains reserved for email sign-in.
+
+Pass `{ identifier, password }` to the handler for either email or username
+(the existing `{ email, password }` body remains supported). Applications that
+need no workspace chooser can configure `tenantId: 'unique-active-membership'`.
+The service verifies the password first, then requires exactly one active direct
+membership before minting a tenant-bound session. Zero or multiple active
+memberships return the same generic refusal as other invalid credentials; an
+ambiguous login never returns an unscoped session. Explicit tenant IDs and
+omitting the tenant option retain their existing behavior.
 
 **Hashing.** scrypt from `node:crypto` (no native dependency) with a random
 per-hash salt; the parameters are stored in each hash
@@ -917,6 +1034,7 @@ words). There are no composition rules. Optional `pepper`. Violations are
 | `changePassword` | the person, proving the current password (from the sign-in budget) | every other session of theirs |
 | `resetPassword` | an admin with `users.password.manage`, never for themself; `mustChange` defaults to true | every session of the person |
 | `clearPassword` | an admin, or the person proving the current password | the person's password sessions |
+| `replaceForgottenPassword` | the person, from a fresh out-of-band recovery session (off unless `recovery` is configured) | every session of the person, this one included |
 
 Self-service writes are guarded on the exact credential the person proved
 (or, for a first password, insert-only), so a reset that lands while a change
@@ -939,6 +1057,56 @@ permission. It is registered in the runtime catalog
 (`seedRolePermissions()`) grants it to `owner` and `admin` (`*`), not to
 `member` or `viewer`.
 
+**Forgotten password (#3905).** A person who signed in some other way — an
+owner-recovery or operator-issued link, an emailed code — can replace a
+password they forgot, without the current one, through
+`replaceForgottenPassword({ actor, newPassword })`. It is disabled until the
+host opts in, and every condition is checked on the stored session row, not
+on the caller's context:
+
+```ts
+import {
+  outOfBandProofSessionData,
+  PasswordCredentialService,
+  SessionService,
+} from '@happyvertical/smrt-users';
+
+const sessions = await SessionService.create({ db });
+
+const passwords = await PasswordCredentialService.create({
+  db,
+  recovery: {
+    authMethods: ['owner-recovery'], // channels minted ONLY after an out-of-band proof
+    maxAgeSeconds: 600,              // default 10 minutes, at most 1 hour
+    assertProof: ({ actor, provenAt }) => true, // optional extra host check
+  },
+});
+
+// In the recovery flow, after verifying the link or code (never from client input):
+const sessionId = await sessions.createSession(user.id, tenantId, {
+  authMethod: 'owner-recovery',
+  data: outOfBandProofSessionData(), // stamps SESSION_DATA_KEYS.outOfBandProofAt
+});
+```
+
+The call is refused (`PasswordCredentialForbiddenError` / 403) unless the
+session is valid and the person's own, first-class (not layered, no
+permission ceiling), has one of the listed `authMethods` (`password` and
+`pin` can never be listed), and carries a proof stamp no older than
+`maxAgeSeconds` (a stamp more than 30 seconds in the future is refused). The
+freshness bound is measured from the stamp, which a tenant switch copies to
+the rotated session, so switching tenants never makes an old proof look new.
+`assertProof`, when given, must return exactly `true`. On success the new
+password (policy-checked, `mustChange` cleared) is written guarded on the row
+read before any hashing — or inserted if the person had none — in the same
+transaction as a conditional update that consumes the recovery session, so
+of any concurrent uses of one proof exactly one succeeds and a failed write
+leaves the proof unconsumed. Every other session of the person ends before
+and after the write, and a `managed` audit entry records
+`action: 'recover'` with the channel and the proof's age. Do not list a
+channel whose sessions an ordinary sign-in can mint: whoever holds such a
+session can then choose the account's password.
+
 #### Consumer wiring (SvelteKit)
 
 ```ts
@@ -958,6 +1126,7 @@ export const passwordAuth = createPasswordCredentialHandlers({
 // POST   /account/password         → passwordAuth.setPassword     ({ password } or admin { userId, password })
 // DELETE /account/password         → passwordAuth.clearPassword   ({ currentPassword } or admin { userId })
 // POST   /admin/users/password     → passwordAuth.resetPassword   ({ userId, password, mustChange? })
+// POST   /account/password/recover → passwordAuth.replaceForgottenPassword ({ newPassword }; needs `recovery`)
 // sign out                         → destroySessionCookie(event, { db })
 ```
 
@@ -979,7 +1148,248 @@ What the app must do:
   `(await passwordAuth.service()).signIn({ … })` and set the cookie with the
   returned `sessionId`; keep the session id out of page data.
 
-Passkeys/WebAuthn are a separate credential (#3275).
+Passkeys/WebAuthn are a separate credential: see "Passkey sign-in" below.
+
+### Step-up (recent authentication) for sensitive actions
+
+A signed-in session is not proof the person is at the keyboard now. For an
+action that must not ride on an old or unlocked session (replacing a vault
+account, #4841), require a recent authentication:
+
+```ts
+import { requireRecentAuthentication } from '@happyvertical/smrt-users/step-up';
+
+const ctx = await sessionService.loadSessionContext(sessionId);
+// throws StepUpRequiredError (code 'step_up_required') unless the person
+// proved a credential within the last 5 minutes (maxAgeSeconds, max 1 hour)
+requireRecentAuthentication(ctx, { maxAgeSeconds: 300 });
+```
+
+- The proof is server-side session state. A password or passkey sign-in counts
+  at mint; `oidc`, `magic-link`, `terminal`, `pin`, `mobile` and host-defined
+  sessions do not (an OIDC login can complete silently from the provider's
+  existing browser session, and a magic link from the device's own mail app,
+  so an unlocked stolen device could mint either). `ctx.reauthenticatedAt` is
+  derived from the stored row.
+- The rule: **an existing session never counts as fresh by itself; a
+  deliberate fresh authentication with any supported method does.** Every
+  method below stamps the EXISTING session (no new session, no user switch),
+  refuses layered/PIN and ceilinged sessions, and answers every refusal with
+  one error that does not say which check failed, so a person who signs in
+  only with Google/OIDC or only by email link can still step up.
+  - **Password**: the page asks for the password and the host calls
+    `(await passwordAuth.service()).stepUp({ sessionId, password, ipAddress })`.
+    It uses the sign-in limiter and constant-work verification; every refusal
+    is one `PasswordCredentialError`.
+  - **Passkey**: re-authenticate with a fresh passkey sign-in and use the new
+    session; there is no separate passkey step-up ceremony.
+  - **OIDC**: `const { url } = await oidc.beginStepUp({ sessionId })`, redirect
+    the person to `url`, then on the callback
+    `await oidc.completeStepUp({ sessionId, callbackUrl })`. The request sets
+    `prompt=login` and `max_age=0`. The transaction (state, nonce, PKCE
+    verifier) is held on the session server-side as its one pending intent
+    (`data.oidcStepUpIntent`, one at a time, dies with the session); the
+    callback takes it, so it works once. The ID token is verified as at
+    sign-in, and must also carry `auth_time` that is within the step-up window
+    (default 300 s, `stepUpWindowSeconds`), not before the intent started and
+    not in the future. The returned issuer+subject must be an existing OIDC
+    identity of the session's own user: it never creates a user or switches
+    one. A provider that does not emit `auth_time`, or ignores
+    `prompt`/`max_age`, is refused, so confirm yours returns `auth_time`. Use a
+    `redirectUri` registered with the provider for step-up (it must not be
+    handled as a sign-in callback). Refusals are `StepUpRequiredError`.
+  - **Magic link**: `const { token, email } = await links.requestStepUp({
+    sessionId })` issues a link of purpose `step_up`, bound to that session and
+    its user, valid for at most 300 s and once; email it to `email` (the
+    user's own address). When the person opens it, the host calls
+    `await links.consumeStepUp({ token, sessionId })` with the SAME session
+    cookie. A sign-in link cannot step up and a step-up link cannot sign in
+    (`verify()`/`inspect()` refuse it); another session or user, an expired or
+    reused link, or a changed account email are all `StepUpRequiredError`.
+- The stamp (`SESSION_DATA_KEYS.reauthenticatedAt`) is never client input
+  (`setSessionData` refuses it), is not moved by refresh, activity or
+  `extend()`, is carried unchanged across tenant-switch rotation, and dies
+  with the session.
+- `isTenantOwnerSession(ctx)` is the matching owner test: a direct active
+  `owner` membership on a first-class session (not a member, `terminal`/`pin`
+  device, layered, ceilinged or inherited one).
+- The `@happyvertical/smrt-users/step-up` entry has no side effects and can be
+  imported by packages that must not load the whole identity module.
+
+### Passkey sign-in
+
+`PasskeyCredentialService` (#3275) gives an app passkey (WebAuthn) sign-in for
+**existing, active** users, with no username typed: the authenticator offers
+its discoverable credential and the credential names the person. It never
+creates a user. Parsing and verification are `@simplewebauthn/server`; this
+package owns the ceremony state, the sign-in order and the authority rules.
+Passkeys live in their own sensitive objects, `UsersPasskeyCredential`
+(`users_passkey_credentials`, many per person) and `UsersPasskeyChallenge`
+(`users_passkey_challenges`, a replay ledger), with no generated
+REST/MCP/CLI surface and no change-feed entry. The service and handlers below
+are their only read and write paths. Sign-in mints a first-class session with
+`authMethod: 'passkey'`; tenant access still comes only from an active
+membership (explicit tenant, or `'unique-active-membership'`, exactly as for
+passwords).
+
+#### Setup: `ORIGIN` and the relying party
+
+Passkeys are bound to the relying party, so `relyingParty` is required and is
+validated at construction. `origin` is the exact origin(s) the browser runs on:
+an absolute `https:` URL with no path (`http:` only for `localhost`,
+`127.0.0.1`, `[::1]`). `rpId` defaults to the hostname of the first origin and
+must be that hostname or a parent domain of every origin. **Choose it once:**
+changing the RP id orphans every registered passkey.
+
+```ts
+// src/lib/server/passkey-auth.ts
+import { createPasskeyCredentialHandlers } from '@happyvertical/smrt-users/sveltekit';
+
+export const passkeyAuth = createPasskeyCredentialHandlers({
+  db,
+  relyingParty: { origin: ORIGIN, rpName: 'Teamworks' }, // ORIGIN = https://app.example.com
+  challengeSecret: PASSKEY_CHALLENGE_SECRET, // >= 32 chars; REQUIRED with more than one process
+  tenantId: () => SHOP_TENANT_ID,            // value or (event) => …; omit for no tenant context
+  cookieName: 'sid',                         // the same cookie createSessionHandler reads
+  loginLimiter,                              // optional: share one limiter with password/PIN
+  freshSessionSeconds: 15 * 60,              // 60..3600, default 900
+  maxPasskeysPerUser: 10,                    // 1..100, default 10
+});
+// POST   /auth/passkey/options        → passkeyAuth.authenticationOptions   → { ceremonyId, options }
+// POST   /auth/passkey/sign-in        → passkeyAuth.signIn                  ({ ceremonyId, response })
+// POST   /account/passkeys/options    → passkeyAuth.registrationOptions     → { ceremonyId, options }
+// GET    /account/passkeys            → passkeyAuth.list                    (?userId= for administrators)
+// POST   /account/passkeys            → passkeyAuth.register                ({ ceremonyId, response, name? })
+// PATCH  /account/passkeys            → passkeyAuth.rename                  ({ passkeyId, name })
+// DELETE /account/passkeys            → passkeyAuth.remove                  ({ passkeyId })
+// POST   /admin/passkeys/remove-all   → passkeyAuth.removeAll               ({ userId })
+```
+
+In the browser, `@happyvertical/smrt-users/svelte` provides
+`browserSupportsPasskeys()`, `createPasskeySignInCeremony()` (a
+`passkeyCeremony` for `createUsersAuthAdapter`, which reveals the sign-in
+button) and `registerPasskey({ name })`. A refused request throws a
+`PasskeyRequestError` carrying the server's `status` and `code`.
+
+#### Ceremonies and replay
+
+`beginAuthentication()` / `beginRegistration()` return an opaque `ceremonyId`:
+`base64url(payload).base64url(HMAC-SHA256(challengeSecret, payload))`, where
+the payload holds the purpose, a random 32-byte challenge, an expiry
+(`challengeTtlSeconds`, 1 to 600, default 300) and, for registration, the
+person plus the SHA-256 of the registering session id (never the raw id).
+Beginning writes nothing, so an unauthenticated request costs no storage.
+Finishing verifies the MAC in constant time, the purpose, the expiry and a
+4 KB bound, then **consumes** the challenge by inserting its hash into the
+unique ledger: a replay is a conflict and is refused. Without `challengeSecret`
+a random per-process secret is used, which only works while one process begins
+and finishes every ceremony.
+
+#### Sign-in order and refusals
+
+The submitted credential id is reserved against the shared
+`LoginAttemptLimiter` (kind `passkey`, source = client address) **before** any
+other work. Then: ceremony verified and consumed, credential loaded,
+assertion verified (origin, RP id, user verification **required**), user
+handle checked against the stored owner, signature counter checked (it must
+advance whenever either side is non-zero; a regression is refused and audited
+as `reason: 'counter'`), user active, membership. The session is minted and
+the credential re-checked with one guarded `UPDATE` of the counter, so a
+passkey removed (or used concurrently) mid-sign-in leaves no session. Every
+refusal other than a rate limit is one `PasskeyCredentialError` ("Invalid
+credentials."), HTTP 401 `invalid_credentials`; a rate limit is
+`LoginRateLimitError`, HTTP 429 with `Retry-After`.
+
+#### Managing passkeys
+
+- **Registering** (and a person removing their own) requires a session
+  authenticated within `freshSessionSeconds` (tenant switching keeps the
+  original time) by an interactive method in `freshAuthMethods` (default
+  `password`, `passkey`, `oidc`, `magic-link`), all decided on the stored
+  session row; layered/PIN sessions and sessions with a permission ceiling are
+  refused. A `terminal` session never counts as fresh (nor does a null or
+  unlisted method): approving a device code lets whoever holds any session,
+  however stale, mint a brand new one, so its age proves nothing. `terminal`
+  and `pin` are rejected in `freshAuthMethods` at construction. Listing and
+  renaming one's own passkeys also refuse a permission ceiling. A stale session
+  is `PasskeyReauthenticationRequiredError` (HTTP 401
+  `reauthentication_required`): sign in again, then retry.
+- `listPasskeys` returns `{ id, name, createdAt, lastUsedAt, backedUp,
+  deviceType, transports }`, never key material or credential ids.
+- `users.passkey.manage` lets an administrator list and remove the passkeys of
+  people whose every active membership is in the administrator's own tenant
+  (the same single-tenant rule as `users.password.manage`).
+- Removing a passkey ends sessions before **and** after the delete: the
+  person's other passkey sessions (and the current one only if it was signed
+  in with the removed passkey); an administrator's removal ends all of them.
+- Every management call writes a `managed` audit event (kind `passkey`; action,
+  self, actor, revoked sessions; never key material).
+
+#### Recovery when every passkey is lost
+
+An administrator holding `users.passkey.manage` calls `removeAllPasskeys` for
+the person (never for themselves), which deletes all their passkeys and ends
+every passkey session. The person then signs in with another credential (a
+password or a magic link) and registers a new passkey from that fresh session.
+Keep at least one non-passkey path available for every person.
+
+Run `smrt db:migrate` once for the two new tables, and sync the permission
+catalog so `users.passkey.manage` can be granted. The retention sweep reaps
+expired challenge rows (`users-passkey-challenges`), keeping each row for 10 minutes past its expiry
+so a process with a slow clock cannot replay it. Every state-changing passkey
+route requires `content-type: application/json` (415 otherwise). When
+`challengeSecret` is unset the service logs one warning at creation.
+
+### Trusted deployment owner provisioning
+
+Self-hosted password deployments keep browser owner bootstrap disabled. After
+building the app, run migrations and provision the owner from a trusted operator
+shell using the compiled registration entry. These commands need Node and the
+published packages, without a Vite runtime:
+
+```sh
+node --import ./.smrt/runtime/register.js node_modules/@happyvertical/smrt-cli/bin/smrt.js db:migrate
+node --import ./.smrt/runtime/register.js node_modules/@happyvertical/smrt-cli/bin/smrt.js users:provision-owner \
+  --tenant-id 2acb0135-6d63-40dc-a8d4-fd87d37cd197 --tenant-name Hearth \
+  --user-id 753d9480-fd17-4f21-8771-345e83833fe3 \
+  --email owner@example.com --username owner --password-stdin < /run/secrets/owner-password
+```
+
+Use your own stable UUIDs and identities; retain them for retries. The database
+comes from normal CLI configuration (`packages.cli.database`, or `DATABASE_URL`
+and `DATABASE_TYPE=postgres`). Supply at least one email or username. The password
+must be one UTF-8 line; a final newline is removed. `--password-file` also accepts
+a regular mode-0400/0600 file (no final symlink); stdin redirection works with
+mounted secret symlinks. Password arguments and environment inputs are unsupported.
+
+The Node-only `@happyvertical/smrt-users/operator` export provides
+`provisionPasswordOwner(db, input, passwordPolicy?)` for operator tools that use
+the application's custom password policy or pepper. The CLI uses the ordinary
+default policy. Never expose this function through browser, REST, MCP, or
+session handlers: possession of the database connection is its authority.
+
+Provisioning supports PostgreSQL only. It creates the tenant, User, owner
+membership, and ordinary password credential in one transaction, without minting
+a session. A fresh authority catalog receives the standard roles and grants;
+existing role grants are never reseeded. Both creation and exact retries require
+at least one effective permission, resolved with tenant and membership DENY
+overrides inside that transaction. Existing restricted roles remain restricted;
+success does not promise every application permission. An empty or fully denied
+permission set refuses with the ordinary sanitized error and CLI exit status 1,
+rolling back new identities and leaving existing credentials and grants intact.
+If roles were initialized without grants, inspect the intended authority policy
+and explicitly seed approved grants using `RoleCollection.seedSystemRoles({
+seedPermissions: true })` from a trusted operator tool, or administer the desired
+restricted grants through the public role services, before retrying. Provisioning
+never restores deliberately revoked grants automatically.
+
+An existing target tenant must be an
+active root tenant with the exact name and no memberships. Existing or partial
+User identities are refused except for a complete exact retry with the same
+active owner membership and password, which returns `unchanged` without writes.
+It never resets a password, reactivates an account, or adopts an ambiguous
+identity. After provisioning, the owner signs in using the normal password
+route. Local loopback bootstrap remains unchanged.
 
 ### Request-scoped database access
 
@@ -1043,6 +1453,27 @@ same tenant/resource/permission; chains are bounded and ancestor revocation
 immediately invalidates every child at the next guard check.
 
 ### Hierarchical tenants
+
+`TenantCollection` is the only hierarchy traversal API. Use
+`getAncestorIds()`, `getDescendantIds()`, and `requireChildOf()` rather than
+walking `parentTenantId` in an application.
+
+For a reviewed cross-tenant **list** read, use
+`withTenantCatalogReadScope()` for the active family, its ancestors, and
+global rows, or `withTenantHierarchyContext()` for one authorized root and its
+descendants. Both require an active tenant **and user**, a non-empty qualified
+collection allowlist, active `enableTenancy()` enforcement, and an authorizer
+that returns exactly `true`; every
+other result fails closed. The callback can widen only `list()` for those
+collections. `get()`, raw queries, saves, and deletes retain normal tenancy
+guards (tenant-scoped collection writes and raw queries are rejected while the
+scope is active). This is a trusted server API, not a sandbox: direct database
+executors and models without tenancy remain the host's responsibility. Catalog scopes never
+include descendants or siblings; subtree scopes never include ancestors or
+global rows. The actor and database session authority are unchanged. PostgreSQL
+RLS remains an additional restriction: effective visibility is the intersection
+of the approved scope and the database policies, so a stricter RLS policy may
+exclude ancestor or global rows even after application authorization.
 
 Tenants support parent-child trees (max depth 10). Two flags control inheritance: `cascadePermissions` (parent pushes down) and `inheritPermissions` (child accepts). Both must be true for permissions to flow.
 
@@ -1218,12 +1649,123 @@ TenantService supports three modes: `flexible` (no auto-create), `personal` (aut
 | `UsersLoginAttempt`, `UsersLoginAuditEvent` | Hashed-key login budget rows and durable sign-in audit events (#3273). Closed generated surface. |
 | `UsersPinCredential` | Per-person scrypt PIN hash for enrolled-device sign-in (#3276). Closed generated surface. |
 | `UsersPasswordCredential` | Per-person scrypt password hash for email + password sign-in (#3274). Sensitive; closed generated surface. |
+| `UsersPasskeyCredential`, `UsersPasskeyChallenge` | Per-person WebAuthn passkeys (many per person) and the consumed-challenge replay ledger (#3275). Sensitive; closed generated surface. |
 | `Group` | Team within a tenant. Gains permissions via GroupRole. |
 | `Membership` | User + Tenant + Role junction. UNIQUE(userId, tenantId). |
 | `MembershipOverride` | Per-user permission grant/deny on a membership. |
+| `LegalMember` | Tenant-scoped legal member register entry, separate from authentication/RBAC membership and subscriptions. |
+| `MemberClass` | Configurable legal member classification; classes have no built-in authority or entitlement effect. |
+| `LegalMemberStatusHistory` | Append-only effective status history for historical and record-date queries. |
+| `LegalMemberReference` | Qualified reference to authoritative shares, dues, subscription, agreement, or ledger evidence; it never stores a balance. |
+| `MemberOfficerAppointment` | Effective-dated board/officer register entry; it is not an RBAC grant or ballot engine. |
 | `TenantPermissionOverride` | Tenant-level permission override (INHERIT/GRANT/DENY). |
 | `GroupMember`, `GroupRole`, `RolePermission` | Junction tables for groups and role-permission assignments. |
 | `AccessRequest` | "Request access / waitlist" record captured before a `User` exists. Closed generated surface — all access via `AccessRequestService`. |
+
+## Legal member register
+
+`MemberRegisterService` manages a tenant's legal member register. It is distinct
+from `Membership`, which is a user-to-tenant authorization row, and from
+subscriptions, which resolve paid entitlements. A legal member may be an
+individual or organisation and may link to a user/profile or an external-party
+reference, without requiring any of them.
+
+The service writes effective status history, references financial evidence
+without copying balances, and effective board/officer terms. `asOf(recordDate,
+policy)` produces persisted, neutral eligibility snapshots plus CSV/JSON
+exports. A policy that requires shares or dues evidence fails closed unless the
+register has an explicitly authoritative reference for every required kind; the
+snapshot names that missing evidence rather than inferring payment status.
+
+For GET-style capabilities, use the member-scoped read API instead:
+
+```typescript
+const register = new MemberRegisterService(db, { tenantId });
+const decision = await register.eligibilityFor(
+  { userId: signedInUser.id }, // or { memberId: legalMemberId }
+  '2026-06-01',
+  { memberClassKeys: ['worker'], requireAuthoritativeKinds: ['dues'] },
+);
+```
+
+`eligibilityFor(identity, recordDate, policy)` performs only reads on the supplied
+executor. It opens no transaction, persists no snapshot and never lists the
+register. Its query count is independent of unrelated members; history and
+references are loaded only for the selected member. Exactly one nonempty selector
+is required. A user identity must resolve to exactly one member in this tenant;
+missing, foreign and ambiguous identities throw `MEMBER_REGISTER_NOT_FOUND`.
+Malformed dates/selectors/policy values throw `MEMBER_REGISTER_INVALID`; an active
+foreign tenant context throws `MEMBER_REGISTER_TENANT_MISMATCH`. Database failures
+propagate. Hosts map these failures to denied capabilities and must derive tenant
+and identity from an authorized session, never trust submitted identity fields.
+This is legal-register eligibility: host-level suspension/bans and operation
+permissions still require their own checks. Individual reads do not promise a
+transactionally stable multi-query snapshot; an accepted command re-evaluates on
+its own transaction.
+
+Persist immutable evidence explicitly when accepting a command:
+
+```typescript
+await register.withTransaction(async (bound, executor) => {
+  const snapshot = await bound.captureEligibility(
+    { memberId: legalMemberId }, '2026-06-01', policy,
+  );
+  if (!snapshot.eligible) throw new Error('Participation denied');
+  // Persist the accepted command with executor, referencing snapshot.id.
+  // Throwing rolls back both command and evidence.
+});
+```
+
+`withTransaction` supplies a bound service and the exact database executor used
+by its reads and writes; callbacks must use that executor for their command and
+must not retain either value after completion. Nested calls through the bound
+service reuse the transaction. `captureEligibility` re-evaluates authoritative
+records and creates one immutable `MemberEligibilitySnapshot`, including the
+policy inputs. Called alone, it opens its own transaction. It does not accept a
+caller-authored decision or grant host authorization. Each successful call is a
+new evidence event; hosts implement command idempotency in the same transaction,
+and skip capture for an already accepted command. A refused or failed transaction
+leaves no snapshot. The existing `asOf` remains the explicit whole-register
+snapshot/export operation and is unsuitable for ordinary capability GETs.
+
+An omitted `memberClassKeys` policy allows every class; an explicit empty list
+allows none. `statuses` defaults to `['active']`, and an empty status list also
+allows none. Snapshots preserve normalized class keys (`null` means unrestricted),
+statuses, and required evidence kinds so the decision retains its policy inputs.
+
+Hosts must authorize the trusted `MemberRegisterActor` before constructing the
+service. Generated REST, CLI and MCP operations are closed for these sensitive
+records. Every service lookup and write stays in the actor's tenant; an active
+context for another tenant is rejected. Direct collections are trusted internal
+APIs, not an authorization boundary for untrusted input.
+
+`enroll`, `setStatus` and `asOf` require database transaction support and commit
+all of their writes together. History and references are append-only, and
+snapshots reject updates and deletes. Same-day history corrections use persisted
+sequence order. Eligibility uses effective history; `LegalMember.status` and
+`leftOn` are display caches refreshed by `setStatus`, so scheduled changes may
+make those caches stale until another write. Use `eligibilityFor` for read-only
+record-date decisions, or `captureEligibility` for accepted-command evidence.
+
+Use `revokeReference(referenceId, { effectiveOn })` when previously authoritative
+evidence is withdrawn. It appends a dated record targeting the original reference;
+that original stops supporting eligibility on the revocation date. Earlier dates
+and already saved snapshots remain unchanged. A replacement authoritative reference
+must be explicitly added when evidence becomes valid again.
+
+Enrollment accepts global profiles or profiles owned by the actor's tenant, and
+rejects foreign-tenant profiles. Members returned from enrollment and status changes
+are rebound to the caller's database so subsequent saves do not reuse a completed
+transaction's connection. Saves still require the appropriate tenant context.
+
+Apply the generated s-m-r-t manifest migration before using the register; its six
+new tables require no auth-membership or subscription backfill. `userId` links
+to the local `User`; `profileId` uses the cross-package reference
+`@happyvertical/smrt-profiles:Profile`. Financial evidence is an opaque
+`sourceType`/`sourceId` reference (for example
+`@happyvertical/smrt-ledgers:JournalEntry` or
+`@happyvertical/smrt-subscriptions:TenantSubscription`); the host validates its
+authority and effective dates, and no posting or balance is copied here.
 
 ### Collections
 
@@ -1235,7 +1777,7 @@ TenantService supports three modes: `flexible` (no auto-create), `personal` (aut
 | `MembershipOverrideCollection`, `TenantPermissionOverrideCollection` | Override management at membership and tenant levels |
 | `GroupCollection`, `GroupMemberCollection`, `GroupRoleCollection`, `RolePermissionCollection` | Group and role-permission junction management |
 | `AccessRequestCollection` | AccessRequest queries: `findByEmail()`, `findOpenByEmail()`, `findByStatus()`, `findOpen()` |
-| `UsersLoginAttemptCollection`, `UsersLoginAuditEventCollection`, `UsersPinCredentialCollection`, `UsersPasswordCredentialCollection` | Atomic limiter primitives, audit storage, and PIN and password credential rows behind the services below |
+| `UsersLoginAttemptCollection`, `UsersLoginAuditEventCollection`, `UsersPinCredentialCollection`, `UsersPasswordCredentialCollection`, `UsersPasskeyCredentialCollection`, `UsersPasskeyChallengeCollection` | Atomic limiter primitives, audit storage, and PIN, password and passkey credential rows behind the services below |
 
 ### Services
 
@@ -1250,6 +1792,7 @@ TenantService supports three modes: `flexible` (no auto-create), `personal` (aut
 | `LoginAttemptLimiter` | Shared sign-in budget with exponential lockout and audit (#3273): `reserve()` → lease `.fail()`/`.succeed()`/`.release()`. `LoginRateLimitError`, `InvalidCredentialsError`, `LoginAuditSink`, `DurableLoginAuditSink`. |
 | `DeviceCredentialService` | Per-person sign-in layered on an enrolled device session (#3276): `signInWithPin()`, `signIn(verifier, input)`, `signOut()`, `setPin()`, `resetPin()`, `clearPin()`. Person authority with optional `deviceCeiling`, `singleOccupant` hand-over, `personIdleSeconds` / `personMaxSeconds`. `PinVerifier`, `DeviceCredentialVerifier`. |
 | `PasswordCredentialService` | Email + password sign-in for existing active users (#3274): `signIn()`, `setPassword()`, `changePassword()`, `resetPassword()`, `clearPassword()`, `hasPassword()`, `validatePassword()`. `PasswordCredentialError`, `PasswordCredentialForbiddenError`, `PasswordPolicyError`. |
+| `PasskeyCredentialService` | Passkey (WebAuthn) sign-in for existing active users (#3275): `beginAuthentication()`, `finishAuthentication()`, `beginRegistration()`, `finishRegistration()`, `listPasskeys()`, `renamePasskey()`, `removePasskey()`, `removeAllPasskeys()`, `hasPasskeys()`. `PasskeyCredentialError`, `PasskeyCredentialForbiddenError`, `PasskeyReauthenticationRequiredError`, `PasskeyRegistrationError`. |
 | `OidcLoginService` | Generic OIDC authorization-code login with PKCE for Kanidm, Dex, and other standards-compliant providers. |
 | `backfillLegacyUserProfiles` | Transactionally create and link canonical global Person Profiles for legacy Users; never creates OIDC identities or infers ownership. |
 | `backfillUserEmailKeys` | Idempotently populate durable normalized-email keys after migrating legacy Users; fails closed on duplicates. |
@@ -1277,6 +1820,7 @@ TenantService supports three modes: `flexible` (no auto-create), `personal` (aut
 | `createMobileAuthHandlers` | Mountable `/api/mobile` PKCE, bearer session, bootstrap, logout, and route-guard handlers |
 | `createDeviceCredentialHandlers` | Mountable PIN sign-in, sign-out, and PIN management handlers for enrolled devices |
 | `createPasswordCredentialHandlers` | Mountable password sign-in (sets the session cookie) and password set/change/reset/clear handlers |
+| `createPasskeyCredentialHandlers` | Mountable passkey sign-in (sets the session cookie), registration, list, rename and remove handlers |
 | `resolveMobileUploadDedupKey` | Resolves `clientCaptureId` with `Idempotency-Key` fallback for app-owned multipart routes |
 | `SessionLocals` | Type for `event.locals` (extend in `app.d.ts`) |
 
@@ -1300,9 +1844,30 @@ for authentication, deduplication, and status semantics.
 | `DEFAULT_LOGIN_MAX_ATTEMPTS`, `DEFAULT_LOGIN_ATTEMPT_WINDOW_SECONDS`, `DEFAULT_LOGIN_LOCKOUT_*` | 5 attempts per 300 s window; lockout 60 s × 2ⁿ, capped at 3600 s |
 | `DEFAULT_PIN_MANAGE_PERMISSION`, `PIN_LOGIN_KIND` | `users.pin.manage`, `pin` |
 | `DEFAULT_PASSWORD_MANAGE_PERMISSION`, `PASSWORD_LOGIN_KIND` | `users.password.manage`, `password` |
+| `DEFAULT_PASSKEY_MANAGE_PERMISSION`, `PASSKEY_LOGIN_KIND`, `PASSKEY_SESSION_DATA_KEY` | `users.passkey.manage`, `passkey`, `passkeyCredentialId` |
 | `DEFAULT_PASSWORD_MIN_LENGTH`, `DEFAULT_PASSWORD_MAX_LENGTH`, `PASSWORD_MAX_LENGTH_CEILING`, `DEFAULT_PASSWORD_DENYLIST` | 10, 256, 1024, built-in common-password list |
 | `TenantHierarchyError` | Thrown on a missing parent, a cycle, or exceeding the hierarchy depth limit (`code`) |
 | `TenantHierarchyMaterializationError` | Thrown by `materializeTenantHierarchy` when any tenant's parent chain is broken; lists `problems` |
+
+`RoleCollection.seedSystemRoles()` seeds these global system identities:
+
+| Role | UUID |
+| --- | --- |
+| Owner | `566aef94-1328-4876-b291-b7cf18d4df01` |
+| Administrator | `566aef94-1328-4876-b291-b7cf18d4df02` |
+| Member | `566aef94-1328-4876-b291-b7cf18d4df03` |
+| Viewer | `566aef94-1328-4876-b291-b7cf18d4df04` |
+
+Repeat seeding requires each built-in role to have the documented UUID, global
+scope, and system flag. A conflicting global slug or occupied reserved UUID
+fails seeding without rewriting role ownership or memberships. Tenant roles
+can share these slugs under their own identities.
+
+Trusted provisioning can pass `reservedIdentity` to
+`TenantService.createTenantWithOwnership()` on its transaction-bound service.
+The service applies `maxTenants`, resolves the global owner role, and inserts
+the tenant and membership with the supplied IDs. A collision aborts
+provisioning. Keep these IDs under server control.
 
 ## Dependencies
 
@@ -1356,6 +1921,41 @@ run `smrt doctor --db` / `db:status --parity`, deploy the new version to every
 writer, then resume traffic. Do not roll back application writers without also
 restoring the pre-upgrade schema/database backup.
 
+### Upgrade duplicate overrides and group members (#3375)
+
+`MembershipOverride` is unique on `(membership_id, permission_id)`,
+`TenantPermissionOverride` on `(tenant_id, permission_id)` and `GroupMember` on
+`(group_id, user_id)`. `setOverride()` (and the grant/deny/inherit helpers) is
+an upsert on that key: concurrent calls leave one row, the last effect written
+wins, and an existing override keeps its id. `addMember()` is idempotent.
+`removeOverride()` / `removeMember()` delete every row for the pair. Their
+`(slug, context)` index is no longer unique, and the single-column
+`membership_id` / `group_id` indexes are replaced by the composite ones.
+
+Existing deployments upgrade exactly like the role-grant upgrade above, in the
+same maintenance window and **before ordinary schema migration**:
+
+```typescript
+import { deduplicateAuthorityPairs } from '@happyvertical/smrt-users';
+
+console.log(await deduplicateAuthorityPairs(db, { dryRun: true }));
+console.log(await deduplicateAuthorityPairs(db, {
+  maintenanceConfirmed: true,
+}));
+```
+
+For an override pair it keeps the row whose effect the resolver already
+applies — DENY, then GRANT, then INHERIT — so no pair's effective authority
+changes; ties, and group members, keep the earliest `created_at` (lowest `id`
+breaks ties; null timestamps sort last). It creates
+`membership_overrides_membership_id_permission_id_idx`,
+`tenant_permission_overrides_tenant_id_permission_id_idx` and
+`group_members_group_id_user_id_idx` in the same transaction as the deletes,
+locks the three tables on PostgreSQL, and is safe to rerun. Until it has run,
+new-version override and group-member writes fail (there is no unique index for
+their upsert to target), so writers stay stopped until it and the schema
+migration complete.
+
 ## Hosted OAuth authorization
 
 Use `SmrtOAuthAuthorizationStorage` with the SDK authorization server, and
@@ -1402,3 +2002,30 @@ settings. Instance-only storage fails closed on an invalidated connection; it
 never silently drops PRAGMAs or temporary state. PostgreSQL does not require
 this option. The [transaction notes](agents/oauth-authorization.md#recoverable-local-sqlite-connections)
 show the factory contract.
+
+### HTTP CLI collection action discovery
+
+`createResourceListHandler` can discover custom actions on registered typed
+collections when `cli.include` names the methods and the API exposes them.
+Generated SvelteKit startup supplies the action host's discovery metadata,
+including collection ancestry; an undecorated domain collection parent retains
+its inherited behavior without extra annotations. Collection defaults,
+wildcard-only includes, and `mirror: 'api'` alone stay hidden; collection CRUD is never advertised. Static and instance collection
+methods use collection-scoped URLs. Explicit `@smrt({ collection })` chooses
+the route namespace independently of the backing model's storage.
+
+When a collection inherits its item's namespace and both expose commands,
+discovery composes disjoint commands under the model's resource identity.
+The generated startup binds the exact live host constructor; composition requires
+that host's registered item model and the same canonical collection receiver.
+Each command retains its originating class's policy context and HTTP route.
+Denied commands are omitted independently. Explicit duplicate namespaces,
+unrelated resources, multiple hosts and overlapping command names/routes still
+fail closed as configuration collisions.
+
+The existing `commandPolicy` filters these commands with the same session and
+class metadata as model resources. Discovery does not authorize execution or
+rows. Generated collection action writes still require the **item model's**
+collection permission (for example `items.submit`, even if the route is
+`/api/operations/submit`), and domain actions retain their tenant checks. See
+[collection action resources](../core/agents/generators.md#explicit-collection-action-resources).

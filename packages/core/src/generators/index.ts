@@ -130,6 +130,14 @@ export {
   type TenantEntryPointRunner,
   type TenantGateOptions,
 } from './tenant-gate';
+// Shared field-to-JSON-Schema projection for tool surfaces. Consumers with a
+// runtime registry (such as chat's manifest dispatcher) normalize their fields
+// into ToolFieldMeta before calling this pure helper.
+export {
+  fieldTypeToJsonSchema,
+  type ToolFieldMeta,
+  type ToolJsonSchema,
+} from './tool-schema';
 // Shared 4xx normalization for generated REST and SvelteKit transports.
 export {
   normalizeTypedHttpError,

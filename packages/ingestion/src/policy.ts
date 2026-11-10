@@ -8,6 +8,8 @@ export interface IntakePolicyLayer {
   providers?: string[];
   access?: string[];
   requireReview?: boolean;
+  /** Application opt-in for submitter-scoped decisions; narrower layers may only disable. */
+  submitterReview?: boolean;
   maxAttempts?: number;
   maxSteps?: number;
   maxBytes?: number;
@@ -30,6 +32,7 @@ export interface IntakePolicy {
   providers: string[];
   access: string[];
   requireReview: boolean;
+  submitterReview: boolean;
   maxAttempts: number;
   maxSteps: number;
   maxBytes: number;
@@ -77,6 +80,7 @@ export function resolveIntakePolicy(
     providers: [],
     access: [],
     requireReview: false,
+    submitterReview: false,
     maxAttempts: 1,
     maxSteps: 10,
     maxBytes: 65536,
@@ -90,6 +94,7 @@ export function resolveIntakePolicy(
   for (const key of lists) result[key] = [...(app[key] ?? [])];
   for (const key of limits) result[key] = app[key] ?? result[key];
   result.minimumCertainty = app.minimumCertainty ?? 1;
+  result.submitterReview = app.submitterReview === true;
   result.automaticHandlers = [...(app.automation?.handlers ?? [])];
   result.consequentialAutomation = app.automation?.consequential === true;
   for (const [index, layer] of layers.entries()) {
@@ -98,6 +103,7 @@ export function resolveIntakePolicy(
     result.versions.push(layer.version);
     result.enabled &&= layer.enabled !== false;
     result.requireReview ||= layer.requireReview === true;
+    result.submitterReview &&= layer.submitterReview !== false;
     for (const key of lists) {
       const values = layer[key];
       if (values !== undefined) {

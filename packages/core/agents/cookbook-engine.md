@@ -28,7 +28,8 @@ engine.tools / engine.batchTool                      // JSON Schema tool definit
 - **Commands** (20, `COOKBOOK_COMMANDS_VERSION = 1`): `apply_cookbook` (select),
   `import_cookbook`, `add_cookbook`, `remove_cookbook`, `add_recipes`,
   `remove_recipes`, `add_features`, `remove_features`, `set_settings`,
-  `set_policy`, `set_theme`, `reset_theme`, `set_name`, `rename_section`,
+  `set_policy`, `set_theme`, `reset_theme`, `set_name` (name, description and `specs`, free-text requirements beyond
+  the recipes; internal newlines are kept), `rename_section`,
   `rename_item`, `hide`, `show`, `validate`, `export_cookbook`, `undo`. Navigation
   and focus are not commands: they are an adapter concern.
 - **`set_theme`** takes `preset`, `primary` (a brand colour that replaces the

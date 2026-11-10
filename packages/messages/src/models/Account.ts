@@ -8,12 +8,12 @@
 // runs, whichever chunk the library build places it in (#3098).
 import '../__smrt-register__.js';
 import { field, SmrtObject, smrt } from '@happyvertical/smrt-core';
+import { TenantScoped, tenantId } from '@happyvertical/smrt-tenancy/decorators';
 import {
+  createAccountSecretService,
   getCurrentTenant,
-  TenantScoped,
-  tenantId,
   withTenant,
-} from '@happyvertical/smrt-tenancy';
+} from '../host.js';
 import type { AccountOptions, MessageSenderInterface } from '../types';
 
 @TenantScoped({ mode: 'optional' })
@@ -155,8 +155,7 @@ export class Account extends SmrtObject {
     if (!this.id) {
       throw new Error('Account must be persisted before storing credentials.');
     }
-    const { SecretService } = await import('@happyvertical/smrt-secrets');
-    const secretService = await SecretService.create({ db: this.db });
+    const secretService = await createAccountSecretService(this.db);
 
     const secretName = `${this.channelType || 'messaging'}-account-${this.id}`;
     const secretValue = JSON.stringify(credentials);
@@ -201,8 +200,7 @@ export class Account extends SmrtObject {
     }
 
     const tenantId = this.requireCredentialTenantId('retrieve credentials');
-    const { SecretService } = await import('@happyvertical/smrt-secrets');
-    const secretService = await SecretService.create({ db: this.db });
+    const secretService = await createAccountSecretService(this.db);
 
     try {
       const secret = await secretService.retrieveForTenant(

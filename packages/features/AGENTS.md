@@ -14,11 +14,34 @@ Code-first feature flag system with global and tenant-hierarchy resolution.
 
 ## Resolution chain (priority high → low)
 
-1. Tenant scope (`scopeType: 'tenant'`) — root-to-leaf traversal; a child inherits only when its parent allows cascading and it allows inheritance, otherwise its baseline resets to global
-2. Global scope (`scopeType: 'global'`, `scopeId: GLOBAL_FEATURE_SCOPE_ID`)
-3. Boolean `defaultEnabled` from the registered class, falling back to its synced definition
+1. Tenant scope (`scopeType: 'tenant'`) — root-to-leaf traversal; a child inherits only when its parent allows cascading and it allows inheritance, otherwise its baseline resets to the post-global state (grant, then global override)
+2. Global scope (`scopeType: 'global'`, `scopeId: GLOBAL_FEATURE_SCOPE_ID`) — applies on top of the grant; `inherit` keeps the granted state
+3. Plan grant (#4761) — a key the tenant's plan grants becomes enabled; an ungranted key keeps its default
+4. Boolean `defaultEnabled` from the registered class or framework definition, falling back to its synced definition
 
-`FeatureResolver` is instantiated with database options; call `isEnabled(key, { tenantId })` or `isEnabledFor(Class, localId, { tenantId })` on that instance. With no tenant context only global/default apply. There is no user scope.
+`FeatureResolver` is instantiated with database options; call `isEnabled(key, { tenantId, grantSource? })`, `explain(key, context)` (`{ enabled, decidedBy }`, the layer that set the state; the gate reads it), or `isEnabledFor(Class, localId, { tenantId })` on that instance. With no tenant context only global/default apply (grants are tenant-level). There is no user scope.
+
+## Plan grants, standard keys, gates (#4761)
+
+- **Grant source slot.** Features never imports `smrt-subscriptions`. A `FeatureGrantSource` (`getGrants(tenantId)`, optional `findGrantingPlan()`) is taken from `context.grantSource`, else `FeatureResolverOptions.grantSource`, else the global slot (`setFeatureGrantSource()`, stored under `Symbol.for(FEATURE_GRANT_SOURCE_SLOT_KEY)`; `smrt-subscriptions` writes the same key, so never rename it). `null` at either level disables grants. No source = no grants = pre-#4761 behavior. Local installs get a source from the signed device entitlement cache in `smrt-app-runtime` (`./device-entitlements`, #4787), registered through this slot; features never imports it. A global override outranks a plan grant: a global row is an explicit operator act, so a global DISABLE stops the feature fleet-wide, granted tenants included. Tenant overrides still beat both (the per-tenant escape hatch). Grant-source errors propagate (an outage must not read as "no plan").
+- **Framework features** (`framework-features.ts`): dotted keys (`inference.hosted`) owned by no class, registered on `globalThis` via `defineFrameworkFeature()` (identical re-definition is a no-op, a conflicting one throws). The resolver reads their default before the class registry. `FeatureSyncService.syncFrameworkDefinitions()` upserts them as rows with an empty `qualifiedClassName`; class-sync pruning skips those rows.
+- **Standard paid keys** (`standard-features.ts`): `FEATURE_SYNC_DEVICES`, `FEATURE_BACKUP_VAULT`, `FEATURE_CLOUD_HOSTED`, `FEATURE_INFERENCE_HOSTED`, `FEATURE_PLUGINS_REMOTE` (also `STANDARD_FEATURE_KEYS`, `STANDARD_FEATURES`); all `metadata.paid: true`, default off, seeded lazily (no import side effect). Gates import the constants, never string literals; plans grant the same strings.
+- **Gates** (`require-feature.ts`): `requireFeature(key, { resolver, tenantId, grantSource? })` throws `FeatureUnavailableError` (`status` 403, `.code`, `.denial`, `.toResponse()`) for services; `featureGateResponse()` returns `null` or the JSON denial `Response` (`featureDenialResponse()`) for SvelteKit routes; `checkFeature()` returns `{ allowed, featureKey, denial? }`. `FeatureGateDenial` is a union discriminated by `code`, sharing `featureKey`, `label`, `paid`, `tenantId`, `message`: `feature_upgrade_required` (`FEATURE_UPGRADE_REQUIRED_CODE`) adds `grantingPlan`; `feature_disabled` (`FEATURE_DISABLED_CODE`) adds `disabledBy` and names no plan. The gate answers `feature_disabled` when `explain()` reports a global or tenant DISABLE decided the state (no upgrade could help) and never calls `findGrantingPlan()` then; otherwise a failing plan lookup only nulls `grantingPlan`. Never a bare 403. Semantics are "feature present", not identity: callers authenticate and authorize the principal and pass the tenant they verified.
+
+## Kill switches (#4760)
+
+`src/kill-switch.ts`: `readKillSwitch()` / `setKillSwitch()` /
+`KillSwitchService` store DISABLE rows in `_smrt_feature_overrides` but
+read them as an incident lever, not a flag: a global DISABLE wins over
+everything, then the tenant's own DISABLE; ENABLE/INHERIT rows are
+ignored, so "on" means no DISABLE row and enabling deletes it. Tenant rows
+are written lower-cased and read in either spelling; enabling clears every
+spelling. Reads are uncached. Kill-switch keys have no definition (so
+`FeatureResolver` refuses them and `FeatureSettingsService` never lists
+them). Keys belong to their consumer: `inference.hosted.enabled` is
+smrt-inference's `HOSTED_INFERENCE_KILL_SWITCH`. `KillSwitchService.set()`
+writes without an authorizer (the CLI's database credentials are the
+authorization); admin UIs write through `FeatureOverrideService`.
 
 ## Conventions
 
@@ -32,7 +55,7 @@ Code-first feature flag system with global and tenant-hierarchy resolution.
 ## Management UI (`./svelte`)
 
 - Built like every other Svelte-shipping package here (`smrt-tenancy`/`smrt-personas` are the closest models): `vite build --mode library && svelte-package -i src/svelte -o dist/svelte`, an `./svelte` export with a `svelte` condition, `svelte` as an **optional** peer dependency — plus `scripts/prune-svelte-package-artifacts.js` (as `smrt-content` does), because `svelte-package` otherwise copies `__tests__/` and `*.test.*` into the published `dist/svelte`. The root export stays Svelte-free so server-only consumers are unaffected.
-- `FeatureSettingsPanel` is presentational: rows and callbacks in, no fetching, no authorization. `src/svelte/types.ts` deliberately imports nothing from `smrt-core` or the `@smrt()` models, so the browser bundle stays thin; `FeatureSettingsRow` is structurally assignable to `FeatureSettingsView`.
+- `FeatureSettingsPanel` is presentational: rows and callbacks in, no fetching, no authorization. `src/svelte/types.ts` deliberately imports nothing from `smrt-core` or the `@smrt()` models, so the browser bundle stays thin; `showKeys` (default true) hides the raw key/package lines for end-user surfaces while keeping the hidden `featureKey` input; `FeatureSettingsRow` is structurally assignable to `FeatureSettingsView`.
 - Each row is its own `<form>`, so `formAction` gives a working screen with no client JS; `onSave` intercepts the submit instead and reads the row's values straight off the form. The global column is opt-in (`showGlobal` / `globalEditable`) because most apps have no platform-admin tier.
 - Two invariants the selects have to keep, both regression-tested. (1) The tenant column's *Default* option must never name the code default: the tenant scope inherits the global override and, with a `FeatureTenantHierarchyProvider`, ancestor tenants' overrides too, so `defaultEnabled` would tell an operator the opposite of what choosing it does. `inheritedOptionLabel()` names `FeatureSettingsView.inheritedEnabled` when the row carries it and says "Default (inherited)" otherwise; `FeatureSettingsService` sets it only where it is exactly knowable (no tenant override → inherited is the effective state), never derived from `globalEffect`. The global column does name the code default — nothing sits above global. (2) The rows remount on `contextKey ?? features`, so an unsaved choice cannot survive a reload or a tenant switch and be submitted against the new rows.
 - Writes validate the **scope shape** before the authorizer runs: `scopeType` must be `global` or `tenant`, a global write must use `GLOBAL_FEATURE_SCOPE_ID`, and a tenant id must be non-blank and already trimmed. A host authorizer cannot catch this — `scopeType: 'global'` with someone else's tenant id reads as an ordinary global write to an authorizer that only gates the global scope — and the resolver looks rows up by the exact `(featureKey, scopeType, scopeId)` triple, so a row written elsewhere is invisible state, not a setting.

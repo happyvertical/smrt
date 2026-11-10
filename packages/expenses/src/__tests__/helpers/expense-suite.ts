@@ -12,6 +12,7 @@ import { AssetCollection } from '@happyvertical/smrt-assets';
 import {
   ContractCollection,
   ContractLineItemCollection,
+  CustomerCollection,
   VendorCollection,
 } from '@happyvertical/smrt-commerce';
 import { GlobalInterceptors, SmrtObject } from '@happyvertical/smrt-core';
@@ -33,6 +34,8 @@ import {
 } from '../../types.js';
 import { computeContentSha256 } from '../../validation.js';
 import { defineFinancialFactsSuite } from './financial-facts-suite.js';
+import { defineRefundPositionSuite } from './refund-position-suite.js';
+import { defineReimbursementPositionSuite } from './reimbursement-position-suite.js';
 
 export const PROJECT = '@happyvertical/smrt-projects:Project';
 
@@ -59,8 +62,15 @@ export interface ExpenseWorld {
   expense(overrides?: ExpenseOptions): Promise<Saved<Expense>>;
   /** Create and save an asset. */
   asset(name?: string): Promise<{ id: string }>;
-  /** Create and save a purchase-order commitment. */
-  commitment(totalAmount: number, currency?: string): Promise<{ id: string }>;
+  /**
+   * Create and save a purchase-order commitment. Its total comes from its
+   * lines (money v2, #4021); `lines` splits it, defaulting to one line.
+   */
+  commitment(
+    totalAmount: number,
+    currency?: string,
+    lines?: readonly number[],
+  ): Promise<{ id: string; lineIds: string[] }>;
   /** Create and save a commerce vendor. */
   vendor(): Promise<{ id: string }>;
 }
@@ -108,16 +118,34 @@ export async function createWorld(
       await asset.save();
       return saved(asset);
     },
-    async commitment(totalAmount, currency = 'USD') {
+    async commitment(totalAmount, currency = 'USD', amounts = [totalAmount]) {
+      const vendors = await VendorCollection.create({ db });
+      const vendor = await vendors.create({ profileId: randomUUID() });
       const po = await contracts.create({
         _meta_type: 'PurchaseOrder',
-        totalAmount,
-        subtotal: totalAmount,
+        vendorId: vendor.id,
         currency,
         reference: `PO-${randomUUID().slice(0, 8)}`,
       } as never);
       await po.save();
-      return saved(po);
+      const { id } = saved(po);
+      const lineIds: string[] = [];
+      for (const [index, amount] of amounts.entries()) {
+        const line = await lines.create({
+          contractId: id,
+          description: `Line ${index + 1}`,
+          quantity: 1,
+          unitPrice: amount,
+        });
+        await line.save();
+        lineIds.push(saved(line).id);
+      }
+      const stored = await contracts.get({ id }, { cache: false });
+      if (stored?.totalAmount !== totalAmount)
+        throw new Error(
+          `commitment lines total ${stored?.totalAmount}, expected ${totalAmount}`,
+        );
+      return { id, lineIds };
     },
     async vendor() {
       const vendors = await VendorCollection.create({ db });
@@ -179,6 +207,8 @@ export function defineExpenseSuite(getDb: () => DatabaseInterface): void {
   });
 
   defineFinancialFactsSuite(() => world);
+  defineRefundPositionSuite(() => world);
+  defineReimbursementPositionSuite(() => world);
 
   describe('recording', () => {
     it('stores integer minor units, the incurred date, and recordedAt', async () => {
@@ -637,6 +667,22 @@ export function defineExpenseSuite(getDb: () => DatabaseInterface): void {
   });
 
   describe('commitment matching', () => {
+    it('rejects a sales order as an expense commitment', async () => {
+      await world.inTenant(async () => {
+        const customer = await (
+          await CustomerCollection.create({ db: world.db })
+        ).create({ profileId: randomUUID() });
+        const salesOrder = await world.contracts.create({
+          _meta_type: 'Order',
+          customerId: customer.id,
+        } as never);
+        await salesOrder.save();
+        await expect(
+          world.expense({ commitmentId: salesOrder.id }),
+        ).rejects.toMatchObject({ code: 'EXPENSE_COMMITMENT_MISMATCH' });
+      });
+    });
+
     it('leaves 3,600 open on a 4,600 award with 1,000 reviewed', async () => {
       await world.inTenant(async () => {
         const reviewer = randomUUID();
@@ -719,16 +765,8 @@ export function defineExpenseSuite(getDb: () => DatabaseInterface): void {
     it('draws down one line of a commitment', async () => {
       await world.inTenant(async () => {
         const reviewer = randomUUID();
-        const award = await world.commitment(460000);
-        const line = await world.lines.create({
-          contractId: award.id,
-          description: 'Framing',
-          quantity: 1.0,
-          unitPrice: 300000,
-          amount: 300000,
-        });
-        await line.save();
-        const lineId = saved(line).id;
+        const award = await world.commitment(460000, 'USD', [300000, 160000]);
+        const [lineId] = award.lineIds;
         const other = await world.commitment(1000);
 
         const actual = await world.expense({

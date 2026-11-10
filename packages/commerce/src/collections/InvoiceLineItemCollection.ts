@@ -3,13 +3,103 @@
  * @packageDocumentation
  */
 
-import { SmrtCollection } from '@happyvertical/smrt-core';
-import { queryGlobal, queryWithGlobals } from '@happyvertical/smrt-tenancy';
+import {
+  SmrtCollection,
+  type SmrtListOptions,
+  type SmrtObject,
+  type SmrtSelectedRow,
+  type SmrtSelectField,
+  type SmrtStiReadScope,
+  type SmrtWhereClause,
+} from '@happyvertical/smrt-core';
+import {
+  getTenantId,
+  queryGlobal,
+  queryWithGlobals,
+} from '@happyvertical/smrt-tenancy';
+import { DOCUMENT_MONEY_READ_REBIND } from '../document-money-internal.js';
 import { InvoiceLineItem } from '../models/InvoiceLineItem.js';
-import type { AccountingLineItemInput } from '../types/index.js';
+import { withTenantMoneyCollectionRead } from '../tenant-money-barrier.js';
+import { assertCommerceMoneySchemaCurrent } from '../upgrade/detect.js';
 
 export class InvoiceLineItemCollection extends SmrtCollection<InvoiceLineItem> {
   static readonly _itemClass = InvoiceLineItem;
+
+  private async withMoneyRead<T>(operation: () => Promise<T>): Promise<T> {
+    const rootDb = this.db;
+    const tenantId = getTenantId();
+    if (!tenantId) {
+      // Without a tenant, still refuse a database with old money storage.
+      await assertCommerceMoneySchemaCurrent(rootDb);
+      return operation();
+    }
+    const result = await withTenantMoneyCollectionRead(
+      rootDb,
+      tenantId,
+      (boundDb) => this.withDatabase(boundDb, operation),
+    );
+    if (result instanceof InvoiceLineItem)
+      result.rebindMoneyRead(DOCUMENT_MONEY_READ_REBIND, rootDb);
+    else if (Array.isArray(result))
+      for (const item of result)
+        if (item instanceof InvoiceLineItem)
+          item.rebindMoneyRead(DOCUMENT_MONEY_READ_REBIND, rootDb);
+    return result;
+  }
+
+  override async get(
+    filter: string | SmrtWhereClause<InvoiceLineItem>,
+    options: Parameters<SmrtCollection<InvoiceLineItem>['get']>[1] = {},
+  ): Promise<InvoiceLineItem | null> {
+    return this.withMoneyRead(() => super.get(filter, options));
+  }
+
+  override async list<
+    const Select extends readonly SmrtSelectField<InvoiceLineItem>[],
+  >(
+    options: Omit<SmrtListOptions<InvoiceLineItem>, 'select' | 'stiScope'> & {
+      select: Select;
+      include?: never;
+      stiScope: SmrtStiReadScope;
+    },
+  ): Promise<Record<string, unknown>[]>;
+  override async list<
+    const Select extends readonly SmrtSelectField<InvoiceLineItem>[],
+  >(
+    options: Omit<SmrtListOptions<InvoiceLineItem>, 'select' | 'stiScope'> & {
+      select: Select;
+      include?: never;
+      stiScope?: undefined;
+    },
+  ): Promise<SmrtSelectedRow<InvoiceLineItem, Select>[]>;
+  override async list(
+    options: Omit<SmrtListOptions<InvoiceLineItem>, 'select' | 'stiScope'> & {
+      select?: undefined;
+      stiScope: SmrtStiReadScope;
+    },
+  ): Promise<SmrtObject[]>;
+  override async list(options?: undefined): Promise<InvoiceLineItem[]>;
+  override async list(
+    options: Omit<SmrtListOptions<InvoiceLineItem>, 'select' | 'stiScope'> & {
+      select?: undefined;
+      stiScope?: undefined;
+    },
+  ): Promise<InvoiceLineItem[]>;
+  override async list(
+    options:
+      | (Omit<SmrtListOptions<InvoiceLineItem>, 'select'> & {
+          select?: undefined;
+        })
+      | undefined,
+  ): Promise<SmrtObject[]>;
+  override async list(
+    options: SmrtListOptions<InvoiceLineItem> | undefined,
+  ): Promise<SmrtObject[] | Record<string, unknown>[]>;
+  override async list(
+    options: SmrtListOptions<InvoiceLineItem> = {},
+  ): Promise<SmrtObject[] | Record<string, unknown>[]> {
+    return this.withMoneyRead(() => super.list(options));
+  }
 
   /**
    * Find line items by invoice
@@ -66,28 +156,6 @@ export class InvoiceLineItemCollection extends SmrtCollection<InvoiceLineItem> {
   }
 
   /**
-   * Calculate subtotal (before tax) for an invoice
-   *
-   * @param invoiceId - Invoice ID
-   * @returns Subtotal
-   */
-  async getSubtotalForInvoice(invoiceId: string): Promise<number> {
-    const lineItems = await this.findByInvoice(invoiceId);
-    return lineItems.reduce((sum, item) => sum + item.getSubtotal(), 0);
-  }
-
-  /**
-   * Calculate tax amount for an invoice
-   *
-   * @param invoiceId - Invoice ID
-   * @returns Tax amount
-   */
-  async getTaxForInvoice(invoiceId: string): Promise<number> {
-    const lineItems = await this.findByInvoice(invoiceId);
-    return lineItems.reduce((sum, item) => sum + item.getTaxAmount(), 0);
-  }
-
-  /**
    * Get the next sort order for an invoice
    *
    * @param invoiceId - Invoice ID
@@ -99,38 +167,6 @@ export class InvoiceLineItemCollection extends SmrtCollection<InvoiceLineItem> {
 
     const maxSortOrder = Math.max(...lineItems.map((item) => item.sortOrder));
     return maxSortOrder + 1;
-  }
-
-  /**
-   * Recalculate all line item amounts for an invoice
-   *
-   * @param invoiceId - Invoice ID
-   * @returns Updated line items
-   */
-  async recalculateAmounts(invoiceId: string): Promise<InvoiceLineItem[]> {
-    const lineItems = await this.findByInvoice(invoiceId);
-
-    for (const item of lineItems) {
-      item.amount = item.calculateAmount();
-    }
-
-    await Promise.all(lineItems.map((item) => item.save()));
-
-    return lineItems;
-  }
-
-  /**
-   * Convert line items to accounting format for SDK sync
-   *
-   * @param invoiceId - Invoice ID
-   * @returns Array of line items in accounting format, money in integer
-   *   minor units (`Invoice.toAccountingInput()` converts to major units)
-   */
-  async toAccountingLineItems(
-    invoiceId: string,
-  ): Promise<AccountingLineItemInput[]> {
-    const lineItems = await this.findByInvoice(invoiceId);
-    return lineItems.map((item) => item.toAccountingLineItem());
   }
 
   // ============================================================================

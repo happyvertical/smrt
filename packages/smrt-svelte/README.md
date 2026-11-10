@@ -10,6 +10,8 @@ typed intent and can be async—rejections restore the previous view. Set
 `optimistic` to present controlled moves while persistence is pending.
 Set `allowSameColumnReorder={false}` when an adapter persists only lane/status
 transitions rather than a position within a lane.
+Lane width defaults to `min(18rem, 82vw)`; set the `laneWidth` prop (any CSS
+length) or the `--smrt-board-lane-width` custom property to change it.
 
 ```svelte
 <script lang="ts">
@@ -561,6 +563,11 @@ keys the shell renders exactly as before.
 </AdminShell>
 ```
 
+`PhoneBottomBar` items take `icon` as a component, or as an icon name string
+(`iconName` is the same). A built-in shell icon name draws that icon; any other
+name goes to the bar's `iconComponent` prop with `size`, as `TenantNav`'s
+`iconComponent` does.
+
 - **`header`** is a full-width row above every edge (`#smrt-admin-shell-header`,
   `--smrt-admin-shell-header-size`, default 3.5rem). On phones it is replaced
   by `phoneTopBar` when one is given.
@@ -708,13 +715,13 @@ importable, even if it appears in `dist/`.
 | `@happyvertical/smrt-svelte/forms` | Form inputs (TextInput, Select, MoneyInput, DateTimeInput, Toggle, etc.) |
 | `@happyvertical/smrt-svelte/import-export` | `ImportExport` (CSV/TSV import with column mapping, validation preview and error report; export with column selection), `createCollectionImportExport`, `fieldsFromCollectionDefinition`, and the pure CSV layer |
 | `@happyvertical/smrt-svelte/settings` | Server-paged settings search, selection, and list/detail layout (`SettingsCatalog`, `paginateSettingsCatalog`) |
-| `@happyvertical/smrt-svelte/screens` | List, view, create and edit screens derived from a generated web definition and resolved field policy (`RecipeScreens`, `ListScreen`, `DetailScreen`, `EditForm`) |
+| `@happyvertical/smrt-svelte/screens` | List, view, create and edit screens derived from a generated web definition and resolved field policy (`RecipeScreens`, `ListScreen`, `RecordScreen`, `DetailScreen`, `EditForm`); `RecordScreen` is the record view with a customizable related-records overview and inline (desktop) or sheet (phone) editing, `deriveScreenRelations` its relation rule |
 | `@happyvertical/smrt-svelte/workspace` | AdminShell, ShellState, tenant nav, focus tools, settings, activities, and system/app panels |
 | `@happyvertical/smrt-svelte/app` | `AppShell` (Provider + themes + AdminShell + nav/dock slots, `dockToggles` buttons and host `slots` for the header/footer/sidebar regions), `OwnerSetupForm` (first-run owner setup), `ShellSettingsPage`, `RuntimeDiagnosticsWebMcp` |
 | `@happyvertical/smrt-svelte/app/runtime-diagnostics` | Svelte-free diagnostics WebMCP registration and its tool name/endpoint constants, importable from server routes |
 | `@happyvertical/smrt-svelte/command-palette` | Global search and command palette: `CommandPalette` (shell-slot trigger plus dialog), `createCommandPalette`, the provider contract, and the navigation and manifest-driven model providers |
 | `@happyvertical/smrt-svelte/overview` | Customizable overview surfaces: `OverviewGrid` (flow grid with keyboard reorder and resize), `createOverview` (host-owned controller), the widget registry (`registerWidget`), `registerCoreWidgets` (metric, chart, record list, shortcuts, note) and `shortcutsFromNav` |
-| `@happyvertical/smrt-svelte/overview/server` | Svelte-free half of the overview surface: the data model (`resolveOverview`, `checkOverviewOverride`), option-schema validation, `WidgetRegistry`, and `loadOverview` for a page's server load |
+| `@happyvertical/smrt-svelte/overview/server` | Svelte-free half of the overview surface: the data model (`resolveOverview`, `checkOverviewOverride`), option-schema validation, `WidgetRegistry`, and `loadOverview` for a page's server load; `recordOverview` / `recordOverviewId` (the record view's default overview, per model kind) |
 | `@happyvertical/smrt-svelte/workspace/legacy` | Opt-in ToolsDock compatibility surface for applications migrating to AdminShell |
 | `@happyvertical/smrt-svelte/workspace/server` | Server-side workspace helpers (Node only) |
 | `@happyvertical/smrt-svelte/workspace/live` | `systemFeed` — the AdminShell system scope (jobs/schedules/dispatch) polled from an app status endpoint; deliberately carries no `smrt-web` dependency |

@@ -27,6 +27,7 @@ let {
   label,
   collapsible = false,
   allowSameColumnReorder = true,
+  laneWidth,
   optimistic = false,
   onselect,
   onmove,
@@ -212,7 +213,8 @@ function toggleColumn(columnId: string): void {
 }
 </script>
 
-<section bind:this={root} class="smrt-board" aria-label={label ?? t(M['ui.board.label'])} aria-roledescription="board" data-smrt-component="Board">
+<section bind:this={root} class="smrt-board" aria-label={label ?? t(M['ui.board.label'])} aria-roledescription="board" style:--smrt-board-lane-width={laneWidth}
+  data-smrt-component="Board">
   <div class="smrt-board__lanes">
     {#each columns as column, columnIndex (column.id)}
       {@const items = cardsInColumn(column.id)}
@@ -295,7 +297,7 @@ function toggleColumn(columnId: string): void {
 @layer smrt.theme {
   .smrt-board { min-width: 0; }
   .smrt-board__lanes { display: flex; gap: var(--smrt-spacing-4); overflow-x: auto; overscroll-behavior-x: contain; padding-block-end: var(--smrt-spacing-2); }
-  .smrt-board__lane { display: grid; grid-template-rows: auto minmax(0, 1fr); flex: 0 0 min(18rem, 82vw); min-block-size: 12rem; max-block-size: min(42rem, 70vh); border: var(--smrt-hairline); border-radius: var(--smrt-radius-md); background: var(--smrt-color-surface-container); overflow: hidden; }
+  .smrt-board__lane { display: grid; grid-template-rows: auto minmax(0, 1fr); flex: 0 0 var(--smrt-board-lane-width, min(18rem, 82vw)); min-block-size: 12rem; max-block-size: min(42rem, 70vh); border: var(--smrt-hairline); border-radius: var(--smrt-radius-md); background: var(--smrt-color-surface-container); overflow: hidden; }
   .smrt-board__lane--disabled { opacity: 0.6; }
   .smrt-board__header { display: flex; align-items: center; justify-content: space-between; gap: var(--smrt-spacing-2); min-block-size: 2.75rem; padding: 0 var(--smrt-spacing-3); border-block-end: var(--smrt-hairline); }
   .smrt-board__title, .smrt-board__collapse { display: flex; align-items: center; justify-content: space-between; gap: var(--smrt-spacing-2); inline-size: 100%; color: inherit; font: var(--smrt-typography-label-large-font); }

@@ -15,6 +15,30 @@ Attendance services accept trusted session actors, serialize mutations per
 actor, and bind every write to one executor. The new tables use non-null unique
 open slots, not nullable unique keys. A linked entry is draft evidence, and
 rollups must deduplicate `AttendancePunch.serviceTimeEntryId`.
+`AttendanceSegment` (`attendance_segments`) is a running work interval inside a
+punch: queryable `workRef*`/`taskRef*`/`kind` columns, one open per punch
+(`openSlot`), closed by `startBreak`/`punchOut`/`autoClose`, never overlapping
+breaks or each other, immutable once closed. It creates no `ServiceTimeEntry`.
+Closed punches, breaks and segments change only through
+`AttendanceCorrectionService` (`attendance/correction-service.ts`), which sets a
+per-instance capability (`attendance/write.ts`, not exported) that lifts the
+models' closed-interval checks for one save, validates the whole punch layout,
+recomputes durations and appends an `AttendanceCorrection` (append-only ledger,
+no generated operations; only a first acknowledgement by the subject may update
+a row). An open punch accepts only a `startedAt` correction, closed breaks/segments inside it, and `addPunch({ open: true })`; the open break/segment and closing stay `AttendanceService`'s. Never export `write.ts`. Punch `source`/`deviceRef*` and break `kind` are immutable except through corrections; `autoCloseReason` is write-once via `persistAutoClose`. A confirmed `PeriodTimecard` is honoured by the
+opt-in `confirmedTimecardGuard` (`rollup/correction-guard.ts`), which refuses
+while a card is submitted or confirmed. `PeriodRollupService.reopen()` returns
+such a card to `open` and appends a `TimecardReopening` (`timecard_reopenings`,
+append-only, service-only via `rollup/write.ts`); `submit()` is the optional
+open -> submitted step (`requireSubmission` makes it mandatory) (#3950).
+`PeriodRollupOptions.attribution` (`'clip'` default | `'start'`) decides crossing
+sources: `'start'` keeps a punch (breaks and segments included) or bounded entry
+whole in the period containing its start, unclipped, and excludes it from the
+next (`attributeSource` in `rollup/calculation.ts`) (#4028).
+Segment transitions live in `attendance/segments.ts`; compose them with other
+attendance writes via `AttendanceService.withTransaction`. Any new attendance
+table must be added to the `includeObjects` lists in the `*.optional.test.ts`
+files.
 
 ## Models
 
@@ -27,6 +51,44 @@ rollups must deduplicate `AttendancePunch.serviceTimeEntryId`.
 `ServiceEvidenceService` records, submits, approves (writing both snapshots
 through a `ServiceCommercialResolver`), and corrects. `smrt-projects` supplies
 `SubscriptionServiceCommercialResolver` for #1925 pricing.
+
+## Generated write actions (#4001)
+
+Generated CRUD writes stay closed. `ServiceTimeEntryCollection` hosts the only
+generated writes, `record` / `submit` / `approve` (`POST
+/servicetimeentries/<action>`, body `{ entryId }` for submit/approve), on REST
+only; MCP and CLI stay read-only until per-operation MCP authorization (#4004).
+A consumer that closes a model also closes its collection's generated CRUD;
+`ServiceTimeEntryCollection`'s own `forWork` / `pendingApproval` stay open
+until the collection class is closed with `registerOverride` too. Surface tests
+match `<model>collection_` tool names as well as `<model>_` (#3468).
+`services/time-entry-actions.ts` delegates each to `ServiceEvidenceService`, so
+the trail and snapshots are set in one place. `services/action-principal.ts`
+takes identity from the tenancy ALS, then the smrt-users session ALS, never the
+body; authorizes `servicetimeentries.<action>` with `assertOperationPermission`
+(system context never bypasses; `approve` refuses super-admin bypass); and
+stamps the user's linked profile. Only the participant records/submits their
+own time unless the caller holds `approve`. `approve` prices with the host's
+`setServiceTimeEntryCommercialResolver()` — a factory called per request with
+the collection's options, so a writing resolver shares the request executor;
+without one it is a 409 and writes nothing. The runtime REST transport gates
+a collection-hosted action on the ITEM's `api.include`, SvelteKit on the
+collection's, so both list the actions;
+a consumer closing them overrides both registrations. The collection and both
+snapshot collections carry their own `@smrt()` surface: undecorated, they
+published generated create/update/delete MCP tools. `reject` waits for #3994.
+
+## Recipe
+
+`src/recipes.ts` declares one `SmrtRecipe`, `timesheets.time-entries`
+(label "Time entries", section `work`), emitted into the built
+`manifest.json` and `smrt-knowledge.json` `recipes`. It shows
+`ServiceTimeEntry` alone, with the generic work reference, evidence, agent
+and approval-trail fields hidden; attendance and rollup models stay out of
+it. `status` and its trail are hidden and locked, and the help never says to
+set them: `save()` accepts a bare transition, so submit and approve must go
+through `ServiceEvidenceService` (the recipe declares no surface for that). Help lives in `src/time-entries.recipe.md` (#3591); keep it and the recipe
+in plain language. See [core recipes](../core/agents/recipes.md).
 
 ## Invariants
 
@@ -122,3 +184,12 @@ Layer 3 lives under `src/rollup/` and the `./rollup` subpath. See
 confirmation, attributed adjustments, isolation, and transaction contracts.
 Timecards and adjustments have closed generated surfaces and service-only
 model writes; never bypass the instance capability with generic persistence.
+Payroll and jurisdiction policy are not built in: a consumer supplies a `PeriodRulesResolver`, and this package records time evidence and snapshots, not payroll.
+
+Replay hashes the tap AS SENT (action, device `at`, paid, work, and `source`/`device`/`kind` only when present, so older receipts still match) so retries match;
+`replay(taps, { resolveAt, now, refusal })` only changes the stored time, reason and the
+punch's `recordedOffline`/`reviewRequired` (both default true and stay set across
+later taps; false never clears an earlier flag). A reviewed correction clears
+`reviewRequired`. Never hash the resolved time. Work actions (`startWork`, `switchWork`,
+`stopWork`, `resumeWork`) run in the tap's transaction via `apply()`. Refusals store
+`code` from `AttendanceConflict.code`; give new conflicts a code.

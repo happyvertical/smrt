@@ -5,6 +5,7 @@ import {
   field,
   foreignKey,
   SmrtObject,
+  type SmrtSaveOptions,
   smrt,
 } from '@happyvertical/smrt-core';
 import { TenantScoped, tenantId } from '@happyvertical/smrt-tenancy';
@@ -132,7 +133,7 @@ export class ExecutedAgreement extends SmrtObject {
     );
   }
 
-  override async save(): Promise<this> {
+  override async save(options?: SmrtSaveOptions): Promise<this> {
     const captured = persistedAgreementState.get(this);
     if (captured !== undefined && captured !== this.serializeState()) {
       throw new Error(
@@ -140,7 +141,7 @@ export class ExecutedAgreement extends SmrtObject {
       );
     }
     if (captured === undefined && !this.isPersisted) this.requireInsertOnSave();
-    const result = (await super.save()) as this;
+    const result = (await super.save(options)) as this;
     persistedAgreementState.set(this, this.serializeState());
     return result;
   }

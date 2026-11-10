@@ -1,5 +1,18 @@
 # s-m-r-t SvelteKit app
 
+<!-- smrt:agents:begin -->
+## smrt framework
+
+- Framework reference: `.agents/smrt-framework.md`
+- Intent index: `.agents/smrt-knowledge/intents/index.md`
+- Before adding infrastructure, utility or integration code, read the intent index.
+- If smrt has the home package but lacks the behaviour, or lacks it entirely, file an issue on happyvertical/smrt and mark any local shim temporary: framework first, no glue.
+- Refresh this block and the references: `smrt docs:agents`.
+- Check for duplicated capability: `smrt-dev-mcp review --directory . --format summary`.
+
+_Generated; edit outside the markers only. Text between them is replaced on refresh._
+<!-- smrt:agents:end -->
+
 This project uses s-m-r-t objects to generate REST routes, CLI commands, MCP
 tools, WebMCP definitions, and agent/developer knowledge artifacts.
 
@@ -67,6 +80,12 @@ tools, WebMCP definitions, and agent/developer knowledge artifacts.
   Keep the guard in place for SSR and seed live collections with SSR
   `initialData`.
 - Do not enable knowledge HTTP routes in production without explicit admin auth.
+- `compose.yaml` is the deployment declaration: its `x-happyvertical` fields
+  (`role`, `health`, `binding`, top-level `migrate`) are what a hosting
+  platform that implements the contract reads and what
+  `smrt deploy:chart-values` renders. Keep them when editing services, keep
+  `entrypoint` equal to the image's own (the chart replaces it), use no `$`
+  variables in `command`, and run `pnpm deploy:check` after any Compose change.
 - Run task and schedule workers as separate deployed processes. The worker
   imports `.smrt/runtime/register.js` (compiled by `pnpm build`) before any
   runner starts, so jobs can target this app's own `@smrt()` objects; keep that

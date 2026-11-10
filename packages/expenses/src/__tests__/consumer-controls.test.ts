@@ -60,10 +60,23 @@ describe('consumer controls', () => {
   });
 
   describe('generated surface is closed', () => {
-    it('declares no API, MCP, or CLI operation', () => {
+    it('declares no CRUD, MCP, or CLI operation; REST carries only the service-backed actions', () => {
+      // #4001: the guarded actions hosted on ExpenseCollection. The runtime
+      // REST transport gates them on the item allowlist too.
+      const actions = [
+        'record',
+        'attachReceipt',
+        'recordReview',
+        'recordReimbursement',
+      ];
       for (const name of [EXPENSE, RECEIPT, ...COLLECTIONS]) {
         const config = ObjectRegistry.getConfig(name);
-        expect(config.api).toEqual({ include: [] });
+        const opensActions =
+          name === EXPENSE ||
+          name === '@happyvertical/smrt-expenses:ExpenseCollection';
+        expect(config.api, name).toEqual({
+          include: opensActions ? actions : [],
+        });
         expect(config.mcp).toEqual({ include: [] });
         expect(config.cli).toBe(false);
       }

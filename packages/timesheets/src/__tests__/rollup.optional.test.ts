@@ -15,10 +15,13 @@ if (isPostgresAvailable()) {
         includeObjects: [
           'PeriodTimecard',
           'TimecardAdjustment',
+          'TimecardReopening',
           'ServiceTimeEntry',
           'AttendancePunch',
           'AttendanceBreak',
+          'AttendanceSegment',
           'AttendanceReplay',
+          'AttendanceCorrection',
         ],
       });
       if (isolated.config.type !== 'postgres')

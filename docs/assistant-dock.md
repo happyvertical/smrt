@@ -200,14 +200,30 @@ Refusals are JSON `{ error, code }` with a user-safe `error`.
   (`agentId`, default `smrt-assistant`, session key `assistant-dock`). A
   thread is served only when it lives in that session's room, so another
   member's thread, another tenant's thread, or another room the actor belongs
-  to answers 404. Reads never create a session.
+  to answers 404. Reads never create a session. A host whose threads already
+  live in another session sets `sessionKey` on `mountAssistantRoutes`: `null`
+  adopts the actor's unkeyed session (the one `createAgentSession` opens with
+  no `sessionKey`), a string adopts the session stored under that key. The key
+  is matched exactly and new threads are created in the adopted session;
+  sessions under other keys (including the default) are no longer listed.
+- **Request context.** A send or resume body may carry `context`, a plain JSON
+  object of at most 8 KiB (else 400 `invalid_context`), handed to the
+  per-request callbacks (`allowedTools`, `extraTools`, `systemPrompt`, ...) as
+  `AssistantRequestContext.requestContext`. It is untrusted input: use it to
+  narrow what the turn sees (e.g. the surfaces the page mounted), never to
+  grant. `createAssistantHttpTransport({ context })` sends it (an object, or a
+  function read per request).
 - **Turns.** A send stores the user message (`ChatService.sendMessage`, with
   `clientRequestId` in `metadata`) and runs `runAssistantTurn`, whose reply is
   authored through the agent bridge. `ai` is a client or a per-turn factory;
   omitted, it is the `smrt.config` `ai` block through the shared resolver.
-  A failing factory, or no configured provider
-  (`AIProviderNotConfiguredError`, which names variables, never values, and
-  goes only to `onError`), answers 503 before anything is written. Tools are
+  A failing factory answers 503 `assistant_unavailable` before anything is
+  written. No configured provider (`AIProviderNotConfiguredError`, which
+  names variables, never values, and goes only to `onError`) or a principal
+  whose AI is off (`AI_UNAVAILABLE`, #4757) answers 503 `ai_unavailable` with
+  the structured `unavailable` status instead
+  ([chat ai-unavailable](../packages/chat/agents/ai-unavailable.md)); pass the
+  dock `aiSettingsHref` to render "AI is off" with a settings link. Tools are
   fail-closed: `allowedTools` (absent = none) gates `extraTools`, `tools` and
   the action adapter, and every tool runs under `executeAsPrincipal`. Without
   `tools`, the route offers the manifest operations `allowedTools` names
@@ -678,6 +694,32 @@ the output inside that message's own `MessageBubble`, below its text:
 Validate the payload's shape in the snippet, and render it with ordinary
 Svelte markup, never `{@html}`.
 
+### Rendering assistant answers: `messageFormat` and `renderMessage` (#4505)
+
+Assistant text renders verbatim by default (`messageFormat="text"`). Pass
+`messageFormat="markdown"` to render stored assistant messages and the
+streaming reply through `renderAssistantMarkdown` (`assistant-markdown.ts`):
+paragraphs with single-newline breaks, `#`–`###` headings, one-level `-`/`*`/`+`
+and numbered lists, fenced and inline code, `**bold**`/`__bold__`,
+`*italic*`/`_italic_`, and `[text](https://…)` links. It escapes every input
+character first, then emits only that fixed tag set; a link needs an absolute
+`http:`/`https:` URL and gets `target="_blank" rel="noopener noreferrer"`,
+anything else stays literal text. Its output is the only `{@html}` in the
+dock. User, system and tool messages stay plain text.
+
+A host with its own renderer passes a `renderMessage` snippet instead; it
+wins over `messageFormat` and receives `{ message, streaming }`. While a reply
+streams, `message` is a stand-in (`id: 'assistant-dock-streaming'`) holding
+the text so far:
+
+```svelte
+<AssistantDock {transport} {registry}>
+  {#snippet renderMessage({ message, streaming })}
+    <MyMarkdown source={message.content} live={streaming} />
+  {/snippet}
+</AssistantDock>
+```
+
 ### Proposing an action and observing the result (#2989)
 
 The dock creates its own controller. `oncontroller` hands that controller
@@ -884,8 +926,21 @@ assistant works and show a status instead (Anytown's watch mode).
   `maxTurnMs` besides `maxSteps`; all three span every browser round trip
   (the continuation carries `tokens` and `startedAt`). When one runs out the
   model gets a last round without tools and the turn ends with
-  `stoppedReason: 'budget'` (or `'max_steps'`). `describeTool(name, args)`
-  also gets a call's arguments, so a step can say "Opening Events".
+  `stoppedReason: 'budget'` (or `'max_steps'`). A read-only call repeated
+  `maxRepeatedCalls` times (default 2) ends the same way with
+  `'repeated_calls'` (#4391). `describeTool(name, args)` also gets a call's
+  arguments, so a step can say "Opening Events".
+- **No answer (server, #4379).** A blank final reply is retried once
+  without tools. If it stays blank the turn ends `stoppedReason: 'empty'`;
+  a timed-out model call (`requestTimeoutMs`, or the provider's default)
+  ends it `'timeout'`. Both store `emptyAnswerFallback` (default
+  `DEFAULT_EMPTY_ANSWER_FALLBACK`) as the reply, never `'Done.'`.   A model call that throws (`AIError` `API_ERROR`, a 5xx, a dropped
+  connection) is answered only when the host sets `providerErrorFallback`
+  (text, or `(code, error) => text | undefined`): the text is stored with
+  `metadata.fallback: 'provider_error'` and the turn ends
+  `stoppedReason: 'provider_error'`; unset, the turn emits an `error` event and
+  stores nothing. See
+  [packages/chat/agents/tool-loop.md](../packages/chat/agents/tool-loop.md).
 - **Settle (browser).** After a step's browser tools ran, the dock waits before
   resuming: the host `settle` hook (e.g. "SvelteKit is no longer
   navigating"), navigations tracked on the registry (`registerLinkSurface`
@@ -899,7 +954,8 @@ assistant works and show a status instead (Anytown's watch mode).
   `state` is `running`, `paused`, `waiting`, `done`, `failed` or `cancelled`.
   `waitingFor.kind` says what the person is needed for: `confirm` (a call
   waits for Allow), `choice` / `review` (a host hold, a previewed action, or
-  a staged proposal-only write), or `continue` (a step or budget limit).
+  a staged proposal-only write), or `continue` (a step or budget limit;
+  never `repeated_calls`, where another leg would only repeat the call).
   `acknowledgeRun()` clears the staged/limit waits once the person has seen
   them; `dismissRun()` forgets a finished run.
 - **Pause.** `pauseRun()` holds the next step (before the page tools run and
@@ -1005,3 +1061,16 @@ cost something); only they dismiss it.
    again, it gets a fresh idempotency key. Retaining unknown outcomes per
    context without leaking them across the swap boundary needs its own
    design.
+
+## Tool result components
+
+A trusted host can pass `toolResultComponent(message)` to `AssistantDock`.
+Return a Svelte component accepting `{ message: AssistantMessage }` for a
+recognized tool result, or `undefined` to keep the ordinary message text.
+Only `role: 'tool'` messages are eligible. The HTTP transport preserves the
+server's `toolCallData` for this selection; unknown payloads remain inert data.
+The existing `toolCall` snippet still renders additional message details.
+
+This is a rendering seam, not an execution or approval API. A domain component
+must call its own authenticated server endpoint from a human action; the host
+must never interpret a model-supplied `confirmed` flag as approval.

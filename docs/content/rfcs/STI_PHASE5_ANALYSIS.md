@@ -634,7 +634,7 @@ if (missing.length > 0) {
 ### 2. Updates to Existing Documentation
 
 #### In `CLAUDE.md` - Add STI Section
-```markdown
+````markdown
 ## Single Table Inheritance (STI)
 
 ### What is STI?
@@ -692,7 +692,7 @@ const largeGatherings = await eventCollection.list({
 ### See Also
 - [STI Complete Guide](./docs/STI.md)
 - [Meta Fields Documentation](./docs/META-FIELDS.md)
-```
+````
 
 #### In `README.md` - Add STI Section
 Short introduction + link to full guide

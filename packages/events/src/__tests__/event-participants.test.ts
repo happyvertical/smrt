@@ -8,19 +8,19 @@
  * Real temp-file SQLite (file:tmpdir), no mocks.
  */
 
-import { randomUUID } from 'node:crypto';
-import { tmpdir } from 'node:os';
-import { join } from 'node:path';
-import { describe, expect, it } from 'vitest';
+import { afterEach, describe, expect, it } from 'vitest';
 import {
   EventCollection,
   EventParticipant,
   EventParticipantCollection,
   EventTypeCollection,
 } from '../index.js';
+import { createOwnedSqliteFixtures } from './owned-sqlite-fixtures.js';
+
+const fixtures = createOwnedSqliteFixtures();
 
 function getTestDbUrl(name: string): string {
-  return `file:${join(tmpdir(), `${name}-${randomUUID()}.db`)}`;
+  return fixtures.url(name);
 }
 
 async function setup(name: string) {
@@ -28,9 +28,11 @@ async function setup(name: string) {
   const participants = await EventParticipantCollection.create({
     db: { type: 'sqlite', url: dbUrl },
   });
+  fixtures.track(participants.db);
   const events = await EventCollection.create({
     db: { type: 'sqlite', url: dbUrl },
   });
+  fixtures.track(events.db);
   for (const eventId of [
     'e',
     'e1',
@@ -48,6 +50,8 @@ async function setup(name: string) {
   }
   return { dbUrl, participants, events };
 }
+
+afterEach(() => fixtures.cleanup());
 
 describe('EventParticipant model', () => {
   it('persists role, placement, and group fields', async () => {
@@ -287,12 +291,15 @@ describe('EventParticipantCollection', () => {
     const participants = await EventParticipantCollection.create({
       db: { type: 'sqlite', url: dbUrl },
     });
+    fixtures.track(participants.db);
     const events = await EventCollection.create({
       db: { type: 'sqlite', url: dbUrl },
     });
+    fixtures.track(events.db);
     const types = await EventTypeCollection.create({
       db: { type: 'sqlite', url: dbUrl },
     });
+    fixtures.track(types.db);
     await types.create({ id: 'type-basketball', name: 'Basketball' });
     await types.create({ id: 'type-soccer', name: 'Soccer' });
 

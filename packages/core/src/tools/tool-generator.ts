@@ -115,8 +115,12 @@ export function convertTypeToJsonSchema(tsType: string): JsonSchema {
     };
   }
 
-  // Object types - basic support
-  if (cleanType.startsWith('{') && cleanType.endsWith('}')) {
+  // Object types - basic support. The scanner records an inline literal
+  // (and an alias to one) as the bare keyword `object` (#4327).
+  if (
+    cleanType === 'object' ||
+    (cleanType.startsWith('{') && cleanType.endsWith('}'))
+  ) {
     return { type: 'object' };
   }
 
@@ -197,7 +201,13 @@ export function generateToolFromMethod(
 
   for (const param of method.parameters) {
     // Convert parameter type to JSON Schema
-    properties[param.name] = convertTypeToJsonSchema(param.type);
+    // A same-module alias name advertises its target type; a cyclic alias
+    // gets no type constraint rather than the unknown-name guess (#4327).
+    // Mirrors `declaredParameterType()`, which lives in custom-action.ts and
+    // imports this module.
+    properties[param.name] = param.aliasUnresolved
+      ? { description: `Unresolved TypeScript type alias: ${param.type}` }
+      : convertTypeToJsonSchema(param.resolvedType ?? param.type);
 
     // Add to required if not optional
     if (!param.optional) {

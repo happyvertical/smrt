@@ -1,3 +1,5 @@
+> Fork or clone contributors without the control-plane skills: follow [`smrt-contribute`](.agents/skills/smrt-contribute/SKILL.md), not the maintainer lifecycle below.
+
 <!-- hv-managed-policy:start revision=1.0.0 sha256=2c2f4d048293cab2fc7f8c636eee474c0386c13a9c7bbf2c535c5ada47d1d6e5 -->
 
 ## Shared development kernel
@@ -40,22 +42,17 @@ never the answer, and a reflex issue usually is not either.
   under edit; here it is expected. Noticing and leaving it is the thing this
   section forbids. Ledger it under `Drive-by fixes` with its files and commit.
 - **Outside that envelope, the kernel routes to the patch train or the tracker,
-  and this section does not change that.** What it adds is a burden of proof:
-  a tracker issue must name the specific reason the work cannot ship in the
-  branch that found it, in the issue. "Out of scope" is not a reason; "needs a
-  migration window", "changes a published contract", or "the design decision is
-  someone else's" are. Issue proliferation is not thoroughness — it is
-  unreviewed debt plus the cost of rediscovering the context — so an issue you
-  cannot justify in one sentence is a fix you should be making.
+  and this section does not change that.** It adds a burden of proof: a tracker
+  issue must name the specific reason the work cannot ship in the branch that
+  found it. "Out of scope" is not a reason; "needs a migration window", "changes
+  a published contract", or "the design decision is someone else's" are. An
+  issue you cannot justify in one sentence is a fix you should be making.
 - **This file grants no exception to the bound above, and cannot.** The kernel
-  is precedence-bound — a repository instruction may add stricter rules, never
-  weaker ones — and a task or issue instruction is bound the same way, so
-  neither this file nor an in-session request can raise the ten-line envelope.
-  An owner who overrides that routing is acting outside the kernel, not under a
-  rule this file supplies; when it happens, log the override and its scope in
-  the PR body next to the commit it covers so the exception is auditable rather
-  than invisible. Making it the standing default means changing the
-  control-plane kernel, which is the only place with the precedence to do it.
+  is precedence-bound: a repository, task, or issue instruction may add
+  stricter rules, never weaker ones, so none can raise the ten-line envelope.
+  An owner who overrides that routing is acting outside the kernel; log the
+  override and its scope in the PR body next to the commit it covers. Making it
+  the standing default means changing the control-plane kernel.
 
 pnpm/TypeScript monorepo: `@smrt()` business objects generate persistence,
 REST, CLI, MCP, and AI operations. Read the affected package's `AGENTS.md`;
@@ -64,20 +61,18 @@ use [CONTEXT-MAP.md](CONTEXT-MAP.md) for cross-package orientation.
 ## Validation
 
 Use Node/pnpm versions from `package.json`. Install with `pnpm install`, then
-`pnpm build`. Start with package checks, then relevant root checks:
+`pnpm build`. Package checks first, then root checks:
 `pnpm test`, `pnpm typecheck`, `pnpm lint`, `pnpm format-check`,
-`pnpm knowledge:check --strict --format markdown`, and `pnpm audit:policy`.
-`pnpm lint` runs Biome directly (`biome ci`, pinned to CI's exact version,
-#2710) and the `--smrt-*` gate (#3822) rather than through Turbo — no package defines its own `lint` or
-`format-check` script (see [standards](docs/content/standards.md));
-`pnpm format-check` is the same check under its documented name.
+`pnpm knowledge:check --strict --format markdown`, `pnpm audit:policy`, and
+`pnpm check:node-roots` (built model roots load under plain Node, #4219;
+allow-list in its root `package.json` script).
+`pnpm lint`/`pnpm format-check` run Biome directly (`biome ci`, CI-pinned,
+#2710) plus the `--smrt-*` gate (#3822), not through Turbo; no package defines
+its own `lint`/`format-check` script.
 [TESTING_STANDARD.md](TESTING_STANDARD.md) defines package release gates.
 
-SMRT tests require `smrtVitestPlugin()`. Restart Vitest after adding decorated
-classes. Rebuild core after scanner/schema-generator edits: the Vite plugin
-consumes deterministic `dist/` artifacts. Vite 8 requires Oxc legacy decorators
-(see core guidance). Svelte subpaths require `svelte-check`, not just `tsc`;
-use named `$props()` interfaces to avoid recursive inline intersections.
+Test and build gotchas (Vitest plugin, Oxc decorators, `svelte-check`):
+[agents/root-gotchas.md](agents/root-gotchas.md).
 
 ## Cross-package invariants
 
@@ -116,6 +111,11 @@ is additive. `pnpm check:agents-chain` checks the 32 KB cap.
 [WORKFLOW.md](WORKFLOW.md) routes to shared lifecycle skills. This project's
 GitHub tracker uses `implement`, `claim-issue`, `review-cycle`, `ship`, and
 `resolve`; Work/buzz variants require an explicitly selected Work tracker.
+
+Before adding a helper, read the [intent index](docs/knowledge/intents/index.md) and run
+`smrt-dev-mcp review --directory <pkg> --format summary`. A capability belongs in its
+owning package or the SDK, never a downstream helper: add it there or file a
+framework issue.
 
 `smrt knowledge:review-context` / `knowledge:architecture-context` provide
 scoped summaries; read the selected references on demand. Runtime manifests

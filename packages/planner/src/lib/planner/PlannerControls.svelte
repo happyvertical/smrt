@@ -1,0 +1,322 @@
+<script lang="ts">
+import { Provider, tryGetAppStateContext } from '@happyvertical/smrt-svelte';
+import {
+  ShellLayoutController,
+  ShellLayoutEditor,
+  useShellLayout,
+} from '@happyvertical/smrt-svelte/workspace';
+import { Tabs } from '@happyvertical/smrt-ui';
+import { onMount, tick, untrack } from 'svelte';
+import type { BrowserAssistantTransport } from '../assistant/transport.ts';
+import CookbooksPanel from '../components/CookbooksPanel.svelte';
+import ExportPanel from '../components/ExportPanel.svelte';
+import FeaturesPanel from '../components/FeaturesPanel.svelte';
+import RecipeCards from '../components/RecipeCards.svelte';
+import SettingsPanel from '../components/SettingsPanel.svelte';
+import SpecsPanel from '../components/SpecsPanel.svelte';
+import ThemeSection from '../components/ThemeSection.svelte';
+import { cookbookStore } from '../cookbook/store.svelte.ts';
+import { provideDataSource, tryUseDataSource } from '../data/context.ts';
+import { createPlannerDataSource } from '../data/planner-source.ts';
+import { cookbookNavGroups } from '../library/menu.ts';
+import { recipeState } from '../recipes/state.svelte.ts';
+import { PLANNER_TAB_IDS, type PlannerTabId } from './commands/index.ts';
+import { NAV_GROUP_TABS, navGroupOf } from './header-nav.ts';
+import { plannerController } from './instance.ts';
+import PlannerLifecycle from './PlannerLifecycle.svelte';
+import { plannerTab } from './tab.svelte.ts';
+import type { PlannerProps } from './types.ts';
+import { workspacePersistence } from './workspace.svelte.ts';
+
+/**
+ * The planner's customization controls alone (Cookbooks, Recipes, Theme,
+ * Settings, Export as tabs), for a host that owns the surrounding shell; the
+ * complete `Planner` mounts the same inside its own shell.
+ */
+interface PlannerControlsProps extends PlannerProps {
+  /**
+   * `true` when the complete `Planner` renders these: its own lifecycle
+   * already configured the controller, persistence and inference, so the
+   * controls do not mount a second one.
+   */
+  managedByParent?: boolean;
+  nativeAssistant?: BrowserAssistantTransport;
+}
+
+const DEFAULT_TABS: PlannerTabId[] = [
+  'cookbooks',
+  'recipes',
+  'theme',
+  'settings',
+  'export',
+];
+const UNLISTED_TABS: PlannerTabId[] = ['specs', 'features', 'layout'];
+// `headerNav: 'labelled'`: Specs and Features join the strip, which then shows
+// only the group of the header button that opened it.
+const LABELLED_TABS: PlannerTabId[] = [
+  'specs',
+  'cookbooks',
+  'recipes',
+  'features',
+  'theme',
+  'settings',
+  'export',
+];
+
+let {
+  controller = plannerController,
+  basePath,
+  inference,
+  layout = 'own',
+  persistence = 'self',
+  projectPersistence,
+  themeControls = false,
+  headerNav = 'icons',
+  advancedStylesHref,
+  tabs = DEFAULT_TABS,
+  onready,
+  exportAction,
+  nativeAssistant,
+  onreset,
+  resetDisabledReason,
+  managedByParent = false,
+}: PlannerControlsProps = $props();
+
+const projectStorage = $derived(
+  projectPersistence === undefined
+    ? persistence === 'self'
+      ? workspacePersistence
+      : null
+    : projectPersistence,
+);
+
+// Generated views and the Cookbooks tab read sample records from a data
+// source: use the host's, else make the planner's own.
+if (!tryUseDataSource()) provideDataSource(createPlannerDataSource());
+
+// smrt-svelte's inputs read the app state. Inside a host's own provider (or
+// the static app's AppShell) use that; otherwise the planner brings one.
+const hasAppState = tryGetAppStateContext() !== null;
+
+const labels: Record<PlannerTabId, string> = {
+  specs: 'Specs',
+  cookbooks: 'Cookbooks',
+  recipes: 'Recipes',
+  features: 'Features',
+  layout: 'Layout',
+  theme: 'Theme',
+  settings: 'Settings',
+  export: 'Export',
+};
+const labelled = $derived(headerNav === 'labelled');
+const defaulted = $derived(tabs === DEFAULT_TABS);
+const listed = $derived(
+  (labelled && defaulted ? LABELLED_TABS : tabs).filter((id) =>
+    PLANNER_TAB_IDS.includes(id),
+  ),
+);
+// Labelled: only the clicked button's group (all of them if the host's own
+// `tabs` leave that group empty).
+const shown = $derived.by(() => {
+  if (!labelled) return listed;
+  const group = NAV_GROUP_TABS[navGroupOf(plannerTab.active)];
+  const grouped = listed.filter((id) => group.includes(id));
+  return grouped.length > 0 ? grouped : listed;
+});
+// Features and Layout left the default tab strip but stay reachable from
+// their links, the command palette and focus commands.
+const reachable = $derived<readonly PlannerTabId[]>(
+  defaulted ? [...new Set([...listed, ...UNLISTED_TABS])] : listed,
+);
+const items = $derived(shown.map((id) => ({ id, label: labels[id] })));
+const active = $derived(
+  reachable.includes(plannerTab.active)
+    ? plannerTab.active
+    : (shown[0] ?? 'recipes'),
+);
+
+// The headless layout controller: the menu the cookbook generates, edited
+// through the cookbook store, with no AppShell around.
+// Fixed at mount: the two editors are different objects.
+const layoutMode = untrack(() => layout);
+const ownLayout =
+  layoutMode === 'own'
+    ? new ShellLayoutController({
+        nav: () => [],
+        groups: () =>
+          cookbookNavGroups({
+            recipes: recipeState.ids,
+            features: recipeState.features,
+          }),
+        panels: () => undefined,
+        layout: () => cookbookStore.layout,
+        editable: () => true,
+        commit: (next) => cookbookStore.setLayout(next),
+      })
+    : null;
+const shellLayout = layoutMode === 'shell' ? useShellLayout() : null;
+
+const select = (id: string) => {
+  const tab = PLANNER_TAB_IDS.find((t) => t === id);
+  if (tab) plannerTab.active = tab;
+};
+
+// The controller's focus -> the tab on screen, and back, each only on a
+// difference, so a foreign controller and the app's own both stay in step.
+onMount(() => {
+  const stop = controller.subscribe((snapshot) => {
+    const tab = snapshot.focus.tab;
+    if (tab && tab !== plannerTab.active) plannerTab.active = tab;
+  });
+  return stop;
+});
+// A tab opened while the page is scrolled down (from the header's links, the
+// palette, a focus command, or a long Recipes list) would show the new panel
+// at the old offset, with the tab strip out of sight. Bring the strip back
+// into view on a change; nothing moves when it is already visible.
+let root = $state<HTMLElement | null>(null);
+let shownTab: string | undefined;
+$effect(() => {
+  const tab = active;
+  if (shownTab === undefined || shownTab === tab) {
+    shownTab = tab;
+    return;
+  }
+  shownTab = tab;
+  void tick().then(() => {
+    root
+      ?.querySelector<HTMLElement>('[role="tablist"]')
+      ?.scrollIntoView({ block: 'nearest' });
+  });
+});
+$effect(() => {
+  const tab = plannerTab.active;
+  untrack(() => {
+    if (controller.snapshot().focus.tab !== tab) {
+      controller.run({ name: 'focus', input: { tab } });
+    }
+  });
+});
+</script>
+
+{#if !managedByParent}
+  <PlannerLifecycle {controller} {basePath} {inference} {persistence} {onready} />
+{/if}
+
+{#snippet view()}
+<div class="planner" bind:this={root}>
+  <Tabs tabs={items} {active} onchange={select} aria-label="Planner">
+    {#if reachable.includes('specs')}
+      <div hidden={active !== 'specs'}><SpecsPanel /></div>
+    {/if}
+    {#if reachable.includes('cookbooks')}
+      <div hidden={active !== 'cookbooks'}><CookbooksPanel /></div>
+    {/if}
+    {#if reachable.includes('recipes')}
+      <div hidden={active !== 'recipes'}><RecipeCards /></div>
+    {/if}
+    {#if reachable.includes('features')}
+      <div hidden={active !== 'features'}><FeaturesPanel /></div>
+    {/if}
+    {#if reachable.includes('layout')}
+      <div hidden={active !== 'layout'} class="pane">
+        <p class="meta">
+          Reorder, move or hide navigation entries and choose which panels show.
+          The layout is saved with the cookbook.
+        </p>
+        <ShellLayoutEditor controller={ownLayout ?? shellLayout ?? undefined} />
+      </div>
+    {/if}
+    {#if reachable.includes('theme')}
+      <div hidden={active !== 'theme'}><ThemeSection provider={themeControls} {advancedStylesHref} /></div>
+    {/if}
+    {#if reachable.includes('settings')}
+      <div hidden={active !== 'settings'}><SettingsPanel projectPersistence={projectStorage} {controller} {nativeAssistant} {onreset} {resetDisabledReason} /></div>
+    {/if}
+    {#if reachable.includes('export')}
+      <div hidden={active !== 'export'}><ExportPanel {exportAction} {controller} {nativeAssistant} {onreset} {resetDisabledReason} /></div>
+    {/if}
+  </Tabs>
+</div>
+{/snippet}
+
+{#if hasAppState}
+  {@render view()}
+{:else}
+  <Provider>{@render view()}</Provider>
+{/if}
+
+<style>
+@layer smrt.reset, smrt.structure, smrt.theme;
+@layer smrt.theme {
+  .planner :global(.tab-panel) {
+    padding-top: var(--smrt-spacing-4);
+  }
+
+  /* The strip persists across configure-page route changes; the panel below
+     crossfades with the content. smrt-ui's Tabs owns the classes (`tabs-nav`
+     for button tabs, `tabs-links` for link tabs; one strip per Tabs). Named
+     only while a transition runs, as in Planner.svelte. */
+  :global([data-smrt-view-transition]) .planner :global(.tabs-nav),
+  :global([data-smrt-view-transition]) .planner :global(.tabs-links) {
+    view-transition-name: planner-tabs;
+  }
+
+  /* Phones: smrt-ui's Tabs strip scrolls sideways but shows no sign of it,
+     so the last tab (Export) is easy to miss. Tabs snap into place, and where
+     scroll-driven animations exist a fade at the trailing edge says more
+     follow, lifting as the strip reaches its end (an inactive timeline, a
+     strip that fits, leaves the fade at its initial 0). The real home for
+     this is smrt-ui's Tabs. */
+  .planner :global(.smrt-tabs__nav) {
+    scroll-snap-type: x proximity;
+    overscroll-behavior-x: contain;
+  }
+
+  .planner :global(.smrt-tabs__tab-button) {
+    scroll-snap-align: start;
+  }
+
+  @property --smrt-planner-controls-tabs-fade {
+    syntax: '<length>';
+    inherits: false;
+    initial-value: 0rem;
+  }
+
+  @supports (animation-timeline: scroll()) {
+    .planner :global(.smrt-tabs__nav) {
+      mask-image: linear-gradient(
+        to right,
+        black calc(100% - var(--smrt-planner-controls-tabs-fade)),
+        transparent
+      );
+      animation: planner-tabs-fade linear both;
+      animation-timeline: scroll(self inline);
+    }
+
+    @keyframes planner-tabs-fade {
+      from {
+        --smrt-planner-controls-tabs-fade: 3rem;
+      }
+      to {
+        --smrt-planner-controls-tabs-fade: 0rem;
+      }
+    }
+  }
+
+  .pane {
+    display: grid;
+    gap: var(--smrt-spacing-3);
+  }
+
+  /* `display: grid` would otherwise override the inactive pane's `hidden`. */
+  .pane[hidden] {
+    display: none;
+  }
+
+  .meta {
+    margin: 0;
+    color: var(--smrt-color-on-surface-variant);
+  }
+}
+</style>

@@ -11,6 +11,13 @@ import type { JobExecutionContext } from '@happyvertical/smrt-jobs';
 import { resolvePlaybook } from '@happyvertical/smrt-playbooks';
 import type { DatabaseInterface } from '@happyvertical/sql';
 import Ajv from 'ajv';
+import { describeArgumentRefusal } from './argument-issues.js';
+import type {
+  IntakeItemDTO,
+  ItemDisposition,
+  OwnProposalsInput,
+  OwnProposalsPage,
+} from './dto.js';
 import type {
   ActionResult,
   ExecutionAccessInput,
@@ -24,20 +31,27 @@ import type {
   PreviewPlanInput,
   PreviewProposalInput,
   ProposalReview,
+  ResolveItemInput,
   ResultReference,
   ReviewInput,
+  StartActionInput,
 } from './execution-contracts.js';
 import {
   type DiscoveryGate,
   discoveryTransaction,
+  listReadGate,
   type TransactionRunner,
 } from './execution-internal.js';
+import { storedFailureCapture } from './failure-capture.js';
 import {
   type FeedbackActionContext,
   feedbackActionTransaction,
   feedbackDiscoveryContext,
 } from './feedback-internal.js';
 import { intersect, resolveIntakePolicy } from './policy.js';
+import type { FailedAttemptCapture } from './proposal-dto.js';
+import { HandlerArgumentsInvalidError } from './proposal-errors.js';
+import { redactedCeiling, UNFINISHED_ACTION_STATES } from './redaction.js';
 import type { ReviewAction, ReviewPage } from './review-dto.js';
 import type { IngestionOptions } from './server.js';
 
@@ -45,6 +59,14 @@ export type * from './execution-contracts.js';
 export type { IntakePolicy, IntakePolicyLayer } from './policy.js';
 export { resolveIntakePolicy } from './policy.js';
 
+/** Uniform no-disclosure denial (missing, foreign, revoked or inactive).
+ * Integrity, validation and database errors are never this type. */
+export class IntakeAccessDeniedError extends Error {
+  constructor() {
+    super('Intake unavailable');
+    this.name = 'IntakeAccessDeniedError';
+  }
+}
 class RetentionExpired extends Error {
   constructor(
     readonly itemId: string,
@@ -54,6 +76,12 @@ class RetentionExpired extends Error {
   }
 }
 type Row = Record<string, unknown>;
+const OWN_SCAN_BATCH = 50;
+/** Hidden (unreadable) own rows one call may skip before failing closed. */
+const OWN_SCAN_CEILING = 1000;
+/** Cursors are row identifiers; reject anything that is not a UUID before SQL. */
+const UUID_CURSOR =
+  /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
 function object(value: unknown): IntakeValues {
   const parsed: unknown = typeof value === 'string' ? JSON.parse(value) : value;
   if (!parsed || typeof parsed !== 'object' || Array.isArray(parsed))
@@ -108,6 +136,10 @@ interface Binding {
     digest: string;
     display: IntakeValues;
   };
+}
+/** One global order for per-item retention writes, so they cannot deadlock (#4651). */
+function byItem([a]: [string, number], [b]: [string, number]): number {
+  return a < b ? -1 : a > b ? 1 : 0;
 }
 interface Bound {
   item: Row;
@@ -176,7 +208,7 @@ export class IntakeExecutionService {
           this.db,
           isEmbeddedDatabase(this.db),
           async (db) => {
-            for (const [itemId, deadline] of intents) {
+            for (const [itemId, deadline] of [...intents].sort(byItem)) {
               await this.restoreRetention(db, itemId, deadline);
             }
           },
@@ -192,16 +224,28 @@ export class IntakeExecutionService {
     // This intent was already authorized. Do not acquire another content-read
     // grant after rollback: a revoked actor must not undo a privacy maximum.
     const expiry = new Date(deadline).toISOString();
-    const result = await db.query(
-      'UPDATE intake_items SET expires_at=CASE WHEN expires_at>? THEN ? ELSE expires_at END WHERE id=? AND tenant_id=? AND confidential_scope_id=? RETURNING id,expires_at,visibility',
-      expiry,
+    // Write only a row that is actually wider than the intent: a restore that
+    // changes nothing takes no row lock, so a read that visited feedback
+    // source items does not lock each of them at its end (#4651).
+    const narrowed = await db.query(
+      'UPDATE intake_items SET expires_at=? WHERE id=? AND tenant_id=? AND confidential_scope_id=? AND expires_at>? RETURNING id,expires_at,visibility',
       expiry,
       itemId,
       this.scope.tenantId,
       this.scope.confidentialScopeId,
+      expiry,
     );
-    const item = result.rows[0];
-    if (!item) throw new Error('Intake unavailable');
+    const item =
+      narrowed.rows[0] ??
+      (
+        await db.query(
+          'SELECT id,expires_at,visibility FROM intake_items WHERE id=? AND tenant_id=? AND confidential_scope_id=?',
+          itemId,
+          this.scope.tenantId,
+          this.scope.confidentialScopeId,
+        )
+      ).rows[0];
+    if (!item) throw new IntakeAccessDeniedError();
     if (!this.retained(item)) await this.redactExecution(db, item);
     return item;
   }
@@ -216,6 +260,7 @@ export class IntakeExecutionService {
       'intake_executions',
       'intake_plans',
       'intake_feedback',
+      'intake_dispositions',
     ])
       await db.query(
         `UPDATE ${table} SET data='{}' WHERE item_id=? AND tenant_id=? AND confidential_scope_id=?`,
@@ -228,21 +273,35 @@ export class IntakeExecutionService {
     db: DatabaseInterface,
     item: Row,
     deadline: number,
+    /**
+     * False on a shared feedback read (#4651): the row is read without the
+     * item lock, and only a write that actually narrows touches it, guarded
+     * so it can never widen a deadline a concurrent writer narrowed further.
+     */
+    exclusive = true,
   ): Promise<void> {
-    const current = await this.item(db, String(item.id), true, true);
+    const current = await this.item(db, String(item.id), exclusive, true);
     const effective = Math.min(time(current.expires_at), deadline);
     if (!Number.isFinite(effective))
       throw new Error('Invalid retention deadline');
-    if (effective < time(current.expires_at))
+    let stored = current;
+    if (effective < time(current.expires_at)) {
+      const expiry = new Date(effective).toISOString();
       await db.query(
-        'UPDATE intake_items SET expires_at=? WHERE id=? AND tenant_id=? AND confidential_scope_id=?',
-        new Date(effective).toISOString(),
+        `UPDATE intake_items SET expires_at=? WHERE id=? AND tenant_id=? AND confidential_scope_id=?${exclusive ? '' : ' AND expires_at>?'}`,
+        expiry,
         item.id,
         this.scope.tenantId,
         this.scope.confidentialScopeId,
+        ...(exclusive ? [] : [expiry]),
       );
-    item.expires_at = new Date(effective).toISOString();
-    item.visibility = current.visibility;
+      if (!exclusive)
+        stored = await this.item(db, String(item.id), false, true);
+    }
+    item.expires_at = new Date(
+      Math.min(effective, time(stored.expires_at)),
+    ).toISOString();
+    item.visibility = stored.visibility;
     if (!this.retained(item)) await this.redactExecution(db, item);
   }
 
@@ -310,14 +369,14 @@ export class IntakeExecutionService {
         db,
       }))
     )
-      throw new Error('Intake unavailable');
+      throw new IntakeAccessDeniedError();
     if (
       !expired &&
       (item.visibility !== 'active' ||
         time(item.expires_at) <= this.now().getTime() ||
         item.cancelled)
     )
-      throw new Error('Intake unavailable');
+      throw new IntakeAccessDeniedError();
     return item;
   }
   private ceiling(item: Row): ExecutionCeiling {
@@ -361,10 +420,18 @@ export class IntakeExecutionService {
       throw new Error('Undeclared capability');
     return handler;
   }
+  /**
+   * `arguments` marks arguments being previewed (operation preview, which
+   * also carries corrections, reviewer-started actions and plan preview):
+   * only their schema refusal is the correctable
+   * `HandlerArgumentsInvalidError`, with value-free field `issues`. Apply-time and
+   * external-send revalidation and result-schema checks keep the plain error.
+   */
   private validate(
     schema: IntakeValues,
     value: IntakeValues,
     limit: number,
+    arguments_ = false,
   ): void {
     if (
       Buffer.byteLength(canonical(value)) > limit ||
@@ -373,29 +440,49 @@ export class IntakeExecutionService {
     )
       throw new Error('Invalid handler payload');
     if (!this.ajv.compile(schema)(value))
-      throw new Error('Invalid handler payload');
+      throw arguments_
+        ? new HandlerArgumentsInvalidError(
+            'Invalid handler payload',
+            describeArgumentRefusal(schema, value),
+          )
+        : new Error('Invalid handler payload');
   }
-  private async access(
+  /**
+   * The read-only half of `access`: current host authority, policy and
+   * ceiling allowlists and the retention deadline they imply. It writes
+   * nothing, so a listing may call it per (item, handler) without opening a
+   * transaction per row.
+   */
+  private async authority(
     db: DatabaseInterface,
     item: Row,
     handler: IntakeHandler,
     operation: ExecutionAccessInput['operation'],
+    onHostError?: (error: unknown) => void,
   ) {
     const ceiling = this.ceiling(item);
-    const current = await this.config.authorize({
-      db,
-      scope: this.scope,
-      itemId: String(item.id),
-      capturedCeiling: ceiling,
-      operation,
-      handlerId: handler.id,
-    });
+    let current: Awaited<ReturnType<IntakeExecutionOptions['authorize']>>;
+    try {
+      current = await this.config.authorize({
+        db,
+        scope: this.scope,
+        itemId: String(item.id),
+        capturedCeiling: ceiling,
+        operation,
+        handlerId: handler.id,
+      });
+    } catch (error) {
+      // Callers that turn refusals into "not readable" must still tell a
+      // failing host apart from a refusing one.
+      onHostError?.(error);
+      throw error;
+    }
     if (
       !current.allowed ||
       current.mutationBoundary !== 'serialized' ||
       current.principalId !== ceiling.principalId
     )
-      throw new Error('Intake unavailable');
+      throw new IntakeAccessDeniedError();
     const policy = resolveIntakePolicy(current.policy);
     const operationKey =
       'model' in handler.operation
@@ -409,21 +496,49 @@ export class IntakeExecutionService {
       !ceiling.operations.includes(operationKey) ||
       !policy.access.includes(this.scope.confidentialScopeId)
     )
-      throw new Error('Intake unavailable');
+      throw new IntakeAccessDeniedError();
     if (
       operation === 'review' &&
       (!current.reviewer || !policy.reviewers.includes(this.scope.actorId))
     )
-      throw new Error('Intake unavailable');
+      throw new IntakeAccessDeniedError();
+    // Submitter decisions need the server-recorded receipt actor, a live host
+    // grant and the application policy opt-in; source metadata supplies none.
+    // The effect runs as the captured principal, so a self-decision is only a
+    // decision by that principal: a bot or service principal needs a reviewer.
+    if (
+      operation === 'review_own' &&
+      (current.submitter !== true ||
+        !policy.submitterReview ||
+        item.submitter_id !== this.scope.actorId ||
+        ceiling.principalId !== this.scope.actorId)
+    )
+      throw new IntakeAccessDeniedError();
     const deadline = Math.min(
       time(item.expires_at),
       time(item.created_at) + policy.retentionMs,
+    );
+    return { current, ceiling, policy, deadline };
+  }
+  private async access(
+    db: DatabaseInterface,
+    item: Row,
+    handler: IntakeHandler,
+    operation: ExecutionAccessInput['operation'],
+    /** False on a shared feedback read: see `narrowRetention` (#4651). */
+    exclusive = true,
+  ) {
+    const { current, ceiling, policy, deadline } = await this.authority(
+      db,
+      item,
+      handler,
+      operation,
     );
     const enforce = async (executor: DatabaseInterface) => {
       const intents = this.retentionIntents.getStore();
       const itemId = String(item.id);
       intents?.set(itemId, Math.min(intents.get(itemId) ?? Infinity, deadline));
-      await this.narrowRetention(executor, item, deadline);
+      await this.narrowRetention(executor, item, deadline, exclusive);
     };
     if (db === this.db) await this.tx(enforce);
     else await enforce(db);
@@ -437,12 +552,14 @@ export class IntakeExecutionService {
       db,
       scope: this.scope,
       itemId: String(item.id),
+      analysisRevision: Number(item.analysis_revision),
       policy,
       assertTarget: async (model, targetId, revision) => {
         await this.config.assertTarget({
           db,
           scope: this.scope,
           itemId: String(item.id),
+          analysisRevision: Number(item.analysis_revision),
           model,
           id: targetId,
           ...(revision === undefined ? {} : { revision }),
@@ -463,8 +580,9 @@ export class IntakeExecutionService {
     handler: OperationHandler,
     operation: 'execute' | 'reconcile' | 'preview',
     work: (context: HandlerContext) => Promise<T>,
+    exclusive = true,
   ): Promise<T> {
-    const access = await this.access(db, item, handler, operation);
+    const access = await this.access(db, item, handler, operation, exclusive);
     const registered = ObjectRegistry.getClassByQualifiedName(
       handler.operation.model,
     )!;
@@ -532,6 +650,7 @@ export class IntakeExecutionService {
                   db,
                   scope: this.scope,
                   itemId,
+                  analysisRevision: context.analysisRevision,
                   model,
                   id,
                 }),
@@ -540,10 +659,9 @@ export class IntakeExecutionService {
           );
         const result = await work(db, authorize);
         // A foundation retry must retain the narrowest authorized privacy ceiling.
-        for (const [
-          retainedItemId,
-          deadline,
-        ] of this.retentionIntents.getStore() ?? []) {
+        for (const [retainedItemId, deadline] of [
+          ...(this.retentionIntents.getStore() ?? []),
+        ].sort(byItem)) {
           const item = await this.restoreRetention(
             db,
             retainedItemId,
@@ -564,20 +682,27 @@ export class IntakeExecutionService {
     work: (context: HandlerContext) => Promise<T>,
     requireReview = false,
     revalidate?: (context: HandlerContext) => Promise<void>,
+    /**
+     * False on a shared feedback read (#4651): the item is read without its
+     * exclusive lock, so reads that visit many feedback source items cannot
+     * deadlock one another; the gate is still evaluated before and after.
+     */
+    exclusive = true,
   ): Promise<T> {
     const review = async () => {
-      const item = await this.item(db, itemId, true);
+      const item = await this.item(db, itemId, exclusive);
       await this.access(
         db,
         item,
         this.handler(handlerId, handlerVersion),
         'review',
+        exclusive,
       );
     };
     const authorize = async <R>(
       callback: (context: HandlerContext) => Promise<R>,
     ) => {
-      const item = await this.item(db, itemId, true);
+      const item = await this.item(db, itemId, exclusive);
       const handler = this.handler(handlerId, handlerVersion);
       if ('execution' in handler)
         return this.principal(
@@ -586,8 +711,15 @@ export class IntakeExecutionService {
           this.operation(handler),
           'preview',
           callback,
+          exclusive,
         );
-      const { context } = await this.access(db, item, handler, 'preview');
+      const { context } = await this.access(
+        db,
+        item,
+        handler,
+        'preview',
+        exclusive,
+      );
       const resolved = await resolvePlaybook(handler.operation.playbookKey, {
         db,
         tenantId: this.scope.tenantId,
@@ -629,6 +761,7 @@ export class IntakeExecutionService {
           this.operation(found),
           'preview',
           async () => {},
+          exclusive,
         );
       }
       return callback(context);
@@ -649,7 +782,7 @@ export class IntakeExecutionService {
     proposalId?: string,
   ): Promise<Bound> {
     const [found] = await this.rows(db, 'intake_actions', 'id=?', [actionId]);
-    if (!found) throw new Error('Intake unavailable');
+    if (!found) throw new IntakeAccessDeniedError();
     const item = await this.item(db, String(found.item_id), lock, expired);
     const [action] = await this.rows(db, 'intake_actions', 'id=?', [actionId]);
     const [proposal] = await this.rows(
@@ -669,6 +802,58 @@ export class IntakeExecutionService {
     )
       throw new Error('Handler version drift');
     return { item, action, proposal, binding, handler };
+  }
+  /**
+   * Read authority for one handler binding of a listed item, read-only. It
+   * applies the handler checks `listReviews` applies before projecting an
+   * action: the bound handler must resolve to a single operation whose
+   * operation and capability still match the saved binding (no version
+   * drift), and the execution read gate (host authority, policy and ceiling
+   * handler/operation allowlists, `policy.access`, principal) must pass, but
+   * without the retention write; an item past the deadline `access` would
+   * narrow to is not listable, and neither is a cancelled item, which
+   * `listReviews` refuses once it binds an action. Per-action target,
+   * evidence and plan gates are not evaluated here; `load` still enforces
+   * them. A refusal or any other failed check answers false and the list
+   * discloses nothing about why; a host `authorize` that throws propagates,
+   * as it does from `load`, so the page is rejected. Package-internal:
+   * reachable only through a symbol the service holds,
+   * so callers cannot hand it an unscoped row.
+   */
+  async [listReadGate](
+    item: Row,
+    binding: {
+      handlerId: string;
+      handlerVersion: string;
+      operation: unknown;
+      capability: unknown;
+    },
+  ): Promise<boolean> {
+    let hostFailure: { error: unknown } | undefined;
+    try {
+      if (item.cancelled) return false;
+      const handler = this.operation(
+        this.handler(binding.handlerId, binding.handlerVersion),
+      );
+      if (
+        canonical(handler.operation) !== canonical(binding.operation) ||
+        canonical(handler.capability) !== canonical(binding.capability)
+      )
+        return false;
+      const { deadline } = await this.authority(
+        this.db,
+        item,
+        handler,
+        'read',
+        (error) => {
+          hostFailure = { error };
+        },
+      );
+      return deadline > this.now().getTime();
+    } catch {
+      if (hostFailure) throw hostFailure.error;
+      return false;
+    }
   }
   private review(bound: Bound): ProposalReview {
     return {
@@ -692,6 +877,8 @@ export class IntakeExecutionService {
     handlerVersion: string,
     work: (context: HandlerContext) => Promise<T>,
     revalidate?: (context: HandlerContext) => Promise<void>,
+    /** False for a feedback read: no exclusive item lock (#4651). */
+    exclusive = true,
   ): Promise<T> {
     const run = (executor: DatabaseInterface) =>
       this.discoveryContext(
@@ -702,6 +889,7 @@ export class IntakeExecutionService {
         work,
         false,
         revalidate,
+        exclusive,
       );
     return db ? run(db) : this.tx(run);
   }
@@ -712,15 +900,37 @@ export class IntakeExecutionService {
     executor?: DatabaseInterface,
     requiredProviders?: string[],
     proposalId?: string,
+    /**
+     * Compare target revisions (default). A lineage re-check of a reviewer
+     * routing choice passes false: its meaning is the handler choice, so later
+     * writes to the target only need the target to remain accessible.
+     */
+    targetRevisions = true,
+    /**
+     * False when the work only reads an example (#4651). A read must not take
+     * the exclusive lock on the source item: retrieval visits many source
+     * items, in an order that differs per read, and held them to the end of
+     * the reading transaction, so parallel reads deadlocked on PostgreSQL.
+     * Unlocked, the binding is loaded before and after the work and both
+     * loads must agree, including the source item's analysis revision.
+     */
+    exclusive = true,
   ): Promise<T> {
     const operation = async (db: DatabaseInterface) => {
       const load = async () => {
-        const bound = await this.bound(db, actionId, true, false, proposalId);
+        const bound = await this.bound(
+          db,
+          actionId,
+          exclusive,
+          false,
+          proposalId,
+        );
         const { context, permissions } = await this.access(
           db,
           bound.item,
           bound.handler,
           reviewer ? 'review' : 'read',
+          exclusive,
         );
         if (
           requiredProviders?.some(
@@ -733,7 +943,9 @@ export class IntakeExecutionService {
           await context.assertTarget(
             target.model,
             target.id,
-            bound.action.state === 'succeeded' ? undefined : target.revision,
+            bound.action.state === 'succeeded' || !targetRevisions
+              ? undefined
+              : target.revision,
           );
         if (bound.binding.plan) {
           const plans = await this.rows(
@@ -765,6 +977,8 @@ export class IntakeExecutionService {
                 );
             },
             reviewer,
+            undefined,
+            exclusive,
           );
         }
         const [analysis] = await this.rows(db, 'intake_analyses', 'id=?', [
@@ -802,10 +1016,20 @@ export class IntakeExecutionService {
         )
           throw new Error('Analysis input integrity');
         if (!this.retained(bound.item)) throw new Error('Feedback unavailable');
+        const resolved = !!(await this.disposition(db, String(bound.item.id)));
+        const state = String(bound.action.state);
+        const settled =
+          !resolved &&
+          (['executing', 'succeeded'].includes(state) ||
+            (state === 'authorized' &&
+              (await this.approvalLive(db, bound.action))));
+        const origin = object(bound.action.data).origin;
         return {
           db,
           context,
           permissions,
+          origin: typeof origin === 'string' ? origin : '',
+          settled,
           review: this.review(bound),
           itemId: String(bound.item.id),
           attemptId: String(attempt.id),
@@ -820,7 +1044,10 @@ export class IntakeExecutionService {
       const result = await work(before);
       const after = await load();
       if (
-        intakeBindingDigest(before.review) !== intakeBindingDigest(after.review)
+        intakeBindingDigest(before.review) !==
+          intakeBindingDigest(after.review) ||
+        (!exclusive &&
+          before.context.analysisRevision !== after.context.analysisRevision)
       )
         throw new Error('Feedback binding changed');
       if (
@@ -854,7 +1081,8 @@ export class IntakeExecutionService {
       if (
         (prior.requireReview && !next.requireReview) ||
         next.minimumCertainty < prior.minimumCertainty ||
-        (!prior.consequentialAutomation && next.consequentialAutomation)
+        (!prior.consequentialAutomation && next.consequentialAutomation) ||
+        (!prior.submitterReview && next.submitterReview)
       )
         throw new Error('Feedback cannot widen policy');
       return result;
@@ -896,7 +1124,7 @@ export class IntakeExecutionService {
       const [action] = await this.rows(db, 'intake_actions', 'id=?', [
         actionId,
       ]);
-      if (!action) throw new Error('Intake unavailable');
+      if (!action) throw new IntakeAccessDeniedError();
       const item = await this.item(db, String(action.item_id), true, true);
       const expiredReview = async (): Promise<ProposalReview> => {
         await this.redactExecution(db, item);
@@ -941,7 +1169,7 @@ export class IntakeExecutionService {
       !Number.isSafeInteger(limit) ||
       limit < 1 ||
       limit > 50 ||
-      (input.cursor !== undefined && !/^[0-9a-f-]{36}$/i.test(input.cursor))
+      (input.cursor !== undefined && !UUID_CURSOR.test(input.cursor))
     )
       throw new Error('Invalid review page');
     return this.tx(async (db) => {
@@ -1013,6 +1241,7 @@ export class IntakeExecutionService {
               db,
               scope: this.scope,
               itemId,
+              analysisRevision: Number(bound.item.analysis_revision),
               model: target.model,
               id: target.id,
             });
@@ -1052,12 +1281,14 @@ export class IntakeExecutionService {
               recoveryAttemptId = String(attempt.id);
           }
         }
+        const origin = object(action.data).origin;
         const entry: ReviewAction = {
           review: this.review(bound),
           args: structuredClone(bound.binding.args),
           handlerId: bound.handler.id,
           handlerVersion: bound.handler.version,
           attemptId: String(proposal.analysis_attempt_id),
+          ...(typeof origin === 'string' && origin ? { origin } : {}),
           dependencies: structuredClone(bound.binding.dependencies),
         };
         if (action.state === 'succeeded')
@@ -1180,10 +1411,18 @@ export class IntakeExecutionService {
       };
     });
   }
+  /**
+   * `reviewed` marks arguments a reviewer is previewing, correcting or
+   * starting a chosen handler with: only then is an argument-schema or
+   * `validate` refusal the typed `HandlerArgumentsInvalidError`. Every other
+   * refusal here stays a plain denial; apply-time verification and plan step
+   * expansion keep the plain error.
+   */
   private async buildBinding(
     db: DatabaseInterface,
     item: Row,
     input: PreviewProposalInput,
+    reviewed = false,
   ): Promise<Binding> {
     const handler = this.operation(
       this.handler(input.handlerId, input.handlerVersion),
@@ -1256,9 +1495,11 @@ export class IntakeExecutionService {
       // A symbolic ID validates against the handler schema, but is never executed.
       concrete[field] = `00000000-0000-4000-8000-000000000000`;
     }
-    this.validate(handler.argsSchema, concrete, policy.maxBytes);
+    this.validate(handler.argsSchema, concrete, policy.maxBytes, reviewed);
     if (!(await handler.validate(input.args, context)).ok)
-      throw new Error('Invalid handler arguments');
+      throw reviewed
+        ? new HandlerArgumentsInvalidError('Invalid handler arguments')
+        : new Error('Invalid handler arguments');
     const preview = await handler.preview(input.args, context);
     if (canonical(preview.normalizedArgs) !== canonical(input.args))
       throw new Error(
@@ -1353,7 +1594,7 @@ export class IntakeExecutionService {
       'id=? AND item_id=?',
       [input.actionId, input.itemId],
     );
-    if (!action) throw new Error('Intake unavailable');
+    if (!action) throw new IntakeAccessDeniedError();
     const prior = await this.rows(db, 'intake_proposals', 'action_id=?', [
       input.actionId,
     ]);
@@ -1385,6 +1626,9 @@ export class IntakeExecutionService {
       )
     )
       throw new Error('Proposal conflict');
+    // A resolved item is terminal: no new revision (correction, edit, re-preview).
+    if (await this.disposition(db, String(item.id)))
+      throw new Error('Item resolved');
     const [attempt] = await this.rows(
       db,
       'intake_analysis_attempts',
@@ -1444,9 +1688,49 @@ export class IntakeExecutionService {
     const frozen = JSON.parse(canonical(input)) as PreviewProposalInput;
     return this.tx(async (db) => {
       const item = await this.item(db, frozen.itemId, true);
-      const binding = await this.buildBinding(db, item, frozen);
+      await this.assertReviewerRevision(db, item, frozen);
+      const binding = await this.buildBinding(db, item, frozen, true);
       return this.publish(db, item, frozen, binding);
     });
+  }
+  /**
+   * A reviewer-selected action records a human routing choice: re-previewing it
+   * needs the reviewer grant (not just `preview`) and keeps its handler fixed,
+   * so only the arguments can be corrected.
+   */
+  private async assertReviewerRevision(
+    db: DatabaseInterface,
+    item: Row,
+    input: PreviewProposalInput,
+  ): Promise<void> {
+    const [action] = await this.rows(
+      db,
+      'intake_actions',
+      'id=? AND item_id=?',
+      [input.actionId, item.id],
+    );
+    if (!action || object(action.data).origin !== 'reviewer-selected') return;
+    const [current] = await this.rows(
+      db,
+      'intake_proposals',
+      'action_id=? AND revision=?',
+      [action.id, action.proposal_revision],
+    );
+    const binding = current
+      ? (object(object(current.data).binding) as unknown as Binding)
+      : undefined;
+    if (
+      !binding ||
+      binding.handlerId !== input.handlerId ||
+      binding.handlerVersion !== input.handlerVersion
+    )
+      throw new Error('Reviewer-selected handler is fixed');
+    await this.access(
+      db,
+      item,
+      this.operation(this.handler(input.handlerId, input.handlerVersion)),
+      'review',
+    );
   }
   /** Capture owner facts in the same transaction; these are never correctness labels. */
   private async feedbackEvent(
@@ -1503,6 +1787,10 @@ export class IntakeExecutionService {
       handlerVersion: bound.handler.version,
       signal,
       reviewer: kind === 'action_decision' ? eventData.reviewer : null,
+      decisionMode:
+        kind === 'action_decision' ? (eventData.mode ?? 'review') : null,
+      selfDecision:
+        kind === 'action_decision' && eventData.selfDecision === true,
       observedBy: this.scope.actorId,
       principalId: eventData.principalId ?? null,
       reason: kind === 'action_decision' ? (eventData.reason ?? '') : '',
@@ -1527,7 +1815,10 @@ export class IntakeExecutionService {
       data: canonical(data),
     });
   }
-  async submitDecision(input: ReviewInput): Promise<ProposalReview> {
+  async submitDecision(
+    input: ReviewInput,
+    mode: 'review' | 'review_own' = 'review',
+  ): Promise<ProposalReview> {
     const frozen = JSON.parse(canonical(input)) as ReviewInput;
     id(frozen.requestId);
     if (
@@ -1535,14 +1826,13 @@ export class IntakeExecutionService {
       (frozen.reason?.length ?? 0) > 2048
     )
       throw new Error('Invalid decision');
+    // A submitter confirms or declines the exact previewed effect; corrections
+    // publish new arguments and stay with the reviewer surface.
+    if (mode === 'review_own' && frozen.decision === 'correct')
+      throw new Error('Invalid decision');
     return this.tx(async (db) => {
       const bound = await this.bound(db, frozen.actionId, true);
-      const { policy } = await this.access(
-        db,
-        bound.item,
-        bound.handler,
-        'review',
-      );
+      const { policy } = await this.access(db, bound.item, bound.handler, mode);
       await this.feedbackLineage(db, bound);
       const decisions = await this.rows(
         db,
@@ -1571,6 +1861,13 @@ export class IntakeExecutionService {
       )
         throw new Error('Stale review');
       await this.verifyEvidence(db, bound);
+      // A resolved item is terminal: only reject remains; approval, correction or
+      // deferral would reopen a decision the disposition closed.
+      if (
+        frozen.decision !== 'reject' &&
+        (await this.disposition(db, String(bound.item.id)))
+      )
+        throw new Error('Item resolved');
       const expiresAt = new Date(
         Math.min(
           time(bound.item.expires_at),
@@ -1593,6 +1890,9 @@ export class IntakeExecutionService {
           policyVersions: policy.versions,
           decidedAt: this.now().toISOString(),
           kind: 'human',
+          // A submitter deciding their own proposal is never a reviewer judgment.
+          mode,
+          selfDecision: bound.item.submitter_id === this.scope.actorId,
         }),
       });
       await this.feedbackEvent(
@@ -1617,7 +1917,12 @@ export class IntakeExecutionService {
           args: frozen.correctedArgs,
           dependencies: bound.binding.dependencies,
         };
-        const binding = await this.buildBinding(db, bound.item, corrected);
+        const binding = await this.buildBinding(
+          db,
+          bound.item,
+          corrected,
+          true,
+        );
         await this.feedbackLineage(db, bound);
         return this.publish(db, bound.item, corrected, binding);
       }
@@ -1634,6 +1939,36 @@ export class IntakeExecutionService {
         this.scope.tenantId,
         this.scope.confidentialScopeId,
       );
+      // Only the reviewer decision path supplies routing evidence. Submitter
+      // self-approval authorizes normally without judging a reviewer choice.
+      const provenance = object(bound.action.data);
+      if (
+        frozen.decision === 'approve' &&
+        mode === 'review' &&
+        provenance.origin === 'reviewer-selected'
+      ) {
+        const [attempt] = await this.rows(
+          db,
+          'intake_analysis_attempts',
+          'id=? AND item_id=?',
+          [bound.proposal.analysis_attempt_id, bound.item.id],
+        );
+        if (attempt)
+          await this.routingFeedback(db, bound.item, attempt, {
+            requestId: frozen.requestId,
+            reason:
+              typeof provenance.reason === 'string' ? provenance.reason : '',
+            ...(typeof provenance.reviewer === 'string'
+              ? { startedBy: provenance.reviewer }
+              : {}),
+            handler: {
+              handlerId: bound.handler.id,
+              handlerVersion: bound.handler.version,
+              args: structuredClone(bound.binding.args),
+              review: this.review(bound),
+            },
+          });
+      }
       return { ...this.review(bound), state };
     });
   }
@@ -1684,6 +2019,9 @@ export class IntakeExecutionService {
   private async approved(db: DatabaseInterface, bound: Bound): Promise<number> {
     await this.feedbackLineage(db, bound);
     await this.verifyEvidence(db, bound);
+    // A resolved item is terminal: no prior approval (or failed retry) may apply.
+    if (await this.disposition(db, String(bound.item.id)))
+      throw new Error('Item resolved');
     if (bound.binding.plan) {
       const plans = await this.rows(
         db,
@@ -1812,6 +2150,13 @@ export class IntakeExecutionService {
     )
       throw new Error('Approval required');
     const decisionData = object(decision.data);
+    // Recheck at apply: a self-decision authorizes only its own principal.
+    if (
+      decisionData.mode === 'review_own' &&
+      (decisionData.reviewer !== bound.item.submitter_id ||
+        bound.item.submitter_id !== this.ceiling(bound.item).principalId)
+    )
+      throw new Error('Approval required');
     if (decisionData.kind === 'machine') {
       const access = await this.access(
         db,
@@ -1930,6 +2275,8 @@ export class IntakeExecutionService {
       );
       args[field] = targetId;
     }
+    // Apply and external-send revalidation stay exactly as before: a plain
+    // error. Only preview refusals are the typed, correctable rejection.
     this.validate(bound.handler.argsSchema, args, context.policy.maxBytes);
     if (!(await bound.handler.validate(args, context)).ok)
       throw new Error('Invalid handler arguments');
@@ -1981,6 +2328,7 @@ export class IntakeExecutionService {
         db,
         scope: this.scope,
         itemId: String(item.id),
+        analysisRevision: Number(item.analysis_revision),
         model,
         id: result[field] as string,
       });
@@ -2019,6 +2367,7 @@ export class IntakeExecutionService {
         db,
         scope: this.scope,
         itemId: String(bound.item.id),
+        analysisRevision: Number(bound.item.analysis_revision),
         model,
         id: result[field] as string,
       });
@@ -2056,6 +2405,7 @@ export class IntakeExecutionService {
       this.scope.tenantId,
       this.scope.confidentialScopeId,
     );
+    await this.releaseRedactedPrincipal(db, String(bound.item.id));
     await this.feedbackEvent(
       db,
       bound,
@@ -2078,7 +2428,7 @@ export class IntakeExecutionService {
       const [action] = await this.rows(db, 'intake_actions', 'id=?', [
         actionId,
       ]);
-      if (!action) throw new Error('Intake unavailable');
+      if (!action) throw new IntakeAccessDeniedError();
       const item = await this.item(db, String(action.item_id), true, true);
       const [current] = await this.rows(db, 'intake_actions', 'id=?', [
         actionId,
@@ -2177,32 +2527,47 @@ export class IntakeExecutionService {
             this.scope.tenantId,
             this.scope.confidentialScopeId,
           );
-          if (bound.handler.execution.kind === 'external') {
+          const domainExecution = bound.handler.execution;
+          if (domainExecution.kind === 'external') {
             reserved = { bound, execution, args };
             return { state: 'executing', actionId };
           }
-          await db.query('SAVEPOINT ingestion_domain_effect');
           try {
-            const effect = await bound.handler.execution.apply(args, context);
-            this.validate(
-              bound.handler.resultSchema,
-              effect,
-              context.policy.maxBytes,
+            return await withEmbeddedWriteTransaction(
+              db,
+              isEmbeddedDatabase(db),
+              async (effectDb) =>
+                this.principal(
+                  effectDb,
+                  bound.item,
+                  bound.handler,
+                  'execute',
+                  async (effectContext) => {
+                    const effect = await domainExecution.apply(
+                      args,
+                      effectContext,
+                    );
+                    this.validate(
+                      bound.handler.resultSchema,
+                      effect,
+                      effectContext.policy.maxBytes,
+                    );
+                    for (const [field, model] of Object.entries(
+                      bound.handler.resultModels,
+                    )) {
+                      id(effect[field]);
+                      await effectContext.assertTarget(
+                        model,
+                        effect[field] as string,
+                      );
+                    }
+                    return this.finish(effectDb, bound, execution, effect);
+                  },
+                ),
             );
-            for (const [field, model] of Object.entries(
-              bound.handler.resultModels,
-            )) {
-              id(effect[field]);
-              await context.assertTarget(model, effect[field] as string);
-            }
-            const completed = await this.finish(db, bound, execution, effect);
-            await db.query('RELEASE SAVEPOINT ingestion_domain_effect');
-            return completed;
           } catch {
             // Keep the item lock and reserved budget while undoing all domain
             // writes. A competing worker cannot enter a rollback/accounting gap.
-            await db.query('ROLLBACK TO SAVEPOINT ingestion_domain_effect');
-            await db.query('RELEASE SAVEPOINT ingestion_domain_effect');
             const deadline = this.retentionIntents
               .getStore()
               ?.get(String(bound.item.id));
@@ -2307,6 +2672,7 @@ export class IntakeExecutionService {
                   db: this.db,
                   scope: this.scope,
                   itemId: String(send.bound.item.id),
+                  analysisRevision: Number(send.bound.item.analysis_revision),
                   model,
                   id: targetId,
                   ...(revision === undefined ? {} : { revision }),
@@ -2444,6 +2810,7 @@ export class IntakeExecutionService {
         this.scope.tenantId,
         this.scope.confidentialScopeId,
       );
+      await this.releaseRedactedPrincipal(db, String(item.id));
       await this.feedbackEvent(
         db,
         { ...bound, item },
@@ -2475,7 +2842,10 @@ export class IntakeExecutionService {
         bound.action.state !== 'waiting_review' ||
         !policy.automaticHandlers.includes(bound.handler.id) ||
         (consequential && !policy.consequentialAutomation) ||
-        !this.config.evaluateAutomatic
+        !this.config.evaluateAutomatic ||
+        // Human routing choices are never machine authority, and a resolved item is terminal.
+        object(bound.action.data).origin === 'reviewer-selected' ||
+        (await this.disposition(db, String(bound.item.id)))
       )
         throw new Error('Automatic execution unavailable');
       await this.feedbackLineage(db, bound);
@@ -2534,6 +2904,428 @@ export class IntakeExecutionService {
       return { ...this.review(bound), state: 'authorized' };
     });
   }
+  /**
+   * Whether an `authorized` action still holds an unexpired approval for its
+   * current review version. An expired one can be neither applied nor rejected,
+   * so it must not keep the item open; `approved()` refuses resolved items.
+   */
+  private async approvalLive(
+    db: DatabaseInterface,
+    action: Row,
+  ): Promise<boolean> {
+    const decisions = await this.rows(
+      db,
+      'intake_review_decisions',
+      "action_id=? AND review_version=? AND decision='approve'",
+      [action.id, action.review_version],
+    );
+    return decisions.some(
+      (row) => time(object(row.data).expiresAt) > this.now().getTime(),
+    );
+  }
+  /** Current terminal reviewer disposition, if any. */
+  private async disposition(
+    db: DatabaseInterface,
+    itemId: string,
+  ): Promise<Row | undefined> {
+    const [row] = await this.rows(
+      db,
+      'intake_dispositions',
+      'item_id=? ORDER BY id LIMIT 1',
+      [itemId],
+    );
+    return row;
+  }
+  private dispositionDTO(row: Row): ItemDisposition {
+    const data = object(row.data);
+    return {
+      kind: 'resolved_no_action',
+      reviewer: typeof data.reviewer === 'string' ? data.reviewer : '',
+      reason: typeof data.reason === 'string' ? data.reason : '',
+      decidedAt: typeof data.decidedAt === 'string' ? data.decidedAt : '',
+    };
+  }
+  /** The current revision's completed/partial attempt; failed revisions need reprocessing. */
+  private async currentAttempt(db: DatabaseInterface, item: Row): Promise<Row> {
+    const [analysis] = await this.rows(
+      db,
+      'intake_analyses',
+      'item_id=? AND revision=?',
+      [item.id, item.analysis_revision],
+    );
+    if (!analysis?.current_attempt_id) throw new Error('Analysis unavailable');
+    const [attempt] = await this.rows(
+      db,
+      'intake_analysis_attempts',
+      'id=? AND item_id=?',
+      [analysis.current_attempt_id, item.id],
+    );
+    if (
+      !attempt ||
+      !['completed', 'partial'].includes(String(attempt.state)) ||
+      !attempt.output_digest
+    )
+      throw new Error('Analysis unavailable');
+    return attempt;
+  }
+  /** Reviewer authority under a handler this item's captured ceiling offers; no new grant. */
+  private async reviewerAccess(db: DatabaseInterface, item: Row) {
+    const handlers = [...this.config.handlers].sort((a, b) =>
+      `${a.id}@${a.version}`.localeCompare(`${b.id}@${b.version}`),
+    );
+    for (const handler of handlers) {
+      try {
+        return await this.access(db, item, handler, 'review');
+      } catch (error) {
+        if (error instanceof RetentionExpired) throw error;
+      }
+    }
+    throw new Error('Intake unavailable');
+  }
+  /** Extracted text for routing examples: the attempt's own results or its pinned extraction. */
+  private async extractedQuery(
+    db: DatabaseInterface,
+    item: Row,
+    attempt: Row,
+  ): Promise<string> {
+    let source = attempt;
+    const output = object(object(attempt.data).output);
+    if (output.proposals) {
+      const pin = object(object(output.proposals).source);
+      const [row] = await this.rows(
+        db,
+        'intake_analysis_attempts',
+        'id=? AND item_id=?',
+        [pin.attemptId, item.id],
+      );
+      if (!row || row.output_digest !== pin.outputDigest)
+        throw new Error('Feedback source unavailable');
+      source = row;
+    }
+    const results = object(object(source.data).output).results;
+    if (!Array.isArray(results)) return '';
+    return results
+      .flatMap((entry) => {
+        const segments = object(entry).segments;
+        return Array.isArray(segments)
+          ? segments.map((segment) => String(object(segment).text ?? ''))
+          : [];
+      })
+      .join('\n')
+      .slice(0, 4096);
+  }
+  /** Optional explicit routing projection; the reviewer's action or disposition stays authoritative. */
+  private async routingFeedback(
+    db: DatabaseInterface,
+    item: Row,
+    attempt: Row,
+    choice: {
+      requestId: string;
+      reason: string;
+      /** Actor who started the action; the current actor is the approver. */
+      startedBy?: string;
+      handler?: {
+        handlerId: string;
+        handlerVersion: string;
+        args: IntakeValues;
+        review: ProposalReview;
+      };
+    },
+  ): Promise<void> {
+    if (!this.options.feedback || !this.retained(item)) return;
+    if (
+      !(await this.options.feedback.authorize({
+        db,
+        scope: this.scope,
+        itemId: String(item.id),
+        operation: 'capture',
+      }))
+    )
+      return;
+    const key = `routing:${choice.requestId}`;
+    const [replay] = await this.rows(
+      db,
+      'intake_feedback',
+      'item_id=? AND request_key=?',
+      [item.id, key],
+    );
+    if (replay) return;
+    // The projection's own source checks never veto the authoritative decision
+    // or disposition: an unavailable pin or malformed evidence skips capture.
+    // Storage failures below still propagate and roll back.
+    let data: Row;
+    try {
+      const [analysis] = await this.rows(db, 'intake_analyses', 'id=?', [
+        attempt.analysis_id,
+      ]);
+      const inputs = object(analysis.data).inputs;
+      if (!Array.isArray(inputs)) throw new Error('Invalid evidence');
+      const body = {
+        version: 1,
+        choice: choice.handler ? 'handler' : 'none',
+        handlerId: choice.handler?.handlerId ?? null,
+        handlerVersion: choice.handler?.handlerVersion ?? null,
+        args: choice.handler?.args ?? null,
+        actionId: choice.handler?.review.actionId ?? null,
+        proposalId: choice.handler?.review.proposalId ?? null,
+        revision: choice.handler?.review.revision ?? null,
+        bindingHash: choice.handler?.review.bindingHash ?? null,
+        attemptId: String(attempt.id),
+        attemptDigest: String(attempt.output_digest),
+        analysisRevision: Number(analysis.revision),
+        evidence: inputs,
+        query: await this.extractedQuery(db, item, attempt),
+        reviewer: this.scope.actorId,
+        startedBy: choice.startedBy ?? null,
+        approvedBy: choice.handler ? this.scope.actorId : null,
+        reason: choice.reason,
+        requestId: choice.requestId,
+        decidedAt: this.now().toISOString(),
+      };
+      data = { ...body, digest: intakeBindingDigest(body) };
+    } catch {
+      return;
+    }
+    if (Buffer.byteLength(canonical(data)) > this.options.feedback.maxBytes)
+      return;
+    await this.insert(db, 'intake_feedback', {
+      item_id: item.id,
+      request_key: key,
+      supersedes_id: null,
+      kind: 'reviewer_routing',
+      data: canonical(data),
+    });
+  }
+  /** Human-chosen handler for any item. Same preview/approval path; never automation-eligible. */
+  async startAction(input: StartActionInput): Promise<ProposalReview> {
+    const frozen = JSON.parse(
+      canonical(JSON.parse(JSON.stringify(input))),
+    ) as StartActionInput;
+    id(frozen.requestId);
+    if (
+      (frozen.reason !== undefined &&
+        (typeof frozen.reason !== 'string' || frozen.reason.length > 2048)) ||
+      !frozen.args ||
+      typeof frozen.args !== 'object' ||
+      Array.isArray(frozen.args)
+    )
+      throw new Error('Invalid reviewer action');
+    return this.tx(async (db) => {
+      const item = await this.item(db, frozen.itemId, true);
+      const handler = this.handler(frozen.handlerId, frozen.handlerVersion);
+      if (!('execution' in handler)) throw new Error('Handler unavailable');
+      // Reviewer authority is checked before any handler callback runs.
+      await this.access(db, item, handler, 'review');
+      const evidence = await this.rows(
+        db,
+        'intake_evidence',
+        "item_id=? AND state='durable'",
+        [item.id],
+      );
+      if (
+        !handler.discovery?.mediaTypes.some((type) =>
+          evidence.some((entry) => entry.media_type === type),
+        )
+      )
+        throw new Error('Handler unavailable');
+      if (await this.disposition(db, String(item.id)))
+        throw new Error('Item resolved');
+      const attempt = await this.currentAttempt(db, item);
+      const actionKey = `reviewer:${frozen.requestId}`;
+      const provenance = canonical({
+        origin: 'reviewer-selected',
+        intentionKey: actionKey,
+        reviewer: this.scope.actorId,
+        reason: frozen.reason ?? '',
+      });
+      let [action] = await this.rows(
+        db,
+        'intake_actions',
+        'item_id=? AND action_key=?',
+        [item.id, actionKey],
+      );
+      if (action && canonical(object(action.data)) !== provenance)
+        throw new Error('Action identity conflict');
+      action ??= await this.insert(db, 'intake_actions', {
+        item_id: item.id,
+        action_key: actionKey,
+        state: 'proposed',
+        proposal_revision: 0,
+        review_version: 0,
+        execution_attempt: 0,
+        fence: 0,
+        result_digest: '',
+        data: provenance,
+      });
+      // A replayed request re-previews against its original revision so the
+      // publication ledger can compare the identical request hash.
+      const replayed = (
+        await this.rows(db, 'intake_proposals', 'action_id=?', [action.id])
+      ).find((row) => object(row.data).requestId === frozen.requestId);
+      const preview: PreviewProposalInput = {
+        itemId: String(item.id),
+        actionId: String(action.id),
+        attemptId: String(attempt.id),
+        expectedRevision: replayed
+          ? Number(replayed.revision) - 1
+          : Number(action.proposal_revision),
+        requestId: frozen.requestId,
+        handlerId: handler.id,
+        handlerVersion: handler.version,
+        args: frozen.args,
+      };
+      // The reviewer typed these arguments: a schema or `validate` refusal is
+      // correctable inline. The transaction rolls back the new action row.
+      const binding = await this.buildBinding(db, item, preview, true);
+      // The routing choice becomes feedback only once the reviewer approves it.
+      return this.publish(db, item, preview, binding);
+    });
+  }
+  /** The full disposition (reviewer, reason) under the current reviewer authority. */
+  async getItemDisposition(
+    itemId: string,
+  ): Promise<ItemDisposition | undefined> {
+    return this.tx(async (db) => {
+      const item = await this.item(db, itemId);
+      await this.reviewerAccess(db, item);
+      const row = await this.disposition(db, String(item.id));
+      return row ? this.dispositionDTO(row) : undefined;
+    });
+  }
+  /**
+   * A failed attempt's opt-in diagnostic capture (#4285) under the current
+   * reviewer authority for this item, inside the caller's tenant and
+   * confidential scope; every denial fails closed before the row is read.
+   */
+  async getFailedAttemptCapture(
+    itemId: string,
+    attemptId?: string,
+  ): Promise<FailedAttemptCapture | null> {
+    return this.tx(async (db) => {
+      const item = await this.item(db, itemId);
+      await this.reviewerAccess(db, item);
+      let id = attemptId;
+      if (id === undefined) {
+        const [analysis] = await this.rows(
+          db,
+          'intake_analyses',
+          'item_id=? AND revision=?',
+          [item.id, item.analysis_revision],
+        );
+        if (!analysis?.current_attempt_id)
+          throw new Error('Analysis unavailable');
+        id = String(analysis.current_attempt_id);
+      }
+      const [attempt] = await this.rows(
+        db,
+        'intake_analysis_attempts',
+        'id=? AND item_id=?',
+        [id, item.id],
+      );
+      if (!attempt) throw new Error('Analysis unavailable');
+      const capture = storedFailureCapture(object(attempt.data).failureCapture);
+      if (!capture || !attempt.safe_error) return null;
+      return {
+        itemId: String(item.id),
+        attemptId: String(attempt.id),
+        source: capture.source,
+        status: capture.status,
+        ...(capture.status === 'captured' ? { text: capture.text } : {}),
+        truncated: capture.truncated,
+        redacted: capture.redacted,
+        maxBytes: capture.maxBytes,
+        capturedAt: capture.capturedAt,
+      };
+    });
+  }
+  /** Close an item as handled without an action. Terminal; replay returns the same disposition. */
+  async resolveItem(input: ResolveItemInput): Promise<ItemDisposition> {
+    const frozen = JSON.parse(
+      canonical(JSON.parse(JSON.stringify(input))),
+    ) as ResolveItemInput;
+    id(frozen.requestId);
+    if (
+      frozen.disposition !== 'resolve_no_action' ||
+      (frozen.reason !== undefined &&
+        (typeof frozen.reason !== 'string' || frozen.reason.length > 2048))
+    )
+      throw new Error('Invalid disposition');
+    return this.tx(async (db) => {
+      const item = await this.item(db, frozen.itemId, true);
+      const { policy } = await this.reviewerAccess(db, item);
+      const requestHash = intakeBindingDigest(frozen);
+      const key = `disposition:${frozen.requestId}`;
+      const existing = await this.disposition(db, String(item.id));
+      if (existing) {
+        const data = object(existing.data);
+        if (
+          existing.request_key === key &&
+          data.requestHash === requestHash &&
+          data.reviewer === this.scope.actorId
+        )
+          return this.dispositionDTO(existing);
+        throw new Error('Item resolved');
+      }
+      const pending: Row[] = [];
+      for (const action of await this.rows(
+        db,
+        'intake_actions',
+        "item_id=? AND state IN ('authorized','executing','outcome_unknown','succeeded')",
+        [item.id],
+      ))
+        if (
+          action.state !== 'authorized' ||
+          (await this.approvalLive(db, action))
+        )
+          pending.push(action);
+      if (pending.length)
+        throw new Error('Item has pending or applied actions');
+      if (!this.retained(item))
+        throw new RetentionExpired(String(item.id), time(item.expires_at));
+      let attempt: Row | undefined;
+      try {
+        attempt = await this.currentAttempt(db, item);
+      } catch {
+        attempt = undefined;
+      }
+      // A closed item is never sent to a provider again: supersede queued or
+      // running analysis under the item lock, as a new revision would.
+      for (const table of ['intake_analysis_attempts', 'intake_analyses'])
+        await db.query(
+          `UPDATE ${table} SET state='superseded' WHERE tenant_id=? AND confidential_scope_id=? AND item_id=? AND state IN ('queued','running')`,
+          this.scope.tenantId,
+          this.scope.confidentialScopeId,
+          item.id,
+        );
+      await db.query(
+        "UPDATE intake_dispatches SET state='completed' WHERE tenant_id=? AND confidential_scope_id=? AND item_id=? AND state<>'completed'",
+        this.scope.tenantId,
+        this.scope.confidentialScopeId,
+        item.id,
+      );
+      const row = await this.insert(db, 'intake_dispositions', {
+        item_id: item.id,
+        request_key: key,
+        disposition: 'resolved_no_action',
+        data: canonical({
+          reviewer: this.scope.actorId,
+          reason: frozen.reason ?? '',
+          requestId: frozen.requestId,
+          requestHash,
+          decidedAt: this.now().toISOString(),
+          attemptId: attempt ? String(attempt.id) : null,
+          attemptDigest: attempt ? String(attempt.output_digest) : null,
+          policyVersions: policy.versions,
+        }),
+      });
+      if (attempt)
+        await this.routingFeedback(db, item, attempt, {
+          requestId: frozen.requestId,
+          reason: frozen.reason ?? '',
+        });
+      return this.dispositionDTO(row);
+    });
+  }
   async previewPlan(input: PreviewPlanInput): Promise<PlanReview> {
     const frozen = JSON.parse(canonical(input)) as PreviewPlanInput;
     id(frozen.planKey);
@@ -2549,9 +3341,9 @@ export class IntakeExecutionService {
         handler,
         'preview',
       );
-      this.validate(handler.argsSchema, frozen.args, policy.maxBytes);
+      this.validate(handler.argsSchema, frozen.args, policy.maxBytes, true);
       if (!(await handler.validate(frozen.args, context)).ok)
-        throw new Error('Invalid plan arguments');
+        throw new HandlerArgumentsInvalidError('Invalid plan arguments');
       const preview = await handler.preview(frozen.args, context);
       if (
         canonical(preview.normalizedArgs) !== canonical(frozen.args) ||
@@ -2843,6 +3635,152 @@ export class IntakeExecutionService {
         break;
     }
     return results;
+  }
+  /** The recorded submitter decides their own proposal under `review_own`
+   * authority. Apply remains the ordinary once-only path under live grants. */
+  async submitOwnDecision(input: ReviewInput): Promise<ProposalReview> {
+    return this.submitDecision(input, 'review_own');
+  }
+  /** Bounded listing of this actor's own active submissions with their saved
+   * reviews. The submitter column is the authenticated receipt actor recorded by
+   * the server; every page reloads current item/handler/target authority. */
+  async listOwnProposals(
+    input: OwnProposalsInput = {},
+  ): Promise<OwnProposalsPage> {
+    const limit = input.limit ?? 20;
+    if (
+      !Number.isSafeInteger(limit) ||
+      limit < 1 ||
+      limit > 50 ||
+      (input.cursor !== undefined && !UUID_CURSOR.test(input.cursor))
+    )
+      throw new Error('Invalid review page');
+    // Unreadable rows are skipped before anything about them is projected, and
+    // the cursor only names an emitted item when a further readable item was
+    // actually found, so neither page shape nor cursor reveals them. Skipping
+    // OWN_SCAN_CEILING hidden rows in one call fails closed with an error; a
+    // short page or a cursor never stands in for an unfinished scan.
+    const readable: Row[] = [];
+    let more = false;
+    let after = input.cursor;
+    let hidden = 0;
+    scan: for (;;) {
+      const batch = (
+        await this.db.query(
+          `SELECT * FROM intake_items WHERE tenant_id=? AND confidential_scope_id=? AND submitter_id=? AND visibility='active' AND expires_at>?${after ? ' AND id>?' : ''} ORDER BY id LIMIT ?`,
+          this.scope.tenantId,
+          this.scope.confidentialScopeId,
+          this.scope.actorId,
+          this.now().toISOString(),
+          ...(after ? [after] : []),
+          OWN_SCAN_BATCH,
+        )
+      ).rows as Row[];
+      for (const row of batch) {
+        if (await this.readableOwn(row)) {
+          if (readable.length === limit) {
+            more = true;
+            break scan;
+          }
+          readable.push(row);
+        } else if (++hidden >= OWN_SCAN_CEILING)
+          throw new Error('Own proposal scan limit');
+      }
+      if (batch.length < OWN_SCAN_BATCH) break;
+      after = String(batch[batch.length - 1].id);
+    }
+    // Host target checks are callbacks: on this surface any throw from one
+    // means "unavailable" and its text never reaches the submitter. Our own
+    // integrity, validation and database errors still propagate.
+    const reviews = new IntakeExecutionService(this.options, {
+      ...this.config,
+      assertTarget: async (target) => {
+        try {
+          const item = await this.item(target.db, target.itemId);
+          return await this.config.assertTarget({
+            ...target,
+            analysisRevision: Number(item.analysis_revision),
+          });
+        } catch {
+          throw new IntakeAccessDeniedError();
+        }
+      },
+    });
+    const items: OwnProposalsPage['items'] = [];
+    for (const row of readable) {
+      const item: IntakeItemDTO = {
+        id: String(row.id),
+        receiptState: String(row.receipt_state),
+        processingState: String(row.processing_state),
+        analysisRevision: Number(row.analysis_revision),
+        cancelled: !!row.cancelled,
+        traceId: String(row.trace_id),
+      };
+      // A readable item whose reviews are denied (handler or target access)
+      // must not hide the others; the entry says only that it is unavailable.
+      // Integrity, validation and database errors still propagate.
+      try {
+        items.push({
+          item,
+          reviews: await reviews.listReviews(item.id, { limit: 50 }),
+        });
+      } catch (error) {
+        if (!(error instanceof IntakeAccessDeniedError)) throw error;
+        items.push({ item, reviews: null, unavailable: true });
+      }
+    }
+    return {
+      items,
+      ...(more && items.length
+        ? { nextCursor: items[items.length - 1].item.id }
+        : {}),
+    };
+  }
+  /** Once a privacy-redacted item has no external action left to reconcile,
+   * drop the principal that redaction had to retain for it. Caller holds the
+   * item lock. */
+  private async releaseRedactedPrincipal(
+    db: DatabaseInterface,
+    itemId: string,
+  ): Promise<void> {
+    const [item] = await this.rows(db, 'intake_items', 'id=?', [itemId]);
+    if (!item || item.visibility === 'active') return;
+    const unfinished = await this.rows(
+      db,
+      'intake_actions',
+      `item_id=? AND state IN (${UNFINISHED_ACTION_STATES.map(() => '?').join(',')})`,
+      [itemId, ...UNFINISHED_ACTION_STATES],
+    );
+    if (unfinished.length) return;
+    const data = object(item.data);
+    const ceiling = object(data.capturedCeiling ?? {});
+    const released = redactedCeiling(ceiling, false);
+    if (canonical(released) === canonical(ceiling)) return;
+    await db.query(
+      'UPDATE intake_items SET data=? WHERE tenant_id=? AND confidential_scope_id=? AND id=?',
+      canonical({ ...data, capturedCeiling: released }),
+      this.scope.tenantId,
+      this.scope.confidentialScopeId,
+      itemId,
+    );
+  }
+  /** Only an explicit denial hides a row; a failing grant store propagates
+   * instead of silently shrinking the list. */
+  private async readableOwn(row: Row): Promise<boolean> {
+    const capturedCeiling = object(object(row.data).capturedCeiling ?? {});
+    try {
+      return (
+        (await this.options.authorize({
+          scope: this.scope,
+          operation: 'read',
+          capturedCeiling,
+          db: this.db,
+        })) === true
+      );
+    } catch (error) {
+      if (error instanceof IntakeAccessDeniedError) return false;
+      throw error;
+    }
   }
 }
 

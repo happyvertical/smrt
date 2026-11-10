@@ -19,6 +19,41 @@
 
 // Built-in signal adapters
 export * from './adapters/index';
+// Opt-in AI call transcripts (#4780), capture side. Browser-safe; keep this
+// list identical in index.ts and browser.ts.
+export {
+  AI_CALL_ID_TAG,
+  type AiTranscriptAppSettings,
+  type AiTranscriptCaptureReason,
+  type AiTranscriptContext,
+  type AiTranscriptMessage,
+  type AiTranscriptRedactionContext,
+  type AiTranscriptRedactionValues,
+  type AiTranscriptRedactor,
+  aiTranscriptCaptureReason,
+  aiTranscriptSampleRate,
+  aiTranscriptsEnabled,
+  type CaptureAiTranscriptCallOptions,
+  captureAiTranscriptCall,
+  DEFAULT_TRANSCRIPT_MAX_BYTES,
+  DEFAULT_TRANSCRIPT_SAMPLE,
+  type FittedAiTranscript,
+  fitAiTranscript,
+  getAiTranscriptAppSettings,
+  getTranscriptRedactor,
+  MIN_SENSITIVE_VALUE_LENGTH,
+  maybeWithAiTranscripts,
+  newAiCallId,
+  noteAiTranscriptRun,
+  observeAiTranscriptUsage,
+  type ResolvedAiTranscriptConfig,
+  redactAiTranscriptMessages,
+  resolveAiTranscriptConfig,
+  setAiTranscriptAppSettings,
+  setTranscriptRedactor,
+  unwrapAiTranscriptClient,
+  withAiTranscripts,
+} from './ai-transcripts';
 export * from './audit.js';
 export { withAuditContext } from './audit-context.js';
 // App-side referential integrity applied by `SmrtObject.delete()` (#2371)
@@ -142,6 +177,10 @@ export {
   DEFAULT_DATA_QUERY_RESULT_BYTES,
   MAX_DATA_QUERY_CURSOR_LENGTH,
   MAX_DATA_QUERY_FACETS,
+  MAX_DATA_QUERY_FIELD_VALUE_DESCRIPTION_LENGTH,
+  MAX_DATA_QUERY_FIELD_VALUE_LABEL_LENGTH,
+  MAX_DATA_QUERY_FIELD_VALUE_LENGTH,
+  MAX_DATA_QUERY_FIELD_VALUES,
   MAX_DATA_QUERY_FILTER_DEPTH,
   MAX_DATA_QUERY_FILTERS,
   MAX_DATA_QUERY_IN_VALUES,
@@ -150,6 +189,7 @@ export {
   MAX_DATA_QUERY_REQUEST_BYTES,
   MAX_DATA_QUERY_RESULT_BYTES,
   MAX_DATA_QUERY_WARNINGS,
+  normalizeDataQueryFieldValues,
   normalizeDataQueryRequest,
   normalizeDataQueryResult,
   normalizeDataQuerySchema,
@@ -170,6 +210,7 @@ export {
   isAbortedTransactionError,
   isDeterministicDatabaseError,
   isNotNullViolationError,
+  isTransientConnectionError,
   isTransientDatabaseError,
   isUniqueViolationError,
 } from './db-errors';
@@ -221,12 +262,15 @@ export {
   isEmbeddedDatabase,
   isPostgresDatabase,
   usesEmbeddedRevisionFallback,
+  usesPostgresDialect,
+  withCallerOwnedDatabaseTransaction,
   withEmbeddedWriteQueue,
   withEmbeddedWriteTransaction,
 } from './embedded-write-queue';
 // Embeddings support (semantic search)
 export * from './embeddings/index';
 export * from './errors';
+export * from './external-agent-usage.js';
 // Filesystem boundary (keeps @happyvertical/files out of neutral bundles)
 export {
   createFilesystemAdapter,
@@ -241,7 +285,151 @@ export {
 } from './generated-collection-access';
 // Code generators (tree-shakeable)
 export * from './generators/index';
+export { toProviderToolSchema } from './generators/provider-tool-schema.js';
 export { type HierarchyView, SmrtHierarchical } from './hierarchical';
+// Inference tiers and the binding resolver seam (#4750). Browser-safe; keep
+// this list identical in index.ts and browser.ts.
+export {
+  assertInferenceConfig,
+  assertInferenceTranscriptsConfig,
+  builtInInferenceResolver,
+  compareInferenceTiers,
+  DEFAULT_INFERENCE_TIER,
+  getInferenceConfig,
+  getInferenceExecutor,
+  getInferenceResolver,
+  getInferenceTranscriptsConfig,
+  INFERENCE_FUSION_MODES,
+  INFERENCE_TARGET_SOURCES,
+  INFERENCE_TARGET_UNBOUND,
+  INFERENCE_TIERS,
+  type InferenceAlias,
+  InferenceBindingError,
+  type InferenceCallOptions,
+  type InferenceCandidate,
+  type InferenceCapabilityFallbackOption,
+  type InferenceConfig,
+  type InferenceExecutionContext,
+  type InferenceExecutor,
+  type InferenceFusionDefinition,
+  type InferenceFusionGate,
+  type InferenceFusionLookup,
+  type InferenceFusionMode,
+  type InferenceFusionSeat,
+  type InferenceFusionSource,
+  type InferenceLatency,
+  type InferenceModelClient,
+  type InferenceModeRequest,
+  type InferenceModeState,
+  type InferenceRequest,
+  type InferenceResolution,
+  type InferenceResolutionSource,
+  type InferenceResolver,
+  type InferenceResolverContext,
+  type InferenceRunRecord,
+  type InferenceRunStatus,
+  type InferenceTarget,
+  type InferenceTargetKind,
+  type InferenceTargetSource,
+  type InferenceTier,
+  type InferenceTierRequest,
+  type InferenceTranscriptPromptConfig,
+  type InferenceTranscriptsConfig,
+  type InferenceUsageObservation,
+  type InferenceUsageRecord,
+  inferenceExecutorFor,
+  inferenceModeForTarget,
+  inferenceTargetKind,
+  inferenceUsageTags,
+  isInferenceTargetSource,
+  isInferenceTier,
+  isInferenceTierRequest,
+  lookupInferenceFusion,
+  MIN_TRANSCRIPT_MAX_BYTES,
+  mergeInferenceConfigs,
+  type ResolveInferenceOptions,
+  resolveAutoTier,
+  resolveInference,
+  resolveInferenceFromConfig,
+  resolveInferenceMode,
+  setInferenceExecutor,
+  setInferenceResolver,
+} from './inference';
+// Inference mode and the typed AI-unavailable state (#4757). Browser-safe;
+// keep this list identical in index.ts and browser.ts.
+export {
+  AI_UNAVAILABLE,
+  INFERENCE_MODES,
+  INFERENCE_UNAVAILABLE_REASONS,
+  type InferenceEntitlementDetails,
+  type InferenceMode,
+  type InferenceStatus,
+  type InferenceUnavailableDetails,
+  InferenceUnavailableError,
+  type InferenceUnavailableReason,
+  inferenceUnavailableMessage,
+  inferenceUnavailableStatus,
+  isInferenceMode,
+  isInferenceUnavailableError,
+  isInferenceUnavailableReason,
+} from './inference-availability';
+export {
+  ASSUMED_INFERENCE_CAPABILITIES,
+  detectInferenceCapabilities,
+  estimateInferenceTokens,
+  INFERENCE_CAPABILITY_HEURISTICS,
+  INFERENCE_CAPABILITY_SOURCES,
+  INFERENCE_PRESET_CAPABILITIES,
+  type InferenceCapabilities,
+  type InferenceCapabilityEvidence,
+  type InferenceCapabilityHeuristic,
+  type InferenceCapabilityLayers,
+  type InferenceCapabilitySource,
+  type InferenceCapabilityTarget,
+  inferenceCapabilitiesFromSdk,
+  inferenceCapabilityHeuristic,
+  inferencePresetFor,
+  isInferenceCapabilities,
+  parseInferenceTextVerdict,
+  resolveInferenceCapabilities,
+} from './inference-capabilities';
+export {
+  checkInferenceGate,
+  enforceInferenceGate,
+  getInferenceGate,
+  INFERENCE_BLOCKED_OPERATION,
+  type InferenceGate,
+  type InferenceGateDecision,
+  type InferenceGateRequest,
+  inferenceBlockedUsageRecord,
+  inferenceGateRequest,
+  isHostedInferenceTarget,
+  setInferenceGate,
+} from './inference-gate';
+export {
+  INFERENCE_PRESET_IDS,
+  INFERENCE_PRESETS,
+  type InferencePresetId,
+  isInferencePresetId,
+  resolveInferencePreset,
+} from './inference-presets';
+export {
+  configuredAiProvider,
+  createInferenceStatusHandler,
+  getInferenceStatus,
+  type InferenceStatusEvent,
+  type InferenceStatusHandlerOptions,
+  type InferenceStatusOptions,
+  inferenceStatusResponse,
+  isInferenceAvailable,
+} from './inference-status';
+export {
+  bindInferenceTarget,
+  inferenceTargetIdentity,
+  type ResolvedInferenceTarget,
+  type ResolveInferenceTargetOptions,
+  resolveInferenceTarget,
+} from './inference-target';
 // Global interceptors system (for tenancy, soft-delete, audit logging, etc.)
 export * from './interceptors';
 export {
@@ -254,15 +442,19 @@ export * from './knowledge';
 // Lazy / execute-time config resolvers (for agent_config and similar
 // snapshot-prone payloads — see issue #1161)
 export type {
+  ConfigResolutionContext,
   ConfigResolver,
+  ConfigResolverContext,
   LazyConfigSentinel,
   ResolveLazyConfigOptions,
 } from './lazy-config';
 export {
+  createConfigResolverContext,
   getClassConfigResolvers,
   getConfigResolver,
   isLazyConfigSentinel,
   listConfigResolvers,
+  preferPersisted,
   registerConfigResolver,
   resetConfigResolvers,
   resolveLazyConfig,
@@ -297,6 +489,10 @@ export {
   SchemaComparer,
 } from './migrations/differ';
 export * from './object';
+export {
+  type OperationPermissionAlias,
+  resolveOperationPermissionAlias,
+} from './operation-permission.js';
 export {
   SmrtPolymorphicAssociation,
   type SmrtPolymorphicAssociationOptions,
@@ -377,7 +573,23 @@ export {
 } from './recipe-help';
 export * from './registry';
 export { smrt as smrtRegistry } from './registry';
+// Generated-surface exposure a collection class takes from its model.
+export {
+  type CollectionWriteEscalation,
+  type CrudVerb,
+  exposedCrudVerbs,
+  findCollectionWriteEscalations,
+  inheritCollectionExposure,
+  inheritedCollectionSurface,
+} from './registry/collection-exposure';
 export type { RuntimeRegistrationOverride } from './registry/runtime-overrides';
+// Subclass models inherit their parent model's generated surface.
+export {
+  findSubclassExposureEscalations,
+  inheritSubclassExposure,
+  type SubclassExposureEscalation,
+  surfaceOpensOperation,
+} from './registry/subclass-exposure';
 // Revision compare-and-swap predicate helpers (#2620)
 export {
   POSTGRES_REVISION_GUARD_EXPRESSION,
@@ -387,6 +599,7 @@ export {
 export * from './run-once';
 // Runtime utilities
 export * from './runtime/index';
+export * from './runtime-model';
 export { detectEngine, generateDDLForEngine } from './schema/ddl';
 // Per-foreign-key orphan count report (#2753) — read-only, COUNT(*) probe of
 // every manifest foreign key, reusing the same predicate the migration
@@ -424,6 +637,7 @@ export * from './signals/index';
 // Idempotent sync-apply batch write contract (#1759) — shared by the runtime
 // REST generator and the generated SvelteKit sync route
 export * from './sync/apply';
+export { setDatabaseSyncDeviceId } from './sync-device.js';
 // System tables and types (note-taking, migrations, registry, signals)
 export * from './system/index';
 export type {

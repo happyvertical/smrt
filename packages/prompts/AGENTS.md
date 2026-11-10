@@ -28,6 +28,7 @@ Each layer can override any subset of fields (template, profile, model, params).
 - **Stored overrides use nullable fields** so inheritance stays field-by-field — null means "use the lower layer"
 - **Provider selection is indirect** in v1: prompts select named profiles, and profiles resolve to provider/model in `smrt-config`
 - **`editable` flags are enforced on `PromptOverride.save()`** — definitions can lock specific fields against tenant override
+- **Tier names are reserved profile names** (#4750): `cheap`, `good`, `great`, `best` and `auto` need no `profiles` entry. `resolvePrompt()` only marks them (`ai.tier`, `ai.promptKey`, and the code default's `ai.latency`) and never copies a binding into `provider`/`model`/`params`: the tier binds once, at call time, through core's seam (`prepareAiOperation()` / `getAiClient(tier)`) with the prompt key, so prompt and call cannot disagree. `allowedProfileNames` applies to tier names chosen by config or an override, but not to the tier the code default itself declares when no config, stored or runtime layer sets a profile (#4755), so an allow-list never breaks framework prompts. An explicit prompt `model` stays validated by `allowedModels` and is sent per call on the tier client. **Footgun:** a same-named `profiles` entry wins and silently opts that name out of tiers. `definePrompt({ ai: { minimumTier } })` sets the ladder floor for a tier prompt (#4752); it is read from the code default only (stripped from params at every layer), so config and tenant overrides cannot lower it, and `promptMessageOptions()` forwards it with `tier`. `tier`, `latency` and `promptKey` never come from params. The canonical `promptMessageOptions()` forwards them; callers send the result through `prepareAiOperation()` (`SmrtClass`, so collections too), which strips them before the provider call. Sites holding their own client (content chat and thumbnails, facts' injected message-only client, the translation job, `Issue`'s explicit-provider path) pass `{ routeTier: false }` or drop the keys, so the prompt's tier does not route there and records no tier tags; the translation job and `Issue`'s path still apply a stored tenant or user binding through core's `resolveInferenceTarget({ appBindings: false })` (#4756), which adds tier and `source` tags only when a binding applied.
 
 ## Generated surfaces
 
@@ -51,13 +52,45 @@ write) or `PromptOverrideCollection.setTemplateOverride()` /
 - `vitest.config.ts` runs two projects (`server` node + `smrtVitestPlugin`, `svelte` jsdom + `@sveltejs/vite-plugin-svelte` with `conditions: ['browser']`) because the browser condition would send `smrt-core` to its browser build if applied globally.
 - `PromptSettingsService.create()` builds its `PromptOverrideCollection` with the caller's `defaultListLimit`/`maxListLimit` stripped before the bulk `getOverrideMapForKeys()` enumeration read that backs `listPromptSettings()` — the #3056 hazard class in `smrt-features`'s `FeatureOverrideCollection.getOverrideMap()`, applied here proactively rather than left for a follow-up issue. A host-configured list bound must never silently drop a key's override from a management screen.
 
+## Usage tags (#4751)
+
+`resolvePrompt()` returns `ai.usageTags = { promptKey, promptLayer,
+templateHash }`: `promptLayer` is the highest layer that supplied the template
+(`default | config | app | tenant | runtime`; a params-only layer does not
+count), `templateHash` the first 12 hex chars of the SHA-256 of the unrendered
+effective template (Web Crypto, so the root stays free of `node:crypto`).
+`promptMessageOptions(ai, { usageTags? })` is the one helper that turns a
+resolution into `ai.message()` options; package copies re-export it. Tag
+precedence, low to high: a `usageTags` object in params (tenant-editable, so
+reserved tags — identity, `runId`, tier, `substitutions`, `fusionKey` — are
+dropped from it), the resolution's tags, the caller's. Params never carry
+`tier`, `latency` or `promptKey` either: tier routing comes only from the
+validated profile. Every consumer
+call site must forward them (`promptMessageOptions()` or a spread of
+`resolved.ai`); core lifts `promptKey` into `_smrt_ai_usage.prompt_key`
+(`../core/agents/ai-usage.md`).
+
+## Framework prompt tiers (#4755)
+
+Every framework `definePrompt()` declares `ai.profile` as a tier: closed-
+vocabulary classification and yes/no predicates → `cheap`; summaries,
+descriptions, translations, headlines → `good`; synthesis over user content
+that is persisted or applied (feedback incorporation, reviews, corrections,
+fact extraction and reconciliation) → `great`; nothing defaults to `best`.
+`ai.latency` is `interactive` on request paths (chat, editor) and `background`
+for jobs, else unset; only the code default declares it. Prompts that make no model call (persona instructions,
+chat system prompts) or call a non-text model (image generation) declare no
+tier. An explicit model on the call path wins over the tier. Each package's
+`AGENTS.md` records its choices; one test per package pins the tag set.
+
 ## Prompt keys are persisted identifiers
 
 Overrides are stored keyed by the exact `key` string and resolved by that
 string at runtime. **Renaming a key orphans every existing override and
-silently reverts every tenant to the registry default.** Treat a shipped key
-as immutable; a rename needs a data migration over
-`_smrt_prompt_overrides.key`, not an edit.
+silently reverts every tenant to the registry default**, and it also orphans
+the key's `_smrt_ai_usage` series: history stays under the old `prompt_key`
+and outcome labels never join the new one. Treat a shipped key as immutable;
+a rename needs a data migration over `_smrt_prompt_overrides.key`, not an edit.
 
 ## Caching
 

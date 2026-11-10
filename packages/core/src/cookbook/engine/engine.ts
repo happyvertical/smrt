@@ -243,6 +243,7 @@ export function createCookbookEngine(
         name:
           doc.name ?? libraryName(catalog, state.applied) ?? DEFAULT_APP_NAME,
         description: doc.description ?? null,
+        specs: doc.specs ?? null,
         cookbook: state.applied,
       },
       recipes: doc.recipes.flatMap((id) => {
@@ -258,6 +259,8 @@ export function createCookbookEngine(
         currency: settings.currency,
         taxRate: Number((settings.taxRate * 100).toFixed(4)),
         paymentTerms: settings.paymentTerms,
+        pricesIncludeTax: settings.pricesIncludeTax,
+        taxRounding: settings.taxRounding,
       },
       theme: {
         text: describeTheme(doc.theme),

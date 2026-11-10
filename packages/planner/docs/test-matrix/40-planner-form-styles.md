@@ -1,0 +1,9 @@
+# Planner form styles and cookbook CSS test matrix
+
+Issue: [#40](https://github.com/happyvertical/smrt-planner/issues/40)
+
+| Behavior / invariant | Reachable trigger | Positive case | Negative / failure case | Actor / context | Data executor / transaction | Supported runtime / dialect | External contract edge | Test level | Validation command |
+| --- | --- | --- | --- | --- | --- | --- | --- | --- | --- |
+| Generated forms have a readable responsive layout | Open New/Edit on a model, recipe field map, or variant grid | Bounded surface, clear heading/actions, one column on narrow screens and two on wide screens | Fields do not overflow; long text and grid remain full width | Planner visitor | N/A: visual layout only | Browser / Svelte 5 | smrt-svelte supplies the field controls; Planner owns the form arrangement | Native app visual QA | Open a model form and a recipe form in the MCP app tab; inspect narrow and wide widths |
+| Custom CSS text is portable but inert | Enter CSS in Theme, save/export/import the cookbook | Exact text survives and the active preset does not change | Non-string or overlong CSS rejects import; older cookbooks without CSS still load | Planner visitor or host agent | CookbookStore and host sync; whole validated document replaces on import | Browser and host-backed MCP app | `theme.customCss` optional in cookbook v1; never injected into the DOM | Unit plus UI QA | `pnpm exec vitest run tests/theme.test.ts`; inspect Theme tab and export |
+| Reset clears the stored CSS | Reset a cookbook that has custom CSS | `theme.customCss` is absent in the resulting document | No stale CSS remains in next export | Planner visitor | CookbookStore.reset | Browser and host-backed MCP app | Cookbook export reflects the current document | Unit | `pnpm exec vitest run tests/theme.test.ts` |

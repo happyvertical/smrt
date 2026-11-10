@@ -101,4 +101,12 @@ describe('FileUpload', () => {
     await userEvent.upload(fileInput(container), png('report.png'));
     await expectNoA11yViolations(container);
   });
+
+  // #3386: the remove button follows the density target.
+  it('puts density on its root so the remove button can take the touch target', () => {
+    const { container } = render(FileUpload, { props: { density: 'touch' } });
+    expect(
+      container.querySelector('[data-smrt-component="FileUpload"]'),
+    ).toHaveAttribute('data-density', 'touch');
+  });
 });

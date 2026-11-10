@@ -1,0 +1,103 @@
+{{- define "smrt.maintenanceConf" -}}
+server {
+  listen {{ .Values.maintenance.port }};
+  location = /ready { return 200 'ready'; }
+  location / {
+    add_header X-Smrt-Release {{ .Values.release.id }} always;
+    add_header X-Smrt-Sequence {{ .Values.release.sequence }} always;
+    return 503 {{ .Values.maintenance.http.body | quote }};
+  }
+}
+{{ end -}}
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: {{ .Release.Name }}-maintenance
+  labels:
+{{ include "smrt.labels" . | indent 4 }}
+data:
+  # A block scalar ending its document loses the final newline in Helm's
+  # post-render path (Flux always post-renders), so emit a quoted string.
+  default.conf: {{ include "smrt.maintenanceConf" . | toJson }}
+---
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: {{ .Release.Name }}-maintenance
+  labels:
+{{ include "smrt.labels" . | indent 4 }}
+spec:
+  replicas: 1
+  selector:
+    matchLabels: {app.kubernetes.io/instance: {{ .Release.Name | quote }}, smrt.happyvertical.com/component: maintenance}
+  template:
+    metadata:
+      labels:
+{{ include "smrt.labels" . | indent 8 }}
+        smrt.happyvertical.com/component: maintenance
+    spec:
+      automountServiceAccountToken: false
+      terminationGracePeriodSeconds: 15
+      containers:
+        - name: maintenance
+          image: {{ .Values.maintenance.image | quote }}
+          command: {{ .Values.maintenance.command | toJson }}
+          ports: [{name: http, containerPort: {{ .Values.maintenance.port }}}]
+          readinessProbe: {httpGet: {path: /ready, port: http}}
+          lifecycle: {preStop: {exec: {command: ["sleep", "5"]}}}
+          resources: {requests: {cpu: 10m, memory: 16Mi}, limits: {cpu: 100m, memory: 64Mi}}
+          volumeMounts: [{name: config, mountPath: /etc/nginx/conf.d, readOnly: true}]
+      volumes:
+        - name: config
+          configMap: {name: {{ .Release.Name }}-maintenance}
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: {{ .Release.Name }}-maintenance
+  labels:
+{{ include "smrt.labels" . | indent 4 }}
+spec:
+  selector: {app.kubernetes.io/instance: {{ .Release.Name | quote }}, smrt.happyvertical.com/component: maintenance}
+  ports: [{name: http, port: {{ .Values.maintenance.port }}, targetPort: http}]
+{{- $root := . }}
+{{- $routes := prepend (default (list) .Values.ingress.additionalRoutes) (dict "name" (default .Release.Name .Values.ingress.name) "host" .Values.ingress.host "tlsSecretName" .Values.ingress.tlsSecretName "annotations" .Values.ingress.annotations "primary" true) }}
+{{- range $route := $routes }}
+---
+apiVersion: networking.k8s.io/v1
+kind: Ingress
+metadata:
+  name: {{ $route.name }}
+  labels:
+{{ include "smrt.labels" $root | indent 4 }}
+  {{- with $route.annotations }}
+  annotations: {{ . | toJson }}
+  {{- end }}
+spec:
+  ingressClassName: {{ $root.Values.ingress.className }}
+  {{- with $route.tlsSecretName }}
+  tls: [{hosts: [{{ $route.host | quote }}], secretName: {{ . }} }]
+  {{- end }}
+  rules:
+    - host: {{ $route.host | quote }}
+      http:
+        paths:
+          - path: /
+            pathType: Prefix
+            backend:
+              service:
+                {{- if or (not $route.primary) (eq $root.Values.release.phase "active") }}
+                {{- $backend := dict "name" $route.workload }}
+                {{- if $route.primary }}
+                {{- range $name, $w := $root.Values.target.workloads }}
+                {{- if eq $w.role "web" }}{{ $_ := set $backend "name" $name }}{{ end }}
+                {{- end }}
+                {{- end }}
+                {{- $w := index $root.Values.target.workloads $backend.name }}
+                name: {{ $root.Release.Name }}-{{ $backend.name }}
+                port: {number: {{ $w.service.port }}}
+                {{- else }}
+                name: {{ $root.Release.Name }}-maintenance
+                port: {number: {{ $root.Values.maintenance.port }}}
+                {{- end }}
+{{- end }}

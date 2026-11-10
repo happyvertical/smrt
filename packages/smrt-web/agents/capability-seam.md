@@ -90,6 +90,18 @@ bookkeeping, ZERO `@tanstack/*` imports.
   clears every registered `DurableResource` under a namespace (best-effort — a
   rejected `clear()` doesn't abort the sweep) then drops it; a safe no-op on an
   unknown/empty namespace.
+- Shared-device sweep (#3234, `durable-store-sweep.ts`): the registry above
+  only reaches resources registered in THIS page load.
+  `listDurableNamespaces()` adds every namespace with an smrt-web IndexedDB
+  database (outbox = bare namespace; `::snapshots` / `::meta` suffixes
+  stripped) by NAME via `indexedDB.databases()`, never opening one.
+  `pruneDurableNamespace(ns, { olderThan })` deletes outbox rows with
+  `enqueuedAt < olderThan` straight from IndexedDB — no `OutboxEngine`, no
+  binding, no transport, no `fetch`; counts only. It must never create a
+  database (opens versionless and aborts `upgradeneeded`), and per route it
+  takes the replayer's own leader lock (`outboxLeaderLockName`) with
+  `ifAvailable`, skipping a held route; without Web Locks it skips a namespace
+  whose outbox this page has registered.
 
 Rationale: the persistence slice's storage (SQLite-WASM/OPFS) and the outbox's
 IndexedDB queue are **separate storage engines**, so the shared foundation lives

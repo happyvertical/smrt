@@ -17,6 +17,12 @@ it links the relevant runtime and generation contracts.
 | `generateSTISchemaFromRegistry` | `src/testing/database.ts` (`getTestDatabase()`), `src/schema/utils.ts` (`generateSchema`; `ensureSchema` only as a fallback) | tests + runtime helpers |
 | `generateSchemaFromRegistry` | the same two callers | tests + runtime helpers |
 
+The migration differ and CREATE TABLE planner share adapter-aware engine
+selection. A native in-memory DuckDB handle can report `:memory:` and expose
+`exportTable`, so use the native and JSON adapter discriminators before URL
+inference. For native DuckDB the differ reads inline UNIQUE constraints from
+`duckdb_constraints()` because the adapter index list omits them.
+
 Production DDL takes the manifest route:
 
 ```
@@ -81,6 +87,8 @@ divergence is a bug in the generator, not an exception to add to the test.
   whose columns are a strict subset of a declared UNIQUE index. It is a pure
   relaxation (every row satisfies the wider key) and otherwise would keep
   rejecting rows the model allows. The maintenance-window rule below applies.
+  DuckDB has no partial indexes, so its indexes count as predicate-free, and
+  its quoted index columns (`"key"`) are unquoted before comparison (#3305 M1).
 - **Optional NULL tenants** retain the SDK's NULL-equal upsert identity. Generated
   framework conflict indexes with nullable keys carry `nullsNotDistinct: true`;
   PostgreSQL 15+ creates `UNIQUE NULLS NOT DISTINCT`, enabling warm single-statement
@@ -181,6 +189,34 @@ Unknown columns, malformed entries, and a name collision with a different index
 all fail generation — a silently dropped index only surfaces later as a
 production slowdown. Keep both config rebuild sites aligned.
 
+### STI subclasses declare indexes on the shared table (#3299)
+
+`@smrt({ indexes })` on an STI **descendant** is emitted on the shared table
+by `appendStiSubclassDeclaredIndexes()` (both STI entry points, after the
+base's declarations; `getAllSchemasAsDefinitions()` and `getTestDatabase()`
+inherit it). It goes through the same validation as a base declaration: known
+columns, the 63-byte name limit, and errors on a collision. A UNIQUE
+declaration is scoped to the declaring subtype with
+`WHERE _meta_type = '<qualified class>'`, so siblings sharing the column are
+not constrained. As with `@field({ unique })` on a descendant, each class in
+the declaring class's own subtree gets a partial copy
+(`<declared name, cut to 52>_<10-hex digest>`), so uniqueness holds per
+concrete class there too, not across the subtree. DuckDB/JSON skip these
+rather than widen them. A subclass UNIQUE with its own `where` is refused; declare a
+combined predicate on the base. A plain subclass index stays unqualified, so
+polymorphic reads can use it. Columns are emitted exactly as declared and are
+never tenant-prefixed, as with explicit `conflictColumns`: put `tenant_id`
+first for a tenant-local key (`['tenantId', 'rampEventId']`). Leave it out
+only for a reviewed global identity (#3305 dispositions).
+
+Migration: `db:migrate` adds the new index by name. A UNIQUE index fails
+closed (the migration rolls back) when existing rows already duplicate the
+key. Find and repair those rows first, scoped to the subtype
+(`_meta_type = '<qualified class>'`), and never by deleting history to make
+the index fit. With `db:migrate --postgres-safe` it is built `CONCURRENTLY`.
+A failed concurrent build leaves an INVALID index, which the next run drops
+and rebuilds after the data is repaired.
+
 ### Relationship targets resolve to a class name on both paths
 
 `@foreignKey`/`@oneToMany`/`@manyToMany` accept a class, a name string, or a
@@ -201,12 +237,32 @@ manifest generator resolves unqualified targets in the declaring package.
 Keep the merged schema in parity tests: `getTestDatabase()` preserves its
 authoritative FK metadata over the generated columns, so testing only the
 standalone generator cannot prove the constraint that reaches the database.
+With an explicit `classes` list, `getTestDatabase()` builds that authoritative
+schema with `getAllSchemasAsDefinitions({ tables })`: only the requested tables
+and their foreign-key closure are merged and ownership-checked
+(`CONFIG_TABLE_NAME_COLLISION` still fires for any of them), so an unrelated
+collision elsewhere in the registry cannot abort the setup. The implicit list
+checks every registered table (#3956).
 
 Field decorator registration retains constructor ownership separately from the
 simple-name inspection view. Custom decorators should pass the callback's
 constructor as `registerFieldDecorator`'s fourth argument. Omit it only for
 intentional legacy string-only metadata; that legacy metadata still composes
 with constructor-owned options, but mirrored public decorator fields do not.
+
+### Decorator-only field types agree on both paths (#4295)
+
+A compiled model registered without a manifest entry sees only `@field()`
+options, never the initializer or annotation the scanner reads. Without an
+explicit `type`, a boolean `default` infers `boolean` on both paths
+(`inferDecoratorOnlyFieldType` in `src/registry/class-registration.ts`, step
+3.7 of the scanner's `ManifestAdapter.inferFieldType`); anything else falls
+back to `text`. Numbers are never inferred at runtime (`0` and `0.0` are the
+same value), so a runtime-only numeric field must declare
+`type: 'integer' | 'decimal'`. Loading the manifest later still replaces the
+decorator-only type. A database whose column was built from the old TEXT
+expectation is not auto-cast; parity reports the drift for an explicit
+migration.
 
 ### A SQLite type change is a table rebuild (#2370)
 
@@ -251,6 +307,30 @@ Four properties of that module are load-bearing; keep them if you touch it:
 All the drifted columns of one table share a single rebuild: the first change
 carries the plan and the rest become `no change needed` comments that the CLI
 classifies as no-ops.
+
+### Explicit SQLite NOT NULL relaxation (#4413)
+
+`relaxColumns: true` / `smrt db:migrate --relax-columns` also supports removing
+an ordinary inline `NOT NULL` clause on a manifest-declared column. The local
+application entry point forwards `smrt app migrate --relax-columns` under its
+existing operation lock and refuses a live application writer. The programmatic
+`migrateSmrtSchemas` / `getPendingSchemaStatements` entry points accept the same
+explicit `relaxColumns` option. Defaults remain advisory; this does not relax
+orphan columns or change SQLite defaults/tightening behavior.
+
+The rebuild preserves live DDL, indexes/triggers and assigned rowids. Named
+NOT NULL constraints, `ON CONFLICT`, AUTOINCREMENT tables, primary/generated target columns, missing
+clauses and tables shadowing every rowid alias refuse rather than guessing.
+A nullable-relaxation rebuild emits `PRAGMA foreign_keys = OFF` as a tracker
+handoff: `MigrationTracker` suspends FK enforcement **before** opening its
+transaction, verifies suspension on both the base and transaction connection,
+and checks `PRAGMA foreign_key_check` before commit. This avoids inbound FK
+`ON DELETE` actions and preserves referencing rows. An active borrowed transaction
+that cannot suspend enforcement, a mismatched transaction connection or an
+adapter without transactions refuses. FK and legacy rename settings are restored
+in `finally`, including after rollback. Run this maintenance operation with
+exclusive access to the SQLite connection. Type-only rebuilds retain the older
+inbound-FK refusal described above.
 
 ## What the differ compares (#2369)
 
@@ -525,6 +605,16 @@ rather than collapsing them, so there is no silent-collision hazard there.
 
 ### The `_smrt_` prefix does not mean "system table" (#2376)
 
+`SmrtClass` coalesces concurrent system-table initialization through completion
+of bootstrap, deferred compatibility, and vector setup (#3944). In-flight work
+is shared only by the same database handle. Distinct handles at the same URL
+retain database-level coordination: a caller-owned transaction may finish its
+initialization statements before its tables become visible to another handle.
+All same-handle waiters observe failure; the pending entry is removed so a fresh
+instance can retry. Existing completed-success cache identities are unchanged.
+Provision system tables on a base connection before caller-owned transactions;
+constructor initialization still preserves PostgreSQL's transaction lock lifetime.
+
 `bootstrapSystemTables()` owns nine hand-written tables; ~25 more `_smrt_*`
 tables belong to `@smrt()` models and are created by `db:migrate` (feature
 flags, prompt overrides, subscription plans, report schedules, field policies,
@@ -541,6 +631,9 @@ additionally needs an `addColumnIfMissing()` entry in `system/compatibility.ts`
 (`CREATE TABLE IF NOT EXISTS` is a no-op on an existing table).
 `system-schema-evolution.test.ts` enforces both, and asserts a legacy database
 upgrades to exactly the shape a fresh install gets.
+Bootstrap-table columns go in `ensureBootstrapSystemTableCompatibility()`,
+which runs before the replay so its indexes find them: `_smrt_ai_usage`'s
+#4751 columns are the model (`agents/ai-usage.md`).
 
 `_smrt_jobs` / `_smrt_job_events` are dual-owned: `db:migrate` creates them,
 the compatibility pass reshapes them. On a fresh install bootstrap runs first,
@@ -601,6 +694,38 @@ swap outside the batch transaction. A change toward `CASCADE` / `SET NULL` /
 `SET DEFAULT` still applies (the manifest declares it) but carries a
 `warning` advisory that `db:diff`, `db:status` and `db:migrate` print as
 DESTRUCTIVE.
+
+### Deletes inside a caller-owned transaction
+
+`runCascadeDelete()` owns the cascade's atomic scope through
+`runInOwningCascadeTransaction()` in `src/cascade.ts` (#2824). A root handle opens
+its own transaction. A transaction handle on an engine with savepoints nests.
+When the engine refuses to nest (`NestedTransactionError`, raised by the SDK before
+the callback runs), the cascade joins the enclosing transaction. This happens for
+framework-owned handles, for caller-owned **native DuckDB** transactions
+(`db.transaction()` scopes and `beginTransaction()` handles passed to
+`withDatabase()`), and for the bulk junction path (#2818). A transaction handle
+counts as native DuckDB only after core has seen its root, through
+`initialize()`, `withDatabase()` or a framework transaction. Otherwise the
+handle is never treated as native by guesswork, and the delete keeps the
+`NestedTransactionError` refusal. The caller's commit or
+rollback then decides the outcome of the cascade, the owned `_smrt_contexts` and
+`_smrt_embeddings` cleanup, and the target row.
+
+There is no savepoint, so a cascade that fails part-way cannot be undone on its
+own. On native DuckDB the framework therefore aborts the joined transaction
+(`SELECT error(...)`) before rethrowing, but only if the cascade has already
+issued a write. The SDK's DuckDB `delete()` reports a constant affected count,
+and the owned-row cleanup always runs. In practice, then, any failure after the
+depth-0 RESTRICT / NO ACTION preflight aborts the transaction. That includes a
+revision or write-guard conflict on the row itself, even one that changed no
+rows. DuckDB then rejects every later statement with "transaction
+is aborted", and its `COMMIT` persists nothing. A caller that swallows the error
+therefore cannot commit a half-applied cascade, and the callback is never
+replayed. By contrast, a refusal raised before the first write, such as the
+RESTRICT / NO ACTION preflight, leaves the caller's transaction usable.
+JSON-adapter caller transactions keep the detectable
+`NestedTransactionError` refusal, because nothing can poison them.
 
 `@crossPackageRef()` remains runtime-only: it registers relationship loading
 and indexes but deliberately emits no physical constraint, avoiding circular

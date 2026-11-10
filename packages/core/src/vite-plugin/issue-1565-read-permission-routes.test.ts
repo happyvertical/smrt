@@ -192,4 +192,57 @@ describe('Issue #1565: generated route read permissions', () => {
       '["private_briefing","events.read.private"]',
     );
   });
+  it('collects STI read permissions only into the imported same-named parent (#4176)', async () => {
+    const agreement = (packageName: string, collection: string) => ({
+      packageName,
+      className: 'Agreement',
+      collection,
+      fields: { title: { type: 'text' } },
+      methods: {},
+      decoratorConfig: {
+        api: { include: ['list', 'get'] },
+        tableStrategy: 'sti',
+      },
+    });
+    await generateSvelteKitRoutes(
+      projectRoot,
+      {
+        objects: {
+          '@test/a:Agreement': agreement('@test/a', 'contracts'),
+          '@test/b:Agreement': agreement('@test/b', 'agreements'),
+          '@test/app:SecretContract': {
+            packageName: '@test/app',
+            className: 'SecretContract',
+            collection: 'secret_contracts',
+            fields: {
+              privateTerms: {
+                type: 'text',
+                readPermission: 'contracts.read.private',
+              },
+            },
+            methods: {},
+            decoratorConfig: { api: false },
+            extends: 'Agreement',
+            extendsQualified: '@test/a:Agreement',
+          },
+        },
+      } as unknown as SmartObjectManifest,
+      {
+        enabled: true,
+        routesDir: 'src/routes/api',
+        objectsDir: 'src/lib/objects',
+      },
+    );
+
+    const calls = vi.mocked(writeFileSync).mock.calls;
+    const route = (collection: string) =>
+      calls.find((call) =>
+        call[0].toString().endsWith(`${collection}/+server.ts`),
+      )?.[1] as string;
+
+    expect(route('contracts')).toContain(
+      '["privateTerms","contracts.read.private"]',
+    );
+    expect(route('agreements')).not.toContain('contracts.read.private');
+  });
 });

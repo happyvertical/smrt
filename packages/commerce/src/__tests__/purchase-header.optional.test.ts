@@ -1,16 +1,21 @@
 import { getTestDatabase } from '@happyvertical/smrt-core/testing';
+import { withTenant } from '@happyvertical/smrt-tenancy';
 import {
   createIsolatedTestDbFromManifest,
   isPostgresAvailable,
 } from '@happyvertical/smrt-vitest';
 import { describe, expect, it } from 'vitest';
 import { ContractCollection } from '../collections/ContractCollection.js';
+import { VendorCollection } from '../collections/VendorCollection.js';
 import type { PurchaseOrder } from '../models/Contract.js';
 
 async function proveHeader(db: Awaited<ReturnType<typeof getTestDatabase>>) {
   const contracts = await ContractCollection.create({ db });
+  const vendors = await VendorCollection.create({ db });
+  const vendor = await vendors.create({ name: 'Purchase header vendor' });
   const order = await contracts.create({
     _meta_type: 'PurchaseOrder',
+    vendorId: vendor.id,
     expectedDate: '2026-11-02',
     shipTo: 'Dock 2\nEdmonton',
   });
@@ -37,11 +42,24 @@ describe('purchase header STI metadata', () => {
   });
   it.skipIf(!isPostgresAvailable())('persists on PostgreSQL', async () => {
     const isolated = await createIsolatedTestDbFromManifest({
-      includeObjects: ['Contract', 'Customer', 'Vendor'],
+      includeObjects: [
+        'Contract',
+        'ContractLineItem',
+        'Customer',
+        'Vendor',
+        'TaxSettings',
+        'TaxCode',
+        'TaxComponent',
+        'DocumentTax',
+      ],
     });
     try {
       expect(isolated.config.type).toBe('postgres');
-      await proveHeader(isolated.baseDb);
+      // Money documents belong to a tenant (#4021).
+      await withTenant(
+        { tenantId: '00000000-0000-4000-8000-0000000040a2' },
+        () => proveHeader(isolated.baseDb),
+      );
     } finally {
       await isolated.cleanup();
     }

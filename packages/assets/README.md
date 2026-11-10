@@ -97,9 +97,45 @@ photo.folderId = folder.id;
 await photo.save();
 
 // AssetStore -- provider-agnostic file I/O + record creation
-const store = new AssetStore({ collection, filesystem });
-await store.store({ buffer, mimeType: 'image/png', name: 'screenshot' });
+const store = await new AssetStore(assetRoot, collection).initialize();
+await store.store('screenshot', buffer, { mimeType: 'image/png' });
 ```
+
+## Portable local storage
+
+For a new desktop installation, pass the same portable storage configuration
+to each asset runtime, worker, and service that handles its managed files:
+
+```ts
+const assets = await createAssetRuntime({
+  db,
+  storage: { type: 'local', basePath: assetRoot, locatorMode: 'relative' },
+});
+```
+
+Use an absolute, app-owned `assetRoot`. The store persists
+`asset-local:<key>`, for example `asset-local:document/17f6.txt`.
+The key is a raw, slash-separated path under the configured root and
+contains no URL escaping. Use ASCII letters, digits, underscores, and
+hyphens in type slugs and IDs. The store rejects traversal, absolute keys,
+Windows device names, links at or below the root, and non-regular files. Keep
+the root and its contents under app control; the filesystem checks assume
+no concurrent changes by an untrusted local process.
+
+When copying an installation, copy the database and the asset directory
+together, keep each file's path within the directory, and set `basePath`
+to the copied directory. Read, preserve, and remove assets through the
+runtime. A storage resolver may choose a path for a portable write, but
+later reads and deletes must use the stored key in the built-in local
+filesystem for that runtime.
+
+The option changes new writes only. Existing local options and S3
+locators keep their formats. A built-in local store can read portable
+locators whether or not it opts in to writing them. In portable mode,
+an existing `file://` locator can still be read or removed when it
+identifies a valid key inside the configured root; changing the root
+does not relocate such records. Start with fresh desktop data or handle
+existing absolute locators before moving an installation.
 
 ## API
 

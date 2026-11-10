@@ -1,4 +1,5 @@
 import { describe, expect, it } from 'vitest';
+import { validateCliIncludeAgainstApi } from '../../vite-plugin/sveltekit-generator';
 import { ManifestGenerator } from '../manifest-generator';
 import type {
   ScanResult,
@@ -7,6 +8,42 @@ import type {
 } from '../types';
 
 describe('ManifestGenerator', () => {
+  it.each([
+    undefined,
+    'workitemresources',
+  ])('preserves explicit collection routes independently of item storage: %s', (collectionName) => {
+    const model: SmartObjectDefinition = {
+      name: 'WorkItem',
+      className: 'WorkItem',
+      collection: 'workitems',
+      filePath: 'item.ts',
+      fields: {},
+      methods: {},
+      decoratorConfig: { tableName: 'work_items' },
+    };
+    const collection: SmartObjectDefinition = {
+      name: 'WorkActions',
+      className: 'WorkActions',
+      collection: 'workactions',
+      filePath: 'actions.ts',
+      extends: 'SmrtCollection',
+      extendsTypeArg: 'WorkItem',
+      fields: {},
+      methods: {},
+      decoratorConfig: collectionName ? { collection: collectionName } : {},
+    };
+    const manifest: SmartObjectManifest = {
+      version: '1',
+      timestamp: 0,
+      objects: { model, collection },
+    };
+    new ManifestGenerator().mergeInheritedFields(manifest);
+    expect(collection.collection).toBe(collectionName ?? 'workitems');
+    expect(collection.decoratorConfig?.tableName).toBe('work_items');
+    new ManifestGenerator().generateSchemas(manifest);
+    expect(collection.schema).toEqual(model.schema);
+  });
+
   it('does not invent independent persistence schemas for collection access classes (#2834)', () => {
     const model: SmartObjectDefinition = {
       name: 'identity',
@@ -1256,16 +1293,13 @@ describe('ManifestGenerator', () => {
       expect(collection.decoratorConfig?.cli).toBe(false);
     });
 
-    // TenantUsageMetric-style: item class narrows its OWN api/mcp/cli
-    // surface with an object-form config (e.g. `{ include: [...] }`).
-    // Those method-name lists are specific to the item class's own
-    // instance methods and must NOT be copied onto the collection class,
-    // whose methods of the same name (list/get/create/...) have different
-    // signatures -- copying them verbatim previously broke
-    // @happyvertical/smrt-subscriptions's TenantUsageMetricCollection by
-    // making the CLI-vs-API exposure checker reject inherited CLI commands
-    // as unrouted.
-    it('does not propagate an object-form api/mcp/cli config to the collection', () => {
+    // An object-form config used to stay on the model: its include list names
+    // the model's own methods, and copying it verbatim made the CLI-vs-API
+    // check reject the collection's CRUD commands as unrouted
+    // (@happyvertical/smrt-subscriptions's TenantUsageMetricCollection). The
+    // collection now inherits the CRUD verbs of the list, and the check
+    // resolves a collection's CRUD commands against its model's routes.
+    it('propagates an object-form api/mcp/cli config to the collection as CRUD verbs, and the CLI-vs-API check accepts it', () => {
       const generator = new ManifestGenerator();
 
       const manifest = generator.generateManifest([
@@ -1307,9 +1341,19 @@ describe('ManifestGenerator', () => {
       ]);
 
       const collection = manifest.objects.scopedMetricCollection;
-      expect(collection.decoratorConfig?.api).toBeUndefined();
-      expect(collection.decoratorConfig?.cli).toBeUndefined();
-      expect(collection.decoratorConfig?.mcp).toBeUndefined();
+      expect(collection.decoratorConfig?.api).toEqual({
+        include: ['list', 'get', 'create'],
+      });
+      expect(collection.decoratorConfig?.cli).toEqual({
+        include: ['list', 'get', 'create'],
+      });
+      expect(collection.decoratorConfig?.mcp).toEqual({
+        include: ['list', 'get'],
+      });
+      // The collection's CRUD commands run the model's routed operations, so
+      // the inherited CLI include list is reachable (the TenantUsageMetric
+      // case that once kept object-form configs off collections).
+      expect(() => validateCliIncludeAgainstApi(manifest)).not.toThrow();
     });
   });
 });

@@ -1,0 +1,84 @@
+{
+  "name": "@happyvertical/smrt-app-shell",
+  "version": "0.60.16",
+  "description": "A smrt app that builds and runs a person's own smrt app from definitions",
+  "type": "module",
+  "engines": {
+    "node": ">=26.0.0"
+  },
+  "exports": {
+    ".": {
+      "types": "./dist/lib/objects/index.d.ts",
+      "import": "./dist/lib/objects/index.js"
+    },
+    "./engine": {
+      "types": "./dist/engine/index.d.ts",
+      "import": "./dist/engine/index.js"
+    },
+    "./engine/worker": {
+      "import": "./dist/engine/app-worker.js"
+    },
+    "./manifest": "./dist/manifest.json"
+  },
+  "files": [
+    "build",
+    "dist",
+    "CLAUDE.md",
+    "AGENTS.md",
+    "agents"
+  ],
+  "scripts": {
+    "dev": "svelte-kit sync && vite dev",
+    "build": "tsc -p tsconfig.lib.json && svelte-kit sync && vite build && node tools/publish-manifest.mjs",
+    "preview": "vite preview",
+    "start": "node build",
+    "clean": "rm -rf dist build .svelte-kit",
+    "test": "vitest run",
+    "typecheck": "svelte-kit sync && tsc --noEmit -p tsconfig.json && svelte-check --tsconfig ./tsconfig.json",
+    "prepack": "node ../../scripts/prepack-package.js"
+  },
+  "dependencies": {
+    "@happyvertical/ai": "catalog:",
+    "@happyvertical/smrt-app-mcp": "workspace:*",
+    "@happyvertical/smrt-app-runtime": "workspace:*",
+    "@happyvertical/smrt-config": "workspace:*",
+    "@happyvertical/smrt-core": "workspace:*",
+    "@happyvertical/smrt-profiles": "workspace:*",
+    "@happyvertical/smrt-tenancy": "workspace:*",
+    "@happyvertical/smrt-ui": "workspace:*",
+    "@happyvertical/smrt-svelte": "workspace:*",
+    "@happyvertical/smrt-users": "workspace:*",
+    "@happyvertical/smrt-web": "workspace:*",
+    "@happyvertical/sql": "catalog:",
+    "@modelcontextprotocol/server": "2.3.1",
+    "quickjs-emscripten": "0.31.0"
+  },
+  "devDependencies": {
+    "@happyvertical/smrt-vitest": "workspace:*",
+    "@sveltejs/adapter-node": "^5.5.7",
+    "@sveltejs/kit": "2.70.3",
+    "@sveltejs/vite-plugin-svelte": "^7.3.0",
+    "@types/node": "24.13.6",
+    "svelte": "^5.57.1",
+    "svelte-check": "^4.7.6",
+    "typescript": "6.0.3",
+    "vite": "8.3.3",
+    "vitest": "4.1.10"
+  },
+  "keywords": [
+    "smrt",
+    "app-shell",
+    "local-first"
+  ],
+  "author": "HappyVertical",
+  "license": "MIT",
+  "repository": {
+    "type": "git",
+    "url": "https://github.com/happyvertical/smrt.git",
+    "directory": "packages/app-shell"
+  },
+  "publishConfig": {
+    "registry": "https://registry.npmjs.org",
+    "access": "public"
+  }
+}

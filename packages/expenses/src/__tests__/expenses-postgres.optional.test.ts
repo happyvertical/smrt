@@ -1,3 +1,4 @@
+import { defineAllocationSuite } from './helpers/allocation-suite.js';
 /**
  * PostgreSQL lane for smrt-expenses.
  *
@@ -49,7 +50,13 @@ import { defineRefundConcurrency } from './helpers/refund-concurrency.js';
 
 const describePostgres = isPostgresAvailable() ? describe : describe.skip;
 
-const PACKAGE_TABLES = ['expenses', 'expense_receipts'];
+const PACKAGE_TABLES = [
+  'expenses',
+  'expense_receipts',
+  'expense_allocation_revisions',
+  'expense_allocation_portions',
+  'expense_allocation_billings',
+];
 
 type Closable = { close?: () => Promise<void> };
 
@@ -131,9 +138,8 @@ describePostgres('expenses on PostgreSQL', () => {
   afterAll(async () => {
     await (db as Closable | undefined)?.close?.();
     if (databaseName) {
-      await admin?.query(
-        `DROP DATABASE IF EXISTS ${databaseName} WITH (FORCE)`,
-      );
+      // Plain DROP lets PostgreSQL stop its own autovacuum workers.
+      await admin?.query(`DROP DATABASE IF EXISTS ${databaseName}`);
     }
     await (admin as Closable | undefined)?.close?.();
   });
@@ -148,6 +154,8 @@ describePostgres('expenses on PostgreSQL', () => {
         financial_breakdown: 'text',
         paid_by_name: 'text',
         refund_of_id: 'uuid',
+        refund_recipient: 'text',
+        reimbursed_amount: 'bigint',
         currency: 'text',
         incurred_on: 'text',
         cost_object_type: 'text',
@@ -256,5 +264,6 @@ describePostgres('expenses on PostgreSQL', () => {
 
   describe('behaviour', () => {
     defineExpenseSuite(() => db);
+    defineAllocationSuite(() => db);
   });
 });

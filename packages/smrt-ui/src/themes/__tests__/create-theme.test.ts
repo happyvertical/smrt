@@ -106,6 +106,32 @@ describe('createTheme color handling (#1586)', () => {
   });
 });
 
+describe('createThemeFromColor dark secondary pair', () => {
+  it('keeps the secondary container label at WCAG AA', () => {
+    for (const seed of [
+      '#7c2d12',
+      '#b45309',
+      '#0f766e',
+      '#1d4ed8',
+      '#111111',
+      '#f5f5f5',
+    ]) {
+      const { dark } = createThemeFromColor(seed, 'contrast-test');
+      expect(
+        getContrastRatio(
+          hexToRgb(dark.onSecondaryContainer),
+          hexToRgb(dark.secondaryContainer),
+        ),
+        seed,
+      ).toBeGreaterThanOrEqual(4.5);
+      expect(
+        getContrastRatio(hexToRgb(dark.onSecondary), hexToRgb(dark.secondary)),
+        seed,
+      ).toBeGreaterThanOrEqual(4.5);
+    }
+  });
+});
+
 describe('derivePrimaryOverrides', () => {
   it('returns the full primary-dependent set and keeps on-primary legible', async () => {
     const { derivePrimaryOverrides } = await import('../create-theme.js');

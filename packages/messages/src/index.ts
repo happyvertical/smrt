@@ -23,6 +23,8 @@ export { AttachmentCollection } from './collections/AttachmentCollection';
 // Base collections
 export { MessageCollection } from './collections/MessageCollection';
 export { MessagingEndpointCollection } from './collections/MessagingEndpointCollection.js';
+export { NotificationDeliveryCollection } from './collections/NotificationDeliveryCollection.js';
+export { NotificationOptOutCollection } from './collections/NotificationOptOutCollection.js';
 export { PersonaMessageRouteCollection } from './collections/PersonaMessageRouteCollection.js';
 export { UserNotificationCollection } from './collections/UserNotificationCollection.js';
 export { Account } from './models/Account';
@@ -30,6 +32,21 @@ export { Attachment } from './models/Attachment';
 // Base models
 export { Message } from './models/Message';
 export { MessagingEndpoint } from './models/MessagingEndpoint.js';
+export {
+  NOTIFICATION_DELIVERY_CHANNELS,
+  NotificationDelivery,
+  type NotificationDeliveryChannel,
+  type NotificationDeliveryOptions,
+  type NotificationDeliveryStatus,
+  type NotificationDeliveryTransition,
+} from './models/NotificationDelivery.js';
+export {
+  isValidNotificationOptOutScope,
+  NOTIFICATION_OPT_OUT_ALL_SCOPE,
+  NOTIFICATION_OPT_OUT_SCOPE_PATTERN,
+  NotificationOptOut,
+  type NotificationOptOutOptions,
+} from './models/NotificationOptOut.js';
 export { PersonaMessageRoute } from './models/PersonaMessageRoute.js';
 export {
   USER_NOTIFICATION_SEVERITIES,
@@ -112,6 +129,41 @@ export {
   type PersonaMessageRouteInput,
 } from './services/MessagingSettingsService.js';
 export {
+  type NotificationOptOutChange,
+  type NotificationOptOutDenialReason,
+  NotificationOptOutDeniedError,
+  type NotificationOptOutKey,
+  type NotificationOptOutListRequest,
+  type NotificationOptOutPrincipal,
+  NotificationOptOutService,
+  optOutSuppression,
+} from './services/NotificationOptOutService.js';
+export {
+  buildNotificationLink,
+  messageSendTransport,
+  type NotificationDispatchOptions,
+  type NotificationDispatchOutcome,
+  type NotificationDispatchReport,
+  type NotificationEmailInput,
+  type NotificationEnqueueResult,
+  type NotificationOutboxDenialReason,
+  NotificationOutboxDeniedError,
+  type NotificationOutboxOptions,
+  NotificationOutboxService,
+  type NotificationProfileRecipientRequest,
+  type NotificationProfileSuppressionRequest,
+  type NotificationRecipient,
+  type NotificationRecipientRequest,
+  type NotificationReconcileOutcome,
+  type NotificationSuppressionRequest,
+  type NotificationTransport,
+  type NotificationTransportOutcome,
+  type NotificationTransportReconciliation,
+  type NotificationTransportRequest,
+  notificationDeliveryCorrelationId,
+  notificationDeliveryMessageId,
+} from './services/NotificationOutboxService.js';
+export {
   type PersonaMessageSendResult,
   PersonaMessagingService,
 } from './services/PersonaMessagingService.js';
@@ -175,4 +227,16 @@ export type {
 ensureBuiltinMessagingProvidersRegistered();
 ensureMessagingPermissionsRegistered();
 
-export { MailboxRecipe, NotificationsRecipe } from './recipes.js';
+export {
+  assertNotificationProfileRecipientSchema,
+  migrateNotificationProfileRecipients,
+  type NotificationProfileRecipientEngine,
+  type NotificationProfileRecipientPlan,
+  planNotificationProfileRecipients,
+} from './migrations/profileRecipients.js';
+export {
+  type NotificationRecipientIdentity,
+  PROFILE_NOTIFICATION_POLICY_PREFIX,
+  profileNotificationPolicy,
+} from './notification-recipient-identity.js';
+export { MailboxRecipe, NotificationsRecipe, SlackRecipe } from './recipes.js';

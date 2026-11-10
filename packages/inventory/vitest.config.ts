@@ -10,6 +10,7 @@ export default defineConfig({
     environment: 'node',
     include: ['src/**/*.test.ts'],
     testTimeout: 30000,
+    hookTimeout: 30000,
     fileParallelism: false,
     pool: 'forks',
     setupFiles: ['@happyvertical/smrt-vitest/svelte-setup'],

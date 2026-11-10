@@ -248,7 +248,9 @@ export const M = defineMessages({
   // components/app/AppShell built-in header and account items (issue #3853)
   'ui.app_shell.account_item': 'Account menu',
   'ui.app_shell.color_scheme_item': 'Color scheme',
-  'ui.app_shell.color_scheme_toggle': 'Toggle color scheme',
+  'ui.app_shell.color_scheme_dark': 'Dark mode',
+  'ui.app_shell.color_scheme_to_dark': 'Switch to dark mode',
+  'ui.app_shell.color_scheme_to_light': 'Switch to light mode',
   'ui.app_shell.command_palette_item': 'Search',
   'ui.app_shell.account_settings': 'Settings',
 

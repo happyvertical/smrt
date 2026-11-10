@@ -46,15 +46,144 @@
  * Both shapes can be combined freely. Global resolvers always take precedence
  * for `$env` sentinels; class resolvers fill in / override fields by name.
  *
+ * ## Resolution context and precedence (#2806)
+ *
+ * Every resolver receives a {@link ConfigResolverContext}: the identity of
+ * the agent instance being resolved (`agentId`, canonical `agentClass`,
+ * `tenantId`, `scheduleId`, `jobId` — whatever the caller knows) and, for a
+ * class resolver, the value this instance's own persisted config holds for the
+ * key (`persisted`, `hasPersisted`). Zero-argument resolvers keep working.
+ *
+ * Precedence for a class resolver's key, highest first:
+ *
+ * 1. a non-null value the resolver returns;
+ * 2. the instance's persisted value (after `$env` sentinel resolution) — kept
+ *    when the resolver returns `undefined` or `null`;
+ * 3. absent.
+ *
+ * A resolver that must not clobber an agent's own persisted value (a
+ * per-agent credential with a deployment-wide fallback) defers by returning
+ * `undefined` when `context.hasPersisted`, or is wrapped in
+ * {@link preferPersisted}. The persisted value a resolver sees is always the
+ * resolving instance's own: the context is built per call from the config
+ * being resolved and is never looked up by scanning other agents' or the
+ * tenant's rows, so with several agents of one class per tenant no resolver
+ * can be handed another agent's value by the framework.
+ *
  * @module
  */
+
+/**
+ * Identity of the agent instance a config is being resolved for (#2806).
+ * Every field is optional: a caller supplies what it knows. The job runner
+ * supplies all of them for a scheduled or object-bound job.
+ */
+export interface ConfigResolutionContext {
+  /** The agent instance's id (`_smrt_agent_schedules.agent_id` / job `objectId`). */
+  agentId?: string;
+  /** Canonical qualified agent class name (`@scope/pkg:Class`). */
+  agentClass?: string;
+  /** Tenant the resolution runs for, when the job is tenant-scoped. */
+  tenantId?: string | null;
+  /**
+   * Schedule that produced the job, when scheduled. Informational only: the
+   * runner echoes it from the job's args without verifying it against
+   * `_smrt_agent_schedules`, so never key a per-agent value (a credential) on
+   * it — use `agentId`.
+   */
+  scheduleId?: string;
+  /** Job being executed, when resolved by the job runner. */
+  jobId?: string;
+}
+
+/**
+ * The argument every {@link ConfigResolver} receives. It is a fresh object
+ * per call, frozen one level deep: `persisted` is neither copied nor frozen,
+ * so treat it as read-only — mutating it changes the config the agent is
+ * constructed with.
+ */
+export interface ConfigResolverContext
+  extends Readonly<ConfigResolutionContext> {
+  /**
+   * The config key being produced: the class resolver's key, or the resolver
+   * name for a `$env` / `$resolver` sentinel.
+   */
+  readonly key: string;
+  /** Location of the value in the config tree (`['ai']`, `['storage', 'primary']`). */
+  readonly path: readonly string[];
+  /** `'class'` for a static `configResolvers` entry, `'sentinel'` for a named resolver. */
+  readonly source: 'class' | 'sentinel';
+  /**
+   * Whether this instance's persisted config carries a non-null value for the
+   * key. Always `false` for a sentinel: the sentinel *is* the persisted value.
+   * Only `undefined` / `null` count as absent; an empty object or a keyless
+   * credential is present — inspect `persisted` when that matters.
+   */
+  readonly hasPersisted: boolean;
+  /**
+   * This instance's persisted value for the key, after sentinel resolution —
+   * the value that is kept when the resolver returns `undefined` or `null`.
+   */
+  readonly persisted: unknown;
+}
 
 /**
  * A lazy resolver — synchronous or async. Return values are merged into the
  * config tree at execute time. Throwing is allowed but is treated as a
  * resolution failure (see {@link ResolveLazyConfigOptions.onError}).
+ *
+ * The {@link ConfigResolverContext} argument is optional to declare, so
+ * existing zero-argument resolvers remain source-compatible.
  */
-export type ConfigResolver = () => unknown | Promise<unknown>;
+export type ConfigResolver = (
+  context: ConfigResolverContext,
+) => unknown | Promise<unknown>;
+
+/**
+ * Build the context argument for invoking a resolver directly (#2806) — for
+ * code that looks a resolver up with {@link getConfigResolver} or
+ * {@link getClassConfigResolvers} and calls it itself. The framework builds
+ * its own; this exists so such callers pass an explicit identity instead of
+ * none. It models a class-resolver call (`source: 'class'`, `path: [key]`);
+ * a sentinel resolver invoked through it sees `hasPersisted` reflect the
+ * `persisted` argument rather than the framework's always-`false`.
+ *
+ * @param key - Config key (class resolver) or resolver name (sentinel)
+ * @param identity - The agent instance being resolved for, if known
+ * @param persisted - That instance's persisted value for the key, if any
+ */
+export function createConfigResolverContext(
+  key: string,
+  identity: ConfigResolutionContext = {},
+  persisted?: unknown,
+): ConfigResolverContext {
+  return resolverContext(identity, {
+    key,
+    path: [key],
+    source: 'class',
+    hasPersisted: persisted !== undefined && persisted !== null,
+    persisted,
+  });
+}
+
+/**
+ * Wrap a class resolver so it only fills a key the instance's persisted config
+ * leaves empty — `undefined` or `null` (#2806); a present but unusable value
+ * such as `{}` is kept, so check `context.persisted` yourself if it can be. Use it for a deployment-wide fallback that must never
+ * replace an agent's own persisted value, such as its own provider credential.
+ *
+ * @example
+ * ```ts
+ * class Praeco extends Agent {
+ *   static override configResolvers = {
+ *     ai: preferPersisted(() => deploymentDefaultAi()),
+ *   };
+ * }
+ * ```
+ */
+export function preferPersisted(resolver: ConfigResolver): ConfigResolver {
+  return (context) => (context.hasPersisted ? undefined : resolver(context));
+}
 
 /**
  * Sentinel object recognised inside agent_config to defer a value to a named
@@ -70,6 +199,13 @@ export interface LazyConfigSentinel {
  * Options for resolving the lazy parts of a config tree.
  */
 export interface ResolveLazyConfigOptions {
+  /**
+   * Identity of the agent instance being resolved, passed to every resolver
+   * (#2806). Supply only what is known for *this* instance; never derive it
+   * by scanning other agents' persisted rows.
+   */
+  context?: ConfigResolutionContext;
+
   /**
    * Per-class resolvers — typically the agent class's static
    * `configResolvers`. Applied as a key-by-key overlay on top of the
@@ -195,6 +331,7 @@ const MAX_DEPTH = 64;
 
 interface ResolveContext {
   resolvers: Map<string, ConfigResolver>;
+  identity: ConfigResolutionContext;
   onError: NonNullable<ResolveLazyConfigOptions['onError']>;
   /**
    * Map from input object/array to its resolved replacement. Serves two
@@ -209,10 +346,27 @@ interface ResolveContext {
   resolved: WeakMap<object, unknown>;
 }
 
+/** Build the frozen per-call argument a resolver receives. */
+function resolverContext(
+  identity: ConfigResolutionContext,
+  fields: Omit<ConfigResolverContext, keyof ConfigResolutionContext>,
+): ConfigResolverContext {
+  return Object.freeze({
+    agentId: identity.agentId,
+    agentClass: identity.agentClass,
+    tenantId: identity.tenantId,
+    scheduleId: identity.scheduleId,
+    jobId: identity.jobId,
+    ...fields,
+    path: Object.freeze([...fields.path]),
+  });
+}
+
 async function resolveValue(
   value: unknown,
   ctx: ResolveContext,
   depth: number,
+  path: readonly string[] = [],
 ): Promise<unknown> {
   if (isLazyConfigSentinel(value)) {
     const name = getSentinelName(value);
@@ -228,7 +382,15 @@ async function resolveValue(
     }
 
     try {
-      return await resolver();
+      return await resolver(
+        resolverContext(ctx.identity, {
+          key: name,
+          path,
+          source: 'sentinel',
+          hasPersisted: false,
+          persisted: undefined,
+        }),
+      );
     } catch (error) {
       if (ctx.onError === 'throw') throw error;
       if (ctx.onError === 'omit') return REMOVE;
@@ -249,8 +411,11 @@ async function resolveValue(
     // Register the placeholder *before* descending so that a cycle pointing
     // back at this array sees the in-progress array (and stops recursing).
     ctx.resolved.set(value, next);
-    for (const entry of value) {
-      const resolved = await resolveValue(entry, ctx, depth + 1);
+    for (const [index, entry] of value.entries()) {
+      const resolved = await resolveValue(entry, ctx, depth + 1, [
+        ...path,
+        String(index),
+      ]);
       if (resolved !== REMOVE) next.push(resolved);
     }
     return next;
@@ -264,7 +429,10 @@ async function resolveValue(
     for (const [key, entry] of Object.entries(
       value as Record<string, unknown>,
     )) {
-      const resolved = await resolveValue(entry, ctx, depth + 1);
+      const resolved = await resolveValue(entry, ctx, depth + 1, [
+        ...path,
+        key,
+      ]);
       if (resolved !== REMOVE) next[key] = resolved;
     }
     return next;
@@ -279,8 +447,11 @@ async function resolveValue(
  * sentinel placeholders replaced by their resolver's current return value.
  *
  * Class-level resolvers from {@link ResolveLazyConfigOptions.classResolvers}
- * are applied as a final overlay so they always reflect the live value
- * regardless of what's persisted.
+ * are applied as a final overlay: a non-null return value wins, and
+ * `undefined` / `null` keeps the persisted value. Each resolver receives the
+ * resolving instance's identity ({@link ResolveLazyConfigOptions.context}) and
+ * its own persisted value for the key, so it can defer to that value instead
+ * of clobbering it (see the module docs and {@link preferPersisted}).
  *
  * @example Sentinel resolution
  * ```ts
@@ -307,8 +478,10 @@ export async function resolveLazyConfig<T extends Record<string, unknown>>(
     ? normalizeResolverMap(options.resolvers)
     : globalResolvers;
 
+  const identity: ConfigResolutionContext = { ...(options.context ?? {}) };
   const ctx: ResolveContext = {
     resolvers,
+    identity,
     onError,
     resolved: new WeakMap<object, unknown>(),
   };
@@ -322,7 +495,16 @@ export async function resolveLazyConfig<T extends Record<string, unknown>>(
   if (options.classResolvers) {
     for (const [key, resolver] of Object.entries(options.classResolvers)) {
       try {
-        const value = await resolver();
+        const persisted = Object.hasOwn(result, key) ? result[key] : undefined;
+        const value = await resolver(
+          resolverContext(identity, {
+            key,
+            path: [key],
+            source: 'class',
+            hasPersisted: persisted !== undefined && persisted !== null,
+            persisted,
+          }),
+        );
         // Both `undefined` and `null` are treated as "no overlay value" —
         // the persisted record's existing value (if any) is preserved.
         // This matches the documented contract on `Agent.configResolvers`

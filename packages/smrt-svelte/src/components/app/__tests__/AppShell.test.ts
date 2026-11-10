@@ -57,6 +57,27 @@ describe('AppShell', () => {
     ).not.toBeNull();
   });
 
+  it('uses the existing compact phone brand and retains its full accessible name', async () => {
+    vi.stubGlobal('matchMedia', (query: string) => ({
+      matches: /max-width:\s*48rem/.test(query),
+      addEventListener() {},
+      removeEventListener() {},
+    }));
+    await render({
+      title: 'Bakery',
+      logoSrc: '/mark.svg',
+      homeHref: '/',
+      config: open,
+    });
+    const brand = container.querySelector(
+      '[data-slot="header.start"] .smrt-admin-shell__brand',
+    );
+    expect(brand?.classList.contains('compact')).toBe(true);
+    expect(brand?.getAttribute('aria-label')).toBe('Bakery');
+    expect(brand?.querySelector('img')?.getAttribute('src')).toBe('/mark.svg');
+    expect(brand?.querySelector('.smrt-admin-shell__brand-text')).toBeNull();
+  });
+
   it('renders the shell with and without navigation', async () => {
     await render({ title: 'Acme', config: open });
     expect(container.textContent).toContain('page body');
@@ -245,4 +266,27 @@ describe('AppShell', () => {
       delete (document as any).modelContext;
     }
   });
+});
+
+it('publishes real edit/menu anchors by stable semantic ids', async () => {
+  await render({
+    layoutEditing: true,
+    navGroups: [
+      {
+        id: 'section:test',
+        heading: 'Test section',
+        items: [{ id: 'item:test', href: '/records', label: 'Records' }],
+      },
+    ],
+    sectionHref: () => '/section/test',
+    navMode: 'sections-with-items',
+  });
+  expect(
+    container
+      .querySelector('[data-smrt-target="item:layout-edit"] button')
+      ?.getAttribute('aria-label'),
+  ).toBeTruthy();
+  expect(
+    container.querySelector('[data-smrt-target="section:test"]')?.textContent,
+  ).toContain('Test section');
 });

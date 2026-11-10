@@ -1,6 +1,6 @@
 {
   "name": "@happyvertical/smrt-preferences",
-  "version": "0.55.21",
+  "version": "0.60.16",
   "description": "Tenant defaults and per-user overrides for user-interface preferences (overview layouts, shell layout), validated per registered kind",
   "type": "module",
   "main": "./dist/index.js",
@@ -39,11 +39,12 @@
     "@happyvertical/sql": "catalog:"
   },
   "devDependencies": {
+    "@happyvertical/smrt-inference": "workspace:*",
     "@happyvertical/smrt-vitest": "workspace:*",
     "@types/node": "24.13.6",
     "svelte": "^5.57.1",
     "typescript": "6.0.3",
-    "vite": "8.1.4",
+    "vite": "8.1.6",
     "vitest": "4.1.10"
   },
   "keywords": [

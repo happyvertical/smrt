@@ -9,8 +9,10 @@ import {
   SHELL_DEFAULT_SECTION_ICON,
   SHELL_PLACEHOLDER_ICON,
 } from './shell-icons.js';
+import { shellTargetAction, tryUseShellTargets } from './targets.js';
 import type { ShellNavGroup, ShellNavItem } from './types.js';
 
+const target = shellTargetAction(tryUseShellTargets());
 const DEFAULT_ACTION_ICON = 'settings';
 
 interface Props {
@@ -69,16 +71,44 @@ function reveal() {
   return { x: 12, duration: ready && !reduced && canAnimate ? 260 : 0 };
 }
 
-function isActive(item: ShellNavItem): boolean {
-  return item.href === currentHref || currentHref.startsWith(`${item.href}/`);
+function matches(href: string): boolean {
+  return href === currentHref || currentHref.startsWith(`${href}/`);
+}
+
+/** Longest matching href across every link in this nav (#4499). */
+const bestMatch = $derived.by(() => {
+  let best = -1;
+  const consider = (href: string) => {
+    if (matches(href) && href.length > best) best = href.length;
+  };
+  const walk = (entries: ShellNavItem[]) => {
+    for (const item of entries) {
+      consider(item.href);
+      if (item.action) consider(item.action.href);
+      if (item.children) walk(item.children);
+    }
+  };
+  walk(items);
+  for (const group of groups) walk(group.items);
+  return best;
+});
+
+function isActive(item: { href: string; current?: boolean }): boolean {
+  if (item.current !== undefined) return item.current;
+  return matches(item.href) && item.href.length === bestMatch;
+}
+
+/** Plain prefix match, used for "contains current" parent state. */
+function isLooseActive(item: ShellNavItem): boolean {
+  return item.current ?? matches(item.href);
 }
 
 /** True when the item, any child, or its action link is the current page. */
 function isItemCurrent(item: ShellNavItem): boolean {
   return (
-    isActive(item) ||
-    !!item.children?.some((child) => isActive(child)) ||
-    (!!item.action && isActive(item.action))
+    isLooseActive(item) ||
+    !!item.children?.some((child) => isLooseActive(child)) ||
+    (!!item.action && matches(item.action.href))
   );
 }
 
@@ -154,6 +184,7 @@ function fallbackIcon(label: string): string {
     <div class="smrt-tenant-nav__section" in:fly={reveal()} animate:flipRow>
       <div class="smrt-tenant-nav__row">
       <a
+        use:target={item.id ?? item.href}
         href={item.href}
         class:smrt-tenant-nav__link--visible-active={isVisibleActive(item)}
         aria-current={isActive(item) ? 'page' : undefined}
@@ -238,6 +269,7 @@ function fallbackIcon(label: string): string {
         <div class="smrt-tenant-nav__section" data-nav-section={groupId(group)} in:fly={reveal()}>
           <div class="smrt-tenant-nav__row">
             <a
+              use:target={groupId(group)}
               {href}
               class="smrt-tenant-nav__section-link"
               class:smrt-tenant-nav__link--visible-active={isSectionCurrent(group)}
@@ -289,6 +321,7 @@ function fallbackIcon(label: string): string {
 <style>
 @layer smrt.reset, smrt.structure, smrt.theme;
 @layer smrt.theme {
+  a:global([data-smrt-highlighted='true']) { outline: var(--smrt-focus-ring-width) solid var(--smrt-color-primary); outline-offset: var(--smrt-focus-ring-offset); }
   .smrt-tenant-nav,
   .smrt-tenant-nav__section,
   .smrt-tenant-nav__children,
@@ -309,8 +342,8 @@ function fallbackIcon(label: string): string {
     display: inline-grid;
     grid-template-columns: minmax(0, 1fr);
     place-items: center;
-    inline-size: max(2rem, var(--smrt-control-target-min, 0px));
-    block-size: max(2rem, var(--smrt-control-target-min, 0px));
+    inline-size: max(2rem, var(--smrt-control-target-min));
+    block-size: max(2rem, var(--smrt-control-target-min));
     padding: 0;
     color: var(--smrt-color-on-surface-variant);
   }
@@ -321,7 +354,7 @@ function fallbackIcon(label: string): string {
 
   .smrt-tenant-nav__heading {
     box-sizing: border-box;
-    min-block-size: var(--smrt-control-target-min, 0px);
+    min-block-size: var(--smrt-control-target-min);
     padding: var(--smrt-spacing-2) var(--smrt-spacing-3);
     color: var(--smrt-color-on-surface-variant);
     font-size: var(--smrt-typography-label-large-size);
@@ -343,8 +376,8 @@ function fallbackIcon(label: string): string {
     display: grid;
     place-items: center;
     list-style: none;
-    inline-size: max(2.25rem, var(--smrt-control-target-min, 0px));
-    block-size: max(2.25rem, var(--smrt-control-target-min, 0px));
+    inline-size: max(2.25rem, var(--smrt-control-target-min));
+    block-size: max(2.25rem, var(--smrt-control-target-min));
     padding: 0;
   }
   .smrt-tenant-nav--collapsed .smrt-tenant-nav__heading::-webkit-details-marker { display: none; }
@@ -357,7 +390,7 @@ function fallbackIcon(label: string): string {
   .smrt-tenant-nav[data-density='comfortable'] { --smrt-control-target-min: 0px; }
   .smrt-tenant-nav a {
     box-sizing: border-box;
-    min-block-size: var(--smrt-control-target-min, 0px);
+    min-block-size: var(--smrt-control-target-min);
     display: grid;
     /* Icon, label, then one auto column per trailing mark (badge, dot). */
     grid-template-columns: auto minmax(0, 1fr);
@@ -380,8 +413,8 @@ function fallbackIcon(label: string): string {
   .smrt-tenant-nav--collapsed a {
     grid-template-columns: minmax(0, 1fr);
     place-items: center;
-    inline-size: max(2.25rem, var(--smrt-control-target-min, 0px));
-    block-size: max(2.25rem, var(--smrt-control-target-min, 0px));
+    inline-size: max(2.25rem, var(--smrt-control-target-min));
+    block-size: max(2.25rem, var(--smrt-control-target-min));
     padding: 0;
   }
 

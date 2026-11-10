@@ -60,6 +60,7 @@ import {
   resolveEffectiveActionMetadata,
 } from './custom-action';
 import { handleEventsRoute } from './events-route';
+import { handleInferenceStatusRoute } from './inference-status-route';
 import {
   handlePlaybookPreflightRoute,
   isApiActionEnabledForObject,
@@ -463,6 +464,16 @@ export class APIGenerator {
         db: this.resolveContextDb(),
         manifestHash: this.resolveManifestHash(),
         maxSubscribers: this.config.eventsRoute?.maxSubscribers,
+      });
+      return this.addCorsHeaders(response, req);
+    }
+
+    // Inference availability (#4757): `{ available, mode, reason?, tier? }`
+    // for the ambient principal; never a key. Auth-guarded when the app
+    // configures `authMiddleware`. Logic lives in ./inference-status-route.ts.
+    if (url.pathname === `${this.config.basePath}/_inference`) {
+      const response = await handleInferenceStatusRoute(req, {
+        authMiddleware: this.config.authMiddleware,
       });
       return this.addCorsHeaders(response, req);
     }
@@ -894,6 +905,11 @@ export class APIGenerator {
       }
       const routeMethod = (effective.httpMethod || 'POST').toUpperCase();
       if (routeMethod !== req.method.toUpperCase()) {
+        continue;
+      }
+      if (ObjectRegistry.getConfig(objectName).abstract) {
+        const refusal = this.refuseWithheldAction(req, actionName, 'abstract');
+        if (refusal) return refusal;
         continue;
       }
       // Past this point the request matched a DECLARATION's own path and verb,

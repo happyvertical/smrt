@@ -18,6 +18,7 @@ import {
   foreignKey,
   SmrtCollection,
   SmrtObject,
+  type SmrtSaveOptions,
   smrt,
 } from '@happyvertical/smrt-core';
 import { TenantScoped, tenantId } from '@happyvertical/smrt-tenancy';
@@ -53,22 +54,34 @@ export class SupportCase extends SmrtObject {
   tenantId: string | null = null;
 
   /** Human-facing case reference (e.g. `SUP-…`), generated at open time. */
-  @field({ type: 'text' })
+  @field({ type: 'text', description: 'The reference number for this ticket.' })
   caseNumber: string = '';
 
   /** Short client-facing summary of the request. */
-  @field({ type: 'text' })
+  @field({
+    type: 'text',
+    description: 'A short summary of what the customer needs.',
+  })
   subject: string = '';
 
   /** Initial request text (the first inbound interaction's body). */
-  @field({ type: 'text' })
+  @field({
+    type: 'text',
+    description: 'What the customer asked for, in their words.',
+  })
   description: string = '';
 
-  @field({ type: 'text' })
+  @field({
+    type: 'text',
+    description: 'Where the ticket stands, from new to resolved.',
+  })
   status: SupportCaseStatus = 'new';
 
   /** Queue ordering priority: `low` | `normal` | `high` | `urgent`. */
-  @field({ type: 'text' })
+  @field({
+    type: 'text',
+    description: 'How soon it needs attention: low, normal, high or urgent.',
+  })
   priority: string = 'normal';
 
   /**
@@ -95,6 +108,7 @@ export class SupportCase extends SmrtObject {
    * Profile. Nullable so unmatched inbound email can park a Case for triage;
    * intake marks those with `metadata.unresolvedClient`.
    */
+  @field({ description: 'The customer who asked for help.' })
   @crossPackageRef('@happyvertical/smrt-profiles:Profile', { nullable: true })
   clientProfileId: string | null = null;
 
@@ -132,6 +146,7 @@ export class SupportCase extends SmrtObject {
   @field({ type: 'text' })
   planSnapshot: string = '{}';
 
+  @field({ description: 'The team member handling this ticket.' })
   @foreignKey('SupportSpecialist')
   assignedSpecialistId: string | null = null;
 
@@ -233,10 +248,10 @@ export class SupportCase extends SmrtObject {
   }
 
   /** Validate the status transition before persisting, then save. */
-  override async save(): Promise<this> {
+  override async save(options?: SmrtSaveOptions): Promise<this> {
     const prior = await this.resolvePriorStatus();
     this.assertStatusTransition(prior);
-    const result = (await super.save()) as this;
+    const result = (await super.save(options)) as this;
     loadedCaseStatus.set(this, this.status);
     return result;
   }

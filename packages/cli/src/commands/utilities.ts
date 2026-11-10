@@ -11,6 +11,7 @@ import { dirname, join, resolve } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import {
   ensureDeferredSystemTableCompatibility,
+  ensureSystemTables,
   generateDDLForEngine,
   isQualifiedName,
   migratePostgresSystemTimestamps,
@@ -28,6 +29,9 @@ import type { DomainKnowledgeManifest } from '@happyvertical/smrt-types';
 import type { DatabaseInterface } from '@happyvertical/sql';
 import type { CLICommand } from '../cli-generator.js';
 import { autoDiscoverAndLoad } from '../discovery/index.js';
+import { aiCompareCommand, promptsHistoryCommand } from './ai-compare.js';
+import { aiTranscriptCommand } from './ai-transcript.js';
+import { aiUsageCommand } from './ai-usage.js';
 import {
   RESET_RECIPE,
   scanProjectForUnlayeredResets,
@@ -85,9 +89,12 @@ import {
 } from './db-qualified-names.js';
 import { dbRollbackCommand } from './db-rollback.js';
 import { dbStatusCommand } from './db-status.js';
+import { dbUpgradeCommerceMoneyCommand } from './db-upgrade-commerce-money.js';
+import { deployCommands } from './deploy.js';
 import { devKnowledgeCommands } from './dev-knowledge.js';
 import { devRuntimeCommands } from './dev-runtime.js';
 import { exportCommand } from './export.js';
+import { inferenceHostedCommand } from './inference-hosted.js';
 import {
   mcpAppsCommands,
   validateMcpAppsPackage,
@@ -110,6 +117,7 @@ import {
   resolveStiDiscriminatorUpgrade,
   type StiDiscriminatorRepairConflict,
 } from './sti-upgrade.js';
+import { usersProvisionOwnerCommand } from './users-provision-owner.js';
 
 /**
  * Fallbacks for `migrations.postgres.lockTimeout` / `.statementTimeout`.
@@ -265,6 +273,20 @@ async function settleDeferredCompatibilityAfterMigrate(
   dbType: string,
   { verbose }: { verbose: boolean },
 ): Promise<void> {
+  // Framework `_smrt_*` tables otherwise appear only when a model first
+  // initializes against this database, so a freshly migrated one failed
+  // `db:status --parity` with every system table missing (#3297). Its own
+  // best-effort step, so a bootstrap failure never skips the pass below.
+  try {
+    await ensureSystemTables(db, dbType);
+  } catch (error) {
+    console.warn(
+      `⚠️  System-table bootstrap did not complete: ${redactDatabaseUrlsInText(
+        error instanceof Error ? error.message : String(error),
+      )}`,
+    );
+    console.warn('   It will be retried the next time the framework starts.\n');
+  }
   try {
     const { settled } = await ensureDeferredSystemTableCompatibility(
       db,
@@ -360,6 +382,8 @@ interface DbMigrateOptions {
 interface DoctorOptions {
   fix?: boolean;
   db?: boolean;
+  ai?: boolean;
+  probe?: boolean;
   verbose?: boolean;
   'generation-snapshot'?: string;
   'generation-snapshot-sha256'?: string;
@@ -980,7 +1004,10 @@ export const utilityCommands: Record<string, CLICommand> = {
           includePrivateMethods: false,
           includeStaticMethods: true,
 
-          // Output configuration
+          // Output configuration: only the test manifest. `.smrt/manifest.json`
+          // belongs to the production build; a test-inclusive scan there
+          // surfaced inline fixtures to every production reader (#2760).
+          outputMode: 'explicit',
           outputDir: options.output || 'src/manifest',
           outputName: 'test-manifest.json',
           generateTypeStub: true,
@@ -999,17 +1026,15 @@ export const utilityCommands: Record<string, CLICommand> = {
           Object.keys(manifest.objects).join(', '),
         );
 
-        // Legacy compatibility: Still write to requested output directory if specified
-        // But the primary manifest is now in .smrt/manifest.json (via ManifestManager)
+        // Write the requested output directory (the only test manifest).
         const outputDir = resolve(
           process.cwd(),
           options.output || 'src/manifest',
         );
         mkdirSync(outputDir, { recursive: true });
 
-        // Write manifest.json to legacy location
+        // ManifestBuilder already published the JSON manifest here.
         const jsonPath = resolve(outputDir, 'test-manifest.json');
-        writeFileSync(jsonPath, JSON.stringify(manifest, null, 2));
 
         // Write TypeScript stub
         const tsContent = `/**
@@ -1032,8 +1057,7 @@ export default testManifest;
         console.log(
           `✅ Generated test manifest with ${objectCount} test object(s)`,
         );
-        console.log(`   Unified: .smrt/manifest.json`);
-        console.log(`   Legacy:  ${jsonPath}`);
+        console.log(`   JSON:    ${jsonPath}`);
         console.log(`   TS:      ${tsPath}\n`);
 
         // Run tests if requested
@@ -1048,6 +1072,12 @@ export default testManifest;
 
             // Run vitest with forwarded arguments (file patterns)
             const vitestArgs = [vitestEntrypoint, 'run', ...args];
+            // The test run's manifest is this file, never `.smrt/manifest.json`
+            // (#4128): register it so the run's workers read it first.
+            const { registerActiveTestManifestPath } = await import(
+              '@happyvertical/smrt-core/manifest'
+            );
+            registerActiveTestManifestPath(process.cwd(), jsonPath);
             const proc = spawn(process.execPath, vitestArgs, {
               stdio: 'inherit',
             });
@@ -1566,7 +1596,15 @@ export default testManifest;
 
             await builder.generate({
               include: ['src/**/*.ts'],
-              exclude: ['src/**/*.d.ts', 'node_modules/**', 'dist/**'],
+              // A production manifest never describes inline test fixtures
+              // (#2760).
+              exclude: [
+                'src/**/*.d.ts',
+                '**/*.test.ts',
+                '**/*.spec.ts',
+                'node_modules/**',
+                'dist/**',
+              ],
               baseClasses,
               followImports: true,
               discoverExternalPackages: true,
@@ -2646,7 +2684,9 @@ export default testManifest;
               actionDesc = `Upgraded column ${migration.tableName}.${migration.column.name} from ${migration.mismatch?.actual} to ${migration.mismatch?.expected}${migration.note ? ` (${migration.note})` : ''}`;
             } else if (migration.type === 'add_index' && migration.index) {
               migrationSql = migration.sql || '';
-              actionDesc = `Created index ${migration.index.name} on ${migration.tableName}`;
+              actionDesc = migration.renamedFrom
+                ? `Renamed index ${migration.renamedFrom} -> ${migration.index.name} on ${migration.tableName}`
+                : `Created index ${migration.index.name} on ${migration.tableName}`;
             } else if (migration.type === 'drop_index' && migration.indexName) {
               migrationSql = migration.sql || '';
               actionDesc = `Dropped index ${migration.indexName} on ${migration.tableName}`;
@@ -3218,6 +3258,18 @@ export default testManifest;
           'Compare the live database to the expected schema shape (incl. _smrt_* system tables)',
         default: false,
       },
+      ai: {
+        type: 'boolean',
+        description:
+          'Check every inference tier and alias binding offline (provider, key variable, model, alias, cycles)',
+        default: false,
+      },
+      probe: {
+        type: 'boolean',
+        description:
+          "With --ai, call each candidate's list endpoint with a short timeout",
+        default: false,
+      },
       verbose: {
         type: 'boolean',
         description: 'Show recommendations and informational findings',
@@ -3783,6 +3835,26 @@ export default testManifest;
         console.log();
       }
 
+      // ========== Agent Knowledge (#4878) ==========
+      // Warning-level and read-only; skipped when no smrt package is installed.
+      try {
+        const { runAgentKnowledgeDoctorSection } = await import(
+          './doctor-agent-knowledge.js'
+        );
+        const section = runAgentKnowledgeDoctorSection(cwd);
+        if (section.applies) {
+          console.log('📚 Agent Knowledge\n');
+          for (const line of section.lines) console.log(line);
+          warnings.push(...section.warnings);
+          passed.push(...section.passed);
+          console.log();
+        }
+      } catch (error) {
+        warnings.push(
+          `agent knowledge check skipped: ${error instanceof Error ? error.message : String(error)}`,
+        );
+      }
+
       // ========== Live Database Parity (opt-in) ==========
       // Off by default because it opens a connection and issues catalog
       // queries; `--db` is what turns doctor's database section from "a URL is
@@ -3873,6 +3945,30 @@ export default testManifest;
         console.log();
       }
 
+      // ========== Inference Bindings (opt-in, #4752) ==========
+      // Offline unless --probe. An unresolvable binding is an issue (non-zero
+      // exit); a chain that still resolves past a bad candidate warns.
+      if (options.ai) {
+        console.log('🧠 Inference Bindings\n');
+        try {
+          const { runInferenceDoctorSection } = await import('./doctor-ai.js');
+          const section = await runInferenceDoctorSection({
+            probe: options.probe === true,
+          });
+          for (const line of section.lines) console.log(line);
+          issues.push(...section.issues);
+          warnings.push(...section.warnings);
+          passed.push(...section.passed);
+        } catch (error) {
+          check(
+            'Inference bindings',
+            false,
+            `inference check failed: ${error instanceof Error ? error.message : String(error)}`,
+          );
+        }
+        console.log();
+      }
+
       // ========== Summary ==========
       console.log('━'.repeat(50));
       console.log(`\n📊 Summary\n`);
@@ -3933,15 +4029,25 @@ export default testManifest;
   'db:migrate-null-equal-indexes': dbMigrateNullEqualIndexesCommand,
   'db:migrate-agent-schedule-slugs': dbMigrateAgentScheduleSlugsCommand,
   'db:migrate-ledger-accounts': dbMigrateLedgerAccountsCommand,
+  'db:upgrade-commerce-money': dbUpgradeCommerceMoneyCommand,
   'db:migrate-qualified-names': dbMigrateQualifiedNamesCommand,
   'db:materialize-tenant-hierarchy': dbMaterializeTenantHierarchyCommand,
+  'users:provision-owner': usersProvisionOwnerCommand,
   'db:drop-framework-base-tables': dbDropFrameworkBaseTablesCommand,
   'db:orphans': dbOrphansCommand,
   'db:prune': dbPruneCommand,
+  'ai:usage': aiUsageCommand,
+  'ai:transcript': aiTranscriptCommand,
+  'ai:compare': aiCompareCommand,
+  'prompts:history': promptsHistoryCommand,
+  'inference:hosted': inferenceHostedCommand,
   'db:permissions': dbPermissionsCommand,
 
   // Configuration commands
   'config:export': configExportCommand,
+
+  // Compose deployment contract (x-happyvertical)
+  ...deployCommands,
 
   // Data export command (for static site generation)
   export: exportCommand,

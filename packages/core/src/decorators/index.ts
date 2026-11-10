@@ -91,6 +91,8 @@ export interface FieldOptions {
   sqlType?: SQLDataType;
   /** Whether the field is required */
   required?: boolean;
+  /** Validate that an STI reference resolves to the declared subtype on save/load. */
+  validateSubtype?: boolean;
   /** Default value for the field */
   default?: unknown;
   /**
@@ -222,6 +224,13 @@ export interface RelationshipFieldOptions extends FieldOptions {
   targetKey?: string;
   /** Relationship type */
   type?: 'foreignKey' | 'crossPackageRef' | 'oneToMany' | 'manyToMany';
+  /**
+   * Relationship role (#3718 record page): `items` on a `@foreignKey` /
+   * `@crossPackageRef` marks the declaring model as the line items of the
+   * target, so record pages show its rows as a line-items table with a
+   * totals block. Emitted on the generated web relationship edge.
+   */
+  role?: 'items';
   /**
    * What happens to this row when the referenced object is deleted (#2371).
    *

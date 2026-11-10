@@ -100,6 +100,27 @@ describe('application runtime profiles', () => {
     ]);
   });
 
+  it('allows self-hosted password authentication only with its deployed safeguards', () => {
+    const resolved = resolveApplicationRuntime({
+      profile: 'self-hosted',
+      providers: { authentication: { provider: 'password' } },
+    });
+
+    expect(resolved.providers.authentication).toEqual({
+      provider: 'password',
+      ownerBootstrap: 'disabled',
+    });
+    expect(resolved.providers.database).toEqual({
+      engine: 'postgres',
+      connectionOwnership: 'operator',
+    });
+    expect(resolved.providers.jobs.topology).toBe('external');
+    expect(resolved.providers.network).toEqual({
+      exposure: 'public',
+      tls: true,
+    });
+  });
+
   it('fails closed with actionable issues before startup', () => {
     expect(() =>
       resolveApplicationRuntime({

@@ -68,7 +68,9 @@ below). `ExecuteAsPrincipal` remains a separate issue (#1888).
   `editable` configurable), `applyPersonaInstructions` /
   `upsertPromptTemplateOverride` (write the override — flows through
   `PromptOverride.save()` → `validatePromptOverride`, so a non-editable template
-  is refused), `resolvePersonaInstructions`.
+  is refused), `resolvePersonaInstructions`. These prompts declare no inference
+  tier (#4755): they make no model call, and the conversation that uses the
+  instructions owns the call and its tier.
 - **Memory scoping** (`persona-memory.ts`): `personaLearningMemory` routes a
   `LearningMemory` by the persona's `memoryScope` (used as `owner_id`), so
   personas learn independently. `reinforceFromFeedback` applies a `Feedback`

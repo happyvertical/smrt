@@ -10,11 +10,15 @@
 import { existsSync, rmSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
-import { afterEach, beforeEach, describe, expect, it } from 'vitest';
+import { afterEach, beforeEach, describe, expect } from 'vitest';
 import { ContractCollection } from '../collections/ContractCollection.js';
 import { CustomerCollection } from '../collections/CustomerCollection.js';
 import { FulfillmentCollection } from '../collections/FulfillmentCollection.js';
 import { FulfillmentStatus, FulfillmentType } from '../types/index.js';
+import { tenantIt } from './helpers/v2-tenant.js';
+
+// Commerce money documents require a tenant (#4021).
+const it = tenantIt();
 
 describe('Fulfillment', () => {
   let dbPath: string;
@@ -51,6 +55,7 @@ describe('Fulfillment', () => {
       await customer.save();
 
       const contract = await contracts.create({
+        _meta_type: 'Order',
         customerId: customer.id,
         totalAmount: 500,
       });
@@ -81,6 +86,7 @@ describe('Fulfillment', () => {
       await customer.save();
 
       const contract = await contracts.create({
+        _meta_type: 'Order',
         customerId: customer.id,
       });
       await contract.save();
@@ -109,6 +115,7 @@ describe('Fulfillment', () => {
       await customer.save();
 
       const contract = await contracts.create({
+        _meta_type: 'Order',
         customerId: customer.id,
       });
       await contract.save();
@@ -128,6 +135,7 @@ describe('Fulfillment', () => {
       await customer.save();
 
       const contract = await contracts.create({
+        _meta_type: 'Order',
         customerId: customer.id,
       });
       await contract.save();
@@ -149,6 +157,7 @@ describe('Fulfillment', () => {
       await customer.save();
 
       const contract = await contracts.create({
+        _meta_type: 'Order',
         customerId: customer.id,
       });
       await contract.save();
@@ -169,6 +178,7 @@ describe('Fulfillment', () => {
       await customer.save();
 
       const contract = await contracts.create({
+        _meta_type: 'Order',
         customerId: customer.id,
       });
       await contract.save();
@@ -189,11 +199,13 @@ describe('Fulfillment', () => {
       await customer.save();
 
       const contract1 = await contracts.create({
+        _meta_type: 'Order',
         customerId: customer.id,
       });
       await contract1.save();
 
       const contract2 = await contracts.create({
+        _meta_type: 'Order',
         customerId: customer.id,
       });
       await contract2.save();
@@ -223,6 +235,7 @@ describe('Fulfillment', () => {
       await customer.save();
 
       const contract = await contracts.create({
+        _meta_type: 'Order',
         customerId: customer.id,
       });
       await contract.save();
@@ -255,6 +268,7 @@ describe('Fulfillment', () => {
       await customer.save();
 
       const contract = await contracts.create({
+        _meta_type: 'Order',
         customerId: customer.id,
       });
       await contract.save();
@@ -281,6 +295,7 @@ describe('Fulfillment', () => {
       await customer.save();
 
       const contract = await contracts.create({
+        _meta_type: 'Order',
         customerId: customer.id,
       });
       await contract.save();
@@ -307,6 +322,7 @@ describe('Fulfillment', () => {
       await customer.save();
 
       const contract = await contracts.create({
+        _meta_type: 'Order',
         customerId: customer.id,
       });
       await contract.save();

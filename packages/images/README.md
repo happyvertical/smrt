@@ -191,3 +191,9 @@ and contributor guidance.
 The setup flow presents four explicit stages: choose a photo, isolate the head, set the mouth from local face landmarks, then save. Each stage exposes one next action; redo and saved-character loading remain secondary actions. On wide screens the isolated head and animated preview share a compact row, and they stack on narrow screens. Loading, cancellation, and failures preserve the recoverable prior stage.
 
 Saving adds the reviewed character to the authorized saved gallery. It does not select or activate a helper; the consuming surface handles that explicit follow-up. The 256×256 model can soften fine strands and low-confidence boundaries. Users review the head before continuing; loading errors and cancellation retain the selected photo. Local development uses the explicitly authorized SDK #1370 sibling link, to be replaced by released family pins at coordinated delivery.
+
+### Image processor dependencies
+
+s-m-r-t images uses its required Sharp backend for local operations. Jimp is an
+optional peer of the underlying SDK rather than a dependency of this package;
+applications that explicitly select that SDK backend install the peer themselves.

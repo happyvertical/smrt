@@ -10,6 +10,7 @@ import { afterEach, beforeEach, describe, expect, it } from 'vitest';
 import { foreignKey, SmrtObject, smrt } from '../index.js';
 import { ObjectRegistry } from '../registry';
 import { getTestDatabase } from '../testing/database';
+import { cleanupFileDatabase } from '../testing/file-cleanup';
 
 @smrt({ tableStrategy: 'sti' })
 class RaceTestParent extends SmrtObject {
@@ -42,16 +43,15 @@ class RaceTestChild extends RaceTestBase {
 
 describe('Race Condition Debug', () => {
   let db: DatabaseInterface;
+  let dbPath: string;
 
   beforeEach(async () => {
-    const dbPath = join(tmpdir(), `race-debug-${randomUUID().slice(0, 8)}.db`);
+    dbPath = join(tmpdir(), `race-debug-${randomUUID().slice(0, 8)}.db`);
     db = await getTestDatabase({ type: 'sqlite', url: dbPath });
   });
 
   afterEach(async () => {
-    if (db && typeof db.close === 'function') {
-      await db.close();
-    }
+    await cleanupFileDatabase(db, dbPath);
   });
 
   it('Test 1: should query by foreign key', async () => {

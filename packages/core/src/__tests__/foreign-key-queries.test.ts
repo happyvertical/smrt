@@ -20,6 +20,7 @@ import { afterEach, beforeEach, describe, expect, it } from 'vitest';
 import { foreignKey, SmrtObject, smrt } from '../index.js';
 import { ObjectRegistry } from '../registry';
 import { getTestDatabase } from '../testing/database';
+import { cleanupFileDatabase } from '../testing/file-cleanup';
 
 // Test models for foreign key queries with STI
 @smrt({ tableStrategy: 'sti' })
@@ -86,9 +87,7 @@ describe('Foreign Key Queries in STI Models', () => {
   });
 
   afterEach(async () => {
-    if (db && typeof db.close === 'function') {
-      await db.close();
-    }
+    await cleanupFileDatabase(db, dbPath);
   });
 
   describe('Field Registration', () => {

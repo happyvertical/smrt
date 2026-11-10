@@ -35,10 +35,17 @@ export interface OidcTestServer {
   issuer: string;
   /** Nonce stamped into subsequently issued ID tokens. */
   setNonce: (value: string) => void;
+  /** `auth_time` (epoch seconds) stamped into subsequent ID tokens; unset omits it. */
+  setAuthTime: (value: number | undefined) => void;
+  /** `sub` of subsequently issued ID tokens (default `dex-user-123`). */
+  setSubject: (value: string) => void;
   tokenRequests: Array<{ authorization?: string; params: URLSearchParams }>;
   userinfoRequests: Array<{ authorization?: string }>;
 }
 
+const MODEL_SYNC_COLUMNS = `
+  "_sync_origin_device_id" TEXT,
+  "_sync_revision" BIGINT,`;
 /**
  * Schema for the tables OIDC user provisioning touches
  * (`UserCollection.getOrCreateFromOidc`): the smrt-profiles trio plus users
@@ -63,7 +70,7 @@ CREATE TABLE IF NOT EXISTS "profile_types" (
   "_meta_type" TEXT NOT NULL,
   "_meta_data" JSON,
   "created_at" TIMESTAMP NOT NULL DEFAULT current_timestamp,
-  "updated_at" TIMESTAMP NOT NULL DEFAULT current_timestamp,
+  "updated_at" TIMESTAMP NOT NULL DEFAULT current_timestamp,${MODEL_SYNC_COLUMNS}
   "tenant_id" TEXT,
   "name" TEXT DEFAULT '',
   "description" TEXT
@@ -78,7 +85,7 @@ CREATE TABLE IF NOT EXISTS "profiles" (
   "_meta_type" TEXT NOT NULL,
   "_meta_data" JSON,
   "created_at" TIMESTAMP NOT NULL DEFAULT current_timestamp,
-  "updated_at" TIMESTAMP NOT NULL DEFAULT current_timestamp,
+  "updated_at" TIMESTAMP NOT NULL DEFAULT current_timestamp,${MODEL_SYNC_COLUMNS}
   "tenant_id" TEXT,
   "type_id" TEXT,
   "email" TEXT,
@@ -96,7 +103,7 @@ CREATE TABLE IF NOT EXISTS "oidc_profile_email_reservations" (
   "slug" TEXT NOT NULL,
   "context" TEXT NOT NULL DEFAULT '',
   "created_at" TIMESTAMP NOT NULL DEFAULT current_timestamp,
-  "updated_at" TIMESTAMP NOT NULL DEFAULT current_timestamp,
+  "updated_at" TIMESTAMP NOT NULL DEFAULT current_timestamp,${MODEL_SYNC_COLUMNS}
   "profile_id" TEXT NOT NULL,
   "email_key" TEXT NOT NULL
 );
@@ -109,7 +116,7 @@ CREATE TABLE IF NOT EXISTS "oidc_identities" (
   "slug" TEXT NOT NULL,
   "context" TEXT NOT NULL DEFAULT '',
   "created_at" TIMESTAMP NOT NULL DEFAULT current_timestamp,
-  "updated_at" TIMESTAMP NOT NULL DEFAULT current_timestamp,
+  "updated_at" TIMESTAMP NOT NULL DEFAULT current_timestamp,${MODEL_SYNC_COLUMNS}
   "profile_id" TEXT NOT NULL,
   "provider" TEXT DEFAULT '',
   "issuer" TEXT DEFAULT '',
@@ -126,23 +133,26 @@ CREATE TABLE IF NOT EXISTS "users" (
   "slug" TEXT NOT NULL,
   "context" TEXT NOT NULL DEFAULT '',
   "created_at" TIMESTAMP NOT NULL DEFAULT current_timestamp,
-  "updated_at" TIMESTAMP NOT NULL DEFAULT current_timestamp,
+  "updated_at" TIMESTAMP NOT NULL DEFAULT current_timestamp,${MODEL_SYNC_COLUMNS}
   "profile_id" TEXT DEFAULT '',
   "email" TEXT DEFAULT '',
   "email_key" TEXT,
+  "username" TEXT,
+  "username_key" TEXT,
   "status" TEXT,
   "last_login_at" TIMESTAMP
 );
 CREATE UNIQUE INDEX IF NOT EXISTS "users_slug_context_idx" ON "users" ("slug", "context");
 CREATE UNIQUE INDEX IF NOT EXISTS "users_profile_id_idx" ON "users" ("profile_id");
 CREATE UNIQUE INDEX IF NOT EXISTS "users_email_key_idx" ON "users" ("email_key");
+CREATE UNIQUE INDEX IF NOT EXISTS "users_username_key_idx" ON "users" ("username_key");
 
 CREATE TABLE IF NOT EXISTS "sessions" (
   "id" TEXT PRIMARY KEY NOT NULL,
   "slug" TEXT NOT NULL,
   "context" TEXT NOT NULL DEFAULT '',
   "created_at" TIMESTAMP NOT NULL DEFAULT current_timestamp,
-  "updated_at" TIMESTAMP NOT NULL DEFAULT current_timestamp,
+  "updated_at" TIMESTAMP NOT NULL DEFAULT current_timestamp,${MODEL_SYNC_COLUMNS}
   "user_id" TEXT DEFAULT '',
   "tenant_id" TEXT,
   "status" TEXT,
@@ -216,6 +226,8 @@ export async function startOidcServer(
 
   let issuer = '';
   let nonce = '';
+  let authTime: number | undefined;
+  let subject = 'dex-user-123';
   const tokenRequests: Array<{
     authorization?: string;
     params: URLSearchParams;
@@ -276,6 +288,9 @@ export async function startOidcServer(
       if (options.authorizedParty) {
         idTokenClaims.azp = options.authorizedParty;
       }
+      if (authTime !== undefined) {
+        idTokenClaims.auth_time = authTime;
+      }
 
       const idToken = await new SignJWT(idTokenClaims)
         .setProtectedHeader({ alg: 'RS256', kid: 'test-key' })
@@ -283,7 +298,7 @@ export async function startOidcServer(
         .setExpirationTime('5m')
         .setIssuedAt()
         .setIssuer(issuer)
-        .setSubject('dex-user-123')
+        .setSubject(subject)
         .sign(privateKey);
 
       sendJson(response, 200, {
@@ -329,6 +344,12 @@ export async function startOidcServer(
     issuer,
     setNonce: (value: string) => {
       nonce = value;
+    },
+    setAuthTime: (value: number | undefined) => {
+      authTime = value;
+    },
+    setSubject: (value: string) => {
+      subject = value;
     },
     tokenRequests,
     userinfoRequests,

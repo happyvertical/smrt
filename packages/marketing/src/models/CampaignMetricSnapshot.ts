@@ -1,7 +1,18 @@
 /** Immutable period performance evidence for a campaign or campaign channel. */
 
-import { field, foreignKey, SmrtObject, smrt } from '@happyvertical/smrt-core';
-import { TenantScoped, tenantId } from '@happyvertical/smrt-tenancy';
+import {
+  field,
+  foreignKey,
+  SmrtObject,
+  type SmrtSaveOptions,
+  smrt,
+} from '@happyvertical/smrt-core';
+import {
+  getCurrentTenant,
+  TenantIsolationError,
+  TenantScoped,
+  tenantId,
+} from '@happyvertical/smrt-tenancy';
 import type { CampaignMetricSnapshotOptions } from '../types.js';
 import { Campaign } from './Campaign.js';
 import { CampaignChannel } from './CampaignChannel.js';
@@ -11,7 +22,11 @@ const persistedSnapshotState = new WeakMap<CampaignMetricSnapshot, string>();
 @TenantScoped({ mode: 'optional' })
 @smrt({
   tableName: 'campaign_metric_snapshots',
-  conflictColumns: ['dedupe_key'],
+  // The ingest API takes an opaque caller key, so it is unique per tenant
+  // (#3305 M2): two tenants may file the same key; global (NULL-tenant)
+  // evidence stays unique through the null-aware upsert, and in the database
+  // through NULLS NOT DISTINCT on PostgreSQL 15+.
+  conflictColumns: ['tenant_id', 'dedupe_key'],
   api: { include: ['list', 'get', 'create'] },
   mcp: { include: ['list', 'get', 'create'] },
   cli: { include: ['list', 'get', 'create'] },
@@ -20,37 +35,66 @@ export class CampaignMetricSnapshot extends SmrtObject {
   @tenantId({ nullable: true })
   tenantId: string | null = null;
 
+  @field({ description: 'The campaign these results belong to.' })
   @foreignKey(Campaign, { required: true })
   campaignId: string = '';
 
   /** Null for campaign rollups; set for channel-scoped evidence. */
+  @field({
+    description:
+      'The channel these results came from. Empty when they cover the whole campaign.',
+  })
   @foreignKey(CampaignChannel, { nullable: true })
   campaignChannelId: string | null = null;
 
-  @field({ required: true })
+  @field({
+    required: true,
+    description: 'The first day of the period these results cover.',
+  })
   periodStart: Date = new Date();
 
-  @field({ required: true })
+  @field({
+    required: true,
+    description: 'The last day of the period these results cover.',
+  })
   periodEnd: Date = new Date();
 
+  @field({ description: 'What was spent in the period, in cents.' })
   spendCents: number = 0;
 
+  @field({ description: 'How many times the campaign was shown.' })
   impressions: number = 0;
 
+  @field({ description: 'How many times someone clicked through.' })
   clicks: number = 0;
 
+  @field({
+    description: 'How many people did what the campaign asked, such as buying.',
+  })
   conversions: number = 0;
 
+  @field({ description: 'How many new leads came in.' })
   leads: number = 0;
 
-  @field({ type: 'integer', nullable: true })
+  @field({
+    type: 'integer',
+    nullable: true,
+    description: 'The sales brought in during the period, in cents, if known.',
+  })
   revenueCents: number | null = null;
 
   /** Ingestion source such as `google_ads`, `meta`, or `rollup_job`. */
-  @field({ required: true })
+  @field({
+    required: true,
+    description: 'Where these results were reported from.',
+  })
   source: string = '';
 
-  @field({ required: true })
+  @field({
+    required: true,
+    description:
+      'The reference this result is filed under, so the same report is never counted twice.',
+  })
   dedupeKey: string = '';
 
   constructor(options: CampaignMetricSnapshotOptions = {}) {
@@ -93,8 +137,9 @@ export class CampaignMetricSnapshot extends SmrtObject {
     return this;
   }
 
-  override async save(): Promise<this> {
+  override async save(options?: SmrtSaveOptions): Promise<this> {
     this.assertMetrics();
+    this.assertOwnerInContext();
     await this.assertChannelMatchesCampaign();
     const captured = persistedSnapshotState.get(this);
     if (captured !== undefined) {
@@ -109,9 +154,16 @@ export class CampaignMetricSnapshot extends SmrtObject {
         `CampaignMetricSnapshot ${this.id}: refusing to overwrite an existing ` +
           'snapshot from a non-hydrated instance; snapshots are immutable evidence.',
       );
-    } else if (this.dedupeKey) {
+    } else {
+      await this.assertCampaignOwnedByOwner();
+    }
+    if (captured === undefined && this.dedupeKey) {
       try {
+        // The key is tenant-local: guard the owner's key, which is this
+        // row's tenant or, before the interceptor fills it in, the context's.
+        // A system context with no tenant guards the global key.
         const row = await this.db.get(this.tableName, {
+          tenant_id: this.ownerTenantId(),
           dedupe_key: this.dedupeKey,
         });
         if (row && row.id !== this.id) {
@@ -132,7 +184,7 @@ export class CampaignMetricSnapshot extends SmrtObject {
       }
     }
 
-    const result = (await super.save()) as this;
+    const result = (await super.save(options)) as this;
     persistedSnapshotState.set(this, this.serializeState());
     return result;
   }
@@ -142,6 +194,52 @@ export class CampaignMetricSnapshot extends SmrtObject {
       `CampaignMetricSnapshot ${this.id ?? '<new>'}: metric snapshots are ` +
         'immutable evidence and cannot be deleted.',
     );
+  }
+
+  /** This row's owner: its tenant, else (before auto-populate) the context's. */
+  private ownerTenantId(): string | null {
+    return this.tenantId || getCurrentTenant()?.tenantId || null;
+  }
+
+  /**
+   * A tenant context may only write its own evidence (#3305 M2). Checked
+   * before any raw lookup so the dedupe guard cannot reveal whether another
+   * tenant filed a key. The class does not opt into super-admin bypass.
+   */
+  private assertOwnerInContext(): void {
+    const context = getCurrentTenant()?.tenantId;
+    if (
+      context &&
+      this.tenantId &&
+      this.tenantId.toLowerCase() !== context.toLowerCase()
+    ) {
+      throw new TenantIsolationError(
+        `Tenant isolation violation in CampaignMetricSnapshot: context tenant '${context}' cannot file evidence for tenant '${this.tenantId}'.`,
+        { tenantId: context, attemptedTenantId: this.tenantId },
+      );
+    }
+  }
+
+  /**
+   * New evidence belongs to its campaign's owner (#3305 M2): a snapshot is
+   * never filed globally, or for another tenant, against a tenant's campaign,
+   * so an unnamed administrative ingest cannot fork a tenant's evidence.
+   */
+  private async assertCampaignOwnedByOwner(): Promise<void> {
+    if (!this.campaignId) return;
+    const campaign = (await this.db.get('campaigns', {
+      id: this.campaignId,
+    })) as { tenant_id?: string | null } | null;
+    const campaignOwner = campaign?.tenant_id
+      ? String(campaign.tenant_id).toLowerCase()
+      : null;
+    const owner = this.ownerTenantId()?.toLowerCase() ?? null;
+    if (!campaign || campaignOwner !== owner) {
+      throw new Error(
+        `CampaignMetricSnapshot campaignId '${this.campaignId}' is not a ` +
+          "campaign of this snapshot's owner.",
+      );
+    }
   }
 
   private assertMetrics(): void {

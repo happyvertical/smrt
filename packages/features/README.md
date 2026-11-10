@@ -59,8 +59,11 @@ accepts a s-m-r-t `SmartObjectManifest` containing class decorator metadata.
 ## Resolution
 
 The resolver starts with the registered class's `defaultEnabled` (falling
-back to the synced definition), then applies the global override and tenant
-overrides. Without a tenant context, only the global override applies.
+back to the synced definition), then applies the tenant's plan grant (see
+below), the global override, and tenant overrides, in that order. Without a
+tenant context, only the global override applies. `explain()` returns the
+same answer as `isEnabled()` plus `decidedBy`, the layer that set it
+(`default`, `plan_grant`, `global_override` or `tenant_override`).
 
 The default hierarchy loader discovers `@happyvertical/smrt-users` when
 available. Alternatively, supply `tenantHierarchyLoader` as the resolver's
@@ -68,8 +71,51 @@ second constructor argument; return a `FeatureTenantHierarchyProvider` or
 `null` for flat tenant resolution. Hierarchy traversal runs root to leaf:
 a child inherits its parent's state only when the parent has
 `cascadePermissions` and the child has `inheritPermissions`; otherwise its
-baseline resets to the global state. Each tenant's own override then applies.
+baseline resets to the global state (the plan grant with the global override
+applied). Each tenant's own override then applies.
 `inherit` preserves that baseline. Supported scopes are `global` and `tenant`.
+
+## Plan grants and paid features
+
+A tenant's subscription plan can grant feature keys. A granted key is on for
+that tenant, and an ungranted key keeps its default. The global override then
+applies on top: a global row is an explicit operator act, so a global DISABLE
+stops the feature for every tenant, granted or not. Tenant overrides apply
+last and beat both the grant and the global override. Features does not depend on
+`@happyvertical/smrt-subscriptions`; it consults a `FeatureGrantSource`, and
+with none registered (a local install) there are no grants.
+
+The standard paid keys are exported as constants and all default off:
+`FEATURE_SYNC_DEVICES`, `FEATURE_BACKUP_VAULT`, `FEATURE_CLOUD_HOSTED`,
+`FEATURE_INFERENCE_HOSTED`, `FEATURE_PLUGINS_REMOTE`.
+
+```ts
+import { FEATURE_SYNC_DEVICES, FeatureResolver, featureGateResponse, requireFeature } from '@happyvertical/smrt-features';
+import { SubscriptionFeatureSource } from '@happyvertical/smrt-subscriptions';
+
+// Once per request.
+const grantSource = await SubscriptionFeatureSource.create(dbOptions);
+const resolver = new FeatureResolver(dbOptions);
+
+// SvelteKit +server.ts: a structured 403 naming the key and the reason.
+const denied = await featureGateResponse(FEATURE_SYNC_DEVICES, { resolver, tenantId, grantSource });
+if (denied) return denied;
+
+// Services: throws FeatureUnavailableError (status 403, .code, .denial, .toResponse()).
+await requireFeature(FEATURE_SYNC_DEVICES, { resolver, tenantId, grantSource });
+```
+
+A denial body has `code: 'feature_upgrade_required'` with the `grantingPlan`
+when the plan is what is missing, or `code: 'feature_disabled'` with
+`disabledBy` (`global_override` or `tenant_override`) and no plan when an
+override turned the feature off, since no upgrade would help.
+
+The gate checks only that the feature is present for the tenant; authenticate
+the caller and check its permissions first, and pass the tenant you verified.
+Register an app-wide source with `setFeatureGrantSource()` instead of passing
+one per call. `defineFrameworkFeature()` adds your own dotted keys, and
+`FeatureSyncService.syncFrameworkDefinitions()` stores them for the settings
+screen.
 
 ## Storage
 

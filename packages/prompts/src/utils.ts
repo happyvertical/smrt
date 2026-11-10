@@ -1,3 +1,10 @@
+import {
+  INFERENCE_TIERS,
+  type InferenceLatency,
+  type InferenceTierRequest,
+  isInferenceTier,
+  isInferenceTierRequest,
+} from '@happyvertical/smrt-core';
 import type {
   NormalizedPromptAI,
   PromptAIInput,
@@ -40,12 +47,22 @@ const AI_RESERVED_KEYS = new Set([
   'maxTokens',
 ]);
 
+// `tier` and `promptKey` come only from the resolution (an effective tier
+// profile), never from tenant-editable params, so `allowedProfileNames`
+// cannot be bypassed through params (#4755).
 const AI_ROUTING_PARAM_KEYS = new Set([
   'profile',
   'provider',
   'type',
   'model',
   'defaultModel',
+  // Inference tier routing (#4750) comes only from the validated profile;
+  // a (tenant-editable) params layer can never pick or spoof it.
+  'tier',
+  'latency',
+  'promptKey',
+  // The ladder floor is read from the code default only (#4752).
+  'minimumTier',
 ]);
 
 export function isPlainObject(
@@ -150,10 +167,22 @@ function normalizeAIInput(ai?: PromptAIInput | null): NormalizedPromptAI {
       : undefined;
   const model =
     typeof ai.model === 'string' || ai.model === null ? ai.model : undefined;
+  if (ai.minimumTier !== undefined && !isInferenceTier(ai.minimumTier)) {
+    throw new Error(
+      `Prompt ai.minimumTier must be one of ${INFERENCE_TIERS.join(', ')}; got "${String(ai.minimumTier)}".`,
+    );
+  }
+
+  const latency =
+    ai.latency === 'interactive' || ai.latency === 'background'
+      ? ai.latency
+      : undefined;
 
   return {
     profile: profile ?? undefined,
     model: model ?? undefined,
+    ...(latency ? { latency } : {}),
+    ...(ai.minimumTier ? { minimumTier: ai.minimumTier } : {}),
     params: extractPromptParams(ai, AI_RESERVED_KEYS),
   };
 }
@@ -285,7 +314,9 @@ export function validateProfileName(
     );
   }
 
-  if (!config.profiles?.[profileName]) {
+  // Tier names (and `auto`) are reserved profile names that resolve through
+  // the core inference seam (#4750); a same-named configured profile wins.
+  if (!config.profiles?.[profileName] && !isInferenceTierRequest(profileName)) {
     throw new Error(`Prompt profile "${profileName}" is not configured`);
   }
 }
@@ -309,21 +340,40 @@ export function validateModelName(
 export function buildResolvedAI(
   ai: NormalizedPromptAI,
   config: PromptPackageConfig,
+  options: {
+    /**
+     * The registered code default's profile (`definePrompt({ ai })`), passed
+     * only when no config, stored or runtime layer set a profile.
+     */
+    defaultProfile?: string;
+  } = {},
 ): ResolvedPromptAI {
   let provider: string | undefined;
   let model = ai.model;
   let params = ai.params;
+  let tier: ResolvedPromptAI['tier'];
 
   if (ai.profile) {
-    validateProfileName(ai.profile, config);
+    // `allowedProfileNames` limits what config and stored overrides may
+    // select. A tier the code default itself declares (#4755) is not such a
+    // choice, so an app's allow-list cannot break framework prompts.
+    const codeDefaultTier =
+      ai.profile === options.defaultProfile &&
+      !config.profiles?.[ai.profile] &&
+      isInferenceTierRequest(ai.profile);
+    if (!codeDefaultTier) validateProfileName(ai.profile, config);
     const configuredProfile = config.profiles?.[ai.profile];
-    if (!configuredProfile) {
+    if (configuredProfile) {
+      const profileConfig = normalizeProfileConfig(configuredProfile);
+      provider = profileConfig.provider;
+      model = model ?? profileConfig.model;
+      params = mergePromptParams(profileConfig.params, params);
+    } else if (isInferenceTierRequest(ai.profile)) {
+      // Bound later through the core inference seam by `resolvePrompt()`.
+      tier = ai.profile;
+    } else {
       throw new Error(`Prompt profile "${ai.profile}" is not configured`);
     }
-    const profileConfig = normalizeProfileConfig(configuredProfile);
-    provider = profileConfig.provider;
-    model = model ?? profileConfig.model;
-    params = mergePromptParams(profileConfig.params, params);
   }
 
   if (ai.model) {
@@ -345,6 +395,7 @@ export function buildResolvedAI(
     profile: ai.profile,
     provider,
     model,
+    ...(tier ? { tier } : {}),
     ...(config.allowedModels
       ? { allowedModels: [...config.allowedModels] }
       : {}),
@@ -360,6 +411,140 @@ export function buildResolvedAI(
   }
 
   return resolved;
+}
+
+const TEMPLATE_HASH_LENGTH = 12;
+
+/**
+ * Short SHA-256 fingerprint of an effective (unrendered) prompt template: the
+ * first 12 lowercase hex characters. Recorded as the `templateHash` usage tag
+ * so an override edit starts a new usage series (#4751).
+ *
+ * Uses Web Crypto (`globalThis.crypto.subtle`), available in Node and every
+ * browser, so the package root stays free of `node:crypto`.
+ */
+export async function promptTemplateHash(template: string): Promise<string> {
+  const digest = await globalThis.crypto.subtle.digest(
+    'SHA-256',
+    new TextEncoder().encode(template),
+  );
+  let hex = '';
+  for (const byte of new Uint8Array(digest)) {
+    hex += byte.toString(16).padStart(2, '0');
+    if (hex.length >= TEMPLATE_HASH_LENGTH) break;
+  }
+  return hex.slice(0, TEMPLATE_HASH_LENGTH);
+}
+
+/** The `ai.message()` options {@link promptMessageOptions} returns. */
+export interface PromptMessageOptions extends PromptParams {
+  model?: string;
+  /**
+   * Inference tier of a tier profile (#4750). Object call sites pass these
+   * options through `SmrtObject.prepareAiOperation()`, which picks the tier
+   * client and strips `tier`/`promptKey` before the provider sees them.
+   */
+  tier?: InferenceTierRequest;
+  /** Set with `tier`: the prompt key for the call-time resolver request. */
+  promptKey?: string;
+  /** Set with `tier`: the code default's `ai.latency` hint (#4755). */
+  latency?: InferenceLatency;
+  temperature?: number;
+  maxTokens?: number;
+  /** Degradation floor sent with `tier` (#4752). */
+  minimumTier?: ResolvedPromptAI['minimumTier'];
+  usageTags?: Record<string, string>;
+}
+
+/** Extra call options merged by {@link promptMessageOptions}. */
+export interface PromptMessageOptionsExtra {
+  /** The caller's own usage tags; they win over the resolution's tags. */
+  usageTags?: Record<string, string>;
+  /**
+   * `false` omits `tier`/`promptKey` for a call site that sends the options
+   * straight to a client it already holds (no `prepareAiOperation()`), so
+   * the tier keys never reach a provider; the call runs on that client.
+   * Default `true`.
+   */
+  routeTier?: boolean;
+}
+
+/**
+ * Turn a resolved prompt's AI settings into `ai.message()` call options:
+ * params, `model`, `temperature`, `maxTokens`, the resolution's
+ * `usageTags` (`promptKey`, `promptLayer`, `templateHash`) and, for a tier
+ * profile, `tier` + `promptKey` (#4750). Send them through
+ * `SmrtObject.prepareAiOperation()` so the tier keys never reach a provider.
+ *
+ * Tag precedence, low to high: a `usageTags` object carried in the prompt's
+ * params (tenant-editable: reserved tags such as runId or tier tags are
+ * dropped from it), the resolution's identity tags, then `extra.usageTags`.
+ */
+export function promptMessageOptions(
+  ai: ResolvedPromptAI,
+  extra: PromptMessageOptionsExtra = {},
+): PromptMessageOptions {
+  // Tier routing keys never ride in on params, even for a hand-built object.
+  const {
+    tier: _tier,
+    latency: _latency,
+    promptKey: _promptKey,
+    // Never spread raw: only the sanitized copy below may reach the call.
+    usageTags: paramTags,
+    ...params
+  } = ai.params || {};
+  const routeTier = extra.routeTier !== false;
+  const usageTags = {
+    ...paramUsageTags(paramTags),
+    ...(ai.usageTags ?? {}),
+    ...(extra.usageTags ?? {}),
+  };
+  return {
+    ...params,
+    ...(ai.model ? { model: ai.model } : {}),
+    ...(routeTier && ai.tier ? { tier: ai.tier } : {}),
+    ...(routeTier && ai.tier && ai.promptKey
+      ? { promptKey: ai.promptKey }
+      : {}),
+    ...(routeTier && ai.tier && ai.latency ? { latency: ai.latency } : {}),
+    ...(routeTier && ai.tier && ai.minimumTier
+      ? { minimumTier: ai.minimumTier }
+      : {}),
+    ...(typeof ai.temperature === 'number'
+      ? { temperature: ai.temperature }
+      : {}),
+    ...(typeof ai.maxTokens === 'number' ? { maxTokens: ai.maxTokens } : {}),
+    ...(Object.keys(usageTags).length > 0 ? { usageTags } : {}),
+  };
+}
+
+/**
+ * Usage tags that feed indexed columns, tenant checks or report accounting
+ * (#4751, #4750, #4752, #4753). A tenant-editable params layer must never
+ * set them: a forged `runId` could make another tenant's run look shared and
+ * block its outcome labels, and forged tier or substitution tags would skew
+ * the report. Only the resolution and the calling code may set these.
+ */
+const RESERVED_USAGE_TAGS = new Set([
+  'promptKey',
+  'promptLayer',
+  'templateHash',
+  'runId',
+  'tierRequested',
+  'tierResolved',
+  'substitutions',
+  'fusionKey',
+]);
+
+/** Free-form tags from params, minus the reserved ones. */
+function paramUsageTags(value: unknown): Record<string, string> {
+  if (!isPlainObject(value)) return {};
+  const tags: Record<string, string> = {};
+  for (const [key, tag] of Object.entries(value)) {
+    if (RESERVED_USAGE_TAGS.has(key)) continue;
+    if (tag !== undefined && tag !== null) tags[key] = String(tag);
+  }
+  return tags;
 }
 
 export function renderPromptTemplate(

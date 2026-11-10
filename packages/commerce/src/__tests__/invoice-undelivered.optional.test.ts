@@ -13,6 +13,7 @@ import { InvoiceCollection } from '../collections/InvoiceCollection.js';
 import { PaymentAllocationCollection } from '../collections/PaymentAllocationCollection.js';
 import { PaymentCollection } from '../collections/PaymentCollection.js';
 import { InvoiceStatus } from '../types/index.js';
+import { createV2Invoice } from './helpers/v2-tenant.js';
 
 const classes = [
   'Customer',
@@ -22,6 +23,11 @@ const classes = [
   'InvoiceLineItem',
   'Payment',
   'PaymentAllocation',
+  // Money-v2 aggregate persistence (#4021).
+  'DocumentTax',
+  'TaxCode',
+  'TaxComponent',
+  'TaxSettings',
 ];
 for (const engine of [
   'sqlite',
@@ -100,11 +106,13 @@ for (const engine of [
       const customer = await (await CustomerCollection.create({ db })).create({
         profileId: randomUUID(),
       });
-      const invoice = await invoices.create({
-        customerId: customer.id,
+      // An undelivered draft whose total comes from its one line (#4021).
+      const invoice = await createV2Invoice(db, {
+        invoiceNumber: `INV-${randomUUID()}`,
+        customerId: String(customer.id),
         currency: 'CAD',
-        subtotal: 100,
-        totalAmount: 100,
+        lines: [100],
+        draft: true,
       });
       const payment = await payments.create({
         customerId: customer.id,
@@ -143,11 +151,12 @@ for (const engine of [
     it('allocates a split to drafts, completes and replays without delivery evidence', () =>
       owned(async () => {
         const f = await fixture();
-        const second = await f.invoices.create({
+        const second = await createV2Invoice(db, {
+          invoiceNumber: `INV-${randomUUID()}`,
           customerId: f.invoice.customerId,
           currency: 'CAD',
-          subtotal: 50,
-          totalAmount: 50,
+          lines: [50],
+          draft: true,
         });
         const split = {
           paymentId: f.payment.id!,

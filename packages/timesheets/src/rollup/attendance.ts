@@ -3,14 +3,20 @@ import {
   AttendanceBreakCollection,
   AttendancePunchCollection,
 } from '../attendance/models.js';
-import { clipSource, instant, integer } from './calculation.js';
-import type { TimecardActor, TimecardPeriod, TimecardSource } from './types.js';
+import { attributeSource, instant, integer } from './calculation.js';
+import type {
+  RollupAttribution,
+  TimecardActor,
+  TimecardPeriod,
+  TimecardSource,
+} from './types.js';
 
 /** Optional attendance reader. Called on the rollup's transaction executor. */
 export async function attendanceSources(
   db: DatabaseInterface,
   actor: TimecardActor,
   period: TimecardPeriod,
+  attribution: RollupAttribution = 'clip',
 ): Promise<{ sources: TimecardSource[]; linkedEntryIds: Set<string> }> {
   const punches = await AttendancePunchCollection.create({ db });
   const breaks = await AttendanceBreakCollection.create({ db });
@@ -55,7 +61,7 @@ export async function attendanceSources(
       const seconds =
         Math.round((paidMs + right - left) / 1000) - Math.round(paidMs / 1000);
       paidMs += right - left;
-      const source = clipSource(
+      const source = attributeSource(
         {
           kind: 'attendance',
           id: String(punch.id),
@@ -64,6 +70,8 @@ export async function attendanceSources(
           seconds,
         },
         period,
+        attribution,
+        start,
       );
       if (source?.seconds) sources.push(source);
     }

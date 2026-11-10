@@ -13,7 +13,9 @@ const { packageManager } = JSON.parse(
 test('normal build caches cannot restore another producer’s tracked registration source', async () => {
   const root = mkdtempSync(join(tmpdir(), 'smrt-turbo-registration-'));
   // Own the cache even when the caller exports a shared TURBO_CACHE_DIR.
+  // ...and never read the remote cache: a replayed fixture build never creates `.started`.
   const cacheArgument = `--cache-dir=${join(root, '.turbo/cache')}`;
+  const cacheArguments = [cacheArgument, '--cache=local:rw'];
   const pkg = join(root, 'packages/provider');
   const registration = join(pkg, 'src/lib/server/smrt-register.ts');
   const write = (path, text) => {
@@ -31,9 +33,9 @@ test('normal build caches cannot restore another producer’s tracked registrati
     // gain provenance: runtime registration no longer includes a test provider.
     write(join(pkg, 'typecheck.mjs'), "import{writeFileSync}from'node:fs';writeFileSync('src/lib/server/smrt-register.ts','export const providers = [];\\n');\n");
     write(registration, 'export const providers = [];\n');
-    const run = (task) => execFileSync(join(repository, 'node_modules/.bin/turbo'), ['run', task, '--filter=provider', cacheArgument], { cwd: root, encoding: 'utf8', timeout: 30000, stdio: ['ignore', 'pipe', 'pipe'] });
+    const run = (task) => execFileSync(join(repository, 'node_modules/.bin/turbo'), ['run', task, '--filter=provider', ...cacheArguments], { cwd: root, encoding: 'utf8', timeout: 30000, stdio: ['ignore', 'pipe', 'pipe'] });
     execFileSync('pnpm', ['install'], { cwd: root, stdio: 'pipe', timeout: 30000 });
-    const child = spawn(join(repository, 'node_modules/.bin/turbo'), ['run', 'build', '--filter=provider', cacheArgument], { cwd: root, stdio: 'inherit' });
+    const child = spawn(join(repository, 'node_modules/.bin/turbo'), ['run', 'build', '--filter=provider', ...cacheArguments], { cwd: root, stdio: 'inherit' });
     const completed = new Promise((resolve, reject) => { child.on('error', reject); child.on('exit', code => code === 0 ? resolve() : reject(new Error(`fixture build exited ${code}`))); });
     try {
       const deadline = Date.now() + 15000;

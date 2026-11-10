@@ -1,3 +1,5 @@
+import { paintControlSpotlight } from './control-spotlight.js';
+
 /** DOM adapter helpers shared by addressable control Implementations. */
 
 const focusableControlSelector = [
@@ -25,11 +27,51 @@ export function revealControl(node: HTMLElement): void {
   });
 }
 
-export function highlightControl(node: HTMLElement, durationMs = 1600): void {
-  node.dataset.smrtHighlighted = 'true';
-  globalThis.setTimeout(() => {
-    if (node.isConnected) delete node.dataset.smrtHighlighted;
-  }, durationMs);
+/** Existing control descriptors keep their void return contract. */
+export function highlightControl(node: HTMLElement, durationMs?: number): void;
+export function highlightControl(
+  node: HTMLElement,
+  durationMs: number,
+  options: { presentation: 'outline' },
+): void;
+export function highlightControl(
+  node: HTMLElement,
+  durationMs: number,
+  options: {
+    presentation: 'spotlight';
+    dismissLabel: string;
+    onDismiss?: () => void;
+  },
+): () => void;
+export function highlightControl(
+  node: HTMLElement,
+  durationMs = 1600,
+  options?:
+    | { presentation: 'outline' }
+    | {
+        presentation: 'spotlight';
+        dismissLabel: string;
+        onDismiss?: () => void;
+      },
+): () => void {
+  let disposed = false;
+  const remove =
+    options?.presentation === 'spotlight'
+      ? paintControlSpotlight(node, options)
+      : (() => {
+          node.dataset.smrtHighlighted = 'true';
+          return () => {
+            delete node.dataset.smrtHighlighted;
+          };
+        })();
+  const timer = globalThis.setTimeout(() => cleanup(), durationMs);
+  const cleanup = () => {
+    if (disposed) return;
+    disposed = true;
+    globalThis.clearTimeout(timer);
+    remove();
+  };
+  return cleanup;
 }
 
 export function emitControlChange(node: HTMLElement): void {

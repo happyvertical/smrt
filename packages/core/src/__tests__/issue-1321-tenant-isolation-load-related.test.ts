@@ -28,6 +28,7 @@ import {
 } from '../index.js';
 import { ObjectRegistry } from '../registry';
 import { getTestDatabase } from '../testing/database';
+import { cleanupFileDatabase } from '../testing/file-cleanup';
 
 // Owning side — a tenant-scoped "Customer" with many orders.
 // `tenantId` needs an explicit type because the framework cannot infer a
@@ -123,9 +124,7 @@ describe('Issue #1321: tenant isolation on relationship loading', () => {
   });
 
   afterEach(async () => {
-    if (db && typeof db.close === 'function') {
-      await db.close();
-    }
+    await cleanupFileDatabase(db, dbPath);
   });
 
   async function makeCustomer(tenantId: string | null): Promise<IsoCustomer> {

@@ -45,7 +45,11 @@ function parseMetadata(raw: unknown): Record<string, unknown> {
 @TenantScoped({ mode: 'optional' })
 @smrt({
   tableName: 'content_contributors',
-  conflictColumns: ['email'],
+  // Unique per tenant, not installation-wide: tenants each know their own
+  // contributors, and global (NULL-tenant) rows stay unique on the normalized
+  // email through the null-aware upsert, and in the database through NULLS NOT
+  // DISTINCT on PostgreSQL 15+ (#3305 M1).
+  conflictColumns: ['tenant_id', 'email'],
   api: { include: ['list', 'get', 'create', 'update', 'delete'] },
   mcp: { include: ['list', 'get', 'create', 'update', 'delete'] },
   cli: { skipApiCheck: true },
@@ -54,10 +58,19 @@ export class ContentContributor extends SmrtObject {
   @crossPackageRef('@happyvertical/smrt-profiles:Profile')
   profileId = '';
 
-  @field({ required: true })
+  @field({
+    required: true,
+    description: 'The email address the contributor writes in from.',
+  })
   email = '';
 
+  @field({ description: 'The name the contributor goes by.' })
   name = '';
+
+  @field({
+    description:
+      'How far you trust what they send in: standard, trusted or blocked.',
+  })
   trustLevel: ContentContributorTrustLevel = 'standard';
   metadata = '';
 
@@ -84,6 +97,16 @@ export class ContentContributor extends SmrtObject {
           ? options.metadata
           : JSON.stringify(options.metadata);
     }
+  }
+
+  /**
+   * The key is `(tenant_id, email)` on the normalized address (#3305 M1).
+   * The constructor normalizes, but generated create/update paths assign the
+   * field after construction, so normalize again before every save.
+   */
+  protected override async validateBeforeSave(): Promise<void> {
+    this.email = (this.email || '').toLowerCase().trim();
+    await super.validateBeforeSave();
   }
 
   getMetadata(): Record<string, unknown> {

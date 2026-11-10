@@ -15,6 +15,7 @@ and repository rules.
 | `src/data-query.ts` | Transport-neutral bounded query normalization | [agents/data-query.md](agents/data-query.md) |
 | `src/schema/`, `src/migrations/`, `src/cascade.ts`, `src/system/` | DDL parity, indexes, migrations, delete integrity, retention | [agents/schema-paths.md](agents/schema-paths.md) |
 | `src/postgres-permissions.ts` | Explicit PostgreSQL ACL plans and atomic reconciliation | [deployment permission contract](../../docs/content/postgres-permissions.md) |
+| `src/migrations/deployment-phase-tracker.ts` | Permanent checksummed PostgreSQL deployment steps, atomic markers and explicit external-effect reconciliation | [agents/deployment-phases.md](agents/deployment-phases.md) |
 | `src/change-feed.ts` | Durable changes, cursors, table versions, retention | [agents/change-feed.md](agents/change-feed.md) |
 | `src/change-feed-authz.ts` | Consumer table/row change-feed authorization hooks (#3020) | [agents/change-feed.md](agents/change-feed.md) |
 | `src/change-signals.ts` | Signal bus, replica fan-out, SSE | [agents/change-signals.md](agents/change-signals.md) |
@@ -22,13 +23,16 @@ and repository rules.
 | `src/vite-plugin/`, `src/consumer-plugin/`, `src/knowledge.ts` | Decorator UI hints, knowledge projection, generation snapshots | [agents/build-knowledge.md](agents/build-knowledge.md) |
 | `src/knowledge-graph.ts` | Cross-package knowledge graph merge and freshness check (#2863) — see [standards](../../docs/content/standards.md) | — |
 | `src/object.ts`, `src/collection.ts`, `src/learning/memory.ts` | Context memory and semantic search | [agents/memory.md](agents/memory.md) |
+| `src/adapters/ai-usage.ts`, `src/adapters/ai-usage-recorder.ts`, `src/system/ai-usage-observability.ts`, `src/system/ai-runs.ts`, `src/ai-transcripts.ts`, `src/system/ai-transcripts.ts`, `src/system/ai-prompt-compare.ts` | Public usage recorder, `withAiUsage()`, ambient-tenant and ambient-user (#4760) slots, gateway cost ids (#3077); usage tags lifted to `prompt_key`/tier/`run_id` columns, outcome labels, `ai:usage` report (#4751); `_smrt_ai_runs` fusion run records (#4753); opt-in `_smrt_ai_transcripts` with `call_id`, redaction, audited tenant-scoped reads (#4780); tenant-scoped prompt/model comparison and template history (#4782) | [agents/ai-usage.md](agents/ai-usage.md) |
 | `src/system/diagnostics.ts` | SELECT-only `_smrt_*` diagnostics reader behind smrt-dev-mcp runtime tools (#1824) | [agents/system-diagnostics.md](agents/system-diagnostics.md) |
 | `src/system/registry-snapshot.ts` | Sanitized plain-JSON projection of the booted `ObjectRegistry` for the smrt-dev-mcp runtime dev-plane (#1831); never constructors, validators, values, or absolute paths | [agents/registry-snapshot.md](agents/registry-snapshot.md) |
 | `src/registry/qualified-name-aliases.ts`, `src/migrations/qualified-name-aliases.ts` | Model moves: `previousQualifiedNames` aliases, deprecation, doctor counts, opt-in backfill (#3338) | [agents/model-moves.md](agents/model-moves.md) |
 | `src/run-once.ts` | Shared idempotency seam: insert-only claim + caller work in one transaction, replay on retry, typed in-flight/unknown-outcome answers (#3080) | [agents/run-once.md](agents/run-once.md) |
+| `src/runtime-model.ts` | Run-time models from data: `runtimeModelEntry()`, `registerRuntimeModel()`, `planRuntimeModelDDL()`, run-time subclasses of registered classes (#4871, #4869 checks) | [agents/runtime-model.md](agents/runtime-model.md) |
 | `src/recipe.ts`, `../scanner/src/recipes.ts` | `SmrtRecipe`: declared user-facing units (models, nav, `requires`, curation `options`) collected into manifest and knowledge `recipes` (#3590) | [agents/recipes.md](agents/recipes.md) |
 | `src/cookbook/` | Cookbook v1 document: browser-safe validate/migrate, JSON Schema (`./cookbook`, `./cookbook/v1.schema.json`; #3748) | [agents/cookbook.md](agents/cookbook.md) |
 | `src/cookbook/engine/` | Headless cookbook command engine: typed commands, idempotent retries, atomic batches, receipts, tool schemas (`./cookbook/engine`; #3753) | [agents/cookbook-engine.md](agents/cookbook-engine.md) |
+| `src/inference.ts`, `getAiClient(tier?)`, `src/inference-target.ts`, `src/inference-availability.ts`, `src/inference-capabilities.ts`, `src/inference-gate.ts` | Inference tiers (`cheap`…`best`, `auto`), `inference` config, `setInferenceResolver()` / `setInferenceExecutor()` seams, per-tier clients and usage tags, fusion kind and run seams (#4750, #4752, #4753); raw-client bindings `resolveInferenceTarget()` (#4756); mode and typed `AI_UNAVAILABLE`, status probe and `_inference` route (#4757); capability detection and recorded fallbacks (#4758); hosted gate seam `setInferenceGate()` (#4760) | [agents/inference.md](agents/inference.md) |
 | `src/browser.ts`, `src/host.ts`, `src/host.browser.ts` | Browser entry that builds and evaluates without Node-only modules: host seam, `package.json#browser` swaps, `pnpm test:browser` (#2838) | [agents/browser-entry.md](agents/browser-entry.md) |
 
 ## Cross-module invariants
@@ -38,6 +42,9 @@ and repository rules.
   with `redactDatabaseUrl` / `redactDatabaseUrlsInText`
   (`src/utils/database-url.ts`, #3527): never the password or query string,
   and never the raw string when it cannot be parsed.
+- `SmrtError` lives in import-free `src/smrt-error.ts`, published as
+  `./smrt-error` (#4100) for browser-safe code that must not load the root
+  entry; `errors.ts` re-exports that one class. Keep it import-free.
 - Per-class registry work on the hydration path (manifest reconciliation in
   `ensureManifestLoaded()`, the simple-name index behind `findClass()`) is
   memoized per registry generation (`src/registry/generation.ts`, #3047). Any
@@ -60,6 +67,9 @@ and repository rules.
   key adopts: a slug `getSlug()` derived from `name`/`title`/`label` moves to
   a free `-2`, `-3`, … slug and INSERTs. See `agents/schema-paths.md`
   ("Tenant OWNERSHIP").
+- Owning `CollectionInterceptor.writeGuard` predicates must reach final writes,
+  including natural-key adoption and deletes; zero matched rows fail closed.
+  See [object runtime](agents/object-runtime.md).
 - Persisted saves use `id` and loaded `updated_at`; new saves use natural keys.
   Preserve revision compare-and-swap ordering through public `save()`,
   `claimRevision()`, and transaction APIs. Embedded saves, deletes, and complete
@@ -122,12 +132,41 @@ and repository rules.
   discriminator, so manifest generation (`generateManifest`,
   `applyGenerationPasses`, hence `pnpm build`) throws
   `CONFIG_UNSCOPED_PACKAGE_NAME` for an unscoped `package.json` name (#3408).
-  Instance and collection registry lookups pass the qualified name. The schema
+  Instance and collection registry lookups pass the qualified name. A parent
+  imported from another scoped package is emitted as `extendsQualified`
+  (scanner traces named, aliased, and namespace imports; `extends` stays the
+  simple name), kept only when that package's manifest declares it
+  (`verifyImportedParents`); decorator registration takes the parent from the
+  real constructor's registration, which a stale simple manifest parent never
+  overwrites (#4145, `issue-4145-*.test.ts`). The schema
   planner rejects a table claimed by two unrelated classes
   (`CONFIG_TABLE_NAME_COLLISION`): only one STI family shares a table (#3098);
-  collections (including `SmrtReportCollection`) never claim one. Consumer
+  collections (including `SmrtReportCollection`) never claim one. The scanner
+  stamps each collection entry with `collectionOf` (its model) and the
+  registry's collection classifier trusts it first, so a collection stays a
+  non-owner even when runtime cannot walk its parent or holds another core
+  copy's `SmrtCollection` (#3956, `issue-3956-*.test.ts`). Consumer
   gates: `registry/__tests__/issue-3110-*.test.ts`, `issue-3109-*.test.ts`,
   `packages/bundle-gate/src/__tests__/consumer-same-name.spec.ts`.
+- A manifest-loaded STI family always includes its own base (#4735). Sibling
+  auto-loading keeps its simple-name "already registered" rule with two
+  exceptions (`shouldLoadStiSibling`): a base that discovered siblings of its
+  own package extend is looked up in that package, and a class whose name the
+  registering package declares on that collection itself is never loaded from
+  another package. Lazy parent loading and `loadAllManifests()` use
+  `hasClassForPackage`. smrt-ledgers' `Account` once hid smrt-messages'
+  `Account`, and `getAllSchemasAsDefinitions()` threw "claimed by unrelated
+  classes".
+- A collection class never publishes more than its model: unset surfaces
+  inherit the model's, and the build rejects a collection that opens a CRUD
+  write its model closes. Inherited surfaces (`inheritedExposure`) keep
+  following the model at runtime and collection CRUD is capped to the model's,
+  so closing a model closes its collection's tools (#3468). See
+  `agents/generators.md` (Collection exposure).
+- A model subclass (STI child or CTI subclass) never publishes more than its
+  parent model: unset surfaces and `sensitive` inherit the parent's, and the
+  build rejects a subclass that widens them unless it names each operation in
+  `widenParentExposure`. See `agents/generators.md` (Subclass exposure).
 - API custom-action eligibility has ONE resolver, `resolveApiMethodExposure()`
   in `generators/custom-action.ts`: both SvelteKit route emitters,
   `resolveApiActionSet`, and `knowledge.ts` read it, and a new consumer must too
@@ -137,7 +176,8 @@ and repository rules.
   `expose: true` bypasses the heuristic ALONE, and an explicit `api.include` or
   `api.routes` entry keeps its pre-#2686 route. Fail closed on scanner
   uncertainty: read `parameters[].typeUnresolved`, never the `'any'` it
-  substitutes. Accepting `Date` as wire-able and hydrating it
+  substitutes. Custom-action schemas and decoders read
+  `declaredParameterType()`, not `parameter.type` (#4327). Accepting `Date` as wire-able and hydrating it
   (`toCustomActionDate`) are one decision — changing either breaks the other.
   The runtime `APIGenerator` transport stays declaration-gated: `rest.ts`
   dispatch and `preflight-route.ts` prediction both read

@@ -20,7 +20,7 @@ Add `svelte` when consuming the optional UI export.
 
 | Entry point | Responsibility |
 | --- | --- |
-| `@happyvertical/smrt-sales/agreements` | Verified e-signature execution and immutable evidence |
+| `@happyvertical/smrt-sales/agreements` | Versioned commercial terms, verified e-signature execution, and immutable evidence |
 | `@happyvertical/smrt-sales/crm` | Leads, pipelines, opportunities, activities, conversions |
 | `@happyvertical/smrt-sales/referrals` | Referrers, links, attribution, qualification, agreements |
 | `@happyvertical/smrt-sales/commissions` | Earners, plans, earning events, commissions, payouts |
@@ -72,6 +72,114 @@ console.log(earner.id, plan.getComponents());
 All money fields use integer cents. Rates and probability-like values use
 decimals from `0` to `1`; rounding occurs through the exported money helpers.
 
+## Waterfall plans
+
+Version-two plans can carry ordered `steps`, an `effectiveTo` boundary, and a
+`remainderSink`. `calculateWaterfall()` is a pure, generic allocation service:
+hosts register recipient resolvers, then persist the returned trace as the
+replay evidence. Step keys must be nonempty strings; malformed persisted keys
+are rejected before allocation or activation. Replay snapshots copy recipient
+and sink values, including nested metadata, so later caller-input mutation
+cannot change the returned evidence. The trace freezes the resolved recipients, input facts, and
+application-fee offset. All amounts are integer minor units; each percentage
+rounds half away from zero and recipients plus the sink always equal gross.
+
+An application fee already settled at checkout is modeled only as an offset to
+the configured recipient's payable allocation. It is never emitted as a second
+allocation or payable. Offset matching uses the entire recipient descriptor,
+including nested metadata; object key order does not change identity. The service
+does not initiate a payout or transfer.
+
+The referral qualification and commission bridge remain component-based. Both
+qualification and explicit requalification refuse a resolved waterfall plan with
+`unsupported_plan_engine`, before writing a snapshot or changing the referral.
+This applies to pinned plans and latest-active plan amendments. Existing frozen
+v1 snapshots keep governing earnings. To recover, activate and bind compatible
+component terms, then retry qualification; use `calculateWaterfall()` directly
+for v2 allocations. Switching a plan key's engine does not migrate referrals.
+
+### Pool recipients
+
+A step can share its amount across a pool of members, weighted by a metric
+such as deliveries, items published, or referrals sent. The step's
+`recipient` names the pool and resolves like any other recipient; the host
+injects who belongs to it and how much each member contributed:
+
+```ts
+import {
+  calculateWaterfallWithPools,
+  WaterfallRecipientResolverRegistry,
+} from '@happyvertical/smrt-sales/commissions';
+
+const resolver = new WaterfallRecipientResolverRegistry();
+resolver.register('treasury', () => ({ kind: 'treasury', id: 'valley-coop' }));
+resolver.register('grower_pool', (d) => ({ kind: 'grower_pool', id: d.id ?? 'all' }));
+
+const { trace } = await calculateWaterfallWithPools(
+  {
+    planKey: 'valley-coop-wholesale',
+    version: 1,
+    currency: 'USD',
+    steps: [
+      { key: 'treasury', base: 'gross', amount: { kind: 'percent', rate: 0.1 },
+        recipient: { kind: 'treasury' } },
+      { key: 'growers', base: 'previous_remainder', amount: { kind: 'percent', rate: 1 },
+        recipient: { kind: 'grower_pool', id: '2026-season' },
+        pool: { metric: 'kg_delivered' } },
+    ],
+    remainderSink: { kind: 'treasury' },
+  },
+  { grossAmountCents: 10_000, currency: 'USD' },
+  {
+    resolver,
+    poolMembers: async (pool) => loadGrowers(pool.id),
+    metricProvider: { getMetricValues: async (req) => loadKgDelivered(req) },
+    metricPeriod: { start: '2026-09-01', end: '2026-10-01' },
+  },
+);
+```
+
+Omit `metric` for equal shares. Weights are non-negative integers, and
+members the provider leaves out weigh zero. Shares are exact integer minor
+units. The cents that cannot be divided go to the remainder sink by default.
+With `residual: 'largest_remainder'`, they go one at a time to the largest
+fractional remainders. Ties go to the larger weight, then to member `kind`
+and `id` order. An empty pool goes to the sink. So does a pool whose weights
+are all zero, unless the step sets `zeroWeight: 'equal'`. The trace freezes
+the members, weights, and metric period, so a replay with `frozenInputs` never
+calls the providers again. A snapshot must also match the step's declared
+`metric`. Replay trusts the frozen inputs it receives, so store them where
+they cannot be edited, such as an immutable calculation trace; a consistent
+edit to the stored evidence cannot be detected here. `calculateWaterfall()`
+stays synchronous; pass it
+`pools` from `prepareWaterfallPools()` when you need the two phases apart.
+
+### Organisation and treasury earners
+
+`Earner.kind` is `person` (the default), `organisation`, or `treasury`.
+Organisation and treasury earners need no person Profile. Payout methods
+include `stripe_connect` and `crypto`; `setPayoutDestination()` stores the
+connected account id or the public receiving address, and an active earner
+using either method must have one. The package records where money should
+go and never calls a payment provider.
+
+`CommissionPayoutService.createPayoutBatch()` captures the typed destination on
+`CommissionPayout.payoutDestination`. Executors and approval screens must read
+`payout.getPayoutDestination()` from the batch, never the current Earner.
+The batch's method and destination are immutable from its first save, including
+pending batches and failed batches reset for retry. Earner preference changes,
+idempotent replay and interrupted membership repair never refresh routing.
+Reject the batch through `transitionPayoutForSource` and create a new batch with
+a new idempotency key to use another destination. This also preserves the route
+that was reviewed before approval; no payment provider is called here.
+
+Run the normal manifest migration before adopting the new field. Existing
+Stripe Connect/crypto batches without a recorded descriptor remain readable,
+but cannot be approved or advanced toward payment. Reject and recreate them;
+never backfill a historical route from today's Earner. Manual methods continue
+to use an empty descriptor. Unknown/malformed descriptors and extra fields
+(including credentials) are rejected.
+
 ## Core model
 
 - **Roles are separate from money.** `SalesRepresentative` and `Referrer` are
@@ -85,6 +193,16 @@ decimals from `0` to `1`; rounding occurs through the exported money helpers.
 - **Writes use services where required.** Payout transitions, adjustments,
   agreement execution, and attribution have service-owned invariants that raw
   generated CRUD must not bypass.
+
+## Referrer nominations
+
+Register known aliases with `ReferrerIdentifierCollection.register()`. A host
+can record a matched nomination at intake using `ReferralNominationResolver`
+and later resolve it under the referral program's active policy. An ambiguous
+or unknown nomination opens an operator review with the original input and
+policy version. Run the normal manifest migration to add
+`referrer_identifiers`. See [referral behavior](agents/referrals.md) for matching
+rules, replay, and tenant boundaries.
 
 ## Lead intake and lifecycle
 
@@ -132,7 +250,26 @@ See [the CRM contract](agents/crm.md) for retry and duplicate semantics and
 
 ## Agreement boundary
 
-The agreements module accepts the provider-neutral
+`Agreement` is a counterparty-agnostic, effective-dated terms record. Parties
+are ordered `{ kind, id }` descriptors, so consumers can use tenant, earner,
+profile, organization, worker, or their own neutral kinds without importing a
+consumer domain. Versions are rows: `createAmendment()` creates a draft and
+`activateAmendment()` closes the predecessor at the successor's start. Effective
+intervals are half-open (`[effectiveFrom, effectiveTo)`), and `activeFor()` is
+an as-of query: it can return a superseded or terminated version that governed
+the supplied record date, never terms inferred from today's status. Ambiguous
+overlapping intervals fail closed. Activation rejects backdated or out-of-order
+amendments that would overlap existing history. Ending a draft cancels it without
+making it govern; closed intervals cannot be reopened. Party JSON is canonicalized
+before persistence, so property order does not change an agreement's identity.
+Tenant lookups fall back to global terms for each requested date when no tenant
+version governs that date. A tenant must explicitly create its initial version
+before using amendment helpers; global terms are never implicitly copied into a
+tenant amendment. Callers that calculate money must snapshot
+the returned version at their authoritative event; this model does not settle
+or allocate funds.
+
+The execution portion of the agreements module accepts the provider-neutral
 `@happyvertical/signatures` contract plus an `AssetRuntimeLike`. Provider
 credentials remain in the injected SDK adapter and secret store. Executed
 agreements freeze the exact source, signed document, audit trail, hashes, and
@@ -163,3 +300,43 @@ pnpm --filter @happyvertical/smrt-sales build
 
 See [`AGENTS.md`](./AGENTS.md) for lifecycle, evidence, concurrency, and payout
 invariants.
+
+A future amendment activated through `activateAmendment` can be withdrawn through
+`withdrawAmendment(id)` only before its start, while it is still active. This
+transaction cancels the never-effective successor and restores its exact persisted
+predecessor end (including a finite end); it never infers an open-ended interval.
+Repeated, late, or conflicting withdrawals fail without changing history. Direct
+model termination remains for already-effective terms. Global defaults apply only
+before a tenant lane first governs; termination, expiry, and later gaps in that
+lane return no agreement instead of silently resuming global fees.
+
+Restoration provenance is written exclusively by amendment activation; ordinary
+creates and saves cannot supply or edit it. Withdrawal advances both persisted
+revision tokens so pre-withdrawal model instances cannot overwrite the result.
+
+Initial agreement creates use strict insertion: concurrent callers for the same
+tenant, kind, parties and version cannot replace the winning row or its terms.
+The losing create fails; load the existing version or create an amendment.
+
+Concurrent `createAmendment` calls serialize version allocation within the owning
+lane: PostgreSQL locks the oldest persisted version and re-reads the latest;
+embedded engines use core's transaction/write queue. Each successful call keeps
+its own terms and version. Direct `supersede()` requires a finite `effectiveTo`
+set before the transition; saving an open-ended superseded row is rejected.
+
+Governed sales are available from `/crm`: `SalesGovernanceService` authorizes
+sellers, exclusively leases canonical advertisers, freezes quote revisions and
+requires exact maker/checker discount approval. Hosts supply current membership,
+suspension, inventory and seller/finance policies. See
+[the governed sales integration contract](agents/crm.md#governed-sellers-quotes-and-canonical-advertiser-registration)
+for transactional executor ownership, migration and provider signing boundaries.
+The Svelte export includes `SellerGovernancePanel` and its view/action contracts.
+
+Governance currently accepts owned PostgreSQL connection configurations
+only. Other adapters fail before connection creation. Full issue #4264 remains
+blocked on [SDK DuckDB connection visibility #1452](https://github.com/happyvertical/sdk/issues/1452).
+
+SQLite governance is also refused before opening because same-process recovery
+from BUSY invalidation has not been proven for this workflow. Previous SQLite
+behavioral tests are investigation evidence, not a supported runtime claim.
+Follow-up validation is tracked in [s-m-r-t #4269](https://github.com/happyvertical/smrt/issues/4269).

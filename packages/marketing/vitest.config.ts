@@ -13,6 +13,7 @@ export default defineConfig({
       exclude: ['**/__tests__/**', '**/*.{test,spec}.ts', '**/*.d.ts'],
     },
     testTimeout: 30000,
+    hookTimeout: 30000,
     fileParallelism: false,
     pool: 'forks',
   },

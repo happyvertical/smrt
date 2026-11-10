@@ -48,6 +48,7 @@ export {
   type PerformerOptions,
   type PerformerStatus,
 } from './performer.js';
+export { VideoLibraryRecipe } from './recipes.js';
 export {
   type AnchorPoint,
   type LightingProfile,

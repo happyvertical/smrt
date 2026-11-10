@@ -52,16 +52,22 @@ import type {
 } from '@happyvertical/smrt-agents';
 import type { DataSurfaceActionAdapter } from '@happyvertical/smrt-agents/server';
 import {
+  AIProviderNotConfiguredError,
   getConfig,
   loadConfig,
   resolveConfiguredAIProvider,
   toAIClientOptions,
 } from '@happyvertical/smrt-config';
-import type { SmrtClassOptions } from '@happyvertical/smrt-core';
+import {
+  resolveInferenceTarget,
+  type SmrtClassOptions,
+} from '@happyvertical/smrt-core';
+import { withTenant } from '@happyvertical/smrt-tenancy';
 import {
   getCurrentSessionPermissionContext,
   getRequestScopedDatabase,
 } from '@happyvertical/smrt-users';
+import { chatUnavailableBody, chatUnconfiguredBody } from './ai-unavailable.js';
 import {
   ASSISTANT_TURN_GENERIC_ERROR,
   type AssistantContinuationStore,
@@ -71,6 +77,7 @@ import {
   createAssistantTurnResponse,
   createSessionContinuationStore,
   DEFAULT_CONTINUATION_TTL_MS,
+  type ProviderErrorFallback,
   runAssistantTurn,
 } from './assistant-turn.js';
 import type { AssistantTurnEvent } from './assistant-turn-events.js';
@@ -88,6 +95,8 @@ import {
 import {
   buildManifestToolCatalog,
   type ClientToolResultInput,
+  FALLBACK_HISTORY_PLACEHOLDER,
+  isFallbackReply,
   MAX_CLIENT_TOOL_RESULT_CHARS,
   MAX_CLIENT_TOOLS,
   type ManifestTool,
@@ -95,6 +104,7 @@ import {
   type ToolInvocation,
   type ToolLoopUsage,
 } from './tool-loop.js';
+import type { ChatMessageRole } from './types.js';
 
 // ---------------------------------------------------------------------------
 // Public types
@@ -141,6 +151,15 @@ export type AssistantPrincipalResolver = (
 export interface AssistantRequestContext {
   event: AssistantRouteEvent;
   principal: AssistantPrincipal;
+  /**
+   * The client-supplied `context` object of a send or resume body (for
+   * example the surfaces the page has mounted), validated to be a plain JSON
+   * object of at most {@link MAX_ASSISTANT_REQUEST_CONTEXT_BYTES} bytes.
+   * Present only on the callbacks of a send or resume; absent when the client
+   * sent none. It is untrusted request input: use it to narrow, never to
+   * grant.
+   */
+  requestContext?: Readonly<Record<string, unknown>>;
 }
 
 /** A value, or a per-request callback producing it. */
@@ -225,9 +244,11 @@ export interface AssistantRouteBoundPrincipal {
 export interface MountAssistantRoutesOptions {
   /**
    * The AI client, or a factory called once per turn. Omitted, each turn
-   * builds a client from the `smrt.config` `ai` block through the shared
-   * resolver (`resolveConfiguredAIProvider` → `toAIClientOptions` →
-   * `getAI`), loading the config file first if nothing has. A factory that
+   * builds a client from the principal's stored inference binding (#4756,
+   * through core's `resolveInferenceTarget()`) over the `smrt.config` `ai`
+   * block through the shared resolver (`resolveConfiguredAIProvider` →
+   * `toAIClientOptions` → `getAI`), loading the config file first if nothing
+   * has. A factory that
    * throws (including `AIProviderNotConfiguredError` when nothing is
    * configured) answers 503 before anything is written; the error goes to
    * `onError` only. Passing `ai` explicitly as `undefined`/`null` is a mount
@@ -262,6 +283,17 @@ export interface MountAssistantRoutesOptions {
   resolvePrincipal?: AssistantPrincipalResolver;
   /** The assistant's agent id (its `bot` profile slug). Default `smrt-assistant`. */
   agentId?: string;
+  /**
+   * Session key of the dock's `AgentSession`. Default
+   * {@link ASSISTANT_DOCK_SESSION_KEY} (`assistant-dock`). A host whose
+   * assistant threads already live in another session passes that session's
+   * key to list and continue them: `null` adopts the person's unkeyed session
+   * (what `ChatService.createAgentSession` opens without a `sessionKey`), a
+   * string adopts the session stored under that key. Sessions are matched on
+   * the key exactly, so a host changing it from the default stops seeing the
+   * threads of the old key.
+   */
+  sessionKey?: string | null;
   systemPrompt?: AssistantRouteValue<string | undefined>;
   /**
    * Server tool allow-list, fail-closed: absent or empty offers NO tools.
@@ -298,11 +330,26 @@ export interface MountAssistantRoutesOptions {
   /** Model used when the request names none. */
   defaultModel?: string;
   maxSteps?: number;
+  /** Repeated-call stop (see `AssistantTurnOptions`, #4391). */
+  maxRepeatedCalls?: number;
   maxTurnTokens?: number;
   maxTurnMs?: number;
+  /** Per-model-call timeout in ms (see `AssistantTurnOptions`, #4379). */
+  requestTimeoutMs?: number;
+  /** Reply stored when the turn produced no answer (#4379). */
+  emptyAnswerFallback?: string;
+  /**
+   * Reply stored when a model call throws, as text or a function of the
+   * error `code` (see `AssistantTurnOptions`, #4454). Unset: an error event
+   * and nothing stored.
+   */
+  providerErrorFallback?: ProviderErrorFallback;
   maxTokens?: number;
   temperature?: number;
-  /** Earlier messages sent with a new turn. Default 20. */
+  /**
+   * Earlier user and assistant turns sent with a new turn; persisted tool
+   * rows do not count (#4458). Default 20.
+   */
   historyLimit?: number;
   /**
    * A stored send with no reply and no recorded outcome (e.g. its process
@@ -322,6 +369,13 @@ export interface MountAssistantRoutesOptions {
    * tool name must be on `allowedTools`, which is mirrored onto the session.
    */
   authorInvocation?: (invocation: ToolInvocation) => AuthoredToolReply | null;
+  /**
+   * Keep a rejected call out of the thread when a later call of the same
+   * tool in the same turn succeeded (#4505; see
+   * `AssistantTurnAuthor.collapseRecoveredFailures`). Only `recoverable`
+   * (validation-class) failures are collapsed. Default `false`.
+   */
+  collapseRecoveredFailures?: boolean;
   onUsage?: (usage: ToolLoopUsage, context: AssistantRequestContext) => void;
   audit?: PrincipalAuditSink;
   postgresRls?: boolean;
@@ -366,6 +420,8 @@ export class AssistantRouteError extends Error {
     readonly status: number,
     readonly code: string,
     message: string,
+    /** Extra user-safe body fields (the #4757 `unavailable` answer). */
+    readonly body?: Record<string, unknown>,
   ) {
     super(message);
     this.name = 'AssistantRouteError';
@@ -418,8 +474,13 @@ export interface AssistantDuplicateSendWire {
 
 /** Default assistant agent id. */
 export const DEFAULT_ASSISTANT_AGENT_ID = 'smrt-assistant';
+
+/** The roles the assistant route replays as history (#4458). */
+const HISTORY_REPLAY_ROLES: readonly ChatMessageRole[] = ['user', 'assistant'];
 /** Session key isolating the dock's session from other uses of the agent id. */
 export const ASSISTANT_DOCK_SESSION_KEY = 'assistant-dock';
+/** Largest serialized `context` object a send or resume body may carry. */
+export const MAX_ASSISTANT_REQUEST_CONTEXT_BYTES = 8 * 1024;
 /** Default JSON body cap. */
 export const DEFAULT_ASSISTANT_MAX_BODY_BYTES = 1024 * 1024;
 /** Default attachment cap. */
@@ -482,7 +543,30 @@ function json(
 }
 
 function errorResponse(error: AssistantRouteError): Response {
-  return json({ error: error.message, code: error.code }, error.status);
+  return json(
+    { ...(error.body ?? {}), error: error.message, code: error.code },
+    error.status,
+  );
+}
+
+/**
+ * The structured 503 for unavailable AI (#4757): core's
+ * `InferenceUnavailableError`, or smrt-config's "no provider" error from the
+ * default factory (`unconfigured`). `undefined` for anything else.
+ */
+function unavailableRouteError(
+  error: unknown,
+): AssistantRouteError | undefined {
+  const body =
+    chatUnavailableBody(error) ??
+    (error instanceof AIProviderNotConfiguredError
+      ? chatUnconfiguredBody()
+      : undefined);
+  if (!body) return undefined;
+  return new AssistantRouteError(503, body.code, body.error, {
+    type: body.type,
+    unavailable: body.unavailable,
+  });
 }
 
 const notFound = () =>
@@ -503,12 +587,19 @@ async function resolveValue<T>(
 let configLoad: Promise<unknown> | undefined;
 
 /**
- * The default AI factory: the `smrt.config` `ai` block (plus its key
- * variable) through the shared resolver. Loads the config file once when no
- * one has; throws `AIProviderNotConfiguredError` (variable names only, never
- * values) when nothing is configured.
+ * The default AI factory: the principal's stored inference binding (a
+ * per-user / per-tenant resolver registered with core, #4756) over the
+ * `smrt.config` `ai` block (plus its key variable) through the shared
+ * resolver. Loads the config file once when no one has; throws
+ * `AIProviderNotConfiguredError` (variable names only, never values) when
+ * neither a binding nor the config names a provider. Usage is recorded
+ * through the public recorder (#3077) with the binding's `source` tag; it
+ * reaches `config({ usage: { handlers } })`, not `_smrt_ai_usage`, because a
+ * turn's request database does not outlive the turn.
  */
-async function configuredAssistantAI(): Promise<AIInterface> {
+async function configuredAssistantAI(
+  context: AssistantRequestContext,
+): Promise<AIInterface> {
   if (getConfig() === null) {
     configLoad ??= loadConfig().catch((error: unknown) => {
       configLoad = undefined;
@@ -516,11 +607,38 @@ async function configuredAssistantAI(): Promise<AIInterface> {
     });
     await configLoad;
   }
-  const options = toAIClientOptions(resolveConfiguredAIProvider());
+  let base: Record<string, unknown> | undefined;
+  let notConfigured: unknown;
+  try {
+    base = toAIClientOptions(resolveConfiguredAIProvider()) as Record<
+      string,
+      unknown
+    >;
+  } catch (error) {
+    if (!(error instanceof AIProviderNotConfiguredError)) throw error;
+    notConfigured = error;
+  }
+  const { principal } = context;
+  // The resolver reads the ambient principal; enter the route's
+  // authenticated one for the resolution only.
+  const resolved = await withTenant(
+    { tenantId: principal.tenantId, userId: principal.userId },
+    () =>
+      resolveInferenceTarget({
+        ...(base ? { base } : {}),
+        tenantId: principal.tenantId,
+        className: 'AssistantRoute',
+        usage: { className: 'AssistantRoute', tenantId: principal.tenantId },
+        // smrt-chat stores the conversation itself: never a second copy in
+        // `_smrt_ai_transcripts` (#4780, owner decision).
+        transcript: false,
+      }),
+  );
+  if (!resolved.options) throw notConfigured;
   // Imported per turn, as the dev routes do: mounting (and SvelteKit's
   // build-time route analysis) never loads a provider SDK.
   const { getAI } = await import('@happyvertical/ai');
-  return getAI(options);
+  return getAI(resolved.options as Parameters<typeof getAI>[0]);
 }
 
 /**
@@ -797,6 +915,15 @@ export function mountAssistantRoutes(
     }
   }
   const agentId = options.agentId ?? DEFAULT_ASSISTANT_AGENT_ID;
+  const dockSessionKey =
+    options.sessionKey === undefined
+      ? ASSISTANT_DOCK_SESSION_KEY
+      : options.sessionKey;
+  if (dockSessionKey !== null && !dockSessionKey.trim()) {
+    throw new Error(
+      'mountAssistantRoutes: sessionKey must be a non-empty string or null.',
+    );
+  }
   const paramName = options.paramName ?? 'path';
   const maxBody = options.maxBodyBytes ?? DEFAULT_ASSISTANT_MAX_BODY_BYTES;
   const maxContent = options.maxContentLength ?? MAX_CHAT_STREAM_CONTENT_LENGTH;
@@ -883,7 +1010,7 @@ export function mountAssistantRoutes(
     return (
       sessions.find(
         (session) =>
-          session.getSessionKey() === ASSISTANT_DOCK_SESSION_KEY &&
+          session.getSessionKey() === dockSessionKey &&
           session.participantProfileId === principal.profileId &&
           session.tenantId === principal.tenantId &&
           Boolean(session.chatRoomId),
@@ -951,6 +1078,15 @@ export function mountAssistantRoutes(
       }
       return ai;
     } catch (error) {
+      // AI off / not set up is a state, not a fault (#4757): answer it
+      // structured. A chosen mode `off` is not logged; the default
+      // factory's "no provider" error still reaches `onError` (it names
+      // the config the operator must add).
+      const unavailable = unavailableRouteError(error);
+      if (unavailable) {
+        if (error instanceof AIProviderNotConfiguredError) safeLog(error);
+        throw unavailable;
+      }
       safeLog(error);
       throw new AssistantRouteError(
         503,
@@ -1022,6 +1158,33 @@ export function mountAssistantRoutes(
         ? current
         : null;
     });
+  };
+
+  /**
+   * Attach a body's optional `context` object to the request context: a plain
+   * JSON object (not an array) of bounded size, else 400.
+   */
+  const withRequestContext = (
+    context: AssistantRequestContext,
+    value: unknown,
+  ): AssistantRequestContext => {
+    if (value === undefined || value === null) return context;
+    if (typeof value !== 'object' || Array.isArray(value)) {
+      throw badRequest('context must be an object.', 'invalid_context');
+    }
+    if (
+      new TextEncoder().encode(JSON.stringify(value)).length >
+      MAX_ASSISTANT_REQUEST_CONTEXT_BYTES
+    ) {
+      throw badRequest(
+        `context is limited to ${MAX_ASSISTANT_REQUEST_CONTEXT_BYTES} bytes.`,
+        'invalid_context',
+      );
+    }
+    return {
+      ...context,
+      requestContext: value as Readonly<Record<string, unknown>>,
+    };
   };
 
   /**
@@ -1122,11 +1285,23 @@ export function mountAssistantRoutes(
         ...(options.maxSteps !== undefined
           ? { maxSteps: options.maxSteps }
           : {}),
+        ...(options.maxRepeatedCalls !== undefined
+          ? { maxRepeatedCalls: options.maxRepeatedCalls }
+          : {}),
         ...(options.maxTurnTokens !== undefined
           ? { maxTurnTokens: options.maxTurnTokens }
           : {}),
         ...(options.maxTurnMs !== undefined
           ? { maxTurnMs: options.maxTurnMs }
+          : {}),
+        ...(options.requestTimeoutMs !== undefined
+          ? { requestTimeoutMs: options.requestTimeoutMs }
+          : {}),
+        ...(options.emptyAnswerFallback !== undefined
+          ? { emptyAnswerFallback: options.emptyAnswerFallback }
+          : {}),
+        ...(options.providerErrorFallback !== undefined
+          ? { providerErrorFallback: options.providerErrorFallback }
           : {}),
         ...(options.maxTokens !== undefined
           ? { maxTokens: options.maxTokens }
@@ -1165,6 +1340,9 @@ export function mountAssistantRoutes(
           threadId: String(thread.id),
           ...(options.authorInvocation
             ? { authorInvocation: options.authorInvocation }
+            : {}),
+          ...(options.collapseRecoveredFailures
+            ? { collapseRecoveredFailures: true }
             : {}),
         },
       },
@@ -1303,6 +1481,9 @@ export function mountAssistantRoutes(
           // narrowed at bind time; the pre-bind snapshot never reaches it.
           const turnContext: AssistantRequestContext = {
             event: context.event,
+            ...(context.requestContext
+              ? { requestContext: context.requestContext }
+              : {}),
             principal: {
               ...principal,
               permissions: effectiveScopes(granted, bound.scopes),
@@ -1389,7 +1570,7 @@ export function mountAssistantRoutes(
       agentId,
       actorProfileId: principal.profileId,
       allowedTools,
-      sessionKey: ASSISTANT_DOCK_SESSION_KEY,
+      sessionKey: dockSessionKey,
     });
     if (!session.chatRoomId) throw new Error('Assistant session has no room');
     const thread = await chat.startThread({
@@ -1552,10 +1733,11 @@ export function mountAssistantRoutes(
     };
 
   const sendMessage = async (
-    context: AssistantRequestContext,
+    baseContext: AssistantRequestContext,
     threadId: string,
   ) => {
-    const body = await readJsonObject(context.event.request, maxBody);
+    const body = await readJsonObject(baseContext.event.request, maxBody);
+    const context = withRequestContext(baseContext, body.context);
     const content = typeof body.content === 'string' ? body.content.trim() : '';
     if (!content) throw badRequest('The message is empty.', 'empty_message');
     if (content.length > maxContent) {
@@ -1684,11 +1866,16 @@ export function mountAssistantRoutes(
     try {
       const history: AIMessage[] = [];
       if (historyLimit > 0) {
+        // `historyLimit` counts replayed turns, not raw rows (#4458): the
+        // role filter runs in SQL, so persisted tool rows never take a
+        // slot. `+ 1` covers this send, which is already stored. The read
+        // is bounded by the limit whatever the thread holds.
         const earlier = await chat.getThreadMessages({
           threadId,
           actorProfileId: principal.profileId,
           tenantId: principal.tenantId,
           limit: historyLimit + 1,
+          roles: HISTORY_REPLAY_ROLES,
         });
         for (const message of earlier) {
           if (String(message.id) === userWire.id) continue;
@@ -1696,7 +1883,15 @@ export function mountAssistantRoutes(
             continue;
           }
           if (!message.content) continue;
-          history.push({ role: message.role, content: message.content });
+          // A fallback reply is not a model answer: never replay it as one
+          // (#4379); a fixed marker keeps the roles alternating.
+          history.push({
+            role: message.role,
+            content:
+              message.role === 'assistant' && isFallbackReply(message)
+                ? FALLBACK_HISTORY_PLACEHOLDER
+                : message.content,
+          });
         }
       }
 
@@ -1727,10 +1922,11 @@ export function mountAssistantRoutes(
   };
 
   const resumeTurn = async (
-    context: AssistantRequestContext,
+    baseContext: AssistantRequestContext,
     threadId: string,
   ) => {
-    const body = await readJsonObject(context.event.request, maxBody);
+    const body = await readJsonObject(baseContext.event.request, maxBody);
+    const context = withRequestContext(baseContext, body.context);
     const continuationId = requireId(body.continuationId, 'continuationId');
     if (
       !Array.isArray(body.results) ||

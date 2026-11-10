@@ -3,6 +3,8 @@
  * Provides virtual modules for REST, MCP, and other services
  */
 
+export { smrtAssetUrlCompatibility } from './asset-url-compatibility.js';
+
 import { existsSync, readFileSync } from 'node:fs';
 import { dirname, join, resolve } from 'node:path';
 import { fileURLToPath } from 'node:url';
@@ -11,7 +13,14 @@ import type {
   DomainKnowledgeConfig,
   DomainKnowledgeManifest,
 } from '@happyvertical/smrt-types';
-import type { Plugin, ResolvedConfig, ViteDevServer } from 'vite';
+import type {
+  SmrtDevServer,
+  SmrtResolvedConfig,
+  SmrtVitePlugin,
+} from './plugin-contract.js';
+
+export type { SmrtVitePlugin } from './plugin-contract.js';
+
 import { publishAtomicArtifact } from '../consumer-plugin/artifact-publication.js';
 import {
   loadVerifiedSmrtGenerationSnapshot,
@@ -24,6 +33,12 @@ import {
   resolveFileKnowledgeConfig,
 } from '../knowledge-config.js';
 import { discoverSmrtPackages } from '../manifest/discover-smrt-packages.js';
+import {
+  createObjectDeclarationIndex,
+  selectObjectDeclarations,
+  warnObjectDeclarationCollisions,
+} from '../manifest/object-declarations.js';
+import { isTestArtifactManifest } from '../manifest/test-artifacts.js';
 import {
   DETERMINISTIC_GENERATED_AT,
   type SmartObjectManifest,
@@ -43,6 +58,10 @@ import {
   GENERATED_CLIENT_CRUD_METHODS,
   generateClientModule,
 } from './generated-client.js';
+import {
+  assertNoHostToolNameCollisions,
+  type HostToolNameDeclaration,
+} from './host-tool-names.js';
 import { importBuildAwareModule } from './import-build-aware.js';
 import { injectPackageStamps, packageStampText } from './package-stamp.js';
 import {
@@ -59,7 +78,6 @@ import {
 } from './sveltekit-route-coordinator.js';
 import {
   buildWebMcpToolDefinitions,
-  compareText,
   generateWebModule,
   selectWebCollectionEntries,
 } from './web-collections.js';
@@ -74,6 +92,13 @@ export {
   serializeSmrtGenerationSnapshot,
   sha256SmrtGenerationSnapshot,
 } from '../generation-snapshot.js';
+export {
+  assertNoHostToolNameCollisions,
+  checkHostToolNameCollisions,
+  type HostToolNameCollision,
+  type HostToolNameDeclaration,
+  type HostToolSurface,
+} from './host-tool-names.js';
 export type {
   CliApiCoherenceViolation,
   SvelteKitOptions,
@@ -101,6 +126,13 @@ interface PackageJsonShape {
 }
 
 export interface SmrtPluginOptions {
+  /**
+   * Host-declared agent tool names (workflow, bespoke WebMCP and MCP tools,
+   * e.g. from `defineHostOperationTool`). A name two different declarations
+   * claim, or that shadows a generated model tool, fails the build naming
+   * both sources; one operation projected on several surfaces is allowed.
+   */
+  hostToolNames?: readonly HostToolNameDeclaration[];
   /** Root directory that owns generated manifests and SvelteKit routes. */
   projectRoot?: string;
   /**
@@ -589,6 +621,12 @@ function mergeExternalManifestEntries(
     return manifest;
   }
 
+  // A test-run manifest left here by an older test runner is not build state:
+  // replace it rather than carrying any of its entries forward (#2760).
+  if (isTestArtifactManifest(existing)) {
+    return manifest;
+  }
+
   const localPackageNames = new Set<string>();
   if (manifest.packageName) {
     localPackageNames.add(manifest.packageName);
@@ -626,7 +664,9 @@ function mergeExternalManifestEntries(
   };
 }
 
-export function smrtPlugin(options: SmrtPluginOptions = {}): Plugin {
+export function smrtPlugin(
+  options: SmrtPluginOptions = {},
+): SmrtVitePlugin<SmrtPluginApi> & { api: SmrtPluginApi } {
   const {
     projectRoot: configuredProjectRoot,
     generationSnapshot,
@@ -649,7 +689,11 @@ export function smrtPlugin(options: SmrtPluginOptions = {}): Plugin {
     },
     knowledge,
     validateCliApiCoherence = true,
+    hostToolNames,
   } = options;
+
+  // Host-vs-host duplicates need no manifest: fail before any scan.
+  if (hostToolNames) assertNoHostToolNameCollisions(hostToolNames);
 
   /**
    * Dev-watcher variant of the cli↔api coherence lint: warn instead of throw,
@@ -718,7 +762,7 @@ export function smrtPlugin(options: SmrtPluginOptions = {}): Plugin {
     }
   }
 
-  let server: ViteDevServer | undefined;
+  let server: SmrtDevServer | undefined;
   let manifest: SmartObjectManifest | null = null;
   /**
    * The declared agent surface from the most recent OXC scan (#2591). Held
@@ -730,7 +774,7 @@ export function smrtPlugin(options: SmrtPluginOptions = {}): Plugin {
   let activeBuildStart: Promise<void> | undefined;
   let pluginMode: 'server' | 'client' = 'server';
   let projectRoot: string = process.cwd();
-  let config: ResolvedConfig | null = null; // Store resolved config for closeBundle hook
+  let config: SmrtResolvedConfig | null = null; // Store resolved config for closeBundle hook
   let resolvedPluginNames: string[] = [];
   let hasFreshConfigResolvedManifest = false;
   let configHookManifest: SmartObjectManifest | null = null;
@@ -1019,7 +1063,7 @@ export function smrtPlugin(options: SmrtPluginOptions = {}): Plugin {
     }
   }
 
-  const plugin: Plugin = {
+  const plugin: SmrtVitePlugin<SmrtPluginApi> & { api: SmrtPluginApi } = {
     name: 'smrt-auto-service',
     // SvelteKit inventories routes in a `config.order = 'pre'` hook. Put SMRT
     // in Vite's earlier plugin tier so this plugin's own pre hook runs first
@@ -1432,9 +1476,7 @@ export function smrtPlugin(options: SmrtPluginOptions = {}): Plugin {
       // into `.smrt/runtime/register.js` for out-of-bundle worker processes
       // (#3117). Once per build; a failure fails the build, because a worker
       // without it cannot run any application-defined job.
-      const environment = (
-        this as { environment?: { config?: { consumer?: string } } }
-      ).environment;
+      const environment = this.environment;
       const serverBuild =
         environment?.config?.consumer === 'server' || !!config?.build?.ssr;
       if (
@@ -1739,6 +1781,20 @@ export function smrtPlugin(options: SmrtPluginOptions = {}): Plugin {
         }
       }
 
+      // A host tool shadowing a generated model tool is a build failure, not
+      // an advisory: it is deliberately outside the advisory try/catch above.
+      if (hostToolNames?.length) {
+        assertNoHostToolNameCollisions(
+          hostToolNames,
+          buildWebMcpToolDefinitions(newManifest, {
+            kebabRoutes: svelteKit.kebabRoutes ?? false,
+          }).map((definition) => ({
+            name: definition.name,
+            declaredBy: `${definition.className}.${definition.action}`,
+          })),
+        );
+      }
+
       const elapsed = performance.now() - startTime;
 
       // Log results
@@ -1916,24 +1972,15 @@ export function createMCPServer(options = {}) {
 function generateClientModeTypes(manifest: SmartObjectManifest): string {
   const typeDefinitions: string[] = [];
 
-  // Generate interfaces for each object in the manifest. Manifest key order
+  // Generate one interface per class in the manifest. Manifest key order
   // follows scan/discovery order, which is not stable across runs (#2749),
-  // so sort deterministically before emitting.
-  const sortedClientModeObjects = Object.entries(manifest.objects)
-    .sort(
-      ([leftKey, left], [rightKey, right]) =>
-        compareText(
-          left.qualifiedName || leftKey,
-          right.qualifiedName || rightKey,
-        ) || compareText(leftKey, rightKey),
-    )
-    .map(([, obj]) => obj);
-  for (const objectMeta of sortedClientModeObjects) {
-    // Manifest keys are qualified names; only the simple class name is a valid
-    // TypeScript identifier (#2631). `className` is required on
-    // `SmartObjectDefinition`, so there is deliberately no manifest-key
-    // fallback here — one would reintroduce invalid emitted TypeScript.
-    const interfaceName = objectMeta.className;
+  // and one class can be listed under several packages (#3296); the shared
+  // declaration selection sorts deterministically and collapses those.
+  // Manifest keys are qualified names; only the simple class name is a valid
+  // TypeScript identifier (#2631), which the selection's interface name uses.
+  for (const { interfaceName, obj: objectMeta } of selectObjectDeclarations(
+    manifest,
+  )) {
     const fields = objectMeta.fields || {};
     const propertyLines: string[] = [];
 
@@ -1976,7 +2023,7 @@ function generateClientModeTypes(manifest: SmartObjectManifest): string {
       '  updated_at?: string;',
     );
 
-    const interfaceDef = `export interface ${interfaceName}Data {\n${propertyLines.join('\n')}\n}`;
+    const interfaceDef = `export interface ${interfaceName} {\n${propertyLines.join('\n')}\n}`;
     typeDefinitions.push(interfaceDef);
   }
 
@@ -2081,18 +2128,12 @@ export async function generateTypeDeclarationFile(
       mkdirSync(declarationsDir, { recursive: true });
     }
 
-    // Generate interface definitions for each discovered SMRT object. Sorted
-    // for the same reason as generateClientModeTypes (#2749).
-    const objectInterfaces = Object.entries(manifest.objects)
-      .sort(
-        ([leftKey, left], [rightKey, right]) =>
-          compareText(
-            left.qualifiedName || leftKey,
-            right.qualifiedName || rightKey,
-          ) || compareText(leftKey, rightKey),
-      )
-      .map(([_name, obj]) => {
-        const interfaceName = `${obj.className}Data`;
+    // Generate one interface definition per discovered SMRT class. Same
+    // selection (and names, #3115) as generateClientModeTypes (#2749, #3296).
+    const declarations = createObjectDeclarationIndex(manifest);
+    warnObjectDeclarationCollisions(declarations, console.warn);
+    const objectInterfaces = declarations.declarations
+      .map(({ interfaceName, obj }) => {
         const fields = Object.entries(obj.fields)
           .map(([fieldName, field]) => {
             const optional = field.required === false ? '?' : '';
@@ -2129,7 +2170,9 @@ ${fields}
           customMethods: exposedMethods,
         }) => {
           const { methods = {} } = obj;
-          const interfaceName = dataInterfaceName;
+          // The row interfaces are declared in the virt-types module; this
+          // ambient module must import them, a bare name does not resolve.
+          const interfaceName = `import('@happyvertical/smrt-virt-types').${dataInterfaceName}`;
           const exposedActionNames = new Set(
             exposedMethods.map((method) => method.name),
           );
@@ -2186,7 +2229,7 @@ ${fields}
     const webCollectionInterface = selectWebCollectionEntries(manifest)
       .map(
         ({ collection, obj }) =>
-          `    ${JSON.stringify(collection)}: SmrtWebCollectionDefinition<import('@happyvertical/smrt-virt-types').${obj.className}Data>;`,
+          `    ${JSON.stringify(collection)}: SmrtWebCollectionDefinition<import('@happyvertical/smrt-virt-types').${declarations.interfaceNameFor(obj)}>;`,
       )
       .join('\n');
 
@@ -2369,6 +2412,7 @@ declare module '@happyvertical/smrt-virt-web' {
     order?: number;
     locked?: boolean;
     widget?: 'textarea' | 'currency' | 'email' | 'url' | 'phone';
+    format?: 'money' | 'date' | 'datetime' | 'percent';
   }
 
   export interface SmrtWebFieldDefinition {
@@ -2397,6 +2441,7 @@ declare module '@happyvertical/smrt-virt-web' {
     field: string;
     kind: SmrtWebRelationshipKind;
     relatedCollection: string;
+    role?: 'items';
   }
 
   export interface WebToolRouteDescriptor {

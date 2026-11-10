@@ -27,6 +27,9 @@ export interface ProposalCandidate {
   id: string;
   revision: string;
   label: string;
+  /** Optional untrusted descriptive JSON data, never instructions or authority.
+   * Included in candidate identity and the existing generation input budget. */
+  context?: IntakeValues;
 }
 export interface CandidatePage {
   items: ProposalCandidate[];
@@ -39,6 +42,12 @@ export interface ProposalCatalogEntry {
   id: string;
   version: string;
   description: string;
+  /**
+   * The handler's reviewer-facing display name (#4503), present only on the
+   * reviewer catalog (`listHandlers`, `ItemReviewView.catalog`) when the
+   * handler declares one. Never part of generation input or digests.
+   */
+  label?: string;
   kind: 'operation' | 'plan';
   /** A plan has no invented aggregate classification; its ordered definition is pinned. */
   capability: CapabilityDeclaration | null;
@@ -61,6 +70,46 @@ export interface GeneratedSuggestion {
   missingFields: string[];
   explanation: string;
   disposition: 'ready_for_review' | 'needs_review';
+  /**
+   * Host annotation recorded by `ProposalConfiguration.reviewSuggestion`;
+   * absent when the host recorded nothing. Value-free by construction.
+   */
+  hostReview?: HostSuggestionReview;
+}
+/**
+ * What the application's own checks recorded about one suggestion: which
+ * argument fields it filled itself and bounded reason codes, never values.
+ * `held` forces `needs_review`; a host can never upgrade a disposition.
+ */
+export interface HostSuggestionReview {
+  /** The host held the suggestion at `needs_review`. */
+  held: boolean;
+  /** Bounded codes (`^[a-z][a-z0-9_.-]{0,47}$`, at most 8). */
+  reasons: string[];
+  /** Argument field names (declared in the handler's `argsSchema`) the host filled itself. */
+  prefilled: string[];
+}
+/**
+ * Value-free record that the validator replaced model-declared `missingFields`
+ * with the schema's computed set (#4284): counts only, never field names.
+ */
+export interface MissingFieldsCorrection {
+  /** Suggestions whose declaration was replaced. */
+  suggestions: number;
+  /** Missing fields the model did not declare. */
+  added: number;
+  /** Declared fields that were not actually missing. */
+  removed: number;
+}
+/**
+ * Value-free record that the validator dropped invented targets from offered
+ * candidate fields (#4289): counts only, never IDs, labels or field names.
+ */
+export interface UnofferedTargetsDropped {
+  /** Suggestions that had at least one target dropped. */
+  suggestions: number;
+  /** Candidate fields whose unoffered value was dropped. */
+  fields: number;
 }
 export interface GenerationOutput {
   version: 1;
@@ -85,20 +134,57 @@ export interface GenerationOutput {
       query: string;
       selection: import('./feedback-dto.js').FeedbackReferences;
     };
+    /** Identity of the reviewer instruction the model was guided by. */
+    reviewerInstruction?: { id: string; digest: string };
     configurationVersion: string;
     promptVersion: string;
     catalogDigest: string;
     policyVersions: string[];
     generative: ProviderIdentity;
+    /** Canonical provider revision for the configured generative alias. */
+    generativeResponseModel?: string;
     decision: {
       configured: boolean;
       provider?: string;
       model?: string;
       version?: string;
+      /** Whether the recorded answers were allowed to withhold readiness. */
+      readiness?: 'gate' | 'record';
+      /** Per-request token window forwarded to the client, when configured. */
+      maxLen?: number;
       answers?: IntakeValues;
       usage?: Record<string, number>;
     };
     usage: Record<string, number>;
+    /**
+     * Repeated `alternatives`/`missingFields` entries dropped from the
+     * generator output before validation (#4286); absent when none were.
+     */
+    duplicatesRemoved?: number;
+    /**
+     * Suggestion explanations cut to the explanation bound before validation
+     * (#4331); a count only, absent when none were.
+     */
+    explanationsTruncated?: number;
+    /**
+     * Split proposals dropped because they failed a fixed check, named here
+     * (#4288); never page numbers or evidence ids. Absent when none were.
+     */
+    splitsDropped?: { count: number; checks: string[] };
+    /**
+     * Bounded, value-free reason for a failed stage, next to its warning
+     * category: JSON paths, schema keywords and constants, never document text.
+     */
+    failure?: { category: string; reason: string };
+    /** Present only when a declaration was corrected; absent output is unchanged. */
+    missingFieldsCorrection?: MissingFieldsCorrection;
+    /** Present only when an invented target was dropped; absent output is unchanged. */
+    unofferedTargetsDropped?: UnofferedTargetsDropped;
+    /**
+     * Counts of suggestions the host's `reviewSuggestion` hook annotated or
+     * held; absent when it recorded nothing or is not configured.
+     */
+    hostReview?: { annotated: number; held: number };
   };
   automaticActionEligible: false;
 }
@@ -120,4 +206,31 @@ export type GeneratedPreview =
 /** Persisted interpretation payload under CompletedAnalysisSnapshot.result.output. */
 export interface GenerationAnalysisOutput {
   proposals: GenerationOutput;
+}
+/** What a failed-attempt capture holds (#4285). */
+export type FailedAttemptCaptureSource =
+  /** The provider's reply text, refused by the SDK adapter (e.g. invalid JSON). */
+  | 'raw_response'
+  /** The generator's parsed output that failed validation or a limit, as JSON. */
+  | 'generated_output';
+export type FailedAttemptCaptureStatus = 'captured' | 'redaction_failed';
+/**
+ * Opt-in diagnostic capture of a failed interpretation attempt. It contains
+ * document-derived model output: read it only through the reviewer-authorized
+ * `getFailedAttemptCapture`, and never put it in lists, logs or telemetry.
+ */
+export interface FailedAttemptCapture {
+  itemId: string;
+  attemptId: string;
+  source: FailedAttemptCaptureSource;
+  /** `redaction_failed`: the host hook was missing or failed; no text stored. */
+  status: FailedAttemptCaptureStatus;
+  /** Redacted, bounded text; present only when `status` is `captured`. */
+  text?: string;
+  /** The text was cut at `maxBytes` (or at the generation output bound). */
+  truncated: boolean;
+  /** A hook was configured; the host owns its semantic redaction policy. */
+  redacted: boolean;
+  maxBytes: number;
+  capturedAt: string;
 }

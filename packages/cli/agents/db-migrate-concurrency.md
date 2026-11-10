@@ -53,3 +53,14 @@ are written after the diff, when both runs have already planned.
   — two concurrent CLI runs apply one batch; a held lock blocks a run before it
   touches schema. Each run gets its own pool (`getDatabase` caches one pool per
   identity in-process, which two real processes would not share).
+
+## Index and flag details
+
+- INVALID indexes — the stump a cancelled or timed-out
+  `CREATE INDEX CONCURRENTLY` leaves, which `pg_indexes` still reports as
+  present — are detected via `pg_index.indisvalid` and dropped before the
+  rebuild.
+- `migrations.postgres.useConcurrently: false` vetoes the flag; index DDL then
+  runs inside the atomic transaction (still bounded by the timeouts).
+- Without the flag, a batch containing explicit `CONCURRENTLY` DDL is rejected
+  before the transaction opens — PostgreSQL cannot run it there.

@@ -32,6 +32,7 @@ Multi-channel messaging with STI hierarchies for both messages and accounts. Cre
   `MessagingSettingsPanel` is the callback-driven Svelte surface.
 - Account, endpoint, and route generated surfaces are read-only. Do not add
   generated mutations around the settings service or make secret fields writable.
+- **Recipe `messages.slack`** (`src/recipes.ts`, help in `src/help/slack.md`): lists Slack messages and workspaces beside the Mailbox and Notifications recipes; workspaces stay read-only and sending goes through the senders, not generated routes. Fields it shows carry `@field({ description })` in plain words; keep them when editing the models.
 
 ## In-app notifications (`UserNotification`)
 
@@ -53,6 +54,29 @@ The in-app channel: one stored row per person, with read state.
 - Hosts decide who is told (e.g. `SocialPost.createdByUserId` for a failed
   post). New table: consumers run `db:migrate`.
 
+## Notification email outbox (`NotificationDelivery`)
+
+`NotificationOutboxService` is the external-channel counterpart of
+`UserNotificationService`: `enqueueEmail()` stores one delivery per
+`(tenant, recipient, channel, sourceRef)` after the host resolves the
+recipient address and same-tenant sender account (callers never choose an
+address); `dispatchDue()` leases due rows by compare-and-set
+(`NotificationDelivery.transition()`), creates the single outbound `Email`
+under the lease, and settles sent/retry/failed/uncertain. Never resend an
+`uncertain` row automatically. Contract, retry, and reconciliation policy:
+[agents/notification-outbox.md](agents/notification-outbox.md). New table:
+consumers run `db:migrate`.
+
+`NotificationOptOut` (`notification_opt_outs`, tenant-required, generated
+surfaces off) is the per-recipient opt-out ledger for the outbox's
+`isSuppressed` hook, keyed `(tenant, recipient, channel, scope)` with scope `*`
+or `project:<uuid>`-style keys. `NotificationOptOutService`: idempotent
+`optOut`/`optIn` (with a `principal` only `userId === recipientUserId` may
+change a row, and only in the principal's own `tenantId`, else
+`NotificationOptOutDeniedError`; no principal = trusted host code), trusted `isOptedOut` (a `*` row matches every scope), `listForRecipient`
+(principal required). `optOutSuppression(service, scopeOf)` builds the
+`isSuppressed` function. Details in the outbox doc; consumers run `db:migrate`.
+
 ## Credential Security
 
 Account credentials stored via tenant-bound `credentialSecretId` →
@@ -62,6 +86,10 @@ directly. Credential descriptor schemas contain field definitions, never values.
 ## Send Lifecycle
 
 `message.send()`: resolves account → creates provider sender → updates sendStatus. Retry support with `maxRetries` budget.
+A failure the provider may still have accepted carries
+`MessageSendResult.outcomeUnknown` (set by `EmailSender` unless
+`isDefiniteSendRejection()` proves a refusal, and when a sender throws) and is
+persisted as `metadata.sendOutcomeUnknown`; never auto-resend it.
 `EmailSender` attaches the message's stored `Attachment` rows (read through
 `Attachment.readContent()`, under the message's tenant context) plus
 `SendEmailOptions.attachments` bytes; an unreadable or file-less row fails the
@@ -106,6 +134,10 @@ import '@happyvertical/smrt-messages/providers/all';     // all of the above
   `ledger_accounts`). Resolve by constructor or qualified name; the
   coexistence tests (`ledger-account-identity-*`, and the PostgreSQL lane
   `pnpm test:postgres`) load both packages in both orders.
+  Both declare the `accounts` collection, so registering the ledgers `Account`
+  auto-loads this family from its manifest as STI siblings. Core loads this
+  base with them and never takes the ledgers `Account` for it (#4735,
+  `ledger-account-identity-sti-siblings.test.ts`).
 - **STI `_meta_type`**: qualified format `@happyvertical/smrt-messages:Email`
 - **JSON fields**: all address/metadata fields are JSON strings with `getX()`/`setX()` helpers
 - **RFC 822 threading**: Email uses `inReplyTo`/`messageId`/`references` — manual management required
@@ -123,3 +155,16 @@ reads provider-supplied paths or advances sync checkpoints. Keep this path
 provider-neutral and exclude arbitrary headers/credentials from its snapshot.
 IMAP lookup must include folder/UIDVALIDITY/UID verification; sender Message-ID
 is a lookup hint, never the durable delivery identity.
+
+Protected notification Emails carry durable delivery provenance. Their canonical
+`send`/`retrySend`, ordinary save/delete, and default EmailSender handoff are
+constrained by `protected-notification-handoff.ts` (package-private, never a root
+export). Only the outbox enters its exact one-use scope after current trusted
+policy/byte validation. Preserve old-row/constructor identity checks, current
+persisted lease checks at the actual provider boundary, copied byte buffers and
+unknown-outcome marker protection. See the outbox contract and shared protected
+handoff suite (SQLite and migrated PostgreSQL).
+
+## Protected external contacts
+
+Profile email uses exclusive `recipientProfileId` plus `resolveProfileRecipient`, a reserved `profileNotificationPolicy` and exact current tenant-owned public Profile email. No User account is required. Before activating profiles, run normal framework schema migration and public `planNotificationProfileRecipients` / `migrateNotificationProfileRecipients`; runtime verifies physical constraints and never applies DDL. Legacy User notification and opt-out paths remain User-only. See [profile recipient contract and matrix](agents/profile-recipients.md).

@@ -51,6 +51,10 @@ export {
   compileReportSpec,
   getReportGroupingColumns,
 } from './compiler.js';
+export type {
+  AggregateDecoratorOptions,
+  AggregateMeasureOptions,
+} from './decorators.js';
 export {
   aggregate,
   avg,
@@ -89,7 +93,18 @@ export {
   previewReportRefresh,
   reportRefreshOutcome,
 } from './lifecycle.js';
-export { MaterializedReportsRecipe } from './recipes.js';
+export {
+  assertMaterializedReportRead,
+  findMaterializedReportHost,
+  type MaterializedReportCellRequest,
+  type MaterializedReportDrilldownContributor,
+  type MaterializedReportDrilldownPresentation,
+  type MaterializedReportDrilldownValues,
+  type MaterializedReportDrilldownWarning,
+  type MaterializedReportHost,
+  type MaterializedReportHostContext,
+} from './materialized-host.js';
+export { MaterializedReportsRecipe, RuntimeReportsRecipe } from './recipes.js';
 export {
   refreshReport,
   reportRowIdentity,
@@ -111,6 +126,20 @@ export {
   runRuntimeReport,
 } from './runtime-compiler.js';
 export type {
+  RunRuntimeReportInMemoryOptions,
+  RuntimeReportMemoryField,
+  RuntimeReportMemoryRow,
+  RuntimeReportMemorySource,
+} from './runtime-memory.js';
+export {
+  describeRuntimeReportMemorySource,
+  runRuntimeReportInMemory,
+} from './runtime-memory.js';
+export type {
+  RuntimeReportDimensionHints,
+  RuntimeReportDimensionKind,
+} from './runtime-plan.js';
+export type {
   RuntimeReportStatus,
   RuntimeReportStoreOptions,
   SaveRuntimeReportOptions,
@@ -124,6 +153,20 @@ export {
   runStoredRuntimeReport,
   saveRuntimeReport,
 } from './runtime-report.js';
+export type {
+  RuntimeReportAwaitingConfirmation,
+  RuntimeReportPrincipal,
+  RuntimeReportServerOptions,
+  RuntimeReportServerSource,
+} from './runtime-server.js';
+export {
+  archiveRuntimeReportForPrincipal,
+  createRuntimeReportConfirmHandler,
+  getRuntimeReportServerOptions,
+  loadRuntimeReportChart,
+  RuntimeReportHttpError,
+  runRuntimeReportForPrincipal,
+} from './runtime-server.js';
 export type {
   RuntimeReportBucket,
   RuntimeReportChart,
@@ -150,9 +193,19 @@ export {
   RUNTIME_REPORT_MEASURE_FNS,
   RUNTIME_REPORT_SPEC_VERSION,
   RuntimeReportError,
-  runtimeReportSpecHash,
+  runtimeReportSpecDigest,
   serializeRuntimeReportSpec,
 } from './runtime-spec.js';
+export { runtimeReportSpecHash } from './runtime-spec-hash.js';
+export type {
+  RuntimeReportTimeIntent,
+  RuntimeReportTimeRange,
+} from './runtime-time.js';
+export {
+  parseRuntimeReportTime,
+  resolveRuntimeReportTimeRange,
+  runtimeReportBucketForSpan,
+} from './runtime-time.js';
 export type {
   EnqueueReportRefreshOptions,
   EnsureReportSchedulesOptions,
@@ -207,12 +260,16 @@ export type {
   ReportFieldDefinition,
   ReportFieldMetadata,
   ReportGroupFieldMetadata,
+  ReportJoinDefinition,
+  ReportJoinOptions,
+  ReportOperand,
   ReportOptions,
   ReportRefreshConfig,
   ReportRefreshMode,
   ReportRefreshOptions,
   ReportRefreshResult,
   ReportRefreshTrigger,
+  ReportRelatedFieldPolicy,
   ReportSource,
   ReportTimeBucketUnit,
 } from './types.js';

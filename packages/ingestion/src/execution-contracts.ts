@@ -11,6 +11,8 @@ export interface HandlerContext {
   db: DatabaseInterface;
   scope: Readonly<IngestionScope>;
   itemId: string;
+  /** Owning item interpretation revision; never supplied by browser arguments. */
+  readonly analysisRevision?: number;
   principal?: PrincipalRun;
   policy: Readonly<IntakePolicy>;
   /** Must check current tenant/confidential ownership and optionally CAS revision. */
@@ -27,6 +29,13 @@ interface HandlerBase {
   id: string;
   version: string;
   description: string;
+  /**
+   * Optional reviewer-facing display name (#4503), shown wherever the review
+   * components draw the handler (`id` otherwise). Presentation only: it is
+   * carried on the reviewer catalog (`listHandlers`), never on generation
+   * input, catalog digests or bindings, so adding one does not stale work.
+   */
+  label?: string;
   argsSchema: IntakeValues;
   resultSchema: IntakeValues;
   /** Schema-allowlisted record-ID fields, never arbitrary expression values. */
@@ -90,7 +99,14 @@ export interface ExecutionAccessInput {
   scope: Readonly<IngestionScope>;
   itemId: string;
   capturedCeiling: Readonly<ExecutionCeiling>;
-  operation: 'preview' | 'review' | 'execute' | 'read' | 'reconcile';
+  /** `review_own`: the recorded submitter decides their own proposal. */
+  operation:
+    | 'preview'
+    | 'review'
+    | 'review_own'
+    | 'execute'
+    | 'read'
+    | 'reconcile';
   handlerId: string;
 }
 /** Every callback is server configuration. It must never be deserialized from input. */
@@ -100,6 +116,8 @@ export interface IntakeExecutionOptions {
   authorize(input: ExecutionAccessInput): Promise<{
     allowed: boolean;
     reviewer: boolean;
+    /** Live grant for `review_own`; absent or false denies submitter decisions. */
+    submitter?: boolean;
     principalId: string;
     permissions: string[];
     policy: [
@@ -125,6 +143,8 @@ export interface IntakeExecutionOptions {
     db: DatabaseInterface;
     scope: Readonly<IngestionScope>;
     itemId: string;
+    /** Current owning item revision, pinned by the engine on this executor. */
+    analysisRevision?: number;
     model: string;
     id: string;
     revision?: string;

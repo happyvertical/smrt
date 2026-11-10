@@ -1,9 +1,7 @@
-import { randomUUID } from 'node:crypto';
-import { tmpdir } from 'node:os';
-import { join } from 'node:path';
 import { AssetCollection } from '@happyvertical/smrt-assets';
 import { VoiceProfile } from '@happyvertical/smrt-voice';
-import { describe, expect, it } from 'vitest';
+import { afterEach, describe, expect, it } from 'vitest';
+import { createOwnedSqliteFixtures } from './__tests__/owned-sqlite-fixtures.js';
 import {
   Character,
   CharacterOwnedAssetCollection,
@@ -12,9 +10,13 @@ import {
   VideoShot,
 } from './index.js';
 
+const fixtures = createOwnedSqliteFixtures();
+
 function getTestDbUrl(name: string): string {
-  return `file:${join(tmpdir(), `${name}-${randomUUID()}.db`)}`;
+  return fixtures.url(name);
 }
+
+afterEach(() => fixtures.cleanup());
 
 async function ensureLegacyColumn(
   db: any,
@@ -73,9 +75,11 @@ async function createAssetFixture(dbUrl: string) {
     tenantId: 'tenant-a',
   });
   await voiceProfile.initialize();
+  fixtures.track(voiceProfile.db);
   await voiceProfile.save();
 
   const assets = await AssetCollection.create({ db: dbConfig });
+  fixtures.track(assets.db);
 
   return {
     assets,
@@ -95,6 +99,7 @@ describe('Video owned assets', () => {
       tenantId: 'tenant-a',
     });
     await character.initialize();
+    fixtures.track(character.db);
     await character.save();
 
     const seedImage = await assets.create({
@@ -127,6 +132,7 @@ describe('Video owned assets', () => {
     ).toEqual([logo.id]);
 
     const links = await CharacterOwnedAssetCollection.create({ db: dbConfig });
+    fixtures.track(links.db);
     expect(
       await links.byLeft(character.id as string, { role: 'seed-image' }),
     ).toHaveLength(1);
@@ -142,6 +148,7 @@ describe('Video owned assets', () => {
       tenantId: 'tenant-a',
     });
     await character.initialize();
+    fixtures.track(character.db);
     await character.save();
 
     await ensureLegacyColumn(db, 'assets', 'character_id', 'TEXT');
@@ -214,6 +221,7 @@ describe('Video owned assets', () => {
       tenantId: 'tenant-a',
     });
     await performer.initialize();
+    fixtures.track(performer.db);
     await performer.save();
 
     await performer.addAsset(reference, 'reference', 0);
@@ -231,6 +239,7 @@ describe('Video owned assets', () => {
       lightingProfile: { envMapAssetId: envMap.id as string },
     });
     await scene.initialize();
+    fixtures.track(scene.db);
     await scene.save();
 
     expect((await scene.getAssetByRole('source'))?.id).toBe(source.id);
@@ -247,6 +256,7 @@ describe('Video owned assets', () => {
       tenantId: 'tenant-a',
     });
     await shot.initialize();
+    fixtures.track(shot.db);
     await shot.save();
 
     const thumbnail = await assets.create({

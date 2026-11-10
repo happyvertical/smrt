@@ -1,0 +1,5 @@
+{
+  "note": "Cookbooks whose recipes are not in the catalog yet. Nothing loads this file: when the smrt release that declares the awaited recipes is installed and `pnpm catalog:generate` has run, move each entry into library.json (tests/library-cookbooks.test.ts says when).",
+  "awaiting": {},
+  "cookbooks": []
+}

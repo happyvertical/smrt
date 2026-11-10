@@ -144,10 +144,21 @@ const SYNC_APPLY_ROUTE = 'sync-apply';
  * only routes it can actually serve, so a leader lacking a route never strands
  * another tab's rows for it.
  */
-function routeOf(row: { transport?: string }): string {
+export function routeOf(row: { transport?: string }): string {
   return row.transport === undefined
     ? SYNC_APPLY_ROUTE
     : `transport:${row.transport}`;
+}
+
+/**
+ * The Web Lock a route's replayer holds for `namespace` (a
+ * `durableStoreNamespace` string). The sync-apply route keeps the pre-#3021
+ * name, so it stays mutually exclusive with tabs running an older build. Shared
+ * with `pruneDurableNamespace`, which must exclude the same replayer.
+ */
+export function outboxLeaderLockName(namespace: string, route: string): string {
+  const root = `smrt-web-outbox-leader:${namespace}`;
+  return route === SYNC_APPLY_ROUTE ? root : `${root}:${route}`;
 }
 
 /** Cross-tab leadership for one route in this tab. */
@@ -351,8 +362,7 @@ export class OutboxEngine {
       existing.refs += 1;
       return;
     }
-    const root = `smrt-web-outbox-leader:${this.config.namespace}`;
-    const lockName = route === SYNC_APPLY_ROUTE ? root : `${root}:${route}`;
+    const lockName = outboxLeaderLockName(this.config.namespace, route);
     const entry: RouteLeadership = {
       release: () => {},
       isLeader: false,

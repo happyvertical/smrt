@@ -385,7 +385,7 @@ export class ThumbnailGenerator {
     } else {
       const built = await this.buildAIPrompt(options.style ?? 'photorealistic');
       prompt = built.text;
-      aiOverrideOptions = promptMessageOptions(built.ai);
+      aiOverrideOptions = promptMessageOptions(built.ai, { routeTier: false });
     }
 
     const result = await ai.generateImage(prompt, {

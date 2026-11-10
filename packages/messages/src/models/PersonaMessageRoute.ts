@@ -8,7 +8,7 @@ import {
 // Register the package manifest before this module's @smrt() decorator
 // runs, whichever chunk the library build places it in (#3098).
 import '../__smrt-register__.js';
-import { TenantScoped, tenantId } from '@happyvertical/smrt-tenancy';
+import { TenantScoped, tenantId } from '@happyvertical/smrt-tenancy/decorators';
 import type { PersonaMessageRouteOptions } from '../types.js';
 
 @TenantScoped({ mode: 'required' })

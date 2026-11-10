@@ -29,6 +29,13 @@
  *    transport" section below for the full read wire contract.
  */
 
+import {
+  type AssistantClientToolCall,
+  type AssistantClientToolDeclaration,
+  type AssistantClientToolResult,
+  type AssistantTurnEvent,
+  readAssistantTurnStream,
+} from '../../../assistant-turn-events.js';
 /**
  * AssistantDock uses its own light thread/message shapes rather than the
  * room-based `ChatThreadData`/`ChatMessageData` (`../types.js`): those UI
@@ -38,13 +45,7 @@
  * intentionally line up with `ChatThreadData`/`ChatMessageData` so a future
  * adapter between the two is a narrow mapping, not a rewrite.
  */
-import {
-  type AssistantClientToolCall,
-  type AssistantClientToolDeclaration,
-  type AssistantClientToolResult,
-  type AssistantTurnEvent,
-  readAssistantTurnStream,
-} from '../../../assistant-turn-events.js';
+import type { AssistantAnswerQuestionInput } from './assistant-question.js';
 
 export interface AssistantThreadSummary {
   id: string;
@@ -162,6 +163,13 @@ export interface AssistantTransport {
    * transport that ever returns `clientToolCalls`. */
   resumeTurn?(
     input: AssistantResumeTurnInput,
+  ): Promise<AssistantSendMessageResult>;
+  /** Answer a structured question an assistant message carried
+   * (`./assistant-question.ts`) with the values from its form. The transport
+   * continues the turn in code, typically with no model round-trip. Omitted,
+   * `AssistantDock` sends the answer as an ordinary message instead. */
+  answerQuestion?(
+    input: AssistantAnswerQuestionInput,
   ): Promise<AssistantSendMessageResult>;
 }
 
@@ -416,6 +424,7 @@ export interface AssistantThreadSummaryWire {
 
 export interface AssistantMessageWire {
   id: string;
+  toolCallData?: unknown;
   threadId?: string;
   content?: string;
   role?: AssistantMessage['role'];
@@ -514,6 +523,7 @@ export function normalizeAssistantMessage(
     createdAt: raw.createdAt ?? raw.created_at ?? new Date(),
     attachments: normalizeAssistantAttachments(raw.attachments),
     clientRequestId: raw.clientRequestId ?? raw.client_request_id,
+    ...(raw.toolCallData != null ? { toolCallData: raw.toolCallData } : {}),
   };
 }
 
@@ -685,6 +695,9 @@ export async function readAssistantTurnResult<W = Record<string, unknown>>(
       options.onEvent({
         type: 'done',
         stoppedReason: event.stoppedReason,
+        // Why tools were withdrawn, kept when the turn then ended `empty`
+        // or `timeout` (#4379): the dock still offers Continue.
+        ...(event.capReason ? { capReason: event.capReason } : {}),
         ...(event.message
           ? { message: options.mapMessage(event.message) }
           : {}),

@@ -1,3 +1,4 @@
+import { rm } from 'node:fs/promises';
 import os from 'node:os';
 import path from 'node:path';
 import { getTestDatabase } from '@happyvertical/smrt-core';
@@ -35,9 +36,13 @@ CREATE UNIQUE INDEX IF NOT EXISTS content_versions_content_id_version_idx ON con
 
 describe('ContentVersionKind', () => {
   it('persists, queries, updates, and serializes auto-generated versions', async () => {
+    const file = path.join(
+      os.tmpdir(),
+      `smrt-content-version-${crypto.randomUUID()}.db`,
+    );
     const db = await getTestDatabase({
       type: 'sqlite',
-      url: `file:${path.join(os.tmpdir(), `smrt-content-version-${crypto.randomUUID()}.db`)}`,
+      url: `file:${file}`,
       classes: ['ContentFeedSource', 'Content', 'ContentVersion'],
     });
     try {
@@ -89,6 +94,11 @@ describe('ContentVersionKind', () => {
       });
     } finally {
       await db.close?.();
+      await Promise.all(
+        [file, `${file}-wal`, `${file}-shm`, `${file}-journal`].map((path) =>
+          rm(path, { force: true }),
+        ),
+      );
     }
   });
 

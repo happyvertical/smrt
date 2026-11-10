@@ -1,6 +1,6 @@
 {
   "name": "@happyvertical/smrt-properties",
-  "version": "0.55.21",
+  "version": "0.60.16",
   "description": "Digital property and zone management models for SMRT framework",
   "type": "module",
   "main": "./dist/index.js",
@@ -37,9 +37,8 @@
     "@happyvertical/smrt-vitest": "workspace:*",
     "@happyvertical/sql": "catalog:",
     "@types/node": "24.13.6",
-    "fast-glob": "3.3.3",
     "typescript": "6.0.3",
-    "vite": "8.1.4",
+    "vite": "8.1.6",
     "vitest": "4.1.10"
   },
   "keywords": [

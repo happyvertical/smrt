@@ -11,6 +11,8 @@
 
 import { getPackageConfig } from '@happyvertical/smrt-config';
 import type { SmrtClassOptions } from '@happyvertical/smrt-core';
+import { OidcIdentityCollection } from '@happyvertical/smrt-profiles';
+import { withSystemContext } from '@happyvertical/smrt-tenancy';
 import {
   createRemoteJWKSet,
   customFetch,
@@ -18,6 +20,7 @@ import {
   type JWTVerifyGetKey,
   jwtVerify,
 } from 'jose';
+import { SessionCollection } from '../collections/SessionCollection.js';
 import {
   type OidcClaims,
   type OidcIdentityResult,
@@ -25,11 +28,18 @@ import {
   type OidcProfileResolver,
   UserCollection,
 } from '../collections/UserCollection.js';
+import {
+  DEFAULT_STEP_UP_MAX_AGE_SECONDS,
+  STEP_UP_MAX_AGE_CEILING_SECONDS,
+  StepUpRequiredError,
+} from '../step-up.js';
 
 const DEFAULT_SCOPES = ['openid', 'profile', 'email'] as const;
 const DEFAULT_CLOCK_TOLERANCE_SECONDS = 15;
 const DEFAULT_METADATA_CACHE_TTL_MS = 5 * 60 * 1000;
 const WELL_KNOWN_PATH = '/.well-known/openid-configuration';
+/** Clock skew tolerated on `auth_time` and the step-up intent (30 s). */
+const STEP_UP_SKEW_MS = 30_000;
 
 export type OidcProviderKind = 'kanidm' | 'dex' | 'generic';
 
@@ -128,6 +138,36 @@ export interface OidcTokenSet {
 export interface OidcCallbackResult {
   claims: OidcClaims;
   tokens: OidcTokenSet;
+  /**
+   * The ID token's `auth_time` (seconds since the epoch): when the provider
+   * last actively authenticated the person. Present only when the provider
+   * sent a numeric value. Step-up reads it; sign-in does not.
+   */
+  authTime?: number;
+}
+
+/** Result of {@link OidcLoginService.beginStepUp}. */
+export interface OidcStepUpStart {
+  /** The provider authorization URL to send the person to. */
+  url: URL;
+  /** The `state` the callback must carry (also held server-side). */
+  state: string;
+}
+
+/** Result of {@link OidcLoginService.completeStepUp}. */
+export interface OidcStepUpResult {
+  sessionId: string;
+  /** ISO time stamped on the session. */
+  reauthenticatedAt: string;
+}
+
+/** What a session records when it starts an OIDC step-up (server-side). */
+interface OidcStepUpIntent {
+  transaction: OidcTransaction;
+  /** ms since the epoch the intent was recorded. */
+  createdAt: number;
+  /** ms since the epoch after which the intent is refused. */
+  expiresAt: number;
 }
 
 export interface OidcLoginResult extends OidcIdentityResult {
@@ -146,6 +186,14 @@ export interface OidcLoginServiceOptions extends SmrtClassOptions {
   clockTolerance?: number | string;
   /** Provider metadata cache TTL in milliseconds. Defaults to 5 minutes. */
   metadataCacheTtlMs?: number;
+  /**
+   * How recent a step-up re-authentication (`auth_time`) must be, and how long
+   * a started step-up stays open, in seconds (1 to 3600). Defaults to the
+   * step-up max age (300).
+   */
+  stepUpWindowSeconds?: number;
+  /** Clock for the step-up checks, injectable for tests. Default `new Date()`. */
+  now?: () => Date;
   /**
    * Application Profile resolver invoked after claims validation and before
    * OIDC identity, User, or session creation.
@@ -470,6 +518,8 @@ export class OidcLoginService {
   private readonly clockTolerance: number | string;
   private readonly fetchImpl: typeof fetch;
   private readonly metadataCacheTtlMs: number;
+  private readonly stepUpWindowSeconds: number;
+  private readonly now: () => Date;
   private readonly authorizeProfileOwner?: OidcProfileOwnerAuthorizer;
   private readonly resolveProfile?: OidcProfileResolver;
   private metadataFetchedAt = 0;
@@ -483,8 +533,10 @@ export class OidcLoginService {
       clockTolerance,
       fetch: fetchOverride,
       metadataCacheTtlMs,
+      now,
       provider,
       providerName,
+      stepUpWindowSeconds,
       authorizeProfileOwner,
       resolveProfile,
       ...classOptions
@@ -501,6 +553,14 @@ export class OidcLoginService {
     this.fetchImpl = ensureFetch(fetchOverride);
     this.metadataCacheTtlMs =
       metadataCacheTtlMs ?? DEFAULT_METADATA_CACHE_TTL_MS;
+    this.now = now ?? (() => new Date());
+    this.stepUpWindowSeconds =
+      typeof stepUpWindowSeconds === 'number' &&
+      Number.isFinite(stepUpWindowSeconds) &&
+      stepUpWindowSeconds >= 1 &&
+      stepUpWindowSeconds <= STEP_UP_MAX_AGE_CEILING_SECONDS
+        ? stepUpWindowSeconds
+        : DEFAULT_STEP_UP_MAX_AGE_SECONDS;
     this.authorizeProfileOwner = authorizeProfileOwner;
     this.resolveProfile = resolveProfile;
     this.provider = {
@@ -614,17 +674,159 @@ export class OidcLoginService {
     callbackUrl: string | URL,
     transaction: OidcTransaction,
   ): Promise<OidcCallbackResult> {
+    const { claims, tokens, authTime } = await this.exchangeAndVerify(
+      callbackUrl,
+      transaction,
+    );
+    return {
+      claims: await this.enrichClaimsFromUserInfo(claims, tokens),
+      tokens,
+      ...(authTime !== undefined ? { authTime } : {}),
+    };
+  }
+
+  /** Validate the callback, exchange the code and verify the ID token. */
+  private async exchangeAndVerify(
+    callbackUrl: string | URL,
+    transaction: OidcTransaction,
+  ): Promise<{ claims: OidcClaims; tokens: OidcTokenSet; authTime?: number }> {
     this.validateCallbackEnvelope(callbackUrl, transaction);
     const metadata = await this.getMetadata();
     const code = this.validateCallback(callbackUrl, transaction, metadata);
     const tokens = await this.exchangeCode(code, transaction);
-    const idTokenClaims = await this.verifyIdToken(
+    const { claims, authTime } = await this.verifyIdToken(
       tokens.idToken,
       transaction.nonce,
     );
-    const claims = await this.enrichClaimsFromUserInfo(idTokenClaims, tokens);
+    return { claims, tokens, ...(authTime !== undefined ? { authTime } : {}) };
+  }
 
-    return { claims, tokens };
+  /**
+   * Start a step-up (#4841) for an already signed-in session: an
+   * authorization request that forces the provider to authenticate the person
+   * again (`prompt=login`, `max_age=0`). The transaction (state, nonce, PKCE
+   * verifier) is recorded on THIS session, server-side, as its one pending
+   * step-up intent; nothing is minted. Finish it with
+   * {@link OidcLoginService.completeStepUp}. Use a `redirectUri` registered
+   * with the provider for step-up (it may be the sign-in callback if the host
+   * routes by session). A session that cannot step up (unknown, expired,
+   * layered, PIN, ceilinged) gets a {@link StepUpRequiredError}.
+   */
+  async beginStepUp(input: { sessionId: string }): Promise<OidcStepUpStart> {
+    const sessionId =
+      typeof input?.sessionId === 'string' ? input.sessionId.trim() : '';
+    if (!sessionId) throw new StepUpRequiredError();
+    const sessions = await SessionCollection.create(this.classOptions);
+    const session = await sessions.findValidSession(sessionId);
+    if (!session?.isStepUpEligible()) {
+      throw new StepUpRequiredError();
+    }
+    const transaction = this.createTransaction();
+    const { url } = await this.createAuthorizationUrl({
+      transaction,
+      authorizationParams: { prompt: 'login', max_age: 0 },
+    });
+    const createdAt = this.now().getTime();
+    const intent: OidcStepUpIntent = {
+      transaction,
+      createdAt,
+      expiresAt: createdAt + this.stepUpWindowSeconds * 1000,
+    };
+    const recorded = await sessions.recordStepUpIntent(
+      sessionId,
+      intent as unknown as Record<string, unknown>,
+      { userId: session.userId },
+    );
+    if (!recorded) throw new StepUpRequiredError();
+    return { url, state: transaction.state };
+  }
+
+  /**
+   * Finish an OIDC step-up (#4841) and stamp `reauthenticatedAt` on the
+   * EXISTING session (the same marking the password step-up uses); no session
+   * is minted and no user is created or switched. The session's pending
+   * intent is taken first, so it is single use whatever happens next. Then the
+   * callback must carry that intent's state, the code must exchange, the ID
+   * token must verify as at sign-in (signature, issuer, audience, nonce), it
+   * must carry an `auth_time` that is within the step-up window, not before
+   * the intent was started and not in the future beyond a small skew, and its
+   * subject must be an EXISTING OIDC identity of the session's own user. A
+   * provider that ignores `prompt`/`max_age` returns a stale (or no)
+   * `auth_time` and is refused. Every refusal is one
+   * {@link StepUpRequiredError}; which check failed is not revealed.
+   */
+  async completeStepUp(input: {
+    sessionId: string;
+    callbackUrl: string | URL;
+  }): Promise<OidcStepUpResult> {
+    const sessionId =
+      typeof input?.sessionId === 'string' ? input.sessionId.trim() : '';
+    if (!sessionId) throw new StepUpRequiredError();
+    const sessions = await SessionCollection.create(this.classOptions);
+    const session = await sessions.findValidSession(sessionId);
+    if (!session?.isStepUpEligible()) {
+      throw new StepUpRequiredError();
+    }
+    const userId = session.userId;
+    const intent = parseStepUpIntent(
+      await sessions.takeStepUpIntent(sessionId, { userId }),
+    );
+    const nowMs = this.now().getTime();
+    if (
+      !intent ||
+      nowMs > intent.expiresAt ||
+      nowMs + STEP_UP_SKEW_MS < intent.createdAt ||
+      intent.transaction.provider !== this.providerName
+    ) {
+      throw new StepUpRequiredError();
+    }
+
+    let verified: Awaited<ReturnType<OidcLoginService['exchangeAndVerify']>>;
+    try {
+      verified = await this.exchangeAndVerify(
+        input.callbackUrl,
+        intent.transaction,
+      );
+    } catch {
+      throw new StepUpRequiredError();
+    }
+
+    const authTimeMs =
+      verified.authTime === undefined ? Number.NaN : verified.authTime * 1000;
+    if (
+      !Number.isFinite(authTimeMs) ||
+      authTimeMs > nowMs + STEP_UP_SKEW_MS ||
+      nowMs - authTimeMs > this.stepUpWindowSeconds * 1000 ||
+      authTimeMs < intent.createdAt - STEP_UP_SKEW_MS
+    ) {
+      throw new StepUpRequiredError();
+    }
+
+    const users = await UserCollection.create(this.classOptions);
+    const user = await users.get(userId);
+    if (!user?.id || !user.isActive() || !user.profileId) {
+      throw new StepUpRequiredError();
+    }
+    let identityProfileId: string | undefined;
+    try {
+      const identities = await OidcIdentityCollection.create(this.classOptions);
+      const identity = await withSystemContext(() =>
+        identities.findBySubject(verified.claims.iss, verified.claims.sub),
+      );
+      identityProfileId = identity?.profileId;
+    } catch {
+      throw new StepUpRequiredError();
+    }
+    if (!identityProfileId || identityProfileId !== user.profileId) {
+      throw new StepUpRequiredError();
+    }
+
+    const at = await sessions.markReauthenticated(sessionId, {
+      userId: user.id,
+      at: this.now(),
+    });
+    if (!at) throw new StepUpRequiredError();
+    return { sessionId, reauthenticatedAt: at.toISOString() };
   }
 
   async completeLogin(
@@ -804,7 +1006,7 @@ export class OidcLoginService {
   private async verifyIdToken(
     idToken: string,
     expectedNonce: string,
-  ): Promise<OidcClaims> {
+  ): Promise<{ claims: OidcClaims; authTime?: number }> {
     const metadata = await this.getMetadata();
     this.remoteJwks ??= createRemoteJWKSet(new URL(metadata.jwks_uri), {
       [customFetch]: this.fetchImpl,
@@ -822,6 +1024,35 @@ export class OidcLoginService {
       throw new OidcLoginError('OIDC nonce validation failed.');
     }
 
-    return normalizeClaims(payload, metadata.issuer, 'OIDC ID token');
+    const authTime =
+      typeof payload.auth_time === 'number' &&
+      Number.isFinite(payload.auth_time)
+        ? payload.auth_time
+        : undefined;
+    return {
+      claims: normalizeClaims(payload, metadata.issuer, 'OIDC ID token'),
+      ...(authTime !== undefined ? { authTime } : {}),
+    };
+  }
+}
+
+/** Parse a stored step-up intent; null for anything malformed (fail closed). */
+function parseStepUpIntent(
+  value: Record<string, unknown> | null,
+): OidcStepUpIntent | null {
+  if (!value) return null;
+  const { createdAt, expiresAt, transaction } = value;
+  if (
+    typeof createdAt !== 'number' ||
+    typeof expiresAt !== 'number' ||
+    !Number.isFinite(createdAt) ||
+    !Number.isFinite(expiresAt)
+  ) {
+    return null;
+  }
+  try {
+    return { createdAt, expiresAt, transaction: parseTransaction(transaction) };
+  } catch {
+    return null;
   }
 }

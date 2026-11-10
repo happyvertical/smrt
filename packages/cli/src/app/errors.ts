@@ -30,6 +30,30 @@ export class AppCommandError extends Error {
   }
 }
 
+/** What this refusal leaves alone, appended to it. */
+const WINDOWS_STILL_AVAILABLE =
+  'Every other smrt app command, and the self-hosted and cloud profiles, are not affected by this refusal.';
+
+/** Fixed, value-free message of {@link WindowsOperatorCopyUnsupportedError}. */
+export const WINDOWS_OPERATOR_COPY_UNSUPPORTED_MESSAGE = `smrt app backup, export, and import are not available on Windows for the local profile yet: directory and file modes are not enforced there, so a copy of the application data would inherit the destination folder permissions instead of being private (smrt#4837). Refused before any state root, operation lock, writer lease, or destination was created or opened, and nothing was copied. ${WINDOWS_STILL_AVAILABLE}`;
+
+/**
+ * Refusal of an operator copy (`backup`, `export`, `import`) of the local
+ * profile on Windows, until a destination custody rule exists. Raised before
+ * any lock, state root, or destination is created. Deployed profiles are not
+ * refused here: deployed `backup` is delegated to the operator, and deployed
+ * `export`/`import` write to an operator-chosen path whose privacy is the
+ * operator's responsibility on Windows.
+ */
+export class WindowsOperatorCopyUnsupportedError extends Error {
+  readonly code = 'windows_operator_copy_unsupported';
+
+  constructor() {
+    super(WINDOWS_OPERATOR_COPY_UNSUPPORTED_MESSAGE);
+    this.name = 'WindowsOperatorCopyUnsupportedError';
+  }
+}
+
 /**
  * A `smrt app start` whose web process never proved readiness. Carries the
  * already-redacted, bounded tail of that process's output and the private

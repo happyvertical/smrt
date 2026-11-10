@@ -5,15 +5,18 @@
 
 import * as fs from 'node:fs';
 import * as path from 'node:path';
+import { fileURLToPath, pathToFileURL } from 'node:url';
 import type { DomainKnowledgeAgentSurface } from '@happyvertical/smrt-types';
-import type { ConfigEnv, Plugin } from 'vite';
+import { resolve as resolveImport } from 'import-meta-resolve';
 import {
   loadVerifiedSmrtGenerationSnapshot,
   type SmrtGenerationSnapshotOptions,
 } from '../generation-snapshot.js';
 import { buildDomainKnowledgeManifest } from '../knowledge.js';
 import { resolveFileKnowledgeConfig } from '../knowledge-config.js';
+import { selectObjectDeclarations } from '../manifest/object-declarations.js';
 import { manifestExportCandidates } from '../manifest/package-manifest-exports.js';
+import { isTestArtifactManifest } from '../manifest/test-artifacts.js';
 import { generateDeclarations } from '../prebuild/index.js';
 import type {
   SmartObjectDefinition,
@@ -22,9 +25,14 @@ import type {
 import { MANIFEST_TIMESTAMP } from '../scanner/types.js';
 import { generateClientModule } from '../vite-plugin/generated-client.js';
 import type { SmrtPluginApi } from '../vite-plugin/index.js';
+import type {
+  SmrtConfigEnv,
+  SmrtVitePlugin,
+} from '../vite-plugin/plugin-contract.js';
 import {
   clearGeneratedSvelteKitRouteFiles,
   reconcileSvelteKitRouteGitignore,
+  resolveApiActionSet,
   type SvelteKitOptions,
 } from '../vite-plugin/sveltekit-generator.js';
 import { canonicalSvelteKitPath } from '../vite-plugin/sveltekit-path.js';
@@ -78,8 +86,12 @@ interface ConsumerObjectDefinition {
   extends?: string;
   extendsQualified?: string;
   extendsTypeArg?: string;
+  /** Configured app dependency whose manifest contributed this object. */
+  providerPackageName?: string;
   [key: string]: unknown;
 }
+
+class AmbiguousProviderGraphError extends Error {}
 
 /**
  * Aggregated manifest assembled by the consumer plugin from one or more
@@ -105,7 +117,196 @@ interface ConsumerPackageJson {
   version?: string;
   main?: string;
   exports?: Record<string, unknown>;
+  dependencies?: Record<string, unknown>;
+  optionalDependencies?: Record<string, unknown>;
+  peerDependencies?: Record<string, unknown>;
   [key: string]: unknown;
+}
+
+interface SelectiveSsrPackage {
+  packageJson: ConsumerPackageJson;
+  packageRoot: string;
+}
+
+function packageNameFromImportPath(importPath: string): string {
+  const parts = importPath.split('/');
+  return importPath.startsWith('@')
+    ? parts.slice(0, 2).join('/')
+    : (parts[0] ?? importPath);
+}
+
+function findInstalledPackageJson(
+  packageName: string,
+  searchFrom: string,
+): string | undefined {
+  let currentDir = fs.existsSync(searchFrom)
+    ? fs.realpathSync(searchFrom)
+    : path.resolve(searchFrom);
+  while (true) {
+    const candidate = path.join(
+      currentDir,
+      'node_modules',
+      packageName,
+      'package.json',
+    );
+    if (fs.existsSync(candidate)) return fs.realpathSync(candidate);
+    const parentDir = path.dirname(currentDir);
+    if (parentDir === currentDir) return undefined;
+    currentDir = parentDir;
+  }
+}
+
+function sameInstalledPackage(
+  left: string | undefined,
+  right: string | undefined,
+): boolean {
+  return Boolean(
+    left && right && fs.realpathSync(left) === fs.realpathSync(right),
+  );
+}
+
+function readInstalledPackageJson(
+  packageJsonPath: string | undefined,
+): ConsumerPackageJson | undefined {
+  if (!packageJsonPath) return undefined;
+  try {
+    return JSON.parse(
+      fs.readFileSync(packageJsonPath, 'utf8'),
+    ) as ConsumerPackageJson;
+  } catch {
+    return undefined;
+  }
+}
+
+const TYPESCRIPT_SOURCE_PATTERN = /(?<!\.d)\.(?:[cm]?ts|tsx)$/;
+
+/**
+ * Whether `specifier` resolves, under Node's ESM `import` conditions from
+ * `fromDir`, to a TypeScript source file (#3092). Workspace packages often
+ * publish `"import": "./src/index.ts"` for an app that only runs them through
+ * Vite. Plain Node cannot evaluate such a module as a SMRT provider: it does
+ * not rewrite `./x.js` specifiers to `./x.ts`, never strips types inside
+ * `node_modules`, and cannot strip `@smrt()` decorators at all. An
+ * unresolvable specifier answers `false`, leaving the existing import (and its
+ * existing failure mode) unchanged.
+ *
+ * @internal Exported for tests.
+ */
+export function resolvesToTypeScriptSource(
+  specifier: string,
+  fromDir: string,
+): boolean {
+  try {
+    const target = resolveImport(
+      specifier,
+      pathToFileURL(path.join(fromDir, 'package.json')).href,
+    );
+    return (
+      target.startsWith('file:') &&
+      TYPESCRIPT_SOURCE_PATTERN.test(fileURLToPath(target))
+    );
+  } catch {
+    return false;
+  }
+}
+
+/**
+ * Whether an `exports` target (or any condition under it) needs Vite to
+ * compile it: a `.svelte`/`.css` file or a `svelte` resolution condition.
+ */
+function exportTargetNeedsViteCompilation(value: unknown): boolean {
+  if (typeof value === 'string') {
+    return value.endsWith('.svelte') || value.endsWith('.css');
+  }
+  if (!value || typeof value !== 'object') return false;
+  return Object.entries(value).some(
+    ([condition, target]) =>
+      condition === 'svelte' || exportTargetNeedsViteCompilation(target),
+  );
+}
+
+/**
+ * A component-bearing package publishes Svelte entries (a `svelte` field, a
+ * `svelte` condition, or a `.svelte`/`.css` export target). Plain Node cannot
+ * evaluate such a package's root: it may re-export `.svelte` files directly or
+ * through another component library (#4219).
+ */
+function isComponentBearingPackage(
+  packageJson: ConsumerPackageJson | undefined,
+): boolean {
+  return (
+    typeof packageJson?.svelte === 'string' ||
+    exportTargetNeedsViteCompilation(packageJson?.exports)
+  );
+}
+
+/**
+ * The package.json fields the Svelte-root rule reads. `exports` is `unknown`
+ * because npm allows a bare string target as well as a conditions map.
+ */
+interface ProviderPackageShape {
+  svelte?: unknown;
+  exports?: unknown;
+  [key: string]: unknown;
+}
+
+/**
+ * Whether the package declares its ROOT as a Svelte entry: a `svelte` field or
+ * a `.` export carrying a `svelte` condition (at any nesting) or a
+ * `.svelte`/`.css` target. Such a root (e.g. `@happyvertical/smrt-products`,
+ * which re-exports its components) cannot be evaluated by plain Node (#4219).
+ * A package that only publishes Svelte under a subpath keeps a Node-safe root,
+ * as the standards require.
+ *
+ * A `svelte` condition counts even when its target is plain `.js`: that is
+ * what svelte-package and Vite library builds emit for a root that re-exports
+ * components (the `.svelte` files sit one import deeper), and it is exactly
+ * the shape of every Svelte root in this workspace. Reading the condition as
+ * the package's declaration is deliberate — the trade-off is that a Node-safe
+ * root that nevertheless declares `svelte` loses its optional provider-context
+ * import, which costs nothing when its objects are imported from a subpath.
+ *
+ * A missing `exports` map, a `.` key absent from it, or an unreadable
+ * package.json (`undefined`) all answer `false`: the register then keeps the
+ * root import #4187 chose, as before.
+ *
+ * @internal Exported for tests.
+ */
+export function isComponentBearingRoot(
+  packageJson: ProviderPackageShape | undefined,
+): boolean {
+  if (typeof packageJson?.svelte === 'string') return true;
+  const exports = packageJson?.exports;
+  if (typeof exports === 'string') {
+    return exportTargetNeedsViteCompilation(exports);
+  }
+  if (!exports || typeof exports !== 'object') return false;
+  const exportsMap = exports as Record<string, unknown>;
+  const hasSubpathKeys = Object.keys(exportsMap).some((key) =>
+    key.startsWith('.'),
+  );
+  return exportTargetNeedsViteCompilation(
+    hasSubpathKeys ? exportsMap['.'] : exportsMap,
+  );
+}
+
+/**
+ * Pick the module the generated register imports so a configured provider is
+ * evaluated in Node's installed package context (#4187): the package root,
+ * unless the package declares that root as a Svelte entry, in which case
+ * nothing is imported for the provider (#4219). Its object entries, imported
+ * from their manifest `importPath`, already evaluate it in that context, and
+ * the transitive loader needs only `import.meta.resolve(provider)`, not an
+ * import. No substitute subpath is chosen: one that reaches `.svelte` would
+ * re-create the failure this avoids.
+ *
+ * @internal Exported for tests.
+ */
+export function resolveProviderContextImport(
+  packageName: string,
+  packageJson: ProviderPackageShape | undefined,
+): string | undefined {
+  return isComponentBearingRoot(packageJson) ? undefined : packageName;
 }
 
 /**
@@ -273,7 +474,7 @@ async function assertConsumerSvelteKitFormerRouteRootsAreSafe(
   userConfig: unknown,
   projectRoot: string,
   routesDir: readonly string[],
-  env?: ConfigEnv,
+  env?: SmrtConfigEnv,
 ): Promise<void> {
   if (routesDir.length === 0) return;
   const activeParticipants = await activeSvelteKitRouteParticipants(
@@ -298,7 +499,7 @@ async function reconcileConsumerSvelteKitRouteRoots(
   projectRoot: string,
   routesDir: string[],
   afterReconciled: () => void,
-  env?: ConfigEnv,
+  env?: SmrtConfigEnv,
 ): Promise<void> {
   const remaining = new Set(routesDir);
   const reconcileOne = (routesDir: string) => {
@@ -536,7 +737,9 @@ function selectConsumerRouteManifest(
 /**
  * Consumer plugin for projects that use SMRT packages
  */
-export function smrtConsumer(options: SmrtConsumerOptions = {}): Plugin {
+export function smrtConsumer(
+  options: SmrtConsumerOptions = {},
+): SmrtVitePlugin {
   const {
     packages = [],
     generateTypes = true,
@@ -557,6 +760,13 @@ export function smrtConsumer(options: SmrtConsumerOptions = {}): Plugin {
   let typesGenerated = false;
   let producerApi: SmrtPluginApi | undefined;
   let routeLifecycleConfig: object | undefined;
+  let isBuild = false;
+  let devServerRoot = projectRoot;
+  const devNativeSsrModules = new Map<
+    string,
+    { externalize: string; type: 'module' | 'commonjs' }
+  >();
+  let selectiveSsrPackages = new Map<string, SelectiveSsrPackage>();
 
   function loadGenerationSnapshot(): ConsumerManifest {
     if (!generationSnapshot) {
@@ -611,6 +821,167 @@ export function smrtConsumer(options: SmrtConsumerOptions = {}): Plugin {
     return { names: packages, explicit: packages.length > 0 };
   }
 
+  /**
+   * Keep consumed providers and their SMRT runtime graph in Node's installed
+   * package context during SSR. Native-backed dependencies (such as sharp)
+   * resolve relative to that context, and keeping core/tenancy alongside the
+   * provider prevents the server bundle from creating a second registry or
+   * AsyncLocalStorage instance.
+   */
+  function resolveConsumerSsrExternalPackages(
+    providerPackages: readonly string[],
+  ): {
+    external: string[];
+    selective: Map<string, SelectiveSsrPackage>;
+  } {
+    const external = new Set<string>();
+    const selective = new Map<string, SelectiveSsrPackage>();
+    const visited = new Set<string>();
+    const pending = providerPackages.map((packageName) => ({
+      packageName,
+      searchFrom: projectRoot,
+    }));
+    while (pending.length > 0) {
+      const candidate = pending.pop();
+      if (!candidate) continue;
+      const { packageName, searchFrom } = candidate;
+
+      const packageJsonPath = findInstalledPackageJson(packageName, searchFrom);
+      const visitKey = packageJsonPath ?? `${searchFrom}\0${packageName}`;
+      if (visited.has(visitKey)) continue;
+      visited.add(visitKey);
+
+      // Manifest loading reports an unavailable or unreadable declared
+      // provider with the actionable package context. Keep the root external
+      // here so Vite does not inline a partial substitute while reporting
+      // that error.
+      const packageJson = readInstalledPackageJson(packageJsonPath);
+
+      const needsSvelteCompilation = isComponentBearingPackage(packageJson);
+      const projectPackageJson = findInstalledPackageJson(
+        packageName,
+        projectRoot,
+      );
+      const isAppResolvable = sameInstalledPackage(
+        packageJsonPath,
+        projectPackageJson,
+      );
+
+      // The preset owns app-runtime's finer split: its root and native runtime
+      // stay external while ./sveltekit remains bundled with the app's Kit.
+      // Component-bearing packages need an export-level boundary: their server
+      // entries stay external while Svelte/CSS entries remain in Vite's graph.
+      // A nested-only dependency cannot be emitted as a bare external import
+      // because Node would resolve it from the app root, where pnpm has no link.
+      if (
+        packageName !== '@happyvertical/smrt-app-runtime' &&
+        isAppResolvable
+      ) {
+        if (needsSvelteCompilation && packageJson) {
+          selective.set(packageName, {
+            packageJson,
+            packageRoot: path.dirname(packageJsonPath as string),
+          });
+        } else {
+          external.add(packageName);
+        }
+      }
+
+      if (!packageJsonPath || !packageJson) continue;
+      for (const dependencies of [
+        packageJson.dependencies,
+        packageJson.optionalDependencies,
+        packageJson.peerDependencies,
+      ]) {
+        for (const dependency of Object.keys(dependencies ?? {})) {
+          if (dependency.startsWith('@happyvertical/smrt-')) {
+            pending.push({
+              packageName: dependency,
+              searchFrom: path.dirname(packageJsonPath),
+            });
+          }
+        }
+      }
+    }
+    return { external: [...external].sort(), selective };
+  }
+
+  function matchingExportTarget(
+    exports: unknown,
+    exportKey: string,
+  ): { target: unknown; wildcard?: string } | undefined {
+    if (!exports) return undefined;
+    if (typeof exports === 'string') {
+      return exportKey === '.' ? { target: exports } : undefined;
+    }
+    if (typeof exports !== 'object') return undefined;
+    const exportMap = exports as Record<string, unknown>;
+    if (exportKey in exportMap) return { target: exportMap[exportKey] };
+    if (
+      exportKey === '.' &&
+      !Object.keys(exportMap).some((key) => key.startsWith('.'))
+    ) {
+      return { target: exportMap };
+    }
+    for (const [pattern, target] of Object.entries(exportMap)) {
+      const wildcardIndex = pattern.indexOf('*');
+      if (wildcardIndex < 0) continue;
+      const prefix = pattern.slice(0, wildcardIndex);
+      const suffix = pattern.slice(wildcardIndex + 1);
+      if (exportKey.startsWith(prefix) && exportKey.endsWith(suffix)) {
+        return {
+          target,
+          wildcard: exportKey.slice(
+            prefix.length,
+            exportKey.length - suffix.length,
+          ),
+        };
+      }
+    }
+  }
+
+  function svelteConditionTargets(value: unknown): string[] {
+    if (!value || typeof value !== 'object') return [];
+    return Object.entries(value).flatMap(([condition, target]) => {
+      if (condition === 'svelte') {
+        if (typeof target === 'string') return [target];
+        return svelteConditionTargets(target);
+      }
+      return svelteConditionTargets(target);
+    });
+  }
+
+  function resolvesToSvelteCondition(
+    packageName: string,
+    packageJson: ConsumerPackageJson,
+    packageRoot: string,
+    id: string,
+    resolvedId: string | undefined,
+  ): boolean {
+    if (!resolvedId) return false;
+    const exportKey =
+      id === packageName ? '.' : `./${id.slice(packageName.length + 1)}`;
+    const matched = matchingExportTarget(packageJson.exports, exportKey);
+    const targets = matched ? svelteConditionTargets(matched.target) : [];
+    if (exportKey === '.' && typeof packageJson.svelte === 'string') {
+      targets.push(packageJson.svelte);
+    }
+    const normalizedResolved = resolvedId.split('?')[0];
+    const canonical = (candidate: string): string =>
+      fs.existsSync(candidate)
+        ? fs.realpathSync(candidate)
+        : path.resolve(candidate);
+    return targets.some((target) => {
+      const substituted = matched?.wildcard
+        ? target.replaceAll('*', matched.wildcard)
+        : target;
+      return (
+        canonical(path.resolve(packageRoot, substituted)) ===
+        canonical(normalizedResolved)
+      );
+    });
+  }
+
   async function generateConfigTypes(
     manifest?: ConsumerManifest,
   ): Promise<void> {
@@ -630,7 +1001,7 @@ export function smrtConsumer(options: SmrtConsumerOptions = {}): Plugin {
     typesGenerated = true;
   }
 
-  const plugin: Plugin = {
+  const plugin: SmrtVitePlugin = {
     name: 'smrt-consumer',
 
     // SvelteKit inventories routes in its config hook. Run before it so a
@@ -643,6 +1014,12 @@ export function smrtConsumer(options: SmrtConsumerOptions = {}): Plugin {
       async handler(userConfig, env) {
         const routeLifecycle = env ?? userConfig;
         routeLifecycleConfig = routeLifecycle;
+        const consumerPackages = await resolveConsumerPackages();
+        isBuild = env?.command === 'build';
+        const ssrResolution = resolveConsumerSsrExternalPackages(
+          consumerPackages.names,
+        );
+        selectiveSsrPackages = ssrResolution.selective;
         const previousConsumerRouteRoots =
           loadConsumerSvelteKitRouteRoots(projectRoot);
         if (consumerSvelteKit) {
@@ -652,11 +1029,10 @@ export function smrtConsumer(options: SmrtConsumerOptions = {}): Plugin {
             previousConsumerRouteRoots,
             env,
           );
-          const routePackages = await resolveConsumerPackages();
           const routeManifest = generationSnapshot
             ? loadGenerationSnapshot()
-            : await aggregateHosted(routePackages.names, projectRoot, {
-                explicit: routePackages.explicit,
+            : await aggregateHosted(consumerPackages.names, projectRoot, {
+                explicit: consumerPackages.explicit,
               });
           const hostedManifest = selectConsumerRouteManifest(
             routeManifest,
@@ -763,6 +1139,13 @@ export function smrtConsumer(options: SmrtConsumerOptions = {}): Plugin {
           }
         }
         return {
+          // This applies only to SSR. Client and Svelte-component builds still
+          // compile provider exports normally, while Node keeps provider JS and
+          // every shared SMRT runtime dependency in one pnpm package context.
+          ssr: {
+            external: ssrResolution.external,
+            noExternal: [...selectiveSsrPackages.keys()].sort(),
+          },
           build: {
             rollupOptions: {
               // Runtime registration evaluates provider entry points so their
@@ -782,6 +1165,19 @@ export function smrtConsumer(options: SmrtConsumerOptions = {}): Plugin {
       producerApi = (resolvedConfig.plugins ?? []).find(
         (plugin) => plugin?.name === 'smrt-auto-service',
       )?.api as SmrtPluginApi | undefined;
+    },
+
+    configureServer(server) {
+      devServerRoot = server.config.root;
+      const ssr = server.environments?.ssr;
+      if (!ssr?.fetchModule) return;
+      const fetchModule = ssr.fetchModule.bind(ssr);
+      // Dev import analysis ignores resolveId.external. Keep its ordinary URL
+      // graph, but hand only our resolved server entries to Node's native cache.
+      ssr.fetchModule = async (id, importer, options) => {
+        const native = devNativeSsrModules.get(id.split('?')[0]);
+        return native ?? fetchModule(id, importer, options);
+      };
     },
 
     async buildStart() {
@@ -846,7 +1242,67 @@ export function smrtConsumer(options: SmrtConsumerOptions = {}): Plugin {
       }
     },
 
-    resolveId(id, _importer) {
+    async resolveId(id, importer, resolveOptions) {
+      if (resolveOptions?.ssr) {
+        for (const [packageName, selectivePackage] of selectiveSsrPackages) {
+          if (id !== packageName && !id.startsWith(`${packageName}/`)) {
+            continue;
+          }
+          const resolved = await this.resolve(id, importer, {
+            ...resolveOptions,
+            skipSelf: true,
+          });
+          const compile =
+            resolved?.id.endsWith('.svelte') || resolved?.id.endsWith('.css');
+          // pnpm can install the same package in multiple peer contexts.
+          // Compare against the export map/root visible to this importer,
+          // rather than a different instance discovered from the app root.
+          const importerPath = importer?.split('?')[0];
+          const packageJsonPath =
+            importerPath && path.isAbsolute(importerPath)
+              ? findInstalledPackageJson(
+                  packageName,
+                  path.dirname(importerPath),
+                )
+              : undefined;
+          const packageJson = packageJsonPath
+            ? readInstalledPackageJson(packageJsonPath)
+            : selectivePackage.packageJson;
+          const compileSvelteBarrel =
+            packageJson &&
+            resolvesToSvelteCondition(
+              packageName,
+              packageJson,
+              packageJsonPath
+                ? path.dirname(packageJsonPath)
+                : selectivePackage.packageRoot,
+              id,
+              resolved?.id,
+            );
+          if (!compile && !compileSvelteBarrel) {
+            if (isBuild) return { id, external: true };
+            if (!resolved) return;
+            const filename = resolved.id.split('?')[0];
+            if (!path.isAbsolute(filename)) return resolved;
+            const native = {
+              externalize: pathToFileURL(filename).href,
+              type: (filename.endsWith('.mjs') ||
+              (!filename.endsWith('.cjs') && packageJson?.type === 'module')
+                ? 'module'
+                : 'commonjs') as 'module' | 'commonjs',
+            };
+            devNativeSsrModules.set(filename, native);
+            devNativeSsrModules.set(path.posix.join('/@fs/', filename), native);
+            if (filename.startsWith(`${devServerRoot}/`))
+              devNativeSsrModules.set(
+                filename.slice(devServerRoot.length),
+                native,
+              );
+            return resolved;
+          }
+          break;
+        }
+      }
       // Resolve virtual modules to generated type declarations
       if (id in VIRTUAL_MODULES) {
         // Generated declarations are ambient TypeScript declarations, not
@@ -1075,14 +1531,24 @@ async function aggregateTypeManifests(
   };
 
   const unresolvedPackages: string[] = [];
+  const objectSources = new Map<string, string>();
 
   for (const packageName of packages) {
     let loadedManifest = false;
     try {
-      const packageDir = path.join(projectRoot, 'node_modules', packageName);
-
       // Load package.json for version and export information
-      const packageJsonPath = path.join(packageDir, 'package.json');
+      const packageJsonPath = findInstalledPackageJson(
+        packageName,
+        projectRoot,
+      );
+      if (!packageJsonPath) {
+        console.warn(
+          `[smrt:consumer] Could not read package.json for ${packageName}`,
+        );
+        unresolvedPackages.push(packageName);
+        continue;
+      }
+      const packageDir = path.dirname(packageJsonPath);
       let packageJson: ConsumerPackageJson;
       try {
         const packageJsonContent = fs.readFileSync(packageJsonPath, 'utf-8');
@@ -1138,6 +1604,27 @@ async function aggregateTypeManifests(
               manifest.objects,
             )) {
               const def = objectDef;
+              const importPath =
+                def.importPath || determineImportPath(packageJson);
+              const importPackageName = importPath.startsWith('@')
+                ? importPath.split('/').slice(0, 2).join('/')
+                : importPath.split('/')[0];
+              const sourcePackageJson =
+                importPackageName === packageName ? packageJsonPath : undefined;
+              const resolvedSourcePackageJson =
+                sourcePackageJson ??
+                findInstalledPackageJson(importPackageName, packageDir);
+              const sourceIdentity = resolvedSourcePackageJson
+                ? fs.realpathSync(resolvedSourcePackageJson)
+                : `${packageName}\0${importPackageName}`;
+              const priorSource = objectSources.get(objectName);
+              if (priorSource && priorSource !== sourceIdentity) {
+                throw new AmbiguousProviderGraphError(
+                  `[smrt:consumer] ${objectName} is contributed by multiple installed provider graphs; refusing ambiguous constructor identity`,
+                );
+              }
+              if (priorSource) continue;
+              objectSources.set(objectName, sourceIdentity);
 
               aggregatedManifest.objects[objectName] = {
                 ...def,
@@ -1149,7 +1636,8 @@ async function aggregateTypeManifests(
                   manifest.packageVersion ||
                   packageJson.version,
                 // Add fallback import paths if missing
-                importPath: def.importPath || determineImportPath(packageJson),
+                importPath,
+                providerPackageName: packageName,
                 exportName: def.exportName || def.className || objectName,
                 collectionExportName:
                   def.collectionExportName ||
@@ -1163,6 +1651,7 @@ async function aggregateTypeManifests(
         }
       }
     } catch (error) {
+      if (error instanceof AmbiguousProviderGraphError) throw error;
       console.warn(
         `[smrt:consumer] Error loading manifest from ${packageName}:`,
         error,
@@ -1279,7 +1768,14 @@ async function saveAggregatedManifest(
         const existing = JSON.parse(
           fs.readFileSync(manifestPath, 'utf-8'),
         ) as Partial<ConsumerManifest>;
-        if (existing && typeof existing.objects === 'object') {
+        // A test-run manifest left here by an older test runner describes
+        // inline test fixtures, not the local project (#2760): replace it
+        // rather than carrying its objects and marker into a build output.
+        if (
+          existing &&
+          typeof existing.objects === 'object' &&
+          !isTestArtifactManifest(existing)
+        ) {
           merged = {
             ...existing,
             ...manifest,
@@ -1370,6 +1866,42 @@ async function generateRegistrationFile(
   // imports in a production consumer bundle.
   const importBindings = new Map<string, string>();
   const importsByPath = new Map<string, Map<string, string>>();
+  const transitiveNamespaces = new Map<
+    string,
+    {
+      binding: string;
+      providerPackageName: string;
+      importPath: string;
+      viteOnly: boolean;
+    }
+  >();
+  // Modules that resolve to TypeScript source (#3092): Vite SSR compiles
+  // them, plain Node cannot. The register imports them only under Vite.
+  const typeScriptSourceMemo = new Map<string, boolean>();
+  const isTypeScriptSource = (specifier: string, fromDir: string): boolean => {
+    const key = `${fromDir}\0${specifier}`;
+    let answer = typeScriptSourceMemo.get(key);
+    if (answer === undefined) {
+      answer = resolvesToTypeScriptSource(specifier, fromDir);
+      typeScriptSourceMemo.set(key, answer);
+    }
+    return answer;
+  };
+  const viteOnlyImportPaths = new Set<string>();
+  const markViteOnlyImport = (importPath: string): void => {
+    if (isTypeScriptSource(importPath, projectRoot)) {
+      viteOnlyImportPaths.add(importPath);
+    }
+  };
+  const transitiveBindings = new Map<
+    string,
+    { binding: string; namespaceBinding: string; exportName: string }
+  >();
+  const transitiveCollectionChecks: Array<{
+    collectionBinding: string;
+    itemBinding: string;
+    viteOnly: boolean;
+  }> = [];
   let nextImportBinding = 0;
   const getImportBinding = (importPath: string, exportName: string): string => {
     const key = `${importPath}\0${exportName}`;
@@ -1381,7 +1913,67 @@ async function generateRegistrationFile(
       importsByPath.get(importPath) ?? new Map<string, string>();
     specifiers.set(exportName, binding);
     importsByPath.set(importPath, specifiers);
+    markViteOnlyImport(importPath);
     return binding;
+  };
+  const getTransitiveBinding = (
+    importPath: string,
+    providerPackageName: string,
+    exportName: string,
+  ): string => {
+    const namespaceKey = `${providerPackageName}\0${importPath}`;
+    let namespace = transitiveNamespaces.get(namespaceKey);
+    if (!namespace) {
+      const providerPackageJson = findInstalledPackageJson(
+        providerPackageName,
+        projectRoot,
+      );
+      namespace = {
+        binding: `__smrt_transitive_provider_${transitiveNamespaces.size}`,
+        providerPackageName,
+        importPath,
+        viteOnly: Boolean(
+          providerPackageJson &&
+            isTypeScriptSource(importPath, path.dirname(providerPackageJson)),
+        ),
+      };
+      transitiveNamespaces.set(namespaceKey, namespace);
+    }
+    const key = `${namespaceKey}\0${exportName}`;
+    const existing = transitiveBindings.get(key);
+    if (existing) return existing.binding;
+    const binding = `__smrt_consumer_${nextImportBinding++}`;
+    transitiveBindings.set(key, {
+      binding,
+      namespaceBinding: namespace.binding,
+      exportName,
+    });
+    return binding;
+  };
+  const isSameProjectAndProviderImport = (
+    importPath: string,
+    providerPackageName?: string,
+  ): boolean => {
+    const importPackageName = packageNameFromImportPath(importPath);
+    const projectPackageJson = findInstalledPackageJson(
+      importPackageName,
+      projectRoot,
+    );
+    if (!providerPackageName) return Boolean(projectPackageJson);
+
+    const providerPackageJson = findInstalledPackageJson(
+      providerPackageName,
+      projectRoot,
+    );
+    if (!providerPackageJson) return false;
+    const providerImportPackageJson =
+      importPackageName === providerPackageName
+        ? providerPackageJson
+        : findInstalledPackageJson(
+            importPackageName,
+            path.dirname(providerPackageJson),
+          );
+    return sameInstalledPackage(projectPackageJson, providerImportPackageJson);
   };
 
   const registrations: string[] = [];
@@ -1409,6 +2001,21 @@ async function generateRegistrationFile(
   }
 
   const collectionClassMemo = new WeakMap<object, boolean>();
+  const svelteRootImportWarnings = new Set<string>();
+  // External objects imported from a package ROOT, grouped by package, so the
+  // Svelte-root warning below can name every affected object once per package.
+  const rootImportedObjects = new Map<string, string[]>();
+  for (const [objectName, def] of Object.entries(manifestObjects)) {
+    if (!def.packageName || def.packageName === manifest.packageName) continue;
+    const objectImportPath = def.importPath || def.packageName;
+    if (objectImportPath !== packageNameFromImportPath(objectImportPath)) {
+      continue;
+    }
+    const names = rootImportedObjects.get(objectImportPath) ?? [];
+    names.push(def.className || def.exportName || objectName);
+    names.sort((left, right) => left.localeCompare(right));
+    rootImportedObjects.set(objectImportPath, names);
+  }
 
   const isCollectionClass = (
     def: ConsumerObjectDefinition | undefined,
@@ -1458,15 +2065,95 @@ async function generateRegistrationFile(
     const collectionExportName = def.collectionExportName;
     const hasCollection = def.hasCollection; // Check if collection class actually exists
     const tableName = def.collection || objectName.toLowerCase();
+    const qualifiedName =
+      def.qualifiedName ||
+      (objectName.includes(':')
+        ? objectName
+        : `${def.packageName}:${def.className || exportName}`);
 
-    const exportBinding = getImportBinding(importPath, exportName);
+    const providerPackageName = def.providerPackageName;
+    const appResolvable = isSameProjectAndProviderImport(
+      importPath,
+      providerPackageName,
+    );
+    if (!appResolvable && !providerPackageName) {
+      throw new Error(
+        `[smrt:consumer] ${objectName} has no configured provider provenance for ${importPath}`,
+      );
+    }
+    // An object exported only from a root the package declares as a Svelte
+    // entry leaves the register no server-safe module to import: the root
+    // import (static, or transitive through the owning provider's context)
+    // is the only way to reach the constructor, so it is kept. Vite SSR
+    // works; plain Node (`smrt db:migrate`, workers) can load it only when
+    // that root really is Node-safe, which the declaration cannot prove
+    // either way. Say so once per package rather than failing a build whose
+    // consumer may never run outside Vite (#4219).
+    if (
+      importPath === packageNameFromImportPath(importPath) &&
+      !svelteRootImportWarnings.has(importPath)
+    ) {
+      svelteRootImportWarnings.add(importPath);
+      const providerPackageJsonPath = appResolvable
+        ? undefined
+        : findInstalledPackageJson(providerPackageName as string, projectRoot);
+      const rootPackageJsonPath = appResolvable
+        ? findInstalledPackageJson(importPath, projectRoot)
+        : providerPackageJsonPath &&
+          findInstalledPackageJson(
+            importPath,
+            path.dirname(providerPackageJsonPath),
+          );
+      if (
+        isComponentBearingRoot(readInstalledPackageJson(rootPackageJsonPath))
+      ) {
+        console.warn(
+          `[smrt:consumer] ${importPath} declares a Svelte root entry (a "svelte" field, or a "svelte" condition or a .svelte/.css target on its "." export) and exports ${(rootImportedObjects.get(importPath) ?? [objectName]).join(', ')} only from that root; .smrt/register.js keeps the root import${appResolvable ? '' : ` (loaded through ${providerPackageName})`}. Verify that root loads under plain Node (smrt db:migrate, task/schedule workers), or publish the package's @smrt() objects from a ./models or ./objects export.`,
+        );
+      }
+    }
+    const exportBinding = appResolvable
+      ? getImportBinding(importPath, exportName)
+      : getTransitiveBinding(
+          importPath,
+          providerPackageName as string,
+          exportName,
+        );
     const collectionBinding =
       hasCollection && collectionExportName
-        ? getImportBinding(importPath, collectionExportName)
+        ? appResolvable
+          ? getImportBinding(importPath, collectionExportName)
+          : getTransitiveBinding(
+              importPath,
+              providerPackageName as string,
+              collectionExportName,
+            )
         : undefined;
+    if (!appResolvable && collectionBinding) {
+      transitiveCollectionChecks.push({
+        collectionBinding,
+        itemBinding: exportBinding,
+        viteOnly:
+          transitiveNamespaces.get(
+            `${providerPackageName as string}\0${importPath}`,
+          )?.viteOnly ?? false,
+      });
+    }
     importedEntryCount++;
 
     if (isCollectionClass(def)) {
+      // Consumer registration owns external import provenance. Bind REST
+      // receivers here without adding object/discovery metadata.
+      if (
+        resolveApiActionSet(
+          def as unknown as SmartObjectDefinition,
+          manifest as unknown as SmartObjectManifest,
+        ).size > 0
+      ) {
+        registrations.push(
+          `if (${exportBinding}) ObjectRegistry.registerCollection(${JSON.stringify(qualifiedName)}, ${exportBinding});`,
+        );
+      }
       continue;
     }
 
@@ -1488,11 +2175,34 @@ async function generateRegistrationFile(
     // Only register collection if it exists
     if (collectionBinding) {
       registrations.push(
-        `if (${collectionBinding}) ObjectRegistry.registerCollection('${tableName}', ${collectionBinding});`,
+        `if (${collectionBinding}) {
+  ObjectRegistry.registerCollection(${JSON.stringify(qualifiedName)}, ${collectionBinding});
+  ObjectRegistry.registerCollection(${JSON.stringify(tableName)}, ${collectionBinding});
+}`,
       );
     }
 
     registeredObjectCount++;
+  }
+
+  // Configured providers remain ordinary static imports so each is evaluated
+  // in Node's installed package context (#4187); transitive-only object
+  // modules are loaded below through their owning provider context. The
+  // register must stay loadable under plain Node (`smrt db:migrate`, workers,
+  // `.smrt/runtime/register.js`), so a root the provider declares as a Svelte
+  // entry is never imported: its object entries already imported above
+  // establish the context (#4219).
+  for (const packageName of manifest.smrtDependencies ?? []) {
+    if (!isSameProjectAndProviderImport(packageName, packageName)) continue;
+    const contextImport = resolveProviderContextImport(
+      packageName,
+      readInstalledPackageJson(
+        findInstalledPackageJson(packageName, projectRoot),
+      ),
+    );
+    if (!contextImport || importsByPath.has(contextImport)) continue;
+    importsByPath.set(contextImport, new Map());
+    markViteOnlyImport(contextImport);
   }
 
   // Skip generation if no external entries
@@ -1506,10 +2216,42 @@ async function generateRegistrationFile(
   const sortedImports = Array.from(importsByPath.entries()).sort(
     ([left], [right]) => left.localeCompare(right),
   );
-  const imports = sortedImports.map(
-    ([importPath], index) =>
-      `import * as __smrt_provider_${index} from '${importPath}';`,
+  const imports = sortedImports.flatMap(([importPath], index) =>
+    viteOnlyImportPaths.has(importPath)
+      ? []
+      : [`import * as __smrt_provider_${index} from '${importPath}';`],
   );
+  // A TypeScript-source module is imported only when Vite evaluates the
+  // register (`import.meta.env` exists only there). Under plain Node its
+  // namespace is empty, so its objects stay unregistered while their
+  // manifests still reach `.smrt/manifest.json` (#3092).
+  const viteOnlyImports = sortedImports.flatMap(([importPath], index) =>
+    viteOnlyImportPaths.has(importPath)
+      ? [
+          `const __smrt_provider_${index} = SMRT_VITE_RUNTIME ? await import(${JSON.stringify(importPath)}) : {};`,
+        ]
+      : [],
+  );
+  const viteOnlyModules = [
+    ...viteOnlyImportPaths,
+    ...Array.from(transitiveNamespaces.values())
+      .filter(({ viteOnly }) => viteOnly)
+      .map(({ importPath }) => importPath),
+  ].sort((left, right) => left.localeCompare(right));
+  const uniqueViteOnlyModules = [...new Set(viteOnlyModules)];
+  if (uniqueViteOnlyModules.length > 0) {
+    console.warn(
+      `[smrt:consumer] ${uniqueViteOnlyModules.join(', ')} resolve${uniqueViteOnlyModules.length === 1 ? 's' : ''} to TypeScript source; .smrt/register.js imports ${uniqueViteOnlyModules.length === 1 ? 'it' : 'them'} only under Vite. Plain Node (smrt db:migrate, CLIs) keeps their manifests but does not register their constructors; the compiled worker artifact (.smrt/runtime/register.js) still imports them and cannot start under plain Node. Publish a compiled JavaScript export to register them outside Vite (#3092).`,
+    );
+  }
+  const viteRuntimePrelude =
+    uniqueViteOnlyModules.length > 0
+      ? `const SMRT_VITE_RUNTIME = Boolean(import.meta.env);
+if (!SMRT_VITE_RUNTIME) {
+  console.warn(${JSON.stringify(`[smrt:register] Skipped TypeScript-source modules under plain Node: ${uniqueViteOnlyModules.join(', ')}. Their manifests remain available; their constructors are registered only under Vite (#3092).`)});
+}
+`
+      : '';
   const importDeclarations = sortedImports.flatMap(([, specifiers], index) =>
     Array.from(specifiers.entries())
       .sort(([left], [right]) => left.localeCompare(right))
@@ -1517,6 +2259,32 @@ async function generateRegistrationFile(
         ([exportName, binding]) =>
           `const ${binding} = getSmrtExport(__smrt_provider_${index}, ${JSON.stringify(exportName)});`,
       ),
+  );
+  const transitiveNamespaceDeclarations = Array.from(
+    transitiveNamespaces.values(),
+  )
+    .sort((left, right) => left.binding.localeCompare(right.binding))
+    .map(({ binding, providerPackageName, importPath, viteOnly }) => {
+      const load = `await importSmrtDependency(${JSON.stringify(importPath)}, ${JSON.stringify(providerPackageName)})`;
+      return viteOnly
+        ? `const ${binding} = SMRT_VITE_RUNTIME ? ${load} : {};`
+        : `const ${binding} = ${load};`;
+    });
+  const viteOnlyNamespaceBindings = new Set(
+    Array.from(transitiveNamespaces.values())
+      .filter(({ viteOnly }) => viteOnly)
+      .map(({ binding }) => binding),
+  );
+  const transitiveDeclarations = Array.from(transitiveBindings.entries())
+    .sort(([left], [right]) => left.localeCompare(right))
+    .map(
+      ([, { binding, namespaceBinding, exportName }]) =>
+        `const ${binding} = getSmrtExport(${namespaceBinding}, ${JSON.stringify(exportName)});
+if (${viteOnlyNamespaceBindings.has(namespaceBinding) ? 'SMRT_VITE_RUNTIME && ' : ''}!${binding}) throw new Error(${JSON.stringify(`[smrt:consumer] Provider-owned module did not export ${exportName}`)});`,
+    );
+  const transitiveCollectionDeclarations = transitiveCollectionChecks.map(
+    ({ collectionBinding, itemBinding, viteOnly }) =>
+      `if (${viteOnly ? 'SMRT_VITE_RUNTIME && ' : ''}${collectionBinding}._itemClass !== ${itemBinding}) throw new Error('[smrt:consumer] Provider-owned collection does not match its item constructor');`,
   );
   const registrationManifestLiteral = JSON.stringify(
     JSON.stringify(registrationManifests),
@@ -1532,6 +2300,7 @@ async function generateRegistrationFile(
  */
 
 import { ObjectRegistry } from '@happyvertical/smrt-core';
+${transitiveNamespaces.size > 0 ? "import { registerHooks } from 'node:module';" : ''}
 
 ${imports.join('\n')}
 
@@ -1542,7 +2311,35 @@ ${imports.join('\n')}
  */
 const getSmrtExport = (provider, exportName) =>
   typeof provider[exportName] === 'function' ? provider[exportName] : undefined;
+${
+  transitiveNamespaces.size > 0
+    ? `const SMRT_RESOLVER_MODULE = 'data:text/javascript,export default (specifier) => import.meta.resolve(specifier)';
+let smrtResolverToken = 0;
+const importSmrtDependency = async (specifier, providerPackageName) => {
+  const parentURL = import.meta.resolve(providerPackageName);
+  const token = \`smrt-consumer-resolve-\${smrtResolverToken++}\`;
+  const hooks = registerHooks({
+    resolve(requested, context, nextResolve) {
+      return requested === token
+        ? nextResolve(specifier, { ...context, parentURL })
+        : nextResolve(requested, context);
+    },
+  });
+  try {
+    const resolver = (await import(/* @vite-ignore */ SMRT_RESOLVER_MODULE)).default;
+    return import(/* @vite-ignore */ resolver(token));
+  } finally {
+    hooks.deregister();
+  }
+};
+`
+    : ''
+}
+${viteRuntimePrelude}${viteOnlyImports.join('\n')}
+${transitiveNamespaceDeclarations.join('\n')}
 ${importDeclarations.join('\n')}
+${transitiveDeclarations.join('\n')}
+${transitiveCollectionDeclarations.join('\n')}
 
 const smrtRegistrationManifests = JSON.parse(${registrationManifestLiteral});
 
@@ -1666,9 +2463,11 @@ function generateFallbackTypesModule(manifest: ConsumerManifest): string {
     return `// No types available`;
   }
 
-  // Generate basic interfaces
-  const interfaces = objects.map(([_name, obj]) => {
-    return `export interface ${obj.className}Data {
+  // One basic interface per class (#3296), in the shared declaration order.
+  const interfaces = selectObjectDeclarations(
+    manifest as unknown as SmartObjectManifest,
+  ).map(({ interfaceName }) => {
+    return `export interface ${interfaceName} {
   id?: string;
   created_at?: string;
   updated_at?: string;

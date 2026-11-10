@@ -142,7 +142,8 @@ async generate(options: Record<string, never>, context: JobExecutionContext) {
 
 Run a `TaskRunner` for the `mcp-tasks` queue in application deployments. Task
 cancellation is cooperative: the job row becomes cancelled immediately and a
-running handler must observe its context before doing further side effects.
+running handler must observe `context.signal` (an `AbortSignal` that aborts on
+cancellation, or on a `'fail'`/`'kill'` timeout) before doing further side effects.
 
 ### Liveness-safe job execution
 
@@ -191,7 +192,71 @@ ownership record before displaying it.
 
 ### Schedule recurring jobs with ScheduleRunner
 
-The `ScheduleRunner` polls the `_smrt_agent_schedules` table for due cron entries and creates `SmrtJob` records for the `TaskRunner` to execute. Wire them together via events:
+The `ScheduleRunner` polls the `_smrt_agent_schedules` table for due cron entries and creates `SmrtJob` records for the `TaskRunner` to execute. Each schedule's cron is evaluated in its row's IANA `timezone` (default `UTC`, DST-correct), independent of the host `TZ`. Each comma-separated list term is matched separately, and a step (`*/n`, `a-b/n`, `a/n`) counts from the field minimum or the term's base, as in standard cron.
+
+Upgrade note: rows that relied on the old behaviour shift. A row left at the default `timezone = 'UTC'` on a non-UTC host now fires in UTC, and day-of-month or month `*/n` now matches 1, 1+n, … (for example `0 0 */2 * *` runs on odd days) instead of counting from 0.
+
+Admission rechecks the current row under a database lock, and enqueues the job
+and advances `next_run` in one transaction. Multiple scheduler processes admit
+one job per due occurrence. An enqueue failure rolls back the slot so the next
+poll can retry. Pending jobs and delayed retries occupy `maxConcurrent` capacity.
+TaskRunner owns job crash recovery; schedule reconciliation never independently
+fails a worker-owned job.
+
+The handler receives `_scheduledFor`, the original due slot as a UTC ISO instant.
+This is **fire-once-forward**: after one overdue occurrence the runner arms the
+next future cron time; it does not backfill every missed slot. Keep domain
+request replay and current authorization in the handler. Reserved occurrence
+arguments cannot be set in `method_args`.
+
+Optional `agentTypes` and `tenantIds` limit selection, reconciliation and claim
+(`[]` selects none); `queue` chooses the output queue (default `agents`). Use
+exact scopes and a dedicated task-worker queue for an application-specific host.
+Use the same optional `tenantIds` scope on `TaskRunner`: ready claims and orphan
+recovery filter before changing ownership or terminal state, and recovery also
+honors configured queues. Explicit empty scopes process nothing. A tenant-scoped
+TaskRunner defaults to `retention: false`, because the normal retention sweep is
+system-wide maintenance. Worker queue advertising remains queue-level and does
+not assert per-tenant availability.
+
+For handlers that require proof of admission, pass a trusted host
+`occurrenceSigner` to ScheduleRunner and require its `occurrenceIntegrity`
+capability. The runner signs the exact job ID, tenant, schedule, UTC period,
+execution target and full args inside the enqueue transaction, saving reserved
+`_scheduleAdmission` metadata before commit. `verifyScheduleAdmission(job, signer)`
+fails closed on copied or changed job/period/tenant/args and missing signatures;
+`getScheduleAdmissionPayload(job, keyId)` only builds the pure signature payload.
+Unsigned legacy runners remain supported, so protected handlers must explicitly
+verify the persisted row. Exact job retries preserve their signature. A trusted
+keyring may retain old verification keys while minting with a current key; unknown
+or retired keys deny. Signature verification complements current authority and
+normal database claims/idempotency. See [the full admission integrity contract](agents/scheduling.md#exact-occurrence-integrity).
+
+Stop the scheduler before draining the TaskRunner: `await scheduleRunner.stop()`
+waits for its in-flight admission transaction.
+
+`SmrtJobCollection.enqueueJob` also accepts a tenant-partitioned `dedupeKey`
+(nonblank, at most 512 characters). Concurrent enqueues return the same
+pending/running job unchanged. Once terminal, a new job may reserve the key;
+retrying an older job refuses if a newer one reserves it. This prevents overlapping
+nonterminal jobs for a caller-defined resource, rather than permanent request
+replay. JavaScript timeout cannot preempt an orphan handler's side effects.
+Use `{ transaction: tx }` as the second argument to join a caller-owned
+transaction without nesting (required on DuckDB). Propagate failures and commit
+or roll back that transaction. Run `smrt db:migrate` before upgrading workers:
+the nullable job provenance field and package-owned `_smrt_job_dedupe_slots`
+model are additive schema changes. Key slots retain one pointer per distinct key;
+use stable resource keys rather than one-shot request tokens.
+
+Keyed UUID tenant identities must use canonical lowercase hyphenated spelling,
+including ambient context; alternate valid UUID spellings fail before writes.
+Opaque non-UUID IDs retain exact case. `job.retry()` re-reads stored identity and
+args, locks schedule→key→job, and enforces schedule capacity before resetting
+lifecycle fields. It preserves args/signatures and refreshes the model revision.
+Use `retry({ transaction: tx })` to join a caller transaction without nesting and
+propagate failures/roll back. See the [retry capacity and lock-order contract](agents/scheduling.md#public-retry-capacity-and-lock-order).
+
+Wire them together via events:
 
 ```typescript
 import { ScheduleRunner } from '@happyvertical/smrt-jobs';
@@ -216,6 +281,7 @@ taskRunner.on('job:failed', (job, error) => {
 | Table | Purpose |
 |-------|---------|
 | `_smrt_jobs` | Persistent job queue (SmrtJob records) |
+| `_smrt_job_dedupe_slots` | Tenant-partitioned nonterminal job-key serialization |
 | `_smrt_agent_schedules` | Cron schedule entries polled by ScheduleRunner |
 
 ## API
@@ -376,3 +442,10 @@ values before any awaited enqueue work. Extra caller fields are not persisted,
 and later mutation of the caller's binding cannot change the durable review
 reference. Live authorization still checks the saved reference at execution
 and resume; the snapshot never grants approval.
+
+Protected schedules can require a durable exact queue/signing-key policy through
+`methodArgs._scheduleAdmissionPolicy`. An unsigned/default runner leaves them
+untouched and emits `schedule:blocked`; require the
+`requiredOccurrenceIntegrity` capability before creating such schedules. See
+[durable required admission](agents/scheduling.md#durable-required-admission-3346)
+for the typed policy, authorized rotation and verification-key retention contract.

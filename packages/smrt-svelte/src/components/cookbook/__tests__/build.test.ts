@@ -1,7 +1,7 @@
 import type { Cookbook } from '@happyvertical/smrt-types';
 import { beforeAll, describe, expect, it } from 'vitest';
 import { applyShellLayout } from '../../workspace/admin-shell/layout.js';
-import { buildCookbookShell } from '../build.js';
+import { buildCookbookShell, humanize, pluralize } from '../build.js';
 import { narrowCatalog } from '../catalog.js';
 import type { CookbookCatalog } from '../types.js';
 import {
@@ -303,11 +303,7 @@ describe('buildCookbookShell: overviews', () => {
       dataWidgets: true,
     });
     const defaults = rich.overviews['section:accounting']?.definition.defaults;
-    expect(defaults?.map((w) => w.id)).toEqual([
-      'shortcuts',
-      'count',
-      'latest',
-    ]);
+    expect(defaults?.map((w) => w.id)).toEqual(['shortcuts', 'latest']);
     expect(defaults?.[1]?.options.model).toMatch(
       /^@happyvertical\/smrt-ledgers:/,
     );
@@ -315,6 +311,29 @@ describe('buildCookbookShell: overviews', () => {
     expect(rich.overviews['section:accounting']?.definition.models).toContain(
       '@happyvertical/smrt-commerce:Order',
     );
+  });
+
+  it('opens a section led by a recipe with its own page on that widget (#4100)', () => {
+    const withReports = cookbook({
+      recipes: [...fixture('bakery').recipes, 'reports.runtime'],
+    });
+    const plain = buildCookbookShell({ cookbook: withReports, catalog });
+    // Without data widgets the host has no loaders: the shortcuts stay.
+    expect(
+      plain.overviews['section:reports.runtime']?.definition.defaults.map(
+        (w) => w.type,
+      ),
+    ).toEqual(['shortcuts']);
+    const rich = buildCookbookShell({
+      cookbook: withReports,
+      catalog,
+      dataWidgets: true,
+    });
+    expect(
+      rich.overviews['section:reports.runtime']?.definition.defaults,
+    ).toEqual([
+      { id: 'saved-reports', type: 'saved-reports', span: 4, options: {} },
+    ]);
   });
 
   it("carries the cookbook's stored override, drops an empty one, and reports unknown pages", () => {
@@ -445,4 +464,47 @@ describe('buildCookbookShell: recipe surfaces', () => {
         shell.settingsPanels.length,
     ).toBeGreaterThan(0);
   });
+});
+
+describe('pluralize', () => {
+  it('pluralizes model labels, leaving nouns that are their own plural', () => {
+    expect(pluralize(humanize('Customer'))).toBe('Customers');
+    expect(pluralize(humanize('Category'))).toBe('Categories');
+    expect(pluralize(humanize('Address'))).toBe('Addresses');
+    expect(pluralize(humanize('EventSeries'))).toBe('Event Series');
+    expect(pluralize('Species')).toBe('Species');
+  });
+});
+
+it('the actual cookbook builder preserves explicit legacy count edits without injecting new defaults', () => {
+  const original = fixture(FIXTURE_NAMES[0]);
+  const rich = buildCookbookShell({
+    cookbook: original,
+    catalog,
+    dataWidgets: true,
+  });
+  const id = Object.keys(rich.overviews).find((id) =>
+    rich.overviews[id].definition.defaults.some((w) => w.id === 'latest'),
+  );
+  if (!id) throw new Error('No ordinary section');
+  expect(
+    rich.overviews[id].definition.defaults.some((w) => w.type === 'metric'),
+  ).toBe(false);
+  const cookbook = {
+    ...original,
+    overviews: {
+      [id]: { version: 1 as const, changed: { count: { span: 2 } } },
+    },
+  };
+  const raw = JSON.stringify(cookbook);
+  const projected = buildCookbookShell({
+    cookbook,
+    catalog,
+    dataWidgets: true,
+  });
+  expect(
+    projected.overviews[id].definition.defaults.map((w) => w.id),
+  ).toContain('count');
+  expect(projected.overviews[id].override).toEqual(cookbook.overviews[id]);
+  expect(JSON.stringify(cookbook)).toBe(raw);
 });

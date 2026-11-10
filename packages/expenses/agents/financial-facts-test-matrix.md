@@ -94,3 +94,60 @@ runs pass four SQLite and seven PostgreSQL cases (`fixed-sqlite.log`,
 `fixed-postgres.log`). Final committed-head package build, full test, PostgreSQL,
 typecheck, and browser commands are recorded with HEAD and exit status in
 `validation-records.json` and their named logs in that same evidence directory.
+
+
+## Exact refund positions (#4070)
+
+Risk: high — cumulative financial reversals and concurrent edits. The shared
+SQLite/PostgreSQL suite covers partial/full/excess cash reversals (including
+rejected rows), independent subtotal/charged/recovery/nonrecoverable caps, exact
+component identities, signed residuals, unknown legacy/partial facts, source
+corrections, refund edits/reparenting, and rollback of refund plus source revision.
+PostgreSQL additionally proves stale sibling amount and financial-facts edits
+abort under REPEATABLE READ, then fail the appropriate cap on a fresh retry.
+No missing financial facts are synthesized. A former freeze fixture now uses a
+source gross sufficient for its refund and retains known linked facts after
+reopen: clearing them would erase already-proved reversal bounds.
+
+Focused commands: `pnpm --filter @happyvertical/smrt-expenses exec vitest run
+src/__tests__/expenses.test.ts`, the same PostgreSQL optional test through
+`scripts/run-with-ci-postgres.mjs`, and owning-package `tsc -p tsconfig.json
+--noEmit`. External receipts: `/home/will/Work/tmp/tc-mvp-20261016/expense-refund-caps/`.
+Coordinator owns combined prerequisites, release validation, and review.
+
+## Refund cash direction and reimbursement positions (#4073)
+
+Risk: high — retained payment amount, liability/receivable direction, additive
+schema migration, and recipient-vs-payment concurrency. Shared SQLite/PostgreSQL
+cases prove company receipts preserve gross personal claim, person receipts
+reduce it, exact full-remaining payment is retained independently of economic
+cost basis, later personal receipt creates a separate company receivable,
+unknown/other-person recipients and historical missing paid amounts remain
+unknown, direct overwrite/source-claim rewrite fail closed, recipient review
+freeze/shape apply, and caller rollback restores an unpaid claim. PostgreSQL
+pins a REPEATABLE READ reimbursement before an independent recipient correction
+and requires serialization rejection, followed by exact fresh payment. Existing
+service-backed permission tests run unchanged; optional expected amount remains
+behind the same authorization. Migration verifies new fields stay null on legacy
+rows; no historical payer or paid cash is inferred.
+
+Focused evidence: `/home/will/Work/tmp/tc-mvp-20261016/expense-reimbursement-position/`.
+No worker broad build/suite/review/PR; coordinator owns combined release gates.
+
+## Explicit third-party refund recipients (#4082)
+
+Shared SQLite/PostgreSQL cases retain exact bounded third-party source names,
+refuse blank/malformed/overlong names and extra fields, persist/reload guarded
+JSON and preserve reviewed provenance. Recipient edits claim the source revision;
+caller rollback restores both evidence and revision. Person reimbursement with
+third-party cash receipt returns unknown-third-party-recipient, nullable cash
+positions and retained actual paid cash; it cannot infer company income, person
+payment or settlement. An exact source name is evidence, not verified customer
+identity. Existing company/person and unknown legacy cases remain covered.
+
+## Complete programmatic refund reads
+
+A shared 201-refund SQLite/PostgreSQL case verifies full cumulative cash capacity,
+exact person reimbursement, over-refund refusal and source-reduction refusal.
+The internal collection reads intentionally use the unbounded programmatic
+`list()` contract; generated API page defaults do not apply to those reads.

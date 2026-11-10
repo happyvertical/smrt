@@ -14,14 +14,16 @@
  * objects AND its consumed packages' objects (via the `.smrt/register.js` it
  * imports), with each class's package-qualified identity and isolated
  * manifest exactly as the web server registers them. Application sources are
- * bundled; every package import stays external and is resolved from
- * `node_modules` at runtime, like the rest of the deployed image — so the
- * worker and `@happyvertical/smrt-core` share one registry.
+ * bundled; package imports stay external and are resolved from `node_modules`
+ * at runtime, except Oxc's decorator helper. Oxc injects that helper into
+ * transformed application classes but applications do not declare it, so the
+ * artifact bundles it. `@happyvertical/*` packages stay external so the worker
+ * and `@happyvertical/smrt-core` share one registry.
  */
 
 import { isAbsolute, join, relative, resolve } from 'node:path';
-import type { Alias, ResolvedConfig } from 'vite';
 import { importProjectVite } from '../utils/import-project-vite.js';
+import type { SmrtAlias, SmrtResolvedConfig } from './plugin-contract.js';
 
 /** Directory (under the project root) the compiled registration is written to. */
 export const WORKER_REGISTRATION_DIR = '.smrt/runtime';
@@ -47,8 +49,8 @@ function isProjectSource(projectRoot: string, child: string): boolean {
  */
 export function projectSourceAliases(
   projectRoot: string,
-  aliases: readonly Alias[] | undefined,
-): Alias[] {
+  aliases: readonly SmrtAlias[] | undefined,
+): SmrtAlias[] {
   return (aliases ?? []).filter(
     (alias) =>
       typeof alias.replacement === 'string' &&
@@ -57,7 +59,7 @@ export function projectSourceAliases(
   );
 }
 
-function matchesAlias(id: string, alias: Alias): boolean {
+function matchesAlias(id: string, alias: SmrtAlias): boolean {
   const { find } = alias;
   if (typeof find === 'string') return id === find || id.startsWith(`${find}/`);
   find.lastIndex = 0;
@@ -69,13 +71,22 @@ function matchesAlias(id: string, alias: Alias): boolean {
  * and project-alias imports; keep every other bare specifier external.
  */
 export function createWorkerRegistrationExternal(
-  aliases: readonly Alias[],
+  aliases: readonly SmrtAlias[],
 ): (id: string) => boolean {
   return (id) => {
     if (id.startsWith('.') || id.startsWith('\0') || isAbsolute(id)) {
       return false;
     }
     if (aliases.some((alias) => matchesAlias(id, alias))) return false;
+    // Vite/Oxc lowers legacy decorators to imports from this package. It is a
+    // core build dependency, not a consumer dependency, so bundle its root and
+    // helper subpaths into the standalone worker artifact.
+    if (
+      id === '@oxc-project/runtime' ||
+      id.startsWith('@oxc-project/runtime/')
+    ) {
+      return false;
+    }
     return true;
   };
 }
@@ -86,7 +97,7 @@ export interface BuildWorkerRegistrationOptions {
   /** The generated `smrt-register.ts` to compile. */
   registrationFile: string;
   /** The consumer build's resolved config (aliases, decorator transform, mode). */
-  resolvedConfig: Pick<ResolvedConfig, 'mode' | 'oxc' | 'resolve'>;
+  resolvedConfig: Pick<SmrtResolvedConfig, 'mode' | 'oxc' | 'resolve'>;
 }
 
 /**

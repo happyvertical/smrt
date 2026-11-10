@@ -24,10 +24,12 @@ import {
   type ReportLifecycleOptions,
   type ReportLifecycleSnapshot,
 } from './lifecycle.js';
+import { fieldPolicy } from './registry-columns.js';
 import type {
   ReportAggregateFn,
   ReportDefinition,
   ReportFieldDefinition,
+  ReportJoinDefinition,
   ReportRefreshConfig,
   ReportTimeBucketUnit,
 } from './types.js';
@@ -58,7 +60,12 @@ export type ReportColumnKind = 'identity' | 'group' | 'bucket' | 'aggregate';
  */
 export type ReportFilterScope = 'where' | 'having';
 
-export interface ReportColumnDescriptor extends DataQueryFieldDescriptor {
+/**
+ * Report columns do not carry data-query allowed values (#4381): the adapter
+ * builds its schema from report definitions and never emits them.
+ */
+export interface ReportColumnDescriptor
+  extends Omit<DataQueryFieldDescriptor, 'values' | 'valuesEnforced'> {
   /** Stable output column id (never a property path). */
   id: string;
   fieldName: string;
@@ -73,6 +80,13 @@ export interface ReportColumnDescriptor extends DataQueryFieldDescriptor {
   bucket?: ReportTimeBucketUnit;
   aggregate?: ReportAggregateFn;
   distinct?: boolean;
+  /**
+   * A canonical rendering of what the column computes beyond a plain source
+   * column: its row expression and filter, and the joins it reads. It exists
+   * so a changed definition changes the report fingerprint; consumers treat it
+   * as opaque.
+   */
+  semantics?: string;
 }
 
 export interface ReportRefreshDescriptor {
@@ -118,6 +132,12 @@ export interface ReportAdapterDescriptor {
   queryExecution: ReportQueryExecutionDescriptor;
   dataTable: ReportDataTableDescriptor;
   drilldown: ReportDrilldownDescriptor;
+  /**
+   * Present when the report joins other models: every join and the report's
+   * `where`/`having`, canonically rendered, so a changed join changes the
+   * definition fingerprint even when no visible column reads it. Opaque.
+   */
+  semantics?: string;
   refresh: ReportRefreshDescriptor;
 }
 
@@ -400,29 +420,6 @@ function registeredClass(
   );
 }
 
-function fieldPolicy(field: RegistryField | undefined): {
-  sensitive: boolean;
-  readPermission?: string;
-} {
-  const meta = field?._meta ?? {};
-  const sensitivity = [field?.sensitivity, meta.sensitivity].find(
-    (value): value is string => typeof value === 'string',
-  );
-  return {
-    sensitive:
-      field?.sensitive === true ||
-      meta.sensitive === true ||
-      sensitivity === 'sensitive' ||
-      sensitivity === 'secret',
-    readPermission:
-      typeof field?.readPermission === 'string'
-        ? field.readPermission
-        : typeof meta.readPermission === 'string'
-          ? meta.readPermission
-          : undefined,
-  };
-}
-
 function descriptorMetadata(field: RegistryField | undefined): {
   format?: string;
   sensitivity?: ReportColumnSensitivity;
@@ -467,6 +464,54 @@ function queryType(type: string | undefined): DataQueryFieldDescriptor['type'] {
   }
 }
 
+/** `alias.fieldName` as `alias.field_name`; a bare name as its column. */
+function canonical(value: unknown): string {
+  if (Array.isArray(value)) return `[${value.map(canonical).join(',')}]`;
+  if (value && typeof value === 'object') {
+    const object = value as Record<string, unknown>;
+    return `{${Object.keys(object)
+      .filter((key) => object[key] !== undefined)
+      .sort()
+      .map((key) => `${JSON.stringify(key)}:${canonical(object[key])}`)
+      .join(',')}}`;
+  }
+  return JSON.stringify(value ?? null);
+}
+
+/** What a column computes beyond a plain source column, for the fingerprint. */
+function columnSemantics(
+  field: ReportFieldDefinition,
+  joins: readonly ReportJoinDefinition[],
+): string | undefined {
+  const report = field.report;
+  if (!report) return undefined;
+  const expr =
+    report.kind === 'aggregate' || report.kind === 'group'
+      ? report.expr
+      : undefined;
+  const filter = report.kind === 'aggregate' ? report.filter : undefined;
+  const text = canonical([expr, filter]);
+  const aliases = new Set(
+    [...text.matchAll(/"col":"([a-z][a-z0-9_]*)\./g)].map((match) => match[1]),
+  );
+  const own =
+    report.kind === 'group'
+      ? report.sourceColumn
+      : report.kind === 'bucket'
+        ? report.sourceColumn
+        : report.column;
+  if (own?.includes('.')) aliases.add(own.split('.')[0]);
+  const used = joins
+    .filter((join) => aliases.has(join.alias))
+    .map((join) => ({ ...join }));
+  if (!expr && !filter && used.length === 0) return undefined;
+  return canonical({ expr, filter, joins: used });
+}
+
+function columnRef(ref: string): string {
+  return ref.split('.').map(toSnakeCase).join('.');
+}
+
 function configuredTenantField(configured?: string): string | undefined {
   return configured ? toSnakeCase(configured) : undefined;
 }
@@ -480,13 +525,20 @@ function isColumnBackedField(field: RegistryField | undefined): boolean {
 function reportColumn(
   field: ReportFieldDefinition,
   registryField: RegistryField | undefined,
+  joins: readonly ReportJoinDefinition[] = [],
+  nullableColumns: ReadonlySet<string> = new Set(),
 ): ReportColumnDescriptor | undefined {
   const policy = fieldPolicy(registryField);
   // A descriptor is an exposure boundary. Without a principal/permission
   // context, sensitive, permission-gated, and non-column fields fail closed.
+  // A column that reads a joined model's field is as restricted as that field.
+  const relatedRestricted = (field.related ?? []).some(
+    (related) => related.sensitive || related.readPermission,
+  );
   if (
     policy.sensitive ||
     policy.readPermission ||
+    relatedRestricted ||
     !isColumnBackedField(registryField)
   ) {
     return undefined;
@@ -496,7 +548,12 @@ function reportColumn(
   const report = field.report;
   if (!report) return undefined;
   const type = queryType(field.type ?? registryField?.type);
-  const filterOperators = filterOperatorsFor(type);
+  const valueOperators = filterOperatorsFor(type);
+  // Null tests (#4448) only where the materialized column can hold null.
+  const filterOperators =
+    valueOperators && nullableColumns.has(id)
+      ? [...valueOperators, ...NULL_TEST_OPERATORS]
+      : valueOperators;
   const base: ReportColumnDescriptor = {
     id,
     fieldName: field.fieldName,
@@ -520,18 +577,16 @@ function reportColumn(
           ? (['group'] as const)
           : []),
     ],
-    ...(report.kind === 'group'
-      ? { sourceColumn: toSnakeCase(report.sourceColumn ?? field.fieldName) }
+    ...(report.kind === 'group' && !report.expr
+      ? { sourceColumn: columnRef(report.sourceColumn ?? field.fieldName) }
       : {}),
     ...(report.kind === 'bucket'
-      ? { bucket: report.unit, sourceColumn: toSnakeCase(report.sourceColumn) }
+      ? { bucket: report.unit, sourceColumn: columnRef(report.sourceColumn) }
       : {}),
     ...(report.kind === 'aggregate'
       ? {
           aggregate: report.fn,
-          ...(report.column
-            ? { sourceColumn: toSnakeCase(report.column) }
-            : {}),
+          ...(report.column ? { sourceColumn: columnRef(report.column) } : {}),
           ...(report.distinct === undefined
             ? {}
             : { distinct: report.distinct }),
@@ -539,6 +594,8 @@ function reportColumn(
       : {}),
     ...descriptorMetadata(registryField),
   };
+  const semantics = columnSemantics(field, joins);
+  if (semantics) base.semantics = semantics;
   return base;
 }
 
@@ -573,6 +630,28 @@ function toQueryField(
       ? {}
       : { filterOperators: [...column.filterOperators] }),
   };
+}
+
+/** Null tests (#4448): condition operators that take no value. */
+const NULL_TEST_OPERATORS: readonly DataQueryFilterOperator[] = [
+  'isNotNull',
+  'isNull',
+];
+
+/**
+ * Materialized report columns that can hold null (#4448), read from the
+ * report class's manifest schema: present, not `notNull`, and not the primary
+ * key. A column the schema does not describe gets no null test.
+ */
+function nullableReportColumns(reportClassName: string): Set<string> {
+  const columns = ObjectRegistry.getSchema(reportClassName)?.columns ?? {};
+  const nullable = new Set<string>();
+  for (const [name, column] of Object.entries(columns)) {
+    if (column.notNull !== true && column.primaryKey !== true) {
+      nullable.add(name);
+    }
+  }
+  return nullable;
 }
 
 function filterOperatorsFor(
@@ -907,7 +986,9 @@ function drilldownDescriptor(
           sourceColumn: string;
         } =>
           (column.kind === 'group' || column.kind === 'bucket') &&
-          typeof column.sourceColumn === 'string',
+          typeof column.sourceColumn === 'string' &&
+          // A joined column is not a column of the source model.
+          !column.sourceColumn.includes('.'),
       )
       .map((column) => ({
         id: column.id,
@@ -935,10 +1016,18 @@ export async function buildReportAdapterDescriptor(
   const tenantField = configuredTenantField(
     registered?.tenantScopedConfig?.field,
   );
+  const nullableColumns = nullableReportColumns(definition.reportClassName);
   const columns = [
     identityColumn(),
     ...definition.fields
-      .map((field) => reportColumn(field, fields.get(field.fieldName)))
+      .map((field) =>
+        reportColumn(
+          field,
+          fields.get(field.fieldName),
+          definition.joins,
+          nullableColumns,
+        ),
+      )
       .filter((field): field is ReportColumnDescriptor => Boolean(field)),
   ].sort((left, right) => left.id.localeCompare(right.id));
   const schema: DataQuerySchema = {
@@ -980,6 +1069,15 @@ export async function buildReportAdapterDescriptor(
     },
     dataTable,
     drilldown: drilldownDescriptor(columns, definition.sourceClassName),
+    ...(definition.joins?.length
+      ? {
+          semantics: canonical({
+            joins: definition.joins,
+            where: definition.where,
+            having: definition.having,
+          }),
+        }
+      : {}),
     refresh: refreshDescriptor(definition.refresh, options.refreshPermission),
   };
 }
@@ -1003,6 +1101,23 @@ export async function buildReportDrilldownQuery(
   row: Readonly<Record<string, unknown>>,
   options: ReportAdapterOptions = {},
 ): Promise<ReportDrilldownQuery> {
+  const definition = await buildReportDefinition(reportCtor);
+  // A row grouped by a joined column or a computed value cannot be bound back
+  // to source rows by a plain source column; a handoff missing that constraint
+  // would match every source row of the group's other keys.
+  const unbindable = definition.fields.find(
+    (field) =>
+      (field.report?.kind === 'group' &&
+        (field.report.expr || field.report.sourceColumn?.includes('.'))) ||
+      (field.report?.kind === 'bucket' &&
+        field.report.sourceColumn.includes('.')),
+  );
+  if (unbindable) {
+    throw new DataQueryValidationError(
+      `Report drilldown is not available for ${definition.reportClassName}: ${unbindable.fieldName} groups by a joined or computed value`,
+      'DATA_QUERY_UNSUPPORTED',
+    );
+  }
   const descriptor = await buildReportAdapterDescriptor(reportCtor, options);
   const constraints = descriptor.drilldown.fields.map((field) => {
     if (!Object.hasOwn(row, field.id)) {
@@ -1072,6 +1187,10 @@ function inverseOperator(
       return 'notIn';
     case 'notIn':
       return 'in';
+    case 'isNull':
+      return 'isNotNull';
+    case 'isNotNull':
+      return 'isNull';
     case 'like':
       return reportFilterError(
         'Report filters do not support negating a LIKE predicate',
@@ -1088,6 +1207,10 @@ function collectionCondition(
   const scalar = (key: string, scalarValue: unknown): MaterializedWhere => [
     [{ [key]: scalarValue }],
   ];
+
+  // Null tests (#4448): `{ col: null }` is IS NULL, `{ 'col !=': null }` IS NOT NULL.
+  if (operator === 'isNull') return scalar(field, null);
+  if (operator === 'isNotNull') return scalar(keyFor('!='), null);
 
   if (operator === 'in') {
     const values = value as Array<string | number | boolean | null>;
@@ -1107,7 +1230,7 @@ function collectionCondition(
   }
 
   const suffix: Record<
-    Exclude<DataQueryFilterOperator, 'in' | 'notIn'>,
+    Exclude<DataQueryFilterOperator, 'in' | 'notIn' | 'isNull' | 'isNotNull'>,
     string
   > = {
     eq: '',

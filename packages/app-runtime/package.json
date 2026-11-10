@@ -1,6 +1,6 @@
 {
   "name": "@happyvertical/smrt-app-runtime",
-  "version": "0.55.21",
+  "version": "0.60.16",
   "description": "Validated local, self-hosted, and cloud runtime composition for s-m-r-t applications",
   "type": "module",
   "main": "./dist/index.js",
@@ -10,9 +10,41 @@
       "types": "./dist/index.d.ts",
       "import": "./dist/index.js"
     },
+    "./sveltekit-runtime": {
+      "types": "./dist/sveltekit-runtime.d.ts",
+      "import": "./dist/sveltekit-runtime.js"
+    },
     "./sveltekit": {
       "types": "./dist/sveltekit/index.d.ts",
       "import": "./dist/sveltekit.js"
+    },
+    "./vault-recovery": {
+      "types": "./dist/vault-recovery.d.ts",
+      "import": "./dist/vault-recovery.js"
+    },
+    "./vault-device-key": {
+      "types": "./dist/vault-device-key.d.ts",
+      "import": "./dist/vault-device-key.js"
+    },
+    "./vault-key-generation": {
+      "types": "./dist/vault-key-generation.d.ts",
+      "import": "./dist/vault-key-generation.js"
+    },
+    "./device-entitlements": {
+      "types": "./dist/device-entitlements.d.ts",
+      "import": "./dist/device-entitlements.js"
+    },
+    "./vault-device-transfer": {
+      "types": "./dist/vault-device-transfer.d.ts",
+      "import": "./dist/vault-device-transfer.js"
+    },
+    "./vault-key-store": {
+      "types": "./dist/vault-key-store.d.ts",
+      "import": "./dist/vault-key-store.js"
+    },
+    "./vault-key-lifecycle": {
+      "types": "./dist/vault-key-lifecycle.d.ts",
+      "import": "./dist/vault-key-lifecycle.js"
     }
   },
   "files": [
@@ -27,7 +59,7 @@
     "dev": "npm run build:watch",
     "test": "vitest run",
     "test:watch": "vitest",
-    "typecheck": "tsc --noEmit",
+    "typecheck": "tsc --noEmit && tsc -p tsconfig.type-tests.json",
     "prepack": "node ../../scripts/prepack-package.js"
   },
   "peerDependencies": {
@@ -39,6 +71,7 @@
     }
   },
   "dependencies": {
+    "@happyvertical/encryption": "catalog:",
     "@happyvertical/smrt-config": "workspace:*",
     "@happyvertical/smrt-core": "workspace:*",
     "@happyvertical/smrt-jobs": "workspace:*",
@@ -53,7 +86,7 @@
     "@types/node": "24.13.6",
     "tsx": "^4.23.13",
     "typescript": "6.0.3",
-    "vite": "8.1.4",
+    "vite": "8.1.6",
     "vitest": "4.1.10"
   },
   "engines": {

@@ -7,7 +7,7 @@
  *    junction key fields (regression test for round-4 codex finding)
  */
 
-import { existsSync, mkdtempSync, rmSync, unlinkSync } from 'node:fs';
+import { mkdtempSync, rmSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
@@ -18,6 +18,7 @@ import { SmrtJunction, SmrtJunctionBase } from '../junction';
 import { SmrtObject } from '../object';
 import { ObjectRegistry, smrt } from '../registry';
 import { getTestDatabase } from '../testing/database';
+import { cleanupFileDatabase } from '../testing/file-cleanup';
 
 @smrt({
   tableName: 'junction_test_links',
@@ -86,8 +87,8 @@ describe('SmrtJunction', () => {
     });
   });
 
-  afterEach(() => {
-    if (existsSync(dbPath)) unlinkSync(dbPath);
+  afterEach(async () => {
+    await cleanupFileDatabase(links.db, dbPath);
   });
 
   describe('compatible bulk lifecycle', () => {
@@ -109,11 +110,18 @@ describe('SmrtJunction', () => {
         // so system cleanup and feed SQL cannot hide behind adapter methods.
         const driver = links.db.client as any;
         let statementCount = 0;
+        let batchWrites = 0;
+        const record = (statement: string | { sql: string }) => {
+          statementCount++;
+          const sql = typeof statement === 'string' ? statement : statement.sql;
+          if (sql.startsWith('INSERT INTO "junction_test_links"'))
+            batchWrites++;
+        };
         const executeOriginal = driver.execute.bind(driver);
         const execute = vi
           .spyOn(driver, 'execute')
           .mockImplementation((...args: any[]) => {
-            statementCount++;
+            record(args[0]);
             return executeOriginal(...args);
           });
         const transactionOriginal = driver.transaction.bind(driver);
@@ -123,12 +131,11 @@ describe('SmrtJunction', () => {
             const tx = await transactionOriginal(...args);
             const executeTx = tx.execute.bind(tx);
             tx.execute = (...queryArgs: any[]) => {
-              statementCount++;
+              record(queryArgs[0]);
               return executeTx(...queryArgs);
             };
             return tx;
           });
-        const query = vi.spyOn(links.db, 'query');
         const upsert = vi.spyOn(links.db, 'upsert');
         await links.setLinks(owner, newIds);
         counts.push(statementCount);
@@ -136,12 +143,7 @@ describe('SmrtJunction', () => {
         execute.mockRestore();
         transaction.mockRestore();
         expect(upsert).not.toHaveBeenCalled();
-        expect(
-          query.mock.calls.filter(([sql]) =>
-            String(sql).startsWith('INSERT INTO "junction_test_links"'),
-          ),
-        ).toHaveLength(1);
-        query.mockRestore();
+        expect(batchWrites).toBe(1);
         upsert.mockRestore();
         const after = await links.byLeft(owner);
         expect(after.map((item) => item.assetId)).toEqual(newIds);
@@ -175,15 +177,16 @@ describe('SmrtJunction', () => {
       const query = vi
         .spyOn(links.db, 'query')
         .mockImplementation(async (sql, ...args) => {
+          const result = await queryOriginal(sql, ...args);
           if (
             !competitorId &&
-            sql.startsWith('INSERT INTO "junction_test_links"')
+            sql.startsWith('SELECT "id" FROM "junction_test_links"')
           ) {
             const competitor = await links.attach('owner-race', 'a');
             if (!competitor.id) throw new Error('Expected attached link id');
             competitorId = competitor.id;
           }
-          return queryOriginal(sql, ...args);
+          return result;
         });
       await links.setLinks('owner-race', ['a', 'b']);
       query.mockRestore();
@@ -195,21 +198,40 @@ describe('SmrtJunction', () => {
     });
 
     it('retries a transient batch failure without duplicating feed entries', async () => {
-      const queryOriginal = links.db.query.bind(links.db);
+      const transactionOriginal = links.db.transaction?.bind(links.db);
+      if (!transactionOriginal)
+        throw new Error('Transaction support is required');
       let attempts = 0;
-      const query = vi
-        .spyOn(links.db, 'query')
-        .mockImplementation(async (sql, ...args) => {
-          if (
-            sql.startsWith('INSERT INTO "junction_test_links"') &&
-            ++attempts === 1
-          ) {
-            throw Object.assign(new Error('busy'), { code: 'SQLITE_BUSY' });
-          }
-          return queryOriginal(sql, ...args);
-        });
-      await links.setLinks('owner-retry', ['a', 'b']);
-      query.mockRestore();
+      const transaction = vi
+        .spyOn(links.db, 'transaction')
+        .mockImplementation((work) =>
+          transactionOriginal(async (tx) => {
+            const queryOriginal = tx.query.bind(tx);
+            const query = vi
+              .spyOn(tx, 'query')
+              .mockImplementation(async (sql, ...args) => {
+                if (
+                  sql.startsWith('INSERT INTO "junction_test_links"') &&
+                  ++attempts === 1
+                ) {
+                  throw Object.assign(new Error('busy'), {
+                    code: 'SQLITE_BUSY',
+                  });
+                }
+                return queryOriginal(sql, ...args);
+              });
+            try {
+              return await work(tx);
+            } finally {
+              query.mockRestore();
+            }
+          }),
+        );
+      try {
+        await links.setLinks('owner-retry', ['a', 'b']);
+      } finally {
+        transaction.mockRestore();
+      }
       expect(attempts).toBe(2);
       const rows = await links.byLeft('owner-retry');
       const ids = new Set(rows.map((row) => row.id));

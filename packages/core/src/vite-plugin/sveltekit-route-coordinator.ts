@@ -1,7 +1,7 @@
 import { existsSync, readdirSync, statSync } from 'node:fs';
 import { join, relative, resolve, sep } from 'node:path';
-import type { ConfigEnv, Plugin } from 'vite';
 import type { SmartObjectManifest } from '../scanner/types.js';
+import type { SmrtConfigEnv, SmrtVitePlugin } from './plugin-contract.js';
 import {
   assertNoCrossObjectRouteCollisions,
   generateSvelteKitRoutes,
@@ -52,7 +52,7 @@ type ProjectRootResolver = (userConfig: unknown) => string;
  * the initial shared route transaction. The marker is intentionally private to
  * the plugin objects supplied to one Vite config invocation. */
 export function markSvelteKitRouteParticipant(
-  plugin: Plugin,
+  plugin: object,
   owner: SvelteKitRouteOwner,
   enabled: boolean,
   routesDir: string,
@@ -69,7 +69,7 @@ export async function expectedSvelteKitRouteOwners(
   userConfig: unknown,
   projectRoot: string,
   routesDir: string,
-  env?: ConfigEnv,
+  env?: SmrtConfigEnv,
 ): Promise<SvelteKitRouteOwner[]> {
   const participants = await activeSvelteKitRouteParticipants(
     userConfig,
@@ -101,9 +101,9 @@ async function flattenPluginOptions(value: unknown): Promise<unknown[]> {
 
 /** Applies the same supported `Plugin.apply` gate Vite uses before config hooks. */
 function appliesToConfig(
-  plugin: Plugin,
+  plugin: SmrtVitePlugin<unknown>,
   userConfig: unknown,
-  env: ConfigEnv | undefined,
+  env: SmrtConfigEnv | undefined,
 ): boolean {
   const apply = plugin.apply;
   if (!apply) return true;
@@ -124,14 +124,15 @@ function appliesToConfig(
 export async function activeSvelteKitRouteParticipants(
   userConfig: unknown,
   projectRoot: string,
-  env?: ConfigEnv,
+  env?: SmrtConfigEnv,
 ): Promise<ActiveSvelteKitRouteParticipant[]> {
   const plugins = await flattenPluginOptions(
     (userConfig as { plugins?: unknown } | undefined)?.plugins,
   );
   const participants: ActiveSvelteKitRouteParticipant[] = [];
   for (const plugin of plugins) {
-    if (!appliesToConfig(plugin as Plugin, userConfig, env)) continue;
+    if (!appliesToConfig(plugin as SmrtVitePlugin<unknown>, userConfig, env))
+      continue;
     const participant = (
       plugin as
         | {
@@ -364,7 +365,7 @@ export function producerKnowledgeRoutePaths(lifecycle: object): Set<string> {
 export async function activeProducerKnowledgeRoutePaths(
   userConfig: unknown,
   projectRoot: string,
-  env?: ConfigEnv,
+  env?: SmrtConfigEnv,
 ): Promise<Set<string>> {
   const paths = new Set<string>();
   for (const participant of await activeSvelteKitRouteParticipants(

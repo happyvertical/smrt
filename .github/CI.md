@@ -41,8 +41,44 @@ the trusted base branch rather than contributor-controlled merge YAML. It passes
 a PR head SHA to reusable general-CI workflows only when the head repository
 equals `github.repository`; merge-group and trusted push workflows use the
 same hosted runner. External fork PRs keep a base-revision hosted control-plane
-check, while the trusted validation call is skipped and `Required CI` rejects
-the run on that skipped result.
+check while the trusted validation call is skipped; their `Required CI` runs the
+maintainer approval gate instead (see "External fork PRs").
+
+### External fork PRs
+
+Fork code never runs with trusted credentials before the merge queue (#4558).
+
+1. **Fork Workflow Change Guard** (`fork-pr-approval.yml`, `pull_request_target`)
+   fails on every fork PR push that touches `.github/` or whose changed-file
+   list is incomplete (the files API stops at 3000). Such a PR could add its
+   own workflow with a job named like a required context, so maintainers never
+   approve its workflow runs and re-land it from a same-repository branch.
+2. **Fork PR Validation** (`fork-pr-validation.yml`, `pull_request`) runs
+   commitlint, the full `test-suite.yml`, and `postgres-tests.yml` for fork PRs
+   only, with a read-only token, no secrets, and PR-scoped caches. Repository
+   settings require a maintainer to approve each run. GitHub loads this file
+   from the PR merge commit, so its result is advice: its check names are
+   distinct from the required contexts.
+3. A maintainer reviews the head commit, submits an **Approve** review on it,
+   confirms the sandbox run passed, and applies `ci: fork-approved`. **Fork PR
+   Approval** runs only `scripts/fork-pr-approval.mjs` from the base revision.
+   It refuses a labeller without write, maintain or admin access and requires
+   a write-access user's current review to approve that exact commit (GitHub
+   records the reviewed `commit_id`). It then records a `fork-approval` commit
+   status on the head and re-runs the `Required CI` and `postgres-required`
+   jobs. If it refuses, fix the cause, then remove and re-add the label:
+   re-adding a label that is already present fires no event.
+4. For a fork PR, both required jobs run that script's `gate`. It passes only
+   when the current head carries the `fork-approval` status from GitHub
+   Actions, the label is present, the latest Fork PR Validation run for that
+   head succeeded, and the guard's file checks pass.
+5. Approval binds to one commit: a fork cannot write statuses here, a review
+   names the commit it approved, and a new push is a new SHA, so its required
+   checks fail until a maintainer reviews and approves again. The push also
+   removes the label. The merge queue's trusted full validation is unchanged
+   and gates every merge.
+
+Every job in the two fork workflows is skipped on same-repository PRs.
 
 `CI_NODE_RUNNER_ENABLED` is gone from this tree — nothing reads it, and the
 migration it was conditioned on is live. If the repository still defines the
@@ -136,6 +172,14 @@ these globs with
 `turbo run build typecheck test --dry=json` on a clean tree and again after
 `turbo run build typecheck`: every task hash must match.
 
+The generated `src/types/virtual-modules.d.ts` is also a build output, not a
+source input. The root generate/build/test/typecheck tasks exclude that exact
+path, and build caching restores it. Otherwise the first build creates an input
+that invalidates the next build and its consumers (#4306). Handwritten
+declarations remain inputs; source and core generator changes still invalidate
+the dependent tasks. `scripts/turbo-generated-inputs.test.mjs` exercises real
+Turbo hashes and cache restoration in an isolated workspace.
+
 The `turbogha_` pool shares the repository's 10 GiB Actions cache quota with
 `mobile.yml`'s Gradle entries (about 3.8 GiB when this lane was added) and
 the pnpm-store and Playwright entries of `setup-environment` under
@@ -151,10 +195,13 @@ to its S3 provider, so the workflows bound the pool themselves:
 - `merge-queue-cleanup.yml` deletes every cache entry of a
   `gh-readonly-queue/*` ref whose branch is gone. Jobs of a live merge group
   still share entries; a dead group's entries are unrestorable.
+- `turbo-cache-seed.yml` also deletes main's `<os>-pnpm-store-*` entries
+  whose key is not the current lockfile's, once the current entry exists
+  (#3122). Each lockfile change leaves one such entry, so the count is small.
 
-Both are best effort, capped per run to respect the `GITHUB_TOKEN` rate
-limit, and never fail their job; anything left idle for seven days expires on
-its own. Manual inspection remains `gh cache list --key turbogha_`.
+All three are best effort, the Turbo and queue prunes are capped per run to
+respect the `GITHUB_TOKEN` rate limit, and none fails its job; anything left
+idle for seven days expires on its own. Manual inspection remains `gh cache list --key turbogha_`.
 
 ## Job timeouts
 
@@ -164,6 +211,15 @@ CI runs on GitHub-hosted `ubuntu-latest` runners, which never set
 `CI_ONNX_DEPS_READY`, so jobs that run `pnpm install` provision ONNX system
 dependencies through apt (#3653). Jobs with `install-deps: 'false'` skip the
 step entirely: without an install they never load `onnxruntime-node`.
+
+Before apt runs, `scripts/configure-ubuntu-apt-mirrors.mjs` routes the hosted
+runner's standard Ubuntu mirror-list entries to the canonical Ubuntu HTTPS
+archive/security endpoints. Azure mirror downloads exhausted the six-minute
+visual-job budget before project installation on #4399. Only known Ubuntu
+entries in `apt-mirrors.txt` and `apt-security-mirrors.txt` change; custom mirrors,
+distribution suites, components, signing keys and required packages are preserved.
+Missing mirror-list files leave other runner configurations unchanged. Unexpected
+filesystem failures stop setup; the visual-job budget and apt retries stay intact.
 
 Each `apt-get update` attempt is bounded at two minutes and is tried up to
 three times with a 10 s / 20 s backoff; `apt-get install` gets ten minutes per
@@ -217,6 +273,15 @@ reason recorded next to the setting or here:
   30-minute Playwright `globalTimeout`, so a run still going at 60 is stuck
   rather than slow. The value keeps a wedged docker-lane job from holding a
   merge-group entry for the full 90.
+- The planner lanes (#4056): `planner-scope` at 10 (a checkout and a paths
+  filter), `planner-browser` at 45 (one filtered build plus two short browser
+  suites), and the `planner-release-gate` jobs in `publish.yml` and
+  `publish-dry-run.yml` at 60, whose work is
+  bounded the same way as `m5-reference-gate`'s: two browser suites, one
+  consumer install, the consumer canary and one generated application, each tried at most twice,
+  plus one control application when the generated one fails.
+- `docs-scope` at 10 (#4846): a checkout and a paths filter, like
+  `planner-scope`.
 - `required-ci` and `test-packages-result`, which only read `needs.*.result`.
   Both finish in seconds, so failing fast is correct for a job that just
   reports other jobs' results.
@@ -272,6 +337,20 @@ three deterministic shards.
 `affected-core-tests`; the matrices shard disjoint package sets, while a
 failing core shard already fails `Required CI`.
 
+The affected workbench browser lane also starts after its scope decision,
+without waiting for package tests: it builds its own consumer fixture and
+does not consume their outputs. The #4306 baseline measured only 2–3 seconds
+of hosted runner queueing. Full mode still waits for the shared build cache.
+This removes a serial dependency, not a validation requirement; both lanes
+must still succeed when selected.
+
+`CI Control Plane Regression` runs the root script tests and packed export
+verifier tests on every trusted PR and merge group. It builds core's dependency
+closure for the production-manifest regression first. `Required CI` rejects
+a failed, cancelled, or unexpectedly skipped regression job. The job also
+publishes an exact-base/head impact inventory for comparison with the existing
+lanes. This inventory is diagnostic: it does not yet authorize skipping them.
+
 Coverage Gate and Publish Dry Run are merge-group only (#2214 items 4 and 8).
 Both used to run in both lanes while the merge group re-ran them in full
 regardless, so the PR copies were duplicate fleet occupancy rather than the
@@ -304,6 +383,30 @@ runs in `affected` mode as well as in `full`, which is every merge group.
 Every other lane in `on-pull-request.yml` and `test-suite.yml` is
 PostgreSQL-free; the registered PostgreSQL suites live in
 `postgres-tests.yml`, described under PostgreSQL isolation below.
+
+The planner (`packages/planner`) is validated in three places (#4056). Its
+unit tests, typecheck and lint run in the normal lanes above, and its tests
+include validating every library cookbook against the catalog its build
+generates from the workspace manifests. Every catalog source package is a
+planner devDependency, so Turbo's affected filter selects the planner's tests
+on any PR that changes one: a contract change that invalidates a cookbook
+fails that PR, not a release. `on-pull-request.yml`'s `planner-browser` runs
+its two browser suites when `planner-scope` sees planner or shell paths
+change, and `Required CI` treats it like the playground visual lane. The
+release-side gate is under Release artifacts.
+
+The documentation site throws on a broken internal link (#4831), so
+`on-pull-request.yml` builds it before merge (#4846). `docs-scope` selects the
+`docs-site-build` lane when a PR or merge group changes `docs/**`, a workspace
+`README.md` that `docs/scripts/copy-readmes.js` copies, `pnpm-workspace.yaml`
+or `scripts/workspaces.mjs` (its workspace discovery), adds a workspace
+manifest (a new workspace needs a README), or deletes any file (a README or
+doc may link to it). The lane runs the same `pnpm --dir docs install
+--frozen-lockfile` and `pnpm docs:site:build` as `publish.yml`'s
+`deploy-docs`, which remains the only job that uploads and deploys the site.
+`Required CI` treats it like the playground visual lane, and
+`scripts/docs-site-scope.test.mjs` pins the filter against docs and code-only
+changes.
 
 `Required CI` is the aggregate repository-validation status; the PostgreSQL
 lane's `postgres-required` is the second required context (#2659, #3068).
@@ -352,17 +455,22 @@ dispatch-only `on-demand-validation.yml`. There is no enabling variable.
 - **`scope`** (hosted) decides whether suites run: a same-repository PR runs
   them unless every changed file is Markdown or under `docs/`; merge groups and
   every other event always run them. External fork PRs never execute trusted
-  PR-head code.
-- **Registered PostgreSQL Suites** runs on `ubuntu-latest` with one shared
-  PostgreSQL 18 service.
-  `pnpm turbo run test:postgres --concurrency=2 --continue --summarize` runs
-  every package's suite even after one fails, and
+  PR-head code; Fork PR Validation calls this workflow in the sandbox instead.
+- **Registered PostgreSQL Suites** uses two `ubuntu-latest` jobs, each with
+  its own PostgreSQL 18 service: ingestion and every remaining registered
+  suite. The selector discovers workspaces through pnpm and partitions the
+  complete registry; it does not skip unaffected packages. The #4306 sample
+  measured ingestion at 20m17s within a 33m23s execution step, with only
+  seconds of runner queueing. Isolating it removes contention without
+  dropping coverage. Both jobs retain `--concurrency=2 --continue --summarize`,
+  run every selected package even after one fails, and
   `scripts/postgres-lane-summary.mjs` writes a per-package table to the job
   summary.
 - **`postgres-required`** (hosted) is the lane's single aggregate status and
   the context the ruleset requires. It always reports: it passes when `scope` skipped the suites for a
-  docs-only PR, and fails when the suites did not succeed or the PR is from a
-  fork (the same policy `Required CI` applies).
+  docs-only PR, and fails when either matrix shard did not succeed or the PR is from a
+  fork without maintainer approval (the gate `Required CI` applies; see
+  "External fork PRs").
 
 The suites connect as `smrt_ci`, created per run as `LOGIN CREATEDB CREATEROLE
 NOSUPERUSER NOBYPASSRLS` and asserted before use. A superuser bypasses
@@ -410,13 +518,18 @@ Merging a pull request advances `main` once and does not invoke the publisher.
 `.github/workflows/on-merge-main.yml` runs daily at 07:17 UTC and can also be
 dispatched manually for an urgent release. Each run versions every eligible
 commit since the previous release, so a group of merged pull requests produces
-one release commit and tag. The workflow checks for active merge-group runs and
+one release commit and tag. With `CI_RELEASE_WINDOW_ENABLED=true`, the
+[bounded release window](release-window.md) closes durable admissions,
+drains its finite admitted set, and reserves the source snapshot through
+primary publication and ref recording. Activation requires the reviewed
+App permissions and rules in that guide; the flag alone grants no authority.
+Without that configured window, the workflow checks for active merge-group runs and
 queue refs before starting and again before the irreversible registry and Git
 release phase. An API error or non-idle queue fails closed and defers the
 release. Once registry publication begins, the matching `main` and tag update
 must complete so the registry and Git release cannot be stranded out of sync.
 To publish a specific cohort immediately, let every pull request in the cohort
-merge and the queue drain before dispatching `on-merge-main.yml`; do not enqueue
+merge and the queue drain before dispatching `on-merge-main.yml`; in legacy mode do not enqueue
 new work while that release is publishing.
 
 Do not restore a `push` trigger on the batch workflow. A release commit changes
@@ -425,11 +538,59 @@ therefore cancels or restarts validation for entries still in the queue (#2174).
 
 Each package is packed once. Pack shards verify that exact tarball and emit a
 schema-versioned manifest containing package name, version, filename, and
-SHA-256. Profiles and Sales validation additionally install each exact tarball
+SHA-256. Packed entrypoints that statically reach Svelte runtime or components
+must declare an effective `svelte` export condition. Its source target may differ
+from a compiled default target. Plain JavaScript
+data subpaths remain valid without it. The packed Vite 7/8 HTTP regression
+remains the behavioral check for shared SSR context; static verification does
+not replace it. Profiles and Sales validation additionally install each exact tarball
 into an isolated consumer, run the built CLI to generate `.smrt/register.js`,
 and import the generated file so every manifest-advertised root import is
-proven against the publish artifact. The summary verifies complete package
-membership and uniform versions.
+proven against the publish artifact. The planner's tarball is checked offline
+(`scripts/verify-packed-planner.mjs`): it must carry `app/`, `app/mcp.html`
+and a catalog whose every package is at the release version. The summary
+verifies complete package membership and uniform versions. Before publication,
+`planner-release-gate` (`scripts/planner-release-gate.mjs`) runs the planner's
+browser suites, installs its tarball against the release tarballs, validates
+every library cookbook with the built CLI, and runs a real
+`smrt cookbook apply` (from the public smrt-start template, as a user runs it,
+its smrt packages pinned to the release version by the CLI) whose app must install,
+build and typecheck with every `@happyvertical` package overridden to the
+release tarballs. It also runs the release consumer canary
+(`scripts/release-consumer-canary.mjs`, #2975): the hermetic app in
+`scripts/fixtures/release-consumer-canary` installs smrt-core, smrt-tags,
+smrt-vitest and smrt-cli from the release tarballs (every release package
+overridden to its tarball) and must build, import its generated
+`.smrt/register.js` under plain Node and under smrt-vitest with every class
+under its declaring package and schemas resolved, typecheck, and run
+`smrt db:migrate` / `db:status --json` (no drift, the expected tables
+created). Third-party and SDK dependencies resolve live with the repository's
+overrides and release-age exclusions, and there is no control run, so a
+failure is this release's or a newly published dependency's. It fails on
+0.51.8 and 0.51.10 (#2970) and passes on 0.51.11. Each check is retried once; the job summary and error
+annotation say whether the planner or the framework broke, and
+`publish-release` needs it to succeed. When the generated app fails, the gate
+repeats the apply as the published release generates it (the published CLI,
+manifests and packages) as a control; if that fails too, it reports
+upstream drift (the smrt-start template or a third-party release) instead of blaming the
+framework. A control that cannot be built from the published release (a package new in
+this release, or a cookbook the published CLI cannot apply) is inconclusive
+and the failure stays the framework's. The gate fails either way. The
+merge-group Publish Dry Run runs the same gate on its versioned archive and
+tarballs (#4061), so a failure that depends on the release environment (a
+restored archive with no dev build, an unpublished version, no credentials)
+ejects the merge group instead of blocking the next release.
+The two `pack-release-1` and `pack-release-2` jobs each expose their own
+immutable upload ID, digest and attempt. `validate-release-shards` requires both
+successful results and complete, distinct artifact identities before Planner or
+publishing can proceed. All downloads use producer IDs, so with the window flag
+off, retrying only a failed consumer reuses successful attempt-1 uploads, and
+retrying one failed pack preserves its successful sibling's upload. No wildcard,
+latest-artifact selection or overwrite is used. With the window flag on, early
+read-only assertions retain the original owner, source, phase and deadline;
+changed-attempt retries cannot take over, and publication recovery follows the
+[original-owner procedure](release-window.md#reconciliation-and-recovery).
+
 The release job publishes those tarballs sequentially and safely skips versions
 already present on npm during a retry. The final publisher consumes only those
 prebuilt artifacts, so it skips a redundant workspace dependency install and
@@ -453,8 +614,9 @@ commit must not fill in the remaining packages under that same version: the
 artifacts would come from different source trees. Keep the npm collision guard,
 apply the interrupted run's exact generated version patch to reserve that
 version in Git, and let the next merge publish the complete package set at a new
-version. The version patch is retained for 30 days so this recovery remains
-available after the short-lived build and package artifacts expire.
+version. The version patch, workspace and pack artifacts are retained for
+30 days. With the release-window flag on, use the original-owner recovery
+procedure instead; never generate a replacement candidate or clear its fence.
 
 Documentation installs as an isolated workspace under `docs/`. Its pnpm build
 policy explicitly allows the `core-js` and `sharp` install scripts required by

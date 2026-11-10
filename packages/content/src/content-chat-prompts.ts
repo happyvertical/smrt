@@ -46,6 +46,8 @@ RULES:
 - Always respond conversationally before the JSON block.
 - The JSON block will be automatically applied to the editor.`,
   ai: {
+    profile: 'great',
+    latency: 'interactive',
     temperature: 0.7,
     maxTokens: 2000,
   },

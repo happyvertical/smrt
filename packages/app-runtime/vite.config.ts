@@ -2,7 +2,19 @@ import type { UserConfig } from 'vite';
 import { createPackageConfig } from '../../vite.config.base.js';
 
 const baseConfig = createPackageConfig('app-runtime', {
-  entries: ['sveltekit'],
+  entries: [
+    'sveltekit',
+    'sveltekit-runtime',
+    'vault-recovery',
+    'vault-device-key',
+    'vault-key-generation',
+    'device-entitlements',
+    'vault-device-transfer',
+    'vault-key-store',
+    'vault-key-lifecycle',
+  ],
+  // Fake Windows runtime for the custody tests; never published.
+  dtsExclude: ['src/test-support/**'],
 });
 
 /**

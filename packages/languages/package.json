@@ -1,6 +1,6 @@
 {
   "name": "@happyvertical/smrt-languages",
-  "version": "0.55.21",
+  "version": "0.60.16",
   "description": "Code-first language strings with config + tenant overrides and AI auto-translation for SMRT",
   "type": "module",
   "main": "./dist/index.js",
@@ -53,7 +53,7 @@
     "@happyvertical/smrt-vitest": "workspace:*",
     "@types/node": "24.13.6",
     "typescript": "6.0.3",
-    "vite": "8.1.4",
+    "vite": "8.1.6",
     "vitest": "4.1.10"
   },
   "keywords": [

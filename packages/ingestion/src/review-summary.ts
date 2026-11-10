@@ -34,20 +34,24 @@ export async function loadReviewSummary(
   } while (cursor);
   const current = await service.getItem(item.id);
   if (!requested) throw new Error('Review page unavailable');
-  const state: InboxState = total
-    ? succeeded === total
-      ? 'completed'
-      : succeeded
-        ? 'partially_completed'
-        : deferred
-          ? 'deferred'
-          : failed
+  // Terminal no-action disposition wins; otherwise new processing supersedes old actions.
+  const state: InboxState =
+    current.disposition && !succeeded
+      ? 'resolved'
+      : ['queued', 'running'].includes(current.processingState)
+        ? 'processing'
+        : total
+          ? succeeded === total
+            ? 'completed'
+            : succeeded
+              ? 'partially_completed'
+              : deferred
+                ? 'deferred'
+                : failed
+                  ? 'failed'
+                  : 'waiting'
+          : current.processingState === 'needs_attention'
             ? 'failed'
-            : 'waiting'
-    : ['queued', 'running'].includes(current.processingState)
-      ? 'processing'
-      : current.processingState === 'needs_attention'
-        ? 'failed'
-        : 'unresolved';
+            : 'unresolved';
   return { reviews: requested, state };
 }

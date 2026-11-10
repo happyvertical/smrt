@@ -9,7 +9,9 @@ import { PromptOverrideCollection } from './collections/PromptOverrideCollection
 import { PromptRegistry } from './prompt-registry.js';
 import type {
   PromptCacheValue,
+  PromptLayer,
   PromptPackageConfig,
+  PromptSourceLayer,
   ResolvedPrompt,
   ResolvePromptOptions,
 } from './types.js';
@@ -17,8 +19,19 @@ import {
   buildResolvedAI,
   mergePromptLayers,
   normalizePromptLayer,
+  promptTemplateHash,
   renderPromptTemplate,
 } from './utils.js';
+
+/** True when `layer` sets the template (null and undefined inherit). */
+function suppliesTemplate(layer: PromptLayer | null | undefined): boolean {
+  return layer?.template !== undefined && layer.template !== null;
+}
+
+/** True when `layer` sets the profile (null and undefined inherit). */
+function suppliesProfile(layer: PromptLayer | null | undefined): boolean {
+  return layer?.profile !== undefined && layer.profile !== null;
+}
 
 function getPromptConfig(): PromptPackageConfig {
   return getPackageConfig<PromptPackageConfig>('prompts', {
@@ -61,32 +74,48 @@ async function loadPromptBase(
   const loadedAtGeneration = getPromptCacheGeneration(key, cacheDb);
 
   const config = getPromptConfig();
-  const layers = [
+  // Each layer is named so the resolution can report which one supplied the
+  // effective template (the `promptLayer` usage tag, #4751).
+  const layers: Array<{
+    name: PromptCacheValue['templateLayer'];
+    layer: PromptLayer;
+  }> = [
     {
-      template: definition.template,
-      profile: definition.ai.profile ?? null,
-      model: definition.ai.model ?? null,
-      params: definition.ai.params,
+      name: 'default',
+      layer: {
+        template: definition.template,
+        profile: definition.ai.profile ?? null,
+        model: definition.ai.model ?? null,
+        params: definition.ai.params,
+      },
     },
-    normalizePromptLayer(config.prompts?.[key]),
+    { name: 'config', layer: normalizePromptLayer(config.prompts?.[key]) },
   ];
 
   if (collection) {
     const stored = await collection.getResolutionLayers(key, tenantId);
 
     if (stored.app) {
-      layers.push(stored.app.toPromptLayer());
+      layers.push({ name: 'app', layer: stored.app.toPromptLayer() });
     }
 
     if (stored.tenant) {
-      layers.push(stored.tenant.toPromptLayer());
+      layers.push({ name: 'tenant', layer: stored.tenant.toPromptLayer() });
     }
   }
 
-  const merged = mergePromptLayers(...layers);
+  const merged = mergePromptLayers(...layers.map(({ layer }) => layer));
+  let templateLayer: PromptCacheValue['templateLayer'] = 'default';
+  let profileLayer: PromptCacheValue['profileLayer'] = 'default';
+  for (const { name, layer } of layers) {
+    if (suppliesTemplate(layer)) templateLayer = name;
+    if (suppliesProfile(layer)) profileLayer = name;
+  }
   const value: PromptCacheValue = {
     key,
     template: merged.template,
+    templateLayer,
+    profileLayer,
     ai: merged.ai,
   };
 
@@ -111,10 +140,44 @@ export async function resolvePrompt(
     runtimeOverride,
   );
 
+  const promptLayer: PromptSourceLayer = suppliesTemplate(runtimeOverride)
+    ? 'runtime'
+    : base.templateLayer;
+  // Only a profile the code default itself supplied is exempt from
+  // `allowedProfileNames`; any config, stored or runtime layer that sets one
+  // (even the same tier again) is a choice the allow-list governs.
+  const profileFromDefault =
+    base.profileLayer === 'default' && !suppliesProfile(runtimeOverride);
+  const ai = buildResolvedAI(merged.ai, config, {
+    defaultProfile: profileFromDefault
+      ? PromptRegistry.get(key)?.ai.profile
+      : undefined,
+  });
+  if (ai.tier) {
+    // The tier binds once, at call time, through the core inference seam
+    // (`SmrtObject.prepareAiOperation()` / `getAiClient(tier)`), with this
+    // key so prompt-scoped bindings apply (#4750).
+    ai.promptKey = key;
+    // The latency hint belongs to the call site, so only the code default
+    // declares it (#4755).
+    const latency = PromptRegistry.get(key)?.ai.latency;
+    if (latency) ai.latency = latency;
+    // The degradation floor is the code default's alone (#4752).
+    const minimumTier = PromptRegistry.get(key)?.ai.minimumTier;
+    if (minimumTier) ai.minimumTier = minimumTier;
+  }
+
   return {
     key,
     template: merged.template,
     text: renderPromptTemplate(merged.template, options.variables),
-    ai: buildResolvedAI(merged.ai, config),
+    ai: {
+      ...ai,
+      usageTags: {
+        promptKey: key,
+        promptLayer,
+        templateHash: await promptTemplateHash(merged.template),
+      },
+    },
   };
 }

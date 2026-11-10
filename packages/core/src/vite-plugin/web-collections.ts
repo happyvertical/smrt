@@ -46,7 +46,11 @@ import type {
   SmartObjectDefinition,
   SmartObjectManifest,
 } from '../scanner/types.js';
-import { isFieldUIWidget } from '../ui-metadata.js';
+import {
+  isFieldUIFormat,
+  isFieldUIWidget,
+  isRelationshipRole,
+} from '../ui-metadata.js';
 import {
   resolveApiActionRouteConfig,
   resolveApiActionSet,
@@ -128,6 +132,12 @@ export interface WebRelationship {
   kind: WebRelationshipKind;
   /** REST collection name the edge resolves to (e.g. `ad_groups`). */
   relatedCollection: string;
+  /**
+   * `items`: the declaring model is the line items of the target
+   * (`@foreignKey(Order, { role: 'items' })`, #3718). Absent otherwise, so
+   * edges without a role stay byte-stable.
+   */
+  role?: 'items';
 }
 
 /** One selected REST collection and the model that owns its definition. */
@@ -1009,6 +1019,7 @@ function sanitizeFieldUIHints(value: unknown): FieldUIHints | undefined {
       : {}),
     ...(typeof raw.locked === 'boolean' ? { locked: raw.locked } : {}),
     ...(isFieldUIWidget(raw.widget) ? { widget: raw.widget } : {}),
+    ...(isFieldUIFormat(raw.format) ? { format: raw.format } : {}),
   };
   return Object.keys(ui).length > 0 ? ui : undefined;
 }
@@ -1069,10 +1080,12 @@ export function buildWebRelationships(
     if (seen.has(dedupeKey)) continue;
     seen.add(dedupeKey);
 
+    const role = (field._meta as { role?: unknown } | undefined)?.role;
     relationships.push({
       field: fieldName,
       kind: field.type as WebRelationshipKind,
       relatedCollection: target.collection,
+      ...(isRelationshipRole(role) ? { role } : {}),
     });
   }
   return relationships;

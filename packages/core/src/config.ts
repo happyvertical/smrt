@@ -11,6 +11,7 @@
 import type { LoggerConfig } from '@happyvertical/logger';
 import type { AiUsageHandler, SignalAdapter } from '@happyvertical/smrt-types';
 import type { DecisionConfig } from './decisions.js';
+import type { InferenceConfig } from './inference.js';
 import type { SignalBus } from './signals/bus.js';
 import type { SanitizationConfig } from './signals/sanitizer.js';
 import type { RetentionPolicy } from './system/retention.js';
@@ -106,6 +107,12 @@ export interface GlobalSignalConfig {
 
   /** Optional typed-decision configuration, independent from `ai`. */
   decisions?: DecisionConfig;
+
+  /**
+   * Inference tier bindings (#4750). Absent: every tier uses the `ai` client.
+   * See `InferenceConfig` and `packages/core/agents/inference.md`.
+   */
+  inference?: InferenceConfig;
 
   /**
    * AI usage tracking configuration (default: enabled)

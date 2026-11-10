@@ -783,6 +783,58 @@ describe('executeContentQuery', () => {
     expect(result.rows.map((row) => row.name)).toEqual(['dated', 'undated']);
   });
 
+  it('filters a nullable column with isNull and isNotNull (#4448)', async () => {
+    const schema = await buildContentQuerySchema();
+    expect(
+      schema.fields.find((entry) => entry.id === 'publish_date')
+        ?.filterOperators,
+    ).toEqual(expect.arrayContaining(['isNull', 'isNotNull']));
+    await seed(contents, [
+      {
+        name: 'dated',
+        status: 'published',
+        publish_date: new Date('2026-09-01T00:00:00Z'),
+      },
+      { name: 'undated-draft', status: 'draft' },
+      { name: 'undated-published', status: 'published' },
+    ]);
+    const names = async (filter: unknown) =>
+      (
+        await executeContentQuery(
+          collectionOf(contents),
+          request({
+            projection: ['name'],
+            filter: filter as DataQueryRequest['filter'],
+            sort: [{ field: 'name', direction: 'asc' }],
+          }),
+        )
+      ).rows.map((row) => row.name);
+    const isNull = {
+      kind: 'condition',
+      field: 'publish_date',
+      operator: 'isNull',
+    };
+    expect(await names(isNull)).toEqual(['undated-draft', 'undated-published']);
+    expect(await names({ ...isNull, operator: 'isNotNull' })).toEqual([
+      'dated',
+    ]);
+    expect(await names({ kind: 'not', filter: isNull })).toEqual(['dated']);
+    expect(
+      await names({
+        kind: 'all',
+        filters: [
+          {
+            kind: 'condition',
+            field: 'status',
+            operator: 'in',
+            value: ['published'],
+          },
+          isNull,
+        ],
+      }),
+    ).toEqual(['undated-published']);
+  });
+
   it('offers only equality operators on a native UUID id column', async () => {
     const schema = await buildContentQuerySchema();
     const idField = schema.fields.find((entry) => entry.id === 'id');

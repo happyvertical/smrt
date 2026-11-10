@@ -45,6 +45,7 @@ import {
   ensureSystemTables,
   isSmrtCollectionExtendsName,
   ObjectRegistry,
+  resolveActiveTestManifestPath,
 } from '@happyvertical/smrt-core';
 import type {
   ForeignKeyDefinition,
@@ -105,6 +106,7 @@ type ManifestSchema = ManifestSchemaLike;
 interface ManifestObjectDef {
   className: string;
   extends?: string;
+  extendsQualified?: string;
   extendsTypeArg?: string | null;
   packageName?: string;
   schema?: ManifestSchema;
@@ -126,9 +128,11 @@ export interface ManifestTestDbOptions {
    * Explicit path to a manifest JSON file.
    *
    * When omitted the function searches the following locations in order:
-   * 1. `.smrt/manifest.json` — output of `smrtVitestPlugin()` / `smrt generate:test`
-   * 2. `dist/manifest.json` — production build manifest
-   * 3. `src/manifest/manifest.json` — legacy location
+   * 1. this test run's manifest snapshot — written by `smrtVitestPlugin()`
+   *    under `.smrt/test-runs/` and inherited by every worker (#4128)
+   * 2. `.smrt/manifest.json` — local build manifest
+   * 3. `dist/manifest.json` — production build manifest
+   * 4. `src/manifest/manifest.json` — legacy location
    */
   manifestPath?: string;
 
@@ -511,6 +515,9 @@ async function createIsolatedTestDbWithPostSchemaStatements(
           cacheKey: `isolated-test-db\0${schema}`,
           databaseOptions: {
             ...config,
+            // Factory cleanup owns this handle. Do not close a caller's
+            // cached PostgreSQL/SQLite adapter on a setup failure.
+            cache: false,
             __smrtSkipVitestSchemaPreparation: true,
           },
           getDatabase: async (databaseOptions) =>
@@ -521,13 +528,38 @@ async function createIsolatedTestDbWithPostSchemaStatements(
         })
       : ((await getDatabase({
           ...config,
+          // Factory cleanup owns this handle; callers may hold the cached
+          // adapter for the same database URL (for example, test admins).
+          cache: false,
           __smrtSkipVitestSchemaPreparation: true,
         } as VitestDatabaseConnectionOptions)) as DatabaseInterfaceWithTransaction);
+
+  const abortSetup = async (error: unknown): Promise<never> => {
+    // Setup failed before ownership was handed to the returned cleanup. Close
+    // the opened handle and remove only this factory's generated SQLite path.
+    try {
+      await baseDb.close?.();
+    } catch {
+      // Best effort: preserve the original setup failure.
+    }
+    if (config.type === 'sqlite' && config.url !== ':memory:') {
+      try {
+        removeSqliteFiles(config.url);
+      } catch {
+        // Best effort: the factory owns getTestDbConfig()'s generated path.
+      }
+    }
+    throw error;
+  };
 
   // Isolated test databases are throwaway, so strip fsync durability from
   // local file-backed SQLite (#2221). The schema-preparation skip above also
   // bypasses the setup file's pragma application, so it happens here.
-  await applySqliteSpeedPragmas(baseDb, config);
+  try {
+    await applySqliteSpeedPragmas(baseDb, config);
+  } catch (error) {
+    return abortSetup(error);
+  }
 
   const applyPostSchemaStatements = async (
     schemaDb: DatabaseInterfaceWithTransaction,
@@ -702,13 +734,16 @@ async function createIsolatedTestDbWithPostSchemaStatements(
   // lock through a pooled connection.
   if (schema && config.type === 'postgres' && postgresManifestPlan) {
     if (!baseDb.beginTransaction) {
-      throw new Error(
-        `Database adapter '${config.type}' does not support beginTransaction(). ` +
-          'This requires @happyvertical/sql with SDK PR #722 merged.',
+      return abortSetup(
+        new Error(
+          `Database adapter '${config.type}' does not support beginTransaction(). ` +
+            'This requires @happyvertical/sql with SDK PR #722 merged.',
+        ),
       );
     }
-    const schemaTransaction = await baseDb.beginTransaction();
+    let schemaTransaction: TransactionHandle | undefined;
     try {
+      schemaTransaction = await baseDb.beginTransaction();
       await schemaTransaction.query(
         'SELECT pg_advisory_xact_lock(hashtext($1))',
         ['smrt-vitest-manifest-schema'],
@@ -744,13 +779,26 @@ async function createIsolatedTestDbWithPostSchemaStatements(
       await schemaTransaction.commit();
       systemTablesPrepared = true;
     } catch (error) {
-      if (schemaTransaction.isActive()) {
-        await schemaTransaction.rollback();
+      if (schemaTransaction?.isActive()) {
+        try {
+          await schemaTransaction.rollback();
+        } catch (rollbackError) {
+          return abortSetup(
+            new AggregateError(
+              [error, rollbackError],
+              'PostgreSQL manifest schema preparation and rollback failed.',
+            ),
+          );
+        }
       }
-      throw error;
+      return abortSetup(error);
     }
   } else if (schema && config.type !== 'sqlite') {
-    await syncSchema({ db: baseDb, schema });
+    try {
+      await syncSchema({ db: baseDb, schema });
+    } catch (error) {
+      return abortSetup(error);
+    }
   }
 
   // Transaction handles are passed to SMRT objects as already-initialized
@@ -759,20 +807,31 @@ async function createIsolatedTestDbWithPostSchemaStatements(
   // catches the error. Provision every framework-owned system table on the base
   // connection before opening the isolated transaction.
   if (config.type === 'postgres' && !systemTablesPrepared) {
-    await ensureSystemTables(baseDb, config.type);
+    try {
+      await ensureSystemTables(baseDb, config.type);
+    } catch (error) {
+      return abortSetup(error);
+    }
   }
 
   // Begin transaction for isolation
   // Note: beginTransaction requires @happyvertical/sql with SDK PR #722 merged
   if (!baseDb.beginTransaction) {
-    throw new Error(
-      `Database adapter '${config.type}' does not support beginTransaction(). ` +
-        `This requires @happyvertical/sql with SDK PR #722 merged. ` +
-        `See: https://github.com/happyvertical/sdk/pull/722`,
+    return abortSetup(
+      new Error(
+        `Database adapter '${config.type}' does not support beginTransaction(). ` +
+          `This requires @happyvertical/sql with SDK PR #722 merged. ` +
+          `See: https://github.com/happyvertical/sdk/pull/722`,
+      ),
     );
   }
 
-  const db = await baseDb.beginTransaction();
+  let db: TransactionHandle;
+  try {
+    db = await baseDb.beginTransaction();
+  } catch (error) {
+    return abortSetup(error);
+  }
 
   // Cleanup function rolls back transaction and closes connection
   const cleanup = async (): Promise<void> => {
@@ -849,14 +908,47 @@ interface PostgresManifestSchemaPlan {
  * @param manifestPath - Optional explicit path to manifest
  * @returns Parsed manifest or null if not found
  */
+function defaultManifestSearchPaths(): string[] {
+  const activeTestManifest = resolveActiveTestManifestPath(process.cwd());
+  return [
+    ...(activeTestManifest ? [activeTestManifest] : []),
+    join(process.cwd(), '.smrt', 'manifest.json'),
+    join(process.cwd(), 'dist', 'manifest.json'),
+    join(process.cwd(), 'src', 'manifest', 'manifest.json'),
+  ];
+}
+
+/**
+ * This test run's manifest snapshot path (#4128): the test-inclusive manifest
+ * `smrtVitestPlugin()` generated for the project at `root`, including inline
+ * test-file fixture classes. Tests that inspect generated manifest metadata
+ * read this instead of `.smrt/manifest.json`, which production builds own and
+ * may rewrite mid-run.
+ *
+ * @throws When the current process is not inside a `smrtVitestPlugin()` run
+ *   that generated a manifest for `root`, or that snapshot no longer exists.
+ */
+export function getTestManifestPath(root: string = process.cwd()): string {
+  const manifestPath = resolveActiveTestManifestPath(root);
+  if (!manifestPath) {
+    throw new Error(
+      `[smrt-vitest] No test manifest snapshot is registered for ${root}. ` +
+        'Run under smrtVitestPlugin() with generateManifest enabled (the default).',
+    );
+  }
+  if (!existsSync(manifestPath)) {
+    throw new Error(
+      `[smrt-vitest] The test manifest snapshot ${manifestPath} registered for ${root} is missing; ` +
+        'it was removed while the run was live (for example by deleting .smrt/).',
+    );
+  }
+  return manifestPath;
+}
+
 function loadManifest(manifestPath?: string): ManifestFile | null {
   const searchPaths = manifestPath
     ? [manifestPath]
-    : [
-        join(process.cwd(), '.smrt', 'manifest.json'),
-        join(process.cwd(), 'dist', 'manifest.json'),
-        join(process.cwd(), 'src', 'manifest', 'manifest.json'),
-      ];
+    : defaultManifestSearchPaths();
 
   for (const path of searchPaths) {
     if (existsSync(path)) {
@@ -1034,9 +1126,10 @@ function getManifestCollectionAncestors(
       currentKey,
       currentDef,
     );
+    // An import-qualified parent resolves in its own package (#4176).
     const parent = findManifestObject(
       manifest,
-      currentDef.extends,
+      currentDef.extendsQualified ?? currentDef.extends,
       currentPackage,
     );
     if (!parent || visited.has(parent.key)) {
@@ -1319,8 +1412,9 @@ function extractTablesFromManifest(
  *   merged into a single `CREATE TABLE` statement that includes all columns.
  * - **FK dependency ordering** — tables are created in topological order so
  *   `REFERENCES` constraints are always satisfied.
- * - **Auto-detection** — searches `.smrt/manifest.json`, `dist/manifest.json`,
- *   and `src/manifest/manifest.json` when no `manifestPath` is given.
+ * - **Auto-detection** — searches this run's test manifest snapshot, then
+ *   `.smrt/manifest.json`, `dist/manifest.json`, and
+ *   `src/manifest/manifest.json` when no `manifestPath` is given.
  *
  * @param options - Optional manifest path, class filter, and SQLite prefix.
  * @returns An {@link IsolatedTestDbResult} — same shape as
@@ -1395,11 +1489,7 @@ export async function createIsolatedTestDbFromManifest(
   if (!manifest) {
     const checkedPaths = manifestPath
       ? [manifestPath]
-      : [
-          '.smrt/manifest.json',
-          'dist/manifest.json',
-          'src/manifest/manifest.json',
-        ];
+      : defaultManifestSearchPaths();
 
     throw new Error(
       'No manifest found. Ensure smrtVitestPlugin() is configured in vitest.config.ts ' +

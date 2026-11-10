@@ -3,9 +3,10 @@ import {
   parseRuntimeReportSpec,
   RUNTIME_REPORT_LIMITS,
   RuntimeReportError,
-  runtimeReportSpecHash,
+  runtimeReportSpecDigest,
   serializeRuntimeReportSpec,
 } from '../runtime-spec.js';
+import { runtimeReportSpecHash } from '../runtime-spec-hash.js';
 
 const base = () => ({
   title: 'Revenue by status',
@@ -65,6 +66,17 @@ describe('parseRuntimeReportSpec', () => {
     expect(parseRuntimeReportSpec(serializeRuntimeReportSpec(a))).toEqual(a);
     const changed = parseRuntimeReportSpec({ ...base(), limit: 5 });
     expect(runtimeReportSpecHash(changed)).not.toBe(runtimeReportSpecHash(a));
+  });
+
+  it('digests in the browser to the same hex as the server hash (#4100)', async () => {
+    const spec = parseRuntimeReportSpec({
+      ...base(),
+      description: 'Résumé — non-ASCII text hashes as UTF-8',
+      filters: [{ field: 'status', op: 'in', value: ['paid', 'open'] }],
+    });
+    expect(await runtimeReportSpecDigest(spec)).toBe(
+      runtimeReportSpecHash(spec),
+    );
   });
 
   it('accepts filters, having, sort and chart hints', () => {

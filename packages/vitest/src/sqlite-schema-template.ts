@@ -3,9 +3,9 @@ import {
   copyFileSync,
   existsSync,
   mkdirSync,
+  readdirSync,
   renameSync,
   rmSync,
-  statSync,
 } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { isAbsolute, join, resolve } from 'node:path';
@@ -14,6 +14,7 @@ import { fileURLToPath } from 'node:url';
 interface SqliteSchemaTemplateState {
   directory: string;
   templates: Map<string, Promise<string>>;
+  dispose: () => void;
 }
 
 interface SqliteSchemaTemplateDatabase {
@@ -42,6 +43,59 @@ function removeSqliteFiles(path: string): void {
   rmSync(`${path}-shm`, { force: true });
 }
 
+async function closeDatabase(
+  database: SqliteSchemaTemplateDatabase | undefined,
+): Promise<void> {
+  try {
+    await database?.close?.();
+  } catch {
+    // Best effort: older SQLite adapters do not expose close().
+  }
+}
+
+/** Dispose this worker's schema-template cache. Internal setup lifecycle API. */
+export function disposeSqliteSchemaTemplateState(): void {
+  const globalState = globalThis as GlobalWithSqliteSchemaTemplates;
+  globalState.__smrtVitestSqliteSchemaTemplates?.dispose();
+}
+
+const SCHEMA_TEMPLATE_PREFIX = 'smrt-vitest-schema-templates-';
+
+/** True unless the PID is provably gone; EPERM means it exists. */
+function isProcessAlive(pid: number): boolean {
+  try {
+    process.kill(pid, 0);
+    return true;
+  } catch (error) {
+    return (error as NodeJS.ErrnoException).code !== 'ESRCH';
+  }
+}
+
+/**
+ * Remove template directories leaked by workers that were killed before their
+ * exit hook ran (#3333). Only directories whose owning PID is dead are removed;
+ * the current process and any live PID are never touched.
+ */
+function sweepStaleSchemaTemplateDirectories(root: string): void {
+  try {
+    for (const entry of readdirSync(root)) {
+      if (!entry.startsWith(SCHEMA_TEMPLATE_PREFIX)) continue;
+      const pid = Number(
+        entry.slice(SCHEMA_TEMPLATE_PREFIX.length).split('-')[0],
+      );
+      if (!Number.isInteger(pid) || pid <= 0 || pid === process.pid) continue;
+      if (isProcessAlive(pid)) continue;
+      try {
+        rmSync(join(root, entry), { recursive: true, force: true });
+      } catch {
+        // Best effort: another sweeper may have removed it first.
+      }
+    }
+  } catch {
+    // Best effort: an unreadable tmpdir must not fail test setup.
+  }
+}
+
 function getSqliteSchemaTemplateState(): SqliteSchemaTemplateState {
   const globalState = globalThis as GlobalWithSqliteSchemaTemplates;
   const existing = globalState.__smrtVitestSqliteSchemaTemplates;
@@ -49,21 +103,33 @@ function getSqliteSchemaTemplateState(): SqliteSchemaTemplateState {
     return existing;
   }
 
+  sweepStaleSchemaTemplateDirectories(tmpdir());
   const directory = join(
     tmpdir(),
-    `smrt-vitest-schema-templates-${process.pid}-${randomUUID().slice(0, 8)}`,
+    `${SCHEMA_TEMPLATE_PREFIX}${process.pid}-${randomUUID().slice(0, 8)}`,
   );
   mkdirSync(directory, { recursive: true });
 
+  let disposed = false;
+  const dispose = () => {
+    if (disposed) return;
+    disposed = true;
+    process.removeListener('exit', dispose);
+    rmSync(directory, { recursive: true, force: true });
+    if (
+      globalState.__smrtVitestSqliteSchemaTemplates?.directory === directory
+    ) {
+      delete globalState.__smrtVitestSqliteSchemaTemplates;
+    }
+  };
   const state: SqliteSchemaTemplateState = {
     directory,
     templates: new Map(),
+    dispose,
   };
   globalState.__smrtVitestSqliteSchemaTemplates = state;
 
-  process.once('exit', () => {
-    rmSync(directory, { recursive: true, force: true });
-  });
+  process.once('exit', dispose);
 
   return state;
 }
@@ -169,15 +235,26 @@ export async function getDatabaseFromSqliteSchemaTemplate<
   const targetPath = getLocalSqliteFilePath(databaseOptions);
   if (!targetPath) {
     const database = await getDatabase(databaseOptions);
-    await prepare(database);
-    return database;
+    try {
+      await prepare(database);
+      return database;
+    } catch (error) {
+      await closeDatabase(database);
+      throw error;
+    }
   }
 
-  // Never replace a fixture or a database already populated by this test.
-  if (existsSync(targetPath) && statSync(targetPath).size > 0) {
+  const targetExisted = existsSync(targetPath);
+  // Never replace a caller-owned fixture, including an empty SQLite file.
+  if (targetExisted) {
     const database = await getDatabase(databaseOptions);
-    await prepare(database);
-    return database;
+    try {
+      await prepare(database);
+      return database;
+    } catch (error) {
+      await closeDatabase(database);
+      throw error;
+    }
   }
 
   const state = getSqliteSchemaTemplateState();
@@ -199,7 +276,7 @@ export async function getDatabaseFromSqliteSchemaTemplate<
       copyFileSync(templatePath, targetPath);
       return await getDatabase(databaseOptions);
     } catch (error) {
-      removeSqliteFiles(targetPath);
+      if (!targetExisted) removeSqliteFiles(targetPath);
       throw error;
     }
   }
@@ -233,12 +310,8 @@ export async function getDatabaseFromSqliteSchemaTemplate<
     if (state.templates.get(templateHash) === templatePromise) {
       state.templates.delete(templateHash);
     }
-    try {
-      await database?.close?.();
-    } catch {
-      // Best effort: older SQLite adapters do not expose close().
-    }
-    removeSqliteFiles(targetPath);
+    await closeDatabase(database);
+    if (!targetExisted) removeSqliteFiles(targetPath);
     throw error;
   } finally {
     removeSqliteFiles(snapshotPath);

@@ -52,6 +52,9 @@ time-entry Svelte components are re-exported from smrt-timesheets too. See
 | **Issue** | `repositoryId` (optional FK), `projectId` (optional FK), `number`, `title`, `body`, `state`, `labels[]` | `incorporateFeedback()`, `rollback()`, `suggestLabels()` |
 | **PullRequest** | extends Issue + `headRef`, `baseRef`, `merged`, `draft` | STI on Issue table. `summarize()`, `merge()` |
 | **Project** | `projectId`, `title`, `statuses[]`, `statusFieldId` | GitHub Projects V2. `addItem()`, `moveItem()`, `analyzeHealth()` |
+| **ProjectQuestion** | polymorphic project target, `prompt`, `answer`, owner, `status`, `revision` | Owner question lifecycle; mutate through `ProjectGovernanceService`. |
+| **ProjectDecision** | polymorphic project target, options, `outcome`, `rationale`, owner, `status`, `revision` | Project choice lifecycle; mutate through `ProjectGovernanceService`. |
+| **ProjectGovernanceEvent** | question/decision target, actor, action, status, revision | Immutable lifecycle history. |
 | **Comment** | `issueId` (FK), `body`, `authorLogin` | AI analysis support |
 | **Label** | `repositoryId` (optional FK), `projectId` (optional FK), `name`, `color` | Scope: repository, project, or neither |
 
@@ -60,7 +63,7 @@ time-entry Svelte components are re-exported from smrt-timesheets too. See
 - **Repository is optional (project-native issues)**: an Issue/Label may carry only a `projectId`. `issue.hasRepository()` gates every provider call: `sync()` is a no-op, `close/addLabels/removeLabel/assign/addComment/rollback/incorporateFeedback(apply)` change local state only, `getComments()` reads stored `Comment` rows, `getRepository()` throws, `getUrl()` returns `''`. No unique key spans `repositoryId`+`number` (lookups only), so NULL repositories need no partial index. Schema change adds `issues.project_id`/`labels.project_id` and relaxes `repository_id` to nullable on both; `db:migrate` generates it from the manifest.
 
 - **Token config reference**: stores env var name (`tokenConfigKey: 'GITHUB_TOKEN'`), not the token itself. Resolved at runtime from `process.env` or `getModuleConfig()`
-- **Living spec** (`incorporateFeedback()`): AI synthesizes issue comments into updated body. Supports preview mode and `rollback()`
+- **Living spec** (`incorporateFeedback()`): AI synthesizes issue comments into updated body. Supports preview mode and `rollback()`. Prompt `projects.issue.incorporateFeedback` declares tier `great` (persisted synthesis, #4755 rule in `../prompts/AGENTS.md`); `do()` binds it, while a configured same-named profile's provider path runs that profile instead
 - **Provider-agnostic**: GitHub primary, GitLab/Bitbucket/Azure planned. Uses `@happyvertical/repos` and `@happyvertical/projects` SDK packages
 - **PullRequest is STI on Issue**: shares table, discriminated by `_meta_type`
 

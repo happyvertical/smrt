@@ -1,6 +1,6 @@
 {
   "name": "@happyvertical/smrt-analytics",
-  "version": "0.55.21",
+  "version": "0.60.16",
   "smrtJsdoc": "strict",
   "description": "Analytics integration models for SMRT framework",
   "type": "module",
@@ -9,7 +9,8 @@
   "files": [
     "dist",
     "CLAUDE.md",
-    "AGENTS.md"
+    "AGENTS.md",
+    "agents"
   ],
   "exports": {
     ".": {
@@ -30,6 +31,10 @@
       "types": "./dist/svelte/index.d.ts",
       "svelte": "./dist/svelte/index.js",
       "import": "./dist/svelte/index.js"
+    },
+    "./browser": {
+      "types": "./dist/browser.d.ts",
+      "import": "./dist/browser.js"
     }
   },
   "scripts": {
@@ -68,11 +73,10 @@
     "@happyvertical/sql": "catalog:",
     "@sveltejs/package": "^2.5.8",
     "@types/node": "24.13.6",
-    "fast-glob": "3.3.3",
     "svelte-check": "^4.7.6",
     "svelte": "^5.57.1",
     "typescript": "6.0.3",
-    "vite": "8.1.4",
+    "vite": "8.1.6",
     "vitest": "4.1.10"
   },
   "keywords": [

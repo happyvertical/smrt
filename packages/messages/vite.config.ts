@@ -2,6 +2,9 @@ import { createPackageConfig } from '../../vite.config.base.js';
 
 export default createPackageConfig('messages', {
   entries: [
+    // Stable private host entries keep Node-only primitives outside browser graphs.
+    'host',
+    'host.browser',
     'ui',
     'playground',
     // Explicit provider entry points (#1979): the only modules allowed to

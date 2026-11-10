@@ -172,34 +172,24 @@ export class TenantPermissionOverrideCollection extends SmrtCollection<TenantPer
   }
 
   /**
-   * Set an override for a tenant permission
+   * Set an override for a tenant permission.
+   *
+   * An upsert on the `(tenant_id, permission_id)` natural key (#3375):
+   * concurrent calls converge on one row, the last write's effect wins, and
+   * an existing override keeps its id.
    */
   async setOverride(
     tenantId: string,
     permissionId: string,
     effect: TenantPermissionEffect,
   ): Promise<TenantPermissionOverride> {
-    // Check if override already exists
-    const existing = await this.list({
-      where: { tenantId, permissionId },
-      limit: 1,
-    });
-
-    if (existing.length > 0) {
-      // Update existing override
-      existing[0].effect = effect;
-      await existing[0].save();
-      return existing[0];
-    }
-
-    // Create new override
-    const override = await this.create({ tenantId, permissionId, effect });
-    await override.save();
-    return override;
+    return await this.create({ tenantId, permissionId, effect });
   }
 
   /**
-   * Remove an override (permission will use default behavior)
+   * Remove the override for a tenant/permission pair (the permission then
+   * uses default behavior), returning whether one existed. Every row for the
+   * pair is removed, so a pre-migration duplicate cannot stay in force.
    */
   async removeOverride(
     tenantId: string,
@@ -207,15 +197,9 @@ export class TenantPermissionOverrideCollection extends SmrtCollection<TenantPer
   ): Promise<boolean> {
     const existing = await this.list({
       where: { tenantId, permissionId },
-      limit: 1,
     });
-
-    if (existing.length === 0) {
-      return false;
-    }
-
-    await existing[0].delete();
-    return true;
+    for (const override of existing) await override.delete();
+    return existing.length > 0;
   }
 
   /**

@@ -15,6 +15,70 @@ afterEach(() => {
   container.remove();
 });
 
+describe('TenantNav longest-match current (#4499)', () => {
+  function currentHrefs(props: Record<string, unknown>): string[] {
+    const component = mount(TenantNav, { target: container, props });
+    try {
+      return [...container.querySelectorAll('a[aria-current="page"]')].map(
+        (a) => a.getAttribute('href') ?? '',
+      );
+    } finally {
+      unmount(component);
+    }
+  }
+
+  it('marks only the longest matching top-level item', () => {
+    expect(
+      currentHrefs({
+        currentHref: '/settings/features',
+        items: [
+          { href: '/settings', label: 'Settings' },
+          { href: '/settings/features', label: 'Features' },
+        ],
+      }),
+    ).toEqual(['/settings/features']);
+  });
+
+  it('keeps the parent current when no longer href matches', () => {
+    expect(
+      currentHrefs({
+        currentHref: '/settings/other',
+        items: [
+          { href: '/settings', label: 'Settings' },
+          { href: '/settings/features', label: 'Features' },
+        ],
+      }),
+    ).toEqual(['/settings']);
+  });
+
+  it('prefers a child or action link over a shorter parent', () => {
+    expect(
+      currentHrefs({
+        currentHref: '/orders/open',
+        items: [
+          {
+            href: '/orders',
+            label: 'Orders',
+            children: [{ href: '/orders/open', label: 'Open' }],
+          },
+        ],
+      }),
+    ).toEqual(['/orders/open']);
+  });
+
+  it('lets an explicit current override the computed match', () => {
+    expect(
+      currentHrefs({
+        currentHref: '/settings/features',
+        items: [
+          { href: '/settings', label: 'Settings', current: true },
+          { href: '/settings/features', label: 'Features', current: false },
+        ],
+      }),
+    ).toEqual(['/settings']);
+  });
+});
+
 describe('TenantNav', () => {
   it('draws built-in subnav icons as SVG without a host icon component', () => {
     const component = mount(TenantNav, {

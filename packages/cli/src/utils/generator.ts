@@ -10,7 +10,7 @@
 import { spawn } from 'node:child_process';
 import { cp, mkdir, readFile, writeFile } from 'node:fs/promises';
 import { dirname, join } from 'node:path';
-import glob from 'fast-glob';
+import { glob } from 'tinyglobby';
 import type { TemplateConfig, TemplateSource } from '../loaders/index.js';
 
 export interface SiteGeneratorOptions {
@@ -221,6 +221,7 @@ async function overlayTemplate(
   // Find all files in source directory
   const files = await glob('**/*', {
     cwd: sourceDir,
+    expandDirectories: false,
     dot: true,
     onlyFiles: true,
     ignore: ['**/.gitkeep'],
@@ -378,6 +379,7 @@ async function processPlaceholders(
     '**/*.{ts,js,mjs,cjs,json,svelte,html,css,md,txt,yml,yaml}',
     {
       cwd: outputDir,
+      expandDirectories: false,
       onlyFiles: true,
       ignore: ['**/node_modules/**', '**/dist/**', '**/.svelte-kit/**'],
     },

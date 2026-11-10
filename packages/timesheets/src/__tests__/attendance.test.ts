@@ -30,7 +30,11 @@ it('fails closed for unsupported DuckDB foreign-key DDL', async () => {
 });
 
 it('exposes only generated reads and keeps replay receipts private', () => {
-  for (const name of ['AttendancePunch', 'AttendanceBreak']) {
+  for (const name of [
+    'AttendancePunch',
+    'AttendanceBreak',
+    'AttendanceSegment',
+  ]) {
     const config = ObjectRegistry.getConfig(name);
     for (const surface of ['api', 'cli', 'mcp'] as const)
       expect(config[surface]).toEqual({ include: ['list', 'get'] });

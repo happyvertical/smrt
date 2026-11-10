@@ -50,6 +50,7 @@ import {
   MCP_TOOL_ACCESS_DENIED_CODE,
   McpAccessError,
 } from './errors.js';
+import { stampVerifiedIdentity } from './identity.js';
 import {
   createMcpProtocolServerForRequest,
   MCP_TASKS_EXTENSION,
@@ -454,10 +455,15 @@ function effectiveBoundPrincipal(
     return undefined;
   }
   const granted = new Set(bound.scopes);
-  return {
-    ...authenticated,
-    scopes: (authenticated.scopes ?? []).filter((scope) => granted.has(scope)),
-  };
+  return stampVerifiedIdentity(
+    {
+      ...authenticated,
+      scopes: (authenticated.scopes ?? []).filter((scope) =>
+        granted.has(scope),
+      ),
+    },
+    authenticated.identity,
+  );
 }
 
 /** Options shared by both route mounts. */

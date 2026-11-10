@@ -159,6 +159,7 @@ export class ContentContributions extends SmrtCollection<ContentContribution> {
       const contributors = await this.getContributorCollection();
       const contributor = await contributors.getByEmail(
         options.contributorEmail,
+        { tenantId: options.tenantId },
       );
       contributorId = contributor?.id || undefined;
     }

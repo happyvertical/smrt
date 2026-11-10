@@ -126,6 +126,18 @@ const NODE_ONLY_GROUPS: ReadonlyArray<{
   },
   {
     reason:
+      'Test-run manifest snapshot contract (#4128): a process-environment map written by the Vitest runner and read by Node test workers; a browser has no test run to join',
+    names: [
+      'SMRT_TEST_MANIFEST_PATHS_ENV_KEY',
+      'isActiveTestManifestPath',
+      'isRefusedTestArtifact',
+      'isTestArtifactManifest',
+      'registerActiveTestManifestPath',
+      'resolveActiveTestManifestPath',
+    ],
+  },
+  {
+    reason:
       'Knowledge graph and artifact publishing (scanner/knowledge, filesystem); belongs behind `@happyvertical/smrt-core/knowledge`',
     names: [
       'AGENT_SURFACE_HASH_PREFIX',
@@ -164,6 +176,16 @@ const NODE_ONLY_GROUPS: ReadonlyArray<{
       'sanitizeMessagePaths',
       'snapshotRegistry',
     ],
+  },
+  {
+    reason:
+      'Run-time model registration for a Node host (an app worker): registers into the process registry and plans DDL through the Node-only schema strategies (#4871)',
+    names: ['planRuntimeModelDDL', 'registerRuntimeModel', 'runtimeModelEntry'],
+  },
+  {
+    reason:
+      'Provider tool-schema preparation sits with the Node-side generators; browsers never send generated tools to a provider (#4872)',
+    names: ['toProviderToolSchema'],
   },
   {
     reason:

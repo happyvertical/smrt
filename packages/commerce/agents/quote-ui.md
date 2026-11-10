@@ -8,8 +8,9 @@ Commerce playground has interactive vendor quotation and customer estimate demos
 `kind: 'vendor-quotation'` means received supplier evidence;
 `kind: 'customer-estimate'` means pricing proposed to a customer. Neither widget
 selects pricing, accepts budgets, awards work, sends messages or mutates a model.
-Adapt public Commerce Estimate/Contract fields (`currency`, `totalAmount`,
-`status`, `customerId`/`vendorId`) to these presentation DTOs;
+Adapt Commerce `Estimate` fields (`currency`, `totalAmount`, `status`,
+`customerId`) to customer-estimate DTOs. A received vendor quotation is
+caller-held evidence or a draft `PurchaseOrder`, not an `Estimate.vendorId`;
 construction package allocation and approval policy remain caller extensions.
 Client records need not become Commerce Customers.
 

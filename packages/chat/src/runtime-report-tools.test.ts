@@ -237,6 +237,60 @@ afterEach(() => {
 });
 
 describe('createRuntimeReportTools', () => {
+  it('uses the current source field policy for discovery, preview, save and saved runs', async () => {
+    sources[0] = {
+      ...sources[0],
+      fields: ['status', 'totalAmount', 'createdAt'],
+      excludeFields: ['createdAt'],
+    };
+    const confirmSave = vi.fn().mockResolvedValue(undefined);
+    const tools = toolMap({
+      sources: () => sources,
+      confirmation: { confirmSave },
+    });
+    const preview = await call(
+      tools.get(RUNTIME_REPORT_DEFINE_TOOL_SLUG),
+      fakeRun(),
+      {
+        phase: 'preview',
+        spec: SPEC,
+      },
+    );
+    expect(preview.result.rows).toHaveLength(2);
+    const saved = await call(
+      tools.get(RUNTIME_REPORT_DEFINE_TOOL_SLUG),
+      fakeRun(),
+      {
+        phase: 'apply',
+        spec: SPEC,
+        specHash: preview.specHash,
+      },
+    );
+    sources[0] = { ...sources[0], excludeFields: ['totalAmount', 'createdAt'] };
+    const described = await call(
+      tools.get(RUNTIME_REPORT_SOURCES_TOOL_SLUG),
+      fakeRun(),
+    );
+    expect(
+      described.sources[0].fields.map((field: { name: string }) => field.name),
+    ).toEqual(['status']);
+    for (const phase of ['preview', 'apply']) {
+      await expect(
+        call(tools.get(RUNTIME_REPORT_DEFINE_TOOL_SLUG), fakeRun(), {
+          phase,
+          spec: SPEC,
+          specHash: preview.specHash,
+        }),
+      ).rejects.toMatchObject({ code: 'unknown_field' });
+    }
+    await expect(
+      call(tools.get(RUNTIME_REPORT_RUN_TOOL_SLUG), fakeRun(), {
+        reportId: saved.reportId,
+      }),
+    ).rejects.toMatchObject({ code: 'unknown_field' });
+    expect(confirmSave).toHaveBeenCalledTimes(1);
+  });
+
   it('exposes four principal tools with stable slugs, names and strict schemas', () => {
     const tools = createRuntimeReportTools({ sources });
     expect(tools.map((t) => t.slug)).toEqual(ALL_TOOLS);
@@ -435,7 +489,7 @@ describe('createRuntimeReportTools', () => {
     });
 
     describe('apply', () => {
-      it('refuses to save without a confirmation host (propose-only)', async () => {
+      it('returns a bounded browser proposal without saving or trusting model consent', async () => {
         const tools = toolMap();
         const preview = await call(
           tools.get(RUNTIME_REPORT_DEFINE_TOOL_SLUG),
@@ -445,7 +499,7 @@ describe('createRuntimeReportTools', () => {
             spec: SPEC,
           },
         );
-        const error = await call(
+        const proposal = await call(
           tools.get(RUNTIME_REPORT_DEFINE_TOOL_SLUG),
           fakeRun(),
           {
@@ -455,9 +509,16 @@ describe('createRuntimeReportTools', () => {
             // A model asserting consent is not consent.
             confirmed: true,
           },
-        ).catch((e) => e);
-        expect(error).toBeInstanceOf(RuntimeReportError);
-        expect(error.message).toMatch(/confirmation/);
+        );
+        expect(proposal).toMatchObject({
+          status: 'awaiting_confirmation',
+          specHash: preview.specHash,
+          spec: preview.spec,
+          sourceLabel: expect.any(String),
+          confirmPath: '/api/_reports/runtime/confirm',
+          preview: { specHash: preview.specHash },
+        });
+        expect(proposal.preview.rows.length).toBeLessThanOrEqual(20);
         const listed = await call(
           tools.get(RUNTIME_REPORT_LIST_TOOL_SLUG),
           fakeRun(),

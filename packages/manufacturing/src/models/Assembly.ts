@@ -71,7 +71,7 @@ export class Assembly extends Product {
    * routing steps (smrt#3445) provide labour per operation; `0` means not
    * estimated.
    */
-  @field()
+  @field({ description: 'About how many minutes it takes to make one.' })
   estimatedLabourMinutes: number = 0;
 
   /**
@@ -79,6 +79,7 @@ export class Assembly extends Product {
    * default, or `null` for none. `RESTRICT`, like `RoutingStep.operationId`:
    * operations are retired, never deleted.
    */
+  @field({ description: 'The kind of work usually booked to this assembly.' })
   @foreignKey(Operation, { nullable: true, onDelete: 'RESTRICT' })
   defaultOperationId: string | null = null;
 
@@ -86,7 +87,7 @@ export class Assembly extends Product {
    * The organization's own drawing or part number for this assembly,
    * alongside (not instead of) the SKU code.
    */
-  @field()
+  @field({ description: 'Your own drawing or part number for this assembly.' })
   partReference: string = '';
 
   constructor(options: AssemblyOptions = {}) {

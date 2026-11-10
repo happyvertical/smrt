@@ -138,6 +138,21 @@ describe('runtime REST custom collection actions (#2047)', () => {
   const get = (path: string): Promise<Response> =>
     handler(new Request(`http://localhost/api/v1/actionwidgets/${path}`));
 
+  it('withholds a declared action when the runtime config is abstract', async () => {
+    const config = ObjectRegistry.getConfig('ActionWidget');
+    const previous = config.abstract;
+    config.abstract = true;
+    try {
+      const response = await post('quote', { symbol: 'HV' });
+      expect(response.status).toBe(404);
+      expect(await response.json()).toEqual({
+        error: "Custom action 'quote' is not exposed (abstract)",
+      });
+    } finally {
+      config.abstract = previous;
+    }
+  });
+
   it('dispatches an action whose route omits an explicit scope', async () => {
     const response = await post('quote', { symbol: 'HV' });
     expect(response.status).toBe(200);

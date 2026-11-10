@@ -334,7 +334,8 @@ available it falls back to `@happyvertical/smrt-scanner`.
 Run an advisory downstream ecosystem review. The tool scans package manifests
 and source imports for missing HappyVertical dependencies, direct storage
 bypasses, custom HTTP shells, custom object manifest generation, local
-auth/tenancy/audit seams, and UI shell drift. It returns deterministic findings
+auth/tenancy/audit seams, UI shell drift, and hand-rolled equivalents of
+smrt packages. It returns deterministic findings
 and suggested follow-up issue titles; it does not modify files.
 
 | Parameter | Type | Required | Description |
@@ -343,6 +344,21 @@ and suggested follow-up issue titles; it does not modify files.
 | `rootDir` | `string` | No | Compatibility alias for `directory` |
 | `includeSourceEvidence` | `boolean` | No | Include file/line evidence (default: true) |
 | `maxFindings` | `number` | No | Limit findings returned |
+| `intentIndexPath` | `string` | No | Caller-trusted intent index driving duplicate detection (`regex:` tokens become `RegExp`). Default: the full index packaged in this release (`dist/knowledge/intents/index.md`), else the monorepo's `docs/knowledge/intents/index.md` in a source checkout; never read from `directory` |
+| `detectDuplicates` | `boolean` | No | Run the intent-driven hand-rolled-equivalent pass (default: true) |
+
+Duplicate detection is table-driven: each row of the intent index names home
+packages and `import:`, `call:`, `regex:` and `decimal-field:` signals. When a
+package shows a signal and imports none of the row's home packages, the tool
+emits an advisory `duplicate-detection` finding anchored at `path:line` that
+names the intent page and component pages. Unknown signal kinds are skipped
+with a stderr note. The rules are never taken from the reviewed project, so a
+pull request cannot delete them or inject a pattern; when no index can be
+found the tool reports `skipped` with a note. The same pass runs from a shell with
+`npx @happyvertical/smrt-dev-mcp review --directory . [--intent-index PATH] [--format summary]`
+(exit 2 and a stderr message when no index is found, never a silent pass) and
+from the reusable `consumer-knowledge-review.yml` workflow, which always uses
+the packaged index.
 
 ### `reflect-knowledge`
 
@@ -716,6 +732,12 @@ Prompts:
 - `@modelcontextprotocol/server` -- MCP server protocol
 - `@happyvertical/smrt-core` -- manifest and object registry
 - `@happyvertical/smrt-types` -- shared domain knowledge contract
+
+The Node HTTP adapter declares a server peer dependency; keep the adapter,
+server, and test client on a coherent supported release set. `pnpm verify:pack`
+from this package installs the packed production graph in a cold consumer with
+strict peer validation, so workspace resolution cannot hide an incompatible
+published pair.
 
 ## License
 

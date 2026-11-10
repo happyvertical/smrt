@@ -21,9 +21,18 @@ import {
   rmSync,
 } from 'node:fs';
 import { homedir, platform } from 'node:os';
-import { join, parse, resolve } from 'node:path';
+import { join, parse, resolve, win32 } from 'node:path';
+import { custodyContext } from './custody-context.js';
 import { errorCode } from './error-code.js';
 import { resolveLocalRuntimePaths, validateApplicationId } from './index.js';
+import { lookupWindowsEnvironment } from './windows-acl-inspector.js';
+import { preparePrivateWindowsTree } from './windows-custody.js';
+import {
+  foldWindowsCase,
+  isInsideWindowsPath,
+  validateWindowsPath,
+  WINDOWS_DERIVED_PATH_RESERVE,
+} from './windows-paths.js';
 
 /** Inputs for the state-root resolvers. */
 export interface ApplicationStateRootOptions {
@@ -38,6 +47,53 @@ export interface ApplicationStateRootOptions {
   environment?: Record<string, string | undefined>;
 }
 
+/** Where the machine-local base of a state root came from. */
+export type ApplicationStateRootSource =
+  /** `XDG_STATE_HOME`, set explicitly by the operator (Linux and others). */
+  | 'xdg-state-home'
+  /** `LOCALAPPDATA` on Windows. */
+  | 'local-app-data'
+  /** The user's home directory: it exists only as long as the home does. */
+  | 'home-directory';
+
+function stateBaseFor(options: ApplicationStateRootOptions): {
+  base: string;
+  source: ApplicationStateRootSource;
+} {
+  const platformName = options.platformName || platform();
+  const homeDirectory = options.homeDirectory || homedir();
+  const environment = options.environment || process.env;
+  if (platformName === 'darwin') {
+    return {
+      base: join(homeDirectory, 'Library', 'Application Support'),
+      source: 'home-directory',
+    };
+  }
+  if (platformName === 'win32') {
+    return environment.LOCALAPPDATA
+      ? { base: environment.LOCALAPPDATA, source: 'local-app-data' }
+      : { base: homeDirectory, source: 'home-directory' };
+  }
+  return environment.XDG_STATE_HOME
+    ? { base: environment.XDG_STATE_HOME, source: 'xdg-state-home' }
+    : {
+        base: join(homeDirectory, '.local', 'state'),
+        source: 'home-directory',
+      };
+}
+
+/**
+ * Which setting decides where this location's custody record lives. A state
+ * root derived from the home directory is lost when the home is recreated
+ * (an ephemeral container filesystem), which makes the next start of a
+ * persisted data root look like an unverified arrival.
+ */
+export function applicationStateRootSource(
+  options: ApplicationStateRootOptions,
+): ApplicationStateRootSource {
+  return stateBaseFor(options).source;
+}
+
 /**
  * State is derived from the canonical application/data identity. It is not an
  * independent override because every process and operator command must share
@@ -46,25 +102,86 @@ export interface ApplicationStateRootOptions {
 export function resolveApplicationStateRoot(
   options: ApplicationStateRootOptions,
 ): string {
+  const platformName = options.platformName || platform();
+  const homeDirectory = options.homeDirectory || homedir();
+  const environment = options.environment || process.env;
+  if (platformName === 'win32') {
+    return resolveWindowsStateRoot(options, homeDirectory, environment);
+  }
   const paths = resolveLocalRuntimePaths({
     appId: options.appId,
     dataDirectory: options.dataDirectory,
     sourceRoot: options.sourceRoot,
   });
-  const platformName = options.platformName || platform();
-  const homeDirectory = options.homeDirectory || homedir();
-  const environment = options.environment || process.env;
-  const stateBase =
-    platformName === 'darwin'
-      ? join(homeDirectory, 'Library', 'Application Support')
-      : platformName === 'win32'
-        ? environment.LOCALAPPDATA || homeDirectory
-        : environment.XDG_STATE_HOME || join(homeDirectory, '.local', 'state');
+  const stateBase = stateBaseFor(options).base;
   const dataIdentity = createHash('sha256')
     .update(resolve(paths.root))
     .digest('hex')
     .slice(0, 12);
   return resolve(stateBase, `.${options.appId}-${dataIdentity}-state`);
+}
+
+/**
+ * Windows state root: machine-local `%LOCALAPPDATA%` only (never the home
+ * directory), the data-root identity is case-folded so spellings of one
+ * directory share one lock domain, and every path passes the Windows lexical
+ * rule.
+ */
+function resolveWindowsStateRoot(
+  options: ApplicationStateRootOptions,
+  homeDirectory: string,
+  environment: Record<string, string | undefined>,
+): string {
+  const paths = resolveLocalRuntimePaths({
+    appId: options.appId,
+    dataDirectory: options.dataDirectory,
+    sourceRoot: options.sourceRoot,
+    platform: 'win32',
+    homeDirectory,
+    env: environment,
+  });
+  const localAppData = lookupWindowsEnvironment(environment, 'LOCALAPPDATA');
+  if (localAppData === undefined || localAppData === '') {
+    throw new Error(
+      'LOCALAPPDATA is required for Windows application state; the roaming profile and the home directory are never used.',
+    );
+  }
+  const stateBase = validateWindowsPath(localAppData, 'LOCALAPPDATA');
+  const dataIdentity = createHash('sha256')
+    .update(foldWindowsCase(paths.root))
+    .digest('hex')
+    .slice(0, 12);
+  return validateWindowsPath(
+    win32.join(stateBase, `.${options.appId}-${dataIdentity}-state`),
+    'Application state root',
+    WINDOWS_DERIVED_PATH_RESERVE,
+  );
+}
+
+/** Windows: the same private, app-bound state root under the W6 rule. */
+function prepareWindowsStateRoot(options: ApplicationStateRootOptions): string {
+  const rt = custodyContext().windows;
+  const sourceRoot = rt.realpath(
+    win32.resolve(options.sourceRoot || process.cwd()),
+  );
+  const stateRoot = resolveApplicationStateRoot(options);
+  if (
+    isInsideWindowsPath(sourceRoot, stateRoot) ||
+    isInsideWindowsPath(stateRoot, sourceRoot)
+  ) {
+    throw new Error('Application state must remain outside the source tree.');
+  }
+  preparePrivateWindowsTree(rt, {
+    directory: stateRoot,
+    file: {
+      path: win32.join(
+        stateRoot,
+        `.smrt-state-${validateApplicationId(options.appId)}`,
+      ),
+      size: 0,
+    },
+  });
+  return stateRoot;
 }
 
 function isInside(parent: string, child: string): boolean {
@@ -91,12 +208,21 @@ export interface StateCustodyOptions {
 export function prepareApplicationStateRoot(
   options: ApplicationStateRootOptions & StateCustodyOptions,
 ): string {
+  if ((options.platformName || platform()) === 'win32') {
+    return prepareWindowsStateRoot(options);
+  }
   const sourceRoot = realpathSync(resolve(options.sourceRoot || process.cwd()));
   const stateRoot = resolveApplicationStateRoot(options);
   if (isInside(sourceRoot, stateRoot) || isInside(stateRoot, sourceRoot)) {
     throw new Error('Application state must remain outside the source tree.');
   }
   const currentUid = options.currentUid ?? process.getuid?.();
+  if (currentUid === undefined) {
+    // Never skip the owner checks for lack of an identity.
+    throw new Error(
+      'Application state requires a numeric current-user identity.',
+    );
+  }
   let component = parse(stateRoot).root;
   for (const part of stateRoot
     .slice(component.length)
@@ -105,7 +231,12 @@ export function prepareApplicationStateRoot(
     component = join(component, part);
     try {
       const details = lstatSync(component);
-      if (details.isSymbolicLink() || !details.isDirectory()) {
+      if (details.isSymbolicLink()) {
+        throw new Error(
+          `Application state path component is unsafe: ${component} (symbolic link). Select an explicit trusted canonical path; on macOS /tmp is commonly /private/tmp. Do not automatically trust symlink targets.`,
+        );
+      }
+      if (!details.isDirectory()) {
         throw new Error(
           `Application state path component is unsafe: ${component}`,
         );
@@ -113,9 +244,8 @@ export function prepareApplicationStateRoot(
       const sharedStickyRoot =
         details.uid === 0 && (details.mode & 0o1000) !== 0;
       if (
-        currentUid !== undefined &&
-        ((details.uid !== currentUid && details.uid !== 0) ||
-          ((details.mode & 0o022) !== 0 && !sharedStickyRoot))
+        (details.uid !== currentUid && details.uid !== 0) ||
+        ((details.mode & 0o022) !== 0 && !sharedStickyRoot)
       ) {
         throw new Error(
           `Application state path lacks trusted custody: ${component}`,
@@ -132,7 +262,7 @@ export function prepareApplicationStateRoot(
       if (
         created.isSymbolicLink() ||
         !created.isDirectory() ||
-        (currentUid !== undefined && created.uid !== currentUid) ||
+        created.uid !== currentUid ||
         (created.mode & 0o777) !== 0o700
       ) {
         throw new Error(
@@ -145,7 +275,7 @@ export function prepareApplicationStateRoot(
   if (
     rootDetails.isSymbolicLink() ||
     !rootDetails.isDirectory() ||
-    (currentUid !== undefined && rootDetails.uid !== currentUid) ||
+    rootDetails.uid !== currentUid ||
     (rootDetails.mode & 0o777) !== 0o700
   ) {
     throw new Error(
@@ -170,7 +300,7 @@ export function prepareApplicationStateRoot(
       marker.isSymbolicLink() ||
       !marker.isFile() ||
       marker.size !== 0 ||
-      (currentUid !== undefined && marker.uid !== currentUid) ||
+      marker.uid !== currentUid ||
       (marker.mode & 0o777) !== 0o600
     ) {
       throw new Error('Application state marker is unsafe.');

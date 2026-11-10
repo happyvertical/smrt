@@ -404,6 +404,20 @@ async function loadManifestArtifact(
 
     try {
       const parsed = JSON.parse(await readFile(candidate, 'utf-8')) as unknown;
+      // A test run's manifest lists inline test fixtures as if they were the
+      // project's objects (#2760); only build outputs describe the project.
+      if (
+        (parsed as { artifactPurpose?: unknown } | null)?.artifactPurpose ===
+        'test'
+      ) {
+        diagnostics.push({
+          severity: 'warning',
+          filePath: candidate,
+          message:
+            'Manifest artifact is a test-run manifest (artifactPurpose: test), not a build output; skipped.',
+        });
+        continue;
+      }
       if (isManifestLike(parsed)) {
         return {
           source: 'manifest',

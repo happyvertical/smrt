@@ -9,7 +9,6 @@
 
 import { randomUUID } from 'node:crypto';
 import { readFile } from 'node:fs/promises';
-import { tmpdir } from 'node:os';
 import { isAbsolute, join } from 'node:path';
 import { getTestDatabase, ObjectRegistry } from '@happyvertical/smrt-core';
 import {
@@ -17,7 +16,7 @@ import {
   getDatabase,
   syncSchema,
 } from '@happyvertical/sql';
-import { beforeEach, describe, expect, it } from 'vitest';
+import { afterEach, beforeEach, describe, expect, it } from 'vitest';
 import { createProfileFromOidc } from '../auth/index.js';
 import { OidcIdentityCollection } from '../collections/OidcIdentityCollection.js';
 import { ProfileCollection } from '../collections/ProfileCollection.js';
@@ -31,6 +30,11 @@ import {
   type OidcProvisioningScenario,
   type OidcProvisioningSurfaceExpectation,
 } from '../testing/oidcProvisioningDecisionMatrix.js';
+import { createOwnedSqliteFixtures } from './owned-sqlite-fixtures.js';
+
+const fixtures = createOwnedSqliteFixtures();
+
+afterEach(() => fixtures.cleanup());
 
 const PROFILE_MATRIX_SCENARIOS: readonly OidcProvisioningScenario[] =
   OIDC_PROVISIONING_DECISION_MATRIX.filter(
@@ -168,21 +172,21 @@ describe('OIDC Account Linking', () => {
 
   beforeEach(async () => {
     // Use a temp file database for each test
-    dbUrl = join(
-      tmpdir(),
-      `test-oidc-${Date.now()}-${Math.random().toString(36).slice(2)}.db`,
-    );
+    dbUrl = fixtures.file('test-oidc');
 
     // Initialize collections to create tables
     const typeCollection = await ProfileTypeCollection.create({
       persistence: { type: 'sqlite', url: dbUrl },
     });
+    fixtures.track(typeCollection.db);
     const personType = await typeCollection.create({
       name: 'Person',
       description: 'Individual person',
     });
     await personType.save();
-    const db = await getDatabase({ type: 'sqlite', url: dbUrl });
+    const db = fixtures.track(
+      await getDatabase({ type: 'sqlite', url: dbUrl }),
+    );
     await backfillProfileEmailKeys(db);
   });
 
@@ -220,14 +224,14 @@ describe('OIDC Account Linking', () => {
     });
 
     it('accepts the database string shortcut', async () => {
-      const stringDbUrl = `file:${join(
-        tmpdir(),
-        `test-oidc-string-${Date.now()}-${Math.random().toString(36).slice(2)}.db`,
-      )}`;
-      await ProfileTypeCollection.create({
+      const stringDbUrl = fixtures.url('test-oidc-string');
+      const stringTypes = await ProfileTypeCollection.create({
         persistence: { type: 'sqlite', url: stringDbUrl },
       });
-      const stringDb = await getDatabase({ type: 'sqlite', url: stringDbUrl });
+      fixtures.track(stringTypes.db);
+      const stringDb = fixtures.track(
+        await getDatabase({ type: 'sqlite', url: stringDbUrl }),
+      );
       await backfillProfileEmailKeys(stringDb);
       const result = await createProfileFromOidc(
         {

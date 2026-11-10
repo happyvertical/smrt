@@ -69,18 +69,22 @@ export interface TenantPermissionOverrideOptions extends SmrtObjectOptions {
   mcp: { include: ['list', 'get'] },
   // #3742: CLI mirrors the read-only surface; `cli` without `include` is full CRUD.
   cli: { include: ['list', 'get'] },
+  // One override per tenant/permission pair (#3375); core makes natural-key writes conflict
+  // tolerant. NO ACTION keeps deletion semantics: a natural-key column would
+  // otherwise default to CASCADE.
+  conflictColumns: ['tenant_id', 'permission_id'],
 })
 export class TenantPermissionOverride extends SmrtObject {
   /**
    * Foreign key to Tenant
    */
-  @foreignKey('Tenant', { required: true })
+  @foreignKey('Tenant', { required: true, onDelete: 'NO ACTION' })
   tenantId?: string;
 
   /**
    * Foreign key to Permission
    */
-  @foreignKey('Permission', { required: true })
+  @foreignKey('Permission', { required: true, onDelete: 'NO ACTION' })
   permissionId?: string;
 
   /**

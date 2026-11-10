@@ -236,53 +236,69 @@ describe('content governance models', () => {
   });
 
   it('resolves collection lookups by key and exact assignment precedence', async () => {
+    // Keys are tenant-local (#3305 M1): lookups go through a tenant-scoped raw
+    // query. Without a tenant only the global (NULL-tenant) row is read; real
+    // tenant/global resolution is covered in __tests__/content-tenant-keys.
     const policyCollection = new ContentGovernancePolicyCollection({} as any);
     const profileCollection = new ContentGovernanceProfileCollection({} as any);
     const assignmentCollection = new ContentGovernanceAssignmentCollection(
       {} as any,
     );
 
-    vi.spyOn(policyCollection, 'get').mockResolvedValue({
-      key: 'facts',
-    } as any);
-    vi.spyOn(profileCollection, 'get').mockResolvedValue({
-      key: 'publication',
-    } as any);
+    const policyQuery = vi
+      .spyOn(policyCollection, 'query')
+      .mockResolvedValue([{ key: 'facts', tenantId: null }] as any);
+    vi.spyOn(profileCollection, 'query').mockResolvedValue([
+      { key: 'publication', tenantId: null },
+    ] as any);
 
-    const assignmentGet = vi
-      .spyOn(assignmentCollection, 'get')
-      .mockImplementation(async (where: any) => {
-        if (where.key === 'article::news') {
-          return { key: 'article::news', contentType: 'article' } as any;
+    const assignmentQuery = vi
+      .spyOn(assignmentCollection, 'query')
+      .mockImplementation(async (_sql: string, params: any) => {
+        const [key] = params as string[];
+        if (key === 'article::news') {
+          return [
+            { key: 'article::news', contentType: 'article', tenantId: null },
+          ] as any;
         }
-        if (where.key === 'article::') {
-          return { key: 'article::', contentType: 'article' } as any;
+        if (key === 'article::') {
+          return [
+            { key: 'article::', contentType: 'article', tenantId: null },
+          ] as any;
         }
-        return null as any;
+        return [] as any;
       });
 
     await expect(policyCollection.getByKey('facts')).resolves.toEqual({
       key: 'facts',
+      tenantId: null,
     });
+    expect(policyQuery).toHaveBeenCalledWith(
+      expect.stringContaining('tenant_id IS NULL'),
+      ['facts'],
+      { allowRawOnTenantScoped: true },
+    );
     await expect(profileCollection.getByKey('publication')).resolves.toEqual({
       key: 'publication',
+      tenantId: null,
     });
     await expect(
       assignmentCollection.resolveForContent({
         contentType: 'article',
         contentVariant: 'news',
       }),
-    ).resolves.toEqual({
-      key: 'article::news',
-      contentType: 'article',
-    });
+    ).resolves.toMatchObject({ key: 'article::news' });
     await expect(
-      assignmentCollection.resolveForContent({ contentType: 'article' }),
-    ).resolves.toEqual({
-      key: 'article::',
-      contentType: 'article',
-    });
-    expect(assignmentGet).toHaveBeenCalledWith({ key: 'article::news' });
+      assignmentCollection.resolveForContent({
+        contentType: 'article',
+        contentVariant: 'opinion',
+      }),
+    ).resolves.toMatchObject({ key: 'article::' });
+    expect(assignmentQuery).toHaveBeenCalledWith(
+      expect.any(String),
+      ['article::news'],
+      { allowRawOnTenantScoped: true },
+    );
   });
 
   it('creates and restores content version snapshots', async () => {

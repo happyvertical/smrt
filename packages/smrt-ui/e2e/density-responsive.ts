@@ -8,6 +8,19 @@ switch (params.get('surface')) {
     mount(Layout, { target });
     break;
   }
+  case 'toolbar': {
+    const { default: Toolbar } = await import(
+      '../src/components/data/__tests__/toolbar-density.fixture.svelte',
+    );
+    const density = params.get('density');
+    mount(Toolbar, {
+      target,
+      props: {
+        density: density === 'touch' || density === 'inherit' ? density : 'comfortable',
+      },
+    });
+    break;
+  }
   case 'table': {
     const { default: Table } = await import(
       '../src/components/data/__tests__/responsive-table.fixture.svelte',
@@ -17,6 +30,16 @@ switch (params.get('surface')) {
       props: {
         mode: params.get('mode') === 'scroll' ? 'scroll' : 'hide-columns',
       },
+    });
+    break;
+  }
+  case 'pager': {
+    const { default: Pager } = await import(
+      '../src/components/data/__tests__/pager-density.fixture.svelte',
+    );
+    mount(Pager, {
+      target,
+      props: { target: params.get('target') ?? '48px' },
     });
     break;
   }

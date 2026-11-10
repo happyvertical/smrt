@@ -5,6 +5,7 @@ import { Form, FormGroup, Input, Select } from '@happyvertical/smrt-ui/forms';
 import { useI18n } from '@happyvertical/smrt-ui/i18n';
 import { EmptyState, PageHeader } from '@happyvertical/smrt-ui/layout';
 import { Button, Card, Skeleton } from '@happyvertical/smrt-ui/ui';
+import type { Snippet } from 'svelte';
 import { M } from '../i18n.js';
 import type {
   PartyDirectoryExtension,
@@ -60,6 +61,10 @@ export interface Props {
   labels?: PartySurfaceLabels;
   /** Consumer content appended to every vendor row. */
   extension?: PartyDirectoryExtension<VendorDisplayData>;
+  /** Omits the built-in page header (title, subtitle, and its create/edit action) for hosts that frame the page themselves. */
+  headless?: boolean;
+  /** Replaces the built-in page header; not rendered when `headless` is set. */
+  header?: Snippet;
 }
 
 const {
@@ -85,6 +90,8 @@ const {
   errorMessage,
   labels = {},
   extension,
+  headless = false,
+  header,
 }: Props = $props();
 
 const { t } = useI18n();
@@ -133,11 +140,15 @@ function vendorMeta(vendor: VendorDisplayData): string {
 </script>
 
 <section class="party-directory" data-smrt-component="VendorDirectory">
-  <PageHeader title={plural} subtitle={labels.plural ? t(M['commerce.party.manage_named'], { plural }) : t(M['commerce.vendor.manage'])}>
-    {#snippet actions()}
-      {#if canCreate && addHref}<Button href={addHref}>{labels.add ?? (labels.singular ? t(M['commerce.party.add_named'], { singular }) : t(M['commerce.vendor.add']))}</Button>{/if}
-    {/snippet}
-  </PageHeader>
+  {#if header && !headless}
+    {@render header()}
+  {:else if !headless}
+    <PageHeader title={plural} subtitle={labels.plural ? t(M['commerce.party.manage_named'], { plural }) : t(M['commerce.vendor.manage'])}>
+      {#snippet actions()}
+        {#if canCreate && addHref}<Button href={addHref}>{labels.add ?? (labels.singular ? t(M['commerce.party.add_named'], { singular }) : t(M['commerce.vendor.add']))}</Button>{/if}
+      {/snippet}
+    </PageHeader>
+  {/if}
 
   <Form class="directory-search" method="get" action={searchAction} preventDefault={false} stagedReview={false}>
     {#each searchHiddenFields as [name, value]}

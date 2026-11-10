@@ -11,6 +11,10 @@ test('notification bell marks read and replaces actor state', async ({
     page.getByRole('button', { name: 'Mark all read' }),
   ).toBeDisabled();
   await page.getByRole('button', { name: 'Switch user' }).click();
+  // "Switch user" sits outside the bell, so the pointer-down closes the
+  // panel (light dismiss, #4566); reopen it to see the new actor's items.
+  await expect(page.getByRole('dialog')).toHaveCount(0);
+  await page.getByRole('button', { name: /Notifications/ }).click();
   await expect(page.getByText('Second user notification')).toBeVisible();
   await expect(page.getByText('First user notification')).toHaveCount(0);
   await page.getByRole('button', { name: 'Mark all read' }).click();

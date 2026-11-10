@@ -9,7 +9,7 @@ deterministic SMRT ecosystem knowledge, and portable agent workflows.
 |------|---------|
 | `generate-smrt-class` | Generates `@smrt()` class with fields, decorator config, imports |
 | `introspect-project` | Scans project directory for SMRT objects; compact summary by default, `detail: 'full'` for field/schema/method detail |
-| `review-smrt-project` | Advisory downstream ecosystem alignment review for dependencies, storage, app shell, auth/tenancy, and manifest generation |
+| `review-smrt-project` | Advisory downstream ecosystem alignment review for dependencies, storage, app shell, auth/tenancy, manifest generation, and intent-driven hand-rolled-equivalent detection (#4690) |
 | `reflect-knowledge` | Reports deterministic SMRT + HappyVertical SDK knowledge coverage and freshness |
 | `reflect-domain-knowledge` | Reports downstream/domain artifact coverage and freshness |
 | `check-knowledge-freshness` | Runs deterministic agent-doc and stale-reference checks |
@@ -32,6 +32,14 @@ deterministic SMRT ecosystem knowledge, and portable agent workflows.
 `pnpm knowledge:check --strict --format markdown` compares this catalog and the
 README parameter tables to the exported `TOOLS` definitions. Add or change a
 tool schema and its authored documentation in the same commit.
+
+## Intent-driven duplicate detection (#4690)
+
+`review-smrt-project` / `smrt-dev-mcp review` flag hand-rolled equivalents of
+smrt packages from the intent index. The rules (`regex:` tokens become `RegExp`)
+come from the full index packaged in this release, never from the reviewed tree;
+`intentIndexPath` / `--intent-index` is caller-trusted. Details, token kinds and
+the CLI/workflow contract: [agents/intent-duplicates.md](agents/intent-duplicates.md).
 
 ## Knowledge Discovery (#2143)
 
@@ -104,6 +112,18 @@ otherwise emitted docs read `/AGENTS.md` and changed-file matching compares
 against a leading `/` and selects nothing. The root owns any changed path no
 member package owns, mirroring the member-excluded scan.
 
+### OKF component pages (#4686)
+
+`pnpm knowledge:okf` (after `pnpm build`) writes `docs/knowledge/components/<unscoped-name>.md` per
+workspace package from this index; never hand-edit them. `source_revision` is a `sha256` of the page's
+inputs (manifest slice, package AGENTS/module-doc hashes, models, MCP tools, `agentSurface`), not a commit.
+`knowledge:check --strict` fails on stale, edited, missing or extra pages and on dangling `/…md` links in
+hand-authored pages. Details: header of `scripts/knowledge-okf.ts`.
+
+Consumer bundle (#4689): `okf-bundle.ts` defines the `.agents/smrt-knowledge/` contract `smrt docs:agents` writes;
+`check-knowledge-freshness` reports its age (`okf-bundle-age` info, `okf-bundle-aged` past 90 days) and flags
+`stale-okf-bundle` when a page's `package_version` no longer matches `node_modules` until `docs:agents` reruns.
+
 ## Agent Skills
 
 Bundled skills live under `skills/`, the Agent Plugins fixed discovery
@@ -115,7 +135,11 @@ Skill-aware harnesses can parse the frontmatter; other harnesses can ignore it.
   Agents should fetch it with `get-agent-skill`, then call `build-context` (`task: review`) for
   deterministic context, inspect the actual diff, and produce a findings-first
   review.
+- `skills/smrt-catalog/SKILL.md` — catalog router skill (#4708), installed into consumers by `smrt docs:agents`.
+- `skills/smrt-contribute/SKILL.md` — contributor skill (#4709) for forks of this repository; an identical copy is
+  checked in at the root `.agents/skills/smrt-contribute/SKILL.md` and a test fails on drift.
 
+Trigger evals, the registry and install contract, and the drift rule: [agents/agent-skills.md](agents/agent-skills.md).
 
 ## Project runtime prerequisite
 
@@ -157,6 +181,12 @@ server is always launched from a repo that installs the package. Prefer an
 absolute `node /path/to/node_modules/@happyvertical/smrt-dev-mcp/dist/index.js`
 launcher or a small wrapper script with an absolute Node path.
 
+This monorepo's `.mcp.json` runs `node scripts/mcp-servers/smrt-dev-mcp.mjs`:
+stdout is protocol-only, the launcher never installs or uses `pnpm exec`/`npx`
+(their stdout banner breaks stdio, #4685), and it falls back to `tsx` on `src/`
+when `dist` is missing or older, so rebuild `dist` after server edits. Guarded by
+`src/launcher-stdio.test.ts`; see [scripts/mcp-servers/README.md](../../scripts/mcp-servers/README.md).
+
 ## MCP Tier Context
 
 - **Tier 1** (Runtime): auto-generated from `@smrt()` objects — live data operations
@@ -170,6 +200,8 @@ launcher or a small wrapper script with an absolute Node path.
 - `src/agent-skills.ts` — bundled skill registry and file loader
 - `plugin.json` / `mcp.json` — Agent Plugins 1.0.0 portable root manifests
 - `skills/smrt-code-review/SKILL.md` — downstream SMRT review procedure
+- `skills/smrt-contribute/SKILL.md` — contributor skill (copy at repo-root `.agents/skills/smrt-contribute/`)
+- `skills/smrt-catalog/SKILL.md` — catalog router skill; `skills/smrt-catalog/evals.json` — its trigger eval set
 - `src/tools/generate-smrt-class.ts` — class generation logic and package-ready templates
 - `src/tools/introspect-project.ts` — manifest-first project scanning, falling back to `@happyvertical/smrt-scanner`
 - `src/dev-plane.ts` — in-app runtime dev-plane (#2782): `createDevPlane({ token, projectRoot, db })` serves JSON + MCP on one mount with loopback/bearer guards and a positive catalog (`registry-live` + the nine runtime tools); mounted by the generated `_dev/[...tool]` SvelteKit route
@@ -273,6 +305,12 @@ launcher or a small wrapper script with an absolute Node path.
   the scoped subset made `scope: 'sdk'` report a false discovery failure.
 
 ## Validation
+
+`src/mcp-conformance.spec.ts` runs the production HTTP handler and official
+client against an isolated consumer workspace with model manifests and docs.
+It checks protocol behavior and resource freshness with the official deadline;
+it does not measure large-monorepo indexing latency. Broader discovery coverage
+remains in the knowledge tests. See the [protocol fixture contract](agents/protocol-conformance.md).
 
 Run package `test`, `typecheck`, and `build`, then
 `pnpm --filter @happyvertical/smrt-dev-mcp verify:pack`. The packaging gate packs

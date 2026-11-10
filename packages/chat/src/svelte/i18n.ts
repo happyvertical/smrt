@@ -83,6 +83,7 @@ export const M = defineMessages({
   'chat.floating_assistant.close': 'Close',
 
   // AssistantDock (#2904)
+  'chat.assistant_dock.conversation_starters': 'Conversation starters',
   'chat.assistant_dock.no_surfaces':
     'Nothing on this page can be changed from the chat. You can still ask questions.',
   'chat.assistant_dock.loading_conversations': 'Loading conversations…',
@@ -90,6 +91,9 @@ export const M = defineMessages({
   'chat.assistant_dock.choose_conversation_hint':
     'Select a conversation to start chatting with the assistant.',
   'chat.assistant_dock.view_conversations': 'View conversations',
+  // AssistantQuestionForm
+  'chat.assistant_question.submit': 'Continue',
+  'chat.assistant_question.choose': 'Choose…',
   'chat.assistant_dock.start_conversation': 'Start a conversation',
   'chat.assistant_dock.start_conversation_hint':
     'Create a conversation to start chatting with the assistant.',
@@ -119,6 +123,12 @@ export const M = defineMessages({
     'The assistant is taking longer than expected.',
   'chat.assistant_dock.retry': 'Retry "{content}"',
   'chat.assistant_dock.error': 'Something went wrong: {message}',
+  // AiUnavailableNotice (#4757)
+  'chat.ai_unavailable.off': 'AI is off.',
+  'chat.ai_unavailable.unconfigured': 'AI is not set up yet.',
+  'chat.ai_unavailable.entitlement': 'AI is not included in your plan.',
+  'chat.ai_unavailable.capability': 'The configured AI model cannot do this.',
+  'chat.ai_unavailable.open_settings': 'Open AI settings',
   'chat.assistant_dock.send_failed':
     'A message failed to send. You can retry it below.',
   'chat.assistant_dock.attachments': 'Attachments',

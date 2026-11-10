@@ -14,6 +14,13 @@ import {
   ObjectRegistry,
   registerChangeFeedWriter,
 } from '@happyvertical/smrt-core';
+import {
+  disableTenancy,
+  enableTenancy,
+  registerTenantScopedClass,
+  unregisterTenantScopedClass,
+  withTenant,
+} from '@happyvertical/smrt-tenancy';
 import type { DatabaseInterface } from '@happyvertical/sql';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { MembershipCollection } from '../collections/MembershipCollection.js';
@@ -35,7 +42,9 @@ import {
 } from '../services/LoginAttemptLimiter.js';
 import {
   DEFAULT_PASSWORD_MANAGE_PERMISSION,
+  outOfBandProofSessionData,
   PASSWORD_LOGIN_KIND,
+  PASSWORD_RECOVERY_MAX_AGE_CEILING_SECONDS,
   PasswordCredentialError,
   PasswordCredentialForbiddenError,
   PasswordCredentialService,
@@ -284,6 +293,132 @@ describe('PasswordCredentialService', () => {
     expect(audit.map((entry) => entry.outcome)).toEqual(['succeeded']);
   });
 
+  it('signs in by a canonical username and selects one active membership only after verification', async () => {
+    const user = await users.get(personId);
+    if (!user) throw new Error('missing user');
+    user.username = 'Pat.Learner';
+    await user.save();
+
+    const result = await service.signIn({
+      identifier: '  PAT.LEARNER ',
+      password: PASSWORD,
+      tenantId: 'unique-active-membership',
+      ipAddress: '198.51.100.87',
+    });
+    expect(result).toMatchObject({ userId: personId, tenantId });
+  });
+
+  it('counts memberships outside an ambient tenant filter after password verification', async () => {
+    await addMember(personId, otherTenantId);
+    registerTenantScopedClass('Membership', {
+      field: 'tenantId',
+      mode: 'required',
+    });
+    enableTenancy();
+    try {
+      await withTenant({ tenantId }, async () => {
+        expect(await memberships.findActiveByUser(personId)).toHaveLength(1);
+        await expect(
+          service.signIn({
+            identifier: 'pat@example.com',
+            password: PASSWORD,
+            tenantId: 'unique-active-membership',
+          }),
+        ).rejects.toBeInstanceOf(PasswordCredentialError);
+        expect(await activeSessionIds(personId)).toEqual([]);
+      });
+    } finally {
+      unregisterTenantScopedClass('Membership');
+      disableTenancy();
+    }
+  });
+
+  it('refuses unique-membership sign-in for no or multiple active memberships', async () => {
+    const user = await users.get(personId);
+    if (!user) throw new Error('missing user');
+    user.username = 'pat-learner';
+    await user.save();
+    await addMember(personId, otherTenantId);
+
+    await expect(
+      service.signIn({
+        identifier: 'pat-learner',
+        password: PASSWORD,
+        tenantId: 'unique-active-membership',
+        ipAddress: '198.51.100.88',
+      }),
+    ).rejects.toBeInstanceOf(PasswordCredentialError);
+  });
+
+  it.each([
+    'email',
+    'username',
+  ])('keeps %s tenant refusals generic, budgeted, and sessionless', async (kind) => {
+    const user = await users.get(personId);
+    if (!user) throw new Error('missing user');
+    user.username = 'pat-learner';
+    await user.save();
+    const identifier = kind === 'email' ? user.email : 'PAT-LEARNER';
+    const membership = await memberships.findByUserAndTenant(
+      personId,
+      tenantId,
+    );
+    if (!membership) throw new Error('missing membership');
+    membership.status = MembershipStatus.INACTIVE;
+    await membership.save();
+    const attempt = () =>
+      service.signIn({
+        identifier,
+        password: PASSWORD,
+        tenantId: 'unique-active-membership',
+        ipAddress: '198.51.100.90',
+      });
+    for (let index = 0; index < 3; index += 1) {
+      await expect(attempt()).rejects.toMatchObject({
+        name: 'PasswordCredentialError',
+      });
+    }
+    expect(await activeSessionIds(personId)).toEqual([]);
+    await expect(attempt()).rejects.toBeInstanceOf(LoginRateLimitError);
+    expect(verified.encodings).toHaveLength(3);
+  });
+
+  it('verifies the password before querying unique memberships and rejects inactive users', async () => {
+    const user = await users.get(personId);
+    if (!user) throw new Error('missing user');
+    user.email = '';
+    user.username = 'learner-only';
+    await user.save();
+    const lookup = vi.spyOn(MembershipCollection.prototype, 'findActiveByUser');
+    await expect(
+      service.signIn({
+        identifier: 'learner-only',
+        password: 'wrong password',
+        tenantId: 'unique-active-membership',
+      }),
+    ).rejects.toBeInstanceOf(PasswordCredentialError);
+    expect(lookup).not.toHaveBeenCalled();
+    const result = await service.signIn({
+      identifier: ' LEARNER-ONLY ',
+      password: PASSWORD,
+      tenantId: 'unique-active-membership',
+    });
+    expect(result).toMatchObject({ userId: personId, tenantId });
+    expect(lookup).toHaveBeenCalledWith(personId);
+    user.status = UserStatus.INACTIVE;
+    await user.save();
+    lookup.mockClear();
+    await expect(
+      service.signIn({
+        identifier: 'learner-only',
+        password: PASSWORD,
+        tenantId: 'unique-active-membership',
+      }),
+    ).rejects.toBeInstanceOf(PasswordCredentialError);
+    expect(lookup).not.toHaveBeenCalled();
+    lookup.mockRestore();
+  });
+
   it('signs in without a tenant context when none is given', async () => {
     const result = await signIn('pat@example.com', PASSWORD, {
       tenantId: null,
@@ -314,6 +449,7 @@ describe('PasswordCredentialService', () => {
 
     const attempts: Array<[string, string, string]> = [
       ['unknown identifier', 'nobody@example.com', PASSWORD],
+      ['unknown username', 'unknown-learner', PASSWORD],
       ['no password set', 'nopass@example.com', PASSWORD],
       ['wrong password', 'pat@example.com', 'wrong horse battery'],
       ['inactive user', 'gone@example.com', PASSWORD],
@@ -346,6 +482,7 @@ describe('PasswordCredentialService', () => {
   it('runs one scrypt verification under the current policy whether or not the account or password exists', async () => {
     for (const [index, [identifier, password]] of [
       ['nobody@example.com', PASSWORD],
+      ['unknown-learner', PASSWORD],
       ['nopass@example.com', PASSWORD],
       ['pat@example.com', 'wrong horse battery'],
       ['pat@example.com', PASSWORD],
@@ -461,6 +598,8 @@ describe('PasswordCredentialService', () => {
       'failed',
       'failed',
       'locked',
+      // The address's lockout start, reported without a subject (#3531).
+      'source-locked',
     ]);
     // The address is now out of budget, even with the right password.
     await expect(
@@ -533,6 +672,45 @@ describe('PasswordCredentialService', () => {
       ipAddress: '192.0.2.10',
     });
     expect(result.userId).toBe(personId);
+  });
+
+  it('keeps only the per-account budget when the address budget is disabled', async () => {
+    const accountOnly = await make({
+      limiter: {
+        maxAttempts: 3,
+        windowSeconds: 60,
+        source: false,
+        audit: { record: async (entry) => void audit.push(entry) },
+      },
+    });
+    for (let i = 0; i < 6; i++) {
+      await expect(
+        accountOnly.signIn({
+          identifier: `guess-${i}@example.com`,
+          password: PASSWORD,
+          ipAddress: '192.0.2.77',
+        }),
+      ).rejects.toBeInstanceOf(PasswordCredentialError);
+    }
+    // Everyone behind the shared address can still sign in.
+    const result = await accountOnly.signIn({
+      identifier: 'pat@example.com',
+      password: PASSWORD,
+      tenantId,
+      ipAddress: '192.0.2.77',
+    });
+    expect(result.userId).toBe(personId);
+    // An address alone keys nothing: refused like a wrong password.
+    await expect(
+      accountOnly.signIn({
+        identifier: '',
+        password: PASSWORD,
+        ipAddress: '192.0.2.77',
+      }),
+    ).rejects.toBeInstanceOf(PasswordCredentialError);
+    expect(audit.some((entry) => entry.outcome === 'source-locked')).toBe(
+      false,
+    );
   });
 
   it('rehashes on sign-in when the stored parameters are below policy, keeping the generation', async () => {
@@ -853,6 +1031,58 @@ describe('PasswordCredentialService', () => {
     ).rejects.toBeInstanceOf(LoginRateLimitError);
   });
 
+  it.each([
+    'change',
+    'clear',
+  ] as const)('shares username sign-in and self-%s guesses without a source budget', async (operation) => {
+    const user = await users.get(personId);
+    if (!user) throw new Error('missing user');
+    user.email = '';
+    user.username = 'Pat.Learner';
+    await user.save();
+    const accountOnly = await make({
+      limiter: {
+        maxAttempts: 3,
+        windowSeconds: 60,
+        source: false,
+        audit: false,
+      },
+    });
+    const current = await accountOnly.signIn({
+      identifier: 'PAT.LEARNER',
+      password: PASSWORD,
+      tenantId,
+    });
+    const actor = await sessionService.loadSessionContext(current.sessionId);
+    if (!actor) throw new Error('missing session');
+    const loginGuess = () =>
+      accountOnly.signIn({
+        identifier: ' PAT.LEARNER ',
+        password: 'wrong horse battery',
+        tenantId,
+      });
+    const managementGuess = () =>
+      operation === 'change'
+        ? accountOnly.changePassword({
+            actor,
+            currentPassword: 'wrong horse battery',
+            newPassword: 'a brand new secret',
+          })
+        : accountOnly.clearPassword({
+            actor,
+            userId: personId,
+            currentPassword: 'wrong horse battery',
+          });
+    await expect(loginGuess()).rejects.toBeInstanceOf(PasswordCredentialError);
+    await expect(managementGuess()).rejects.toBeInstanceOf(
+      PasswordCredentialError,
+    );
+    await expect(loginGuess()).rejects.toBeInstanceOf(PasswordCredentialError);
+    await expect(managementGuess()).rejects.toBeInstanceOf(LoginRateLimitError);
+    await expect(loginGuess()).rejects.toBeInstanceOf(LoginRateLimitError);
+    expect(await activeSessionIds(personId)).toEqual([current.sessionId]);
+  });
+
   it('never lets a change or self-clear proven with the old password overwrite a reset that landed meanwhile', async () => {
     const internals = service as unknown as {
       hashPassword: (password: string) => Promise<string>;
@@ -1059,6 +1289,329 @@ describe('PasswordCredentialService', () => {
         .filter((entry) => entry.outcome === 'managed')
         .map((entry) => entry.metadata?.action),
     ).toEqual(['clear', 'set', 'clear']);
+  });
+  // -------------------------------------------------------------------------
+  // Out-of-band recovery (#3905)
+  // -------------------------------------------------------------------------
+
+  describe('replaceForgottenPassword', () => {
+    const RECOVERY = 'owner-recovery';
+    const NEW_PASSWORD = 'a brand new secret';
+
+    const recoveryService = (
+      recovery: Partial<
+        NonNullable<PasswordCredentialServiceOptions['recovery']>
+      > = {},
+    ) => make({ recovery: { authMethods: [RECOVERY], ...recovery } });
+
+    const mint = async (
+      userId: string,
+      init: {
+        authMethod?: string;
+        data?: Record<string, unknown>;
+        tenant?: string | null;
+      } = {},
+    ) => {
+      const sessionId = await sessionService.createSession(
+        userId,
+        init.tenant === undefined ? tenantId : (init.tenant ?? undefined),
+        {
+          authMethod: init.authMethod ?? RECOVERY,
+          data: init.data ?? outOfBandProofSessionData(),
+        },
+      );
+      const actor = await sessionService.loadSessionContext(sessionId);
+      if (!actor) throw new Error('expected a loadable session');
+      return actor;
+    };
+
+    const stillSignsInWith = async (password: string) =>
+      (await signIn('pat@example.com', password)).userId === personId;
+
+    it('is off unless configured', async () => {
+      await expect(
+        service.replaceForgottenPassword({
+          actor: await mint(personId),
+          newPassword: NEW_PASSWORD,
+        }),
+      ).rejects.toBeInstanceOf(PasswordCredentialForbiddenError);
+      expect(await stillSignsInWith(PASSWORD)).toBe(true);
+    });
+
+    it('refuses unsafe recovery configuration', async () => {
+      for (const recovery of [
+        { authMethods: [] },
+        { authMethods: [PASSWORD_LOGIN_KIND] },
+        { authMethods: [RECOVERY, 'pin'] },
+        { authMethods: [' '] },
+        {
+          authMethods: [RECOVERY],
+          maxAgeSeconds: PASSWORD_RECOVERY_MAX_AGE_CEILING_SECONDS + 1,
+        },
+        { authMethods: [RECOVERY], maxAgeSeconds: 0 },
+      ]) {
+        await expect(make({ recovery })).rejects.toThrow(/recovery/);
+      }
+    });
+
+    it('replaces the password, ends every session including this one, and audits without secrets', async () => {
+      const recovering = await recoveryService();
+      const other = await signIn('pat@example.com', PASSWORD);
+      const actor = await mint(personId);
+      audit.length = 0;
+      const result = await recovering.replaceForgottenPassword({
+        actor,
+        newPassword: NEW_PASSWORD,
+        ipAddress: '198.51.100.7',
+      });
+      expect(result.endedCurrentSession).toBe(true);
+      expect(result.revokedSessions).toBeGreaterThanOrEqual(2);
+      expect(await activeSessionIds(personId)).toEqual([]);
+      expect(other.sessionId).toBeTruthy();
+      await expect(signIn('pat@example.com', PASSWORD)).rejects.toBeInstanceOf(
+        PasswordCredentialError,
+      );
+      expect(await stillSignsInWith(NEW_PASSWORD)).toBe(true);
+      const managed = audit.find((entry) => entry.outcome === 'managed');
+      expect(managed?.metadata).toMatchObject({
+        action: 'recover',
+        self: true,
+        authMethod: RECOVERY,
+        replaced: true,
+      });
+      const recorded = JSON.stringify(audit);
+      for (const secret of [NEW_PASSWORD, PASSWORD, actor.sessionId]) {
+        expect(recorded).not.toContain(secret);
+      }
+      // One proof, one replacement: the recovery session is gone.
+      await expect(
+        recovering.replaceForgottenPassword({
+          actor,
+          newPassword: 'yet another secret',
+        }),
+      ).rejects.toBeInstanceOf(PasswordCredentialForbiddenError);
+    });
+
+    it('lets exactly one of two interleaved uses of one proof succeed', async () => {
+      for (const target of ['existing', 'none'] as const) {
+        const userId = target === 'existing' ? personId : noPasswordId;
+        const email =
+          target === 'existing' ? 'pat@example.com' : 'nopass@example.com';
+        // Hold both calls at the host assertion until both have validated
+        // the same session, then let them race to the write.
+        let arrived = 0;
+        let release!: () => void;
+        const bothArrived = new Promise<void>((resolve) => {
+          release = resolve;
+        });
+        const recovering = await recoveryService({
+          assertProof: async () => {
+            arrived += 1;
+            if (arrived === 2) release();
+            await bothArrived;
+            return true;
+          },
+        });
+        const actor = await mint(userId);
+        const outcomes = await Promise.allSettled([
+          recovering.replaceForgottenPassword({
+            actor,
+            newPassword: 'first racer secret',
+          }),
+          recovering.replaceForgottenPassword({
+            actor,
+            newPassword: 'second racer secret',
+          }),
+        ]);
+        expect(arrived).toBe(2);
+        const won = outcomes.filter((o) => o.status === 'fulfilled');
+        const lost = outcomes.filter(
+          (o): o is PromiseRejectedResult => o.status === 'rejected',
+        );
+        expect(won).toHaveLength(1);
+        expect(lost).toHaveLength(1);
+        expect(
+          lost[0].reason instanceof PasswordCredentialForbiddenError ||
+            lost[0].reason instanceof PasswordCredentialError,
+        ).toBe(true);
+        const winner =
+          outcomes[0].status === 'fulfilled'
+            ? 'first racer secret'
+            : 'second racer secret';
+        const loser =
+          winner === 'first racer secret'
+            ? 'second racer secret'
+            : 'first racer secret';
+        expect((await credentials.findByUserId(userId))?.rotatedBy).toBe(
+          'self-recovery',
+        );
+        await expect(signIn(email, loser)).rejects.toBeInstanceOf(
+          PasswordCredentialError,
+        );
+        expect((await signIn(email, winner)).userId).toBe(userId);
+      }
+    });
+
+    it('sets a first password for someone who never had one', async () => {
+      const recovering = await recoveryService();
+      await recovering.replaceForgottenPassword({
+        actor: await mint(noPasswordId),
+        newPassword: NEW_PASSWORD,
+      });
+      expect((await signIn('nopass@example.com', NEW_PASSWORD)).userId).toBe(
+        noPasswordId,
+      );
+    });
+
+    it('clears a must-change flag left by an administrative reset', async () => {
+      const recovering = await recoveryService();
+      await recovering.resetPassword({
+        actor: adminActor(),
+        userId: personId,
+        password: 'temporary secret 1',
+      });
+      await recovering.replaceForgottenPassword({
+        actor: await mint(personId),
+        newPassword: NEW_PASSWORD,
+      });
+      expect((await signIn('pat@example.com', NEW_PASSWORD)).mustChange).toBe(
+        false,
+      );
+    });
+
+    it('refuses a proof older than the freshness bound, even after a tenant switch rotates the session', async () => {
+      vi.useFakeTimers({ toFake: ['Date'] });
+      vi.setSystemTime(new Date('2026-10-13T12:00:00Z'));
+      const recovering = await recoveryService({ maxAgeSeconds: 300 });
+      const actor = await mint(personId, { tenant: null });
+      vi.setSystemTime(new Date('2026-10-13T12:06:00Z'));
+      await expect(
+        recovering.replaceForgottenPassword({
+          actor,
+          newPassword: NEW_PASSWORD,
+        }),
+      ).rejects.toBeInstanceOf(PasswordCredentialForbiddenError);
+      // A rotated session has a new row and created_at, but the same stamp.
+      const switched = await sessionService.switchTenant(
+        actor.sessionId,
+        tenantId,
+      );
+      if (!switched.switched) throw new Error('expected the switch to succeed');
+      const rotated = await sessionService.loadSessionContext(
+        switched.sessionId as string,
+      );
+      expect(rotated).not.toBeNull();
+      await expect(
+        recovering.replaceForgottenPassword({
+          actor: rotated as SessionContext,
+          newPassword: NEW_PASSWORD,
+        }),
+      ).rejects.toBeInstanceOf(PasswordCredentialForbiddenError);
+      // A stamp from the future is not a fresh proof either.
+      await expect(
+        recovering.replaceForgottenPassword({
+          actor: await mint(personId, {
+            data: outOfBandProofSessionData(new Date('2026-10-13T12:16:00Z')),
+          }),
+          newPassword: NEW_PASSWORD,
+        }),
+      ).rejects.toBeInstanceOf(PasswordCredentialForbiddenError);
+      vi.useRealTimers();
+      expect(await stillSignsInWith(PASSWORD)).toBe(true);
+    });
+
+    it('refuses any session that is not a stamped out-of-band session of the person', async () => {
+      const recovering = await recoveryService();
+      const stamped = outOfBandProofSessionData();
+      const refusals: SessionContext[] = [
+        // An allowed channel without the stamp.
+        await mint(personId, { data: {} }),
+        // A malformed stamp.
+        await mint(personId, {
+          data: { outOfBandProofAt: 'yesterday-ish' },
+        }),
+        // A stamped session on a channel the host did not list.
+        await mint(personId, { authMethod: 'oidc', data: stamped }),
+        // A stamped password session.
+        await mint(personId, {
+          authMethod: PASSWORD_LOGIN_KIND,
+          data: stamped,
+        }),
+        // A restricted session.
+        await mint(personId, {
+          data: { ...stamped, permissionCeiling: [] },
+        }),
+      ];
+      // A context claiming the person but carrying someone else's session.
+      const adminSession = await mint(adminId);
+      refusals.push({ ...adminSession, user: { id: personId } as never });
+      // A layered context.
+      refusals.push({
+        ...(await mint(personId)),
+        parent: {
+          sessionId: 'device',
+          userId: adminId,
+          tenantId,
+          authMethod: 'terminal',
+        },
+      });
+      // A context whose session id does not exist.
+      refusals.push({ ...(await mint(personId)), sessionId: 'missing' });
+      for (const actor of refusals) {
+        await expect(
+          recovering.replaceForgottenPassword({
+            actor,
+            newPassword: NEW_PASSWORD,
+          }),
+        ).rejects.toBeInstanceOf(PasswordCredentialForbiddenError);
+      }
+      expect(await stillSignsInWith(PASSWORD)).toBe(true);
+    });
+
+    it('refuses an inactive person and honours the host assertion', async () => {
+      const seen: Date[] = [];
+      let verdict: unknown = false;
+      const recovering = await recoveryService({
+        assertProof: ({ provenAt }) => {
+          seen.push(provenAt);
+          return verdict as boolean;
+        },
+      });
+      const actor = await mint(personId);
+      await expect(
+        recovering.replaceForgottenPassword({
+          actor,
+          newPassword: NEW_PASSWORD,
+        }),
+      ).rejects.toBeInstanceOf(PasswordCredentialForbiddenError);
+      verdict = 'yes';
+      await expect(
+        recovering.replaceForgottenPassword({
+          actor,
+          newPassword: NEW_PASSWORD,
+        }),
+      ).rejects.toBeInstanceOf(PasswordCredentialForbiddenError);
+      expect(seen).toHaveLength(2);
+      expect(seen[0]).toBeInstanceOf(Date);
+      // Policy still applies once the proof is accepted.
+      verdict = true;
+      await expect(
+        recovering.replaceForgottenPassword({ actor, newPassword: 'short' }),
+      ).rejects.toBeInstanceOf(PasswordPolicyError);
+      expect(await stillSignsInWith(PASSWORD)).toBe(true);
+
+      const suspended = await mint(personId);
+      const person = await users.get(personId);
+      if (!person) throw new Error('expected the person');
+      person.status = UserStatus.SUSPENDED;
+      await person.save();
+      await expect(
+        recovering.replaceForgottenPassword({
+          actor: suspended,
+          newPassword: NEW_PASSWORD,
+        }),
+      ).rejects.toBeInstanceOf(PasswordCredentialForbiddenError);
+    });
   });
 });
 

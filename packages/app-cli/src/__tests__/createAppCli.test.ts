@@ -28,11 +28,12 @@ let originalStderr: NodeJS.WriteStream;
 let stdout: ReturnType<typeof buf>;
 let stderr: ReturnType<typeof buf>;
 let cfgBackup: string | undefined;
+let configDir: string | undefined;
 
 beforeEach(async () => {
-  const dir = await mkdtemp(join(tmpdir(), 'smrt-app-cli-create-'));
+  configDir = await mkdtemp(join(tmpdir(), 'smrt-app-cli-create-'));
   cfgBackup = process.env.APPCLI_CLI_CONFIG;
-  process.env.APPCLI_CLI_CONFIG = join(dir, 'config.json');
+  process.env.APPCLI_CLI_CONFIG = join(configDir, 'config.json');
 
   stdout = buf();
   stderr = buf();
@@ -57,9 +58,10 @@ afterEach(async () => {
     value: originalStderr,
     configurable: true,
   });
-  if (process.env.APPCLI_CLI_CONFIG) {
-    await rm(process.env.APPCLI_CLI_CONFIG, { force: true }).catch(() => {});
+  if (configDir) {
+    await rm(configDir, { recursive: true, force: true });
   }
+  configDir = undefined;
   process.env.APPCLI_CLI_CONFIG = cfgBackup;
 });
 

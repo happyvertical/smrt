@@ -90,6 +90,12 @@ class SwaggerReadOnly extends SmrtObject {
   }
 }
 
+@smrt({ abstract: true })
+class SwaggerAbstract extends SmrtObject {
+  @field({ type: 'text' })
+  name = '';
+}
+
 // exclude list — delete path must be omitted; others present.
 @smrt({ api: { exclude: ['delete'] } })
 class SwaggerNoDelete extends SmrtObject {
@@ -220,6 +226,15 @@ describe('OpenAPI spec generation (#1500)', () => {
   });
 
   describe('path generation per verb', () => {
+    it('omits write operations for abstract models', () => {
+      const spec = testOpenAPISpec();
+      const base = '/api/v1/swaggerabstracts';
+      expect(spec.paths[base].get).toBeDefined();
+      expect(spec.paths[base].post).toBeUndefined();
+      expect(spec.paths[`${base}/{id}`].get).toBeDefined();
+      expect(spec.paths[`${base}/{id}`].put).toBeUndefined();
+      expect(spec.paths[`${base}/{id}`].delete).toBeUndefined();
+    });
     it('emits collection + item CRUD paths with the expected operations', () => {
       const spec = testOpenAPISpec();
       const base = '/api/v1/swaggerfieldwidgets';

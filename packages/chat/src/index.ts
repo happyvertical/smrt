@@ -56,6 +56,12 @@ import './__smrt-register__.js';
 // methods (getAgentSession, findActiveAgentSessions, getThread, listRoomThreads,
 // getThreadMessages, getRoomMessages, getRoomForMember, ...).
 
+export {
+  CHAT_AI_UNAVAILABLE_CODE,
+  type ChatUnavailableBody,
+  chatUnavailableBody,
+  chatUnconfiguredBody,
+} from './ai-unavailable.js';
 // Streamed assistant turn over the tool loop, with browser-executed tools
 // (#2908). The wire types are browser-safe (`./assistant-turn` subpath).
 export {
@@ -76,6 +82,7 @@ export {
   createSessionContinuationStore,
   DEFAULT_ASSISTANT_TURN_HEARTBEAT_MS,
   DEFAULT_CONTINUATION_TTL_MS,
+  type ProviderErrorFallback,
   runAssistantTurn,
   SESSION_CONTINUATIONS_FIELD,
 } from './assistant-turn.js';
@@ -96,6 +103,7 @@ export {
 // Conversational harness (L3, #1891): the persona-bound agentic tool-loop and
 // in-chat feedback capture. `chat → personas` is the new acyclic edge.
 export {
+  CHAT_STREAM_TIMEOUT_ERROR,
   ChatStreamBadRequestError,
   type ChatStreamContext,
   type ChatStreamControlCommand,
@@ -259,25 +267,50 @@ export {
   type ClientToolEffect,
   type ClientToolResultInput,
   classifyToolError,
+  DEFAULT_EMPTY_ANSWER_FALLBACK,
+  DEFAULT_MAX_REPEATED_CALLS,
   DEFAULT_MAX_STEPS,
+  FALLBACK_HISTORY_PLACEHOLDER,
+  FALLBACK_REPLY_METADATA_KEY,
+  type FallbackReplyReason,
   invokeManifestTool,
+  isFallbackReply,
   MAX_CLIENT_TOOL_RESULT_CHARS,
   MAX_CLIENT_TOOL_SCHEMA_BYTES,
   MAX_CLIENT_TOOLS,
+  MAX_DEDUPED_CALLS_PER_TURN,
+  MAX_REPEATED_CALLS_LIMIT,
+  MAX_SERVER_TOOL_OBSERVATION_CHARS,
+  MAX_TOOL_FAILURE_ARGS_CHARS,
+  MAX_TOOL_LOOP_REASONING_CHARS,
   type ManifestTool,
   manifestToolToAITool,
   matchesToolAllowList,
   type PendingClientToolCall,
+  replyContentFor,
+  replyMetadataFor,
+  resolveTurnReply,
   runToolLoop,
+  SERVER_TOOL_OBSERVATION_TRUNCATED_MARKER,
   sanitizeClientToolDeclarations,
+  TOOL_CALL_DEDUPED_NOTE,
+  TOOL_CALL_DEDUPED_REJECTED_NOTE,
+  TOOL_EXECUTION_ERROR_HINT,
+  TOOL_LOOP_ANSWER_NOW_INSTRUCTION,
+  TOOL_LOOP_REPEATED_CALLS_INSTRUCTION,
   type ToolErrorKind,
   type ToolExecutionContext,
+  type ToolFailureRecord,
   type ToolInvocation,
+  type ToolLoopCapReason,
   type ToolLoopOptions,
   type ToolLoopResult,
   type ToolLoopStepEvent,
   type ToolLoopStopReason,
   type ToolLoopUsage,
+  type TurnReply,
+  toolFailureAuditMetadata,
+  toolFailureRecord,
 } from './tool-loop.js';
 // Types
 export type {

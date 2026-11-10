@@ -608,11 +608,18 @@ export function validateCookbook(
     );
   }
 
-  for (const key of ['name', 'description'] as const) {
+  for (const key of ['name', 'description', 'specs'] as const) {
     if (input[key] !== undefined && typeof input[key] !== 'string') {
       error(diagnostics, 'invalid_type', key, `${key} must be a string`);
     }
   }
+  if (typeof input.specs === 'string' && Array.from(input.specs).length > 20000)
+    error(
+      diagnostics,
+      'invalid_value',
+      'specs',
+      'specs must be at most 20,000 characters',
+    );
 
   let recipes: string[] = [];
   if (!isStrings(input.recipes)) {

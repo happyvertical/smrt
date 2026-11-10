@@ -236,7 +236,7 @@ const TOOL_DEFINITIONS: Array<
   {
     name: 'review-smrt-project',
     description:
-      'Advisory ecosystem alignment review for downstream SMRT projects',
+      'Advisory ecosystem alignment review for downstream SMRT projects, including intent-driven hand-rolled-equivalent detection',
     inputSchema: {
       type: 'object',
       properties: {
@@ -256,6 +256,17 @@ const TOOL_DEFINITIONS: Array<
         maxFindings: {
           type: 'number',
           description: 'Optional maximum number of findings to return',
+        },
+        intentIndexPath: {
+          type: 'string',
+          description:
+            'Caller-trusted intent index driving duplicate detection (regex tokens become RegExp). Default: the full index packaged in this release, never read from the reviewed directory',
+        },
+        detectDuplicates: {
+          type: 'boolean',
+          description:
+            'Run the intent-driven hand-rolled-equivalent pass (default: true)',
+          default: true,
         },
       },
     },

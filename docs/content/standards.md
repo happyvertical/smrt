@@ -154,6 +154,57 @@ See [§11](#11-forbidden-artifacts) for the full list.
   - Required peers (e.g. `users` requires `profiles`) documented in `AGENTS.md`
 - **`publishConfig.registry`** always `https://registry.npmjs.org` for published packages, with `access: "public"`
 
+### Copied resource exports
+
+The packed-export verifier distinguishes executable exports from authored files
+copied by a scaffold. A package may explicitly declare copied directory exports:
+
+```json
+{
+  "exports": { ".": "./index.js", "./template/*": "./template/*" },
+  "smrt": { "resourceExports": ["./template/*"] }
+}
+```
+
+Each declaration must be a unique non-root directory pattern with one terminal
+`*` and an identical, unconditioned export target. Directory segments start with
+an ASCII letter, digit, `_` or `-`, followed by those characters or `.`.
+Root/global patterns, traversal, conditional targets and unknown export keys
+are rejected. The declared directory must contain files in the actual tarball;
+a directory entry alone is insufficient. Metadata is read from packed
+`package.json`, never inferred from package names or file extensions.
+
+Resource exports retain packaged-presence checks but do not enter the runtime
+JavaScript/Svelte analysis merely because a copied file has a code extension.
+This allows unrendered scaffold placeholders without parsing or executing
+template configuration. Runtime roots, other exports (including wildcards),
+and runtime imports into resource directories retain all normal checks. A
+runtime entry reaching Svelte still requires an effective `svelte` condition.
+The declaration does not change Node's exports map or scaffold copy behavior.
+
+`node --test scripts/verify-template-packed-exports.test.mjs` creates both real
+template tarballs with normal `pnpm pack` hooks and verifies them through the
+root wrapper. Complete publish validation uses
+`node scripts/validate-publish-packages.js` for every shard, then
+`node scripts/verify-publish-artifacts.mjs <output-directory>` to check exact
+publish membership, versions and digests. This covers all publishable packages,
+including those without a convenience `verify:pack` script.
+
+The validator also runs both manifest guards for every package it packs
+(`scripts/release-manifest-guards.mjs`, #2853), so coverage does not depend on
+a package defining `prepack`. Completeness (#1483) re-scans `src/` in
+`--release` mode: the scanner must load, and a package that declares `@smrt()`
+objects without a `./manifest` export fails. The packed manifest must match the
+verified workspace manifest byte for byte. The exports guard (#2845) runs
+against the tarball installed into a scratch consumer with only its declared
+dependencies linked. Exemptions stay those of the verifiers: framework
+infrastructure packages, collection companions and bundler-only root barrels.
+A closed API/CLI/MCP surface does not exempt a public model export. `prepack`
+still runs the same verifiers in their lenient workspace mode (an unbuilt
+scanner or a missing `./manifest` export skips, and exports are checked against
+workspace `dist/`); only the release validator is fail-closed and bound to the
+tarball. A local `changeset publish` therefore gets the weaker check.
+
 ---
 
 ## 3. Build configuration
@@ -424,9 +475,9 @@ never disable the scan.
   `"undici@>=7.0.0 <7.24.0": "7.24.0"`). Scope the key
   to the vulnerable range so unrelated majors aren't force-bumped.
 - **Accept-with-justification.** Only when an advisory can't be remediated without
-  breaking a pinned API, or no patched release exists at all (e.g. `braces` and
-  `http-cache-semantics`, #3396), add its GHSA to `auditConfig.ignoreGhsas` in
-  `pnpm-workspace.yaml` with a `suppressed: true` record in `audit-policy.json`:
+  breaking a pinned API, or no patched release exists at all (e.g. `braces`,
+  #3396), add its GHSA to `auditConfig.ignoreGhsas` in `pnpm-workspace.yaml`
+  with a `suppressed: true` record in `audit-policy.json`:
   reachability evidence, the upstream blocker, and a `recheckBy` date.
   `pnpm audit:policy` enforces the records and fails once a record passes its
   `recheckBy` date. `pnpm audit:policy:drift` warns about every live
@@ -838,7 +889,12 @@ After `pnpm build`, run `node scripts/verify-packed-declarations.mjs` to compile
 real core, profiles, inventory, and their workspace dependency tarballs in both
 consumer modes with declaration checking enabled. The fixture installs those
 tarballs without links to producer dependencies or undeclared development types.
-Set `SMRT_PACKED_EVIDENCE_DIR` to retain install metadata and tarball evidence.
+Packing runs normal lifecycle hooks in a separate temporary producer workspace,
+so a prepack rebuild cannot delete live build outputs used by parallel tests.
+Selected workspace dependency links resolve to copied producers; installed external tools
+are reused without permitting pnpm to relink the live installation. The consumer
+remains separate, with no ancestor `node_modules` or producer dependency links.
+Set `SMRT_PACKED_EVIDENCE_DIR` to retain prepack logs, install metadata and tarball evidence.
 
 SDK declaration portability requires the repair released in SDK v0.102.1
 ([SDK #1285](https://github.com/happyvertical/sdk/issues/1285)), which the workspace

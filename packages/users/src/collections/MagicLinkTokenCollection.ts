@@ -24,6 +24,18 @@ export class UsersMagicLinkTokenCollection extends SmrtCollection<UsersMagicLink
     }) as Promise<UsersMagicLinkToken | null>;
   }
 
+  /** Check a signed token's live nonce without claiming it; never authorizes login. */
+  async isAvailable(nonce: string, email: string): Promise<boolean> {
+    const { rows } = await this.db.query(
+      `SELECT nonce FROM ${this.tableName} WHERE nonce = ? AND email = ? AND used = ? AND expires_at > ? LIMIT 1`,
+      nonce,
+      email,
+      false,
+      new Date().toISOString(),
+    );
+    return rows.length === 1;
+  }
+
   /**
    * Atomically mark a token as used (single-use enforcement).
    *

@@ -73,7 +73,8 @@ describe('RecipeScreens', () => {
       expect.objectContaining({ title: 'Write better docs' }),
     );
 
-    // view -> delete -> list
+    // view -> delete (in the overflow menu) -> list
+    await userEvent.click(screen.getByRole('button', { name: 'More actions' }));
     await userEvent.click(screen.getByRole('button', { name: 'Delete' }));
     const dialog = await screen.findByRole('dialog');
     await userEvent.click(

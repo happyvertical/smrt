@@ -5,9 +5,21 @@
  * The 5 core types: Asset, Liability, Equity, Revenue, Expense
  */
 
-import { field, SmrtHierarchical, smrt } from '@happyvertical/smrt-core';
-import { TenantScoped, tenantId } from '@happyvertical/smrt-tenancy';
+import {
+  field,
+  foreignKey,
+  SmrtHierarchical,
+  smrt,
+} from '@happyvertical/smrt-core';
+import {
+  getTenantId,
+  isSuperAdminBypass,
+  isTenancyEnabled,
+  TenantScoped,
+  tenantId,
+} from '@happyvertical/smrt-tenancy';
 import type { AccountOptions, AccountTreeNode, AccountType } from '../types';
+import { Ledger } from './Ledger';
 
 @TenantScoped({ mode: 'optional' })
 @smrt({
@@ -50,6 +62,14 @@ export class Account extends SmrtHierarchical {
   @field({ description: 'asset, liability, equity, revenue or expense.' })
   type: AccountType = 'asset';
 
+  /** Accounting scope; null is a legacy account usable only by legacy journals. */
+  @field({
+    description: 'The ledger policy this account belongs to.',
+    nullable: true,
+  })
+  @foreignKey(Ledger)
+  ledgerId: string | null = null;
+
   // parentId inherited from SmrtHierarchical (null = top-level)
 
   /**
@@ -68,14 +88,63 @@ export class Account extends SmrtHierarchical {
 
   constructor(options: AccountOptions = {}) {
     super(options);
+    if (options.tenantId !== undefined) this.tenantId = options.tenantId;
     if (options.number !== undefined) this.number = options.number;
     if (options.name !== undefined) this.name = options.name;
     if (options.description !== undefined)
       this.description = options.description;
     if (options.type !== undefined) this.type = options.type;
+    if (options.ledgerId !== undefined) this.ledgerId = options.ledgerId;
     if (options.parentId !== undefined) this.parentId = options.parentId;
     if (options.active !== undefined) this.active = options.active;
     if (options.metadata !== undefined) this.metadata = options.metadata;
+  }
+
+  protected async validateBeforeSave(): Promise<void> {
+    await super.validateBeforeSave();
+    // A fresh accounting identity must never adopt another row by natural key.
+    // Core enforces this with INSERT uniqueness, including concurrent callers.
+    this.requireInsertOnSave({ preserveDerivedSlug: true });
+    if (this.ledgerId) {
+      const { LedgerCollection } = await import('../collections/Ledgers');
+      const ledger = await (await LedgerCollection.create(this.options)).get(
+        { id: this.ledgerId },
+        { cache: false },
+      );
+      // Model validation precedes optional tenancy auto-population.
+      const owner =
+        this.tenantId ??
+        (isTenancyEnabled() && !isSuperAdminBypass()
+          ? (getTenantId() ?? null)
+          : null);
+      if (!ledger || ledger.tenantId !== owner)
+        throw new Error(
+          'Scoped account requires an accessible ledger with the same owner',
+        );
+    }
+    if (this.id) {
+      const stored = await this.db.get(this.tableName, { id: this.id });
+      if (
+        stored &&
+        (stored.ledger_id !== this.ledgerId ||
+          (stored.ledger_id &&
+            (stored.tenant_id !== this.tenantId || stored.type !== this.type)))
+      )
+        throw new Error('Ledger account scope, owner and type are immutable');
+    }
+  }
+
+  async delete(
+    options: Parameters<SmrtHierarchical['delete']>[0] = {},
+  ): Promise<void> {
+    const stored = this.id
+      ? await this.db.get(this.tableName, { id: this.id })
+      : null;
+    if (stored?.ledger_id)
+      throw new Error(
+        'Ledger accounts cannot be deleted; deactivate them instead',
+      );
+    await super.delete(options);
   }
 
   /**
@@ -154,10 +223,26 @@ export class Account extends SmrtHierarchical {
     }
     const { AccountCollection } = await import('../collections/Accounts');
     const collection = await AccountCollection.create(this.options);
+    const parent = await collection.get({ id: this.id }, { cache: false });
+    if (!parent)
+      throw new Error('Parent account must be persisted and accessible');
+    if (
+      parent.ledgerId &&
+      ((options.ledgerId !== undefined &&
+        options.ledgerId !== parent.ledgerId) ||
+        (options.tenantId !== undefined &&
+          options.tenantId !== parent.tenantId))
+    )
+      throw new Error(
+        'Scoped children must inherit the parent ledger and owner',
+      );
     const account = await collection.create({
       ...options,
-      parentId: this.id,
-      type: this.type, // Inherit type from parent
+      ...(parent.ledgerId
+        ? { ledgerId: parent.ledgerId, tenantId: parent.tenantId }
+        : {}),
+      parentId: parent.id,
+      type: parent.type, // Inherit persisted type from parent
     });
     await account.save();
     return account;

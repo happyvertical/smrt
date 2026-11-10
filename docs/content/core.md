@@ -229,6 +229,8 @@ const summary = await doc.generateSummary();
 
 SMRT objects include built-in AI operations that enable intelligent content analysis and transformation. These methods leverage the configured AI provider to perform natural language tasks.
 
+To choose which model answers each call (tiers, fallback aliases, fusions, user and tenant bindings, hosted inference, usage reports), see [Inference tiers, bindings and usage](./inference.md).
+
 ### `is(criteria)` - Evaluate Criteria
 
 Evaluates whether the object meets specified criteria using AI analysis. Returns a boolean.
@@ -377,7 +379,7 @@ for (const item of items) {
 1. **Be specific with criteria**: Provide clear, measurable conditions for `is()` calls
 2. **Use structured prompts**: Break complex instructions into bullet points for `do()` calls
 3. **Cache expensive results**: Store AI-generated content in object properties to avoid repeated calls
-4. **Handle errors gracefully**: AI methods may throw errors if the provider is unavailable
+4. **Handle errors gracefully**: AI methods throw `InferenceUnavailableError` (`AI_UNAVAILABLE`) when AI is off or not configured for the principal, and `InferenceExhaustedError` when every model in a fallback chain failed; see [Inference](./inference.md#5-who-decides-what)
 
 ```typescript
 class Article extends SmrtObject {
@@ -1170,7 +1172,7 @@ process exits.
 
 | Key | Applied as | Default | Effect |
 | --- | --- | --- | --- |
-| `connectionTimeout` | `connectionTimeoutMillis` pool option | `10s` | Fail an acquisition instead of queueing forever (pending happyvertical/sdk#1204) |
+| `connectionTimeout` | `connectionTimeoutMillis` pool option | `10s` | Fail an acquisition instead of queueing forever |
 | `statementTimeout` | `statement_timeout` | `30s` | Cancel a single runaway statement |
 | `idleInTransactionSessionTimeout` | `idle_in_transaction_session_timeout` | `60s` | Kill a transaction left open between statements, releasing its locks |
 | `lockTimeout` | `lock_timeout` | `10s` | Stop waiting for a lock someone else holds |
@@ -1196,7 +1198,23 @@ through the environment: `SMRT_PG_CONNECTION_TIMEOUT`,
 `SMRT_PG_LOCK_TIMEOUT`. Precedence is: a parameter already spelled into the
 connection URL, then `timeouts`, then the environment variable, then the
 default — so `postgres://…/app?statement_timeout=120000` keeps its 120 s while
-still picking up bounded lock and idle-in-transaction settings.
+still picking up bounded lock and idle-in-transaction settings. A
+`connectionTimeoutMillis` spelled directly on the config ranks just below
+`timeouts.connectionTimeout`, above the environment variable.
+
+#### Pool options and pool identity
+
+`max`, `connectionTimeoutMillis`, and `idleTimeoutMillis` on a PostgreSQL
+config are forwarded to the `pg.Pool`, and they are part of the pool's
+identity: SMRT passes no derived `dbid` for PostgreSQL, so
+`@happyvertical/sql` keys the pool on its effective connection *and* pool
+options. Two configurations that agree share one pool; a configuration with
+`max: 5` gets its own 5-client pool even after another caller resolved the
+same URL with the default (20) first (#3046). An explicit `dbid` (on the
+config or `resolveDatabase(config, { dbid })`) is caller-owned identity and
+shares the pool unconditionally. SQLite and DuckDB keep the `smrt:<url>`
+identity. `createDispatchBus({ db: config })` forwards the whole config, and
+the `smrt-jobs` liveness thread opens a one-client bounded pool.
 
 Three things these do **not** cover. `smrt db:migrate` opens its own connection
 and bounds each statement from `migrations.postgres.lockTimeout` /
@@ -2338,4 +2356,4 @@ See the [API documentation](https://happyvertical.github.io/sdk/modules/_have_sm
 
 ## License
 
-This package is part of the HAVE SDK and is licensed under the MIT License - see the [LICENSE](../../LICENSE) file for details.
+This package is part of the HAVE SDK and is licensed under the MIT License - see the [LICENSE](https://github.com/happyvertical/smrt/blob/main/LICENSE) file for details.

@@ -10,7 +10,8 @@ const ids = (description: string, values?: readonly string[]): JsonSchema => ({
   type: 'array',
   description,
   minItems: 1,
-  maxItems: 50,
+  // Room for every recipe in the catalog at once (55 at smrt 0.57.36).
+  maxItems: 100,
   items: values?.length
     ? { type: 'string', enum: [...values] }
     : { type: 'string', minLength: 1 },
@@ -152,6 +153,14 @@ export function buildCommandTools(catalog: EngineCatalog): CommandTool[] {
           minLength: 1,
           maxLength: MAX_TERMS_LENGTH,
         },
+        pricesIncludeTax: {
+          type: 'boolean',
+          description: 'Whether new document prices include tax.',
+        },
+        taxRounding: {
+          enum: ['line', 'document'],
+          description: 'Whether tax rounds per line or per document.',
+        },
       }),
     },
     {
@@ -228,13 +237,20 @@ export function buildCommandTools(catalog: EngineCatalog): CommandTool[] {
     },
     {
       name: 'set_name',
-      description: 'Name and describe the app. null clears a part.',
+      description: 'Name, describe and specify the app. null clears a part.',
       inputSchema: object({
         name: { type: ['string', 'null'], minLength: 1, maxLength: 60 },
         description: {
           type: ['string', 'null'],
           minLength: 1,
           maxLength: 400,
+        },
+        specs: {
+          type: ['string', 'null'],
+          minLength: 1,
+          maxLength: 20000,
+          description:
+            'Product requirements beyond recipes and features, as plain text or a short list.',
         },
       }),
     },

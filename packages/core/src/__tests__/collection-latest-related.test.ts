@@ -1,5 +1,4 @@
 import { randomUUID } from 'node:crypto';
-import { existsSync, rmSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import type { DatabaseInterface } from '@happyvertical/sql';
@@ -10,6 +9,10 @@ import { GlobalInterceptors } from '../interceptors';
 import { SmrtObject } from '../object';
 import { smrt } from '../registry';
 import { getTestDatabase } from '../testing/database';
+import {
+  cleanupDirectoryDatabase,
+  cleanupFileDatabase,
+} from '../testing/file-cleanup';
 
 let activeInitializers = 0;
 let maximumActiveInitializers = 0;
@@ -181,10 +184,7 @@ describe('SmrtCollection.listWithLatestRelated()', () => {
   afterEach(async () => {
     GlobalInterceptors.unregister('latest-related-transform');
     GlobalInterceptors.unregister('latest-related-scope');
-    await db.close?.();
-    if (existsSync(sqlitePath)) {
-      rmSync(sqlitePath, { force: true });
-    }
+    await cleanupFileDatabase(db, sqlitePath);
   });
 
   it('selects one latest row per parent and sorts before pagination', async () => {
@@ -701,10 +701,7 @@ describe('SmrtCollection.listWithLatestRelated()', () => {
         note: 'json second latest',
       });
     } finally {
-      await jsonDb.close?.();
-      if (existsSync(jsonPath)) {
-        rmSync(jsonPath, { recursive: true, force: true });
-      }
+      await cleanupDirectoryDatabase(jsonDb, jsonPath);
     }
   });
 });

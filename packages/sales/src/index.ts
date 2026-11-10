@@ -4,8 +4,8 @@
  * Modular sales for the SMRT framework, shipped as one installable package
  * with distinct modules:
  *
- * - `agreements` (`@happyvertical/smrt-sales/agreements`): provider-neutral
- *   e-signature lifecycle, verified events, and immutable executed evidence.
+ * - `agreements` (`@happyvertical/smrt-sales/agreements`): generic versioned
+ *   terms, provider-neutral e-signature lifecycle, and immutable evidence.
  * - `crm` (`@happyvertical/smrt-sales/crm`): Leads, Opportunities,
  *   configurable Pipelines, tenant-safe Lead follow-up, sales activity,
  *   ownership, and idempotent conversion links.

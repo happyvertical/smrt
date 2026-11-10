@@ -6,9 +6,10 @@ import { EventEmitter } from 'node:events';
 import { beforeEach, describe, expect, it, vi } from 'vitest';
 
 // Use vi.hoisted to create mocks before hoisting
-const { mockMkdir, mockRm, mockHttpsGet } = vi.hoisted(() => ({
+const { mockMkdir, mockRm, mockRmSync, mockHttpsGet } = vi.hoisted(() => ({
   mockMkdir: vi.fn(),
   mockRm: vi.fn(),
+  mockRmSync: vi.fn(),
   mockHttpsGet: vi.fn(),
 }));
 
@@ -16,6 +17,10 @@ const { mockMkdir, mockRm, mockHttpsGet } = vi.hoisted(() => ({
 vi.mock('node:fs/promises', () => ({
   mkdir: mockMkdir,
   rm: mockRm,
+}));
+
+vi.mock('node:fs', () => ({
+  rmSync: mockRmSync,
 }));
 
 // Mock https to prevent real network calls
@@ -32,12 +37,23 @@ import {
   loadGitTemplate,
 } from './git-loader.js';
 
+const exitListenersBeforeLoader = new Set(process.listeners('exit'));
+
+function getLoaderExitHandler(): () => void {
+  const handler = process
+    .listeners('exit')
+    .find((listener) => !exitListenersBeforeLoader.has(listener));
+  if (!handler) throw new Error('Git loader exit handler was not registered');
+  return handler as () => void;
+}
+
 describe('Git Loader', () => {
   beforeEach(() => {
     vi.clearAllMocks();
     // Reset mock implementations to no-op by default
     mockMkdir.mockResolvedValue(undefined);
     mockRm.mockResolvedValue(undefined);
+    mockRmSync.mockImplementation(() => {});
 
     // Mock https.get to fail immediately (simulates network error)
     // This prevents actual network calls during tests
@@ -219,14 +235,40 @@ describe('Git Loader', () => {
     });
 
     it('should cleanup temp directory on error', async () => {
-      mockRm.mockResolvedValue(undefined);
+      await expect(loadGitTemplate('github:user/repo')).rejects.toThrow(
+        /getaddrinfo ENOTFOUND/,
+      );
+      expect(mockRm).toHaveBeenCalledTimes(1);
+      expect(mockRm).toHaveBeenCalledWith(
+        expect.stringMatching(/smrt-template-user-repo-/),
+        { recursive: true, force: true },
+      );
+    });
 
-      try {
-        await loadGitTemplate('github:user/repo');
-      } catch (error) {
-        // Should cleanup on failure
-        expect(mockRm).toHaveBeenCalled();
-      }
+    it('retries failed owned cleanup synchronously on normal exit', async () => {
+      mockRm.mockRejectedValueOnce(new Error('async cleanup failed'));
+      const error = await loadGitTemplate('github:user/repo').catch(
+        (caught: unknown) => caught,
+      );
+      expect(error).toBeInstanceOf(AggregateError);
+      expect((error as AggregateError).errors).toHaveLength(2);
+      expect((error as AggregateError).cause).toMatchObject({
+        message: 'getaddrinfo ENOTFOUND',
+      });
+
+      const cleanupOnExit = getLoaderExitHandler();
+      mockRmSync.mockImplementationOnce(() => {
+        throw new Error('sync cleanup failed');
+      });
+      cleanupOnExit();
+      cleanupOnExit();
+
+      expect(mockRmSync).toHaveBeenCalledTimes(2);
+      expect(mockRmSync).toHaveBeenNthCalledWith(
+        1,
+        expect.stringMatching(/smrt-template-user-repo-/),
+        { recursive: true, force: true },
+      );
     });
 
     it('should look for template.config.js first', async () => {
@@ -301,6 +343,22 @@ describe('Git Loader', () => {
         recursive: true,
         force: true,
       });
+      expect(mockConfig.__tempDir).toBeUndefined();
+      expect(mockConfig.__templateRoot).toBeUndefined();
+    });
+
+    it('is idempotent after successful cleanup', async () => {
+      const mockConfig = {
+        name: 'Test',
+        description: 'Test',
+        dependencies: {},
+        __tempDir: '/tmp/test-12345',
+      } as any;
+
+      await cleanupGitTemplate(mockConfig);
+      await cleanupGitTemplate(mockConfig);
+
+      expect(mockRm).toHaveBeenCalledTimes(1);
     });
 
     it('should not fail if no temp directory', async () => {

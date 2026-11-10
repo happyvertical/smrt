@@ -35,7 +35,7 @@ describe('worker registration externals (#3117)', () => {
     expect(aliases.map((alias) => alias.find)).toEqual(['$lib']);
   });
 
-  it('bundles relative, resolved, and project-alias imports; externalizes packages', () => {
+  it('bundles project code and Oxc decorator helpers; externalizes packages', () => {
     const external = createWorkerRegistrationExternal([
       { find: '$lib', replacement: '/app/src/lib' },
     ]);
@@ -45,6 +45,8 @@ describe('worker registration externals (#3117)', () => {
     expect(external('\0virtual')).toBe(false);
     expect(external('$lib/objects/helpers')).toBe(false);
     expect(external('$libx')).toBe(true);
+    expect(external('@oxc-project/runtime')).toBe(false);
+    expect(external('@oxc-project/runtime/helpers/esm/decorate')).toBe(false);
     expect(external('@happyvertical/smrt-core')).toBe(true);
     expect(external('@happyvertical/smrt-jobs/runner')).toBe(true);
     expect(external('node:fs')).toBe(true);
@@ -164,12 +166,21 @@ export default defineConfig({
     const output = join(projectRoot, WORKER_REGISTRATION_PATH);
     expect(existsSync(output)).toBe(true);
     const compiled = readFileSync(output, 'utf8');
-    // Package imports stay external so the worker shares the installed core.
-    expect(compiled).toMatch(/from ["']@happyvertical\/smrt-core["']/);
-    expect(compiled).not.toContain('class SmrtObject');
 
     // The issue's repro: runtime + generated registration, no app source.
     const probe = join(projectRoot, 'probe.mjs');
+    const noOxcRuntimeLoader = join(projectRoot, 'no-oxc-runtime-loader.mjs');
+    writeFileSync(
+      noOxcRuntimeLoader,
+      [
+        'export async function resolve(specifier, context, nextResolve) {',
+        "  if ((specifier === '@oxc-project/runtime' || specifier.startsWith('@oxc-project/runtime/')) && context.parentURL.includes('/.smrt/runtime/')) {",
+        "    throw new Error('consumer does not provide @oxc-project/runtime');",
+        '  }',
+        '  return nextResolve(specifier, context);',
+        '}',
+      ].join('\n'),
+    );
     writeFileSync(
       probe,
       [
@@ -184,14 +195,21 @@ export default defineConfig({
         '}));',
       ].join('\n'),
     );
-    const { stdout } = await execFileAsync(process.execPath, [probe], {
-      cwd: projectRoot,
-      timeout: 30_000,
-    });
+    const { stdout } = await execFileAsync(
+      process.execPath,
+      ['--experimental-loader', noOxcRuntimeLoader, probe],
+      { cwd: projectRoot, timeout: 30_000 },
+    );
     expect(JSON.parse(stdout.trim().split('\n').at(-1) ?? '{}')).toEqual({
       found: true,
       qualifiedName: '@test/worker-app:ShopScheduledTask',
       sweep: 30,
     });
+    // Package imports stay external so the worker shares the installed core.
+    expect(compiled).toMatch(/from ["']@happyvertical\/smrt-core["']/);
+    expect(compiled).not.toContain('class SmrtObject');
+    // The app has no direct Oxc runtime dependency. Vite injects this helper
+    // while lowering decorators, so it must be inside the worker artifact.
+    expect(compiled).not.toContain('@oxc-project/runtime');
   }, 150_000);
 });

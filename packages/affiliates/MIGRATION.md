@@ -34,7 +34,7 @@ import from `@happyvertical/smrt-sales` directly.
 | `CommissionType` enum | — (plan component keys) | See the worked `CommissionPlan` below. |
 | `CommissionStatus` enum | `CommissionStatus` union (`COMMISSION_STATUSES`) | `pending`/`paid` align; `included` has no direct equivalent (see status mapping). |
 | `PayoutStatus` enum | `CommissionPayoutStatus` union (`COMMISSION_PAYOUT_STATUSES`) | 1:1. |
-| `PayoutMethod` enum | `PayoutMethod` union (`PAYOUT_METHODS`) | Legacy values align; the new union adds `'other'`. |
+| `PayoutMethod` enum | `PayoutMethod` union (`PAYOUT_METHODS`) | Legacy values align; the new union adds `'other'`, `'stripe_connect'`, and `'crypto'`. |
 
 New concepts with no legacy counterpart (adopt as you migrate):
 `CommissionPlan(Collection)` (versioned calculation terms),
@@ -66,7 +66,7 @@ helpers (`roundCents`, `centsToAmount`, `amountToCents`,
 | `parent_commission_share` | plan component rates / `share_fraction` | See the worked plan below. Note the legacy column was declared with an integer default (`= 0`) — audit stored values before converting. |
 | `display_commission_rate`, `referral_commission_rate`, `sales_commission_rate` | `commission_plans.components` (JSON) | Per-type rates become plan components; see the worked plan below. Legacy values were true 0–1 decimals. |
 | `payout_threshold` | `earners.payout_threshold_cents` | Same unit (integer cents), explicit `*Cents` name. |
-| `payout_method` | `earners.payout_method` | Same string values; the new union adds `'other'`. |
+| `payout_method` | `earners.payout_method` | Same string values; the new union adds `'other'`, `'stripe_connect'`, and `'crypto'`. |
 | `currency` | `earners.currency` | Copy the explicit value (see currency note below). |
 | `status` | `earners.status` | Same string values (`pending`/`active`/`suspended`). |
 | `metadata` (JSON string) | `earners.metadata` | New default is `'{}'` rather than `''`. |

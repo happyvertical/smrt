@@ -7,7 +7,12 @@
 
 import type { Asset } from '@happyvertical/smrt-assets';
 import type { SmrtObjectOptions } from '@happyvertical/smrt-core';
-import { crossPackageRef, SmrtObject, smrt } from '@happyvertical/smrt-core';
+import {
+  crossPackageRef,
+  field,
+  SmrtObject,
+  smrt,
+} from '@happyvertical/smrt-core';
 import { TenantScoped, tenantId } from '@happyvertical/smrt-tenancy';
 import {
   assertValidVideoAssetRole,
@@ -187,16 +192,23 @@ export class Scene extends SmrtObject {
   tenantId: string | null = null;
 
   /** Human-readable name */
+  @field({ description: 'What the scene is called.' })
   name: string = '';
 
   /** Description */
+  @field({ description: 'What the scene shows.' })
   description: string | null = null;
 
   /** Source media asset ID */
+  @field({ description: 'The picture or video the scene is made from.' })
   @crossPackageRef('@happyvertical/smrt-assets:Asset')
   sourceAssetId: string | null = null;
 
   /** Type of source media */
+  @field({
+    description:
+      'What kind of file the scene is made from: a picture, a video or a wrap-around panorama.',
+  })
   sourceType: SceneSourceType = 'image';
 
   /** Projection type for panoramas */
@@ -218,6 +230,7 @@ export class Scene extends SmrtObject {
   anchorPoints: AnchorPoint[] = [];
 
   /** Scene status */
+  @field({ description: 'Whether the scene is ready to be used in shots.' })
   status: SceneStatus = 'pending';
 
   constructor(options: SceneOptions = {}) {

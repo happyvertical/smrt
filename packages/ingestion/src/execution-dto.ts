@@ -43,6 +43,22 @@ export interface ReviewInput {
   reason?: string;
   correctedArgs?: IntakeValues;
 }
+/** Reviewer-chosen handler for any item; previewed and approved like a generated proposal. */
+export interface StartActionInput {
+  itemId: string;
+  handlerId: string;
+  handlerVersion: string;
+  args: IntakeValues;
+  requestId: string;
+  reason?: string;
+}
+/** Close an item as handled without an action; distinct from rejecting a proposal. */
+export interface ResolveItemInput {
+  itemId: string;
+  disposition: 'resolve_no_action';
+  requestId: string;
+  reason?: string;
+}
 export interface ActionResult {
   state:
     | 'succeeded'

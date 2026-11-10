@@ -7,6 +7,7 @@ import {
   within,
 } from '@testing-library/svelte';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
+import * as shellState from '../../workspace/admin-shell/state.svelte.js';
 import Harness from './settings-page-harness.svelte';
 
 beforeEach(() => {
@@ -30,6 +31,25 @@ const part = (name: string) =>
   page().querySelector<HTMLElement>(`[data-smrt-part="${name}"]`);
 
 describe('ShellSettingsPage', () => {
+  it('uses AppShell’s one canonical state and renders settings without shell chrome', () => {
+    const create = vi.spyOn(shellState, 'createShellState');
+    const onShell = vi.fn();
+    try {
+      render(Harness, { chrome: false, onShell });
+      expect(create).toHaveBeenCalledOnce();
+      expect(onShell).toHaveBeenCalledWith(create.mock.results[0].value);
+      for (const name of ['appearance', 'account', 'layout']) {
+        expect(part(name)).not.toBeNull();
+      }
+      expect(
+        document.querySelector('[data-smrt-component="AdminShell"]'),
+      ).toBeNull();
+      expect(document.querySelector('nav')).toBeNull();
+    } finally {
+      create.mockRestore();
+    }
+  });
+
   it('renders Appearance, Account and Layout sections reusing the theme controls', () => {
     render(Harness, {});
     for (const name of ['appearance', 'account', 'layout']) {

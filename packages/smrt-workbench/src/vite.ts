@@ -1,6 +1,6 @@
 import { existsSync, readFileSync } from 'node:fs';
 import { dirname, isAbsolute, join, resolve } from 'node:path';
-import fg from 'fast-glob';
+import { glob } from 'tinyglobby';
 import { normalizePath, type Plugin } from 'vite';
 import {
   buildWorkbenchProject,
@@ -68,8 +68,9 @@ async function discoverWorkspacePlaygroundSpecifiers(
   workspaceRoot: string,
   packageName?: string,
 ): Promise<PlaygroundSpecifier[]> {
-  const matches = await fg('packages/*/src/svelte/playground.ts', {
+  const matches = await glob('packages/*/src/svelte/playground.ts', {
     cwd: workspaceRoot,
+    expandDirectories: false,
     absolute: true,
     onlyFiles: true,
   });

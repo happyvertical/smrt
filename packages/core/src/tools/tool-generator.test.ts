@@ -51,6 +51,8 @@ describe('convertTypeToJsonSchema', () => {
     expect(convertTypeToJsonSchema('Record<string, any>')).toEqual({
       type: 'object',
     });
+    // The scanner's name for an inline literal or an alias to one (#4327).
+    expect(convertTypeToJsonSchema('object')).toEqual({ type: 'object' });
   });
 
   it('handles complex nested types', () => {

@@ -10,11 +10,16 @@
  * Browser-safe: no server imports. Authentication is the host's session
  * cookie (same-origin `fetch`), or headers the host supplies.
  */
+
 import type {
   DataSurfaceActionRequest,
   DataSurfaceActionResult,
   DataSurfaceRegistry,
 } from '@happyvertical/smrt-ui/data-surface';
+import {
+  type ChatUnavailableStatus,
+  readChatUnavailableStatus,
+} from '../../../client.js';
 import {
   type AssistantAttachmentRef,
   type AssistantMessage,
@@ -47,6 +52,13 @@ export interface AssistantHttpOptions {
 export interface AssistantHttpTransportOptions extends AssistantHttpOptions {
   /** When set, the dock renders `ModelPicker`; the server checks the choice. */
   models?: ModelOption[];
+  /**
+   * A JSON object sent as `context` with every send and resume, for the
+   * server's per-request callbacks (`AssistantRequestContext.requestContext`),
+   * e.g. the surfaces the page has mounted. A function is read per request.
+   * The server caps it (8 KiB) and treats it as untrusted.
+   */
+  context?: Record<string, unknown> | (() => Record<string, unknown>);
 }
 
 /** A non-2xx answer from the assistant routes. `message` is user-safe. */
@@ -55,6 +67,8 @@ export class AssistantHttpError extends Error {
     message: string,
     readonly status: number,
     readonly code: string | undefined,
+    /** Set when AI is off or not set up (`code: 'ai_unavailable'`, #4757). */
+    readonly unavailable?: ChatUnavailableStatus,
   ) {
     super(message);
     this.name = 'AssistantHttpError';
@@ -89,14 +103,16 @@ function makeFetch(options: AssistantHttpOptions) {
 async function failure(response: Response): Promise<AssistantHttpError> {
   let message = `The assistant request failed (${response.status}).`;
   let code: string | undefined;
+  let unavailable: ChatUnavailableStatus | undefined;
   try {
     const body = (await response.json()) as { error?: unknown; code?: unknown };
     if (typeof body.error === 'string' && body.error) message = body.error;
     if (typeof body.code === 'string') code = body.code;
+    unavailable = readChatUnavailableStatus(body);
   } catch {
     // Not JSON: keep the generic message.
   }
-  return new AssistantHttpError(message, response.status, code);
+  return new AssistantHttpError(message, response.status, code, unavailable);
 }
 
 function isJson(response: Response): boolean {
@@ -160,6 +176,13 @@ export function createAssistantHttpTransport(
       body: JSON.stringify(body),
       ...(signal ? { signal } : {}),
     });
+  const contextField = () => {
+    const value =
+      typeof options.context === 'function'
+        ? options.context()
+        : options.context;
+    return value ? { context: value } : {};
+  };
   const threadPath = (threadId: string, leaf: string) =>
     `/threads/${encodeURIComponent(threadId)}/${leaf}`;
 
@@ -191,6 +214,7 @@ export function createAssistantHttpTransport(
             ...(input.clientTools?.length
               ? { clientTools: input.clientTools }
               : {}),
+            ...contextField(),
           },
           input.signal,
         );
@@ -207,6 +231,7 @@ export function createAssistantHttpTransport(
             ...(input.clientTools?.length
               ? { clientTools: input.clientTools }
               : {}),
+            ...contextField(),
           },
           input.signal,
         );

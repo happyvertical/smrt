@@ -206,6 +206,80 @@ await notifications.markAllRead(userId, { tenantIds });
 The generated REST/MCP/CLI surfaces are off; expose host routes that pass the
 signed-in user's id. The table is new: run `db:migrate`.
 
+### Notification email outbox
+
+`NotificationOutboxService` sends one email per event and recipient from a
+durable, leased outbox. The host resolves recipients and the sender account;
+callers pass a user id and a host-relative link path, never an address.
+
+```typescript
+import { NotificationOutboxService } from '@happyvertical/smrt-messages';
+import '@happyvertical/smrt-messages/providers/email'; // default transport
+
+const outbox = new NotificationOutboxService({
+  db,
+  linkBaseUrl: 'https://app.example.com',
+  resolveRecipient: async ({ tenantId, recipientUserId }) =>
+    (await isMember(tenantId, recipientUserId))
+      ? { address: await emailOf(recipientUserId) }
+      : null, // denied
+  resolveSenderAccountId: ({ tenantId }) => senderAccountIdFor(tenantId),
+});
+
+// Idempotent per (tenant, recipient, email, sourceRef).
+await outbox.enqueueEmail({
+  tenantId,
+  recipientUserId,
+  sourceRef: `project-question:${question.id}:asked`,
+  kind: 'project-question.asked',
+  subject: 'A question is waiting for you',
+  text: question.prompt,
+  path: `/portal/projects/${projectId}/questions#question-${question.id}`,
+});
+
+// From a scheduled job; safe to run concurrently and after a crash.
+await outbox.dispatchDue({ limit: 25 });
+```
+
+Outcomes the provider may have seen but did not confirm become `uncertain`
+and wait for `reconcile()`. See
+[agents/notification-outbox.md](agents/notification-outbox.md) for the lease,
+retry, and reconciliation policy. The table is new: run `db:migrate`.
+
+#### Per-recipient opt-out
+
+`NotificationOptOutService` is the opt-out ledger (`notification_opt_outs`)
+for the outbox's `isSuppressed` hook. A scope is `*` or a host key such as
+`project:<uuid>`.
+
+```typescript
+import {
+  NotificationOptOutService,
+  optOutSuppression,
+} from '@happyvertical/smrt-messages';
+
+const optOuts = new NotificationOptOutService({ db });
+// Idempotent; with a principal only the recipient may change their own row,
+// in the tenant the principal is authenticated in.
+await optOuts.optOut({
+  tenantId,
+  recipientUserId,
+  channel: 'email',
+  scope: `project:${projectId}`,
+  principal: { userId: session.userId, tenantId },
+});
+
+// Pass to the outbox: enqueue and dispatch both honour opt-outs.
+const isSuppressed = optOutSuppression(optOuts, async (request) => {
+  // The host maps its own event to a scope; null = not opt-out-able.
+  // Here a question's sourceRef is resolved to its project by a host lookup.
+  const projectId = await projectIdForSourceRef(request.tenantId, request.sourceRef);
+  return projectId ? `project:${projectId}` : null;
+});
+```
+
+The table is new: run `db:migrate`.
+
 ### Credential Security
 
 Account credentials are stored via `credentialSecretId` pointing to smrt-secrets envelope encryption. Use `account.setCredentials()` and `account.getCredentials()` -- never store passwords as plain fields.

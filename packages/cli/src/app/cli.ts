@@ -7,7 +7,10 @@
  */
 
 import { resolve } from 'node:path';
+import { refreshAgentDocsOnDev, warnAgentDocsOnBuild } from './agent-docs.js';
+import { runBackupsCommand } from './backup-command.js';
 import { ApplicationStartError, boundedTail, redactSecrets } from './errors.js';
+import { runInstallationOperation } from './installation.js';
 import {
   devServerArguments,
   launchVite,
@@ -21,6 +24,7 @@ import {
   runApplicationOperation,
   START_OUTPUT_TAIL_BYTES,
 } from './operations.js';
+import { runRestoreLatestOperation } from './restore-latest.js';
 import {
   type AppCommandDependencies,
   type AppCommandIo,
@@ -44,13 +48,21 @@ export const APP_COMMANDS: Readonly<Record<string, string>> = Object.freeze({
   stop: 'Local: stop the managed application process',
   doctor: 'Report runtime, storage, provider, and migration findings (default)',
   open: 'Open the application or pending owner onboarding in a browser',
-  'backup [destination]':
-    'Local: copy the private data root to a new directory',
-  'export [path]': 'Write a logical, asset-aware export bundle',
+  'backup [--encrypted [--target <name>]] [destination]':
+    'Local: copy the private data root to a new directory, one encrypted snapshot file, or a backup target',
+  'backups [targets|list|prune]':
+    'Local: configure backup targets, list their snapshots, apply retention',
+  'export [--encrypted] [path]':
+    'Write a logical, asset-aware export bundle (optionally as an encrypted snapshot)',
   'import <path>': 'Import a logical export bundle into an empty application',
-  migrate: 'Prepare storage custody and run smrt db:migrate under the lock',
+  'migrate [--relax-columns]':
+    'Prepare storage custody and run smrt db:migrate under the lock',
   'token [list|revoke <id>] [--scopes ...]':
     'Local: issue, list, or revoke a scoped bearer token for a local MCP client',
+  'installation [status|restore|reseed|recover-seed|retire]':
+    'Local: declare a restored move, an independent copy, or a recovered seed',
+  'restore-latest [--discard-local] [--replace-installation] [--origin-retired] [--recover]':
+    "Local: replace the data root with the vault account's latest snapshot",
   'worker [task|schedule]': 'Deployed: run the task or schedule worker',
   'dev [...vite args]': "Run the application's Vite dev server",
   'build [...vite args]':
@@ -134,6 +146,9 @@ const ENV_FILE_OPERATIONS = new Set<string>([
   ...APP_OPERATIONS,
   'migrate',
   'token',
+  'installation',
+  'backups',
+  'restore-latest',
   'dev',
   'build',
   'vite',
@@ -166,9 +181,11 @@ export async function runAppCommand(
     io.stdout(renderAppHelp());
     return 0;
   }
-  // `dev`/`build`/`vite` forward `--help` to Vite; `token` has its own usage.
+  // `dev`/`build`/`vite` forward `--help` to Vite; `token` and `installation` have their own usage.
   if (
-    !['dev', 'build', 'vite', 'token'].includes(operation) &&
+    !['dev', 'build', 'vite', 'token', 'installation', 'backups'].includes(
+      operation,
+    ) &&
     args.some((arg) => arg === '--help' || arg === '-h')
   ) {
     io.stdout(renderAppHelp());
@@ -187,8 +204,19 @@ export async function runAppCommand(
       if (operation === 'build') {
         const status = await validateMcpAppsIfPresent(context);
         if (status !== 0) return status;
+        await warnAgentDocsOnBuild(
+          sourceRoot,
+          io,
+          options.dependencies?.agentDocs,
+        );
+      } else if (operation === 'dev') {
+        await refreshAgentDocsOnDev(
+          sourceRoot,
+          io,
+          options.dependencies?.agentDocs,
+        );
       }
-      return launchVite(
+      return (options.dependencies?.launchVite ?? launchVite)(
         context,
         operation === 'vite'
           ? args
@@ -207,9 +235,16 @@ export async function runAppCommand(
       io,
       deps,
     };
-    if (operation === 'migrate') return await prepareMigration(context);
+    if (operation === 'migrate') return await prepareMigration(context, args);
     if (operation === 'worker') return await runWorker(context, args);
     if (operation === 'token') return await runTokenOperation(context, args);
+    if (operation === 'backups') return await runBackupsCommand(context, args);
+    if (operation === 'installation') {
+      return await runInstallationOperation(context, args);
+    }
+    if (operation === 'restore-latest') {
+      return await runRestoreLatestOperation(context, args);
+    }
     if (!(APP_OPERATIONS as readonly string[]).includes(operation)) {
       throw new Error(`Unknown app operation: ${operation}`);
     }

@@ -63,6 +63,13 @@ export interface ShellPanelConfig {
    */
   overlayMedia?: string;
   /**
+   * Right edge (the dock): close it when a card inside announces that it
+   * navigated the page (`announceShellNavigation`), but only while the dock
+   * is laid over the page (an overlay or a phone sheet). Default `true`; a
+   * dock beside the page always stays open.
+   */
+  closeOnNavigate?: boolean;
+  /**
    * Drag-to-resize for a `push` side edge on tablet/desktop: a separator on
    * the edge's inner border (pointer drag, arrow keys, Home/End, double-click
    * or Enter to reset). `true` uses the default limits.
@@ -214,6 +221,11 @@ export interface ShellNavItem {
    */
   attention?: boolean | string | null;
   children?: ShellNavItem[];
+  /**
+   * Explicit current state. When defined it overrides the computed
+   * longest-href match for this item's own link (`aria-current`).
+   */
+  current?: boolean;
   /**
    * Trailing action link. "Section current" means: for an item in a
    * {@link ShellNavGroup}, any item of the group, their children, or any
@@ -413,6 +425,12 @@ export interface AdminShellProps {
   logoAlt?: string;
   /** Custom brand content, receiving whether it is in the compact rail. */
   brand?: Snippet<[{ compact: boolean }]>;
+  /**
+   * Content rendered beside the brand (e.g. a notification bell), outside the
+   * home link, in the top band and the left-rail header. Adds a
+   * `.smrt-admin-shell__brand-row` wrapper only when given.
+   */
+  brandEnd?: Snippet<[{ compact: boolean }]>;
   subtitle?: string;
   config?: ShellPanelDefaults;
   settings?: ShellSettingsDelta;
@@ -464,11 +482,12 @@ export interface ShellSectionMenuEntry {
 }
 
 /**
- * A phone bottom bar entry whose icon is either a component (`icon`) or a
- * shell/host icon name (`iconName`, drawn like navigation icons; a missing
- * name draws the placeholder glyph).
+ * A phone bottom bar entry whose icon is a component, or a name (`icon` as a
+ * string, or `iconName`) drawn like navigation icons: a built-in shell icon
+ * name draws that icon, any other name goes to the bar's `iconComponent` (as in
+ * `TenantNav`). A missing name draws the placeholder glyph.
  */
 export type PhoneBottomBarEntry = Omit<PhoneBottomBarItem, 'icon'> & {
-  icon?: PhoneBottomBarItem['icon'];
+  icon?: PhoneBottomBarItem['icon'] | string;
   iconName?: string;
 };

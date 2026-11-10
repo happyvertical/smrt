@@ -7,6 +7,10 @@
 
 import { createLogger } from '@happyvertical/logger';
 import {
+  isJsonAdapterHandle,
+  isKnownNativeDuckDbHandle,
+} from '../native-duckdb.js';
+import {
   mapWithConcurrency,
   POSTGRES_INTROSPECTION_CONCURRENCY,
 } from '../schema/bounded-concurrency.js';
@@ -21,7 +25,7 @@ import {
   conflictIndexName,
   isLegacyNaturalKeyIndex,
 } from '../schema/conflict-target.js';
-import { detectEngine, getDDLStrategy } from '../schema/ddl/index.js';
+import { getDDLStrategy } from '../schema/ddl/index.js';
 import { renderNullEqualConflictIndex } from '../schema/ddl/null-equal-index.js';
 import type { DatabaseEngine } from '../schema/ddl/types.js';
 import {
@@ -73,6 +77,7 @@ import {
   type UuidConvergenceLiveForeignKey,
   type UuidConvergencePlan,
 } from '../schema/uuid-convergence.js';
+import { getDatabaseEngine } from '../system/compatibility.js';
 import {
   planSqliteTableRebuilds,
   sqliteBackfillPlaceholderSql,
@@ -82,6 +87,23 @@ import {
 import type { DatabaseInterface, SqlTableSchemaInfo } from './types.js';
 
 const logger = createLogger({ level: 'info' });
+
+/**
+ * DuckDB introspection reports an index column that needs quoting as its
+ * quoted form (`"key"`), so it never matched the manifest's `key` (#3305 M1).
+ */
+function unquoteIndexColumns(
+  schema: SqlTableSchemaInfo | null | undefined,
+): SqlTableSchemaInfo | null | undefined {
+  for (const index of schema?.indexes ?? []) {
+    index.columns = index.columns.map((column) =>
+      /^"(?:[^"]|"")+"$/.test(column)
+        ? column.slice(1, -1).replace(/""/g, '"')
+        : column,
+    );
+  }
+  return schema;
+}
 
 /** A framework-owned live foreign key whose actions differ from the manifest (#3023). */
 interface ForeignKeyActionReplacement {
@@ -263,10 +285,6 @@ export function uniqueColumnIndexName(
 }
 
 /**
- * True when a change is report-only: it carries an advisory and no
- * executable statement. Such changes never reach the migration stream.
- */
-/**
  * Single- vs double-precision float classification for #2770's float-width
  * drift detection. `null` for anything that isn't unambiguously one or the
  * other (DECIMAL/NUMERIC have no fixed binary width and are out of scope).
@@ -292,6 +310,10 @@ function floatPrecisionOf(
   return null;
 }
 
+/**
+ * True when a change is report-only: it carries an advisory and no
+ * executable statement. Such changes never reach the migration stream.
+ */
 export function isAdvisoryOnlyChange(change: SchemaChange): boolean {
   if (!change.advisory) return false;
   const statements = change.sqlStatements ?? (change.sql ? [change.sql] : []);
@@ -322,11 +344,23 @@ export function isManualOrAdvisoryChange(change: SchemaChange): boolean {
   );
 }
 
-function resolveDatabaseUrl(db: DatabaseInterface): string {
-  const dbWithConfig = db as DatabaseInterface & {
-    config?: { url?: string };
-  };
-  return db.url || dbWithConfig.config?.url || '';
+/** @internal Resolve the same engine for diffing and migration DDL. */
+export function resolveMigrationEngine(
+  db: DatabaseInterface,
+  engineHint?: string,
+): DatabaseEngine {
+  if (engineHint === 'json') return 'json';
+  if (engineHint) return getDatabaseEngine(db, engineHint);
+  if (isKnownNativeDuckDbHandle(db)) return 'duckdb';
+  // Older JSON adapter wrappers expose only exportTable; native handles do
+  // too, so check for native DuckDB before using the legacy capability.
+  if (
+    isJsonAdapterHandle(db) ||
+    typeof (db as { exportTable?: unknown }).exportTable === 'function'
+  ) {
+    return 'json';
+  }
+  return getDatabaseEngine(db);
 }
 
 /**
@@ -644,16 +678,7 @@ export class SchemaComparer {
       ignoreTypeMismatches: false,
       ...options,
     };
-    // Use the shared detectEngine utility for consistent detection.
-    // Handles :memory:, .json, and other edge cases. The JSON adapter is
-    // detected structurally (it exposes `exportTable`) because its url can be
-    // empty; otherwise fall back to URL-based detection, where `engineHint`
-    // lets callers override when `db.url` is empty or points at an adapter
-    // whose engine isn't obvious from the URL alone (some in-memory wrappers).
-    this.engine =
-      typeof (this.db as { exportTable?: unknown }).exportTable === 'function'
-        ? 'json'
-        : detectEngine(resolveDatabaseUrl(this.db), this.options.engineHint);
+    this.engine = resolveMigrationEngine(this.db, this.options.engineHint);
     this.ddlStrategy = getDDLStrategy(this.engine);
   }
 
@@ -846,10 +871,9 @@ export class SchemaComparer {
     // #2370: SQLite cannot change a column's type in place. Turn the
     // "requires table recreation" placeholders those comparisons emit into an
     // executable table rebuild (see `./sqlite-rebuild.ts`); anything the
-    // rebuild can't do safely stays manual drift, as before. The planner only
-    // consumes `type_upgrade` placeholders — SQLite `alter_column`
-    // nullability/default drift (#2369) stays manual until the rebuild also
-    // rewrites constraints.
+    // rebuild can't do safely stays manual drift, as before. Explicit NOT NULL relaxation also uses
+    // the rebuild, with tracker-owned foreign-key suspension (#4413).
+    // Other constraint drift remains manual.
     const plannedColumnChanges =
       this.engine === 'sqlite'
         ? await planSqliteTableRebuilds({
@@ -909,12 +933,22 @@ export class SchemaComparer {
     // adds/drops/changes of the predicate (issue #1692).
     const dbIndexPredicates = await this.getDbIndexPredicates(tableName);
 
-    // Compare indexes
+    // Native DuckDB CREATE TABLE emits inline UNIQUE constraints, which
+    // getTableSchema() omits from its list of standalone indexes.
+    const inlineUniqueSignatures =
+      this.engine === 'duckdb' &&
+      isKnownNativeDuckDbHandle(this.db) &&
+      manifest.indexes.some(
+        (index) => index.unique && !index.where && !index.jsonPath,
+      )
+        ? await this.getDuckDbInlineUniqueSignatures(tableName)
+        : undefined;
     const indexChanges = this.compareIndexes(
       tableName,
       manifest,
       dbSchema,
       dbIndexPredicates,
+      inlineUniqueSignatures,
     );
     const foreignKeyChanges = await this.compareForeignKeys(
       tableName,
@@ -983,6 +1017,23 @@ export class SchemaComparer {
     return changes;
   }
 
+  private async getDuckDbInlineUniqueSignatures(
+    tableName: string,
+  ): Promise<Set<string>> {
+    const { rows } = await this.db.query(
+      `SELECT to_json(constraint_column_names)::VARCHAR AS columns
+       FROM duckdb_constraints()
+       WHERE database_name = current_database() AND schema_name = current_schema()
+         AND table_name = ? AND constraint_type = 'UNIQUE'`,
+      tableName,
+    );
+    return new Set(
+      rows.map(({ columns }) =>
+        this.getIndexSignature(JSON.parse(String(columns)) as string[], true),
+      ),
+    );
+  }
+
   /**
    * Read (and memoize for this run) one table's live schema. Returns
    * `undefined` when the table does not exist or the adapter cannot
@@ -994,7 +1045,9 @@ export class SchemaComparer {
     if (this.liveSchemas.has(tableName)) {
       return this.liveSchemas.get(tableName) ?? undefined;
     }
-    const schema = await this.db.getTableSchema?.(tableName);
+    const schema = unquoteIndexColumns(
+      await this.db.getTableSchema?.(tableName),
+    );
     this.liveSchemas.set(tableName, schema);
     return schema ?? undefined;
   }
@@ -1031,7 +1084,8 @@ export class SchemaComparer {
     const schemas = await mapWithConcurrency(
       pending,
       concurrency,
-      (tableName) => Promise.resolve(this.db.getTableSchema?.(tableName)),
+      async (tableName) =>
+        unquoteIndexColumns(await this.db.getTableSchema?.(tableName)),
     );
     pending.forEach((tableName, index) => {
       this.liveSchemas.set(tableName, schemas[index]);
@@ -1613,19 +1667,34 @@ export class SchemaComparer {
         : this.plannedTables.get(foreignKey.referencesTable);
       if (plannedParent) {
         // A join cannot read a parent that this batch has not created yet.
-        // Prove the *whole child table* empty, even for a new child column:
-        // its default could otherwise create references on existing rows.
+        // Without a parent to join, prove no child row can reference it:
+        // an existing FK column must hold no non-NULL value; a new column
+        // with no default or a NULL default cannot reference anything; any
+        // other new-column default could create references on existing
+        // rows, so that case still requires the whole child table empty.
         // Keep the ordinary NOT VALID + VALIDATE below as the authoritative
         // transactional check against writes racing this read-only preflight.
         const parentColumn = plannedParent.columns[foreignKey.referencesColumn];
         let childEmpty = false;
         if (parentColumn) {
           try {
-            const result = await this.db.query(
-              `SELECT 1 FROM ${this.quoteIdentifier(tableName)} LIMIT 1`,
-            );
-            const rows = Array.isArray(result) ? result : result.rows || [];
-            childEmpty = rows.length === 0;
+            const existingColumn = Boolean(dbSchema.columns[foreignKey.column]);
+            const declaredDefault =
+              manifest.columns[foreignKey.column]?.defaultValue;
+            if (
+              !existingColumn &&
+              (declaredDefault === undefined || declaredDefault === null)
+            ) {
+              childEmpty = true;
+            } else {
+              const result = await this.db.query(
+                existingColumn
+                  ? `SELECT 1 FROM ${this.quoteIdentifier(tableName)} WHERE ${this.quoteIdentifier(foreignKey.column)} IS NOT NULL LIMIT 1`
+                  : `SELECT 1 FROM ${this.quoteIdentifier(tableName)} LIMIT 1`,
+              );
+              const rows = Array.isArray(result) ? result : result.rows || [];
+              childEmpty = rows.length === 0;
+            }
           } catch (error) {
             throw new Error(
               `[SchemaComparer] Cannot prove ${tableName} empty for planned parent ${foreignKey.referencesTable}; refusing automatic constraint addition: ${error instanceof Error ? error.message : String(error)}`,
@@ -3388,8 +3457,9 @@ export class SchemaComparer {
    *   emitting an ALTER the engine would reject mid-batch.
    * - Relaxing (`DROP NOT NULL`, `DROP DEFAULT`) is reported as an advisory
    *   unless `relaxColumns` is set, in which case it is executable.
-   * - SQLite has no `ALTER COLUMN`; every alteration is reported as manual
-   *   (advisory-comment SQL) until the table-rebuild path (#2370) lands.
+   * - SQLite has no `ALTER COLUMN`; explicit supported NOT NULL relaxation
+   *   uses the table rebuild (#4413). Other alterations remain manual except
+   *   declared backfill rebuilds (#3008).
    * - Defaults are compared through {@link canonicalizeDefault}; when either
    *   side cannot be canonicalized the comparison is skipped rather than
    *   risking a false positive that would churn every run.
@@ -3786,7 +3856,8 @@ export class SchemaComparer {
    * says so instead of implying the flag will act (#2370).
    */
   private relaxHint(action: string): string {
-    return this.supportsAlterColumn()
+    return this.supportsAlterColumn() ||
+      (this.engine === 'sqlite' && action === 'drop the constraint')
       ? `Pass relaxColumns / --relax-columns to ${action}.`
       : `SQLite cannot ${action} in place (no ALTER COLUMN); it requires a table rebuild (#2370) — relaxColumns / --relax-columns only reports it as manual here.`;
   }
@@ -3952,6 +4023,7 @@ export class SchemaComparer {
     manifest: SchemaDefinition,
     dbSchema: SqlTableSchemaInfo,
     dbIndexPredicates: Map<string, string> | null = null,
+    inlineUniqueSignatures?: ReadonlySet<string>,
   ): SchemaChange[] {
     const changes: SchemaChange[] = [];
 
@@ -4028,6 +4100,14 @@ export class SchemaComparer {
         manifestPredicateFor(idx),
       );
 
+      // Inline constraints can satisfy full unique declarations but never
+      // participate in name-based DDL for standalone indexes.
+      const hasInlineEquivalent =
+        idx.unique &&
+        !idx.where &&
+        !idx.jsonPath &&
+        inlineUniqueSignatures?.has(manifestSignature);
+
       // (a) Same name in DB — verify shape matches.
       const dbByName = dbIndexesByName.get(idx.name);
       if (dbByName) {
@@ -4071,13 +4151,15 @@ export class SchemaComparer {
           name: idx.name,
           sql: this.generateDropIndexSQL(idx.name),
         });
-        changes.push({
-          type: 'add_index',
-          table: tableName,
-          name: idx.name,
-          index: idx,
-          sql: this.generateAddIndexSQL(tableName, idx),
-        });
+        if (!hasInlineEquivalent) {
+          changes.push({
+            type: 'add_index',
+            table: tableName,
+            name: idx.name,
+            index: idx,
+            sql: this.generateAddIndexSQL(tableName, idx),
+          });
+        }
         continue;
       }
 
@@ -4111,12 +4193,15 @@ export class SchemaComparer {
             name: idx.name,
             index: idx,
             note: `renames ${legacyName} (same columns)`,
+            renamedFrom: legacyName,
             sql: renameSql,
             sqlStatements: [renameSql],
           });
         }
         continue;
       }
+
+      if (hasInlineEquivalent) continue;
 
       // (c) Genuinely missing — add it.
       changes.push({
@@ -4216,10 +4301,12 @@ export class SchemaComparer {
       // `['tenant_id', 'key']`). The stale narrower index keeps rejecting
       // rows the model now allows, so it is dropped without the opt-in: a
       // pure relaxation that every existing row already satisfies. Requires
-      // predicate introspection so a partial index is never mistaken for it.
+      // predicate introspection so a partial index is never mistaken for it;
+      // an engine without partial indexes (DuckDB) cannot hold one, so its
+      // indexes are all full (#3305 M1).
       const supersededConflictIndex =
         idx.unique === true &&
-        predicateAware &&
+        (predicateAware || !this.supportsPartialIndexes()) &&
         dbPredicateFor(idx.name) === '' &&
         idx.columns.length > 0 &&
         idx.name ===

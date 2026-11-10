@@ -4,7 +4,7 @@
  * Extends AccountCollection with email-specific query methods.
  */
 
-import { queryGlobal, queryWithGlobals } from '@happyvertical/smrt-tenancy';
+import { queryGlobal, queryWithGlobals } from '../host.js';
 import { EmailAccount } from '../models/EmailAccount';
 import type {
   EmailAccountSearchFilters,

@@ -37,7 +37,14 @@ function message(id: string, role: AssistantMessage['role'], content: string) {
 function scriptedTransport(
   legs: AssistantClientToolCall[][],
   finish: {
-    stoppedReason?: 'stop' | 'max_steps' | 'budget';
+    stoppedReason?:
+      | 'stop'
+      | 'max_steps'
+      | 'budget'
+      | 'repeated_calls'
+      | 'empty'
+      | 'timeout';
+    capReason?: 'max_steps' | 'budget' | 'repeated_calls';
     fail?: boolean;
   } = {},
 ) {
@@ -102,6 +109,7 @@ function scriptedTransport(
       input.onEvent?.({
         type: 'done',
         stoppedReason: finish.stoppedReason ?? 'stop',
+        ...(finish.capReason ? { capReason: finish.capReason } : {}),
       });
       return {
         inProgress: false,
@@ -304,6 +312,54 @@ describe('assistant run', () => {
       stoppedReason: 'max_steps',
     });
     controller.dispose();
+  });
+
+  it('still asks to continue when a capped turn ended empty or timeout (#4379)', async () => {
+    for (const [stoppedReason, capReason] of [
+      ['empty', 'max_steps'],
+      ['timeout', 'budget'],
+    ] as const) {
+      const transport = scriptedTransport([[call('1', NAV.name)]], {
+        stoppedReason,
+        capReason,
+      });
+      const controller = await open(transport, tools([NAV]));
+      await controller.send('look everywhere');
+      expect(controller.run).toMatchObject({
+        state: 'waiting',
+        waitingFor: { kind: 'continue', count: 1 },
+        stoppedReason: capReason,
+      });
+      controller.dispose();
+    }
+    // An uncapped empty turn is not continuable.
+    const transport = scriptedTransport([[call('1', NAV.name)]], {
+      stoppedReason: 'empty',
+    });
+    const controller = await open(transport, tools([NAV]));
+    await controller.send('look everywhere');
+    expect(controller.run?.waitingFor).toBeNull();
+    controller.dispose();
+  });
+
+  it('records a repeated-calls stop without offering Continue (#4391)', async () => {
+    for (const [stoppedReason, capReason] of [
+      ['repeated_calls', 'repeated_calls'],
+      ['empty', 'repeated_calls'],
+    ] as const) {
+      const transport = scriptedTransport([[call('1', NAV.name)]], {
+        stoppedReason,
+        capReason,
+      });
+      const controller = await open(transport, tools([NAV]));
+      await controller.send('how many open work orders?');
+      expect(controller.run).toMatchObject({
+        state: 'done',
+        waitingFor: null,
+        stoppedReason: 'repeated_calls',
+      });
+      controller.dispose();
+    }
   });
 
   it('fails red on an error and ends cancelled on Stop', async () => {

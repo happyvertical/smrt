@@ -339,10 +339,14 @@ describe('live parity against a real SQLite database', () => {
   async function createSystemTables(): Promise<void> {
     await withDatabase(async (db) => {
       for (const shape of getSystemTableShapes('sqlite').values()) {
+        const primaryKey = shape.columns
+          .filter((column) => column.primaryKey)
+          .map((column) => column.name);
+        const compositeKey = primaryKey.length > 1;
         const columns = shape.columns
           .map(
             (column) =>
-              `${column.name} ${column.type}${column.primaryKey ? ' PRIMARY KEY' : ''}${
+              `${column.name} ${column.type}${column.primaryKey && !compositeKey ? ' PRIMARY KEY' : ''}${
                 column.notNull ? ' NOT NULL' : ''
               }${column.unique ? ' UNIQUE' : ''}`,
           )
@@ -350,9 +354,12 @@ describe('live parity against a real SQLite database', () => {
             shape.uniqueConstraints.map(
               (columnSet) => `UNIQUE(${columnSet.join(', ')})`,
             ),
-          )
-          .join(', ');
-        await db.query(`CREATE TABLE ${shape.tableName} (${columns})`);
+          );
+        if (compositeKey)
+          columns.push(`PRIMARY KEY (${primaryKey.join(', ')})`);
+        await db.query(
+          `CREATE TABLE ${shape.tableName} (${columns.join(', ')})`,
+        );
         for (const index of shape.indexes) {
           await db.query(
             `CREATE ${index.unique ? 'UNIQUE ' : ''}INDEX ${index.name} ON ${shape.tableName}(${index.columns.join(', ')})${
@@ -425,6 +432,42 @@ describe('live parity against a real SQLite database', () => {
       ),
     ).toContain('tenant_id');
     expect(parity?.systemTablesIncluded).toBe(true);
+  });
+
+  it('finds no system table missing after a fresh db:migrate (#3297)', async () => {
+    autoDiscoverAndLoadMock.mockResolvedValue({
+      discovered: [
+        {
+          path: '/tmp/parity-3297/.smrt/manifest.json',
+          source: 'project',
+          objectCount: 1,
+        },
+      ],
+      totalObjects: 1,
+    });
+    const lines: string[] = [];
+    const capture = (...args: unknown[]) => lines.push(args.join(' '));
+    const spies = (['log', 'warn', 'error'] as const).map((method) =>
+      vi.spyOn(console, method).mockImplementation(capture),
+    );
+    try {
+      await requireCommandHandler(utilityCommands['db:migrate'])([], {});
+    } finally {
+      for (const spy of spies) spy.mockRestore();
+    }
+    expect(process.exitCode ?? 0, lines.join('\n')).toBe(0);
+    const { report: parity, error } = await runLiveSchemaParity();
+    expect(error).toBeNull();
+    const systemTables = [...getSystemTableShapes('sqlite').keys()];
+    expect(
+      (parity as LiveSchemaParityReport).findings
+        .filter(
+          (finding) =>
+            finding.kind === 'missing_table' &&
+            systemTables.includes(finding.table),
+        )
+        .map((finding) => finding.table),
+    ).toEqual([]);
   });
 
   it('fails closed when no persistent database is configured', async () => {

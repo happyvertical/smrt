@@ -6,7 +6,7 @@ executes the source.
 
 ## Key Exports
 
-- `OxcScanner` — class that globs `.ts` files (`fast-glob`) and parses each into
+- `OxcScanner` — class that globs `.ts` files (`tinyglobby`) and parses each into
   raw class/field/method metadata. `scan()` parses; `scanAndResolve()` parses
   then resolves inheritance in one call.
 - `InheritanceResolver` — resolves class inheritance chains across files
@@ -35,7 +35,10 @@ executes the source.
 - `parseFile` / `parseSource` — parse a single file or a source string to a
   `FileScanResult` (classes, errors, type aliases, SMRT imports). Each class
   carries the parser's `bodyStart` offset; core's library build inserts its
-  package stamp there and never rescans source text (#3490).
+  package stamp there and never rescans source text (#3490). A class whose
+  parent is a named, aliased, or namespace value import carries
+  `extendsSource`; `ManifestAdapter` turns a scoped package other than its own
+  into `extendsQualified` (#4145). Never infer it from relative paths or names.
 - `extractSmrtImports` — pull SMRT-related imports from a parsed file.
 - `lintNumericPrecision(classes, sourceText?)` — flags persisted `number` fields
   whose declared precision contradicts their name (#2361), returning a `kind`
@@ -52,7 +55,8 @@ executes the source.
 - `verifyManifestCompleteness({ packageDir })` — publish guard: re-scans `src/`
   and asserts every `@smrt()` object reached `dist/manifest.json` (issue #1483).
   Returns `ok` / `incomplete` / `missing-manifest` / `scan-error` / `skipped`.
-  Driven by `scripts/verify-manifest-completeness.mjs` from `prepack`.
+  Driven by `scripts/verify-manifest-completeness.mjs` (prepack; release
+  `--release` = `requireManifestExport`, #2853).
 - `discoverSourceFiles(options)` — shared bounded source-discovery policy used
   by `OxcScanner` and the core manifest preflight.
 - `extractAgentSurface` / `scanSvelteAgentSurface` / `mergeAgentSurfaces` —
@@ -238,7 +242,7 @@ place, `toKnowledgeAgentSurface` in `vite-plugin/index.ts`.
 
 ## How It Works
 
-1. `fast-glob` finds `.ts` files matching include/exclude patterns.
+1. `tinyglobby` finds `.ts` files matching include/exclude patterns.
 2. `oxc-parser` parses each file's AST (TS-ESTree shape).
 3. Extracts: `@smrt()` config, class hierarchy, field defaults (0 vs 0.0
    heuristic, including negative initializers via `UnaryExpression` unwrap),
@@ -322,11 +326,11 @@ place, `toKnowledgeAgentSurface` in `vite-plugin/index.ts`.
   access) — `type` still reads `'any'` for compatibility, so that flag is the
   only thing separating it from an authored `any`. `memberTypes` carries the
   members of an INLINE object literal, which `extractTypeName` otherwise
-  flattens to `'object'`; NAMED bags stay unexpanded on purpose. Core's API
-  wire-ability gate fails closed on both (#2686). The bare `object` keyword is
-  resolved for parameters only — `ManifestAdapter.inferFromAnnotation` gives an
-  `object`-typed FIELD a `{}` column default, so naming it in `extractTypeName`
-  would silently change DDL.
+  flattens to `'object'`; NAMED bags stay unexpanded. Core's API
+  wire-ability gate fails closed on both (#2686). Bare `object` resolves for
+  parameters only: `ManifestAdapter.inferFromAnnotation` gives an `object`
+  FIELD a `{}` column default, so naming it in `extractTypeName` would change
+  DDL. Same-module aliases: `resolvedType` (#4327).
 - **`@method()` config is read with `requireLiteralValues`**, like `@smrt()`: an
   unresolvable value is a scan error, because a dropped `expose: false` restores
   the routing the author was withholding. `decoratorConfig` is `undefined` for

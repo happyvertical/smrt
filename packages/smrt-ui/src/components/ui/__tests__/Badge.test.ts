@@ -37,6 +37,7 @@ describe('Badge', () => {
     'warning',
     'error',
     'info',
+    'neutral',
   ] as const)('reflects the %s variant as a class', (variant) => {
     const { container } = render(Badge, {
       props: { variant, children: textSnippet('Status') },

@@ -1,7 +1,11 @@
 import type { DecisionClient } from '@happyvertical/smrt-core';
 import type { HandlerContext } from './execution-contracts.js';
 import type { IntakeValues } from './execution-dto.js';
-import type { EvidenceLocation, ProviderIdentity } from './extraction-types.js';
+import {
+  type EvidenceLocation,
+  type ProviderIdentity,
+  providerIdentity,
+} from './extraction-types.js';
 import type {
   ProposalCandidate,
   ProposalCatalogEntry,
@@ -39,7 +43,11 @@ export interface GenerativeProposalInput {
     parentEvidenceId: string | null;
     mediaType: string;
     contentHash: string;
-    segments: Array<{ text: string; location: EvidenceLocation }>;
+    segments: Array<{
+      text: string;
+      location: EvidenceLocation;
+      observedRegions?: import('./observed-regions.js').ObservedImageRegions;
+    }>;
   }>;
   offered: Array<{
     handler: ProposalCatalogEntry;
@@ -50,6 +58,8 @@ export interface GenerativeProposalInput {
   examples?: import('./feedback-dto.js').FeedbackSelection;
   /** Authenticated human correction carried through fresh extraction; never model authority. */
   humanCorrection?: IntakeValues;
+  /** Authenticated reviewer guidance; trusted steering only, never catalog or approval authority. */
+  reviewerInstruction?: { id: string; text: string };
 }
 /** Inject only trusted SDK-bound adapters. Generative output is always untrusted. */
 export interface ProposalGenerator {
@@ -61,20 +71,145 @@ export interface ProposalGenerator {
     output: unknown;
     completion: 'complete' | 'unknown';
     usage?: Record<string, number>;
+    /** Provider-reported immutable model revision, when it safely resolves a configured alias. */
+    responseModel?: string;
   }>;
 }
-export interface ProposalConfiguration {
+/**
+ * How validated decision answers affect readiness. `gate` (default) sends a
+ * suggestion to `needs_review` when the thresholds are not met; `record` still
+ * runs and persists the same answers but leaves outcome/disposition to the
+ * validator. Neither mode makes any action automation-eligible.
+ */
+export type DecisionReadiness = 'gate' | 'record';
+/** Public decision settings shared by generation and read configuration. */
+export interface DecisionSettings {
+  minimumDecisionProbability?: number;
+  tieMargin?: number;
+  /**
+   * Per-request token window forwarded to the decision client as `maxLen`
+   * (the SDK Laya provider option). Absent keeps the client/checkpoint default.
+   */
+  decisionMaxLen?: number;
+  decisionReadiness?: DecisionReadiness;
+}
+export interface ProposalConfiguration extends DecisionSettings {
   version: string;
   promptVersion: string;
   generator: ProposalGenerator;
   /** Absent means the normal unconfigured decision path, never fake probability. */
   decision?: { client: DecisionClient; identity: ProviderIdentity };
-  minimumDecisionProbability?: number;
-  tieMargin?: number;
   limits: GenerationLimits;
+  /**
+   * Opt-in, bounded, redacted capture of the model output on a failed
+   * interpretation attempt (#4285). Text requires a host redactor; absent or
+   * failed redaction retains no text. Off when absent. Not public read
+   * configuration: it never enters frozen configuration, digests or
+   * `proposalReadConfiguration`. See PROPOSALS.md.
+   */
+  failureCapture?: import('./failure-capture.js').FailureCaptureConfiguration;
+  /**
+   * Optional host checks on each validated suggestion (trusted, server-only).
+   * Runs after validation and before the decision gate, with a copy of the
+   * suggestion, its handler and the retained evidence text. The result can
+   * only hold the suggestion at `needs_review` and record bounded, value-free
+   * annotations; it can never upgrade a disposition or change args. A throw,
+   * timeout or malformed result holds the suggestion with a fixed reason code.
+   * Not public read configuration: it never enters frozen configuration or
+   * digests. See PROPOSALS.md.
+   */
+  reviewSuggestion?: (
+    input: SuggestionReviewInput,
+  ) =>
+    | HostSuggestionReviewResult
+    | undefined
+    | Promise<HostSuggestionReviewResult | undefined>;
+  /**
+   * Opt-in retry of a rejected `generator.generate` call (#4504). Absent (or
+   * `attempts: 1`) keeps one call. Each call gets its own `limits.timeoutMs`
+   * deadline; a timeout is final, and a retry is skipped when the analysis
+   * lease could not cover the backoff plus another full deadline. Only the
+   * final rejection becomes `provider_error`. Not public read configuration.
+   */
+  retry?: import('./generation-retry.js').GenerationRetryPolicy;
+  /**
+   * Most `generator.generate` calls in flight at once, shared by every
+   * service built from this configuration object (1..1000). Absent:
+   * unlimited, as before. A queued call waits before its deadline starts.
+   * Not public read configuration.
+   */
+  concurrency?: number;
+}
+/** A copy of what the host may inspect; mutating it changes nothing. */
+export interface SuggestionReviewInput {
+  suggestion: import('./proposal-dto.js').GeneratedSuggestion;
+  handler: ProposalCatalogEntry;
+  evidence: GenerativeProposalInput['evidence'];
+}
+/** Host result: bounded codes and argument field names only. */
+export interface HostSuggestionReviewResult {
+  /** Hold the suggestion at `needs_review`. */
+  hold?: boolean;
+  /** Up to 8 codes matching `^[a-z][a-z0-9_.-]{0,47}$`; never document values. */
+  reasons?: string[];
+  /** Argument names declared in the handler's `argsSchema` that the host filled itself. */
+  prefilled?: string[];
+}
+/** Credential-free configuration for validating persisted proposal snapshots. */
+export interface ProposalReadConfiguration extends DecisionSettings {
+  version: string;
+  promptVersion: string;
+  generator: ProviderIdentity;
+  decision?: ProviderIdentity;
+  limits: GenerationLimits;
+}
+/** Remove generation capability while preserving the public persisted configuration. */
+export function proposalReadConfiguration(
+  config: ProposalConfiguration | ProposalReadConfiguration,
+): ProposalReadConfiguration {
+  const generator = providerIdentity(
+    'identity' in config.generator
+      ? config.generator.identity
+      : config.generator,
+  );
+  return {
+    version: config.version,
+    promptVersion: config.promptVersion,
+    generator,
+    ...(config.decision
+      ? {
+          decision: providerIdentity(
+            'identity' in config.decision
+              ? config.decision.identity
+              : config.decision,
+          ),
+        }
+      : {}),
+    ...(config.minimumDecisionProbability === undefined
+      ? {}
+      : { minimumDecisionProbability: config.minimumDecisionProbability }),
+    ...(config.tieMargin === undefined ? {} : { tieMargin: config.tieMargin }),
+    ...(config.decisionMaxLen === undefined
+      ? {}
+      : { decisionMaxLen: config.decisionMaxLen }),
+    ...(config.decisionReadiness === undefined
+      ? {}
+      : { decisionReadiness: config.decisionReadiness }),
+    limits: {
+      maxHandlers: config.limits.maxHandlers,
+      maxCandidates: config.limits.maxCandidates,
+      maxSuggestions: config.limits.maxSuggestions,
+      maxInputBytes: config.limits.maxInputBytes,
+      maxOutputBytes: config.limits.maxOutputBytes,
+      maxQueryLength: config.limits.maxQueryLength,
+      timeoutMs: config.limits.timeoutMs,
+    },
+  };
 }
 export interface GenerationStageConfiguration extends IntakeValues {
   stage: 'interpret';
+  /** Copied from the pinned extraction source; verified against it before provider disclosure. */
+  reviewerInstruction?: IntakeValues;
   proposals: {
     source: import('./proposal-dto.js').GenerationSourcePin;
     configurationVersion: string;
@@ -85,5 +220,9 @@ export interface GenerationStageConfiguration extends IntakeValues {
     limits: GenerationLimits;
     minimumDecisionProbability: number;
     tieMargin: number;
+    /** Present only when configured, so default digests stay stable. */
+    decisionMaxLen?: number;
+    /** Present only for `record`; `gate` is the default. */
+    decisionReadiness?: 'record';
   };
 }

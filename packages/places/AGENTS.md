@@ -7,6 +7,7 @@ Hierarchical geographic database with organic growth via geocoding integration.
 - **Place** (STI): hierarchical via `parentId`. Optional geo fields (all nullable — supports abstract places like game zones). `externalId`/`source` from geocoder. Metadata JSON.
 - **PlaceAsset**: dedicated owned-asset join in `place_assets` with `relationship` and `sortOrder`.
 - **PlaceType**: slug-based classification (country, city, building, zone, room, region).
+- **Recipe `places.locations`** (`src/recipes.ts`, help in `src/locations.recipe.md`): lists places and place types for the planner and other catalog hosts; `PlaceAsset` is closed and stays out. Fields it shows carry `@field({ description })` in plain words; `parentId` (inherited) is described by the recipe's `options` help. Keep both when editing the models.
 
 ## Key Collection Methods
 

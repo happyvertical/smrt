@@ -1,10 +1,25 @@
 import assert from 'node:assert/strict';
 import { createHash } from 'node:crypto';
-import { mkdtempSync, readFileSync } from 'node:fs';
+import {
+  existsSync,
+  mkdtempSync,
+  readFileSync,
+  readdirSync,
+  rmSync,
+  writeFileSync,
+} from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import test from 'node:test';
-import { compareVersions, mirrorRelease, reportMirror } from './mirror-release-to-npmjs.mjs';
+import {
+  compareVersions,
+  DEFAULT_CONCURRENCY,
+  describeNpmError,
+  mirrorRelease,
+  reportMirror,
+  resolveConcurrency,
+  runProcess,
+} from './mirror-release-to-npmjs.mjs';
 
 const PRIMARY = 'https://npm.happyvertical.com/';
 const NPMJS = 'https://registry.npmjs.org/';
@@ -75,9 +90,22 @@ function run(fakes, extra = {}) {
     runNpm: fakes.runNpm,
     fetchImpl: fakes.fetchImpl,
     log: () => {},
-    workDir: mkdtempSync(join(tmpdir(), 'mirror-test-')),
     ...extra,
   });
+}
+
+async function withIsolatedTmpdir(run) {
+  const previous = process.env.TMPDIR;
+  const directory = mkdtempSync(join(tmpdir(), 'mirror-test-tmp-'));
+  process.env.TMPDIR = directory;
+  try {
+    assert.equal(tmpdir(), directory);
+    return await run(directory);
+  } finally {
+    if (previous === undefined) delete process.env.TMPDIR;
+    else process.env.TMPDIR = previous;
+    rmSync(directory, { recursive: true, force: true });
+  }
 }
 
 test('versions are compared numerically', () => {
@@ -163,7 +191,7 @@ test('a failed publish stops that package so later versions cannot leapfrog it',
   });
   const result = await run(fakes);
   assert.deepEqual(result.mirrored, []);
-  assert.deepEqual(result.failed, [`${NAME}@0.51.11: npm error code E403`]);
+  assert.deepEqual(result.failed, [`${NAME}@0.51.11: E403 — more detail`]);
 });
 
 test('a tarball whose bytes do not match the primary metadata is refused', async () => {
@@ -199,11 +227,49 @@ test('a tarball URL outside the primary is refused before anything is fetched', 
   assert.match(result.failed[0], /tarball outside itself/);
 });
 
-test('mirroring a registry onto itself is a no-op', async () => {
-  const fakes = fakeRegistries({ primary: {}, npmjs: {} });
-  const result = await run(fakes, { primary: NPMJS });
-  assert.equal(fakes.calls.length, 0);
-  assert.deepEqual(result, { mirrored: [], skipped: [], failed: [] });
+test('mirroring a registry onto itself is a no-op', { concurrency: false }, async () => {
+  await withIsolatedTmpdir(async (directory) => {
+    const fakes = fakeRegistries({ primary: {}, npmjs: {} });
+    const result = await run(fakes, { primary: NPMJS });
+    assert.equal(fakes.calls.length, 0);
+    assert.deepEqual(result, { mirrored: [], skipped: [], failed: [] });
+    assert.deepEqual(readdirSync(directory), []);
+  });
+});
+
+test('a caller-owned work directory is preserved', async () => {
+  const fakes = fakeRegistries({
+    primary: { [NAME]: ['0.51.11'] },
+    npmjs: {},
+  });
+  const workDir = mkdtempSync(join(tmpdir(), 'mirror-test-'));
+  try {
+    const sentinel = join(workDir, 'caller-owned');
+    writeFileSync(sentinel, 'preserve me');
+    const result = await run(fakes, { workDir });
+    assert.deepEqual(result.mirrored, [`${NAME}@0.51.11`]);
+    assert.ok(existsSync(workDir));
+    assert.equal(readFileSync(sentinel, 'utf8'), 'preserve me');
+  } finally {
+    rmSync(workDir, { recursive: true, force: true });
+  }
+});
+
+test('an internally-owned work directory is removed when logging throws', { concurrency: false }, async () => {
+  await withIsolatedTmpdir(async (directory) => {
+    await assert.rejects(
+      mirrorRelease({
+        packages: [],
+        primary: PRIMARY,
+        mirror: NPMJS,
+        log: () => {
+          throw new Error('injected log failure');
+        },
+      }),
+      /injected log failure/,
+    );
+    assert.deepEqual(readdirSync(directory), []);
+  });
 });
 
 test('the report warns on failures and never throws on an unwritable summary', () => {
@@ -315,4 +381,156 @@ test('the version this run released is compared, not only the checkout version',
   });
   assert.equal(withRelease.failed.length, 1);
   assert.match(withRelease.failed[0], /0\.51\.11: DIVERGED/);
+});
+
+test('npm failures report the error code and the real cause, not a leading warning', () => {
+  assert.deepEqual(
+    describeNpmError(
+      new Error(
+        '[WARN] Failed to replace env in config: ${NODE_AUTH_TOKEN}\nnpm warn publish npm auto-corrected some errors\nnpm error code E401\nnpm error 401 Unauthorized - PUT https://registry.npmjs.org/@happyvertical%2fsmrt-ui',
+      ),
+    ),
+    { code: 'E401', detail: '401 Unauthorized - PUT https://registry.npmjs.org/@happyvertical%2fsmrt-ui' },
+  );
+  const timedOut = new Error('npm publish was stopped (SIGTERM) after 600s');
+  timedOut.code = 'TIMEOUT';
+  assert.deepEqual(describeNpmError(timedOut), {
+    code: 'TIMEOUT',
+    detail: 'npm publish was stopped (SIGTERM) after 600s',
+  });
+  assert.equal(describeNpmError(new Error('HTTP 502 from the primary')).code, null);
+});
+
+test('the report prints every failure to the log as well as the summary', () => {
+  const lines = [];
+  let summary = '';
+  reportMirror(
+    { mirrored: [], skipped: [], failed: ['a@1.0.0: E401 — Unauthorized', 'b@2.0.0: E429 — Too Many Requests'] },
+    {
+      log: (line) => lines.push(line),
+      env: { GITHUB_STEP_SUMMARY: '/summary' },
+      appendSummary: (_file, text) => {
+        summary += text;
+      },
+    },
+  );
+  assert.ok(lines.some((line) => line.includes('a@1.0.0: E401 — Unauthorized')));
+  assert.ok(lines.some((line) => line.includes('b@2.0.0: E429 — Too Many Requests')));
+  assert.match(summary, /- a@1\.0\.0: E401 — Unauthorized/);
+  assert.match(summary, /- b@2\.0\.0: E429 — Too Many Requests/);
+});
+
+test('the concurrency setting falls back to the default and is capped', () => {
+  assert.equal(resolveConcurrency(undefined), DEFAULT_CONCURRENCY);
+  assert.equal(resolveConcurrency('0'), DEFAULT_CONCURRENCY);
+  assert.equal(resolveConcurrency('nope'), DEFAULT_CONCURRENCY);
+  assert.equal(resolveConcurrency('3'), 3);
+  assert.equal(resolveConcurrency('500'), 16);
+});
+
+test('packages mirror concurrently while each keeps its versions in order', async () => {
+  const names = ['@happyvertical/a', '@happyvertical/b', '@happyvertical/c', '@happyvertical/d'];
+  const primary = Object.fromEntries(names.map((name) => [name, ['1.0.0', '1.0.1', '1.0.2', '1.0.3']]));
+  const npmjs = Object.fromEntries(names.map((name) => [name, ['1.0.0']]));
+  const fakes = fakeRegistries({ primary, npmjs });
+  const order = [];
+  let inFlight = 0;
+  let peak = 0;
+  const result = await run(fakes, {
+    packages: names.map((name) => ({ name })),
+    concurrency: 3,
+    runNpm: async (args, options) => {
+      if (args[0] !== 'publish') return fakes.runNpm(args, options);
+      inFlight += 1;
+      peak = Math.max(peak, inFlight);
+      await new Promise((resolve) => setTimeout(resolve, 5));
+      inFlight -= 1;
+      order.push(/_happyvertical_(\w)-(.+)\.tgz$/.exec(args[1]).slice(1).join('@'));
+      return fakes.runNpm(args, options);
+    },
+  });
+
+  assert.equal(peak, 3);
+  assert.equal(result.failed.length, 0);
+  // Reported in package order regardless of completion order.
+  assert.deepEqual(
+    result.mirrored,
+    names.flatMap((name) => ['1.0.1', '1.0.2', '1.0.3'].map((v) => `${name}@${v}`)),
+  );
+  for (const letter of ['a', 'b', 'c', 'd']) {
+    assert.deepEqual(
+      order.filter((spec) => spec.startsWith(`${letter}@`)),
+      ['1.0.1', '1.0.2', '1.0.3'].map((v) => `${letter}@${v}`),
+    );
+  }
+});
+
+test('one package failing does not stop the others in the pool', async () => {
+  const names = ['@happyvertical/a', '@happyvertical/b'];
+  const fakes = fakeRegistries({
+    primary: Object.fromEntries(names.map((name) => [name, ['1.0.0', '1.0.1']])),
+    npmjs: Object.fromEntries(names.map((name) => [name, ['1.0.0']])),
+    publishFails: (args) => args[1].includes('_happyvertical_a-'),
+  });
+  const result = await run(fakes, { packages: names.map((name) => ({ name })), concurrency: 2 });
+  assert.deepEqual(result.mirrored, ['@happyvertical/b@1.0.1']);
+  assert.deepEqual(result.failed, ['@happyvertical/a@1.0.1: E403 — more detail']);
+});
+
+test('every failure is logged the moment it is recorded, not only in the final report', async () => {
+  const lines = [];
+  const diverged = fakeRegistries({
+    primary: { [NAME]: ['0.51.10', '0.51.11'] },
+    npmjs: { [NAME]: ['0.51.10', '0.51.11'] },
+    shasumOnNpmjs: 'c'.repeat(40),
+  });
+  await run(diverged, { packages: [{ name: NAME, version: '0.51.11' }], log: (line) => lines.push(line) });
+  assert.ok(lines.some((line) => /^❌ npmjs mirror failed: .*0\.51\.11: DIVERGED/.test(line)));
+
+  const unreadable = fakeRegistries({ primary: { [NAME]: ['0.51.10'] }, npmjs: {}, unreadable: [NPMJS] });
+  lines.length = 0;
+  await run(unreadable, { log: (line) => lines.push(line) });
+  assert.ok(lines.some((line) => /^❌ npmjs mirror failed: .*could not read versions: EAI_AGAIN/.test(line)));
+
+  const publishFails = fakeRegistries({
+    primary: { [NAME]: ['0.51.10', '0.51.11'] },
+    npmjs: { [NAME]: ['0.51.10'] },
+    publishFails: () => true,
+  });
+  lines.length = 0;
+  await run(publishFails, { log: (line) => lines.push(line) });
+  assert.ok(lines.includes(`❌ npmjs mirror failed: ${NAME}@0.51.11: E403 — more detail`));
+});
+
+test('a child that ignores SIGTERM is killed and reported as TIMEOUT', async () => {
+  const started = Date.now();
+  await assert.rejects(
+    runProcess(
+      process.execPath,
+      ['-e', "process.on('SIGTERM', () => {}); setInterval(() => {}, 1000); console.error('npm warn stuck')"],
+      { timeoutMs: 300, killGraceMs: 300 },
+    ),
+    (error) => {
+      assert.equal(error.code, 'TIMEOUT');
+      assert.equal(describeNpmError(error).code, 'TIMEOUT');
+      assert.match(error.message, /was stopped \(SIGKILL\)/);
+      return true;
+    },
+  );
+  assert.ok(Date.now() - started < 5000);
+});
+
+test('a finished child resolves with its output, and a 404 can be an answer', async () => {
+  assert.equal(await runProcess(process.execPath, ['-e', "console.log(' ok ')"], { timeoutMs: 5000 }), 'ok');
+  assert.equal(
+    await runProcess(process.execPath, ['-e', "console.error('npm error code E404'); process.exit(1)"], {
+      timeoutMs: 5000,
+      allowNotFound: true,
+    }),
+    null,
+  );
+  await assert.rejects(
+    runProcess(process.execPath, ['-e', "console.error('npm error code E403'); process.exit(1)"], { timeoutMs: 5000 }),
+    /E403/,
+  );
 });

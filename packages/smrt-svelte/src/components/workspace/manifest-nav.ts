@@ -52,6 +52,11 @@ export interface SmrtManifestEntryLike {
   /** Base class name as written in source. */
   extends?: string;
   /**
+   * Base class qualified from its import (`@package/name:ClassName`), when
+   * the scanner could resolve it. Wins over `extends` (#4176).
+   */
+  extendsQualified?: string;
+  /**
    * Top-level visibility flag — `SmartObjectDefinition` hoists this out of
    * `decoratorConfig` so it can be read without parsing the raw config. The
    * helper reads here first, then falls back to `decoratorConfig.visibility`
@@ -249,9 +254,9 @@ function isPublicEntry(entry: SmrtManifestEntryLike): boolean {
  * ancestor in the manifest) stay visible — better to show one link
  * than none.
  *
- * Detection: starting at `entry.extends`, look up that className in
- * the manifest. If found and `collection` matches, suppress this
- * entry. Otherwise recurse into THAT entry's `extends` and try again.
+ * Detection: starting at the entry's parent (`extendsQualified`, else
+ * `extends` by className), look it up in the manifest. If found and `collection` matches, suppress this
+ * entry. Otherwise recurse into THAT entry's parent and try again.
  * Stop at `SmrtObject`/`SmrtClass`, when no manifest entry resolves,
  * or when a cycle is detected.
  */
@@ -259,20 +264,17 @@ function looksLikeStiSubtypeOfParentRoute(
   entry: SmrtManifestEntryLike,
   manifest: SmrtManifestLike,
 ): boolean {
-  const byClassName = entryIndexByClassName(manifest);
-  const visited = new Set<string>();
-  let cursor: string | undefined = entry.extends;
-  while (cursor && cursor !== 'SmrtObject' && cursor !== 'SmrtClass') {
-    if (visited.has(cursor)) return false; // pathological cycle
-    visited.add(cursor);
-    const ancestor = byClassName.get(cursor);
-    if (!ancestor) return false; // chain broken, keep this entry visible
+  const visited = new Set<SmrtManifestEntryLike>([entry]);
+  let ancestor = parentEntry(entry, manifest);
+  while (ancestor) {
+    if (visited.has(ancestor)) return false; // pathological cycle
+    visited.add(ancestor);
     if (ancestor.collection && ancestor.collection === entry.collection) {
       return true;
     }
-    cursor = ancestor.extends;
+    ancestor = parentEntry(ancestor, manifest);
   }
-  return false;
+  return false; // chain broken or ended, keep this entry visible
 }
 
 /**
@@ -300,6 +302,31 @@ function entryIndexByClassName(
   }
   manifestClassNameIndex.set(manifest, idx);
   return idx;
+}
+
+/**
+ * The manifest entry `entry` extends, or `undefined` at a framework base or
+ * a broken chain. An import-qualified parent resolves to that package's
+ * entry only, never a same-named class of another package (#4176).
+ */
+function parentEntry(
+  entry: SmrtManifestEntryLike,
+  manifest: SmrtManifestLike,
+): SmrtManifestEntryLike | undefined {
+  const qualified = entry.extendsQualified;
+  if (qualified) {
+    return (
+      manifest.objects[qualified] ??
+      Object.values(manifest.objects).find(
+        (candidate) => entryQualifier(candidate) === qualified,
+      )
+    );
+  }
+  const parent = entry.extends;
+  if (!parent || parent === 'SmrtObject' || parent === 'SmrtClass') {
+    return undefined;
+  }
+  return entryIndexByClassName(manifest).get(parent);
 }
 
 /**
@@ -388,15 +415,13 @@ function entryQualifier(entry: SmrtManifestEntryLike): string {
  * threads through the inheritance chain (handles multi-level STI)
  * with a visited-set cycle guard.
  *
- * Pure: returns a new Set; never mutates the caller's set. The
- * className index is the same memoised one used by
- * `looksLikeStiSubtypeOfParentRoute`.
+ * Pure: returns a new Set; never mutates the caller's set. Ancestors
+ * resolve through `parentEntry`, as in `looksLikeStiSubtypeOfParentRoute`.
  */
 function expandPermittedThroughStiParents(
   permitted: Set<string>,
   manifest: SmrtManifestLike,
 ): Set<string> {
-  const byClassName = entryIndexByClassName(manifest);
   // Also need to resolve qualifier → entry, because permitted set
   // entries are qualified names (`@pkg/x:Class`), not raw classNames.
   const byQualifier = new Map<string, SmrtManifestEntryLike>();
@@ -407,19 +432,16 @@ function expandPermittedThroughStiParents(
   for (const qualifier of permitted) {
     const entry = byQualifier.get(qualifier);
     if (!entry) continue;
-    const visited = new Set<string>();
-    let cursor: string | undefined = entry.extends;
+    const visited = new Set<SmrtManifestEntryLike>([entry]);
+    let ancestor = parentEntry(entry, manifest);
     let lastSeenCollection = entry.collection;
-    while (cursor && cursor !== 'SmrtObject' && cursor !== 'SmrtClass') {
-      if (visited.has(cursor)) break;
-      visited.add(cursor);
-      const ancestor = byClassName.get(cursor);
-      if (!ancestor) break;
+    while (ancestor && !visited.has(ancestor)) {
+      visited.add(ancestor);
       if (ancestor.collection && ancestor.collection === lastSeenCollection) {
         expanded.add(entryQualifier(ancestor));
       }
       lastSeenCollection = ancestor.collection ?? lastSeenCollection;
-      cursor = ancestor.extends;
+      ancestor = parentEntry(ancestor, manifest);
     }
   }
   return expanded;

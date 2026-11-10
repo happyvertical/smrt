@@ -19,7 +19,12 @@
  * @packageDocumentation
  */
 
-import { foreignKey, SmrtObject, smrt } from '@happyvertical/smrt-core';
+import {
+  foreignKey,
+  SmrtObject,
+  type SmrtSaveOptions,
+  smrt,
+} from '@happyvertical/smrt-core';
 import { TenantScoped, tenantId } from '@happyvertical/smrt-tenancy';
 import type { CommissionPlanComponent } from '../../commissions/index.js';
 import type {
@@ -160,7 +165,7 @@ export class ReferralTermSnapshot extends SmrtObject {
    *   (e.g. `create({ id, _skipLoad: true })`) is rejected outright — blind
    *   overwrites can't sidestep the comparison.
    */
-  override async save(): Promise<this> {
+  override async save(options?: SmrtSaveOptions): Promise<this> {
     const captured = persistedSnapshotState.get(this);
     if (captured !== undefined) {
       if (captured !== this.serializeState()) {
@@ -178,7 +183,7 @@ export class ReferralTermSnapshot extends SmrtObject {
           'immutable once created.',
       );
     }
-    const result = (await super.save()) as this;
+    const result = (await super.save(options)) as this;
     persistedSnapshotState.set(this, this.serializeState());
     return result;
   }

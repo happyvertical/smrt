@@ -116,8 +116,23 @@ describe('durable OAuth on the configured SQLite/PostgreSQL executor', () => {
   afterAll(async () => {
     vi.unstubAllEnvs();
     if (postgresAdmin && postgresName) {
-      await postgresAdmin.query(`DROP DATABASE "${postgresName}" WITH (FORCE)`);
-      await postgresAdmin.close?.();
+      // Every connection this suite opened is closed by afterEach. FORCE needs
+      // permission to terminate other roles' sessions (42501 on shared CI
+      // servers), so drop plainly and retry while closed pools drain.
+      const drop = `DROP DATABASE IF EXISTS "${postgresName}"`;
+      try {
+        for (let attempt = 0; ; attempt++) {
+          try {
+            await postgresAdmin.query(drop);
+            break;
+          } catch (error) {
+            if (attempt >= 4) throw error;
+            await new Promise((resolve) => setTimeout(resolve, 250));
+          }
+        }
+      } finally {
+        await postgresAdmin.close?.();
+      }
     }
   });
   let isolated: IsolatedTestDbResult;

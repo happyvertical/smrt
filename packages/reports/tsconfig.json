@@ -9,7 +9,12 @@
     "lib": ["ES2023"]
   },
   "include": ["src/**/*"],
-  "exclude": ["**/*.test.ts", "**/*.spec.ts"],
+  "exclude": [
+    "**/*.test.ts",
+    "**/*.spec.ts",
+    "src/svelte/**",
+    "src/playground.ts"
+  ],
   "references": [
     { "path": "../core" },
     { "path": "../jobs" },

@@ -18,7 +18,12 @@
  * @packageDocumentation
  */
 
-import { field, SmrtObject, smrt } from '@happyvertical/smrt-core';
+import {
+  field,
+  SmrtObject,
+  type SmrtSaveOptions,
+  smrt,
+} from '@happyvertical/smrt-core';
 import { TenantScoped, tenantId } from '@happyvertical/smrt-tenancy';
 import {
   ATTRIBUTION_CONFLICT_BEHAVIORS,
@@ -340,7 +345,7 @@ export class AttributionPolicy extends SmrtObject {
    *    every policy-defining field must match the captured snapshot. Amend
    *    by inserting a new version instead.
    */
-  override async save(): Promise<this> {
+  override async save(options?: SmrtSaveOptions): Promise<this> {
     const prior = await this.resolvePriorStatus();
     this.assertStatusTransition(prior);
     this.assertFrozenIdentityUnchanged();
@@ -348,7 +353,7 @@ export class AttributionPolicy extends SmrtObject {
     if (this.status === 'active') {
       validateAttributionPolicyTerms(this);
     }
-    const result = (await super.save()) as this;
+    const result = (await super.save(options)) as this;
     loadedPolicyStatus.set(this, this.status);
     if (this.status !== 'draft' && !frozenPolicySnapshot.has(this)) {
       frozenPolicySnapshot.set(this, this.serializeFrozenSnapshot());

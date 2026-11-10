@@ -1118,6 +1118,12 @@ describe('smrt#3139 Stripe launch billing', () => {
           )
         ).find((row) => row.id === local?.id);
       expect((await listed())?.status).toBe(InvoiceStatus.WRITTEN_OFF);
+      // Written off from DRAFT, it froze with the provider's tax.
+      const writtenOff = await listed();
+      expect(writtenOff?.providerTaxAmount).toBeGreaterThan(0);
+      expect(writtenOff?.totalAmount).toBe(
+        Number(writtenOff?.subtotal) + Number(writtenOff?.providerTaxAmount),
+      );
 
       // Reinstated by paying the next invoice; a late event about the parked
       // one does not undo it.
@@ -1159,6 +1165,58 @@ describe('smrt#3139 Stripe launch billing', () => {
         true,
       );
       expect((await listed())?.status).toBe(InvoiceStatus.WRITTEN_OFF);
+    });
+
+    it('completes a parked close without revenue when its invoice was voided meanwhile', async () => {
+      await world.usage(SOLO);
+      // The send reaches Stripe but its total disagrees, so the close parks
+      // with the local invoice still a draft.
+      const original = world.provider.provider.getInvoice;
+      vi.spyOn(world.provider.provider, 'getInvoice').mockImplementation(
+        async (id) => {
+          const state = await original.call(world.provider.provider, id);
+          return state.status === 'draft'
+            ? state
+            : { ...state, subtotal: state.subtotal + 1 };
+        },
+      );
+      await expect(world.provider.closePeriod(period)).rejects.toThrow();
+      vi.restoreAllMocks();
+      const account = await world.provider.getAccount(SOLO);
+      const listed = async () =>
+        (
+          await withTenant({ tenantId: PROVIDER }, async () =>
+            (
+              await InvoiceCollection.create({ db: world.db })
+            ).list({
+              where: { customerId: account?.customerId },
+            }),
+          )
+        )[0];
+      const parked = await listed();
+      expect(parked?.status).toBe(InvoiceStatus.DRAFT);
+      const externalId = String(parked?.externalId);
+      world.stripe.setInvoiceStatus(externalId, 'void');
+      await deliver(world, invoiceEvent('invoice.voided', externalId));
+      expect((await listed())?.status).toBe(InvoiceStatus.CANCELLED);
+
+      const result = await world.provider.closePeriod(period);
+      expect(result.groups.every((group) => group.outcome !== 'failed')).toBe(
+        true,
+      );
+      const voided = await listed();
+      expect(voided?.status).toBe(InvoiceStatus.CANCELLED);
+      expect(voided?.arJournalId).toBeFalsy();
+      const journals = await withTenant({ tenantId: PROVIDER }, async () =>
+        (await JournalCollection.create({ db: world.db })).list({
+          where: { sourceModule: 'smrt-commerce' },
+        }),
+      );
+      expect(
+        journals.filter((journal) =>
+          String(journal.sourceRef).includes(String(voided?.id)),
+        ),
+      ).toEqual([]);
     });
 
     it('refuses to write off an invoice that is not sent and unpaid', async () => {

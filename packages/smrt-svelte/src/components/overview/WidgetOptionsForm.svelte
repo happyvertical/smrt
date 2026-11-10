@@ -23,8 +23,14 @@ import { M } from '../../i18n/strings.overview.js';
 import type { WidgetOptionsFormProps } from './grid-types.js';
 import type { OverviewOptions, WidgetOptionField } from './types.js';
 
-let { definition, initial, models, onsave, oncancel }: WidgetOptionsFormProps =
-  $props();
+let {
+  definition,
+  initial,
+  models,
+  onsave,
+  oncancel,
+  optionsEditor,
+}: WidgetOptionsFormProps = $props();
 
 const { t } = useI18n();
 
@@ -108,8 +114,12 @@ const optionalChoice = (field: WidgetOptionField): boolean =>
 const modelValues = $derived(
   new Set((models ?? []).map((model) => model.value)),
 );
+const CustomEditor = $derived(optionsEditor ?? definition.optionsEditor);
 </script>
 
+{#if CustomEditor}
+  <CustomEditor {definition} {initial} {models} {onsave} {oncancel} />
+{:else}
 <Form onsubmit={submit} novalidate>
   {#if failed}
     <Alert variant="error">{t(M['ui.overview.options_failed'])}</Alert>
@@ -184,6 +194,7 @@ const modelValues = $derived(
     </Button>
   </FormActionBar>
 </Form>
+{/if}
 
 <style>
 @layer smrt.reset, smrt.structure, smrt.theme;

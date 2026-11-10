@@ -8,6 +8,7 @@
 import type { SmrtObjectOptions } from '@happyvertical/smrt-core';
 import {
   crossPackageRef,
+  field,
   foreignKey,
   SmrtObject,
   smrt,
@@ -225,6 +226,7 @@ export class SocialPost extends SmrtObject {
   /**
    * Social account to publish to
    */
+  @field({ description: 'The connected account this post goes out from.' })
   @foreignKey(SocialAccount)
   socialAccountId: string | null = null;
 
@@ -260,6 +262,9 @@ export class SocialPost extends SmrtObject {
   /**
    * High-level post type
    */
+  @field({
+    description: 'What kind of post it is: text, link, image or video.',
+  })
   postType: SocialPostType = 'text';
 
   /**
@@ -270,21 +275,25 @@ export class SocialPost extends SmrtObject {
   /**
    * Post title (for platforms that support it)
    */
+  @field({ description: 'A title, for platforms that show one.' })
   title: string | null = null;
 
   /**
    * Post description/caption
    */
+  @field({ description: 'The words of the post.' })
   description: string = '';
 
   /**
    * Hashtags to include
    */
+  @field({ description: 'Hashtags added to the end of the post.' })
   hashtags: string[] = [];
 
   /**
    * Link URL to include in the post
    */
+  @field({ description: 'A web address to share with the post.' })
   linkUrl: string | null = null;
 
   /**
@@ -295,17 +304,25 @@ export class SocialPost extends SmrtObject {
   /**
    * Public post URL (set after publishing)
    */
+  @field({
+    description: 'Where the post can be seen on the platform, once it is out.',
+  })
   platformUrl: string | null = null;
 
   /**
    * Scheduled publish time
    * If set, post will be scheduled instead of published immediately
    */
+  @field({
+    description:
+      'The date and time you have in mind for putting the post out. Only a note of the plan: publishing is a separate step your application has to run.',
+  })
   scheduledAt: Date | null = null;
 
   /**
    * Actual publish time
    */
+  @field({ description: 'When the post actually went out.' })
   publishedAt: Date | null = null;
 
   /**
@@ -321,6 +338,10 @@ export class SocialPost extends SmrtObject {
    * - failed: Publishing failed
    * - cancelled: Publishing was cancelled
    */
+  @field({
+    description:
+      'Where the post stands: draft, waiting to go out, published or failed.',
+  })
   status: PostStatus = 'draft';
 
   /**

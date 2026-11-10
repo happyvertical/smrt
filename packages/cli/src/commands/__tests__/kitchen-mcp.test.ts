@@ -45,12 +45,20 @@ function writeManifests(dir: string): void {
   const models: Record<string, Record<string, string[]>> = {
     '@happyvertical/smrt-commerce': {
       Customer: ['name', 'creditLimit', 'paymentTerms'],
-      Invoice: ['number', 'total', 'currency', 'terms'],
+      Invoice: [
+        'number',
+        'total',
+        'currency',
+        'terms',
+        'lineAmountType',
+        'taxRoundingScope',
+      ],
       Order: ['number', 'currency', 'terms'],
       PurchaseOrder: ['currency'],
       WholesaleOrder: ['currency', 'terms'],
       Estimate: ['currency', 'terms'],
       Agreement: ['currency', 'terms'],
+      Contract: ['currency', 'terms', 'lineAmountType', 'taxRoundingScope'],
       InvoiceLineItem: ['taxRate'],
       ContractLineItem: ['taxRate'],
       ProductionOrder: ['quantity'],
@@ -840,6 +848,7 @@ describe('smrt kitchen mcp over stdio', () => {
       currency: 'CAD',
       taxRate: 5,
     });
+    expect(changed.text).toContain('tax 5% excluded, line rounding');
 
     // The same batch id again applies nothing, even though expectedRevision is stale.
     const retry = await call('run_commands', {
@@ -942,7 +951,7 @@ describe('smrt kitchen mcp over stdio', () => {
     expect(Object.keys(pkg.dependencies)).toContain(
       '@happyvertical/smrt-inventory',
     );
-    expect(pkg.name).toBe('lotus');
+    expect(pkg.name).toBe('@smrt-app/lotus');
     expect(existsSync(join(dir, 'node_modules'))).toBe(false);
 
     // Re-applying the same plan changes nothing.

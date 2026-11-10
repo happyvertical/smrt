@@ -8,10 +8,7 @@
  * `prompts.ts`) and `@happyvertical/smrt-content` (see `content-prompts.ts`).
  */
 
-import {
-  definePrompt,
-  type ResolvedPromptAI,
-} from '@happyvertical/smrt-prompts';
+import { definePrompt } from '@happyvertical/smrt-prompts';
 
 // Journal summarization only uses non-PII journal fields
 // (number, date, description, status, balanced flag) plus aggregate totals
@@ -38,6 +35,7 @@ Status: {journalStatus}
 Total: {journalTotal}
 Entries: {entryCount}
 Balanced: {journalBalanced}`,
+  ai: { profile: 'good' },
   editable: {
     template: true,
     profile: true,
@@ -46,13 +44,9 @@ Balanced: {journalBalanced}`,
   },
 });
 
-export function promptMessageOptions(ai: ResolvedPromptAI) {
-  return {
-    ...(ai.params || {}),
-    ...(ai.model ? { model: ai.model } : {}),
-    ...(typeof ai.temperature === 'number'
-      ? { temperature: ai.temperature }
-      : {}),
-    ...(typeof ai.maxTokens === 'number' ? { maxTokens: ai.maxTokens } : {}),
-  };
-}
+/**
+ * Canonical helper lives in `@happyvertical/smrt-prompts` (#4751): it also
+ * forwards the resolution's `usageTags` (`promptKey`, `promptLayer`,
+ * `templateHash`). Re-exported here for existing importers.
+ */
+export { promptMessageOptions } from '@happyvertical/smrt-prompts';

@@ -1,0 +1,7 @@
+{
+  "$schema": "../gen/schemas/desktop-schema.json",
+  "identifier": "default",
+  "description": "Splash window only. The sidecar origin is remote content and is granted no IPC.",
+  "windows": ["main"],
+  "permissions": []
+}

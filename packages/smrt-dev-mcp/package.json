@@ -1,6 +1,6 @@
 {
   "name": "@happyvertical/smrt-dev-mcp",
-  "version": "0.55.21",
+  "version": "0.60.16",
   "description": "Development MCP server for SMRT framework knowledge, review context, architecture context, and code generation",
   "type": "module",
   "main": "./dist/index.js",
@@ -16,6 +16,10 @@
     "./knowledge": {
       "types": "./dist/knowledge.d.ts",
       "import": "./dist/knowledge.js"
+    },
+    "./agent-skills": {
+      "types": "./dist/agent-skills.d.ts",
+      "import": "./dist/agent-skills.js"
     },
     "./dev-plane": {
       "types": "./dist/dev-plane.d.ts",
@@ -33,6 +37,7 @@
     "README.md",
     "dist",
     "AGENTS.md",
+    "agents",
     "plugin.json",
     "mcp.json",
     "skills",
@@ -65,20 +70,20 @@
   },
   "dependencies": {
     "@happyvertical/smrt-scanner": "workspace:*",
-    "@modelcontextprotocol/node": "2.0.0",
-    "@modelcontextprotocol/server": "2.0.0",
+    "@modelcontextprotocol/node": "2.1.2",
+    "@modelcontextprotocol/server": "2.4.0",
     "@happyvertical/smrt-types": "workspace:*"
   },
   "devDependencies": {
     "@happyvertical/smrt-config": "workspace:*",
     "@happyvertical/smrt-core": "workspace:*",
     "@happyvertical/sql": "catalog:",
-    "@modelcontextprotocol/client": "2.0.0",
+    "@modelcontextprotocol/client": "2.4.0",
     "@modelcontextprotocol/conformance": "0.2.0-alpha.11",
     "@types/node": "24.13.6",
     "ajv": "8.20.0",
     "typescript": "6.0.3",
-    "vite": "8.1.4",
+    "vite": "8.1.6",
     "vitest": "4.1.10"
   },
   "author": "HappyVertical",

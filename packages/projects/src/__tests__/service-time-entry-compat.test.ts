@@ -3,8 +3,8 @@
  * to `@happyvertical/smrt-timesheets`. A database built from the pre-move
  * smrt-projects schema — still carrying the support-only `case_id` /
  * `specialist_id` columns and their indexes — must keep working through the
- * classes smrt-projects exports, with no schema change and no executable
- * migration.
+ * classes smrt-projects exports. The move needs no DDL. Framework sync
+ * metadata (#4673) is added separately as nullable columns.
  *
  * `fixtures/pre-3288-service-evidence-schema.json` is the schema section of
  * smrt-projects' built manifest at 02590837 (the commit before the move).
@@ -241,20 +241,54 @@ describe('service time entries moved to smrt-timesheets (#3288)', () => {
     await expect(approved.save()).rejects.toThrow(/immutable/i);
   });
 
-  it('plans no DDL against the pre-move tables', async () => {
-    const pending = await getPendingSchemaStatements(db, {
-      engineHint: 'sqlite',
-    });
-    const touching = pending.statements.filter((statement) =>
-      TABLES.some((table) => targets(statement, table)),
-    );
-    // The orphaned case_id / specialist_id columns are reported, never
-    // altered or dropped.
-    expect(touching).toEqual([]);
-    expect(
-      pending.unactionableChanges.filter((change) =>
-        TABLES.includes(String(change.table)),
+  it('adds only nullable sync metadata to the pre-move tables', async () => {
+    const syncColumns = {
+      _sync_origin_device_id: 'TEXT',
+      _sync_revision: 'INTEGER',
+    };
+    const plan = async () => {
+      const pending = await getPendingSchemaStatements(db, {
+        engineHint: 'sqlite',
+      });
+      expect(
+        pending.unactionableChanges.filter((change) =>
+          TABLES.includes(String(change.table)),
+        ),
+      ).toEqual([]);
+      expect(
+        pending.diff.changes.filter(
+          (change) =>
+            TABLES.includes(String(change.table)) &&
+            change.type === 'drop_index',
+        ),
+      ).toEqual([]);
+      return pending.statements.filter((statement) =>
+        TABLES.some((table) => targets(statement, table)),
+      );
+    };
+
+    const statements = await plan();
+    expect(statements).toEqual(
+      TABLES.flatMap((table) =>
+        Object.entries(syncColumns).map(
+          ([column, type]) =>
+            `ALTER TABLE "${table}" ADD COLUMN "${column}" ${type}`,
+        ),
       ),
-    ).toEqual([]);
+    );
+
+    const readRows = async (table: string) =>
+      (await db.query(`SELECT * FROM "${table}" ORDER BY id`)).rows;
+    const before = await Promise.all(TABLES.map(readRows));
+    for (const statement of statements) await db.query(statement);
+    expect(await plan()).toEqual([]);
+    const after = await Promise.all(TABLES.map(readRows));
+    const untracked = Object.fromEntries(
+      Object.keys(syncColumns).map((column) => [column, null]),
+    );
+    // Includes the support-only columns and both commercial snapshot tables.
+    expect(after).toEqual(
+      before.map((rows) => rows.map((row) => ({ ...row, ...untracked }))),
+    );
   });
 });

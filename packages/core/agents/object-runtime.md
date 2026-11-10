@@ -26,7 +26,7 @@ See [audit contract](../../../docs/content/audit-trail.md).
   canonicalizing a wrapped identity. Custom embedded-CAS paths that consume
   persisted rows must use `getCanonicalPersistedRow()` so UUID identities are
   cast in the same coherent read before reuse.
-- `is(criteria)` / `do(instructions)` / `describe()`: AI operations via function calling. They inject the object's own `toPublicJSON()` (sensitive fields stripped) as a "content body" so the model reasons over the instance. Options: `includeData: false` skips injection (for callers that already curate the relevant fields into the instruction); `maxDataLength` overrides the truncation budget. Neither key is forwarded to `ai.message()`. (#1567)
+- `is(criteria)` / `do(instructions)` / `describe()`: AI operations via function calling. They inject the object's own `toPublicJSON()` (sensitive fields stripped) as a "content body" so the model reasons over the instance. Options: `includeData: false` skips injection (for callers that already curate the relevant fields into the instruction); `maxDataLength` overrides the truncation budget. Neither key is forwarded to `ai.message()`. (#1567) `tier` / `latency` pick an inference tier client and tag usage; see [inference](inference.md) (#4750).
 - `normalizePersistenceData(data)` is the synchronous final derived-column hook:
   shared save preparation passes read-only snake-case row data after the complete polymorphic
   `toJSON()` / `transformJSON()` chain and UUID coercion, then merges the returned
@@ -40,6 +40,14 @@ See [audit contract](../../../docs/content/audit-trail.md).
   use `transformJSON()` for that existing contract. Ordinary saves and eligible
   junction batches share this preparation. A custom normalization override makes
   a junction ineligible for batching, preserving its virtual per-row save path.
+  Junction batches write new rows in one statement. Known collisions take
+  the per-row path. A late untracked collision updates the existing row in
+  place, while a tracked collision rolls back all additions. Callers still
+  own the transaction for an atomic remove-and-add replacement.
+- PostgreSQL nullable natural-key upserts recheck an initial miss on the
+  bound transaction under a per-key advisory lock. A late same-owner match
+  keeps its original ID and creation time. An unloaded write to a tracked
+  match fails without committing.
 - `save()` error contract (#2366): unique/PK violation → `ValidationError` `VALIDATION_UNIQUE_CONSTRAINT`, NOT NULL → `VALIDATION_REQUIRED_FIELD`, both on the first attempt on every adapter; any other database failure → `DatabaseError` with the driver error on `cause`
 - `getSlug()`: auto-generates from name → title → label → id
 - `loadRelated(fieldName)`: lazy-loads relationships (cached in `_loadedRelationships` Map)
@@ -185,6 +193,9 @@ instances and never use this path to overwrite a loaded revision.
   from the blob on hydration and save, object or JSON text (`sanitizeMetaData`).
 - Polymorphic queries: collection loads `_meta_type`, creates correct subclass dynamically
 - Validation: fail-fast on save if `_meta_type` missing or mismatched
+- Multi-level STI collections read their own discriminator and every registered descendant, never sibling branches. Decorate every intermediate with `@smrt()`; registration rejects an undecorated intermediate beneath an STI root.
+- `@smrt({ abstract: true })` makes a registered STI type readable but prevents saving an instance with its own discriminator. A base collection can still create a concrete descendant by passing that descendant's `_meta_type`. Generated surfaces expose only `list` and `get` for abstract models, including when custom actions were explicitly included.
+- Set `validateSubtype: true` on a foreign key or cross-package reference targeting an STI child when it must reject sibling rows. Save checks through the child's collection, and `loadRelated()` rejects a stored sibling row. The physical FK targets the shared root table, so the collection's discriminator and tenant read scope provide the subtype check. Saves fail when the subtype target cannot be loaded, even if ordinary cross-package validation is disabled.
 
 ## Child Accessors (R10)
 
@@ -194,3 +205,28 @@ instances and never use this path to overwrite a loaded revision.
 - **Runtime-only** — attached to the prototype, invisible to the build-time manifest, so it never leaks into the REST/CLI/MCP surface.
 
 When the target declares multiple FKs back to the parent, annotate `@oneToMany(Target, { foreignKey: '<inverseField>' })`; `loadRelatedMany` and the eager `include:` loader both honor it (else first-match).
+
+## Mandatory persisted write predicates
+
+`CollectionInterceptor.writeGuard` supplies trusted column predicates that callers
+cannot override through patches or save options. Core conjoins these with CAS
+conditions at the final mutation. Guarded new rows insert without unconditional
+upsert fallback; existing natural-key targets update conditionally, with zero rows
+failing closed. Embedded adapter checks execute inside the shared write queue;
+PostgreSQL uses the final SQL predicate. Guarded policies disable bulk shortcuts
+unless explicitly compatible. Preserve this enforcement in save, claimRevision,
+delete and natural-key adoption paths, including transaction-bound executors.
+
+Mandatory write guards preserve natural-key identity: only the row found and
+owner-checked by the natural-key lookup can be adopted for a conditional update.
+An unmatched natural key uses INSERT, even if its explicit primary key names an
+existing row. Duplicate IDs therefore fail without changing foreign/global rows,
+including NULL-bearing natural keys on PostgreSQL.
+
+`requireInsertOnSave({ preserveDerivedSlug: true })` opts a model into new-identity
+writes while retaining generated-name slug disambiguation. Explicit natural-key
+collisions fail with the ordinary unique-constraint error; the create path of
+`getOrUpsert` cannot override this policy. Loaded objects still update by ID and
+run their model guards. The default without options remains strict INSERT for
+every initial save, including generated slugs. Once requested, that stricter
+policy cannot be relaxed by a later opt-in call from the model.

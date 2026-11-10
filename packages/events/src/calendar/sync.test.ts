@@ -1,9 +1,9 @@
-import { randomUUID } from 'node:crypto';
-import { tmpdir } from 'node:os';
-import { join } from 'node:path';
-import { describe, expect, it } from 'vitest';
+import { afterEach, describe, expect, it } from 'vitest';
+import { createOwnedSqliteFixtures } from '../__tests__/owned-sqlite-fixtures.js';
 import { EventCollection } from '../collections/EventCollection.js';
 import { syncICalendarSource } from './sync.js';
+
+const fixtures = createOwnedSqliteFixtures();
 
 const ics = (
   sequence: number,
@@ -22,16 +22,22 @@ END:VEVENT\r
 END:VCALENDAR\r
 `;
 
-function db() {
-  return {
-    type: 'sqlite' as const,
-    url: `file:${join(tmpdir(), `calendar-${randomUUID()}.db`)}`,
-  };
+async function db() {
+  const events = await EventCollection.create({
+    db: {
+      type: 'sqlite' as const,
+      url: fixtures.url('calendar'),
+    },
+  });
+  fixtures.track(events.db);
+  return events.db;
 }
+
+afterEach(() => fixtures.cleanup());
 
 describe('syncICalendarSource', () => {
   it('is identity-idempotent, version ordered, and never deletes by feed omission', async () => {
-    const database = db();
+    const database = await db();
     expect(
       await syncICalendarSource({ db: database, source: 'town', ics: ics(1) }),
     ).toMatchObject({ created: 1, retainedOnOmission: true });
@@ -56,7 +62,7 @@ describe('syncICalendarSource', () => {
   });
 
   it('keeps tenant identities isolated and accepts newer DTSTAMP with lower sequence', async () => {
-    const database = db();
+    const database = await db();
     await syncICalendarSource({
       db: database,
       source: 'town',

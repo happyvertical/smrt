@@ -66,6 +66,7 @@ export interface FieldPolicyCatalogField {
     order?: number;
     locked?: boolean;
     widget?: 'textarea' | 'currency' | 'email' | 'url' | 'phone';
+    format?: 'money' | 'date' | 'datetime' | 'percent';
   };
 }
 

@@ -103,14 +103,22 @@ describe('AnalyticsProperty.analyzePerformance()', () => {
     expect(text).not.toContain('do-not-leak');
   });
 
-  it('passes empty AI options for the default registered prompt (no ai config)', async () => {
+  it('passes only the prompt-run usage tags for the default registered prompt (no ai config, #4751)', async () => {
     const property = makeProperty();
 
     await property.analyzePerformance();
 
     expect(aiMessageMock).toHaveBeenCalledTimes(1);
     const [, options] = aiMessageMock.mock.calls[0];
-    expect(options).toEqual({});
+    expect(options).toEqual({
+      usageTags: {
+        promptKey: 'smrtAnalytics.property.analyzePerformance',
+        promptLayer: 'default',
+        templateHash: expect.stringMatching(/^[0-9a-f]{12}$/),
+        tierRequested: 'good',
+        tierResolved: 'good',
+      },
+    });
   });
 
   it('OMITS tenantId from resolvePrompt options so withTenant context is honored', async () => {

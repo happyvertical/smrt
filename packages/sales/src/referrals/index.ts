@@ -51,6 +51,11 @@ export {
   type TouchWindowQuery,
 } from './collections/ReferralTouchCollection.js';
 export { ReferrerCollection } from './collections/ReferrerCollection.js';
+export {
+  ReferrerIdentifierCollection,
+  ReferrerIdentifierConflictError,
+  type RegisterReferrerIdentifierInput,
+} from './collections/ReferrerIdentifierCollection.js';
 // Models
 export { AttributionException } from './models/AttributionException.js';
 export {
@@ -67,6 +72,9 @@ export { ReferralProgram } from './models/ReferralProgram.js';
 export { ReferralTermSnapshot } from './models/ReferralTermSnapshot.js';
 export { ReferralTouch } from './models/ReferralTouch.js';
 export { Referrer } from './models/Referrer.js';
+export { ReferrerIdentifier } from './models/ReferrerIdentifier.js';
+// Recipes
+export { AffiliatesReferralsRecipe } from './recipes.js';
 // Services
 export {
   type AttributionAward,
@@ -98,6 +106,11 @@ export {
   type ReferralProcessingSkip,
   type ReferralProcessingSkipReason,
 } from './services/ReferralCommissionService.js';
+export {
+  type RecordReferralNominationInput,
+  ReferralNominationResolver,
+  type ResolveReferralNominationInput,
+} from './services/ReferralNominationResolver.js';
 export {
   type QualificationRefusalReason,
   type QualifyReferralInput,

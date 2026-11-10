@@ -9,6 +9,10 @@
  * - Rollback support
  */
 
+// Installs the tenant-type-agnostic change-feed helpers before a conversion.
+export { ensurePostgresChangeFeedAppendFunction } from '../change-feed.js';
+// System-table tenant columns converted by `smrt db:migrate-uuid` (#3297)
+export { SYSTEM_TABLE_TENANT_UUID_COLUMNS } from '../system/schema.js';
 // Backfill tracking (data corrections, not schema migrations)
 export {
   type BackfillRecord,
@@ -23,6 +27,19 @@ export {
   shortChecksum,
   verifyChecksum,
 } from './checksum.js';
+export {
+  DeploymentPhaseTracker,
+  type DeploymentReconciledContext,
+  type DeploymentReconciliation,
+  DeploymentStepError,
+  type DeploymentStepKey,
+  type DeploymentStepMode,
+  type DeploymentStepOptions,
+  type DeploymentStepRecord,
+  type DeploymentStepStatus,
+  type DeploymentStepTransaction,
+  MAX_DEPLOYMENT_CHECKPOINT_BYTES,
+} from './deployment-phase-tracker.js';
 export type { DiffOptions } from './differ.js';
 // Schema comparison
 export {

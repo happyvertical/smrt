@@ -21,6 +21,7 @@ import { ObjectRegistry } from '../registry';
 import { SQLiteStrategy } from '../schema/ddl/sqlite-strategy.js';
 import { SchemaGenerator } from '../schema/generator.js';
 import { getTestDatabase } from '../testing/database';
+import { cleanupFileDatabase } from '../testing/file-cleanup';
 
 // STI base
 @smrt({ tableStrategy: 'sti' })
@@ -61,9 +62,7 @@ describe('@meta({ indexed: true }) (R9)', () => {
   });
 
   afterEach(async () => {
-    if (db && typeof db.close === 'function') {
-      await db.close();
-    }
+    await cleanupFileDatabase(db, dbPath);
   });
 
   it('emits a jsonPath IndexDefinition for indexed meta fields', async () => {

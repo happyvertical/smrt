@@ -354,6 +354,15 @@ function isDuplicateIndexRaceError(error: unknown, indexName: string): boolean {
   return false;
 }
 
+/**
+ * A tenant id column added to an existing system table: native uuid on
+ * PostgreSQL, like fresh system DDL and every application `tenant_id`
+ * (#3297); TEXT elsewhere.
+ */
+function tenantIdColumnType(db: DatabaseInterface, typeHint?: string): string {
+  return getDatabaseEngine(db, typeHint) === 'postgres' ? 'UUID' : 'TEXT';
+}
+
 async function addColumnIfMissing(
   db: DatabaseInterface,
   tableName: string,
@@ -779,7 +788,13 @@ export async function ensureDispatchSystemTableCompatibility(
   // Tenant isolation (S5 #1398): dispatches are scoped to the emitting
   // tenant context so a subscriber in tenant A cannot snoop/claim tenant B's
   // dispatches. Nullable so non-tenant (global) dispatches keep tenant_id NULL.
-  await addColumnIfMissing(db, '_smrt_dispatch', 'tenant_id', 'TEXT', typeHint);
+  await addColumnIfMissing(
+    db,
+    '_smrt_dispatch',
+    'tenant_id',
+    tenantIdColumnType(db, typeHint),
+    typeHint,
+  );
   await addIndexIfMissing(
     db,
     'idx_smrt_dispatch_target',
@@ -824,7 +839,7 @@ export async function ensureDispatchSubscriptionsSystemTableCompatibility(
     db,
     '_smrt_dispatch_subscriptions',
     'tenant_id',
-    'TEXT',
+    tenantIdColumnType(db, typeHint),
     typeHint,
   );
   await addIndexIfMissing(
@@ -912,7 +927,13 @@ export async function ensureJobsSystemTableCompatibility(
     return;
   }
 
-  await addColumnIfMissing(db, '_smrt_jobs', 'tenant_id', 'TEXT', typeHint);
+  await addColumnIfMissing(
+    db,
+    '_smrt_jobs',
+    'tenant_id',
+    tenantIdColumnType(db, typeHint),
+    typeHint,
+  );
   await addIndexIfMissing(
     db,
     'idx_smrt_jobs_tenant_id',
@@ -978,7 +999,7 @@ export async function ensureJobEventsSystemTableCompatibility(
     db,
     '_smrt_job_events',
     'tenant_id',
-    'TEXT',
+    tenantIdColumnType(db, typeHint),
     typeHint,
   );
   await addIndexIfMissing(
@@ -1047,6 +1068,47 @@ export async function ensureDeferredSystemTableCompatibility(
 }
 
 /**
+ * Prompt-run observability columns on `_smrt_ai_usage` (#4751) and the
+ * `call_id` columns on `_smrt_ai_usage` / `_smrt_ai_usage_outcomes` (#4780).
+ *
+ * Nullable TEXT, populated from usage tags by `AiUsagePersistenceHandler`;
+ * existing rows keep NULL (no backfill: `tags` still holds the full copy).
+ * Each ALTER is guarded by a column-existence probe on every engine, and must
+ * run before the DDL replay because its `CREATE INDEX` clauses reference the
+ * new columns.
+ */
+export async function ensureAiUsageSystemTableCompatibility(
+  db: DatabaseInterface,
+  typeHint?: string,
+): Promise<void> {
+  if (!(await tableExists(db, '_smrt_ai_usage', typeHint))) {
+    return;
+  }
+
+  for (const column of [
+    'prompt_key',
+    'tier_requested',
+    'tier_resolved',
+    'run_id',
+    // AI call transcripts (#4780).
+    'call_id',
+  ]) {
+    await addColumnIfMissing(db, '_smrt_ai_usage', column, 'TEXT', typeHint);
+  }
+  // `_smrt_ai_usage_outcomes` (#4751) gains `call_id` with #4780; a 1.13.0 or
+  // 1.14.0 install has the table without it.
+  if (await tableExists(db, '_smrt_ai_usage_outcomes', typeHint)) {
+    await addColumnIfMissing(
+      db,
+      '_smrt_ai_usage_outcomes',
+      'call_id',
+      'TEXT',
+      typeHint,
+    );
+  }
+}
+
+/**
  * The compatibility pass that must precede replaying system DDL.
  *
  * Only the tables `bootstrapSystemTables()` itself creates belong here: an
@@ -1067,6 +1129,7 @@ export async function ensureBootstrapSystemTableCompatibility(
 ): Promise<void> {
   await ensureDispatchSystemTableCompatibility(db, typeHint);
   await ensureDispatchSubscriptionsSystemTableCompatibility(db, typeHint);
+  await ensureAiUsageSystemTableCompatibility(db, typeHint);
 }
 
 /**

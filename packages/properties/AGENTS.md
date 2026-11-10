@@ -28,6 +28,8 @@ import { smrtPropertiesSummarizePrompt } from '@happyvertical/smrt-properties';
 // key: 'smrtProperties.property.summarize'
 ```
 
+Tier (#4755 rule, `../prompts/AGENTS.md`): `good` (a summary). The call binds it through `prepareAiOperation()`.
+
 Only non-PII fields are passed to the AI provider: `name`, `domain`, `description`, `status`, plus aggregate zone information (count + top-level zone names). Internal foreign-key fields (`ownerId`, `repositoryId`, `tenantId`) and the extensible `metadata` blob are intentionally excluded — `metadata` may contain analytics IDs or tenant-private configuration.
 
 ## Gotchas

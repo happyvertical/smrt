@@ -174,6 +174,18 @@ describe('consumer-closed time entry surface', () => {
         tools.filter((tool) => tool.name.startsWith(toolPrefix)),
         className,
       ).toEqual([]);
+      // The package's collection over this table publishes no generated CRUD
+      // once the consumer closes the model (#3468). A query the collection
+      // declares itself (ServiceTimeEntryCollection's forWork /
+      // pendingApproval) keeps the collection opt-in policy; close it with
+      // `registerOverride` on the collection class.
+      const collectionPrefix = `${toolPrefix.slice(0, -1)}collection_`;
+      expect(
+        tools.filter((tool) =>
+          CRUD.some((verb) => tool.name === `${collectionPrefix}${verb}`),
+        ),
+        className,
+      ).toEqual([]);
     }
   });
 

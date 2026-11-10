@@ -175,13 +175,71 @@ describe('smrt() Vite preset', () => {
       ).toEqual({ oxc: { decorator: { emitDecoratorMetadata: true } } });
     });
 
-    it('dedupes @sveltejs/kit so SMRT SvelteKit entries share the app copy', async () => {
+    it('bundles the runtime and dedupes Kit so production control flow shares identity', async () => {
       const plugins = (await smrt({ packages: [] })) as AnyPlugin[];
       const shared = plugins.find((p) => p.name === 'smrt:shared-runtime');
       expect(shared).toBeDefined();
-      expect(callHook(shared as AnyPlugin, 'config', {})).toEqual({
+      expect(
+        callHook(shared as AnyPlugin, 'config', {}, { command: 'build' }),
+      ).toEqual({
+        resolve: { dedupe: ['@sveltejs/kit'] },
+        ssr: {
+          noExternal: ['@happyvertical/smrt-app-runtime'],
+          external: ['@happyvertical/smrt-app-runtime/sveltekit-runtime'],
+        },
+      });
+    });
+
+    it('externalizes only the exact server root without overriding browser resolution', async () => {
+      const shared = (await smrt({ packages: [] })).find(
+        (p) => p.name === 'smrt:shared-runtime',
+      ) as AnyPlugin;
+      callHook(shared, 'config', {}, { command: 'build' });
+      expect(
+        callHook(
+          shared,
+          'resolveId',
+          '@happyvertical/smrt-app-runtime',
+          undefined,
+          { ssr: true },
+        ),
+      ).toEqual({ id: '@happyvertical/smrt-app-runtime', external: true });
+      expect(
+        callHook(
+          shared,
+          'resolveId',
+          '@happyvertical/smrt-app-runtime/sveltekit',
+          undefined,
+          { ssr: true },
+        ),
+      ).toBeUndefined();
+      expect(
+        callHook(
+          shared,
+          'resolveId',
+          '@happyvertical/smrt-app-runtime',
+          undefined,
+          { ssr: false },
+        ),
+      ).toBeUndefined();
+    });
+
+    it('keeps normal development SSR externalization while deduping Kit', async () => {
+      const shared = (await smrt({ packages: [] })).find(
+        (p) => p.name === 'smrt:shared-runtime',
+      ) as AnyPlugin;
+      expect(callHook(shared, 'config', {}, { command: 'serve' })).toEqual({
         resolve: { dedupe: ['@sveltejs/kit'] },
       });
+      expect(
+        callHook(
+          shared,
+          'resolveId',
+          '@happyvertical/smrt-app-runtime',
+          undefined,
+          { ssr: true },
+        ),
+      ).toBeUndefined();
     });
 
     it('omits the decorator plugin when decorators is false', async () => {
@@ -344,6 +402,56 @@ describe('smrt() Vite preset', () => {
       });
       await runBuild(plugins as AnyPlugin[], root);
       expect(existsSync(join(root, 'src/routes/api/items'))).toBe(false);
+    });
+  });
+
+  describe('hostToolNames forwarding (#4520)', () => {
+    const decl = (
+      name: string,
+      surface: 'workflow' | 'bespoke' | 'mcp',
+      declaredBy: string,
+    ) => ({ name, surface, declaredBy });
+
+    it('fails construction on duplicates across surfaces, like smrtPlugin', async () => {
+      const hostToolNames = [
+        decl('dup_tool', 'workflow', 'A.op'),
+        decl('dup_tool', 'mcp', 'B.op'),
+      ];
+      let direct: unknown;
+      try {
+        smrtPlugin({ hostToolNames });
+      } catch (e) {
+        direct = e;
+      }
+      expect(direct).toBeInstanceOf(Error);
+      await expect(
+        smrt({ projectRoot: root, packages: [], hostToolNames }),
+      ).rejects.toThrow((direct as Error).message);
+    });
+
+    it('accepts clean names and one operation on several surfaces', async () => {
+      await expect(
+        smrt({
+          projectRoot: root,
+          packages: [],
+          hostToolNames: [
+            decl('a_tool', 'workflow', 'A.op'),
+            decl('b_tool', 'bespoke', 'B.op'),
+            decl('c_tool', 'workflow', 'C.op'),
+            decl('c_tool', 'mcp', 'C.op'),
+          ],
+        }),
+      ).resolves.toBeInstanceOf(Array);
+    });
+
+    it('is unchanged without the option', async () => {
+      const plugins = await smrt({ projectRoot: root, packages: [] });
+      const withEmpty = await smrt({
+        projectRoot: root,
+        packages: [],
+        hostToolNames: [],
+      });
+      expect(withEmpty.map((p) => p.name)).toEqual(plugins.map((p) => p.name));
     });
   });
 

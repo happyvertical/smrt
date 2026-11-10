@@ -36,11 +36,12 @@ pnpm add @happyvertical/smrt-ui
 | Choices | `Checkbox`, `RadioGroup`/`Radio`, `Switch`, `Toggle`, `ToggleButton`, `SegmentedControl` |
 | Values and files | `Slider`, `RangeSlider`, `DatePicker`, `TimePicker`, `FilePicker` |
 | Capture | `CameraCapture`, `SignaturePad` |
+| Touch entry and viewing | `NumericKeypad` (`/forms`), `DocumentViewer` (`/display`) |
 | Actions and display | `Button`, `Dropdown`/`Menu`, `Badge`, `Chip`, `Avatar`, `Card`, `Skeleton`, `Tooltip`, `Tree` |
 | Disclosure and overlays | `Popover`, `Disclosure`, `Accordion`/`AccordionItem`, `Modal`, `Drawer`/`Sheet`, `PhoneSheet`, `ConfirmDialog` |
 | Feedback | `Alert`, `ToastViewport`, `Progress`, `Meter`, `Spinner`, `LoadingOverlay`, `WorkingStrip` |
 | Collections | `CollectionToolbar`, `CollectionList`/`ContentList`, `DataTable`, `Pagination` |
-| Layout and navigation | `Container`, `PageLayout`, `Grid`, `ActionGroup`, `Header`, `Footer`, `PageHeader`, `EmptyState`, `Tabs`, `FilterChips` |
+| Layout and navigation | `Container`, `PageLayout`, `Grid`, `Stack`, `DescriptionList`, `ActionGroup`, `Header`, `Footer`, `PageHeader`, `EmptyState`, `Tabs`, `FilterChips` |
 | Calendar | `CalendarView` (deprecated: `Calendar`, `DayView`) |
 
 ### Phone surfaces
@@ -229,7 +230,10 @@ tone overrides the built-in domain scheme while label, size, and outline variant
 continue to work independently. Tones use the active theme's paired container
 and text tokens. Without a tone, known domain statuses retain their existing
 colors and unknown statuses retain the neutral fallback. `StatusTone` is exported
-as a TypeScript type from the package root.
+as a TypeScript type from the package root. `StatusBadge` also spreads rest
+props (`data-*`, `aria-*`, `title`, ...) onto its root `<span>`; `class` is not
+accepted. It and the other display components are importable from
+`@happyvertical/smrt-ui/display` as well as the package root.
 
 ### Touch targets for Checkbox, Radio and Switch
 
@@ -657,6 +661,96 @@ least `--smrt-touch-target-min` (48px by default; see
 Both register with an enclosing `Form`'s interaction registry as non-readable,
 non-writable `file` controls.
 
+## Touch keypad and document viewer
+
+Two controls for gloved, tablet-first use. Every key and control is at least
+4rem square (or `--smrt-touch-target-min`, whichever is larger).
+
+### NumericKeypad
+
+```svelte
+<script lang="ts">
+  import { NumericKeypad } from '@happyvertical/smrt-ui/forms';
+  let price = $state('');
+</script>
+
+<NumericKeypad
+  bind:value={price}
+  mode="money"
+  currency="CAD"
+  prefix="$"
+  min={0.01}
+  onSubmit={({ minorUnits }) => save(minorUnits)}
+  name="price"
+/>
+```
+
+`value` is the typed text (`"12.5"`; a number is accepted). A 3x4 grid holds
+the digits, a decimal point (only when `maxDecimals` > 0) and backspace; Clear
+sits beside the display and the confirm key (text `submitLabel`) appears when
+`onSubmit` is given. `onChange` / `onSubmit` receive `{ text, number,
+minorUnits, valid }`. A value outside `min` / `max` shows an error and blocks
+confirm; `clampToMax` refuses a press that would exceed `max`. `maxLength`
+caps the typed text (default 12).
+
+`mode="money"` keeps integer minor units: the decimals allowed follow the
+currency's ISO 4217 exponent (`currency`, or `minorUnitExponent`), `minorUnits`
+is computed by string arithmetic and never a float, and a `name` posts the
+integer minor units (in `number` mode it posts the typed text).
+Money amounts beyond JavaScript's safe integer minor-unit range are invalid
+and cannot be confirmed, including when `maxLength` is increased. The pure
+helpers `textToMinorUnits()`, `minorUnitsToText()`, `minorUnitExponent()`,
+`applyKeypadKey()` and `validateKeypadEntry()` are exported from `/forms`.
+
+Hardware keys work while focus is inside the keypad: digits, `.` or `,` for the
+point, Backspace, Delete (clear) and Enter (confirm, when the keypad itself has
+focus). The root is a `group`, the display is a polite live `output`, and every
+key has an `aria-label`. This is a quantity/money pad, not a PIN pad: the typed
+value is shown as text. Text comes from `ui.numeric_keypad.*` and `labels`.
+
+### DocumentViewer
+
+```svelte
+<script lang="ts">
+  import { DocumentViewer, createPdfJsOpener } from '@happyvertical/smrt-ui/display';
+  import workerSrc from 'pdfjs-dist/legacy/build/pdf.worker.min.mjs?url';
+  // Literal imports here let YOUR bundler include pdf.js.
+  const openPdf = createPdfJsOpener({
+    workerSrc,
+    loadLibrary: () => import('pdfjs-dist/legacy/build/pdf.mjs'),
+  });
+</script>
+
+<DocumentViewer src="/api/prints/42/file" mimeType="application/pdf"
+  label="Bracket, rev C" fetch={authedFetch} {openPdf} />
+```
+
+The file is read through `fetch` (default: the global one; inject the app's
+authenticated fetch) and shown from a blob. It never sets `<img src>` or
+`<iframe src>` to `src`, so it works in an embedded WebView that only
+authenticates through the app's own fetch and has no built-in PDF viewer. Blob
+URLs are revoked on cleanup. `mimeType` may be omitted, then the response's
+Content-Type decides. Controls: previous / next with "Page N of M", zoom out /
+Fit / zoom in (1, 1.5, 2, 3, 4, 5), and a two-finger pinch; a zoomed document
+scrolls inside its sheet. States (the root's `data-state`): `loading`,
+`ready`, `failed` (with "Try again"), and `unsupported` (an unknown type, or no
+PDF engine). Text comes from `ui.document_viewer.*` and `labels`.
+
+**PDFs** are drawn by an `OpenPdf` (`(bytes) => Promise<PdfDocument>` where a
+`PdfDocument` is `{ pages, renderPage(page, canvas, cssWidth), destroy() }`).
+Inject your own, or omit it for the default, `createPdfJsOpener()`, which
+uses `pdfjs-dist`'s legacy build. `pdfjs-dist` is an **optional peer
+dependency**: install it only if you show PDFs; images need nothing. It is
+loaded on the first PDF, and if it is missing the viewer shows `unsupported`.
+The default opener loads it through a variable specifier so an app without
+pdfjs-dist still builds; that means a bundler does not include pdf.js by default.
+An app that wants it bundled passes `loadLibrary` (as above) and `workerSrc`.
+Pass `workerSrc` (a URL such as Vite's `?url` import of
+`pdf.worker.min.mjs`) to render off the main thread; without it the worker
+module is imported and runs on the main thread, which needs no bundler URL
+handling. The canvas is capped at 4096 x 4096 device pixels; zooming past it
+enlarges on screen instead.
+
 ## DataTable controller
 
 `DataTable` can share one headless `DataTableController` between rendered
@@ -1047,6 +1141,22 @@ vertical gap.
 Use `PageLayout` inside an application shell to give each route responsive
 gutters, block padding, vertical rhythm, and the width appropriate to its
 content. It never creates a scroll container or claims viewport height.
+Use `Stack` for vertical or horizontal rhythm from the spacing tokens
+(`gap` `xs` to `xl`, optional `align`, `justify` and `wrap`), and
+`DescriptionList` for a term/description grid that collapses to one column on
+narrow screens (pass `items`, or `<dt>`/`<dd>` children).
+
+```svelte
+<script>
+  import { DescriptionList, Stack } from '@happyvertical/smrt-ui/layout';
+</script>
+
+<Stack gap="lg">
+  <DescriptionList items={[{ term: 'Status', description: 'Open' }]} />
+  <Stack direction="horizontal" gap="sm" wrap>...</Stack>
+</Stack>
+```
+
 Use `ActionGroup` for adjacent page or card actions; it wraps with token spacing
 and can justify actions at the start or end without form-specific behavior.
 
@@ -1192,8 +1302,10 @@ pnpm verify:pack
 
 Set `<ThemeProvider density="touch">` for floor tablets and phones, or set
 `density="touch"` on Input, Select, Textarea, Checkbox, Switch, RadioGroup,
-Button (including links), FilterChips, SegmentedControl, or DataTable. DataTable
-applies density to its sort buttons. Density is independent of existing `size`
+Button (including links), FilterChips, SegmentedControl, Pagination, or
+DataTable. DataTable applies density to its sort buttons and passes it to its
+pager; Pagination raises every page and First/Previous/Next/Last control (links
+or buttons) to the target size. Density is independent of existing `size`
 props, including native Input/Select sizes. Omitted density inherits; explicitly
 setting `density="comfortable"` opts that control out and keeps its usual size.
 RadioGroup expands each option's clickable label, and Checkbox/Switch expand

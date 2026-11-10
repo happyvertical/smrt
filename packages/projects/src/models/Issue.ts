@@ -9,12 +9,16 @@ import { type AIClientOptions, getAI } from '@happyvertical/ai';
 import {
   field,
   foreignKey,
+  resolveInferenceTarget,
   SmrtObject,
   type SmrtObjectOptions,
   smrt,
   config as smrtConfig,
 } from '@happyvertical/smrt-core';
-import { resolvePrompt } from '@happyvertical/smrt-prompts';
+import {
+  promptMessageOptions,
+  resolvePrompt,
+} from '@happyvertical/smrt-prompts';
 import { TenantScoped, tenantId } from '@happyvertical/smrt-tenancy';
 import { loadEnvConfig } from '@happyvertical/utils';
 import { SYNC_THROTTLE_MS } from '../constants';
@@ -499,10 +503,15 @@ export class Issue extends SmrtObject {
       },
     );
 
-    const aiOptions = {
-      ...resolvedPrompt.ai.params,
-      ...(resolvedPrompt.ai.model ? { model: resolvedPrompt.ai.model } : {}),
-    };
+    // Params, model and the prompt-run usage tags (#4751) for both paths.
+    // The do() path routes a tier profile through prepareAiOperation(); the
+    // explicit-provider path holds its own client, so it drops the tier keys.
+    const aiOptions = promptMessageOptions(resolvedPrompt.ai);
+    const {
+      tier: _tier,
+      promptKey: _promptKey,
+      ...providerAiOptions
+    } = aiOptions;
 
     let synthesized: string;
 
@@ -510,7 +519,7 @@ export class Issue extends SmrtObject {
       synthesized = await this.runPromptWithResolvedAI(
         resolvedPrompt.text,
         resolvedPrompt.ai.provider,
-        aiOptions,
+        providerAiOptions,
       );
     } else {
       // The resolved prompt template already curates the issue body + comments,
@@ -595,16 +604,45 @@ export class Issue extends SmrtObject {
           ? env.GEMINI_API_KEY
           : env.OPENAI_API_KEY);
 
-    const ai = await getAI({
+    const base: Record<string, unknown> = {
       ...aiConfig,
       provider,
       type: provider,
       model: options.model ?? aiConfig.model,
       defaultModel: options.model ?? aiConfig.model,
       apiKey,
-    } as AIClientOptions);
+    };
+    // A stored per-user / per-tenant binding (#4756) replaces the prompt's
+    // provider; app tier bindings do not. Usage records through this
+    // instance's pipeline (#3077) with the binding's tags.
+    const target = await resolveInferenceTarget({
+      base,
+      tenantId: this.tenantId ?? null,
+      className: this._className,
+      promptKey: issueIncorporateFeedbackPrompt.key,
+      appBindings: false,
+    });
+    const clientConfig = target.options ?? base;
+    // Transcripts (#4780), while the app enables them; the key this client
+    // carries (a stored binding's, or the env/config one) is masked exactly.
+    const ai = this.transcriptClient(
+      await getAI(
+        this.withAiUsage(clientConfig, {
+          tags: target.usageTags,
+        }) as unknown as AIClientOptions,
+      ),
+      undefined,
+      {
+        secrets: () =>
+          typeof clientConfig.apiKey === 'string' ? [clientConfig.apiKey] : [],
+      },
+    );
 
-    return this.sendPromptMessage(ai, instructions, options);
+    return this.sendPromptMessage(
+      ai,
+      instructions,
+      target.bound ? { ...options, model: clientConfig.model } : options,
+    );
   }
 
   /**

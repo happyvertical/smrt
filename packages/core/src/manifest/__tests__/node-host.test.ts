@@ -65,6 +65,83 @@ describe('manifest discovery without a Node host', () => {
     });
   });
 
+  it('preserves bundled STI metadata while optional dependencies have no filesystem', async () => {
+    await withoutHost(async () => {
+      const loader = await import('../manifest-loader.js');
+      const store = await import('../store.js');
+      loader.clearManifestCache();
+      vi.stubEnv('NODE_ENV', 'production');
+      vi.stubEnv('VITEST', 'false');
+      vi.stubEnv('JEST_WORKER_ID', undefined);
+      const manifest = {
+        version: '1.0.0',
+        timestamp: 1,
+        packageName: '@fixture/bundled',
+        smrtDependencies: ['@fixture/unbundled'],
+        objects: {
+          BundledParent: {
+            className: 'BundledParent',
+            collection: 'browser_sti',
+            fields: { title: { type: 'text' } },
+          },
+          BundledChild: {
+            className: 'BundledChild',
+            collection: 'browser_sti',
+            extends: 'BundledParent',
+            fields: { detail: { type: 'text' } },
+          },
+        },
+      } as any;
+      globalThis.__smrtManifestStatic = manifest;
+      globalThis.__smrtManifestStaticLoadAttempted = true;
+      globalThis.__smrtManifestCache = new Map([
+        ['@fixture/bundled', manifest],
+      ]);
+      // A browser has no cwd at all. This also catches code that mistakes
+      // "process exists" for the capability to inspect installed packages.
+      const cwd = vi.spyOn(process, 'cwd').mockImplementation(() => {
+        throw new Error('Browser cannot read cwd');
+      });
+      try {
+        expect(loader.loadExternalManifestSync('@fixture/bundled')).toBe(
+          manifest,
+        );
+        expect(store.loadExternalManifestSyncWithNode('@fixture/bundled')).toBe(
+          manifest,
+        );
+        expect(
+          loader.loadExternalManifestSync('@fixture/unbundled'),
+        ).toBeNull();
+        expect(
+          store.loadExternalManifestSyncWithNode('@fixture/unbundled'),
+        ).toBeNull();
+        const siblings = loader.discoverSTISiblingsSync('browser_sti');
+        expect(siblings.map(({ className }) => className)).toEqual([
+          'BundledParent',
+          'BundledChild',
+        ]);
+        expect(siblings[1].entry.fields).toEqual({ detail: { type: 'text' } });
+        expect(loader.discoverManifestSync('BundledParent')?.fields).toEqual({
+          title: { type: 'text' },
+        });
+        expect(
+          loader.discoverManifestSync('UnavailableRequiredClass'),
+        ).toBeUndefined();
+        expect(cwd).not.toHaveBeenCalled();
+        const { ObjectRegistry } = await import('../../registry.js');
+        await expect(
+          ObjectRegistry.ensureManifestLoaded(
+            '@fixture/unbundled:UnavailableRequiredClass',
+          ),
+        ).rejects.toThrow(/not registered/);
+      } finally {
+        cwd.mockRestore();
+        vi.unstubAllEnvs();
+        loader.clearManifestCache();
+      }
+    });
+  });
+
   it('resolves a real host on Node', async () => {
     vi.resetModules();
     const host = await import('../node-host.js');

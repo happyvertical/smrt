@@ -8,6 +8,7 @@ import {
   DEFAULT_SESSION_TTL,
   generateSessionId,
   resolveSessionExpiry,
+  SESSION_DATA_KEYS,
   Session,
   type SessionAuthMethod,
 } from '../models/Session.js';
@@ -350,6 +351,99 @@ export class SessionCollection extends SmrtCollection<Session> {
   }
 
   /**
+   * Record a step-up (#4841): stamp `data.reauthenticatedAt` on a live session.
+   * Call ONLY after the person's credential was verified on the server; this
+   * method proves nothing itself. Returns the stamp, or null when the session
+   * is unknown, not active, expired, or not `userId`'s (when given). Only the
+   * stamp moves: expiry, activity and every other `data` key are untouched,
+   * so ordinary use or refresh can never extend it.
+   */
+  async markReauthenticated(
+    sessionId: string,
+    options: { userId?: string; at?: Date } = {},
+  ): Promise<Date | null> {
+    const at = options.at ?? new Date();
+    for (let attempt = 0; attempt < 4; attempt += 1) {
+      const session = await this.findValidSession(sessionId);
+      if (!session) return null;
+      if (options.userId !== undefined && session.userId !== options.userId) {
+        return null;
+      }
+      session.setData(SESSION_DATA_KEYS.reauthenticatedAt, at.toISOString());
+      try {
+        await session.save();
+        return at;
+      } catch (error) {
+        if (
+          attempt === 3 ||
+          !(
+            error instanceof Error &&
+            'code' in error &&
+            error.code === 'RUNTIME_REVISION_CONFLICT'
+          )
+        ) {
+          throw error;
+        }
+      }
+    }
+    return null;
+  }
+
+  /**
+   * Record the OIDC step-up intent of a live session (#4841): the transaction
+   * a re-authentication the session itself started must come back with. Only
+   * one intent is pending per session; a new one replaces the old. Returns
+   * false when the session is unknown, not live, or not `userId`'s.
+   */
+  async recordStepUpIntent(
+    sessionId: string,
+    intent: Record<string, unknown>,
+    options: { userId?: string } = {},
+  ): Promise<boolean> {
+    const session = await this.findValidSession(sessionId);
+    if (!session) return false;
+    if (options.userId !== undefined && session.userId !== options.userId) {
+      return false;
+    }
+    session.setData(SESSION_DATA_KEYS.oidcStepUpIntent, intent);
+    await session.save();
+    return true;
+  }
+
+  /**
+   * Take (read and remove) the pending OIDC step-up intent, so it can be used
+   * once. Returns null when there is none, the session is not live or not
+   * `userId`'s, or the removal lost a write race (the other writer holds the
+   * intent). Never retries: a contested intent is a refused one.
+   */
+  async takeStepUpIntent(
+    sessionId: string,
+    options: { userId?: string } = {},
+  ): Promise<Record<string, unknown> | null> {
+    const session = await this.findValidSession(sessionId);
+    if (!session) return null;
+    if (options.userId !== undefined && session.userId !== options.userId) {
+      return null;
+    }
+    const raw = session.data?.[SESSION_DATA_KEYS.oidcStepUpIntent];
+    if (!raw || typeof raw !== 'object' || Array.isArray(raw)) return null;
+    session.removeData(SESSION_DATA_KEYS.oidcStepUpIntent);
+    try {
+      await session.save();
+    } catch (error) {
+      if (
+        error instanceof Error &&
+        'code' in error &&
+        error.code === 'RUNTIME_REVISION_CONFLICT'
+      ) {
+        return null;
+      }
+      throw error;
+    }
+    return raw as Record<string, unknown>;
+  }
+
+  /**
    * Set custom session data
    */
   async setSessionData(
@@ -357,6 +451,16 @@ export class SessionCollection extends SmrtCollection<Session> {
     key: string,
     value: unknown,
   ): Promise<boolean> {
+    // Server-set: tenant-switch rotation writes the authentication time and
+    // passkey sign-in writes the passkey row id; neither is caller data.
+    if (
+      key === SESSION_DATA_KEYS.authenticatedAt ||
+      key === SESSION_DATA_KEYS.reauthenticatedAt ||
+      key === SESSION_DATA_KEYS.oidcStepUpIntent ||
+      key === SESSION_DATA_KEYS.passkeyCredentialId
+    ) {
+      return false;
+    }
     const session = await this.findValidSession(sessionId);
     if (!session) return false;
 

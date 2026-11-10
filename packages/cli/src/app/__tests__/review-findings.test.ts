@@ -145,7 +145,7 @@ describe('R4: a failed start never orphans a live writer', () => {
       expect(existsSync(join(stateRoot, 'app.pid'))).toBe(true);
       expect(stderr.join('')).toContain(String(pid));
     }
-    expect(alive).toBe(false);
+    expect(alive, stderr.join('\n')).toBe(false);
     expect(existsSync(join(stateRoot, 'app.pid'))).toBe(false);
   }, 60_000);
 });

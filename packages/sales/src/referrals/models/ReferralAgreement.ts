@@ -23,7 +23,12 @@
  * @packageDocumentation
  */
 
-import { foreignKey, SmrtObject, smrt } from '@happyvertical/smrt-core';
+import {
+  foreignKey,
+  SmrtObject,
+  type SmrtSaveOptions,
+  smrt,
+} from '@happyvertical/smrt-core';
 import { TenantScoped, tenantId } from '@happyvertical/smrt-tenancy';
 import type {
   ReferralAgreementApprovalMode,
@@ -321,7 +326,7 @@ export class ReferralAgreement extends SmrtObject {
    *
    * Activating saves also re-require {@link commissionPlanKey}.
    */
-  override async save(): Promise<this> {
+  override async save(options?: SmrtSaveOptions): Promise<this> {
     const prior = await this.resolvePriorStatus();
     this.assertStatusTransition(prior);
     this.assertFrozenTermsUnchanged();
@@ -338,7 +343,7 @@ export class ReferralAgreement extends SmrtObject {
         );
       }
     }
-    const result = (await super.save()) as this;
+    const result = (await super.save(options)) as this;
     loadedAgreementStatus.set(this, this.status);
     if (this.status !== 'draft' && !frozenAgreementSnapshot.has(this)) {
       frozenAgreementSnapshot.set(this, this.serializeFrozenTerms());

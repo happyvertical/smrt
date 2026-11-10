@@ -42,8 +42,11 @@ which would orphan the optimistic row the outbox is keeping; sync-apply's
 strict-insert path preserves the client UUID, so replay reconciles the exact
 optimistic row. `wrapMutation` enqueues then returns `{ handled: true, result:
 envelope.data }`, and the factory suppresses the post-mutation refetch +
-`invalidateRelated()` (its `{ refetch: false }` path) so the optimistic row is
-not dropped by a refetch of a server list that has never seen the offline write.
+`invalidateRelated()`. The factory awaits `writeUpsert` / `writeDelete` to
+confirm queued rows in the synced store before settling the transaction; a
+mixed batch is confirmed locally if any member was handled. This keeps queued
+rows after optimistic state is removed, without fetching a server list that
+has never seen the offline write.
 
 **Idempotency / no duplicates.** Rows carry client-generated UUIDs and the
 endpoint is idempotent (`_insertOnly` create + no-op re-apply), so a batch that

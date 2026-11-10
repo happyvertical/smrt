@@ -389,7 +389,7 @@ export async function runOnce<T>(
       INSERT INTO _smrt_run_once_claims
         (claim_key, tenant_id, actor, content_digest, status, result, created_at)
       VALUES
-        (${claimKey}, ${tenantId}, ${actor}, ${contentDigest}, ${'in_progress'}, ${null}, ${new Date()})
+        (${claimKey}, ${tenantId}, ${actor}, ${contentDigest}, ${'in_progress'}, ${null}, ${new Date().toISOString()})
       ON CONFLICT (claim_key) DO NOTHING
       RETURNING claim_key
     `;
@@ -409,7 +409,7 @@ export async function runOnce<T>(
       {
         status: 'completed',
         result: JSON.stringify(result ?? null),
-        completed_at: new Date(),
+        completed_at: new Date().toISOString(),
       },
     );
     return result;

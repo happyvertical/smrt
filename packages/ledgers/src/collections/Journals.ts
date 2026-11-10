@@ -132,11 +132,15 @@ export class JournalCollection extends SmrtCollection<Journal> {
     // Create journal
     const journalNumber = await this.generateJournalNumber();
     const journal = await this.create({
+      tenantId: data.tenantId ?? null,
       number: journalNumber,
       date: data.date || new Date(),
       description: data.description,
       sourceModule: data.sourceModule || 'manual',
       sourceRef: data.sourceRef || null,
+      ledgerId: data.ledgerId ?? null,
+      idempotencyKey: data.idempotencyKey ?? null,
+      requestDigest: data.requestDigest ?? null,
       metadata: data.metadata || {},
     });
     await journal.save();

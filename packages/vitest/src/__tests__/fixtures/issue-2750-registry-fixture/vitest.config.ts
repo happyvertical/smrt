@@ -15,40 +15,8 @@ import { fileURLToPath } from 'node:url';
 import { defineConfig } from 'vitest/config';
 import { smrtVitestPlugin } from '../../../index.ts';
 
-const agentSurface = {
-  intents: [
-    {
-      id: 'widgets.next_page',
-      description: 'Advance the widget table by one page',
-      capability: { effect: 'read', idempotent: false, openWorld: false },
-      target: { registry: 'dataSurface', controlId: 'next-page' },
-      hasInputSchema: false,
-      planes: ['browser'],
-      sourceFile: 'src/registry-probe.spec.ts',
-    },
-  ],
-  playbooks: [],
-  diagnostics: [],
-};
-
 export default defineConfig({
   plugins: [
-    {
-      name: 'smrt-auto-service',
-      api: {
-        options: {
-          baseClasses: [],
-          followImports: true,
-          include: ['src/**/*.ts'],
-          exclude: [],
-        },
-        resolveKnowledgeConfig: async () => ({
-          enabled: process.env.SMRT_FIXTURE_KNOWLEDGE_ENABLED !== 'false',
-          tags: ['producer-inline'],
-        }),
-        resolveKnowledgeAgentSurface: async () => agentSurface,
-      },
-    },
     smrtVitestPlugin({
       verbose: true,
       setupFile: fileURLToPath(new URL('../../../setup.ts', import.meta.url)),
@@ -59,6 +27,7 @@ export default defineConfig({
     environment: 'node',
     include: ['src/**/*.spec.ts'],
     testTimeout: 30000,
+    hookTimeout: 30000,
     pool: 'forks',
     fileParallelism: false,
   },

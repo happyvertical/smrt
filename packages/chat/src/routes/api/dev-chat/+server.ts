@@ -1,6 +1,11 @@
 import type { AIMessage, ChatOptions } from '@happyvertical/ai';
 import { json, type RequestHandler } from '@sveltejs/kit';
-import { type DevAIConfig, resolveDevAIConfig } from '../dev-ai.js';
+import { chatUnavailableBody } from '../../../ai-unavailable.js';
+import {
+  type DevAIConfig,
+  devAIClientOptions,
+  resolveDevAIConfig,
+} from '../dev-ai.js';
 
 const MAX_MESSAGES = 24;
 const MAX_CONTENT_LENGTH = 8_000;
@@ -99,18 +104,18 @@ async function runAIChat(
   body: DevChatRequest,
 ): Promise<{ content: string; model?: string }> {
   const { getAI } = await import('@happyvertical/ai');
-  const ai = await getAI({
-    type: aiConfig.provider,
-    provider: aiConfig.provider,
-    apiKey: aiConfig.apiKey,
-    baseUrl: aiConfig.baseUrl,
-    defaultModel: aiConfig.model,
-  } as never);
-  const response = await ai.chat(messages, buildChatOptions(aiConfig, body));
+  const options = await devAIClientOptions(aiConfig);
+  const ai = await getAI(options as never);
+  const model =
+    typeof options.model === 'string' ? options.model : aiConfig.model;
+  const response = await ai.chat(
+    messages,
+    buildChatOptions({ ...aiConfig, model }, body),
+  );
 
   return {
     content: response.content || localReply(messages),
-    model: response.model || aiConfig.model,
+    model: response.model || model,
   };
 }
 
@@ -150,6 +155,9 @@ export const POST: RequestHandler = async ({ request }) => {
         configured: true,
       });
     } catch (error) {
+      // AI off (#4757): a structured answer, not the local fallback.
+      const unavailable = chatUnavailableBody(error);
+      if (unavailable) return json(unavailable, { status: 503 });
       return json({
         mode: 'local' satisfies DevChatMode,
         provider: aiConfig.provider,

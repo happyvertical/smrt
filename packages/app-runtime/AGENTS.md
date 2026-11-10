@@ -13,13 +13,74 @@ Application infrastructure composition for the validated runtime profiles in
 - SQLite is acquired through `@happyvertical/sql`'s explicit
   `{ driver: 'node:sqlite', custody: 'trusted-parent' }` boundary after the
   runtime establishes its user-owned mode-0700 data root.
-- Application migrations are explicit through `prepareDatabase`; runtime never
-  creates application model tables implicitly. A rejected `prepareDatabase` is
-  normalized into `LocalRuntimeError` with the stable `migration_failed` code
-  and the fixed recovery message `MIGRATION_FAILED_MESSAGE` ("run pnpm
-  app:setup and inspect the private migration logs"). The caller's error text
-  is never surfaced — it is retained only as a non-enumerable `cause` for
-  private logs — and the same application root stays retryable.
+- The initialization lease lives beside the data root
+  (`<parent>/.smrt-lease-<key>/initialization.sqlite`, #3877), then the legacy
+  `/tmp/.smrt-<uid>/<key>` lease, which older releases take alone: secure when
+  its ancestry is trusted, else lock-only (owner check on unmapped ancestors
+  relaxed, nothing written; skipped only if its directory cannot be created
+  and no lock file exists). It is required (secure) when the parent cannot hold
+  a lease. Legacy candidates, deduplicated and in this order: the in-namespace
+  uid, then that uid mapped through `/proc/self/uid_map` (identity when absent;
+  unparseable/non-covering fails closed); ownership checks still use the
+  in-namespace uid. The beside-data lease taken first keeps that order
+  deadlock-free. Only the in-namespace candidate (when it differs) is skipped
+  if its root is an existing real directory owned by another uid. Acquire in that order; never make the
+  lease location configurable per process — every process sharing a data root
+  must derive the same lease.
+- Filesystem custody (preflight, data-root and lease construction, markers, the
+  application secret, no-follow opens) lives in `src/local-custody.ts`; it is
+  internal (not exported from the package). `index.ts` only composes it into the
+  public entry points. `LocalRuntimeError` lives in `src/local-runtime-error.ts`.
+- Windows has its own custody rule (README "Windows", smrt#4837), because Node
+  has no `O_NOFOLLOW`, uid, mode bits, or DACL access there: `windows-paths.ts`
+  (lexical), `windows-sddl.ts` (SDDL access decision), `windows-acl-inspector.ts`
+  (fixed-argv PowerShell, paths in the environment, ASCII JSON out, every
+  failure a refusal; no "unverified" mode), `windows-custody.ts` (synchronous
+  chain walk, creation with post-create re-inspection and rollback, bigint
+  identity). `windows-acl-lock.ts` (smrt#4843): a directory the runtime itself
+  creates (every component the call creates, intermediate ones included;
+  never one that already existed) is
+  locked at once through `WindowsCustodyRuntime.lockDirectory` (fixed-argv
+  `icacls.exe /inheritance:r /grant:r *user/SY/BA (OI)(CI)F`, path one argv
+  element) and then verified by the unchanged rule; a lock failure removes it.
+  The create-then-lock race is documented as a residual in the README; a
+  pre-existing directory is never re-permissioned and its refusal names the
+  extra principal. The fake machine's `lockMode` defaults to `record` so older
+  tests keep the inherited DACL; use `apply` to model icacls. Default root is `%LOCALAPPDATA%` only, never APPDATA or home.
+  Everything runs through `WindowsCustodyRuntime`; tests inject
+  `test-support/windows-fake-runtime.ts` with `runWithCustodyContext`
+  (`custody-context.ts`), never a public option. SQLite acquisition on Windows
+  runs through the SDK's `secureFile.windowsCustody.verify`
+  (`createWindowsDatabaseVerifier`, `windowsSecureFileCustody`; every place
+  that opens the secure database spreads it into `secureFile`); it throws, the
+  rule is unchanged. `smrt app backup|export|import` stay refused on Windows
+  for destination custody (packages/cli). Lease, state root,
+  `validateLocalDatabaseStorage` and acquisition work. SDDL writes the built-in RID-500
+  Administrator as `LA`: it is trusted (`ALIAS:LA`) only when the current
+  user's SID is a machine `S-1-5-21-…-500` SID (`trustedPrincipals`);
+  unverified on a real runner. `windows-custody.test.ts` runs anywhere;
+  `windows-custody.win32.test.ts` runs only in the advisory
+  `app-runtime-windows.yml` job.
+- First start (smrt#4835, `src/local-schema.ts`): with `createSchema` the
+  local runtime creates its schema before serving, inside the initialization
+  lock (plus the web writer lease), via the framework's `migrateSmrtSchemas`
+  (the `smrt db:migrate` path; never a second creator). The SvelteKit runtime
+  defaults it on; direct `initializeLocalApplicationRuntime` defaults off so
+  operator tooling (`smrt app setup` spawns `db:migrate`) is unchanged. Local
+  only; deployed profiles keep `DB_SCHEMA_MISSING`. First run (no tracker or
+  bootstrap table): framework step and `prepareDatabase` share ONE
+  transaction; failure rolls back and removes a database file the attempt
+  created (secret and root marker stay). Later starts: the framework batch is
+  one atomic DDL transaction on the database (a transaction handle has no
+  `getTableSchema`), then `prepareDatabase` in its own transaction.
+- `prepareDatabase(db, context)` is the app hook the desktop shell builds on;
+  keep name and shape. It runs on EVERY start after the framework step
+  (idempotent). `context`: `db`, `profile`, `paths` (null deployed), `firstRun`,
+  `migrateSchemas()`; `(db)` callers still work. Its rejection is
+  `migration_failed`; a framework-step failure is `schema_creation_failed`.
+  Both are fixed text, cause only as non-enumerable `cause`, root retryable.
+  Tests of creation set `SMRT_VITEST_AUTO_SCHEMA=0` (the shared setup
+  otherwise pre-creates every registered table).
 - Standalone migration commands must call `prepareLocalDatabaseStorage()`
   before opening SQLite so custody is established without creating schema or
   bootstrap records.
@@ -28,13 +89,30 @@ Application infrastructure composition for the validated runtime profiles in
   app-bound marker, source separation, real path chain, ownership, and mode
   without creating or repairing storage.
 - Owner bootstrap creates normal `Person`, `User`, `Tenant`, owner `Role` /
-  `Membership`, and `Session` records in one transaction.
+  `Membership`, and `Session` records in one transaction. `ownerTenant`
+  selects the tenant slug (default `default`); because `Tenant` upserts on
+  slug, the claim must look the slug up first and fail closed
+  (`owner_tenant_conflict`) rather than save over it. `adoptExisting` adopts
+  only an active root tenant with zero memberships (#3032). Fresh tenant
+  creation uses `TenantService` with the local ownership policy and a trusted
+  reserved identity. Default tenant and owner graph IDs derive from the
+  protected per-install application secret. Preserve that file when restoring
+  the same installation. A missing seed in an initialized root fails closed
+  (`installation_seed_missing`) and is never regenerated.
 - Bootstrap is loopback-only. Only an HMAC of the short-lived token is stored.
   A token that cannot claim fails a read-only preflight before role/catalog
   seeding (#3323); the claim transaction's conditional UPDATE stays the
   authority for single use, expiry, and concurrency.
 - Local MCP tokens (`mcpTokens`, `openLocalMcpTokenStore`, `smrt app token`):
-  owner-bound, scoped, expiring (default 30 d, max 365 d), revocable. Only a
+  owner-bound, scoped, revocable. No `expiresInSeconds` = renewable: 30 d window
+  slid by `verify()` (conditional UPDATE, at most hourly via `last_used_at`;
+  never revives expired/revoked, never shortens, best effort); explicit TTL
+  (60 s..365 d) = fixed, never slides. Optional `holder`: `issue` rotates in one
+  transaction (revoke old + insert new; partial unique index backstop);
+  `revokeHolder` for device removal (no local caller exists). NULL
+  holder/sliding on old rows = no holder, fixed; `ensureLocalMcpTokenTable`
+  adds columns idempotently. Reseed changes the HMAC key, voiding all tokens.
+  Only a
   domain-separated HMAC (application secret) is stored, in the runtime-owned
   `_smrt_local_mcp_tokens` system table (created like the bootstrap table;
   never application schema). Issue refuses scopes the owner lacks; verify
@@ -55,10 +133,62 @@ Application infrastructure composition for the validated runtime profiles in
   `tenantBinding: 'direct'` and the
   `LOCAL_MCP_TOKEN_PRINCIPAL` brand; `runAsPrincipal` rejects a copy that
   widens the binding, so the two public APIs compose safely.
-  Never log or return the token outside `issue()`. The operator store opens an
+  Return bearer material only to the issuing operator or the authenticated
+  desktop credential response. The opt-in `createLocalMcpCredentialHandler`
+  requires a direct loopback peer, matching Host and exact Origin, and the sole
+  active owner's first-class session. Desktop slots use a disjoint ID namespace,
+  atomic hash replacement and terminal revocation. See the desktop protocol in
+  [README.md](README.md). The operator store opens an
   uncached connection and takes no writer lease (revocation is per request).
+- Installation custody (`installation-custody.ts`, #4704): the data root's
+  `secrets/installation.json` travels with copies; the state root's
+  `installation.json` stays at the location; matching `activationId`s mean
+  in custody. Unattributable arrivals fail closed (`installation_unverified`)
+  until `restore` (asserts origin retired; epoch +1), `reseed` (new seed,
+  identities and seed-keyed tokens change; needs `confirmDestroySeed`), `recover-seed` or `retire`
+  (`smrt app installation`). A fresh seed always establishes custody; a
+  pre-existing seed never does. Record and seed reads use `O_NOFOLLOW`, owner
+  and mode checks; writes are atomic. The state root must persist with the
+  data volume (Linux containers: `XDG_STATE_HOME` on that volume, never `HOME`
+  or `/tmp`); the refusal names it. Decision and limits: README.
+- `origin.json` (`origin-file.ts`, #4729): the local web process records its
+  exact `http://127.0.0.1:<port>` (from `ORIGIN`, set by the desktop
+  supervisor; anything else writes nothing) in the state root, per location and
+  not in backups, removes it on exit/SIGTERM/SIGINT. `readOriginFile` is the
+  only reader contract: `null` unless private, exact and the pid is alive; the
+  reader still probes. It holds no secret; keep it that way.
 - Background jobs and application-defined paid capabilities are default-off.
 - The embedded runner reuses `TaskRunner`; it is not a second job contract.
+
+## Device entitlement cache (`./device-entitlements`, #4787)
+
+- Signed (Ed25519, `node:crypto`), time-limited snapshot of the feature keys
+  one account grants one device, so a local install knows its tier offline.
+  `signDeviceEntitlementSnapshot` runs only on the issuing cloud/billing host;
+  `verifyDeviceEntitlementSnapshot` / `DeviceEntitlementCache` run on the
+  install. Trusted public keys (`trustedKeys`, by key id, rotation = several)
+  come from application configuration, never the cache file or data root: that
+  is why a local install cannot mint its own. Signature is checked before any
+  payload field is read; signed bytes are domain-prefixed
+  (`smrt-device-entitlement-v1\0`); the payload `keyId` must equal the
+  envelope's.
+- Anything but a valid snapshot (absent, expired, tampered, wrong
+  account/device, future-dated beyond `clockSkewMs`, lifetime above
+  `maxLifetimeMs`, older than the watermark, unreadable) is the Local tier with
+  no keys. `status()` and `grantSource()` never throw; `install()`/`refresh()`
+  report a reason and keep what is stored. Invalid *configuration* (non-Ed25519
+  or private key, empty key set, out-of-range durations) throws at construction.
+- Replay: the newest accepted `issuedAt` lives in `<filePath>.watermark`; install
+  and load both compare against it. Deleting/corrupting the watermark or rolling the
+  clock back replays an unexpired snapshot; the issuer's lifetime bounds that.
+- Grace (`gracePeriodMs`, default 0, max 30 d) keeps keys on past `expiresAt`
+  (`state: 'grace'`); skew applies to `issuedAt` only, never extends expiry.
+- Features integration is structural: `cache.grantSource()` is a
+  `FeatureGrantSource` for `FeatureResolver`/`requireFeature`, or
+  `registerDeviceEntitlementGrantSource()` writes the
+  `Symbol.for('@happyvertical/smrt-features:grant-source')` slot. This package
+  must not import `smrt-features`: its dev tooling depends on `smrt-cli`, which
+  depends on this package (a cycle). The transport for `refresh()` is injected.
 
 ## Deployed profiles
 
@@ -75,7 +205,9 @@ Application infrastructure composition for the validated runtime profiles in
   readiness-checked before startup succeeds.
 - `createTaskWorker()` and `createScheduleWorker()` initialize the normal jobs
   package runners against the shared PostgreSQL database. They are intended for
-  separate processes; the web process does not start them automatically. The
+  separate processes; the web process does not start them automatically. A
+  task worker polls `default` plus `SCHEDULED_JOB_QUEUE` (`agents`, where
+  `ScheduleRunner` enqueues) unless `queues` is passed (#3141). The
   worker process must import the app's compiled registration
   (`.smrt/runtime/register.js`, #3117) first; runners resolve `objectType`
   through the registry and never load application source themselves.
@@ -96,6 +228,11 @@ Application infrastructure composition for the validated runtime profiles in
 
 - Server-only subpath; `@sveltejs/kit` is an optional peer and is externalized
   in `vite.config.ts` (kit recognizes `redirect`/`fail` by class identity).
+  Consumer apps use core's `smrt()` preset to bundle the Kit-facing entry into
+  their SSR output and dedupe Kit; `./sveltekit-runtime` and the root stay external
+  to preserve native dependency loading. The implementation subpath is for
+  build composition; apps keep importing `./sveltekit`.
+  Package-build externalization alone does not preserve class identity through adapter-node's final production bundle.
   The root entry must never import kit or Svelte.
 - Without a `runtime` option the profile comes from smrt-config's
   `resolveEffectiveApplicationRuntime(await loadConfig())`, the same rule as
@@ -156,6 +293,17 @@ Application infrastructure composition for the validated runtime profiles in
   `createProviderReadinessProbe` (`SMRT_*_READINESS_MODULE`, resolved from the
   app root with Node's own ESM rules). File names, record formats, and
   messages are a cross-process contract; never change them unilaterally.
+  `installation.json` joins `writer.lease` and `operation.lock` in the state
+  root; the writer lease record is unchanged. So do `vault-sync.json` and,
+  only during a restore, `data-root-swap.json`: while that journal exists
+  `acquireWriterLease` refuses every writer except `dataRootSwapRecovery`
+  (#4805; README "Vault primary writer and restore-latest").
+- A vault restart is orchestrated by `restartVault` in
+  `@happyvertical/smrt-cli/app` (README "Restarting when the recovery secret is
+  lost"); it adds no state, only sequencing over `restartAccount`,
+  `switchVaultAccount` and `vault-sync.json`. The parked account is read only
+  through `openPreviousReadingKey`: it never seals, never writes, and refuses
+  once `discardPreviousAccount` has run (#4838).
 - Tests that hook `node:fs` interleavings must live in this package: from a
   consumer the package is an externalized dependency a mock cannot reach.
 
@@ -190,8 +338,11 @@ Application infrastructure composition for the validated runtime profiles in
 
 ## Validation
 
+Build first: `sveltekit-production.test.ts` copies the published `dist` entry
+and exercises the final adapter-node HTTP handler in a separate process.
+
 ```bash
+pnpm --filter @happyvertical/smrt-app-runtime build
 pnpm --filter @happyvertical/smrt-app-runtime test
 pnpm --filter @happyvertical/smrt-app-runtime typecheck
-pnpm --filter @happyvertical/smrt-app-runtime build
 ```

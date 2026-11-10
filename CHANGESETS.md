@@ -18,6 +18,21 @@ prepares versioned artifacts, validates the release package set, publishes it,
 and updates release refs and the GitHub release. Consult those workflows for
 current gates, publishing modes, and documentation-deployment conditions.
 
+Every `@happyvertical/smrt-*` package releases on this one line, including
+`@happyvertical/smrt-planner` (`packages/planner`, formerly its own repository
+and 0.1.x line). Its build generates the planner's catalog from the same
+workspace, and `Planner Release Gate` in `publish.yml` runs after the tarballs
+are packed and before anything is published: the planner's browser suites, its
+packed tarball installed against the release tarballs, and a real
+`smrt cookbook apply` from the smrt-start template whose generated app must
+install, build and typecheck against them, plus the release consumer canary
+(`scripts/release-consumer-canary.mjs`, #2975), an in-repo app installed from
+the tarballs that must build, register, resolve schemas, test and migrate
+(`scripts/planner-release-gate.mjs`; one retry per check, and the
+summary says whether the planner, the framework, or upstream drift in the
+smrt-start template or a third-party release broke it). The merge-group Publish
+Dry Run runs the same gate, so it fails before merge rather than at release.
+
 ## Where releases go
 
 A release is published to **our own registry, `https://npm.happyvertical.com/`**,
@@ -50,7 +65,10 @@ release still reads third-party dependencies from it. Four rules follow.
   refuses (published there before and removed) is recorded as skipped and does
   not hold back later versions. If the release version exists on both
   registries with different checksums it is reported as `DIVERGED`; that
-  cannot be reconciled and needs a new version. `MIRROR_BACKFILL=true` fills
+  cannot be reconciled and needs a new version. Packages mirror through a
+  pool of `MIRROR_CONCURRENCY` workers (default 6), each package's versions
+  still oldest first, and every failure is logged and summarised with its
+  `package@version` and npm error code (#3963). `MIRROR_BACKFILL=true` fills
   older gaps deliberately; `MIRROR_STRICT=true` makes a manual repair run fail
   loudly.
 - The emergency `changesets` publish mode still publishes straight to npmjs

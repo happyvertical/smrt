@@ -268,13 +268,18 @@ describe('Issue #1008: Full registry integration (high object counts)', () => {
 
     // Only genuine cycle members may be exempt. In the current monorepo the
     // approved foreign-key cycles are chat's message/thread pair and ingestion's
-    // analysis/current-attempt pair (ADR 0004). Reject every other cyclic edge.
+    // analysis/current-attempt pair (ADR 0004), and expenses' immutable revision
+    // source/nullable active-revision pair. The schema planner handles these
+    // mutual FKs; the source is inserted before its revision and head update.
+    // Reject every other cyclic edge.
     for (const edge of exemptCycleEdges) {
       expect(
         edge === 'ChatMessage -> ChatThread' ||
           edge === 'ChatThread -> ChatMessage' ||
           edge === 'IntakeAnalysis -> IntakeAnalysisAttempt' ||
-          edge === 'IntakeAnalysisAttempt -> IntakeAnalysis',
+          edge === 'IntakeAnalysisAttempt -> IntakeAnalysis' ||
+          edge === 'Expense -> ExpenseAllocationRevision' ||
+          edge === 'ExpenseAllocationRevision -> Expense',
       ).toBe(true);
     }
   });

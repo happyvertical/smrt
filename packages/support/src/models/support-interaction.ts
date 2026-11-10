@@ -38,10 +38,14 @@ export class SupportInteraction extends SmrtObject {
   @tenantId({ nullable: true })
   tenantId: string | null = null;
 
+  @field({ description: 'The ticket this message belongs to.' })
   @foreignKey('SupportCase', { required: true })
   caseId: string = '';
 
-  @field({ type: 'text' })
+  @field({
+    type: 'text',
+    description: 'Whether the customer sent it or your team did.',
+  })
   direction: SupportInteractionDirection = 'inbound';
 
   @field({ type: 'text' })
@@ -55,10 +59,11 @@ export class SupportInteraction extends SmrtObject {
   authorProfileId: string | null = null;
 
   /** When the exchange happened on its channel (not when it was ingested). */
+  @field({ description: 'When the message was sent.' })
   occurredAt: Date = new Date();
 
   /** Denormalized text body for the case timeline (source stays canonical). */
-  @field({ type: 'text' })
+  @field({ type: 'text', description: 'What the message says.' })
   body: string = '';
 
   /**

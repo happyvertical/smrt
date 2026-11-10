@@ -1,4 +1,5 @@
 import { randomUUID } from 'node:crypto';
+import { rm } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import {
@@ -7,7 +8,8 @@ import {
   ProfileMetafieldCollection,
   ProfileTypeCollection,
 } from '@happyvertical/smrt-profiles';
-import { describe, expect, it } from 'vitest';
+import { getDatabase } from '@happyvertical/sql';
+import { afterEach, describe, expect, it } from 'vitest';
 import type { HelperContext, HelperPreferences } from './helper-preferences.js';
 import {
   createHelperProfilePreferenceStore,
@@ -24,11 +26,27 @@ const preferences: HelperPreferences = {
   spokenSubtitles: true,
 };
 
+const fixtures = new Map<string, Awaited<ReturnType<typeof getDatabase>>>();
+
+afterEach(async () => {
+  for (const [file, db] of fixtures) {
+    await db.close?.();
+    await Promise.all(
+      [file, `${file}-wal`, `${file}-shm`, `${file}-journal`].map((path) =>
+        rm(path, { force: true }),
+      ),
+    );
+  }
+  fixtures.clear();
+});
+
 async function setup() {
-  const db = {
+  const file = join(tmpdir(), `helper-preferences-${randomUUID()}.db`);
+  const db = await getDatabase({
     type: 'sqlite' as const,
-    url: `file:${join(tmpdir(), `helper-preferences-${randomUUID()}.db`)}`,
-  };
+    url: `file:${file}`,
+  });
+  fixtures.set(file, db);
   const types = await ProfileTypeCollection.create({ db });
   const type = await types.create({ name: 'Person' });
   await type.save();
@@ -59,7 +77,7 @@ describe('ProfileHelperPreferenceStore (SQLite)', () => {
   it('durably replaces one complete preference value and writes an explicit clear marker', async () => {
     const { db, context } = await setup();
     const store = createHelperProfilePreferenceStore({
-      db: await (await import('@happyvertical/sql')).getDatabase(db),
+      db,
       applicationId: 'app-a',
       metafieldSlug: 'app-helper-preferences',
     });
@@ -75,7 +93,7 @@ describe('ProfileHelperPreferenceStore (SQLite)', () => {
 
   it('rejects a profile/tenant mismatch and duplicate metadata rows', async () => {
     const { db, profile, field, context } = await setup();
-    const database = await (await import('@happyvertical/sql')).getDatabase(db);
+    const database = db;
     const store = createHelperProfilePreferenceStore({
       db: database,
       applicationId: 'app-a',

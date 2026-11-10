@@ -21,6 +21,11 @@ Provider-agnostic asset management with versioning, type classification, and gen
   failures other than not-found. The caller owns receipt fencing/serialization.
   `removeFile(asset)` removes only bytes for recovery cleanup, including an
   already-pruned owner record; `remove(asset)` also deletes the owner record.
+  Opt into `asset-local:<key>` writes with
+  `{ type: 'local', basePath: absoluteRoot, locatorMode: 'relative' }`.
+  Keep the root app-owned; portable paths must resolve beneath it without links.
+  See [portable local storage](README.md#portable-local-storage) for adoption and
+  the legacy locator boundary.
 - **Ownership rule**: base/domain-owned asset relationships should live on noun join tables such as `content_assets`, `profile_assets`, `event_assets`, `place_assets`, and `product_assets`; keep `AssetAssociation` for generic/provenance links like image derivation.
 
 ## Runtime surface
@@ -32,6 +37,8 @@ Apps and agents should depend on the public **asset runtime** rather than hand-w
 - `AssetRuntime.storeDerivedAsset(source, name, data, opts)` — create a derivative with `sourceAssetId` set and (by default) a provenance `AssetAssociation` under a chosen role.
 - `AssetRuntime.linkDerivation(source, derivative, { role })` — record provenance without touching bytes.
 - `AssetRuntime.setExtractionStatus(asset, status, { error?, extractedAt? })` — write canonical extraction metadata into the asset's description JSON sidecar. Non-destructive: if `description` is free-form prose or non-object JSON, the original value is preserved under the reserved `text` key instead of being overwritten. Existing JSON objects are merged into.
+
+- `AssetRuntime.getPrivateAssetMetadata({ tenantId, actorUserId, assetId })` → `PrivateAssetMetadata | null` — authorized, tenant-scoped display metadata read of one PRIVATE asset so hosts never read `assets` rows. Trusted server capability (host authorizes first); requires an ambient tenant actor matching `tenantId`/`actorUserId` exactly (throws otherwise, including empty ids). Result is an allowlist (`id, tenantId, name, mimeType, version, typeSlug, statusSlug, createdAt, updatedAt`); never owner, `sourceUri`, description/metadata sidecars. There is no size field on `Asset`. Missing, public and other-tenant assets all return `null`. Internally resolves the owner from the tenant-scoped private row, then reads through the guarded collection inside a one-id `withPrivateAssetAccess` that closes on return; inside an existing scope it can only narrow (throws `cannot widen` otherwise).
 
 Agents that need asset I/O should accept an `AssetRuntimeLike` in their options rather than asking callers to pass a store + collection separately.
 
@@ -83,3 +90,11 @@ Registered slots: `asset-manager` (admin), `asset-grid` / `asset-list` (list), `
 - **Folder tree traversal**: via `SmrtHierarchical` (`getParent`/`getChildren`/`getAncestors`/`getDescendants`/`getHierarchy`/`moveTo`); `FolderCollection.getTree(rootId?)` and `getPath(folderId)` wrap these for convenience
 - **AssetAssociation polymorphic FK**: requires manual `metaType` string matching
 - **Optional tenancy**: assets can be global (tenantId=null) or tenant-scoped
+
+## Private records
+
+`Asset.accessMode` and the mandatory owning interceptor protect private records
+across generated and parent STI surfaces. Use the exact actor/owner/ID capability
+only after host authorization; see [private assets](agents/private-assets.md).
+For display metadata (name, mime type, version) use `AssetRuntime.getPrivateAssetMetadata`
+instead of reading raw `assets` rows to discover the owner.

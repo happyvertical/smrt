@@ -100,9 +100,10 @@ unavailable vendor or explicitly permit keeping the existing relationship.
 `shipTo` is a delivery address/instructions snapshot, not a Profile reference.
 `PurchaseOrder.expectedDate` and `.shipTo` use existing STI metadata, default to
 empty strings, and accept `PurchaseOrderOptions`; no table migration is needed.
-Existing Contract fields own the other three values. Header persistence uses the
-existing SQLite/PostgreSQL Contract schema; DuckDB rejects its existing
-ON UPDATE CASCADE foreign keys and is not a supported Contract storage lane. Caller retry identities
+`PurchaseContract` owns `vendorId`; `Contract` owns `reference` and `notes`.
+Header persistence uses the existing SQLite/PostgreSQL Contract schema. DuckDB
+rejects its existing ON UPDATE CASCADE foreign keys and is not a supported
+Contract storage lane. Caller retry identities
 are rendered unchanged; the form itself never persists or retries a mutation.
 
 Header regression evidence uses the purchasing SSR suite and the shared quote

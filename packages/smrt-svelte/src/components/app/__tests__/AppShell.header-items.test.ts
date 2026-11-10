@@ -208,7 +208,10 @@ describe('left sidebar order: nav, chevron, footer', () => {
       '.smrt-admin-shell__edge--left .smrt-admin-shell__rail',
     );
     expect(rail?.lastElementChild).not.toBe(chevron);
-    expect(chevron?.parentElement?.className).toContain('tenant-stack');
+    expect(chevron?.parentElement?.className).toContain('tenant-utilities');
+    expect(chevron?.parentElement?.parentElement?.className).toContain(
+      'tenant-stack',
+    );
   });
 
   it('collapsed: nav, chevron, then the compact avatar last', async () => {
@@ -228,7 +231,8 @@ describe('left sidebar order: nav, chevron, footer', () => {
     expect(
       kids[0].classList.contains('smrt-admin-shell__tenant-rail-content'),
     ).toBe(true);
-    expect(kids[1]).toBe(chevron);
+    expect(kids[1].classList).toContain('smrt-admin-shell__tenant-utilities');
+    expect(kids[1].lastElementChild).toBe(chevron);
     expect(
       kids[2].classList.contains('smrt-admin-shell__tenant-rail-footer'),
     ).toBe(true);
@@ -241,40 +245,152 @@ describe('left sidebar order: nav, chevron, footer', () => {
 });
 
 describe('item:color-scheme', () => {
-  it('is on by default in header.end', async () => {
+  const toggleWrap = () =>
+    container.querySelector<HTMLElement>(
+      '[data-smrt-component="ShellColorSchemeToggle"]',
+    );
+  const toggle = () =>
+    container.querySelector<HTMLButtonElement>(
+      '[data-smrt-component="ShellColorSchemeToggle"] button',
+    );
+  const utilities = () =>
+    container.querySelector<HTMLElement>(
+      '.smrt-admin-shell__edge--left .smrt-admin-shell__tenant-utilities',
+    );
+
+  it('is an icon button in the expanded sidebar, beside the chevron and above the account', async () => {
+    await render({ edgeToggles: { left: true } });
+    const row = utilities();
+    expect(row?.parentElement?.classList).toContain(
+      'smrt-admin-shell__tenant-stack',
+    );
+    expect(row?.contains(toggleWrap())).toBe(true);
+    // Toggle first, the chevron keeps the row's inner edge.
+    expect(row?.firstElementChild).toBe(toggleWrap());
+    expect(row?.lastElementChild?.classList).toContain(
+      'smrt-admin-shell__edge-toggle--left',
+    );
+    const nav = container.querySelector('a[href="/posts"]');
+    const account = container.querySelector(
+      '.smrt-admin-shell__edge--left .smrt-workspace-account-menu',
+    );
+    expect(follows(nav, toggle())).toBe(true);
+    expect(follows(toggle(), account)).toBe(true);
+    // Not in the header, not in the footer slot, rendered once.
+    expect(
+      slot('header.end')?.querySelector(
+        '[data-smrt-component="ShellColorSchemeToggle"]',
+      ) ?? null,
+    ).toBeNull();
+    expect(
+      slot('leftSidebar.footer')?.querySelector(
+        '[data-smrt-component="ShellColorSchemeToggle"]',
+      ) ?? null,
+    ).toBeNull();
+    expect(
+      container.querySelectorAll(
+        '[data-smrt-component="ShellColorSchemeToggle"]',
+      ),
+    ).toHaveLength(1);
+    // Icon only: no visible text.
+    expect(toggle()?.textContent?.trim()).toBe('');
+    expect(toggle()?.querySelector('svg[aria-hidden="true"]')).toBeTruthy();
+  });
+
+  it('renders in the utility row even without the chevron', async () => {
     await render();
+    expect(utilities()?.contains(toggleWrap())).toBe(true);
     expect(
-      slot('header.end')?.querySelector(
-        '[data-smrt-component="ColorSchemeToggle"]',
-      ),
-    ).toBeTruthy();
+      container.querySelector('.smrt-admin-shell__edge-toggle--left'),
+    ).toBeNull();
+  });
+
+  it('stays a compact icon in the collapsed rail: nav, toggle and chevron, then the avatar', async () => {
+    await render({
+      edgeToggles: { left: true },
+      config: { left: { initial: 'collapsed' } },
+    });
+    const stack = container.querySelector(
+      '.smrt-admin-shell__tenant-rail-stack',
+    );
+    const row = utilities();
+    expect(row?.parentElement).toBe(stack);
+    expect(row?.contains(toggleWrap())).toBe(true);
+    const chevron = container.querySelector(
+      '.smrt-admin-shell__edge-toggle--left',
+    );
+    const account = container.querySelector('.smrt-workspace-account-menu');
+    expect(follows(toggle(), chevron)).toBe(true);
+    expect(follows(chevron, account)).toBe(true);
+    expect(account?.hasAttribute('data-compact')).toBe(true);
     expect(
-      slot('header.end')?.querySelector(
-        'button[aria-label="Toggle color scheme"]',
+      container.querySelectorAll(
+        '[data-smrt-component="ShellColorSchemeToggle"]',
       ),
-    ).toBeTruthy();
+    ).toHaveLength(1);
+    expect(slot('footer.start')).toBeNull();
+    expect(
+      slot('header.start')?.querySelector(
+        '[data-smrt-component="ShellColorSchemeToggle"]',
+      ) ?? null,
+    ).toBeNull();
+  });
+
+  it('has an accessible name, tooltip and pressed state, and flips the scheme', async () => {
+    await render({ colorScheme: 'light' });
+    const button = toggle() as HTMLButtonElement;
+    expect(button.tagName).toBe('BUTTON');
+    expect(button.type).toBe('button');
+    expect(button.getAttribute('aria-label')).toBe('Dark mode');
+    expect(button.getAttribute('aria-pressed')).toBe('false');
+    expect(button.title).toBe('Switch to dark mode');
+    expect(document.documentElement.getAttribute('data-color-scheme')).toBe(
+      'light',
+    );
+
+    button.click();
+    for (let i = 0; i < 3; i++) await tick();
+    expect(toggle()?.getAttribute('aria-label')).toBe('Dark mode');
+    expect(toggle()?.getAttribute('aria-pressed')).toBe('true');
+    expect(toggle()?.title).toBe('Switch to light mode');
+    expect(document.documentElement.getAttribute('data-color-scheme')).toBe(
+      'dark',
+    );
+
+    (toggle() as HTMLButtonElement).click();
+    for (let i = 0; i < 3; i++) await tick();
+    expect(toggle()?.getAttribute('aria-pressed')).toBe('false');
+    expect(document.documentElement.getAttribute('data-color-scheme')).toBe(
+      'light',
+    );
   });
 
   it('opts out with colorSchemeToggle={false}', async () => {
     await render({ colorSchemeToggle: false });
-    expect(
-      container.querySelector('[data-smrt-component="ColorSchemeToggle"]'),
-    ).toBeNull();
+    expect(toggleWrap()).toBeNull();
   });
 
-  it('is icon-only on phones with an accessible name', async () => {
+  it('stays reachable on phones as an icon in the header band', async () => {
     phone = true;
     await render();
-    const toggle = container.querySelector(
-      'button[aria-label="Toggle color scheme"]',
+    const wrap = slot('header.end')?.querySelector(
+      '[data-smrt-component="ShellColorSchemeToggle"]',
     );
-    expect(toggle).toBeTruthy();
-    expect(
-      toggle?.querySelector('.smrt-color-scheme-toggle__label'),
-    ).toBeNull();
+    expect(wrap).toBeTruthy();
+    expect(wrap?.querySelector('button[aria-label="Dark mode"]')).toBeTruthy();
+    expect(utilities()).toBeNull();
   });
 
-  it('moves with placements', async () => {
+  it('honours { slot } and stored placements', async () => {
+    await render({ colorSchemeToggle: { slot: 'header.end' } });
+    expect(
+      slot('header.end')?.querySelector(
+        '[data-smrt-component="ShellColorSchemeToggle"]',
+      ),
+    ).toBeTruthy();
+    expect(utilities()).toBeNull();
+    unmount(component as never);
+    container.innerHTML = '';
     await render({
       layout: {
         version: 1,
@@ -283,7 +399,7 @@ describe('item:color-scheme', () => {
     });
     expect(
       slot('footer.end')?.querySelector(
-        '[data-smrt-component="ColorSchemeToggle"]',
+        '[data-smrt-component="ShellColorSchemeToggle"]',
       ),
     ).toBeTruthy();
   });

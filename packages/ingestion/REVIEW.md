@@ -1,9 +1,12 @@
 # Authenticated review surfaces
 
-`@happyvertical/smrt-ingestion/svelte` exports `IntakeInbox`, `IntakeReview` and
-`EvidenceViewer`. The browser-safe DTO entry exports their `IntakeReviewHost`
+`@happyvertical/smrt-ingestion/svelte` exports `IntakeInbox`, `IntakeReview`,
+`IntakeWorkspace` and `EvidenceViewer`. The browser-safe DTO entry exports their `IntakeReviewHost`
 callback contract. Import styling/theme configuration from smrt-ui in the host.
 Components use smrt-ui primitives and the `ingestion.*` i18n catalog.
+Existing `IntakeInbox` hosts now keep the previous rows visible, with their
+controls disabled, while a refresh or filter change loads; any failed read
+(Load more included) still clears them.
 
 The host authenticates every request, resolves tenant/actor/confidential scope
 from its session, enforces CSRF on mutations, and constructs `IngestionService`.
@@ -31,6 +34,71 @@ Success results are rechecked through the durable result reader.
 Plan membership contains the exact parent args/version so edits call
 `previewPlan`, not per-step correction. An item may have more review pages; the
 host must aggregate state across pages when projecting a production inbox state.
+
+A `needs_review` suggestion is completable, not only rejectable (#4208). That
+includes a suggestion kept because its arguments missed only required fields
+(#4284); nested misses appear as JSON Pointers such as `/vendor/name`. The
+component shows its `missingFields`, an editable `Suggested arguments (JSON)`
+draft prefilled from the generated arguments, and the candidate picker for
+declared candidate fields; Prepare review stays disabled while required fields
+are still missing from an unchanged draft. An unchanged draft previews the
+generated snapshot as before; an edited draft is sent as `preview({..., args})`,
+which the published host publishes through the ordinary `previewProposal` /
+`previewPlan` with the same `ui:<index>` intention, never by rewriting the
+generation. The handler validates the human arguments again before a
+`waiting_review` action exists, approval remains a separate explicit decision,
+`ActionReview` lists top-level required arguments missing from the current
+draft while editing (nested misses named by JSON Pointer in `missingFields` are
+not re-checked in the browser; the server's revalidation refuses them and the
+component shows that inline as `HandlerArgumentsInvalidError`), and no authority or automation eligibility is added: a failed attempt,
+an unoffered handler or a foreign stage is still refused by the host.
+`preview` throws on every failure, as before. When the handler's argument
+schema or `validate` refused the arguments being previewed (operation preview,
+which also carries corrections, a reviewer-started action, or plan preview),
+the server throws `HandlerArgumentsInvalidError` (`name` set, messages
+unchanged). An argument-schema refusal also carries `issues`: a frozen list of
+at most `HANDLER_ARGUMENT_ISSUE_LIMIT` (20) `{ path, keyword? }` entries
+(`HandlerArgumentIssue`). `path` is built only from schema-declared property
+names, `required` names and real array indexes and is cut at
+`HANDLER_ARGUMENT_PATH_LIMIT` (160)
+characters (never splitting a `~0`/`~1` escape). Segments are escaped per RFC
+6901 (`~` as `~0`, `/` as `~1`), with two departures: `/` is the whole
+arguments object (never a key `""`), and `?` stands for a data-named key. A
+`required` refusal appends the missing schema name to the parent's path. The
+format relates to a suggestion's `missingFields` as follows: a root path
+`/name` is the bare `missingFields` entry `name` (unescaped), and a nested
+entry is the same escaped pointer in both (for example `/vendor/a~1b~0c`).
+The bundled view shows a root issue without its leading `/`, so its refused
+fields read like the missing-information list. `ProposalValidationError`
+reasons share the schema-owned segment rule but stay unescaped.
+`keyword` is the failing schema keyword. Argument values, Ajv
+`params`/messages and handler messages are never included. A `validate`
+refusal has no `issues` (the handler contract returns only `ok`). The size and
+shape preconditions checked before the schema runs (arguments over the policy
+byte limit, or a handler schema that is not a closed `type: 'object'` with
+`additionalProperties: false`) stay a plain `Error`: they fail closed as a
+denial, never as the inline refusal. Apply-time and
+external-send revalidation and result-schema checks keep a plain `Error`. The component shows an inline message and
+keeps the view and draft when `preview` either rejects with an error whose
+`name` is `HandlerArgumentsInvalidError` or resolves `{ rejected: 'invalid' }`
+(`PreviewRejection`, optionally with the same `issues`). A transport that
+crosses a process boundary preserves the inline UX by keeping that name and
+`issues` (for example re-throwing an `Error` with
+`name = 'HandlerArgumentsInvalidError'` in the browser callback) or by
+returning `{ rejected: 'invalid', issues? }` for that case only, as the
+maintained fixture's `previewForReview` and `startActionForReview` do. Since
+#4281 the fixture's rejection body also carries `issues` when the schema
+refused; read `rejected === 'invalid'` rather than comparing the whole body
+with strict equality. Without either, the refusal behaves like
+any other failure: the view is cleared exactly as before this change, and the
+reviewer's in-memory draft returns after an authorized refresh. Every other
+thrown preview or candidate-search failure (denied, revoked, unavailable or
+unknown) clears the view.
+Unsent drafts live only in component memory, keyed by attempt and suggestion
+index. They survive Refresh, a failed callback, an action on another card and a
+transient `unavailable`/`stale` reload; a `revoked` or `expired` result
+discards them, a successful preview clears that card's draft, and an available
+reload drops drafts for attempts or cards no longer offered.
 
 The host's `load` callback supplies a current `ItemReviewView`, using
 `getCompletedAnalysis` with no historical fallback. Generated suggestions bind
@@ -67,6 +135,58 @@ Changing it or itemId destroys the old view and fences late callback results.
 Denied refresh clears prior originals, candidates, arguments and results.
 Missing confidence is unavailable; page/time links exist only for observed
 locations. Provider errors and unresolved/partial results remain review states.
+A host that enabled `proposals.failureCapture` may fetch a failed attempt's
+redacted model output with `getFailedAttemptCapture(itemId, attemptId?)`.
+Retaining text requires a configured host redaction hook; a missing or failed
+hook yields only `redaction_failed` metadata. The host owns that redaction policy.
+The getter requires current reviewer authority for that item and fails closed
+otherwise;
+`load`, inbox rows and review pages never include it, so a host shows it only
+behind its own explicit diagnostic action (see
+[PROPOSALS.md](PROPOSALS.md#failed-attempt-capture-opt-in-4285)).
+
+## Submitter-scoped decisions
+
+For trusted internal sources the person who submitted an item may confirm or
+decline their own proposal without the reviewer inbox. `listOwnProposals`
+returns only items whose server-recorded `submitter_id` equals the current
+authenticated actor, each with its bounded saved review page reloaded under
+current item, handler and target authority. An item the actor can no longer
+read (the host `authorize` returns false or throws `IntakeAccessDeniedError`)
+is skipped before projection: the page is filled from readable items only, in
+50-row batches, and `nextCursor` names the last emitted item and is present
+only when a further readable item was actually found. Neither the entries, the
+page size nor the cursor reveal a hidden item. If one call has to skip 1000
+hidden submissions it fails with `Own proposal scan limit` rather than return a
+short page or a cursor that stops inside the hidden run; this error is the only
+signal, and it says only that such a run exists. Any other `authorize` error
+propagates instead of shrinking the list. An item that is still readable but
+whose reviews are denied is returned as `{ item, reviews: null, unavailable:
+true }`: that covers ingestion's own denials and any throw from the host
+`assertTarget` (deleted or revoked targets), whose text is never returned.
+Integrity, validation and database errors from ingestion itself propagate. The
+reviewer `listReviews` surface keeps propagating host target errors unchanged.
+`submitOwnDecision` takes the same `ReviewInput` CAS fields and request ID as
+`submitDecision` and accepts `approve`, `reject` and `defer` only; `correct`
+belongs to the reviewer surface. It runs under the `review_own` execution
+operation: the host's `authorize` must return `submitter: true`, the resolved
+policy must have `submitterReview` enabled, and the recorded submitter must be
+the current actor and also the receipt's captured execution principal (the
+identity the effect runs as), checked under the item lock and again at apply.
+A receipt captured for a bot or service principal is never self-approvable. Policy enablement, handler/operation allowlists, captured
+ceiling, confidential access, retention and the first-valid-decision lock are
+unchanged. The decision is a human decision by that actor, recorded with
+`mode: 'review_own'`; reviewer decisions carry `mode: 'review'`. In both modes
+`selfDecision` is true exactly when the deciding actor is the item's
+submitter, so a reviewer approving their own submission is never independent
+review. A self-decision is not a reviewer judgment: it never feeds
+automation eligibility (machine authorization remains the separate evaluated
+`kind: 'machine'` path) and its feedback events carry the same marker. The
+`unavailable` entry discloses nothing about the denied handler or target.
+`applyAction` then runs once under the approver's live grants exactly as
+for reviewer decisions. Hosts render this surface from their own authenticated
+session; presentation state confers no authority, and a source payload cannot
+nominate a submitter.
 
 ## Assignment and logical splits
 
@@ -98,10 +218,440 @@ with `human_split_not_respected`. New proposals require new explicit review.
 The reference host runs these stages synchronously for browser determinism;
 production hosts dispatch the existing durable analysis jobs.
 
+## Reviewer instructions
+
+`recordReviewerInstruction({itemId, attemptId, expectedRevision, text,
+requestId})` records a plain-text instruction for one item ("This is a customer
+PO from Badger; file it, do not bill it") as the second kind of **human
+correction**. It is authorized exactly like `reviseLogicalSplit`: the current
+generation must pass the same-executor catalog/candidate gate and the reviewer
+grant plus policy reviewer list, and authority is checked before mutation and
+again before publication. Process access, `analyze`, and a client payload cannot
+mint one: `analyze` rejects a `reviewerInstruction` key on an extraction
+configuration, and an interpretation copy that differs from the pinned
+extraction's record fails with `Generation evidence changed` before provider
+disclosure. Text is required, trimmed-nonempty and at most 4,000 characters.
+
+The record is immutable: `{id, text, actorId, recordedAt, supersedesId, digest}`
+plus the request binding, written into a new extraction configuration beside
+any existing split correction. Recording supersedes current suggestions and
+approvals, queues the normal fenced re-extraction and interpretation through the
+existing dispatch path, and returns immediately; the reviewer keeps working
+while the item reports `processing`. `prepareGeneration` copies the instruction
+into the interpretation configuration, the generator receives it only after its
+digest matches the authoritative extraction record, and saved generation
+provenance records `reviewerInstruction: {id, digest}`. A later instruction
+records `supersedesId` and replaces the earlier one for future interpretations;
+`listReviewerInstructions(itemId)` returns the full history, newest first, and
+history is never deleted. The instruction steers the model only: it cannot add
+handlers, candidates, schemas, permissions or automation eligibility, replies
+are validated as usual, and suggestions still require explicit preview and
+approval. A replay with the same request ID returns the same revision; a changed
+text under the same request ID conflicts.
+
+**Cost.** Each recorded instruction appends a new extraction revision, so the
+item is extracted again before it is interpreted again: cheap for embedded-text
+PDFs and plain text, but OCR/speech hosts spend provider budget per instruction,
+exactly as they do per split correction. The pinned extraction is not reused
+because the interpretation contract requires its source to be the immediately
+preceding revision and `getCompletedAnalysis(itemId, attemptId)` serves only
+the current revision (PROPOSALS.md, "Durable stages"); reusing it would mean
+weakening that predecessor pin, which protects every generation from an
+intervening reprocess, so this feature follows the split path instead.
+
+**State and failure.** An in-flight stage (queued/running) reports the item as
+`processing` even when earlier, now-stale actions exist. If the re-extraction or
+interpretation fails, `getReinterpretationState(itemId)` returns the latest
+attempt's safe failure category and the latest completed generation attempt;
+the host projects them as `instruction.failure` and `instruction.binding`, and
+`recordReviewerInstruction` accepts that historical attempt as its anchor when
+`expectedRevision` is the item's current (failed) revision and no later
+**interpretation** completed and nothing is queued or running, so the reviewer
+can retry or change the instruction after either stage fails. A completed
+extraction whose own interpretation failed belongs to the failed attempt, not a
+newer result; a completed extraction whose interpretation has **not been
+appended yet** is in flight (the host is between stages) and is refused with
+`ReviewerInstructionStaleError` (`Stale reviewer instruction`), so a second
+reviewer cannot pre-empt it. That gap expires: once the extraction attempt's
+completion plus the item's analysis lease duration (`limits.leaseMs`, the lease
+`claimAnalysis` grants) has passed with no interpretation appended,
+`getReinterpretationState` reports `failure: 'not_started'` with the retry
+binding and the guard allows the retry. `not_started` means **the
+interpretation did not start within the lease window**: the host crashed,
+threw between `prepareGeneration` and `analyze`, or its queue is merely slow.
+Pre-empting a slow but healthy host is safe because `analyze` refuses an
+interpretation whose pinned extraction is no longer the item's latest, under
+the item lock and before anything is superseded
+(`GenerationSourceStaleError`, nothing appended): the slow host's late append
+cannot clobber the retry. Missing or malformed timing (no attempt, no
+`completedAt`, non-finite `leaseMs`) counts as already expired rather than
+holding retries forever. The "still being re-read" note shown after a stale
+result is cleared by the next reload that shows the item settled; the draft
+then carries a persistent "This item changed while you were writing; your
+instruction was not recorded." note (any stale cause: another reinterpretation,
+a split, or a host reprocess) until the reviewer edits or resubmits it. The guard and
+`getReinterpretationState` share one predicate, and the latter's
+`reinterpreting` flag (projected as `instruction.reinterpreting`) is true in
+the gap too, so the component keeps polling and keeps Re-read disabled there.
+The published host maps two typed errors to `instruct` results:
+`ReviewerInstructionStaleError` → `{ stale: true }` (refresh-and-retry: reload
+with a note, draft kept) and `ReviewerInstructionInvalidError` → `{ invalid:
+true }` (empty, whitespace-only or over 4,000 characters: shown inline, draft
+kept). Neither is a denial. Custom hosts should map them the same way; a host
+that lets either propagate as a thrown error makes the component treat it like
+any other failed mutation, i.e. a whole-view deny with the "view unavailable"
+message, as before these results existed. The maintained fixture's
+`/api/instruct` now answers an invalid text with HTTP 200 `{ invalid: true }`
+instead of 409. A retry from an older anchor builds on the **whole configuration**
+of the newest extraction after it (replacing only the instruction), because that
+is the item's current configuration: corrections chain forward through it and a
+host reprocess replaces it. So a split followed by a failed stage is never
+silently dropped, and a failed reprocess's changed configuration is neither
+reverted nor overlaid with a split it dropped. **Concurrency.** `recordReviewerInstruction` and `reviseLogicalSplit` each
+run their whole decision in one transaction under the item row lock: the
+anchor snapshot read takes the lock first, the execution authorization of
+that snapshot takes it again (`UPDATE intake_items` row lock), the guard step
+re-asserts it explicitly, and
+the request-key replay check, the revision and later-work guards, the
+carried-forward split, the history read that sets `supersedesId`, and the
+append all run under it. On PostgreSQL a second reviewer at the same revision
+blocks on that lock and is then refused (`ReviewerInstructionStaleError` /
+`Stale logical split`), so the ledger cannot fork; an instruction racing a
+split (in either order) is refused rather than built from the pre-split
+configuration; and a double-click whose duplicate commits after the unlocked
+replay check is answered as a replay of the committed request, not a conflict
+or a denial.
+
+**Host reprocess.** A host reprocess (a plain `analyze()` extraction the host
+configures itself) cannot carry human corrections — `analyze` rejects
+`humanCorrection`/`reviewerInstruction` on extraction configurations — so it
+drops the split and the instruction alike, and neither is applied to its
+interpretations. The instruction is then reported as `dropped`, not pending:
+`getReinterpretationState().instructionInEffect` names the instruction the
+newest extraction carries (verified by digest) and is null after such a
+reprocess. History is unchanged; the reviewer can re-record the instruction,
+which supersedes the dropped one.
+
+`ItemReviewView.instruction` exposes `current` (the latest recorded instruction
+still in effect, i.e. carried by the newest extraction), optional `dropped`
+(the latest recorded instruction a reprocess dropped), `applied` (the
+instruction the displayed **generation** ran under; a completed extraction alone
+applies nothing), `stale` (the displayed suggestions predate the current
+instruction), optional `failure` and optional `binding`. Feedback examples that carry instruction
+text count it toward the feedback byte budget (FEEDBACK.md). The optional host callback
+`IntakeReviewHost.instruct` is implemented by the published adapter when the
+service supports it, with an optional `onInstruct(itemId, revision)` wakeup
+mirroring `onSplit`. The review component renders "Instructions for the
+assistant" with "Re-read with these instructions", shows "Reinterpreting…" while
+the item's stage is queued/running, repeats the existing authenticated `load`
+on `pollMs` (default 2 s, backing off to 5×) and patches the view in place —
+drafts, split edits, focus and the evidence viewer survive and no loading
+placeholder is shown — stops when the stage is no longer in flight, and then
+shows the instruction that produced the current suggestions, marking a
+superseded one as stale. An explicit host denial on a poll tick fails closed at
+once; a thrown tick is treated as transient (view and drafts kept, a
+"Couldn't refresh; retrying." note, backoff continues), but because hosts may
+also throw for revoked access, three consecutive thrown ticks fail closed.
+**Hosts must signal revocation by returning `availability: 'revoked'`** (or
+another non-`available` state) from `load`, not by throwing: a returned denial
+clears the view on that tick, while a host that throws on revocation leaves the
+already-displayed content visible until the third thrown tick (about 10 s at the
+default interval and backoff) before the view fails closed.
+Split drafts survive a refresh only when the reviewer edited them. A failed stage shows its safe category with the form
+still available. There is no
+streaming channel; status is read through the existing item/analysis APIs. The
+maintained fixture records the instruction durably and then runs the stages in
+the background so the browser proof exercises the in-place update.
+
+**Try again (#4504).** `retryInterpretation({itemId, attemptId,
+expectedRevision, requestId})` re-runs an item whose interpretation failed (the
+displayed generation is `provider_error`, or later work failed or never
+started) with no new instruction. It uses the same anchor, guards, `process`
+authority and fresh extraction plus interpretation as an instruction, carries
+the item's current configuration (an instruction or split already in effect
+included) unchanged, and records nothing in the instruction history. Superseded
+anchors, work in flight and items that did not fail throw
+`ReviewerInstructionStaleError`. A replay of the same intent (item, anchor,
+revision, `requestId`, actor) returns the first append under current `process`
+authority; the same `requestId` with another intent is a request conflict.
+`createIntakeReviewHost` exposes it as `IntakeReviewHost.retry` (stale resolves
+`{ stale: true }`) and wakes the worker through `onRetry`, else `onInstruct`.
+`ReviewView` draws a "Try again" button (`ingestion.tryAgain`) beside the
+instruction box when `host.retry` exists, the item is open, nothing is in
+flight and the interpretation failed; it binds like the instruction
+(`instruction.binding`, else the displayed generation).
+
 `feedback` is an optional explicit correctness callback, separate from approval
 choice and execution success. No learning, feedback storage or rule promotion is
 implemented by these components; #3676 owns those services. Do not pass feedback
 or a feedback callback to readers without the relevant host grant.
+
+## Reviewer-chosen actions and "handled, no action"
+
+A reviewer is not limited to model suggestions. `ItemReviewView.catalog` carries
+the handlers the item's catalog currently offers (`listHandlers`, discovery media
+types and live preview authority; it is presentation, never a grant). The optional
+`startAction` callback forwards `StartActionInput` (`itemId`, `handlerId@version`,
+explicit `args`, `requestId`, optional `reason`) to `startReviewerAction`, which
+requires the current reviewer grant under that handler, a completed or partial
+attempt on the current analysis revision, and an operation handler the item's
+evidence media types offer. Plan handlers go through `previewPlan`. The server
+creates an action keyed `reviewer:<requestId>` with origin `reviewer-selected`
+(`createAction` refuses that key prefix and origin, so process authority cannot
+mint reviewer provenance; re-previewing such an action with `previewProposal`
+needs the reviewer grant and keeps its handler fixed, so only its arguments can
+be corrected),
+runs the handler's normal `validate`/`preview`, publishes a `waiting_review`
+revision and requires the same explicit approval and apply as a generated
+proposal. The reviewer typed these arguments, so a handler argument-schema or
+`validate` refusal throws `HandlerArgumentsInvalidError` with the value-free
+`issues` described above, and the rolled-back transaction leaves no action row
+(#4281). Every other refusal (input shape, access, handler unavailable, item
+resolved, identity or request conflict, normalization mismatch) stays a plain
+denial. `startAction` follows the `preview` contract: it throws, or a transport
+may resolve `{ rejected: 'invalid', issues? }` for that one case. The component
+keeps the start form, handler, arguments and reason, shows an inline refusal and
+lists any field paths; any other failure clears the view as before. Replays
+with the same request return the same review; changed arguments or reason
+conflict. Such actions are never automation-eligible: `authorizeAutomatic`
+refuses them regardless of policy opt-ins. The UI pre-fills arguments only from a
+same-handler suggestion (for example a `needs_review` one) and a single original's
+evidence references, lists the required fields still missing, and submits exactly
+what the reviewer typed. An item whose current attempt failed outright must be
+reprocessed first; an interpretation that completed with `provider_error`,
+`unknown` or no suggestions can be acted on directly. `ReviewAction.origin`
+exposes the provenance so `ActionReview` can label human-started actions.
+
+The optional `resolve` callback forwards `ResolveItemInput`
+(`disposition: 'resolve_no_action'`, `requestId`, optional `reason`) to
+`resolveItem`. It needs reviewer authority under any handler the item's captured
+ceiling offers and refuses while an action is `authorized` with a live approval,
+`executing`, `outcome_unknown` or `succeeded`; waiting, deferred, rejected and
+failed actions, and authorized ones whose approval expired, may remain (neither
+an exhausted failed action nor a lapsed approval can be rejected, so they must
+not keep the queue open). Afterwards only reject remains: those actions can no
+longer be approved, corrected, deferred, re-previewed, retried, applied or
+automated. `submitDecision` refuses every decision but `reject`, no new revision
+is published for the item, `applyAction` rechecks the disposition before any
+effect, and `analyze`, `reviseLogicalSplit` and `createAction` refuse the item
+under its lock before any write, so it is never reanalysed, re-split or given a
+new action. `resolveItem` supersedes any queued or running analysis under the
+same lock and `claimAnalysis` refuses a resolved item, so no provider is called
+after a human closed it; the item's `processingState` keeps its last value (it
+describes analysis, not review), and the inbox state `resolved` is authoritative.
+`publishProposal` (process authority) refuses a resolved item and any
+reviewer-selected action. The UI hides Approve, Defer, Apply, every edit control, suggestion
+preview and split controls on a resolved item.
+Resolved items hide the instruction editor and stop reinterpretation polling, even if an older processing projection is still queued. Recording an instruction cannot append a new revision after resolution.
+
+Paged lists project the resolved state and disposition time in the same bounded, scope-filtered query, so state filters and row controls agree with a full item reload.
+
+The append-only `intake_dispositions` record is terminal: replaying the same
+request returns the same disposition, any other request conflicts, and
+`startReviewerAction` refuses the item. `IntakeItemDTO.disposition` projects only
+`{ state: 'resolved', at }` to any item reader (`listItems` reads it in the same
+statement as the page); the reviewer and reason are returned only by
+`getItemDisposition`, which requires reviewer authority, and the review hosts put
+them on `ItemReviewView.disposition` (omitted when that read is denied, so the
+view shows only "Handled, no action"). `loadReviewSummary` reports inbox state `resolved` unless an action
+actually succeeded. Privacy deletion and retention expiry redact the reason and
+reviewer (`intake_dispositions.data`) and keep only the kind. The disposition is
+distinct from `reject`, which still means the proposal was wrong. Closing an item
+records `reviewer_routing` feedback immediately; a started action records it only
+when the reviewer approves it (see FEEDBACK.md). Capture is an optional projection
+that never vetoes the decision or disposition.
+
+`startReviewerAction` applies the handler's discovery media types and the live
+reviewer grant/policy for that handler. It intentionally does not apply the
+proposal catalog's provider-policy filter or `maxHandlers` slice: those bound what
+a model may be offered, and a human choosing a handler sends nothing to a
+provider. The UI picker shows the offered catalog, so a handler hidden from it is
+only reachable by a reviewer who already holds `review` authority for it. The maintained
+browser fixture serves both operations behind CSRF and the same session scope.
+
+## Review screen presentation (#4503)
+
+All presentation only; no new authority.
+
+- **Handler labels.** A handler registration may declare `label`. It is carried
+  on the reviewer catalog only (`listHandlers`, `ItemReviewView.catalog`), never
+  on generation input, catalog digests or bindings, so adding one never stales
+  existing work. The proposal heading, action heading and "Start action as…"
+  select draw it, falling back to the handler id.
+- **State labels.** Review states draw `ingestion.reviewState.<state>` and
+  generation outcomes `ingestion.outcome.<outcome>`; an unknown value is drawn
+  as is.
+- **Arguments as fields.** Where a handler `argsSchema` declares top-level
+  `string` (plain, `date`, `date-time`), `number`, `integer`, `boolean` or
+  enum properties, or `references` declares a candidate/evidence field, the
+  suggestion draft, the action's arguments and the start form draw those as
+  fields (`title` as the label, `*` when required). A candidate reference is a
+  search box over `host.candidates`, filtered to the reference's model, showing
+  the candidate's label (the generation's offered candidates label the current
+  value); an evidence reference picks among the item's originals. The JSON text
+  stays the source of truth: fields rewrite it, and it remains editable under a
+  collapsed "Advanced" disclosure for everything else (objects, arrays,
+  unions). Without such properties the plain JSON textarea (and the
+  destination picker) are drawn as before. Server validation is unchanged.
+- **Effects.** `action.review.display` is drawn as a `<dl>`: the handler's
+  preview fields (`display.preview`, or `display.step.preview` for a plan step;
+  a flat record as is), then non-empty `dependencies`/`plan` metadata as JSON,
+  named `metadata.<key>` when a preview field already has that name
+  (`displayEntries` in `view-utils`).
+- **Assignees.** An optional `IntakeReviewHost.assignees(query)` (adapter
+  option `assignees`) answers `{ id, label }[]`; the inbox then draws a search
+  picker for the filter and each row instead of the free-text "Assignee ID".
+  `assign` still receives the id and still authorizes. A failed search offers
+  nothing.
+- **Feedback state.** `ReviewAction.feedback` (see FEEDBACK.md) presses the
+  current judgment; a further judgment supersedes it and
+  `ingestion.feedbackSent` confirms it.
+- **Confidence.** Nothing is drawn when the provider reports no confidence.
+
+## Single-page triage workspace
+
+`IntakeWorkspace` (#4215) composes the existing pieces so a reviewer works the
+whole queue on one page: the paged inbox as a list pane, the review view of the
+selected item beside it (the original above its action form), and the
+reviewer-instruction message box of the item pane. Props: `host`, `contextKey`
+(replace on session change, as for the other components), optional initial
+`itemId`, `pollMs`, `rowAside` and `onselect(itemId | undefined)`, which only
+reports the selection (to keep a URL in step) and never navigates. It adds **no
+host callback and no server authority**: every read is the host's `list` and
+`load`, every action still goes through the handler preview and an explicit
+approval and apply under the approver's live grants, and the message steers the
+model only, exactly as in `IntakeReview`.
+
+- **Inline original.** In the item pane `EvidenceViewer` shows one part at a
+  time (`layout="pager"`), opening on the first part that renders inline (the
+  uploaded file rather than its capture record), with previous/next original.
+  A PDF with more than one *observed* page (extraction locations or proposed
+  page groups; `pages` prop) gets previous/next page, which reloads the frame
+  at the same-origin URL plus `#page=n`; only `evidenceUrl`-approved URLs ever
+  reach a frame. `IntakeReview` gets the same page navigation over its
+  unchanged stacked list of parts. The chosen part and page belong to the item
+  view (bindable `chosen`/`page`), so they survive in-place reloads, Prepare
+  review, Approve and Apply.
+- **Keyboard.** J/K and Alt+Down/Alt+Up move to the next/previous row (loading
+  the next page at the end), ignored while focus is in a text field, select or
+  editable region; "Previous item"/"Next item" buttons carry
+  `aria-keyshortcuts`. The selected row is `aria-current`, and every selection
+  moves focus to the item pane region, named by the row's label. A navigation
+  that waited for the next page is dropped if the reviewer chose another item
+  meanwhile.
+- **Unsent input.** The pane holds unsent input when it has instruction text,
+  an edited suggestion draft or split draft, a chosen start handler or start
+  reason, a no-action reason, or an action editor with edited arguments, a
+  reason or a feedback comment. It is read from the drafts themselves, so it
+  holds while a reload has cleared the view; while the view is denied nothing
+  is shown and nothing counts (the drafts stay in memory and return with an
+  authorized refresh, as before). A reviewer-initiated move (J/K, Alt+arrows,
+  Next/Previous item, a row's Review button) then asks inline, in a group
+  labelled by its note: "Stay on this item" takes focus and returns it to the
+  field the reviewer last used; "Discard and open the other item" proceeds.
+  When an item is closed without action (here or by another session), input a
+  closed item cannot take
+  (instruction, suggestion and split drafts, a started action, a no-action
+  reason) is discarded.
+- **Live state.** A row's status follows the item: "Interpreting…", "Ready to
+  review", "Needs review" with missing argument names or the generation
+  outcome, "Awaiting approval", "Approved, not yet applied", "Failed" with a
+  safe category, "Handled, no action", or the listed inbox state. Rows the
+  reviewer has not opened show the listed state only; reasons come from a
+  loaded view, never from server exception text. The open item's own polling
+  (`ReviewView`, unchanged backoff and three-failure fail-closed) reports each
+  displayed view and the workspace patches that row in place
+  (`InboxView.patch`, keeping the listed label and preview, and the row's
+  assignment unless the patch carries a newer assignment version, so a view
+  read before an assignment never rolls the row or the next expected version
+  back), so the row follows each newer read of the form and the list is
+  **not** re-listed per tick. An item the
+  reviewer leaves while its stage is in flight, or before the pane showed the
+  result of its last operation (an instruction just recorded), keeps
+  following: the workspace re-reads followed items with the same `load` (first
+  review page) on the pane's backoff, at most **5** reads per tick, one after
+  another, least recently read first (so every followed row is reached), with
+  only one tick running at a time. At most **20** items are followed; beyond
+  that the longest-followed one (the earliest started, whatever the read
+  rotation) stops. An item left while its pane was mid-operation (an Apply not
+  yet answered) keeps following while a read still shows an action authorized
+  or executing: exactly **3** more reads when it never answers, the fourth
+  ending the follow. That debt belongs to the operation, so it survives
+  reopening and leaving the item again until a view shows the operation
+  answered or the reads run out; leaving mid-operation again starts a full
+  debt for the new operation. Each follow has a
+  generation: an answer from an earlier follow of the same item (one asked
+  before the reviewer reopened or left it again) is dropped, and its failure
+  does not count toward the new follow's three. An item stops being followed
+  when it settles, its view is denied, three reads in a row throw, its row
+  leaves the displayed list (a filter or a refreshed page removed it), the
+  list fails closed, or the cap drops it; a denial, the failure stop or the
+  cap drops its cached status and restores its entry exactly as its page read
+  returned it (never a patched entry). Opening an item drops its cached
+  status until the pane shows a view; a denial in the open pane (a failed
+  action, the pane's own fail-closed poll, or a first load that failed) does
+  the same as a follow denial, clears the announcement, and the item is not
+  followed when left. A settled stage that was seen running is announced in a
+  polite status region ("badger-po.pdf: Ready to review"), only while its row
+  is displayed; a refreshed page or a failed list clears it.
+  Other rows update on Refresh, a filter change or when opened; there is no
+  streaming. While a refresh or "Load more" is pending, the displayed rows stay
+  (controls disabled) and keep taking patches. Every read (a page, a pane
+  view, including an unchanged poll, and a follow read) is numbered when its
+  request starts, and each row shows the entry of its newest read, whatever
+  the source: a page read before a pane or follow read never regresses the
+  row, and a page read after them replaces what they showed. The same rule
+  governs a follow: a follow read older than the row's newest read changes
+  no status, does not stop the follow and announces nothing (a newer read
+  settles it), so the announcement never contradicts the row. Cached status reasons follow the same ordering, even when entries have identical
+  fingerprints. "Load more" continues the
+  filter the rows were listed under, not filter inputs edited since, and does
+  not repeat a row already shown. A failed "Load more" fails closed like any
+  failed read (the host cannot tell a transient failure from a revoked
+  grant): the rows clear and the list shows its error.
+- **Approve and advance.** After an approve, apply or "Handled, no action" whose
+  reload left nothing for the reviewer (closed without action, or an action
+  succeeded and none is waiting for approval, waiting to be applied, executing,
+  unknown or failed; stale, rejected and deferred actions do not hold it), the
+  item's row is patched and leaves the list when it no longer matches the
+  listed state/assignee filter, and the next row that is not closed or
+  completed opens and takes focus, with no navigation and no re-listing. An
+  approval that leaves an apply step keeps the item open with Apply in place.
+  Unloaded saved-review pages and an active background stage also prevent
+  settlement. Advancing skips completed inbox pages until a reviewable row
+  appears; a page that makes no progress stops the walk.
+  It never advances over unsent input on the same item: the item stays open,
+  the input stays, and a note says it is finished but has unsent input; the
+  reviewer moves on explicitly, through the confirmation; input typed while
+  the next page loads counts too. When no open row is displayed, the advance
+  appends pages of finished rows until one has an open row or no page
+  remains, at most **5** appends. After each append, the advance (like
+  J/K at the end of the list) finds its place again by id: just after the
+  item it left, or, if that row has gone, at the first row that followed it
+  and is still listed, or at the first new row, so a row that left the list
+  meanwhile never shifts it onto the wrong item. Its notes (and "nothing else
+  needs review") are written into one persistent polite status region. The queue is never reported empty when
+  that is unknown: past the bound, or when an append cannot start (a refresh
+  is pending) or is superseded, the item stays open with a note to try Next
+  item again, which still works; when an append fails, the list has failed
+  closed (no rows, Next disabled), so the item stays open with a note to
+  refresh the list to continue. The open item stays listed while the
+  reviewer works on it even if its state stops matching the filter; it
+  leaves once they move on.
+  When nothing is left the pane says so. The per-row "Handled, no action"
+  control is hidden in the workspace (`resolveInRow={false}`) so closing always
+  goes through the item pane and advances.
+
+
+**List following and refresh (#4504).** Every listed row (other than the open
+item) whose entry shows a stage in flight is followed like an item left
+mid-stage, up to `WATCH_CAP` rows, `WATCH_LIMIT` reads per tick on the pane's
+backoff, so rows no longer keep "Interpreting…" until Refresh. Opt-in
+`listPollMs` on `IntakeWorkspace`/`IntakeInbox` also re-reads the listed page
+under its listed filter while any row is processing (skipped while a read or
+operation is pending or Load more appended pages). Both components export
+`refresh()` (`bind:this`), which re-reads the first page like the Refresh
+button and resolves `{ items, result: 'shown' | 'failed' | 'pending' }`.
 
 ## Maintained browser proof
 
@@ -143,18 +693,179 @@ Import `createIntakeReviewHost` and `IntakeReviewHostOptions` from
 options)` with a service constructed from the current authenticated session.
 The returned `IntakeReviewHost` implements inbox state projection across saved
 review pages, current generation loading, stable `ui:<index>` intention keys,
-action/plan preview CAS lookup, decisions, apply, corrections, candidates, split
-and feedback. Repeated preparation of an unchanged authorized suggestion retains
+action/plan preview CAS lookup, decisions, apply, corrections, candidates, split,
+feedback, the offered `catalog`, `startAction` and `resolve`. Any catalog
+failure (not configured, bound exceeded, denied) omits `catalog`, so the picker
+disappears while existing reviews stay reviewable; item, review and evidence
+denials still propagate as before; the reference host (`reference/review-host.ts`)
+degrades the same way. Repeated
+preparation of an unchanged authorized suggestion retains
 its current review instead of creating a new revision. Changed arguments still
 require explicit re-preview and a fresh human decision.
-Lists scan 20 items per page; filtered pages may be empty with a `nextCursor`.
-Continue until the cursor is absent. Listing does not load original bytes.
+`list({ state?, assigneeId?, cursor?, limit? })` returns one page newest receipt
+first (`intake_items.created_at`, id tiebreak) through `service.listItemsPage`.
+`limit` defaults to 20 and is capped at 100; the cursor is an opaque
+(received-at, id) continuation, never a bare id. Tenant, confidential scope,
+retention and the `state` filter run inside the page query, so a page is full
+and `nextCursor` is present only when more rows follow.
+
+Authority is rechecked at the same two levels `load` applies, but per page
+rather than per row: the host authorize callback once per distinct captured
+ceiling in a batch, and the execution read gate (policy, ceiling, handler and
+operation allowlists, principal) once per distinct (item, handler) bound by
+the page's saved actions. The list gate is read-only: it evaluates the same
+checks as `listReviews` without the retention write, so an item that the item
+view would narrow past its deadline is simply not listed. The list gate also
+resolves each bound handler and rejects version drift against the saved
+binding and omits a cancelled item, as `listReviews` does; it does not
+evaluate per-action target,
+evidence or plan gates, so an item whose target became unreadable still lists
+and its item view refuses. An item whose bound
+handler the actor cannot currently read is not listed at all, rather than
+listed with a state derived from actions the actor may not see; actions
+without a proposal bind no handler and are not gated, as in `listReviews`.
+Handler bindings (handler id and version, projected in SQL, distinct per
+item) are read once per fetched batch for the rows that passed the item-level
+gate. Note the host cost plainly: the execution `authorize` callback runs once
+per distinct (item, handler) bound by a scanned row that passed the item-level
+gate. Each item is its own authorization subject, so nothing is deduplicated
+across items; the count is bounded by rows scanned (at most
+`ITEM_SCAN_CEILING`) and runs in host code rather than as N+1 database reads. Either host callback, the item-level `authorize` or the execution
+`authorize` behind the handler gate, follows the same rule: a refusal (false,
+or an access check that fails) hides the rows it covers, and a callback that
+throws rejects the whole page (and `listItems()`) with its error, as `load`
+does, so a transient failure never lets paging move past readable rows.
+Denied or unreadable rows are skipped without
+disclosure and the page refills from the next rows; refills grow from the page
+size to 100 rows per query, so a fully denied scope costs about a dozen page
+reads and as many binding reads per call. One service call examines at most
+`ITEM_SCAN_CEILING` (1000) rows, or the caller's smaller `scanLimit`, and
+reports the count as `scanned`; when a mostly-denied scope reaches the ceiling
+the page comes back short with a `nextCursor`. Rows are authorized first and
+the `state` filter is then applied to the fetched batch, so it is bounded by
+the same scan limit: a rare state yields short pages with a cursor rather than
+an unbounded walk inside one query. A row the actor can read whose state does
+not match discloses nothing and may anchor the cursor, so a filter with no
+match among the next 1000 rows returns an empty page with a cursor and still
+pages to the end. The host `list` passes its remaining budget as `scanLimit`, so the
+rows scanned across the service calls of one host call never exceed 1000: a
+short service page with a cursor, or an exhausted budget while filtering by
+assignee, ends the host call with the same cursor and the caller continues.
+Only rows the service wrote are supported: cursors carry the canonical
+millisecond ISO receipt time the service stores. A row whose stored receipt
+time is not that form (on SQLite anything but `YYYY-MM-DDTHH:MM:SS.mmmZ`,
+including a parseable value without milliseconds or with an offset; on
+PostgreSQL a value with a sub-millisecond part) is never listed, whatever the
+actor's access, and counts toward the scan, as does a row whose id is not a
+UUID. On SQLite a non-text stored value (an integer, say) and a receipt value
+or id longer than 64 characters or containing a NUL character are excluded by
+the page query itself: the first sorts after every text value so the scan
+could never move past it, the second could not be carried by any cursor, and
+the third is returned truncated at the NUL, so it would look canonical and
+sort above a legitimate row at the truncated value. Within a call the scan moves
+past a service-foreign row by its exact stored value, and an unsealed cursor
+names the last row before it that the actor can read. A call that finds no readable row within its scan limit (at
+most 1000) fails closed with `IntakeScanLimitError` unless a `cursorKey` is
+configured, as below. The host
+`list` returns what earlier service calls collected, with their cursor, when
+a later call fails that way.
+
+`listItems()` is deprecated and kept only for callers of the array-returning
+API. It walks every page, so its cost grows with the scope, including one
+execution authorization per (item, handler) across the whole scope. It follows
+the internal scan position, which never leaves the service, so runs of rows
+the actor cannot read never stop it and it returns `[]` where nothing is
+readable. Items are newest-first and gated exactly as on a page.
+
+The page's inbox state is the durable projection of the saved action journal
+and processing state, computed once per scanned row inside the page query;
+`load` remains the authoritative, live-gated projection for one item (it still
+projects individual stale actions, which the list does not). Cost is
+proportional to the page for unfiltered pages and common states, and to the
+number of items scanned until enough matches are found for rare states: the
+state is not persisted, because the action journal is append-only and
+projecting it into an indexed column would need a maintained denormalisation
+in the execution service plus a migration, which this change does not take.
+Listing does not load original bytes.
+
+Cursors never disclose an unreadable row. Without a `cursorKey` in the
+service options, every cursor (each row's and `nextCursor`) names a row the
+actor can read (the last one when a page stops early); a page that spends its scan limit before filling hands back
+the last such row, and one that found none fails closed with
+`IntakeScanLimitError` (`Intake scan limit`, no id or time). A run of rows the
+actor cannot read (refused by the captured ceiling or the execution gate, or
+stored with a non-canonical receipt time) at least as long as the scan limit
+therefore stops an unkeyed walk there; readable rows that the `state` filter
+excludes never count toward such a run. With a `cursorKey` (a server secret of at least 32 bytes), every
+cursor is sealed with AES-256-GCM, bound to the tenant, confidential scope and
+actor, and a budget-stopped page returns a sealed position past what it
+skipped, so the walk always progresses. Sealed cursors have a fixed length
+(the plaintext is padded to 1024 bytes) and a fresh nonce per seal, so neither
+their length nor their bytes reveal anything about the stop row. `scanned` is for trusted host
+accounting and must not be sent to clients; a short page with a cursor tells
+a caller only that unlisted rows exist, never which.
+
+Newest-first paging relies on `intake_items_received_idx`
+(`tenant_id, confidential_scope_id, created_at, id`), the full ordering key, so
+an unfiltered page is a backward index scan that stops at the page boundary;
+the foundation suite asserts that plan on both engines (SQLite
+`EXPLAIN QUERY PLAN`, PostgreSQL `EXPLAIN`), with the per-row state counters
+served by `intake_actions_item_idx`. On SQLite the page query pins the index with `INDEXED BY` (except under an
+id restriction, where direct id lookups are cheaper), because without planner
+statistics SQLite otherwise picks `intake_items_expiry_idx` plus a sort; the
+SQLite plan check runs without `ANALYZE`. A deployment must have applied the
+manifest migration, or the page query fails with a missing-index error. This package ships no
+migration files: indexes are declared on the model, the build emits them into
+`dist/manifest.json`, and `smrt db:migrate` / the public migration API create
+them, which is how `intake_items_receipt_idx` shipped. Deploy the manifest
+migration before upgrading hosts; `db:status --parity` reports the index as
+missing until then.
 
 Supply four application adapters: `upload(files, requestId)` (authenticated
 receipt plus first extraction request), `assignment(itemId)` (durable read),
 `assign(input)` (manager authorization, eligible assignees, durable CAS and request
 replay protection), and `evidence(part)` (safe label/text or authenticated
-same-origin URL). Optional `label(item)` changes presentation. Optional
+same-origin URL), which `load` calls for every part and `list` never calls;
+`load` sets no row preview on its entry.
+
+Row previews are opt-in through an optional fifth adapter,
+`rowEvidence(rows)`. When it is supplied, `list` reads the page's durable
+evidence metadata with one `service.listEvidence(itemIds)` query (at most 100
+ids; items the scope cannot read, and expired or inactive items, are omitted
+without disclosure; the host `authorize` runs once per distinct captured
+ceiling through the same gate as `listItemsPage`, so a refusal or a
+malformed captured ceiling hides the item and a failing `authorize` rejects
+the page; an item whose stored data does not parse is skipped by both
+`listItemsPage` and `listEvidence`, never fatal). It then calls `rowEvidence`
+once with each row's primary part (`{ itemId, evidence }`) and publishes the
+returned `{ label, viewUrl?, thumbnailUrl? }` as `InboxEntry.evidence`
+(`{ evidence, label, viewUrl?, thumbnailUrl? }`, never text). Build those URLs
+from metadata without reading bytes; if `rowEvidence` throws or returns a
+malformed answer, the page still lists without previews, and a row without
+durable parts never gets one. When it is omitted, rows show no original link.
+Either way `list` reads the page's evidence metadata once, in that same query,
+so the row label can use the original filename; it never reads original bytes
+and never calls `evidence(part)`. The primary part is chosen by role, not media
+type: the shallowest child part when any part has a parent (an upload's file
+under its capture record, an email's first attachment under the message, even
+when that child is JSON), else the first root part (a watched-folder file);
+part ids sort numerically. `IntakeInbox`/`InboxView` accept an
+optional `rowAside` snippet receiving the `InboxEntry`; without it a row renders
+the host's "Open original" link (new tab) and thumbnail when the URLs are
+same-origin; each link's accessible name is "Open original: <row label>", and
+a row shows no wrapper when neither URL is usable. The slot is a plain `div`,
+not an `aside` landmark, so a page does not add one landmark per row. Optional
+`label(item, evidence)` changes presentation; `evidence` is the item's durable
+parts with the primary part first, and the default label is the primary part's
+own original `filename`, else `Intake <8 hex>`. Optional
+`assignments(itemIds)` reads one page's assignments in one batch (otherwise
+`assignment` runs per row), and optional `assignedItemIds(assigneeId)` lets
+`list` push the assignee filter into the page query (junk ids are dropped, not
+fatal); without it an assignee filter scans further pages and filters by
+`assignment`, which stays correct but costs more rows. The page's continuation
+is always the last row actually returned, so an assignment that changes
+between the page read and the assignment read costs at most one extra scan and
+never skips or repeats a row. Optional
 `enableFeedback: true` exposes the optional feedback callback when the service
 has feedback configured. Optional `onSplit(itemId, revision)` wakes the host worker after the durable extraction
 request; repair dispatches if wakeup fails. The factory creates no assignment
@@ -166,3 +877,54 @@ wrapper `{ proposals: GenerationOutput }` under `analysis.result.output`.
 The factory unwraps this into `ItemReviewView.generation`. Stale generation is
 omitted while authorized saved reviews remain available; access denials propagate.
 The reference application still owns its fixture provisioning and HTTP transport.
+
+## Upload drop zone (#4587)
+
+The inbox's upload leads the view, before the state filter and the rows, so it
+is found on an empty inbox too, and it is a drop zone by default:
+`IntakeWorkspace`/`IntakeInbox` (and `InboxView`) take `dropzone` (default
+`true`), which gives smrt-ui `FilePicker` its full-width, dashed drop-area
+presentation (the picker accepted dropped files before; it just did not look
+like it). Files dropped on it are selected exactly as picked ones (same retained originals, request
+identity and refusal handling below), click-to-pick still opens the native
+chooser, and `accept` / `uploadAccept` and the host's allowlist apply unchanged.
+Its description is `ingestion.filesDrop` ("Drop files here, or browse.")
+followed by `ingestion.filesHelp`, so a host that overrides the help text with
+its own allowlist wording keeps it. `dropzone={false}` keeps the plain picker,
+with `ingestion.filesHelp` alone, in the same place.
+
+## Upload refusals and accepted types (#4502)
+
+`IntakeWorkspace`/`IntakeInbox` take `accept` (an `<input accept>` value)
+for their file picker, defaulting to `IntakeReviewHost.uploadAccept` (adapter
+option `uploadAccept`); it is a hint only, `upload` still enforces the host's
+allowlist. When `upload` throws `IntakeUploadRefusedError` (from `/svelte`) or
+any error with a string `userMessage` (or an error named
+`IntakeUploadRefusedError` / with `code: 'INTAKE_UPLOAD_REFUSED'`, whose
+`message` is then shown), the inbox shows that reason (trimmed, at most 500
+characters) and keeps its rows; `uploadRefusalMessage(error)` applies the same
+rule. Any other error still fails the list closed with `ingestion.error`.
+
+## Explicit upload retries
+
+The inbox retains selected original files and the receive request identity when
+upload fails or acknowledgment is lost. Retry Upload explicitly with the same
+selection; Refresh does not replace that identity. Selecting files again starts a
+new receipt identity, even when names match. Successful upload clears the selection
+and identity. Replacing the authenticated host/context or destroying the component
+discards both and fences late completion from the prior context. No automatic
+upload retry or authorization bypass occurs.
+
+The inbox clears only its native file-input value when opening the picker, so
+choosing the same local file explicitly starts a new upload identity. Opening
+then dismissing the chooser preserves the separately retained originals and
+request identity for retry; it does not clear the shared FilePicker's native-form
+behavior. Successful upload and host/context disposal still discard retry state.
+
+Workspace ordering also protects an open item during an awaited automatic page walk:
+the selected row remains until navigation succeeds, except that a failed list read
+clears the inbox. Applying an action is disabled
+while that action card holds unsent arguments, reason, or feedback comment. A list
+refresh retires earlier follow snapshots; only follow reads started after that
+page request may override its rows, so a newer refresh cannot be regressed by an
+already settled or older in-flight follow read.

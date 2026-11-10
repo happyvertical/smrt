@@ -649,4 +649,4 @@ const contents = await Contents.create({
 
 ## License
 
-This package is part of the SMRT Framework and is licensed under the MIT License - see the [LICENSE](../../LICENSE) file for details.
+This package is part of the SMRT Framework and is licensed under the MIT License - see the [LICENSE](https://github.com/happyvertical/smrt/blob/main/LICENSE) file for details.

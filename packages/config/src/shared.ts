@@ -60,6 +60,7 @@ export {
   exportConfig,
   mergeExportedConfig,
   parseExportedConfig,
+  redactValueSecrets as redactSecretValues,
   sanitizeConfig,
 } from './export.js';
 export { clearRuntimeConfig, getRuntimeConfig, mergeConfigs } from './merge.js';

@@ -16,17 +16,38 @@ Double-entry accounting with chart of accounts, journal lifecycle, and balance e
 
 Registered at module-load time via `definePrompt()` in `src/prompts.ts`. Side-effect imported from `src/index.ts` so consumers automatically see the prompts after importing any export from this package.
 
-| Key | Method | Variables |
-|-----|--------|-----------|
-| `smrtLedgers.journal.summarize` | `Journal.summarize()` | `journalNumber`, `journalDate`, `journalDescription`, `journalStatus`, `journalTotal`, `entryCount`, `journalBalanced` |
+| Key | Method | Tier | Variables |
+|-----|--------|------|-----------|
+| `smrtLedgers.journal.summarize` | `Journal.summarize()` | `good` | `journalNumber`, `journalDate`, `journalDescription`, `journalStatus`, `journalTotal`, `entryCount`, `journalBalanced` |
 
 PII-conscious variable selection: `tenantId`, `sourceRef` (may reference customer/vendor identifiers), per-entry `accountId`/`id`, and the extensible `metadata` blob are intentionally NOT exposed as prompt variables. Tenants who need richer context should override the template via `PromptOverride` and supply their own variables through a custom call site.
 
 ## Balance Enforcement
 
+Named `Ledger` scopes freeze owner, currency and balance mode at creation.
+`exact-integer` mode requires safe integer minor units and exact equality; assigned
+accounts freeze scope/owner/type and cannot be deleted. Posted scoped journals and
+lines are immutable, including void/delete; use compensating postings.
+`postReceivable`/`postPayable`/`postSettlement` require exact ledgers and use one
+transactional claim per tenant/ledger/key with payload-digest replay validation.
+The journal's unique `(tenantId, ledgerId, idempotencyKey)` row is the permanent
+record: a retry after the `runOnce` claim is pruned (#4067) returns the original
+posted journal on a digest match, and refuses a mismatch or a non-posted row.
+See README for ownership, reversal, aging and dialect contracts.
+
+
 `journal.post()` validates `Math.abs(totalDebits - totalCredits) < BALANCE_EPSILON` where `BALANCE_EPSILON = 0.01` (float rounding tolerance). Unbalanced journals cannot be posted.
 
 **This package is unit-agnostic** — `debit` / `credit` are plain DECIMAL numbers and the balance check only compares the two sides, so it holds for whatever unit the posting module uses. As of #2401, journals posted from `@happyvertical/smrt-commerce` (`Payment.recordPayment()`, `Invoice.recognizeRevenue()`) carry **integer minor units**, which balance exactly rather than merely within the epsilon. A consumer mixing modules that post in different units will get arithmetically balanced but semantically meaningless journals; pick one unit per ledger.
+
+`JournalEntryCollection.listPostedMovements({ tenantId, accountIds, from, to,
+currency })` is the bounded reporting input. It joins only rows whose entry and
+journal share the requested tenant, includes every posted source (including
+manual journals), and excludes drafts and voids. Its debit, credit, and
+`creditMinusDebit` values are raw ledger units; commerce must verify its
+minor-unit convention before using them in an exact tax report. Each returned
+movement retains the requested `tenantId` so consumers can reject a fact that
+crosses the reporting boundary.
 
 ## Gotchas
 

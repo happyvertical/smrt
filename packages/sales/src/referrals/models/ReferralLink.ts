@@ -3,7 +3,13 @@
  * @packageDocumentation
  */
 
-import { field, foreignKey, SmrtObject, smrt } from '@happyvertical/smrt-core';
+import {
+  field,
+  foreignKey,
+  SmrtObject,
+  type SmrtSaveOptions,
+  smrt,
+} from '@happyvertical/smrt-core';
 import { TenantScoped, tenantId } from '@happyvertical/smrt-tenancy';
 import type { ReferralLinkOptions, ReferralLinkStatus } from '../types.js';
 
@@ -139,7 +145,7 @@ export class ReferralLink extends SmrtObject {
    *   referral-code hijack). Mint codes through
    *   `ReferralLinkCollection.createWithUniqueCode()`.
    */
-  override async save(): Promise<this> {
+  override async save(options?: SmrtSaveOptions): Promise<this> {
     if (this.targetUrl) {
       assertHttpTargetUrl(this.targetUrl);
     }
@@ -164,7 +170,7 @@ export class ReferralLink extends SmrtObject {
         // DB not ready / table absent — nothing persisted to protect yet.
       }
     }
-    return (await super.save()) as this;
+    return (await super.save(options)) as this;
   }
 }
 

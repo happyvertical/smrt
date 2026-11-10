@@ -62,34 +62,25 @@ export class MembershipOverrideCollection extends SmrtCollection<MembershipOverr
   }
 
   /**
-   * Set an override for a membership
+   * Set an override for a membership.
+   *
+   * An upsert on the `(membership_id, permission_id)` natural key (#3375):
+   * concurrent calls converge on one row, the last write's effect wins, and
+   * an existing override keeps its id.
    */
   async setOverride(
     membershipId: string,
     permissionId: string,
     effect: OverrideEffect,
   ): Promise<MembershipOverride> {
-    // Check if override already exists
-    const existing = await this.list({
-      where: { membershipId, permissionId },
-      limit: 1,
-    });
-
-    if (existing.length > 0) {
-      // Update existing override
-      existing[0].effect = effect;
-      await existing[0].save();
-      return existing[0];
-    }
-
-    // Create new override
-    const override = await this.create({ membershipId, permissionId, effect });
-    await override.save();
-    return override;
+    return await this.create({ membershipId, permissionId, effect });
   }
 
   /**
-   * Remove an override
+   * Remove the override for a membership/permission pair, returning whether
+   * one existed. Every row for the pair is removed, so a duplicate left by a
+   * deployment that has not yet run `deduplicateAuthorityPairs()` can never
+   * keep the override in force.
    */
   async removeOverride(
     membershipId: string,
@@ -97,15 +88,9 @@ export class MembershipOverrideCollection extends SmrtCollection<MembershipOverr
   ): Promise<boolean> {
     const existing = await this.list({
       where: { membershipId, permissionId },
-      limit: 1,
     });
-
-    if (existing.length === 0) {
-      return false;
-    }
-
-    await existing[0].delete();
-    return true;
+    for (const override of existing) await override.delete();
+    return existing.length > 0;
   }
 
   /**

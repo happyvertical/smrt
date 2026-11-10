@@ -18,6 +18,16 @@ review, reimbursement recording, and smrt-commerce commitment drawdown (#3289).
   `filename`, `mimeType`, `byteCount`, `contentSha256`. Collection extends
   `SmrtJunction` (left expense, right asset, ordered by `created_at`).
 
+## Recipe
+
+`src/recipes.ts` declares one `SmrtRecipe`, `expenses.tracking` (label
+"Expenses", section `accounting`, shared with `ledgers.bookkeeping`), emitted
+into the built `manifest.json` and `smrt-knowledge.json` `recipes`. It brings
+`Expense` with `ExpenseReceipt` as a child model, hides the cost-object type,
+commitment and reviewer plumbing, and leaves the read-only review fields as
+they are (review is method-only; see below). Help lives in
+`src/tracking.recipe.md` (#3591). See [core recipes](../core/agents/recipes.md).
+
 ## Invariants
 
 - **Review is method-only.** `review()`, `reject()`, `markDuplicate()`,
@@ -89,14 +99,29 @@ review, reimbursement recording, and smrt-commerce commitment drawdown (#3289).
   Consumers make it required with a qualified
   `registerTenantScopedClass(…, { mode: 'required' })`.
 - **Closed generated surface.** Models AND collections declare
-  `api: { include: [] }`, `mcp: { include: [] }`, `cli: false`. Collection
-  classes are registered too: an undecorated collection publishes its CRUD and
-  public methods as MCP tools. Core has no consumer-side switch to reopen a
-  package model's surface; consumers write their own routes.
+  `mcp: { include: [] }`, `cli: false` and no generated CRUD or reads
+  (generated reads check no read permission, and cost visibility is
+  permission-gated). Collection classes are registered too: an undecorated
+  collection publishes its CRUD and public methods as MCP tools. Core has no
+  consumer-side switch to reopen a package model's surface.
+- **Generated write actions (#4001).** `ExpenseCollection` hosts the only
+  generated writes, on REST: `record`, `attachReceipt`, `recordReview`
+  (`decision: 'approve' | 'reject'`, reject needs `reason`) and
+  `recordReimbursement`. `Expense` and `ExpenseCollection` both list them in
+  `api.include` (runtime REST gates on the item, SvelteKit on the collection).
+  Their names differ from `Expense.review()` / `markReimbursed()` on purpose:
+  allowlisting a collection action must never open an instance method that
+  takes the actor from its input. `src/actions/` delegates to the guarded
+  model flow; identity comes from the tenancy/session ALS, never the body;
+  each authorizes `expenses.<action>` via `assertOperationPermission` (system
+  context never bypasses; review and reimbursement refuse super-admin bypass).
+  Acting on someone else's expense needs `recordReview`. There is no submit
+  state: a recorded expense is `unreviewed`, i.e. awaiting review.
 - **Cost object is not dereferenced on save.** `getCostObject()` resolves it
   through the registry and returns `null` for a foreign-tenant row. One cost
-  object per expense (columns, not a `SmrtPolymorphicAssociation` join) so a
-  cost can never roll up into two jobs.
+  original cost object per expense. Reviewed relational allocation revisions
+  can attribute that source to multiple targets; target totals count portions
+  instead of the original attribution. See [reviewed allocations](agents/reviewed-allocations.md).
 
 ## Optional financial facts
 
@@ -113,22 +138,28 @@ source in id order before either refund check, while SQLite serializes writes.
 The inbound projected lookup uses the existing `refund_of_id` index and an
 explicit owner filter. Keep caller transaction affinity and per-row revision
 checks; neither an unlocked lookup nor revision CAS alone protects this pair.
+
+`ExpenseCollection.listReviewedTaxFacts({ tenantId, from, to, currency? })`
+is the reporting input for supplier facts: it returns only that tenant's reviewed,
+non-duplicate expenses in the inclusive calendar-date range. A null
+`financialBreakdown` remains an unknown legacy fact, never zero tax.
+Each fact carries `expenseId` as the commerce reporting identity; `id` remains
+the compatible owner alias.
 All three fields participate in the reviewed-money freeze. See the README and
 [financial facts test matrix](agents/financial-facts-test-matrix.md).
 
-Linking a new refund (or changing its source) also claims the source revision in
+Linking a refund, changing its source, or editing amount/financial facts claims the source revision in
 that same transaction through `claimRevision(source.updated_at)`. This makes a
 source edit under an older PostgreSQL `REPEATABLE READ` snapshot fail with a
 serialization error instead of missing the new refund. Reload a source after
 linking a refund before editing/reviewing it; on a serialization failure, retry
 the entire caller transaction with fresh instances. Failed outer transactions
-roll back both the refund and the source revision claim. Existing-link saves do
-not advance the source revision.
+roll back both the refund and the source revision claim. Saves without capacity-relevant changes do not advance the source revision.
 
 ## Cross-package references
 
 - `vendorId` → `@crossPackageRef('@happyvertical/smrt-commerce:Vendor')`
-- `commitmentId` → `…smrt-commerce:Contract` (usually a `PurchaseOrder`)
+- `commitmentId` → `…smrt-commerce:PurchaseContract` (`PurchaseOrder` or `ProductionOrder`)
 - `commitmentLineId` → `…smrt-commerce:ContractLineItem`
 - `assetId` → `…smrt-assets:Asset`
 - profile ids → `…smrt-profiles:Profile` (no dependency; references only)
@@ -160,3 +191,55 @@ profile ids in tests: PostgreSQL stores them as `uuid`.
 Draft amounts are lossless currency-unit text; model/review amounts remain integer
 minor units. Receipt upload is composed from Assets, never reimplemented here.
 `test` includes backend and UI SSR; `test:e2e` proves native browser submissions.
+
+
+## Exact refund capacity (#4070)
+
+All persisted linked refunds reserve gross capacity regardless of review state.
+`refundPosition(sourceId)` / `getRefundPosition()` expose exact positive cash
+magnitudes and nullable complete financial residuals. `src/refund-position.ts`
+bounds known subtotal and tax-code charged/recoverable/nonrecoverable reversals
+separately; source component identities cannot compensate for one another.
+Unknown facts stay null, and known linked facts cannot be cleared. Source edits
+and refund edits revalidate the prospective position under the existing source
+locks and revision claims. No customer credit or cash recipient is inferred.
+
+## Cash reimbursement positions (#4073)
+
+`refundRecipient` guarded JSON is explicit company/person/third-party cash receipt evidence,
+separate from payer. Third-party names are exact bounded source evidence, never
+verified identities or fuzzy joins. Missing/other-person/third-party direction
+stays unknown for person reimbursement; third-party yields
+`unknown-third-party-recipient`. Public
+`reimbursementPosition` / `getReimbursementPosition` returns nonnegative remaining
+claim and separate money owed to company; never offset economic cost basis or
+infer historical payment. `markReimbursed` stores exact full remaining
+`reimbursedAmount` with date/reference; direct payment-field writes, replacement
+payments, and later source cash-claim/payer edits are refused. Legacy payment
+markers with null amount remain unknown. Recipient changes share refund source
+locks/CAS, including rollback and stale REPEATABLE READ decisions.
+
+## Supplier payable authority (#4096)
+
+`src/supplier-payable.ts` owns exact dated retention/settlement/refund-direction
+projection, separately from incurred cost and employee reimbursement. The guarded
+`supplierPayableJson` is method-only, original snapshot + append-only child UUIDs
++ optional one-time unknown-basis completion. Current source-row locks/CAS also
+serialize this authority with linked refunds. Direct field writes/deletes and
+managed money/payer/refund mutations fail; no generated action exposes these
+methods. Unknown basis or unreconciled refund remains unknown and blocks new
+settlement. A settlement records evidence; it executes no bank/provider/journal
+operation. Preserve explicit chronological prefixes and same-day ordering.
+See README and `agents/supplier-payable-test-matrix.md` for the full contract.
+
+## Reviewed allocations (#4746)
+
+See [reviewed allocations](agents/reviewed-allocations.md) and its
+[behavior matrix](agents/allocation-test-matrix.md). Source accounting remains
+singular; immutable portions own attribution and canonical billing identities.
+
+Unbilled `withdrawAllocation` audits a full return to the original unsplit target,
+requires source/all-old/restored-target authority, refuses any active billing
+claim, and permits later explicit source correction without losing history.
+Revision kind/predecessor + typed source snapshots preserve old portion facts
+when the active head is null; receipt provenance stays frozen after withdrawal.

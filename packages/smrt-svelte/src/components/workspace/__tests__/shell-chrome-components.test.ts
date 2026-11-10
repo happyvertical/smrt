@@ -4,6 +4,7 @@ import { describe, expect, it, vi } from 'vitest';
 import PhoneBottomBar from '../admin-shell/PhoneBottomBar.svelte';
 import PhoneTopBar from '../admin-shell/PhoneTopBar.svelte';
 import ShellNavToggle from '../admin-shell/ShellNavToggle.svelte';
+import NamedIcon from './named-icon.svelte';
 import TestIcon from './test-icon.svelte';
 
 describe('ShellNavToggle', () => {
@@ -127,5 +128,49 @@ describe('PhoneBottomBar', () => {
     expect(
       screen.getByRole('button', { name: 'Assistant, new reply' }),
     ).toBeInTheDocument();
+  });
+
+  it('draws icon names through iconComponent, and keeps component icons', () => {
+    const { container } = render(PhoneBottomBar, {
+      props: {
+        iconComponent: NamedIcon,
+        items: [
+          { id: 'jobs', label: 'Jobs', icon: 'jobs-glyph', href: '/jobs' },
+          { id: 'menu', label: 'Menu', icon: TestIcon, onclick: () => {} },
+          {
+            id: 'by-name',
+            label: 'Other',
+            iconName: 'other-glyph',
+            href: '/o',
+          },
+        ],
+      },
+    });
+    expect(container.querySelector('[data-item="jobs"]')?.innerHTML).toContain(
+      'jobs-glyph',
+    );
+    expect(
+      container.querySelector('[data-item="by-name"]')?.innerHTML,
+    ).toContain('other-glyph');
+    expect(container.querySelector('[data-item="menu"] svg')).not.toBeNull();
+    expect(container.querySelectorAll('[data-icon]')).toHaveLength(2);
+  });
+
+  it('draws a built-in shell icon name itself even with iconComponent', () => {
+    const { container } = render(PhoneBottomBar, {
+      props: {
+        iconComponent: NamedIcon,
+        items: [{ id: 'h', label: 'Home', iconName: 'edit', href: '/' }],
+      },
+    });
+    expect(container.querySelector('[data-item="h"] svg')).not.toBeNull();
+    expect(container.querySelectorAll('[data-icon]')).toHaveLength(0);
+  });
+
+  it('draws a built-in shell icon name without iconComponent', () => {
+    const { container } = render(PhoneBottomBar, {
+      props: { items: [{ id: 'h', label: 'Home', icon: 'edit', href: '/' }] },
+    });
+    expect(container.querySelector('[data-item="h"] svg')).not.toBeNull();
   });
 });

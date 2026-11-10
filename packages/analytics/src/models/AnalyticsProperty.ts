@@ -301,11 +301,11 @@ export class AnalyticsProperty extends SmrtObject {
       },
     );
 
-    const ai = await this.getAiClient();
-    const analysis = await ai.message(
-      resolvedPrompt.text,
+    // A tier profile (#4750) picks the tier client; tier keys are stripped.
+    const { ai, aiOptions } = await this.prepareAiOperation(
       promptMessageOptions(resolvedPrompt.ai),
     );
+    const analysis = await ai.message(resolvedPrompt.text, aiOptions);
 
     return {
       action: 'analyzePerformance',

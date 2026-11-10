@@ -26,14 +26,52 @@ collection class and its populated model share an endpoint, the model owns the
 canonical collection key and row payload schema; the collection class remains
 available under a deterministic class-derived secondary key. Selection and
 collision suffixes must not depend on manifest insertion order (#2027).
+Client entry selection skips the framework base classes exactly as route
+emission does (`isFrameworkBaseClass`, #2642): a consumer aggregating
+`@happyvertical/smrt-core` receives `SmrtObject`/`SmrtCollection`, and the
+client must not advertise their CRUD or methods (static helpers included) as
+callable actions that no route serves (#3295). Static model methods stay
+collection-scoped (`method(options)`), instance methods item-scoped
+(`method(id, options)`), matching the emitted route files.
 Route emission iterates manifest objects in the same deterministic
 qualified-identity order (`orderedManifestObjectEntries`), so when two models
 share one collection the last writer of each route file — and therefore the
 CRUD method set `resolveGeneratedEndpointCrudMethods` mirrors into
 `smrt-client.d.ts` — is stable across scan orders (#2754).
+The generated sync-apply route keys `SYNC_TARGETS` by segment and resolves one
+owner per segment among models exposing a mutating op: STI base (an
+API-enabled base without mutating ops fails the segment closed), else first in
+qualified-identity order. A shared segment's registry key and write policy are
+byte-stable across scan orders (#2807).
 For aggregated manifests, inheritance and item-type references resolve exact
 qualified names first, then package-local simple names, then a stable identity
 fallback so duplicate class names across packages cannot reintroduce ordering.
+
+Object row-type declarations (`XData` in `smrt-objects.d.ts`, `smrt-types.d.ts`,
+the Vite ambient `virtual-modules.d.ts`, and the `@smrt/types` module) are one
+per CLASS, selected by `selectObjectDeclarations()` in
+`src/manifest/object-declarations.ts`; every emitter reads it. Built workspace
+libraries list a consumed model under their own package name (#3110), so an
+aggregated consumer manifest can name one class several times: listings with
+the same absolute declaring `filePath`, `className`, and field shape collapse
+to one declaration, rendered from the first listing in qualified-identity order
+(#3296). A path alone is machine-local evidence, so a relative or missing
+`filePath`, or disagreeing fields, keeps the listing separate. The aggregated
+manifest itself keeps every listing.
+
+Names follow the qualified identity when simple names collide (#3115): a
+unique class keeps `${className}Data`; distinct classes sharing a simple name
+each get a package-qualified name (`@ergot/market-core:LicenseSale` ->
+`ErgotMarketCoreLicenseSaleData`), none keeps the bare name (a stem without a
+known package is suffixed), and the generator warns with each name and every
+listing it covers. The prefix is the package of the declaration's first
+listing in qualified-identity order, which for a class relisted by consumer
+packages (#3296) need not be the declaring package. One class whose listings
+disagree on fields (a stale relisting) also forms a collision group, so it
+loses its bare name until the stale package is rebuilt. Client and web declarations resolve row types
+through `createObjectDeclarationIndex().interfaceNameFor()` and import them
+(`import('./smrt-objects')`, `import('@happyvertical/smrt-virt-types')`);
+a bare name does not resolve inside an ambient module.
 
 The web module also emits a build-time **`manifestHash`** constant (#1764): `computeWebManifestHash(manifest)` is a deterministic, replica-stable digest of the emitted web-collection SHAPE (name/className/endpoint/idField/actions/fields/relationships), canonicalized (recursive key sort) before `sha256 → base64url`, truncated to 16 chars — so the same schema always hashes the same, and a field add/remove/type-change/edge-change changes it. A change means old persisted client rows may mis-hydrate, so smrt-web keys its durable persistence namespace on it and its `updateAvailable` contract signal compares against it. Four co-managed emission sites must not drift: the runtime value (`generateWebModule`), the `@happyvertical/smrt-virt-web` ambient d.ts (`vite-plugin/index.ts`), the physical `@smrt/web` d.ts (`prebuild/index.ts`), and the hand-written type mirror in `@happyvertical/smrt-web` (`packages/smrt-web/src/index.ts` — dependency-free, so textual sync only).
 
@@ -41,6 +79,43 @@ The web module also emits a build-time **`manifestHash`** constant (#1764): `com
 identifier, or annotation changes cannot alter persisted row hydration.
 
 Per-field web emission (#2046): `buildWebFieldDefinitions` carries `description` (from `@field({ description })`) and sanitized `ui` hints (from `@field({ ui: { basic, group, order, locked } })`, read off the manifest `_meta.ui` bag through per-key type guards) into each emitted field definition, and `buildWebToolDescriptors` threads the same `description` into browser MCP tool schemas. `sensitive`/`transient` fields are excluded from emission entirely, so their descriptions never ship. Both keys are conditional, so hint-less schemas emit byte-identical definitions (and hashes) as before; adding a description/ui hint changes the manifest hash — deliberate over-invalidation, harmless per the #1764 contract.
+
+## MCP `get` serializers
+
+A model may add an async serializer only to its standard generated MCP `get`
+tool. Configure a module specifier and named export under `mcp.serializers.get`:
+
+```ts
+@smrt({
+  mcp: {
+    serializers: {
+      get: {
+        importPath: '@scope/package',
+        exportName: 'serializeThingMcpGet',
+      },
+    },
+  },
+})
+```
+
+The named export receives `(item, options: PublicJsonOptions)` and returns the
+get result (or a promise for it). Bare package specifiers resolve with ESM
+conditions from the declaring model's loaded module, so the serializer's owning
+package is an application dependency rather than a dependency of core or a
+generic dispatcher. This anchor is independent of `process.cwd()`. Relative
+references retain ordinary dynamic-import behavior. The MCP runtime imports
+and caches the named module, then calls the serializer after normal
+authentication, tenant-scoped lookup, and read access have admitted and loaded
+the item. A missing or non-function export makes that `get` call fail. The hook
+replaces only the standard `get` result; generated `list`, writes, deletes, and
+custom actions keep their existing contracts.
+
+The serializer owns its public projection. Start with
+`item.toPublicJSON(options)`, and project each related model with that model's
+`toPublicJSON(options)` before adding it. The final transport pass cannot make
+arbitrary plain aliases permission-safe: returning a DTO does not cause fields
+inside it to be filtered by model policy. Do not use `toJSON()` or spread model
+instances into a serializer result.
 
 ## Generated MCP server output language
 
@@ -66,6 +141,16 @@ CommonJS package would then parse as CommonJS. The entry is written at the
 requested path rather than a hardcoded `index.js`.
 Generated code also has to be valid in an ES module: `arguments` is not a legal
 binding name there, however convenient it reads.
+
+## Inference status route (#4757)
+
+`GET {basePath}/_inference[?tier=<tier>]` (`src/generators/inference-status-route.ts`)
+on the runtime `APIGenerator` returns the ambient principal's `InferenceStatus`
+(`{ available, mode, reason?, tier? }`, never a key), runs
+`authMiddleware('_inference', 'status')` when one is configured, and refuses
+non-`GET` with 405. SvelteKit apps serve the same body from their own
+`+server.ts` with `createInferenceStatusHandler()`; no route file is
+generated. Contract: [inference.md](inference.md#inference-mode-and-ai_unavailable-4757).
 
 ## Browser-plane playbook preflight route (#2590)
 
@@ -185,6 +270,103 @@ rather than asserting the collision.
 `smrt doctor` prints the whole surface — model tools, intents, playbooks — from
 these artifacts alone, with no application running.
 
+## Collection exposure
+
+A collection class is registered as a resource of its own, so every transport
+generates operations for it (`<name>collection_create` MCP tools,
+`<name>collection:create` CLI commands, routes for its public methods). It may
+never publish more than its model. `registry/collection-exposure.ts` holds the
+rule; the manifest generator applies it (`mergeInheritedFields`) and
+`ObjectRegistry.getConfig()` applies it again at runtime, so a manifest built
+before the rule is held to it too. For each of `api`/`mcp`/`cli` the collection
+leaves unset, it inherits the model's: `false` stays `false`; an `include`
+list keeps only its CRUD verbs (the other names are the model's instance
+methods, so the collection's own methods stay closed); an `exclude` list is
+copied; an open model leaves the collection open. A `sensitive: true` model's
+collection gets read-only MCP; one that configures `mcp` itself keeps its
+custom methods, but the runtime CRUD cap below still drops its MCP writes. The CLI treats
+a collection's `include` as the complete allowlist, as MCP and REST do.
+
+The scanner records the surfaces it copied as `inheritedExposure` on the
+collection's manifest entry. At runtime those surfaces follow the model's
+effective config, narrowed and never widened (`false` wins, `include` lists
+intersect, `exclude` lists union), so a consumer that closes the model
+(`registerOverride`, or a subclass manifest that replaces it) closes the
+undecorated collection too. On `mcp`/`cli` the runtime also caps every
+collection's generated CRUD verbs to the model's effective ones, decorated or
+not; custom methods a collection lists stay its own opt-in, closed with
+`registerOverride` on the collection class. `exclude: ['*']` is not a
+wildcard any generator reads, so both the scanner and `getConfig()` normalize
+it to `include: []` (fail closed; smrt-profiles `MagicLinkToken`). See #3468,
+`registry/__tests__/issue-3468-closed-collection-exposure.test.ts`. Surface
+tests must match `<model>collection_` tool names as well as `<model>_`.
+
+A collection opens its own methods by listing them in its own `@smrt()`. A
+collection decorator's config is merged over its model's at runtime, so repeat
+the model's CRUD verbs (and storage keys) there. The build fails with
+`CONFIG_COLLECTION_EXPOSURE` when a collection's own surface opens an MCP or
+CLI CRUD write its model closes. Gates: `registry/__tests__/collection-exposure.test.ts`,
+`packages/cli/src/__tests__/collection-exposure.test.ts`, and the cross-package
+`packages/bundle-gate/src/__tests__/collection-exposure.spec.ts`.
+
+## Explicit collection action resources
+
+A typed `SmrtCollection<Model>` may declare `@smrt({ collection: 'operations',
+api: { include: ['submit'] }, cli: { include: ['submit'] } })` to give its
+custom actions a distinct route namespace. The explicit `collection` controls
+routes; the collection still inherits its model's storage/schema. Without an
+explicit namespace, the existing model collection name is inherited. When both
+the model and its action host expose HTTP CLI commands in that inherited
+namespace, discovery combines disjoint commands under the model resource shell,
+while evaluating each command with its original class policy. Explicit duplicate
+namespaces and overlapping routes/commands remain configuration errors.
+
+HTTP CLI discovery includes only named custom methods in the collection's
+`cli.include` that its API exposes. Boolean/default CLI config, wildcard-only
+includes and `mirror: 'api'` alone do not opt a collection into discovery;
+collections never advertise CRUD. Both static and instance collection methods
+use collection-scoped URLs without an item id. Existing unsupported-signature
+warnings and the handler's per-command policy still apply.
+
+The collection must declare or inherit its real `_itemClass` and be registered
+as that model's collection constructor. A facade may extend an undecorated
+domain collection to retain its instance behavior; include that collection
+ancestry in the consumer manifest. Generated startup retains its existing
+side-effect imports and registers discovery metadata and exact live constructor
+bindings only for named API/HTTP
+CLI action hosts and their collection ancestors. Ordinary collections stay
+side-effect-only. Runtime schema ownership also recognizes real
+`SmrtCollection` prototype ancestry when a domain parent is not registered;
+class names and `_itemClass` alone do not exempt a model from table ownership. Generated routes resolve the model's registry
+identity and invoke the registered collection, not an arbitrary model instance.
+A distinct route namespace does not change authorization: collection-hosted
+writes retain the model collection's permission slug (#2977). Discovery is
+capability filtering, not row authorization; the route and domain action remain
+authoritative for authentication, permissions and tenant ownership.
+
+## Subclass exposure
+
+A model that extends another registered model (`Person extends Profile`, an
+STI contract subtype, a CTI subclass) is generated as a resource of its own,
+but every operation it inherits is its parent's. `registry/subclass-exposure.ts`
+holds the rule; the manifest generator applies it (`mergeInheritedFields`,
+before the collection pass, so a subclass's collection sees it) and
+`ObjectRegistry.getConfig()` applies it again at runtime. For each of
+`api`/`mcp`/`cli` the subclass leaves unset it inherits the parent's effective
+value as is, and `sensitive: true` is inherited and cannot be dropped. An
+abstract parent's synthesized write exclusions are not inherited: its authored
+surface is, so its concrete subclasses can lift them.
+
+A subclass's own `@smrt()` may narrow its parent's surface. The build fails
+with `CONFIG_SUBCLASS_EXPOSURE` when it opens a CRUD verb or a parent method
+(on REST, MCP or CLI, read the way each generator reads `include`/`exclude`)
+that the parent closes, unless the subclass lists that operation in
+`widenParentExposure: { api: ['create'] }`; a listed operation that widens
+nothing also fails. Methods only the subclass declares are not checked. Gates:
+`registry/__tests__/subclass-exposure.test.ts`,
+`packages/cli/src/__tests__/subclass-exposure.test.ts`, and the cross-package
+`packages/bundle-gate/src/__tests__/subclass-exposure.spec.ts`.
+
 ## Custom-action contract
 
 `resolveCustomActionMetadata()` is the common discovery and invocation contract
@@ -209,6 +391,25 @@ namespaces. Typed CLI actions may use standard flag names such as `limit`,
 `offset`, `where`, and `format` without those values being stripped as CRUD
 flags.
 
+A parameter typed with a bare alias name declared in the method's own module
+(`type ActionOptions = Record<string, unknown>`) is resolved by the scanner
+(`resolveParameterAlias`, `packages/scanner/src/oxc-parser.ts`). Chains are
+followed, and the alias target is recorded as `resolvedType` beside the authored
+`type`, using only the declaring module's aliases, so neither a same-named alias
+elsewhere nor a subclass in another module can rebind an inherited parameter.
+Schema emitters and argument decoders read `declaredParameterType(parameter)`
+rather than `parameter.type`. A cyclic or over-long chain sets
+`aliasUnresolved` and is advertised with no type constraint. An imported or
+unknown name keeps the existing fallback, and the wire-ability gate still
+judges the authored name (#4327).
+
+MCP static dispatch resolves the exact qualified registry entry's model
+constructor first, then its registered `collectionConstructor`. Manifest-backed
+collection resources can retain a stub model constructor after generated
+`registerCollection()` binds the live class; invoke the static method with the
+selected constructor as `this`. Receiver resolution does not add tool exposure
+or permit an item-scoped method to run without its ID.
+
 Custom actions may return an explicit, domain-neutral failure object with
 `ok: false`, `code`, and `message` plus optional `status`, `details`,
 `retryable`, and `correlationId`. `normalizeCustomActionFailure()` redacts it;
@@ -230,8 +431,9 @@ Generated reads (`list`/`get`) on the REST and SvelteKit generators support cond
 
 `src/vite-plugin/dev-plane-route.ts` emits `<routesDir>/_dev/[...tool]/+server.ts`
 only when `svelteKit.devPlaneRoute.enabled === true` and
-`@happyvertical/smrt-dev-mcp/dev-plane` resolves from the consumer (same
-resolvability guard as `_resources`). The route is dev-only (`$app/environment`
+`@happyvertical/smrt-dev-mcp/dev-plane` resolves from the consumer under ESM
+import conditions (the shared `consumerResolvesImport` guard used by
+`_resources`; the subpath is `types`/`import`-only, #3913). The route is dev-only (`$app/environment`
 `dev`, else 404), refuses to start without `SMRT_DEV_MCP_TOKEN` (503), and
 delegates everything else to `createDevPlane`, passing `getSmrtConfig(...).db`
 from the embedded access prelude (below) so the plane shares the app's
@@ -315,3 +517,60 @@ tool schemas (`fieldTypeToJsonSchema`, so MCP and WebMCP descriptors), OpenAPI
 `null` to the list so `type: [.., 'null']` still validates. The client web
 collection `fields` map does not carry `enum` yet (it feeds the shape digest and
 three hand-mirrored d.ts files); tool inputs read it from the manifest field.
+
+## Custom-action permission aliases (#3878)
+
+`@smrt({ operationPermissions: { run: { action: 'read' } } })` lets a custom
+method reuse an existing CRUD grant in its own collection. Generated SvelteKit
+POST routes and smrt-users operation guards resolve the same mapping; the
+catalog emits the target grant rather than a second method-named permission.
+CRUD itself cannot be aliased. Malformed declarations fail closed. Optional
+`databaseActions: ['SELECT', 'UPDATE']` adds explicit PostgreSQL policy bindings
+for the aliased grant (for example a status-only archive guarded by `create`
+that must load its item before updating it). This is server-authored authority
+metadata: grant only the actions the method needs, review it with the method's
+model-level validation, and regenerate RLS policies when adopting a changed
+binding.
+
+Custom actions retain the `{ action, result }` response envelope.
+
+## Collection-hosted REST factory identity (#4320)
+
+Generated collection custom-action handlers resolve their executable collection
+using the declaring resource's exact qualified registration key. Keep that
+factory key separate from the item model's qualified type/policy metadata:
+item collection slugs still govern permissions, and ordinary model routes keep
+their own factory lookup. A resource in another package must neither rebuild
+an item identity under its package nor steal the item's existing package when
+its collection decorator merges configuration. Registration and generated
+factory selection share one identity resolver; never install global aliases to
+repair an inferred or bundled class name.
+
+Every collection hosting a generated REST action receives its exact constructor
+binding even with `cli: false` or omitted CLI configuration. This runtime-only
+binding does not add discovery metadata: named HTTP CLI resources keep their
+existing explicit-include eligibility. Constructor-only qualified receivers keep
+their own collection-cache identity while resolving backing item metadata, so
+ordinary model factories cannot reuse a different resource receiver. Neither
+CLI nor MCP discovery gains a resource or default CRUD surface from this binding.
+
+When consumer registration owns external packages (`smrtDependencies`), its
+`.smrt/register.js` binds external REST action receivers using the resolved
+canonical/provider-context export. The SvelteKit registration module continues
+to delegate external imports there; external bindings also add no discovery
+metadata and do not depend on CLI inclusion.
+
+## Provider-facing tool schemas (`toProviderToolSchema`)
+
+Generated MCP input schemas are valid draft 2020-12 but model providers accept
+less: a `<model>_get` tool declares a top-level `anyOf` (id or slug) and OpenAI
+and Anthropic both answer 400 for the WHOLE request when any one tool carries
+it ("schema must have type 'object' and not have 'oneOf'/'anyOf'/... at the top
+level"; "input_schema does not support oneOf, allOf, or anyOf at the top
+level"), so one app model broke every model call. Any code that hands generated
+tools to a provider (an assistant, an agent loop) must pass each `inputSchema`
+through `toProviderToolSchema()` (`src/generators/provider-tool-schema.ts`): it
+inlines local `$ref`/`$defs`, drops `$schema`, and removes top-level
+`anyOf`/`oneOf`/`allOf`/`not`/`enum`/`const`, keeping `required` alternatives as
+a description sentence. MCP clients keep the original schema. Test:
+`src/generators/__tests__/provider-tool-schema.test.ts`.

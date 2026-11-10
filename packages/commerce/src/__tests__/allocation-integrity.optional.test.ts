@@ -11,13 +11,18 @@ import {
   isPostgresAvailable,
 } from '@happyvertical/smrt-vitest';
 import type { DatabaseInterface } from '@happyvertical/sql';
-import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
+import { afterEach, beforeEach, describe, expect, vi } from 'vitest';
 import { assertAllocationParent } from '../allocation-integrity.js';
 import { CustomerCollection } from '../collections/CustomerCollection.js';
 import { InvoiceCollection } from '../collections/InvoiceCollection.js';
 import { PaymentAllocationCollection } from '../collections/PaymentAllocationCollection.js';
 import { PaymentCollection } from '../collections/PaymentCollection.js';
 import { InvoiceStatus } from '../types/index.js';
+import { createV2Invoice, inTenant, tenantIt } from './helpers/v2-tenant.js';
+
+// Commerce money documents require a tenant (#4021). Tenancy is on so the
+// payments, customers and allocations share the invoices' tenant.
+const it = tenantIt();
 
 const classes = [
   'Customer',
@@ -27,6 +32,11 @@ const classes = [
   'InvoiceLineItem',
   'Payment',
   'PaymentAllocation',
+  // Money-v2 aggregate persistence (#4021).
+  'DocumentTax',
+  'TaxCode',
+  'TaxComponent',
+  'TaxSettings',
 ];
 for (const engine of [
   'sqlite',
@@ -39,31 +49,34 @@ for (const engine of [
     let invoices: InvoiceCollection;
     let allocations: PaymentAllocationCollection;
     let customerId: string;
-    beforeEach(async () => {
-      if (engine === 'postgres') {
-        const isolated = await createIsolatedTestDbFromManifest({
-          includeObjects: classes,
-        });
-        db = isolated.baseDb;
-        cleanup = isolated.cleanup;
-      } else {
-        db = await getTestDatabase({
-          type: engine as 'sqlite' | 'duckdb',
-          url: ':memory:',
-          classes,
-        });
-        cleanup = async () => {
-          await db.close?.();
-        };
-      }
-      payments = await PaymentCollection.create({ db });
-      invoices = await InvoiceCollection.create({ db });
-      allocations = await PaymentAllocationCollection.create({ db });
-      const customers = await CustomerCollection.create({ db });
-      customerId = String(
-        (await customers.create({ profileId: randomUUID() })).id,
-      );
-    });
+    beforeEach(
+      inTenant(async () => {
+        enableTenancy();
+        if (engine === 'postgres') {
+          const isolated = await createIsolatedTestDbFromManifest({
+            includeObjects: classes,
+          });
+          db = isolated.baseDb;
+          cleanup = isolated.cleanup;
+        } else {
+          db = await getTestDatabase({
+            type: engine as 'sqlite' | 'duckdb',
+            url: ':memory:',
+            classes,
+          });
+          cleanup = async () => {
+            await db.close?.();
+          };
+        }
+        payments = await PaymentCollection.create({ db });
+        invoices = await InvoiceCollection.create({ db });
+        allocations = await PaymentAllocationCollection.create({ db });
+        const customers = await CustomerCollection.create({ db });
+        customerId = String(
+          (await customers.create({ profileId: randomUUID() })).id,
+        );
+      }),
+    );
     afterEach(async () => {
       disableTenancy();
       await cleanup?.();
@@ -74,14 +87,20 @@ for (const engine of [
         amount,
         currency: 'CAD',
       });
-      const invoice = await invoices.create({
-        status: InvoiceStatus.SENT,
-        customerId,
-        subtotal: amount,
-        totalAmount: amount,
-        currency: 'CAD',
-      });
+      const invoice = await issuedInvoice(amount);
       return { payment, invoice };
+    }
+    // An issued (SENT) CAD invoice whose frozen total is `amount`.
+    function issuedInvoice(
+      amount: number,
+      overrides: { currency?: string; customerId?: string } = {},
+    ) {
+      return createV2Invoice(db, {
+        invoiceNumber: `INV-${randomUUID()}`,
+        customerId: overrides.customerId ?? customerId,
+        currency: overrides.currency ?? 'CAD',
+        lines: amount > 0 ? [amount] : [],
+      });
     }
     it('preserves payment-only deployments without allocation storage', async () => {
       await db.query('DROP TABLE payment_allocations');
@@ -115,24 +134,23 @@ for (const engine of [
       }
     });
     it('rejects mismatched currency and zero-total invoices before a row is committed', async () => {
-      const { payment, invoice } = await fixtures();
-      invoice.currency = 'USD';
-      await invoice.save();
+      const { payment } = await fixtures();
+      // An issued invoice's currency is frozen (#4021), so the mismatch is a
+      // separate USD invoice rather than an edit.
+      const usd = await issuedInvoice(100, { currency: 'USD' });
       await expect(
         allocations.create({
           paymentId: payment.id,
-          invoiceId: invoice.id,
+          invoiceId: usd.id,
           amount: 20,
         }),
       ).rejects.toThrow(/currency/);
-      invoice.currency = 'CAD';
-      invoice.subtotal = 0;
-      invoice.totalAmount = 0;
-      await invoice.save();
+      const empty = await issuedInvoice(0);
+      expect(empty.totalAmount).toBe(0);
       await expect(
         allocations.create({
           paymentId: payment.id,
-          invoiceId: invoice.id,
+          invoiceId: empty.id,
           amount: 20,
         }),
       ).rejects.toThrow(/over-pay/);
@@ -172,14 +190,16 @@ for (const engine of [
         }),
       ).rejects.toThrow(/Payment/);
       const customers = await CustomerCollection.create({ db });
-      invoice.customerId = String(
-        (await customers.create({ profileId: randomUUID() })).id,
-      );
-      await invoice.save();
+      // An issued invoice's customer is frozen (#4021): bill another one.
+      const otherCustomer = await issuedInvoice(100, {
+        customerId: String(
+          (await customers.create({ profileId: randomUUID() })).id,
+        ),
+      });
       await expect(
         allocations.create({
           paymentId: payment.id,
-          invoiceId: invoice.id,
+          invoiceId: otherCustomer.id,
           amount: 1,
         }),
       ).rejects.toThrow(/customer/);
@@ -196,11 +216,8 @@ for (const engine of [
           amount: 100,
           currency: 'CAD',
         });
-        const invoice = await invoices.create({
-          customerId: customer.id,
-          subtotal: 100,
-          totalAmount: 100,
-          currency: 'CAD',
+        const invoice = await issuedInvoice(100, {
+          customerId: String(customer.id),
         });
         await allocations.create({
           paymentId: payment.id,
@@ -248,14 +265,14 @@ for (const engine of [
       payment.amount = 100;
       payment.currency = 'USD';
       await expect(payment.save()).rejects.toThrow(/currency/);
+      // An issued invoice's currency (and its document text) is frozen
+      // outright (#4021).
       invoice.currency = 'USD';
       await expect(invoice.save()).rejects.toThrow(/currency/);
+      invoice.currency = 'CAD';
       payment.currency = 'CAD';
       payment.notes = 'allowed correction';
       await payment.save();
-      invoice.currency = 'CAD';
-      invoice.notes = 'allowed correction';
-      await invoice.save();
       const customers = await CustomerCollection.create({ db });
       payment.customerId = String(
         (await customers.create({ profileId: randomUUID() })).id,
@@ -275,13 +292,7 @@ for (const engine of [
     });
     it('splits atomically, replays exact stable ids and rejects changed replay', async () => {
       const { payment, invoice } = await fixtures();
-      const second = await invoices.create({
-        status: InvoiceStatus.SENT,
-        customerId,
-        currency: 'CAD',
-        subtotal: 100,
-        totalAmount: 100,
-      });
+      const second = await issuedInvoice(100);
       const input = {
         paymentId: String(payment.id),
         allocations: [
@@ -369,13 +380,7 @@ for (const engine of [
     });
     it('rolls the entire split back when a later leg exceeds its cap', async () => {
       const { payment, invoice } = await fixtures();
-      const second = await invoices.create({
-        status: InvoiceStatus.SENT,
-        customerId,
-        currency: 'CAD',
-        subtotal: 10,
-        totalAmount: 10,
-      });
+      const second = await issuedInvoice(10);
       await expect(
         allocations.allocatePayment({
           paymentId: String(payment.id),
@@ -489,24 +494,16 @@ for (const engine of [
           await allocations.getTotalAllocatedToInvoice(String(invoice.id)),
         ).toBe(60);
       });
-    it.each([
-      'payment',
-      'invoice',
-    ])('serializes a %s reduction against an allocation', async (kind) => {
+    it('serializes a payment reduction against an allocation', async () => {
       const { payment, invoice } = await fixtures();
-      const mutation = kind === 'payment' ? payment : invoice;
-      if (kind === 'payment') payment.amount = 50;
-      else {
-        invoice.subtotal = 50;
-        invoice.totalAmount = 50;
-      }
+      payment.amount = 50;
       const results = await Promise.allSettled([
         allocations.create({
           paymentId: payment.id,
           invoiceId: invoice.id,
           amount: 60,
         }),
-        mutation.save(),
+        payment.save(),
       ]);
       expect(results.some((result) => result.status === 'rejected')).toBe(true);
       const committed = await allocations.getTotalAllocatedToInvoice(
@@ -518,6 +515,21 @@ for (const engine of [
       expect(committed).toBeLessThanOrEqual(
         (await invoices.get(invoice.id))!.totalAmount,
       );
+    });
+    it('freezes an issued invoice total, so it cannot be reduced under an allocation', async () => {
+      // The invoice-side race the payment case covers no longer exists: an
+      // issued invoice's money is frozen (#4021).
+      const { payment, invoice } = await fixtures();
+      await allocations.create({
+        paymentId: payment.id,
+        invoiceId: invoice.id,
+        amount: 60,
+      });
+      await invoice.loadFromId();
+      invoice.subtotal = 50;
+      invoice.totalAmount = 50;
+      await expect(invoice.save()).rejects.toThrow(/frozen/);
+      expect((await invoices.get(invoice.id))!.totalAmount).toBe(100);
     });
     it('uses the outer transaction executor and rolls allocations and parent revisions back', async () => {
       const { payment, invoice } = await fixtures();

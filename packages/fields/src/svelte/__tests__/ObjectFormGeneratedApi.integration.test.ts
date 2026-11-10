@@ -7,6 +7,7 @@
 import { readFileSync } from 'node:fs';
 import { resolve } from 'node:path';
 import { TextDecoder, TextEncoder } from 'node:util';
+import { getTestManifestPath } from '@happyvertical/smrt-vitest';
 import { vi } from 'vitest';
 
 vi.hoisted(() => {
@@ -125,7 +126,7 @@ function generatedDefinitions(): Record<
 > {
   // These fixture classes belong to Vitest's local artifact, not production.
   const manifest = JSON.parse(
-    readFileSync(resolve(process.cwd(), '.smrt/manifest.json'), 'utf8'),
+    readFileSync(getTestManifestPath(), 'utf8'),
   ) as SmartObjectManifest;
   return Object.fromEntries(
     selectWebCollectionEntries(manifest).map((entry) => [
@@ -445,14 +446,18 @@ describe('ObjectForm generated API integration', () => {
     await userEvent.click(
       within(organizationTitle).getByRole('button', { name: 'Save' }),
     );
+    // Save persists asynchronously and reloads the editor; the existing dialog
+    // is not evidence that either operation has completed.
     await vi.waitFor(() =>
       expect(
-        screen.getByRole('dialog', { name: 'Field settings' }),
-      ).toBeInTheDocument(),
+        within(
+          screen.getByRole('group', { name: 'Organization title' }),
+        ).getByRole('button', { name: 'Save' }),
+      ).toBeEnabled(),
     );
 
     await userEvent.click(screen.getByRole('tab', { name: 'Just me' }));
-    const personalTitle = screen.getByRole('group', {
+    const personalTitle = await screen.findByRole('group', {
       name: 'Organization title',
     });
     await userEvent.clear(
@@ -548,6 +553,17 @@ describe('ObjectForm generated API integration', () => {
     await userEvent.click(
       within(lockTitle).getByRole('button', { name: 'Save' }),
     );
+    await vi.waitFor(async () => {
+      const state = (await gearAdapter(aliceId, alicePermissions).load({
+        objectRef: eventRef,
+      })) as FieldPolicyEditorState;
+      expect(state.policy.fields.title.locked).toBe(true);
+      expect(
+        within(
+          screen.getByRole('group', { name: 'Organization title' }),
+        ).getByRole('button', { name: 'Save' }),
+      ).toBeEnabled();
+    });
     aliceLock.unmount();
 
     const bob = render(GeneratedApiGearFixture, {

@@ -11,6 +11,7 @@
 
 import { describe, expect, it } from 'vitest';
 import {
+  navigableManifestEntries,
   navTreeFromManifest,
   pluralizeClassName,
   type SmrtManifestLike,
@@ -641,5 +642,52 @@ describe('pluralizeClassName', () => {
 
   it('returns empty string unchanged', () => {
     expect(pluralizeClassName('')).toBe('');
+  });
+});
+
+describe('navigableManifestEntries — import-qualified STI parent (#4176)', () => {
+  // Two packages export `Agreement`; the consumer subtype imports the
+  // commerce one, so it shares commerce's `contracts` route — not sales'.
+  const manifest: SmrtManifestLike = {
+    objects: {
+      '@test/sales:Agreement': {
+        qualifiedName: '@test/sales:Agreement',
+        className: 'Agreement',
+        packageName: '@test/sales',
+        collection: 'agreements',
+        decoratorConfig: { api: { include: ['list'] } },
+      },
+      '@test/commerce:Agreement': {
+        qualifiedName: '@test/commerce:Agreement',
+        className: 'Agreement',
+        packageName: '@test/commerce',
+        collection: 'contracts',
+        decoratorConfig: { api: { include: ['list'] } },
+      },
+      '@test/app:AdvertisingProductContract': {
+        qualifiedName: '@test/app:AdvertisingProductContract',
+        className: 'AdvertisingProductContract',
+        packageName: '@test/app',
+        collection: 'contracts',
+        extends: 'Agreement',
+        extendsQualified: '@test/commerce:Agreement',
+        decoratorConfig: { api: { include: ['list'] } },
+      },
+    },
+  };
+
+  it('folds the subtype into the parent it imports', () => {
+    const qualifiers = navigableManifestEntries(manifest).map(
+      (item) => item.qualifier,
+    );
+    expect(qualifiers).toContain('@test/commerce:Agreement');
+    expect(qualifiers).not.toContain('@test/app:AdvertisingProductContract');
+  });
+
+  it('expands a permitted subtype to its imported parent, not the same-named one', () => {
+    const qualifiers = navigableManifestEntries(manifest, {
+      permittedResources: ['@test/app:AdvertisingProductContract'],
+    }).map((item) => item.qualifier);
+    expect(qualifiers).toEqual(['@test/commerce:Agreement']);
   });
 });

@@ -5,6 +5,10 @@
 import { defineMessages } from '@happyvertical/smrt-ui/i18n';
 
 export const M = defineMessages({
+  'subscriptions.picker.free': 'Free',
+  'subscriptions.picker.pay_what_you_can': 'Pay what you can',
+  'subscriptions.picker.minimum': 'Minimum {amount} / {interval}',
+  'subscriptions.picker.suggested': 'Suggested {amount} / {interval}',
   'subscriptions.commercial.overview_label': 'Commercial usage overview',
   'subscriptions.summary.current_plan': 'Current plan',
   'subscriptions.summary.ends': 'Ends',

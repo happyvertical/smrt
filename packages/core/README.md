@@ -159,6 +159,13 @@ cache whole-plan results, or change database pool defaults.
 
 ### Generate metadata and migrate
 
+The Vite integrations support Vite 5–8. Install Vite in the consuming build
+project. s-m-r-t's plugin declarations use a structural contract independent of
+Vite's bundler types; build-time Vite loading resolves from the project root.
+Core keeps Vite development-only, so server consumers need no build tool and
+different Vite peer contexts cannot duplicate the s-m-r-t runtime registry.
+`node scripts/verify-packed-vite-peer.mjs` verifies the packed consumer contract.
+
 Configure Vite 8's Oxc decorator transform and point `smrtPlugin()` at the
 directory containing your objects:
 
@@ -179,6 +186,27 @@ export default defineConfig({
   ],
 });
 ```
+
+#### Vite 7 and large browser workers
+
+Apps using Vite 7 with Planner/browser AI workers can add
+`smrtAssetUrlCompatibility()` from `@happyvertical/smrt-core/vite-plugin`
+to their root `plugins` array. It also composes the existing worker plugin
+factory, including async plugin options, so no separate worker configuration
+is required. It replaces only Vite 7's exact known backtracking asset URL
+prefilter with a literal substring filter. A bounded iterative walk of the
+bundler's parsed AST skips comment/string-only `import.meta.url` matches, which
+can otherwise overflow Vite's tokenizer on large escaped bundles. Every real
+`import.meta` expression, parse failure, or exhausted walk budget delegates to
+Vite's original handler with its original context and arguments. Vite's asset
+parsing, ID exclusions, resolution and rewriting remain unchanged. Vite 8 and unknown filter shapes
+are left untouched. This compatibility helper can be removed after moving
+the consuming app to a Vite release with a safe prefilter. The version is
+loaded lazily during configuration; the resolved hook changes filters
+synchronously before subsequent build hooks can observe them. Vite 7's
+unchanged tokenizer may also need Node's `--regexp-interpret-all` for very large
+escaped literals; use that flag on the Vite build process where required.
+
 
 #### One-call preset for SvelteKit apps
 
@@ -437,6 +465,59 @@ const isExpensive = await product.is('costs more than the average product');
 const description = await product.do('Write a short marketing description');
 ```
 
+### Inference tiers
+
+Ask for a quality tier instead of a model: `cheap`, `good`, `great`, `best`,
+or `auto` (the configured default tier). With no `inference` config every
+tier runs on the configured client.
+
+```typescript
+const relevant = await product.is('is a winter product', { tier: 'cheap' });
+const copy = await product.do('Write a launch email', { tier: 'great' });
+```
+
+Bind tiers with `config({ inference: { tiers } })` or
+`SMRT_INFERENCE_<TIER>_PROVIDER` / `_MODEL`. Fallback aliases, fusions, user
+and tenant bindings, hosted inference and usage reports are covered in the
+[inference guide](../../docs/content/inference.md); the contract is
+[agents/inference.md](./agents/inference.md).
+
+### BYO inference presets and local discovery
+
+From Node application code, import `resolveInferencePreset` and
+`discoverLocalInferenceModels` from `@happyvertical/smrt-core/byo-inference`.
+Pass the options from `resolveInferencePreset(id, { model, apiKey })` to
+`getAI` from `@happyvertical/ai` after checking for `null`. Each preset uses
+the OpenAI-compatible SDK provider and requires an explicit model ID.
+
+| Preset ID | Default API base URL | API key |
+| --- | --- | --- |
+| `openrouter` | `https://openrouter.ai/api/v1` | Required |
+| `lemonade` | `http://127.0.0.1:13305/v1` | Supply if server authentication is enabled |
+| `llama.cpp` | `http://127.0.0.1:9931/v1` | Supply if server authentication is enabled |
+| `lm-studio` | `http://127.0.0.1:1234/v1` | Supply if server authentication is enabled |
+
+The resolver returns `null` for unknown preset IDs, blank model IDs, and
+missing OpenRouter keys. The SDK requires a nonempty key, so keyless local
+options use a fixed synthetic credential.
+
+Call `discoverLocalInferenceModels()` explicitly when the application needs
+to suggest models. It makes parallel, credential-free GET requests to Ollama
+(`127.0.0.1:11434/api/tags`) and Lemonade
+(`127.0.0.1:13305/v1/models`). Each probe has a one-second deadline and
+a 1 MiB response limit. A reachable service with an empty model list returns
+`available: true` and `models: []`. An unreachable service, a service that
+requires authentication, or a failed probe returns `available: false`.
+Discovery excludes Ollama models with upstream model or host metadata.
+Ollama's `baseUrl` is suitable for the SDK's `ollama` provider. Lemonade
+model IDs can be used with the `lemonade` preset.
+
+Provider references are available for [OpenRouter](https://openrouter.ai/developers),
+[Lemonade](https://lemonade-server.ai/docs/api/openai/#get-v1models),
+[llama.cpp](https://github.com/ggml-org/llama.cpp/tree/master/tools/server#quick-start),
+[LM Studio](https://lmstudio.ai/docs/developer/openai-compat), and
+[Ollama](https://github.com/ollama/ollama/blob/main/docs/openapi.yaml).
+
 ### Opt-In Read Cache
 
 SSR apps that re-query read-heavy / write-rare collections on every request
@@ -500,6 +581,20 @@ CLI entrypoints should ship two things together:
 2. The `manifest.json` exports for any installed external `@happyvertical/smrt-*`
    packages the runtime needs to hydrate at query time.
 
+For an SSR build, `smrtConsumer()` leaves its consumed providers and their
+transitive server-side `@happyvertical/smrt-*` runtime dependencies external.
+Node therefore resolves native-backed provider dependencies from their
+installed pnpm package context, while core and tenancy retain one server-side
+registry and async context. Mixed packages are split by export: server entries
+stay external, while Svelte and CSS entries remain in Vite's compiler graph.
+The generated consumer registration entrypoint loads transitive-only object
+modules through the configured provider's ESM resolution context. This avoids
+unresolvable app-root imports while preserving the exact model and collection
+constructors used by the provider. The Vite preset retains its narrower
+app-runtime split so SvelteKit control-flow classes keep app identity. This
+applies only to SSR; browser and Svelte component builds retain their normal
+bundled resolution.
+
 `ObjectRegistry.ensureManifestLoaded()` can now auto-load installed external
 classes by either simple name (`'EventType'`) or qualified name
 (`'@happyvertical/smrt-events:EventType'`). `SmrtCollection.list()` and
@@ -550,7 +645,7 @@ file has run.
 | Export | Description |
 |--------|------------|
 | `DispatchBus` | Persistent message bus with wildcard subscriptions |
-| `createDispatchBus` | Factory function for DispatchBus |
+| `createDispatchBus` | Factory function for DispatchBus; retries a transient connection failure at startup (`startupRetry`, default 5 attempts from 500 ms, `false` to disable) |
 | `Dispatch` | Dispatch record model |
 | `DispatchSubscription` | Persistent subscription model |
 
@@ -645,6 +740,7 @@ instead of matching messages.
 | `isAbortedTransactionError` | Statement issued inside an aborted PostgreSQL transaction (`25P02`) |
 | `isDeterministicDatabaseError` | A retry cannot change the outcome |
 | `isTransientDatabaseError` | Contention or availability; a retry may succeed |
+| `isTransientConnectionError` | The connection itself dropped, was refused, or the server could not accept it yet (class `08`, `57P01`–`57P03`, `53300`, `ECONNREFUSED`, `ECONNRESET`, `ETIMEDOUT`, `EAI_AGAIN`); an unresolvable or unreachable host is not retried |
 | `DatabaseErrorKind` | Union of classification kinds |
 | `DatabaseErrorClassification` | Structured result of `classifyDatabaseError` |
 
@@ -782,3 +878,19 @@ Consumer integration tests create disposable applications in
 compiler configuration and aliases. Core's production, test typecheck, and
 declaration builds exclude these directories, including leftovers from an
 interrupted test run; the authored consumer integration tests remain included.
+
+
+## External agent measurements
+
+`ExternalAgentUsageRecorder` persists validated provider counters on the existing
+AI usage store, with trusted tenant/project/task/session ownership bindings,
+immutable replay-safe sequences and nullable unknown counters.
+`summarizeExternalAgentUsage` returns per-session projections separately from
+hosted AI billing. See the [contract and validation design](../../docs/implementation/external-agent-usage-test-design.md).
+
+The initial contract supports one task, provider, model, and counter semantic per
+real native harness session. Rebinding an existing session fails closed. A new
+task requires a real fresh session or future explicit attribution-span support;
+never invent session IDs or reset a cumulative baseline to count prior work twice.
+Only adapter-proven exclusive structured measurements are supported. Call
+`ensureSystemTables(db)` before entering a caller-owned transaction.

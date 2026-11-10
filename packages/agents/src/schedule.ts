@@ -1,9 +1,16 @@
 import {
   field,
+  GlobalInterceptors,
+  ObjectRegistry,
   SmrtCollection,
   SmrtObject,
   smrt,
 } from '@happyvertical/smrt-core';
+import {
+  getNextCronDate,
+  getScheduleAdmissionPolicy,
+  type ScheduleAdmissionPolicy,
+} from '@happyvertical/smrt-jobs';
 import {
   queryGlobal,
   queryWithGlobals,
@@ -15,6 +22,25 @@ import {
   getAgentTypeAliases,
   getAgentTypeName,
 } from './identity.js';
+
+type SaveOptions = NonNullable<Parameters<SmrtObject['save']>[0]>;
+
+// Per-operation ownership state is never read from constructor options or JSON.
+const admissionWriteGuards = new WeakMap<SmrtObject, Record<string, unknown>>();
+GlobalInterceptors.register({
+  name: 'agent-schedule-admission-policy',
+  writeGuard: (instance) => admissionWriteGuards.get(instance),
+});
+
+/** Trusted host authorization must recheck current operator/tenant authority. */
+export interface ScheduleAdmissionReconfiguration {
+  authorize(context: {
+    scheduleId: string;
+    tenantId: string | null;
+    previousPolicy: unknown;
+    nextPolicy: ScheduleAdmissionPolicy | null;
+  }): Promise<void>;
+}
 
 /**
  * Status of a scheduled agent
@@ -66,6 +92,11 @@ export type ScheduleStatus = 'active' | 'paused' | 'disabled' | 'error';
   ],
 })
 export class AgentSchedule extends SmrtObject {
+  /** Persisted protected policy cannot be downgraded through ordinary saves. */
+  static readonly capabilities = Object.freeze({
+    requiredAdmissionPolicy: true,
+  } as const);
+
   /**
    * Tenant ID for multi-tenant isolation
    * Nullable to support both tenant-scoped and global schedules
@@ -94,7 +125,11 @@ export class AgentSchedule extends SmrtObject {
   @field({ type: 'text' })
   cron: string = '';
 
-  /** Timezone for cron interpretation (default: UTC) */
+  /**
+   * IANA time zone the cron is evaluated in (e.g. `America/Edmonton`),
+   * DST-correct. Defaults to `UTC`; a blank value is treated as `UTC`, and
+   * an unrecognized zone puts the schedule in `error` status.
+   */
   @field({ type: 'text' })
   timezone: string = 'UTC';
 
@@ -193,7 +228,8 @@ export class AgentSchedule extends SmrtObject {
   }
 
   /**
-   * Calculate the next run time based on cron expression
+   * Calculate the next run time from the cron expression, evaluated in
+   * {@link timezone} (#3859).
    */
   calculateNextRun(): void {
     if (!this.cron || !this.enabled) {
@@ -202,12 +238,15 @@ export class AgentSchedule extends SmrtObject {
     }
 
     try {
-      const next = getNextCronDate(this.cron, this.timezone);
-      this.nextRun = next;
-    } catch {
+      this.nextRun = getNextCronDate(this.cron, this.timezone?.trim() || 'UTC');
+    } catch (error) {
       this.nextRun = null;
       this.status = 'error';
-      this.lastError = `Invalid cron expression: ${this.cron}`;
+      // The jobs parser names the failing part (cron field or time zone).
+      this.lastError =
+        error instanceof Error && error.message
+          ? error.message
+          : `Invalid cron expression: ${this.cron}`;
     }
   }
 
@@ -220,6 +259,116 @@ export class AgentSchedule extends SmrtObject {
       ? `${displayAgentType}#${this.agentId}`
       : displayAgentType;
     return `${agent}.${this.method}() @ ${this.cron}`;
+  }
+
+  /**
+   * Run {@link beforeSave} before persisting: core `save()` does not call a
+   * model's own `beforeSave()`, so without this an enabled schedule created
+   * with `create()` + `save()` kept a NULL `next_run` and never fired (#3390).
+   */
+  override async save(options: SaveOptions = {}): Promise<this> {
+    return this.saveWithAdmissionPolicy(options);
+  }
+
+  /** Explicit trusted-host boundary for policy rotation/removal; never exposed by generated update. */
+  async reconfigureAdmissionPolicy(
+    policy: ScheduleAdmissionPolicy | null,
+    authorization: ScheduleAdmissionReconfiguration,
+    options: SaveOptions = {},
+  ): Promise<this> {
+    if (!authorization || typeof authorization.authorize !== 'function') {
+      throw new TypeError(
+        'Admission policy reconfiguration requires trusted host authorization',
+      );
+    }
+    const nextPolicy =
+      policy === null
+        ? null
+        : getScheduleAdmissionPolicy({ _scheduleAdmissionPolicy: policy });
+    if (nextPolicy) Object.freeze(nextPolicy);
+    return this.saveWithAdmissionPolicy(options, {
+      policy: nextPolicy,
+      authorization,
+    });
+  }
+
+  private async saveWithAdmissionPolicy(
+    options: SaveOptions,
+    reconfiguration?: {
+      policy: ScheduleAdmissionPolicy | null;
+      authorization: ScheduleAdmissionReconfiguration;
+    },
+  ): Promise<this> {
+    await this.beforeSave();
+    // Use the same public natural identity core uses. The mandatory raw JSON
+    // predicate below closes the gap between this read and core's final write.
+    let stored = this.id
+      ? await this.getCanonicalPersistedRow({ id: this.id })
+      : null;
+    if (!stored && !this.isPersisted && this.slug) {
+      const values = this.toJSON() as Record<string, unknown>;
+      const filter: Record<string, unknown> = {};
+      for (const column of ObjectRegistry.getConflictColumns(
+        this.getResolvedQualifiedName(),
+      )) {
+        filter[column] =
+          column === 'tenant_id'
+            ? this.tenantId
+            : column === 'slug'
+              ? this.slug
+              : column === 'context'
+                ? this.context
+                : (values[column] ?? null);
+      }
+      stored = await this.getCanonicalPersistedRow(filter);
+    }
+    const previousArgs =
+      typeof stored?.method_args === 'string'
+        ? JSON.parse(stored.method_args)
+        : stored?.method_args;
+    if (stored && (stored.tenant_id ?? null) !== this.tenantId) {
+      throw new Error(
+        'Admission policy update requires the persisted schedule tenant',
+      );
+    }
+    const previousPolicy =
+      previousArgs && typeof previousArgs === 'object'
+        ? (previousArgs as Record<string, unknown>)._scheduleAdmissionPolicy
+        : undefined;
+    if (reconfiguration) {
+      if (!stored || !this.isPersisted)
+        throw new Error('Reconfigure a loaded persisted schedule');
+      await reconfiguration.authorization.authorize({
+        scheduleId: String(stored.id),
+        tenantId: this.tenantId,
+        previousPolicy,
+        nextPolicy: reconfiguration.policy,
+      });
+      this.methodArgs = { ...this.methodArgs };
+      if (reconfiguration.policy === null)
+        delete this.methodArgs._scheduleAdmissionPolicy;
+      else this.methodArgs._scheduleAdmissionPolicy = reconfiguration.policy;
+    } else {
+      const proposedPolicy = getScheduleAdmissionPolicy(this.methodArgs);
+      if (
+        previousArgs &&
+        Object.hasOwn(previousArgs, '_scheduleAdmissionPolicy') &&
+        JSON.stringify(getScheduleAdmissionPolicy(previousArgs)) !==
+          JSON.stringify(proposedPolicy)
+      ) {
+        throw new Error(
+          'Persisted schedule admission policy requires explicit authorized reconfiguration',
+        );
+      }
+    }
+    admissionWriteGuards.set(this, {
+      method_args: stored?.method_args ?? null,
+    });
+    try {
+      return await super.save(options);
+    } finally {
+      admissionWriteGuards.delete(this);
+    }
   }
 
   /**
@@ -321,125 +470,10 @@ export class AgentScheduleCollection extends SmrtCollection<AgentSchedule> {
 }
 
 /**
- * Parse a cron expression and get the next run date.
- *
- * Supports standard 5-field cron format: minute hour day-of-month month
- * day-of-week. Day-of-month / day-of-week follow POSIX OR semantics when both
- * are restricted (see the loop body). Matched against the host's local time
- * (not timezone-aware).
- *
- * Examples:
- * - '0 2 * * *' - 2:00 AM daily
- * - '0 0 * * 0' - Midnight on Sundays
- * - 'x/15 * * * *' - Every 15 minutes (where x is asterisk)
- * - '0 9 1 * *' - 9:00 AM on the 1st of every month
- *
- * Exported for unit testing of the matching logic.
+ * Cron next-run calculation is owned by `@happyvertical/smrt-jobs` so the
+ * model's `calculateNextRun()` and the ScheduleRunner re-arm cannot diverge
+ * (#3859); re-exported here for the model's tests.
  */
-export function getNextCronDate(cron: string, _timezone: string = 'UTC'): Date {
-  const parts = cron.trim().split(/\s+/);
-  if (parts.length !== 5) {
-    throw new Error(
-      `Invalid cron expression: expected 5 fields, got ${parts.length}`,
-    );
-  }
-
-  const [minuteExpr, hourExpr, dayExpr, monthExpr, dowExpr] = parts;
-
-  const now = new Date();
-  const candidate = new Date(now);
-  candidate.setSeconds(0);
-  candidate.setMilliseconds(0);
-
-  // Move to next minute at minimum
-  candidate.setMinutes(candidate.getMinutes() + 1);
-
-  // Standard cron DOM/DOW semantics:
-  // When both day-of-month and day-of-week are restricted (not *),
-  // a date matches if EITHER condition is met (OR logic). When only one
-  // is restricted, only that field applies; when both are `*`, every day
-  // matches. POSIX: `0 0 13 * 5` fires on the 13th OR any Friday.
-  const dayIsWildcard = dayExpr === '*';
-  const dowIsWildcard = dowExpr === '*';
-
-  // Search for next matching date (limit to 1 year)
-  const maxIterations = 525600; // ~1 year in minutes
-  for (let i = 0; i < maxIterations; i++) {
-    const dayMatches = matchesCronField(candidate.getDate(), dayExpr);
-    // getDay() returns 0 for Sunday; standard cron accepts both 0 and 7
-    const dow = candidate.getDay();
-    const dowMatches =
-      matchesCronField(dow, dowExpr) ||
-      (dow === 0 && matchesCronField(7, dowExpr));
-
-    let dayOfMonthOrWeekMatches: boolean;
-    if (!dayIsWildcard && !dowIsWildcard) {
-      dayOfMonthOrWeekMatches = dayMatches || dowMatches;
-    } else if (!dayIsWildcard) {
-      dayOfMonthOrWeekMatches = dayMatches;
-    } else if (!dowIsWildcard) {
-      dayOfMonthOrWeekMatches = dowMatches;
-    } else {
-      dayOfMonthOrWeekMatches = true;
-    }
-
-    if (
-      matchesCronField(candidate.getMonth() + 1, monthExpr) &&
-      dayOfMonthOrWeekMatches &&
-      matchesCronField(candidate.getHours(), hourExpr) &&
-      matchesCronField(candidate.getMinutes(), minuteExpr)
-    ) {
-      return candidate;
-    }
-
-    candidate.setMinutes(candidate.getMinutes() + 1);
-  }
-
-  throw new Error(`Could not find next run date for cron: ${cron}`);
-}
-
-/**
- * Check if a value matches a cron field expression
- */
-function matchesCronField(value: number, expr: string): boolean {
-  // Wildcard matches everything
-  if (expr === '*') {
-    return true;
-  }
-
-  // Handle step values (*/5, 0-30/2)
-  if (expr.includes('/')) {
-    const [range, stepStr] = expr.split('/');
-    const step = parseInt(stepStr, 10);
-    if (range === '*') {
-      return value % step === 0;
-    }
-    // Handle range with step
-    if (range.includes('-')) {
-      const [startStr, endStr] = range.split('-');
-      const start = parseInt(startStr, 10);
-      const end = parseInt(endStr, 10);
-      if (value < start || value > end) return false;
-      return (value - start) % step === 0;
-    }
-  }
-
-  // Handle ranges (1-5)
-  if (expr.includes('-')) {
-    const [startStr, endStr] = expr.split('-');
-    const start = parseInt(startStr, 10);
-    const end = parseInt(endStr, 10);
-    return value >= start && value <= end;
-  }
-
-  // Handle lists (1,3,5)
-  if (expr.includes(',')) {
-    const values = expr.split(',').map((v) => parseInt(v.trim(), 10));
-    return values.includes(value);
-  }
-
-  // Exact match
-  return value === parseInt(expr, 10);
-}
+export { getNextCronDate };
 
 export default AgentSchedule;

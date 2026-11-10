@@ -83,17 +83,19 @@ settings on vite 8.
 
 The manifest is generated once at vitest startup. Restart vitest after adding new `@smrt()` classes or fields.
 
-### Generated Artifact Coherence
+### Test Manifest Snapshot
 
-Test startup refreshes the canonical `.smrt/manifest.json` and its paired
-`.smrt/smrt-knowledge.json` together. When `smrtPlugin()` is present, the
-Vitest plugin uses its current agent-surface declarations and effective
-knowledge configuration, including inline plugin options. A standalone
-Vitest configuration preserves prior agent-surface source hashes when it
-cannot rescan them, so changed declarations remain stale rather than being
-incorrectly marked fresh. The monorepo build cache restores this pair with the
-generated server registration entry, so `pnpm build`, `pnpm test`, and a
-cached `pnpm build` leave one coherent artifact snapshot.
+Test startup scans test-inclusive sources (inline `*.test.ts` fixture classes
+need manifest metadata) and writes the result to a per-run snapshot,
+`.smrt/test-runs/<run>/manifest.json`, never to `.smrt/manifest.json`,
+`dist/manifest.json`, or their paired `smrt-knowledge.json` (#4128). Those
+belong to production builds, so a build or typecheck running alongside a test
+suite can neither replace the suite's manifest nor be replaced by it. Every
+manifest read inside the run — worker registration, the runtime manifest
+loader, `createIsolatedTestDbFromManifest()` — resolves the snapshot first;
+tests that inspect generated metadata read `getTestManifestPath()`. The
+snapshot directory is removed when the run exits, and directories left by
+ended runs are pruned at the next startup.
 
 ### Pool and Isolation
 

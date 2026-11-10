@@ -55,7 +55,7 @@ export interface EngineLibraryCookbook {
 
 /** Which model fields each app setting is the default of. */
 export type SettingTargets = Record<
-  'currency' | 'taxRate' | 'paymentTerms',
+  'currency' | 'taxRate' | 'paymentTerms' | 'pricesIncludeTax' | 'taxRounding',
   readonly { model: string; field: string }[]
 >;
 
@@ -96,7 +96,13 @@ export interface CommandInputs {
   /** Import a cookbook document, replacing the app (needs `replace` if non-empty). */
   import_cookbook: { document: unknown; replace?: boolean };
   /** App settings; tax rate in percent, 0 to 100. */
-  set_settings: { currency?: string; taxRate?: number; paymentTerms?: string };
+  set_settings: {
+    currency?: string;
+    taxRate?: number;
+    paymentTerms?: string;
+    pricesIncludeTax?: boolean;
+    taxRounding?: 'line' | 'document';
+  };
   /** Set (or clear with null) one field's policy row. App scope. */
   set_policy: {
     model: string;
@@ -116,8 +122,12 @@ export interface CommandInputs {
     contrast?: 'auto' | 'standard' | 'more';
   };
   reset_theme: Record<string, never>;
-  /** Name (and describe) the app; null clears. */
-  set_name: { name?: string | null; description?: string | null };
+  /** Name, describe and specify the app; null clears a part. */
+  set_name: {
+    name?: string | null;
+    description?: string | null;
+    specs?: string | null;
+  };
   rename_section: { id: string; label: string };
   /** `null` restores the entry's own name. */
   rename_item: { id: string; label: string | null };
@@ -180,12 +190,23 @@ export interface PlanSnapshot {
   version: typeof COOKBOOK_COMMANDS_VERSION;
   /** Counts applied changes; equal histories give equal revisions. */
   revision: number;
-  app: { name: string; description: string | null; cookbook: string | null };
+  app: {
+    name: string;
+    description: string | null;
+    specs: string | null;
+    cookbook: string | null;
+  };
   recipes: { id: string; label: string }[];
   features: string[];
   /** Recipe and feature ids this catalog lacks; kept on export. */
   unavailable: string[];
-  settings: { currency: string; taxRate: number; paymentTerms: string };
+  settings: {
+    currency: string;
+    taxRate: number;
+    paymentTerms: string;
+    pricesIncludeTax: boolean;
+    taxRounding: 'line' | 'document';
+  };
   theme: {
     text: string;
     preset: string | null;

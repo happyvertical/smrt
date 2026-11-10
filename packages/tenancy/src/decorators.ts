@@ -31,6 +31,9 @@ import {
   registerCompatibleFieldDecorator,
 } from '@happyvertical/smrt-core';
 import type { TenantIdFieldOptions } from './fields.js';
+
+export type { TenantIdFieldOptions } from './fields.js';
+
 import {
   registerTenantScopedConstructor,
   type TenantScopedConfig,

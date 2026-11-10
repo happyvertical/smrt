@@ -1,3 +1,7 @@
+import {
+  applyPostgresRuntimeTimeouts,
+  detectEngine,
+} from '@happyvertical/smrt-core';
 import { getDatabase } from '@happyvertical/sql';
 import { tuneSqliteForConcurrency } from './worker-liveness.js';
 
@@ -15,11 +19,40 @@ export interface LivenessTickerOptions {
   leaseTtlMs: number;
   /** Renewal cadence in milliseconds. */
   leaseTickMs: number;
+  /** Queues the runner polls, re-written on every renewal. */
+  queues?: string[];
 }
 
 export interface LivenessTicker {
   /** Stop renewing and close the connection. */
   stop: () => Promise<void>;
+}
+
+/**
+ * Connection options for the ticker's own database handle (#3046).
+ *
+ * The ticker issues one `UPDATE` per tick, so on PostgreSQL it needs exactly
+ * one client: `max: 1` keeps it from opening a second default-sized (20-client)
+ * pool next to the runner's, and the runtime timeout bounds (#2377) keep a hung
+ * acquisition or statement from stalling the thread forever. No `dbid` is
+ * passed, so the SDK keys this pool on its effective options and it can never
+ * be confused with — or resize — the application's pool for the same URL.
+ * Other engines pass through unchanged.
+ */
+export function livenessConnectionOptions(
+  options: Pick<LivenessTickerOptions, 'url' | 'type'>,
+): Parameters<typeof getDatabase>[0] {
+  const base = {
+    url: options.url,
+    type: options.type as 'sqlite' | 'postgres' | 'duckdb' | undefined,
+  };
+  if (detectEngine(options.url, options.type) !== 'postgres') {
+    return base as Parameters<typeof getDatabase>[0];
+  }
+  return {
+    ...applyPostgresRuntimeTimeouts(base),
+    max: 1,
+  } as Parameters<typeof getDatabase>[0];
 }
 
 /**
@@ -34,10 +67,7 @@ export interface LivenessTicker {
 export async function runLivenessTicker(
   options: LivenessTickerOptions,
 ): Promise<LivenessTicker> {
-  const db = await getDatabase({
-    url: options.url,
-    type: options.type as 'sqlite' | 'postgres' | 'duckdb' | undefined,
-  });
+  const db = await getDatabase(livenessConnectionOptions(options));
 
   // The ticker's connection shares the SQLite file with the runner's main
   // connection; enable WAL + a busy timeout so renewals don't lose a lock race.
@@ -51,6 +81,20 @@ export async function runLivenessTicker(
     const expiresAt = new Date(
       now.getTime() + options.leaseTtlMs,
     ).toISOString();
+    if (options.queues) {
+      await db.query(
+        `UPDATE _smrt_workers
+            SET lease_expires_at = ?,
+                heartbeat_at = ?,
+                queues = ?
+          WHERE worker_id = ?`,
+        expiresAt,
+        now.toISOString(),
+        JSON.stringify(options.queues),
+        options.workerKey,
+      );
+      return;
+    }
     await db.query(
       `UPDATE _smrt_workers
           SET lease_expires_at = ?,

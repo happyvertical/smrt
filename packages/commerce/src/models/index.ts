@@ -26,11 +26,19 @@ export {
   LicenseSale,
   Order,
   ProductionOrder,
+  PurchaseContract,
   PurchaseOrder,
+  SalesContract,
+  SupplierQuote,
   WholesaleOrder,
 } from './Contract.js';
 export { ContractLineItem } from './ContractLineItem.js';
 export { Customer } from './Customer.js';
+export {
+  type CommerceDocumentType,
+  DocumentTax,
+  type DocumentTaxOptions,
+} from './DocumentTax.js';
 export { Fulfillment } from './Fulfillment.js';
 export { FulfillmentLineItem } from './FulfillmentLineItem.js';
 export { Invoice } from './Invoice.js';
@@ -40,4 +48,25 @@ export { PaymentAllocation } from './PaymentAllocation.js';
 export { PaymentInstrument } from './PaymentInstrument.js';
 export { PaymentIntent } from './PaymentIntent.js';
 export { Payout } from './Payout.js';
+export { PurchasePriceObservation } from './PurchasePriceObservation.js';
+export { TaxCode, type TaxCodeAppliesTo, type TaxCodeKind } from './TaxCode.js';
+export { TaxComponent } from './TaxComponent.js';
+export { type TaxRegistration, TaxSettings } from './TaxSettings.js';
+export {
+  TaxSummaryReport,
+  type TaxSummaryReportRowKind,
+} from './TaxSummaryReport.js';
+export {
+  deriveTenantPaymentAccountStatus,
+  TenantPaymentAccount,
+  type TenantPaymentAccountOptions,
+  type TenantPaymentAccountStatus,
+  type TenantPaymentCapabilitySnapshot,
+  type TenantPaymentEnvironment,
+} from './TenantPaymentAccount.js';
+export { TenantPaymentDispute } from './TenantPaymentDispute.js';
+export {
+  TenantPaymentWebhookEvent,
+  type TenantPaymentWebhookOutcome,
+} from './TenantPaymentWebhookEvent.js';
 export { Vendor } from './Vendor.js';

@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import { resolveIntakePolicy } from './policy.js';
+import { type IntakePolicyLayer, resolveIntakePolicy } from './policy.js';
 
 describe('trusted ingestion policy', () => {
   it('intersects ceilings, minimizes budgets and preserves every review requirement', () => {
@@ -87,5 +87,22 @@ describe('trusted ingestion policy', () => {
       ).toThrow();
     }
     expect(() => resolveIntakePolicy([{ version: 'app' }])).toThrow();
+  });
+  it('enables submitter review only by application opt-in; narrower layers may only disable it', () => {
+    const resolve = (
+      app: Partial<IntakePolicyLayer>,
+      tenant: Partial<IntakePolicyLayer> = {},
+    ) =>
+      resolveIntakePolicy([
+        { version: 'app', ...app },
+        { version: 'tenant', ...tenant },
+        { version: 'source' },
+      ]).submitterReview;
+    expect(resolve({})).toBe(false);
+    expect(resolve({ submitterReview: true })).toBe(true);
+    expect(resolve({ submitterReview: true }, { submitterReview: false })).toBe(
+      false,
+    );
+    expect(resolve({}, { submitterReview: true })).toBe(false);
   });
 });

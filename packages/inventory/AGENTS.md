@@ -11,7 +11,13 @@ Multi-location stock tracking. Strictly industry-neutral — the same primitives
 | `StockLevel` | Materialized `qty` for a `(skuId, locationId, state)` tuple. Upserted in place. **Mutated only by `StockService`.** States: `available`, `allocated`, `wip`, `qc_hold`, `damaged`. |
 | `StockMovement` | Append-only audit log. Every `StockService` mutation writes one (or two for `transfer`). `sourceType` + `sourceId` carry cross-package attribution. |
 
-All three inventory models (`InventoryLocation`, `StockLevel`, `StockMovement`) use `@TenantScoped({ mode: 'optional' })` + nullable `tenantId` so they can be used either tenant-scoped or globally. The catalog shapes (`Product`, `Material`, `ProductVariant`, `Sku`) live in `@happyvertical/smrt-products` and carry their own tenant decoration there.
+| `Lot` | A traceable batch or serial (`inventory_lots`). `conflictColumns: ['identity_key','tenant_id']`, every create insert-only. **Written only by `LotService`.** |
+| `LotStockLevel` | Per-lot balance for `(lotId, locationId, state)` (`inventory_lot_stock_levels`). **Mutated only by `StockService`** when `lotId` is passed. |
+| `LotUsage` | A lot used by a consumer: the trace edge. Never deleted; `status: 'unlinked'` after a correction. `consumerType: 'Lot'` marks assembly lineage. |
+| `LotCorrection` | Append-only correction trail (`conflictColumns: ['id']`); reason mandatory. |
+| `LotDocument` | Asset attached to a lot (`assetId` is a cross-package ref); detached, never deleted. |
+
+All inventory models (`InventoryLocation`, `StockLevel`, `StockMovement`, and the lot models) use `@TenantScoped({ mode: 'optional' })` + nullable `tenantId` so they can be used either tenant-scoped or globally. The catalog shapes (`Product`, `Material`, `ProductVariant`, `Sku`) live in `@happyvertical/smrt-products` and carry their own tenant decoration there.
 
 ## StockService — the only sanctioned way to mutate stock
 
@@ -37,6 +43,18 @@ await service.adjust(skuId, locationId, delta, { sourceType, sourceId });
 | `adjust` | signed delta — cycle counts and one-off corrections | `adjustment` |
 
 All methods reject zero / negative / non-finite quantities except `adjust`, which accepts non-zero signed deltas. Negative deltas that would drive a state below zero throw `InsufficientStockError`.
+
+## LotService — lots and serials (additive, #3459)
+
+`createLotService({ db })` (with `withTransaction`, same pattern as `StockService`) is the only writer of the lot tables. `receiveLot` records identity only and moves no stock; compose with `StockService` in one transaction via `createLotService({ db: tx.db })`. Passing `lotId` to a `StockService` mutation applies the same deltas to `LotStockLevel`, enforces non-negative at lot level (`InsufficientStockError.lotId`), validates the lot (`LotNotFoundError`, `LotMismatchError` when `lot.skuId` differs), and stamps `StockMovement.lotId`.
+
+- `Lot.identityKey` is the only DB-unique key: `u:<kind>:<sku>:<SEARCHKEY>` for unique lots and all serials (hashed if over 160 chars), `k:<idempotencyKey>` for idempotent receipts, else a random `r:` key. So a lot number repeats by default (one supplier lot, two receipts); `DuplicateLotError` only for unique ones.
+- Corrections (`correctLotNumber`, `correctAttributes`, `setStatus`, `unlinkUsage`, `detachDocument`) require a reason, are refused when nothing changes, and write a `LotCorrection`. They `save()` the lot so concurrent changes conflict on its revision; retry the loser.
+- `recordUsage` is idempotent per consumer; `exclusive` (default for serials) throws `LotInUseError` for a second consumer.
+- `traceForward(lotId)` / `traceBack(consumerType, consumerId)` follow `consumerType: 'Lot'` usages with a path-based cycle guard and `depth` (default 10).
+- `StockService` does not consult `lot.status`: callers decide what a quarantined or void lot may do. A repeated `idempotencyKey` returns the first lot even if the other fields differ; a repeated `recordUsage` for the same consumer returns the existing usage unchanged (its `qty` is ignored).
+- No authorization inside the package; callers authorize. Nothing assumes an id format, so a consumer's data migration may insert rows with its own ids.
+- Schema upgrade is additive: five new tables and one nullable column, `inventory_stock_movements.lot_id`. `StockLevel`'s unique key is unchanged. Runtime never creates schema: generate and apply the normal migration first (`smrt doctor --db`); no data copy is needed.
 
 ## Opt-in DispatchBus hooks
 
@@ -65,7 +83,7 @@ The `Sku` model moved out of this package and into `@happyvertical/smrt-products
 
 **Upgrade procedure** for deployed consumers:
 
-1. **Let the framework create the destination table first.** Boot the new version once with `@happyvertical/smrt-products` registered in your `SmrtClassOptions`; the lazy `syncSchema` path will create `product_skus` with the right primary key, NOT NULL, UNIQUE (`code`, `tenant_id`), and indexes — they're derived from the `Sku` model decorators and would be stripped by a raw `CREATE TABLE AS SELECT`.
+1. **Create the destination table with the explicit migration workflow first.** Runtime never creates application schema, so booting the new version does not create `product_skus`. With `@happyvertical/smrt-products` registered, generate and apply the normal migration (`smrt db:status`, then `smrt db:migrate`) and confirm `smrt db:status --parity` is clean. That creates `product_skus` with the right primary key, NOT NULL, UNIQUE (`code`, `tenant_id`), and indexes derived from the `Sku` model decorators; a raw `CREATE TABLE AS SELECT` would strip them. Do this before step 2 so the keys and indexes exist before any rows are copied.
 
 2. **Idempotently copy rows across.** SQLite + Postgres:
 
@@ -105,7 +123,7 @@ The `Sku` model moved out of this package and into `@happyvertical/smrt-products
 - **Atomic per-method, transactional across composition.** Each `StockService` mutation (`receive` / `reserve` / `release` / `fulfill` / `transfer` / `adjust`) wraps every write in a single `db.transaction(...)` (via `@happyvertical/sql >= 0.74.0`). Partial failure rolls the whole call back — level writes and the matching `StockMovement` audit row commit together or not at all. `transfer` writes both legs (source decrement, destination increment, and both audit rows) inside one tx, so a failure mid-`transfer` is fully reverted.
   Callers composing multiple `StockService` calls into one logical unit (e.g. consuming materials line-by-line for a production order) should wrap them in `await stockService.withTransaction(async (tx) => { ... })` — `tx` is a tx-bound `StockService` with the same public API; mutation calls inside the callback share one transaction and either all commit or all roll back.
   If the underlying SQL adapter does not expose `transaction()` (extremely rare — all four built-in `@happyvertical/sql >= 0.74.0` adapters implement it), the service degrades to non-atomic serial writes and emits a one-time `console.warn`.
-- **Concurrent reservations: tightened, not bulletproof.** `@happyvertical/sql >= 0.74.0` serialises null-aware *upserts* via a per-key in-process lock (SQLite) or advisory lock (Postgres). That lock fixed the row-creation race (issue #1246) — two concurrent `create()` calls on the same conflict-column tuple no longer race the underlying `INSERT ... ON CONFLICT`. It does NOT serialise the read-modify-write compound that `reserve` / `fulfill` / `transfer` / `adjust` perform on an existing row: each method reads the current level (`SELECT`), computes the new value in JS, then writes it back (`UPDATE` via `save()` on the loaded row). The whole compound is inside one `db.transaction(...)` from round-3, so the level write and audit row commit together — but two concurrent transactions on the same `(skuId, locationId)` can each see the same starting balance, compute the same decrement, and double-spend. Awaited (serial) calls always behave correctly. Use a job queue (e.g. `@happyvertical/smrt-jobs`) or your own mutex when you need hard atomicity across concurrent callers. The full fix is `SELECT ... FOR UPDATE` inside the same transaction (Postgres) or upgrading the journal mode (SQLite); deferred until we see a real high-contention workload that warrants it.
+- **Concurrent reservations: tightened, not bulletproof.** `@happyvertical/sql >= 0.74.0` serialises null-aware *upserts* via a per-key in-process lock (SQLite) or advisory lock (Postgres). That lock fixed the row-creation race (issue #1246) — two concurrent `create()` calls on the same conflict-column tuple no longer race the underlying `INSERT ... ON CONFLICT`. The first `StockLevel` row for a key is now created insert-only (#3204): a concurrent first write fails on the unique key and its transaction rolls back (retry it) instead of upserting over the winner's qty. It does NOT serialise the read-modify-write compound that `reserve` / `fulfill` / `transfer` / `adjust` perform on an existing row: each method reads the current level (`SELECT`), computes the new value in JS, then writes it back (`UPDATE` via `save()` on the loaded row). The whole compound is inside one `db.transaction(...)` from round-3, so the level write and audit row commit together — but two concurrent transactions on the same `(skuId, locationId)` can each see the same starting balance, compute the same decrement, and double-spend. Awaited (serial) calls always behave correctly. Use a job queue (e.g. `@happyvertical/smrt-jobs`) or your own mutex when you need hard atomicity across concurrent callers. The full fix is `SELECT ... FOR UPDATE` inside the same transaction (Postgres) or upgrading the journal mode (SQLite); deferred until we see a real high-contention workload that warrants it.
 
 ## Source attribution
 

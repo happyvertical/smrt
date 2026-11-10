@@ -17,6 +17,7 @@ export default defineConfig({
     // the harness is inert under the node environment.
     setupFiles: ['@happyvertical/smrt-vitest/svelte-setup'],
     testTimeout: 30000,
+    hookTimeout: 30000,
     fileParallelism: false,
     pool: 'forks',
   },

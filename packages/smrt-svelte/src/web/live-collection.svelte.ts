@@ -43,7 +43,7 @@ import { useLiveQuery } from '@tanstack/svelte-db';
  * - `loading` — the first load has not completed yet (also covers the engine's
  *   pre-start `idle` and post-teardown `cleaned-up` phases).
  * - `ready` — data has arrived and the collection is live.
- * - `error` — the read failed during sync initialization.
+ * - `error` — the first load, live synchronization, or query execution failed.
  */
 export type LiveCollectionStatus = 'loading' | 'ready' | 'error';
 
@@ -253,10 +253,15 @@ export function liveCollection<TData extends object>(
   const rows = $derived.by(() =>
     query.data.map((row) => toPlainRow<TData>(row)),
   );
-  const status = $derived(toLiveStatus(query.isReady, query.isError));
+  const hasReadError = $derived(
+    query.isLoadingError || query.isCrashed || query.isSyncError,
+  );
+  const status = $derived(toLiveStatus(query.isReady, hasReadError));
   // useLiveQuery does not surface an error object, only an error status; expose
   // the status string as the error payload when the read has failed.
-  const error = $derived<unknown>(query.isError ? query.status : null);
+  const error = $derived<unknown>(
+    hasReadError ? (query.isSyncError ? 'sync-error' : query.status) : null,
+  );
 
   return {
     get rows() {

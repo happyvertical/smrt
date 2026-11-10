@@ -55,6 +55,7 @@ Sidebar-only shells may set `top: false`. In that mode the configured brand is
 shown at the top of the expanded tenant panel as well as in the compact rail.
 When the top header is visible, its brand is the only copy; collapsing the
 left sidebar does not add a second logo to the rail.
+`brandEnd?: Snippet<[{ compact }]>` renders beside the brand (e.g. a `NotificationBell`), outside the home link, in the top band and the left-rail header; a `.smrt-admin-shell__brand-row` wrapper exists only when `brandEnd` is given, so default markup is unchanged.
 Use `tenantRailFooter` for a control pinned below collapsed navigation; it sits
 outside the rail's scroll clip so menus can open over the workspace. Pair it
 with `WorkspaceAccountMenu compact` for an avatar-only trigger that retains the
@@ -86,6 +87,12 @@ icon-only "Close menu". While the right edge has focus tools, phones get a
 presents as a drawer (or sheet) with an icon-only "Close tools". Chrome buttons,
 rail tool buttons and dock toggles use `--smrt-touch-target-min` on phones. A
 tool without an icon uses the generic tool icon, never its first letter.
+The dock (right edge) defaults to `overlayMedia: '(max-width: 79.9375rem)'`
+(#4100): from the xl breakpoint (80rem) it sits beside the page and the main
+area shrinks; below it slides over the page. A dock card that navigates calls
+`announceShellNavigation(element, { focus? })` (`admin-shell/navigation.ts`):
+the shell closes the dock only while it overlays the page (overlay or phone
+sheet; `closeOnNavigate: false` keeps it), then focuses the announced `focus` target as soon as it matches, else the incoming page's heading (never one already on the page).
 Phone drawers and the bottom drawer offset themselves by the header and phone
 bar tracks. `shell.viewport` comes from `ADMIN_SHELL_PHONE_QUERY` (48rem, the
 same boundary as the CSS media query — never make one configurable without the
@@ -181,10 +188,13 @@ in the tooltip, there is no visible `<kbd>`), and off phones it closes the
 navigation region: it sits at the end of the nav (`margin-block-start: auto`),
 above the `leftSidebar.footer` slot, never below it. Order top to bottom, expanded
 and collapsed: nav, chevron, footer (the account menu; the compact avatar last
-in the collapsed rail). Expanded it lives inside the sidebar body
-(`tenant-stack`) and hugs the inner edge; collapsed it is the middle row of the
-rail stack (content, chevron, `tenantRailFooter`) and is centred. Only a rail
-with neither nav nor footer content draws it alone at the bottom. Phones replace it with the drawer's
+in the collapsed rail). It sits in the utility row
+(`.smrt-admin-shell__tenant-utilities`, after any `tenantUtilities` icons such
+as the color-scheme toggle). Expanded the row lives inside the sidebar body
+(`tenant-stack`) and the chevron hugs its inner edge; collapsed the row is the
+middle row of the rail stack (content, utilities, `tenantRailFooter`), stacked
+and centred. Only a rail with neither nav, utilities nor footer content draws
+the chevron alone at the bottom. Phones replace it with the drawer's
 icon-only "Close menu" at the top, so opening the drawer still focuses a close control. The
 header, footer and right toggles keep their region label and hotkey hint.
 
@@ -205,7 +215,7 @@ keep them stable), all movable in the layout editor like `item:brand`:
 | Item | Default slot | Phone | Opt out |
 | --- | --- | --- | --- |
 | `item:account` | `leftSidebar.footer` | compact avatar, last in the header band (`header.end`) | `accountMenu={false}`; `accountMenu={{ slot }}` sets the default |
-| `item:color-scheme` | `header.end` | icon-only (no label), accessible name kept | `colorSchemeToggle={false}`; `{ slot }` sets the default |
+| `item:color-scheme` | `leftSidebar.footer` (rendered in the sidebar utility row, see below) | icon button in the header band (`header.end`) | `colorSchemeToggle={false}`; `{ slot }` sets the default |
 | `item:command-palette` | `header.center` | search glyph button | off unless `commandPalette` is passed |
 
 `item:account` renders `WorkspaceAccountMenu` only when `user` is set (nothing
@@ -218,8 +228,18 @@ it shows the full identity (menu opens upward); everywhere else, and in the
 collapsed rail, it is the compact avatar. In the collapsed rail `AppShell`
 passes it as `tenantRailFooter` (outside the rail's scroll clip; the menu opens
 to the inline end over the workspace) instead of letting the footer slot fall
-back to another region. `item:color-scheme` reuses `ColorSchemeToggle` from
-`@happyvertical/smrt-ui/themes` (no second switcher). `item:command-palette`
+back to another region. `item:color-scheme` is `ShellColorSchemeToggle`
+(`src/components/app/`): an icon-only `ShellIconButton` over the
+`ThemeProvider` context (no second scheme store), named "Dark mode" with
+`aria-pressed`, showing the mode a press switches to (moon in light, sun in
+dark: `darkMode` / `lightMode` in the shell icon set) with a "Switch to dark
+mode" / "Switch to light mode" tooltip. Left in `leftSidebar.footer` on desktop
+it renders in `AdminShell`'s `tenantUtilities` row (#4107): toggle first, the
+collapse chevron at the inner edge, at the end of the nav region above the
+account; in the collapsed rail the row stacks (toggle, chevron) above the
+compact avatar. It never falls back to the header or footer while the left
+edge is shown; in edit mode it is an ordinary movable item in the footer drop
+zone. Will's standing default: never a labelled Light/Dark pill in the header. `item:command-palette`
 mounts the existing `CommandPalette` (`commandPalette: { providers, placeholder? }`,
 types `AppShellCommandPalette`/`AppShellAccountMenu` from `./app`): it owns the
 dialog and the global shortcut, so it mounts once. Planner-style hosts that
@@ -584,6 +604,7 @@ control panel), wired by `app/AppShell.svelte`.
   popover grid ("Use <icon> icon", `aria-pressed` on the current one; Escape
   closes the grid before the toolbar). Entries are not in the sidebar in
   `sections` mode; `sections-with-items` shows them under their section.
+- **TenantNav current matching (#4499).** Per-link `aria-current="page"` / visible-active uses the LONGEST matching href across every item, child and action link of the nav (exact or `href + '/'` prefix), so `/settings` and `/settings/features` never both read current. Parent "contains current" state (`isItemCurrent`, group/section current, collapsed-rail highlight) still uses plain prefix matching. `ShellNavItem.current?: boolean`, when defined, overrides the computed match for that item's link.
 - **TenantNav rows.** `ShellNavItem.icon` renders in items mode and the collapsed rail (host `iconComponent` first, else `SHELL_ICON_PATHS`); an iconless item shows the `placeholder` glyph in the rail only. The current row has a `secondary-container` fill plus a start indicator bar (`aria-current="page"` unchanged). Row block-size is `--smrt-touch-target-min` at the phone boundary (`max-width: 48rem`) and `--smrt-control-target-min` otherwise; `ShellNavEditor` item rows use the same sizing.
 - **`ShellSectionMenu`** (`sectionId`, `controller?`, `meta(entry)`,
   `actions(entry)`, `iconComponent`, `aria-label`, `layout`): the section's page body.
@@ -668,6 +689,13 @@ lives beside, not inside, `./workspace` so the AdminShell barrel stays free of
   form is a plain `method="POST"`; pass `enhance` from `$app/forms` to enhance
   it. The token is a hidden field only and is never stored, logged or shown.
   Single-use, loopback-only enforcement stays server-side.
+
+`AppShell chrome={false}` omits generated chrome while retaining Provider,
+ThemeProvider, shell layout context and the canonical `useAdminShell()` state.
+A host can render its own navigation plus `ShellSettingsPage`; settings and
+layout consumers share AppShell's existing store rather than a second state.
+This mode renders no hidden AdminShell or navigation. Covered by the real
+`ShellSettingsPage` chrome-free component regression (#4338).
 
 ## Theme (premium baseline)
 

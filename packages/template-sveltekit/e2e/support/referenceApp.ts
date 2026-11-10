@@ -25,6 +25,7 @@ import {
   rmSync,
   statSync,
   symlinkSync,
+  writeFileSync,
 } from 'node:fs';
 import { createServer } from 'node:net';
 import { homedir, tmpdir } from 'node:os';
@@ -250,6 +251,17 @@ async function provisionReferenceApp(
   mkdirSync(artifactRoot, { recursive: true, mode: 0o700 });
 
   copyRuntimeProfileReference(appRoot);
+  // The fixture host explicitly exposes its tenant-scoped Note model to reports.
+  // The public template keeps an empty source allow-list until its host configures it.
+  const reportConfigPath = join(appRoot, 'smrt.config.ts');
+  const reportConfig = readFileSync(reportConfigPath, 'utf8');
+  if (!reportConfig.includes('export default {')) {
+    throw new Error('Reference report source requires the template config export');
+  }
+  writeFileSync(reportConfigPath, reportConfig.replace('export default {', `export default {
+    packages: { reports: { runtime: { sources: [
+      { id: 'notes', className: 'Note', collection: 'notes', label: 'Notes' }
+    ] } } },`));
   // Not a symlink to `packageRoot/node_modules`: Vite resolves `cacheDir` to
   // `<root>/node_modules/.vite`, and through a whole-directory symlink that
   // lands in the workspace package inside the checkout — persistent gate

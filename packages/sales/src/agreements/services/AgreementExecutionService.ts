@@ -35,6 +35,14 @@ export interface AgreementExecutionServiceDeps {
   executedAgreements: ExecutedAgreementCollection;
   now?: () => Date;
   createLeaseDurationMs?: number;
+  /**
+   * Mandatory for sales-quote sources, optional policy for other sources.
+   * Rechecked before every create/replay and immediately before provider I/O.
+   * Bind sourceId/sourceVersion to SalesGovernanceService.assertCanSign().
+   * Local authority commits before external I/O; remote execution cannot be
+   * rolled back by SQL. Hosts revoke outstanding provider requests explicitly.
+   */
+  authorizeSigning?: (input: CreateAgreementExecutionInput) => Promise<void>;
 }
 
 export interface AdoptAgreementProviderRequestInput {
@@ -116,6 +124,7 @@ export class AgreementExecutionService {
     this.assertTenant(input.tenantId);
     this.assertProviderCapabilities();
     this.assertCreateInput(input);
+    await this.authorizeSigning(input);
 
     const sourceBytes = await readByteSource(input.document.data);
     if (sourceBytes.byteLength === 0) {
@@ -272,6 +281,7 @@ export class AgreementExecutionService {
     let request: SignatureRequest;
     let providerResponded = false;
     try {
+      await this.authorizeSigning(input);
       request = await this.deps.provider.createRequest({
         tenantId: input.tenantId,
         idempotencyKey: input.idempotencyKey,
@@ -1439,6 +1449,20 @@ export class AgreementExecutionService {
     };
   }
 
+  private async authorizeSigning(
+    input: CreateAgreementExecutionInput,
+  ): Promise<void> {
+    if (
+      input.sourceKind === 'sales-quote' &&
+      (!input.signingActorProfileId?.trim() || !this.deps.authorizeSigning)
+    ) {
+      throw new Error(
+        'Governed sales quote signing requires an actor and authorization guard',
+      );
+    }
+    await this.deps.authorizeSigning?.(input);
+  }
+
   private assertTenant(expected: string): void {
     this.assertTenantValue(requireTenantId(), expected, 'tenant context');
   }
@@ -1489,6 +1513,9 @@ function hashRequestIntent(
         sourceKind: input.sourceKind,
         sourceId: input.sourceId,
         sourceVersion: input.sourceVersion,
+        ...(input.signingActorProfileId
+          ? { signingActorProfileId: input.signingActorProfileId }
+          : {}),
         sourceSha256,
         documentName: input.document.name,
         documentMediaType: input.document.mediaType,

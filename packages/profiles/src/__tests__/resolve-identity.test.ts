@@ -8,10 +8,8 @@
  */
 
 import { randomUUID } from 'node:crypto';
-import { tmpdir } from 'node:os';
-import { join } from 'node:path';
 import { getDatabase } from '@happyvertical/sql';
-import { beforeEach, describe, expect, it } from 'vitest';
+import { afterEach, beforeEach, describe, expect, it } from 'vitest';
 import {
   ApiKey,
   backfillProfileEmailKeys,
@@ -26,20 +24,24 @@ import {
   ProfileTypeCollection,
   resolveIdentity,
 } from '../index.js';
+import { createOwnedSqliteFixtures } from './owned-sqlite-fixtures.js';
 
 const TEST_MASTER_SECRET = 'test-master-secret-32-bytes-long';
+const fixtures = createOwnedSqliteFixtures();
 
 function getTestDbUrl(name: string): string {
-  return `file:${join(tmpdir(), `${name}-${randomUUID()}.db`)}`;
+  return fixtures.url(name);
 }
 
 async function createProfile(dbUrl: string, email: string) {
   const db = { type: 'sqlite' as const, url: dbUrl };
   const profileTypes = await ProfileTypeCollection.create({ db });
+  fixtures.track(profileTypes.db);
   const type = await profileTypes.create({ name: 'Person' });
   await type.save();
 
   const profiles = await ProfileCollection.create({ db });
+  fixtures.track(profiles.db);
   const profile = await profiles.create({
     typeId: type.id,
     name: 'User',
@@ -54,8 +56,10 @@ describe('resolveIdentity', () => {
 
   beforeEach(async () => {
     dbUrl = getTestDbUrl('resolve-identity');
-    const db = await getDatabase({ type: 'sqlite', url: dbUrl });
-    await ProfileCollection.create({ db });
+    const db = fixtures.track(
+      await getDatabase({ type: 'sqlite', url: dbUrl }),
+    );
+    fixtures.track((await ProfileCollection.create({ db })).db);
     await backfillProfileEmailKeys(db);
   });
 
@@ -243,6 +247,8 @@ describe('resolveIdentity', () => {
     expect(result.profile).toBeNull();
   });
 });
+
+afterEach(() => fixtures.cleanup());
 
 describe('createProfileFromNostr', () => {
   let dbUrl: string;

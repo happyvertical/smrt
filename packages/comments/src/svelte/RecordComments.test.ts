@@ -1,3 +1,6 @@
+import '../models/ParticipationPolicy.js';
+import '../models/ParticipationBan.js';
+import '../models/ParticipationRateBucket.js';
 // @vitest-environment jsdom
 import { getTestDatabase } from '@happyvertical/smrt-core/testing';
 import { render, screen, userEvent } from '@happyvertical/smrt-vitest/svelte';
@@ -89,7 +92,12 @@ it('asks to check the discussion when actual mention delivery fails after save',
   const db = await getTestDatabase({
     type: 'sqlite',
     url: ':memory:',
-    classes: ['Comment'],
+    classes: [
+      'Comment',
+      'ParticipationPolicy',
+      'ParticipationBan',
+      'ParticipationRateBucket',
+    ],
   });
   try {
     const tenantId = '11111111-1111-4111-8111-111111111111';
@@ -137,4 +145,28 @@ it('asks to check the discussion when actual mention delivery fails after save',
   } finally {
     await db.close?.();
   }
+});
+
+it('renders thread parents and sends replies through the parent-specific callback', async () => {
+  const onreply = vi.fn();
+  render(RecordComments, {
+    props: {
+      contextKey: 'worker:project',
+      comments: [
+        { id: '1', authorLabel: 'Ada', body: 'Schedule' },
+        { id: '2', parentCommentId: '1', authorLabel: 'Bo', body: 'Agreed' },
+      ],
+      onreply,
+    },
+  });
+  expect(screen.getByText('Reply to Ada', { selector: 'small' })).toBeTruthy();
+  expect(screen.queryByRole('button', { name: 'Post comment' })).toBeNull();
+  await userEvent.click(screen.getByRole('button', { name: 'Reply to Ada' }));
+  await userEvent.type(screen.getByLabelText('Add a comment'), 'Next shift');
+  await userEvent.click(screen.getByRole('button', { name: 'Post comment' }));
+  expect(onreply).toHaveBeenCalledWith('1', 'Next shift');
+  expect(screen.queryByRole('button', { name: 'Post comment' })).toBeNull();
+  await userEvent.click(screen.getByRole('button', { name: 'Reply to Ada' }));
+  await userEvent.click(screen.getByRole('button', { name: 'Cancel reply' }));
+  expect(screen.queryByRole('button', { name: 'Post comment' })).toBeNull();
 });

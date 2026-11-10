@@ -18,7 +18,7 @@ import {
   writeFileSync,
 } from 'node:fs';
 import { tmpdir } from 'node:os';
-import { basename, dirname, join, relative, resolve } from 'node:path';
+import { basename, dirname, join, relative, resolve, sep } from 'node:path';
 import type { Cookbook } from '@happyvertical/smrt-types';
 
 export const COOKBOOK_CONFIG_FILE = 'smrt.cookbook.json';
@@ -32,6 +32,41 @@ const DEP_SECTIONS = [
 ] as const;
 
 type DepSection = (typeof DEP_SECTIONS)[number];
+
+/** Sections a new project's smrt packages are pinned in (peer ranges stay ranges). */
+const PINNED_SECTIONS = [
+  'dependencies',
+  'devDependencies',
+  'optionalDependencies',
+] as const;
+
+const SMRT_PACKAGE_PREFIX = '@happyvertical/smrt-';
+
+/** Lockfiles a template may ship; they resolve the template's own pins. */
+const LOCKFILES = [
+  'pnpm-lock.yaml',
+  'package-lock.json',
+  'npm-shrinkwrap.json',
+  'yarn.lock',
+  'bun.lock',
+  'bun.lockb',
+] as const;
+
+/**
+ * The template repository's own metadata, at its root (#4239). It names the
+ * template's tracker, forge, memory bank and CI, so a coding agent in the new
+ * project would file and claim work against the template repository.
+ */
+const TEMPLATE_REPOSITORY_FILES = [
+  '.agents',
+  '.github',
+  'AGENTS.md',
+  'CLAUDE.md',
+  'renovate.json',
+] as const;
+
+const isTemplateRepositoryFile = (path: string): boolean =>
+  (TEMPLATE_REPOSITORY_FILES as readonly string[]).includes(path.split('/')[0]);
 
 interface PackageJson {
   name?: string;
@@ -55,7 +90,11 @@ export interface ApplyOptions {
    * stdio server). Stdin is never shared with the install in `stderr` mode.
    */
   installOutput?: 'inherit' | 'stderr';
-  /** Version of the CLI, the last-resort dependency range. */
+  /**
+   * Version of this CLI. smrt releases in lockstep, so a new project's
+   * `@happyvertical/smrt-*` packages are pinned to exactly this version when
+   * it is a plain release; it is also the last-resort range for `--into`.
+   */
   cliVersion: string;
   cwd?: string;
 }
@@ -67,8 +106,19 @@ export interface ApplyPlan {
   projectName?: string;
   /** Dependencies added to package.json. */
   addDependencies: Record<string, string>;
-  /** Needed packages already declared (left exactly as they are). */
+  /** Needed packages already declared (left as they are, apart from the pin below). */
   keptDependencies: Record<string, string>;
+  /**
+   * The exact version a new project's `@happyvertical/smrt-*` packages are
+   * pinned to (this CLI's), or undefined when they keep their ranges.
+   */
+  smrtVersion?: string;
+  /** Template smrt dependencies whose range the pin replaced. */
+  repinnedDependencies: Record<string, { from: string; to: string }>;
+  /** Template lockfiles dropped because they resolve the replaced pins. */
+  removedLockfiles: string[];
+  /** Template repository metadata not copied into the new project (#4239). */
+  skippedTemplateFiles: string[];
   config: 'create' | 'update' | 'unchanged';
 }
 
@@ -78,6 +128,8 @@ export interface ApplyResult {
   written: string[];
   installed: boolean;
   nextSteps: string[];
+  /** Things the user should know about the result (e.g. an unpinned dev build). */
+  warnings: string[];
 }
 
 export class ApplyError extends Error {}
@@ -108,15 +160,58 @@ function declaredRange(json: PackageJson, name: string): string | undefined {
 }
 
 /**
- * Range for packages the project does not declare yet: the framework line the
- * project already uses (smrt packages release as one fixed group), else this
- * CLI's own release line.
+ * `version` when it is a plain release (`x.y.z`) that the registry serves;
+ * undefined for a prerelease, build metadata, or the `0.0.0` an unresolved
+ * dev build reports.
+ */
+export function releasedVersion(version: string): string | undefined {
+  return /^\d+\.\d+\.\d+$/.test(version) && version !== '0.0.0'
+    ? version
+    : undefined;
+}
+
+/**
+ * Range for packages an existing project (`--into`) does not declare yet:
+ * the framework line the project already uses (smrt packages release as one
+ * fixed group), else this CLI's own version (exact when it is a release).
  */
 export function chooseRange(json: PackageJson, cliVersion: string): string {
   const core = declaredRange(json, '@happyvertical/smrt-core');
   if (core?.startsWith('workspace:')) return 'workspace:*';
   if (core && /^[\^~]?\d/.test(core)) return core;
-  return `^${cliVersion}`;
+  return releasedVersion(cliVersion) ?? `^${cliVersion}`;
+}
+
+/**
+ * A copy of `json` with every `@happyvertical/smrt-*` registry range in
+ * dependencies, devDependencies and optionalDependencies set to exactly
+ * `version`, plus what changed. A protocol or path spec (`workspace:`,
+ * `link:`, `file:`, `npm:` alias, git, URL) is a deliberate local choice
+ * and is kept, as is every non-smrt dependency.
+ */
+export function pinSmrtDependencies(
+  json: PackageJson,
+  version: string,
+): {
+  json: PackageJson;
+  changes: Record<string, { from: string; to: string }>;
+} {
+  const next: PackageJson = { ...json };
+  const changes: Record<string, { from: string; to: string }> = {};
+  for (const section of PINNED_SECTIONS) {
+    const deps = json[section] as Record<string, unknown> | undefined;
+    if (!deps || typeof deps !== 'object') continue;
+    const pinned: Record<string, unknown> = { ...deps };
+    for (const [name, spec] of Object.entries(deps)) {
+      if (!name.startsWith(SMRT_PACKAGE_PREFIX)) continue;
+      if (typeof spec !== 'string' || /[:/]/.test(spec)) continue;
+      if (spec === version) continue;
+      pinned[name] = version;
+      changes[name] = { from: spec, to: version };
+    }
+    next[section] = pinned;
+  }
+  return { json: next, changes };
 }
 
 const slug = (value: string) =>
@@ -129,6 +224,43 @@ const slug = (value: string) =>
 export function npmNameFromText(value: string): string | undefined {
   const name = slug(value).slice(0, 214).replace(/-+$/, '');
   return name || undefined;
+}
+
+/** The scope a new project's name takes when its template's name has none. */
+export const DEFAULT_PROJECT_SCOPE = '@smrt-app';
+
+/**
+ * A new project's package name: the slug under the template's npm scope (else
+ * `@smrt-app`). SMRT qualifies class names as `@scope/package:ClassName` and
+ * refuses to scan a project with an unscoped name, so an unscoped name would
+ * leave any template that declares its own models unbuildable (#4061). A
+ * slug that would reproduce the template's name gets a `-project` suffix.
+ */
+export function scopedProjectName(
+  slugName: string,
+  templateName: string | undefined,
+): string {
+  const scope = /^@[a-z0-9][a-z0-9._~-]*\//.exec(templateName ?? '')?.[0];
+  const prefix = scope ? scope.slice(0, -1) : DEFAULT_PROJECT_SCOPE;
+  const fit = (suffix: string) => {
+    // A template scope can leave too little room for a suffixed basename;
+    // the default scope always has room (and then cannot be the template's).
+    const scopeOf = (candidate: string) =>
+      214 - candidate.length - 1 - suffix.length >= 1
+        ? candidate
+        : DEFAULT_PROJECT_SCOPE;
+    const chosen = scopeOf(prefix);
+    const room = 214 - chosen.length - 1 - suffix.length;
+    const base = slugName.slice(0, room).replace(/-+$/, '') || 'app';
+    return `${chosen}/${base}${suffix}`;
+  };
+  // Never the template's own name (its app identity), compared after
+  // truncation; suffixes are tried until the name differs.
+  let name = fit('');
+  for (let n = 1; name === templateName; n += 1) {
+    name = fit(n === 1 ? '-project' : `-project-${n}`);
+  }
+  return name;
 }
 
 /** Parse `github:owner/repo#ref`, a git URL, or a local path. */
@@ -252,10 +384,14 @@ function renderJson(value: unknown, indent: string | number = 2): string {
   return `${JSON.stringify(value, null, indent)}\n`;
 }
 
-function packageManager(dir: string): string {
-  if (existsSync(join(dir, 'yarn.lock'))) return 'yarn';
-  if (existsSync(join(dir, 'package-lock.json'))) return 'npm';
+function packageManagerFrom(has: (file: string) => boolean): string {
+  if (has('yarn.lock')) return 'yarn';
+  if (has('package-lock.json')) return 'npm';
   return 'pnpm';
+}
+
+function packageManager(dir: string): string {
+  return packageManagerFrom((file) => existsSync(join(dir, file)));
 }
 
 export function nextSteps(
@@ -263,8 +399,8 @@ export function nextSteps(
   json: PackageJson,
   installed: boolean,
   cwd: string,
+  pm: string = packageManager(dir),
 ): string[] {
-  const pm = packageManager(dir);
   const run = pm === 'npm' ? 'npm run' : pm;
   const scripts = (json.scripts as Record<string, string> | undefined) ?? {};
   const steps: string[] = [];
@@ -296,12 +432,17 @@ function copyTemplate(template: AcquiredTemplate, targetDir: string): void {
   if (!template.files) {
     cpSync(template.root, targetDir, {
       recursive: true,
-      filter: (src) => !skip(basename(src)) && refuseLink(src),
+      filter: (src) =>
+        !skip(basename(src)) &&
+        !isTemplateRepositoryFile(
+          relative(template.root, src).split(sep).join('/'),
+        ) &&
+        refuseLink(src),
     });
     return;
   }
   for (const file of template.files) {
-    if (file.split('/').some(skip)) continue;
+    if (file.split('/').some(skip) || isTemplateRepositoryFile(file)) continue;
     const from = join(template.root, file);
     refuseLink(from);
     const to = join(targetDir, file);
@@ -361,7 +502,51 @@ export function applyCookbook(options: ApplyOptions): ApplyResult {
       ({ json: baseJson, raw: baseRaw } = readPackageJson(targetDir));
     }
 
-    const range = chooseRange(baseJson, options.cliVersion);
+    // A new project runs the smrt release this CLI is, not whatever the
+    // template pinned when it was last touched (#4055): smrt releases in
+    // lockstep, so this CLI's version is right for every smrt package.
+    const warnings: string[] = [];
+    const smrtVersion =
+      mode === 'new' ? releasedVersion(options.cliVersion) : undefined;
+    if (mode === 'new' && !smrtVersion) {
+      warnings.push(
+        `this CLI's version (${options.cliVersion}) is not a published release, so the project keeps the template's @happyvertical/smrt-* ranges; pin them to a released smrt version before relying on the app`,
+      );
+    }
+    let repinnedDependencies: Record<string, { from: string; to: string }> = {};
+    if (smrtVersion) {
+      ({ json: baseJson, changes: repinnedDependencies } = pinSmrtDependencies(
+        baseJson,
+        smrtVersion,
+      ));
+    }
+    const skippedTemplateFiles =
+      mode === 'new'
+        ? TEMPLATE_REPOSITORY_FILES.filter((name) => {
+            const { root, files } = template as AcquiredTemplate;
+            return files
+              ? files.some((file) => file.split('/')[0] === name)
+              : existsSync(join(root, name));
+          })
+        : [];
+    // The template's lockfile resolves the ranges just replaced; keeping it
+    // would let the install (or a later frozen one) restore them.
+    // What the new project receives from the template: a local git
+    // template contributes only `files` (an ignored lockfile stays behind).
+    const copied = (file: string): boolean => {
+      const { root, files } = template as AcquiredTemplate;
+      return files ? files.includes(file) : existsSync(join(root, file));
+    };
+    const removedLockfiles =
+      mode === 'new' && Object.keys(repinnedDependencies).length > 0
+        ? LOCKFILES.filter(copied)
+        : [];
+    // Decided from the copied files before a lockfile is dropped, since
+    // lockfiles name it.
+    const pm =
+      mode === 'new' ? packageManagerFrom(copied) : packageManager(targetDir);
+
+    const range = smrtVersion ?? chooseRange(baseJson, options.cliVersion);
     const addDependencies: Record<string, string> = {};
     const keptDependencies: Record<string, string> = {};
     for (const name of options.packages) {
@@ -381,12 +566,16 @@ export function applyCookbook(options: ApplyOptions): ApplyResult {
     // A new project never keeps the template's package name: the runtime
     // derives the application identity (and so the OS data directory) from
     // it, so two projects from one template would share a database. Name it
-    // from the cookbook, else from the target directory.
+    // from the cookbook, else from the target directory, under the template's
+    // scope: SMRT requires a scoped package name to qualify class names.
     const projectName =
       mode === 'new'
-        ? (npmNameFromText(options.cookbook.name ?? '') ??
-          npmNameFromText(basename(targetDir)) ??
-          'smrt-app')
+        ? scopedProjectName(
+            npmNameFromText(options.cookbook.name ?? '') ??
+              npmNameFromText(basename(targetDir)) ??
+              'smrt-app',
+            typeof baseJson.name === 'string' ? baseJson.name : undefined,
+          )
         : undefined;
 
     const plan: ApplyPlan = {
@@ -397,6 +586,10 @@ export function applyCookbook(options: ApplyOptions): ApplyResult {
       projectName,
       addDependencies,
       keptDependencies,
+      smrtVersion,
+      repinnedDependencies,
+      removedLockfiles,
+      skippedTemplateFiles,
       config,
     };
 
@@ -421,7 +614,8 @@ export function applyCookbook(options: ApplyOptions): ApplyResult {
         dryRun: true,
         written: [],
         installed: false,
-        nextSteps: nextSteps(targetDir, nextJson, false, cwd),
+        nextSteps: nextSteps(targetDir, nextJson, false, cwd, pm),
+        warnings,
       };
     }
 
@@ -430,6 +624,9 @@ export function applyCookbook(options: ApplyOptions): ApplyResult {
       mkdirSync(targetDir, { recursive: true });
       copyTemplate(template as AcquiredTemplate, targetDir);
       written.push(`${targetDir} (from template)`);
+      for (const file of removedLockfiles) {
+        rmSync(join(targetDir, file), { force: true });
+      }
     }
     const packageJsonChanged =
       mode === 'new' ||
@@ -450,7 +647,6 @@ export function applyCookbook(options: ApplyOptions): ApplyResult {
 
     let installed = false;
     if (wantInstall) {
-      const pm = packageManager(targetDir);
       const result = spawnSync(pm, ['install'], {
         cwd: targetDir,
         stdio:
@@ -468,7 +664,8 @@ export function applyCookbook(options: ApplyOptions): ApplyResult {
       dryRun: false,
       written,
       installed,
-      nextSteps: nextSteps(targetDir, nextJson, installed, cwd),
+      nextSteps: nextSteps(targetDir, nextJson, installed, cwd, pm),
+      warnings,
     };
   } finally {
     template?.cleanup();

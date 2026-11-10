@@ -195,12 +195,12 @@ export class AttributionService {
    *    them. Nothing left → `refused: 'no_eligible_touches'`.
    * 5. **Conflicts** — `conflictBehavior: 'review'` with more than one
    *    distinct eligible referrer, exact-timestamp ties between distinct
-   *    referrers in `first_touch`/`last_touch`, or competing manual
-   *    assignments in `assigned` mode → an OPEN AttributionException
+   *    referrers in `first_touch`/`last_touch`, or competing assignments or nominations
+   *    for different referrers in `assigned` mode → an OPEN AttributionException
    *    carrying the candidates; NO referral rows.
    * 6. **Credit** — otherwise the mode elects the winner(s):
    *    `first_touch`/`last_touch` (earliest/latest), `assigned` (most
-   *    recent manual assignment; assignments beat clicks by definition),
+   *    recent assignment-grade touch, either a manual assignment or nomination),
    *    or `split` (every distinct eligible referrer, equal fractions
    *    rounded to 4 dp with the remainder on the last, one shared
    *    `splitGroupId`). Referrals are created `pending → attributed` with
@@ -212,29 +212,10 @@ export class AttributionService {
   ): Promise<AttributionResolution> {
     const now = input.now ?? new Date();
 
-    // Idempotency: live credit already exists → return it untouched.
-    const existing = (
-      await this.deps.referrals.findByTarget(input.targetKind, input.targetId)
-    ).filter(
-      (referral) =>
-        referral.programId === input.programId &&
-        (referral.status === 'attributed' || referral.status === 'qualified'),
-    );
-    if (existing.length > 0) {
-      return { referrals: existing, exception: null };
-    }
-
-    // Idempotency: a conflict already parked for review → return it.
-    const openException = await this.deps.exceptions.findOpenByTarget(
-      input.targetKind,
-      input.targetId,
-      input.programId,
-    );
-    if (openException) {
-      return { referrals: [], exception: openException };
-    }
-
     const program = await this.requireProgram(input.programId);
+    const existing = await this.findExistingResolution(input, program.tenantId);
+    if (existing) return existing;
+
     const policy = await this.resolvePolicy(program, input.policyKey, now);
     if (!policy) {
       return { referrals: [], exception: null, refused: 'no_active_policy' };
@@ -249,7 +230,12 @@ export class AttributionService {
       };
     }
 
-    const eligible = await this.gatherEligibleTouches(input, policy, now);
+    const eligible = await this.gatherEligibleTouches(
+      input,
+      program.tenantId,
+      policy,
+      now,
+    );
     if (eligible.length === 0) {
       return { referrals: [], exception: null, refused: 'no_eligible_touches' };
     }
@@ -316,10 +302,10 @@ export class AttributionService {
       }
 
       case 'assigned': {
-        // Only explicit manual assignments carry credit in assigned mode —
-        // clicks and code entries are context, never winners.
+        // Manual assignments and matched nominations carry assigned credit.
         const assignments = eligible.filter(
-          (touch) => touch.kind === 'manual_assignment',
+          (touch) =>
+            touch.kind === 'manual_assignment' || touch.kind === 'nomination',
         );
         if (assignments.length === 0) {
           return {
@@ -458,8 +444,22 @@ export class AttributionService {
       );
     }
 
-    const policyPin = await this.resolvePolicyPin(exception);
     const candidates = exception.getCandidates();
+    if (
+      exception.conflictReason === 'nomination_unresolved' ||
+      candidates.some((candidate) => candidate.kind === 'nomination')
+    ) {
+      for (const { referrerId } of input.awards) {
+        const referrer = await this.deps.referrers.get({ id: referrerId });
+        if (!referrer?.isActive() || referrer.tenantId !== exception.tenantId) {
+          throw new Error(
+            'Nomination awards require active referrers in the same tenant',
+          );
+        }
+      }
+    }
+
+    const policyPin = await this.resolvePolicyPin(exception);
     const splitGroupId = input.awards.length > 1 ? randomUUID() : '';
     const referrals: Referral[] = [];
     for (const award of input.awards) {
@@ -623,6 +623,41 @@ export class AttributionService {
     return { referrals, exception };
   }
 
+  /** Return already attributed credit or an open review for this target and tenant. */
+  async findExistingResolution(
+    input: Pick<
+      ResolveAttributionInput,
+      'targetKind' | 'targetId' | 'programId'
+    >,
+    tenantId: string | null,
+  ): Promise<AttributionResolution | null> {
+    // Idempotency: live credit already exists → return it untouched.
+    const existing = (
+      await this.deps.referrals.findByTarget(input.targetKind, input.targetId)
+    ).filter(
+      (referral) =>
+        referral.programId === input.programId &&
+        referral.tenantId === tenantId &&
+        (referral.status === 'attributed' || referral.status === 'qualified'),
+    );
+    if (existing.length > 0) {
+      return { referrals: existing, exception: null };
+    }
+
+    // Idempotency: a conflict already parked for review → return it.
+    const openException = await this.deps.exceptions.findOpenByTarget(
+      input.targetKind,
+      input.targetId,
+      input.programId,
+      tenantId,
+    );
+    if (openException) {
+      return { referrals: [], exception: openException };
+    }
+
+    return null;
+  }
+
   // -------- Internals --------
 
   private async requireProgram(programId: string): Promise<ReferralProgram> {
@@ -664,6 +699,7 @@ export class AttributionService {
    */
   private async gatherEligibleTouches(
     input: ResolveAttributionInput,
+    tenantId: string | null,
     policy: AttributionPolicy,
     now: Date,
   ): Promise<ReferralTouch[]> {
@@ -685,29 +721,42 @@ export class AttributionService {
 
     const windowStart = now.getTime() - policy.windowDays * MS_PER_DAY;
     const inWindow = [...byId.values()].filter((touch) => {
-      if (touch.programId !== input.programId) return false;
+      if (touch.programId !== input.programId || touch.tenantId !== tenantId)
+        return false;
       const at = touch.occurredAt.getTime();
       return at >= windowStart && at <= now.getTime();
     });
 
     // Self-referral gate: drop touches whose referrer IS the prospect,
     // unless the policy explicitly allows self-referrals.
-    let eligible = inWindow;
-    if (!policy.allowSelfReferral && input.subjectProfileId) {
-      const referrerProfiles = new Map<string, string>();
-      for (const touch of inWindow) {
-        if (referrerProfiles.has(touch.referrerId)) continue;
-        const referrer = await this.deps.referrers.get({
-          id: touch.referrerId,
-        });
-        referrerProfiles.set(touch.referrerId, referrer?.profileId ?? '');
+    const eligible: ReferralTouch[] = [];
+    const referrers = new Map<
+      string,
+      Awaited<ReturnType<ReferrerCollection['get']>>
+    >();
+    const checkSelfReferral =
+      !policy.allowSelfReferral && !!input.subjectProfileId;
+    for (const touch of inWindow) {
+      if (touch.kind !== 'nomination' && !checkSelfReferral) {
+        eligible.push(touch);
+        continue;
       }
-      eligible = inWindow.filter(
-        (touch) =>
-          referrerProfiles.get(touch.referrerId) !== input.subjectProfileId,
-      );
+      if (!referrers.has(touch.referrerId)) {
+        referrers.set(
+          touch.referrerId,
+          await this.deps.referrers.get({ id: touch.referrerId }),
+        );
+      }
+      const referrer = referrers.get(touch.referrerId);
+      if (
+        touch.kind === 'nomination' &&
+        (!referrer?.isActive() || referrer.tenantId !== tenantId)
+      )
+        continue;
+      if (checkSelfReferral && referrer?.profileId === input.subjectProfileId)
+        continue;
+      eligible.push(touch);
     }
-
     return eligible.sort(
       (a, b) => a.occurredAt.getTime() - b.occurredAt.getTime(),
     );

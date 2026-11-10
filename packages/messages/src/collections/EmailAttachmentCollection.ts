@@ -4,7 +4,7 @@
  * @deprecated Use AttachmentCollection instead
  */
 
-import { queryGlobal, queryWithGlobals } from '@happyvertical/smrt-tenancy';
+import { queryGlobal, queryWithGlobals } from '../host.js';
 import { EmailAttachment } from '../models/EmailAttachment';
 import { AttachmentCollection } from './AttachmentCollection';
 

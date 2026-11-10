@@ -1,10 +1,13 @@
 import { describe, expect, it } from 'vitest';
 
 import {
+  DEFAULT_PASSKEY_MANAGE_PERMISSION,
   DEFAULT_PASSWORD_MANAGE_PERMISSION,
   DeviceCredentialService,
   LoginAttemptLimiter,
+  PASSKEY_LOGIN_KIND,
   PASSWORD_LOGIN_KIND,
+  PasskeyCredentialService,
   PasswordCredentialService,
   UsersCliAuthApproveLimit,
   UsersCliAuthApproveLimitCollection,
@@ -12,6 +15,10 @@ import {
   UsersLoginAttemptCollection,
   UsersLoginAuditEvent,
   UsersLoginAuditEventCollection,
+  UsersPasskeyChallenge,
+  UsersPasskeyChallengeCollection,
+  UsersPasskeyCredential,
+  UsersPasskeyCredentialCollection,
   UsersPasswordCredential,
   UsersPasswordCredentialCollection,
   UsersPinCredential,
@@ -44,5 +51,17 @@ describe('terminal auth public exports', () => {
     expect(PASSWORD_LOGIN_KIND).toBe('password');
     const sveltekit = await import('../sveltekit/index.js');
     expect(sveltekit.createPasswordCredentialHandlers).toBeTypeOf('function');
+  });
+
+  it('exports the passkey credential classes and constants (#3275)', async () => {
+    expect(PasskeyCredentialService).toBeTypeOf('function');
+    expect(UsersPasskeyCredential).toBeTypeOf('function');
+    expect(UsersPasskeyCredentialCollection).toBeTypeOf('function');
+    expect(UsersPasskeyChallenge).toBeTypeOf('function');
+    expect(UsersPasskeyChallengeCollection).toBeTypeOf('function');
+    expect(DEFAULT_PASSKEY_MANAGE_PERMISSION).toBe('users.passkey.manage');
+    expect(PASSKEY_LOGIN_KIND).toBe('passkey');
+    const sveltekit = await import('../sveltekit/index.js');
+    expect(sveltekit.createPasskeyCredentialHandlers).toBeTypeOf('function');
   });
 });

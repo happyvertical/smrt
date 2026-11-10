@@ -3,9 +3,15 @@
  *
  * ```
  * smrt app token --scopes notes.read [--expires 30d] [--label "Claude Desktop"]
+ *                [--holder laptop]
  * smrt app token list
  * smrt app token revoke <id>
+ * smrt app token revoke-holder <holder>
  * ```
+ *
+ * Without `--expires` a token is renewable: each use slides its 30-day window
+ * forward. `--expires` makes it fixed-lifetime. `--holder` allows one active
+ * token per holder: issuing again for the holder rotates (revokes) the old one.
  *
  * Local profile only. The token is printed once, in the `issued` JSON
  * document on stdout, and is otherwise never written anywhere: the runtime
@@ -21,12 +27,13 @@ import { type AppContext, preparedStateRoot } from './runtime.js';
 
 /** Usage text for `smrt app token`. */
 export const TOKEN_USAGE =
-  'Usage: smrt app token [create] --scopes <scope[,scope...]> [--expires <n>s|m|h|d] [--label <text>] | token list | token revoke <id>';
+  'Usage: smrt app token [create] --scopes <scope[,scope...]> [--expires <n>s|m|h|d] [--label <text>] [--holder <id>] | token list | token revoke <id> | token revoke-holder <holder>';
 
 interface CreateArgs {
   scopes: string[];
   expiresInSeconds?: number;
   label?: string;
+  holder?: string;
 }
 
 const UNIT_SECONDS: Record<string, number> = {
@@ -49,11 +56,16 @@ function parseCreateArgs(args: string[]): CreateArgs {
   const scopes: string[] = [];
   let expiresInSeconds: number | undefined;
   let label: string | undefined;
+  let holder: string | undefined;
   for (let index = 0; index < args.length; index += 1) {
     const arg = args[index];
     const equals = arg.indexOf('=');
     const name = equals > 0 ? arg.slice(0, equals) : arg;
-    if (!['--scopes', '--scope', '--expires', '--label'].includes(name)) {
+    if (
+      !['--scopes', '--scope', '--expires', '--label', '--holder'].includes(
+        name,
+      )
+    ) {
       throw new Error(`Unknown token option: ${name}. ${TOKEN_USAGE}`);
     }
     const value = equals > 0 ? arg.slice(equals + 1) : args[++index];
@@ -67,6 +79,11 @@ function parseCreateArgs(args: string[]): CreateArgs {
         throw new Error('Token option --expires was provided more than once.');
       }
       expiresInSeconds = parseTokenLifetime(value);
+    } else if (name === '--holder') {
+      if (holder !== undefined) {
+        throw new Error('Token option --holder was provided more than once.');
+      }
+      holder = value;
     } else {
       if (label !== undefined) {
         throw new Error('Token option --label was provided more than once.');
@@ -77,7 +94,7 @@ function parseCreateArgs(args: string[]): CreateArgs {
   if (scopes.length === 0) {
     throw new Error(`At least one scope is required. ${TOKEN_USAGE}`);
   }
-  return { scopes, expiresInSeconds, label };
+  return { scopes, expiresInSeconds, label, holder };
 }
 
 function printJson(context: AppContext, value: unknown): void {
@@ -98,7 +115,7 @@ export async function runTokenOperation(
   const subcommand =
     first === undefined || first.startsWith('--') ? 'create' : first;
   const subArgs = subcommand === first ? rest : args;
-  if (!['create', 'list', 'revoke'].includes(subcommand)) {
+  if (!['create', 'list', 'revoke', 'revoke-holder'].includes(subcommand)) {
     throw new Error(`Unknown token operation: ${subcommand}. ${TOKEN_USAGE}`);
   }
   // Validate arguments before touching any state.
@@ -108,6 +125,11 @@ export async function runTokenOperation(
   }
   if (subcommand === 'revoke' && subArgs.length !== 1) {
     throw new Error(`token revoke takes exactly one token id. ${TOKEN_USAGE}`);
+  }
+  if (subcommand === 'revoke-holder' && subArgs.length !== 1) {
+    throw new Error(
+      `token revoke-holder takes exactly one holder. ${TOKEN_USAGE}`,
+    );
   }
   await assertLocalOperation(context, 'app:token');
 
@@ -154,11 +176,24 @@ export async function runTokenOperation(
           token: issued.token,
           scopes: issued.scopes,
           label: issued.label,
+          holder: issued.holder,
+          renewable: issued.renewable,
           createdAt: issued.createdAt,
           expiresAt: issued.expiresAt,
           notice:
             'This token is shown once and only its hash is stored. Put it in your MCP client configuration now; revoke it with smrt app token revoke <id>.',
           secretValuesIncluded: true,
+        });
+        return 0;
+      }
+      if (subcommand === 'revoke-holder') {
+        const holder = subArgs[0];
+        const outcome = await withStore((store) => store.revokeHolder(holder));
+        printJson(context, {
+          schemaVersion: 1,
+          status: outcome,
+          holder,
+          secretValuesIncluded: false,
         });
         return 0;
       }

@@ -42,7 +42,10 @@ import {
 import { getDatabase } from '@happyvertical/sql';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { runAppCommand } from '../cli.js';
-import { AppCommandError } from '../errors.js';
+import {
+  AppCommandError,
+  WINDOWS_OPERATOR_COPY_UNSUPPORTED_MESSAGE,
+} from '../errors.js';
 import {
   prepareApplicationStateRoot,
   resolveApplicationStateRoot,
@@ -53,6 +56,10 @@ import {
   type CommandRunner,
   resolveConfiguredRuntime,
 } from '../runtime.js';
+import {
+  decryptSnapshot,
+  type SnapshotKeyProvider,
+} from '../snapshot-framing.js';
 
 const TOKEN = 'bootstrap-token-must-never-print-0123456789';
 const ROTATED_TOKEN = 'rotated-token-must-never-print-9876543210';
@@ -268,6 +275,31 @@ function fakeInitialize(status: { value: 'available' | 'claimed' }) {
 function allOutput(fixture: Fixture): string {
   return [...fixture.output.stdout, ...fixture.output.stderr].join('');
 }
+
+const SNAPSHOT_CONTEXT = {
+  accountId: 'account-1',
+  deviceId: 'device-1',
+  sequence: 3n,
+};
+const SNAPSHOT_KEY = Buffer.alloc(32, 7);
+const SNAPSHOT_KEY_ID = 'ab'.repeat(16);
+
+/** In-memory vault key custody double (#4797). */
+const snapshotKeys: SnapshotKeyProvider = {
+  async sealingKey() {
+    return {
+      ...SNAPSHOT_CONTEXT,
+      generation: 1n,
+      keyId: SNAPSHOT_KEY_ID,
+      key: new Uint8Array(SNAPSHOT_KEY),
+    };
+  },
+  async openingKey({ generation, keyId }) {
+    return generation === 1n && keyId === SNAPSHOT_KEY_ID
+      ? new Uint8Array(SNAPSHOT_KEY)
+      : undefined;
+  },
+};
 
 function expectNoLocks(fixture: Fixture): void {
   expect(existsSync(join(fixture.stateRoot(), 'operation.lock'))).toBe(false);
@@ -1034,6 +1066,48 @@ describe('smrt app start / stop', () => {
     expect(allOutput(fixture)).not.toContain(TOKEN);
     expect(await fixture.run(['stop'])).toBe(0);
   });
+
+  it('install refreshes agent docs in write mode, and a failing refresh never stops it (#4878)', async () => {
+    const fixture = makeFixture();
+    const port = await freePort();
+    process.env.PORT = port;
+    writeFakeBuild(fixture.app);
+    process.env.FAKE_HEALTH = JSON.stringify({
+      configuration: expectedFingerprint(fixture, port),
+    });
+    const refresh = vi.fn(async () => {
+      throw new Error('docs exploded');
+    });
+    expect(
+      await fixture.run(['install'], {
+        openBrowser: vi.fn(),
+        agentDocs: { refresh },
+      }),
+    ).toBe(0);
+    expect(refresh).toHaveBeenCalledTimes(1);
+    expect(refresh).toHaveBeenCalledWith(
+      expect.objectContaining({ cwd: fixture.app, mode: 'write' }),
+    );
+    // Plain text on stderr, no error envelope; stdout is the usual JSON.
+    const stderr = fixture.output.stderr.join('');
+    expect(stderr).toContain('agent docs refresh failed (docs exploded)');
+    expect(() => JSON.parse(stderr)).toThrow();
+    const lines = fixture.output.stdout.join('');
+    expect(lines).toContain('"status": "ready"');
+    const started = JSON.parse(lines.trim().split('\n').at(-1) as string) as {
+      pid: number;
+    };
+    children.push(started.pid);
+    expect(await fixture.run(['stop'])).toBe(0);
+  });
+
+  it('install does not refresh agent docs when the local-operation assertion refuses', async () => {
+    const fixture = makeFixture();
+    fixture.setProfile('self-hosted');
+    const refresh = vi.fn();
+    expect(await fixture.run(['install'], { agentDocs: { refresh } })).toBe(1);
+    expect(refresh).not.toHaveBeenCalled();
+  });
 });
 
 describe('smrt app doctor', () => {
@@ -1178,6 +1252,108 @@ describe('smrt app backup', () => {
     expect(existsSync(nestedStorageDestination)).toBe(false);
   });
 
+  it('writes one encrypted snapshot file with --encrypted and restores it to a candidate', async () => {
+    const fixture = makeFixture();
+    await fixture.run(['setup']);
+    writeFileSync(join(fixture.data, 'marker.txt'), 'plaintext-marker');
+    const destination = join(fixture.root, 'backups', 'first.hvsnap');
+    expect(await fixture.run(['backup', '--encrypted', destination])).toBe(1);
+    expect(fixture.stderrJson().message).toBe(
+      'Encrypted snapshots need a vault key provider, and none is configured for this installation.',
+    );
+    expect(existsSync(destination)).toBe(false);
+
+    expect(
+      await fixture.run(['backup', '--', '--encrypted', destination], {
+        snapshotKeys,
+      }),
+    ).toBe(0);
+    const report = fixture.stdoutJson() as Record<string, unknown>;
+    expect(report).toMatchObject({
+      schemaVersion: 1,
+      status: 'backed-up',
+      destination,
+      encrypted: true,
+      snapshot: {
+        format: 'hvsf-v1',
+        kind: 'data-root',
+        generation: '1',
+        sequence: '3',
+        // The producing device is printed so a lost laptop's file can be
+        // matched to its origin on another machine.
+        deviceId: 'device-1',
+        keyId: SNAPSHOT_KEY_ID,
+      },
+    });
+    expect(JSON.stringify(report)).not.toContain('digest');
+    expect(statSync(destination).isFile()).toBe(true);
+    expect(statSync(destination).mode & 0o777).toBe(0o600);
+    expect(readFileSync(destination).includes('plaintext-marker')).toBe(false);
+    expect(readdirSync(join(fixture.root, 'backups'))).toEqual([
+      'first.hvsnap',
+    ]);
+    expectNoLocks(fixture);
+
+    const candidate = join(fixture.root, 'candidate');
+    await decryptSnapshot({
+      source: destination,
+      destination: candidate,
+      context: SNAPSHOT_CONTEXT,
+      keys: snapshotKeys,
+      expectedKind: 'data-root',
+    });
+    expect(readdirSync(candidate).sort()).toEqual(
+      readdirSync(fixture.data).sort(),
+    );
+    expect(readFileSync(join(candidate, 'marker.txt'), 'utf8')).toBe(
+      'plaintext-marker',
+    );
+
+    expect(
+      await fixture.run(['backup', '--encrypted', destination], {
+        snapshotKeys,
+      }),
+    ).toBe(1);
+    expect(fixture.stderrJson().message).toBe(
+      `Backup destination already exists: ${destination}`,
+    );
+  });
+
+  it('refuses an unknown option instead of writing a plaintext backup to a path named after it', async () => {
+    const fixture = makeFixture();
+    await fixture.run(['setup']);
+    const before = readdirSync(fixture.root).sort();
+    for (const flag of ['--encrypt', '--encrypted=true', '--Encrypted', '-e']) {
+      for (const args of [
+        ['backup', flag],
+        ['backup', flag, join(fixture.root, 'backups', 'x')],
+        ['backup', join(fixture.root, 'backups', 'x'), flag],
+      ]) {
+        expect(await fixture.run(args, { snapshotKeys })).toBe(1);
+        expect(String(fixture.stderrJson().message)).toContain(
+          `Unknown option for app backup: ${JSON.stringify(flag)}`,
+        );
+      }
+    }
+    expect(readdirSync(fixture.root).sort()).toEqual(before);
+    expect(existsSync(join(fixture.root, 'backups'))).toBe(false);
+    expect(existsSync(join(fixture.app, '--encrypt'))).toBe(false);
+    expect(existsSync(join(process.cwd(), '--encrypt'))).toBe(false);
+    expectNoLocks(fixture);
+  });
+
+  it('defaults an encrypted backup to a .hvsnap file beside local storage', async () => {
+    const fixture = makeFixture();
+    await fixture.run(['setup']);
+    expect(await fixture.run(['backup', '--encrypted'], { snapshotKeys })).toBe(
+      0,
+    );
+    const { destination } = fixture.stdoutJson() as { destination: string };
+    expect(destination.startsWith(join(fixture.root, 'backups'))).toBe(true);
+    expect(destination.endsWith('.hvsnap')).toBe(true);
+    expect(statSync(destination).isFile()).toBe(true);
+  });
+
   it('preserves a destination created by a contender before ownership is acquired', async () => {
     const fixture = makeFixture();
     await fixture.run(['setup']);
@@ -1255,6 +1431,134 @@ describe('smrt app backup', () => {
     process.env.SMRT_APP_ID = 'other-app';
     expect(await fixture.run(['backup', join(fixture.root, 'b2')])).toBe(1);
     expect(existsSync(join(fixture.root, 'b2'))).toBe(false);
+  });
+});
+
+describe('smrt app operator copies on Windows (smrt#4837 C1)', () => {
+  const onWindows = { platform: () => 'win32' as const };
+
+  function snapshot(directory: string): string[] {
+    const entries: string[] = [];
+    const walk = (current: string) => {
+      for (const name of readdirSync(current).sort()) {
+        const path = join(current, name);
+        entries.push(path);
+        if (lstatSync(path).isDirectory()) walk(path);
+      }
+    };
+    if (existsSync(directory)) walk(directory);
+    return entries;
+  }
+
+  it.each([
+    ['backup', 'backup-out'],
+    ['export', 'export-out.json'],
+    ['import', 'import-in.json'],
+  ] as const)('refuses %s before touching any state or destination', async (operation, name) => {
+    const fixture = makeFixture();
+    await fixture.run(['setup']);
+    const target = join(fixture.root, 'outside', name);
+    writeFileSync(join(fixture.root, 'placeholder'), '');
+    const beforeData = snapshot(fixture.data);
+    const beforeState = snapshot(fixture.stateRoot());
+    const beforeRoot = snapshot(fixture.root);
+
+    expect(await fixture.run([operation, target], onWindows)).toBe(1);
+    const envelope = fixture.stderrJson();
+    expect(envelope.message).toBe(WINDOWS_OPERATOR_COPY_UNSUPPORTED_MESSAGE);
+    expect(envelope.message).not.toContain(fixture.root);
+    expect(existsSync(target)).toBe(false);
+    expect(existsSync(join(fixture.root, 'outside'))).toBe(false);
+    expect(snapshot(fixture.data)).toEqual(beforeData);
+    expect(snapshot(fixture.stateRoot())).toEqual(beforeState);
+    expect(snapshot(fixture.root)).toEqual(beforeRoot);
+  });
+
+  it('refuses before creating a missing state root, and still delegates deployed backups', async () => {
+    const fixture = makeFixture();
+    expect(
+      await fixture.run(['backup', join(fixture.root, 'b')], onWindows),
+    ).toBe(1);
+    expect(fixture.stderrJson().message).toBe(
+      WINDOWS_OPERATOR_COPY_UNSUPPORTED_MESSAGE,
+    );
+    expect(existsSync(fixture.stateRoot())).toBe(false);
+    expect(existsSync(fixture.data)).toBe(false);
+
+    fixture.setProfile('self-hosted');
+    expect(await fixture.run(['backup'], onWindows)).toBe(1);
+    expect(fixture.stderrJson().message).toBe(
+      'This scaffold delegates deployed backups to the selected operator or managed provider.',
+    );
+  });
+});
+
+describe('smrt app local-profile commands on Windows (smrt#4837)', () => {
+  const onWindows = { platform: () => 'win32' as const };
+
+  it('no longer refuses setup, migrate, token or doctor for the local profile', async () => {
+    const fixture = makeFixture();
+    // The refusal existed only because the database could not be opened on
+    // Windows; with `windowsCustody.verify` it can, so the commands run.
+    expect(await fixture.run(['setup'], onWindows)).toBe(0);
+    expect(existsSync(fixture.stateRoot())).toBe(true);
+    expect(fixture.calls.smrt.length).toBeGreaterThan(0);
+    expect(await fixture.run(['migrate'], onWindows)).toBe(0);
+    expect(fixture.calls.smrt.at(-1)?.args).toEqual(['db:migrate']);
+    expect(await fixture.run(['token', '--help'], onWindows)).toBe(0);
+  });
+
+  it('doctor reads migration status again instead of reporting a refusal', async () => {
+    const fixture = makeFixture();
+    await fixture.run(['setup']);
+    const runSmrt = vi.fn(() => ({
+      status: 0,
+      stdout: JSON.stringify({ drift: [] }),
+      stderr: '',
+    }));
+    await fixture.run(['doctor'], {
+      ...onWindows,
+      runSmrt: runSmrt as never,
+    });
+    const report = fixture.stdoutJson() as {
+      findings: Array<{ code: string }>;
+    };
+    expect(report.findings.map((finding) => finding.code)).not.toContain(
+      'windows-local-profile-unsupported',
+    );
+    expect(runSmrt).toHaveBeenCalled();
+  });
+
+  it('keeps the destination-custody refusal of the operator copies', () => {
+    expect(WINDOWS_OPERATOR_COPY_UNSUPPORTED_MESSAGE).toContain(
+      'for the local profile',
+    );
+    expect(WINDOWS_OPERATOR_COPY_UNSUPPORTED_MESSAGE).toContain(
+      'would inherit the destination folder permissions',
+    );
+  });
+
+  it('does not gate a deployed profile, help, or other hosts', async () => {
+    const fixture = makeFixture();
+    fixture.setProfile('self-hosted');
+    process.env.DATABASE_URL = `postgresql://owner:${DB_PASSWORD}@db.example/app`;
+    expect(await fixture.run(['setup'], onWindows)).toBe(0);
+    expect(fixture.calls.pm).toHaveLength(1);
+    expect(await fixture.run(['migrate'], onWindows)).toBe(0);
+    expect(fixture.calls.smrt.at(-1)?.args).toEqual(['db:migrate']);
+    expect(await fixture.run(['help'], onWindows)).toBe(0);
+
+    const local = makeFixture();
+    expect(await local.run(['setup'], { platform: () => 'linux' })).toBe(0);
+    expect(existsSync(local.stateRoot())).toBe(true);
+  });
+
+  it('leaves a malformed migrate usage as usage output', async () => {
+    const fixture = makeFixture();
+    expect(await fixture.run(['migrate', '--bogus'], onWindows)).toBe(1);
+    expect(fixture.stderrJson().message).toBe(
+      'Usage: smrt app migrate [--relax-columns]',
+    );
   });
 });
 
@@ -1413,6 +1717,95 @@ describe('smrt app export / import', () => {
     expect(allOutput(fixture)).not.toContain(DB_PASSWORD);
   });
 
+  it('exports an encrypted bundle with --encrypted that decrypts to the logical bundle', async () => {
+    const { fixture } = await seededApplication();
+    const bundle = join(fixture.root, 'exports', 'app.json.hvsnap');
+    expect(await fixture.run(['export', '--encrypted', bundle])).toBe(1);
+    expect(existsSync(bundle)).toBe(false);
+
+    expect(
+      await fixture.run(['export', '--encrypted', bundle], { snapshotKeys }),
+    ).toBe(0);
+    expect(fixture.stdoutJson()).toMatchObject({
+      schemaVersion: 1,
+      status: 'exported',
+      path: bundle,
+      tableCount: 2,
+      encrypted: true,
+      snapshot: {
+        kind: 'export-bundle',
+        generation: '1',
+        sequence: '3',
+        deviceId: 'device-1',
+      },
+    });
+    expect(statSync(bundle).mode & 0o777).toBe(0o600);
+    expect(readFileSync(bundle).includes('First')).toBe(false);
+    expect(readdirSync(join(fixture.root, 'exports'))).toEqual([
+      'app.json.hvsnap',
+    ]);
+
+    const restored = join(fixture.root, 'restored', 'app.json');
+    await decryptSnapshot({
+      source: bundle,
+      destination: restored,
+      context: SNAPSHOT_CONTEXT,
+      keys: snapshotKeys,
+      expectedKind: 'export-bundle',
+    });
+    const parsed = JSON.parse(readFileSync(restored, 'utf8'));
+    expect(parsed).toMatchObject({ schemaVersion: 2, application: 'ops-app' });
+    expect(readFileSync(restored, 'utf8')).not.toContain(TOKEN);
+
+    expect(
+      await fixture.run(['import', '--encrypted', bundle], { snapshotKeys }),
+    ).toBe(1);
+    expect(fixture.stderrJson().message).toBe(
+      'Encrypted bundles cannot be imported directly yet; decrypt the snapshot first.',
+    );
+    mkdirSync(join(fixture.app, 'scripts'), { recursive: true });
+    writeFileSync(
+      join(fixture.app, 'scripts', 'smrt-portability.mjs'),
+      'export async function exportApplication(context) { return { path: context.path }; }\n',
+    );
+    expect(
+      await fixture.run(
+        ['export', '--encrypted', join(fixture.root, 'custom.hvsnap')],
+        { snapshotKeys },
+      ),
+    ).toBe(1);
+    expect(fixture.stderrJson().message).toBe(
+      'Encrypted export is not available with a custom scripts/smrt-portability.mjs adapter.',
+    );
+  });
+
+  it('refuses an unknown export or import option instead of exporting plaintext to a path named after it', async () => {
+    const { fixture } = await seededApplication();
+    const destination = join(fixture.root, 'exports', 'app.json');
+    for (const [operation, flag] of [
+      ['export', '--encrypt'],
+      ['export', '--encrypted=1'],
+      ['import', '--encrypt'],
+    ] as const) {
+      expect(
+        await fixture.run([operation, flag, destination], { snapshotKeys }),
+      ).toBe(1);
+      expect(String(fixture.stderrJson().message)).toContain(
+        `Unknown option for app ${operation}: ${JSON.stringify(flag)}`,
+      );
+      expect(
+        await fixture.run([operation, destination, flag], { snapshotKeys }),
+      ).toBe(1);
+    }
+    expect(await fixture.run(['export', '--encrypt'], { snapshotKeys })).toBe(
+      1,
+    );
+    expect(existsSync(join(fixture.root, 'exports'))).toBe(false);
+    expect(existsSync(destination)).toBe(false);
+    expect(existsSync(join(fixture.app, '--encrypt'))).toBe(false);
+    expect(existsSync(join(process.cwd(), '--encrypt'))).toBe(false);
+  });
+
   it("keeps the application's scripts/smrt-portability.mjs adapter as the extension point", async () => {
     const { fixture } = await seededApplication();
     mkdirSync(join(fixture.app, 'scripts'), { recursive: true });
@@ -1432,6 +1825,18 @@ describe('smrt app export / import', () => {
 });
 
 describe('smrt app migrate', () => {
+  it('forwards explicit constraint relaxation under the operation lock', async () => {
+    const fixture = makeFixture();
+    expect(await fixture.run(['migrate', '--relax-columns'])).toBe(0);
+    expect(fixture.calls.smrt[0].args).toEqual([
+      'db:migrate',
+      '--relax-columns',
+    ]);
+    expectNoLocks(fixture);
+    expect(await fixture.run(['migrate', '--unknown'])).toBe(1);
+    expect(fixture.calls.smrt).toHaveLength(1);
+  });
+
   it('prepares local custody and runs db:migrate with the local database', async () => {
     const fixture = makeFixture();
     expect(await fixture.run(['migrate'])).toBe(0);

@@ -135,6 +135,69 @@ describe('@field ui.widget (#3599)', () => {
   });
 });
 
+describe('@field ui.format and relationship role (#3718)', () => {
+  it.each([
+    ['money', 'integer'],
+    ['date', 'datetime'],
+    ['datetime', 'datetime'],
+    ['percent', 'decimal'],
+    ['percent', 'integer'],
+  ] as const)('accepts format %s on a %s field', (format, type) => {
+    const manifest = generate({
+      f: { type, required: false, _meta: { ui: { format } } },
+    });
+    expect(manifest.objects[`${PKG}:Order`].fields.f._meta?.ui).toEqual({
+      format,
+    });
+  });
+
+  it('rejects money on a decimal or text field and an unknown format', () => {
+    expect(() =>
+      generate({
+        total: {
+          type: 'decimal',
+          required: false,
+          _meta: { ui: { format: 'money' } },
+        },
+      }),
+    ).toThrow(
+      /ui\.format "money" needs a field of type integer, but this field is decimal/,
+    );
+    expect(() =>
+      generate({ f: text({ _meta: { ui: { format: 'money' } } }) }),
+    ).toThrow(/needs a field of type integer, but this field is text/);
+    expect(() =>
+      generate({ f: text({ _meta: { ui: { format: 'cents' as never } } }) }),
+    ).toThrow(/"cents" is not one of money, date, datetime, percent/);
+  });
+
+  it('accepts role items on a reference and rejects it elsewhere', () => {
+    expect(() =>
+      generate({
+        orderId: {
+          type: 'foreignKey',
+          required: false,
+          related: 'Order',
+          _meta: { role: 'items' },
+        },
+      }),
+    ).not.toThrow();
+    expect(() =>
+      generate({ f: text({ _meta: { role: 'items' } as never }) }),
+    ).toThrow(/role "items" needs a foreignKey or crossPackageRef field/);
+    expect(() =>
+      generate({
+        orderId: {
+          type: 'foreignKey',
+          required: false,
+          related: 'Order',
+          _meta: { role: 'lines' } as never,
+        },
+      }),
+    ).toThrow(/role "lines" is not one of items/);
+  });
+});
+
 describe('own-field display label (#3599)', () => {
   it('stamps the declared label field', () => {
     const manifest = generate(

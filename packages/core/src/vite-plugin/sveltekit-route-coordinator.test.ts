@@ -50,6 +50,7 @@ function manifest(
   className: string,
   collection: string,
   packageName: string,
+  filePath = join('/virtual/node_modules', packageName, `${className}.ts`),
 ): SmartObjectManifest {
   return {
     version: '1',
@@ -61,7 +62,7 @@ function manifest(
         className,
         collection,
         packageName,
-        filePath: join('/virtual/node_modules', packageName, `${className}.ts`),
+        filePath,
         fields: {},
         methods: {},
         decoratorConfig: { api: true },
@@ -737,7 +738,13 @@ describe('contributeSvelteKitRoutes', () => {
       ['producer'],
       root,
       'producer',
-      manifest('LocalWidget', 'LocalWidget', 'local-widgets', '@app/local'),
+      manifest(
+        'LocalWidget',
+        'LocalWidget',
+        'local-widgets',
+        '@app/local',
+        join(root, 'src/lib/objects/LocalWidget.ts'),
+      ),
       routeOptions(),
     );
     await contribute(
@@ -763,7 +770,8 @@ describe('contributeSvelteKitRoutes', () => {
       'utf8',
     );
     expect(registration).toContain('LocalWidget');
-    expect(registration).toContain('RemoteWidget');
+    expect(registration).not.toContain('RemoteWidget');
+    expect(registration).toContain("import '../../../.smrt/register.js';");
     const gitignore = readFileSync(join(root, '.gitignore'), 'utf8');
     expect(gitignore).toContain('src/routes/api/local-widgets/+server.ts');
     expect(gitignore).toContain(

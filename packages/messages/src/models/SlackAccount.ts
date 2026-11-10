@@ -5,7 +5,7 @@
 // Register the package manifest before this module's @smrt() decorator
 // runs, whichever chunk the library build places it in (#3098).
 import '../__smrt-register__.js';
-import { smrt } from '@happyvertical/smrt-core';
+import { field, smrt } from '@happyvertical/smrt-core';
 import type { MessageSenderInterface, SlackAccountOptions } from '../types';
 import { Account } from './Account';
 
@@ -16,8 +16,13 @@ import { Account } from './Account';
   cli: { include: ['list', 'get'] },
 })
 export class SlackAccount extends Account {
+  @field({ description: 'The identifier of the connected workspace.' })
   workspaceId = '';
+  @field({ description: 'The name of the connected workspace.' })
   workspaceName = '';
+  @field({
+    description: 'The bot user your application posts as in this workspace.',
+  })
   botUserId = '';
 
   constructor(options: SlackAccountOptions = {}) {

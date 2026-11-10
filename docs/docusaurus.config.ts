@@ -15,7 +15,9 @@ const config: Config = {
   organizationName: 'happyvertical',
   projectName: 'smrt',
 
-  onBrokenLinks: 'warn',
+  // Fail the build on broken internal links (#4813). Point repository files
+  // outside docs/content at https://github.com/happyvertical/smrt/blob/main/...
+  onBrokenLinks: 'throw',
 
   // Markdown configuration
   // 'detect' parses .md as CommonMark — which is what every page under
@@ -25,7 +27,7 @@ const config: Config = {
     format: 'detect',
     mermaid: true,
     hooks: {
-      onBrokenMarkdownLinks: 'warn',
+      onBrokenMarkdownLinks: 'throw',
     },
   },
 

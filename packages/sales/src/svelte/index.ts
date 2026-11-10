@@ -82,6 +82,7 @@ export type ReferrerEarningsSummaryProps = ComponentProps<
 >;
 export type SalesDashboardProps = ComponentProps<typeof SalesDashboard>;
 
+export { default as SellerGovernancePanel } from './components/SellerGovernancePanel.svelte';
 // Formatting helpers
 export {
   EMPTY_VALUE_PLACEHOLDER,
@@ -131,6 +132,8 @@ export type {
   ReferralStatusView,
   SalesActivityView,
   SalesRepOptionView,
+  SellerGovernanceAction,
+  SellerGovernanceView,
   StagePipelineSummary,
   StatusBadgeVariant,
 } from './types.js';

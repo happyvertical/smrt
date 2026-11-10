@@ -7,10 +7,7 @@
  * provider.
  */
 
-import { randomUUID } from 'node:crypto';
-import { tmpdir } from 'node:os';
-import { join } from 'node:path';
-import { beforeEach, describe, expect, it, vi } from 'vitest';
+import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 
 // `vi.mock` factories are hoisted above the import they mock, so any symbols
 // they reference need to come from `vi.hoisted` rather than module scope.
@@ -35,11 +32,24 @@ vi.mock('@happyvertical/geo', async () => {
   };
 });
 
+import { createOwnedSqliteFixtures } from './__tests__/owned-sqlite-fixtures.js';
 import { PlaceCollection } from './index.js';
 
+const fixtures = createOwnedSqliteFixtures();
+
 function getTestDbUrl(name: string): string {
-  return `file:${join(tmpdir(), `${name}-${randomUUID()}.db`)}`;
+  return fixtures.url(name);
 }
+
+async function createPlaces(name: string): Promise<PlaceCollection> {
+  const places = await PlaceCollection.create({
+    db: { type: 'sqlite', url: getTestDbUrl(name) },
+  });
+  fixtures.track(places.db);
+  return places;
+}
+
+afterEach(() => fixtures.cleanup());
 
 function makePoi(id: string, name: string, lat: number, lon: number) {
   return {
@@ -65,9 +75,7 @@ describe('PlaceCollection POI discovery', () => {
       makePoi('osm-node-2', 'Corner Store', 53.5462, -113.494),
     ]);
 
-    const places = await PlaceCollection.create({
-      db: { type: 'sqlite', url: getTestDbUrl('discover-basic') },
-    });
+    const places = await createPlaces('discover-basic');
     const results = await places.discoverNearby(53.5461, -113.4938, 100);
 
     expect(results).toHaveLength(2);
@@ -86,9 +94,7 @@ describe('PlaceCollection POI discovery', () => {
       makePoi('osm-node-42', 'Anchor', 53.5, -113.5),
     ]);
 
-    const places = await PlaceCollection.create({
-      db: { type: 'sqlite', url: getTestDbUrl('discover-idempotent') },
-    });
+    const places = await createPlaces('discover-idempotent');
 
     const first = await places.discoverNearby(53.5, -113.5, 50);
     const second = await places.discoverNearby(53.5, -113.5, 50);
@@ -105,9 +111,7 @@ describe('PlaceCollection POI discovery', () => {
       reverseGeocode: vi.fn(),
     });
 
-    const places = await PlaceCollection.create({
-      db: { type: 'sqlite', url: getTestDbUrl('discover-unsupported') },
-    });
+    const places = await createPlaces('discover-unsupported');
     await expect(places.discoverNearby(0, 0, 100)).rejects.toThrow(
       /does not implement findPoisNear/,
     );
@@ -124,9 +128,7 @@ describe('PlaceCollection.resolveTrackPlaces', () => {
       makePoi('osm-node-a', 'A', 53.5461, -113.4938),
     ]);
 
-    const places = await PlaceCollection.create({
-      db: { type: 'sqlite', url: getTestDbUrl('track-bucket') },
-    });
+    const places = await createPlaces('track-bucket');
 
     // Three points all within a few meters — should collapse to one bucket.
     const result = await places.resolveTrackPlaces(
@@ -153,9 +155,7 @@ describe('PlaceCollection.resolveTrackPlaces', () => {
         makePoi('second-poi', 'Second Place', 53.547, -113.495),
       ]);
 
-    const places = await PlaceCollection.create({
-      db: { type: 'sqlite', url: getTestDbUrl('track-dedupe') },
-    });
+    const places = await createPlaces('track-dedupe');
 
     const result = await places.resolveTrackPlaces(
       [
@@ -183,9 +183,7 @@ describe('PlaceCollection.resolveTrackPlaces', () => {
       makePoi('osm-node-x', 'X', 53.5, -113.5),
     ]);
 
-    const places = await PlaceCollection.create({
-      db: { type: 'sqlite', url: getTestDbUrl('track-boundary') },
-    });
+    const places = await createPlaces('track-boundary');
 
     const result = await places.resolveTrackPlaces(
       [
@@ -207,9 +205,7 @@ describe('PlaceCollection.resolveTrackPlaces', () => {
       makePoi('osm-node-cached', 'Cached POI', 53.5, -113.5),
     ]);
 
-    const places = await PlaceCollection.create({
-      db: { type: 'sqlite', url: getTestDbUrl('track-cachehit') },
-    });
+    const places = await createPlaces('track-cachehit');
 
     const first = await places.resolveTrackPlaces(
       [{ lat: 53.5, lng: -113.5 }],
@@ -242,9 +238,7 @@ describe('PlaceCollection.resolveTrackPlaces', () => {
       },
     },
   ])('rejects invalid options: $label', async ({ opts }) => {
-    const places = await PlaceCollection.create({
-      db: { type: 'sqlite', url: getTestDbUrl('track-invalid') },
-    });
+    const places = await createPlaces('track-invalid');
 
     await expect(
       places.resolveTrackPlaces([{ lat: 0, lng: 0 }], opts),
@@ -254,9 +248,7 @@ describe('PlaceCollection.resolveTrackPlaces', () => {
   it('honors throttleMs between provider calls', async () => {
     findPoisNearMock.mockResolvedValue([]);
 
-    const places = await PlaceCollection.create({
-      db: { type: 'sqlite', url: getTestDbUrl('track-throttle') },
-    });
+    const places = await createPlaces('track-throttle');
 
     // Fake timers keep this assertion deterministic: under CI load the
     // real-time variant can trip over event-loop scheduling jitter and

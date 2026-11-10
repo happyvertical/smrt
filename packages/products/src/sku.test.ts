@@ -1,19 +1,23 @@
-import { randomUUID } from 'node:crypto';
-import { tmpdir } from 'node:os';
-import { join } from 'node:path';
-import { describe, expect, it } from 'vitest';
+import { afterEach, describe, expect, it } from 'vitest';
+import { createOwnedSqliteFixtures } from './__tests__/owned-sqlite-fixtures.js';
 import { SkuCollection } from './lib/collections/SkuCollection.js';
 import { Sku } from './lib/models/Sku.js';
 
+const fixtures = createOwnedSqliteFixtures();
+
 function getTestDbUrl(name: string): string {
-  return `file:${join(tmpdir(), `${name}-${randomUUID()}.db`)}`;
+  return fixtures.url(name);
 }
 
 async function createSkuCollection(name: string): Promise<SkuCollection> {
-  return SkuCollection.create({
+  const skus = await SkuCollection.create({
     db: { type: 'sqlite', url: getTestDbUrl(name) },
   });
+  fixtures.track(skus.db);
+  return skus;
 }
+
+afterEach(() => fixtures.cleanup());
 
 describe('Sku model construction', () => {
   it('assigns every supplied option onto the new SKU', () => {

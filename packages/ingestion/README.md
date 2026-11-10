@@ -10,7 +10,25 @@ methods through their authenticated application transport.
 
 Before starting a service, deploy the package manifest through the public s-m-r-t
 migration APIs or `smrt db:migrate`. `assertReady()` only checks existing tables.
-SQLite and PostgreSQL are supported; other engines fail construction.
+SQLite and PostgreSQL are supported; other engines fail construction. Index
+additions ship the same way: `intake_items_received_idx` (newest-first inbox
+paging on `tenant_id, confidential_scope_id, created_at, id`) is declared on the model and reaches existing deployments through the
+next manifest migration; there are no hand-written migration files in this
+package, and `smrt doctor --db` / `db:status --parity` report the index until
+it is applied.
+
+`listItemsPage({ limit?, cursor?, state?, itemIds?, scanLimit? })` returns
+`{ items: [{ item, state, cursor }], scanned, nextCursor? }`: one authorized
+inbox page newest receipt first with each row's durable inbox state and
+continuation cursor, and the number of rows the call examined. `listItems()`
+remains as a deprecated array-returning method that walks the private page
+scan to the end. Without the optional `cursorKey` service option every cursor
+names the last row the actor can read, and a page that finds no readable row
+within its scan limit fails with `IntakeScanLimitError`; with a server secret
+of at least 32 bytes, cursors are sealed and such a page resumes past what it
+skipped. `scanned` is for host
+accounting only. See [REVIEW.md](REVIEW.md) for the paging and authorization
+contract.
 
 A host supplies a database, AssetRuntime, authenticated tenant/actor/confidential
 scope, a live authorization callback, a registered jobs target, and an idempotent
@@ -20,7 +38,29 @@ transaction executor; it must intersect current grants with that ceiling. Never
 construct the scope, retention policy or budgets from incoming document labels.
 
 `receive` accepts bounded original byte buffers, with stable source part IDs,
-parent relationships and optional upstream identity/version. Source adapters own
+parent relationships, optional upstream identity/version and an optional
+original `filename` (kept for labels on `IntakeEvidenceDTO.filename`, never
+part of receipt identity). The multipart upload source, email attachments and
+the watched folder all supply it, as may a host `snapshotReference` part or a
+vendor webhook's verified parts. Every source delivers through one place that
+removes control, format (bidi, zero-width, tag), line-separator and
+default-ignorable characters (Unicode properties, see
+`src/presented-filename.ts`) and drops a name that is then empty or over 512
+characters, so an odd name falls back to the default label instead of failing
+the receipt (`receive` itself rejects such a name from a direct caller as
+`invalid`, and names are cleaned again when read back). Removing every format
+and default-ignorable character has display-only effects, since nothing uses
+the name as identity: emoji ZWJ sequences and presentation selectors flatten,
+ZWNJ/ZWJ are removed from Persian and Indic text (letters may join
+differently), and ideographic variation selectors are removed (a CJK variant
+shows its base glyph). Unicode normalization
+(NFC/NFKC) and confusable look-alike characters are out of scope: the name is
+still untrusted text, so render it as text, never as markup or a path. The
+upstream `sourceReference` is stored but not exposed on the DTO: its ids are
+upstream locators, not display text, and they are never cleaned. For email
+they are the provider's message locator (plus the attachment part id); for the
+watched folder the id is the raw folder entry name, whose cleaned form is what
+`filename` exposes. Source adapters own
 streaming and upstream snapshot retrieval. Receipt identity is tenant + source +
 delivery key; changing bytes or authenticated scope conflicts. Content equality
 in a different conversation does not deduplicate an arrival. The returned item
@@ -157,10 +197,24 @@ Mount the `/svelte` inbox and review components through an authenticated host us
 the browser-safe `IntakeReviewHost` DTO contract. See [REVIEW.md](REVIEW.md) for
 exact revision-bound callbacks, live evidence access, logical split corrections,
 assignment ownership, and the maintained upload-to-domain-result browser fixture.
+`IntakeWorkspace` puts the inbox, the selected item with its original inline,
+the message box and approve-and-advance on one page with keyboard next/previous;
+it uses the same callbacks and adds no authority (REVIEW.md, "Single-page triage
+workspace").
 
 Optional explicit feedback and scoped example retrieval are documented in
 [FEEDBACK.md](FEEDBACK.md). Approval and execution outcomes remain separate from
 interpretation correctness; routing policy adoption is explicit and versioned.
+
+Reviewers can start any offered handler for an item (`startReviewerAction`) or
+close it as handled without action (`resolveItem`); the published host adapter
+wires both as `startAction`/`resolve` and exposes the offered `catalog`. Hosts
+with their own transport add the two POST operations behind the same session,
+CSRF and reviewer checks as `decide`, and map a thrown
+`HandlerArgumentsInvalidError` (name and value-free `issues`) from `startAction`
+exactly as they do for `preview` so the form stays inline (see
+[REVIEW.md](REVIEW.md)). The `intake_dispositions` table requires
+a manifest migration before upgrading.
 
 ## Recipe preview
 
@@ -207,3 +261,178 @@ Proposal limits must be positive safe integers. `maxHandlers`, `maxCandidates`
 and `maxSuggestions` are each capped at 20; `timeoutMs` is capped at 2147483647.
 Invalid limits are rejected when constructing `IngestionService`, before receipt
 or interpretation. See [REVIEW.md](REVIEW.md) for the published server review host.
+
+`proposals.failureCapture` (`{ enabled, maxBytes?, redact? }`) is off by
+default. With `enabled: true` and a host `redact` hook, a failed interpretation
+attempt keeps the model output (or the parsed output that failed validation)
+for diagnosis: cut to
+`maxBytes` (default 16384, at most 65536 UTF-8 bytes) after the host
+`redact` hook, stored beside the attempt result (not digested), readable only
+through the reviewer-authorized `getFailedAttemptCapture(itemId, attemptId?)`
+and removed with the item. A missing or failed hook stores only
+`redaction_failed` metadata, never text. Hosts own the semantic redaction policy;
+no built-in sanitizer is supplied. Invalid settings are rejected at construction.
+See [PROPOSALS.md](PROPOSALS.md#failed-attempt-capture-opt-in-4285).
+
+## Trusted internal sources
+
+A host with a trusted internal source, such as chat messages recorded in
+smrt-messages, can receive **by reference**, interpret **inline**, and let the
+**submitter** confirm their own proposal (#4085). None of these modes changes
+copied receipts: their identity, validation, queueing and retention are
+untouched, and a replay that switches mode conflicts.
+
+**Receive by reference.** A part may be `{ partId, reference: { owner, id,
+version? }, snapshot: { text } | { structured } }` instead of bytes. The
+service derives UTF-8 bytes once (`text/plain` or canonical `application/json`;
+text, reference fields and owner identity containing NUL or unpaired
+surrogates are rejected `invalid` on every engine, and `expireOwned` refuses
+them, so distinct owners can never collapse onto one stored key),
+hashes them into the receipt identity, and stores only that snapshot in the
+durable evidence row; no AssetStore object or asset record is created, and
+`readEvidence` serves the snapshot after the same hash/length check. The
+reference is identity and provenance, never authority. Such parts must be
+text or structured; files still arrive as copied bytes.
+
+**Owner-bound retention.** `retention: { kind: 'owner', owner: { kind, id },
+version, expiresAt, replayUntil, acceptAfter }` binds the receipt to its
+owner's lifecycle. The time deadlines remain required and validated exactly as
+before: they are the hard privacy ceiling, and `sweepRetention` and execution's
+policy ceiling still apply. When the owner is deleted the host calls
+`expireOwned({ kind, id })` from its deletion path; every active receipt bound
+to that owner is revoked and removed through the existing `expire` /
+`repairDeletions` protocol, which redacts the snapshot together with every
+other payload, and the deleted delivery is never re-admitted. The owner key is
+recorded in the indexed `owner_key` column (`<kind>:<id>`, so `kind` cannot
+contain `:`). Deletion redaction blanks `owner_key` and `submitter_id` together
+with every payload: only the receipt identity (`delivery_key`) and the captured
+ceiling survive, and the ceiling loses `execution.principalId` unless an
+external action is still `executing` or `outcome_unknown`. So once nothing is
+left to reconcile, a redacted row no longer links an owner to an actor, and a
+repeated `expireOwned` finds nothing. Redaction also overwrites every
+identity- or content-derived digest (`payload_digest`, `scope_digest`, analysis
+`input_digest`, attempt `output_digest`, plan `digest` and proposal, decision
+and execution `binding_hash`) with the fixed marker `redacted`; successful
+result digests remain as the replay tombstone. The principal is retained only
+for an external action that was still in flight when the item was redacted,
+because reconciling it authorizes under that principal; it is dropped when that
+reconciliation reaches a final state, or by the next `repairDeletions` /
+`sweepRetention` pass. For a self-approvable receipt the principal is the
+submitter, so until then it identifies the sender. Later deletion sweeps pass
+this redacted ceiling to the host's `authorize({ operation: 'delete' })`, so
+delete authorization must not depend on `execution.principalId`: a host that
+requires it would refuse, and the sweep would stop with later deletion intents
+still pending. A successful result digest
+is a plain SHA-256 of the canonical result, so it can confirm a guessed result:
+keep handler results to record ids or opaque references, never content.
+
+A replay of a deleted delivery is rejected and never becomes fresh work. While
+deletion is still pending it returns `rejected/expired`; once redaction has
+completed the identity digests are gone, so it returns `rejected/conflict`.
+Sources treat both as terminal and must not retry. `delivery_key` stays in plaintext because it is
+the unique receipt identity and the package holds no secret to key it: hosts
+must use an opaque value (for example a random UUID recorded with the message)
+and must not encode owner ids, sender ids or content in `deliveryKey`.
+
+Host ordering for owner deletion: first stop issuing receipts for the owner,
+then call `expireOwned`, and call it again once in-flight receipts settle (or
+from a periodic sweep). A receipt still in flight when its owner is expired
+returns `{ kind: 'rejected', category: 'expired' }` rather than `accepted`, but
+one that reserved its row after the first `expireOwned` is only found by the
+later call; until then the time ceiling bounds it. Services are confidential-scope bound, so
+a host whose owner has receipts in several confidential scopes calls
+`expireOwned` from each scope's service; a foreign tenant or scope sees zero.
+
+**Inline mode.** `receive({ ..., dispatch: 'inline' })` requires text/structured
+parts only, records the route provenance but **no deliverable dispatch intent**
+for any revision (every intent is retained as `completed`, so no worker or
+`repairDispatches` ever picks it up), and does not enqueue. The host then calls
+`interpretInline(itemId, { requestId, extraction: { configurationRevision,
+limits } })`, which runs in-process exactly what the job path runs: an
+immutable `stage: 'extract'` revision claimed under a fenced lease and
+extracted with the built-in UTF-8 extractor, then `prepareGeneration` and the
+`stage: 'interpret'` revision with the same analysis lease, catalog-live
+checks, provenance and failure categories as `generateProposals`. A retry with
+the same `requestId` replays the immutable revisions, including when two
+identical calls race. The interpretation is appended under the item lock only
+while its pinned extraction is still the latest revision; if another request
+reprocessed the item meanwhile it fails with `GenerationSourceStaleError` (the
+general latest-extraction check every interpretation append runs, #4228) or,
+for a pin whose extraction attempt was replaced, `Generation source changed`. The result reports each
+stage's attempt and safe error and, when generation completed, the authorized
+`getCompletedAnalysis` snapshot. Inline is for send-triggered suggestions that
+must not depend on the scheduler; it is not a bypass of review or execution.
+
+**Submitter-scoped approval.** The service records `submitter_id` as the
+authenticated `scope.actorId` of the receiving service, server-side; payload
+and source metadata never supply it. `listOwnProposals({ cursor?, limit? })`
+lists only this actor's own active submissions with their saved review pages,
+reloaded under current item/handler/target authority, without the reviewer
+inbox. A submission the actor can no longer read is skipped before projection
+and never named by the cursor; a readable one whose reviews are denied by
+ingestion authority is returned as `{ item, reviews: null, unavailable: true }`
+with no reason, so one revoked grant never hides the others. `submitOwnDecision(input)` accepts `approve`, `reject` or `defer` (never
+`correct`) under the `review_own` authority: the host's execution `authorize`
+must return `submitter: true` for that actor, the application policy must opt
+in with `submitterReview: true` (narrower layers may only disable it), and the
+item's recorded submitter must equal the current actor. Every other check is
+the ordinary one, and `applyAction` remains the single once-only effect path
+under the approver's live grants. Because the effect runs as the receipt's
+captured `capturedCeiling.execution.principalId`, `review_own` additionally
+requires that principal to be the submitter itself (`submitter_id ===
+scope.actorId === principalId`), checked under the item lock at decision time
+and again at apply; a receipt captured for a bot or service principal can only
+be approved by a reviewer. The decision is recorded with `mode` (`review` or
+`review_own`) and `selfDecision`, which is true whenever the deciding actor is
+the item's submitter, in either mode (mirrored as `decisionMode` /
+`selfDecision` on feedback events), so a self-confirmation is never mistaken
+for independent review and never contributes to automation eligibility. See
+[REVIEW.md](REVIEW.md) and [execution integration](agents/execution.md).
+
+## Dispatch route ownership and legacy recovery
+
+A receipt retains a versioned, server-owned `jobTarget` snapshot, and every
+analysis dispatch retains the same route. Receipt replay and later analysis
+cannot retarget it. `repairDispatches()` filters by retained route before the
+calling host's authorization or delivery budget, then rechecks provenance under
+the item lock. A failed job for another host sharing the same tenant and
+confidential scope neither runs on this host nor blocks its unrelated receipt.
+Matching routes still require current access within the captured permission
+ceiling; their authorization and queue failures remain visible. Job arguments
+continue to contain identifiers only.
+
+Legacy receipts lacking route metadata can use existing recorded job authority
+only when all available provenance agrees. A linked job must match the tenant,
+ingestion queue, item, dispatch ID and revision exactly. This preserves recorded
+job authority, not a reconstruction of the host's historical intention. Conflicting
+or malformed provenance fails closed. Deleted jobs are absent provenance: an
+existing protected route survives deletion, but without one the route remains
+unknown and automatic repair skips it.
+
+`inspectDispatchRoute(itemId)` requires normal read authority and returns a
+status, fingerprint and verified target (or null). For genuinely provenance-free
+legacy receipts a host may opt into `dispatchRecovery.authorize`. Without this
+separate operator authorization callback recovery is disabled. Quiesce legacy
+workers and investigate their recorded job history before authorizing recovery;
+missing history is not proof of a particular intended handler. Call
+`recoverDispatchRoute({ itemId, expectedFingerprint, evidenceRef })` with the
+inspection fingerprint and a nonblank evidence reference of at most 512
+characters. The target comes exclusively from that service's trusted,
+constructor-snapshotted configuration, never from the request.
+
+Recovery acquires the item lock, rechecks current/captured process permissions
+and the separate host operator permission, and verifies the exact fingerprint.
+It refuses bound, conflicting or stale authority. It appends retained operator,
+date, evidence and original fingerprint provenance and binds missing dispatch
+metadata atomically; it does not enqueue, alter original receipt/analysis/action
+facts, or replace prior provenance. The exact original fingerprint/evidence retry
+returns the retained binding, including under concurrent delivery, but still
+rechecks both permissions. A different decision conflicts. Once reviewed,
+normal matching-host `repairDispatches()` may enqueue work separately. Hosts
+without legacy tenants need not configure recovery at all.
+
+`IngestionService.getReceiptSource(itemId)` returns the authorized immutable
+source ID, source version and delivery identity for domain retention/recovery.
+It uses the same current read/tenant/confidential-scope boundary as evidence
+reads and exposes no source configuration or credentials. Delivery identity is
+provenance, never authority.

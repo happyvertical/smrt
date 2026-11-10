@@ -303,7 +303,7 @@ export default {
       id: 'invoice-preparation',
       title: 'Invoice Preparation',
       description:
-        'Edit invoice lines, prices, discounts and tax, with optional source allocations and retained rejection recovery.',
+        'Edit invoice lines, prices and discounts with tax codes; issued invoices show their frozen stored totals.',
       loadComponent: () =>
         import('./playground/InvoicePreparationPreview.svelte'),
       order: 7,

@@ -11,14 +11,15 @@
  * Svelte-free apart from type imports, so a server load can call it.
  */
 import type {
-  RecipeDefinition,
   RecipeExportRef,
+  RecipeSurface,
   RecipeWidgetSurface,
 } from '@happyvertical/smrt-types';
 import type { Component } from 'svelte';
 import type { WidgetRegistry } from './registry.js';
 import type {
   OverviewOptions,
+  OverviewWidget,
   WidgetComponentModule,
   WidgetComponentProps,
   WidgetDefinition,
@@ -37,9 +38,11 @@ export type RecipeExportResolver = (
   exportName: string,
 ) => unknown | Promise<unknown>;
 
-/** The part of a recipe this helper reads; a manifest `RecipeDefinition` fits. */
-export type RecipeWidgetSource = Pick<RecipeDefinition, 'id'> &
-  Partial<Pick<RecipeDefinition, 'surfaces'>>;
+/** The part of a recipe this helper reads; manifests and readonly recipe statics fit. */
+export interface RecipeWidgetSource {
+  id: string;
+  surfaces?: readonly RecipeSurface[];
+}
 
 export interface RegisterRecipeWidgetsOptions {
   /** Replace a type that is already registered instead of skipping it. */
@@ -74,6 +77,25 @@ export interface RecipeWidgetRegistration {
   skipped: RecipeWidgetSkip[];
   /** Removes exactly the registrations this call made. */
   dispose: () => void;
+}
+
+/**
+ * The widget a recipe declares as its section page (`sectionDefault: true`),
+ * placed the way a section overview's defaults hold it: full width, with no
+ * options (each required option starts from its `default`), its type as id.
+ * `undefined` when the recipe declares none. A host uses it for the section
+ * the recipe leads, in place of the generic shortcuts, count and records.
+ */
+export function sectionDefaultWidget(
+  recipe: RecipeWidgetSource | undefined,
+): OverviewWidget | undefined {
+  const surface = recipe?.surfaces?.find(
+    (candidate): candidate is RecipeWidgetSurface =>
+      candidate.kind === 'widget' && candidate.sectionDefault === true,
+  );
+  return surface
+    ? { id: surface.type, type: surface.type, span: 4, options: {} }
+    : undefined;
 }
 
 /** Split `'<specifier>#<Name>'`; refuses relative and absolute specifiers. */
@@ -133,6 +155,11 @@ function toDefinition(
   migrate: WidgetMigrate | undefined,
 ): WidgetDefinition {
   const component = once(() => resolveRef(surface.export, resolveExport));
+  const optionsEditor = surface.optionsEditor
+    ? once(() =>
+        resolveRef(surface.optionsEditor as RecipeExportRef, resolveExport),
+      )
+    : undefined;
   const loadFn = surface.data?.load
     ? once(() =>
         resolveRef(surface.data?.load as RecipeExportRef, resolveExport),
@@ -158,6 +185,14 @@ function toDefinition(
   if (surface.minSpan !== undefined) def.minSpan = surface.minSpan;
   if (surface.maxSpan !== undefined) def.maxSpan = surface.maxSpan;
   if (migrate) def.migrate = migrate;
+  if (optionsEditor) {
+    def.loadOptionsEditor = async () => {
+      const value = await optionsEditor();
+      return (isModuleWithDefault(value) ? value.default : value) as Component<
+        import('./types.js').WidgetOptionsEditorProps
+      >;
+    };
+  }
   if (loadFn) {
     const load: WidgetLoad = async (
       options: OverviewOptions,

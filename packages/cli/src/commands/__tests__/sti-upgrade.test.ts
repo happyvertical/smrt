@@ -53,11 +53,11 @@ describe('resolveStiDiscriminatorUpgrade', () => {
 
   beforeEach(() => {
     ObjectRegistry.clear();
-    ObjectRegistry.register(StiUpgradeAsset, {
-      packageName: '@happyvertical/smrt-assets',
-    });
     ObjectRegistry.register(StiUpgradeImage, {
       packageName: '@happyvertical/smrt-images',
+    });
+    ObjectRegistry.register(StiUpgradeAsset, {
+      packageName: '@happyvertical/smrt-assets',
     });
     ObjectRegistry.register(StiUpgradeCustomIdentity, {
       packageName: '@happyvertical/smrt-cli',

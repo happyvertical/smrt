@@ -1,22 +1,24 @@
-import { randomUUID } from 'node:crypto';
-import { tmpdir } from 'node:os';
-import { join } from 'node:path';
 import { AssetCollection } from '@happyvertical/smrt-assets';
-import { describe, expect, it } from 'vitest';
+import { afterEach, describe, expect, it } from 'vitest';
+import { createOwnedSqliteFixtures } from './__tests__/owned-sqlite-fixtures.js';
 import { ProductAssetCollection } from './lib/collections/ProductAssetCollection.js';
 import { ProductCollection } from './lib/collections/ProductCollection.js';
 
+const fixtures = createOwnedSqliteFixtures();
+
 function getTestDbUrl(name: string): string {
-  return `file:${join(tmpdir(), `${name}-${randomUUID()}.db`)}`;
+  return fixtures.url(name);
 }
 
 async function createProductFixture(dbUrl: string) {
   const products = await ProductCollection.create({
     db: { type: 'sqlite', url: dbUrl },
   });
+  fixtures.track(products.db);
   const assets = await AssetCollection.create({
     db: { type: 'sqlite', url: dbUrl },
   });
+  fixtures.track(assets.db);
 
   const product = await products.create({
     name: 'SMRT Widget',
@@ -26,6 +28,8 @@ async function createProductFixture(dbUrl: string) {
 
   return { products, assets, product };
 }
+
+afterEach(() => fixtures.cleanup());
 
 describe('Product owned assets', () => {
   it('manages owned assets from the model API', async () => {
@@ -66,6 +70,7 @@ describe('Product owned assets', () => {
     const productAssets = await ProductAssetCollection.create({
       db: { type: 'sqlite', url: dbUrl },
     });
+    fixtures.track(productAssets.db);
 
     const asset = await assets.create({
       name: 'thumbnail.png',

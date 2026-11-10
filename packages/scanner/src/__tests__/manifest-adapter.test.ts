@@ -65,6 +65,46 @@ describe('ManifestAdapter', () => {
         });
       });
 
+      it('should infer boolean from a bare @field({ default: <boolean> }) (#4295)', () => {
+        const bare = (
+          args: string,
+          extra: Partial<RawFieldDefinition> = {},
+        ): RawFieldDefinition => ({
+          name: 'archived',
+          accessibility: 'public',
+          typeAnnotation: null,
+          initializer: null,
+          optional: false,
+          hasDecimalPoint: false,
+          numericValue: null,
+          decorators: [{ name: 'field', arguments: [args] }],
+          isStatic: false,
+          readonly: false,
+          line: 1,
+          ...extra,
+        });
+
+        const flag = adapter.convertField(bare('{ default: false }'));
+        expect(flag?.type).toBe('boolean');
+        expect(flag?.default).toBe(false);
+        expect(flag?.required).toBe(false);
+        expect(
+          adapter.convertField(bare('{ required: true, default: true }'))
+            ?.required,
+        ).toBe(true);
+        // Only a boolean default is type evidence; others keep the text default.
+        expect(adapter.convertField(bare("{ default: 'no' }"))?.type).toBe(
+          'text',
+        );
+        expect(adapter.convertField(bare('{ default: 0 }'))?.type).toBe('text');
+        // An annotation still wins over the decorator default.
+        expect(
+          adapter.convertField(
+            bare('{ default: false }', { typeAnnotation: 'string' }),
+          )?.type,
+        ).toBe('text');
+      });
+
       it('should let nullable override required in @field options', () => {
         const field: RawFieldDefinition = {
           name: 'optionalName',
@@ -94,6 +134,31 @@ describe('ManifestAdapter', () => {
     });
 
     describe('@foreignKey decorator - Issue #846', () => {
+      it.each([
+        ['foreignKey', 'Organization'],
+        ['crossPackageRef', "'@example/accounts:Organization'"],
+      ])('preserves subtype validation and items role for %s', (name, target) => {
+        const field: RawFieldDefinition = {
+          name: 'organizationId',
+          accessibility: 'public',
+          typeAnnotation: 'string',
+          initializer: "''",
+          optional: false,
+          hasDecimalPoint: false,
+          numericValue: null,
+          decorators: [
+            {
+              name,
+              arguments: [target, "{ validateSubtype: true, role: 'items' }"],
+            },
+          ],
+        };
+        expect(adapter.inferFieldType(field)._meta).toMatchObject({
+          validateSubtype: true,
+          role: 'items',
+        });
+      });
+
       it('should respect TypeScript optional marker (?) for @foreignKey fields', () => {
         // Create a field with @foreignKey decorator and optional marker
         const field: RawFieldDefinition = {
@@ -472,6 +537,74 @@ describe('ManifestAdapter', () => {
           fn: 'count',
           column: 'customerId',
           distinct: true,
+        });
+      });
+
+      const reportField = (name: string, decorator: string, args: string[]) =>
+        ({
+          name,
+          accessibility: 'public',
+          typeAnnotation: 'number',
+          initializer: '0',
+          optional: false,
+          hasDecimalPoint: false,
+          numericValue: 0,
+          decorators: [{ name: decorator, arguments: args }],
+          isStatic: false,
+          readonly: false,
+          line: 1,
+        }) as RawFieldDefinition;
+
+      it('parses a filtered count as literal expression nodes', () => {
+        const result = adapter.convertField(
+          reportField('halted', 'count', [
+            "{ filter: { op: 'eq', left: { col: 'halted' }, right: { value: true } } }",
+          ]),
+        );
+
+        expect(result?._meta?.__report).toEqual({
+          kind: 'aggregate',
+          fn: 'count',
+          filter: { op: 'eq', left: { col: 'halted' }, right: { value: true } },
+        });
+      });
+
+      it('parses an aggregate over a row expression and a joined column', () => {
+        const expr =
+          "{ op: 'secondsBetween', later: { col: 'claimedAt' }, earlier: { col: 'createdAt' } }";
+        const avg = adapter.convertField(
+          reportField('response', 'avg', [`{ expr: ${expr} }`]),
+        );
+        expect(avg?._meta?.__report).toEqual({
+          kind: 'aggregate',
+          fn: 'avg',
+          expr: {
+            op: 'secondsBetween',
+            later: { col: 'claimedAt' },
+            earlier: { col: 'createdAt' },
+          },
+        });
+
+        const joined = adapter.convertField(
+          reportField('estimate', 'max', ["'wo.estimatedHours'"]),
+        );
+        expect(joined?._meta?.__report).toEqual({
+          kind: 'aggregate',
+          fn: 'max',
+          column: 'wo.estimatedHours',
+        });
+      });
+
+      it('parses a group key computed from a row expression', () => {
+        const result = adapter.convertField(
+          reportField('overdue', 'groupBy', [
+            "{ expr: { op: 'gt', left: { col: 'dueAt' }, right: { col: 'doneAt' } } }",
+          ]),
+        );
+
+        expect(result?._meta?.__report).toEqual({
+          kind: 'group',
+          expr: { op: 'gt', left: { col: 'dueAt' }, right: { col: 'doneAt' } },
         });
       });
     });

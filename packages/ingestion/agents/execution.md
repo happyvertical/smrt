@@ -11,7 +11,9 @@ service surface and create `IngestionScope` from the session.
 ## Catalog and authority
 
 Applications supply a trusted `IntakeExecutionOptions.handlers` catalog.
-`OperationHandler` has qualified ID, immutable version, description, object JSON
+`OperationHandler` has qualified ID, immutable version, description, optional
+reviewer-facing `label` (presentation only, carried on the reviewer catalog and
+never on generation input or digests; REVIEW.md), object JSON
 schemas for arguments/results, allowlisted `resultModels`, `validate`, `preview`,
 a registered `{model, action, version}` operation and explicit effect/idempotency/
 open-world capability declaration. Preview returns display, exact normalized
@@ -37,6 +39,34 @@ requires human review; machine authorization requires explicit evaluated opt-ins
 at all three authority layers and remains separate provenance from human review.
 The reference handlers always require review; no evaluation claim is made here.
 
+`operation: 'review_own'` is the submitter-scoped decision gate (#4085). The
+service accepts it only when the host's `authorize` result carries
+`submitter: true`, the resolved policy's `submitterReview` is enabled (the
+application layer opts in; tenant/source layers may only set it `false`), and
+the item's server-recorded `submitter_id` (the receiving service's authenticated
+`scope.actorId`) equals the current actor and the captured
+`execution.principalId`; apply rechecks that a `review_own` decision's reviewer
+is that submitter and principal. All other `review` checks apply
+unchanged; `correct` is refused. The decision row records `mode` and
+`selfDecision` (decider is the submitter, in either mode), and `feedbackEvent` copies them as `decisionMode`/`selfDecision`;
+`authorizeAutomatic` never reads human decisions, so a self-decision cannot
+become automation evidence. `listOwnProposals` reads with the ordinary `read`
+operation per handler after an item-level `read` check. Unreadable items are
+skipped before projection (1000 hidden rows per call, then `Own proposal scan
+limit`) and the cursor names only emitted items with a confirmed readable
+successor. On this surface every host `assertTarget` throw is mapped to the
+exported `IntakeAccessDeniedError` (message `Intake unavailable`, the type of
+every execution denial), so the item becomes an `unavailable` entry and host
+error text is not returned; hosts need no change. Other errors propagate,
+including a throwing grant store in `authorize`. The feedback anti-widening
+check also refuses a re-evaluation that turns `submitterReview` on.
+Deletion redaction blanks `submitter_id` and `owner_key` with the payloads and
+drops `execution.principalId` unless an external action is still `executing`
+or `outcome_unknown`; `finish` and the reconcile state update release it once
+none is left, and later deletion sweeps do the same.
+Hosts whose `authorize` switches exhaustively on the operation fail closed for
+the new value until they opt in.
+
 `mutationBoundary: 'serialized'` is an explicit host guarantee, not an inferred
 property of a permissions array: grant revocation must serialize with the supplied
 transaction, or the owning mutation must revalidate under its own lock. The host
@@ -46,6 +76,52 @@ writers using the supplied executor. The reference host demonstrates a scoped
 row lock before public `Contents` reads. A current `PrincipalRun` intersects live
 permissions with the captured ceiling and checks the exact registered collection
 operation at every effect. No `runOnce` atomicity is assumed.
+
+## Reviewer-chosen actions and dispositions
+
+`startAction(StartActionInput)` lets an authenticated reviewer begin any
+operation handler the item's evidence media types offer, without a model
+suggestion. It checks `review` access under that handler before any callback,
+refuses plan handlers and resolved items, binds the current analysis revision's
+completed/partial attempt, inserts an action keyed `reviewer:<requestId>` with
+`data.origin = 'reviewer-selected'`, and reuses `buildBinding`/`publish`: schema
+validation, `validate`, `preview`, exact normalized arguments, target locks,
+evidence pins and the request ledger behave exactly as for `previewProposal`,
+including the typed `HandlerArgumentsInvalidError` (with value-free `issues`)
+for an argument-schema or `validate` refusal of the reviewer's arguments;
+every other refusal stays a plain `Error` (#4281). Replays re-preview against the original revision and return the same review.
+Approval, apply, retention, redaction and reconciliation are unchanged.
+`authorizeAutomatic` refuses `reviewer-selected` actions and resolved items;
+human routing is never machine authority.
+
+`resolveItem(ResolveItemInput)` appends one terminal `intake_dispositions` row
+(`disposition = 'resolved_no_action'`, reason/reviewer in redactable `data`)
+under the item lock. Reviewer authority is taken from the first handler the
+captured ceiling and policy offer; no new grant exists. It refuses while any
+action is `authorized` with an unexpired approval for its current review
+version, `executing`, `outcome_unknown` or `succeeded`; `failed` actions and
+lapsed approvals do not block it (neither can be rejected). Afterwards
+`submitDecision` refuses everything but `reject`, `publish` refuses any new
+revision (correction, re-preview, plan preview), the apply gate (`approved`)
+refuses any execution or retry, and `IngestionService.analyze`,
+`reviseLogicalSplit` and `createAction` refuse the item under its lock before
+any write. `createAction` (process authority) also refuses the reserved
+`reviewer:` key prefix and `reviewer-selected` origin, which only
+`startReviewerAction` mints; `previewProposal` on such an action requires
+`review` access and the current handler@version. `resolveItem` supersedes
+queued/running analyses and completes dispatch intents under the item lock, and
+`claimAnalysis` returns `null` for a resolved item; `publishProposal` refuses
+a resolved item and any reviewer-selected action. `[feedbackActionTransaction]`
+takes `targetRevisions` (default true); routing lineage re-checks pass false. The feedback context's
+`settled` flag gates selection only; lineage re-checks ignore it (FEEDBACK.md). `intake_dispositions` is a new model: deploy
+its manifest migration (`pnpm ... db:migrate`) before upgrading hosts;
+`assertReady` checks it, and both privacy deletion and retention expiry
+(`redactExecution`) redact its payload with the other item-owned tables.
+`IntakeItemDTO.disposition` is `{ state: 'resolved', at }` (row `created_at`,
+never redacted); `getItemDisposition` returns reviewer and reason under
+`reviewerAccess`. `resolveItem` captures an optional `reviewer_routing` feedback projection in the
+same transaction; a reviewer-selected action is captured when its approval is
+recorded (FEEDBACK.md).
 
 ## Durable review and effects
 
@@ -82,6 +158,21 @@ The plan preview and target preconditions are part of its digest and visible in
 each step review; changed preview/preconditions require a fresh review.
 Abort/continue follows the pinned public playbook definition, with fresh authority
 at every step.
+
+Human corrections are the logical split and the reviewer instruction. Both are
+minted only by their authenticated review API under reviewer authority, written
+into a new immutable extraction configuration, and reach interpretation only as
+a digest-verified copy. Neither grants handlers, candidates, permissions or
+automation; `authorizeAutomatic` and preview/approval are unchanged for actions
+produced under an instruction. Recording either supersedes current suggestions
+and queues the existing dispatch stages (a new extraction revision, then
+interpretation — provider extraction budget is spent per correction because the
+predecessor pin is not reused); hosts wake their worker through
+`onSplit`/`onInstruct` and rely on dispatch repair otherwise. While a stage is
+queued/running the item reports `processing` regardless of earlier actions; a
+failed stage (extraction or interpretation) exposes its safe category through
+`getReinterpretationState`, and a retry anchored on the latest completed
+generation carries forward any newer split correction.
 
 `continueIntakeReview` uses the existing jobs continuation context. Applications
 create tasks with owner, tenant and exact `{recordId, revision, inputKey}` binding

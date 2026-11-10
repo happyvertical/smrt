@@ -31,6 +31,15 @@ export interface RawClassDefinition {
   /** Generic type argument from extends (e.g., "Meeting" from SmrtCollection<Meeting>) */
   extendsTypeArg: string | null;
 
+  /**
+   * Module specifier the `extends` identifier is imported from, through a
+   * named (possibly aliased) or namespace import (#4145). Absent when the
+   * parent is declared in this file, default-imported, or not imported.
+   * `extendsClause` is then the parent's exported name, so a bare package
+   * specifier names the parent's package.
+   */
+  extendsSource?: string;
+
   /** Parsed @smrt() decorator configuration object */
   decoratorConfig: RawDecoratorConfig | null;
 
@@ -67,6 +76,8 @@ export interface RawClassDefinition {
  * Raw @smrt() decorator configuration
  */
 export interface RawDecoratorConfig {
+  /** Prevent direct creation of this STI model. */
+  abstract?: boolean;
   /** Table strategy: 'sti' | 'cti' */
   tableStrategy?: 'sti' | 'cti';
 
@@ -259,6 +270,20 @@ export interface RawParameterDefinition {
    * before #2686.
    */
   unionBranches?: ParameterTypeBranch[];
+
+  /**
+   * Target of a same-module type alias when `type` is a bare alias name
+   * (`type ActionOptions = Record<string, unknown>` gives
+   * `'Record<string, unknown>'`), following alias chains (#4327). Absent for
+   * every other parameter, so manifests for ordinary parameters are unchanged.
+   */
+  resolvedType?: string;
+
+  /**
+   * `type` names a same-module alias whose chain is cyclic or too deep to
+   * follow. Schema consumers must not guess a type for it (#4327).
+   */
+  aliasUnresolved?: boolean;
 }
 
 /** One branch of a top-level union parameter type (#2686). */

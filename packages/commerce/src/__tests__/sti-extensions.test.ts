@@ -7,7 +7,7 @@ import { existsSync, rmSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { ObjectRegistry } from '@happyvertical/smrt-core';
-import { afterEach, beforeEach, describe, expect, it } from 'vitest';
+import { afterEach, beforeEach, describe, expect } from 'vitest';
 import { ContractCollection } from '../collections/ContractCollection.js';
 import { CustomerCollection } from '../collections/CustomerCollection.js';
 import {
@@ -18,6 +18,10 @@ import {
 } from '../models/Contract.js';
 import { ContractType, CustomerType } from '../types/index.js';
 import { seedCommerceForeignKeyFixtures } from './foreign-key-fixtures.js';
+import { tenantIt } from './helpers/v2-tenant.js';
+
+// Commerce money documents require a tenant (#4021).
+const it = tenantIt();
 
 describe('Contract STI extensions', () => {
   let dbPath: string;

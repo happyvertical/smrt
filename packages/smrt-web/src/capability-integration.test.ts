@@ -26,8 +26,9 @@ import {
   type SmrtWebCollection,
   type SmrtWebCollectionDefinition,
   type SmrtWebMutationEnvelope,
-  type SmrtWebTransaction,
 } from './index.js';
+
+import { mutationTargetHydrators } from './internal.js';
 
 interface ProductData {
   id?: string;
@@ -440,6 +441,119 @@ describe('capability seam — wrapMutation', () => {
     expect(collection.get(localId)?.name).toBe('Gadget');
   });
 
+  it('retains queued updates and deletes after transaction settlement without refetching', async () => {
+    const scripted = makeScriptedFetchers([{ id: 'p1', name: 'Before' }]);
+    const collection = track(
+      createSmrtCollection(productDefinition('queued-crud'), {
+        fetchers: scripted.fetchers,
+        capabilities: [
+          {
+            name: 'queue',
+            wrapMutation: async (envelope) => ({
+              handled: true,
+              result: envelope.data,
+            }),
+          },
+        ],
+      }),
+    );
+    await collection.preload();
+    await collection.update('p1', { name: 'Queued' }).isPersisted.promise;
+    expect(collection.get('p1')?.name).toBe('Queued');
+    await collection.delete('p1').isPersisted.promise;
+    expect(collection.has('p1')).toBe(false);
+    expect(scripted.calls).toEqual({
+      list: 1,
+      create: 0,
+      update: 0,
+      delete: 0,
+    });
+  });
+
+  it('waits for asynchronous synced-store confirmation before settling a queued insert', async () => {
+    const scripted = makeScriptedFetchers([]);
+    const collection = track(
+      createSmrtCollection(productDefinition('queued-async'), {
+        fetchers: scripted.fetchers,
+        capabilities: [
+          {
+            name: 'queue',
+            wrapMutation: async (envelope) => ({
+              handled: true,
+              result: envelope.data,
+            }),
+          },
+        ],
+      }),
+    );
+    await collection.preload();
+    const engine = getEngineCollection(collection) as {
+      utils: { writeUpsert: (rows: unknown) => Promise<void> };
+    };
+    const writeUpsert = engine.utils.writeUpsert;
+    let release!: () => void;
+    const gate = new Promise<void>((resolve) => {
+      release = resolve;
+    });
+    let entered = false;
+    vi.spyOn(engine.utils, 'writeUpsert').mockImplementation(async (rows) => {
+      entered = true;
+      await gate;
+      await writeUpsert(rows);
+    });
+    const tx = collection.insert({ id: 'queued', name: 'Pending' });
+    let settled = false;
+    void tx.isPersisted.promise.then(() => {
+      settled = true;
+    });
+    await vi.waitFor(() => expect(entered).toBe(true));
+    expect(settled).toBe(false);
+    release();
+    await tx.isPersisted.promise;
+    expect(collection.get('queued')?.name).toBe('Pending');
+    expect(scripted.calls.list).toBe(1);
+  });
+
+  it('awaits deferred hydration writes and propagates their failures before mutation dispatch', async () => {
+    const collection = track(
+      createSmrtCollection(productDefinition('hydrate-async'), {
+        fetchers: makeScriptedFetchers([]).fetchers,
+      }),
+    );
+    await collection.preload();
+    const engine = getEngineCollection(collection) as {
+      utils: { writeUpsert: (row: unknown) => Promise<void> };
+    };
+    const writeUpsert = engine.utils.writeUpsert;
+    let release!: () => void;
+    const gate = new Promise<void>((resolve) => {
+      release = resolve;
+    });
+    let entered = false;
+    const spy = vi
+      .spyOn(engine.utils, 'writeUpsert')
+      .mockImplementation(async (row) => {
+        entered = true;
+        await gate;
+        await writeUpsert(row);
+      });
+    const hydrate = mutationTargetHydrators.get(collection);
+    expect(hydrate).toBeDefined();
+    let settled = false;
+    const hydration = hydrate?.({ id: 'p1', name: 'Hydrated' }).then(() => {
+      settled = true;
+    });
+    await vi.waitFor(() => expect(entered).toBe(true));
+    expect(settled).toBe(false);
+    release();
+    await hydration;
+    expect(collection.get('p1')?.name).toBe('Hydrated');
+    const error = new Error('Sync write failed');
+    spy.mockRejectedValueOnce(error);
+    await expect(hydrate?.({ id: 'p2', name: 'Rejected' })).rejects.toBe(error);
+    expect(collection.has('p2')).toBe(false);
+  });
+
   it('{ handled: false } falls through to the real fetcher', async () => {
     const calls: HookCall[] = [];
     const scripted = makeScriptedFetchers([{ id: 'p1', name: 'Widget' }]);
@@ -510,20 +624,10 @@ describe('capability seam — wrapMutation', () => {
     );
     await collection.preload();
 
-    const engine = getEngineCollection(collection) as {
-      update(
-        id: string,
-        callback: (draft: ProductData) => void,
-      ): SmrtWebTransaction;
-      delete(id: string): SmrtWebTransaction;
-    };
-
-    const updateTx = engine.update('p1', (draft) => {
-      draft.name = 'Updated Widget';
-    });
+    const updateTx = collection.update('p1', { name: 'Updated Widget' });
     await updateTx.isPersisted.promise;
 
-    const deleteTx = engine.delete('p2');
+    const deleteTx = collection.delete('p2');
     await deleteTx.isPersisted.promise;
 
     const envelopes = calls

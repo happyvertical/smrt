@@ -3,13 +3,24 @@
  * to avoid disk and network.
  */
 
+import { rm } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
-import { join } from 'node:path';
-import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
+import { dirname, join } from 'node:path';
+import {
+  afterAll,
+  afterEach,
+  beforeEach,
+  describe,
+  expect,
+  it,
+  vi,
+} from 'vitest';
 import { saveAuth } from '../config.js';
 import type { CliResource, CommandDefinition } from '../discovery.js';
 import { buildUrl, invokeCommand } from '../invoke.js';
 import type { ParsedArgs } from '../parser.js';
+
+let configPath: string | undefined;
 
 function makeContext() {
   const slug = `app-cli-${Date.now()}-${Math.random().toString(16).slice(2)}`;
@@ -18,12 +29,8 @@ function makeContext() {
   // wrong var meant these tests wrote to the real `~/.config/test-cli/
   // config.json` and never cleaned up. Point the override at a tmp file
   // so each context is isolated and disposable. (#1311 PR review.)
-  process.env.TEST_CLI_CONFIG = join(
-    tmpdir(),
-    'smrt-app-cli-tests',
-    slug,
-    'config.json',
-  );
+  configPath = join(tmpdir(), `smrt-app-cli-tests-${slug}`, 'config.json');
+  process.env.TEST_CLI_CONFIG = configPath;
   return {
     envPrefix: 'TEST',
     appSlug: 'test-cli',
@@ -301,6 +308,13 @@ describe('invokeCommand', () => {
     delete process.env.TEST_TOKEN;
   });
 
+  afterAll(async () => {
+    if (configPath) {
+      await rm(dirname(configPath), { recursive: true, force: true });
+    }
+    delete process.env.TEST_CLI_CONFIG;
+  });
+
   it('sends Authorization header and JSON body for POST', async () => {
     await invokeCommand({
       context,
@@ -367,7 +381,7 @@ describe('invokeCommand', () => {
   it('omits Authorization header when no token is stored — #1311 reviewer B test gap', async () => {
     // Fresh context with no auth stored.
     const freshSlug = `app-cli-noauth-${Date.now()}-${Math.random().toString(16).slice(2)}`;
-    const freshDir = join(tmpdir(), 'smrt-app-cli-tests', freshSlug);
+    const freshDir = join(tmpdir(), `smrt-app-cli-tests-${freshSlug}`);
     const envKey = 'NOTOK_CLI_CONFIG';
     process.env[envKey] = join(freshDir, 'config.json');
     const freshContext = {
@@ -384,8 +398,11 @@ describe('invokeCommand', () => {
       fetch: fetchMock as any,
     });
     const [, init] = fetchMock.mock.calls[0];
-    expect((init.headers as Headers).get('authorization')).toBeNull();
-
-    delete process.env[envKey];
+    try {
+      expect((init.headers as Headers).get('authorization')).toBeNull();
+    } finally {
+      await rm(freshDir, { recursive: true, force: true });
+      delete process.env[envKey];
+    }
   });
 });

@@ -60,6 +60,18 @@ export interface ApiSerializerReference {
   exportName: string;
 }
 
+export interface McpSerializersConfig {
+  /**
+   * Async serializer used only for the standard MCP `get` response.
+   *
+   * The function receives the loaded object and the caller's public JSON
+   * options. It runs after authentication and tenant-scoped lookup, and must
+   * build its base projection with `toPublicJSON(options)` before adding any
+   * related public data.
+   */
+  get?: ApiSerializerReference;
+}
+
 export interface ApiCustomRouteConfig {
   /**
    * Route scope for custom methods.
@@ -281,6 +293,8 @@ export interface ReportConfig {
  * @interface SmartObjectConfig
  */
 export interface SmartObjectConfig {
+  /** Prevent instances of this STI type while allowing concrete descendants. */
+  abstract?: boolean;
   /** Opt in to transactional collection CRUD audit recording. */
   audit?: boolean;
   /**
@@ -532,10 +546,37 @@ export interface SmartObjectConfig {
    */
   report?: ReportConfig;
 
-  /**
-   * API configuration
-   */
+  /** Custom actions may reuse an existing CRUD grant in this collection. */
+  operationPermissions?: Record<
+    string,
+    import('../operation-permission.js').OperationPermissionAlias
+  >;
+
+  /** API configuration. */
   api?: boolean | ApiConfig;
+
+  /**
+   * Operations a model subclass deliberately opens although its parent model
+   * keeps them closed, per transport (CRUD verbs or method names).
+   *
+   * A subclass inherits every api/mcp/cli surface it leaves unset from its
+   * parent, and its own `@smrt()` may narrow those surfaces but not widen
+   * them: the build fails (`CONFIG_SUBCLASS_EXPOSURE`) when a subclass opens
+   * an operation its parent closes, unless that operation is listed here. An
+   * entry that widens nothing is also a build error. See
+   * `registry/subclass-exposure.ts`.
+   *
+   * @example
+   * ```typescript
+   * // Message is read-only over REST; Email is writable there.
+   * @smrt({
+   *   api: { include: ['list', 'get', 'create', 'update', 'delete'] },
+   *   widenParentExposure: { api: ['create', 'update', 'delete'] },
+   * })
+   * class Email extends Message {}
+   * ```
+   */
+  widenParentExposure?: Partial<Record<'api' | 'mcp' | 'cli', string[]>>;
 
   /**
    * MCP server configuration
@@ -573,6 +614,9 @@ export interface SmartObjectConfig {
          * withhold is still emitted.
          */
         exclude?: string[];
+
+        /** Optional async enrichment for the standard read-only get tool. */
+        serializers?: McpSerializersConfig;
 
         /**
          * Enable the MCP Tasks extension for long-running custom actions.
@@ -1119,6 +1163,18 @@ export interface RegisteredClass {
   extends?: string;
   /** Generic type arg from `SmrtCollection<X>` — marks collection classes. */
   extendsTypeArg?: string;
+  /**
+   * Generated surfaces in `config` the scanner copied from this collection's
+   * model (`SmartObjectDefinition.inheritedExposure`); they follow the
+   * model's effective config at runtime, never widening (#3468).
+   */
+  inheritedExposure?: Array<'api' | 'mcp' | 'cli'>;
+  /**
+   * Manifest classification of a collection class: the model it manages
+   * (`SmartObjectDefinition.collectionOf`). A registration carrying it is a
+   * collection and never claims a physical table (#3956).
+   */
+  collectionOf?: string;
   /** Full inheritance chain from base to this class (cached for performance) */
   inheritanceChain?: string[];
   /** Merged fields from entire inheritance chain (cached, includes parent fields) */

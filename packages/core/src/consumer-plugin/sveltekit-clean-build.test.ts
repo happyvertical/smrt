@@ -229,19 +229,21 @@ export default defineConfig({
       expect(readFileSync(itemRoute, 'utf8')).toContain(
         "from '@acme/widgets/objects'",
       );
-      expect(
-        readFileSync(
-          join(
-            projectRoot,
-            expectedConfigFile.replace(/[^/]+$/, 'smrt-register.ts'),
-          ),
-          'utf8',
+      const svelteKitRegistration = readFileSync(
+        join(
+          projectRoot,
+          expectedConfigFile.replace(/[^/]+$/, 'smrt-register.ts'),
         ),
-      ).toContain(
-        "import { PublishedWidget as Widget } from '@acme/widgets/objects';",
+        'utf8',
       );
+      expect(svelteKitRegistration).toContain('LocalWidget');
+      expect(svelteKitRegistration).not.toContain('PublishedWidget');
+      expect(svelteKitRegistration).toContain('.smrt/register.js');
       expect(existsSync(join(projectRoot, expectedConfigFile))).toBe(true);
       expect(existsSync(join(projectRoot, '.smrt/register.js'))).toBe(true);
+      expect(
+        readFileSync(join(projectRoot, '.smrt/register.js'), 'utf8'),
+      ).toContain("from '@acme/widgets/objects'");
       expect(existsSync(join(configuredViteRoot, '.smrt/register.js'))).toBe(
         false,
       );

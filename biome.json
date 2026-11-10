@@ -1,5 +1,5 @@
 {
-  "$schema": "https://biomejs.dev/schemas/2.2.4/schema.json",
+  "$schema": "https://biomejs.dev/schemas/2.5.3/schema.json",
   "files": {
     "includes": [
       "packages/*/src/**/*.{js,ts,tsx,jsx,svelte}",
@@ -7,6 +7,8 @@
       "packages/smrt-svelte/e2e/**/*.{js,ts,svelte}",
       "packages/smrt-playground/e2e/*.{mjs,ts}",
       "packages/smrt-playground/host/playwright.visual.config.ts",
+      "packages/planner/tests/**/*.ts",
+      "packages/planner/*.{js,ts}",
       "packages/ingestion/e2e/**/*.{js,ts,svelte}",
       "packages/ingestion/reference/review-host.ts",
       "packages/ingestion/reference/review-summary.ts",
@@ -128,7 +130,11 @@
       }
     },
     {
-      "includes": ["packages/*/src/**/*.ts", "packages/*/src/**/*.tsx"],
+      "includes": [
+        "packages/*/src/**/*.ts",
+        "packages/*/src/**/*.tsx",
+        "packages/planner/tests/**/*.ts"
+      ],
       "linter": {
         "rules": {
           "suspicious": {

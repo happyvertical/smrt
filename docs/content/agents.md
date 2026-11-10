@@ -13,7 +13,7 @@ Agent framework for building autonomous actors in the SMRT ecosystem.
 
 ## Overview
 
-The `@happyvertical/smrt-agents` package provides a base `Agent` class for building autonomous actors that perform specific tasks with full lifecycle management, status tracking, and database persistence. Agents extend `SmrtObject`, inheriting all SMRT framework capabilities including automatic database persistence, AI-powered methods, and code generation.
+The `@happyvertical/smrt-agents` package provides a base `Agent` class for building autonomous actors that perform specific tasks with full lifecycle management, status tracking, and database persistence. Agents extend `SmrtObject`, inheriting all SMRT framework capabilities including automatic database persistence, AI-powered methods, and code generation. An agent's AI calls use the tenant's inference binding and mode, and a run ends `skipped` when AI is unavailable; see [Inference tiers, bindings and usage](./inference.md#5-who-decides-what).
 
 Agents are designed for long-running processes, scheduled tasks, and autonomous operations that require state management, graceful shutdown, and structured logging. Each agent manages its own lifecycle with configurable hooks for initialization, validation, execution, and shutdown.
 
@@ -455,7 +455,7 @@ For the full exported API, read the package sources: [`packages/agents/README.md
 
 ## License
 
-This package is part of the SMRT Framework and is licensed under the MIT License - see the [LICENSE](../../LICENSE) file for details.
+This package is part of the SMRT Framework and is licensed under the MIT License - see the [LICENSE](https://github.com/happyvertical/smrt/blob/main/LICENSE) file for details.
 
 ## Migrating legacy AgentSchedule slugs
 

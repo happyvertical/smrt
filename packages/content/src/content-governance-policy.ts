@@ -4,6 +4,7 @@ import { TenantScoped, tenantId } from '@happyvertical/smrt-tenancy';
 import {
   type ContentReviewKind,
   type ContentReviewPolicyDefinition,
+  findTenantReferencesToGlobalKey,
   getEffectiveContentGovernanceConfig,
   getFallbackPolicyKind,
   hasStaticContentGovernancePolicy,
@@ -24,7 +25,11 @@ export interface ContentGovernancePolicyOptions extends SmrtObjectOptions {
 @TenantScoped({ mode: 'optional' })
 @smrt({
   tableName: 'content_governance_policies',
-  conflictColumns: ['key'],
+  // A key is unique per tenant: a tenant row overrides the global (NULL-tenant)
+  // policy of the same key instead of colliding with it or with another
+  // tenant's. Global rows stay unique on key through the null-aware upsert,
+  // and in the database through NULLS NOT DISTINCT on PostgreSQL 15+ (#3305 M1).
+  conflictColumns: ['tenant_id', 'key'],
   api: { include: ['list', 'get', 'create', 'update', 'delete'] },
   mcp: { include: ['list', 'get', 'create', 'update', 'delete'] },
   cli: { skipApiCheck: true },
@@ -89,8 +94,12 @@ export class ContentGovernancePolicy extends SmrtObject {
   }
 
   override async delete(): Promise<void> {
+    // Check references in this row's own scope (#3305 M1): a tenant row
+    // against that tenant's overrides plus the global layer; a global row
+    // also against every tenant that relies on it.
     const effective = await getEffectiveContentGovernanceConfig({
       db: this.db,
+      tenantId: this.tenantId || undefined,
     });
     const hasFallback = hasStaticContentGovernancePolicy(this.key);
     const referencedBy = effective.profiles
@@ -100,6 +109,16 @@ export class ContentGovernancePolicy extends SmrtObject {
         ),
       )
       .map((profile) => profile.key);
+
+    if (!this.tenantId && !hasFallback && referencedBy.length === 0) {
+      referencedBy.push(
+        ...(await findTenantReferencesToGlobalKey({
+          db: this.db,
+          kind: 'policy',
+          key: this.key,
+        })),
+      );
+    }
 
     if (!hasFallback && referencedBy.length > 0) {
       throw new Error(

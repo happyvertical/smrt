@@ -138,7 +138,7 @@ For framework invariants and production setup, read [the repository guide](./AGE
 
 - **Domain-first ORM:** typed objects, collections, relationships, tenancy, STI, migrations, and portable database adapters.
 - **Generated interfaces:** REST, CLI, MCP, manifests, web collection definitions, and mobile contracts from one model graph.
-- **AI runtime:** object-level `is()`/`do()`, prompts, agents, personas, learning memory, jobs, and observability signals.
+- **AI runtime:** object-level `is()`/`do()`, prompts, agents, personas, learning memory, jobs, and observability signals; inference tiers, fallback aliases, fusions, user and tenant bindings, hosted inference, and per-prompt usage reports ([guide](./docs/content/inference.md)).
 - **Reusable vertical packages:** identity, content, commerce, sales, support, projects, media, analytics, and more.
 - **Cross-platform clients:** Svelte 5 UI, browser data runtime, Kotlin Multiplatform foundations, Android Compose, and SwiftUI.
 
@@ -150,6 +150,7 @@ For framework invariants and production setup, read [the repository guide](./AGE
 | Start a SvelteKit application | [`smrt-template-sveltekit`](./packages/template-sveltekit/README.md) |
 | Run a local, self-hosted, or cloud application | [`smrt-app-runtime`](./packages/app-runtime/README.md) |
 | Build agents and personas | [`smrt-agents`](./packages/agents/README.md), [`smrt-personas`](./packages/personas/README.md) |
+| Choose models, fallbacks, and who may change them | [Inference guide](./docs/content/inference.md), [`smrt-inference`](./packages/inference/README.md) |
 | Add tenant-aware identity and authorization | [`smrt-tenancy`](./packages/tenancy/README.md), [`smrt-users`](./packages/users/README.md) |
 | Build live or offline browser data | [`smrt-web`](./packages/smrt-web/README.md), [`smrt-svelte`](./packages/smrt-svelte/README.md) |
 | Expose an application CLI or MCP server | [`smrt-app-cli`](./packages/app-cli/README.md), [`smrt-app-mcp`](./packages/smrt-app-mcp/README.md) |
@@ -179,6 +180,7 @@ Status legend:
 | [`smrt-cli`](./packages/cli/README.md) | Stable | Developer CLI, schema commands, generation, and knowledge tooling. |
 | [`smrt-app-cli`](./packages/app-cli/README.md) | Preview | Reusable branded application CLI and stdio MCP bridge. |
 | [`smrt-app-runtime`](./packages/app-runtime/README.md) | Preview | Validated local, self-hosted, and cloud composition with safe bootstrap, provider diagnostics, and profile-selected workers. |
+| [`smrt-app-shell`](./packages/app-shell/README.md) | Preview | An ordinary smrt app that builds and runs a person's own smrt app from definitions: versioned changes with undo, owner approvals, sandboxed code methods, MCP and an assistant. |
 | [`smrt-workbench`](./packages/smrt-workbench/README.md) | Preview | CWD-scoped package and project workbench for docs, APIs, routes, previews, and knowledge. |
 | [`smrt-workbench-host`](./packages/smrt-workbench/host/README.md) | Internal | Private SvelteKit browser host bundled with the workbench package. |
 | [`smrt-dev-mcp`](./packages/smrt-dev-mcp/README.md) | Stable | Development MCP server and repository knowledge tools. |
@@ -200,6 +202,7 @@ Status legend:
 | [`smrt-approvals`](./packages/approvals/README.md) | Experimental | Revision-bound, single-use approvals with quorum, expiry, and an append-only decision ledger. |
 | [`smrt-playbooks`](./packages/playbooks/README.md) | Preview | Layered playbook registry, overrides, and plan resolution. |
 | [`smrt-prompts`](./packages/prompts/README.md) | Stable | Typed prompt registry and tenant-aware overrides. |
+| [`smrt-inference`](./packages/inference/README.md) | Preview | Inference alias chains with recorded fallback, fusions, user and tenant bindings, the settings panel, hosted inference, and `smrt doctor --ai`. |
 | [`smrt-projects`](./packages/projects/README.md) | Preview | Provider-neutral projects, repositories, issues, and delivery work. |
 | [`smrt-support`](./packages/support/README.md) | Preview | Support Case intake, lifecycle, routing, targets, and service time. |
 | [`smrt-timesheets`](./packages/timesheets/README.md) | Preview | Shared time entries, approval and correction, and immutable charge/compensation snapshots. |
@@ -220,6 +223,7 @@ Status legend:
 | [`smrt-messages`](./packages/messages/README.md) | Stable | Provider-neutral multi-channel messages and credentials. |
 | [`smrt-chat`](./packages/chat/README.md) | Stable | Rooms, DMs, threads, sessions, and agent conversations. |
 | [`smrt-comments`](./packages/comments/README.md) | Preview | Record comments and mention notification hooks. |
+| [`smrt-reactions`](./packages/reactions/README.md) | Experimental | Guarded reactions and polls for SQLite and PostgreSQL. |
 | [`smrt-webhooks`](./packages/webhooks/README.md) | Preview | Signed outbound webhooks, durable retries, and delivery administration. |
 | [`smrt-social`](./packages/social/README.md) | Stable | Social account OAuth, publishing, and scheduling. |
 
@@ -227,12 +231,14 @@ Status legend:
 
 | Package | Status | Purpose |
 | --- | --- | --- |
+| [`smrt-bookings`](./packages/bookings/README.md) | Preview | Operator-managed service reservations and provider capacity. |
 | [`smrt-commerce`](./packages/commerce/README.md) | Stable | Customers, vendors, contracts, invoices, and fulfillment. |
 | [`smrt-products`](./packages/products/README.md) | Stable | Product catalog and triple-consumption package template. |
 | [`smrt-sales`](./packages/sales/README.md) | Preview | Agreements, CRM, referrals, commissions, and sales surfaces. |
 | [`smrt-affiliates`](./packages/affiliates/README.md) | Deprecated | Compatibility shim over the `smrt-sales` commissions core. |
 | [`smrt-subscriptions`](./packages/subscriptions/README.md) | Preview | Plans, entitlements, usage, pricing, and spending policies. |
 | [`smrt-ledgers`](./packages/ledgers/README.md) | Stable | Double-entry accounting and journal lifecycle. |
+| [`smrt-education`](./packages/education/README.md) | Preview | Tenant-aware course catalog, learner curricula, and enrollment progress with authorized private learning materials. |
 | [`smrt-expenses`](./packages/expenses/README.md) | Preview | Reviewed expenses against a cost object, deduplicated receipts, and commitment drawdown. |
 | [`smrt-ads`](./packages/ads/README.md) | Stable | Ad selection, variation testing, and immutable delivery events. |
 | [`smrt-analytics`](./packages/analytics/README.md) | Stable | Analytics properties, streams, events, and reports. |
@@ -247,12 +253,13 @@ Status legend:
 | [`smrt-properties`](./packages/properties/README.md) | Stable | Digital properties and hierarchical content/ad zones. |
 | [`smrt-tags`](./packages/tags/README.md) | Stable | Context-scoped hierarchical tags and aliases. |
 | [`smrt-secrets`](./packages/secrets/README.md) | Stable | Tenant envelope encryption, rotation, and audit. |
+| [`smrt-vault-relay`](./packages/vault-relay/README.md) | Experimental | Blind encrypted-snapshot relay with device-signed requests, gated by `backup.vault`. |
 | [`smrt-features`](./packages/features/README.md) | Preview | Code-first feature flags and tenant overrides. |
 | [`smrt-languages`](./packages/languages/README.md) | Preview | Language strings, overrides, and translation jobs. |
 | [`smrt-fields`](./packages/fields/README.md) | Preview | Layered field policy store, resolution engine, and form surfaces. |
 | [`smrt-preferences`](./packages/preferences/README.md) | Preview | Organization defaults and personal user-interface preferences: overview layouts and the shell layout. |
 
-### Web, mobile, and templates
+### Web, desktop, mobile, and templates
 
 | Package | Status | Purpose |
 | --- | --- | --- |
@@ -261,6 +268,8 @@ Status legend:
 | [`smrt-web`](./packages/smrt-web/README.md) | Preview | Reactive browser collections, offline outbox, persistence, and live invalidation. |
 | [`smrt-playground`](./packages/smrt-playground/README.md) | Preview | Package playground discovery, runtime, and host components. |
 | [`smrt-playground-host`](./packages/smrt-playground/host/README.md) | Internal | Private SvelteKit end-to-end test host for the playground runtime. |
+| [`smrt-planner`](./packages/planner/README.md) | Preview | Mountable app planner: pick recipes from every package's manifest, lay out the app, and export a cookbook; ships the static planner app and its MCP widget. |
+| [`smrt-desktop`](./packages/smrt-desktop/README.md) | Preview | Versioned sidecar manifest, runtime bundler and assistant-plugin launcher for packaged desktop apps; the Tauri wrapper lives in `wrapper/`. |
 | [`smrt-mobile-contract`](./packages/smrt-mobile-contract/README.md) | Preview | Manifest-to-Kotlin/Swift contract generation. |
 | [`smrt-mobile`](./packages/smrt-mobile/README.md) | Preview | Kotlin Multiplatform offline, sync, auth, and platform seams. |
 | [`smrt-android`](./packages/smrt-android/README.md) | Internal | Android Compose foundation and native adapters. |
@@ -306,6 +315,7 @@ The first command links a sibling HappyVertical SDK checkout; the second restore
 
 - [Repository architecture and agent guidance](./AGENTS.md)
 - [Core framework API and examples](./packages/core/README.md)
+- [Inference tiers, bindings and usage](./docs/content/inference.md)
 - [Package standards](./docs/content/standards.md)
 - [UI surface conventions](./docs/ui-surfaces.md)
 - [AssistantDock (route-aware assistant surface)](./docs/assistant-dock.md)
@@ -316,7 +326,7 @@ The documentation build discovers package READMEs from workspace `package.json` 
 ## Related projects
 
 - [HappyVertical SDK](https://github.com/happyvertical/sdk) — infrastructure packages used by s-m-r-t.
-- [s-m-r-t SaaS starter](https://github.com/happyvertical/smrt-saas-starter) — reference application, demo, and template baseline.
+- [smrt-start](https://github.com/happyvertical/smrt-start) — the canonical production-shaped application template.
 
 ## License
 

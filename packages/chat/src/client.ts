@@ -121,7 +121,90 @@ export type ChatClientStreamFrame =
         createdAt?: string;
       };
     }
-  | { type: 'error'; error?: string };
+  | {
+      type: 'error';
+      error?: string;
+      code?: string;
+      unavailable?: ChatUnavailableStatus;
+    };
+
+/**
+ * Why AI is unavailable, as the server sends it (#4757): the shape of core's
+ * `InferenceStatus`, repeated here so this module stays dependency-free.
+ */
+export interface ChatUnavailableStatus {
+  available: false;
+  mode: 'byo' | 'local' | 'hosted' | 'off';
+  reason: 'off' | 'unconfigured' | 'entitlement' | 'capability';
+  tier?: 'cheap' | 'good' | 'great' | 'best';
+}
+
+const UNAVAILABLE_REASONS = [
+  'off',
+  'unconfigured',
+  'entitlement',
+  'capability',
+];
+const INFERENCE_MODES = ['byo', 'local', 'hosted', 'off'];
+const INFERENCE_TIERS = ['cheap', 'good', 'great', 'best'];
+
+/** The `code` of an unavailable answer. */
+export const CHAT_UNAVAILABLE_CODE = 'ai_unavailable';
+
+/** The status in an `ai_unavailable` body or event, else `undefined`. */
+export function readChatUnavailableStatus(
+  body: unknown,
+): ChatUnavailableStatus | undefined {
+  if (!body || typeof body !== 'object') return undefined;
+  const record = body as { code?: unknown; unavailable?: unknown };
+  if (record.code !== CHAT_UNAVAILABLE_CODE) return undefined;
+  const status = record.unavailable as Record<string, unknown> | undefined;
+  if (!status || !UNAVAILABLE_REASONS.includes(status.reason as string)) {
+    return undefined;
+  }
+  const reason = status.reason as ChatUnavailableStatus['reason'];
+  const mode =
+    reason === 'off' || reason === 'unconfigured'
+      ? 'off'
+      : INFERENCE_MODES.includes(status.mode as string)
+        ? (status.mode as ChatUnavailableStatus['mode'])
+        : 'off';
+  return {
+    available: false,
+    mode,
+    reason,
+    ...(INFERENCE_TIERS.includes(status.tier as string)
+      ? { tier: status.tier as ChatUnavailableStatus['tier'] }
+      : {}),
+  };
+}
+
+/**
+ * AI is off or not set up (#4757): the server answered `ai_unavailable`
+ * (a 503, or an in-band stream `error` event). `unavailable` says why; a UI
+ * renders "AI is off" with a settings link instead of a failure.
+ */
+export class ChatUnavailableError extends Error {
+  readonly code = CHAT_UNAVAILABLE_CODE;
+  constructor(
+    message: string,
+    readonly unavailable: ChatUnavailableStatus,
+  ) {
+    super(message);
+    this.name = 'ChatUnavailableError';
+  }
+}
+
+/** The unavailable error a body describes, else `undefined`. */
+function unavailableErrorFrom(body: unknown): ChatUnavailableError | undefined {
+  const status = readChatUnavailableStatus(body);
+  if (!status) return undefined;
+  const message = (body as { error?: unknown }).error;
+  return new ChatUnavailableError(
+    typeof message === 'string' && message ? message : 'AI is unavailable.',
+    status,
+  );
+}
 
 let counter = 0;
 
@@ -211,12 +294,21 @@ export class SmrtChatBackend implements ChatClientBackend {
       if (!response.ok || !response.body) {
         // The handler renders structured errors ({error, code}) — carry the
         // body so auth failures are distinguishable from bad requests.
-        let detail = '';
+        let text = '';
         try {
-          detail = (await response.text()).slice(0, 200);
+          text = await response.text();
         } catch {
           /* body unreadable — status alone will have to do */
         }
+        const detail = text.slice(0, 200);
+        let parsed: unknown;
+        try {
+          parsed = JSON.parse(text);
+        } catch {
+          /* not JSON */
+        }
+        const unavailable = unavailableErrorFrom(parsed);
+        if (unavailable) throw unavailable;
         throw new Error(
           `[smrt-chat] chat endpoint responded ${response.status}${
             detail ? `: ${detail}` : ''
@@ -250,7 +342,8 @@ export class SmrtChatBackend implements ChatClientBackend {
             // its own registry when that wiring lands).
           } else if (event.type === 'error') {
             handlers.onError(
-              new Error(event.error ?? '[smrt-chat] chat stream error'),
+              unavailableErrorFrom(event) ??
+                new Error(event.error ?? '[smrt-chat] chat stream error'),
             );
             // The turn is settled but the server may keep sending (heartbeats,
             // late frames) — release the connection instead of leaving the

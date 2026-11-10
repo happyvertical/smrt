@@ -24,6 +24,11 @@ export function json(data: unknown, init: ResponseInit = {}): Response {
   return new Response(JSON.stringify(data), { ...init, headers });
 }
 
+/** Behavioral route-load error used by authenticated server-page tests. */
+export function error(status: number, body?: string): never {
+  throw Object.assign(new Error(body ?? 'Route error'), { status });
+}
+
 /** Behavioral stand-in for SvelteKit's thrown `Redirect`. */
 export class Redirect {
   constructor(

@@ -1,8 +1,9 @@
 import { type ChildProcess, spawn } from 'node:child_process';
-import { mkdir, rm, writeFile } from 'node:fs/promises';
+import { mkdir, readFile, rm, writeFile } from 'node:fs/promises';
 import { dirname, join, resolve } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { MCPGenerator } from '@happyvertical/smrt-core/generators/mcp';
+import { ManifestBuilder } from '@happyvertical/smrt-core/manifest';
 import { getTestDatabase } from '@happyvertical/smrt-core/testing';
 import { Client } from '@modelcontextprotocol/client';
 import { StdioClientTransport } from '@modelcontextprotocol/client/stdio';
@@ -24,6 +25,14 @@ const generatedDir = join(packageRoot, '.generated-tmp');
 const generatedPath = join(generatedDir, 'index.ts');
 const generatedDatabasePath = join(generatedDir, 'fixture.sqlite');
 const generatedRegisterPath = join(generatedDir, 'fixture-register.ts');
+// Working directory of the generated server: the application root a deploy
+// would run it from, holding the application's build manifest.
+const generatedAppDir = join(generatedDir, 'app');
+const generatedAppManifestPath = join(
+  generatedAppDir,
+  '.smrt',
+  'manifest.json',
+);
 const tsxBin = join(repoRoot, 'node_modules', '.bin', 'tsx');
 const conformanceBin = join(packageRoot, 'node_modules', '.bin', 'conformance');
 const baselinePath = join(packageRoot, 'conformance-baseline.yml');
@@ -42,6 +51,22 @@ beforeAll(async () => {
     generatedRegisterPath,
     "import '../src/fixture-objects.ts';\n",
   );
+  // The generated server is a production process with a sanitized
+  // environment: it registers its application from the build manifest under
+  // its working directory, never from the test run's manifest snapshot
+  // (#4128) — test runs no longer write `.smrt/manifest.json`. This package
+  // has no build step, so emit that manifest the way `smrtPlugin()` does
+  // (test files excluded) into the generated application's root.
+  await new ManifestBuilder(packageRoot).generate({
+    include: ['src/**/*.ts'],
+    exclude: ['**/*.test.ts', '**/*.spec.ts', '**/node_modules/**'],
+    outputMode: 'explicit',
+    outputDir: dirname(generatedAppManifestPath),
+    outputName: 'manifest.json',
+    generateTypeStub: false,
+    injectPackageInfo: true,
+    moduleType: 'smrt',
+  });
   fixtureDb = await getTestDatabase({
     type: 'sqlite',
     url: generatedDatabasePath,
@@ -71,7 +96,7 @@ beforeAll(async () => {
   const transport = new StdioClientTransport({
     command: tsxBin,
     args: [generatedPath],
-    cwd: packageRoot,
+    cwd: generatedAppDir,
     stderr: 'pipe',
   });
   const client = new Client(
@@ -248,11 +273,32 @@ describe('generated Tier-1 MCP 2026-07-28 conformance', () => {
     }
   });
 
+  it('builds the application manifest with the advertised STI subtype and no test fixtures', async () => {
+    const manifest = JSON.parse(
+      await readFile(generatedAppManifestPath, 'utf8'),
+    ) as {
+      artifactPurpose?: string;
+      objects: Record<string, { filePath?: string }>;
+    };
+    expect(manifest.artifactPurpose).toBeUndefined();
+    expect(Object.keys(manifest.objects)).toEqual(
+      expect.arrayContaining([
+        '@happyvertical/smrt-mcp-conformance-fixture:ConformanceAnimal',
+        '@happyvertical/smrt-mcp-conformance-fixture:ConformanceCat',
+      ]),
+    );
+    expect(
+      Object.values(manifest.objects).filter((entry) =>
+        /\.(test|spec)\.tsx?$/.test(entry.filePath ?? ''),
+      ),
+    ).toEqual([]);
+  });
+
   it('creates an advertised STI subtype through the generated runtime', async () => {
     const transport = new StdioClientTransport({
       command: tsxBin,
       args: [generatedPath],
-      cwd: packageRoot,
+      cwd: generatedAppDir,
       stderr: 'pipe',
       env: {
         DATABASE_TYPE: 'sqlite',
@@ -375,7 +421,7 @@ describe('generated Tier-1 MCP 2026-07-28 conformance', () => {
 
 function openRawStdio() {
   const child = spawn(tsxBin, [generatedPath], {
-    cwd: packageRoot,
+    cwd: generatedAppDir,
     env: {
       ...process.env,
       DATABASE_TYPE: 'sqlite',
@@ -461,11 +507,15 @@ function openRawStdio() {
 
 function startHttpAdapter(): Promise<string> {
   return new Promise((resolveUrl, rejectStart) => {
-    httpChild = spawn(tsxBin, ['scripts/serve-generated.ts', generatedPath], {
-      cwd: packageRoot,
-      env: process.env,
-      stdio: ['ignore', 'pipe', 'pipe'],
-    });
+    httpChild = spawn(
+      tsxBin,
+      [join(packageRoot, 'scripts/serve-generated.ts'), generatedPath],
+      {
+        cwd: generatedAppDir,
+        env: process.env,
+        stdio: ['ignore', 'pipe', 'pipe'],
+      },
+    );
     let stderr = '';
     httpChild.stderr?.on('data', (chunk) => {
       stderr += String(chunk);

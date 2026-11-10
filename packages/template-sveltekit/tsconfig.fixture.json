@@ -13,6 +13,7 @@
     }
   },
   "include": [
+    "__tests__/commerceBootstrap.test.ts",
     "__tests__/runtimeEntry.test.ts",
     "__tests__/runtimeOperations.test.ts",
     "__tests__/runtimeProfileReference*.ts",
@@ -22,5 +23,10 @@
     "mcp-apps-template/src/routes/.well-known/oauth-protected-resource/api/mcp/+server.ts",
     "e2e/**/*.ts",
     "playwright.config.ts"
+  ],
+  "exclude": [
+    // Route modules depend on SvelteKit-generated `$types`; the copied-app
+    // browser gate runs `svelte-check` after `svelte-kit sync`.
+    "fixtures/runtime-profile-reference/overlay/src/routes/**/*"
   ]
 }

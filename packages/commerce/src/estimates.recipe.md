@@ -17,3 +17,4 @@ to a customer, lists its line items and shows how long the price is good for.
 
 1. Set **{field:status}** to sent once it goes out.
 2. Move it to accepted or declined when the customer answers.
+3. Once accepted, convert it to an order so the work can be billed; the order keeps the estimate's lines and totals and a link back to the quote.

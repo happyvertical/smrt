@@ -6,10 +6,12 @@
  * or an explicit semantic tone for custom status vocabulary.
  */
 
+import type { HTMLAttributes } from 'svelte/elements';
 import type { StatusTone, StatusType } from './types.js';
 
 /** Props for StatusBadge component */
-export interface Props {
+export interface Props
+  extends Omit<HTMLAttributes<HTMLSpanElement>, 'class' | 'children'> {
   /** The status value to display */
   status: string;
   /** Pre-defined color scheme type */
@@ -22,6 +24,8 @@ export interface Props {
   variant?: 'filled' | 'outline';
   /** Optional custom label (defaults to status value) */
   label?: string;
+  /** `'capitalize'` (default) title-cases the label via CSS; `'as-is'` leaves it untouched. */
+  case?: 'capitalize' | 'as-is';
 }
 
 const {
@@ -31,6 +35,8 @@ const {
   size = 'md',
   variant = 'filled',
   label,
+  case: textCase = 'capitalize',
+  ...rest
 }: Props = $props();
 
 // Color mappings for different status domains, referencing the canonical
@@ -247,10 +253,12 @@ const displayLabel = $derived(label ?? status.replace(/_/g, ' '));
 </script>
 
 <span
+  {...rest}
   class="status-badge"
   class:sm={size === 'sm'}
   class:lg={size === 'lg'}
   class:outline={variant === 'outline'}
+  class:as-is={textCase === 'as-is'}
   style:--smrt-badge-bg={colors.bg}
   style:--smrt-badge-text={colors.text} data-smrt-component="StatusBadge"
 >
@@ -272,6 +280,9 @@ const displayLabel = $derived(label ?? status.replace(/_/g, ' '));
     background-color: var(--smrt-badge-bg);
     color: var(--smrt-badge-text);
     line-height: 1.25;
+  }
+  .status-badge.as-is {
+    text-transform: none;
   }
 
   .status-badge.sm {

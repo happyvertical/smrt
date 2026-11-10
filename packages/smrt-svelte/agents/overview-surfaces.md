@@ -22,6 +22,11 @@ assistant operations with Undo ("Assistant operations").
 | `./overview/server` (`server.ts`) | Svelte-free: types, `validateWidgetOptions`, the model (`resolveOverview`, `checkOverviewOverride`, `applyOverviewOverride`, `diffOverview`, `sanitizeOverview`, ...), `WidgetRegistry` / `registerWidget`, `loadOverview`, the operations (`planOverviewOperations`, `describeOverview`) and `createOverviewAssistantSurface`. Safe in a `+page.server.ts` or a save endpoint. |
 | `./overview` (`index.ts`) | Everything above plus `OverviewGrid`, `createOverview` (controller), `WidgetOptionsForm`, the core widgets and `registerCoreWidgets`, `shortcutsFromNav`, `formatWidgetValue`, `parseMarkdown` / `safeHref`, `createOverviewAssistant` / `useOverviewAssistantTools` / `OverviewAssistantUndo`. |
 
+`ChartWidget` delegates to `@happyvertical/smrt-ui/charts` so domain packages
+can reuse the same renderer without depending on this integration package.
+`formatWidgetValue` remains a compatibility re-export of the Svelte-free
+`@happyvertical/smrt-ui/charts/format` entry. Existing translation keys stay stable.
+
 ## Data model (`types.ts`, `model.ts`)
 
 A saved overview is data, never code:
@@ -113,10 +118,26 @@ return { overview };   // LoadedOverview: JSON, serializable
 
 - A widget's `load(options, ctx)` receives **validated options only** and a
   `WidgetLoadContext` the host built from the request principal: `overviewId`, an
-  abort `signal`, `locale`, and any host capabilities (index keys). It must
+  abort `signal`, `locale`, the optional core `record` key (below), and any host
+  capabilities (index keys). It must
   authorize through `ctx` (the user's permissions and tenant filters), never
   through option values. Reports-backed chart loaders call the runtime-report
   compiler with this context; this package does not depend on it.
+- **`ctx.record = { model, id }`** is a core capability key: the record a
+  record overview is rendered on (`RecordScreen` sets it from the screen's
+  definition `objectRef` and the record's id; a host's server load sets it the
+  same way for a record page). With it comes the **parent-filter vocabulary**
+  of the core `records` and `metric` loaders: `filter: 'parent'` plus `field`
+  (the FK field on `options.model`) mean "rows of `model` whose `field` equals
+  `ctx.record.id`" — a count for `metric`, the newest rows for `records`
+  (`sort` / `direction` / `limit` as usual). A `metric` with `parentField`
+  uses that as the FK and measures `field` (`measure: 'sum'`, `field:
+  'totalAmount'`, `parentField: 'customerId'`: the record's order total). A
+  `records` load may carry `columns` (comma-separated keys; fill each row's
+  `cells`). A loader given `filter: 'parent'`
+  without `ctx.record` or `field` must return an empty result, never the
+  unfiltered model. The shell's own loaders need no data access: hosts
+  implement it, the same way they implement every other named filter.
 - Loads run in parallel with a per-widget timeout (default 8 s; the signal
   aborts). A thrown error, a timeout or non-serializable / oversized data
   (default 256 KB of JSON) becomes a per-widget error tile
@@ -161,7 +182,13 @@ Call `destroy()` when the owner unmounts.
 The core shortcuts widget draws each shortcut with an inline icon/title heading.
 The icon uses `--smrt-color-primary` from the active theme, matching the
 `ShellSectionMenu` card layout; descriptions remain below the heading. Hosts
-may still provide an icon component for their own glyphs.
+may still provide an icon component for their own glyphs. The heading row is
+the icon and the title alone: the record count is meta, so like
+`ShellSectionMenu`'s card foot it sits on its own muted row at the card's foot
+(#4120). Never put a count or other meta back on a title row — it takes a
+fixed slice of the row and forces the title to wrap. Grid widget headings are
+the same: the title owns its row and wraps rather than truncating; the
+one-line edit-mode chrome label carries the full title as a tooltip.
 
 Props in `grid-types.ts`. `editing` defaults to the shell's layout editor
 (`tryUseShellLayout()?.editing`), so the same pencil edits the grid under an
@@ -197,9 +224,9 @@ shape. Data shapes are in `widgets/data.ts`.
 
 | Type | Options | Data |
 |---|---|---|
-| `metric` | `title`, `model`*, `measure`, `field`, `filter` | `{ value, format?, currency?, label?, change?, href? }` (money = integer minor units) |
+| `metric` | `title`, `model`*, `measure`, `field`, `filter`, `parentField` | `{ value, format?, currency?, label?, change?, href? }` (money = integer minor units) |
 | `chart` | `title`, `model`*, `groupBy`, `measure`, `field`, `period`, `style` (bar/line/table/pie/stat), `filter` | `{ points: [{ label, value }], format?, currency?, href?, delta? }`, one measure of a runtime report |
-| `records` | `title`, `model`*, `sort`, `direction`, `limit`, `filter` | `{ rows: [{ id, title, subtitle?, meta?, href? }], total?, href? }`; the loader chooses the title field and the visible records |
+| `records` | `title`, `model`*, `sort`, `field`, `direction`, `limit`, `filter`, `columns`, `summaries` | `{ rows: [{ id, title, subtitle?, meta?, href?, cells? }], total?, href?, columns?, currency?, timeZone?, summaries? }`; the loader chooses the title field and the visible records; `field` is the FK for `filter: 'parent'`; with columns (the option, else `data.columns`) the rows are a table — see "Records tables" |
 | `shortcuts` | `title`, `section` | `{ items: [{ id, label, href, icon?, description?, count? }] }` (`count` draws as "N records"; widgets also receive the grid's `presentation` and the shortcuts widget drops its entry frame under `plain`); `shortcutsFromNav(sections, sectionId)` maps `resolveShellNavModel` / `useShellLayout().sections` (visible entries, user renames) |
 | `note` | `title`, `body` (Markdown) | none |
 
@@ -219,6 +246,75 @@ else derived from the last two points). Motion honours `prefers-reduced-motion`.
 The chart option schema is **version 2**: v1 (`style` bar or line, or no version)
 migrates by identity (`migrateChartOptions`), so saved overviews keep validating.
 
+## Records tables (`widgets/RecordTable.svelte`, `widgets/record-table.ts`)
+
+The `records` widget with columns, each `related` tab and `line-items` render
+one internal `RecordTable`: smrt-ui `DataTable` (dense, `phoneLayout="cards"`)
+with cells by `RecordListColumn.role` — `identifier` monospace, `status` a
+`Badge` (`statusTone`), `date` date-only in `data.timeZone` (default UTC, so
+SSR and the browser agree; a non-ISO string is shown as sent), `money` from
+integer minor units in `data.currency`, `quantity` a number — and the first
+column linking to the row's `href`. The footer is `DataTable`'s `summaries`
+(no per-widget footer code): the count (`total`, else the rows) in the first
+column and the sum of every `money` / `quantity` column unless
+`summarize: false` (a unit price). **A partial page is never summed**: when
+`total` exceeds the rows, a sum cell is empty unless the loader sent
+`summaries` (totals over every matching record, money in minor units). The
+`columns` option is a comma-separated list because options are flat JSON
+primitives (`parseColumnsOption` / `formatColumnsOption`, at most 6 keys);
+labels and roles come from `data.columns`, else a humanized key. Pure,
+Node-tested helpers: `formatRecordCell`, `statusTone` /
+`DEFAULT_STATUS_TONES`, `statusLabel`, `resolveRecordColumns`,
+`readRecordRows`, `isSummedColumn`.
+
+## Record-page widgets (`related`, `line-items`; `widgets/record-loaders.ts`)
+
+Built from the record's relations, so they register per record view —
+`registerRecordWidgets(registry, { relations, records, viewAllHref?,
+totals?, currency? })`; `RecordScreen` does it on its own registry when
+`loaders.records` is given. **Loader contract: no new loader.** Each tab /
+the lines are one call of the host's core `records` loader with the
+parent-filter vocabulary (`model`, `field`, `filter: 'parent'`, `sort`,
+`direction`, `limit`, `columns`), so a host that implements parent-filtered
+`records` implements both. Loaders are Svelte-free on both entries
+(`createRelatedLoader`, `createLineItemsLoader`, `relatedRelations`,
+`relatedTabOptions`, `lineItemsRelation`, `lineItemsOptions`).
+
+| Type | Options | Data |
+|---|---|---|
+| `related` | `title`, `relations` (relation keys `Order-customerId`, comma-separated; empty = every `children` relation, at most 20), `limit` (5) | `{ tabs: [{ key, label, rows, total?, columns, href?, currency?, timeZone?, summaries? }] }` |
+| `line-items` | `title`, `relation` (an `items` relation key; empty = the first), `limit` (50, the max) | `{ rows, columns, total?, totals?: { subtotal?, discount?, tax?, total? }, storedTotals?: { subtotal, discount, tax, total, lineAmountType, roundingScope, taxes }, currency?, summaries?, href? }` |
+
+- `related`: one tab per relation with the count in the tab ("Orders 6"),
+  each a records table with a totals footer and that tab's one "View all"
+  (`viewAllHref`, else the loaded `href`). Relations with no rows are hidden;
+  all empty is one empty state. A failing tab is dropped; all failing fails
+  the widget. Never lists `items` relations.
+- `line-items` (the contract's `lineItems`; widget type ids are lowercase
+  kebab): a domain host with an issued/frozen money document supplies
+  `storedTotals` through `RecordScreen.lineItemStoredTotals`; its totals and
+  per-component tax rows are displayed as persisted (with matching component
+  rows grouped), never reconstructed from the visible lines. Without that
+  optional snapshot, the widget shows the lines in `sort` order, then the
+  totals block (`lineItemTotals`, pure). The record's own subtotal /
+  discount / tax / total are authoritative and shown as they are; one it
+  lacks is computed from the lines and marked "(from the lines)"; discount
+  and tax show when present and non-zero. There is one money semantic
+  (#4010): line amounts are net of discount, or gross when the record's
+  `lineAmountType` (read by `recordTotals` when the view shows it) is
+  `inclusive`, with net = gross - tax; a record without one is `exclusive`.
+  subtotal = sum of the net lines, total = subtotal + tax, and the discount
+  is shown as "Includes discounts of" and never subtracted. An unavailable
+  tax (no field, or policy-hidden) is unknown rather than zero, so inclusive
+  lines then yield no net and no total is computed or compared from the
+  lines. When the record's subtotal (or, without one, its total) disagrees
+  with the lines, a visible flag says "Lines add up to $X." beside the
+  recorded figure — never a silent override. A partial page of lines is not
+  compared.
+- Tests: `__tests__/record-table.test.ts`, `__tests__/record-widgets.test.ts`,
+  `__tests__/line-items.test.ts` (axe on both components), the records cases
+  in `__tests__/widgets.test.ts`.
+
 ## Recipe widgets (`recipe-widgets.ts`)
 
 A package contributes a widget with a `widget` surface on a recipe
@@ -232,16 +328,19 @@ turns the manifest's widget surfaces into `registry.register(...)` calls:
 | `type`, `label`, `description`, `icon`, `version` | `type`, `title`, `description`, `icon`, `version` |
 | `options` | `options` (plain JSON; `registry.register` re-validates the schema) |
 | `export` | `loadComponent` (lazy; the export may be a component or a `{ default }` module) |
+| `optionsEditor` | `loadOptionsEditor` (lazy; lets dependent choices use a package-owned editor without importing UI on the server) |
 | `data.load` | `load` (resolved on first use; a missing or non-function loader is that widget's error tile) |
 | `migrate` | `migrate`, **resolved eagerly** because the registry's `migrate` is synchronous |
 | `allowedIn`, `defaultSpan`, `minSpan`, `maxSpan` | same names |
 | `data.models` | not registered: documentation of what the loader reads; confine with the page's `models` |
+| `sectionDefault` | not registered: `sectionDefaultWidget(recipe)` places it as the section page's default (the cookbook builder with `dataWidgets`, the planner) |
 
 - **The module resolver is injected.** `resolveExport(specifier, exportName)` is
   the host's: a static map of dynamic imports in a bundled app, a stub in tests.
   Nothing is imported when the manifest is read, and the registration itself
-  imports nothing except `migrate` exports. Relative or absolute specifiers
-  are refused.
+  imports nothing except `migrate` exports. UI hosts resolve lazy components
+  with `resolveWidgetComponents(...)` and custom editors with
+  `resolveWidgetOptionsEditors(...)`. Relative or absolute specifiers are refused.
 - **Never throws for a bad surface.** The result is `{ registered, skipped,
   dispose }`; a skip carries `reason` `duplicate_type` (a core widget or another
   recipe owns the type; `replace` overrides), `invalid` (the registry refused the
@@ -250,7 +349,8 @@ turns the manifest's widget surfaces into `registry.register(...)` calls:
 - **`enabled(recipeId)`** keeps widgets of recipes that are off out of the add
   list. Call the helper again (after `dispose()`) when the set changes.
 - Widget types share one registry namespace with the core widgets
-  (`metric`, `chart`, `records`, `shortcuts`, `note`). Pages still confine what
+  (`metric`, `chart`, `records`, `shortcuts`, `note`) and the record-page
+  widgets (`related`, `line-items`). Pages still confine what
   can appear with `defineOverview({ allowed })`, and a widget with `allowedIn`
   only validates inside those overview ids.
 - `src/components/overview/__tests__/recipe-widgets.test.ts` covers lazy
@@ -373,6 +473,38 @@ and the person can undo the change.
   `createOverviewAssistantSurface` is wired to the stored user tier through
   `createOverviewStore(...).save` as shown there.
 - **Not built:** the activity widget (Track B, #3710) and agenda.
+
+## Record overviews (`record.ts`)
+
+`recordOverview(definition, relations, { id?, metrics?, maxMetrics?,
+related? })` (both entries) is the default overview of a record page:
+
+1. **Summary strip** (`metrics`, default on): `metric` tiles of span 1, a
+   count per `children` relation (`field` = the FK) and, where its columns
+   have a money column, the sum of it (`measure: 'sum'`, `field` = the
+   amount, `parentField` = the FK), at most `maxMetrics`
+   (`RECORD_OVERVIEW_MAX_METRICS` = 4). Ordinary widgets: removable.
+2. **`line-items`** (span 4) for the first `items` relation.
+3. **`related`** (span 4, id `related`) over the `children` relations;
+   `related: 'panels'` instead declares one `records` panel per relation
+   (span `RECORD_OVERVIEW_PANEL_SPAN` = 2, newest five, `columns` from the
+   relation) — the previous default.
+
+Default widget ids come from the relation (`count-Order-customerId`,
+`sum-...`, `items-OrderLine-orderId`, `records-...`; a `-2` suffix tells apart
+two that fold alike), not their position, so a host that narrows the defaults
+keeps every id, and added widgets (`w<n>`) never collide with a hidden
+default; `models` confines added widgets to the child models and `allowed` is
+`RECORD_OVERVIEW_ALLOWED` (`related`, `line-items`, `records`, `metric`,
+`chart`, `note`). The id defaults to `recordOverviewId(definition.objectRef)`
+— `detail:<model>` with `@`, `/` and `:` folded to dots
+(`detail:acme.shop.Customer`), because a qualified model id is not a valid
+overview id — so the layout persists **per model kind**, not per record.
+`RecordScreen` renders it with `presentation="plain"` and extends the widget
+context with `record`.
+
+Empty surfaces show authoring guidance only while editing. Read mode remains quiet;
+customization controls and capability checks are unchanged.
 
 ## Host section presentation
 

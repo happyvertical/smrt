@@ -16,6 +16,15 @@ export interface FeedbackActionContext {
   result: IntakeValues;
   handlerId: string;
   handlerVersion: string;
+  /** `intake_actions.data.origin`, e.g. `generated-proposal` or `reviewer-selected`. */
+  origin: string;
+  /**
+   * The action is approved and still effective: applied (`executing`,
+   * `succeeded`) or `authorized` with an unexpired approval, on an unresolved
+   * item. Evaluated only when an example or rule support is first selected;
+   * lineage re-checks of an earlier selection never consult it.
+   */
+  settled: boolean;
 }
 
 export const feedbackDiscoveryContext = Symbol(

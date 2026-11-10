@@ -12,6 +12,26 @@ Each bridge script in this directory handles:
 
 ## Available Bridges
 
+### smrt-dev-mcp.mjs
+Plain-Node stdio launcher for the `smrt-dev-mcp` server; `.mcp.json` runs it as
+`node scripts/mcp-servers/smrt-dev-mcp.mjs`.
+
+- **stdout is protocol-only**: the child inherits stdio and the launcher writes
+  its own messages to stderr. Never launch the server through `pnpm exec` or
+  `npx`: pnpm 11 prints its dependency-verification banner to stdout (and may
+  install), so clients fail with `CONNECTION_CLOSED` (#4685).
+- **Never installs**: it resolves `node_modules/.bin/tsx` by path and exits with
+  an stderr message if it is missing; run `pnpm install` yourself.
+- **Entry selection**: `packages/smrt-dev-mcp/dist/index.js` when it is newer
+  than every file under `src/`, otherwise `src/index.ts` via tsx. Rebuild `dist`
+  after server edits (`pnpm --filter @happyvertical/smrt-dev-mcp build`) or the
+  launcher quietly uses the slower tsx path. `SMRT_DEV_MCP_ENTRY=dist|tsx` forces one.
+- **Process handling**: forwards SIGINT/SIGTERM/SIGHUP and exits with the child's code.
+- **Regression guard**: `packages/smrt-dev-mcp/src/launcher-stdio.test.ts`.
+
+`smrt-dev-server.sh` (`start|stop|restart|status|logs`) wraps the same launcher
+for the `packages/*/.claude/setup-mcp.sh` scripts.
+
 ### shadcn-ui.sh
 Provides access to shadcn/ui components and documentation with support for multiple frameworks.
 

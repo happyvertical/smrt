@@ -1,6 +1,6 @@
 {
   "name": "@happyvertical/smrt-messages",
-  "version": "0.55.21",
+  "version": "0.60.16",
   "smrtJsdoc": "strict",
   "description": "Unified multi-channel messaging with STI-based hierarchies",
   "type": "module",
@@ -10,7 +10,8 @@
   "files": [
     "dist",
     "CLAUDE.md",
-    "AGENTS.md"
+    "AGENTS.md",
+    "agents"
   ],
   "exports": {
     ".": {
@@ -77,6 +78,7 @@
     "@happyvertical/logger": "catalog:",
     "@happyvertical/messages": "catalog:",
     "@happyvertical/smrt-core": "workspace:*",
+    "@happyvertical/smrt-profiles": "workspace:*",
     "@happyvertical/smrt-types": "workspace:*",
     "@happyvertical/smrt-secrets": "workspace:*",
     "@happyvertical/smrt-tenancy": "workspace:*",
@@ -106,7 +108,7 @@
     "svelte": "^5.57.1",
     "svelte-check": "^4.7.6",
     "typescript": "6.0.3",
-    "vite": "8.1.4",
+    "vite": "8.1.6",
     "vitest": "4.1.10"
   },
   "keywords": [
@@ -129,5 +131,8 @@
   "publishConfig": {
     "registry": "https://registry.npmjs.org",
     "access": "public"
+  },
+  "browser": {
+    "./dist/host.js": "./dist/host.browser.js"
   }
 }

@@ -1,0 +1,5 @@
+# Changes to these paths need the owner's review. The desktop release workflow
+# signs and publishes, so it and the Node pins it trusts are owner-reviewed.
+/.github/ @willgriffin
+/packages/smrt-desktop/wrapper/ @willgriffin
+/packages/smrt-desktop/src/bundler/node-pins.ts @willgriffin

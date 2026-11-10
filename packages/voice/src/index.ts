@@ -55,6 +55,7 @@ export type {
   TranscriptSegment,
   WordTiming as SpeechWordTiming,
 } from '@happyvertical/speech';
+export { VoiceProfilesRecipe } from './recipes.js';
 export {
   metadataFromSynthesizedSpeech,
   VoiceOutput,

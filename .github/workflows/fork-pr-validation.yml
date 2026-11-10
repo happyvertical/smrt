@@ -1,0 +1,90 @@
+name: Fork PR Validation
+
+# Sandboxed validation for external fork pull requests (#4558).
+#
+# `pull_request` from a fork runs with a read-only GITHUB_TOKEN and no
+# secrets, its caches are scoped to the PR, and every run needs a maintainer's
+# approval (repository setting: all external contributors). It loads this file
+# from the PR's merge commit, so its result is advice, not a gate: the
+# approval gate (scripts/fork-pr-approval.mjs) refuses any fork PR that
+# changes .github/, and the merge queue re-runs full trusted validation.
+#
+# Same-repository PRs are validated by on-pull-request.yml; every job here is
+# skipped for them. Job names stay distinct from the required contexts.
+on:
+  pull_request:
+    branches: [main]
+    types: [opened, synchronize, reopened]
+
+concurrency:
+  group: fork-pr-validation-${{ github.event.pull_request.number }}
+  cancel-in-progress: true
+
+env:
+  FORCE_JAVASCRIPT_ACTIONS_TO_NODE24: 'true'
+
+permissions:
+  contents: read
+  packages: read
+  pull-requests: read
+
+jobs:
+  commits:
+    name: Fork Conventional Commits
+    if: github.event.pull_request.head.repo.full_name != github.repository
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - name: Checkout PR head
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7
+        with:
+          ref: ${{ github.event.pull_request.head.sha }}
+          fetch-depth: 0
+          persist-credentials: false
+
+      - name: Setup Node.js
+        uses: actions/setup-node@820762786026740c76f36085b0efc47a31fe5020 # v7
+        with:
+          node-version: '26.12.1'
+
+      - name: Validate commit messages
+        env:
+          BASE_SHA: ${{ github.event.pull_request.base.sha }}
+        run: |
+          git fetch --no-tags "https://github.com/${GITHUB_REPOSITORY}.git" "$BASE_SHA" --depth=200
+          FROM_SHA=$(git merge-base "$BASE_SHA" HEAD)
+          npx --yes --package @commitlint/cli@^20 --package @commitlint/config-conventional@^20 -- \
+            commitlint --from="$FROM_SHA" --to=HEAD --verbose
+
+      # The merge queue validates the squash header built from the PR title.
+      - name: Validate squash-derived header (PR title)
+        env:
+          PR_TITLE: ${{ github.event.pull_request.title }}
+          PR_NUMBER: ${{ github.event.pull_request.number }}
+        run: |
+          printf '%s (#%s)\n' "$PR_TITLE" "$PR_NUMBER" | \
+            npx --yes --package @commitlint/cli@^20 --package @commitlint/config-conventional@^20 -- \
+            commitlint --verbose
+
+  test:
+    name: Fork Test Suite
+    if: github.event.pull_request.head.repo.full_name != github.repository
+    uses: ./.github/workflows/test-suite.yml
+    with:
+      mode: full
+      checkout_ref: ${{ github.sha }}
+    permissions:
+      contents: read
+      packages: read
+
+  postgres:
+    name: Fork PostgreSQL
+    if: github.event.pull_request.head.repo.full_name != github.repository
+    uses: ./.github/workflows/postgres-tests.yml
+    permissions:
+      # postgres-required declares these for the fork gate, unused on this path.
+      actions: read
+      contents: read
+      packages: read
+      pull-requests: read
+      statuses: read

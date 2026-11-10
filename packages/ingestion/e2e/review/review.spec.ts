@@ -1,6 +1,6 @@
-import { randomUUID } from 'node:crypto';
-import { readFile } from 'node:fs/promises';
-import { expect, type Page, test } from '@playwright/test';
+import { createHash, randomUUID } from 'node:crypto';
+import { readFile, writeFile } from 'node:fs/promises';
+import { expect, type Locator, type Page, test } from '@playwright/test';
 import { embeddedPDF } from '../../src/test-support/extraction-fixtures.js';
 import { twoPagePDF } from './fixtures.js';
 
@@ -32,6 +32,19 @@ async function upload(
   );
   return new URL(page.url()).searchParams.get('itemId')!;
 }
+/**
+ * Where a handler schema draws argument fields, the raw JSON sits under a
+ * collapsed "Advanced" disclosure (#4503); open each as a reviewer would
+ * before typing. Value assertions read the JSON with `includeHidden`.
+ */
+async function reveal(scope: Page | Locator) {
+  await scope.getByTestId('advanced-arguments').first().waitFor();
+  const closed = scope.locator(
+    'details[data-testid="advanced-arguments"]:not([open]) > summary',
+  );
+  for (let count = await closed.count(); count > 0; count--)
+    await closed.first().click();
+}
 async function csrf(page: Page) {
   return (await (await page.request.get('/api/session')).json()).csrf as string;
 }
@@ -53,16 +66,19 @@ test('real PDF upload, exact correction, stale tab refusal, reload and one actua
   await expect(page.getByTestId('intake-review')).toContainText(
     'Meeting minutes',
   );
+  // Absent provider confidence draws nothing (#4503).
   await expect(
     page.getByText('Confidence unavailable', { exact: true }),
-  ).toBeVisible();
+  ).toHaveCount(0);
   await page
     .getByRole('button', { name: 'Prepare review', exact: true })
     .click();
   const args = page.getByRole('textbox', {
+    includeHidden: true,
     name: 'Exact arguments (JSON)',
     exact: true,
   });
+  await reveal(page);
   await expect(args).toBeVisible();
   const snapshot = await (
     await page.request.get(`/api/load?itemId=${itemId}`)
@@ -76,6 +92,7 @@ test('real PDF upload, exact correction, stale tab refusal, reload and one actua
   await expect(
     other.getByRole('button', { name: 'Approve', exact: true }),
   ).toBeVisible();
+  await reveal(page);
   await args.fill(
     JSON.stringify({
       title: 'Human reviewed title',
@@ -89,7 +106,11 @@ test('real PDF upload, exact correction, stale tab refusal, reload and one actua
     .getByRole('button', { name: 'Save edits for new review', exact: true })
     .click();
   await expect(
-    page.getByRole('textbox', { name: 'Exact arguments (JSON)', exact: true }),
+    page.getByRole('textbox', {
+      includeHidden: true,
+      name: 'Exact arguments (JSON)',
+      exact: true,
+    }),
   ).toHaveValue(/Human reviewed title/);
   await other.getByRole('button', { name: 'Approve', exact: true }).click();
   await expect(other.getByRole('alert')).toBeVisible();
@@ -171,7 +192,11 @@ test('real PDF upload, exact correction, stale tab refusal, reload and one actua
   ).toBe(409);
   await page.reload();
   await expect(
-    page.getByRole('textbox', { name: 'Exact arguments (JSON)', exact: true }),
+    page.getByRole('textbox', {
+      includeHidden: true,
+      name: 'Exact arguments (JSON)',
+      exact: true,
+    }),
   ).toHaveValue(/Human reviewed title/);
   const reloaded = await (
     await page.request.get(`/api/load?itemId=${itemId}`)
@@ -182,14 +207,18 @@ test('real PDF upload, exact correction, stale tab refusal, reload and one actua
   await expect(
     page.getByRole('button', { name: 'Apply approved action', exact: true }),
   ).toBeVisible();
-  await page
-    .getByRole('textbox', { name: 'Exact arguments (JSON)', exact: true })
-    .fill(
-      JSON.stringify({
-        title: 'Final approved title',
-        body: 'Human reviewed minutes',
-      }),
-    );
+  const approved = page.getByRole('textbox', {
+    includeHidden: true,
+    name: 'Exact arguments (JSON)',
+    exact: true,
+  });
+  await reveal(page);
+  await approved.fill(
+    JSON.stringify({
+      title: 'Final approved title',
+      body: 'Human reviewed minutes',
+    }),
+  );
   await expect(
     page.getByRole('button', { name: 'Apply approved action', exact: true }),
   ).toBeDisabled();
@@ -227,6 +256,127 @@ test('real PDF upload, exact correction, stale tab refusal, reload and one actua
     ),
   ).toBe(true);
   await other.close();
+});
+
+test('a reviewer completes a needs_review suggestion through the ordinary preview and approval path (#4208)', async ({
+  page,
+}) => {
+  await signIn(page);
+  const itemId = await upload(
+    page,
+    'statement.pdf',
+    'application/pdf',
+    embeddedPDF('Vendor statement [[missing-title]] retain this original.'),
+  );
+  const review = page.getByTestId('intake-review');
+  await expect(review).toContainText('Missing information');
+  await expect(review).toContainText(
+    'This suggestion needs review. Complete or confirm its arguments',
+  );
+  const prepare = page.getByRole('button', {
+    name: 'Prepare review',
+    exact: true,
+  });
+  await expect(prepare).toBeDisabled();
+  const snapshot = await (
+    await page.request.get(`/api/load?itemId=${itemId}`)
+  ).json();
+  expect(snapshot.generation.suggestions[0]).toMatchObject({
+    disposition: 'needs_review',
+    missingFields: ['title'],
+  });
+  // The generated arguments alone still fail the handler schema server-side.
+  // The fixture's review transport reports that one case as a correctable
+  // rejection body; nothing is published.
+  const incomplete = await page.request.post('/api/preview', {
+    headers: { 'x-review-csrf': await csrf(page) },
+    data: {
+      itemId,
+      attemptId: snapshot.analysis.attemptId,
+      index: 0,
+      requestId: randomUUID(),
+    },
+  });
+  expect(incomplete.status()).toBe(200);
+  // Only value-free, schema-owned field details accompany it (#4281).
+  expect(await incomplete.json()).toEqual({
+    rejected: 'invalid',
+    issues: [{ path: '/title', keyword: 'required' }],
+  });
+  // Only the action identity exists (created before preview, as on main);
+  // no proposal, binding or arguments were published.
+  const afterRefusal = (
+    await (await page.request.get(`/api/load?itemId=${itemId}`)).json()
+  ).reviews.actions as Array<{
+    args?: unknown;
+    review: { proposalId: string; bindingHash: string };
+  }>;
+  for (const action of afterRefusal) {
+    expect(action.review.proposalId).toBe('');
+    expect(action.review.bindingHash).toBe('');
+    expect(action.args).toBeUndefined();
+  }
+  // Any other preview failure is still a refusal (here: a forged index).
+  const forged = await page.request.post('/api/preview', {
+    headers: { 'x-review-csrf': await csrf(page) },
+    data: {
+      itemId,
+      attemptId: snapshot.analysis.attemptId,
+      index: 7,
+      requestId: randomUUID(),
+    },
+  });
+  expect(forged.status()).toBe(409);
+  const draft = page.getByRole('textbox', {
+    includeHidden: true,
+    name: 'Suggested arguments (JSON)',
+    exact: true,
+  });
+  await reveal(page);
+  await draft.fill(
+    JSON.stringify({
+      ...snapshot.generation.suggestions[0].args,
+      title: 'Human completed title',
+    }),
+  );
+  await expect(prepare).toBeEnabled();
+  await prepare.click();
+  const args = page.getByRole('textbox', {
+    includeHidden: true,
+    name: 'Exact arguments (JSON)',
+    exact: true,
+  });
+  await expect(args).toHaveValue(/Human completed title/);
+  await expect(
+    page.getByRole('button', { name: 'Approve', exact: true }),
+  ).toBeEnabled();
+  const prepared = await (
+    await page.request.get(`/api/load?itemId=${itemId}`)
+  ).json();
+  const action = prepared.reviews.actions[0];
+  expect(action.review.state).toBe('waiting_review');
+  expect(action.args).toMatchObject({ title: 'Human completed title' });
+  // The immutable generation still records what the model left unfilled.
+  expect(prepared.generation.suggestions[0].missingFields).toEqual(['title']);
+  await page.getByRole('button', { name: 'Approve', exact: true }).click();
+  await page
+    .getByRole('button', { name: 'Apply approved action', exact: true })
+    .click();
+  await expect(
+    page.getByTestId(`action-${action.review.actionId}`),
+  ).toContainText('succeeded');
+  const final = await (
+    await page.request.get(`/api/load?itemId=${itemId}`)
+  ).json();
+  const domain = await (
+    await page.request.get(
+      `/api/result?id=${final.reviews.actions[0].result.result.contentId}`,
+    )
+  ).json();
+  expect(domain).toMatchObject({
+    title: 'Human completed title',
+    status: 'draft',
+  });
 });
 
 test('authenticated originals, CSRF, assignment CAS and foreign tenant boundaries', async ({
@@ -464,4 +614,628 @@ test('human page regrouping preserves the original and forces new review after r
   expect(final.reviews.actions[0].review.revision).toBe(
     before.reviews.actions[0].review.revision + 1,
   );
+});
+
+test('a reviewer instruction is recorded immutably, reinterpreted in the background and lands in place as trusted guidance', async ({
+  page,
+}) => {
+  // Two real re-extractions plus background interpretation under Chromium.
+  test.setTimeout(150000);
+  await signIn(page);
+  const original = embeddedPDF('Purchase order 4471 from Badger Supply.');
+  const itemId = await upload(
+    page,
+    'badger-po.pdf',
+    'application/pdf',
+    original,
+  );
+  // An action exists before the instruction: the item is "waiting", not
+  // "processing", when the reviewer asks for a re-read.
+  await page
+    .getByRole('button', { name: 'Prepare review', exact: true })
+    .click();
+  await expect(
+    page.getByRole('button', { name: 'Approve', exact: true }),
+  ).toBeVisible();
+  const before = await (
+    await page.request.get(`/api/load?itemId=${itemId}`)
+  ).json();
+  expect(before.entry.state).toBe('waiting');
+  expect(before.reviews.actions).toHaveLength(1);
+  expect(before.instruction).toBeUndefined();
+  expect(before.generation.provenance.reviewerInstruction).toBeUndefined();
+  const text =
+    'This is a customer PO from Badger. Do not bill it; just file it.';
+  const box = page.getByRole('textbox', {
+    name: 'Instructions for the assistant',
+    exact: true,
+  });
+  const button = page.getByRole('button', {
+    name: 'Re-read with these instructions',
+    exact: true,
+  });
+  await expect(button).toBeDisabled();
+  await box.fill(text);
+  const recorded = page.waitForResponse(
+    (response) =>
+      response.url().endsWith('/api/instruct') &&
+      response.request().method() === 'POST',
+  );
+  await button.click();
+  expect((await recorded).status()).toBe(200);
+  // The reviewer is not blocked: the item reports the background stage and the
+  // page refreshes itself when the fenced interpretation completes.
+  await expect(page.getByTestId('reinterpreting')).toBeVisible();
+  // The reviewer keeps working while it runs: a draft typed during the stage
+  // survives the in-place refresh.
+  await box.fill('draft while reinterpreting');
+  await expect(page.getByTestId('applied-instruction')).toBeVisible({
+    timeout: 30000,
+  });
+  await expect(box).toHaveValue('draft while reinterpreting');
+  await box.fill('');
+  await expect(page.getByTestId('applied-instruction')).toContainText(text);
+  await expect(page.getByTestId('instruction-stale')).toHaveCount(0);
+  await expect(page.getByTestId('reinterpreting')).toHaveCount(0);
+  await expect(
+    page.getByRole('button', { name: 'Prepare review', exact: true }),
+  ).toBeVisible();
+  const after = await (
+    await page.request.get(`/api/load?itemId=${itemId}`)
+  ).json();
+  expect(after.analysis.revision).toBe(before.analysis.revision + 2);
+  expect(after.reviews.actions[0].review.actionId).toBe(
+    before.reviews.actions[0].review.actionId,
+  );
+  expect(after.reviews.actions[0].review.state).toBe('stale');
+  expect(after.instruction.current.id).toBe(after.instruction.applied.id);
+  expect(after.instruction.stale).toBe(false);
+  expect(after.instruction.applied).toMatchObject({
+    actorId: 'owner',
+    text,
+    supersedesId: null,
+  });
+  expect(after.analysis.configuration.reviewerInstruction).toMatchObject({
+    kind: 'reviewer_instruction',
+    id: after.instruction.applied.id,
+    digest: after.instruction.applied.digest,
+  });
+  expect(after.generation.provenance.reviewerInstruction).toEqual({
+    id: after.instruction.applied.id,
+    digest: after.instruction.applied.digest,
+  });
+  expect(after.generation.provenance.catalogDigest).toBe(
+    before.generation.provenance.catalogDigest,
+  );
+  expect(after.generation.automaticActionEligible).toBe(false);
+  const pdf = after.evidence.find(
+    (entry: { evidence: { mediaType: string } }) =>
+      entry.evidence.mediaType === 'application/pdf',
+  );
+  expect(await (await page.request.get(pdf.viewUrl)).body()).toEqual(original);
+  // Whitespace-only instruction text fails server-side validation, reported
+  // as a validation result rather than an error status.
+  const blankText = await page.request.post('/api/instruct', {
+    headers: { 'x-review-csrf': await csrf(page) },
+    data: {
+      itemId,
+      attemptId: after.analysis.attemptId,
+      expectedRevision: after.analysis.revision,
+      text: ' ',
+      requestId: randomUUID(),
+    },
+  });
+  expect(blankText.status()).toBe(200);
+  expect(await blankText.json()).toEqual({ invalid: true });
+  // A superseding instruction replaces the first for future interpretations;
+  // the earlier record remains in history.
+  await box.fill('Second thoughts: file it under supplier correspondence.');
+  const superseded = page.waitForResponse((response) =>
+    response.url().endsWith('/api/instruct'),
+  );
+  await button.click();
+  expect((await superseded).status()).toBe(200);
+  await expect(page.getByTestId('applied-instruction')).toContainText(
+    'supplier correspondence',
+    { timeout: 30000 },
+  );
+  const final = await (
+    await page.request.get(`/api/load?itemId=${itemId}`)
+  ).json();
+  expect(final.instruction.applied.supersedesId).toBe(
+    after.instruction.applied.id,
+  );
+  expect(final.analysis.revision).toBe(after.analysis.revision + 2);
+});
+
+test('same local file reselection starts a new upload while chooser cancellation retains retry', async ({
+  page,
+}) => {
+  await signIn(page);
+  const bytes = embeddedPDF('Explicit same-file selection evidence.');
+  const path = test.info().outputPath('same-original.pdf');
+  await writeFile(path, bytes);
+  const expectedHash = createHash('sha256').update(bytes).digest('hex');
+  const requests: { key: string; sourceHash: boolean }[] = [];
+  const receipts: string[] = [];
+  page.on('response', async (response) => {
+    if (
+      response.url().endsWith('/api/upload') &&
+      response.request().method() === 'POST' &&
+      response.ok()
+    )
+      receipts.push((await response.json()).itemId);
+  });
+  await page.route('**/api/upload', async (route) => {
+    const request = route.request();
+    requests.push({
+      key: request.headers()['idempotency-key'],
+      sourceHash: request.postData()!.includes(expectedHash),
+    });
+    if (requests.length <= 2) {
+      await route.fulfill({
+        status: 503,
+        body: 'Synthetic transport unavailable',
+      });
+      return;
+    }
+    await route.continue();
+  });
+  const input = page.locator('input[type=file]');
+  const picker = page.getByText('Choose intake files', { exact: true });
+  const upload = page.getByRole('button', { name: 'Upload', exact: true });
+  async function uploadAndWait() {
+    const response = page.waitForResponse('**/api/upload');
+    await upload.click();
+    expect((await response).ok()).toBe(true);
+    await (await response).json();
+  }
+  async function choose() {
+    const chooser = page.waitForEvent('filechooser');
+    await picker.click();
+    await (await chooser).setFiles(path);
+  }
+  await choose();
+  await upload.click();
+  await expect(page.getByRole('alert')).toBeVisible();
+  expect(requests).toHaveLength(1);
+  const originalKey = requests[0].key;
+  expect(originalKey).toMatch(/^[0-9a-f-]{36}$/);
+
+  // Opening without selecting a new file must not discard the retained retry.
+  const cancelled = page.waitForEvent('filechooser');
+  await picker.click();
+  await cancelled;
+  await page.keyboard.press('Escape');
+  await expect(
+    page.getByText('1 file selected', { exact: true }),
+  ).toBeVisible();
+  await expect(upload).toBeEnabled();
+  await upload.click();
+  await expect.poll(() => requests.length).toBe(2);
+  await expect(page.getByRole('alert')).toBeVisible();
+  expect(requests[1].key).toBe(originalKey);
+  expect(requests.every((request) => request.sourceHash)).toBe(true);
+
+  // Exact same path, name and bytes, selected through Chromium's native picker.
+  await choose();
+  await uploadAndWait();
+  await expect.poll(() => requests.length).toBe(3);
+  expect(requests[2].key).not.toBe(originalKey);
+  await expect(page.getByTestId('intake-review')).toBeVisible();
+  await expect(page.getByTestId('intake-inbox')).toHaveAttribute(
+    'aria-busy',
+    'false',
+  );
+  await expect(upload).toBeDisabled();
+
+  // The successful selection's native FileList must not suppress another arrival.
+  expect(
+    await input.evaluate((element: HTMLInputElement) => element.files?.length),
+  ).toBe(1);
+  await choose();
+  await expect(upload).toBeEnabled();
+  await uploadAndWait();
+  await expect.poll(() => receipts.length).toBe(2);
+  await expect(page.getByTestId('intake-inbox')).toHaveAttribute(
+    'aria-busy',
+    'false',
+  );
+  expect(requests[3].key).not.toBe(requests[2].key);
+  expect(new Set(receipts).size).toBe(2);
+  expect(requests.every((request) => request.sourceHash)).toBe(true);
+});
+
+test('switching intake context discards chooser retry state and fences a late real upload', async ({
+  page,
+}) => {
+  await signIn(page);
+  const path = test.info().outputPath('old-context.pdf');
+  await writeFile(
+    path,
+    embeddedPDF('Old context must not select this receipt.'),
+  );
+  let release!: () => void;
+  let started!: () => void;
+  const pending = new Promise<void>((resolve) => {
+    release = resolve;
+  });
+  const requested = new Promise<void>((resolve) => {
+    started = resolve;
+  });
+  await page.route('**/api/upload', async (route) => {
+    started();
+    await pending;
+    await route.continue();
+  });
+  const chooser = page.waitForEvent('filechooser');
+  await page.getByText('Choose intake files', { exact: true }).click();
+  await (await chooser).setFiles(path);
+  await page.getByRole('button', { name: 'Upload', exact: true }).click();
+  await requested;
+  await expect(page.getByTestId('intake-inbox')).toHaveAttribute(
+    'aria-busy',
+    'true',
+  );
+  await page
+    .getByRole('button', { name: 'Switch intake context', exact: true })
+    .click();
+  await expect(page.getByTestId('intake-inbox')).toHaveAttribute(
+    'aria-busy',
+    'false',
+  );
+  await expect(
+    page.getByRole('button', { name: 'Upload', exact: true }),
+  ).toBeDisabled();
+  expect(
+    await page
+      .locator('input[type=file]')
+      .evaluate((element: HTMLInputElement) => element.files?.length),
+  ).toBe(0);
+  const uploaded = page.waitForResponse(
+    (response) =>
+      response.url().endsWith('/api/upload') &&
+      response.request().method() === 'POST',
+  );
+  release();
+  const response = await uploaded;
+  expect(response.ok()).toBe(true);
+  const original = await response.json();
+  expect(original.itemId).toBeTruthy();
+  await page.getByRole('button', { name: 'Refresh', exact: true }).click();
+  await expect(page.getByTestId('intake-inbox')).toHaveAttribute(
+    'aria-busy',
+    'false',
+  );
+  await expect(page.getByTestId('intake-review')).toHaveCount(0);
+  expect(new URL(page.url()).searchParams.get('itemId')).toBeNull();
+  await expect(
+    page.getByRole('button', { name: 'Upload', exact: true }),
+  ).toBeDisabled();
+});
+
+// Routing-feedback capture for both paths is asserted at the service level in
+// src/test-support/proposals.ts; this scenario proves the browser journeys.
+test('reviewer starts a chosen handler through preview and approval, and closes another item without action', async ({
+  page,
+}) => {
+  await signIn(page);
+  const review = page.getByTestId('intake-review');
+  const itemId = await upload(
+    page,
+    'customer-po.txt',
+    'text/plain',
+    Buffer.from('Customer purchase order 17 from Acme for widgets'),
+  );
+  const picker = review.getByRole('combobox', { name: 'Handler' });
+  await expect(picker).toBeVisible();
+  await picker.selectOption(
+    '@happyvertical/smrt-ingestion-reference:create-draft@1',
+  );
+  const args = review.getByRole('textbox', {
+    includeHidden: true,
+    name: 'Initial arguments (JSON)',
+  });
+  await reveal(review);
+  // Pre-filled from the same-handler suggestion, then changed by the reviewer.
+  await expect(args).toHaveValue(/Reviewed intake draft/);
+  await review
+    .getByRole('textbox', { name: 'Reason', exact: true })
+    .fill('Customer PO, not a vendor bill');
+  // The handler schema refuses the reviewer's arguments: the transport
+  // reports the correctable rejection and the form keeps the draft (#4281).
+  const invalidDraft = JSON.stringify({
+    title: '',
+    body: 'Acme purchase order',
+  });
+  await args.fill(invalidDraft);
+  const refusedStart = page.waitForResponse(
+    (response) =>
+      response.url().endsWith('/api/startAction') &&
+      response.request().method() === 'POST',
+  );
+  await review.getByRole('button', { name: 'Start action' }).click();
+  const refusedResponse = await refusedStart;
+  expect(refusedResponse.status()).toBe(200);
+  expect(await refusedResponse.json()).toEqual({
+    rejected: 'invalid',
+    issues: [{ path: '/title', keyword: 'minLength' }],
+  });
+  const startRefusal = review.getByTestId('start-rejected');
+  await expect(startRefusal).toContainText(
+    'did not pass the handler validation',
+  );
+  // A root issue `/title` shows as `title`, like the missing-information list.
+  await expect(startRefusal.getByRole('listitem')).toHaveText(['title']);
+  await expect(args).toHaveValue(invalidDraft);
+  expect(
+    (await (await page.request.get(`/api/load?itemId=${itemId}`)).json())
+      .reviews.actions,
+  ).toHaveLength(0);
+  await args.fill(
+    JSON.stringify({ title: 'Customer PO 17', body: 'Acme purchase order' }),
+  );
+  const started = page.waitForResponse(
+    (response) =>
+      response.url().endsWith('/api/startAction') &&
+      response.request().method() === 'POST',
+  );
+  await review.getByRole('button', { name: 'Start action' }).click();
+  const startResponse = await started;
+  expect(startResponse.status()).toBe(200);
+  expect(startResponse.request().postDataJSON()).toMatchObject({
+    itemId,
+    handlerId: '@happyvertical/smrt-ingestion-reference:create-draft',
+    handlerVersion: '1',
+    args: { title: 'Customer PO 17', body: 'Acme purchase order' },
+    reason: 'Customer PO, not a vendor bill',
+  });
+  await expect(review.getByText('Started by a reviewer')).toBeVisible();
+  const loaded = await (
+    await page.request.get(`/api/load?itemId=${itemId}`)
+  ).json();
+  expect(loaded.reviews.actions).toHaveLength(1);
+  expect(loaded.reviews.actions[0]).toMatchObject({
+    origin: 'reviewer-selected',
+    args: { title: 'Customer PO 17', body: 'Acme purchase order' },
+  });
+  expect(loaded.entry.state).toBe('waiting');
+  await review.getByRole('button', { name: 'Approve', exact: true }).click();
+  await review
+    .getByRole('button', { name: 'Apply approved action', exact: true })
+    .click();
+  await expect(
+    page.getByTestId(`action-${loaded.reviews.actions[0].review.actionId}`),
+  ).toContainText('succeeded');
+  const applied = await (
+    await page.request.get(`/api/load?itemId=${itemId}`)
+  ).json();
+  const domain = await (
+    await page.request.get(
+      `/api/result?id=${applied.reviews.actions[0].result.result.contentId}`,
+    )
+  ).json();
+  expect(domain).toMatchObject({ title: 'Customer PO 17', status: 'draft' });
+  // A second item is closed as handled without any action.
+  const paidId = await upload(
+    page,
+    'paid-invoice.txt',
+    'text/plain',
+    Buffer.from('Paid invoice 9 from Initech, nothing to do'),
+  );
+  await review
+    .getByRole('textbox', { name: 'Reason for no action' })
+    .fill('Already paid');
+  const resolved = page.waitForResponse(
+    (response) =>
+      response.url().endsWith('/api/resolve') &&
+      response.request().method() === 'POST',
+  );
+  await review.getByRole('button', { name: 'Handled, no action' }).click();
+  expect((await resolved).status()).toBe(200);
+  await expect(review.getByTestId('disposition')).toContainText(
+    'Closed without action by owner: Already paid',
+  );
+  await expect(review.getByRole('combobox', { name: 'Handler' })).toHaveCount(
+    0,
+  );
+  const resolvedList = await (
+    await page.request.get('/api/list?state=resolved')
+  ).json();
+  expect(
+    resolvedList.items.map((entry: { item: { id: string } }) => entry.item.id),
+  ).toEqual([paidId]);
+  // The fixture answers refusals with the safe message plus the gate's reason.
+  const refused = {
+    error: 'Review unavailable; refresh current state',
+    reason: 'Item resolved',
+  };
+  const resolveAgain = await page.request.post('/api/resolve', {
+    headers: { 'x-review-csrf': await csrf(page) },
+    data: {
+      itemId: paidId,
+      disposition: 'resolve_no_action',
+      requestId: randomUUID(),
+    },
+  });
+  expect(resolveAgain.status()).toBe(409);
+  expect(await resolveAgain.json()).toEqual(refused);
+  const startAfterResolve = await page.request.post('/api/startAction', {
+    headers: { 'x-review-csrf': await csrf(page) },
+    data: {
+      itemId: paidId,
+      handlerId: '@happyvertical/smrt-ingestion-reference:create-draft',
+      handlerVersion: '1',
+      args: { title: 'Late', body: 'Late' },
+      requestId: randomUUID(),
+    },
+  });
+  expect(startAfterResolve.status()).toBe(409);
+  expect(await startAfterResolve.json()).toEqual(refused);
+  const reloaded = await (
+    await page.request.get(`/api/load?itemId=${paidId}`)
+  ).json();
+  // The item DTO carries only the state; reviewer and reason ride the review view.
+  expect(Object.keys(reloaded.entry.item.disposition).sort()).toEqual([
+    'at',
+    'state',
+  ]);
+  expect(reloaded.disposition).toMatchObject({
+    kind: 'resolved_no_action',
+    reviewer: 'owner',
+    reason: 'Already paid',
+  });
+  expect(reloaded.reviews.actions).toHaveLength(0);
+  // No CSRF token: neither reviewer operation is accepted.
+  expect(
+    (
+      await page.request.post('/api/resolve', {
+        data: {
+          itemId,
+          disposition: 'resolve_no_action',
+          requestId: randomUUID(),
+        },
+      })
+    ).status(),
+  ).toBe(403);
+});
+
+test('single-page triage: inline original, background re-read, approve and advance, then resolve and advance without navigation (#4215)', async ({
+  page,
+}) => {
+  // Two real re-extractions plus background interpretation under Chromium.
+  test.setTimeout(150000);
+  await page.goto('/e2e/review/index.html?layout=workspace');
+  await page.getByRole('button', { name: 'Sign in to review fixture' }).click();
+  await expect(page.getByTestId('intake-workspace')).toBeVisible();
+  const noteId = await upload(
+    page,
+    'paid-note.txt',
+    'text/plain',
+    Buffer.from('Paid invoice 12 from Initech, nothing to do'),
+  );
+  const original = twoPagePDF();
+  const poId = await upload(page, 'badger-po.pdf', 'application/pdf', original);
+  // No page load happens from here on: this marker would not survive one.
+  await page.evaluate(() => {
+    (window as unknown as { triageMarker: number }).triageMarker = 4215;
+  });
+  const marker = () =>
+    page.evaluate(
+      () => (window as unknown as { triageMarker?: number }).triageMarker,
+    );
+  const workspace = page.getByTestId('intake-workspace');
+  const item = page.getByTestId('workspace-item');
+  const row = (id: string) => workspace.locator(`li[data-item-id="${id}"]`);
+  // Newest first (the fixture database is shared by the suite, so earlier
+  // tests' items follow); the upload opened the PDF beside the list.
+  const rows = workspace.locator('li[data-item-id]');
+  await expect(rows.nth(0)).toHaveAttribute('data-item-id', poId);
+  await expect(rows.nth(1)).toHaveAttribute('data-item-id', noteId);
+  await expect(row(poId)).toHaveAttribute('aria-current', 'true');
+  await expect(item).toHaveAttribute('aria-label', 'badger-po.pdf');
+  // The original renders inline with page navigation over its observed pages.
+  const frame = item.getByTestId('evidence-viewer').locator('iframe');
+  await expect(frame).toBeVisible();
+  await expect(item.getByText('Page 1 of 2')).toBeVisible();
+  await item.getByRole('button', { name: 'Next page', exact: true }).click();
+  await expect(item.getByText('Page 2 of 2')).toBeVisible();
+  await expect(frame).toHaveAttribute('src', /#page=2$/);
+  // Keyboard next/previous outside text fields.
+  await item.focus();
+  await page.keyboard.press('j');
+  await expect(row(noteId)).toHaveAttribute('aria-current', 'true');
+  await expect(item).toHaveAttribute('aria-label', 'paid-note.txt');
+  await page.keyboard.press('k');
+  await expect(row(poId)).toHaveAttribute('aria-current', 'true');
+  await expect(page.getByTestId('intake-review')).toHaveAttribute(
+    'aria-busy',
+    'false',
+  );
+  // Message the model, then keep working while it re-reads in the background.
+  const text = 'Customer PO from Badger, just file it.';
+  await item
+    .getByRole('textbox', { name: 'Instructions for the assistant' })
+    .fill(text);
+  const recorded = page.waitForResponse(
+    (response) =>
+      response.url().endsWith('/api/instruct') &&
+      response.request().method() === 'POST',
+  );
+  await item
+    .getByRole('button', { name: 'Re-read with these instructions' })
+    .click();
+  expect((await recorded).status()).toBe(200);
+  await page.keyboard.press('j');
+  await expect(row(noteId)).toHaveAttribute('aria-current', 'true');
+  // The left item's row follows its stage until the new suggestions land,
+  // and the settled stage is announced.
+  await expect(page.getByTestId('background-update')).toHaveText(
+    'badger-po.pdf: Ready to review',
+    { timeout: 30000 },
+  );
+  await expect(row(poId).getByTestId('row-status')).toHaveText(
+    'Ready to review',
+  );
+  await expect(row(noteId)).toHaveAttribute('aria-current', 'true');
+  await page.keyboard.press('k');
+  await expect(row(poId)).toHaveAttribute('aria-current', 'true');
+  await expect(item.getByTestId('applied-instruction')).toContainText(text);
+  // Review and approve in place.
+  await item
+    .getByRole('button', { name: 'Prepare review', exact: true })
+    .click();
+  await item.getByRole('button', { name: 'Approve', exact: true }).click();
+  const apply = item.getByRole('button', {
+    name: 'Apply approved action',
+    exact: true,
+  });
+  await expect(apply).toBeVisible();
+  // Approval leaves the apply step here: the item has not advanced.
+  await expect(row(poId)).toHaveAttribute('aria-current', 'true');
+  await expect(row(poId).getByTestId('row-status')).toHaveText(
+    'Approved, not yet applied',
+  );
+  await apply.click();
+  // Applied: the next item opens, focused, and the list stays in step.
+  await expect(row(noteId)).toHaveAttribute('aria-current', 'true');
+  await expect(item).toHaveAttribute('aria-label', 'paid-note.txt');
+  await expect(item).toBeFocused();
+  await expect(row(poId).getByTestId('row-status')).toHaveText('Completed');
+  // "Handled, no action" closes the item and advances again: to an older
+  // open item left by an earlier test, or, run alone, to the empty queue.
+  await item
+    .getByRole('textbox', { name: 'Reason for no action' })
+    .fill('Already paid');
+  await item.getByRole('button', { name: 'Handled, no action' }).click();
+  await expect(row(noteId).getByTestId('row-status')).toHaveText(
+    'Handled, no action',
+  );
+  await expect(row(noteId)).not.toHaveAttribute('aria-current', 'true');
+  const selected = workspace.locator('li[aria-current="true"]');
+  await expect(selected.or(page.getByTestId('queue-done'))).toBeVisible();
+  if (await selected.count()) {
+    await expect(item).toBeFocused();
+    await expect(selected.getByTestId('row-status')).not.toHaveText(
+      /Handled, no action|Completed/,
+    );
+  }
+  expect(await marker()).toBe(4215);
+  expect(new URL(page.url()).pathname).toBe('/e2e/review/index.html');
+  const po = await (await page.request.get(`/api/load?itemId=${poId}`)).json();
+  expect(po.instruction.applied.text).toBe(text);
+  expect(po.reviews.actions[0].review.state).toBe('succeeded');
+  const pdf = po.evidence.find(
+    (entry: { evidence: { mediaType: string } }) =>
+      entry.evidence.mediaType === 'application/pdf',
+  );
+  expect(await (await page.request.get(pdf.viewUrl)).body()).toEqual(original);
+  const note = await (
+    await page.request.get(`/api/load?itemId=${noteId}`)
+  ).json();
+  expect(note.disposition).toMatchObject({
+    kind: 'resolved_no_action',
+    reviewer: 'owner',
+    reason: 'Already paid',
+  });
 });

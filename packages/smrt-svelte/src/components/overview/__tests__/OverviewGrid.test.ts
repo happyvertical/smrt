@@ -65,6 +65,28 @@ const titles = () =>
   );
 
 describe('OverviewGrid (view)', () => {
+  it('keeps an empty overview quiet in read mode and retains edit guidance', async () => {
+    const registry = coreRegistry();
+    const empty = { ...definition, defaults: [] };
+    const { container, rerender } = render(Harness, {
+      options: { definition: empty, registry },
+      gridProps: { editing: false },
+    });
+    expect(container.querySelector('.smrt-overview__empty')).toBeNull();
+    expect(screen.queryByRole('toolbar')).toBeNull();
+    await rerender({
+      options: { definition: empty, registry },
+      gridProps: { editing: true },
+    });
+    expect(
+      container.querySelector('.smrt-overview__empty'),
+    ).toBeInTheDocument();
+    expect(screen.getByRole('toolbar')).toBeInTheDocument();
+    expect(
+      screen.getByRole('button', { name: /add widget/i }),
+    ).toBeInTheDocument();
+  });
+
   it('renders host links inside accessible headings without replacing edit controls', async () => {
     const registry = coreRegistry();
     const loaded = await loadedFor(registry);
@@ -120,6 +142,57 @@ describe('OverviewGrid (view)', () => {
     expect(screen.getByText('Hi').tagName).toBe('STRONG');
     expect(screen.queryByRole('slider')).toBeNull();
     expect(screen.queryByRole('toolbar')).toBeNull();
+  });
+
+  it('gives each widget title its own row, with counts and meta below it (#4120)', async () => {
+    await mount();
+    for (const heading of document.querySelectorAll('.smrt-overview__title')) {
+      const article = heading.closest('.smrt-overview__widget');
+      // The heading is the article's first row and holds only the title.
+      expect(article?.firstElementChild).toBe(heading);
+      expect(heading.children).toHaveLength(0);
+      expect(heading.nextElementSibling).toHaveClass('smrt-overview__content');
+    }
+    // The records count lives in the widget body, never in the heading row.
+    const records = screen
+      .getByRole('heading', { name: 'Record list' })
+      .closest('article') as HTMLElement;
+    const total = within(records).getByText('12 in total');
+    expect(
+      screen.getByRole('heading', { name: 'Record list' }),
+    ).not.toContainElement(total);
+  });
+
+  it('shows a long title in full, wrapping rather than truncating (#4120)', async () => {
+    const long =
+      'Equipment and parts orders awaiting supplier confirmation this week';
+    await mount({
+      override: {
+        version: 1,
+        changed: { w3: { options: { title: long, body: 'x' } } },
+      },
+    });
+    expect(screen.getByRole('heading', { name: long })).toHaveTextContent(long);
+  });
+
+  it('keeps edit controls on the title row with the full title as a tooltip', async () => {
+    const long =
+      'Equipment and parts orders awaiting supplier confirmation this week';
+    await mount({
+      editing: true,
+      override: {
+        version: 1,
+        changed: { w3: { options: { title: long, body: 'x' } } },
+      },
+    });
+    const remove = screen.getByRole('button', { name: `Remove ${long}` });
+    const chrome = remove.closest('.smrt-overview__chrome') as HTMLElement;
+    expect(chrome).not.toBeNull();
+    expect(
+      chrome.querySelector('.smrt-overview__chrome-title'),
+    ).toHaveAttribute('title', long);
+    // The widget's own heading still carries the whole title.
+    expect(screen.getByRole('heading', { name: long })).toHaveTextContent(long);
   });
 
   it('exposes spans as data attributes and a CSS variable', async () => {

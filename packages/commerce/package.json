@@ -1,6 +1,6 @@
 {
   "name": "@happyvertical/smrt-commerce",
-  "version": "0.55.21",
+  "version": "0.60.16",
   "smrtJsdoc": "strict",
   "description": "Commerce models for the SMRT framework - contracts, fulfillments, payments",
   "type": "module",
@@ -30,6 +30,10 @@
     "./cost-billing": {
       "types": "./dist/cost-billing.d.ts",
       "import": "./dist/cost-billing.js"
+    },
+    "./money": {
+      "types": "./dist/money.d.ts",
+      "import": "./dist/money.js"
     }
   },
   "files": [
@@ -80,13 +84,18 @@
   "dependencies": {
     "@happyvertical/accounting": "catalog:",
     "@happyvertical/payments": "catalog:",
+    "@happyvertical/smrt-agents": "workspace:*",
     "@happyvertical/smrt-core": "workspace:*",
     "@happyvertical/smrt-jobs": "workspace:*",
     "@happyvertical/smrt-ledgers": "workspace:*",
+    "@happyvertical/smrt-products": "workspace:*",
+    "@happyvertical/smrt-reports": "workspace:*",
     "@happyvertical/smrt-subscriptions": "workspace:*",
+    "@happyvertical/smrt-svelte": "workspace:*",
     "@happyvertical/smrt-tenancy": "workspace:*",
     "@happyvertical/smrt-types": "workspace:*",
-    "@happyvertical/smrt-ui": "workspace:*"
+    "@happyvertical/smrt-ui": "workspace:*",
+    "@happyvertical/sql": "catalog:"
   },
   "peerDependencies": {
     "svelte": "^5.57.0"
@@ -105,11 +114,10 @@
     "@testing-library/user-event": "^14.6.7",
     "@types/node": "24.13.6",
     "axe-core": "^4.13.0",
-    "fast-glob": "^3.3.3",
     "svelte": "^5.57.1",
     "svelte-check": "^4.7.6",
     "typescript": "6.0.3",
-    "vite": "8.1.4",
+    "vite": "8.1.6",
     "vitest": "4.1.10"
   }
 }

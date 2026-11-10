@@ -32,6 +32,7 @@ import {
 } from '../system/schema.js';
 import { toSafeBooleanInteger, toSafeInteger } from '../utils/safe-integer.js';
 import { computeChecksum, verifyChecksum } from './checksum.js';
+import { SQLITE_RELAX_REBUILD_MARKER } from './sqlite-rebuild.js';
 import type {
   ApplyMigrationsOptions,
   DatabaseInterface,
@@ -267,6 +268,7 @@ export class MigrationTracker {
   private db: DatabaseInterface;
   private options: Required<Omit<MigrationTrackerOptions, 'db' | 'engineHint'>>;
   private engineHint?: string;
+  private sqliteRebuildTransactionOwned = false;
   private dbEngine: DatabaseEngine;
   /**
    * Memoized initialization promise. Storing the in-flight promise (rather
@@ -756,6 +758,14 @@ export class MigrationTracker {
     definitions: MigrationDefinition[],
     options: ApplyMigrationsOptions = {},
   ): Promise<MigrationResult[]> {
+    if (
+      !options.dryRun &&
+      this.needsSqliteRebuildSafety(definitions.flatMap((d) => d.up))
+    ) {
+      return this.withSqliteRebuildSafety(() =>
+        this.applyAll(definitions, options),
+      );
+    }
     if (options.atomic && !options.dryRun) {
       if (!this.db.transaction) {
         throw new Error(
@@ -813,6 +823,13 @@ export class MigrationTracker {
             useConcurrentIndexes: false,
           });
           txTracker.concurrentIndexPlan = deferred;
+          txTracker.sqliteRebuildTransactionOwned =
+            this.sqliteRebuildTransactionOwned;
+          if (this.sqliteRebuildTransactionOwned) {
+            await this.assertSqliteForeignKeysSuspended(
+              tx as DatabaseInterface,
+            );
+          }
           const results = await txTracker.applyAll(definitions, {
             ...options,
             atomic: false,
@@ -834,6 +851,8 @@ export class MigrationTracker {
             throw new AtomicMigrationRollback(results, failed);
           }
 
+          if (this.sqliteRebuildTransactionOwned)
+            await this.checkSqliteForeignKeys(tx as DatabaseInterface);
           return results;
         });
 
@@ -1256,6 +1275,72 @@ export class MigrationTracker {
     return (result.rows as MigrationRow[]).map(hydrateMigrationRow);
   }
 
+  private needsSqliteRebuildSafety(statements: string[]): boolean {
+    return (
+      this.dbEngine === 'sqlite' &&
+      !this.sqliteRebuildTransactionOwned &&
+      statements.includes(SQLITE_RELAX_REBUILD_MARKER)
+    );
+  }
+
+  private async assertSqliteForeignKeysSuspended(
+    db: DatabaseInterface,
+  ): Promise<void> {
+    const result = await db.query('PRAGMA foreign_keys');
+    if (Number(result.rows[0]?.foreign_keys) !== 0) {
+      throw new Error(
+        'SQLite rebuild requires an exclusive connection outside an active transaction; foreign key suspension failed',
+      );
+    }
+  }
+
+  private async checkSqliteForeignKeys(db: DatabaseInterface): Promise<void> {
+    if ((await db.query('PRAGMA foreign_key_check')).rows.length > 0) {
+      throw new Error(
+        'SQLite rebuild foreign key validation failed; transaction rolled back',
+      );
+    }
+  }
+
+  private async assertSqliteForeignKeySetting(expected: number): Promise<void> {
+    const restored = Number(
+      (await this.db.query('PRAGMA foreign_keys')).rows[0]?.foreign_keys,
+    );
+    if (restored !== expected)
+      throw new Error(
+        'SQLite rebuild could not restore foreign key enforcement',
+      );
+  }
+
+  /** SQLite ignores FK changes inside a transaction. Verify on both connections. */
+  private async withSqliteRebuildSafety<T>(work: () => Promise<T>): Promise<T> {
+    if (!this.db.transaction)
+      throw new Error('SQLite rebuild requires transaction support');
+    const foreignKeys = Number(
+      (await this.db.query('PRAGMA foreign_keys')).rows[0]?.foreign_keys,
+    );
+    const legacy = Number(
+      (await this.db.query('PRAGMA legacy_alter_table')).rows[0]
+        ?.legacy_alter_table,
+    );
+    if (![0, 1].includes(foreignKeys) || ![0, 1].includes(legacy))
+      throw new Error('Cannot read SQLite rebuild connection settings');
+    try {
+      await this.db.query(SQLITE_RELAX_REBUILD_MARKER);
+      await this.assertSqliteForeignKeysSuspended(this.db);
+      this.sqliteRebuildTransactionOwned = true;
+      return await work();
+    } finally {
+      this.sqliteRebuildTransactionOwned = false;
+      try {
+        await this.db.query(`PRAGMA legacy_alter_table = ${legacy}`);
+      } finally {
+        await this.db.query(`PRAGMA foreign_keys = ${foreignKeys}`);
+        await this.assertSqliteForeignKeySetting(foreignKeys);
+      }
+    }
+  }
+
   /**
    * Execute SQL statements with appropriate transaction handling
    */
@@ -1274,11 +1359,23 @@ export class MigrationTracker {
    * Execute statements within a transaction (SQLite/DuckDB)
    */
   private async executeWithTransaction(statements: string[]): Promise<void> {
+    if (this.needsSqliteRebuildSafety(statements)) {
+      return this.withSqliteRebuildSafety(() =>
+        this.executeWithTransaction(statements),
+      );
+    }
+    statements = statements.filter(
+      (sql) => sql !== SQLITE_RELAX_REBUILD_MARKER,
+    );
     if (this.db.transaction) {
       await this.db.transaction(async (tx) => {
+        if (this.sqliteRebuildTransactionOwned)
+          await this.assertSqliteForeignKeysSuspended(tx as DatabaseInterface);
         for (const sql of statements) {
           await tx.query(sql);
         }
+        if (this.sqliteRebuildTransactionOwned)
+          await this.checkSqliteForeignKeys(tx as DatabaseInterface);
       });
     } else {
       // Fallback to sequential execution

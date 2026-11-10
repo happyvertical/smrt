@@ -156,6 +156,27 @@ CREATE TABLE _smrt_dispatch_subscriptions (
   UNIQUE(signal_type, subscriber)
 )`;
 
+/**
+ * `_smrt_ai_usage` before #4751's prompt_key / tier_requested / tier_resolved
+ * / run_id columns, with one pre-upgrade row.
+ */
+const LEGACY_AI_USAGE_TABLE = `
+CREATE TABLE _smrt_ai_usage (
+  id TEXT PRIMARY KEY,
+  provider TEXT NOT NULL,
+  model TEXT NOT NULL,
+  operation TEXT NOT NULL,
+  prompt_tokens INTEGER,
+  completion_tokens INTEGER,
+  total_tokens INTEGER,
+  estimated_cost REAL,
+  duration INTEGER NOT NULL,
+  class_name TEXT,
+  tenant_id TEXT,
+  tags TEXT,
+  created_at TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP
+)`;
+
 // ============================================================================
 // Tests
 // ============================================================================
@@ -174,6 +195,11 @@ describe('system schema evolution (issue #2376)', () => {
         `INSERT INTO _smrt_dispatch_subscriptions (id, signal_type, subscriber)
          VALUES ('sub-1', 'order.placed', 'worker')`,
       );
+      await upgraded.query(LEGACY_AI_USAGE_TABLE);
+      await upgraded.query(
+        `INSERT INTO _smrt_ai_usage (id, provider, model, operation, duration, tags)
+         VALUES ('usage-1', 'openai', 'gpt-4o', 'chat', 5, '{"promptKey":"legacy.key"}')`,
+      );
       await bootstrap(upgraded);
       const upgradedShape = await readSystemShape(upgraded);
 
@@ -191,6 +217,14 @@ describe('system schema evolution (issue #2376)', () => {
       );
       expect(rows.rows).toHaveLength(1);
 
+      // #4751: the new columns arrive NULL; no backfill, tags keep the copy.
+      const usage = await upgraded.query(
+        'SELECT prompt_key, run_id, tags FROM _smrt_ai_usage',
+      );
+      expect(usage.rows).toEqual([
+        { prompt_key: null, run_id: null, tags: '{"promptKey":"legacy.key"}' },
+      ]);
+
       await fresh.close?.();
       await upgraded.close?.();
     });
@@ -205,6 +239,7 @@ describe('system schema evolution (issue #2376)', () => {
       const upgraded = await freshDatabase();
       await upgraded.query(LEGACY_DISPATCH_TABLE);
       await upgraded.query(LEGACY_DISPATCH_SUBSCRIPTIONS_TABLE);
+      await upgraded.query(LEGACY_AI_USAGE_TABLE);
       await bootstrap(upgraded);
 
       const freshReport = await checkLiveSchemaParity({

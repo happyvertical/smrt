@@ -228,6 +228,13 @@ describePostgres('withPrincipalPermissionContext + Postgres RLS', () => {
       await adminDb.query('DELETE FROM permissions WHERE id = $1', [
         readPermissionId,
       ]);
+      await adminDb.query('DELETE FROM memberships WHERE user_id = $1', userId);
+      await adminDb.query('DELETE FROM roles WHERE id = $1', roleId);
+      await adminDb.query('DELETE FROM users WHERE id = $1', userId);
+      await adminDb.query('DELETE FROM tenants WHERE id IN ($1, $2)', [
+        tenantAId,
+        tenantBId,
+      ]);
     }
     roleName = '';
     clearCache();

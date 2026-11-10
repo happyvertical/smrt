@@ -1,6 +1,52 @@
 import { defineMessages } from '@happyvertical/smrt-ui/i18n';
 
 export const M = defineMessages({
+  'projects.governance.questions': 'Questions',
+  'projects.governance.questions_description':
+    'Facts the project still needs from its owners.',
+  'projects.governance.questions_empty': 'No project questions are waiting.',
+  'projects.governance.decisions': 'Decisions',
+  'projects.governance.decisions_description':
+    'Choices that need an owner and a recorded outcome.',
+  'projects.governance.decisions_empty': 'No project decisions are waiting.',
+  'projects.governance.open_count': '{count} open',
+  'projects.governance.owner': 'Owner:',
+  'projects.governance.question_context': 'Question context',
+  'projects.governance.decision_context': 'Decision context',
+  'projects.governance.answer': 'Answer',
+  'projects.governance.other': 'Other',
+  'projects.governance.other_answer': 'Other answer',
+  'projects.governance.recommended': 'Recommended',
+  'projects.governance.save_answer': 'Save answer',
+  'projects.governance.outcome': 'Outcome',
+  'projects.governance.choose_option': 'Select an option',
+  'projects.governance.rationale': 'Rationale',
+  'projects.governance.record_decision': 'Record decision',
+  'projects.interview.aria': 'Project interview',
+  'projects.interview.progress': 'Question {current} of {total}',
+  'projects.interview.answered_count': '{answered} of {total} answered',
+  'projects.interview.why': 'Why this matters',
+  'projects.interview.unblocks': 'What this unblocks',
+  'projects.interview.your_answer': 'Your answer',
+  'projects.interview.your_choice': 'Your choice',
+  'projects.interview.notes': 'Anything to add? (optional)',
+  'projects.interview.submit': 'Save and continue',
+  'projects.interview.navigation': 'Interview navigation',
+  'projects.interview.back': 'Back',
+  'projects.interview.skip': 'Skip for now',
+  'projects.interview.next': 'Next',
+  'projects.interview.recorded': 'Recorded answer',
+  'projects.interview.not_yours':
+    'Someone else on the project answers this one.',
+  'projects.interview.empty': 'There is nothing to answer right now.',
+  'projects.interview.complete_title': 'All done',
+  'projects.interview.complete_description':
+    'Thank you. Every question has an answer.',
+  'projects.interview.remaining_title': 'Almost there',
+  'projects.interview.remaining_description':
+    '{count} skipped and still waiting for an answer.',
+  'projects.interview.review_skipped': 'Answer skipped questions',
+
   'projects.development_request.type': 'Request type',
   'projects.development_request.feature': 'Feature',
   'projects.development_request.bug': 'Bug',

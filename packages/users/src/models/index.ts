@@ -40,6 +40,15 @@ export {
   UsersOAuthRefreshFamily,
   UsersOAuthRefreshGrant,
 } from './OAuthAuthorization.js';
+// Passkey credentials and consumed ceremony challenges (#3275)
+export {
+  type PasskeyChallengePurpose,
+  UsersPasskeyChallenge,
+} from './PasskeyChallenge.js';
+export {
+  type PasskeyDeviceType,
+  UsersPasskeyCredential,
+} from './PasskeyCredential.js';
 // Password credential (#3274)
 export { UsersPasswordCredential } from './PasswordCredential.js';
 export {
@@ -65,6 +74,7 @@ export {
   SESSION_DATA_KEYS,
   Session,
   type SessionAuthMethod,
+  STEP_UP_SIGN_IN_AUTH_METHODS,
 } from './Session.js';
 export { MAX_TENANT_HIERARCHY_DEPTH, Tenant } from './Tenant.js';
 export {

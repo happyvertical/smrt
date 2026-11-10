@@ -4,12 +4,25 @@
  * @packageDocumentation
  */
 
-import { SmrtCollection } from '@happyvertical/smrt-core';
+import {
+  type AuditContext,
+  SmrtCollection,
+  type SmrtCreateInput,
+} from '@happyvertical/smrt-core';
 import { CommissionPayout } from '../models/CommissionPayout.js';
+import { findByReplayKey, resolveReplayOwner } from '../replay-owner.js';
 import type { CommissionPayoutStatus } from '../types.js';
 
 export class CommissionPayoutCollection extends SmrtCollection<CommissionPayout> {
   static readonly _itemClass = CommissionPayout;
+
+  /** Persist the first routing snapshot atomically; a duplicate key must not upsert it. */
+  override async create(
+    options: SmrtCreateInput<CommissionPayout>,
+    context?: Partial<AuditContext>,
+  ): Promise<CommissionPayout> {
+    return super.create({ ...options, _insertOnly: true }, context);
+  }
 
   /** All payout batches for an earner, newest first. */
   async findByEarner(earnerId: string): Promise<CommissionPayout[]> {
@@ -29,13 +42,21 @@ export class CommissionPayoutCollection extends SmrtCollection<CommissionPayout>
     });
   }
 
-  /** Look up a payout by its idempotency natural key. */
+  /**
+   * Look up a payout by its idempotency natural key within one owner
+   * (#3305 D1): `options.tenantId` (the earner's tenant, for background
+   * settlement), else the active context; neither → global payouts only.
+   */
   async findByIdempotencyKey(
     idempotencyKey: string,
+    options: { tenantId?: string | null } = {},
   ): Promise<CommissionPayout | null> {
     if (!idempotencyKey) return null;
-    const results = await this.list({ where: { idempotencyKey }, limit: 1 });
-    return results[0] ?? null;
+    const owner = resolveReplayOwner(
+      options.tenantId,
+      'CommissionPayoutCollection.findByIdempotencyKey',
+    );
+    return findByReplayKey(this, 'idempotency_key', idempotencyKey, owner);
   }
 
   /**

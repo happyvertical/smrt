@@ -1,0 +1,126 @@
+/**
+ * The mounted Planner's section pages are the framework's
+ * `CookbookSectionPage` (smrt#3888): themed cards with the planner's heading
+ * and count-free section defaults. The overview grid renders after hydration, so this
+ * mounts the component in a DOM.
+ */
+import { flushSync, mount, tick, unmount } from 'svelte';
+import { afterEach, beforeEach, describe, expect, it } from 'vitest';
+import {
+  CookbookStore,
+  cookbookStore,
+} from '../src/lib/cookbook/store.svelte.ts';
+import { COOKBOOK_SCHEMA } from '../src/lib/cookbook/types.ts';
+import { setBasePath } from '../src/lib/planner/app.svelte.ts';
+import Planner from '../src/lib/planner/Planner.svelte';
+
+async function settle(): Promise<void> {
+  for (let i = 0; i < 40; i++) {
+    await tick();
+    await new Promise((resolve) => setTimeout(resolve, 0));
+  }
+  flushSync();
+}
+
+describe('the mounted Planner section page', () => {
+  let target: HTMLElement;
+  let app: ReturnType<typeof mount> | undefined;
+  const previous = new CookbookStore();
+
+  beforeEach(() => {
+    previous.apply(cookbookStore.snapshot());
+    cookbookStore.apply({
+      $schema: COOKBOOK_SCHEMA,
+      version: 1,
+      recipes: ['commerce.sales'],
+      features: [],
+      policies: [],
+    });
+    cookbookStore.loaded = true;
+    target = document.createElement('div');
+    document.body.append(target);
+  });
+  afterEach(() => {
+    if (app) unmount(app);
+    app = undefined;
+    target.remove();
+    document.body.innerHTML = '';
+    cookbookStore.apply(previous.snapshot());
+    cookbookStore.loaded = false;
+    setBasePath('');
+  });
+
+  it('renders default section pages without automatic record counts', async () => {
+    app = mount(Planner, { target, props: { basePath: '/planner' } });
+    await settle();
+    const page = target.querySelector(
+      '[data-smrt-component="CookbookSectionPage"]',
+    );
+    expect(page).not.toBeNull();
+    expect(page?.querySelector('header.section-heading h1')?.textContent).toBe(
+      'Sales',
+    );
+    const grid = page?.querySelector('[data-smrt-component="OverviewGrid"]');
+    expect(grid?.getAttribute('data-presentation')).toBe('card');
+    const counts = [
+      ...(page?.querySelectorAll('.smrt-shortcuts__count') ?? []),
+    ].map((node) => node.textContent?.trim() ?? '');
+    expect(counts).toEqual([]);
+    expect(
+      page?.querySelector('[data-smrt-component="MetricWidget"]'),
+    ).toBeNull();
+    expect(page?.textContent).not.toMatch(/\d+ in total/);
+  });
+
+  it('opens a cookbook from its fragment route, and Back returns to the grid', async () => {
+    app = mount(Planner, { target, props: { basePath: '/planner' } });
+    await settle();
+    location.hash = '#/configure/cookbooks/mechanic/';
+    window.dispatchEvent(new HashChangeEvent('hashchange'));
+    await settle();
+    const detail = () => target.querySelector('[data-cookbook-detail]');
+    expect(detail()?.getAttribute('data-cookbook-detail')).toBe('mechanic');
+    expect(target.querySelector('ul[aria-label="Cookbooks"]')).toBeNull();
+    location.hash = '#/configure/cookbooks/';
+    window.dispatchEvent(new HashChangeEvent('hashchange'));
+    await settle();
+    expect(detail()).toBeNull();
+    expect(target.querySelector('ul[aria-label="Cookbooks"]')).not.toBeNull();
+    location.hash = '';
+  });
+
+  it('returns to the grid on the bare configure route a detail was opened from', async () => {
+    location.hash = '#/configure/';
+    app = mount(Planner, { target, props: { basePath: '/planner' } });
+    await settle();
+    const go = async (hash: string) => {
+      location.hash = hash;
+      window.dispatchEvent(new HashChangeEvent('hashchange'));
+      await settle();
+    };
+    await go('#/configure/cookbooks/bakery/');
+    expect(target.querySelector('[data-cookbook-detail]')).not.toBeNull();
+    // What Back (history.back()) lands on: the route the card was clicked on.
+    await go('#/configure/');
+    expect(target.querySelector('[data-cookbook-detail]')).toBeNull();
+    expect(target.querySelector('ul[aria-label="Cookbooks"]')).not.toBeNull();
+    location.hash = '';
+  });
+
+  it('titles the document for the route it shows, never the previous one', async () => {
+    app = mount(Planner, { target, props: { basePath: '/planner' } });
+    await settle();
+    expect(document.title).toBe('Sales');
+    const heading = () => target.querySelector('main h2')?.textContent ?? '';
+    location.hash = '#/m/commerce/Order/';
+    window.dispatchEvent(new HashChangeEvent('hashchange'));
+    await settle();
+    expect(heading()).toContain(document.title);
+    expect(document.title).not.toBe('Sales');
+    location.hash = '#/configure/';
+    window.dispatchEvent(new HashChangeEvent('hashchange'));
+    await settle();
+    expect(document.title).toBe('Planner');
+    location.hash = '';
+  });
+});

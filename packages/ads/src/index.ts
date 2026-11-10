@@ -28,6 +28,8 @@ export {
   AdGroup,
   AdVariation,
 } from './models/index.js';
+// Recipes
+export { AdsCampaignsRecipe } from './recipes.js';
 // Types and enums
 export {
   AdEventType,

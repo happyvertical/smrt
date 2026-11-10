@@ -3,11 +3,15 @@
  * smrt-commerce loaded. Neither adopts the other's registration or table.
  */
 import type { SmrtObject } from '@happyvertical/smrt-core';
-import { afterAll, beforeAll, describe, it } from 'vitest';
+import { afterAll, beforeAll, describe } from 'vitest';
 import {
   assertLicenseSalesCoexist,
   defineConsumerLicenseSale,
 } from './helpers/consumer-license-sale.js';
+import { tenantIt } from './helpers/v2-tenant.js';
+
+// Commerce money documents require a tenant (#4021).
+const it = tenantIt();
 
 describe('consumer LicenseSale next to smrt-commerce (consumer first)', () => {
   let consumer: { ctor: typeof SmrtObject; dispose: () => void };

@@ -16,7 +16,8 @@ vi.mock('$app/environment', () => ({
   },
 }));
 vi.mock('@happyvertical/ai', () => ({ getAI: mocks.getAI }));
-vi.mock('../dev-ai.js', () => ({
+vi.mock('../dev-ai.js', async (importOriginal) => ({
+  ...(await importOriginal<typeof import('../dev-ai.js')>()),
   resolveDevAIConfig: mocks.resolveDevAIConfig,
 }));
 

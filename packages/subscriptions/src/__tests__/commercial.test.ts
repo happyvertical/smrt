@@ -735,6 +735,22 @@ describe('commercial usage tracer', () => {
       localAdjustments,
       { adapterType: type },
     );
+    const adjustedCharge = await localCharges.create({
+      id: '33333333-3333-4333-8333-333333333331',
+      tenantId: '11111111-1111-4111-8111-111111111111',
+      usageEventId: '44444444-4444-4444-8444-444444444441',
+      amount: 10,
+      status: 'approved',
+      approvedAt: new Date('2026-07-01T00:00:00Z'),
+    });
+    const ordinaryCharge = await localCharges.create({
+      id: '33333333-3333-4333-8333-333333333332',
+      tenantId: '11111111-1111-4111-8111-111111111111',
+      usageEventId: '44444444-4444-4444-8444-444444444442',
+      amount: 10,
+      status: 'draft',
+    });
+
     const originalTransaction = db.transaction;
     if (!originalTransaction) throw new Error('expected transaction support');
     let transactionEntered!: () => void;
@@ -757,22 +773,6 @@ describe('commercial usage tracer', () => {
       );
 
     try {
-      const adjustedCharge = await localCharges.create({
-        id: '33333333-3333-4333-8333-333333333331',
-        tenantId: '11111111-1111-4111-8111-111111111111',
-        usageEventId: '44444444-4444-4444-8444-444444444441',
-        amount: 10,
-        status: 'approved',
-        approvedAt: new Date('2026-07-01T00:00:00Z'),
-      });
-      const ordinaryCharge = await localCharges.create({
-        id: '33333333-3333-4333-8333-333333333332',
-        tenantId: '11111111-1111-4111-8111-111111111111',
-        usageEventId: '44444444-4444-4444-8444-444444444442',
-        amount: 10,
-        status: 'draft',
-      });
-
       const rolledBack = localService.adjust(
         String(adjustedCharge.id),
         -1,

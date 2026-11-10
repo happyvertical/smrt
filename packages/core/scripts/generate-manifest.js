@@ -40,6 +40,7 @@ async function generateManifest() {
           'src/**/*.test.ts',
           'src/**/*.spec.ts',
           'src/**/__tests__/**/*.ts',
+          'src/**/__test-*/**', // Temporary test projects are never package models (#4190)
           'src/**/*.d.ts',
           'src/scanner/**/*.ts',
           'src/vite-plugin/**/*.ts',

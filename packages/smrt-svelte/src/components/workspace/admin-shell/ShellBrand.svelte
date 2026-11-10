@@ -16,6 +16,8 @@ interface Props {
   logoAlt?: string;
   /** Custom brand content, receiving whether it is in the compact rail. */
   brand?: Snippet<[{ compact: boolean }]>;
+  /** Content rendered beside the brand, outside its home link. */
+  brandEnd?: Snippet<[{ compact: boolean }]>;
   /** Compact (rail) form: logo or the title's first letter. */
   compact?: boolean;
 }
@@ -27,6 +29,7 @@ let {
   logoSrc,
   logoAlt = '',
   brand,
+  brandEnd,
   compact = false,
 }: Props = $props();
 const { t } = useI18n();
@@ -45,12 +48,23 @@ const { t } = useI18n();
   {/if}
 {/snippet}
 
+{#snippet brandNode()}
 {#if homeHref}
   <a class="smrt-admin-shell__brand smrt-admin-shell__brand-link" class:compact href={homeHref} aria-label={title || t(M['ui.admin_shell.home'])}>
     {@render content()}
   </a>
 {:else}
   <div class="smrt-admin-shell__brand" class:compact>{@render content()}</div>
+{/if}
+{/snippet}
+
+{#if brandEnd}
+  <div class="smrt-admin-shell__brand-row" class:compact>
+    {@render brandNode()}
+    {@render brandEnd({ compact })}
+  </div>
+{:else}
+  {@render brandNode()}
 {/if}
 
 <style>
@@ -64,6 +78,16 @@ const { t } = useI18n();
     color: inherit;
     text-decoration: none;
   }
+  .smrt-admin-shell__brand-row {
+    display: flex;
+    align-items: center;
+    gap: var(--smrt-spacing-2);
+    min-inline-size: 0;
+    flex-shrink: 0;
+  }
+  .smrt-admin-shell__brand-row > :global(.smrt-admin-shell__brand) { flex: 1 1 auto; }
+  .smrt-admin-shell__brand-row.compact { flex-direction: column; margin-block-end: var(--smrt-spacing-2); }
+  .smrt-admin-shell__brand-row.compact > :global(.smrt-admin-shell__brand.compact) { margin-block-end: 0; }
   .smrt-admin-shell__brand-text { display: grid; min-width: 0; }
   .smrt-admin-shell__brand.compact { justify-content: center; margin-block-end: var(--smrt-spacing-2); }
   .smrt-admin-shell__brand-link:focus-visible { outline: 2px solid var(--smrt-color-primary); outline-offset: 2px; }

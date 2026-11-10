@@ -18,7 +18,12 @@ export interface UsersAuthAdapter {
   requestMagicLink?(input: { email: string }): Promise<void>;
   confirmMagicLink?(input: { token: string }): Promise<void>;
   signInWithOidc?(input: { providerId: string }): Promise<void>;
-  /** Provided only after #3275's server-side WebAuthn ceremony is installed. */
+  /**
+   * Provided only when the host supplies a `passkeyCeremony`. Build one with
+   * `createPasskeySignInCeremony()` against the routes of
+   * `createPasskeyCredentialHandlers()` (#3275): endpoint configuration alone
+   * cannot perform the browser ceremony.
+   */
   signInWithPasskey?(): Promise<void>;
   revokeSession?(sessionId: string): Promise<void>;
   revokeApiKey?(apiKeyId: string): Promise<void>;
@@ -52,8 +57,9 @@ export interface UsersAuthEndpointOptions {
     Record<Exclude<keyof UsersAuthAdapter, 'signInWithPasskey'>, string>
   >;
   /**
-   * A host-owned WebAuthn ceremony. Endpoint configuration alone cannot enable
-   * passkeys because it cannot perform the browser ceremony required by #3275.
+   * A host-owned WebAuthn ceremony, normally `createPasskeySignInCeremony()`.
+   * Endpoint configuration alone cannot enable passkeys because it cannot
+   * perform the browser ceremony (#3275).
    */
   passkeyCeremony?: NonNullable<UsersAuthAdapter['signInWithPasskey']>;
 }

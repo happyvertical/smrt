@@ -9,12 +9,15 @@ are not prerequisites for unrelated user-package work.
 
 | Module | Scope | Module doc |
 |---|---|---|
+| `src/permission-registry.ts` | portable permission metadata registration; same root/service singleton, no authority grants | [agents/permissions.md](agents/permissions.md#portable-metadata-registry-4765) |
 | `src/services/PermissionResolver.ts` | permission precedence, inherited memberships, guards, RLS, role seeding | [agents/permissions.md](agents/permissions.md) |
 | `src/services/OidcLoginService.ts`, collections and OIDC handlers | identity reconciliation, transaction boundaries, migration readiness | [agents/oidc-provisioning.md](agents/oidc-provisioning.md) |
 | `src/services/MobileAuthService.ts` | mobile handshake, bearer sessions, bootstrap extension boundary | [agents/mobile-auth.md](agents/mobile-auth.md) |
 | `src/services/TerminalAuthService.ts`, `src/services/LoginAttemptLimiter.ts`, `src/collections/LoginAttemptCollection.ts` | terminal approval concurrency, shared login budget and lockout (#3273), retry-safe database fixtures | [agents/terminal-auth-testing.md](agents/terminal-auth-testing.md) |
 | `src/services/DeviceCredentialService.ts` | per-person PIN layered on a device session (#3276), verifier seam for other credential kinds | this file, "Security boundaries" |
 | `src/services/PasswordCredentialService.ts`, `src/sveltekit/password-handlers.ts` | email + password sign-in and password lifecycle (#3274); shared scrypt in `credential-hash.ts` | this file, "Security boundaries"; README "Password sign-in" |
+| `src/services/PasskeyCredentialService.ts`, `src/sveltekit/passkey-handlers.ts`, `src/svelte/passkey.ts` | passkey (WebAuthn) sign-in and passkey lifecycle (#3275); library does all verification | this file, "Security boundaries"; README "Passkey sign-in" |
+| `src/services/TenantInvitationService.ts`, `src/services/MailboxAuthenticationService.ts` | exact-role invitations, preserved identity, one-use generations and embedded transaction send budgets | [agents/family-invitations.md](agents/family-invitations.md) |
 | `src/retention.ts` | expired session/token/CLI-auth reaping and retention sweep wiring | [agents/retention.md](agents/retention.md) |
 
 ## Models and authority
@@ -78,6 +81,9 @@ are not prerequisites for unrelated user-package work.
   them on failure, release on success or abort, never skip the reserve.
   Limiter writes are raw SQL and bypass the change feed; the audit sink is the
   observability seam, and it must never throw into the sign-in path.
+  Subject and source budgets are sized independently (#3531); `source: false`
+  ignores the source key, so a reservation then needs a subject (fail closed).
+  The `source-locked` audit entry never carries a subject or caller metadata.
 - `DeviceCredentialService` accepts a person credential only from a
   first-class session whose `authMethod` is a device-enrollment method
   (`terminal` by default) and that the host's `assertEnrolledDevice` confirms.
@@ -96,7 +102,12 @@ are not prerequisites for unrelated user-package work.
   `setPin` ends that session; do not grant it authority another way.
 - `UsersPasswordCredential` is one row per person, sensitive, with no
   generated surface; `PasswordCredentialService` and its handlers are its only
-  read/write paths. Sign-in normalizes the email like `emailKey`, reserves
+  session-authorized read/write paths. The separate Node `./operator` entrypoint
+  provisions new PostgreSQL owners from trusted database custody, atomically;
+  never mount it in a browser/REST/MCP handler. Exact retries verify existing
+  credentials without writes; partial/conflicting identities fail closed.
+  See README "Trusted deployment owner provisioning".
+  Sign-in normalizes the email like `emailKey`, reserves
   before work, always runs one scrypt verify (dummy hash when absent), never
   creates a user, and maps every non-rate-limit refusal to one
   `PasswordCredentialError`. It re-checks the credential after the mint (a
@@ -109,6 +120,58 @@ are not prerequisites for unrelated user-package work.
   set; `users.password.manage` follows the PIN's single-tenant target
   rule and never resets the actor's own. Layered sessions never manage
   passwords; a `mustChange` sign-in mints an empty ceiling.
+  `replaceForgottenPassword` (#3905, opt-in `recovery`) is the only
+  self-service write without the current password: it decides on the stored
+  session row (owner, first-class, no ceiling, listed non-password/pin
+  `authMethod`, fresh `outOfBandProofAt` stamp) and ends every session,
+  its own included. Never set that stamp from client input.
+- `UsersPasskeyCredential` (many per person) and `UsersPasskeyChallenge` (consumed
+  challenge ledger) are sensitive with no generated surface;
+  `PasskeyCredentialService` and its handlers are the only paths. Verification is
+  `@simplewebauthn/server`, loaded on first use (its `reflect-metadata` polyfill is process-wide) and external in the build; never hand-roll COSE/CBOR. Sign-in reserves on
+  the submitted credential id before any work, requires user verification, checks
+  user handle and a strictly advancing counter (`reason: 'counter'`), mints, then
+  re-checks with a guarded counter UPDATE; a ceremony is an HMAC-signed
+  `ceremonyId` consumed into the unique ledger (replay = refuse; set
+  `challengeSecret` for multi-process). Unique arbiters are
+  `INSERT … ON CONFLICT DO NOTHING`, never a caught constraint error. Register and
+  self-remove need a session authenticated within `freshSessionSeconds`, decided
+  on the stored row (`Session.getAuthenticatedAt()`: server-set
+  `data.authenticatedAt`, which tenant-switch rotation carries forward, else
+  `created_at`; malformed fails closed; `setSessionData` refuses the key),
+  first-class, no ceiling, and its STORED `authMethod` in `freshAuthMethods` (default password/passkey/oidc/magic-link; never `terminal`, whose approval mints a fresh session for any holder of a stale one, nor `pin`); self list/rename also refuse a ceiling; `users.passkey.manage` follows the PIN's
+  single-tenant rule, and `removeAllPasskeys` is admin-only, never self. Sessions
+  end before and after every removal; `SESSION_DATA_KEYS.passkeyCredentialId` is
+  server-set (`setSessionData` refuses it). State-changing handlers require
+  `application/json` (415). Challenge rows are reaped only 10 minutes past expiry
+  (clock skew).
+- Step-up (#4841, `src/step-up.ts`, subpath `./step-up`): `requireRecentAuthentication`
+  decides on `SessionContext.reauthenticatedAt`, derived from the stored row:
+  `data.reauthenticatedAt` (server-set through `SessionCollection.markReauthenticated`
+  only after a deliberate fresh authentication; `setSessionData` refuses it;
+  extend/activity never move it) or the sign-in time of a password or passkey
+  session only (`STEP_UP_SIGN_IN_AUTH_METHODS` = `password`, `passkey`; an OIDC
+  or magic-link SIGN-IN, `terminal`, `pin`, `mobile` never count: an unlocked
+  stolen device can complete them without the person). Rule: an EXISTING
+  session never counts as fresh by itself; a DELIBERATE fresh authentication
+  with any supported method does, so an OIDC-only or magic-link-only owner can
+  still step up. Methods, all stamping the EXISTING session (never minting one),
+  all refusing layered/PIN/ceilinged sessions (`Session.isStepUpEligible`):
+  `PasswordCredentialService.stepUp` (limiter-guarded password check);
+  `OidcLoginService.beginStepUp`/`completeStepUp` (authorization request with
+  `prompt=login` + `max_age=0`; the transaction is stored on the session as
+  `data.oidcStepUpIntent`, taken at the callback so it is single use; the ID
+  token must verify as at sign-in AND carry `auth_time` inside the window, not
+  before the intent started, not future; its issuer+subject must be an existing
+  `OidcIdentity` of the session user's own profile; a provider that omits
+  `auth_time` or ignores `prompt`/`max_age` is refused);
+  `MagicLinkService.requestStepUp`/`consumeStepUp` (token claim `purpose:
+  step_up` + session digest + user id, TTL <= 300 s, single use; `verify` and
+  `inspect` refuse it so it cannot sign in; `consumeStepUp` refuses a link
+  without that purpose). Every step-up refusal is one `StepUpRequiredError`
+  (`step_up_required`) that does not say which check failed. A passkey owner
+  re-authenticates with a fresh passkey sign-in. Keep the entry free of
+  side-effect imports.
 - A layered session whose tenant differs from its parent's never loads (null
   is allowed: narrower). Limiter rows carry `retain_until`; retention must
   not fall back to a process-wide horizon.
@@ -150,3 +213,104 @@ Start with the relevant test file via `test -- src/__tests__/<file>.test.ts`.
 Run `test:postgres` for RLS, principal context, OIDC, or terminal-auth database
 changes. `typecheck` includes Svelte accessibility checks; plain `tsc` is
 insufficient. Follow root knowledge freshness checks before shipping.
+
+## Pending invitations
+
+`TenantInvitationService.create({ db: tx, transaction: 'caller' }).prepare({
+tenantId, email, roleSlug })` is a trusted host integration seam. The caller
+must authorize the destination tenant and system role, serialize its invitation
+scope, and own the entire transaction. It prepares only pending User and
+Membership records, with a canonical global Person and email reservation;
+it never proves email ownership, activates access, sends email, or mints login
+credentials. Existing canonical User/Profile links remain unchanged; unowned
+same-email Profiles require explicit reconciliation. Pending retries reuse rows,
+active memberships remain active with their existing role, and inactive or
+conflicting memberships fail closed. Caller failures must roll back the whole
+transaction; retry identity uniqueness conflicts only after rollback. Run the
+profile/user email-key backfills before using this service.
+
+`issue({ membershipId })` requires the host to authorize that exact destination
+and returns a signed single-use `{ membershipId, token, expiresAt }`; secure
+delivery is the host’s responsibility (no email is sent). Configure `secret` and
+optional `tokenExpiry` (1–604800 seconds, default one day) at service creation.
+`accept({ membershipId, token, sessionId, expectedUserId? })` consumes the tenant
+grant only after validating an independently authenticated, active exact User's
+stored first-class OIDC, magic-link, password or passkey session. Layered,
+permission-ceiling, terminal and unknown sessions fail closed. It activates only
+the Membership; reuse/switch that session through canonical session APIs.
+Never mint global identity sessions from an operator-copyable invitation.
+
+For a new pending User, wire `authorizeOidcOwner(context, { membershipId, token })`
+only into the canonical protocol-verified OIDC `authorizeProfileOwner` callback.
+It requires the exact caller transaction, strict `email_verified: true` and the
+exact canonical invitee email, consumes the grant and activates pending User
+and Membership atomically before returning `{ profile, user, tenantId, membershipId }`.
+Arbitrary claims must never reach this trusted callback seam. The canonical
+binder still verifies ownership and issuer/subject authority before commit.
+The signed scope fixes user, profile, tenant, membership and role; expiration,
+replay, changed bindings, inactive membership and suspended users fail closed.
+Nonce consumption and activation roll back together. `TenantInvitationError`
+is an expected 400/403 refusal;
+`MagicLinkError` represents invalid, expired or replayed proof. Database failures
+remain distinct. Treat tokens as secrets, prefer URL fragments and POST bodies,
+and never log or persist a copy outside the canonical token ledger.
+
+
+## Independent emailed mailbox authentication
+
+`MailboxAuthenticationService.create({db:tx,transaction:'caller',secret,loginLimiter})`
+requests and verifies returning-client login without creating identities/sessions.
+`request({email,sourceKey,deliver})` returns only `{requested:true}` for known,
+unknown, malformed, pending, inactive or unauthorized accounts. The trusted server
+`deliver({email,token,expiresAt})` callback sends only to the eligible canonical
+active User's email; never expose a proof in HTTP responses/operator UI/logs,
+including development. Ten-minute one-use proofs bind immutable User/Profile ids.
+`authenticate({token,expectedUserId?,sessionId?})` rechecks canonical identity and
+active tenant membership before consuming proof; returns only verified
+`{userId,profileId,tenantId}` for the host's canonical magic-link session mint.
+Existing signed-in identity must match; supplied sessions cannot have a parent,
+permission ceiling, terminal/PIN/unknown method, or inactive principal.
+
+For pending invitation onboarding, `requestMailboxAuthentication({membershipId,
+token:projectGrant,sourceKey,deliver})` inspects but never consumes the signed
+project grant, then delivers a DIFFERENT mailbox proof to the fixed invitee.
+Only `{expiresAt}` is returned. `authenticateMailbox({membershipId,
+invitationToken:projectGrant,token:mailedProof,expectedUserId?,sessionId?})` claims
+BOTH proof nonces and activates pending canonical User/exact Membership in the
+same caller transaction. Mailbox proof issuer binds all invitation ids, role and
+SHA256 of the exact grant. A copied operator-visible grant cannot authenticate
+identity. Repeated email requests do not burn the grant; only the first completed
+authentication can claim it. Existing active-session/OIDC paths remain supported.
+
+All refusals/caller failures must roll back the whole caller transaction. Mail
+transport must reject on failure. Delivery is an external effect before commit:
+a successfully delivered but rolled-back proof is unusable; retry may send another
+mail. No session/authentication is valid without committed proof claims. The host
+must set a bounded transport timeout and never return transport payloads/secrets.
+No generic outbox/provider is required; compose the existing SDK email transport.
+
+Both mail request operations REQUIRE a root-executor canonical
+`LoginAttemptLimiter` passed as `loginLimiter`; missing limiters fail before
+nonce/budget writes or delivery. Completion-only operations may omit it. Supply
+the limiter independently from the caller transaction so
+caller rollbacks cannot release send budgets (SQLite single-connection fixtures
+cannot prove that production-pool separation). `sourceKey` is a trusted server
+client-address key, never request-controlled forwarded headers; limiter hashes
+and peppers it, never stores raw addresses/email. Each request retains its budget
+through window expiry via `retainOnSuccess`, regardless of account eligibility.
+Handle `LoginRateLimitError` with the same generic request response plus retry
+policy. Returning request has a 250ms response floor; delivery latency remains
+transport-dependent, so do not claim constant timing. Malformed/expired/replayed
+proofs raise `MagicLinkError`; invitation binding/status refusals also use
+`TenantInvitationError`. Database/transport faults remain distinguishable server
+failures. Never swallow an error and commit a partially consumed transaction.
+
+`MagicLinkService.inspect()` validates signed live nonce without claiming it;
+it is preparation, never authentication. `verify()` remains the atomic claim.
+Optional generated signed `subject` binds immutable identity; legacy callers
+without a subject retain their existing result shape.
+
+Focused matrix: `mailbox-authentication.test.ts` runs in memory SQLite by default;
+`TEST_DB_ADAPTER=postgres` plus an explicit isolated `DATABASE_URL` creates a unique
+schema per scenario and also exercises concurrent invitation/login proof claims.
+It is registered in `test:postgres`; no shared local service fallback is used.

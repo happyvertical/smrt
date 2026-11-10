@@ -170,6 +170,49 @@ describe('natural-key upsert ownership', () => {
     }
   });
 
+  it('insert-only opt-in preserves generated names but refuses explicit adoption', async () => {
+    const create = async (slug?: string, preserveDerivedSlug = true) => {
+      const item = new NkLeague({
+        db,
+        tenantId: TENANT_A,
+        name: 'Repeated name',
+        slug,
+        _skipLoad: true,
+      });
+      await item.initialize();
+      item.requireInsertOnSave({ preserveDerivedSlug });
+      await item.save();
+      return item;
+    };
+    const first = await create();
+    const second = await create();
+    expect(second.id).not.toBe(first.id);
+    expect(second.slug).toBe('repeated-name-2');
+    await expect(create(first.slug!)).rejects.toMatchObject({
+      code: 'VALIDATION_UNIQUE_CONSTRAINT',
+    });
+    await expect(create(undefined, false)).rejects.toMatchObject({
+      code: 'VALIDATION_UNIQUE_CONSTRAINT',
+    });
+    const strict = new NkLeague({
+      db,
+      tenantId: TENANT_A,
+      name: 'Repeated name',
+      _skipLoad: true,
+    });
+    await strict.initialize();
+    strict.requireInsertOnSave();
+    strict.requireInsertOnSave({ preserveDerivedSlug: true });
+    await expect(strict.save()).rejects.toMatchObject({
+      code: 'VALIDATION_UNIQUE_CONSTRAINT',
+    });
+    first.name = 'Updated by identity';
+    await first.save();
+    expect((await db.get('nk_leagues', { id: first.id }))?.name).toBe(
+      'Updated by identity',
+    );
+  });
+
   describe('an undeclared tenantId field makes the default key tenant-led', () => {
     it('resolves (tenant_id, slug, context) for the conflict target', () => {
       expect(ObjectRegistry.getTenantColumn('NkLeague')).toBeUndefined();

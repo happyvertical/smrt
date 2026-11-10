@@ -64,6 +64,7 @@ import {
   toSnakeCase,
 } from './utils';
 import { chunkArray, IN_LIST_CHUNK_SIZE } from './utils/chunk';
+import { jsonValuesEqual, parseJsonContainerText } from './utils/json-equal';
 
 const logger = createLogger({ level: 'info' });
 
@@ -701,6 +702,16 @@ export class SmrtCollection<ModelType extends SmrtObject> extends SmrtClass {
     );
   }
 
+  /** Discriminators visible through this STI class, including its descendants. */
+  private getStiReadTypes(itemQualifiedName: string): string[] {
+    return [
+      itemQualifiedName,
+      ...ObjectRegistry.getDescendants(itemQualifiedName)
+        .filter((name) => ObjectRegistry.getTableStrategy(name) === 'sti')
+        .sort(),
+    ];
+  }
+
   /** Apply and validate this collection's owned STI discriminator predicate. */
   private applyStiReadScope(
     where: SmrtListWhereClause<ModelType> | undefined,
@@ -712,9 +723,14 @@ export class SmrtCollection<ModelType extends SmrtObject> extends SmrtClass {
     const isChild = stiBase !== null && stiBase !== itemQualifiedName;
 
     if (stiScope === undefined) {
-      return isChild
-        ? andWhereCondition(where, { _meta_type: itemQualifiedName })
-        : where;
+      if (!isChild) return where;
+      const types = this.getStiReadTypes(itemQualifiedName);
+      return andWhereCondition(
+        where,
+        types.length === 1
+          ? { _meta_type: itemQualifiedName }
+          : { '_meta_type in': types },
+      );
     }
     if (
       !stiScope ||
@@ -936,7 +952,12 @@ export class SmrtCollection<ModelType extends SmrtObject> extends SmrtClass {
   ): string {
     if (!orderBy) return '';
 
-    const orderByItems = Array.isArray(orderBy) ? orderBy : [orderBy];
+    // Each item may itself be a comma-separated list (`'a DESC, b ASC'`), so
+    // flatten, trim, and drop empty terms (a trailing comma) before parsing.
+    const orderByItems = (Array.isArray(orderBy) ? orderBy : [orderBy])
+      .flatMap((item) => String(item).split(','))
+      .map((item) => item.trim())
+      .filter((item) => item.length > 0);
     if (orderByItems.length === 0) return '';
 
     const itemClassName = this.getResolvedItemClassName();
@@ -1778,9 +1799,20 @@ export class SmrtCollection<ModelType extends SmrtObject> extends SmrtClass {
 
       const columnName = this.toDbColumnName(fieldName);
       const quotedColumn = this.quoteProjectionIdentifier(columnName);
+      const declaredType = String(
+        schema?.columns[columnName]?.type,
+      ).toUpperCase();
+      // DuckDB's JS binding returns native UUIDs as lossy `{ hugeint }`
+      // doubles that cannot be repaired after the read (#4459). A default
+      // `id` is a native UUID on DuckDB even when a manifest declares it TEXT,
+      // so cast it in the read; casting VARCHAR to VARCHAR is a no-op.
+      const isDefaultTextId =
+        columnName === 'id' &&
+        !customPrimaryKey &&
+        (declaredType === 'TEXT' || declaredType === 'UNDEFINED');
       const selectValue =
         this.getDatabaseEngine() === 'duckdb' &&
-        String(schema?.columns[columnName]?.type).toUpperCase() === 'UUID'
+        (declaredType === 'UUID' || isDefaultTextId)
           ? `CAST(${quotedColumn} AS VARCHAR)`
           : quotedColumn;
       selectExpressions.push(
@@ -2001,10 +2033,10 @@ export class SmrtCollection<ModelType extends SmrtObject> extends SmrtClass {
     if (relatedIsSTI) {
       const relatedStiBase = ObjectRegistry.getSTIBase(relatedQualifiedName);
       if (relatedStiBase && relatedStiBase !== relatedQualifiedName) {
-        relatedWhere = {
-          _meta_type: relatedQualifiedName,
-          ...(relatedWhere || {}),
-        };
+        relatedWhere = relatedCollection.applyStiReadScope(
+          relatedWhere,
+          undefined,
+        );
       }
     }
     relatedWhere = resolveMetaTypeInWhere(relatedWhere);
@@ -2946,10 +2978,13 @@ export class SmrtCollection<ModelType extends SmrtObject> extends SmrtClass {
     if (isSTI) {
       const stiBase = ObjectRegistry.getSTIBase(itemQualifiedName);
       if (stiBase && stiBase !== itemQualifiedName) {
-        where = {
-          _meta_type: itemQualifiedName,
-          ...where,
-        };
+        const types = this.getStiReadTypes(itemQualifiedName);
+        where = andWhereCondition(
+          where,
+          types.length === 1
+            ? { _meta_type: itemQualifiedName }
+            : { '_meta_type in': types },
+        ) as Record<string, unknown>;
       }
     }
 
@@ -3786,7 +3821,7 @@ export class SmrtCollection<ModelType extends SmrtObject> extends SmrtClass {
   private async createPolymorphic(
     className: string | null | undefined,
     options: Record<string, unknown>,
-    hydrationOptions: { hydrateOnly?: boolean } = {},
+    hydrationRow?: Record<string, unknown>,
   ): Promise<ModelType> {
     // Schema already initialized in Collection.create() static factory
 
@@ -3827,7 +3862,7 @@ export class SmrtCollection<ModelType extends SmrtObject> extends SmrtClass {
       decisions: this.options.decisions,
       db: this.db,
       _skipLoad: true,
-      ...(hydrationOptions.hydrateOnly
+      ...(hydrationRow
         ? {
             _reuseInitializedDb: true,
             _deferRuntimeInitialization: true,
@@ -3838,7 +3873,8 @@ export class SmrtCollection<ModelType extends SmrtObject> extends SmrtClass {
 
     // Instantiate the correct subclass
     const instance = new registeredClass.constructor(params);
-    if (hydrationOptions.hydrateOnly) {
+    if (hydrationRow) {
+      instance.hydrateSyncMetadata(hydrationRow);
       // Models need to distinguish authoritative DB hydration from a fresh
       // `_skipLoad` instance while initialize() captures immutable state.
       instance.markAsPersisted();
@@ -3972,7 +4008,11 @@ export class SmrtCollection<ModelType extends SmrtObject> extends SmrtClass {
       (acc, key) => {
         if (
           validKeys.has(key) &&
-          !this.areEquivalentValues(existingRecord[key], data[key])
+          !this.areEquivalentValues(
+            existingRecord[key],
+            data[key],
+            fields[key]?.type === 'json',
+          )
         ) {
           acc[key] = data[key];
         }
@@ -4059,11 +4099,17 @@ export class SmrtCollection<ModelType extends SmrtObject> extends SmrtClass {
   }
 
   /**
-   * Treat date-equivalent values as unchanged even if their runtime types differ.
+   * Whether `nextValue` would leave the stored `existingValue` unchanged.
+   *
+   * Dates compare by instant even across runtime types. Objects and arrays
+   * compare structurally in their JSON form (key-order-insensitive), and a
+   * JSON field held as text on one side is parsed before comparing, so an
+   * unchanged JSON field never forces a re-save (#4604).
    */
   private areEquivalentValues(
     existingValue: unknown,
     nextValue: unknown,
+    isJsonField = false,
   ): boolean {
     if (existingValue instanceof Date || nextValue instanceof Date) {
       const existingTime = this.toComparableTime(existingValue);
@@ -4074,7 +4120,21 @@ export class SmrtCollection<ModelType extends SmrtObject> extends SmrtClass {
       }
     }
 
-    return existingValue === nextValue;
+    if (existingValue === nextValue) return true;
+    const isObject = (value: unknown) =>
+      value !== null && typeof value === 'object';
+    // Parse JSON text only against an object on the other side: two strings
+    // are two JSON string values and already compared with `===` above.
+    if (isJsonField && isObject(existingValue) !== isObject(nextValue)) {
+      return jsonValuesEqual(
+        parseJsonContainerText(existingValue),
+        parseJsonContainerText(nextValue),
+      );
+    }
+    if (isObject(existingValue) && isObject(nextValue)) {
+      return jsonValuesEqual(existingValue, nextValue);
+    }
+    return false;
   }
 
   /**
@@ -4548,6 +4608,12 @@ export class SmrtCollection<ModelType extends SmrtObject> extends SmrtClass {
     return stiBase && stiBase !== itemQualifiedName ? itemQualifiedName : null;
   }
 
+  /** All discriminator values visible through this STI child collection. */
+  public getStiChildMetaTypes(): string[] {
+    const child = this.getStiChildMetaType();
+    return child ? this.getStiReadTypes(child) : [];
+  }
+
   /**
    * Execute a raw SQL query and hydrate results as collection item instances
    *
@@ -4667,7 +4733,7 @@ export class SmrtCollection<ModelType extends SmrtObject> extends SmrtClass {
       const polymorphicInstance = await this.createPolymorphic(
         typeof metaType === 'string' ? metaType : String(metaType),
         formattedData,
-        { hydrateOnly: true },
+        row,
       );
       return polymorphicInstance;
     }
@@ -4683,6 +4749,7 @@ export class SmrtCollection<ModelType extends SmrtObject> extends SmrtClass {
     };
 
     const instance = new this._itemClass(instanceParams);
+    instance.hydrateSyncMetadata(row);
     // Mark before initialize() so model lifecycle guards can safely snapshot
     // authoritative hydrated values without probing the database. A fresh
     // caller-created `_skipLoad` instance remains unpersisted.

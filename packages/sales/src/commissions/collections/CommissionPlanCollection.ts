@@ -16,6 +16,8 @@ import {
 import type {
   CommissionPlanComponent,
   CommissionPlanStatus,
+  WaterfallRecipientDescriptor,
+  WaterfallStep,
 } from '../types.js';
 
 /**
@@ -30,6 +32,10 @@ export interface CommissionPlanAmendmentChanges {
   components?: CommissionPlanComponent[];
   currency?: string;
   effectiveFrom?: Date | null;
+  effectiveTo?: Date | null;
+  steps?: WaterfallStep[];
+  remainderSink?: WaterfallRecipientDescriptor;
+  applicationFeeOffsetRecipient?: WaterfallRecipientDescriptor;
   metadata?: Record<string, unknown>;
 }
 
@@ -73,7 +79,9 @@ export class CommissionPlanCollection extends SmrtCollection<CommissionPlan> {
       });
       return (
         results.find(
-          (plan) => plan.effectiveFrom === null || plan.effectiveFrom <= at,
+          (plan) =>
+            (plan.effectiveFrom === null || plan.effectiveFrom <= at) &&
+            (plan.effectiveTo === null || plan.effectiveTo > at),
         ) ?? null
       );
     }
@@ -89,9 +97,10 @@ export class CommissionPlanCollection extends SmrtCollection<CommissionPlan> {
            AND plan_key = ?
            AND status = ?
            AND (effective_from IS NULL OR effective_from <= ?)
+           AND (effective_to IS NULL OR effective_to > ?)
          ORDER BY version DESC
          LIMIT 1`,
-        [planKey, 'active', atIso],
+        [planKey, 'active', atIso, atIso],
         { allowRawOnTenantScoped: true },
       );
       return results[0] ?? null;
@@ -107,9 +116,10 @@ export class CommissionPlanCollection extends SmrtCollection<CommissionPlan> {
          AND plan_key = ?
          AND status = ?
          AND (effective_from IS NULL OR effective_from <= ?)
+         AND (effective_to IS NULL OR effective_to > ?)
        ORDER BY CASE WHEN tenant_id = ? THEN 0 ELSE 1 END, version DESC
        LIMIT 1`,
-      [tenantId, planKey, 'active', atIso, tenantId],
+      [tenantId, planKey, 'active', atIso, atIso, tenantId],
       { allowRawOnTenantScoped: true },
     );
     return results[0] ?? null;
@@ -154,10 +164,24 @@ export class CommissionPlanCollection extends SmrtCollection<CommissionPlan> {
         changes.effectiveFrom !== undefined
           ? changes.effectiveFrom
           : latest.effectiveFrom,
+      effectiveTo:
+        changes.effectiveTo !== undefined ? changes.effectiveTo : null,
       components:
         changes.components !== undefined
           ? JSON.stringify(changes.components)
           : latest.components,
+      steps:
+        changes.steps !== undefined
+          ? JSON.stringify(changes.steps)
+          : latest.steps,
+      remainderSink:
+        changes.remainderSink !== undefined
+          ? JSON.stringify(changes.remainderSink)
+          : latest.remainderSink,
+      applicationFeeOffsetRecipient:
+        changes.applicationFeeOffsetRecipient !== undefined
+          ? JSON.stringify(changes.applicationFeeOffsetRecipient)
+          : latest.applicationFeeOffsetRecipient,
       metadata:
         changes.metadata !== undefined
           ? JSON.stringify(changes.metadata)

@@ -4,6 +4,7 @@ import {
   foreignKey,
   SmrtCollection,
   SmrtObject,
+  type SmrtSaveOptions,
   smrt,
 } from '@happyvertical/smrt-core';
 import { TenantScoped, tenantId } from '@happyvertical/smrt-tenancy';
@@ -35,19 +36,33 @@ export class Qualification extends SmrtObject {
   @tenantId() tenantId = '';
   /** Lowercase kebab-case, unique per tenant: `first-aid`. */
   key = '';
+  @field({
+    description: 'What the qualification is called, such as First aid.',
+  })
   name = '';
-  @field({ type: 'text' }) kind: QualificationKind = 'certification';
+  @field({
+    type: 'text',
+    description:
+      'The sort of qualification, such as a certificate or a licence.',
+  })
+  kind: QualificationKind = 'certification';
+  @field({ description: 'Who gives it out.' })
   issuingBody = '';
   /** Whether held qualifications of this kind expire. */
+  @field({ description: 'Whether it has to be renewed.' })
   expires = false;
   /** Default validity in months, applied when a grant gives no expiry. */
-  @field({ type: 'integer', nullable: true })
+  @field({
+    type: 'integer',
+    nullable: true,
+    description: 'How many months it lasts once given.',
+  })
   validityMonths: number | null = null;
   /** Whether a held qualification belongs to the person or the employment. */
   @field({ type: 'text' }) scope: QualificationScope = 'person';
   isActive = true;
 
-  override async save(): Promise<this> {
+  override async save(options?: SmrtSaveOptions): Promise<this> {
     assertHrWrite(this);
     const prior = this.id
       ? await this.db.get(this.tableName, { id: this.id })
@@ -57,7 +72,7 @@ export class Qualification extends SmrtObject {
         'HR_HISTORY_IMMUTABLE',
         'A qualification key and scope are immutable; deactivate it instead.',
       );
-    return (await super.save()) as this;
+    return (await super.save(options)) as this;
   }
   override async delete(): Promise<void> {
     throw new HrError(
@@ -113,17 +128,31 @@ const FROZEN_WHEN_REVOKED = [
 })
 export class HeldQualification extends SmrtObject {
   @tenantId() tenantId = '';
-  @foreignKey(Qualification, { onDelete: 'RESTRICT' }) qualificationId = '';
+  @field({ description: 'The qualification this person holds.' })
+  @foreignKey(Qualification, { onDelete: 'RESTRICT' })
+  qualificationId = '';
+  @field({ description: 'The person who holds it.' })
   @crossPackageRef('@happyvertical/smrt-profiles:Profile', {
     onDelete: 'RESTRICT',
   })
   profileId = '';
   @foreignKey('Employment', { nullable: true, onDelete: 'RESTRICT' })
   employmentId: string | null = null;
-  @field({ type: 'text' }) issuedOn: IsoDate = '';
-  @field({ type: 'text', nullable: true }) expiresOn: IsoDate | null = null;
+  @field({ type: 'text', description: 'The day it was given.' })
+  issuedOn: IsoDate = '';
+  @field({
+    type: 'text',
+    nullable: true,
+    description: 'The day it runs out. Empty if it does not.',
+  })
+  expiresOn: IsoDate | null = null;
+  @field({ description: 'The number printed on the certificate.' })
   certificateNumber = '';
-  @field({ type: 'text' }) status: HeldQualificationStatus = 'valid';
+  @field({
+    type: 'text',
+    description: 'Whether it is valid, expired, suspended or revoked.',
+  })
+  status: HeldQualificationStatus = 'valid';
   @crossPackageRef('@happyvertical/smrt-profiles:Profile', {
     nullable: true,
     onDelete: 'RESTRICT',
@@ -135,7 +164,7 @@ export class HeldQualification extends SmrtObject {
   @foreignKey('HeldQualification', { nullable: true, onDelete: 'RESTRICT' })
   renewalOfId: string | null = null;
 
-  override async save(): Promise<this> {
+  override async save(options?: SmrtSaveOptions): Promise<this> {
     assertHrWrite(this);
     const prior = this.id
       ? await this.db.get(this.tableName, { id: this.id })
@@ -164,7 +193,7 @@ export class HeldQualification extends SmrtObject {
         'HR_HISTORY_IMMUTABLE',
         'A revoked qualification never changes, apart from its verification; grant a new one.',
       );
-    return (await super.save()) as this;
+    return (await super.save(options)) as this;
   }
   override async delete(): Promise<void> {
     throw new HrError(
@@ -201,7 +230,7 @@ export class HeldQualificationChange extends SmrtObject {
   })
   actorProfileId = '';
 
-  override async save(): Promise<this> {
+  override async save(options?: SmrtSaveOptions): Promise<this> {
     assertHrWrite(this);
     if (this.id && (await this.db.get(this.tableName, { id: this.id })))
       throw new HrError(
@@ -209,7 +238,7 @@ export class HeldQualificationChange extends SmrtObject {
         'Held qualification changes are append-only.',
       );
     this.requireInsertOnSave();
-    return (await super.save()) as this;
+    return (await super.save(options)) as this;
   }
   override async delete(): Promise<void> {
     throw new HrError(

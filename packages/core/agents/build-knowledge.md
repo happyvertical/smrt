@@ -32,6 +32,17 @@ money amount; amounts are integer minor units and take no widget); an unknown
 value or a non-text field is an error. `ui.widget` is a hint only — it never changes
 the column type or validation.
 
+`ui.format` (#3718) says how a value is presented: `money` (an `integer` of
+minor units — the amount hint record pages format and total), `date` (a
+business date on a `datetime`, shown without a time), `datetime`, `percent`
+(a rate on a `decimal`/`integer`). Same channel, same emission, same build-time
+check against the field type. `@foreignKey(Target, { role: 'items' })` (or on
+`@crossPackageRef`) marks the declaring model as the target's line items; the
+scanner keeps it at `_meta.role`, the build rejects it on a non-reference or
+an unknown value, and the generated web relationship edge carries
+`role: 'items'` (edges without a role stay byte-stable). Both are hints: no
+schema, persistence or security effect.
+
 ## Presentation metadata (#3599)
 
 Pure helpers live in `src/ui-metadata.ts`, published browser-safe as
@@ -75,10 +86,123 @@ task/schedule worker registers the app's local objects (and, through the
 `.smrt/register.js` it imports, consumed packages' objects) with the same
 qualified identities and isolated manifests as the web server. It is a nested
 SSR build with no consumer plugins: only aliases pointing into the project
-sources (e.g. `$lib`) apply, and every other bare import stays external so the
-worker shares the installed `@happyvertical/smrt-core` registry. SvelteKit
+sources (e.g. `$lib`) apply, and bare imports stay external so the worker
+shares the installed `@happyvertical/smrt-core` registry. The sole exception is
+`@oxc-project/runtime` and its helper subpaths: Vite injects them when lowering
+decorators, but applications do not declare that compiler support dependency,
+so the artifact bundles them. SvelteKit
 virtual modules (`$env/*`, `$app/*`) are not available to a worker; an object
 importing one fails at worker startup. A failure fails the build.
+
+**Register imports stay Node-loadable (#4219).** `.smrt/register.js`
+(`generateRegistrationFile` in `src/consumer-plugin/index.ts`) is evaluated by
+plain Node — `smrt db:migrate`, every CLI, and the worker artifact above — as
+well as by Vite SSR, so it may only import modules Node can load. Each object
+is imported from its manifest `importPath` (the scanner's export-subpath match,
+e.g. `@happyvertical/smrt-products/models`). Each configured provider in
+`smrtDependencies` is also imported once so it is evaluated in Node's installed
+package context (#4187): the package root, unless the package declares that
+root as a Svelte entry (`isComponentBearingRoot`: a `svelte` field, or a `.`
+export with a `svelte` condition or a `.svelte`/`.css` target — e.g.
+`@happyvertical/smrt-products`, whose root re-exports its components and so
+reaches `@happyvertical/smrt-ui`'s `.svelte` files). Such a root is never
+imported and no subpath is substituted for it (`resolveProviderContextImport`
+returns `undefined`): its already-imported object entries establish the
+context, a provider contributing only nested objects needs none because the
+transitive loader uses only `import.meta.resolve(provider)`, and a substitute
+`./models` whose JS reached `.svelte` would re-create the failure. A package that publishes Svelte
+only under subpaths keeps its root import; the broader `isComponentBearingPackage`
+test (any Svelte export) only selects `ssr.noExternal` packages. A `svelte`
+condition counts even with a plain `.js` target — that is what svelte-package
+and Vite library builds emit for a root that re-exports components, and every
+Svelte root in this workspace (`smrt-products`, `smrt-ui`, `smrt-svelte`,
+`smrt-planner`) has that shape and fails under plain Node; a Node-safe root
+that declares `svelte` anyway only loses an optional context import.
+Transitive-only object modules are loaded through `importSmrtDependency()`
+from their provider's context, which needs no root import.
+
+**TypeScript-source providers are Vite-only (#3092).** A workspace package
+linked into the consumer may export TypeScript source (`"import":
+"./src/index.ts"`). Plain Node cannot evaluate it as a provider (no `./x.js` →
+`./x.ts` rewriting, no type stripping under `node_modules`, no decorator
+stripping), so any register import whose target resolves to `.ts`/`.mts`/
+`.cts`/`.tsx` (`resolvesToTypeScriptSource`, ESM `import` conditions from the
+consumer, or from the provider for transitive modules) is emitted as
+`SMRT_VITE_RUNTIME ? await import(...) : {}` with `SMRT_VITE_RUNTIME =
+Boolean(import.meta.env)`, and its export/collection consistency throws are
+gated the same way. Vite SSR therefore registers those constructors exactly as
+before, while `smrt db:migrate` and CLIs load the register, warn once on
+stderr, and rely on `.smrt/manifest.json` for those objects. Generation warns
+too. Not covered: the compiled worker artifact (`.smrt/runtime/register.js`) is
+a Vite build, so `import.meta.env` is constant there and the externalized
+TypeScript import still fails when a plain-Node worker starts. Publish a
+compiled JS export to register such objects outside Vite.
+Regression: the `#3092` tests in `index.test.ts` (plain-Node and real Vite
+`ssrLoadModule` loads of one generated register, and the transitive gating).
+
+Selective SSR compilation compares a JavaScript barrel's `svelte` export target
+against the package instance visible from its actual importer. pnpm may install
+the same version in multiple peer contexts; the app-root package directory is
+not the identity of a transitive import. Read that importer's installed export
+map and root together, preserving exact target matching. Plain server entries
+remain external; do not fix peer-context resolution by deduplicating app
+packages or bundling every server export (#4318).
+
+The same server/component split applies to consumer development SSR (#4475).
+Vite's dev import analysis ignores a resolver's `external` flag, so broad
+`noExternal` alone creates another module instance even when native Node and
+Vite resolve the identical file. That duplicates module-local enablement and
+interceptors while an AsyncLocalStorage singleton can still appear shared.
+The consumer resolver records only exact server entry files selected through
+the importer's installed export map. Its dev SSR environment `fetchModule`
+transport returns those files as native external modules; component barrels,
+Svelte and CSS continue through Vite. Production keeps bare external imports.
+Never externalize the complete component-bearing package or switch its mutable
+runtime flags to globals to mask duplicate execution. The real `createServer` /
+`ssrLoadModule` regression in `selective-ssr-dev.test.ts` initializes native
+server state and verifies root/subpath reads plus direct and transitive peer
+Svelte/CSS compilation in one dev request.
+
+Not covered by contract: a package whose root is a Svelte entry AND whose
+`@smrt()` objects are exported only from that root. The object loop must then
+import the root (it is the only module exporting the constructors) — statically
+when the app resolves the package, or through `importSmrtDependency()` when it
+is reached only through its provider — so Vite SSR works but plain Node can
+load the register only if that root happens to be Node-safe. Generation keeps
+the import and warns once per package (`declares a Svelte root entry`), asking
+to verify the root under plain Node or publish the objects from `./models` or
+`./objects`. The declaration is a heuristic: a Node-safe root that declares
+`svelte` only by convention gets the same warning (a false positive, harmless —
+the import is kept) and, when its objects come from subpaths, loses only its
+optional provider-context import. Regression: the `#4219` tests in
+`index.test.ts` (unit cases for `isComponentBearingRoot` /
+`resolveProviderContextImport`, a child-Node load of the generated register,
+the nested-only provider that gets no import, and the root-only and transitive
+warnings).
+
+**Gate: `pnpm check:node-roots`** (root script; run after `pnpm build`). It
+runs `scripts/survey-node-root-load.mjs --strict --allow=<packages>`, which
+spawns `node --input-type=module -e "await import('<name>')"` from every
+built workspace package whose manifest declares `@smrt()` objects and fails on
+any root plain Node cannot evaluate that is not allow-listed. The allow-list
+is explicit and lives in the root `package.json` script: currently only
+`@happyvertical/smrt-products`, whose root re-exports its Svelte components by
+documented contract. A new entry needs the same justification; a model root
+that merely starts importing `@happyvertical/smrt-ui` must be fixed, not
+allowed. `--strict` also fails when nothing was surveyed (run before
+`pnpm build`) and when an allow-listed package was not surveyed or now loads,
+so the list cannot go stale. `--all` surveys every published package,
+including those without objects, as a report.
+
+CI runs the gate in both Knowledge Freshness jobs of
+`.github/workflows/test-suite.yml`. In full mode (the merge queue, and every PR
+while `vars.CI_MERGE_QUEUE_ENABLED` is not `true`) it always runs. In affected
+mode it runs only when the `knowledge` paths filter matches, which covers
+`package.json` files and docs but not `packages/*/src/**`; a same-repo PR that
+makes a model root import smrt-ui only through source is therefore first
+caught in the merge queue, which still blocks the merge. The filter is not
+widened for this, because that would run the knowledge job on every PR. Run
+`pnpm check:node-roots` locally when changing a model package's root imports.
 
 ## Lightweight discovery
 
@@ -117,6 +241,9 @@ recorded `packageName` — a plain overwrite in either direction silently drops
 the other's objects, and the last pass of a multi-environment build is not
 reliably the aggregating one (#1760, #2925). `dist/manifest.json` stays
 local-only: a published package must not carry its dependencies' objects.
+Core's canonical generator excludes temporary `__test-*` source roots as well
+as test files and `__tests__`; prepack verifies fresh and reused manifests
+contain no test-artifact marker or fixture source provenance (#4190).
 
 The schema-version-1 object projection is additive and high-signal: it retains
 normalized tenant mode/field, explicit `cti`/`sti` strategy, conflict columns,
@@ -133,22 +260,40 @@ Config precedence for knowledge is defaults → top-level `knowledge` in
 `smrt.config.ts` → `packages[packageName].knowledge` → plugin option →
 object-level `@smrt({ knowledge })`.
 
-Test generation uses that same effective configuration and publishes knowledge
-matching the manifest it generated. Disabling knowledge removes a previous local
-knowledge artifact, so consumers cannot mistake it for current enabled output.
+Test generation writes no knowledge and never touches the production pair:
+`smrtVitestPlugin()` writes a per-run snapshot, and core's own `generate:test`
+writes only `src/manifest/test-manifest.json` (`outputMode: 'explicit'`; its
+Turbo outputs exclude `.smrt/`). Disabling knowledge in a production build
+removes a previous local knowledge artifact, so consumers cannot mistake it for
+current enabled output.
 `new ManifestBuilder(projectRoot)` keeps discovery, package identity, and output
 at that explicit root, including installed providers and external base classes;
 omitting the argument retains the current-working-directory
 behavior. Both manifest writers retain declared package dependencies when merging
 their local and consumed-object projections.
 
-Test manifests carry optional `artifactPurpose: 'test'`; dependency discovery
-skips those artifacts, including `.smrt` fallbacks. Unmarked runtime manifests,
+Test manifests carry `artifactPurpose: 'test'` and are valid only as the active
+test manifest of the run that registered them. Every other reader refuses them
+(`isRefusedTestArtifact`, #2760): `LocalManifestReader`, the runtime loader's
+local, workspace-source, external and explicit-path loads, dependency
+discovery (including `.smrt` fallbacks), CLI project/package discovery (the
+`db:*` schema gate), CLI data portability, and smrt-dev-mcp's runtime boot and
+knowledge reads. A test manifest left at `.smrt/manifest.json` by an older
+runner therefore fails closed (`missing_local_manifest`) instead of surfacing
+inline fixtures as phantom objects; regression
+`packages/vitest/src/__tests__/issue-2760-test-then-cli-parity.test.ts`. Unmarked runtime manifests,
 empty published providers, and source-only development providers remain eligible.
-`ManifestBuilder` accepts explicit `outputMode: 'dev' | 'build'`; omitted mode
-retains legacy filename inference. Vitest selects dev mode explicitly, so tests
-never replace a production `dist/manifest.json`. Relative output directories are
-resolved against the builder's project root.
+`ManifestBuilder` accepts explicit `outputMode: 'dev' | 'build' | 'explicit'`;
+omitted mode retains legacy filename inference. `'explicit'` writes only
+`outputDir/outputName`, never the unified `.smrt`/`dist` location. Vitest uses
+it for its per-run snapshot `.smrt/test-runs/<run>/manifest.json`, published
+per root in `__SMRT_TEST_MANIFEST_PATHS__` (`manifest/test-artifacts.ts`).
+`LocalManifestReader.loadLocal()` (and so the runtime loader and manifest test
+databases) reads that active snapshot before `.smrt/manifest.json` for the
+registered root only; `loadForExternalPackage()` never reads it, and a process
+outside the run never sees it (#4128). Core's own Vitest config registers `src/manifest/test-manifest.json`
+the same way. Relative output directories are resolved against the builder's
+project root.
 
 With `svelteKit.enabled`, `smrtPlugin()`'s transform prepends
 `import './smrt-register.js';` to the configured config module
@@ -173,6 +318,25 @@ admin auth.
 
 ## Vite Plugin
 
+Every generated file gated on a consumer dependency (`_resources` →
+`@happyvertical/smrt-users/sveltekit`, application-runtime config →
+`@happyvertical/smrt-app-runtime/sveltekit`, `_dev` →
+`@happyvertical/smrt-dev-mcp/dev-plane`) detects it through
+`consumerResolvesImport` (`src/vite-plugin/consumer-import.ts`, #3913): ESM
+import conditions anchored to the consumer package URL, using
+`import-meta-resolve`. A `types`/`import`-only export is valid; a CommonJS
+`createRequire.resolve` probe would falsely skip it, so new gated routes use
+the shared resolver. `generated-route-dependencies-packed-consumer.test.ts`
+proves all three against a real packed Core tarball plus minimal packages
+carrying the dependencies' real published export maps (direct, hoisted,
+absent); it does not exercise those packages' runtime graphs.
+Verify the selected target is an existing file because import-meta resolution
+can return URLs for missing files/directories. Missing/unexported dependencies
+remain skipped, ancestor-hoisted installs resolve normally, and handwritten
+`+server.ts`/`+server.js` ownership and explicit disablement remain unchanged.
+Do not change a package's export map to accommodate a mismatched detector.
+
+
 `src/vite-preset/` (`@happyvertical/smrt-core/vite`, `smrt()`) composes the Oxc
 decorator block, `smrtConsumer`, then `smrtPlugin` with the template path
 conventions. Its package list comes only from the `smrt({ packages })` option, or
@@ -181,7 +345,20 @@ conventions. Its package list comes only from the `smrt({ packages })` option, o
 byte-identical to the two-plugin form (`src/vite-preset/index.test.ts`). It
 also dedupes `@sveltejs/kit` (`smrt:shared-runtime`): SvelteKit matches
 `redirect()`/`fail()` by class, and a linked/workspace SMRT SvelteKit entry
-would otherwise import its own copy and turn redirects into 500s.
+would otherwise import its own copy and turn redirects into 500s. The preset
+also keeps the thin `@happyvertical/smrt-app-runtime/sveltekit` entry inside
+the SSR bundle: adapter-node bundles Kit itself, and an external runtime
+would load a separate class through Node even at the same installed version.
+Vite matches `ssr.noExternal` by package name, so a pre-resolver keeps the
+exact runtime root external and `ssr.external` keeps `./sveltekit-runtime`
+external. That implementation subpath is an internal composition boundary;
+apps keep importing `./sveltekit`. This avoids bundling native SQL dependencies.
+This split applies only to builds; development keeps normal SSR externalization
+and Kit dedupe because Vite's dev module runner ignores resolver external flags.
+Other runtime dependencies retain their normal externalization. Do not explicitly
+externalize app-runtime in an app config. The production regression in
+`packages/app-runtime/src/sveltekit-production.test.ts` exercises the final
+adapter-node HTTP handler using an installed copy of the published dist entry.
 
 **Package models over REST (#3749).** `consumer.packages` registers a package's
 models and gives `@smrt/web` (the consumer's `collectionDefinitions`, one per
@@ -276,3 +453,15 @@ and decorators), minus a leading `ClassName - ` / `ClassName: `, tags
 sentence boundary. `@internal` classes and classes without docs emit no key. It
 is not inherited from a parent class. Generated MCP tool descriptions are
 unchanged (they stay generic).
+
+## AGENTS.md discovery in a monorepo (#3476)
+
+`buildDomainKnowledgeManifest()` takes the agent doc from the project root, else from the nearest ancestor `AGENTS.md` up to the workspace root (the nearest directory with `pnpm-workspace.yaml`, else the git root, a directory containing `.git`). It never walks past that boundary, and with no boundary above the project root it checks only the root. `agentDocPath` stays relative to the project root (so an inherited doc reads `../../AGENTS.md`), and `agentDoc` and `sourceHashes.agents` are populated from it. Module docs linked from the doc (`moduleDocs`) are only followed when `AGENTS.md` sits at the project root, since their links resolve against that directory.
+
+## Host tool-name collisions (#4520)
+
+`smrtPlugin({ hostToolNames })` (or `smrt({ hostToolNames })` in `vite.config.ts`, which forwards it unchanged) takes `{ name, surface: 'workflow' | 'bespoke' | 'mcp', declaredBy }`
+declarations (`src/vite-plugin/host-tool-names.ts`). Host-vs-host duplicates fail at plugin
+construction; a host name shadowing a generated model tool fails after the scan. The same
+`declaredBy` on several surfaces is one operation and is allowed. Unlike the advisory
+intent-vs-generated check, these throw and fail the build.

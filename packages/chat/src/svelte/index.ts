@@ -84,6 +84,7 @@ export { default as ToolCallDisplay } from './components/agent/ToolCallDisplay.s
 export { default as AssistantChoiceCards } from './components/assistant/AssistantChoiceCards.svelte';
 export { default as AssistantComposer } from './components/assistant/AssistantComposer.svelte';
 export { default as AssistantDock } from './components/assistant/AssistantDock.svelte';
+export { default as AssistantQuestionForm } from './components/assistant/AssistantQuestionForm.svelte';
 export { default as AssistantThreadList } from './components/assistant/AssistantThreadList.svelte';
 export {
   ASSISTANT_CHOICE_MAX_OPTIONS,
@@ -111,6 +112,22 @@ export {
   createAssistantHttpActionClient,
   createAssistantHttpTransport,
 } from './components/assistant/assistant-http-client.js';
+// The dock's escaping Markdown renderer (#4505), for hosts' own surfaces.
+export { renderAssistantMarkdown } from './components/assistant/assistant-markdown.js';
+export {
+  ASSISTANT_QUESTION_KIND,
+  type AssistantAnswerQuestionInput,
+  type AssistantQuestion,
+  type AssistantQuestionAnswer,
+  type AssistantQuestionField,
+  type AssistantQuestionOption,
+  assistantQuestionDefaults,
+  assistantQuestionFromMessage,
+  describeAssistantQuestionAnswer,
+  matchAssistantQuestionText,
+  parseAssistantQuestion,
+  validateAssistantQuestionAnswer,
+} from './components/assistant/assistant-question.js';
 export {
   type AssistantAttachmentRef,
   type AssistantMessage,
@@ -199,6 +216,8 @@ export { default as MessageInput } from './components/messages/MessageInput.svel
 export { default as MessageItem } from './components/messages/MessageItem.svelte';
 export { default as MessageList } from './components/messages/MessageList.svelte';
 export { default as ThreadPanel } from './components/messages/ThreadPanel.svelte';
+export type { AiUnavailableNoticeProps } from './components/shared/AiUnavailableNotice.svelte';
+export { default as AiUnavailableNotice } from './components/shared/AiUnavailableNotice.svelte';
 export { default as Avatar } from './components/shared/Avatar.svelte';
 export { default as FileUpload } from './components/shared/FileUpload.svelte';
 export { default as LinkPreview } from './components/shared/LinkPreview.svelte';

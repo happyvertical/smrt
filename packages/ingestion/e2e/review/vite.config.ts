@@ -1,13 +1,13 @@
 import { randomUUID } from 'node:crypto';
-import { mkdtemp } from 'node:fs/promises';
-import { tmpdir } from 'node:os';
-import { join } from 'node:path';
 import { svelte } from '@sveltejs/vite-plugin-svelte';
 import { defineConfig } from 'vite';
 import type {
   ReferenceReviewHost,
   ReviewSession,
 } from '../../reference/review-host.js';
+import { createReviewFixture, type OwnedReviewFixture } from './fixture.js';
+
+let fixture: OwnedReviewFixture | undefined;
 
 export default defineConfig({
   oxc: { decorator: { legacy: true, emitDecoratorMetadata: true } },
@@ -22,20 +22,19 @@ export default defineConfig({
         >();
         // Provision the fixture schema before installing any request handler.
         const module = await server.ssrLoadModule('/reference/review-host.ts');
-        const app: ReferenceReviewHost =
-          await module.ReferenceReviewHost.provision(
-            await mkdtemp(join(tmpdir(), 'review-')),
-            {
-              feedback: {
-                version: 'browser-feedback1',
-                maxExamples: 5,
-                maxScan: 50,
-                maxBytes: 8000,
-                minimumSimilarity: 0.2,
-                authorize: async () => true,
-              },
+        fixture = await createReviewFixture((root) =>
+          module.ReferenceReviewHost.provision(root, {
+            feedback: {
+              version: 'browser-feedback1',
+              maxExamples: 5,
+              maxScan: 50,
+              maxBytes: 8000,
+              minimumSimilarity: 0.2,
+              authorize: async () => true,
             },
-          );
+          }),
+        );
+        const app: ReferenceReviewHost = fixture.app;
         const host = async () => app;
         server.middlewares.use(async (req, res, next) => {
           if (!req.url?.startsWith('/api/')) return next();
@@ -186,7 +185,7 @@ export default defineConfig({
             }
             const input = body.length ? JSON.parse(body.toString()) : {};
             const allowed: Record<string, string[]> = {
-              preview: ['itemId', 'attemptId', 'index', 'requestId'],
+              preview: ['itemId', 'attemptId', 'index', 'requestId', 'args'],
               decide: [
                 'actionId',
                 'expectedRevision',
@@ -205,6 +204,13 @@ export default defineConfig({
                 'expectedRevision',
                 'evidenceId',
                 'groups',
+                'requestId',
+              ],
+              instruct: [
+                'itemId',
+                'attemptId',
+                'expectedRevision',
+                'text',
                 'requestId',
               ],
               candidates: ['itemId', 'handlerId', 'handlerVersion', 'query'],
@@ -240,6 +246,15 @@ export default defineConfig({
                 'requestId',
                 'supersedesId',
               ],
+              startAction: [
+                'itemId',
+                'handlerId',
+                'handlerVersion',
+                'args',
+                'requestId',
+                'reason',
+              ],
+              resolve: ['itemId', 'disposition', 'requestId', 'reason'],
               revoke: [],
             };
             const operation = url.pathname.slice('/api/'.length);
@@ -257,7 +272,7 @@ export default defineConfig({
             let result: unknown;
             switch (operation) {
               case 'preview':
-                result = await app.preview(scope, input);
+                result = await app.previewForReview(scope, input);
                 break;
               case 'decide':
                 result = await app.decide(scope, input);
@@ -271,6 +286,9 @@ export default defineConfig({
               case 'split':
                 result = await app.split(scope, input);
                 break;
+              case 'instruct':
+                result = await app.instruct(scope, input);
+                break;
               case 'candidates':
                 result = await service.findCandidates(input);
                 break;
@@ -283,21 +301,32 @@ export default defineConfig({
               case 'feedback':
                 result = await service.recordFeedback(input);
                 break;
+              case 'startAction':
+                result = await app.startActionForReview(scope, input);
+                break;
+              case 'resolve':
+                result = await service.resolveItem(input);
+                break;
               case 'revoke':
                 await app.revoke(scope.actorId);
                 result = {};
                 break;
             }
             respond(200, result ?? {});
-          } catch {
+          } catch (error) {
+            // Fixture only: the safe message plus the service's refusal reason
+            // so browser tests can assert which gate refused. The UI never
+            // renders this body.
             respond(409, {
               error: 'Review unavailable; refresh current state',
+              reason: error instanceof Error ? error.message : 'unknown',
             });
           }
         });
-        server.httpServer?.once('close', () => {
-          void app.db.close?.();
-        });
+      },
+      async closeBundle() {
+        await fixture?.close();
+        fixture = undefined;
       },
     },
   ],

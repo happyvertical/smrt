@@ -33,16 +33,37 @@ import {
 } from '@happyvertical/smrt-tenancy';
 import type { DatabaseInterface, SqlAdapterType } from '@happyvertical/sql';
 import { buildAggregate } from './aggregate.js';
-import { adapterTypeFromDb, tenantColumn } from './refresh.js';
+import { adapterTypeFromDb } from './refresh.js';
+import { tenantColumn } from './registry-columns.js';
+import { describeRuntimeReportSourceFields } from './runtime-dimensions.js';
+import {
+  assertRuntimeReportFilterOperator,
+  coerceRuntimeReportValue,
+  humanizeRuntimeReportName,
+  normalizeRuntimeReportCell,
+  planRuntimeReportColumns,
+  type RuntimeReportColumn,
+  type RuntimeReportColumnType,
+  type RuntimeReportResult,
+  type RuntimeReportSourceDescription,
+  resolveRuntimeReportFieldPolicy,
+  unknownRuntimeReportField,
+} from './runtime-plan.js';
 import {
   RUNTIME_REPORT_LIMITS,
-  type RuntimeReportChart,
   RuntimeReportError,
   type RuntimeReportFilter,
   type RuntimeReportSpec,
-  runtimeReportSpecHash,
 } from './runtime-spec.js';
+import { runtimeReportSpecHash } from './runtime-spec-hash.js';
 import type { AggregateSelectExpr, AggregateSpec } from './types.js';
+
+export type {
+  RuntimeReportColumn,
+  RuntimeReportColumnType,
+  RuntimeReportResult,
+  RuntimeReportSourceDescription,
+} from './runtime-plan.js';
 
 /** A server-owned report source. The spec refers to it only by `id`. */
 export interface RuntimeReportSourceDefinition {
@@ -58,6 +79,14 @@ export interface RuntimeReportSourceDefinition {
    */
   collection?: string;
   description?: string;
+  /** Canonical public field names to expose; omitted means all eligible fields. */
+  fields?: readonly string[];
+  /** Canonical public field names to remove; exclusions always win. */
+  excludeFields?: readonly string[];
+  /** The natural date "by month" buckets (an invoice's issue date); derived when omitted. */
+  timeField?: string;
+  /** Fields worth grouping by, most useful first; derived when omitted. */
+  dimensions?: readonly string[];
 }
 
 export interface RuntimeReportCompileContext {
@@ -79,27 +108,6 @@ export interface RuntimeReportCompileContext {
   ) => void | Promise<void>;
 }
 
-export type RuntimeReportColumnType =
-  | 'string'
-  | 'integer'
-  | 'decimal'
-  | 'boolean'
-  | 'datetime'
-  | 'id';
-
-export interface RuntimeReportColumn {
-  id: string;
-  label: string;
-  role: 'dimension' | 'measure';
-  type: RuntimeReportColumnType;
-  /** Source field this column derives from (absent for a row count). */
-  field?: string;
-  fn?: string;
-  bucket?: string;
-  /** Field format hint carried from the model (for example `money`). */
-  format?: string;
-}
-
 export interface CompiledRuntimeReport {
   version: 1;
   specHash: string;
@@ -117,25 +125,10 @@ export interface CompiledRuntimeReport {
   tenant: { scoped: boolean; tenantId: string | null };
 }
 
-export interface RuntimeReportResult {
-  version: 1;
-  specHash: string;
-  title: string;
-  columns: RuntimeReportColumn[];
-  rows: Record<string, string | number | boolean | null>[];
-  rowCount: number;
-  /** True when more rows existed than the spec/host limit. */
-  truncated: boolean;
-  ranAt: string;
-  chart: RuntimeReportChart;
-}
-
 const ALIAS_PREFIX = 'r_';
-const UUID_PATTERN =
-  /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
-
 interface RegistryFieldShape {
   type?: string;
+  enum?: unknown;
   transient?: boolean;
   sensitive?: boolean;
   sensitivity?: unknown;
@@ -152,13 +145,17 @@ interface SourceField {
   type: RuntimeReportColumnType;
   format?: string;
   label: string;
+  enum?: readonly string[];
+  businessDate?: boolean;
 }
 
-function humanize(name: string): string {
-  return name
-    .replace(/([a-z\d])([A-Z])/g, '$1 $2')
-    .replace(/[_-]+/g, ' ')
-    .replace(/^./, (value) => value.toUpperCase());
+/** Declared values of a closed text field (manifest `enum`). */
+function enumOf(field: RegistryFieldShape): string[] | undefined {
+  const values = [field.enum, field._meta?.enum].find(Array.isArray) as
+    | unknown[]
+    | undefined;
+  const strings = values?.filter((v): v is string => typeof v === 'string');
+  return strings?.length ? strings : undefined;
 }
 
 function columnTypeFor(
@@ -190,7 +187,9 @@ function explicitColumn(field: RegistryFieldShape): string | undefined {
 }
 
 function strictFormat(field: RegistryFieldShape): string | undefined {
-  const candidates = [field.format, field._meta?.format];
+  // Manifests carry `@field({ ui: { format } })` as `_meta.ui.format`.
+  const ui = field._meta?.ui as { format?: unknown } | undefined;
+  const candidates = [field.format, field._meta?.format, ui?.format];
   return candidates.find(
     (value): value is string => typeof value === 'string' && value.length > 0,
   );
@@ -245,165 +244,96 @@ async function loadSourceFields(
   qualifiedName: string,
   tenantField: string | null,
   permissions: ReadonlySet<string>,
+  source: RuntimeReportSourceDefinition,
 ): Promise<Map<string, SourceField>> {
   const registered = (await ObjectRegistry.getAllFields(qualifiedName)) as Map<
     string,
     RegistryFieldShape
   >;
-  const fields = new Map<string, SourceField>();
+  const baseNames = new Map(
+    Object.keys(BASE_FIELDS).map((name) => [toSnakeCase(name), name]),
+  );
+  const columns = new Map<
+    string,
+    { name: string; field: RegistryFieldShape }[]
+  >();
   for (const [name, field] of registered) {
-    if (isExcluded(name, field, tenantField, permissions)) continue;
-    const type = columnTypeFor(field.type);
-    if (!type) continue;
-    const format = strictFormat(field);
-    fields.set(name, {
-      name,
-      column: toSnakeCase(explicitColumn(field) ?? name),
-      type,
-      ...(format ? { format } : {}),
-      label:
-        typeof field.description === 'string' && field.description.length > 0
-          ? field.description
-          : humanize(name),
-    });
+    const column = toSnakeCase(explicitColumn(field) ?? name);
+    const entries = columns.get(column) ?? [];
+    entries.push({ name, field });
+    columns.set(column, entries);
   }
   for (const [name, type] of Object.entries(BASE_FIELDS)) {
-    if (fields.has(name) || registered.has(name)) continue;
-    fields.set(name, {
-      name,
-      column: toSnakeCase(name),
-      type,
-      label: humanize(name),
-    });
+    const column = toSnakeCase(name);
+    if (!columns.has(column) && !registered.has(name)) {
+      columns.set(column, [
+        {
+          name,
+          field: {
+            type:
+              type === 'id' ? 'foreignKey' : type === 'string' ? 'text' : type,
+          },
+        },
+      ]);
+    }
+  }
+  // Collapse base-column aliases before applying either model or host policy.
+  // Any restriction on a physical column also protects its other spellings.
+  const knownNames = new Set<string>();
+  for (const [column, entries] of columns) {
+    for (const entry of entries)
+      knownNames.add(baseNames.get(column) ?? entry.name);
+  }
+  const { included, excluded } = resolveRuntimeReportFieldPolicy(
+    source,
+    knownNames,
+  );
+  const fields = new Map<string, SourceField>();
+  for (const [column, entries] of columns) {
+    if (
+      column === tenantField ||
+      column === 'tenant_id' ||
+      entries.some(
+        ({ name, field }) =>
+          isExcluded(name, field, tenantField, permissions) ||
+          excluded?.has(baseNames.get(column) ?? name),
+      )
+    )
+      continue;
+    for (const { name: registeredName, field } of entries) {
+      const name = baseNames.get(column) ?? registeredName;
+      if (fields.has(name) || (included && !included.has(name))) continue;
+      const type = columnTypeFor(field.type);
+      if (!type) continue;
+      const format = strictFormat(field);
+      const values = type === 'string' ? enumOf(field) : undefined;
+      fields.set(name, {
+        name,
+        column,
+        type,
+        ...(format ? { format } : {}),
+        ...(values ? { enum: values } : {}),
+        ...(type === 'datetime' && format === 'date'
+          ? { businessDate: true }
+          : {}),
+        label:
+          typeof field.description === 'string' && field.description.length > 0
+            ? field.description
+            : humanizeRuntimeReportName(name),
+      });
+    }
   }
   return fields;
 }
 
-function unknownField(path: string, name: string): never {
-  throw new RuntimeReportError(
-    'unknown_field',
-    path,
-    `'${name}' is not a field available on this source`,
-  );
-}
-
-function badOperation(path: string, message: string): never {
-  throw new RuntimeReportError('invalid_operation', path, message);
-}
-
-function badValue(path: string, message: string): never {
-  throw new RuntimeReportError('invalid_value', path, message);
-}
-
 type Condition = Record<string, unknown>;
-
-const OPERATORS_BY_TYPE: Record<
-  RuntimeReportColumnType,
-  readonly RuntimeReportFilter['op'][]
-> = {
-  string: [
-    'eq',
-    'ne',
-    'gt',
-    'gte',
-    'lt',
-    'lte',
-    'in',
-    'notIn',
-    'contains',
-    'isNull',
-    'isNotNull',
-  ],
-  integer: [
-    'eq',
-    'ne',
-    'gt',
-    'gte',
-    'lt',
-    'lte',
-    'in',
-    'notIn',
-    'isNull',
-    'isNotNull',
-  ],
-  decimal: [
-    'eq',
-    'ne',
-    'gt',
-    'gte',
-    'lt',
-    'lte',
-    'in',
-    'notIn',
-    'isNull',
-    'isNotNull',
-  ],
-  datetime: [
-    'eq',
-    'ne',
-    'gt',
-    'gte',
-    'lt',
-    'lte',
-    'in',
-    'notIn',
-    'isNull',
-    'isNotNull',
-  ],
-  boolean: ['eq', 'ne', 'isNull', 'isNotNull'],
-  id: ['eq', 'ne', 'in', 'notIn', 'isNull', 'isNotNull'],
-};
-
-function coerceValue(
-  type: RuntimeReportColumnType,
-  value: unknown,
-  path: string,
-): string | number | boolean | Date {
-  switch (type) {
-    case 'string':
-      if (typeof value !== 'string') badValue(path, 'must be a string');
-      return value;
-    case 'integer':
-      if (typeof value !== 'number' || !Number.isSafeInteger(value)) {
-        badValue(path, 'must be a safe integer');
-      }
-      return value;
-    case 'decimal':
-      if (typeof value !== 'number' || !Number.isFinite(value)) {
-        badValue(path, 'must be a finite number');
-      }
-      return value;
-    case 'boolean':
-      if (typeof value !== 'boolean') badValue(path, 'must be true or false');
-      return value;
-    case 'datetime': {
-      if (typeof value !== 'string')
-        badValue(path, 'must be an ISO-8601 string');
-      const parsed = new Date(value);
-      if (Number.isNaN(parsed.getTime()) || !/^\d{4}-\d{2}-\d{2}/.test(value)) {
-        badValue(path, 'must be an ISO-8601 date or timestamp');
-      }
-      return parsed;
-    }
-    case 'id':
-      if (typeof value !== 'string' || !UUID_PATTERN.test(value)) {
-        badValue(path, 'must be a UUID');
-      }
-      return value.toLowerCase();
-  }
-}
 
 function filterCondition(
   filter: RuntimeReportFilter,
   field: SourceField,
   path: string,
 ): Condition {
-  if (!OPERATORS_BY_TYPE[field.type].includes(filter.op)) {
-    badOperation(
-      `${path}.op`,
-      `'${filter.op}' is not valid for ${field.type} fields`,
-    );
-  }
+  assertRuntimeReportFilterOperator(filter, field.type, path);
   const column = field.column;
   switch (filter.op) {
     case 'isNull':
@@ -413,13 +343,13 @@ function filterCondition(
     case 'in':
     case 'notIn': {
       const values = (filter.value as unknown[]).map((entry, index) =>
-        coerceValue(field.type, entry, `${path}.value[${index}]`),
+        coerceRuntimeReportValue(field.type, entry, `${path}.value[${index}]`),
       );
       return { [`${column} ${filter.op === 'in' ? 'in' : 'not in'}`]: values };
     }
     case 'contains':
       return {
-        [`${column} contains`]: coerceValue(
+        [`${column} contains`]: coerceRuntimeReportValue(
           field.type,
           filter.value,
           `${path}.value`,
@@ -435,7 +365,7 @@ function filterCondition(
         lte: ' <=',
       }[filter.op];
       return {
-        [`${column}${suffix}`]: coerceValue(
+        [`${column}${suffix}`]: coerceRuntimeReportValue(
           field.type,
           filter.value,
           `${path}.value`,
@@ -443,15 +373,6 @@ function filterCondition(
       };
     }
   }
-}
-
-function measureColumnType(
-  fn: string,
-  field: SourceField | undefined,
-): RuntimeReportColumnType {
-  if (fn === 'count' || fn === 'countDistinct') return 'integer';
-  if (fn === 'avg') return 'decimal';
-  return field?.type ?? 'decimal';
 }
 
 function resolveSource(
@@ -516,6 +437,7 @@ async function prepareSource(
     qualifiedName,
     tenantCol,
     new Set(context.permissions ?? []),
+    source,
   );
   return {
     source,
@@ -525,21 +447,6 @@ async function prepareSource(
     tenantCol,
     fields,
   };
-}
-
-export interface RuntimeReportSourceDescription {
-  id: string;
-  label: string;
-  description?: string;
-  /** Fields the live principal may group by, filter on or aggregate. */
-  fields: {
-    name: string;
-    label: string;
-    type: RuntimeReportColumnType;
-    format?: string;
-    filterOperators: readonly string[];
-    aggregates: readonly string[];
-  }[];
 }
 
 /**
@@ -554,27 +461,14 @@ export async function describeRuntimeReportSource(
   const prepared = await prepareSource(context, sourceId);
   return {
     id: prepared.source.id,
-    label: prepared.source.label ?? humanize(prepared.registeredName),
+    label:
+      prepared.source.label ??
+      humanizeRuntimeReportName(prepared.registeredName),
     ...(prepared.source.description
       ? { description: prepared.source.description }
       : {}),
-    fields: [...prepared.fields.values()].map((field) => ({
-      name: field.name,
-      label: field.label,
-      type: field.type,
-      ...(field.format ? { format: field.format } : {}),
-      filterOperators: OPERATORS_BY_TYPE[field.type],
-      aggregates: aggregatesFor(field.type),
-    })),
+    ...describeRuntimeReportSourceFields(prepared.fields, prepared.source),
   };
-}
-
-function aggregatesFor(type: RuntimeReportColumnType): readonly string[] {
-  if (type === 'integer' || type === 'decimal') {
-    return ['count', 'countDistinct', 'sum', 'avg', 'min', 'max'];
-  }
-  if (type === 'datetime') return ['count', 'countDistinct', 'min', 'max'];
-  return ['count', 'countDistinct'];
 }
 
 /**
@@ -590,23 +484,18 @@ export async function compileRuntimeReportSpec(
 
   const lookup = (name: string, path: string): SourceField => {
     const field = fields.get(name);
-    if (!field) unknownField(path, name);
+    if (!field) unknownRuntimeReportField(path, name);
     return field;
   };
 
-  const columns: RuntimeReportColumn[] = [];
+  // Shared with the in-memory runner: validates dimensions and measures and
+  // describes the result columns, so both paths agree on what a spec means.
+  const columns = planRuntimeReportColumns(spec, fields);
   const select: AggregateSelectExpr[] = [];
   const groupBy: string[] = [];
 
-  for (const [index, dimension] of spec.dimensions.entries()) {
-    const path = `spec.dimensions[${index}]`;
-    const field = lookup(dimension.field, `${path}.field`);
-    if (dimension.bucket && field.type !== 'datetime') {
-      badOperation(
-        `${path}.bucket`,
-        'buckets are only valid on datetime fields',
-      );
-    }
+  for (const dimension of spec.dimensions) {
+    const field = fields.get(dimension.field) as SourceField;
     const sqlAlias = `${ALIAS_PREFIX}${dimension.as}`;
     if (dimension.bucket) {
       select.push({
@@ -618,61 +507,15 @@ export async function compileRuntimeReportSpec(
       select.push({ column: field.column, as: sqlAlias });
     }
     groupBy.push(sqlAlias);
-    columns.push({
-      id: dimension.as,
-      label: humanize(dimension.as),
-      role: 'dimension',
-      type: dimension.bucket ? 'datetime' : field.type,
-      field: field.name,
-      ...(dimension.bucket ? { bucket: dimension.bucket } : {}),
-      ...(field.format && !dimension.bucket ? { format: field.format } : {}),
-    });
   }
 
-  for (const [index, measure] of spec.measures.entries()) {
-    const path = `spec.measures[${index}]`;
-    const field = measure.field
-      ? lookup(measure.field, `${path}.field`)
-      : undefined;
-    if (
-      (measure.fn === 'sum' || measure.fn === 'avg') &&
-      field?.type !== 'integer' &&
-      field?.type !== 'decimal'
-    ) {
-      badOperation(`${path}.fn`, `${measure.fn} requires a numeric field`);
-    }
-    if (
-      (measure.fn === 'min' || measure.fn === 'max') &&
-      field?.type !== 'integer' &&
-      field?.type !== 'decimal' &&
-      field?.type !== 'datetime'
-    ) {
-      badOperation(
-        `${path}.fn`,
-        `${measure.fn} requires a numeric or datetime field`,
-      );
-    }
-    const sqlAlias = `${ALIAS_PREFIX}${measure.as}`;
+  for (const measure of spec.measures) {
+    const field = measure.field ? fields.get(measure.field) : undefined;
     select.push({
       fn: measure.fn === 'countDistinct' ? 'count' : measure.fn,
       ...(field ? { column: field.column } : {}),
-      as: sqlAlias,
+      as: `${ALIAS_PREFIX}${measure.as}`,
       ...(measure.fn === 'countDistinct' ? { distinct: true } : {}),
-    });
-    const keepsFormat =
-      field?.format &&
-      (measure.fn === 'sum' ||
-        measure.fn === 'min' ||
-        measure.fn === 'max' ||
-        measure.fn === 'avg');
-    columns.push({
-      id: measure.as,
-      label: humanize(measure.as),
-      role: 'measure',
-      type: measureColumnType(measure.fn, field),
-      ...(field ? { field: field.name } : {}),
-      fn: measure.fn,
-      ...(keepsFormat ? { format: field?.format } : {}),
     });
   }
 
@@ -746,7 +589,7 @@ export async function compileRuntimeReportSpec(
     source: {
       id: source.id,
       className: qualifiedName,
-      label: source.label ?? humanize(registeredName),
+      label: source.label ?? humanizeRuntimeReportName(registeredName),
       table,
     },
     columns,
@@ -781,59 +624,6 @@ function adaptWhere(
       ),
     ),
   );
-}
-
-function normalizeCell(
-  column: RuntimeReportColumn,
-  value: unknown,
-): string | number | boolean | null {
-  if (value === null || value === undefined) return null;
-  if (value instanceof Date) return value.toISOString();
-  if (typeof value === 'bigint') {
-    const asNumber = Number(value);
-    if (!Number.isSafeInteger(asNumber)) {
-      throw new RuntimeReportError(
-        'invalid_result',
-        column.id,
-        'integer result exceeds the JavaScript safe range',
-      );
-    }
-    return asNumber;
-  }
-  if (column.type === 'boolean') {
-    if (value === 1 || value === '1' || value === 'true' || value === true) {
-      return true;
-    }
-    if (value === 0 || value === '0' || value === 'false' || value === false) {
-      return false;
-    }
-  }
-  if (column.type === 'integer' || column.type === 'decimal') {
-    const numeric = typeof value === 'number' ? value : Number(value);
-    if (!Number.isFinite(numeric)) {
-      throw new RuntimeReportError(
-        'invalid_result',
-        column.id,
-        'numeric result is not finite',
-      );
-    }
-    if (column.type === 'integer' && !Number.isSafeInteger(numeric)) {
-      throw new RuntimeReportError(
-        'invalid_result',
-        column.id,
-        'integer result exceeds the JavaScript safe range',
-      );
-    }
-    return numeric;
-  }
-  if (
-    typeof value === 'string' ||
-    typeof value === 'number' ||
-    typeof value === 'boolean'
-  ) {
-    return value;
-  }
-  return String(value);
 }
 
 export interface RunRuntimeReportOptions {
@@ -872,7 +662,7 @@ export async function runRuntimeReport(
   const rows = rawRows.slice(0, limit).map((row) => {
     const out: Record<string, string | number | boolean | null> = {};
     for (const column of compiled.columns) {
-      out[column.id] = normalizeCell(
+      out[column.id] = normalizeRuntimeReportCell(
         column,
         row[`${ALIAS_PREFIX}${column.id}`],
       );

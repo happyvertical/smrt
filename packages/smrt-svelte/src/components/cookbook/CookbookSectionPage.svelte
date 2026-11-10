@@ -2,8 +2,8 @@
 /**
  * A navigation section's own page in a cookbook app (#3749). The sidebar lists
  * only sections, so this is where a section's entries are: an editable
- * overview (the entries as a plain list of shortcuts by default, framed cards
- * with `presentation="card"`) with the shell's layout
+ * overview (the entries as themed cards by default, unframed shortcuts
+ * with explicit `presentation="plain"`) with the shell's layout
  * edit mode driving its grid. A section with no overview shows its menu.
  *
  * Render it from one route (`s/[slug]/+page.svelte`), inside `CookbookApp`.
@@ -23,7 +23,7 @@ let {
   sectionId,
   slug,
   children,
-  presentation = 'plain',
+  presentation = 'card',
   heading,
 }: CookbookSectionPageProps = $props();
 

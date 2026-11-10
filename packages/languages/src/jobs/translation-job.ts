@@ -2,6 +2,7 @@ import { type GetAIOptions, getAI } from '@happyvertical/ai';
 import { createLogger } from '@happyvertical/logger';
 import { getPackageConfig } from '@happyvertical/smrt-config';
 import {
+  resolveInferenceTarget,
   type SmrtClassOptions,
   SmrtObject,
   smrt,
@@ -53,6 +54,7 @@ definePrompt({
     'Match the organization glossary where applicable:\n{glossary}\n' +
     'String to translate: "{template}"\n' +
     'Reply with a JSON object shaped like {responseShapeExample} where the translation field is your translated string.',
+  ai: { profile: 'good', latency: 'background' },
   editable: {
     template: true,
     profile: true,
@@ -167,14 +169,56 @@ export class LanguageTranslationTask extends SmrtObject {
     // Single merged AI config: per-job model override (`args.model`) wins
     // over the prompt's `ai.model`, and the same merge feeds both `getAI()`
     // (client construction) and `ai.message()` (request options) so the
-    // override actually takes effect end-to-end.
+    // override actually takes effect end-to-end. A bound target's model wins
+    // in both places.
     const promptAi = (prompt.ai ?? {}) as Record<string, unknown>;
-    const mergedAiConfig: Record<string, unknown> = { ...promptAi };
+    // A per-call getAI() client cannot pick an inference tier (#4750), so the
+    // tier routing keys never reach the provider; usageTags still forward.
+    const {
+      tier: _tier,
+      promptKey: _promptKey,
+      latency: _latency,
+      ...routedAi
+    } = promptAi;
+    const mergedAiConfig: Record<string, unknown> = { ...routedAi };
     if (args.model) mergedAiConfig.model = args.model;
-    const ai = await getAI(mergedAiConfig as GetAIOptions);
 
+    // A stored tenant binding (#4756, the registered inference resolver)
+    // replaces the provider; app tier bindings never replace the prompt's
+    // own model. The job runs without a principal, so no user layer applies.
+    const target = await resolveInferenceTarget({
+      base: mergedAiConfig,
+      tenantId: args.tenantId ?? null,
+      className: 'LanguageTranslationTask',
+      promptKey: TRANSLATION_PROMPT_KEY,
+      appBindings: false,
+    });
+    const clientConfig = target.options ?? mergedAiConfig;
+    // Usage lands in `_smrt_ai_usage` through this task's pipeline (#3077),
+    // attributed to the requesting tenant with the binding's tags.
+    // Transcripts (#4780), while the app enables them, follow the same
+    // tenant as the usage row.
+    const ai = this.transcriptClient(
+      await getAI(
+        this.withAiUsage(clientConfig, {
+          tenantId: args.tenantId ?? null,
+          tags: target.usageTags,
+        }) as unknown as GetAIOptions,
+      ),
+      undefined,
+      {
+        tenantId: () => args.tenantId ?? null,
+        // The bound key (a tenant or user binding's) is masked exactly.
+        secrets: () =>
+          typeof clientConfig.apiKey === 'string' ? [clientConfig.apiKey] : [],
+      },
+    );
+
+    const { onUsage: _onUsage, ...callConfig } = target.bound
+      ? { ...mergedAiConfig, model: clientConfig.model }
+      : mergedAiConfig;
     const message = await ai.message(prompt.text, {
-      ...mergedAiConfig,
+      ...callConfig,
       responseFormat: { type: 'json_object' },
     });
 

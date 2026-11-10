@@ -215,7 +215,7 @@ CREATE TABLE IF NOT EXISTS content_governance_policies (
   metadata TEXT
 );
 CREATE INDEX IF NOT EXISTS content_governance_policies_id_idx ON content_governance_policies (id);
-CREATE UNIQUE INDEX IF NOT EXISTS content_governance_policies_key_idx ON content_governance_policies (key);
+CREATE UNIQUE INDEX IF NOT EXISTS content_governance_policies_tenant_id_key_idx ON content_governance_policies (tenant_id, key);
 `;
 
 const GOVERNANCE_PROFILES_SCHEMA = `
@@ -234,7 +234,7 @@ CREATE TABLE IF NOT EXISTS content_governance_profiles (
   metadata TEXT
 );
 CREATE INDEX IF NOT EXISTS content_governance_profiles_id_idx ON content_governance_profiles (id);
-CREATE UNIQUE INDEX IF NOT EXISTS content_governance_profiles_key_idx ON content_governance_profiles (key);
+CREATE UNIQUE INDEX IF NOT EXISTS content_governance_profiles_tenant_id_key_idx ON content_governance_profiles (tenant_id, key);
 `;
 
 const GOVERNANCE_ASSIGNMENTS_SCHEMA = `
@@ -259,7 +259,7 @@ CREATE TABLE IF NOT EXISTS content_governance_assignments (
   metadata TEXT
 );
 CREATE INDEX IF NOT EXISTS content_governance_assignments_id_idx ON content_governance_assignments (id);
-CREATE UNIQUE INDEX IF NOT EXISTS content_governance_assignments_key_idx ON content_governance_assignments (key);
+CREATE UNIQUE INDEX IF NOT EXISTS content_governance_assignments_tenant_id_key_idx ON content_governance_assignments (tenant_id, key);
 `;
 
 async function prepareContentWorkflowSchemas(db: DatabaseInterface) {
@@ -325,6 +325,14 @@ describe('Content governance', () => {
       });
 
       expect(message).toHaveBeenCalledTimes(1);
+      // Prompt-run usage tags reach the review call (#4751).
+      expect(message.mock.calls[0][1]?.usageTags).toEqual({
+        promptKey: 'smrtContent.review',
+        promptLayer: 'default',
+        templateHash: expect.stringMatching(/^[0-9a-f]{12}$/),
+        tierRequested: 'great',
+        tierResolved: 'great',
+      });
       expect(review).toMatchObject({ kind, status: 'passed' });
       expect(await db.list('content_reviews', { kind })).toHaveLength(1);
     } finally {

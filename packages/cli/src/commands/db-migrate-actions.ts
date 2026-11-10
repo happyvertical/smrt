@@ -96,6 +96,8 @@ export interface MigrationAction {
   advisory?: SchemaChangeAdvisoryLike;
   /** Operator-facing note carried from `SchemaChangeLike.note` (#3226). */
   note?: string;
+  /** Set on an `add_index` that renames a live index (#3307). */
+  renamedFrom?: string;
   /** Set on `add_foreign_key` / `drop_foreign_key` actions (#2748). */
   foreignKey?: ForeignKeyDefinitionLike;
   /** See `SchemaChangeLike.orphanBlocked` (#2748). */
@@ -169,6 +171,8 @@ export interface SchemaChangeLike {
    * `SchemaChange.note`), e.g. empty text stored as NULL (#3226).
    */
   note?: string;
+  /** Mirrors core's `SchemaChange.renamedFrom` (#3307). */
+  renamedFrom?: string;
   sql?: string;
   sqlStatements?: string[];
   /** Set on `add_foreign_key` / `drop_foreign_key` changes (#2748). */
@@ -799,6 +803,7 @@ export function partitionSchemaChanges(
           ...(change.sqlStatements
             ? { sqlStatements: change.sqlStatements }
             : {}),
+          ...(change.renamedFrom ? { renamedFrom: change.renamedFrom } : {}),
         });
         break;
       }

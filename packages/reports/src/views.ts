@@ -11,6 +11,7 @@ import {
   normalizeDataQueryRequest,
 } from '@happyvertical/smrt-core';
 import type {
+  DataQueryFilterOperator,
   DataQueryFreshness,
   DataQueryRequest,
   DataQueryResult,
@@ -398,6 +399,21 @@ function stable(value: unknown): string {
 }
 
 /**
+ * The null tests (#4448) a nullable column gains are left out of the
+ * definition fingerprint: they add a predicate without changing what any
+ * stored view's existing filter means, so views saved before the operators
+ * existed keep their binding. A view that uses one is still validated against
+ * the live schema when it runs, so it fails closed if the column loses it.
+ */
+function withoutNullTests(
+  operators: readonly DataQueryFilterOperator[],
+): DataQueryFilterOperator[] {
+  return operators.filter(
+    (operator) => operator !== 'isNull' && operator !== 'isNotNull',
+  );
+}
+
+/**
  * A change to report fields, their capabilities, schema, scope, or source
  * invalidates a stored view/export snapshot rather than silently widening it.
  */
@@ -420,15 +436,30 @@ export function reportDefinitionFingerprint(
       projectable: column.projectable === true,
       sortable: column.sortable === true,
       facetable: column.facetable === true,
-      filterOperators: column.filterOperators ?? [],
+      filterOperators: withoutNullTests(column.filterOperators ?? []),
       capabilities: [...column.capabilities].sort(),
       sensitivity: column.sensitivity ?? null,
       sourceColumn: column.sourceColumn ?? null,
       bucket: column.bucket ?? null,
       aggregate: column.aggregate ?? null,
       distinct: column.distinct ?? null,
+      // Only present when set, so reports without joins or expressions keep
+      // the fingerprint their stored views were bound to.
+      ...(column.semantics ? { semantics: column.semantics } : {}),
     })),
-    schema: descriptor.schema,
+    schema: {
+      ...descriptor.schema,
+      fields: descriptor.schema.fields.map((field) =>
+        field.filterOperators
+          ? {
+              ...field,
+              filterOperators: withoutNullTests(field.filterOperators),
+            }
+          : field,
+      ),
+    },
+    // Only present for joined reports, so other fingerprints do not move.
+    ...(descriptor.semantics ? { semantics: descriptor.semantics } : {}),
   };
   return (
     'rv1_' +

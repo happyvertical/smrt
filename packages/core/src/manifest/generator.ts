@@ -60,8 +60,14 @@ export interface ManifestBuilderOptions {
   includeStaticMethods?: boolean;
 
   // Output Configuration
-  /** Explicit output ownership; omitted retains legacy filename inference. */
-  outputMode?: 'dev' | 'build';
+  /**
+   * Explicit output ownership; omitted retains legacy filename inference.
+   * `'dev'`/`'build'` also write the unified `.smrt/manifest.json` /
+   * `dist/manifest.json`. `'explicit'` writes only `outputDir/outputName`:
+   * test generation uses it so a test-inclusive scan never replaces a
+   * production manifest path (#4128).
+   */
+  outputMode?: 'dev' | 'build' | 'explicit';
   outputDir?: string;
   outputName?: string;
   generateTypeStub?: boolean;
@@ -414,10 +420,14 @@ export class ManifestBuilder {
     const isTest =
       options.outputName?.includes('test') ||
       options.stubName?.includes('test');
-    const mode = options.outputMode ?? (isTest ? 'dev' : 'build');
+    const requestedMode = options.outputMode ?? (isTest ? 'dev' : 'build');
+    const mode = requestedMode === 'explicit' ? null : requestedMode;
 
-    // 1. Always write to the unified location via ManifestManager
-    manager.write(manifest, mode);
+    // 1. Write the unified location via ManifestManager, unless the caller
+    // owns an explicit, isolated output path.
+    if (mode) {
+      manager.write(manifest, mode);
+    }
 
     // 2. Legacy/Explicit Output (if requested or for stubs)
     const outputDir = resolve(this.root(), options.outputDir || 'src/manifest');
@@ -428,9 +438,9 @@ export class ManifestBuilder {
 
     // Write JSON manifest to legacy location if different from unified path
     const manifestPath = resolve(outputDir, outputName);
-    const unifiedPath = manager.getOutputPath(mode);
+    const unifiedPath = mode ? manager.getOutputPath(mode) : null;
 
-    if (resolve(manifestPath) !== resolve(unifiedPath)) {
+    if (!unifiedPath || resolve(manifestPath) !== resolve(unifiedPath)) {
       publishAtomicArtifact({
         path: manifestPath,
         content: JSON.stringify(manifest, null, 2),
@@ -447,7 +457,7 @@ export class ManifestBuilder {
 
     const objectCount = Object.keys(manifest.objects).length;
     logger.info(`[smrt] ✅ Generated manifest with ${objectCount} object(s)`);
-    logger.debug(`[smrt]    Unified: ${unifiedPath}`);
+    logger.debug(`[smrt]    Output: ${unifiedPath ?? manifestPath}`);
   }
 
   /**

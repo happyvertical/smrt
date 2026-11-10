@@ -1,25 +1,27 @@
-import { randomUUID } from 'node:crypto';
-import { tmpdir } from 'node:os';
-import { join } from 'node:path';
 import { type Asset, AssetCollection } from '@happyvertical/smrt-assets';
-import { describe, expect, it } from 'vitest';
+import { afterEach, describe, expect, it } from 'vitest';
+import { createOwnedSqliteFixtures } from './__tests__/owned-sqlite-fixtures.js';
 import {
   PLACE_MAIN_ASSET_RELATIONSHIP,
   PlaceAssetCollection,
   PlaceCollection,
 } from './index.js';
 
+const fixtures = createOwnedSqliteFixtures();
+
 function getTestDbUrl(name: string): string {
-  return `file:${join(tmpdir(), `${name}-${randomUUID()}.db`)}`;
+  return fixtures.url(name);
 }
 
 async function createPlaceFixture(dbUrl: string) {
   const places = await PlaceCollection.create({
     db: { type: 'sqlite', url: dbUrl },
   });
+  fixtures.track(places.db);
   const assets = await AssetCollection.create({
     db: { type: 'sqlite', url: dbUrl },
   });
+  fixtures.track(assets.db);
 
   const place = await places.create({
     name: 'Main Hall',
@@ -30,6 +32,8 @@ async function createPlaceFixture(dbUrl: string) {
 
   return { places, assets, place };
 }
+
+afterEach(() => fixtures.cleanup());
 
 describe('Place owned assets', () => {
   it('manages owned assets from the model API', async () => {
@@ -72,6 +76,7 @@ describe('Place owned assets', () => {
     const placeAssets = await PlaceAssetCollection.create({
       db: { type: 'sqlite', url: dbUrl },
     });
+    fixtures.track(placeAssets.db);
 
     const asset = await assets.create({
       name: 'hero.jpg',
@@ -201,6 +206,7 @@ describe('Place owned assets', () => {
     const links = await PlaceAssetCollection.create({
       db: { type: 'sqlite', url: dbUrl },
     });
+    fixtures.track(links.db);
     const photo = await assets.create({
       name: 'photo.jpg',
       sourceUri: 'file:///tmp/photo.jpg',

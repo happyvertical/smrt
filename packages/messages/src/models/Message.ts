@@ -1,3 +1,13 @@
+import type { SmrtSaveOptions } from '@happyvertical/smrt-core';
+import {
+  assertProtectedNotificationDelete,
+  assertProtectedNotificationRetry,
+  assertProtectedNotificationSave,
+  assertProtectedSenderHandoff,
+  beginProtectedNotificationSend,
+  ProtectedNotificationHandoffError,
+  rememberNotificationOrigin,
+} from '../protected-notification-handoff.js';
 /**
  * Message model - Base class for all message types (STI)
  *
@@ -16,13 +26,67 @@ import {
   usesEmbeddedRevisionFallback,
   withEmbeddedWriteQueue,
 } from '@happyvertical/smrt-core';
-import { TenantScoped, tenantId } from '@happyvertical/smrt-tenancy';
+import { TenantScoped, tenantId } from '@happyvertical/smrt-tenancy/decorators';
 import type {
   MessageOptions,
   MessageSendResult,
   SendMessageOptions,
   SendStatus,
 } from '../types';
+
+/** `metadata` key recording that the last failed send may have been accepted. */
+export const SEND_OUTCOME_UNKNOWN_METADATA_KEY = 'sendOutcomeUnknown';
+
+/**
+ * The stored metadata JSON with the outcome-unknown marker set or cleared, or
+ * undefined when it needs no change (or is not a JSON object to edit).
+ */
+function withSendOutcomeMarker(
+  stored: unknown,
+  outcomeUnknown: boolean,
+): string | undefined {
+  let bag: Record<string, unknown> = {};
+  if (typeof stored === 'string' && stored.trim()) {
+    try {
+      const parsed: unknown = JSON.parse(stored);
+      if (!parsed || typeof parsed !== 'object' || Array.isArray(parsed)) {
+        return undefined;
+      }
+      bag = parsed as Record<string, unknown>;
+    } catch {
+      return undefined;
+    }
+  }
+  if (Boolean(bag[SEND_OUTCOME_UNKNOWN_METADATA_KEY]) === outcomeUnknown) {
+    return undefined;
+  }
+  if (outcomeUnknown) bag[SEND_OUTCOME_UNKNOWN_METADATA_KEY] = true;
+  else delete bag[SEND_OUTCOME_UNKNOWN_METADATA_KEY];
+  return JSON.stringify(bag);
+}
+
+// Only the canonical send/retry implementation can authorize its exact local
+// lifecycle save. An active provider scope never grants arbitrary public saves.
+const lifecycleSaves = new WeakMap<Message, string>();
+function lifecycleSignature(message: Message): string {
+  return JSON.stringify([
+    message.sendStatus,
+    message.retryCount,
+    message.maxRetries,
+    message.sendError,
+    message.sentAt,
+    message.scheduledSendAt,
+    message.metadata,
+  ]);
+}
+async function saveSendLifecycle(message: Message): Promise<void> {
+  lifecycleSaves.set(message, lifecycleSignature(message));
+  try {
+    await message.save();
+  } finally {
+    lifecycleSaves.delete(message);
+  }
+}
 
 @TenantScoped({ mode: 'optional' })
 @smrt({
@@ -144,6 +208,36 @@ export class Message extends SmrtObject {
       this.inReplyToMessageId = options.inReplyToMessageId;
     if (options.createdAt) this.createdAt = options.createdAt;
     if (options.updatedAt) this.updatedAt = options.updatedAt;
+    rememberNotificationOrigin(this);
+  }
+
+  /** Ordinary saves preserve protected outbox provenance and approved content. */
+  override async save(options?: SmrtSaveOptions): Promise<this> {
+    const signature = lifecycleSaves.get(this);
+    lifecycleSaves.delete(this);
+    return this.withTransaction(async () => {
+      const authorized =
+        signature !== undefined && signature === lifecycleSignature(this);
+      await assertProtectedNotificationSave(this, options, authorized);
+      if (signature !== undefined && signature !== lifecycleSignature(this))
+        throw new Error('Message lifecycle changed during its guarded save.');
+      const result = await super.save(options);
+      // Core may adopt a natural-key row that appeared during save. Verify
+      // its resulting durable identity before this transaction can commit.
+      await assertProtectedNotificationSave(this, options, authorized);
+      if (signature !== undefined && signature !== lifecycleSignature(this))
+        throw new Error('Message lifecycle changed during its guarded save.');
+      rememberNotificationOrigin(this);
+      return result;
+    });
+  }
+
+  /** Protected outbound evidence is retained; ordinary message deletion remains unchanged. */
+  override async delete(
+    options: { expectedUpdatedAt?: Date | string } = {},
+  ): Promise<void> {
+    await assertProtectedNotificationDelete(this);
+    return super.delete(options);
   }
 
   private async finalizeSendLifecycle(
@@ -163,11 +257,18 @@ export class Message extends SmrtObject {
         const currentRevisionMs = new Date(String(currentRevision)).getTime();
         if (!Number.isFinite(currentRevisionMs)) return;
         nextRevision = new Date(Math.max(Date.now(), currentRevisionMs + 1));
+        // Record durably whether a failure may still have been accepted, so a
+        // later reconciliation can tell it from a definite rejection.
+        const metadata = withSendOutcomeMarker(
+          current.metadata,
+          !result.success && result.outcomeUnknown === true,
+        );
         const values = {
           send_status: sendStatus,
           sent_at: result.success ? result.sentAt : null,
           send_error: sendError,
           updated_at: nextRevision,
+          ...(metadata === undefined ? {} : { metadata }),
         };
         if (useEmbeddedFallback) {
           await this.db.upsert(this.tableName, ['id'], {
@@ -339,6 +440,15 @@ export class Message extends SmrtObject {
    * Send this message via its account's sender
    */
   async send(options?: SendMessageOptions): Promise<MessageSendResult> {
+    try {
+      await beginProtectedNotificationSend(this, options);
+    } catch (error) {
+      return {
+        success: false,
+        error: error instanceof Error ? error.message : String(error),
+        sentAt: new Date(),
+      };
+    }
     // Entry guard: a message that is already in flight or delivered must not be
     // sent again. Catches same-instance double-clicks before any work happens.
     if (this.sendStatus === 'sending' || this.sendStatus === 'sent') {
@@ -360,7 +470,7 @@ export class Message extends SmrtObject {
       this.sendStatus = 'failed';
       this.sendError = result.error ?? '';
       this.updatedAt = new Date();
-      await this.save();
+      await saveSendLifecycle(this);
       return result;
     }
 
@@ -373,7 +483,7 @@ export class Message extends SmrtObject {
       this.sendStatus = 'failed';
       this.sendError = result.error ?? '';
       this.updatedAt = new Date();
-      await this.save();
+      await saveSendLifecycle(this);
       return result;
     }
 
@@ -387,7 +497,7 @@ export class Message extends SmrtObject {
       this.sendStatus = 'failed';
       this.sendError = errorMessage;
       this.updatedAt = new Date();
-      await this.save();
+      await saveSendLifecycle(this);
       return {
         success: false,
         error: errorMessage,
@@ -465,18 +575,23 @@ export class Message extends SmrtObject {
     } else {
       this.sendStatus = 'sending';
       this.updatedAt = new Date();
-      await this.save();
+      await saveSendLifecycle(this);
     }
 
     let result: MessageSendResult;
     try {
+      await assertProtectedSenderHandoff(this, options);
       result = await sender.send(this, options);
     } catch (error) {
       const errorMessage =
         error instanceof Error ? error.message : String(error);
+      // A sender that throws mid-send says nothing about provider acceptance.
       result = {
         success: false,
         error: errorMessage,
+        ...(error instanceof ProtectedNotificationHandoffError
+          ? {}
+          : { outcomeUnknown: true }),
         sentAt: new Date(),
       };
     }
@@ -485,9 +600,53 @@ export class Message extends SmrtObject {
   }
 
   /**
+   * Whether the latest failed send may still have been accepted by the
+   * provider (see `MessageSendResult.outcomeUnknown`).
+   */
+  isSendOutcomeUnknown(): boolean {
+    return (
+      this.sendStatus === 'failed' &&
+      this.getMetadata()[SEND_OUTCOME_UNKNOWN_METADATA_KEY] === true
+    );
+  }
+
+  /**
+   * Release a send claim whose sender is gone (a crash or lost lease left the
+   * row in `sending`): move it to `failed` with an unknown outcome so the
+   * owner of the delivery decision can send it again. Returns false, changing
+   * nothing, unless the stored row is still `sending`. Only for callers that
+   * have established that no live sender holds the claim.
+   */
+  async abandonSendAttempt(reason: string): Promise<boolean> {
+    if (!this.id) return false;
+    const current = await this.getCanonicalPersistedRow({ id: this.id });
+    if (current?.send_status !== 'sending') return false;
+    try {
+      await this.finalizeSendLifecycle({
+        success: false,
+        error: reason,
+        outcomeUnknown: true,
+        sentAt: new Date(),
+      });
+    } catch {
+      return false;
+    }
+    return this.sendStatus === 'failed';
+  }
+
+  /**
    * Retry sending a failed message
    */
   async retrySend(options?: SendMessageOptions): Promise<MessageSendResult> {
+    try {
+      await assertProtectedNotificationRetry(this, options);
+    } catch (error) {
+      return {
+        success: false,
+        error: error instanceof Error ? error.message : String(error),
+        sentAt: new Date(),
+      };
+    }
     if (this.sendStatus !== 'failed') {
       return {
         success: false,
@@ -506,7 +665,7 @@ export class Message extends SmrtObject {
 
     this.retryCount++;
     this.updatedAt = new Date();
-    await this.save();
+    await saveSendLifecycle(this);
 
     return this.send(options);
   }

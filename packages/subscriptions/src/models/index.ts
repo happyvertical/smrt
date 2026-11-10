@@ -1,3 +1,4 @@
+export { BillingCheckoutSession } from './BillingCheckoutSession.js';
 export type {
   PricingStrategy,
   SpendingBasis,
@@ -27,5 +28,6 @@ export {
   RetailChargeCollection,
 } from './reseller.js';
 export { SubscriptionPlan } from './SubscriptionPlan.js';
+export { SubscriptionPlanVersion } from './SubscriptionPlanVersion.js';
 export { TenantSubscription } from './TenantSubscription.js';
 export { TenantUsageMetric } from './TenantUsageMetric.js';

@@ -67,6 +67,7 @@ import {
   findClassesByName,
   getCanonicalClassName,
   hasClassCaseInsensitive,
+  hasClassForPackage,
   qualifyExtendsName,
 } from './name-resolver';
 import { assertQualifiedNameAliasesAvailable } from './qualified-name-aliases';
@@ -124,6 +125,29 @@ function pluralizeCollection(className: string): string {
 }
 
 /**
+ * The registry key of the class `ctor` actually extends, when that parent is
+ * registered under a qualified name and (if the manifest names a parent) has
+ * the manifest's simple name (#4145). Constructor identity is exact: two
+ * packages may export a same-named class, and only the prototype says which
+ * one this class extends, even when the manifest predates `extendsQualified`.
+ */
+function registeredParentKey(
+  ctor: typeof SmrtObject,
+  manifestParent: string | undefined,
+): string | undefined {
+  const parentKey = getConstructorIndex().get(Object.getPrototypeOf(ctor));
+  if (!parentKey || !isQualifiedName(parentKey)) return undefined;
+  if (
+    manifestParent &&
+    manifestParent !== parentKey &&
+    parseQualifiedName(parentKey).className !== manifestParent
+  ) {
+    return undefined;
+  }
+  return parentKey;
+}
+
+/**
  * The collection an STI subtype shares with its STI base, for a class that
  * registers with no manifest `collection` (#3125). The manifest generator
  * gives every STI subtype its base's collection (`findSTIBase`: the oldest
@@ -145,6 +169,30 @@ function inheritedStiCollection(ctor: typeof SmrtObject): string | undefined {
     if (registered?.config?.tableStrategy === 'sti') base = registered;
   }
   return base?.collection;
+}
+
+function assertRegisteredStiParent(ctor: typeof SmrtObject): void {
+  const directParent = Object.getPrototypeOf(ctor) as typeof SmrtObject;
+  if (
+    !directParent ||
+    directParent === SmrtObject ||
+    getConstructorIndex().has(directParent)
+  )
+    return;
+  for (
+    let ancestor = Object.getPrototypeOf(directParent) as typeof SmrtObject;
+    ancestor && ancestor !== SmrtObject && ancestor !== Function.prototype;
+    ancestor = Object.getPrototypeOf(ancestor) as typeof SmrtObject
+  ) {
+    const key = getConstructorIndex().get(ancestor);
+    if (key && getClasses().get(key)?.config.tableStrategy === 'sti') {
+      throw new ConfigurationError(
+        `STI descendant ${ctor.name} has unregistered direct parent ${directParent.name}; decorate the intermediate with @smrt()`,
+        'CONFIG_STI_UNREGISTERED_PARENT',
+        { className: ctor.name, parentName: directParent.name },
+      );
+    }
+  }
 }
 
 /**
@@ -1640,7 +1688,7 @@ function registerUntracked(
         // Decorator for field not in manifest - add it
         const newMeta: FieldMeta = decoratorOptions;
         const newField: RegisteredField = {
-          type: opts.type || 'text',
+          type: opts.type || inferDecoratorOnlyFieldType(opts),
           _meta: newMeta,
         };
 
@@ -1674,7 +1722,7 @@ function registerUntracked(
 
         fields.set(fieldName, newField);
         verboseLog(
-          `[registry]   ✅ Added field ${fieldName} from decorator: type=${opts.type || 'text'}`,
+          `[registry]   ✅ Added field ${fieldName} from decorator: type=${newField.type}`,
         );
       }
     }
@@ -1888,7 +1936,10 @@ function registerUntracked(
   // Derive extends from prototype chain if not available from manifest
   // This is critical for inline test classes that use decorators
   let extendsClass: string | undefined =
-    manifestEntry?.extendsQualified ?? manifestEntry?.extends;
+    manifestEntry?.extendsQualified ??
+    registeredParentKey(ctor, manifestEntry?.extends) ??
+    manifestEntry?.extends;
+  assertRegisteredStiParent(ctor);
   if (!extendsClass) {
     const proto = Object.getPrototypeOf(ctor);
     if (proto?.name && proto.name !== 'SmrtObject' && proto.name !== 'Object') {
@@ -1977,6 +2028,8 @@ function registerUntracked(
     sourceFilePath, // Store source file for collision detection (Issue #555)
     extends: extendsClass, // Capture parent class name from manifest OR prototype chain
     extendsTypeArg: manifestEntry?.extendsTypeArg, // SmrtCollection<T> generic arg
+    inheritedExposure: manifestEntry?.inheritedExposure, // #3468
+    collectionOf: manifestEntry?.collectionOf, // #3956 manifest collection classification
     tenantScopedConfig, // Multi-tenancy config (Issue #688)
     tenantScopedConfigSource,
     visibility, // Visibility control for manifest filtering
@@ -2041,9 +2094,8 @@ function registerUntracked(
 
     // Register any siblings that aren't already registered
     // Only load siblings from DIFFERENT packages to avoid collisions with local classes
-    for (const sibling of siblings) {
-      // Use case-insensitive check to prevent registering 'Praeco' when 'praeco' exists
-      if (!hasClassCaseInsensitive(sibling.className)) {
+    for (const sibling of orderStiSiblingsBaseFirst(siblings)) {
+      if (shouldLoadStiSibling(sibling, siblings, packageName)) {
         // Skip siblings from the same package - they will be registered by their own decorators
         if (
           sibling.packageName &&
@@ -2106,6 +2158,82 @@ function tenantScopedConfigFromFieldMetadata(
     };
   }
   return undefined;
+}
+
+type DiscoveredStiSibling = ReturnType<typeof discoverSTISiblingsSync>[number];
+
+/**
+ * True when `candidate` is the base that another discovered sibling of the
+ * SAME package extends: the class a loaded family cannot do without.
+ */
+function isStiBaseOfDiscoveredSibling(
+  candidate: DiscoveredStiSibling,
+  siblings: readonly DiscoveredStiSibling[],
+): boolean {
+  if (!candidate.packageName) return false;
+  const qualified = createQualifiedName(
+    candidate.packageName,
+    candidate.className,
+  );
+  return siblings.some(
+    (sibling) =>
+      sibling !== candidate &&
+      sibling.packageName === candidate.packageName &&
+      (sibling.entry.extendsQualified
+        ? sibling.entry.extendsQualified === qualified
+        : sibling.entry.extends === candidate.className),
+  );
+}
+
+/**
+ * Whether sibling auto-loading should register `sibling` from its manifest.
+ *
+ * "Already registered" stays a simple-name, case-insensitive test: a
+ * same-named registration stands for the sibling ('Praeco' for 'praeco', a
+ * child that replaced its same-named parent, one class described under two
+ * package names). Two exceptions keep packages that share a class name on one
+ * collection apart (smrt-ledgers and smrt-messages `Account`, #4735):
+ *
+ * - A base that discovered siblings of its own package extend is looked up in
+ *   that package. Another package's same-named class is not that base, and
+ *   taking it for the base loaded the subclasses without it.
+ * - A class whose name the REGISTERING package declares on this collection
+ *   itself is that package's own class, registered by its own decorators. The
+ *   other package's same-named class is not its sibling and is not loaded.
+ */
+function shouldLoadStiSibling(
+  sibling: DiscoveredStiSibling,
+  siblings: readonly DiscoveredStiSibling[],
+  registeringPackage: string | undefined,
+): boolean {
+  if (isStiBaseOfDiscoveredSibling(sibling, siblings)) {
+    return !hasClassForPackage(sibling.className, sibling.packageName);
+  }
+  if (hasClassCaseInsensitive(sibling.className)) return false;
+  const lowerName = sibling.className.toLowerCase();
+  return !(
+    registeringPackage &&
+    sibling.packageName !== registeringPackage &&
+    siblings.some(
+      (other) =>
+        other.packageName === registeringPackage &&
+        other.className.toLowerCase() === lowerName,
+    )
+  );
+}
+
+/** Bases before the subclasses that extend them; otherwise discovery order. */
+function orderStiSiblingsBaseFirst(
+  siblings: readonly DiscoveredStiSibling[],
+): DiscoveredStiSibling[] {
+  return [
+    ...siblings.filter((sibling) =>
+      isStiBaseOfDiscoveredSibling(sibling, siblings),
+    ),
+    ...siblings.filter(
+      (sibling) => !isStiBaseOfDiscoveredSibling(sibling, siblings),
+    ),
+  ];
 }
 
 export function registerCollection(
@@ -2250,6 +2378,25 @@ interface DecoratorFieldOptions {
   readPermission?: unknown;
   related?: string;
   [key: string]: unknown;
+}
+
+/**
+ * Column type for a decorator-only field (no manifest entry) that declares no
+ * explicit `type` (#4295).
+ *
+ * The runtime sees only the decorator options, never the property initializer
+ * or annotation the static scanner reads, so the decorator `default` is the
+ * only type evidence both paths share. A boolean default is unambiguous and
+ * the scanner reads it the same way (`ManifestAdapter.inferFieldType`), so it
+ * maps to `boolean`. A number is deliberately NOT inferred: `0` and `0.0` are
+ * the same JavaScript value, so the source-level integer/decimal rule cannot
+ * be applied here and guessing INTEGER would mis-type a decimal column.
+ * Runtime-only numeric fields must declare `type: 'integer' | 'decimal'`.
+ */
+function inferDecoratorOnlyFieldType(
+  opts: DecoratorFieldOptions,
+): RegisteredField['type'] {
+  return typeof opts.default === 'boolean' ? 'boolean' : 'text';
 }
 
 /**
@@ -2557,14 +2704,32 @@ function mergeManifestIntoExistingRegistration(
 
   const manifestParent = objectDef.extendsQualified ?? objectDef.extends;
   if (manifestParent) {
-    existing.extends = packageName
+    const qualifiedParent = packageName
       ? qualifyExtendsName(manifestParent, packageName)
       : manifestParent;
+    // A simple name the registry cannot qualify (another package declares
+    // the same class name) never replaces the parent the decorator already
+    // took from the real constructor's registration (#4145).
+    const keepConstructorParent =
+      !isQualifiedName(qualifiedParent) &&
+      !!existing.extends &&
+      isQualifiedName(existing.extends) &&
+      parseQualifiedName(existing.extends).className === qualifiedParent;
+    if (!keepConstructorParent) existing.extends = qualifiedParent;
   }
 
   if (!existing.sourceFilePath && objectDef.filePath) {
     existing.sourceFilePath = objectDef.filePath;
   }
+
+  // #3468: which surfaces of the merged config the scanner copied from the
+  // collection's model, so they keep following the model at runtime.
+  if (objectDef.inheritedExposure) {
+    existing.inheritedExposure = objectDef.inheritedExposure;
+  }
+  // A class registered before its manifest loaded learns it is a collection
+  // here, so it stops claiming its model's table (#3956).
+  if (objectDef.collectionOf) existing.collectionOf = objectDef.collectionOf;
 
   // The manifest's collection is authoritative (it carries STI inheritance):
   // a class decorated before its manifest loaded registered a derived one,
@@ -2578,15 +2743,35 @@ function mergeManifestIntoExistingRegistration(
   invalidateInheritanceEntries(existing);
 }
 
+/**
+ * Options for a run-time model registration (`registerRuntimeModel()`), as
+ * opposed to a consumed package's manifest stub.
+ */
+export interface RuntimeManifestRegistrationOptions {
+  /**
+   * Qualified key of a registered class the entry extends. When that class
+   * has a real constructor, the registered class extends it (inherited
+   * methods and field accessors work) and the entry may share its simple
+   * name without the STI child-wins rule replacing the parent's registration.
+   */
+  extendsRegistered?: string;
+}
+
 export function registerFromManifest(
   name: string,
   objectDef: SmartObjectDefinition,
   manifestPackageName?: string,
+  runtimeOptions?: RuntimeManifestRegistrationOptions,
 ): void {
   // Same invalidation contract as register() (#3047).
   bumpRegistryGeneration();
   try {
-    registerFromManifestUntracked(name, objectDef, manifestPackageName);
+    registerFromManifestUntracked(
+      name,
+      objectDef,
+      manifestPackageName,
+      runtimeOptions,
+    );
   } finally {
     reconcileSubtypeLineage();
     applyRuntimeOverrides();
@@ -2598,6 +2783,7 @@ function registerFromManifestUntracked(
   name: string,
   objectDef: SmartObjectDefinition,
   manifestPackageName?: string,
+  runtimeOptions?: RuntimeManifestRegistrationOptions,
 ): void {
   // Issue #2970: `manifestPackageName` identifies the package that owns the
   // manifest FILE this entry was read from, which is not always the package
@@ -2626,7 +2812,11 @@ function registerFromManifestUntracked(
   const registrationKey = (qualifiedNameEarly || name) as string;
   const replacedQualifiedNames = new Set<string>();
   const manifestParent = objectDef.extendsQualified ?? objectDef.extends;
-  recordSubtypeParent(registrationKey, manifestParent);
+  // A run-time subclass keeps its same-named parent registered next to it, so
+  // the lineage that lets a descendant replace its parent is not recorded.
+  if (!runtimeOptions?.extendsRegistered) {
+    recordSubtypeParent(registrationKey, manifestParent);
+  }
 
   // Release C (#1134): collision resolution routes through
   // decideCollisionPolicy. See collision-policy.ts for the 16-row decision
@@ -2643,7 +2833,13 @@ function registerFromManifestUntracked(
   // It falls through both checks into the new-registration code below,
   // preserving issue #951's coexistence semantics.
   const existingCanonical = getCanonicalClassName(simpleClassName);
-  if (existingCanonical) {
+  // A run-time subclass deliberately shares its parent's simple name
+  // (`@local/app:Profile` extends `@pkg:Profile`); the parent stays registered.
+  const sharesParentName =
+    runtimeOptions?.extendsRegistered !== undefined &&
+    existingCanonical === runtimeOptions.extendsRegistered &&
+    existingCanonical !== registrationKey;
+  if (existingCanonical && !sharesParentName) {
     const existing = getClasses().get(existingCanonical);
     if (existing) {
       const outcome = applyManifestCollisionPolicy({
@@ -2696,7 +2892,16 @@ function registerFromManifestUntracked(
   // Create stub constructor - not needed for CLI command generation
   // The CLI only needs metadata (fields, methods, config)
   // Mark as manifest stub so real class can replace it during decorator registration
-  const stubConstructor = class extends SmrtObject {
+  const parentRegistration = runtimeOptions?.extendsRegistered
+    ? getClasses().get(runtimeOptions.extendsRegistered)
+    : undefined;
+  const parentConstructor =
+    parentRegistration &&
+    (parentRegistration.constructor as { _isManifestStub?: boolean })
+      ._isManifestStub !== true
+      ? (parentRegistration.constructor as typeof SmrtObject)
+      : SmrtObject;
+  const stubConstructor = class extends parentConstructor {
     static readonly _isManifestStub = true;
   } as typeof SmrtObject;
   Object.defineProperty(stubConstructor, 'name', { value: simpleClassName });
@@ -2846,11 +3051,17 @@ function registerFromManifestUntracked(
     replacedQualifiedNames: [...replacedQualifiedNames],
     extends: qualifiedExtends, // Issue #1004: Pre-computed qualified parent
     extendsTypeArg: objectDef.extendsTypeArg, // SmrtCollection<T> generic arg
+    inheritedExposure: objectDef.inheritedExposure, // #3468
+    collectionOf: objectDef.collectionOf, // #3956 manifest collection classification
     visibility, // New: Visibility control for manifest filtering
   };
   // #3338: a deprecated alias must never name a second live class.
   assertQualifiedNameAliasesAvailable(registrationKey, registration);
   getClasses().set(registrationKey, registration);
+  // A run-time class is looked up by constructor to resolve its own identity
+  // (`_meta_type`, fields); by simple name it could be its same-named parent.
+  if (runtimeOptions)
+    getConstructorIndex().set(stubConstructor, registrationKey);
   // Tag the synthetic stub constructor with the qualified name so the
   // same constructor-side identity convention holds for manifest-loaded
   // classes as well as decorator-registered ones.
@@ -2882,9 +3093,8 @@ function registerFromManifestUntracked(
 
     // Register any siblings that aren't already registered
     // Only load siblings from DIFFERENT packages to avoid collisions with local classes
-    for (const sibling of siblings) {
-      // Use case-insensitive check to prevent registering 'Praeco' when 'praeco' exists
-      if (!hasClassCaseInsensitive(sibling.className)) {
+    for (const sibling of orderStiSiblingsBaseFirst(siblings)) {
+      if (shouldLoadStiSibling(sibling, siblings, packageName)) {
         // Skip siblings from the same package - they will be registered by their own decorators
         if (
           sibling.packageName &&

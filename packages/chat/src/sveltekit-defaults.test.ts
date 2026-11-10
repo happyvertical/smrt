@@ -18,7 +18,14 @@ import type {
   ChatOptions,
 } from '@happyvertical/ai';
 import { clearRuntimeConfig, setConfig } from '@happyvertical/smrt-config';
-import { field, SmrtObject, smrt } from '@happyvertical/smrt-core';
+import {
+  field,
+  SmrtObject,
+  setInferenceResolver,
+  smrt,
+  config as smrtConfig,
+} from '@happyvertical/smrt-core';
+import { getCurrentTenant } from '@happyvertical/smrt-tenancy';
 import {
   MembershipCollection,
   PermissionCollection,
@@ -442,11 +449,99 @@ describe('mountAssistantRoutes defaults (#3414)', () => {
         provider: 'openai',
         apiKey: 'k-config-test',
         defaultModel: 'gpt-test',
+        // The #3077 recorder (#4756).
+        onUsage: expect.any(Function),
       });
       const done = seen.find((e) => e.type === 'done');
       expect(done).toMatchObject({
         message: expect.objectContaining({ content: 'From config.' }),
       });
+    });
+
+    it('never stores chat turns as AI transcripts (#4780)', async () => {
+      setConfig({
+        ai: {
+          provider: 'openai',
+          model: 'gpt-test',
+          apiKeyEnv: 'OPENAI_API_KEY',
+        },
+      });
+      process.env.OPENAI_API_KEY = 'k-config-test';
+      // Every success sampled: a wrapped client would mint a callId.
+      smrtConfig({
+        inference: { transcripts: { enabled: true, sample: 1 } },
+      } as never);
+      try {
+        const seenOptions: unknown[] = [];
+        const ai = scriptedAI([
+          (_messages, options) => {
+            seenOptions.push(options);
+            return { content: 'Stored by chat only.', finishReason: 'stop' };
+          },
+        ]);
+        getAI.mockResolvedValue(ai);
+        const routes = mountAssistantRoutes({ db, audit: () => {} });
+        const threadId = await createThread(routes, ownerA);
+        await events(await send(routes, threadId, ownerA, 't1'));
+        expect(seenOptions).toHaveLength(1);
+        // The factory passes `transcript: false`: the client is used as built,
+        // so no call id and no transcript capture.
+        expect(
+          (seenOptions[0] as { usageTags?: Record<string, string> } | undefined)
+            ?.usageTags?.callId,
+        ).toBeUndefined();
+      } finally {
+        smrtConfig.reset();
+      }
+    });
+
+    it('applies the principal stored inference binding over the config (#4756)', async () => {
+      setConfig({
+        ai: {
+          provider: 'openai',
+          model: 'gpt-test',
+          apiKeyEnv: 'OPENAI_API_KEY',
+        },
+      });
+      process.env.OPENAI_API_KEY = 'k-config-test';
+      const seenPrincipal: unknown[] = [];
+      setInferenceResolver({
+        resolve: async (request) => {
+          seenPrincipal.push(getCurrentTenant());
+          return {
+            tierResolved: request.tier === 'auto' ? 'good' : request.tier,
+            target: {
+              provider: 'openai',
+              baseUrl: 'https://openrouter.ai/api/v1',
+              apiKey: 'sk-user-binding',
+              model: 'user/model',
+              source: 'byo',
+            },
+            via: 'resolver',
+          };
+        },
+      });
+      try {
+        getAI.mockResolvedValue(scriptedAI([text('From binding.')]));
+        const routes = mountAssistantRoutes({ db, audit: () => {} });
+        const threadId = await createThread(routes, ownerA);
+        await events(await send(routes, threadId, ownerA, 'b1'));
+        expect(getAI).toHaveBeenCalledWith(
+          expect.objectContaining({
+            provider: 'openai',
+            baseUrl: 'https://openrouter.ai/api/v1',
+            apiKey: 'sk-user-binding',
+            model: 'user/model',
+            onUsage: expect.any(Function),
+          }),
+        );
+        expect(seenPrincipal[0]).toMatchObject({
+          tenantId: ownerA.tenantId,
+          userId: ownerA.user.id,
+        });
+      } finally {
+        setInferenceResolver(undefined);
+      }
     });
 
     it('answers 503 with the clear, secret-free error when nothing is configured', async () => {
@@ -462,7 +557,13 @@ describe('mountAssistantRoutes defaults (#3414)', () => {
       const response = await send(routes, threadId, ownerA, 'u1');
       expect(response.status).toBe(503);
       const raw = await response.text();
-      expect(JSON.parse(raw)).toMatchObject({ code: 'assistant_unavailable' });
+      // #4757: a structured unavailable answer, not a generic failure.
+      expect(JSON.parse(raw)).toEqual({
+        type: 'unavailable',
+        code: 'ai_unavailable',
+        error: 'AI is not set up: no AI provider is configured.',
+        unavailable: { available: false, mode: 'off', reason: 'unconfigured' },
+      });
       expect(raw).not.toContain(secret);
       expect(getAI).not.toHaveBeenCalled();
       expect(errors).toHaveLength(1);
@@ -471,6 +572,55 @@ describe('mountAssistantRoutes defaults (#3414)', () => {
       expect(error.message).toMatch(/smrt\.config\.ts/);
       expect(error.message).not.toContain(secret);
       expect(await storedMessages(routes, threadId, ownerA)).toEqual([]);
+    });
+
+    it('answers a structured unavailable message when the principal turned AI off (#4757)', async () => {
+      setConfig({
+        ai: {
+          provider: 'openai',
+          model: 'gpt-test',
+          apiKeyEnv: 'OPENAI_API_KEY',
+        },
+      });
+      process.env.OPENAI_API_KEY = 'k-config-test';
+      setInferenceResolver({
+        resolve: (request) => ({
+          tierResolved: request.tier === 'auto' ? 'good' : request.tier,
+          target: {},
+          via: 'resolver',
+          mode: 'off',
+          unavailable: 'off',
+        }),
+      });
+      try {
+        const errors: unknown[] = [];
+        const routes = mountAssistantRoutes({
+          db,
+          onError: (error) => errors.push(error),
+        });
+        const threadId = await createThread(routes, ownerA);
+        const response = await send(routes, threadId, ownerA, 'off1');
+        expect(response.status).toBe(503);
+        const raw = await response.text();
+        expect(JSON.parse(raw)).toEqual({
+          type: 'unavailable',
+          code: 'ai_unavailable',
+          error: 'AI is turned off.',
+          unavailable: {
+            available: false,
+            mode: 'off',
+            reason: 'off',
+            tier: 'good',
+          },
+        });
+        expect(raw).not.toMatch(/stack|k-config-test/);
+        // (getAI still builds model objects' configured clients at init;
+        // the refused turn itself stores nothing below.)
+        expect(errors).toEqual([]);
+        expect(await storedMessages(routes, threadId, ownerA)).toEqual([]);
+      } finally {
+        setInferenceResolver(undefined);
+      }
     });
 
     it('treats an explicitly empty ai as a mount error, not a fallback', () => {

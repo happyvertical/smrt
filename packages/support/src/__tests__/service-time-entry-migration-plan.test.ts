@@ -3,8 +3,8 @@
  * `db:status` register each package's built manifest and diff the merged
  * table definitions against the live database. With smrt-timesheets owning
  * the base entry and smrt-support adding `caseId` / `specialistId`, a
- * `service_time_entries` table built from the pre-move schema must plan no
- * DDL, whichever order the manifests load in.
+ * `service_time_entries` table built from the pre-move schema must only add
+ * framework sync metadata (#4673), whichever order the manifests load in.
  */
 import { readFileSync } from 'node:fs';
 import { createRequire } from 'node:module';
@@ -75,7 +75,7 @@ describe('service_time_entries migration plan after #3288', () => {
   });
 
   for (const order of [PACKAGES, [...PACKAGES].reverse()]) {
-    it(`plans one table family and no DDL (${order.map((name) => name.split('smrt-')[1]).join(' → ')})`, async () => {
+    it(`plans one table family with only additive sync DDL (${order.map((name) => name.split('smrt-')[1]).join(' → ')})`, async () => {
       for (const packageName of order) {
         ObjectRegistry.registerPackageManifest(builtManifest(packageName));
       }
@@ -85,15 +85,31 @@ describe('service_time_entries migration plan after #3288', () => {
         expect.arrayContaining(['case_id', 'specialist_id', 'work_ref_id']),
       );
 
-      const pending = await getPendingSchemaStatements(db, {
-        engineHint: 'sqlite',
-      });
-      expect(
-        pending.statements.filter((statement) => targets(statement, TABLE)),
-      ).toEqual([]);
-      expect(
-        pending.unactionableChanges.filter((change) => change.table === TABLE),
-      ).toEqual([]);
+      const plan = async () => {
+        const pending = await getPendingSchemaStatements(db, {
+          engineHint: 'sqlite',
+        });
+        expect(
+          pending.unactionableChanges.filter(
+            (change) => change.table === TABLE,
+          ),
+        ).toEqual([]);
+        expect(
+          pending.diff.changes.filter(
+            (change) => change.table === TABLE && change.type === 'drop_index',
+          ),
+        ).toEqual([]);
+        return pending.statements.filter((statement) =>
+          targets(statement, TABLE),
+        );
+      };
+      const statements = await plan();
+      expect(statements).toEqual([
+        `ALTER TABLE "${TABLE}" ADD COLUMN "_sync_origin_device_id" TEXT`,
+        `ALTER TABLE "${TABLE}" ADD COLUMN "_sync_revision" INTEGER`,
+      ]);
+      for (const statement of statements) await db.query(statement);
+      expect(await plan()).toEqual([]);
     });
   }
 });

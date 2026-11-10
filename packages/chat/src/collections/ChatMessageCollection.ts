@@ -1,6 +1,6 @@
 import { SmrtCollection } from '@happyvertical/smrt-core';
 import { ChatMessage } from '../models/ChatMessage.js';
-import type { ChatMessageSearchFilters } from '../types.js';
+import type { ChatMessageRole, ChatMessageSearchFilters } from '../types.js';
 
 export class ChatMessageCollection extends SmrtCollection<ChatMessage> {
   static readonly _itemClass = ChatMessage;
@@ -17,11 +17,18 @@ export class ChatMessageCollection extends SmrtCollection<ChatMessage> {
    * lookup (S5 #1392): room ids are not globally unique, so a roomId-only read
    * could surface another tenant's messages for a same-id room. The caller's
    * membership gate is tenant-scoped, so the read MUST be too.
+   *
+   * `roles` (non-empty) keeps only those roles, in SQL, so `limit` counts
+   * them alone (#4458); omitted or empty reads every role.
    */
   async getByRoom(
     roomId: string,
     tenantId: string,
-    options?: { limit?: number; before?: string },
+    options?: {
+      limit?: number;
+      before?: string;
+      roles?: readonly ChatMessageRole[];
+    },
   ): Promise<ChatMessage[]> {
     const where: Record<string, unknown> = {
       roomId,
@@ -29,6 +36,7 @@ export class ChatMessageCollection extends SmrtCollection<ChatMessage> {
       isDeleted: false,
       threadId: null,
     };
+    if (options?.roles?.length) where.role = [...options.roles];
 
     // Cursor-based pagination: only messages older than the cursor message.
     // The cursor must belong to the SAME root-message set of the SAME room AND

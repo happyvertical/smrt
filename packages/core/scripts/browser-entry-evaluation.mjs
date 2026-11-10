@@ -11,18 +11,28 @@
  * Set PLAYWRIGHT_CHROMIUM_EXECUTABLE_PATH to use a Chromium other than
  * Playwright's own install.
  */
+import { execFile } from 'node:child_process';
 import { existsSync } from 'node:fs';
-import { mkdtemp, readFile, rm, writeFile } from 'node:fs/promises';
+import {
+  copyFile,
+  mkdir,
+  mkdtemp,
+  readFile,
+  rm,
+  writeFile,
+} from 'node:fs/promises';
 import { createServer } from 'node:http';
 import { tmpdir } from 'node:os';
 import { dirname, extname, resolve } from 'node:path';
-import { fileURLToPath } from 'node:url';
+import { fileURLToPath, pathToFileURL } from 'node:url';
+import { promisify } from 'node:util';
 import { chromium } from 'playwright-core';
 import { build, createLogger } from 'vite';
 
 const packageDir = resolve(dirname(fileURLToPath(import.meta.url)), '..');
 const browserEntry = resolve(packageDir, 'dist/browser.js');
 const browserHost = resolve(packageDir, 'dist/host.browser.js');
+const cascadeProbe = process.argv.includes('--pglite-cascade');
 if (!existsSync(browserEntry)) {
   throw new Error(`${browserEntry} is missing; run \`pnpm build\` first`);
 }
@@ -30,9 +40,38 @@ if (!existsSync(browserEntry)) {
 const workDir = await mkdtemp(resolve(tmpdir(), 'smrt-core-browser-entry-'));
 const outputDir = resolve(workDir, 'dist');
 const entry = resolve(workDir, 'entry.ts');
-const contentTypes = { '.js': 'text/javascript', '.map': 'application/json' };
+const contentTypes = {
+  '.js': 'text/javascript',
+  '.map': 'application/json',
+  '.wasm': 'application/wasm',
+};
+
+async function provisionPglite() {
+  const source = resolve(packageDir, 'scripts/fixtures/pglite-peer');
+  const scratch = resolve(workDir, 'pglite-peer');
+  await mkdir(scratch);
+  await Promise.all(
+    ['package.json', 'peer.js', 'pnpm-lock.yaml', 'pnpm-workspace.yaml'].map(
+      (file) => copyFile(resolve(source, file), resolve(scratch, file)),
+    ),
+  );
+  await promisify(execFile)('pnpm', [
+    '--dir',
+    scratch,
+    'install',
+    '--frozen-lockfile',
+  ]);
+
+  // Serve the peer's published ESM and WASM. Its Emscripten loader guards
+  // Node imports at runtime, but Vite warns about them when bundling the peer.
+  const { pgliteEntry } = await import(
+    pathToFileURL(resolve(scratch, 'peer.js')).href
+  );
+  return dirname(fileURLToPath(pgliteEntry));
+}
 
 try {
+  const pgliteDir = cascadeProbe ? await provisionPglite() : undefined;
   await writeFile(
     entry,
     `import * as core from ${JSON.stringify(browserEntry)};
@@ -63,7 +102,12 @@ const widget = new BrowserWidget({ name: 'probe', size: 3 });
 if (widget.name !== 'probe' || widget.size !== 3) throw new Error('widget fields were not assigned');
 const registered = ObjectRegistry.getClass('BrowserWidget');
 if (!registered) throw new Error('decorated class did not register');
-document.body.textContent = 'browser entry evaluated: ' + Object.keys(core).length + ' exports';
+${cascadeProbe ? `
+import { runPgliteCascade } from ${JSON.stringify(resolve(packageDir, 'scripts/fixtures/browser-pglite-cascade.ts'))};
+await runPgliteCascade('memory://');
+await runPgliteCascade('idb://smrt-cascade-dialect');
+document.body.textContent = 'browser entry evaluated: PGlite SET NULL cascade (memory:// and idb://)';
+` : "document.body.textContent = 'browser entry evaluated: ' + Object.keys(core).length + ' exports';"}
 `,
   );
 
@@ -89,7 +133,11 @@ document.body.textContent = 'browser entry evaluated: ' + Object.keys(core).leng
     build: {
       outDir: outputDir,
       minify: false,
-      rollupOptions: { input: entry, output: { entryFileNames: 'entry.js' } },
+      rollupOptions: {
+        input: entry,
+        ...(cascadeProbe ? { external: ['@electric-sql/pglite'] } : {}),
+        output: { entryFileNames: 'entry.js' },
+      },
       target: 'es2022',
     },
   });
@@ -103,12 +151,19 @@ document.body.textContent = 'browser entry evaluated: ' + Object.keys(core).leng
     const pathname = new URL(request.url ?? '/', 'http://localhost').pathname;
     if (pathname === '/') {
       response.writeHead(200, { 'content-type': 'text/html' });
-      response.end('<script type="module" src="/entry.js"></script>');
+      response.end(
+        (cascadeProbe
+          ? '<script type="importmap">{"imports":{"@electric-sql/pglite":"/pglite/index.js"}}</script>'
+          : '') + '<script type="module" src="/entry.js"></script>',
+      );
       return;
     }
     if (pathname === '/favicon.ico') return response.writeHead(204).end();
-    const file = resolve(outputDir, `.${pathname}`);
-    if (!file.startsWith(`${outputDir}/`)) return response.writeHead(403).end();
+    const servingPglite = pgliteDir && pathname.startsWith('/pglite/');
+    const assetDir = servingPglite ? pgliteDir : outputDir;
+    const assetPath = servingPglite ? pathname.slice('/pglite'.length) : pathname;
+    const file = resolve(assetDir, `.${assetPath}`);
+    if (!file.startsWith(`${assetDir}/`)) return response.writeHead(403).end();
     try {
       const content = await readFile(file);
       response.writeHead(200, {

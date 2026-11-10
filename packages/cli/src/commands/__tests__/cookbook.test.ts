@@ -20,6 +20,7 @@ import {
   acquireTemplate,
   applyCookbook,
   nextSteps,
+  scopedProjectName,
 } from '../cookbook/apply.js';
 import {
   createRecipeIndex,
@@ -35,6 +36,7 @@ import {
   validateCookbookText,
 } from '../cookbook/validate.js';
 import { cookbookCommands } from '../cookbook.js';
+import { scaffoldAgentDocs } from '../scaffold-agent-docs.js';
 
 const fixtureDir = join(
   dirname(fileURLToPath(import.meta.url)),
@@ -302,15 +304,15 @@ describe('cookbook apply', () => {
     for (const dep of report.packages) {
       expect(pkg.dependencies[dep]).toBeDefined();
     }
-    // The template's framework line, not the CLI version.
-    expect(pkg.dependencies['@happyvertical/smrt-commerce']).toBe('^0.55.1');
-    // Existing dependencies untouched, deps sorted.
-    expect(pkg.dependencies['@happyvertical/smrt-users']).toBe('^0.55.1');
+    // This CLI's release, not the template's framework line (#4055).
+    expect(pkg.dependencies['@happyvertical/smrt-commerce']).toBe('9.9.9');
+    // The template's own smrt dependencies are pinned too; deps sorted.
+    expect(pkg.dependencies['@happyvertical/smrt-users']).toBe('9.9.9');
     expect(Object.keys(pkg.dependencies)).toEqual(
       [...Object.keys(pkg.dependencies)].sort((a, b) => a.localeCompare(b)),
     );
     // Named from the directory, never the template's shared identity.
-    expect(pkg.name).toBe(`out-${name}`);
+    expect(pkg.name).toBe(`@smrt-app/out-${name}`);
     expect(readJson(join(dir, 'smrt.cookbook.json'))).toEqual(report.cookbook);
     // Template files copied, .git left behind.
     expect(existsSync(join(dir, 'src', 'app.ts'))).toBe(true);
@@ -337,13 +339,15 @@ describe('cookbook apply', () => {
       cliVersion: '9.9.9',
       cwd: work,
     });
-    expect(readJson(join(dir, 'package.json')).name).toBe('sourdough-co');
+    expect(readJson(join(dir, 'package.json')).name).toBe(
+      '@smrt-app/sourdough-co',
+    );
   });
 
   it('names the project from the target directory when the cookbook has no name', async () => {
     const cases: Array<[string, string]> = [
-      ['My Cool_App!', 'my-cool-app'],
-      ['___', 'smrt-app'],
+      ['My Cool_App!', '@smrt-app/my-cool-app'],
+      ['___', '@smrt-app/smrt-app'],
     ];
     for (const [dirName, expected] of cases) {
       const dir = join(work, dirName);
@@ -359,7 +363,7 @@ describe('cookbook apply', () => {
       });
       const name = readJson(join(dir, 'package.json')).name;
       expect(name).toBe(expected);
-      expect(name).toMatch(/^[a-z0-9][a-z0-9-]*$/);
+      expect(name).toMatch(/^@smrt-app\/[a-z0-9][a-z0-9-]*$/);
     }
   });
 
@@ -400,6 +404,82 @@ describe('cookbook apply', () => {
     expect(existsSync(join(dir, '.git'))).toBe(false);
   });
 
+  describe("leaves the template repository's own metadata behind (#4239)", () => {
+    function addRepositoryMetadata(repo: string) {
+      mkdirSync(join(repo, '.agents'), { recursive: true });
+      writeFileSync(join(repo, '.agents', 'project.yaml'), 'tracker: x\n');
+      mkdirSync(join(repo, '.github', 'workflows'), { recursive: true });
+      writeFileSync(join(repo, '.github', 'workflows', 'ci.yml'), 'on: push\n');
+      writeFileSync(join(repo, 'AGENTS.md'), '# template repository\n');
+      writeFileSync(join(repo, 'CLAUDE.md'), '@AGENTS.md\n');
+      writeFileSync(join(repo, 'renovate.json'), '{}\n');
+      // The same names below the root are the app's own and still ship.
+      mkdirSync(join(repo, 'src', '.github'), { recursive: true });
+      writeFileSync(join(repo, 'src', '.github', 'keep.md'), 'x');
+      writeFileSync(join(repo, 'src', 'AGENTS.md'), '# app notes\n');
+    }
+
+    function expectLeftBehind(dir: string) {
+      for (const name of [
+        '.agents',
+        '.github',
+        'AGENTS.md',
+        'CLAUDE.md',
+        'renovate.json',
+      ]) {
+        expect(existsSync(join(dir, name)), name).toBe(false);
+      }
+      expect(existsSync(join(dir, 'src', '.github', 'keep.md'))).toBe(true);
+      expect(existsSync(join(dir, 'src', 'AGENTS.md'))).toBe(true);
+      expect(existsSync(join(dir, 'src', 'app.ts'))).toBe(true);
+    }
+
+    const skipped = [
+      '.agents',
+      '.github',
+      'AGENTS.md',
+      'CLAUDE.md',
+      'renovate.json',
+    ];
+
+    it('from a fetched or plain-directory template', async () => {
+      addRepositoryMetadata(template);
+      const dir = join(work, 'no-repo-metadata');
+      const { result } = await apply('yoga-studio', dir);
+      expect(result.plan.skippedTemplateFiles).toEqual(skipped);
+      expectLeftBehind(dir);
+    });
+
+    it('from a local git template', async () => {
+      const repo = join(work, 'git-template-metadata');
+      writeTemplate(repo);
+      rmSync(join(repo, '.git'), { recursive: true, force: true });
+      addRepositoryMetadata(repo);
+      const sh = (...args: string[]) =>
+        execFileSync('git', args, { cwd: repo, stdio: 'ignore' });
+      sh('init', '-q');
+      sh('add', '.');
+      const dir = join(work, 'no-repo-metadata-git');
+      const { result } = await apply('yoga-studio', dir, { template: repo });
+      expect(result.plan.skippedTemplateFiles).toEqual(skipped);
+      expectLeftBehind(dir);
+    });
+
+    it('plans the skip in a dry run, and an update never reports one', async () => {
+      addRepositoryMetadata(template);
+      const dir = join(work, 'dry-metadata');
+      const { result } = await apply('yoga-studio', dir, { dryRun: true });
+      expect(result.plan.skippedTemplateFiles).toEqual(skipped);
+      expect(existsSync(dir)).toBe(false);
+
+      const project = join(work, 'existing');
+      await apply('yoga-studio', project);
+      const { result: update } = await apply('yoga-studio', project);
+      expect(update.plan.mode).toBe('update');
+      expect(update.plan.skippedTemplateFiles).toEqual([]);
+    });
+  });
+
   it('is idempotent and preserves user edits when re-applying an edited cookbook', async () => {
     const dir = join(work, 'idem');
     await apply('yoga-studio', dir);
@@ -426,7 +506,7 @@ describe('cookbook apply', () => {
     const after = readJson(pkgPath);
     expect(after.scripts.custom).toBe('echo hi');
     expect(after.dependencies['@happyvertical/smrt-commerce']).toBe('~0.55.9');
-    expect(after.name).toBe('idem');
+    expect(after.name).toBe('@smrt-app/idem');
     expect(readFileSync(join(dir, 'src', 'app.ts'), 'utf-8')).toBe('// mine\n');
     expect(readJson(join(dir, 'smrt.cookbook.json')).recipes).toContain(
       'commerce.wholesale',
@@ -470,7 +550,7 @@ describe('cookbook apply', () => {
     expect(readdirSync(work)).not.toContain('dry');
   });
 
-  it('falls back to the CLI release line without a framework dependency', async () => {
+  it('pins added packages to the CLI release without a framework dependency', async () => {
     const bare = join(work, 'bare-template');
     mkdirSync(bare);
     writeFileSync(join(bare, 'package.json'), '{"name":"bare"}\n');
@@ -478,8 +558,207 @@ describe('cookbook apply', () => {
       template: bare,
     });
     expect(result.plan.addDependencies['@happyvertical/smrt-commerce']).toBe(
-      '^9.9.9',
+      '9.9.9',
     );
+  });
+});
+
+describe("apply pins smrt to the CLI's release (#4055)", () => {
+  /** A template that pins the vulnerable 0.55 line and locks it. */
+  function writeStaleTemplate(dir: string, lockfile = 'pnpm-lock.yaml') {
+    mkdirSync(dir, { recursive: true });
+    writeFileSync(
+      join(dir, 'package.json'),
+      `${JSON.stringify(
+        {
+          name: '@smrt-app/start',
+          scripts: { 'app:setup': 'smrt app setup' },
+          dependencies: {
+            '@happyvertical/smrt-core': '^0.55.21',
+            '@happyvertical/smrt-ui': '0.55.21',
+            '@happyvertical/smrt-users': '~0.55.0',
+            '@happyvertical/smrt-local': 'link:../smrt-local',
+            '@happyvertical/smrt-alias': 'npm:@happyvertical/smrt-core@0.55.21',
+            '@happyvertical/sql': '^0.103.5',
+            svelte: '^5.57.1',
+          },
+          devDependencies: {
+            '@happyvertical/smrt-cli': '^0.55.21',
+            vitest: '4.1.10',
+          },
+          peerDependencies: { '@happyvertical/smrt-types': '>=0.55.0' },
+        },
+        null,
+        2,
+      )}\n`,
+    );
+    writeFileSync(
+      join(dir, lockfile),
+      "  '@happyvertical/smrt-core@0.55.21':\n    resolution: {}\n",
+    );
+  }
+
+  async function applyStale(cliVersion: string, extra = {}) {
+    const stale = join(work, 'stale-template');
+    writeStaleTemplate(stale);
+    const report = await validate(doc({ recipes: ['commerce.customers'] }));
+    const dir = join(work, 'app');
+    const result = applyCookbook({
+      cookbook: report.cookbook as Cookbook,
+      packages: report.packages,
+      dir,
+      template: stale,
+      install: false,
+      cliVersion,
+      cwd: work,
+      ...extra,
+    });
+    return { stale, dir, result };
+  }
+
+  it('pins every template smrt dependency and devDependency to the CLI version', async () => {
+    const { dir, result } = await applyStale('0.57.0');
+    const pkg = readJson(join(dir, 'package.json'));
+    expect(pkg.dependencies['@happyvertical/smrt-core']).toBe('0.57.0');
+    expect(pkg.dependencies['@happyvertical/smrt-ui']).toBe('0.57.0');
+    expect(pkg.dependencies['@happyvertical/smrt-users']).toBe('0.57.0');
+    expect(pkg.devDependencies['@happyvertical/smrt-cli']).toBe('0.57.0');
+    expect(result.plan.smrtVersion).toBe('0.57.0');
+    expect(
+      result.plan.repinnedDependencies['@happyvertical/smrt-core'],
+    ).toEqual({ from: '^0.55.21', to: '0.57.0' });
+    expect(result.warnings).toEqual([]);
+  });
+
+  it('gives recipe-added smrt packages the CLI version', async () => {
+    const { dir, result } = await applyStale('0.57.0');
+    expect(result.plan.addDependencies).toEqual({
+      '@happyvertical/smrt-commerce': '0.57.0',
+    });
+    expect(
+      readJson(join(dir, 'package.json')).dependencies[
+        '@happyvertical/smrt-commerce'
+      ],
+    ).toBe('0.57.0');
+  });
+
+  it('leaves non-smrt dependencies, protocol specs and peer ranges alone', async () => {
+    const { dir } = await applyStale('0.57.0');
+    const pkg = readJson(join(dir, 'package.json'));
+    expect(pkg.dependencies['@happyvertical/sql']).toBe('^0.103.5');
+    expect(pkg.dependencies.svelte).toBe('^5.57.1');
+    expect(pkg.devDependencies.vitest).toBe('4.1.10');
+    expect(pkg.dependencies['@happyvertical/smrt-local']).toBe(
+      'link:../smrt-local',
+    );
+    expect(pkg.dependencies['@happyvertical/smrt-alias']).toBe(
+      'npm:@happyvertical/smrt-core@0.55.21',
+    );
+    expect(pkg.peerDependencies['@happyvertical/smrt-types']).toBe('>=0.55.0');
+  });
+
+  it('drops the template lockfile so the install cannot keep the old smrt versions', async () => {
+    const { stale, dir, result } = await applyStale('0.57.0');
+    expect(result.plan.removedLockfiles).toEqual(['pnpm-lock.yaml']);
+    expect(existsSync(join(dir, 'pnpm-lock.yaml'))).toBe(false);
+    expect(
+      readdirSync(dir)
+        .filter((f) => /lock/.test(f))
+        .map((f) => readFileSync(join(dir, f), 'utf-8'))
+        .join(''),
+    ).not.toContain('0.55.21');
+    // The template itself is untouched.
+    expect(existsSync(join(stale, 'pnpm-lock.yaml'))).toBe(true);
+  });
+
+  it('keeps the package manager the dropped lockfile named', async () => {
+    const stale = join(work, 'yarn-template');
+    writeStaleTemplate(stale, 'yarn.lock');
+    const report = await validate(doc({ recipes: ['commerce.customers'] }));
+    const dir = join(work, 'yarn-app');
+    const result = applyCookbook({
+      cookbook: report.cookbook as Cookbook,
+      packages: report.packages,
+      dir,
+      template: stale,
+      install: false,
+      cliVersion: '0.57.0',
+      cwd: work,
+    });
+    expect(existsSync(join(dir, 'yarn.lock'))).toBe(false);
+    expect(result.nextSteps).toContain('yarn install');
+  });
+
+  it('chooses the package manager from copied files, not git-ignored ones', async () => {
+    const repo = join(work, 'git-stale-template');
+    writeStaleTemplate(repo);
+    writeFileSync(join(repo, '.gitignore'), 'yarn.lock\n');
+    writeFileSync(join(repo, 'yarn.lock'), 'ignored');
+    execFileSync('git', ['init', '-q'], { cwd: repo });
+    const report = await validate(doc({ recipes: ['commerce.customers'] }));
+    const dir = join(work, 'git-stale-app');
+    const result = applyCookbook({
+      cookbook: report.cookbook as Cookbook,
+      packages: report.packages,
+      dir,
+      template: repo,
+      install: false,
+      cliVersion: '0.57.0',
+      cwd: work,
+    });
+    expect(result.plan.removedLockfiles).toEqual(['pnpm-lock.yaml']);
+    expect(existsSync(join(dir, 'yarn.lock'))).toBe(false);
+    expect(result.nextSteps).toContain('pnpm install');
+  });
+
+  it('plans the pin and the dropped lockfile in a dry run without writing', async () => {
+    const { dir, result } = await applyStale('0.57.0', { dryRun: true });
+    expect(existsSync(dir)).toBe(false);
+    expect(result.plan.removedLockfiles).toEqual(['pnpm-lock.yaml']);
+    expect(Object.keys(result.plan.repinnedDependencies)).toContain(
+      '@happyvertical/smrt-cli',
+    );
+  });
+
+  it.each([
+    '0.57.1-next.0',
+    '0.0.0',
+  ])('keeps the template ranges and warns for an unreleased CLI %s', async (version) => {
+    const { dir, result } = await applyStale(version);
+    const pkg = readJson(join(dir, 'package.json'));
+    expect(pkg.dependencies['@happyvertical/smrt-core']).toBe('^0.55.21');
+    expect(pkg.dependencies['@happyvertical/smrt-commerce']).toBe('^0.55.21');
+    expect(existsSync(join(dir, 'pnpm-lock.yaml'))).toBe(true);
+    expect(result.plan.smrtVersion).toBeUndefined();
+    expect(result.warnings.join(' ')).toMatch(/not a published release/);
+  });
+
+  it('does not repin an existing project on --into or re-apply', async () => {
+    const dir = join(work, 'mine');
+    mkdirSync(dir);
+    writeFileSync(
+      join(dir, 'package.json'),
+      JSON.stringify({
+        name: 'mine',
+        dependencies: { '@happyvertical/smrt-core': '0.56.2' },
+      }),
+    );
+    writeFileSync(join(dir, 'pnpm-lock.yaml'), 'keep');
+    const report = await validate(doc({ recipes: ['commerce.customers'] }));
+    const result = applyCookbook({
+      cookbook: report.cookbook as Cookbook,
+      packages: report.packages,
+      dir,
+      into: true,
+      install: false,
+      cliVersion: '0.57.0',
+      cwd: work,
+    });
+    const pkg = readJson(join(dir, 'package.json'));
+    expect(pkg.dependencies['@happyvertical/smrt-core']).toBe('0.56.2');
+    expect(pkg.dependencies['@happyvertical/smrt-commerce']).toBe('0.56.2');
+    expect(readFileSync(join(dir, 'pnpm-lock.yaml'), 'utf-8')).toBe('keep');
+    expect(result.plan.repinnedDependencies).toEqual({});
   });
 });
 
@@ -784,4 +1063,135 @@ applyCookbook({ cookbook: { version: 1, recipes: [], features: [], policies: [] 
     expect(run.stdout).not.toContain('STDOUT-LEAK');
     expect(run.stderr).toContain('STDOUT-LEAK');
   }, 60_000);
+});
+
+describe('scopedProjectName (#4061)', () => {
+  it('keeps the template scope, else uses @smrt-app, so SMRT can qualify class names', () => {
+    expect(scopedProjectName('bakery', '@smrt-app/sveltekit-app')).toBe(
+      '@smrt-app/bakery',
+    );
+    expect(scopedProjectName('bakery', '@acme/starter')).toBe('@acme/bakery');
+    expect(scopedProjectName('bakery', 'unscoped-template')).toBe(
+      '@smrt-app/bakery',
+    );
+    expect(scopedProjectName('bakery', undefined)).toBe('@smrt-app/bakery');
+  });
+
+  it('never reproduces the template name, whose app identity it would share', () => {
+    expect(scopedProjectName('sveltekit-app', '@smrt-app/sveltekit-app')).toBe(
+      '@smrt-app/sveltekit-app-project',
+    );
+  });
+
+  it('compares with the template name after truncating to 214 characters', () => {
+    const template = `@smrt-app/${'a'.repeat(204)}`;
+    const name = scopedProjectName('a'.repeat(205), template);
+    expect(name).not.toBe(template);
+    expect(name.length).toBeLessThanOrEqual(214);
+    expect(name.endsWith('-project')).toBe(true);
+    // A slug that already ends in the suffix at the truncation point.
+    const tricky = `${'a'.repeat(195)}-project`;
+    const trickyTemplate = `@smrt-app/${tricky}`;
+    expect(scopedProjectName(`${tricky}-project`, trickyTemplate)).not.toBe(
+      trickyTemplate,
+    );
+  });
+
+  it('stays a valid name when a long template scope leaves no room for a suffix', () => {
+    const template = `@${'a'.repeat(205)}/starter`;
+    expect(template.length).toBe(214);
+    const name = scopedProjectName('starter', template);
+    expect(name).not.toBe(template);
+    expect(name.length).toBeLessThanOrEqual(214);
+    expect(name).toMatch(/^@[a-z0-9._~-]+\/[a-z0-9][a-z0-9._~-]*$/);
+  });
+
+  it('stays within the 214-character npm name limit', () => {
+    const name = scopedProjectName('a'.repeat(300), '@smrt-app/start');
+    expect(name.length).toBeLessThanOrEqual(214);
+    expect(name.startsWith('@smrt-app/a')).toBe(true);
+  });
+});
+
+describe('cookbook apply refreshes agent docs (#4878)', () => {
+  function run(dir: string, extra: Record<string, unknown> = {}) {
+    return cookbookCommands['cookbook apply'].handler?.(
+      [join(fixtureDir, 'bakery.cookbook.json'), dir],
+      {
+        template,
+        manifests: [manifests],
+        'no-registry': true,
+        'no-install': true,
+        ...extra,
+      },
+    );
+  }
+
+  function seam(
+    refresh: (typeof scaffoldAgentDocs)['refresh'] = async () => ({
+      status: 'written',
+      root: '',
+      warnings: [],
+    }),
+  ) {
+    return vi.spyOn(scaffoldAgentDocs, 'refresh').mockImplementation(refresh);
+  }
+
+  it('refreshes at the written project in write mode, after a new apply', async () => {
+    vi.spyOn(console, 'log').mockImplementation(() => {});
+    const refresh = seam();
+    const dir = join(work, 'fresh');
+    await run(dir);
+    expect(refresh).toHaveBeenCalledTimes(1);
+    expect(refresh.mock.calls[0][0]).toMatchObject({ cwd: dir, mode: 'write' });
+    expect(existsSync(join(dir, 'smrt.cookbook.json'))).toBe(true);
+  });
+
+  it('refreshes for --into too', async () => {
+    vi.spyOn(console, 'log').mockImplementation(() => {});
+    const dir = join(work, 'existing');
+    await run(dir);
+    const refresh = seam();
+    await run(dir, { into: true });
+    expect(refresh).toHaveBeenCalledTimes(1);
+    expect(refresh.mock.calls[0][0]).toMatchObject({ cwd: dir });
+  });
+
+  it('does not refresh on --dry-run', async () => {
+    vi.spyOn(console, 'log').mockImplementation(() => {});
+    const refresh = seam();
+    await run(join(work, 'dry'), { 'dry-run': true });
+    expect(refresh).not.toHaveBeenCalled();
+  });
+
+  it('a failing refresh keeps the result, stdout JSON and exit status', async () => {
+    const log = vi.spyOn(console, 'log').mockImplementation(() => {});
+    const err = vi.spyOn(console, 'error').mockImplementation(() => {});
+    const exit = vi.spyOn(process, 'exit');
+    seam(async () => {
+      throw new Error('boom');
+    });
+    const dir = join(work, 'broken');
+    await run(dir, { json: true });
+    expect(exit).not.toHaveBeenCalled();
+    expect(log).toHaveBeenCalledTimes(1);
+    expect(JSON.parse(log.mock.calls[0][0] as string).dryRun).toBe(false);
+    expect(err.mock.calls.join('\n')).toContain(
+      'agent docs refresh failed: boom',
+    );
+    expect(existsSync(join(dir, 'smrt.cookbook.json'))).toBe(true);
+  });
+
+  it('nothing installed prints one stderr hint and leaves stdout alone', async () => {
+    const log = vi.spyOn(console, 'log').mockImplementation(() => {});
+    const err = vi.spyOn(console, 'error').mockImplementation(() => {});
+    seam(async () => ({
+      status: 'skipped-nothing-installed',
+      root: '',
+      warnings: [],
+    }));
+    await run(join(work, 'bare'), { json: true });
+    expect(log).toHaveBeenCalledTimes(1);
+    expect(err.mock.calls.flat().join('\n')).toContain('smrt docs:agents');
+  });
 });

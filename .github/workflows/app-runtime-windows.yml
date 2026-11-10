@@ -1,0 +1,156 @@
+# =============================================================================
+# App runtime Windows custody (smrt#4837)
+# =============================================================================
+# Runs the Windows custody tests of @happyvertical/smrt-app-runtime on a real
+# Windows runner: the in-memory seam tests (`windows-custody.test.ts`) and the
+# real-Windows-only tests (`windows-custody.win32.test.ts`), which exercise the
+# real PowerShell ACL inspector, NTFS file ids, junctions, subst drives and
+# DACL inheritance that no fake can reproduce.
+#
+# This workflow is path filtered so it never runs for (or blocks) unrelated
+# pull requests, and it is intentionally NOT a required status check: it is new,
+# its install and test steps have not yet been proven on windows-latest, and
+# the monorepo's native dependencies may not all install there. Promote it to a
+# required check only once it has been stable for a while. It starts no
+# containers. Its only secret is the read-only GITHUB_TOKEN, which exists in the
+# install step alone (see below): the build and test steps run pull-request
+# code and never see it.
+#
+# Until one green run of this job is attached to the pull request or recorded
+# on smrt#4837, the Windows claims of @happyvertical/smrt-app-runtime are
+# unverified. The job runs only the app-runtime custody tests; the
+# `smrt app` Windows gate in packages/cli/src/app is covered by seam tests on
+# any host. The filter lists packages/cli/src/app because that code decides
+# which app-runtime entry points a Windows host reaches.
+# =============================================================================
+
+name: App runtime Windows
+
+on:
+  pull_request:
+    paths:
+      - 'packages/app-runtime/**'
+      - 'packages/cli/src/app/**'
+      - '.github/workflows/app-runtime-windows.yml'
+  push:
+    branches: [main]
+    paths:
+      - 'packages/app-runtime/**'
+      - 'packages/cli/src/app/**'
+      - '.github/workflows/app-runtime-windows.yml'
+  workflow_dispatch:
+
+permissions:
+  contents: read
+  # Read-only: the install resolves a few @happyvertical tarballs that still
+  # live only in GitHub Packages (see .npmrc).
+  packages: read
+
+concurrency:
+  group: app-runtime-windows-${{ github.ref }}
+  cancel-in-progress: ${{ github.event_name == 'pull_request' }}
+
+jobs:
+  custody:
+    name: Windows custody tests
+    runs-on: windows-latest
+    timeout-minutes: 45
+    defaults:
+      run:
+        shell: bash
+    steps:
+      # Windows runners default to core.autocrlf=true, which checks text files
+      # out with CRLF. Generated-file verification (for example
+      # smrt-mobile-contract's committed Kotlin) compares bytes against LF
+      # output and reports "stale". Check out LF, as every other runner does.
+      - name: Keep LF line endings
+        run: git config --global core.autocrlf false
+
+      - name: Checkout
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7
+        with:
+          persist-credentials: false
+
+      - name: Set up Node
+        uses: actions/setup-node@820762786026740c76f36085b0efc47a31fe5020 # v7
+        with:
+          node-version: '26.12.1'
+
+      - name: Set up pnpm
+        uses: pnpm/action-setup@0977fd99725f1db4007ccb2928dbb4e90d06cc86 # v6
+        with:
+          run_install: false
+
+      # The only step that holds NODE_AUTH_TOKEN (step-level env, never job
+      # level). The user config is a throwaway file under RUNNER_TEMP that
+      # names the token by reference (`${NODE_AUTH_TOKEN}`, expanded by pnpm),
+      # so the secret is never written to disk, and a trap deletes the file
+      # when this step ends however it ends. HOME/.npmrc is not touched.
+      #
+      # Filtered to the package and its dependency closure: the rest of the
+      # monorepo (native addons, Playwright) is neither needed nor expected to
+      # install on Windows.
+      - name: Install dependencies
+        env:
+          NODE_AUTH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          set -euo pipefail
+          userconfig="${RUNNER_TEMP}/app-runtime-windows.npmrc"
+          trap 'rm -f "${userconfig}"' EXIT
+          # shellcheck disable=SC2016 # the token stays a reference on purpose
+          {
+            echo "@happyvertical:registry=https://npm.pkg.github.com"
+            echo '//npm.pkg.github.com/:_authToken=${NODE_AUTH_TOKEN}'
+            echo "//npm.pkg.github.com/:always-auth=true"
+          } > "${userconfig}"
+          export NPM_CONFIG_USERCONFIG="${userconfig}"
+          pnpm install --frozen-lockfile --filter "@happyvertical/smrt-app-runtime..."
+
+      # Fails the job if the install step left a registry credential behind,
+      # before any step that runs pull-request code.
+      - name: Check no registry credential remains
+        run: |
+          set -euo pipefail
+          test -z "${NODE_AUTH_TOKEN:-}"
+          test ! -e "${RUNNER_TEMP}/app-runtime-windows.npmrc"
+          if [ -f "${HOME}/.npmrc" ] && grep -q '_authToken' "${HOME}/.npmrc"; then
+            echo 'A registry credential remains in the user .npmrc' >&2
+            exit 1
+          fi
+
+      # packages/core/scripts/generate-manifest.js only runs its generator when
+      # `import.meta.url === file://${process.argv[1]}`, which is never true on
+      # Windows (file:///D:/... against file://D:\...). On Windows the script
+      # therefore exits 0 without writing src/manifest/static-manifest.ts, and
+      # core's own `vite build` then fails with UNRESOLVED_ENTRY. Run the
+      # generator through its exported function until core fixes the entry
+      # check (tracked on the Windows follow-up issue). Core's dependencies
+      # must be built first because the generator imports from source.
+      # Package scripts in this monorepo are POSIX shell (VAR=x cmd, cp -r) and
+      # pnpm runs them through cmd.exe on Windows. Run the build steps' package
+      # scripts under the Git Bash that ships on the runner instead. Applied to
+      # the build steps only; the install step keeps pnpm's default shell.
+      - name: Build core's dependencies
+        env:
+          NPM_CONFIG_SCRIPT_SHELL: 'C:\Program Files\Git\bin\bash.exe'
+        run: pnpm turbo run build --filter="@happyvertical/smrt-core^..."
+
+      - name: Generate the core manifest (Windows entry-check workaround)
+        working-directory: packages/core
+        run: node -e "import('./scripts/generate-manifest.js').then((m) => m.generateManifest())"
+
+      - name: Build the dependency closure
+        env:
+          NPM_CONFIG_SCRIPT_SHELL: 'C:\Program Files\Git\bin\bash.exe'
+        run: pnpm turbo run build --filter="@happyvertical/smrt-app-runtime^..."
+
+      - name: Restore the core test manifest
+        env:
+          NPM_CONFIG_SCRIPT_SHELL: 'C:\Program Files\Git\bin\bash.exe'
+        run: pnpm turbo run generate:test --filter='@happyvertical/smrt-core'
+
+      - name: Windows custody tests
+        working-directory: packages/app-runtime
+        env:
+          NODE_ENV: test
+        run: pnpm exec vitest run src/windows-custody

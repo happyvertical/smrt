@@ -9,8 +9,8 @@
  * Import this module as the first statement in `src/index.ts` so its top-level
  * side effect runs ahead of any class module's @smrt() decorator.
  *
- * Silent no-op in dev/test, where the vitest plugin already populates manifests
- * via a different path. Only needs to succeed in the published dist output.
+ * Vitest/Vite can populate manifests separately. Plain source imports use the
+ * checked-in runtime manifest below; published builds embed that schema inline.
  *
  * @see https://github.com/happyvertical/smrt/issues/1132
  */
@@ -22,5 +22,5 @@ import { ObjectRegistry } from '@happyvertical/smrt-core';
 // relocating the compiled module away from dist/manifest.json. The runtime
 // lookup below is the fallback for source-mode runs without that transform.
 ObjectRegistry.registerPackageManifest(
-  new URL('./manifest.json', import.meta.url),
+  new URL('./manifest/manifest.json', import.meta.url),
 );

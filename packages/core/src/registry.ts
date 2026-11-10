@@ -87,6 +87,19 @@ import { clearSubtypeLineage } from './registry/subtype-lineage';
 
 export type { RuntimeRegistrationOverride } from './registry/runtime-overrides';
 
+import {
+  COLLECTION_CRUD_SURFACES,
+  capCollectionCrudToModel,
+  closeWildcardExclusions,
+  inheritCollectionExposure,
+  inheritedCollectionSurface,
+  narrowInheritedCollectionSurface,
+} from './registry/collection-exposure';
+import {
+  isCollectionRegistration,
+  resolveCollectionItemClassName,
+  resolveRelatedRegistration,
+} from './registry/collection-resolution';
 import { resolveCollectionDbCacheKey } from './registry/db-cache-key';
 import {
   clearRegistryDiagnostics,
@@ -102,6 +115,7 @@ import {
   hasEmbeddings as _hasEmbeddings,
   resolveEmbeddingConfig as _resolveEmbeddingConfig,
 } from './registry/embedding-manager';
+import { isFrameworkBaseClass } from './registry/framework-base-classes';
 import {
   bumpRegistryGeneration,
   getRegistryGeneration,
@@ -133,7 +147,9 @@ import {
   getQualifiedClassNames as _getQualifiedClassNames,
   hasClass as _hasClass,
   hasClassCaseInsensitive as _hasClassCaseInsensitive,
+  hasClassForPackage as _hasClassForPackage,
   resolveType as _resolveType,
+  findClassStrict,
 } from './registry/name-resolver';
 import {
   collectManifestAliasInventory,
@@ -176,6 +192,7 @@ import {
   setNextDbId,
   verboseLog,
 } from './registry/shared-state';
+import { inheritSubclassExposure } from './registry/subclass-exposure';
 import type {
   RegisteredClass,
   RegisteredField,
@@ -290,6 +307,37 @@ let manifestAliasInventory:
  * generation (see `registry/generation.ts`).
  */
 const manifestEnsuredAtGeneration = new WeakMap<RegisteredClass, number>();
+
+/**
+ * The parent a manifest entry would set on `registered`, or `undefined` when
+ * the registration already records it (#4176). The import-qualified
+ * `extendsQualified` (#4145) wins over the bare `extends`. A bare name never
+ * replaces a registered qualified parent of the same class name: once two
+ * packages export that name the bare form is ambiguous, and the qualified one
+ * is the parent the class was registered against (from its constructor or its
+ * manifest). A qualified parent that names no registered class — a guess made
+ * before the class's package identity was known — still yields to the bare
+ * name, which resolves by simple name.
+ */
+function manifestParentUpdate(
+  registered: RegisteredClass,
+  manifestEntry: { extends?: string; extendsQualified?: string },
+): string | undefined {
+  const parent = manifestEntry.extendsQualified ?? manifestEntry.extends;
+  if (!parent || registered.extends === parent) {
+    return undefined;
+  }
+  if (
+    !isQualifiedName(parent) &&
+    registered.extends &&
+    isQualifiedName(registered.extends) &&
+    parseQualifiedName(registered.extends).className === parent &&
+    getClasses().has(registered.extends)
+  ) {
+    return undefined;
+  }
+  return parent;
+}
 
 /**
  * Loose view of a stored field's option bag. Field entries are heterogeneous
@@ -533,6 +581,198 @@ function viteFsUrlToPath(urlString: string): string | null {
   const decoded = decodeURIComponent(pathname.slice('/@fs'.length));
   // Windows: `/C:/dir/file` -> `C:/dir/file`.
   return /^\/[A-Za-z]:\//.test(decoded) ? decoded.slice(1) : decoded;
+}
+
+/**
+ * A class's config with the generated-surface exposure it inherits: a
+ * collection's from its model (`registry/collection-exposure.ts`), a model
+ * subclass's from its parent model (`registry/subclass-exposure.ts`). Applied
+ * here as well as in the manifest generator, so a class registered from a
+ * manifest built before those rules, or by any other runtime path, still never
+ * publishes more than its source. Returns the registered config object itself
+ * when nothing is inherited.
+ */
+const effectiveConfigCache = new WeakMap<
+  RegisteredClass,
+  { generation: number; source: SmartObjectConfig; config: SmartObjectConfig }
+>();
+
+const collectionExposureLookup = {
+  findClass: (className: string) => ObjectRegistry.getClass(className),
+  findClassInPackage: (packageName: string, className: string) =>
+    ObjectRegistry.getClassInPackage(packageName, className),
+  // Walk `extends` directly: `getInheritanceChain()` memoizes, and this
+  // lookup runs from `getConfig()` while classes are still registering, so a
+  // chain cached here would miss ancestors registered later.
+  getInheritanceChain: (className: string) => {
+    const chain: string[] = [];
+    let current = ObjectRegistry.getClass(className);
+    const seen = new Set<string>();
+    while (current?.extends && !seen.has(current.extends)) {
+      seen.add(current.extends);
+      chain.push(current.extends);
+      current = ObjectRegistry.getClass(current.extends);
+    }
+    return chain;
+  },
+};
+
+/**
+ * Method names a model declares or inherits from its registered ancestors,
+ * matching the merged method set the manifest generator compares against.
+ */
+function chainMethodNames(registered: RegisteredClass): Set<string> {
+  const names = new Set(registered.methods.keys());
+  for (const ancestor of collectionExposureLookup.getInheritanceChain(
+    registered.qualifiedName || registered.name,
+  )) {
+    for (const name of ObjectRegistry.getClass(ancestor)?.methods.keys() ??
+      []) {
+      names.add(name);
+    }
+  }
+  return names;
+}
+
+/**
+ * The registered model a model class directly extends, or `undefined` when
+ * its parent is a framework base, a collection, or not registered. Resolved
+ * package-first, the way the inheritance chain is; an ambiguous simple name
+ * resolves to nothing rather than to a guess.
+ */
+function resolveParentModel(
+  registered: RegisteredClass,
+): RegisteredClass | undefined {
+  const parentName = registered.extends;
+  if (!parentName) return undefined;
+  let parent: RegisteredClass | undefined;
+  try {
+    parent = findClassStrict(parentName, registered.packageName);
+  } catch {
+    return undefined;
+  }
+  if (!parent || parent === registered) return undefined;
+  if (isFrameworkBaseClass(parent.name, parent.packageName)) return undefined;
+  if (
+    isCollectionRegistration(
+      parent.qualifiedName || parent.name,
+      parent,
+      collectionExposureLookup,
+    )
+  ) {
+    return undefined;
+  }
+  return parent;
+}
+
+/**
+ * A class's effective config: its registered config plus the
+ * generated-surface exposure it inherits. A collection class takes it from
+ * its model (`registry/collection-exposure.ts`); a model subclass takes it
+ * from its parent model (`registry/subclass-exposure.ts`). Both resolve
+ * against the source's own effective config, so a collection over an STI
+ * child sees the restrictions the child inherits from its base.
+ */
+function resolveEffectiveConfig(
+  name: string,
+  registered: RegisteredClass,
+  visiting: Set<RegisteredClass> = new Set(),
+): SmartObjectConfig {
+  const generation = getRegistryGeneration();
+  const cached = effectiveConfigCache.get(registered);
+  if (
+    cached &&
+    cached.generation === generation &&
+    cached.source === registered.config
+  ) {
+    return cached.config;
+  }
+  if (visiting.has(registered))
+    return closeWildcardExclusions(registered.config);
+  visiting.add(registered);
+  // `exclude: ['*']` closes the surface (#3468).
+  const ownConfig = closeWildcardExclusions(registered.config);
+  let config = ownConfig;
+  const key = registered.qualifiedName || registered.name || name;
+  if (!isFrameworkBaseClass(registered.name, registered.packageName)) {
+    if (isCollectionRegistration(key, registered, collectionExposureLookup)) {
+      const itemName = resolveCollectionItemClassName(
+        key,
+        registered,
+        collectionExposureLookup,
+      );
+      const item = itemName
+        ? resolveRelatedRegistration(
+            itemName,
+            registered,
+            collectionExposureLookup,
+          )
+        : undefined;
+      if (item && item !== registered) {
+        const itemConfig = resolveEffectiveConfig(
+          itemName as string,
+          item,
+          visiting,
+        );
+        const methods = {
+          collection: new Set(registered.methods.keys()),
+          item: chainMethodNames(item),
+        };
+        const inherited: SmartObjectConfig = inheritCollectionExposure(
+          ownConfig,
+          itemConfig,
+          methods,
+        );
+        // Surfaces the scanner copied from the model follow the model's
+        // effective config now (a consumer subclass or registerOverride may
+        // have closed it), never opening more than the build did (#3468).
+        for (const surface of registered.inheritedExposure ?? []) {
+          const narrowed = narrowInheritedCollectionSurface(
+            ownConfig[surface],
+            inheritedCollectionSurface(surface, itemConfig, methods),
+          );
+          if (narrowed !== ownConfig[surface]) {
+            (inherited as Record<string, unknown>)[surface] = narrowed;
+          }
+        }
+        // A collection never publishes a generated CRUD operation its model
+        // keeps closed, however its own surface reads (#3468).
+        for (const surface of COLLECTION_CRUD_SURFACES) {
+          const current =
+            surface in inherited ? inherited[surface] : ownConfig[surface];
+          const capped = capCollectionCrudToModel(surface, current, itemConfig);
+          if (capped !== current) {
+            (inherited as Record<string, unknown>)[surface] = capped;
+          }
+        }
+        if (Object.keys(inherited).length > 0) {
+          config = { ...ownConfig, ...inherited };
+        }
+      }
+    } else {
+      const parent = resolveParentModel(registered);
+      if (parent) {
+        const inherited = inheritSubclassExposure(
+          ownConfig,
+          resolveEffectiveConfig(
+            parent.qualifiedName || parent.name,
+            parent,
+            visiting,
+          ),
+        );
+        if (Object.keys(inherited).length > 0) {
+          config = { ...ownConfig, ...inherited };
+        }
+      }
+    }
+  }
+  visiting.delete(registered);
+  effectiveConfigCache.set(registered, {
+    generation,
+    source: registered.config,
+    config,
+  });
+  return config;
 }
 
 /**
@@ -1223,6 +1463,21 @@ export class ObjectRegistry {
       collectionConstructor as unknown as Function,
     );
     _registerCollection(objectName, collectionConstructor);
+
+    // A `getCollection()` before this registration cached a generic default
+    // collection; drop it so later lookups get the package's own class
+    // instead of one missing its methods (#3723).
+    const { canonicalName } =
+      ObjectRegistry.resolveCollectionRegistration(objectName);
+    const cache = ObjectRegistry.collectionCache;
+    for (const key of cache.keys()) {
+      if (
+        key.startsWith(`${canonicalName}:`) &&
+        cache.get(key)?.constructor !== collectionConstructor
+      ) {
+        cache.delete(key);
+      }
+    }
   }
   /**
    * Register one manifest entry as a metadata-only stub.
@@ -1771,13 +2026,27 @@ export class ObjectRegistry {
     // and only the child package is installed
     const childClassName = objectDef.className || requestedClassName;
     if (objectDef.extends && objectDef.extends !== childClassName) {
-      const parentName = objectDef.extends;
+      // An import-qualified parent of another package is not in this
+      // manifest; it registers from its own package, never as this
+      // manifest's same-named class (#4176).
+      const parentRef = objectDef.extendsQualified ?? objectDef.extends;
+      const qualifiedParent = isQualifiedName(parentRef)
+        ? parseQualifiedName(parentRef)
+        : undefined;
+      const parentInManifest =
+        !qualifiedParent ||
+        !packageName ||
+        qualifiedParent.packageName === packageName;
+      const parentName = qualifiedParent?.className ?? objectDef.extends;
       const lowerParentName = parentName.toLowerCase();
-      let parentDef =
-        manifest.objects[lowerParentName] || manifest.objects[parentName];
+      let parentDef = parentInManifest
+        ? manifest.objects[parentRef] ||
+          manifest.objects[lowerParentName] ||
+          manifest.objects[parentName]
+        : undefined;
 
       // Search by className field if not found by key (Issue #713)
-      if (!parentDef) {
+      if (!parentDef && parentInManifest) {
         for (const [_key, def] of Object.entries(manifest.objects)) {
           if (
             def.className?.toLowerCase() === lowerParentName ||
@@ -1789,12 +2058,19 @@ export class ObjectRegistry {
         }
       }
 
-      if (parentDef && !ObjectRegistry.hasClass(objectDef.extends)) {
+      // A parent named by its simple name is checked in its own package:
+      // another package's same-named class (smrt-ledgers `Account`) must not
+      // stand in for it (#4735).
+      const parentRegistered =
+        parentInManifest && manifest.packageName
+          ? _hasClassForPackage(parentName, manifest.packageName)
+          : ObjectRegistry.hasClass(parentRef);
+      if (parentDef && !parentRegistered) {
         verboseLog(
-          `[ObjectRegistry] Also registering parent class ${objectDef.extends} for STI`,
+          `[ObjectRegistry] Also registering parent class ${parentRef} for STI`,
         );
         ObjectRegistry.registerFromManifest(
-          parentDef.className || objectDef.extends,
+          parentDef.className || parentName,
           parentDef,
           manifest.packageName,
         );
@@ -1851,7 +2127,9 @@ export class ObjectRegistry {
       // full-registry-integration.test.ts:72-76 contract.
       const source = new ExplicitPathsManifestSource(options.manifestPaths);
       for (const entry of source.entries()) {
-        if (!ObjectRegistry.hasClassCaseInsensitive(entry.className)) {
+        // Package-aware (#4735): another package's same-named class does not
+        // make this entry registered.
+        if (!_hasClassForPackage(entry.className, entry.packageName)) {
           ObjectRegistry.registerFromManifest(
             entry.className,
             entry.def,
@@ -1908,7 +2186,7 @@ export class ObjectRegistry {
           if (!entry.packageName || !seenPackages.has(entry.packageName)) {
             continue;
           }
-          if (!ObjectRegistry.hasClassCaseInsensitive(entry.className)) {
+          if (!_hasClassForPackage(entry.className, entry.packageName)) {
             ObjectRegistry.registerFromManifest(
               entry.className,
               entry.def,
@@ -2279,6 +2557,10 @@ export class ObjectRegistry {
       collectionConstructor = ObjectRegistry.collections.get(className);
     }
 
+    // Constructor-only qualified resources have their own receiver identity;
+    // their backing item metadata must not collapse the collection cache key.
+    const qualifiedReceiver =
+      !registered && !!collectionConstructor && className.includes(':');
     if (!registered && collectionConstructor) {
       const itemClass = (
         collectionConstructor as unknown as {
@@ -2292,8 +2574,9 @@ export class ObjectRegistry {
       }
     }
 
-    const canonicalName =
-      registered?.qualifiedName || registered?.name || className;
+    const canonicalName = qualifiedReceiver
+      ? className
+      : registered?.qualifiedName || registered?.name || className;
 
     return {
       canonicalName,
@@ -2629,8 +2912,7 @@ export class ObjectRegistry {
       const needsRegistrationHydration =
         (!!manifestEntry.packageName &&
           registered.packageName !== manifestEntry.packageName) ||
-        (!!manifestEntry.extends &&
-          registered.extends !== manifestEntry.extends);
+        manifestParentUpdate(registered, manifestEntry) !== undefined;
 
       if (
         existingFieldCount > 0 &&
@@ -2712,9 +2994,28 @@ export class ObjectRegistry {
         didHydrate = true;
       }
 
+      // #3468: surfaces the scanner copied from a collection's model.
+      if (
+        manifestEntry.inheritedExposure &&
+        registered.inheritedExposure?.join() !==
+          manifestEntry.inheritedExposure.join()
+      ) {
+        registered.inheritedExposure = manifestEntry.inheritedExposure;
+        didHydrate = true;
+      }
+      // #3956: the manifest classifies collection classes explicitly.
+      if (
+        manifestEntry.collectionOf &&
+        registered.collectionOf !== manifestEntry.collectionOf
+      ) {
+        registered.collectionOf = manifestEntry.collectionOf;
+        didHydrate = true;
+      }
+
       // Store extends info for getAllFields() to use (if present)
-      if (manifestEntry.extends) {
-        registered.extends = manifestEntry.extends;
+      const manifestParent = manifestParentUpdate(registered, manifestEntry);
+      if (manifestParent) {
+        registered.extends = manifestParent;
         didHydrate = true;
       }
 
@@ -2741,12 +3042,29 @@ export class ObjectRegistry {
   }
 
   /**
-   * Get configuration for a registered class
+   * Whether `name` is a registered collection class (a `SmrtCollection`,
+   * junction or report collection subclass) rather than a model.
+   */
+  static isCollectionClass(name: string): boolean {
+    const registered = ObjectRegistry.findClass(name);
+    if (!registered) return false;
+    return isCollectionRegistration(
+      registered.qualifiedName || registered.name || name,
+      registered,
+      collectionExposureLookup,
+    );
+  }
+
+  /**
+   * Get configuration for a registered class. A collection class's
+   * api/mcp/cli surfaces it leaves unset come from its model (see
+   * `registry/collection-exposure.ts`).
    */
   static getConfig(name: string): SmartObjectConfig {
     // Issue #951: Use findClass for multi-strategy lookup
     const registered = ObjectRegistry.findClass(name);
-    return registered ? registered.config : {};
+    if (!registered) return {};
+    return resolveEffectiveConfig(name, registered);
   }
 
   /**
@@ -2785,8 +3103,10 @@ export class ObjectRegistry {
   /**
    * Get all registered schemas as SchemaDefinition objects
    */
-  static getAllSchemasAsDefinitions(): Record<string, SchemaDefinition> {
-    return _getAllSchemasAsDefinitions();
+  static getAllSchemasAsDefinitions(
+    options?: Parameters<typeof _getAllSchemasAsDefinitions>[0],
+  ): Record<string, SchemaDefinition> {
+    return _getAllSchemasAsDefinitions(options);
   }
   /**
    * Get compiled validation functions for a registered class
@@ -4345,6 +4665,11 @@ export function smrt(config: SmartObjectConfig = {}) {
               ?.tableName || tableName;
         ObjectRegistry.register(itemClass, {
           ...config,
+          // The collection may belong to a different package. Its config must
+          // not move an already-registered item out of its declaring package.
+          packageName:
+            ObjectRegistry.getClassByConstructor(itemClass)?.packageName ??
+            config.packageName,
           tableName: itemTableName,
         });
 

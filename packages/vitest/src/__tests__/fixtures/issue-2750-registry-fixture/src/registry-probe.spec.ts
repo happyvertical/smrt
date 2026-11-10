@@ -17,6 +17,16 @@ describe('issue #2750 registry-sharing probe', () => {
     expect(classNames.some((name) => name.endsWith(':Widget'))).toBe(true);
   });
 
+  it('never receives an inline test-file fixture through manifest registration (#2760)', () => {
+    const classNames = ObjectRegistry.getQualifiedClassNames();
+    // `inline-fixture.spec.ts` declares InlineProbeGadget; the test manifest
+    // describes it, but bulk registration must skip test-file entries.
+    expect(classNames.some((name) => name.endsWith(':Widget'))).toBe(true);
+    expect(classNames.some((name) => name.endsWith(':InlineProbeGadget'))).toBe(
+      false,
+    );
+  });
+
   it('getTestDatabase() creates a real model table, not just system tables', async () => {
     const db = await getTestDatabase({ type: 'sqlite', url: ':memory:' });
     try {

@@ -73,15 +73,19 @@ import './__smrt-register__.js';
 // Re-export core lazy-config primitives for discoverability — agents are the
 // primary use case for `agent_config` snapshot resolution (issue #1161).
 export type {
+  ConfigResolutionContext,
   ConfigResolver,
+  ConfigResolverContext,
   LazyConfigSentinel,
   ResolveLazyConfigOptions,
 } from '@happyvertical/smrt-core';
 export {
+  createConfigResolverContext,
   getClassConfigResolvers,
   getConfigResolver,
   isLazyConfigSentinel,
   listConfigResolvers,
+  preferPersisted,
   registerConfigResolver,
   resetConfigResolvers,
   resolveLazyConfig,
@@ -91,6 +95,8 @@ export { Agent, type AgentOptions } from './agent.js';
 export {
   type AgentAIOptions,
   type AgentAISecretFallback,
+  type ResolvedAgentAIConfig,
+  resolveAgentAIClientOptions,
   resolveAgentAIOptions,
 } from './ai-config.js';
 export { AgentConfig, AgentConfigCollection } from './config.js';
@@ -105,11 +111,18 @@ export {
   DATA_QUERY_FUNCTION_NAME,
   DATA_QUERY_TOOL_PARAMETERS,
   DATA_QUERY_TOOL_SLUG,
+  type DataSurfaceAction,
+  DataSurfaceActionDeniedError,
   type DataSurfaceAuditEntry,
   type DataSurfaceAuditSink,
+  type DataSurfaceCatalogContext,
   DataSurfaceDeadlineError,
   type DataSurfaceDefinition,
+  type DataSurfaceDenialReason,
+  type DataSurfaceDeniedEntry,
   DataSurfaceDeniedError,
+  type DataSurfaceDeniedSink,
+  type DataSurfaceDiscoverDetail,
   type DataSurfaceExecutionContext,
   type DataSurfaceExecutor,
   type DataSurfaceExecutorResult,
@@ -121,10 +134,15 @@ export {
   DataSurfaceQueryError,
   DataSurfaceRequestError,
   DataSurfaceResultOrderError,
+  type DataSurfaceRowCountHint,
   type DataSurfaceSchema,
+  type DataSurfaceSummary,
   type DataSurfaceToolsOptions,
   DEFAULT_DATA_SURFACE_DEADLINE_MS,
   MAX_DATA_SURFACE_DEADLINE_MS,
+  MAX_DATA_SURFACE_ROW_COUNT_HINT_CHARS,
+  MAX_DATA_SURFACE_SUMMARY_DESCRIPTION_CHARS,
+  normalizeDataSurfaceRowCountHint,
 } from './data-surface.js';
 // Principal delegation for agent orchestration (#1892): the immutable-principal,
 // bounded-depth delegation envelope.
@@ -271,6 +289,7 @@ export {
 export {
   AgentSchedule,
   AgentScheduleCollection,
+  type ScheduleAdmissionReconfiguration,
   type ScheduleStatus,
 } from './schedule.js';
 // Generic SmrtObject collection -> DataSurface adapter (#2905).
@@ -284,6 +303,8 @@ export {
   dataQueryOrderByTerms,
   executeSmrtCollectionQuery,
   ID_FIELD_FILTER_OPERATORS,
+  NULL_TEST_FILTER_OPERATORS,
+  nullableColumnFieldIds,
   type SmrtCollectionDataSurfaceAction,
   type SmrtCollectionQueryCollection,
   type SmrtCollectionQueryScope,
@@ -300,7 +321,7 @@ export {
   TenantAgentCollection,
   type TenantAgentStatus,
 } from './tenant-agent.js';
-export type { AgentStatusType } from './types.js';
+export type { AgentRunRecord, AgentStatusType } from './types.js';
 // UI types and registry for admin panels
 export {
   type AdminPanelBaseProps,

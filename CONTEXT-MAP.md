@@ -4,13 +4,17 @@ SMRT is a multi-context monorepo. Use this map to find the package-level contrac
 
 | Context | Packages | Domain sources |
 | --- | --- | --- |
-| Framework foundations | `core`, `config`, `cli`, `types`, `scanner`, `tenancy`, `vitest` | Package `AGENTS.md` files, [`docs/adr/0003-smrt-add-declarative-package-install.md`](docs/adr/0003-smrt-add-declarative-package-install.md) |
-| Agent runtime, identity, and communications | `agents`, `approvals`, `jobs`, `users`, `profiles`, `personas`, `messages`, `chat`, `secrets` | [`packages/messages/CONTEXT.md`](packages/messages/CONTEXT.md), package `AGENTS.md` files, [`docs/adr/0001-persona-scoped-messaging.md`](docs/adr/0001-persona-scoped-messaging.md) |
+| Framework foundations | `core`, `config`, `cli`, `types`, `scanner`, `tenancy`, `inference`, `vitest` | Package `AGENTS.md` files, [`docs/adr/0003-smrt-add-declarative-package-install.md`](docs/adr/0003-smrt-add-declarative-package-install.md) |
+| AI inference | `core` (tiers, seams, usage), `inference` (`@happyvertical/smrt-inference`: chains, fusions, bindings, settings, hosted gate), `prompts`, `secrets`, `features`, `subscriptions` | [Inference guide](docs/content/inference.md), [`packages/inference/AGENTS.md`](packages/inference/AGENTS.md), [`packages/core/agents/inference.md`](packages/core/agents/inference.md) |
+| Agent runtime, identity, and communications | `agents`, `approvals`, `jobs`, `users`, `profiles`, `personas`, `messages`, `chat`, `secrets`, `vault-relay` | [`packages/messages/CONTEXT.md`](packages/messages/CONTEXT.md), package `AGENTS.md` files, [`docs/adr/0001-persona-scoped-messaging.md`](docs/adr/0001-persona-scoped-messaging.md) |
 | Content and media | `content`, `assets`, `images`, `video`, `voice`, `social` | Package `AGENTS.md` files |
-| Business capabilities | `commerce`, `expenses`, `timesheets`, `human-resources`, `products`, `ads`, `affiliates`, `ledgers`, `analytics`, `reports`, `subscriptions` | Package `AGENTS.md` files |
+| Business capabilities | `bookings`, `commerce`, `expenses`, `timesheets`, `human-resources`, `products`, `ads`, `affiliates`, `ledgers`, `analytics`, `reports`, `subscriptions` | Package `AGENTS.md` files |
 | Domain capabilities | `events`, `places`, `facts`, `sites`, `properties`, `tags` | Package `AGENTS.md` files |
 | Mobile | `smrt-mobile`, `smrt-android`, `smrt-ios`, `smrt-mobile-contract` | Package `AGENTS.md` files |
-| Web and application tooling | `smrt-web`, `smrt-svelte`, `preferences`, `smrt-ui`, `smrt-app-cli`, `smrt-dev-mcp`, `smrt-app-mcp`, templates | Package `AGENTS.md` files, [`docs/adr/0003-smrt-add-declarative-package-install.md`](docs/adr/0003-smrt-add-declarative-package-install.md) |
+| Desktop | `smrt-desktop` | [Sidecar manifest, runtime bundler and plugin launcher](packages/smrt-desktop/README.md) |
+| Web and application tooling | `smrt-web`, `smrt-svelte`, `preferences`, `smrt-ui`, `smrt-app-cli`, `smrt-dev-mcp`, `smrt-app-mcp`, `planner`, templates | Package `AGENTS.md` files, [`docs/adr/0003-smrt-add-declarative-package-install.md`](docs/adr/0003-smrt-add-declarative-package-install.md) |
 | Admin Shell | `smrt-svelte` workspace and shell surfaces | Root `CONTEXT.md` |
 
 For cross-context work, read every affected row. System-wide decisions belong in root `docs/adr/`; context-local decisions should live beside the relevant context.
+
+Before adding a helper, read the [intent index](docs/knowledge/intents/index.md) and run `smrt-dev-mcp review --directory <pkg> --format summary`. A capability belongs in its owning package or the SDK, never a downstream helper: add it there or file a framework issue.

@@ -186,6 +186,30 @@ alias supports the same flag and retains its historical output path.
 Regenerate snapshots after moving the project or updating dependencies so the
 local source paths remain current.
 
+`docs:agents` also installs the `smrt-catalog` agent skill into
+`.claude/skills/` and `.agents/skills/` so an agent consults the knowledge
+catalog before hand-rolling infrastructure. Pass `--no-install-skills` to skip
+it. A copy you edited (the generated marker removed) is never overwritten.
+
+In a pnpm monorepo, run `smrt docs:agents` at the workspace root (or from any
+member): packages are collected from every member's `node_modules`, and the
+framework file, knowledge bundle and skills are written at the root. A package
+installed at different versions is listed once with each version. Pass `--here`
+to document only the current directory.
+
+`docs:agents` also keeps a short block between `<!-- smrt:agents:begin -->` and
+`<!-- smrt:agents:end -->` in the root `AGENTS.md` (created when absent, with a
+`CLAUDE.md` importing it only when that is absent too), pointing agents at the
+intent index and the framework reference. Only the text between the markers is
+ever rewritten; a damaged marker pair is refused with a warning. Pass
+`--no-agents-block` to skip it; `--dry-run` prints it on stderr.
+
+The export stays current without anyone remembering it: `smrt app install`
+refreshes it, `smrt app dev` refreshes a missing or stale bundle (skipped when
+`CI` is set or `SMRT_AGENT_DOCS=off`), `smrt app build` only prints a warning
+and writes nothing, and `smrt doctor` has an "Agent knowledge" section. Agent
+docs never fail or change the exit status of those commands.
+
 Review and architecture prompt bundles include package guidance and modules
 matched by file or focus hints. Add `--complete` to either context command to
 include every module for the selected packages. These commands still build the
@@ -197,11 +221,14 @@ knowledge index; documentation snapshots use lightweight package discovery.
 |---------|------------|
 | `smrt config:export` | Export agent config for SSG |
 | `smrt export` | Export data in various formats |
+| `smrt deploy:check [file]` | Check the Compose file as a deployment declaration (`x-happyvertical` contract). `--image service=ref@sha256:…` (repeatable) or `--deploy` checks a release; `--json` for tooling |
+| `smrt deploy:chart-values [file] --inputs <json>` | Render the declaration and image digests as `smrt-app` chart values on stdout |
 | `smrt init` | Initialize s-m-r-t in an existing SvelteKit project |
 | `smrt cookbook validate <file\|url>` | Check a cookbook against cookbook/v1 and the recipe manifests |
-| `smrt cookbook apply <file\|url> [dir]` | Create a project from a cookbook and the smrt-start template (`--into`, `--template`, `--dry-run`, `--no-install`) |
+| `smrt cookbook apply <file\|url> [dir]` | Create a project from a cookbook and the smrt-start template, its smrt packages pinned to this CLI's release (`--into`, `--template`, `--dry-run`, `--no-install`) |
 | `smrt kitchen [dir]` | Serve the planner on localhost, chat to a cookbook, **Send to kitchen** applies it into `dir` (`--planner`, `--template`, `--no-open`, `--no-install`) |
 | `smrt kitchen apply <url\|file> [dir]` | `cookbook apply` that also takes a plan URL |
+| `smrt desktop bundle --out <dir>` | Bundle a built app with its pinned Node sidecar for a desktop target: `--app`, `--target`, `--bridge`, `--features`, `--max-size`, `--measure`, `--offline`, `--json`. Exit codes: 0 ok, 2 usage, 3 invalid input, 4 provenance, 5 verification, 6 size budget, 7 child failed, 8 io. See the `@happyvertical/smrt-desktop` README |
 
 `smrt export` reads the `export` section of `smrt.config.js`. A listed type that
 is not registered fails the command (non-zero exit, naming the type) instead of
@@ -293,17 +320,40 @@ app's `package.json` scripts are one-liners:
 | `smrt app start` / `stop` | Local: run the production build on loopback; readiness is proven by app id, process instance, and configuration fingerprint |
 | `smrt app doctor` | Secret-free findings (`invalid-runtime-profile`, `unsafe-local-bind`, `runtime-path-unavailable`, `migration-required`, …); exits 1 on any error (default operation) |
 | `smrt app open` | Open the app, or the pending onboarding launch file |
-| `smrt app backup [destination]` | Local: copy the validated data root to a new private directory outside the checkout |
-| `smrt app export [path]` / `import <path>` | Logical, asset-aware bundle; import requires an empty target (deployed: `SMRT_MAINTENANCE_MODE=true`) |
+| `smrt app backup [--encrypted] [destination]` | Local: copy the validated data root to a new private directory outside the checkout; `--encrypted` writes one encrypted snapshot file instead and needs a vault key provider, which the stock binary does not yet supply ([format](agents/encrypted-snapshots.md)); any other `-`/`--` option is refused rather than taken as a path. Refused on Windows for the local profile (`WindowsOperatorCopyUnsupportedError`) until the destination has custody |
+| `smrt app backup --encrypted --target <name>` / `smrt app backups targets\|list\|prune` | Local: store the encrypted snapshot on a configured local directory, your own Google Drive, or the vault relay (needs the `backup.vault` entitlement); retention per target; configuration holds no secrets and credentials come from an injected credential store ([targets](agents/backup-targets.md)) |
+| `smrt app export [--encrypted] [path]` / `import <path>` | Logical, asset-aware bundle, optionally as an encrypted snapshot; import takes a plaintext bundle and requires an empty target (deployed: `SMRT_MAINTENANCE_MODE=true`). Local `export`/`import` are refused on Windows like `backup`; deployed ones are not |
 | `smrt app migrate` | Establish local storage custody, then `smrt db:migrate`, under the operation lock |
 | `smrt app worker [task\|schedule]` | Deployed: imports `.smrt/runtime/register.js`, then runs the jobs runner until SIGTERM. The kind defaults to `task`; any other value is a usage error before anything starts |
 | `smrt app dev\|build\|vite [args]` | Run the app's installed Vite with `.env` loaded (shell wins); `build` validates `./mcp-apps` first |
+
+**Windows (smrt#4837).** The local runtime opens its SQLite database on
+Windows through `@happyvertical/sql`'s `windowsCustody.verify` (the runtime's
+own Windows custody rule), so `install`, `setup`, `recover`, `start`, `stop`,
+`open`, `migrate`, `token` and `doctor` are no longer refused for the local
+profile. `backup`, `export` and `import` still are
+(`WindowsOperatorCopyUnsupportedError`), for a different reason: their
+destination relies on POSIX modes that Windows ignores, so a copy would inherit
+the destination folder's ACL. Deployed profiles are not refused: a deployed
+`export`/`import` writes to the operator's chosen path with no mode guarantee,
+and deployed `backup` is delegated to the operator. Unverified on a real
+Windows host until one green `windows-latest` run is recorded on smrt#4837.
 
 Success output is JSON on stdout; a failure is one JSON envelope on stderr with
 exit code 1 and never contains secret values. The same primitives (operation
 lock, writer lease, state root, artifact-path custody, portability) are
 importable without side effects from `@happyvertical/smrt-cli/app`. Contract
 details: [agents/app-commands.md](agents/app-commands.md).
+
+On macOS, `/tmp` commonly links to `/private/tmp`. Local setup rejects symbolic
+links in state/data path components and reports the rejected component. For an
+isolated trial home, first inspect and trust the intended directory, then select
+its canonical spelling explicitly, for example
+`HOME=/private/tmp/my-owned-trial-home pnpm app:setup`. Use that same home for
+later app commands and the running app. Select a canonical `SMRT_DATA_DIR` too
+if overriding data storage. The directories must still meet ownership,
+permissions, and source-tree separation checks; resolving a link is not proof
+that its target is trusted. The runtime never automatically trusts symlinks.
 
 ### Auto-Generated Object Commands
 
@@ -317,6 +367,11 @@ For each registered s-m-r-t object, the CLI generates:
 | `<object>:update <id>` | Update existing object |
 | `<object>:delete <id>` | Delete object |
 | `<object>:<method> <id>` | Custom methods exposed via `cli: { include: [...] }` |
+
+`create` and `update` apply the same write policy as the generated REST routes
+and MCP tools in every input mode (`--from-file`, interactive, flags): fields
+outside `api.writable`, `readonly` fields and server-managed keys (`id`,
+`tenantId`, timestamps) are dropped.
 
 Custom methods on s-m-r-t objects are auto-discovered from manifests. Method parameters become CLI options (camelCase to kebab-case).
 

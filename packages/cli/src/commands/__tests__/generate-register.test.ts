@@ -153,7 +153,7 @@ describe('generate-register', () => {
     );
   });
 
-  it('imports collection entries without registering them as objects', async () => {
+  it('skips collection entries: neither imported nor registered as objects', async () => {
     mockedAutoDiscover.mockResolvedValue({
       discovered: [
         {
@@ -209,34 +209,66 @@ describe('generate-register', () => {
     const content = await readFile(outputPath, 'utf-8');
 
     expect(content).toContain("import { Widget } from '@happyvertical/pkg';");
-    expect(content).toContain(
-      "import { WidgetCollection } from '@happyvertical/pkg';",
-    );
-    expect(content).toContain(
-      "import { LegacyWidgetCollection } from '@happyvertical/pkg';",
-    );
-    expect(content).toContain(
-      "import { SpecializedWidgetCollection } from '@happyvertical/pkg';",
-    );
+    expect(content).not.toContain('WidgetCollection');
+    expect(content).not.toContain('LegacyWidgetCollection');
+    expect(content).not.toContain('SpecializedWidgetCollection');
     expect(content).toContain(
       'ObjectRegistry.register(Widget, { name: "Widget", packageName: "@happyvertical/pkg" });',
     );
     expect(content).toContain(
       "console.log('[smrt:register] Registered 1 external object');",
     );
-    expect(content).not.toContain('ObjectRegistry.register(WidgetCollection');
-    expect(content).not.toContain(
-      'ObjectRegistry.register(LegacyWidgetCollection',
-    );
-    expect(content).not.toContain(
-      'ObjectRegistry.register(SpecializedWidgetCollection',
+    expect(console.log).toHaveBeenCalledWith(
+      expect.stringContaining('with 1 external entry (1 registered object)'),
     );
     expect(console.log).toHaveBeenCalledWith(
-      expect.stringContaining('with 4 external entries (1 registered object)'),
+      '   - @happyvertical/pkg (1 registered object, 1 imported entry)',
     );
-    expect(console.log).toHaveBeenCalledWith(
-      '   - @happyvertical/pkg (1 registered object, 4 imported entries)',
+  });
+
+  it('does not import a scanned collection class the package root hides (#4066)', async () => {
+    mockedAutoDiscover.mockResolvedValue({
+      discovered: [
+        {
+          path: '/fake/pkg/manifest.json',
+          source: 'package',
+          packageName: '@happyvertical/pkg',
+        },
+      ],
+    } as any);
+
+    mockedLoadManifest.mockResolvedValue({
+      objects: {
+        PriceBookAssignment: {
+          className: 'PriceBookAssignment',
+          exportName: 'PriceBookAssignment',
+          packageName: '@happyvertical/pkg',
+          qualifiedName: '@happyvertical/pkg:PriceBookAssignment',
+          collection: 'price_book_assignments',
+          visibility: 'public',
+        },
+        // Scanned, but the package root deliberately does not export it.
+        PriceBookAssignmentCollection: {
+          className: 'PriceBookAssignmentCollection',
+          exportName: 'PriceBookAssignmentCollection',
+          packageName: '@happyvertical/pkg',
+          qualifiedName: '@happyvertical/pkg:PriceBookAssignmentCollection',
+          collection: 'price_book_assignments',
+          extends: 'SmrtCollection',
+          visibility: 'public',
+        },
+      },
+    });
+
+    await handler([], { 'output-path': outputPath });
+
+    const content = await readFile(outputPath, 'utf-8');
+
+    expect(content).not.toContain('PriceBookAssignmentCollection');
+    expect(content).toContain(
+      "import { PriceBookAssignment } from '@happyvertical/pkg';",
     );
+    expect(content).toContain('ObjectRegistry.register(PriceBookAssignment, {');
   });
 
   it('filters out test-visibility objects', async () => {

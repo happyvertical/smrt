@@ -38,7 +38,8 @@ with the root database handle, never one that is already inside a transaction
   models, so each of the six carries
   `@smrt({ api: { include: [] }, mcp: { include: [] }, cli: false })` as an
   inline literal (the scanner cannot resolve an imported constant). An
-  undecorated collection publishes its methods as MCP tools. A collection's
+  undecorated collection would inherit the model's closed surface; the explicit
+  literal keeps it closed whatever the model says. A collection's
   config merges over its model's, so a model's effective `cli` reads `false`.
   `src/__tests__/closed-surface.test.ts` asserts no generated tool exists.
 - **The tenant is the employer.** `employerProfileId` is informational and
@@ -295,3 +296,5 @@ pnpm --filter @happyvertical/smrt-human-resources typecheck
 
 Build before `test`: `src/__tests__/employment-extension.test.ts` reads
 `dist/manifest.json`.
+
+- **Recipes `human-resources.people` (label Employees) and `human-resources.qualifications`** (`src/recipes.ts`, help in `src/people.recipe.md` and `src/qualifications.recipe.md`) are `static exposure = 'ui-only'` (#4440): the models stay closed to API/MCP/CLI, the recipes still appear in the planner and generate screens, and the Features card says agents cannot read them. The scanner rejects `ui-only` if any model of the recipe is exposed. Never open a surface to make a recipe show up.

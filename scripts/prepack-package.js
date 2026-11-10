@@ -4,6 +4,7 @@ import { execFileSync, spawnSync } from 'node:child_process';
 import { existsSync, readFileSync } from 'node:fs';
 import { dirname, resolve } from 'node:path';
 import { fileURLToPath } from 'node:url';
+import { shipPackageKnowledge } from './ship-knowledge-pages.mjs';
 
 const manifestVerifierPath = resolve(
   dirname(fileURLToPath(import.meta.url)),
@@ -129,6 +130,9 @@ if (runningInCi && hasDistArtifacts) {
 }
 
 runScript(buildScript);
+
+// A build empties dist/, so re-ship the committed OKF page (#4689).
+shipPackageKnowledge(process.cwd());
 
 for (const scriptName of verifyScripts) {
   if (verifyScriptsHandledByBuild.has(scriptName)) {

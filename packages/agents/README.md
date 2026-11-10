@@ -147,6 +147,40 @@ such as `MessagingSettingsService`.
 | `SmrtCollectionQueryScope` | Trusted, server-derived scope conditions for the generic adapter |
 | `SmrtCollectionDataSurfaceAction` | Declarative row/bulk action catalog entry surfaced via `metadata.actionCatalog` |
 
+### Summary Discovery
+
+`createDataSurfaceTools({ surfaces, discoverDetail: 'summary' })` makes
+`data.discover` return one small entry per readable surface — `id`, `label`
+(its first non-empty line, falling back to the id), the first non-empty line of
+`description` bounded to 160 characters with an ellipsis, and an optional
+`rowCountHint` — instead of the full field, metadata, `supports`, and `limits`
+descriptor. The model then calls `data.inspect` for one surface's fields and
+operators, so **summary mode assumes the principal's allow-list includes
+`data.inspect`**; a host that grants `data.discover` and `data.query` without
+it should keep full mode. The default, `discoverDetail: 'full'`, is unchanged
+(byte-identical when no `rowCountHint` is set); catalog filtering,
+permissions, the `discover` audit entry, failures, and `data.query` behave the
+same in both modes, and `data.inspect` always returns the full descriptor.
+
+`DataSurfaceDefinition.rowCountHint` (also accepted by
+`createSmrtCollectionDataSurfaceDefinition()`, report definitions, and
+`@happyvertical/smrt-content`'s `createContentListDataSurfaceDefinition()`) is
+a host-supplied size hint: a non-negative safe integer or a single-line label
+of at most 32 characters such as `"~2k"`. It is never computed by querying.
+Invalid values are omitted (see `normalizeDataSurfaceRowCountHint()`) without
+failing discovery: labels with control, format (bidi, zero-width, BOM, soft
+hyphen, tag), or line/paragraph-separator characters, or with nothing
+visible. Valid hints also appear in full descriptors.
+
+The same hint is shown to **every principal who can read the surface**, so it
+must not encode a tenant- or principal-specific count. Use a coarse, static
+label (`"thousands"`, `"~2k"`), never a live per-tenant total. Likewise, the
+first non-empty line of `description` is model-facing text in every summary:
+keep it free of secrets, internal identifiers, and instructions to the model.
+For the summary `label` and `description`, CR, LF, VT, FF, NEL, U+2028, and
+U+2029 are line breaks, format characters are removed, and other control
+characters become spaces. Full descriptors keep the host's text unchanged.
+
 ### Report Data-Surface Tools
 
 `createReportDataSurfaceTools()` combines the generic read-only data-surface
@@ -193,6 +227,23 @@ disjunctive-normal-form `where` conditions), supports both offset and
 opaque-cursor paging, and never hydrates the full collection. An explicit,
 normalized-empty application `scope` denies all rows and short-circuits
 without calling the collection.
+
+A field with a scanner-declared closed set — a TypeScript `enum` or
+string/number literal-union type, carried as the registry field's `enum` —
+gets those members as its data-query `values` (#4381), so `data.inspect` and
+`data.discover` show them. Because the ORM does not validate enums on save,
+stored rows may predate or escape the declaration, so derived values are
+advisory by default (`valuesEnforced: false` in the descriptor) and filters on
+other values keep working. Set `enforceDerivedValues: true` once the stored
+data is known to match; `data.query` then rejects a filter value outside the
+set and the descriptor reports `valuesEnforced: true`. Values come only from
+the declaration, never from rows. A declaration outside the core bounds (more
+than 100 members, an over-long or unsafe member, a type mismatch) yields no
+values at all, since a partial list would read as complete: advisory surfaces
+log a `@happyvertical/logger` warning naming the class and field, and with
+`enforceDerivedValues: true` the schema build throws. Id fields never carry
+values. A `schema` override declares its own `values` (enforced unless it sets
+`valuesEnforced: false`).
 
 Cursors are opaque and bound to the exact query: they encode `{ binding,
 offset }`, where `binding` fingerprints the normalized request (filter, sort,

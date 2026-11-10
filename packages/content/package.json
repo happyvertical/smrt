@@ -1,6 +1,6 @@
 {
   "name": "@happyvertical/smrt-content",
-  "version": "0.55.21",
+  "version": "0.60.16",
   "smrtJsdoc": "strict",
   "description": "Content processing module for SMRT framework - handles documents, web content, and media",
   "type": "module",
@@ -43,6 +43,7 @@
     },
     "./workbench": {
       "types": "./dist/workbench.d.ts",
+      "svelte": "./dist/workbench.js",
       "import": "./dist/workbench.js"
     }
   },
@@ -88,7 +89,7 @@
     "@happyvertical/utils": "catalog:",
     "fast-xml-parser": "^5.11.1",
     "sanitize-html": "^2.17.7",
-    "undici": "^7.29.1",
+    "undici": "^7.30.1",
     "yaml": "^2.9.1"
   },
   "peerDependencies": {
@@ -112,7 +113,7 @@
     "svelte": "^5.57.1",
     "svelte-check": "^4.7.6",
     "typescript": "6.0.3",
-    "vite": "8.1.4",
+    "vite": "8.1.6",
     "vitest": "4.1.10"
   },
   "keywords": [

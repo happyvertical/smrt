@@ -5,6 +5,7 @@
  */
 
 import type { DatabaseInterface } from '@happyvertical/sql';
+import type { PostgresTimeoutConfig } from '../postgres-timeouts.js';
 import type { DispatchTenantScope } from './tenant-resolver.js';
 
 /**
@@ -161,6 +162,25 @@ export interface DispatchCleanupResult {
 }
 
 /**
+ * Pool and connection options a {@link DispatchBusOptions} database config may
+ * carry. They are forwarded to `getDatabase()` exactly as given, so a bus
+ * built from a config honors the same pool cap and timeouts as the rest of the
+ * application instead of opening its own default-sized pool (#3046).
+ */
+export interface DispatchBusPoolOptions {
+  /** Caller-owned pool cache identity, forwarded as given. */
+  dbid?: string;
+  /** Maximum PostgreSQL pool clients. */
+  max?: number;
+  /** PostgreSQL pool acquisition timeout, in milliseconds. */
+  connectionTimeoutMillis?: number;
+  /** PostgreSQL idle-client timeout, in milliseconds. */
+  idleTimeoutMillis?: number;
+  /** Runtime PostgreSQL timeouts (#2377). */
+  timeouts?: PostgresTimeoutConfig;
+}
+
+/**
  * Options for creating a DispatchBus
  */
 export interface DispatchBusOptions {
@@ -182,13 +202,31 @@ export interface DispatchBusOptions {
    */
   db?:
     | DatabaseInterface
-    | {
+    | ({
         type: 'sqlite' | 'postgres' | 'json' | 'duckdb';
         url: string;
-      };
+      } & DispatchBusPoolOptions);
   /** Alias for db - persistence layer configuration */
   persistence?: {
     type: 'sql' | 'json' | 'duckdb';
     url: string;
-  };
+  } & DispatchBusPoolOptions;
+  /**
+   * Bounded retry of the startup bootstrap (opening the database and
+   * `initialize()`) on a transient connection failure, such as PostgreSQL or
+   * its pooler dropping the first connection after a migration (#3657). Any
+   * other error fails at once. Defaults to 5 attempts with exponential backoff
+   * from 500 ms, capped at 5 s between attempts; `false` disables it.
+   */
+  startupRetry?: DispatchBusStartupRetry | false;
+}
+
+/** Startup retry budget for {@link DispatchBusOptions.startupRetry}. */
+export interface DispatchBusStartupRetry {
+  /** Total attempts, including the first (default 5, minimum 1). */
+  attempts?: number;
+  /** Delay before the second attempt, doubled each time (default 500 ms). */
+  initialDelayMs?: number;
+  /** Upper bound on any one delay (default 5000 ms). */
+  maxDelayMs?: number;
 }

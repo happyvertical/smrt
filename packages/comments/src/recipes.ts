@@ -1,5 +1,10 @@
 import { SmrtRecipe } from '@happyvertical/smrt-core';
 import { Comment } from './models/Comment.js';
+import { CommentReport } from './models/CommentReport.js';
+import { CommentRevision } from './models/CommentRevision.js';
+import { ParticipationBan } from './models/ParticipationBan.js';
+import { ParticipationPolicy } from './models/ParticipationPolicy.js';
+import { ParticipationRateBucket } from './models/ParticipationRateBucket.js';
 
 /** Discussion attached to any authorized business record. */
 export class RecordCommentsRecipe extends SmrtRecipe {
@@ -12,7 +17,14 @@ export class RecordCommentsRecipe extends SmrtRecipe {
     label: 'Comments',
     summary: 'Keep discussions alongside the records your team works on.',
   };
-  static models = [Comment];
+  static models = [
+    Comment,
+    CommentRevision,
+    CommentReport,
+    ParticipationPolicy,
+    ParticipationBan,
+    ParticipationRateBucket,
+  ];
   // Record discussions need an authorized parent record, not a global list.
   static nav = [];
   static runtime = 'both' as const;

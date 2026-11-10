@@ -44,6 +44,11 @@ export {
   UsersOAuthRefreshGrantCollection,
 } from './OAuthAuthorizationCollection.js';
 // Password credential (#3274)
+export { UsersPasskeyChallengeCollection } from './PasskeyChallengeCollection.js';
+export {
+  type PasskeyCredentialWrite,
+  UsersPasskeyCredentialCollection,
+} from './PasskeyCredentialCollection.js';
 export {
   type PasswordCredentialWrite,
   UsersPasswordCredentialCollection,

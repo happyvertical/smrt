@@ -8,9 +8,7 @@
  */
 
 import { randomUUID } from 'node:crypto';
-import { tmpdir } from 'node:os';
-import { join } from 'node:path';
-import { beforeEach, describe, expect, it } from 'vitest';
+import { afterEach, beforeEach, describe, expect, it } from 'vitest';
 import {
   AGENT_PROFILE_CONTEXT,
   AGENT_PROFILE_TYPE_SLUG,
@@ -18,9 +16,11 @@ import {
   resolveAgentProfile,
   resolveAgentProfileId,
 } from '../index.js';
+import { createOwnedSqliteFixtures } from './owned-sqlite-fixtures.js';
 
 const UUID_RE =
   /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/iu;
+const fixtures = createOwnedSqliteFixtures();
 
 describe('resolveAgentProfile', () => {
   let db: { type: 'sqlite'; url: string };
@@ -29,10 +29,13 @@ describe('resolveAgentProfile', () => {
   beforeEach(async () => {
     db = {
       type: 'sqlite',
-      url: `file:${join(tmpdir(), `agent-profile-${randomUUID()}.db`)}`,
+      url: fixtures.url('agent-profile'),
     };
     profiles = await ProfileCollection.create({ db });
+    fixtures.track(profiles.db);
   });
+
+  afterEach(() => fixtures.cleanup());
 
   it('creates a bot profile with a uuid id on first use', async () => {
     const profile = await resolveAgentProfile(profiles, {

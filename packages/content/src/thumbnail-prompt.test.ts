@@ -171,6 +171,12 @@ describe('thumbnail AI-prompt registration', () => {
     expect(optionsArg).toMatchObject({
       size: '1200x630',
       outputFormat: 'buffer',
+      // Prompt-run usage tags reach generateImage (#4751).
+      usageTags: {
+        promptKey: 'smrtContent.thumbnail.aiGenerate',
+        promptLayer: 'default',
+        templateHash: expect.stringMatching(/^[0-9a-f]{12}$/),
+      },
     });
     expect(image).toMatchObject({ id: 'image-1' });
   });

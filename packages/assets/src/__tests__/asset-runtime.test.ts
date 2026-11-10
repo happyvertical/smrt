@@ -5,11 +5,11 @@
  * creation, provenance linking, and the extraction-status helper.
  */
 
-import { existsSync, mkdtempSync, rmSync } from 'node:fs';
+import { cpSync, existsSync, mkdirSync, mkdtempSync, rmSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join as pathJoin } from 'node:path';
 import { getTestDatabase } from '@happyvertical/smrt-core/testing';
-import type { DatabaseInterface } from '@happyvertical/sql';
+import { type DatabaseInterface, getDatabase } from '@happyvertical/sql';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import '../folder';
 import { Asset } from '../asset';
@@ -48,6 +48,60 @@ describe('AssetRuntime', () => {
       expect(runtime.collection).toBeInstanceOf(AssetCollection);
       expect(runtime.associations).toBeInstanceOf(AssetAssociationCollection);
       expect(runtime.store.basePath).toBe(storageDir);
+    });
+
+    it('reopens a copied asset database and files under a different root', async () => {
+      const original = pathJoin(storageDir, 'original');
+      const copy = pathJoin(storageDir, 'copied');
+      const dbName = 'assets.sqlite';
+      mkdirSync(original);
+      const storage = (root: string) => ({
+        type: 'local' as const,
+        basePath: pathJoin(root, 'assets'),
+        locatorMode: 'relative' as const,
+      });
+      const originalDb = await getTestDatabase({
+        type: 'sqlite',
+        url: pathJoin(original, dbName),
+      });
+      let id: string;
+      const bytes = Buffer.from('original retained bytes');
+      try {
+        const runtime = await createAssetRuntime({
+          db: originalDb,
+          storage: storage(original),
+        });
+        const asset = await runtime.storeSourceAsset('notes.txt', bytes, {
+          mimeType: 'text/plain',
+          typeSlug: 'document',
+        });
+        id = asset.id as string;
+      } finally {
+        await originalDb.close?.();
+      }
+      cpSync(original, copy, { recursive: true });
+      rmSync(original, { recursive: true });
+      const copiedDb = await getDatabase({
+        type: 'sqlite',
+        url: pathJoin(copy, dbName),
+      });
+      try {
+        const runtime = await createAssetRuntime({
+          db: copiedDb,
+          storage: storage(copy),
+        });
+        const reloaded = await runtime.collection.get({ id });
+        if (!reloaded) throw new Error('Copied asset is missing');
+        expect(reloaded.sourceUri).toBe(`asset-local:document/${id}.txt`);
+        await expect(runtime.store.read(reloaded)).resolves.toEqual(bytes);
+        await runtime.store.remove(reloaded);
+        expect(
+          existsSync(pathJoin(copy, 'assets', 'document', `${id}.txt`)),
+        ).toBe(false);
+        expect(await runtime.collection.get({ id })).toBeNull();
+      } finally {
+        await copiedDb.close?.();
+      }
     });
 
     it('reuses pre-built collections when provided', async () => {

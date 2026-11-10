@@ -1,3 +1,13 @@
+import {
+  allocationTargetAmount,
+  type ExpenseAllocationAuthority,
+  type ExpenseAllocationResult,
+  type ReviewExpenseAllocationInput,
+  reviewExpenseAllocation,
+  type WithdrawExpenseAllocationInput,
+  type WithdrawExpenseAllocationResult,
+  withdrawExpenseAllocation,
+} from '../expense-allocation.js';
 /**
  * ExpenseCollection — queries, per-currency totals, and commitment drawdown.
  *
@@ -5,18 +15,64 @@
  */
 
 import {
-  ContractCollection,
   ContractLineItemCollection,
+  PurchaseContractCollection,
 } from '@happyvertical/smrt-commerce';
-import { SmrtCollection, smrt } from '@happyvertical/smrt-core';
+import { method, SmrtCollection, smrt } from '@happyvertical/smrt-core';
+import type {
+  AttachExpenseReceiptActionInput,
+  MarkExpenseReimbursedActionInput,
+  RecordExpenseActionInput,
+  ReviewExpenseActionInput,
+} from '../actions/expense-actions.js';
 import { Expense } from '../models/Expense.js';
+import type { ExpenseReceipt } from '../models/ExpenseReceipt.js';
+import type {
+  CompleteSupplierPayableBasisInput,
+  RecordSupplierPayableEventInput,
+  RecordSupplierPayableInput,
+  SupplierPayablePosition,
+} from '../supplier-payable.js';
 import {
   type CommitmentPosition,
   type CurrencyTotals,
   ExpenseError,
+  type ExpenseFinancialBreakdown,
+  type ExpenseRefundPosition,
+  type ExpenseReimbursementPosition,
   type ExpenseReviewStatus,
   type ExpenseTotalsOptions,
 } from '../types.js';
+
+/** A reviewed, non-duplicate expense and its optional stored supplier facts. */
+export interface ReviewedExpenseTaxFact {
+  /** Legacy owner identity alias retained for existing callers. */
+  id: string;
+  /** Reporting identity consumed by commerce tax-summary facts. */
+  expenseId: string;
+  tenantId: string;
+  incurredOn: string;
+  currency: string;
+  commitmentId: string | null;
+  commitmentLineId: string | null;
+  /** `null` is unknown legacy supplier tax, never an implied zero. */
+  financialBreakdown: ExpenseFinancialBreakdown | null;
+}
+
+export interface ReviewedExpenseTaxFactsOptions {
+  tenantId: string;
+  from: string;
+  to: string;
+  currency?: string;
+}
+
+function isCalendarDate(value: string): boolean {
+  if (!/^\d{4}-\d{2}-\d{2}$/.test(value)) return false;
+  const date = new Date(`${value}T00:00:00.000Z`);
+  return (
+    !Number.isNaN(date.getTime()) && date.toISOString().slice(0, 10) === value
+  );
+}
 
 /** Plain projection read for sums: never hydrates objects. */
 interface AmountRow {
@@ -63,12 +119,175 @@ function addTo(totals: CurrencyTotals, currency: string, amount: number) {
  * interceptors, so inside `withTenant()` every method here sees only that
  * tenant's expenses.
  *
- * Collection classes are registered too, so this one carries its own closed
- * surface; without it every public method here would become an MCP tool.
+ * Collection classes are registered too, so this one carries its own
+ * surface; without it every public method here would become an MCP tool. It
+ * publishes only the service-backed write actions (#4001), on REST: each
+ * authorizes the signed-in person itself (`expenses.<action>`) and delegates
+ * to the guarded domain flow. Reads, MCP and CLI stay closed.
  */
-@smrt({ api: { include: [] }, mcp: { include: [] }, cli: false })
+@smrt({
+  api: {
+    include: ['record', 'attachReceipt', 'recordReview', 'recordReimbursement'],
+  },
+  mcp: { include: [] },
+  cli: false,
+})
 export class ExpenseCollection extends SmrtCollection<Expense> {
   static readonly _itemClass = Expense;
+
+  /** Record immutable original supplier retention/payable evidence on its Expense. */
+  async recordSupplierPayable(
+    expenseId: string,
+    input: RecordSupplierPayableInput,
+  ): Promise<SupplierPayablePosition> {
+    const expense = await this.requireSupplierPayableExpense(expenseId);
+    return expense.recordSupplierPayable(input);
+  }
+
+  /** Append a dated supplier event; no external money movement is executed. */
+  async recordSupplierPayableEvent(
+    expenseId: string,
+    input: RecordSupplierPayableEventInput,
+  ): Promise<SupplierPayablePosition> {
+    return (
+      await this.requireSupplierPayableExpense(expenseId)
+    ).recordSupplierPayableEvent(input);
+  }
+
+  /** Independently review an originally unknown payable basis exactly once. */
+  async completeSupplierPayableBasis(
+    expenseId: string,
+    input: CompleteSupplierPayableBasisInput,
+  ): Promise<SupplierPayablePosition> {
+    return (
+      await this.requireSupplierPayableExpense(expenseId)
+    ).completeSupplierPayableBasis(input);
+  }
+
+  /** Dated supplier position is independent of incurred cost and reimbursement. */
+  async supplierPayablePosition(
+    expenseId: string,
+    input: { asOfDate?: string } = {},
+  ): Promise<SupplierPayablePosition | null> {
+    return (
+      await this.requireSupplierPayableExpense(expenseId)
+    ).getSupplierPayablePosition(input);
+  }
+
+  private async requireSupplierPayableExpense(
+    expenseId: string,
+  ): Promise<Expense> {
+    const expense = await this.get({ id: expenseId }, { cache: false });
+    if (!expense)
+      throw new ExpenseError(
+        'EXPENSE_INVALID',
+        'Supplier payable source was not found.',
+      );
+    return expense;
+  }
+
+  /** Cash claim after explicit refund receipts and retained historical payments. */
+  async reimbursementPosition(
+    sourceId: string,
+  ): Promise<ExpenseReimbursementPosition> {
+    const source = await this.get({ id: sourceId }, { cache: false });
+    if (!source)
+      throw new ExpenseError(
+        'EXPENSE_INVALID',
+        'Reimbursement source was not found.',
+      );
+    return source.getReimbursementPosition();
+  }
+
+  /** All persisted linked refunds reserve source capacity, irrespective of review. */
+  async refundPosition(sourceId: string): Promise<ExpenseRefundPosition> {
+    const source = await this.get({ id: sourceId }, { cache: false });
+    if (!source)
+      throw new ExpenseError('EXPENSE_INVALID', 'Refund source was not found.');
+    return source.getRefundPosition();
+  }
+
+  /**
+   * Record a new, unreviewed expense for the signed-in person in their
+   * tenant. Needs `expenses.record`; a person-paid expense for someone else
+   * also needs `expenses.recordReview`.
+   */
+  @method({
+    httpMethod: 'POST',
+    path: 'record',
+    effect: 'write',
+    idempotent: false,
+    openWorld: false,
+    description: 'Record a new expense for review (service-backed).',
+  })
+  async record(options: RecordExpenseActionInput): Promise<Expense> {
+    const { recordExpenseAction } = await import(
+      '../actions/expense-actions.js'
+    );
+    return recordExpenseAction(this, options);
+  }
+
+  /**
+   * Attach a stored asset to an expense as its receipt. Needs
+   * `expenses.attachReceipt`; only the recorder or payer may attach unless
+   * the caller holds `expenses.recordReview`.
+   */
+  @method({
+    httpMethod: 'POST',
+    path: 'attachReceipt',
+    effect: 'write',
+    idempotent: false,
+    openWorld: false,
+    description: 'Attach a receipt file to an expense (service-backed).',
+  })
+  async attachReceipt(
+    options: AttachExpenseReceiptActionInput,
+  ): Promise<ExpenseReceipt> {
+    const { attachExpenseReceiptAction } = await import(
+      '../actions/expense-actions.js'
+    );
+    return attachExpenseReceiptAction(this, options);
+  }
+
+  /**
+   * Accept or refuse (with a reason) an expense, attributed to the signed-in
+   * reviewer. Needs an explicit `expenses.recordReview` grant.
+   */
+  @method({
+    httpMethod: 'POST',
+    path: 'recordReview',
+    effect: 'write',
+    idempotent: false,
+    openWorld: false,
+    description: 'Approve or reject an expense with a reason (service-backed).',
+  })
+  async recordReview(options: ReviewExpenseActionInput): Promise<Expense> {
+    const { reviewExpenseAction } = await import(
+      '../actions/expense-actions.js'
+    );
+    return reviewExpenseAction(this, options);
+  }
+
+  /**
+   * Record that the person who paid an expense has been paid back. Needs an
+   * explicit `expenses.recordReimbursement` grant.
+   */
+  @method({
+    httpMethod: 'POST',
+    path: 'recordReimbursement',
+    effect: 'write',
+    idempotent: false,
+    openWorld: false,
+    description: 'Record that an expense was reimbursed (service-backed).',
+  })
+  async recordReimbursement(
+    options: MarkExpenseReimbursedActionInput,
+  ): Promise<Expense> {
+    const { markExpenseReimbursedAction } = await import(
+      '../actions/expense-actions.js'
+    );
+    return markExpenseReimbursedAction(this, options);
+  }
 
   /**
    * Expenses charged to one cost object, oldest incurred first.
@@ -105,23 +324,94 @@ export class ExpenseCollection extends SmrtCollection<Expense> {
   ): Promise<CurrencyTotals> {
     const statuses = options.reviewStatuses ?? ['reviewed'];
     if (statuses.length === 0) return {};
-    const rows = (await this.list({
-      where: {
-        ...(options.where ?? {}),
-        reviewStatus: [...statuses],
-        duplicateOfId: null,
-      },
-      select: [...AMOUNT_FIELDS],
-    })) as unknown as AmountRow[];
-
+    const where = { ...(options.where ?? {}) };
+    const targetFilter: Record<string, unknown> = {};
+    for (const key of Object.keys(where)) {
+      if (/^cost(ObjectType|ObjectId|CodeRef)/.test(key)) {
+        targetFilter[key] = where[key];
+        delete where[key];
+      }
+    }
+    const rows = await this.list({
+      where: { ...where, reviewStatus: [...statuses], duplicateOfId: null },
+    });
     const totals: CurrencyTotals = {};
     const seen = new Set<string>();
     for (const row of rows) {
-      if (seen.has(row.id)) continue;
+      if (!row.id || seen.has(row.id)) continue;
       seen.add(row.id);
-      addTo(totals, row.currency, toMinorUnits(row.amount));
+      const amount = Object.keys(targetFilter).length
+        ? await allocationTargetAmount(row, targetFilter)
+        : toMinorUnits(row.amount);
+      if (amount !== null) addTo(totals, row.currency, amount);
     }
     return totals;
+  }
+
+  /** Review a complete allocation through ambient reviewer and mandatory host authority. */
+  async reviewAllocation(
+    input: ReviewExpenseAllocationInput,
+    authority: ExpenseAllocationAuthority,
+  ): Promise<ExpenseAllocationResult> {
+    return reviewExpenseAllocation(this.db, input, authority);
+  }
+
+  /** Audit withdrawal of entirely unreserved portions before correcting the original source. */
+  async withdrawAllocation(
+    input: WithdrawExpenseAllocationInput,
+    authority: ExpenseAllocationAuthority,
+  ): Promise<WithdrawExpenseAllocationResult> {
+    return withdrawExpenseAllocation(this.db, input, authority);
+  }
+
+  /**
+   * Stored supplier-tax facts for reporting. Only reviewed non-duplicate
+   * expenses are returned; callers must retain a null breakdown as unknown.
+   */
+  async listReviewedTaxFacts(
+    options: ReviewedExpenseTaxFactsOptions,
+  ): Promise<ReviewedExpenseTaxFact[]> {
+    if (
+      !options.tenantId?.trim() ||
+      !isCalendarDate(options.from) ||
+      !isCalendarDate(options.to) ||
+      options.from > options.to ||
+      (options.currency !== undefined && !options.currency.trim())
+    ) {
+      throw new ExpenseError(
+        'EXPENSE_INVALID',
+        'Tax facts require a tenant, an ordered calendar-date range, and a nonempty currency when supplied.',
+      );
+    }
+    const expenses = await this.list({
+      where: {
+        tenantId: options.tenantId,
+        reviewStatus: 'reviewed',
+        duplicateOfId: null,
+        'incurredOn >=': options.from,
+        'incurredOn <=': options.to,
+        ...(options.currency ? { currency: options.currency } : {}),
+      },
+      orderBy: ['incurred_on ASC', 'id ASC'],
+    });
+    return expenses.map((expense) => {
+      if (!expense.id || expense.tenantId !== options.tenantId) {
+        throw new ExpenseError(
+          'EXPENSE_INVALID',
+          'Tenant tax-fact query returned a row without its requested tenant identity.',
+        );
+      }
+      return {
+        id: expense.id,
+        expenseId: expense.id,
+        tenantId: expense.tenantId,
+        incurredOn: expense.incurredOn,
+        currency: expense.currency,
+        commitmentId: expense.commitmentId,
+        commitmentLineId: expense.commitmentLineId,
+        financialBreakdown: expense.getFinancialBreakdown(),
+      };
+    });
   }
 
   /**
@@ -143,7 +433,7 @@ export class ExpenseCollection extends SmrtCollection<Expense> {
     commitmentId: string,
     options: { lineId?: string } = {},
   ): Promise<CommitmentPosition> {
-    const contracts = await ContractCollection.create({ db: this.db });
+    const contracts = await PurchaseContractCollection.create({ db: this.db });
     const commitment = await contracts.get({ id: commitmentId });
     if (!commitment) {
       throw new ExpenseError(

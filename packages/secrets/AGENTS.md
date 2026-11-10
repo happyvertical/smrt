@@ -36,7 +36,8 @@ Secret value → encrypted with TDEK (per-tenant Data Encryption Key)
 - **Repair is destructive only by confirmation**: `repairTenantSecretKeyDrift()` deletes unrecoverable encrypted rows only when `confirmDeleteUnrecoverableData: true` is explicit. Do not silently discard encrypted secrets.
 - **Expired secrets filtered by default**: pass `includeExpired: true` to list them
 - **TenantKeyCollection.cleanupRetiredKeys()**: hard-deletes after 90 days
-- **Audit logging optional but default**: failures logged to console, not thrown
+- **Audit logging optional but default**: failures logged to console, not thrown. `store(..., { auditDetails })` and `delete(name, { auditDetails })` add caller context (an operation name, a non-secret handle) to the entry's `details`; never a value (#4759)
+- **Inference keys live here** (#4756, #4759): smrt-inference stores AI provider keys only as category `inference.provider-config` (`:user:<id>`, `:tenant`) and hosted gateway state as `inference.hosted`, both with `context = tenantId`; see [smrt-inference resolver](../inference/agents/resolver.md). Never add a second key store for them
 - **Audit rows outlive secrets**: `SecretAuditLog.secretId` uses the explicit
   same-package app-side-only FK option. It retains relationship metadata and an
   index, but emits no physical constraint because compliance logs are retained

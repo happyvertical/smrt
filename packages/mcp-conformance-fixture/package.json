@@ -18,7 +18,7 @@
     "@happyvertical/smrt-config": "workspace:*",
     "@happyvertical/smrt-core": "workspace:*",
     "@happyvertical/smrt-jobs": "workspace:*",
-    "@modelcontextprotocol/server": "2.0.0",
+    "@modelcontextprotocol/server": "2.4.0",
     "@happyvertical/smrt-app-mcp": "workspace:*",
     "@happyvertical/smrt-agents": "workspace:*",
     "@happyvertical/smrt-app-runtime": "workspace:*",
@@ -31,16 +31,16 @@
   },
   "devDependencies": {
     "@happyvertical/smrt-vitest": "workspace:*",
-    "@modelcontextprotocol/client": "2.0.0",
+    "@modelcontextprotocol/client": "2.4.0",
     "@modelcontextprotocol/conformance": "0.2.0-alpha.11",
-    "@modelcontextprotocol/node": "2.0.0",
+    "@modelcontextprotocol/node": "2.1.2",
     "@types/node": "24.13.6",
     "tsx": "^4.23.13",
     "typescript": "6.0.3",
     "vitest": "4.1.10",
     "jose": "^6.2.12",
     "@playwright/test": "^1.63.0",
-    "vite": "8.1.4"
+    "vite": "8.1.6"
   },
   "repository": {
     "type": "git",

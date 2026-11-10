@@ -53,18 +53,22 @@ export interface MembershipOverrideOptions extends SmrtObjectOptions {
   mcp: { include: ['list', 'get'] },
   // #3742: CLI mirrors the read-only surface; `cli` without `include` is full CRUD.
   cli: { include: ['list', 'get'] },
+  // One override per membership/permission pair (#3375); core makes natural-key writes conflict
+  // tolerant. NO ACTION keeps deletion semantics: a natural-key column would
+  // otherwise default to CASCADE.
+  conflictColumns: ['membership_id', 'permission_id'],
 })
 export class MembershipOverride extends SmrtObject {
   /**
    * Foreign key to Membership
    */
-  @foreignKey('Membership', { required: true })
+  @foreignKey('Membership', { required: true, onDelete: 'NO ACTION' })
   membershipId?: string;
 
   /**
    * Foreign key to Permission
    */
-  @foreignKey('Permission', { required: true })
+  @foreignKey('Permission', { required: true, onDelete: 'NO ACTION' })
   permissionId?: string;
 
   /**

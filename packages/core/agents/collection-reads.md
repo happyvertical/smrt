@@ -14,8 +14,7 @@ and is limited to column-backed fields; it cannot combine with `include`.
 
 ## Bounded STI discriminator scopes
 
-An STI child collection remains scoped to its own qualified `_meta_type` by
-default. A migration that must read registered sibling types may opt into an
+An STI child collection reads its own qualified `_meta_type` and all registered descendants by default. A migration that must read registered sibling types may opt into an
 explicit allowlist:
 
 ```typescript
@@ -38,9 +37,13 @@ supported by `list()`, `count()`, `counts()`, `facets()`, and
 `listWithLatestRelated()`. These methods retain their normal field validation,
 projection or polymorphic hydration, pagination and cache-key construction;
 normal read and tenant interceptors still run and are ANDed with the allowlist.
-Point reads through `get()` remain child-only; use a bounded
+Point reads through `get()` remain within the child branch; use a bounded
 `list({ where, limit: 1, stiScope })` migration read when sibling hydration is
 required.
+
+Raw SQL helpers can use `getStiChildMetaTypes()` to obtain the same branch
+discriminator set. The older `getStiChildMetaType()` returns only the class's
+own discriminator for callers that intentionally require an exact subtype.
 
 For one child per parent, use
 [`latest-related.md`](latest-related.md). It uses a portable ranked CTE,

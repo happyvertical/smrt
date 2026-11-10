@@ -31,7 +31,7 @@ import {
 } from '../vite-plugin/web-collections.js';
 
 /**
- * The `api` config of the nearest STI ancestor that declares one. An omitted
+ * The `api` config of the nearest concrete STI ancestor that declares one. An omitted
  * `api` means full CRUD, so a hosted subclass that says nothing would expose
  * `DELETE /orders/:id` even though its base (`Contract`) allows only
  * list/get/create/update. Hosting fails closed: the subclass inherits the base's
@@ -56,7 +56,15 @@ function inheritedApi(
       parent.decoratorConfig?.tableStrategy === 'sti';
     if (!sti) return undefined;
     const api = parent.decoratorConfig?.api;
-    if (api !== undefined) return api;
+    // Preserve authored restrictions on an abstract ancestor, but do not
+    // inherit the write exclusions synthesized for its own discriminator.
+    // Old manifests without the marker keep their API policy (fail closed).
+    if (parent.decoratorConfig?.abstract === true) {
+      if (parent.abstractDeclaredApi !== null)
+        return parent.abstractDeclaredApi ?? api;
+    } else if (api !== undefined) {
+      return api;
+    }
     child = parent;
     parentName = parent.extendsQualified || parent.extends;
   }

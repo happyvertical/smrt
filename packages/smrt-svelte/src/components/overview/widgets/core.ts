@@ -56,6 +56,32 @@ const fieldField: WidgetOptionField = {
   label: 'ui.overview.opt.field',
   help: 'ui.overview.opt.field_help',
 };
+/** The FK to the record under `filter: 'parent'`, when `field` is the measured field. */
+const parentFieldField: WidgetOptionField = {
+  key: 'parentField',
+  type: 'identifier',
+  label: 'ui.overview.opt.parent_field',
+  help: 'ui.overview.opt.parent_field_help',
+};
+/**
+ * Table columns: field names, comma-separated (`number,status,issuedAt`).
+ * Options are flat JSON primitives, so the list travels as text;
+ * `parseColumnsOption` reads it.
+ */
+const columnsField: WidgetOptionField = {
+  key: 'columns',
+  type: 'text',
+  label: 'ui.overview.opt.columns',
+  help: 'ui.overview.opt.columns_help',
+  maxLength: 400,
+};
+/** Totals row; unset means on when a money or quantity column exists. */
+const summariesField: WidgetOptionField = {
+  key: 'summaries',
+  type: 'boolean',
+  label: 'ui.overview.opt.summaries',
+  help: 'ui.overview.opt.summaries_help',
+};
 const measureField = (choices: readonly string[]): WidgetOptionField => ({
   key: 'measure',
   type: 'enum',
@@ -67,7 +93,12 @@ const measureField = (choices: readonly string[]): WidgetOptionField => ({
   })),
 });
 
-/** Metric: one number from a model. Options: model, measure, field, filter. */
+/**
+ * Metric: one number from a model. Options: model, measure, field, filter,
+ * parentField. Under `filter: 'parent'` the FK to the record is
+ * `parentField` when given (and `field` is then the measured field, a `sum`
+ * of `totalAmount`), else `field` (a count).
+ */
 export function createMetricWidget(
   load: WidgetLoad<MetricWidgetData>,
 ): WidgetDefinition<MetricWidgetData> {
@@ -82,6 +113,7 @@ export function createMetricWidget(
       measureField(['count', 'sum', 'avg', 'min', 'max']),
       fieldField,
       filterField,
+      parentFieldField,
     ],
     component: MetricWidget,
     load,
@@ -159,7 +191,13 @@ export function createChartWidget(
   };
 }
 
-/** Record list: the latest or top records of a model. */
+/**
+ * Record list: the latest or top records of a model. `field` names the FK on
+ * the model for `filter: 'parent'` (a record view's related-records panel).
+ * `columns` (comma-separated field names) renders the rows as a table of
+ * their `cells` with a totals footer (`summaries`); the loader receives the
+ * option and fills `cells` for those keys.
+ */
 export function createRecordListWidget(
   load: WidgetLoad<RecordListWidgetData>,
 ): WidgetDefinition<RecordListWidgetData> {
@@ -172,6 +210,7 @@ export function createRecordListWidget(
       titleField,
       modelField,
       { key: 'sort', type: 'identifier', label: 'ui.overview.opt.sort' },
+      fieldField,
       {
         key: 'direction',
         type: 'enum',
@@ -191,6 +230,8 @@ export function createRecordListWidget(
         max: 20,
       },
       filterField,
+      columnsField,
+      summariesField,
     ],
     component: RecordListWidget,
     load,

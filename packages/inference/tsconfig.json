@@ -1,0 +1,17 @@
+{
+  "extends": "../../tsconfig.ui-package.json",
+  "compilerOptions": {
+    "composite": true,
+    "outDir": "./dist",
+    "rootDir": "./src",
+    "tsBuildInfoFile": "./dist/.tsbuildinfo"
+  },
+  "include": ["ambient.d.ts", "src/**/*"],
+  "exclude": [
+    "**/*.test.ts",
+    "**/*.spec.ts",
+    "src/__tests__/**",
+    "node_modules",
+    "dist"
+  ]
+}

@@ -6,7 +6,9 @@
  * external package classes aren't registered in the test manifest.
  *
  * Uses ManifestManager for unified manifest loading, which properly handles
- * the manifest priority order: .smrt/manifest.json (test) -> dist/manifest.json (production)
+ * the manifest priority order: this run's test manifest snapshot
+ * (`.smrt/test-runs/<run>/manifest.json`, #4128) -> .smrt/manifest.json ->
+ * dist/manifest.json
  *
  * @example
  * ```typescript
@@ -26,17 +28,21 @@
  * @packageDocumentation
  */
 
+import { randomBytes } from 'node:crypto';
 import {
   existsSync,
+  mkdirSync,
   readdirSync,
   readFileSync,
   realpathSync,
-  unlinkSync,
+  rmSync,
+  statSync,
+  writeFileSync,
 } from 'node:fs';
 import { createRequire } from 'node:module';
-import { dirname, join } from 'node:path';
+import { hostname } from 'node:os';
+import { dirname, join, resolve } from 'node:path';
 import { fileURLToPath } from 'node:url';
-import type { SmrtPluginApi } from '@happyvertical/smrt-core/vite-plugin';
 import { configDefaults, type Plugin } from 'vitest/config';
 import { isVerbose, shouldLogManifestSummaryOnce } from './log.js';
 
@@ -131,6 +137,138 @@ export function setManifestRegistrationOptionsForRoot(
 
   byRoot[key] = options;
   process.env[SMRT_VITEST_SETUP_OPTIONS_ENV_KEY] = JSON.stringify(byRoot);
+}
+
+/**
+ * Environment variable carrying the active test manifest path per project
+ * root. Mirrors `SMRT_TEST_MANIFEST_PATHS_ENV_KEY` in
+ * `@happyvertical/smrt-core/manifest` (`test-artifacts.ts`), which owns the
+ * read side; kept as a literal here so {@link smrtVitestPlugin}'s `config()`
+ * hook can publish it synchronously, before Vitest forks any pool worker
+ * (see {@link SMRT_VITEST_SETUP_OPTIONS_ENV_KEY}). Parity with core is
+ * asserted in `src/__tests__/test-run-manifest-isolation.test.ts`.
+ */
+export const SMRT_TEST_MANIFEST_PATHS_ENV_KEY = '__SMRT_TEST_MANIFEST_PATHS__';
+
+/**
+ * Directory, relative to a project root, holding one subdirectory per test
+ * run's manifest snapshot (#4128).
+ */
+export const SMRT_TEST_RUNS_DIR = '.smrt/test-runs';
+
+/** A run directory whose owner is unknown or remote is pruned after this. */
+const STALE_TEST_RUN_MS = 24 * 60 * 60 * 1000;
+
+const testRunManifestPaths = new Map<string, string>();
+
+interface TestRunOwner {
+  pid: number;
+  hostname: string;
+  startedAt: number;
+}
+
+function isProcessAlive(pid: number): boolean {
+  try {
+    process.kill(pid, 0);
+    return true;
+  } catch (error) {
+    // EPERM: the process exists but belongs to someone else.
+    return (error as NodeJS.ErrnoException).code === 'EPERM';
+  }
+}
+
+/**
+ * Remove snapshot directories whose run has ended. A run recorded on this
+ * host is removed only once its process is gone, however long it has been
+ * running (a watch or `--ui` session can outlive a day). A run whose owner
+ * cannot be probed — no readable `owner.json`, or another host or container
+ * sharing the checkout — is removed once it is older than a day.
+ */
+function pruneEndedTestRuns(root: string, keep: string): void {
+  const runsDir = join(root, SMRT_TEST_RUNS_DIR);
+  let entries: string[];
+  try {
+    entries = readdirSync(runsDir);
+  } catch {
+    return;
+  }
+  const thisHost = hostname();
+  for (const entry of entries) {
+    const runDir = join(runsDir, entry);
+    if (runDir === keep) continue;
+    let owner: Partial<TestRunOwner> | undefined;
+    try {
+      owner = JSON.parse(readFileSync(join(runDir, 'owner.json'), 'utf8'));
+    } catch {
+      owner = undefined;
+    }
+    let ageMs: number;
+    try {
+      ageMs = Date.now() - (owner?.startedAt ?? statSync(runDir).mtimeMs);
+    } catch {
+      continue;
+    }
+    const probeable =
+      owner?.hostname === thisHost && typeof owner.pid === 'number';
+    const ended = probeable
+      ? owner?.pid !== process.pid && !isProcessAlive(owner?.pid as number)
+      : ageMs > STALE_TEST_RUN_MS;
+    if (ended) {
+      rmSync(runDir, { recursive: true, force: true });
+    }
+  }
+}
+
+/**
+ * The manifest snapshot path owned by this process's test run for `root`
+ * (#4128): `<root>/.smrt/test-runs/<pid>-<time>-<random>/manifest.json`.
+ *
+ * Test generation scans test-inclusive sources, so it must not share a path
+ * with production generation: `.smrt/manifest.json` is rewritten by every
+ * `smrtPlugin()` build (and by a typecheck whose Turbo graph rebuilds the
+ * package), which used to replace the test manifest while forked test
+ * workers were still reading it. Each run instead owns a directory nothing
+ * else writes; it is stable for the life of this process, so every plugin
+ * instance and config restart for the same root shares it, and removed when
+ * the process exits.
+ */
+export function resolveTestRunManifestPath(root: string): string {
+  const key = normalizeRootKey(resolve(root));
+  const existing = testRunManifestPaths.get(key);
+  if (existing) return existing;
+  const runId = `${process.pid}-${Date.now().toString(36)}-${randomBytes(4).toString('hex')}`;
+  const manifestPath = join(key, SMRT_TEST_RUNS_DIR, runId, 'manifest.json');
+  testRunManifestPaths.set(key, manifestPath);
+  const runDir = dirname(manifestPath);
+  process.once('exit', () => {
+    rmSync(runDir, { recursive: true, force: true });
+  });
+  return manifestPath;
+}
+
+/**
+ * Publish `manifestPath` as the active test manifest for `root`, merged into
+ * {@link SMRT_TEST_MANIFEST_PATHS_ENV_KEY}. Keys match core's reader: the
+ * root as given, trimmed of trailing separators, and realpath'd.
+ */
+function registerTestRunManifestPath(root: string, manifestPath: string): void {
+  let byRoot: Record<string, string> = {};
+  const raw = process.env[SMRT_TEST_MANIFEST_PATHS_ENV_KEY];
+  if (raw) {
+    try {
+      const parsed = JSON.parse(raw);
+      if (parsed && typeof parsed === 'object' && !Array.isArray(parsed)) {
+        byRoot = parsed;
+      }
+    } catch {
+      // A malformed prior value is replaced.
+    }
+  }
+  const trimmed = root.replace(/[/\\]+$/, '') || root;
+  for (const key of new Set([root, trimmed, normalizeRootKey(root)])) {
+    byRoot[key] = manifestPath;
+  }
+  process.env[SMRT_TEST_MANIFEST_PATHS_ENV_KEY] = JSON.stringify(byRoot);
 }
 
 /**
@@ -344,6 +482,158 @@ function readWorkspacePackageRoots(root: string): Map<string, string> {
   }
 
   return packageRoots;
+}
+
+/**
+ * The runtime target an export condition object resolves to for a Node test
+ * run: `import`, then `default`, then `svelte` (nested condition objects are
+ * followed). `types` and `browser` are never runtime targets here.
+ */
+function exportRuntimeTarget(value: unknown): string | null {
+  if (typeof value === 'string') return value;
+  if (!value || typeof value !== 'object' || Array.isArray(value)) return null;
+  const conditions = value as Record<string, unknown>;
+  for (const condition of ['import', 'default', 'svelte']) {
+    const target = exportRuntimeTarget(conditions[condition]);
+    if (target) return target;
+  }
+  return null;
+}
+
+/**
+ * Source file a built export target was compiled from (#2954): `./dist/<p>.js`
+ * maps to `src/<p>.ts`, `src/<p>.svelte.ts`, `src/<p>/index.ts`, or, for
+ * `svelte-package` layouts, the same under `src/lib/`. Returns `null` for
+ * targets outside `dist/` or with no matching source file.
+ */
+function sourceForExportTarget(
+  packageRoot: string,
+  target: string,
+): string | null {
+  const match = /^\.\/dist\/(.+?)\.(?:m?js)$/.exec(target);
+  if (!match) return null;
+  const built = match[1];
+  for (const base of ['src', 'src/lib']) {
+    for (const candidate of [
+      `${base}/${built}.ts`,
+      `${base}/${built}.svelte.ts`,
+      `${base}/${built}/index.ts`,
+    ]) {
+      const path = join(packageRoot, candidate);
+      if (existsSync(path)) return path;
+    }
+  }
+  return null;
+}
+
+/**
+ * Every exact (non-pattern) JavaScript subpath a workspace package exports,
+ * with the source file it is built from, or `null` when no source file can be
+ * derived. Read from the package's own `exports` map, so a newly exported
+ * subpath is covered without editing this file (#2954).
+ */
+export function getWorkspaceExportSources(
+  packageRoot: string,
+): Array<{ subpath: string; target: string; source: string | null }> {
+  let exportsMap: unknown;
+  try {
+    exportsMap = JSON.parse(
+      readFileSync(join(packageRoot, 'package.json'), 'utf-8'),
+    ).exports;
+  } catch {
+    return [];
+  }
+  if (!exportsMap || typeof exportsMap !== 'object') return [];
+  const entries: Array<{
+    subpath: string;
+    target: string;
+    source: string | null;
+  }> = [];
+  for (const [subpath, value] of Object.entries(
+    exportsMap as Record<string, unknown>,
+  )) {
+    if (!subpath.startsWith('.') || subpath.includes('*')) continue;
+    const target = exportRuntimeTarget(value);
+    if (!target || !/\.m?js$/.test(target)) continue;
+    entries.push({
+      subpath,
+      target,
+      source: sourceForExportTarget(packageRoot, target),
+    });
+  }
+  return entries;
+}
+
+/**
+ * The concrete runtime target (`./dist/...`) a workspace package's exports
+ * map gives `subpath`, exact or pattern, or `null` when it exports none.
+ */
+export function workspaceExportTarget(
+  packageRoot: string,
+  subpath: string,
+): string | null {
+  let exportsMap: unknown;
+  try {
+    exportsMap = JSON.parse(
+      readFileSync(join(packageRoot, 'package.json'), 'utf-8'),
+    ).exports;
+  } catch {
+    return null;
+  }
+  if (!exportsMap || typeof exportsMap !== 'object') return null;
+  const entries = exportsMap as Record<string, unknown>;
+  if (subpath in entries) return exportRuntimeTarget(entries[subpath]);
+  // Node picks the pattern with the longest prefix before `*`.
+  const patterns = Object.entries(entries)
+    .filter(([pattern]) => pattern.includes('*'))
+    .sort(([left], [right]) => right.indexOf('*') - left.indexOf('*'));
+  for (const [pattern, value] of patterns) {
+    const star = pattern.indexOf('*');
+    if (star < 0) continue;
+    const prefix = pattern.slice(0, star);
+    const suffix = pattern.slice(star + 1);
+    if (
+      !subpath.startsWith(prefix) ||
+      !subpath.endsWith(suffix) ||
+      subpath.length < prefix.length + suffix.length
+    ) {
+      continue;
+    }
+    const target = exportRuntimeTarget(value);
+    if (!target?.includes('*')) continue;
+    return target
+      .split('*')
+      .join(subpath.slice(prefix.length, subpath.length - suffix.length));
+  }
+  return null;
+}
+
+/**
+ * Source file for the concrete `subpath` a consumer imports from a workspace
+ * package — exact or pattern export (`"./utils/*": "./dist/utils/*"`) — for
+ * the per-import resolution in {@link smrtVitestPlugin} (#2954). Exact
+ * subpaths are normally aliased statically; pattern subpaths can only be
+ * mapped per import. A JavaScript target maps like an exact export; another
+ * asset (CSS, JSON) maps to the same relative path under `src/` or
+ * `src/lib/`. Returns `null` when nothing is exported there or no source
+ * file exists.
+ */
+export function resolveWorkspaceExportSource(
+  packageRoot: string,
+  subpath: string,
+): string | null {
+  const concrete = workspaceExportTarget(packageRoot, subpath);
+  if (!concrete) return null;
+  const jsSource = sourceForExportTarget(packageRoot, concrete);
+  if (jsSource) return jsSource;
+  const asset = /^\.\/dist\/(.+)$/.exec(concrete);
+  if (asset && !/\.m?js$/.test(concrete)) {
+    for (const base of ['src', 'src/lib']) {
+      const path = join(packageRoot, base, asset[1]);
+      if (existsSync(path)) return path;
+    }
+  }
+  return null;
 }
 
 function addAliasIfPresent(
@@ -715,6 +1005,22 @@ export function getWorkspaceViteAliases(
     }
   }
 
+  // Every remaining exported subpath resolves to the source it is built from
+  // (#2954). The hand-written entries above win (`addAliasIfPresent` keeps the
+  // first entry per specifier): they cover entries whose source layout the
+  // derivation cannot infer. Without an alias a consumer test resolves the
+  // subpath through the exports map to the sibling's last BUILT dist — stale,
+  // or missing in a fresh worktree — while resolving the package root to
+  // source, which also loads two copies of shared modules.
+  for (const [packageName, packageRoot] of packageRoots.entries()) {
+    for (const { subpath, source } of getWorkspaceExportSources(packageRoot)) {
+      if (!source) continue;
+      const specifier =
+        subpath === '.' ? packageName : `${packageName}${subpath.slice(1)}`;
+      addAliasIfPresent(aliases, specifier, source);
+    }
+  }
+
   const { filter } = options;
   const kept = filter ? aliases.filter((entry) => filter(entry)) : aliases;
 
@@ -727,6 +1033,82 @@ export function getWorkspaceViteAliases(
       find: new RegExp(`^${escapeRegExp(find)}$`),
       replacement,
     }));
+}
+
+/** Forward-slash form of a filesystem path, for prefix comparisons. */
+function toPosix(path: string): string {
+  return path.replace(/\\/g, '/');
+}
+
+/** The package name a bare or subpath specifier belongs to. */
+function packageNameOf(specifier: string): string {
+  const parts = specifier.split('/');
+  return specifier.startsWith('@') ? parts.slice(0, 2).join('/') : parts[0];
+}
+
+/**
+ * Detects a workspace package specifier resolved to a sibling's BUILT output
+ * (#2954).
+ *
+ * Every exported subpath of a workspace package is aliased to source (see
+ * {@link getWorkspaceViteAliases}), so a module loaded from another
+ * package's `dist/` means a specifier escaped the aliases: the test would
+ * run the sibling's last build — stale, or missing in a fresh worktree — and
+ * could pass against code that no longer exists. Returns the failure message
+ * for such an id, or `null`. Exempt: the package under test (its own build
+ * output), and packages the consumer deliberately resolves to built entries,
+ * by dropping their generated aliases through `aliasFilter` or by aliasing
+ * one of their specifiers to a `dist/` file itself.
+ */
+export function createWorkspaceDistGuard(
+  root: string,
+  exemptPackages: ReadonlySet<string> = new Set(),
+): (id: string) => string | null {
+  const ownRoot = normalizeRootKey(resolve(root));
+  const distRoots: Array<{ name: string; distRoot: string }> = [];
+  for (const [name, packageRoot] of readWorkspacePackageRoots(root)) {
+    const real = normalizeRootKey(packageRoot);
+    if (real === ownRoot || exemptPackages.has(name)) continue;
+    distRoots.push({ name, distRoot: `${toPosix(real)}/dist/` });
+  }
+  return (id: string) => {
+    const file = toPosix(id.split('?')[0] ?? id);
+    const owner = distRoots.find(({ distRoot }) => file.startsWith(distRoot));
+    if (!owner) return null;
+    return (
+      `[smrt-vitest] ${file} is the built output of workspace package ${owner.name}. ` +
+      'A consumer test must run its source, not a possibly stale or missing dist (#2954). ' +
+      `Export the subpath from ${owner.name}'s package.json with a source file the ` +
+      'workspace aliases can derive (dist/<p>.js <- src/<p>.ts, src/<p>/index.ts, src/lib/...), ' +
+      'or resolve published entries deliberately via aliasFilter.'
+    );
+  };
+}
+
+/** Workspace packages whose `dist/` a consumer config deliberately targets. */
+function packagesWithDeliberateDistEntries(
+  root: string,
+  droppedSpecifiers: Iterable<string>,
+  userAliases: Array<{ replacement: string }>,
+): Set<string> {
+  const exempt = new Set<string>();
+  for (const specifier of droppedSpecifiers) {
+    exempt.add(packageNameOf(specifier));
+  }
+  const roots = readWorkspacePackageRoots(root);
+  for (const { replacement } of userAliases) {
+    for (const [name, packageRoot] of roots) {
+      const target =
+        typeof replacement === 'string' ? toPosix(replacement) : '';
+      if (
+        target.startsWith(`${toPosix(packageRoot)}/dist/`) ||
+        target.startsWith(`${toPosix(normalizeRootKey(packageRoot))}/dist/`)
+      ) {
+        exempt.add(name);
+      }
+    }
+  }
+  return exempt;
 }
 
 function normalizeAliasEntries(
@@ -897,19 +1279,6 @@ async function importSmrtCoreManifestModule(): Promise<
   }
 }
 
-async function importSmrtCoreKnowledgeModule(): Promise<
-  typeof import('@happyvertical/smrt-core/knowledge')
-> {
-  const specifier = '@happyvertical/smrt-core/knowledge';
-  try {
-    return await import(specifier);
-  } catch {
-    const fallbackHref = new URL('../../core/src/knowledge.ts', import.meta.url)
-      .href;
-    return await importWorkspaceSourceModule(fallbackHref);
-  }
-}
-
 async function importDiscoverBaseClassesModule(): Promise<
   typeof import('@happyvertical/smrt-core/manifest/discover-base-classes')
 > {
@@ -930,8 +1299,12 @@ async function importDiscoverBaseClassesModule(): Promise<
  * Load manifest from a package using ManifestManager
  *
  * This properly handles the manifest priority order:
- * 1. .smrt/manifest.json (test/dev manifest with all classes)
+ * 1. .smrt/manifest.json (local build manifest)
  * 2. dist/manifest.json (production manifest)
+ * `loadLocal()` would prefer an active test snapshot registered for the
+ * dependency's own root; only that root's own plugin registers one, so a
+ * dependency is read from its snapshot only when it runs in the same
+ * process or a child of its own test run.
  */
 async function loadAndRegisterManifest(
   packageName: string,
@@ -1107,16 +1480,23 @@ async function loadAndRegisterLocalManifest(
 }
 
 /**
- * Generate local manifest using ManifestBuilder
+ * Generate this run's test manifest snapshot using ManifestBuilder.
  *
  * This ensures the manifest is always fresh after adding new classes/fields.
- * The ~1-2s overhead is minimal compared to test execution time.
+ * The ~1-2s overhead is minimal compared to test execution time. The scan is
+ * test-inclusive (inline `*.test.ts` fixture classes need metadata, #2760),
+ * so it is written only to `manifestPath` — the run's own snapshot
+ * (`outputMode: 'explicit'`) — never to `.smrt/manifest.json`,
+ * `dist/manifest.json`, or their paired `smrt-knowledge.json`, which belong
+ * to production generation (#4128). A production pair therefore stays
+ * byte-identical across a test run, so knowledge freshness (#3205) holds
+ * without regenerating it from test output.
  */
 async function generateLocalManifest(
   root: string,
   options: SmrtVitestPluginOptions,
   verbose: boolean,
-  producerApi?: SmrtPluginApi,
+  manifestPath: string,
 ): Promise<boolean> {
   try {
     console.log('[smrt-vitest] Generating test manifest...');
@@ -1132,6 +1512,16 @@ async function generateLocalManifest(
         `[smrt-vitest] Discovered ${baseClasses.length} base classes (including ${baseClasses.length - 3} from external packages)`,
       );
     }
+
+    const runDir = dirname(manifestPath);
+    pruneEndedTestRuns(root, runDir);
+    mkdirSync(runDir, { recursive: true });
+    const owner: TestRunOwner = {
+      pid: process.pid,
+      hostname: hostname(),
+      startedAt: Date.now(),
+    };
+    writeFileSync(join(runDir, 'owner.json'), JSON.stringify(owner));
 
     const builder = new ManifestBuilder(root);
     const manifest = await builder.generate({
@@ -1152,10 +1542,10 @@ async function generateLocalManifest(
       includePrivateMethods: false,
       includeStaticMethods: true,
 
-      // Output configuration - write to .smrt directory (ManifestManager default)
-      outputMode: 'dev',
+      // Output configuration - only this run's snapshot (#4128)
+      outputMode: 'explicit',
       artifactPurpose: 'test',
-      outputDir: '.smrt',
+      outputDir: runDir,
       outputName: 'manifest.json',
       generateTypeStub: false,
 
@@ -1165,7 +1555,6 @@ async function generateLocalManifest(
     });
 
     const objectCount = Object.keys(manifest.objects).length;
-    await refreshTestKnowledgeArtifact(root, manifest, producerApi);
     console.log(
       `[smrt-vitest] ✓ Generated manifest with ${objectCount} object(s)`,
     );
@@ -1175,70 +1564,6 @@ async function generateLocalManifest(
     console.error('[smrt-vitest] Failed to generate manifest:', error);
     return false;
   }
-}
-
-async function refreshTestKnowledgeArtifact(
-  root: string,
-  manifest: import('@happyvertical/smrt-core/scanner/types').SmartObjectManifest,
-  producerApi?: SmrtPluginApi,
-): Promise<void> {
-  const {
-    AGENT_SURFACE_HASH_PREFIX,
-    buildDomainKnowledgeManifest,
-    publishAtomicArtifact,
-    resolveFileKnowledgeConfig,
-  } = await importSmrtCoreKnowledgeModule();
-  const manifestPath = join(root, '.smrt/manifest.json');
-  const knowledgePath = join(root, '.smrt/smrt-knowledge.json');
-  let priorKnowledge:
-    | {
-        agentSurface?: unknown;
-        sourceHashes?: Record<string, string>;
-      }
-    | undefined;
-  try {
-    priorKnowledge = JSON.parse(readFileSync(knowledgePath, 'utf8'));
-  } catch {
-    // A missing or malformed prior artifact is replaced by current generation.
-  }
-  const config = producerApi
-    ? await producerApi.resolveKnowledgeConfig(manifest)
-    : await resolveFileKnowledgeConfig(root, manifest.packageName);
-  if (config.enabled === false) {
-    if (existsSync(knowledgePath)) unlinkSync(knowledgePath);
-    return;
-  }
-  const agentSurface = producerApi
-    ? await producerApi.resolveKnowledgeAgentSurface()
-    : undefined;
-  const knowledge = buildDomainKnowledgeManifest({
-    manifest,
-    rootDir: root,
-    manifestPath,
-    config,
-    agentSurface,
-  });
-  const priorSurfaceHashes = Object.entries(
-    priorKnowledge?.sourceHashes ?? {},
-  ).filter(([key]) => key.startsWith(AGENT_SURFACE_HASH_PREFIX));
-  if (
-    !agentSurface &&
-    priorKnowledge?.agentSurface &&
-    priorSurfaceHashes.length
-  ) {
-    // Without the producer API we cannot rescan declarations. Preserve the
-    // last surface *and its old source hashes*: rebuilding hashes from files
-    // under a stale declaration would incorrectly certify it as fresh.
-    knowledge.agentSurface = priorKnowledge.agentSurface as never;
-    Object.assign(
-      knowledge.sourceHashes,
-      Object.fromEntries(priorSurfaceHashes),
-    );
-  }
-  publishAtomicArtifact({
-    path: knowledgePath,
-    content: JSON.stringify(knowledge, null, 2),
-  });
 }
 
 /**
@@ -1396,13 +1721,53 @@ export function smrtVitestPlugin(
   const verbose = isVerbose(verboseOption);
 
   let manifestsLoaded = false;
+  const testRunManifestPath = resolveTestRunManifestPath(root);
   const setupFileId = setupFile;
   const workspaceAliases = getWorkspaceViteAliases(root, {
     filter: aliasFilter,
   });
+  const keptAliasSources = new Set(
+    workspaceAliases.map((entry) => entry.find.source),
+  );
+  // Specifiers the consumer's aliasFilter removed: those packages resolve
+  // through their exports map to built entries on purpose.
+  const droppedSpecifiers = aliasFilter
+    ? getWorkspaceViteAliases(root)
+        .filter((entry) => !keptAliasSources.has(entry.find.source))
+        .map((entry) =>
+          entry.find.source.replace(/^\^|\$$/g, '').replace(/\\(.)/g, '$1'),
+        )
+    : [];
+  let distGuard: ((id: string) => string | null) | undefined;
+  let distExempt: ReadonlySet<string> = new Set();
+  const workspacePackages = [...readWorkspacePackageRoots(root).entries()];
+  const matchWorkspacePackageSpecifier = (
+    source: string,
+  ): { name: string; root: string; subpath: string } | null => {
+    for (const [name, packageRoot] of workspacePackages) {
+      if (source === name) return { name, root: packageRoot, subpath: '.' };
+      if (source.startsWith(`${name}/`)) {
+        return {
+          name,
+          root: packageRoot,
+          subpath: `.${source.slice(name.length)}`,
+        };
+      }
+    }
+    return null;
+  };
 
   const ensureSetupFiles = (value: string | string[] | undefined): string[] => {
-    const setupFiles = Array.isArray(value) ? [...value] : value ? [value] : [];
+    // Vitest resolves `setupFiles` specifiers itself, outside `resolve.alias`,
+    // so a workspace specifier such as `@happyvertical/smrt-vitest/svelte-setup`
+    // would load the sibling's built dist (#2954). Map it to its source.
+    const setupFiles = (
+      Array.isArray(value) ? [...value] : value ? [value] : []
+    ).map(
+      (entry) =>
+        workspaceAliases.find((alias) => alias.find.test(entry))?.replacement ??
+        entry,
+    );
 
     if (!setupFiles.includes(setupFileId)) {
       setupFiles.push(setupFileId);
@@ -1460,6 +1825,48 @@ export function smrtVitestPlugin(
 
   return {
     name: 'smrt-vitest',
+    enforce: 'pre',
+
+    // A workspace specifier the static aliases did not rewrite — a pattern
+    // export subpath, or one with no derivable source — is resolved here
+    // (#2954). Pattern subpaths map to their source; anything still resolving
+    // to a sibling's built JavaScript fails the test, so a stale or missing
+    // dist cannot make a consumer suite pass. `enforce: 'pre'` places this
+    // after Vite's alias step (aliased specifiers never reach it) but before
+    // Vite's own resolver, which would otherwise resolve the exports map to
+    // dist first. Code that deliberately imports a dist file by path (e.g. a
+    // runtime loader under test) is not a specifier resolution and is left
+    // alone.
+    async resolveId(source, importer, options) {
+      const workspace = distGuard
+        ? matchWorkspacePackageSpecifier(source)
+        : null;
+      // Packages the consumer resolves to published entries on purpose keep
+      // their exports-map resolution.
+      if (!distGuard || !workspace || distExempt.has(workspace.name)) {
+        return null;
+      }
+      if (workspace.subpath !== '.') {
+        const patternSource = resolveWorkspaceExportSource(
+          workspace.root,
+          workspace.subpath,
+        );
+        if (patternSource) return patternSource;
+      }
+      // The exports map decides where Node and Vite would take the
+      // specifier; a built JavaScript target fails whether or not that file
+      // currently exists (stale or missing dist alike).
+      const target = workspaceExportTarget(workspace.root, workspace.subpath);
+      if (target && /\.m?js$/.test(target)) {
+        const failure = distGuard(
+          join(normalizeRootKey(workspace.root), target),
+        );
+        if (failure) {
+          throw new Error(`${failure} (specifier: ${source})`);
+        }
+      }
+      return null;
+    },
 
     config(userConfig) {
       // Propagate manifest-registration options to every worker process this
@@ -1500,6 +1907,13 @@ export function smrtVitestPlugin(
       // logging; a project needing distinct isolation in that shape should
       // pass an explicit, distinct `root` to `smrtVitestPlugin()`.
       setManifestRegistrationOptionsForRoot(root, { packages, root, verbose });
+      // Publish this run's test manifest snapshot path just as early, for
+      // the same reason: workers forked before `configResolved()` must
+      // still read the run's own snapshot, never the production
+      // `.smrt/manifest.json` a concurrent build may rewrite (#4128).
+      if (generateManifest) {
+        registerTestRunManifestPath(root, testRunManifestPath);
+      }
 
       const rootRetry = userConfig.test?.retry as RetryConfig | undefined;
       // Build tools may copy co-located tests into both output directories.
@@ -1512,6 +1926,12 @@ export function smrtVitestPlugin(
           ? (userConfig.resolve as { alias?: unknown })
           : undefined;
       const alias = normalizeAliasEntries(resolveConfig?.alias);
+      distExempt = packagesWithDeliberateDistEntries(
+        root,
+        droppedSpecifiers,
+        alias,
+      );
+      distGuard = createWorkspaceDistGuard(root, distExempt);
 
       return {
         // Vite 8 (rolldown/oxc) defaults — legacy @smrt() decorators and
@@ -1541,16 +1961,21 @@ export function smrtVitestPlugin(
     },
 
     // Run during config resolution to ensure manifests are loaded before tests
-    async configResolved(resolvedConfig) {
+    async configResolved() {
       if (manifestsLoaded) return;
 
       // Step 1: Generate local manifest if enabled (default: true)
       // This ensures manifest is always fresh after adding new classes/fields
       if (generateManifest) {
-        const producerApi = (resolvedConfig.plugins ?? []).find(
-          (plugin) => plugin?.name === 'smrt-auto-service',
-        )?.api as SmrtPluginApi | undefined;
-        await generateLocalManifest(root, options, verbose, producerApi);
+        // `config()` normally published this already; a caller driving
+        // `configResolved()` alone (tests, custom harnesses) still gets it.
+        registerTestRunManifestPath(root, testRunManifestPath);
+        await generateLocalManifest(
+          root,
+          options,
+          verbose,
+          testRunManifestPath,
+        );
       }
 
       // Step 2: Load the local manifest so late-imported local classes are
@@ -1721,6 +2146,7 @@ export {
   getInMemoryDbConfig,
   getTestAdapter,
   getTestDbConfig,
+  getTestManifestPath,
   type IsolatedTestDbOptions,
   type IsolatedTestDbResult,
   isPostgresAvailable,

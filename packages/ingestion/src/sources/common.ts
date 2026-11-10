@@ -1,4 +1,5 @@
 import type { ReceiptResult } from '../dto.js';
+import { presentedFilename } from '../presented-filename.js';
 import type { IngestionService, IntakePart, ReceiveInput } from '../server.js';
 
 /** Host configuration, reconstructed from authenticated session/account state. */
@@ -42,6 +43,19 @@ export function text(value: unknown): string {
   if (typeof value !== 'string' || !value || value.length > 1024)
     throw new SourceInputError('invalid');
   return value;
+}
+/**
+ * A name a source presented for a part (upload, attachment, folder entry),
+ * kept for labels only (#4214); see `../presented-filename.ts` for the unsafe
+ * character set it removes.
+ */
+export { presentedFilename };
+/** `{ filename }` for a usable presented name, else nothing to spread. */
+export function withPresentedFilename(value: unknown): {
+  filename?: string;
+} {
+  const filename = presentedFilename(value);
+  return filename ? { filename } : {};
 }
 export function timestamp(value: unknown): Date {
   const date = new Date(text(value));
@@ -143,7 +157,13 @@ export async function deliver(
       limits: binding.limits,
       deliveryKey,
       deliveredAt,
-      parts,
+      // The one place every source's names are cleaned (#4214): upload,
+      // host snapshot, vendor webhook, email and watched folder all deliver
+      // here, so an odd name never fails the receipt.
+      parts: parts.map(({ filename, ...part }) => ({
+        ...part,
+        ...withPresentedFilename(filename),
+      })),
     });
   } catch (error) {
     return safeFailure(error);

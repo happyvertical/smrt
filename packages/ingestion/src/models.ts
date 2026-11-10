@@ -25,6 +25,18 @@ import { TenantScoped, tenantId } from '@happyvertical/smrt-tenancy';
       name: 'intake_items_receipt_idx',
       columns: ['tenantId', 'receiptState', 'leaseUntil'],
     },
+    {
+      name: 'intake_items_submitter_idx',
+      columns: ['tenantId', 'submitterId'],
+    },
+    { name: 'intake_items_owner_idx', columns: ['tenantId', 'ownerKey'] },
+    // Newest-first inbox paging within one authenticated scope (#4211):
+    // the page orders by (created_at DESC, id DESC), so the id is part of
+    // the key and the scan terminates at the page boundary.
+    {
+      name: 'intake_items_received_idx',
+      columns: ['tenantId', 'confidentialScopeId', 'createdAt', 'id'],
+    },
   ],
 })
 @TenantScoped({ mode: 'required' })
@@ -84,6 +96,14 @@ export class IntakeItem extends SmrtObject {
 
   @field({ type: 'text', required: true })
   traceId: string = '';
+
+  /** Authenticated actor recorded by the server at receipt; never source metadata. */
+  @field({ type: 'text', required: true, default: '' })
+  submitterId: string = '';
+
+  /** `<kind>:<id>` of the lifecycle owner for owner-bound retention; '' otherwise. */
+  @field({ type: 'text', required: true, default: '' })
+  ownerKey: string = '';
 
   @field({ type: 'json', required: true })
   data: string = '{}';
@@ -657,6 +677,50 @@ export class IntakeDispatch extends SmrtObject {
 
   @field({ type: 'integer', required: true })
   deliveries: number = 0;
+
+  @field({ type: 'json', required: true })
+  data: string = '{}';
+
+  /** Parse a bounded object payload; malformed persisted data fails closed. */
+  getData(): Record<string, unknown> {
+    const value: unknown =
+      typeof this.data === 'string' ? JSON.parse(this.data) : this.data;
+    if (!value || typeof value !== 'object' || Array.isArray(value))
+      throw new Error('Invalid intake payload');
+    return value as Record<string, unknown>;
+  }
+}
+
+/** Durable reviewer disposition for an item closed without an action; append-only. */
+@smrt({
+  tableName: 'intake_dispositions',
+  conflictColumns: ['tenant_id', 'item_id', 'request_key'],
+  api: false,
+  cli: false,
+  mcp: false,
+  indexes: [
+    {
+      name: 'intake_dispositions_scope_idx',
+      columns: ['tenantId', 'confidentialScopeId'],
+    },
+    { name: 'intake_dispositions_item_idx', columns: ['tenantId', 'itemId'] },
+  ],
+})
+@TenantScoped({ mode: 'required' })
+export class IntakeDisposition extends SmrtObject {
+  @tenantId()
+  tenantId: string = '';
+  @field({ type: 'text', required: true })
+  confidentialScopeId: string = '';
+
+  @foreignKey('IntakeItem', { required: true })
+  itemId: string = '';
+
+  @field({ type: 'text', required: true })
+  requestKey: string = '';
+
+  @field({ type: 'text', required: true })
+  disposition: string = '';
 
   @field({ type: 'json', required: true })
   data: string = '{}';

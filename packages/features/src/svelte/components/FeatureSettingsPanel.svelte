@@ -49,6 +49,11 @@ export interface Props {
   /** Text for the empty state. */
   emptyMessage?: string;
   /**
+   * Show each feature's raw key and package name. Default true; set false for
+   * end-user surfaces (the hidden `featureKey` form input is always kept).
+   */
+  showKeys?: boolean;
+  /**
    * Identity of what is being edited (typically the tenant id). Unsaved edits
    * are discarded whenever this changes — or, when it is omitted, whenever
    * `features` is replaced with a new array, which is what a reloaded server
@@ -80,6 +85,7 @@ const {
   contextKey,
   message = null,
   error = null,
+  showKeys = true,
   emptyMessage = 'No features are registered yet. Definitions appear here once they are synced from code.',
   saveLabel = 'Save',
   formAction,
@@ -142,9 +148,11 @@ function readOnlyEffectLabel(feature: FeatureSettingsView): string {
               </Badge>
             </div>
             <p class="fs-description">{feature.description || feature.featureKey}</p>
-            <code class="fs-key">{feature.featureKey}</code>
-            {#if feature.packageName}
-              <span class="fs-package">{feature.packageName}</span>
+            {#if showKeys}
+              <code class="fs-key">{feature.featureKey}</code>
+              {#if feature.packageName}
+                <span class="fs-package">{feature.packageName}</span>
+              {/if}
             {/if}
           </div>
 

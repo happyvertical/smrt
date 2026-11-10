@@ -339,6 +339,8 @@ export function formatOwned(
 export const MODEL_PACKAGE_EXCLUSIONS: Record<string, string> = {
   '@happyvertical/smrt-cli':
     'command-line tool; its `@smrt(` matches are scaffold template text, and a CLI is Node-only by definition',
+  '@happyvertical/smrt-app-shell':
+    'an adapter-node application (worker threads, SQLite, QuickJS), not a consumable model package; it has no root entry and its shell models are never imported by other packages',
 };
 
 /** Always gated even when no decorated class is found in source. */

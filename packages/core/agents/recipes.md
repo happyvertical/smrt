@@ -87,6 +87,7 @@ at scan time; a host resolves them. Relative or absolute specifiers are rejected
 | `surfaces` | `RecipeSurface[]` | `{ kind: 'shell-widget', slot, export, label, icon? }`, `{ kind: 'route', path, export, label }`, `{ kind: 'settings-panel', export, label }`, `{ kind: 'playground', export, label? }`, `{ kind: 'widget', type, export, label, ... }` (see below). `slot` is a smrt-svelte `ShellSlot`; `path` starts with `/` and has no whitespace, `?`, `#` or `..`. |
 | `providers` | `RecipeProvider[]` | `{ id, kind, options, required, secrets?, browserOptions? }`: lowercase slugs, `options` non-empty and distinct, `required` always written, `secrets` distinct `UPPER_SNAKE` names (never values), `browserOptions` a non-empty subset of `options` that run in a browser with none of the secrets (#3709). Ids are unique per recipe. |
 | `runtime` | `'browser' \| 'server' \| 'both'` | Where the recipe's runtime pieces can run. Omitted means `both`; the value is emitted as authored. The build refines it into `demo` (below). |
+| `exposure` | `'ui-only'` | The recipe's models are closed to the generated API, MCP and CLI on purpose (employment records). A host still offers the recipe and builds its screens, and the planner's Features card says agents cannot read it. The scanner rejects it unless every model sets `api`, `mcp` and `cli` to `false` or `{ include: [] }`, so the flag cannot drift (#4440). Omit it for every other recipe. |
 | `demoSeed` | `{ export } \| { data }` | A fixture export reference, or inline JSON of at most 8 KB, for demo hosts. Exactly one key. |
 
 Write `surfaces` with `as const` (like `options`) so `kind` and `slot` stay
@@ -116,6 +117,7 @@ static surfaces = [
     icon: 'chart',
     version: 2,                                // option-schema version (default 1)
     migrate: '@acme/shop/server#migrateSalesTotal', // needs version above 1
+    optionsEditor: '@acme/shop/svelte#SalesOptions', // optional dependent-choice editor
     options: [
       { key: 'model', type: 'model', label: 'Model', required: true },
       { key: 'style', type: 'enum', label: 'Style', default: 'bar',
@@ -123,20 +125,23 @@ static surfaces = [
     ],
     data: { load: '@acme/shop/server#loadSalesTotal', models: ['@acme/shop:Order'] },
     allowedIn: ['shop.home'],                  // overview ids; omit for any
+    sectionDefault: true,                      // optional: this widget IS the section page
     defaultSpan: 2, minSpan: 1, maxSpan: 3,
   },
 ] as const;
 ```
 
 Emitted keys, in this order: `kind`, `type`, `export`, `label`, `description`,
-`icon`, `version`, `migrate`, `options`, `data`, `allowedIn`, `defaultSpan`,
-`minSpan`, `maxSpan`; absent ones are omitted. Rules (each violation is a scan
+`icon`, `version`, `migrate`, `optionsEditor`, `options`, `data`, `allowedIn`,
+`sectionDefault`, `defaultSpan`, `minSpan`, `maxSpan`; absent ones are omitted. Rules (each violation is a scan
 error, same strictness as the other kinds):
 
 - `type` is a lowercase kebab id (`[a-z][a-z0-9-]{0,31}`), unique among a
-  recipe's surfaces and across the package's recipes. `export`, `data.load` and
-  `migrate` are `'<package specifier>#<ExportName>'`; relative specifiers are
-  rejected. `label` is required.
+  recipe's surfaces and across the package's recipes. `export`, `data.load`,
+  `migrate`, and `optionsEditor` are `'<package specifier>#<ExportName>'`;
+  relative specifiers are rejected. `label` is required. A UI host resolves an
+  `optionsEditor` lazily for dependent or remote choices; the server registry
+  never imports it, and every saved value still passes the ordinary option schema.
 - `options` is a non-empty list of plain-JSON fields limited to the overview
   option types: `text`, `markdown`, `identifier`, `model`, `integer`, `number`,
   `boolean`, closed `enum` (non-empty distinct `choices`). There is no free-form
@@ -144,6 +149,13 @@ error, same strictness as the other kinds):
   and unique; `default` must pass its field's own rule; `min`/`max` only on
   numbers, `maxLength` only on text. Only `key`, `type`, `label`, `help`,
   `required`, `default`, `min`, `max`, `maxLength`, `choices` are accepted.
+- `sectionDefault: true` makes the widget the section page of the recipe's
+  section: when the recipe leads a navigation section (the first recipe
+  suggesting it), a host rendering data widgets defaults that section's
+  overview to this widget alone, full width, instead of the generic shortcuts,
+  count and latest records (smrt-svelte `sectionDefaultWidget`). At most one per
+  recipe, and every required option needs a `default`, since it is placed with
+  no options. The person can still edit the page.
 - `data` takes `load` and/or `models` (qualified class names, distinct). The
   scanner cannot see other packages, so a model is checked for format only.
 - `allowedIn` is a non-empty list of distinct overview ids
@@ -283,7 +295,8 @@ pre-scanned results and never sees recipes.) The adapter qualifies names and emi
 
 ## Build-time validation
 
-Ids are dotted lowercase and unique; `models` is non-empty, resolvable, and
+Ids are dotted lowercase and unique (the first segment is usually a package short
+name and may be hyphenated: `human-resources.people`); `models` is non-empty, resolvable, and
 duplicate-free; every `nav` model is in `models`; `requires` are well-formed,
 not self-referential or duplicated, and acyclic within the package (ids in other
 packages cannot be checked at scan time); `options` name only listed models and
@@ -292,6 +305,12 @@ and only the keys below. Field names are checked in core
 the merged manifest, so STI-merged, tenant, and framework-base fields such as
 `parentId` are accepted along with the universal `id`, `slug`, `context`,
 `created_at`, `updated_at`; anything else fails the build.
+A package-local test that runs `applyGenerationPasses` on a single package's
+manifest must first set `manifest.smrtDependencies` to the packages whose
+models it inherits from (`['@happyvertical/smrt-core']` for `SmrtHierarchical`'s
+`parentId`, plus `@happyvertical/smrt-content` for a `Content` subclass), or
+every inherited field name in `options` is rejected; the real build reads them
+from the dependency tree (`packages/places/src/__tests__/recipes.test.ts`).
 
 ## options: curation hints, never a second schema
 

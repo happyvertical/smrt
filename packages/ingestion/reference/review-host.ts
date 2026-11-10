@@ -12,24 +12,35 @@ import {
 } from '@happyvertical/smrt-core';
 import { backgroundEligible } from '@happyvertical/smrt-jobs';
 import type { DatabaseInterface } from '@happyvertical/sql';
-import type { ReviewInput } from '../src/execution-dto.js';
+import type {
+  IntakeValues,
+  ReviewInput,
+  StartActionInput,
+} from '../src/execution-dto.js';
 import type { ExtractionRequest } from '../src/extraction-types.js';
 import type { FeedbackConfiguration } from '../src/feedback-contracts.js';
 import * as models from '../src/models.js';
 import type { GenerationOutput } from '../src/proposal-dto.js';
+import { HandlerArgumentsInvalidError } from '../src/proposal-errors.js';
 import type {
   Assignment,
   InboxEntry,
   InboxState,
   ItemReviewView,
   LogicalSplitInput,
+  PreviewRejection,
+  ReviewerInstructionInput,
 } from '../src/review-dto.js';
+import { createIntakeReviewHost } from '../src/review-host.js';
+import { loadInstructionView } from '../src/review-instruction-view.js';
 import type { AnalysisLease, IngestionOptions } from '../src/server.js';
 import {
   createSDKExtractionAdapter,
   createSourceDeliveryHandler,
   extractAnalysis,
   IngestionService,
+  ReviewerInstructionInvalidError,
+  ReviewerInstructionStaleError,
 } from '../src/server.js';
 import {
   ATTACH,
@@ -113,6 +124,12 @@ export interface ReferenceReviewHostOptions {
   };
   feedback?: FeedbackConfiguration;
 }
+/** The value-free correctable body for a handler's argument refusal. */
+function rejection(error: HandlerArgumentsInvalidError): PreviewRejection {
+  return error.issues
+    ? { rejected: 'invalid', issues: error.issues }
+    : { rejected: 'invalid' };
+}
 export class ReferenceReviewHost {
   constructor(
     readonly db: DatabaseInterface,
@@ -130,20 +147,25 @@ export class ReferenceReviewHost {
       ...options.database,
       classes,
     });
-    await db.query(
-      'CREATE TABLE IF NOT EXISTS review_assignments (tenant_id TEXT NOT NULL,item_id TEXT NOT NULL,assignee_id TEXT,version INTEGER NOT NULL,request_id TEXT NOT NULL,request_digest TEXT NOT NULL,PRIMARY KEY(tenant_id,item_id))',
-    );
-    await db.query(
-      'CREATE TABLE IF NOT EXISTS review_grants (actor_id TEXT PRIMARY KEY, enabled INTEGER NOT NULL)',
-    );
-    for (const actor of ['owner', 'reviewer'])
+    try {
       await db.query(
-        'INSERT INTO review_grants(actor_id,enabled) VALUES(?,1) ON CONFLICT(actor_id) DO NOTHING',
-        actor,
+        'CREATE TABLE IF NOT EXISTS review_assignments (tenant_id TEXT NOT NULL,item_id TEXT NOT NULL,assignee_id TEXT,version INTEGER NOT NULL,request_id TEXT NOT NULL,request_digest TEXT NOT NULL,PRIMARY KEY(tenant_id,item_id))',
       );
-    const host = new ReferenceReviewHost(db, root, options);
-    ReferenceReviewWorker.host = host;
-    return host;
+      await db.query(
+        'CREATE TABLE IF NOT EXISTS review_grants (actor_id TEXT PRIMARY KEY, enabled INTEGER NOT NULL)',
+      );
+      for (const actor of ['owner', 'reviewer'])
+        await db.query(
+          'INSERT INTO review_grants(actor_id,enabled) VALUES(?,1) ON CONFLICT(actor_id) DO NOTHING',
+          actor,
+        );
+      const host = new ReferenceReviewHost(db, root, options);
+      ReferenceReviewWorker.host = host;
+      return host;
+    } catch (error) {
+      await db.close?.();
+      throw error;
+    }
   }
   async revoke(actorId: string) {
     await this.db.query(
@@ -279,6 +301,10 @@ export class ReferenceReviewHost {
                   e.segments.some((s) => s.text.trim()) &&
                   e.mediaType !== 'application/json',
               ) ?? input.evidence[0];
+            const body = part?.segments.map((s) => s.text).join('\n') ?? '';
+            // A deterministic incomplete suggestion: the marker leaves the
+            // required title unfilled so the browser proof can complete it.
+            const incomplete = body.includes('[[missing-title]]');
             return {
               completion: 'complete',
               output: {
@@ -289,8 +315,10 @@ export class ReferenceReviewHost {
                         handlerId: CREATE,
                         handlerVersion: '1',
                         args: {
-                          title: 'Reviewed intake draft',
-                          body: part.segments.map((s) => s.text).join('\n'),
+                          ...(incomplete
+                            ? {}
+                            : { title: 'Reviewed intake draft' }),
+                          body,
                         },
                         evidence: [
                           {
@@ -299,7 +327,7 @@ export class ReferenceReviewHost {
                           },
                         ],
                         alternatives: [],
-                        missingFields: [],
+                        missingFields: incomplete ? ['title'] : [],
                         explanation:
                           'Deterministic fixture suggestion from retained extracted text.',
                       },
@@ -531,6 +559,7 @@ export class ReferenceReviewHost {
     scope: ReviewSession,
     itemId: string,
     cursor?: string,
+    full = true,
   ): Promise<ItemReviewView> {
     const { service } = await this.service(scope);
     const item = await service.getItem(itemId);
@@ -542,7 +571,8 @@ export class ReferenceReviewHost {
       cursor,
     );
     const { reviews, state } = await loadReviewSummary(service, item, cursor);
-    const evidence = await service.getEvidence(itemId);
+    // The inbox projection needs neither original bytes nor the offered catalog.
+    const evidence = full ? await service.getEvidence(itemId) : [];
     const views = [];
     for (const part of evidence) {
       const bytes = await service.readEvidence(itemId, part.id);
@@ -556,6 +586,22 @@ export class ReferenceReviewHost {
           : {}),
       });
     }
+    // The offered catalog grants nothing; a catalog failure (not configured,
+    // bound exceeded, denied) only hides the start-action picker.
+    let catalog: ItemReviewView['catalog'];
+    if (full)
+      try {
+        catalog = await service.listHandlers(itemId);
+      } catch {
+        catalog = undefined;
+      }
+    let disposition: ItemReviewView['disposition'];
+    if (full && item.disposition)
+      try {
+        disposition = await service.getItemDisposition(itemId);
+      } catch {
+        disposition = undefined;
+      }
     await service.getItem(itemId);
     const entry: InboxEntry = {
       item,
@@ -563,10 +609,14 @@ export class ReferenceReviewHost {
       state,
       assignment: await this.assignment(scope, itemId),
     };
+    const instruction = await loadInstructionView(service, itemId, analysis);
     return {
       entry,
       evidence: views,
       analysis,
+      ...(catalog ? { catalog } : {}),
+      ...(disposition ? { disposition } : {}),
+      ...(instruction ? { instruction } : {}),
       ...(analysis?.configuration.stage === 'interpret'
         ? {
             generation: analysis.result.output
@@ -579,26 +629,59 @@ export class ReferenceReviewHost {
   }
   async list(
     scope: ReviewSession,
-    input: { state?: InboxState; assigneeId?: string; cursor?: string },
+    input: {
+      state?: InboxState;
+      assigneeId?: string;
+      cursor?: string;
+      limit?: number;
+    },
   ) {
     const { service } = await this.service(scope);
-    const items = (await service.listItems())
-      .sort((a, b) => a.id.localeCompare(b.id))
-      .filter((item) => !input.cursor || item.id > input.cursor)
-      .slice(0, 21);
-    const projected = [];
-    for (const item of items.slice(0, 20)) {
-      const entry = (await this.load(scope, item.id)).entry;
-      if (
-        (!input.state || entry.state === input.state) &&
-        (!input.assigneeId || entry.assignment.assigneeId === input.assigneeId)
-      )
-        projected.push(entry);
-    }
-    return {
-      items: projected,
-      ...(items.length > 20 ? { nextCursor: items[19].id } : {}),
+    const notListing = async (): Promise<never> => {
+      throw new Error('Not used for listing');
     };
+    // Listing composes the published host, so this reference gets the same
+    // paging, scan ceiling, junk-id filtering and assignee fallback as a
+    // production host. This host owns review_assignments and supplies the
+    // batched reads and the assignee pushdown.
+    return createIntakeReviewHost(service, {
+      upload: notListing,
+      assign: notListing,
+      evidence: notListing,
+      assignment: (itemId) => this.assignment(scope, itemId),
+      assignments: (itemIds) => this.assignments(scope, itemIds),
+      assignedItemIds: async (assigneeId) =>
+        (
+          await this.db.query(
+            'SELECT item_id FROM review_assignments WHERE tenant_id=? AND assignee_id=?',
+            scope.tenantId,
+            assigneeId,
+          )
+        ).rows.map((row) => String(row.item_id)),
+    }).list(input);
+  }
+  /** One read for a listed page; the page itself is already authorized. */
+  async assignments(
+    scope: ReviewSession,
+    itemIds: string[],
+  ): Promise<Map<string, Assignment>> {
+    if (!itemIds.length) return new Map();
+    const rows = (
+      await this.db.query(
+        `SELECT item_id,assignee_id,version FROM review_assignments WHERE tenant_id=? AND item_id IN (${itemIds.map(() => '?').join(',')})`,
+        scope.tenantId,
+        ...itemIds,
+      )
+    ).rows;
+    return new Map(
+      rows.map((row) => [
+        String(row.item_id),
+        {
+          assigneeId: row.assignee_id ? String(row.assignee_id) : null,
+          version: Number(row.version ?? 0),
+        },
+      ]),
+    );
   }
   async preview(
     scope: ReviewSession,
@@ -607,6 +690,7 @@ export class ReferenceReviewHost {
       attemptId: string;
       index: number;
       requestId: string;
+      args?: IntakeValues;
     },
   ) {
     const { service } = await this.service(scope);
@@ -616,7 +700,11 @@ export class ReferenceReviewHost {
       typeof input.attemptId !== 'string' ||
       !input.attemptId ||
       typeof input.requestId !== 'string' ||
-      !input.requestId.trim()
+      !input.requestId.trim() ||
+      (input.args !== undefined &&
+        (!input.args ||
+          typeof input.args !== 'object' ||
+          Array.isArray(input.args)))
     )
       throw new Error('Invalid preview');
     const current = await service.getCompletedAnalysis(
@@ -625,29 +713,77 @@ export class ReferenceReviewHost {
     );
     const generation = current.result.output
       .proposals as unknown as GenerationOutput;
+    const suggestion = generation?.suggestions[input.index];
     if (
       current.configuration.stage !== 'interpret' ||
-      generation?.suggestions[input.index]?.disposition !== 'ready_for_review'
+      generation?.outcome === 'provider_error' ||
+      !suggestion ||
+      !['ready_for_review', 'needs_review'].includes(suggestion.disposition)
     )
       throw new Error('Preview unavailable');
+    const handler = generation.offered.find(
+      ({ handler }) =>
+        handler.id === suggestion.handlerId &&
+        handler.version === suggestion.handlerVersion,
+    )?.handler;
+    if (!handler) throw new Error('Preview unavailable');
     const intentionKey = `ui:${input.index}`;
-    const actionId = await service.createAction(input.itemId, intentionKey, {
-      origin: 'generated-proposal',
-      intentionKey,
-    });
+    const actionId =
+      handler.kind === 'plan'
+        ? undefined
+        : await service.createAction(input.itemId, intentionKey, {
+            origin: 'generated-proposal',
+            intentionKey,
+          });
     let cursor: string | undefined,
       expectedRevision = 0;
     do {
       const page = await service.listReviews(input.itemId, { cursor });
-      const found = page.actions.find(
-        (entry) => entry.review.actionId === actionId,
+      const found = page.actions.find((entry) =>
+        handler.kind === 'plan'
+          ? (entry.plan?.key ?? entry.stalePlan?.key) === intentionKey
+          : entry.review.actionId === actionId,
       );
       if (found) {
-        expectedRevision = found.review.revision;
+        expectedRevision =
+          handler.kind === 'plan'
+            ? (found.plan?.revision ?? found.stalePlan?.revision ?? 0)
+            : found.review.revision;
         break;
       }
       cursor = page.nextCursor;
     } while (cursor);
+    if (input.args) {
+      // Human-completed arguments use the ordinary explicit preview (#4208).
+      const shared = {
+        itemId: input.itemId,
+        attemptId: input.attemptId,
+        expectedRevision,
+        requestId: input.requestId,
+        handlerId: suggestion.handlerId,
+        handlerVersion: suggestion.handlerVersion,
+        args: structuredClone(input.args),
+      };
+      return handler.kind === 'plan'
+        ? [
+            {
+              kind: 'plan' as const,
+              review: await service.previewPlan({
+                ...shared,
+                planKey: intentionKey,
+              }),
+            },
+          ]
+        : [
+            {
+              kind: 'operation' as const,
+              review: await service.previewProposal({
+                ...shared,
+                actionId: actionId as string,
+              }),
+            },
+          ];
+    }
     return service.previewGeneratedProposals({
       itemId: input.itemId,
       attemptId: input.attemptId,
@@ -661,6 +797,43 @@ export class ReferenceReviewHost {
       ],
     });
   }
+  /**
+   * Review-UI transport for `preview`: only the handler's own refusal of the
+   * arguments becomes the correctable `{ rejected: 'invalid' }` result; every
+   * other failure (denied, revoked, unavailable, unknown) still throws.
+   */
+  async previewForReview(
+    scope: ReviewSession,
+    input: Parameters<ReferenceReviewHost['preview']>[1],
+  ): Promise<
+    Awaited<ReturnType<ReferenceReviewHost['preview']>> | PreviewRejection
+  > {
+    try {
+      return await this.preview(scope, input);
+    } catch (error) {
+      if (error instanceof HandlerArgumentsInvalidError)
+        return rejection(error);
+      throw error;
+    }
+  }
+  /**
+   * Review-UI transport for `startAction`, with the same mapping as
+   * `previewForReview`: only the handler's refusal of the reviewer's
+   * arguments resolves `{ rejected: 'invalid', issues? }`; access, handler
+   * unavailable, item resolved and identity conflict still throw.
+   */
+  async startActionForReview(
+    scope: ReviewSession,
+    input: StartActionInput,
+  ): Promise<void | PreviewRejection> {
+    try {
+      await (await this.service(scope)).service.startReviewerAction(input);
+    } catch (error) {
+      if (error instanceof HandlerArgumentsInvalidError)
+        return rejection(error);
+      throw error;
+    }
+  }
   async decide(scope: ReviewSession, input: ReviewInput) {
     return (await this.service(scope)).service.submitDecision(input);
   }
@@ -669,6 +842,31 @@ export class ReferenceReviewHost {
     const result = await service.reviseLogicalSplit(input);
     await this.process(scope, input.itemId, result.revision);
   }
+  /** Durable record first; the fixture then reinterprets in the background like a job worker. */
+  async instruct(scope: ReviewSession, input: ReviewerInstructionInput) {
+    const { service } = await this.service(scope);
+    let result: Awaited<ReturnType<typeof service.recordReviewerInstruction>>;
+    try {
+      result = await service.recordReviewerInstruction(input);
+    } catch (error) {
+      if (error instanceof ReviewerInstructionStaleError)
+        return { stale: true as const };
+      if (error instanceof ReviewerInstructionInvalidError)
+        return { invalid: true as const };
+      throw error;
+    }
+    const pending = this.process(scope, input.itemId, result.revision).catch(
+      () => undefined,
+    );
+    this.background.add(pending);
+    void pending.finally(() => this.background.delete(pending));
+    return { revision: result.revision };
+  }
+  /** Tests and shutdown wait for fixture background stages instead of racing them. */
+  async settle() {
+    while (this.background.size) await Promise.all([...this.background]);
+  }
+  private readonly background = new Set<Promise<unknown>>();
   async result(scope: ReviewSession, id: string) {
     if (!(await this.allowed(scope))) throw new Error('Unavailable');
     const record = await (await Contents.create({ db: this.db })).get({ id });

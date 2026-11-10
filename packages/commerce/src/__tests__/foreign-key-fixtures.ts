@@ -1,6 +1,6 @@
-import { ContractCollection } from '../collections/ContractCollection.js';
 import { CustomerCollection } from '../collections/CustomerCollection.js';
 import { VendorCollection } from '../collections/VendorCollection.js';
+import { Order } from '../models/Contract.js';
 
 interface CommerceForeignKeyFixtures {
   db: { type: 'sqlite'; url: string };
@@ -18,28 +18,25 @@ export async function seedCommerceForeignKeyFixtures({
 }: CommerceForeignKeyFixtures): Promise<void> {
   const customers = await CustomerCollection.create({ db });
   const vendors = await VendorCollection.create({ db });
-  const contracts = await ContractCollection.create({ db });
   const fixtureCustomerId = '__fixture_customer__';
-  const fixtureVendorId = '__fixture_vendor__';
 
   const requiredCustomerIds = contractIds.length
     ? [fixtureCustomerId, ...customerIds]
     : customerIds;
-  const requiredVendorIds = contractIds.length
-    ? [fixtureVendorId, ...vendorIds]
-    : vendorIds;
   for (const id of new Set(requiredCustomerIds)) {
     await customers.create({ id, name: `Fixture ${id}` });
   }
-  for (const id of new Set(requiredVendorIds)) {
+  for (const id of new Set(vendorIds)) {
     await vendors.create({ id, name: `Fixture ${id}` });
   }
   for (const id of new Set(contractIds)) {
-    await contracts.create({
+    const order = new Order({
+      db,
       id,
       customerId: fixtureCustomerId,
-      vendorId: fixtureVendorId,
       reference: `Fixture ${id}`,
     });
+    await order.initialize();
+    await order.save();
   }
 }

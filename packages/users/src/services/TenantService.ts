@@ -108,13 +108,17 @@ export class TenantService {
    *
    * @param userId - The user to make owner
    * @param name - Tenant name
-   * @param options - Optional slug override
+   * @param options - Optional slug override and trusted provisioning identities
    * @returns The created tenant and membership
    */
   async createTenantWithOwnership(
     userId: string,
     name: string,
-    options?: { slug?: string },
+    options?: {
+      slug?: string;
+      /** Server-owned IDs only. Use the caller's provisioning transaction. */
+      reservedIdentity?: { tenantId?: string; membershipId?: string };
+    },
   ): Promise<TenantWithOwnershipResult> {
     // Check if user can create
     if (!(await this.canCreateTenant(userId))) {
@@ -123,29 +127,28 @@ export class TenantService {
       );
     }
 
-    // Create tenant
-    const tenant = await this.tenantCollection.create({
-      name,
-      slug: options?.slug,
-    });
-    await tenant.save();
-
-    // Get owner role
-    const ownerRole = await this.roleCollection.findBySlug(
+    const ownerRole = await this.roleCollection.findSystemRoleBySlug(
       DEFAULT_ROLE_SLUGS.OWNER,
     );
-    if (!ownerRole) {
+    if (!ownerRole?.id) {
       throw new Error('Owner role not found - run seedSystemRoles first');
     }
 
-    // Create ownership membership
+    const identity = options?.reservedIdentity;
+    const tenant = await this.tenantCollection.create({
+      id: identity?.tenantId,
+      _insertOnly: identity !== undefined,
+      name,
+      slug: options?.slug,
+    });
     const membership = await this.membershipCollection.create({
+      id: identity?.membershipId,
+      _insertOnly: identity !== undefined,
       userId,
       tenantId: tenant.id as string,
-      roleId: ownerRole.id as string,
+      roleId: ownerRole.id,
       status: MembershipStatus.ACTIVE,
     });
-    await membership.save();
 
     return { tenant, membership };
   }
@@ -160,7 +163,7 @@ export class TenantService {
       return true; // Unlimited
     }
 
-    const ownerRole = await this.roleCollection.findBySlug(
+    const ownerRole = await this.roleCollection.findSystemRoleBySlug(
       DEFAULT_ROLE_SLUGS.OWNER,
     );
     if (!ownerRole) {
@@ -195,7 +198,7 @@ export class TenantService {
       return 'You are not a member of this tenant or it does not exist.';
     }
 
-    const ownerRole = await this.roleCollection.findBySlug(
+    const ownerRole = await this.roleCollection.findSystemRoleBySlug(
       DEFAULT_ROLE_SLUGS.OWNER,
     );
     if (!ownerRole) {
@@ -320,7 +323,7 @@ export class TenantService {
    * Get all tenants for a user (where they are owner)
    */
   async getOwnedTenants(userId: string): Promise<Tenant[]> {
-    const ownerRole = await this.roleCollection.findBySlug(
+    const ownerRole = await this.roleCollection.findSystemRoleBySlug(
       DEFAULT_ROLE_SLUGS.OWNER,
     );
     if (!ownerRole) {

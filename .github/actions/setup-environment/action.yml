@@ -6,7 +6,7 @@ inputs:
   node-version:
     description: 'Node.js version to use'
     required: false
-    default: '26.9.0'
+    default: '26.12.1'
 
   install-deps:
     description: 'Whether to install project dependencies'
@@ -41,6 +41,14 @@ inputs:
       'off' disables it everywhere.
     required: false
     default: 'auto'
+
+  pnpm-cache:
+    description: >-
+      Restore and save the pnpm store with actions/cache. 'false' installs
+      cold and never saves, for jobs that run untrusted code (the desktop
+      release bundle job).
+    required: false
+    default: 'true'
 
 outputs:
   pnpm-cache-hit:
@@ -222,6 +230,7 @@ runs:
     - name: Setup pnpm cache
       id: pnpm-cache
       if: >-
+        inputs.pnpm-cache != 'false' &&
         steps.pnpm-store-strategy.outputs.use-actions-cache == 'true' &&
         github.event_name != 'pull_request_target'
       uses: actions/cache@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6
@@ -297,6 +306,7 @@ runs:
 
         echo "Installing ONNX Runtime system dependencies..."
         node_path="$(command -v node)"
+        sudo "$node_path" "$GITHUB_WORKSPACE/scripts/configure-ubuntu-apt-mirrors.mjs"
         sudo "$node_path" "$GITHUB_WORKSPACE/scripts/run-bounded-command.mjs" \
           --stage 'apt-get update' \
           --timeout-seconds 120 \

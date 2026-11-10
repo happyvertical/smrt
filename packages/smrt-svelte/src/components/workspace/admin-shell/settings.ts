@@ -51,6 +51,10 @@ export const DEFAULT_PANEL_CONFIG: Record<PanelEdge, ShellPanelConfig> = {
     label: 'Right sidebar',
     initial: 'collapsed',
     presentation: 'push',
+    // The dock sits beside the page from the xl breakpoint (80rem, 1280px)
+    // and slides over it below (#4100); hosts override either.
+    overlayMedia: '(max-width: 79.9375rem)',
+    closeOnNavigate: true,
     hotkey: DEFAULT_SHELL_KEYMAP.right,
     collapsedSize: '4.25rem',
     expandedSize: '20rem',

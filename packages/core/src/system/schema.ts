@@ -243,7 +243,12 @@ CREATE TABLE IF NOT EXISTS _smrt_ai_usage (
   class_name TEXT,
   tenant_id TEXT,
   tags TEXT,
-  created_at TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP
+  created_at TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP,
+  prompt_key TEXT,
+  tier_requested TEXT,
+  tier_resolved TEXT,
+  run_id TEXT,
+  call_id TEXT
 );
 
 CREATE INDEX IF NOT EXISTS idx_smrt_ai_usage_created
@@ -263,6 +268,148 @@ CREATE INDEX IF NOT EXISTS idx_smrt_ai_usage_provider_model
 -- which the single-column indexes above can satisfy (#2375).
 CREATE INDEX IF NOT EXISTS idx_smrt_ai_usage_tenant_created
   ON _smrt_ai_usage(tenant_id, created_at);
+
+-- Prompt-run observability (#4751): prompt_key, tier_requested, tier_resolved
+-- and run_id are lifted from the promptKey / tierRequested / tierResolved /
+-- runId usage tags (tags keeps the full copy). Existing databases receive the
+-- columns from ensureAiUsageSystemTableCompatibility() before this replays.
+CREATE INDEX IF NOT EXISTS idx_smrt_ai_usage_prompt_key
+  ON _smrt_ai_usage(prompt_key, created_at);
+
+CREATE INDEX IF NOT EXISTS idx_smrt_ai_usage_run
+  ON _smrt_ai_usage(run_id);
+
+-- AI call transcripts (#4780): call_id is lifted from the callId usage tag
+-- that core mints per call while transcripts are enabled. It links the usage
+-- row to its transcript and labels.
+CREATE INDEX IF NOT EXISTS idx_smrt_ai_usage_call
+  ON _smrt_ai_usage(call_id);
+`;
+
+/**
+ * Outcome labels for AI usage (#4751).
+ *
+ * A run cannot rate itself, so whether an answer was any good is a label
+ * recorded later, when it is known, by `recordAiUsageOutcome()`. A label
+ * targets one usage row (`usage_id`), a whole run (`run_id`), or both. Neither
+ * is a foreign key: `pruneAiUsage()` deletes usage rows on its own schedule and
+ * must never be blocked by, or cascade into, the labels.
+ */
+export const CREATE_SMRT_AI_USAGE_OUTCOMES_TABLE = `
+CREATE TABLE IF NOT EXISTS _smrt_ai_usage_outcomes (
+  id TEXT PRIMARY KEY,
+  usage_id TEXT,
+  run_id TEXT,
+  call_id TEXT,
+  label TEXT NOT NULL,
+  score REAL,
+  evidence TEXT,
+  actor TEXT NOT NULL,
+  tenant_id TEXT,
+  created_at TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP
+);
+
+CREATE INDEX IF NOT EXISTS idx_smrt_ai_usage_outcomes_usage
+  ON _smrt_ai_usage_outcomes(usage_id);
+
+CREATE INDEX IF NOT EXISTS idx_smrt_ai_usage_outcomes_run
+  ON _smrt_ai_usage_outcomes(run_id);
+
+CREATE INDEX IF NOT EXISTS idx_smrt_ai_usage_outcomes_tenant_created
+  ON _smrt_ai_usage_outcomes(tenant_id, created_at);
+
+CREATE INDEX IF NOT EXISTS idx_smrt_ai_usage_outcomes_call
+  ON _smrt_ai_usage_outcomes(call_id);
+`;
+
+/**
+ * Multi-call run records (#4753).
+ *
+ * One row per fusion run: what ran (`fusion_key`, `mode`, the entry call's
+ * `prompt_key`), how it went (`status`: ok | degraded | failed; `seats` that
+ * ran, `degraded_seats` that died or answered through a substitution), and
+ * `details`, JSON with per-seat persona, target, model, usage, substitutions
+ * and the gate result. Each seat's own `_smrt_ai_usage` row carries the run's
+ * id in `run_id`; that is not a foreign key, for the same retention reason as
+ * the outcome labels. `tenant_id` matches `_smrt_ai_usage.tenant_id` (TEXT).
+ * `status` has no index: it is always read beside a fusion key or a window.
+ */
+export const CREATE_SMRT_AI_RUNS_TABLE = `
+CREATE TABLE IF NOT EXISTS _smrt_ai_runs (
+  id TEXT PRIMARY KEY,
+  fusion_key TEXT NOT NULL,
+  mode TEXT NOT NULL,
+  tenant_id TEXT,
+  class_name TEXT,
+  prompt_key TEXT,
+  seats INTEGER NOT NULL,
+  degraded_seats INTEGER NOT NULL,
+  status TEXT NOT NULL,
+  duration INTEGER NOT NULL,
+  details TEXT,
+  created_at TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP
+);
+
+CREATE INDEX IF NOT EXISTS idx_smrt_ai_runs_created
+  ON _smrt_ai_runs(created_at);
+
+CREATE INDEX IF NOT EXISTS idx_smrt_ai_runs_fusion_created
+  ON _smrt_ai_runs(fusion_key, created_at);
+
+CREATE INDEX IF NOT EXISTS idx_smrt_ai_runs_tenant_created
+  ON _smrt_ai_runs(tenant_id, created_at);
+`;
+
+/**
+ * Opt-in AI call transcripts (#4780).
+ *
+ * Readable content of one AI call: the request messages, the response and
+ * the tool events, each TEXT JSON after redaction, with a per-row byte cap
+ * (`truncated` is 1 after a head-and-tail cut, 0 otherwise: system tables
+ * store flags as INTEGER, like `_smrt_schema_migrations.is_reversible`, so
+ * one binding works on every engine; `bytes` is the stored size of the three
+ * payloads). Written only when the app enables
+ * `inference.transcripts`. `call_id` is the `callId` usage tag the matching
+ * `_smrt_ai_usage` rows carry in `call_id`, and `run_id` the fusion run;
+ * neither is a foreign key, so retention prunes transcripts (30 days by
+ * default) independently of usage rows and labels. `tenant_id` is TEXT like
+ * `_smrt_ai_usage.tenant_id`. Reads are tenant-scoped by
+ * `(tenant_id, created_at)`; `prompt_key` reads by `(prompt_key, created_at)`.
+ */
+export const CREATE_SMRT_AI_TRANSCRIPTS_TABLE = `
+CREATE TABLE IF NOT EXISTS _smrt_ai_transcripts (
+  id TEXT PRIMARY KEY,
+  call_id TEXT NOT NULL,
+  run_id TEXT,
+  tenant_id TEXT,
+  prompt_key TEXT,
+  template_hash TEXT,
+  provider TEXT,
+  model TEXT,
+  operation TEXT NOT NULL,
+  class_name TEXT,
+  request TEXT,
+  response TEXT,
+  tool_events TEXT,
+  truncated INTEGER NOT NULL DEFAULT 0,
+  bytes INTEGER NOT NULL,
+  created_at TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP
+);
+
+CREATE INDEX IF NOT EXISTS idx_smrt_ai_transcripts_call
+  ON _smrt_ai_transcripts(call_id);
+
+CREATE INDEX IF NOT EXISTS idx_smrt_ai_transcripts_run
+  ON _smrt_ai_transcripts(run_id);
+
+CREATE INDEX IF NOT EXISTS idx_smrt_ai_transcripts_created
+  ON _smrt_ai_transcripts(created_at);
+
+CREATE INDEX IF NOT EXISTS idx_smrt_ai_transcripts_tenant_created
+  ON _smrt_ai_transcripts(tenant_id, created_at);
+
+CREATE INDEX IF NOT EXISTS idx_smrt_ai_transcripts_prompt_created
+  ON _smrt_ai_transcripts(prompt_key, created_at);
 `;
 
 /**
@@ -336,7 +483,7 @@ CREATE TABLE IF NOT EXISTS _smrt_changes_pending (
   table_name TEXT NOT NULL,
   row_id TEXT,
   operation TEXT NOT NULL,
-  tenant_id TEXT,
+  tenant_id UUID,
   created_at TIMESTAMPTZ NOT NULL
 );
 
@@ -349,7 +496,10 @@ export const POSTGRES_CHANGE_FEED_PENDING_TABLE = '_smrt_changes_pending';
 
 /** PostgreSQL materialization of the portable change-feed table DDL. */
 export const CREATE_POSTGRES_SMRT_CHANGES_TABLE =
-  CREATE_SMRT_CHANGES_TABLE.replace(/\bTIMESTAMP\b/g, 'TIMESTAMPTZ');
+  CREATE_SMRT_CHANGES_TABLE.replace(/\bTIMESTAMP\b/g, 'TIMESTAMPTZ').replace(
+    /\btenant_id TEXT\b/g,
+    'tenant_id UUID',
+  );
 
 /** PostgreSQL helper used to isolate best-effort feed appends (#2026). */
 export const POSTGRES_CHANGE_FEED_APPEND_FUNCTION_NAME = '_smrt_append_change';
@@ -376,13 +526,51 @@ export const POSTGRES_CHANGE_FEED_APPEND_BATCH_FUNCTION_IDENTITY = `${POSTGRES_C
  * replaced. Bump it whenever either helper's body changes in a way an existing
  * database must pick up.
  */
-export const POSTGRES_CHANGE_FEED_HELPER_MARKER = 'smrt-change-feed-helpers:v4';
+export const POSTGRES_CHANGE_FEED_HELPER_MARKER = 'smrt-change-feed-helpers:v5';
+
+/**
+ * The previous body marker, still stamped into every v5 body (#3297).
+ *
+ * v5 only changes how a tenant id is coerced: it is converted to whatever type
+ * the live `tenant_id` column has (TEXT before `db:migrate-uuid`, native uuid
+ * after), so a v5 body is a drop-in for v4 callers. Older SMRT processes probe
+ * for the v4 marker; carrying it stops them from replacing a v5 body with a
+ * v4 one (which inserts text into a converted uuid column) during a
+ * mixed-version rollout.
+ */
+export const POSTGRES_CHANGE_FEED_HELPER_COMPAT_MARKER =
+  'smrt-change-feed-helpers:v4';
+
+/**
+ * Coerce a text tenant id to the live type of `<table>.tenant_id` (#3297).
+ *
+ * `jsonb_populate_record` builds the table's row type at execution time, so
+ * the same body works before and after the column converts to uuid, and a
+ * cached plan is invalidated by the ALTER like any other. Empty strings are
+ * NULL, matching the TypeScript writers.
+ */
+function postgresTenantIdAs(table: string, textExpression: string): string {
+  return `(jsonb_populate_record(NULL::${table}, jsonb_build_object('tenant_id', NULLIF(${textExpression}, '')))).tenant_id`;
+}
 
 /** PostgreSQL helper that sequences staged change-feed appends (#2649). */
 export const POSTGRES_CHANGE_FEED_DRAIN_FUNCTION_NAME = '_smrt_drain_changes';
 
-/** Exact PostgreSQL identity used for catalog lookup of the drain helper. */
-export const POSTGRES_CHANGE_FEED_DRAIN_FUNCTION_IDENTITY = `${POSTGRES_CHANGE_FEED_DRAIN_FUNCTION_NAME}(integer)`;
+/**
+ * Exact PostgreSQL identity of the drain helper (#2982): the batch limit plus
+ * the live set of sensitive tables, which the drain purges from staging and
+ * never sequences.
+ */
+export const POSTGRES_CHANGE_FEED_DRAIN_FUNCTION_IDENTITY = `${POSTGRES_CHANGE_FEED_DRAIN_FUNCTION_NAME}(integer,text[])`;
+
+/**
+ * Identity of the pre-#2982 single-argument drain, kept as a compatibility
+ * entry point so replicas of an older SMRT that still call
+ * `_smrt_drain_changes()` keep working during a mixed-version rollout. It
+ * delegates to the two-argument drain with no exclusions — exactly the old
+ * behavior — because it has no way to know the live sensitive set.
+ */
+export const POSTGRES_CHANGE_FEED_COMPAT_DRAIN_FUNCTION_IDENTITY = `${POSTGRES_CHANGE_FEED_DRAIN_FUNCTION_NAME}(integer)`;
 
 /** How many staged entries one drain call sequences. */
 export const POSTGRES_CHANGE_FEED_DRAIN_BATCH = 1000;
@@ -410,10 +598,18 @@ export const POSTGRES_CHANGE_FEED_DRAIN_BATCH = 1000;
  * Failures are returned as data, like the append helper, so a drain problem
  * never aborts the caller's transaction. A failed drain leaves the staged rows
  * in place for the next attempt.
+ *
+ * Sensitive tables (#2982): `p_excluded_tables` is the caller's live
+ * sensitive set. Under the drain lock, staged rows for those tables are
+ * deleted before any sequence is allocated, and the sequencing batch skips
+ * them too, so an entry staged by an older replica (or left over from before
+ * an upgrade) never reaches `_smrt_changes`. Neither parameter has a default:
+ * a call with no arguments resolves only to the compatibility overload.
  */
 export const CREATE_POSTGRES_CHANGE_FEED_DRAIN_FUNCTION = `
 CREATE OR REPLACE FUNCTION ${POSTGRES_CHANGE_FEED_DRAIN_FUNCTION_NAME}(
-  p_limit INTEGER DEFAULT ${POSTGRES_CHANGE_FEED_DRAIN_BATCH}
+  p_limit INTEGER,
+  p_excluded_tables TEXT[]
 )
 RETURNS TABLE(
   drained_seq BIGINT,
@@ -428,6 +624,7 @@ LANGUAGE plpgsql
 SECURITY INVOKER
 AS $smrt_change_feed_drain$
 -- ${POSTGRES_CHANGE_FEED_HELPER_MARKER}
+-- ${POSTGRES_CHANGE_FEED_HELPER_COMPAT_MARKER}
 DECLARE
   v_base BIGINT;
   v_error_code TEXT;
@@ -466,6 +663,23 @@ BEGIN
       RETURN;
     END IF;
 
+    -- The feed never records a sensitive table (#2982). Staged entries for
+    -- one — from an older replica, or staged before the table was declared
+    -- sensitive — are dropped here, before a sequence is allocated.
+    -- Bounded like the sequencing batch, so a large legacy backlog cannot make
+    -- one pass outlive statement_timeout and stall the feed; the remainder is
+    -- purged by later passes, and the batch below skips it meanwhile.
+    IF COALESCE(cardinality(p_excluded_tables), 0) > 0 THEN
+      DELETE FROM _smrt_changes_pending AS sensitive
+      WHERE sensitive.pending_id IN (
+        SELECT staged.pending_id
+        FROM _smrt_changes_pending AS staged
+        WHERE staged.table_name = ANY(p_excluded_tables)
+        ORDER BY staged.pending_id
+        LIMIT GREATEST(COALESCE(p_limit, ${POSTGRES_CHANGE_FEED_DRAIN_BATCH}), 1)
+      );
+    END IF;
+
     SELECT COALESCE(MAX(changes.seq), 0) INTO v_base FROM _smrt_changes AS changes;
 
     RETURN QUERY
@@ -474,6 +688,11 @@ BEGIN
       WHERE pending.pending_id IN (
         SELECT candidate.pending_id
         FROM _smrt_changes_pending AS candidate
+        -- A sensitive row committed after the purge above is skipped, not
+        -- sequenced; the next drain purges it.
+        WHERE NOT (
+          candidate.table_name = ANY(COALESCE(p_excluded_tables, ARRAY[]::TEXT[]))
+        )
         ORDER BY candidate.pending_id
         LIMIT GREATEST(COALESCE(p_limit, ${POSTGRES_CHANGE_FEED_DRAIN_BATCH}), 1)
       )
@@ -505,7 +724,7 @@ BEGIN
         numbered.table_name,
         numbered.row_id,
         numbered.operation,
-        numbered.tenant_id,
+        ${postgresTenantIdAs('_smrt_changes', 'numbered.tenant_id::TEXT')},
         numbered.created_at
       FROM numbered
       RETURNING
@@ -520,7 +739,7 @@ BEGIN
       inserted.table_name,
       inserted.row_id,
       inserted.operation,
-      inserted.tenant_id,
+      inserted.tenant_id::TEXT,
       NULL::TEXT,
       NULL::TEXT
     FROM inserted
@@ -540,6 +759,55 @@ BEGIN
   END;
 END;
 $smrt_change_feed_drain$;
+`;
+
+/**
+ * Compatibility single-argument drain (#2982): see
+ * {@link POSTGRES_CHANGE_FEED_COMPAT_DRAIN_FUNCTION_IDENTITY}. Current SMRT
+ * never calls it.
+ */
+export const CREATE_POSTGRES_CHANGE_FEED_COMPAT_DRAIN_FUNCTION = `
+CREATE OR REPLACE FUNCTION ${POSTGRES_CHANGE_FEED_DRAIN_FUNCTION_NAME}(
+  p_limit INTEGER DEFAULT ${POSTGRES_CHANGE_FEED_DRAIN_BATCH}
+)
+RETURNS TABLE(
+  drained_seq BIGINT,
+  drained_table TEXT,
+  drained_row_id TEXT,
+  drained_operation TEXT,
+  drained_tenant_id TEXT,
+  error_code TEXT,
+  error_message TEXT
+)
+LANGUAGE plpgsql
+SECURITY INVOKER
+AS $smrt_change_feed_drain_compat$
+-- ${POSTGRES_CHANGE_FEED_HELPER_MARKER}
+DECLARE
+  v_error_code TEXT;
+  v_error_message TEXT;
+BEGIN
+  -- Its own boundary, like the drain it delegates to: a resolution or
+  -- privilege error on the inner call must come back as data, never abort an
+  -- older replica's caller transaction (#2026).
+  BEGIN
+    RETURN QUERY
+    SELECT * FROM ${POSTGRES_CHANGE_FEED_DRAIN_FUNCTION_NAME}(p_limit, ARRAY[]::TEXT[]);
+  EXCEPTION WHEN query_canceled OR assert_failure OR OTHERS THEN
+    GET STACKED DIAGNOSTICS
+      v_error_code = RETURNED_SQLSTATE,
+      v_error_message = MESSAGE_TEXT;
+    RETURN QUERY SELECT
+      NULL::BIGINT,
+      NULL::TEXT,
+      NULL::TEXT,
+      NULL::TEXT,
+      NULL::TEXT,
+      v_error_code,
+      v_error_message;
+  END;
+END;
+$smrt_change_feed_drain_compat$;
 `;
 
 /**
@@ -569,6 +837,7 @@ LANGUAGE plpgsql
 SECURITY INVOKER
 AS $smrt_change_feed$
 -- ${POSTGRES_CHANGE_FEED_HELPER_MARKER}
+-- ${POSTGRES_CHANGE_FEED_HELPER_COMPAT_MARKER}
 DECLARE
   v_seq BIGINT;
   v_error_code TEXT;
@@ -621,7 +890,7 @@ BEGIN
         p_table_name,
         p_row_id,
         p_operation,
-        p_tenant_id,
+        ${postgresTenantIdAs('_smrt_changes_pending', 'p_tenant_id')},
         p_created_at
       );
 
@@ -662,7 +931,7 @@ BEGIN
       p_table_name,
       p_row_id,
       p_operation,
-      p_tenant_id,
+      ${postgresTenantIdAs('_smrt_changes', 'p_tenant_id')},
       p_created_at
     FROM _smrt_changes AS changes
     RETURNING _smrt_changes.seq INTO v_seq;
@@ -698,6 +967,7 @@ LANGUAGE plpgsql
 SECURITY INVOKER
 AS $smrt_change_feed_batch$
 -- ${POSTGRES_CHANGE_FEED_HELPER_MARKER}
+-- ${POSTGRES_CHANGE_FEED_HELPER_COMPAT_MARKER}
 DECLARE
   v_deferred BOOLEAN;
   v_error_code TEXT;
@@ -721,7 +991,7 @@ BEGIN
           input.value->>'table',
           input.value->>'rowId',
           input.value->>'operation',
-          input.value->>'tenantId',
+          ${postgresTenantIdAs('_smrt_changes_pending', "input.value->>'tenantId'")},
           (input.value->>'timestamp')::TIMESTAMPTZ
         FROM input
         ORDER BY input.entry_index
@@ -753,7 +1023,7 @@ BEGIN
         numbered.value->>'table',
         numbered.value->>'rowId',
         numbered.value->>'operation',
-        numbered.value->>'tenantId',
+        ${postgresTenantIdAs('_smrt_changes', "numbered.value->>'tenantId'")},
         (numbered.value->>'timestamp')::TIMESTAMPTZ
       FROM numbered
       ORDER BY numbered.entry_index
@@ -788,6 +1058,55 @@ $smrt_change_feed_pending_ddl$;`,
     .join('\n');
 
 /**
+ * Install both drain overloads inside a helper DO block (#2982).
+ *
+ * The two-argument drain is the first framework routine identity added to
+ * databases that already exist, and a new function gets PostgreSQL's default
+ * ACL — which a hardened deployment (PUBLIC EXECUTE revoked, the runtime role
+ * granted explicitly by the permissions planner) would leave the runtime
+ * unable to call. When this block creates it, it therefore inherits the
+ * compatibility drain's reconciled EXECUTE grants. A role that may not grant
+ * keeps the default ACL; the permissions planner reports and repairs it.
+ */
+const POSTGRES_CHANGE_FEED_DRAIN_INSTALL = `  DECLARE
+    v_drain_created BOOLEAN :=
+      to_regprocedure('${POSTGRES_CHANGE_FEED_DRAIN_FUNCTION_IDENTITY}') IS NULL;
+    v_grant RECORD;
+  BEGIN
+    EXECUTE $smrt_change_feed_drain_ddl$
+${CREATE_POSTGRES_CHANGE_FEED_DRAIN_FUNCTION.trim()}
+$smrt_change_feed_drain_ddl$;
+    EXECUTE $smrt_change_feed_drain_compat_ddl$
+${CREATE_POSTGRES_CHANGE_FEED_COMPAT_DRAIN_FUNCTION.trim()}
+$smrt_change_feed_drain_compat_ddl$;
+    IF v_drain_created AND (
+      SELECT p.proacl FROM pg_proc AS p
+      WHERE p.oid = to_regprocedure('${POSTGRES_CHANGE_FEED_COMPAT_DRAIN_FUNCTION_IDENTITY}')
+    ) IS NOT NULL THEN
+      BEGIN
+        EXECUTE 'REVOKE ALL ON FUNCTION ${POSTGRES_CHANGE_FEED_DRAIN_FUNCTION_IDENTITY} FROM PUBLIC';
+        FOR v_grant IN
+          SELECT acl.grantee
+          FROM pg_proc AS p, aclexplode(p.proacl) AS acl
+          WHERE p.oid = to_regprocedure('${POSTGRES_CHANGE_FEED_COMPAT_DRAIN_FUNCTION_IDENTITY}')
+            AND acl.privilege_type = 'EXECUTE'
+        LOOP
+          IF v_grant.grantee = 0 THEN
+            EXECUTE 'GRANT EXECUTE ON FUNCTION ${POSTGRES_CHANGE_FEED_DRAIN_FUNCTION_IDENTITY} TO PUBLIC';
+          ELSE
+            EXECUTE format(
+              'GRANT EXECUTE ON FUNCTION ${POSTGRES_CHANGE_FEED_DRAIN_FUNCTION_IDENTITY} TO %I',
+              pg_get_userbyid(v_grant.grantee)
+            );
+          END IF;
+        END LOOP;
+      EXCEPTION WHEN insufficient_privilege THEN
+        NULL;
+      END;
+    END IF;
+  END;`;
+
+/**
  * Serialize PostgreSQL helper replacement inside one server-side statement.
  *
  * The transaction-scoped advisory lock prevents concurrent bootstraps from
@@ -803,9 +1122,7 @@ BEGIN
   );
 ${POSTGRES_CHANGE_FEED_PENDING_DDL}
   DROP FUNCTION IF EXISTS ${LEGACY_POSTGRES_CHANGE_FEED_APPEND_FUNCTION_IDENTITY};
-  EXECUTE $smrt_change_feed_drain_ddl$
-${CREATE_POSTGRES_CHANGE_FEED_DRAIN_FUNCTION.trim()}
-$smrt_change_feed_drain_ddl$;
+${POSTGRES_CHANGE_FEED_DRAIN_INSTALL}
   EXECUTE $smrt_change_feed_ddl$
 ${CREATE_POSTGRES_CHANGE_FEED_APPEND_FUNCTION.trim()}
 $smrt_change_feed_ddl$;
@@ -851,9 +1168,7 @@ BEGIN
     );
 ${POSTGRES_CHANGE_FEED_PENDING_DDL}
   DROP FUNCTION IF EXISTS ${LEGACY_POSTGRES_CHANGE_FEED_APPEND_FUNCTION_IDENTITY};
-  EXECUTE $smrt_change_feed_drain_ddl$
-${CREATE_POSTGRES_CHANGE_FEED_DRAIN_FUNCTION.trim()}
-$smrt_change_feed_drain_ddl$;
+${POSTGRES_CHANGE_FEED_DRAIN_INSTALL}
   IF v_append_stale THEN
     EXECUTE $smrt_change_feed_ddl$
 ${CREATE_POSTGRES_CHANGE_FEED_APPEND_FUNCTION.trim()}
@@ -907,9 +1222,7 @@ BEGIN
 ${POSTGRES_CHANGE_FEED_SCHEMA_DDL}
 ${POSTGRES_CHANGE_FEED_PENDING_DDL}
   DROP FUNCTION IF EXISTS ${LEGACY_POSTGRES_CHANGE_FEED_APPEND_FUNCTION_IDENTITY};
-  EXECUTE $smrt_change_feed_drain_ddl$
-${CREATE_POSTGRES_CHANGE_FEED_DRAIN_FUNCTION.trim()}
-$smrt_change_feed_drain_ddl$;
+${POSTGRES_CHANGE_FEED_DRAIN_INSTALL}
   IF v_append_stale THEN
     EXECUTE $smrt_change_feed_ddl$
 ${CREATE_POSTGRES_CHANGE_FEED_APPEND_FUNCTION.trim()}
@@ -986,6 +1299,20 @@ CREATE INDEX IF NOT EXISTS idx_smrt_run_once_claims_status_completed
   ON _smrt_run_once_claims(status, completed_at);
 `;
 
+/** Durable sync deletion revisions, separate from live natural keys. */
+export const CREATE_SMRT_SYNC_TOMBSTONES_TABLE = `
+CREATE TABLE IF NOT EXISTS _smrt_sync_tombstones (
+  table_name TEXT NOT NULL,
+  row_id TEXT NOT NULL,
+  model TEXT NOT NULL,
+  tenant_id TEXT,
+  origin_device_id TEXT NOT NULL,
+  revision INTEGER NOT NULL,
+  deleted_at TIMESTAMP NOT NULL,
+  PRIMARY KEY (table_name, row_id)
+);
+`;
+
 /**
  * All system table creation statements
  */
@@ -999,7 +1326,11 @@ export const ALL_SYSTEM_TABLES = [
   CREATE_SMRT_DISPATCH_TABLE,
   CREATE_SMRT_DISPATCH_SUBSCRIPTIONS_TABLE,
   CREATE_SMRT_AI_USAGE_TABLE,
+  CREATE_SMRT_AI_USAGE_OUTCOMES_TABLE,
+  CREATE_SMRT_AI_RUNS_TABLE,
+  CREATE_SMRT_AI_TRANSCRIPTS_TABLE,
   CREATE_SMRT_CHANGES_TABLE,
+  CREATE_SMRT_SYNC_TOMBSTONES_TABLE,
 ];
 
 /**
@@ -1063,9 +1394,44 @@ export const RETIRED_SYSTEM_TABLES: readonly string[] = [
 ];
 
 /**
+ * System-table columns that hold a real tenant id (#3297): a tenant UUID from
+ * the tenant context, or NULL for global rows. On PostgreSQL they materialize
+ * as native `uuid`, like every application `tenant_id`; other engines keep
+ * TEXT, where `UUID` renders as TEXT anyway. Existing PostgreSQL TEXT columns
+ * convert through `smrt db:migrate-uuid` in a maintenance window.
+ *
+ * Deliberately NOT here (they stay TEXT):
+ * - text identity encodings that are not tenant ids: `_smrt_contexts.owner_id`
+ *   (`__collection__` / `__collection__:<tenantId>` scope keys, object/agent
+ *   row ids), `_smrt_run_once_claims.actor` (an arbitration namespace),
+ *   `_smrt_dispatch.processed_by` (a subscriber name) and
+ *   `_smrt_schema_migrations.applied_by` (a hostname);
+ * - `_smrt_run_once_claims.tenant_id`: a NOT NULL claim scope folded into the
+ *   claim key; a caller without a tenant must pass a scope string, so it is a
+ *   scope key, not a tenant FK;
+ * - `_smrt_ai_usage.tenant_id`: model usage writes tenant UUIDs, but the
+ *   published external-agent usage API accepts any non-empty text tenant id,
+ *   so converting it is a contract change tracked separately;
+ * - `_smrt_ai_usage_outcomes.tenant_id`, `_smrt_ai_runs.tenant_id` and
+ *   `_smrt_ai_transcripts.tenant_id`: match `_smrt_ai_usage.tenant_id`, the
+ *   column they are read beside, and convert with it.
+ */
+export const SYSTEM_TABLE_TENANT_UUID_COLUMNS: ReadonlyArray<{
+  table: string;
+  column: string;
+}> = Object.freeze([
+  { table: '_smrt_dispatch', column: 'tenant_id' },
+  { table: '_smrt_dispatch_subscriptions', column: 'tenant_id' },
+  { table: '_smrt_changes', column: 'tenant_id' },
+  { table: '_smrt_changes_pending', column: 'tenant_id' },
+]);
+
+/**
  * Materialize the portable system-table schema for a target engine.
  *
- * PostgreSQL must use TIMESTAMPTZ because every system Date is an instant.
+ * PostgreSQL must use TIMESTAMPTZ because every system Date is an instant,
+ * and native UUID for the tenant columns in
+ * {@link SYSTEM_TABLE_TENANT_UUID_COLUMNS} (#3297).
  * PostgreSQL and DuckDB also materialize integer storage as BIGINT, matching
  * application-table DDL; SQLite keeps its variable-width INTEGER.
  */
@@ -1085,8 +1451,26 @@ export function getSystemTableDDLForEngine(
       ? ddl.replace(/\bINTEGER\b/g, 'BIGINT')
       : ddl;
   return engine === 'postgres'
-    ? integerDdl.replace(/\bTIMESTAMP\b/g, 'TIMESTAMPTZ')
+    ? toPostgresTenantUuid(integerDdl.replace(/\bTIMESTAMP\b/g, 'TIMESTAMPTZ'))
     : integerDdl;
+}
+
+const POSTGRES_UUID_TENANT_TABLES = new Set(
+  SYSTEM_TABLE_TENANT_UUID_COLUMNS.map(({ table }) => table),
+);
+
+/**
+ * Render `tenant_id TEXT` as native uuid on PostgreSQL in the DDL of a table
+ * listed in {@link SYSTEM_TABLE_TENANT_UUID_COLUMNS} (each system DDL
+ * constant creates one table).
+ */
+function toPostgresTenantUuid(ddl: string): string {
+  const table = ddl.match(
+    /CREATE\s+TABLE\s+(?:IF\s+NOT\s+EXISTS\s+)?([A-Za-z_][\w$]*)/i,
+  )?.[1];
+  return table && POSTGRES_UUID_TENANT_TABLES.has(table)
+    ? ddl.replace(/\btenant_id TEXT\b/g, 'tenant_id UUID')
+    : ddl;
 }
 
 /**
@@ -1115,8 +1499,19 @@ export function getSystemTableDDLForEngine(
  * 1.11.1 adds `idx_smrt_run_once_claims_status_completed` (#3080), the
  * `(status, completed_at)` index backing `pruneRunOnceClaims()`'s retention
  * predicate (`system/retention.ts`).
+ *
+ * 1.12.0 adds the durable tracked-deletion ledger.
+ *
+ * 1.13.0 adds the prompt-run observability columns `prompt_key`,
+ * `tier_requested`, `tier_resolved`, `run_id` and their indexes to
+ * `_smrt_ai_usage`, and the `_smrt_ai_usage_outcomes` label table (#4751).
+ *
+ * 1.14.0 adds the `_smrt_ai_runs` fusion run table (#4753).
+ *
+ * 1.15.0 adds the `_smrt_ai_transcripts` table and the `call_id` columns
+ * (with indexes) on `_smrt_ai_usage` and `_smrt_ai_usage_outcomes` (#4780).
  */
-export const SMRT_SCHEMA_VERSION = '1.11.1';
+export const SMRT_SCHEMA_VERSION = '1.15.0';
 
 /**
  * Canonical form of the system DDL that {@link SMRT_SCHEMA_DDL_CHECKSUMS} covers.
@@ -1161,4 +1556,12 @@ export const SMRT_SCHEMA_DDL_CHECKSUMS: Readonly<Record<string, string>> =
       'c51351a76c96beb64fa7e5922f78d776367af882ed1ff37229f9e9ffacee8372',
     '1.11.1':
       '98112937a3bbb3883c3db1fd5e836751f91a479c1c5da64d4410263a6581ef1f',
+    '1.12.0':
+      '6aa42e368e7d57191de9b0c040c289edf38a1ffa7ae0097f57188ecd5a5b8f9c',
+    '1.13.0':
+      '321c33d4616dd98575c80aa6bc766f65c4282c2341fc9566e50914a873e1065f',
+    '1.14.0':
+      '4dc0c5f170ebe54ce1322bd42e42e042d8893f2b4588809c19c77f17479c15b3',
+    '1.15.0':
+      '6a1a58c1b2f137d8a1e3378f667587074dd6d1049c8d2f119427ff1232c0323b',
   });

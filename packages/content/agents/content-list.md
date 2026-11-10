@@ -258,6 +258,8 @@ confirmation/idempotency authority, and auditReference identifies original execu
   executeContentQuery owns rows/counts/facets/offset continuation. Exclude tenant,
   hidden and sensitive fields from discovery/projection. Durable agent mutations
   use the action adapter, never browser registry authority.
+  An optional `rowCountHint` passes through for `data.discover`; it is shown
+  to every reader, so use a coarse static label, never a per-tenant count.
 
 ## Validation
 

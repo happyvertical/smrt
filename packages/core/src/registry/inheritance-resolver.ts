@@ -65,6 +65,40 @@ export function buildInheritanceChain(ctor: typeof SmrtObject): string[] {
   return chain;
 }
 
+/**
+ * {@link findClassStrict} for a registered class's parent. An ambiguous
+ * simple `extends` is rethrown naming the subclass and its package, so the
+ * error points at the class whose manifest needs a qualified parent (#4145).
+ */
+function findParentClassStrict(
+  child: RegisteredClass,
+  parentName: string,
+): RegisteredClass | undefined {
+  try {
+    return findClassStrict(parentName, child.packageName);
+  } catch (error) {
+    if (
+      !(error instanceof ConfigurationError) ||
+      error.code !== 'CONFIG_AMBIGUOUS_CLASS'
+    ) {
+      throw error;
+    }
+    const subclass = child.qualifiedName ?? child.name;
+    throw new ConfigurationError(
+      `${error.message} Subclass ${subclass} declares \`extends ${parentName}\` ` +
+        `without a package; regenerate ${child.packageName ?? 'its'} manifest ` +
+        `so the parent is qualified from its import (extendsQualified).`,
+      'CONFIG_AMBIGUOUS_CLASS',
+      {
+        ...(error.details ?? {}),
+        subclass,
+        subclassPackage: child.packageName,
+      },
+      error,
+    );
+  }
+}
+
 export function getInheritanceChain(className: string): string[] {
   const cache = getInheritanceCache();
 
@@ -133,7 +167,7 @@ export function getInheritanceChain(className: string): string[] {
     // qualifyExtendsName), this is an O(1) direct lookup.
     // If ambiguous, let the ConfigurationError propagate — callers
     // should fix their manifests rather than silently get wrong results.
-    const parent = findClassStrict(current.extends, current.packageName);
+    const parent = findParentClassStrict(current, current.extends);
 
     // Issue #1007: Parent not found — the class is not registered.
     // After loadAllManifests() completes at startup, all classes are

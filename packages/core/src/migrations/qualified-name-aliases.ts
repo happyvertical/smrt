@@ -191,7 +191,11 @@ export function collectLegacyQualifiedNameTargets(): LegacyQualifiedNameTarget[]
   for (const className of ObjectRegistry.getQualifiedClassNames()) {
     const registered = ObjectRegistry.getClass(className);
     if (!registered) continue;
-    if (isSmrtCollectionExtendsName(registered.extends)) continue;
+    if (
+      registered.collectionOf ||
+      isSmrtCollectionExtendsName(registered.extends)
+    )
+      continue;
     if (isFrameworkBaseClass(registered.name, registered.packageName)) continue;
     if (!isPolymorphicAssociationFields(registered.fields)) continue;
     const table = ObjectRegistry.getTableName(className);

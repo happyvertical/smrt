@@ -21,6 +21,11 @@ export type LoginAuditOutcome =
   | 'succeeded'
   /** A failure exhausted the budget and the key is now locked out. */
   | 'locked'
+  /**
+   * A failure started a SOURCE lockout (#3531). Carries the source hash only,
+   * never a subject; rate limited per source.
+   */
+  | 'source-locked'
   /** A credential was set, reset, or cleared (administrative). */
   | 'managed';
 

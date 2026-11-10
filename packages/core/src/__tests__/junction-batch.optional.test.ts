@@ -143,16 +143,34 @@ for (const type of ['sqlite', 'duckdb', 'postgres'] as const) {
       });
 
       it('uses one upsert for many links and hydrates canonical IDs and timestamps', async () => {
-        const query = vi.spyOn(db, 'query');
-        await links.setLinks(
-          'owner',
-          Array.from({ length: 30 }, (_, i) => `asset-${i}`),
-        );
-        const writes = query.mock.calls.filter(([sql]) =>
-          String(sql).startsWith('INSERT INTO "junction_batch_dialect_links"'),
-        );
-        query.mockRestore();
-        expect(writes).toHaveLength(1);
+        const transactionOriginal = db.transaction?.bind(db);
+        if (!transactionOriginal)
+          throw new Error('Transaction support is required');
+        let writes = 0;
+        const transaction = vi
+          .spyOn(db, 'transaction')
+          .mockImplementation((work) =>
+            transactionOriginal(async (tx) => {
+              const query = vi.spyOn(tx, 'query');
+              try {
+                return await work(tx);
+              } finally {
+                writes += query.mock.calls.filter(([sql]) =>
+                  sql.startsWith('INSERT INTO "junction_batch_dialect_links"'),
+                ).length;
+                query.mockRestore();
+              }
+            }),
+          );
+        try {
+          await links.setLinks(
+            'owner',
+            Array.from({ length: 30 }, (_, i) => `asset-${i}`),
+          );
+        } finally {
+          transaction.mockRestore();
+        }
+        expect(writes).toBe(1);
         const rows = await links.byLeft('owner');
         expect(rows).toHaveLength(30);
         expect(
@@ -208,18 +226,78 @@ for (const type of ['sqlite', 'duckdb', 'postgres'] as const) {
       });
 
       it.skipIf(type !== 'duckdb')(
-        'preserves the detectable legacy caller-transaction limitation (#2824)',
+        'deletes a legacy row inside a caller-owned transaction and honours its rollback (#2824)',
         async () => {
           await links.setLinks('legacy-owner', ['before']);
           const row = (await links.byLeft('legacy-owner'))[0];
           if (!db.transaction)
             throw new Error('DuckDB transaction is required');
+          // The cascade joins the caller's transaction (DuckDB has no
+          // savepoint), so the caller's rollback discards the delete...
           await expect(
             db.transaction(async (tx) => {
               await row.withDatabase(tx, () => row.delete());
+              throw new Error('caller aborts');
             }),
-          ).rejects.toThrow('Nested transactions are not supported');
+          ).rejects.toThrow('caller aborts');
           expect((await links.byLeft('legacy-owner'))[0].id).toBe(row.id);
+          // ...and its commit persists it.
+          await db.transaction(async (tx) => {
+            await row.withDatabase(tx, () => row.delete());
+          });
+          expect(await links.byLeft('legacy-owner')).toEqual([]);
+        },
+      );
+
+      it.skipIf(type !== 'duckdb')(
+        'aborts a joined transaction after a tracked late collision',
+        async () => {
+          if (!db.transaction)
+            throw new Error('DuckDB transaction is required');
+          await expect(
+            db.transaction(async (tx) => {
+              const bound = await JunctionBatchDialectLinks.create({ db: tx });
+              const tracked = await new JunctionBatchDialectLink({
+                db: tx,
+                id: crypto.randomUUID(),
+                _skipLoad: true,
+              }).initialize();
+              tracked.ownerId = 'tracked-owner';
+              tracked.assetId = 'late';
+              const original = tx.query.bind(tx);
+              let interleaved = false;
+              const spy = vi
+                .spyOn(tx, 'query')
+                .mockImplementation(async (sql, ...args) => {
+                  const result = await original(sql, ...args);
+                  if (
+                    !interleaved &&
+                    sql.startsWith(
+                      'SELECT "id" FROM "junction_batch_dialect_links"',
+                    )
+                  ) {
+                    interleaved = true;
+                    await tracked.save({
+                      sync: { originDeviceId: 'other-device', revision: 1 },
+                    });
+                  }
+                  return result;
+                });
+              try {
+                await expect(
+                  bound.setLinks('tracked-owner', ['fresh', 'late']),
+                ).rejects.toMatchObject({
+                  code: 'RUNTIME_INVALID_STATE',
+                });
+                expect(interleaved).toBe(true);
+                await expect(tx.query('SELECT 1')).rejects.toThrow(/aborted/i);
+                throw new Error('caller observed aborted transaction');
+              } finally {
+                spy.mockRestore();
+              }
+            }),
+          ).rejects.toThrow('caller observed aborted transaction');
+          expect(await links.byLeft('tracked-owner')).toEqual([]);
         },
       );
 

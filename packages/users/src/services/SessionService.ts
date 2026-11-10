@@ -13,6 +13,7 @@ import { UserCollection } from '../collections/UserCollection.js';
 import type { Membership } from '../models/Membership.js';
 import {
   DEFAULT_SESSION_TTL,
+  SESSION_DATA_KEYS,
   type Session,
   type SessionAuthMethod,
 } from '../models/Session.js';
@@ -66,6 +67,14 @@ export interface SessionContext {
    * ceiling never receives super-admin bypass or system context.
    */
   permissionCeiling?: string[] | null;
+  /**
+   * When the person last proved a credential on this session (#4841): a
+   * step-up or an interactive sign-in. Server-derived from the stored row
+   * (`Session.getReauthenticatedAt`); null when never, malformed, or the
+   * session was minted by a method that proves nothing about the person.
+   * Decide with `requireRecentAuthentication`, never by reading this alone.
+   */
+  reauthenticatedAt?: Date | null;
 }
 
 /**
@@ -101,6 +110,14 @@ export interface SwitchTenantResult {
   session: Session | null;
   /** True only when a fresh session id was minted (non-null tenant switch). */
   rotated: boolean;
+}
+
+/** Session data without a pending OIDC step-up intent (it is per session id). */
+function withoutStepUpIntent(
+  data: Record<string, unknown> | undefined,
+): Record<string, unknown> {
+  const { [SESSION_DATA_KEYS.oidcStepUpIntent]: _intent, ...rest } = data ?? {};
+  return rest;
 }
 
 /**
@@ -302,6 +319,7 @@ export class SessionService {
         authMethod: session.authMethod,
         parent,
         permissionCeiling,
+        reauthenticatedAt: current.getReauthenticatedAt(),
       };
     }
     return null;
@@ -490,7 +508,18 @@ export class SessionService {
       ttl: session.getIdleSeconds() ?? this.defaultTTL,
       userAgent: session.userAgent,
       ipAddress: session.ipAddress,
-      data: session.data,
+      // Rotation must not launder the session's age: carry the ORIGINAL
+      // authentication time forward (a malformed stamp stays malformed, so
+      // it stays stale), or consumers that require a recent sign-in would
+      // see a brand new `created_at`.
+      data: {
+        ...withoutStepUpIntent(session.data),
+        [SESSION_DATA_KEYS.authenticatedAt]:
+          session.data?.[SESSION_DATA_KEYS.authenticatedAt] ??
+          (session.created_at instanceof Date
+            ? session.created_at.toISOString()
+            : new Date(0).toISOString()),
+      },
       authMethod: session.authMethod,
       parentSessionId: session.parentSessionId,
     });

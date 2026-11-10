@@ -2,14 +2,26 @@
 
 Agent framework for autonomous actors with inter-agent messaging, interest-based object discovery, scheduling, and multi-tenant bindings.
 
+## Modules
+
+| Module | Contract |
+| --- | --- |
+| [Data-surface discovery](agents/data-surface-discovery.md) | Summary discovery, row-count hints, allowed values, `id`/request aliases |
+| [Lazy agent_config](agents/lazy-config.md) | `$env` sentinels, class `configResolvers`, resolver context and precedence (#1161, #2806) |
+
 ## Agent Lifecycle
 
 `initialize()` → `validate()` → `run()` → `shutdown()`
 
 - Extend `Agent` (which extends `SmrtObject`) and implement `run()`
-- Status tracking: `idle → initializing → running → error/shutdown`
+- Status tracking: `idle → initializing → running → error/skipped/shutdown`
 - `execute()` runs the full lifecycle automatically
-- Process signal handling is opt-in via `manageProcessSignals: true` and is intended for single-agent processes
+- `AI_UNAVAILABLE` (#4757): `execute()` ends the run `skipped`
+  (`runRecord` `{ reason, mode }`), never rethrown or retried; interests
+  stop; learning neither reinforces nor decays. Direct `run()` (jobs)
+  throws it, `retryable: false`. Agents read only the tenant's mode and
+  binding (`inferenceUserScope()` is `null`).
+- Process signal handling is opt-in (`manageProcessSignals: true`), for single-agent processes
 
 ## DispatchBus — Inter-Agent Communication
 
@@ -50,6 +62,14 @@ async run() { for (const { type, data } of await this.interesting()) { ... } }
   agents use `AgentOptions.personaId` as the durable config owner; legacy agents
   use the saved Agent row id.
 - **Merged**: `getMergedConfig('slotId')` — DB overrides file config
+- **AI usage (#3077)**: `initialize()` wraps `options.ai` in `withAiUsage()`;
+  `resolveAgentAIOptions({ db })` attaches a recorder, so per-call `getAI()`
+  clients record for the run's tenant ([ai-usage](../core/agents/ai-usage.md)).
+- **Inference bindings (#4756)**: without `apiKey`/`apiKeySecretName`,
+  `resolveAgentAIClientOptions()` takes the stored tenant binding (core
+  `resolveInferenceTarget({ appBindings: false, userId: null })`), tags on
+  usage rows; never a user's (options outlive the run) or an app tier
+  binding. `initialize()` re-resolves, so rotated keys are never kept.
 - **UI slots**: `static uiSlots` declares admin panels (id, label, icon, order,
   `scope`, optional versioned `settingsSchema`). Without a registered custom
   component, `AgentSettingsForm` renders that schema.
@@ -85,31 +105,11 @@ from `./ui` filters, builds `href`, and sorts. Non-relative routes are dropped.
 
 ## AgentSchedule
 
-Cron-based scheduling stored in `_smrt_agent_schedules`. Fields: `agentType`, `cron`, `method` (default: 'run'), `maxConcurrent`, `timeout`. Executed by ScheduleRunner from smrt-jobs.
+Cron-based scheduling stored in `_smrt_agent_schedules`. Fields: `agentType`, `cron`, `timezone` (IANA, default `UTC`; blank → `UTC`), `method` (default: 'run'), `maxConcurrent`, `timeout`. Executed by ScheduleRunner from smrt-jobs. `calculateNextRun()` and the runner re-arm share smrt-jobs' `getNextCronDate(cron, timezone)`, so both evaluate the cron in the row's zone, DST-correct (#3859); an unknown zone sets `status: 'error'` with the parser message in `lastError`.
 
 ## Lazy agent_config Resolution (issue #1161)
 
-Persisted `agent_config` snapshots env-derived values at sync time, so rotated env vars don't reach already-stored schedule rows. Two complementary mechanisms unfreeze them:
-
-1. **`$env` sentinels in persisted config** — register a global resolver and reference it from the JSON:
-
-   ```ts
-   import { registerConfigResolver } from '@happyvertical/smrt-agents';
-   registerConfigResolver('sharedAssetStorage', () => resolveSharedAssetStorage());
-   // persisted: { "assetStorage": { "$env": "sharedAssetStorage" } }
-   ```
-
-2. **`static configResolvers` on the agent class** — declarative, discoverable via the class itself:
-
-   ```ts
-   class Praeco extends Agent {
-     static override configResolvers = {
-       assetStorage: () => resolveSharedAssetStorage(),
-     };
-   }
-   ```
-
-The TaskRunner calls `resolveLazyConfig()` immediately before constructing the agent, so live values always win over snapshotted ones. Re-exported from `@happyvertical/smrt-core` (`resolveLazyConfig`, `registerConfigResolver`, `getClassConfigResolvers`, …) for cases where agents isn't on the import path.
+`$env` sentinels and `static configResolvers` re-resolve persisted `agent_config` at execute time. Resolvers receive the instance's identity and its own persisted value (#2806). Keep a per-agent credential with `preferPersisted()`, and never select an agent by scanning the tenant's rows. See [agents/lazy-config.md](agents/lazy-config.md).
 
 ## Learning Trait (issue #1886) — opt-in
 
@@ -183,7 +183,27 @@ projection. Execution has a bounded deadline; public executor/result failures
 use stable generic errors while optional `onFailure` telemetry receives the
 authenticated/delegated principal and detailed server-side error. Hidden field
 request failures also use a stable public error. Tool arguments never contain
-principal or tenant authority.
+principal or tenant authority. `data.query` takes `{surfaceId, request}` or the
+flat form; a key beside `request` (a misplaced `filter`) is a 400
+`DataSurfaceRequestError` (`DATA_QUERY_ARGUMENTS_UNEXPECTED`), never silently
+dropped (#4378). A `surfaceId` nested in `request` (or a `query` wrapper) is
+lifted; two different ids are `DATA_QUERY_SURFACE_ID_CONFLICT`, none is
+`DATA_QUERY_SURFACE_ID_REQUIRED` (400s, not denials). Every request error ends with a one-line valid example for
+the surface (placeholders only, no caller values).
+Null tests (#4448): the SMRT collection adapter (and content's mirror) adds
+`isNull`/`isNotNull` to a field's `filterOperators` when its manifest column is
+neither `notNull` nor the primary key (`nullableColumnFieldIds`,
+`NULL_TEST_FILTER_OPERATORS`), lowered to `{ field: null }` / `{ 'field !=':
+null }`; JSON fields stay unfilterable, and a null test on a UUID column skips
+the id-value check. A rejected filter that looks like a null test on a field
+declaring `isNull` (`eq`/`ne` with `null`, `"null"`, `""` or `[]`; a `not` naming
+`field`; an `exists`-style kind/operator) gets a hint naming `isNull`/
+`isNotNull` with that field, and the valid example uses it; polarity follows
+`ne` and enclosing `not`s. Grammar: [core data-query](../core/agents/data-query.md#null-tests-4448).
+Refusals (#4387: action-specific denials, the `{ action }` catalog argument,
+`onDenied`, audit `denied` entries, missing executors):
+[agents/data-surface-denials.md](agents/data-surface-denials.md).
+
 
 ## Playbook Preflight (issue #2590)
 
@@ -294,7 +314,7 @@ consuming app, not just this package's.
 | `src/agent.ts` | Base Agent class — lifecycle, dispatch, interests, config, opt-in learning trait, multi-instance identity |
 | `src/execute-as-principal.ts` | `executeAsPrincipal` / `PrincipalRun` — run agent work as a persona's bound user (#1888) |
 | `src/report-data-surface.ts` | Principal-bound report discovery, query, lifecycle, drilldown, and export tools (#2462) |
-| `src/smrt-collection-data-surface.ts` | `createSmrtCollectionDataSurfaceDefinition()` — generic registry-driven `SmrtObject` collection to `DataSurfaceDefinition` adapter, with field-policy redaction (schema overrides included), class-aware tenant scope, DNF filter/scope lowering, deny-all short-circuit, query-bound opaque cursors, and offset/cursor paging; hydrated row values are serialized to JSON scalars at the adapter boundary — a `Date`/date-only/zoneless-UTC `datetime` becomes an ISO-8601 UTC instant, a `bigint` a safe number, and a non-scalar value on a scalar descriptor its JSON string — so a populated datetime column no longer fails the whole result; callers must keep `maxPageLimit` <= the collection's own row-limit cap (#2905, follow-up #2912, #2933) |
+| `src/smrt-collection-data-surface.ts` | `createSmrtCollectionDataSurfaceDefinition()`: registry-driven collection → `DataSurfaceDefinition` adapter ([contract](agents/data-surface-discovery.md#collection-adapter-2905)) |
 | `src/delegation.ts` | `DelegationEnvelope` — immutable principal + bounded delegation depth (#1892) |
 | `src/invoke-agent.ts` | `invoke-agent` tool, worker executor, completion-dispatch convention, transports (#1892) |
 | `src/playbook-preflight.ts` | `playbooks.preflight` PrincipalTool — advisory per-step verdicts, never a grant (#2590) |
@@ -303,3 +323,11 @@ consuming app, not just this package's.
 | `src/tenant-agent.ts` | TenantAgent — junction table, hierarchical resolution |
 | `src/interests.ts` | Interest filter types and configuration |
 | `src/config.ts` | File + DB config management, UI slots |
+
+Protected schedules persist the public `ScheduleAdmissionPolicy` in
+`methodArgs._scheduleAdmissionPolicy` (version, required integrity, queue, keyId).
+Ordinary saves preserve it; trusted hosts use loaded-model
+`reconfigureAdmissionPolicy(policyOrNull, { authorize })` for an explicitly
+current-authorized change. See [durable required admission](../jobs/agents/scheduling.md#durable-required-admission-3346).
+The owning write guard binds canonical stored JSON and composes with tenancy;
+never set authorization from constructor options, request JSON or persisted args.

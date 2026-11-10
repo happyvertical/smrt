@@ -5,46 +5,183 @@ import {
 } from '@happyvertical/smrt-core';
 import { getTenantId, withTenant } from '@happyvertical/smrt-tenancy';
 import type { DatabaseInterface } from '@happyvertical/sql';
+import { parseTimesheetJson } from '../models/json.js';
 import { ServiceTimeEntryCollection } from '../models/service-time-entry.js';
+import {
+  type AttendanceActor,
+  type AttendanceBreakOptions,
+  AttendanceConflict,
+  type AttendanceContext,
+  type AttendanceDeviceRef,
+  type AttendancePunchOptions,
+  type AttendanceRefusalCode,
+  type AttendanceWork,
+  attendanceIdentity,
+  attendanceLabel,
+  attendanceProvenance,
+  validateAttendanceWork,
+} from './context.js';
 import {
   AttendanceBreakCollection,
   AttendancePunch,
   AttendancePunchCollection,
   AttendanceReplayCollection,
   type AttendanceReplayOutcome,
+  AttendanceSegment,
+  AttendanceSegmentCollection,
 } from './models.js';
+import {
+  beginSegment,
+  closeOpenSegment,
+  continueSegment,
+  endSegment,
+  listSegments,
+  openSegment,
+  replaceSegment,
+} from './segments.js';
+import { persistAutoClose } from './write.js';
 
+/** Whether stored evidence metadata carries this work's task reference and kind. */
+function sameAttribution(metadata: string, work: AttendanceWork): boolean {
+  const stored = parseTimesheetJson<Record<string, unknown>>(metadata, {});
+  return (
+    (stored.taskRefType ?? '') === (work.taskRefType ?? '') &&
+    (stored.taskRefId ?? '') === (work.taskRefId ?? '') &&
+    (stored.kind ?? '') === (work.kind ?? '')
+  );
+}
+
+export {
+  type AttendanceActor,
+  type AttendanceBreakOptions,
+  AttendanceConflict,
+  type AttendanceContext,
+  type AttendanceDeviceRef,
+  type AttendancePunchOptions,
+  type AttendanceRefusalCode,
+  type AttendanceWork,
+  validateAttendanceWork,
+} from './context.js';
 export type { AttendanceReplayOutcome } from './models.js';
+export * from './segments.js';
 
-/** Resolve these identifiers from the authenticated session, never from tap input. */
-export interface AttendanceActor {
-  tenantId: string;
-  profileId: string;
-}
-/** Explicit work attribution for a closed punch's draft evidence entry. */
-export interface AttendanceWork {
-  workRefType: string;
-  workRefId: string;
-  description: string;
-}
 /** Offline command with a durable client-generated identifier and device timestamp. */
 export interface AttendanceTap {
   clientId: string;
   at: string;
-  action: 'punchIn' | 'punchOut' | 'startBreak' | 'endBreak';
+  action: AttendanceTapAction;
   paid?: boolean;
+  /** Required by `startWork` and `switchWork`; also links evidence on `punchOut`. */
   work?: AttendanceWork;
+  /** Recorded on the punch by `punchIn`; hashed with the tap. */
+  source?: string;
+  /** Recorded on the punch by `punchIn`; hashed with the tap. */
+  device?: AttendanceDeviceRef;
+  /** Recorded on the break by `startBreak`; hashed with the tap. */
+  kind?: string;
 }
 
-/** Expected state conflict, distinct from retryable database failures. */
-export class AttendanceConflict extends Error {}
+/** Punch and break actions plus the work-segment actions (`stopWork` is "pause"). */
+export type AttendanceTapAction =
+  | 'punchIn'
+  | 'punchOut'
+  | 'startBreak'
+  | 'endBreak'
+  | 'startWork'
+  | 'switchWork'
+  | 'stopWork'
+  | 'resumeWork';
 
-type Context = {
-  db: DatabaseInterface;
-  punches: AttendancePunchCollection;
-  breaks: AttendanceBreakCollection;
-  replays: AttendanceReplayCollection;
-};
+const TAP_ACTIONS: readonly string[] = [
+  'punchIn',
+  'punchOut',
+  'startBreak',
+  'endBreak',
+  'startWork',
+  'switchWork',
+  'stopWork',
+  'resumeWork',
+];
+
+/** What a time policy sees for one tap that has not been replayed yet. */
+export interface AttendanceTimeInput {
+  /** The tap exactly as sent. */
+  tap: AttendanceTap;
+  /** The tap's device time. */
+  deviceAt: Date;
+  /** When the server received the batch. */
+  serverNow: Date;
+  /** `serverNow - deviceAt` in milliseconds: how long the tap waited. */
+  waitedMs: number;
+  /** The trusted actor the tap replays for. */
+  actor: AttendanceActor;
+}
+
+/** The effective time a policy chose, and whether a person should look at it. */
+export interface AttendanceResolvedTime {
+  at: Date;
+  /**
+   * Whether a person should review the result. Applies to the punch (default
+   * true when omitted) and, when true, the resulting work segment. False does
+   * not clear a punch's existing review requirement; use a reviewed correction.
+   */
+  reviewRequired?: boolean;
+  /** Marks the punch offline (default true); false never clears an earlier flag. */
+  recordedOffline?: boolean;
+}
+
+/** Why a consumer refuses or rewrites the stored reason of a refused tap. */
+export interface AttendanceRefusal {
+  code: AttendanceRefusalCode;
+  /** Replaces the default message when given. */
+  message?: string;
+}
+
+/** A resolved auto-close deadline and, optionally, why the punch closed then. */
+export interface AttendanceAutoCloseDecision {
+  deadline: Date;
+  /** Recorded as `autoCloseReason` (1 to 200 characters); defaults to `deadline`. */
+  reason?: string;
+}
+
+/**
+ * Fixed maximum open seconds, or a per-punch resolver returning the deadline
+ * (a Date or a decision) or null to leave the punch open.
+ */
+export type AttendanceAutoCloseDeadline =
+  | number
+  | ((
+      punch: AttendancePunch,
+    ) =>
+      | Date
+      | AttendanceAutoCloseDecision
+      | null
+      | undefined
+      | Promise<Date | AttendanceAutoCloseDecision | null | undefined>);
+
+export interface AttendanceReplayOptions {
+  /**
+   * Choose each tap's effective time (for example the device time inside a
+   * window, else the server arrival time). The receipt still hashes the tap as
+   * sent, so retries with the same clientId match; the resolved time is what is
+   * stored. Called once per tap that has no receipt yet, inside its transaction.
+   */
+  resolveAt?: (
+    input: AttendanceTimeInput,
+  ) => AttendanceResolvedTime | Promise<AttendanceResolvedTime>;
+  /** Clock for `serverNow`; defaults to `new Date()` per tap. */
+  now?: () => Date;
+  /**
+   * Name the stored code (and optionally message) of a refused tap. Without it,
+   * the refusal's own `AttendanceConflict.code` is stored.
+   */
+  refusal?: (
+    tap: AttendanceTap,
+    error: AttendanceConflict,
+  ) => AttendanceRefusal | undefined | void;
+}
+
+type Context = AttendanceContext;
 
 /**
  * Attendance mutations bound to a trusted tenant/profile. Applications authorize
@@ -66,11 +203,19 @@ export class AttendanceService {
   }
 
   private identity(value: string): string {
-    if (!isPostgresDatabase(this.db)) return value;
-    const hex = value.replace(/[{}-]/g, '').toLowerCase();
-    if (!/^[0-9a-f]{32}$/.test(hex))
-      throw new Error('PostgreSQL attendance identities must be UUIDs.');
-    return `${hex.slice(0, 8)}-${hex.slice(8, 12)}-${hex.slice(12, 16)}-${hex.slice(16, 20)}-${hex.slice(20)}`;
+    return attendanceIdentity(this.db, value);
+  }
+
+  /**
+   * Run `operation` in the actor's serialized attendance transaction. The
+   * context's collections share the executor, so corrections and replay can
+   * compose several attendance mutations (with the segment helpers) atomically.
+   * Results that are punches or segments are re-read after commit.
+   */
+  async withTransaction<T>(
+    operation: (context: AttendanceContext) => Promise<T>,
+  ): Promise<T> {
+    return this.transact(operation);
   }
 
   private async transact<T>(
@@ -97,6 +242,7 @@ export class AttendanceService {
             db,
             punches: await AttendancePunchCollection.create({ db }),
             breaks: await AttendanceBreakCollection.create({ db }),
+            segments: await AttendanceSegmentCollection.create({ db }),
             replays: await AttendanceReplayCollection.create({ db }),
           });
         },
@@ -109,6 +255,18 @@ export class AttendanceService {
           limit: 1,
         });
         if (!fresh) throw new Error('Committed attendance punch disappeared.');
+        return fresh as T;
+      }
+      if (result instanceof AttendanceSegment) {
+        const segments = await AttendanceSegmentCollection.create({
+          db: this.db,
+        });
+        const [fresh] = await segments.list({
+          where: { tenantId: this.actor.tenantId, id: result.id },
+          limit: 1,
+        });
+        if (!fresh)
+          throw new Error('Committed attendance segment disappeared.');
         return fresh as T;
       }
       return result;
@@ -128,7 +286,7 @@ export class AttendanceService {
       where: { ...this.actor, endedAt: null },
       limit: 1,
     });
-    if (!punch) throw new AttendanceConflict('No open punch.');
+    if (!punch) throw new AttendanceConflict('No open punch.', 'no_open_punch');
     return punch;
   }
 
@@ -149,8 +307,15 @@ export class AttendanceService {
     const breaks = await tx.breaks.list({
       where: { tenantId: this.actor.tenantId, punchId: punch.id },
     });
+    const segments = await tx.segments.list({
+      where: { tenantId: this.actor.tenantId, punchId: punch.id },
+    });
     const latest = Math.max(
       punch.startedAt.getTime(),
+      ...segments.flatMap((g) => [
+        g.startedAt.getTime(),
+        g.endedAt?.getTime() ?? 0,
+      ]),
       punch.endedAt?.getTime() ?? 0,
       ...breaks.flatMap((b) => [
         b.startedAt.getTime(),
@@ -160,12 +325,22 @@ export class AttendanceService {
     if (at.getTime() < latest)
       throw new AttendanceConflict(
         'Tap predates committed attendance; manual review required.',
+        'predates_committed',
       );
   }
 
   /** Open one punch; the database unique slot also protects direct model writers. */
-  async punchIn(at = new Date()): Promise<AttendancePunch> {
-    return this.transact((tx) => this.transition(tx, 'punchIn', this.date(at)));
+  async punchIn(
+    at = new Date(),
+    options?: AttendancePunchOptions,
+  ): Promise<AttendancePunch> {
+    const meta = attendanceProvenance(options);
+    return this.transact((tx) =>
+      this.transition(tx, 'punchIn', this.date(at), false, undefined, false, {
+        ...meta,
+        kind: '',
+      }),
+    );
   }
   /** Close the punch and any active break; optionally create linked draft evidence. */
   async punchOut(at: Date, work?: AttendanceWork): Promise<AttendancePunch> {
@@ -174,16 +349,89 @@ export class AttendanceService {
     );
   }
   /** Begin a break; paid defaults false and must be explicitly configured by the caller. */
-  async startBreak(at: Date, paid = false): Promise<AttendancePunch> {
+  async startBreak(
+    at: Date,
+    paid = false,
+    options?: AttendanceBreakOptions,
+  ): Promise<AttendancePunch> {
+    const kind = attendanceLabel(options?.kind, 'kind');
     return this.transact((tx) =>
-      this.transition(tx, 'startBreak', this.date(at), paid),
+      this.transition(tx, 'startBreak', this.date(at), paid, undefined, false, {
+        ...attendanceProvenance(),
+        kind,
+      }),
     );
   }
-  /** End the current break. */
-  async endBreak(at: Date): Promise<AttendancePunch> {
+  /**
+   * End the current break. With `{ resumeWork: true }` the work interrupted by
+   * `startBreak` resumes at the same instant, atomically with the break end.
+   */
+  async endBreak(
+    at: Date,
+    options?: { resumeWork?: boolean },
+  ): Promise<AttendancePunch> {
     return this.transact((tx) =>
-      this.transition(tx, 'endBreak', this.date(at)),
+      this.transition(
+        tx,
+        'endBreak',
+        this.date(at),
+        false,
+        undefined,
+        options?.resumeWork,
+      ),
     );
+  }
+
+  /** Open a work segment in the open punch; refuses during a break or while one is open. */
+  async startWork(at: Date, work: AttendanceWork): Promise<AttendanceSegment> {
+    return this.transact(async (tx) => {
+      validateAttendanceWork(work);
+      await this.chronological(tx, this.date(at));
+      return beginSegment(tx, await this.open(tx), at, work);
+    });
+  }
+  /** Atomically close the open segment and open the next one at `at`. */
+  async switchWork(at: Date, work: AttendanceWork): Promise<AttendanceSegment> {
+    return this.transact(async (tx) => {
+      validateAttendanceWork(work);
+      await this.chronological(tx, this.date(at));
+      return replaceSegment(tx, await this.open(tx), at, work);
+    });
+  }
+  /** Close the open segment without starting another. */
+  async stopWork(at: Date): Promise<AttendanceSegment> {
+    return this.transact(async (tx) => {
+      await this.chronological(tx, this.date(at));
+      return endSegment(tx, await this.open(tx), at);
+    });
+  }
+  /** Reopen the work a break interrupted (the latest segment must have closed on `startBreak`). */
+  async resumeWork(at: Date): Promise<AttendanceSegment> {
+    return this.transact(async (tx) => {
+      await this.chronological(tx, this.date(at));
+      return continueSegment(tx, await this.open(tx), at);
+    });
+  }
+  /** The open work segment of the actor's open punch, or null. */
+  async currentWork(): Promise<AttendanceSegment | null> {
+    return this.transact(async (tx) => {
+      const [punch] = await tx.punches.list({
+        where: { ...this.actor, endedAt: null },
+        limit: 1,
+      });
+      return punch ? openSegment(tx, punch) : null;
+    });
+  }
+  /** Work segments of one of the actor's punches, oldest first. */
+  async segments(punchId: string): Promise<AttendanceSegment[]> {
+    return this.transact(async (tx) => {
+      const [punch] = await tx.punches.list({
+        where: { ...this.actor, id: punchId },
+        limit: 1,
+      });
+      if (!punch) throw new AttendanceConflict('Punch not found for actor.');
+      return listSegments(tx, punch);
+    });
   }
 
   private async transition(
@@ -192,6 +440,11 @@ export class AttendanceService {
     at: Date,
     paid = false,
     work?: AttendanceWork,
+    resumeWork = false,
+    meta: ReturnType<typeof attendanceProvenance> & { kind: string } = {
+      ...attendanceProvenance(),
+      kind: '',
+    },
   ): Promise<AttendancePunch> {
     await this.chronological(tx, at);
     if (action === 'punchIn') {
@@ -203,10 +456,13 @@ export class AttendanceService {
           })
         ).length
       )
-        throw new AttendanceConflict('A punch is already open.');
+        throw new AttendanceConflict('A punch is already open.', 'punch_open');
       return tx.punches.create({
         ...this.actor,
         startedAt: at,
+        source: meta.source,
+        deviceRefType: meta.deviceRefType,
+        deviceRefId: meta.deviceRefId,
         _insertOnly: true,
       });
     }
@@ -216,14 +472,17 @@ export class AttendanceService {
     });
     const active = breaks.find((b) => !b.endedAt);
     if (action === 'startBreak') {
-      if (active) throw new AttendanceConflict('A break is already open.');
+      if (active)
+        throw new AttendanceConflict('A break is already open.', 'break_open');
       if (typeof paid !== 'boolean')
         throw new AttendanceConflict('paid must be boolean.');
+      await closeOpenSegment(tx, punch, at, 'break');
       await tx.breaks.create({
         tenantId: this.actor.tenantId,
         punchId: punch.id ?? undefined,
         startedAt: at,
         paid,
+        kind: meta.kind,
         _insertOnly: true,
       });
       return punch;
@@ -231,7 +490,7 @@ export class AttendanceService {
     if (action !== 'endBreak' && action !== 'punchOut')
       throw new AttendanceConflict('Unknown attendance action.');
     if (action === 'endBreak' && !active)
-      throw new AttendanceConflict('No open break.');
+      throw new AttendanceConflict('No open break.', 'no_open_break');
     if (action === 'punchOut' && work) {
       this.validateWork(work);
       const unpaidMilliseconds = breaks
@@ -254,7 +513,11 @@ export class AttendanceService {
       active.endedAt = at;
       await active.save();
     }
-    if (action === 'endBreak') return punch;
+    if (action === 'endBreak') {
+      if (resumeWork) await continueSegment(tx, punch, at);
+      return punch;
+    }
+    await closeOpenSegment(tx, punch, at, 'punchOut');
     punch.endedAt = at;
     const unpaidMilliseconds = breaks
       .filter((b) => !b.paid)
@@ -271,18 +534,63 @@ export class AttendanceService {
     return punch;
   }
 
+  /** Run one replayed tap on `tx`; work actions share the punch changes' transaction. */
+  private async apply(
+    tx: Context,
+    tap: AttendanceTap,
+    at: Date,
+  ): Promise<{ punch: AttendancePunch; segment?: AttendanceSegment }> {
+    const work = (): AttendanceWork => {
+      if (!tap.work)
+        throw new AttendanceConflict('Work is required.', 'invalid');
+      return tap.work;
+    };
+    let segment: AttendanceSegment;
+    switch (tap.action) {
+      case 'startWork':
+        await this.chronological(tx, at);
+        segment = await beginSegment(tx, await this.open(tx), at, work());
+        break;
+      case 'switchWork':
+        await this.chronological(tx, at);
+        segment = await replaceSegment(tx, await this.open(tx), at, work());
+        break;
+      case 'stopWork':
+        await this.chronological(tx, at);
+        segment = await endSegment(tx, await this.open(tx), at);
+        break;
+      case 'resumeWork':
+        await this.chronological(tx, at);
+        segment = await continueSegment(tx, await this.open(tx), at);
+        break;
+      default:
+        return {
+          punch: await this.transition(
+            tx,
+            tap.action,
+            at,
+            tap.paid,
+            tap.work,
+            false,
+            {
+              ...attendanceProvenance({
+                source: tap.source,
+                device: tap.device,
+              }),
+              kind: attendanceLabel(tap.kind, 'kind'),
+            },
+          ),
+        };
+    }
+    const [punch] = await tx.punches.list({
+      where: { ...this.actor, id: segment.punchId },
+      limit: 1,
+    });
+    return { punch, segment };
+  }
+
   private validateWork(work: AttendanceWork): void {
-    if (
-      !work ||
-      typeof work.workRefType !== 'string' ||
-      !work.workRefType ||
-      typeof work.workRefId !== 'string' ||
-      !work.workRefId ||
-      typeof work.description !== 'string'
-    )
-      throw new AttendanceConflict(
-        'A complete work reference and description are required.',
-      );
+    validateAttendanceWork(work);
   }
 
   private async link(
@@ -305,7 +613,8 @@ export class AttendanceService {
         !existing ||
         existing.workRefType !== work.workRefType ||
         existing.workRefId !== work.workRefId ||
-        existing.description !== work.description
+        existing.description !== work.description ||
+        !sameAttribution(existing.metadata, work)
       )
         throw new AttendanceConflict('Punch already linked to different work.');
       return;
@@ -322,7 +631,13 @@ export class AttendanceService {
       endedAt: punch.endedAt,
       durationSeconds: punch.durationSeconds,
       status: 'draft',
-      metadata: JSON.stringify({ attendancePunchId: punch.id }),
+      metadata: JSON.stringify({
+        attendancePunchId: punch.id,
+        ...(work.taskRefType
+          ? { taskRefType: work.taskRefType, taskRefId: work.taskRefId }
+          : {}),
+        ...(work.kind ? { kind: work.kind } : {}),
+      }),
       _insertOnly: true,
     });
     if (!entry.id) throw new Error('Saved service entry has no id.');
@@ -346,13 +661,24 @@ export class AttendanceService {
     });
   }
 
-  /** Close at startedAt + maxOpenSeconds once due, flagging the punch for review. */
+  /**
+   * Close the open punch once its deadline has passed, flagging it for review.
+   * `deadline` is either a fixed maximum open duration in seconds (closing at
+   * `startedAt + seconds`, reason `maxDuration`) or a resolver called with the
+   * open punch that returns its deadline (a `Date`, or `{ deadline, reason }`),
+   * or null to leave it open. The consumer owns time zones and shop-day rules.
+   * The open work segment and break close at the deadline; returns the closed
+   * punch, or null when nothing was due.
+   */
   async autoClose(
     now: Date,
-    maxOpenSeconds: number,
+    deadline: AttendanceAutoCloseDeadline,
   ): Promise<AttendancePunch | null> {
     this.date(now);
-    if (!Number.isSafeInteger(maxOpenSeconds) || maxOpenSeconds <= 0)
+    if (
+      typeof deadline !== 'function' &&
+      (!Number.isSafeInteger(deadline) || deadline <= 0)
+    )
       throw new AttendanceConflict(
         'maxOpenSeconds must be a positive integer.',
       );
@@ -362,14 +688,34 @@ export class AttendanceService {
         limit: 1,
       });
       if (!punch) return null;
-      const deadline = new Date(
-        punch.startedAt.getTime() + maxOpenSeconds * 1000,
-      );
-      if (deadline > now) return null;
+      let at: Date;
+      let reason = 'maxDuration';
+      if (typeof deadline === 'function') {
+        const resolved = await deadline(punch);
+        if (resolved === null || resolved === undefined) return null;
+        const decision =
+          resolved instanceof Date ? { deadline: resolved } : resolved;
+        at = decision.deadline;
+        if (!(at instanceof Date) || !Number.isFinite(at.getTime()))
+          throw new AttendanceConflict('Auto-close deadline is invalid.');
+        if (at < punch.startedAt)
+          throw new AttendanceConflict(
+            'Auto-close deadline predates the punch.',
+          );
+        reason = decision.reason ?? 'deadline';
+        if (typeof reason !== 'string' || !reason.trim() || reason.length > 200)
+          throw new AttendanceConflict(
+            'Auto-close reason must be 1 to 200 characters.',
+          );
+      } else {
+        at = new Date(punch.startedAt.getTime() + deadline * 1000);
+      }
+      if (at > now) return null;
       // Do not truncate a later committed break. The conflict requires manual review.
-      const closed = await this.transition(tx, 'punchOut', deadline);
+      const closed = await this.transition(tx, 'punchOut', at);
       closed.reviewRequired = true;
-      await closed.save();
+      closed.autoCloseReason = reason;
+      await persistAutoClose(closed);
       return closed;
     });
   }
@@ -382,6 +728,7 @@ export class AttendanceService {
    */
   async replay(
     taps: readonly AttendanceTap[],
+    options: AttendanceReplayOptions = {},
   ): Promise<AttendanceReplayOutcome[]> {
     for (const tap of taps) {
       if (
@@ -389,13 +736,20 @@ export class AttendanceService {
         typeof tap.at !== 'string' ||
         typeof tap.clientId !== 'string' ||
         !tap.clientId ||
-        !['punchIn', 'punchOut', 'startBreak', 'endBreak'].includes(tap.action)
+        !TAP_ACTIONS.includes(tap.action)
       )
         throw new AttendanceConflict('Malformed attendance tap.');
       this.date(new Date(tap.at));
       if (tap.work !== undefined) this.validateWork(tap.work);
+      if (
+        (tap.action === 'startWork' || tap.action === 'switchWork') &&
+        tap.work === undefined
+      )
+        throw new AttendanceConflict('Malformed attendance tap.');
       if (tap.paid !== undefined && typeof tap.paid !== 'boolean')
         throw new AttendanceConflict('paid must be boolean.');
+      attendanceProvenance({ source: tap.source, device: tap.device });
+      attendanceLabel(tap.kind, 'kind');
     }
     const ordered = [...taps].sort(
       (a, b) =>
@@ -418,6 +772,25 @@ export class AttendanceService {
             tap.work?.workRefType ?? null,
             tap.work?.workRefId ?? null,
             tap.work?.description ?? null,
+            ...(tap.work?.taskRefType || tap.work?.kind
+              ? [
+                  tap.work.taskRefType ?? null,
+                  tap.work.taskRefId ?? null,
+                  tap.work.kind ?? null,
+                ]
+              : []),
+            // Provenance joins the hash only when present, so receipts of taps
+            // that carry none are unchanged.
+            ...(tap.source || tap.device || tap.kind
+              ? [
+                  {
+                    source: tap.source ?? '',
+                    deviceType: tap.device?.type ?? '',
+                    deviceId: tap.device?.id ?? '',
+                    kind: tap.kind ?? '',
+                  },
+                ]
+              : []),
           ]);
           const [receipt] = await tx.replays.list({
             where: { tenantId: this.actor.tenantId, replayKey },
@@ -435,6 +808,31 @@ export class AttendanceService {
               );
             return outcome;
           }
+          const deviceAt = new Date(tap.at);
+          let at = deviceAt;
+          let review = false;
+          let punchReview = true;
+          let offline = true;
+          if (options.resolveAt) {
+            const serverNow = this.date(options.now?.() ?? new Date());
+            const resolved = await options.resolveAt({
+              tap,
+              deviceAt,
+              serverNow,
+              waitedMs: serverNow.getTime() - deviceAt.getTime(),
+              actor: { ...this.actor },
+            });
+            if (
+              !resolved ||
+              !(resolved.at instanceof Date) ||
+              !Number.isFinite(resolved.at.getTime())
+            )
+              throw new Error('resolveAt must return a valid date.');
+            at = resolved.at;
+            review = resolved.reviewRequired === true;
+            punchReview = resolved.reviewRequired !== false;
+            offline = resolved.recordedOffline !== false;
+          }
           let outcome: AttendanceReplayOutcome;
           try {
             // Domain refusals are validated before the first write. Adapters with
@@ -448,25 +846,36 @@ export class AttendanceService {
                   db,
                   punches: await AttendancePunchCollection.create({ db }),
                   breaks: await AttendanceBreakCollection.create({ db }),
+                  segments: await AttendanceSegmentCollection.create({ db }),
                   replays: tx.replays,
                 };
-                const punch = await this.transition(
-                  inner,
-                  tap.action,
-                  new Date(tap.at),
-                  tap.paid,
-                  tap.work,
-                );
-                punch.recordedOffline = true;
-                punch.reviewRequired = true;
+                const { punch, segment } = await this.apply(inner, tap, at);
+                punch.recordedOffline ||= offline;
+                punch.reviewRequired ||= punchReview;
                 await punch.save();
-                return { clientId: tap.clientId, punchId: punch.id! };
+                if (segment && review) {
+                  segment.reviewRequired = true;
+                  await segment.save();
+                }
+                return {
+                  clientId: tap.clientId,
+                  punchId: punch.id!,
+                  ...(segment ? { segmentId: segment.id! } : {}),
+                  ...(at.getTime() !== deviceAt.getTime()
+                    ? { resolvedAt: at.toISOString() }
+                    : {}),
+                };
               },
               true,
             );
           } catch (error) {
             if (!(error instanceof AttendanceConflict)) throw error;
-            outcome = { clientId: tap.clientId, error: error.message };
+            const custom = options.refusal?.(tap, error) || undefined;
+            outcome = {
+              clientId: tap.clientId,
+              error: custom?.message || error.message,
+              code: custom?.code || error.code,
+            };
           }
           await tx.replays.create({
             tenantId: this.actor.tenantId,

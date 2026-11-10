@@ -1,3 +1,6 @@
+import { hasConnectedPaymentAuthority } from '../connected-payments-internal.js';
+import { hasOrdinaryAccountingAuthority } from '../ordinary-accounting-internal.js';
+import { hasRetentionAccountingAuthority } from '../retention-accounting-internal.js';
 /**
  * Payment model - tracks payments with ledger integration
  * @packageDocumentation
@@ -7,7 +10,9 @@ import {
   crossPackageRef,
   field,
   foreignKey,
+  type SmrtDeleteOptions,
   SmrtObject,
+  type SmrtSaveOptions,
   smrt,
 } from '@happyvertical/smrt-core';
 import type { Journal } from '@happyvertical/smrt-ledgers';
@@ -16,8 +21,13 @@ import {
   assertAllocationParent,
   claimAllocationParent,
 } from '../allocation-integrity.js';
+import {
+  assertCustomerFundsWrite,
+  customerFundsState,
+} from '../customer-funds-internal.js';
 import { assertIntegerMinorUnits } from '../money.js';
 import {
+  type PaymentKind,
   PaymentMethod,
   type PaymentOptions,
   PaymentStatus,
@@ -113,6 +123,7 @@ const recordingInProgress = new WeakSet<Payment>();
   api: {
     include: ['list', 'get', 'create', 'update'],
     writable: [
+      'kind',
       'contractId',
       'customerId',
       'amount',
@@ -142,6 +153,21 @@ const recordingInProgress = new WeakSet<Payment>();
   cli: { skipApiCheck: true },
 })
 export class Payment extends SmrtObject {
+  /** Incoming settlement or outgoing customer refund. Amount stays positive. */
+  kind: PaymentKind = 'payment';
+
+  /** Command-owned customer advance policy, source lineage and append-only application evidence. */
+  @field({ type: 'text' })
+  customerFundsJson = '';
+
+  /** Immutable provider-refund source binding owned by retention commands. */
+  @field({ sensitive: true })
+  retentionAccountingBindingJson = '';
+
+  /** Immutable ordinary-provider refund reservation; command-owned. */
+  @field({ sensitive: true })
+  ordinaryAccountingBindingJson = '';
+
   /**
    * Tenant ID for multi-tenant isolation
    * Nullable to support both tenant-scoped and global payments
@@ -153,7 +179,7 @@ export class Payment extends SmrtObject {
    * Contract this payment is for
    */
   @field({ description: 'The order or agreement this payment is for, if any.' })
-  @foreignKey('Contract')
+  @foreignKey('SalesContract', { validateSubtype: true })
   contractId: string | null = null;
 
   /**
@@ -171,7 +197,7 @@ export class Payment extends SmrtObject {
    * `PaymentAllocation.save()` caps allocations against and `Invoice.amountPaid`
    * is summed from, so it must be in the same exact units as both (#2401).
    */
-  @field({ description: 'How much was paid.' })
+  @field({ description: 'How much was paid.', ui: { format: 'money' } })
   amount: number = 0;
 
   /**
@@ -333,8 +359,49 @@ export class Payment extends SmrtObject {
    */
   usdAtConfirmation: number = 0;
 
+  /**
+   * Connected provider account (for example a Stripe `acct_...`) a direct
+   * charge was made on, so the funds landed with the tenant rather than the
+   * platform (#3831). Empty for platform-account and non-Connect payments.
+   * Server-managed: written only by the connected-payments commands.
+   */
+  connectedAccountId: string = '';
+
+  /** Immutable host-supplied agreement/fee-policy version at checkout pricing. */
+  connectedFeePolicyRef: string = '';
+
+  /**
+   * Platform application fee the provider withheld from this direct charge,
+   * in integer minor units of {@link currency} (#3831). Settled at source, so
+   * {@link recordPayment} books it as a fee expense, never as a payable.
+   * Server-managed.
+   */
+  applicationFeeCents: number = 0;
+
+  /**
+   * For a `refund` of a connected charge, the `Payment` it refunds (#3831).
+   * Server-managed.
+   */
+  refundOfPaymentId: string = '';
+
+  /**
+   * For a `refund` of a connected charge, the provider's refund state:
+   * `requested` (recorded before the provider is asked), `pending` until the
+   * provider confirms it, then `succeeded` (journaled) or `failed` (#3831).
+   * Server-managed.
+   */
+  connectedRefundState: '' | 'requested' | 'pending' | 'succeeded' | 'failed' =
+    '';
+
+  /**
+   * For a `refund` of a connected charge, whether the platform's application
+   * fee was refunded with it (#3831). Server-managed and frozen.
+   */
+  applicationFeeRefunded: boolean = false;
+
   constructor(options: PaymentOptions = {}) {
     super(options);
+    if (options.kind !== undefined) this.kind = options.kind;
     if (options.tenantId !== undefined) this.tenantId = options.tenantId;
     if (options.contractId !== undefined) this.contractId = options.contractId;
     if (options.customerId !== undefined) this.customerId = options.customerId;
@@ -345,6 +412,8 @@ export class Payment extends SmrtObject {
     if (options.transactionId !== undefined)
       this.transactionId = options.transactionId;
     if (options.reference !== undefined) this.reference = options.reference;
+    if (options.customerFundsJson !== undefined)
+      this.customerFundsJson = options.customerFundsJson;
     if (options.journalId !== undefined) this.journalId = options.journalId;
     if (options.paidAt !== undefined) this.paidAt = options.paidAt;
     if (options.notes !== undefined) this.notes = options.notes;
@@ -362,6 +431,18 @@ export class Payment extends SmrtObject {
     if (options.usdAtQuote !== undefined) this.usdAtQuote = options.usdAtQuote;
     if (options.usdAtConfirmation !== undefined)
       this.usdAtConfirmation = options.usdAtConfirmation;
+    if (options.connectedAccountId !== undefined)
+      this.connectedAccountId = options.connectedAccountId;
+    if (options.connectedFeePolicyRef !== undefined)
+      this.connectedFeePolicyRef = options.connectedFeePolicyRef;
+    if (options.applicationFeeCents !== undefined)
+      this.applicationFeeCents = options.applicationFeeCents;
+    if (options.refundOfPaymentId !== undefined)
+      this.refundOfPaymentId = options.refundOfPaymentId;
+    if (options.connectedRefundState !== undefined)
+      this.connectedRefundState = options.connectedRefundState;
+    if (options.applicationFeeRefunded !== undefined)
+      this.applicationFeeRefunded = options.applicationFeeRefunded;
   }
 
   /**
@@ -403,9 +484,17 @@ export class Payment extends SmrtObject {
    *    (REST/MCP/CLI/direct). Fixtures/migrations that need a completed payment
    *    must drive it through `recordPayment()` (or start non-COMPLETED).
    */
-  override async save(): Promise<this> {
+  override async save(options?: SmrtSaveOptions): Promise<this> {
     return this.withTransaction(async () => {
-      await claimAllocationParent(this, 'payment');
+      if (this.kind !== 'payment' && this.kind !== 'refund')
+        throw new Error('Payment kind must be payment or refund');
+      // The claim is the compare-and-swap against the caller's revision (it
+      // advances the stored revision), so the guarded save below must expect
+      // the revision the claim just wrote, not the caller's pre-claim one.
+      const callerRevision = options?.expectedUpdatedAt;
+      await claimAllocationParent(this, 'payment', callerRevision);
+      if (callerRevision !== undefined && this.updated_at)
+        options = { ...options, expectedUpdatedAt: this.updated_at };
       // Whole minor units on every surface (#2401). `amount` is what
       // `PaymentAllocation.save()` and `Payout.assertCappedBySourcePayment()` cap
       // against with exact integer comparisons, so a fractional major-unit write
@@ -415,9 +504,67 @@ export class Payment extends SmrtObject {
         ['nativeAmount', this.nativeAmount],
         ['usdAtQuote', this.usdAtQuote],
         ['usdAtConfirmation', this.usdAtConfirmation],
+        ['applicationFeeCents', this.applicationFeeCents],
       ]);
+      if (
+        this.applicationFeeCents < 0 ||
+        this.applicationFeeCents > this.amount
+      )
+        throw new Error(
+          'Payment applicationFeeCents must be between 0 and the payment amount',
+        );
+      if (this.applicationFeeCents > 0 && !this.connectedAccountId)
+        throw new Error(
+          'Payment applicationFeeCents requires a connectedAccountId',
+        );
 
       const priorRow = await this.loadPersistedRow();
+      if (this.customerFundsJson || priorRow?.customer_funds_json)
+        assertCustomerFundsWrite(this);
+      const ordinaryBinding =
+        this.ordinaryAccountingBindingJson ||
+        String(priorRow?.ordinary_accounting_binding_json ?? '');
+      if (
+        ordinaryBinding &&
+        !hasOrdinaryAccountingAuthority(
+          this.tenantId,
+          JSON.parse(ordinaryBinding).invoiceId,
+        )
+      )
+        throw new Error(
+          'Provider-recorded refund is immutable; use an explicit reversal workflow',
+        );
+      const retainedBinding =
+        this.retentionAccountingBindingJson ||
+        String(priorRow?.retention_accounting_binding_json ?? '');
+      if (
+        retainedBinding &&
+        !hasRetentionAccountingAuthority(
+          this.tenantId,
+          JSON.parse(retainedBinding).invoiceId,
+        )
+      )
+        throw new Error(
+          'Provider-recorded refund is immutable; use an explicit reversal workflow',
+        );
+      // A connected charge or refund (#3831) is written only by the
+      // connected-payments commands: its identity and amounts never change
+      // after the first write, even while PENDING (a pending refund can wait
+      // days for the provider), so a generated update cannot repoint it.
+      // Every write of a connected row (creation, refund state, provider
+      // reference, status) must come from a connected-payments command for
+      // its tenant: generated surfaces (including CLI `--from-file`) cannot
+      // forge or advance one.
+      if (
+        (this.connectedAccountId ||
+          String(priorRow?.connected_account_id ?? '')) &&
+        !hasConnectedPaymentAuthority(this.tenantId)
+      )
+        throw new Error(
+          'Connected payments and refunds are written only by the connected-payments commands',
+        );
+      if (priorRow && String(priorRow.connected_account_id ?? ''))
+        this.assertConnectedIdentityUnchanged(priorRow);
       const prior =
         priorRow && priorRow.status != null
           ? (priorRow.status as PaymentStatus)
@@ -453,19 +600,99 @@ export class Payment extends SmrtObject {
       // EVERY surface (REST/MCP/CLI/direct), independent of the per-surface
       // writable allowlist (`amount`/`currency`/`nativeAmount`/... are writable
       // on a *new* PENDING payment, but must be immutable once settled).
-      if (priorRow && priorRow.status === PaymentStatus.COMPLETED) {
+      if (
+        priorRow &&
+        (priorRow.status === PaymentStatus.COMPLETED ||
+          priorRow.status === PaymentStatus.REFUNDED)
+      ) {
         this.assertSettledAmountsUnchanged(priorRow);
       }
 
       try {
         await assertAllocationParent(this, 'payment');
-        const result = (await super.save()) as this;
+        const result = (await super.save(options)) as this;
         loadedPaymentStatus.set(this, this.status);
         return result;
       } finally {
         settlementInProgress.delete(this);
       }
     });
+  }
+
+  /** Managed receipts and refunds retain immutable cash provenance. */
+  override async delete(options: SmrtDeleteOptions = {}): Promise<void> {
+    const persisted = await this.loadPersistedRow();
+    if (
+      this.retentionAccountingBindingJson ||
+      persisted?.retention_accounting_binding_json ||
+      this.ordinaryAccountingBindingJson ||
+      persisted?.ordinary_accounting_binding_json
+    )
+      throw new Error('Provider-recorded refund history cannot be deleted');
+    if (this.customerFundsJson || persisted?.customer_funds_json)
+      throw new Error('Customer funds cash history cannot be deleted');
+    if (this.connectedAccountId || persisted?.connected_account_id)
+      throw new Error('Connected payment and refund history cannot be deleted');
+    return super.delete(options);
+  }
+
+  /** See the connected-row guard in {@link save}. */
+  private assertConnectedIdentityUnchanged(
+    priorRow: Record<string, unknown>,
+  ): void {
+    const frozen: Array<[string, unknown, unknown]> = [
+      ['kind', String(priorRow.kind ?? 'payment'), this.kind],
+      [
+        'connectedFeePolicyRef',
+        String(priorRow.connected_fee_policy_ref ?? ''),
+        this.connectedFeePolicyRef,
+      ],
+      ['amount', Number(priorRow.amount ?? 0), Number(this.amount ?? 0)],
+      ['currency', String(priorRow.currency ?? ''), this.currency],
+      ['backendId', String(priorRow.backend_id ?? ''), this.backendId],
+      [
+        // A refund's provider reference is set once, in the same write that
+        // records the provider's answer (connectedRefundState leaves
+        // `requested`, which no generated surface can write).
+        'backendTxRef',
+        !priorRow.backend_tx_ref &&
+        priorRow.connected_refund_state === 'requested' &&
+        this.connectedRefundState !== 'requested'
+          ? this.backendTxRef
+          : String(priorRow.backend_tx_ref ?? ''),
+        this.backendTxRef,
+      ],
+      [
+        'transactionId',
+        String(priorRow.transaction_id ?? ''),
+        this.transactionId,
+      ],
+      [
+        'connectedAccountId',
+        String(priorRow.connected_account_id ?? ''),
+        this.connectedAccountId,
+      ],
+      [
+        'applicationFeeCents',
+        Number(priorRow.application_fee_cents ?? 0),
+        Number(this.applicationFeeCents ?? 0),
+      ],
+      [
+        'refundOfPaymentId',
+        String(priorRow.refund_of_payment_id ?? ''),
+        this.refundOfPaymentId,
+      ],
+      [
+        'applicationFeeRefunded',
+        Boolean(priorRow.application_fee_refunded),
+        Boolean(this.applicationFeeRefunded),
+      ],
+    ];
+    for (const [field, prior, next] of frozen)
+      if (prior !== next)
+        throw new Error(
+          `Payment ${this.id}: '${field}' of a connected payment or refund cannot change`,
+        );
   }
 
   /**
@@ -508,7 +735,7 @@ export class Payment extends SmrtObject {
   > {
     if (!this.id) return undefined;
     try {
-      const row = await this.db.get(this.tableName, { id: this.id });
+      const row = await this.getCanonicalPersistedRow({ id: this.id });
       return row ?? undefined;
     } catch {
       // DB not ready / table absent — treat as new (in-memory fallback in save).
@@ -532,6 +759,20 @@ export class Payment extends SmrtObject {
     priorRow: Record<string, unknown>,
   ): void {
     const frozen: Array<[string, number | string, number | string]> = [
+      ['journalId', String(priorRow.journal_id ?? ''), this.journalId ?? ''],
+      [
+        'paidAt',
+        priorRow.paid_at == null
+          ? ''
+          : new Date(priorRow.paid_at as string | number).getTime(),
+        this.paidAt == null ? '' : new Date(this.paidAt).getTime(),
+      ],
+      ['kind', String(priorRow.kind ?? 'payment'), this.kind],
+      [
+        'connectedFeePolicyRef',
+        String(priorRow.connected_fee_policy_ref ?? ''),
+        this.connectedFeePolicyRef,
+      ],
       ['amount', Number(priorRow.amount ?? 0), Number(this.amount ?? 0)],
       [
         'currency',
@@ -557,6 +798,26 @@ export class Payment extends SmrtObject {
         'usdAtConfirmation',
         Number(priorRow.usd_at_confirmation ?? 0),
         Number(this.usdAtConfirmation ?? 0),
+      ],
+      [
+        'connectedAccountId',
+        String(priorRow.connected_account_id ?? ''),
+        String(this.connectedAccountId ?? ''),
+      ],
+      [
+        'applicationFeeCents',
+        Number(priorRow.application_fee_cents ?? 0),
+        Number(this.applicationFeeCents ?? 0),
+      ],
+      [
+        'refundOfPaymentId',
+        String(priorRow.refund_of_payment_id ?? ''),
+        String(this.refundOfPaymentId ?? ''),
+      ],
+      [
+        'connectedRefundState',
+        String(priorRow.connected_refund_state ?? ''),
+        String(this.connectedRefundState ?? ''),
       ],
     ];
     for (const [field, prior, next] of frozen) {
@@ -657,7 +918,7 @@ export class Payment extends SmrtObject {
         await this.claimRevision(this.updated_at);
         // In-memory status can be edited without saving (including markFailed).
         // Only the claimed persisted row decides whether settlement happened.
-        const persisted = await this.db.get(this.tableName, { id: this.id });
+        const persisted = await this.getCanonicalPersistedRow({ id: this.id });
         if (!persisted) throw new Error('Claimed payment could not be loaded');
         if (persisted.status === PaymentStatus.COMPLETED) {
           throw new Error('Payment already recorded');
@@ -688,6 +949,13 @@ export class Payment extends SmrtObject {
     return journal;
   }
 
+  /** Settle an outgoing refund through the same guarded journal transaction. */
+  async recordRefund(options: RecordPaymentOptions): Promise<Journal> {
+    if (this.kind !== 'refund')
+      throw new Error('recordRefund requires Payment.kind=refund');
+    return this.recordPayment(options);
+  }
+
   /** Post and complete only inside recordPayment's claimed transaction. */
   private async postPaymentInTransaction(
     options: RecordPaymentOptions,
@@ -700,6 +968,46 @@ export class Payment extends SmrtObject {
       throw new Error('Payment amount must be positive');
     }
 
+    // A connected direct charge arrives net of the platform's application
+    // fee (#3831): the provider withheld it at source, so it is an expense
+    // already paid, never a payable to the platform.
+    const applicationFee =
+      this.kind === 'payment' ? this.applicationFeeCents : 0;
+    if (applicationFee > 0 && !options.applicationFeeAccountId)
+      throw new Error(
+        'Payment carries an application fee; recordPayment requires applicationFeeAccountId',
+      );
+
+    const funds = customerFundsState(this.customerFundsJson);
+    const explicitDate = options.effectiveOn;
+    if (
+      explicitDate !== undefined &&
+      (typeof explicitDate !== 'string' ||
+        !/^\d{4}-\d{2}-\d{2}$/.test(explicitDate) ||
+        !Number.isFinite(Date.parse(explicitDate)) ||
+        new Date(explicitDate).toISOString().slice(0, 10) !== explicitDate)
+    )
+      throw new Error('Settlement effectiveOn must be a calendar date');
+    if (funds) {
+      if (explicitDate !== undefined && explicitDate !== funds.effectiveOn)
+        throw new Error('Settlement date differs from reviewed customer funds');
+      assertCustomerFundsWrite(this);
+      if (
+        options.cashAccountId !== funds.policy.cashAccountId ||
+        options.receivablesAccountId !== funds.policy.receivablesAccountId
+      )
+        throw new Error(
+          'Customer funds settlement accounts differ from reviewed policy',
+        );
+    }
+    const creditAccountId =
+      funds?.policy.mode === 'deposit-liability'
+        ? funds.policy.liabilityAccountId!
+        : options.receivablesAccountId;
+    const effectiveOn = funds?.effectiveOn ?? explicitDate;
+    const effectiveDate = effectiveOn
+      ? new Date(`${effectiveOn}T12:00:00Z`)
+      : new Date();
     // Dynamic import to avoid hard dependency on smrt-ledgers
     const { JournalCollection } = await import('@happyvertical/smrt-ledgers');
 
@@ -708,26 +1016,40 @@ export class Payment extends SmrtObject {
 
     // Create a new journal for this payment
     const journal = await journalCollection.create({
-      date: new Date(),
-      description: `Payment received for contract ${this.contractId}`,
+      date: effectiveDate,
+      description:
+        this.kind === 'refund'
+          ? `Customer refund for contract ${this.contractId}`
+          : `Payment received for contract ${this.contractId}`,
       sourceModule: 'smrt-commerce',
       sourceRef: this.id,
     });
     await journal.save();
 
-    // Add balanced entries:
-    // Debit Cash/Bank (assets increase)
+    // Incoming payments debit cash/credit AR; refunds reverse that movement.
     await journal.addEntry({
       accountId: options.cashAccountId,
-      debit: this.amount,
-      memo: `Payment ${this.reference || this.id}`,
+      currency: this.currency,
+      debit: this.kind === 'payment' ? this.amount - applicationFee : 0,
+      credit: this.kind === 'refund' ? this.amount : 0,
+      memo: `${this.kind === 'refund' ? 'Refund' : 'Payment'} ${this.reference || this.id}`,
     });
+    if (applicationFee > 0)
+      await journal.addEntry({
+        accountId: options.applicationFeeAccountId!,
+        currency: this.currency,
+        debit: applicationFee,
+        credit: 0,
+        memo: `Application fee ${this.reference || this.id}`,
+      });
 
     // Credit Accounts Receivable (receivables decrease)
     await journal.addEntry({
-      accountId: options.receivablesAccountId,
-      credit: this.amount,
-      memo: `Payment ${this.reference || this.id}`,
+      accountId: creditAccountId,
+      currency: this.currency,
+      debit: this.kind === 'refund' ? this.amount : 0,
+      credit: this.kind === 'payment' ? this.amount : 0,
+      memo: `${this.kind === 'refund' ? 'Refund' : 'Payment'} ${this.reference || this.id}`,
     });
 
     // Post the journal (validates balance and finalizes)
@@ -744,7 +1066,7 @@ export class Payment extends SmrtObject {
     }
     this.journalId = journal.id;
     this.status = PaymentStatus.COMPLETED;
-    this.paidAt = new Date();
+    this.paidAt = effectiveDate;
     settlementInProgress.add(this);
     await this.save();
 

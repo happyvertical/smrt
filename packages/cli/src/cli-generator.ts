@@ -63,6 +63,7 @@ let _playgroundCommands: Record<string, Command> | null = null;
 let _workbenchCommands: Record<string, Command> | null = null;
 let _cookbookCommands: Record<string, Command> | null = null;
 let _kitchenCommands: Record<string, Command> | null = null;
+let _desktopCommands: Record<string, Command> | null = null;
 
 async function getGnodeCommands(): Promise<Record<string, Command>> {
   if (!_gnodeCommands) {
@@ -142,6 +143,14 @@ async function getKitchenCommands(): Promise<Record<string, Command>> {
     _kitchenCommands = kitchenCommands;
   }
   return _kitchenCommands;
+}
+
+async function getDesktopCommands(): Promise<Record<string, Command>> {
+  if (!_desktopCommands) {
+    const { desktopCommands } = await import('./commands/index.js');
+    _desktopCommands = desktopCommands;
+  }
+  return _desktopCommands;
 }
 
 async function getWorkbenchCommands(): Promise<Record<string, Command>> {
@@ -343,6 +352,13 @@ function rescopeGlobalFlag(
   // map is loaded lazily, so the first parse pass sees object commands only.
   const firstOptionIndex = start + Math.max(wordCount, 1);
 
+  // The built-in `version` command aliases `-v`, so `parseCliArgs` swallows a
+  // `-v` after a subcommand too (#2942). Route it to the long option of a
+  // subcommand that declares `short: 'v'` (e.g. `--verbose`).
+  const shortVOption = Object.entries(command?.options ?? {}).find(
+    ([name, option]) => option.short === 'v' && name !== SCOPED_GLOBAL_FLAG,
+  )?.[0];
+
   let rewritten = false;
   const rescoped = [...argv];
   for (let index = firstOptionIndex; index < rescoped.length; index += 1) {
@@ -351,6 +367,11 @@ function rescopeGlobalFlag(
     // shared parser already gives it.
     if (token === '--') {
       break;
+    }
+    if (token === '-v' && shortVOption) {
+      rescoped[index] = `--${shortVOption}`;
+      rewritten = true;
+      continue;
     }
     if (token === flag) {
       rescoped[index] = aliasFlag;
@@ -1098,6 +1119,8 @@ export class CLIGenerator {
     const shouldInclude = (
       command: 'list' | 'get' | 'create' | 'update' | 'delete',
     ) => {
+      if (config.abstract && command !== 'list' && command !== 'get')
+        return false;
       if (included && !included.includes(command)) return false;
       if (excluded.includes(command)) return false;
       return true;
@@ -1233,13 +1256,20 @@ export class CLIGenerator {
       });
     }
 
+    // Abstract resources expose reads only, even when a custom method was
+    // explicitly included or the manifest predates abstract normalization.
+    if (config.abstract) return commands;
+
     // CUSTOM METHODS - discover from manifest (including inherited methods)
     const methods = await ObjectRegistry.getAllMethods(objectName);
 
-    // Check if include list contains any custom method names (indicates strict mode)
-    const hasCustomMethodsInInclude = included?.some(
-      (item) => !isCrudOperation(item),
-    );
+    // Check if include list contains any custom method names (indicates strict mode).
+    // A collection class's include list is always the complete allowlist, as
+    // on MCP and REST: a collection inherits its model's include list as CRUD
+    // verbs only, and its own methods must stay closed until it lists them.
+    const hasCustomMethodsInInclude =
+      included?.some((item) => !isCrudOperation(item)) ||
+      (Array.isArray(included) && ObjectRegistry.isCollectionClass(objectName));
 
     // Every name a caller can already type for this object, taken from the
     // CRUD commands actually pushed above — their names AND their aliases,
@@ -1391,6 +1421,20 @@ export class CLIGenerator {
   }
 
   /**
+   * True when argv starts with a command word other than the version command
+   * itself (so a `-v` after it is not the global `smrt -v`).
+   */
+  private leadsWithOtherCommand(argv: string[], version: CLICommand): boolean {
+    const leading = argv[firstArgumentIndex(argv)];
+    return (
+      !!leading &&
+      !leading.startsWith('-') &&
+      leading !== version.name &&
+      !version.aliases?.includes(leading)
+    );
+  }
+
+  /**
    * Execute a parsed command
    */
   async executeCommand(
@@ -1423,6 +1467,18 @@ export class CLIGenerator {
         parsed.args = reParsed.args;
         parsed.options = reParsed.options;
       }
+    }
+
+    // `parseCliArgs` reports `version` for a `-v` anywhere in argv. When a
+    // subcommand leads, defer that: a subcommand declaring `short: 'v'` owns
+    // the flag (#2942); otherwise the version command still runs below.
+    const swallowedVersion =
+      command?.name === 'version' &&
+      this.leadsWithOtherCommand(processedArgv, command)
+        ? command
+        : undefined;
+    if (swallowedVersion) {
+      command = undefined;
     }
 
     if (command) {
@@ -1471,6 +1527,7 @@ export class CLIGenerator {
       workbenchCommands,
       cookbookCommands,
       kitchenCommands,
+      desktopCommands,
     ] = await Promise.all([
       getGnodeCommands(),
       getGenerateCommands(),
@@ -1483,6 +1540,7 @@ export class CLIGenerator {
       getWorkbenchCommands(),
       getCookbookCommands(),
       getKitchenCommands(),
+      getDesktopCommands(),
     ]);
     const builtInCommands = {
       ...gnodeCommands,
@@ -1496,6 +1554,7 @@ export class CLIGenerator {
       ...workbenchCommands,
       ...cookbookCommands,
       ...kitchenCommands,
+      ...desktopCommands,
     };
 
     const builtInMatch = matchLeadingCommand(
@@ -1503,7 +1562,7 @@ export class CLIGenerator {
       [],
       builtInCommands,
     );
-    const builtInCommand =
+    let builtInCommand =
       builtInMatch.command ??
       builtInCommands[parsed.command] ??
       Object.values(builtInCommands).find(
@@ -1511,6 +1570,14 @@ export class CLIGenerator {
           cmd.name === parsed.command ||
           cmd.aliases?.includes(parsed.command ?? ''),
       );
+    if (swallowedVersion) {
+      const ownsShortV = Object.values(
+        builtInMatch.command?.options ?? {},
+      ).some((option) => option.short === 'v');
+      if (!ownsShortV) {
+        builtInCommand = swallowedVersion;
+      }
+    }
     if (builtInCommand) {
       // Validate required arguments (args wrapped in [...] are optional)
       const requiredArgCount = countRequiredArgs(builtInCommand.args);
@@ -1866,6 +1933,7 @@ export class CLIGenerator {
       workbenchCommands,
       cookbookCommands,
       kitchenCommands,
+      desktopCommands,
     ] = await Promise.all([
       getGnodeCommands(),
       getGenerateCommands(),
@@ -1878,6 +1946,7 @@ export class CLIGenerator {
       getWorkbenchCommands(),
       getCookbookCommands(),
       getKitchenCommands(),
+      getDesktopCommands(),
     ]);
 
     console.log('Project Setup:');
@@ -1900,6 +1969,12 @@ export class CLIGenerator {
 
     console.log('Kitchen:');
     for (const command of Object.values(kitchenCommands)) {
+      this.showCommandHelp(command);
+    }
+    console.log();
+
+    console.log('Desktop:');
+    for (const command of Object.values(desktopCommands)) {
       this.showCommandHelp(command);
     }
     console.log();
@@ -2139,6 +2214,56 @@ export class CLIGenerator {
   }
 
   /**
+   * Keep only the fields a generated create/update may write, exactly as the
+   * REST routes and MCP tools do: never framework/server-managed keys,
+   * underscored internals or `readonly` fields, and only `api.writable` when
+   * the model declares it. Applies to every input mode (`--from-file`,
+   * interactive, flags), so the CLI is not a way around a model's write
+   * allowlist.
+   */
+  private applyWritablePolicy(
+    objectName: string,
+    data: unknown,
+  ): Record<string, unknown> {
+    if (!data || typeof data !== 'object' || Array.isArray(data)) return {};
+    const serverManaged = new Set([
+      'id',
+      'tenantId',
+      'tenant_id',
+      'createdAt',
+      'created_at',
+      'updatedAt',
+      'updated_at',
+    ]);
+    const apiConfig = ObjectRegistry.getConfig(objectName)?.api;
+    const writable =
+      apiConfig &&
+      typeof apiConfig === 'object' &&
+      Array.isArray((apiConfig as { writable?: unknown }).writable)
+        ? ((apiConfig as { writable: string[] }).writable as string[])
+        : null;
+    const readonly = new Set<string>();
+    for (const [name, definition] of ObjectRegistry.getFields(objectName)) {
+      const meta = definition as {
+        readonly?: unknown;
+        _meta?: { readonly?: unknown };
+      } | null;
+      if (meta?.readonly === true || meta?._meta?.readonly === true)
+        readonly.add(name);
+    }
+    const result: Record<string, unknown> = {};
+    for (const [key, value] of Object.entries(
+      data as Record<string, unknown>,
+    )) {
+      if (key.startsWith('_')) continue;
+      if (serverManaged.has(key) || readonly.has(key)) continue;
+      if (writable && !writable.includes(key)) continue;
+      result[key] = value;
+    }
+    return result;
+  }
+
+  /**
    * Handle CREATE command
    */
   private async handleCreate(
@@ -2170,6 +2295,10 @@ export class CLIGenerator {
         }
       }
 
+      // The STI discriminator selects the subtype; it is not a field write.
+      const metaType = data._meta_type;
+      data = this.applyWritablePolicy(objectName, data);
+      if (typeof metaType === 'string') data._meta_type = metaType;
       const spinner = this.createSpinner(`Creating ${objectName}...`);
 
       const collection = await this.getCollection(objectName);
@@ -2232,6 +2361,7 @@ export class CLIGenerator {
         }
       }
 
+      data = this.applyWritablePolicy(objectName, data);
       const spinner = this.createSpinner(`Updating ${objectName}...`);
 
       await collection.withAuditMutation(existing, 'updated', async (bound) => {

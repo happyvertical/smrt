@@ -13,10 +13,12 @@ import {
 import { useI18n } from '@happyvertical/smrt-ui/i18n';
 import { Button } from '@happyvertical/smrt-ui/ui';
 import type { Snippet } from 'svelte';
+import type { HTMLFormAttributes } from 'svelte/elements';
 import { M } from '../i18n.js';
 import type {
   PartyContactLabels,
   PartyExtension,
+  PartyFormEnhance,
   PartyFormErrors,
   PartyFormTransport,
   PartySurfaceLabels,
@@ -60,6 +62,10 @@ export interface Props {
   extension?: PartyExtension<VendorFormValues>;
   /** Replaces the default cancel and save action bar. */
   actions?: Snippet;
+  /** Progressive-enhancement hook for the native form element, such as SvelteKit's `enhance`. Needed when an `ssr = false` app must not answer a native post with its empty shell. */
+  enhance?: PartyFormEnhance;
+  /** Native submit handler. Submission stays native unless the handler calls `event.preventDefault()`. */
+  onsubmit?: HTMLFormAttributes['onsubmit'];
 }
 
 const {
@@ -79,6 +85,8 @@ const {
   cancelHref,
   extension,
   actions,
+  enhance,
+  onsubmit,
 }: Props = $props();
 
 const i18n = useI18n();
@@ -95,14 +103,29 @@ const errorList = $derived(
       message,
     })),
 );
+
+let formComponent = $state<ReturnType<typeof Form>>();
+
+/** Returns the native form while mounted, or null before mount/after unmount. */
+export function getFormElement(): HTMLFormElement | null {
+  return formComponent?.getFormElement() ?? null;
+}
+
+function attachEnhance(form: HTMLFormElement) {
+  const handle = enhance?.(form);
+  return () => handle?.destroy?.();
+}
 </script>
 
 <Form
+  bind:this={formComponent}
   class="party-form"
   action={transport.action}
   method={transport.method ?? 'post'}
   preventDefault={false}
   stagedReview={false}
+  {onsubmit}
+  {@attach attachEnhance}
 >
   {#each Object.entries(transport.hiddenFields ?? {}) as [name, value]}
     <Input interaction={false} type="hidden" {name} {value} />

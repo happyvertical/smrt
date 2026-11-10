@@ -8,7 +8,11 @@
  * `DataSurfaceRegistry` instance (already owned by the host shell) and an
  * `AssistantTransport`.
  */
-import { MessageBubble } from '@happyvertical/smrt-ui/chat';
+import {
+  ASSISTANT_REQUEST_EVENT,
+  type AssistantRequestDetail,
+  MessageBubble,
+} from '@happyvertical/smrt-ui/chat';
 import type {
   DataSurfaceActionRequest,
   DataSurfaceActionResult,
@@ -23,16 +27,25 @@ import type {
 } from '@happyvertical/smrt-ui/forms';
 import { useI18n } from '@happyvertical/smrt-ui/i18n';
 import { Button } from '@happyvertical/smrt-ui/ui';
-import { type Snippet, tick, untrack } from 'svelte';
+import { type Component, type Snippet, tick, untrack } from 'svelte';
 import type { AssistantStatus } from '../../../assistant-turn-events.js';
+import type { ChatUnavailableStatus } from '../../../client.js';
 import { M } from '../../i18n.js';
 import ToolCallDisplay from '../agent/ToolCallDisplay.svelte';
+import AiUnavailableNotice from '../shared/AiUnavailableNotice.svelte';
 import ModelPicker from '../shared/ModelPicker.svelte';
 import AssistantChoiceCards from './AssistantChoiceCards.svelte';
 import AssistantComposer from './AssistantComposer.svelte';
+import AssistantQuestionForm from './AssistantQuestionForm.svelte';
 import AssistantThreadList from './AssistantThreadList.svelte';
 import { toolCallStatusForAction } from './action-status.js';
 import type { AssistantChoiceSourceRegistry } from './assistant-choices.svelte.js';
+import { renderAssistantMarkdown } from './assistant-markdown.js';
+import {
+  type AssistantQuestion,
+  type AssistantQuestionAnswer,
+  assistantQuestionFromMessage,
+} from './assistant-question.js';
 import type {
   AssistantAttachmentRef,
   AssistantMessage,
@@ -80,6 +93,8 @@ function formatAttachmentSize(bytes: number): string {
 }
 
 export interface Props {
+  /** Explicit send choices for a fresh conversation. Nothing runs until clicked. */
+  suggestions?: readonly { label: string; prompt: string }[];
   /** Thread/message I/O backend; see `./assistant-transport.js`. */
   transport: AssistantTransport;
   /** The host shell's `DataSurfaceRegistry` instance — the dock discovers
@@ -139,6 +154,26 @@ export interface Props {
    * is host-defined, so the dock never stringifies it or injects it as HTML.
    * Render it with ordinary Svelte markup in the host's own snippet. */
   toolCall?: Snippet<[AssistantMessage]>;
+  /** Trusted host selection of a component for a tool result. Unknown results
+   * retain their ordinary message text and optional toolCall snippet. This
+   * seam only renders: it grants no tool execution or confirmation authority. */
+  toolResultComponent?: (
+    message: AssistantMessage,
+  ) => Component<{ message: AssistantMessage }> | undefined;
+  /** How an assistant message's text renders (#4505). `'text'` (default)
+   * shows it verbatim, as before. `'markdown'` renders paragraphs, headings
+   * (`#`–`###`), lists, fenced and inline code, bold/italic and http(s) links
+   * through the package's escaping renderer (`renderAssistantMarkdown`): all
+   * input HTML is escaped, so model text can never inject markup. Applies to
+   * stored assistant messages and the streaming reply; user, system and tool
+   * messages stay plain text. */
+  messageFormat?: 'text' | 'markdown';
+  /** Host renderer for an assistant message's text (#4505), used instead of
+   * `messageFormat` inside the message bubble. `streaming` is `true` for the
+   * in-progress reply, whose `message` is a stand-in with the text so far
+   * (`id` `'assistant-dock-streaming'`). Attachments, question forms and the
+   * `toolCall` region still render around it. */
+  renderMessage?: Snippet<[{ message: AssistantMessage; streaming: boolean }]>;
   /** Hands the host this dock's own controller once, on mount (#2989), so it
    * can propose an action with `controller.previewAction(request)`. The
    * proposal renders with Confirm/Reject like any other; everything else
@@ -217,11 +252,16 @@ export interface Props {
   /** The reply is being read aloud: hands-free listening pauses meanwhile;
    * see `AssistantComposer`. */
   speaking?: boolean;
+  /** Host route of its AI settings page (#4757). When a send is refused
+   * because AI is off or not set up (`ai_unavailable`), the dock shows
+   * "AI is off" with a link here instead of an error. */
+  aiSettingsHref?: string;
 }
 
 const {
   transport,
   registry,
+  suggestions = [],
   contextMode = 'data-surfaces',
   actionClient,
   surfaces,
@@ -230,6 +270,9 @@ const {
   conversations = 'multiple',
   threadList = true,
   toolCall,
+  toolResultComponent,
+  messageFormat = 'text',
+  renderMessage,
   oncontroller,
   onactionapplied,
   onactionsettled,
@@ -253,8 +296,22 @@ const {
   sendOnPause = false,
   sendOnPauseMs,
   speaking = false,
+  aiSettingsHref,
 }: Props = $props();
 const { t } = useI18n();
+
+// Set when the server answered `ai_unavailable` (#4757); cleared by the next
+// successful send. Rendered as a notice with the host's settings link.
+let aiUnavailable = $state<ChatUnavailableStatus | null>(null);
+
+function noteUnavailable(error: unknown): boolean {
+  const status =
+    error && typeof error === 'object'
+      ? (error as { unavailable?: ChatUnavailableStatus }).unavailable
+      : undefined;
+  aiUnavailable = status?.reason ? status : null;
+  return aiUnavailable !== null;
+}
 
 // Passed to the controller as getters (not direct values) so a later
 // reassignment of these bound props (e.g. a host swapping the transport or
@@ -513,6 +570,23 @@ $effect(() => {
   void tick().then(() => composerRef?.focus());
 });
 
+// The page asks the assistant (`requestAssistant` from smrt-ui: a "New
+// report" button, an empty state): put the prompt in the composer for the
+// person to edit and send, never sending it on their behalf. A shell that
+// opens this dock first re-dispatches the request from inside it.
+$effect(() => {
+  if (typeof document === 'undefined') return;
+  const take = (event: Event) => {
+    const detail = (event as CustomEvent<AssistantRequestDetail>).detail;
+    if (event.defaultPrevented || typeof detail?.prompt !== 'string') return;
+    event.preventDefault();
+    controller.setDraft(detail.prompt);
+    void tick().then(() => composerRef?.focus());
+  };
+  document.addEventListener(ASSISTANT_REQUEST_EVENT, take);
+  return () => document.removeEventListener(ASSISTANT_REQUEST_EVENT, take);
+});
+
 async function handleClearConversation() {
   closeThreads();
   controller.setError(null);
@@ -540,6 +614,27 @@ async function handleCreateThread() {
   }
 }
 
+// A structured question's form (`./assistant-question.ts`): the transport
+// continues the turn from the values, or they go out as a message. A failure
+// is surfaced on the dock and the form stays answerable.
+async function handleAnswerQuestion(
+  messageId: string,
+  question: AssistantQuestion,
+  values: AssistantQuestionAnswer,
+) {
+  try {
+    await controller.answerQuestion(messageId, question, values);
+  } catch (error) {
+    if (noteUnavailable(error)) controller.setError(null);
+    else
+      controller.setError(
+        error instanceof Error ? error.message : String(error),
+      );
+    // The form learns it failed, so it stays answerable.
+    throw error;
+  }
+}
+
 async function handleSend(
   content: string,
   attachments: AssistantAttachmentRef[],
@@ -553,8 +648,13 @@ async function handleSend(
   try {
     await controller.send(content, attachments);
     controller.setError(null);
+    aiUnavailable = null;
   } catch (error) {
-    controller.setError(error instanceof Error ? error.message : String(error));
+    if (noteUnavailable(error)) controller.setError(null);
+    else
+      controller.setError(
+        error instanceof Error ? error.message : String(error),
+      );
     throw error;
   }
 }
@@ -604,6 +704,20 @@ async function handleConfirmAction(requestId: string) {
 }
 </script>
 
+{#snippet assistantText(message: AssistantMessage, streaming: boolean)}
+  {#if renderMessage}
+    {@render renderMessage({ message, streaming })}
+  {:else if messageFormat === 'markdown'}
+    <!-- Only the escaping renderer's output is injected (#4505): it escapes
+         all input HTML and emits a fixed tag set with checked http(s) hrefs. -->
+    <div class="assistant-dock-message-content assistant-dock-markdown">
+      {@html renderAssistantMarkdown(message.content)}
+    </div>
+  {:else}
+    <p class="assistant-dock-message-content">{message.content}</p>
+  {/if}
+{/snippet}
+
 <div class="assistant-dock" data-smrt-component="AssistantDock">
   <div
     class="assistant-dock-layout"
@@ -637,6 +751,9 @@ async function handleConfirmAction(requestId: string) {
     {/if}
 
     <div class="assistant-dock-main">
+      {#if aiUnavailable}
+        <AiUnavailableNotice status={aiUnavailable} settingsHref={aiSettingsHref} />
+      {/if}
       {#if controller.error}
         <p class="assistant-dock-error" role="alert">
           {t(M['chat.assistant_dock.error'], { message: controller.error })}
@@ -762,20 +879,36 @@ async function handleConfirmAction(requestId: string) {
           </section>
         {/if}
 
+        {#if controller.activeThreadId && !controller.threadsLoading && !controller.messages.some((message) => message.role === 'user' || message.role === 'tool') && controller.pendingSends.length === 0 && suggestions.length > 0}
+          <div class="assistant-dock-suggestions" role="group" aria-label={t(M['chat.assistant_dock.conversation_starters'])}>
+            {#each suggestions as suggestion (suggestion.prompt)}
+              <Button variant="secondary" disabled={composerDisabled} onclick={() => { void handleSend(suggestion.prompt, []).catch(() => {}); }}>
+                {suggestion.label}
+              </Button>
+            {/each}
+          </div>
+        {/if}
         <ul class="assistant-dock-messages">
           {#each controller.messages as message (message.id)}
+            {@const ResultComponent = message.role === 'tool' ? toolResultComponent?.(message) : undefined}
+            {@const question = message.role === 'assistant' ? assistantQuestionFromMessage(message) : null}
             <li data-role={message.role}>
-              <MessageBubble
-                variant={bubbleVariant(message.role)}
-                own={message.role === 'user'}
-              >
-                {#snippet children()}
-                  <p class="assistant-dock-message-content">{message.content}</p>
-                {#if toolCall && message.toolCallData != null}
-                  <div class="assistant-dock-tool-call">
-                    {@render toolCall(message)}
-                  </div>
-                {/if}
+              {#if ResultComponent}
+                <!-- Structured results are cards spanning the thread, not bubbles. -->
+                <div class="assistant-dock-card">
+                  <ResultComponent {message} />
+                </div>
+              {:else}
+                <MessageBubble
+                  variant={bubbleVariant(message.role)}
+                  own={message.role === 'user'}
+                >
+                  {#snippet children()}
+                    {#if message.role === 'assistant'}
+                      {@render assistantText(message, false)}
+                    {:else}
+                      <p class="assistant-dock-message-content">{message.content}</p>
+                    {/if}
                   {#if message.attachments && message.attachments.length > 0}
                     <ul
                       class="assistant-dock-attachments"
@@ -807,8 +940,26 @@ async function handleConfirmAction(requestId: string) {
                       {/each}
                     </ul>
                   {/if}
-                {/snippet}
-              </MessageBubble>
+                  {/snippet}
+                </MessageBubble>
+              {/if}
+              {#if question}
+                <div class="assistant-dock-card">
+                  <AssistantQuestionForm
+                    {question}
+                    answered={controller.answeredQuestions[`${message.id}:${question.id}`] ?? null}
+                    autofocus={message.id === controller.messages.at(-1)?.id}
+                    onsubmit={(values) => handleAnswerQuestion(message.id, question, values)}
+                  />
+                </div>
+              {/if}
+              {#if toolCall && message.toolCallData != null}
+                <!-- A host's cards (a report preview, an offer) span the thread
+                     under the message's text bubble. -->
+                <div class="assistant-dock-card assistant-dock-tool-call">
+                  {@render toolCall(message)}
+                </div>
+              {/if}
             </li>
           {/each}
         </ul>
@@ -820,7 +971,16 @@ async function handleConfirmAction(requestId: string) {
           >
             <MessageBubble variant="agent" own={false}>
               {#snippet children()}
-                <p class="assistant-dock-message-content">{controller.streamingText}</p>
+                {@render assistantText(
+                  {
+                    id: 'assistant-dock-streaming',
+                    threadId: controller.activeThreadId ?? '',
+                    role: 'assistant',
+                    content: controller.streamingText,
+                    createdAt: '',
+                  },
+                  true,
+                )}
               {/snippet}
             </MessageBubble>
           </div>
@@ -1169,6 +1329,13 @@ async function handleConfirmAction(requestId: string) {
     min-height: 0;
   }
 
+  .assistant-dock-suggestions {
+    display: flex;
+    flex-wrap: wrap;
+    gap: var(--smrt-spacing-2);
+    padding: var(--smrt-spacing-3);
+  }
+
   .assistant-dock-messages {
     list-style: none;
     margin: 0;
@@ -1255,14 +1422,65 @@ async function handleConfirmAction(requestId: string) {
     min-height: 4rem;
   }
 
-  .assistant-dock-tool-call {
+  /* Structured cards (results, questions, a host's previews) use the full
+   * thread width; the components inside draw their own card surface. */
+  .assistant-dock-card {
+    align-self: stretch;
+    inline-size: 100%;
+    min-inline-size: 0;
     margin-top: var(--smrt-spacing-2);
-    min-width: 0;
   }
 
   .assistant-dock-message-content {
     margin: 0;
     white-space: pre-wrap;
+  }
+
+  /* Markdown answers (#4505): block spacing comes from the elements, and the
+     rendered HTML is not scoped, so its rules are :global under the wrapper. */
+  .assistant-dock-markdown {
+    white-space: normal;
+    overflow-wrap: anywhere;
+  }
+
+  .assistant-dock-markdown :global(:is(p, ul, ol, pre, h1, h2, h3)) {
+    margin: 0 0 var(--smrt-spacing-2);
+  }
+
+  .assistant-dock-markdown :global(:is(p, ul, ol, pre, h1, h2, h3):last-child) {
+    margin-bottom: 0;
+  }
+
+  .assistant-dock-markdown :global(:is(h1, h2, h3)) {
+    font-size: 1em;
+    font-weight: var(--smrt-typography-weight-semibold, 600);
+    line-height: inherit;
+  }
+
+  .assistant-dock-markdown :global(h1) {
+    font-size: 1.15em;
+  }
+
+  .assistant-dock-markdown :global(:is(ul, ol)) {
+    padding-inline-start: 1.25em;
+  }
+
+  .assistant-dock-markdown :global(code) {
+    font-family: var(--smrt-font-family-mono, ui-monospace, monospace);
+    font-size: 0.9em;
+  }
+
+  .assistant-dock-markdown :global(pre) {
+    overflow-x: auto;
+    white-space: pre;
+    padding: var(--smrt-spacing-2);
+    border-radius: var(--smrt-radius-sm);
+    background: var(--smrt-color-surface-container-low);
+  }
+
+  .assistant-dock-markdown :global(a) {
+    color: inherit;
+    text-decoration: underline;
   }
 
   .assistant-dock-attachments {

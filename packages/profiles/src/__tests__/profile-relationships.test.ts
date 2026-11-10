@@ -13,9 +13,7 @@
  */
 
 import { randomUUID } from 'node:crypto';
-import { tmpdir } from 'node:os';
-import { join } from 'node:path';
-import { beforeEach, describe, expect, it } from 'vitest';
+import { afterEach, beforeEach, describe, expect, it } from 'vitest';
 import {
   ProfileCollection,
   ProfileRelationship,
@@ -26,18 +24,26 @@ import {
   ProfileRelationshipTypeCollection,
   ProfileTypeCollection,
 } from '../index.js';
+import { createOwnedSqliteFixtures } from './owned-sqlite-fixtures.js';
+
+const fixtures = createOwnedSqliteFixtures();
 
 function getTestDbUrl(name: string): string {
-  return `file:${join(tmpdir(), `${name}-${randomUUID()}.db`)}`;
+  return fixtures.url(name);
 }
 
 async function setup(dbUrl: string) {
   const db = { type: 'sqlite' as const, url: dbUrl };
   const profiles = await ProfileCollection.create({ db });
+  fixtures.track(profiles.db);
   const profileTypes = await ProfileTypeCollection.create({ db });
+  fixtures.track(profileTypes.db);
   const relTypes = await ProfileRelationshipTypeCollection.create({ db });
+  fixtures.track(relTypes.db);
   const relationships = await ProfileRelationshipCollection.create({ db });
+  fixtures.track(relationships.db);
   const terms = await ProfileRelationshipTermCollection.create({ db });
+  fixtures.track(terms.db);
 
   const personType = await profileTypes.create({ name: 'Person' });
   await personType.save();
@@ -67,6 +73,8 @@ async function setup(dbUrl: string) {
     charlie,
   };
 }
+
+afterEach(() => fixtures.cleanup());
 
 describe('Profile.addRelationship / getRelationships / getRelatedProfiles', () => {
   let dbUrl: string;

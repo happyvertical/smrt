@@ -151,7 +151,8 @@ async function getExportableFields(
       (f) =>
         // `exported: false` is never overridable, not even by a whitelist.
         (fields.has(f) &&
-          (fields.get(f) as ExportFieldDef).exported !== false) ||
+          (fields.get(f) as ExportFieldDef).exported !== false &&
+          (fields.get(f) as ExportFieldDef).type !== 'meta') ||
         (f === '_meta_type' && projection.includeMetaType) ||
         (f === '_meta_data' && projection.includeMetaData) ||
         (f === 'id' && projection.schemaColumns.has('id')) ||
@@ -165,10 +166,12 @@ async function getExportableFields(
     const fieldDef = rawFieldDef as ExportFieldDef;
     if (fieldDef._meta?.__smrtSystemField === true) continue;
 
-    // Skip transient and relationship fields
+    // Skip fields without dedicated physical columns. STI meta fields live in
+    // the shared `_meta_data` JSON column, which is added below when present.
     if (fieldDef.transient) continue;
     if (fieldDef.type === 'oneToMany' || fieldDef.type === 'manyToMany')
       continue;
+    if (fieldDef.type === 'meta') continue;
 
     // Check field-level export annotation (from @field({ exported: ... }))
     const exportedAnnotation = fieldDef.exported;

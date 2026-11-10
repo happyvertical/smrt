@@ -9,6 +9,7 @@ import {
   chmodSync,
   cpSync,
   existsSync,
+  linkSync,
   lstatSync,
   mkdirSync,
   mkdtempSync,
@@ -204,7 +205,11 @@ async function createSchema(
   return db;
 }
 
-async function seedSource(fixture: FixtureContext, assetPath?: string) {
+async function seedSource(
+  fixture: FixtureContext,
+  assetPath?: string,
+  assetSourceUri?: string,
+) {
   const blobPath = assetPath || join(fixture.sourceAssetRoot, 'reference.json');
   if (!assetPath) writeFileSync(blobPath, ASSET_BYTES, { mode: 0o600 });
   const databasePath = join(fixture.sourceDataRoot, 'app.sqlite');
@@ -258,7 +263,7 @@ async function seedSource(fixture: FixtureContext, assetPath?: string) {
     ASSET_ID,
     'tenant-1',
     'profile-1',
-    pathToFileURL(blobPath).href,
+    assetSourceUri ?? pathToFileURL(blobPath).href,
     'Reference asset',
   );
   await db.query(
@@ -304,8 +309,8 @@ function portabilityContext(
   };
 }
 
-async function exportFixture(fixture: FixtureContext) {
-  const databasePath = await seedSource(fixture);
+async function exportFixture(fixture: FixtureContext, assetSourceUri?: string) {
+  const databasePath = await seedSource(fixture, undefined, assetSourceUri);
   const result = await exportApplication({
     ...portabilityContext(
       fixture,
@@ -486,6 +491,13 @@ describe('asset-aware runtime portability', () => {
         /unsafe-payload-path/,
       ],
       [
+        'locator',
+        (bundle) => {
+          bundle.assets.entries[0].locator = 'unknown';
+        },
+        /invalid-asset-locator/,
+      ],
+      [
         'duplicate',
         (bundle) => {
           const path = `payloads/${'f'.repeat(64)}`;
@@ -542,6 +554,62 @@ describe('asset-aware runtime portability', () => {
       ).toBe(0);
       await db.close?.();
     }
+  });
+
+  it('preserves a relative locator through logical export, import, and a move', async () => {
+    const fixture = fixtureContext();
+    const databasePath = await seedSource(fixture);
+    const context = portabilityContext(
+      fixture,
+      databasePath,
+      fixture.sourceAssetRoot,
+      fixture.stateRoot,
+    );
+    const source = await getDatabase({ type: 'sqlite', url: databasePath });
+    await source.query(
+      'UPDATE assets SET source_uri = ? WHERE id = ?',
+      'asset-local:../reference.json',
+      ASSET_ID,
+    );
+    await expect(
+      exportApplication({ ...context, path: fixture.bundlePath }),
+    ).rejects.toThrow(/unsupported-asset-source/);
+    const outsidePath = join(fixture.directory, 'outside.json');
+    writeFileSync(outsidePath, 'outside bytes', { mode: 0o600 });
+    linkSync(outsidePath, join(fixture.sourceAssetRoot, 'linked.json'));
+    await source.query(
+      'UPDATE assets SET source_uri = ? WHERE id = ?',
+      'asset-local:linked.json',
+      ASSET_ID,
+    );
+    await expect(
+      exportApplication({ ...context, path: fixture.bundlePath }),
+    ).rejects.toThrow(/asset-not-regular/);
+    await source.query(
+      'UPDATE assets SET source_uri = ? WHERE id = ?',
+      'asset-local:reference.json',
+      ASSET_ID,
+    );
+    await source.close?.();
+    await exportApplication({ ...context, path: fixture.bundlePath });
+    expect(readBundle(fixture).assets.entries[0].locator).toBe('relative');
+
+    const target = await emptyTarget(fixture);
+    await importApplication({ ...target.context, path: fixture.bundlePath });
+    const movedRoot = join(fixture.directory, 'moved');
+    renameSync(dirname(target.databasePath), movedRoot);
+    const restored = await getDatabase({
+      type: 'sqlite',
+      url: join(movedRoot, 'app.sqlite'),
+    });
+    const asset = (await restored.query('SELECT source_uri FROM assets'))
+      .rows[0];
+    await restored.close?.();
+    const assetKey = `portable/${hash(ASSET_ID)}`;
+    expect(asset.source_uri).toBe(`asset-local:${assetKey}`);
+    expect(readFileSync(join(movedRoot, 'assets', assetKey))).toEqual(
+      ASSET_BYTES,
+    );
   });
 
   it('rejects source and bundle symlinks before following them', async () => {
@@ -941,9 +1009,22 @@ const postgresUrl = process.env.SMRT_TEST_POSTGRES_URL;
 describe.skipIf(!postgresUrl)(
   'asset-aware SQLite to PostgreSQL portability',
   () => {
-    it('imports the same record, authorization links, association, and verified blob', async () => {
+    // The M5 reference gate identifies the absolute case by its test title.
+    it.each([
+      [
+        'imports the same record, authorization links, association, and verified blob',
+        false,
+      ],
+      [
+        'imports a verified relative asset and preserves the owner relationship',
+        true,
+      ],
+    ] as const)('%s', async (_title, relative) => {
       const fixture = fixtureContext();
-      await exportFixture(fixture);
+      await exportFixture(
+        fixture,
+        relative ? 'asset-local:reference.json' : undefined,
+      );
       const assetRoot = join(fixture.directory, 'postgres-assets');
       const stateRoot = join(fixture.directory, 'postgres-state');
       makePrivateDirectory(assetRoot);
@@ -979,7 +1060,12 @@ describe.skipIf(!postgresUrl)(
           await verification.query('SELECT source_uri FROM assets')
         ).rows[0];
         await verification.close?.();
-        expect(readFileSync(new URL(asset.source_uri))).toEqual(ASSET_BYTES);
+        const assetKey = `portable/${hash(ASSET_ID)}`;
+        const path = join(assetRoot, assetKey);
+        expect(asset.source_uri).toBe(
+          relative ? `asset-local:${assetKey}` : pathToFileURL(path).href,
+        );
+        expect(readFileSync(path)).toEqual(ASSET_BYTES);
       } finally {
         const cleanup = await getDatabase({
           type: 'postgres',

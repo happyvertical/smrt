@@ -136,11 +136,11 @@ export class Image extends Asset {
       },
     );
 
-    const ai = await this.getAiClient();
-    const response = await ai.message(
-      resolvedPrompt.text,
+    // A tier profile (#4750) picks the tier client; tier keys are stripped.
+    const { ai, aiOptions } = await this.prepareAiOperation(
       promptMessageOptions(resolvedPrompt.ai),
     );
+    const response = await ai.message(resolvedPrompt.text, aiOptions);
 
     const altText = response.trim();
     this.alt = altText;

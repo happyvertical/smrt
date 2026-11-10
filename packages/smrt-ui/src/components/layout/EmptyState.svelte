@@ -118,7 +118,7 @@ const icons = {
     margin-bottom: 2rem;
     background-color: var(--smrt-color-secondary-container);
     color: var(--smrt-color-on-secondary-container);
-    border-radius: var(--smrt-radius-3xl, 32px); /* M3 extra large shape */
+    border-radius: var(--smrt-radius-3xl); /* M3 extra large shape */
     padding: var(--smrt-spacing-6);
   }
 
@@ -134,7 +134,7 @@ const icons = {
     width: 120px;
     height: 120px;
     margin-bottom: 2.5rem;
-    border-radius: var(--smrt-radius-3xl, 32px);
+    border-radius: var(--smrt-radius-3xl);
     padding: var(--smrt-spacing-8);
   }
 

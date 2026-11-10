@@ -12,7 +12,7 @@ import {
 } from '@happyvertical/smrt-users';
 
 const databaseUrl = '.smrt/e2e-playwright.db';
-const baseURL = 'http://127.0.0.1:4173';
+const baseURL = `http://127.0.0.1:${Number(process.env.SMRT_CONTENT_E2E_PORT ?? 4173)}`;
 const testIdentity = {
   email: 'content-browser@example.test',
   name: 'Content browser test user',

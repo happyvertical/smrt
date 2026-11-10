@@ -9,7 +9,10 @@
  */
 
 import { AssetCollection } from '@happyvertical/smrt-assets';
-import type { DecisionClient } from '@happyvertical/smrt-core';
+import {
+  type DecisionClient,
+  setInferenceResolver,
+} from '@happyvertical/smrt-core';
 import { getTestDatabase } from '@happyvertical/smrt-core/testing';
 import type { DatabaseInterface } from '@happyvertical/sql';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
@@ -80,6 +83,46 @@ describe('ImageCategorizer', () => {
       expect(result.description).toBe('A sandy beach with blue ocean water');
       expect(result.confidence).toBe(0.92);
       expect(result.subjects).toEqual(['sand', 'water', 'sky']);
+    });
+
+    it('builds its client from a stored inference binding (#4756)', async () => {
+      chatMock.mockResolvedValue({ content: '{}' });
+      const requests: unknown[] = [];
+      setInferenceResolver({
+        resolve: (request) => {
+          requests.push(request);
+          return {
+            tierResolved: 'good',
+            target: {
+              provider: 'openai',
+              baseUrl: 'http://127.0.0.1:1234/v1',
+              apiKey: 'smrt-local',
+              model: 'local-model',
+              source: 'local',
+            },
+            via: 'resolver',
+          };
+        },
+      });
+      try {
+        await new ImageCategorizer(aiOptions).categorize(
+          makeImage({ tenantId: 'tenant-img' } as never),
+        );
+        const { getAI } = await import('@happyvertical/ai');
+        expect(getAI).toHaveBeenCalledWith(
+          expect.objectContaining({
+            baseUrl: 'http://127.0.0.1:1234/v1',
+            model: 'local-model',
+            onUsage: expect.any(Function),
+          }),
+        );
+        expect(getAI).not.toHaveBeenCalledWith(
+          expect.objectContaining({ apiKey: 'test-key' }),
+        );
+        expect(requests[0]).toMatchObject({ tenantId: 'tenant-img' });
+      } finally {
+        setInferenceResolver(undefined);
+      }
     });
 
     it('extracts the JSON object even when the model wraps it in prose', async () => {

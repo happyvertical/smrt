@@ -7,6 +7,7 @@ import {
   type DispatchBus,
   type DispatchMetadata,
   type DispatchTenantScope,
+  isInferenceUnavailableError,
   type LearningEpisode,
   LearningMemory,
   type LearningMemoryRecord,
@@ -24,7 +25,10 @@ import {
   TenantScoped,
   tenantId,
 } from '@happyvertical/smrt-tenancy';
-import { type AgentAIOptions, resolveAgentAIOptions } from './ai-config.js';
+import {
+  type AgentAIOptions,
+  resolveAgentAIClientOptions,
+} from './ai-config.js';
 import { AgentConfig } from './config.js';
 import {
   instanceScopedSubscriber,
@@ -44,7 +48,7 @@ import {
   type AgentLearningDeclaration,
   resolveAgentLearning,
 } from './learning.js';
-import type { AgentStatusType } from './types.js';
+import type { AgentRunRecord, AgentStatusType } from './types.js';
 import type { AgentAdminRoute, AgentCreateEntry, AgentUISlots } from './ui.js';
 
 /**
@@ -275,12 +279,24 @@ export abstract class Agent extends SmrtObject {
    * the persisted value (or to whatever
    * {@link ResolveLazyConfigOptions.onError} dictates).
    *
+   * Each resolver receives a `ConfigResolverContext` (#2806): this agent
+   * instance's `agentId`, canonical `agentClass`, `tenantId`, `scheduleId`,
+   * and the value its own persisted config holds for the key (`persisted`,
+   * `hasPersisted`). A per-agent value such as the agent's own AI credential
+   * should not be clobbered by a deployment default: wrap the default in
+   * `preferPersisted()` (or return `undefined` when `context.hasPersisted`).
+   * Never pick an agent by scanning the tenant's `agent_configs` rows — with
+   * several agents of one class per tenant that hands one agent another's
+   * credential; use `context.agentId`.
+   *
    * @example
    * ```typescript
    * class Praeco extends Agent {
    *   static override configResolvers = {
    *     assetStorage: () => resolveSharedAssetStorage(),
    *     aiKey: async () => loadAIKeyFromSecretsManager(),
+   *     ai: preferPersisted(() => deploymentDefaultAi()),
+   *     region: ({ agentId }) => lookupRegionFor(agentId),
    *   };
    * }
    * ```
@@ -347,6 +363,9 @@ export abstract class Agent extends SmrtObject {
    */
   status: AgentStatusType = 'idle';
 
+  /** The outcome of the last {@link execute} on this instance (not persisted). */
+  #runRecord: AgentRunRecord | null = null;
+
   /**
    * Structured logger instance
    * Created with agent's class name as context
@@ -371,6 +390,17 @@ export abstract class Agent extends SmrtObject {
    * Signal handlers for graceful shutdown
    */
   private signalHandlers: Map<NodeJS.Signals, () => void> = new Map();
+  /**
+   * The `ai` options as configured, before `initialize()` bound secrets or
+   * an inference binding into `options.ai`. Every `initialize()` (so every
+   * `execute()`) resolves from this, so a rotated or removed tenant key is
+   * not kept from an earlier run (#4756).
+   */
+  #configuredAi: { value: AgentAIOptions | undefined } | undefined;
+  /** What `initialize()` last wrote to `options.ai` (to spot a caller's change). */
+  #boundAi: unknown;
+  /** Set by `initialize()` when the tenant's AI is unavailable (#4757). */
+  #aiUnavailable: Error | undefined;
 
   /**
    * Cached DispatchBus instance for inter-agent communication
@@ -932,6 +962,9 @@ export abstract class Agent extends SmrtObject {
           this._learningOutcome ?? { success: true },
         );
       } catch (error) {
+        // AI unavailable (#4757) is not a failed strategy: nothing ran, so
+        // the memory is neither reinforced nor decayed.
+        if (isInferenceUnavailableError(error)) throw error;
         // Capture the failure, but never mask the original error.
         try {
           await this.captureForRun(memory, {
@@ -1020,22 +1053,67 @@ export abstract class Agent extends SmrtObject {
       (this.config as Record<string, unknown>).ai !== null
         ? ((this.config as Record<string, unknown>).ai as AgentAIOptions)
         : undefined;
-    const configuredAi =
-      ((this.options as AgentOptions).ai as AgentAIOptions | undefined) ??
-      fileAiConfig;
+    if (
+      this.#configuredAi &&
+      (this.options as AgentOptions).ai !== this.#boundAi
+    ) {
+      // The caller replaced `options.ai` since the last initialize().
+      this.#configuredAi = undefined;
+    }
+    this.#configuredAi ??= {
+      value:
+        ((this.options as AgentOptions).ai as AgentAIOptions | undefined) ??
+        fileAiConfig,
+    };
+    const configuredAi = this.#configuredAi.value;
+    let bindingTags: Record<string, string> | undefined;
+    this.#aiUnavailable = undefined;
     if (configuredAi && this._db) {
-      const resolvedAi = await resolveAgentAIOptions({
-        aiConfig: configuredAi,
-        db: this._db,
-        tenantId:
-          getCurrentTenant()?.tenantId ||
-          (typeof this.tenantId === 'string' ? this.tenantId : undefined),
-      });
-      if (resolvedAi) {
-        (this.options as AgentOptions).ai = resolvedAi as AIClientOptions &
-          Record<string, unknown>;
+      try {
+        // Usage is wired below through this instance's own pipeline.
+        const { options: resolvedAi, tags } = await resolveAgentAIClientOptions(
+          {
+            aiConfig: configuredAi,
+            db: this._db,
+            tenantId:
+              getCurrentTenant()?.tenantId ||
+              (typeof this.tenantId === 'string' ? this.tenantId : undefined),
+          },
+        );
+        bindingTags = tags;
+        if (resolvedAi) {
+          (this.options as AgentOptions).ai = resolvedAi as AIClientOptions &
+            Record<string, unknown>;
+        }
+      } catch (error) {
+        // The tenant turned AI off (#4757). Initializing (hydration, admin
+        // listings) must still work: bind no client options, and let
+        // execute() end the run `skipped` with this reason.
+        if (!isInferenceUnavailableError(error)) throw error;
+        this.#aiUnavailable = error;
+        (this.options as AgentOptions).ai = undefined;
       }
     }
+
+    // A subclass that builds its own client per call
+    // (`getAI(this.options.ai)`) records usage through this agent's pipeline;
+    // the agent's own `this.ai` client drops the sink and records once
+    // (#3077). A client object passed as `ai` (tests) is left alone.
+    const agentAi = (this.options as AgentOptions).ai as
+      | Record<string, unknown>
+      | undefined;
+    if (
+      agentAi &&
+      typeof agentAi === 'object' &&
+      typeof agentAi.message !== 'function' &&
+      typeof agentAi.embed !== 'function'
+    ) {
+      (this.options as AgentOptions).ai = this.withAiUsage(
+        agentAi,
+        bindingTags ? { tags: bindingTags } : {},
+      ) as AIClientOptions & Record<string, unknown>;
+    }
+    this.#boundAi = (this.options as AgentOptions).ai;
 
     if ((this.options as AgentOptions).manageProcessSignals) {
       this.setupSignalHandlers();
@@ -1209,8 +1287,6 @@ export abstract class Agent extends SmrtObject {
    * Main agent logic
    * Must be implemented by extending class
    *
-   * Update this.lastRun.itemsProcessed to track work done
-   *
    * @example
    * ```typescript
    * async run(): Promise<void> {
@@ -1222,7 +1298,6 @@ export abstract class Agent extends SmrtObject {
    *     processed++;
    *   }
    *
-   *   this.lastRun.itemsProcessed = processed;
    *   this.logger.info(`Processed ${processed} items`);
    * }
    * ```
@@ -1266,6 +1341,13 @@ export abstract class Agent extends SmrtObject {
    * 2. Logs error
    * 3. Re-throws error
    *
+   * When AI is unavailable (`InferenceUnavailableError`, `AI_UNAVAILABLE`,
+   * #4757: mode `off`, nothing configured, ...) the run ends `skipped`
+   * instead: status `skipped`, {@link runRecord} carries the reason and
+   * mode, and nothing is thrown, so schedules and dispatch processing do not
+   * retry it. `run()` called directly (the background job path) still
+   * throws it; the jobs runner never retries it (`retryable: false`).
+   *
    * @example
    * ```typescript
    * const agent = new MyAgent({ name: 'my-agent' });
@@ -1279,8 +1361,10 @@ export abstract class Agent extends SmrtObject {
    * ```
    */
   async execute(): Promise<void> {
+    const startedAt = new Date();
     try {
       await this.initialize();
+      if (this.#aiUnavailable) throw this.#aiUnavailable;
       await this.validate();
 
       this.status = 'running';
@@ -1304,13 +1388,57 @@ export abstract class Agent extends SmrtObject {
       // alike — nothing learning-specific is needed in execute() itself.
       await this.run();
       this.status = 'idle';
+      this.#runRecord = {
+        status: 'completed',
+        startedAt,
+        finishedAt: new Date(),
+      };
 
       this.logger.info('Agent execution completed');
     } catch (error) {
+      if (isInferenceUnavailableError(error)) {
+        this.status = 'skipped';
+        this.#runRecord = {
+          status: 'skipped',
+          startedAt,
+          finishedAt: new Date(),
+          reason: error.reason,
+          mode: error.mode,
+        };
+        this.logger.info('Agent run skipped: AI is unavailable', {
+          reason: error.reason,
+          mode: error.mode,
+        });
+        return;
+      }
       this.status = 'error';
+      this.#runRecord = {
+        status: 'error',
+        startedAt,
+        finishedAt: new Date(),
+        error: error instanceof Error ? error.message : String(error),
+      };
       this.logger.error('Agent execution failed', { error });
       throw error;
     }
+  }
+
+  /**
+   * An agent's AI client outlives one user's request, so its tier calls and
+   * mode checks use only the tenant's stored binding and mode, never the
+   * ambient user's (#4756, #4757).
+   */
+  protected override inferenceUserScope(): null {
+    return null;
+  }
+
+  /**
+   * The outcome of the last {@link execute} on this instance: `completed`,
+   * `skipped` (AI unavailable, with `reason` and `mode`, #4757) or `error`.
+   * `null` before the first run. In memory only.
+   */
+  get runRecord(): AgentRunRecord | null {
+    return this.#runRecord;
   }
 
   /**
@@ -1355,6 +1483,9 @@ export abstract class Agent extends SmrtObject {
         const items = await this.queryInterestingObjects(className, config);
         results.push(...items);
       } catch (error) {
+        // AI unavailable (#4757) in a handler ends the whole query: every
+        // other type's handler would hit the same state.
+        if (isInferenceUnavailableError(error)) throw error;
         // Log warning and continue with other types
         this.logger.warn(`Failed to query ${className} for interests`, {
           error,

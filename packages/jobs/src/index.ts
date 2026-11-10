@@ -93,7 +93,6 @@ export {
   parseDelay,
   priorityToNumber,
 } from './job-builder.js';
-
 // Job handle for tracking
 export {
   JobHandle,
@@ -151,16 +150,25 @@ export {
   createTaskRunner,
   getActiveJobExecutionContext,
   isRunnerExecutionContext,
+  JobCancelledError,
   JobTimeoutError,
   TaskRunner,
   type TaskRunnerConfig,
   type TaskRunnerEvents,
 } from './runner.js';
+export {
+  getScheduleAdmissionPayload,
+  getScheduleAdmissionPolicy,
+  type ScheduleAdmissionPayload,
+  type ScheduleAdmissionPolicy,
+  verifyScheduleAdmission,
+} from './schedule-admission.js';
 
 // Schedule runner (for cron-based agent scheduling)
 export {
   createScheduleRunner,
   getNextCronDate,
+  SCHEDULED_JOB_QUEUE,
   type ScheduleInfo,
   ScheduleRunner,
   type ScheduleRunnerConfig,
@@ -177,7 +185,7 @@ export {
   type SmrtJobData,
   type TimeoutBehavior,
 } from './smrt-job.js';
-
+export { SmrtJobDedupeSlot } from './smrt-job-dedupe-slot.js';
 // Durable job telemetry
 export {
   type JobEventCursor,
@@ -192,7 +200,6 @@ export {
   type SmrtJobTerminalOutcomePage,
   type SmrtJobTerminalStatus,
 } from './smrt-job-event.js';
-
 // Worker liveness lease model
 export {
   type RegisterWorkerInput,

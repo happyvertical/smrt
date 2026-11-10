@@ -19,7 +19,7 @@ export interface ReferralAgreementExecutionServiceDeps {
   agreements: ReferralAgreementCollection;
   executions: AgreementExecutionCollection;
   executedAgreements: ExecutedAgreementCollection;
-  executionService: AgreementExecutionService;
+  executionService?: AgreementExecutionService;
   now?: () => Date;
 }
 
@@ -59,6 +59,12 @@ export class ReferralAgreementExecutionService {
     input: RequestReferralAgreementSignatureInput,
   ): Promise<AgreementExecutionResult> {
     this.assertTenant(input.tenantId);
+    const { executionService } = this.deps;
+    if (!executionService) {
+      throw new Error(
+        'Requesting a signature requires an AgreementExecutionService',
+      );
+    }
     const agreement = await this.requireAgreement(input.agreementId);
     this.assertAgreementTenant(agreement, input.tenantId);
     if (!agreement.id || agreement.status !== 'draft') {
@@ -74,7 +80,7 @@ export class ReferralAgreementExecutionService {
     const idempotencyKey = `${input.tenantId}:${REFERRAL_AGREEMENT_SOURCE_KIND}:${agreement.id}:v${agreement.version}`;
     let result: AgreementExecutionResult;
     try {
-      result = await this.deps.executionService.createExecution({
+      result = await executionService.createExecution({
         tenantId: input.tenantId,
         idempotencyKey,
         sourceKind: REFERRAL_AGREEMENT_SOURCE_KIND,

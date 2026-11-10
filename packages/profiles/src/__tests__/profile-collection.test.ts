@@ -7,9 +7,7 @@
  */
 
 import { randomUUID } from 'node:crypto';
-import { tmpdir } from 'node:os';
-import { join } from 'node:path';
-import { beforeEach, describe, expect, it } from 'vitest';
+import { afterEach, beforeEach, describe, expect, it } from 'vitest';
 import {
   encryptPrivkey,
   generateNostrKeypair,
@@ -19,18 +17,23 @@ import {
   ProfileMetafieldCollection,
   ProfileTypeCollection,
 } from '../index.js';
+import { createOwnedSqliteFixtures } from './owned-sqlite-fixtures.js';
 
 const TEST_MASTER_SECRET = 'test-master-secret-32-bytes-long';
+const fixtures = createOwnedSqliteFixtures();
 
 function getTestDbUrl(name: string): string {
-  return `file:${join(tmpdir(), `${name}-${randomUUID()}.db`)}`;
+  return fixtures.url(name);
 }
 
 async function setup(dbUrl: string) {
   const db = { type: 'sqlite' as const, url: dbUrl };
   const profiles = await ProfileCollection.create({ db });
+  fixtures.track(profiles.db);
   const profileTypes = await ProfileTypeCollection.create({ db });
+  fixtures.track(profileTypes.db);
   const metafields = await ProfileMetafieldCollection.create({ db });
+  fixtures.track(metafields.db);
 
   const type = await profileTypes.create({ name: 'Person' });
   await type.save();
@@ -48,6 +51,8 @@ async function setup(dbUrl: string) {
 
   return { db, profiles, profileTypes, metafields, type, mkProfile };
 }
+
+afterEach(() => fixtures.cleanup());
 
 describe('ProfileCollection query and batch helpers', () => {
   let dbUrl: string;

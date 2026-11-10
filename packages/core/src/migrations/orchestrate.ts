@@ -12,7 +12,7 @@
  */
 import type { DatabaseInterface } from '@happyvertical/sql';
 import { ObjectRegistry } from '../registry.js';
-import { detectEngine, getDDLStrategy } from '../schema/ddl/index.js';
+import { getDDLStrategy } from '../schema/ddl/index.js';
 import type { DatabaseEngine } from '../schema/ddl/types.js';
 import { planForeignKeyCreation } from '../schema/foreign-key-planner.js';
 import type { MigrationResult, SchemaChange } from '../schema/types.js';
@@ -20,6 +20,7 @@ import {
   generateSchemaDiff,
   getSQLFromChanges,
   hasActionableChanges,
+  resolveMigrationEngine,
 } from './differ.js';
 import {
   createMigrationDefinition,
@@ -85,6 +86,8 @@ export interface MigrateSmrtSchemasOptions {
    * `DiffOptions.emptyTextAsNull`.
    */
   emptyTextAsNull?: boolean;
+  /** Explicitly allow relaxing live column constraints. */
+  relaxColumns?: boolean;
 }
 
 export interface MigrateSmrtSchemasResult {
@@ -151,6 +154,8 @@ export async function getPendingSchemaStatements(
     engineHint?: DatabaseEngine;
     postgresTimestampMigration?: { legacyTimezone: 'UTC' };
     emptyTextAsNull?: boolean;
+    /** Explicitly allow relaxing live column constraints. */
+    relaxColumns?: boolean;
   } = {},
 ): Promise<PendingSchemaStatementsResult> {
   const schemas = ObjectRegistry.getAllSchemasAsDefinitions();
@@ -163,6 +168,7 @@ export async function getPendingSchemaStatements(
     engineHint: options.engineHint,
     postgresTimestampMigration: options.postgresTimestampMigration,
     emptyTextAsNull: options.emptyTextAsNull,
+    relaxColumns: options.relaxColumns,
   });
   const statements = collectStatementsFromDiff(diff, db, options.engineHint);
   const unactionableChanges = collectUnactionableChanges(diff);
@@ -218,6 +224,7 @@ export async function migrateSmrtSchemas(
     engineHint: options.engineHint,
     postgresTimestampMigration: options.postgresTimestampMigration,
     emptyTextAsNull: options.emptyTextAsNull,
+    relaxColumns: options.relaxColumns,
   });
   if (!pending.hasChanges || pending.statements.length === 0) {
     return {
@@ -232,7 +239,7 @@ export async function migrateSmrtSchemas(
 
   const tracker = new MigrationTracker({
     db: options.db,
-    engineHint: options.engineHint,
+    engineHint: resolveMigrationEngine(options.db, options.engineHint),
     lockTimeout: options.lockTimeout,
     statementTimeout: options.statementTimeout,
     useConcurrentIndexes: options.useConcurrentIndexes ?? true,
@@ -274,18 +281,6 @@ export async function migrateSmrtSchemas(
   };
 }
 
-/** Mirror of the `getDatabaseUrl` helper in class.ts — some adapters
- * (JSON, certain in-memory wrappers) leave `db.url` undefined and expose
- * the URL on `db.config?.url` instead. Detecting the engine from a raw
- * `db.url` would throw or silently fall through to the sqlite default.
- */
-function resolveDatabaseUrl(db: DatabaseInterface): string {
-  const dbWithConfig = db as DatabaseInterface & {
-    config?: { url?: string };
-  };
-  return db.url || dbWithConfig.config?.url || '';
-}
-
 /**
  * Materialize the diff into the engine-correct SQL statements.
  *
@@ -304,7 +299,7 @@ function resolveDatabaseUrl(db: DatabaseInterface): string {
  * public entry point (`migrations/index.ts` re-exports names explicitly).
  *
  * @param diff - Schema diff to materialize.
- * @param db - Database whose URL selects the DDL strategy.
+ * @param db - Database whose adapter selects the DDL strategy.
  * @param engineHint - Explicit engine when `db.url` is empty or ambiguous.
  * @returns Ordered, executable DDL statements.
  */
@@ -313,9 +308,7 @@ export function collectStatementsFromDiff(
   db: DatabaseInterface,
   engineHint?: DatabaseEngine,
 ): string[] {
-  const strategy = getDDLStrategy(
-    detectEngine(resolveDatabaseUrl(db), engineHint),
-  );
+  const strategy = getDDLStrategy(resolveMigrationEngine(db, engineHint));
   const statements: string[] = [];
   const tablePlan = planForeignKeyCreation(diff.added_tables, strategy.engine);
   // #2608: the pre-R11 uuid convergence has to precede *every* foreign-key

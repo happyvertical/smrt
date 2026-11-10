@@ -88,6 +88,7 @@ export class EmailSourceAdapter {
           parentPartId: 'message',
           mediaType: attachment.mediaType,
           bytes: attachment.bytes,
+          filename: attachment.filename,
           sourceReference: {
             owner: 'message-attachment',
             id: `${delivery.locator}:${attachment.partId}`,

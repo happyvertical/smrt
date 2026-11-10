@@ -39,6 +39,7 @@ import {
   startRetentionSweeper,
 } from './retention.js';
 import {
+  jobTenantScope,
   SMRT_JOB_PORTABLE_SELECT_COLUMNS,
   type SmrtJob,
   SmrtJobCollection,
@@ -51,7 +52,11 @@ import {
   DEFAULT_TASK_HEARTBEAT_INTERVAL_MS,
   getEffectiveLeaseTtlMs,
 } from './stale-recovery.js';
-import { terminalSnapshot, transitionTerminalJob } from './terminal-outcome.js';
+import {
+  ensureTerminalOutcomeStorage,
+  terminalSnapshot,
+  transitionTerminalJob,
+} from './terminal-outcome.js';
 import {
   createWorkerKey,
   isWorkerAlive,
@@ -101,6 +106,8 @@ export interface TaskRunnerConfig {
   concurrency?: number;
   /** Queues to process (default: ['default']) */
   queues?: string[];
+  /** Limit claims and orphan recovery to these tenants; [] selects none. */
+  tenantIds?: readonly (string | null)[];
   /** Base polling interval in milliseconds, capped at the effective lease TTL. */
   pollInterval?: number;
   /**
@@ -114,6 +121,12 @@ export interface TaskRunnerConfig {
   idlePollInterval?: number;
   /** Heartbeat interval in milliseconds */
   heartbeatInterval?: number;
+  /**
+   * How often a running job's row is checked for cancellation, in
+   * milliseconds, so `JobExecutionContext.signal` can abort. Default 1000.
+   * One read-only query per active job per interval; no writes.
+   */
+  cancelPollInterval?: number;
   /** Maximum time to wait for jobs to complete on shutdown */
   shutdownTimeout?: number;
   /**
@@ -160,6 +173,30 @@ const LIVENESS_THREAD_START_TIMEOUT_MS = 10000;
 const DEFAULT_IDLE_POLL_INTERVAL_MULTIPLIER = 20;
 /** Ids per surplus-release statement, well under driver bind-parameter caps. */
 const SURPLUS_RELEASE_CHUNK = 500;
+/** Upper bound on a handler error's `retryAfterMs` hint (#3308). */
+const MAX_RETRY_AFTER_MS = 24 * 60 * 60 * 1000;
+
+/**
+ * Retry hints a handler error may carry (#3308): `retryable: false` for an
+ * error a retry cannot fix (bad credentials, unknown model), `retryAfterMs`
+ * for a provider-given reset time. Both are read from the error itself.
+ */
+function errorRetryHints(error: unknown): {
+  retryable: boolean;
+  retryAfterMs: number | null;
+} {
+  if (!error || typeof error !== 'object') {
+    return { retryable: true, retryAfterMs: null };
+  }
+  const hints = error as { retryable?: unknown; retryAfterMs?: unknown };
+  const retryAfterMs =
+    typeof hints.retryAfterMs === 'number' &&
+    Number.isFinite(hints.retryAfterMs) &&
+    hints.retryAfterMs > 0
+      ? Math.min(hints.retryAfterMs, MAX_RETRY_AFTER_MS)
+      : null;
+  return { retryable: hints.retryable !== false, retryAfterMs };
+}
 
 /**
  * Raised when a job exceeds its timeout under `timeoutBehavior` `'fail'`/`'kill'`.
@@ -180,9 +217,23 @@ export class JobTimeoutError extends Error {
 }
 
 /**
+ * Abort reason of `JobExecutionContext.signal` when the job row was cancelled
+ * while its handler was running.
+ */
+export class JobCancelledError extends Error {
+  constructor(message: string) {
+    super(message);
+    this.name = 'JobCancelledError';
+  }
+}
+
+/**
  * Default configuration
  */
-const DEFAULT_CONFIG: Required<TaskRunnerConfig> = {
+type ResolvedTaskRunnerConfig = Required<Omit<TaskRunnerConfig, 'tenantIds'>> &
+  Pick<TaskRunnerConfig, 'tenantIds'>;
+
+const DEFAULT_CONFIG: ResolvedTaskRunnerConfig = {
   id: '',
   authorizeMcpTask: async () => false,
   concurrency: 5,
@@ -190,12 +241,23 @@ const DEFAULT_CONFIG: Required<TaskRunnerConfig> = {
   pollInterval: 1000,
   idlePollInterval: 0,
   heartbeatInterval: DEFAULT_TASK_HEARTBEAT_INTERVAL_MS,
+  cancelPollInterval: 1000,
   shutdownTimeout: 30000,
   staleJobThresholdMs: 90000,
   leaseTtlMs: DEFAULT_LEASE_TTL_MS,
   leaseTickMs: DEFAULT_LEASE_TICK_MS,
   retention: {},
 };
+
+/**
+ * A rejection from one of a job's own state writes, as opposed to a listener
+ * or telemetry call that threw after the write committed.
+ */
+class UnpersistedJobWriteError extends Error {
+  constructor(readonly writeError: unknown) {
+    super('Job state write could not be persisted');
+  }
+}
 
 /**
  * TaskRunner processes SMRT jobs by invoking methods on SmrtObjects
@@ -208,6 +270,10 @@ const DEFAULT_CONFIG: Required<TaskRunnerConfig> = {
  * - Embedded mode (in-process) or standalone (CLI)
  */
 export class TaskRunner extends EventEmitter {
+  /** Tenant selection is applied before claims and recovery ownership writes. */
+  static readonly capabilities = Object.freeze({
+    tenantSelection: true,
+  } as const);
   readonly id: string;
   /**
    * Per-incarnation-unique worker key. Stored as the `worker_id` on claimed
@@ -217,7 +283,7 @@ export class TaskRunner extends EventEmitter {
    * events/logs.
    */
   private readonly workerKey: string;
-  private readonly config: Required<TaskRunnerConfig>;
+  private readonly config: ResolvedTaskRunnerConfig;
   private readonly maxIdlePollIntervalMs: number;
   private readonly effectiveLeaseTtlMs: number;
   private collection: SmrtJobCollection | null = null;
@@ -227,6 +293,17 @@ export class TaskRunner extends EventEmitter {
   private lastRecoverySweepAt = 0;
   private running = false;
   private activeJobs = new Map<string, SmrtJob>();
+  /**
+   * Rows this runner still owns as `running` because their terminal or retry
+   * write could not be persisted, with the `last_error` to record. The owner
+   * is alive, so liveness-based recovery would never touch them; this runner's
+   * own sweep settles them (#4735).
+   */
+  private unsettledJobs = new Map<string, string>();
+  /** Orphans whose recovery failure was already logged; one line per job. */
+  private recoveryFailuresLogged = new Set<string>();
+  /** Per-job cooperative cancellation controllers, alive while the job runs. */
+  private jobAborts = new Map<string, AbortController>();
   /** Over-claimed job ids whose release back to `pending` has not landed. */
   private unreleasedSurplus = new Set<string>();
   private pollTimer: NodeJS.Timeout | null = null;
@@ -249,6 +326,12 @@ export class TaskRunner extends EventEmitter {
       ...config,
       id: config.id || `runner_${createId().slice(0, 8)}`,
     };
+    jobTenantScope(this.config.tenantIds);
+    if (this.config.tenantIds !== undefined) {
+      this.config.tenantIds = [...this.config.tenantIds];
+      // The default retention sweep is system-wide maintenance, not tenant work.
+      if (config.retention === undefined) this.config.retention = false;
+    }
     this.id = this.config.id;
     this.workerKey = createWorkerKey(this.id);
     for (const [name, value] of [
@@ -302,6 +385,8 @@ export class TaskRunner extends EventEmitter {
     // actionable error rather than a confusing recovery failure later.
     await this.workerCollection.assertReady();
 
+    await this.prepareTerminalOutcomeStorage();
+
     // On SQLite, the runner's writes will race the off-loop ticker's writes to
     // the same file; enable WAL + a busy timeout up front so neither loses a
     // lock race under load (#1474 flake). Best-effort, file-level.
@@ -318,6 +403,7 @@ export class TaskRunner extends EventEmitter {
       hostname:
         typeof process !== 'undefined' ? (process.env.HOSTNAME ?? null) : null,
       leaseTtlMs: this.effectiveLeaseTtlMs,
+      queues: this.config.queues,
     });
     registerLiveWorker(this.workerKey);
 
@@ -391,6 +477,9 @@ export class TaskRunner extends EventEmitter {
       await this.shutdownPromise;
     } finally {
       this.shutdownPromise = null;
+      // The drain also waited for an in-flight poll, whose own surplus
+      // release may have failed after the flush above: flush again (#3148).
+      await this.retryUnreleasedSurplus();
       // Stop off-loop lease renewal (thread) and main-loop renewal (timer) only
       // AFTER the drain, so a still-running handler kept its lease fresh.
       await this.stopLivenessThread();
@@ -488,8 +577,12 @@ export class TaskRunner extends EventEmitter {
     const generation = this.pollGeneration;
     if (!this.collection || !this.db) return true;
 
+    // stop() may begin while any await below is pending; it waits for this
+    // poll, so bail out instead of claiming work after shutdown began (#3148).
     await this.recoverStaleJobs();
+    if (generation !== this.pollGeneration) return false;
     await this.retryUnreleasedSurplus();
+    if (generation !== this.pollGeneration) return false;
 
     // Calculate how many jobs we can take
     const available = this.config.concurrency - this.activeJobs.size;
@@ -500,6 +593,7 @@ export class TaskRunner extends EventEmitter {
     const claimed = await this.collection.claimReady({
       workerId: this.workerKey,
       queues: this.config.queues,
+      tenantIds: this.config.tenantIds,
       limit: available,
     });
 
@@ -545,8 +639,9 @@ export class TaskRunner extends EventEmitter {
    * touched, in chunked statements.
    *
    * A failed release keeps the ids; it is retried at the start of every poll
-   * and once more by `stop()`. If the process dies first, stale recovery fails
-   * those rows as orphaned (it does not requeue them).
+   * and by `stop()` both before and after its drain. If the process dies
+   * first, stale recovery fails those rows as orphaned (it does not requeue
+   * them).
    */
   private async releaseSurplusClaims(
     surplus: SmrtJob[],
@@ -638,8 +733,12 @@ export class TaskRunner extends EventEmitter {
     // until it fired and was swallowed by the settled race — timer-heap
     // pressure plus a delayed clean process exit.
     let timeoutHandle: NodeJS.Timeout | null = null;
+    let cancelPollHandle: NodeJS.Timeout | null = null;
+    const abortController = new AbortController();
+    this.jobAborts.set(jobId, abortController);
 
     try {
+      cancelPollHandle = this.startCancelPoll(job, abortController);
       const result = await this.runWithTimeout(job, (handle) => {
         timeoutHandle = handle;
       });
@@ -665,9 +764,15 @@ export class TaskRunner extends EventEmitter {
       } catch (persistenceError) {
         // The handler already returned successfully. A terminal persistence
         // failure is an operator fault, not a business execution failure: the
-        // transaction left the owned row running and must not relabel it or
-        // schedule a retry through handleJobError().
-        this.emit('runner:error', persistenceError as Error);
+        // transaction left the owned row running, and it must not be retried
+        // through handleJobError(). The recovery sweep settles it as failed,
+        // with its event, saying what happened.
+        this.reportUnpersistedJobWrite(
+          job,
+          'completion',
+          persistenceError,
+          `Job handler returned but its completion could not be persisted (${redactErrorForPersistence(persistenceError)}); settled as failed by recovery, not retried.`,
+        );
         return;
       }
 
@@ -687,11 +792,91 @@ export class TaskRunner extends EventEmitter {
       try {
         await this.handleJobError(job, error as Error);
       } catch (handlerError) {
-        this.emit('runner:error', handlerError as Error);
+        if (handlerError instanceof UnpersistedJobWriteError) {
+          this.reportUnpersistedJobWrite(
+            job,
+            'failure',
+            handlerError.writeError,
+            `${redactErrorForPersistence(error)} (the failure could not be persisted when it happened: ${redactErrorForPersistence(handlerError.writeError)}; settled as failed by recovery, not retried.)`,
+          );
+        } else {
+          // A listener or telemetry call threw after the write committed:
+          // the row is not stranded, so this is only a runner error.
+          this.emit('runner:error', handlerError as Error);
+        }
       }
     } finally {
       if (timeoutHandle) clearTimeout(timeoutHandle);
+      if (cancelPollHandle) clearInterval(cancelPollHandle);
+      this.jobAborts.delete(jobId);
       this.activeJobs.delete(jobId);
+    }
+  }
+
+  /**
+   * Every terminal write needs the terminal-outcome storage, and preparing it
+   * builds the registry's merged schemas. Prepare it before claiming anything
+   * (#4735): a registry inconsistency then stops the runner at start, naming
+   * itself, instead of leaving every claimed job `running`; and models that
+   * register after start can no longer block a terminal write, because
+   * readiness is cached for this database.
+   */
+  private async prepareTerminalOutcomeStorage(): Promise<void> {
+    try {
+      await ensureTerminalOutcomeStorage(this.db as DatabaseInterface);
+    } catch (error) {
+      this.logger.error(
+        `TaskRunner cannot start: terminal job outcomes cannot be persisted: ${redactErrorForPersistence(error)}`,
+      );
+      throw error;
+    }
+  }
+
+  /**
+   * A job's terminal (or retry) write could not be persisted. The state and
+   * its event commit together or not at all, so the row is still `running`.
+   *
+   * It must not be silent (#4735): `runner:error` is only heard by a caller
+   * that listens, so say it at error level with the job id as well. And it
+   * must not stay `running` for good: the owning worker is alive, so
+   * liveness-based recovery would skip the row until this process stops.
+   * `settleAs` records the `last_error` this runner's own recovery sweep
+   * settles it with, atomically with its event, once the fault clears.
+   */
+  private reportUnpersistedJobWrite(
+    job: SmrtJob,
+    write: 'completion' | 'failure' | 'stale recovery',
+    cause: unknown,
+    settleAs?: string,
+  ): void {
+    const error = cause instanceof Error ? cause : new Error(String(cause));
+    const jobId = job.id;
+    if (settleAs && jobId) this.unsettledJobs.set(jobId, settleAs);
+    const firstReport =
+      write !== 'stale recovery' ||
+      !jobId ||
+      !this.recoveryFailuresLogged.has(jobId);
+    if (firstReport) {
+      if (write === 'stale recovery' && jobId) {
+        this.recoveryFailuresLogged.add(jobId);
+      }
+      const next =
+        write === 'stale recovery'
+          ? 'it stays running and each recovery sweep retries it'
+          : "it stays running until this runner's next recovery sweep settles it as failed";
+      this.logger.error(
+        `Job ${jobId} (${job.getDescription()}) ${write} could not be persisted; ${next}: ${redactErrorForPersistence(error)}`,
+      );
+    }
+    this.emit('runner:error', error);
+  }
+
+  /** Tag a rejection from a job's own state write (see the caller's catch). */
+  private async persistJobWrite<T>(write: () => Promise<T>): Promise<T> {
+    try {
+      return await write();
+    } catch (cause) {
+      throw new UnpersistedJobWriteError(cause);
     }
   }
 
@@ -740,12 +925,56 @@ export class TaskRunner extends EventEmitter {
     // 'fail' (default) and 'kill' (treated as 'fail'; see doc comment).
     const timeoutPromise = new Promise<never>((_, reject) => {
       const handle = setTimeout(() => {
-        reject(new JobTimeoutError(`Job timeout after ${job.timeout}ms`));
+        const timeoutError = new JobTimeoutError(
+          `Job timeout after ${job.timeout}ms`,
+        );
+        // Let the orphaned handler stop; the row is failed by the rejection.
+        const controller = job.id ? this.jobAborts.get(job.id) : undefined;
+        controller?.abort(timeoutError);
+        reject(timeoutError);
       }, job.timeout);
       captureHandle(handle);
     });
 
     return Promise.race([this.executeJob(job), timeoutPromise]);
+  }
+
+  /**
+   * Poll the owned row while its handler runs and abort the job's signal when
+   * it is observed as cancelled. Read-only; failures are ignored (the next tick
+   * retries). Returns an unref'd interval the caller must clear.
+   */
+  private startCancelPoll(
+    job: SmrtJob,
+    controller: AbortController,
+  ): NodeJS.Timeout | null {
+    const jobId = job.id;
+    const db = this.db;
+    if (!jobId || !db) return null;
+    let inFlight = false;
+    const handle = setInterval(() => {
+      if (inFlight || controller.signal.aborted) return;
+      inFlight = true;
+      void Promise.resolve()
+        .then(() =>
+          db.query(`SELECT status FROM _smrt_jobs WHERE id = ?`, jobId),
+        )
+        .then((res) => {
+          const status = (res?.rows?.[0] as { status?: string } | undefined)
+            ?.status;
+          if (status === 'cancelled' && !controller.signal.aborted) {
+            controller.abort(
+              new JobCancelledError(`Job cancelled: ${job.getDescription()}`),
+            );
+          }
+        })
+        .catch(() => {})
+        .finally(() => {
+          inFlight = false;
+        });
+    }, this.config.cancelPollInterval);
+    handle.unref();
+    return handle;
   }
 
   /**
@@ -828,10 +1057,30 @@ export class TaskRunner extends EventEmitter {
       // agent constructor (where it would surface much later as a confusing
       // downstream failure — e.g. `[object Object]` masquerading as a
       // bucket name).
+      //
+      // Every resolver receives this job's own agent identity and the value
+      // this instance's persisted config holds for its key (#2806), so a
+      // per-agent credential resolver can defer to the agent's own value. The
+      // identity comes only from the job row — never from scanning the
+      // tenant's other agents.
       const classResolvers = getClassConfigResolvers(ObjectClass);
+      const scheduleId =
+        typeof rawArgs._scheduleId === 'string'
+          ? rawArgs._scheduleId
+          : undefined;
       const agentConfig = await resolveLazyConfig(persistedAgentConfig, {
         classResolvers,
         onError: 'throw',
+        context: {
+          agentId:
+            typeof job.objectId === 'string' && job.objectId.length > 0
+              ? job.objectId
+              : undefined,
+          agentClass: registeredClass.qualifiedName ?? job.objectType,
+          tenantId: job.tenantId ?? null,
+          scheduleId,
+          jobId: job.id ?? undefined,
+        },
       });
 
       // Persistence identity and the database connection belong to the
@@ -977,19 +1226,31 @@ export class TaskRunner extends EventEmitter {
     // (no `.message`) would otherwise persist an empty `last_error`.
     const safeMessage = redactErrorForPersistence(error);
 
-    if (!isTimeout && decision.shouldRetry && job.attempts < job.maxAttempts) {
+    // The handler's own hints win over the strategy: `retryable: false` is
+    // terminal, and `retryAfterMs` is a floor on the strategy's backoff.
+    const hints = errorRetryHints(error);
+    const delay = Math.max(decision.delay, hints.retryAfterMs ?? 0);
+
+    if (
+      !isTimeout &&
+      hints.retryable &&
+      decision.shouldRetry &&
+      job.attempts < job.maxAttempts
+    ) {
       // Schedule retry
-      const nextRunAt = new Date(Date.now() + decision.delay);
+      const nextRunAt = new Date(Date.now() + delay);
 
       // Conditional: don't resurrect a row that recovery already failed.
-      const applied = await this.writeOwnedJob(jobId, {
-        status: 'pending',
-        last_error: safeMessage,
-        run_at: nextRunAt.toISOString(),
-        worker_id: null,
-        worker_heartbeat: null,
-        updated_at: new Date().toISOString(),
-      });
+      const applied = await this.persistJobWrite(() =>
+        this.writeOwnedJob(jobId, {
+          status: 'pending',
+          last_error: safeMessage,
+          run_at: nextRunAt.toISOString(),
+          worker_id: null,
+          worker_heartbeat: null,
+          updated_at: new Date().toISOString(),
+        }),
+      );
       if (!applied) return;
 
       job.status = 'pending';
@@ -1003,23 +1264,25 @@ export class TaskRunner extends EventEmitter {
         level: 'warn',
         stage: 'retrying',
         message: `Retrying job after failure: ${safeMessage}`,
-        data: { delay: decision.delay, attempts: job.attempts },
+        data: { delay, attempts: job.attempts },
       });
-      this.emit('job:retrying', job, error, decision.delay);
+      this.emit('job:retrying', job, error, delay);
     } else {
       // Job failed permanently
       const completedAt = new Date();
       const snapshot = terminalSnapshot(job);
       const event = snapshot
-        ? await transitionTerminalJob(this.db as DatabaseInterface, {
-            job: snapshot,
-            status: 'failed',
-            completedAt,
-            expectedStatuses: ['running'],
-            expectedWorkerId: this.workerKey,
-            lastError: safeMessage,
-            failureKind: isTimeout ? 'timeout' : 'execution',
-          })
+        ? await this.persistJobWrite(() =>
+            transitionTerminalJob(this.db as DatabaseInterface, {
+              job: snapshot,
+              status: 'failed',
+              completedAt,
+              expectedStatuses: ['running'],
+              expectedWorkerId: this.workerKey,
+              lastError: safeMessage,
+              failureKind: isTimeout ? 'timeout' : 'execution',
+            }),
+          )
         : null;
       if (!event) return;
 
@@ -1083,6 +1346,9 @@ export class TaskRunner extends EventEmitter {
     const context: JobExecutionContext = {
       job: jobContext,
       logger: contextLogger,
+      signal:
+        (job.id ? this.jobAborts.get(job.id)?.signal : undefined) ??
+        new AbortController().signal,
       event: async (input: JobEventInput) => {
         await this.appendJobEvent(job, input);
       },
@@ -1261,22 +1527,45 @@ export class TaskRunner extends EventEmitter {
     const freshLeaseKeys = await this.workerCollection.freshLeaseWorkerKeys();
     // Worker-internal cross-tenant recovery scan; SmrtJob is @TenantScoped
     // (S5 #1402) so this raw read needs an explicit opt-in.
+    const scope = jobTenantScope(this.config.tenantIds);
+    const queuePredicate = this.config.queues.length
+      ? ` AND queue IN (${this.config.queues.map(() => '?').join(', ')})`
+      : '';
     const running = await this.collection.query(
       `SELECT ${SMRT_JOB_PORTABLE_SELECT_COLUMNS}
          FROM _smrt_jobs
-        WHERE status = 'running'`,
-      [],
+        WHERE status = 'running'${scope.sql}${queuePredicate}`,
+      [...scope.params, ...this.config.queues],
       { allowRawOnTenantScoped: true },
     );
+    // Forget rows that are no longer running: settled by a peer, cancelled,
+    // or committed after all.
+    const runningIds = new Set(running.map((job) => job.id));
+    for (const jobId of this.unsettledJobs.keys()) {
+      if (!runningIds.has(jobId)) this.unsettledJobs.delete(jobId);
+    }
+    for (const jobId of this.recoveryFailuresLogged) {
+      if (!runningIds.has(jobId)) this.recoveryFailuresLogged.delete(jobId);
+    }
     if (running.length === 0) return;
 
     // A job is orphaned iff its owning worker is not alive: not live in this
     // process AND no fresh database lease. The live set takes precedence over a
     // stale lease (a worker whose lease lapsed while its loop was blocked is
     // still alive here); a runner also never recovers its own active jobs.
+    // The exception is a row this runner itself could not settle (#4735): it
+    // finished here, nothing will run it again, and no other worker may touch
+    // it while this one is alive.
     const orphans = running.filter((job) => {
       const jobId = job.id;
       if (jobId && this.activeJobs.has(jobId)) return false;
+      if (
+        jobId &&
+        this.unsettledJobs.has(jobId) &&
+        job.workerId === this.workerKey
+      ) {
+        return true;
+      }
       return !isWorkerAlive(job.workerId, freshLeaseKeys);
     });
     if (orphans.length === 0) return;
@@ -1289,23 +1578,37 @@ export class TaskRunner extends EventEmitter {
     for (const job of orphans) {
       const snapshot = terminalSnapshot(job);
       if (!snapshot) continue;
-      const event = await transitionTerminalJob(this.db, {
-        job: snapshot,
-        status: 'failed',
-        completedAt: recoveredAt,
-        expectedStatuses: ['running'],
-        expectedWorkerId: job.workerId ?? null,
-        clearWorker: true,
-        lastError: errorMessage,
-        failureKind: 'stale-recovery',
-      });
+      const lastError =
+        (job.id ? this.unsettledJobs.get(job.id) : undefined) ?? errorMessage;
+      let event: SmrtJobEvent | null;
+      try {
+        event = await transitionTerminalJob(this.db, {
+          job: snapshot,
+          status: 'failed',
+          completedAt: recoveredAt,
+          expectedStatuses: ['running'],
+          expectedWorkerId: job.workerId ?? null,
+          clearWorker: true,
+          lastError,
+          failureKind: 'stale-recovery',
+        });
+      } catch (persistenceError) {
+        // One orphan that cannot be settled must not stop the sweep for the
+        // others, or stop this poll from claiming work (#4735).
+        this.reportUnpersistedJobWrite(job, 'stale recovery', persistenceError);
+        continue;
+      }
+      if (job.id) {
+        this.unsettledJobs.delete(job.id);
+        this.recoveryFailuresLogged.delete(job.id);
+      }
       if (!event) continue;
       job.status = 'failed';
       job.completedAt = recoveredAt;
-      job.lastError = errorMessage;
+      job.lastError = lastError;
       job.workerId = null;
       job.workerHeartbeat = null;
-      const error = new Error(errorMessage);
+      const error = new Error(lastError);
       this.emitPersistedJobEvent(job, event);
       this.emit('job:failed', job, error);
     }
@@ -1326,6 +1629,7 @@ export class TaskRunner extends EventEmitter {
         await this.workerCollection?.renewLease(
           this.workerKey,
           this.effectiveLeaseTtlMs,
+          this.config.queues,
         );
       } catch {
         // Ignore transient lease-renewal errors; the next tick retries.
@@ -1361,6 +1665,7 @@ export class TaskRunner extends EventEmitter {
           workerKey: this.workerKey,
           leaseTtlMs: this.effectiveLeaseTtlMs,
           leaseTickMs: this.config.leaseTickMs,
+          queues: this.config.queues,
         },
       });
     } catch {

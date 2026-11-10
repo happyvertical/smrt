@@ -1,0 +1,9 @@
+{
+  "name": "@fixture/consumer-hand-rolled-credentials",
+  "version": "1.0.0",
+  "private": true,
+  "dependencies": {
+    "@happyvertical/smrt-core": "^0.60.0",
+    "keytar": "^7.9.0"
+  }
+}

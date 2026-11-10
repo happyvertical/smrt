@@ -17,6 +17,7 @@ export const M = defineMessages({
   'ingestion.upload': 'Upload',
   'ingestion.files': 'Choose intake files',
   'ingestion.filesHelp': 'Select documents, images, email, or audio.',
+  'ingestion.filesDrop': 'Drop files here, or browse.',
   'ingestion.more': 'Load more',
   'ingestion.open': 'Review',
   'ingestion.processing': 'Processing',
@@ -26,6 +27,17 @@ export const M = defineMessages({
   'ingestion.deferred': 'Deferred',
   'ingestion.partially_completed': 'Partially completed',
   'ingestion.completed': 'Completed',
+  'ingestion.resolved': 'Handled, no action',
+  'ingestion.startAs': 'Start action as…',
+  'ingestion.startHandler': 'Handler',
+  'ingestion.startArgs': 'Initial arguments (JSON)',
+  'ingestion.start': 'Start action',
+  'ingestion.startHelp':
+    'The handler previews these arguments; approval is a separate step.',
+  'ingestion.resolveNoAction': 'Handled, no action',
+  'ingestion.resolveReason': 'Reason for no action',
+  'ingestion.resolvedBy': 'Closed without action by {reviewer}',
+  'ingestion.reviewerSelected': 'Started by a reviewer',
   'ingestion.evidence': 'Original evidence',
   'ingestion.original': 'Open original',
   'ingestion.noOriginal': 'Original unavailable',
@@ -35,6 +47,14 @@ export const M = defineMessages({
   'ingestion.proposals': 'Proposed actions',
   'ingestion.preview': 'Prepare review',
   'ingestion.args': 'Exact arguments (JSON)',
+  'ingestion.suggestionArgs': 'Suggested arguments (JSON)',
+  'ingestion.previewRejected':
+    'These arguments did not pass the handler validation. Correct them and prepare review again.',
+  'ingestion.startRejected':
+    'These arguments did not pass the handler validation. Correct them and start the action again.',
+  'ingestion.refusedFields': 'Fields to check',
+  'ingestion.completeSuggestion':
+    'This suggestion needs review. Complete or confirm its arguments, then prepare review.',
   'ingestion.effects': 'Proposed effects',
   'ingestion.approve': 'Approve',
   'ingestion.reject': 'Reject',
@@ -44,6 +64,10 @@ export const M = defineMessages({
   'ingestion.invalid': 'Enter a valid JSON object or page groups.',
   'ingestion.alternatives': 'Alternatives',
   'ingestion.missing': 'Missing information',
+  'ingestion.hostChecked': 'Checked by the shop: {summary}',
+  'ingestion.hostHeld': 'held for review',
+  'ingestion.hostFilled': 'filled in: {fields}',
+  'ingestion.hostReasons': 'flagged: {reasons}',
   'ingestion.candidates': 'Authorized destinations',
   'ingestion.search': 'Search destinations',
   'ingestion.query': 'Destination search',
@@ -51,6 +75,29 @@ export const M = defineMessages({
   'ingestion.choose': 'Choose destination',
   'ingestion.split': 'Logical page groups (JSON)',
   'ingestion.saveSplit': 'Save split and reprocess',
+  'ingestion.instructions': 'Instructions for the assistant',
+  'ingestion.reinterpret': 'Re-read with these instructions',
+  'ingestion.tryAgain': 'Try again',
+  'ingestion.reinterpreting': 'Reinterpreting…',
+  'ingestion.appliedInstruction':
+    'Suggestions were produced under this instruction',
+  'ingestion.pendingInstruction': 'Latest instruction, not yet applied',
+  'ingestion.refreshRetrying': "Couldn't refresh; retrying.",
+  'ingestion.instructionNotRecorded':
+    'This item changed while you were writing; your instruction was not recorded.',
+  'ingestion.instructionLength': '{count} / {max} characters',
+  'ingestion.instructionInvalid':
+    'Enter an instruction of 1 to {max} characters. It was not recorded.',
+  'ingestion.droppedInstruction':
+    "A reprocess replaced this item's extraction, so this instruction no longer applies. Re-record it to use it",
+  'ingestion.reinterpretNotStarted':
+    'The reinterpretation did not start. Re-read again to retry.',
+  'ingestion.instructionBusy':
+    'This item changed or is still being re-read. It has been refreshed; try again when it finishes.',
+  'ingestion.reinterpretFailed':
+    'The reinterpretation did not complete. Adjust the instruction or re-read again.',
+  'ingestion.instructionStale':
+    'Superseded: the current suggestions do not reflect the latest instruction.',
   'ingestion.result': 'Result',
   'ingestion.stale': 'Stale',
   'ingestion.revoked': 'Access revoked',
@@ -70,4 +117,77 @@ export const M = defineMessages({
   'ingestion.state': 'State',
   'ingestion.reason': 'Reason',
   'ingestion.feedbackSent': 'Feedback sent.',
+  'ingestion.previousPage': 'Previous page',
+  'ingestion.nextPage': 'Next page',
+  'ingestion.pageOf': 'Page {page} of {count}',
+  'ingestion.previousOriginal': 'Previous original',
+  'ingestion.nextOriginal': 'Next original',
+  'ingestion.originalOf': 'Original {index} of {count}',
+  'ingestion.workspace': 'Intake triage',
+  'ingestion.selectedItem': 'Selected item',
+  'ingestion.previousItem': 'Previous item',
+  'ingestion.nextItem': 'Next item',
+  'ingestion.itemOf': 'Item {index} of {count}',
+  'ingestion.selectItem': 'Choose an item from the list to review it here.',
+  'ingestion.queueDone': 'Nothing else in this list needs review.',
+  'ingestion.unsavedLeave':
+    'This item has input you have not sent. Leave it and discard that input?',
+  'ingestion.discardLeave': 'Discard and open the other item',
+  'ingestion.stay': 'Stay on this item',
+  'ingestion.finishedUnsent':
+    'Finished. You have unsent input on this item; move on with Next item when ready.',
+  'ingestion.advanceRetry':
+    "Finished, but the next open item wasn't reached yet. Try Next item again.",
+  'ingestion.advanceFailed':
+    "Finished, but the list couldn't load more items. Refresh the list to continue.",
+  'ingestion.keyboardHelp':
+    'Press J or K, or Alt+Down or Alt+Up, outside a text field to move between items.',
+  'ingestion.statusReason': '{status}: {reason}',
+  'ingestion.backgroundUpdate': '{label}: {status}',
+  'ingestion.triage.pending': 'Interpreting…',
+  'ingestion.triage.ready': 'Ready to review',
+  'ingestion.triage.needs_review': 'Needs review',
+  'ingestion.triage.approval': 'Awaiting approval',
+  'ingestion.triage.apply': 'Approved, not yet applied',
+  'ingestion.triage.failed': 'Failed',
+  'ingestion.triage.missing': 'missing {fields}',
+  'ingestion.fields': 'Arguments',
+  'ingestion.advanced': 'Advanced: edit as JSON',
+  'ingestion.fieldsUnavailable':
+    'Fix the JSON under Advanced to edit these fields.',
+  'ingestion.unset': 'Not set',
+  'ingestion.searching': 'Searching…',
+  'ingestion.noMatches': 'No matches',
+  'ingestion.assigneeName': 'Assignee',
+  'ingestion.anyAssignee': 'Anyone',
+  'ingestion.reviewState.proposed': 'Proposed',
+  'ingestion.reviewState.waiting_review': 'Waiting for review',
+  'ingestion.reviewState.authorized': 'Approved, not yet applied',
+  'ingestion.reviewState.deferred': 'Deferred',
+  'ingestion.reviewState.rejected': 'Rejected',
+  'ingestion.reviewState.claimed': 'Starting',
+  'ingestion.reviewState.executing': 'Applying',
+  'ingestion.reviewState.outcome_unknown': 'Outcome unknown',
+  'ingestion.reviewState.succeeded': 'Applied',
+  'ingestion.reviewState.failed': 'Failed',
+  'ingestion.reviewState.stale': 'Out of date',
+  'ingestion.reviewState.expired': 'Expired',
+  'ingestion.reviewState.unavailable': 'Unavailable',
+  'ingestion.outcome.proposals': 'Suggestions ready',
+  'ingestion.outcome.needs_review': 'Needs review',
+  'ingestion.outcome.unknown': 'Not understood',
+  'ingestion.outcome.ambiguous': 'Ambiguous',
+  'ingestion.outcome.no_action': 'No action suggested',
+  'ingestion.outcome.provider_error': 'Interpretation failed',
 });
+/**
+ * The message key for a server value (a review state, a generation outcome),
+ * or undefined when none exists; callers then draw the value itself.
+ */
+export function messageKey(
+  prefix: 'ingestion.reviewState.' | 'ingestion.outcome.',
+  value: string,
+): keyof typeof M | undefined {
+  const key = `${prefix}${value}`;
+  return Object.hasOwn(M, key) ? (key as keyof typeof M) : undefined;
+}

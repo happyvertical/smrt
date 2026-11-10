@@ -4,17 +4,17 @@
  * instead of treating the field as free text.
  *
  * Reads the manifest the smrt-vitest plugin generates from source before the
- * run (`.smrt/manifest.json`), i.e. exactly what the scanner emits.
+ * run (`getTestManifestPath()`), i.e. exactly what the scanner emits.
  */
 
 import { readFileSync } from 'node:fs';
-import { resolve } from 'node:path';
+import { getTestManifestPath } from '@happyvertical/smrt-vitest';
 import { describe, expect, it } from 'vitest';
 
 type ManifestField = { type: string; enum?: Array<string | number> };
-const manifest = JSON.parse(
-  readFileSync(resolve(process.cwd(), '.smrt/manifest.json'), 'utf8'),
-) as { objects: Record<string, { fields: Record<string, ManifestField> }> };
+const manifest = JSON.parse(readFileSync(getTestManifestPath(), 'utf8')) as {
+  objects: Record<string, { fields: Record<string, ManifestField> }>;
+};
 
 const fieldsOf = (className: string) =>
   manifest.objects[`@happyvertical/smrt-commerce:${className}`].fields;

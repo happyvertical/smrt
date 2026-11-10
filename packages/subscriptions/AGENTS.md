@@ -64,6 +64,73 @@ that reverted to DECIMAL passes every SQLite suite.
   are BIGINT, and hydration rejects values outside JavaScript's safe-integer
   range. Existing PostgreSQL `int4` columns require the explicit widening in #2424.
 
+## Plan versions (#4032)
+
+- `SubscriptionPlan.save()` publishes the next immutable
+  `SubscriptionPlanVersion` when its terms (`PLAN_TERM_FIELDS`) change; the
+  logic lives in `src/plan-versioning.ts`. Versions are append-only,
+  contiguous, and monotonic in `effectiveFrom`.
+- `TenantSubscription.validateBeforeSave()` maintains `planVersionId` via
+  `pinSubscriptionPlanVersion()`: pin at period start, re-pin when
+  `currentPeriodStart` moves, and refuse in-period changes that are not an
+  `isEntitlementUpgrade()` unless `replacePlanVersion({ policy: 'authorized',
+  reason })`. Never relax this to "latest version wins": a paid period must
+  not lose entitlements.
+- The resolver reads the pinned version; a missing or inactive pinned version
+  fails closed. Only unpinned rows on plans without versions fall back to the
+  live plan. `migrateSubscriptionPlanVersions(db)` backfills both.
+- Renewal means the new `currentPeriodStart` is at or after the stored
+  `currentPeriodEnd`; creation and renewal pin the boundary's version, and a
+  caller-named other version needs an authorized replacement.
+- `canceled` subscriptions entitle until `currentPeriodEnd` only with
+  `retainsPaidPeriod`, derived on save from an entitled pre-cancel row.
+- **Recipe `subscriptions.plans`** (`src/recipes.ts`, help in `src/plans.recipe.md`): lists plans, subscriptions, plan versions (read-only, written by `plan-versioning.ts`) and charges (read-only, written by the usage service) for the planner and other catalog hosts. Fields it shows carry `@field({ description })` in plain words, money fields saying "in cents"; keep them when editing the models. Reseller models and pricing rules stay out of it.
+
+## Hosted AI spend caps (#4760)
+
+`src/services/hosted-ai-spend.ts`. Plans cap platform-paid (`source:
+hosted`) inference with ordinary `PlanThreshold`s on two reserved keys, so
+window, amount and enforcement come from the plan (pinned version included):
+`AI_HOSTED_SPEND_METRIC` (`ai.hosted.spend_micros`, the tenant) and
+`AI_HOSTED_USER_SPEND_METRIC` (`ai.hosted.user_spend_micros`, each user).
+
+- `limit` is **integer micro-dollars** (1 USD = 1,000,000; the money rule at
+  per-call precision). `block` blocks at or over the cap, `warn` warns,
+  `observe` never affects a call; `warningRatio` (default 0.8) warns early;
+  a 0 cap blocks every hosted call. A malformed hosted cap (fractional or
+  negative limit, unknown window/enforcement) throws
+  `HostedAiSpendPolicyError` (the gate fails closed); it never reads as "no
+  cap". `resolvePlanThresholds()` returns thresholds unfiltered for this
+  reason (the models' `getThresholds()` drop invalid entries) and throws on
+  non-array JSON.
+- Spend: `createHostedAiSpendReader(db)` sums `_smrt_ai_usage.estimated_cost`
+  (USD, rounded to micro-dollars) by `tenant_id` and `created_at` in the
+  cap's window for rows whose `tags` hold `"source":"hosted"` (and
+  `"userId":"<id>"` for the per-user cap), as exact, case-sensitive JSON
+  fragments (`hostedAiTagFragment()`; `strpos` on the PostgreSQL dialect,
+  `instr` elsewhere, never `LIKE`, which folds ASCII case on SQLite and
+  would merge `Alice` and `alice`); errors only over-count.
+  `operation: 'blocked'` rows and external-agent measurements never count;
+  uncosted rows add nothing (give hosted models a cost rate). The `userId`
+  tag exists only while the hosted gate's ambient-user resolver is
+  registered.
+- `resetsAt`: the calendar window's end; for a blocked `rolling` cap (30
+  days), `HostedAiSpendReader.liftsAt()`: one window-function query (newest
+  first running `SUM(estimated_cost)`, rounded as `summarize()` rounds)
+  returns the row whose expiry first brings the total below the cap, plus
+  30 days (null for a 0 cap). A blocked decision names the blocking cap that
+  lifts last.
+- `HostedAiSpendEvaluator` (`create({ db })`): plan thresholds via
+  `SubscriptionResolver.resolvePlanThresholds()` (entitled terms, no usage
+  meters; memoized per tenant for `termsTtlMs`, 30 s, failures evicted,
+  `invalidate()`), spend read fresh per call; per-user caps only with a
+  user. Errors propagate. smrt-inference's `./gate` consumes it.
+- `resolveEntitlements()` / the tenant usage meter report these keys with
+  quantity 0: only the evaluator meters them. The meter's AI summary (and so
+  `ai.requests`) skips `operation: 'blocked'` rows. `SpendingPolicy` rows stay the
+  billed-charge (cents) policy; hosted AI caps are plan terms because the
+  issue's window and amount come from the plan.
+
 ## Reseller billing (#3059)
 
 - Billing ownership is consumed from `smrt-tenancy`'s
@@ -94,6 +161,84 @@ that reverted to DECIMAL passes every SQLite suite.
   it `currentShortfall()`, so a hook that charges asynchronously can see a
   concurrent top-up (smrt-commerce's `autoTopUpHook()`, #3139).
 
+## Billing host glue (#4786)
+
+`src/billing/` is the reusable Stripe checkout, signed idempotent webhook and
+portal wiring (`createBillingHost()`, `readBillingEnv()`); the recipe and
+environment names are in the README. Invariants:
+
+- **No direct Stripe calls.** The provider is the structural
+  `BillingProviderPort`; `StripeAccountingProvider` from
+  `@happyvertical/accounting` satisfies it (a test pins that). A missing SDK
+  capability is fixed in the SDK first. `@happyvertical/accounting` is a
+  devDependency only (tests run the real provider over a fake `fetch`).
+- **Webhook order is load-bearing:** size cap, signature header, own timestamp
+  tolerance, SDK `verify` on the raw body, parse, handled-type filter,
+  completed-claim pre-check, then (checkout only) the outside-transaction
+  provider read-back, then `runOnce` claiming the event id *and* applying it.
+  All DB access inside that transaction must use the `tx` handle; a read on the
+  base handle deadlocks single-connection SQLite. Never claim before applying.
+- **Trust comes from our own state.** Checkout metadata is HMAC-signed
+  (`smrt_sig`, `signing.ts`) and an unsigned or foreign-signed session never
+  links a tenant or plan.
+- **Checkout is bound to a recorded session (#4814)**, `checkout-sessions.ts`
+  and `models/BillingCheckoutSession.ts` (`_smrt_billing_checkout_sessions`,
+  no API surface; a root export because the manifest advertises it).
+  `createCheckout` records the session id
+  before returning the URL and signs `smrt_exp`; the completion (inside the
+  `runOnce` transaction, after the PostgreSQL `checkout:<id>` lock) checks, in
+  order: record exists, status is not `completed` / `needs_reconciliation`
+  (no-op `ignored`), record tenant equals the signed tenant, `smrt_exp` is
+  well-formed, event time is not after the signed or recorded expiry. A
+  missing, mismatched or expired record never links and never drops: the row
+  becomes `needs_reconciliation` (outcome `needs_reconciliation`, error log).
+  Only `applied` marks a record `completed`. `reconcileCheckout()` (link) and
+  `dismissCheckout()` (terminal `dismissed`, for a payment that is not the
+  tenant's) are the only ways out and are operator-only; reconcile never skips
+  the apply-time conflict checks. The list shows `customerId`,
+  `targetTenantId` and `claimedTenantHasOwnSession`, is paged, and has a count.
+  The expiry is deterministic per idempotency window so a repeated click sends
+  identical provider parameters. Change the table shape only with owner
+  approval. A provider subscription or customer id links to one
+  tenant; a conflicting event is ignored with a reason code, not merged.
+  Verification accepts the signing secret plus `metadataVerificationSecrets`
+  (rotation); a purpose-matching session that fails them logs at error.
+  A price the host cannot map that differs from the recorded one is held
+  (`incomplete`, plan and recorded price kept, `metadata.stripe.held` set so
+  checkout still refuses a second subscription) with an error log, never
+  carried over onto the previous plan.
+  Ignore (2xx, logged) for security refusals; fail (5xx) for configuration or
+  database faults so the provider retries.
+- **Only operator plans are sold by default** (`tenantPlans: 'deny'`); price
+  resolution never lets a tenant-owned plan outrank a global one. Checkout
+  metadata also signs the price and known customer, and the webhook refuses a
+  session whose read-back subscription differs. PostgreSQL events lock the
+  subscription and tenant (advisory, sorted) and re-read before deciding.
+- **Order state lives on the row** (`metadata.stripe.lastEventAt`, `terminal`);
+  a checkout read-back stamps `max(eventCreated, readAt)` so later-delivered
+  older events cannot rewind it. Cancellation caps `currentPeriodEnd` at now.
+- **Plan changes** from the provider use `replacePlanVersion({ policy:
+  'authorized', reason: 'stripe:<eventId>' })`; the provider billed the change,
+  so a mid-period downgrade is honoured and audited. Do not relax the pinning
+  rules for any other caller.
+- **No secrets out.** Responses use fixed messages; logs get ids and reason
+  codes only, errors pass through `safeErrorMessage()`. `readBillingEnv` keeps
+  secrets non-enumerable. Add a named test per new threat in
+  `__tests__/billing-host.test.ts`.
+
+## Vault account restart and supersede (#4841)
+
+`src/vault-account/`. `supersedeVaultAccount`, `unsupersedeVaultAccount` and
+`provisionRestartAccount` take injected ports (`VaultRelayAdminPort`,
+`VaultAccountDirectory`, an audit sink); no HTTP server or relay is needed.
+Order is load-bearing: owner of the tenant and of both accounts (`not_owner`),
+then `requireRecentAuthentication` from `smrt-users/step-up`
+(`step_up_required`, default 300 s), then the `authorized` audit record, then
+exactly one relay call, then the outcome record. Refusals are audited and never
+reach the relay; a member never learns about the step-up. Audit entries carry
+ids and codes only (no session id, key, token or message text). Import only the
+`@happyvertical/smrt-users/step-up` subpath, never the package root.
+
 ## Notes
 
 - Keep Stripe-specific fields as provider binding metadata. Runtime Stripe API
@@ -107,3 +252,32 @@ that reverted to DECIMAL passes every SQLite suite.
   current subscription and plan.
 - Subscription UI components should stay provider-neutral and receive actions
   from the host app.
+- **Feature grants as flags (#4761).** `SubscriptionFeatureSource` implements
+  `smrt-features`' `FeatureGrantSource` structurally (no dependency either
+  way). Build one per request (`SubscriptionFeatureSource.create(options)` or
+  `new SubscriptionFeatureSource({ resolver })`; it memoizes grants per
+  tenant) and pass it as `grantSource`, or register an app-wide one built with
+  `memoize: false` through `registerSubscriptionFeatureSource()`, which writes
+  the features slot key `FEATURE_GRANT_SOURCE_SLOT_KEY`. It reads
+  `SubscriptionResolver.resolveFeatureGrants()`, which shares the
+  version-pinning and entitlement rules of `resolveEntitlements()` but never
+  evaluates thresholds, so a flag check reads no usage meters. Missing
+  subscription tables (`isMissingSubscriptionTableError`) and no entitled
+  subscription report no grants silently; every other error propagates.
+  `findGrantingPlan()` names the first active plan by `sortOrder` visible in
+  the current context.
+- **Entitlement change hook (#4759).** `src/services/entitlement-changes.ts`.
+  The host wraps its billing-webhook write in
+  `trackEntitlementChange({ tenantId, resolver }, apply)`: it snapshots
+  `resolveFeatureGrants()` (keys plus grant `metadata`, no usage reads)
+  before and after, diffs `gained` / `lost` / `changed` (metadata, e.g. a
+  plan budget) and calls listeners registered with
+  `registerEntitlementChangeListener()` (a `Symbol.for` slot) or passed in.
+  Listeners run after `apply`; their failures are returned in `failures`,
+  never thrown, and never undo the write, so listeners must be idempotent.
+  An `apply` error propagates and notifies nobody. A redelivered webhook
+  diffs to no change, so a lost reaction is repaired by the consumer's
+  reconcile entry point (hosted inference: `createHostedInferenceReconciler()`
+  with `snapshotEntitlements()`), run on redelivery or a schedule. Listeners satisfy the
+  structural type (smrt-inference's hosted listener), so this package
+  depends on none of them.

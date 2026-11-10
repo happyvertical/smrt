@@ -21,6 +21,7 @@ import type {
   CommissionPayoutStatus,
   CommissionStatus,
   EarnerBalance,
+  PayoutDestination,
   PayoutMethod,
 } from '../commissions/index.js';
 import type {
@@ -372,6 +373,8 @@ export interface PayoutView {
   totalAmountCents: number;
   currency: string;
   payoutMethod: PayoutMethod;
+  /** Batch-owned descriptor; hosts must never substitute the live Earner's routing. */
+  payoutDestination?: PayoutDestination | null;
   status: CommissionPayoutStatus;
   paymentReference?: string;
   providerRef?: string;
@@ -950,4 +953,38 @@ export function sumExpenseRowsByCurrency(
       payoutCents: payouts,
       netAccruedCents: expense + adjustments - payouts,
     }));
+}
+
+/** Host-owned display state; eligibility is informational, server guards decide. */
+export interface SellerGovernanceView {
+  sellerLabel: string;
+  authorized: boolean;
+  advertiserLabel: string;
+  lease:
+    | import('../crm/services/sales-governance-types.js').SalesAdvertiserLease
+    | null;
+  quote:
+    | import('../crm/services/sales-governance-types.js').SalesQuoteSnapshot
+    | null;
+  /** Hosts independently authorize finance actions. */
+  canReview: boolean;
+}
+
+/** Exact current revision/request identifiers are included in every UI action. */
+export interface SellerGovernanceAction {
+  action:
+    | 'acquire'
+    | 'renew'
+    | 'release'
+    | 'request'
+    | 'approve'
+    | 'reject'
+    | 'revoke'
+    | 'issue'
+    | 'sign';
+  quoteId?: string;
+  revision?: number;
+  requestId?: string;
+  leaseId?: string;
+  reason?: string;
 }

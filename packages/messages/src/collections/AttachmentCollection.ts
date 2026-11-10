@@ -3,7 +3,7 @@
  */
 
 import { SmrtCollection } from '@happyvertical/smrt-core';
-import { queryGlobal, queryWithGlobals } from '@happyvertical/smrt-tenancy';
+import { queryGlobal, queryWithGlobals } from '../host.js';
 import { Attachment } from '../models/Attachment';
 
 export class AttachmentCollection extends SmrtCollection<Attachment> {

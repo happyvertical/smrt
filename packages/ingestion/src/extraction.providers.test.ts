@@ -87,6 +87,95 @@ describe('real local SDK provider integration (no remote quality claims)', () =>
     expect(result.segments[0].text).toBe(text);
     expect(result.automaticActionEligible).toBe(false);
   });
+  it('sends bounded oriented vision derivatives through the packaged child and installed SDK', async () => {
+    let sent:
+      | {
+          messages: Array<{
+            content: Array<{ type: string; image_url?: { url: string } }>;
+          }>;
+        }
+      | undefined;
+    const server = createServer(async (request, response) => {
+      const chunks: Buffer[] = [];
+      for await (const chunk of request) chunks.push(Buffer.from(chunk));
+      sent = JSON.parse(Buffer.concat(chunks).toString());
+      response.writeHead(200, { 'content-type': 'application/json' });
+      response.end(
+        JSON.stringify({
+          id: 'local-image',
+          object: 'chat.completion',
+          model: 'gpt-4o',
+          choices: [
+            {
+              index: 0,
+              finish_reason: 'stop',
+              message: {
+                role: 'assistant',
+                content: 'Synthetic visible worksheet',
+              },
+            },
+          ],
+        }),
+      );
+    });
+    server.listen(0, '127.0.0.1');
+    await once(server, 'listening');
+    const address = server.address();
+    if (!address || typeof address === 'string') throw new Error('No server');
+    try {
+      const create = await builtAdapter();
+      const adapter = create({
+        nativeMemoryIsolation: 'host-enforced',
+        imageMode: 'vision',
+        visionImageLimits: { maxEdge: 1024, maxEncodedBytes: 128 * 1024 },
+        vision: {
+          identity: { provider: 'openai', model: 'gpt-4o', version: 'fixture' },
+          options: {
+            type: 'openai',
+            apiKey: 'local-fixture-only',
+            baseUrl: `http://127.0.0.1:${address.port}/v1`,
+            defaultModel: 'gpt-4o',
+          },
+        },
+      });
+      const bytes = await sharp({
+        create: { width: 4000, height: 3000, channels: 3, background: 'white' },
+      })
+        .withMetadata({ orientation: 6 })
+        .jpeg()
+        .toBuffer();
+      const input = extractionRequest(bytes, 'image/jpeg');
+      input.limits.maxPixels = 12_000_000;
+      input.limits.timeoutMs = 15_000;
+      const result = await adapter.extract(input);
+      expect(result.errors).toEqual([]);
+      expect(result.status).toBe('complete');
+      const url = sent?.messages[0].content.find(
+        (part) => part.type === 'image_url',
+      )?.image_url?.url;
+      if (!url) throw new Error('Missing SDK image request');
+      expect(url.startsWith('data:image/jpeg;base64,')).toBe(true);
+      const derivative = Buffer.from(url.split(',')[1], 'base64');
+      expect(derivative.length).toBeLessThanOrEqual(128 * 1024);
+      const metadata = await sharp(derivative).metadata();
+      expect([metadata.width, metadata.height]).toEqual([768, 1024]);
+      expect(result.imagePreparations).toEqual([
+        expect.objectContaining({
+          maxEdge: 1024,
+          maxEncodedBytes: 128 * 1024,
+          sourceOrientation: 6,
+          width: 768,
+          height: 1024,
+          encodedBytes: derivative.length,
+        }),
+      ]);
+      expect(result.evidence).toEqual(input.evidence);
+      expect(JSON.stringify(result)).not.toContain('local-fixture-only');
+    } finally {
+      server.closeAllConnections();
+      server.close();
+    }
+  });
   it('extracts generated embedded PDF through actual installed PDF SDK', async () => {
     const client = await getPDFReader({ provider: 'unpdf', enableOCR: false });
     const result = await extractWithProviders(

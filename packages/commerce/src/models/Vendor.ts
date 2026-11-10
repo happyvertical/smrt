@@ -6,11 +6,18 @@
 import {
   crossPackageRef,
   field,
+  foreignKey,
   SmrtObject,
+  type SmrtSaveOptions,
   smrt,
 } from '@happyvertical/smrt-core';
 import { TenantScoped, tenantId } from '@happyvertical/smrt-tenancy';
-import { type VendorOptions, VendorStatus } from '../types/index.js';
+import { normalizePartyContacts } from '../party-contacts.js';
+import {
+  type PartyContact,
+  type VendorOptions,
+  VendorStatus,
+} from '../types/index.js';
 
 /**
  * Vendor represents the vendor/supplier role for a Profile.
@@ -66,7 +73,10 @@ export class Vendor extends SmrtObject {
    * satoshis). Compared against `Contract.totalAmount`, which is also minor
    * units (#2401).
    */
-  @field({ description: 'The smallest order the vendor will accept.' })
+  @field({
+    description: 'The smallest order the vendor will accept.',
+    ui: { format: 'money' },
+  })
   minimumOrderAmount: number = 0;
 
   /**
@@ -86,6 +96,24 @@ export class Vendor extends SmrtObject {
     ui: { widget: 'currency' },
   })
   currency: string = 'USD';
+
+  /**
+   * Supplier registration number.
+   *
+   * Sensitive for the same reason as a customer's tax ID: it is identifying
+   * business information and must not enter generated list/search surfaces.
+   */
+  @field({
+    sensitive: true,
+    description: 'The vendor tax or VAT registration number kept on file.',
+  })
+  taxId: string = '';
+
+  /** Tax code normally used for purchases from this vendor. */
+  @foreignKey('TaxCode', {
+    description: 'The tax code normally used when buying from this vendor.',
+  })
+  defaultTaxCodeId: string = '';
 
   /**
    * Default contact email for orders
@@ -149,6 +177,16 @@ export class Vendor extends SmrtObject {
   })
   payoutAddresses: Record<string, string> = {};
 
+  /**
+   * People to reach at this vendor, stored as a JSON column (#3501). Write
+   * form rows through `savePartyContacts()`; every save normalizes the shape.
+   */
+  @field({
+    description:
+      'The people you deal with at this vendor, with their role and how to reach them.',
+  })
+  contacts: PartyContact[] = [];
+
   constructor(options: VendorOptions = {}) {
     super(options);
     if (options.tenantId !== undefined) this.tenantId = options.tenantId;
@@ -160,6 +198,9 @@ export class Vendor extends SmrtObject {
     if (options.paymentTerms !== undefined)
       this.paymentTerms = options.paymentTerms;
     if (options.currency !== undefined) this.currency = options.currency;
+    if (options.taxId !== undefined) this.taxId = options.taxId;
+    if (options.defaultTaxCodeId !== undefined)
+      this.defaultTaxCodeId = options.defaultTaxCodeId;
     if (options.defaultContactEmail !== undefined)
       this.defaultContactEmail = options.defaultContactEmail;
     if (options.defaultContactPhone !== undefined)
@@ -171,6 +212,8 @@ export class Vendor extends SmrtObject {
         options.payoutAddresses,
       );
     }
+    if (options.contacts !== undefined)
+      this.contacts = normalizePartyContacts(options.contacts);
   }
 
   /**
@@ -187,6 +230,7 @@ export class Vendor extends SmrtObject {
     this.payoutAddresses = Vendor.normalizePayoutAddresses(
       this.payoutAddresses as unknown,
     );
+    this.contacts = normalizePartyContacts(this.contacts);
     return this;
   }
 
@@ -195,11 +239,12 @@ export class Vendor extends SmrtObject {
    * (`vendor.payoutAddresses = somethingFunny`) can't smuggle non-string
    * values into the persisted row.
    */
-  override async save(): Promise<this> {
+  override async save(options?: SmrtSaveOptions): Promise<this> {
     this.payoutAddresses = Vendor.normalizePayoutAddresses(
       this.payoutAddresses as unknown,
     );
-    return super.save() as Promise<this>;
+    this.contacts = normalizePartyContacts(this.contacts);
+    return super.save(options) as Promise<this>;
   }
 
   /**

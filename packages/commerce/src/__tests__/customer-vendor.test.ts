@@ -327,3 +327,57 @@ describe('Customer and Vendor - Same Profile', () => {
     expect(foundVendors[0].leadTimeDays).toBe(21);
   });
 });
+
+// Issue #4144: Customer.save() and Vendor.save() normalize contacts and must
+// still forward SmrtSaveOptions, so an explicit revision guard is honoured.
+describe('Customer and Vendor - save options (#4144)', () => {
+  let dbPath: string;
+
+  beforeEach(() => {
+    dbPath = join(tmpdir(), `smrt-party-save-options-${Date.now()}.db`);
+  });
+
+  afterEach(() => {
+    if (existsSync(dbPath)) rmSync(dbPath, { force: true });
+  });
+
+  const stale = '2000-01-01T00:00:00.000Z';
+
+  it('Customer.save forwards expectedUpdatedAt', async () => {
+    const customers = await CustomerCollection.create({
+      db: { type: 'sqlite', url: dbPath },
+    });
+    const customer = await customers.create({ profileId: 'profile-rev-c' });
+    await customer.save();
+
+    customer.paymentTerms = 'Net 15';
+    await expect(
+      customer.save({ expectedUpdatedAt: stale }),
+    ).rejects.toMatchObject({ code: 'RUNTIME_REVISION_CONFLICT' });
+
+    const current = customer.updated_at;
+    if (!current) throw new Error('expected persisted revision');
+    await customer.save({ expectedUpdatedAt: current });
+    expect((await customers.get({ id: customer.id }))?.paymentTerms).toBe(
+      'Net 15',
+    );
+  });
+
+  it('Vendor.save forwards expectedUpdatedAt', async () => {
+    const vendors = await VendorCollection.create({
+      db: { type: 'sqlite', url: dbPath },
+    });
+    const vendor = await vendors.create({ profileId: 'profile-rev-v' });
+    await vendor.save();
+
+    vendor.leadTimeDays = 9;
+    await expect(
+      vendor.save({ expectedUpdatedAt: stale }),
+    ).rejects.toMatchObject({ code: 'RUNTIME_REVISION_CONFLICT' });
+
+    const current = vendor.updated_at;
+    if (!current) throw new Error('expected persisted revision');
+    await vendor.save({ expectedUpdatedAt: current });
+    expect((await vendors.get({ id: vendor.id }))?.leadTimeDays).toBe(9);
+  });
+});

@@ -158,9 +158,9 @@ export function buildKnowledgeGraph(
   // duplicate would make resolveTarget's `.length === 1` uniqueness check
   // see a false ambiguity for an otherwise-unique name (#2872 review).
   const idBySimpleName = new Map<string, Set<string>>();
-  // A `tableStrategy: 'sti'` object's `extends` is an unqualified simple name
-  // (its own package's base class, never a cross-package reference — STI
-  // shares one table within a package), so a same-package simple-name match
+  // A `tableStrategy: 'sti'` object's `extends` is an unqualified simple name;
+  // a parent imported from another package also carries `extendsQualified`
+  // (#4145), which resolves first. Otherwise a same-package simple-name match
   // must win over an ambiguous or wrong-package GLOBAL simple-name match:
   // two packages both declaring `Account` must not point one package's
   // subclass at the other package's `Account` (#2863 review).
@@ -283,6 +283,7 @@ export function buildKnowledgeGraph(
           type: 'sti',
           from: id,
           to:
+            resolveTarget(object.extendsQualified) ??
             resolveTarget(object.extends, objectPackageName) ??
             `${objectPackageName}#${object.extends}`,
         });
@@ -421,10 +422,31 @@ export function checkKnowledgeGraphFreshness(
     return issues;
   }
 
-  const recordedPaths = Object.keys(graph.sourceHashes ?? {});
-  for (const [artifactPath, expectedHash] of Object.entries(
-    graph.sourceHashes ?? {},
-  )) {
+  const isPlainObject = (value: unknown): value is Record<string, unknown> =>
+    typeof value === 'object' && value !== null && !Array.isArray(value);
+  const graphValue: unknown = graph;
+  // A graph without `sourceHashes` records no artifacts (as before #3075);
+  // only shapes that used to throw are reported as malformed.
+  const sourceHashesValue = isPlainObject(graphValue)
+    ? (graphValue.sourceHashes ?? {})
+    : undefined;
+  if (
+    !isPlainObject(graphValue) ||
+    !isPlainObject(sourceHashesValue) ||
+    Object.values(sourceHashesValue).some((hash) => typeof hash !== 'string')
+  ) {
+    issues.push({
+      severity: 'error',
+      code: 'stale-knowledge-graph',
+      message: `${graphPath} is malformed (expected an object with a \`sourceHashes\` map of string hashes); run \`pnpm knowledge:graph\``,
+      file: graphPath,
+    });
+    return issues;
+  }
+
+  const sourceHashes = sourceHashesValue as Record<string, string>;
+  const recordedPaths = Object.keys(sourceHashes);
+  for (const [artifactPath, expectedHash] of Object.entries(sourceHashes)) {
     const absoluteArtifactPath = `${rootDir}/${artifactPath}`;
     if (!existsSync(absoluteArtifactPath)) {
       issues.push({

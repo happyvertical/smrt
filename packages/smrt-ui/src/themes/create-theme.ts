@@ -141,26 +141,17 @@ function normalizeHex(color: string): string {
 }
 
 /**
- * Generate dark mode colors from light mode colors
- * Uses simple inversion logic - for production use, manually define dark colors
+ * Generate dark mode colors from light mode colors: tonal pairs for primary
+ * and secondary, fixed dark neutrals for the surfaces. For production use,
+ * define dark colors by hand.
  */
 function generateDarkColors(light: ColorPalette): ColorPalette {
-  // Adjust color brightness by a multiplicative factor. Normalizes the input to
-  // RGB first (via the shared parser), so 3-digit hex and rgb()/rgba() inputs no
-  // longer NaN-poison the output into `#NaNNaNNaN` (#1586).
-  const adjustBrightness = (color: string, factor: number): string => {
-    const { r, g, b } = hexToRgb(color);
-    if (Number.isNaN(r) || Number.isNaN(g) || Number.isNaN(b)) {
-      throw new Error(
-        `createTheme: unsupported color "${color}". Use 6-digit hex (#rrggbb), ` +
-          '3-digit hex (#rgb), or rgb()/rgba() notation.',
-      );
-    }
-    return rgbToHex(r * factor, g * factor, b * factor);
-  };
   // Multiplying a very dark brand seed stays dark. Use tonal primary pairs so
   // icons and labels keep contrast against their containers in dark mode.
   const primary = generateTheme(light.primary, 'dark');
+  // The same for the secondary pair: scaling a light container down and its
+  // dark label up left both dark (an active nav item read about 1.6:1).
+  const secondary = generateTheme(normalizeHex(light.secondary), 'dark');
 
   return {
     ...light,
@@ -168,10 +159,10 @@ function generateDarkColors(light: ColorPalette): ColorPalette {
     onPrimary: primary.onPrimary,
     primaryContainer: primary.primaryContainer,
     onPrimaryContainer: primary.onPrimaryContainer,
-    secondary: adjustBrightness(light.secondary, 1.3),
-    onSecondary: adjustBrightness(light.onSecondary, 0.8),
-    secondaryContainer: adjustBrightness(light.secondaryContainer, 0.3),
-    onSecondaryContainer: adjustBrightness(light.onSecondaryContainer, 1.2),
+    secondary: secondary.secondary,
+    onSecondary: secondary.onSecondary,
+    secondaryContainer: secondary.secondaryContainer,
+    onSecondaryContainer: secondary.onSecondaryContainer,
     surface: '#111827',
     onSurface: '#f9fafb',
     surfaceVariant: '#1f2937',

@@ -1,4 +1,8 @@
-import type { TimecardPeriod, TimecardSource } from './types.js';
+import type {
+  RollupAttribution,
+  TimecardPeriod,
+  TimecardSource,
+} from './types.js';
 
 export function integer(value: number, signed = false): number {
   if (!Number.isSafeInteger(value) || (!signed && value < 0))
@@ -78,4 +82,25 @@ export function clipSource(
     endsAt: new Date(right).toISOString(),
     seconds: integer(seconds),
   };
+}
+
+/**
+ * Attribute a source to a period. `'clip'` prorates it to the period; `'start'`
+ * keeps it whole when `ownerStart` (the start of the punch or entry it belongs
+ * to, in epoch ms) falls inside the period, and drops it otherwise.
+ */
+export function attributeSource(
+  source: TimecardSource,
+  period: TimecardPeriod,
+  attribution: RollupAttribution,
+  ownerStart: number,
+): TimecardSource | null {
+  if (attribution === 'clip') return clipSource(source, period);
+  integer(source.seconds);
+  if (instant(new Date(source.endsAt)) < instant(new Date(source.startsAt)))
+    throw new Error('Invalid source interval.');
+  return ownerStart >= period.startsAt.getTime() &&
+    ownerStart < period.endsAt.getTime()
+    ? { ...source }
+    : null;
 }

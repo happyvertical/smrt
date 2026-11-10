@@ -68,9 +68,12 @@ describe('commerce tenant isolation (#1600)', () => {
     await withTenant({ tenantId: 'tenant-2' }, async () => {
       await (await contracts.create({ reference: 't2-contract' })).save();
     });
-    await withSystemContext(async () => {
-      await (await contracts.create({ reference: 'g-contract' })).save();
-    });
+    // Money documents always belong to a tenant (#4021).
+    await expect(
+      withSystemContext(async () =>
+        (await contracts.create({ reference: 'g-contract' })).save(),
+      ),
+    ).rejects.toThrow(/require a tenant/);
 
     expect(
       sorted(
@@ -79,7 +82,7 @@ describe('commerce tenant isolation (#1600)', () => {
         ),
         'reference',
       ),
-    ).toEqual(['g-contract']);
+    ).toEqual([]);
     expect(
       sorted(
         await withTenant({ tenantId: 'tenant-1' }, () =>
@@ -87,7 +90,7 @@ describe('commerce tenant isolation (#1600)', () => {
         ),
         'reference',
       ),
-    ).toEqual(['g-contract', 't1-contract']);
+    ).toEqual(['t1-contract']);
     await expect(
       withTenant({ tenantId: 'tenant-1' }, () =>
         contracts.findWithGlobals('tenant-2'),
@@ -98,27 +101,27 @@ describe('commerce tenant isolation (#1600)', () => {
         await withSystemContext(() => contracts.findWithGlobals('tenant-2')),
         'reference',
       ),
-    ).toEqual(['g-contract', 't2-contract']);
+    ).toEqual(['t2-contract']);
   });
 
   it('ContractLineItemCollection.findGlobal/findWithGlobals do not throw and stay tenant-scoped', async () => {
     const items = await ContractLineItemCollection.create({ db });
-    await withTenant({ tenantId: 'tenant-1' }, async () => {
-      await (await items.create({ description: 't1-line' })).save();
-    });
-    await withTenant({ tenantId: 'tenant-2' }, async () => {
-      await (await items.create({ description: 't2-line' })).save();
-    });
-    await withSystemContext(async () => {
-      await (await items.create({ description: 'g-line' })).save();
-    });
+    const contracts = await ContractCollection.create({ db });
+    for (const [tenantId, description] of [
+      ['tenant-1', 't1-line'],
+      ['tenant-2', 't2-line'],
+    ])
+      await withTenant({ tenantId }, async () => {
+        const contract = await contracts.create({ reference: description });
+        await items.create({ contractId: contract.id, description });
+      });
 
     expect(
       sorted(
         await withTenant({ tenantId: 'tenant-1' }, () => items.findGlobal()),
         'description',
       ),
-    ).toEqual(['g-line']);
+    ).toEqual([]);
     expect(
       sorted(
         await withTenant({ tenantId: 'tenant-1' }, () =>
@@ -126,7 +129,7 @@ describe('commerce tenant isolation (#1600)', () => {
         ),
         'description',
       ),
-    ).toEqual(['g-line', 't1-line']);
+    ).toEqual(['t1-line']);
     await expect(
       withTenant({ tenantId: 'tenant-1' }, () =>
         items.findWithGlobals('tenant-2'),
@@ -137,7 +140,7 @@ describe('commerce tenant isolation (#1600)', () => {
         await withSystemContext(() => items.findWithGlobals('tenant-2')),
         'description',
       ),
-    ).toEqual(['g-line', 't2-line']);
+    ).toEqual(['t2-line']);
   });
 
   it('CustomerCollection.findGlobal/findWithGlobals do not throw and stay tenant-scoped', async () => {
@@ -265,24 +268,25 @@ describe('commerce tenant isolation (#1600)', () => {
 
   it('InvoiceCollection.findGlobal/findWithGlobals do not throw and stay tenant-scoped', async () => {
     const invoices = await InvoiceCollection.create({ db });
-    // Fresh DRAFT invoice, zero amounts → satisfies the save-time financial
-    // invariant (totalAmount === subtotal + taxAmount).
     await withTenant({ tenantId: 'tenant-1' }, async () => {
       await (await invoices.create({ invoiceNumber: 't1-inv' })).save();
     });
     await withTenant({ tenantId: 'tenant-2' }, async () => {
       await (await invoices.create({ invoiceNumber: 't2-inv' })).save();
     });
-    await withSystemContext(async () => {
-      await (await invoices.create({ invoiceNumber: 'g-inv' })).save();
-    });
+    // Money documents always belong to a tenant (#4021).
+    await expect(
+      withSystemContext(async () =>
+        (await invoices.create({ invoiceNumber: 'g-inv' })).save(),
+      ),
+    ).rejects.toThrow(/require a tenant/);
 
     expect(
       sorted(
         await withTenant({ tenantId: 'tenant-1' }, () => invoices.findGlobal()),
         'invoiceNumber',
       ),
-    ).toEqual(['g-inv']);
+    ).toEqual([]);
     expect(
       sorted(
         await withTenant({ tenantId: 'tenant-1' }, () =>
@@ -290,7 +294,7 @@ describe('commerce tenant isolation (#1600)', () => {
         ),
         'invoiceNumber',
       ),
-    ).toEqual(['g-inv', 't1-inv']);
+    ).toEqual(['t1-inv']);
     await expect(
       withTenant({ tenantId: 'tenant-1' }, () =>
         invoices.findWithGlobals('tenant-2'),
@@ -301,27 +305,27 @@ describe('commerce tenant isolation (#1600)', () => {
         await withSystemContext(() => invoices.findWithGlobals('tenant-2')),
         'invoiceNumber',
       ),
-    ).toEqual(['g-inv', 't2-inv']);
+    ).toEqual(['t2-inv']);
   });
 
   it('InvoiceLineItemCollection.findGlobal/findWithGlobals do not throw and stay tenant-scoped', async () => {
     const items = await InvoiceLineItemCollection.create({ db });
-    await withTenant({ tenantId: 'tenant-1' }, async () => {
-      await (await items.create({ description: 't1-ili' })).save();
-    });
-    await withTenant({ tenantId: 'tenant-2' }, async () => {
-      await (await items.create({ description: 't2-ili' })).save();
-    });
-    await withSystemContext(async () => {
-      await (await items.create({ description: 'g-ili' })).save();
-    });
+    const invoices = await InvoiceCollection.create({ db });
+    for (const [tenantId, description] of [
+      ['tenant-1', 't1-ili'],
+      ['tenant-2', 't2-ili'],
+    ])
+      await withTenant({ tenantId }, async () => {
+        const invoice = await invoices.create({ invoiceNumber: description });
+        await items.create({ invoiceId: invoice.id, description });
+      });
 
     expect(
       sorted(
         await withTenant({ tenantId: 'tenant-1' }, () => items.findGlobal()),
         'description',
       ),
-    ).toEqual(['g-ili']);
+    ).toEqual([]);
     expect(
       sorted(
         await withTenant({ tenantId: 'tenant-1' }, () =>
@@ -329,7 +333,7 @@ describe('commerce tenant isolation (#1600)', () => {
         ),
         'description',
       ),
-    ).toEqual(['g-ili', 't1-ili']);
+    ).toEqual(['t1-ili']);
     await expect(
       withTenant({ tenantId: 'tenant-1' }, () =>
         items.findWithGlobals('tenant-2'),
@@ -340,7 +344,7 @@ describe('commerce tenant isolation (#1600)', () => {
         await withSystemContext(() => items.findWithGlobals('tenant-2')),
         'description',
       ),
-    ).toEqual(['g-ili', 't2-ili']);
+    ).toEqual(['t2-ili']);
   });
 
   it('PaymentAllocationCollection.findGlobal/findWithGlobals do not throw and stay tenant-scoped', async () => {
@@ -349,10 +353,12 @@ describe('commerce tenant isolation (#1600)', () => {
     const invoices = await InvoiceCollection.create({ db });
     const createAllocation = async (notes: string) => {
       const payment = await payments.create({ amount: 1 });
-      const invoice = await invoices.create({
-        subtotal: 1,
-        totalAmount: 1,
-        currency: 'USD',
+      const invoice = await invoices.create({ currency: 'USD' });
+      await (await InvoiceLineItemCollection.create({ db })).create({
+        invoiceId: invoice.id,
+        description: notes,
+        quantity: 1,
+        unitPrice: 1,
       });
       await allocations.create({
         paymentId: payment.id,
@@ -367,7 +373,8 @@ describe('commerce tenant isolation (#1600)', () => {
     await withTenant({ tenantId: 'tenant-2' }, () =>
       createAllocation('t2-alloc'),
     );
-    await withSystemContext(() => createAllocation('g-alloc'));
+    // A global allocation would need a global invoice; money documents always
+    // belong to a tenant (#4021).
 
     expect(
       sorted(
@@ -376,7 +383,7 @@ describe('commerce tenant isolation (#1600)', () => {
         ),
         'notes',
       ),
-    ).toEqual(['g-alloc']);
+    ).toEqual([]);
     expect(
       sorted(
         await withTenant({ tenantId: 'tenant-1' }, () =>
@@ -384,7 +391,7 @@ describe('commerce tenant isolation (#1600)', () => {
         ),
         'notes',
       ),
-    ).toEqual(['g-alloc', 't1-alloc']);
+    ).toEqual(['t1-alloc']);
     await expect(
       withTenant({ tenantId: 'tenant-1' }, () =>
         allocations.findWithGlobals('tenant-2'),
@@ -395,7 +402,7 @@ describe('commerce tenant isolation (#1600)', () => {
         await withSystemContext(() => allocations.findWithGlobals('tenant-2')),
         'notes',
       ),
-    ).toEqual(['g-alloc', 't2-alloc']);
+    ).toEqual(['t2-alloc']);
   });
 
   it('PaymentCollection.findGlobal/findWithGlobals do not throw and stay tenant-scoped', async () => {

@@ -30,7 +30,8 @@ export class ProjectTrackerRecipe extends SmrtRecipe {
   static models = [Project, Issue, Label, Comment];
   static nav = [
     {
-      label: 'Projects',
+      // Not "Projects": that is the section the recipe suggests.
+      label: 'All projects',
       model: Project,
       icon: 'folder',
       description: 'Bigger jobs broken into steps you can follow.',

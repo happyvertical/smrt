@@ -1,8 +1,8 @@
 import type { SmrtClassOptions } from '@happyvertical/smrt-core';
-import { withTenant } from '@happyvertical/smrt-tenancy';
 import { AccountCollection } from '../collections/AccountCollection.js';
 import { MessagingEndpointCollection } from '../collections/MessagingEndpointCollection.js';
 import { PersonaMessageRouteCollection } from '../collections/PersonaMessageRouteCollection.js';
+import { withTenant } from '../host.js';
 import { Account } from '../models/Account.js';
 import { EmailAccount } from '../models/EmailAccount.js';
 import { MessagingEndpoint } from '../models/MessagingEndpoint.js';

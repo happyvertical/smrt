@@ -1,6 +1,6 @@
 {
   "name": "@happyvertical/smrt-scanner",
-  "version": "0.55.21",
+  "version": "0.60.16",
   "description": "High-performance TypeScript scanner using OXC for SMRT manifest generation",
   "author": "HappyVertical",
   "type": "module",
@@ -35,15 +35,15 @@
   },
   "dependencies": {
     "@happyvertical/smrt-types": "workspace:*",
-    "fast-glob": "3.3.3",
     "minimatch": "10.2.6",
     "oxc-parser": "^0.150.0",
-    "oxc-resolver": "^11.24.2"
+    "oxc-resolver": "^11.24.2",
+    "tinyglobby": "0.2.17"
   },
   "devDependencies": {
     "@types/node": "24.13.6",
     "tsx": "^4.23.13",
-    "vite": "8.1.4",
+    "vite": "8.1.6",
     "vitest": "4.1.10"
   },
   "scripts": {

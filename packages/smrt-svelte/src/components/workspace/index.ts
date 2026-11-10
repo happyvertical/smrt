@@ -81,6 +81,11 @@ export {
   installShellViewport,
   watchFormActionBar,
 } from './admin-shell/mobile-shell-dom.js';
+export {
+  announceShellNavigation,
+  SHELL_NAVIGATED_EVENT,
+  type ShellNavigatedDetail,
+} from './admin-shell/navigation.js';
 export { default as PhoneBottomBar } from './admin-shell/PhoneBottomBar.svelte';
 export { default as PhoneTopBar } from './admin-shell/PhoneTopBar.svelte';
 export { default as ShellCorner } from './admin-shell/ShellCorner.svelte';
@@ -147,6 +152,11 @@ export {
   type ShellStateOptions,
 } from './admin-shell/state.svelte.js';
 export { default as TenantNav } from './admin-shell/TenantNav.svelte';
+export {
+  type ShellTargets,
+  shellTargetAction,
+  tryUseShellTargets,
+} from './admin-shell/targets.js';
 export type {
   ActivityStatus,
   AdminShellPhoneOptions,
@@ -193,7 +203,6 @@ export {
   SCOPE_EDGES,
 } from './admin-shell/types.js';
 export { default as WorkspaceAccountMenu } from './admin-shell/WorkspaceAccountMenu.svelte';
-
 export {
   type NavSection,
   type NavTreeFromManifestOptions,

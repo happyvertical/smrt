@@ -1,15 +1,148 @@
-import Ajv from 'ajv';
+import Ajv, { type ErrorObject } from 'ajv';
+import { schemaOwnedPath } from './argument-issues.js';
 import { intakeBindingDigest } from './execution.js';
 import type { IntakeValues } from './execution-dto.js';
-import { proposeDocumentSplits } from './extraction.js';
+import { proposeDocumentSplits, SplitGroupError } from './extraction.js';
 import type { ExtractionResult } from './extraction-types.js';
+import { storableJSONText } from './json-storage.js';
 import type { GenerationLimits } from './proposal-contracts.js';
 import type {
   GeneratedSuggestion,
   GenerationOutput,
+  MissingFieldsCorrection,
   ProposalEvidenceReference,
+  UnofferedTargetsDropped,
 } from './proposal-dto.js';
 
+export { schemaOwnedPath } from './argument-issues.js';
+
+/** Longest persisted reason; the rest is cut so the publication envelope stays bounded. */
+export const PROPOSAL_REASON_LIMIT = 1000;
+/**
+ * Validator failure with a bounded, value-free reason. The reason names JSON
+ * paths, schema keywords and schema constants only: never document text,
+ * argument values or evidence content.
+ */
+export class ProposalValidationError extends Error {
+  readonly reason: string;
+  constructor(message: string, detail?: string) {
+    super(message);
+    this.reason = (detail ? `${message}: ${detail}` : message).slice(
+      0,
+      PROPOSAL_REASON_LIMIT,
+    );
+  }
+}
+/**
+ * Summarize Ajv errors by schema-owned path, keyword and schema-owned params.
+ * Data never appears: an extra property's name is model output and is omitted.
+ */
+/** Ajv errors examined per summary, duplicates included. */
+export const PROPOSAL_REASON_MAX_ERRORS = 200;
+/** Longest single path rendered; deeper paths keep their prefix. */
+const PATH_LIMIT = 160;
+export function describeSchemaErrors(
+  errors: ErrorObject[] | null | undefined,
+  schema: unknown,
+  instance?: unknown,
+  limit = 20,
+  maxChars = PROPOSAL_REASON_LIMIT - 100,
+): string {
+  // Bounded work: a huge or deeply recursive reply can carry hundreds of
+  // thousands of (often identical) errors, so examine at most a fixed number
+  // of errors in total, walk each distinct instance path once, and stop as
+  // soon as enough distinct parts are collected.
+  const parts = new Set<string>();
+  const paths = new Map<string, string>();
+  const all = errors ?? [];
+  let consumed = 0;
+  while (
+    consumed < all.length &&
+    consumed < PROPOSAL_REASON_MAX_ERRORS &&
+    parts.size < limit
+  ) {
+    const error = all[consumed++];
+    const params = error.params as Record<string, unknown>;
+    const detail: string[] = [];
+    if (typeof params.missingProperty === 'string')
+      detail.push(`missingProperty=${params.missingProperty}`);
+    if (Array.isArray(params.allowedValues))
+      detail.push(
+        `allowedValues=${params.allowedValues.map(String).join('|')}`,
+      );
+    if (params.allowedValue !== undefined)
+      detail.push(`allowedValue=${String(params.allowedValue)}`);
+    if (typeof params.type === 'string') detail.push(`type=${params.type}`);
+    if (typeof params.limit === 'number' || typeof params.limit === 'string')
+      detail.push(`limit=${String(params.limit)}`);
+    if (typeof params.passingSchemas !== 'undefined')
+      detail.push('oneOf=none|multiple');
+    let path = paths.get(error.instancePath);
+    if (path === undefined) {
+      path = schemaOwnedPath(error.instancePath, schema, instance);
+      if (path.length > PATH_LIMIT) path = `${path.slice(0, PATH_LIMIT)}…`;
+      paths.set(error.instancePath, path);
+    }
+    parts.add(
+      `${path} ${error.keyword}${detail.length ? ` (${detail.join(', ')})` : ''}`,
+    );
+  }
+  const shown: string[] = [];
+  let length = 0;
+  for (const part of parts) {
+    if (length + part.length + 2 > maxChars) break;
+    shown.push(part);
+    length += part.length + 2;
+  }
+  const omitted = parts.size - shown.length + (all.length - consumed);
+  if (omitted > 0) shown.push(`+${omitted} more`);
+  return shown.join('; ');
+}
+/** Most missing required arguments one suggestion may carry (#4284); the reply schema's `missingFields` cap. */
+export const PROPOSAL_MISSING_FIELDS_LIMIT = 30;
+/** Longest missing-field name or path kept; the reply schema's string cap. */
+const MISSING_FIELD_LENGTH = 512;
+/**
+ * The missing required arguments when the handler schema refused *only* on
+ * `required` (#4284). A miss at the argument root is the bare property name,
+ * as the existing `missingFields` contract has it; a miss inside a present
+ * nested object or array item is an RFC 6901 JSON Pointer relative to the
+ * arguments (`/vendor/name`, `/lines/0/sku`). Returns `undefined`, so the
+ * caller rejects as before, when any other keyword failed (type, enum,
+ * bounds, additionalProperties, anyOf/oneOf, if/then/else, not, array-form
+ * dependencies — which also carries `missingProperty`...), when a
+ * path crosses a segment the schema does not own (a model-chosen key), or
+ * when the work or result exceeds its bound. Every name comes from the
+ * handler schema's own `required` list; argument values are never read.
+ */
+export function missingRequiredFields(
+  errors: ErrorObject[] | null | undefined,
+  schema: unknown,
+  instance: unknown,
+): string[] | undefined {
+  const all = errors ?? [];
+  if (!all.length || all.length > PROPOSAL_REASON_MAX_ERRORS) return undefined;
+  const missing = new Set<string>();
+  for (const error of all) {
+    const property = (error.params as Record<string, unknown>).missingProperty;
+    if (error.keyword !== 'required' || typeof property !== 'string')
+      return undefined;
+    let field = property;
+    if (error.instancePath) {
+      if (
+        schemaOwnedPath(error.instancePath, schema, instance)
+          .split('/')
+          .includes('?')
+      )
+        return undefined;
+      field = `${error.instancePath}/${property.replace(/~/g, '~0').replace(/\//g, '~1')}`;
+    }
+    if (!field || field.length > MISSING_FIELD_LENGTH) return undefined;
+    missing.add(field);
+    if (missing.size > PROPOSAL_MISSING_FIELDS_LIMIT) return undefined;
+  }
+  return [...missing];
+}
 export function record(value: unknown): IntakeValues {
   if (!value || typeof value !== 'object' || Array.isArray(value))
     throw new Error('Invalid proposal object');
@@ -19,6 +152,72 @@ export function text(value: unknown, max = 512): string {
   if (typeof value !== 'string' || !value.trim() || value.length > max)
     throw new Error('Invalid proposal string');
   return value;
+}
+/** Data only: reject lossy JSON coercions, unsafe Unicode and excessive shape.
+ * The caller also counts the complete offered input against maxInputBytes. */
+export function candidateContext(
+  value: unknown,
+  maxBytes: number,
+): IntakeValues {
+  const fail = (): never => {
+    throw new Error('Invalid candidate context');
+  };
+  const seen = new Set<object>();
+  let nodes = 0;
+  const visit = (entry: unknown, depth: number): void => {
+    if (++nodes > maxBytes || depth > 32) fail();
+    if (
+      entry === null ||
+      typeof entry === 'string' ||
+      typeof entry === 'boolean'
+    )
+      return;
+    if (typeof entry === 'number' && Number.isFinite(entry)) return;
+    if (typeof entry !== 'object' || !entry) {
+      fail();
+      return;
+    }
+    if (seen.has(entry)) fail();
+    seen.add(entry);
+    if (Object.getOwnPropertySymbols(entry).length) fail();
+    if (Array.isArray(entry)) {
+      if (Object.getPrototypeOf(entry) !== Array.prototype) fail();
+      if (Object.keys(entry).length !== entry.length) fail();
+      for (const [key, descriptor] of Object.entries(
+        Object.getOwnPropertyDescriptors(entry),
+      )) {
+        if (
+          key !== 'length' &&
+          (!/^(?:0|[1-9][0-9]*)$/.test(key) ||
+            Number(key) >= entry.length ||
+            !descriptor.enumerable ||
+            !('value' in descriptor))
+        )
+          fail();
+      }
+      for (const child of entry) visit(child, depth + 1);
+    } else {
+      if (
+        Object.getPrototypeOf(entry) !== Object.prototype &&
+        Object.getPrototypeOf(entry) !== null
+      )
+        fail();
+      for (const descriptor of Object.values(
+        Object.getOwnPropertyDescriptors(entry),
+      )) {
+        if (!descriptor.enumerable || !('value' in descriptor)) fail();
+        visit(descriptor.value, depth + 1);
+      }
+      if (Object.getOwnPropertySymbols(entry).length) fail();
+    }
+    seen.delete(entry);
+  };
+  if (!value || typeof value !== 'object' || Array.isArray(value)) fail();
+  visit(value, 0);
+  const serialized = JSON.stringify(value);
+  if (Buffer.byteLength(serialized) > maxBytes || !storableJSONText(serialized))
+    fail();
+  return JSON.parse(serialized) as IntakeValues;
 }
 export function safeUsage(value: unknown): Record<string, number> {
   if (!value || typeof value !== 'object') return {};
@@ -133,7 +332,10 @@ export function suggestionSchema(limits: GenerationLimits) {
               maxItems: 30,
               items: string,
             },
-            explanation: { type: 'string', maxLength: 2000 },
+            explanation: {
+              type: 'string',
+              maxLength: PROPOSAL_EXPLANATION_LIMIT,
+            },
           },
         },
       },
@@ -163,20 +365,165 @@ export function suggestionSchema(limits: GenerationLimits) {
     },
   };
 }
+/**
+ * Upper bound, in code points, on a suggestion's `explanation` (#4331). The
+ * fixed instructions ask for one or two plain sentences stating what the
+ * document is and why the handler fits; two such sentences run about 150-250
+ * characters, so 300 leaves headroom without letting a model spend its output
+ * budget on deliberation (roughly 75-100 tokens at most, against thousands
+ * for the arguments). The provider grammar and this validator use the same
+ * value, so the provider copy still accepts a superset of the validator
+ * (#4261); fresh output is cut to it first ({@link boundGeneratedExplanations}).
+ */
+export const PROPOSAL_EXPLANATION_LIMIT = 300;
+/**
+ * Cut each over-long suggestion `explanation` in fresh generator output to
+ * {@link PROPOSAL_EXPLANATION_LIMIT} code points, ending in an ellipsis, so a
+ * verbose explanation never fails validation (#4331); the raw output-size
+ * checks still run first. A grammar backend already enforces the bound while
+ * decoding; this covers providers that ignore the schema. Only string explanations are touched; anything else is left for
+ * the validator. The input is not mutated, and stored output is never re-cut.
+ */
+export function boundGeneratedExplanations(raw: unknown): {
+  output: unknown;
+  truncated: number;
+} {
+  const suggestions = (raw as { suggestions?: unknown } | null)?.suggestions;
+  if (!raw || typeof raw !== 'object' || !Array.isArray(suggestions))
+    return { output: raw, truncated: 0 };
+  let truncated = 0;
+  const output = {
+    ...raw,
+    suggestions: suggestions.map((suggestion: unknown) => {
+      if (
+        !suggestion ||
+        typeof suggestion !== 'object' ||
+        Array.isArray(suggestion)
+      )
+        return suggestion;
+      const { explanation } = suggestion as { explanation?: unknown };
+      if (typeof explanation !== 'string') return suggestion;
+      // Code points, as Ajv's maxLength and the grammar count them; never
+      // split a surrogate pair.
+      const points = Array.from(explanation);
+      if (points.length <= PROPOSAL_EXPLANATION_LIMIT) return suggestion;
+      truncated += 1;
+      return {
+        ...(suggestion as Record<string, unknown>),
+        explanation: `${points
+          .slice(0, PROPOSAL_EXPLANATION_LIMIT - 1)
+          .join('')
+          .trimEnd()}\u2026`,
+      };
+    }),
+  };
+  return { output, truncated };
+}
+/**
+ * Drop repeated `alternatives` and `missingFields` entries, and repeated whole
+ * suggestions (same handlerId, handlerVersion and args; #4450), by canonical JSON,
+ * keeping the first, from fresh generator output before validation (#4286).
+ * The provider grammar no longer carries `uniqueItems` (#4260), so a model can
+ * repeat an entry; the validator still enforces `uniqueItems` on the result.
+ * Nothing else is touched; anything malformed or
+ * non-JSON is left for the validator to reject. The input is not mutated.
+ */
+export function dedupeGeneratedLists(raw: unknown): {
+  output: unknown;
+  removed: number;
+} {
+  const suggestions = (raw as { suggestions?: unknown } | null)?.suggestions;
+  if (!raw || typeof raw !== 'object' || !Array.isArray(suggestions))
+    return { output: raw, removed: 0 };
+  let removed = 0;
+  const unique = (list: unknown[]) => {
+    const seen = new Set<string>();
+    const kept = list.filter((item) => {
+      let key: string;
+      try {
+        key = intakeBindingDigest(item);
+      } catch {
+        return true;
+      }
+      if (seen.has(key)) return false;
+      seen.add(key);
+      return true;
+    });
+    removed += list.length - kept.length;
+    return kept;
+  };
+  const cleaned = suggestions.map((suggestion: unknown) => {
+    if (
+      !suggestion ||
+      typeof suggestion !== 'object' ||
+      Array.isArray(suggestion)
+    )
+      return suggestion;
+    const entry = { ...(suggestion as Record<string, unknown>) };
+    for (const field of ['alternatives', 'missingFields'])
+      if (Array.isArray(entry[field]))
+        entry[field] = unique(entry[field] as unknown[]);
+    return entry;
+  });
+  // A later suggestion with the same handler, handler version and canonical
+  // (key-sorted) args as an earlier one is the same action; storing both would
+  // let a reviewer approve and run it twice (#4450). Malformed entries pass
+  // through for the validator to reject.
+  const seen = new Set<string>();
+  const kept = cleaned.filter((suggestion: unknown) => {
+    if (
+      !suggestion ||
+      typeof suggestion !== 'object' ||
+      Array.isArray(suggestion)
+    )
+      return true;
+    const { handlerId, handlerVersion, args } = suggestion as Record<
+      string,
+      unknown
+    >;
+    if (
+      typeof handlerId !== 'string' ||
+      typeof handlerVersion !== 'string' ||
+      !args ||
+      typeof args !== 'object' ||
+      Array.isArray(args)
+    )
+      return true;
+    let key: string;
+    try {
+      key = intakeBindingDigest([handlerId, handlerVersion, args]);
+    } catch {
+      return true;
+    }
+    if (seen.has(key)) return false;
+    seen.add(key);
+    return true;
+  });
+  removed += cleaned.length - kept.length;
+  return { output: { ...raw, suggestions: kept }, removed };
+}
 export function validateSuggestions(
   raw: unknown,
   offered: GenerationOutput['offered'],
   extraction: ExtractionResult[],
   limits: GenerationLimits,
   revision: number,
-): Pick<GenerationOutput, 'outcome' | 'suggestions' | 'splits'> {
+): Pick<GenerationOutput, 'outcome' | 'suggestions' | 'splits'> & {
+  missingFieldsCorrection?: MissingFieldsCorrection;
+  splitsDropped?: NonNullable<GenerationOutput['provenance']['splitsDropped']>;
+  unofferedTargetsDropped?: UnofferedTargetsDropped;
+} {
   const ajv = new Ajv({
     strict: true,
     allErrors: true,
     validateFormats: false,
   });
-  if (!ajv.validate(suggestionSchema(limits), raw))
-    throw new Error('Invalid generated proposals');
+  const shape = suggestionSchema(limits);
+  if (!ajv.validate(shape, raw))
+    throw new ProposalValidationError(
+      'Invalid generated proposals',
+      describeSchemaErrors(ajv.errors, shape, raw),
+    );
   const input = raw as {
     outcome: GenerationOutput['outcome'];
     suggestions: Omit<GeneratedSuggestion, 'disposition'>[];
@@ -187,15 +534,26 @@ export function validateSuggestions(
     (['unknown', 'no_action'].includes(input.outcome) &&
       input.suggestions.length)
   )
-    throw new Error('Inconsistent proposal outcome');
+    throw new ProposalValidationError(
+      'Inconsistent proposal outcome',
+      `outcome=${input.outcome}, suggestions=${input.suggestions.length}`,
+    );
   const offeredKeys = new Set(
     offered.flatMap(({ handler, candidates }) => [
       `${handler.id}@${handler.version}`,
       ...candidates.map((candidate) => candidate.key),
     ]),
   );
+  const correction: MissingFieldsCorrection = {
+    suggestions: 0,
+    added: 0,
+    removed: 0,
+  };
+  const unoffered: UnofferedTargetsDropped = { suggestions: 0, fields: 0 };
+  const droppedValues: Array<{ value: string; path: string }> = [];
   const suggestions = input.suggestions.map(
-    (suggestion): GeneratedSuggestion => {
+    (suggestion, index): GeneratedSuggestion => {
+      const path = `/suggestions/${index}`;
       const entry = offered.find(
         ({ handler }) =>
           handler.id === suggestion.handlerId &&
@@ -205,25 +563,29 @@ export function validateSuggestions(
         !entry ||
         suggestion.alternatives.some((key) => !offeredKeys.has(key))
       )
-        throw new Error('Unoffered handler');
+        throw new ProposalValidationError('Unoffered handler', path);
       const schema = ajv.compile(entry.handler.argsSchema);
       const valid = schema(suggestion.args);
-      const missing = (schema.errors ?? [])
-        .filter(
-          (error) => error.keyword === 'required' && error.instancePath === '',
-        )
-        .map((error) => String(error.params.missingProperty))
-        .sort();
-      if (
-        (!valid &&
-          schema.errors?.some(
-            (error) =>
-              error.keyword !== 'required' || error.instancePath !== '',
-          )) ||
-        JSON.stringify([...suggestion.missingFields].sort()) !==
-          JSON.stringify(missing)
-      )
-        throw new Error('Invalid handler arguments');
+      // Required-only refusals keep the suggestion for a person to complete
+      // (#4284); any other refusal still rejects the attempt.
+      let missing = valid
+        ? []
+        : missingRequiredFields(
+            schema.errors,
+            entry.handler.argsSchema,
+            suggestion.args,
+          );
+      if (!missing)
+        throw new ProposalValidationError(
+          'Invalid handler arguments',
+          `${path}/args ${describeSchemaErrors(schema.errors, entry.handler.argsSchema, suggestion.args)}`,
+        );
+      // An invented target in a declared candidate field is dropped, never
+      // kept, and the field is left for the reviewer to choose (#4289).
+      const declaredProperties = (
+        entry.handler.argsSchema as { properties?: unknown }
+      ).properties;
+      const dropped: string[] = [];
       for (const [field, reference] of Object.entries(
         entry.handler.references,
       )) {
@@ -235,42 +597,147 @@ export function validateSuggestions(
               (candidate) =>
                 candidate.model === reference.model && candidate.id === value,
             )
-          )
-            throw new Error('Unoffered target');
+          ) {
+            if (
+              typeof value !== 'string' ||
+              !declaredProperties ||
+              typeof declaredProperties !== 'object' ||
+              !Object.hasOwn(declaredProperties, field)
+            )
+              throw new ProposalValidationError(
+                'Unoffered target',
+                `${path}/args/${field}`,
+              );
+            dropped.push(field);
+          }
         } else if (!extraction.some((result) => result.evidence.id === value))
-          throw new Error('Unknown evidence');
+          throw new ProposalValidationError(
+            'Unknown evidence',
+            `${path}/args/${field}`,
+          );
       }
-      for (const reference of suggestion.evidence)
-        assertEvidenceReference(reference, extraction);
+      let args = suggestion.args;
+      if (dropped.length) {
+        args = Object.fromEntries(
+          Object.entries(suggestion.args).filter(
+            ([field]) => !dropped.includes(field),
+          ),
+        );
+        // The remaining arguments must still fail only on `required`; a drop
+        // that exposes any other refusal rejects as it did before.
+        missing = schema(args)
+          ? []
+          : missingRequiredFields(
+              schema.errors,
+              entry.handler.argsSchema,
+              args,
+            );
+        if (!missing)
+          throw new ProposalValidationError(
+            'Unoffered target',
+            `${path}/args/${dropped[0]}`,
+          );
+        for (const field of dropped)
+          droppedValues.push({
+            value: suggestion.args[field] as string,
+            path: `${path}/args/${field}`,
+          });
+        unoffered.suggestions += 1;
+        unoffered.fields += dropped.length;
+      }
+      // The schema, not the model, decides what is missing. A matching
+      // declaration keeps the model's order, so output that was already valid
+      // is byte-identical; a mismatch is replaced by the sorted computed set
+      // and always needs review.
+      const declared = suggestion.missingFields;
+      const added = missing.filter((field) => !declared.includes(field));
+      const removed = declared.filter((field) => !missing.includes(field));
+      const corrected = added.length > 0 || removed.length > 0;
+      const missingFields = corrected ? [...missing].sort() : [...declared];
+      if (corrected) {
+        correction.suggestions += 1;
+        correction.added += added.length;
+        correction.removed += removed.length;
+      }
+      for (const [position, reference] of suggestion.evidence.entries())
+        assertEvidenceReference(
+          reference,
+          extraction,
+          `${path}/evidence/${position}`,
+        );
       return {
         ...structuredClone(suggestion),
+        args: structuredClone(args),
+        missingFields,
         disposition:
-          missing.length || input.outcome !== 'proposals'
+          corrected ||
+          dropped.length ||
+          missingFields.length ||
+          input.outcome !== 'proposals'
             ? 'needs_review'
             : 'ready_for_review',
       };
     },
   );
   const seen = new Set<string>();
-  const splits = input.splits.map((split) => {
+  let dropped = 0;
+  const splits = input.splits.flatMap((split, index) => {
     const source = extraction.find(
       (entry) => entry.evidence.id === split.evidenceId,
     );
     if (!source || seen.has(split.evidenceId))
-      throw new Error('Invalid split source');
+      throw new ProposalValidationError(
+        'Invalid split source',
+        `/splits/${index}`,
+      );
     seen.add(split.evidenceId);
-    const result = proposeDocumentSplits(source, revision, split.groups);
-    return {
-      evidenceId: split.evidenceId,
-      groups: structuredClone(split.groups),
-      digest: result.digest,
-    };
+    let result: ReturnType<typeof proposeDocumentSplits>;
+    try {
+      result = proposeDocumentSplits(source, revision, split.groups);
+    } catch (error) {
+      // Drop only a split that fails the group check; suggestions and other
+      // splits stand (#4288). An empty group cannot reach here (the schema's
+      // minItems rejects it first). Anything else, such as an invalid
+      // revision, is not the model's and still fails the attempt.
+      if (!(error instanceof SplitGroupError))
+        throw new ProposalValidationError('Invalid split', `/splits/${index}`);
+      dropped++;
+      return [];
+    }
+    return [
+      {
+        evidenceId: split.evidenceId,
+        groups: structuredClone(split.groups),
+        digest: result.digest,
+      },
+    ];
   });
-  return { outcome: input.outcome, suggestions, splits };
+  // A dropped value echoed anywhere else in the kept output (another
+  // argument, an explanation, another suggestion) would survive as a usable
+  // copy, so the attempt rejects as it did before #4289.
+  if (droppedValues.length) {
+    const kept = JSON.stringify({ suggestions, splits });
+    const echoed = droppedValues.find(({ value }) =>
+      kept.includes(JSON.stringify(value).slice(1, -1)),
+    );
+    if (echoed)
+      throw new ProposalValidationError('Unoffered target', echoed.path);
+  }
+  return {
+    outcome: input.outcome,
+    suggestions,
+    splits,
+    ...(correction.suggestions ? { missingFieldsCorrection: correction } : {}),
+    ...(dropped
+      ? { splitsDropped: { count: dropped, checks: ['split_groups'] } }
+      : {}),
+    ...(unoffered.suggestions ? { unofferedTargetsDropped: unoffered } : {}),
+  };
 }
 function assertEvidenceReference(
   reference: ProposalEvidenceReference,
   extraction: ExtractionResult[],
+  path: string,
 ) {
   const source = extraction.find(
     (entry) => entry.evidence.id === reference.evidenceId,
@@ -283,5 +750,5 @@ function assertEvidenceReference(
         intakeBindingDigest(reference.location),
     )
   )
-    throw new Error('Unknown evidence location');
+    throw new ProposalValidationError('Unknown evidence location', path);
 }

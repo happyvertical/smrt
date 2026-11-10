@@ -4,7 +4,7 @@
  * `smrt app token`, and the runtime's membership-backed hosted resolver.
  * Everything runs on the real local runtime and SQLite.
  */
-import { createHash } from 'node:crypto';
+import { createHash, randomUUID } from 'node:crypto';
 import {
   mkdir,
   mkdtemp,
@@ -29,12 +29,13 @@ import {
   PermissionCollection,
   RoleCollection,
   RolePermissionCollection,
+  SessionCollection,
   TenantCollection,
   UserCollection,
   UserStatus,
 } from '@happyvertical/smrt-users';
 import type { DatabaseInterface } from '@happyvertical/sql';
-import { afterAll, afterEach, describe, expect, it } from 'vitest';
+import { afterAll, afterEach, describe, expect, it, vi } from 'vitest';
 import {
   LOCAL_MCP_TOKEN_PRINCIPAL,
   LOCAL_MCP_TOKEN_TABLE,
@@ -42,6 +43,11 @@ import {
   openLocalMcpTokenStore,
 } from './index.js';
 import {
+  createLocalMcpTokenStore,
+  ensureLocalMcpTokenTable,
+} from './local-mcp-tokens.js';
+import {
+  createLocalMcpCredentialHandler,
   createSmrtSvelteKitRuntime,
   type SmrtSvelteKitRuntime,
 } from './sveltekit.js';
@@ -212,8 +218,11 @@ describe('local MCP tokens', () => {
         id: issued.id,
         scopes: [EXPORT, READ],
         label: 'Claude Desktop',
+        holder: null,
+        renewable: true,
         createdAt: issued.createdAt,
         expiresAt: issued.expiresAt,
+        lastUsedAt: null,
         revokedAt: null,
         status: 'active',
       },
@@ -837,6 +846,440 @@ describe('local MCP tokens', () => {
   });
 });
 
+describe('self-renewing local MCP tokens (#4874)', () => {
+  const HOUR = 60 * 60 * 1000;
+  const WINDOW = 30 * 24 * HOUR;
+  const T0 = '2026-10-03T12:00:00.000Z';
+
+  async function storeFor(label: string) {
+    const clock = { now: new Date(T0) };
+    const fixture = await ownedRuntime(label, clock);
+    const store = fixture.local.mcpTokens;
+    if (!store) throw new Error('token store missing');
+    const advance = (ms: number) => {
+      clock.now = new Date(clock.now.getTime() + ms);
+    };
+    const expiryOf = async (id: string) =>
+      (await tokenRows(fixture.local.db)).find((row) => row.id === id)
+        ?.expires_at;
+    return { ...fixture, store, clock, advance, expiryOf };
+  }
+
+  it('rotates a holder atomically: one active token, scopes kept per issue', async () => {
+    const { runtime, local, store } = await storeFor('rotate');
+    const other = await store.issue({ scopes: [READ] });
+    const first = await store.issue({
+      scopes: [READ, EXPORT],
+      holder: 'laptop',
+    });
+    const second = await store.issue({ scopes: [READ], holder: 'laptop' });
+    expect(second.holder).toBe('laptop');
+    expect(second.id).not.toBe(first.id);
+    expect(second.token).not.toBe(first.token);
+    expect(await runtime.verifyLocalMcpToken(first.token)).toBeNull();
+    expect(await runtime.verifyLocalMcpToken(second.token)).toMatchObject({
+      scopes: [READ],
+    });
+    // A token with no holder is unaffected, and so is another holder.
+    expect(await runtime.verifyLocalMcpToken(other.token)).not.toBeNull();
+    const phone = await store.issue({ scopes: [READ], holder: 'phone' });
+    expect(await runtime.verifyLocalMcpToken(phone.token)).not.toBeNull();
+    expect(await runtime.verifyLocalMcpToken(second.token)).not.toBeNull();
+    const listed = await store.list();
+    const active = listed.filter(
+      (record) => record.status === 'active' && record.holder === 'laptop',
+    );
+    expect(active.map((record) => record.id)).toEqual([second.id]);
+    expect(listed.find((record) => record.id === first.id)?.status).toBe(
+      'revoked',
+    );
+    expect(JSON.stringify(await tokenRows(local.db))).not.toContain(
+      second.token,
+    );
+  });
+
+  it('rotates over an expired holder token and never leaves two valid', async () => {
+    const { runtime, store, advance } = await storeFor('rotate-expired');
+    const first = await store.issue({
+      scopes: [READ],
+      holder: 'tv',
+      expiresInSeconds: 60,
+    });
+    advance(5 * 60 * 1000);
+    const second = await store.issue({ scopes: [READ], holder: 'tv' });
+    expect(await runtime.verifyLocalMcpToken(first.token)).toBeNull();
+    expect(await runtime.verifyLocalMcpToken(second.token)).not.toBeNull();
+  });
+
+  it('keeps the previous token valid when a rotation fails midway', async () => {
+    const { runtime, local, store } = await storeFor('rotate-fail');
+    const first = await store.issue({ scopes: [READ], holder: 'laptop' });
+    await local.db.query(
+      `CREATE TRIGGER fail_rotation BEFORE INSERT ON ${LOCAL_MCP_TOKEN_TABLE}
+       WHEN NEW.label = 'boom'
+       BEGIN SELECT RAISE(ABORT, 'boom'); END`,
+    );
+    await expect(
+      store.issue({ scopes: [READ], holder: 'laptop', label: 'boom' }),
+    ).rejects.toThrow();
+    expect(await runtime.verifyLocalMcpToken(first.token)).not.toBeNull();
+    expect((await store.list())[0]).toMatchObject({
+      id: first.id,
+      status: 'active',
+      revokedAt: null,
+    });
+    expect(await tokenRows(local.db)).toHaveLength(1);
+  });
+
+  it('enforces one unrevoked token per holder in the database', async () => {
+    const { local, store } = await storeFor('holder-index');
+    const issued = await store.issue({ scopes: [READ], holder: 'laptop' });
+    await expect(
+      local.db.query(
+        `INSERT INTO ${LOCAL_MCP_TOKEN_TABLE}
+         (id, token_hash, user_id, tenant_id, scopes, created_at, expires_at, holder)
+         VALUES (?, 'x', 'u', 't', '[]', 'c', 'e', 'laptop')`,
+        randomUUID(),
+      ),
+    ).rejects.toThrow();
+    await store.revoke(issued.id);
+    await local.db.query(
+      `INSERT INTO ${LOCAL_MCP_TOKEN_TABLE}
+       (id, token_hash, user_id, tenant_id, scopes, created_at, expires_at, holder)
+       VALUES (?, 'y', 'u', 't', '[]', 'c', 'e', 'laptop')`,
+      randomUUID(),
+    );
+  });
+
+  it('validates the holder like a label', async () => {
+    const { local, store } = await storeFor('holder-invalid');
+    for (const holder of ['', '   ', 'x'.repeat(81), 'bad\nholder', 5]) {
+      await expect(
+        store.issue({ scopes: [READ], holder: holder as string }),
+      ).rejects.toMatchObject({ code: 'invalid_configuration' });
+    }
+    await expect(store.revokeHolder('')).rejects.toMatchObject({
+      code: 'invalid_configuration',
+    });
+    expect(await tokenRows(local.db)).toEqual([]);
+    const ok = await store.issue({ scopes: [READ], holder: '  tablet  ' });
+    expect(ok.holder).toBe('tablet');
+  });
+
+  it('slides a renewable token on use, writing at most once an hour', async () => {
+    const { runtime, store, advance, expiryOf } = await storeFor('slide');
+    const issued = await store.issue({ scopes: [READ] });
+    expect(issued.renewable).toBe(true);
+    expect(await expiryOf(issued.id)).toBe(
+      new Date(Date.parse(T0) + WINDOW).toISOString(),
+    );
+    // First use records the slide (never used before).
+    advance(10 * 60 * 1000);
+    expect(await runtime.verifyLocalMcpToken(issued.token)).not.toBeNull();
+    const firstSlide = new Date(
+      Date.parse(T0) + 10 * 60 * 1000 + WINDOW,
+    ).toISOString();
+    expect(await expiryOf(issued.id)).toBe(firstSlide);
+    expect((await store.list())[0]).toMatchObject({
+      renewable: true,
+      lastUsedAt: '2026-10-03T12:10:00.000Z',
+    });
+    // Within the hour: verify succeeds without writing.
+    advance(59 * 60 * 1000);
+    expect(await runtime.verifyLocalMcpToken(issued.token)).not.toBeNull();
+    expect(await expiryOf(issued.id)).toBe(firstSlide);
+    // At the hour: slides again, to exactly now + window.
+    advance(60 * 1000);
+    expect(await runtime.verifyLocalMcpToken(issued.token)).not.toBeNull();
+    expect(await expiryOf(issued.id)).toBe(
+      new Date(Date.parse(T0) + 70 * 60 * 1000 + WINDOW).toISOString(),
+    );
+  });
+
+  it('keeps a token alive across windows while used, and lapses it after a full unused window', async () => {
+    const { runtime, store, advance } = await storeFor('lapse');
+    const issued = await store.issue({ scopes: [READ], holder: 'laptop' });
+    for (let day = 0; day < 4; day += 1) {
+      advance(20 * 24 * HOUR);
+      expect(await runtime.verifyLocalMcpToken(issued.token)).not.toBeNull();
+    }
+    // 80 days after issue, past the original 30-day expiry, still active.
+    expect((await store.list())[0].status).toBe('active');
+    advance(WINDOW - 1000);
+    expect((await store.list())[0].status).toBe('active');
+    advance(1000);
+    expect(await runtime.verifyLocalMcpToken(issued.token)).toBeNull();
+    expect((await store.list())[0].status).toBe('expired');
+  });
+
+  it('never revives an expired token by sliding, nor slides a revoked one', async () => {
+    const { runtime, local, store, advance, expiryOf } =
+      await storeFor('no-revive');
+    const issued = await store.issue({ scopes: [READ] });
+    const before = await expiryOf(issued.id);
+    advance(WINDOW + 1000);
+    expect(await runtime.verifyLocalMcpToken(issued.token)).toBeNull();
+    expect(await expiryOf(issued.id)).toBe(before);
+    expect((await tokenRows(local.db))[0].last_used_at).toBeNull();
+
+    const revoked = await store.issue({ scopes: [READ] });
+    const revokedBefore = await expiryOf(revoked.id);
+    await store.revoke(revoked.id);
+    advance(2 * HOUR);
+    expect(await runtime.verifyLocalMcpToken(revoked.token)).toBeNull();
+    expect(await expiryOf(revoked.id)).toBe(revokedBefore);
+  });
+
+  it('never shortens an expiry and does not slide when the owner is inactive', async () => {
+    const { runtime, local, owner, store, advance, expiryOf } =
+      await storeFor('no-shorten');
+    const issued = await store.issue({ scopes: [READ] });
+    // Push the stored expiry beyond now + window; a slide must not pull it in.
+    const far = new Date(Date.parse(T0) + 2 * WINDOW).toISOString();
+    await local.db.query(
+      `UPDATE ${LOCAL_MCP_TOKEN_TABLE} SET expires_at = ? WHERE id = ?`,
+      far,
+      issued.id,
+    );
+    advance(2 * HOUR);
+    expect(await runtime.verifyLocalMcpToken(issued.token)).not.toBeNull();
+    expect(await expiryOf(issued.id)).toBe(far);
+
+    const second = await store.issue({ scopes: [READ] });
+    const users = await UserCollection.create({ db: local.db });
+    const user = await users.get({ id: owner.userId });
+    if (!user) throw new Error('user missing');
+    user.status = UserStatus.SUSPENDED;
+    await user.save();
+    const slidBefore = await expiryOf(second.id);
+    advance(2 * HOUR);
+    expect(await runtime.verifyLocalMcpToken(second.token)).toBeNull();
+    expect(await expiryOf(second.id)).toBe(slidBefore);
+  });
+
+  it('never slides a desktop slot credential (#4874)', async () => {
+    const { runtime, local, owner, store, advance, expiryOf } =
+      await storeFor('desktop-fixed');
+    const put = await store.manageDesktopCredential?.(
+      {
+        userId: owner.userId,
+        tenantId: owner.tenantId,
+        permissions: [READ],
+      },
+      {
+        id: randomUUID(),
+        action: 'put',
+        scopes: [READ],
+        expiresInSeconds: 24 * 60 * 60,
+      },
+    );
+    if (!put || put === 'slot_unavailable') throw new Error('slot not minted');
+    expect(put.renewable).toBe(false);
+    const expiry = await expiryOf(put.id);
+    advance(2 * HOUR);
+    expect(await runtime.verifyLocalMcpToken(put.token)).not.toBeNull();
+    advance(2 * HOUR);
+    expect(await runtime.verifyLocalMcpToken(put.token)).not.toBeNull();
+    expect(await expiryOf(put.id)).toBe(expiry);
+    expect(
+      (await tokenRows(local.db)).find((row) => row.id === put.id)
+        ?.last_used_at,
+    ).toBeNull();
+  });
+
+  describe('the slide write re-checks the row itself (#4874)', () => {
+    /**
+     * Run `interfere` after verify has read and accepted the row but before
+     * the slide UPDATE reaches the database.
+     */
+    async function raceSlide(
+      label: string,
+      interfere: (
+        local: Awaited<ReturnType<typeof storeFor>>['local'],
+        id: string,
+        clock: Date,
+      ) => Promise<void>,
+    ) {
+      const fixture = await storeFor(label);
+      const { runtime, local, store, advance, clock, expiryOf } = fixture;
+      const issued = await store.issue({ scopes: [READ] });
+      advance(2 * HOUR);
+      const original = local.db.query.bind(local.db);
+      let raced = false;
+      const spy = vi
+        .spyOn(local.db, 'query')
+        .mockImplementation(async (sql: string, ...params: unknown[]) => {
+          if (!raced && /SET expires_at = \?, last_used_at/u.test(sql)) {
+            raced = true;
+            await interfere(local, issued.id, clock.now);
+          }
+          return original(sql, ...params);
+        });
+      try {
+        await runtime.verifyLocalMcpToken(issued.token);
+      } finally {
+        spy.mockRestore();
+      }
+      expect(raced).toBe(true);
+      const row = (await tokenRows(local.db)).find(
+        (entry) => entry.id === issued.id,
+      );
+      return { fixture, issued, row, expiryOf };
+    }
+
+    it('does not slide a token revoked after verify read it', async () => {
+      const expected = new Date(Date.parse(T0) + WINDOW).toISOString();
+      const { fixture, issued, row } = await raceSlide(
+        'race-revoked',
+        async (local, id, at) => {
+          await local.db.query(
+            `UPDATE ${LOCAL_MCP_TOKEN_TABLE} SET revoked_at = ? WHERE id = ?`,
+            at.toISOString(),
+            id,
+          );
+        },
+      );
+      expect(row?.expires_at).toBe(expected);
+      expect(row?.last_used_at).toBeNull();
+      expect(
+        await fixture.runtime.verifyLocalMcpToken(issued.token),
+      ).toBeNull();
+    });
+
+    it('does not revive a token that expired after verify read it', async () => {
+      let lapsed = '';
+      const { fixture, issued, row } = await raceSlide(
+        'race-expired',
+        async (local, id, at) => {
+          lapsed = new Date(at.getTime() - 1000).toISOString();
+          await local.db.query(
+            `UPDATE ${LOCAL_MCP_TOKEN_TABLE} SET expires_at = ? WHERE id = ?`,
+            lapsed,
+            id,
+          );
+        },
+      );
+      expect(row?.expires_at).toBe(lapsed);
+      expect(row?.last_used_at).toBeNull();
+      expect(
+        await fixture.runtime.verifyLocalMcpToken(issued.token),
+      ).toBeNull();
+    });
+  });
+
+  it('never slides a fixed-lifetime token', async () => {
+    const { runtime, store, advance, expiryOf } = await storeFor('fixed');
+    const issued = await store.issue({
+      scopes: [READ],
+      expiresInSeconds: 24 * 60 * 60,
+    });
+    expect(issued.renewable).toBe(false);
+    const expiry = await expiryOf(issued.id);
+    advance(2 * HOUR);
+    expect(await runtime.verifyLocalMcpToken(issued.token)).not.toBeNull();
+    advance(2 * HOUR);
+    expect(await runtime.verifyLocalMcpToken(issued.token)).not.toBeNull();
+    expect(await expiryOf(issued.id)).toBe(expiry);
+    expect((await store.list())[0]).toMatchObject({
+      renewable: false,
+      lastUsedAt: null,
+    });
+    advance(24 * HOUR);
+    expect(await runtime.verifyLocalMcpToken(issued.token)).toBeNull();
+    await expect(
+      store.issue({ scopes: [READ], expiresInSeconds: 59 }),
+    ).rejects.toMatchObject({ code: 'invalid_configuration' });
+  });
+
+  it('revokes a holder idempotently without touching other tokens', async () => {
+    const { runtime, store } = await storeFor('revoke-holder');
+    const mine = await store.issue({ scopes: [READ], holder: 'laptop' });
+    const kept = await store.issue({ scopes: [READ], holder: 'phone' });
+    const anonymous = await store.issue({ scopes: [READ] });
+    expect(await store.revokeHolder('laptop')).toBe('revoked');
+    expect(await store.revokeHolder('laptop')).toBe('none');
+    expect(await store.revokeHolder('never-seen')).toBe('none');
+    expect(await runtime.verifyLocalMcpToken(mine.token)).toBeNull();
+    expect(await runtime.verifyLocalMcpToken(kept.token)).not.toBeNull();
+    expect(await runtime.verifyLocalMcpToken(anonymous.token)).not.toBeNull();
+    // The holder can be issued a fresh token afterwards.
+    const again = await store.issue({ scopes: [READ], holder: 'laptop' });
+    expect(await runtime.verifyLocalMcpToken(again.token)).not.toBeNull();
+  });
+
+  it('upgrades an old-schema table in place and treats old rows as fixed with no holder', async () => {
+    const { runtime, local, store, advance, expiryOf } =
+      await storeFor('upgrade');
+    const old = await store.issue({ scopes: [READ] });
+    const [row] = await tokenRows(local.db);
+    // Rebuild the table as releases before #4874 shaped it, keeping the row.
+    await local.db.query(`DROP TABLE ${LOCAL_MCP_TOKEN_TABLE}`);
+    await local.db.query(
+      `CREATE TABLE ${LOCAL_MCP_TOKEN_TABLE} (
+        id TEXT PRIMARY KEY,
+        token_hash TEXT NOT NULL UNIQUE,
+        user_id TEXT NOT NULL,
+        tenant_id TEXT NOT NULL,
+        scopes TEXT NOT NULL,
+        label TEXT NULL,
+        created_at TEXT NOT NULL,
+        expires_at TEXT NOT NULL,
+        revoked_at TEXT NULL
+      )`,
+    );
+    await local.db.query(
+      `INSERT INTO ${LOCAL_MCP_TOKEN_TABLE}
+       (id, token_hash, user_id, tenant_id, scopes, label, created_at, expires_at)
+       VALUES (?, ?, ?, ?, ?, NULL, ?, ?)`,
+      row.id,
+      row.token_hash,
+      row.user_id,
+      row.tenant_id,
+      row.scopes,
+      row.created_at,
+      row.expires_at,
+    );
+    // Startup runs this; running it again must change nothing.
+    await ensureLocalMcpTokenTable(local.db);
+    await ensureLocalMcpTokenTable(local.db);
+    const columns = (
+      (await local.db.query(`PRAGMA table_info(${LOCAL_MCP_TOKEN_TABLE})`))
+        .rows as Array<{ name: string }>
+    ).map((column) => column.name);
+    expect(columns).toEqual(
+      expect.arrayContaining(['holder', 'sliding', 'last_used_at']),
+    );
+    const expiry = await expiryOf(old.id);
+    advance(2 * HOUR);
+    expect(await runtime.verifyLocalMcpToken(old.token)).not.toBeNull();
+    expect(await expiryOf(old.id)).toBe(expiry); // legacy rows never slide
+    expect((await store.list())[0]).toMatchObject({
+      id: old.id,
+      holder: null,
+      renewable: false,
+      lastUsedAt: null,
+      status: 'active',
+    });
+    const rotated = await store.issue({ scopes: [READ], holder: 'laptop' });
+    expect(await runtime.verifyLocalMcpToken(rotated.token)).not.toBeNull();
+    expect(await runtime.verifyLocalMcpToken(old.token)).not.toBeNull();
+  });
+
+  it('does not verify a token under a different installation secret', async () => {
+    const { local, owner, store, clock } = await storeFor('other-seed');
+    const issued = await store.issue({ scopes: [READ], holder: 'laptop' });
+    const reseeded = createLocalMcpTokenStore({
+      db: local.db,
+      now: () => clock.now,
+      readSecret: async () => 'a-different-installation-seed',
+      findOwner: async () => owner,
+      fail: (code, message) => new LocalRuntimeError(code, message),
+    });
+    expect(await reseeded.verify(issued.token)).toBeNull();
+    expect(await store.verify(issued.token)).not.toBeNull();
+  });
+});
+
 describe('membership-backed hosted MCP principal', () => {
   const ISSUER = 'https://id.example.test/';
 
@@ -931,5 +1374,309 @@ describe('membership-backed hosted MCP principal', () => {
     await expect(hostedRuntime.resolveMcpPrincipal(identity)).resolves.toBe(
       null,
     );
+  });
+});
+
+function desktopRequest(runtime: SmrtSvelteKitRuntime, sessionId: string) {
+  const handle = createLocalMcpCredentialHandler(runtime);
+  return (
+    body: unknown,
+    options: {
+      url?: string;
+      host?: string;
+      origin?: string | null;
+      peer?: string;
+      fetchSite?: string;
+      method?: string;
+      mediaType?: string;
+      raw?: string;
+      cookie?: string;
+    } = {},
+  ) => {
+    const url = new URL(
+      options.url ?? 'http://127.0.0.1:4678/api/local/mcp-credentials',
+    );
+    const request = new Request(url, {
+      method: options.method ?? 'POST',
+      headers: {
+        host: options.host ?? url.host,
+        'content-type': options.mediaType ?? 'application/json',
+        ...(options.origin === null
+          ? {}
+          : { origin: options.origin ?? url.origin }),
+        ...(options.fetchSite ? { 'sec-fetch-site': options.fetchSite } : {}),
+      },
+      ...(options.method === 'GET'
+        ? {}
+        : { body: options.raw ?? JSON.stringify(body) }),
+    });
+    return handle({
+      request,
+      url,
+      getClientAddress: () => options.peer ?? '::ffff:127.0.0.1',
+      cookies: { get: () => options.cookie ?? sessionId } as Parameters<
+        typeof handle
+      >[0]['cookies'],
+    });
+  };
+}
+
+describe('desktop local MCP credential handler', () => {
+  it('mints, rotates, expires and revokes a private owner slot without colliding with operator tokens', async () => {
+    const clock = { now: new Date() };
+    const { runtime, local, owner } = await ownedRuntime(
+      'desktop-lifecycle',
+      clock,
+    );
+    const store = local.mcpTokens;
+    if (!store) throw new Error('token store missing');
+    const manual = await store.issue({ scopes: [EXPORT] });
+    const desktop = desktopRequest(runtime, owner.sessionId);
+    // Even knowing the manual id cannot make its UUIDv4 row a desktop slot.
+    const put = {
+      action: 'put',
+      id: manual.id,
+      scopes: [READ],
+      expiresInSeconds: 60,
+    };
+    const response = await desktop(put);
+    expect(response.status).toBe(200);
+    expect(response.headers.get('cache-control')).toBe('no-store');
+    expect(response.headers.get('referrer-policy')).toBe('no-referrer');
+    expect(response.headers.get('x-content-type-options')).toBe('nosniff');
+    const first = await response.json();
+    expect(first).toEqual({
+      id: manual.id,
+      token: expect.stringMatching(/^smrt_mcp_[A-Za-z0-9_-]{43}$/),
+      scopes: [READ],
+      expiresAt: new Date(clock.now.getTime() + 60_000).toISOString(),
+    });
+    expect(await runtime.verifyLocalMcpToken(first.token)).toMatchObject({
+      id: owner.userId,
+      tenantId: owner.tenantId,
+      scopes: [READ],
+    });
+    const rotated = await (await desktop({ ...put, scopes: [EXPORT] })).json();
+    expect(rotated.token).not.toBe(first.token);
+    expect(await runtime.verifyLocalMcpToken(first.token)).toBeNull();
+    expect(await runtime.verifyLocalMcpToken(rotated.token)).toMatchObject({
+      scopes: [EXPORT],
+    });
+    const persisted = JSON.stringify(await tokenRows(local.db));
+    expect(persisted).not.toContain(rotated.token);
+    expect(await store.list()).toHaveLength(2);
+    clock.now = new Date(clock.now.getTime() + 60_000);
+    expect(await runtime.verifyLocalMcpToken(rotated.token)).toBeNull();
+
+    for (let retry = 0; retry < 2; retry += 1) {
+      const response = await desktop({ action: 'revoke', id: put.id });
+      expect(response.status).toBe(200);
+      expect(await response.json()).toEqual({ status: 'revoked' });
+    }
+    expect((await desktop(put)).status).toBe(409);
+    expect(await runtime.verifyLocalMcpToken(manual.token)).not.toBeNull();
+    expect(await store.list()).toHaveLength(2);
+  });
+
+  it('denies hostile peers, origins, hosts, and callers and refuses malformed or excessive scopes and expiry', async () => {
+    const { runtime, owner, local, revokePermission } =
+      await ownedRuntime('desktop-trust');
+    const desktop = desktopRequest(runtime, owner.sessionId);
+    const put = {
+      action: 'put',
+      id: randomUUID(),
+      scopes: [READ],
+      expiresInSeconds: 60,
+    };
+    const users = await UserCollection.create({ db: local.db });
+    const nonOwner = await users.create({
+      email: 'visitor@example.test',
+      status: UserStatus.ACTIVE,
+    });
+    const roles = await RoleCollection.create({ db: local.db });
+    const viewer = await roles.findSystemRoleBySlug(DEFAULT_ROLE_SLUGS.VIEWER);
+    const memberships = await MembershipCollection.create({ db: local.db });
+    await memberships.create({
+      tenantId: owner.tenantId,
+      userId: nonOwner.id as string,
+      roleId: viewer?.id as string,
+      status: MembershipStatus.ACTIVE,
+    });
+    const sessions = await SessionCollection.create({ db: local.db });
+    const visitorSession = await sessions.createSession({
+      tenantId: owner.tenantId,
+      userId: nonOwner.id as string,
+      authMethod: 'password',
+    });
+    const tenants = await TenantCollection.create({ db: local.db });
+    const anotherTenant = await tenants.create({
+      name: 'Other',
+      slug: 'other',
+    });
+    const wrongTenantSession = await sessions.createSession({
+      tenantId: anotherTenant.id as string,
+      userId: owner.userId,
+      authMethod: 'password',
+    });
+    const cappedSession = await sessions.createSession({
+      tenantId: owner.tenantId,
+      userId: owner.userId,
+      authMethod: 'password',
+      data: { permissionCeiling: [EXPORT] },
+    });
+    const deviceSession = await sessions.createSession({
+      tenantId: owner.tenantId,
+      userId: owner.userId,
+      authMethod: 'pin',
+    });
+    for (const options of [
+      { peer: '192.0.2.1' },
+      { url: 'https://attacker.example/api/local/mcp-credentials' },
+      { host: 'attacker.example' },
+      { origin: null },
+      { origin: 'null' },
+      { origin: 'http://127.0.0.1:4679' },
+      { origin: 'http://localhost:4678' },
+      { fetchSite: 'cross-site' },
+      { cookie: '' },
+      { cookie: 'forged-session' },
+      { cookie: visitorSession.id as string },
+      { cookie: wrongTenantSession.id as string },
+      { cookie: deviceSession.id as string },
+      { cookie: cappedSession.id as string },
+    ]) {
+      const response = await desktop(put, options);
+      expect(response.status).toBe(403);
+      expect(response.headers.get('cache-control')).toBe('no-store');
+      expect(await response.json()).toEqual({ code: 'forbidden' });
+    }
+    for (const input of [
+      { ...put, id: 'bad-id' },
+      { ...put, action: 'unknown' },
+      { ...put, scopes: [] },
+      { ...put, scopes: ['missing.scope'] },
+      { ...put, scopes: [{ unexpected: 'object' }] },
+      { ...put, expiresInSeconds: undefined },
+      { ...put, expiresInSeconds: 59 },
+      { ...put, expiresInSeconds: 365 * 86400 + 1 },
+      { ...put, tenantId: owner.tenantId },
+    ]) {
+      expect((await desktop(input)).status).toBe(400);
+    }
+    expect((await desktop(put, { method: 'GET' })).status).toBe(405);
+    expect((await desktop(put, { mediaType: 'text/plain' })).status).toBe(415);
+    expect((await desktop(put, { raw: '{broken' })).status).toBe(400);
+    expect((await desktop(put, { raw: ' '.repeat(13 * 1024) })).status).toBe(
+      400,
+    );
+    expect(
+      (
+        await desktop(
+          { action: 'revoke', id: put.id },
+          { cookie: cappedSession.id as string },
+        )
+      ).status,
+    ).toBe(403);
+    expect(await tokenRows(local.db)).toEqual([]);
+
+    const issued = await (await desktop(put)).json();
+    expect(
+      (await desktop(put, { cookie: cappedSession.id as string })).status,
+    ).toBe(403);
+    expect(await runtime.verifyLocalMcpToken(issued.token)).toMatchObject({
+      scopes: [READ],
+    });
+    await revokePermission(READ);
+    expect((await desktop(put)).status).toBe(400);
+    expect(await runtime.verifyLocalMcpToken(issued.token)).toMatchObject({
+      scopes: [],
+    });
+
+    const ownerRole = await roles.findSystemRoleBySlug(
+      DEFAULT_ROLE_SLUGS.OWNER,
+    );
+    const otherMembership = await memberships.findByUserAndTenant(
+      nonOwner.id as string,
+      owner.tenantId,
+    );
+    if (!otherMembership || !ownerRole?.id)
+      throw new Error('Missing owner fixture');
+    otherMembership.roleId = ownerRole.id;
+    await otherMembership.save();
+    expect((await desktop({ ...put, scopes: [EXPORT] })).status).toBe(403);
+    expect(await tokenRows(local.db)).toHaveLength(1);
+  });
+
+  it('preserves the previous credential on failed rotation and converges after lost or concurrent responses', async () => {
+    const { runtime, owner, local } = await ownedRuntime('desktop-retry');
+    const desktop = desktopRequest(runtime, owner.sessionId);
+    const put = {
+      action: 'put',
+      id: randomUUID(),
+      scopes: [READ],
+      expiresInSeconds: 60,
+    };
+    const initial = await (await desktop(put)).json();
+    const secret = initial.token;
+    const driverSentinel = `smrt_mcp_${'S'.repeat(43)}`;
+    // The driver exception includes sensitive text that must not escape the route.
+    await local.db.query(`CREATE TEMP TRIGGER fail_desktop_rotation BEFORE UPDATE ON ${LOCAL_MCP_TOKEN_TABLE} BEGIN
+      SELECT RAISE(ABORT, '${driverSentinel}'); END`);
+    const log = vi.spyOn(console, 'log');
+    const warn = vi.spyOn(console, 'warn');
+    const error = vi.spyOn(console, 'error');
+    try {
+      const failure = await desktop(put);
+      expect(failure.status).toBe(500);
+      expect(await failure.json()).toEqual({
+        code: 'credential_operation_failed',
+      });
+      const output = JSON.stringify([
+        ...log.mock.calls,
+        ...warn.mock.calls,
+        ...error.mock.calls,
+      ]);
+      expect(output).not.toContain(driverSentinel);
+      expect(output).not.toContain(secret);
+      expect(process.argv.join(' ')).not.toContain(secret);
+      expect(await runtime.verifyLocalMcpToken(secret)).not.toBeNull();
+    } finally {
+      log.mockRestore();
+      warn.mockRestore();
+      error.mockRestore();
+      await local.db.query('DROP TRIGGER fail_desktop_rotation');
+    }
+    // A response can be lost after commit. One more PUT replaces it in the
+    // same slot, and concurrent writers still leave only one valid token.
+    expect((await desktop(put)).status).toBe(200);
+    const writes = await Promise.all([desktop(put), desktop(put)]);
+    expect(writes.map((response) => response.status)).toEqual([200, 200]);
+    const replies = await Promise.all(
+      writes.map((response) => response.json()),
+    );
+    const principals = await Promise.all(
+      replies.map((reply) => runtime.verifyLocalMcpToken(reply.token)),
+    );
+    expect(principals.filter(Boolean)).toHaveLength(1);
+    expect(await runtime.verifyLocalMcpToken(secret)).toBeNull();
+    expect(await tokenRows(local.db)).toHaveLength(1);
+    const revoked = await Promise.all([
+      desktop(put),
+      desktop({ action: 'revoke', id: put.id }),
+    ]);
+    expect([200, 409]).toContain(revoked[0].status);
+    expect(revoked[1].status).toBe(200);
+    if (revoked[0].ok) {
+      expect(
+        await runtime.verifyLocalMcpToken((await revoked[0].json()).token),
+      ).toBeNull();
+    }
+    expect((await desktop(put)).status).toBe(409);
+    const unused = { ...put, id: randomUUID() };
+    expect((await desktop({ action: 'revoke', id: unused.id })).status).toBe(
+      200,
+    );
+    expect((await desktop(unused)).status).toBe(409);
+    await expectDatabaseIntegrity(local.db);
   });
 });

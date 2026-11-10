@@ -15,6 +15,7 @@
     "version": { "const": 1 },
     "name": { "type": "string" },
     "description": { "type": "string" },
+    "specs": { "type": "string", "maxLength": 20000, "description": "Free-text product requirements beyond the recipes and features: what the app must also do. Agents treat it as requirements to build." },
     "recipes": { "type": "array", "items": { "type": "string" } },
     "features": { "type": "array", "items": { "type": "string" } },
     "policies": { "type": "array", "items": { "$ref": "#/$defs/policyRow" } },

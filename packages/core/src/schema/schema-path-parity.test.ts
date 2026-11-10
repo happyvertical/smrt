@@ -579,8 +579,24 @@ function buildFixtureManifest(): SmartObjectManifest {
         agenda: { type: 'meta' },
         priority: { type: 'meta', _meta: { indexed: true } },
         bookingRef: { type: 'text', _meta: { unique: true } },
+        externalRef: { type: 'text' },
       },
-      {},
+      {
+        // Subclass-declared indexes on the shared table (#3299): the unique
+        // one is scoped to this subtype's discriminator, the plain one stays
+        // unqualified so polymorphic reads can use it.
+        indexes: [
+          {
+            name: 'parity_events_meeting_tenant_external_uidx',
+            columns: ['tenantId', 'externalRef'],
+            unique: true,
+          },
+          {
+            name: 'parity_events_meeting_external_created_idx',
+            columns: ['externalRef', 'createdAt'],
+          },
+        ],
+      },
       'ParityEvent',
     ),
   );
@@ -1371,6 +1387,8 @@ describe('schema path parity (#2359)', () => {
         'parity_events_booking_ref_parity_stakehol_dacfd5775b_unique_idx',
         'parity_events_code_unique_idx',
         'parity_events_host_profile_id_idx',
+        'parity_events_meeting_external_created_idx',
+        'parity_events_meeting_tenant_external_uidx',
         'parity_events_meta_priority_idx',
         'parity_events_meta_type_idx',
         'parity_events_room_id_idx',
@@ -1425,6 +1443,23 @@ describe('schema path parity (#2359)', () => {
         idx('parity_events').find((i) => i.name === 'parity_events_room_id_idx')
           ?.where,
       ).toBeUndefined();
+    });
+
+    it('STI subclass-declared indexes reach the shared table on every path, unique ones scoped to the declaring subtype (#3299)', () => {
+      const uniqueIndex = idx('parity_events').find(
+        (i) => i.name === 'parity_events_meeting_tenant_external_uidx',
+      );
+      expect(uniqueIndex?.unique).toBe(true);
+      // Exactly the declared columns, tenant first as declared: the generator
+      // never rewrites or tenant-prefixes an explicit declaration.
+      expect(uniqueIndex?.columns).toEqual(['tenant_id', 'external_ref']);
+      expect(uniqueIndex?.where).toBe(`_meta_type = '${PKG}:ParityMeeting'`);
+      const plain = idx('parity_events').find(
+        (i) => i.name === 'parity_events_meeting_external_created_idx',
+      );
+      expect(plain?.unique).toBeFalsy();
+      expect(plain?.columns).toEqual(['external_ref', 'created_at']);
+      expect(plain?.where).toBeUndefined();
     });
 
     it('STI partial unique: a long subtype name is shortened but the predicate keeps the qualified discriminator (#2374)', () => {

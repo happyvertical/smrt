@@ -8,20 +8,22 @@ import {
   field,
   foreignKey,
   SmrtObject,
+  type SmrtSaveOptions,
   smrt,
 } from '@happyvertical/smrt-core';
+import type { DatabaseInterface } from '@happyvertical/smrt-core/migrations';
 import { TenantScoped, tenantId } from '@happyvertical/smrt-tenancy';
-import { minorToMajorUnits } from '../billing/units.js';
 import {
-  calculateInvoiceMinorLine,
-  type InvoiceCalculationContext,
-  type InvoiceLineDraft,
-  resolveInvoiceLineDraft,
-} from '../svelte/invoices/calculations.js';
+  DOCUMENT_MONEY_READ_REBIND,
+  DOCUMENT_MONEY_WRITE,
+  type DocumentMoneyReadRebindCapability,
+  type DocumentMoneyWriteCapability,
+} from '../document-money-internal.js';
+import { MoneyValidationError } from '../money.js';
 import type {
-  AccountingLineItemInput,
-  InvoiceLineEditorState,
+  InvoiceCreditCalculationBasis,
   InvoiceLineItemOptions,
+  InvoiceTaxComponentSnapshot,
 } from '../types/index.js';
 
 /**
@@ -47,11 +49,48 @@ import type {
  */
 @TenantScoped({ mode: 'optional' })
 @smrt({
-  api: { include: ['list', 'get', 'create', 'update', 'delete'] },
+  api: {
+    include: ['list', 'get', 'create', 'update', 'delete'],
+    writable: [
+      'invoiceId',
+      'description',
+      'sku',
+      'productId',
+      'quantity',
+      'unitPrice',
+      'discount',
+      'discountType',
+      'discountRate',
+      'taxRate',
+      'taxMode',
+      'taxCodeId',
+      'sourceType',
+      'sourceId',
+      'periodStart',
+      'periodEnd',
+      'revenueAccountId',
+      'sortOrder',
+    ],
+  },
   mcp: { include: ['list', 'get'] },
   cli: { skipApiCheck: true },
 })
 export class InvoiceLineItem extends SmrtObject {
+  /** @internal Collection read guard returns this snapshot on its root DB. */
+  rebindMoneyRead(
+    capability: DocumentMoneyReadRebindCapability,
+    db: DatabaseInterface,
+  ): this {
+    if (capability !== DOCUMENT_MONEY_READ_REBIND)
+      throw new MoneyValidationError(
+        'FROZEN_DOCUMENT',
+        'Invoice line read rebinding requires the owning capability',
+      );
+    this._db = db;
+    this.options.db = db;
+    return this;
+  }
+
   /**
    * Tenant ID for multi-tenant isolation
    * Nullable to support both tenant-scoped and global invoice line items
@@ -63,8 +102,46 @@ export class InvoiceLineItem extends SmrtObject {
    * Parent invoice
    */
   @field({ description: 'The invoice this line belongs to.' })
-  @foreignKey('Invoice')
+  @foreignKey('Invoice', { role: 'items' })
   invoiceId: string = '';
+
+  @foreignKey('InvoiceLineItem', { nullable: true })
+  creditedLineId: string | null = null;
+
+  @field({
+    description:
+      'Frozen source basis used to cap and reproduce an issued credit line.',
+  })
+  creditCalculationBasisJson = '';
+
+  get creditCalculationBasis(): InvoiceCreditCalculationBasis | null {
+    try {
+      const value: unknown = JSON.parse(this.creditCalculationBasisJson);
+      if (!value || typeof value !== 'object' || !('kind' in value))
+        return null;
+      const basis = value as Record<string, unknown>;
+      if (
+        (basis.kind !== 'quantity' && basis.kind !== 'net_amount') ||
+        typeof basis.sourceQuantity !== 'string' ||
+        !Number.isSafeInteger(basis.sourceUnitPrice) ||
+        (basis.sourceDiscountType !== 'none' &&
+          basis.sourceDiscountType !== 'percent' &&
+          basis.sourceDiscountType !== 'amount') ||
+        typeof basis.sourceDiscountRate !== 'string' ||
+        !Number.isSafeInteger(basis.sourceDiscountMinor) ||
+        (basis.kind === 'quantity' && typeof basis.quantity !== 'string') ||
+        (basis.kind === 'net_amount' && !Number.isSafeInteger(basis.netMinor))
+      )
+        return null;
+      return basis as unknown as InvoiceCreditCalculationBasis;
+    } catch {
+      return null;
+    }
+  }
+
+  set creditCalculationBasis(value: InvoiceCreditCalculationBasis | null) {
+    this.creditCalculationBasisJson = value ? JSON.stringify(value) : '';
+  }
 
   /**
    * Item description
@@ -77,53 +154,39 @@ export class InvoiceLineItem extends SmrtObject {
    */
   sku: string = '';
 
+  @crossPackageRef('@happyvertical/smrt-products:Product', { nullable: true })
+  productId: string | null = null;
+
   /** Nonnegative decimal quantity (hours, weight, units), up to six fractional digits. */
   @field({ description: 'How many.' })
   quantity: number = 1.0;
 
-  /** Raw editor modes retained only while they resolve to the authoritative model fields. */
-  invoiceEditorStateJson: string = '';
-
-  /** Guarded editor metadata view; malformed stored JSON is treated as absent. */
-  get invoiceEditorState(): InvoiceLineEditorState | null {
-    try {
-      const value: unknown = JSON.parse(this.invoiceEditorStateJson);
-      if (
-        !value ||
-        typeof value !== 'object' ||
-        !('draft' in value) ||
-        !('context' in value) ||
-        !value.draft ||
-        typeof value.draft !== 'object' ||
-        !value.context ||
-        typeof value.context !== 'object'
-      )
-        return null;
-      return value as InvoiceLineEditorState;
-    } catch {
-      return null;
-    }
-  }
-
-  /** Store only this model's editor state, preserving unrelated metadata. */
-  set invoiceEditorState(value: InvoiceLineEditorState | null) {
-    this.invoiceEditorStateJson = value ? JSON.stringify(value) : '';
-  }
-
   /**
-   * Unit price before discount, in **integer minor units** (cents, satoshis).
+   * Unit price before discount, in **integer minor units** (cents, satoshis),
+   * in the document's pricing mode: tax-inclusive when its `lineAmountType`
+   * is `inclusive`.
    *
    * Money is exact, so it is stored as minor units and never as a float —
    * `$19.99` is `1999`. An integer literal is what maps this to an INTEGER
    * column (#2361).
    */
-  @field({ description: 'The price of one, before tax.' })
+  @field({
+    description:
+      "The price of one, before discount; includes tax when the document's prices include tax.",
+    ui: { format: 'money' },
+  })
   unitPrice: number = 0;
 
   /**
    * Discount amount (flat, not percentage), in integer minor units (#2361).
    */
+  @field({ ui: { format: 'money' } })
   discount: number = 0;
+
+  discountType: 'none' | 'percent' | 'amount' = 'none';
+
+  @field({ type: 'decimal' })
+  discountRate = '0.0';
 
   /**
    * Tax rate as a decimal fraction (e.g., 0.05 for 5%).
@@ -133,14 +196,63 @@ export class InvoiceLineItem extends SmrtObject {
    * truncate every rate to 0 (#2361).
    */
   @field({
-    description: 'The tax rate for this line, as a percentage (5 means 5%).',
+    description:
+      'The stored fractional tax rate for this line (0.05 means 5%).',
   })
   taxRate: number = 0.0;
 
+  taxMode: 'inherit' | 'override' = 'inherit';
+
+  @foreignKey('TaxCode', { nullable: true })
+  taxCodeId: string | null = null;
+
+  taxCodeCode: string | null = null;
+
+  taxCodeName: string | null = null;
+
+  taxComponentsJson: string | null = null;
+
+  get taxComponents(): InvoiceTaxComponentSnapshot[] {
+    if (this.taxComponentsJson === null) return [];
+    try {
+      const value: unknown = JSON.parse(this.taxComponentsJson);
+      if (!Array.isArray(value)) return [];
+      return value.filter(
+        (entry): entry is InvoiceTaxComponentSnapshot =>
+          !!entry &&
+          typeof entry === 'object' &&
+          typeof (entry as InvoiceTaxComponentSnapshot).taxComponentId ===
+            'string' &&
+          typeof (entry as InvoiceTaxComponentSnapshot).name === 'string' &&
+          typeof (entry as InvoiceTaxComponentSnapshot).percent === 'string' &&
+          Number.isSafeInteger((entry as InvoiceTaxComponentSnapshot).taxMinor),
+      );
+    } catch {
+      return [];
+    }
+  }
+
+  set taxComponents(value: InvoiceTaxComponentSnapshot[]) {
+    this.taxComponentsJson = JSON.stringify(value);
+  }
+
+  /** Exact sum of frozen component taxes, in integer minor units. */
+  @field({ ui: { format: 'money' } })
+  taxAmount = 0;
+
+  /** Stable document snapshot identity; ordinary lifecycle saves do not change it. */
+  moneySnapshotId = '';
+
   /**
-   * Calculated line amount, in integer minor units (#2361).
+   * Calculated line amount, in integer minor units (#2361): net of discount
+   * and before tax for `exclusive` / `none` documents, and tax-inclusive for
+   * `inclusive` ones; {@link taxAmount} holds the tax.
    */
-  @field({ description: 'The line total.' })
+  @field({
+    description:
+      "The line amount: net of discount, and including tax only when the document's prices include tax.",
+    ui: { format: 'money' },
+  })
   amount: number = 0;
 
   // ============================================================================
@@ -156,6 +268,10 @@ export class InvoiceLineItem extends SmrtObject {
    * ID of the source (e.g., campaign ID, contract ID)
    */
   sourceId: string = '';
+
+  /** Command-owned pointer to the source package's existing reservation. */
+  @field({ type: 'text', nullable: true, readonly: true })
+  sourceReservationId: string | null = null;
 
   /**
    * Service period start (for time-based billing)
@@ -175,8 +291,8 @@ export class InvoiceLineItem extends SmrtObject {
    * Revenue account ID (cross-package ref to smrt-ledgers)
    * Used for revenue recognition to specific accounts
    */
-  @crossPackageRef('@happyvertical/smrt-ledgers:Account')
-  revenueAccountId: string = '';
+  @crossPackageRef('@happyvertical/smrt-ledgers:Account', { nullable: true })
+  revenueAccountId: string | null = null;
 
   /**
    * Sort order within the invoice
@@ -185,22 +301,46 @@ export class InvoiceLineItem extends SmrtObject {
 
   constructor(options: InvoiceLineItemOptions = {}) {
     super(options);
-    if (options.invoiceEditorStateJson !== undefined)
-      this.invoiceEditorStateJson = options.invoiceEditorStateJson;
-    if (options.invoiceEditorState !== undefined)
-      this.invoiceEditorState = structuredClone(options.invoiceEditorState);
     if (options.tenantId !== undefined) this.tenantId = options.tenantId;
     if (options.invoiceId !== undefined) this.invoiceId = options.invoiceId;
+    if (options.creditedLineId !== undefined)
+      this.creditedLineId = options.creditedLineId;
+    if (options.creditCalculationBasisJson !== undefined)
+      this.creditCalculationBasisJson = options.creditCalculationBasisJson;
+    if (options.creditCalculationBasis !== undefined)
+      this.creditCalculationBasis = structuredClone(
+        options.creditCalculationBasis,
+      );
     if (options.description !== undefined)
       this.description = options.description;
     if (options.sku !== undefined) this.sku = options.sku;
+    if (options.productId !== undefined) this.productId = options.productId;
     if (options.quantity !== undefined) this.quantity = options.quantity;
     if (options.unitPrice !== undefined) this.unitPrice = options.unitPrice;
     if (options.discount !== undefined) this.discount = options.discount;
+    if (options.discountType !== undefined)
+      this.discountType = options.discountType;
+    if (options.discountRate !== undefined)
+      this.discountRate = options.discountRate;
     if (options.taxRate !== undefined) this.taxRate = options.taxRate;
+    if (options.taxMode !== undefined) this.taxMode = options.taxMode;
+    if (options.taxCodeId !== undefined) this.taxCodeId = options.taxCodeId;
+    if (options.taxCodeCode !== undefined)
+      this.taxCodeCode = options.taxCodeCode;
+    if (options.taxCodeName !== undefined)
+      this.taxCodeName = options.taxCodeName;
+    if (options.taxComponentsJson !== undefined)
+      this.taxComponentsJson = options.taxComponentsJson;
+    if (options.taxComponents !== undefined)
+      this.taxComponents = structuredClone(options.taxComponents);
+    if (options.taxAmount !== undefined) this.taxAmount = options.taxAmount;
+    if (options.moneySnapshotId !== undefined)
+      this.moneySnapshotId = options.moneySnapshotId;
     if (options.amount !== undefined) this.amount = options.amount;
     if (options.sourceType !== undefined) this.sourceType = options.sourceType;
     if (options.sourceId !== undefined) this.sourceId = options.sourceId;
+    if (options.sourceReservationId !== undefined)
+      this.sourceReservationId = options.sourceReservationId;
     if (options.periodStart !== undefined)
       this.periodStart = options.periodStart;
     if (options.periodEnd !== undefined) this.periodEnd = options.periodEnd;
@@ -209,70 +349,61 @@ export class InvoiceLineItem extends SmrtObject {
     if (options.sortOrder !== undefined) this.sortOrder = options.sortOrder;
   }
 
-  /** Calculate exact safe integer-minor totals, rounding gross and tax ties toward positive infinity. */
-  calculateAmount(): number {
-    return calculateInvoiceMinorLine(this).totalMinor;
-  }
-
-  /** Rounded quantity times price, less the resolved flat minor-unit discount. */
-  getSubtotal(): number {
-    return calculateInvoiceMinorLine(this).subtotalMinor;
-  }
-
-  /** Tax on the rounded discounted subtotal, in safe integer minor units. */
-  getTaxAmount(): number {
-    return calculateInvoiceMinorLine(this).taxMinor;
-  }
-
-  /** Apply a server-validated draft without saving; authorization and transaction stay caller-owned. */
-  applyEditorDraft(
-    draft: InvoiceLineDraft,
-    context: InvoiceCalculationContext,
-  ): void {
-    const resolved = resolveInvoiceLineDraft(draft, context);
-    Object.assign(this, resolved);
-    this.invoiceEditorState = structuredClone({ draft, context });
-  }
-
-  /** Recover original editing modes only when current authority and resolved model fields agree. */
-  getEditorDraft(
-    authorizedContext: InvoiceCalculationContext,
-  ): InvoiceLineDraft | null {
-    const state = this.invoiceEditorState;
-    if (
-      !state ||
-      !authorizedContext ||
-      state.context?.currency !== authorizedContext.currency ||
-      state.context?.inheritedTaxRate !== authorizedContext.inheritedTaxRate
-    )
-      return null;
-    try {
-      const resolved = resolveInvoiceLineDraft(state.draft, authorizedContext);
-      if (
-        resolved.description !== this.description ||
-        resolved.sku !== this.sku ||
-        resolved.quantity !== this.quantity ||
-        resolved.unitPrice !== this.unitPrice ||
-        resolved.discount !== this.discount ||
-        resolved.taxRate !== this.taxRate
-      )
-        return null;
-      return structuredClone(state.draft);
-    } catch {
-      return null;
+  /** Refuse an old-format row read from the database. */
+  override async initialize(): Promise<this> {
+    await super.initialize();
+    // A row read from the database must not be old-format money data.
+    if (this.isPersisted) {
+      const { assertHydratedMoneyRowCurrent } = await import(
+        '../upgrade/detect.js'
+      );
+      await assertHydratedMoneyRowCurrent(this);
     }
+    return this;
   }
 
-  /** Validate resolved fields and recompute amount before persistence; editor metadata never determines money. */
-  override async save(): Promise<this> {
-    this.amount = this.calculateAmount();
-    const state = this.invoiceEditorState;
-    if (
-      this.invoiceEditorStateJson &&
-      (!state || !this.getEditorDraft(state.context))
-    )
-      this.invoiceEditorState = null;
-    return (await super.save()) as this;
+  /** Persist through the invoice money aggregate. */
+  override async save(options?: SmrtSaveOptions): Promise<this> {
+    const { saveInvoiceLineItem } = await import('../document-money.js');
+    return (await saveInvoiceLineItem(this, options)) as this;
+  }
+
+  /** @internal Aggregate persistence only. */
+  async saveDerived(
+    capability: DocumentMoneyWriteCapability,
+    options?: SmrtSaveOptions,
+  ): Promise<this> {
+    if (capability !== DOCUMENT_MONEY_WRITE)
+      throw new Error('Invoice line money write capability is required');
+    // Money is integer minor units: refuse a major-unit price before it can
+    // reach the database (#2401), ahead of the aggregate recompute.
+    for (const [field, value] of [
+      ['unitPrice', this.unitPrice],
+      ['discount', this.discount],
+    ] as const)
+      if (!Number.isSafeInteger(value))
+        throw new MoneyValidationError(
+          'UNSAFE_MONEY',
+          `Invoice line ${field} ${value} must be a safe integer number of minor units`,
+        );
+    return (await super.save(options)) as this;
+  }
+
+  override async delete(
+    options: { expectedUpdatedAt?: Date | string } = {},
+  ): Promise<void> {
+    const { deleteInvoiceLineItem } = await import('../document-money.js');
+    await deleteInvoiceLineItem(this, options);
+  }
+
+  /** @internal Aggregate persistence only. */
+  async deleteDerived(
+    capability: DocumentMoneyWriteCapability,
+    options: { expectedUpdatedAt?: Date | string } = {},
+  ): Promise<void> {
+    if (capability !== DOCUMENT_MONEY_WRITE)
+      throw new Error('Invoice line money write capability is required');
+    await super.delete(options);
   }
 
   /**
@@ -287,29 +418,6 @@ export class InvoiceLineItem extends SmrtObject {
    */
   hasPeriod(): boolean {
     return !!this.periodStart && !!this.periodEnd;
-  }
-
-  /**
-   * Convert to line item format for SDK accounting provider.
-   *
-   * `@happyvertical/accounting` takes currency **major** units. Pass the
-   * invoice currency to convert (as {@link Invoice.toAccountingInput} does);
-   * without it, money stays in this package's integer minor units.
-   */
-  toAccountingLineItem(currency?: string): AccountingLineItemInput {
-    const money = (value: number) =>
-      currency ? minorToMajorUnits(value, currency) : value;
-    return {
-      description: this.description,
-      sku: this.sku || undefined,
-      quantity: this.quantity,
-      unitPrice: money(this.unitPrice),
-      discount: this.discount ? money(this.discount) : undefined,
-      taxRate: this.taxRate,
-      amount: money(this.amount),
-      periodStart: this.periodStart || undefined,
-      periodEnd: this.periodEnd || undefined,
-    };
   }
 }
 

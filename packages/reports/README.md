@@ -32,7 +32,7 @@ import {
 class Invoice extends SmrtObject {
   customerId = '';
   issuedAt = new Date();
-  totalAmount = 0.0;
+  subtotal = 0.0;
   status = '';
 }
 
@@ -45,7 +45,7 @@ class Invoice extends SmrtObject {
 class MonthlyRevenue extends SmrtReport {
   @groupBy('customerId') customerId = '';
   @month('issuedAt') issuedMonth = new Date();
-  @sum('totalAmount') revenue = 0.0;
+  @sum('subtotal') revenue = 0.0;
 }
 
 class MonthlyRevenueCollection extends SmrtReportCollection<MonthlyRevenue> {
@@ -62,15 +62,88 @@ const rows = await reports.list({ orderBy: 'issued_month DESC' });
 | Decorator | Meaning |
 | --- | --- |
 | `@report({ source, ... })` | Declare the source and refresh policy |
-| `@groupBy(column?)` | Group by a source column |
+| `@groupBy(column?)` | Group by a source column, a joined column (`'wo.title'`), or `{ expr }` |
 | `@minute()` through `@year()` | Bucket a source timestamp |
-| `@sum()`, `@avg()`, `@min()`, `@max()` | Aggregate a source column |
-| `@count()` | Count rows or distinct values |
+| `@sum()`, `@avg()`, `@min()`, `@max()` | Aggregate a source or joined column, or a row `{ expr }`, optionally `{ filter }`ed |
+| `@count()` | Count rows or distinct values, optionally `{ filter }`ed |
 | `@aggregate()` | Define a custom supported aggregate shape |
 
 Every non-system report field must be a grouping key, time bucket, or aggregate.
 Metadata is stored under the field's `_meta.__report` contract so scanner and
 runtime compilation stay aligned.
+
+## Joins, row expressions and filtered measures
+
+A report can read a related model, compute a value from each row, and count
+only the rows a condition holds for. Each compiles to the SQL aggregate API in
+`@happyvertical/sql`; nothing is built as SQL text here.
+
+```ts
+@report({
+  source: AttendanceSegment,
+  // Many-to-one: AttendanceSegment.workRefId holds a WorkOrder id.
+  joins: { wo: { source: WorkOrder, on: 'workRefId' } },
+})
+class LabourByWorkOrder extends SmrtReport {
+  @groupBy() workRefId = '';
+  @groupBy('wo.title') workOrder = '';
+  @max('wo.estimatedHours') estimatedHours = 0;
+
+  // A row expression: seconds from createdAt to claimedAt, averaged.
+  @avg({ expr: { op: 'secondsBetween', later: { col: 'claimedAt' }, earlier: { col: 'createdAt' } } })
+  avgResponseSeconds = 0;
+
+  // A filtered count: one number rather than a two-row grouping.
+  @count({ filter: { op: 'eq', left: { col: 'halted' }, right: { value: true } } })
+  haltedSegments = 0;
+}
+```
+
+- **Joins** are many-to-one, keyed `alias: { source, on, to?, type? }`. `on` is a
+  field of the report source; `to` is the related field it points at (default
+  `id`) and must identify one related row per tenant, or source rows repeat.
+  `type` is `left` (default, keeps a source row whose related row is gone) or
+  `inner`. Aliases are lower-case identifiers and not `src`. Reference a joined
+  field as `alias.field` in `@groupBy`, the aggregate and bucket decorators,
+  expressions and `where`.
+- **Key types.** `on` and `to` may be the same type (uuid = uuid, text = text),
+  compared as they are so their indexes serve the join, or a text field against a
+  uuid one, such as a polymorphic `workRefId` string pointing at a uuid `id`.
+  When one column is text and the other uuid in the schema, the join compares both as text
+  on PostgreSQL and DuckDB (which would otherwise refuse `text = uuid` or fail on
+  a non-uuid value), so a text value that is not a uuid simply matches nothing:
+  NULL on a left join, dropped on an inner one. A uuid compares in its canonical
+  lower-case form, so a reference stored in upper case does not match. SQLite
+  stores both as TEXT and compares them uncast. The cast column cannot use its
+  index; for a large table prefer a uuid-typed reference (`@foreignKey()` or
+  `@crossPackageRef()`). The same rule applies to the tenant columns. Other
+  type pairs (an integer against a decimal, say) are compared as they are.
+- **Tenancy is built into the join.** When the related model is tenant-scoped the
+  join also matches `tenant_id` between the two rows, so an id that points at
+  another tenant's row never matches. A tenant-scoped join from a source with no
+  tenant field is refused. Soft-deleted related rows never match.
+- **Field policy follows the data.** A report column that reads a joined field
+  marked sensitive or `readPermission`-gated is withheld from the adapter
+  descriptor exactly as that field would be.
+- **Expressions are data, written as literals** (the manifest scanner reads
+  decorator arguments statically, so builder calls would be dropped): `{ col }`,
+  `{ value }`, `add`/`sub`/`mul`/`div`, `secondsBetween`, `eq`/`ne`/`lt`/`lte`/
+  `gt`/`gte`, `and`/`or`/`not`, `isNull`/`isNotNull` and `coalesce`. A `col`
+  names a model field, never a SQL column. `div` returns NULL for a zero
+  divisor. `expr` and `filter` work with `count`, `sum`, `avg`, `min` and `max`.
+- **Joined reports refresh by rebuild only.** A change to a joined row does not
+  move the source's watermark, so declaring `mode: 'incremental'` is refused and
+  any trigger that asks for an incremental refresh (a schedule, `onChange`, a
+  job) is run as a rebuild. List the joined models in `refresh.onChange` to
+  rebuild when they change. Rows whose tenant is `NULL` (the global slice) do not
+  match tenant-scoped related rows, because `NULL = NULL` is not true in SQL.
+- **Saved views and snapshots notice definition changes.** A column's expression, filter and the joins it reads are part of its descriptor (`semantics`) and so of the report definition fingerprint; changing one invalidates stored views and export snapshots. Reports without joins or expressions keep their existing fingerprints.
+- **No drilldown by joined or computed keys.** A row grouped by a joined column or
+  a computed value cannot be bound back to source rows by a source column, so
+  `buildReportDrilldownQuery()` refuses such reports.
+
+The runtime-report grammar stays closed: runtime reports have no joins or
+expressions.
 
 ## Refresh modes
 
@@ -246,6 +319,36 @@ payloads use the same integrity boundary. Only a registered `SmrtReportCollectio
 synchronously refresh a stale read, and only when its TTL policy is positive and
 not manual.
 
+### Scheduled refresh lifecycle
+
+Declare `refresh: { schedule: '*/5 * * * *', tenantFanout: 'discover' }`
+on a tenant-scoped report to discover distinct non-null source tenants each
+scheduled run. Include scopes still present in the materialized table so a
+the next rebuild removes stale groups for tenants losing their final source row.
+Discovery preserves the configured refresh mode. Incremental reports still need
+a `fullRebuildSchedule` to catch hard deletions that do not advance a source
+watermark. Provision schedules with `ensureReportRefreshSchedules({ db,
+reports })`; no discovered scopes means no work, and discovery never refreshes
+the global slice.
+The worker uses the registered source/report tenant columns and its supplied
+maintenance executor. Discovery does not grant database privileges or widen a
+tenant-bound or manual job. Keep `tenantFanout: true` with explicit `tenantIds`
+when the host owns a fixed tenant list.
+
+Initialize a `ReportScheduleRunner` and a jobs `TaskRunner` against the migrated
+database, then call `const unbind = schedules.bindTaskRunner(tasks)` before
+starting them. This connects terminal job events to schedule counters, freeing
+the concurrency slot after success or failure. Repeated binding is idempotent;
+call `unbind()` on shutdown. Listen for `runner:error` to detect failed counter
+updates. Persisted failure messages use the jobs package redaction policy.
+Durable payload signing and execution-time authority checks remain
+required; completion accounting uses the signed schedule identity.
+
+Repeated schedule provisioning inserts missing identities and preserves existing
+history, next-run time, running count, and operator settings. A different cron,
+mode, or tenant scope identifies a different schedule; explicitly disable obsolete
+schedules when changing those settings.
+
 ### Saved views and snapshot exports
 
 `normalizeReportSavedView()` and `restoreReportSavedView()` provide the
@@ -299,6 +402,15 @@ with the spec hash a human confirmed; the model layer refuses every other write.
 chat package offers matching assistant tools that propose a spec, preview it,
 and save only after a human confirms. See
 [`agents/runtime-reports.md`](./agents/runtime-reports.md).
+
+## Browser components
+
+`@happyvertical/smrt-reports/svelte` exports saved-report and detail screens,
+a confirmation card, a report/measure picker, and a shared-chart result view.
+They accept a principal-scoped browser transport and show an unavailable state
+when no server is supplied. See the [browser integration contract](./agents/runtime-report-browser.md)
+for route-host identity and capability props, confirmation wiring, recipe
+surfaces, and playground previews.
 
 ## Development
 

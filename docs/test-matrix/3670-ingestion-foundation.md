@@ -32,9 +32,10 @@ Provider/component/e2e/evaluation lanes are frozen but have no implementation in
 | Immutable foundations | explicit stable action identity; proposal expected-revision CAS; pinned attempt digest; plan revision replay; successful action refuses new proposal | U,P |
 | Retention/deletion | revoke before failed purge; retry deletion; success tombstones; feedback content redaction; actual late-written object removed by next sweep | U,P |
 | Database rollback | owning executor rollback leaves both item and evidence unchanged | U,P |
-| Migrations/types | public MigrationTracker applies manifest DDL on each engine; registry columns/indexes match; live schema diff empty; missing schema fails diagnostic; fractional confidence round-trip | U,P |
+| Migrations/types | public MigrationTracker applies manifest DDL on each engine; registry columns/indexes (including `intake_items_received_idx`) match; live schema diff empty; missing schema fails diagnostic; fractional confidence round-trip | U,P |
 | Browser boundary | built root and DTO dependency graph bundled with browser conditions and banned provider/Node imports | K |
 | Host authority | owner and delegated allow; unrelated/revoked actor and foreign tenant/confidential scope deny at list/item/evidence/byte reads and writes | U,P |
+| Inbox paging (#4211) | 300 then 1500 seeded items: newest-first order with id tiebreak, identical query counts per page at both sizes, one authorize per ceiling per batch, denied ceilings refill the page, full state-filtered pages with honest `nextCursor`, id restriction, limit/cursor/state/id validation and the 100-row ceiling, index-backed plan without sort or table scan on both engines, mostly-denied actor bounded by the 1000-row scan ceiling with short pages and complete walk, foreign confidential scope empty; proposals suite: read-only handler gate over a cloned page with handler/operation/access/principal/ceiling denials, version drift omitted and no writes; deprecated `listItems()` equals the paged walk; service-foreign receipt times skipped with partial pages, a 130-row run passed in one call and a row-free error only without progress | U,P |
 
 No domain action is executed in this child. The durable-success fixture is inserted
 by trusted test setup to prove proposal/reprocessing/retention refusal and replay
@@ -121,3 +122,190 @@ Evidence: `/home/will/Work/tmp/s3670/r4-fixes`. Full core test/integration/build
 typecheck and affected repository gates run. Ingestion U/P, core PostgreSQL and
 full root runtime evidence carry forward because only test expectations and
 this matrix change; no numeric, UUID, conflict, timestamp or migration path changes.
+
+### #4212 reviewer instructions as trusted guidance
+
+`proposals.test.ts` and `proposals.postgres.test.ts` share three cases. The
+record case covers reviewer-grant and actor denial, empty/oversized text, stale
+revision, replay identity and changed-text conflict, immediate suggestion
+staleness, the extraction-configuration record (`kind`, id, digest, actor), the
+digest-verified interpretation copy, the separate trusted-guidance prompt section
+after the untrusted-evidence instruction, unchanged `offered`/`catalogDigest`,
+`provenance.reviewerInstruction`, `automaticActionEligible: false` with
+`authorizeAutomatic` refusal, supersession (`supersedesId`, newest-first history)
+and a guided reply naming an unoffered handler failing as `provider_error` with
+no domain effect. The injection case shows `analyze` refusing an extraction-stage
+instruction and a forged interpretation copy failing before provider disclosure
+while history stays empty. The feedback case shows the judgment carrying
+`{id, digest, text}`, `retrieveFeedback` returning it with the example, and the
+receiving generation seeing it only as example content. Further shared cases cover `processing` state with earlier (stale) actions and
+`getReinterpretationState`; an instruction retained beside a later split
+correction with `human_split_not_respected` still enforced; a tampered stored
+extraction record and a well-formed forged interpretation copy both failing
+before provider disclosure; replay of a superseded request ID, a concurrent
+double record (exactly one wins) and retry against the latest completed
+generation after a failed re-extraction, after a failed **interpretation**
+(old anchor rejected once a newer interpretation completes), and with a split
+recorded after the anchor carried into the retry; retries refused while the
+later work is queued, running, between extraction and interpretation, or
+interpreting, then accepted once interpretation fails; judgments storing only the
+instruction reference with retrieval joining the text, a write-time refusal when
+the joined example alone exceeds the read budget (nothing written), an exactly
+fitting judgment recording and retrieving at its exact size, one byte short
+refused, the handler `policy.maxBytes` side of the write-time `min()` refusing
+on its own, and re-signed stored references with a wrong digest or id excluded;
+a wedged gap (extraction completed, interpretation never appended) staying in
+flight up to exactly the item lease and then reporting `not_started` and
+accepting the retry, which recovers; a slow host's late interpretation append
+after that retry refused with `GenerationSourceStaleError` (nothing appended, the
+retry still queued, then completing under the retried instruction); missing
+completion timing treated as expired immediately; the existing superseded
+preparation case now refused at append time; genuinely interleaved concurrency
+(on PostgreSQL a second real connection; on SQLite the shared write queue): two
+reviewers at one revision (one wins, one refused, no fork), an instruction and a
+split racing in both orders (the loser refused, both earlier corrections kept),
+and a double-clicked instruction and split replaying a duplicate committed after
+the unlocked replay check. Mutation evidence on PostgreSQL: the double-click
+case fails (`ReviewerInstructionStaleError`) with the replay-under-lock removed;
+the two race cases fail (the second writer is no longer blocked; the split race
+hangs) only when *every* item-row lock is removed, because the guards were
+already serialized twice before this change (the snapshot read's lock and the
+execution authorization's `item(db, id, true)` row lock, both in the same
+transaction before the guard step); the decision stage receiving the guidance
+exactly once under `reviewerGuidance` and never under `evidence` (all decision
+cases on both engines); the shared instruction-view projection used by both the
+published and reference hosts (`review-instruction-view.test.ts`: an instruction
+recorded between the history and state reads re-reads history instead of
+reporting a drop, `dropped` only when nothing is in effect); missing-attempt and non-finite `leaseMs` gap timing expiring
+immediately; and carried instruction text being
+counted in the exact feedback byte budget, with one byte short still failing
+closed before provider I/O (the existing byte-budget contract is unchanged). `review-host.test.ts`
+covers `instruct` wiring, `onInstruct` wakeup and the `current/applied/stale`
+projection; the component suite covers the textarea/button binding, disabled
+empty text, polling through `processing` until the in-place update (also with an
+earlier action present, with drafts and the textarea element preserved and no
+loading placeholder), the failure/retry binding path, the 5× backoff cap under fake timers, a
+transient thrown tick keeping the view then recovering, three thrown ticks
+failing closed and stopping, edited-versus-untouched split drafts, polling with
+Re-read disabled through the between-stages gap, a `{ stale: true }` result
+reloading with a note and keeping the draft instead of denying, the note
+cleared once a later poll shows the item settled (and at once when the reload
+answering the click is already settled), the
+`not_started` retry against the server binding, and stale display; the Chromium suite records a real instruction, observes the background
+"Reinterpreting…" state, the in-place update, provenance, unchanged original
+bytes, whitespace-only instruction text refused by server-side validation, and
+supersession. No schema or migration changes:
+the record lives in the existing append-only analysis ledger beside the split
+correction.
+
+### #4085 trusted internal sources
+
+`internal-sources.test.ts` and `internal-sources.postgres.test.ts` share
+`src/test-support/internal-sources.ts` on both databases:
+
+| Behavior/invariant | Positive | Negative/failure | Evidence |
+|---|---|---|---|
+| Receive by reference | text and structured snapshots become durable evidence with no asset record or stored object; `readEvidence` serves the snapshot after hash/length checks; copied sibling parts still preserve an asset | malformed reference/snapshot/owner, NUL or unpaired surrogates in snapshot text, reference owner/id/version or retention owner kind/id, and non-text inline parts reject `invalid` without reserving a row on both engines; `expireOwned` and `interpretInline` refuse such identifiers; a replay switching retention mode conflicts | U,P |
+| Owner-bound retention | `expireOwned` revokes and redacts every receipt of that owner through the existing deletion ledger, removes copied assets, leaves other owners untouched and returns zero on repeat; every ledger table's payload is `{}` and `owner_key`/`submitter_id` are blank afterwards; each confidential scope's service releases its own receipts | the deleted delivery is never re-admitted; the own listing drops it immediately; a foreign tenant releases nothing | U,P |
+| Referenced snapshot integrity | asset-less evidence is served only when length and hash match | same-length tampering, truncation and a missing snapshot fail closed; an uncategorized stage failure leaves the inline attempt running under its lease (job semantics), the same request reports `Inline interpretation busy`, and a fresh fenced attempt follows lease expiry with no job row | U,P |
+| Inline mode | receive-to-proposals in-process: fenced extraction and interpretation revisions, catalog digest and provenance, no job row, every dispatch intent retained `completed`, `repairDispatches` enqueues nothing; identical `requestId` replays the same attempts | a job receipt cannot use the inline path; provider failure keeps the `unavailable` category without exception text; revoked process access denies before any stage; two concurrent calls with one `requestId` (the first held between replay lookup and append) return the same attempts with one generation; a concurrent reprocess under a different `requestId` makes the held interpretation fail `GenerationSourceStaleError` with no stale-pinned revision appended; a held inline interpretation whose host appends a competing `stage: 'interpret'` revision pinned to the same extraction (so #4228's check passes) fails `Generation source changed` with no second interpretation appended | U,P |
+| Submitter-scoped approval | own listing shows only the actor's own items; `submitOwnDecision` approve/defer records a human decision by that actor with `mode: 'review_own'`/`selfDecision: true` (reviewer decisions `mode: 'review'`), mirrored on feedback events; identical replay returns the review; `applyAction` succeeds once and replays its digest | non-reviewer submitter denied at `submitDecision`; other actors and reviewers denied as submitter; `correct` refused; missing live `submitter` grant or policy opt-out denied with no decision row; conflicting replay rejected; page limits validated; foreign tenant/scope lists nothing; with A < B < C and B's item-level read revoked, `limit: 2` returns `[A, C]` with no cursor and `limit: 1` pages `A` then `C` with the cursor naming only A, B's id appearing nowhere; an all-unreadable page is empty with no cursor; with 49 hidden rows the 50-row batch boundary still pages the readable rows on either side with a confirmed cursor; 999 hidden rows still list the readable row at `limit` 20 and 1 (no cursor) and 1000 fail closed with `Own proposal scan limit`; a readable item whose handler access is denied, or whose host `assertTarget` throws (reference host), is returned `unavailable` without handler, action or host error text while the others keep their reviews; a throwing grant store propagates instead of hiding rows; feedback re-evaluation cannot turn `submitterReview` on | U,P |
+| Self-approval principal binding | a submitter whose actor is the captured execution principal approves and applies once; a reviewer may still approve a bot-principal receipt, which then runs as the bot | `review_own` on a receipt captured for a bot principal is denied with no decision row; tampering the captured principal after a self-decision makes apply fail `Approval required` with no domain write; a reviewer approving their own submission records `selfDecision: true` under `mode: 'review'`; submitter-mode approval of a reviewer-selected action appends no routing feedback, while reviewer-mode approvals still capture explicit routing choices (including a reviewer’s own receipt) | U,P |
+| Redaction of identity digests | after `expireOwned`, `payload_digest`, `scope_digest`, analysis `input_digest`, attempt `output_digest`, proposal/decision/execution `binding_hash` are `redacted`, evidence `content_hash` is empty, the retained ceiling has no principal when no external action is unfinished, the plan `digest` is `redacted`, the fixture `delivery_key` is opaque, and the successful `result_digest` still replays as the tombstone | | U,P |
+| Receipt revoked before acknowledgement | an owner expired at the `reserved`, `evidence` or `ready` boundary of an in-flight receipt, or at `reserved` on a ready duplicate, yields `rejected`/`expired`; the redacted delivery's replay is exactly `rejected`/`conflict` | | U,P |
+| Principal retained for reconciliation | in the sweep-expiry cases the principal survives redaction while the external action is unfinished, both `executing` (a submission still in flight) and `outcome_unknown` (reconcile in flight), and is dropped once it succeeds or fails; an `unknown` outcome keeps it until a later deletion sweep sees a final state | removing either state from `UNFINISHED_ACTION_STATES` fails a case | U,P |
+| Inline never deliverable | every dispatch intent is `completed` with no job id and `repairDispatches` enqueues nothing after receive, after a duplicate receipt and after `interpretInline`; reference evidence that gains an `asset_id` is never served; a NUL or unpaired-surrogate extraction revision is refused before any revision exists | | U,P |
+| Migrations/types | the existing manifest parity case covers the added `submitter_id`/`owner_key` columns and indexes on both engines | | U,P,K |
+
+### #4116 retained dispatch routing
+
+`foundation.test.ts` and `foundation.postgres.test.ts` share the `dispatch route
+authority` cases: real TaskRunner failure followed by a differently configured
+host, in both routing directions and with an unrelated denied captured ceiling;
+no cross-host authorization, delivery consumption or enqueue; same-route revoked
+authority remains an error. They also cover receipt/revision pins, cross-host
+replay and analysis refusal, defensive host-target snapshots, exact legacy
+job-lineage verification, malformed/conflicting lineage, and deleted-job unknown
+recovery. Explicit operator recovery is tested closed by default, separately
+authorized, current/captured permission-bound, scoped to tenant/confidential
+context, fingerprint-checked under lock, bounded in evidence, atomic on rollback,
+idempotent under identical concurrent retry and conflicting under differing
+concurrent decisions, without enqueue or original-authority replacement.
+Historical route-less rows are constructed only in the owned test fixture;
+worker failures use the real public runner lifecycle, not edited job statuses.
+
+### #4210 reviewer-chosen actions, handled-no-action disposition, routing feedback
+
+New model `IntakeDisposition` (`intake_dispositions`) joins the manifest
+migration/parity case automatically (`Object.keys(models)`), `assertReady` and
+privacy redaction. Behavior cases live in `src/test-support/proposals.ts` and run
+on both databases (U, P):
+
+| Behavior/invariant | Positive | Negative/failure | Executor/transaction | Level |
+|---|---|---|---|---|
+| Start a reviewer-chosen handler | extraction-only, `provider_error` interpretation and wrong-suggestion items publish a `waiting_review` review with origin `reviewer-selected`; approve and apply create the real domain record; replay returns the same review | non-reviewer, foreign actor, unknown handler/version, unoffered media type, invalid arguments (no action row survives rollback), changed replay payload conflict | one locked item transaction through `buildBinding`/`publish` | U, P, components, E |
+| Never automatic | a generated proposal under the same layered opt-in is machine-authorizable | the reviewer-selected action is refused by `authorizeAutomatic` | execution transaction | U, P |
+| Handled, no action | disposition recorded once, projected on `IntakeItemDTO` as state and time only (reviewer/reason via `getItemDisposition` under reviewer authority, hidden from a denied reader), inbox state `resolved` and filterable; extraction-only items close too | non-reviewer/foreign tenant, invalid disposition, second request conflicts, authorized (live approval)/applied actions block while an exhausted failed action or a lapsed approval does not, executing/outcome_unknown/succeeded block too, later approve/correct/defer/re-preview/start/apply/retry/analyze/split/createAction refused while reject still works; createAction refuses reserved reviewer provenance; re-preview of a reviewer-selected action needs review authority and a fixed handler; resolve supersedes queued analysis and claimAnalysis refuses; privacy deletion and retention expiry keep only the kind for dispositions and routing feedback | append-only `intake_dispositions` under the item lock | U, P, components, E |
+| Routing feedback | `reviewer_routing` rows for approved handler choices and `none` dispositions; retrieved for comparable items with `kind`, `routing` and no model versions; included in generation input; two independent handler choices support a rule suggestion with `automaticActionEligible: false` | tenant/confidential scope and per-item capture/retrieve denial exclude; `none`, duplicate, rejected and deferred support rejected; a correction retires the example until re-approval; starting alone records nothing; a lapsed unapplied approval or a disposition excludes the example and its support at selection while lineage re-checks of used examples ignore later resolution, lapse, outcome changes and target writes; a replayed suggestion returns the stored row; stored routing support survives a target write while interpretation support keeps the target check; tampered routing origin excluded from retrieval and support; interpretation judgments on reviewer-selected actions (even rejected, on a generated item) refused and never retrieved, while judgments on resolved items still count; no rows without feedback configuration | owning transactions; live source revalidation per example | U, P |
+| UI | handler picker with suggestion/evidence pre-fill and missing fields, exact start payload, review and inbox no-action controls with reason, disposition replaces controls, origin label | malformed JSON rejected locally; absent callbacks render nothing; no implicit approve/apply/feedback | N/A | components, E |
+
+Commands: package `pnpm test`, `pnpm test:postgres`, `pnpm test:components`,
+`pnpm test:e2e`, `pnpm typecheck`, `pnpm build`; root lint/format/knowledge/audit.
+
+### #4281 typed refusal for reviewer-chosen start arguments
+
+No schema, migration or authority change. `startAction` publishes reviewer
+arguments through `buildBinding(..., reviewed = true)`; `HandlerArgumentsInvalidError`
+gains optional value-free `issues` on every path that throws it.
+
+| Behavior/invariant | Positive | Negative/failure | Level |
+|---|---|---|---|
+| Typed start refusal | schema refusals (`minLength`, every `required` field, `type`, `additionalProperties`) and a `validate` refusal on `startReviewerAction` throw `HandlerArgumentsInvalidError`; schema refusals carry frozen `issues`, `validate` carries none; a corrected start then publishes | input shape, missing handler, denied reviewer, action identity and request conflicts and a resolved item stay plain `Error`; no action/proposal row survives any refusal | U, P (`src/test-support/proposals.ts`) |
+| Value-free, bounded issues | RFC 6901-escaped schema-owned paths (`/` is the whole object, `?` a data key; root `/name` maps to `missingFields` `name`), `required` names, real array indexes and allowlisted keywords; preview schema refusals carry the same issues (`src/test-support/execution.ts`) | data-named keys become `?`; document text, account numbers and argument values never appear in the message, JSON or issues; count capped at 20, paths at 160 characters without splitting an escape, inherited names such as `toString` treated as data, 200 Ajv errors examined, duplicates dropped, unsafe keywords dropped, `issues: []` omitted; uncompilable schema yields none | U (`src/argument-issues.test.ts`) |
+| Host transport | the published host rethrows the typed error with `name` and `issues`; the fixture's `startActionForReview` resolves `{ rejected: 'invalid', issues? }` | handler unavailable, item resolved and identity conflict still throw | U (`review-host.test.ts`, `reference-review-host.test.ts`) |
+| Start form inline | a thrown typed error or a resolved rejection keeps the view, handler, arguments and reason, shows the refusal and at most 20 distinct field paths (root paths bare, like missing fields; over-long or empty paths dropped), sends one request for rapid clicks, and a corrected retry succeeds; the browser fixture shows `/title` for an empty title and publishes nothing | any other thrown error (even one carrying `issues`) still clears the view | components, E |
+
+### #4215 single-page triage workspace
+
+UI composition only: no host callback, model, migration or server authority
+changes. Cases live in `src/svelte/__tests__/workspace.component.test.ts`
+(components) and the `single-page triage` scenario of `e2e/review/review.spec.ts`
+(E, real fixture host).
+
+| Behavior/invariant | Positive | Negative/failure | Level |
+|---|---|---|---|
+| Split view and inline original | row selection marks `aria-current`, focuses the named item pane; pager opens on the uploaded file, steps between parts; observed-page PDF navigation reloads the frame at `#page=n` | foreign-origin URL never reaches a frame and gets no page navigation; no navigation or page load (window marker, path) | components, E |
+| Keyboard | J/K and Alt+Down/Up move through rows; Next disabled at the end | keys typed in a text field never move the selection | components, E |
+| Live state | open item's in-place poll updates its row (Interpreting… → Ready to review) without re-listing; an item left mid-stage, or before its post-instruction reload answered, keeps following by `load` until settled and announces once | settled rows stop following; a stage never seen running is not announced | components, E |
+| Approve and advance | apply that settles the item advances to the next open row with focus; under a state filter the finished row leaves the list; "Handled, no action" advances and reports an empty queue | approval leaving an apply step does not advance; a failed sibling action blocks settlement; per-row resolve hidden in the workspace | components, E |
+| Workspace pagination regressions | advance skips a completed inbox page to reach the next reviewable row; Load more keeps the applied assignee filter | an unloaded saved-review cursor prevents premature advance; an unapplied assignee edit cannot change a continuation | components; baseline failure and corrected-source success |
+| Concurrency and failure (review round 1) | rows stay through a pending refresh and take a poll that is not regressed by the older page; an apply during a refresh advances from the displayed rows; any number of left items followed at ≤5 reads per tick in rotation; original page survives an approve; "Load more" keeps the listed filter; a closed next row is skipped | a navigation awaiting the next page is dropped after another choice; pane denial clears the row status and is not followed; three thrown follow reads stop and restore the listed state; no reads after unmount or host change; a left pane's late poll answer is ignored; empty list selects and loads nothing; unsent input asks before J/K/Next ("Stay" keeps it) | components |
+| Unsent input and paging failures (review round 2) | an applied item with an unsent suggestion draft stays open with the draft and a note, then moves on through the confirmation; closing an item discards input it cannot take and advances; a failed page append during advance keeps the open item with a retry note (round 3: the list itself fails closed); a page append blocked by a pending refresh is not an empty queue; a denial after Load more restores the page-listed entry; at most 20 items followed, the longest-followed one restored to its listed state; a page read before a followed item settled does not regress its row | the confirmation is asked for a suggestion draft, a split draft, a chosen start handler, a no-action reason, an action card's reason and its feedback comment, each by J, Next item and a row's Review button, and for an instruction by Previous item ("Stay" returns focus to the field; the note is not also an alert); a draft still counts while a reload cleared the view; input the denied pane no longer shows is not asked about; a filtered-out row is neither followed nor announced | components |
+| Assignment, paging and the follow cap (review round 3) | assigning the open item's row survives the re-applied pane view and a second assign carries the current version; an advance skips a page of completed rows to an open row on the next page; the follow cap drops the earliest started item after the reads have rotated | a failed Load more clears the rows in the plain inbox and, during an advance, keeps only the open item with a note to refresh the list (Next disabled); after five appends of finished rows the advance asks to try Next item again (still enabled) instead of reporting an empty queue; input typed while the next page loads stops the advance | components |
+| Workspace input during automatic paging | A reviewer types a suggestion draft while the first or later inbox page is pending after Apply | The item and exact draft stay, an unsent-input note appears, and explicit Next still asks for confirmation | `workspace.component.test.ts`: keeps input typed during an automatic page walk (both first/later page); baseline2FAIL, fixed regression/full components |
+| Workspace review regressions | Apply is disabled for unsent action reason/comment; a filtered selected row stays while automatic paging is held by new input; a refresh begun after a settled follow wins | Existing older-page/newer-follow protection remains, as do explicit navigation confirmation and normal Apply after clearing input | workspace GitHub review regressions; baseline4FAIL and corrected full component suite |
+| Read freshness (review round 7) | the open item stays listed when an older page lands under a filter it no longer matches; a pane read stamped before a page that answers after it does not regress the row; leaving with a pane view older than a page keeps the page entry; a second unanswered operation owes a full three reads even when the first debt was spent to zero | a follow read older than a page neither announces, stops following nor changes the status; a stale follow's thrown read does not count toward the new follow's three failures; an earlier follow's answer, newer than the row, is dropped when the item was left again before its reopened pane answered | components |
+| Read freshness (review round 6) | a page read after an item was left shows what it lists; a follow read that started before a page cannot regress the row the page showed; owed operation reads survive reopening and leaving again, so the row reaches Completed once the Apply answers; opening an item shows its listed state until the pane's first view | a follow read asked before a reopen that answers after the item is followed again is dropped (no false settle or announcement, following continues); owed operation reads are exactly three when the operation never answers (the fourth read ends the follow); a refreshed page and a list that fails closed both clear the background announcement | components |
+| Row lifecycle (review round 5) | J at the last row and an automatic advance both open the first appended row although a followed row above left the list while the page loaded; an item left mid-Apply keeps following until a read shows the apply answered; a page read after a settled follow read shows what it lists; the advance notes are written into one persistent status region | reopening an item whose first load is denied drops its earlier status and restores its listed entry; a denied open pane clears the background announcement; input hidden because another session closed the item (a split draft, a no-action reason) is not unsent; the list failing closed stops following; an item a refreshed page no longer lists stops being followed; a settled stage whose row the filter removed is not announced | components |
+
+## Portable proposal response schemas (#4260)
+
+The provider grammar is a conservative copy of the response schema; the original
+Ajv schema remains authoritative after decoding. No provider-mode retry is added.
+
+| Invariant | Positive case | Failure or adversarial case | Lane |
+|---|---|---|---|
+| Schema weakening preserves valid arguments | Original-valid values remain portable-valid across removed constraints, nested schemas and `$defs`; an adjacent `anyOf` remains a separate conjunct | Relaxed `oneOf` branches cannot exclude original-valid values; removing `patternProperties` cannot close the object | providers, real SDK loopback |
+| Data stays data | Argument properties named `format` or `uniqueItems`, enum/const values and required names survive | Unsupported schema keywords are removed only at schema positions; provider fixtures use an independent rejection list | providers |
+| Validator remains authoritative | Supported handler arguments and exact offered keys retain their meaning | Duplicate alternatives/missing fields and original `oneOf` exclusivity remain rejected without echoing values | U, P, providers |
+| Failure diagnostics contain no provider free text | A failed attempt records a fixed phrase, bounded numeric status, closed SDK code and allowlisted schema keyword names | Document/account identifiers, unknown uppercase codes, echoed digits and arbitrary error strings do not enter provenance; abort/timeout remain explicit | U, P, providers |
+| Existing output and authority gates remain | Failure publication uses the existing live scope checks and transaction | Output-limit fallback removes the diagnostic; revocation, stale leases and cross-scope access still fail closed | U, P |
+| Bounded explanation emitted last (#4331) | Provider schema and validator share the 300-code-point explanation bound; suggestion properties end with `explanation`; the fixed instruction asks for one or two plain sentences; an over-long fresh explanation is cut with an ellipsis and counted as `explanationsTruncated` | A surrogate pair is never split; non-string explanations still reach the validator; the count is absent when zero and removed on rejection and output-limit fallback; stored output is not re-cut | U, P, providers |
+
+Provider fixtures use local HTTP only and make no claim about live recognition
+quality. Full ingestion tests, PostgreSQL, providers, evaluation, types/build and
+root gates are required for the integrated revision.
+
+Round1 reference regression (#4260): provider schemas compile and accept original-valid inputs when references target relocated oneOf branches, deleted not subtrees, nested $id resources, and anchors. Provider reference constraints are omitted conservatively; original validator still rejects invalid inputs, and $ref property/const data is preserved.
+
+Incoming4270 review: typed schema-like objects inside enum/const and nested contentSchema are rejected by a type-qualified backend feature probe before sanitization and accepted afterward; provider widening preserves original-valid values and harmless colliding property names/data.

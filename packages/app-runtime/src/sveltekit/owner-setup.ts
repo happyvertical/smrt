@@ -7,10 +7,13 @@
  * every request instead of trusting the bind host alone.
  */
 
+import {
+  type LocalOwnerClaimResult,
+  LocalRuntimeError,
+  removeOnboardingHandoff,
+} from '@happyvertical/smrt-app-runtime';
 import type { Cookies } from '@sveltejs/kit';
 import { type ActionFailure, fail, redirect } from '@sveltejs/kit';
-import type { LocalOwnerClaimResult } from '../index.js';
-import { removeOnboardingHandoff } from '../state-root.js';
 import type { SmrtSvelteKitRuntime } from './runtime.js';
 
 /** Data returned by the setup page `load`. */
@@ -44,7 +47,9 @@ export type OwnerSetupErrorCode =
   /** Missing token, blank name, or email without `@` (HTTP 400). */
   | 'setup_invalid_input'
   /** Token wrong, expired, or already used; owner already claimed (HTTP 400). */
-  | 'setup_invalid';
+  | 'setup_invalid'
+  /** The bootstrap tenant slug already exists (HTTP 409). */
+  | 'setup_conflict';
 
 /** `form` data returned with `fail(status, …)`. */
 export interface OwnerSetupFailure {
@@ -58,6 +63,7 @@ export const OWNER_SETUP_FIELDS = Object.freeze({
   token: 'token',
   name: 'name',
   email: 'email',
+  password: 'password',
   tenantName: 'tenantName',
 } as const);
 
@@ -69,6 +75,8 @@ export const DEFAULT_OWNER_SETUP_MESSAGES: Readonly<
   setup_invalid_input: 'Name, email, and a valid setup token are required.',
   setup_invalid:
     'The setup invitation is invalid, expired, or already used. Run pnpm app:stop, pnpm app:recover, pnpm app:start, then pnpm app:open.',
+  setup_conflict:
+    'A workspace with the configured owner tenant slug already exists. Configure ownerTenant with another slug or adoptExisting.',
 });
 
 /** The request fields the setup page reads. */
@@ -84,6 +92,8 @@ export interface OwnerSetupActionEvent extends OwnerSetupEvent {
 }
 
 export interface OwnerSetupPageOptions {
+  /** Require an initial owner password. Default false for existing bootstrap consumers. */
+  readonly requirePassword?: boolean;
   /** Where a signed-in visitor or a successful claim is sent. Default `/`. */
   readonly redirectTo?: string;
   /** Replace fixed failure messages (for example app-specific recovery steps). */
@@ -128,7 +138,8 @@ export interface OwnerSetupPage {
  * ```
  *
  * The form posts to the `default` action with fields `token` (hidden),
- * `name`, `email`, and optional `tenantName`. Success sets the session cookie
+ * `name`, `email`, and optional `password` and `tenantName`. Set
+ * `requirePassword: true` for password-based applications. Success sets the session cookie
  * and redirects 303; failures return `fail(status, { code, message })`.
  */
 export function createOwnerSetupPage(
@@ -186,8 +197,14 @@ export function createOwnerSetupPage(
     const token = field(OWNER_SETUP_FIELDS.token);
     const name = field(OWNER_SETUP_FIELDS.name);
     const email = field(OWNER_SETUP_FIELDS.email);
+    const password = field(OWNER_SETUP_FIELDS.password);
     const tenantName = field(OWNER_SETUP_FIELDS.tenantName).trim();
-    if (!token || !name.trim() || !email.includes('@')) {
+    if (
+      !token ||
+      !name.trim() ||
+      !email.includes('@') ||
+      (options.requirePassword && !password)
+    ) {
       return failure(400, 'setup_invalid_input');
     }
 
@@ -198,11 +215,19 @@ export function createOwnerSetupPage(
         token,
         name,
         email,
+        password,
         ...(tenantName ? { tenantName } : {}),
         userAgent: event.request.headers.get('user-agent') || undefined,
         ipAddress: event.getClientAddress(),
       });
-    } catch {
+    } catch (error) {
+      if (
+        error instanceof LocalRuntimeError &&
+        (error.code === 'owner_tenant_conflict' ||
+          error.code === 'owner_identity_conflict')
+      ) {
+        return failure(409, 'setup_conflict');
+      }
       return failure(400, 'setup_invalid');
     }
 

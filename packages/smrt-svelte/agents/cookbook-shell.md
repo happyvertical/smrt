@@ -138,10 +138,9 @@ route: `s/[slug]/+page.svelte` renders
 `CookbookApp`.
 
 Props (also on `CookbookSectionOverview`, #3888): `presentation?: 'plain' | 'card'`
-(default `'plain'`) is passed to `OverviewGrid`, so the default section body
-lists shortcut entries as unframed rows on the panel surface (the shortcuts
-widget receives the grid's `presentation` and drops its per-entry frame); `'card'`
-keeps the framed look, and editing always keeps its frame.
+(default `'card'`) is passed to `OverviewGrid`, so section widgets and shortcuts
+use the current theme's existing framed styles. Explicit `'plain'` remains
+available for unframed entries on the panel surface; editing keeps its frame.
 `heading?: Snippet<[{ section: CookbookSectionHeadingInfo }]>` replaces the
 default title block (`{ id, title, description?, icon }`) on the page; on a
 standalone `CookbookSectionOverview` it renders above the grid and needs the

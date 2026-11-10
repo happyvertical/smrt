@@ -1,4 +1,8 @@
 <script lang="ts">
+import { useI18n } from '@happyvertical/smrt-ui/i18n';
+import { M } from './i18n.js';
+
+const { t } = useI18n();
 /**
  * Serializable plan shape accepted by PlanPicker. `SubscriptionPlan` model
  * instances satisfy it structurally, but it can also be plain data returned
@@ -18,6 +22,9 @@ export interface PlanPickerPlan {
   description?: string | null;
   /** Integer minor units of `currency` — `$19.99` is `1999` (#2401). */
   priceAmount: number;
+  pricingMode?: 'free' | 'fixed' | 'pay_what_you_can';
+  minimumAmount?: number;
+  suggestedAmount?: number;
   currency: string;
   billingInterval: string;
   featureKeys?: string[];
@@ -35,13 +42,13 @@ export interface PlanPickerPlan {
  * Uses the currency's own minor-unit exponent rather than a hard-coded 100, so
  * zero-decimal currencies (JPY, KRW) are not divided by anything.
  */
-function formatPrice(plan: PlanPickerPlan): string {
+function formatPrice(plan: PlanPickerPlan, amount = plan.priceAmount): string {
   const format = new Intl.NumberFormat(undefined, {
     style: 'currency',
     currency: plan.currency,
   });
   const digits = format.resolvedOptions().maximumFractionDigits ?? 2;
-  return format.format(plan.priceAmount / 10 ** digits);
+  return format.format(amount / 10 ** digits);
 }
 
 function featureCount(plan: PlanPickerPlan): number {
@@ -91,8 +98,18 @@ let {
     >
       <span class="smrt-plan-picker__name">{plan.name}</span>
       <span class="smrt-plan-picker__price">
-        {formatPrice(plan)}
-        <small>/ {plan.billingInterval}</small>
+        {#if plan.pricingMode === 'free'}
+          {t(M['subscriptions.picker.free'])}
+        {:else if plan.pricingMode === 'pay_what_you_can'}
+          {t(M['subscriptions.picker.pay_what_you_can'])}
+          <small>{t(M['subscriptions.picker.minimum'], { amount: formatPrice(plan, plan.minimumAmount ?? 0), interval: plan.billingInterval })}</small>
+          {#if plan.suggestedAmount}
+            <small>{t(M['subscriptions.picker.suggested'], { amount: formatPrice(plan, plan.suggestedAmount), interval: plan.billingInterval })}</small>
+          {/if}
+        {:else}
+          {formatPrice(plan)}
+          <small>/ {plan.billingInterval}</small>
+        {/if}
       </span>
       {#if plan.description}
         <span class="smrt-plan-picker__description">{plan.description}</span>

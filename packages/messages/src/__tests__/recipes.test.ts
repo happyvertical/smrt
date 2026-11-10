@@ -1,6 +1,17 @@
-import { describe, expect, it } from 'vitest';
+import { readFileSync } from 'node:fs';
+import { dirname, resolve } from 'node:path';
+import { fileURLToPath } from 'node:url';
+import { ManifestGenerator } from '@happyvertical/smrt-core/manifest';
+import { ManifestAdapter, OxcScanner } from '@happyvertical/smrt-scanner';
+import type { RecipeDefinition } from '@happyvertical/smrt-types';
+import { beforeAll, describe, expect, it } from 'vitest';
 import { Email } from '../models/Email.js';
-import { MailboxRecipe, NotificationsRecipe } from '../recipes.js';
+import { SlackAccount } from '../models/SlackAccount.js';
+import { SlackMessage } from '../models/SlackMessage.js';
+import { MailboxRecipe, NotificationsRecipe, SlackRecipe } from '../recipes.js';
+
+const packageRoot = resolve(dirname(fileURLToPath(import.meta.url)), '../..');
+const PACKAGE = '@happyvertical/smrt-messages';
 
 describe('messaging recipe composition', () => {
   it('shares one card without making notifications require a mailbox', () => {
@@ -79,4 +90,94 @@ it('places the recipient-scoped bell in a supported slot with a required service
   expect(NotificationsRecipe.nav).toEqual([]);
   expect(NotificationsRecipe.demoSeed.data.items[0].readAt).toBeNull();
   expect(NotificationsRecipe.runtime).toBe('both');
+});
+
+describe('slack recipe', () => {
+  it('shares the messaging card and section with the mailbox without requiring it', () => {
+    expect(SlackRecipe.id).toBe('messages.slack');
+    expect(SlackRecipe.label).toBe('Slack');
+    expect(SlackRecipe.group).toEqual(MailboxRecipe.group);
+    expect(SlackRecipe.section).toEqual(MailboxRecipe.section);
+    expect(SlackRecipe.requires).toEqual([]);
+    expect(SlackRecipe.models).toEqual([SlackMessage, SlackAccount]);
+    expect(SlackRecipe.exposure).toBeUndefined();
+  });
+
+  it('opens messages and workspaces as separate lists', () => {
+    const models = SlackRecipe.nav.map((entry) => entry.model);
+    expect(models).toEqual([SlackMessage, SlackAccount]);
+    expect(
+      SlackRecipe.nav.find((entry) => entry.model === SlackMessage)?.key,
+    ).toBe('slack-messages');
+    for (const entry of SlackRecipe.nav) expect(entry.filter).toBeUndefined();
+  });
+
+  describe('scanned and emitted', () => {
+    let recipes: RecipeDefinition[];
+    let manifest: ReturnType<ManifestAdapter['toManifest']>;
+    let errors: string[];
+
+    beforeAll(async () => {
+      const scanner = new OxcScanner({
+        cwd: packageRoot,
+        include: ['src/**/*.ts'],
+        exclude: [
+          '**/*.test.ts',
+          '**/*.spec.ts',
+          '**/__tests__/**',
+          '**/*.d.ts',
+        ],
+      });
+      const { results, resolved } = await scanner.scanAndResolve();
+      errors = results.errors
+        .filter((diagnostic) => diagnostic.severity === 'error')
+        .map((diagnostic) => `${diagnostic.filePath}: ${diagnostic.message}`);
+      manifest = new ManifestAdapter().toManifest(resolved, {
+        packageName: PACKAGE,
+        typeAliases: results.typeAliases,
+        recipes: results.recipes,
+      });
+      new ManifestGenerator().applyGenerationPasses(manifest, {
+        packageName: PACKAGE,
+        packageJson: JSON.parse(
+          readFileSync(resolve(packageRoot, 'package.json'), 'utf-8'),
+        ),
+      });
+      recipes = manifest.recipes ?? [];
+    });
+
+    it('passes scanner validation', () => {
+      expect(errors).toEqual([]);
+    });
+
+    it('emits all three messaging recipes', () => {
+      expect(recipes.map((recipe) => recipe.id).sort()).toEqual([
+        'messages.mailbox',
+        'messages.notifications',
+        'messages.slack',
+      ]);
+      const slack = recipes.find((recipe) => recipe.id === 'messages.slack');
+      expect(slack?.label).toBe('Slack');
+      expect(slack?.help?.markdown).toContain('## Tasks');
+      expect(slack?.help?.fieldRefs.length).toBeGreaterThan(0);
+    });
+
+    it('exposes every Slack nav model to the generated surface, read-only for workspaces', () => {
+      const slack = recipes.find((recipe) => recipe.id === 'messages.slack');
+      expect(slack?.nav?.length).toBe(2);
+      for (const entry of slack?.nav ?? []) {
+        const object = manifest.objects[entry.model];
+        expect(object, entry.model).toBeDefined();
+        expect(object.decoratorConfig?.api?.include ?? []).toContain('list');
+      }
+      expect(
+        manifest.objects[`${PACKAGE}:SlackAccount`]?.decoratorConfig?.api
+          ?.include,
+      ).toEqual(['list', 'get']);
+      expect(
+        manifest.objects[`${PACKAGE}:SlackMessage`]?.decoratorConfig?.api
+          ?.include,
+      ).toEqual(['list', 'get', 'create']);
+    });
+  });
 });

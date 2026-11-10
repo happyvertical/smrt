@@ -971,6 +971,50 @@ describe('DataTable', () => {
     ).not.toBeInTheDocument();
   });
 
+  it('renders column summaries in tfoot over every filtered row', async () => {
+    const lines = [
+      { id: 'a', name: 'Labour', qty: 2, amount: 54000 },
+      { id: 'b', name: 'Shingles', qty: 1, amount: 12345 },
+      { id: 'c', name: 'Nails', qty: 3, amount: 100 },
+    ];
+    const { container } = render(DataTable, {
+      props: {
+        data: lines,
+        rowKey: 'id',
+        pageSize: 2,
+        caption: 'Lines',
+        columns: [
+          { id: 'name', label: 'Item' },
+          { id: 'qty', label: 'Qty' },
+          {
+            id: 'amount',
+            label: 'Amount',
+            align: 'left' as const,
+            summaryFormat: (value: number) => `$${(value / 100).toFixed(2)}`,
+          },
+        ],
+        summaries: {
+          name: (rows: readonly unknown[]) => `${rows.length} lines`,
+          qty: 'sum',
+          amount: 'sum',
+        },
+      },
+    });
+    const foot = container.querySelector('tfoot');
+    expect(foot).not.toBeNull();
+    const footRow = within(foot as HTMLElement).getByRole('row');
+    expect(footRow).toHaveAttribute('data-row-kind', 'footer');
+    expect(footRow).toHaveTextContent('3 lines');
+    expect(footRow).toHaveTextContent('6');
+    expect(footRow).toHaveTextContent('$664.45');
+    // `sum` right-aligns a column without an explicit align; an explicit one wins.
+    const qtyHeader = container.querySelector('th[data-column-id="qty"]');
+    expect((qtyHeader as HTMLElement | null)?.style.textAlign).toBe('right');
+    const amountCell = footRow.querySelector('[data-column-id="amount"]');
+    expect((amountCell as HTMLElement | null)?.style.textAlign).toBe('left');
+    await expectNoA11yViolations(container);
+  });
+
   it('is axe-clean', async () => {
     const { container } = render(DataTable, {
       props: { data, columns, caption: 'People' },

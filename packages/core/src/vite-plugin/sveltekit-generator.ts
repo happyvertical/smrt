@@ -1,3 +1,4 @@
+import { resolveOperationPermissionAlias } from '../operation-permission.js';
 /**
  * SvelteKit route auto-generation from SMRT objects
  * Generates real TypeScript files in src/routes/api/ based on discovered SMRT objects
@@ -12,15 +13,14 @@ import {
   unlinkSync,
   writeFileSync,
 } from 'node:fs';
-import { createRequire } from 'node:module';
 import { isAbsolute, join, relative, resolve, sep } from 'node:path';
-import { pathToFileURL } from 'node:url';
 import type { DomainKnowledgeConfig } from '@happyvertical/smrt-types';
 import { generateConditionalGetRouteHelper } from '../generators/conditional-get.js';
 import {
   type ApiMethodExposure,
   CRUD_OPERATIONS,
   createManifestClassNamePredicate,
+  declaredParameterType,
   declaredTypeAcceptsDate,
   isCrudOperation,
   isFrameworkLifecycleMethod,
@@ -49,6 +49,7 @@ import type {
   SmartObjectManifest,
 } from '../scanner/types';
 import { generateChangesRoute } from './changes-route.js';
+import { consumerResolvesImport } from './consumer-import.js';
 import {
   generateDevPlaneRoute,
   willGenerateDevPlaneRoute,
@@ -71,6 +72,7 @@ import {
 } from './sync-apply-route.js';
 import {
   computeWebManifestHash,
+  findManifestObjectByName,
   isCollectionManifestClass,
   orderedManifestObjectEntries,
   resolveCollectionItemObject,
@@ -211,6 +213,28 @@ function getRegistrationPackageName(
   }
 
   return objectDef.packageName;
+}
+
+/** Use the same exact identity for collection registration and route factories. */
+function collectionResourceRegistryKey(
+  projectRoot: string,
+  className: string,
+  objectDef: SmartObjectDefinition,
+  manifest: SmartObjectManifest,
+): string {
+  const packageName = getRegistrationPackageName(
+    manifest,
+    objectDef,
+    isLocalObject(projectRoot, objectDef),
+  );
+  return (
+    objectDef.qualifiedName ||
+    (className.includes(':')
+      ? className
+      : packageName
+        ? `${packageName}:${extractSimpleClassName(className)}`
+        : className)
+  );
 }
 
 function toSingleQuotedStringLiteral(value: string): string {
@@ -472,6 +496,16 @@ function manifestObjectExtends(
 ): boolean {
   const extendsQualified = objectDef.extendsQualified;
   const extendsName = objectDef.extends;
+  // An import-qualified parent names its package: a same-named class of
+  // another package is not this object's parent (#4176).
+  const parentIdentity =
+    parent.qualifiedName ??
+    (parent.packageName
+      ? `${parent.packageName}:${parent.className}`
+      : undefined);
+  if (typeof extendsQualified === 'string' && parentIdentity) {
+    return extendsQualified === parentIdentity;
+  }
   return (
     (typeof extendsQualified === 'string' &&
       extendsQualified === parent.qualifiedName) ||
@@ -879,9 +913,8 @@ function resolveDefaultListOrderBy(
  * the `@TenantScoped` interceptors that auto-filter by tenant.
  *
  * `establishTenantContext` reads the canonical `locals.tenantId` set by the
- * smrt-users auth hook (with `user`/`session` fallbacks). It is a no-op when a
- * context is already active (e.g. an upstream tenancy handle) or when the
- * request carries no tenant (anonymous / global principal).
+ * smrt-users auth hook (with `user`/`session` fallbacks). An upstream context
+ * must identify the same tenant/user; conflicting authority fails closed.
  *
  * When no context could be established, an `optional`-mode read would otherwise
  * fall through the interceptor UNFILTERED and return rows from ALL tenants (the
@@ -900,15 +933,20 @@ function generateTenantContextHelper(
     typeof tenantId !== 'string' || !tenantId ||
     typeof userId !== 'string' || !userId ||
     !permissions
-  ) return;
+  ) {
+    throw error(403, 'Authenticated principal context is incomplete');
+  }
 `
     : '';
   const contextArgument = requirePrincipal
     ? '{ tenantId, userId, permissions }'
     : '{ tenantId }';
+  const activeUserMismatch = requirePrincipal
+    ? 'active.userId !== userId'
+    : "typeof userId === 'string' && userId && active.userId && active.userId !== userId";
   const tenancyImport = includeReadScope
     ? 'enterTenantContext, getCurrentTenant, hasTenantContext, isSuperAdminBypass, isTenancyEnabled'
-    : 'enterTenantContext, hasTenantContext';
+    : 'enterTenantContext, getCurrentTenant';
   const readScopeHelpers = includeReadScope
     ? `
 // Fail-closed read scope (#1782): a public/anonymous read on a @TenantScoped
@@ -941,14 +979,15 @@ function tenantReadOptionsScope(): { tenantId: string | null } | undefined {
 import { ${tenancyImport} } from '@happyvertical/smrt-tenancy';
 
 function establishTenantContext(locals: unknown): void {
-  if (hasTenantContext()) return;
   if (!locals || typeof locals !== 'object') return;
   const l = locals as Record<string, unknown>;
   const user = l.user as Record<string, unknown> | undefined;
   const session = l.session as Record<string, unknown> | undefined;
-  const tenantId = l.tenantId ?? user?.tenantId ?? session?.tenantId;
-  const userId = l.userId ?? user?.id ?? user?.userId ?? session?.userId;
-  const rawPermissions = l.permissions;
+  const tenantContext = l.tenantContext as Record<string, unknown> | undefined;
+  const tenantId = l.tenantId ?? user?.tenantId ?? session?.tenantId ?? tenantContext?.tenantId;
+  const userId = l.userId ?? user?.id ?? user?.userId ?? session?.userId ?? tenantContext?.userId;
+  const rawPermissions =
+    l.permissions ?? l.permissionSet ?? l.smrtPermissions ?? tenantContext?.permissions;
   const permissions =
     rawPermissions instanceof Set && [...rawPermissions].every((value) => typeof value === 'string')
       ? rawPermissions
@@ -956,6 +995,16 @@ function establishTenantContext(locals: unknown): void {
         ? new Set(rawPermissions)
         : undefined;
 ${principalGuard}
+  const active = getCurrentTenant();
+  if (active) {
+    if (
+      (typeof tenantId === 'string' && tenantId && active.tenantId !== tenantId) ||
+      (${activeUserMismatch})
+    ) {
+      throw error(403, 'Tenant context does not match authenticated principal');
+    }
+${requirePrincipal ? '    enterTenantContext({ ...active, tenantId, userId, permissions });\n' : ''}    return;
+  }
   if (typeof tenantId === 'string' && tenantId) {
     enterTenantContext(
       ${contextArgument},
@@ -1164,8 +1213,8 @@ function buildActionInvocationArgs(
     // hydrated on both because a JSON body cannot carry one either (#2686).
     const decoder =
       httpMethod === 'GET'
-        ? queryStringDecoderFor(parameter.type)
-        : declaredTypeAcceptsDate(parameter.type)
+        ? queryStringDecoderFor(declaredParameterType(parameter))
+        : declaredTypeAcceptsDate(declaredParameterType(parameter))
           ? 'toCustomActionDate'
           : undefined;
     return decoder ? `${decoder}(${access}) as ActionArgs[${index}]` : access;
@@ -1942,6 +1991,15 @@ async function generateRegistrationFile(
   const configPath = options.configPath || 'src/lib/server';
   const configDir = join(projectRoot, configPath);
   const registrationFilePath = join(configDir, 'smrt-register.ts');
+  const externalRuntimeDependencies = (manifest.smrtDependencies || []).filter(
+    (dependency) => dependency !== '@happyvertical/smrt-core',
+  );
+  const consumerRegistrationPaths =
+    options.consumerRegistrationPaths ??
+    (externalRuntimeDependencies.length > 0
+      ? [join(projectRoot, '.smrt', 'register.js')]
+      : []);
+  const consumerOwnsExternalRegistration = consumerRegistrationPaths.length > 0;
 
   // Group objects by package for efficient imports
   const localObjects: Array<[string, (typeof manifest.objects)[string]]> = [];
@@ -1962,6 +2020,7 @@ async function generateRegistrationFile(
       // Local object (source in project, not node_modules) - use $lib path
       localObjects.push([className, objectDef]);
     } else if (objectDef.packageName) {
+      if (consumerOwnsExternalRegistration) continue;
       // External packages may publish canonical object exports from a subpath
       // under an aliased export name. Registry identity stays keyed by the
       // manifest's qualified class name; only the emitted module binding uses
@@ -1972,7 +2031,10 @@ async function generateRegistrationFile(
         hasCollectionImport: false,
       };
 
-      if (isCollectionManifestClass(manifest, objectDef)) {
+      if (
+        isCollectionManifestClass(manifest, objectDef) &&
+        !hasGeneratedCollectionActions(manifest, objectDef)
+      ) {
         packageEntry.hasCollectionImport = true;
       } else {
         packageEntry.objects.push({
@@ -2020,7 +2082,10 @@ async function generateRegistrationFile(
       );
     }
 
-    if (isCollectionManifestClass(manifest, objectDef)) {
+    if (
+      isCollectionManifestClass(manifest, objectDef) &&
+      !hasGeneratedCollectionActions(manifest, objectDef)
+    ) {
       localSideEffectImports.add(importPath);
       continue;
     }
@@ -2072,22 +2137,30 @@ async function generateRegistrationFile(
     .join('\n');
 
   const imports = [packageImports, localImports].filter(Boolean).join('\n');
-  const externalRuntimeDependencies = (manifest.smrtDependencies || []).filter(
-    (dependency) => dependency !== '@happyvertical/smrt-core',
-  );
-  const consumerRegistrationPaths =
-    options.consumerRegistrationPaths ??
-    (externalRuntimeDependencies.length > 0
-      ? [join(projectRoot, '.smrt', 'register.js')]
-      : []);
   let consumerRegistrationImport = '';
   if (consumerRegistrationPaths.length > 0) {
     consumerRegistrationImport = [...new Set(consumerRegistrationPaths)]
       .sort()
       .map((registerPath) => {
+        const lexicalRegistrationPath = relative(projectRoot, registerPath);
+        const registerPathFromProjectRoot =
+          lexicalRegistrationPath === '..' ||
+          lexicalRegistrationPath.startsWith(`..${sep}`) ||
+          isAbsolute(lexicalRegistrationPath)
+            ? relative(
+                canonicalSvelteKitPath(projectRoot),
+                canonicalSvelteKitPath(registerPath),
+              )
+            : lexicalRegistrationPath;
+        const registrationTarget =
+          registerPathFromProjectRoot === '..' ||
+          registerPathFromProjectRoot.startsWith(`..${sep}`) ||
+          isAbsolute(registerPathFromProjectRoot)
+            ? registerPath
+            : resolve(projectRoot, registerPathFromProjectRoot);
         const consumerRegistrationPath = relative(
           configDir,
-          registerPath,
+          registrationTarget,
         ).replace(/\\/g, '/');
         return `import '${consumerRegistrationPath.startsWith('.') ? consumerRegistrationPath : `./${consumerRegistrationPath}`}';`;
       })
@@ -2119,10 +2192,50 @@ async function generateRegistrationFile(
     };
   }
 
+  // Collection decorators install their real constructor under the item,
+  // but do not register their own discovery metadata. Publish only explicitly
+  // exposed HTTP CLI action hosts and the collection ancestry needed to resolve
+  // them; ordinary/default collections retain their side-effect-only startup.
+  const collectionMetadata = new Map<string, SmartObjectDefinition>();
+  const manifestKeys = new Map(
+    Object.entries(manifest.objects).map(([key, value]) => [value, key]),
+  );
+  for (const objectDef of Object.values(manifest.objects)) {
+    if (!isCollectionManifestClass(manifest, objectDef)) continue;
+    if (!isCollectionActionResource(manifest, objectDef)) continue;
+    let current: SmartObjectDefinition | undefined = objectDef;
+    const seen = new Set<SmartObjectDefinition>();
+    while (
+      current &&
+      !seen.has(current) &&
+      isCollectionManifestClass(manifest, current)
+    ) {
+      seen.add(current);
+      const key = manifestKeys.get(current);
+      if (key)
+        collectionMetadata.set(
+          key,
+          portableObjectManifest(projectRoot, current),
+        );
+      const parent: string | undefined =
+        current.extendsQualified || current.extends;
+      current = parent
+        ? findManifestObjectByName(manifest, parent, current)
+        : undefined;
+    }
+  }
+  const collectionMetadataLiteral = JSON.stringify(
+    JSON.stringify({
+      ...manifest,
+      objects: Object.fromEntries(collectionMetadata),
+    }),
+  );
+
   const registrationManifests = Object.fromEntries(
     Object.entries(manifest.objects).flatMap(([className, objectDef]) => {
       if (isCollectionManifestClass(manifest, objectDef)) return [];
       const localObject = isLocalObject(projectRoot, objectDef);
+      if (!localObject && consumerOwnsExternalRegistration) return [];
       const packageName = getRegistrationPackageName(
         manifest,
         objectDef,
@@ -2159,6 +2272,7 @@ async function generateRegistrationFile(
       const bindingName =
         registrationBindings.get(className) || simpleClassName;
       const localObject = isLocalObject(projectRoot, objectDef);
+      if (!localObject && consumerOwnsExternalRegistration) return null;
       const packageName = getRegistrationPackageName(
         manifest,
         objectDef,
@@ -2189,6 +2303,27 @@ async function generateRegistrationFile(
     .filter((registration): registration is string => registration !== null)
     .join('\n');
 
+  const collectionRegistrations = Object.entries(manifest.objects)
+    .filter(
+      ([, objectDef]) =>
+        hasGeneratedCollectionActions(manifest, objectDef) &&
+        (!consumerOwnsExternalRegistration ||
+          isLocalObject(projectRoot, objectDef)),
+    )
+    .map(([className, objectDef]) => {
+      const qualifiedName = collectionResourceRegistryKey(
+        projectRoot,
+        className,
+        objectDef,
+        manifest,
+      );
+      const bindingName =
+        registrationBindings.get(className) ||
+        extractSimpleClassName(className);
+      return `ObjectRegistry.registerCollection(${JSON.stringify(qualifiedName)}, ${bindingName});`;
+    })
+    .join('\n');
+
   const registrationContent = `/**
  * Auto-generated SMRT object registration
  * DO NOT EDIT - changes will be overwritten
@@ -2207,6 +2342,16 @@ const smrtRegistrationManifests = JSON.parse(${registrationManifestLiteral});
 
 // Re-register imported objects with explicit package names for bundled runtimes
 ${registrations}
+${
+  collectionMetadata.size > 0
+    ? `
+// Metadata only: collection constructors were installed by their decorators.
+ObjectRegistry.registerPackageManifest(JSON.parse(${collectionMetadataLiteral}));
+`
+    : ''
+}
+// Bind every generated REST action receiver, independently of discovery eligibility.
+${collectionRegistrations}
 `;
 
   // Create directory if it doesn't exist
@@ -2218,13 +2363,50 @@ ${registrations}
   console.log(`[smrt] Generated registration file: ${registrationFilePath}`);
 }
 
+/** REST action receivers need a live binding even when CLI discovery is closed. */
+function hasGeneratedCollectionActions(
+  manifest: SmartObjectManifest,
+  objectDef: SmartObjectDefinition,
+): boolean {
+  return (
+    isCollectionManifestClass(manifest, objectDef) &&
+    resolveApiActionSet(objectDef, manifest).size > 0
+  );
+}
+
+/** Named HTTP CLI collection actions need metadata and a live receiver binding. */
+function isCollectionActionResource(
+  manifest: SmartObjectManifest,
+  objectDef: SmartObjectDefinition,
+): boolean {
+  if (!isCollectionManifestClass(manifest, objectDef)) return false;
+  const cli = objectDef.decoratorConfig?.cli;
+  if (
+    !cli ||
+    typeof cli !== 'object' ||
+    !Array.isArray(cli.include) ||
+    cli.http === false ||
+    (cli.exclude !== undefined && !Array.isArray(cli.exclude))
+  )
+    return false;
+  const apiActions = resolveApiActionSet(objectDef, manifest);
+  const cliActions = resolveCliActionSet(objectDef);
+  return cli.include.some(
+    (name) => name !== '*' && apiActions.has(name) && cliActions.has(name),
+  );
+}
+
 function buildRegistrationBindings(
   manifest: SmartObjectManifest,
 ): Map<string, string> {
   const keysBySimpleName = new Map<string, string[]>();
   const reservedBindings = new Set<string>();
   for (const [manifestKey, objectDef] of Object.entries(manifest.objects)) {
-    if (isCollectionManifestClass(manifest, objectDef)) continue;
+    if (
+      isCollectionManifestClass(manifest, objectDef) &&
+      !hasGeneratedCollectionActions(manifest, objectDef)
+    )
+      continue;
     const simpleName = extractSimpleClassName(manifestKey);
     reservedBindings.add(simpleName);
     const keys = keysBySimpleName.get(simpleName) ?? [];
@@ -2266,17 +2448,15 @@ function formatRegistrationImport(importedObject: {
 
 /**
  * Whether `@happyvertical/smrt-app-runtime/sveltekit` resolves from the
- * consumer at `projectRoot` (same signal as `consumerHasSmrtUsers`).
+ * consumer at `projectRoot` under ESM import conditions (same signal as
+ * `consumerHasSmrtUsers`; see `consumer-import.ts`), with an existing file
+ * target.
  */
 function consumerHasSmrtAppRuntime(projectRoot: string): boolean {
-  try {
-    createRequire(
-      pathToFileURL(join(projectRoot, 'package.json')).href,
-    ).resolve('@happyvertical/smrt-app-runtime/sveltekit');
-    return true;
-  } catch {
-    return false;
-  }
+  return consumerResolvesImport(
+    projectRoot,
+    '@happyvertical/smrt-app-runtime/sveltekit',
+  );
 }
 
 /** Default config module for apps that install the application runtime. */
@@ -2626,7 +2806,6 @@ async function generateCollectionRoutesForObject(
     semanticManifest,
     lookupClassName,
   );
-
   const { exposed: customActions, rejected } = resolveApiCustomActions(
     objectDef,
     semanticManifest,
@@ -2736,6 +2915,14 @@ export function resolveApiCustomActions(
   exposed: Array<[string, MethodDefinition]>;
   rejected: Array<[string, ApiMethodExposure]>;
 } {
+  if (
+    objectIsCollectionClass &&
+    manifest &&
+    resolveCollectionItemObject(manifest, objectDef)?.decoratorConfig
+      ?.abstract === true
+  ) {
+    return { exposed: [], rejected: [] };
+  }
   const apiConfig = objectDef.decoratorConfig?.api;
   const isModelClassName =
     wireability.isModelClassName ?? createManifestClassNamePredicate(manifest);
@@ -3056,6 +3243,21 @@ export function findCliApiCoherenceViolations(
     }
 
     const apiActionSet = resolveApiActionSet(objectDef, manifest);
+    // A collection class has no CRUD routes of its own: its CRUD commands
+    // run the model's operations, so they are reachable exactly where the
+    // model's API routes them. Collections inherit their model's `cli`
+    // include list (`registry/collection-exposure.ts`), so without this
+    // every inherited CRUD verb would read as unreachable.
+    if (isCollectionManifestClass(manifest, objectDef)) {
+      const item = resolveCollectionItemObject(manifest, objectDef);
+      if (item && item !== objectDef) {
+        for (const action of resolveStandardCrudActions(
+          item.decoratorConfig?.api,
+        )) {
+          apiActionSet.add(action);
+        }
+      }
+    }
     const unreachable = [...effectiveCliCommands]
       .filter((action) => !apiActionSet.has(action) && !skipNames.has(action))
       .sort();
@@ -3672,8 +3874,8 @@ function generateActionRouteTemplate(
     for (const parameter of spec.actionDef.parameters ?? []) {
       const decoder =
         spec.routeConfig?.method === 'GET'
-          ? queryStringDecoderFor(parameter.type)
-          : declaredTypeAcceptsDate(parameter.type)
+          ? queryStringDecoderFor(declaredParameterType(parameter))
+          : declaredTypeAcceptsDate(declaredParameterType(parameter))
             ? 'toCustomActionDate'
             : undefined;
       if (decoder) decoderImports.add(decoder);
@@ -3740,6 +3942,18 @@ function generateActionRouteTemplate(
         needsTenantContext,
         lookupModelType.typeName,
         hostModelType.typeName,
+        resolveOperationPermissionAlias(
+          objectDef.decoratorConfig,
+          spec.actionName,
+        )?.action,
+        spec.hostType === 'collection'
+          ? collectionResourceRegistryKey(
+              projectRoot,
+              spec.hostClassName,
+              objectDef,
+              semanticManifest,
+            )
+          : undefined,
       ),
     )
     .join('\n');
@@ -3773,7 +3987,13 @@ function generateActionRouteHandler(
   needsTenantContext: boolean,
   lookupTypeName: string,
   hostTypeName: string,
+  permissionAction?: string,
+  collectionRegistryKey = lookupClassName,
 ): string {
+  const successResponse = `  return json({
+    action: '${actionName}',
+    result: toPublicResult(result, publicJsonOptions),
+  });`;
   const handlerName = routeConfig.method;
   // Mutating verbs require auth even when reads are public (#1540). Tenant-scoped
   // objects also establish tenant context so the action runs filtered.
@@ -3782,7 +4002,7 @@ function generateActionRouteHandler(
   if (mutating) {
     // Custom mutating actions require `<collection>.<method>` (#2977).
     guardLines.push(
-      `  requireRoutePermission(locals, ${JSON.stringify(actionName)});`,
+      `  requireRoutePermission(locals, ${JSON.stringify(permissionAction ?? actionName)});`,
     );
   }
   if (needsTenantContext) {
@@ -3826,9 +4046,9 @@ function generateActionRouteHandler(
 export const ${handlerName}: RequestHandler = async (${collectionHandlerArgs}) => {
 ${authGuardLine}
   const publicJsonOptions = getPublicJsonOptions(locals);
-${generateCollectionLoad(lookupClassName, { typeName: lookupTypeName })}
+${generateCollectionLoad(collectionRegistryKey, { typeName: lookupTypeName })}
   const typedCollection = collection as unknown as ${hostTypeName};
-${generateCollectionNotRegisteredError(lookupClassName)}
+${generateCollectionNotRegisteredError(collectionRegistryKey)}
 ${staticTargetLoad}
 
 ${optionsLoad}${scopedOptions.source}  let result: unknown;
@@ -3847,10 +4067,7 @@ ${optionsLoad}${scopedOptions.source}  let result: unknown;
     return json({ error: failure }, { status: failure.status });
   }
 
-  return json({
-    action: '${actionName}',
-    result: toPublicResult(result, publicJsonOptions),
-  });
+${successResponse}
 };
 `;
   }
@@ -3897,10 +4114,7 @@ ${optionsLoad}${scopedOptions.source}  const ClassRef = registered.constructor a
     return json({ error: failure }, { status: failure.status });
   }
 
-  return json({
-    action: '${actionName}',
-    result: toPublicResult(result, publicJsonOptions),
-  });
+${successResponse}
 };
 `;
   }
@@ -3948,10 +4162,7 @@ ${optionsLoad}  let result: unknown;
     return json({ error: failure }, { status: failure.status });
   }
 
-  return json({
-    action: '${actionName}',
-    result: toPublicResult(result, publicJsonOptions),
-  });
+${successResponse}
 };
 `;
 }

@@ -1,5 +1,15 @@
 import assert from 'node:assert/strict';
-import { readdirSync, readFileSync } from 'node:fs';
+import { spawnSync } from 'node:child_process';
+import {
+  mkdirSync,
+  mkdtempSync,
+  readdirSync,
+  readFileSync,
+  rmSync,
+  writeFileSync,
+} from 'node:fs';
+import { tmpdir } from 'node:os';
+import { dirname, join } from 'node:path';
 import test from 'node:test';
 
 const workflow = readFileSync(
@@ -75,6 +85,53 @@ test('release regenerates and commits tracked SvelteKit registration snapshots',
     publisher.indexOf("-name 'smrt-register.ts'") <
       publisher.indexOf('git commit -m "chore(release):'),
   );
+});
+
+test('release commit collection never stages build or dependency output (#4711)', () => {
+  // `packages/core` builds with `cp -r scripts dist/`, so a source fixture
+  // package.json reappears under the gitignored dist/. Staging it makes
+  // `git add` refuse the ignored path and fails the release before tagging.
+  const collect = /^ +mapfile -t release_files < <\((find packages .*\| sort)\)$/m;
+  const commands = ['seal-release', 'publish-release'].map((name) => {
+    const match = job(name).match(collect);
+    assert.ok(match, `${name} must collect release files with find`);
+    return match[1];
+  });
+  assert.equal(commands[0], commands[1], 'both seal steps must collect identically');
+
+  const root = mkdtempSync(join(tmpdir(), 'release-files-'));
+  try {
+    const files = {
+      collected: [
+        'packages/core/package.json',
+        'packages/core/CHANGELOG.md',
+        'packages/core/scripts/fixtures/pglite-peer/package.json',
+        'packages/assets/src/lib/server/smrt-register.ts',
+        'packages/cli/templates/app/template.config.js',
+        'packages/cli/templates/mcp-apps-template/package.dependencies.json',
+      ],
+      excluded: [
+        'packages/core/dist/scripts/fixtures/pglite-peer/package.json',
+        'packages/core/dist/CHANGELOG.md',
+        'packages/core/node_modules/some-dep/package.json',
+        'packages/cli/templates/app/node_modules/x/template.config.js',
+      ],
+    };
+    for (const file of [...files.collected, ...files.excluded]) {
+      mkdirSync(join(root, dirname(file)), { recursive: true });
+      writeFileSync(join(root, file), '{}');
+    }
+    const result = spawnSync('sh', ['-c', commands[0]], { cwd: root, encoding: 'utf8' });
+    assert.equal(result.status, 0, result.stderr);
+    const listed = result.stdout.split('\n').filter(Boolean);
+    // Compare as sets: `sort` ordering follows the runner's locale.
+    assert.deepEqual([...listed].sort(), [...files.collected].sort());
+    for (const path of listed) {
+      assert.doesNotMatch(path, /(^|\/)(dist|node_modules)\//, path);
+    }
+  } finally {
+    rmSync(root, { recursive: true, force: true });
+  }
 });
 
 test('routine releases batch instead of publishing after every main push', () => {
@@ -168,7 +225,7 @@ test('releases are published to the primary registry, with npmjs as a mirror', (
   // The mirror can never fail the release, never holds the primary's
   // credential, and also runs when no release was cut so it self-heals.
   assert.match(mirror, /^    continue-on-error: true$/m);
-  assert.match(mirror, /^    needs: \[prepare-release, publish-release\]$/m);
+  assert.match(mirror, /^    needs: \[prepare-release, publish-release, publish-window\]$/m);
   assert.match(
     mirror,
     /MIRROR_RELEASE_VERSION: \$\{\{ needs\.prepare-release\.outputs\.version \}\}/,

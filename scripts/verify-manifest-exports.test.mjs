@@ -1,15 +1,28 @@
 import assert from 'node:assert/strict';
 import { spawnSync } from 'node:child_process';
-import { mkdirSync, mkdtempSync, writeFileSync } from 'node:fs';
+import { mkdirSync, mkdtempSync, rmSync, writeFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { dirname, join, resolve } from 'node:path';
-import test from 'node:test';
+import { after, test } from 'node:test';
 import { fileURLToPath } from 'node:url';
 
 const scriptPath = resolve(
   dirname(fileURLToPath(import.meta.url)),
   'verify-manifest-exports.mjs',
 );
+const fixtureDirectories = new Set();
+
+after(() => {
+  for (const directory of fixtureDirectories) {
+    rmSync(directory, { recursive: true, force: true });
+  }
+});
+
+function createFixtureDirectory(prefix) {
+  const directory = mkdtempSync(join(tmpdir(), prefix));
+  fixtureDirectories.add(directory);
+  return directory;
+}
 
 function writeJson(path, value) {
   writeFileSync(path, `${JSON.stringify(value, null, 2)}\n`);
@@ -22,9 +35,7 @@ function writeJson(path, value) {
  * real dynamic import instead of a mock.
  */
 function createPackageFixture({ rootExports = [], serverExports = [] }) {
-  const packageDir = mkdtempSync(
-    join(tmpdir(), 'smrt-verify-manifest-exports-'),
-  );
+  const packageDir = createFixtureDirectory('smrt-verify-manifest-exports-');
 
   writeJson(join(packageDir, 'package.json'), {
     name: '@happyvertical/smrt-fixture',
@@ -453,8 +464,8 @@ test('verify-manifest-exports (smrt#2845): resolves the manifest through the pac
   // dist/lib/manifest.json (a non-default layout). Before this fix the
   // guard hardcoded dist/manifest.json and would silently skip() such a
   // package, leaving it unchecked.
-  const packageDir = mkdtempSync(
-    join(tmpdir(), 'smrt-verify-manifest-exports-altpath-'),
+  const packageDir = createFixtureDirectory(
+    'smrt-verify-manifest-exports-altpath-',
   );
   writeJson(join(packageDir, 'package.json'), {
     name: '@happyvertical/smrt-fixture',
@@ -526,8 +537,8 @@ test('verify-manifest-exports (smrt#2845): prefers "./manifest.json" over "./man
 });
 
 test('verify-manifest-exports (smrt#2845): skips when there is no dist/manifest.json', () => {
-  const packageDir = mkdtempSync(
-    join(tmpdir(), 'smrt-verify-manifest-exports-empty-'),
+  const packageDir = createFixtureDirectory(
+    'smrt-verify-manifest-exports-empty-',
   );
   writeJson(join(packageDir, 'package.json'), {
     name: '@happyvertical/smrt-fixture-empty',

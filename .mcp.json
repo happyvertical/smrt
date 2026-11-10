@@ -2,11 +2,9 @@
   "mcpServers": {
     "smrt-dev-mcp": {
       "type": "stdio",
-      "command": "pnpm",
+      "command": "node",
       "args": [
-        "exec",
-        "tsx",
-        "packages/smrt-dev-mcp/src/index.ts"
+        "scripts/mcp-servers/smrt-dev-mcp.mjs"
       ],
       "env": {
         "DEBUG": "false"

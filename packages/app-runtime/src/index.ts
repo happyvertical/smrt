@@ -4,56 +4,108 @@
  * This Node-only subpath owns the small amount of operational composition that
  * does not belong in a generated application: user-owned paths, restrictive
  * local secret material, SQLite tuning, owner bootstrap, and an optional
- * embedded job runner. Domain schema preparation remains an explicit startup
- * step supplied by the application migration layer.
+ * embedded job runner. With `createSchema` the runtime creates the framework
+ * schema on first start (smrt#4835, `local-schema.ts`); the application's own
+ * schema work stays an explicit `prepareDatabase` step.
  */
 
-import { execFile } from 'node:child_process';
 import { createHash, createHmac, randomBytes } from 'node:crypto';
-import {
-  constants,
-  type FileHandle,
-  link,
-  lstat,
-  mkdir,
-  open,
-  readdir,
-  realpath,
-  rmdir,
-  unlink,
-} from 'node:fs/promises';
 import { homedir, platform } from 'node:os';
-import { isAbsolute, parse, relative, resolve, sep } from 'node:path';
-import { promisify } from 'node:util';
-import { Worker } from 'node:worker_threads';
+import { parse, resolve, win32 } from 'node:path';
 import {
   type ResolvedApplicationRuntime,
   type RuntimeProviderOverrides,
   resolveApplicationRuntime,
 } from '@happyvertical/smrt-config';
+import { setDatabaseSyncDeviceId } from '@happyvertical/smrt-core';
 import { TaskRunner, type TaskRunnerConfig } from '@happyvertical/smrt-jobs';
 import { Person, ProfileTypeCollection } from '@happyvertical/smrt-profiles';
 import { withSystemContext } from '@happyvertical/smrt-tenancy';
 import {
   DEFAULT_ROLE_SLUGS,
+  ensurePasswordPermissionsRegistered,
   MembershipCollection,
   MembershipStatus,
+  PasswordCredentialService,
+  type PasswordPolicyOptions,
   RoleCollection,
   SessionCollection,
   SessionService,
+  type Tenant,
+  TenantCollection,
   TenantService,
+  TenantStatus,
+  type TenantWithOwnershipResult,
   UserCollection,
   UserStatus,
 } from '@happyvertical/smrt-users';
 import { type DatabaseInterface, getDatabase } from '@happyvertical/sql';
 import {
+  type CloudLinkChallenge,
+  CloudLinkError,
+  type CloudLinkExpectations,
+  type CloudLinkIdentities,
+  deriveCloudLinkKeyPair,
+  signCloudLinkProof,
+  verifyCloudLinkChallenge,
+} from './cloud-link.js';
+import {
+  type InstallationCustodyReport,
+  inspectInstallationCustody,
+  stateRootOptions,
+} from './installation-custody.js';
+import {
+  acquireInitializationLock,
+  acquireLocalDatabase,
+  BOOTSTRAP_TABLE,
+  canonicalLocalSourceRoot,
+  closeDatabaseAfterFailure,
+  DATABASE_FILE_NAME,
+  defaultApplicationDataRoot,
+  installationUnverified,
+  isInside,
+  preflightLocalApplicationRoot,
+  prepareLocalFilesystem,
+  preservePrimaryFailure,
+  SECRET_FILE_NAME,
+  sameFilesystemPath,
+  validateApplicationSecret,
+  validateLocalStorageCustody,
+  windowsSecureFileCustody,
+} from './local-custody.js';
+import {
+  deriveLocalInstallationIdentity,
+  type LocalInstallationIdentity,
+} from './local-installation-identity.js';
+import {
   createLocalMcpTokenStore,
   ensureLocalMcpTokenTable,
   type LocalMcpTokenStore,
 } from './local-mcp-tokens.js';
+import { LocalRuntimeError } from './local-runtime-error.js';
+import {
+  databaseFileExists,
+  discardCreatedDatabase,
+  type LocalPrepareDatabase,
+  LocalSchemaStepFailure,
+  prepareLocalSchema,
+} from './local-schema.js';
+import {
+  applicationStateRootSource,
+  prepareApplicationStateRoot,
+} from './state-root.js';
+import {
+  validateWindowsApplicationId,
+  validateWindowsPath,
+  WINDOWS_DERIVED_PATH_RESERVE,
+} from './windows-paths.js';
 
 export * from './application-identity.js';
+export * from './cloud-link.js';
+export * from './data-root-swap.js';
 export * from './deployed-runtime.js';
+export * from './installation-custody.js';
+export { withLocalInitializationLock } from './local-custody.js';
 export {
   DEFAULT_LOCAL_MCP_TOKEN_TTL_SECONDS,
   type IssuedLocalMcpToken,
@@ -62,72 +114,51 @@ export {
   LOCAL_MCP_TOKEN_PREFIX,
   LOCAL_MCP_TOKEN_PRINCIPAL,
   LOCAL_MCP_TOKEN_TABLE,
+  type LocalMcpDesktopCredentialInput,
+  type LocalMcpDesktopOwnerSession,
   type LocalMcpTokenPrincipal,
   type LocalMcpTokenRecord,
   type LocalMcpTokenStatus,
   type LocalMcpTokenStore,
   MAX_LOCAL_MCP_TOKEN_TTL_SECONDS,
 } from './local-mcp-tokens.js';
+export {
+  LocalRuntimeError,
+  type LocalRuntimeErrorCode,
+} from './local-runtime-error.js';
+export {
+  type LocalPrepareDatabase,
+  type LocalPrepareDatabaseContext,
+  MIGRATION_FAILED_MESSAGE,
+  type PrepareDatabaseContext,
+  SCHEMA_CREATION_FAILED_MESSAGE,
+} from './local-schema.js';
 export * from './operation-lock.js';
+export {
+  ORIGIN_FILE,
+  type OriginRecord,
+  parseLoopbackOrigin,
+  readOriginFile,
+  removeOriginFile,
+  writeOriginFile,
+} from './origin-file.js';
+export * from './private-files.js';
 export * from './provider-readiness.js';
 export * from './runtime-diagnostics.js';
 export * from './stale-reclaim.js';
 export * from './state-root.js';
+export * from './vault-lease.js';
+export * from './vault-restart.js';
+export * from './vault-sync-state.js';
 export * from './writer-lease.js';
 
 const DEFAULT_BIND_HOST = '127.0.0.1';
 const DEFAULT_BOOTSTRAP_TTL_SECONDS = 10 * 60;
 const MAX_BOOTSTRAP_TTL_SECONDS = 15 * 60;
 const DEFAULT_SESSION_TTL_SECONDS = 7 * 24 * 60 * 60;
-const BOOTSTRAP_TABLE = '_smrt_local_owner_bootstrap';
-const SECRET_FILE_NAME = 'application.secret';
-const DATABASE_FILE_NAME = 'application.sqlite';
-const ROOT_MARKER_PREFIX = '.smrt-local-runtime-';
-const PREFLIGHT_RETRY_LIMIT = 4;
-const INITIALIZATION_LOCK_TIMEOUT_MS = 120_000;
-const INITIALIZATION_LOCK_WORKER = `
-  const { parentPort, workerData } = require('node:worker_threads');
-  let database;
-  let transaction;
-  (async () => {
-    try {
-      const { getDatabase } = await import(workerData.sqlModuleUrl);
-      database = await getDatabase({
-        type: 'sqlite',
-        url: workerData.path,
-        secureFile: {
-          driver: 'node:sqlite',
-          custody: 'trusted-parent',
-          root: workerData.custodyRoot,
-        },
-        transactionQueueTimeout: workerData.timeout,
-      });
-      if (!database.beginTransaction) {
-        throw new Error('Secure SQLite does not expose beginTransaction().');
-      }
-      await database.query('PRAGMA busy_timeout = ' + workerData.timeout);
-      transaction = await database.beginTransaction();
-      parentPort.postMessage({ type: 'acquired' });
-    } catch (error) {
-      try { await database?.close?.(); } catch {}
-      parentPort.postMessage({ type: 'error', message: String(error) });
-      parentPort.close();
-      return;
-    }
-    parentPort.once('message', async (message) => {
-      if (message?.type !== 'release') return;
-      let releaseError;
-      try { await transaction.rollback(); } catch (error) { releaseError = String(error); }
-      try { await database.close?.(); } catch (error) { releaseError ??= String(error); }
-      parentPort.postMessage({ type: 'released', error: releaseError });
-      parentPort.close();
-    });
-  })().catch((error) => {
-    parentPort.postMessage({ type: 'error', message: String(error) });
-    parentPort.close();
-  });
-`;
-const execFileAsync = promisify(execFile);
+const DEFAULT_OWNER_TENANT_SLUG = 'default';
+const DEFAULT_OWNER_TENANT_NAME = 'My Workspace';
+const OWNER_TENANT_SLUG_PATTERN = /^[a-z0-9](?:[a-z0-9-]{0,62}[a-z0-9])?$/;
 
 /** Paths owned by the local user, outside the source tree by default. */
 export interface LocalRuntimePaths {
@@ -158,10 +189,25 @@ export interface LocalApplicationRuntimeOptions
   /** Actual HTTP bind host. Owner bootstrap refuses non-loopback values. */
   bindHost?: string;
   /**
-   * Explicit application migration/schema hook, invoked before identity access.
-   * It must be idempotent; runtime code never synthesizes application tables.
+   * Create and upgrade the framework schema when this process starts, inside
+   * the initialization lock and one transaction (smrt#4835). On an empty data
+   * directory the database is created, migrated, and only then served; a
+   * failure rolls back, removes a database this attempt created, and throws
+   * `schema_creation_failed`. Default `false` here so operator tooling that
+   * migrates through another path (`smrt app setup` spawns `smrt db:migrate`)
+   * is unchanged; the SvelteKit runtime enables it. Local profile only.
    */
-  prepareDatabase?: (db: DatabaseInterface) => Promise<void>;
+  createSchema?: boolean;
+  /**
+   * The application's own database step, run on EVERY start after the
+   * framework schema and inside the same lock and transaction (when
+   * {@link LocalApplicationRuntimeOptions.createSchema} is on, so a failure
+   * rolls both back). It must be idempotent; runtime code never synthesizes
+   * application model tables itself. `context.firstRun` is true only on the
+   * start that found an empty database. A step that needs only the database
+   * may take `(db)`. A rejection surfaces as `migration_failed`.
+   */
+  prepareDatabase?: LocalPrepareDatabase;
   /** Local profile provider overrides (only validated local combinations survive). */
   providers?: RuntimeProviderOverrides;
   /** Short-lived bootstrap token lifetime. Range: 1..900 seconds. */
@@ -172,8 +218,49 @@ export interface LocalApplicationRuntimeOptions
   backgroundJobs?: boolean;
   /** Explicit opt-in for application-defined paid capabilities. Default false. */
   paidCapabilities?: boolean;
+  /**
+   * The tenant `claimOwner()` creates or adopts for the owner. Defaults to a
+   * new tenant with slug `default`; see {@link LocalOwnerTenantOptions}.
+   */
+  ownerTenant?: LocalOwnerTenantOptions;
+  /** Server-only policy shared with the application password sign-in service. */
+  passwordPolicy?: PasswordPolicyOptions;
   /** Testable clock. */
   now?: () => Date;
+}
+
+/**
+ * Bootstrap tenant selection for `claimOwner()` (#3032).
+ *
+ * The claim never writes over an existing tenant: when a tenant with `slug`
+ * already exists the claim fails closed with `owner_tenant_conflict` unless
+ * `adoptExisting` is set, and adoption itself fails closed unless that tenant
+ * is an active root tenant with no memberships of any status.
+ */
+export interface LocalOwnerTenantOptions {
+  /**
+   * Slug of the owner's tenant: lowercase letters, digits, and inner hyphens,
+   * at most 64 characters. Default `default`.
+   */
+  readonly slug?: string;
+  /**
+   * Name of a newly created tenant when the claim supplies no `tenantName`.
+   * Default `My Workspace`. An adopted tenant keeps its own name.
+   */
+  readonly name?: string;
+  /**
+   * Adopt an application-seeded tenant with `slug` instead of failing: the
+   * owner gets an owner membership in it and its id (and every row that
+   * points at it) is kept. When no tenant has the slug, one is created.
+   * Default false.
+   */
+  readonly adoptExisting?: boolean;
+}
+
+interface ResolvedOwnerTenant {
+  readonly slug: string;
+  readonly name: string;
+  readonly adoptExisting: boolean;
 }
 
 /**
@@ -184,7 +271,7 @@ export async function prepareLocalDatabaseStorage(
   options: ResolveLocalRuntimePathsOptions,
 ): Promise<LocalRuntimePaths> {
   const paths = resolveLocalRuntimePaths(options);
-  const sourceRoot = resolve(options.sourceRoot ?? process.cwd());
+  const sourceRoot = resolveSourceRoot(options);
   const appId = validateApplicationId(options.appId);
   await preflightLocalApplicationRoot(paths.root, sourceRoot, appId);
   const initializationLock = await acquireInitializationLock(paths.root);
@@ -225,27 +312,9 @@ export async function validateLocalDatabaseStorage(
   options: ResolveLocalRuntimePathsOptions,
 ): Promise<LocalRuntimePaths> {
   const paths = resolveLocalRuntimePaths(options);
-  const sourceRoot = resolve(options.sourceRoot ?? process.cwd());
+  const sourceRoot = resolveSourceRoot(options);
   const appId = validateApplicationId(options.appId);
-  await preflightLocalApplicationRoot(paths.root, sourceRoot, appId);
-  const canonicalSourceRoot = await realpath(sourceRoot);
-  await validateRootMarker(
-    resolve(paths.root, `${ROOT_MARKER_PREFIX}${appId}`),
-    canonicalSourceRoot,
-  );
-  await validateExistingPathChain(paths.database, canonicalSourceRoot, 'file');
-  const database = await lstat(paths.database);
-  const currentUid = process.getuid?.();
-  if (
-    database.isSymbolicLink() ||
-    !database.isFile() ||
-    (currentUid !== undefined && database.uid !== currentUid) ||
-    (database.mode & 0o777) !== 0o600
-  ) {
-    throw unsafeFilesystemEntry(
-      `Local application database must be a current-user-owned mode-0600 file: ${paths.database}`,
-    );
-  }
+  await validateLocalStorageCustody(paths, sourceRoot, appId);
   return paths;
 }
 
@@ -273,8 +342,8 @@ export async function openLocalMcpTokenStore(
   options: OpenLocalMcpTokenStoreOptions,
 ): Promise<OpenedLocalMcpTokenStore> {
   const paths = await validateLocalDatabaseStorage(options);
-  const canonicalSourceRoot = await realpath(
-    resolve(options.sourceRoot ?? process.cwd()),
+  const canonicalSourceRoot = await canonicalLocalSourceRoot(
+    resolveSourceRoot(options),
   );
   // Uncached: `close()` must never close a connection another caller in
   // this process (for example the web runtime) shares.
@@ -286,6 +355,7 @@ export async function openLocalMcpTokenStore(
       driver: 'node:sqlite',
       custody: 'trusted-parent',
       root: paths.root,
+      ...windowsSecureFileCustody(paths),
     },
   });
   try {
@@ -304,9 +374,151 @@ export async function openLocalMcpTokenStore(
     issue: store.issue,
     list: store.list,
     revoke: store.revoke,
+    revokeHolder: store.revokeHolder,
     verify: store.verify,
     close: async () => {
       await db.close?.();
+    },
+  });
+}
+
+/** The local half of a cloud link (#4806); holds no secret material. */
+export interface LocalCloudLinkIdentity {
+  /** The public device ID. */
+  readonly installationId: string;
+  readonly identities: CloudLinkIdentities;
+  /** Raw Ed25519 link public key, base64url. */
+  readonly linkPublicKey: string;
+  /**
+   * Check a challenge against this installation and the operator's
+   * expectations (`verifyCloudLinkChallenge()`), then sign it. The seed is
+   * re-read for each signature and never retained.
+   */
+  signProof(
+    challenge: unknown,
+    expected: LocalCloudLinkExpectations,
+  ): Promise<{ challenge: CloudLinkChallenge; signature: string }>;
+}
+
+/** Operator expectations for {@link LocalCloudLinkIdentity.signProof}. */
+export type LocalCloudLinkExpectations = Omit<
+  CloudLinkExpectations,
+  'appId' | 'installationId' | 'linkPublicKey'
+>;
+
+/** Options for {@link openLocalCloudLinkIdentity}. */
+export interface OpenLocalCloudLinkIdentityOptions
+  extends ResolveLocalRuntimePathsOptions {
+  /**
+   * The installation a per-user cloud migration began at this location (#4806).
+   * Beginning retires the location before the bundle is exported, yet the
+   * per-user link can only be made after that bundle is imported, so a
+   * location retired for this exact installation may still sign the per-user
+   * link of its own migration, and nothing else: a shared-target challenge is
+   * refused. The caller must have checked its migration record
+   * (`openMigrationCloudLinkIdentity` in `@happyvertical/smrt-cli/app`).
+   */
+  retiredInstallationId?: string;
+}
+
+/**
+ * Open the link identity of an initialized local installation. Refuses unless
+ * custody is `in-custody`: an arrived copy, a retired location or a seed
+ * mismatch cannot link, except the narrow `retiredInstallationId` case above.
+ * Read-only; it never opens the database.
+ */
+export async function openLocalCloudLinkIdentity(
+  options: OpenLocalCloudLinkIdentityOptions,
+): Promise<LocalCloudLinkIdentity> {
+  const paths = await validateLocalDatabaseStorage(options);
+  const canonicalSourceRoot = await canonicalLocalSourceRoot(
+    resolveSourceRoot(options),
+  );
+  const retiredFor = options.retiredInstallationId;
+  const unverified = (report: InstallationCustodyReport) => {
+    const stateOptions = stateRootOptions(options);
+    return installationUnverified(report, {
+      stateRoot: prepareApplicationStateRoot(stateOptions),
+      source: applicationStateRootSource(stateOptions),
+    });
+  };
+  const custodyUsable = (report: InstallationCustodyReport) =>
+    report.status === 'in-custody' ||
+    (retiredFor !== undefined &&
+      report.status === 'retired' &&
+      report.installationId === retiredFor);
+  const report = await inspectInstallationCustody(options);
+  if (!custodyUsable(report)) throw unverified(report);
+  const readIdentity = async () => {
+    const secret = await validateApplicationSecret(
+      paths.applicationSecret,
+      canonicalSourceRoot,
+    );
+    return {
+      identity: deriveLocalInstallationIdentity(secret),
+      keys: deriveCloudLinkKeyPair(secret),
+    };
+  };
+  const { identity, keys } = await readIdentity();
+  if (identity.deviceId !== report.installationId) {
+    throw unverified(report);
+  }
+  const identities: CloudLinkIdentities = Object.freeze({
+    tenantId: identity.tenantId,
+    ownerId: identity.ownerId,
+    profileId: identity.profileId,
+    membershipId: identity.membershipId,
+  });
+  const linkPublicKey = keys.publicKey;
+  return Object.freeze({
+    installationId: identity.deviceId,
+    identities,
+    linkPublicKey,
+    async signProof(value: unknown, expected: LocalCloudLinkExpectations) {
+      const challenge = verifyCloudLinkChallenge(value, {
+        ...expected,
+        appId: validateApplicationId(options.appId),
+        installationId: identity.deviceId,
+        linkPublicKey,
+      });
+      if (retiredFor !== undefined && challenge.target !== 'per-user') {
+        throw new CloudLinkError(
+          'challenge_mismatch',
+          'A retired location can only sign the per-user link of its own migration.',
+        );
+      }
+      if (
+        challenge.target === 'per-user' &&
+        (challenge.accountId !== identities.ownerId ||
+          challenge.tenantId !== identities.tenantId)
+      ) {
+        throw new CloudLinkError(
+          'challenge_mismatch',
+          'A per-user link must be signed in as the imported local owner and tenant.',
+        );
+      }
+      const custody = await inspectInstallationCustody(options);
+      if (
+        !custodyUsable(custody) ||
+        custody.installationId !== identity.deviceId
+      ) {
+        throw unverified(custody);
+      }
+      const current = await readIdentity();
+      if (current.keys.publicKey !== linkPublicKey) {
+        throw new LocalRuntimeError(
+          'installation_unverified',
+          'The installation seed changed while linking; nothing was signed.',
+        );
+      }
+      return {
+        challenge,
+        signature: signCloudLinkProof(
+          current.keys.privateKey,
+          challenge,
+          identities,
+        ),
+      };
     },
   });
 }
@@ -343,6 +555,8 @@ export interface ClaimLocalOwnerInput {
   token: string;
   name: string;
   email: string;
+  /** Optional initial owner password, stored atomically with the owner claim. */
+  password?: string;
   tenantName?: string;
   userAgent?: string;
   ipAddress?: string;
@@ -394,40 +608,6 @@ export interface LocalRuntimeDiagnostics {
   readonly secretValuesIncluded: false;
 }
 
-export type LocalRuntimeErrorCode =
-  | 'bootstrap_claimed'
-  | 'bootstrap_expired'
-  | 'bootstrap_invalid'
-  | 'bootstrap_unavailable'
-  | 'capability_disabled'
-  | 'invalid_configuration'
-  | 'invalid_scope'
-  | 'migration_failed'
-  | 'owner_unavailable'
-  | 'unsafe_public_exposure';
-
-/**
- * Fixed, secret-free surface for a failed application migration.
- *
- * A migration driver message is a likely carrier of a connection string,
- * credential, filesystem path, or environment value, so the caller's text is
- * never surfaced. The original error is retained as a non-enumerable `cause`
- * for private logs only.
- */
-export const MIGRATION_FAILED_MESSAGE =
-  'The application migration step failed; run pnpm app:setup and inspect the private migration logs.';
-
-/** Stable, secret-free local-runtime failure. */
-export class LocalRuntimeError extends Error {
-  constructor(
-    readonly code: LocalRuntimeErrorCode,
-    message: string,
-  ) {
-    super(message);
-    this.name = 'LocalRuntimeError';
-  }
-}
-
 interface BootstrapRow {
   expires_at?: unknown;
   consumed_at?: unknown;
@@ -448,13 +628,16 @@ export function resolveLocalRuntimePaths(
   const runtimePlatform = options.platform ?? platform();
   const runtimeHome = options.homeDirectory ?? homedir();
   const env = options.env ?? process.env;
+  if (runtimePlatform === 'win32') {
+    return resolveWindowsRuntimePaths(options, appId, runtimeHome, env);
+  }
   const defaultRoot = defaultApplicationDataRoot(
     runtimePlatform,
     runtimeHome,
     env,
   );
   const root = resolve(options.dataDirectory ?? resolve(defaultRoot, appId));
-  const sourceRoot = resolve(options.sourceRoot ?? process.cwd());
+  const sourceRoot = resolveSourceRoot(options);
 
   if (
     sameFilesystemPath(root, runtimeHome, runtimePlatform) ||
@@ -477,6 +660,53 @@ export function resolveLocalRuntimePaths(
   });
 }
 
+/** The absolute source checkout, resolved with the flavour of the platform. */
+function resolveSourceRoot(options: ResolveLocalRuntimePathsOptions): string {
+  const runtimePlatform = options.platform ?? platform();
+  const source = options.sourceRoot ?? process.cwd();
+  return runtimePlatform === 'win32' ? win32.resolve(source) : resolve(source);
+}
+
+/**
+ * The Windows branch of {@link resolveLocalRuntimePaths}: the Windows lexical
+ * rule (W1) applies to the root *before* resolution can fold aliases away, the
+ * appId must be a plain NTFS name, and the default root is the machine-local
+ * `%LOCALAPPDATA%` (never the roaming profile or the home directory).
+ */
+function resolveWindowsRuntimePaths(
+  options: ResolveLocalRuntimePathsOptions,
+  appId: string,
+  runtimeHome: string,
+  env: NodeJS.ProcessEnv,
+): LocalRuntimePaths {
+  validateWindowsApplicationId(appId);
+  const root = validateWindowsPath(
+    options.dataDirectory ??
+      win32.join(defaultApplicationDataRoot('win32', runtimeHome, env), appId),
+    'Local application data directory',
+    WINDOWS_DERIVED_PATH_RESERVE,
+  );
+  const sourceRoot = resolveSourceRoot({ ...options, platform: 'win32' });
+  if (
+    sameFilesystemPath(root, runtimeHome, 'win32') ||
+    sameFilesystemPath(root, win32.parse(root).root, 'win32') ||
+    isInside(sourceRoot, root, 'win32') ||
+    isInside(root, sourceRoot, 'win32')
+  ) {
+    throw new LocalRuntimeError(
+      'invalid_configuration',
+      'Local application data must be a dedicated directory that does not overlap the source tree.',
+    );
+  }
+  return Object.freeze({
+    root,
+    database: win32.join(root, DATABASE_FILE_NAME),
+    assets: win32.join(root, 'assets'),
+    secrets: win32.join(root, 'secrets'),
+    applicationSecret: win32.join(root, 'secrets', SECRET_FILE_NAME),
+  });
+}
+
 /**
  * Initialize or reopen a local application runtime.
  *
@@ -494,12 +724,13 @@ export async function initializeLocalApplicationRuntime(
   const sessionTtlSeconds = validateSessionTtl(
     options.sessionTtlSeconds ?? DEFAULT_SESSION_TTL_SECONDS,
   );
+  const ownerTenant = resolveOwnerTenant(options.ownerTenant);
   const resolvedRuntime = resolveApplicationRuntime({
     profile: 'local',
     providers: options.providers,
   });
   const paths = resolveLocalRuntimePaths(options);
-  const sourceRoot = resolve(options.sourceRoot ?? process.cwd());
+  const sourceRoot = resolveSourceRoot(options);
   const appId = validateApplicationId(options.appId);
   await preflightLocalApplicationRoot(paths.root, sourceRoot, appId);
   const initializationLock = await acquireInitializationLock(paths.root);
@@ -507,17 +738,36 @@ export async function initializeLocalApplicationRuntime(
   let initialization: LocalRuntimeInitialization | undefined;
   let initializationFailure: unknown;
   let initializationFailed = false;
+  let discardCreatedDatabaseOnFailure = false;
   try {
     await preflightLocalApplicationRoot(paths.root, sourceRoot, appId);
+    // Under the lock, so nobody else creates it between this and the open.
+    const databaseExisted = await databaseFileExists(paths.database);
     const acquired = await acquireLocalDatabase(paths, sourceRoot, appId);
     db = acquired.db;
     const { canonicalSourceRoot } = acquired;
-    await prepareLocalFilesystem(paths, canonicalSourceRoot);
+    const identity = await prepareLocalFilesystem(
+      paths,
+      canonicalSourceRoot,
+      db,
+      options,
+    );
+    setDatabaseSyncDeviceId(db, identity.deviceId);
     await tuneLocalSqlite(db);
     try {
-      await options.prepareDatabase?.(db);
-    } catch (migrationFailure) {
-      throw migrationFailed(migrationFailure);
+      await prepareLocalSchema({
+        db,
+        paths,
+        appId,
+        createSchema: options.createSchema === true,
+        prepareDatabase: options.prepareDatabase,
+      });
+    } catch (stepFailure) {
+      if (!(stepFailure instanceof LocalSchemaStepFailure)) throw stepFailure;
+      // The transaction rolled back. A database this attempt created holds
+      // nothing worth keeping, so it is removed once the handle is closed.
+      discardCreatedDatabaseOnFailure = stepFailure.discard && !databaseExisted;
+      throw stepFailure.error;
     }
     await ensureBootstrapTable(db);
     await ensureLocalMcpTokenTable(db);
@@ -531,6 +781,9 @@ export async function initializeLocalApplicationRuntime(
       sessionTtlSeconds,
       backgroundJobs: options.backgroundJobs === true,
       paidCapabilities: options.paidCapabilities === true,
+      ownerTenant,
+      passwordPolicy: options.passwordPolicy,
+      identity,
       now: options.now ?? (() => new Date()),
       canonicalSourceRoot,
     });
@@ -546,6 +799,18 @@ export async function initializeLocalApplicationRuntime(
       ? await closeDatabaseAfterFailure(db, error)
       : error;
     db = undefined;
+    if (discardCreatedDatabaseOnFailure) {
+      try {
+        await discardCreatedDatabase(paths.database);
+      } catch (discardError) {
+        initializationFailure = preservePrimaryFailure(
+          initializationFailure,
+          discardError,
+          'databaseDiscardError',
+          'Local runtime schema creation and database cleanup both failed.',
+        );
+      }
+    }
   }
 
   try {
@@ -576,6 +841,7 @@ export async function initializeLocalApplicationRuntime(
 }
 
 interface LocalApplicationRuntimeState {
+  identity: LocalInstallationIdentity;
   db: DatabaseInterface;
   paths: LocalRuntimePaths;
   bindHost: string;
@@ -584,6 +850,8 @@ interface LocalApplicationRuntimeState {
   sessionTtlSeconds: number;
   backgroundJobs: boolean;
   paidCapabilities: boolean;
+  ownerTenant: ResolvedOwnerTenant;
+  passwordPolicy?: PasswordPolicyOptions;
   now: () => Date;
   canonicalSourceRoot: string;
 }
@@ -623,8 +891,11 @@ class InitializedLocalApplicationRuntime implements LocalApplicationRuntime {
   readonly mcpTokens: LocalMcpTokenStore;
   private readonly bootstrapTtlSeconds: number;
   private readonly sessionTtlSeconds: number;
+  private readonly ownerTenant: ResolvedOwnerTenant;
+  private readonly passwordPolicy?: PasswordPolicyOptions;
   private readonly now: () => Date;
   private readonly canonicalSourceRoot: string;
+  private readonly identity: LocalInstallationIdentity;
 
   constructor(state: LocalApplicationRuntimeState) {
     this.db = state.db;
@@ -633,10 +904,13 @@ class InitializedLocalApplicationRuntime implements LocalApplicationRuntime {
     this.resolvedRuntime = state.resolvedRuntime;
     this.bootstrapTtlSeconds = state.bootstrapTtlSeconds;
     this.sessionTtlSeconds = state.sessionTtlSeconds;
+    this.ownerTenant = state.ownerTenant;
+    this.passwordPolicy = state.passwordPolicy;
     this.backgroundJobsEnabled = state.backgroundJobs;
     this.paidCapabilitiesEnabled = state.paidCapabilities;
     this.now = state.now;
     this.canonicalSourceRoot = state.canonicalSourceRoot;
+    this.identity = state.identity;
     this.mcpTokens = localMcpTokenStore(
       state.db,
       state.paths,
@@ -732,6 +1006,7 @@ class InitializedLocalApplicationRuntime implements LocalApplicationRuntime {
     // permission catalog, not only the role itself. Seeding is idempotent and
     // additive, and commits in its own transaction before the claim
     // transaction.
+    if (input.password) ensurePasswordPermissionsRegistered();
     const roles = await RoleCollection.create({ db: this.db });
     await roles.seedSystemRoles({ seedPermissions: true });
     return this.db.transaction(async (tx) => {
@@ -759,7 +1034,14 @@ class InitializedLocalApplicationRuntime implements LocalApplicationRuntime {
         );
       }
 
-      return createLocalOwnerRecords(tx, input, this.sessionTtlSeconds);
+      return createLocalOwnerRecords(
+        tx,
+        input,
+        this.sessionTtlSeconds,
+        this.ownerTenant,
+        this.identity,
+        this.passwordPolicy,
+      );
     });
   }
 
@@ -886,7 +1168,40 @@ async function createLocalOwnerRecords(
   db: DatabaseInterface,
   input: ClaimLocalOwnerInput,
   sessionTtlSeconds: number,
+  ownerTenant: ResolvedOwnerTenant,
+  identity: LocalInstallationIdentity,
+  passwordPolicy?: PasswordPolicyOptions,
 ): Promise<LocalOwnerClaimResult> {
+  // Resolve the tenant before writing anything: `Tenant` upserts on its slug,
+  // so creating over an existing slug would replace that row with a new id
+  // and orphan every row that points at it (#3032).
+  const tenants = await TenantCollection.create({ db });
+  const existingTenant = await tenants.findBySlug(ownerTenant.slug);
+  const defaultTenant = ownerTenant.slug === DEFAULT_OWNER_TENANT_SLUG;
+  const reservedTenant = defaultTenant
+    ? await tenants.get(identity.tenantId)
+    : null;
+  if (reservedTenant && reservedTenant.id !== existingTenant?.id) {
+    throw new LocalRuntimeError(
+      'owner_tenant_conflict',
+      'The reserved local tenant identity is already in use.',
+    );
+  }
+  const users = await UserCollection.create({ db });
+  if (
+    (await users.get(identity.ownerId)) ||
+    (await users.findByEmail(input.email.trim()))
+  ) {
+    throw new LocalRuntimeError(
+      'owner_identity_conflict',
+      'The local owner identity is already in use.',
+    );
+  }
+  const memberships = await MembershipCollection.create({ db });
+  if (existingTenant) {
+    await assertAdoptableOwnerTenant(existingTenant, ownerTenant, memberships);
+  }
+
   const profileTypes = await ProfileTypeCollection.create({ db });
   const personType = await withSystemContext(() =>
     profileTypes.getOrCreateGlobalBySlug('person', {
@@ -896,72 +1211,171 @@ async function createLocalOwnerRecords(
   );
   const person = new Person({
     db,
+    id: identity.profileId,
+    _skipLoad: true,
     typeId: requireId(personType.id, 'Person profile type'),
     tenantId: null,
     name: input.name.trim(),
     email: input.email.trim(),
   });
   await person.initialize();
+  person.requireInsertOnSave({ preserveDerivedSlug: true });
   await person.save();
 
-  const users = await UserCollection.create({ db });
   const user = await users.create({
+    id: identity.ownerId,
+    _insertOnly: true,
     profileId: requireId(person.id, 'Person'),
     email: input.email.trim(),
     status: UserStatus.ACTIVE,
     lastLoginAt: new Date(),
   });
-  await user.save();
+  const userId = requireId(user.id, 'User');
 
-  const tenantService = new TenantService(
-    { db },
-    {
-      mode: 'required',
-      maxTenants: 1,
-      defaultName: input.tenantName?.trim() || 'My Workspace',
-    },
-  );
-  await tenantService.initialize();
-  const { tenant, membership } = await tenantService.createTenantWithOwnership(
-    requireId(user.id, 'User'),
-    input.tenantName?.trim() || 'My Workspace',
-    { slug: 'default' },
-  );
+  let ownership: TenantWithOwnershipResult;
+  if (existingTenant) {
+    const roles = await RoleCollection.create({ db });
+    const ownerRole = await roles.findSystemRoleBySlug(
+      DEFAULT_ROLE_SLUGS.OWNER,
+    );
+    ownership = {
+      tenant: existingTenant,
+      membership: await memberships.create({
+        id: identity.membershipId,
+        _insertOnly: true,
+        userId,
+        tenantId: requireId(existingTenant.id, 'Tenant'),
+        roleId: requireId(ownerRole?.id, 'Owner role'),
+        status: MembershipStatus.ACTIVE,
+      }),
+    };
+  } else {
+    const tenantName = input.tenantName?.trim() || ownerTenant.name;
+    const service = await TenantService.create(
+      { db },
+      { mode: 'required', maxTenants: 1, defaultName: tenantName },
+    );
+    ownership = await service.createTenantWithOwnership(userId, tenantName, {
+      slug: ownerTenant.slug,
+      reservedIdentity: {
+        tenantId: defaultTenant ? identity.tenantId : undefined,
+        membershipId: identity.membershipId,
+      },
+    });
+  }
+  const { tenant, membership } = ownership;
+
+  // Bind the owner's profile to the actual created or adopted tenant before
+  // committing the claim; the shared Person profile type remains global.
+  person.tenantId = requireId(tenant.id, 'Tenant');
+  await person.save();
 
   const sessions = await SessionCollection.create({ db });
   const session = await sessions.createSession({
-    userId: requireId(user.id, 'User'),
+    userId,
     tenantId: requireId(tenant.id, 'Tenant'),
     ttl: sessionTtlSeconds,
     userAgent: input.userAgent,
     ipAddress: input.ipAddress,
     data: { localOwner: true },
+    authMethod: input.password ? 'password' : 'local-bootstrap',
   });
+
+  if (input.password) {
+    const passwords = await PasswordCredentialService.create({
+      db,
+      sessionTtl: sessionTtlSeconds,
+      password: passwordPolicy,
+    });
+    await passwords.setPassword({
+      actor: {
+        user,
+        membership: membership as never,
+        permissions: [],
+        tenantId: requireId(tenant.id, 'Tenant'),
+        sessionId: requireId(session.id, 'Session'),
+        authMethod: 'password',
+        parent: null,
+      },
+      userId,
+      password: input.password,
+    });
+  }
 
   return Object.freeze({
     profileId: requireId(person.id, 'Person'),
-    userId: requireId(user.id, 'User'),
+    userId,
     tenantId: requireId(tenant.id, 'Tenant'),
     membershipId: requireId(membership.id, 'Membership'),
     sessionId: requireId(session.id, 'Session'),
   });
 }
 
+async function assertAdoptableOwnerTenant(
+  tenant: Tenant,
+  ownerTenant: ResolvedOwnerTenant,
+  memberships: MembershipCollection,
+): Promise<void> {
+  if (!ownerTenant.adoptExisting) {
+    throw new LocalRuntimeError(
+      'owner_tenant_conflict',
+      'A tenant with the owner tenant slug already exists; set ownerTenant.adoptExisting to adopt it or choose another slug.',
+    );
+  }
+  // Only an untouched, application-seeded tenant may be adopted. A child
+  // tenant can grant inherited access through its parent, and any membership
+  // (active, invited, or suspended) means someone else already has a claim.
+  const tenantId = requireId(tenant.id, 'Tenant');
+  if (
+    tenant.status !== TenantStatus.ACTIVE ||
+    tenant.parentTenantId ||
+    (await memberships.findByTenant(tenantId)).length > 0
+  ) {
+    throw new LocalRuntimeError(
+      'owner_tenant_conflict',
+      'The existing owner tenant cannot be adopted: it must be an active root tenant with no memberships.',
+    );
+  }
+}
+
+function resolveOwnerTenant(
+  options: LocalOwnerTenantOptions | undefined,
+): ResolvedOwnerTenant {
+  const slug = options?.slug ?? DEFAULT_OWNER_TENANT_SLUG;
+  if (typeof slug !== 'string' || !OWNER_TENANT_SLUG_PATTERN.test(slug)) {
+    throw new LocalRuntimeError(
+      'invalid_configuration',
+      'ownerTenant.slug must be 1-64 lowercase letters, digits, or inner hyphens.',
+    );
+  }
+  const name =
+    typeof options?.name === 'string' && options.name.trim()
+      ? options.name.trim()
+      : DEFAULT_OWNER_TENANT_NAME;
+  return Object.freeze({
+    slug,
+    name,
+    adoptExisting: options?.adoptExisting === true,
+  });
+}
+
 async function findExistingOwner(
   db: DatabaseInterface,
+  requireUnique = false,
 ): Promise<ExistingOwner | null> {
   const roles = await RoleCollection.create({ db });
   const ownerRole = await roles.findSystemRoleBySlug(DEFAULT_ROLE_SLUGS.OWNER);
   if (!ownerRole?.id) return null;
   const memberships = await MembershipCollection.create({ db });
   const ownerMemberships = await memberships.findByRole(ownerRole.id);
-  const active = ownerMemberships.find(
+  const activeOwners = ownerMemberships.filter(
     (membership) =>
       membership.status === MembershipStatus.ACTIVE &&
       typeof membership.userId === 'string' &&
       typeof membership.tenantId === 'string',
   );
-  return active
+  const active = activeOwners[0];
+  return active && (!requireUnique || activeOwners.length === 1)
     ? { userId: active.userId as string, tenantId: active.tenantId as string }
     : null;
 }
@@ -1046,929 +1460,6 @@ async function tuneLocalSqlite(db: DatabaseInterface): Promise<void> {
   await db.query('PRAGMA busy_timeout = 5000');
 }
 
-interface PreparedLocalRoot {
-  createdDirectories: string[];
-  pendingMarker: string | null;
-  pendingMarkerCreatedByAttempt: boolean;
-  finalMarker: string;
-}
-
-interface LocalInitializationLock {
-  release(): Promise<void>;
-}
-
-async function preflightLocalApplicationRoot(
-  root: string,
-  sourceRoot: string,
-  appId: string,
-): Promise<void> {
-  for (let attempt = 0; attempt < PREFLIGHT_RETRY_LIMIT; attempt += 1) {
-    try {
-      await preflightLocalApplicationRootOnce(root, sourceRoot, appId);
-      return;
-    } catch (error) {
-      if (!isMissingFile(error) && !hasMissingFileCause(error)) throw error;
-      if (attempt === PREFLIGHT_RETRY_LIMIT - 1) {
-        throw unsafeFilesystemEntry(
-          'Local application data changed repeatedly during read-only preflight.',
-          error,
-        );
-      }
-      await new Promise<void>((resolveRetry) => setImmediate(resolveRetry));
-    }
-  }
-}
-
-async function preflightLocalApplicationRootOnce(
-  root: string,
-  sourceRoot: string,
-  appId: string,
-): Promise<void> {
-  requireNoFollowSupport();
-  const canonicalSourceRoot = await realpath(sourceRoot);
-  const currentUid = process.getuid?.();
-  if (currentUid === undefined) {
-    throw unsafeFilesystemEntry(
-      'Local runtime storage requires a numeric current-user identity.',
-    );
-  }
-  if (
-    isInside(canonicalSourceRoot, root) ||
-    isInside(root, canonicalSourceRoot)
-  ) {
-    throw unsafeFilesystemEntry(
-      'Local application data must remain outside the canonical source tree.',
-    );
-  }
-
-  let rootExists = true;
-  for (const component of absolutePathComponents(root)) {
-    let details: Awaited<ReturnType<typeof lstat>>;
-    try {
-      details = await lstat(component);
-    } catch (error) {
-      if (!isMissingFile(error)) throw error;
-      rootExists = false;
-      break;
-    }
-    if (details.isSymbolicLink() || !details.isDirectory()) {
-      throw unsafeFilesystemEntry(
-        `Local runtime path component must be a real directory: ${component}`,
-      );
-    }
-    await assertCanonicalEntry(component, canonicalSourceRoot);
-    const sharedStickyRoot = details.uid === 0 && (details.mode & 0o1000) !== 0;
-    if (
-      (details.uid !== currentUid && details.uid !== 0) ||
-      ((details.mode & 0o022) !== 0 && !sharedStickyRoot)
-    ) {
-      throw unsafeFilesystemEntry(
-        `Local runtime path ancestry does not have trusted-parent custody: ${component}`,
-      );
-    }
-    await assertNoPermissiveDarwinAcl(component);
-  }
-
-  if (!rootExists) return;
-  const rootDetails = await lstat(root);
-  if (rootDetails.uid !== currentUid || (rootDetails.mode & 0o777) !== 0o700) {
-    throw unsafeFilesystemEntry(
-      `Existing local application data root must already be owned by the current user with mode 0700: ${root}`,
-    );
-  }
-  await preflightDedicatedRoot(root, canonicalSourceRoot, appId);
-}
-
-async function preflightDedicatedRoot(
-  root: string,
-  canonicalSourceRoot: string,
-  appId: string,
-): Promise<void> {
-  const finalMarker = resolve(root, `${ROOT_MARKER_PREFIX}${appId}`);
-  const pendingMarker = resolve(root, `${ROOT_MARKER_PREFIX}${appId}.pending`);
-  const entries = await readdir(root);
-  const finalMarkerName = finalMarker.slice(root.length + 1);
-  const pendingMarkerName = pendingMarker.slice(root.length + 1);
-  const hasFinalMarker = entries.includes(finalMarkerName);
-  const hasPendingMarker = entries.includes(pendingMarkerName);
-
-  if (hasFinalMarker) {
-    await validateRootMarker(finalMarker, canonicalSourceRoot);
-    if (hasPendingMarker) {
-      await validateRootMarker(pendingMarker, canonicalSourceRoot);
-    }
-    return;
-  }
-  if (hasPendingMarker) {
-    await validateRootMarker(pendingMarker, canonicalSourceRoot);
-    const permittedInterruptedEntries = new Set([
-      pendingMarkerName,
-      DATABASE_FILE_NAME,
-      `${DATABASE_FILE_NAME}-shm`,
-      `${DATABASE_FILE_NAME}-wal`,
-    ]);
-    if (entries.some((entry) => !permittedInterruptedEntries.has(entry))) {
-      throw unsafeFilesystemEntry(
-        'Interrupted local application root contains unexpected artifacts.',
-      );
-    }
-    return;
-  }
-  if (entries.length > 0) {
-    throw unsafeFilesystemEntry(
-      'Existing local application data root is populated but has no valid ownership marker.',
-    );
-  }
-}
-
-async function assertNoPermissiveDarwinAcl(path: string): Promise<void> {
-  if (platform() !== 'darwin') return;
-  let listing: string;
-  try {
-    const result = await execFileAsync('/bin/ls', ['-lde', '--', path], {
-      encoding: 'utf8',
-      env: { ...process.env, LC_ALL: 'C' },
-    });
-    listing = result.stdout;
-  } catch (error) {
-    throw unsafeFilesystemEntry(
-      `Local runtime could not inspect macOS access controls: ${path}`,
-      error,
-    );
-  }
-  for (const line of listing.split('\n')) {
-    if (!/^\s*\d+:/.test(line)) continue;
-    const entry = line.match(/^\s*\d+:\s+.+\s+(allow|deny)\s+\S.*$/);
-    if (entry?.[1] !== 'deny') {
-      throw unsafeFilesystemEntry(
-        `Local runtime path contains a permissive macOS access control list: ${path}`,
-      );
-    }
-  }
-}
-
-async function acquireLocalDatabase(
-  paths: LocalRuntimePaths,
-  sourceRoot: string,
-  appId: string,
-): Promise<{
-  canonicalSourceRoot: string;
-  db: DatabaseInterface;
-}> {
-  requireNoFollowSupport();
-  const canonicalSourceRoot = await realpath(sourceRoot);
-  const createdDirectories = await ensureSafeDirectoryTree(
-    paths.root,
-    canonicalSourceRoot,
-    true,
-  );
-  const prepared = await prepareDedicatedRoot(
-    paths.root,
-    canonicalSourceRoot,
-    appId,
-    createdDirectories,
-  );
-  let db: DatabaseInterface | undefined;
-  try {
-    db = await getDatabase({
-      type: 'sqlite',
-      url: paths.database,
-      secureFile: {
-        driver: 'node:sqlite',
-        custody: 'trusted-parent',
-        root: paths.root,
-      },
-    });
-    await enforcePrivateDatabaseMode(paths.database, canonicalSourceRoot);
-  } catch (error) {
-    if (db) throw await closeDatabaseAfterFailure(db, error);
-    if (prepared.pendingMarkerCreatedByAttempt) {
-      await removeMarkerIfPresent(prepared.pendingMarker, canonicalSourceRoot);
-      await removeCreatedDirectories(createdDirectories);
-    }
-    throw error;
-  }
-  if (!db) {
-    throw new Error('Local runtime database acquisition returned no database.');
-  }
-
-  // Once SQLite acquisition succeeds, the database is an authoritative
-  // artifact. Keep the pending marker through every promotion failure so a
-  // later startup can resume rather than seeing an unmarked populated root.
-  try {
-    await publishRootMarker(prepared.finalMarker, canonicalSourceRoot);
-    await removeMarkerIfPresent(prepared.pendingMarker, canonicalSourceRoot);
-  } catch (error) {
-    throw await closeDatabaseAfterFailure(db, error);
-  }
-  return { canonicalSourceRoot, db };
-}
-
-async function enforcePrivateDatabaseMode(
-  path: string,
-  canonicalSourceRoot: string,
-): Promise<void> {
-  const database = await openSafeFile(
-    path,
-    constants.O_RDWR,
-    0o600,
-    'Local application database',
-    canonicalSourceRoot,
-  );
-  try {
-    await database.chmod(0o600);
-    await database.sync();
-  } finally {
-    await database.close();
-  }
-}
-
-async function closeDatabaseAfterFailure(
-  db: DatabaseInterface,
-  primaryFailure: unknown,
-): Promise<unknown> {
-  try {
-    await db.close?.();
-  } catch (cleanupFailure) {
-    return preservePrimaryFailure(
-      primaryFailure,
-      cleanupFailure,
-      'databaseCleanupError',
-      'Local runtime initialization and database cleanup both failed.',
-    );
-  }
-  return primaryFailure;
-}
-
-function migrationFailed(cause: unknown): LocalRuntimeError {
-  const failure = new LocalRuntimeError(
-    'migration_failed',
-    MIGRATION_FAILED_MESSAGE,
-  );
-  Object.defineProperty(failure, 'cause', {
-    value: cause,
-    configurable: true,
-  });
-  return failure;
-}
-
-function preservePrimaryFailure(
-  primaryFailure: unknown,
-  secondaryFailure: unknown,
-  secondaryProperty: string,
-  aggregateMessage: string,
-): unknown {
-  if (primaryFailure instanceof Error) {
-    try {
-      Object.defineProperty(primaryFailure, secondaryProperty, {
-        value: secondaryFailure,
-        configurable: true,
-      });
-    } catch {
-      // A frozen application error must remain primary even when secondary
-      // failure context cannot be attached to it.
-    }
-    return primaryFailure;
-  }
-  return new AggregateError(
-    [primaryFailure, secondaryFailure],
-    aggregateMessage,
-  );
-}
-
-async function prepareLocalFilesystem(
-  paths: LocalRuntimePaths,
-  canonicalSourceRoot: string,
-): Promise<void> {
-  await ensureSafeDirectoryTree(paths.assets, canonicalSourceRoot);
-  await ensureSafeDirectoryTree(paths.secrets, canonicalSourceRoot);
-  await ensureApplicationSecret(paths.applicationSecret, canonicalSourceRoot);
-}
-
-async function prepareDedicatedRoot(
-  path: string,
-  canonicalSourceRoot: string,
-  appId: string,
-  createdDirectories: string[],
-): Promise<PreparedLocalRoot> {
-  const finalMarker = resolve(path, `${ROOT_MARKER_PREFIX}${appId}`);
-  const pendingMarker = resolve(path, `${ROOT_MARKER_PREFIX}${appId}.pending`);
-  const entries = await readdir(path);
-  const hasFinalMarker = entries.includes(finalMarker.slice(path.length + 1));
-  const hasPendingMarker = entries.includes(
-    pendingMarker.slice(path.length + 1),
-  );
-
-  if (hasFinalMarker) {
-    await validateRootMarker(finalMarker, canonicalSourceRoot);
-    if (hasPendingMarker) {
-      await validateRootMarker(pendingMarker, canonicalSourceRoot);
-    }
-    return {
-      createdDirectories,
-      pendingMarker: hasPendingMarker ? pendingMarker : null,
-      pendingMarkerCreatedByAttempt: false,
-      finalMarker,
-    };
-  }
-
-  if (hasPendingMarker) {
-    await validateRootMarker(pendingMarker, canonicalSourceRoot);
-    const permittedInterruptedEntries = new Set([
-      pendingMarker.slice(path.length + 1),
-      DATABASE_FILE_NAME,
-      `${DATABASE_FILE_NAME}-shm`,
-      `${DATABASE_FILE_NAME}-wal`,
-    ]);
-    if (entries.some((entry) => !permittedInterruptedEntries.has(entry))) {
-      throw unsafeFilesystemEntry(
-        'Interrupted local application root contains unexpected artifacts.',
-      );
-    }
-    return {
-      createdDirectories,
-      pendingMarker,
-      pendingMarkerCreatedByAttempt: false,
-      finalMarker,
-    };
-  }
-
-  if (entries.length > 0) {
-    throw unsafeFilesystemEntry(
-      'Existing local application data root is populated but has no valid ownership marker.',
-    );
-  }
-  const pendingMarkerCreatedByAttempt = await publishRootMarker(
-    pendingMarker,
-    canonicalSourceRoot,
-  );
-  return {
-    createdDirectories,
-    pendingMarker,
-    pendingMarkerCreatedByAttempt,
-    finalMarker,
-  };
-}
-
-async function acquireInitializationLock(
-  root: string,
-): Promise<LocalInitializationLock> {
-  const currentUid = process.getuid?.();
-  if (currentUid === undefined) {
-    throw unsafeFilesystemEntry(
-      'Local runtime initialization locks require a numeric current-user identity.',
-    );
-  }
-  const canonicalTemporaryRoot = await realpath('/tmp');
-  const lockRoot = resolve(canonicalTemporaryRoot, `.smrt-${currentUid}`);
-  try {
-    await mkdir(lockRoot, { mode: 0o700 });
-  } catch (error) {
-    if (!isFileAlreadyExists(error)) throw error;
-  }
-  const lockRootDetails = await lstat(lockRoot);
-  if (
-    !lockRootDetails.isDirectory() ||
-    lockRootDetails.isSymbolicLink() ||
-    lockRootDetails.uid !== currentUid ||
-    (lockRootDetails.mode & 0o777) !== 0o700
-  ) {
-    throw unsafeFilesystemEntry(
-      `Local runtime lock directory must be current-user-owned with mode 0700: ${lockRoot}`,
-    );
-  }
-  const lockKey = createHash('sha256')
-    .update(normalizeFilesystemIdentity(root))
-    .digest('hex')
-    .slice(0, 32);
-  const custodyRoot = resolve(lockRoot, lockKey);
-  try {
-    await mkdir(custodyRoot, { mode: 0o700 });
-  } catch (error) {
-    if (!isFileAlreadyExists(error)) throw error;
-  }
-  const path = resolve(custodyRoot, 'initialization.sqlite');
-  return acquireInitializationDatabaseLease(path, custodyRoot);
-}
-
-async function acquireInitializationDatabaseLease(
-  path: string,
-  custodyRoot: string,
-): Promise<LocalInitializationLock> {
-  const worker = new Worker(INITIALIZATION_LOCK_WORKER, {
-    eval: true,
-    workerData: {
-      path,
-      custodyRoot,
-      timeout: INITIALIZATION_LOCK_TIMEOUT_MS,
-      sqlModuleUrl: import.meta.resolve('@happyvertical/sql'),
-    },
-  });
-  const acquisitionFailure = (cause: unknown) => {
-    const failure = new LocalRuntimeError(
-      'invalid_configuration',
-      'Could not acquire the local runtime initialization lease within two minutes.',
-    );
-    Object.defineProperty(failure, 'cause', { value: cause });
-    return failure;
-  };
-  let workerError: unknown;
-  const exited = new Promise<never>((_resolve, reject) => {
-    worker.once('error', (error) => {
-      workerError = error;
-    });
-    worker.once('exit', (code) => {
-      reject(
-        acquisitionFailure(
-          workerError ??
-            new Error(`Initialization lock worker exited ${code}.`),
-        ),
-      );
-    });
-  });
-  const acquired = new Promise<void>((resolvePromise, reject) => {
-    const onMessage = (message: { type?: string; message?: string }) => {
-      if (message.type === 'acquired') {
-        worker.off('message', onMessage);
-        resolvePromise();
-      } else if (message.type === 'error') {
-        worker.off('message', onMessage);
-        reject(acquisitionFailure(new Error(message.message)));
-      }
-    };
-    worker.on('message', onMessage);
-  });
-  await Promise.race([acquired, exited]);
-
-  let released = false;
-  return {
-    release: async () => {
-      if (released) return;
-      released = true;
-      const releaseCompleted = new Promise<void>((resolvePromise, reject) => {
-        const onMessage = (message: { type?: string; error?: string }) => {
-          if (message.type !== 'released') return;
-          worker.off('message', onMessage);
-          if (message.error) reject(new Error(message.error));
-          else resolvePromise();
-        };
-        worker.on('message', onMessage);
-        worker.postMessage({ type: 'release' });
-      });
-      try {
-        await Promise.race([releaseCompleted, exited]);
-      } finally {
-        await worker.terminate();
-      }
-    },
-  };
-}
-
-async function ensureSafeDirectoryTree(
-  path: string,
-  canonicalSourceRoot: string,
-  dedicatedRoot = false,
-): Promise<string[]> {
-  const components = absolutePathComponents(path);
-  const createdDirectories: string[] = [];
-  for (const component of components) {
-    let created = false;
-    try {
-      const details = await lstat(component);
-      if (details.isSymbolicLink() || !details.isDirectory()) {
-        throw unsafeFilesystemEntry(
-          `Local runtime path component must be a real directory: ${component}`,
-        );
-      }
-    } catch (error) {
-      if (!isMissingFile(error)) throw error;
-      try {
-        await mkdir(component, { mode: 0o700 });
-        created = true;
-        createdDirectories.push(component);
-      } catch (mkdirError) {
-        // A concurrent initializer may have created the component. It is still
-        // opened and validated without following links below.
-        if (!isFileAlreadyExists(mkdirError)) throw mkdirError;
-      }
-    }
-
-    const directory = await openSafeDirectory(component, canonicalSourceRoot);
-    try {
-      await assertCanonicalEntry(component, canonicalSourceRoot);
-      if (component === path && dedicatedRoot && !created) {
-        await assertExistingDedicatedRoot(
-          directory,
-          component,
-          canonicalSourceRoot,
-        );
-      }
-      if (created || (component === path && !dedicatedRoot)) {
-        await directory.chmod(0o700);
-      }
-    } finally {
-      await directory.close();
-    }
-  }
-  await validateExistingPathChain(path, canonicalSourceRoot, 'directory');
-  return createdDirectories;
-}
-
-async function assertExistingDedicatedRoot(
-  directory: FileHandle,
-  path: string,
-  canonicalSourceRoot: string,
-): Promise<void> {
-  const canonical = await realpath(path);
-  if (
-    isInside(canonicalSourceRoot, canonical) ||
-    isInside(canonical, canonicalSourceRoot)
-  ) {
-    throw unsafeFilesystemEntry(
-      'Local application data must be a dedicated directory that does not overlap the canonical source tree.',
-    );
-  }
-
-  const details = await directory.stat();
-  const currentUid = process.getuid?.();
-  if (
-    currentUid === undefined ||
-    details.uid !== currentUid ||
-    (details.mode & 0o777) !== 0o700
-  ) {
-    throw unsafeFilesystemEntry(
-      `Existing local application data root must already be owned by the current user with mode 0700: ${path}`,
-    );
-  }
-}
-
-async function publishRootMarker(
-  path: string,
-  canonicalSourceRoot: string,
-): Promise<boolean> {
-  let marker: FileHandle | undefined;
-  let created = false;
-  try {
-    marker = await openSafeFile(
-      path,
-      constants.O_WRONLY | constants.O_CREAT | constants.O_EXCL,
-      0o600,
-      'Local application root marker',
-      canonicalSourceRoot,
-    );
-    created = true;
-    await marker.sync();
-  } catch (error) {
-    if (!isFileAlreadyExists(error)) throw error;
-  } finally {
-    await marker?.close();
-  }
-  await validateRootMarker(path, canonicalSourceRoot);
-  await syncDirectory(resolve(path, '..'), canonicalSourceRoot);
-  return created;
-}
-
-async function validateRootMarker(
-  path: string,
-  canonicalSourceRoot: string,
-): Promise<void> {
-  await validateExistingPathChain(path, canonicalSourceRoot, 'file');
-  const marker = await openSafeFile(
-    path,
-    constants.O_RDONLY,
-    0o600,
-    'Local application root marker',
-    canonicalSourceRoot,
-  );
-  try {
-    const details = await marker.stat();
-    const currentUid = process.getuid?.();
-    if (
-      currentUid === undefined ||
-      details.uid !== currentUid ||
-      (details.mode & 0o777) !== 0o600 ||
-      details.size !== 0
-    ) {
-      throw unsafeFilesystemEntry(
-        `Local application root marker must be an empty current-user-owned mode-0600 file: ${path}`,
-      );
-    }
-  } finally {
-    await marker.close();
-  }
-}
-
-async function removeMarkerIfPresent(
-  path: string | null,
-  canonicalSourceRoot: string,
-): Promise<void> {
-  if (path === null) return;
-  try {
-    await validateRootMarker(path, canonicalSourceRoot);
-    await unlink(path);
-    await syncDirectory(resolve(path, '..'), canonicalSourceRoot);
-  } catch (error) {
-    if (!isMissingFile(error) && !hasMissingFileCause(error)) throw error;
-  }
-}
-
-async function removeCreatedDirectories(paths: string[]): Promise<void> {
-  for (const path of paths.toReversed()) {
-    try {
-      await rmdir(path);
-    } catch (error) {
-      if (!isMissingFile(error) && !isDirectoryNotEmpty(error)) throw error;
-    }
-  }
-}
-
-async function ensureApplicationSecret(
-  path: string,
-  canonicalSourceRoot: string,
-): Promise<void> {
-  const directoryPath = resolve(path, '..');
-  const temporaryPath = resolve(
-    directoryPath,
-    `.${SECRET_FILE_NAME}.tmp-${randomBytes(16).toString('hex')}`,
-  );
-  let temporary: FileHandle | undefined;
-  let failure: unknown;
-  try {
-    temporary = await openSafeFile(
-      temporaryPath,
-      constants.O_WRONLY | constants.O_CREAT | constants.O_EXCL,
-      0o600,
-      'Temporary application secret',
-      canonicalSourceRoot,
-    );
-    await temporary.writeFile(
-      `${randomBytes(32).toString('base64url')}\n`,
-      'utf8',
-    );
-    await temporary.sync();
-    await temporary.close();
-    temporary = undefined;
-
-    try {
-      await link(temporaryPath, path);
-    } catch (error) {
-      if (!isFileAlreadyExists(error)) throw error;
-    }
-
-    await validateApplicationSecret(path, canonicalSourceRoot);
-    await syncDirectory(directoryPath, canonicalSourceRoot);
-  } catch (error) {
-    failure = error;
-  }
-  try {
-    await temporary?.close();
-  } catch (error) {
-    failure ??= error;
-  }
-  try {
-    await unlink(temporaryPath);
-  } catch (error) {
-    if (!isMissingFile(error)) failure ??= error;
-  }
-  if (failure !== undefined) throw failure;
-  await removeStaleSecretTemps(directoryPath);
-}
-
-async function validateApplicationSecret(
-  path: string,
-  canonicalSourceRoot: string,
-): Promise<string> {
-  await validateExistingPathChain(path, canonicalSourceRoot, 'file');
-  const file = await openSafeFile(
-    path,
-    constants.O_RDONLY,
-    0o600,
-    'Application secret',
-    canonicalSourceRoot,
-  );
-  try {
-    const details = await file.stat();
-    const currentUid = process.getuid?.();
-    const secret = await file.readFile('utf8');
-    await validateExistingPathChain(path, canonicalSourceRoot, 'file');
-    if (
-      currentUid === undefined ||
-      details.uid !== currentUid ||
-      (details.mode & 0o777) !== 0o600 ||
-      details.size !== 44 ||
-      !/^[A-Za-z0-9_-]{43}\n$/.test(secret)
-    ) {
-      throw unsafeFilesystemEntry(
-        'Application secret must be a complete current-user-owned mode-0600 value in the expected format.',
-      );
-    }
-    return secret;
-  } finally {
-    await file.close();
-  }
-}
-
-async function syncDirectory(
-  path: string,
-  canonicalSourceRoot: string,
-): Promise<void> {
-  const directory = await openSafeDirectory(path, canonicalSourceRoot);
-  try {
-    await directory.sync();
-  } finally {
-    await directory.close();
-  }
-}
-
-async function removeStaleSecretTemps(directoryPath: string): Promise<void> {
-  const prefix = `.${SECRET_FILE_NAME}.tmp-`;
-  for (const entry of await readdir(directoryPath)) {
-    if (!entry.startsWith(prefix)) continue;
-    try {
-      await unlink(resolve(directoryPath, entry));
-    } catch (error) {
-      if (!isMissingFile(error)) throw error;
-    }
-  }
-}
-
-async function openSafeDirectory(path: string, canonicalSourceRoot: string) {
-  let directory: FileHandle | undefined;
-  try {
-    directory = await open(
-      path,
-      constants.O_RDONLY | constants.O_DIRECTORY | constants.O_NOFOLLOW,
-    );
-    await validateOpenHandlePath(
-      directory,
-      path,
-      'directory',
-      canonicalSourceRoot,
-    );
-    return directory;
-  } catch (error) {
-    await directory?.close();
-    if (error instanceof LocalRuntimeError) throw error;
-    throw unsafeFilesystemEntry(
-      `Could not safely open local runtime directory: ${path}`,
-      error,
-    );
-  }
-}
-
-async function openSafeFile(
-  path: string,
-  flags: number,
-  mode: number,
-  label: string,
-  canonicalSourceRoot: string,
-) {
-  let file: FileHandle | undefined;
-  try {
-    file = await open(path, flags | constants.O_NOFOLLOW, mode);
-    await validateOpenHandlePath(file, path, 'file', canonicalSourceRoot);
-    return file;
-  } catch (error) {
-    await file?.close();
-    if (error instanceof LocalRuntimeError || isFileAlreadyExists(error)) {
-      throw error;
-    }
-    throw unsafeFilesystemEntry(
-      `${label} could not be opened without following symbolic links.`,
-      error,
-    );
-  }
-}
-
-async function validateOpenHandlePath(
-  handle: FileHandle,
-  path: string,
-  expectedType: 'directory' | 'file',
-  canonicalSourceRoot: string,
-): Promise<void> {
-  const opened = await handle.stat();
-  const current = await lstat(path);
-  const expectedDirectory = expectedType === 'directory';
-  if (
-    current.isSymbolicLink() ||
-    (expectedDirectory ? !opened.isDirectory() : !opened.isFile()) ||
-    (expectedDirectory ? !current.isDirectory() : !current.isFile()) ||
-    opened.dev !== current.dev ||
-    opened.ino !== current.ino
-  ) {
-    throw unsafeFilesystemEntry(
-      `Local runtime ${expectedType} changed while it was being opened: ${path}`,
-    );
-  }
-  await validateExistingPathChain(path, canonicalSourceRoot, expectedType);
-  const afterValidation = await lstat(path);
-  if (
-    afterValidation.isSymbolicLink() ||
-    opened.dev !== afterValidation.dev ||
-    opened.ino !== afterValidation.ino
-  ) {
-    throw unsafeFilesystemEntry(
-      `Local runtime ${expectedType} changed during validation: ${path}`,
-    );
-  }
-}
-
-async function validateExistingPathChain(
-  path: string,
-  canonicalSourceRoot: string,
-  leafType: 'directory' | 'file',
-): Promise<void> {
-  const components = absolutePathComponents(path);
-  for (const [index, component] of components.entries()) {
-    const details = await lstat(component);
-    const expectedFile = index === components.length - 1 && leafType === 'file';
-    if (
-      details.isSymbolicLink() ||
-      (expectedFile ? !details.isFile() : !details.isDirectory())
-    ) {
-      throw unsafeFilesystemEntry(
-        `Local runtime path contains an unsafe component: ${component}`,
-      );
-    }
-    await assertCanonicalEntry(component, canonicalSourceRoot);
-  }
-}
-
-async function assertCanonicalEntry(
-  path: string,
-  canonicalSourceRoot: string,
-): Promise<void> {
-  const canonical = await realpath(path);
-  if (!sameFilesystemPath(canonical, path)) {
-    throw unsafeFilesystemEntry(
-      `Local runtime path must not be redirected: ${path}`,
-    );
-  }
-  if (isInside(canonicalSourceRoot, canonical)) {
-    throw unsafeFilesystemEntry(
-      'Local application data must remain outside the canonical source tree.',
-    );
-  }
-}
-
-function absolutePathComponents(path: string): string[] {
-  const absolute = resolve(path);
-  const root = parse(absolute).root;
-  const parts = absolute.slice(root.length).split(sep).filter(Boolean);
-  const components = [root];
-  for (const part of parts) {
-    components.push(resolve(components.at(-1) as string, part));
-  }
-  return components;
-}
-
-function requireNoFollowSupport(): void {
-  if (
-    typeof constants.O_NOFOLLOW !== 'number' ||
-    constants.O_NOFOLLOW === 0 ||
-    typeof constants.O_DIRECTORY !== 'number' ||
-    constants.O_DIRECTORY === 0
-  ) {
-    throw unsafeFilesystemEntry(
-      'This platform cannot safely initialize local storage without no-follow filesystem support.',
-    );
-  }
-}
-
-function sameFilesystemPath(
-  left: string,
-  right: string,
-  runtimePlatform: NodeJS.Platform = platform(),
-): boolean {
-  return (
-    normalizeFilesystemIdentity(left, runtimePlatform) ===
-    normalizeFilesystemIdentity(right, runtimePlatform)
-  );
-}
-
-function usesCaseInsensitivePathGuards(
-  runtimePlatform: NodeJS.Platform,
-): boolean {
-  return runtimePlatform === 'win32' || runtimePlatform === 'darwin';
-}
-
-function normalizeFilesystemIdentity(
-  value: string,
-  runtimePlatform: NodeJS.Platform = platform(),
-): string {
-  const normalized = resolve(value);
-  return usesCaseInsensitivePathGuards(runtimePlatform)
-    ? normalized.toLowerCase()
-    : normalized;
-}
-
-function unsafeFilesystemEntry(message: string, cause?: unknown) {
-  const error = new LocalRuntimeError('invalid_configuration', message);
-  if (cause !== undefined)
-    Object.defineProperty(error, 'cause', { value: cause });
-  return error;
-}
-
 function validateBootstrapTtl(value: number): number {
   if (
     !Number.isInteger(value) ||
@@ -2051,31 +1542,6 @@ export function encodeApplicationId(value: string): string {
   return validateApplicationId(`${slug}-${digest}`);
 }
 
-function defaultApplicationDataRoot(
-  runtimePlatform: NodeJS.Platform,
-  runtimeHome: string,
-  env: NodeJS.ProcessEnv,
-): string {
-  if (runtimePlatform === 'darwin') {
-    return resolve(runtimeHome, 'Library', 'Application Support');
-  }
-  if (runtimePlatform === 'win32') {
-    return resolve(env.LOCALAPPDATA ?? env.APPDATA ?? runtimeHome);
-  }
-  return resolve(env.XDG_DATA_HOME ?? resolve(runtimeHome, '.local', 'share'));
-}
-
-function isInside(
-  parent: string,
-  child: string,
-  runtimePlatform: NodeJS.Platform = platform(),
-): boolean {
-  const normalizedParent = normalizeFilesystemIdentity(parent, runtimePlatform);
-  const normalizedChild = normalizeFilesystemIdentity(child, runtimePlatform);
-  const path = relative(normalizedParent, normalizedChild);
-  return path === '' || (!path.startsWith('..') && !isAbsolute(path));
-}
-
 function parseStoredDate(value: unknown): Date | null {
   if (!(typeof value === 'string' || value instanceof Date)) return null;
   const date = value instanceof Date ? value : new Date(value);
@@ -2087,40 +1553,4 @@ function requireId(value: unknown, label: string): string {
     throw new Error(`${label} was not persisted with an id.`);
   }
   return value;
-}
-
-function isMissingFile(error: unknown): boolean {
-  return (
-    typeof error === 'object' &&
-    error !== null &&
-    'code' in error &&
-    (error as { code?: unknown }).code === 'ENOENT'
-  );
-}
-
-function hasMissingFileCause(error: unknown): boolean {
-  return (
-    typeof error === 'object' &&
-    error !== null &&
-    'cause' in error &&
-    isMissingFile((error as { cause?: unknown }).cause)
-  );
-}
-
-function isFileAlreadyExists(error: unknown): boolean {
-  return (
-    typeof error === 'object' &&
-    error !== null &&
-    'code' in error &&
-    (error as { code?: unknown }).code === 'EEXIST'
-  );
-}
-
-function isDirectoryNotEmpty(error: unknown): boolean {
-  return (
-    typeof error === 'object' &&
-    error !== null &&
-    'code' in error &&
-    (error as { code?: unknown }).code === 'ENOTEMPTY'
-  );
 }

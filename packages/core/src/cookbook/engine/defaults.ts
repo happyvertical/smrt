@@ -29,6 +29,14 @@ export const COMMERCE_SETTING_TARGETS: SettingTargets = {
     model: `${C}${model}`,
     field: 'taxRate',
   })),
+  pricesIncludeTax: ['Invoice', 'Contract'].map((model) => ({
+    model: `${C}${model}`,
+    field: 'lineAmountType',
+  })),
+  taxRounding: ['Invoice', 'Contract'].map((model) => ({
+    model: `${C}${model}`,
+    field: 'taxRoundingScope',
+  })),
   paymentTerms: [
     ...['Order', 'WholesaleOrder', 'Estimate', 'Invoice', 'Agreement'].map(
       (model) => ({ model: `${C}${model}`, field: 'terms' }),

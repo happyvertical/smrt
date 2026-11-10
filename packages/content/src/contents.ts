@@ -17,10 +17,7 @@ import {
   loadPersistedContentGovernanceDefinitions,
   resolveEffectiveContentGovernance,
 } from './content-governance';
-import {
-  type ContentQueryCollection,
-  executeContentQuery,
-} from './content-query';
+import { executeContentQuery } from './content-query';
 import {
   type ResolveHostname,
   redactUrlCredentials,
@@ -226,10 +223,7 @@ export class Contents extends SmrtCollection<Content> {
    * @returns A validated, bounded `DataQueryResult`.
    */
   public async queryAction(options: unknown): Promise<DataQueryResult> {
-    return executeContentQuery(
-      this as unknown as ContentQueryCollection,
-      options,
-    );
+    return executeContentQuery(this, options);
   }
 
   public async browseFacts(
@@ -339,22 +333,27 @@ export class Contents extends SmrtCollection<Content> {
       }),
     ]);
 
+    // Persisted rows list the global layer first, then the tenant's; keys
+    // repeat across the layers (#3305 M1), so the tenant override is the
+    // row an effective entry stands for.
+    const effectiveRow = <T extends { key?: string }>(
+      rows: T[],
+      key?: string,
+    ) => [...rows].reverse().find((item) => item.key === key) || {};
+
     return {
       effective: {
         policies: effective.policies.map((policy) => ({
           ...policy,
-          ...(persisted.policies.find((item) => item.key === policy.key) || {}),
+          ...effectiveRow(persisted.policies, policy.key),
         })),
         profiles: effective.profiles.map((profile) => ({
           ...profile,
-          ...(persisted.profiles.find((item) => item.key === profile.key) ||
-            {}),
+          ...effectiveRow(persisted.profiles, profile.key),
         })),
         assignments: effective.assignments.map((assignment) => ({
           ...assignment,
-          ...(persisted.assignments.find(
-            (item) => item.key === assignment.key,
-          ) || {}),
+          ...effectiveRow(persisted.assignments, assignment.key),
         })),
       },
       persisted: {

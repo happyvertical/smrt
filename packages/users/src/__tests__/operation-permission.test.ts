@@ -19,6 +19,7 @@ import { TenantCollection } from '../collections/TenantCollection.js';
 import { UserCollection } from '../collections/UserCollection.js';
 import type { Tenant } from '../models/Tenant.js';
 import type { User } from '../models/User.js';
+import { registerPermissionDefinitions as registerPortableMetadata } from '../permission-registry.js';
 import {
   assertOperationPermission,
   checkResourceOperationPermission,
@@ -148,6 +149,38 @@ describe('operation permission guards', () => {
     if (existsSync(dbPath)) {
       rmSync(dbPath, { force: true });
     }
+  });
+
+  it('does not grant an actual member authority by registering portable metadata or syncing its catalog', async () => {
+    cleanupFns.push(
+      registerPortableMetadata([
+        {
+          slug: 'portable_registry_records.read',
+          name: 'Portable registry record read',
+        },
+      ]),
+    );
+    const actor = await createActor([]);
+    expect(
+      await permissions.findBySlug('portable_registry_records.read'),
+    ).toBeDefined();
+    await expect(
+      assertOperationPermission({
+        ...options,
+        collection: 'portable_registry_records',
+        action: 'get',
+        tenantId: actor.tenant.id,
+        userId: actor.user.id,
+        allowSystemContextBypass: false,
+        allowSuperAdminBypass: false,
+      }),
+    ).rejects.toMatchObject({
+      decision: {
+        allowed: false,
+        reason: 'permission_denied',
+        permission: 'portable_registry_records.read',
+      },
+    });
   });
 
   it('derives operation slugs from strings, classes, instances, and collections', async () => {

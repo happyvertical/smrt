@@ -1,3 +1,7 @@
+import {
+  AiUsagePersistenceHandler,
+  ExternalAgentUsageRecorder,
+} from '@happyvertical/smrt-core';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { TenantUsageMetricCollection } from '../collections/TenantUsageMetricCollection.js';
 import { TenantUsageMeter } from '../services/usage-meter.js';
@@ -22,6 +26,7 @@ const AI_USAGE_DDL = `
 
 interface SeedRow {
   tenantId: string;
+  operation?: string;
   promptTokens: number;
   completionTokens: number;
   totalTokens: number;
@@ -44,7 +49,7 @@ async function seedAiUsage(
       `usage-${counter}`,
       'openai',
       'gpt-test',
-      'do',
+      row.operation ?? 'do',
       row.promptTokens,
       row.completionTokens,
       row.totalTokens,
@@ -110,6 +115,34 @@ describe('TenantUsageMeter AI usage summaries', () => {
       },
     ]);
 
+    const binding = {
+      tenantId: 'tenant-1',
+      workspaceId: 'workspace',
+      projectId: 'project',
+      taskId: 'task',
+      sessionId: 'external-meter-fixture',
+      role: 'worker',
+    };
+    await new ExternalAgentUsageRecorder(metrics.db, binding).record({
+      version: 1,
+      binding,
+      provider: 'fixture',
+      model: 'fixture',
+      provenance: {
+        harness: 'fixture',
+        source: 'fixture.usage',
+        eventId: 'external-0',
+      },
+      observedAt: '2026-06-10T12:00:00Z',
+      sequence: 0,
+      epoch: 0,
+      basis: 'delta',
+      baseline: 'zero',
+      scope: 'exclusive',
+      inputIncludesCache: true,
+      outputIncludesReasoning: true,
+      counters: { inputTokens: 999, outputTokens: 999, totalTokens: 1998 },
+    });
     const meter = new TenantUsageMeter(metrics);
     const summary = await meter.summarizeAiUsage({
       tenantId: 'tenant-1',
@@ -353,6 +386,36 @@ describe('TenantUsageMeter AI usage summaries', () => {
     ).rejects.toBe(cyclic);
   });
 
+  it('never counts hosted-gate blocked rows as requests (#4760)', async () => {
+    await seedAiUsage(metrics, [
+      {
+        tenantId: 'tenant-1',
+        promptTokens: 10,
+        completionTokens: 5,
+        totalTokens: 15,
+        estimatedCost: 0.01,
+        createdAt: '2026-06-10T12:00:00.000Z',
+      },
+      {
+        tenantId: 'tenant-1',
+        operation: 'blocked',
+        promptTokens: 0,
+        completionTokens: 0,
+        totalTokens: 0,
+        estimatedCost: 0,
+        createdAt: '2026-06-11T12:00:00.000Z',
+      },
+    ]);
+    const summary = await new TenantUsageMeter(metrics).summarizeAiUsage({
+      tenantId: 'tenant-1',
+      window: {
+        start: new Date('2026-06-01T00:00:00.000Z'),
+        end: new Date('2026-07-01T00:00:00.000Z'),
+      },
+    });
+    expect(summary).toMatchObject({ requestCount: 1, totalTokens: 15 });
+  });
+
   it('returns zeroed totals when no usage matches', async () => {
     const meter = new TenantUsageMeter(metrics);
     const summary = await meter.summarizeAiUsage({
@@ -370,5 +433,47 @@ describe('TenantUsageMeter AI usage summaries', () => {
       estimatedCost: 0,
       requestCount: 0,
     });
+  });
+});
+
+describe.each([
+  'sqlite',
+  'duckdb',
+] as const)('native custom-operation accounting %s', (type) => {
+  it.each([
+    ['null', undefined],
+    ['ordinary', { component: 'native-fixture' }],
+  ] as const)('includes a real native external-agent operation with %s tags', async (_name, tags) => {
+    const metrics = await TenantUsageMetricCollection.create({
+      db: { type, url: ':memory:' },
+    });
+    try {
+      await metrics.db.query(AI_USAGE_DDL);
+      await new AiUsagePersistenceHandler(metrics.db).handle({
+        provider: 'fixture',
+        model: 'native-model',
+        operation: 'external-agent',
+        className: 'Native',
+        tenantId: 'native-accounting-fixture',
+        timestamp: new Date('2026-10-26T00:00:00Z'),
+        duration: 12,
+        estimatedCost: 0.25,
+        usage: { promptTokens: 7, completionTokens: 3, totalTokens: 10 },
+        ...(tags ? { tags } : {}),
+      });
+      const summary = await new TenantUsageMeter(metrics).summarizeAiUsage({
+        tenantId: 'native-accounting-fixture',
+        window: { start: new Date('2026-10-01'), end: new Date('2026-11-01') },
+      });
+      expect(summary).toMatchObject({
+        promptTokens: 7,
+        completionTokens: 3,
+        totalTokens: 10,
+        estimatedCost: 0.25,
+        requestCount: 1,
+      });
+    } finally {
+      await metrics.db.close?.();
+    }
   });
 });

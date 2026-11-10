@@ -33,7 +33,7 @@ fails closed.
 | Profile | Default composition | Supported choices |
 | --- | --- | --- |
 | `local` | user-owned SQLite; single-use owner bootstrap; real default tenant; local assets and secrets; embedded jobs; loopback binding; file-snapshot backup | jobs may run `inline`; TLS may be enabled while the bind remains loopback |
-| `self-hosted` | operator PostgreSQL; OIDC; single tenant; S3-compatible assets; environment secrets; external workers; public TLS; operator backup | magic link auth; explicit multi-tenant mode with required context; local or S3-compatible assets; environment, local-file, or external secrets; application isolation or RLS |
+| `self-hosted` | operator PostgreSQL; OIDC; single tenant; S3-compatible assets; environment secrets; external workers; public TLS; operator backup | magic link or password auth; explicit multi-tenant mode with required context; local or S3-compatible assets; environment, local-file, or external secrets; application isolation or RLS |
 | `cloud` | managed PostgreSQL; hosted identity; required multi-tenant context with RLS; managed storage and secrets; scalable workers; public TLS; managed backup | S3-compatible storage, external secret provider, or application-enforced isolation |
 
 All three presets advertise logical export and import. Provider-specific
@@ -125,9 +125,19 @@ generated application-secret file are mode `0600`. SQLite enables foreign keys,
 WAL, full synchronous durability, and a busy timeout. The local server binds to
 `127.0.0.1` by default, and owner bootstrap refuses a non-loopback bind.
 Concurrent initializers are serialized across processes by an exclusive
-transaction in a dedicated SQLite lock database under a private per-user,
-root-keyed custody directory. The released SQL trusted-parent boundary validates
-the lock directory, ancestor chain, leaf, and macOS ACLs before opening it.
+transaction in a dedicated SQLite lock database under a private, root-keyed
+custody directory beside the data root (`<parent>/.smrt-lease-<key>`), so it
+also works in user-namespace sandboxes where `/tmp` reads as owned by the
+overflow uid. The legacy per-user `/tmp/.smrt-<uid>` lease is taken afterwards
+so older releases stay excluded; when `/tmp`'s owner is unmapped it is taken
+lock-only (never written, private current-user lock directories and file), and
+it is required when the parent cannot hold a lease. In a uid-remapping
+namespace both the in-namespace `<uid>` and its `/proc/self/uid_map` host
+mapping are locked, in that order, so older releases inside the namespace and
+on the host both contend; the in-namespace candidate is skipped only when its
+root is an existing real directory owned by another user (no one in the
+namespace can hold it), and an unusable map fails closed. The released SQL trusted-parent boundary validates
+each lock directory, ancestor chain, leaf, and macOS ACLs before opening it.
 SQLite elects one owner atomically without deleting a lock pathname; process or
 worker death releases the kernel lock without PID/time leases. A read-only
 storage-path and marker preflight rejects obvious invalid configurations before
@@ -156,7 +166,11 @@ expires within fifteen minutes, and is consumed in the same serialized database
 transaction that creates the real global `Person`, `User`, default `Tenant`,
 owner `Role` / `Membership`, and server-side `Session`. Repeated setup or startup
 does not duplicate those records. Tenancy can remain hidden in the local UI, but
-the durable default tenant is preserved for later logical migration.
+the durable default tenant is preserved for later logical migration. The
+`ownerTenant` option chooses that tenant's slug (default `default`) and name;
+a claim never writes over an existing tenant with the slug: it fails closed with
+`owner_tenant_conflict` unless `ownerTenant.adoptExisting` is set, and then
+adopts only an active root tenant that has no memberships, keeping its id.
 Authenticated session TTLs are whole seconds with a minimum of one second;
 invalid TTL configuration is rejected before any filesystem mutation.
 
@@ -165,6 +179,14 @@ default. An explicit background opt-in exposes the regular embedded
 `TaskRunner`, preserving the same persisted enqueue and execution contract used
 by deployed workers. Diagnostics report these choices and bootstrap state but
 never read or emit application secrets, token plaintext, or token hashes.
+
+A local install learns which paid capabilities it may enable from the device
+entitlement cache (`@happyvertical/smrt-app-runtime/device-entitlements`): a
+signed, time-limited snapshot of feature keys verified against public keys the
+application ships. With no valid snapshot (none, expired, tampered, wrong
+account or device, replayed) the install is on the Local tier and every paid key
+stays off, so the default-off rule above holds on any failure. See the package
+README for the grace-period policy.
 
 ## Running self-hosted and cloud profiles
 
@@ -265,6 +287,17 @@ providers, secret managers, workers, billing, or a hosted control plane. The
 operator applies application migrations and, when `database-rls` is selected,
 the documented s-m-r-t PostgreSQL policies. The selector validates intent; it
 does not mutate database roles or privileges during web startup.
+
+Hosted inference for `cloud` members (the paid `inference.hosted` key) is
+provisioned per user on the operator's AI gateway by `smrt-inference`
+(`provisionHostedInference()`, `smrt inference:hosted provision|revoke`, and a
+`smrt-subscriptions` entitlement-change listener); the gateway and its admin
+credentials come from `SMRT_INFERENCE_HOSTED_*`. Local installs never set
+these, so hosted inference stays off there. See
+[hosted inference](./inference.md#6-hosted-inference) for entitlement, spend
+caps and the kill switch, and
+[smrt-inference](https://github.com/happyvertical/smrt/blob/main/packages/inference/AGENTS.md)
+("Hosted inference") for the contract.
 
 ## SvelteKit server hooks
 

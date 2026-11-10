@@ -43,14 +43,18 @@ export class SupportSpecialist extends SmrtObject {
   tenantId: string | null = null;
 
   /** The Participant (Person profile) this specialist role belongs to. */
+  @field({ description: 'The profile of the person on your team.' })
   @crossPackageRef('@happyvertical/smrt-profiles:Profile', { required: true })
   profileId: string = '';
 
   /** Display name for queues/routing rationale (denormalized from Profile). */
-  @field({ type: 'text' })
+  @field({ type: 'text', description: 'The name your team and customers see.' })
   displayName: string = '';
 
-  @field({ type: 'text' })
+  @field({
+    type: 'text',
+    description: 'Whether this person is taking tickets right now.',
+  })
   status: SupportSpecialistStatus = 'active';
 
   /** Languages the specialist supports (JSON array of BCP-47-ish codes). */

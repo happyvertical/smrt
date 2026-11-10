@@ -11,6 +11,7 @@ import {
   mkdirSync,
   mkdtempSync,
   readFileSync,
+  realpathSync,
   rmSync,
   writeFileSync,
 } from 'node:fs';
@@ -21,6 +22,7 @@ import { createGeneratedCollectionAccess } from '@happyvertical/smrt-core';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { requireCommandHandler } from '../../__tests__/command-handler.js';
 import { initCommands } from '../init.js';
+import { scaffoldAgentDocs } from '../scaffold-agent-docs.js';
 
 let tempDir: string;
 let originalCwd: string;
@@ -307,6 +309,31 @@ describe('init command', () => {
     expect(readFileSync(join(tempDir, 'package.json'), 'utf-8')).toBe(before);
     const printed = logSpy.mock.calls.map((c) => c[0]).join('\n');
     expect(printed).not.toContain('Added SMRT dependencies');
+  });
+
+  it('refreshes agent docs at the project after writing (#4878)', async () => {
+    writePackageJson({ name: 'demo', dependencies: { '@sveltejs/kit': '^2' } });
+    const refresh = vi
+      .spyOn(scaffoldAgentDocs, 'refresh')
+      .mockResolvedValue({ status: 'written', root: tempDir, warnings: [] });
+    await init([], { database: 'sqlite' });
+    expect(refresh).toHaveBeenCalledTimes(1);
+    expect(refresh.mock.calls[0][0]).toMatchObject({
+      cwd: realpathSync(tempDir),
+      mode: 'write',
+    });
+    expect(existsSync(join(tempDir, 'smrt.config.ts'))).toBe(true);
+  });
+
+  it('a throwing refresh does not fail init', async () => {
+    writePackageJson({ name: 'demo', dependencies: { '@sveltejs/kit': '^2' } });
+    vi.spyOn(scaffoldAgentDocs, 'refresh').mockRejectedValue(new Error('boom'));
+    const exit = vi.spyOn(process, 'exit');
+    await init([], { database: 'sqlite' });
+    expect(exit).not.toHaveBeenCalled();
+    expect(errorSpy.mock.calls.flat().join('\n')).toContain(
+      'agent docs refresh failed: boom',
+    );
   });
 });
 

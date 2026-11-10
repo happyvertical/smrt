@@ -10,7 +10,7 @@ import { createRequire } from 'node:module';
 import { dirname, join } from 'node:path';
 import { pathToFileURL } from 'node:url';
 import { createLogger } from '@happyvertical/logger';
-import glob from 'fast-glob';
+import { glob } from 'tinyglobby';
 import type { TemplateConfig } from './template-loader.js';
 
 // This package is pure ESM ("type":"module"), where `require`/`module` are not
@@ -127,7 +127,10 @@ export async function findTemplateInPackages(
   ];
 
   for (const pattern of patterns) {
-    const matches = await glob(pattern, { absolute: true });
+    const matches = await glob(pattern, {
+      absolute: true,
+      expandDirectories: false,
+    });
     if (matches.length > 0) {
       // Return the package path, not the template.config path
       const configPath = matches[0];
@@ -160,7 +163,10 @@ export async function discoverInstalledTemplates(): Promise<
   }> = [];
 
   for (const pattern of patterns) {
-    const matches = await glob(pattern, { absolute: true });
+    const matches = await glob(pattern, {
+      absolute: true,
+      expandDirectories: false,
+    });
 
     for (const configPath of matches) {
       try {

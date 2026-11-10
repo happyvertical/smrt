@@ -8,24 +8,35 @@ import {
   field,
   foreignKey,
   SmrtObject,
+  type SmrtSaveOptions,
   smrt,
 } from '@happyvertical/smrt-core';
-import type { Journal, JournalEntryData } from '@happyvertical/smrt-ledgers';
+import type { DatabaseInterface } from '@happyvertical/smrt-core/migrations';
+import type { Journal } from '@happyvertical/smrt-ledgers';
 import { TenantScoped, tenantId } from '@happyvertical/smrt-tenancy';
 import {
   assertAllocationParent,
   claimAllocationParent,
 } from '../allocation-integrity.js';
-import { minorToMajorUnits } from '../billing/units.js';
-import { assertIntegerMinorUnits } from '../money.js';
+import {
+  DOCUMENT_MONEY_READ_REBIND,
+  DOCUMENT_MONEY_WRITE,
+  type DocumentMoneyReadRebindCapability,
+  type DocumentMoneyWriteCapability,
+} from '../document-money-internal.js';
+import type { FrozenInvoiceAccountingOptions } from '../invoice-accounting-sync.js';
+import { assertIntegerMinorUnits, MoneyValidationError } from '../money.js';
+import { calculateInvoicePayable } from '../retention-money.js';
 import {
   type AccountingInvoiceInput,
+  type CancelRevenueOptions,
   type InvoiceCollectionMethod,
+  type InvoiceKind,
   type InvoiceOptions,
   InvoiceStatus,
   type RecognizeRevenueOptions,
+  type TaxRegistrationOptions,
 } from '../types/index.js';
-import type { InvoiceLineItem } from './InvoiceLineItem.js';
 
 /*
  * There is deliberately no `INVOICE_EPSILON` here any more (#2401).
@@ -100,6 +111,7 @@ const INVOICE_STATUS_TRANSITIONS: Record<InvoiceStatus, InvoiceStatus[]> = {
     InvoiceStatus.VIEWED,
     InvoiceStatus.SENT,
     InvoiceStatus.OVERDUE,
+    InvoiceStatus.CANCELLED,
     InvoiceStatus.WRITTEN_OFF,
   ],
   // Terminal states: no outbound transitions.
@@ -170,6 +182,8 @@ const loadedInvoiceStatus = new WeakMap<Invoice, InvoiceStatus>();
       'issueDate',
       'dueDate',
       'currency',
+      'lineAmountType',
+      'taxRoundingScope',
       'notes',
       'customerNotes',
       'terms',
@@ -186,10 +200,76 @@ const loadedInvoiceStatus = new WeakMap<Invoice, InvoiceStatus>();
   // application code that enforces permissions. MCP create/update honor the
   // same `api.writable` allowlist, so status/amounts are unsettable over MCP
   // too. See S5 audit #1390.
-  mcp: { include: ['list', 'get'] },
+  mcp: {
+    include: ['list', 'get'],
+    serializers: {
+      get: {
+        importPath: '@happyvertical/smrt-commerce',
+        exportName: 'serializeInvoiceMcpGet',
+      },
+    },
+  },
   cli: { skipApiCheck: true },
+  indexes: [
+    {
+      name: 'invoice_historical_source_identity',
+      columns: ['tenantId', 'historicalSourceKeyHash'],
+      unique: true,
+    },
+  ],
 })
 export class Invoice extends SmrtObject {
+  /** Command-owned original sales authority; ordinary documents stay calculated. */
+  @field({
+    description:
+      'Whether amounts were calculated or retained from an original issued invoice.',
+  })
+  moneyAuthority: 'calculated' | 'historical' = 'calculated';
+  historicalSalesMoneyJson = '';
+  @field({ type: 'text', nullable: true }) historicalSourceKeyHash:
+    | string
+    | null = null;
+
+  /** @internal Collection read guard returns this snapshot on its root DB. */
+  rebindMoneyRead(
+    capability: DocumentMoneyReadRebindCapability,
+    db: DatabaseInterface,
+  ): this {
+    if (capability !== DOCUMENT_MONEY_READ_REBIND)
+      throw new MoneyValidationError(
+        'FROZEN_DOCUMENT',
+        'Invoice read rebinding requires the owning capability',
+      );
+    this._db = db;
+    this.options.db = db;
+    return this;
+  }
+
+  @field({ description: 'Invoice or customer credit note.' })
+  kind: InvoiceKind = 'invoice';
+
+  @foreignKey('Invoice', { nullable: true })
+  creditedInvoiceId: string | null = null;
+
+  /** Issued credit-note total cached under the source invoice lock. */
+  @field({ ui: { format: 'money' } })
+  creditedAmount = 0;
+
+  /** Server-owned immutable retention policy and append-only release evidence. */
+  retentionStateJson = '';
+
+  /** Command-owned durable provider retention bundle; never caller-writable. */
+  @field({ sensitive: true })
+  retentionAccountingStateJson = '';
+
+  /** Command-owned ordinary provider adjustments; no retention agreement. */
+  @field({ sensitive: true })
+  ordinaryAccountingStateJson = '';
+
+  getPayableFacts() {
+    return calculateInvoicePayable(this);
+  }
+
   /**
    * Tenant ID for multi-tenant isolation
    * Nullable to support both tenant-scoped and global invoices
@@ -210,7 +290,7 @@ export class Invoice extends SmrtObject {
   @field({
     description: 'The order or agreement this invoice bills for, if any.',
   })
-  @foreignKey('Contract')
+  @foreignKey('SalesContract', { validateSubtype: true })
   contractId: string = '';
 
   // ============================================================================
@@ -236,14 +316,23 @@ export class Invoice extends SmrtObject {
   /**
    * Date invoice was issued
    */
-  @field({ description: 'The date the invoice was issued.' })
+  @field({
+    description: 'The date the invoice was issued.',
+    // A business date: what "invoices by month" buckets (#4100).
+    ui: { format: 'date' },
+  })
   issueDate: Date = new Date();
 
   /**
    * Payment due date
    */
-  @field({ description: 'The date payment is expected.' })
-  dueDate: Date = new Date();
+  @field({
+    type: 'datetime',
+    nullable: true,
+    description:
+      'The date payment is expected; null when the original source did not establish it.',
+  })
+  dueDate: Date | null = new Date();
 
   /**
    * Date invoice was fully paid
@@ -264,14 +353,14 @@ export class Invoice extends SmrtObject {
    * Writing a fractional major-unit value here is the bug; PostgreSQL rejects
    * it with `22P02` while SQLite's affinity silently stores it (#2361).
    */
-  @field({ description: 'The amount before tax.' })
+  @field({ description: 'The amount before tax.', ui: { format: 'money' } })
   subtotal: number = 0;
 
   /**
    * Tax amount, in integer minor units (#2361). With line items this is the
    * sum of their rate-based tax plus {@link providerTaxAmount}.
    */
-  @field({ description: 'The tax charged.' })
+  @field({ description: 'The tax charged.', ui: { format: 'money' } })
   taxAmount: number = 0;
 
   /**
@@ -281,18 +370,25 @@ export class Invoice extends SmrtObject {
    * It is added to the line items' tax, so `taxAmount` and `totalAmount` stay
    * authoritative from line items plus this one provider figure.
    */
+  @field({ ui: { format: 'money' } })
   providerTaxAmount: number = 0;
 
   /**
    * Total amount due (subtotal + tax), in integer minor units (#2361).
    */
-  @field({ description: 'What the customer owes in all, tax included.' })
+  @field({
+    description: 'What the customer owes in all, tax included.',
+    ui: { format: 'money' },
+  })
   totalAmount: number = 0;
 
   /**
    * Amount paid (sum of PaymentAllocations), in integer minor units (#2361).
    */
-  @field({ description: 'How much of the total has been paid so far.' })
+  @field({
+    description: 'How much of the total has been paid so far.',
+    ui: { format: 'money' },
+  })
   amountPaid: number = 0;
 
   /**
@@ -303,6 +399,47 @@ export class Invoice extends SmrtObject {
     ui: { widget: 'currency' },
   })
   currency: string = 'CAD';
+
+  /** Pricing interpretation fixed for the document before issue. */
+  lineAmountType: 'exclusive' | 'inclusive' | 'none' = 'exclusive';
+
+  /** Component rounding scope fixed for the document before issue. */
+  taxRoundingScope: 'line' | 'document' = 'line';
+
+  /** Informational sum of resolved line discounts, in minor units. */
+  @field({ ui: { format: 'money' } })
+  discountTotal = 0;
+
+  /** Immutable seller registration snapshot once the invoice leaves draft. */
+  sellerTaxRegistrationsJson = '[]';
+
+  get sellerTaxRegistrations(): TaxRegistrationOptions[] {
+    try {
+      const value: unknown = JSON.parse(this.sellerTaxRegistrationsJson);
+      if (!Array.isArray(value)) return [];
+      return value.filter(
+        (entry): entry is TaxRegistrationOptions =>
+          !!entry &&
+          typeof entry === 'object' &&
+          typeof (entry as TaxRegistrationOptions).taxComponentId ===
+            'string' &&
+          typeof (entry as TaxRegistrationOptions).number === 'string' &&
+          typeof (entry as TaxRegistrationOptions).label === 'string',
+      );
+    } catch {
+      return [];
+    }
+  }
+
+  set sellerTaxRegistrations(value: TaxRegistrationOptions[]) {
+    this.sellerTaxRegistrationsJson = JSON.stringify(value);
+  }
+
+  /** Immutable customer tax identifier snapshot once issued. */
+  partyTaxId = '';
+
+  /** Stable issue/freeze identity, independent of lifecycle updated_at. */
+  moneySnapshotId = '';
 
   // ============================================================================
   // Status
@@ -326,6 +463,10 @@ export class Invoice extends SmrtObject {
    */
   @crossPackageRef('@happyvertical/smrt-ledgers:Journal')
   arJournalId: string = '';
+
+  /** Posted journal that exactly reverses arJournalId on cancellation. */
+  @crossPackageRef('@happyvertical/smrt-ledgers:Journal', { nullable: true })
+  arReversalJournalId: string | null = null;
 
   /**
    * Journal ID for revenue recognition (cross-package ref to smrt-ledgers)
@@ -357,6 +498,10 @@ export class Invoice extends SmrtObject {
    * When invoice was last synced to provider
    */
   syncedAt: Date | null = null;
+
+  /** Server-owned prepared/in-flight/result identity for frozen accounting sync. */
+  @field({ sensitive: true })
+  accountingSyncStateJson = '';
 
   /**
    * How the provider collects this invoice (#3190), decided once by billing
@@ -424,6 +569,17 @@ export class Invoice extends SmrtObject {
 
   constructor(options: InvoiceOptions = {}) {
     super(options);
+    if (options.kind !== undefined) this.kind = options.kind;
+    if (options.creditedInvoiceId !== undefined)
+      this.creditedInvoiceId = options.creditedInvoiceId;
+    if (options.moneyAuthority !== undefined)
+      this.moneyAuthority = options.moneyAuthority;
+    if (options.historicalSalesMoneyJson !== undefined)
+      this.historicalSalesMoneyJson = options.historicalSalesMoneyJson;
+    if (options.historicalSourceKeyHash !== undefined)
+      this.historicalSourceKeyHash = options.historicalSourceKeyHash;
+    if (options.creditedAmount !== undefined)
+      this.creditedAmount = options.creditedAmount;
     if (options.tenantId !== undefined) this.tenantId = options.tenantId;
     if (options.customerId !== undefined) this.customerId = options.customerId;
     if (options.contractId !== undefined) this.contractId = options.contractId;
@@ -441,9 +597,26 @@ export class Invoice extends SmrtObject {
       this.totalAmount = options.totalAmount;
     if (options.amountPaid !== undefined) this.amountPaid = options.amountPaid;
     if (options.currency !== undefined) this.currency = options.currency;
+    if (options.lineAmountType !== undefined)
+      this.lineAmountType = options.lineAmountType;
+    if (options.taxRoundingScope !== undefined)
+      this.taxRoundingScope = options.taxRoundingScope;
+    if (options.discountTotal !== undefined)
+      this.discountTotal = options.discountTotal;
+    if (options.sellerTaxRegistrationsJson !== undefined)
+      this.sellerTaxRegistrationsJson = options.sellerTaxRegistrationsJson;
+    if (options.sellerTaxRegistrations !== undefined)
+      this.sellerTaxRegistrations = structuredClone(
+        options.sellerTaxRegistrations,
+      );
+    if (options.partyTaxId !== undefined) this.partyTaxId = options.partyTaxId;
+    if (options.moneySnapshotId !== undefined)
+      this.moneySnapshotId = options.moneySnapshotId;
     if (options.status !== undefined) this.status = options.status;
     if (options.arJournalId !== undefined)
       this.arJournalId = options.arJournalId;
+    if (options.arReversalJournalId !== undefined)
+      this.arReversalJournalId = options.arReversalJournalId;
     if (options.revenueJournalId !== undefined)
       this.revenueJournalId = options.revenueJournalId;
     if (options.externalId !== undefined) this.externalId = options.externalId;
@@ -452,6 +625,8 @@ export class Invoice extends SmrtObject {
     if (options.externalProvider !== undefined)
       this.externalProvider = options.externalProvider;
     if (options.syncedAt !== undefined) this.syncedAt = options.syncedAt;
+    if (options.accountingSyncStateJson !== undefined)
+      this.accountingSyncStateJson = options.accountingSyncStateJson;
     if (options.collectionMethod !== undefined)
       this.collectionMethod = options.collectionMethod;
     if (options.sentAt !== undefined) this.sentAt = options.sentAt;
@@ -476,6 +651,13 @@ export class Invoice extends SmrtObject {
    */
   override async initialize(): Promise<this> {
     await super.initialize();
+    // A row read from the database must not be old-format money data.
+    if (this.isPersisted) {
+      const { assertHydratedMoneyRowCurrent } = await import(
+        '../upgrade/detect.js'
+      );
+      await assertHydratedMoneyRowCurrent(this);
+    }
     if (await this.isSaved()) {
       loadedInvoiceStatus.set(this, this.status);
     }
@@ -492,42 +674,116 @@ export class Invoice extends SmrtObject {
    * raw mass-assignment on the generated CRUD routes.
    *
    * Behaviour:
-   *  - **Totals are authoritative from line items.** When the invoice is
-   *    persisted and has line items, `subtotal` / `taxAmount` / `totalAmount`
-   *    are recomputed from those items, overriding whatever the caller sent.
-   *    This blocks "create real line items but claim a tiny total" forgery.
-   *  - **Without line items**, the caller-supplied totals are accepted but the
-   *    `totalAmount === subtotal + taxAmount` arithmetic invariant is enforced.
+   *  - **Totals are authoritative from line items.** A draft's `subtotal` /
+   *    `discountTotal` / `taxAmount` / `totalAmount` are recomputed from its
+   *    lines and tax codes on every save, whatever the caller sent; a new
+   *    invoice with no lines starts at zero. Issued invoices are frozen.
    *  - **amountPaid is derived/validated.** When persisted, it is recomputed
    *    from PaymentAllocations rather than trusted from the caller. It may
-   *    never exceed `totalAmount`.
-   *  - **Whole minor units and non-negativity** are enforced on all four
-   *    amounts. The integer check runs FIRST (#2401), before the
-   *    `totalAmount === subtotal + taxAmount` invariant, so a caller who wrote
-   *    major units gets "money is minor units" rather than a confusing
-   *    arithmetic-mismatch error from float addition.
+   *    never exceed `totalAmount`, and a new invoice cannot start paid.
+   *  - **Whole minor units and non-negativity** are enforced on all amounts.
    *  - **Status transitions** are validated against the prior persisted status.
    */
-  override async save(): Promise<this> {
-    return this.withTransaction(async () => {
-      await claimAllocationParent(this, 'invoice');
-      const persisted = await this.isSaved();
-      const prior = await this.resolvePriorStatus(persisted);
+  override async save(options?: SmrtSaveOptions): Promise<this> {
+    const { saveInvoice } = await import('../document-money.js');
+    return (await saveInvoice(this, options)) as this;
+  }
 
-      this.assertAmountsAreMinorUnits();
-      await this.recomputeAmountsForSave(persisted);
-      this.assertNonNegativeAmounts();
-      this.assertStatusTransition(prior);
-      this.assertPaymentStatusConsistent();
-      await this.assertDraftDeliveryHistory(persisted);
+  /** @internal Aggregate persistence only. */
+  async saveDerived(
+    capability: DocumentMoneyWriteCapability,
+    options?: SmrtSaveOptions,
+  ): Promise<this> {
+    if (capability !== DOCUMENT_MONEY_WRITE)
+      throw new Error('Invoice money write capability is required');
+    // The claim is the compare-and-swap against the caller's revision (it
+    // advances the stored revision), so the guarded save below must expect the
+    // revision the claim just wrote rather than the caller's pre-claim one.
+    const expectedUpdatedAt = options?.expectedUpdatedAt;
+    await claimAllocationParent(this, 'invoice', expectedUpdatedAt);
+    const saveOptions =
+      expectedUpdatedAt === undefined
+        ? options
+        : {
+            ...options,
+            expectedUpdatedAt: this.updated_at ?? expectedUpdatedAt,
+          };
+    const persisted = await this.isSaved();
+    const prior = await this.resolvePriorStatus(persisted);
 
-      await assertAllocationParent(this, 'invoice');
-      const result = (await super.save()) as this;
-      // Once written, the current status becomes the new "prior" for the next
-      // save in this instance's lifetime.
-      loadedInvoiceStatus.set(this, this.status);
-      return result;
-    });
+    this.assertAmountsAreMinorUnits();
+    if (persisted && this.id) await this.recomputeAmountPaid();
+    else {
+      // A new invoice has no PaymentAllocations behind it, so it cannot
+      // start paid: payment status is derived from allocations.
+      this.amountPaid = 0;
+      if (
+        this.status === InvoiceStatus.PAID ||
+        this.status === InvoiceStatus.PARTIAL
+      )
+        throw new Error(
+          `Invoice ${this.invoiceNumber || '<new>'}: a new invoice cannot start ` +
+            `in status '${this.status}' — payment status is derived from ` +
+            'PaymentAllocations, not set at creation. Create the invoice unpaid ' +
+            '(DRAFT / SENT) and record payments via allocations.',
+        );
+    }
+    this.assertNonNegativeAmounts();
+    this.assertStatusTransition(prior);
+    this.assertPaymentStatusConsistent();
+    const payable = calculateInvoicePayable(this);
+    if (
+      (this.retentionAccountingStateJson || this.ordinaryAccountingStateJson) &&
+      [InvoiceStatus.CANCELLED, InvoiceStatus.WRITTEN_OFF].includes(this.status)
+    )
+      throw new MoneyValidationError(
+        'ACCOUNTING_SYNC_RECONCILIATION_REQUIRED',
+        'Provider retention cannot be voided or written off without an explicit reconciled reversal contract',
+      );
+    if (
+      (this.retentionAccountingStateJson || this.ordinaryAccountingStateJson) &&
+      (this.collectionMethod || this.providerTaxAmount)
+    )
+      throw new MoneyValidationError(
+        'INVALID_MONEY_INPUT',
+        'Retention accounting does not support provider collection or tax overrides',
+      );
+    if (
+      payable.retainedRemainingMinor > 0 &&
+      !this.retentionAccountingStateJson &&
+      (this.externalId ||
+        this.externalProvider ||
+        this.accountingSyncStateJson ||
+        this.collectionMethod ||
+        this.providerTaxAmount)
+    )
+      throw new MoneyValidationError(
+        'INVALID_MONEY_INPUT',
+        'Unreleased retention requires an explicit provider retention contract',
+      );
+    await this.assertDraftDeliveryHistory(persisted);
+
+    await assertAllocationParent(this, 'invoice');
+    const result = (await super.save(saveOptions)) as this;
+    loadedInvoiceStatus.set(this, this.status);
+    return result;
+  }
+
+  override async delete(
+    options: { expectedUpdatedAt?: Date | string } = {},
+  ): Promise<void> {
+    const { deleteInvoice } = await import('../document-money.js');
+    await deleteInvoice(this, options);
+  }
+
+  /** @internal Aggregate persistence only. */
+  async deleteDerived(
+    capability: DocumentMoneyWriteCapability,
+    options: { expectedUpdatedAt?: Date | string } = {},
+  ): Promise<void> {
+    if (capability !== DOCUMENT_MONEY_WRITE)
+      throw new Error('Invoice money write capability is required');
+    await super.delete(options);
   }
 
   /**
@@ -555,86 +811,18 @@ export class Invoice extends SmrtObject {
     return loadedInvoiceStatus.get(this);
   }
 
-  /**
-   * Recompute subtotal/tax/total from line items (when present) and derive
-   * amountPaid from PaymentAllocations. Falls back to the arithmetic invariant
-   * when the invoice has no line items. Tolerant of smrt-ledgers being absent
-   * (the dynamic imports stay inside the package).
-   */
-  private async recomputeAmountsForSave(persisted: boolean): Promise<void> {
-    if (persisted && this.id) {
-      const { InvoiceLineItemCollection } = await import(
-        '../collections/InvoiceLineItemCollection.js'
-      );
-      const lineItemCollection = await InvoiceLineItemCollection.create({
-        ...this.options,
-        db: this.db,
-      });
-      const lineItems = await lineItemCollection.findByInvoice(this.id);
-
-      if (lineItems.length > 0) {
-        const subtotal = lineItems.reduce(
-          (sum: number, item: InvoiceLineItem) => sum + item.getSubtotal(),
-          0,
-        );
-        const taxAmount =
-          lineItems.reduce(
-            (sum: number, item: InvoiceLineItem) => sum + item.getTaxAmount(),
-            0,
-          ) + this.providerTaxAmount;
-        // Totals are AUTHORITATIVE from the line items (S5 audit #1390). Any
-        // caller-supplied subtotal / tax / total is ignored and overwritten —
-        // that is the security goal (a forged total can never be persisted)
-        // AND it self-heals a stale stored total (e.g. one left behind after a
-        // line item changed). We deliberately do NOT throw on a caller
-        // mismatch: throwing blocked legitimate self-heal of stale totals, and
-        // since the values are overwritten regardless, the throw added no
-        // protection. Non-negativity is still enforced downstream by
-        // assertNonNegativeAmounts().
-        const computedTotal = subtotal + taxAmount;
-        this.subtotal = subtotal;
-        this.taxAmount = taxAmount;
-        this.totalAmount = computedTotal;
-      } else {
-        this.assertTotalArithmetic();
-      }
-
-      // amountPaid is the sum of PaymentAllocations — never trust the caller.
-      const { PaymentAllocationCollection } = await import(
-        '../collections/PaymentAllocationCollection.js'
-      );
-      const allocationCollection = await PaymentAllocationCollection.create({
-        ...this.options,
-        db: this.db,
-      });
-      const allocated = await allocationCollection.getTotalAllocatedToInvoice(
-        this.id,
-      );
-      this.amountPaid = allocated;
-    } else {
-      // Not-yet-persisted invoice: no line items / allocations exist yet, so
-      // enforce the arithmetic invariant on the caller-supplied totals.
-      this.assertTotalArithmetic();
-
-      // A brand-new invoice cannot already be paid: there are no
-      // PaymentAllocations behind it yet, so a caller-supplied amountPaid (or a
-      // PAID/PARTIAL starting status) would be unbacked money. Force it to
-      // start unpaid; payment progress is only ever driven by allocations via
-      // updatePaymentStatus(). (Re-derive on the first persisted save once
-      // allocations exist.)
-      this.amountPaid = 0;
-      if (
-        this.status === InvoiceStatus.PAID ||
-        this.status === InvoiceStatus.PARTIAL
-      ) {
-        throw new Error(
-          `Invoice ${this.invoiceNumber || '<new>'}: a new invoice cannot start ` +
-            `in status '${this.status}' — payment status is derived from ` +
-            'PaymentAllocations, not set at creation. Create the invoice unpaid ' +
-            '(DRAFT / SENT) and record payments via allocations.',
-        );
-      }
-    }
+  private async recomputeAmountPaid(): Promise<void> {
+    const { PaymentAllocationCollection } = await import(
+      '../collections/PaymentAllocationCollection.js'
+    );
+    const allocationCollection = await PaymentAllocationCollection.create({
+      ...this.options,
+      db: this.db,
+    });
+    if (!this.id) throw new Error('Persisted invoice is missing its ID');
+    this.amountPaid = await allocationCollection.getTotalAllocatedToInvoice(
+      this.id,
+    );
   }
 
   /**
@@ -655,7 +843,7 @@ export class Invoice extends SmrtObject {
    * such thing as sub-cent dust.
    */
   private isFullyPaid(): boolean {
-    return this.amountPaid >= this.totalAmount;
+    return this.amountPaid + this.creditedAmount >= this.totalAmount;
   }
 
   /**
@@ -663,7 +851,7 @@ export class Invoice extends SmrtObject {
    * Derived from {@link isFullyPaid} so the two stay mutually exclusive.
    */
   private isPartiallyPaid(): boolean {
-    return this.amountPaid > 0 && !this.isFullyPaid();
+    return this.amountPaid + this.creditedAmount > 0 && !this.isFullyPaid();
   }
 
   /**
@@ -740,28 +928,6 @@ export class Invoice extends SmrtObject {
   }
 
   /**
-   * Enforce `totalAmount === subtotal + taxAmount` exactly. Used when the
-   * invoice has no line items to recompute from.
-   *
-   * Exact because every term is integer minor units (#2401). The float era
-   * needed a `0.01` tolerance here and then had to SNAP `totalAmount` to the
-   * recomputed value afterwards, because a total that passed the invoice's
-   * loose tolerance could still fail smrt-ledgers' tighter `BALANCE_EPSILON`
-   * and void the journal `recognizeRevenue` builds from it. Integer arithmetic
-   * removes both halves of that workaround: what the caller supplied either is
-   * the sum or is rejected, and any journal built from it balances exactly.
-   */
-  private assertTotalArithmetic(): void {
-    const expected = this.subtotal + this.taxAmount;
-    if (this.totalAmount !== expected) {
-      throw new Error(
-        `Invoice ${this.invoiceNumber || this.id || '<new>'}: totalAmount ${this.totalAmount} ` +
-          `must equal subtotal + taxAmount (${expected}).`,
-      );
-    }
-  }
-
-  /**
    * Reject amounts that are not whole minor units, negative financial values,
    * and an amountPaid that exceeds the total (overpayment is modelled
    * elsewhere, not by letting amountPaid float above the invoice total).
@@ -776,6 +942,7 @@ export class Invoice extends SmrtObject {
         ['providerTaxAmount', this.providerTaxAmount],
         ['totalAmount', this.totalAmount],
         ['amountPaid', this.amountPaid],
+        ['creditedAmount', this.creditedAmount],
       ],
     );
   }
@@ -788,6 +955,7 @@ export class Invoice extends SmrtObject {
       ['providerTaxAmount', this.providerTaxAmount],
       ['totalAmount', this.totalAmount],
       ['amountPaid', this.amountPaid],
+      ['creditedAmount', this.creditedAmount],
     ] as const;
     // Re-checked after the recompute: line-item sums and the allocation total
     // feed these, so integer-ness has to hold for the derived values too — it
@@ -861,16 +1029,22 @@ export class Invoice extends SmrtObject {
    * Check if invoice is overdue
    */
   isOverdue(): boolean {
+    if (this.getAmountDue() === 0) return false;
     if (this.status === InvoiceStatus.OVERDUE) return true;
     if (this.isPaid() || this.status === InvoiceStatus.CANCELLED) return false;
-    return new Date() > this.dueDate;
+    return this.dueDate !== null && new Date() > this.dueDate;
   }
 
   /**
    * Get remaining amount due
    */
   getAmountDue(): number {
-    return Math.max(0, this.totalAmount - this.amountPaid);
+    return this.getPayableFacts().currentlyDueMinor;
+  }
+
+  /** Signed amount still owed after payments and issued credit notes. */
+  getBalance(): number {
+    return this.totalAmount - this.amountPaid - this.creditedAmount;
   }
 
   // ============================================================================
@@ -939,11 +1113,14 @@ export class Invoice extends SmrtObject {
     // exactly (e.g. 0.1×3 line items paid 0.3) is treated as PAID by both —
     // not PARTIAL here and then rejected on save (S5 audit #1390 follow-up).
     if (this.isFullyPaid()) {
-      if (this.status !== InvoiceStatus.PAID || !this.paidDate) {
+      if (
+        this.moneyAuthority !== 'historical' &&
+        (this.status !== InvoiceStatus.PAID || !this.paidDate)
+      ) {
         this.paidDate = new Date();
       }
       this.status = InvoiceStatus.PAID;
-    } else if (amountPaid > 0) {
+    } else if (amountPaid + this.creditedAmount > 0) {
       this.status = InvoiceStatus.PARTIAL;
       this.paidDate = null; // Clear paidDate if no longer fully paid
     } else {
@@ -951,7 +1128,7 @@ export class Invoice extends SmrtObject {
       this.paidDate = null;
       if (this.viewedAt) {
         this.status = InvoiceStatus.VIEWED;
-      } else if (this.sentAt) {
+      } else if (this.sentAt || this.moneyAuthority === 'historical') {
         this.status = InvoiceStatus.SENT;
       } else {
         this.status = InvoiceStatus.DRAFT;
@@ -963,12 +1140,28 @@ export class Invoice extends SmrtObject {
    * Cancel the invoice
    */
   cancel(): void {
-    if (this.isPaid()) {
+    if (
+      (this.kind === 'invoice' && this.isPaid()) ||
+      (this.kind === 'credit_note' && this.amountPaid > 0)
+    ) {
       throw new Error(
-        `Cannot cancel invoice with status '${this.status}'. Paid invoices cannot be cancelled.`,
+        `Cannot cancel ${this.kind} with status '${this.status}' and refunded/paid amount ${this.amountPaid}.`,
       );
     }
     this.status = InvoiceStatus.CANCELLED;
+  }
+
+  /** Cancel a posted invoice with an exact atomic journal reversal. */
+  async cancelWithRevenueReversal(
+    options: CancelRevenueOptions,
+  ): Promise<Journal> {
+    const { cancelInvoiceWithRevenueReversal, rebindJournal } = await import(
+      '../invoice-posting.js'
+    );
+    return rebindJournal(
+      this.db,
+      await cancelInvoiceWithRevenueReversal(this, options),
+    );
   }
 
   /**
@@ -983,124 +1176,31 @@ export class Invoice extends SmrtObject {
   // ============================================================================
 
   /**
-   * Recognize revenue and create AR journal entry.
+   * Post the issued invoice's revenue journal from its frozen money facts.
    *
-   * Creates a balanced journal entry in smrt-ledgers:
-   * - Debit: Accounts Receivable (assets increase)
-   * - Credit: Revenue (revenue increases)
-   * - Credit: Tax Payable (liability increases, if taxAmount > 0)
+   * Debits accounts receivable with the stored total, credits each line's
+   * revenue account (or `revenueAccountId`) and each tax component's
+   * liability account (or `taxAccountId`), then links the journal to the
+   * invoice atomically. The invoice must be issued (frozen).
    *
-   * **Note**: This method saves the invoice after setting arJournalId.
-   *
-   * @param options - Account IDs for the journal entry
-   * @returns The created journal
+   * @param options - Account IDs and the ledger book currency
+   * @returns The posted journal
    *
    * @example
    * ```typescript
    * const journal = await invoice.recognizeRevenue({
    *   arAccountId: '1120',
    *   revenueAccountId: '4100',
-   *   taxAccountId: '2130'
+   *   taxAccountId: '2130',
+   *   bookCurrency: 'CAD',
    * });
    * ```
    */
   async recognizeRevenue(options: RecognizeRevenueOptions): Promise<Journal> {
-    if (this.arJournalId) {
-      throw new Error(
-        `Revenue already recognized for invoice ${this.invoiceNumber} (journal ID: ${this.arJournalId})`,
-      );
-    }
-
-    // Recompute/validate the invoice's authoritative totals BEFORE building any
-    // journal (S5 audit #1390 round 2). Round 1 built and posted the journal
-    // off stale/forged in-memory totals, then called save() — which recomputes
-    // from line items and could throw, leaving an orphaned posted journal with
-    // the wrong amount already in the books. Recomputing first means the
-    // journal is built from the same authoritative figures save() would accept,
-    // and a forged total is rejected before any ledger mutation happens.
-    const persisted = await this.isSaved();
-    await this.recomputeAmountsForSave(persisted);
-    this.assertNonNegativeAmounts();
-
-    if (this.totalAmount <= 0) {
-      throw new Error(
-        `Cannot recognize revenue for invoice ${this.invoiceNumber} with non-positive total: ${this.totalAmount}`,
-      );
-    }
-
-    if (this.taxAmount > 0 && !options.taxAccountId) {
-      throw new Error(
-        `Invoice ${this.invoiceNumber} has taxAmount ${this.taxAmount} but no taxAccountId provided`,
-      );
-    }
-
-    // Dynamic import to avoid hard dependency on smrt-ledgers
-    const { JournalCollection } = await import('@happyvertical/smrt-ledgers');
-
-    const journalCollection = await JournalCollection.create(this.options);
-
-    // Build entries array from the now-authoritative totals.
-    const entries: JournalEntryData[] = [
-      // Debit AR (assets increase)
-      {
-        accountId: options.arAccountId,
-        debit: this.totalAmount,
-        memo: `Invoice ${this.invoiceNumber}`,
-      },
-      // Credit Revenue
-      {
-        accountId: options.revenueAccountId,
-        credit: this.subtotal,
-        memo: `Invoice ${this.invoiceNumber}`,
-      },
-    ];
-
-    // Credit Tax Payable if there's tax
-    if (this.taxAmount > 0 && options.taxAccountId) {
-      entries.push({
-        accountId: options.taxAccountId,
-        credit: this.taxAmount,
-        memo: `Tax on Invoice ${this.invoiceNumber}`,
-      });
-    }
-
-    // Create journal with entries
-    const journal = await journalCollection.createWithEntries({
-      description: `Revenue: Invoice ${this.invoiceNumber}`,
-      sourceModule: 'smrt-commerce',
-      sourceRef: this.id,
-      entries,
-    });
-
-    // Post the journal, then link + persist the invoice as one logical unit. If
-    // the invoice save fails after the journal is posted, void the journal so
-    // the books don't retain a posted-but-unlinked entry (compensating action —
-    // smrt-ledgers has no cross-row transaction primitive, and a posted journal
-    // is immutable except via void()).
-    await journal.post();
-    // A posted journal always carries an id; fail fast rather than persist an
-    // empty-string FK if that invariant breaks.
-    if (!journal.id) {
-      throw new Error(
-        'Invoice.recognizeRevenue: journal was posted but has no id',
-      );
-    }
-    this.arJournalId = journal.id;
-    try {
-      await this.save();
-    } catch (err) {
-      try {
-        await journal.void(
-          `Reverted: invoice ${this.invoiceNumber} save failed during revenue recognition`,
-        );
-      } catch {
-        // Best-effort compensation; surface the original failure regardless.
-      }
-      this.arJournalId = '';
-      throw err;
-    }
-
-    return journal;
+    const { recognizeInvoiceRevenue, rebindJournal } = await import(
+      '../invoice-posting.js'
+    );
+    return rebindJournal(this.db, await recognizeInvoiceRevenue(this, options));
   }
 
   /**
@@ -1143,43 +1243,30 @@ export class Invoice extends SmrtObject {
    * await invoice.save();
    * ```
    */
-  async toAccountingInput(): Promise<AccountingInvoiceInput> {
-    // Dynamically import to avoid circular dependency
-    const { InvoiceLineItemCollection } = await import(
-      '../collections/InvoiceLineItemCollection.js'
-    );
-
-    const lineItemCollection = await InvoiceLineItemCollection.create(
-      this.options,
-    );
-    // A synced invoice is always persisted; fail fast rather than query line
-    // items under an empty id or push an invalid invoice to the provider.
-    if (!this.id) {
-      throw new Error(
-        'Invoice.toAccountingInput requires a persisted invoice (missing id)',
+  async toAccountingInput(
+    options?: FrozenInvoiceAccountingOptions,
+  ): Promise<AccountingInvoiceInput> {
+    if (!options) {
+      throw new MoneyValidationError(
+        'INVALID_MONEY_INPUT',
+        'Accounting conversion requires explicit realm mapping',
       );
     }
-    const invoiceId = this.id;
-    const lineItems = await lineItemCollection.findByInvoice(invoiceId);
-
-    return {
-      id: invoiceId,
-      externalId: this.externalId || undefined,
-      invoiceNumber: this.invoiceNumber,
-      customerId: this.customerId,
-      customerExternalId: this.customerExternalId || undefined,
-      issueDate: this.issueDate,
-      dueDate: this.dueDate,
-      lineItems: lineItems.map((item: InvoiceLineItem) =>
-        item.toAccountingLineItem(this.currency),
-      ),
-      subtotal: minorToMajorUnits(this.subtotal, this.currency),
-      taxAmount: minorToMajorUnits(this.taxAmount, this.currency),
-      totalAmount: minorToMajorUnits(this.totalAmount, this.currency),
-      currency: this.currency,
-      reference: this.reference || undefined,
-      memo: this.customerNotes || undefined,
-    };
+    if (!this.id || !this.tenantId) {
+      throw new MoneyValidationError(
+        'INVALID_MONEY_INPUT',
+        'Accounting conversion requires a persisted tenant invoice',
+      );
+    }
+    const { toFrozenInvoiceAccountingInput } = await import(
+      '../invoice-accounting-sync.js'
+    );
+    return toFrozenInvoiceAccountingInput({
+      db: this.db,
+      tenantId: this.tenantId,
+      invoiceId: this.id,
+      mapping: options.mapping,
+    });
   }
 }
 

@@ -3,25 +3,121 @@
  * @packageDocumentation
  */
 
-import { SmrtCollection } from '@happyvertical/smrt-core';
-import { queryGlobal, queryWithGlobals } from '@happyvertical/smrt-tenancy';
-import { Contract } from '../models/Contract.js';
+import {
+  SmrtCollection,
+  type SmrtListOptions,
+  type SmrtObject,
+  type SmrtSelectedRow,
+  type SmrtSelectField,
+  type SmrtStiReadScope,
+  type SmrtWhereClause,
+} from '@happyvertical/smrt-core';
+import {
+  getTenantId,
+  queryGlobal,
+  queryWithGlobals,
+} from '@happyvertical/smrt-tenancy';
+import { DOCUMENT_MONEY_READ_REBIND } from '../document-money-internal.js';
+import {
+  Contract,
+  isContractSnapshotReportEligible,
+} from '../models/Contract.js';
+import { withTenantMoneyCollectionRead } from '../tenant-money-barrier.js';
 import { ContractStatus, ContractType } from '../types/index.js';
+import { assertCommerceMoneySchemaCurrent } from '../upgrade/detect.js';
+import { PurchaseContractCollection } from './PurchaseContractCollection.js';
+import { SalesContractCollection } from './SalesContractCollection.js';
 
 export class ContractCollection extends SmrtCollection<Contract> {
   static readonly _itemClass = Contract;
+
+  private async withMoneyRead<T>(operation: () => Promise<T>): Promise<T> {
+    const rootDb = this.db;
+    const tenantId = getTenantId();
+    if (!tenantId) {
+      // Without a tenant, still refuse a database with old money storage.
+      await assertCommerceMoneySchemaCurrent(rootDb);
+      return operation();
+    }
+    const result = await withTenantMoneyCollectionRead(
+      rootDb,
+      tenantId,
+      (boundDb) => this.withDatabase(boundDb, operation),
+    );
+    if (result instanceof Contract)
+      result.rebindMoneyRead(DOCUMENT_MONEY_READ_REBIND, rootDb);
+    else if (Array.isArray(result))
+      for (const item of result)
+        if (item instanceof Contract)
+          item.rebindMoneyRead(DOCUMENT_MONEY_READ_REBIND, rootDb);
+    return result;
+  }
+
+  override async get(
+    filter: string | SmrtWhereClause<Contract>,
+    options: Parameters<SmrtCollection<Contract>['get']>[1] = {},
+  ): Promise<Contract | null> {
+    return this.withMoneyRead(() => super.get(filter, options));
+  }
+
+  override async list<
+    const Select extends readonly SmrtSelectField<Contract>[],
+  >(
+    options: Omit<SmrtListOptions<Contract>, 'select' | 'stiScope'> & {
+      select: Select;
+      include?: never;
+      stiScope: SmrtStiReadScope;
+    },
+  ): Promise<Record<string, unknown>[]>;
+  override async list<
+    const Select extends readonly SmrtSelectField<Contract>[],
+  >(
+    options: Omit<SmrtListOptions<Contract>, 'select' | 'stiScope'> & {
+      select: Select;
+      include?: never;
+      stiScope?: undefined;
+    },
+  ): Promise<SmrtSelectedRow<Contract, Select>[]>;
+  override async list(
+    options: Omit<SmrtListOptions<Contract>, 'select' | 'stiScope'> & {
+      select?: undefined;
+      stiScope: SmrtStiReadScope;
+    },
+  ): Promise<SmrtObject[]>;
+  override async list(options?: undefined): Promise<Contract[]>;
+  override async list(
+    options: Omit<SmrtListOptions<Contract>, 'select' | 'stiScope'> & {
+      select?: undefined;
+      stiScope?: undefined;
+    },
+  ): Promise<Contract[]>;
+  override async list(
+    options:
+      | (Omit<SmrtListOptions<Contract>, 'select'> & { select?: undefined })
+      | undefined,
+  ): Promise<SmrtObject[]>;
+  override async list(
+    options: SmrtListOptions<Contract> | undefined,
+  ): Promise<SmrtObject[] | Record<string, unknown>[]>;
+  override async list(
+    options: SmrtListOptions<Contract> = {},
+  ): Promise<SmrtObject[] | Record<string, unknown>[]> {
+    return this.withMoneyRead(() => super.list(options));
+  }
 
   /**
    * Find contracts by customer
    *
    * @param customerId - Customer ID
    * @returns Array of contracts
+   * @deprecated Use SalesContractCollection.findByCustomer.
    */
   async findByCustomer(customerId: string): Promise<Contract[]> {
-    return await this.list({
-      where: { customerId },
-      orderBy: 'created_at DESC',
+    const sales = await SalesContractCollection.create({
+      ...this.options,
+      db: this.db,
     });
+    return sales.findByCustomer(customerId);
   }
 
   /**
@@ -29,12 +125,34 @@ export class ContractCollection extends SmrtCollection<Contract> {
    *
    * @param vendorId - Vendor ID
    * @returns Array of contracts
+   * @deprecated Use PurchaseContractCollection.findByVendor.
    */
   async findByVendor(vendorId: string): Promise<Contract[]> {
-    return await this.list({
-      where: { vendorId },
-      orderBy: 'created_at DESC',
+    const purchases = await PurchaseContractCollection.create({
+      ...this.options,
+      db: this.db,
     });
+    return purchases.findByVendor(vendorId);
+  }
+
+  /**
+   * Hydrate a bounded tenant/date report candidate set once, retaining exact
+   * STI descendants so callers can classify custom purchase types safely.
+   */
+  async listSnapshotReportContracts(options: {
+    tenantId: string;
+    from: Date;
+    to: Date;
+  }): Promise<Contract[]> {
+    const contracts = await this.list({
+      where: {
+        tenantId: options.tenantId,
+        'issueDate >=': options.from.toISOString(),
+        'issueDate <=': options.to.toISOString(),
+      },
+      orderBy: 'issueDate ASC',
+    });
+    return contracts.filter(isContractSnapshotReportEligible);
   }
 
   /**

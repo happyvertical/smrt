@@ -5,7 +5,8 @@
  * screen set for a package that ships models but no consumer UI: tags, facts,
  * secrets, profiles, reports, prompts and the like.
  *
- * It composes `ListScreen`, `DetailScreen` and `EditForm` over a
+ * It composes `ListScreen`, `RecordScreen` (view and edit, the record view
+ * with its related-records overview) and `EditForm` (create) over a
  * transport-neutral `source` (list / get / create / update / delete). The
  * `view` and `recordId` props are bindable so an app can mirror them into its
  * router (`onnavigate` fires on every user navigation); left unbound, the
@@ -18,10 +19,11 @@ import { useI18n } from '@happyvertical/smrt-ui/i18n';
 import { Button } from '@happyvertical/smrt-ui/ui';
 import { untrack } from 'svelte';
 import { M } from '../../i18n/strings.screens.js';
-import DetailScreen from './DetailScreen.svelte';
 import EditForm from './EditForm.svelte';
 import { screenTitles } from './fields.js';
 import ListScreen from './ListScreen.svelte';
+import RecordScreen from './RecordScreen.svelte';
+import { deriveScreenRelations } from './relations.js';
 import type {
   RecipeScreensProps,
   RecipeScreensSource,
@@ -44,6 +46,8 @@ let {
   locale,
   can = {},
   onnavigate,
+  definitions,
+  record: recordProps = {},
 }: RecipeScreensProps = $props();
 
 const { t } = useI18n();
@@ -53,6 +57,9 @@ const idField = $derived(definition.idField ?? 'id');
 const allowCreate = $derived(can.create !== false && !!source.create);
 const allowUpdate = $derived(can.update !== false && !!source.update);
 const allowDelete = $derived(can.delete !== false && !!source.delete);
+const relations = $derived(
+  definitions ? deriveScreenRelations(definitions, definition.objectRef) : [],
+);
 
 let rows = $state<readonly ScreenRecord[]>([]);
 let loading = $state(true);
@@ -182,33 +189,26 @@ async function remove(): Promise<void> {
       />
   {:else if (view === 'view' || view === 'edit') && recordId !== null}
     {#if current}
-      {#if view === 'edit' && allowUpdate}
-        {#key recordId}
-          <EditForm
-            {definition}
-            {policy}
-            {currency}
-            {fields}
-            record={current}
-            submitting={saving}
-            onsubmit={update}
-            oncancel={() => navigate('view', recordId)}
-          />
-        {/key}
-      {:else}
-        <DetailScreen
+      {#key definition.objectRef}
+        <RecordScreen
           {definition}
           {policy}
           {currency}
           {locale}
           {fields}
+          {relations}
           record={current}
+          mode={view === 'edit' && allowUpdate ? 'edit' : 'view'}
           {deleting}
+          submitting={saving}
           onback={() => navigate('list')}
           onedit={allowUpdate ? () => navigate('edit', recordId) : undefined}
+          oncancel={() => navigate('view', recordId)}
+          onsave={allowUpdate ? update : undefined}
           ondelete={allowDelete ? remove : undefined}
+          {...recordProps}
         />
-      {/if}
+      {/key}
     {:else if !resolving}
       <Alert variant="warning">{t(M['ui.screens.not_found'])}</Alert>
       <Button variant="ghost" onclick={() => navigate('list')}>

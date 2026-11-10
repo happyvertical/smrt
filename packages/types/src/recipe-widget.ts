@@ -82,12 +82,23 @@ export interface RecipeWidgetSurface {
   version?: number;
   /** Export of the `migrate(options, fromVersion)` function; needs `version` above 1. */
   migrate?: RecipeExportRef;
+  /** Optional Svelte editor for dependent or remotely loaded option choices. */
+  optionsEditor?: RecipeExportRef;
   /** The widget's options; omitted means none. */
   options?: readonly RecipeWidgetOption[];
   /** Data needs; omitted for a widget that renders from its options alone. */
   data?: RecipeWidgetData;
   /** Overview ids the widget may appear in; omitted means any. */
   allowedIn?: readonly string[];
+  /**
+   * The widget is the recipe's section page: when this recipe leads a
+   * navigation section (the first recipe suggesting it), a host that renders
+   * data widgets defaults that section's overview to this widget at full
+   * width, in place of the generic shortcuts, count and latest records. At
+   * most one per recipe; every required option needs a `default`, because the
+   * default is placed with no options. The person can still edit the page.
+   */
+  sectionDefault?: boolean;
   /** Column spans, 1 to 4 (`minSpan <= defaultSpan <= maxSpan`). */
   defaultSpan?: number;
   minSpan?: number;

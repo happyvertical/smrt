@@ -27,15 +27,22 @@ vi.mock('node:fs', () => ({
     },
   ),
   readdirSync: vi.fn(),
-  statSync: vi.fn(),
+  statSync: vi.fn(() => ({ isFile: () => true, isDirectory: () => false })),
   unlinkSync: vi.fn(),
 }));
 
-// consumerHasSmrtUsers (resources-route.ts, #2663) resolves via
-// node:module's createRequire rather than existsSync — see that module's
-// doc comment. Mock the require it constructs so _resources tests below
-// control whether resolution succeeds.
-const mockSmrtUsersResolve = vi.fn<(specifier: string) => string>();
+// The users and application-runtime ESM probes have independent fixture
+// controls. The separate CommonJS mock preserves unrelated dev-plane detection.
+const mockSmrtUsersResolve =
+  vi.fn<(specifier: string, parent?: string) => string>();
+const mockSmrtAppRuntimeResolve =
+  vi.fn<(specifier: string, parent: string) => string>();
+vi.mock('import-meta-resolve', () => ({
+  resolve: (specifier: string, parent: string) =>
+    specifier === '@happyvertical/smrt-app-runtime/sveltekit'
+      ? mockSmrtAppRuntimeResolve(specifier, parent)
+      : mockSmrtUsersResolve(specifier, parent),
+}));
 vi.mock('node:module', () => ({
   createRequire: () => ({ resolve: mockSmrtUsersResolve }),
 }));
@@ -192,20 +199,88 @@ describe('SvelteKit Route Generator', () => {
     vi.mocked(existsSync).mockReturnValue(false);
     vi.mocked(readFileSync).mockReturnValue('');
     vi.mocked(readdirSync).mockReturnValue([]);
-    // Consumer resolution: every package resolves except the application
-    // runtime, so the default config stays the self-contained legacy shape.
+    mockSmrtAppRuntimeResolve.mockImplementation((specifier) => {
+      throw Object.assign(new Error(`Cannot find module '${specifier}'`), {
+        code: 'ERR_MODULE_NOT_FOUND',
+      });
+    });
+    // The default config stays the self-contained legacy shape while the
+    // independently controlled users discovery endpoint remains available.
     mockSmrtUsersResolve.mockImplementation((specifier) => {
       if (specifier.startsWith('@happyvertical/smrt-app-runtime')) {
         throw Object.assign(new Error(`Cannot find module '${specifier}'`), {
           code: 'MODULE_NOT_FOUND',
         });
       }
-      return `/fake/node_modules/${specifier}.js`;
+      return `file:///fake/node_modules/${specifier}.js`;
     });
   });
 
   afterEach(() => {
     vi.clearAllMocks();
+  });
+
+  it('gates aliased actions and keeps action envelopes', async () => {
+    const manifest: SmartObjectManifest = {
+      version: '1',
+      timestamp: 0,
+      objects: {
+        Report: {
+          className: 'Report',
+          name: 'Report',
+          filePath: '',
+          collection: 'reports',
+          fields: {},
+          methods: Object.fromEntries(
+            ['run', 'archive', 'publish'].map((name) => [
+              name,
+              {
+                name,
+                async: true,
+                isStatic: false,
+                parameters: [],
+                returnType: 'Promise<void>',
+                isPublic: true,
+              },
+            ]),
+          ),
+          decoratorConfig: {
+            operationPermissions: {
+              run: { action: 'read' },
+              archive: { action: 'create' },
+            },
+            api: {
+              include: ['run', 'archive', 'publish'],
+              routes: {
+                run: { method: 'POST' },
+                archive: { method: 'POST' },
+                publish: { method: 'POST' },
+              },
+            },
+          },
+        },
+      },
+    };
+    await generateSvelteKitRoutes(projectRoot, manifest, {
+      enabled: true,
+      routesDir: 'src/routes/api',
+      objectsDir: 'src/lib/objects',
+    });
+    for (const [action, permission] of [
+      ['run', 'read'],
+      ['archive', 'create'],
+      ['publish', 'publish'],
+    ]) {
+      const write = vi
+        .mocked(writeFileSync)
+        .mock.calls.find(([path]) =>
+          String(path).includes(`reports/[id]/${action}/+server.ts`),
+        );
+      expect(write?.[1]).toContain(
+        `requireRoutePermission(locals, "${permission}");`,
+      );
+      expect(write?.[1]).toContain(`action: '${action}',`);
+    }
   });
 
   describe('Configuration File Generation', () => {
@@ -280,8 +355,8 @@ describe('SvelteKit Route Generator', () => {
 
     it('generates a runtime-shaped config when the app installs smrt-app-runtime (#3416)', async () => {
       vi.mocked(existsSync).mockReturnValue(false);
-      mockSmrtUsersResolve.mockImplementation(
-        (specifier) => `/fake/node_modules/${specifier}.js`,
+      mockSmrtAppRuntimeResolve.mockImplementation(
+        (specifier) => `file:///fake/node_modules/${specifier}.js`,
       );
 
       await generateSvelteKitRoutes(
@@ -532,7 +607,11 @@ describe('SvelteKit Route Generator', () => {
         );
       expect(route).toBeDefined();
       const content = route?.[1] as string;
-      expectGetCollectionCall(content, 'Widget', 'Widget');
+      expectGetCollectionCall(
+        content,
+        '@test/sveltekit:SpecialWidgetCollection',
+        'Widget',
+      );
       expect(content).not.toContain("getCollection('SpecialWidget')");
       // The inherited collection's write action is gated on the resolved
       // item's collection, matching the permission catalog (#2977).
@@ -655,8 +734,8 @@ describe('SvelteKit Route Generator', () => {
         );
       expect(route).toBeDefined();
       const content = route?.[1] as string;
-      expect(content).toContain("    'Widget',");
-      expect(content).not.toContain("'WidgetCollection'");
+      expectGetCollectionCall(content, 'WidgetCollection');
+      expect(content).not.toContain("    'Widget',");
     });
 
     it('should skip config generation when file already exists', async () => {
@@ -819,8 +898,9 @@ describe('SvelteKit Route Generator', () => {
       expect(registrationContent).toMatch(
         /ObjectRegistry\.register\(LocalThing,\s*\{\s*name: 'LocalThing',\s*packageName: '@test\/app',\s*_manifest: smrtRegistrationManifests\['LocalThing'\],\s*_manifestKey: 'LocalThing',\s*\}\);/s,
       );
-      expect(registrationContent).toMatch(
-        /ObjectRegistry\.register\(ExternalThing,\s*\{\s*name: 'ExternalThing',\s*packageName: '@test\/pkg',\s*_manifest: smrtRegistrationManifests\['@test\/pkg:ExternalThing'\],\s*_manifestKey: '@test\/pkg:ExternalThing',\s*\}\);/s,
+      expect(registrationContent).not.toContain("from '@test/pkg'");
+      expect(registrationContent).not.toContain(
+        'ObjectRegistry.register(ExternalThing',
       );
       expect(registrationContent).toContain(
         'const smrtRegistrationManifests = JSON.parse(',
@@ -897,6 +977,83 @@ describe('SvelteKit Route Generator', () => {
       );
       expect(registrationContent).not.toContain(
         'ObjectRegistry.register(UnqualifiedThing, {});',
+      );
+    });
+
+    it('binds only named action hosts with collision-safe external constructor imports', async () => {
+      vi.mocked(existsSync).mockReturnValue(false);
+      const objects: SmartObjectManifest['objects'] = {};
+      for (const [index, packageName] of ['@test/a', '@test/b'].entries()) {
+        objects[`${packageName}:Actions`] = {
+          name: 'Actions',
+          className: 'Actions',
+          packageName,
+          qualifiedName: `${packageName}:Actions`,
+          importPath: `${packageName}/collections`,
+          exportName: 'ExportedActions',
+          filePath: `/virtual/node_modules/${packageName}/dist/Actions.js`,
+          collection: `actions${index}`,
+          extends: 'SmrtCollection',
+          fields: {},
+          methods: {
+            submit: {
+              name: 'submit',
+              async: false,
+              isStatic: true,
+              isPublic: true,
+              parameters: [],
+              returnType: 'void',
+            },
+          },
+          decoratorConfig: {
+            api: { include: ['submit'] },
+            cli: { include: ['submit'] },
+          },
+        };
+      }
+      objects.Ordinary = {
+        name: 'Ordinary',
+        className: 'Ordinary',
+        packageName: '@test/ordinary',
+        filePath: '/virtual/node_modules/@test/ordinary/dist/Ordinary.js',
+        collection: 'ordinary',
+        extends: 'SmrtCollection',
+        fields: {},
+        methods: {},
+        decoratorConfig: { api: false, cli: true },
+      };
+      await generateSvelteKitRoutes(
+        projectRoot,
+        { version: '1', timestamp: 0, objects },
+        {
+          enabled: true,
+          routesDir: 'src/routes/api',
+          objectsDir: 'src/lib/objects',
+          configPath: 'src/lib/server',
+        },
+      );
+      const content = String(
+        vi
+          .mocked(writeFileSync)
+          .mock.calls.find((call) =>
+            String(call[0]).endsWith('smrt-register.ts'),
+          )?.[1],
+      );
+      expect(content).toContain(
+        "import { ExportedActions as __smrt_Actions_1 } from '@test/a/collections';",
+      );
+      expect(content).toContain(
+        "import { ExportedActions as __smrt_Actions_2 } from '@test/b/collections';",
+      );
+      expect(content).toContain(
+        'ObjectRegistry.registerCollection("@test/a:Actions", __smrt_Actions_1);',
+      );
+      expect(content).toContain(
+        'ObjectRegistry.registerCollection("@test/b:Actions", __smrt_Actions_2);',
+      );
+      expect(content).toContain("import '@test/ordinary';");
+      expect(content).not.toContain(
+        'ObjectRegistry.registerCollection("@test/ordinary:Ordinary"',
       );
     });
 
@@ -2913,6 +3070,48 @@ describe('SvelteKit Route Generator', () => {
   });
 
   describe('Collection Class Filtering', () => {
+    it('withholds collection methods attached to an abstract item', () => {
+      const abstractItem = {
+        className: 'AbstractInvitation',
+        name: 'abstractinvitation',
+        collection: 'invitations',
+        fields: {},
+        methods: {},
+        decoratorConfig: { abstract: true, api: { include: ['list', 'get'] } },
+        filePath: '/test/project/AbstractInvitation.ts',
+      };
+      const collection = {
+        className: 'AbstractInvitationCollection',
+        name: 'abstractinvitationcollection',
+        collection: 'invitations',
+        fields: {},
+        methods: {
+          browse: {
+            name: 'browse',
+            isPublic: true,
+            isStatic: false,
+            async: true,
+            returnType: 'void',
+            parameters: [],
+          },
+        },
+        decoratorConfig: { api: { include: ['browse'] } },
+        extends: 'SmrtCollection',
+        extendsTypeArg: 'AbstractInvitation',
+        filePath: '/test/project/AbstractInvitationCollection.ts',
+      };
+      const manifest: SmartObjectManifest = {
+        version: '1',
+        timestamp: 0,
+        objects: {
+          AbstractInvitation: abstractItem,
+          AbstractInvitationCollection: collection,
+        },
+      };
+
+      expect(resolveApiActionSet(collection, manifest)).toEqual(new Set());
+    });
+
     it('should generate collection class methods as collection-scoped routes', async () => {
       const consoleSpy = vi.spyOn(console, 'log').mockImplementation(() => {});
 
@@ -2999,7 +3198,11 @@ describe('SvelteKit Route Generator', () => {
         );
       expect(findByTokenRoute).toBeDefined();
       const findByTokenContent = findByTokenRoute?.[1] as string;
-      expectGetCollectionCall(findByTokenContent, 'Invitation', 'Invitation');
+      expectGetCollectionCall(
+        findByTokenContent,
+        'InvitationCollection',
+        'Invitation',
+      );
       expect(findByTokenContent).toMatch(
         /await (?:typedCollection|collection)\.findByToken\(options(?:\["token"\]|\.token)\)/,
       );
@@ -4350,7 +4553,7 @@ describe('SvelteKit Route Generator', () => {
     function resolveSmrtUsers(): void {
       mockSmrtUsersResolve.mockImplementation((specifier) => {
         if (specifier === '@happyvertical/smrt-users/sveltekit') {
-          return '/fake/node_modules/@happyvertical/smrt-users/dist/sveltekit.js';
+          return 'file:///fake/node_modules/@happyvertical/smrt-users/dist/sveltekit.js';
         }
         throw Object.assign(new Error(`Cannot find module '${specifier}'`), {
           code: 'MODULE_NOT_FOUND',
@@ -4506,7 +4709,7 @@ describe('consumer external import and reserved resource routes (#2852)', () => 
         ? 'export const GET = () => new Response();'
         : '',
     );
-    mockSmrtUsersResolve.mockImplementation(() => '/fake/sveltekit.js');
+    mockSmrtUsersResolve.mockImplementation(() => 'file:///fake/sveltekit.js');
     const manifest: SmartObjectManifest = {
       version: '1',
       timestamp: 0,

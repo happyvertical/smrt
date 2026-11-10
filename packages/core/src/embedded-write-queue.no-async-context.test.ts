@@ -1,3 +1,4 @@
+import type { DatabaseInterface } from '@happyvertical/sql';
 import { describe, expect, it, vi } from 'vitest';
 
 /** Hide (or restore) `process.getBuiltinModule`, the Node-host probe. */
@@ -38,6 +39,31 @@ describe('withEmbeddedWriteQueue without async context', () => {
       ]);
       expect(result).toBe('done');
       expect(order).toEqual(['outer:start', 'inner', 'outer:end']);
+    } finally {
+      setBuiltinModuleProbe(real);
+    }
+  });
+
+  it('tracks only the bound transaction across awaits and clears rejected scopes', async () => {
+    const real = process.getBuiltinModule;
+    setBuiltinModuleProbe(undefined);
+    vi.resetModules();
+    try {
+      const { isKnownDatabaseTransaction, withCallerOwnedDatabaseTransaction } =
+        await import('./embedded-write-queue.js');
+      const tx = {} as DatabaseInterface;
+      const other = {} as DatabaseInterface;
+      await expect(
+        withCallerOwnedDatabaseTransaction(tx, async () => {
+          await Promise.resolve();
+          expect(isKnownDatabaseTransaction(tx)).toBe(true);
+          expect(isKnownDatabaseTransaction(other)).toBe(false);
+          await withCallerOwnedDatabaseTransaction(tx, async () => {});
+          expect(isKnownDatabaseTransaction(tx)).toBe(true);
+          throw new Error('caller failed');
+        }),
+      ).rejects.toThrow('caller failed');
+      expect(isKnownDatabaseTransaction(tx)).toBe(false);
     } finally {
       setBuiltinModuleProbe(real);
     }

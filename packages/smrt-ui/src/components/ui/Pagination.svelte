@@ -32,6 +32,12 @@ export interface Props {
   showFirstLast?: boolean;
   /** Maximum number of visible page numbers */
   maxVisible?: number;
+  /**
+   * Control target density. `touch` raises every page and nav control to
+   * `--smrt-touch-target-min`; omit to inherit the ThemeProvider setting
+   * (`--smrt-control-target-min`).
+   */
+  density?: 'comfortable' | 'touch';
 }
 
 const {
@@ -42,6 +48,7 @@ const {
   'aria-label': ariaLabel = 'Pagination',
   showFirstLast = true,
   maxVisible = 5,
+  density,
 }: Props = $props();
 
 function getPageUrl(page: number): string {
@@ -106,7 +113,7 @@ const isLastPage = $derived(currentPage === totalPages);
 </script>
 
 {#if totalPages > 1}
-  <nav class="pagination" aria-label={ariaLabel} data-smrt-component="Pagination">
+  <nav class="pagination" data-density={density} aria-label={ariaLabel} data-smrt-component="Pagination">
     <!-- First page -->
     {#if showFirstLast}
       {#if onPageChange}
@@ -202,11 +209,16 @@ const isLastPage = $derived(currentPage === totalPages);
     flex-wrap: wrap;
   }
 
+  .pagination[data-density='touch'] { --smrt-control-target-min: var(--smrt-touch-target-min); }
+  .pagination[data-density='comfortable'] { --smrt-control-target-min: 0px; }
+
   .page-numbers {
     list-style: none;
     display: flex;
     align-items: center;
     gap: var(--smrt-spacing-1, 0.25rem);
+    flex-wrap: wrap;
+    justify-content: center;
     margin: 0;
     padding: 0;
   }
@@ -220,8 +232,9 @@ const isLastPage = $derived(currentPage === totalPages);
     display: inline-flex;
     align-items: center;
     justify-content: center;
-    min-width: 2.25rem;
+    min-width: max(2.25rem, var(--smrt-control-target-min));
     height: 2.25rem;
+    min-height: var(--smrt-control-target-min);
     padding: 0 var(--smrt-spacing-2, 0.5rem);
     border-radius: var(--smrt-radius-small, 0.25rem);
     font-size: var(--smrt-typography-body-medium-size, 0.875rem);
@@ -286,7 +299,7 @@ const isLastPage = $derived(currentPage === totalPages);
 
   @media (max-width: 480px) {
     .page-link {
-      min-width: 2rem;
+      min-width: max(2rem, var(--smrt-control-target-min));
       height: 2rem;
       font-size: var(--smrt-typography-body-medium-size, 0.8125rem);
     }

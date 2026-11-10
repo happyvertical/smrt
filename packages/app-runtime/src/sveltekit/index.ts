@@ -15,32 +15,6 @@
  */
 
 export {
-  createRuntimeDiagnosticsHandler,
-  createRuntimeHealthHandler,
-  createSessionLayoutLoad,
-  type DiagnosticsPrincipalLocals,
-  RUNTIME_DIAGNOSTICS_READ_PERMISSION,
-  type RuntimeDiagnosticsHandlerOptions,
-  type SessionLayoutData,
-  type SessionLayoutUser,
-} from './handlers.js';
-export {
-  createOwnerSetupPage,
-  DEFAULT_OWNER_SETUP_MESSAGES,
-  isLoopbackAddress,
-  isLoopbackHostname,
-  isLoopbackRequest,
-  OWNER_SETUP_FIELDS,
-  type OwnerSetupActionEvent,
-  type OwnerSetupErrorCode,
-  type OwnerSetupEvent,
-  type OwnerSetupFailure,
-  type OwnerSetupLinkState,
-  type OwnerSetupPage,
-  type OwnerSetupPageData,
-  type OwnerSetupPageOptions,
-} from './owner-setup.js';
-export {
   type ApplicationRuntimeDiagnosticsOptions,
   authorizedTenantLocalsHandle,
   composeHandles,
@@ -62,7 +36,40 @@ export {
   type TenantBindingMode,
   type WriterLease,
   type WriterLeaseContext,
-} from './runtime.js';
+} from '@happyvertical/smrt-app-runtime/sveltekit-runtime';
+export {
+  createRuntimeDiagnosticsHandler,
+  createRuntimeHealthHandler,
+  createSessionLayoutLoad,
+  type DiagnosticsPrincipalLocals,
+  RUNTIME_DIAGNOSTICS_READ_PERMISSION,
+  type RuntimeDiagnosticsHandlerOptions,
+  type SessionLayoutData,
+  type SessionLayoutUser,
+} from './handlers.js';
+export { createLocalMcpCredentialHandler } from './local-mcp-credentials.js';
+export {
+  createOwnerLinkHandler,
+  OWNER_LINK_ROUTE,
+  OWNER_LINK_SECRET_ENV,
+  type OwnerLinkHandlerOptions,
+} from './owner-link.js';
+export {
+  createOwnerSetupPage,
+  DEFAULT_OWNER_SETUP_MESSAGES,
+  isLoopbackAddress,
+  isLoopbackHostname,
+  isLoopbackRequest,
+  OWNER_SETUP_FIELDS,
+  type OwnerSetupActionEvent,
+  type OwnerSetupErrorCode,
+  type OwnerSetupEvent,
+  type OwnerSetupFailure,
+  type OwnerSetupLinkState,
+  type OwnerSetupPage,
+  type OwnerSetupPageData,
+  type OwnerSetupPageOptions,
+} from './owner-setup.js';
 export { createSignOutHandler } from './sign-out.js';
 export {
   createSubdomainTenantSelector,

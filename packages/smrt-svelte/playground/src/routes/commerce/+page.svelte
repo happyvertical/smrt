@@ -3,6 +3,7 @@ import type {
   InvoiceData,
   InvoiceStatus,
   LineItem,
+  RetainedInvoiceTotalsView,
   UnbilledItem,
 } from '@happyvertical/smrt-commerce/svelte';
 import {
@@ -82,6 +83,30 @@ const lineItems: LineItem[] = [
     category: 'Infrastructure',
   },
 ];
+
+// Stored invoice totals in minor units; InvoiceTotals never derives tax.
+const demoTotals: RetainedInvoiceTotalsView = {
+  currency: 'USD',
+  subtotalMinor: 700000,
+  taxes: [{ id: 'sales-tax', label: 'Tax (5%)', amountMinor: 35000 }],
+  totalMinor: 735000,
+};
+const basicTotals: RetainedInvoiceTotalsView = {
+  currency: 'USD',
+  subtotalMinor: 500000,
+  totalMinor: 500000,
+};
+const taxedTotals: RetainedInvoiceTotalsView = {
+  currency: 'USD',
+  subtotalMinor: 500000,
+  taxes: [{ id: 'sales-tax', label: 'Tax (5%)', amountMinor: 25000 }],
+  totalMinor: 525000,
+};
+const paidTotals: RetainedInvoiceTotalsView = {
+  ...taxedTotals,
+  paidMinor: 200000,
+  payableMinor: 325000,
+};
 
 // Sample unbilled items
 let unbilledItems: UnbilledItem[] = $state([
@@ -168,12 +193,7 @@ function handleCreateInvoice(ids: string[]) {
       showSource
     />
 
-    <InvoiceTotals
-      subtotal={700000}
-      taxRate={5}
-      total={735000}
-      showTax
-    />
+    <InvoiceTotals retained={demoTotals} />
 
     <InvoiceActions
       status={demoStatus}
@@ -206,15 +226,15 @@ function handleCreateInvoice(ids: string[]) {
   <div class="demo-row">
     <div class="demo-box" style="flex: 1;">
       <h4>Basic</h4>
-      <InvoiceTotals subtotal={500000} total={500000} showTax={false} />
+      <InvoiceTotals retained={basicTotals} />
     </div>
     <div class="demo-box" style="flex: 1;">
       <h4>With Tax</h4>
-      <InvoiceTotals subtotal={500000} taxRate={5} total={525000} />
+      <InvoiceTotals retained={taxedTotals} />
     </div>
     <div class="demo-box" style="flex: 1;">
       <h4>With Payment</h4>
-      <InvoiceTotals subtotal={500000} taxRate={5} total={525000} amountPaid={200000} showPaid />
+      <InvoiceTotals retained={paidTotals} />
     </div>
   </div>
 </section>
@@ -281,12 +301,9 @@ function handleCreateInvoice(ids: string[]) {
       <tr><th>Prop</th><th>Type</th><th>Description</th></tr>
     </thead>
     <tbody>
-      <tr><td><code>subtotal</code></td><td><code>number</code></td><td>Subtotal in cents</td></tr>
-      <tr><td><code>taxRate</code></td><td><code>number</code></td><td>Tax rate percentage</td></tr>
-      <tr><td><code>total</code></td><td><code>number</code></td><td>Total in cents</td></tr>
-      <tr><td><code>amountPaid</code></td><td><code>number</code></td><td>Amount paid in cents</td></tr>
-      <tr><td><code>showTax</code></td><td><code>boolean</code></td><td>Show tax breakdown</td></tr>
-      <tr><td><code>showPaid</code></td><td><code>boolean</code></td><td>Show payment status</td></tr>
+      <tr><td><code>retained</code></td><td><code>RetainedInvoiceTotalsView</code></td><td>Stored totals in minor units: currency, subtotal, optional discount, tax rows, holdback, paid and payable</td></tr>
+      <tr><td><code>details</code></td><td><code>Snippet</code></td><td>Extra retained totals evidence</td></tr>
+      <tr><td><code>size</code></td><td><code>'sm' | 'md' | 'lg'</code></td><td>Size variant</td></tr>
     </tbody>
   </table>
 

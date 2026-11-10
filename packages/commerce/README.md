@@ -1,6 +1,6 @@
 # @happyvertical/smrt-commerce
 
-Commerce models for the s-m-r-t framework. Covers customers, vendors, contracts (9 STI types), invoices with ledger integration, payments, and fulfillment tracking.
+Commerce models for the s-m-r-t framework. Covers customers, vendors, contracts (10 STI types), invoices with ledger integration, payments, and fulfillment tracking.
 
 ## Installation
 
@@ -11,86 +11,254 @@ pnpm add @happyvertical/smrt-commerce
 ## Usage
 
 ```typescript
+import { withTenant } from '@happyvertical/smrt-tenancy';
 import {
-  Customer, CustomerCollection,
-  Order, ContractCollection,
-  Invoice, InvoiceCollection,
-  Payment, PaymentCollection,
-  ContractStatus, InvoiceStatus, PaymentMethod
+  CustomerCollection,
+  ContractCollection,
+  InvoiceCollection,
+  InvoiceLineItemCollection,
+  PaymentCollection,
+  PaymentMethod,
+  ensureCommerceTenant,
 } from '@happyvertical/smrt-commerce';
 
-// Create a customer linked to a profile
-const customers = await CustomerCollection.create({ db });
-const customer = await customers.create({
-  profileId: 'profile-uuid',
-  creditLimit: 1000000, // $10,000.00 — money is integer minor units
-  paymentTerms: 'Net 30',
-});
-await customer.save();
+// Once per tenant, after the host creates it: tax settings and standard codes.
+await ensureCommerceTenant(db, tenantId);
 
-// Create an order (STI contract type)
-const contracts = await ContractCollection.create({ db });
-const order = await contracts.create({
-  _meta_type: 'Order',
-  customerId: customer.id,
-  subtotal: 100000, // $1,000.00
-  taxAmount: 5000, // $50.00
-  totalAmount: 105000, // $1,050.00
-  currency: 'CAD',
-});
-await order.save();
+// Money documents (invoices, contracts, and their lines) belong to a tenant.
+await withTenant({ tenantId }, async () => {
+  // Create a customer linked to a profile
+  const customers = await CustomerCollection.create({ db });
+  const customer = await customers.create({
+    profileId: 'profile-uuid',
+    creditLimit: 1000000, // $10,000.00 — money is integer minor units
+    paymentTerms: 'Net 30',
+  });
 
-// Create an invoice for the order
-const invoices = await InvoiceCollection.create({ db });
-const invoiceNumber = await invoices.generateInvoiceNumber();
-const invoice = await invoices.create({
-  customerId: customer.id,
-  contractId: order.id,
-  invoiceNumber,
-  subtotal: 100000, // $1,000.00
-  taxAmount: 5000, // $50.00
-  totalAmount: 105000, // $1,050.00
-});
-await invoice.save();
+  // Create an order (STI contract type)
+  const contracts = await ContractCollection.create({ db });
+  const order = await contracts.create({
+    _meta_type: 'Order',
+    customerId: customer.id,
+    currency: 'CAD',
+  });
 
-// Recognize revenue (creates balanced journal in smrt-ledgers)
-await invoice.recognizeRevenue({
-  arAccountId: 'ar-account-id',
-  revenueAccountId: 'revenue-account-id',
-  taxAccountId: 'tax-account-id',
-});
+  // Create an invoice. The server resolves each line's tax code and computes
+  // line tax and the header totals; header amounts are never inputs.
+  const invoices = await InvoiceCollection.create({ db });
+  const invoice = await invoices.create({
+    customerId: customer.id,
+    contractId: order.id,
+    invoiceNumber: await invoices.generateInvoiceNumber(),
+    currency: 'CAD',
+  });
+  const lines = await InvoiceLineItemCollection.create({ db });
+  await lines.create({
+    invoiceId: invoice.id,
+    description: 'Consulting',
+    quantity: 10,
+    unitPrice: 10000, // $100.00
+  });
 
-// Record a payment
-const payments = await PaymentCollection.create({ db });
-const payment = await payments.create({
-  contractId: order.id,
-  customerId: customer.id,
-  amount: 105000,
-  method: PaymentMethod.CREDIT_CARD,
-});
-await payment.save();
+  // Issuing freezes the money snapshot; then recognize revenue (creates a
+  // balanced journal in smrt-ledgers from the frozen facts).
+  const issued = await invoices.get({ id: invoice.id }, { cache: false });
+  issued.markSent();
+  await issued.save();
+  await issued.recognizeRevenue({
+    arAccountId: 'ar-account-id',
+    revenueAccountId: 'revenue-account-id',
+    taxAccountId: 'tax-account-id',
+    bookCurrency: 'CAD', // must equal the invoice currency
+  });
 
-// Record payment with ledger integration
-await payment.recordPayment({
-  ledgerId: 'ledger-id',
-  receivablesAccountId: 'ar-account-id',
-  cashAccountId: 'bank-account-id',
+  // Record a payment with ledger integration
+  const payments = await PaymentCollection.create({ db });
+  const payment = await payments.create({
+    contractId: order.id,
+    customerId: customer.id,
+    amount: issued.totalAmount,
+    method: PaymentMethod.CREDIT_CARD,
+  });
+  await payment.recordPayment({
+    ledgerId: 'ledger-id',
+    receivablesAccountId: 'ar-account-id',
+    cashAccountId: 'bank-account-id',
+  });
 });
 ```
+
+## Commercial money calculator
+
+The public `/money` entry is a pure calculator for line amounts, discounts,
+component tax, document rounding, and totals. It consumes and returns integer
+minor-unit money values; tax and discount percentages are exact text (`'5'`
+means 5%). It does not persist or load documents.
+
+```ts
+import { calculateMoneyDocument } from '@happyvertical/smrt-commerce/money';
+
+const totals = calculateMoneyDocument({
+  currency: 'CAD',
+  lineAmountType: 'exclusive',
+  roundingScope: 'line',
+  lines: [{
+    id: 'consulting', quantity: 1, unitPrice: 10000,
+    discount: { kind: 'none' },
+    taxCode: {
+      id: 'gst', kind: 'taxable',
+      components: [{ taxComponentId: 'gst', percent: '5', compound: false }],
+    },
+  }],
+});
+```
+
+`resolveLineTaxCode()` resolves caller-loaded codes without I/O, and the
+Svelte `InvoiceEditor` renders the money controls from its required `money`
+prop. Frozen editor documents render a supplied stored snapshot without
+recalculation. See the [commerce money calculator guide](../../docs/content/commerce-money.md)
+for pricing modes, rounding, input and result types, the native-form editor
+contract, and the boundaries this package does not define.
+
+### Tenant tax catalogue and defaults
+
+The package root also exports tenant-scoped `TaxComponent`, `TaxCode`, and
+`TaxSettings` models and their collections. Components hold exact percentage
+rates and optional liability accounts; codes combine compatible components; the
+one settings row per tenant supplies sales/purchase defaults, amount mode,
+rounding scope, and labelled registration numbers. A referenced component rate
+is immutable: archive it and create a replacement for a rate change.
+
+`ensureTenantTaxCodes(db, tenantId)` idempotently creates the standard
+non-taxable codes, `exempt`, `zero-rated`, and `out-of-scope`
+(`STANDARD_TAX_CODES`). `applyTaxCodeExamplePack(db, tenantId)` installs illustrative
+regional examples for review, and `applyCommerceCookbookSettings(db, tenantId,
+cookbook)` explicitly materializes a validated cookbook's defaults after schema
+setup and authentication establish the tenant. See the [commerce money
+calculator guide](../../docs/content/commerce-money.md#tenant-tax-catalogue) for
+the supported kinds, seed behavior, and cookbook rate units.
+
+### Persisted Invoice money
+
+Commerce has one money model. Tax codes resolve each line's tax: the line's
+override, else `exempt` for an exempt customer, else the product's code, the
+customer's code, then the tenant default. The server computes line
+`taxAmount` and the header totals and ignores any client total. Every Invoice
+and Contract money write needs a tenant; without one it fails with
+`MoneyValidationError` `INVALID_MONEY_INPUT`.
+`ensureCommerceTenant(db, tenantId, { cookbook })` is the one bootstrap call a
+host makes after creating a tenant. It seeds the tenant's tax settings, the
+standard codes, and the cookbook's defaults, and returns `{ tenantId }`.
+
+Issuing an Invoice (leaving `DRAFT`) or assigning `arJournalId` freezes its
+money snapshot. Header and line money changes then fail with `FROZEN_DOCUMENT`,
+while later lifecycle and payment updates retain the snapshot. Provider tax
+stays separate in `providerTaxAmount` and contributes to the Invoice headers
+without creating an application tax code.
+`InvoiceLineItemCollection.getTotalForInvoice()` sums line amounts for
+compatibility; use persisted `Invoice.totalAmount` for the amount due.
+`recognizeRevenue()` and `cancelWithRevenueReversal()` require a `bookCurrency`
+equal to the invoice currency, and `toAccountingInput({ mapping })` requires
+explicit QuickBooks realm mapping. The
+[commerce money calculator guide](../../docs/content/commerce-money.md#persisted-invoice-money)
+and [document-money contract](agents/document-money.md) cover persisted Invoice
+semantics, credits, refunds, and posting. The materialized Invoice tax-report
+descriptor and tenant-safe drilldown are documented in
+[tax-summary contract](agents/tax-summary.md). Contract money persistence,
+PurchaseContract tax contributors, and the materialized tax-summary host and
+drilldown are available. Applications opt in by registering
+`createTaxSummaryMaterializedReportHost()` in their server-only report-host
+registry; the route binds the authenticated tenant and read permission. See the
+tax-summary contract for registration details.
+
+### Upgrading money data from an earlier version
+
+Commerce refuses money data written by an earlier version with
+`COMMERCE_DATA_NEEDS_UPGRADE` instead of reading it. That is a schema that
+still has the earlier money columns or the `commerce_money_migration_documents` table,
+an invoice or contract without a tenant, or a tenant with invoices or contracts but no tax settings row or with
+documents in the earlier format. `smrt db:status`
+reports it, so `smrt app doctor` reports `migration-required`. Run the normal
+schema migration, then upgrade once:
+
+```sh
+smrt db:upgrade-commerce-money --check   # report only
+smrt db:upgrade-commerce-money           # every tenant
+```
+
+Each tenant converts in its own transaction. Stored rates become tax codes,
+issued documents keep every stored total, and drafts are recomputed. The
+earlier columns are dropped once no tenant needs the upgrade. See
+[money data upgrade](agents/money-upgrade.md) and the
+[CLI guide](../cli/agents/commerce-money-upgrade.md).
 
 ## API
 
 ### Models
 
+#### Supplier quotations
+
+`SupplierQuote` extends `PurchaseContract`, requires `vendorId`, and has
+`ContractType.SUPPLIER_QUOTE`. Create it through `PurchaseContractCollection`
+(or `ContractCollection`) with `_meta_type:
+'@happyvertical/smrt-commerce:SupplierQuote'`. It inherits `expiryDate`,
+`reference`, `notes`, and `terms`; it has no customer relationship. Purchase
+branch reads include quotes and sales branch reads exclude them.
+
+Keep received quote revisions and shared quote identity in your application.
+Awarding a quote creates a separate `PurchaseOrder`; accepting or saving a
+quote never converts its identity into an order. Quotes use purchase-side
+money calculation and frozen snapshots, but never contribute incurred purchase
+tax to reports, regardless of status. Existing Estimate and PurchaseOrder
+report eligibility is unchanged.
+
+#### Upgrading contract parties (#3898)
+
+`Contract` no longer declares `customerId` or `vendorId`. Narrow a contract to
+`SalesContract` to read `customerId`, or to `PurchaseContract` to read `vendorId`.
+The existing leaf qualified names and the `contracts` table stay the same; a
+`db:migrate --dry-run` against a v0.55.19 schema reports no DDL changes on
+SQLite or PostgreSQL. Sales leaves no longer accept `vendorId`; purchase leaves
+no longer accept `customerId`. `Order`, `Estimate`, `Agreement`, `Lease`, and
+`WholesaleOrder` require a customer on save. `PurchaseOrder` and `SupplierQuote`
+require a vendor.
+`Cart`, `LicenseSale`, and `ProductionOrder` retain optional parties on their side.
+
+Before upgrading existing data, run the read-only
+`preflightCommercePartyLinks(db)` and inspect its stray party links, missing
+required parties, base-typed rows, discriminator mismatches, and invalid
+document references. Its `unqualifiedDiscriminatorRows` lists legacy simple
+`_meta_type` values such as `Order` and `PurchaseOrder`; retype them to the
+qualified class name before upgrading, since branch collections cannot read
+them. The report checks invoice, payment, fulfillment, ad group,
+and expense links when those tables exist. A linked base-typed or wrong-branch
+contract blocks the next save of its document even when the link is unchanged.
+Registered custom descendants of either contract branch are accepted in link
+checks; load those model classes before running the preflight.
+Tenant-owned documents linked to global or other-tenant contracts are also
+reported because the save-time lookup is tenant-scoped. Retype the contract to
+the correct leaf, assign it to the document's tenant, or repair the link before
+deployment. The deprecated `ContractCollection` party finders now return the
+appropriate branch
+only, so retype legacy base rows with party links before relying on those
+finders. Clear stray party columns and fill required parties before deploying
+writers that save affected rows. Missing required parties remain readable but
+fail their next save. Regenerate cached manifests, planner catalogs, and
+generated screens after upgrading.
+This preflight never edits rows; an operator chooses the data correction.
+
 | Export | Description |
 |--------|------------|
-| `Customer` | Customer record with creditLimit, paymentTerms, tax exemption, addresses |
-| `Vendor` | Vendor/supplier with leadTimeDays, minimumOrderAmount, currency |
+| `Customer` | Customer record with creditLimit, paymentTerms, tax exemption, addresses, contacts |
+| `Vendor` | Vendor/supplier with leadTimeDays, minimumOrderAmount, currency, contacts |
 | `Contract` | STI base class for all commercial agreements |
+| `SalesContract` | Abstract customer-side Contract branch; owns `customerId` |
+| `PurchaseContract` | Abstract supplier-side Contract branch; owns `vendorId` |
 | `Estimate` | Quote or proposal sent to a customer |
 | `Order` | Customer purchase order |
 | `Lease` | Rental or lease agreement |
 | `Agreement` | Service or maintenance agreement |
+| `SupplierQuote` | Quotation received from a vendor; distinct from an awarded purchase order |
 | `PurchaseOrder` | Order sent to a vendor/supplier |
 | `ContractLineItem` | Line item within a contract |
 | `Invoice` | Billing document with status lifecycle and ledger integration |
@@ -105,7 +273,7 @@ await payment.recordPayment({
 
 ### Collections
 
-`CustomerCollection`, `VendorCollection`, `ContractCollection`, `InvoiceCollection`, `InvoiceLineItemCollection`, `PaymentCollection`, `PaymentAllocationCollection`, `FulfillmentCollection`
+`CustomerCollection`, `VendorCollection`, `ContractCollection`, `SalesContractCollection`, `PurchaseContractCollection`, `InvoiceCollection`, `InvoiceLineItemCollection`, `PaymentCollection`, `PaymentAllocationCollection`, `FulfillmentCollection`
 
 `PaymentAllocationCollection.allocatePayment()` splits a payment across invoices
 in one transaction using stable allocation IDs for retries. Direct allocation
@@ -118,7 +286,7 @@ replay, parent revision refresh and compatibility requirements.
 
 | Export | Values |
 |--------|--------|
-| `ContractType` | `estimate`, `order`, `lease`, `agreement`, `purchase_order` |
+| `ContractType` | `estimate`, `order`, `lease`, `agreement`, `supplier_quote`, `purchase_order`, `wholesale_order`, `production_order`, `cart`, `license_sale` |
 | `ContractStatus` | `draft`, `sent`, `accepted`, `declined`, `completed`, `cancelled` |
 | `CustomerStatus` | `active`, `inactive`, `suspended` |
 | `VendorStatus` | `active`, `inactive`, `suspended` |
@@ -155,6 +323,10 @@ and retry only if it is still pending. An already completed payment retains the
 owner: if it rolls back after settlement returns, reload the payment before retry.
 These guarantees cover new postings, not orphaned journals written by older
 versions. The returned journal uses the caller's database executor.
+Both payment and refund journal lines retain the payment's explicit currency and
+exact amount; posting does not convert currencies or fall back to USD. When
+reporting accounts that contain different currencies, use the public
+`listPostedMovements` currency filter rather than combining their amounts.
 
 ### Cross-Package References
 
@@ -188,6 +360,7 @@ const billing = await BillingRuntime.create({
   provider: createStripeBillingProvider({ stripe, webhookSecret }),
   billingRelationships, // smrt-tenancy BillingRelationshipService
   ledger: {
+    bookCurrency: 'USD', // ISO 4217; must equal the billing currency
     arAccountId,
     revenueAccountId,
     taxAccountId,
@@ -335,7 +508,13 @@ const evaluator = await SpendingPolicyEvaluator.create({
   upgrade (`<subscriptionId>:<periodStart>`, number 0) count as billed
   coverage, so nothing is billed again after it.
 - **Tax** comes from the provider (Stripe Tax) using the account customer's
-  `defaultBillingAddress`; the invoice records it as `providerTaxAmount`.
+  `defaultBillingAddress`; the invoice records it as `providerTaxAmount` in the
+  save that issues it. Billing invoices are ordinary money-model invoices in
+  the seller's tenant; period close seeds its standard codes if needed. Every
+  billing line is an explicit override to the seller's `out-of-scope` code, so
+  the seller's default code never taxes it a second time. Charges are written
+  before credits, so the running subtotal never goes negative. Revenue posting
+  uses `ledger.bookCurrency` and is idempotent.
 - **Events** are verified, stored in smrt-jobs' durable delivery inbox, and
   applied against current provider state: paid invoices record a payment and
   allocation; failures and overdue notices mark the payer `past_due` and its
@@ -519,6 +698,67 @@ await billing.processEvents();
 See [`AGENTS.md`](./AGENTS.md#billing-period-close-3060) for invariants and
 known limits.
 
+## Tenant-owned connected payment accounts
+
+A tenant (for example a co-op) can be paid into its own Stripe Connect
+Standard account, so its customers' money never passes through the platform.
+Checkouts are direct charges on the tenant's account; the platform's share is
+an application fee. A tenant without an enabled account is refused — there is
+no fallback to the platform account.
+
+```ts
+import { SecretService } from '@happyvertical/smrt-secrets';
+import {
+  createConnectedCheckout,
+  createStripeConnectGateway,
+  createTenantOnboardingLink,
+  handleConnectedPaymentWebhook,
+  onboardTenantPaymentAccount,
+  refundConnectedPayment,
+} from '@happyvertical/smrt-commerce';
+
+const gateway = await createStripeConnectGateway({
+  secrets: await SecretService.create({ db }),
+  secretsTenantId: installationTenantId,
+  environment: 'live',
+  adapterOptions: { successUrl, cancelUrl, defaultCurrency: 'CAD' },
+});
+
+// Onboarding: create the tenant's Standard account, then send its treasurer
+// to Stripe. The link is a bearer secret: redirect, never log or store.
+await onboardTenantPaymentAccount({ db, gateway, tenantId, environment: 'live', country: 'CA' });
+const { url } = await createTenantOnboardingLink({
+  db, gateway, tenantId, environment: 'live', returnUrl, refreshUrl,
+});
+
+// Checkout: the fee comes from the tenant's fee policy, in integer minor units.
+const { intent, checkoutUrl } = await createConnectedCheckout({
+  db, gateway, tenantId, environment: 'live',
+  offeringRef: 'membership-2027', licenseeEmail, idempotencyKey,
+  amount: 10_000, currency: 'CAD', applicationFeeAmount: 500,
+});
+
+// Webhooks (Connect endpoint; use endpoint: 'platform' for application_fee.*).
+const result = await handleConnectedPaymentWebhook({
+  db, gateway, environment: 'live', payload: rawBody,
+  signature: request.headers.get('Stripe-Signature') ?? undefined,
+  resolveSettlementAccounts: ({ tenantId }) => ledgerAccountsFor(tenantId),
+});
+
+// Refunds go to the tenant's account; the fee-refund choice is explicit.
+await refundConnectedPayment({
+  db, gateway, tenantId, environment: 'live', paymentId, amount: 4_000,
+  refundApplicationFee: true, idempotencyKey, resolveSettlementAccounts,
+});
+```
+
+The settled `Payment` books cash net of the fee and the fee as an expense, so
+the fee never becomes a payable to the platform. Webhook signatures are
+verified before routing, events are routed by connected account to the
+owning tenant, quotes are bound to that tenant before settling, and processed
+event ids are stored. Secrets, endpoints, and limits:
+[connected payments](agents/connected-payments.md).
+
 ## Dependencies
 
 - `@happyvertical/smrt-core` -- ORM and code generation
@@ -549,6 +789,41 @@ selectors while preserving native field names and rejected raw drafts. See
 native forms, recovery, amount units and consumer adoption, plus the focused
 [customer/vendor](agents/customer-vendor-ui.md) and
 [quotation](agents/quote-ui.md) contracts for selector restrictions.
+
+## Customer and vendor contacts
+
+`Customer.contacts` and `Vendor.contacts` hold the people to reach at a party
+(`PartyContact`: `id`, `name`, `label`, `email`, `phone`, `address`) as a JSON
+column; existing databases need `smrt db:migrate` for the new `contacts`
+columns. The form's contact rows are written with `savePartyContacts()`:
+
+```typescript
+import {
+  applyPartyContactIntent,
+  PartyContactValidationError,
+  readPartyContactRows,
+  savePartyContacts,
+} from '@happyvertical/smrt-commerce';
+
+const form = await request.formData();
+// Throws PartyContactPayloadError when the form's contactCount marker is absent
+// (block not rendered, or fieldNames differ), so a save never deletes by accident.
+const rows = readPartyContactRows(form); // pass the form's fieldNames if overridden
+const { contacts, handled } = applyPartyContactIntent(rows, String(form.get('intent')));
+if (handled) return { values: { ...values, contacts } }; // add/remove round trip, no save
+try {
+  await savePartyContacts(vendors, vendorId, rows, { expectedTenantId });
+} catch (error) {
+  if (error instanceof PartyContactValidationError)
+    return fail(400, { values: { ...values, contacts: rows }, errors: { contacts: toMessages(error.errors) } });
+  throw error;
+}
+```
+
+`savePartyContacts` also accepts the `FormData` itself (with `fieldNames`) and
+reads it the same way. The rows replace the party's contacts: posted ids are kept, new rows get an
+id, unposted rows are removed, blank rows are dropped. See
+[customer/vendor UI](agents/customer-vendor-ui.md#contact-rows-3501).
 
 ## Customer and vendor selectors
 
@@ -586,14 +861,17 @@ The same models carry `@field({ ui: { widget } })` hints in the manifest:
 
 ## Invoice preparation UI
 
-`InvoiceLineEditor` and `InvoiceEditor` from `@happyvertical/smrt-commerce/svelte`
-provide editable descriptions/SKUs, fractional quantities, unit prices, flat or
-percentage discounts, explicit or inherited tax, customer, dates, currency and
-terms. Calculated previews use the same exact minor-unit arithmetic exported
-for server handlers from `@happyvertical/smrt-commerce/invoices`.
-`InvoiceAllocationFields` and `InvoiceReview` extend this foundation with
-caller-owned sources and approvals. See [the editor contract](agents/invoice-preparation.md),
-[calculation rules](agents/invoice-calculations.md), and the required
+`InvoiceEditor` from `@happyvertical/smrt-commerce/svelte` is the invoice form,
+built on the commercial money model, v2, which is the only invoice money model.
+It requires a `money` prop (`MoneyEditorProps`): a lossless draft with
+descriptions, fractional quantities, unit prices, percentage or amount
+discounts and a tax code per line (inherited or overridden), plus the
+authorized tax codes. Its previews run the same exact calculator the server
+uses, and the server re-resolves tax codes and recomputes every stored amount.
+An issued document renders only its frozen stored snapshot.
+`InvoiceAllocationFields` and `InvoiceReview` add caller-owned sources and
+approvals. See [the editor contract](agents/invoice-preparation.md), the
+[line calculation helper](agents/invoice-calculations.md), and the
 [existing-database storage migration](agents/invoice-quantity.md).
 
 ## Exact cost billing
@@ -614,3 +892,129 @@ native POST of vendor, reference, notes, expected date and ship-to fields. Pass
 allocations and totals unchanged. `PurchaseOrder` stores `expectedDate` and
 `shipTo` in existing STI metadata. See [the purchasing contract](agents/purchasing-ui.md#purchase-order-header)
 for validation, retained values and transport details.
+
+### Invoice retention and release
+
+`configureInvoiceRetention` freezes an explicit retained minor-unit amount on an
+unpaid draft. Supply tenant, invoice, currency, expected invoice revision,
+request identity, actor, reason, evidence reference, and versioned host policy.
+The supported `creditPolicy: 'retained-first'` is an explicit caller choice:
+issued credits reduce unreleased retention first, then current payable. Hosts
+must choose and authorize their regional policy; Commerce supplies no legal
+percentage or release date default. Configuration cannot be overwritten; replace
+an unissued draft to change the original agreement.
+
+`releaseInvoiceRetention` appends evidence under the invoice's transaction lock.
+It cannot release more than the currently retained remainder. Exact request
+replays are safe; changed payloads or stale revisions fail. Both commands retain
+caller transaction affinity. Original gross, tax, line snapshots and approved
+configuration stay unchanged. Credits and credit cancellation derive remaining
+retention without rewriting release history.
+
+`invoice.getPayableFacts()` separates `grossBalanceMinor`,
+`retainedRemainingMinor`, `currentlyDueMinor`, and `allocationCapMinor`. The
+allocation API enforces the current cap. `getAmountDue()` returns current due;
+`getBalance()` remains the signed gross balance. An invoice with paid current
+due and unreleased retention is not fully paid or overdue. Display gross and
+current payable separately; pass explicit current due and remaining holdback to
+the exact retained invoice UI props rather than treating gross as payable.
+Stored money facts include `payable` for retained invoices; MCP projection honors
+field visibility for every source of the payable alias.
+
+Provider-controlled imports/automatic collection cannot acquire retention.
+Accounting export refuses unreleased retention until the provider has an
+explicit payable representation; it never silently requests collection of
+gross. Fully released invoices use the existing gross accounting contract.
+
+## Retained invoice accounting
+
+`loadRetainedInvoiceAccountingSnapshot` supplies a read-only frozen document for
+reviewing item/tax mapping before posting; `toRetainedInvoiceAccountingInput`
+validates that reviewed mapping against those frozen lines. Both preserve tenant and caller executor
+scope and performs no provider operation. Generic accounting snapshot/export still
+refuses unreleased retention. A supplied host-managed release due date may precede
+the release date: preserving original past-due terms makes the released amount
+immediately overdue rather than silently extending payment terms.
+
+`loadRetainedCreditAccountingSnapshot` and `toRetainedCreditAccountingInput`
+provide the equivalent review path for an issued calculated credit. The caller
+supplies both original invoice and credit IDs; the owning API verifies tenant,
+customer, currency and exact original lineage, then retains the existing frozen
+reader's issue and provider-realm checks. Generic retained-credit export remains
+blocked. Review never creates a credit adjustment or contacts a provider.
+
+The public `syncRetainedInvoiceToAccounting`, `releaseRetainedInvoiceToAccounting`,
+`syncRetainedCreditToAccounting`, and `syncRetainedRefundToAccounting` commands
+implement an explicit QuickBooks accrual reclassification contract. They require
+SDK `receivableTransfers` from the published SDK0.104.1 cohort
+(happyvertical/sdk#1414 / #1415; absent from SDK0.104.0).
+They are available from the Commerce root and `/invoices` entry points.
+
+The tenant must review/version the realm, environment, customer, AR account,
+retained-asset account and optional bank account mapping. Supported choices are
+`accrual`, `invoice-tax-point` and `host-managed` release due dates. Verified home
+currency only; no inferred FX, tax timing, recovery percentage or release date.
+Hosts authorize actors before these server commands and provide an active tenant.
+
+For gross10500/retained1000, the original approved invoice remains10500. A
+withholding journal debits retained assets and credits customer AR1000; a
+zero-cash application links that credit to the original invoice. A partial release
+creates the opposite journal and an explicitly dated host collection obligation.
+The original invoice and its tax snapshot are unchanged. Provider collections and
+provider tax overrides are unsupported for this contract.
+
+Initial export requires an issued, unpaid, uncredited, unreleased host-owned
+invoice with no prior provider identity. Historical source-owned invoices require
+a separate reconciled ownership contract and are rejected: importing history must
+not duplicate its original journal. Existing local retention commands continue to
+reject provider-controlled releases; use the provider release command instead.
+
+Retained-first credits cancel the applicable retained asset through a release
+journal, apply the exported credit memo to that journal, and apply any due portion
+to the original invoice. Unapplied credit remains available for a refund. Refund
+sync requires an already completed local refund Payment, its cash journal and one
+exact source-credit allocation. It records the cash journal and applies the
+existing credit; it performs no bank action and makes no settlement-certification
+claim. That source payment/allocation becomes immutable. Provider-managed invoice
+voids/write-offs, credit cancellation/reallocation and refund deletion are rejected
+rather than silently erasing remote postings. Corrective reversal contracts are
+not implemented by these commands.
+
+### Recovery and concurrency
+
+Each external write has persisted request bytes/hash, attempt owner, status and
+validated readback. Confirmed earlier steps survive a later failure. Unknown or
+interrupted steps block new operations; `reconcileRetainedAccountingStep` requires
+the observed request/attempt, a known remote ID for exact provider readback, or
+explicit authoritative absence evidence. An interrupted in-flight owner must be
+proven stopped. Reconciliation evidence and previous attempts remain recorded.
+`reconcileRetainedBaseInvoice` wraps the existing frozen invoice recovery contract.
+`reconcileRetainedCreditAccounting` resolves the reserved credit-memo creation step. Ordinary credit export is blocked for provider-retained sources.
+
+The descriptor hash is not remote idempotency. The SDK uses documented QuickBooks
+request-ID duplicate handling; never create a new request identity merely because
+a response was lost. Exact local replays reuse confirmed steps. Competing commands
+serialize under the tenant/source invoice locks, and releases check an observed
+invoice revision. Source credits cannot change during an unfinished retention
+operation. Commands reject caller-owned Commerce money transactions because a
+provider write cannot be rolled back with local SQL.
+
+`readRetainedInvoiceAccountingState` exposes the persisted operation/readback
+history. Canonical `Invoice.getPayableFacts()` remains the source of local gross,
+retained, released, credited and currently due amounts. Provider invoice
+`TotalAmt - Balance` includes noncash applications and must never be labeled cash
+received. SDK readback separates noncash applications, recorded cash journals and
+unverified bank settlement.
+
+Validation uses native SQLite/PostgreSQL persistence with mocked public provider
+operations, plus the SDK's exact request/readback fixtures. No live provider call
+or sandbox certification has been performed. Primary contract evidence and
+provider-field limits are documented in the SDK Accounting README.
+
+### Incomplete supplier price evidence
+
+Use `recordPurchasePriceObservation`, `readPurchasePriceObservation`, and
+`completePurchasePriceObservation` for source quotes/orders that lack complete
+net/tax/gross facts. Unknown totals remain null and no calculated or reportable
+Contract exists until explicit reviewed completion. See
+[observed purchase prices](agents/observed-purchase-prices.md).

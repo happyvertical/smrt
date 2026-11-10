@@ -16,8 +16,23 @@ import {
   loadExternalManifestSync,
   lookupInManifest,
 } from '../manifest/manifest-loader.js';
+import { selectObjectDeclarations } from '../manifest/object-declarations.js';
 import { findField, type HelpModel, validateHelp } from '../recipe-help.js';
+import {
+  closeWildcardExclusions,
+  findCollectionWriteEscalations,
+  formatCollectionWriteEscalations,
+  inheritCollectionExposure,
+} from '../registry/collection-exposure.js';
+import { isSmrtCollectionExtendsName } from '../registry/collection-resolution.js';
 import { VERBOSE_ENABLED } from '../registry/shared-state.js';
+import {
+  findStaleWidenings,
+  findSubclassExposureEscalations,
+  formatSubclassExposureEscalations,
+  inheritSubclassExposure,
+} from '../registry/subclass-exposure.js';
+import type { SmartObjectConfig } from '../registry/types.js';
 import {
   defaultConflictColumns,
   resolveOwnershipTenantColumn,
@@ -37,16 +52,23 @@ import type {
 import { generateToolManifest } from '../tools/tool-generator.js';
 import {
   displayLabelFieldProblem,
+  FIELD_UI_FORMAT_TYPES,
+  FIELD_UI_FORMATS,
   FIELD_UI_WIDGET_TYPES,
   FIELD_UI_WIDGETS,
+  isFieldUIFormat,
   isFieldUIWidget,
+  isRelationshipRole,
+  RELATIONSHIP_ROLES,
   resolveDisplayLabelField,
 } from '../ui-metadata.js';
 import { classnameToTablename, toSnakeCase } from '../utils/naming.js';
 import {
   assertScopedPackageName,
   createQualifiedName,
+  isQualifiedName,
   isQualifiedNameAliasFormat,
+  parseQualifiedName,
   readPreviousQualifiedNames,
 } from '../utils/qualified-names.js';
 import { applyRecipeDemo } from './recipe-demo-pass.js';
@@ -418,9 +440,33 @@ export class ManifestGenerator {
       assertScopedPackageName(options?.packageName);
     }
 
+    // `exclude: ['*']` closes a surface; no generator reads `'*'` as a
+    // wildcard, so normalize it before any pass or manifest reader sees it
+    // (#3468, smrt-profiles MagicLinkToken).
+    for (const objectDef of Object.values(manifest.objects)) {
+      if (objectDef.decoratorConfig) {
+        objectDef.decoratorConfig = closeWildcardExclusions(
+          objectDef.decoratorConfig,
+        );
+      }
+    }
+
+    // Capture authored API exposure before making the abstract class itself
+    // read-only so hosted concrete descendants can inherit the authored part.
+    for (const objectDef of Object.values(manifest.objects)) {
+      if (objectDef.decoratorConfig?.abstract !== true) continue;
+      if (!Object.hasOwn(objectDef, 'abstractDeclaredApi')) {
+        objectDef.abstractDeclaredApi = objectDef.decoratorConfig.api ?? null;
+      }
+    }
+
     // Deprecated qualified-name aliases (#3338) fail closed at build time, the
     // same as the registry refuses them at runtime.
     this.assertQualifiedNameAliases(manifest);
+
+    // Keep only import-derived parent qualifications the parent's package
+    // confirms (#4145), before any pass walks `extendsQualified`.
+    this.verifyImportedParents(manifest);
 
     // Report cache rows are safe to scope by tenant even when a report is
     // global: optional mode keeps tenant-less rows readable outside a tenant
@@ -431,9 +477,86 @@ export class ManifestGenerator {
     // Second pass: materialize implicit tenant fields before inheritance and schema generation.
     this.injectTenantScopedFields(manifest);
 
+    // Report models default to a read-only surface. Apply that before
+    // inheritance, so a report model's collection inherits it and the
+    // collection-exposure guard sees it.
+    this.applyReportSurfaceDefaults(manifest);
+
     // Third pass: Merge inherited fields for STI classes
     // This ensures STI subclasses have all parent fields inline in the manifest
     this.mergeInheritedFields(manifest);
+
+    // A model subclass may narrow its parent's generated surface but not
+    // widen it. Before the abstract pass below, which synthesizes write
+    // exclusions on an abstract parent that its concrete subclasses exist to
+    // lift.
+    this.assertSubclassExposure(manifest);
+
+    // All producers, including OXC, must suppress custom actions on abstract
+    // resources and their collection classes. Do this after inheritance so
+    // ancestor methods are covered and projections share the same exclusions.
+    const objectsByName = new Map(
+      Object.values(manifest.objects).map((objectDef) => [
+        objectDef.className,
+        objectDef,
+      ]),
+    );
+    for (const objectDef of Object.values(manifest.objects)) {
+      const config = objectDef.decoratorConfig;
+      const isCollection =
+        objectDef.extends === 'SmrtCollection' ||
+        this.extendsCollection(objectDef, objectsByName, manifest);
+      let collectionItem: SmartObjectDefinition | undefined;
+      if (isCollection) {
+        const seenParents = new Set<string>();
+        let candidate: SmartObjectDefinition | undefined = objectDef;
+        while (candidate) {
+          if (candidate.extendsTypeArg || candidate.fields._itemClass) {
+            collectionItem = this.findItemClass(
+              candidate,
+              manifest,
+              objectsByName,
+            );
+            break;
+          }
+          const parentName = candidate.extendsQualified || candidate.extends;
+          if (!parentName || seenParents.has(parentName)) break;
+          seenParents.add(parentName);
+          candidate = lookupInManifest(manifest, parentName) as
+            | SmartObjectDefinition
+            | undefined;
+        }
+        collectionItem ??= this.findItemClass(
+          objectDef,
+          manifest,
+          objectsByName,
+        );
+      }
+      const itemIsAbstract = collectionItem?.decoratorConfig?.abstract === true;
+      if (config?.abstract !== true && !itemIsAbstract) continue;
+      const methods = Object.entries(objectDef.methods || {})
+        .filter(([, method]) => method.isPublic)
+        .map(([name]) => name)
+        .filter((name) => name !== 'list' && name !== 'get');
+      for (const surface of ['api', 'mcp', 'cli'] as const) {
+        if (config[surface] === false) continue;
+        const current = config[surface];
+        const excludes =
+          current && typeof current === 'object' && current.exclude
+            ? current.exclude
+            : [];
+        config[surface] = {
+          ...(current && typeof current === 'object' ? current : {}),
+          exclude: [
+            ...new Set([...excludes, 'create', 'update', 'delete', ...methods]),
+          ],
+        };
+      }
+    }
+
+    // A collection may not open a generated write its model closes. After
+    // the abstract pass above, which closes writes over abstract models.
+    this.assertCollectionExposure(manifest);
 
     // Recipe options may only name fields the merged model declares (#3590).
     this.assertRecipeOptions(manifest);
@@ -490,6 +613,112 @@ export class ManifestGenerator {
       options?.packageName,
       options?.packageJson,
     );
+  }
+
+  /**
+   * Drop an `extendsQualified` naming ANOTHER package unless that package's
+   * manifest declares the class under exactly that qualified name (#4145).
+   *
+   * The scanner qualifies a parent from the import it is bound to, but a
+   * module can re-export another package's class, and an alias-like specifier
+   * (`@app/models`) can look like a package. Neither may become a parent the
+   * registry cannot find, so an unconfirmed qualification falls back to the
+   * simple `extends` and today's resolution. Same-package qualifications are
+   * left alone: they name this manifest's own classes.
+   */
+  verifyImportedParents(manifest: SmartObjectManifest): void {
+    for (const obj of Object.values(manifest.objects)) {
+      const parent = obj.extendsQualified;
+      if (!parent || !isQualifiedName(parent)) continue;
+      const { packageName } = parseQualifiedName(parent);
+      if (packageName === (obj.packageName ?? manifest.packageName)) continue;
+      const parentManifest = loadExternalManifestSync(packageName, {
+        warn: false,
+      });
+      if (parentManifest && lookupInManifest(parentManifest, parent)) continue;
+      logger.debug(
+        `[manifest-generator] ${obj.className}: ${packageName} does not declare ${parent}; keeping the unqualified parent "${obj.extends}"`,
+      );
+      delete obj.extendsQualified;
+    }
+  }
+
+  /**
+   * The name to resolve an object's parent by: the import-derived qualified
+   * name when the scanner traced one (#4145), else the simple `extends`.
+   */
+  private parentRef(obj: SmartObjectDefinition): string | undefined {
+    return obj.extendsQualified || obj.extends;
+  }
+
+  /**
+   * Resolve a parent reference from {@link parentRef}. A qualified reference
+   * matches only that package's class (this manifest's, else the dependency's
+   * manifest), never a same-named class of another package; a simple one
+   * keeps the established local-then-dependency lookup. `child` is skipped so
+   * a local class named like its imported parent never resolves to itself.
+   */
+  private resolveParentDefinition(
+    ref: string,
+    child: SmartObjectDefinition | undefined,
+    manifest: SmartObjectManifest,
+    objectsByName: Map<string, SmartObjectDefinition>,
+  ): SmartObjectDefinition | undefined {
+    let parent: SmartObjectDefinition | undefined = isQualifiedName(ref)
+      ? (manifest.objects[ref] as SmartObjectDefinition | undefined)
+      : objectsByName.get(ref);
+    if (parent === child) parent = undefined;
+    if (!parent && manifest.smrtDependencies?.length) {
+      parent = this.loadParentFromExternalPackage(
+        ref,
+        manifest.smrtDependencies,
+        objectsByName,
+      );
+    }
+    return parent === child ? undefined : parent;
+  }
+
+  /**
+   * `obj`'s parent among `objectsByName` (keyed by class name), without
+   * loading dependency manifests. An import-qualified parent only matches a
+   * definition of that package, never a same-named class of another one
+   * (#4176); a definition carrying no package identity still matches by name.
+   * `manifest` is the one `objectsByName` was built from, where a qualified
+   * parent that lost its class-name slot is still found.
+   */
+  private namedParent(
+    obj: SmartObjectDefinition,
+    objectsByName: Map<string, SmartObjectDefinition>,
+    manifest?: SmartObjectManifest,
+  ): SmartObjectDefinition | undefined {
+    const qualified = obj.extendsQualified;
+    if (!qualified) {
+      return obj.extends ? objectsByName.get(obj.extends) : undefined;
+    }
+    const direct = objectsByName.get(qualified);
+    if (direct) return direct;
+    const identity = (candidate: SmartObjectDefinition) =>
+      candidate.qualifiedName ??
+      (candidate.packageName
+        ? `${candidate.packageName}:${candidate.className}`
+        : undefined);
+    const candidate = objectsByName.get(this.simpleClassName(qualified));
+    if (candidate && (identity(candidate) ?? qualified) === qualified) {
+      return candidate;
+    }
+    // The class-name slot may hold another package's same-named class; the
+    // imported one is then still in the manifest the map was built from.
+    const keyed = manifest?.objects[qualified] as
+      | SmartObjectDefinition
+      | undefined;
+    if (keyed) return keyed;
+    for (const definition of [
+      ...objectsByName.values(),
+      ...Object.values(manifest?.objects ?? {}),
+    ] as SmartObjectDefinition[]) {
+      if (identity(definition) === qualified) return definition;
+    }
+    return undefined;
   }
 
   /**
@@ -786,8 +1015,37 @@ export class ManifestGenerator {
       const owner = obj.qualifiedName ?? key;
 
       for (const [fieldName, field] of Object.entries(obj.fields)) {
-        const ui = field._meta?.ui as { widget?: unknown } | undefined;
-        if (!ui || typeof ui !== 'object' || ui.widget === undefined) continue;
+        const role = (field._meta as { role?: unknown } | undefined)?.role;
+        if (role !== undefined) {
+          if (!isRelationshipRole(role)) {
+            failures.push(
+              `${owner}.${fieldName}: role ${JSON.stringify(role)} is not one of ${RELATIONSHIP_ROLES.join(', ')}.`,
+            );
+          } else if (
+            field.type !== 'foreignKey' &&
+            field.type !== 'crossPackageRef'
+          ) {
+            failures.push(
+              `${owner}.${fieldName}: role "${role}" needs a foreignKey or crossPackageRef field, but this field is ${field.type}.`,
+            );
+          }
+        }
+        const ui = field._meta?.ui as
+          | { widget?: unknown; format?: unknown }
+          | undefined;
+        if (!ui || typeof ui !== 'object') continue;
+        if (ui.format !== undefined) {
+          if (!isFieldUIFormat(ui.format)) {
+            failures.push(
+              `${owner}.${fieldName}: ui.format ${JSON.stringify(ui.format)} is not one of ${FIELD_UI_FORMATS.join(', ')}.`,
+            );
+          } else if (!FIELD_UI_FORMAT_TYPES[ui.format].includes(field.type)) {
+            failures.push(
+              `${owner}.${fieldName}: ui.format "${ui.format}" needs a field of type ${FIELD_UI_FORMAT_TYPES[ui.format].join(' or ')}, but this field is ${field.type}.`,
+            );
+          }
+        }
+        if (ui.widget === undefined) continue;
         if (!isFieldUIWidget(ui.widget)) {
           failures.push(
             `${owner}.${fieldName}: ui.widget ${JSON.stringify(ui.widget)} is not one of ${FIELD_UI_WIDGETS.join(', ')}.`,
@@ -1143,7 +1401,7 @@ export class ManifestGenerator {
     for (const [name, obj] of Object.entries(manifest.objects)) {
       // Collections access their item model's table; an independent schema can
       // contradict that model's tenant/conflict identity during aggregation.
-      if (this.extendsCollection(obj, schemaClasses)) {
+      if (this.extendsCollection(obj, schemaClasses, aggregatedManifest)) {
         delete obj.schema;
         continue;
       }
@@ -1219,7 +1477,8 @@ export class ManifestGenerator {
     // Preserve collection metadata, but take persistence identity from the item
     // model only after every model schema (including FK repair) is complete.
     for (const obj of Object.values(manifest.objects)) {
-      if (!this.extendsCollection(obj, schemaClasses)) continue;
+      if (!this.extendsCollection(obj, schemaClasses, aggregatedManifest))
+        continue;
       let current: SmartObjectDefinition | undefined = obj;
       const visited = new Set<SmartObjectDefinition>();
       while (current && !visited.has(current)) {
@@ -1229,23 +1488,31 @@ export class ManifestGenerator {
           aggregatedManifest,
           schemaClasses,
         );
-        if (item?.schema && !this.extendsCollection(item, schemaClasses)) {
+        if (
+          item?.schema &&
+          !this.extendsCollection(item, schemaClasses, aggregatedManifest)
+        ) {
           obj.schema = structuredClone(item.schema);
           break;
         }
-        current = current.extends
-          ? schemaClasses.get(current.extends)
-          : undefined;
+        current = this.namedParent(current, schemaClasses, aggregatedManifest);
       }
     }
   }
 
-  normalizeReportObjects(manifest: SmartObjectManifest): void {
+  /** A report model's generated surface defaults to `list`/`get`. */
+  applyReportSurfaceDefaults(manifest: SmartObjectManifest): void {
     for (const obj of Object.values(manifest.objects)) {
       if (!obj.decoratorConfig?.report) continue;
-
       obj.decoratorConfig.api ??= { include: ['list', 'get'] };
       obj.decoratorConfig.mcp ??= { include: ['list', 'get'] };
+    }
+  }
+
+  normalizeReportObjects(manifest: SmartObjectManifest): void {
+    this.applyReportSurfaceDefaults(manifest);
+    for (const obj of Object.values(manifest.objects)) {
+      if (!obj.decoratorConfig?.report) continue;
 
       if (obj.decoratorConfig.conflictColumns) continue;
 
@@ -1646,7 +1913,12 @@ export class ManifestGenerator {
         continue;
       }
 
-      if (extendsLower === baseClassLower) {
+      // An import-qualified parent names its package: a same-named base of
+      // another package is not this class's ancestor (#4145).
+      if (
+        extendsLower === baseClassLower &&
+        !this.qualifiedParentExcludes(obj, baseClassName)
+      ) {
         descendants.push(name);
         descendants.push(
           ...this.findDescendantsInManifest(name, manifest, visited),
@@ -1655,6 +1927,21 @@ export class ManifestGenerator {
     }
 
     return descendants;
+  }
+
+  /**
+   * Whether `obj`'s import-qualified parent rules out `baseClassName` (a
+   * qualified name of another class with the same simple name).
+   */
+  private qualifiedParentExcludes(
+    obj: SmartObjectDefinition,
+    baseClassName: string,
+  ): boolean {
+    return (
+      !!obj.extendsQualified &&
+      isQualifiedName(baseClassName) &&
+      obj.extendsQualified !== baseClassName
+    );
   }
 
   private applySqlTypeOverrides(obj: SmartObjectDefinition): void {
@@ -1773,27 +2060,21 @@ export class ManifestGenerator {
     }
 
     // Walk up the inheritance chain looking for STI base
-    let currentClass: string | undefined = obj.extends;
+    let currentClass: string | undefined = this.parentRef(obj);
     const visited = new Set<string>();
 
     while (currentClass) {
       if (visited.has(currentClass)) break;
       visited.add(currentClass);
 
-      let parentObj = objectsByName.get(currentClass);
-
-      // If parent not in current manifest, try loading from external SMRT packages
-      if (
-        !parentObj &&
-        manifest.smrtDependencies &&
-        manifest.smrtDependencies.length > 0
-      ) {
-        parentObj = this.loadParentFromExternalPackage(
-          currentClass,
-          manifest.smrtDependencies,
-          objectsByName,
-        );
-      }
+      // Local first, then external SMRT packages; a qualified parent only
+      // resolves to its own package's class (#4145).
+      const parentObj = this.resolveParentDefinition(
+        currentClass,
+        obj,
+        manifest,
+        objectsByName,
+      );
 
       if (!parentObj) break; // Parent not found anywhere (e.g., SmrtObject)
 
@@ -1801,7 +2082,7 @@ export class ManifestGenerator {
         return true; // Found STI ancestor
       }
 
-      currentClass = parentObj.extends;
+      currentClass = this.parentRef(parentObj);
     }
 
     return false;
@@ -1854,27 +2135,19 @@ export class ManifestGenerator {
     let stiBaseInfo: { className: string; tableName: string } | undefined;
 
     // Walk up the inheritance chain looking for the OLDEST STI base
-    let currentClass: string | undefined = obj.extends;
+    let currentClass: string | undefined = this.parentRef(obj);
     const visited = new Set<string>();
 
     while (currentClass) {
       if (visited.has(currentClass)) break;
       visited.add(currentClass);
 
-      let parentObj = objectsByName.get(currentClass);
-
-      // If parent not in current manifest, try loading from external SMRT packages
-      if (
-        !parentObj &&
-        manifest.smrtDependencies &&
-        manifest.smrtDependencies.length > 0
-      ) {
-        parentObj = this.loadParentFromExternalPackage(
-          currentClass,
-          manifest.smrtDependencies,
-          objectsByName,
-        );
-      }
+      const parentObj = this.resolveParentDefinition(
+        currentClass,
+        obj,
+        manifest,
+        objectsByName,
+      );
 
       if (!parentObj) break;
 
@@ -1891,7 +2164,7 @@ export class ManifestGenerator {
         };
       }
 
-      currentClass = parentObj.extends;
+      currentClass = this.parentRef(parentObj);
     }
 
     return stiBaseInfo; // Return the oldest STI ancestor found (or undefined if none)
@@ -1938,6 +2211,39 @@ export class ManifestGenerator {
     return className.includes(':')
       ? className.split(':').pop() || className
       : className;
+  }
+
+  /**
+   * Fill missing manifest metadata on a child's own redeclared field from the
+   * inherited (nearest declaring ancestor) definition it replaces.
+   *
+   * Child-wins: every property the child's own field carries is kept, so a
+   * redeclaration that sets its own options still replaces the ancestor's.
+   * But a bare redeclaration — no annotation, no decorator, common for STI
+   * discriminators like `override contractType = ContractType.ORDER` —
+   * converts to a bare field and would otherwise drop the ancestor's
+   * `enum` and `description` during this manifest-level merge, most visibly
+   * when the child's manifest comes from an external package built by a
+   * scanner that predates the raw-level fill (#4005). Fill only what is
+   * missing so closed literal sets and field docs survive the merge.
+   *
+   * @param inherited - The merged ancestor field being overridden.
+   * @param own - The child's own field definition, which wins.
+   * @returns The child's field with missing `enum`/`description` filled in.
+   */
+  private mergeInheritedFieldOverride(
+    inherited: FieldDefinition,
+    own: FieldDefinition,
+  ): FieldDefinition {
+    return {
+      ...own,
+      ...(own.enum === undefined && inherited.enum !== undefined
+        ? { enum: inherited.enum }
+        : {}),
+      ...(own.description === undefined && inherited.description !== undefined
+        ? { description: inherited.description }
+        : {}),
+    };
   }
 
   /**
@@ -1998,9 +2304,12 @@ export class ManifestGenerator {
         `[manifest-generator] Merging inherited fields for ${obj.className} from ${obj.extends}`,
       );
 
-      // Build full inheritance chain (base -> child)
+      // Build full inheritance chain (base -> child). Each ancestor keeps
+      // the definition it resolved to: re-resolving its simple name later
+      // could pick another package's same-named class (#4145).
       const inheritanceChain: string[] = [];
-      let currentClass: string | undefined = obj.extends;
+      const ancestorDefs: Array<SmartObjectDefinition | undefined> = [];
+      let currentClass: string | undefined = this.parentRef(obj);
       const visited = new Set<string>();
 
       while (currentClass) {
@@ -2011,33 +2320,25 @@ export class ManifestGenerator {
           break;
         }
         visited.add(currentClass);
-        inheritanceChain.unshift(currentClass); // Add to front (building base -> child)
 
-        let parentObj = objectsByName.get(currentClass);
-
-        // Skip self-reference: when a local class has the same name as its
+        // Skips self-reference: when a local class has the same name as its
         // imported parent (e.g., local Performer extends external Performer),
-        // objectsByName returns the child itself. Skip it so we fall through
-        // to the external package lookup.
-        if (parentObj === obj) {
-          parentObj = undefined;
-        }
+        // the local lookup returns the child itself and falls through to the
+        // external package lookup.
+        const parentObj = this.resolveParentDefinition(
+          currentClass,
+          obj,
+          manifest,
+          objectsByName,
+        );
 
-        // If parent not in current manifest, try loading from external SMRT packages
-        if (
-          !parentObj &&
-          manifest.smrtDependencies &&
-          manifest.smrtDependencies.length > 0
-        ) {
-          parentObj = this.loadParentFromExternalPackage(
-            currentClass,
-            manifest.smrtDependencies,
-            objectsByName,
-          );
-        }
-
+        // Chain entries are simple names, as before; the resolved definition
+        // rides alongside.
+        const ancestorName = this.simpleClassName(currentClass);
+        inheritanceChain.unshift(ancestorName); // Add to front (building base -> child)
+        ancestorDefs.unshift(parentObj);
         if (!parentObj) break; // Parent not found anywhere (e.g., SmrtObject)
-        currentClass = parentObj.extends;
+        currentClass = this.parentRef(parentObj);
       }
 
       logger.debug(
@@ -2058,8 +2359,8 @@ export class ManifestGenerator {
       const mergedFieldOwners = new Map<string, string>();
       const mergedMethods: Record<string, MethodDefinition> = {};
 
-      for (const ancestorName of inheritanceChain) {
-        const ancestor = objectsByName.get(ancestorName);
+      for (const [index, ancestorName] of inheritanceChain.entries()) {
+        const ancestor = ancestorDefs[index];
         if (!ancestor) continue;
 
         const ancestorIsFrameworkBase =
@@ -2093,6 +2394,16 @@ export class ManifestGenerator {
                 obj.className,
               );
               mergedFieldOwners.set(fieldName, ancestorName);
+            } else if (usesSTI) {
+              // Storage stays with its oldest owner; enum/docs follow the
+              // nearest declaring ancestor, including prebuilt manifests.
+              mergedFields[fieldName] = {
+                ...mergedFields[fieldName],
+                ...(fieldDef.enum !== undefined ? { enum: fieldDef.enum } : {}),
+                ...(fieldDef.description !== undefined
+                  ? { description: fieldDef.description }
+                  : {}),
+              };
             }
           }
         }
@@ -2133,7 +2444,10 @@ export class ManifestGenerator {
 
       // Add child's own fields (override any parent fields with same name)
       for (const [fieldName, fieldDef] of Object.entries(obj.fields)) {
-        mergedFields[fieldName] = fieldDef;
+        const inherited = mergedFields[fieldName];
+        mergedFields[fieldName] = inherited
+          ? this.mergeInheritedFieldOverride(inherited, fieldDef)
+          : fieldDef;
       }
 
       // Add child's own methods
@@ -2202,76 +2516,331 @@ export class ManifestGenerator {
       );
     }
 
+    // A model subclass inherits every generated surface (and `sensitive`) it
+    // leaves unset from its parent model. Before the collection pass below,
+    // so a subclass's collection inherits the subclass's effective surface.
+    this.applySubclassExposureInheritance(manifest, objectsByName);
+
     // SECOND PASS: Handle collection classes that should inherit from their item class
     // This must happen AFTER STI field merging so item classes have their tableName set
     for (const obj of Object.values(manifest.objects)) {
       // Check if this is a collection class (extends SmrtCollection)
       const isCollection =
         obj.extends === 'SmrtCollection' ||
-        this.extendsCollection(obj, objectsByName);
+        this.extendsCollection(obj, objectsByName, manifest);
+      // Junction and report collections inherit their model's exposure too,
+      // but keep their own storage naming (that predates this pass).
+      if (
+        !isCollection &&
+        !this.extendsAnyCollectionBase(obj, objectsByName, manifest)
+      ) {
+        continue;
+      }
+
+      // Find the item class from _itemClass static property
+      const itemClass = this.findItemClass(obj, manifest, objectsByName);
+      if (!itemClass || itemClass === obj) continue;
+
+      logger.debug(
+        `[manifest-generator] ${obj.className} is a collection class for ${itemClass.className}`,
+      );
+
+      // Record the classification itself: collection entries also carry the
+      // model's tableName and schema (for routes and parity), so without it
+      // a runtime that cannot walk the parent chain or match prototypes
+      // (another core copy, an unloaded parent manifest) would count the
+      // collection as a second owner of the model's table (#3956).
+      obj.collectionOf = itemClass.qualifiedName || itemClass.className;
 
       if (isCollection) {
-        // Find the item class from _itemClass static property
-        const itemClass = this.findItemClass(obj, manifest, objectsByName);
-
-        if (itemClass) {
+        // Inherit tableName from item class (which may have inherited it from STI base)
+        if (itemClass.decoratorConfig?.tableName) {
+          obj.decoratorConfig = obj.decoratorConfig || {};
+          obj.decoratorConfig.tableName = itemClass.decoratorConfig.tableName;
           logger.debug(
-            `[manifest-generator] ${obj.className} is a collection class for ${itemClass.className}`,
+            `[manifest-generator] ${obj.className} inherits tableName: '${itemClass.decoratorConfig.tableName}' from item class ${itemClass.className}`,
           );
+        }
 
-          // Inherit tableName from item class (which may have inherited it from STI base)
-          if (itemClass.decoratorConfig?.tableName) {
-            obj.decoratorConfig = obj.decoratorConfig || {};
-            obj.decoratorConfig.tableName = itemClass.decoratorConfig.tableName;
-            logger.debug(
-              `[manifest-generator] ${obj.className} inherits tableName: '${itemClass.decoratorConfig.tableName}' from item class ${itemClass.className}`,
-            );
-          }
-
-          // Inherit collection name from item class
-          if (itemClass.collection !== obj.collection) {
-            logger.debug(
-              `[manifest-generator] ${obj.className} inherits collection: '${itemClass.collection}' from item class ${itemClass.className} (was '${obj.collection}')`,
-            );
-            obj.collection = itemClass.collection;
-          }
-
-          // Inherit a full route opt-out (api/mcp/cli === false) from the
-          // item class unless the collection class explicitly overrides it
-          // itself. Decorator-only registration never gives an undecorated
-          // collection its own independent route surface, so an item class
-          // that fully opts out of generated routes (e.g. api: false for a
-          // tenant-isolation fail-closed class such as SmrtJob, #2750) must
-          // not leave its collection independently advertised in the
-          // manifest path.
-          //
-          // Deliberately scoped to the boolean `false` opt-out only, never
-          // to an object-form config (e.g. `{ include: [...] }`): those
-          // configs list method names specific to the ITEM class's own
-          // instance methods, which do not correspond 1:1 to the
-          // COLLECTION class's methods of the same name (different
-          // signatures, e.g. a bulk/collection `create` vs. a single-record
-          // `create`) -- copying them verbatim previously broke unrelated
-          // packages whose item class narrows its own api/cli/mcp surface
-          // with an include list (e.g. @happyvertical/smrt-subscriptions's
-          // TenantUsageMetric), producing a spurious "CLI command not
-          // exposed via the api" build error on the collection.
-          for (const key of ['api', 'mcp', 'cli'] as const) {
-            const itemValue = itemClass.decoratorConfig?.[key];
-            if (
-              itemValue === false &&
-              obj.decoratorConfig?.[key] === undefined
-            ) {
-              obj.decoratorConfig = obj.decoratorConfig || {};
-              obj.decoratorConfig[key] = false;
-              logger.debug(
-                `[manifest-generator] ${obj.className} inherits ${key}: false from item class ${itemClass.className}`,
-              );
-            }
-          }
+        // Routes may use an explicit namespace independently of item storage.
+        // Match registry registration, where decorator collection wins.
+        if (typeof obj.decoratorConfig?.collection === 'string') {
+          obj.collection = obj.decoratorConfig.collection;
+        } else if (itemClass.collection !== obj.collection) {
+          logger.debug(
+            `[manifest-generator] ${obj.className} inherits collection: '${itemClass.collection}' from item class ${itemClass.className} (was '${obj.collection}')`,
+          );
+          obj.collection = itemClass.collection;
         }
       }
+
+      // A collection class is generated as a resource of its own, so a
+      // surface it leaves unset inherits its model's exposure: `false`,
+      // the CRUD verbs of an `include` list, an `exclude` list, and
+      // read-only MCP over a `sensitive` model. Without this an object-form
+      // model config left the collection open on every transport. From an
+      // `include` list only CRUD verbs and names only the collection declares
+      // carry over: a name the model declares is the model's own method, and
+      // a same-named collection method is a different operation, so it stays
+      // closed until the collection lists it. See `registry/collection-exposure.ts`.
+      const inherited = inheritCollectionExposure(
+        obj.decoratorConfig || {},
+        itemClass.decoratorConfig || {},
+        {
+          collection: new Set(Object.keys(obj.methods || {})),
+          item: new Set(Object.keys(itemClass.methods || {})),
+        },
+      );
+      if (Object.keys(inherited).length > 0) {
+        obj.decoratorConfig = { ...(obj.decoratorConfig || {}), ...inherited };
+        // Keep the copied surfaces distinguishable from the collection's own,
+        // so the runtime can follow its model's effective config (#3468).
+        obj.inheritedExposure = Object.keys(inherited) as Array<
+          keyof typeof inherited
+        >;
+        logger.debug(
+          `[manifest-generator] ${obj.className} inherits ${Object.keys(inherited).join(', ')} exposure from item class ${itemClass.className}`,
+        );
+      }
     }
+  }
+
+  /**
+   * The model a model class directly extends, from this manifest or an
+   * external SMRT dependency's, or `undefined` when its parent is a framework
+   * base, a collection or unknown, or when the class is itself a collection.
+   */
+  private findParentModel(
+    obj: SmartObjectDefinition,
+    manifest: SmartObjectManifest,
+    objectsByName: Map<string, SmartObjectDefinition>,
+  ): SmartObjectDefinition | undefined {
+    const parentName = obj.extendsQualified || obj.extends;
+    if (!parentName) return undefined;
+    const simpleParent = this.simpleClassName(parentName);
+    if (
+      FRAMEWORK_ABSTRACT_BASE_NAMES.has(simpleParent) ||
+      FRAMEWORK_METHOD_BASE_NAMES.has(simpleParent) ||
+      isSmrtCollectionExtendsName(parentName)
+    ) {
+      return undefined;
+    }
+    if (
+      this.extendsCollection(obj, objectsByName, manifest) ||
+      this.extendsAnyCollectionBase(obj, objectsByName, manifest)
+    ) {
+      return undefined;
+    }
+    let parent =
+      (obj.extendsQualified
+        ? (manifest.objects[obj.extendsQualified] as
+            | SmartObjectDefinition
+            | undefined)
+        : undefined) ?? objectsByName.get(obj.extends ?? simpleParent);
+    if (parent === obj) parent = undefined;
+    if (!parent && manifest.smrtDependencies?.length) {
+      parent = this.loadParentFromExternalPackage(
+        parentName,
+        manifest.smrtDependencies,
+        objectsByName,
+      );
+    }
+    if (!parent || parent === obj) return undefined;
+    if (
+      this.extendsCollection(parent, objectsByName, manifest) ||
+      this.extendsAnyCollectionBase(parent, objectsByName, manifest)
+    ) {
+      return undefined;
+    }
+    return parent;
+  }
+
+  /**
+   * A model's config with the surfaces it inherits from its ancestors
+   * (`registry/subclass-exposure.ts`), computed without mutating `obj` or any
+   * external manifest entry.
+   */
+  private subclassEffectiveConfig(
+    obj: SmartObjectDefinition,
+    manifest: SmartObjectManifest,
+    objectsByName: Map<string, SmartObjectDefinition>,
+    memo: Map<SmartObjectDefinition, SmartObjectConfig>,
+    visiting: Set<SmartObjectDefinition> = new Set(),
+  ): SmartObjectConfig {
+    const cached = memo.get(obj);
+    if (cached) return cached;
+    const own = obj.decoratorConfig || {};
+    if (visiting.has(obj)) return own;
+    visiting.add(obj);
+    let config = own;
+    const parent = this.findParentModel(obj, manifest, objectsByName);
+    if (parent) {
+      const inherited = inheritSubclassExposure(
+        own,
+        this.subclassEffectiveConfig(
+          parent,
+          manifest,
+          objectsByName,
+          memo,
+          visiting,
+        ),
+      );
+      if (Object.keys(inherited).length > 0) config = { ...own, ...inherited };
+    }
+    visiting.delete(obj);
+    memo.set(obj, config);
+    return config;
+  }
+
+  /**
+   * Give every model subclass in this manifest the generated surfaces and
+   * `sensitive` flag it leaves unset from its parent model. Without this an
+   * STI child such as `Person extends Profile` was generated with the open
+   * default surface, publishing every write and method `Profile` closes.
+   */
+  private applySubclassExposureInheritance(
+    manifest: SmartObjectManifest,
+    objectsByName: Map<string, SmartObjectDefinition>,
+  ): void {
+    const memo = new Map<SmartObjectDefinition, SmartObjectConfig>();
+    const updates: Array<[SmartObjectDefinition, SmartObjectConfig]> = [];
+    for (const obj of Object.values(manifest.objects)) {
+      const effective = this.subclassEffectiveConfig(
+        obj,
+        manifest,
+        objectsByName,
+        memo,
+      );
+      if (effective !== (obj.decoratorConfig || {})) {
+        updates.push([obj, effective]);
+      }
+    }
+    for (const [obj, effective] of updates) {
+      obj.decoratorConfig = effective;
+      logger.debug(
+        `[manifest-generator] ${obj.className} inherits generated-surface exposure from ${obj.extends}`,
+      );
+    }
+  }
+
+  /**
+   * Fail the build when a model subclass's own `@smrt()` opens a generated
+   * operation (a CRUD verb or a parent method, on REST, MCP or CLI) that its
+   * parent model closes, or drops its parent's `sensitive: true`, without
+   * naming it in `widenParentExposure`. Runs after inheritance, so only a
+   * subclass's own config can trip it.
+   */
+  private assertSubclassExposure(manifest: SmartObjectManifest): void {
+    const objectsByName = new Map<string, SmartObjectDefinition>();
+    for (const objectDef of Object.values(manifest.objects)) {
+      objectsByName.set(objectDef.className, objectDef);
+    }
+    const memo = new Map<SmartObjectDefinition, SmartObjectConfig>();
+    const findings: Parameters<typeof formatSubclassExposureEscalations>[0] =
+      [];
+    for (const obj of Object.values(manifest.objects)) {
+      const parent = this.findParentModel(obj, manifest, objectsByName);
+      if (!parent) continue;
+      const childConfig = this.subclassEffectiveConfig(
+        obj,
+        manifest,
+        objectsByName,
+        memo,
+      );
+      const parentConfig = this.subclassEffectiveConfig(
+        parent,
+        manifest,
+        objectsByName,
+        memo,
+      );
+      const parentOperations = Object.entries(parent.methods || {})
+        .filter(([, method]) => method.isPublic !== false)
+        .map(([name]) => name);
+      const escalations = findSubclassExposureEscalations(
+        childConfig,
+        parentConfig,
+        parentOperations,
+      );
+      const stale = findStaleWidenings(childConfig, parentConfig);
+      if (escalations.length > 0 || stale.length > 0) {
+        findings.push({
+          subclass: obj.qualifiedName || obj.className,
+          parent: parent.qualifiedName || parent.className,
+          escalations,
+          stale,
+        });
+      }
+    }
+    if (findings.length > 0) {
+      throw new ConfigurationError(
+        formatSubclassExposureEscalations(findings),
+        'CONFIG_SUBCLASS_EXPOSURE',
+      );
+    }
+  }
+
+  /**
+   * Fail the build when a collection class opens a generated CRUD write (MCP
+   * or CLI) that its model keeps closed. Runs after inheritance, so only a
+   * collection's own `@smrt()` surface can trip it.
+   */
+  private assertCollectionExposure(manifest: SmartObjectManifest): void {
+    const objectsByName = new Map(
+      Object.values(manifest.objects).map((objectDef) => [
+        objectDef.className,
+        objectDef,
+      ]),
+    );
+    const findings: Parameters<typeof formatCollectionWriteEscalations>[0] = [];
+    for (const obj of Object.values(manifest.objects)) {
+      if (
+        obj.extends !== 'SmrtCollection' &&
+        !this.extendsCollection(obj, objectsByName, manifest) &&
+        !this.extendsAnyCollectionBase(obj, objectsByName, manifest)
+      ) {
+        continue;
+      }
+      const itemClass = this.findItemClass(obj, manifest, objectsByName);
+      if (!itemClass || itemClass === obj) continue;
+      const escalations = findCollectionWriteEscalations(
+        obj.decoratorConfig || {},
+        itemClass.decoratorConfig || {},
+      );
+      if (escalations.length > 0) {
+        findings.push({
+          collection: obj.qualifiedName || obj.className,
+          model: itemClass.qualifiedName || itemClass.className,
+          escalations,
+        });
+      }
+    }
+    if (findings.length > 0) {
+      throw new ConfigurationError(
+        formatCollectionWriteEscalations(findings),
+        'CONFIG_COLLECTION_EXPOSURE',
+      );
+    }
+  }
+
+  /**
+   * Whether a class descends from any SMRT collection base (`SmrtCollection`,
+   * `SmrtJunction`, `SmrtJunctionBase`, `SmrtReportCollection`), following
+   * parents declared in this manifest.
+   */
+  private extendsAnyCollectionBase(
+    obj: SmartObjectDefinition,
+    objectsByName: Map<string, SmartObjectDefinition>,
+    manifest?: SmartObjectManifest,
+  ): boolean {
+    let current: SmartObjectDefinition | undefined = obj;
+    const visited = new Set<SmartObjectDefinition>();
+    while (current?.extends) {
+      if (isSmrtCollectionExtendsName(current.extends)) return true;
+      if (visited.has(current)) return false;
+      visited.add(current);
+      current = this.namedParent(current, objectsByName, manifest);
+    }
+    return false;
   }
 
   /**
@@ -2284,23 +2853,19 @@ export class ManifestGenerator {
   private extendsCollection(
     obj: SmartObjectDefinition,
     objectsByName: Map<string, SmartObjectDefinition>,
+    manifest?: SmartObjectManifest,
   ): boolean {
-    if (!obj.extends) return false;
-
     // Walk up inheritance chain looking for SmrtCollection
-    let currentClass: string | undefined = obj.extends;
-    const visited = new Set<string>();
+    let current: SmartObjectDefinition | undefined = obj;
+    const visited = new Set<SmartObjectDefinition>();
 
-    while (currentClass) {
-      if (visited.has(currentClass)) break;
-      visited.add(currentClass);
+    while (current?.extends) {
+      if (visited.has(current)) break;
+      visited.add(current);
 
-      if (currentClass === 'SmrtCollection') return true;
+      if (current.extends === 'SmrtCollection') return true;
 
-      const parentObj = objectsByName.get(currentClass);
-      if (!parentObj) break;
-
-      currentClass = parentObj.extends;
+      current = this.namedParent(current, objectsByName, manifest);
     }
 
     return false;
@@ -2466,7 +3031,7 @@ export class ManifestGenerator {
     }
 
     // Walk up the inheritance chain looking for STI base
-    let currentClass: string | undefined = obj.extends;
+    let currentClass: string | undefined = this.parentRef(obj);
     const visited = new Set<string>();
 
     while (currentClass) {
@@ -2475,25 +3040,13 @@ export class ManifestGenerator {
       }
       visited.add(currentClass);
 
-      let parentDef = objectsByName.get(currentClass);
-
-      // Skip self-reference (local class with same name as imported parent)
-      if (parentDef === obj) {
-        parentDef = undefined;
-      }
-
-      // If parent not in current manifest, try loading from external SMRT packages
-      if (
-        !parentDef &&
-        manifest.smrtDependencies &&
-        manifest.smrtDependencies.length > 0
-      ) {
-        parentDef = this.loadParentFromExternalPackage(
-          currentClass,
-          manifest.smrtDependencies,
-          objectsByName,
-        );
-      }
+      // Skips self-reference (local class with same name as imported parent).
+      const parentDef = this.resolveParentDefinition(
+        currentClass,
+        obj,
+        manifest,
+        objectsByName,
+      );
 
       if (!parentDef) break; // Parent not found anywhere
 
@@ -2502,7 +3055,7 @@ export class ManifestGenerator {
         return true; // Found STI ancestor
       }
 
-      currentClass = parentDef.extends;
+      currentClass = this.parentRef(parentDef);
     }
 
     return false; // No STI in hierarchy
@@ -2533,7 +3086,7 @@ export class ManifestGenerator {
     }
 
     // Walk up the inheritance chain looking for the oldest STI base
-    let currentClass: string | undefined = obj.extends;
+    let currentClass: string | undefined = this.parentRef(obj);
     const visited = new Set<string>();
 
     while (currentClass) {
@@ -2542,25 +3095,13 @@ export class ManifestGenerator {
       }
       visited.add(currentClass);
 
-      let parentDef = objectsByName.get(currentClass);
-
-      // Skip self-reference (local class with same name as imported parent)
-      if (parentDef === obj) {
-        parentDef = undefined;
-      }
-
-      // If parent not in current manifest, try loading from external SMRT packages
-      if (
-        !parentDef &&
-        manifest.smrtDependencies &&
-        manifest.smrtDependencies.length > 0
-      ) {
-        parentDef = this.loadParentFromExternalPackage(
-          currentClass,
-          manifest.smrtDependencies,
-          objectsByName,
-        );
-      }
+      // Skips self-reference (local class with same name as imported parent).
+      const parentDef = this.resolveParentDefinition(
+        currentClass,
+        obj,
+        manifest,
+        objectsByName,
+      );
 
       if (!parentDef) break; // Parent not found anywhere
 
@@ -2570,7 +3111,7 @@ export class ManifestGenerator {
         stiBase = parentDef;
       }
 
-      currentClass = parentDef.extends;
+      currentClass = this.parentRef(parentDef);
     }
 
     return stiBase; // Return the oldest STI ancestor found (or undefined if none)
@@ -2606,9 +3147,15 @@ export class ManifestGenerator {
       const parentObj = lookupInManifest(externalManifest, parentClassName);
 
       if (parentObj) {
-        // Cache the loaded parent object for future lookups
-        objectsByName.set(parentObj.className, parentObj);
-        objectsByName.set(parentObj.className.toLowerCase(), parentObj);
+        // Cache the loaded parent object for future lookups, but never over
+        // a local class of the same simple name: that entry is this
+        // package's own parent for its other subclasses (#4145).
+        if (!objectsByName.has(parentObj.className)) {
+          objectsByName.set(parentObj.className, parentObj);
+        }
+        if (!objectsByName.has(parentObj.className.toLowerCase())) {
+          objectsByName.set(parentObj.className.toLowerCase(), parentObj);
+        }
 
         return parentObj;
       }
@@ -2765,15 +3312,10 @@ export class ManifestGenerator {
     // across runs (#2749): the vite-plugin's server-mode `@smrt/types`
     // resolution calls this method directly, so sort deterministically
     // before emitting for the same reason as the prebuild/client-mode paths.
-    const sortedEntries = Object.entries(manifest.objects).sort(
-      ([leftKey, left], [rightKey, right]) =>
-        compareText(
-          left.qualifiedName || leftKey,
-          right.qualifiedName || rightKey,
-        ) || compareText(leftKey, rightKey),
-    );
-    for (const [_name, obj] of sortedEntries) {
-      interfaces.push(this.generateInterface(obj));
+    // One class can be listed under several packages (#3296); the shared
+    // declaration selection collapses those listings to one interface.
+    for (const { interfaceName, obj } of selectObjectDeclarations(manifest)) {
+      interfaces.push(this.generateInterface(obj, interfaceName));
     }
 
     return interfaces.join('\n\n');
@@ -2782,7 +3324,10 @@ export class ManifestGenerator {
   /**
    * Generate a single interface definition
    */
-  private generateInterface(obj: SmartObjectDefinition): string {
+  private generateInterface(
+    obj: SmartObjectDefinition,
+    interfaceName: string,
+  ): string {
     const fields = Object.entries(obj.fields)
       .map(([name, field]) => {
         const optional = !field.required ? '?' : '';
@@ -2791,7 +3336,7 @@ export class ManifestGenerator {
       })
       .join('\n');
 
-    return `export interface ${obj.className}Data {
+    return `export interface ${interfaceName} {
 ${fields}
 }`;
   }

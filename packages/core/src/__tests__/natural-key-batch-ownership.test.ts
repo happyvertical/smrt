@@ -2,9 +2,8 @@
  * Natural-key ownership on the compatible junction batch path and the strict
  * insert path (follow-up to the Anytown Ludis takeover fix).
  *
- * `tryJunctionBatch` writes new rows with one multi-row
- * `INSERT … ON CONFLICT (…) DO UPDATE SET`, which cannot run `save()`'s
- * per-row natural-key identity guard:
+ * `tryJunctionBatch` groups new rows in one write. A conflict discovered
+ * during preflight uses `save()`'s per-row guard instead:
  *
  * - a same-owner collision must not rewrite the existing row's primary key
  *   (the SET list used to include `"id" = excluded.id`);
@@ -16,7 +15,15 @@
  * (which a unique index cannot enforce) is checked explicitly.
  */
 
-import { afterAll, beforeAll, beforeEach, describe, expect, it } from 'vitest';
+import {
+  afterAll,
+  beforeAll,
+  beforeEach,
+  describe,
+  expect,
+  it,
+  vi,
+} from 'vitest';
 import { field } from '../decorators/index.js';
 import { ValidationError } from '../errors.js';
 import { SmrtObject } from '../object.js';
@@ -150,6 +157,65 @@ describe('natural-key ownership on the batch and strict-insert paths', () => {
     expect(rows.map((row) => row.id).sort()).toEqual(
       items.map((item) => item.id).sort(),
     );
+  });
+
+  it('rolls back all additions when a tracked key appears after the batch probe', async () => {
+    const fresh = await link(NkbLink, db, {
+      ownerId: 'o',
+      assetId: 'fresh',
+      tenantId: TENANT_A,
+    });
+    const duplicate = await link(NkbLink, db, {
+      ownerId: 'o',
+      assetId: 'late',
+      tenantId: TENANT_A,
+      sortOrder: 7,
+    });
+    const tracked = new NkbLink({
+      db,
+      id: crypto.randomUUID(),
+      _skipLoad: true,
+    });
+    await tracked.initialize();
+    Object.assign(tracked, {
+      ownerId: 'o',
+      assetId: 'late',
+      tenantId: TENANT_A,
+      sortOrder: 1,
+    });
+    const query = db.query.bind(db);
+    const spy = vi
+      .spyOn(db, 'query')
+      .mockImplementation(async (sql, ...params) => {
+        const result = await query(sql, ...params);
+        if (
+          sql.startsWith('SELECT "id" FROM "nkb_links"') &&
+          !tracked.isPersisted
+        ) {
+          await tracked.save({
+            sync: { originDeviceId: 'another-device', revision: 1 },
+          });
+        }
+        return result;
+      });
+    try {
+      await expect(
+        SmrtObject.tryJunctionBatch([], [fresh, duplicate]),
+      ).rejects.toMatchObject({
+        code: 'RUNTIME_INVALID_STATE',
+      });
+      expect(await db.list('nkb_links', {})).toEqual([
+        expect.objectContaining({
+          id: tracked.id,
+          asset_id: 'late',
+          sort_order: 1,
+          _sync_origin_device_id: 'another-device',
+          _sync_revision: 1,
+        }),
+      ]);
+    } finally {
+      spy.mockRestore();
+    }
   });
 
   it('falls back to per-item saves when the conflict target omits tenant_id', async () => {

@@ -253,6 +253,9 @@ function generatePaths(basePath: string): Record<string, OpenAPIPathItem> {
     const shouldInclude = (
       endpoint: 'list' | 'get' | 'create' | 'update' | 'delete',
     ) => {
+      if (config.abstract && endpoint !== 'list' && endpoint !== 'get') {
+        return false;
+      }
       if (included && !included.includes(endpoint)) return false;
       if (excluded.includes(endpoint)) return false;
       return true;

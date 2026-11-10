@@ -306,7 +306,7 @@ const inputLabel = $derived(label ?? t(M['ui.command_palette.input_label']));
     display: flex;
     align-items: center;
     gap: 0.75rem;
-    min-block-size: max(2.5rem, var(--smrt-control-target-min, 0px));
+    min-block-size: max(2.5rem, var(--smrt-control-target-min));
     padding: 0.375rem 0.75rem;
     border-radius: var(--smrt-radius-medium, 0.5rem);
     color: var(--smrt-color-on-surface);

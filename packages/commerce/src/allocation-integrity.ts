@@ -12,6 +12,7 @@ export function allocationOwner(value: string | null): string | null {
 export async function claimAllocationParent(
   parent: Payment | Invoice,
   kind: 'payment' | 'invoice',
+  expectedUpdatedAt?: Date | string,
 ): Promise<void> {
   if (!parent.id) return;
   const { PaymentCollection } = await import(
@@ -27,7 +28,7 @@ export async function claimAllocationParent(
   const persisted = await collection.get({ id: parent.id }, { cache: false });
   if (!persisted) return;
   const expected = parent.isPersisted
-    ? parent.updated_at
+    ? (expectedUpdatedAt ?? parent.updated_at)
     : persisted.updated_at;
   if (!expected) throw new Error('Allocation parent has no persisted revision');
   await persisted.claimRevision(expected);
@@ -89,7 +90,9 @@ export async function assertAllocationParent(
   const cap =
     kind === 'payment'
       ? (parent as Payment).amount
-      : (parent as Invoice).totalAmount;
+      : (parent as Invoice).totalAmount -
+        ((parent as Invoice).getPayableFacts().retainedMinor -
+          (parent as Invoice).getPayableFacts().releasedMinor);
   if (allocationTotal(rows) > BigInt(cap))
     throw new Error('Parent amount cannot be less than committed allocations');
   for (const row of rows) {

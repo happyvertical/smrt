@@ -9,7 +9,7 @@ import { readFile, writeFile } from 'node:fs/promises';
 import { basename, resolve } from 'node:path';
 import { getPackageConfig } from '@happyvertical/smrt-config';
 import { ObjectRegistry } from '@happyvertical/smrt-core';
-import fg from 'fast-glob';
+import { glob } from 'tinyglobby';
 import type { DEFAULT_CLI_CONFIG } from '../config.js';
 import {
   type ObjectValidationResult,
@@ -93,7 +93,10 @@ export async function resolveDataPath(
         const configPath = resolve(process.cwd(), dbUrl);
         if (existsSync(configPath)) {
           // Check if it's a directory with JSON files
-          const hasJsonFiles = await fg('*.json', { cwd: configPath });
+          const hasJsonFiles = await glob('*.json', {
+            cwd: configPath,
+            expandDirectories: false,
+          });
           if (hasJsonFiles.length > 0) {
             return configPath;
           }
@@ -109,7 +112,10 @@ export async function resolveDataPath(
   for (const path of commonPaths) {
     const resolved = resolve(process.cwd(), path);
     if (existsSync(resolved)) {
-      const hasJsonFiles = await fg('*.json', { cwd: resolved });
+      const hasJsonFiles = await glob('*.json', {
+        cwd: resolved,
+        expandDirectories: false,
+      });
       if (hasJsonFiles.length > 0) {
         return resolved;
       }
@@ -123,8 +129,9 @@ export async function resolveDataPath(
  * Discover JSON files in the data directory
  */
 export async function discoverJsonFiles(dataPath: string): Promise<string[]> {
-  return fg('*.json', {
+  return glob('*.json', {
     cwd: dataPath,
+    expandDirectories: false,
     absolute: true,
     ignore: ['*.schema.json', 'package.json', 'tsconfig.json', 'manifest.json'],
   });

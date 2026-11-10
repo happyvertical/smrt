@@ -1,7 +1,7 @@
 {
   "name": "@happyvertical/smrt-core",
-  "version": "0.55.21",
-  "description": "Core AI agent framework with standardized collections, object-relational mapping, and code generators",
+  "version": "0.60.16",
+  "description": "Core SMRT framework for business objects, persistence, and generated REST, CLI, MCP, and AI interfaces",
   "author": "HappyVertical",
   "type": "module",
   "engines": {
@@ -70,6 +70,11 @@
       "types": "./dist/generators/mcp.d.ts",
       "import": "./dist/generators/mcp.js",
       "default": "./dist/generators/mcp.js"
+    },
+    "./mcp-serializer": {
+      "types": "./dist/mcp-serializer.d.ts",
+      "import": "./dist/mcp-serializer.js",
+      "default": "./dist/mcp-serializer.js"
     },
     "./generators/swagger": {
       "types": "./dist/generators/swagger.d.ts",
@@ -153,6 +158,21 @@
       "import": "./dist/utils/database-url.js",
       "default": "./dist/utils/database-url.js"
     },
+    "./byo-inference": {
+      "types": "./dist/byo-inference.d.ts",
+      "import": "./dist/byo-inference.js",
+      "default": "./dist/byo-inference.js"
+    },
+    "./smrt-error": {
+      "types": "./dist/smrt-error.d.ts",
+      "import": "./dist/smrt-error.js",
+      "default": "./dist/smrt-error.js"
+    },
+    "./inference-availability": {
+      "types": "./dist/inference-availability.d.ts",
+      "import": "./dist/inference-availability.js",
+      "default": "./dist/inference-availability.js"
+    },
     "./utils/import-workspace-module": {
       "types": "./dist/utils/import-workspace-module.d.ts",
       "import": "./dist/utils/import-workspace-module.js",
@@ -197,10 +217,9 @@
     "@noble/hashes": "^2.4.0",
     "@oxc-project/runtime": "^0.150.0",
     "cheerio": "^1.2.0",
-    "fast-glob": "3.3.3",
+    "import-meta-resolve": "4.2.0",
     "minimatch": "10.2.6",
     "oxc-transform": "0.150.0",
-    "pluralize": "^8.0.0",
     "tsx": "^4.23.13",
     "yaml": "^2.9.1"
   },
@@ -209,7 +228,7 @@
     "generate": "node scripts/generate-manifest.js",
     "generate:test": "node scripts/generate-test-manifest.js",
     "test": "node scripts/generate-test-manifest.js && vitest run",
-    "test:browser": "node scripts/browser-plain-json-regression.mjs && node scripts/browser-entry-evaluation.mjs",
+    "test:browser": "node scripts/browser-plain-json-regression.mjs && node scripts/browser-entry-evaluation.mjs && node scripts/browser-entry-evaluation.mjs --pglite-cascade && node scripts/browser-unbundled-dev.mjs",
     "test:postgres": "node scripts/generate-test-manifest.js && NODE_OPTIONS=--trace-deprecation node ../../scripts/run-with-ci-postgres.mjs -- pnpm exec vitest run optional.test.ts",
     "test:integration": "TEST_INTEGRATION=1 vitest run src/__tests__/full-registry-integration.test.ts src/__tests__/manifest-no-leak.test.ts",
     "test:watch": "node scripts/generate-test-manifest.js && vitest",
@@ -220,7 +239,7 @@
     "verify:consumer-plugin": "node -e \"try { const { smrtConsumer } = require('./dist/consumer-plugin.js'); const plugin = smrtConsumer(); console.log('✅ Consumer plugin working:', plugin.name); } catch(e) { console.error('❌ Consumer plugin failed:', e.message); process.exit(1); }\"",
     "verify:exports": "node --input-type=module -e \"import { readFileSync, existsSync } from 'fs'; const pkg = JSON.parse(readFileSync('./package.json', 'utf-8')); Object.entries(pkg.exports).forEach(([key, path]) => { if (typeof path === 'string' && existsSync(path)) { console.log('✅', key, '→', path); } else if (typeof path === 'object') { const paths = [path.types, path.browser, path.default, path.import, path.require].filter(Boolean); if (paths.every(p => existsSync(p))) { console.log('✅', key, '→', JSON.stringify(path)); } else { console.error('❌', key, '→', JSON.stringify(path), '(some missing)'); process.exit(1); } } else { console.error('❌', key, '→', path, '(missing)'); process.exit(1); } });\"",
     "build:fresh": "npm run clean && npm run build && npm run verify:exports && npm run verify:consumer-plugin",
-    "prepack": "node scripts/prepack.js"
+    "prepack": "node scripts/prepack.js && node ../../scripts/ship-knowledge-pages.mjs ."
   },
   "peerDependencies": {
     "@huggingface/transformers": ">=3.0.0 <5.0.0",
@@ -243,10 +262,12 @@
     "@types/pluralize": "^0.0.33",
     "@xenova/transformers": "^2.17.2",
     "ajv": "8.20.0",
+    "pluralize": "^8.0.0",
+    "reflect-metadata": "0.2.2",
     "svelte": "^5.57.1",
     "svelte-check": "^4.7.6",
     "typescript": "6.0.3",
-    "vite": "8.1.4",
+    "vite": "8.1.6",
     "vitest": "4.1.10"
   },
   "publishConfig": {

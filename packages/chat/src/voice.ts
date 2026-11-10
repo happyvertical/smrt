@@ -16,6 +16,8 @@ import {
   runPersonaConversationTurn,
 } from './persona-conversation.js';
 import type { ChatService } from './services/index.js';
+import { FALLBACK_HISTORY_PLACEHOLDER, isFallbackReply } from './tool-loop.js';
+import type { ChatMessageRole } from './types.js';
 
 export const SMRT_CHAT_VOICE_TARGET = 'smrt:chat';
 export const MAX_VOICE_GATEWAY_TEXT_LENGTH = 12_000;
@@ -110,6 +112,10 @@ export interface HandleVoiceGatewayTurnOptions {
   ai: AIInterface;
   payload: VoiceGatewayTurnPayload;
   now?: Date;
+  /**
+   * Earlier user, assistant and system messages replayed with a turn;
+   * persisted tool rows do not count (#4458). Default 24.
+   */
   historyLimit?: number;
   recall?: PersonaRecallOptions | false;
   model?: string;
@@ -459,7 +465,7 @@ export async function handleVoiceGatewayTurn(
     return {
       session_id: payload.session_id,
       turn_id: payload.turn_id,
-      text: turn.result.content,
+      text: turn.reply,
       metadata: {
         tenantId: voiceSession.tenantId,
         chatRoomId: voiceSession.chatRoomId,
@@ -736,6 +742,13 @@ function assertActiveAgentSession(session: {
   }
 }
 
+/** The roles voice replays as history (#4458); every other role is skipped. */
+const VOICE_HISTORY_ROLES: readonly ChatMessageRole[] = [
+  'user',
+  'assistant',
+  'system',
+];
+
 async function loadConversationHistory(input: {
   chatService: ChatService;
   tenantId: string;
@@ -744,12 +757,16 @@ async function loadConversationHistory(input: {
   threadId: string | null;
   limit: number;
 }): Promise<AIMessage[]> {
+  // `limit` counts the replayed rows, not raw rows (#4458): the role filter
+  // runs in SQL, so persisted tool rows never take a slot, and the read
+  // stays bounded by `limit` whatever the thread holds.
   const messages = input.threadId
     ? await input.chatService.getThreadMessages({
         threadId: input.threadId,
         actorProfileId: input.actorProfileId,
         tenantId: input.tenantId,
         limit: input.limit,
+        roles: VOICE_HISTORY_ROLES,
       })
     : (
         await input.chatService.getRoomMessages({
@@ -757,6 +774,7 @@ async function loadConversationHistory(input: {
           actorProfileId: input.actorProfileId,
           tenantId: input.tenantId,
           limit: input.limit,
+          roles: VOICE_HISTORY_ROLES,
         })
       ).reverse();
 
@@ -772,6 +790,11 @@ function chatMessageToAIMessage(message: ChatMessage): AIMessage | null {
     message.role !== 'system'
   ) {
     return null;
+  }
+  // A fallback reply is not a model answer: never replay it as one (#4379);
+  // a fixed marker keeps the roles alternating.
+  if (message.role === 'assistant' && isFallbackReply(message)) {
+    return { role: 'assistant', content: FALLBACK_HISTORY_PLACEHOLDER };
   }
   return { role: message.role, content: message.content } as AIMessage;
 }

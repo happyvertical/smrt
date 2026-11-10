@@ -1,6 +1,12 @@
 /** Generic links from a campaign to cross-package channel execution rows. */
 
-import { field, foreignKey, SmrtObject, smrt } from '@happyvertical/smrt-core';
+import {
+  field,
+  foreignKey,
+  SmrtObject,
+  type SmrtSaveOptions,
+  smrt,
+} from '@happyvertical/smrt-core';
 import { TenantScoped, tenantId } from '@happyvertical/smrt-tenancy';
 import type {
   CampaignChannelOptions,
@@ -21,25 +27,48 @@ export class CampaignChannel extends SmrtObject {
   @tenantId({ nullable: true })
   tenantId: string | null = null;
 
+  @field({ description: 'The campaign this channel runs for.' })
   @foreignKey(Campaign, { required: true })
   campaignId: string = '';
 
   /** Open kind vocabulary; recommended values live in CAMPAIGN_CHANNEL_KINDS. */
-  @field({ required: true })
+  @field({
+    required: true,
+    description:
+      'What sort of channel this is, such as an ad group, a social post, a message, content or an event.',
+  })
   channelKind: string = '';
 
   /** Opaque identifier in the namespace named by channelKind. */
-  @field({ required: true })
+  @field({
+    required: true,
+    description:
+      'The name or reference the channel goes by, so its results can be matched to it.',
+  })
   channelRef: string = '';
 
+  @field({
+    description:
+      'The share of the campaign budget set aside for this channel, in cents.',
+  })
   allocatedBudgetCents: number = 0;
 
   /** Optional execution-specific override of the Campaign start. */
+  @field({
+    description: 'When this channel starts, if different from the campaign.',
+  })
   startAt: Date | null = null;
 
   /** Optional execution-specific override of the Campaign end. */
+  @field({
+    description: 'When this channel ends, if different from the campaign.',
+  })
   endAt: Date | null = null;
 
+  @field({
+    description:
+      'Where this channel stands, from planned through active to completed or cancelled.',
+  })
   status: CampaignChannelStatus = 'planned';
 
   constructor(options: CampaignChannelOptions = {}) {
@@ -65,7 +94,7 @@ export class CampaignChannel extends SmrtObject {
     return this;
   }
 
-  override async save(): Promise<this> {
+  override async save(options?: SmrtSaveOptions): Promise<this> {
     if (!CAMPAIGN_CHANNEL_STATUSES.includes(this.status)) {
       throw new Error(
         `CampaignChannel ${this.channelRef || this.id}: unknown status '${this.status}'.`,
@@ -86,7 +115,7 @@ export class CampaignChannel extends SmrtObject {
     ) {
       throw new Error('CampaignChannel endAt must be on or after startAt.');
     }
-    return (await super.save()) as this;
+    return (await super.save(options)) as this;
   }
 
   private static coerceDate(value: unknown): Date | null {

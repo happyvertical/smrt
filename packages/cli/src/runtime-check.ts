@@ -4,6 +4,7 @@ import { dirname, isAbsolute, join, relative, resolve } from 'node:path';
 import {
   createQualifiedName,
   isQualifiedName,
+  isRefusedTestArtifact,
   ObjectRegistry,
   parseQualifiedName,
 } from '@happyvertical/smrt-core';
@@ -36,8 +37,10 @@ export interface RuntimeCheckResult {
   findings: RuntimeCheckFinding[];
 }
 
-interface ManifestEntryRef {
+export interface ManifestEntryRef {
   manifestPackageName?: string;
+  /** The package whose manifest holds this entry (it may be a consumed copy). */
+  containerPackageName?: string;
   manifestSource: 'project' | 'dependency';
   key: string;
   definition: SmartObjectDefinition;
@@ -189,6 +192,7 @@ function flattenManifestEntries(
       objectDef as SmartObjectDefinition,
       manifestPackageName,
     ),
+    containerPackageName: manifestPackageName,
     manifestSource: source,
     key,
     definition: objectDef as SmartObjectDefinition,
@@ -259,8 +263,8 @@ function resolveEntryByName(
   name: string,
 ): EntryLookupResult {
   const entries = flattenRuntimeEntries(manifests);
-  const qualifiedMatches = entries.filter((entry) =>
-    entryMatchesQualifiedName(entry, name),
+  const qualifiedMatches = distinctClasses(
+    entries.filter((entry) => entryMatchesQualifiedName(entry, name)),
   );
 
   if (qualifiedMatches.length === 1) {
@@ -281,8 +285,8 @@ function resolveEntryByName(
   const shortName = isQualifiedName(name)
     ? parseQualifiedName(name).className
     : name;
-  const shortNameMatches = entries.filter((entry) =>
-    entryMatchesShortName(entry, shortName),
+  const shortNameMatches = distinctClasses(
+    entries.filter((entry) => entryMatchesShortName(entry, shortName)),
   );
 
   if (shortNameMatches.length === 1) {
@@ -304,6 +308,33 @@ function resolveEntryByName(
     kind: 'missing',
     name,
   };
+}
+
+/**
+ * One entry per class. A package's manifest may also carry objects it
+ * consumed from another package under their own qualified names, so one class
+ * can appear in several manifests; that is not an ambiguity (#4176). The copy
+ * held by the owning package's own manifest wins, whatever the order.
+ */
+export function distinctClasses<Entry extends ManifestEntryRef>(
+  matches: Entry[],
+): Entry[] {
+  const byClass = new Map<string, Entry>();
+  const unqualified: Entry[] = [];
+  for (const entry of matches) {
+    const qualifiedName = describeEntry(entry);
+    // Without a package there is no identity to compare: keep every one.
+    if (!isQualifiedName(qualifiedName)) {
+      unqualified.push(entry);
+      continue;
+    }
+    const identity = qualifiedName.toLowerCase();
+    const owned =
+      parseQualifiedName(qualifiedName).packageName ===
+      entry.containerPackageName;
+    if (!byClass.has(identity) || owned) byClass.set(identity, entry);
+  }
+  return [...byClass.values(), ...unqualified];
 }
 
 function describeEntry(entry: ManifestEntryRef): string {
@@ -629,7 +660,8 @@ async function loadDependencyManifest(
     }
 
     const manifest = await tryLoadManifestFile(manifestPath);
-    if (manifest) {
+    // A dependency's test-run manifest is never its published surface (#2760).
+    if (manifest && !isRefusedTestArtifact(manifest, manifestPath)) {
       return {
         manifest,
         resolverPath: packageJsonPath,
@@ -733,19 +765,20 @@ async function checkRuntimeHydration(
       projectManifest.packageName,
     );
     let parentEntry: ManifestEntryRef | undefined;
+    // Prefer the scanner's import-qualified parent (#4145) so a parent name
+    // shared by two packages resolves to the one the class actually imports.
+    const parentName =
+      entry.definition.extendsQualified || entry.definition.extends;
 
-    if (entry.definition.extends) {
-      const parentLookup = resolveEntryByName(
-        allManifests,
-        entry.definition.extends,
-      );
+    if (parentName) {
+      const parentLookup = resolveEntryByName(allManifests, parentName);
 
       if (parentLookup.kind === 'ambiguous') {
         addFinding(
           findings,
           'error',
           'ambiguous-extends-reference',
-          `Runtime hydration for "${qualifiedName}" cannot resolve "${entry.definition.extends}" because it matches multiple manifest classes: ${parentLookup.matches.map(describeEntry).sort().join(', ')}.`,
+          `Runtime hydration for "${qualifiedName}" cannot resolve "${parentName}" because it matches multiple manifest classes: ${parentLookup.matches.map(describeEntry).sort().join(', ')}.`,
         );
         continue;
       }
@@ -795,7 +828,7 @@ async function checkRuntimeHydration(
           findings,
           'error',
           'runtime-inheritance-hydration',
-          `Runtime hydration for "${qualifiedName}" is missing inherited fields from "${entry.definition.extends}": ${missingInherited.join(', ')}.`,
+          `Runtime hydration for "${qualifiedName}" is missing inherited fields from "${parentName}": ${missingInherited.join(', ')}.`,
         );
       }
     }

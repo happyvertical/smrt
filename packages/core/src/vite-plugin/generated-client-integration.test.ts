@@ -305,13 +305,13 @@ export class GenClientReadonly extends SmrtObject {
       'utf-8',
     );
     expect(declarationSource).toContain(
-      '"genclientproducts": CrudOperations<GenClientProductData> & {\n      invalidCollectionScope(id: string, options?: Record<string, never>): Promise<any>;',
+      '"genclientproducts": CrudOperations<import(\'@happyvertical/smrt-virt-types\').GenClientProductData> & {\n      invalidCollectionScope(id: string, options?: Record<string, never>): Promise<any>;',
     );
     expect(declarationSource).not.toContain(
-      '"genclientproducts": CrudOperations<GenClientProductCollectionData>;',
+      '"genclientproducts": CrudOperations<import(\'@happyvertical/smrt-virt-types\').GenClientProductCollectionData>;',
     );
     expect(declarationSource).toContain(
-      '"genClientProductCollection": Pick<CrudOperations<GenClientProductData>, "list" | "get" | "create" | "update" | "delete"> & {',
+      '"genClientProductCollection": Pick<CrudOperations<import(\'@happyvertical/smrt-virt-types\').GenClientProductData>, "list" | "get" | "create" | "update" | "delete"> & {',
     );
     expect(declarationSource).toMatch(
       /export interface GenClientProductData \{[\s\S]*?name: string;[\s\S]*?price: number;[\s\S]*?\n {2}\}/,
@@ -332,22 +332,22 @@ export class GenClientReadonly extends SmrtObject {
       'describe(id: string, options: { tone: string }): Promise<any>;',
     );
     expect(declarationSource).toContain(
-      '"contents": CrudOperations<ContentData> & {\n      summarize(id: string, options?: Record<string, never>): Promise<any>;',
+      '"contents": CrudOperations<import(\'@happyvertical/smrt-virt-types\').ContentData> & {\n      summarize(id: string, options?: Record<string, never>): Promise<any>;',
     );
     expect(declarationSource).toContain(
-      '"contents2": CrudOperations<ContentData> & {\n      featured(options?: Record<string, never>): Promise<any>;',
+      '"contents2": CrudOperations<import(\'@happyvertical/smrt-virt-types\').ContentData> & {\n      featured(options?: Record<string, never>): Promise<any>;',
     );
     expect(declarationSource).toContain(
-      '"genClientEmailCollection": CrudOperations<GenClientMessageData> & {\n      findUnread(options?: Record<string, never>): Promise<any>;',
+      '"genClientEmailCollection": CrudOperations<import(\'@happyvertical/smrt-virt-types\').GenClientMessageData> & {\n      findUnread(options?: Record<string, never>): Promise<any>;',
     );
     expect(declarationSource).toContain(
       '"genclientsecrets": {\n      reveal(options?: Record<string, never>): Promise<any>;\n    };',
     );
     expect(declarationSource).not.toContain(
-      '"genclientsecrets": CrudOperations<GenClientSecretData>',
+      '"genclientsecrets": CrudOperations<import(\'@happyvertical/smrt-virt-types\').GenClientSecretData>',
     );
     expect(declarationSource).toContain(
-      '"genclientreadonlies": Pick<CrudOperations<GenClientReadonlyData>, "get"> & {\n      ping(id: string, options?: Record<string, never>): Promise<any>;',
+      '"genclientreadonlies": Pick<CrudOperations<import(\'@happyvertical/smrt-virt-types\').GenClientReadonlyData>, "get"> & {\n      ping(id: string, options?: Record<string, never>): Promise<any>;',
     );
     expect(declarationSource).toContain('error?: string | SmrtClientFailure;');
     expect(declarationSource).toContain('code?: string;');
@@ -406,7 +406,7 @@ export class GenClientReadonly extends SmrtObject {
         'utf-8',
       );
       expect(declarationSource).toContain(
-        '"audit-events": CrudOperations<AuditEventData>;',
+        '"audit-events": CrudOperations<import(\'@happyvertical/smrt-virt-types\').AuditEventData>;',
       );
       expect(declarationSource).toContain(
         '"audit-events": SmrtWebCollectionDefinition<',

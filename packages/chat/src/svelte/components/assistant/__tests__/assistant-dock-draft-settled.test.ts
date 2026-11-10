@@ -6,6 +6,11 @@
  * `onactionsettled` outcome callback for applied, rejected, and unknown
  * action outcomes.
  */
+
+import {
+  ASSISTANT_REQUEST_EVENT,
+  requestAssistant,
+} from '@happyvertical/smrt-ui/chat';
 import {
   createDataSurfaceRegistry,
   type DataSurfaceActionRequest,
@@ -275,6 +280,31 @@ describe('AssistantDock draft seeding and placeholder (#2991)', () => {
     flushSync();
     expect(textarea()).toHaveValue('Describe the edit');
     expect(sendMessage).not.toHaveBeenCalled();
+  });
+
+  it('takes a page request (requestAssistant) into the composer without sending it', async () => {
+    const transport = createInMemoryAssistantTransport();
+    const sendMessage = vi.spyOn(transport, 'sendMessage');
+    render(AssistantDock, {
+      props: { transport, registry: registryWithSurface() },
+    });
+    const button = document.createElement('button');
+    document.body.append(button);
+    expect(requestAssistant(button, { prompt: 'Sales by month' })).toBe(true);
+    flushSync();
+    expect(textarea()).toHaveValue('Sales by month');
+    // A request another listener already took is left alone.
+    const taken = new CustomEvent(ASSISTANT_REQUEST_EVENT, {
+      bubbles: true,
+      cancelable: true,
+      detail: { prompt: 'Not this' },
+    });
+    taken.preventDefault();
+    button.dispatchEvent(taken);
+    flushSync();
+    expect(textarea()).toHaveValue('Sales by month');
+    expect(sendMessage).not.toHaveBeenCalled();
+    button.remove();
   });
 
   it('reflects typed text back into controller.draft', async () => {

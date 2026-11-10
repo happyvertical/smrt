@@ -25,6 +25,7 @@ import {
   FormActionBar,
   FormGroup,
   Input,
+  Select,
   Textarea,
 } from '@happyvertical/smrt-ui/forms';
 import { useI18n } from '@happyvertical/smrt-ui/i18n';
@@ -32,6 +33,7 @@ import { PageHeader } from '@happyvertical/smrt-ui/layout';
 import { Button, Disclosure } from '@happyvertical/smrt-ui/ui';
 import { untrack } from 'svelte';
 import { M } from '../../i18n/strings.screens.js';
+import { statusLabel } from '../overview/widgets/record-table.js';
 import {
   deriveScreenFields,
   groupScreenFields,
@@ -51,6 +53,7 @@ import {
   DEFAULT_SCREEN_CURRENCY,
   draftForCreate,
   draftFromRecord,
+  formatScreenValue,
   parseDraft,
 } from './values.js';
 
@@ -67,6 +70,7 @@ let {
   error = null,
   onsubmit,
   oncancel,
+  derivedFields = [],
 }: EditFormProps = $props();
 
 const { t } = useI18n();
@@ -86,6 +90,9 @@ const allFields = $derived(
     ? []
     : deriveScreenFields(definition, policy, { mode: 'edit', include }),
 );
+/** Derived fields (a total computed from line items) show but never submit. */
+const isDerived = (field: ScreenField): boolean =>
+  derivedFields.includes(field.name);
 const basicFields = $derived(allFields.filter((f) => f.tier === 'basic'));
 const advancedFields = $derived(allFields.filter((f) => f.tier === 'advanced'));
 
@@ -153,7 +160,11 @@ async function submit(): Promise<void> {
   if (working || submitting) return;
   failed = false;
   hostErrors = {};
-  const parsed = parseDraft(allFields, draft, { currency, record });
+  const parsed = parseDraft(
+    allFields.filter((f) => !isDerived(f)),
+    draft,
+    { currency, record },
+  );
   localErrors = parsed.errors;
   if (Object.keys(parsed.errors).length > 0) {
     if (advancedFields.some((f) => parsed.errors[f.name])) advancedOpen = true;
@@ -182,7 +193,15 @@ const formError = $derived(
 </script>
 
 {#snippet control(field: ScreenField)}
-  {#if field.kind === 'boolean'}
+  {#if isDerived(field)}
+    <FormGroup label={label(field)} hint={t(M['ui.screens.derived_hint'])}>
+      <Input
+        name={field.name}
+        readonly
+        value={formatScreenValue(field, record?.[field.name], { currency })}
+      />
+    </FormGroup>
+  {:else if field.kind === 'boolean'}
     <div class="smrt-edit-form__check">
       <Checkbox
         name={field.name}
@@ -204,7 +223,24 @@ const formError = $derived(
       error={messageFor(field)}
       required={field.required}
     >
-      {#if field.kind === 'textarea' || field.kind === 'json'}
+      {#if field.kind === 'select'}
+        <Select
+          name={field.name}
+          disabled={busy}
+          required={field.required}
+          bind:value={() => text(field.name), (v) => setText(field.name, v)}
+        >
+          {#if !field.required || text(field.name) === ''}
+            <option value="">{t(M['ui.screens.select_none'])}</option>
+          {/if}
+          {#each field.options ?? [] as option (option)}
+            <option value={option}>{statusLabel(option)}</option>
+          {/each}
+          {#if text(field.name) !== '' && !(field.options ?? []).includes(text(field.name))}
+            <option value={text(field.name)}>{text(field.name)}</option>
+          {/if}
+        </Select>
+      {:else if field.kind === 'textarea' || field.kind === 'json'}
         <Textarea
           name={field.name}
           rows={field.kind === 'json' ? 8 : 4}

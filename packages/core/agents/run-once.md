@@ -5,6 +5,13 @@
 SvelteKit and outside the ORM. Any caller with a database handle and a
 JSON-serializable work result can use it.
 
+Claim creation and completion bind UTC ISO timestamp strings (#3942). The
+DuckDB raw-query path does not normalize JavaScript `Date` parameters; binding
+one in the claim insert fails before the work callback runs. Keep these scalar
+bindings portable without changing claim identity or transaction boundaries.
+The shared run-once suite executes on SQLite and DuckDB; the PostgreSQL suite
+additionally covers replay and concurrent submissions across connections.
+
 ## Why this exists, and why it is not the token alone
 
 Every consumer with a form, a retried request, or a double-tapped button

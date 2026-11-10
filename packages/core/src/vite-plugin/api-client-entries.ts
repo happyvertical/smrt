@@ -12,6 +12,11 @@ import {
   createManifestClassNamePredicate,
   resolveApiMethodExposure,
 } from '../generators/custom-action.js';
+import {
+  createObjectDeclarationIndex,
+  type ObjectDeclarationIndex,
+} from '../manifest/object-declarations.js';
+import { isFrameworkBaseClass } from '../registry/framework-base-classes.js';
 import type {
   SmartObjectDefinition,
   SmartObjectManifest,
@@ -39,7 +44,11 @@ export interface ApiClientEntry {
   obj: SmartObjectDefinition;
   /** Canonical collection key or deterministic class-derived secondary key. */
   clientKey: string;
-  /** Row-payload interface used by CRUD methods for this entry. */
+  /**
+   * Row-payload interface used by CRUD methods for this entry: the declared
+   * name from the shared declaration selection (package-qualified when
+   * distinct classes share a simple name, #3115).
+   */
   dataInterfaceName: string;
   /** Standard client operations whose server routes are actually emitted. */
   crudMethods: ApiClientCrudMethod[];
@@ -185,6 +194,13 @@ function resolveGeneratedClientCustomMethods(
   if (apiConfig === false) return [];
 
   const isCollection = isCollectionManifestClass(manifest, obj);
+  if (
+    isCollection &&
+    resolveCollectionItemObject(manifest, obj)?.decoratorConfig?.abstract ===
+      true
+  ) {
+    return [];
+  }
   const isModelClassName = createManifestClassNamePredicate(manifest);
 
   return Object.entries(obj.methods ?? {}).flatMap(([name, method]) => {
@@ -241,6 +257,7 @@ function resolveCrudObject(
     .filter(
       ([, candidate]) =>
         candidate.collection === obj.collection &&
+        !isFrameworkBaseClass(candidate.className, candidate.packageName) &&
         !isCollectionManifestClass(manifest, candidate),
     )
     .map(([, candidate]) => candidate)[0];
@@ -299,6 +316,7 @@ function resolveGeneratedEndpointCrudMethods(
   for (const [, obj] of orderedManifestObjectEntries(manifest)) {
     if (
       obj.collection !== collection ||
+      isFrameworkBaseClass(obj.className, obj.packageName) ||
       isCollectionManifestClass(manifest, obj)
     ) {
       continue;
@@ -336,6 +354,12 @@ function exposesApiClientSurface(
   obj: SmartObjectDefinition,
   manifest: SmartObjectManifest,
 ): boolean {
+  // The framework's own base classes (SmrtObject, SmrtCollection, ...) are
+  // scaffolding: the route generator never emits a route directory for them
+  // (#2642), so the client must not advertise their CRUD or their methods,
+  // static helpers included, as callable actions (#3295). A consumer that
+  // aggregates `@happyvertical/smrt-core` receives them in its manifest.
+  if (isFrameworkBaseClass(obj.className, obj.packageName)) return false;
   if (obj.decoratorConfig?.api === false) return false;
   if (resolveGeneratedClientCrudMethods(obj, manifest).length > 0) return true;
 
@@ -348,13 +372,14 @@ function exposesApiClientSurface(
 function resolveDataInterfaceName(
   obj: SmartObjectDefinition,
   manifest: SmartObjectManifest,
+  declarations: ObjectDeclarationIndex,
 ): string {
   if (!isCollectionManifestClass(manifest, obj)) {
-    return `${obj.className}Data`;
+    return declarations.interfaceNameFor(obj);
   }
 
   const itemObject = resolveCollectionItemObject(manifest, obj);
-  return `${itemObject?.className || obj.className}Data`;
+  return declarations.interfaceNameFor(itemObject ?? obj);
 }
 
 function sharedCollectionModelDepth(
@@ -471,6 +496,7 @@ export function selectApiClientEntries(
   // A secondary key must never shadow any canonical endpoint, including a
   // later collection whose canonical owner has not been emitted yet.
   const reservedCanonicalKeys = new Set(canonicalOwners.keys());
+  const declarations = createObjectDeclarationIndex(manifest);
   const usedKeys = new Set<string>();
 
   return orderedCandidates.map(({ objectName, obj }) => {
@@ -495,7 +521,7 @@ export function selectApiClientEntries(
       objectName,
       obj,
       clientKey,
-      dataInterfaceName: resolveDataInterfaceName(obj, manifest),
+      dataInterfaceName: resolveDataInterfaceName(obj, manifest, declarations),
       crudMethods: resolveGeneratedEndpointCrudMethods(
         obj.collection,
         manifest,

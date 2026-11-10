@@ -13,6 +13,7 @@ import type { Asset } from '@happyvertical/smrt-assets';
 import type { SmrtObjectOptions } from '@happyvertical/smrt-core';
 import {
   crossPackageRef,
+  field,
   foreignKey,
   SmrtObject,
   smrt,
@@ -164,12 +165,17 @@ export class Character extends SmrtObject {
   tenantId: string | null = null;
 
   /** Human-readable name for the character */
+  @field({ description: 'What the character is called.' })
   name: string = '';
 
   /** Description of the character persona */
+  @field({
+    description: 'Who this character is and how they come across on screen.',
+  })
   description: string | null = null;
 
   /** Asset ID of the seed image for I2V generation */
+  @field({ description: 'The picture the character is built from.' })
   @crossPackageRef('@happyvertical/smrt-assets:Asset')
   imageAssetId: string | null = null;
 
@@ -178,6 +184,7 @@ export class Character extends SmrtObject {
   baseMotionAssetId: string | null = null;
 
   /** Voice profile ID for speech synthesis */
+  @field({ description: 'The voice the character speaks with.' })
   @crossPackageRef('@happyvertical/smrt-voice:VoiceProfile')
   voiceProfileId: string | null = null;
 
@@ -185,6 +192,9 @@ export class Character extends SmrtObject {
   brandingKit: BrandingConfig = {};
 
   /** Character status */
+  @field({
+    description: 'Whether the character is ready to appear in shots.',
+  })
   status: CharacterStatus = 'pending';
 
   /** Linked performer for IP-Adapter face consistency */
@@ -192,6 +202,7 @@ export class Character extends SmrtObject {
   performerId: string | null = null;
 
   /** Default scene for this character */
+  @field({ description: 'The scene the character usually appears in.' })
   @foreignKey(() => Scene)
   defaultSceneId: string | null = null;
 

@@ -1,7 +1,6 @@
 <script lang="ts">
 import {
   type ColorScheme,
-  ColorSchemeToggle,
   type ContrastPreference,
   type ThemeConfig,
   type ThemePreset,
@@ -23,6 +22,7 @@ import { formatSortableAnnouncement } from '../sortable/announce.js';
 import { createSortable } from '../sortable/controller.svelte.js';
 import AdminShell from '../workspace/admin-shell/AdminShell.svelte';
 import AppScopePanel from '../workspace/admin-shell/AppScopePanel.svelte';
+import { setAdminShell } from '../workspace/admin-shell/context.js';
 import {
   applyShellLayout,
   normalizeShellLayout,
@@ -53,6 +53,10 @@ import {
 import { createShellState } from '../workspace/admin-shell/state.svelte.js';
 import TenantNav from '../workspace/admin-shell/TenantNav.svelte';
 import {
+  provideShellTargets,
+  shellTargetAction,
+} from '../workspace/admin-shell/targets.js';
+import {
   type AdminShellProps,
   PANEL_EDGES,
   type PanelEdge,
@@ -72,6 +76,7 @@ import {
   resolvePhoneTabBar,
 } from './phone-tabs.js';
 import RuntimeDiagnosticsWebMcp from './RuntimeDiagnosticsWebMcp.svelte';
+import ShellColorSchemeToggle from './ShellColorSchemeToggle.svelte';
 import type { ShellUser } from './shell-user.js';
 import type {
   AppShellAccountMenu,
@@ -128,10 +133,13 @@ interface Props {
    */
   signOutHref?: string;
   /**
-   * The theme switcher (`ColorSchemeToggle` from `smrt-ui/themes`) as the
-   * built-in item `item:color-scheme`, default slot `header.end`. On by
-   * default; `false` opts out, `{ slot }` sets the default slot. Icon-only on
-   * phones.
+   * The light/dark switch as the built-in item `item:color-scheme`: an
+   * icon-only toggle (moon or sun, "Dark mode" with `aria-pressed`). Default
+   * slot `leftSidebar.footer`, where it renders in the sidebar's utility row
+   * beside the collapse chevron, above the account menu, and stays a compact
+   * icon in the collapsed rail; on phones it defaults to `header.end`. On by
+   * default; `false` opts out, `{ slot }` sets the default slot (users can
+   * still move it in the layout editor).
    */
   colorSchemeToggle?: boolean | { slot?: ShellSlot };
   /**
@@ -275,8 +283,9 @@ interface Props {
   phoneDock?: 'sheet' | 'drawer';
   /**
    * Render the shell chrome (default). `false` mounts only the Provider and
-   * ThemeProvider around `children`: no navigation, sidebars, header, or
-   * footer, so a host can show the first-run setup route chrome-free.
+   * ThemeProvider around `children`, retaining the canonical shell and layout
+   * contexts: no navigation, sidebars, header, or footer. Hosts can compose
+   * their own chrome and still render ShellSettingsPage against the same state.
    */
   chrome?: boolean;
   children: Snippet;
@@ -335,6 +344,7 @@ const SHELL_BRAND_ITEM_ID = 'item:brand';
 const SHELL_ACCOUNT_ITEM_ID = 'item:account';
 const SHELL_COLOR_SCHEME_ITEM_ID = 'item:color-scheme';
 const SHELL_COMMAND_PALETTE_ITEM_ID = 'item:command-palette';
+const target = shellTargetAction(provideShellTargets());
 /** Stable id of the built-in edit-layout toggle item. */
 const layoutFloating = $derived(
   typeof layoutEditing === 'object' && layoutEditing.floating === true,
@@ -405,7 +415,8 @@ const entries = $derived.by(() => {
       slot:
         (typeof colorSchemeToggle === 'object'
           ? colorSchemeToggle.slot
-          : undefined) ?? 'header.end',
+          : undefined) ??
+        (shell.viewport === 'phone' ? 'header.end' : 'leftSidebar.footer'),
       render: colorSchemeItem,
     });
   }
@@ -449,6 +460,9 @@ const shell = untrack(() =>
     layoutPanels: normalizeShellLayout(layout).panels,
   }),
 );
+// Context belongs to the state owner, including hosts that supply their own chrome.
+setAdminShell(shell);
+
 // Hosts that pass only `onlayoutchange` own persistence but not the value:
 // keep it in memory so edits show at once.
 let localLayout = $state<ShellLayout | undefined>();
@@ -477,7 +491,10 @@ const slotIds = $derived(resolveShellPlacements(entries, effectiveLayout));
 const entriesFor = (name: ShellSlot): PlacedEntry[] => {
   const byId = new Map(entries.map((entry) => [entry.id, entry]));
   return slotIds[name].flatMap((id) =>
-    id === SHELL_ACCOUNT_ITEM_ID && accountInRail ? [] : (byId.get(id) ?? []),
+    (id === SHELL_ACCOUNT_ITEM_ID && accountInRail) ||
+    (id === SHELL_COLOR_SCHEME_ITEM_ID && colorSchemeInSidebar)
+      ? []
+      : (byId.get(id) ?? []),
   );
 };
 const slotSnippets: Record<ShellSlot, Snippet> = {
@@ -560,6 +577,17 @@ const accountInRail = $derived(
     shell.viewport !== 'phone' &&
     shell.isEdgeShown('left') &&
     shell.panels.left === 'collapsed',
+);
+// ---- Color scheme ------------------------------------------------------
+// Placed in the left sidebar footer (the default) on desktop, the toggle
+// renders in the sidebar's utility row beside the chevron, expanded or as
+// the rail, rather than in the footer slot or a fallback region. While the
+// layout is edited it stays a movable item in the footer drop zone.
+const colorSchemeInSidebar = $derived(
+  slotIds['leftSidebar.footer'].includes(SHELL_COLOR_SCHEME_ITEM_ID) &&
+    !editing &&
+    shell.viewport !== 'phone' &&
+    shell.isEdgeShown('left'),
 );
 // Full identity only inside an expanded sidebar; everywhere else the avatar.
 const accountCompact = $derived.by(() => {
@@ -839,7 +867,7 @@ const EDGE_OF_REGION: Record<ShellRegion, PanelEdge> = {
 {/snippet}
 
 {#snippet layoutToggle()}
-  <span class="smrt-layout-toggle" class:smrt-layout-toggle--floating={layoutFloating} data-testid="layout-edit-toggle">
+  <span use:target={SHELL_LAYOUT_EDIT_ITEM_ID} class="smrt-layout-toggle" class:smrt-layout-toggle--floating={layoutFloating} data-testid="layout-edit-toggle">
     <ShellIconButton
       icon="edit"
       pressed={editing}
@@ -918,13 +946,7 @@ const EDGE_OF_REGION: Record<ShellRegion, PanelEdge> = {
 {/snippet}
 
 {#snippet colorSchemeItem()}
-  <span class="smrt-app-shell-color-scheme">
-    <ColorSchemeToggle
-      variant="switch"
-      showLabels={shell.viewport !== 'phone'}
-      ariaLabel={t(M['ui.app_shell.color_scheme_toggle'])}
-    />
-  </span>
+  <ShellColorSchemeToggle />
 {/snippet}
 
 {#snippet commandPaletteItem()}
@@ -943,7 +965,7 @@ const EDGE_OF_REGION: Record<ShellRegion, PanelEdge> = {
 {/snippet}
 
 {#snippet brandItem()}
-  <ShellBrand {title} {subtitle} {logoSrc} {logoAlt} {homeHref} />
+  <ShellBrand {title} {subtitle} {logoSrc} {logoAlt} {homeHref} compact={shell.viewport === 'phone'} />
 {/snippet}
 
 {#snippet editRegionControl(region: ShellRegion)}
@@ -1011,6 +1033,7 @@ const EDGE_OF_REGION: Record<ShellRegion, PanelEdge> = {
       phoneDockOpener={dockToggles.length === 0 && !tabBarOn}
       phoneBottomBar={tabBarOn ? phoneTabs : undefined}
       tenantRailFooter={accountInRail ? railAccount : undefined}
+      tenantUtilities={colorSchemeInSidebar ? colorSchemeItem : undefined}
       bind:rootElement={shellRoot}
       {floatingReserve}
     >
@@ -1088,12 +1111,11 @@ const EDGE_OF_REGION: Record<ShellRegion, PanelEdge> = {
   a {
     color: var(--smrt-color-primary);
   }
+  .smrt-layout-toggle:global([data-smrt-highlighted='true']) { outline: var(--smrt-focus-ring-width) solid var(--smrt-color-primary); outline-offset: var(--smrt-focus-ring-offset); }
   .smrt-layout-toggle { display: inline-flex; align-items: center; gap: var(--smrt-spacing-1); }
   .smrt-layout-toggle--floating { position: fixed; z-index: 45; inset-block-start: max(var(--smrt-spacing-3), env(safe-area-inset-top)); inset-inline-end: max(var(--smrt-spacing-3), env(safe-area-inset-right)); border: var(--smrt-hairline); border-radius: var(--smrt-radius-full); background: var(--smrt-surface-raised); box-shadow: var(--smrt-elevation-3), var(--smrt-inset-highlight); }
   .smrt-layout-toggle--floating :global(.smrt-shell-icon-button) { border-radius: var(--smrt-radius-full); }
   .smrt-layout-toggle :global(.smrt-shell-icon-button[aria-pressed='true']) { background: var(--smrt-color-primary-container); color: var(--smrt-color-on-primary-container); }
-  .smrt-app-shell-color-scheme { display: inline-flex; align-items: center; }
-  .smrt-app-shell-color-scheme :global(.smrt-color-scheme-toggle__switch) { min-block-size: var(--smrt-control-target-min); }
   .smrt-app-shell-palette { display: inline-flex; min-inline-size: 0; }
   .smrt-app-shell-palette[data-search] :global(.smrt-command-palette-trigger) { inline-size: min(28rem, 40vw); justify-content: flex-start; border: var(--smrt-hairline-strong); border-radius: var(--smrt-radius-full); background: var(--smrt-surface-control); color: var(--smrt-color-on-surface-variant); }
   .smrt-app-shell-palette[data-search] :global(.smrt-command-palette-trigger__hint) { margin-inline-start: auto; }

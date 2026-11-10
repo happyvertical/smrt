@@ -61,6 +61,7 @@ export interface RuntimeBoot {
 interface ManifestLike {
   packageName?: unknown;
   moduleType?: unknown;
+  artifactPurpose?: unknown;
   objects?: Record<string, unknown>;
 }
 
@@ -232,9 +233,22 @@ async function performBoot(
   const diagnostics: BootDiagnostic[] = [];
   const manifests: BootedManifest[] = [];
 
-  const projectManifestPath = PROJECT_MANIFEST_CANDIDATES.map((candidate) =>
+  const existingManifestPaths = PROJECT_MANIFEST_CANDIDATES.map((candidate) =>
     join(projectRoot, candidate),
-  ).find((path) => existsSync(path));
+  ).filter((path) => existsSync(path));
+  // A test run's manifest describes inline test fixtures, never the project's
+  // runtime surface (#2760); skip it in favor of a build output.
+  const projectManifestPath = existingManifestPaths.find(
+    (path) => readManifest(path)?.artifactPurpose !== 'test',
+  );
+  if (!projectManifestPath && existingManifestPaths.length > 0) {
+    diagnostics.push({
+      severity: 'warning',
+      code: 'project_manifest_test_artifact',
+      message:
+        'The project manifest is a test artifact (artifactPurpose: test), not a build output; run the project build so the runtime manifest exists.',
+    });
+  }
   const projectPackageName = readProjectPackageName(projectRoot);
 
   if (!projectManifestPath) {

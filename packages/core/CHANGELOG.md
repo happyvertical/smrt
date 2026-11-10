@@ -1,5 +1,1195 @@
 # @happyvertical/smrt-core
 
+## 0.60.16
+
+### Patch Changes
+
+- ### Features
+  
+  - build and run a person's own smrt app from definitions (#4884) (app-shell)
+  - platform train for tokens, launcher, vault, step-up, Windows and first run (#4886)
+  - run settings-panel fusions through the executor (#4855) (inference)
+  - put the smrt knowledge base into consumer AGENTS.md and monorepo roots (#4882) (cli)
+  - finish hosted key lifecycle on SDK 0.111.7 (#4876) (inference)
+  - compare prompt versions and models (ai:compare) (#4880) (core,cli)
+  - compose deployment contract with x-happyvertical schema v1 (#4862) (config)
+  - wave 1 contracts, bundler, release pipeline, Windows custody (#4842) (desktop)
+  - transcript toggle and usage links in settings panel (#4853) (inference)
+  - wave 2 vault distribution — snapshots, relay, keys, restore, migration (#4839)
+  - opt-in AI call transcripts linked to usage rows (#4848) (core)
+  
+  ### Bug Fixes
+  
+  - load STI families with their base, settle unpersisted job writes (#4861) (core, jobs)
+  
+  ### Other Changes
+  
+  - refactor: collapse into one thin smrt-desktop package, rename shell to wrapper (#4870) (desktop)
+  - ci: build the docs site on PRs that touch its inputs (#4849)
+  - docs: fix broken internal links on s-m-r-t.dev and gate the build (#4831)
+- @happyvertical/smrt-config@0.60.16
+  - @happyvertical/smrt-scanner@0.60.16
+  - @happyvertical/smrt-types@0.60.16
+
+## 0.60.15
+
+### Patch Changes
+
+- ### Features
+  
+  - alias chains, fusions, bindings, modes, hosted gate (#4808) (inference)
+  - add reviewed allocations, durable schedules, and protected delivery (#4769)
+  - supervisor contract and first Tauri supervisor slice (#4795) (desktop)
+  - rotate immutable ingress TLS references safely (#4770) (deployment)
+  - public AI usage recorder with ambient tenant attribution (#4779) (core)
+  - support native legacy adoption and immutable TLS rotation (#4494) (deployment)
+  - declare inference tiers across framework prompts (#4777) (prompts)
+  - prompt-run tags, columns, ai:usage report and outcome labels (#4763) (core,prompts)
+  - plan grants as flags, standard paid keys, requireFeature (#4762) (features,subscriptions)
+  - inference tiers and binding resolver seam (#4767) (core)
+  
+  ### Other Changes
+  
+  - docs: s-m-r-t.dev inference guide and docs currency sweep (#4816) (inference)
+- @happyvertical/smrt-config@0.60.15
+  - @happyvertical/smrt-scanner@0.60.15
+  - @happyvertical/smrt-types@0.60.15
+
+## 0.60.14
+
+### Patch Changes
+
+- ### Features
+  
+  - prepare fresh vault key generations (#4744) (app-runtime)
+  
+  ### Other Changes
+  
+  - docs: document remote assistant connector authorization (#4733) (mcp)
+- @happyvertical/smrt-config@0.60.14
+  - @happyvertical/smrt-scanner@0.60.14
+  - @happyvertical/smrt-types@0.60.14
+
+## 0.60.13
+
+### Patch Changes
+
+- ### Features
+  
+  - wrap vault data keys for individual devices (#4742) (app-runtime)
+  - resolve referrer nominations (#4740) (sales)
+  - wrap vault data keys for user-held recovery (#4739) (app-runtime)
+  
+  ### Other Changes
+  
+  - chore: sync sdk packages to v0.111.6 (#4728) (deps)
+- @happyvertical/smrt-config@0.60.13
+  - @happyvertical/smrt-scanner@0.60.13
+  - @happyvertical/smrt-types@0.60.13
+
+## 0.60.12
+
+### Patch Changes
+
+- ### Features
+  
+  - convert an accepted Estimate into an Order (#4731) (commerce)
+- @happyvertical/smrt-config@0.60.12
+  - @happyvertical/smrt-scanner@0.60.12
+  - @happyvertical/smrt-types@0.60.12
+
+## 0.60.11
+
+### Patch Changes
+
+- ### Features
+  
+  - per-recipient notification opt-out ledger for the outbox (#4720) (messages)
+  - generate local desktop assistant plugin artifacts (#4727) (app-cli)
+  - manage scoped local desktop MCP credentials (#4726) (app-runtime)
+  - support portable local asset locators (#4723) (assets)
+  - smrt-catalog and smrt-contribute agent skills, installed by docs:agents (#4713) (cli)
+- @happyvertical/smrt-config@0.60.11
+  - @happyvertical/smrt-scanner@0.60.11
+  - @happyvertical/smrt-types@0.60.11
+
+## 0.60.10
+
+### Patch Changes
+
+- ### Features
+  
+  - OKF knowledge base, intent index, docs:agents export, duplicate detection (#4706) (knowledge)
+  - source-keyed notification email outbox with leased dispatch (#4707) (messages)
+  - add guided ProjectInterview component (#4699) (projects)
+  - establish local identities and sync metadata (#4680) (core, app-runtime, users)
+  
+  ### Other Changes
+  
+  - ci: keep build and dependency output out of the release commit (#4712) (release)
+- @happyvertical/smrt-config@0.60.10
+  - @happyvertical/smrt-scanner@0.60.10
+  - @happyvertical/smrt-types@0.60.10
+
+## 0.60.9
+
+### Patch Changes
+
+- ### Features
+  
+  - priced offerings, open-slot discovery and lead-bound requests (#4700) (bookings)
+  - define the Node sidecar manifest contract (#4676) (desktop)
+  - add BYO inference presets and local discovery (#4675) (core)
+- @happyvertical/smrt-config@0.60.9
+  - @happyvertical/smrt-scanner@0.60.9
+  - @happyvertical/smrt-types@0.60.9
+
+## 0.60.8
+
+### Patch Changes
+
+- ### Features
+  
+  - plan lessonActivityId follows effective work placement (#4679) (education)
+  
+  ### Other Changes
+  
+  - test: close oauth suite connections before dropping its database (#4677) (users)
+- @happyvertical/smrt-config@0.60.8
+  - @happyvertical/smrt-scanner@0.60.8
+  - @happyvertical/smrt-types@0.60.8
+
+## 0.60.7
+
+### Patch Changes
+
+- ### Features
+  
+  - host-configurable lesson kinds a learner may self-report (#4661) (education)
+- @happyvertical/smrt-config@0.60.7
+  - @happyvertical/smrt-scanner@0.60.7
+  - @happyvertical/smrt-types@0.60.7
+
+## 0.60.6
+
+### Patch Changes
+
+- ### Bug Fixes
+  
+  - feedback reads take no exclusive item lock and re-run deadlocks (#4651) (#4655) (ingestion)
+- @happyvertical/smrt-config@0.60.6
+  - @happyvertical/smrt-scanner@0.60.6
+  - @happyvertical/smrt-types@0.60.6
+
+## 0.60.5
+
+### Patch Changes
+
+- ### Features
+  
+  - lesson steps from course bundles, and printing their setup sheets (#4658) (education)
+- @happyvertical/smrt-config@0.60.5
+  - @happyvertical/smrt-scanner@0.60.5
+  - @happyvertical/smrt-types@0.60.5
+
+## 0.60.4
+
+### Patch Changes
+
+- ### Features
+  
+  - show the bundle's material titles instead of stored file names (#4654) (education)
+- @happyvertical/smrt-config@0.60.4
+  - @happyvertical/smrt-scanner@0.60.4
+  - @happyvertical/smrt-types@0.60.4
+
+## 0.60.3
+
+### Patch Changes
+
+- @happyvertical/smrt-config@0.60.3
+  - @happyvertical/smrt-scanner@0.60.3
+  - @happyvertical/smrt-types@0.60.3
+
+## 0.60.2
+
+### Patch Changes
+
+- ### Features
+  
+  - expose authorized discovery lists (#4631) (bookings)
+- @happyvertical/smrt-config@0.60.2
+  - @happyvertical/smrt-scanner@0.60.2
+  - @happyvertical/smrt-types@0.60.2
+
+## 0.60.1
+
+### Patch Changes
+
+- ### Features
+  
+  - readable Class CrunchLabs lesson and material titles (#4643) (education)
+- @happyvertical/smrt-config@0.60.1
+  - @happyvertical/smrt-scanner@0.60.1
+  - @happyvertical/smrt-types@0.60.1
+
+## 0.60.0
+
+### Minor Changes
+
+- ### Breaking Changes
+  
+  - import a bundle into one family course with lesson materials (#4633) (education)
+
+### Patch Changes
+
+- @happyvertical/smrt-config@0.60.0
+  - @happyvertical/smrt-scanner@0.60.0
+  - @happyvertical/smrt-types@0.60.0
+
+## 0.59.1
+
+### Patch Changes
+
+- ### Features
+  
+  - group-shared work carries course, lesson and page titles (#4627) (education)
+- @happyvertical/smrt-config@0.59.1
+  - @happyvertical/smrt-scanner@0.59.1
+  - @happyvertical/smrt-types@0.59.1
+
+## 0.59.0
+
+### Patch Changes
+
+- @happyvertical/smrt-config@0.59.0
+  - @happyvertical/smrt-scanner@0.59.0
+  - @happyvertical/smrt-types@0.59.0
+
+## 0.58.0
+
+### Minor Changes
+
+- ### Breaking Changes
+  
+  - course work absorbs workbooks with book courses and lesson pages (#4623) (education)
+
+### Patch Changes
+
+- @happyvertical/smrt-config@0.58.0
+  - @happyvertical/smrt-scanner@0.58.0
+  - @happyvertical/smrt-types@0.58.0
+
+## 0.57.52
+
+### Patch Changes
+
+- ### Features
+  
+  - Word and PowerPoint bundle members via a DocumentConverter (#4617) (education)
+  
+  ### Bug Fixes
+  
+  - compare JSON values structurally in getOrUpsert diff guard (#4606) (core)
+- @happyvertical/smrt-config@0.57.52
+  - @happyvertical/smrt-scanner@0.57.52
+  - @happyvertical/smrt-types@0.57.52
+
+## 0.57.51
+
+### Patch Changes
+
+- ### Features
+  
+  - learner lesson requests, interest theme and lesson append (#4612) (education)
+  
+  ### Other Changes
+  
+  - ci: drop withdrawn GHSA-ch52-4w7c-c8xp record and suppression (#4608) (audit)
+- @happyvertical/smrt-config@0.57.51
+  - @happyvertical/smrt-scanner@0.57.51
+  - @happyvertical/smrt-types@0.57.51
+
+## 0.57.50
+
+### Patch Changes
+
+- ### Bug Fixes
+  
+  - publish a compatible split protocol dependency graph (#4595) (mcp)
+- @happyvertical/smrt-config@0.57.50
+  - @happyvertical/smrt-scanner@0.57.50
+  - @happyvertical/smrt-types@0.57.50
+
+## 0.57.49
+
+### Patch Changes
+
+- ### Features
+  
+  - learner completion, pace, visibility, tutor records, bundle import (#4593) (education)
+- @happyvertical/smrt-config@0.57.49
+  - @happyvertical/smrt-scanner@0.57.49
+  - @happyvertical/smrt-types@0.57.49
+
+## 0.57.48
+
+### Patch Changes
+
+- ### Features
+  
+  - lead the inbox with an upload drop zone (#4587) (#4591) (ingestion)
+- @happyvertical/smrt-config@0.57.48
+  - @happyvertical/smrt-scanner@0.57.48
+  - @happyvertical/smrt-types@0.57.48
+
+## 0.57.47
+
+### Patch Changes
+
+- ### Features
+  
+  - extract and match structured questions from scans and imports (#4580) (education)
+  - learner put-back, enrollment status and self-attestation (#4579) (education)
+  - add source-bound mailbox enrollment and trial fixes (#4456) (users)
+  - give config resolvers the resolving agent's identity and persisted value (#2806) (#4551) (core)
+  - gate publication on an executable packed-consumer canary (#2975) (#4535) (release)
+  
+  ### Bug Fixes
+  
+  - keep test fixtures out of production manifest consumers (#2760) (#4552) (core)
+  - keep framework base classes out of the generated client (#3295) (#4547) (core)
+  - resolve every workspace export to source in consumer tests (#2954) (#4561) (vitest)
+  - keep collection tools closed when their model closes (#3468) (#4548) (core)
+  - name generated row types by qualified identity on simple-name collisions (#3115) (#4537) (core)
+  - resolve captured aliases in custom action parameter schemas (#4327) (#4539) (core)
+  - native uuid tenant ids in PostgreSQL system tables (#3297) (#4557) (core,cli)
+  - tenant-scope campaign metric snapshot dedupe keys (#3305 M2) (#4540) (marketing)
+  - bell light dismiss and Glass light AA primary (#4566 #4567) (#4576) (smrt-svelte,smrt-ui)
+  - keep sensitive tables out of the PostgreSQL change-feed drain (#2982) (#4555) (core)
+  - tenant-scope contributor and governance natural keys (#3305 M1) (#4533) (content)
+  - isolate test manifests from concurrent production generation (#4128) (#4538) (vitest)
+  - emit one row-type declaration per class across manifest listings (#3296) (#4526) (core)
+  - keep collection manifests from owning their model table (#3956) (#4531) (core)
+  - tenant-local replay keys for earning events, commissions and payouts (#3305 D1) (#4545) (sales)
+  - resolve one deterministic sync-apply target per segment (#2807) (#4550) (core)
+  - emit STI subclass-declared indexes on the shared table (#3299) (#4553) (core)
+  - support legacy cascade deletes inside caller-owned DuckDB transactions (#2824) (#4546) (core)
+  - ship a self-contained ./core so smrt kitchen loads the cached planner (#4238) (#4543) (planner)
+  - bundle CommonJS pluralize so dist stays native ESM (#4054) (#4536) (core)
+  - keep .smrt/register.js Node-loadable with TypeScript-source providers (#3092) (#4532) (core)
+  - honor PostgreSQL pool configuration regardless of resolution order (#3046) (#4530) (core)
+  - align static and runtime boolean field inference (#4295) (#4527) (core)
+  - resolve generated route dependencies with consumer ESM conditions (#3913) (#4525) (core)
+  - run manifest guards centrally for every packed package (#2853) (#4524) (release)
+  
+  ### Other Changes
+  
+  - chore: sync sdk packages to v0.111.3 (#4560) (deps)
+  - ci: validate fork PRs in a sandbox behind a maintainer approval gate (#4562)
+- @happyvertical/smrt-config@0.57.47
+  - @happyvertical/smrt-scanner@0.57.47
+  - @happyvertical/smrt-types@0.57.47
+
+## 0.57.46
+
+### Patch Changes
+
+- ### Features
+  
+  - intake train from teamworks-os QA (#4502 #4503 #4504 #4522) (#4542) (ingestion)
+  - AssistantDock markdown, query aliases, surfaceId naming (#4505 #4507) (#4529) (chat,agents)
+  - shell train from teamworks-os QA (#4497-#4501) (#4528) (smrt-svelte,smrt-ui,features)
+- @happyvertical/smrt-config@0.57.46
+  - @happyvertical/smrt-scanner@0.57.46
+  - @happyvertical/smrt-types@0.57.46
+
+## 0.57.45
+
+### Patch Changes
+
+- ### Features
+  
+  - job cancel signal, private asset metadata, generated printables, refusal outcome (#4549)
+- @happyvertical/smrt-config@0.57.45
+  - @happyvertical/smrt-scanner@0.57.45
+  - @happyvertical/smrt-types@0.57.45
+
+## 0.57.44
+
+### Patch Changes
+
+- ### Features
+  
+  - course authoring revisions, question records, generation and review (#4519) (education)
+- @happyvertical/smrt-config@0.57.44
+  - @happyvertical/smrt-scanner@0.57.44
+  - @happyvertical/smrt-types@0.57.44
+
+## 0.57.43
+
+### Patch Changes
+
+- ### Features
+  
+  - simplify the Export tab into a summary and two cards (#4511) (planner)
+- @happyvertical/smrt-config@0.57.43
+  - @happyvertical/smrt-scanner@0.57.43
+  - @happyvertical/smrt-types@0.57.43
+
+## 0.57.42
+
+### Patch Changes
+
+- ### Features
+  
+  - release family learning workflows and compatible browser runtime (#4509)
+- @happyvertical/smrt-config@0.57.42
+  - @happyvertical/smrt-scanner@0.57.42
+  - @happyvertical/smrt-types@0.57.42
+
+## 0.57.41
+
+### Patch Changes
+
+- ### Features
+  
+  - require parent decisions for workbook completion (#4490) (education)
+  - add learner Plan reads and guardian enrollment notes (#4489) (education)
+- @happyvertical/smrt-config@0.57.41
+  - @happyvertical/smrt-scanner@0.57.41
+  - @happyvertical/smrt-types@0.57.41
+
+## 0.57.40
+
+### Patch Changes
+
+- @happyvertical/smrt-config@0.57.40
+  - @happyvertical/smrt-scanner@0.57.40
+  - @happyvertical/smrt-types@0.57.40
+
+## 0.57.39
+
+### Patch Changes
+
+- ### Features
+  
+  - add authorized publisher catalog previews (#4484) (education)
+  
+  ### Other Changes
+  
+  - chore: sync sdk packages to v0.111.0 (#4471) (deps)
+- @happyvertical/smrt-config@0.57.39
+  - @happyvertical/smrt-scanner@0.57.39
+  - @happyvertical/smrt-types@0.57.39
+
+## 0.57.38
+
+### Patch Changes
+
+- ### Features
+  
+  - retain family intake before learner assignment (#4479) (education)
+  
+  ### Bug Fixes
+  
+  - patch train 2026-10-28 (29 issues) (#4474)
+- @happyvertical/smrt-config@0.57.38
+  - @happyvertical/smrt-scanner@0.57.38
+  - @happyvertical/smrt-types@0.57.38
+
+## 0.57.37
+
+### Patch Changes
+
+- ### Features
+  
+  - end the tool phase after repeated deduped calls (#4391) (#4467) (chat)
+  - data-query null test (isNull/isNotNull) (#4448) (#4460) (core,agents,reports,content)
+  - package-level planner recipes for ten packages (#4409) (#4457) (recipes)
+  
+  ### Bug Fixes
+  
+  - teamworks release train (chat, reports, ui density, worker queues) (#4472)
+  - compare text/uuid join keys as text on Postgres and DuckDB (#4441) (#4446) (reports)
+  - count historyLimit in replayed turns, not raw rows (#4458) (#4466) (chat)
+  
+  ### Other Changes
+  
+  - chore: sync sdk packages to v0.110.0 (#4465) (deps)
+- @happyvertical/smrt-config@0.57.37
+  - @happyvertical/smrt-scanner@0.57.37
+  - @happyvertical/smrt-types@0.57.37
+
+## 0.57.36
+
+### Patch Changes
+
+- ### Features
+  
+  - reconcile disputes with verified checkout ownership (#4423) (commerce)
+  
+  ### Other Changes
+  
+  - docs: describe business objects and generated interfaces (#4434) (core)
+- @happyvertical/smrt-config@0.57.36
+  - @happyvertical/smrt-scanner@0.57.36
+  - @happyvertical/smrt-types@0.57.36
+
+## 0.57.35
+
+### Patch Changes
+
+- ### Features
+  
+  - ui-only exposure; Employees and Qualifications recipes (#4447) (recipes)
+  - assemblies and production recipes (#4439) (manufacturing)
+  - recipes for support, affiliates and human resources (#4438)
+  
+  ### Bug Fixes
+  
+  - patch train 4 - skip template repo metadata, guard svelte conditions (#4436) (cli,packages)
+  - allow required application settings in chart migrations (#4433) (deploy)
+- @happyvertical/smrt-config@0.57.35
+  - @happyvertical/smrt-scanner@0.57.35
+  - @happyvertical/smrt-types@0.57.35
+
+## 0.57.34
+
+### Patch Changes
+
+- ### Features
+  
+  - release durable workbook intake and source-bound marking (#4432) (education)
+- @happyvertical/smrt-config@0.57.34
+  - @happyvertical/smrt-scanner@0.57.34
+  - @happyvertical/smrt-types@0.57.34
+
+## 0.57.33
+
+### Patch Changes
+
+- ### Features
+  
+  - add pod hardening and migration observer access (#4414) (deployment)
+  - joins, row expressions and filtered measures in declared reports (#3903) (#4410) (reports)
+  - integrate four Chad tool-loop and query PRs (#4402) (chat,agents,core)
+  - consolidate seven Chad PRs with Codex review (#4399) (release)
+  
+  ### Bug Fixes
+  
+  - isolate SMRT-only private fence verification (#4429) (release)
+  - patch train 3 - job retry hints, stop/poll race, dispatch-bus startup retry (#4421) (jobs,core)
+  - replace fast-glob with tinyglobby to drop braces (#4420) (scanner,cli)
+  - raise @modelcontextprotocol/client to 2.3.1 (#4419) (deps)
+  - patch train 1 for save options, theme overrides, toolbar density (#4411) (commerce,smrt-ui)
+  - unblock protected chart publication through GHCR (#4394) (deployment)
+- @happyvertical/smrt-config@0.57.33
+  - @happyvertical/smrt-scanner@0.57.33
+  - @happyvertical/smrt-types@0.57.33
+
+## 0.57.32
+
+### Patch Changes
+
+- ### Features
+  
+  - add measured agent usage and structured project questions (#4377)
+- @happyvertical/smrt-config@0.57.32
+  - @happyvertical/smrt-scanner@0.57.32
+  - @happyvertical/smrt-types@0.57.32
+
+## 0.57.31
+
+### Patch Changes
+
+- ### Features
+  
+  - add guarded maintenance releases and durable data steps (#4326) (deployment)
+  
+  ### Bug Fixes
+  
+  - retain invented-target suggestions for review (#4289) (#4328) (ingestion)
+  
+  ### Other Changes
+  
+  - ci: bound release admission and strengthen validation evidence (#4324)
+- @happyvertical/smrt-config@0.57.31
+  - @happyvertical/smrt-scanner@0.57.31
+  - @happyvertical/smrt-types@0.57.31
+
+## 0.57.30
+
+### Patch Changes
+
+- ### Features
+  
+  - add redacted failed-attempt diagnostics (#4323) (ingestion)
+  
+  ### Bug Fixes
+  
+  - preserve consumer and REST resource identities and redact approval faults (#4322)
+- @happyvertical/smrt-config@0.57.30
+  - @happyvertical/smrt-scanner@0.57.30
+  - @happyvertical/smrt-types@0.57.30
+
+## 0.57.29
+
+### Patch Changes
+
+- ### Bug Fixes
+  
+  - retain STI metadata and repair validation harnesses (#4204) (scanner)
+  
+  ### Other Changes
+  
+  - chore: sync sdk packages to v0.107.0 (#4280) (deps)
+- @happyvertical/smrt-config@0.57.29
+  - @happyvertical/smrt-scanner@0.57.29
+  - @happyvertical/smrt-types@0.57.29
+
+## 0.57.28
+
+### Patch Changes
+
+- ### Bug Fixes
+  
+  - resolve MCP static collection action receivers (#4309) (core)
+- @happyvertical/smrt-config@0.57.28
+  - @happyvertical/smrt-scanner@0.57.28
+  - @happyvertical/smrt-types@0.57.28
+
+## 0.57.27
+
+### Patch Changes
+
+- ### Bug Fixes
+  
+  - fill evidence-grounded proposal arguments (#4304) (ingestion)
+  - compile analytics context with the SSR renderer (#4303) (ui)
+  - keep invalid reviewer arguments correctable (#4301) (ingestion)
+  - retain required-only argument refusals for review (#4300) (ingestion)
+- @happyvertical/smrt-config@0.57.27
+  - @happyvertical/smrt-scanner@0.57.27
+  - @happyvertical/smrt-types@0.57.27
+
+## 0.57.26
+
+### Patch Changes
+
+- ### Bug Fixes
+  
+  - normalize generated proposal lists and invalid splits (#4294) (ingestion)
+- @happyvertical/smrt-config@0.57.26
+  - @happyvertical/smrt-scanner@0.57.26
+  - @happyvertical/smrt-types@0.57.26
+
+## 0.57.25
+
+### Patch Changes
+
+- ### Bug Fixes
+  
+  - guard comment-only asset URL tokenizer inputs (#4292) (core)
+- @happyvertical/smrt-config@0.57.25
+  - @happyvertical/smrt-scanner@0.57.25
+  - @happyvertical/smrt-types@0.57.25
+
+## 0.57.24
+
+### Patch Changes
+
+- ### Features
+  
+  - freeze payout routing and repair dependency audit gates (#4266) (sales)
+  
+  ### Bug Fixes
+  
+  - apply Vite asset filters before transform setup (#4275) (core)
+- @happyvertical/smrt-config@0.57.24
+  - @happyvertical/smrt-scanner@0.57.24
+  - @happyvertical/smrt-types@0.57.24
+
+## 0.57.23
+
+### Patch Changes
+
+- ### Features
+  
+  - add co-op eligibility, provenance and governed participation (#4273)
+  
+  ### Bug Fixes
+  
+  - support Vite 7 asset filters for large workers (#4272) (core)
+  - portable proposal schemas and safe provider diagnostics (#4270) (ingestion)
+- @happyvertical/smrt-config@0.57.23
+  - @happyvertical/smrt-scanner@0.57.23
+  - @happyvertical/smrt-types@0.57.23
+
+## 0.57.22
+
+### Patch Changes
+
+- ### Features
+  
+  - add lead conversion, client mailbox authentication and analytics (#4255)
+  - add single-page triage workspace (#4259) (ingestion)
+  - receive by reference, inline proposals, submitter-scoped approval (#4229) (ingestion)
+  - reviewer-chosen actions and no-action feedback (#4227) (ingestion)
+  
+  ### Bug Fixes
+  
+  - preserve budget bounds for schema-aware evaluation (#4258) (ingestion)
+- @happyvertical/smrt-config@0.57.22
+  - @happyvertical/smrt-scanner@0.57.22
+  - @happyvertical/smrt-types@0.57.22
+
+## 0.57.21
+
+### Patch Changes
+
+- ### Features
+  
+  - trusted reviewer instructions for reinterpretation (#4228) (ingestion)
+  - NumericKeypad and DocumentViewer for touch tablets (#3463) (#4224) (smrt-ui)
+  - keep original filenames and label inbox rows by them (#4243) (ingestion)
+  - opt-in inbox row previews and original links (#4242) (ingestion)
+  
+  ### Bug Fixes
+  
+  - validator reasons, needs_review review path, configurable decision gate (#4226) (ingestion)
+  - keep the generated register loadable under plain Node (#4223) (core)
+  
+  ### Other Changes
+  
+  - perf: page the review list newest-first with query-side filters (#4225) (ingestion)
+  - test: drop owned PostgreSQL databases without force (#4253) (expenses)
+  - docs: clarify authorization for filename labels (#4250) (ingestion)
+- @happyvertical/smrt-config@0.57.21
+  - @happyvertical/smrt-scanner@0.57.21
+  - @happyvertical/smrt-types@0.57.21
+
+## 0.57.20
+
+### Patch Changes
+
+- ### Features
+  
+  - add governance, specifications, and participant intake (#4236) (projects)
+- @happyvertical/smrt-config@0.57.20
+  - @happyvertical/smrt-scanner@0.57.20
+  - @happyvertical/smrt-types@0.57.20
+
+## 0.57.19
+
+### Patch Changes
+
+- ### Features
+  
+  - specs, labelled header, guide holds, host reset (#4205) (planner)
+  
+  ### Other Changes
+  
+  - chore: sync sdk packages to v0.106.0 (#4198) (deps)
+  - chore: patch Node.js to 26.12.1 (Oct 2026 security releases) (#4201)
+- @happyvertical/smrt-config@0.57.19
+  - @happyvertical/smrt-scanner@0.57.19
+  - @happyvertical/smrt-types@0.57.19
+
+## 0.57.18
+
+### Patch Changes
+
+- ### Features
+  
+  - passkey (WebAuthn) registration and sign-in (#3275) (#4197) (users)
+  - lot and serial tracking (#3459) (#4196) (inventory)
+  
+  ### Bug Fixes
+  
+  - preserve native SSR and licensed IM catalog printing (#4187)
+  
+  ### Other Changes
+  
+  - docs: describe the saved-report component props (#4195) (reports)
+  - test: fall back to plain DROP when FORCE hits autovacuum (#4199) (expenses)
+- @happyvertical/smrt-config@0.57.18
+  - @happyvertical/smrt-scanner@0.57.18
+  - @happyvertical/smrt-types@0.57.18
+
+## 0.57.17
+
+### Patch Changes
+
+- ### Bug Fixes
+  
+  - show useful overview columns and quiet empty views (#4185) (planner)
+- @happyvertical/smrt-config@0.57.17
+  - @happyvertical/smrt-scanner@0.57.17
+  - @happyvertical/smrt-types@0.57.17
+
+## 0.57.16
+
+### Patch Changes
+
+- ### Bug Fixes
+  
+  - keep a class's qualified parent when hydrating its manifest (#4177) (core)
+  - skip collection imports in generate-register; permanent ledger idempotency (#4163)
+  - support credential-free proposal review (#4180) (ingestion)
+  - patch @modelcontextprotocol/server, vite and launch-editor advisories (#4179) (deps)
+- @happyvertical/smrt-config@0.57.16
+  - @happyvertical/smrt-scanner@0.57.16
+  - @happyvertical/smrt-types@0.57.16
+
+## 0.57.15
+
+### Patch Changes
+
+- ### Bug Fixes
+  
+  - discover collection actions and close redirect/MCP vulnerabilities (#4172)
+- @happyvertical/smrt-config@0.57.15
+  - @happyvertical/smrt-scanner@0.57.15
+  - @happyvertical/smrt-types@0.57.15
+
+## 0.57.14
+
+### Patch Changes
+
+- ### Features
+  
+  - support self-hosted public password auth (#4165) (app-runtime)
+- @happyvertical/smrt-config@0.57.14
+  - @happyvertical/smrt-scanner@0.57.14
+  - @happyvertical/smrt-types@0.57.14
+
+## 0.57.13
+
+### Patch Changes
+
+- ### Features
+  
+  - add safe native hosting, workspace reset and guidance (#4159) (planner)
+- @happyvertical/smrt-config@0.57.13
+  - @happyvertical/smrt-scanner@0.57.13
+  - @happyvertical/smrt-types@0.57.13
+
+## 0.57.12
+
+### Patch Changes
+
+- ### Bug Fixes
+  
+  - resolve runtime:check parents through extendsQualified (#4161) (cli)
+- @happyvertical/smrt-config@0.57.12
+  - @happyvertical/smrt-scanner@0.57.12
+  - @happyvertical/smrt-types@0.57.12
+
+## 0.57.11
+
+### Patch Changes
+
+- ### Features
+  
+  - tenant-owned connected payment accounts (#4157) (commerce)
+  
+  ### Bug Fixes
+  
+  - save contracts whose billing schedule is NULL (#4156) (commerce)
+- @happyvertical/smrt-config@0.57.11
+  - @happyvertical/smrt-scanner@0.57.11
+  - @happyvertical/smrt-types@0.57.11
+
+## 0.57.10
+
+### Patch Changes
+
+- ### Features
+  
+  - effective-dated plan versions preserve paid-period entitlements (#4153) (subscriptions)
+  - pool recipients weighted by metric; organisation and treasury earners (#4150) (sales)
+  - deliver Hearth MVP education and ingestion framework (#4137)
+  
+  ### Bug Fixes
+  
+  - qualify imported parent classes in manifests (#4152) (core)
+- @happyvertical/smrt-config@0.57.10
+  - @happyvertical/smrt-scanner@0.57.10
+  - @happyvertical/smrt-types@0.57.10
+
+## 0.57.9
+
+### Patch Changes
+
+- ### Bug Fixes
+  
+  - preserve SvelteKit control flow in production apps (#4135) (core)
+- @happyvertical/smrt-config@0.57.9
+  - @happyvertical/smrt-scanner@0.57.9
+  - @happyvertical/smrt-types@0.57.9
+
+## 0.57.8
+
+### Patch Changes
+
+- ### Features
+  
+  - support ordinary email and username password accounts (#4127) (auth)
+  
+  ### Other Changes
+  
+  - docs: remove shared-device learner PIN requirements (#4124) (education)
+- @happyvertical/smrt-config@0.57.8
+  - @happyvertical/smrt-scanner@0.57.8
+  - @happyvertical/smrt-types@0.57.8
+
+## 0.57.7
+
+### Patch Changes
+
+- ### Features
+  
+  - runtime reports in the browser assistant (#4106) (planner)
+- @happyvertical/smrt-config@0.57.7
+  - @happyvertical/smrt-scanner@0.57.7
+  - @happyvertical/smrt-types@0.57.7
+
+## 0.57.6
+
+### Patch Changes
+
+- ### Features
+  
+  - add Music teacher and Band library cookbooks (#4117) (planner)
+  - theme toggle as an icon in the sidebar utility row (#4108) (smrt-svelte)
+  
+  ### Bug Fixes
+  
+  - give overview card titles their own row (#4121) (smrt-svelte)
+- @happyvertical/smrt-config@0.57.6
+  - @happyvertical/smrt-scanner@0.57.6
+  - @happyvertical/smrt-types@0.57.6
+
+## 0.57.5
+
+### Patch Changes
+
+- ### Features
+  
+  - coordinate ordinary accounting and preserve intake recovery (#4113)
+  
+  ### Bug Fixes
+  
+  - preserve managed credit allocations on refresh (#4111) (commerce)
+- @happyvertical/smrt-config@0.57.5
+  - @happyvertical/smrt-scanner@0.57.5
+  - @happyvertical/smrt-types@0.57.5
+
+## 0.57.4
+
+### Patch Changes
+
+- ### Features
+  
+  - support original financial facts, retained settlements and customer funds (#4101)
+  
+  ### Bug Fixes
+  
+  - QA round screencast findings and four trade cookbooks (#4092) (planner)
+  - allow @happyvertical/ocr ^0.62.1 for paddleocr-vl (#4087) (#4104) (deps)
+  
+  ### Other Changes
+  
+  - chore: sync sdk packages to v0.105.1 (#4105) (deps)
+  - chore: sync sdk packages to v0.105.0 (#4098) (deps)
+- @happyvertical/smrt-config@0.57.4
+  - @happyvertical/smrt-scanner@0.57.4
+  - @happyvertical/smrt-types@0.57.4
+
+## 0.57.3
+
+### Patch Changes
+
+- ### Features
+  
+  - integrate co-op foundations (#4060) (#4064) (release)
+  
+  ### Bug Fixes
+  
+  - ship declaration maps (#4075) (#4077) (planner)
+  
+  ### Other Changes
+  
+  - ci: apply the public smrt-start template in the release gate (#4071) (planner)
+- @happyvertical/smrt-config@0.57.3
+  - @happyvertical/smrt-scanner@0.57.3
+  - @happyvertical/smrt-types@0.57.3
+
+## 0.57.2
+
+### Patch Changes
+
+- ### Features
+  
+  - move smrt-planner into the monorepo as a lockstep package (#4058) (planner)
+  
+  ### Bug Fixes
+  
+  - make the release gate pass in the release environment (#4062) (planner)
+  - pin a new cookbook app's smrt packages to the CLI's release (#4057) (cli)
+  - fold STI children into their base in the CLI resource listing (users)
+  - declare the REST writes message subtypes open beyond Message (messages)
+  - subclass models inherit their parent's generated surface (core)
+  
+  ### Other Changes
+  
+  - test: gate subclass model surfaces across packages (bundle-gate)
+- @happyvertical/smrt-config@0.57.2
+  - @happyvertical/smrt-scanner@0.57.2
+  - @happyvertical/smrt-types@0.57.2
+
+## 0.57.1
+
+### Patch Changes
+
+- ### Features
+  
+  - release attendance corrections, attribution and segment profiles (#4042) (timesheets)
+- @happyvertical/smrt-config@0.57.1
+  - @happyvertical/smrt-scanner@0.57.1
+  - @happyvertical/smrt-types@0.57.1
+
+## 0.57.0
+
+### Minor Changes
+
+- ### Breaking Changes
+  
+  - remove the legacy money model; v2 is the only model (#4021) (#4043) (commerce)
+  
+  ### Bug Fixes
+  
+  - release owned test and packaging resources (#4026)
+
+### Patch Changes
+
+- @happyvertical/smrt-config@0.57.0
+  - @happyvertical/smrt-scanner@0.57.0
+  - @happyvertical/smrt-types@0.57.0
+
+## 0.56.2
+
+### Patch Changes
+
+- ### Features
+  
+  - add purchase-side supplier quotations (#4022) (commerce)
+  - add family learning foundation (#4000) (education)
+  
+  ### Bug Fixes
+  
+  - adapt packages to inherited collection surfaces
+  - collections inherit their model's generated surface (core)
+  - money-v2 follow-ups — fallback totals, money hints, line descriptions (patch train) (#4014)
+  
+  ### Other Changes
+  
+  - test: cover education collections in the surface gate (bundle-gate)
+  - test: gate collection surfaces across packages (bundle-gate)
+- @happyvertical/smrt-config@0.56.2
+  - @happyvertical/smrt-scanner@0.56.2
+  - @happyvertical/smrt-types@0.56.2
+
+## 0.56.1
+
+### Patch Changes
+
+- ### Features
+  
+  - service-backed write actions on REST (time entries, expenses) (#4007) (timesheets,expenses)
+  - time entries and expenses recipes for planner cookbooks (#3992) (recipes)
+  - release unified document money and tax reporting (#3988) (commerce)
+  
+  ### Bug Fixes
+  
+  - finish the npmjs mirror inside its time limit and name every failure (#4002) (release)
+- @happyvertical/smrt-config@0.56.1
+  - @happyvertical/smrt-scanner@0.56.1
+  - @happyvertical/smrt-types@0.56.1
+
+## 0.56.0
+
+### Minor Changes
+
+- ### Breaking Changes
+  
+  - split contract parties; run preflightCommercePartyLinks before upgrade (#3951) (commerce)
+  
+  ### Features
+  
+  - autoClose deadlines, punch provenance and timecard reopening (#3993) (timesheets)
+  - attendance segments, replay time policy and correction ledger (#3983) (timesheets)
+  - add runtime report browser UI (#3982) (reports)
+  - add confirmed runtime report server actions (#3978) (reports)
+  - support abstract intermediate STI contract branches (#3943) (core)
+
+### Patch Changes
+
+- @happyvertical/smrt-config@0.56.0
+  - @happyvertical/smrt-scanner@0.56.0
+  - @happyvertical/smrt-types@0.56.0
+
+## 0.55.24
+
+### Patch Changes
+
+- ### Features
+
+  - record screens with related and line-items widgets (#3954) (smrt-svelte)
+  - add durable authorized idempotent creation (#3958) (comments)
+
+  ### Bug Fixes
+
+  - #3906 pass 2 broken/degraded items (jobs, app-runtime, ui, web, users, commerce) (#3960)
+
+  ### Other Changes
+
+  - chore: sync sdk packages to v0.103.6 (#3962) (deps)
+- @happyvertical/smrt-config@0.55.24
+  - @happyvertical/smrt-scanner@0.55.24
+  - @happyvertical/smrt-types@0.55.24
+
+## 0.55.23
+
+### Patch Changes
+
+- ### Bug Fixes
+
+  - repair DuckDB retry timestamps and concurrent initialization (#3953) (core)
+- @happyvertical/smrt-config@0.55.23
+  - @happyvertical/smrt-scanner@0.55.23
+  - @happyvertical/smrt-types@0.55.23
+
+## 0.55.22
+
+### Patch Changes
+
+- ### Features
+  
+  - restrict runtime source fields with host policy (#3911) (reports)
+  - discover scheduled tenants and preserve refresh history (#3909) (reports)
+  - add exact percentage labour reconciliation (#3914) (timesheets)
+  - wave 2 — visual-regression harness, hairline tokens, structure/theme pilot (#3896) (styling)
+  
+  ### Bug Fixes
+  
+  - scheduling, chat registry, and inventory patch train from #3906 (#3915)
+  - preserve bundled registration and query value contracts (#3907) (reports)
+- @happyvertical/smrt-config@0.55.22
+  - @happyvertical/smrt-scanner@0.55.22
+  - @happyvertical/smrt-types@0.55.22
+
 ## 0.55.21
 
 ### Patch Changes
