@@ -237,6 +237,7 @@ describe('approval gating', () => {
       'chore_delete',
       { id: chore },
       h.owner.id,
+      'live',
     )) as { status: string };
     expect(out.status).toBe('pending_approval');
     expect((await host.get('Chore', chore)).id).toBe(chore);
@@ -254,10 +255,16 @@ describe('approval gating', () => {
     const viaRest = (await runRest(
       { method: 'DELETE', url: `/api/chores/${chore}` },
       h.owner.id,
+      'live',
     )) as { status: string; approvalId: string };
     expect(viaRest.status).toBe('pending_approval');
     expect((await host.get('Chore', chore)).id).toBe(chore);
-    const viaRecord = await requestRecordDelete('Chore', chore, h.owner.id);
+    const viaRecord = (await requestRecordDelete(
+      'Chore',
+      chore,
+      h.owner.id,
+      'live',
+    )) as { status: string; approvalId: string };
     expect(viaRecord.status).toBe('pending_approval');
     const row = (await (
       await ApprovalCollection.create({ db: h.db })

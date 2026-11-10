@@ -5,10 +5,10 @@ description: "A smrt app that builds and runs a person's own smrt app from defin
 status: "stable"
 generated:
   by: "smrt/scripts/generate-knowledge-okf.ts"
-  at: "2026-11-10T21:08:53Z"
+  at: "2026-11-10T21:42:03Z"
 audience: "internal"
 evidence_level: "source-inspected"
-source_revision: "sha256:76b8194bfab22705d0409d067e2f4a3a3eb05f8bf943b782d53dc1b0ec593b48"
+source_revision: "sha256:0231629d6bc693cf4edab3bff29817615d803dcd9fb700dc8a0d65a10a2c2fa5"
 sources:
   - id: "manifest"
     resource: "https://github.com/happyvertical/smrt/blob/main/packages/app-shell/package.json"
@@ -68,6 +68,10 @@ sources:
 
 - `App` (collection `apps`, extends `SmrtObject`)
 - `AppCollection` (collection `apps`, extends `SmrtCollection`)
+- `AppDraft` (collection `appdrafts`, extends `SmrtObject`)
+- `AppDraftCollection` (collection `appdrafts`, extends `SmrtCollection`)
+- `AppDraftVersion` (collection `appdraftversions`, extends `SmrtObject`)
+- `AppDraftVersionCollection` (collection `appdraftversions`, extends `SmrtCollection`)
 - `AppVersion` (collection `appversions`, extends `SmrtObject`)
 - `AppVersionCollection` (collection `appversions`, extends `SmrtCollection`)
 - `Approval` (collection `approvals`, extends `SmrtObject`)
@@ -86,13 +90,18 @@ sources:
 - `decide_approvals`: decide on `@happyvertical/smrt-app-shell:Approval`
 - `defineModel_apps`: defineModel on `@happyvertical/smrt-app-shell:App`
 - `describe_apps`: describe on `@happyvertical/smrt-app-shell:App`
+- `discardDraft_apps`: discardDraft on `@happyvertical/smrt-app-shell:App`
 - `enableRecipe_apps`: enableRecipe on `@happyvertical/smrt-app-shell:App`
 - `exportTemplate_apps`: exportTemplate on `@happyvertical/smrt-app-shell:App`
 - `hideField_apps`: hideField on `@happyvertical/smrt-app-shell:App`
 - `history_apps`: history on `@happyvertical/smrt-app-shell:App`
 - `importTemplate_apps`: importTemplate on `@happyvertical/smrt-app-shell:App`
 - `pending_approvals`: pending on `@happyvertical/smrt-app-shell:Approval`
+- `previewPublish_apps`: previewPublish on `@happyvertical/smrt-app-shell:App`
+- `publishDraft_apps`: publishDraft on `@happyvertical/smrt-app-shell:App`
 - `removeField_apps`: removeField on `@happyvertical/smrt-app-shell:App`
 - `removeModel_apps`: removeModel on `@happyvertical/smrt-app-shell:App`
 - `renameField_apps`: renameField on `@happyvertical/smrt-app-shell:App`
+- `startDraft_apps`: startDraft on `@happyvertical/smrt-app-shell:App`
+- `undoTo_apps`: undoTo on `@happyvertical/smrt-app-shell:App`
 - `undo_apps`: undo on `@happyvertical/smrt-app-shell:App`

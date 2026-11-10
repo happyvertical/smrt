@@ -42,6 +42,16 @@ describe('assistant preferences', () => {
       expect(validateAssistantPreferences(bad).ok).toBe(false);
   });
 
+  it('keeps the owner’s view choice (live or draft) and nothing else in that member', () => {
+    expect(validateAssistantPreferences({ view: 'draft' })).toMatchObject({
+      ok: true,
+      canonical: { view: 'draft' },
+    });
+    expect(validateAssistantPreferences({ view: 'live' }).ok).toBe(true);
+    for (const bad of [{ view: 'both' }, { view: 1 }, { view: 'Draft' }])
+      expect(validateAssistantPreferences(bad).ok).toBe(false);
+  });
+
   it('an empty model clears the choice', () => {
     expect(validateAssistantPreferences({ chatgptModel: '' })).toMatchObject({
       ok: true,

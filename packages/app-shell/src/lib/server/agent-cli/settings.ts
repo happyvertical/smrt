@@ -9,6 +9,9 @@
 //   chatgptModel the model the owner picked for `chatgpt` (an id from the
 //               signed-in account's catalog); absent = the catalog's first.
 //   onboarding  set once the first-run flow is finished (`fresh`) or skipped.
+//   view        the owner's saved choice of which copy of the app the content
+//               shows while a draft is open (`live` or `draft`), at user scope
+//               (see ../view.ts).
 //
 // Why not a member of the `inference` preference: that payload is the
 // settings panel's own form and `saveDefaults` replaces it whole, which would
@@ -45,6 +48,12 @@ export interface AssistantPreferences {
   engine?: AssistantEngine;
   chatgptModel?: string;
   onboarding?: OnboardingOutcome;
+  /**
+   * Which copy of the app the owner is looking at while a draft is open
+   * (`live` or `draft`). Written at USER scope (per owner) by `view.ts`; the
+   * server turns it into an explicit target for the assistant's turn.
+   */
+  view?: 'live' | 'draft';
 }
 
 export function isAssistantEngine(value: unknown): value is AssistantEngine {
@@ -90,6 +99,9 @@ export function validateAssistantPreferences(payload: unknown) {
             `onboarding is one of ${ONBOARDING_OUTCOMES.join(', ')}`,
           ),
         );
+    } else if (member === 'view') {
+      if (value === 'live' || value === 'draft') canonical.view = value;
+      else issues.push(issue(member, "view is 'live' or 'draft'"));
     } else issues.push(issue(member, 'unknown assistant preference'));
   }
   return {

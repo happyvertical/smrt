@@ -6,6 +6,7 @@ import { AsyncLocalStorage } from 'node:async_hooks';
 import { createHash } from 'node:crypto';
 import type { Command, Plan } from '../../engine/index.ts';
 import { type Approval, ApprovalCollection } from '../objects/Approval.ts';
+import { discardNow, publishApproved } from './drafts.ts';
 import { publish } from './events.ts';
 import { getHost, getShellDb } from './host.ts';
 
@@ -14,7 +15,16 @@ export type ApprovalAction =
   | { kind: 'command'; command: Command }
   | { kind: 'tool'; name: string; args: Record<string, unknown> }
   | { kind: 'rest'; method: string; url: string; body?: string }
-  | { kind: 'record-delete'; model: string; id: string };
+  | { kind: 'record-delete'; model: string; id: string }
+  /** Publish the open draft; pinned to the digest of the preview the owner reviewed. */
+  | {
+      kind: 'publish-draft';
+      draftId: string;
+      draftName: string;
+      digest: string;
+    }
+  /** Discard the open draft (a tool asked; the UI discards directly). */
+  | { kind: 'discard-draft'; draftId: string; draftName: string };
 
 /** The answer a refused-until-approved call gives instead of applying. */
 export interface PendingApproval {
@@ -198,6 +208,14 @@ function isAction(v: unknown): v is ApprovalAction {
     return typeof a.method === 'string' && typeof a.url === 'string';
   if (a.kind === 'record-delete')
     return typeof a.model === 'string' && typeof a.id === 'string';
+  if (a.kind === 'publish-draft')
+    return (
+      typeof a.draftId === 'string' &&
+      typeof a.digest === 'string' &&
+      typeof a.draftName === 'string'
+    );
+  if (a.kind === 'discard-draft')
+    return typeof a.draftId === 'string' && typeof a.draftName === 'string';
   return false;
 }
 
@@ -269,8 +287,21 @@ export async function decideApproval(
     let result: unknown;
     let error: string | undefined;
     try {
+      // Approvals only ever run against the LIVE host: the draft host
+      // approves its own risky changes (autoApprove), so none is ever asked.
       const host = await getHost();
-      if (action.kind === 'command')
+      if (action.kind === 'publish-draft')
+        result = await publishApproved(action, (live, draft, o) =>
+          live.publishDraft(draft, {
+            author: row.requestedBy || decidedBy,
+            approved: true,
+            expect: o.expect,
+            draftName: o.draftName,
+          }),
+        );
+      else if (action.kind === 'discard-draft')
+        result = await discardNow(action.draftId);
+      else if (action.kind === 'command')
         result = await host.execute(action.command, {
           author: row.requestedBy || decidedBy,
           approved: true,
