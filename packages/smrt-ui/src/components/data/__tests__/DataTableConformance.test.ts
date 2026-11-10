@@ -244,7 +244,7 @@ describe('DataTable release conformance', () => {
       },
     });
     const tableContainer = container.querySelector(
-      '.data-table-container',
+      '.smrt-data-table__container',
     ) as HTMLDivElement;
     setHorizontalOverflow(tableContainer, 320, 960);
 
@@ -272,7 +272,7 @@ describe('DataTable release conformance', () => {
       },
     });
     const tableContainer = container.querySelector(
-      '.data-table-container',
+      '.smrt-data-table__container',
     ) as HTMLDivElement;
 
     expect(screen.getByRole('table')).toHaveAttribute('aria-rowcount', '122');

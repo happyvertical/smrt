@@ -21,7 +21,7 @@ const data = [
   },
 ];
 async function resize(container: HTMLElement, width: number) {
-  const root = container.querySelector('.data-table-container');
+  const root = container.querySelector('.smrt-data-table__container');
   Object.defineProperty(root, 'clientWidth', {
     configurable: true,
     value: width,
@@ -29,7 +29,9 @@ async function resize(container: HTMLElement, width: number) {
   window.dispatchEvent(new Event('resize'));
   await waitFor(() =>
     expect(root).toHaveClass(
-      width <= 800 ? 'data-table-container--narrow' : 'data-table-container',
+      width <= 800
+        ? 'smrt-data-table__container--narrow'
+        : 'smrt-data-table__container',
     ),
   );
 }
@@ -104,13 +106,13 @@ describe('responsive column collapse', () => {
   });
   it('preserves the scroll default regardless of narrow width', async () => {
     const { container } = render(DataTable, { props: { data, columns } });
-    const root = container.querySelector('.data-table-container');
+    const root = container.querySelector('.smrt-data-table__container');
     Object.defineProperty(root, 'clientWidth', {
       configurable: true,
       value: 390,
     });
     window.dispatchEvent(new Event('resize'));
     await waitFor(() => expect(screen.getAllByRole('cell')).toHaveLength(6));
-    expect(root).not.toHaveClass('data-table-container--narrow');
+    expect(root).not.toHaveClass('smrt-data-table__container--narrow');
   });
 });

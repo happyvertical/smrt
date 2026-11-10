@@ -212,7 +212,7 @@ for (const variant of ['static', 'inline'] as const) {
       expect(await page.locator('.smrt-chip__root:not(.smrt-chip__selected)').first().evaluate((el) => getComputedStyle(el).outlineStyle)).toBe('none');
 
       // DataTable: the selected row is outlined.
-      const row = page.locator('.data-table__row--selected');
+      const row = page.locator('.smrt-data-table__row--selected');
       await expect(row).toHaveCount(1);
       expect(await row.evaluate((el) => getComputedStyle(el).outlineColor)).toBe(highlight);
       expect(await row.evaluate((el) => getComputedStyle(el).outlineStyle)).toBe('solid');

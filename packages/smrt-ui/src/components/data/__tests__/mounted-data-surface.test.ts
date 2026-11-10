@@ -123,7 +123,7 @@ describe('mounted data surfaces', () => {
       }),
     ).resolves.toMatchObject({ ok: true });
     expect(document.activeElement).toBe(
-      document.querySelector('.data-table-container'),
+      document.querySelector('.smrt-data-table__container'),
     );
   });
 
