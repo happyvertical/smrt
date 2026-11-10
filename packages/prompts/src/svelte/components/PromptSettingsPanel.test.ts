@@ -128,9 +128,9 @@ describe('PromptSettingsPanel', () => {
       ],
     });
 
-    expect(target.querySelector('.ps-title')?.textContent?.trim()).toBe(
-      '@test/app:Invoice#bare',
-    );
+    expect(
+      target.querySelector('[data-smrt-part="title"]')?.textContent?.trim(),
+    ).toBe('@test/app:Invoice#bare');
   });
 
   it('renders an empty state when there are no prompts', () => {
@@ -183,9 +183,9 @@ describe('PromptSettingsPanel', () => {
     expect(
       target.querySelector('input[type="checkbox"][name="appOverride"]'),
     ).toBeNull();
-    expect(target.querySelector('.ps-readonly')?.textContent?.trim()).toBe(
-      'App text.',
-    );
+    expect(
+      target.querySelector('[data-smrt-part="value"]')?.textContent?.trim(),
+    ).toBe('App text.');
   });
 
   it('renders an editable app column for a platform-admin tier', () => {

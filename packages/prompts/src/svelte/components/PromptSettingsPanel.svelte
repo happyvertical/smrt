@@ -125,31 +125,31 @@ function submit(event: SubmitEvent, prompt: PromptSettingsView): void {
 }
 </script>
 
-<section class="prompt-settings" data-testid="prompt-settings-panel" data-smrt-component="PromptSettingsPanel">
+<section class="smrt-prompt-settings-panel__root" data-testid="prompt-settings-panel" data-smrt-component="PromptSettingsPanel">
   {#if message}
-    <p class="ps-flash" role="status">{message}</p>
+    <p class="smrt-prompt-settings-panel__flash" data-smrt-part="message" role="status">{message}</p>
   {/if}
   {#if error}
-    <p class="ps-flash ps-flash-error" role="alert">{error}</p>
+    <p class="smrt-prompt-settings-panel__flash smrt-prompt-settings-panel__flash-error" data-smrt-part="message" role="alert">{error}</p>
   {/if}
 
   {#key resetKey}
     {#each prompts as prompt (prompt.key)}
       <Card variant="outlined">
-        <div class="ps-row">
-          <div class="ps-copy">
-            <div class="ps-title-row">
-              <h3 class="ps-title">{prompt.description || prompt.key}</h3>
+        <div class="smrt-prompt-settings-panel__row" data-smrt-part="row">
+          <div class="smrt-prompt-settings-panel__copy" data-smrt-part="body">
+            <div class="smrt-prompt-settings-panel__title-row" data-smrt-part="header">
+              <h3 class="smrt-prompt-settings-panel__title" data-smrt-part="title">{prompt.description || prompt.key}</h3>
               <Badge variant="default" size="sm">
                 {supplyingLevelLabel(prompt.supplyingLevel)}
               </Badge>
             </div>
-            <code class="ps-key">{prompt.key}</code>
-            <pre class="ps-effective">{prompt.effectiveTemplate}</pre>
+            <code class="smrt-prompt-settings-panel__key" data-smrt-part="key">{prompt.key}</code>
+            <pre class="smrt-prompt-settings-panel__effective" data-smrt-part="body">{prompt.effectiveTemplate}</pre>
           </div>
 
           <form
-            class="ps-controls"
+            class="smrt-prompt-settings-panel__controls" data-smrt-part="actions"
             method="POST"
             action={formAction}
             onsubmit={(event) => submit(event, prompt)}
@@ -158,8 +158,8 @@ function submit(event: SubmitEvent, prompt: PromptSettingsView): void {
 
             {#if showApp}
               {#if appIsEditable}
-                <div class="ps-field">
-                  <label class="ps-toggle">
+                <div class="smrt-prompt-settings-panel__field" data-smrt-part="field">
+                  <label class="smrt-prompt-settings-panel__toggle">
                     <input
                       type="checkbox"
                       name="appOverride"
@@ -169,29 +169,29 @@ function submit(event: SubmitEvent, prompt: PromptSettingsView): void {
                     {appLabel}
                   </label>
                   <textarea
-                    class="ps-textarea"
+                    class="smrt-prompt-settings-panel__textarea"
                     name="appTemplate"
                     aria-label={appLabel}
                     rows="3"
                     disabled={busy || !isTemplateEditable(prompt)}
                     value={prompt.appTemplate ?? appRevertPreview(prompt)}
                   ></textarea>
-                  <p class="ps-hint">
+                  <p class="smrt-prompt-settings-panel__hint" data-smrt-part="hint">
                     Unchecked reverts to: {appRevertPreview(prompt)}
                   </p>
                 </div>
               {:else}
-                <div class="ps-field">
-                  <span class="ps-field-label">{appLabel}</span>
-                  <p class="ps-readonly">
+                <div class="smrt-prompt-settings-panel__field" data-smrt-part="field">
+                  <span class="smrt-prompt-settings-panel__field-label" data-smrt-part="label">{appLabel}</span>
+                  <p class="smrt-prompt-settings-panel__readonly" data-smrt-part="value">
                     {prompt.appTemplate ?? appRevertPreview(prompt)}
                   </p>
                 </div>
               {/if}
             {/if}
 
-            <div class="ps-field">
-              <label class="ps-toggle">
+            <div class="smrt-prompt-settings-panel__field" data-smrt-part="field">
+              <label class="smrt-prompt-settings-panel__toggle">
                 <input
                   type="checkbox"
                   name="tenantOverride"
@@ -201,14 +201,14 @@ function submit(event: SubmitEvent, prompt: PromptSettingsView): void {
                 {tenantLabel}
               </label>
               <textarea
-                class="ps-textarea"
+                class="smrt-prompt-settings-panel__textarea"
                 name="tenantTemplate"
                 aria-label={tenantLabel}
                 rows="4"
                 disabled={busy || !isTemplateEditable(prompt)}
                 value={prompt.tenantTemplate ?? tenantRevertPreview(prompt)}
               ></textarea>
-              <p class="ps-hint">
+              <p class="smrt-prompt-settings-panel__hint" data-smrt-part="hint">
                 Unchecked reverts to: {tenantRevertPreview(prompt)}
               </p>
             </div>
@@ -225,132 +225,137 @@ function submit(event: SubmitEvent, prompt: PromptSettingsView): void {
         </div>
       </Card>
     {:else}
-      <p class="ps-empty">{emptyMessage}</p>
+      <p class="smrt-prompt-settings-panel__empty" data-smrt-part="empty">{emptyMessage}</p>
     {/each}
   {/key}
 </section>
 
 <style>
 @layer smrt.reset, smrt.structure, smrt.theme;
-@layer smrt.theme {
-  .prompt-settings {
+@layer smrt.structure {
+  .smrt-prompt-settings-panel__root {
     display: flex;
     flex-direction: column;
     gap: 1rem;
   }
-
-  .ps-flash {
+  .smrt-prompt-settings-panel__flash {
     margin: 0;
     padding: 0.625rem 0.75rem;
-    border-radius: 0.375rem;
-    background: var(--smrt-color-surface-variant);
   }
-
-  .ps-flash-error {
-    color: var(--smrt-color-error);
-    background: var(--smrt-color-error-container);
-  }
-
-  .ps-empty {
+  .smrt-prompt-settings-panel__empty {
     margin: 0;
-    color: var(--smrt-color-on-surface-variant);
-    font-style: italic;
   }
-
-  .ps-row {
+  .smrt-prompt-settings-panel__row {
     display: grid;
     grid-template-columns: minmax(0, 1fr) minmax(18rem, 26rem);
     gap: 1rem;
     align-items: start;
   }
-
-  .ps-copy {
+  .smrt-prompt-settings-panel__copy {
     min-width: 0;
     display: flex;
     flex-direction: column;
     gap: 0.25rem;
   }
-
-  .ps-title-row {
+  .smrt-prompt-settings-panel__title-row {
     display: flex;
     align-items: center;
     justify-content: space-between;
     gap: 0.5rem;
   }
-
-  .ps-title {
+  .smrt-prompt-settings-panel__title {
     margin: 0;
-    font-size: 1rem;
-    line-height: 1.25;
   }
-
-  .ps-key {
-    font-size: 0.8125rem;
-    color: var(--smrt-color-on-surface-variant);
+  .smrt-prompt-settings-panel__key {
     overflow-wrap: anywhere;
   }
-
-  .ps-effective {
+  .smrt-prompt-settings-panel__effective {
     margin: 0;
     padding: 0.5rem;
-    border-radius: 0.375rem;
-    background: var(--smrt-color-surface-variant);
     white-space: pre-wrap;
     overflow-wrap: anywhere;
-    font-family: inherit;
-    font-size: 0.875rem;
   }
-
-  .ps-controls {
+  .smrt-prompt-settings-panel__controls {
     display: flex;
     flex-direction: column;
     gap: 0.75rem;
   }
-
-  .ps-field {
+  .smrt-prompt-settings-panel__field {
     min-width: 0;
     display: flex;
     flex-direction: column;
     gap: 0.25rem;
   }
-
-  .ps-field-label {
-    font-size: 0.8125rem;
-    color: var(--smrt-color-on-surface-variant);
-  }
-
-  .ps-toggle {
+  .smrt-prompt-settings-panel__toggle {
     display: flex;
     align-items: center;
     gap: 0.375rem;
+  }
+  .smrt-prompt-settings-panel__textarea {
+    width: 100%;
+    padding: 0.5rem;
+    resize: vertical;
+  }
+  .smrt-prompt-settings-panel__hint,
+  .smrt-prompt-settings-panel__readonly {
+    margin: 0;
+    overflow-wrap: anywhere;
+  }
+  @media (max-width: 860px) {
+    .smrt-prompt-settings-panel__row {
+      grid-template-columns: 1fr;
+    }
+  }
+}
+
+@layer smrt.theme {
+  .smrt-prompt-settings-panel__flash {
+    border-radius: 0.375rem;
+    background: var(--smrt-color-surface-variant);
+  }
+  .smrt-prompt-settings-panel__flash-error {
+    color: var(--smrt-color-error);
+    background: var(--smrt-color-error-container);
+  }
+  .smrt-prompt-settings-panel__empty {
+    color: var(--smrt-color-on-surface-variant);
+    font-style: italic;
+  }
+  .smrt-prompt-settings-panel__title {
+    font-size: 1rem;
+    line-height: 1.25;
+  }
+  .smrt-prompt-settings-panel__key {
     font-size: 0.8125rem;
     color: var(--smrt-color-on-surface-variant);
   }
-
-  .ps-textarea {
-    width: 100%;
-    padding: 0.5rem;
+  .smrt-prompt-settings-panel__effective {
+    border-radius: 0.375rem;
+    background: var(--smrt-color-surface-variant);
+    font-family: inherit;
+    font-size: 0.875rem;
+  }
+  .smrt-prompt-settings-panel__field-label {
+    font-size: 0.8125rem;
+    color: var(--smrt-color-on-surface-variant);
+  }
+  .smrt-prompt-settings-panel__toggle {
+    font-size: 0.8125rem;
+    color: var(--smrt-color-on-surface-variant);
+  }
+  .smrt-prompt-settings-panel__textarea {
     border: var(--smrt-hairline);
     border-radius: 0.375rem;
     background: var(--smrt-color-surface);
     color: inherit;
     font: inherit;
-    resize: vertical;
   }
-
-  .ps-hint,
-  .ps-readonly {
-    margin: 0;
+  .smrt-prompt-settings-panel__hint,
+  .smrt-prompt-settings-panel__readonly {
     font-size: 0.8125rem;
     color: var(--smrt-color-on-surface-variant);
     line-height: 1.45;
-    overflow-wrap: anywhere;
-  }
-
-  @media (max-width: 860px) {
-    .ps-row {
-      grid-template-columns: 1fr;
-    }
   }
 }
+
 </style>
