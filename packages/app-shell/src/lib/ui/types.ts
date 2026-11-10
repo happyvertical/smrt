@@ -94,8 +94,19 @@ export interface PendingApproval {
 }
 
 export type ShellEvent =
-  | { type: 'changed'; version: number; summary: string }
-  | { type: 'records'; model: string | null }
+  | {
+      type: 'changed';
+      target?: 'live' | 'draft';
+      version: number;
+      summary: string;
+    }
+  | { type: 'records'; target?: 'live' | 'draft'; model: string | null }
+  | {
+      type: 'draft';
+      status: 'started' | 'published' | 'discarded' | 'unpublishable';
+      id: string;
+      name: string;
+    }
   | {
       type: 'approval';
       id: string;

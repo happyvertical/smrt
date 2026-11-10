@@ -14,6 +14,7 @@ import {
   listCatalog,
 } from './catalog.ts';
 import { isOwner, PolicyError, type Principal } from './owner.ts';
+import { type CallScope, LIVE_SCOPE } from './target.ts';
 
 function asMcp(principal: Principal): McpAppPrincipal {
   return {
@@ -24,12 +25,17 @@ function asMcp(principal: Principal): McpAppPrincipal {
   };
 }
 
-/** The tools this principal may see. Empty unless the principal is the owner. */
+/**
+ * The tools this principal may see. Empty unless the principal is the owner.
+ * `scope` names the copies the request is about (default: live); it picks
+ * which copy's app tools are listed.
+ */
 export async function toolsFor(
   principal: Principal | null | undefined,
+  scope: CallScope = LIVE_SCOPE,
 ): Promise<CatalogTool[]> {
   if (!principal || !(await isOwner(principal))) return [];
-  return listCatalog(asMcp(principal));
+  return listCatalog(asMcp(principal), scope);
 }
 
 /**
@@ -40,12 +46,13 @@ export async function toolsFor(
 export async function authorizeCall(
   principal: Principal | null | undefined,
   name: string,
+  scope: CallScope = LIVE_SCOPE,
 ): Promise<CatalogTool> {
   if (!principal?.id || !principal.tenantId)
     throw new PolicyError(401, 'sign in first');
   if (!(await isOwner(principal)))
     throw new PolicyError(403, 'only the owner can use these tools');
-  const tool = (await listCatalog(asMcp(principal))).find(
+  const tool = (await listCatalog(asMcp(principal), scope)).find(
     (t) => t.name === name,
   );
   if (!tool) throw new PolicyError(403, 'unknown tool');
@@ -57,9 +64,15 @@ export async function callTool(
   principal: Principal | null | undefined,
   name: string,
   args: Record<string, unknown> = {},
+  scope: CallScope = LIVE_SCOPE,
 ): Promise<CatalogResponse> {
-  const tool = await authorizeCall(principal, name);
-  return dispatchTool(asMcp(principal as Principal) as never, tool, args);
+  const tool = await authorizeCall(principal, name, scope);
+  return dispatchTool(
+    asMcp(principal as Principal) as never,
+    tool,
+    args,
+    scope,
+  );
 }
 
 export { asMcp as toMcpPrincipal };

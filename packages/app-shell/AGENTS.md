@@ -15,8 +15,9 @@ SvelteKit or `src/lib`). README has the route and JSON contracts.
 | `src/lib/server/smrt.ts` | `createSmrtSvelteKitRuntime`, `prepareDatabase`, `configureShell`. |
 | `src/lib/server/registry.ts` | The ONE startup registration path (permissions, preference kinds); `smrt.ts` imports it before the runtime. app-runtime grants newly registered permissions to an existing owner on every start. `registry.test.ts` guards it. |
 | `src/lib/server/schema.ts` | `prepareShellSchema(db)`: additive first-run schema. |
-| `src/lib/server/host.ts` | Holders: shell db, data root, the one lazily opened `AppHost`. |
-| `src/lib/server/version-store.ts` | `ShellVersionStore` (engine `VersionStore` on `AppVersion` + the `App` row). |
+| `src/lib/server/host.ts` | Holders: shell db, data root, the LIVE `AppHost` (`getHost`, never the draft) and the open-draft slot; `hostFor(target)` is how a request reaches either; restart adoption of an open draft (re-freeze live, reopen the draft with `autoApprove`). |
+| `src/lib/server/target.ts`, `drafts.ts`, `view.ts` | The copy a request names (`live`/`draft`, `CallScope`), the draft lifecycle (start, describe, preview, publish and discard apply, History grouping) and the owner's saved view. README "Draft then publish (the shell)" lists routes, payloads, events. |
+| `src/lib/server/version-store.ts` | `ShellVersionStore` (engine `VersionStore` on `AppVersion` + the `App` row; `commit` is one transaction, a publish's draft mark rides in it) and `DraftVersionStore` (`AppDraftVersion` rows of one `AppDraft`). |
 | `src/lib/server/owner.ts` | Owner check, `Principal`, `assertOwner`, `runAs`. |
 | `src/lib/server/approvals.ts` | Approval service; the only place `approved: true` is set. |
 | `src/lib/server/builder.ts` | `runCommand`/`runAppTool`/`runRest`/`requestRecordDelete`: execute or turn into an Approval. |
@@ -54,6 +55,18 @@ SvelteKit or `src/lib`). README has the route and JSON contracts.
   reserved core endpoints are refused (only the app's own collections are
   served). Snapshots are retained (20 `method-*`; clean up prunes old
   `migrate-*`/`schema-*`).
+- **Drafts and targets.** Every request names its copy; there is no ambient
+  "current host". REST: `?target=` (`x-shell-target` on `/api/app/*`); MCP:
+  the URL (`/mcp`, `?target=draft`, `?scope=assistant`); tools and the
+  assistant pass a `CallScope`. Default live. `getHost()` is live only; the
+  draft host is reached only via `hostFor('draft')`; `invariants.test.ts` keeps
+  request paths on `hostFor` and `autoApprove: true` in `openDraftHost`. While a
+  draft is open live is frozen (also after a restart): builder calls naming live
+  are refused naming the draft; live records keep working. `publishDraft` is
+  always an Approval (`publish-draft`, pinned to the preview digest; the engine
+  refuses at apply if the chain changed); a discard is direct from the UI route,
+  an Approval from a tool. Approvals only ever run against live. Table changes
+  here are new tables only (`prepareShellSchema` cannot ALTER).
 - **Decorator configs are literals** (`@smrt({...})` on `App`, `Approval`). The
   scanner reads them statically; a shared constant silently falls back to full
   CRUD routes. Collections are undecorated. The shell models expose only their

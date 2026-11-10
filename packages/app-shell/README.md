@@ -63,6 +63,8 @@ The same names and parameters on both surfaces. A wrong-shaped argument is a
 | `enableRecipe` | `recipe` |
 | `cleanUp` | `keep?` |
 | `importTemplate`, `exportTemplate` | `data`, `includeRecords?` |
+| `undoTo` (`app_undoto`) | `version` |
+| `startDraft`, `previewPublish`, `publishDraft`, `discardDraft` | `name?`; none; `expect?`; none. See [Draft then publish](#draft-then-publish-the-shell). `?target=live\|draft` (REST) names the copy a builder operation acts on |
 
 A FieldDef is `{ type, label?, required?, choices?, ref? }`; `type` is one of
 text, number, integer, boolean, date, money, choice, reference, json. Field names
@@ -76,16 +78,16 @@ owner). Writes must be same-origin `application/json`. Errors are
 
 | Route | Body | Response |
 |---|---|---|
-| `GET /api/shell/describe` | | `{ name, version, recipes, models: { [Model]: { kind: 'app'\|'shipped-subclass', label, table, className, extends, fields: { [name]: FieldDef }, ownFields: string[], methods: { [name]: { description, params } } } }, pendingApprovals }` |
-| `GET /api/shell/history` | | `{ versions: { version, parent, author, summary, createdAt, purged, current }[] }` oldest first |
-| `POST /api/shell/undo` | none | change result `{ version, summary, statements, snapshot, appRestartMs, ... }`; 409 if purged; **202** `PendingApproval` (with `preview.replaced`, the rows that would be overwritten) when the change being undone converted a field's type |
+| `GET /api/shell/describe?target=` | | `{ mode: 'live'\|'draft', draft: DraftInfo \| null, frozen, name, version, recipes, models: { [Model]: { kind: 'app'\|'shipped-subclass', label, table, className, extends, fields: { [name]: FieldDef }, ownFields: string[], methods: { [name]: { description, params } } } }, pendingApprovals }` (see [Draft then publish](#draft-then-publish-the-shell)) |
+| `GET /api/shell/history?target=` | | `{ mode, versions: { version, parent, author, summary, createdAt, purged, current, publish: { draftId, name } \| null }[] }` oldest first |
+| `POST /api/shell/undo?target=` | none | change result `{ version, summary, statements, snapshot, appRestartMs, ... }`; 409 if purged; **202** `PendingApproval` (with `preview.replaced`, the rows that would be overwritten) when the change being undone converted a field's type |
 | `GET /api/shell/approvals?status=` | | `{ approvals: ApprovalView[], pending }`; `status` is `pending`, `approved`, `denied` or `failed` |
 | `POST /api/shell/approvals/<id>` | `{ approve: boolean }` | `{ id, status: 'approved'\|'denied'\|'failed', result?, error? }`; 404 unknown, 409 already decided |
-| `GET /api/shell/records/<Model>?limit=` | | `{ records: object[] }` |
-| `POST /api/shell/records/<Model>` | the record's fields | 201 the record |
-| `GET /PUT /api/shell/records/<Model>/<id>` | PUT: changed fields | the record |
-| `DELETE /api/shell/records/<Model>/<id>` | | **202** `PendingApproval`; nothing is deleted until approved |
-| `/api/app/<route>` (any method) | as the app's REST | the app's generated REST (`/api/app/chores` is the app's `/api/chores`); `DELETE` answers **202** `PendingApproval`; only the app's own collection routes are served (`sync/apply`, `_changes`, `_events` and unknown collections are 404) |
+| `GET /api/shell/records/<Model>?limit=&target=` | | `{ records: object[] }` |
+| `POST /api/shell/records/<Model>?target=` | the record's fields | 201 the record |
+| `GET /PUT /api/shell/records/<Model>/<id>?target=` | PUT: changed fields | the record |
+| `DELETE /api/shell/records/<Model>/<id>?target=` | | live: **202** `PendingApproval`, nothing is deleted until approved; draft: **200** `{ deleted: id }` |
+| `/api/app/<route>` (any method; copy in the `x-shell-target` header) | as the app's REST | the app's generated REST (`/api/app/chores` is the app's `/api/chores`); `DELETE` answers **202** `PendingApproval`; only the app's own collection routes are served (`sync/apply`, `_changes`, `_events` and unknown collections are 404) |
 | `GET /api/events` | | server-sent events |
 | `POST /mcp` | MCP Streamable HTTP | shell tools plus app tools, one policy |
 
@@ -94,8 +96,8 @@ owner). Writes must be same-origin `application/json`. Errors are
 where `action` is `{ kind: 'command', command } | { kind: 'tool', name, args } | { kind: 'rest', method, url } | { kind: 'record-delete', model, id }`.
 
 `GET /api/events` sends `event: ready`, then `event: shell` with JSON
-`{ type: 'changed', version, summary }` (definition changed: reload
-`describe`, the menu and the tool catalog), `{ type: 'records', model }`
+`{ type: 'changed', target, version, summary }` (definition changed: reload
+`describe`, the menu and the tool catalog), `{ type: 'records', target, model }`
 (`model` may be null: reload lists) and `{ type: 'approval', id, status, summary }`
 (`pending`, `approved`, `denied`, `failed`). A `: ping` comment every 25 s.
 
@@ -104,7 +106,8 @@ REST (`POST /api/apps/<op>`) and MCP tools (`app_definemodel`, `app_addfield`,
 `app_hidefield`, `app_renamefield`, `app_removefield`, `app_changefieldtype`,
 `app_removemodel`, `app_addmethod`, `app_enablerecipe`, `app_undo`,
 `app_cleanup`, `app_exporttemplate`, `app_importtemplate`, `app_describe`,
-`app_history`), plus `approval_pending`. There is no tool to decide an approval: only the
+`app_history`, `app_undoto`, `app_startdraft`, `app_previewpublish`,
+`app_publishdraft`, `app_discarddraft`), plus `approval_pending`. There is no tool to decide an approval: only the
 owner, signed in, decides in the UI, so no model-driven client (the assistant
 or an outside MCP client) can approve its own call. The risky ones
 (`addMethod`, `removeField`, `removeModel`, `changeFieldType`, `cleanUp`, an
@@ -116,7 +119,7 @@ or an outside MCP client) can approve its own call. The risky ones
 
 - `toolsFor(principal): Promise<CatalogTool[]>`: the merged catalog (`{ name, description, inputSchema, annotations?, side: 'shell'|'app', risky }`); empty unless `principal` is the owner.
 - `authorizeCall(principal, name): Promise<CatalogTool>`: throws `PolicyError` (`status` 401 no principal, 403 not the owner or unknown tool).
-- `callTool(principal, name, args)`: authorize and run. A risky call returns a `PendingApproval`.
+- `callTool(principal, name, args, scope?)`: authorize and run on the copies `scope` names (default: live). A risky call returns a `PendingApproval`.
 - `Principal = { id, tenantId, scopes? }`; get one from the request with `principalFromLocals(locals)` (`owner.ts`).
 
 ## Settings
@@ -327,6 +330,109 @@ and not a tier target of core's inference model). **Settings > Assistant**
 `POST /api/shell/onboarding/{connect,engine,complete,skip}`, and
 `GET`/`POST /api/shell/onboarding/chatgpt` (start, sign-out, model;
 `lib/server/onboarding.ts`).
+
+## Draft then publish (the shell)
+
+A draft is a test copy of the person's app (its definition and its records at
+that moment) that they build in while the live app keeps working. Rules the UI
+can rely on:
+
+- One draft at a time. While it is open **live structure is frozen** (frozen
+  again after every restart); live **records** keep working (create, edit,
+  delete, reports, the app's own REST and tools).
+- A draft's own records are throw-away test data and are **not carried** at
+  publish; records added to live meanwhile are kept.
+- A publish lands as N ordinary live versions (summaries tagged
+  `[draft: <name>] ...`) and can be undone in one step with `undoTo`.
+- **Every request names its copy**, there is no "current host": REST uses
+  `?target=live|draft` (absent = `live`; anything else is 400), `/api/app/*`
+  uses the `x-shell-target` header (its query string belongs to the app), MCP
+  uses the URL. `target=draft` with no draft open is 404 `no draft open`.
+- A structural request that names `live` while a draft is open is **409**
+  `The draft "<name>" is open, so the live app's structure is frozen. Make this
+  change in the draft (target=draft), or publish or discard the draft first.`
+- A risky change in the draft (remove a field or model, change a type, add a
+  method, delete a record, a DELETE through the app's REST) applies at once: the
+  draft host approves its own. On live it is an Approval, as before.
+
+### Routes (owner only: 401 signed out, 403 anyone else; writes same-origin JSON)
+
+| Route | Body | Response |
+|---|---|---|
+| `GET /api/shell/draft` | | `{ draft: DraftInfo \| null, view: 'live'\|'draft' }` |
+| `POST /api/shell/draft` | `{ name? }` | **201** `DraftInfo`; 409 if one is already open |
+| `POST /api/shell/draft/preview` | none | `{ draft: DraftInfo, preview: PublishPreview }`; 404 no draft; 409 unpublishable |
+| `POST /api/shell/draft/publish` | `{ expect? }` (the preview's `digest`) | **always 202** `PendingApproval`; 409 when `expect` no longer matches (review again) |
+| `POST /api/shell/draft/discard` | `{ draftId? }` | `{ discarded: name }`; the owner's direct action (the UI confirms first); 404 none, 409 wrong id |
+| `GET /api/shell/draft/view` | | `{ view }` (`live` whenever no draft is open) |
+| `PUT /api/shell/draft/view` | `{ view: 'live'\|'draft' }` | `{ view }`; `draft` with no usable draft is 409 |
+| `POST /api/shell/undo-to?target=` | `{ version }` | the change result; 202 `PendingApproval` when an undone change converted a field's type; 409 purged |
+| `POST /api/apps/{startDraft,previewPublish,publishDraft,discardDraft,undoTo}` | as the tools | the same operations as generated REST; `publishDraft` and `discardDraft` answer **202** (an Approval) |
+
+`DraftInfo = { id, name, status: 'open', baseVersion, version, changes,
+createdAt, createdBy, liveVersion, liveFrozen, publishable, problem, recovery }`.
+`changes` counts the changes made in the draft; `version` is null when its copy
+cannot be opened. `publishable: false` comes with a `problem` sentence (the data
+folder was restored or moved so the draft names another live app; its files are
+missing; it cannot be opened): show it and offer Discard (the only way out).
+`recovery: 'rolled-back'` means a restart interrupted a publish and it was
+undone; the draft is still open, publish again.
+
+`PublishPreview = { digest, risky: true, fromVersion, toVersion, versions:
+{ version, draftVersion, author, summary, steps, statements }[], definition:
+DefinitionDiff, archives: { values, tables }, methods: { model, name, status:
+'added'\|'changed'\|'unchanged', description, code, ... }[] }`. EVERY method of
+the final definition is listed in full (draft code reaches live at publish, show
+it). Archive counts are of that moment and can drift. The publish Approval's
+`preview` is this object plus `draft` (the name); its `action` is
+`{ kind: 'publish-draft', draftId, draftName, digest }`. Approving applies
+exactly that chain and **fails** (status `failed`, the draft stays open) if the
+draft changed since. Approve through `POST /api/shell/approvals/<id>` as for any
+Approval. A discard asked by a tool is `{ kind: 'discard-draft', draftId,
+draftName }`. A successful publish result is `{ version, versions, summary,
+archives, appRestartMs, draft }`.
+
+`describe` for each copy: `GET /api/shell/describe?target=live` is
+`{ mode: 'live', frozen: true, draft: DraftInfo, ... }` while a draft is open;
+`?target=draft` is `{ mode: 'draft', frozen: false, draft: DraftInfo, ... }`;
+with no draft `draft` is null and `frozen` false. A view of live therefore has
+what it needs for the draft strip from the same call.
+
+History: `GET /api/shell/history` (live) tags every version a publish made with
+`publish: { draftId, name }` (group rows by `draftId`; "Undo this publish" is
+`POST /api/shell/undo-to { version: <parent of the group's first row> }`).
+`?target=draft` lists only changes made in the draft (the live base version is
+left out).
+
+Events (`GET /api/events`) now say which copy changed:
+`{ type: 'changed', target: 'live'|'draft', version, summary }`,
+`{ type: 'records', target, model }` (reload only the view of that copy) and
+`{ type: 'draft', status: 'started'|'published'|'discarded'|'unpublishable', id, name }`
+(everything is stale: reload describe, history, lists).
+
+### Tools and MCP
+
+Tools: `app_startdraft` (`name?`), `app_previewpublish`, `app_publishdraft`
+(`expect?`; always a `pending_approval`), `app_discarddraft` (a
+`pending_approval`), `app_undoto` (`version`). `/mcp` names its copy in the URL,
+fixed per endpoint: `/mcp` is live (builder tools are refused while a draft is
+open; record tools work), `/mcp?target=draft` is the draft, and
+`/mcp?scope=assistant` is the assistant's split, resolved per call. In code,
+`callTool(principal, name, args, scope)` takes a
+`CallScope = { records, structure }` (`scopeFor('draft')` puts both on the
+draft); the default is live.
+
+### The assistant
+
+All engines (API key, ChatGPT plan, Claude Code, Codex) use the same scope
+(`assistant/scope.ts`), resolved at every call. No draft: everything is live,
+approvals as before. A draft open: builder tools go to the draft with no
+per-change approval and record tools to the copy the person is viewing (the
+saved view). The system prompt ends with a mode line, `tool_result` events
+carry `copy: 'live'|'draft'` while a draft is open, and a turn that changed
+structure in the draft closes with "I made that change in the draft ... so the
+live app is unchanged". Publishing through the assistant raises the publish
+Approval and holds the turn; it never applies.
 
 ## Draft then publish (engine API)
 

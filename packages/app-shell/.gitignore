@@ -27,15 +27,20 @@ src/routes/api/apps/changeFieldType/+server.ts
 src/routes/api/apps/cleanUp/+server.ts
 src/routes/api/apps/defineModel/+server.ts
 src/routes/api/apps/describe/+server.ts
+src/routes/api/apps/discardDraft/+server.ts
 src/routes/api/apps/enableRecipe/+server.ts
 src/routes/api/apps/exportTemplate/+server.ts
 src/routes/api/apps/hideField/+server.ts
 src/routes/api/apps/history/+server.ts
 src/routes/api/apps/importTemplate/+server.ts
+src/routes/api/apps/previewPublish/+server.ts
+src/routes/api/apps/publishDraft/+server.ts
 src/routes/api/apps/removeField/+server.ts
 src/routes/api/apps/removeModel/+server.ts
 src/routes/api/apps/renameField/+server.ts
+src/routes/api/apps/startDraft/+server.ts
 src/routes/api/apps/undo/+server.ts
+src/routes/api/apps/undoTo/+server.ts
 # END SMRT auto-generated routes (Vite plugin)
 
 # Authored (the repo-wide rule ignores .d.ts under packages/*/src).
