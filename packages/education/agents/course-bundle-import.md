@@ -427,6 +427,12 @@ built-ins are `manifest-v2`, `manifest-v1` and `plain-files`. SCORM and Common C
 trees that do not map to sections/lessons without design); a host can register
 a reader ahead of the built-ins (`register(reader, { first: true })`).
 
+`attachCourse` gives the course, sections and lessons it creates the
+deterministic slugs `bundle-course-<id>`, `bundle-section-<id>` and
+`bundle-lesson-<id>` (the id is the `bundleUuid`). Slugs are unique per tenant, so
+title-derived ones ("files", "lesson-1") collided on a tenant's second course
+(smrt#4716). Rows written earlier keep their slugs; replay finds rows by id.
+
 ## Identity and replay
 
 `bundleIdentity` (`cbi1-...`) digests the sorted (path, sha256) pairs, so

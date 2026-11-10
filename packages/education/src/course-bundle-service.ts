@@ -491,6 +491,15 @@ function bundleUuid(...parts: string[]): string {
   return `${hex.slice(0, 8)}-${hex.slice(8, 12)}-5${hex.slice(13, 16)}-a${hex.slice(17, 20)}-${hex.slice(20, 32)}`;
 }
 
+/**
+ * Slug of a bundle-created course, section or lesson. Slugs are unique per
+ * tenant, so a title-derived one ("files", "lesson-1") collides across courses;
+ * the row id already is course-scoped and deterministic, so replays agree.
+ */
+function bundleSlug(kind: 'course' | 'section' | 'lesson', id: string): string {
+  return `bundle-${kind}-${id}`;
+}
+
 function choiceView(
   target: string,
   audience: MaterialAudience,
@@ -2032,6 +2041,7 @@ export class CourseBundleImportService extends CourseAuthoringService {
               structure.sections[0]?.title ||
               'Imported course'
             ).slice(0, 300),
+            slug: bundleSlug('course', courseId),
             subject: structure.subject ?? '',
             sourceKey: BUNDLE_COURSE_SOURCE,
             sourceRef: unit.key,
@@ -2149,6 +2159,7 @@ export class CourseBundleImportService extends CourseAuthoringService {
             await sectionRows.create({
               _insertOnly: true,
               id: sectionId,
+              slug: bundleSlug('section', sectionId),
               tenantId: request.tenantId,
               courseId,
               title: section.title,
@@ -2193,6 +2204,7 @@ export class CourseBundleImportService extends CourseAuthoringService {
               await lessonRows.create({
                 _insertOnly: true,
                 id,
+                slug: bundleSlug('lesson', id),
                 tenantId: request.tenantId,
                 sectionId,
                 title: lesson.title,
