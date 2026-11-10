@@ -21,6 +21,6 @@ describe('FormActionBar', () => {
   it('defaults its accessible name and supports the plain variant', () => {
     render(FormActionBar, { props: { plain: true, children: actions } });
     const group = screen.getByRole('group', { name: 'Form actions' });
-    expect(group.classList.contains('plain')).toBe(true);
+    expect(group.classList.contains('smrt-form-action-bar__plain')).toBe(true);
   });
 });

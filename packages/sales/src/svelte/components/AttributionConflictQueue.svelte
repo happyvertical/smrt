@@ -330,7 +330,7 @@ function resolve(exception: AttributionExceptionView) {
     color: var(--smrt-color-error);
   }
 
-  .award-editor :global(.form-group) {
+  .award-editor :global([data-smrt-component="FormGroup"]) {
     margin-bottom: 0;
   }
 

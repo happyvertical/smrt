@@ -193,8 +193,8 @@ for (const variant of ['static', 'inline'] as const) {
       // Toggle: checked track fills with Highlight, unchecked does not.
       const trackBg = (label: string) =>
         page
-          .locator('.toggle', { hasText: label })
-          .locator('.toggle__thumb')
+          .locator('[data-smrt-component="Toggle"]', { hasText: label })
+          .locator('[data-smrt-part="thumb"]')
           .evaluate((el) => getComputedStyle(el).backgroundColor);
       expect(await trackBg('Toggle on')).toBe(highlight);
       expect(await trackBg('Toggle off')).not.toBe(highlight);
@@ -202,7 +202,7 @@ for (const variant of ['static', 'inline'] as const) {
       // Checkbox and radio: checked fills with Highlight.
       const checked = page.locator('.smrt-checkbox__root:has(input:checked)');
       expect(await checked.locator('.smrt-checkbox__box').evaluate((el) => getComputedStyle(el).backgroundColor)).toBe(highlight);
-      const radioDot = page.locator('.radio', { hasText: 'Radio B' }).locator('.radio__mark');
+      const radioDot = page.locator('[data-smrt-component="Radio"]', { hasText: 'Radio B' }).locator('[data-smrt-part="mark"]');
       expect(await radioDot.evaluate((el) => getComputedStyle(el, '::after').backgroundColor)).toBe(highlight);
       expect(await radioDot.evaluate((el) => getComputedStyle(el, '::after').transform)).not.toBe('matrix(0, 0, 0, 0, 0, 0)');
 
@@ -227,8 +227,8 @@ for (const variant of ['static', 'inline'] as const) {
       // Highlight fill: it reads GrayText on Canvas, like every other disabled control.
       const highlight = await systemColor(page, 'Highlight');
       for (const el of [
-        page.locator('.segmented label.selected'),
-        page.locator('.toggle-button.pressed:disabled'),
+        page.locator('[data-smrt-component="SegmentedControl"] label.smrt-segmented-control__selected'),
+        page.locator('[data-smrt-component="ToggleButton"].smrt-toggle-button__pressed:disabled'),
       ]) {
         const style = await el.evaluate((n) => ({ bg: getComputedStyle(n).backgroundColor, color: getComputedStyle(n).color, opacity: getComputedStyle(n).opacity }));
         expect(style.bg).not.toBe(highlight);

@@ -13,16 +13,16 @@ describe('FieldLabel', () => {
     });
     const label = container.querySelector('label');
     expect(label?.getAttribute('for')).toBe('amt');
-    expect(label?.classList.contains('smrt-field-label')).toBe(true);
+    expect(label?.classList.contains('smrt-field-label__root')).toBe(true);
     expect(label?.querySelector('[aria-hidden="true"]')?.textContent).toBe('*');
   });
 
   it('renders a non-label element for read-only displays', () => {
     const { container } = render(FieldLabel, { props: { label: 'Total' } });
     expect(container.querySelector('label')).toBeNull();
-    expect(container.querySelector('span.smrt-field-label')?.textContent).toBe(
-      'Total',
-    );
+    expect(
+      container.querySelector('span.smrt-field-label__root')?.textContent,
+    ).toBe('Total');
   });
 });
 
@@ -59,7 +59,9 @@ describe('code selects with a label', () => {
       props: { label: 'Customer', name: 'c', options: [] },
     });
     expect(
-      container.querySelector('label')?.classList.contains('smrt-field-label'),
+      container
+        .querySelector('label')
+        ?.classList.contains('smrt-field-label__root'),
     ).toBe(true);
   });
 });

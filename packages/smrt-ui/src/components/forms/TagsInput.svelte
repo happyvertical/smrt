@@ -129,26 +129,97 @@ useControlRegistration(() => {
   };
 });
 </script>
-<div class="tags-field {className}" data-smrt-component="TagsInput"><label for={inputId}>{label}</label><div bind:this={rootEl} class="tags" data-smrt-control={controlId} data-smrt-form={interactionContext?.formId}
+<div class="smrt-tags-input__root {className}" data-smrt-component="TagsInput"><label for={inputId}>{label}</label><div bind:this={rootEl} class="smrt-tags-input__tags" data-smrt-part="tags" data-smrt-control={controlId} data-smrt-form={interactionContext?.formId}
   data-smrt-subject-type={interaction === false ? undefined : interaction?.subject?.type}
   data-smrt-subject-id={interaction === false ? undefined : interaction?.subject?.id}>
-  {#each values as tag, index}<span class="tag">{tag}<button type="button" disabled={disabled} aria-label={`Remove ${tag}`} onclick={() => remove(index)}>×</button><input type="hidden" name={name ? `${name}[]` : undefined} value={tag} /></span>{/each}
+  {#each values as tag, index}<span class="smrt-tags-input__tag" data-smrt-part="tag">{tag}<button type="button" disabled={disabled} aria-label={`Remove ${tag}`} onclick={() => remove(index)}>×</button><input type="hidden" name={name ? `${name}[]` : undefined} value={tag} /></span>{/each}
   <input bind:this={inputEl} id={inputId} {placeholder} {disabled} bind:value={draft} onkeydown={handleKeydown} onblur={() => commit(draft)} />
 </div></div>
 <style>
 @layer smrt.reset, smrt.structure, smrt.theme;
-@layer smrt.theme {
-  .tags-field { display: grid; gap: var(--smrt-spacing-1); color: var(--smrt-color-on-surface); } label { font: var(--smrt-typography-label-large-font); }
-  .tags { display: flex; flex-wrap: wrap; gap: var(--smrt-spacing-1); min-height: 2.5rem; padding: var(--smrt-spacing-1); border: var(--smrt-hairline-strong); border-radius: var(--smrt-radius-small); background: var(--smrt-color-surface); }
-  .tag { display: inline-flex; align-items: center; gap: var(--smrt-spacing-1); padding: var(--smrt-spacing-1) var(--smrt-spacing-2); border-radius: var(--smrt-radius-full); background: var(--smrt-color-secondary-container); color: var(--smrt-color-on-secondary-container); }
-  .tag button { display: inline-flex; align-items: center; justify-content: center; border: 0; background: transparent; color: inherit; cursor: pointer; }
+@layer smrt.structure {
+  .smrt-tags-input__root {
+    display: grid;
+    gap: var(--smrt-spacing-1);
+  }
+  .smrt-tags-input__tags {
+    display: flex;
+    flex-wrap: wrap;
+    gap: var(--smrt-spacing-1);
+    min-height: 2.5rem;
+    padding: var(--smrt-spacing-1);
+  }
+  .smrt-tags-input__tag {
+    display: inline-flex;
+    align-items: center;
+    gap: var(--smrt-spacing-1);
+    padding: var(--smrt-spacing-1) var(--smrt-spacing-2);
+  }
+  .smrt-tags-input__tag button {
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    cursor: pointer;
+  }
   /* Phones and touch screens: the × is a 44px target (the tag grows with it). */
   @media (max-width: 48rem), (pointer: coarse) {
-    .tag { padding-inline-end: 0; }
-    .tag button { min-inline-size: 2.75rem; min-block-size: 2.75rem; font-size: 1.25rem; }
+    .smrt-tags-input__tag {
+      padding-inline-end: 0;
+    }
+    .smrt-tags-input__tag button {
+      min-inline-size: 2.75rem;
+      min-block-size: 2.75rem;
+    }
   }
-  .tag button:focus-visible { outline: var(--smrt-focus-ring-width) solid var(--smrt-focus-ring-color); outline-offset: calc(var(--smrt-focus-ring-width) * -1); border-radius: var(--smrt-radius-full); }
-  .tags > input { flex: 1; min-width: 8rem; border: 0; outline: 0; background: transparent; color: inherit; }
-  :global(.tags[data-smrt-highlighted='true']) { outline: 3px solid var(--smrt-color-tertiary); outline-offset: 4px; }
+  .smrt-tags-input__tags > input {
+    flex: 1;
+    min-width: 8rem;
+  }
 }
+
+@layer smrt.theme {
+  .smrt-tags-input__root {
+    color: var(--smrt-color-on-surface);
+  }
+  label {
+    font: var(--smrt-typography-label-large-font);
+  }
+  .smrt-tags-input__tags {
+    border: var(--smrt-hairline-strong);
+    border-radius: var(--smrt-radius-small);
+    background: var(--smrt-color-surface);
+  }
+  .smrt-tags-input__tag {
+    border-radius: var(--smrt-radius-full);
+    background: var(--smrt-color-secondary-container);
+    color: var(--smrt-color-on-secondary-container);
+  }
+  .smrt-tags-input__tag button {
+    border: 0;
+    background: transparent;
+    color: inherit;
+  }
+  /* Phones and touch screens: the × is a 44px target (the tag grows with it). */
+  @media (max-width: 48rem), (pointer: coarse) {
+    .smrt-tags-input__tag button {
+      font-size: 1.25rem;
+    }
+  }
+  .smrt-tags-input__tag button:focus-visible {
+    outline: var(--smrt-focus-ring-width) solid var(--smrt-focus-ring-color);
+    outline-offset: calc(var(--smrt-focus-ring-width) * -1);
+    border-radius: var(--smrt-radius-full);
+  }
+  .smrt-tags-input__tags > input {
+    border: 0;
+    outline: 0;
+    background: transparent;
+    color: inherit;
+  }
+  :global(.smrt-tags-input__tags[data-smrt-highlighted='true']) {
+    outline: 3px solid var(--smrt-color-tertiary);
+    outline-offset: 4px;
+  }
+}
+
 </style>

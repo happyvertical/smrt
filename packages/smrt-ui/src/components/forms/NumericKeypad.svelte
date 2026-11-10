@@ -285,8 +285,8 @@ const DIGIT_ROWS = [
 <div
   bind:this={rootEl}
   id={resolvedId}
-  class="numeric-keypad {className}"
-  class:disabled
+  class="smrt-numeric-keypad__root {className}"
+  class:smrt-numeric-keypad__disabled={disabled}
   role="group"
   tabindex={disabled ? undefined : 0}
   aria-label={label ?? text.region}
@@ -299,9 +299,9 @@ const DIGIT_ROWS = [
   data-smrt-component="NumericKeypad"
   onkeydown={handleKeydown}
 >
-  <div class="readout">
+  <div class="smrt-numeric-keypad__readout" data-smrt-part="readout">
     <output
-      class="display"
+      class="smrt-numeric-keypad__display"
       data-smrt-part="display"
       data-empty={typed === '' ? 'true' : undefined}
       aria-label={text.display}
@@ -309,13 +309,13 @@ const DIGIT_ROWS = [
       aria-atomic="true"
       aria-describedby={showError ? messageId : undefined}
     >
-      {#if prefix}<span class="affix" data-smrt-part="prefix">{prefix}</span>{/if}
-      <span class="entry">{typed === '' ? '0' : typed}</span>
-      {#if unit}<span class="affix" data-smrt-part="unit">{unit}</span>{/if}
+      {#if prefix}<span class="smrt-numeric-keypad__affix" data-smrt-part="prefix">{prefix}</span>{/if}
+      <span class="smrt-numeric-keypad__entry" data-smrt-part="entry">{typed === '' ? '0' : typed}</span>
+      {#if unit}<span class="smrt-numeric-keypad__affix" data-smrt-part="unit">{unit}</span>{/if}
     </output>
     <button
       type="button"
-      class="key clear"
+      class="smrt-numeric-keypad__key smrt-numeric-keypad__clear"
       data-smrt-part="key"
       data-key="clear"
       aria-label={text.clear}
@@ -326,14 +326,14 @@ const DIGIT_ROWS = [
     </button>
   </div>
 
-  <p id={messageId} class="message" data-smrt-part="message" role="status">{errorText}</p>
+  <p id={messageId} class="smrt-numeric-keypad__message" data-smrt-part="message" role="status">{errorText}</p>
 
-  <div class="grid" data-smrt-part="grid">
+  <div class="smrt-numeric-keypad__grid" data-smrt-part="grid">
     {#each DIGIT_ROWS as row (row[0])}
       {#each row as digit (digit)}
         <button
           type="button"
-          class="key digit"
+          class="smrt-numeric-keypad__key smrt-numeric-keypad__digit"
           data-smrt-part="key"
           data-key={digit}
           aria-label={digit}
@@ -347,7 +347,7 @@ const DIGIT_ROWS = [
     {#if rules.maxDecimals > 0}
       <button
         type="button"
-        class="key"
+        class="smrt-numeric-keypad__key"
         data-smrt-part="key"
         data-key="decimal"
         aria-label={text.decimal}
@@ -357,11 +357,11 @@ const DIGIT_ROWS = [
         .
       </button>
     {:else}
-      <span class="spacer" aria-hidden="true"></span>
+      <span class="smrt-numeric-keypad__spacer" data-smrt-part="spacer" aria-hidden="true"></span>
     {/if}
     <button
       type="button"
-      class="key digit"
+      class="smrt-numeric-keypad__key smrt-numeric-keypad__digit"
       data-smrt-part="key"
       data-key="0"
       aria-label="0"
@@ -372,7 +372,7 @@ const DIGIT_ROWS = [
     </button>
     <button
       type="button"
-      class="key"
+      class="smrt-numeric-keypad__key"
       data-smrt-part="key"
       data-key="backspace"
       aria-label={text.backspace}
@@ -386,7 +386,7 @@ const DIGIT_ROWS = [
   {#if onSubmit}
     <button
       type="button"
-      class="key submit"
+      class="smrt-numeric-keypad__key smrt-numeric-keypad__submit"
       data-smrt-part="submit"
       aria-label={text.submit}
       disabled={disabled || validity !== 'ok'}
@@ -403,24 +403,19 @@ const DIGIT_ROWS = [
 
 <style>
 @layer smrt.reset, smrt.structure, smrt.theme;
-@layer smrt.theme {
-  .numeric-keypad {
+@layer smrt.structure {
+  .smrt-numeric-keypad__root {
     display: grid;
     gap: var(--smrt-spacing-3);
     width: 100%;
     max-width: 24rem;
-    color: var(--smrt-color-on-surface);
   }
-  .numeric-keypad:focus-visible {
-    outline: var(--smrt-focus-ring-width) solid var(--smrt-focus-ring-color);
-    outline-offset: var(--smrt-focus-ring-offset);
-  }
-  .readout {
+  .smrt-numeric-keypad__readout {
     display: flex;
     gap: var(--smrt-spacing-3);
     align-items: stretch;
   }
-  .display {
+  .smrt-numeric-keypad__display {
     display: flex;
     flex: 1 1 auto;
     align-items: baseline;
@@ -429,83 +424,104 @@ const DIGIT_ROWS = [
     min-width: 0;
     min-height: 4rem;
     padding: 0 var(--smrt-spacing-4);
-    border: var(--smrt-hairline-strong);
-    border-radius: var(--smrt-radius-medium);
-    background: var(--smrt-color-surface-container-lowest);
-    font: var(--smrt-typography-headline-large-font);
     align-items: center;
     overflow: hidden;
   }
-  [data-state='below'] .display,
-  [data-state='above'] .display {
-    border-color: var(--smrt-color-error);
-  }
-  .display[data-empty='true'] .entry {
-    color: var(--smrt-color-on-surface-variant);
-  }
-  .entry {
+  .smrt-numeric-keypad__entry {
     overflow: hidden;
     text-overflow: ellipsis;
     white-space: nowrap;
-    font-variant-numeric: tabular-nums;
   }
-  .affix {
-    color: var(--smrt-color-on-surface-variant);
-    font: var(--smrt-typography-title-large-font);
-  }
-  .message {
+  .smrt-numeric-keypad__message {
     margin: 0;
-    color: var(--smrt-color-error);
-    font: var(--smrt-typography-body-medium-font);
   }
-  .message:empty {
+  .smrt-numeric-keypad__message:empty {
     display: none;
   }
-  .grid {
+  .smrt-numeric-keypad__grid {
     display: grid;
     grid-template-columns: repeat(3, 1fr);
     gap: var(--smrt-spacing-3);
   }
-  .key {
+  .smrt-numeric-keypad__key {
     /* Gloved hands: never below 4rem, whatever the density token says. */
     min-width: max(4rem, var(--smrt-touch-target-min));
     min-height: max(4rem, var(--smrt-touch-target-min));
     padding: 0 var(--smrt-spacing-3);
+    cursor: pointer;
+    touch-action: manipulation;
+    user-select: none;
+  }
+  .smrt-numeric-keypad__key:disabled {
+    cursor: not-allowed;
+  }
+}
+
+@layer smrt.theme {
+  .smrt-numeric-keypad__root {
+    color: var(--smrt-color-on-surface);
+  }
+  .smrt-numeric-keypad__root:focus-visible {
+    outline: var(--smrt-focus-ring-width) solid var(--smrt-focus-ring-color);
+    outline-offset: var(--smrt-focus-ring-offset);
+  }
+  .smrt-numeric-keypad__display {
+    border: var(--smrt-hairline-strong);
+    border-radius: var(--smrt-radius-medium);
+    background: var(--smrt-color-surface-container-lowest);
+    font: var(--smrt-typography-headline-large-font);
+  }
+  [data-state='below'] .smrt-numeric-keypad__display,
+  [data-state='above'] .smrt-numeric-keypad__display {
+    border-color: var(--smrt-color-error);
+  }
+  .smrt-numeric-keypad__display[data-empty='true'] .smrt-numeric-keypad__entry {
+    color: var(--smrt-color-on-surface-variant);
+  }
+  .smrt-numeric-keypad__entry {
+    font-variant-numeric: tabular-nums;
+  }
+  .smrt-numeric-keypad__affix {
+    color: var(--smrt-color-on-surface-variant);
+    font: var(--smrt-typography-title-large-font);
+  }
+  .smrt-numeric-keypad__message {
+    color: var(--smrt-color-error);
+    font: var(--smrt-typography-body-medium-font);
+  }
+  .smrt-numeric-keypad__key {
     border: var(--smrt-hairline-strong);
     border-radius: var(--smrt-radius-medium);
     background: var(--smrt-color-surface-container-highest);
     color: var(--smrt-color-on-surface);
     font: var(--smrt-typography-headline-large-font);
-    cursor: pointer;
-    touch-action: manipulation;
-    user-select: none;
   }
-  .key.clear {
+  .smrt-numeric-keypad__key.smrt-numeric-keypad__clear {
     font: var(--smrt-typography-label-large-font);
   }
-  .key:active:not(:disabled) {
+  .smrt-numeric-keypad__key:active:not(:disabled) {
     background: var(--smrt-color-surface-container-high);
   }
-  .key.submit {
+  .smrt-numeric-keypad__key.smrt-numeric-keypad__submit {
     border-color: var(--smrt-color-primary);
     background: var(--smrt-color-primary);
     color: var(--smrt-color-on-primary);
     font: var(--smrt-typography-title-large-font);
   }
-  .key:focus-visible {
+  .smrt-numeric-keypad__key:focus-visible {
     outline: var(--smrt-focus-ring-width) solid var(--smrt-focus-ring-color);
     outline-offset: var(--smrt-focus-ring-offset);
   }
-  .key:disabled {
-    opacity: 0.5;
-    cursor: not-allowed;
-  }
-  .disabled .display {
+  .smrt-numeric-keypad__key:disabled {
     opacity: 0.5;
   }
-  :global(.numeric-keypad[data-smrt-highlighted='true']) {
+  .smrt-numeric-keypad__disabled .smrt-numeric-keypad__display {
+    opacity: 0.5;
+  }
+  :global(.smrt-numeric-keypad__root[data-smrt-highlighted='true']) {
     outline: var(--smrt-focus-ring-width) solid var(--smrt-color-tertiary);
     outline-offset: var(--smrt-focus-ring-offset);
   }
 }
+
 </style>

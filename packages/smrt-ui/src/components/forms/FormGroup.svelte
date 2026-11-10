@@ -62,36 +62,40 @@ setFormGroupContext(
 );
 </script>
 
-<div class="form-group" data-smrt-component="FormGroup">
+<div class="smrt-form-group__root" data-smrt-component="FormGroup">
 	<FieldLabel for={fieldId} {label} {required} />
 	{@render children()}
 	{#if hintId}
-		<p id={hintId} class="form-hint">{hint}</p>
+		<p id={hintId} class="smrt-form-group__hint" data-smrt-part="hint">{hint}</p>
 	{/if}
 	{#if errorId}
-		<p id={errorId} class="form-error" role="alert">{error}</p>
+		<p id={errorId} class="smrt-form-group__error" data-smrt-part="error" role="alert">{error}</p>
 	{/if}
 </div>
 
 <style>
 @layer smrt.reset, smrt.structure, smrt.theme;
-@layer smrt.theme {
-	.form-group {
-		margin-bottom: 1rem;
-	}
-
-
-
-	.form-hint {
-		margin: 0.25rem 0 0;
-		font-size: var(--smrt-typography-body-small-size, 0.75rem);
-		color: var(--smrt-color-on-surface-variant);
-	}
-
-	.form-error {
-		margin: 0.25rem 0 0;
-		font-size: var(--smrt-typography-body-small-size, 0.75rem);
-		color: var(--smrt-color-error);
-	}
+@layer smrt.structure {
+  .smrt-form-group__root {
+    margin-bottom: 1rem;
+  }
+  .smrt-form-group__hint {
+    margin: 0.25rem 0 0;
+  }
+  .smrt-form-group__error {
+    margin: 0.25rem 0 0;
+  }
 }
+
+@layer smrt.theme {
+  .smrt-form-group__hint {
+    font-size: var(--smrt-typography-body-small-size, 0.75rem);
+    color: var(--smrt-color-on-surface-variant);
+  }
+  .smrt-form-group__error {
+    font-size: var(--smrt-typography-body-small-size, 0.75rem);
+    color: var(--smrt-color-error);
+  }
+}
+
 </style>

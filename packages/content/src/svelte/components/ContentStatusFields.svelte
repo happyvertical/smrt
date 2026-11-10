@@ -113,7 +113,7 @@ function updateField(key: string, value: unknown) {
     gap: 0.75rem;
   }
 
-  .content-status-fields :global(.form-group) {
+  .content-status-fields :global([data-smrt-component="FormGroup"]) {
     display: grid;
     gap: 0.35rem;
     min-width: 8.5rem;

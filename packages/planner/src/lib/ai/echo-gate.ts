@@ -18,7 +18,7 @@ export function cancelsSpeech(event: {
     return target.matches('textarea, input[type="text"], input:not([type])');
   }
   if (event.type === 'click') {
-    return target.closest('.smrt-dictation-button') !== null;
+    return target.closest('.smrt-dictation-button__root') !== null;
   }
   return false;
 }

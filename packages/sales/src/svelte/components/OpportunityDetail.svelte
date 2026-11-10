@@ -371,8 +371,8 @@ function isOpenNextAction(activity: SalesActivityView): boolean {
 
   /* The base FormGroup carries a bottom margin for stacked forms; inside these
      inline action rows it would misalign the adjacent buttons. */
-  .controls__group :global(.form-group),
-  .sales-opportunity-detail :global(.record .form-group) {
+  .controls__group :global([data-smrt-component="FormGroup"]),
+  .sales-opportunity-detail :global(.record [data-smrt-component="FormGroup"]) {
     margin-bottom: 0;
   }
 

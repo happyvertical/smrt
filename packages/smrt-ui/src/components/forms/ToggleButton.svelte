@@ -86,23 +86,64 @@ useControlRegistration(() => {
   };
 });
 </script>
-<button bind:this={buttonEl} id={resolvedId} type="button" {name} {disabled} class="toggle-button {className}" class:pressed
+<button bind:this={buttonEl} id={resolvedId} type="button" {name} {disabled} class="smrt-toggle-button__root {className}" class:smrt-toggle-button__pressed={pressed}
   aria-pressed={pressed} aria-label={ariaLabel} data-smrt-control={controlId} data-smrt-form={interactionContext?.formId}
   data-smrt-subject-type={interaction === false ? undefined : interaction?.subject?.type}
   data-smrt-subject-id={interaction === false ? undefined : interaction?.subject?.id}
   onclick={handleClick} {...rest} data-smrt-component="ToggleButton">{@render children?.()}</button>
 <style>
 @layer smrt.reset, smrt.structure, smrt.theme;
-@layer smrt.theme {
-  .toggle-button { display: inline-flex; align-items: center; justify-content: center; min-height: 2.5rem; padding: 0 var(--smrt-spacing-4); border: var(--smrt-hairline-strong); border-radius: var(--smrt-radius-full); background: var(--smrt-color-surface); color: var(--smrt-color-on-surface); cursor: pointer; }
-  .toggle-button.pressed { background: var(--smrt-color-secondary-container); color: var(--smrt-color-on-secondary-container); border-color: var(--smrt-color-secondary); }
-  .toggle-button:focus-visible { outline: var(--smrt-focus-ring-width) solid var(--smrt-focus-ring-color); outline-offset: var(--smrt-focus-ring-offset); }
-  .toggle-button:disabled { opacity: .5; cursor: not-allowed; }
-  .toggle-button[data-smrt-highlighted='true'] { outline: 3px solid var(--smrt-color-tertiary); outline-offset: 4px; }
-  /* Forced colors (#3908): system colours where colour alone carries meaning. */
-  @media (forced-colors: active) {
-    .toggle-button.pressed { background: Highlight; color: HighlightText; border-color: Highlight; }
-    .toggle-button:disabled, .toggle-button.pressed:disabled { opacity: 1; background: Canvas; color: GrayText; border-color: GrayText; }
+@layer smrt.structure {
+  .smrt-toggle-button__root {
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    min-height: 2.5rem;
+    padding: 0 var(--smrt-spacing-4);
+    cursor: pointer;
+  }
+  .smrt-toggle-button__root:disabled {
+    cursor: not-allowed;
   }
 }
+
+@layer smrt.theme {
+  .smrt-toggle-button__root {
+    border: var(--smrt-hairline-strong);
+    border-radius: var(--smrt-radius-full);
+    background: var(--smrt-color-surface);
+    color: var(--smrt-color-on-surface);
+  }
+  .smrt-toggle-button__root.smrt-toggle-button__pressed {
+    background: var(--smrt-color-secondary-container);
+    color: var(--smrt-color-on-secondary-container);
+    border-color: var(--smrt-color-secondary);
+  }
+  .smrt-toggle-button__root:focus-visible {
+    outline: var(--smrt-focus-ring-width) solid var(--smrt-focus-ring-color);
+    outline-offset: var(--smrt-focus-ring-offset);
+  }
+  .smrt-toggle-button__root:disabled {
+    opacity: .5;
+  }
+  .smrt-toggle-button__root[data-smrt-highlighted='true'] {
+    outline: 3px solid var(--smrt-color-tertiary);
+    outline-offset: 4px;
+  }
+  /* Forced colors (#3908): system colours where colour alone carries meaning. */
+  @media (forced-colors: active) {
+    .smrt-toggle-button__root.smrt-toggle-button__pressed {
+      background: Highlight;
+      color: HighlightText;
+      border-color: Highlight;
+    }
+    .smrt-toggle-button__root:disabled, .smrt-toggle-button__root.smrt-toggle-button__pressed:disabled {
+      opacity: 1;
+      background: Canvas;
+      color: GrayText;
+      border-color: GrayText;
+    }
+  }
+}
+
 </style>

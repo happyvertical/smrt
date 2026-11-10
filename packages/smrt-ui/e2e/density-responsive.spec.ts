@@ -22,7 +22,7 @@ for (const width of [390, 768]) {
       ).toBeVisible();
       const sizes = await page
         .locator(
-          '[data-smrt-component="Input"]:not([data-density="comfortable"]), [data-smrt-component="Select"], .textarea, [data-smrt-component="Checkbox"], [data-smrt-component="Switch"], .radio, [data-smrt-component="Button"], .filter-chip, .segmented label, [data-smrt-part="sort"]',
+          '[data-smrt-component="Input"]:not([data-density="comfortable"]), [data-smrt-component="Select"], [data-smrt-component="Textarea"], [data-smrt-component="Checkbox"], [data-smrt-component="Switch"], [data-smrt-component="Radio"], [data-smrt-component="Button"], .filter-chip, [data-smrt-component="SegmentedControl"] label, [data-smrt-part="sort"]',
         )
         .evaluateAll((elements) =>
           elements.map((element) => ({
@@ -71,7 +71,7 @@ for (const density of ['comfortable', 'touch']) {
         page.getByRole('button', { name: 'Use signature' }),
       ).toBeVisible();
       const sizes = await page
-        .locator('.camera-capture .action, .signature-pad .action')
+        .locator('[data-smrt-component="CameraCapture"] [data-smrt-part="action"], [data-smrt-component="SignaturePad"] [data-smrt-part="action"]')
         .evaluateAll((elements) =>
           elements.map((element) => ({
             height: element.getBoundingClientRect().height,
