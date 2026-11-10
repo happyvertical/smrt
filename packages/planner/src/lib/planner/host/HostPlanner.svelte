@@ -49,22 +49,36 @@ onMount(() => {
   };
 });
 </script>
-{#if session.error}<p role="alert">{session.error}</p>{/if}
+{#if session.error}<p role="alert" data-smrt-component="HostPlanner">{session.error}</p>{/if}
 {#if session.preservedDraft}
-  <details><summary>Preserved edit</summary><textarea readonly value={JSON.stringify(session.preservedDraft, null, 2)} aria-label="Preserved cookbook edit"></textarea></details>
-  <button type="button" onclick={() => session.dismissPreservedDraft()}>Dismiss preserved edit</button>
+  <details data-smrt-component="HostPlanner"><summary>Preserved edit</summary><textarea readonly value={JSON.stringify(session.preservedDraft, null, 2)} aria-label="Preserved cookbook edit"></textarea></details>
+  <button type="button" onclick={() => session.dismissPreservedDraft()} data-smrt-component="HostPlanner">Dismiss preserved edit</button>
 {/if}
 {#if session.retryable}
-  <button disabled={session.busy} onclick={() => session.retry()}>Retry same edit</button>
+  <button disabled={session.busy} onclick={() => session.retry()} data-smrt-component="HostPlanner">Retry same edit</button>
 {/if}
 {#if session.current}
-  <fieldset disabled={session.locked} aria-busy={session.busy}>
+  <fieldset disabled={session.locked} aria-busy={session.busy} data-smrt-component="HostPlanner">
     <Planner persistence="host" themeControls={true} />
   </fieldset>
-{:else}<p role="status">Waiting for a Kitchen plan…</p>{/if}
+{:else}<p role="status" data-smrt-component="HostPlanner">Waiting for a Kitchen plan…</p>{/if}
 <style>
 @layer smrt.reset, smrt.structure, smrt.theme;
-@layer smrt.theme {
-fieldset { border: 0; padding: 0; min-width: 0; } textarea { width: 100%; min-height: 12rem; }
+@layer smrt.structure {
+  fieldset {
+    padding: 0;
+    min-width: 0;
+  }
+  textarea {
+    width: 100%;
+    min-height: 12rem;
+  }
 }
+
+@layer smrt.theme {
+  fieldset {
+    border: 0;
+  }
+}
+
 </style>

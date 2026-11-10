@@ -153,217 +153,29 @@
       "unsorted": true,
       "internalClasses": 7
     },
-    "packages/planner/src/lib/components/AdvancedStyles.svelte": {
-      "unsorted": true,
-      "internalClasses": 12
-    },
-    "packages/planner/src/lib/components/AiModelsPage.svelte": {
-      "unsorted": true,
-      "internalClasses": 3
-    },
-    "packages/planner/src/lib/components/AiSetup.svelte": {
-      "unsorted": true,
-      "internalClasses": 11
-    },
-    "packages/planner/src/lib/components/AiStatusIcons.svelte": {
-      "unsorted": true,
-      "internalClasses": 2
-    },
-    "packages/planner/src/lib/components/AppSettings.svelte": {
-      "unsorted": true,
-      "internalClasses": 9
-    },
-    "packages/planner/src/lib/components/BrowserAssistant.svelte": {
-      "unsorted": true,
-      "internalClasses": 11
-    },
     "packages/planner/src/lib/components/ChildRecords.svelte": {
-      "unsorted": true,
-      "internalClasses": 12
-    },
-    "packages/planner/src/lib/components/ConnectTools.svelte": {
-      "unsorted": true,
-      "internalClasses": 4
-    },
-    "packages/planner/src/lib/components/CookbooksPanel.svelte": {
-      "unsorted": true,
-      "internalClasses": 16
-    },
-    "packages/planner/src/lib/components/ExportPanel.svelte": {
-      "unsorted": true,
-      "internalClasses": 15
-    },
-    "packages/planner/src/lib/components/FeatureCard.svelte": {
-      "unsorted": true,
-      "internalClasses": 11
-    },
-    "packages/planner/src/lib/components/FeaturesPanel.svelte": {
-      "unsorted": true,
-      "internalClasses": 6
+      "unsorted": false,
+      "internalClasses": 3
     },
     "packages/planner/src/lib/components/FieldInput.svelte": {
-      "unsorted": true,
-      "internalClasses": 4
+      "unsorted": false,
+      "internalClasses": 1
     },
     "packages/planner/src/lib/components/FieldMapForm.svelte": {
-      "unsorted": true,
-      "internalClasses": 4
+      "unsorted": false,
+      "internalClasses": 3
     },
     "packages/planner/src/lib/components/FormWorkspace.svelte": {
-      "unsorted": true,
-      "internalClasses": 8
-    },
-    "packages/planner/src/lib/components/HeaderIconLink.svelte": {
-      "unsorted": true,
+      "unsorted": false,
       "internalClasses": 3
-    },
-    "packages/planner/src/lib/components/HelpView.svelte": {
-      "unsorted": true,
-      "internalClasses": 1
-    },
-    "packages/planner/src/lib/components/ModelOptions.svelte": {
-      "unsorted": true,
-      "internalClasses": 10
-    },
-    "packages/planner/src/lib/components/ModelPage.svelte": {
-      "unsorted": true,
-      "internalClasses": 2
     },
     "packages/planner/src/lib/components/ModelWorkspace.svelte": {
-      "unsorted": true,
-      "internalClasses": 14
-    },
-    "packages/planner/src/lib/components/PackagePage.svelte": {
-      "unsorted": true,
-      "internalClasses": 1
-    },
-    "packages/planner/src/lib/components/PlannerReports.svelte": {
-      "unsorted": true,
-      "internalClasses": 1
-    },
-    "packages/planner/src/lib/components/ProductMedia.svelte": {
-      "unsorted": true,
-      "internalClasses": 4
-    },
-    "packages/planner/src/lib/components/ProjectControls.svelte": {
-      "unsorted": true,
-      "internalClasses": 3
-    },
-    "packages/planner/src/lib/components/RecipeCards.svelte": {
-      "unsorted": true,
-      "internalClasses": 6
-    },
-    "packages/planner/src/lib/components/RecipeHelp.svelte": {
-      "unsorted": true,
-      "internalClasses": 1
-    },
-    "packages/planner/src/lib/components/RecipeOptions.svelte": {
-      "unsorted": true,
-      "internalClasses": 6
-    },
-    "packages/planner/src/lib/components/RecordFeatures.svelte": {
-      "unsorted": true,
-      "internalClasses": 14
-    },
-    "packages/planner/src/lib/components/RecordView.svelte": {
-      "unsorted": true,
-      "internalClasses": 2
-    },
-    "packages/planner/src/lib/components/RelationField.svelte": {
-      "unsorted": true,
-      "internalClasses": 2
-    },
-    "packages/planner/src/lib/components/SectionActions.svelte": {
-      "unsorted": true,
-      "internalClasses": 1
-    },
-    "packages/planner/src/lib/components/SectionHeading.svelte": {
-      "unsorted": true,
-      "internalClasses": 3
-    },
-    "packages/planner/src/lib/components/SectionIcons.svelte": {
-      "unsorted": true,
-      "internalClasses": 2
-    },
-    "packages/planner/src/lib/components/SectionOverview.svelte": {
-      "unsorted": true,
-      "internalClasses": 1
-    },
-    "packages/planner/src/lib/components/SectionPage.svelte": {
-      "unsorted": true,
-      "internalClasses": 1
-    },
-    "packages/planner/src/lib/components/SectionView.svelte": {
-      "unsorted": true,
-      "internalClasses": 2
-    },
-    "packages/planner/src/lib/components/SettingsPanel.svelte": {
-      "unsorted": true,
-      "internalClasses": 2
-    },
-    "packages/planner/src/lib/components/SpecsPanel.svelte": {
-      "unsorted": true,
-      "internalClasses": 3
-    },
-    "packages/planner/src/lib/components/ThemeSection.svelte": {
-      "unsorted": true,
-      "internalClasses": 25
+      "unsorted": false,
+      "internalClasses": 8
     },
     "packages/planner/src/lib/components/VariantGridForm.svelte": {
-      "unsorted": true,
-      "internalClasses": 9
-    },
-    "packages/planner/src/lib/components/VoiceTyping.svelte": {
-      "unsorted": true,
-      "internalClasses": 5
-    },
-    "packages/planner/src/lib/kitchen/LiveKitchenBridge.svelte": {
-      "unsorted": true,
+      "unsorted": false,
       "internalClasses": 4
-    },
-    "packages/planner/src/lib/planner/host/HostPlanner.svelte": {
-      "unsorted": true,
-      "internalClasses": 0
-    },
-    "packages/planner/src/lib/planner/Planner.svelte": {
-      "unsorted": true,
-      "internalClasses": 2
-    },
-    "packages/planner/src/lib/planner/PlannerControls.svelte": {
-      "unsorted": true,
-      "internalClasses": 3
-    },
-    "packages/planner/src/lib/planner/PlannerHostAction.svelte": {
-      "unsorted": true,
-      "internalClasses": 2
-    },
-    "packages/planner/src/routes/+layout.svelte": {
-      "unsorted": true,
-      "internalClasses": 2
-    },
-    "packages/planner/src/routes/+page.svelte": {
-      "unsorted": true,
-      "internalClasses": 3
-    },
-    "packages/planner/src/routes/advanced-styles/+page.svelte": {
-      "unsorted": true,
-      "internalClasses": 0
-    },
-    "packages/planner/src/routes/ai/+page.svelte": {
-      "unsorted": true,
-      "internalClasses": 0
-    },
-    "packages/planner/src/routes/packages/+page.svelte": {
-      "unsorted": true,
-      "internalClasses": 11
-    },
-    "packages/planner/src/routes/recipes/[id]/+page.svelte": {
-      "unsorted": true,
-      "internalClasses": 2
-    },
-    "packages/planner/src/routes/recipes/[id]/help/+page.svelte": {
-      "unsorted": true,
-      "internalClasses": 2
     },
     "packages/projects/src/svelte/AssistanceLauncher.svelte": {
       "unsorted": true,

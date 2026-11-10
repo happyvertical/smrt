@@ -17,9 +17,9 @@ interface SectionHeadingProps {
 let { icon, title, description, actions }: SectionHeadingProps = $props();
 </script>
 
-<header class="section-heading">
-  <span class="mark"><ShellSectionIcon name={icon} size={28} /></span>
-  <div class="heading">
+<header class="smrt-section-heading__root" data-smrt-component="SectionHeading">
+  <span class="smrt-section-heading__icon" data-smrt-part="icon"><ShellSectionIcon name={icon} size={28} /></span>
+  <div class="smrt-section-heading__heading" data-smrt-part="heading">
     <h1>{title}</h1>
     {#if description}<p>{description}</p>{/if}
   </div>
@@ -28,36 +28,40 @@ let { icon, title, description, actions }: SectionHeadingProps = $props();
 
 <style>
 @layer smrt.reset, smrt.structure, smrt.theme;
-@layer smrt.theme {
+@layer smrt.structure {
   header {
     display: flex;
     align-items: center;
     gap: var(--smrt-spacing-4);
   }
-
-  .mark {
+  .smrt-section-heading__icon {
     display: inline-grid;
     place-items: center;
     flex: 0 0 auto;
     inline-size: 3rem;
     block-size: 3rem;
+  }
+  .smrt-section-heading__heading {
+    flex: 1 1 auto;
+    min-inline-size: 0;
+  }
+  h1 {
+    margin: 0;
+  }
+  .smrt-section-heading__heading p {
+    margin: var(--smrt-spacing-1) 0 0;
+  }
+}
+
+@layer smrt.theme {
+  .smrt-section-heading__icon {
     border-radius: var(--smrt-radius-large, 0.75rem);
     background: var(--smrt-color-primary-container);
     color: var(--smrt-color-on-primary-container);
   }
-
-  .heading {
-    flex: 1 1 auto;
-    min-inline-size: 0;
-  }
-
-  h1 {
-    margin: 0;
-  }
-
-  .heading p {
-    margin: var(--smrt-spacing-1) 0 0;
+  .smrt-section-heading__heading p {
     color: var(--smrt-color-on-surface-variant);
   }
 }
+
 </style>

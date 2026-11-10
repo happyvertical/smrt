@@ -180,13 +180,13 @@ async function remove(row: ModelRecord) {
 }
 </script>
 
-<section class="children" data-child-model={model.name}>
+<section class="smrt-child-records__root" data-child-model={model.name} data-smrt-component="ChildRecords">
   <header>
     <h3>{title} <small>{rows.length}</small></h3>
     {#if removeError}
-      <p class="error" role="alert" data-remove-error>{removeError}</p>
+      <p class="smrt-child-records__error" data-smrt-part="error" role="alert" data-remove-error>{removeError}</p>
     {/if}
-    <button type="button" class="secondary" onclick={startCreate}>
+    <button type="button" class="smrt-child-records__secondary" data-smrt-part="action" onclick={startCreate}>
       Add {title.toLowerCase().replace(/s$/, '')}
     </button>
   </header>
@@ -196,7 +196,7 @@ async function remove(row: ModelRecord) {
       <form onsubmit={save} novalidate>
         {#each fields as field (field.name)}
           {#if calculated.has(field.name)}
-            <div class="derived">
+            <div class="smrt-child-records__derived" data-smrt-part="derived">
               <FieldLabel label={field.label} />
               <output data-derived={field.name}>
                 {formatValue(field, derivedPreview(field.name), labels)}
@@ -216,11 +216,11 @@ async function remove(row: ModelRecord) {
           {/if}
         {/each}
         {#if summary}
-          <p class="error" role="alert" data-error-summary>{summary}</p>
+          <p class="smrt-child-records__error" data-smrt-part="error" role="alert" data-error-summary>{summary}</p>
         {/if}
-        <div class="actions">
+        <div class="smrt-child-records__actions" data-smrt-part="actions">
           <button type="submit">Save</button>
-          <button type="button" class="secondary" onclick={() => (editing = null)}>
+          <button type="button" class="smrt-child-records__secondary" data-smrt-part="action" onclick={() => (editing = null)}>
             Cancel
           </button>
         </div>
@@ -231,9 +231,9 @@ async function remove(row: ModelRecord) {
   {#if !loaded}
     <p>Loading...</p>
   {:else if rows.length === 0}
-    <p class="empty">None yet.</p>
+    <p class="smrt-child-records__empty" data-smrt-part="empty">None yet.</p>
   {:else}
-    <div class="scroll">
+    <div class="smrt-child-records__scroll" data-smrt-part="scroll">
       <table class="planner-list">
         <thead>
           <tr>
@@ -244,7 +244,7 @@ async function remove(row: ModelRecord) {
                 </button>
               </th>
             {/each}
-            <th scope="col"><span class="visually-hidden">Actions</span></th>
+            <th scope="col"><span class="smrt-child-records__visually-hidden" data-smrt-part="label">Actions</span></th>
           </tr>
         </thead>
         <tbody>
@@ -253,10 +253,10 @@ async function remove(row: ModelRecord) {
               {#each columns as column (column.name)}
                 <td>{formatValue(column, cellValue(column, row), labels)}</td>
               {/each}
-              <td class="row-actions">
+              <td class="smrt-child-records__row-actions" data-smrt-part="actions">
                 <button
                   type="button"
-                  class="secondary"
+                  class="smrt-child-records__secondary" data-smrt-part="action"
                   aria-label={`Edit ${nameOf(row)}`}
                   onclick={() => startEdit(row)}
                 >
@@ -264,7 +264,7 @@ async function remove(row: ModelRecord) {
                 </button>
                 <button
                   type="button"
-                  class="secondary"
+                  class="smrt-child-records__secondary" data-smrt-part="action"
                   aria-label={`Delete ${nameOf(row)}`}
                   onclick={() => remove(row)}
                 >
@@ -281,93 +281,56 @@ async function remove(row: ModelRecord) {
 
 <style>
 @layer smrt.reset, smrt.structure, smrt.theme;
-@layer smrt.theme {
-  .children {
+@layer smrt.structure {
+  .smrt-child-records__root {
     display: grid;
     gap: var(--smrt-spacing-3);
     padding: var(--smrt-spacing-3) var(--smrt-spacing-4);
-    border: var(--smrt-hairline);
-    border-radius: var(--smrt-radius-large);
   }
-
   header {
     display: flex;
     gap: var(--smrt-spacing-3);
     align-items: center;
     justify-content: space-between;
   }
-
   h3 {
     margin: 0;
-    font: var(--smrt-typography-title-medium-font); letter-spacing: var(--smrt-typography-title-medium-tracking);
   }
-
-  small,
-  .empty {
-    color: var(--smrt-color-on-surface-variant);
-    font-weight: 400;
-  }
-
   p {
     margin: 0;
   }
-
   form {
     display: grid;
     gap: var(--smrt-spacing-2);
   }
-
-  .error {
+  .smrt-child-records__error {
     margin: 0;
-    color: var(--smrt-color-error);
   }
-
-  .derived {
+  .smrt-child-records__derived {
     display: grid;
     gap: var(--smrt-spacing-1);
   }
-
-  .actions,
-  .row-actions {
+  .smrt-child-records__actions,
+  .smrt-child-records__row-actions {
     display: flex;
     gap: var(--smrt-spacing-2);
   }
-
-  .scroll {
+  .smrt-child-records__scroll {
     overflow-x: auto;
   }
-
   table {
     width: 100%;
-    border-collapse: collapse;
-    font-size: 0.875rem;
   }
-
   th,
   td {
     padding: var(--smrt-spacing-1) var(--smrt-spacing-2);
-    border-bottom: var(--smrt-hairline);
-    text-align: left;
     white-space: nowrap;
   }
-
   button {
     padding: var(--smrt-spacing-1) var(--smrt-spacing-3);
-    border: 0;
-    border-radius: var(--smrt-radius-medium);
-    background: var(--smrt-color-primary);
-    color: var(--smrt-color-on-primary);
-    font: inherit;
     cursor: pointer;
   }
-
-  button.secondary {
-    border: var(--smrt-control-border);
-    background: transparent;
-    color: var(--smrt-color-on-surface);
-  }
-
-  .visually-hidden {
+  .smrt-child-records__visually-hidden {
     position: absolute;
     width: 1px;
     height: 1px;
@@ -375,4 +338,45 @@ async function remove(row: ModelRecord) {
     clip-path: inset(50%);
   }
 }
+
+@layer smrt.theme {
+  .smrt-child-records__root {
+    border: var(--smrt-hairline);
+    border-radius: var(--smrt-radius-large);
+  }
+  h3 {
+    font: var(--smrt-typography-title-medium-font);
+    letter-spacing: var(--smrt-typography-title-medium-tracking);
+  }
+  small,
+  .smrt-child-records__empty {
+    color: var(--smrt-color-on-surface-variant);
+    font-weight: 400;
+  }
+  .smrt-child-records__error {
+    color: var(--smrt-color-error);
+  }
+  table {
+    border-collapse: collapse;
+    font-size: 0.875rem;
+  }
+  th,
+  td {
+    border-bottom: var(--smrt-hairline);
+    text-align: left;
+  }
+  button {
+    border: 0;
+    border-radius: var(--smrt-radius-medium);
+    background: var(--smrt-color-primary);
+    color: var(--smrt-color-on-primary);
+    font: inherit;
+  }
+  button.smrt-child-records__secondary {
+    border: var(--smrt-control-border);
+    background: transparent;
+    color: var(--smrt-color-on-surface);
+  }
+}
+
 </style>

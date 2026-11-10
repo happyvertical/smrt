@@ -119,55 +119,55 @@ const cssPending = $derived.by(() => {
 });
 </script>
 
-<section class="theme" aria-label="Theme settings">
+<section class="smrt-theme-section__root" aria-label="Theme settings" data-smrt-component="ThemeSection">
   {#if provider && context}
-    <div class="cards" role="group" aria-label="Theme look">
+    <div class="smrt-theme-section__cards" role="group" aria-label="Theme look" data-smrt-part="grid">
       {#each themePresets as preset (preset.id)}
         {@const palette = context.state.resolvedScheme === 'dark' ? preset.dark : preset.light}
-        <button type="button" class="choice preset"
-          class:selected={!custom && (cookbookStore.theme?.preset ?? 'glass') === preset.id}
+        <button type="button" class="smrt-theme-section__choice smrt-theme-section__preset" data-smrt-part="card"
+          class:smrt-theme-section__selected={!custom && (cookbookStore.theme?.preset ?? 'glass') === preset.id}
           aria-pressed={!custom && (cookbookStore.theme?.preset ?? 'glass') === preset.id}
           onclick={() => context?.setPreset(preset.id)}
           style:--smrt-planner-preview-bg={palette.background}
           style:--smrt-planner-preview-surface={palette.surface}
           style:--smrt-planner-preview-primary={palette.primary}
           style:--smrt-planner-preview-ink={palette.onSurface}>
-          <span class="choice-name"><span class="choice-icon" aria-hidden="true">{icons[preset.id]}</span>{preset.label}</span>
-          <span class="preview" aria-hidden="true">
-            <span class="preview-sidebar"><span></span><span></span><span></span></span>
-            <span class="preview-main"><span class="preview-title"></span><span class="preview-body"><span></span><span></span></span></span>
+          <span class="smrt-theme-section__name" data-smrt-part="name"><span class="smrt-theme-section__icon" aria-hidden="true" data-smrt-part="icon">{icons[preset.id]}</span>{preset.label}</span>
+          <span class="smrt-theme-section__preview" aria-hidden="true" data-smrt-part="preview">
+            <span class="smrt-theme-section__preview-sidebar" data-smrt-part="panel"><span></span><span></span><span></span></span>
+            <span class="smrt-theme-section__preview-main" data-smrt-part="main"><span class="smrt-theme-section__preview-title" data-smrt-part="title"></span><span class="smrt-theme-section__preview-body" data-smrt-part="body"><span></span><span></span></span></span>
           </span>
         </button>
       {/each}
     </div>
-    <div class="cards schemes" role="group" aria-label="Appearance">
+    <div class="smrt-theme-section__cards smrt-theme-section__schemes" role="group" aria-label="Appearance" data-smrt-part="grid">
       {#each schemes as scheme (scheme.id)}
-        <button type="button" class="choice scheme"
-          class:selected={context.state.colorScheme === scheme.id}
+        <button type="button" class="smrt-theme-section__choice smrt-theme-section__scheme" data-smrt-part="card"
+          class:smrt-theme-section__selected={context.state.colorScheme === scheme.id}
           aria-pressed={context.state.colorScheme === scheme.id}
           onclick={() => context?.setColorScheme(scheme.id)}>
-          <span class="choice-name"><span class="choice-icon" aria-hidden="true">{scheme.icon}</span>{scheme.label}</span>
-          <span class="choice-hint">{scheme.hint}</span>
+          <span class="smrt-theme-section__name" data-smrt-part="name"><span class="smrt-theme-section__icon" aria-hidden="true" data-smrt-part="icon">{scheme.icon}</span>{scheme.label}</span>
+          <span class="smrt-theme-section__hint" data-smrt-part="hint">{scheme.hint}</span>
         </button>
       {/each}
     </div>
   {/if}
-  <div class="shape" role="group" aria-label="Shape and contrast">
-    <div class="field">
+  <div class="smrt-theme-section__shape" role="group" aria-label="Shape and contrast" data-smrt-part="row">
+    <div class="smrt-theme-section__field" data-smrt-part="field">
       <FieldLabel for="theme-radius" label="Corner radius" />
       <select id="theme-radius" value={cookbookStore.theme?.borderRadius ?? DEFAULTS.borderRadius}
         onchange={(event) => setShape('borderRadius', event.currentTarget.value as BorderRadiusSetting)}>
         {#each radii as radius (radius.id)}<option value={radius.id}>{radius.label}</option>{/each}
       </select>
     </div>
-    <div class="field">
+    <div class="smrt-theme-section__field" data-smrt-part="field">
       <FieldLabel for="theme-density" label="Density" />
       <select id="theme-density" value={cookbookStore.theme?.density ?? DEFAULTS.density}
         onchange={(event) => setShape('density', event.currentTarget.value as DensitySetting)}>
         {#each densities as density (density.id)}<option value={density.id}>{density.label}</option>{/each}
       </select>
     </div>
-    <div class="field">
+    <div class="smrt-theme-section__field" data-smrt-part="field">
       <FieldLabel for="theme-contrast" label="Contrast" />
       <select id="theme-contrast" value={cookbookStore.theme?.contrast ?? DEFAULTS.contrast}
         onchange={(event) => setShape('contrast', event.currentTarget.value as ContrastSetting)}>
@@ -175,11 +175,11 @@ const cssPending = $derived.by(() => {
       </select>
     </div>
   </div>
-  <div class="brand">
-    <div class="field">
+  <div class="smrt-theme-section__brand" data-smrt-part="row">
+    <div class="smrt-theme-section__field" data-smrt-part="field">
       <FieldLabel for="theme-brand-colour" label="Brand colour" />
-      <div class="pick">
-        <span class="wheel" style:--smrt-planner-picked-color={custom?.primary ?? '#e68a00'}>
+      <div class="smrt-theme-section__pick" data-smrt-part="row">
+        <span class="smrt-theme-section__wheel" style:--smrt-planner-picked-color={custom?.primary ?? '#e68a00'} data-smrt-part="value">
           <input id="theme-brand-colour" type="color" aria-label="Choose brand colour"
             value={custom?.primary ?? '#e68a00'}
             oninput={(event) => setBrand(event.currentTarget.value)} />
@@ -192,7 +192,7 @@ const cssPending = $derived.by(() => {
           }} />
       </div>
     </div>
-    <div class="field font-field">
+    <div class="smrt-theme-section__field smrt-theme-section__font-field" data-smrt-part="field">
       <FieldLabel for="theme-brand-font" label="Font" />
       <select id="theme-brand-font" value={cookbookStore.theme?.fontFamily ?? custom?.fontFamily ?? ''} onchange={(event) => setFont(event.currentTarget.value)}>
         <option value="">Theme default</option>
@@ -201,58 +201,290 @@ const cssPending = $derived.by(() => {
     </div>
     {#if custom}<Button variant="secondary" onclick={resetToPreset}>Reset brand colour</Button>{/if}
   </div>
-  {#if invalid}<p class="error" role="alert">Use a hex colour like #c2410c.</p>{/if}
-  <a class="advanced" href={advancedStylesHref}>
-    <span class="advanced-icon" aria-hidden="true">{'{}'}</span>
+  {#if invalid}<p class="smrt-theme-section__error" role="alert" data-smrt-part="error">Use a hex colour like #c2410c.</p>{/if}
+  <a class="smrt-theme-section__advanced" href={advancedStylesHref} data-smrt-part="card">
+    <span class="smrt-theme-section__advanced-icon" aria-hidden="true" data-smrt-part="icon">{'{}'}</span>
     <span><strong>Advanced Styles</strong><small>{cssPending ? 'This cookbook has custom CSS waiting for your approval' : 'Edit custom CSS for your app'}</small></span>
-    <span class="arrow" aria-hidden="true">→</span>
+    <span class="smrt-theme-section__arrow" aria-hidden="true" data-smrt-part="icon">→</span>
   </a>
 </section>
 
 <style>
 @layer smrt.reset, smrt.structure, smrt.theme;
-@layer smrt.theme {
-  .theme { display: grid; gap: 1.25rem; max-inline-size: 72rem; }
-  .cards { display: grid; grid-template-columns: repeat(auto-fill, minmax(min(10rem, 100%), 1fr)); gap: .75rem; }
-  .choice { display: grid; align-content: start; gap: .8rem; min-block-size: 8.5rem; padding: .85rem; border: var(--smrt-hairline); border-radius: var(--smrt-radius-large, .75rem); background: var(--smrt-surface-panel); color: var(--smrt-color-on-surface); text-align: start; cursor: pointer; transition: border-color var(--smrt-duration-short3, 150ms) var(--smrt-easing-standard, ease), background var(--smrt-duration-short3, 150ms) var(--smrt-easing-standard, ease), transform var(--smrt-duration-short3, 150ms) var(--smrt-easing-standard, ease); }
-  .choice:hover { border-color: var(--smrt-color-primary); background: var(--smrt-surface-raised); transform: translateY(-2px); }
-  .choice.selected { border: 2px solid var(--smrt-color-primary); padding: calc(.85rem - 1px); background: var(--smrt-color-primary-container); color: var(--smrt-color-on-primary-container); }
-  .choice:focus-visible, .advanced:focus-visible, .wheel:focus-within, select:focus-visible { outline: var(--smrt-focus-ring-width) solid var(--smrt-focus-ring-color); outline-offset: var(--smrt-focus-ring-offset); }
-  .choice-name { display: inline-flex; align-items: center; gap: .55rem; font-size: 1rem; font-weight: 700; line-height: 1.2; }
-  .choice-icon { display: inline-grid; place-items: center; flex: none; inline-size: 1.5rem; block-size: 1.5rem; font-size: 1.35rem; color: var(--smrt-color-primary); }
-  .preview { display: flex; overflow: hidden; inline-size: 100%; block-size: 4.5rem; border-radius: .4rem; border: 1px solid color-mix(in srgb, var(--smrt-planner-preview-ink) 20%, transparent); background: var(--smrt-planner-preview-bg); }
-  .preview-sidebar { display: grid; align-content: start; gap: .35rem; inline-size: 23%; padding: .5rem .3rem; background: var(--smrt-planner-preview-primary); }
-  .preview-sidebar span { block-size: .22rem; border-radius: 1rem; background: var(--smrt-planner-preview-surface); opacity: .8; }
-  .preview-main { display: grid; align-content: start; gap: .4rem; flex: 1; padding: .6rem; }
-  .preview-title { inline-size: 55%; block-size: .32rem; border-radius: 1rem; background: var(--smrt-planner-preview-ink); opacity: .7; }
-  .preview-body { display: grid; gap: .25rem; padding: .35rem; border-radius: .2rem; background: var(--smrt-planner-preview-surface); }
-  .preview-body span { block-size: .2rem; border-radius: 1rem; background: var(--smrt-planner-preview-primary); opacity: .7; }
-  .preview-body span:last-child { inline-size: 70%; opacity: .35; }
-  .scheme { min-block-size: 8.5rem; }
-  .choice-hint { font-size: .85rem; color: var(--smrt-color-on-surface-variant); }
-  .brand, .shape { display: flex; flex-wrap: wrap; gap: 1rem; align-items: end; }
-  .shape .field { min-inline-size: min(10rem, 100%); }
-  .field { display: grid; gap: .4rem; }
-  .pick { display: flex; gap: .65rem; align-items: center; }
-  .wheel { position: relative; display: inline-grid; place-items: center; flex: none; inline-size: 3rem; block-size: 3rem; border-radius: 50%; background: conic-gradient(red, #ff0, #0f0, #0ff, #00f, #f0f, red); box-shadow: 0 0 0 1px var(--smrt-hairline-color); cursor: pointer; }
-  .wheel::after { content: ''; inline-size: 1.7rem; block-size: 1.7rem; border: 2px solid white; border-radius: 50%; background: var(--smrt-planner-picked-color); box-shadow: var(--smrt-elevation-1); pointer-events: none; }
-  .wheel input { position: absolute; inset: 0; inline-size: 100%; block-size: 100%; opacity: 0; cursor: pointer; }
-  .font-field { min-inline-size: min(14rem, 100%); }
-  select { min-block-size: 3rem; padding: .6rem 2rem .6rem .8rem; border: var(--smrt-control-border); border-radius: var(--smrt-radius-medium, .5rem); background: var(--smrt-surface-control); color: var(--smrt-color-on-surface); font: inherit; cursor: pointer; }
-  .error { margin: 0; color: var(--smrt-color-error); }
-  .advanced { display: flex; align-items: center; gap: .8rem; padding: 1rem; border: var(--smrt-hairline); border-radius: var(--smrt-radius-large, .75rem); background: var(--smrt-surface-panel); color: var(--smrt-color-on-surface); text-decoration: none; }
-  .advanced:hover { border-color: var(--smrt-color-primary); }
-  .advanced-icon { display: grid; place-items: center; inline-size: 2.8rem; block-size: 2.8rem; flex: none; border-radius: .65rem; background: var(--smrt-color-primary-container); color: var(--smrt-color-on-primary-container); font: 700 1rem ui-monospace, monospace; }
-  .advanced strong, .advanced small { display: block; }
-  .advanced small { margin-top: .15rem; color: var(--smrt-color-on-surface-variant); }
-  .arrow { margin-inline-start: auto; font-size: 1.3rem; }
-  /* Forced colours: backgrounds and shadows are replaced by system colours, so
-     the selected card shows a Highlight frame, and the colour swatches (the
-     preset previews and the wheel) keep their real colours: they show
-     colours by design. */
-  @media (forced-colors: active) {
-    .choice.selected { border-color: Highlight; outline: 0.125rem solid Highlight; outline-offset: 0.125rem; }
-    .preview, .wheel { forced-color-adjust: none; }
+@layer smrt.structure {
+  .smrt-theme-section__root {
+    display: grid;
+    gap: 1.25rem;
+    max-inline-size: 72rem;
+  }
+  .smrt-theme-section__cards {
+    display: grid;
+    grid-template-columns: repeat(auto-fill, minmax(min(10rem, 100%), 1fr));
+    gap: .75rem;
+  }
+  .smrt-theme-section__choice {
+    display: grid;
+    align-content: start;
+    gap: .8rem;
+    min-block-size: 8.5rem;
+    padding: .85rem;
+    cursor: pointer;
+  }
+  .smrt-theme-section__choice.smrt-theme-section__selected {
+    padding: calc(.85rem - 1px);
+  }
+  .smrt-theme-section__name {
+    display: inline-flex;
+    align-items: center;
+    gap: .55rem;
+  }
+  .smrt-theme-section__icon {
+    display: inline-grid;
+    place-items: center;
+    flex: none;
+    inline-size: 1.5rem;
+    block-size: 1.5rem;
+  }
+  .smrt-theme-section__preview {
+    display: flex;
+    overflow: hidden;
+    inline-size: 100%;
+    block-size: 4.5rem;
+  }
+  .smrt-theme-section__preview-sidebar {
+    display: grid;
+    align-content: start;
+    gap: .35rem;
+    inline-size: 23%;
+    padding: .5rem .3rem;
+  }
+  .smrt-theme-section__preview-sidebar span {
+    block-size: .22rem;
+  }
+  .smrt-theme-section__preview-main {
+    display: grid;
+    align-content: start;
+    gap: .4rem;
+    flex: 1;
+    padding: .6rem;
+  }
+  .smrt-theme-section__preview-title {
+    inline-size: 55%;
+    block-size: .32rem;
+  }
+  .smrt-theme-section__preview-body {
+    display: grid;
+    gap: .25rem;
+    padding: .35rem;
+  }
+  .smrt-theme-section__preview-body span {
+    block-size: .2rem;
+  }
+  .smrt-theme-section__preview-body span:last-child {
+    inline-size: 70%;
+  }
+  .smrt-theme-section__scheme {
+    min-block-size: 8.5rem;
+  }
+  .smrt-theme-section__brand, .smrt-theme-section__shape {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 1rem;
+    align-items: end;
+  }
+  .smrt-theme-section__shape .smrt-theme-section__field {
+    min-inline-size: min(10rem, 100%);
+  }
+  .smrt-theme-section__field {
+    display: grid;
+    gap: .4rem;
+  }
+  .smrt-theme-section__pick {
+    display: flex;
+    gap: .65rem;
+    align-items: center;
+  }
+  .smrt-theme-section__wheel {
+    position: relative;
+    display: inline-grid;
+    place-items: center;
+    flex: none;
+    inline-size: 3rem;
+    block-size: 3rem;
+    cursor: pointer;
+  }
+  .smrt-theme-section__wheel::after {
+    inline-size: 1.7rem;
+    block-size: 1.7rem;
+    pointer-events: none;
+  }
+  .smrt-theme-section__wheel input {
+    position: absolute;
+    inset: 0;
+    inline-size: 100%;
+    block-size: 100%;
+    cursor: pointer;
+    opacity: 0;
+  }
+  .smrt-theme-section__font-field {
+    min-inline-size: min(14rem, 100%);
+  }
+  select {
+    min-block-size: 3rem;
+    padding: .6rem 2rem .6rem .8rem;
+    cursor: pointer;
+  }
+  .smrt-theme-section__error {
+    margin: 0;
+  }
+  .smrt-theme-section__advanced {
+    display: flex;
+    align-items: center;
+    gap: .8rem;
+    padding: 1rem;
+  }
+  .smrt-theme-section__advanced-icon {
+    display: grid;
+    place-items: center;
+    inline-size: 2.8rem;
+    block-size: 2.8rem;
+    flex: none;
+  }
+  .smrt-theme-section__advanced strong, .smrt-theme-section__advanced small {
+    display: block;
+  }
+  .smrt-theme-section__advanced small {
+    margin-top: .15rem;
+  }
+  .smrt-theme-section__arrow {
+    margin-inline-start: auto;
   }
 }
+
+@layer smrt.theme {
+  .smrt-theme-section__choice {
+    border: var(--smrt-hairline);
+    border-radius: var(--smrt-radius-large, .75rem);
+    background: var(--smrt-surface-panel);
+    color: var(--smrt-color-on-surface);
+    text-align: start;
+    transition: border-color var(--smrt-duration-short3, 150ms) var(--smrt-easing-standard, ease), background var(--smrt-duration-short3, 150ms) var(--smrt-easing-standard, ease), transform var(--smrt-duration-short3, 150ms) var(--smrt-easing-standard, ease);
+  }
+  .smrt-theme-section__choice:hover {
+    border-color: var(--smrt-color-primary);
+    background: var(--smrt-surface-raised);
+    transform: translateY(-2px);
+  }
+  .smrt-theme-section__choice.smrt-theme-section__selected {
+    border: 2px solid var(--smrt-color-primary);
+    background: var(--smrt-color-primary-container);
+    color: var(--smrt-color-on-primary-container);
+  }
+  .smrt-theme-section__choice:focus-visible, .smrt-theme-section__advanced:focus-visible, .smrt-theme-section__wheel:focus-within, select:focus-visible {
+    outline: var(--smrt-focus-ring-width) solid var(--smrt-focus-ring-color);
+    outline-offset: var(--smrt-focus-ring-offset);
+  }
+  .smrt-theme-section__name {
+    font-size: 1rem;
+    font-weight: 700;
+    line-height: 1.2;
+  }
+  .smrt-theme-section__icon {
+    font-size: 1.35rem;
+    color: var(--smrt-color-primary);
+  }
+  .smrt-theme-section__preview {
+    border-radius: .4rem;
+    border: 1px solid color-mix(in srgb, var(--smrt-planner-preview-ink) 20%, transparent);
+    background: var(--smrt-planner-preview-bg);
+  }
+  .smrt-theme-section__preview-sidebar {
+    background: var(--smrt-planner-preview-primary);
+  }
+  .smrt-theme-section__preview-sidebar span {
+    border-radius: 1rem;
+    background: var(--smrt-planner-preview-surface);
+    opacity: .8;
+  }
+  .smrt-theme-section__preview-title {
+    border-radius: 1rem;
+    background: var(--smrt-planner-preview-ink);
+    opacity: .7;
+  }
+  .smrt-theme-section__preview-body {
+    border-radius: .2rem;
+    background: var(--smrt-planner-preview-surface);
+  }
+  .smrt-theme-section__preview-body span {
+    border-radius: 1rem;
+    background: var(--smrt-planner-preview-primary);
+    opacity: .7;
+  }
+  .smrt-theme-section__preview-body span:last-child {
+    opacity: .35;
+  }
+  .smrt-theme-section__hint {
+    font-size: .85rem;
+    color: var(--smrt-color-on-surface-variant);
+  }
+  .smrt-theme-section__wheel {
+    border-radius: 50%;
+    background: conic-gradient(red, #ff0, #0f0, #0ff, #00f, #f0f, red);
+    box-shadow: 0 0 0 1px var(--smrt-hairline-color);
+  }
+  .smrt-theme-section__wheel::after {
+    content: '';
+    border: 2px solid white;
+    border-radius: 50%;
+    background: var(--smrt-planner-picked-color);
+    box-shadow: var(--smrt-elevation-1);
+  }
+  select {
+    border: var(--smrt-control-border);
+    border-radius: var(--smrt-radius-medium, .5rem);
+    background: var(--smrt-surface-control);
+    color: var(--smrt-color-on-surface);
+    font: inherit;
+  }
+  .smrt-theme-section__error {
+    color: var(--smrt-color-error);
+  }
+  .smrt-theme-section__advanced {
+    border: var(--smrt-hairline);
+    border-radius: var(--smrt-radius-large, .75rem);
+    background: var(--smrt-surface-panel);
+    color: var(--smrt-color-on-surface);
+    text-decoration: none;
+  }
+  .smrt-theme-section__advanced:hover {
+    border-color: var(--smrt-color-primary);
+  }
+  .smrt-theme-section__advanced-icon {
+    border-radius: .65rem;
+    background: var(--smrt-color-primary-container);
+    color: var(--smrt-color-on-primary-container);
+    font: 700 1rem ui-monospace, monospace;
+  }
+  .smrt-theme-section__advanced small {
+    color: var(--smrt-color-on-surface-variant);
+  }
+  .smrt-theme-section__arrow {
+    font-size: 1.3rem;
+  }
+  /* Forced colours: backgrounds and shadows are replaced by system colours, so
+  the selected card shows a Highlight frame, and the colour swatches (the
+  preset previews and the wheel) keep their real colours: they show
+  colours by design. */
+  @media (forced-colors: active) {
+    .smrt-theme-section__choice.smrt-theme-section__selected {
+      border-color: Highlight;
+      outline: 0.125rem solid Highlight;
+      outline-offset: 0.125rem;
+    }
+    .smrt-theme-section__preview, .smrt-theme-section__wheel {
+      forced-color-adjust: none;
+    }
+  }
+}
+
 </style>

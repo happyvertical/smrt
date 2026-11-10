@@ -100,7 +100,7 @@ describe('Planner component', () => {
     // The shell's pencil edits the layout; the planner's own pages are behind
     // the chef's hat (`#/configure/`), so the header never shows two pencils.
     const hat = body.match(
-      /<a class="header-link[^>]*aria-label="Plan the app"[^>]*>/,
+      /<a [^>]*aria-label="Plan the app"[^>]*data-smrt-component="HeaderIconLink"[^>]*>/,
     );
     expect(hat, 'Plan the app link').toBeTruthy();
     expect(hat?.[0]).toContain('href="#/configure/"');
@@ -111,7 +111,7 @@ describe('Planner component', () => {
     // The export shortcut follows it: the Export tab as a route
     // (`#/configure/<tab>/` selects a tab).
     const exportLink = body.match(
-      /<a class="header-link[^>]*aria-label="Export the app"[^>]*>/,
+      /<a [^>]*aria-label="Export the app"[^>]*data-smrt-component="HeaderIconLink"[^>]*>/,
     );
     expect(exportLink, 'Export the app link').toBeTruthy();
     expect(exportLink?.[0]).toContain('href="#/configure/export/"');
@@ -281,8 +281,8 @@ describe('Planner component', () => {
       // section page, with the planner's heading. Its overview grid renders
       // after hydration (tests/planner-section.dom.test.ts).
       expect(body).toContain('data-smrt-component="CookbookSectionPage"');
-      expect(body).not.toContain('class="section-view');
-      expect(body).toMatch(/<header class="section-heading[^"]*">/);
+      expect(body).not.toContain('class="smrt-section-view__root');
+      expect(body).toMatch(/<header class="smrt-section-heading__root[^"]*"/);
       expect(body).toMatch(/<h1[^>]*>Sales<\/h1>/);
       // The loaders the mount hands `CookbookApp`: every data widget, and the
       // shortcuts' record counts.

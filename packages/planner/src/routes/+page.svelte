@@ -21,11 +21,11 @@ const title = $derived(currentPlannerTitle());
 
 <main>
   {#if aiState.firstRun}
-    <section class="first-run" aria-labelledby="first-run-title">
+    <section class="smrt-planner-page__first-run" aria-labelledby="first-run-title" data-smrt-part="panel">
       <h1 id="first-run-title">Set up your assistant</h1>
-      <p class="meta">{aiState.privacyNote}</p>
+      <p class="smrt-planner-page__meta" data-smrt-part="meta">{aiState.privacyNote}</p>
       <AiSetup />
-      <div class="actions">
+      <div class="smrt-planner-page__actions" data-smrt-part="actions">
         <Button onclick={() => aiState.continueFirstRun()}>
           Continue
         </Button>
@@ -41,27 +41,28 @@ const title = $derived(currentPlannerTitle());
 
 <style>
 @layer smrt.reset, smrt.structure, smrt.theme;
-@layer smrt.theme {
+@layer smrt.structure {
   main {
     width: min(100%, 72rem);
     margin-inline: auto;
     padding: var(--smrt-spacing-6);
   }
-
-  .first-run {
+  .smrt-planner-page__first-run {
     display: grid;
     gap: var(--smrt-spacing-4);
   }
-
-  .first-run h1,
-  .first-run p {
+  .smrt-planner-page__first-run h1,
+  .smrt-planner-page__first-run p {
     margin: 0;
   }
-
-  .actions {
+  .smrt-planner-page__actions {
     display: flex;
     flex-wrap: wrap;
     gap: var(--smrt-spacing-2);
   }
 }
+
+@layer smrt.theme {
+}
+
 </style>

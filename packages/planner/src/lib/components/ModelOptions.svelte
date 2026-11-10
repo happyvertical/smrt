@@ -72,16 +72,16 @@ function setOrder(name: string, raw: string) {
 }
 </script>
 
-<form class="options" onsubmit={save} aria-label={`Options for ${model.name}`}>
+<form class="smrt-model-options__root" onsubmit={save} aria-label={`Options for ${model.name}`} data-smrt-component="ModelOptions">
   <svelte:element this={`h${Math.min(headingLevel, 6)}`}>{model.name} options</svelte:element>
-  <p class="hint">
+  <p class="smrt-model-options__hint" data-smrt-part="hint">
     Stored in the <code>{model.collection}</code> table. Switch fields on or
     off and set their label, help, default and order. Saved as field policies.
   </p>
 
   <fieldset>
     <legend>Exposure (can only be narrowed)</legend>
-    <div class="surfaces">
+    <div class="smrt-model-options__surfaces" data-smrt-part="grid">
       {#each SURFACES as surface (surface)}
         <Switch
           checked={draft.exposure[surface]}
@@ -98,15 +98,15 @@ function setOrder(name: string, raw: string) {
     {@const lockedOn = isFieldLockedOn(entry)}
     {@const frozen = entry.locked}
     {#if draft.fields[name]}
-      <fieldset class="field">
-        <legend><code>{name}</code> <span class="type">{entry.field.type}</span></legend>
+      <fieldset class="smrt-model-options__field" data-smrt-part="field">
+        <legend><code>{name}</code> <span class="smrt-model-options__type" data-smrt-part="meta">{entry.field.type}</span></legend>
         <Switch
           checked={draft.fields[name].use}
           disabled={lockedOn}
           onchange={(event) => (draft.fields[name].use = event.currentTarget.checked)}
           label={`Use field ${name}${entry.required ? ' (required)' : frozen ? ' (locked)' : ''}`}
         />
-        <div class="controls">
+        <div class="smrt-model-options__controls" data-smrt-part="grid">
           <label>
             <span>Label</span>
             <Input
@@ -123,7 +123,7 @@ function setOrder(name: string, raw: string) {
               aria-label={`Help text for ${name}`}
             />
           </label>
-          <fieldset class="default" disabled={frozen}>
+          <fieldset class="smrt-model-options__default" disabled={frozen} data-smrt-part="value">
             <FieldInput
               field={{ ...entry.field, required: false }}
               modelId={model.id}
@@ -152,28 +152,27 @@ function setOrder(name: string, raw: string) {
   {/each}
 
   {#if hiddenByRecipe.length}
-    <p class="hint">
+    <p class="smrt-model-options__hint" data-smrt-part="hint">
       Hidden by the recipe: {hiddenByRecipe.join(', ')}.
     </p>
   {/if}
 
-  <div class="actions">
+  <div class="smrt-model-options__actions" data-smrt-part="actions">
     <button type="submit">Save options</button>
-    <button type="button" class="secondary" onclick={reset}>
+    <button type="button" class="smrt-model-options__secondary" onclick={reset} data-smrt-part="action">
       Reset to recipe defaults
     </button>
   </div>
-  <p class="status" role="status" aria-live="polite">{status}</p>
+  <p class="smrt-model-options__status" role="status" aria-live="polite" data-smrt-part="status">{status}</p>
 </form>
 
 <style>
 @layer smrt.reset, smrt.structure, smrt.theme;
-@layer smrt.theme {
-  .options {
+@layer smrt.structure {
+  .smrt-model-options__root {
     display: grid;
     gap: var(--smrt-spacing-3);
   }
-
   h3,
   h4,
   h5,
@@ -181,70 +180,72 @@ function setOrder(name: string, raw: string) {
   p {
     margin: 0;
   }
-
-  .hint,
-  .type {
-    color: var(--smrt-color-on-surface-variant);
-  }
-
   fieldset {
     display: grid;
     gap: var(--smrt-spacing-2);
     margin: 0;
     padding: var(--smrt-spacing-3) var(--smrt-spacing-4);
-    border: var(--smrt-hairline);
-    border-radius: var(--smrt-radius-large);
   }
-
-  .surfaces,
-  .controls {
+  .smrt-model-options__surfaces,
+  .smrt-model-options__controls {
     display: grid;
     gap: var(--smrt-spacing-3);
     grid-template-columns: repeat(auto-fit, minmax(12rem, 1fr));
   }
-
   label {
     display: grid;
     gap: var(--smrt-spacing-1);
-    font-weight: 500;
   }
-
-  fieldset.default {
+  fieldset.smrt-model-options__default {
     padding: 0;
-    border: 0;
   }
-
-  fieldset.default:disabled {
-    opacity: 0.6;
-  }
-
-  .actions {
+  .smrt-model-options__actions {
     display: flex;
     gap: var(--smrt-spacing-2);
   }
-
   button {
     padding: var(--smrt-spacing-2) var(--smrt-spacing-3);
+    cursor: pointer;
+  }
+}
+
+@layer smrt.theme {
+  .smrt-model-options__hint,
+  .smrt-model-options__type {
+    color: var(--smrt-color-on-surface-variant);
+  }
+  fieldset {
+    border: var(--smrt-hairline);
+    border-radius: var(--smrt-radius-large);
+  }
+  label {
+    font-weight: 500;
+  }
+  fieldset.smrt-model-options__default {
+    border: 0;
+  }
+  fieldset.smrt-model-options__default:disabled {
+    opacity: 0.6;
+  }
+  button {
     border: 0;
     border-radius: var(--smrt-radius-medium);
     background: var(--smrt-color-primary);
     color: var(--smrt-color-on-primary);
     font: inherit;
-    cursor: pointer;
   }
-
-  button.secondary {
+  button.smrt-model-options__secondary {
     border: var(--smrt-control-border);
     background: transparent;
     color: var(--smrt-color-on-surface);
   }
-
   /* Forced colours: a disabled default reads as GrayText, not by opacity. */
   @media (forced-colors: active) {
-    fieldset.default:disabled {
+    fieldset.smrt-model-options__default:disabled {
       color: GrayText;
       opacity: 1;
     }
   }
 }
+
 </style>

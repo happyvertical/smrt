@@ -100,13 +100,13 @@ $effect(() => {
   {#if isThemeUndoRef(ref) && session.themeUndos}
     {@const entry = session.themeUndos.undos[ref.undoId]}
     {#if entry?.status === 'available'}
-      <div class="offer" role="group" aria-label="Theme change">
+      <div class="smrt-browser-assistant__offer" data-smrt-part="notice" role="group" aria-label="Theme change">
         <Button variant="secondary" onclick={() => session.themeUndos?.undo(entry.id)}>
           Undo theme change
         </Button>
       </div>
     {:else if entry?.status === 'undone'}
-      <p class="offer-note" role="status">Theme restored.</p>
+      <p class="smrt-browser-assistant__offer-note" data-smrt-part="status" role="status">Theme restored.</p>
     {/if}
   {/if}
 {/snippet}
@@ -137,12 +137,12 @@ $effect(() => {
     {#if offer && cookbook}
       {#if offer.status === 'pending'}
         {@const menu = previewMenu(cookbook.document)}
-        <div class="offer" role="group" aria-label="Add the {cookbook.name} cookbook">
-          <div class="offer-text">
+        <div class="smrt-browser-assistant__offer" data-smrt-part="notice" role="group" aria-label="Add the {cookbook.name} cookbook">
+          <div class="smrt-browser-assistant__offer-text" data-smrt-part="description">
             <strong>{cookbook.name} cookbook</strong>
             <span>{cookbook.summary}</span>
             {#if menu.length}
-              <ul class="offer-menu">
+              <ul class="smrt-browser-assistant__offer-menu" data-smrt-part="list">
                 {#each menu as section (section.id)}
                   <li>
                     <b>{section.label}</b>:
@@ -163,17 +163,17 @@ $effect(() => {
           {/if}
         </div>
       {:else if offer.status === 'applied'}
-        <p class="offer-note" role="status">{cookbook.name} set up.</p>
+        <p class="smrt-browser-assistant__offer-note" data-smrt-part="status" role="status">{cookbook.name} set up.</p>
       {:else if offer.status === 'failed'}
-        <p class="offer-note" role="alert">{offer.error}</p>
+        <p class="smrt-browser-assistant__offer-note" data-smrt-part="status" role="alert">{offer.error}</p>
       {/if}
     {/if}
   {/if}
 {/snippet}
 
-<div class="assistant">
+<div class="smrt-browser-assistant__root" data-smrt-component="BrowserAssistant">
   {#if session.status === 'unsupported'}
-    <div class="panel" role="status">
+    <div class="smrt-browser-assistant__panel" data-smrt-part="panel" role="status">
       <h2>Assistant unavailable</h2>
       <p>
         The assistant runs a small model on your graphics card using WebGPU, and
@@ -183,11 +183,11 @@ $effect(() => {
       </p>
     </div>
   {:else if session.status === 'ready'}
-    <div class="top">
-      <div class="bar">
-        <span class="model-name">{thinkName}</span>
+    <div class="smrt-browser-assistant__top" data-smrt-part="header">
+      <div class="smrt-browser-assistant__bar" data-smrt-part="toolbar">
+        <span class="smrt-browser-assistant__model-name" data-smrt-part="name">{thinkName}</span>
         <a
-          class="model-link"
+          class="smrt-browser-assistant__model-link" data-smrt-part="icon"
           href={settingsHref}
           aria-label="AI settings: change model or voice"
           title="AI settings"
@@ -210,7 +210,7 @@ $effect(() => {
     <!-- Typing or pressing the microphone interrupts a spoken reply. -->
     <!-- svelte-ignore a11y_no_static_element_interactions -->
     <div
-      class="dock"
+      class="smrt-browser-assistant__dock" data-smrt-part="body"
       oninputcapture={(event) => {
         if (cancelsSpeech(event)) aiState.cancelSpeech();
       }}
@@ -238,7 +238,7 @@ $effect(() => {
   {:else}
     <!-- The header control only opens the dock once the assistant is ready;
          this covers a dock left open when the model goes away. -->
-    <div class="panel" role="status">
+    <div class="smrt-browser-assistant__panel" data-smrt-part="panel" role="status">
       <h2>Assistant</h2>
       <p>The assistant is not set up.</p>
       <a href={settingsHref}>Set up the assistant</a>
@@ -248,8 +248,8 @@ $effect(() => {
 
 <style>
 @layer smrt.reset, smrt.structure, smrt.theme;
-@layer smrt.theme {
-  .assistant {
+@layer smrt.structure {
+  .smrt-browser-assistant__root {
     display: grid;
     grid-template-columns: minmax(0, 1fr);
     grid-template-rows: auto minmax(0, 1fr);
@@ -257,18 +257,15 @@ $effect(() => {
     min-width: 0;
     min-height: 0;
   }
-
-  .top {
+  .smrt-browser-assistant__top {
     min-width: 0;
   }
-
-  .dock {
+  .smrt-browser-assistant__dock {
     min-width: 0;
     min-height: 0;
     overflow: hidden;
   }
-
-  .panel {
+  .smrt-browser-assistant__panel {
     display: grid;
     grid-template-columns: minmax(0, 1fr);
     gap: var(--smrt-spacing-3);
@@ -277,85 +274,82 @@ $effect(() => {
     min-width: 0;
     overflow-wrap: anywhere;
   }
-
-  .bar {
+  .smrt-browser-assistant__bar {
     display: flex;
     align-items: center;
     justify-content: space-between;
     gap: var(--smrt-spacing-2);
     padding: var(--smrt-spacing-2) var(--smrt-spacing-4);
     min-width: 0;
-    color: var(--smrt-color-on-surface-variant);
   }
-
-  .model-name {
+  .smrt-browser-assistant__model-name {
     overflow: hidden;
     text-overflow: ellipsis;
     white-space: nowrap;
     min-width: 0;
-    font-size: var(--smrt-typography-body-small-size, 0.8125rem);
   }
-
-  .model-link {
+  .smrt-browser-assistant__model-link {
     display: inline-flex;
     align-items: center;
     justify-content: center;
     flex-shrink: 0;
     width: 32px;
     height: 32px;
-    border-radius: var(--smrt-radius-full);
-    color: var(--smrt-color-on-surface-variant);
   }
-
-  .model-link:hover {
-    background: color-mix(in srgb, currentColor calc(var(--smrt-state-hover) * 100%), transparent);
-  }
-
-  .model-link:focus-visible {
-    outline: var(--smrt-focus-ring-width) solid var(--smrt-focus-ring-color);
-    outline-offset: var(--smrt-focus-ring-offset);
-  }
-
-  .offer {
+  .smrt-browser-assistant__offer {
     display: flex;
     flex-wrap: wrap;
     align-items: center;
     gap: var(--smrt-spacing-2);
     margin-top: var(--smrt-spacing-2);
   }
-
-  .offer-text {
+  .smrt-browser-assistant__offer-text {
     display: grid;
     gap: var(--smrt-spacing-1);
     flex-basis: 100%;
   }
-
-  .offer-text span,
-  .offer-menu {
-    color: var(--smrt-color-on-surface-variant);
-  }
-
-  .offer-menu {
+  .smrt-browser-assistant__offer-menu {
     margin: 0;
     padding-inline-start: var(--smrt-spacing-4);
   }
-
-  .offer small,
-  .offer-note {
-    color: var(--smrt-color-on-surface-variant);
-  }
-
-  .offer-note {
+  .smrt-browser-assistant__offer-note {
     margin: var(--smrt-spacing-2) 0 0;
   }
-
   h2,
   p {
     margin: 0;
   }
+}
 
+@layer smrt.theme {
+  .smrt-browser-assistant__bar {
+    color: var(--smrt-color-on-surface-variant);
+  }
+  .smrt-browser-assistant__model-name {
+    font-size: var(--smrt-typography-body-small-size, 0.8125rem);
+  }
+  .smrt-browser-assistant__model-link {
+    border-radius: var(--smrt-radius-full);
+    color: var(--smrt-color-on-surface-variant);
+  }
+  .smrt-browser-assistant__model-link:hover {
+    background: color-mix(in srgb, currentColor calc(var(--smrt-state-hover) * 100%), transparent);
+  }
+  .smrt-browser-assistant__model-link:focus-visible {
+    outline: var(--smrt-focus-ring-width) solid var(--smrt-focus-ring-color);
+    outline-offset: var(--smrt-focus-ring-offset);
+  }
+  .smrt-browser-assistant__offer-text span,
+  .smrt-browser-assistant__offer-menu {
+    color: var(--smrt-color-on-surface-variant);
+  }
+  .smrt-browser-assistant__offer small,
+  .smrt-browser-assistant__offer-note {
+    color: var(--smrt-color-on-surface-variant);
+  }
   p {
     color: var(--smrt-color-on-surface-variant);
   }
 }
+
 </style>

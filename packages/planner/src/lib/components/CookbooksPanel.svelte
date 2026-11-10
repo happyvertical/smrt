@@ -126,31 +126,31 @@ function commit() {
 }
 </script>
 
-<div class="cookbooks">
+<div class="smrt-cookbooks-panel__root" data-smrt-component="CookbooksPanel">
   {#if notice}
     <Alert variant="success" title="Cookbook applied">{notice}</Alert>
   {/if}
-  <p class="meta">
+  <p class="smrt-cookbooks-panel__meta" data-smrt-part="meta">
     A cookbook is a ready-made starting point: the recipes, menu and settings a
     kind of business usually needs. Pick one, look it over, then change
     anything in the other tabs.
   </p>
 
-  <div class="swap">
+  <div class="smrt-cookbooks-panel__swap" data-smrt-part="body">
   {#if !selected}
-  <ul class="grid" aria-label="Cookbooks" bind:this={grid}>
+  <ul class="smrt-cookbooks-panel__grid" data-smrt-part="grid" aria-label="Cookbooks" bind:this={grid}>
     {#each libraryCookbooks as cookbook (cookbook.id)}
       {@const active = isActive(cookbook)}
       <li>
         <button
           type="button"
-          class="card"
+          class="smrt-cookbooks-panel__card" data-smrt-part="card"
           data-cookbook={cookbook.id}
           onclick={() => open(cookbook)}
         >
-          <span class="heading">
+          <span class="smrt-cookbooks-panel__heading" data-smrt-part="heading">
             <svg
-              class="icon"
+              class="smrt-cookbooks-panel__icon" data-smrt-part="icon"
               viewBox="0 0 24 24"
               width="28"
               height="28"
@@ -165,10 +165,10 @@ function commit() {
                 <path {d} />
               {/each}
             </svg>
-            <span class="name">{cookbook.name}</span>
+            <span class="smrt-cookbooks-panel__name" data-smrt-part="name">{cookbook.name}</span>
           </span>
-          <span class="summary">{cookbook.summary}</span>
-          {#if active}<span class="badge">In use</span>{/if}
+          <span class="smrt-cookbooks-panel__summary" data-smrt-part="summary">{cookbook.summary}</span>
+          {#if active}<span class="smrt-cookbooks-panel__badge" data-smrt-part="badge">In use</span>{/if}
         </button>
       </li>
     {/each}
@@ -178,29 +178,29 @@ function commit() {
     {@const menu = previewMenu(selected.document)}
     <!-- svelte-ignore a11y_no_noninteractive_element_interactions -->
     <section
-      class="preview"
+      class="smrt-cookbooks-panel__preview" data-smrt-part="panel"
       aria-labelledby="preview-heading"
       data-cookbook-detail={selected.id}
       onkeydown={onDetailKeydown}
     >
-      <div class="back">
+      <div class="smrt-cookbooks-panel__back" data-smrt-part="nav">
         <Button variant="ghost" onclick={back}>
           <span aria-hidden="true">←</span> Back to cookbooks
         </Button>
       </div>
       <h2 id="preview-heading" tabindex="-1" bind:this={detailHeading}>{selected.name}</h2>
-      <p class="summary">{selected.summary}</p>
-      <div class="block">
+      <p class="smrt-cookbooks-panel__summary" data-smrt-part="summary">{selected.summary}</p>
+      <div class="smrt-cookbooks-panel__block" data-smrt-part="section">
         <h3>Recipes</h3>
-        <ul class="chips" aria-label="Recipes">
+        <ul class="smrt-cookbooks-panel__chips" data-smrt-part="chips" aria-label="Recipes">
           {#each libraryRecipeLabels(selected) as label (label)}
             <li>{label}</li>
           {/each}
         </ul>
       </div>
-      <div class="block">
+      <div class="smrt-cookbooks-panel__block" data-smrt-part="section">
         <h3>Menu</h3>
-        <div class="menu">
+        <div class="smrt-cookbooks-panel__menu" data-smrt-part="list">
           {#each menu as section (section.id)}
             <div>
               <h4>{section.label}</h4>
@@ -213,7 +213,7 @@ function commit() {
           {/each}
         </div>
       </div>
-      <div class="block">
+      <div class="smrt-cookbooks-panel__block" data-smrt-part="section">
         <h3>Settings</h3>
         <AppSettings
           value={settings}
@@ -221,9 +221,9 @@ function commit() {
           idPrefix="cookbook-settings"
         />
       </div>
-      <div class="actions">
+      <div class="smrt-cookbooks-panel__actions" data-smrt-part="actions">
         <Button onclick={use}>Use this cookbook</Button>
-        <span class="meta">Replaces your current recipes, menu and sample records.</span>
+        <span class="smrt-cookbooks-panel__meta" data-smrt-part="meta">Replaces your current recipes, menu and sample records.</span>
       </div>
     </section>
   {/if}
@@ -246,30 +246,18 @@ function commit() {
 
 <style>
 @layer smrt.reset, smrt.structure, smrt.theme;
-@layer smrt.theme {
-  .cookbooks {
+@layer smrt.structure {
+  .smrt-cookbooks-panel__root {
     display: grid;
     gap: var(--smrt-spacing-4);
   }
-
   h2,
   h3,
   h4,
   p {
     margin: 0;
   }
-
-  h3,
-  h4 {
-    font: var(--smrt-typography-title-medium-font); letter-spacing: var(--smrt-typography-title-medium-tracking);
-  }
-
-  .meta,
-  .summary {
-    color: var(--smrt-color-on-surface-variant);
-  }
-
-  .grid {
+  .smrt-cookbooks-panel__grid {
     display: grid;
     grid-template-columns: repeat(auto-fill, minmax(14rem, 1fr));
     gap: var(--smrt-spacing-3);
@@ -277,8 +265,7 @@ function commit() {
     padding: 0;
     list-style: none;
   }
-
-  .card {
+  .smrt-cookbooks-panel__card {
     position: relative;
     display: grid;
     gap: var(--smrt-spacing-2);
@@ -286,121 +273,125 @@ function commit() {
     width: 100%;
     height: 100%;
     padding: var(--smrt-spacing-4);
-    border: var(--smrt-hairline);
-    border-radius: var(--smrt-radius-lg, 0.75rem);
-    background: var(--smrt-surface-panel);
-    color: inherit;
-    font: inherit;
-    text-align: start;
     cursor: pointer;
   }
-
-  .card:focus-visible {
-    outline: var(--smrt-focus-ring-width) solid var(--smrt-focus-ring-color);
-    outline-offset: var(--smrt-focus-ring-offset);
-  }
-
-  .icon {
+  .smrt-cookbooks-panel__icon {
     flex: 0 0 auto;
-    color: var(--smrt-color-primary);
   }
-
-  .heading {
+  .smrt-cookbooks-panel__heading {
     display: flex;
     align-items: center;
     gap: var(--smrt-spacing-2);
     min-inline-size: 0;
     padding-inline-end: 4rem;
   }
-
-  .name {
-    font-weight: var(--smrt-typography-weight-semibold);
-  }
-
-  .badge {
+  .smrt-cookbooks-panel__badge {
     position: absolute;
     top: var(--smrt-spacing-3);
     right: var(--smrt-spacing-3);
     padding: 0 var(--smrt-spacing-2);
-    border-radius: var(--smrt-radius-full);
-    background: var(--smrt-color-primary);
-    color: var(--smrt-color-on-primary);
-    font-size: 0.75rem;
   }
-
-  .preview {
+  .smrt-cookbooks-panel__preview {
     display: grid;
     gap: var(--smrt-spacing-4);
     padding: var(--smrt-spacing-4);
-    border: var(--smrt-hairline);
-    border-radius: var(--smrt-radius-lg, 0.75rem);
   }
-
-  .block {
+  .smrt-cookbooks-panel__block {
     display: grid;
     gap: var(--smrt-spacing-2);
   }
-
-  .chips,
-  .menu ul {
+  .smrt-cookbooks-panel__chips,
+  .smrt-cookbooks-panel__menu ul {
     margin: 0;
     padding: 0;
     list-style: none;
   }
-
-  .chips {
+  .smrt-cookbooks-panel__chips {
     display: flex;
     flex-wrap: wrap;
     gap: var(--smrt-spacing-2);
   }
-
-  .chips li {
+  .smrt-cookbooks-panel__chips li {
     padding: 0 var(--smrt-spacing-3);
-    border-radius: var(--smrt-radius-full);
-    background: var(--smrt-color-surface-container);
   }
-
-  .menu {
+  .smrt-cookbooks-panel__menu {
     display: grid;
     grid-template-columns: repeat(auto-fill, minmax(11rem, 1fr));
     gap: var(--smrt-spacing-3);
   }
-
-  .menu ul {
+  .smrt-cookbooks-panel__menu ul {
     display: grid;
     gap: var(--smrt-spacing-1);
     margin-top: var(--smrt-spacing-1);
   }
-
-  .actions {
+  .smrt-cookbooks-panel__actions {
     display: flex;
     flex-wrap: wrap;
     align-items: center;
     gap: var(--smrt-spacing-3);
   }
-
-  .back {
+  .smrt-cookbooks-panel__back {
     justify-self: start;
     margin-inline-start: calc(-1 * var(--smrt-spacing-2));
   }
+}
 
-  .preview h2:focus {
-    outline: none;
+@layer smrt.theme {
+  h3,
+  h4 {
+    font: var(--smrt-typography-title-medium-font);
+    letter-spacing: var(--smrt-typography-title-medium-tracking);
   }
-
-  .preview h2:focus-visible {
+  .smrt-cookbooks-panel__meta,
+  .smrt-cookbooks-panel__summary {
+    color: var(--smrt-color-on-surface-variant);
+  }
+  .smrt-cookbooks-panel__card {
+    border: var(--smrt-hairline);
+    border-radius: var(--smrt-radius-lg, 0.75rem);
+    background: var(--smrt-surface-panel);
+    color: inherit;
+    font: inherit;
+    text-align: start;
+  }
+  .smrt-cookbooks-panel__card:focus-visible {
     outline: var(--smrt-focus-ring-width) solid var(--smrt-focus-ring-color);
     outline-offset: var(--smrt-focus-ring-offset);
   }
-
+  .smrt-cookbooks-panel__icon {
+    color: var(--smrt-color-primary);
+  }
+  .smrt-cookbooks-panel__name {
+    font-weight: var(--smrt-typography-weight-semibold);
+  }
+  .smrt-cookbooks-panel__badge {
+    border-radius: var(--smrt-radius-full);
+    background: var(--smrt-color-primary);
+    color: var(--smrt-color-on-primary);
+    font-size: 0.75rem;
+  }
+  .smrt-cookbooks-panel__preview {
+    border: var(--smrt-hairline);
+    border-radius: var(--smrt-radius-lg, 0.75rem);
+  }
+  .smrt-cookbooks-panel__chips li {
+    border-radius: var(--smrt-radius-full);
+    background: var(--smrt-color-surface-container);
+  }
+  .smrt-cookbooks-panel__preview h2:focus {
+    outline: none;
+  }
+  .smrt-cookbooks-panel__preview h2:focus-visible {
+    outline: var(--smrt-focus-ring-width) solid var(--smrt-focus-ring-color);
+    outline-offset: var(--smrt-focus-ring-offset);
+  }
   /* The grid and the detail swap in one place: while a view transition runs
-     (`runViewTransition` marks the root) they share a name, so the swap is a
-     short crossfade there rather than the whole page's. Reduced motion skips
-     the transition outright. */
-  :global([data-smrt-view-transition]) .swap {
+  (`runViewTransition` marks the root) they share a name, so the swap is a
+  short crossfade there rather than the whole page's. Reduced motion skips
+  the transition outright. */
+  :global([data-smrt-view-transition]) .smrt-cookbooks-panel__swap {
     view-transition-name: planner-cookbooks;
   }
-
   :global(::view-transition-group(planner-cookbooks)),
   :global(::view-transition-old(planner-cookbooks)),
   :global(::view-transition-new(planner-cookbooks)) {
@@ -408,4 +399,5 @@ function commit() {
     animation-timing-function: var(--smrt-easing-standard);
   }
 }
+
 </style>
