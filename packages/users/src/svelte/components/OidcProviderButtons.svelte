@@ -25,9 +25,32 @@ async function signIn(providerId: string) {
   }
 }
 </script>
-<section aria-label={t('users.auth.single_sign_on')} data-smrt-component="OidcProviderButtons"><h2>{t('users.auth.or_continue_with')}</h2>{#if error}<p class="error" role="alert">{t(error)}</p>{/if}<div class="providers">{#each providers as provider (provider.id)}<Button variant="secondary" fullWidth onclick={()=>signIn(provider.id)} disabled={provider.disabled||!adapter.signInWithOidc} loading={pending===provider.id}>{provider.label}</Button>{/each}</div></section><style>
+<section aria-label={t('users.auth.single_sign_on')} data-smrt-component="OidcProviderButtons"><h2>{t('users.auth.or_continue_with')}</h2>{#if error}<p class="smrt-oidc-provider-buttons__error" data-smrt-part="error" role="alert">{t(error)}</p>{/if}<div class="smrt-oidc-provider-buttons__providers" data-smrt-part="list">{#each providers as provider (provider.id)}<Button variant="secondary" fullWidth onclick={()=>signIn(provider.id)} disabled={provider.disabled||!adapter.signInWithOidc} loading={pending===provider.id}>{provider.label}</Button>{/each}</div></section><style>
 @layer smrt.reset, smrt.structure, smrt.theme;
-@layer smrt.theme {
-section{display:grid;gap:var(--smrt-spacing-sm,.5rem)}h2{margin:0;font:var(--smrt-typography-title-small-font)}.providers{display:grid;gap:var(--smrt-spacing-sm,.5rem)}.error{margin:0;color:var(--smrt-color-error)}
+@layer smrt.structure {
+  section {
+    display:grid;
+    gap:var(--smrt-spacing-sm,.5rem);
+  }
+  h2 {
+    margin:0;
+  }
+  .smrt-oidc-provider-buttons__providers {
+    display:grid;
+    gap:var(--smrt-spacing-sm,.5rem);
+  }
+  .smrt-oidc-provider-buttons__error {
+    margin:0;
+  }
 }
+
+@layer smrt.theme {
+  h2 {
+    font:var(--smrt-typography-title-small-font);
+  }
+  .smrt-oidc-provider-buttons__error {
+    color:var(--smrt-color-error);
+  }
+}
+
 </style>

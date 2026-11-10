@@ -39,17 +39,17 @@ const {
 }: Props = $props();
 </script>
 
-<div class="user-list" data-smrt-component="UserList">
+<div class="smrt-user-list__root" data-smrt-component="UserList">
   {#if loading}
-    <div class="loading">
-      <div class="spinner"></div>
+    <div class="smrt-user-list__progress" data-smrt-part="progress">
+      <div class="smrt-user-list__spinner" data-smrt-part="spinner"></div>
       <span>{t(M['users.user_list.loading_users'])}</span>
     </div>
   {:else if users.length === 0}
     {#if empty}
       {@render empty()}
     {:else}
-      <div class="empty">{emptyMessage}</div>
+      <div class="smrt-user-list__empty" data-smrt-part="empty">{emptyMessage}</div>
     {/if}
   {:else}
     {#each users as { user, profile, role } (user.id)}
@@ -67,50 +67,55 @@ const {
 
 <style>
 @layer smrt.reset, smrt.structure, smrt.theme;
-@layer smrt.theme {
-  .user-list {
+@layer smrt.structure {
+  .smrt-user-list__root {
     display: flex;
     flex-direction: column;
     gap: var(--smrt-spacing-sm, 0.5rem);
   }
-
-  .loading {
+  .smrt-user-list__progress {
     display: flex;
     align-items: center;
     justify-content: center;
     gap: var(--smrt-spacing-sm, 0.75rem);
     padding: var(--smrt-spacing-xl, 2rem);
-    color: var(--smrt-color-on-surface-variant);
   }
-
-  .spinner {
+  .smrt-user-list__spinner {
     width: 1.25rem;
     height: 1.25rem;
+  }
+  .smrt-user-list__empty {
+    padding: var(--smrt-spacing-xl, 2rem);
+  }
+}
+
+@layer smrt.theme {
+  .smrt-user-list__progress {
+    color: var(--smrt-color-on-surface-variant);
+  }
+  .smrt-user-list__spinner {
     border: 2px solid var(--smrt-color-outline-variant);
     border-top-color: var(--smrt-color-primary);
     border-radius: var(--smrt-radius-full);
     animation: spin 0.6s linear infinite;
   }
-
   @keyframes spin {
     to {
       transform: rotate(360deg);
     }
   }
-
-  .empty {
-    padding: var(--smrt-spacing-xl, 2rem);
+  .smrt-user-list__empty {
     text-align: center;
     color: var(--smrt-color-on-surface-variant);
     background: var(--smrt-color-surface-container-low);
     border: 1px dashed var(--smrt-color-outline-variant);
     border-radius: var(--smrt-radius-medium, 0.5rem);
   }
-
   @media (prefers-reduced-motion: reduce) {
-    .spinner {
+    .smrt-user-list__spinner {
       animation: none;
     }
   }
 }
+
 </style>

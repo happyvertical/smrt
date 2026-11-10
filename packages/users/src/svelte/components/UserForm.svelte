@@ -72,22 +72,22 @@ function handleSubmit() {
 }
 </script>
 
-<div class="user-form-shell" data-smrt-component="UserForm">
+<div class="smrt-user-form__root" data-smrt-component="UserForm">
   <Form class="user-form" onsubmit={handleSubmit}>
-    <div class="field">
+    <div class="smrt-user-form__field" data-smrt-part="field">
       <label for="name">Name</label>
       <Input id="name" type="text" bind:value={name} required disabled={loading} />
     </div>
 
-    <div class="field">
+    <div class="smrt-user-form__field" data-smrt-part="field">
       <label for="email">Email</label>
       <Input id="email" type="email" bind:value={email} required disabled={loading || !!user} />
       {#if user}
-        <span class="hint">{t(M['users.user_form.email_cannot_be_changed'])}</span>
+        <span class="smrt-user-form__hint" data-smrt-part="hint">{t(M['users.user_form.email_cannot_be_changed'])}</span>
       {/if}
     </div>
 
-    <div class="field">
+    <div class="smrt-user-form__field" data-smrt-part="field">
       <label for="status">Status</label>
       <Select id="status" bind:value={status} disabled={loading}>
         {#each statusOptions as option (option.value)}
@@ -96,7 +96,7 @@ function handleSubmit() {
       </Select>
     </div>
 
-    <div class="actions">
+    <div class="smrt-user-form__actions" data-smrt-part="actions">
       {#if oncancel}
         <Button variant="secondary" type="button" onclick={oncancel} disabled={loading}>
           Cancel
@@ -115,34 +115,34 @@ function handleSubmit() {
 
 <style>
 @layer smrt.reset, smrt.structure, smrt.theme;
-@layer smrt.theme {
-  .user-form-shell :global(.user-form) {
+@layer smrt.structure {
+  .smrt-user-form__root :global(.user-form) {
     display: flex;
     flex-direction: column;
     gap: var(--smrt-spacing-md, 1rem);
   }
-
-  .field {
+  .smrt-user-form__field {
     display: flex;
     flex-direction: column;
     gap: 0.25rem;
   }
-
-  label {
-    font: var(--smrt-typography-body-medium-font, 500 0.875rem / 1.25 sans-serif);
-    color: var(--smrt-color-on-surface-variant);
-  }
-
-  .hint {
-    font: var(--smrt-typography-body-small-font, 0.75rem / 1.25 sans-serif);
-    color: var(--smrt-color-on-surface-variant);
-  }
-
-  .actions {
+  .smrt-user-form__actions {
     display: flex;
     justify-content: flex-end;
     gap: var(--smrt-spacing-sm, 0.5rem);
     margin-top: var(--smrt-spacing-sm, 0.5rem);
   }
 }
+
+@layer smrt.theme {
+  label {
+    font: var(--smrt-typography-body-medium-font, 500 0.875rem / 1.25 sans-serif);
+    color: var(--smrt-color-on-surface-variant);
+  }
+  .smrt-user-form__hint {
+    font: var(--smrt-typography-body-small-font, 0.75rem / 1.25 sans-serif);
+    color: var(--smrt-color-on-surface-variant);
+  }
+}
+
 </style>

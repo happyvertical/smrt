@@ -35,14 +35,14 @@ const {
 const statusClass = $derived.by(() => {
   switch (status) {
     case 'active':
-      return 'status-active';
+      return 'smrt-user-card__status-active';
     case 'pending':
-      return 'status-pending';
+      return 'smrt-user-card__status-pending';
     case 'suspended':
-      return 'status-error';
+      return 'smrt-user-card__status-error';
     case 'inactive':
       // `inactive` is the real UserStatus value (there is no `deactivated`).
-      return 'status-disabled';
+      return 'smrt-user-card__status-disabled';
     default:
       return '';
   }
@@ -52,139 +52,139 @@ const statusClass = $derived.by(() => {
 <!-- raw-primitive-allow: large pressable selection card wrapping rich content (avatar, name, email, role/status) with selected state and ripple; no Button primitive owns this structural pattern -->
 <button
   type="button"
-  class="user-card"
-  class:selected
-  class:clickable={!!onclick}
+  class="smrt-user-card__root"
+  class:smrt-user-card__selected={selected}
+  class:smrt-user-card__clickable={!!onclick}
   onclick={onclick}
   disabled={!onclick}
   use:ripple data-smrt-component="UserCard"
 >
   <UserAvatar {profile} size="md" />
 
-  <div class="info">
-    <div class="name">{profile.name}</div>
-    <div class="email">{user.email}</div>
+  <div class="smrt-user-card__info" data-smrt-part="body">
+    <div class="smrt-user-card__name" data-smrt-part="name">{profile.name}</div>
+    <div class="smrt-user-card__email" data-smrt-part="email">{user.email}</div>
   </div>
 
-  <div class="meta">
+  <div class="smrt-user-card__meta" data-smrt-part="meta">
     {#if role}
-      <span class="role">{role}</span>
+      <span class="smrt-user-card__role" data-smrt-part="badge">{role}</span>
     {/if}
     {#if status}
-      <span class="status {statusClass}">{status}</span>
+      <span class="smrt-user-card__status {statusClass}" data-smrt-part="status">{status}</span>
     {/if}
   </div>
 </button>
 
 <style>
 @layer smrt.reset, smrt.structure, smrt.theme;
-@layer smrt.theme {
-  .user-card {
+@layer smrt.structure {
+  .smrt-user-card__root {
     display: flex;
     align-items: center;
     gap: var(--smrt-spacing-4);
     padding: var(--smrt-spacing-3) var(--smrt-spacing-4);
-    background-color: var(--smrt-color-surface-container-low);
-    border-radius: var(--smrt-radius-lg);
     width: 100%;
-    text-align: left;
     cursor: default;
-    border: none;
-    transition: all 200ms cubic-bezier(0.2, 0, 0, 1);
     position: relative;
     overflow: hidden;
-    color: var(--smrt-color-on-surface);
-    box-shadow: var(--smrt-elevation-1);
   }
-
-  .user-card.clickable {
+  .smrt-user-card__root.smrt-user-card__clickable {
     cursor: pointer;
   }
-
-  .user-card.clickable:hover {
-    background-color: var(--smrt-color-surface-container-high);
-    box-shadow: var(--smrt-elevation-2);
-  }
-
-  .user-card.selected {
-    background-color: var(--smrt-color-secondary-container);
-    color: var(--smrt-color-on-secondary-container);
-  }
-
-  .info {
+  .smrt-user-card__info {
     flex: 1;
     min-width: 0;
   }
-
-  .name {
-    font: var(--smrt-typography-title-small-font);
-    font-weight: var(--smrt-typography-weight-semibold, 600);
+  .smrt-user-card__name {
     white-space: nowrap;
     overflow: hidden;
     text-overflow: ellipsis;
   }
-
-  .email {
-    font: var(--smrt-typography-body-small-font);
-    color: var(--smrt-color-on-surface-variant);
+  .smrt-user-card__email {
     white-space: nowrap;
     overflow: hidden;
     text-overflow: ellipsis;
   }
-
-  .selected .email {
-    color: var(--smrt-color-on-secondary-container);
-    opacity: 0.8;
-  }
-
-  .meta {
+  .smrt-user-card__meta {
     display: flex;
     align-items: center;
     gap: var(--smrt-spacing-2);
     flex-shrink: 0;
   }
-
-  .role {
-    font: var(--smrt-typography-label-small-font);
+  .smrt-user-card__role {
     padding: 0 var(--smrt-spacing-2);
     height: 20px;
     display: inline-flex;
     align-items: center;
+  }
+  .smrt-user-card__status {
+    padding: 0 var(--smrt-spacing-2);
+    height: 20px;
+    display: inline-flex;
+    align-items: center;
+  }
+}
+
+@layer smrt.theme {
+  .smrt-user-card__root {
+    background-color: var(--smrt-color-surface-container-low);
+    border-radius: var(--smrt-radius-lg);
+    text-align: left;
+    border: none;
+    transition: all 200ms cubic-bezier(0.2, 0, 0, 1);
+    color: var(--smrt-color-on-surface);
+    box-shadow: var(--smrt-elevation-1);
+  }
+  .smrt-user-card__root.smrt-user-card__clickable:hover {
+    background-color: var(--smrt-color-surface-container-high);
+    box-shadow: var(--smrt-elevation-2);
+  }
+  .smrt-user-card__root.smrt-user-card__selected {
+    background-color: var(--smrt-color-secondary-container);
+    color: var(--smrt-color-on-secondary-container);
+  }
+  .smrt-user-card__name {
+    font: var(--smrt-typography-title-small-font);
+    font-weight: var(--smrt-typography-weight-semibold, 600);
+  }
+  .smrt-user-card__email {
+    font: var(--smrt-typography-body-small-font);
+    color: var(--smrt-color-on-surface-variant);
+  }
+  .smrt-user-card__selected .smrt-user-card__email {
+    color: var(--smrt-color-on-secondary-container);
+    opacity: 0.8;
+  }
+  .smrt-user-card__role {
+    font: var(--smrt-typography-label-small-font);
     background-color: var(--smrt-color-surface-container-highest);
     color: var(--smrt-color-on-surface-variant);
     border-radius: var(--smrt-radius-lg);
     text-transform: capitalize;
   }
-
-  .status {
+  .smrt-user-card__status {
     font: var(--smrt-typography-label-small-font);
-    padding: 0 var(--smrt-spacing-2);
-    height: 20px;
-    display: inline-flex;
-    align-items: center;
     border-radius: var(--smrt-radius-lg);
     text-transform: capitalize;
     font-weight: var(--smrt-typography-weight-semibold, 600);
   }
-
-  .status-active {
+  .smrt-user-card__status-active {
     background-color: var(--smrt-color-primary-container);
     color: var(--smrt-color-on-primary-container);
   }
-
-  .status-pending {
+  .smrt-user-card__status-pending {
     background-color: var(--smrt-color-secondary-container);
     color: var(--smrt-color-on-secondary-container);
   }
-
-  .status-error {
+  .smrt-user-card__status-error {
     background-color: var(--smrt-color-error-container);
     color: var(--smrt-color-on-error-container);
   }
-
-  .status-disabled {
+  .smrt-user-card__status-disabled {
     background-color: var(--smrt-color-surface-variant);
     color: var(--smrt-color-on-surface-variant);
   }
 }
+
 </style>

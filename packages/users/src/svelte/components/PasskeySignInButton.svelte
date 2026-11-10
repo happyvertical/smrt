@@ -25,9 +25,22 @@ async function signIn() {
   }
 }
 </script>
-{#if adapter.signInWithPasskey}<div class="passkey" data-smrt-component="PasskeySignInButton"><Button variant="secondary" fullWidth onclick={signIn} loading={pending}>{label ?? t('users.auth.passkey_sign_in')}</Button>{#if error}<p role="alert">{t(error)}</p>{/if}</div>{/if}<style>
+{#if adapter.signInWithPasskey}<div class="smrt-passkey-sign-in-button__root" data-smrt-component="PasskeySignInButton"><Button variant="secondary" fullWidth onclick={signIn} loading={pending}>{label ?? t('users.auth.passkey_sign_in')}</Button>{#if error}<p role="alert">{t(error)}</p>{/if}</div>{/if}<style>
 @layer smrt.reset, smrt.structure, smrt.theme;
-@layer smrt.theme {
-.passkey{display:grid;gap:var(--smrt-spacing-sm,.5rem)}p{margin:0;color:var(--smrt-color-error)}
+@layer smrt.structure {
+  .smrt-passkey-sign-in-button__root {
+    display:grid;
+    gap:var(--smrt-spacing-sm,.5rem);
+  }
+  p {
+    margin:0;
+  }
 }
+
+@layer smrt.theme {
+  p {
+    color:var(--smrt-color-error);
+  }
+}
+
 </style>

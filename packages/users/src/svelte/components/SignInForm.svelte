@@ -34,7 +34,7 @@ async function submit() {
 </script>
 <Form class="auth-form" onsubmit={submit} aria-busy={loading || pending}>
   <h2>{t('users.auth.sign_in')}</h2>
-  {#if error}<p class="error" role="alert">{t(error)}</p>{/if}
+  {#if error}<p class="smrt-sign-in-form__error" data-smrt-part="error" role="alert">{t(error)}</p>{/if}
   <label for="sign-in-email">{t('users.auth.email_address')}</label><Input id="sign-in-email" type="email" bind:value={email} autocomplete="email" required disabled={loading || pending} />
   <label for="sign-in-password">{t('users.auth.password')}</label><Input id="sign-in-password" type="password" bind:value={password} autocomplete="current-password" required disabled={loading || pending} />
   {#if forgotPasswordHref}<Button href={forgotPasswordHref} variant="ghost">{t('users.auth.forgot_password')}</Button>{/if}
@@ -42,7 +42,35 @@ async function submit() {
 </Form>
 <style>
 @layer smrt.reset, smrt.structure, smrt.theme;
-@layer smrt.theme {
-:global(.auth-form){display:grid;gap:var(--smrt-spacing-sm,.5rem);color:var(--smrt-color-on-surface)}h2{margin:0;font:var(--smrt-typography-title-large-font)}label{font:var(--smrt-typography-label-large-font)}.error{margin:0;padding:var(--smrt-spacing-sm,.5rem);border-radius:var(--smrt-radius-sm,.25rem);background:var(--smrt-color-error-container);color:var(--smrt-color-on-error-container)}
+@layer smrt.structure {
+  :global(.auth-form) {
+    display:grid;
+    gap:var(--smrt-spacing-sm,.5rem);
+  }
+  h2 {
+    margin:0;
+  }
+  .smrt-sign-in-form__error {
+    margin:0;
+    padding:var(--smrt-spacing-sm,.5rem);
+  }
 }
+
+@layer smrt.theme {
+  :global(.auth-form) {
+    color:var(--smrt-color-on-surface);
+  }
+  h2 {
+    font:var(--smrt-typography-title-large-font);
+  }
+  label {
+    font:var(--smrt-typography-label-large-font);
+  }
+  .smrt-sign-in-form__error {
+    border-radius:var(--smrt-radius-sm,.25rem);
+    background:var(--smrt-color-error-container);
+    color:var(--smrt-color-on-error-container);
+  }
+}
+
 </style>
