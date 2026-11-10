@@ -24,6 +24,7 @@ import {
 } from './reducer';
 
 const OPEN_KEY = 'smrt-app-shell:assistant-open';
+const OPEN_EVENT = 'smrt-app-shell:open-assistant';
 
 let dock = $state<DockState>(initialState);
 let open = $state(false);
@@ -241,12 +242,19 @@ function onPanelKey(event: KeyboardEvent) {
   }
 }
 
+// The welcome steps ask for the dock to open once they finish.
+const openOnRequest = () => {
+  if (!open) void openDock();
+};
+
 onMount(() => {
+  window.addEventListener(OPEN_EVENT, openOnRequest);
   try {
     if (localStorage.getItem(OPEN_KEY) === '1') void openDock();
   } catch {
     // storage is optional
   }
+  return () => window.removeEventListener(OPEN_EVENT, openOnRequest);
 });
 onDestroy(() => controller?.abort());
 
@@ -281,7 +289,10 @@ $effect(() => {
       onkeydown={onPanelKey}
     >
       <header class="bar">
-        <h2>Assistant{#if dock.engineLabel}<span class="sh-muted engine"> · {dock.engineLabel}</span>{/if}</h2>
+        <div class="title">
+          <h2>Assistant</h2>
+          {#if dock.engineLabel}<p class="sh-muted engine">Using {dock.engineLabel}</p>{/if}
+        </div>
         <div class="bar-actions">
           <button type="button" class="sh-btn" onclick={newChat} disabled={dock.items.length === 0 && !dock.running}>New chat</button>
           <button type="button" class="sh-btn" aria-expanded="true" aria-controls="assistant-panel" onclick={closeDock}>Close<span class="sr-only"> assistant</span></button>
@@ -409,9 +420,12 @@ $effect(() => {
     margin: 0;
     font-size: 1rem;
   }
+  .title {
+    min-inline-size: 0;
+  }
   .engine {
+    margin: 0;
     font-size: 0.8125rem;
-    font-weight: normal;
   }
   .bar-actions {
     display: flex;

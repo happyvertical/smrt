@@ -1,6 +1,13 @@
 import { createSessionLayoutLoad } from '@happyvertical/smrt-app-runtime/sveltekit';
+import { redirect } from '@sveltejs/kit';
+import {
+  asSettingsOwner,
+  assistantSettings,
+} from '$lib/server/agent-cli/service';
+import { principalFromLocals } from '$lib/server/owner';
 import { DEPENDS } from '$lib/ui/events';
 import { loadDescription } from '$lib/ui/load';
+import { needsWelcome } from '$lib/ui/onboarding-client';
 import type { LayoutServerLoad } from './$types';
 
 /**
@@ -16,5 +23,24 @@ export const load: LayoutServerLoad = async (event) => {
   const { session } = sessionLoad(event);
   if (!session.authenticated) return { session, description: null };
   const result = await loadDescription(event.fetch);
-  return { session, description: result.ok ? result.description : null };
+  const description = result.ok ? result.description : null;
+  // First run: an owner with an empty app who has not finished or skipped the
+  // welcome steps is sent there once. An app that already has models is in
+  // use, so it is never interrupted (the steps stay open from Settings).
+  const owner = principalFromLocals(event.locals);
+  if (description && owner) {
+    const settings = await asSettingsOwner(owner, () =>
+      assistantSettings().read(),
+    ).catch(() => null);
+    if (
+      settings &&
+      needsWelcome({
+        pathname: event.url.pathname,
+        modelCount: Object.keys(description.models).length,
+        onboarding: settings.onboarding,
+      })
+    )
+      redirect(303, '/welcome');
+  }
+  return { session, description };
 };

@@ -8,6 +8,9 @@ import type { PageProps } from './$types';
 
 let { data }: PageProps = $props();
 
+// Opened from the welcome steps: offer the way back.
+const fromWelcome = $derived(page.url.searchParams.get('from') === 'welcome');
+
 let busy = $state(false);
 let message = $state<string | null>(null);
 let error = $state<string | null>(null);
@@ -45,6 +48,9 @@ async function discover(): Promise<void> {
 </svelte:head>
 
 <ShellSettingsPage basePath="/settings" title="Inference">
+  {#if fromWelcome}
+    <p><a class="sh-link" href="/welcome">Back to the welcome steps</a></p>
+  {/if}
   <!-- The owner is the only person here: the key they save is the one the
        assistant uses on its next turn. The page never receives a key back. -->
   <InferenceSettingsPanel
