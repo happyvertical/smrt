@@ -739,6 +739,46 @@ smrt app token --scopes notes.read --expires 7d      # fixed lifetime
 smrt app token list | revoke <id> | revoke-holder <holder>
 ```
 
+### Secrets master key
+
+`smrt-secrets` seals every stored secret (an inference provider key, for
+one) under an application master key, which a desktop or other local app has
+no environment to carry. The local runtime creates it instead, on first use,
+and keeps it in the vault key store; the user never sees or types it.
+
+```ts
+// Local profile: the runtime owns the key. Elsewhere it returns null and
+// SMRT_SECRET_MASTER_KEY is the only source.
+const secrets = await SecretService.create({
+  db: await runtime.database(),
+  masterKeyProvider: () => runtime.secretMasterKey(),
+});
+```
+
+- `runtime.secretMasterKey()` (SvelteKit runtime) and
+  `LocalApplicationRuntime.secretMasterKey()` return 64 hex characters for
+  `SecretService.create({ masterKeyProvider })` and nothing else. Never log
+  it, return it from a route, or keep it.
+- **Once, then reused.** The first call creates 32 random bytes as the vault
+  key store item `smrt-secrets.master-key`, under the data root's
+  initialization lock so concurrent processes agree. Every later call, and
+  every restart, loads the same one.
+- **Env wins.** `SecretService` asks the provider only when
+  `SMRT_SECRET_MASTER_KEY` is unset. On a deployed profile the method returns
+  `null`; the runtime never generates a key outside the local profile.
+- **Custody seam.** The default store is `createFileVaultKeyStore` on an
+  owner-only `.smrt-keys-<data directory name>` directory beside the data
+  root (never inside it, so exports and backups of the root exclude it).
+  Pass `vaultKeyStore` to `initializeLocalApplicationRuntime` or
+  `createSmrtSvelteKitRuntime` to inject another provider, such as the
+  desktop wrapper's OS keychain.
+- **Fails closed.** A store that cannot be read, or an item that is not 32
+  bytes, rejects with `LocalRuntimeError` code `secret_master_key_unavailable`,
+  whose message names no key material or path. A malformed item is never
+  replaced: a new key would orphan every secret the old one sealed. Losing
+  the item loses the stored secrets (a key re-entered afterwards is stored
+  under a new master key).
+
 ### Origin file
 
 When the desktop supervisor starts the app it sets `ORIGIN=http://127.0.0.1:<port>`.

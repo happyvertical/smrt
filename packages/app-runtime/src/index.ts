@@ -72,6 +72,7 @@ import {
   validateApplicationSecret,
   validateLocalStorageCustody,
   windowsSecureFileCustody,
+  withLocalInitializationLock,
 } from './local-custody.js';
 import {
   deriveLocalInstallationIdentity,
@@ -91,9 +92,15 @@ import {
   prepareLocalSchema,
 } from './local-schema.js';
 import {
+  loadOrCreateSecretMasterKey,
+  localVaultKeyStore,
+  secretMasterKeyUnavailable,
+} from './local-secret-master-key.js';
+import {
   applicationStateRootSource,
   prepareApplicationStateRoot,
 } from './state-root.js';
+import type { VaultKeyStore } from './vault-key-store.js';
 import {
   validateWindowsApplicationId,
   validateWindowsPath,
@@ -133,6 +140,10 @@ export {
   type PrepareDatabaseContext,
   SCHEMA_CREATION_FAILED_MESSAGE,
 } from './local-schema.js';
+export {
+  defaultLocalVaultKeyDirectory,
+  SECRET_MASTER_KEY_ITEM,
+} from './local-secret-master-key.js';
 export * from './operation-lock.js';
 export {
   ORIGIN_FILE,
@@ -225,6 +236,13 @@ export interface LocalApplicationRuntimeOptions
   ownerTenant?: LocalOwnerTenantOptions;
   /** Server-only policy shared with the application password sign-in service. */
   passwordPolicy?: PasswordPolicyOptions;
+  /**
+   * Custody for the secrets master key (see
+   * {@link LocalApplicationRuntime.secretMasterKey}). Defaults to an
+   * owner-only file store beside the data root; the desktop wrapper injects an
+   * OS keychain provider through this seam.
+   */
+  vaultKeyStore?: VaultKeyStore;
   /** Testable clock. */
   now?: () => Date;
 }
@@ -783,6 +801,7 @@ export async function initializeLocalApplicationRuntime(
       paidCapabilities: options.paidCapabilities === true,
       ownerTenant,
       passwordPolicy: options.passwordPolicy,
+      vaultKeyStore: options.vaultKeyStore,
       identity,
       now: options.now ?? (() => new Date()),
       canonicalSourceRoot,
@@ -852,6 +871,7 @@ interface LocalApplicationRuntimeState {
   paidCapabilities: boolean;
   ownerTenant: ResolvedOwnerTenant;
   passwordPolicy?: PasswordPolicyOptions;
+  vaultKeyStore?: VaultKeyStore;
   now: () => Date;
   canonicalSourceRoot: string;
 }
@@ -879,6 +899,19 @@ export interface LocalApplicationRuntime {
    * callers fail closed.
    */
   readonly mcpTokens?: LocalMcpTokenStore;
+  /**
+   * The application secrets master key as 64 hex characters, for
+   * `SecretService.create({ masterKeyProvider })` in `@happyvertical/smrt-secrets`
+   * and nothing else. The first call creates a random key in the vault key
+   * store (under the data root's initialization lock, so concurrent processes
+   * agree) and every later call, in this process or after a restart, loads
+   * the same one. The user never sees or types it. Never log, return from a
+   * route, or persist it. Fails with `secret_master_key_unavailable`, naming
+   * no key material, when the store cannot be read or holds a malformed item;
+   * it never falls back to a generated or default key. Optional only so
+   * structural test doubles stay valid.
+   */
+  secretMasterKey?(): Promise<string>;
 }
 
 class InitializedLocalApplicationRuntime implements LocalApplicationRuntime {
@@ -896,6 +929,8 @@ class InitializedLocalApplicationRuntime implements LocalApplicationRuntime {
   private readonly now: () => Date;
   private readonly canonicalSourceRoot: string;
   private readonly identity: LocalInstallationIdentity;
+  private readonly vaultKeyStore?: VaultKeyStore;
+  private masterKey?: Promise<string>;
 
   constructor(state: LocalApplicationRuntimeState) {
     this.db = state.db;
@@ -911,6 +946,7 @@ class InitializedLocalApplicationRuntime implements LocalApplicationRuntime {
     this.now = state.now;
     this.canonicalSourceRoot = state.canonicalSourceRoot;
     this.identity = state.identity;
+    this.vaultKeyStore = state.vaultKeyStore;
     this.mcpTokens = localMcpTokenStore(
       state.db,
       state.paths,
@@ -923,6 +959,20 @@ class InitializedLocalApplicationRuntime implements LocalApplicationRuntime {
    * Issue the first short-lived owner invitation when none is active.
    * Repeated startup never rotates an unexpired token or duplicates an owner.
    */
+  secretMasterKey(): Promise<string> {
+    this.masterKey ??= withLocalInitializationLock(this.paths.root, () =>
+      loadOrCreateSecretMasterKey(
+        localVaultKeyStore(this.paths.root, this.vaultKeyStore),
+      ),
+    ).catch((error: unknown) => {
+      this.masterKey = undefined;
+      throw error instanceof LocalRuntimeError
+        ? error
+        : secretMasterKeyUnavailable();
+    });
+    return this.masterKey;
+  }
+
   async ensureBootstrapInvitation(): Promise<LocalOwnerBootstrapInvitation | null> {
     if (await findExistingOwner(this.db)) return null;
     const current = await readBootstrapRow(this.db);

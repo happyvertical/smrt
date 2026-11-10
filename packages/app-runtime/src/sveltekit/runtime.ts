@@ -101,6 +101,7 @@ import {
   prepareApplicationStateRoot,
   resolveApplicationStateRoot,
 } from '../state-root.js';
+import type { VaultKeyStore } from '../vault-key-store.js';
 import { acquireWriterLease, type WriterLease } from '../writer-lease.js';
 import {
   createSubdomainTenantSelector,
@@ -252,6 +253,13 @@ export interface SmrtSvelteKitRuntimeOptions {
   readonly ownerTenant?: LocalOwnerTenantOptions;
   /** Server-only policy shared with the application password sign-in service. */
   readonly passwordPolicy?: PasswordPolicyOptions;
+  /**
+   * Custody for the local secrets master key ({@link
+   * SmrtSvelteKitRuntime.secretMasterKey}). Defaults to an owner-only file
+   * store beside the data root; the desktop wrapper injects an OS keychain
+   * provider. Local profile only.
+   */
+  readonly vaultKeyStore?: VaultKeyStore;
   /**
    * Local single-writer lease held for the web process, released when local
    * startup fails. Defaults to the state-root writer lease shared with
@@ -467,6 +475,17 @@ export interface SmrtSvelteKitRuntime {
   database(): Promise<DatabaseInterface>;
   /** The local runtime. Rejects outside the `local` profile. */
   localRuntime(): Promise<LocalApplicationRuntime>;
+  /**
+   * The secrets master key for `SecretService.create({ masterKeyProvider })`
+   * (`@happyvertical/smrt-secrets`), as 64 hex characters, or `null` outside
+   * the `local` profile, where the key comes from `SMRT_SECRET_MASTER_KEY`
+   * and nothing is ever generated. On the local profile the first call
+   * creates the key in the vault key store and later calls and restarts load
+   * the same one; the user never sees it. It is for that one call only: never
+   * log it, return it from a route, or keep it. `SecretService` asks only
+   * when the environment variable is unset, so the variable wins.
+   */
+  secretMasterKey(): Promise<string | null>;
   /**
    * Where the desktop wrapper sends the owner: `/setup?token=<one-time token>`
    * while the local owner is unclaimed, `/` otherwise (claimed, deployed, or no
@@ -726,6 +745,7 @@ export function composeSmrtSvelteKitRuntime(
       sessionTtlSeconds: options.sessionTtlSeconds,
       ownerTenant: options.ownerTenant,
       passwordPolicy: options.passwordPolicy,
+      vaultKeyStore: options.vaultKeyStore,
       createSchema: options.createSchema ?? true,
       prepareDatabase: options.prepareDatabase,
       now: options.now,
@@ -756,6 +776,12 @@ export function composeSmrtSvelteKitRuntime(
         throw error;
       });
     return localPromise;
+  };
+
+  const secretMasterKey = async (): Promise<string | null> => {
+    if ((await resolvedRuntime()).profile !== 'local') return null;
+    const local = await localRuntime();
+    return local.secretMasterKey ? local.secretMasterKey() : null;
   };
 
   const ownerSetupLocation = async (): Promise<string> => {
@@ -1300,6 +1326,7 @@ export function composeSmrtSvelteKitRuntime(
     resolveMcpPrincipal,
     database,
     localRuntime,
+    secretMasterKey,
     ownerSetupLocation,
     deployedRuntime,
     health,
