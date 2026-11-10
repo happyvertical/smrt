@@ -99,15 +99,15 @@ async function skip() {
       }}
     >
       <fieldset>
-        <legend class="sr-only">Starting point</legend>
-        <label class="choice" class:chosen={start === 'fresh'}>
+        <legend class="sh-sr-only">Starting point</legend>
+        <label class="sh-choice" class:sh-choice-on={start === 'fresh'}>
           <input type="radio" name="start" value="fresh" bind:group={start} />
           <span>
             <strong>Fresh</strong>
             <span class="sh-muted">Start with an empty app. Tell the assistant what to build.</span>
           </span>
         </label>
-        <label class="choice off">
+        <label class="sh-choice sh-choice-off">
           <input type="radio" name="start" value="wizard" disabled aria-describedby="wizard-soon" />
           <span>
             <strong>Wizard</strong>
@@ -147,40 +147,8 @@ async function skip() {
     display: grid;
     gap: var(--smrt-spacing-sm, 0.5rem);
   }
-  .choice {
-    display: flex;
-    gap: var(--smrt-spacing-md, 0.75rem);
-    align-items: flex-start;
-    padding: var(--smrt-spacing-md, 0.75rem);
-    border: 1px solid var(--smrt-color-outline-variant);
-    border-radius: var(--smrt-radius-md, 0.5rem);
-    cursor: pointer;
-  }
-  .choice span {
-    display: flex;
-    flex-direction: column;
-  }
-  .choice.chosen {
-    border-color: var(--smrt-color-primary);
-  }
-  .choice.off {
-    cursor: not-allowed;
-    opacity: 0.7;
-  }
-  .choice:focus-within {
-    outline: 2px solid var(--smrt-color-primary);
-    outline-offset: 2px;
-  }
   h1:focus {
     outline: none;
-  }
-  .sr-only {
-    position: absolute;
-    inline-size: 1px;
-    block-size: 1px;
-    overflow: hidden;
-    clip-path: inset(50%);
-    white-space: nowrap;
   }
 }
 </style>

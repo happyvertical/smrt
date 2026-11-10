@@ -156,7 +156,7 @@ onDestroy(() => {
               href={tool.installUrl}
               target="_blank"
               rel="noopener noreferrer"
-            >{action.label}<span class="sr-only"> for {tool.label} (opens in a new tab)</span></a>
+            >{action.label}<span class="sh-sr-only"> for {tool.label} (opens in a new tab)</span></a>
           {:else if action.kind === 'in-use'}
             <span class="sh-badge sh-badge-ok">{action.label}</span>
           {:else}
@@ -193,7 +193,7 @@ onDestroy(() => {
   {/if}
 
   <p class="sh-alert {failed ? 'sh-alert-error' : message ? 'sh-alert-ok' : ''} note" role={failed ? 'alert' : 'status'} hidden={!message}>{message}</p>
-  <p class="sr-only" role="status">{ready ? 'The assistant is ready.' : ''}</p>
+  <p class="sh-sr-only" role="status">{ready ? 'The assistant is ready.' : ''}</p>
 </div>
 
 <style>
@@ -225,14 +225,6 @@ onDestroy(() => {
   }
   .note {
     margin-block-start: var(--smrt-spacing-md, 0.75rem);
-  }
-  .sr-only {
-    position: absolute;
-    inline-size: 1px;
-    block-size: 1px;
-    overflow: hidden;
-    clip-path: inset(50%);
-    white-space: nowrap;
   }
 }
 </style>

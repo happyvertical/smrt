@@ -293,3 +293,39 @@ textarea.sh-input {
   gap: var(--smrt-spacing-lg, 1rem);
   grid-template-columns: repeat(auto-fit, minmax(min(100%, 16rem), 1fr));
 }
+
+/* Text for assistive technology only. */
+.sh-sr-only {
+  position: absolute;
+  inline-size: 1px;
+  block-size: 1px;
+  overflow: hidden;
+  clip-path: inset(50%);
+  white-space: nowrap;
+}
+
+/* A selectable choice (welcome steps): a bordered card around a radio. */
+.sh-choice {
+  display: flex;
+  align-items: flex-start;
+  gap: var(--smrt-spacing-md, 0.75rem);
+  padding: var(--smrt-spacing-md, 0.75rem);
+  border: 1px solid var(--smrt-color-outline-variant);
+  border-radius: var(--smrt-radius-md, 0.5rem);
+  cursor: pointer;
+}
+.sh-choice > span {
+  display: flex;
+  flex-direction: column;
+}
+.sh-choice-on {
+  border-color: var(--smrt-color-primary);
+}
+.sh-choice-off {
+  cursor: not-allowed;
+  opacity: 0.7;
+}
+.sh-choice:focus-within {
+  outline: 2px solid var(--smrt-color-primary);
+  outline-offset: 2px;
+}
