@@ -1209,7 +1209,9 @@ describe('smrt app doctor', () => {
       deployed.findings
         .filter((finding) => finding.code === 'provider-not-configured')
         .map((finding) => finding.component),
-    ).toEqual(['authentication', 'assets', 'secrets']);
+      // The environment secret store has a default readiness probe (#4864),
+      // so only providers that still need a named module are reported.
+    ).toEqual(['authentication', 'assets']);
     expect(allOutput(fixture)).not.toContain(DB_PASSWORD);
   });
 });
