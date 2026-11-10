@@ -79,13 +79,13 @@ describe('approval gate invariants', () => {
     const routes = files.filter(([f]) =>
       /^routes\/api\/shell\/onboarding\/(.*\/)?\+server\.ts$/.test(f),
     );
-    expect(routes.length).toBe(5);
+    expect(routes.length).toBe(6);
     for (const [f, t] of routes)
       expect(t, f).toMatch(
-        /onboardingRoutes\.(state|connect|engine|complete|skip)\(/,
+        /onboardingRoutes\.(state|connect|engine|chatgptState|chatgpt|complete|skip)\(/,
       );
     const impl = files.find(([f]) => f === 'lib/server/onboarding.ts');
-    expect((impl?.[1].match(/await ownerOf\(event\)/g) ?? []).length).toBe(5);
+    expect((impl?.[1].match(/await ownerOf\(event\)/g) ?? []).length).toBe(7);
   });
 
   it('the agent CLI engine never decides approvals or sets `approved`', () => {
@@ -93,6 +93,8 @@ describe('approval gate invariants', () => {
       ([f]) =>
         f.startsWith('lib/server/agent-cli/') ||
         f === 'lib/server/assistant/agent-turn.ts' ||
+        f === 'lib/server/assistant/model.ts' ||
+        f === 'lib/server/chatgpt.ts' ||
         f === 'lib/server/onboarding.ts',
     ))
       expect(t, f).not.toMatch(

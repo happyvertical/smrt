@@ -23,7 +23,11 @@ import { callTool, toolsFor } from '../policy.ts';
 import { describeModelError } from './diagnostics.ts';
 import { systemPrompt } from './guidance.ts';
 import { type HoldOutcome, holdForUser } from './hold.ts';
-import type { AssistantModel, ModelToolCall } from './model.ts';
+import {
+  type AssistantModel,
+  ModelFailure,
+  type ModelToolCall,
+} from './model.ts';
 import { appendMessage, historyFor } from './threads.ts';
 
 export interface TurnLimits {
@@ -123,6 +127,13 @@ async function pendingOf(response: CatalogResponse): Promise<Pending | null> {
   const row = await getApprovalView(response.pending.approvalId);
   if (row?.status !== 'pending') return null;
   return { approvalId: row.id, summary: row.summary, preview: row.preview };
+}
+
+/** `Name/code` of an error, never its message. */
+function classAndCode(error: unknown): string {
+  if (!(error instanceof Error)) return 'unknown';
+  const code = (error as { code?: unknown }).code;
+  return `${error.name}${typeof code === 'string' ? `/${code}` : ''}`;
 }
 
 function oneLine(text: string, max = 160): string {
@@ -376,7 +387,24 @@ export async function runTurn(options: RunTurnOptions): Promise<TurnStop> {
         return finish('timeout');
       }
       // biome-ignore lint/suspicious/noConsole: provider message and status, redacted; never the request
-      console.error('assistant model call failed:', describeModelError(error));
+      console.error(
+        'assistant model call failed:',
+        // A named failure (the ChatGPT plan's): class and code only, since a
+        // provider message there can carry credentials.
+        error instanceof ModelFailure
+          ? classAndCode(error.cause)
+          : describeModelError(error),
+      );
+      if (error instanceof ModelFailure) {
+        // The engine named the problem in words for the owner.
+        emit({
+          type: 'error',
+          code: error.code,
+          message: error.message,
+          ...(error.action ? { action: error.action } : {}),
+        });
+        return finish('error');
+      }
       emit({
         type: 'error',
         code: 'model_error',

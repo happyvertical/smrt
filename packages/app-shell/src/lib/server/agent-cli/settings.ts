@@ -4,14 +4,17 @@
 //   engine      which engine runs the assistant: `api` (an API key, resolved
 //               through smrt-inference's tiers) or a local agent CLI,
 //               `claude-code` / `codex` (the person's own installed, signed-in
-//               tool; see ./tools.ts for the legal rule).
+//               tool; see ./tools.ts for the legal rule) or `chatgpt` (the
+//               owner's own ChatGPT plan, Sign in with ChatGPT).
+//   chatgptModel the model the owner picked for `chatgpt` (an id from the
+//               signed-in account's catalog); absent = the catalog's first.
 //   onboarding  set once the first-run flow is finished (`fresh`) or skipped.
 //
 // Why not a member of the `inference` preference: that payload is the
 // settings panel's own form and `saveDefaults` replaces it whole, which would
 // erase these members on the next save; and a subprocess agent loop is not a
 // chat-completion tier target, so smrt-core's tier/mode model has no seat for
-// it. Never a key: the validator refuses anything but these two members.
+// it. Never a key: the validator refuses anything but these members.
 import {
   type PreferenceKindDefinition,
   registerPreferenceKind,
@@ -35,8 +38,12 @@ export { ASSISTANT_ENGINES, type AssistantEngine };
 export const ONBOARDING_OUTCOMES = ['fresh', 'skipped'] as const;
 export type OnboardingOutcome = (typeof ONBOARDING_OUTCOMES)[number];
 
+/** A model id from the plan's catalog: bounded, no whitespace. */
+export const CHATGPT_MODEL_PATTERN = /^[A-Za-z0-9][A-Za-z0-9._:/-]{0,99}$/;
+
 export interface AssistantPreferences {
   engine?: AssistantEngine;
+  chatgptModel?: string;
   onboarding?: OnboardingOutcome;
 }
 
@@ -69,6 +76,10 @@ export function validateAssistantPreferences(payload: unknown) {
         issues.push(
           issue(member, `engine is one of ${ASSISTANT_ENGINES.join(', ')}`),
         );
+    } else if (member === 'chatgptModel') {
+      if (typeof value === 'string' && CHATGPT_MODEL_PATTERN.test(value))
+        canonical.chatgptModel = value;
+      else issues.push(issue(member, 'chatgptModel is a model id'));
     } else if (member === 'onboarding') {
       if ((ONBOARDING_OUTCOMES as readonly unknown[]).includes(value))
         canonical.onboarding = value as OnboardingOutcome;
@@ -162,6 +173,8 @@ export interface AssistantSettings {
   engine: AssistantEngine;
   /** `null` until onboarding is finished or skipped. */
   onboarding: OnboardingOutcome | null;
+  /** The owner's ChatGPT model choice, `null` = the catalog's first. */
+  chatgptModel: string | null;
 }
 
 export function createAssistantSettings(
@@ -184,6 +197,7 @@ export function createAssistantSettings(
       return {
         engine: prefs.engine ?? 'api',
         onboarding: prefs.onboarding ?? null,
+        chatgptModel: prefs.chatgptModel ?? null,
       };
     },
 

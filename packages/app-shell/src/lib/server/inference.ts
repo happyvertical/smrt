@@ -17,8 +17,11 @@ import {
 } from '@happyvertical/smrt-inference/server';
 import { createPreferenceStore } from '@happyvertical/smrt-preferences';
 import './inference-registry.ts';
+import { asSettingsOwner, assistantSettings } from './agent-cli/service.ts';
+import { CHATGPT_ASSISTANT_CLASS, lazyChatgptConnection } from './chatgpt.ts';
 import { getShellDb, getShellSecretMasterKey, shellDbSync } from './host.ts';
 import {
+  currentPrincipal,
   type Principal,
   principalFromLocals,
   requireOwner,
@@ -35,6 +38,20 @@ export function shellInference(): InferenceSettingsHost {
     // Read only after `getShellDb()` has resolved (every route and every
     // stored-key read opens it first).
     overrides: () => ({ db: shellDbSync() }),
+    // Sign in with ChatGPT: only the assistant's own `chatgpt` engine asks for
+    // the plan (by request name); no tier is ever moved onto it.
+    chatgptPlan: {
+      connection: lazyChatgptConnection,
+      appliesTo: (request) => request.className === CHATGPT_ASSISTANT_CLASS,
+      model: async () => {
+        const owner = currentPrincipal();
+        if (!owner) return undefined;
+        const settings = await asSettingsOwner(owner, () =>
+          assistantSettings().read(),
+        );
+        return settings.chatgptModel ?? undefined;
+      },
+    },
   });
   return host;
 }

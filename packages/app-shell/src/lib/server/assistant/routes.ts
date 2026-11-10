@@ -14,7 +14,11 @@
 // button, a closed tab) aborts the model call, the running tool and any hold.
 
 import { join } from 'node:path';
-import type { TurnEvent, TurnStop } from '../../assistant/events.ts';
+import type {
+  AssistantEngineId,
+  TurnEvent,
+  TurnStop,
+} from '../../assistant/events.ts';
 import { tokenCredentials } from '../agent-cli/credentials.ts';
 import { type AgentCliStatus, locateCli } from '../agent-cli/detect.ts';
 import {
@@ -56,7 +60,7 @@ export interface AssistantRoutesOptions extends AssistantConfigOptions {
   /** Tests only. */
   hold?: typeof holdForUser;
   /** Which engine is chosen. Default: the owner's `assistant` preference. */
-  engine?: () => Promise<'api' | 'claude-code' | 'codex'>;
+  engine?: () => Promise<AssistantEngineId>;
   /** The local agent CLI engine's host wiring. Default: this app's runtime. */
   agent?: AgentEngineDeps;
   /** What the local CLIs report. Default: cached detection on this machine. */
@@ -180,7 +184,7 @@ export function mountAssistantRoutes(
           );
       } else {
         try {
-          model = await factory({ principal: owner });
+          model = await factory({ principal: owner, engine });
         } catch (error) {
           const body = unavailableBody(error);
           if (body) return json(body, 503);

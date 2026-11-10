@@ -37,14 +37,27 @@ export type TurnEvent =
       approvalId: string;
       status: 'approved' | 'denied' | 'failed' | 'timeout';
     }
-  | { type: 'error'; code: string; message: string }
+  | {
+      type: 'error';
+      code: string;
+      message: string;
+      /** Where to fix it ("Sign in again"), when there is somewhere. */
+      action?: { label: string; href: string };
+    }
   | { type: 'done'; stop: TurnStop };
 
 /**
- * Which engine runs the assistant: `api` (an API key through smrt-inference)
- * or a local agent CLI (the person's own, signed-in `claude-code` / `codex`).
+ * Which engine runs the assistant: `api` (an API key through smrt-inference),
+ * a local agent CLI (the person's own, signed-in `claude-code` / `codex`), or
+ * `chatgpt` (the owner's own ChatGPT plan through Sign in with ChatGPT, a
+ * preview for open source apps).
  */
-export const ASSISTANT_ENGINES = ['api', 'claude-code', 'codex'] as const;
+export const ASSISTANT_ENGINES = [
+  'api',
+  'claude-code',
+  'codex',
+  'chatgpt',
+] as const;
 export type AssistantEngineId = (typeof ASSISTANT_ENGINES)[number];
 
 /** `GET /api/assistant/status`. Never carries a key, provider or endpoint. */
@@ -56,7 +69,7 @@ export interface AssistantStatus {
   engineLabel?: string;
   /**
    * Set when not configured: `assistant_not_configured`, `ai_unavailable`,
-   * `agent_cli_missing` or `agent_cli_signed_out`.
+   * `agent_cli_missing`, `agent_cli_signed_out` or `chatgpt_signed_out`.
    */
   code?: string;
   message?: string;

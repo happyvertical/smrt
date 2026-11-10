@@ -15,17 +15,26 @@ import {
   tryResolveConfiguredAIProvider,
 } from '@happyvertical/smrt-config';
 import {
+  type InferenceResolver,
   type InferenceTierRequest,
+  resolveInference,
   resolveInferenceTarget,
 } from '@happyvertical/smrt-core';
 import {
   inferenceUnavailableMessage,
   isInferenceUnavailableError,
 } from '@happyvertical/smrt-core/inference-availability';
+import { ChatGPTSignedOutError } from '@happyvertical/smrt-inference/server';
 import type { AssistantStatus } from '../../assistant/events.ts';
+import { CHATGPT_ASSISTANT_CLASS, CHATGPT_SETTINGS_HREF } from '../chatgpt.ts';
 import { type Principal, runAs } from '../owner.ts';
 
-/** Provider ids that sign in with a person's subscription. Never allowed. */
+/**
+ * Provider ids that sign in with a person's subscription. Refused on the API
+ * engine and everywhere else. The single exception is `chatgpt-plan` from the
+ * owner's Sign in with ChatGPT, which only the `chatgpt` engine reaches, by
+ * its own resolution below ({@link resolveChatGPTAssistantModel}).
+ */
 export const SUBSCRIPTION_PROVIDERS: readonly string[] = [
   'claude-cli',
   'chatgpt-plan',
@@ -39,11 +48,15 @@ export class SubscriptionProviderError extends Error {
   readonly code = 'assistant_provider_refused';
   constructor() {
     super(
-      'The assistant uses an API key. Subscription logins (claude.ai, ChatGPT plan, CLI sessions) are not supported.',
+      'The API key engine does not use subscription providers (claude.ai, CLI sessions, a ChatGPT plan set in configuration). Use an API key, Claude Code, or Sign in with ChatGPT in Settings.',
     );
     this.name = 'SubscriptionProviderError';
   }
 }
+
+const CHATGPT_SIGNED_OUT_MESSAGE = 'Sign in with ChatGPT to use the assistant.';
+
+export { ChatGPTSignedOutError };
 
 /** Thrown when there is no API key to run the assistant on. */
 export class AssistantNotConfiguredError extends Error {
@@ -78,6 +91,8 @@ export interface AssistantConfigOptions {
   env?: Readonly<Record<string, string | undefined>>;
   /** Inference tier. Default `SMRT_APP_SHELL_ASSISTANT_TIER`, else `good`. */
   tier?: InferenceTierRequest;
+  /** Tests: the resolver the ChatGPT engine asks, instead of the registered one. */
+  resolver?: InferenceResolver;
 }
 
 const TIERS = ['cheap', 'good', 'great', 'best', 'auto'] as const;
@@ -133,6 +148,41 @@ export async function resolveAssistantOptions(
   return resolved.options;
 }
 
+/**
+ * The model the `chatgpt` engine runs on, for `principal`: asks the resolver
+ * (the ChatGPT one `installShellInference` composed) with this engine's own
+ * request name and accepts ONLY a `chatgpt-plan` target that resolver made for
+ * the owner's sign-in. Anything else (nobody signed in, a resolver that is not
+ * installed, another provider) is {@link ChatGPTSignedOutError}: this engine
+ * never runs on an API key or any other provider. No `base` client is bound,
+ * so no key, endpoint or `HAVE_AI_*` setting can reach the plan.
+ */
+export async function resolveChatGPTAssistantModel(
+  principal: Principal,
+  config: AssistantConfigOptions = {},
+): Promise<string | undefined> {
+  const resolution = await runAs(principal, () =>
+    resolveInference(
+      {
+        tier: tierOf(config),
+        tenantId: principal.tenantId,
+        className: CHATGPT_ASSISTANT_CLASS,
+      },
+      config.resolver ? { resolver: config.resolver } : {},
+    ),
+  );
+  const target = resolution.target;
+  if (
+    resolution.unavailable ||
+    target.provider !== 'chatgpt-plan' ||
+    target.source !== 'byo'
+  )
+    throw new ChatGPTSignedOutError();
+  return typeof target.model === 'string' && target.model
+    ? target.model
+    : undefined;
+}
+
 /** The answer for the dock's "not configured" state. No secrets. */
 export async function assistantStatus(
   principal: Principal,
@@ -167,6 +217,17 @@ export function unavailableBody(error: unknown):
       code: error.code,
       message: error.message,
       error: error.message,
+    };
+  if (error instanceof ChatGPTSignedOutError)
+    return {
+      type: 'unavailable',
+      configured: false,
+      engine: 'chatgpt',
+      engineLabel: 'ChatGPT',
+      code: error.code,
+      message: CHATGPT_SIGNED_OUT_MESSAGE,
+      error: CHATGPT_SIGNED_OUT_MESSAGE,
+      action: { label: 'Sign in with ChatGPT', href: CHATGPT_SETTINGS_HREF },
     };
   if (error instanceof SubscriptionProviderError)
     return {
