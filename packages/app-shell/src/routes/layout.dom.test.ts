@@ -212,6 +212,138 @@ describe('desktop layout', () => {
   });
 });
 
+const LAYOUT_KEY = 'smrt-app-shell:layout:owner-1';
+const collapseToggle = () =>
+  q<HTMLButtonElement>('.smrt-admin-shell__edge-toggle--left');
+const railFooter = () => q('.smrt-admin-shell__tenant-rail-footer');
+const flush = async () => {
+  for (let i = 0; i < 4; i++) await tick();
+};
+
+describe('the sidebar collapse control', () => {
+  it('is present and starts expanded', async () => {
+    await render();
+    const toggle = collapseToggle();
+    expect(toggle).toBeTruthy();
+    expect(toggle?.getAttribute('aria-expanded')).toBe('true');
+    expect(toggle?.getAttribute('aria-label')).toBe('Collapse sidebar');
+    expect(q('.smrt-admin-shell')?.getAttribute('data-left-state')).toBe(
+      'expanded',
+    );
+    expect(q('.smrt-tenant-nav a[href="/"]')?.textContent).toContain('Home');
+  });
+
+  it('collapses to an icon rail: nav icons with tooltips and the footer controls', async () => {
+    await render();
+    collapseToggle()?.click();
+    await flush();
+    expect(q('.smrt-admin-shell')?.getAttribute('data-left-state')).toBe(
+      'collapsed',
+    );
+    expect(collapseToggle()?.getAttribute('aria-label')).toBe('Expand sidebar');
+    // Nav items stay as links; the label becomes the tooltip.
+    const home = q<HTMLAnchorElement>('.smrt-tenant-nav a[href="/"]');
+    expect(home?.getAttribute('title')).toBe('Home');
+    expect(q('.smrt-tenant-nav--collapsed')).toBeTruthy();
+    expect(home?.querySelector('svg')).toBeTruthy();
+    // Voice, the assistant toggle and the user menu stay, as icons.
+    const rail = railFooter();
+    expect(rail).toBeTruthy();
+    const voice = rail?.querySelector<HTMLElement>(
+      'button[aria-label^="Voice mode"]',
+    );
+    const assistant = rail?.querySelector<HTMLElement>(
+      'button[aria-label="Assistant"]',
+    );
+    expect(voice).toBeTruthy();
+    expect(assistant?.getAttribute('aria-pressed')).toBe('true');
+    expect(follows(voice ?? null, assistant ?? null)).toBe(true);
+    expect(follows(assistant ?? null, trigger())).toBe(true);
+    expect(rail?.contains(trigger())).toBe(true);
+  });
+
+  it('keeps the assistant toggle, the chat and the user menu working while collapsed', async () => {
+    await render();
+    collapseToggle()?.click();
+    await flush();
+    const toggle = () =>
+      railFooter()?.querySelector<HTMLButtonElement>(
+        'button[aria-label="Assistant"]',
+      );
+    toggle()?.click();
+    await flush();
+    expect(panel()?.getAttribute('hidden')).not.toBeNull();
+    toggle()?.click();
+    await flush();
+    expect(panel()?.getAttribute('hidden')).toBeNull();
+    expect(q('[role="separator"][aria-label="Resize Assistant"]')).toBeTruthy();
+
+    trigger()?.click();
+    await tick();
+    expect(menuItems().map((el) => el.textContent?.trim())).toContain(
+      'Approvals2',
+    );
+    expect(q('[data-smrt-part="trigger-badge"]')?.textContent).toBe('2');
+  });
+
+  it('expands again and remembers the choice per owner', async () => {
+    await render();
+    collapseToggle()?.click();
+    await flush();
+    expect(
+      JSON.parse(localStorage.getItem(LAYOUT_KEY) ?? '{}').panels?.left,
+    ).toBe('collapsed');
+
+    unmount(component as never);
+    component = undefined;
+    container.innerHTML = '';
+    await render();
+    await flush();
+    expect(q('.smrt-admin-shell')?.getAttribute('data-left-state')).toBe(
+      'collapsed',
+    );
+
+    collapseToggle()?.click();
+    await flush();
+    expect(q('.smrt-admin-shell')?.getAttribute('data-left-state')).toBe(
+      'expanded',
+    );
+    expect(
+      JSON.parse(localStorage.getItem(LAYOUT_KEY) ?? '{}').panels?.left,
+    ).toBe('expanded');
+  });
+
+  it('does not leak the collapsed state to another owner', async () => {
+    localStorage.setItem(
+      'smrt-app-shell:layout:someone-else',
+      JSON.stringify({ panels: { left: 'collapsed' } }),
+    );
+    await render();
+    await flush();
+    expect(q('.smrt-admin-shell')?.getAttribute('data-left-state')).toBe(
+      'expanded',
+    );
+  });
+
+  it('is also there in a plugin view', async () => {
+    await render(data({ embedded: true }));
+    expect(collapseToggle()).toBeTruthy();
+  });
+});
+
+describe('the sidebar footer line', () => {
+  // jsdom applies no component CSS, so the opt-out is asserted as the shell's
+  // switch (smrt-svelte turns it into the removed hairline).
+  it('is switched off, expanded and collapsed', async () => {
+    await render();
+    const shell = () => q('.smrt-admin-shell');
+    expect(shell()?.getAttribute('data-footer-divider')).toBe('off');
+    collapseToggle()?.click();
+    await flush();
+    expect(shell()?.getAttribute('data-footer-divider')).toBe('off');
+  });
+});
+
 describe('the chat width', () => {
   const separator = () =>
     q<HTMLElement>('[role="separator"][aria-label="Resize Assistant"]');

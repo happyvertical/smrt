@@ -142,7 +142,10 @@ The chat column (`src/lib/assistant/AssistantPanel.svelte`, the `panel` of
 smrt-svelte's `AppShell` in `src/routes/+layout.svelte`, mounted for the owner)
 talks to `mountAssistantRoutes` (`src/lib/server/assistant/`). The layout is
 left sidebar, chat, content; the voice and assistant toggles and the user menu
-sit in the sidebar footer. The boundary between chat and content is a draggable
+sit in the sidebar footer. The sidebar collapses to an icon rail (nav icons with
+tooltips, the footer controls as icons) from the chevron above the footer; the
+choice is remembered per owner, and the footer has no divider line (it would sit
+beside the chat composer's top border). The boundary between chat and content is a draggable
 separator (arrow keys, double-click resets); its width and the open state are
 remembered per owner. As a plugin view (iframe, or `?embed=plugin`) there is no
 chat and no toggles: the host app is the chat. Voice mode shows as not

@@ -103,6 +103,9 @@ onMount(() => {
   settingsHref={isOwner ? '/settings' : undefined}
   accountMenu={{ items: accountItems, theme: true }}
   colorSchemeToggle={false}
+  edgeToggles={{ left: true }}
+  config={{ left: { initial: 'expanded' } }}
+  sidebarFooterDivider={false}
   phoneTabBar
   chrome={!page.route.id?.startsWith('/setup')}
   panelEnabled={plan.chat}
