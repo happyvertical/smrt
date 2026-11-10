@@ -108,16 +108,16 @@ function _getFieldType(
 }
 </script>
 
-<div class="auto-form">
-  <header class="form-header">
-    <h2 class="form-title">{title}</h2>
-    <div class="form-subtitle">
+<div class="smrt-auto-form__root" data-smrt-component="AutoForm">
+  <header class="smrt-auto-form__header" data-smrt-part="header">
+    <h2 class="smrt-auto-form__title" data-smrt-part="title">{title}</h2>
+    <div class="smrt-auto-form__subtitle" data-smrt-part="meta">
       {t(M['products.auto_form.subtitle'])}
     </div>
   </header>
 
-  <div class="form-content-shell">
-    <Form class="form-content" onsubmit={handleSubmit}>
+  <div class="smrt-auto-form__content-shell" data-smrt-part="content">
+    <Form class="smrt-auto-form__content" onsubmit={handleSubmit}>
       {#each fieldSchema as field}
         <FieldRenderer
           fieldName={field.name}
@@ -132,7 +132,7 @@ function _getFieldType(
       {/each}
 
       {#if !readonly}
-        <div class="form-actions">
+        <div class="smrt-auto-form__actions" data-smrt-part="actions">
           <Button type="submit" variant="primary">
             {submitLabel}
           </Button>
@@ -145,7 +145,7 @@ function _getFieldType(
   </div>
 
   <!-- Demo: Show current form state -->
-  <details class="form-debug">
+  <details class="smrt-auto-form__debug" data-smrt-part="details">
     <summary>{t(M['products.auto_form.debug_summary'])}</summary>
     <pre>{JSON.stringify(formData, null, 2)}</pre>
   </details>
@@ -153,68 +153,78 @@ function _getFieldType(
 
 <style>
 @layer smrt.reset, smrt.structure, smrt.theme;
-@layer smrt.theme {
-  .auto-form {
+@layer smrt.structure {
+  .smrt-auto-form__root {
     max-width: 600px;
     margin: 0 auto;
     padding: 1.5rem;
-    background: var(--smrt-color-surface);
-    border-radius: var(--smrt-radius-md);
-    box-shadow: var(--smrt-elevation-1, 0 1px 3px color-mix(in srgb, var(--smrt-color-shadow) 10%, transparent));
   }
-
-  .form-header {
+  .smrt-auto-form__header {
     margin-bottom: 2rem;
-    text-align: center;
   }
-
-  .form-title {
-    font-size: var(--smrt-typography-headline-small-size, 1.5rem);
-    font-weight: var(--smrt-typography-weight-semibold, 600);
-    color: var(--smrt-color-on-surface);
+  .smrt-auto-form__title {
     margin: 0 0 0.5rem 0;
   }
-
-  .form-subtitle {
-    font-size: var(--smrt-typography-body-medium-size, 0.875rem);
-    color: var(--smrt-color-on-surface-variant);
-    font-style: italic;
-  }
-
-  .form-content-shell :global(.form-content) {
+  .smrt-auto-form__content-shell :global([data-smrt-component="Form"]) {
     display: flex;
     flex-direction: column;
     gap: 1rem;
   }
-
-  .form-actions {
+  .smrt-auto-form__actions {
     display: flex;
     gap: 0.75rem;
     margin-top: 1.5rem;
     padding-top: 1.5rem;
-    border-top: var(--smrt-hairline);
   }
-
-  .form-debug {
+  .smrt-auto-form__debug {
     margin-top: 2rem;
     padding: 1rem;
-    background: var(--smrt-color-surface-container-low);
-    border-radius: var(--smrt-radius-sm, 0.375rem);
-    border: var(--smrt-hairline);
   }
-
-  .form-debug summary {
+  .smrt-auto-form__debug summary {
     cursor: pointer;
-    font-weight: var(--smrt-typography-weight-medium, 500);
-    color: var(--smrt-color-on-surface);
   }
-
-  .form-debug pre {
+  .smrt-auto-form__debug pre {
     margin-top: 0.5rem;
-    font-size: var(--smrt-typography-body-small-size, 0.75rem);
-    color: var(--smrt-color-on-surface-variant);
     white-space: pre-wrap;
     word-break: break-word;
   }
 }
+
+@layer smrt.theme {
+  .smrt-auto-form__root {
+    background: var(--smrt-color-surface);
+    border-radius: var(--smrt-radius-md);
+    box-shadow: var(--smrt-elevation-1, 0 1px 3px color-mix(in srgb, var(--smrt-color-shadow) 10%, transparent));
+  }
+  .smrt-auto-form__header {
+    text-align: center;
+  }
+  .smrt-auto-form__title {
+    font-size: var(--smrt-typography-headline-small-size, 1.5rem);
+    font-weight: var(--smrt-typography-weight-semibold, 600);
+    color: var(--smrt-color-on-surface);
+  }
+  .smrt-auto-form__subtitle {
+    font-size: var(--smrt-typography-body-medium-size, 0.875rem);
+    color: var(--smrt-color-on-surface-variant);
+    font-style: italic;
+  }
+  .smrt-auto-form__actions {
+    border-top: var(--smrt-hairline);
+  }
+  .smrt-auto-form__debug {
+    background: var(--smrt-color-surface-container-low);
+    border-radius: var(--smrt-radius-sm, 0.375rem);
+    border: var(--smrt-hairline);
+  }
+  .smrt-auto-form__debug summary {
+    font-weight: var(--smrt-typography-weight-medium, 500);
+    color: var(--smrt-color-on-surface);
+  }
+  .smrt-auto-form__debug pre {
+    font-size: var(--smrt-typography-body-small-size, 0.75rem);
+    color: var(--smrt-color-on-surface-variant);
+  }
+}
+
 </style>

@@ -57,20 +57,20 @@ onMount(async () => {
 <Provider webmcp={{ definitions: definition ? [definition] : [] }}>
   <AppLayout>
     {#snippet children()}
-    <div class="live-products-page">
-      <div class="page-header">
+    <div class="smrt-live-products-page__root">
+      <div class="smrt-live-products-page__header" data-smrt-part="header">
         <h1>{t(M['products.live_page.title'])}</h1>
-        <p class="page-description">{t(M['products.live_page.description'])}</p>
+        <p class="smrt-live-products-page__description" data-smrt-part="meta">{t(M['products.live_page.description'])}</p>
       </div>
 
       {#if loadError}
-        <p class="page-status" role="alert">
+        <p class="smrt-live-products-page__status" data-smrt-part="status" role="alert">
           {t(M['products.live_page.load_failed'])} {loadError}
         </p>
       {:else if LiveProductList && definition}
         <LiveProductList {definition} />
       {:else}
-        <p class="page-status" role="status" aria-live="polite">
+        <p class="smrt-live-products-page__status" data-smrt-part="status" role="status" aria-live="polite">
           {t(M['products.live_page.loading_runtime'])}
         </p>
       {/if}
@@ -81,36 +81,44 @@ onMount(async () => {
 
 <style>
 @layer smrt.reset, smrt.structure, smrt.theme;
-@layer smrt.theme {
-  .live-products-page {
+@layer smrt.structure {
+  .smrt-live-products-page__root {
     max-width: 1200px;
     margin: 0 auto;
   }
-
-  .page-header {
-    text-align: center;
+  .smrt-live-products-page__header {
     margin-bottom: 2rem;
   }
-
-  .page-header h1 {
+  .smrt-live-products-page__header h1 {
     margin: 0 0 0.5rem 0;
+  }
+  .smrt-live-products-page__description {
+    max-width: 640px;
+    margin: 0 auto;
+  }
+  .smrt-live-products-page__status {
+    padding: 2rem 1rem;
+  }
+}
+
+@layer smrt.theme {
+  .smrt-live-products-page__header {
+    text-align: center;
+  }
+  .smrt-live-products-page__header h1 {
     font-size: var(--smrt-typography-display-small-size, 2.25rem);
     font-weight: var(--smrt-typography-weight-bold, 800);
     color: var(--smrt-color-on-surface);
   }
-
-  .page-description {
-    max-width: 640px;
-    margin: 0 auto;
+  .smrt-live-products-page__description {
     font-size: var(--smrt-typography-body-large-size, 1.125rem);
     color: var(--smrt-color-on-surface-variant);
     line-height: var(--smrt-typography-body-large-line-height, 1.6);
   }
-
-  .page-status {
+  .smrt-live-products-page__status {
     text-align: center;
-    padding: 2rem 1rem;
     color: var(--smrt-color-on-surface-variant);
   }
 }
+
 </style>
