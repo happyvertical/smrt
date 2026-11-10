@@ -78,7 +78,7 @@ function highlightMatch(
 
 {#if isVisible && suggestions.length > 0}
   <div
-    class="mention-autocomplete"
+    class="smrt-mention-autocomplete__root"
     role="listbox"
     aria-label={t(M['chat.mention_autocomplete.suggestions'])} data-smrt-component="MentionAutocomplete"
   >
@@ -86,12 +86,14 @@ function highlightMatch(
       {@const parts = highlightMatch(suggestion.name, query)}
       <!-- raw-primitive-allow: role=option in a hand-rolled autocomplete listbox with roving active-index keyboard navigation (ArrowUp/Down/Enter/Tab) and onpointerenter active sync, wrapping rich content (avatar, highlighted name); no Button primitive owns this structural listbox-option pattern -->
       <button
-        class="mention-autocomplete__item"
-        class:mention-autocomplete__item--active={i === activeIndex}
+        class="smrt-mention-autocomplete__item"
+        data-smrt-part="option"
         type="button"
         role="option"
         aria-selected={i === activeIndex}
         onclick={() => onselect(suggestion.id)}
+  class:smrt-mention-autocomplete__item--active={i === activeIndex}
+
         onpointerenter={() => activeIndex = i}
       >
         <Avatar
@@ -99,8 +101,8 @@ function highlightMatch(
           avatarUrl={suggestion.avatarUrl}
           size="sm"
         />
-        <span class="mention-autocomplete__name">
-          {parts.before}<mark class="mention-autocomplete__highlight">{parts.match}</mark>{parts.after}
+        <span class="smrt-mention-autocomplete__name" data-smrt-part="label">
+          {parts.before}<mark class="smrt-mention-autocomplete__highlight" data-smrt-part="highlight">{parts.match}</mark>{parts.after}
         </span>
       </button>
     {/each}
@@ -109,8 +111,8 @@ function highlightMatch(
 
 <style>
 @layer smrt.reset, smrt.structure, smrt.theme;
-@layer smrt.theme {
-  .mention-autocomplete {
+@layer smrt.structure {
+  .smrt-mention-autocomplete__root {
     position: absolute;
     bottom: 100%;
     left: 0;
@@ -119,58 +121,62 @@ function highlightMatch(
     max-width: 320px;
     max-height: 240px;
     overflow-y: auto;
-    background: var(--smrt-color-surface);
-    border: var(--smrt-hairline);
-    border-radius: var(--smrt-radius-medium);
-    box-shadow: var(--smrt-elevation-2, 0 2px 8px rgba(0, 0, 0, 0.15));
     z-index: var(--smrt-z-index-dropdown, 1000);
     padding: var(--smrt-spacing-1);
     display: flex;
     flex-direction: column;
   }
-
-  .mention-autocomplete__item {
+  .smrt-mention-autocomplete__item {
     display: flex;
     align-items: center;
     gap: var(--smrt-spacing-2);
     width: 100%;
     padding: var(--smrt-spacing-2);
+    cursor: pointer;
+  }
+  .smrt-mention-autocomplete__name {
+    white-space: nowrap;
+    overflow: hidden;
+    text-overflow: ellipsis;
+  }
+}
+
+@layer smrt.theme {
+  .smrt-mention-autocomplete__root {
+    background: var(--smrt-color-surface);
+    border: var(--smrt-hairline);
+    border-radius: var(--smrt-radius-medium);
+    box-shadow: var(--smrt-elevation-2, 0 2px 8px rgba(0, 0, 0, 0.15));
+  }
+  .smrt-mention-autocomplete__item {
     border: none;
     background: transparent;
-    cursor: pointer;
     text-align: left;
     color: var(--smrt-color-on-surface);
     border-radius: var(--smrt-radius-small);
     transition: background var(--smrt-duration-short2, 150ms);
   }
-
-  .mention-autocomplete__item:hover,
-  .mention-autocomplete__item--active {
+  .smrt-mention-autocomplete__item:hover,
+  .smrt-mention-autocomplete__item--active {
     background: var(--smrt-color-surface-container-high);
   }
-
-  .mention-autocomplete__item:focus-visible {
+  .smrt-mention-autocomplete__item:focus-visible {
     outline: 2px solid var(--smrt-color-primary);
     outline-offset: -2px;
   }
-
-  .mention-autocomplete__name {
+  .smrt-mention-autocomplete__name {
     font: var(--smrt-typography-body-medium-font, 0.875rem/1.25 sans-serif);
-    white-space: nowrap;
-    overflow: hidden;
-    text-overflow: ellipsis;
   }
-
-  .mention-autocomplete__highlight {
+  .smrt-mention-autocomplete__highlight {
     background: transparent;
     color: var(--smrt-color-primary);
     font-weight: var(--smrt-typography-weight-semibold, 600);
   }
-
   @media (prefers-reduced-motion: reduce) {
-    .mention-autocomplete__item {
+    .smrt-mention-autocomplete__item {
       transition: none;
     }
   }
 }
+
 </style>

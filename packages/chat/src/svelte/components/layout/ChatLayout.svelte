@@ -58,9 +58,12 @@ function handlePointerUp() {
 }
 </script>
 
-<div class="chat-layout" class:chat-layout--resizing={isResizing} data-smrt-component="ChatLayout">
+<div class="smrt-chat-layout__root" data-smrt-component="ChatLayout"
+  class:smrt-chat-layout__resizing={isResizing}
+>
   <aside
-    class="chat-layout__sidebar"
+    class="smrt-chat-layout__sidebar"
+    data-smrt-part="sidebar"
     style:--smrt-chat-layout-sidebar-width="{sidebarWidth}px"
     aria-label={t(M['chat.chat_layout.rooms_label'])}
   >
@@ -75,7 +78,8 @@ function handlePointerUp() {
   <!-- raw-primitive-allow: custom drag-to-resize splitter with pointer capture (pointerdown/move/up) and ArrowLeft/ArrowRight keyboard resizing; a press-and-drag control no Button primitive owns -->
   <button
     type="button"
-    class="chat-layout__resize-handle"
+    class="smrt-chat-layout__handle"
+    data-smrt-part="handle"
     aria-label={t(M['chat.chat_layout.resize_sidebar'])}
     onpointerdown={handlePointerDown}
     onpointermove={handlePointerMove}
@@ -86,83 +90,88 @@ function handlePointerUp() {
     }}
   ></button>
 
-  <main class="chat-layout__content">
+  <main class="smrt-chat-layout__body" data-smrt-part="body">
     {@render children()}
   </main>
 </div>
 
 <style>
 @layer smrt.reset, smrt.structure, smrt.theme;
-@layer smrt.theme {
-  .chat-layout {
+@layer smrt.structure {
+  .smrt-chat-layout__root {
     display: flex;
     height: 100%;
     width: 100%;
     overflow: hidden;
-    background: var(--smrt-color-surface);
-    color: var(--smrt-color-on-surface);
   }
-
-  .chat-layout--resizing {
+  .smrt-chat-layout__resizing {
     user-select: none;
     cursor: col-resize;
   }
-
-  .chat-layout__sidebar {
+  .smrt-chat-layout__sidebar {
     flex-shrink: 0;
     width: var(--smrt-chat-layout-sidebar-width);
     display: flex;
     flex-direction: column;
-    background: var(--smrt-color-surface-container);
-    border-right: var(--smrt-hairline);
     overflow-y: auto;
     overflow-x: hidden;
   }
-
-  .chat-layout__resize-handle {
+  .smrt-chat-layout__handle {
     flex-shrink: 0;
     width: 4px;
     padding: 0;
-    border: 0;
     cursor: col-resize;
-    background: transparent;
-    transition: background var(--smrt-duration-short2, 150ms);
   }
-
-  .chat-layout__resize-handle:hover,
-  .chat-layout__resize-handle:active {
-    background: var(--smrt-color-primary);
-    opacity: 0.4;
-  }
-
-  .chat-layout__resize-handle:focus-visible {
-    outline: 2px solid var(--smrt-color-primary);
-    outline-offset: -2px;
-  }
-
-  .chat-layout__content {
+  .smrt-chat-layout__body {
     flex: 1;
     display: flex;
     flex-direction: column;
     min-width: 0;
     overflow: hidden;
   }
-
   @media (max-width: 600px) {
-    .chat-layout {
+    .smrt-chat-layout__root {
       flex-direction: column;
     }
-
-    .chat-layout__sidebar {
+    .smrt-chat-layout__sidebar {
       width: 100%;
       max-height: 14rem;
-      border-right: 0;
-      border-bottom: var(--smrt-hairline);
     }
-
-    .chat-layout__resize-handle {
+    .smrt-chat-layout__handle {
       display: none;
     }
   }
 }
+
+@layer smrt.theme {
+  .smrt-chat-layout__root {
+    background: var(--smrt-color-surface);
+    color: var(--smrt-color-on-surface);
+  }
+  .smrt-chat-layout__sidebar {
+    background: var(--smrt-color-surface-container);
+    border-right: var(--smrt-hairline);
+  }
+  .smrt-chat-layout__handle {
+    border: 0;
+    background: transparent;
+    transition: background var(--smrt-duration-short2, 150ms);
+  }
+  .smrt-chat-layout__handle:hover,
+  .smrt-chat-layout__handle:active {
+    background: var(--smrt-color-primary);
+    opacity: 0.4;
+  }
+  .smrt-chat-layout__handle:focus-visible {
+    outline: 2px solid var(--smrt-color-primary);
+    outline-offset: -2px;
+  }
+  @media (max-width: 600px) {
+    .smrt-chat-layout__sidebar {
+      border-right: 0;
+      border-bottom: var(--smrt-hairline);
+    }
+  }
+}
+
 </style>

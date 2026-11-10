@@ -64,20 +64,20 @@ function handleScroll(event: Event) {
 </script>
 
 <div
-  class="message-list"
+  class="smrt-message-list__root"
   bind:this={scrollContainer}
   onscroll={handleScroll}
   role="log"
   aria-label={t(M['chat.message_list.messages_label'])} data-smrt-component="MessageList"
 >
   {#if messages.length === 0}
-    <div class="message-list__empty">
+    <div class="smrt-message-list__empty" data-smrt-part="empty">
       <span>{t(M['chat.message_list.no_messages'])}</span>
     </div>
   {:else}
     {#each groupedMessages as group}
-      <div class="message-list__date-separator" role="separator">
-        <span class="message-list__date-label">{group.dateLabel}</span>
+      <div class="smrt-message-list__separator" data-smrt-part="separator" role="separator">
+        <span class="smrt-message-list__label" data-smrt-part="label">{group.dateLabel}</span>
       </div>
       {#each group.messages as message (message.id)}
         <MessageItem
@@ -93,8 +93,8 @@ function handleScroll(event: Event) {
 
 <style>
 @layer smrt.reset, smrt.structure, smrt.theme;
-@layer smrt.theme {
-  .message-list {
+@layer smrt.structure {
+  .smrt-message-list__root {
     display: flex;
     flex-direction: column;
     gap: var(--smrt-spacing-2, 0.375rem);
@@ -103,30 +103,35 @@ function handleScroll(event: Event) {
     padding: var(--smrt-spacing-4, 1rem) 0;
     min-height: 0;
   }
-
-  .message-list__empty {
+  .smrt-message-list__empty {
     display: flex;
     align-items: center;
     justify-content: center;
     flex: 1;
-    color: var(--smrt-color-on-surface-variant);
-    font-size: var(--smrt-typography-body-medium-size, 0.875rem);
   }
-
-  .message-list__date-separator {
+  .smrt-message-list__separator {
     display: flex;
     align-items: center;
     justify-content: center;
     padding: var(--smrt-spacing-3, 0.75rem) var(--smrt-spacing-4, 1rem);
   }
-
-  .message-list__date-label {
+  .smrt-message-list__label {
     padding: var(--smrt-spacing-1, 0.25rem) var(--smrt-spacing-3, 0.75rem);
+    white-space: nowrap;
+  }
+}
+
+@layer smrt.theme {
+  .smrt-message-list__empty {
+    color: var(--smrt-color-on-surface-variant);
+    font-size: var(--smrt-typography-body-medium-size, 0.875rem);
+  }
+  .smrt-message-list__label {
     font-size: var(--smrt-typography-body-small-size, 0.75rem);
     color: var(--smrt-color-on-surface-variant);
     background: var(--smrt-color-surface-container);
     border-radius: var(--smrt-radius-full);
-    white-space: nowrap;
   }
 }
+
 </style>

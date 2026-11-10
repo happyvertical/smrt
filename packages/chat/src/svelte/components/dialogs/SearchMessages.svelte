@@ -81,7 +81,7 @@ function highlightMatch(text: string, search: string): string {
   const escaped = search.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
   return safe.replace(
     new RegExp(`(${escaped})`, 'gi'),
-    '<mark class="highlight">$1</mark>',
+    '<mark class="smrt-search-messages__highlight">$1</mark>',
   );
 }
 
@@ -111,21 +111,20 @@ $effect(() => {
 
 {#if isOpen}
   <div
-    class="search-panel"
+    class="smrt-search-messages__root"
     role="search"
     aria-label={t(M['chat.search_messages.search'])} data-smrt-component="SearchMessages"
   >
-    <div class="search-panel__header">
-      <h2 class="search-panel__title">{t(M['chat.search_messages.title'])}</h2>
+    <div class="smrt-search-messages__header" data-smrt-part="header">
+      <h2 class="smrt-search-messages__title" data-smrt-part="title">{t(M['chat.search_messages.title'])}</h2>
       <Button
         variant="ghost"
         size="sm"
-        class="close-btn"
         type="button"
         onclick={handleClose}
         aria-label={t(M['chat.search_messages.close'])}
       >
-        <svg class="close-btn__icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
+        <svg class="smrt-search-messages__close-icon" data-smrt-part="icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
           <path d="M18 6 6 18" />
           <path d="m6 6 12 12" />
         </svg>
@@ -133,11 +132,10 @@ $effect(() => {
     </div>
 
     <Form
-      class="search-form"
       onsubmit={(e) => { e.preventDefault(); handleSubmit(); }}
     >
-      <div class="search-input-wrap">
-        <svg class="search-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
+      <div class="smrt-search-messages__input-wrap" data-smrt-part="input">
+        <svg class="smrt-search-messages__search-icon" data-smrt-part="icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
           <circle cx="11" cy="11" r="8" />
           <path d="m21 21-4.35-4.35" />
         </svg>
@@ -145,7 +143,6 @@ $effect(() => {
           bind:value={query}
           id="search-messages-input"
           type="search"
-          class="search-input"
           placeholder={t(M['chat.search_messages.input_placeholder'])}
           autocomplete="off"
           aria-label={t(M['chat.search_messages.query'])}
@@ -154,12 +151,11 @@ $effect(() => {
           <Button
             variant="ghost"
             size="sm"
-            class="clear-btn"
             type="button"
             onclick={() => { query = ''; focusSearchInput(); }}
             aria-label={t(M['chat.search_messages.clear'])}
           >
-            <svg class="clear-btn__icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
+            <svg class="smrt-search-messages__clear-icon" data-smrt-part="icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
               <path d="M18 6 6 18" />
               <path d="m6 6 12 12" />
             </svg>
@@ -168,32 +164,33 @@ $effect(() => {
       </div>
     </Form>
 
-    <div class="search-results" aria-label={t(M['chat.search_messages.results'])}>
+    <div class="smrt-search-messages__results" data-smrt-part="body" aria-label={t(M['chat.search_messages.results'])}>
       {#if hasResults}
-        <p class="results-count">
+        <p class="smrt-search-messages__count" data-smrt-part="count">
           {t(M['chat.search_messages.results_count'], { count: results.length, plural: results.length !== 1 ? 's' : '' })}
         </p>
-        <ul class="results-list" aria-label={t(M['chat.search_messages.results'])}>
+        <ul class="smrt-search-messages__list" data-smrt-part="list" aria-label={t(M['chat.search_messages.results'])}>
           {#each results as message (message.id)}
-            <li class="results-list__item">
+            <li class="smrt-search-messages__item" data-smrt-part="item">
               <!-- raw-primitive-allow: large pressable search-result card wrapping rich content (avatar, sender, date, multi-line highlighted message excerpt); no Button primitive owns this structural selection-card pattern -->
               <button
-                class="result-item"
+                class="smrt-search-messages__result"
+                data-smrt-part="result"
                 type="button"
                 onclick={() => onselectresult?.(message.id)}
               >
-                <div class="result-item__header">
+                <div class="smrt-search-messages__result-header" data-smrt-part="result-header">
                   {#if message.senderAvatarUrl}
-                    <img class="result-item__avatar" src={message.senderAvatarUrl} alt="" />
+                    <img class="smrt-search-messages__avatar" data-smrt-part="avatar" src={message.senderAvatarUrl} alt="" />
                   {:else}
-                    <span class="result-item__avatar-placeholder">
+                    <span class="smrt-search-messages__avatar-placeholder" data-smrt-part="avatar">
                       {message.senderName.charAt(0).toUpperCase()}
                     </span>
                   {/if}
-                  <span class="result-item__sender">{message.senderName}</span>
-                  <span class="result-item__date">{formatDate(message.createdAt)}</span>
+                  <span class="smrt-search-messages__sender" data-smrt-part="label">{message.senderName}</span>
+                  <span class="smrt-search-messages__date" data-smrt-part="time">{formatDate(message.createdAt)}</span>
                 </div>
-                <p class="result-item__content">
+                <p class="smrt-search-messages__message" data-smrt-part="message">
                   <!-- eslint-disable-next-line svelte/no-at-html-tags -->
                   {@html highlightMatch(
                     message.content.length > 200
@@ -207,13 +204,13 @@ $effect(() => {
           {/each}
         </ul>
       {:else if hasQuery}
-        <div class="search-empty" role="status">
-          <p class="search-empty__text">{t(M['chat.search_messages.no_results'], { query })}</p>
-          <p class="search-empty__hint">{t(M['chat.search_messages.no_results_hint'])}</p>
+        <div class="smrt-search-messages__empty" data-smrt-part="empty" role="status">
+          <p class="smrt-search-messages__empty-text" data-smrt-part="message">{t(M['chat.search_messages.no_results'], { query })}</p>
+          <p class="smrt-search-messages__empty-hint" data-smrt-part="hint">{t(M['chat.search_messages.no_results_hint'])}</p>
         </div>
       {:else}
-        <div class="search-empty" role="status">
-          <p class="search-empty__text">{t(M['chat.search_messages.empty'])}</p>
+        <div class="smrt-search-messages__empty" data-smrt-part="empty" role="status">
+          <p class="smrt-search-messages__empty-text" data-smrt-part="message">{t(M['chat.search_messages.empty'])}</p>
         </div>
       {/if}
     </div>
@@ -222,254 +219,269 @@ $effect(() => {
 
 <style>
 @layer smrt.reset, smrt.structure, smrt.theme;
-@layer smrt.theme {
-  .search-panel {
+@layer smrt.structure {
+  .smrt-search-messages__root {
     display: flex;
     flex-direction: column;
     width: 320px;
     height: 100%;
-    background: var(--smrt-color-surface);
-    border-left: var(--smrt-hairline);
     overflow: hidden;
   }
-
-  .search-panel__header {
+  .smrt-search-messages__header {
     display: flex;
     align-items: center;
     justify-content: space-between;
     padding: 0.75rem 1rem;
-    border-bottom: var(--smrt-hairline);
   }
-
-  .search-panel__title {
+  .smrt-search-messages__title {
     margin: 0;
-    font: var(--smrt-typography-title-small-font, 600 0.875rem / 1.25 sans-serif);
-    color: var(--smrt-color-on-surface);
   }
-
   /* :global() pierces into the Button child's rendered <button> (see #1589). */
-  .search-panel__header :global(.close-btn) {
+  .smrt-search-messages__header :global([data-smrt-component="Button"]) {
     width: 1.75rem;
     height: 1.75rem;
     padding: 0;
-    background: none;
-    border-radius: var(--smrt-radius-medium, 0.5rem);
-    color: var(--smrt-color-on-surface-variant);
-    transition: background var(--smrt-duration-short2, 150ms);
   }
-
-  .search-panel__header :global(.close-btn:hover) {
-    background: var(--smrt-color-surface-variant);
-  }
-
-  .close-btn__icon {
+  .smrt-search-messages__close-icon {
     width: 1rem;
     height: 1rem;
   }
-
   /* :global() targets the Form primitive's rendered <form> (see #1589 scoping trap). */
-  :global(.search-form) {
+  .smrt-search-messages__root :global([data-smrt-component="Form"]) {
     padding: 0.75rem 1rem;
-    border-bottom: var(--smrt-hairline);
   }
-
-  .search-input-wrap {
+  .smrt-search-messages__input-wrap {
     display: flex;
     align-items: center;
     gap: 0.5rem;
     padding: 0.5rem 0.75rem;
-    border: var(--smrt-hairline-strong);
-    border-radius: var(--smrt-radius-large, 1rem);
-    background: var(--smrt-color-surface-container);
-    transition: border-color var(--smrt-duration-short2, 150ms);
   }
-
-  .search-input-wrap:focus-within {
-    border-color: var(--smrt-color-primary);
-    box-shadow: 0 0 0 1px var(--smrt-color-primary);
-  }
-
-  .search-icon {
+  .smrt-search-messages__search-icon {
     flex-shrink: 0;
     width: 1.125rem;
     height: 1.125rem;
-    color: var(--smrt-color-on-surface-variant);
   }
-
-  /* The Input primitive sits inside the bordered .search-input-wrap, which owns
-     the border + focus-within ring — so neutralize the primitive's own chrome
-     (border/background/padding/box-shadow) and let it render borderless. */
-  :global(.search-input) {
+  /* The Input primitive sits inside the bordered .smrt-search-messages__input-wrap, which owns
+  the border + focus-within ring — so neutralize the primitive's own chrome
+  (border/background/padding/box-shadow) and let it render borderless. */
+  .smrt-search-messages__input-wrap :global([data-smrt-component="Input"]) {
     flex: 1;
-    border: none;
-    outline: none;
     padding: 0;
-    background: transparent;
-    box-shadow: none;
-    font: var(--smrt-typography-body-medium-font, 0.875rem / 1.25 sans-serif);
-    color: var(--smrt-color-on-surface);
   }
-
-  :global(.search-input:focus) {
-    border: none;
-    outline: none;
-    box-shadow: none;
-  }
-
   /* :global() pierces into the Button child's rendered <button> (see #1589). */
-  .search-input-wrap :global(.clear-btn) {
+  .smrt-search-messages__input-wrap :global([data-smrt-component="Button"]) {
     flex-shrink: 0;
     width: 1.25rem;
     height: 1.25rem;
     padding: 0;
-    background: none;
-    border-radius: var(--smrt-radius-full);
-    color: var(--smrt-color-on-surface-variant);
   }
-
-  .search-input-wrap :global(.clear-btn:hover) {
-    background: none;
-    color: var(--smrt-color-on-surface);
-  }
-
-  .clear-btn__icon {
+  .smrt-search-messages__clear-icon {
     width: 0.875rem;
     height: 0.875rem;
   }
-
-  .search-results {
+  .smrt-search-messages__results {
     flex: 1;
     overflow-y: auto;
     padding: 0.5rem 0;
   }
-
-  .results-list {
+  .smrt-search-messages__list {
     list-style: none;
     margin: 0;
     padding: 0;
   }
-
-  .results-list__item {
+  .smrt-search-messages__item {
     margin: 0;
     padding: 0;
   }
-
-  .results-count {
+  .smrt-search-messages__count {
     margin: 0;
     padding: 0.375rem 1rem;
-    font: var(--smrt-typography-label-small-font, 500 0.6875rem / 1 sans-serif);
-    color: var(--smrt-color-on-surface-variant);
-    text-transform: uppercase;
-    letter-spacing: 0.05em;
   }
-
-  .result-item {
+  .smrt-search-messages__result {
     display: flex;
     flex-direction: column;
     gap: 0.25rem;
     width: 100%;
     padding: 0.75rem 1rem;
-    border: none;
-    background: none;
     cursor: pointer;
-    text-align: left;
-    transition: background var(--smrt-duration-short2, 150ms);
   }
-
-  .result-item:hover {
-    background: var(--smrt-color-surface-variant);
-  }
-
-  .result-item:focus-visible {
-    outline: 2px solid var(--smrt-color-primary);
-    outline-offset: -2px;
-  }
-
-  .result-item__header {
+  .smrt-search-messages__result-header {
     display: flex;
     align-items: center;
     gap: 0.375rem;
   }
-
-  .result-item__avatar {
+  .smrt-search-messages__avatar {
     width: 1.25rem;
     height: 1.25rem;
-    border-radius: var(--smrt-radius-full);
     object-fit: cover;
   }
-
-  .result-item__avatar-placeholder {
+  .smrt-search-messages__avatar-placeholder {
     width: 1.25rem;
     height: 1.25rem;
-    border-radius: var(--smrt-radius-full);
-    background: var(--smrt-color-primary-container);
-    color: var(--smrt-color-on-primary-container);
     display: inline-flex;
     align-items: center;
     justify-content: center;
-    font: var(--smrt-typography-label-small-font, 500 0.6875rem / 1 sans-serif);
   }
-
-  .result-item__sender {
-    font: var(--smrt-typography-label-medium-font, 500 0.75rem / 1 sans-serif);
-    color: var(--smrt-color-on-surface);
-  }
-
-  .result-item__date {
+  .smrt-search-messages__date {
     margin-left: auto;
-    font: var(--smrt-typography-label-small-font, 500 0.6875rem / 1 sans-serif);
-    color: var(--smrt-color-on-surface-variant);
   }
-
-  .result-item__content {
+  .smrt-search-messages__message {
     margin: 0;
-    font: var(--smrt-typography-body-small-font, 0.75rem / 1.25 sans-serif);
-    color: var(--smrt-color-on-surface-variant);
     overflow: hidden;
     display: -webkit-box;
+    -webkit-box-orient: vertical;
     -webkit-line-clamp: 3;
     line-clamp: 3;
-    -webkit-box-orient: vertical;
   }
-
-  .result-item__content :global(.highlight) {
-    background: var(--smrt-color-tertiary-container);
-    color: var(--smrt-color-on-tertiary-container);
-    border-radius: var(--smrt-radius-sm);
+  .smrt-search-messages__message :global(.smrt-search-messages__highlight) {
     padding: 0 0.125rem;
   }
-
-  .search-empty {
+  .smrt-search-messages__empty {
     display: flex;
     flex-direction: column;
     align-items: center;
     justify-content: center;
     gap: 0.25rem;
     padding: 2rem 1rem;
+  }
+  .smrt-search-messages__empty-text {
+    margin: 0;
+  }
+  .smrt-search-messages__empty-hint {
+    margin: 0;
+  }
+}
+
+@layer smrt.theme {
+  .smrt-search-messages__root {
+    background: var(--smrt-color-surface);
+    border-left: var(--smrt-hairline);
+  }
+  .smrt-search-messages__header {
+    border-bottom: var(--smrt-hairline);
+  }
+  .smrt-search-messages__title {
+    font: var(--smrt-typography-title-small-font, 600 0.875rem / 1.25 sans-serif);
+    color: var(--smrt-color-on-surface);
+  }
+  /* :global() pierces into the Button child's rendered <button> (see #1589). */
+  .smrt-search-messages__header :global([data-smrt-component="Button"]) {
+    background: none;
+    border-radius: var(--smrt-radius-medium, 0.5rem);
+    color: var(--smrt-color-on-surface-variant);
+    transition: background var(--smrt-duration-short2, 150ms);
+  }
+  .smrt-search-messages__header :global([data-smrt-component="Button"]:hover) {
+    background: var(--smrt-color-surface-variant);
+  }
+  /* :global() targets the Form primitive's rendered <form> (see #1589 scoping trap). */
+  .smrt-search-messages__root :global([data-smrt-component="Form"]) {
+    border-bottom: var(--smrt-hairline);
+  }
+  .smrt-search-messages__input-wrap {
+    border: var(--smrt-hairline-strong);
+    border-radius: var(--smrt-radius-large, 1rem);
+    background: var(--smrt-color-surface-container);
+    transition: border-color var(--smrt-duration-short2, 150ms);
+  }
+  .smrt-search-messages__input-wrap:focus-within {
+    border-color: var(--smrt-color-primary);
+    box-shadow: 0 0 0 1px var(--smrt-color-primary);
+  }
+  .smrt-search-messages__search-icon {
+    color: var(--smrt-color-on-surface-variant);
+  }
+  /* The Input primitive sits inside the bordered .smrt-search-messages__input-wrap, which owns
+  the border + focus-within ring — so neutralize the primitive's own chrome
+  (border/background/padding/box-shadow) and let it render borderless. */
+  .smrt-search-messages__input-wrap :global([data-smrt-component="Input"]) {
+    border: none;
+    outline: none;
+    background: transparent;
+    box-shadow: none;
+    font: var(--smrt-typography-body-medium-font, 0.875rem / 1.25 sans-serif);
+    color: var(--smrt-color-on-surface);
+  }
+  .smrt-search-messages__input-wrap :global([data-smrt-component="Input"]:focus) {
+    border: none;
+    outline: none;
+    box-shadow: none;
+  }
+  /* :global() pierces into the Button child's rendered <button> (see #1589). */
+  .smrt-search-messages__input-wrap :global([data-smrt-component="Button"]) {
+    background: none;
+    border-radius: var(--smrt-radius-full);
+    color: var(--smrt-color-on-surface-variant);
+  }
+  .smrt-search-messages__input-wrap :global([data-smrt-component="Button"]:hover) {
+    background: none;
+    color: var(--smrt-color-on-surface);
+  }
+  .smrt-search-messages__count {
+    font: var(--smrt-typography-label-small-font, 500 0.6875rem / 1 sans-serif);
+    color: var(--smrt-color-on-surface-variant);
+    text-transform: uppercase;
+    letter-spacing: 0.05em;
+  }
+  .smrt-search-messages__result {
+    border: none;
+    background: none;
+    text-align: left;
+    transition: background var(--smrt-duration-short2, 150ms);
+  }
+  .smrt-search-messages__result:hover {
+    background: var(--smrt-color-surface-variant);
+  }
+  .smrt-search-messages__result:focus-visible {
+    outline: 2px solid var(--smrt-color-primary);
+    outline-offset: -2px;
+  }
+  .smrt-search-messages__avatar {
+    border-radius: var(--smrt-radius-full);
+  }
+  .smrt-search-messages__avatar-placeholder {
+    border-radius: var(--smrt-radius-full);
+    background: var(--smrt-color-primary-container);
+    color: var(--smrt-color-on-primary-container);
+    font: var(--smrt-typography-label-small-font, 500 0.6875rem / 1 sans-serif);
+  }
+  .smrt-search-messages__sender {
+    font: var(--smrt-typography-label-medium-font, 500 0.75rem / 1 sans-serif);
+    color: var(--smrt-color-on-surface);
+  }
+  .smrt-search-messages__date {
+    font: var(--smrt-typography-label-small-font, 500 0.6875rem / 1 sans-serif);
+    color: var(--smrt-color-on-surface-variant);
+  }
+  .smrt-search-messages__message {
+    font: var(--smrt-typography-body-small-font, 0.75rem / 1.25 sans-serif);
+    color: var(--smrt-color-on-surface-variant);
+  }
+  .smrt-search-messages__message :global(.smrt-search-messages__highlight) {
+    background: var(--smrt-color-tertiary-container);
+    color: var(--smrt-color-on-tertiary-container);
+    border-radius: var(--smrt-radius-sm);
+  }
+  .smrt-search-messages__empty {
     text-align: center;
   }
-
-  .search-empty__text {
-    margin: 0;
+  .smrt-search-messages__empty-text {
     font: var(--smrt-typography-body-medium-font, 0.875rem / 1.25 sans-serif);
     color: var(--smrt-color-on-surface-variant);
   }
-
-  .search-empty__hint {
-    margin: 0;
+  .smrt-search-messages__empty-hint {
     font: var(--smrt-typography-body-small-font, 0.75rem / 1.25 sans-serif);
     color: var(--smrt-color-outline);
   }
-
   @media (prefers-reduced-motion: reduce) {
-    .result-item,
-    .search-input-wrap {
+    .smrt-search-messages__result,
+    .smrt-search-messages__input-wrap {
       transition: none;
     }
-
-    .search-panel__header :global(.close-btn) {
+    .smrt-search-messages__header :global([data-smrt-component="Button"]) {
       transition: none;
     }
   }
 }
+
 </style>
