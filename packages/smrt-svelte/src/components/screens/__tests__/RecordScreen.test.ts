@@ -232,7 +232,7 @@ describe('RecordScreen (edit)', () => {
       expect(node).not.toBeNull();
       return node as HTMLElement;
     });
-    await waitFor(() => expect(sheet).toHaveClass('open'));
+    await waitFor(() => expect(sheet).toHaveClass('smrt-phone-sheet__open'));
     expect(within(sheet).getByLabelText(/Task name/)).toHaveValue('Write docs');
     expect(screen.queryByRole('complementary')).toBeNull();
 
@@ -249,7 +249,7 @@ describe('RecordScreen (edit)', () => {
     await waitFor(() => {
       const sheet = document.querySelector('[data-testid="phone-sheet"]');
       expect(sheet).not.toBeNull();
-      expect(sheet).not.toHaveClass('open');
+      expect(sheet).not.toHaveClass('smrt-phone-sheet__open');
     });
     expect(screen.queryByLabelText(/Task name/)).toBeNull();
   });
