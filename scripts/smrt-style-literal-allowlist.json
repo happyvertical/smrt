@@ -91,7 +91,7 @@
     "packages/content/src/svelte/components/ContentReviewStatusTray.svelte": 2,
     "packages/content/src/svelte/components/ContentTitleField.svelte": 4,
     "packages/content/src/svelte/components/ContentTransparencyTool.svelte": 1,
-    "packages/content/src/svelte/routes/ContentContributionsRoute.svelte": 6,
+    "packages/content/src/svelte/routes/ContentContributionsRoute.svelte": 7,
     "packages/content/src/svelte/routes/ContentFactsRoute.svelte": 4,
     "packages/content/src/svelte/routes/ContentGovernanceRoute.svelte": 3,
     "packages/content/src/svelte/routes/ContentWorkspaceRoute.svelte": 5,
