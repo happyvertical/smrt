@@ -120,7 +120,7 @@ function headingTag(depth = 2) {
 }
 </script>
 
-<div class="markdown-document">
+<div class="smrt-markdown-document__root">
   {#each blocks as block}
     {#if block.type === 'heading'}
       <svelte:element this={headingTag(block.depth)}>{block.text}</svelte:element>
@@ -128,7 +128,7 @@ function headingTag(depth = 2) {
       <p>{block.text}</p>
     {:else if block.type === 'code'}
       {#if block.language}
-        <p class="code-language">{block.language}</p>
+        <p class="smrt-markdown-document__language" data-smrt-part="language">{block.language}</p>
       {/if}
       <pre><code>{block.text}</code></pre>
     {:else if block.type === 'list' && block.ordered}
@@ -149,55 +149,57 @@ function headingTag(depth = 2) {
 
 <style>
 @layer smrt.reset, smrt.structure, smrt.theme;
-@layer smrt.theme {
-  .markdown-document {
+@layer smrt.structure {
+  .smrt-markdown-document__root {
     display: grid;
     gap: 0.85rem;
-    line-height: 1.62;
   }
-
-  .markdown-document :global(h2),
-  .markdown-document :global(h3),
-  .markdown-document :global(h4),
-  .markdown-document :global(h5),
-  .markdown-document p,
-  .markdown-document ul,
-  .markdown-document ol {
+  .smrt-markdown-document__root :global(h2),
+  .smrt-markdown-document__root :global(h3),
+  .smrt-markdown-document__root :global(h4),
+  .smrt-markdown-document__root :global(h5),
+  .smrt-markdown-document__root p,
+  .smrt-markdown-document__root ul,
+  .smrt-markdown-document__root ol {
     margin: 0;
   }
+  .smrt-markdown-document__root ul,
+  .smrt-markdown-document__root ol {
+    padding-left: 1.2rem;
+  }
+  .smrt-markdown-document__root pre {
+    margin: 0;
+    overflow: auto;
+    padding: 0.85rem;
+  }
+}
 
-  .markdown-document :global(h2),
-  .markdown-document :global(h3),
-  .markdown-document :global(h4),
-  .markdown-document :global(h5) {
+@layer smrt.theme {
+  .smrt-markdown-document__root {
+    line-height: 1.62;
+  }
+  .smrt-markdown-document__root :global(h2),
+  .smrt-markdown-document__root :global(h3),
+  .smrt-markdown-document__root :global(h4),
+  .smrt-markdown-document__root :global(h5) {
     color: var(--smrt-color-on-surface);
     line-height: 1.25;
   }
-
-  .markdown-document p,
-  .markdown-document li {
+  .smrt-markdown-document__root p,
+  .smrt-markdown-document__root li {
     color: var(--smrt-color-on-surface-variant);
   }
-
-  .markdown-document ul,
-  .markdown-document ol {
-    padding-left: 1.2rem;
-  }
-
-  .markdown-document pre {
-    margin: 0;
-    overflow: auto;
+  .smrt-markdown-document__root pre {
     border: var(--smrt-hairline);
     border-radius: 6px;
     background: var(--smrt-color-surface-container-low);
     color: var(--smrt-color-on-surface);
-    padding: 0.85rem;
   }
-
-  .code-language {
+  .smrt-markdown-document__language {
     color: var(--smrt-color-primary);
     font-size: 0.78rem;
     text-transform: uppercase;
   }
 }
+
 </style>
