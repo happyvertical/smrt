@@ -259,19 +259,19 @@ function handleInput(e: Event) {
 </script>
 
 <div 
-  class="smrt-text-field" 
-  class:smrt-mode={isSmrt} 
-  class:focused={isFocused} 
-  class:invalid={showInvalid}
-  class:disabled
-  class:has-value={!!value}
-  class:listening={isHolding} data-smrt-component="TextInput"
+  class="smrt-text-input__root" 
+  class:smrt-text-input__mode={isSmrt} 
+  class:smrt-text-input__focused={isFocused} 
+  class:smrt-text-input__invalid={showInvalid}
+  class:smrt-text-input__disabled={disabled}
+  class:smrt-text-input__has-value={!!value}
+  class:smrt-text-input__listening={isHolding} data-smrt-component="TextInput"
 >
   {#if label}
     <FieldLabel id={labelId} for={name} {label} {required} />
   {/if}
-  <div class="container">
-    <div class="content">
+  <div class="smrt-text-input__container">
+    <div class="smrt-text-input__content">
       <input
         bind:this={inputEl}
         id={name}
@@ -282,7 +282,8 @@ function handleInput(e: Event) {
         {value}
         disabled={disabled || isProcessing}
         {required}
-        class="input"
+        class="smrt-text-input__input"
+        data-smrt-part="input"
         aria-invalid={showInvalid ? 'true' : undefined}
         aria-describedby={`${name}-supporting`}
         oninput={handleInput}
@@ -299,8 +300,9 @@ function handleInput(e: Event) {
     {#if isSmrt}
       <button
         type="button"
-        class="mic-btn"
-        class:active={isHolding}
+        class="smrt-text-input__mic-btn"
+        class:smrt-text-input__active={isHolding}
+        data-smrt-part="trigger"
         {disabled}
         use:ripple
         onclick={handleMicClick}
@@ -316,132 +318,140 @@ function handleInput(e: Event) {
       </button>
     {/if}
 
-    <div class="active-indicator"></div>
+    <div class="smrt-text-input__active-indicator"></div>
   </div>
 
-  <div id={`${name}-supporting`} class="supporting-text" aria-live="polite">
+  <div id={`${name}-supporting`} class="smrt-text-input__supporting-text" data-smrt-part="hint" aria-live="polite">
     {#if isInitializing}
-      <span class="info">{t(M['ui.text_input.downloading_model'], { progress: downloadProgress })}</span>
+      <span class="smrt-text-input__info">{t(M['ui.text_input.downloading_model'], { progress: downloadProgress })}</span>
     {:else if isHolding}
-      <span class="success">Recording...</span>
+      <span class="smrt-text-input__success" data-smrt-part="status">Recording...</span>
     {:else if isProcessing}
-      <span class="info">Processing...</span>
+      <span class="smrt-text-input__info">Processing...</span>
     {:else if processError}
-      <span class="error">{processError}</span>
+      <span class="smrt-text-input__error" data-smrt-part="error">{processError}</span>
     {:else if showInvalid}
-      <span class="error">{t(M['ui.text_input.invalid_email'])}</span>
+      <span class="smrt-text-input__error" data-smrt-part="error">{t(M['ui.text_input.invalid_email'])}</span>
     {:else if description && isFocused}
-      <span class="info">{description}</span>
+      <span class="smrt-text-input__info">{description}</span>
     {/if}
   </div>
 </div>
 
 <style>
 @layer smrt.reset, smrt.structure, smrt.theme;
-@layer smrt.theme {
-  .smrt-text-field {
-    --smrt-text-input-field-color: var(--smrt-color-on-surface-variant);
-    --smrt-text-input-field-bg: var(--smrt-color-surface-container-highest);
-    --smrt-text-input-field-active: var(--smrt-color-primary);
-    
+@layer smrt.structure {
+  .smrt-text-input__root {
     display: flex;
     flex-direction: column;
     width: 100%;
     min-width: 0;
   }
-
-  .container {
+  .smrt-text-input__container {
     position: relative;
     display: flex;
     align-items: center;
-    background-color: var(--smrt-color-surface);
-    border: var(--smrt-hairline);
-    border-radius: var(--smrt-radius-small);
     min-height: 40px;
     padding: 0 var(--smrt-spacing-3);
-    transition: background-color var(--smrt-duration-short3, 200ms) var(--smrt-easing-standard, cubic-bezier(0.2, 0, 0, 1));
   }
-
-  .container:hover {
-    background-color: var(--smrt-color-surface-container-high);
-  }
-
-  .content {
+  .smrt-text-input__content {
     flex: 1;
     display: flex;
     flex-direction: column;
     justify-content: center;
     height: 100%;
-      }
+  }
+  .smrt-text-input__input {
+    width: 100%;
+    padding: 0;
+    margin: 0;
+    height: 24px;
+  }
+  .smrt-text-input__active-indicator {
+    display: none;
+  }
+  .smrt-text-input__mic-btn {
+    width: 40px;
+    height: 40px;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    cursor: pointer;
+    margin-right: -8px;
+  }
+  .smrt-text-input__supporting-text {
+    padding: var(--smrt-spacing-1) 0 0;
+    min-height: 16px;
+  }
+  .smrt-text-input__disabled {
+    pointer-events: none;
+  }
+}
 
-
-  .input {
+@layer smrt.theme {
+  .smrt-text-input__root {
+    --smrt-text-input-field-color: var(--smrt-color-on-surface-variant);
+    --smrt-text-input-field-bg: var(--smrt-color-surface-container-highest);
+    --smrt-text-input-field-active: var(--smrt-color-primary);
+  }
+  .smrt-text-input__container {
+    background-color: var(--smrt-color-surface);
+    border: var(--smrt-hairline);
+    border-radius: var(--smrt-radius-small);
+    transition: background-color var(--smrt-duration-short3, 200ms) var(--smrt-easing-standard, cubic-bezier(0.2, 0, 0, 1));
+  }
+  .smrt-text-input__container:hover {
+    background-color: var(--smrt-color-surface-container-high);
+  }
+  .smrt-text-input__input {
     border: none;
     background: transparent;
     font-size: var(--smrt-typography-body-large-size, 1rem);
     line-height: var(--smrt-typography-body-large-line-height, 1.5);
     letter-spacing: var(--smrt-typography-body-large-tracking);
     color: var(--smrt-color-on-surface);
-    width: 100%;
-    padding: 0;
-    margin: 0;
-    height: 24px;
   }
-
-  .input:focus {
+  .smrt-text-input__input:focus {
     outline: none;
   }
-
-  .active-indicator { display: none; }
-
-  .focused .container {
+  .smrt-text-input__focused .smrt-text-input__container {
     border-color: var(--smrt-text-input-field-active);
     box-shadow: 0 0 0 3px color-mix(in srgb, var(--smrt-text-input-field-active) 10%, transparent);
   }
-
-  .mic-btn {
-    width: 40px;
-    height: 40px;
-    display: flex;
-    align-items: center;
-    justify-content: center;
+  .smrt-text-input__mic-btn {
     border: none;
     background: transparent;
     color: var(--smrt-text-input-field-color);
     border-radius: var(--smrt-radius-full);
-    cursor: pointer;
-    margin-right: -8px;
     transition: all 200ms;
   }
-
-  .mic-btn.active {
+  .smrt-text-input__mic-btn.smrt-text-input__active {
     color: var(--smrt-color-primary);
     background-color: var(--smrt-color-primary-container);
   }
-
-  .supporting-text {
-    padding: var(--smrt-spacing-1) 0 0;
+  .smrt-text-input__supporting-text {
     font-size: var(--smrt-typography-body-small-size, 0.75rem);
-    min-height: 16px;
   }
-
-  .info { color: var(--smrt-color-on-surface-variant); }
-  .error { color: var(--smrt-color-error); }
-  .success { color: var(--smrt-color-primary); }
-
+  .smrt-text-input__info {
+    color: var(--smrt-color-on-surface-variant);
+  }
+  .smrt-text-input__error {
+    color: var(--smrt-color-error);
+  }
+  .smrt-text-input__success {
+    color: var(--smrt-color-primary);
+  }
   /* States */
-  .invalid {
+  .smrt-text-input__invalid {
     --smrt-text-input-field-active: var(--smrt-color-error);
     --smrt-text-input-field-color: var(--smrt-color-error);
   }
-
-  .listening {
+  .smrt-text-input__listening {
     background-color: var(--smrt-color-primary-container);
   }
-
-  .disabled {
+  .smrt-text-input__disabled {
     opacity: 0.38;
-    pointer-events: none;
   }
 }
+
 </style>

@@ -189,17 +189,21 @@ useWebMcpTool(
 );
 </script>
 
-<div class="smrt-form-scope" data-smrt-form-scope={formId} bind:this={scope} data-smrt-component="FormScope">
+<div class="smrt-form-scope__root" data-smrt-form-scope={formId} bind:this={scope} data-smrt-component="FormScope">
   {@render children()}
   <StagedControlReview {registry} {formId} {formElement} summary={stagedReview} />
 </div>
 
 <style>
 @layer smrt.reset, smrt.structure, smrt.theme;
-@layer smrt.theme {
+@layer smrt.structure {
   /* Layout-neutral: the wrapped content lays out exactly as before. */
-  .smrt-form-scope {
+  .smrt-form-scope__root {
     display: contents;
   }
 }
+
+@layer smrt.theme {
+}
+
 </style>

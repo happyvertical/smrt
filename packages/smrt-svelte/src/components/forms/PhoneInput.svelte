@@ -298,12 +298,12 @@ function handleInput(e: Event) {
 }
 </script>
 
-<div class="smrt-phone" class:listening={isHolding} data-smrt-component="PhoneInput">
+<div class="smrt-phone-input__root" class:smrt-phone-input__listening={isHolding} data-smrt-component="PhoneInput">
   {#if label}
     <FieldLabel id={labelId} for={name} {label} {required} />
   {/if}
 
-  <div class="input-wrapper">
+  <div class="smrt-phone-input__input-wrapper">
     <input
       bind:this={inputEl}
       id={name}
@@ -314,10 +314,11 @@ function handleInput(e: Event) {
       {value}
       disabled={disabled || isProcessing}
       {required}
-      class="smrt-input"
-      class:smrt-mode={isSmrt}
-      class:invalid={showInvalid}
-      class:processing={isProcessing}
+      class="smrt-phone-input__input"
+      data-smrt-part="input"
+      class:smrt-phone-input__mode={isSmrt}
+      class:smrt-phone-input__invalid={showInvalid}
+      class:smrt-phone-input__processing={isProcessing}
       aria-invalid={showInvalid ? 'true' : undefined}
       aria-describedby={showInvalid
         ? `${name}-error`
@@ -335,8 +336,9 @@ function handleInput(e: Event) {
     {#if isSmrt}
       <button
         type="button"
-        class="mic-btn"
-        class:active={isHolding}
+        class="smrt-phone-input__mic-btn"
+        class:smrt-phone-input__active={isHolding}
+        data-smrt-part="trigger"
         {disabled}
         onkeydown={handleMicKeydown}
         onmousedown={handleMouseDown}
@@ -365,78 +367,128 @@ function handleInput(e: Event) {
   </div>
 
   {#if isInitializing}
-    <div class="downloading-indicator">
-      <span class="processing-spinner"></span>
+    <div class="smrt-phone-input__downloading-indicator" data-smrt-part="status">
+      <span class="smrt-phone-input__processing-spinner" data-smrt-part="spinner"></span>
       <span>{t(M['ui.phone_input.downloading_model'], { progress: downloadProgress })}</span>
     </div>
   {:else if isHolding}
-    <div class="listening-indicator">
-      <span class="listening-dot"></span>
+    <div class="smrt-phone-input__listening-indicator" data-smrt-part="status">
+      <span class="smrt-phone-input__listening-dot"></span>
       <span>Recording...</span>
     </div>
   {:else if isProcessing}
-    <div class="processing-indicator">
-      <span class="processing-spinner"></span>
+    <div class="smrt-phone-input__processing-indicator" data-smrt-part="status">
+      <span class="smrt-phone-input__processing-spinner" data-smrt-part="spinner"></span>
       <span>Processing...</span>
     </div>
   {/if}
 
   {#if processError}
-    <div id={`${name}-stt-error`} class="error-message" role="alert">{processError}</div>
+    <div id={`${name}-stt-error`} class="smrt-phone-input__error-message" data-smrt-part="error" role="alert">{processError}</div>
   {/if}
 
   {#if showInvalid}
-    <div id={`${name}-error`} class="validation-error" role="alert">{t(M['ui.phone_input.invalid'])}</div>
+    <div id={`${name}-error`} class="smrt-phone-input__validation-error" data-smrt-part="error" role="alert">{t(M['ui.phone_input.invalid'])}</div>
   {/if}
 </div>
 
 <style>
 @layer smrt.reset, smrt.structure, smrt.theme;
-@layer smrt.theme {
-  .smrt-phone {
+@layer smrt.structure {
+  .smrt-phone-input__root {
     display: flex;
     flex-direction: column;
     gap: var(--smrt-spacing-1);
     position: relative;
   }
-
-  .input-wrapper {
+  .smrt-phone-input__input-wrapper {
     display: flex;
     position: relative;
   }
-
-  .smrt-input {
+  .smrt-phone-input__input {
     flex: 1;
     padding: var(--smrt-spacing-2) var(--smrt-spacing-3);
+  }
+  .smrt-phone-input__input.smrt-phone-input__mode {
+    padding-right: var(--smrt-spacing-11);
+    cursor: pointer;
+  }
+  .smrt-phone-input__input:disabled {
+    cursor: not-allowed;
+  }
+  .smrt-phone-input__mic-btn {
+    position: absolute;
+    right: 4px;
+    top: 50%;
+    width: 32px;
+    height: 32px;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    cursor: pointer;
+    transform: translateY(-50%);
+  }
+  .smrt-phone-input__mic-btn:disabled {
+    cursor: not-allowed;
+  }
+  /* The green lives in `.smrt-phone-input__listening-dot` below; the label reads as ordinary
+  secondary text. Painting the words with `success` measured 4.2–4.4:1 on
+  several light-scheme surfaces, under the AA floor (#2323). */
+  .smrt-phone-input__listening-indicator {
+    display: flex;
+    align-items: center;
+    gap: var(--smrt-spacing-2);
+    margin-top: var(--smrt-spacing-1);
+  }
+  .smrt-phone-input__listening-dot {
+    width: 8px;
+    height: 8px;
+  }
+  .smrt-phone-input__processing-indicator {
+    display: flex;
+    align-items: center;
+    gap: var(--smrt-spacing-2);
+    margin-top: var(--smrt-spacing-1);
+  }
+  .smrt-phone-input__downloading-indicator {
+    display: flex;
+    align-items: center;
+    gap: var(--smrt-spacing-2);
+    margin-top: var(--smrt-spacing-1);
+  }
+  .smrt-phone-input__processing-spinner {
+    width: 12px;
+    height: 12px;
+  }
+  .smrt-phone-input__error-message {
+    margin-top: var(--smrt-spacing-1);
+  }
+  .smrt-phone-input__validation-error {
+    margin-top: var(--smrt-spacing-1);
+  }
+}
+
+@layer smrt.theme {
+  .smrt-phone-input__input {
     font-size: var(--smrt-typography-body-large-size, 1rem);
     border: var(--smrt-hairline);
     border-radius: var(--smrt-radius-small);
     background: var(--smrt-color-surface);
     transition: all var(--smrt-duration-short2, 150ms) var(--smrt-easing-standard, ease);
   }
-
-  .smrt-input:focus {
+  .smrt-phone-input__input:focus {
     outline: none;
     border-color: var(--smrt-color-primary);
     box-shadow: 0 0 0 3px color-mix(in srgb, var(--smrt-color-primary) 10%, transparent);
   }
-
-  .smrt-input.smrt-mode {
-    padding-right: var(--smrt-spacing-11);
-    cursor: pointer;
-  }
-
-  .smrt-input:disabled {
+  .smrt-phone-input__input:disabled {
     background: var(--smrt-color-surface-container-high);
-    cursor: not-allowed;
   }
-
-  .smrt-phone.listening .smrt-input {
+  .smrt-phone-input__root.smrt-phone-input__listening .smrt-phone-input__input {
     border-color: var(--smrt-color-success);
     box-shadow: 0 0 0 3px color-mix(in srgb, var(--smrt-color-success) 30%, transparent);
     animation: pulse-green 1.5s var(--smrt-easing-standard, ease-in-out) infinite;
   }
-
   @keyframes pulse-green {
     0%, 100% {
       box-shadow: 0 0 0 3px color-mix(in srgb, var(--smrt-color-success) 30%, transparent);
@@ -445,79 +497,51 @@ function handleInput(e: Event) {
       box-shadow: 0 0 0 6px color-mix(in srgb, var(--smrt-color-success) 15%, transparent);
     }
   }
-
   @media (prefers-reduced-motion: reduce) {
-    .smrt-phone.listening .smrt-input {
+    .smrt-phone-input__root.smrt-phone-input__listening .smrt-phone-input__input {
       animation: none;
     }
   }
-
-  .mic-btn {
-    position: absolute;
-    right: 4px;
-    top: 50%;
-    transform: translateY(-50%);
-    width: 32px;
-    height: 32px;
-    display: flex;
-    align-items: center;
-    justify-content: center;
+  .smrt-phone-input__mic-btn {
     background: transparent;
     border: none;
     border-radius: var(--smrt-radius-sm);
     color: var(--smrt-color-on-surface-variant);
-    cursor: pointer;
     transition: all 0.2s;
   }
-
-  .mic-btn:hover {
+  .smrt-phone-input__mic-btn:hover {
     background: var(--smrt-color-surface-container);
     color: var(--smrt-color-on-surface);
   }
-
-  .mic-btn.active {
+  .smrt-phone-input__mic-btn.smrt-phone-input__active {
     background: var(--smrt-color-primary);
     color: var(--smrt-color-on-primary, white);
   }
-
-  .mic-btn:disabled {
+  .smrt-phone-input__mic-btn:disabled {
     opacity: 0.5;
-    cursor: not-allowed;
   }
-
-  .smrt-input.invalid {
+  .smrt-phone-input__input.smrt-phone-input__invalid {
     border-color: var(--smrt-color-error);
   }
-
-  .smrt-input.invalid:focus {
+  .smrt-phone-input__input.smrt-phone-input__invalid:focus {
     border-color: var(--smrt-color-error);
     box-shadow: 0 0 0 3px color-mix(in srgb, var(--smrt-color-error) 10%, transparent);
   }
-
-  .smrt-input.processing {
+  .smrt-phone-input__input.smrt-phone-input__processing {
     opacity: 0.7;
   }
-
-  /* The green lives in `.listening-dot` below; the label reads as ordinary
-     secondary text. Painting the words with `success` measured 4.2–4.4:1 on
-     several light-scheme surfaces, under the AA floor (#2323). */
-  .listening-indicator {
-    display: flex;
-    align-items: center;
-    gap: var(--smrt-spacing-2);
+  /* The green lives in `.smrt-phone-input__listening-dot` below; the label reads as ordinary
+  secondary text. Painting the words with `success` measured 4.2–4.4:1 on
+  several light-scheme surfaces, under the AA floor (#2323). */
+  .smrt-phone-input__listening-indicator {
     font-size: var(--smrt-typography-body-small-size, 0.75rem);
     color: var(--smrt-color-on-surface-variant);
-    margin-top: var(--smrt-spacing-1);
   }
-
-  .listening-dot {
-    width: 8px;
-    height: 8px;
+  .smrt-phone-input__listening-dot {
     background: var(--smrt-color-success);
     border-radius: var(--smrt-radius-full);
     animation: pulse-dot 1s ease-in-out infinite;
   }
-
   @keyframes pulse-dot {
     0%, 100% {
       opacity: 1;
@@ -528,56 +552,38 @@ function handleInput(e: Event) {
       transform: scale(0.8);
     }
   }
-
   @media (prefers-reduced-motion: reduce) {
-    .listening-dot {
+    .smrt-phone-input__listening-dot {
       animation: none;
     }
   }
-
-  .processing-indicator {
-    display: flex;
-    align-items: center;
-    gap: var(--smrt-spacing-2);
+  .smrt-phone-input__processing-indicator {
     font-size: var(--smrt-typography-body-small-size, 0.75rem);
     color: var(--smrt-color-on-surface-variant);
-    margin-top: var(--smrt-spacing-1);
   }
-
-  .downloading-indicator {
-    display: flex;
-    align-items: center;
-    gap: var(--smrt-spacing-2);
+  .smrt-phone-input__downloading-indicator {
     font-size: var(--smrt-typography-body-small-size, 0.75rem);
     color: var(--smrt-color-tertiary);
-    margin-top: var(--smrt-spacing-1);
   }
-
-  .processing-spinner {
-    width: 12px;
-    height: 12px;
+  .smrt-phone-input__processing-spinner {
     border: 2px solid var(--smrt-color-outline-variant);
     border-top-color: var(--smrt-color-primary);
     border-radius: var(--smrt-radius-full);
     animation: spin 0.8s linear infinite;
   }
-
   @keyframes spin {
     to {
       transform: rotate(360deg);
     }
   }
-
-  .error-message {
+  .smrt-phone-input__error-message {
     font-size: var(--smrt-typography-body-small-size, 0.75rem);
     color: var(--smrt-color-error);
-    margin-top: var(--smrt-spacing-1);
   }
-
-  .validation-error {
+  .smrt-phone-input__validation-error {
     font-size: var(--smrt-typography-body-small-size, 0.75rem);
     color: var(--smrt-color-error);
-    margin-top: var(--smrt-spacing-1);
   }
 }
+
 </style>
