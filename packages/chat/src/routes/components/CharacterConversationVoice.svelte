@@ -91,8 +91,8 @@ onDestroy(() => {
 });
 </script>
 
-<section class="character-conversation-voice" aria-label={t(M['chat.character_conversation.voice_input'])}>
-  <div class="voice-actions">
+<section class="smrt-character-conversation-voice__root" aria-label={t(M['chat.character_conversation.voice_input'])} data-smrt-component="CharacterConversationVoice">
+  <div class="smrt-character-conversation-voice__actions" data-smrt-part="actions">
     <DictationButton
       {dictation}
       disabled={(sending || disabled) && dictation.state !== 'listening'}
@@ -104,7 +104,7 @@ onDestroy(() => {
   </div>
 
   {#if dictation.state === 'error'}
-    <p class="typed-fallback" role="status">
+    <p class="smrt-character-conversation-voice__fallback" data-smrt-part="message" role="status">
       {t(M['chat.character_conversation.unavailable'])}
     </p>
   {/if}
@@ -112,10 +112,10 @@ onDestroy(() => {
     <p role="alert">{deliveryError}</p>
   {/if}
 
-  <Form class="typed-form" onsubmit={submitTyped}>
+  <Form onsubmit={submitTyped}>
     <label for={messageInputId}>
       {t(M['chat.character_conversation.message'])}
-      <Input id={messageInputId} class="typed-input" value={typed} oninput={(event) => (typed = event.currentTarget.value)} disabled={disabled || sending} maxlength={4000} />
+      <Input id={messageInputId} value={typed} oninput={(event) => (typed = event.currentTarget.value)} disabled={disabled || sending} maxlength={4000} />
     </label>
     <Button type="submit" disabled={disabled || sending || !typed.trim()} onclick={submitTyped}>{t(M['chat.character_conversation.send'])}</Button>
   </Form>
@@ -130,12 +130,35 @@ onDestroy(() => {
 
 <style>
 @layer smrt.reset, smrt.structure, smrt.theme;
-@layer smrt.theme {
-  .character-conversation-voice { display: grid; gap: .5rem; }
-  .voice-actions { display: flex; align-items: center; gap: .5rem; }
-  .character-conversation-voice :global(.typed-form) { display: flex; inline-size: 100%; flex-wrap: wrap; align-items: end; gap: .5rem; }
-  label { display: grid; gap: .25rem; flex: 1 1 16rem; }
-  .character-conversation-voice :global(.typed-input) { min-block-size: 2.5rem; padding-inline: .65rem; }
-  .typed-fallback { margin: 0; }
+@layer smrt.structure {
+  .smrt-character-conversation-voice__root {
+    display: grid;
+    gap: .5rem;
+  }
+  .smrt-character-conversation-voice__actions {
+    display: flex;
+    align-items: center;
+    gap: .5rem;
+  }
+  .smrt-character-conversation-voice__root :global([data-smrt-component="Form"]) {
+    display: flex;
+    inline-size: 100%;
+    flex-wrap: wrap;
+    align-items: end;
+    gap: .5rem;
+  }
+  label {
+    display: grid;
+    gap: .25rem;
+    flex: 1 1 16rem;
+  }
+  .smrt-character-conversation-voice__root :global([data-smrt-component="Input"]) {
+    min-block-size: 2.5rem;
+    padding-inline: .65rem;
+  }
+  .smrt-character-conversation-voice__fallback {
+    margin: 0;
+  }
 }
+
 </style>

@@ -10,7 +10,7 @@ test('floating launcher remains usable at 320px with keyboard controls', async (
   await launcher.focus();
   await page.keyboard.press('Enter');
   await expect(page.getByRole('button', { name: 'Collapse assistant' })).toBeVisible();
-  const bounds = await page.locator('.floating-assistant-panel').boundingBox();
+  const bounds = await page.locator('[data-smrt-component="FloatingAssistant"] [data-smrt-part="panel"]').boundingBox();
   expect(bounds).not.toBeNull();
   expect(bounds!.x).toBeGreaterThanOrEqual(0);
   expect(bounds!.x + bounds!.width).toBeLessThanOrEqual(320);
@@ -18,7 +18,7 @@ test('floating launcher remains usable at 320px with keyboard controls', async (
   expect(bounds!.y + bounds!.height).toBeLessThanOrEqual(640);
   await page.keyboard.press('Escape');
   await expect(launcher).toBeFocused();
-  await expect(page.locator('.floating-assistant-panel')).toHaveAttribute(
+  await expect(page.locator('[data-smrt-component="FloatingAssistant"] [data-smrt-part="panel"]')).toHaveAttribute(
     'aria-hidden',
     'true',
   );
@@ -27,7 +27,7 @@ test('floating launcher remains usable at 320px with keyboard controls', async (
 test('reduced motion disables floating panel transitions', async ({ page }) => {
   await page.emulateMedia({ reducedMotion: 'reduce' });
   await page.goto('/previews/floating-assistant', { waitUntil: 'networkidle' });
-  await expect(page.locator('.floating-assistant-panel')).toHaveCSS(
+  await expect(page.locator('[data-smrt-component="FloatingAssistant"] [data-smrt-part="panel"]')).toHaveCSS(
     'transition-duration',
     '0s',
   );
@@ -65,10 +65,10 @@ test('controls mode exposes choices, Stop, and failures', async ({ page }) => {
   await page.getByRole('button', { name: 'Open assistant' }).click();
   await page.getByRole('button', { name: 'Offer choices' }).click();
   await page.getByRole('button', { name: /Compact layout/ }).click();
-  await expect(page.locator('.floating-assistant-panel')).toHaveAttribute('aria-hidden', 'false');
+  await expect(page.locator('[data-smrt-component="FloatingAssistant"] [data-smrt-part="panel"]')).toHaveAttribute('aria-hidden', 'false');
   await page.getByRole('button', { name: 'Start work' }).click();
   await page.getByRole('button', { name: 'Stop', exact: true }).click();
-  await expect(page.locator('.floating-assistant-panel')).toHaveAttribute('aria-hidden', 'false');
+  await expect(page.locator('[data-smrt-component="FloatingAssistant"] [data-smrt-part="panel"]')).toHaveAttribute('aria-hidden', 'false');
   await page.getByRole('button', { name: 'Show error' }).click();
   await expect(page.getByText(/Preview failure remains visible/)).toBeVisible();
   await page.getByRole('button', { name: 'Inspect decisions' }).click();
@@ -90,7 +90,7 @@ test('host visibility pauses polling and restores the same mounted pending decis
   expect(polling).toBeGreaterThan(initial);
   await page.getByRole('button', { name: 'Hide assistant', exact: true }).click();
   await expect(page.getByRole('button', { name: 'Open assistant', exact: true })).toBeHidden();
-  await expect(page.locator('.floating-assistant-panel')).toBeHidden();
+  await expect(page.locator('[data-smrt-component="FloatingAssistant"] [data-smrt-part="panel"]')).toBeHidden();
   await page.clock.fastForward(30001);
   await page.getByRole('button', { name: 'Inspect decisions' }).click();
   expect(JSON.parse(await page.getByLabel('Decision evidence').innerText()).loads).toBe(polling);
@@ -126,7 +126,7 @@ for (const hidden of [false, true]) {
     await page.keyboard.press('Escape');
     await page.getByRole('button', { name: 'Host closes panel' }).click();
     await page.getByRole('button', { name: 'Collapse assistant' }).click();
-    await expect(page.locator('.floating-assistant-panel')).toHaveAttribute('aria-hidden', 'false');
+    await expect(page.locator('[data-smrt-component="FloatingAssistant"] [data-smrt-part="panel"]')).toHaveAttribute('aria-hidden', 'false');
     await page.getByRole('button', { name: 'Inspect decisions' }).click();
     await expect(page.getByLabel('Decision evidence')).toContainText('"choices":[]');
     await choice.click();

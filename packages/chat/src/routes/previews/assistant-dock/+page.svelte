@@ -290,9 +290,9 @@ function formatAttachmentSize(bytes: number): string {
 </svelte:head>
 
 <ThemeProvider colorScheme="system" persist={true}>
-  <div class="assistant-dock-demo">
-    <header class="topbar">
-      <div class="title-block">
+  <div class="smrt-assistant-dock-preview__root">
+    <header class="smrt-assistant-dock-preview__topbar" data-smrt-part="header">
+      <div class="smrt-assistant-dock-preview__title-block" data-smrt-part="title-block">
         <h1>AssistantDock demo</h1>
         <p>
           Type <code>mark order 2 shipped</code> and confirm the proposed
@@ -301,8 +301,8 @@ function formatAttachmentSize(bytes: number): string {
       </div>
     </header>
 
-    <main class="workspace">
-      <section class="orders-panel">
+    <main class="smrt-assistant-dock-preview__workspace" data-smrt-part="body">
+      <section class="smrt-assistant-dock-preview__orders" data-smrt-part="orders">
         <h2>Demo orders surface (revision {revision})</h2>
         <table>
           <thead>
@@ -317,14 +317,14 @@ function formatAttachmentSize(bytes: number): string {
               <tr>
                 <td>{row.id}</td>
                 <td>{row.customer}</td>
-                <td class={`status status-${row.status}`}>{row.status}</td>
+                <td class={`smrt-assistant-dock-preview__status smrt-assistant-dock-preview__status-${row.status}`}>{row.status}</td>
               </tr>
             {/each}
           </tbody>
         </table>
       </section>
 
-      <section class="dock-panel">
+      <section class="smrt-assistant-dock-preview__dock" data-smrt-part="dock">
         {#if ready}
           <AssistantThreadList
             threads={controller.threads}
@@ -350,8 +350,8 @@ function formatAttachmentSize(bytes: number): string {
             <p>No data surfaces mounted.</p>
           {/if}
 
-          <div class="dock-scroll">
-            <ul class="messages">
+          <div class="smrt-assistant-dock-preview__scroll" data-smrt-part="scroll">
+            <ul class="smrt-assistant-dock-preview__messages" data-smrt-part="list">
               {#each controller.messages as message (message.id)}
                 <li>
                   <MessageBubble
@@ -363,12 +363,12 @@ function formatAttachmentSize(bytes: number): string {
                     own={message.role === 'user'}
                   >
                     {#snippet children()}
-                      <p class="message-content">{message.content}</p>
+                      <p class="smrt-assistant-dock-preview__message" data-smrt-part="message">{message.content}</p>
                       {#if message.attachments && message.attachments.length > 0}
-                        <ul class="message-attachments" aria-label="Attachments">
+                        <ul class="smrt-assistant-dock-preview__attachments" data-smrt-part="attachments" aria-label="Attachments">
                           {#each message.attachments as attachment (attachment.id)}
                             {@const href = safeAttachmentHref(attachment.url)}
-                            <li class="message-attachment">
+                            <li class="smrt-assistant-dock-preview__attachment" data-smrt-part="attachment">
                               {#if href}
                                 <a {href} target="_blank" rel="noopener noreferrer">
                                   {attachment.name}
@@ -377,7 +377,7 @@ function formatAttachmentSize(bytes: number): string {
                                 <span>{attachment.name}</span>
                               {/if}
                               {#if attachment.size !== undefined}
-                                <span class="message-attachment-size">
+                                <span class="smrt-assistant-dock-preview__attachment-size" data-smrt-part="meta">
                                   {formatAttachmentSize(attachment.size)}
                                 </span>
                               {/if}
@@ -392,7 +392,7 @@ function formatAttachmentSize(bytes: number): string {
             </ul>
 
             {#if controller.actions.size > 0}
-              <ul class="actions">
+              <ul class="smrt-assistant-dock-preview__actions" data-smrt-part="actions">
                 {#each [...controller.actions.entries()] as [requestId, action] (requestId)}
                   <li>
                     <ToolCallDisplay
@@ -427,45 +427,40 @@ function formatAttachmentSize(bytes: number): string {
 
 <style>
 @layer smrt.reset, smrt.structure, smrt.theme;
-@layer smrt.theme {
-  .assistant-dock-demo {
+@layer smrt.structure {
+  .smrt-assistant-dock-preview__root {
     display: flex;
     flex-direction: column;
     height: 100vh;
     padding: var(--smrt-spacing-4, 1rem);
     box-sizing: border-box;
-    font-family: var(--smrt-font-family, system-ui, sans-serif);
-    background: var(--smrt-color-surface);
-    color: var(--smrt-color-on-surface);
   }
-  .workspace {
+  .smrt-assistant-dock-preview__workspace {
     display: flex;
     gap: var(--smrt-spacing-5, 1.5rem);
     flex: 1;
     min-height: 0;
   }
-  .orders-panel {
+  .smrt-assistant-dock-preview__orders {
     flex: 1;
     min-width: 280px;
   }
-  .dock-panel {
+  .smrt-assistant-dock-preview__dock {
     flex: 1;
     min-width: 320px;
     min-height: 0;
     display: flex;
     flex-direction: column;
     overflow: hidden;
-    border: var(--smrt-hairline);
-    border-radius: var(--smrt-radius-medium);
   }
-  .dock-panel > :global(*:first-child) {
+  .smrt-assistant-dock-preview__dock > :global(*:first-child) {
     flex-shrink: 0;
   }
-  .message-content {
+  .smrt-assistant-dock-preview__message {
     margin: 0;
     white-space: pre-wrap;
   }
-  .message-attachments {
+  .smrt-assistant-dock-preview__attachments {
     list-style: none;
     margin: var(--smrt-spacing-2, 0.5rem) 0 0;
     padding: 0;
@@ -473,32 +468,19 @@ function formatAttachmentSize(bytes: number): string {
     flex-direction: column;
     gap: var(--smrt-spacing-1, 0.25rem);
   }
-  .message-attachment {
+  .smrt-assistant-dock-preview__attachment {
     display: flex;
     align-items: baseline;
     gap: var(--smrt-spacing-1, 0.25rem);
-    font: var(--smrt-typography-body-small-font, 0.8125rem/1.4 sans-serif);
-  }
-  .message-attachment-size {
-    opacity: 0.75;
-    font-size: var(--smrt-typography-label-small-size, 0.6875rem);
   }
   table {
     width: 100%;
-    border-collapse: collapse;
-    font: var(--smrt-typography-body-medium-font, 0.875rem/1.4 sans-serif);
   }
   th,
   td {
-    text-align: left;
     padding: var(--smrt-spacing-2, 0.35rem) var(--smrt-spacing-3, 0.5rem);
-    border-bottom: var(--smrt-hairline);
   }
-  .status-shipped {
-    color: var(--smrt-color-success);
-    font-weight: var(--smrt-typography-weight-semibold, 600);
-  }
-  .dock-scroll {
+  .smrt-assistant-dock-preview__scroll {
     flex: 1;
     min-height: 0;
     overflow-y: auto;
@@ -507,8 +489,8 @@ function formatAttachmentSize(bytes: number): string {
     flex-direction: column;
     gap: var(--smrt-spacing-3, 0.75rem);
   }
-  .messages,
-  .actions {
+  .smrt-assistant-dock-preview__messages,
+  .smrt-assistant-dock-preview__actions {
     list-style: none;
     margin: 0;
     padding: 0;
@@ -517,4 +499,37 @@ function formatAttachmentSize(bytes: number): string {
     gap: var(--smrt-spacing-2, 0.5rem);
   }
 }
+
+@layer smrt.theme {
+  .smrt-assistant-dock-preview__root {
+    font-family: var(--smrt-font-family, system-ui, sans-serif);
+    background: var(--smrt-color-surface);
+    color: var(--smrt-color-on-surface);
+  }
+  .smrt-assistant-dock-preview__dock {
+    border: var(--smrt-hairline);
+    border-radius: var(--smrt-radius-medium);
+  }
+  .smrt-assistant-dock-preview__attachment {
+    font: var(--smrt-typography-body-small-font, 0.8125rem/1.4 sans-serif);
+  }
+  .smrt-assistant-dock-preview__attachment-size {
+    opacity: 0.75;
+    font-size: var(--smrt-typography-label-small-size, 0.6875rem);
+  }
+  table {
+    border-collapse: collapse;
+    font: var(--smrt-typography-body-medium-font, 0.875rem/1.4 sans-serif);
+  }
+  th,
+  td {
+    text-align: left;
+    border-bottom: var(--smrt-hairline);
+  }
+  .smrt-assistant-dock-preview__status-shipped {
+    color: var(--smrt-color-success);
+    font-weight: var(--smrt-typography-weight-semibold, 600);
+  }
+}
+
 </style>

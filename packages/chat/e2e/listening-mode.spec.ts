@@ -20,9 +20,9 @@ test('explicit start, interim/final routing, independent toggles and pending app
   await expect(page.getByTestId('sent-turns')).toHaveText('1');
   await expect(page.getByRole('button', { name: 'Confirm', exact: true })).toBeVisible();
   await expect(page.getByLabel('Project status', { exact: true })).toHaveValue('pending');
-  await expect(page.locator('.assistant-dock')).toHaveCount(1);
-  await expect(page.locator('.assistant-dock-messages')).toHaveCount(0);
-  await expect(page.locator('.assistant-composer')).toHaveCount(0);
+  await expect(page.locator('[data-smrt-component="AssistantDock"]')).toHaveCount(1);
+  await expect(page.locator('[data-smrt-part="messages"]')).toHaveCount(0);
+  await expect(page.locator('[data-smrt-component="AssistantComposer"]')).toHaveCount(0);
   await page.getByRole('button', { name: 'Playback boundary', exact: true }).click();
   await expect(page.getByLabel('Assistant is speaking', { exact: true })).toHaveCount(0);
   await page.getByRole('button', { name: 'Playback started', exact: true }).click();
@@ -48,8 +48,8 @@ test('explicit start, interim/final routing, independent toggles and pending app
   await expect(page.getByLabel('Project status', { exact: true })).toHaveValue('ready');
   await expect(page.getByTestId('revision')).toHaveText('2');
   await page.getByRole('checkbox', { name: 'Hide conversation history', exact: true }).press('Space');
-  await expect(page.locator('.assistant-dock-message-content').filter({ hasText: /^Mark the project ready\.$/ })).toHaveCount(2);
-  await expect(page.locator('.assistant-dock')).toHaveCount(1);
+  await expect(page.locator('.smrt-assistant-dock__message-content').filter({ hasText: /^Mark the project ready\.$/ })).toHaveCount(2);
+  await expect(page.locator('[data-smrt-component="AssistantDock"]')).toHaveCount(1);
   await page.screenshot({ path: test.info().outputPath('confirmed-context.png'), fullPage: true });
 });
 
@@ -64,15 +64,15 @@ test('stop ignores late media callbacks and preserves an existing draft', async 
   await expect(page.getByLabel('Assistant is speaking', { exact: true })).toHaveCount(0);
   await page.getByRole('button', { name: 'Reject', exact: true }).click();
   await page.getByRole('checkbox', { name: 'Hide conversation history', exact: true }).press('Space');
-  const draft = page.locator('.assistant-composer textarea');
+  const draft = page.locator('[data-smrt-component="AssistantComposer"] textarea');
   await draft.fill('My existing draft');
   await page.getByRole('button', { name: 'Synthetic final', exact: true }).click();
   await expect(draft).toHaveValue('My existing draft');
   await expect(page.getByTestId('sent-turns')).toHaveText('1');
   await page.getByRole('button', { name: 'Synthetic interim', exact: true }).click();
-  await expect(page.locator('.heard-captions .interim')).toBeVisible();
+  await expect(page.locator('[data-smrt-component="HeardCaptions"] [data-smrt-part="preview"]')).toBeVisible();
   await page.getByRole('button', { name: 'Stop listening', exact: true }).click();
-  await expect(page.locator('.heard-captions .interim')).toHaveCount(0);
+  await expect(page.locator('[data-smrt-component="HeardCaptions"] [data-smrt-part="preview"]')).toHaveCount(0);
   await page.getByRole('button', { name: 'Synthetic final', exact: true }).click();
   await expect(page.getByTestId('sent-turns')).toHaveText('1');
 });
@@ -88,8 +88,8 @@ test('320px and reduced motion retain visible, keyboard reachable approval', asy
   expect(await page.locator('.smrt-dictation-dot').evaluate((el) => getComputedStyle(el).animationName)).toBe('none');
   await page.getByRole('button', { name: 'Playback started', exact: true }).press('Enter');
   await page.getByRole('button', { name: 'Playback boundary', exact: true }).press('Enter');
-  await expect(page.locator('.caption-overlay')).toHaveCount(1);
-  await expect(page.locator('.caption-overlay-content > section')).toHaveCount(2);
+  await expect(page.locator('[data-smrt-component="CaptionOverlay"]')).toHaveCount(1);
+  await expect(page.locator('[data-smrt-component="CaptionOverlay"] [data-smrt-part="list"] > section')).toHaveCount(2);
   await confirm.click({ trial: true });
   await confirm.focus();
   await expect(confirm).toBeFocused();
@@ -149,16 +149,18 @@ for (const speaker of ['heard', 'spoken']) {
     test(`standalone ${speaker} ${placement} contains long final and interim text at 320px`, async ({ page }) => {
       await page.setViewportSize({ width: 320, height: 800 });
       await page.goto(`/previews/captions-standalone?speaker=${speaker}&placement=${placement}`);
-      const caption = page.locator(`.${speaker}-captions`);
+      const caption = page.locator(
+        `[data-smrt-component="${speaker === 'heard' ? 'HeardCaptions' : 'SpokenCaptions'}"]`,
+      );
       await expect(caption).toBeVisible();
-      await expect(page.locator('.caption-overlay')).toHaveCount(placement === 'bottom' ? 1 : 0);
+      await expect(page.locator('[data-smrt-component="CaptionOverlay"]')).toHaveCount(placement === 'bottom' ? 1 : 0);
       const bounds = await caption.boundingBox();
       expect(bounds).not.toBeNull();
       expect(bounds!.x).toBeGreaterThanOrEqual(0);
       expect(bounds!.x + bounds!.width).toBeLessThanOrEqual(320);
       expect(await caption.evaluate((el) => el.scrollWidth <= el.clientWidth)).toBe(true);
       expect(await page.evaluate(() => document.documentElement.scrollWidth <= window.innerWidth)).toBe(true);
-      for (const text of await caption.locator('.caption-lines p, .interim').all()) {
+      for (const text of await caption.locator('[data-smrt-part="body"] p, [data-smrt-part="preview"]').all()) {
         const textBounds = await text.evaluate((el) => {
           const range = document.createRange();
           range.selectNodeContents(el);
@@ -183,7 +185,7 @@ test('one overlay stacks bottom captions through growth, toggles and remounts at
     const owned = new Set<ResizeObserver>();
     window.ResizeObserver = class extends NativeResizeObserver {
       observe(target: Element, options?: ResizeObserverOptions) {
-        if (target.classList.contains('caption-overlay')) owned.add(this);
+        if (target.matches('[data-smrt-component="CaptionOverlay"]')) owned.add(this);
         super.observe(target, options);
       }
       disconnect() { owned.delete(this); super.disconnect(); }
@@ -197,7 +199,7 @@ test('one overlay stacks bottom captions through growth, toggles and remounts at
   const heard = page.getByRole('region', { name: 'You said', exact: true });
   const spoken = page.getByRole('region', { name: 'Assistant is speaking', exact: true });
   const checkLayout = async (count: number) => {
-    const surfaces = group.locator('.caption-overlay-content > section');
+    const surfaces = group.locator('[data-smrt-part="list"] > section');
     await expect(surfaces).toHaveCount(count);
     const boxes = await surfaces.evaluateAll((elements) => elements.map((el) => {
       const b = el.getBoundingClientRect();
@@ -255,7 +257,7 @@ test('tall caption group is viewport bounded and keyboard scrollable', async ({ 
   expect(box.y).toBeGreaterThanOrEqual(0);
   expect(box.y + box.height).toBeLessThanOrEqual(568);
   expect(box.height).toBeLessThanOrEqual(284);
-  const viewport = group.locator('.caption-overlay-viewport');
+  const viewport = group.locator('[data-smrt-part="body"]');
   const up = group.getByRole('button', { name: 'Scroll captions up', exact: true });
   const down = group.getByRole('button', { name: 'Scroll captions down', exact: true });
   await expect(up).toBeDisabled();
@@ -286,7 +288,7 @@ for (const speaker of ['heard', 'spoken']) {
       const owned = new Set<ResizeObserver>();
       window.ResizeObserver = class extends NativeResizeObserver {
         observe(target: Element, options?: ResizeObserverOptions) {
-          if (target.classList.contains('caption-overlay')) owned.add(this);
+          if (target.matches('[data-smrt-component="CaptionOverlay"]')) owned.add(this);
           super.observe(target, options);
         }
         disconnect() { owned.delete(this); super.disconnect(); }
@@ -294,7 +296,9 @@ for (const speaker of ['heard', 'spoken']) {
       Object.defineProperty(window, 'captionObservers', { value: () => owned.size });
     });
     await page.goto(`/previews/captions-standalone?speaker=${speaker}&placement=bottom&tall`);
-    const caption = page.locator(`.${speaker}-captions`);
+    const caption = page.locator(
+        `[data-smrt-component="${speaker === 'heard' ? 'HeardCaptions' : 'SpokenCaptions'}"]`,
+      );
     await expect(caption).toBeVisible();
     expect((await caption.boundingBox())!.y).toBeGreaterThanOrEqual(0);
     const group = page.getByRole('region', { name: 'Captions', exact: true });
@@ -303,7 +307,7 @@ for (const speaker of ['heard', 'spoken']) {
     expect(bounds.y).toBeGreaterThanOrEqual(0);
     expect(bounds.y + bounds.height).toBeLessThanOrEqual(568);
     expect(bounds.height).toBeLessThanOrEqual(284);
-    const viewport = group.locator('.caption-overlay-viewport');
+    const viewport = group.locator('[data-smrt-part="body"]');
     const up = group.getByRole('button', { name: 'Scroll captions up', exact: true });
     const down = group.getByRole('button', { name: 'Scroll captions down', exact: true });
     await expect(up).toBeDisabled();
@@ -314,7 +318,7 @@ for (const speaker of ['heard', 'spoken']) {
     for (let i = 0; i < 150 && !(await down.isDisabled()); i++) await down.press('Enter');
     await expect(down).toBeDisabled();
     const textEnd = await caption.evaluate((el) => {
-      const p = el.querySelector('.interim') ?? el.querySelector('.caption-lines p:last-child');
+      const p = el.querySelector('[data-smrt-part="preview"]') ?? el.querySelector('[data-smrt-part="body"] p:last-child');
       const range = document.createRange();
       range.selectNodeContents(p!);
       const last = [...range.getClientRects()].at(-1)!;

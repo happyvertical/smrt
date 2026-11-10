@@ -5,11 +5,12 @@
  */
 import { expect, type Page, test } from '@playwright/test';
 
-const box = (width: number) => `.dock-box[data-width="${width}"]`;
+const box = (width: number) =>
+  `.smrt-assistant-dock-narrow__dock-box[data-width="${width}"]`;
 
 async function mainWidth(page: Page, width: number) {
   const rect = await page
-    .locator(`${box(width)} .assistant-dock-main`)
+    .locator(`${box(width)} [data-smrt-part="main"]`)
     .boundingBox();
   return rect?.width ?? 0;
 }
@@ -18,15 +19,15 @@ test.beforeEach(async ({ page }) => {
   await page.goto('/previews/assistant-dock-narrow', {
     waitUntil: 'networkidle',
   });
-  await expect(page.locator('.assistant-dock-main')).toHaveCount(3);
+  await expect(page.locator('[data-smrt-part="main"]')).toHaveCount(3);
 });
 
 for (const width of [250, 285]) {
   test(`${width}px: the conversation keeps the width and the list collapses`, async ({
     page,
   }) => {
-    const toggle = page.locator(`${box(width)} .assistant-dock-threads-toggle`);
-    const threads = page.locator(`${box(width)} .assistant-dock-threads`);
+    const toggle = page.locator(`${box(width)} [data-smrt-part="layout"] > [data-smrt-component="Button"]`);
+    const threads = page.locator(`${box(width)} [data-smrt-part="threads"]`);
     await expect(toggle).toBeVisible();
     await expect(toggle).toHaveAttribute('aria-expanded', 'false');
     await expect(threads).toBeHidden();
@@ -38,7 +39,7 @@ for (const width of [250, 285]) {
     expect(await mainWidth(page, width)).toBeGreaterThanOrEqual(200);
 
     await page
-      .locator(`${box(width)} .assistant-thread-list-new`)
+      .locator(`${box(width)} [data-smrt-component="AssistantThreadList"] > [data-smrt-component="Button"]`)
       .press('Enter');
     await expect(threads).toBeHidden();
     await expect(toggle).toBeFocused();
@@ -48,14 +49,14 @@ for (const width of [250, 285]) {
 test('800px: the thread list stays beside the conversation', async ({
   page,
 }) => {
-  const threads = page.locator(`${box(800)} .assistant-dock-threads`);
+  const threads = page.locator(`${box(800)} [data-smrt-part="threads"]`);
   await expect(
-    page.locator(`${box(800)} .assistant-dock-threads-toggle`),
+    page.locator(`${box(800)} [data-smrt-part="layout"] > [data-smrt-component="Button"]`),
   ).toBeHidden();
   await expect(threads).toBeVisible();
   const list = await threads.boundingBox();
   const main = await page
-    .locator(`${box(800)} .assistant-dock-main`)
+    .locator(`${box(800)} [data-smrt-part="main"]`)
     .boundingBox();
   expect(list && main && list.x + list.width <= main.x + 1).toBe(true);
   expect(main && list && Math.abs(main.y - list.y) < 1).toBe(true);
@@ -78,10 +79,10 @@ for (const width of [250, 285, 800]) {
       waitUntil: 'networkidle',
     });
     const dock = page.locator(box(width));
-    await expect(dock.locator('.assistant-dock-threads')).toHaveCount(0);
-    await expect(dock.locator('.assistant-dock-threads-toggle')).toHaveCount(0);
+    await expect(dock.locator('[data-smrt-part="threads"]')).toHaveCount(0);
+    await expect(dock.locator('[data-smrt-part="layout"] > [data-smrt-component="Button"]')).toHaveCount(0);
     await expect(dock.getByRole('button', { name: 'View conversations' })).toHaveCount(0);
-    const layout = await dock.locator('.assistant-dock-layout').boundingBox();
+    const layout = await dock.locator('[data-smrt-part="layout"]').boundingBox();
     expect(layout).not.toBeNull();
     expect(Math.abs((await mainWidth(page, width)) - (layout?.width ?? 0))).toBeLessThanOrEqual(1);
 
@@ -92,6 +93,6 @@ for (const width of [250, 285, 800]) {
     await composer.fill('Hello from the single conversation');
     await dock.getByRole('button', { name: 'Send', exact: true }).click();
     await expect(dock.getByText('Hello from the single conversation', { exact: true })).toBeVisible();
-    await expect(dock.locator('.assistant-dock-threads')).toHaveCount(0);
+    await expect(dock.locator('[data-smrt-part="threads"]')).toHaveCount(0);
   });
 }
