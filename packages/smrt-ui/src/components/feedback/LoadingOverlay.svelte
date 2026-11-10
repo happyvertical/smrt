@@ -213,11 +213,11 @@ function handleKeydown(e: KeyboardEvent) {
     text-align: center;
     box-shadow: var(--smrt-elevation-5, 0 25px 50px -12px rgba(0, 0, 0, 0.25));
   }
-  .smrt-loading-overlay__glyph--spinner {
+  .smrt-loading-overlay__glyph.smrt-loading-overlay__glyph--spinner {
     color: var(--smrt-color-primary);
     animation: spin 1s linear infinite;
   }
-  .smrt-loading-overlay__glyph--error {
+  .smrt-loading-overlay__glyph.smrt-loading-overlay__glyph--error {
     color: var(--smrt-color-error);
   }
   @keyframes spin {
@@ -280,7 +280,7 @@ function handleKeydown(e: KeyboardEvent) {
     outline-offset: var(--smrt-focus-ring-offset);
   }
   @media (prefers-reduced-motion: reduce) {
-    .smrt-loading-overlay__glyph--spinner {
+    .smrt-loading-overlay__glyph.smrt-loading-overlay__glyph--spinner {
       animation: none;
     }
     .smrt-loading-overlay__indicator {
