@@ -42,8 +42,8 @@ const jobs = [
 ];
 
 const queues = () =>
-  Array.from(document.querySelectorAll('.job-list__cell--queue')).map((cell) =>
-    cell.textContent?.trim(),
+  Array.from(document.querySelectorAll('.smrt-job-list__cell-queue')).map(
+    (cell) => cell.textContent?.trim(),
   );
 
 describe('JobList ordering', () => {
