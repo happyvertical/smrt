@@ -39,55 +39,60 @@ const text = $derived.by(() => {
 </script>
 
 {#if show}
-  <div class="typing" role="status" aria-live="polite" data-smrt-component="TypingIndicator">
-    <span class="typing__text">{text}</span>
-    <span class="typing__dots" aria-hidden="true">
-      <span class="typing__dot"></span>
-      <span class="typing__dot"></span>
-      <span class="typing__dot"></span>
+  <div class="smrt-typing-indicator__root" role="status" aria-live="polite" data-smrt-component="TypingIndicator">
+    <span class="smrt-typing-indicator__text" data-smrt-part="label">{text}</span>
+    <span class="smrt-typing-indicator__dots" data-smrt-part="indicator" aria-hidden="true">
+      <span class="smrt-typing-indicator__dot" data-smrt-part="dot"></span>
+      <span class="smrt-typing-indicator__dot" data-smrt-part="dot"></span>
+      <span class="smrt-typing-indicator__dot" data-smrt-part="dot"></span>
     </span>
   </div>
 {/if}
 
 <style>
 @layer smrt.reset, smrt.structure, smrt.theme;
-@layer smrt.theme {
-  .typing {
+@layer smrt.structure {
+  .smrt-typing-indicator__root {
     display: inline-flex;
     align-items: center;
     gap: var(--smrt-spacing-2);
     padding: var(--smrt-spacing-2) var(--smrt-spacing-3);
-    border-radius: var(--smrt-radius-large);
-    background: var(--smrt-color-surface-container);
     width: fit-content;
   }
-
-  .typing__text {
-    font-size: var(--smrt-typography-body-small-size, 0.75rem);
-    color: var(--smrt-color-on-surface-variant);
+  .smrt-typing-indicator__text {
     white-space: nowrap;
   }
-
-  .typing__dots {
+  .smrt-typing-indicator__dots {
     display: inline-flex;
     gap: var(--smrt-spacing-1);
   }
-
-  .typing__dot {
+  .smrt-typing-indicator__dot {
     width: 0.5rem;
     height: 0.5rem;
+  }
+}
+
+@layer smrt.theme {
+  .smrt-typing-indicator__root {
+    border-radius: var(--smrt-radius-large);
+    background: var(--smrt-color-surface-container);
+  }
+  .smrt-typing-indicator__text {
+    font-size: var(--smrt-typography-body-small-size, 0.75rem);
+    color: var(--smrt-color-on-surface-variant);
+  }
+  .smrt-typing-indicator__dot {
     border-radius: var(--smrt-radius-full);
     background: var(--smrt-color-on-surface-variant);
     opacity: 0.5;
     animation: smrt-typing-bounce 1.2s ease-in-out infinite;
   }
-  .typing__dot:nth-child(2) {
+  .smrt-typing-indicator__dot:nth-child(2) {
     animation-delay: 0.2s;
   }
-  .typing__dot:nth-child(3) {
+  .smrt-typing-indicator__dot:nth-child(3) {
     animation-delay: 0.4s;
   }
-
   @keyframes smrt-typing-bounce {
     0%,
     60%,
@@ -100,11 +105,11 @@ const text = $derived.by(() => {
       opacity: 1;
     }
   }
-
   @media (prefers-reduced-motion: reduce) {
-    .typing__dot {
+    .smrt-typing-indicator__dot {
       animation: none;
     }
   }
 }
+
 </style>

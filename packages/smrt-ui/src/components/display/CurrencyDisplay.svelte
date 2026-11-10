@@ -198,43 +198,44 @@ const colorClass = $derived.by(() => {
 </script>
 
 <span
-  class="currency-display {className}"
-  class:sm={size === 'sm'}
-  class:lg={size === 'lg'}
-  class:negative={colorClass === 'negative'}
-  class:positive={colorClass === 'positive'}
-  class:invalid={formatted.invalidCode !== null} data-smrt-component="CurrencyDisplay"
+  class="smrt-currency-display__root {className}"
+  class:smrt-currency-display__sm={size === 'sm'}
+  class:smrt-currency-display__lg={size === 'lg'}
+  class:smrt-currency-display__negative={colorClass === 'negative'}
+  class:smrt-currency-display__positive={colorClass === 'positive'}
+  class:smrt-currency-display__invalid={formatted.invalidCode !== null} data-smrt-component="CurrencyDisplay"
 >
   {formatted.text}
 </span>
 
 <style>
 @layer smrt.reset, smrt.structure, smrt.theme;
-@layer smrt.theme {
-  .currency-display {
-    font-variant-numeric: tabular-nums;
+@layer smrt.structure {
+  .smrt-currency-display__root {
     white-space: nowrap;
   }
+}
 
-  .currency-display.sm {
+@layer smrt.theme {
+  .smrt-currency-display__root {
+    font-variant-numeric: tabular-nums;
+  }
+  .smrt-currency-display__root.smrt-currency-display__sm {
     font-size: var(--smrt-typography-body-medium-size, 0.875rem);
   }
-
-  .currency-display.lg {
+  .smrt-currency-display__root.smrt-currency-display__lg {
     font-size: var(--smrt-typography-title-large-size, 1.25rem);
     font-weight: var(--smrt-typography-title-large-weight, 600);
   }
-
-  .currency-display.negative {
+  .smrt-currency-display__root.smrt-currency-display__negative {
     color: var(--smrt-color-error);
   }
-
-  .currency-display.positive {
+  .smrt-currency-display__root.smrt-currency-display__positive {
     color: var(--smrt-color-tertiary);
   }
-
-  .currency-display.invalid {
+  .smrt-currency-display__root.smrt-currency-display__invalid {
     color: var(--smrt-color-error);
   }
 }
+
 </style>

@@ -16,13 +16,13 @@ const { children }: Props = $props();
 const currentYear = new Date().getFullYear();
 </script>
 
-<footer class="site-footer" data-smrt-component="Footer">
+<footer class="smrt-footer__root" data-smrt-component="Footer">
   <Container>
-    <div class="footer-content">
-      <p class="copyright">&copy; {currentYear} {t(M['ui.footer.all_rights_reserved'])}</p>
+    <div class="smrt-footer__content" data-smrt-part="content">
+      <p class="smrt-footer__copyright" data-smrt-part="meta">&copy; {currentYear} {t(M['ui.footer.all_rights_reserved'])}</p>
 
       {#if children}
-        <div class="footer-links">
+        <div class="smrt-footer__links" data-smrt-part="list">
           {@render children()}
         </div>
       {/if}
@@ -32,36 +32,42 @@ const currentYear = new Date().getFullYear();
 
 <style>
 @layer smrt.reset, smrt.structure, smrt.theme;
-@layer smrt.theme {
-  .site-footer {
-    background: var(--smrt-color-surface-container-low);
-    border-top: var(--smrt-hairline);
+@layer smrt.structure {
+  .smrt-footer__root {
     padding: var(--smrt-spacing-8) 0;
     margin-top: var(--smrt-spacing-12);
-    text-align: center;
-    color: var(--smrt-color-on-surface-variant);
   }
-
-  .footer-content {
+  .smrt-footer__content {
     display: flex;
     flex-direction: column;
     gap: var(--smrt-spacing-4);
     align-items: center;
   }
-
-  .copyright {
+  .smrt-footer__copyright {
     margin: 0;
-    font-size: var(--smrt-typography-body-medium-size);
   }
-
-  .footer-links :global(a) {
-    color: var(--smrt-color-primary);
-    text-decoration: none;
+  .smrt-footer__links :global(a) {
     margin: 0 var(--smrt-spacing-2);
   }
+}
 
-  .footer-links :global(a:hover) {
+@layer smrt.theme {
+  .smrt-footer__root {
+    background: var(--smrt-color-surface-container-low);
+    border-top: var(--smrt-hairline);
+    text-align: center;
+    color: var(--smrt-color-on-surface-variant);
+  }
+  .smrt-footer__copyright {
+    font-size: var(--smrt-typography-body-medium-size);
+  }
+  .smrt-footer__links :global(a) {
+    color: var(--smrt-color-primary);
+    text-decoration: none;
+  }
+  .smrt-footer__links :global(a:hover) {
     text-decoration: underline;
   }
 }
+
 </style>

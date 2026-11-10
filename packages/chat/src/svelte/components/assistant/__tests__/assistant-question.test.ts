@@ -215,10 +215,12 @@ describe('dock question form', () => {
   it('renders the form as a full-width card under the text bubble', async () => {
     await mount(true);
     const form = screen.getByRole('group', { name: /Group invoices/ });
-    expect(form.closest('.bubble')).toBeNull();
+    expect(form.closest('[data-smrt-component="MessageBubble"]')).toBeNull();
     expect(form.closest('.assistant-dock-card')).not.toBeNull();
     expect(
-      screen.getByText('How should I group them?').closest('.bubble'),
+      screen
+        .getByText('How should I group them?')
+        .closest('[data-smrt-component="MessageBubble"]'),
     ).not.toBeNull();
   });
 });

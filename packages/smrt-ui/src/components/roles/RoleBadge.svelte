@@ -29,61 +29,65 @@ const variantClass = $derived.by(() => {
 </script>
 
 <span
-  class="role-badge {variantClass}"
-  class:sm={size === 'sm'}
-  class:lg={size === 'lg'} data-smrt-component="RoleBadge"
+  class="smrt-role-badge__root smrt-role-badge__{variantClass}"
+  class:smrt-role-badge__sm={size === 'sm'}
+  class:smrt-role-badge__lg={size === 'lg'} data-smrt-component="RoleBadge"
 >
   {role.name}
 </span>
 
 <style>
 @layer smrt.reset, smrt.structure, smrt.theme;
-@layer smrt.theme {
-  .role-badge {
+@layer smrt.structure {
+  .smrt-role-badge__root {
     display: inline-flex;
     align-items: center;
     padding: 0 var(--smrt-spacing-3);
     height: 24px;
+    white-space: nowrap;
+  }
+  .smrt-role-badge__root.smrt-role-badge__sm {
+    padding: 0 var(--smrt-spacing-2);
+    height: 20px;
+  }
+  .smrt-role-badge__root.smrt-role-badge__lg {
+    padding: 0 var(--smrt-spacing-4);
+    height: 32px;
+  }
+}
+
+@layer smrt.theme {
+  .smrt-role-badge__root {
     font: var(--smrt-typography-label-large-font);
     font-weight: var(--smrt-typography-weight-semibold, 600);
     border-radius: var(--smrt-radius-md);
-    white-space: nowrap;
     transition: all 200ms cubic-bezier(0.2, 0, 0, 1);
   }
-
-  .role-badge.sm {
-    padding: 0 var(--smrt-spacing-2);
-    height: 20px;
+  .smrt-role-badge__root.smrt-role-badge__sm {
     font: var(--smrt-typography-label-small-font);
     font-weight: var(--smrt-typography-weight-semibold, 600);
   }
-
-  .role-badge.lg {
-    padding: 0 var(--smrt-spacing-4);
-    height: 32px;
+  .smrt-role-badge__root.smrt-role-badge__lg {
     font: var(--smrt-typography-title-small-font);
     font-weight: var(--smrt-typography-weight-semibold, 600);
   }
-
   /* Variant Colors using M3 roles */
-  .variant-owner {
+  .smrt-role-badge__variant-owner {
     background-color: var(--smrt-color-tertiary-container);
     color: var(--smrt-color-on-tertiary-container);
   }
-
-  .variant-admin {
+  .smrt-role-badge__variant-admin {
     background-color: var(--smrt-color-primary-container);
     color: var(--smrt-color-on-primary-container);
   }
-
-  .variant-member {
+  .smrt-role-badge__variant-member {
     background-color: var(--smrt-color-secondary-container);
     color: var(--smrt-color-on-secondary-container);
   }
-
-  .variant-default {
+  .smrt-role-badge__variant-default {
     background-color: var(--smrt-color-surface-variant);
     color: var(--smrt-color-on-surface-variant);
   }
 }
+
 </style>

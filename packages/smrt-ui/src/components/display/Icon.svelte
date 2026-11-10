@@ -57,11 +57,17 @@ const pxSize = $derived(typeof size === 'number' ? `${size}px` : size);
 
 <style>
 @layer smrt.reset, smrt.structure, smrt.theme;
-@layer smrt.theme {
+@layer smrt.structure {
   svg {
     display: inline-block;
     flex-shrink: 0;
+  }
+}
+
+@layer smrt.theme {
+  svg {
     vertical-align: middle;
   }
 }
+
 </style>

@@ -123,19 +123,19 @@ const inlineStyles = $derived.by(() => {
 
 // Build class names
 const gridClasses = $derived.by(() => {
-  const classes = ['grid'];
+  const classes = ['smrt-grid__root'];
 
   // Responsive modifier
   if (isResponsive) {
-    classes.push('grid-responsive');
+    classes.push('smrt-grid__responsive');
   }
 
   // Gap classes (row and column may differ)
   if (rowGap && columnGap && rowGap === columnGap) {
-    classes.push(`gap-${rowGap}`);
+    classes.push(`smrt-grid__gap-${rowGap}`);
   } else {
-    if (rowGap) classes.push(`row-gap-${rowGap}`);
-    if (columnGap) classes.push(`col-gap-${columnGap}`);
+    if (rowGap) classes.push(`smrt-grid__row-gap-${rowGap}`);
+    if (columnGap) classes.push(`smrt-grid__col-gap-${columnGap}`);
   }
 
   return classes.join(' ');
@@ -143,7 +143,7 @@ const gridClasses = $derived.by(() => {
 </script>
 
 {#if header}
-  <div class="grid-header" data-smrt-component="Grid">
+  <div class="smrt-grid__header" data-smrt-part="header" data-smrt-component="Grid">
     {@render header()}
   </div>
 {/if}
@@ -157,89 +157,76 @@ const gridClasses = $derived.by(() => {
 
 <style>
 @layer smrt.reset, smrt.structure, smrt.theme;
-@layer smrt.theme {
-  .grid {
+@layer smrt.structure {
+  .smrt-grid__root {
     display: grid;
     min-width: 0;
   }
-
-  .grid-header {
+  .smrt-grid__header {
     width: 100%;
     margin-bottom: var(--smrt-spacing-4);
   }
-
   /* Responsive grid - uses CSS variables set via inline styles */
-  .grid-responsive {
+  .smrt-grid__responsive {
     grid-template-columns: repeat(var(--smrt-grid-columns-sm, 1), 1fr);
   }
-
   @media (min-width: 640px) {
-    .grid-responsive {
+    .smrt-grid__responsive {
       grid-template-columns: repeat(var(--smrt-grid-columns-md, var(--smrt-grid-columns-sm, 2)), 1fr);
     }
   }
-
   @media (min-width: 1024px) {
-    .grid-responsive {
+    .smrt-grid__responsive {
       grid-template-columns: repeat(var(--smrt-grid-columns-lg, var(--smrt-grid-columns-md, var(--smrt-grid-columns-sm, 3))), 1fr);
     }
   }
-
   @media (min-width: 1280px) {
-    .grid-responsive {
+    .smrt-grid__responsive {
       grid-template-columns: repeat(var(--smrt-grid-columns-xl, var(--smrt-grid-columns-lg, var(--smrt-grid-columns-md, var(--smrt-grid-columns-sm, 4)))), 1fr);
     }
   }
-
   /* Uniform gap */
-  .gap-sm {
+  .smrt-grid__gap-sm {
     gap: var(--smrt-spacing-4);
   }
-
-  .gap-md {
+  .smrt-grid__gap-md {
     gap: var(--smrt-spacing-6);
   }
-
-  .gap-lg {
+  .smrt-grid__gap-lg {
     gap: var(--smrt-spacing-8);
   }
-
-  .gap-xl {
+  .smrt-grid__gap-xl {
     gap: var(--smrt-spacing-12);
   }
-
   /* Row gap */
-  .row-gap-sm {
+  .smrt-grid__row-gap-sm {
     row-gap: var(--smrt-spacing-4);
   }
-
-  .row-gap-md {
+  .smrt-grid__row-gap-md {
     row-gap: var(--smrt-spacing-6);
   }
-
-  .row-gap-lg {
+  .smrt-grid__row-gap-lg {
     row-gap: var(--smrt-spacing-8);
   }
-
-  .row-gap-xl {
+  .smrt-grid__row-gap-xl {
     row-gap: var(--smrt-spacing-12);
   }
-
   /* Column gap */
-  .col-gap-sm {
+  .smrt-grid__col-gap-sm {
     column-gap: var(--smrt-spacing-4);
   }
-
-  .col-gap-md {
+  .smrt-grid__col-gap-md {
     column-gap: var(--smrt-spacing-6);
   }
-
-  .col-gap-lg {
+  .smrt-grid__col-gap-lg {
     column-gap: var(--smrt-spacing-8);
   }
-
-  .col-gap-xl {
+  .smrt-grid__col-gap-xl {
     column-gap: var(--smrt-spacing-12);
   }
 }
+
+@layer smrt.theme {
+}
+
 </style>

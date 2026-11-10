@@ -61,8 +61,8 @@ const icons = {
 };
 </script>
 
-<div class="empty-state" class:sm={size === 'sm'} class:lg={size === 'lg'} data-smrt-component="EmptyState">
-  <div class="icon-container">
+<div class="smrt-empty-state__root" class:smrt-empty-state__sm={size === 'sm'} class:smrt-empty-state__lg={size === 'lg'} data-smrt-component="EmptyState">
+  <div class="smrt-empty-state__icon" data-smrt-part="icon">
     {#if typeof icon === 'string'}
       {@html icons[icon] ?? icons.inbox}
     {:else}
@@ -70,19 +70,19 @@ const icons = {
     {/if}
   </div>
 
-  <h3 class="empty-title">{title}</h3>
+  <h3 class="smrt-empty-state__title" data-smrt-part="title">{title}</h3>
 
   {#if description}
-    <p class="empty-description">{description}</p>
+    <p class="smrt-empty-state__description" data-smrt-part="description">{description}</p>
   {/if}
 
   {#if actionLabel}
     {#if actionHref}
-      <a href={actionHref} class="action-button" use:ripple>
+      <a href={actionHref} class="smrt-empty-state__action" data-smrt-part="trigger" use:ripple>
         {actionLabel}
       </a>
     {:else if onaction}
-      <button type="button" class="action-button" onclick={onaction} use:ripple>
+      <button type="button" class="smrt-empty-state__action" data-smrt-part="trigger" onclick={onaction} use:ripple>
         {actionLabel}
       </button>
     {/if}
@@ -91,83 +91,94 @@ const icons = {
 
 <style>
 @layer smrt.reset, smrt.structure, smrt.theme;
-@layer smrt.theme {
-  .empty-state {
+@layer smrt.structure {
+  .smrt-empty-state__root {
     display: flex;
     flex-direction: column;
     align-items: center;
     justify-content: center;
     padding: 4rem 2rem;
-    text-align: center;
   }
-
-  .empty-state.sm {
+  .smrt-empty-state__root.smrt-empty-state__sm {
     padding: 2rem 1.5rem;
   }
-
-  .empty-state.lg {
+  .smrt-empty-state__root.smrt-empty-state__lg {
     padding: 6rem 3rem;
   }
-
-  .icon-container {
+  .smrt-empty-state__icon {
     display: flex;
     align-items: center;
     justify-content: center;
     width: 96px;
     height: 96px;
     margin-bottom: 2rem;
-    background-color: var(--smrt-color-secondary-container);
-    color: var(--smrt-color-on-secondary-container);
-    border-radius: var(--smrt-radius-3xl); /* M3 extra large shape */
+    /* M3 extra large shape */
     padding: var(--smrt-spacing-6);
   }
-
-  .sm .icon-container {
+  .smrt-empty-state__sm .smrt-empty-state__icon {
     width: 64px;
     height: 64px;
     margin-bottom: 1.5rem;
-    border-radius: var(--smrt-radius-xl);
     padding: var(--smrt-spacing-4);
   }
-
-  .lg .icon-container {
+  .smrt-empty-state__lg .smrt-empty-state__icon {
     width: 120px;
     height: 120px;
     margin-bottom: 2.5rem;
-    border-radius: var(--smrt-radius-3xl);
     padding: var(--smrt-spacing-8);
   }
-
-  .empty-title {
-    font: var(--smrt-typography-title-large-font);
-    color: var(--smrt-color-on-surface);
+  .smrt-empty-state__title {
     margin: 0 0 0.75rem;
-    font-weight: var(--smrt-typography-weight-medium, 500);
   }
-
-  .sm .empty-title {
-    font: var(--smrt-typography-title-medium-font);
-  }
-
-  .lg .empty-title {
-    font: var(--smrt-typography-headline-small-font);
-  }
-
-  .empty-description {
-    font: var(--smrt-typography-body-medium-font);
-    color: var(--smrt-color-on-surface-variant);
+  .smrt-empty-state__description {
     margin: 0 0 2rem;
     max-width: 440px;
-    line-height: var(--smrt-typography-body-medium-line-height, 1.5);
   }
-
-  .action-button {
+  .smrt-empty-state__action {
     display: inline-flex;
     align-items: center;
     justify-content: center;
     gap: var(--smrt-spacing-2);
     padding: 0 var(--smrt-spacing-6);
     height: 40px;
+    cursor: pointer;
+    position: relative;
+    overflow: hidden;
+  }
+}
+
+@layer smrt.theme {
+  .smrt-empty-state__root {
+    text-align: center;
+  }
+  .smrt-empty-state__icon {
+    background-color: var(--smrt-color-secondary-container);
+    color: var(--smrt-color-on-secondary-container);
+    border-radius: var(--smrt-radius-3xl);
+  }
+  .smrt-empty-state__sm .smrt-empty-state__icon {
+    border-radius: var(--smrt-radius-xl);
+  }
+  .smrt-empty-state__lg .smrt-empty-state__icon {
+    border-radius: var(--smrt-radius-3xl);
+  }
+  .smrt-empty-state__title {
+    font: var(--smrt-typography-title-large-font);
+    color: var(--smrt-color-on-surface);
+    font-weight: var(--smrt-typography-weight-medium, 500);
+  }
+  .smrt-empty-state__sm .smrt-empty-state__title {
+    font: var(--smrt-typography-title-medium-font);
+  }
+  .smrt-empty-state__lg .smrt-empty-state__title {
+    font: var(--smrt-typography-headline-small-font);
+  }
+  .smrt-empty-state__description {
+    font: var(--smrt-typography-body-medium-font);
+    color: var(--smrt-color-on-surface-variant);
+    line-height: var(--smrt-typography-body-medium-line-height, 1.5);
+  }
+  .smrt-empty-state__action {
     font: var(--smrt-typography-label-large-font);
     font-weight: var(--smrt-typography-weight-medium, 500);
     color: var(--smrt-color-on-primary);
@@ -175,16 +186,13 @@ const icons = {
     border: none;
     border-radius: var(--smrt-radius-2xl);
     text-decoration: none;
-    cursor: pointer;
     transition: box-shadow 200ms, background-color 200ms;
-    position: relative;
-    overflow: hidden;
     box-shadow: var(--smrt-elevation-1);
   }
-
-  .action-button:hover {
+  .smrt-empty-state__action:hover {
     background-color: var(--smrt-color-primary);
     box-shadow: var(--smrt-elevation-2);
   }
 }
+
 </style>

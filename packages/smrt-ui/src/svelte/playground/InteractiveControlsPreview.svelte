@@ -76,19 +76,19 @@ const identity = (controlId: string) => ({
 });
 </script>
 
-<div class="workbench">
+<div class="smrt-interactive-controls-preview__root" data-smrt-component="InteractiveControlsPreview">
   <header>
-    <div><p class="eyebrow">Addressable controls</p><h4>Interactive form foundation</h4><p>Every control exposes stable identity, capability, state, and consent-aware mutation hooks.</p></div>
-    <div class="agent-actions">
+    <div><p class="smrt-interactive-controls-preview__eyebrow" data-smrt-part="label">Addressable controls</p><h4>Interactive form foundation</h4><p>Every control exposes stable identity, capability, state, and consent-aware mutation hooks.</p></div>
+    <div class="smrt-interactive-controls-preview__agent-actions" data-smrt-part="actions">
       <Button size="sm" variant="secondary" onclick={() => command({ action: 'highlight', identity: identity('country') })}>Highlight country</Button>
       <Button size="sm" variant="secondary" onclick={() => command({ action: 'stage', identity: identity('volume'), value: 72 })}>Stage volume 72</Button>
       <Button size="sm" onclick={() => command({ action: 'stage', identity: identity('country'), value: 'us' })}>Stage country US</Button>
     </div>
   </header>
-  <p class="agent-status" aria-live="polite">Agent: {status} Review staged changes in the form before applying or discarding them.</p>
+  <p class="smrt-interactive-controls-preview__agent-status" data-smrt-part="status" aria-live="polite">Agent: {status} Review staged changes in the form before applying or discarding them.</p>
 
   <Form formId="foundation-demo" interactionRegistry={registry} aria-label="Foundation controls">
-    <section><h5>Choice and state</h5><div class="grid compact">
+    <section><h5>Choice and state</h5><div class="smrt-interactive-controls-preview__grid smrt-interactive-controls-preview__compact" data-smrt-part="body">
       <Checkbox name="accepted" label="Accept terms" bind:checked={accepted} />
       <Switch name="notifications" label="Notifications" bind:checked={notifications} />
       <ToggleButton name="pinned" bind:pressed={pinned}>Pin workspace</ToggleButton>
@@ -97,12 +97,12 @@ const identity = (controlId: string) => ({
       <Listbox name="region" label="Region" options={[{ value: 'west', label: 'West' }, { value: 'central', label: 'Central' }, { value: 'east', label: 'East' }]} bind:value={region} />
     </div></section>
 
-    <section><h5>Ranges</h5><div class="grid">
+    <section><h5>Ranges</h5><div class="smrt-interactive-controls-preview__grid" data-smrt-part="body">
       <Slider name="volume" label="Volume" unit="%" bind:value={volume} />
       <RangeSlider name="budget" label="Budget range" unit="%" bind:value={budget} />
     </div></section>
 
-    <section><h5>Structured input</h5><div class="grid">
+    <section><h5>Structured input</h5><div class="smrt-interactive-controls-preview__grid" data-smrt-part="body">
       <Combobox name="country" label="Country" options={countries} bind:value={country} />
       <RelationInput name="customerId" label="Customer" description="Search by name or email" search={searchCustomers} resolve={resolveCustomer} bind:value={customerId} />
       <MultiSelect name="channels" label="Channels" options={[{ value: 'email', label: 'Email' }, { value: 'sms', label: 'SMS' }, { value: 'push', label: 'Push' }]} bind:values={channels} />
@@ -116,18 +116,92 @@ const identity = (controlId: string) => ({
 
 <style>
 @layer smrt.reset, smrt.structure, smrt.theme;
-@layer smrt.theme {
-  .workbench { display: grid; gap: var(--smrt-spacing-5); color: var(--smrt-color-on-surface); }
-  header { display: flex; align-items: flex-start; justify-content: space-between; gap: var(--smrt-spacing-5); padding-bottom: var(--smrt-spacing-4); border-bottom: var(--smrt-hairline); }
-  h4, h5, p { margin: 0; } h4 { font: var(--smrt-typography-headline-small-font); } h5 { margin-bottom: var(--smrt-spacing-3); font: var(--smrt-typography-title-medium-font); }
-  header p:not(.eyebrow) { max-width: 40rem; color: var(--smrt-color-on-surface-variant); }
-  .eyebrow { color: var(--smrt-color-primary); font: var(--smrt-typography-label-small-font); letter-spacing: .1em; text-transform: uppercase; }
-  .agent-actions { display: flex; flex-wrap: wrap; justify-content: flex-end; gap: var(--smrt-spacing-2); }
-  .agent-status { padding: var(--smrt-spacing-3); border-inline-start: 3px solid var(--smrt-color-tertiary); background: var(--smrt-color-surface-container-low); color: var(--smrt-color-on-surface-variant); }
-  :global(form) { display: grid; gap: var(--smrt-spacing-6); }
-  section { min-width: 0; }
-  .grid { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: var(--smrt-spacing-5); align-items: start; }
-  .grid.compact { grid-template-columns: repeat(3, minmax(0, 1fr)); }
-  @media (max-width: 900px) { header { flex-direction: column; } .agent-actions { justify-content: flex-start; } .grid, .grid.compact { grid-template-columns: 1fr; } }
+@layer smrt.structure {
+  .smrt-interactive-controls-preview__root {
+    display: grid;
+    gap: var(--smrt-spacing-5);
+  }
+  header {
+    display: flex;
+    align-items: flex-start;
+    justify-content: space-between;
+    gap: var(--smrt-spacing-5);
+    padding-bottom: var(--smrt-spacing-4);
+  }
+  h4, h5, p {
+    margin: 0;
+  }
+  h5 {
+    margin-bottom: var(--smrt-spacing-3);
+  }
+  header p:not(.smrt-interactive-controls-preview__eyebrow) {
+    max-width: 40rem;
+  }
+  .smrt-interactive-controls-preview__agent-actions {
+    display: flex;
+    flex-wrap: wrap;
+    justify-content: flex-end;
+    gap: var(--smrt-spacing-2);
+  }
+  .smrt-interactive-controls-preview__agent-status {
+    padding: var(--smrt-spacing-3);
+  }
+  :global(form) {
+    display: grid;
+    gap: var(--smrt-spacing-6);
+  }
+  section {
+    min-width: 0;
+  }
+  .smrt-interactive-controls-preview__grid {
+    display: grid;
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+    gap: var(--smrt-spacing-5);
+    align-items: start;
+  }
+  .smrt-interactive-controls-preview__grid.smrt-interactive-controls-preview__compact {
+    grid-template-columns: repeat(3, minmax(0, 1fr));
+  }
+  @media (max-width: 900px) {
+    header {
+      flex-direction: column;
+    }
+    .smrt-interactive-controls-preview__agent-actions {
+      justify-content: flex-start;
+    }
+    .smrt-interactive-controls-preview__grid, .smrt-interactive-controls-preview__grid.smrt-interactive-controls-preview__compact {
+      grid-template-columns: 1fr;
+    }
+  }
 }
+
+@layer smrt.theme {
+  .smrt-interactive-controls-preview__root {
+    color: var(--smrt-color-on-surface);
+  }
+  header {
+    border-bottom: var(--smrt-hairline);
+  }
+  h4 {
+    font: var(--smrt-typography-headline-small-font);
+  }
+  h5 {
+    font: var(--smrt-typography-title-medium-font);
+  }
+  header p:not(.smrt-interactive-controls-preview__eyebrow) {
+    color: var(--smrt-color-on-surface-variant);
+  }
+  .smrt-interactive-controls-preview__eyebrow {
+    color: var(--smrt-color-primary);
+    font: var(--smrt-typography-label-small-font);
+    letter-spacing: .1em;
+    text-transform: uppercase;
+  }
+  .smrt-interactive-controls-preview__agent-status {
+    border-inline-start: 3px solid var(--smrt-color-tertiary);
+    background: var(--smrt-color-surface-container-low);
+    color: var(--smrt-color-on-surface-variant);
+  }
+}
+
 </style>

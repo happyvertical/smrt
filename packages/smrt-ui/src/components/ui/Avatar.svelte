@@ -57,10 +57,11 @@ const statusLabels: Record<AvatarStatus, string> = {
 };
 </script>
 
-<span class="avatar {size} {className}" {...rest} data-smrt-component="Avatar">
+<span class="smrt-avatar__root smrt-avatar__{size} {className}" {...rest} data-smrt-component="Avatar">
   {#if src && !imgFailed}
     <img
-      class="avatar__img"
+      class="smrt-avatar__img"
+      data-smrt-part="content"
       {src}
       alt={name}
       onerror={() => {
@@ -68,69 +69,53 @@ const statusLabels: Record<AvatarStatus, string> = {
       }}
     />
   {:else}
-    <span class="avatar__initials" role="img" aria-label={name}>
+    <span class="smrt-avatar__initials" data-smrt-part="content" role="img" aria-label={name}>
       {initialsOf(name)}
     </span>
   {/if}
   {#if status}
-    <span class="avatar__status {status}">
-      <span class="avatar__sr-only">{statusLabels[status]}</span>
+    <span class="smrt-avatar__status smrt-avatar__{status}" data-smrt-part="indicator">
+      <span class="smrt-avatar__sr-only" data-smrt-part="label">{statusLabels[status]}</span>
     </span>
   {/if}
 </span>
 
 <style>
 @layer smrt.reset, smrt.structure, smrt.theme;
-@layer smrt.theme {
-  .avatar {
+@layer smrt.structure {
+  .smrt-avatar__root {
     position: relative;
     display: inline-flex;
     align-items: center;
     justify-content: center;
     flex-shrink: 0;
-    border-radius: var(--smrt-radius-full);
-    background: var(--smrt-color-surface-container-high);
-    color: var(--smrt-color-on-surface-variant);
-    font-weight: var(--smrt-typography-weight-medium, 500);
     overflow: visible;
     user-select: none;
   }
-
-  .avatar__img {
+  .smrt-avatar__img {
     width: 100%;
     height: 100%;
-    border-radius: inherit;
     object-fit: cover;
   }
-
-  .avatar__initials {
-    line-height: 1;
-  }
-
   /* Sizes */
-  .sm {
+  .smrt-avatar__sm {
     width: 24px;
     height: 24px;
-    font-size: var(--smrt-typography-label-small-size, 0.6875rem);
   }
-  .md {
+  .smrt-avatar__md {
     width: 36px;
     height: 36px;
-    font-size: var(--smrt-typography-label-large-size, 0.875rem);
   }
-  .lg {
+  .smrt-avatar__lg {
     width: 48px;
     height: 48px;
-    font-size: var(--smrt-typography-title-medium-size, 1rem);
   }
-  .xl {
+  .smrt-avatar__xl {
     width: 64px;
     height: 64px;
-    font-size: var(--smrt-typography-title-large-size, 1.375rem);
   }
-
   /* Presence dot */
-  .avatar__status {
+  .smrt-avatar__status {
     position: absolute;
     right: 0;
     bottom: 0;
@@ -138,24 +123,9 @@ const statusLabels: Record<AvatarStatus, string> = {
     height: 28%;
     min-width: 8px;
     min-height: 8px;
-    border-radius: var(--smrt-radius-full);
-    border: 2px solid var(--smrt-color-surface);
     box-sizing: border-box;
   }
-  .avatar__status.online {
-    background: var(--smrt-color-success);
-  }
-  .avatar__status.offline {
-    background: var(--smrt-color-outline);
-  }
-  .avatar__status.away {
-    background: var(--smrt-color-warning);
-  }
-  .avatar__status.busy {
-    background: var(--smrt-color-error);
-  }
-
-  .avatar__sr-only {
+  .smrt-avatar__sr-only {
     position: absolute;
     width: 1px;
     height: 1px;
@@ -164,7 +134,55 @@ const statusLabels: Record<AvatarStatus, string> = {
     overflow: hidden;
     clip: rect(0, 0, 0, 0);
     white-space: nowrap;
+  }
+}
+
+@layer smrt.theme {
+  .smrt-avatar__root {
+    border-radius: var(--smrt-radius-full);
+    background: var(--smrt-color-surface-container-high);
+    color: var(--smrt-color-on-surface-variant);
+    font-weight: var(--smrt-typography-weight-medium, 500);
+  }
+  .smrt-avatar__img {
+    border-radius: inherit;
+  }
+  .smrt-avatar__initials {
+    line-height: 1;
+  }
+  /* Sizes */
+  .smrt-avatar__sm {
+    font-size: var(--smrt-typography-label-small-size, 0.6875rem);
+  }
+  .smrt-avatar__md {
+    font-size: var(--smrt-typography-label-large-size, 0.875rem);
+  }
+  .smrt-avatar__lg {
+    font-size: var(--smrt-typography-title-medium-size, 1rem);
+  }
+  .smrt-avatar__xl {
+    font-size: var(--smrt-typography-title-large-size, 1.375rem);
+  }
+  /* Presence dot */
+  .smrt-avatar__status {
+    border-radius: var(--smrt-radius-full);
+    border: 2px solid var(--smrt-color-surface);
+  }
+  .smrt-avatar__status.smrt-avatar__online {
+    background: var(--smrt-color-success);
+  }
+  .smrt-avatar__status.smrt-avatar__offline {
+    background: var(--smrt-color-outline);
+  }
+  .smrt-avatar__status.smrt-avatar__away {
+    background: var(--smrt-color-warning);
+  }
+  .smrt-avatar__status.smrt-avatar__busy {
+    background: var(--smrt-color-error);
+  }
+  .smrt-avatar__sr-only {
     border: 0;
   }
 }
+
 </style>

@@ -86,7 +86,9 @@ describe('ConfidenceBadge', () => {
     const { container } = render(ConfidenceBadge, {
       props: { confidence: value },
     });
-    const badge = container.querySelector('.confidence-badge') as HTMLElement;
+    const badge = container.querySelector(
+      '[data-smrt-component="ConfidenceBadge"]',
+    ) as HTMLElement;
     expect(
       badge.style.getPropertyValue('--smrt-confidence-badge-bar-color'),
     ).toContain(`smrt-color-${token}`);
@@ -98,7 +100,9 @@ describe('ConfidenceBadge', () => {
     const { container } = render(ConfidenceBadge, {
       props: { confidence: 90 },
     });
-    const badge = container.querySelector('.confidence-badge') as HTMLElement;
+    const badge = container.querySelector(
+      '[data-smrt-component="ConfidenceBadge"]',
+    ) as HTMLElement;
     for (const prop of [
       '--smrt-badge-bg',
       '--smrt-badge-text',
@@ -114,18 +118,22 @@ describe('ConfidenceBadge', () => {
     const { container } = render(ConfidenceBadge, {
       props: { confidence: 50, class: 'my-badge' },
     });
-    const badge = container.querySelector('.confidence-badge');
+    const badge = container.querySelector(
+      '[data-smrt-component="ConfidenceBadge"]',
+    );
     expect(badge).toHaveClass('my-badge');
   });
 
   it.each([
-    ['sm', 'sm'],
-    ['lg', 'lg'],
+    ['sm', 'smrt-confidence-badge__sm'],
+    ['lg', 'smrt-confidence-badge__lg'],
   ] as const)('applies the %s size class', (size, cls) => {
     const { container } = render(ConfidenceBadge, {
       props: { confidence: 50, size },
     });
-    expect(container.querySelector('.confidence-badge')).toHaveClass(cls);
+    expect(
+      container.querySelector('[data-smrt-component="ConfidenceBadge"]'),
+    ).toHaveClass(cls);
   });
 
   it.each([10, 60, 95])('is axe-clean at %s%% confidence', async (value) => {

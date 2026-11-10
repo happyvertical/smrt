@@ -122,12 +122,13 @@ $effect(() => {
 });
 </script>
 
-<div class="role-selector" class:disabled bind:this={wrapEl} data-smrt-component="RoleSelector">
+<div class="smrt-role-selector__root" class:smrt-role-selector__disabled={disabled} bind:this={wrapEl} data-smrt-component="RoleSelector">
   <button
     bind:this={triggerEl}
     type="button"
-    class="trigger"
-    class:open
+    class="smrt-role-selector__trigger"
+    data-smrt-part="trigger"
+    class:smrt-role-selector__open={open}
     onclick={() => (open ? closeList(false) : openList())}
     onkeydown={onTriggerKeydown}
     {disabled}
@@ -135,16 +136,16 @@ $effect(() => {
     aria-expanded={open}
   >
     {#if selectedRole}
-      <span class="selected">
-        <span class="role-name">{selectedRole.name}</span>
+      <span class="smrt-role-selector__selected" data-smrt-part="value">
+        <span class="smrt-role-selector__role-name" data-smrt-part="label">{selectedRole.name}</span>
         {#if selectedRole.isSystem}
-          <span class="system-badge">System</span>
+          <span class="smrt-role-selector__system-badge" data-smrt-part="badge">System</span>
         {/if}
       </span>
     {:else}
-      <span class="placeholder">{placeholder}</span>
+      <span class="smrt-role-selector__placeholder" data-smrt-part="placeholder">{placeholder}</span>
     {/if}
-    <svg class="chevron" viewBox="0 0 20 20" fill="currentColor" aria-hidden="true">
+    <svg class="smrt-role-selector__chevron" data-smrt-part="icon" viewBox="0 0 20 20" fill="currentColor" aria-hidden="true">
       <path
         fill-rule="evenodd"
         d="M5.23 7.21a.75.75 0 011.06.02L10 11.168l3.71-3.938a.75.75 0 111.08 1.04l-4.25 4.5a.75.75 0 01-1.08 0l-4.25-4.5a.75.75 0 01.02-1.06z"
@@ -156,7 +157,8 @@ $effect(() => {
   {#if open}
     <!-- svelte-ignore a11y_no_noninteractive_element_interactions -->
     <div
-      class="dropdown"
+      class="smrt-role-selector__dropdown"
+      data-smrt-part="panel"
       role="listbox"
       tabindex={-1}
       aria-label={placeholder}
@@ -166,21 +168,22 @@ $effect(() => {
         <button
           bind:this={optionEls[i]}
           type="button"
-          class="option"
-          class:selected={role.id === value}
+          class="smrt-role-selector__option"
+          data-smrt-part="option"
+          class:smrt-role-selector__selected={role.id === value}
           onclick={() => handleSelect(role.id!)}
           role="option"
           tabindex={-1}
           aria-selected={role.id === value}
         >
-          <div class="option-content">
-            <span class="role-name">{role.name}</span>
+          <div class="smrt-role-selector__option-content" data-smrt-part="content">
+            <span class="smrt-role-selector__role-name" data-smrt-part="label">{role.name}</span>
             {#if role.isSystem}
-              <span class="system-badge">System</span>
+              <span class="smrt-role-selector__system-badge" data-smrt-part="badge">System</span>
             {/if}
           </div>
           {#if showDescription && role.description}
-            <span class="description">{role.description}</span>
+            <span class="smrt-role-selector__description" data-smrt-part="description">{role.description}</span>
           {/if}
         </button>
       {/each}
@@ -190,136 +193,135 @@ $effect(() => {
 
 <style>
 @layer smrt.reset, smrt.structure, smrt.theme;
-@layer smrt.theme {
-  .role-selector {
+@layer smrt.structure {
+  .smrt-role-selector__root {
     position: relative;
     width: 100%;
   }
-
-  .role-selector.disabled {
-    opacity: 0.6;
-  }
-
-  .trigger {
+  .smrt-role-selector__trigger {
     display: flex;
     align-items: center;
     justify-content: space-between;
     width: 100%;
     padding: 0.5rem 0.75rem;
-    background: var(--smrt-color-surface, white);
-    border: var(--smrt-hairline-strong);
-    border-radius: var(--smrt-radius-small, 0.375rem);
-    font-size: var(--smrt-typography-body-medium-size, 0.875rem);
     cursor: pointer;
-    text-align: left;
   }
-
-  .trigger:focus-visible {
-    outline: none;
-    border-color: var(--smrt-color-primary);
-    box-shadow: 0 0 0 3px color-mix(in srgb, var(--smrt-color-primary) 10%, transparent);
-  }
-
-  .trigger.open {
-    border-color: var(--smrt-color-primary);
-  }
-
-  .trigger:disabled {
-    background: var(--smrt-color-surface-container-high);
+  .smrt-role-selector__trigger:disabled {
     cursor: not-allowed;
   }
-
-  .selected {
+  .smrt-role-selector__selected {
     display: flex;
     align-items: center;
     gap: 0.5rem;
   }
-
-  .placeholder {
-    color: var(--smrt-color-on-surface-variant);
-  }
-
-  .chevron {
+  .smrt-role-selector__chevron {
     width: 1.25rem;
     height: 1.25rem;
-    color: var(--smrt-color-on-surface-variant);
-    transition: transform var(--smrt-duration-short2, 150ms) var(--smrt-easing-standard, ease);
   }
-
-  .trigger.open .chevron {
-    transform: rotate(180deg);
-  }
-
-  .dropdown {
+  .smrt-role-selector__dropdown {
     position: absolute;
     top: 100%;
     left: 0;
     right: 0;
     margin-top: 0.25rem;
-    background: var(--smrt-color-surface, white);
-    border: var(--smrt-hairline);
-    border-radius: var(--smrt-radius-small, 0.375rem);
-    box-shadow: var(--smrt-elevation-2, 0 4px 6px -1px rgba(0, 0, 0, 0.1));
     z-index: var(--smrt-z-index-dropdown, 1000);
     max-height: 15rem;
     overflow-y: auto;
   }
-
-  .option {
+  .smrt-role-selector__option {
     display: flex;
     flex-direction: column;
     gap: 0.125rem;
     width: 100%;
     padding: 0.5rem 0.75rem;
-    background: none;
-    border: none;
-    font-size: var(--smrt-typography-body-medium-size, 0.875rem);
     cursor: pointer;
-    text-align: left;
   }
-
-  .option:hover {
-    background: var(--smrt-color-surface-container-high);
-  }
-  /* Keyboard focus needs its own indicator: the hover background alone is a
-     ~1.1:1 change against the list surface in every preset, which is invisible
-     and fails WCAG 2.4.11. Inset so it is not clipped by the list's overflow
-     (#2322). */
-  .option:focus-visible {
-    background: var(--smrt-color-surface-container-high);
-    outline: var(--smrt-focus-ring-width) solid var(--smrt-focus-ring-color);
-    outline-offset: calc(var(--smrt-focus-ring-width) * -1);
-  }
-
-  .option.selected {
-    background: var(--smrt-color-primary-container);
-  }
-
-  .option-content {
+  .smrt-role-selector__option-content {
     display: flex;
     align-items: center;
     gap: 0.5rem;
   }
+  .smrt-role-selector__system-badge {
+    padding: 0.125rem 0.375rem;
+  }
+}
 
-  .role-name {
+@layer smrt.theme {
+  .smrt-role-selector__root.smrt-role-selector__disabled {
+    opacity: 0.6;
+  }
+  .smrt-role-selector__trigger {
+    background: var(--smrt-color-surface, white);
+    border: var(--smrt-hairline-strong);
+    border-radius: var(--smrt-radius-small, 0.375rem);
+    font-size: var(--smrt-typography-body-medium-size, 0.875rem);
+    text-align: left;
+  }
+  .smrt-role-selector__trigger:focus-visible {
+    outline: none;
+    border-color: var(--smrt-color-primary);
+    box-shadow: 0 0 0 3px color-mix(in srgb, var(--smrt-color-primary) 10%, transparent);
+  }
+  .smrt-role-selector__trigger.smrt-role-selector__open {
+    border-color: var(--smrt-color-primary);
+  }
+  .smrt-role-selector__trigger:disabled {
+    background: var(--smrt-color-surface-container-high);
+  }
+  .smrt-role-selector__placeholder {
+    color: var(--smrt-color-on-surface-variant);
+  }
+  .smrt-role-selector__chevron {
+    color: var(--smrt-color-on-surface-variant);
+    transition: transform var(--smrt-duration-short2, 150ms) var(--smrt-easing-standard, ease);
+  }
+  .smrt-role-selector__trigger.smrt-role-selector__open .smrt-role-selector__chevron {
+    transform: rotate(180deg);
+  }
+  .smrt-role-selector__dropdown {
+    background: var(--smrt-color-surface, white);
+    border: var(--smrt-hairline);
+    border-radius: var(--smrt-radius-small, 0.375rem);
+    box-shadow: var(--smrt-elevation-2, 0 4px 6px -1px rgba(0, 0, 0, 0.1));
+  }
+  .smrt-role-selector__option {
+    background: none;
+    border: none;
+    font-size: var(--smrt-typography-body-medium-size, 0.875rem);
+    text-align: left;
+  }
+  .smrt-role-selector__option:hover {
+    background: var(--smrt-color-surface-container-high);
+  }
+  /* Keyboard focus needs its own indicator: the hover background alone is a
+  ~1.1:1 change against the list surface in every preset, which is invisible
+  and fails WCAG 2.4.11. Inset so it is not clipped by the list's overflow
+  (#2322). */
+  .smrt-role-selector__option:focus-visible {
+    background: var(--smrt-color-surface-container-high);
+    outline: var(--smrt-focus-ring-width) solid var(--smrt-focus-ring-color);
+    outline-offset: calc(var(--smrt-focus-ring-width) * -1);
+  }
+  .smrt-role-selector__option.smrt-role-selector__selected {
+    background: var(--smrt-color-primary-container);
+  }
+  .smrt-role-selector__role-name {
     font-weight: var(--smrt-typography-weight-medium, 500);
     color: var(--smrt-color-on-surface);
     text-transform: capitalize;
   }
-
-  .system-badge {
+  .smrt-role-selector__system-badge {
     font-size: var(--smrt-typography-label-small-size, 0.625rem);
-    padding: 0.125rem 0.375rem;
     background: var(--smrt-color-primary-container);
     color: var(--smrt-color-on-primary-container);
     border-radius: var(--smrt-radius-full);
     text-transform: uppercase;
     font-weight: var(--smrt-typography-weight-semibold, 600);
   }
-
-  .description {
+  .smrt-role-selector__description {
     font-size: var(--smrt-typography-body-small-size, 0.75rem);
     color: var(--smrt-color-on-surface-variant);
   }
 }
+
 </style>

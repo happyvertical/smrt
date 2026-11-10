@@ -44,39 +44,39 @@ const labels = {
 };
 </script>
 
-<div class="smrt-color-scheme-toggle {variant} {className}" data-smrt-component="ColorSchemeToggle">
+<div class="smrt-color-scheme-toggle__root smrt-color-scheme-toggle__variant-{variant} {className}" data-smrt-component="ColorSchemeToggle">
   {#if variant === 'switch'}
     <button
-      class="smrt-color-scheme-toggle__switch"
+      class="smrt-color-scheme-toggle__switch" data-smrt-part="trigger"
       onclick={toggle}
       type="button"
       aria-label={ariaLabel}
       title={labels[context.state.resolvedScheme]}
     >
       {#if context.state.isDark}
-        <span class="smrt-color-scheme-toggle__icon">{icons.dark}</span>
+        <span class="smrt-color-scheme-toggle__icon" data-smrt-part="icon">{icons.dark}</span>
       {:else}
-        <span class="smrt-color-scheme-toggle__icon">{icons.light}</span>
+        <span class="smrt-color-scheme-toggle__icon" data-smrt-part="icon">{icons.light}</span>
       {/if}
       {#if showLabels}
-        <span class="smrt-color-scheme-toggle__label">
+        <span class="smrt-color-scheme-toggle__label" data-smrt-part="label">
           {labels[context.state.resolvedScheme]}
         </span>
       {/if}
     </button>
 
   {:else if variant === 'buttons'}
-    <div class="smrt-color-scheme-toggle__buttons">
+    <div class="smrt-color-scheme-toggle__buttons" data-smrt-part="list">
       {#each ['light', 'dark', 'system'] as scheme}
         <button
-          class="smrt-color-scheme-toggle__button"
-          class:active={context.state.colorScheme === scheme}
+          class="smrt-color-scheme-toggle__button" data-smrt-part="trigger"
+          class:smrt-color-scheme-toggle__active={context.state.colorScheme === scheme}
           onclick={() => setScheme(scheme as ColorScheme)}
           type="button"
         >
-          <span class="smrt-color-scheme-toggle__icon">{icons[scheme as keyof typeof icons]}</span>
+          <span class="smrt-color-scheme-toggle__icon" data-smrt-part="icon">{icons[scheme as keyof typeof icons]}</span>
           {#if showLabels}
-            <span class="smrt-color-scheme-toggle__label">
+            <span class="smrt-color-scheme-toggle__label" data-smrt-part="label">
               {labels[scheme as keyof typeof labels]}
             </span>
           {/if}
@@ -85,21 +85,21 @@ const labels = {
     </div>
 
   {:else if variant === 'segmented'}
-    <div class="smrt-color-scheme-toggle__segmented" role="radiogroup" aria-label={ariaLabel}>
+    <div class="smrt-color-scheme-toggle__segmented" data-smrt-part="list" role="radiogroup" aria-label={ariaLabel}>
       {#each ['light', 'dark', 'system'] as scheme}
         <button
-          class="smrt-color-scheme-toggle__segment"
-          class:active={context.state.colorScheme === scheme}
+          class="smrt-color-scheme-toggle__segment" data-smrt-part="trigger"
+          class:smrt-color-scheme-toggle__active={context.state.colorScheme === scheme}
           onclick={() => setScheme(scheme as ColorScheme)}
           type="button"
           role="radio"
           aria-checked={context.state.colorScheme === scheme}
         >
-          <span class="smrt-color-scheme-toggle__icon">
+          <span class="smrt-color-scheme-toggle__icon" data-smrt-part="icon">
             {icons[scheme as keyof typeof icons]}
           </span>
           {#if showLabels}
-            <span class="smrt-color-scheme-toggle__label">
+            <span class="smrt-color-scheme-toggle__label" data-smrt-part="label">
               {labels[scheme as keyof typeof labels]}
             </span>
           {/if}
@@ -111,98 +111,98 @@ const labels = {
 
 <style>
 @layer smrt.reset, smrt.structure, smrt.theme;
-@layer smrt.theme {
-  .smrt-color-scheme-toggle {
+@layer smrt.structure {
+  .smrt-color-scheme-toggle__root {
     display: inline-flex;
     align-items: center;
   }
-
   .smrt-color-scheme-toggle__switch {
     display: flex;
     align-items: center;
     gap: var(--smrt-spacing-2, 0.5rem);
     padding: var(--smrt-spacing-2, 0.5rem) var(--smrt-spacing-3, 0.75rem);
-    border: var(--smrt-hairline-strong);
-    border-radius: var(--smrt-radius-full);
-    background: var(--smrt-color-surface-container-low);
-    color: var(--smrt-color-on-surface, inherit);
-    font-size: var(--smrt-typography-body-medium-size, 0.875rem);
     cursor: pointer;
-    transition: all 200ms ease;
   }
-
-  .smrt-color-scheme-toggle__switch:hover {
-    background: var(--smrt-color-surface-container);
-  }
-
   .smrt-color-scheme-toggle__buttons {
     display: flex;
     gap: var(--smrt-spacing-1, 0.25rem);
   }
-
   .smrt-color-scheme-toggle__button {
     display: flex;
     align-items: center;
     gap: var(--smrt-spacing-1, 0.25rem);
     padding: var(--smrt-spacing-1_5, 0.375rem) var(--smrt-spacing-3, 0.75rem);
-    border: var(--smrt-hairline-strong);
-    border-radius: var(--smrt-radius-md, 0.5rem);
-    background: var(--smrt-color-surface-container-low);
-    color: var(--smrt-color-on-surface, inherit);
-    font-size: var(--smrt-typography-body-medium-size, 0.875rem);
     cursor: pointer;
-    transition: all 200ms ease;
   }
-
-  .smrt-color-scheme-toggle__button:hover {
-    background: var(--smrt-color-surface-container);
-  }
-
-  .smrt-color-scheme-toggle__button.active {
-    background: var(--smrt-color-primary-container);
-    color: var(--smrt-color-on-primary-container);
-    border-color: var(--smrt-color-primary);
-  }
-
   .smrt-color-scheme-toggle__segmented {
     display: inline-flex;
-    background: var(--smrt-color-surface-container-lowest);
-    border: var(--smrt-hairline-strong);
-    border-radius: var(--smrt-radius-lg, 0.75rem);
     padding: var(--smrt-spacing-0_5, 0.125rem);
   }
-
   .smrt-color-scheme-toggle__segment {
     display: flex;
     align-items: center;
     gap: var(--smrt-spacing-1, 0.25rem);
     padding: var(--smrt-spacing-1_5, 0.375rem) var(--smrt-spacing-3, 0.75rem);
+    cursor: pointer;
+  }
+}
+
+@layer smrt.theme {
+  .smrt-color-scheme-toggle__switch {
+    border: var(--smrt-hairline-strong);
+    border-radius: var(--smrt-radius-full);
+    background: var(--smrt-color-surface-container-low);
+    color: var(--smrt-color-on-surface, inherit);
+    font-size: var(--smrt-typography-body-medium-size, 0.875rem);
+    transition: all 200ms ease;
+  }
+  .smrt-color-scheme-toggle__switch:hover {
+    background: var(--smrt-color-surface-container);
+  }
+  .smrt-color-scheme-toggle__button {
+    border: var(--smrt-hairline-strong);
+    border-radius: var(--smrt-radius-md, 0.5rem);
+    background: var(--smrt-color-surface-container-low);
+    color: var(--smrt-color-on-surface, inherit);
+    font-size: var(--smrt-typography-body-medium-size, 0.875rem);
+    transition: all 200ms ease;
+  }
+  .smrt-color-scheme-toggle__button:hover {
+    background: var(--smrt-color-surface-container);
+  }
+  .smrt-color-scheme-toggle__button.smrt-color-scheme-toggle__active {
+    background: var(--smrt-color-primary-container);
+    color: var(--smrt-color-on-primary-container);
+    border-color: var(--smrt-color-primary);
+  }
+  .smrt-color-scheme-toggle__segmented {
+    background: var(--smrt-color-surface-container-lowest);
+    border: var(--smrt-hairline-strong);
+    border-radius: var(--smrt-radius-lg, 0.75rem);
+  }
+  .smrt-color-scheme-toggle__segment {
     border: none;
     border-radius: var(--smrt-radius-md, 0.5rem);
     background: transparent;
     color: var(--smrt-color-on-surface-variant);
     font-size: var(--smrt-typography-body-medium-size, 0.875rem);
-    cursor: pointer;
     transition: all 200ms ease;
   }
-
   .smrt-color-scheme-toggle__segment:hover {
     color: var(--smrt-color-on-surface, inherit);
   }
-
-  .smrt-color-scheme-toggle__segment.active {
+  .smrt-color-scheme-toggle__segment.smrt-color-scheme-toggle__active {
     background: var(--smrt-color-surface, white);
     color: var(--smrt-color-on-surface, inherit);
     box-shadow: var(--smrt-elevation-1, 0 1px 2px rgba(0,0,0,0.1));
   }
-
   .smrt-color-scheme-toggle__icon {
     font-size: var(--smrt-typography-body-large-size, 1rem);
     line-height: 1;
   }
-
   .smrt-color-scheme-toggle__label {
     font-size: inherit;
   }
 }
+
 </style>

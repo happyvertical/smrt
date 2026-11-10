@@ -127,13 +127,14 @@ function onItemKeydown(event: KeyboardEvent, index: number, item: FlatNode) {
 }
 </script>
 
-<div role="tree" aria-label={ariaLabel} class="tree" data-smrt-component="Tree">
+<div role="tree" aria-label={ariaLabel} class="smrt-tree__root" data-smrt-component="Tree">
   {#each flat as item, i (item.node.id)}
     <div
       bind:this={itemEls[i]}
       role="treeitem"
-      class="tree__item"
-      class:selected={selectedId === item.node.id}
+      class="smrt-tree__item"
+      class:smrt-tree__selected={selectedId === item.node.id}
+      data-smrt-part="item"
       style:padding-left="calc({item.depth} * var(--smrt-spacing-4) + var(--smrt-spacing-2))"
       aria-level={item.depth + 1}
       aria-selected={selectedId === item.node.id}
@@ -146,67 +147,72 @@ function onItemKeydown(event: KeyboardEvent, index: number, item: FlatNode) {
       onkeydown={(e) => onItemKeydown(e, i, item)}
     >
       {#if item.hasChildren}
-        <span class="tree__twisty" class:open={item.isExpanded} aria-hidden="true"
+        <span class="smrt-tree__twisty" class:smrt-tree__open={item.isExpanded} data-smrt-part="indicator" aria-hidden="true"
           >▸</span
         >
       {:else}
-        <span class="tree__twisty tree__twisty--leaf" aria-hidden="true"></span>
+        <span class="smrt-tree__twisty smrt-tree__twisty-leaf" data-smrt-part="indicator" aria-hidden="true"></span>
       {/if}
-      <span class="tree__label">{item.node.label}</span>
+      <span class="smrt-tree__label" data-smrt-part="label">{item.node.label}</span>
     </div>
   {/each}
 </div>
 
 <style>
 @layer smrt.reset, smrt.structure, smrt.theme;
-@layer smrt.theme {
-  .tree {
+@layer smrt.structure {
+  .smrt-tree__root {
     display: flex;
     flex-direction: column;
   }
-
-  .tree__item {
+  .smrt-tree__item {
     display: flex;
     align-items: center;
     gap: var(--smrt-spacing-1);
     padding-top: var(--smrt-spacing-1);
     padding-bottom: var(--smrt-spacing-1);
     padding-right: var(--smrt-spacing-2);
-    border-radius: var(--smrt-radius-small);
     cursor: pointer;
-    color: var(--smrt-color-on-surface);
     user-select: none;
   }
-  .tree__item:hover {
-    background: var(--smrt-color-surface-container-high);
-  }
-  .tree__item:focus-visible {
-    outline: var(--smrt-focus-ring-width) solid var(--smrt-focus-ring-color);
-    outline-offset: calc(var(--smrt-focus-ring-width) * -1);
-  }
-  .tree__item.selected {
-    background: var(--smrt-color-primary-container);
-    color: var(--smrt-color-on-primary-container);
-  }
-
-  .tree__twisty {
+  .smrt-tree__twisty {
     display: inline-flex;
     width: 1em;
     justify-content: center;
+  }
+  .smrt-tree__twisty-leaf {
+    visibility: hidden;
+  }
+}
+
+@layer smrt.theme {
+  .smrt-tree__item {
+    border-radius: var(--smrt-radius-small);
+    color: var(--smrt-color-on-surface);
+  }
+  .smrt-tree__item:hover {
+    background: var(--smrt-color-surface-container-high);
+  }
+  .smrt-tree__item:focus-visible {
+    outline: var(--smrt-focus-ring-width) solid var(--smrt-focus-ring-color);
+    outline-offset: calc(var(--smrt-focus-ring-width) * -1);
+  }
+  .smrt-tree__item.smrt-tree__selected {
+    background: var(--smrt-color-primary-container);
+    color: var(--smrt-color-on-primary-container);
+  }
+  .smrt-tree__twisty {
     transition: transform 0.15s ease;
     font-size: 0.75em;
   }
-  .tree__twisty.open {
+  .smrt-tree__twisty.smrt-tree__open {
     transform: rotate(90deg);
   }
-  .tree__twisty--leaf {
-    visibility: hidden;
-  }
-
   @media (prefers-reduced-motion: reduce) {
-    .tree__twisty {
+    .smrt-tree__twisty {
       transition: none;
     }
   }
 }
+
 </style>

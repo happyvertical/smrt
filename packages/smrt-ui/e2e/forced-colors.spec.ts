@@ -74,7 +74,7 @@ for (const variant of ['static', 'inline'] as const) {
       const highlight = await systemColor(page, 'Highlight');
       const tokens = await page.evaluate(() => {
         const root = getComputedStyle(
-          document.querySelector('.smrt-theme-root') as Element,
+          document.querySelector('[data-smrt-component="ThemeProvider"]') as Element,
         );
         const read = (name: string) => root.getPropertyValue(name).trim();
         return {
@@ -255,7 +255,7 @@ test('[data-forced-colors] alone applies the token layer without media emulation
   const before = await style(page, CARD, 'border-top-color');
   await page.evaluate(() => {
     document.documentElement.setAttribute('data-forced-colors', '');
-    document.querySelector('.smrt-theme-root')?.setAttribute('data-forced-colors', '');
+    document.querySelector('[data-smrt-component="ThemeProvider"]')?.setAttribute('data-forced-colors', '');
   });
   const canvasText = await systemColor(page, 'CanvasText');
   // Card declares `transition: all`; poll until the change settles.
@@ -265,7 +265,7 @@ test('[data-forced-colors] alone applies the token layer without media emulation
   expect(before).not.toBe(canvasText);
   expect(isInvisibleShadow(await style(page, CARD, 'box-shadow'))).toBe(true);
   expect(
-    await page.locator('.smrt-theme-root').evaluate((el) =>
+    await page.locator('[data-smrt-component="ThemeProvider"]').evaluate((el) =>
       getComputedStyle(el).getPropertyValue('--smrt-focus-ring-color').trim(),
     ),
   ).toBe('Highlight');
@@ -276,7 +276,7 @@ test('standard colours are untouched when forced colors are off', async ({
 }) => {
   await page.goto('/e2e/forced-colors.html');
   await expect(page.getByRole('button', { name: 'Save' })).toBeVisible();
-  const tokens = await page.locator('.smrt-theme-root').evaluate((el) => {
+  const tokens = await page.locator('[data-smrt-component="ThemeProvider"]').evaluate((el) => {
     const s = getComputedStyle(el);
     return {
       ring: s.getPropertyValue('--smrt-focus-ring-color').trim(),

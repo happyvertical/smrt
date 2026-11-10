@@ -27,38 +27,38 @@ const {
 </script>
 
 <Container {maxWidth} data-page-layout-container>
-  <div class="page-layout gap-{gap} {className}" data-page-layout {...rest}>
+  <div class="smrt-page-layout__root smrt-page-layout__gap-{gap} {className}" data-page-layout {...rest}>
     {@render children()}
   </div>
 </Container>
 
 <style>
 @layer smrt.reset, smrt.structure, smrt.theme;
-@layer smrt.theme {
-  .page-layout {
+@layer smrt.structure {
+  .smrt-page-layout__root {
     display: grid;
     grid-template-columns: minmax(0, 1fr);
     min-inline-size: 0;
     padding-block: var(--smrt-spacing-5) var(--smrt-spacing-8);
     overflow-wrap: anywhere;
   }
-
-  .gap-sm {
+  .smrt-page-layout__gap-sm {
     gap: var(--smrt-spacing-3);
   }
-
-  .gap-md {
+  .smrt-page-layout__gap-md {
     gap: var(--smrt-spacing-5);
   }
-
-  .gap-lg {
+  .smrt-page-layout__gap-lg {
     gap: var(--smrt-spacing-8);
   }
-
   @media (min-width: 640px) {
-    .page-layout {
+    .smrt-page-layout__root {
       padding-block: var(--smrt-spacing-6) var(--smrt-spacing-10);
     }
   }
 }
+
+@layer smrt.theme {
+}
+
 </style>

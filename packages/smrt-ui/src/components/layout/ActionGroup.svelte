@@ -25,34 +25,34 @@ const {
 }: Props = $props();
 </script>
 
-<div class="action-group gap-{gap} justify-{justify} {className}" {...rest} data-smrt-component="ActionGroup">
+<div class="smrt-action-group__root smrt-action-group__gap-{gap} smrt-action-group__justify-{justify} {className}" {...rest} data-smrt-component="ActionGroup">
   {@render children()}
 </div>
 
 <style>
 @layer smrt.reset, smrt.structure, smrt.theme;
-@layer smrt.theme {
-  .action-group {
+@layer smrt.structure {
+  .smrt-action-group__root {
     display: flex;
     flex-wrap: wrap;
     align-items: center;
     min-inline-size: 0;
   }
-
-  .gap-sm {
+  .smrt-action-group__gap-sm {
     gap: var(--smrt-spacing-2);
   }
-
-  .gap-md {
+  .smrt-action-group__gap-md {
     gap: var(--smrt-spacing-3);
   }
-
-  .justify-start {
+  .smrt-action-group__justify-start {
     justify-content: flex-start;
   }
-
-  .justify-end {
+  .smrt-action-group__justify-end {
     justify-content: flex-end;
   }
 }
+
+@layer smrt.theme {
+}
+
 </style>

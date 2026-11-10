@@ -79,12 +79,13 @@ $effect(() => {
 });
 </script>
 
-<span bind:this={rootEl} class="popover {className}" data-smrt-component="Popover">
+<span bind:this={rootEl} class="smrt-popover__root {className}" data-smrt-component="Popover">
   <button
     bind:this={triggerEl}
     type="button"
-    class="popover__trigger"
-    class:popover__trigger--icon={variant === 'icon'}
+    class="smrt-popover__trigger"
+    class:smrt-popover__trigger-icon={variant === 'icon'}
+    data-smrt-part="trigger"
     aria-haspopup="dialog"
     aria-label={triggerLabel ?? (variant === 'icon' ? label : undefined)}
     aria-expanded={open}
@@ -99,7 +100,8 @@ $effect(() => {
     <div
       bind:this={panelEl}
       id={panelId}
-      class="popover__panel popover__panel--{placement}"
+      class="smrt-popover__panel smrt-popover__panel-{placement}"
+      data-smrt-part="panel"
       role="dialog"
       aria-label={label}
       tabindex="-1"
@@ -112,19 +114,94 @@ $effect(() => {
 
 <style>
 @layer smrt.reset, smrt.structure, smrt.theme;
-@layer smrt.theme {
-  .popover { position: relative; display: inline-flex; }
-  .popover__trigger { appearance: none; padding: var(--smrt-spacing-2) var(--smrt-spacing-3); border: var(--smrt-hairline-strong); border-radius: var(--smrt-control-radius); background: var(--smrt-surface-control); color: var(--smrt-color-on-surface); font: inherit; font-weight: var(--smrt-control-weight); cursor: pointer; }
-  .popover__trigger:focus-visible, .popover__panel:focus-visible { outline: var(--smrt-focus-ring-width) solid var(--smrt-focus-ring-color); outline-offset: var(--smrt-focus-ring-offset); }
-  .popover__trigger:disabled { opacity: var(--smrt-state-disabled); cursor: not-allowed; }
+@layer smrt.structure {
+  .smrt-popover__root {
+    position: relative;
+    display: inline-flex;
+  }
+  .smrt-popover__trigger {
+    padding: var(--smrt-spacing-2) var(--smrt-spacing-3);
+    cursor: pointer;
+  }
+  .smrt-popover__trigger:disabled {
+    cursor: not-allowed;
+  }
   /* Icon trigger: a 44px round glyph in the surrounding colour. Hover and open nudge the glyph; focus keeps the standard primary ring (a soft ring in the glyph's colour fell under 3:1 on ordinary surfaces). */
-  .popover__trigger--icon { display: inline-flex; align-items: center; justify-content: center; box-sizing: border-box; inline-size: 2.75rem; block-size: 2.75rem; padding: 0; border: none; border-radius: var(--smrt-radius-full); background: transparent; color: inherit; }
-  .popover__trigger--icon:hover:not(:disabled), .popover__trigger--icon[aria-expanded='true'] { background: transparent; color: color-mix(in srgb, currentColor 80%, var(--smrt-color-on-surface)); }
-  .popover__trigger--icon:focus-visible { background: transparent; }
-  .popover__panel { position: absolute; z-index: var(--smrt-z-index-popover, 1000); box-sizing: border-box; inline-size: var(--smrt-popover-panel-width, auto); min-width: min(16rem, calc(100vw - 2rem)); max-width: calc(100vw - 2rem); padding: var(--smrt-popover-panel-padding, var(--smrt-spacing-4)); border: var(--smrt-hairline); border-radius: var(--smrt-radius-large); background: var(--smrt-glass-surface); backdrop-filter: blur(var(--smrt-glass-blur)) saturate(var(--smrt-glass-saturation)); color: var(--smrt-color-on-surface); box-shadow: var(--smrt-inset-highlight), var(--smrt-elevation-3); }
-  .popover__panel--bottom-start { top: calc(100% + var(--smrt-spacing-1)); left: 0; }
-  .popover__panel--bottom-end { top: calc(100% + var(--smrt-spacing-1)); right: 0; }
-  .popover__panel--top-start { bottom: calc(100% + var(--smrt-spacing-1)); left: 0; }
-  .popover__panel--top-end { right: 0; bottom: calc(100% + var(--smrt-spacing-1)); }
+  .smrt-popover__trigger-icon {
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    box-sizing: border-box;
+    inline-size: 2.75rem;
+    block-size: 2.75rem;
+    padding: 0;
+  }
+  .smrt-popover__panel {
+    position: absolute;
+    z-index: var(--smrt-z-index-popover, 1000);
+    box-sizing: border-box;
+    inline-size: var(--smrt-popover-panel-width, auto);
+    min-width: min(16rem, calc(100vw - 2rem));
+    max-width: calc(100vw - 2rem);
+    padding: var(--smrt-popover-panel-padding, var(--smrt-spacing-4));
+  }
+  .smrt-popover__panel-bottom-start {
+    top: calc(100% + var(--smrt-spacing-1));
+    left: 0;
+  }
+  .smrt-popover__panel-bottom-end {
+    top: calc(100% + var(--smrt-spacing-1));
+    right: 0;
+  }
+  .smrt-popover__panel-top-start {
+    bottom: calc(100% + var(--smrt-spacing-1));
+    left: 0;
+  }
+  .smrt-popover__panel-top-end {
+    right: 0;
+    bottom: calc(100% + var(--smrt-spacing-1));
+  }
 }
+
+@layer smrt.theme {
+  .smrt-popover__trigger {
+    appearance: none;
+    border: var(--smrt-hairline-strong);
+    border-radius: var(--smrt-control-radius);
+    background: var(--smrt-surface-control);
+    color: var(--smrt-color-on-surface);
+    font: inherit;
+    font-weight: var(--smrt-control-weight);
+  }
+  .smrt-popover__trigger:focus-visible, .smrt-popover__panel:focus-visible {
+    outline: var(--smrt-focus-ring-width) solid var(--smrt-focus-ring-color);
+    outline-offset: var(--smrt-focus-ring-offset);
+  }
+  .smrt-popover__trigger:disabled {
+    opacity: var(--smrt-state-disabled);
+  }
+  /* Icon trigger: a 44px round glyph in the surrounding colour. Hover and open nudge the glyph; focus keeps the standard primary ring (a soft ring in the glyph's colour fell under 3:1 on ordinary surfaces). */
+  .smrt-popover__trigger-icon {
+    border: none;
+    border-radius: var(--smrt-radius-full);
+    background: transparent;
+    color: inherit;
+  }
+  .smrt-popover__trigger-icon:hover:not(:disabled), .smrt-popover__trigger-icon[aria-expanded='true'] {
+    background: transparent;
+    color: color-mix(in srgb, currentColor 80%, var(--smrt-color-on-surface));
+  }
+  .smrt-popover__trigger-icon:focus-visible {
+    background: transparent;
+  }
+  .smrt-popover__panel {
+    border: var(--smrt-hairline);
+    border-radius: var(--smrt-radius-large);
+    background: var(--smrt-glass-surface);
+    backdrop-filter: blur(var(--smrt-glass-blur)) saturate(var(--smrt-glass-saturation));
+    color: var(--smrt-color-on-surface);
+    box-shadow: var(--smrt-inset-highlight), var(--smrt-elevation-3);
+  }
+}
+
 </style>

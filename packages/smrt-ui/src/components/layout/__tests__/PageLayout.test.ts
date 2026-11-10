@@ -15,11 +15,11 @@ describe('PageLayout', () => {
     });
 
     expect(container.querySelector('[data-page-layout-container]')).toHaveClass(
-      'max-w-lg',
+      'smrt-container__max-w-lg',
     );
     expect(container.querySelector('[data-page-layout]')).toHaveClass(
-      'page-layout',
-      'gap-md',
+      'smrt-page-layout__root',
+      'smrt-page-layout__gap-md',
     );
     expect(screen.getByText('Page content')).toBeInTheDocument();
   });
@@ -35,7 +35,7 @@ describe('PageLayout', () => {
       props: { maxWidth, children: textSnippet('x') },
     });
     expect(container.querySelector('[data-page-layout-container]')).toHaveClass(
-      `max-w-${maxWidth}`,
+      `smrt-container__max-w-${maxWidth}`,
     );
   });
 
@@ -48,7 +48,7 @@ describe('PageLayout', () => {
       props: { gap, children: textSnippet('x') },
     });
     expect(container.querySelector('[data-page-layout]')).toHaveClass(
-      `gap-${gap}`,
+      `smrt-page-layout__gap-${gap}`,
     );
   });
 
@@ -64,7 +64,7 @@ describe('PageLayout', () => {
     });
     expect(
       screen.getByRole('region', { name: 'Account settings' }),
-    ).toHaveClass('page-layout', 'account-page');
+    ).toHaveClass('smrt-page-layout__root', 'account-page');
     expect(screen.getByTestId('page')).toHaveAttribute('data-page-layout');
   });
 

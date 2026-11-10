@@ -48,7 +48,7 @@ describe('phone touch targets', () => {
 
   it('Dropdown menu rows are at least 44px tall', () => {
     expect(read('ui/Dropdown.svelte')).toMatch(
-      /\.dropdown__item\s*\{[^}]*min-block-size:\s*2\.75rem/,
+      /\.smrt-dropdown__item\s*\{[^}]*min-block-size:\s*2\.75rem/,
     );
   });
 });

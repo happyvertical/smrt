@@ -81,9 +81,9 @@ const valueText = $derived(
 </script>
 
 <span
-  class="confidence-badge {className}"
-  class:sm={size === 'sm'}
-  class:lg={size === 'lg'}
+  class="smrt-confidence-badge__root {className}"
+  class:smrt-confidence-badge__sm={size === 'sm'}
+  class:smrt-confidence-badge__lg={size === 'lg'}
   style:--smrt-badge-bg={colors.bg}
   style:--smrt-badge-text={colors.text}
   style:--smrt-confidence-badge-bar-color={colors.bar}
@@ -94,56 +94,66 @@ const valueText = $derived(
   aria-valuetext={valueText}
   aria-label={ariaLabel ?? defaultLabel} data-smrt-component="ConfidenceBadge"
 >
-  <span class="confidence-bar" style:width="{clampedConfidence}%"></span>
+  <span class="smrt-confidence-badge__bar" data-smrt-part="indicator" style:width="{clampedConfidence}%"></span>
   {#if showPercent}
-    <span class="confidence-value" aria-hidden="true">{percentText}</span>
+    <span class="smrt-confidence-badge__value" data-smrt-part="value" aria-hidden="true">{percentText}</span>
   {/if}
 </span>
 
 <style>
 @layer smrt.reset, smrt.structure, smrt.theme;
-@layer smrt.theme {
-  .confidence-badge {
+@layer smrt.structure {
+  .smrt-confidence-badge__root {
     display: inline-flex;
     align-items: center;
     gap: 0.5rem;
     padding: 0.25rem 0.5rem;
+    position: relative;
+    overflow: hidden;
+    min-width: 60px;
+  }
+  .smrt-confidence-badge__root.smrt-confidence-badge__sm {
+    padding: 0.125rem 0.375rem;
+    min-width: 48px;
+  }
+  .smrt-confidence-badge__root.smrt-confidence-badge__lg {
+    padding: 0.375rem 0.75rem;
+    min-width: 80px;
+  }
+  .smrt-confidence-badge__bar {
+    position: absolute;
+    left: 0;
+    top: 0;
+    bottom: 0;
+  }
+  .smrt-confidence-badge__value {
+    position: relative;
+    z-index: 1;
+  }
+}
+
+@layer smrt.theme {
+  .smrt-confidence-badge__root {
     font-size: var(--smrt-typography-label-medium-size, 0.75rem);
     font-weight: var(--smrt-typography-weight-medium, 500);
     border-radius: var(--smrt-radius-sm);
     background-color: var(--smrt-badge-bg);
     color: var(--smrt-badge-text);
-    position: relative;
-    overflow: hidden;
-    min-width: 60px;
   }
-
-  .confidence-badge.sm {
-    padding: 0.125rem 0.375rem;
+  .smrt-confidence-badge__root.smrt-confidence-badge__sm {
     font-size: var(--smrt-typography-label-small-size, 0.625rem);
-    min-width: 48px;
   }
-
-  .confidence-badge.lg {
-    padding: 0.375rem 0.75rem;
+  .smrt-confidence-badge__root.smrt-confidence-badge__lg {
     font-size: var(--smrt-typography-label-large-size, 0.875rem);
-    min-width: 80px;
   }
-
-  .confidence-bar {
-    position: absolute;
-    left: 0;
-    top: 0;
-    bottom: 0;
+  .smrt-confidence-badge__bar {
     background-color: var(--smrt-confidence-badge-bar-color);
     opacity: 0.3;
     transition: width var(--smrt-duration-short4, 300ms) var(--smrt-easing-standard, ease);
   }
-
-  .confidence-value {
-    position: relative;
-    z-index: 1;
+  .smrt-confidence-badge__value {
     font-variant-numeric: tabular-nums;
   }
 }
+
 </style>

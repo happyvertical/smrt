@@ -90,7 +90,9 @@ describe('Skeleton', () => {
     const { container } = render(Skeleton, {
       props: { variant: 'text', lines: 3 },
     });
-    expect(container.querySelectorAll('.skeleton')).toHaveLength(3);
+    expect(
+      container.querySelectorAll('[data-smrt-part="placeholder"]'),
+    ).toHaveLength(3);
   });
 
   it('is axe-clean', async () => {

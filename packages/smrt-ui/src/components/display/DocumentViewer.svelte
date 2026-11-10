@@ -236,19 +236,19 @@ function pointerUp(event: PointerEvent): void {
 
 <div
   id={id}
-  class="document-viewer {className}"
+  class="smrt-document-viewer__root {className}"
   role="group"
   aria-label={label}
   data-state={status}
   data-kind={kind ?? undefined}
   data-smrt-component="DocumentViewer"
 >
-  <div class="controls" data-smrt-part="controls">
+  <div class="smrt-document-viewer__controls" data-smrt-part="controls">
     {#if pdf && pdf.pages > 1}
-      <div class="group" role="group" aria-label={text.pages}>
+      <div class="smrt-document-viewer__group" data-smrt-part="row" role="group" aria-label={text.pages}>
         <button
           type="button"
-          class="ctl"
+          class="smrt-document-viewer__ctl"
           data-smrt-part="control"
           data-control="previous"
           aria-label={text.previousPage}
@@ -257,12 +257,12 @@ function pointerUp(event: PointerEvent): void {
         >
           <span aria-hidden="true">◀</span>
         </button>
-        <span class="where" data-smrt-part="page-indicator" aria-live="polite">
+        <span class="smrt-document-viewer__where" data-smrt-part="page-indicator" aria-live="polite">
           {renderTemplate(text.pageOf, { page, pages: pdf.pages })}
         </span>
         <button
           type="button"
-          class="ctl"
+          class="smrt-document-viewer__ctl"
           data-smrt-part="control"
           data-control="next"
           aria-label={text.nextPage}
@@ -274,10 +274,10 @@ function pointerUp(event: PointerEvent): void {
       </div>
     {/if}
     {#if status === 'ready'}
-      <div class="group" role="group" aria-label={text.zoom}>
+      <div class="smrt-document-viewer__group" data-smrt-part="row" role="group" aria-label={text.zoom}>
         <button
           type="button"
-          class="ctl"
+          class="smrt-document-viewer__ctl"
           data-smrt-part="control"
           data-control="zoom-out"
           aria-label={text.zoomOut}
@@ -288,7 +288,7 @@ function pointerUp(event: PointerEvent): void {
         </button>
         <button
           type="button"
-          class="ctl fit"
+          class="smrt-document-viewer__ctl smrt-document-viewer__fit"
           data-smrt-part="control"
           data-control="fit"
           disabled={zoom === MIN_ZOOM}
@@ -298,7 +298,7 @@ function pointerUp(event: PointerEvent): void {
         </button>
         <button
           type="button"
-          class="ctl"
+          class="smrt-document-viewer__ctl"
           data-smrt-part="control"
           data-control="zoom-in"
           aria-label={text.zoomIn}
@@ -313,7 +313,7 @@ function pointerUp(event: PointerEvent): void {
 
   <!-- svelte-ignore a11y_no_static_element_interactions (pinch is a shortcut; zoom out / Fit / zoom in are the controls) -->
   <div
-    class="sheet"
+    class="smrt-document-viewer__sheet"
     data-smrt-part="sheet"
     data-zoom={zoom}
     bind:clientWidth={width}
@@ -323,13 +323,13 @@ function pointerUp(event: PointerEvent): void {
     onpointercancel={pointerUp}
   >
     {#if status === 'loading'}
-      <p class="hold" data-smrt-part="loading" role="status">{text.loading}</p>
+      <p class="smrt-document-viewer__hold" data-smrt-part="status" role="status">{text.loading}</p>
     {:else if status === 'failed'}
-      <div class="hold" data-smrt-part="failed">
+      <div class="smrt-document-viewer__hold" data-smrt-part="status">
         <p role="alert">{text.failed}</p>
         <button
           type="button"
-          class="ctl retry"
+          class="smrt-document-viewer__ctl smrt-document-viewer__retry"
           data-smrt-part="control"
           data-control="retry"
           onclick={() => (attempt += 1)}
@@ -338,7 +338,7 @@ function pointerUp(event: PointerEvent): void {
         </button>
       </div>
     {:else if status === 'unsupported'}
-      <p class="hold" data-smrt-part="unsupported" role="status">{text.unsupported}</p>
+      <p class="smrt-document-viewer__hold" data-smrt-part="status" role="status">{text.unsupported}</p>
     {:else if kind === 'pdf'}
       <canvas
         bind:this={canvas}
@@ -358,65 +358,45 @@ function pointerUp(event: PointerEvent): void {
 
 <style>
 @layer smrt.reset, smrt.structure, smrt.theme;
-@layer smrt.theme {
-  .document-viewer {
+@layer smrt.structure {
+  .smrt-document-viewer__root {
     display: grid;
     gap: var(--smrt-spacing-3);
-    color: var(--smrt-color-on-surface);
   }
-  .controls {
+  .smrt-document-viewer__controls {
     display: flex;
     flex-wrap: wrap;
     justify-content: space-between;
     gap: var(--smrt-spacing-3);
   }
-  .group {
+  .smrt-document-viewer__group {
     display: flex;
     align-items: center;
     gap: var(--smrt-spacing-2);
   }
   /* Glove-size: at least 4rem square, whatever the density token says. */
-  .ctl {
+  .smrt-document-viewer__ctl {
     min-width: max(4rem, var(--smrt-touch-target-min));
     min-height: max(4rem, var(--smrt-touch-target-min));
     padding: 0 var(--smrt-spacing-4);
-    border: var(--smrt-hairline-strong);
-    border-radius: var(--smrt-radius-medium);
-    background: var(--smrt-color-surface-container-highest);
-    color: var(--smrt-color-on-surface);
-    font: var(--smrt-typography-headline-large-font);
     cursor: pointer;
     touch-action: manipulation;
   }
-  .ctl.fit,
-  .ctl.retry {
-    font: var(--smrt-typography-title-large-font);
-  }
-  .ctl:focus-visible {
-    outline: var(--smrt-focus-ring-width) solid var(--smrt-focus-ring-color);
-    outline-offset: var(--smrt-focus-ring-offset);
-  }
-  .ctl:disabled {
-    opacity: 0.5;
+  .smrt-document-viewer__ctl:disabled {
     cursor: not-allowed;
   }
-  .where {
+  .smrt-document-viewer__where {
     min-width: 8rem;
-    text-align: center;
-    font: var(--smrt-typography-title-large-font);
   }
   /* The document's own sheet: scrolls when zoomed past its width. Paper stays
-     light in every scheme (a document is content, not chrome). */
-  .sheet {
+  light in every scheme (a document is content, not chrome). */
+  .smrt-document-viewer__sheet {
     display: grid;
     justify-items: start;
     align-items: start;
     min-height: 24rem;
     max-height: 70vh;
     overflow: auto;
-    border: var(--smrt-hairline-strong);
-    border-radius: var(--smrt-radius-small);
-    background: var(--smrt-color-surface-container-lowest);
     touch-action: pan-x pan-y;
   }
   canvas,
@@ -428,7 +408,7 @@ function pointerUp(event: PointerEvent): void {
     max-width: none;
     height: auto;
   }
-  .hold {
+  .smrt-document-viewer__hold {
     display: grid;
     gap: var(--smrt-spacing-4);
     place-items: center;
@@ -436,8 +416,47 @@ function pointerUp(event: PointerEvent): void {
     justify-self: center;
     margin: 0;
     padding: var(--smrt-spacing-8);
+  }
+}
+
+@layer smrt.theme {
+  .smrt-document-viewer__root {
+    color: var(--smrt-color-on-surface);
+  }
+  /* Glove-size: at least 4rem square, whatever the density token says. */
+  .smrt-document-viewer__ctl {
+    border: var(--smrt-hairline-strong);
+    border-radius: var(--smrt-radius-medium);
+    background: var(--smrt-color-surface-container-highest);
+    color: var(--smrt-color-on-surface);
+    font: var(--smrt-typography-headline-large-font);
+  }
+  .smrt-document-viewer__ctl.smrt-document-viewer__fit,
+  .smrt-document-viewer__ctl.smrt-document-viewer__retry {
+    font: var(--smrt-typography-title-large-font);
+  }
+  .smrt-document-viewer__ctl:focus-visible {
+    outline: var(--smrt-focus-ring-width) solid var(--smrt-focus-ring-color);
+    outline-offset: var(--smrt-focus-ring-offset);
+  }
+  .smrt-document-viewer__ctl:disabled {
+    opacity: 0.5;
+  }
+  .smrt-document-viewer__where {
+    text-align: center;
+    font: var(--smrt-typography-title-large-font);
+  }
+  /* The document's own sheet: scrolls when zoomed past its width. Paper stays
+  light in every scheme (a document is content, not chrome). */
+  .smrt-document-viewer__sheet {
+    border: var(--smrt-hairline-strong);
+    border-radius: var(--smrt-radius-small);
+    background: var(--smrt-color-surface-container-lowest);
+  }
+  .smrt-document-viewer__hold {
     text-align: center;
     font: var(--smrt-typography-title-large-font);
   }
 }
+
 </style>
