@@ -461,14 +461,14 @@ function closeTry() {
 }
 </script>
 
-<div class="page">
-  <div class="page-header">
+<div class="smrt-api-explorer__root">
+  <div class="smrt-api-explorer__header" data-smrt-part="header">
     <h1>🔌 API Explorer</h1>
     <p>Browse and test the {groups.reduce((n, g) => n + g.endpoints.length, 0)} auto-generated REST endpoints from the Content Service.</p>
   </div>
 
-  <div class="explorer-layout">
-    <aside class="group-nav">
+  <div class="smrt-api-explorer__layout" data-smrt-part="body">
+    <aside class="smrt-api-explorer__nav" data-smrt-part="nav">
       {#each groups as group}
         <Button
           variant="ghost"
@@ -476,22 +476,22 @@ function closeTry() {
           aria-pressed={activeGroup === group.key}
           onclick={() => { activeGroup = group.key; closeTry(); }}
         >
-          <span class="group-icon">{group.icon}</span>
-          <span class="group-label">{group.label}</span>
-          <span class="group-count">{group.endpoints.length}</span>
+          <span class="smrt-api-explorer__icon" data-smrt-part="icon">{group.icon}</span>
+          <span class="smrt-api-explorer__label" data-smrt-part="label">{group.label}</span>
+          <span class="smrt-api-explorer__count" data-smrt-part="count">{group.endpoints.length}</span>
         </Button>
       {/each}
     </aside>
 
-    <div class="endpoints-panel">
+    <div class="smrt-api-explorer__panel" data-smrt-part="panel">
       <h2>{activeGroupData.icon} {activeGroupData.label}</h2>
 
-      <div class="endpoint-list">
+      <div class="smrt-api-explorer__list" data-smrt-part="list">
         {#each activeGroupData.endpoints as endpoint}
-          <div class="endpoint-row">
-            <span class="method-badge" style="background: {methodColor(endpoint.method)}">{endpoint.method}</span>
-            <code class="endpoint-path">{endpoint.path}</code>
-            <span class="endpoint-desc">{endpoint.description}</span>
+          <div class="smrt-api-explorer__row" data-smrt-part="row">
+            <span class="smrt-api-explorer__badge" data-smrt-part="badge" style="background: {methodColor(endpoint.method)}">{endpoint.method}</span>
+            <code class="smrt-api-explorer__path" data-smrt-part="path">{endpoint.path}</code>
+            <span class="smrt-api-explorer__desc" data-smrt-part="desc">{endpoint.description}</span>
             {#if canTry(endpoint)}
               <Button variant="ghost" size="sm" class="try-btn" onclick={() => void handleTry(endpoint)}>Try</Button>
             {/if}
@@ -500,18 +500,18 @@ function closeTry() {
       </div>
 
       {#if tryEndpoint}
-        <div class="try-panel">
-          <div class="try-header">
-            <span class="method-badge" style="background: {methodColor(tryEndpoint.method)}">{tryEndpoint.method}</span>
+        <div class="smrt-api-explorer__try-panel" data-smrt-part="section">
+          <div class="smrt-api-explorer__try-header" data-smrt-part="toolbar">
+            <span class="smrt-api-explorer__badge" data-smrt-part="badge" style="background: {methodColor(tryEndpoint.method)}">{tryEndpoint.method}</span>
             <code>{tryEndpoint.path}</code>
             <Button variant="ghost" size="sm" class="close-btn" onclick={closeTry} aria-label="Close" title="Close">✕</Button>
           </div>
           {#if tryLoading}
-            <p class="try-loading">Fetching...</p>
+            <p class="smrt-api-explorer__try-loading" data-smrt-part="status">Fetching...</p>
           {:else if tryError}
-            <pre class="try-error">{tryError}</pre>
+            <pre class="smrt-api-explorer__try-error" data-smrt-part="error">{tryError}</pre>
           {:else if tryResult}
-            <pre class="try-result">{tryResult}</pre>
+            <pre class="smrt-api-explorer__try-result" data-smrt-part="preview">{tryResult}</pre>
           {/if}
         </div>
       {/if}
@@ -521,237 +521,248 @@ function closeTry() {
 
 <style>
 @layer smrt.reset, smrt.structure, smrt.theme;
-@layer smrt.theme {
-  .page {
+@layer smrt.structure {
+  .smrt-api-explorer__root {
     display: flex;
     flex-direction: column;
     gap: 1.5rem;
   }
-
-  .page-header {
-    text-align: center;
+  .smrt-api-explorer__header {
     padding: 1rem 0;
   }
-
-  .page-header h1 {
+  .smrt-api-explorer__header h1 {
     margin: 0 0 0.5rem 0;
-    font-size: var(--smrt-typography-headline-large-size, 2rem);
-    font-weight: var(--smrt-typography-weight-bold, 800);
   }
-
-  .page-header p {
+  .smrt-api-explorer__header p {
     margin: 0 auto;
-    color: var(--smrt-color-on-surface-variant);
-    font-size: var(--smrt-typography-body-large-size, 1.05rem);
     max-width: 600px;
   }
-
-  .explorer-layout {
+  .smrt-api-explorer__layout {
     display: grid;
     grid-template-columns: 200px 1fr;
     gap: 1rem;
     align-items: start;
   }
-
-  .group-nav {
+  .smrt-api-explorer__nav {
     display: flex;
     flex-direction: column;
     gap: 0.25rem;
     position: sticky;
     top: 70px;
   }
-
-  .group-nav :global(.group-btn) {
+  .smrt-api-explorer__nav :global(.group-btn) {
     display: flex;
     align-items: center;
     gap: 0.5rem;
     padding: 0.6rem 0.75rem;
-    border: none;
-    border-radius: 0.5rem;
-    background: transparent;
-    color: var(--smrt-color-on-surface-variant);
     cursor: pointer;
-    font-size: var(--smrt-typography-label-large-size, 0.8125rem);
-    text-align: left;
-    transition: background 0.15s;
   }
-
-  .group-nav :global(.group-btn:hover) {
-    background: var(--smrt-color-surface-variant);
+  .smrt-api-explorer__label {
+    flex: 1;
   }
-
-  .group-nav :global(.group-btn.group-btn--active) {
-    background: var(--smrt-color-primary-container);
-    color: var(--smrt-color-on-primary-container);
-    font-weight: var(--smrt-typography-weight-semibold, 600);
-  }
-
-  .group-icon { font-size: var(--smrt-typography-title-medium-size, 1rem); }
-
-  .group-label { flex: 1; }
-
-  .group-count {
-    background: var(--smrt-color-surface-variant);
+  .smrt-api-explorer__count {
     padding: 0.1rem 0.4rem;
-    border-radius: var(--smrt-radius-full);
-    font-size: var(--smrt-typography-label-small-size, 0.7rem);
-    font-weight: var(--smrt-typography-weight-semibold, 600);
   }
-
-  .group-nav :global(.group-btn.group-btn--active .group-count) {
-    background: color-mix(in srgb, var(--smrt-color-shadow) 8%, transparent);
-  }
-
-  .endpoints-panel {
-    background: var(--smrt-color-surface);
-    border: var(--smrt-hairline);
-    border-radius: 1rem;
+  .smrt-api-explorer__panel {
     padding: 1.5rem;
-    box-shadow: var(--smrt-elevation-3, 0 2px 8px color-mix(in srgb, var(--smrt-color-shadow) 4%, transparent));
   }
-
-  .endpoints-panel h2 {
+  .smrt-api-explorer__panel h2 {
     margin: 0 0 1rem 0;
-    font-size: var(--smrt-typography-title-large-size, 1.25rem);
   }
-
-  .endpoint-list {
+  .smrt-api-explorer__list {
     display: flex;
     flex-direction: column;
     gap: 0.5rem;
   }
-
-  .endpoint-row {
+  .smrt-api-explorer__row {
     display: flex;
     align-items: center;
     gap: 0.6rem;
     padding: 0.5rem 0.75rem;
-    border-radius: 0.5rem;
-    background: var(--smrt-color-surface-container-low);
-    font-size: var(--smrt-typography-body-medium-size, 0.8125rem);
     flex-wrap: wrap;
   }
-
-  .method-badge {
+  .smrt-api-explorer__badge {
     display: inline-flex;
     align-items: center;
     padding: 0.15rem 0.45rem;
+    min-width: 3rem;
+    justify-content: center;
+  }
+  .smrt-api-explorer__path {
+    word-break: break-all;
+  }
+  .smrt-api-explorer__desc {
+    flex: 1;
+  }
+  .smrt-api-explorer__row :global(.try-btn) {
+    padding: 0.2rem 0.6rem;
+    cursor: pointer;
+  }
+  .smrt-api-explorer__try-panel {
+    margin-top: 1rem;
+    overflow: hidden;
+  }
+  .smrt-api-explorer__try-header {
+    display: flex;
+    align-items: center;
+    gap: 0.5rem;
+    padding: 0.6rem 0.75rem;
+  }
+  .smrt-api-explorer__try-header code {
+    flex: 1;
+  }
+  .smrt-api-explorer__try-header :global(.close-btn) {
+    cursor: pointer;
+    padding: 0.2rem 0.4rem;
+  }
+  .smrt-api-explorer__try-loading {
+    padding: 1rem;
+    margin: 0;
+  }
+  .smrt-api-explorer__try-result, .smrt-api-explorer__try-error {
+    margin: 0;
+    padding: 1rem;
+    max-height: 400px;
+    overflow: auto;
+    white-space: pre-wrap;
+    word-break: break-word;
+  }
+  @media (max-width: 768px) {
+    .smrt-api-explorer__layout {
+      grid-template-columns: 1fr;
+    }
+    .smrt-api-explorer__nav {
+      flex-direction: row;
+      overflow-x: auto;
+      flex-wrap: nowrap;
+      position: static;
+    }
+    .smrt-api-explorer__nav :global(.group-btn) {
+      white-space: nowrap;
+    }
+  }
+}
+
+@layer smrt.theme {
+  .smrt-api-explorer__header {
+    text-align: center;
+  }
+  .smrt-api-explorer__header h1 {
+    font-size: var(--smrt-typography-headline-large-size, 2rem);
+    font-weight: var(--smrt-typography-weight-bold, 800);
+  }
+  .smrt-api-explorer__header p {
+    color: var(--smrt-color-on-surface-variant);
+    font-size: var(--smrt-typography-body-large-size, 1.05rem);
+  }
+  .smrt-api-explorer__nav :global(.group-btn) {
+    border: none;
+    border-radius: 0.5rem;
+    background: transparent;
+    color: var(--smrt-color-on-surface-variant);
+    font-size: var(--smrt-typography-label-large-size, 0.8125rem);
+    text-align: left;
+    transition: background 0.15s;
+  }
+  .smrt-api-explorer__nav :global(.group-btn:hover) {
+    background: var(--smrt-color-surface-variant);
+  }
+  .smrt-api-explorer__nav :global(.group-btn.group-btn--active) {
+    background: var(--smrt-color-primary-container);
+    color: var(--smrt-color-on-primary-container);
+    font-weight: var(--smrt-typography-weight-semibold, 600);
+  }
+  .smrt-api-explorer__icon {
+    font-size: var(--smrt-typography-title-medium-size, 1rem);
+  }
+  .smrt-api-explorer__count {
+    background: var(--smrt-color-surface-variant);
+    border-radius: var(--smrt-radius-full);
+    font-size: var(--smrt-typography-label-small-size, 0.7rem);
+    font-weight: var(--smrt-typography-weight-semibold, 600);
+  }
+  .smrt-api-explorer__nav :global(.group-btn.group-btn--active .smrt-api-explorer__count) {
+    background: color-mix(in srgb, var(--smrt-color-shadow) 8%, transparent);
+  }
+  .smrt-api-explorer__panel {
+    background: var(--smrt-color-surface);
+    border: var(--smrt-hairline);
+    border-radius: 1rem;
+    box-shadow: var(--smrt-elevation-3, 0 2px 8px color-mix(in srgb, var(--smrt-color-shadow) 4%, transparent));
+  }
+  .smrt-api-explorer__panel h2 {
+    font-size: var(--smrt-typography-title-large-size, 1.25rem);
+  }
+  .smrt-api-explorer__row {
+    border-radius: 0.5rem;
+    background: var(--smrt-color-surface-container-low);
+    font-size: var(--smrt-typography-body-medium-size, 0.8125rem);
+  }
+  .smrt-api-explorer__badge {
     border-radius: 0.25rem;
     color: white;
     font-size: var(--smrt-typography-label-small-size, 0.6875rem);
     font-weight: var(--smrt-typography-weight-bold, 700);
     font-family: var(--smrt-font-family-mono, monospace);
-    min-width: 3rem;
-    justify-content: center;
   }
-
-  .endpoint-path {
+  .smrt-api-explorer__path {
     font-size: var(--smrt-typography-body-medium-size, 0.8125rem);
     color: var(--smrt-color-on-surface);
-    word-break: break-all;
   }
-
-  .endpoint-desc {
-    flex: 1;
+  .smrt-api-explorer__desc {
     color: var(--smrt-color-on-surface-variant);
     font-size: var(--smrt-typography-body-small-size, 0.75rem);
     text-align: right;
   }
-
-  .endpoint-row :global(.try-btn) {
-    padding: 0.2rem 0.6rem;
+  .smrt-api-explorer__row :global(.try-btn) {
     border: 1px solid var(--smrt-color-primary);
     border-radius: 0.25rem;
     background: transparent;
     color: var(--smrt-color-primary);
     font-size: var(--smrt-typography-label-small-size, 0.6875rem);
     font-weight: var(--smrt-typography-weight-semibold, 600);
-    cursor: pointer;
     transition: all 0.15s;
   }
-
-  .endpoint-row :global(.try-btn:hover) {
+  .smrt-api-explorer__row :global(.try-btn:hover) {
     background: var(--smrt-color-primary);
     color: white;
   }
-
-  .try-panel {
-    margin-top: 1rem;
+  .smrt-api-explorer__try-panel {
     border: var(--smrt-hairline);
     border-radius: 0.75rem;
-    overflow: hidden;
   }
-
-  .try-header {
-    display: flex;
-    align-items: center;
-    gap: 0.5rem;
-    padding: 0.6rem 0.75rem;
+  .smrt-api-explorer__try-header {
     background: var(--smrt-color-surface-container-low);
     border-bottom: var(--smrt-hairline);
   }
-
-  .try-header code {
-    flex: 1;
+  .smrt-api-explorer__try-header code {
     font-size: var(--smrt-typography-body-medium-size, 0.8125rem);
   }
-
-  .try-header :global(.close-btn) {
+  .smrt-api-explorer__try-header :global(.close-btn) {
     border: none;
     background: none;
-    cursor: pointer;
     font-size: var(--smrt-typography-title-medium-size, 1rem);
     color: var(--smrt-color-on-surface-variant);
-    padding: 0.2rem 0.4rem;
     border-radius: 0.25rem;
   }
-
-  .try-header :global(.close-btn:hover) {
+  .smrt-api-explorer__try-header :global(.close-btn:hover) {
     background: var(--smrt-color-surface-variant);
   }
-
-  .try-loading {
-    padding: 1rem;
+  .smrt-api-explorer__try-loading {
     text-align: center;
     color: var(--smrt-color-on-surface-variant);
-    margin: 0;
   }
-
-  .try-result, .try-error {
-    margin: 0;
-    padding: 1rem;
+  .smrt-api-explorer__try-result, .smrt-api-explorer__try-error {
     font-size: var(--smrt-typography-body-small-size, 0.75rem);
     line-height: var(--smrt-typography-body-small-line-height, 1.5);
-    max-height: 400px;
-    overflow: auto;
-    white-space: pre-wrap;
-    word-break: break-word;
   }
-
-  .try-error {
+  .smrt-api-explorer__try-error {
     color: var(--smrt-color-error);
     background: var(--smrt-color-error-container);
   }
-
-  .try-result {
+  .smrt-api-explorer__try-result {
     background: var(--smrt-color-surface-container-lowest);
   }
-
-  @media (max-width: 768px) {
-    .explorer-layout {
-      grid-template-columns: 1fr;
-    }
-
-    .group-nav {
-      flex-direction: row;
-      overflow-x: auto;
-      flex-wrap: nowrap;
-      position: static;
-    }
-
-    .group-nav :global(.group-btn) {
-      white-space: nowrap;
-    }
-  }
 }
+
 </style>
