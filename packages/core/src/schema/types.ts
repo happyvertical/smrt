@@ -326,10 +326,11 @@ export interface DriftReport {
  *   column (strengthening). The differ emits executable SQL for these on
  *   engines that support `ALTER COLUMN`.
  * - `drop_not_null` / `drop_default`: the live column is stricter than the
- *   manifest (relaxing). Reported as an advisory by default and only made
- *   executable when the caller opts in (`DiffOptions.relaxColumns`), because
- *   weakening a production column on the strength of a manifest that may
- *   itself be under-specified is not something to do silently.
+ *   manifest (relaxing). `drop_not_null` on a manifest-nullable column is
+ *   executable by default on engines that support `ALTER COLUMN` (#4897: it
+ *   loses no data and rejects no row). Everything else — `drop_default`,
+ *   orphan columns, SQLite — is an advisory until the caller opts in
+ *   (`DiffOptions.relaxColumns`).
  */
 export type ColumnAlteration =
   | 'set_not_null'
