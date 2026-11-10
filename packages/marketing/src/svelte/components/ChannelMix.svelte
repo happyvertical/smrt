@@ -23,24 +23,24 @@ let { channels = [], currency = 'USD', locale }: Props = $props();
 const mix = $derived(calculateChannelMix(channels));
 </script>
 
-<section class="channel-mix" data-smrt-component="ChannelMix">
+<section class="smrt-channel-mix__root" data-smrt-component="ChannelMix">
   <h3>Channel mix</h3>
   {#if mix.length === 0}
-    <p class="empty">No channel performance yet.</p>
+    <p class="smrt-channel-mix__empty" data-smrt-part="empty">No channel performance yet.</p>
   {:else}
-    <div class="rows">
+    <div class="smrt-channel-mix__rows" data-smrt-part="list">
       {#each mix as channel (channel.id)}
         <Card padding="sm">
-          <div class="head">
+          <div class="smrt-channel-mix__head" data-smrt-part="header">
             <div>
-              <span class="name">{channel.label ?? humanizeKey(channel.channelKind)}</span>
-              <span class="secondary">{channel.channelRef}</span>
+              <span class="smrt-channel-mix__name">{channel.label ?? humanizeKey(channel.channelKind)}</span>
+              <span class="smrt-channel-mix__secondary">{channel.channelRef}</span>
             </div>
             <Badge variant={campaignStatusBadgeVariant(channel.status)} size="sm">
               {humanizeKey(channel.status)}
             </Badge>
           </div>
-          <div class="progress-label">
+          <div class="smrt-channel-mix__progress-label" data-smrt-part="label">
             <span>{formatCents(channel.spendCents, currency, locale)} spent</span>
             <span>{formatPercent(channel.spendFraction, locale)} of mix</span>
           </div>
@@ -49,7 +49,7 @@ const mix = $derived(calculateChannelMix(channels));
             max={1}
             label={`${channel.label ?? channel.channelKind} spend share`}
           />
-          <dl class="metrics">
+          <dl class="smrt-channel-mix__metrics" data-smrt-part="metrics">
             <div><dt>Allocation</dt><dd>{formatCents(channel.allocatedBudgetCents, currency, locale)}</dd></div>
             <div><dt>Impressions</dt><dd>{formatNumber(channel.impressions ?? 0, locale)}</dd></div>
             <div><dt>Clicks</dt><dd>{formatNumber(channel.clicks ?? 0, locale)}</dd></div>
@@ -63,82 +63,93 @@ const mix = $derived(calculateChannelMix(channels));
 
 <style>
 @layer smrt.reset, smrt.structure, smrt.theme;
-@layer smrt.theme {
-  .channel-mix,
-  .rows {
-    display: flex;
-    flex-direction: column;
-  }
+@layer smrt.structure {
 
-  .channel-mix {
-    gap: var(--smrt-spacing-3);
-  }
+.smrt-channel-mix__root,
+  .smrt-channel-mix__rows {
+display: flex;
+flex-direction: column;
 
-  .rows {
-    gap: var(--smrt-spacing-2);
-  }
-
-  h3,
-  .empty {
-    margin: 0;
-  }
-
-  h3 {
-    color: var(--smrt-color-on-surface);
-    font: var(--smrt-typography-title-medium-font);
-  }
-
-  .empty,
-  .secondary,
-  dt,
-  .progress-label {
-    color: var(--smrt-color-on-surface-variant);
-  }
-
-  .empty,
-  .name {
-    font: var(--smrt-typography-body-medium-font);
-  }
-
-  .head,
-  .progress-label {
-    display: flex;
-    align-items: center;
-    justify-content: space-between;
-    gap: var(--smrt-spacing-3);
-  }
-
-  .name,
-  .secondary {
-    display: block;
-  }
-
-  .name {
-    color: var(--smrt-color-on-surface);
-    font-weight: var(--smrt-typography-weight-medium);
-  }
-
-  .secondary,
-  .progress-label,
-  dt {
-    font: var(--smrt-typography-body-small-font);
-  }
-
-  .progress-label {
-    margin: var(--smrt-spacing-3) 0 var(--smrt-spacing-1);
-  }
-
-  .metrics {
-    display: grid;
-    grid-template-columns: repeat(auto-fit, minmax(8rem, 1fr));
-    gap: var(--smrt-spacing-3);
-    margin: var(--smrt-spacing-3) 0 0;
-  }
-
-  .metrics dd {
-    margin: var(--smrt-spacing-1) 0 0;
-    color: var(--smrt-color-on-surface);
-    font: var(--smrt-typography-body-medium-font);
-  }
 }
+.smrt-channel-mix__root {
+gap: var(--smrt-spacing-3);
+
+}
+.smrt-channel-mix__rows {
+gap: var(--smrt-spacing-2);
+
+}
+h3,
+  .smrt-channel-mix__empty {
+margin: 0;
+
+}
+.smrt-channel-mix__head,
+  .smrt-channel-mix__progress-label {
+display: flex;
+align-items: center;
+justify-content: space-between;
+gap: var(--smrt-spacing-3);
+
+}
+.smrt-channel-mix__name,
+  .smrt-channel-mix__secondary {
+display: block;
+
+}
+.smrt-channel-mix__progress-label {
+margin: var(--smrt-spacing-3) 0 var(--smrt-spacing-1);
+
+}
+.smrt-channel-mix__metrics {
+display: grid;
+grid-template-columns: repeat(auto-fit, minmax(8rem, 1fr));
+gap: var(--smrt-spacing-3);
+margin: var(--smrt-spacing-3) 0 0;
+
+}
+.smrt-channel-mix__metrics dd {
+margin: var(--smrt-spacing-1) 0 0;
+
+}
+
+}
+@layer smrt.theme {
+
+h3 {
+color: var(--smrt-color-on-surface);
+font: var(--smrt-typography-title-medium-font);
+
+}
+.smrt-channel-mix__empty,
+  .smrt-channel-mix__secondary,
+  dt,
+  .smrt-channel-mix__progress-label {
+color: var(--smrt-color-on-surface-variant);
+
+}
+.smrt-channel-mix__empty,
+  .smrt-channel-mix__name {
+font: var(--smrt-typography-body-medium-font);
+
+}
+.smrt-channel-mix__name {
+color: var(--smrt-color-on-surface);
+font-weight: var(--smrt-typography-weight-medium);
+
+}
+.smrt-channel-mix__secondary,
+  .smrt-channel-mix__progress-label,
+  dt {
+font: var(--smrt-typography-body-small-font);
+
+}
+.smrt-channel-mix__metrics dd {
+color: var(--smrt-color-on-surface);
+font: var(--smrt-typography-body-medium-font);
+
+}
+
+}
+
 </style>

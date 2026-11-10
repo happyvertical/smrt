@@ -33,30 +33,6 @@
       "unsorted": true,
       "internalClasses": 17
     },
-    "packages/analytics/src/svelte/AnalyticsSummary.svelte": {
-      "unsorted": true,
-      "internalClasses": 2
-    },
-    "packages/analytics/src/svelte/EventsTable.svelte": {
-      "unsorted": true,
-      "internalClasses": 13
-    },
-    "packages/analytics/src/svelte/PropertyInfo.svelte": {
-      "unsorted": true,
-      "internalClasses": 5
-    },
-    "packages/analytics/src/svelte/PropertyStatusBadge.svelte": {
-      "unsorted": true,
-      "internalClasses": 5
-    },
-    "packages/analytics/src/svelte/StatCard.svelte": {
-      "unsorted": true,
-      "internalClasses": 5
-    },
-    "packages/analytics/src/svelte/TrendBadge.svelte": {
-      "unsorted": true,
-      "internalClasses": 6
-    },
     "packages/app-shell/src/lib/assistant/AssistantDock.svelte": {
       "unsorted": true,
       "internalClasses": 25
@@ -697,22 +673,6 @@
       "unsorted": true,
       "internalClasses": 2
     },
-    "packages/human-resources/src/svelte/components/EmployeeForm.svelte": {
-      "unsorted": true,
-      "internalClasses": 6
-    },
-    "packages/human-resources/src/svelte/components/EmployeeList.svelte": {
-      "unsorted": true,
-      "internalClasses": 8
-    },
-    "packages/human-resources/src/svelte/components/ExpiringQualificationsList.svelte": {
-      "unsorted": true,
-      "internalClasses": 8
-    },
-    "packages/human-resources/src/svelte/components/PersonQualifications.svelte": {
-      "unsorted": true,
-      "internalClasses": 8
-    },
     "packages/images/src/svelte/components/AssetsGallery.svelte": {
       "unsorted": true,
       "internalClasses": 15
@@ -838,26 +798,6 @@
       "internalClasses": 4
     },
     "packages/manufacturing/src/svelte/components/RequirementsTreeLevel.svelte": {
-      "unsorted": true,
-      "internalClasses": 7
-    },
-    "packages/marketing/src/svelte/components/BudgetPacing.svelte": {
-      "unsorted": true,
-      "internalClasses": 5
-    },
-    "packages/marketing/src/svelte/components/CampaignDetail.svelte": {
-      "unsorted": true,
-      "internalClasses": 9
-    },
-    "packages/marketing/src/svelte/components/CampaignList.svelte": {
-      "unsorted": true,
-      "internalClasses": 8
-    },
-    "packages/marketing/src/svelte/components/ChannelMix.svelte": {
-      "unsorted": true,
-      "internalClasses": 8
-    },
-    "packages/marketing/src/svelte/components/MarketingDashboard.svelte": {
       "unsorted": true,
       "internalClasses": 7
     },
@@ -2129,37 +2069,17 @@
       "unsorted": true,
       "internalClasses": 12
     },
-    "packages/subscriptions/src/svelte/CommercialOverview.svelte": {
-      "unsorted": true,
-      "internalClasses": 2
-    },
     "packages/subscriptions/src/svelte/PlanPicker.svelte": {
-      "unsorted": true,
-      "internalClasses": 2
+      "unsorted": false,
+      "internalClasses": 1
     },
     "packages/subscriptions/src/svelte/SubscriptionSummary.svelte": {
-      "unsorted": true,
+      "unsorted": false,
       "internalClasses": 1
     },
     "packages/subscriptions/src/svelte/UsageThresholds.svelte": {
-      "unsorted": true,
-      "internalClasses": 3
-    },
-    "packages/support/src/svelte/components/CaseDetail.svelte": {
-      "unsorted": true,
-      "internalClasses": 18
-    },
-    "packages/support/src/svelte/components/CaseQueue.svelte": {
-      "unsorted": true,
-      "internalClasses": 11
-    },
-    "packages/support/src/svelte/components/RoutingRationale.svelte": {
-      "unsorted": true,
-      "internalClasses": 9
-    },
-    "packages/support/src/svelte/components/TargetList.svelte": {
-      "unsorted": true,
-      "internalClasses": 9
+      "unsorted": false,
+      "internalClasses": 1
     },
     "packages/tenancy/src/svelte/components/TenantCard.svelte": {
       "unsorted": true,

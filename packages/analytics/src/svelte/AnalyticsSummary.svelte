@@ -15,7 +15,7 @@ const { stats }: Props = $props();
 </script>
 
 {#if stats}
-	<div class="analytics-summary" data-smrt-component="AnalyticsSummary">
+	<div class="smrt-analytics-summary__root" data-smrt-component="AnalyticsSummary">
 		<StatCard
 			label="Pageviews Today"
 			value={stats.todayPageviews.toLocaleString()}
@@ -38,30 +38,41 @@ const { stats }: Props = $props();
 		/>
 	</div>
 {:else}
-	<div class="analytics-empty" data-smrt-component="AnalyticsSummary">
+	<div class="smrt-analytics-summary__empty" data-smrt-component="AnalyticsSummary" data-smrt-part="empty">
 		<p>{t(M['analytics.analytics_summary.empty'])}</p>
 	</div>
 {/if}
 
 <style>
 @layer smrt.reset, smrt.structure, smrt.theme;
-@layer smrt.theme {
-	.analytics-summary {
-		display: grid;
-		grid-template-columns: repeat(auto-fill, minmax(180px, 1fr));
-		gap: 1rem;
-	}
+@layer smrt.structure {
 
-	.analytics-empty {
-		text-align: center;
-		padding: 2rem;
-		color: var(--smrt-color-on-surface-variant);
-		background: var(--smrt-color-surface-container);
-		border-radius: 0.5rem;
-	}
+.smrt-analytics-summary__root {
+display: grid;
+grid-template-columns: repeat(auto-fill, minmax(180px, 1fr));
+gap: 1rem;
 
-	.analytics-empty p {
-		margin: 0;
-	}
 }
+.smrt-analytics-summary__empty {
+padding: 2rem;
+
+}
+.smrt-analytics-summary__empty p {
+margin: 0;
+
+}
+
+}
+@layer smrt.theme {
+
+.smrt-analytics-summary__empty {
+text-align: center;
+color: var(--smrt-color-on-surface-variant);
+background: var(--smrt-color-surface-container);
+border-radius: 0.5rem;
+
+}
+
+}
+
 </style>
