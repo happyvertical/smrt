@@ -221,15 +221,15 @@ function submitDecision(event: SubmitEvent, decision: ProjectDecisionView) {
 </script>
 
 <section
-  class="interview"
+  class="smrt-project-interview__root"
   aria-label={t(M['projects.interview.aria'])}
   data-smrt-component="ProjectInterview"
   data-motion={reducedMotion ? 'off' : 'on'}
 >
   {#if total === 0}
-    <p class="empty">{t(M['projects.interview.empty'])}</p>
+    <p class="smrt-project-interview__empty" data-smrt-part="empty">{t(M['projects.interview.empty'])}</p>
   {:else}
-    <div class="progress">
+    <div class="smrt-project-interview__progress" data-smrt-part="progress">
       <p aria-live="polite">
         {#if current}{t(M['projects.interview.progress'], { current: position + 1, total })} · {/if}{t(M['projects.interview.answered_count'], { answered: answeredCount, total })}
       </p>
@@ -237,19 +237,19 @@ function submitDecision(event: SubmitEvent, decision: ProjectDecisionView) {
     </div>
 
     {#key current?.key ?? 'complete'}
-      <article class="step" data-interview-step={current?.key ?? 'complete'}>
+      <article class="smrt-project-interview__step" data-smrt-part="step" data-interview-step={current?.key ?? 'complete'}>
         {#if current}
           {@const frame = framing[current.record.id] ?? {}}
           {@const prompt = current.kind === 'question' ? current.record.prompt : current.record.question}
           <h2 tabindex="-1" bind:this={heading}>{prompt}</h2>
           {#if frame.why}
-            <div class="framing">
+            <div class="smrt-project-interview__framing" data-smrt-part="framing">
               <h3>{t(M['projects.interview.why'])}</h3>
               <p>{frame.why}</p>
             </div>
           {/if}
           {#if frame.unblocks?.length}
-            <div class="framing">
+            <div class="smrt-project-interview__framing" data-smrt-part="framing">
               <h3 id={`unblocks-${current.key}`}>{t(M['projects.interview.unblocks'])}</h3>
               <ul aria-labelledby={`unblocks-${current.key}`}>
                 {#each frame.unblocks as label, index (`${index}:${label}`)}
@@ -260,7 +260,7 @@ function submitDecision(event: SubmitEvent, decision: ProjectDecisionView) {
           {/if}
 
           {#if current.record.status !== 'open'}
-            <div class="recorded">
+            <div class="smrt-project-interview__recorded" data-smrt-part="meta">
               <h3>{t(M['projects.interview.recorded'])}</h3>
               {#if current.kind === 'question'}
                 <p>{current.record.answer}</p>
@@ -273,7 +273,7 @@ function submitDecision(event: SubmitEvent, decision: ProjectDecisionView) {
               {/if}
             </div>
           {:else if !current.record.canResolve}
-            <p class="empty">{t(M['projects.interview.not_yours'])}</p>
+            <p class="smrt-project-interview__empty" data-smrt-part="empty">{t(M['projects.interview.not_yours'])}</p>
           {:else if current.kind === 'question'}
             {@const question = current.record}
             {@const options = sortedOptions(question.options, frame.recommendedOptionId, true)}
@@ -282,14 +282,14 @@ function submitDecision(event: SubmitEvent, decision: ProjectDecisionView) {
                 <fieldset disabled={busy}>
                   <legend>{t(M['projects.interview.your_answer'])}</legend>
                   {#each options as option (option.id)}
-                    <label class="choice" class:recommended={option.isRecommended}>
+                    <label class="smrt-project-interview__choice" data-smrt-part="choice" class:smrt-project-interview__recommended={option.isRecommended}>
                       <Input type="radio" name="selectedOptionId" value={option.id} required interaction={false} checked={selections[current.key] === option.id} onchange={() => (selections[current.key] = option.id)} />
                       <span>{option.label}{#if option.isRecommended} <strong>{t(M['projects.governance.recommended'])}</strong>{/if}
                         {#if option.description}<small>{option.description}</small>{/if}
                       </span>
                     </label>
                   {/each}
-                  <label class="choice">
+                  <label class="smrt-project-interview__choice" data-smrt-part="choice">
                     <Input type="radio" name="selectedOptionId" value="other" required interaction={false} checked={selections[current.key] === 'other'} onchange={() => (selections[current.key] = 'other')} />
                     <span>{t(M['projects.governance.other'])}</span>
                   </label>
@@ -310,7 +310,7 @@ function submitDecision(event: SubmitEvent, decision: ProjectDecisionView) {
                 <fieldset disabled={busy}>
                   <legend>{t(M['projects.interview.your_choice'])}</legend>
                   {#each options as option (option.id)}
-                    <label class="choice" class:recommended={option.isRecommended}>
+                    <label class="smrt-project-interview__choice" data-smrt-part="choice" class:smrt-project-interview__recommended={option.isRecommended}>
                       <Input type="radio" name="outcome" value={option.id} required interaction={false} />
                       <span>{option.label}{#if option.isRecommended} <strong>{t(M['projects.governance.recommended'])}</strong>{/if}
                         {#if option.description}<small>{option.description}</small>{/if}
@@ -328,7 +328,7 @@ function submitDecision(event: SubmitEvent, decision: ProjectDecisionView) {
             </Form>
           {/if}
 
-          <nav class="navigation" aria-label={t(M['projects.interview.navigation'])}>
+          <nav class="smrt-project-interview__navigation" data-smrt-part="actions" aria-label={t(M['projects.interview.navigation'])}>
             <Button type="button" variant="ghost" disabled={busy || position === 0} onclick={() => moveTo(position - 1, 'back')}>{t(M['projects.interview.back'])}</Button>
             {#if current.record.status === 'open'}
               <Button type="button" variant="ghost" disabled={busy} onclick={() => moveTo(position + 1, 'skip')}>{t(M['projects.interview.skip'])}</Button>
@@ -339,13 +339,13 @@ function submitDecision(event: SubmitEvent, decision: ProjectDecisionView) {
         {:else if openCount === 0}
           <h2 tabindex="-1" bind:this={heading}>{t(M['projects.interview.complete_title'])}</h2>
           <p>{t(M['projects.interview.complete_description'])}</p>
-          <nav class="navigation" aria-label={t(M['projects.interview.navigation'])}>
+          <nav class="smrt-project-interview__navigation" data-smrt-part="actions" aria-label={t(M['projects.interview.navigation'])}>
             <Button type="button" variant="ghost" disabled={busy} onclick={() => moveTo(total - 1, 'back')}>{t(M['projects.interview.back'])}</Button>
           </nav>
         {:else}
           <h2 tabindex="-1" bind:this={heading}>{t(M['projects.interview.remaining_title'])}</h2>
           <p>{t(M['projects.interview.remaining_description'], { count: openCount })}</p>
-          <nav class="navigation" aria-label={t(M['projects.interview.navigation'])}>
+          <nav class="smrt-project-interview__navigation" data-smrt-part="actions" aria-label={t(M['projects.interview.navigation'])}>
             <Button type="button" variant="ghost" disabled={busy} onclick={() => moveTo(total - 1, 'back')}>{t(M['projects.interview.back'])}</Button>
             <Button type="button" disabled={busy} onclick={() => moveTo(firstOpenFrom(0), 'review')}>{t(M['projects.interview.review_skipped'])}</Button>
           </nav>
@@ -357,31 +357,117 @@ function submitDecision(event: SubmitEvent, decision: ProjectDecisionView) {
 
 <style>
 @layer smrt.reset, smrt.structure, smrt.theme;
-@layer smrt.theme {
-  .interview { display: grid; gap: var(--smrt-spacing-4); max-width: 40rem; }
-  .progress { display: grid; gap: var(--smrt-spacing-2); }
-  .progress p, .step h2, .step h3, .step p { margin: 0; }
-  .progress p, .empty, .choice small { color: var(--smrt-color-on-surface-variant); }
-  .progress progress { width: 100%; }
-  .step { border: var(--smrt-hairline); border-radius: var(--smrt-radius-medium); display: grid; gap: var(--smrt-spacing-4); padding: var(--smrt-spacing-5); }
-  .step h2:focus { outline: none; }
-  .step h2:focus-visible { outline: var(--smrt-focus-ring-width) solid var(--smrt-focus-ring-color); outline-offset: var(--smrt-focus-ring-offset); }
-  .framing { display: grid; gap: var(--smrt-spacing-1); }
-  .framing h3, .recorded h3 { font-size: var(--smrt-typography-label-large-size); }
-  .framing ul { margin: 0; padding-inline-start: var(--smrt-spacing-5); }
-  .recorded p { display: grid; gap: var(--smrt-spacing-1); }
-  .step :global(form) { display: grid; gap: var(--smrt-spacing-3); }
-  .step :global(form button[type='submit']) { justify-self: start; }
-  fieldset { display: grid; gap: var(--smrt-spacing-2); border: 0; padding: 0; margin: 0; min-width: 0; }
-  legend { margin-bottom: var(--smrt-spacing-2); padding: 0; }
-  .choice { display: flex; align-items: start; gap: var(--smrt-spacing-2); }
-  .choice.recommended { font-weight: var(--smrt-typography-weight-medium, 500); }
-  .choice :global(input[type='radio']) { width: auto; min-height: auto; padding: 0; }
-  .choice small { display: block; }
-  .navigation { display: flex; flex-wrap: wrap; gap: var(--smrt-spacing-2); justify-content: space-between; }
-  @media (prefers-reduced-motion: no-preference) {
-    .interview[data-motion='on'] .step { animation: smrt-interview-enter 160ms ease-out; }
+@layer smrt.structure {
+  .smrt-project-interview__root {
+    display: grid;
+    gap: var(--smrt-spacing-4);
+    max-width: 40rem;
   }
-  @keyframes smrt-interview-enter { from { opacity: 0; transform: translateY(0.25rem); } to { opacity: 1; transform: none; } }
+  .smrt-project-interview__progress {
+    display: grid;
+    gap: var(--smrt-spacing-2);
+  }
+  .smrt-project-interview__progress p, .smrt-project-interview__step h2, .smrt-project-interview__step h3, .smrt-project-interview__step p {
+    margin: 0;
+  }
+  .smrt-project-interview__progress progress {
+    width: 100%;
+  }
+  .smrt-project-interview__step {
+    display: grid;
+    gap: var(--smrt-spacing-4);
+    padding: var(--smrt-spacing-5);
+  }
+  .smrt-project-interview__framing {
+    display: grid;
+    gap: var(--smrt-spacing-1);
+  }
+  .smrt-project-interview__framing ul {
+    margin: 0;
+    padding-inline-start: var(--smrt-spacing-5);
+  }
+  .smrt-project-interview__recorded p {
+    display: grid;
+    gap: var(--smrt-spacing-1);
+  }
+  .smrt-project-interview__step :global(form) {
+    display: grid;
+    gap: var(--smrt-spacing-3);
+  }
+  .smrt-project-interview__step :global(form button[type='submit']) {
+    justify-self: start;
+  }
+  fieldset {
+    display: grid;
+    gap: var(--smrt-spacing-2);
+    padding: 0;
+    margin: 0;
+    min-width: 0;
+  }
+  legend {
+    margin-bottom: var(--smrt-spacing-2);
+    padding: 0;
+  }
+  .smrt-project-interview__choice {
+    display: flex;
+    align-items: start;
+    gap: var(--smrt-spacing-2);
+  }
+  .smrt-project-interview__choice :global(input[type='radio']) {
+    width: auto;
+    min-height: auto;
+    padding: 0;
+  }
+  .smrt-project-interview__choice small {
+    display: block;
+  }
+  .smrt-project-interview__navigation {
+    display: flex;
+    flex-wrap: wrap;
+    gap: var(--smrt-spacing-2);
+    justify-content: space-between;
+  }
 }
+
+@layer smrt.theme {
+  .smrt-project-interview__progress p, .smrt-project-interview__empty, .smrt-project-interview__choice small {
+    color: var(--smrt-color-on-surface-variant);
+  }
+  .smrt-project-interview__step {
+    border: var(--smrt-hairline);
+    border-radius: var(--smrt-radius-medium);
+  }
+  .smrt-project-interview__step h2:focus {
+    outline: none;
+  }
+  .smrt-project-interview__step h2:focus-visible {
+    outline: var(--smrt-focus-ring-width) solid var(--smrt-focus-ring-color);
+    outline-offset: var(--smrt-focus-ring-offset);
+  }
+  .smrt-project-interview__framing h3, .smrt-project-interview__recorded h3 {
+    font-size: var(--smrt-typography-label-large-size);
+  }
+  fieldset {
+    border: 0;
+  }
+  .smrt-project-interview__choice.smrt-project-interview__recommended {
+    font-weight: var(--smrt-typography-weight-medium, 500);
+  }
+  @media (prefers-reduced-motion: no-preference) {
+    .smrt-project-interview__root[data-motion='on'] .smrt-project-interview__step {
+      animation: smrt-interview-enter 160ms ease-out;
+    }
+  }
+  @keyframes smrt-interview-enter {
+    from {
+      opacity: 0;
+      transform: translateY(0.25rem);
+    }
+    to {
+      opacity: 1;
+      transform: none;
+    }
+  }
+}
+
 </style>
