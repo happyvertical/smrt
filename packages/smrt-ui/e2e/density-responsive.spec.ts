@@ -71,7 +71,7 @@ for (const density of ['comfortable', 'touch']) {
         page.getByRole('button', { name: 'Use signature' }),
       ).toBeVisible();
       const sizes = await page
-        .locator('[data-smrt-component="CameraCapture"] [data-smrt-part="action"], [data-smrt-component="SignaturePad"] [data-smrt-part="action"]')
+        .locator('[data-smrt-component="CameraCapture"] :is([data-smrt-part="action"], [data-smrt-part="picker"]), [data-smrt-component="SignaturePad"] [data-smrt-part="action"]')
         .evaluateAll((elements) =>
           elements.map((element) => ({
             height: element.getBoundingClientRect().height,
