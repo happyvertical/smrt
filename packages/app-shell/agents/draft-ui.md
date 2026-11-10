@@ -1,6 +1,6 @@
 # Draft UI validation
 
-The content header owns draft controls. The saved owner view selects the
+The content header owns draft controls on home, model, history and review pages; welcome and settings have none. Chat is hidden during onboarding. The publish preview groups Added, Removed, Changed and Archived items in counted cards before its ordered changes and full method code. The saved owner view selects the
 layout description; loaders and mutations carry that description's explicit
 target. Changing copies remounts forms and returns home. Approvals always name
 live. No report route is present. Shell copy uses the existing plain-text
@@ -54,3 +54,21 @@ pre-fix implementation as well as the fixed code.
 | Attribution | Owner id resolves to profile name; recorded assistant and engine remain | Unknown identity uses neutral label; spacing survives DOM rendering | Session profile, approval cards and history | DOM |
 | Phone navigation | 375px starts on content, drawer can open on demand | Desktop expanded preference never opens phone drawer; title can ellipsize | Shared shell responsive state | DOM + browser |
 | Publish review | Added/Removed/Changed/Archived groups, counts, ordered changes, full code | Empty groups show zero; conversions and archives remain visible | Existing preview payload; UI primitives and tokens | DOM |
+
+QA rerun (2026-11-10, Node 26.12.1, production `node build`, fresh data
+outside the checkout, port 4822, desktop owner-link auto-sign-in): native Chrome
+showed welcome without chat or draft controls. Selecting Claude Code and finishing
+Fresh opened an enabled composer saying “Using Claude Code” without a reload.
+Settings had no draft controls. Seeded Product and OldModel, started a draft from
+the UI, then added Supplier, a notes field and a method, removed a field/model,
+and converted money to integer through the authenticated routes. Review showed
+Added 3 / Removed 2 / Changed 1 / Archived 3, then six ordered changes and full
+method code. Its approval said “Asked just now by” the owner's profile name;
+after approval, History showed that name and retained “engine” on version 0.
+At Chrome's 375×812 responsive viewport, a fresh page load showed content,
+the full app name and bottom tabs with the drawer closed. Menu opened and closed
+it; returning to desktop restored the expanded sidebar. The console was empty.
+Real paid model turns, ChatGPT OAuth and real key saves were not exercised;
+connection transitions and resumed-engine inputs were verified with DOM tests,
+the stub model and both stub CLIs. Each numbered fix has failing pre-fix
+regression evidence and passing fixed-code evidence. No containers were used.

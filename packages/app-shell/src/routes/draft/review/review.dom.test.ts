@@ -161,3 +161,75 @@ describe('publish review', () => {
     );
   });
 });
+
+it('groups definition changes into counted sections before ordered changes and method code', async () => {
+  await render();
+  const group = (name: string) =>
+    container.querySelector<HTMLElement>(`section[aria-label="${name}"]`);
+  expect(group('Added')?.textContent).toContain('Add model Order');
+  expect(group('Added')?.textContent).toContain('Add field Customer.email');
+  expect(
+    group('Added')?.querySelector('[data-smrt-component="Badge"]')?.textContent,
+  ).toBe('3');
+  expect(group('Added')?.textContent).toContain('Add method Order.total()');
+  expect(group('Removed')?.textContent).toContain('Remove model Note');
+  expect(group('Removed')?.textContent).toContain(
+    'Remove field Customer.oldName',
+  );
+  expect(group('Changed')?.textContent).toContain(
+    'Customer.age: text to integer',
+  );
+  expect(group('Archived')?.textContent).toContain('Archived values: 7');
+  expect(group('Archived')?.textContent).toContain('Archived tables: 1');
+  expect(
+    group('Archived')?.querySelector('[data-smrt-component="Badge"]')
+      ?.textContent,
+  ).toBe('8');
+  const changes = container.querySelector('ol');
+  expect(changes?.querySelectorAll('li').length).toBe(2);
+  expect(
+    Boolean(
+      (group('Archived')?.compareDocumentPosition(changes as Node) ?? 0) &
+        Node.DOCUMENT_POSITION_FOLLOWING,
+    ),
+  ).toBe(true);
+  expect(
+    Boolean(
+      (changes?.compareDocumentPosition(
+        container.querySelector('pre') as Node,
+      ) ?? 0) & Node.DOCUMENT_POSITION_FOLLOWING,
+    ),
+  ).toBe(true);
+  expect(
+    container.querySelectorAll('[data-smrt-component="Card"]').length,
+  ).toBe(4);
+});
+
+it('keeps empty change groups visible with zero counts', async () => {
+  vi.mocked(fetch).mockResolvedValue(
+    json({
+      draft: draftInfo,
+      preview: {
+        ...preview,
+        versions: [],
+        methods: [],
+        archives: { values: 0, tables: 0 },
+        definition: {
+          modelsAdded: [],
+          modelsRemoved: [],
+          recipesAdded: [],
+          recipesRemoved: [],
+          models: {},
+        },
+      },
+    }),
+  );
+  await render();
+  for (const name of ['Added', 'Removed', 'Changed', 'Archived']) {
+    const group = container.querySelector(`section[aria-label="${name}"]`);
+    expect(
+      group?.querySelector('[data-smrt-component="Badge"]')?.textContent,
+    ).toBe('0');
+  }
+  expect(container.querySelector('ol')?.children.length).toBe(0);
+});

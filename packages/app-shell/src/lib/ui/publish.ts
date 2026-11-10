@@ -32,6 +32,68 @@ export function publishLines(preview: PublishPreview): string[] {
   return lines;
 }
 
+export interface PublishGroup {
+  name: 'Added' | 'Removed' | 'Changed' | 'Archived';
+  count: number;
+  items: string[];
+  note?: string;
+}
+
+/** Definition items grouped for review; intermediate conversions still matter. */
+export function publishGroups(preview: PublishPreview): PublishGroup[] {
+  const d = preview.definition;
+  const added = [
+    ...d.modelsAdded.map((name) => `Add model ${name}.`),
+    ...d.recipesAdded.map((name) => `Add recipe ${name}.`),
+  ];
+  const removed = [
+    ...d.modelsRemoved.map((name) => `Remove model ${name}.`),
+    ...d.recipesRemoved.map((name) => `Remove recipe ${name}.`),
+  ];
+  const changed: string[] = [];
+  for (const [name, model] of Object.entries(d.models)) {
+    added.push(
+      ...model.fieldsAdded.map((field) => `Add field ${name}.${field}.`),
+    );
+    removed.push(
+      ...model.fieldsRemoved.map((field) => `Remove field ${name}.${field}.`),
+    );
+    changed.push(
+      ...model.fieldsChanged.map(
+        (field) =>
+          `Change ${name}.${field.field}: ${field.from.type} to ${field.to.type}.`,
+      ),
+    );
+  }
+  for (const method of preview.methods) {
+    if (method.change === 'added')
+      added.push(`Add method ${method.model}.${method.name}().`);
+    if (method.change === 'changed')
+      changed.push(`Change method ${method.model}.${method.name}().`);
+  }
+  const conversions = preview.versions
+    .flatMap((v) => v.steps)
+    .filter((step) => step.op === 'convertColumn').length;
+  return [
+    { name: 'Added', count: added.length, items: added },
+    { name: 'Removed', count: removed.length, items: removed },
+    {
+      name: 'Changed',
+      count: changed.length,
+      items: changed,
+      note: `Field type changes: ${conversions}.`,
+    },
+    {
+      name: 'Archived',
+      count: preview.archives.values + preview.archives.tables,
+      items: [
+        `Archived values: ${preview.archives.values}.`,
+        `Archived tables: ${preview.archives.tables}.`,
+      ],
+    },
+  ];
+}
+
 export interface HistoryGroup {
   id: string;
   name: string | null;

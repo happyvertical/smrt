@@ -1,14 +1,30 @@
 <script lang="ts">
-import { publishLines } from '$lib/ui/publish';
+import { Badge, Card, Grid, Stack } from '@happyvertical/smrt-ui';
+import { publishGroups } from '$lib/ui/publish';
 import type { PublishPreview } from '$lib/ui/types';
 
 let { preview }: { preview: PublishPreview } = $props();
-const lines = $derived(publishLines(preview));
+const groups = $derived(publishGroups(preview));
 </script>
 
-<ul>
-  {#each lines as line, i (i)}<li>{line}</li>{/each}
-</ul>
+<Stack gap="lg">
+<Grid columns={{ sm: 1, md: 2 }} gap="md">
+  {#each groups as group (group.name)}
+    <section aria-label={group.name}>
+      <Card padding="sm">
+        <Stack gap="sm">
+          <Stack direction="horizontal" align="center" gap="sm">
+            <h2>{group.name}</h2><Badge variant="neutral">{group.count}</Badge>
+          </Stack>
+          {#if group.items.length}
+            <ul>{#each group.items as item (item)}<li>{item}</li>{/each}</ul>
+          {:else}<p class="sh-muted">None.</p>{/if}
+          {#if group.note}<p class="sh-muted">{group.note}</p>{/if}
+        </Stack>
+      </Card>
+    </section>
+  {/each}
+</Grid>
 <p>Counts can change until you publish as live records change. Records added in the draft are thrown away.</p>
 <h2>Changes to publish ({preview.versions.length})</h2>
 <ol>
@@ -27,3 +43,5 @@ const lines = $derived(publishLines(preview));
     <pre class="sh-code" tabindex="0" aria-label="Code for {method.model}.{method.name}"><code>{method.code}</code></pre>
   </section>
 {/each}
+
+</Stack>
