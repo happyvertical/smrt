@@ -78,12 +78,12 @@ describe('product media demo', () => {
     try {
       recipeState.clear();
       const off = view();
-      expect(off).not.toContain('asset-grid');
+      expect(off).not.toContain('data-smrt-component="AssetGrid"');
       expect(off).toContain('Add image for Loaf');
       expect(off).toMatch(/1\s+image\b/);
       recipeState.add(GALLERY_RECIPE);
       const on = view();
-      expect(on).toContain('asset-grid');
+      expect(on).toContain('data-smrt-component="AssetGrid"');
       expect(on).toContain('Loaf photo');
       expect(on).toContain('Add image for Loaf');
     } finally {

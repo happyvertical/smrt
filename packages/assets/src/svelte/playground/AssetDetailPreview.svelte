@@ -63,14 +63,14 @@ function handleEdit() {
 }
 </script>
 
-<div class="preview-shell">
-  <div class="preview-card">
-    <p class="eyebrow">{t(M['assets.asset_detail_preview.modal_preview'])}</p>
+<div class="smrt-asset-detail-preview__root" data-smrt-component="AssetDetailPreview">
+  <div class="smrt-asset-detail-preview__card" data-smrt-part="panel">
+    <p class="smrt-asset-detail-preview__eyebrow" data-smrt-part="label">{t(M['assets.asset_detail_preview.modal_preview'])}</p>
     <h4>{previewAsset?.name ?? asset.name}</h4>
     <p>{t(M['assets.asset_detail_preview.description'])}</p>
-    <Button variant="primary" class="preview-open" onclick={openPreview}>{t(M['assets.asset_detail_preview.open_asset_detail'])}</Button>
+    <Button variant="primary" onclick={openPreview}>{t(M['assets.asset_detail_preview.open_asset_detail'])}</Button>
     {#if statusMessage}
-      <p class="status">{statusMessage}</p>
+      <p class="smrt-asset-detail-preview__status" data-smrt-part="status">{statusMessage}</p>
     {/if}
   </div>
 
@@ -86,49 +86,55 @@ function handleEdit() {
 
 <style>
 @layer smrt.reset, smrt.structure, smrt.theme;
-@layer smrt.theme {
-  .preview-shell {
+@layer smrt.structure {
+  .smrt-asset-detail-preview__root {
     display: grid;
     gap: 1rem;
   }
-
-  .preview-card {
+  .smrt-asset-detail-preview__card {
     display: grid;
     gap: 0.75rem;
     max-width: 32rem;
     padding: 1.25rem;
+  }
+  .smrt-asset-detail-preview__card h4,
+  .smrt-asset-detail-preview__card p {
+    margin: 0;
+  }
+  /* The open-preview button renders via <Button variant="primary"> (issue
+  #1589). The primary variant owns the fill/color; this override keeps the
+  pill shape and grid placement, reaching the child <button> via :global(). */
+  .smrt-asset-detail-preview__card :global([data-smrt-component="Button"]) {
+    justify-self: start;
+    padding: 0.75rem 1rem;
+  }
+}
+
+@layer smrt.theme {
+  .smrt-asset-detail-preview__card {
     border-radius: 1rem;
     background: color-mix(in srgb, var(--smrt-color-surface) 92%, transparent);
     border: var(--smrt-hairline);
     box-shadow: var(--smrt-elevation-5, 0 18px 38px color-mix(in srgb, var(--smrt-color-shadow) 8%, transparent));
   }
-
-  .preview-card h4,
-  .preview-card p {
-    margin: 0;
-  }
-
-  .eyebrow {
+  .smrt-asset-detail-preview__eyebrow {
     font-size: var(--smrt-typography-label-medium-size, 0.75rem);
     letter-spacing: var(--smrt-typography-label-medium-tracking, 0.12em);
     text-transform: uppercase;
     color: var(--smrt-color-primary);
   }
-
   /* The open-preview button renders via <Button variant="primary"> (issue
-     #1589). The primary variant owns the fill/color; this override keeps the
-     pill shape and grid placement, reaching the child <button> via :global(). */
-  .preview-card :global(.preview-open) {
-    justify-self: start;
+  #1589). The primary variant owns the fill/color; this override keeps the
+  pill shape and grid placement, reaching the child <button> via :global(). */
+  .smrt-asset-detail-preview__card :global([data-smrt-component="Button"]) {
     border: 0;
     border-radius: var(--smrt-radius-full);
-    padding: 0.75rem 1rem;
     font-weight: var(--smrt-typography-weight-semibold, 600);
   }
-
-  .status {
+  .smrt-asset-detail-preview__status {
     color: var(--smrt-color-primary);
     font-size: var(--smrt-typography-body-large-size, 0.95rem);
   }
 }
+
 </style>

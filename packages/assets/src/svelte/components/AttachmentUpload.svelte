@@ -54,7 +54,7 @@ const fileHelp = $derived(
 
 {#if canUpload}
   <Form id={formId} {action} method="post" enctype="multipart/form-data" preventDefault={false} {onsubmit} aria-busy={busy}>
-    <div class="upload-fields">
+    <div class="smrt-attachment-upload__fields" data-smrt-part="form">
       {#each hiddenFields as field}<Input type="hidden" name={field.name} value={field.value} interaction={false} />{/each}
       {#if message}<p role="alert">{message}</p>{/if}
       {#if retryStatus === 'transport-error'}<p role="status">{t(M['assets.attachments.uncertain'])}</p>{/if}
@@ -77,8 +77,19 @@ const fileHelp = $derived(
 
 <style>
 @layer smrt.reset, smrt.structure, smrt.theme;
-@layer smrt.theme {
-  .upload-fields { display: grid; gap: var(--smrt-spacing-3); min-width: 0; overflow-wrap: anywhere; }
-  p { margin: 0; }
+@layer smrt.structure {
+  .smrt-attachment-upload__fields {
+    display: grid;
+    gap: var(--smrt-spacing-3);
+    min-width: 0;
+    overflow-wrap: anywhere;
+  }
+  p {
+    margin: 0;
+  }
 }
+
+@layer smrt.theme {
+}
+
 </style>
