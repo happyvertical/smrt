@@ -9,10 +9,11 @@ import {
   initialValues,
   serializeForm,
 } from '$lib/ui/fields';
-import type { MethodInfo } from '$lib/ui/types';
+import type { MethodInfo, Target } from '$lib/ui/types';
 import FieldInput from './FieldInput.svelte';
 
 interface Props {
+  target: Target;
   className: string;
   name: string;
   method: MethodInfo;
@@ -20,7 +21,7 @@ interface Props {
   recordId?: string | null;
 }
 
-let { className, name, method, recordId = null }: Props = $props();
+let { target, className, name, method, recordId = null }: Props = $props();
 
 const uid = `m-${Math.random().toString(36).slice(2, 8)}`;
 const paramDefs = $derived(
@@ -53,7 +54,7 @@ async function run(event: SubmitEvent) {
   if (recordId) args.id = recordId;
   busy = true;
   try {
-    const r = await runMethodTool(className, name, args);
+    const r = await runMethodTool(className, name, args, fetch, target);
     if (r.isError) {
       failure = r.text || 'The method failed.';
     } else {

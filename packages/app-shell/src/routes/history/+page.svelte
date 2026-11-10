@@ -1,13 +1,22 @@
 <script lang="ts">
+import { Button } from '@happyvertical/smrt-ui';
 import { invalidate } from '$app/navigation';
 import ConfirmDialog from '$lib/components/ConfirmDialog.svelte';
-import { ApiError, isPendingApproval, undoLast } from '$lib/ui/api';
+import {
+  ApiError,
+  isPendingApproval,
+  undoLast,
+  undoPublish,
+} from '$lib/ui/api';
 import { DEPENDS } from '$lib/ui/events';
 import { fullTime, timeAgo } from '$lib/ui/format';
+import { groupHistory, type HistoryGroup } from '$lib/ui/publish';
 import type { PageProps } from './$types';
 
 let { data }: PageProps = $props();
 
+const groups = $derived(groupHistory(data.versions));
+let selected = $state<HistoryGroup | null>(null);
 const current = $derived(data.versions.find((v) => v.current));
 const canUndo = $derived(!!current && current.parent !== null);
 let confirming = $state(false);
@@ -21,7 +30,11 @@ async function undo() {
   busy = true;
   error = '';
   try {
-    const { data: out } = await undoLast();
+    const target = data.description?.mode ?? 'live';
+    const { data: out } =
+      selected?.before !== null && selected?.before !== undefined
+        ? await undoPublish(selected.before, target)
+        : await undoLast(target);
     confirming = false;
     if (isPendingApproval(out)) {
       // Going back would overwrite newer values: nothing has changed yet.
@@ -37,12 +50,7 @@ async function undo() {
       invalidate(DEPENDS.records),
     ]);
   } catch (e) {
-    error =
-      e instanceof ApiError && e.status === 409
-        ? `${e.message}. Cleaned-up changes cannot be undone.`
-        : e instanceof ApiError
-          ? e.message
-          : 'Could not undo.';
+    error = e instanceof ApiError ? e.message : 'Could not undo.';
   } finally {
     busy = false;
   }
@@ -74,8 +82,15 @@ async function undo() {
     </div>
   {:else}
     <ol class="sh-list">
-      {#each data.versions as v (v.version)}
+      {#each groups as group (group.id)}
         <li>
+          {#if group.name}
+            <h2>{group.name}</h2>
+            {#if group.canUndo}
+              <Button variant="secondary" onclick={() => { selected = group; error = ''; confirming = true; }}>Undo this publish</Button>
+            {/if}
+          {/if}
+          {#each group.versions as v (v.version)}
           <article class="sh-card" aria-current={v.current ? 'true' : undefined}>
             <div class="row">
               <h2>{v.summary || `Version ${v.version}`}</h2>
@@ -97,11 +112,12 @@ async function undo() {
                 Its saved data was cleaned up, so going back past this change is no longer possible.
               </p>
             {/if}
-            {#if v.current && canUndo}
+            {#if !group.name && v.current && canUndo}
               <button
                 type="button"
                 class="sh-btn"
                 onclick={() => {
+                  selected = null;
                   error = '';
                   confirming = true;
                 }}
@@ -110,6 +126,7 @@ async function undo() {
               </button>
             {/if}
           </article>
+          {/each}
         </li>
       {/each}
     </ol>
@@ -118,7 +135,7 @@ async function undo() {
 
 <ConfirmDialog
   open={confirming}
-  title="Undo this change?"
+  title={selected ? 'Undo this publish?' : 'Undo this change?'}
   confirmLabel="Undo"
   {busy}
   {error}
@@ -126,8 +143,8 @@ async function undo() {
   oncancel={() => (confirming = false)}
 >
   <p>
-    <strong>{current?.summary}</strong> will be taken back and your app returns
-    to the version before it. Data archived by the change is restored.
+    <strong>{selected?.name ?? current?.summary}</strong> will be taken back and your app returns
+    to the version before it. Later changes are also taken back. Archived data is restored.
   </p>
 </ConfirmDialog>
 
@@ -147,7 +164,7 @@ async function undo() {
   }
   .badges {
     display: flex;
-    gap: 0.4rem;
+    gap: var(--smrt-spacing-sm);
   }
   .sh-card p {
     margin: var(--smrt-spacing-sm, 0.5rem) 0;

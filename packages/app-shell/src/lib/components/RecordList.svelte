@@ -41,7 +41,7 @@ async function confirmDelete() {
   deleting = true;
   deleteError = '';
   try {
-    const { data } = await api.remove(model, target.id);
+    const { data } = await api.remove(model, target.id, description.mode);
     target = null;
     if (isPendingApproval(data)) {
       pending = data;
@@ -124,7 +124,7 @@ async function confirmDelete() {
   <section class="methods" aria-label="Actions for {info.label}">
     <h2>Actions</h2>
     {#each methods as [name, method] (name)}
-      <MethodRunner className={info.className} {name} {method} />
+      <MethodRunner target={description.mode} className={info.className} {name} {method} />
     {/each}
   </section>
 {/if}
@@ -132,7 +132,7 @@ async function confirmDelete() {
 <ConfirmDialog
   open={target !== null}
   title="Delete this {info.label.toLowerCase()}?"
-  confirmLabel="Ask to delete"
+  confirmLabel={description.mode === 'draft' ? 'Delete' : 'Ask to delete'}
   danger
   busy={deleting}
   error={deleteError}
@@ -140,9 +140,13 @@ async function confirmDelete() {
   oncancel={() => (target = null)}
 >
   <p>
-    <strong>{target ? recordLabel(info, target) : ''}</strong> will not be
-    deleted right away. The request goes to your Approvals page and the record
-    stays until you approve it.
+    {#if description.mode === 'draft'}
+      Delete <strong>{target ? recordLabel(info, target) : ''}</strong> from the draft? Your live record stays unchanged.
+    {:else}
+      <strong>{target ? recordLabel(info, target) : ''}</strong> will not be
+      deleted right away. The request goes to your Approvals page and the record
+      stays until you approve it.
+    {/if}
   </p>
 </ConfirmDialog>
 

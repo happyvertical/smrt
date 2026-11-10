@@ -1,4 +1,5 @@
 <script lang="ts">
+import { Button } from '@happyvertical/smrt-ui';
 import { describeApproval, failureText, statusLabel } from '$lib/ui/approvals';
 import { fullTime, timeAgo } from '$lib/ui/format';
 import type { ApprovalView } from '$lib/ui/types';
@@ -56,6 +57,9 @@ const badge = $derived(
   </p>
 
   {#if failed}<p class="sh-alert sh-alert-error">{failed}</p>{/if}
+  {#if approval.status === 'failed' && approval.action?.kind === 'publish-draft'}
+    <Button variant="secondary" href="/draft/review">Review again</Button>
+  {/if}
   {#if message}<p class="sh-alert sh-alert-error" role="alert">{message}</p>{/if}
 
   {#if pending && ondecide}

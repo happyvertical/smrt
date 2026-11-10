@@ -2,7 +2,9 @@
 // Connect panel and the Welcome page make from them. No credential is ever
 // handled here; "connect" asks the server to use the CLI already on this
 // computer (see lib/server/agent-cli/tools.ts for the rule).
+
 import type { AssistantEngineId } from '../assistant/events.ts';
+import { targetPath } from './target.ts';
 
 export interface ToolInfo {
   tool: 'claude-code' | 'codex';
@@ -43,7 +45,7 @@ async function call<T>(
 ): Promise<T> {
   let response: Response;
   try {
-    response = await doFetch(path, init);
+    response = await doFetch(targetPath(path, 'live'), init);
   } catch {
     throw new OnboardingError('Could not reach the app.');
   }

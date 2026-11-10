@@ -234,3 +234,40 @@ describe('announcement', () => {
     expect(announcement(initialState)).toBe('');
   });
 });
+
+describe('tool copy metadata', () => {
+  it('preserves the copy on streamed and reopened tool results', () => {
+    const state = run([
+      ev({ type: 'tool_call', id: 'one', name: 'app_removefield', args: '{}' }),
+      ev({
+        type: 'tool_result',
+        id: 'one',
+        name: 'app_removefield',
+        ok: true,
+        summary: 'Removed field',
+        copy: 'draft',
+      }),
+    ]);
+    expect(state.items[0]).toMatchObject({ kind: 'tool', copy: 'draft' });
+    const reopened = reduce(initialState, {
+      type: 'loaded',
+      threadId: 'thread',
+      messages: [
+        {
+          id: 'one',
+          seq: 1,
+          role: 'tool',
+          content: '',
+          tool: {
+            id: 'one',
+            name: 'chore_create',
+            ok: true,
+            summary: 'Created',
+            copy: 'live',
+          },
+        },
+      ],
+    });
+    expect(reopened.items[0]).toMatchObject({ kind: 'tool', copy: 'live' });
+  });
+});

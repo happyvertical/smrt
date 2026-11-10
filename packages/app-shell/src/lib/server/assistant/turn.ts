@@ -511,6 +511,7 @@ export async function runTurn(options: RunTurnOptions): Promise<TurnStop> {
         name: call.name,
         ok: outcome.ok,
         summary: outcome.summary,
+        ...(outcome.copy ? { copy: outcome.copy } : {}),
         ...(outcome.approvalId ? { approvalId: outcome.approvalId } : {}),
       };
       await appendMessage(thread, {

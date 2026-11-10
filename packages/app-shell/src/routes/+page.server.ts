@@ -13,7 +13,12 @@ export const load: PageServerLoad = async ({ parent, depends, fetch }) => {
     await Promise.all(
       Object.keys(description.models).map(async (model) => {
         try {
-          const rows = await loadRecords(fetch, model, COUNT_LIMIT);
+          const rows = await loadRecords(
+            fetch,
+            model,
+            COUNT_LIMIT,
+            description.mode,
+          );
           counts[model] = {
             count: rows.length,
             capped: rows.length >= COUNT_LIMIT,

@@ -380,7 +380,7 @@ undone; the draft is still open, publish again.
 
 `PublishPreview = { digest, risky: true, fromVersion, toVersion, versions:
 { version, draftVersion, author, summary, steps, statements }[], definition:
-DefinitionDiff, archives: { values, tables }, methods: { model, name, status:
+DefinitionDiff, archives: { values, tables }, methods: { model, name, change:
 'added'\|'changed'\|'unchanged', description, code, ... }[] }`. EVERY method of
 the final definition is listed in full (draft code reaches live at publish, show
 it). Archive counts are of that moment and can drift. The publish Approval's
@@ -478,3 +478,21 @@ pnpm --filter @happyvertical/smrt-app-shell typecheck
 ```
 
 See [AGENTS.md](AGENTS.md) for the invariants and [agents/engine.md](agents/engine.md) for the engine.
+
+### Draft UI
+
+The content header offers **Start draft**, then **Live / Draft**, the unpublished
+change count, **Discard** (confirmed), and **Review and publish**. Starting a draft
+opens its view; switching copies saves the owner's choice and returns home. In
+Draft, a warning explains that test records are thrown away and draft-only models
+have a **new** marker. Chat shows **Building in draft**; tool chips name the copy,
+including after reopening a thread.
+
+`/draft/review` rehearses the publish and shows definition changes, conversions,
+archive counts, and all final method code. **Publish** requests a digest-pinned
+Approval; the existing approval card resolves it. A changed-chain failure offers
+**Review again**. Counts can drift as live records change. History groups each
+publish under its draft name; **Undo this publish** returns to its first parent
+(and takes back subsequent changes), with an Approval if needed. Lifecycle events
+refresh the bar and pages without reloading. An unusable draft explains the problem
+and keeps Discard available. See [UI validation](agents/draft-ui.md).

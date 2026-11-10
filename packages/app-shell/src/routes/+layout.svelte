@@ -5,6 +5,7 @@ import { onMount, untrack } from 'svelte';
 import { page } from '$app/state';
 import '$lib/ui/ui.css';
 import AssistantPanel from '$lib/assistant/AssistantPanel.svelte';
+import DraftBar from '$lib/components/DraftBar.svelte';
 import {
   ASSISTANT_OPEN_EVENT,
   assistantOpenKey,
@@ -34,6 +35,12 @@ const nav: ShellNavItem[] = $derived(
         label: item.label,
         icon: item.icon,
         description: item.description,
+        badge:
+          data.description?.mode === 'draft' &&
+          item.id.startsWith('model:') &&
+          !Object.hasOwn(data.liveDescription?.models ?? {}, item.id.slice(6))
+            ? 'new'
+            : null,
       }))
     : [],
 );
@@ -75,7 +82,7 @@ $effect(() => {
 
 // Live updates only make sense for the signed-in owner.
 $effect(() => {
-  if (isOwner) live.start();
+  if (isOwner) live.start(data.description?.mode ?? 'live');
   else live.stop();
 });
 onMount(() => {
@@ -121,9 +128,12 @@ onMount(() => {
   bind:panelOpen
 >
   {#snippet panel({ open })}
-    <AssistantPanel {open} />
+    <AssistantPanel {open} buildingInDraft={!!data.description?.draft} />
   {/snippet}
-  {@render children()}
+  {#if data.description}<DraftBar description={data.description} />{/if}
+  {#key data.description?.mode}
+    {@render children()}
+  {/key}
   <!-- Screen readers hear changes made elsewhere (the assistant, another tab). -->
   <div class="sr-only" aria-live="polite" role="status">{live.announcement}</div>
   {#if isOwner && live.status === 'reconnecting'}
@@ -134,6 +144,7 @@ onMount(() => {
 <style>
 @layer smrt.reset, smrt.structure, smrt.theme;
 @layer smrt.theme {
+  :global(.smrt-admin-shell nav.smrt-tenant-nav a[href] small) { color: var(--smrt-color-warning); }
   .sr-only {
     position: absolute;
     width: 1px;
@@ -156,7 +167,7 @@ onMount(() => {
     background: var(--smrt-color-inverse-surface);
     color: var(--smrt-color-inverse-on-surface);
     font-size: 0.8125rem;
-    z-index: 50;
+    z-index: var(--smrt-z-index-toast);
   }
 }
 </style>

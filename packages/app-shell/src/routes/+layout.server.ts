@@ -5,10 +5,12 @@ import {
   assistantSettings,
 } from '$lib/server/agent-cli/service';
 import { principalFromLocals } from '$lib/server/owner';
+import { api } from '$lib/ui/api';
 import { DEPENDS } from '$lib/ui/events';
 import { isPluginRequest } from '$lib/ui/layout';
 import { loadDescription } from '$lib/ui/load';
 import { needsWelcome } from '$lib/ui/onboarding-client';
+import type { DraftInfo, Target } from '$lib/ui/types';
 import type { LayoutServerLoad } from './$types';
 
 /**
@@ -29,7 +31,21 @@ export const load: LayoutServerLoad = async (event) => {
     embed: event.url.searchParams.get('embed'),
   });
   if (!session.authenticated) return { session, description: null, embedded };
-  const result = await loadDescription(event.fetch);
+  // Check ownership before reading the saved copy. Signed-in members have no shell.
+  const liveResult = await loadDescription(event.fetch, 'live');
+  const draftState = liveResult.ok
+    ? (
+        await api<{ draft: DraftInfo | null; view: Target }>(
+          '/api/shell/draft',
+          { fetch: event.fetch },
+        )
+      ).data
+    : { draft: null, view: 'live' as const };
+  const result =
+    draftState.view === 'draft' && draftState.draft?.publishable
+      ? await loadDescription(event.fetch, 'draft')
+      : liveResult;
+  const liveDescription = liveResult.ok ? liveResult.description : null;
   const description = result.ok ? result.description : null;
   // First run: an owner with an empty app who has not finished or skipped the
   // welcome steps is sent there once. An app that already has models is in
@@ -55,5 +71,5 @@ export const load: LayoutServerLoad = async (event) => {
           : '/welcome',
       );
   }
-  return { session, description, embedded };
+  return { session, description, liveDescription, embedded };
 };

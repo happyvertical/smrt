@@ -19,6 +19,7 @@ export type Item =
   | { kind: 'assistant'; id: string; text: string; streaming: boolean }
   | {
       kind: 'tool';
+      copy?: 'live' | 'draft';
       id: string;
       name: string;
       state: 'running' | 'ok' | 'error';
@@ -205,6 +206,7 @@ export function reduce(state: DockState, action: Action): DockState {
             name: m.tool.name,
             state: m.tool.ok ? 'ok' : 'error',
             summary: m.tool.summary,
+            ...(m.tool.copy ? { copy: m.tool.copy } : {}),
           });
       }
       return {
@@ -331,6 +333,7 @@ function onEvent(state: DockState, e: TurnEvent): DockState {
             ...(i as Extract<Item, { kind: 'tool' }>),
             state: e.ok ? 'ok' : 'error',
             summary: e.summary,
+            ...(e.copy ? { copy: e.copy } : {}),
           }),
         ),
       };

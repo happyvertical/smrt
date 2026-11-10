@@ -77,12 +77,12 @@ async function save(event: SubmitEvent) {
   saving = true;
   try {
     if (record) {
-      await records.update(model, record.id, data);
+      await records.update(model, record.id, data, description.mode);
       touched = false;
       await invalidate(DEPENDS.records);
       saved = true;
     } else {
-      await records.create(model, data);
+      await records.create(model, data, description.mode);
       touched = false;
       await invalidate(DEPENDS.records);
       await goto(modelHref(model));
@@ -106,7 +106,7 @@ async function confirmDelete() {
   deleting = true;
   deleteError = '';
   try {
-    const { data } = await records.remove(model, record.id);
+    const { data } = await records.remove(model, record.id, description.mode);
     confirming = false;
     if (isPendingApproval(data)) {
       pending = data;
@@ -185,6 +185,7 @@ const methods = $derived(Object.entries(info.methods));
         {name}
         {method}
         recordId={record.id}
+        target={description.mode}
       />
     {/each}
   </section>
@@ -194,7 +195,7 @@ const methods = $derived(Object.entries(info.methods));
   <ConfirmDialog
     open={confirming}
     title="Delete this {info.label.toLowerCase()}?"
-    confirmLabel="Ask to delete"
+    confirmLabel={description.mode === 'draft' ? 'Delete' : 'Ask to delete'}
     danger
     busy={deleting}
     error={deleteError}
@@ -202,9 +203,13 @@ const methods = $derived(Object.entries(info.methods));
     oncancel={() => (confirming = false)}
   >
     <p>
-      <strong>{recordLabel(info, record)}</strong> will not be deleted right
-      away. The request goes to your Approvals page and the record stays until
-      you approve it.
+      {#if description.mode === 'draft'}
+        Delete <strong>{recordLabel(info, record)}</strong> from the draft? Your live record stays unchanged.
+      {:else}
+        <strong>{recordLabel(info, record)}</strong> will not be deleted right
+        away. The request goes to your Approvals page and the record stays until
+        you approve it.
+      {/if}
     </p>
   </ConfirmDialog>
 {/if}

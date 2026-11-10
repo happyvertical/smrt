@@ -23,7 +23,7 @@ export async function postSetting(
   body.set('payload', JSON.stringify(payload));
   let response: Response;
   try {
-    response = await fetch(`?/${action}`, {
+    response = await fetch(`?/${action}&target=live`, {
       method: 'POST',
       body,
       headers: { 'x-sveltekit-action': 'true' },

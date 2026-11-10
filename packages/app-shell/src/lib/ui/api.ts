@@ -1,7 +1,8 @@
 // Browser-side calls to the shell's JSON routes. Every route answers
 // `{ error, code? }` on failure; that message is shown as is.
 import { methodToolName } from './fields.ts';
-import type { PendingApproval } from './types.ts';
+import { targetPath } from './target.ts';
+import type { PendingApproval, Target } from './types.ts';
 
 export class ApiError extends Error {
   constructor(
@@ -25,15 +26,26 @@ type Fetch = typeof fetch;
 
 export async function api<T>(
   path: string,
-  init: { method?: string; body?: unknown; fetch?: Fetch } = {},
+  init: {
+    method?: string;
+    body?: unknown;
+    fetch?: Fetch;
+    target?: Target;
+  } = {},
 ): Promise<{ status: number; data: T }> {
   const doFetch = init.fetch ?? fetch;
   let response: Response;
   try {
-    response = await doFetch(path, {
+    response = await doFetch(targetPath(path, init.target ?? 'live'), {
       method: init.method ?? 'GET',
-      headers:
-        init.body !== undefined ? { 'content-type': 'application/json' } : {},
+      headers: {
+        ...(init.body !== undefined
+          ? { 'content-type': 'application/json' }
+          : {}),
+        ...(path.startsWith('/api/app/')
+          ? { 'x-shell-target': init.target ?? 'live' }
+          : {}),
+      },
       body: init.body !== undefined ? JSON.stringify(init.body) : undefined,
     });
   } catch {
@@ -65,18 +77,28 @@ const rec = (model: string) =>
   `/api/shell/records/${encodeURIComponent(model)}`;
 
 export const records = {
-  create: (model: string, data: Record<string, unknown>) =>
-    api<Record<string, unknown>>(rec(model), { method: 'POST', body: data }),
-  update: (model: string, id: string, data: Record<string, unknown>) =>
+  create: (model: string, data: Record<string, unknown>, target: Target) =>
+    api<Record<string, unknown>>(rec(model), {
+      method: 'POST',
+      body: data,
+      target,
+    }),
+  update: (
+    model: string,
+    id: string,
+    data: Record<string, unknown>,
+    target: Target,
+  ) =>
     api<Record<string, unknown>>(`${rec(model)}/${encodeURIComponent(id)}`, {
       method: 'PUT',
       body: data,
+      target,
     }),
   /** 202 with a PendingApproval: nothing is deleted until the owner approves. */
-  remove: (model: string, id: string) =>
+  remove: (model: string, id: string, target: Target) =>
     api<PendingApproval | { deleted: string }>(
       `${rec(model)}/${encodeURIComponent(id)}`,
-      { method: 'DELETE' },
+      { method: 'DELETE', target },
     ),
 };
 
@@ -87,12 +109,10 @@ export const decideApproval = (id: string, approve: boolean) =>
   );
 
 /** 202 with a PendingApproval when going back would overwrite newer data. */
-export const undoLast = () =>
+export const undoLast = (target: Target) =>
   api<PendingApproval | { version: number; summary: string }>(
     '/api/shell/undo',
-    {
-      method: 'POST',
-    },
+    { target, method: 'POST' },
   );
 
 export interface MethodOutcome {
@@ -121,10 +141,11 @@ export async function runMethodTool(
   method: string,
   args: Record<string, unknown>,
   fetchImpl: Fetch = fetch,
+  target: Target = 'live',
 ): Promise<MethodOutcome> {
   let response: Response;
   try {
-    response = await fetchImpl('/mcp', {
+    response = await fetchImpl(targetPath('/mcp', target), {
       method: 'POST',
       headers: {
         'content-type': 'application/json',
@@ -170,3 +191,13 @@ export async function runMethodTool(
   } catch {}
   return outcome;
 }
+
+export const undoPublish = (version: number, target: Target) =>
+  api<PendingApproval | { version: number; summary: string }>(
+    '/api/shell/undo-to',
+    {
+      method: 'POST',
+      body: { version },
+      target,
+    },
+  );

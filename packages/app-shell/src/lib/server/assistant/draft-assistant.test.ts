@@ -23,7 +23,7 @@ import { modeLine, systemPrompt } from './guidance.ts';
 import { assistantScope } from './scope.ts';
 import { call, drive, say, scripted } from './test-helpers.ts';
 import { startTestMcp, type TestMcp } from './test-mcp.ts';
-import { createThread } from './threads.ts';
+import { createThread, viewMessages } from './threads.ts';
 
 let h: ShellHarness;
 let mcp: TestMcp;
@@ -120,11 +120,18 @@ describe('API engine (scripted model)', () => {
       () => say('Done.'),
     ]);
     const events: TurnEvent[] = [];
-    const { stop } = await drive({
+    const { stop, threadId } = await drive({
       principal: h.owner,
       model,
       onEvent: (e) => events.push(e),
     });
+    const saved = await viewMessages(threadId);
+    expect(
+      saved.find((m) => m.tool?.name === 'app_removefield')?.tool?.copy,
+    ).toBe('draft');
+    expect(saved.find((m) => m.tool?.name === 'chore_create')?.tool?.copy).toBe(
+      'live',
+    );
     expect(stop).toBe('complete'); // nothing held
     expect(events.some((e) => e.type === 'approval_required')).toBe(false);
     // the system prompt told it where it is working
@@ -276,7 +283,7 @@ async function cliTurn(tool: AgentTool, text: string) {
       deps,
     }),
   );
-  return { events, stop, stateDir };
+  return { events, stop, stateDir, threadId: thread.id as string };
 }
 
 describe.each([
@@ -295,10 +302,15 @@ describe.each([
       new RegExp(`Mode: the draft .{1,3}Cli ${tool}.{1,3} is open`),
     );
 
-    const { events, stop } = await cliTurn(
+    const { events, stop, threadId } = await cliTurn(
       tool,
       'tool app_removefield {"model":"Chore","field":"points"}',
     );
+    expect(
+      (await viewMessages(threadId)).find(
+        (m) => m.tool?.name === 'app_removefield',
+      )?.tool?.copy,
+    ).toBe('draft');
     expect(stop).toBe('complete'); // a draft change needs no approval
     expect(events.some((e) => e.type === 'approval_required')).toBe(false);
     expect(live.version).toBe(liveVersion);

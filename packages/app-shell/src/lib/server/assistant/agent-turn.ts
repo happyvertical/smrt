@@ -291,6 +291,7 @@ export async function runAgentTurn(
             name,
             ok: event.ok,
             summary,
+            ...(copy ? { copy } : {}),
             ...(approvalId ? { approvalId } : {}),
           },
         });

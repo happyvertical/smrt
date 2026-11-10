@@ -104,6 +104,7 @@ export interface ThreadMessage {
     ok: boolean;
     summary: string;
     approvalId?: string;
+    copy?: 'live' | 'draft';
   };
 }
 

@@ -3,8 +3,22 @@
 // vitest.dom.config.ts (jsdom).
 import { createRawSnippet, mount, tick, unmount } from 'svelte';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
+import { loadRecords } from '../lib/ui/load.ts';
+import type { Description } from '../lib/ui/types.ts';
 import { page } from '../test/app-state.ts';
+import {
+  description as draftDescription,
+  draftInfo,
+} from '../test/draft-fixtures.ts';
+import { layoutState } from '../test/layout-state.svelte.ts';
 import Layout from './+layout.svelte';
+
+const navigation = vi.hoisted(() => ({
+  goto: vi.fn(async () => {}),
+  invalidate: vi.fn(async () => {}),
+  invalidateAll: vi.fn(async () => {}),
+}));
+vi.mock('$app/navigation', () => navigation);
 
 let container: HTMLDivElement;
 let component: ReturnType<typeof mount> | undefined;
@@ -19,10 +33,11 @@ function data(overrides: Record<string, unknown> = {}) {
       user: { id: 'owner-1', email: 'will@example.com', name: 'Will' },
     },
     description: {
-      name: 'My app',
-      models: { Customer: { label: 'Customers' } },
+      ...draftDescription('live'),
+      draft: null,
+      frozen: false,
       pendingApprovals: 2,
-    },
+    } as Description,
     embedded: false,
     ...overrides,
   };
@@ -30,6 +45,7 @@ function data(overrides: Record<string, unknown> = {}) {
 
 beforeEach(() => {
   phone = false;
+  vi.resetAllMocks();
   localStorage.clear();
   page.url = new URL('http://localhost/');
   page.route = { id: '/' };
@@ -486,5 +502,260 @@ describe('phone width', () => {
   it('has no chat tab in a plugin', async () => {
     await render(data({ embedded: true }));
     expect(q('[data-item="panel"]')).toBeNull();
+  });
+});
+
+describe('draft controls in the content column', () => {
+  const button = (label: string) =>
+    [...container.querySelectorAll<HTMLButtonElement>('button')].find(
+      (b) => b.textContent?.trim() === label,
+    );
+  const draftData = (mode: 'live' | 'draft' = 'draft') =>
+    data({
+      description: draftDescription(mode),
+      liveDescription: draftDescription('live'),
+    });
+
+  it('offers a quiet Start draft within content when no draft is open', async () => {
+    await render();
+    expect(button('Start draft')).toBeTruthy();
+    expect(
+      q('#smrt-admin-shell-main')?.contains(button('Start draft') ?? null),
+    ).toBe(true);
+    expect(q('.draft-strip')).toBeNull();
+  });
+
+  it('starts a draft and explicitly saves the draft view', async () => {
+    await render();
+    button('Start draft')?.click();
+    await vi.waitFor(() => expect(navigation.invalidateAll).toHaveBeenCalled());
+    expect(fetch).toHaveBeenCalledWith(
+      '/api/shell/draft?target=live',
+      expect.objectContaining({ method: 'POST' }),
+    );
+    expect(fetch).toHaveBeenCalledWith(
+      '/api/shell/draft/view?target=live',
+      expect.objectContaining({
+        method: 'PUT',
+        body: JSON.stringify({ view: 'draft' }),
+      }),
+    );
+  });
+
+  it('shows the switch, count, actions, warning, sidebar new marker and chat badge', async () => {
+    await render(draftData());
+    expect(button('Draft')?.getAttribute('aria-pressed')).toBe('true');
+    expect(button('Live')?.getAttribute('aria-pressed')).toBe('false');
+    expect(q('[data-testid="draft-header"]')?.textContent).toContain(
+      '2 changes, not published',
+    );
+    expect(button('Discard')).toBeTruthy();
+    expect(q('a[href="/draft/review"]')?.textContent).toContain(
+      'Review and publish',
+    );
+    expect(q('.draft-strip')?.textContent).toBe(
+      'Draft: a test copy. Records you add here are thrown away when you publish.',
+    );
+    expect(q('.smrt-tenant-nav a[href="/m/Order"] small')?.textContent).toBe(
+      'new',
+    );
+    expect(q('.smrt-tenant-nav a[href="/m/Customer"] small')).toBeNull();
+    expect(panel()?.textContent).toContain('Building in draft');
+  });
+
+  it('keeps live navigation and hides the strip in Live view while building in draft', async () => {
+    await render(draftData('live'));
+    expect(button('Live')?.getAttribute('aria-pressed')).toBe('true');
+    expect(q('.draft-strip')).toBeNull();
+    expect(q('.smrt-tenant-nav a[href="/m/Order"]')).toBeNull();
+    expect(panel()?.textContent).toContain('Building in draft');
+  });
+
+  it('persists switching copies and sends the new target on subsequent data loads', async () => {
+    const state = layoutState(draftData());
+    const fetcher = vi.mocked(fetch);
+    fetcher.mockImplementation(async (path, init) => {
+      if (String(path).includes('/draft/view')) {
+        expect(JSON.parse(String(init?.body))).toEqual({ view: 'live' });
+        return new Response(JSON.stringify({ view: 'live' }));
+      }
+      return new Response(
+        JSON.stringify({ records: [], threads: [], approvals: [] }),
+      );
+    });
+    navigation.invalidateAll.mockImplementation(async () => {
+      state.description = draftDescription('live');
+      await loadRecords(fetch, 'Customer', 500, state.description.mode);
+    });
+    await render(state);
+    button('Live')?.click();
+    await vi.waitFor(() =>
+      expect(button('Live')?.getAttribute('aria-pressed')).toBe('true'),
+    );
+    expect(fetch).toHaveBeenCalledWith(
+      '/api/shell/draft/view?target=live',
+      expect.objectContaining({ method: 'PUT' }),
+    );
+    expect(fetch).toHaveBeenCalledWith(
+      '/api/shell/records/Customer?limit=500&target=live',
+      expect.anything(),
+    );
+    expect(q('.draft-strip')).toBeNull();
+  });
+
+  it('preserves the viewed copy if saving the view fails', async () => {
+    await render(draftData());
+    vi.mocked(fetch).mockResolvedValue(
+      new Response(JSON.stringify({ error: 'View could not be saved' }), {
+        status: 409,
+      }),
+    );
+    button('Live')?.click();
+    await vi.waitFor(() =>
+      expect(container.textContent).toContain('View could not be saved'),
+    );
+    expect(button('Draft')?.getAttribute('aria-pressed')).toBe('true');
+    expect(navigation.invalidateAll).not.toHaveBeenCalled();
+  });
+
+  it('confirms discard and sends the specific draft id', async () => {
+    await render(draftData());
+    button('Discard')?.click();
+    await flush();
+    expect(container.querySelector('dialog[open]')?.textContent).toContain(
+      'Your live app stays unchanged',
+    );
+    expect(fetch).not.toHaveBeenCalledWith(
+      expect.stringContaining('/discard'),
+      expect.anything(),
+    );
+    button('Discard draft')?.click();
+    await vi.waitFor(() =>
+      expect(fetch).toHaveBeenCalledWith(
+        '/api/shell/draft/discard?target=live',
+        expect.objectContaining({
+          body: JSON.stringify({ draftId: draftInfo.id }),
+        }),
+      ),
+    );
+  });
+
+  it('explains an unpublishable draft and keeps Discard available', async () => {
+    const desc = draftDescription('live');
+    desc.draft = {
+      ...draftInfo,
+      publishable: false,
+      problem: 'The data folder moved.',
+    };
+    await render(data({ description: desc }));
+    expect(container.textContent).toContain(
+      'This draft cannot be published. The data folder moved.',
+    );
+    expect(button('Draft')?.disabled).toBe(true);
+    expect(button('Discard')?.disabled).toBe(false);
+    const review = [...container.querySelectorAll('a')].find(
+      (a) => a.textContent?.trim() === 'Review and publish',
+    );
+    expect(review?.getAttribute('aria-disabled')).toBe('true');
+    expect(review?.getAttribute('href')).toBeNull();
+  });
+
+  it('keeps the switch, actions and warning inside content at phone width', async () => {
+    phone = true;
+    await render(draftData());
+    const main = q('#smrt-admin-shell-main');
+    expect(main?.contains(q('[role="group"][aria-label="View copy"]'))).toBe(
+      true,
+    );
+    expect(main?.contains(q('.draft-actions'))).toBe(true);
+    expect(main?.contains(q('.draft-strip'))).toBe(true);
+  });
+
+  it.each([
+    'started',
+    'published',
+    'discarded',
+    'unpublishable',
+  ] as const)('refreshes the bar on draft %s without a reload', async (status) => {
+    class Source extends EventTarget {
+      static latest: Source;
+      constructor() {
+        super();
+        Source.latest = this;
+      }
+      close() {}
+    }
+    vi.stubGlobal('EventSource', Source);
+    const state = layoutState(status === 'started' ? data() : draftData());
+    navigation.invalidate.mockImplementation(async () => {
+      state.description =
+        status === 'published' || status === 'discarded'
+          ? { ...draftDescription('live'), draft: null }
+          : {
+              ...draftDescription('live'),
+              draft: {
+                ...draftInfo,
+                publishable: status !== 'unpublishable',
+                problem:
+                  status === 'unpublishable' ? 'The data folder moved.' : null,
+              },
+            };
+    });
+    await render(state);
+    Source.latest.dispatchEvent(
+      new MessageEvent('shell', {
+        data: JSON.stringify({
+          type: 'draft',
+          status,
+          id: draftInfo.id,
+          name: draftInfo.name,
+        }),
+      }),
+    );
+    await vi.waitFor(() =>
+      expect(navigation.invalidate).toHaveBeenCalledWith('smrt:shell'),
+    );
+    await flush();
+    if (status === 'published' || status === 'discarded')
+      expect(button('Start draft')).toBeTruthy();
+    else expect(button('Discard')).toBeTruthy();
+    if (status === 'unpublishable')
+      expect(container.textContent).toContain('The data folder moved.');
+  });
+
+  it('ignores record events from the other copy', async () => {
+    class Source extends EventTarget {
+      static latest: Source;
+      constructor() {
+        super();
+        Source.latest = this;
+      }
+      close() {}
+    }
+    vi.stubGlobal('EventSource', Source);
+    await render(draftData());
+    Source.latest.dispatchEvent(
+      new MessageEvent('shell', {
+        data: JSON.stringify({
+          type: 'records',
+          target: 'live',
+          model: 'Customer',
+        }),
+      }),
+    );
+    await new Promise((resolve) => setTimeout(resolve, 200));
+    expect(navigation.invalidate).not.toHaveBeenCalled();
+    Source.latest.dispatchEvent(
+      new MessageEvent('shell', {
+        data: JSON.stringify({
+          type: 'records',
+          target: 'draft',
+          model: 'Customer',
+        }),
+      }),
+    );
+    await vi.waitFor(() =>
+      expect(navigation.invalidate).toHaveBeenCalledWith('smrt:records'),
+    );
   });
 });

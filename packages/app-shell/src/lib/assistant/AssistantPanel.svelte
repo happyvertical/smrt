@@ -1,4 +1,5 @@
 <script lang="ts">
+import { Badge } from '@happyvertical/smrt-ui';
 import { onDestroy, tick, untrack } from 'svelte';
 import ApprovalCard from '$lib/components/ApprovalCard.svelte';
 import type { ApprovalView } from '$lib/ui/types';
@@ -27,7 +28,10 @@ import {
 // the layout (smrt-svelte's AppShell `panel`). `open` is the layout's state: the
 // panel stays mounted while closed, so a running turn and the thread survive
 // a toggle.
-let { open = true }: { open?: boolean } = $props();
+let {
+  open = true,
+  buildingInDraft = false,
+}: { open?: boolean; buildingInDraft?: boolean } = $props();
 
 let dock = $state<DockState>(initialState);
 let draft = $state('');
@@ -235,6 +239,7 @@ onDestroy(() => controller?.abort());
   <header class="bar">
     <div class="title">
       <h2>Assistant</h2>
+      {#if buildingInDraft}<Badge variant="warning">Building in draft</Badge>{/if}
       {#if dock.engineLabel}<p class="sh-muted engine">Using {dock.engineLabel}</p>{/if}
     </div>
     <div class="bar-actions">
@@ -277,6 +282,7 @@ onDestroy(() => controller?.abort());
           <span aria-hidden="true">{item.state === 'running' ? '…' : item.state === 'ok' ? '✓' : '!'}</span>
           <span>{toolLabel(item.name)}</span>
           {#if item.summary}<span class="sh-muted sum">{item.summary}</span>{/if}
+          {#if item.copy}<span class="sh-muted">{item.copy === 'draft' ? 'Draft copy. Your live app is unchanged.' : 'Live copy.'}</span>{/if}
           <span class="sr-only">{item.state === 'running' ? 'running' : item.state === 'ok' ? 'done' : 'did not work'}</span>
         </p>
       {:else if item.kind === 'approval'}
