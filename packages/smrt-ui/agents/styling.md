@@ -438,6 +438,14 @@ class attributes and class directives; repeated selectors count once, and
 `:global()` classes and classes passed to child components do not count).
 Dynamic class expressions are covered where they have local CSS selectors; this
 inventory does not prove all runtime-generated class names are namespaced.
+Published shell class families (for example `smrt-admin-shell__*`,
+`smrt-workspace-*`, `smrt-phone-*`, `smrt-tenant-nav`, and the app shell's
+`smrt-layout-*` / `smrt-edit-*`) keep their existing names. A bounded prefix
+allow-list in `scripts/smrt-sort-layers-lib.mjs`, scoped to smrt-svelte's
+`workspace/` and `app/` sources, counts these as namespaced. It does not exempt
+generic helpers or classes in other packages. Preserve externally consumed
+legacy helpers and state modifiers too; their existing ratchet debt remains
+until a compatible migration is agreed. Add role-based parts alongside them.
 After completing and namespacing a slice, run
 `node scripts/check-smrt-sort-layers.mjs --write`. Stale entries fail lint;
 `--write` accepts shrinking debt but refuses increased counts or a sorted/new

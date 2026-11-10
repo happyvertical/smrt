@@ -57,7 +57,8 @@ let {
 
 <style>
 @layer smrt.reset, smrt.structure, smrt.theme;
-@layer smrt.theme {
+
+@layer smrt.structure {
   .smrt-shell-icon-button {
     flex: 0 0 auto;
     display: inline-grid;
@@ -66,21 +67,48 @@ let {
     inline-size: max(var(--smrt-control-height-small), var(--smrt-control-target-min));
     block-size: max(var(--smrt-control-height-small), var(--smrt-control-target-min));
     padding: 0;
+    cursor: pointer;
+  }
+  .smrt-shell-icon-button:disabled {
+    cursor: not-allowed;
+  }
+}
+
+@layer smrt.theme {
+  .smrt-shell-icon-button {
     border: 0;
     border-radius: var(--smrt-control-radius);
     background: transparent;
     color: var(--smrt-color-on-surface-variant);
-    cursor: pointer;
   }
-  .smrt-shell-icon-button:hover { background: color-mix(in srgb, currentColor calc(var(--smrt-state-hover) * 100%), transparent); color: var(--smrt-color-on-surface); }
-  .smrt-shell-icon-button:active { background: color-mix(in srgb, currentColor calc(var(--smrt-state-pressed) * 100%), transparent); }
-  .smrt-shell-icon-button[aria-pressed='true'] { color: var(--smrt-color-on-surface); }
-  .smrt-shell-icon-button:focus-visible { outline: var(--smrt-focus-ring-width) solid var(--smrt-focus-ring-color); outline-offset: var(--smrt-focus-ring-offset); }
-  .smrt-shell-icon-button:disabled { opacity: var(--smrt-state-disabled); cursor: not-allowed; }
+  .smrt-shell-icon-button:hover {
+    background: color-mix(in srgb, currentColor calc(var(--smrt-state-hover) * 100%), transparent);
+    color: var(--smrt-color-on-surface);
+  }
+  .smrt-shell-icon-button:active {
+    background: color-mix(in srgb, currentColor calc(var(--smrt-state-pressed) * 100%), transparent);
+  }
+  .smrt-shell-icon-button[aria-pressed='true'] {
+    color: var(--smrt-color-on-surface);
+  }
+  .smrt-shell-icon-button:focus-visible {
+    outline: var(--smrt-focus-ring-width) solid var(--smrt-focus-ring-color);
+    outline-offset: var(--smrt-focus-ring-offset);
+  }
+  .smrt-shell-icon-button:disabled {
+    opacity: var(--smrt-state-disabled);
+  }
   /* Forced colors (#3908): selected and open states keep a non-colour indicator. */
   @media (forced-colors: active) {
-    .smrt-shell-icon-button[aria-pressed='true'] { background: Highlight; color: HighlightText; }
-    .smrt-shell-icon-button:disabled, .smrt-shell-icon-button[aria-pressed='true']:disabled { opacity: 1; background: Canvas; color: GrayText; }
+    .smrt-shell-icon-button[aria-pressed='true'] {
+      background: Highlight;
+      color: HighlightText;
+    }
+    .smrt-shell-icon-button:disabled, .smrt-shell-icon-button[aria-pressed='true']:disabled {
+      opacity: 1;
+      background: Canvas;
+      color: GrayText;
+    }
   }
 }
 </style>

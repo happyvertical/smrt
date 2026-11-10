@@ -63,6 +63,24 @@ test('classes count distinct local CSS/static markup/directives but not global o
   assert.deepEqual(inspectFiles({ x: '<script>const x = "<style>.x{color:red}</style>";</script><div/>' }).snapshot.files, {});
 });
 
+test('published shell class families are preserved only in shell source directories', () => {
+  const input = `<div class="smrt-admin-shell smrt-workspace-sidebar smrt-phone-bottom-bar smrt-app-shell-palette smrt-layout-toggle--floating smrt-edit-item smrt-tenant-nav" class:active={true}><span class="private-helper"/></div>
+    <style>@layer smrt.structure {} @layer smrt.theme {.smrt-admin-shell__slot--leftSidebar-header {color:red}}</style>`;
+  const ast = parseComponent(input);
+  for (const file of ['packages/smrt-svelte/src/components/workspace/admin-shell/AdminShell.svelte',
+    'packages/smrt-svelte/src/components/app/AppShell.svelte']) {
+    assert.deepEqual(internalClasses(ast, file), ['active', 'private-helper']);
+    assert.equal(inspectFiles({ [file]: input }).snapshot.files[file].internalClasses, 2);
+  }
+  for (const file of ['', 'packages/smrt-ui/src/components/ui/Other.svelte',
+    'packages/smrt-svelte/src/components/app-other/Other.svelte']) {
+    assert.ok(internalClasses(ast, file).includes('smrt-admin-shell'));
+  }
+  const unknown = parseComponent('<div class="smrt-unknown-shell smrt-admin-shellfish"/>');
+  assert.deepEqual(internalClasses(unknown, 'packages/smrt-svelte/src/components/app/Other.svelte'),
+    ['smrt-admin-shellfish', 'smrt-unknown-shell']);
+});
+
 test('split preserves declaration values, selector order, nesting, scoping, comments, and markup', () => {
   const input = unsorted(`/* keep */ .thing:global(.external), .thing:hover { display:flex; color:red; display:grid; }
     @media (width > 2px) { @supports (display:grid) { .thing {padding:1rem;background:url("data:image/svg+xml;a:b{c}")} } }
@@ -217,8 +235,9 @@ test('CLI check/write/report are scoped, idempotent, and validate input before m
     assert.equal(readFileSync(file, 'utf8'), output);
     // Read-only package filter includes exactly that package, never rewrites it.
     const scoped = run(['--check', '--package', 'smrt-ui']);
-    assert.equal(scoped.status, 1);
-    assert.ok(JSON.parse(scoped.stdout).files.every((entry) => entry.file.startsWith('packages/smrt-ui/src/')));
+    const scopedFiles = JSON.parse(scoped.stdout).files;
+    assert.equal(scoped.status, scopedFiles.some((entry) => entry.changed || entry.todos.length) ? 1 : 0);
+    assert.ok(scopedFiles.every((entry) => entry.file.startsWith('packages/smrt-ui/src/')));
     writeFileSync(file, unsorted('.thing{display:flex;opacity:0}'));
     assert.equal(run(['--write', file, '--report', report]).status, 1);
     assert.equal(JSON.parse(readFileSync(report)).files[0].todos.length, 1);

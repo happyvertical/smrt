@@ -111,8 +111,26 @@ export function hasStructure(css) {
   return found;
 }
 
+// Published shell roots and BEM families predate the wave-3 naming convention.
+// Keep this exception scoped to shell sources; new generic helpers still ratchet.
+const PUBLISHED_SHELL_PREFIXES = [
+  'smrt-admin-shell', 'smrt-workspace-', 'smrt-phone-', 'smrt-shell-',
+  'smrt-activity-', 'smrt-app-scope-panel', 'smrt-hotkey-input', 'smrt-nav-editor',
+  'smrt-section-menu', 'smrt-shortcuts-overlay', 'smrt-system-scope-panel',
+  'smrt-system-status-chips', 'smrt-tenant-nav', 'smrt-role-shell', 'smrt-nav-tree',
+  'smrt-breadcrumbs', 'smrt-dock-toggles', 'smrt-app-shell', 'smrt-layout-',
+  'smrt-edit-', 'smrt-owner-setup',
+];
+
+function publishedShellClass(name, file) {
+  if (!/^packages\/smrt-svelte\/src\/components\/(?:workspace|app)\//.test(file)) return false;
+  return PUBLISHED_SHELL_PREFIXES.some((prefix) => prefix.endsWith('-')
+    ? name.startsWith(prefix)
+    : name === prefix || name.startsWith(`${prefix}-`) || name.startsWith(`${prefix}__`));
+}
+
 /** Distinct owned class names, not selector occurrences or consumer :global() classes. */
-export function internalClasses(ast) {
+export function internalClasses(ast, file = '') {
   const names = new Set();
   function selectors(node, global = false) {
     if (!node || typeof node !== 'object') return;
@@ -154,7 +172,8 @@ export function internalClasses(ast) {
     }
   }
   markup(ast.fragment);
-  return [...names].filter((name) => !/^smrt-[a-z0-9]+(?:-[a-z0-9]+)*__[a-z0-9][a-z0-9_-]*$/.test(name)).sort();
+  return [...names].filter((name) => !/^smrt-[a-z0-9]+(?:-[a-z0-9]+)*__[a-z0-9][a-z0-9_-]*$/.test(name)
+    && !publishedShellClass(name, file)).sort();
 }
 
 export function layerViolations(source, ast = parseComponent(source)) {

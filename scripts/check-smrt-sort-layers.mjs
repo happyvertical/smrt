@@ -16,7 +16,7 @@ export function inspectFiles(files) {
       const ast = parseComponent(source);
       const styled = !!ast.css?.children.some((node) => node.block);
       const unsorted = styled && !hasStructure(ast.css);
-      const count = internalClasses(ast).length;
+      const count = internalClasses(ast, file).length;
       if (unsorted || count) entries[file] = { unsorted, internalClasses: count };
       for (const error of layerViolations(source, ast)) errors.push(`${file}: ${error}`);
       if (ast.css?.comments.some((comment) => source.slice(comment.start, comment.end).includes(TODO_MARKER))) {

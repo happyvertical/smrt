@@ -143,7 +143,7 @@ function onmove(move: SortableItemMove<SortableItem>): void {
       {#snippet item({ item: sortable })}
         {@const entry = entryById.get(sortable.id)}
         {#if entry}
-          <span class="smrt-section-menu__row" class:smrt-section-menu__row--muted={entry.hidden}>
+          <span class="smrt-section-menu__row" class:smrt-section-menu__row--muted={entry.hidden} data-smrt-part="row">
             {#if entry.icon}
               <ShellSectionIcon name={entry.icon} iconComponent={IconComponent} />
             {/if}
@@ -174,7 +174,7 @@ function onmove(move: SortableItemMove<SortableItem>): void {
             {/if}
             {@render meta?.(entry)}
             {#if layoutMode === 'cards' && entry.item.description}
-              <span class="smrt-section-menu__desc">{entry.item.description}</span>
+              <span class="smrt-section-menu__desc" data-smrt-part="description">{entry.item.description}</span>
             {/if}
           </span>
           <ShellIconButton
@@ -200,44 +200,44 @@ function onmove(move: SortableItemMove<SortableItem>): void {
       {/snippet}
     </Sortable>
   {:else if entries.length === 0}
-    <p class="smrt-section-menu__empty">{t(M['ui.section_menu.empty'])}</p>
+    <p class="smrt-section-menu__empty" data-smrt-part="empty">{t(M['ui.section_menu.empty'])}</p>
   {:else if layoutMode === 'cards'}
-    <ul class="smrt-section-menu__cards" aria-label={listLabel}>
+    <ul class="smrt-section-menu__cards" aria-label={listLabel} data-smrt-part="list">
       {#each entries as entry (entry.id)}
-        <li class="smrt-section-menu__card" animate:flipRow>
-          <a class="smrt-section-menu__card-link" href={entry.href} onclick={onNavigate}>
-            <span class="smrt-section-menu__card-heading">
-              <span class="smrt-section-menu__card-icon">
+        <li class="smrt-section-menu__card" animate:flipRow data-smrt-part="item">
+          <a class="smrt-section-menu__card-link" href={entry.href} onclick={onNavigate} data-smrt-part="link">
+            <span class="smrt-section-menu__card-heading" data-smrt-part="header">
+              <span class="smrt-section-menu__card-icon" data-smrt-part="icon">
                 <ShellSectionIcon name={entry.icon ?? SHELL_DEFAULT_SECTION_ICON} size={28} iconComponent={IconComponent} />
               </span>
-              <span class="smrt-section-menu__card-title">{entry.label}</span>
+              <span class="smrt-section-menu__card-title" data-smrt-part="title">{entry.label}</span>
             </span>
             {#if entry.item.description}
-              <span class="smrt-section-menu__desc">{entry.item.description}</span>
+              <span class="smrt-section-menu__desc" data-smrt-part="description">{entry.item.description}</span>
             {/if}
           </a>
           {#if meta || actions}
-            <div class="smrt-section-menu__card-foot">
-              {#if meta}<span class="smrt-section-menu__meta">{@render meta(entry)}</span>{/if}
-              {#if actions}<span class="smrt-section-menu__actions">{@render actions(entry)}</span>{/if}
+            <div class="smrt-section-menu__card-foot" data-smrt-part="footer">
+              {#if meta}<span class="smrt-section-menu__meta" data-smrt-part="meta">{@render meta(entry)}</span>{/if}
+              {#if actions}<span class="smrt-section-menu__actions" data-smrt-part="actions">{@render actions(entry)}</span>{/if}
             </div>
           {/if}
         </li>
       {/each}
     </ul>
   {:else}
-    <ul class="smrt-section-menu__list" aria-label={listLabel}>
+    <ul class="smrt-section-menu__list" aria-label={listLabel} data-smrt-part="list">
       {#each entries as entry (entry.id)}
-        <li class="smrt-section-menu__item" animate:flipRow>
-          <a class="smrt-section-menu__link" href={entry.href} onclick={onNavigate}>
+        <li class="smrt-section-menu__item" animate:flipRow data-smrt-part="item">
+          <a class="smrt-section-menu__link" href={entry.href} onclick={onNavigate} data-smrt-part="link">
             {#if entry.icon}
               <ShellSectionIcon name={entry.icon} iconComponent={IconComponent} />
             {/if}
-            <span class="smrt-section-menu__label">{entry.label}</span>
+            <span class="smrt-section-menu__label" data-smrt-part="label">{entry.label}</span>
           </a>
-          {#if meta}<span class="smrt-section-menu__meta">{@render meta(entry)}</span>{/if}
-          {#if actions}<span class="smrt-section-menu__actions">{@render actions(entry)}</span>{/if}
-          <svg class="smrt-section-menu__chevron" viewBox="0 0 24 24" width="18" height="18" fill="currentColor" aria-hidden="true" focusable="false"><path d={SHELL_ICON_PATHS.chevronRight} /></svg>
+          {#if meta}<span class="smrt-section-menu__meta" data-smrt-part="meta">{@render meta(entry)}</span>{/if}
+          {#if actions}<span class="smrt-section-menu__actions" data-smrt-part="actions">{@render actions(entry)}</span>{/if}
+          <svg class="smrt-section-menu__chevron" viewBox="0 0 24 24" width="18" height="18" fill="currentColor" aria-hidden="true" focusable="false" data-smrt-part="indicator"><path d={SHELL_ICON_PATHS.chevronRight} /></svg>
         </li>
       {/each}
     </ul>
@@ -246,52 +246,271 @@ function onmove(move: SortableItemMove<SortableItem>): void {
 
 <style>
 @layer smrt.reset, smrt.structure, smrt.theme;
-@layer smrt.theme {
-  .smrt-section-menu { min-inline-size: 0; }
-  .smrt-section-menu__list { display: grid; gap: var(--smrt-spacing-1); margin: 0; padding: 0; list-style: none; }
-  .smrt-section-menu__item { position: relative; display: flex; align-items: center; gap: var(--smrt-spacing-3); min-inline-size: 0; padding: var(--smrt-spacing-2) var(--smrt-spacing-3); border: var(--smrt-hairline); border-radius: var(--smrt-control-radius); background: var(--smrt-surface-panel); color: var(--smrt-color-on-surface); }
-  .smrt-section-menu__item:hover { background: color-mix(in srgb, var(--smrt-surface-panel), currentColor calc(var(--smrt-state-hover) * 100%)); }
-  .smrt-section-menu__item:active { background: color-mix(in srgb, var(--smrt-surface-panel), currentColor calc(var(--smrt-state-pressed) * 100%)); }
-  .smrt-section-menu__link { flex: 1 1 auto; display: flex; align-items: center; gap: var(--smrt-spacing-3); min-inline-size: 0; min-block-size: var(--smrt-control-target-min, 2rem); color: inherit; text-decoration: none; }
-  /* The whole row follows the link; actions sit above the stretched target. */
-  .smrt-section-menu__link::after { content: ''; position: absolute; inset: 0; border-radius: inherit; }
-  .smrt-section-menu__link:focus-visible { outline: none; }
-  .smrt-section-menu__link:focus-visible::after { outline: var(--smrt-focus-ring-width) solid var(--smrt-focus-ring-color); outline-offset: var(--smrt-focus-ring-offset); }
-  .smrt-section-menu__label { min-inline-size: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; font-weight: var(--smrt-typography-weight-medium, 500); }
-  .smrt-section-menu__meta { flex: 0 0 auto; color: var(--smrt-color-on-surface-variant); font-size: var(--smrt-typography-label-large-size); }
-  .smrt-section-menu__actions { position: relative; z-index: 1; flex: 0 0 auto; display: inline-flex; align-items: center; gap: var(--smrt-spacing-1); }
-  .smrt-section-menu__chevron { flex: 0 0 auto; color: var(--smrt-color-on-surface-variant); }
-  /* Fixed icon column so labels align whatever the glyph (or a missing one). */
-  .smrt-section-menu :global(.smrt-shell-section-icon) { inline-size: 20px; block-size: 20px; }
-  .smrt-section-menu__card-icon :global(.smrt-shell-section-icon) { inline-size: 28px; block-size: 28px; }
-  /* Cards: a responsive grid; the whole card is one stretched link. */
-  .smrt-section-menu__cards, .smrt-section-menu--cards :global(.smrt-sortable__items) { display: grid; grid-template-columns: repeat(auto-fill, minmax(min(16rem, 100%), 1fr)); gap: var(--smrt-spacing-3); margin: 0; padding: 0; list-style: none; }
-  .smrt-section-menu__card { position: relative; display: flex; flex-direction: column; gap: var(--smrt-spacing-3); min-inline-size: 0; padding: var(--smrt-spacing-4); border: var(--smrt-hairline); border-radius: var(--smrt-radius-large, var(--smrt-radius-medium)); background: var(--smrt-surface-panel); color: var(--smrt-color-on-surface); transition: background-color var(--smrt-duration-short2), border-color var(--smrt-duration-short2), transform var(--smrt-duration-short2); }
-  .smrt-section-menu__card:hover { background: color-mix(in srgb, var(--smrt-surface-panel), currentColor calc(var(--smrt-state-hover) * 100%)); border-color: var(--smrt-hairline-strong-color); }
-  .smrt-section-menu__card:active { background: color-mix(in srgb, var(--smrt-surface-panel), currentColor calc(var(--smrt-state-pressed) * 100%)); }
-  .smrt-section-menu__card-link { flex: 1 1 auto; display: flex; flex-direction: column; gap: var(--smrt-spacing-2); color: inherit; text-decoration: none; }
-  .smrt-section-menu__card-link::after { content: ''; position: absolute; inset: 0; border-radius: inherit; }
-  .smrt-section-menu__card-link:focus-visible { outline: none; }
-  .smrt-section-menu__card-link:focus-visible::after { outline: var(--smrt-focus-ring-width) solid var(--smrt-focus-ring-color); outline-offset: var(--smrt-focus-ring-offset); }
-  .smrt-section-menu__card-heading { display: flex; align-items: center; gap: var(--smrt-spacing-2); min-inline-size: 0; }
-  .smrt-section-menu__card-icon { display: inline-grid; place-items: center; flex: 0 0 28px; inline-size: 28px; block-size: 28px; color: var(--smrt-color-primary); }
-  .smrt-section-menu__card-title { font-size: var(--smrt-typography-title-medium-size, 1rem); font-weight: var(--smrt-typography-weight-medium, 500); overflow-wrap: anywhere; }
-  .smrt-section-menu__desc { display: -webkit-box; -webkit-line-clamp: 2; line-clamp: 2; -webkit-box-orient: vertical; overflow: hidden; color: var(--smrt-color-on-surface-variant); font-size: var(--smrt-typography-body-medium-size, 0.875rem); }
-  .smrt-section-menu__card-foot { position: relative; z-index: 1; display: flex; flex-wrap: wrap; align-items: center; justify-content: space-between; gap: var(--smrt-spacing-2); }
-  .smrt-section-menu--cards :global(.smrt-sortable__item) { align-items: flex-start; }
-  .smrt-section-menu--cards .smrt-section-menu__row { flex-wrap: wrap; }
-  .smrt-section-menu--cards .smrt-section-menu__row .smrt-section-menu__desc { flex: 1 1 100%; }
-  .smrt-section-menu__empty { margin: 0; color: var(--smrt-color-on-surface-variant); }
 
+@layer smrt.structure {
+  .smrt-section-menu {
+    min-inline-size: 0;
+  }
+  .smrt-section-menu__list {
+    display: grid;
+    gap: var(--smrt-spacing-1);
+    margin: 0;
+    padding: 0;
+    list-style: none;
+  }
+  .smrt-section-menu__item {
+    position: relative;
+    display: flex;
+    align-items: center;
+    gap: var(--smrt-spacing-3);
+    min-inline-size: 0;
+    padding: var(--smrt-spacing-2) var(--smrt-spacing-3);
+  }
+  .smrt-section-menu__link {
+    flex: 1 1 auto;
+    display: flex;
+    align-items: center;
+    gap: var(--smrt-spacing-3);
+    min-inline-size: 0;
+    min-block-size: var(--smrt-control-target-min, 2rem);
+  }
+  /* The whole row follows the link; actions sit above the stretched target. */
+  .smrt-section-menu__link::after {
+    position: absolute;
+    inset: 0;
+  }
+  .smrt-section-menu__label {
+    min-inline-size: 0;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+  }
+  .smrt-section-menu__meta {
+    flex: 0 0 auto;
+  }
+  .smrt-section-menu__actions {
+    position: relative;
+    z-index: 1;
+    flex: 0 0 auto;
+    display: inline-flex;
+    align-items: center;
+    gap: var(--smrt-spacing-1);
+  }
+  .smrt-section-menu__chevron {
+    flex: 0 0 auto;
+  }
+  /* Fixed icon column so labels align whatever the glyph (or a missing one). */
+  .smrt-section-menu :global(.smrt-shell-section-icon) {
+    inline-size: 20px;
+    block-size: 20px;
+  }
+  .smrt-section-menu__card-icon :global(.smrt-shell-section-icon) {
+    inline-size: 28px;
+    block-size: 28px;
+  }
+  /* Cards: a responsive grid; the whole card is one stretched link. */
+  .smrt-section-menu__cards, .smrt-section-menu--cards :global(.smrt-sortable__items) {
+    display: grid;
+    grid-template-columns: repeat(auto-fill, minmax(min(16rem, 100%), 1fr));
+    gap: var(--smrt-spacing-3);
+    margin: 0;
+    padding: 0;
+    list-style: none;
+  }
+  .smrt-section-menu__card {
+    position: relative;
+    display: flex;
+    flex-direction: column;
+    gap: var(--smrt-spacing-3);
+    min-inline-size: 0;
+    padding: var(--smrt-spacing-4);
+  }
+  .smrt-section-menu__card-link {
+    flex: 1 1 auto;
+    display: flex;
+    flex-direction: column;
+    gap: var(--smrt-spacing-2);
+  }
+  .smrt-section-menu__card-link::after {
+    position: absolute;
+    inset: 0;
+  }
+  .smrt-section-menu__card-heading {
+    display: flex;
+    align-items: center;
+    gap: var(--smrt-spacing-2);
+    min-inline-size: 0;
+  }
+  .smrt-section-menu__card-icon {
+    display: inline-grid;
+    place-items: center;
+    flex: 0 0 28px;
+    inline-size: 28px;
+    block-size: 28px;
+  }
+  .smrt-section-menu__card-title {
+    overflow-wrap: anywhere;
+  }
+  .smrt-section-menu__desc {
+    display: -webkit-box;
+    -webkit-line-clamp: 2;
+    line-clamp: 2;
+    -webkit-box-orient: vertical;
+    overflow: hidden;
+  }
+  .smrt-section-menu__card-foot {
+    position: relative;
+    z-index: 1;
+    display: flex;
+    flex-wrap: wrap;
+    align-items: center;
+    justify-content: space-between;
+    gap: var(--smrt-spacing-2);
+  }
+  .smrt-section-menu--cards :global(.smrt-sortable__item) {
+    align-items: flex-start;
+  }
+  .smrt-section-menu--cards .smrt-section-menu__row {
+    flex-wrap: wrap;
+  }
+  .smrt-section-menu--cards .smrt-section-menu__row .smrt-section-menu__desc {
+    flex: 1 1 100%;
+  }
+  .smrt-section-menu__empty {
+    margin: 0;
+  }
   /* Edit mode: the generic Sortable reads as the same rows. */
-  .smrt-section-menu :global(.smrt-sortable__container) { padding: 0; border: 0; background: transparent; gap: var(--smrt-spacing-1); }
-  .smrt-section-menu :global(.smrt-sortable__header) { display: none; }
-  .smrt-section-menu :global(.smrt-sortable__items) { gap: var(--smrt-spacing-1); }
-  .smrt-section-menu :global(.smrt-sortable__item) { border: var(--smrt-hairline); border-radius: var(--smrt-control-radius); background: var(--smrt-surface-panel); }
-  .smrt-section-menu :global(.smrt-sortable__handle) { inline-size: 1.5rem; block-size: 2rem; }
-  .smrt-section-menu__row { flex: 1 1 auto; min-inline-size: 0; display: flex; align-items: center; gap: var(--smrt-spacing-3); padding: var(--smrt-spacing-2) var(--smrt-spacing-1); }
-  .smrt-section-menu__row--muted { opacity: 0.55; }
-  .smrt-section-menu__row strong { min-inline-size: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; font-weight: var(--smrt-typography-weight-medium, 500); }
-  :global(.smrt-section-menu__name) { flex: 1 1 auto; min-inline-size: 0; }
+  .smrt-section-menu :global(.smrt-sortable__container) {
+    padding: 0;
+    gap: var(--smrt-spacing-1);
+  }
+  .smrt-section-menu :global(.smrt-sortable__header) {
+    display: none;
+  }
+  .smrt-section-menu :global(.smrt-sortable__items) {
+    gap: var(--smrt-spacing-1);
+  }
+  .smrt-section-menu :global(.smrt-sortable__handle) {
+    inline-size: 1.5rem;
+    block-size: 2rem;
+  }
+  .smrt-section-menu__row {
+    flex: 1 1 auto;
+    min-inline-size: 0;
+    display: flex;
+    align-items: center;
+    gap: var(--smrt-spacing-3);
+    padding: var(--smrt-spacing-2) var(--smrt-spacing-1);
+  }
+  .smrt-section-menu__row strong {
+    min-inline-size: 0;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+  }
+  :global(.smrt-section-menu__name) {
+    flex: 1 1 auto;
+    min-inline-size: 0;
+  }
+}
+
+@layer smrt.theme {
+  .smrt-section-menu__item {
+    border: var(--smrt-hairline);
+    border-radius: var(--smrt-control-radius);
+    background: var(--smrt-surface-panel);
+    color: var(--smrt-color-on-surface);
+  }
+  .smrt-section-menu__item:hover {
+    background: color-mix(in srgb, var(--smrt-surface-panel), currentColor calc(var(--smrt-state-hover) * 100%));
+  }
+  .smrt-section-menu__item:active {
+    background: color-mix(in srgb, var(--smrt-surface-panel), currentColor calc(var(--smrt-state-pressed) * 100%));
+  }
+  .smrt-section-menu__link {
+    color: inherit;
+    text-decoration: none;
+  }
+  /* The whole row follows the link; actions sit above the stretched target. */
+  .smrt-section-menu__link::after {
+    content: '';
+    border-radius: inherit;
+  }
+  .smrt-section-menu__link:focus-visible {
+    outline: none;
+  }
+  .smrt-section-menu__link:focus-visible::after {
+    outline: var(--smrt-focus-ring-width) solid var(--smrt-focus-ring-color);
+    outline-offset: var(--smrt-focus-ring-offset);
+  }
+  .smrt-section-menu__label {
+    font-weight: var(--smrt-typography-weight-medium, 500);
+  }
+  .smrt-section-menu__meta {
+    color: var(--smrt-color-on-surface-variant);
+    font-size: var(--smrt-typography-label-large-size);
+  }
+  .smrt-section-menu__chevron {
+    color: var(--smrt-color-on-surface-variant);
+  }
+  .smrt-section-menu__card {
+    border: var(--smrt-hairline);
+    border-radius: var(--smrt-radius-large, var(--smrt-radius-medium));
+    background: var(--smrt-surface-panel);
+    color: var(--smrt-color-on-surface);
+    transition: background-color var(--smrt-duration-short2), border-color var(--smrt-duration-short2), transform var(--smrt-duration-short2);
+  }
+  .smrt-section-menu__card:hover {
+    background: color-mix(in srgb, var(--smrt-surface-panel), currentColor calc(var(--smrt-state-hover) * 100%));
+    border-color: var(--smrt-hairline-strong-color);
+  }
+  .smrt-section-menu__card:active {
+    background: color-mix(in srgb, var(--smrt-surface-panel), currentColor calc(var(--smrt-state-pressed) * 100%));
+  }
+  .smrt-section-menu__card-link {
+    color: inherit;
+    text-decoration: none;
+  }
+  .smrt-section-menu__card-link::after {
+    content: '';
+    border-radius: inherit;
+  }
+  .smrt-section-menu__card-link:focus-visible {
+    outline: none;
+  }
+  .smrt-section-menu__card-link:focus-visible::after {
+    outline: var(--smrt-focus-ring-width) solid var(--smrt-focus-ring-color);
+    outline-offset: var(--smrt-focus-ring-offset);
+  }
+  .smrt-section-menu__card-icon {
+    color: var(--smrt-color-primary);
+  }
+  .smrt-section-menu__card-title {
+    font-size: var(--smrt-typography-title-medium-size, 1rem);
+    font-weight: var(--smrt-typography-weight-medium, 500);
+  }
+  .smrt-section-menu__desc {
+    color: var(--smrt-color-on-surface-variant);
+    font-size: var(--smrt-typography-body-medium-size, 0.875rem);
+  }
+  .smrt-section-menu__empty {
+    color: var(--smrt-color-on-surface-variant);
+  }
+  /* Edit mode: the generic Sortable reads as the same rows. */
+  .smrt-section-menu :global(.smrt-sortable__container) {
+    border: 0;
+    background: transparent;
+  }
+  .smrt-section-menu :global(.smrt-sortable__item) {
+    border: var(--smrt-hairline);
+    border-radius: var(--smrt-control-radius);
+    background: var(--smrt-surface-panel);
+  }
+  .smrt-section-menu__row--muted {
+    opacity: 0.55;
+  }
+  .smrt-section-menu__row strong {
+    font-weight: var(--smrt-typography-weight-medium, 500);
+  }
 }
 </style>

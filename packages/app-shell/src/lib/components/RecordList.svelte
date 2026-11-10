@@ -58,26 +58,26 @@ async function confirmDelete() {
 </script>
 
 {#if pending}
-  <p class="sh-alert sh-alert-warn" role="status">
+  <p class="sh-alert sh-alert-warn" role="status" data-smrt-part="status">
     Waiting for your approval: {pending.summary}. Nothing is deleted yet.
-    <a class="sh-link" href="/approvals">Review it on the Approvals page</a>.
+    <a class="sh-link" href="/approvals" data-smrt-part="link">Review it on the Approvals page</a>.
   </p>
 {/if}
 
 {#if sorted.length === 0}
-  <div class="sh-empty">
+  <div class="sh-empty" data-smrt-part="empty">
     <p><strong>No {info.label.toLowerCase()} yet</strong></p>
-    <p class="sh-muted">Add the first one to get started.</p>
-    <a class="sh-btn sh-btn-primary" href="{base}/new">New {info.label.toLowerCase()}</a>
+    <p class="sh-muted" data-smrt-part="description">Add the first one to get started.</p>
+    <a class="sh-btn sh-btn-primary" href="{base}/new" data-smrt-part="trigger">New {info.label.toLowerCase()}</a>
   </div>
 {:else}
-  <div class="sh-tablewrap">
-    <table class="sh-table">
-      <caption class="sr-only">{info.label}, newest first</caption>
+  <div class="sh-tablewrap" data-smrt-part="body">
+    <table class="sh-table" data-smrt-part="table">
+      <caption class="smrt-record-list__sr-only" data-smrt-part="label">{info.label}, newest first</caption>
       <thead>
         <tr>
           {#each columns as col (col.name)}<th scope="col">{col.label}</th>{/each}
-          <th scope="col" class="sr-only">Actions</th>
+          <th scope="col" class="smrt-record-list__sr-only" data-smrt-part="label">Actions</th>
         </tr>
       </thead>
       <tbody>
@@ -86,7 +86,7 @@ async function confirmDelete() {
             {#each columns as col, c (col.name)}
               <td>
                 {#if c === 0}
-                  <a class="sh-link" href="{base}/{encodeURIComponent(row.id)}">
+                  <a class="sh-link" href="{base}/{encodeURIComponent(row.id)}" data-smrt-part="link">
                     {cellText(col.def, row[col.name], description.models, lookup) ||
                       recordLabel(info, row)}
                   </a>
@@ -96,11 +96,11 @@ async function confirmDelete() {
               </td>
             {/each}
             {#if columns.length === 0}
-              <td><a class="sh-link" href="{base}/{encodeURIComponent(row.id)}">{recordLabel(info, row)}</a></td>
+              <td><a class="sh-link" href="{base}/{encodeURIComponent(row.id)}" data-smrt-part="link">{recordLabel(info, row)}</a></td>
             {/if}
-            <td class="sh-row-actions">
-              <a class="sh-btn sh-btn-small" href="{base}/{encodeURIComponent(row.id)}">
-                Edit<span class="sr-only"> {recordLabel(info, row)}</span>
+            <td class="sh-row-actions" data-smrt-part="actions">
+              <a class="sh-btn sh-btn-small" href="{base}/{encodeURIComponent(row.id)}" data-smrt-part="trigger">
+                Edit<span class="smrt-record-list__sr-only" data-smrt-part="label"> {recordLabel(info, row)}</span>
               </a>
               <button
                 type="button"
@@ -108,9 +108,9 @@ async function confirmDelete() {
                 onclick={() => {
                   deleteError = '';
                   target = row;
-                }}
+                }} data-smrt-part="trigger"
               >
-                Delete<span class="sr-only"> {recordLabel(info, row)}</span>
+                Delete<span class="smrt-record-list__sr-only" data-smrt-part="label"> {recordLabel(info, row)}</span>
               </button>
             </td>
           </tr>
@@ -121,7 +121,7 @@ async function confirmDelete() {
 {/if}
 
 {#if methods.length}
-  <section class="methods" aria-label="Actions for {info.label}">
+  <section class="smrt-record-list__methods" aria-label="Actions for {info.label}" data-smrt-part="actions">
     <h2>Actions</h2>
     {#each methods as [name, method] (name)}
       <MethodRunner className={info.className} {name} {method} />
@@ -148,11 +148,12 @@ async function confirmDelete() {
 
 <style>
 @layer smrt.reset, smrt.structure, smrt.theme;
-@layer smrt.theme {
-  .methods {
+
+@layer smrt.structure {
+  .smrt-record-list__methods {
     margin-block-start: var(--smrt-spacing-xl, 1.5rem);
   }
-  .sr-only {
+  .smrt-record-list__sr-only {
     position: absolute;
     width: 1px;
     height: 1px;
@@ -160,5 +161,8 @@ async function confirmDelete() {
     clip-path: inset(50%);
     white-space: nowrap;
   }
+}
+
+@layer smrt.theme {
 }
 </style>
