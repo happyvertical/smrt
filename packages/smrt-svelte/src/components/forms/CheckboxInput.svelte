@@ -110,8 +110,8 @@ function handleChange(e: Event) {
 }
 </script>
 
-<div class="smrt-checkbox-field" class:disabled class:smrt-mode={isSmrt} data-smrt-component="CheckboxInput">
-  <div class="container" use:ripple>
+<div class="smrt-checkbox-input__root" class:smrt-checkbox-input__disabled={disabled} class:smrt-checkbox-input__mode={isSmrt} data-smrt-component="CheckboxInput">
+  <div class="smrt-checkbox-input__container" use:ripple>
     <input
       type="checkbox"
       id={name}
@@ -119,21 +119,22 @@ function handleChange(e: Event) {
       {checked}
       {disabled}
       {required}
-      class="input"
+      class="smrt-checkbox-input__input"
+      data-smrt-part="input"
       onchange={handleChange}
     />
-    <div class="checkbox" class:checked>
+    <div class="smrt-checkbox-input__box" class:smrt-checkbox-input__checked={checked} data-smrt-part="box">
       {#if checked}
-        <svg viewBox="0 0 24 24" class="icon">
+        <svg viewBox="0 0 24 24" class="smrt-checkbox-input__icon">
           <path d="M9 16.17L4.83 12l-1.42 1.41L9 19 21 7l-1.41-1.41L9 16.17z" />
         </svg>
       {/if}
     </div>
-    <div class="state-layer"></div>
+    <div class="smrt-checkbox-input__state-layer"></div>
   </div>
   
   {#if label}
-    <label for={name} class="label">
+    <label for={name} class="smrt-checkbox-input__label" data-smrt-part="label">
       {label}{#if required}*{/if}
     </label>
   {/if}
@@ -141,101 +142,108 @@ function handleChange(e: Event) {
 
 <style>
 @layer smrt.reset, smrt.structure, smrt.theme;
-@layer smrt.theme {
-  .smrt-checkbox-field {
+@layer smrt.structure {
+  .smrt-checkbox-input__root {
     display: inline-flex;
     min-width: 0;
     align-items: center;
     gap: var(--smrt-spacing-2);
     cursor: pointer;
-    vertical-align: middle;
     user-select: none;
   }
-
-  .container {
+  .smrt-checkbox-input__container {
     position: relative;
     width: 40px;
     height: 40px;
     display: flex;
     align-items: center;
     justify-content: center;
-    border-radius: var(--smrt-radius-full);
-    margin: -10px; /* Offset the 40x40 container to align 18x18 checkbox */
+    margin: -10px;
   }
-
-  .input {
+  .smrt-checkbox-input__input {
     position: absolute;
     width: 100%;
     height: 100%;
-    opacity: 0;
     cursor: inherit;
     z-index: 1;
     margin: 0;
+    opacity: 0;
   }
-
-  .checkbox {
+  .smrt-checkbox-input__box {
     width: 18px;
     height: 18px;
-    border: 2px solid var(--smrt-color-on-surface-variant);
-    border-radius: var(--smrt-radius-sm);
     display: flex;
     align-items: center;
     justify-content: center;
-    transition: all var(--smrt-duration-short3, 200ms) var(--smrt-easing-standard, cubic-bezier(0.2, 0, 0, 1));
-    background-color: transparent;
   }
-
-  .checkbox.checked {
-    background-color: var(--smrt-color-primary);
-    border-color: var(--smrt-color-primary);
-  }
-
-  /* Smrt mode styling */
-  .smrt-mode .checkbox.checked {
-    background-color: var(--smrt-color-tertiary);
-    border-color: var(--smrt-color-tertiary);
-  }
-
-  .icon {
+  .smrt-checkbox-input__icon {
     width: 14px;
     height: 14px;
-    fill: var(--smrt-color-on-primary);
   }
-
-  .smrt-mode .icon {
-    fill: var(--smrt-color-on-tertiary);
-  }
-
-  .label {
-    font-size: var(--smrt-typography-body-medium-size, 0.875rem);
-    color: var(--smrt-color-on-surface);
+  .smrt-checkbox-input__label {
     cursor: inherit;
   }
-
-  .disabled {
-    opacity: 0.38;
-    pointer-events: none;
-  }
-
-  .input:focus-visible ~ .state-layer {
-    background-color: var(--smrt-color-on-surface);
-    opacity: 0.12;
-  }
-
-  .state-layer {
+  .smrt-checkbox-input__state-layer {
     position: absolute;
     top: 0;
     left: 0;
     right: 0;
     bottom: 0;
-    border-radius: var(--smrt-radius-full);
     pointer-events: none;
+  }
+  .smrt-checkbox-input__disabled {
+    pointer-events: none;
+  }
+}
+
+@layer smrt.theme {
+  .smrt-checkbox-input__root {
+    vertical-align: middle;
+  }
+  .smrt-checkbox-input__container {
+    border-radius: var(--smrt-radius-full);
+    /* Offset the 40x40 container to align 18x18 checkbox */
+  }
+  .smrt-checkbox-input__box {
+    border: 2px solid var(--smrt-color-on-surface-variant);
+    border-radius: var(--smrt-radius-sm);
+    transition: all var(--smrt-duration-short3, 200ms) var(--smrt-easing-standard, cubic-bezier(0.2, 0, 0, 1));
+    background-color: transparent;
+  }
+  .smrt-checkbox-input__box.smrt-checkbox-input__checked {
+    background-color: var(--smrt-color-primary);
+    border-color: var(--smrt-color-primary);
+  }
+  /* Smrt mode styling */
+  .smrt-checkbox-input__mode .smrt-checkbox-input__box.smrt-checkbox-input__checked {
+    background-color: var(--smrt-color-tertiary);
+    border-color: var(--smrt-color-tertiary);
+  }
+  .smrt-checkbox-input__icon {
+    fill: var(--smrt-color-on-primary);
+  }
+  .smrt-checkbox-input__mode .smrt-checkbox-input__icon {
+    fill: var(--smrt-color-on-tertiary);
+  }
+  .smrt-checkbox-input__label {
+    font-size: var(--smrt-typography-body-medium-size, 0.875rem);
+    color: var(--smrt-color-on-surface);
+  }
+  .smrt-checkbox-input__disabled {
+    opacity: 0.38;
+  }
+  .smrt-checkbox-input__input:focus-visible ~ .smrt-checkbox-input__state-layer {
+    background-color: var(--smrt-color-on-surface);
+    opacity: 0.12;
+  }
+  .smrt-checkbox-input__state-layer {
+    border-radius: var(--smrt-radius-full);
     transition: opacity var(--smrt-duration-short3, 200ms) var(--smrt-easing-standard, ease);
   }
-
-  .container:hover .state-layer {
+  .smrt-checkbox-input__container:hover .smrt-checkbox-input__state-layer {
     background-color: var(--smrt-color-on-surface);
     opacity: 0.08;
   }
 }
+
 </style>

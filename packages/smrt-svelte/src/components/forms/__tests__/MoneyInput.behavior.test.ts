@@ -65,7 +65,9 @@ describe('MoneyInput — behavior', () => {
       props: { name: 'price', label: 'Price' },
     });
     expect(container.querySelector('.currency-symbol')).toBeNull(); // shown once
-    expect(container.querySelector('.currency-code')?.textContent).toBe('CAD');
+    expect(
+      container.querySelector('.smrt-money-input__currency-code')?.textContent,
+    ).toBe('CAD');
   });
 
   it('shows the USD code once when currency=USD', () => {
@@ -73,7 +75,9 @@ describe('MoneyInput — behavior', () => {
       props: { name: 'price', label: 'Price', currency: 'USD' },
     });
     expect(container.querySelector('.currency-symbol')).toBeNull(); // shown once
-    expect(container.querySelector('.currency-code')?.textContent).toBe('USD');
+    expect(
+      container.querySelector('.smrt-money-input__currency-code')?.textContent,
+    ).toBe('USD');
   });
 
   it('writes the cents value into the hidden submission input', async () => {

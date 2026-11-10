@@ -447,30 +447,30 @@ const primaryControlId = $derived(isSmrt ? `${name}_voice` : `${name}_start`);
 </script>
 
 <div
-  class="smrt-daterange"
-  class:listening={isRecording}
-  class:parsing={isParsing}
+  class="smrt-date-range-input__root"
+  class:smrt-date-range-input__listening={isRecording}
+  class:smrt-date-range-input__parsing={isParsing}
   data-smrt-field-owner={fieldOwnerToken} data-smrt-component="DateRangeInput"
 >
   {#if label}
     <FieldLabel for={primaryControlId} {label} {required} />
   {/if}
 
-  <div class="range-wrapper" class:smrt-mode={isSmrt} class:invalid={showInvalid}>
+  <div class="smrt-date-range-input__range-wrapper" class:smrt-date-range-input__mode={isSmrt} class:smrt-date-range-input__invalid={showInvalid} data-smrt-part="field">
     {#if isSmrt}
       <!-- Voice mode: single input for the entire range -->
-      <div class="voice-input-wrapper">
-        <div class="voice-display">
+      <div class="smrt-date-range-input__voice-input-wrapper">
+        <div class="smrt-date-range-input__voice-display" data-smrt-part="content">
           {#if startDisplay && endDisplay}
-            <span class="date-value">{startDisplay}</span>
-            <span class="range-separator">→</span>
-            <span class="date-value">{endDisplay}</span>
+            <span class="smrt-date-range-input__date-value">{startDisplay}</span>
+            <span class="smrt-date-range-input__range-separator">→</span>
+            <span class="smrt-date-range-input__date-value">{endDisplay}</span>
           {:else if startDisplay}
-            <span class="date-value">{startDisplay}</span>
-            <span class="range-separator">→</span>
-            <span class="placeholder">{endPlaceholder}</span>
+            <span class="smrt-date-range-input__date-value">{startDisplay}</span>
+            <span class="smrt-date-range-input__range-separator">→</span>
+            <span class="smrt-date-range-input__placeholder">{endPlaceholder}</span>
           {:else}
-            <span class="placeholder">Say "from [start] to [end]"</span>
+            <span class="smrt-date-range-input__placeholder">Say "from [start] to [end]"</span>
           {/if}
         </div>
 
@@ -478,8 +478,9 @@ const primaryControlId = $derived(isSmrt ? `${name}_voice` : `${name}_start`);
           bind:this={primaryControl}
           id={primaryControlId}
           type="button"
-          class="mic-btn"
-          class:active={isRecording}
+          class="smrt-date-range-input__mic-btn"
+          class:smrt-date-range-input__active={isRecording}
+          data-smrt-part="trigger"
           disabled={disabled || isParsing}
           onkeydown={handleMicKeydown}
           onmousedown={handleMouseDown}
@@ -490,7 +491,7 @@ const primaryControlId = $derived(isSmrt ? `${name}_voice` : `${name}_start`);
           aria-label={t(M['ui.date_range_input.mic_aria_label'])}
         >
           {#if isParsing}
-            <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" class="spinner">
+            <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" class="smrt-date-range-input__spinner" data-smrt-part="spinner">
               <circle cx="12" cy="12" r="10" stroke-dasharray="32" stroke-dashoffset="12"/>
             </svg>
           {:else}
@@ -504,9 +505,9 @@ const primaryControlId = $derived(isSmrt ? `${name}_voice` : `${name}_start`);
       </div>
     {:else}
       <!-- Standard mode: two date pickers -->
-      <div class="date-inputs">
-        <div class="date-field">
-          <label for="{name}_start" class="field-label">Start</label>
+      <div class="smrt-date-range-input__date-inputs" data-smrt-part="row">
+        <div class="smrt-date-range-input__date-field" data-smrt-part="field">
+          <label for="{name}_start" class="smrt-date-range-input__field-label" data-smrt-part="label">Start</label>
           <input
             bind:this={primaryControl}
             id="{name}_start"
@@ -517,17 +518,18 @@ const primaryControlId = $derived(isSmrt ? `${name}_voice` : `${name}_start`);
             max={endDate || maxDate}
             {disabled}
             required={required}
-            class="smrt-input"
+            class="smrt-date-range-input__input"
+            data-smrt-part="input"
             aria-invalid={showInvalid ? 'true' : undefined}
             aria-describedby={showInvalid ? `${name}-error` : undefined}
             onchange={handleStartChange}
           />
         </div>
 
-        <span class="range-arrow">→</span>
+        <span class="smrt-date-range-input__range-arrow">→</span>
 
-        <div class="date-field">
-          <label for="{name}_end" class="field-label">End</label>
+        <div class="smrt-date-range-input__date-field" data-smrt-part="field">
+          <label for="{name}_end" class="smrt-date-range-input__field-label" data-smrt-part="label">End</label>
           <input
             id="{name}_end"
             name="{name}[endDate]"
@@ -537,7 +539,8 @@ const primaryControlId = $derived(isSmrt ? `${name}_voice` : `${name}_start`);
             max={maxDate}
             {disabled}
             required={required}
-            class="smrt-input"
+            class="smrt-date-range-input__input"
+            data-smrt-part="input"
             aria-invalid={showInvalid ? 'true' : undefined}
             aria-describedby={showInvalid ? `${name}-error` : undefined}
             onchange={handleEndChange}
@@ -552,15 +555,15 @@ const primaryControlId = $derived(isSmrt ? `${name}_voice` : `${name}_start`);
   </div>
 
   {#if isRecording}
-    <div class="listening-indicator">Recording... say "from [start] to [end]"</div>
+    <div class="smrt-date-range-input__listening-indicator" data-smrt-part="status">Recording... say "from [start] to [end]"</div>
   {:else if isParsing}
-    <div class="parsing-indicator">{t(M['ui.date_range_input.parsing'])}</div>
+    <div class="smrt-date-range-input__parsing-indicator" data-smrt-part="status">{t(M['ui.date_range_input.parsing'])}</div>
   {:else if parseError}
-    <div id={`${name}-error`} class="error-indicator" role="alert">{parseError}</div>
+    <div id={`${name}-error`} class="smrt-date-range-input__error-indicator" data-smrt-part="error" role="alert">{parseError}</div>
   {:else if error}
-    <div id={`${name}-error`} class="error-indicator" role="alert">{error}</div>
+    <div id={`${name}-error`} class="smrt-date-range-input__error-indicator" data-smrt-part="error" role="alert">{error}</div>
   {:else if !isValidRange}
-    <div id={`${name}-error`} class="error-indicator" role="alert">
+    <div id={`${name}-error`} class="smrt-date-range-input__error-indicator" data-smrt-part="error" role="alert">
       {t(M['ui.date_range_input.end_after_start'])}
     </div>
   {/if}
@@ -568,161 +571,160 @@ const primaryControlId = $derived(isSmrt ? `${name}_voice` : `${name}_start`);
 
 <style>
 @layer smrt.reset, smrt.structure, smrt.theme;
-@layer smrt.theme {
-  .smrt-daterange {
+@layer smrt.structure {
+  .smrt-date-range-input__root {
     display: flex;
     flex-direction: column;
     gap: var(--smrt-spacing-2);
   }
-
-  .range-wrapper {
+  .smrt-date-range-input__range-wrapper {
     display: flex;
     flex-direction: column;
   }
-
-  .range-wrapper.smrt-mode {
-    border: 1px solid var(--smrt-color-tertiary);
-    border-radius: var(--smrt-radius-small);
-    background: var(--smrt-color-tertiary-container);
-  }
-
-  .range-wrapper.invalid {
-    border-color: var(--smrt-color-error);
-  }
-
-  .voice-input-wrapper {
+  .smrt-date-range-input__voice-input-wrapper {
     display: flex;
     align-items: center;
     padding: var(--smrt-spacing-2) var(--smrt-spacing-3);
     gap: var(--smrt-spacing-2);
   }
-
-  .voice-display {
+  .smrt-date-range-input__voice-display {
     flex: 1;
     display: flex;
     align-items: center;
     gap: var(--smrt-spacing-2);
-    font-size: var(--smrt-typography-body-large-size, 1rem);
   }
-
-  .date-value {
-    color: var(--smrt-color-on-surface);
-  }
-
-  .range-separator {
-    color: var(--smrt-color-on-surface-variant);
-    font-weight: var(--smrt-typography-weight-medium, 500);
-  }
-
-  .placeholder {
-    color: var(--smrt-color-on-surface-variant);
-    font-style: italic;
-  }
-
-  .date-inputs {
+  .smrt-date-range-input__date-inputs {
     display: flex;
     align-items: flex-end;
     gap: var(--smrt-spacing-3);
   }
-
-  .date-field {
+  .smrt-date-range-input__date-field {
     flex: 1;
     display: flex;
     flex-direction: column;
     gap: var(--smrt-spacing-1);
   }
+  .smrt-date-range-input__range-arrow {
+    padding-bottom: var(--smrt-spacing-2);
+  }
+  .smrt-date-range-input__input {
+    padding: var(--smrt-spacing-2) var(--smrt-spacing-3);
+  }
+  .smrt-date-range-input__input:disabled {
+    cursor: not-allowed;
+  }
+  .smrt-date-range-input__mic-btn {
+    width: 32px;
+    height: 32px;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    cursor: pointer;
+    flex-shrink: 0;
+  }
+  .smrt-date-range-input__mic-btn:disabled {
+    cursor: not-allowed;
+  }
+  @media (max-width: 600px) {
+    .smrt-date-range-input__date-inputs {
+      flex-direction: column;
+      gap: var(--smrt-spacing-2);
+    }
+    .smrt-date-range-input__range-arrow {
+      display: none;
+    }
+  }
+}
 
-  .field-label {
+@layer smrt.theme {
+  .smrt-date-range-input__range-wrapper.smrt-date-range-input__mode {
+    border: 1px solid var(--smrt-color-tertiary);
+    border-radius: var(--smrt-radius-small);
+    background: var(--smrt-color-tertiary-container);
+  }
+  .smrt-date-range-input__range-wrapper.smrt-date-range-input__invalid {
+    border-color: var(--smrt-color-error);
+  }
+  .smrt-date-range-input__voice-display {
+    font-size: var(--smrt-typography-body-large-size, 1rem);
+  }
+  .smrt-date-range-input__date-value {
+    color: var(--smrt-color-on-surface);
+  }
+  .smrt-date-range-input__range-separator {
+    color: var(--smrt-color-on-surface-variant);
+    font-weight: var(--smrt-typography-weight-medium, 500);
+  }
+  .smrt-date-range-input__placeholder {
+    color: var(--smrt-color-on-surface-variant);
+    font-style: italic;
+  }
+  .smrt-date-range-input__field-label {
     font-size: var(--smrt-typography-body-small-size, 0.75rem);
     font-weight: var(--smrt-typography-body-small-weight, 500);
     color: var(--smrt-color-on-surface-variant);
     text-transform: uppercase;
     letter-spacing: 0.025em;
   }
-
-  .range-arrow {
+  .smrt-date-range-input__range-arrow {
     color: var(--smrt-color-on-surface-variant);
     font-size: var(--smrt-typography-title-medium-size, 1.25rem);
-    padding-bottom: var(--smrt-spacing-2);
   }
-
-  .smrt-input {
-    padding: var(--smrt-spacing-2) var(--smrt-spacing-3);
+  .smrt-date-range-input__input {
     font-size: var(--smrt-typography-body-large-size, 1rem);
     border: var(--smrt-hairline);
     border-radius: var(--smrt-radius-small);
     background: var(--smrt-color-surface);
     transition: all var(--smrt-duration-short2, 150ms) var(--smrt-easing-standard, ease);
   }
-
-  .smrt-input:focus {
+  .smrt-date-range-input__input:focus {
     outline: none;
     border-color: var(--smrt-color-primary);
     box-shadow: 0 0 0 3px color-mix(in srgb, var(--smrt-color-primary) 10%, transparent);
   }
-
-  .smrt-input:disabled {
+  .smrt-date-range-input__input:disabled {
     background: var(--smrt-color-surface-container-high);
-    cursor: not-allowed;
   }
-
-  .mic-btn {
-    width: 32px;
-    height: 32px;
-    display: flex;
-    align-items: center;
-    justify-content: center;
+  .smrt-date-range-input__mic-btn {
     background: transparent;
     border: none;
     border-radius: var(--smrt-radius-sm);
     color: var(--smrt-color-on-surface-variant);
-    cursor: pointer;
     transition: all var(--smrt-duration-short2, 150ms) var(--smrt-easing-standard, ease);
-    flex-shrink: 0;
   }
-
-  .mic-btn:hover {
+  .smrt-date-range-input__mic-btn:hover {
     background: var(--smrt-color-surface-container-high);
     color: var(--smrt-color-on-surface);
   }
-
-  .mic-btn.active {
+  .smrt-date-range-input__mic-btn.smrt-date-range-input__active {
     background: var(--smrt-color-primary);
     color: var(--smrt-color-on-primary, white);
   }
-
-  .mic-btn:disabled {
+  .smrt-date-range-input__mic-btn:disabled {
     opacity: 0.5;
-    cursor: not-allowed;
   }
-
-  .spinner {
+  .smrt-date-range-input__spinner {
     animation: spin 1s linear infinite;
   }
-
   @keyframes spin {
     to {
       transform: rotate(360deg);
     }
   }
-
   @media (prefers-reduced-motion: reduce) {
-    .spinner {
+    .smrt-date-range-input__spinner {
       animation: none;
     }
   }
-
-  .smrt-daterange.listening .range-wrapper.smrt-mode {
+  .smrt-date-range-input__root.smrt-date-range-input__listening .smrt-date-range-input__range-wrapper.smrt-date-range-input__mode {
     border-color: var(--smrt-color-success);
     box-shadow: 0 0 0 3px color-mix(in srgb, var(--smrt-color-success) 30%, transparent);
     animation: pulse-green 1.5s var(--smrt-easing-standard, ease-in-out) infinite;
   }
-
-  .smrt-daterange.parsing .range-wrapper.smrt-mode {
+  .smrt-date-range-input__root.smrt-date-range-input__parsing .smrt-date-range-input__range-wrapper.smrt-date-range-input__mode {
     border-color: var(--smrt-color-warning);
     box-shadow: 0 0 0 3px color-mix(in srgb, var(--smrt-color-warning) 20%, transparent);
   }
-
   @keyframes pulse-green {
     0%, 100% {
       box-shadow: 0 0 0 3px color-mix(in srgb, var(--smrt-color-success) 30%, transparent);
@@ -731,31 +733,18 @@ const primaryControlId = $derived(isSmrt ? `${name}_voice` : `${name}_start`);
       box-shadow: 0 0 0 6px color-mix(in srgb, var(--smrt-color-success) 15%, transparent);
     }
   }
-
-  .listening-indicator {
+  .smrt-date-range-input__listening-indicator {
     font-size: var(--smrt-typography-body-small-size, 0.75rem);
     color: var(--smrt-color-primary);
   }
-
-  .parsing-indicator {
+  .smrt-date-range-input__parsing-indicator {
     font-size: var(--smrt-typography-body-small-size, 0.75rem);
     color: var(--smrt-color-secondary);
   }
-
-  .error-indicator {
+  .smrt-date-range-input__error-indicator {
     font-size: var(--smrt-typography-body-small-size, 0.75rem);
     color: var(--smrt-color-error);
   }
-
-  @media (max-width: 600px) {
-    .date-inputs {
-      flex-direction: column;
-      gap: var(--smrt-spacing-2);
-    }
-
-    .range-arrow {
-      display: none;
-    }
-  }
 }
+
 </style>

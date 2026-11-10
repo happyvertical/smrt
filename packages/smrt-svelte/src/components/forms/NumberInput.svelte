@@ -233,12 +233,12 @@ function handleInput(e: Event) {
 }
 </script>
 
-<div class="smrt-number" data-smrt-component="NumberInput">
+<div class="smrt-number-input__root" data-smrt-component="NumberInput">
   {#if label}
     <FieldLabel id={labelId} for={name} {label} {required} />
   {/if}
 
-  <div class="input-wrapper">
+  <div class="smrt-number-input__input-wrapper">
     <input
       id={name}
       aria-labelledby={label ? labelId : undefined}
@@ -251,9 +251,10 @@ function handleInput(e: Event) {
       {step}
       {disabled}
       {required}
-      class="smrt-input"
-      class:smrt-mode={isSmrt}
-      class:invalid={showInvalid}
+      class="smrt-number-input__input"
+      data-smrt-part="input"
+      class:smrt-number-input__mode={isSmrt}
+      class:smrt-number-input__invalid={showInvalid}
       aria-invalid={showInvalid ? 'true' : undefined}
       aria-describedby={showInvalid ? `${name}-error` : undefined}
       oninput={handleInput}
@@ -261,7 +262,7 @@ function handleInput(e: Event) {
   </div>
 
   {#if showInvalid}
-    <div id={`${name}-error`} class="validation-error" role="alert">
+    <div id={`${name}-error`} class="smrt-number-input__validation-error" data-smrt-part="error" role="alert">
       {#if min !== undefined && value !== null && value < min}
         {t(M['ui.number_input.value_at_least'], { min })}
       {:else if max !== undefined && value !== null && value > max}
@@ -273,73 +274,77 @@ function handleInput(e: Event) {
 
 <style>
 @layer smrt.reset, smrt.structure, smrt.theme;
-@layer smrt.theme {
-  .smrt-number {
+@layer smrt.structure {
+  .smrt-number-input__root {
     display: flex;
     flex-direction: column;
     width: 100%;
     min-width: 0;
     gap: var(--smrt-spacing-1);
   }
-
-  .input-wrapper {
+  .smrt-number-input__input-wrapper {
     display: flex;
     position: relative;
   }
-
-  .smrt-input {
+  .smrt-number-input__input {
     flex: 1;
     box-sizing: border-box;
     min-width: 0;
     width: 100%;
     padding: var(--smrt-spacing-2) var(--smrt-spacing-3);
+  }
+  .smrt-number-input__input:disabled {
+    cursor: not-allowed;
+  }
+  /* Hide spinner buttons */
+  .smrt-number-input__input::-webkit-outer-spin-button,
+  .smrt-number-input__input::-webkit-inner-spin-button {
+    margin: 0;
+  }
+  .smrt-number-input__validation-error {
+    margin-top: var(--smrt-spacing-1);
+  }
+}
+
+@layer smrt.theme {
+  .smrt-number-input__input {
     font-size: var(--smrt-typography-body-large-size, 1rem);
     border: var(--smrt-hairline);
     border-radius: var(--smrt-radius-small);
     background: var(--smrt-color-surface);
     transition: all var(--smrt-duration-short2, 150ms) var(--smrt-easing-standard, ease);
   }
-
-  .smrt-input:focus {
+  .smrt-number-input__input:focus {
     outline: none;
     border-color: var(--smrt-color-primary);
     box-shadow: 0 0 0 3px color-mix(in srgb, var(--smrt-color-primary) 10%, transparent);
   }
-
-  .smrt-input:disabled {
+  .smrt-number-input__input:disabled {
     background: var(--smrt-color-surface-container-high);
-    cursor: not-allowed;
   }
-
-  .smrt-input.smrt-mode {
+  .smrt-number-input__input.smrt-number-input__mode {
     border-color: var(--smrt-color-tertiary);
   }
-
-  .smrt-input.invalid {
+  .smrt-number-input__input.smrt-number-input__invalid {
     border-color: var(--smrt-color-error);
   }
-
-  .smrt-input.invalid:focus {
+  .smrt-number-input__input.smrt-number-input__invalid:focus {
     border-color: var(--smrt-color-error);
     box-shadow: 0 0 0 3px color-mix(in srgb, var(--smrt-color-error) 10%, transparent);
   }
-
   /* Hide spinner buttons */
-  .smrt-input::-webkit-outer-spin-button,
-  .smrt-input::-webkit-inner-spin-button {
+  .smrt-number-input__input::-webkit-outer-spin-button,
+  .smrt-number-input__input::-webkit-inner-spin-button {
     -webkit-appearance: none;
-    margin: 0;
   }
-
-  .smrt-input[type=number] {
+  .smrt-number-input__input[type=number] {
     appearance: textfield;
     -moz-appearance: textfield;
   }
-
-  .validation-error {
+  .smrt-number-input__validation-error {
     font-size: var(--smrt-typography-body-small-size, 0.75rem);
     color: var(--smrt-color-error);
-    margin-top: var(--smrt-spacing-1);
   }
 }
+
 </style>

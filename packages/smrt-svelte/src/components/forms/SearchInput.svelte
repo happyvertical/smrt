@@ -123,21 +123,22 @@ export function clear() {
 }
 
 const sizeClasses = {
-  sm: 'search-input--sm',
-  md: 'search-input--md',
-  lg: 'search-input--lg',
+  sm: 'smrt-search-input__sm',
+  md: 'smrt-search-input__md',
+  lg: 'smrt-search-input__lg',
 };
 </script>
 
 <div
-  class="search-input {sizeClasses[size]}"
-  class:search-input--disabled={disabled}
-  class:search-input--loading={loading} data-smrt-component="SearchInput"
+  class="smrt-search-input__root {sizeClasses[size]}"
+  class:smrt-search-input__disabled={disabled}
+  class:smrt-search-input__loading={loading} data-smrt-component="SearchInput"
 >
-  <span class="search-input__icon" aria-hidden="true">
+  <span class="smrt-search-input__icon" data-smrt-part="icon" aria-hidden="true">
     {#if loading}
       <svg
-        class="search-input__spinner"
+        class="smrt-search-input__spinner"
+        data-smrt-part="spinner"
         xmlns="http://www.w3.org/2000/svg"
         width="18"
         height="18"
@@ -176,7 +177,8 @@ const sizeClasses = {
   <input
     bind:this={inputEl}
     type="search"
-    class="search-input__field"
+    class="smrt-search-input__field"
+    data-smrt-part="input"
     {id}
     {name}
     {placeholder}
@@ -190,7 +192,8 @@ const sizeClasses = {
   {#if value && !disabled}
     <button
       type="button"
-      class="search-input__clear"
+      class="smrt-search-input__clear"
+      data-smrt-part="close"
       onclick={handleClear}
       aria-label={t(M['ui.search_input.clear_aria_label'])}
     >
@@ -214,148 +217,148 @@ const sizeClasses = {
 
 <style>
 @layer smrt.reset, smrt.structure, smrt.theme;
-@layer smrt.theme {
-  .search-input {
+@layer smrt.structure {
+  .smrt-search-input__root {
     position: relative;
     display: flex;
     align-items: center;
     width: 100%;
+  }
+  .smrt-search-input__disabled {
+    cursor: not-allowed;
+  }
+  .smrt-search-input__icon {
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    flex-shrink: 0;
+  }
+  .smrt-search-input__field {
+    flex: 1;
+    width: 100%;
+  }
+  /* Hide default search clear button */
+  .smrt-search-input__field::-webkit-search-cancel-button {
+    display: none;
+  }
+  .smrt-search-input__clear {
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    flex-shrink: 0;
+    padding: 0;
+    cursor: pointer;
+  }
+  /* Size: Small */
+  .smrt-search-input__sm {
+    height: 32px;
+  }
+  .smrt-search-input__sm .smrt-search-input__icon {
+    padding-left: var(--smrt-spacing-2, 0.5rem);
+  }
+  .smrt-search-input__sm .smrt-search-input__field {
+    padding: var(--smrt-spacing-1, 0.25rem) var(--smrt-spacing-2, 0.5rem);
+  }
+  .smrt-search-input__sm .smrt-search-input__clear {
+    width: 24px;
+    height: 24px;
+    margin-right: var(--smrt-spacing-1, 0.25rem);
+  }
+  /* Size: Medium (default) */
+  .smrt-search-input__md {
+    height: 40px;
+  }
+  .smrt-search-input__md .smrt-search-input__icon {
+    padding-left: var(--smrt-spacing-3, 0.75rem);
+  }
+  .smrt-search-input__md .smrt-search-input__field {
+    padding: var(--smrt-spacing-2, 0.5rem) var(--smrt-spacing-3, 0.75rem);
+  }
+  .smrt-search-input__md .smrt-search-input__clear {
+    width: 28px;
+    height: 28px;
+    margin-right: var(--smrt-spacing-2, 0.5rem);
+  }
+  /* Size: Large */
+  .smrt-search-input__lg {
+    height: 48px;
+  }
+  .smrt-search-input__lg .smrt-search-input__icon {
+    padding-left: var(--smrt-spacing-4, 1rem);
+  }
+  .smrt-search-input__lg .smrt-search-input__field {
+    padding: var(--smrt-spacing-3, 0.75rem) var(--smrt-spacing-4, 1rem);
+  }
+  .smrt-search-input__lg .smrt-search-input__clear {
+    width: 32px;
+    height: 32px;
+    margin-right: var(--smrt-spacing-3, 0.75rem);
+  }
+}
+
+@layer smrt.theme {
+  .smrt-search-input__root {
     background: var(--smrt-color-surface-container-low);
     border: var(--smrt-hairline);
     border-radius: var(--smrt-radius-md, 0.5rem);
     transition: all var(--smrt-duration-fast, 150ms) var(--smrt-easing-standard, ease);
   }
-
-  .search-input:focus-within {
+  .smrt-search-input__root:focus-within {
     background: var(--smrt-color-surface);
     border-color: var(--smrt-color-primary);
     box-shadow: 0 0 0 3px var(--smrt-color-primary-container, rgba(0, 90, 193, 0.1));
   }
-
-  .search-input--disabled {
+  .smrt-search-input__disabled {
     opacity: 0.5;
-    cursor: not-allowed;
   }
-
-  .search-input__icon {
-    display: flex;
-    align-items: center;
-    justify-content: center;
-    flex-shrink: 0;
+  .smrt-search-input__icon {
     color: var(--smrt-color-on-surface-variant);
   }
-
-  .search-input__spinner {
+  .smrt-search-input__spinner {
     animation: spin 1s linear infinite;
   }
-
   @keyframes spin {
     to {
       transform: rotate(360deg);
     }
   }
-
-  .search-input__field {
-    flex: 1;
-    width: 100%;
+  .smrt-search-input__field {
     border: none;
     background: transparent;
     font-family: inherit;
     color: var(--smrt-color-on-surface);
     outline: none;
   }
-
-  .search-input__field::placeholder {
+  .smrt-search-input__field::placeholder {
     color: var(--smrt-color-on-surface-variant);
   }
-
-  /* Hide default search clear button */
-  .search-input__field::-webkit-search-cancel-button {
-    display: none;
-  }
-
-  .search-input__clear {
-    display: flex;
-    align-items: center;
-    justify-content: center;
-    flex-shrink: 0;
-    padding: 0;
+  .smrt-search-input__clear {
     border: none;
     background: transparent;
     color: var(--smrt-color-on-surface-variant);
-    cursor: pointer;
     border-radius: var(--smrt-radius-full);
     transition: all var(--smrt-duration-short2, 150ms) var(--smrt-easing-standard, ease);
   }
-
-  .search-input__clear:hover {
+  .smrt-search-input__clear:hover {
     color: var(--smrt-color-on-surface);
     background: var(--smrt-color-surface-container);
   }
-
-  .search-input__clear:focus-visible {
+  .smrt-search-input__clear:focus-visible {
     outline: 2px solid var(--smrt-color-primary);
     outline-offset: 2px;
   }
-
   /* Size: Small */
-  .search-input--sm {
-    height: 32px;
+  .smrt-search-input__sm {
     font-size: var(--smrt-typography-body-medium-size, 0.875rem);
   }
-
-  .search-input--sm .search-input__icon {
-    padding-left: var(--smrt-spacing-2, 0.5rem);
-  }
-
-  .search-input--sm .search-input__field {
-    padding: var(--smrt-spacing-1, 0.25rem) var(--smrt-spacing-2, 0.5rem);
-  }
-
-  .search-input--sm .search-input__clear {
-    width: 24px;
-    height: 24px;
-    margin-right: var(--smrt-spacing-1, 0.25rem);
-  }
-
   /* Size: Medium (default) */
-  .search-input--md {
-    height: 40px;
+  .smrt-search-input__md {
     font-size: var(--smrt-typography-body-medium-size, 0.875rem);
   }
-
-  .search-input--md .search-input__icon {
-    padding-left: var(--smrt-spacing-3, 0.75rem);
-  }
-
-  .search-input--md .search-input__field {
-    padding: var(--smrt-spacing-2, 0.5rem) var(--smrt-spacing-3, 0.75rem);
-  }
-
-  .search-input--md .search-input__clear {
-    width: 28px;
-    height: 28px;
-    margin-right: var(--smrt-spacing-2, 0.5rem);
-  }
-
   /* Size: Large */
-  .search-input--lg {
-    height: 48px;
+  .smrt-search-input__lg {
     font-size: var(--smrt-typography-body-large-size, 1rem);
   }
-
-  .search-input--lg .search-input__icon {
-    padding-left: var(--smrt-spacing-4, 1rem);
-  }
-
-  .search-input--lg .search-input__field {
-    padding: var(--smrt-spacing-3, 0.75rem) var(--smrt-spacing-4, 1rem);
-  }
-
-  .search-input--lg .search-input__clear {
-    width: 32px;
-    height: 32px;
-    margin-right: var(--smrt-spacing-3, 0.75rem);
-  }
 }
+
 </style>

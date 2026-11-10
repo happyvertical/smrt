@@ -441,12 +441,12 @@ function handleUnitChange(e: Event) {
 }
 </script>
 
-<div class="smrt-measurement" data-smrt-field-owner={fieldOwnerToken} data-smrt-component="MeasurementInput">
+<div class="smrt-measurement-input__root" data-smrt-field-owner={fieldOwnerToken} data-smrt-component="MeasurementInput">
   {#if label}
     <FieldLabel for={name} {label} {required} />
   {/if}
 
-  <div class="input-wrapper" class:smrt-mode={isSmrt}>
+  <div class="smrt-measurement-input__input-wrapper" class:smrt-measurement-input__mode={isSmrt}>
     <input
       id={name}
       name={name}
@@ -458,8 +458,9 @@ function handleUnitChange(e: Event) {
       {step}
       {disabled}
       {required}
-      class="smrt-input"
-      class:invalid={showInvalid}
+      class="smrt-measurement-input__input"
+      data-smrt-part="input"
+      class:smrt-measurement-input__invalid={showInvalid}
       aria-invalid={showInvalid ? 'true' : undefined}
       aria-describedby={showInvalid ? `${name}-error` : undefined}
       oninput={handleInput}
@@ -469,8 +470,9 @@ function handleUnitChange(e: Event) {
       name="{name}_unit"
       value={unit}
       {disabled}
-      class="unit-select"
-      class:smrt-mode={isSmrt}
+      class="smrt-measurement-input__unit-select"
+      data-smrt-part="field"
+      class:smrt-measurement-input__mode={isSmrt}
       aria-label={label ? `${label} unit` : 'Unit'}
       onchange={handleUnitChange}
     >
@@ -484,9 +486,9 @@ function handleUnitChange(e: Event) {
   <input type="hidden" name="{name}_combined" value={value !== null ? `${value} ${unit}` : ''} />
 
   {#if error}
-    <div id={`${name}-error`} class="validation-error" role="alert">{error}</div>
+    <div id={`${name}-error`} class="smrt-measurement-input__validation-error" data-smrt-part="error" role="alert">{error}</div>
   {:else if showInvalid && !isInRange}
-    <div id={`${name}-error`} class="validation-error" role="alert">
+    <div id={`${name}-error`} class="smrt-measurement-input__validation-error" data-smrt-part="error" role="alert">
       {#if min !== undefined && value !== null && value < min}
         {t(M['ui.measurement_input.value_at_least'], { min, unit: unitAbbreviations[unit] })}
       {:else if max !== undefined && value !== null && value > max}
@@ -498,107 +500,111 @@ function handleUnitChange(e: Event) {
 
 <style>
 @layer smrt.reset, smrt.structure, smrt.theme;
-@layer smrt.theme {
-  .smrt-measurement {
+@layer smrt.structure {
+  .smrt-measurement-input__root {
     display: flex;
     flex-direction: column;
     gap: var(--smrt-spacing-1);
   }
-
-  .input-wrapper {
+  .smrt-measurement-input__input-wrapper {
     display: flex;
     gap: var(--smrt-spacing-2);
   }
-
-  .input-wrapper.smrt-mode {
-    border: 1px solid var(--smrt-color-tertiary);
-    border-radius: var(--smrt-radius-small);
+  .smrt-measurement-input__input-wrapper.smrt-measurement-input__mode {
     padding: var(--smrt-spacing-1);
-    background: var(--smrt-color-tertiary-container);
   }
-
-  .smrt-input {
+  .smrt-measurement-input__input {
     flex: 1;
     padding: var(--smrt-spacing-2) var(--smrt-spacing-3);
+    min-width: 0;
+  }
+  .smrt-measurement-input__input:disabled {
+    cursor: not-allowed;
+  }
+  /* Hide spinner buttons */
+  .smrt-measurement-input__input::-webkit-outer-spin-button,
+  .smrt-measurement-input__input::-webkit-inner-spin-button {
+    margin: 0;
+  }
+  .smrt-measurement-input__unit-select {
+    padding: var(--smrt-spacing-2) var(--smrt-spacing-3);
+    cursor: pointer;
+    min-width: 100px;
+  }
+  .smrt-measurement-input__unit-select:disabled {
+    cursor: not-allowed;
+  }
+  .smrt-measurement-input__validation-error {
+    margin-top: var(--smrt-spacing-1);
+  }
+}
+
+@layer smrt.theme {
+  .smrt-measurement-input__input-wrapper.smrt-measurement-input__mode {
+    border: 1px solid var(--smrt-color-tertiary);
+    border-radius: var(--smrt-radius-small);
+    background: var(--smrt-color-tertiary-container);
+  }
+  .smrt-measurement-input__input {
     font-size: var(--smrt-typography-body-large-size, 1rem);
     border: var(--smrt-hairline);
     border-radius: var(--smrt-radius-small);
     background: var(--smrt-color-surface);
     transition: all var(--smrt-duration-short2, 150ms) var(--smrt-easing-standard, ease);
-    min-width: 0;
   }
-
-  .input-wrapper.smrt-mode .smrt-input {
+  .smrt-measurement-input__input-wrapper.smrt-measurement-input__mode .smrt-measurement-input__input {
     border: none;
     background: transparent;
   }
-
-  .smrt-input:focus {
+  .smrt-measurement-input__input:focus {
     outline: none;
     border-color: var(--smrt-color-primary);
     box-shadow: 0 0 0 3px color-mix(in srgb, var(--smrt-color-primary) 10%, transparent);
   }
-
-  .input-wrapper.smrt-mode .smrt-input:focus {
+  .smrt-measurement-input__input-wrapper.smrt-measurement-input__mode .smrt-measurement-input__input:focus {
     box-shadow: none;
   }
-
-  .smrt-input:disabled {
+  .smrt-measurement-input__input:disabled {
     background: var(--smrt-color-surface-container-high);
-    cursor: not-allowed;
   }
-
-  .smrt-input.invalid {
+  .smrt-measurement-input__input.smrt-measurement-input__invalid {
     border-color: var(--smrt-color-error);
   }
-
   /* Hide spinner buttons */
-  .smrt-input::-webkit-outer-spin-button,
-  .smrt-input::-webkit-inner-spin-button {
+  .smrt-measurement-input__input::-webkit-outer-spin-button,
+  .smrt-measurement-input__input::-webkit-inner-spin-button {
     -webkit-appearance: none;
-    margin: 0;
   }
-
-  .smrt-input[type=number] {
+  .smrt-measurement-input__input[type=number] {
     appearance: textfield;
     -moz-appearance: textfield;
   }
-
-  .unit-select {
-    padding: var(--smrt-spacing-2) var(--smrt-spacing-3);
+  .smrt-measurement-input__unit-select {
     font-size: var(--smrt-typography-body-medium-size, 0.875rem);
     border: var(--smrt-hairline);
     border-radius: var(--smrt-radius-small);
     background: var(--smrt-color-surface);
-    cursor: pointer;
-    min-width: 100px;
     transition: all var(--smrt-duration-short2, 150ms) var(--smrt-easing-standard, ease);
   }
-
-  .unit-select.smrt-mode {
+  .smrt-measurement-input__unit-select.smrt-measurement-input__mode {
     border: none;
     background: transparent;
   }
-
-  .unit-select:focus {
+  .smrt-measurement-input__unit-select:focus {
     outline: none;
     border-color: var(--smrt-color-primary);
     box-shadow: 0 0 0 3px color-mix(in srgb, var(--smrt-color-primary) 10%, transparent);
   }
-
-  .unit-select.smrt-mode:focus {
+  .smrt-measurement-input__unit-select.smrt-measurement-input__mode:focus {
     box-shadow: none;
   }
-
-  .unit-select:disabled {
+  .smrt-measurement-input__unit-select:disabled {
     background: var(--smrt-color-surface-container);
-    cursor: not-allowed;
   }
-
-  .validation-error {
+  .smrt-measurement-input__validation-error {
     font-size: var(--smrt-typography-body-small-size, 0.75rem);
     color: var(--smrt-color-error);
-    margin-top: var(--smrt-spacing-1);
   }
 }
+
 </style>

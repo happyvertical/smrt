@@ -28,117 +28,130 @@ function formatBytes(bytes: number): string {
 }
 </script>
 
-<div class="download-progress" data-smrt-component="DownloadProgress">
-  <div class="label">
+<div class="smrt-download-progress__root" data-smrt-component="DownloadProgress">
+  <div class="smrt-download-progress__label" data-smrt-part="label">
     <span>{label}</span>
     {#if showPercent && progress}
-      <span class="percent">{progress.percent}%</span>
+      <span class="smrt-download-progress__percent">{progress.percent}%</span>
     {/if}
   </div>
 
-  <div class="progress-bar">
+  <div class="smrt-download-progress__progress-bar" data-smrt-part="progress">
     <div
-      class="progress-fill"
+      class="smrt-download-progress__progress-fill"
       style:width={progress && progress.state !== 'idle' ? `${progress.percent ?? 0}%` : undefined}
-      class:indeterminate={!progress || progress.state === 'idle'}
+      class:smrt-download-progress__indeterminate={!progress || progress.state === 'idle'}
     ></div>
   </div>
 
   {#if showBytes && progress && progress.bytesTotal > 0}
-    <div class="bytes">
+    <div class="smrt-download-progress__bytes" data-smrt-part="meta">
       {formatBytes(progress.bytesLoaded)} / {formatBytes(progress.bytesTotal)}
     </div>
   {/if}
 
   {#if progress?.currentFile}
-    <div class="current-file">{progress.currentFile}</div>
+    <div class="smrt-download-progress__current-file" data-smrt-part="meta">{progress.currentFile}</div>
   {/if}
 
   {#if progress?.state === 'error'}
-    <div class="error">{progress.error}</div>
+    <div class="smrt-download-progress__error" data-smrt-part="error">{progress.error}</div>
   {/if}
 </div>
 
 <style>
 @layer smrt.reset, smrt.structure, smrt.theme;
-@layer smrt.theme {
-  .download-progress {
+@layer smrt.structure {
+  .smrt-download-progress__root {
     width: 100%;
     padding: var(--smrt-spacing-md);
-    background: var(--smrt-color-surface-container-low);
-    border-radius: var(--smrt-radius-medium);
   }
-
-  .label {
+  .smrt-download-progress__label {
     display: flex;
     justify-content: space-between;
     align-items: center;
-    font: var(--smrt-typography-body-medium-font, 0.875rem / 1.25 sans-serif);
-    color: var(--smrt-color-on-surface);
     margin-bottom: var(--smrt-spacing-sm);
   }
-
-  .percent {
-    font-weight: var(--smrt-typography-weight-semibold, 600);
-    color: var(--smrt-color-primary);
-  }
-
-  .progress-bar {
+  .smrt-download-progress__progress-bar {
     width: 100%;
     height: 8px;
-    background: var(--smrt-color-outline-variant);
-    border-radius: var(--smrt-radius-small);
     overflow: hidden;
   }
-
-  .progress-fill {
+  .smrt-download-progress__progress-fill {
     height: 100%;
-    background: linear-gradient(90deg, var(--smrt-color-primary), var(--smrt-color-primary-container));
-    border-radius: var(--smrt-radius-small);
-    transition: width var(--smrt-duration-medium1, 300ms) var(--smrt-easing-standard, ease);
   }
-
-  .progress-fill.indeterminate {
+  .smrt-download-progress__progress-fill.smrt-download-progress__indeterminate {
     width: 30%;
-    animation: indeterminate 1.5s infinite linear;
   }
-
-  @keyframes indeterminate {
-    0% { transform: translateX(-100%); }
-    100% { transform: translateX(400%); }
-  }
-
-  .bytes {
-    font: var(--smrt-typography-body-small-font, 0.75rem / 1.25 sans-serif);
-    color: var(--smrt-color-on-surface-variant);
+  .smrt-download-progress__bytes {
     margin-top: var(--smrt-spacing-2);
-    text-align: center;
   }
-
-  .current-file {
-    font: var(--smrt-typography-body-small-font, 0.75rem / 1.25 sans-serif);
-    color: var(--smrt-color-outline);
+  .smrt-download-progress__current-file {
     margin-top: var(--smrt-spacing-1);
-    text-align: center;
     white-space: nowrap;
     overflow: hidden;
     text-overflow: ellipsis;
   }
-
-  .error {
-    font: var(--smrt-typography-body-small-font, 0.75rem / 1.25 sans-serif);
-    color: var(--smrt-color-error);
+  .smrt-download-progress__error {
     margin-top: var(--smrt-spacing-2);
   }
+}
 
+@layer smrt.theme {
+  .smrt-download-progress__root {
+    background: var(--smrt-color-surface-container-low);
+    border-radius: var(--smrt-radius-medium);
+  }
+  .smrt-download-progress__label {
+    font: var(--smrt-typography-body-medium-font, 0.875rem / 1.25 sans-serif);
+    color: var(--smrt-color-on-surface);
+  }
+  .smrt-download-progress__percent {
+    font-weight: var(--smrt-typography-weight-semibold, 600);
+    color: var(--smrt-color-primary);
+  }
+  .smrt-download-progress__progress-bar {
+    background: var(--smrt-color-outline-variant);
+    border-radius: var(--smrt-radius-small);
+  }
+  .smrt-download-progress__progress-fill {
+    background: linear-gradient(90deg, var(--smrt-color-primary), var(--smrt-color-primary-container));
+    border-radius: var(--smrt-radius-small);
+    transition: width var(--smrt-duration-medium1, 300ms) var(--smrt-easing-standard, ease);
+  }
+  .smrt-download-progress__progress-fill.smrt-download-progress__indeterminate {
+    animation: indeterminate 1.5s infinite linear;
+  }
+  @keyframes indeterminate {
+    0% {
+      transform: translateX(-100%);
+    }
+    100% {
+      transform: translateX(400%);
+    }
+  }
+  .smrt-download-progress__bytes {
+    font: var(--smrt-typography-body-small-font, 0.75rem / 1.25 sans-serif);
+    color: var(--smrt-color-on-surface-variant);
+    text-align: center;
+  }
+  .smrt-download-progress__current-file {
+    font: var(--smrt-typography-body-small-font, 0.75rem / 1.25 sans-serif);
+    color: var(--smrt-color-outline);
+    text-align: center;
+  }
+  .smrt-download-progress__error {
+    font: var(--smrt-typography-body-small-font, 0.75rem / 1.25 sans-serif);
+    color: var(--smrt-color-error);
+  }
   @media (prefers-reduced-motion: reduce) {
-    .progress-fill {
+    .smrt-download-progress__progress-fill {
       transition: none;
     }
-    
-    .progress-fill.indeterminate {
+    .smrt-download-progress__progress-fill.smrt-download-progress__indeterminate {
       animation: none;
     }
   }
 }
+
 </style>

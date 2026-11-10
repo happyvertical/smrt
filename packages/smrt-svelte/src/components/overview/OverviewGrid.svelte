@@ -354,14 +354,14 @@ const headingTag = $derived(`h${headingLevel}`);
 {#snippet body(row: Row)}
   {@const Widget = components?.get(row.widget.type) ?? row.def?.component}
   <article class="smrt-overview__widget" aria-labelledby="{uid}-title-{row.widget.id}">
-    <svelte:element this={headingTag} class="smrt-overview__title" id="{uid}-title-{row.widget.id}">{#if heading}{@render heading(row.widget, row.title)}{:else}{row.title}{/if}</svelte:element>
-    <div class="smrt-overview__content" aria-busy={row.status === 'loading'}>
+    <svelte:element this={headingTag} class="smrt-overview__title" data-smrt-part="title" id="{uid}-title-{row.widget.id}">{#if heading}{@render heading(row.widget, row.title)}{:else}{row.title}{/if}</svelte:element>
+    <div class="smrt-overview__content" data-smrt-part="body" aria-busy={row.status === 'loading'}>
       {#if !row.def}
-        <p class="smrt-overview__state">{t(M['ui.overview.unavailable'])}</p>
+        <p class="smrt-overview__state" data-smrt-part="status">{t(M['ui.overview.unavailable'])}</p>
       {:else if row.status === 'loading'}
-        <p class="smrt-overview__state">{t(M['ui.overview.loading'])}</p>
+        <p class="smrt-overview__state" data-smrt-part="status">{t(M['ui.overview.loading'])}</p>
       {:else if row.status === 'error'}
-        <p class="smrt-overview__state" role="status">{t(M['ui.overview.error'])}</p>
+        <p class="smrt-overview__state" data-smrt-part="status" role="status">{t(M['ui.overview.error'])}</p>
         <Button type="button" variant="ghost" size="sm" onclick={() => controller.reload(row.widget.id)}>
           {t(M['ui.overview.retry'])}
         </Button>
@@ -383,9 +383,9 @@ const headingTag = $derived(`h${headingLevel}`);
   </article>
 {/snippet}
 
-<div class="smrt-overview" bind:this={rootEl} data-editing={editing ? '' : undefined} data-presentation={presentation} data-smrt-component="OverviewGrid">
+<div class="smrt-overview__root" bind:this={rootEl} data-editing={editing ? '' : undefined} data-presentation={presentation} data-smrt-component="OverviewGrid">
   {#if editing}
-    <div class="smrt-overview__toolbar" role="toolbar" aria-label={t(M['ui.overview.toolbar'])}>
+    <div class="smrt-overview__toolbar" data-smrt-part="actions" role="toolbar" aria-label={t(M['ui.overview.toolbar'])}>
       <ShellIconButton
         icon="add"
         label={t(M['ui.overview.add'])}
@@ -402,11 +402,12 @@ const headingTag = $derived(`h${headingLevel}`);
   {/if}
 
   {#if editing && rows.length === 0}
-    <p class="smrt-overview__empty">{t(M['ui.overview.empty'])}</p>
+    <p class="smrt-overview__empty" data-smrt-part="empty">{t(M['ui.overview.empty'])}</p>
   {/if}
   <div
     bind:this={listEl}
     class="smrt-overview__list"
+    data-smrt-part="list"
     role="list"
     aria-label={gridLabel}
     data-smrt-overview-list={LIST}
@@ -420,6 +421,7 @@ const headingTag = $derived(`h${headingLevel}`);
       <div
         role="listitem"
         class="smrt-overview__item"
+        data-smrt-part="row"
         animate:flipRow
         data-span={spanOf(row)}
         data-smrt-overview-item={row.widget.id}
@@ -433,9 +435,9 @@ const headingTag = $derived(`h${headingLevel}`);
           sortable.dropOnItem(event, LIST, index);
         }}
       >
-        <div class="smrt-overview__tile">
+        <div class="smrt-overview__tile" data-smrt-part="panel">
           {#if editing}
-            <div class="smrt-overview__chrome">
+            <div class="smrt-overview__chrome" data-smrt-part="actions">
               <!-- raw-primitive-allow: native button owns keyboard pickup and HTML drag/drop -->
               <button
                 type="button"
@@ -455,7 +457,7 @@ const headingTag = $derived(`h${headingLevel}`);
                 ondragend={() => sortable.dragEnd()}
               ><span aria-hidden="true">⠿</span></button>
               <!-- Truncated to one line beside the controls; the tooltip carries the full title. -->
-              <span class="smrt-overview__chrome-title" aria-hidden="true" title={row.title}>{row.title}</span>
+              <span class="smrt-overview__chrome-title" data-smrt-part="label" aria-hidden="true" title={row.title}>{row.title}</span>
               {#if row.def && row.def.options.length > 0}
                 <ShellIconButton
                   icon="settings"
@@ -498,7 +500,7 @@ const headingTag = $derived(`h${headingLevel}`);
     {/each}
   </div>
 
-  <div class="smrt-overview__live" role="status" aria-live="polite" aria-atomic="true">{liveMessage}{sortable.announcement ? ` ${sortable.announcement}` : ''}</div>
+  <div class="smrt-overview__live" data-smrt-part="status" role="status" aria-live="polite" aria-atomic="true">{liveMessage}{sortable.announcement ? ` ${sortable.announcement}` : ''}</div>
 </div>
 
 {#if editing}
@@ -506,9 +508,9 @@ const headingTag = $derived(`h${headingLevel}`);
     {#if controller.addable.length === 0 || controller.full}
       <p>{t(M['ui.overview.add_none'])}</p>
     {:else}
-      <ul class="smrt-overview__choices">
+      <ul class="smrt-overview__choices" data-smrt-part="list">
         {#each controller.addable as def (def.type)}
-          <li>
+          <li data-smrt-part="row">
             <Button type="button" variant="ghost" fullWidth onclick={() => chooseType(def.type)}>
               <span class="smrt-overview__choice">
                 {#if def.icon}<ShellSectionIcon name={def.icon} {iconComponent} />{/if}
@@ -546,48 +548,218 @@ const headingTag = $derived(`h${headingLevel}`);
 
 <style>
 @layer smrt.reset, smrt.structure, smrt.theme;
-@layer smrt.theme {
-  .smrt-overview { container-type: inline-size; min-inline-size: 0; }
-  .smrt-overview__toolbar { display: flex; gap: var(--smrt-spacing-1); margin-block-end: var(--smrt-spacing-2); }
-  .smrt-overview__empty { margin: 0; color: var(--smrt-color-on-surface-variant); }
+@layer smrt.structure {
+  .smrt-overview__root {
+    container-type: inline-size;
+    min-inline-size: 0;
+  }
+  .smrt-overview__toolbar {
+    display: flex;
+    gap: var(--smrt-spacing-1);
+    margin-block-end: var(--smrt-spacing-2);
+  }
+  .smrt-overview__empty {
+    margin: 0;
+  }
   /* Gaps are tile padding, not grid gap, so a pointer never crosses a dead
-     zone between tiles while dragging. */
-  .smrt-overview__list { --smrt-overview-grid-pad: var(--smrt-spacing-2); display: grid; grid-template-columns: repeat(4, minmax(0, 1fr)); margin: calc(-1 * var(--smrt-overview-grid-pad)); }
-  .smrt-overview__item { position: relative; grid-column: span var(--smrt-overview-grid-span, 1); min-inline-size: 0; padding: var(--smrt-overview-grid-pad); }
-  .smrt-overview__item[data-dragging] { opacity: 0.5; }
-  .smrt-overview__item[data-drop]::before { content: ''; position: absolute; inset-block: var(--smrt-overview-grid-pad); inline-size: 0.1875rem; border-radius: var(--smrt-radius-full); background: var(--smrt-color-primary); }
-  .smrt-overview__item[data-drop='before']::before { inset-inline-start: 0; }
-  .smrt-overview__item[data-drop='after']::before { inset-inline-end: 0; }
-  .smrt-overview__tile { position: relative; block-size: 100%; box-sizing: border-box; padding: var(--smrt-spacing-3); border: var(--smrt-hairline); border-radius: var(--smrt-radius-large, var(--smrt-radius-medium)); background: var(--smrt-color-surface); color: var(--smrt-color-on-surface); }
-  [data-presentation='plain']:not([data-editing]) .smrt-overview__tile { padding: 0; border: 0; border-radius: 0; background: transparent; }
-  [data-editing] .smrt-overview__tile { border-style: dashed; }
-  .smrt-overview__widget { display: grid; gap: var(--smrt-spacing-2); align-content: start; min-inline-size: 0; }
-  .smrt-overview__title { margin: 0; overflow-wrap: break-word; color: var(--smrt-color-on-surface-variant); font-size: var(--smrt-typography-title-small-size, 0.875rem); font-weight: var(--smrt-typography-weight-medium, 500); }
-  .smrt-overview__state { margin: 0; color: var(--smrt-color-on-surface-variant); }
-  .smrt-overview__chrome { display: flex; align-items: center; gap: var(--smrt-spacing-1); margin-block-end: var(--smrt-spacing-2); }
-  .smrt-overview__chrome-title { flex: 1 1 auto; min-inline-size: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; color: var(--smrt-color-on-surface-variant); font-size: var(--smrt-typography-label-large-size, 0.875rem); }
-  .smrt-overview__handle { display: inline-grid; place-items: center; flex: 0 0 auto; inline-size: 2rem; block-size: 2rem; padding: 0; border: 0; border-radius: var(--smrt-radius-small); background: transparent; color: var(--smrt-color-on-surface-variant); cursor: grab; touch-action: none; }
-  .smrt-overview__handle:active { cursor: grabbing; }
-  .smrt-overview__handle:hover { background: var(--smrt-color-surface-container-high); }
-  .smrt-overview__handle:focus-visible { outline: 2px solid var(--smrt-color-primary); outline-offset: 2px; }
-  .smrt-overview__handle[aria-pressed='true'] { background: var(--smrt-color-primary-container); color: var(--smrt-color-on-primary-container); }
-  .smrt-overview__resize { position: absolute; inset-block-start: 50%; inset-inline-end: -0.4375rem; inline-size: 0.875rem; block-size: 2.75rem; transform: translateY(-50%); border: var(--smrt-hairline-strong); border-radius: var(--smrt-radius-full); background: var(--smrt-color-surface-container-high); cursor: ew-resize; touch-action: none; }
-  .smrt-overview__resize:hover { background: var(--smrt-color-primary-container); }
-  .smrt-overview__resize:focus-visible { outline: 2px solid var(--smrt-color-primary); outline-offset: 2px; }
-  .smrt-overview__choices { display: grid; gap: var(--smrt-spacing-1); margin: 0; padding: 0; list-style: none; }
-  .smrt-overview__choice { display: flex; align-items: center; gap: var(--smrt-spacing-3); text-align: start; }
-  .smrt-overview__choice-text { display: grid; }
-  .smrt-overview__choice-text small { color: var(--smrt-color-on-surface-variant); }
-  .smrt-overview__live { position: absolute; inline-size: 1px; block-size: 1px; overflow: hidden; clip: rect(0 0 0 0); clip-path: inset(50%); white-space: nowrap; }
-
+  zone between tiles while dragging. */
+  .smrt-overview__list {
+    display: grid;
+    grid-template-columns: repeat(4, minmax(0, 1fr));
+    margin: calc(-1 * var(--smrt-overview-grid-pad));
+    --smrt-overview-grid-pad: var(--smrt-spacing-2);
+  }
+  .smrt-overview__item {
+    position: relative;
+    grid-column: span var(--smrt-overview-grid-span, 1);
+    min-inline-size: 0;
+    padding: var(--smrt-overview-grid-pad);
+  }
+  .smrt-overview__item[data-drop]::before {
+    position: absolute;
+    inset-block: var(--smrt-overview-grid-pad);
+    inline-size: 0.1875rem;
+    content: '';
+  }
+  .smrt-overview__item[data-drop='before']::before {
+    inset-inline-start: 0;
+  }
+  .smrt-overview__item[data-drop='after']::before {
+    inset-inline-end: 0;
+  }
+  .smrt-overview__tile {
+    position: relative;
+    block-size: 100%;
+    box-sizing: border-box;
+    padding: var(--smrt-spacing-3);
+  }
+  [data-presentation='plain']:not([data-editing]) .smrt-overview__tile {
+    padding: 0;
+  }
+  .smrt-overview__widget {
+    display: grid;
+    gap: var(--smrt-spacing-2);
+    align-content: start;
+    min-inline-size: 0;
+  }
+  .smrt-overview__title {
+    margin: 0;
+    overflow-wrap: break-word;
+  }
+  .smrt-overview__state {
+    margin: 0;
+  }
+  .smrt-overview__chrome {
+    display: flex;
+    align-items: center;
+    gap: var(--smrt-spacing-1);
+    margin-block-end: var(--smrt-spacing-2);
+  }
+  .smrt-overview__chrome-title {
+    flex: 1 1 auto;
+    min-inline-size: 0;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+  }
+  .smrt-overview__handle {
+    display: inline-grid;
+    place-items: center;
+    flex: 0 0 auto;
+    inline-size: 2rem;
+    block-size: 2rem;
+    padding: 0;
+    cursor: grab;
+    touch-action: none;
+  }
+  .smrt-overview__handle:active {
+    cursor: grabbing;
+  }
+  .smrt-overview__resize {
+    position: absolute;
+    inset-block-start: 50%;
+    inset-inline-end: -0.4375rem;
+    inline-size: 0.875rem;
+    block-size: 2.75rem;
+    cursor: ew-resize;
+    touch-action: none;
+    transform: translateY(-50%);
+  }
+  .smrt-overview__choices {
+    display: grid;
+    gap: var(--smrt-spacing-1);
+    margin: 0;
+    padding: 0;
+    list-style: none;
+  }
+  .smrt-overview__choice {
+    display: flex;
+    align-items: center;
+    gap: var(--smrt-spacing-3);
+  }
+  .smrt-overview__choice-text {
+    display: grid;
+  }
+  .smrt-overview__live {
+    position: absolute;
+    inline-size: 1px;
+    block-size: 1px;
+    overflow: hidden;
+    clip: rect(0 0 0 0);
+    clip-path: inset(50%);
+    white-space: nowrap;
+  }
   /* Responsive columns follow the grid's own width, not the viewport. */
   @container (max-width: 40rem) {
-    .smrt-overview__list { grid-template-columns: repeat(2, minmax(0, 1fr)); }
-    .smrt-overview__item[data-span='3'], .smrt-overview__item[data-span='4'] { grid-column: span 2; }
+    .smrt-overview__list {
+      grid-template-columns: repeat(2, minmax(0, 1fr));
+    }
+    .smrt-overview__item[data-span='3'], .smrt-overview__item[data-span='4'] {
+      grid-column: span 2;
+    }
   }
   @container (max-width: 22rem) {
-    .smrt-overview__list { grid-template-columns: minmax(0, 1fr); }
-    .smrt-overview__list .smrt-overview__item[data-span] { grid-column: span 1; }
+    .smrt-overview__list {
+      grid-template-columns: minmax(0, 1fr);
+    }
+    .smrt-overview__list .smrt-overview__item[data-span] {
+      grid-column: span 1;
+    }
   }
 }
+
+@layer smrt.theme {
+  .smrt-overview__empty {
+    color: var(--smrt-color-on-surface-variant);
+  }
+  .smrt-overview__item[data-dragging] {
+    opacity: 0.5;
+  }
+  .smrt-overview__item[data-drop]::before {
+    border-radius: var(--smrt-radius-full);
+    background: var(--smrt-color-primary);
+  }
+  .smrt-overview__tile {
+    border: var(--smrt-hairline);
+    border-radius: var(--smrt-radius-large, var(--smrt-radius-medium));
+    background: var(--smrt-color-surface);
+    color: var(--smrt-color-on-surface);
+  }
+  [data-presentation='plain']:not([data-editing]) .smrt-overview__tile {
+    border: 0;
+    border-radius: 0;
+    background: transparent;
+  }
+  [data-editing] .smrt-overview__tile {
+    border-style: dashed;
+  }
+  .smrt-overview__title {
+    color: var(--smrt-color-on-surface-variant);
+    font-size: var(--smrt-typography-title-small-size, 0.875rem);
+    font-weight: var(--smrt-typography-weight-medium, 500);
+  }
+  .smrt-overview__state {
+    color: var(--smrt-color-on-surface-variant);
+  }
+  .smrt-overview__chrome-title {
+    color: var(--smrt-color-on-surface-variant);
+    font-size: var(--smrt-typography-label-large-size, 0.875rem);
+  }
+  .smrt-overview__handle {
+    border: 0;
+    border-radius: var(--smrt-radius-small);
+    background: transparent;
+    color: var(--smrt-color-on-surface-variant);
+  }
+  .smrt-overview__handle:hover {
+    background: var(--smrt-color-surface-container-high);
+  }
+  .smrt-overview__handle:focus-visible {
+    outline: 2px solid var(--smrt-color-primary);
+    outline-offset: 2px;
+  }
+  .smrt-overview__handle[aria-pressed='true'] {
+    background: var(--smrt-color-primary-container);
+    color: var(--smrt-color-on-primary-container);
+  }
+  .smrt-overview__resize {
+    border: var(--smrt-hairline-strong);
+    border-radius: var(--smrt-radius-full);
+    background: var(--smrt-color-surface-container-high);
+  }
+  .smrt-overview__resize:hover {
+    background: var(--smrt-color-primary-container);
+  }
+  .smrt-overview__resize:focus-visible {
+    outline: 2px solid var(--smrt-color-primary);
+    outline-offset: 2px;
+  }
+  .smrt-overview__choice {
+    text-align: start;
+  }
+  .smrt-overview__choice-text small {
+    color: var(--smrt-color-on-surface-variant);
+  }
+}
+
 </style>

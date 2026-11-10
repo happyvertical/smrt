@@ -181,7 +181,7 @@ describe('CommandPalette', () => {
       screen
         .getAllByRole('option')
         .map((o) =>
-          o.querySelector('.smrt-command-palette__title')?.textContent?.trim(),
+          o.querySelector('[data-smrt-part="title"]')?.textContent?.trim(),
         );
     // Local matches first, then the remote provider's answer (zero debounce).
     await waitFor(() =>

@@ -56,15 +56,15 @@ const store = {
   {#if title}<title>{title}</title>{/if}
 </svelte:head>
 
-<main class="cookbook-section" data-smrt-component="CookbookSectionPage">
+<main class="smrt-cookbook-section-page__root" data-smrt-component="CookbookSectionPage">
   {#if section}
     {#if heading}
       {@render heading({ section: headingInfo })}
     {:else}
-      <header>
-        <span class="mark"><ShellSectionIcon name={icon} size={28} /></span>
-        <div class="heading">
-          <h1>{title}</h1>
+      <header data-smrt-part="header">
+        <span class="smrt-cookbook-section-page__mark" data-smrt-part="icon"><ShellSectionIcon name={icon} size={28} /></span>
+        <div class="smrt-cookbook-section-page__heading" data-smrt-part="content">
+          <h1 data-smrt-part="title">{title}</h1>
           {#if description}<p>{description}</p>{/if}
         </div>
       </header>
@@ -84,8 +84,8 @@ const store = {
         />
       {/key}
       {#if layout.editing}
-        <section class="entries" aria-labelledby="cookbook-section-entries">
-          <h2 id="cookbook-section-entries">{t(M['ui.cookbook.menu_entries'])}</h2>
+        <section class="smrt-cookbook-section-page__entries" aria-labelledby="cookbook-section-entries" data-smrt-part="list">
+          <h2 id="cookbook-section-entries" data-smrt-part="title">{t(M['ui.cookbook.menu_entries'])}</h2>
           <ShellSectionMenu sectionId={id} />
         </section>
       {/if}
@@ -94,61 +94,64 @@ const store = {
     {/if}
     {@render children?.()}
   {:else}
-    <h1>{t(M['ui.cookbook.section_not_found'])}</h1>
-    <p>{t(M['ui.cookbook.section_not_found_hint'])}</p>
+    <h1 data-smrt-part="title">{t(M['ui.cookbook.section_not_found'])}</h1>
+    <p data-smrt-part="hint">{t(M['ui.cookbook.section_not_found_hint'])}</p>
   {/if}
 </main>
 
 <style>
 @layer smrt.reset, smrt.structure, smrt.theme;
-@layer smrt.theme {
-  .cookbook-section {
+@layer smrt.structure {
+  .smrt-cookbook-section-page__root {
     display: grid;
     gap: var(--smrt-spacing-6);
     width: min(100%, 64rem);
     margin-inline: auto;
     padding: var(--smrt-spacing-6);
   }
-
   header {
     display: flex;
     align-items: center;
     gap: var(--smrt-spacing-4);
   }
-
-  .mark {
+  .smrt-cookbook-section-page__mark {
     display: inline-grid;
     place-items: center;
     flex: 0 0 auto;
     inline-size: 3rem;
     block-size: 3rem;
+  }
+  .smrt-cookbook-section-page__heading {
+    flex: 1 1 auto;
+    min-inline-size: 0;
+  }
+  h1 {
+    margin: 0;
+  }
+  .smrt-cookbook-section-page__heading p {
+    margin: var(--smrt-spacing-1) 0 0;
+  }
+  .smrt-cookbook-section-page__entries {
+    display: grid;
+    gap: var(--smrt-spacing-3);
+  }
+  .smrt-cookbook-section-page__entries h2 {
+    margin: 0;
+  }
+}
+
+@layer smrt.theme {
+  .smrt-cookbook-section-page__mark {
     border-radius: var(--smrt-radius-large, 0.75rem);
     background: var(--smrt-color-primary-container);
     color: var(--smrt-color-on-primary-container);
   }
-
-  .heading {
-    flex: 1 1 auto;
-    min-inline-size: 0;
-  }
-
-  h1 {
-    margin: 0;
-  }
-
-  .heading p {
-    margin: var(--smrt-spacing-1) 0 0;
+  .smrt-cookbook-section-page__heading p {
     color: var(--smrt-color-on-surface-variant);
   }
-
-  .entries {
-    display: grid;
-    gap: var(--smrt-spacing-3);
-  }
-
-  .entries h2 {
-    margin: 0;
+  .smrt-cookbook-section-page__entries h2 {
     font-size: var(--smrt-typography-title-medium-size, 1rem);
   }
 }
+
 </style>

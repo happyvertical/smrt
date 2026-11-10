@@ -270,7 +270,7 @@ const dateOf = (stored: string): string => stored.slice(0, 10);
     gap: var(--smrt-spacing-2);
   }
 
-  .percent :global(.smrt-number) {
+  .percent :global([data-smrt-component="NumberInput"]) {
     flex: 1;
   }
 

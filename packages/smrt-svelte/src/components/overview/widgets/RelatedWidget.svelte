@@ -60,7 +60,7 @@ const current = $derived(tabs.find((tab) => tab.key === selected) ?? tabs[0]);
 {#if !current}
   <p class="smrt-related__empty" data-smrt-component="RelatedWidget">{t(M['ui.overview.related.empty'])}</p>
 {:else}
-  <div class="smrt-related" data-smrt-component="RelatedWidget">
+  <div class="smrt-related__root" data-smrt-component="RelatedWidget">
     <Tabs
       tabs={tabs.map((tab) => ({ id: tab.key, label: tab.label, count: tab.total }))}
       active={current.key}
@@ -83,9 +83,9 @@ const current = $derived(tabs.find((tab) => tab.key === selected) ?? tabs[0]);
             total={current.total}
           />
         {:else}
-          <ul class="smrt-related__list">
+          <ul class="smrt-related__list" data-smrt-part="list">
             {#each current.rows as row (row.id)}
-              <li>
+              <li data-smrt-part="row">
                 {#if row.href && safeHref(row.href)}
                   <a href={safeHref(row.href)}>{row.title}</a>
                 {:else}
@@ -96,7 +96,7 @@ const current = $derived(tabs.find((tab) => tab.key === selected) ?? tabs[0]);
           </ul>
         {/if}
         {#if current.href}
-          <p class="smrt-related__foot">
+          <p class="smrt-related__foot" data-smrt-part="footer">
             <a href={current.href}>{t(M['ui.overview.records.view_all'])}</a>
           </p>
         {/if}
@@ -107,11 +107,37 @@ const current = $derived(tabs.find((tab) => tab.key === selected) ?? tabs[0]);
 
 <style>
 @layer smrt.reset, smrt.structure, smrt.theme;
-@layer smrt.theme {
-  .smrt-related { min-inline-size: 0; }
-  .smrt-related__list { display: grid; gap: var(--smrt-spacing-2); margin: var(--smrt-spacing-2) 0 0; padding: 0; list-style: none; }
-  .smrt-related__foot { display: flex; justify-content: flex-end; margin: var(--smrt-spacing-2) 0 0; font-size: var(--smrt-typography-body-medium-size, 0.875rem); }
-  .smrt-related__foot a { color: var(--smrt-color-primary); }
-  .smrt-related__empty { margin: 0; color: var(--smrt-color-on-surface-variant); }
+@layer smrt.structure {
+  .smrt-related__root {
+    min-inline-size: 0;
+  }
+  .smrt-related__list {
+    display: grid;
+    gap: var(--smrt-spacing-2);
+    margin: var(--smrt-spacing-2) 0 0;
+    padding: 0;
+    list-style: none;
+  }
+  .smrt-related__foot {
+    display: flex;
+    justify-content: flex-end;
+    margin: var(--smrt-spacing-2) 0 0;
+  }
+  .smrt-related__empty {
+    margin: 0;
+  }
 }
+
+@layer smrt.theme {
+  .smrt-related__foot {
+    font-size: var(--smrt-typography-body-medium-size, 0.875rem);
+  }
+  .smrt-related__foot a {
+    color: var(--smrt-color-primary);
+  }
+  .smrt-related__empty {
+    color: var(--smrt-color-on-surface-variant);
+  }
+}
+
 </style>

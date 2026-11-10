@@ -203,7 +203,7 @@ describe('RecordScreen (edit)', () => {
       oncancel,
       onedit: vi.fn(),
     });
-    expect(container.querySelector('.smrt-record-screen--edit')).not.toBeNull();
+    expect(container.querySelector('.smrt-record-screen__edit')).not.toBeNull();
     const aside = screen.getByRole('complementary', { name: 'Edit task' });
     expect(within(aside).getByLabelText(/Task name/)).toHaveValue('Write docs');
     // the detail header hides its Edit action while editing

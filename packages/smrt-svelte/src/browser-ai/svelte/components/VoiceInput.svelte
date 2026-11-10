@@ -49,7 +49,7 @@ async function handleToggle() {
 }
 </script>
 
-<div class="voice-input" class:sm={size === 'sm'} class:lg={size === 'lg'} data-smrt-component="VoiceInput">
+<div class="smrt-voice-input__root" class:smrt-voice-input__sm={size === 'sm'} class:smrt-voice-input__lg={size === 'lg'} data-smrt-component="VoiceInput">
   {#if stt.isInitializing}
     <DownloadProgress
       progress={stt.downloadProgress ? {
@@ -61,19 +61,20 @@ async function handleToggle() {
       label="Loading speech recognition..."
     />
   {:else if stt.error}
-    <div class="error">
-      <span class="error-icon">!</span>
+    <div class="smrt-voice-input__error" data-smrt-part="error">
+      <span class="smrt-voice-input__error-icon" data-smrt-part="icon">!</span>
       <span>{stt.error.message}</span>
     </div>
   {:else}
     <!-- raw-primitive-allow: bespoke circular mic toggle with a listening-state pulse animation, the core voice-input control; not a standard action button -->
     <button
       type="button"
-      class="mic-button"
-      class:listening={stt.isListening}
+      class="smrt-voice-input__mic-button"
+      class:smrt-voice-input__listening={stt.isListening}
       onclick={handleToggle}
       {disabled}
       aria-label={stt.isListening ? 'Stop listening' : 'Start listening'}
+      data-smrt-part="trigger"
     >
       <svg viewBox="0 0 24 24" fill="currentColor" aria-hidden="true">
         <path d="M12 14c1.66 0 3-1.34 3-3V5c0-1.66-1.34-3-3-3S9 3.34 9 5v6c0 1.66 1.34 3 3 3z" />
@@ -85,45 +86,81 @@ async function handleToggle() {
 
 <style>
 @layer smrt.reset, smrt.structure, smrt.theme;
-@layer smrt.theme {
-  .voice-input {
+@layer smrt.structure {
+  .smrt-voice-input__root {
     display: flex;
     flex-direction: column;
     align-items: center;
     gap: var(--smrt-spacing-sm);
   }
-
-  .mic-button {
+  .smrt-voice-input__mic-button {
     width: 3rem;
     height: 3rem;
-    border-radius: var(--smrt-radius-full, 50%);
-    border: none;
-    background: var(--smrt-color-primary);
-    color: var(--smrt-color-on-primary);
     cursor: pointer;
     display: flex;
     align-items: center;
     justify-content: center;
+  }
+  .smrt-voice-input__mic-button:disabled {
+    cursor: not-allowed;
+  }
+  .smrt-voice-input__mic-button svg {
+    width: 1.5rem;
+    height: 1.5rem;
+  }
+  /* Size variants */
+  .smrt-voice-input__sm .smrt-voice-input__mic-button {
+    width: 2.5rem;
+    height: 2.5rem;
+  }
+  .smrt-voice-input__sm .smrt-voice-input__mic-button svg {
+    width: 1.25rem;
+    height: 1.25rem;
+  }
+  .smrt-voice-input__lg .smrt-voice-input__mic-button {
+    width: 4rem;
+    height: 4rem;
+  }
+  .smrt-voice-input__lg .smrt-voice-input__mic-button svg {
+    width: 2rem;
+    height: 2rem;
+  }
+  .smrt-voice-input__error {
+    display: flex;
+    align-items: center;
+    gap: var(--smrt-spacing-sm);
+    padding: var(--smrt-spacing-md) var(--smrt-spacing-md);
+  }
+  .smrt-voice-input__error-icon {
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    width: 20px;
+    height: 20px;
+  }
+}
+
+@layer smrt.theme {
+  .smrt-voice-input__mic-button {
+    border-radius: var(--smrt-radius-full, 50%);
+    border: none;
+    background: var(--smrt-color-primary);
+    color: var(--smrt-color-on-primary);
     transition: all var(--smrt-duration-short3, 200ms) var(--smrt-easing-standard, ease);
     box-shadow: var(--smrt-elevation-1, 0 2px 4px rgba(0, 0, 0, 0.1));
   }
-
-  .mic-button:hover:not(:disabled) {
+  .smrt-voice-input__mic-button:hover:not(:disabled) {
     background: var(--smrt-color-primary-container);
     opacity: 0.9;
     transform: scale(1.05);
   }
-
-  .mic-button:disabled {
+  .smrt-voice-input__mic-button:disabled {
     opacity: 0.5;
-    cursor: not-allowed;
   }
-
-  .mic-button.listening {
+  .smrt-voice-input__mic-button.smrt-voice-input__listening {
     background: var(--smrt-color-error);
     animation: pulse 1.5s ease-in-out infinite;
   }
-
   @keyframes pulse {
     0%, 100% {
       transform: scale(1);
@@ -135,70 +172,31 @@ async function handleToggle() {
       box-shadow: 0 0 0 10px transparent;
     }
   }
-
-  .mic-button svg {
-    width: 1.5rem;
-    height: 1.5rem;
-  }
-
-  /* Size variants */
-  .sm .mic-button {
-    width: 2.5rem;
-    height: 2.5rem;
-  }
-
-  .sm .mic-button svg {
-    width: 1.25rem;
-    height: 1.25rem;
-  }
-
-  .lg .mic-button {
-    width: 4rem;
-    height: 4rem;
-  }
-
-  .lg .mic-button svg {
-    width: 2rem;
-    height: 2rem;
-  }
-
-  .error {
-    display: flex;
-    align-items: center;
-    gap: var(--smrt-spacing-sm);
-    padding: var(--smrt-spacing-md) var(--smrt-spacing-md);
+  .smrt-voice-input__error {
     background: var(--smrt-color-error-container);
     border: 1px solid var(--smrt-color-error);
     border-radius: var(--smrt-radius-medium);
     color: var(--smrt-color-on-error-container);
     font: var(--smrt-typography-body-medium-font, 0.875rem / 1.25 sans-serif);
   }
-
-  .error-icon {
-    display: flex;
-    align-items: center;
-    justify-content: center;
-    width: 20px;
-    height: 20px;
+  .smrt-voice-input__error-icon {
     background: var(--smrt-color-error);
     color: var(--smrt-color-on-error);
     border-radius: var(--smrt-radius-full, 50%);
     font-weight: var(--smrt-typography-weight-bold, 700);
     font: var(--smrt-typography-label-small-font, 0.75rem / 1 sans-serif);
   }
-
   @media (prefers-reduced-motion: reduce) {
-    .mic-button {
+    .smrt-voice-input__mic-button {
       transition: none;
     }
-    
-    .mic-button:hover:not(:disabled) {
+    .smrt-voice-input__mic-button:hover:not(:disabled) {
       transform: none;
     }
-    
-    .mic-button.listening {
+    .smrt-voice-input__mic-button.smrt-voice-input__listening {
       animation: none;
     }
   }
 }
+
 </style>

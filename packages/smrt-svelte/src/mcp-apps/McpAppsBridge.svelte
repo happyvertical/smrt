@@ -96,17 +96,17 @@ async function expand() {
 }
 </script>
 
-<section aria-labelledby={headingId} class="smrt-mcp-apps-bridge" data-smrt-component="McpAppsBridge">
-  <h1 id={headingId}>{title}</h1>
-  {#if description}<p>{description}</p>{/if}
+<section aria-labelledby={headingId} class="smrt-mcp-apps-bridge__root" data-smrt-component="McpAppsBridge">
+  <h1 id={headingId} data-smrt-part="title">{title}</h1>
+  {#if description}<p data-smrt-part="meta">{description}</p>{/if}
   {#if inlineOnly}
-    <p role="status">{t(M['ui.mcp_apps.inline_only'])}</p>
+    <p role="status" data-smrt-part="status">{t(M['ui.mcp_apps.inline_only'])}</p>
   {:else if canExpand}
     <Button type="button" onclick={expand} loading={requesting}>
       {t(M['ui.mcp_apps.expand'])}
     </Button>
   {:else if !ready}
-    <p role="status" class="smrt-mcp-apps-bridge__pending">
+    <p role="status" class="smrt-mcp-apps-bridge__pending" data-smrt-part="status">
       {t(M['ui.mcp_apps.connecting'])}
     </p>
   {/if}
@@ -115,12 +115,16 @@ async function expand() {
 
 <style>
 @layer smrt.reset, smrt.structure, smrt.theme;
+@layer smrt.structure {
+  .smrt-mcp-apps-bridge__root {
+    display: grid;
+    gap: var(--smrt-spacing-3, 0.75rem);
+    min-width: 0;
+    overflow-wrap: anywhere;
+  }
+}
+
 @layer smrt.theme {
-.smrt-mcp-apps-bridge {
-  display: grid;
-  gap: var(--smrt-spacing-3, 0.75rem);
-  min-width: 0;
-  overflow-wrap: anywhere;
 }
-}
+
 </style>

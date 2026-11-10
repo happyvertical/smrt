@@ -125,18 +125,18 @@ const CustomEditor = $derived(optionsEditor ?? definition.optionsEditor);
     <Alert variant="error">{t(M['ui.overview.options_failed'])}</Alert>
   {/if}
   {#if fields.length === 0}
-    <p class="smrt-widget-form__none">{t(M['ui.overview.options_none'])}</p>
+    <p class="smrt-widget-form__none" data-smrt-part="empty">{t(M['ui.overview.options_none'])}</p>
   {/if}
   {#each fields as field (field.key)}
     {#if field.type === 'boolean'}
-      <div class="smrt-widget-form__check">
+      <div class="smrt-widget-form__check" data-smrt-part="field">
         <Checkbox
           name={field.key}
           label={label(field)}
           bind:checked={() => flags[field.key] === true, (v) => (flags[field.key] = v)}
         />
-        {#if hint(field)}<small class="smrt-widget-form__hint">{hint(field)}</small>{/if}
-        {#if issues[field.key]}<small class="smrt-widget-form__error" role="alert">{issues[field.key]}</small>{/if}
+        {#if hint(field)}<small class="smrt-widget-form__hint" data-smrt-part="hint">{hint(field)}</small>{/if}
+        {#if issues[field.key]}<small class="smrt-widget-form__error" data-smrt-part="error" role="alert">{issues[field.key]}</small>{/if}
       </div>
     {:else}
       <FormGroup label={label(field)} hint={hint(field)} error={issues[field.key]} required={field.required}>
@@ -198,10 +198,27 @@ const CustomEditor = $derived(optionsEditor ?? definition.optionsEditor);
 
 <style>
 @layer smrt.reset, smrt.structure, smrt.theme;
-@layer smrt.theme {
-  .smrt-widget-form__check { display: flex; flex-direction: column; gap: var(--smrt-spacing-1); }
-  .smrt-widget-form__hint { color: var(--smrt-color-on-surface-variant); }
-  .smrt-widget-form__error { color: var(--smrt-color-error); }
-  .smrt-widget-form__none { margin: 0; color: var(--smrt-color-on-surface-variant); }
+@layer smrt.structure {
+  .smrt-widget-form__check {
+    display: flex;
+    flex-direction: column;
+    gap: var(--smrt-spacing-1);
+  }
+  .smrt-widget-form__none {
+    margin: 0;
+  }
 }
+
+@layer smrt.theme {
+  .smrt-widget-form__hint {
+    color: var(--smrt-color-on-surface-variant);
+  }
+  .smrt-widget-form__error {
+    color: var(--smrt-color-error);
+  }
+  .smrt-widget-form__none {
+    color: var(--smrt-color-on-surface-variant);
+  }
+}
+
 </style>
