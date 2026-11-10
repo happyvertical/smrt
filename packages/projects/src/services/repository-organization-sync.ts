@@ -9,7 +9,7 @@
  * a savepoint), so a failure leaves earlier rows saved and a rerun converges.
  */
 
-import { withTenant } from '@happyvertical/smrt-tenancy';
+import { getCurrentTenant, withTenant } from '@happyvertical/smrt-tenancy';
 import type { RepositoryCollection } from '../collections/Repositories';
 import { SYNC_THROTTLE_MS } from '../constants';
 import type { Repository } from '../models/Repository';
@@ -132,6 +132,10 @@ export const defaultOrganizationRepositoryLister: OrganizationRepositoryLister =
 const sameOwner = (a: string, b: string): boolean =>
   a.toLowerCase() === b.toLowerCase();
 
+/** Case-insensitive identity: GitHub logins and names ignore case. */
+const rowKey = (owner: string, name: string): string =>
+  `${owner}/${name}`.toLowerCase();
+
 function toDate(value: string | null): Date | null {
   if (!value) return null;
   const date = new Date(value);
@@ -157,8 +161,6 @@ function applySummary(
   repo.latestReleaseTag = s.latestRelease?.tag ?? '';
   repo.latestReleaseDate = toDate(s.latestRelease?.publishedAt ?? null);
   repo.latestReleaseUrl = s.latestRelease?.url ?? '';
-  repo.lastObservedAt = now;
-  repo.lastSyncedAt = now;
   repo.missingSince = null;
 }
 
@@ -172,7 +174,11 @@ function applySummary(
  *   `missingSince`; they come back (cleared) if listed again. Repositories of
  *   other owners (added by name) are never touched. Vanish detection is
  *   withheld when the listing is empty, since that usually means lost access.
- * - Throttled by the newest `lastObservedAt` among the owner's rows.
+ * - Throttled by `lastObservedAt` once a pass has completed; a pass that
+ *   failed midway is retried immediately.
+ * - Scoped to the ambient tenant (or `tenantId`); with no tenant context only
+ *   global (null-tenant) rows are read or written.
+ * - Owner and name match case-insensitively; stored casing follows the provider.
  *
  * @param collection - Repository collection (tenant scope comes from context)
  * @param options - See {@link SyncOrganizationOptions}
@@ -210,15 +216,23 @@ export async function syncOrganizationRepositories(
     restored: 0,
   };
 
+  // Rows of exactly this tenant. Under a tenant context the query is already
+  // filtered; with no context (system/scheduled run) an optional-scope query
+  // spans every tenant, so restrict to the global (null-tenant) rows rather
+  // than reading or mutating another tenant's records.
+  const scopeTenantId = getCurrentTenant()?.tenantId ?? null;
   const existing = (await collection.list({ where: { providerType } })).filter(
-    (r) => sameOwner(r.owner, owner),
+    (r) => sameOwner(r.owner, owner) && (r.tenantId ?? null) === scopeTenantId,
   );
 
   const throttleMs = options.throttleMs ?? SYNC_THROTTLE_MS;
   if (!options.force && existing.length > 0) {
     const newest = Math.max(
+      0,
       ...existing.map((r) => r.lastObservedAt?.getTime() ?? 0),
     );
+    // lastObservedAt is stamped only after a pass completes, so a failed
+    // partial run is never throttled.
     if (newest > 0 && clock().getTime() - newest < throttleMs) {
       return { ...result, skipped: true, reason: 'throttled' };
     }
@@ -234,11 +248,12 @@ export async function syncOrganizationRepositories(
   });
 
   const now = clock();
-  const byKey = new Map(existing.map((r) => [`${r.owner}/${r.name}`, r]));
+  const byKey = new Map(existing.map((r) => [rowKey(r.owner, r.name), r]));
   const seen = new Set<string>();
+  const touched: Repository[] = [];
 
   for (const summary of listing.repositories) {
-    const key = `${summary.owner}/${summary.name}`;
+    const key = rowKey(summary.owner, summary.name);
     if (seen.has(key)) continue;
     seen.add(key);
     let repo = byKey.get(key);
@@ -257,6 +272,7 @@ export async function syncOrganizationRepositories(
     }
     if (summary.archived) result.archived++;
     await repo.save();
+    touched.push(repo);
   }
   result.listed = seen.size;
 
@@ -264,10 +280,16 @@ export async function syncOrganizationRepositories(
     return { ...result, reason: 'empty-listing' };
   }
   for (const repo of existing) {
-    if (seen.has(`${repo.owner}/${repo.name}`) || repo.missingSince) continue;
+    if (seen.has(rowKey(repo.owner, repo.name)) || repo.missingSince) continue;
     repo.missingSince = now;
     await repo.save();
     result.vanished++;
+  }
+  // Completion stamp: drives the throttle, so it is written last.
+  for (const repo of touched) {
+    repo.lastObservedAt = now;
+    repo.lastSyncedAt = now;
+    await repo.save();
   }
   return result;
 }

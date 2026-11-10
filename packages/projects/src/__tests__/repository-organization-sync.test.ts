@@ -213,6 +213,43 @@ describe('RepositoryCollection.syncOrganization (#4905)', () => {
     expect(t2Rows.every((r) => r.tenantId === 'tenant-2')).toBe(true);
   });
 
+  it("without a tenant context never reads or marks another tenant's rows", async () => {
+    enableTenancy();
+    await repos.syncOrganization({ ...base(), tenantId: 'tenant-1' });
+    listing = [summary('alpha')];
+    clock = new Date('2026-11-10T14:00:00Z');
+    const global = await repos.syncOrganization(base());
+    expect(global).toMatchObject({ created: 1, vanished: 0 });
+    const t1 = await withTenant({ tenantId: 'tenant-1' }, () => repos.list({}));
+    expect(t1.every((r) => r.missingSince === null)).toBe(true);
+    expect(t1).toHaveLength(2);
+  });
+
+  it('retries immediately after a partial failure', async () => {
+    const original = repos.create.bind(repos);
+    let calls = 0;
+    vi.spyOn(repos, 'create').mockImplementation(async (...args) => {
+      if (++calls === 2) throw new Error('boom');
+      return original(...args);
+    });
+    await expect(repos.syncOrganization(base())).rejects.toThrow('boom');
+    vi.restoreAllMocks();
+    clock = new Date('2026-11-10T12:01:00Z');
+    const retry = await repos.syncOrganization(base());
+    expect(retry.skipped).toBe(false);
+    expect(await repos.list({})).toHaveLength(2);
+  });
+
+  it('matches owner and name case-insensitively without duplicating', async () => {
+    await repos.getOrCreate('ACME', 'Alpha');
+    const result = await repos.syncOrganization(base());
+    expect(result).toMatchObject({ created: 1, updated: 1, vanished: 0 });
+    expect(await repos.list({})).toHaveLength(2);
+    expect((await repos.findByFullName('acme', 'alpha'))?.missingSince).toBe(
+      null,
+    );
+  });
+
   it('default lister reports a clear error when the SDK lacks the export', async () => {
     const sdk = (await import('@happyvertical/repos')) as Record<
       string,
