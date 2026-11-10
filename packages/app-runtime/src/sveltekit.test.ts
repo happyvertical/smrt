@@ -521,6 +521,8 @@ describe('local SvelteKit runtime', () => {
     expect(runtime.classOptions('Membership').db).toBe(override);
     const users = await UserCollection.create(runtime.classOptions('User'));
     expect(await applicationDb(runtime)).toBe(users.db);
+    // The shared handle for services that take a DatabaseInterface.
+    expect(await runtime.database()).toBe(local.db);
   });
 
   it('keeps owner bootstrap loopback-only, single-use, and HMAC-only end to end', async () => {

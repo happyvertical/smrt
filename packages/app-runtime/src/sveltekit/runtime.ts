@@ -456,6 +456,15 @@ export interface SmrtSvelteKitRuntime {
   resolveMcpPrincipal(
     identity: SmrtRuntimeMcpIdentity,
   ): Promise<SmrtRuntimeMcpPrincipalMapping | null>;
+  /**
+   * The application's open database handle, for services that take a
+   * `DatabaseInterface` rather than collection options (for example
+   * `createPreferenceStore({ db })`). Awaits startup. In an RLS request this
+   * is the transaction-bound request database; otherwise the local or
+   * deployed runtime's own handle. The runtime owns and closes it: never
+   * close it, and never keep a request-scoped one beyond the request.
+   */
+  database(): Promise<DatabaseInterface>;
   /** The local runtime. Rejects outside the `local` profile. */
   localRuntime(): Promise<LocalApplicationRuntime>;
   /**
@@ -652,6 +661,15 @@ export function composeSmrtSvelteKitRuntime(
     className: string,
   ): Promise<SmrtCollection<T>> =>
     ObjectRegistry.getCollection<T>(className, classOptions(className));
+
+  const database = async (): Promise<DatabaseInterface> => {
+    const requestDb = rlsRequestDatabase();
+    if (requestDb) return requestDb as unknown as DatabaseInterface;
+    const runtime = await resolvedRuntime();
+    return runtime.profile === 'local'
+      ? (await localRuntime()).db
+      : (await deployedRuntime()).db;
+  };
 
   const writerLease =
     options.acquireWriterLease === false
@@ -1280,6 +1298,7 @@ export function composeSmrtSvelteKitRuntime(
     runAsPrincipal,
     verifyLocalMcpToken,
     resolveMcpPrincipal,
+    database,
     localRuntime,
     ownerSetupLocation,
     deployedRuntime,

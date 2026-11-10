@@ -5,10 +5,10 @@ description: "Minimal SvelteKit project template with s-m-r-t framework integrat
 status: "stable"
 generated:
   by: "smrt/scripts/generate-knowledge-okf.ts"
-  at: "2026-11-09T23:54:35Z"
+  at: "2026-11-10T00:03:59Z"
 audience: "internal"
 evidence_level: "source-inspected"
-source_revision: "sha256:324bc7242d95b8fd5d202234705a3cc292a03eb67df3982b96eb5ac7dcfc8b46"
+source_revision: "sha256:968e7eef672cfcc6fa16d70ecbc61148a08a8fe32e9fcd71510cbf5c0348e4ab"
 sources:
   - id: "manifest"
     resource: "https://github.com/happyvertical/smrt/blob/main/packages/template-sveltekit/package.json"
@@ -41,10 +41,13 @@ sources:
 - [smrt-cli](/components/smrt-cli.md)
 - [smrt-config](/components/smrt-config.md)
 - [smrt-core](/components/smrt-core.md)
+- [smrt-inference](/components/smrt-inference.md)
 - [smrt-jobs](/components/smrt-jobs.md)
 - [smrt-mcp-openai](/components/smrt-mcp-openai.md)
 - [smrt-playbooks](/components/smrt-playbooks.md)
+- [smrt-preferences](/components/smrt-preferences.md)
 - [smrt-profiles](/components/smrt-profiles.md)
+- [smrt-prompts](/components/smrt-prompts.md)
 - [smrt-reports](/components/smrt-reports.md)
 - [smrt-scanner](/components/smrt-scanner.md)
 - [smrt-svelte](/components/smrt-svelte.md)

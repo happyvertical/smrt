@@ -4240,6 +4240,9 @@ importers:
       '@happyvertical/smrt-config':
         specifier: workspace:*
         version: link:../config
+      '@happyvertical/smrt-inference':
+        specifier: workspace:*
+        version: link:../inference
       '@happyvertical/smrt-jobs':
         specifier: workspace:*
         version: link:../jobs
@@ -4249,9 +4252,15 @@ importers:
       '@happyvertical/smrt-playbooks':
         specifier: workspace:*
         version: link:../playbooks
+      '@happyvertical/smrt-preferences':
+        specifier: workspace:*
+        version: link:../preferences
       '@happyvertical/smrt-profiles':
         specifier: workspace:*
         version: link:../profiles
+      '@happyvertical/smrt-prompts':
+        specifier: workspace:*
+        version: link:../prompts
       '@happyvertical/smrt-reports':
         specifier: workspace:*
         version: link:../reports

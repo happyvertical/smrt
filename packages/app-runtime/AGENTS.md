@@ -249,7 +249,9 @@ Application infrastructure composition for the validated runtime profiles in
 - In an RLS request `classOptions()`/`databaseConfig()` return the
   transaction-bound request db (class `db` overrides win). Anything that
   outlives a request (session service, tenant selector) must use the base
-  config, never these.
+  config, never these. `runtime.database()` is the same rule for a service
+  that takes a `DatabaseInterface` (preference store): the request db in an
+  RLS request, else the runtime's own handle; never close it.
 - The local writer lease defaults to `defaultWriterLease()` (root
   `acquireWriterLease` over `prepareApplicationStateRoot`, presenting
   `SMRT_OPERATION_INSTANCE`); `acquireWriterLease` replaces it, `false` opts

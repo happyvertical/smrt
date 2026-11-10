@@ -50,8 +50,12 @@ import { applyStoredTranscriptSettings } from './transcripts.js';
 
 /** Options for {@link createInferenceOverrideResolver}. */
 export interface InferenceOverrideResolverOptions {
-  /** Database options for the override collection (list bounds are stripped). */
-  db?: SmrtClassOptions;
+  /**
+   * Database options for the override collection (list bounds are stripped).
+   * A function is called once, on the first resolution, so a host can name a
+   * runtime that resolves after this resolver is installed.
+   */
+  db?: SmrtClassOptions | (() => SmrtClassOptions);
   /** An existing collection instead of `db`. */
   overrides?: InferenceOverrideCollection;
   /** Resolver to defer to for tiers with no stored binding. */
@@ -143,7 +147,7 @@ export function createInferenceOverrideResolver(
   const getCollection = () => {
     if (options.overrides) return Promise.resolve(options.overrides);
     collection ??= InferenceOverrideCollection.create({
-      ...(options.db ?? {}),
+      ...(typeof options.db === 'function' ? options.db() : (options.db ?? {})),
       defaultListLimit: undefined,
       maxListLimit: undefined,
     } as SmrtCollectionOptions) as Promise<InferenceOverrideCollection>;

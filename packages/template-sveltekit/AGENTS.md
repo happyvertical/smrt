@@ -112,6 +112,19 @@ It is the ground-up alternative to `smrt-start`.
   each is its own page (`/settings/[section=settingsSection]` for the built-in
   Appearance, Account, Layout and Shortcuts, via the `isShellSettingsSection`
   param matcher; host sections get a static route beside it).
+- Inference and Prompts are host sections (`/settings/inference`,
+  `/settings/prompts`) mounting `InferenceSettingsPanel` and
+  `PromptSettingsPanel`. `consumer.packages` lists smrt-inference, smrt-prompts
+  and smrt-preferences so their tables (`_smrt_inference_overrides`,
+  `_smrt_prompt_overrides`, `_smrt_ui_preferences`) are created on first start.
+  `src/lib/server/settings-registry.ts` (imported by `smrt.ts` before the
+  runtime exists) registers the `inference` preference kind and the
+  `inference.*` / `prompts.customize` permissions the owner role is seeded
+  with; `settings.ts` holds the authorizers (a write needs the permission in
+  the session snapshot, the panels decide nothing), `runtime.database()` feeds
+  the preference store, and `hooks.server.ts` installs the lazy override
+  resolver so saved bindings apply. API-key storage (`onSaveKey`) is not wired:
+  smrt-secrets needs a master key a local app does not have (see the PR note).
 - Session user and sign-out: `+layout.server.ts` (`createSessionLayoutLoad()`)
   returns `session.user` (`{ id, email, name? }` only, never the record or
   tokens). The root layout passes it as AppShell `user` (account menu) with
