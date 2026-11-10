@@ -120,7 +120,7 @@ function headingTag(depth = 2) {
 }
 </script>
 
-<div class="smrt-markdown-document__root">
+<div class="smrt-markdown-document__root" data-smrt-component="MarkdownDocument">
   {#each blocks as block}
     {#if block.type === 'heading'}
       <svelte:element this={headingTag(block.depth)}>{block.text}</svelte:element>
@@ -128,7 +128,7 @@ function headingTag(depth = 2) {
       <p>{block.text}</p>
     {:else if block.type === 'code'}
       {#if block.language}
-        <p class="smrt-markdown-document__language" data-smrt-part="language">{block.language}</p>
+        <p class="smrt-markdown-document__language" data-smrt-part="meta">{block.language}</p>
       {/if}
       <pre><code>{block.text}</code></pre>
     {:else if block.type === 'list' && block.ordered}

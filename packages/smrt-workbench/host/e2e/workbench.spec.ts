@@ -7,7 +7,7 @@ test('root aggregate workbench shows package metadata', async ({ page }) => {
     'data-hydrated',
     'true',
   );
-  await expect(page.locator('.tabs')).toHaveCount(0);
+  await expect(page.locator('[data-smrt-component="Tabs"]')).toHaveCount(0);
   await expect(page.locator('.smrt-workbench-host__brand')).toContainText('s-m-r-t');
   await expect(page.getByRole('heading', { name: 'Workbench' })).toBeVisible();
   await expect(page.locator('.smrt-workbench-host__brand')).not.toContainText(
@@ -225,7 +225,7 @@ test('root aggregate workbench shows package metadata', async ({ page }) => {
   await sectionList.getByRole('button', { name: 'Playground' }).click();
   await expect(page.getByTestId('workbench-tab-playground')).toBeVisible();
   await expect(page.locator('.smrt-playground-host__root-embedded')).toHaveCount(1);
-  await expect(page.locator('.smrt-playground-host__root-embedded .sidebar')).toHaveCount(
+  await expect(page.locator('[data-smrt-component="PlaygroundHost"] > aside[data-smrt-part="nav"]')).toHaveCount(
     0,
   );
   await expect(page.getByTestId('playground-entries')).toHaveCount(0);

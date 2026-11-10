@@ -336,7 +336,7 @@ function selectEntry(entry: ResolvedSmrtPlaygroundEntry) {
     class:smrt-playground-host__active={entry.qualifiedId === selectedEntry?.qualifiedId}
     aria-pressed={entry.qualifiedId === selectedEntry?.qualifiedId}
     data-playground-entry={entry.qualifiedId}
-    onclick={() => selectEntry(entry)}
+    onclick={() => selectEntry(entry)} data-smrt-part="trigger"
   >
     {entry.title}
   </button>
@@ -350,7 +350,7 @@ function selectEntry(entry: ResolvedSmrtPlaygroundEntry) {
   >
     {#if !embedded}
     <aside class="smrt-playground-host__catalog-nav" data-smrt-part="nav">
-      <header class="smrt-playground-host__brand" data-smrt-part="brand">
+      <header class="smrt-playground-host__brand" data-smrt-part="label">
         <span class="smrt-playground-host__brand-mark" data-smrt-part="icon" aria-hidden="true">S</span>
         <div>
           <h1>{title}</h1>
@@ -422,7 +422,7 @@ function selectEntry(entry: ResolvedSmrtPlaygroundEntry) {
         {/if}
       </div>
 
-      <footer class="smrt-playground-host__theme-controls" data-smrt-part="controls" data-testid="playground-theme-controls">
+      <footer class="smrt-playground-host__theme-controls" data-smrt-part="actions" data-testid="playground-theme-controls">
         <ThemeSwitcher variant="select" label="Theme" />
         <ColorSchemeToggle />
       </footer>
@@ -432,7 +432,7 @@ function selectEntry(entry: ResolvedSmrtPlaygroundEntry) {
     <svelte:element this={embedded ? 'div' : 'main'} class="smrt-playground-host__workspace" data-smrt-part="workspace">
       {#if selectedModule}
         <header class="smrt-playground-host__workspace-header" data-smrt-part="header">
-          <div class="smrt-playground-host__breadcrumbs" data-smrt-part="breadcrumbs">
+          <div class="smrt-playground-host__breadcrumbs" data-smrt-part="nav">
             <span data-testid="playground-selected-module">{selectedModule.displayName}</span>
             <i aria-hidden="true">/</i>
             <strong>{selectedEntry?.title ?? 'Overview'}</strong>
@@ -446,7 +446,7 @@ function selectEntry(entry: ResolvedSmrtPlaygroundEntry) {
                   class:smrt-playground-host__active={mode === selectedMode}
                   aria-pressed={mode === selectedMode}
                   data-playground-mode={mode}
-                  onclick={() => (selectedMode = mode)}
+                  onclick={() => (selectedMode = mode)} data-smrt-part="trigger"
                 >
                   {mode}
                 </button>
@@ -468,7 +468,7 @@ function selectEntry(entry: ResolvedSmrtPlaygroundEntry) {
           </div>
 
           <section class="smrt-playground-host__preview-panel" data-smrt-part="panel" data-testid="playground-preview-panel">
-            <div class="smrt-playground-host__preview-stage" data-smrt-part="stage" data-testid="playground-preview-stage">
+            <div class="smrt-playground-host__preview-stage" data-smrt-part="panel" data-testid="playground-preview-stage">
               {#if PreviewComponent && previewComponentEntryId === selectedEntry.qualifiedId}
                 <PreviewComponent {...selectedProps} />
               {:else if previewIsLoading}
@@ -485,7 +485,7 @@ function selectEntry(entry: ResolvedSmrtPlaygroundEntry) {
             </div>
           </section>
         {:else}
-          <section class="smrt-playground-host__landing" data-smrt-part="landing" data-testid="playground-package-landing">
+          <section class="smrt-playground-host__landing" data-smrt-part="body" data-testid="playground-package-landing">
             <header>
               <p data-testid="playground-selected-package">{selectedModule.packageName}</p>
               <h2>{selectedModule.displayName}</h2>
@@ -661,10 +661,10 @@ function selectEntry(entry: ResolvedSmrtPlaygroundEntry) {
     gap: 0.5rem;
     padding-top: 0.8rem;
   }
-  .smrt-playground-host__theme-controls :global(.smrt-theme-switcher__label) {
+  .smrt-playground-host__theme-controls :global(:where([data-smrt-component="ThemeSwitcher"]) > [data-smrt-part="label"]) {
     display: none;
   }
-  .smrt-playground-host__theme-controls :global(.smrt-theme-switcher__select) {
+  .smrt-playground-host__theme-controls :global(:where([data-smrt-component="ThemeSwitcher"]) > [data-smrt-part="trigger"]:where(select)) {
     min-width: 7rem;
     padding-block: 0.48rem;
   }
