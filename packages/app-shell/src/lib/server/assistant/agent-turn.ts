@@ -23,7 +23,7 @@ import { AGENT_TOOL_INFO, type AgentTool } from '../agent-cli/tools.ts';
 import { getApprovalView } from '../approvals.ts';
 import { subscribe } from '../events.ts';
 import type { Principal } from '../owner.ts';
-import { systemPrompt } from './guidance.ts';
+import { systemPrompt, turnInput } from './guidance.ts';
 import {
   assistantMode,
   copyNote,
@@ -304,14 +304,15 @@ export async function runAgentTurn(
   };
 
   const attempt = async (resume: string | null) => {
+    const mode = await assistantMode(options.principal);
     const spec = buildAgentRun({
       tool,
       location,
       stateDir: await deps.stateDir(),
       mcpUrl: options.mcpUrl,
       token,
-      systemPrompt: agentSystemPrompt(await assistantMode(options.principal)),
-      prompt: options.text,
+      systemPrompt: agentSystemPrompt(mode),
+      prompt: turnInput(options.text, mode),
       resumeId: resume,
       ...(deps.baseEnv ? { baseEnv: deps.baseEnv } : {}),
     });

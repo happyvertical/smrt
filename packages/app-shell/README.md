@@ -428,7 +428,7 @@ All engines (API key, ChatGPT plan, Claude Code, Codex) use the same scope
 (`assistant/scope.ts`), resolved at every call. No draft: everything is live,
 approvals as before. A draft open: builder tools go to the draft with no
 per-change approval and record tools to the copy the person is viewing (the
-saved view). The system prompt ends with a mode line, `tool_result` events
+saved view). The system prompt and every turn input carry the current mode (including resumed CLI sessions); stored user messages stay unchanged. `tool_result` events
 carry `copy: 'live'|'draft'` while a draft is open, and a turn that changed
 structure in the draft closes with "I made that change in the draft ... so the
 live app is unchanged". Publishing through the assistant raises the publish

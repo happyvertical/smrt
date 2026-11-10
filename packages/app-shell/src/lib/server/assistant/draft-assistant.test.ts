@@ -24,6 +24,7 @@ import { assistantScope } from './scope.ts';
 import { call, drive, say, scripted } from './test-helpers.ts';
 import { startTestMcp, type TestMcp } from './test-mcp.ts';
 import { createThread, viewMessages } from './threads.ts';
+import { runTurn } from './turn.ts';
 
 let h: ShellHarness;
 let mcp: TestMcp;
@@ -344,5 +345,85 @@ describe.each([
     for (const p of await listApprovalViews({ status: 'pending' }))
       await decide(p.id, false);
     await discardNow();
+  });
+});
+
+describe('current mode in every turn input', () => {
+  it('refreshes the stub model input in an existing conversation, including after discard', async () => {
+    const thread = await createThread(h.owner.id, 'existing');
+    const { model, requests } = scripted([() => say('Done.')]);
+    const turn = () =>
+      runAs(h.owner, () =>
+        runTurn({
+          principal: h.owner,
+          thread,
+          text: 'continue',
+          model,
+          signal: new AbortController().signal,
+          emit: () => {},
+        }),
+      );
+    const input = () =>
+      requests
+        .at(-1)
+        ?.messages.filter((m) => m.role === 'user')
+        .at(-1)?.content;
+    await turn();
+    expect(input()).toContain('no draft is open');
+    await startDraft('After conversation', h.owner.id);
+    await writeView(h.owner, 'draft');
+    await turn();
+    expect(input()).toContain('the draft "After conversation" is open');
+    expect(input()).toContain('looking at the DRAFT');
+    await writeView(h.owner, 'live');
+    await turn();
+    expect(input()).toContain('looking at the LIVE app');
+    await discardNow();
+    await turn();
+    expect(input()).toContain('no draft is open');
+    expect(input()).not.toContain('After conversation');
+    expect(
+      (await viewMessages(thread.id as string))
+        .filter((m) => m.role === 'user')
+        .every((m) => m.content === 'continue'),
+    ).toBe(true);
+  });
+
+  it.each([
+    'claude-code',
+    'codex',
+  ] as const)('sends fresh mode on stdin when %s resumes', async (tool) => {
+    const { deps } = setup(tool);
+    const thread = await createThread(h.owner.id, 'existing CLI');
+    const turn = async () => {
+      const events: TurnEvent[] = [];
+      await runAs(h.owner, () =>
+        runAgentTurn({
+          principal: h.owner,
+          thread,
+          tool,
+          text: 'context',
+          deps,
+          mcpUrl: `${mcp.url}?scope=assistant`,
+          signal: new AbortController().signal,
+          emit: (e) => events.push(e),
+        }),
+      );
+      return JSON.parse(textOf(events)) as { prompt: string; resumed: boolean };
+    };
+    expect((await turn()).prompt).toContain('no draft is open');
+    await startDraft('Resumed draft', h.owner.id);
+    await writeView(h.owner, 'draft');
+    const draft = await turn();
+    expect(draft.resumed).toBe(true);
+    expect(draft.prompt).toContain('the draft "Resumed draft" is open');
+    expect(draft.prompt).toContain('looking at the DRAFT');
+    await writeView(h.owner, 'live');
+    expect((await turn()).prompt).toContain('looking at the LIVE app');
+    await discardNow();
+    const live = await turn();
+    expect(live.resumed).toBe(true);
+    expect(live.prompt).toContain('no draft is open');
+    expect(live.prompt).not.toContain('Resumed draft');
   });
 });

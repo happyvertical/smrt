@@ -105,6 +105,8 @@ async function callTool(name, args) {
 start();
 if (head === 'say') {
   say(rest.join(' '));
+} else if (head === 'context') {
+  say(JSON.stringify({ prompt, resumed: session.resumed }));
 } else if (head === 'resume') {
   say(`${session.resumed ? 'resumed' : 'new'}:${session.id}`);
 } else if (head === 'tool') {

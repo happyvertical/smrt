@@ -17,3 +17,10 @@ export function modeLine(mode: ModeContext): string {
 export function systemPrompt(mode: ModeContext = LIVE_MODE): string {
   return `${guidance.trim()}\n\n## Where you are working right now\n\n${modeLine(mode)}`;
 }
+
+/** Current app state travels on every turn, including resumed CLI sessions.
+ * Keep this transient: the stored conversation remains the person's words.
+ */
+export function turnInput(text: string, mode: ModeContext): string {
+  return `${text}\n\n<app-context>\n${modeLine(mode)}\n</app-context>`;
+}

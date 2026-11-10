@@ -22,7 +22,7 @@ import { PolicyError, type Principal } from '../owner.ts';
 import { callTool, toolsFor } from '../policy.ts';
 import { type CallScope, LIVE_SCOPE, type Target } from '../target.ts';
 import { describeModelError } from './diagnostics.ts';
-import { systemPrompt } from './guidance.ts';
+import { systemPrompt, turnInput } from './guidance.ts';
 import { type HoldOutcome, holdForUser } from './hold.ts';
 import {
   type AssistantModel,
@@ -403,6 +403,17 @@ export async function runTurn(options: RunTurnOptions): Promise<TurnStop> {
     const tools = await assistantTools(principal, mode.scope);
     const offered = new Map(tools.map((t) => [t.name, t]));
 
+    const lastUser = history.findLastIndex(
+      (message) => message.role === 'user',
+    );
+    const input = history.map((message, index) =>
+      index === lastUser
+        ? {
+            ...message,
+            content: turnInput(String(message.content ?? ''), mode),
+          }
+        : message,
+    );
     let streamed = false;
     const callSignal = AbortSignal.any([
       signal,
@@ -414,7 +425,7 @@ export async function runTurn(options: RunTurnOptions): Promise<TurnStop> {
     let reply: Awaited<ReturnType<AssistantModel['complete']>>;
     try {
       reply = await options.model.complete({
-        messages: [{ role: 'system', content: systemPrompt(mode) }, ...history],
+        messages: [{ role: 'system', content: systemPrompt(mode) }, ...input],
         tools: tools.map(toAiTool),
         maxTokens: limits.maxTokensPerCall,
         signal: callSignal,
