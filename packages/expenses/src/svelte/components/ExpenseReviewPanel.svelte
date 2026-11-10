@@ -25,8 +25,8 @@ let {
 }: Props = $props();
 const { t } = useI18n();
 </script>
-<section class="expense-review" aria-label={t(M['expenses.review.title'])} data-smrt-component="ExpenseReviewPanel">
-  <h3>{expense.description}</h3>
+<section class="smrt-expense-review-panel__root" aria-label={t(M['expenses.review.title'])} data-smrt-component="ExpenseReviewPanel">
+  <h3 data-smrt-part="title">{expense.description}</h3>
   <p><CurrencyDisplay amount={expense.amount} currency={expense.currency} unit="cents" /> · {expense.incurredOn}</p>
   <p aria-live="polite">{expense.statusLabel}</p>
   {#if expense.note}<p>{expense.note}</p>{/if}
@@ -45,17 +45,36 @@ const { t } = useI18n();
     <Form {action} method="post" preventDefault={false} {onsubmit} aria-busy={pending}>
       {#each hiddenFields as field}<Input type="hidden" name={field.name} value={field.value} interaction={false} />{/each}
       {@render children?.()}
-      <div class="actions">{#each actions as choice}<Button type="submit" name={intentField} value={choice.intent} disabled={pending || choice.disabled}>{choice.label}</Button>{/each}</div>
+      <div class="smrt-expense-review-panel__actions" data-smrt-part="actions">{#each actions as choice}<Button type="submit" name={intentField} value={choice.intent} disabled={pending || choice.disabled}>{choice.label}</Button>{/each}</div>
     </Form>
   {/if}
   {#if receipts}<AttachmentPanel {...receipts} />{/if}
 </section>
 <style>
 @layer smrt.reset, smrt.structure, smrt.theme;
-@layer smrt.theme {
-  .expense-review { display: grid; gap: var(--smrt-spacing-4); min-width: 0; overflow-wrap: anywhere; }
-  .actions { display: flex; flex-wrap: wrap; gap: var(--smrt-spacing-3); }
-  h3, h4, p { margin: 0; }
-  ul, ol { display: grid; gap: var(--smrt-spacing-2); padding-inline-start: var(--smrt-spacing-5); }
+@layer smrt.structure {
+  .smrt-expense-review-panel__root {
+    display: grid;
+    gap: var(--smrt-spacing-4);
+    min-width: 0;
+    overflow-wrap: anywhere;
+  }
+  .smrt-expense-review-panel__actions {
+    display: flex;
+    flex-wrap: wrap;
+    gap: var(--smrt-spacing-3);
+  }
+  h3, h4, p {
+    margin: 0;
+  }
+  ul, ol {
+    display: grid;
+    gap: var(--smrt-spacing-2);
+    padding-inline-start: var(--smrt-spacing-5);
+  }
 }
+
+@layer smrt.theme {
+}
+
 </style>
