@@ -31,7 +31,7 @@ const make = (extra: Record<string, unknown> = {}) => {
 /** The Undo affordance's own live region (the grid has another). */
 const undoStatus = (container: HTMLElement): HTMLElement =>
   container.querySelector(
-    '.smrt-overview-assistant-undo [role="status"]',
+    '[data-smrt-component="OverviewAssistantUndo"] [role="status"]',
   ) as HTMLElement;
 
 const tool = (

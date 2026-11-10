@@ -33,7 +33,9 @@ function drop(page: Page, form: string, names: string[]) {
       for (const n of fileNames) {
         transfer.items.add(new File(['abcd'], n, { type: 'text/plain' }));
       }
-      const zone = document.querySelector(`#${formId} .drop-zone`);
+      const zone = document.querySelector(
+        `#${formId} [data-smrt-component="FileUpload"] [data-smrt-part="trigger"]`,
+      );
       if (!zone) throw new Error(`drop zone not found in #${formId}`);
       zone.dispatchEvent(
         new DragEvent('drop', {

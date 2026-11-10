@@ -225,7 +225,7 @@ describe('DetailScreen', () => {
       },
     });
     const card = screen.getByRole('article', { name: 'Details' });
-    expect(card).toHaveClass('smrt-detail-screen--card');
+    expect(card).toHaveClass('smrt-detail-screen__card');
     expect(within(card).queryByText('Task name')).toBeNull();
     const first = card.querySelector(
       '.smrt-detail-screen__group',

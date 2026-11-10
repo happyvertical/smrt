@@ -137,9 +137,9 @@ describe('NumberInput — attributes', () => {
     container.style.width = '80px';
     const input = screen.getByLabelText('Amount');
 
-    expect(input).toHaveClass('smrt-input');
+    expect(input).toHaveClass('smrt-number-input__input');
     expect(numberInputSource).toMatch(
-      /\.smrt-input\s*\{[^}]*box-sizing:\s*border-box;[^}]*min-width:\s*0;[^}]*width:\s*100%;/,
+      /\.smrt-number-input__input\s*\{[^}]*box-sizing:\s*border-box;[^}]*min-width:\s*0;[^}]*width:\s*100%;/,
     );
   });
 

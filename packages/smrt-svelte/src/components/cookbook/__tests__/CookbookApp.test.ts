@@ -78,7 +78,9 @@ describe('CookbookApp', () => {
       expect(within(main).getByText('Customers')).toBeTruthy();
     });
     const orders = within(
-      document.querySelector('main.cookbook-section') as HTMLElement,
+      document.querySelector(
+        'main[data-smrt-component="CookbookSectionPage"]',
+      ) as HTMLElement,
     ).getByText('Orders');
     expect(orders.closest('a')?.getAttribute('href')).toBe(
       '/m/commerce/Order/',
@@ -189,7 +191,11 @@ describe('CookbookApp', () => {
       expect((await screen.findByTestId('custom-heading')).textContent).toBe(
         'Custom Shop',
       );
-      expect(document.querySelector('.cookbook-section > header')).toBeNull();
+      expect(
+        document.querySelector(
+          '[data-smrt-component="CookbookSectionPage"] > header',
+        ),
+      ).toBeNull();
     });
 
     it('shows host-supplied shortcut counts through the shell path', async () => {
