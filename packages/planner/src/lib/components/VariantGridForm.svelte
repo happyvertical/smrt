@@ -125,7 +125,7 @@ async function save(event: SubmitEvent) {
 {#if !loaded}
   <p data-smrt-component="VariantGridForm">Loading...</p>
 {:else}
-  <form class="planner-form" onsubmit={save} data-smrt-component="VariantGridForm">
+  <form class="smrt-planner-form__root" onsubmit={save} data-smrt-component="VariantGridForm">
     <h3>{id === undefined ? `New ${active.form.label.toLowerCase()}` : `Edit ${active.form.label.toLowerCase()}`}</h3>
     {#each productInputs as { field, catalogField } (field.id)}
       <FieldInput
@@ -147,7 +147,7 @@ async function save(event: SubmitEvent) {
       />
     {/each}
 
-    <div class="grid" role="group" aria-labelledby={`${active.form.id}-grid`}>
+    <div class="smrt-planner-form__grid" role="group" aria-labelledby={`${active.form.id}-grid`}>
       <h4 id={`${active.form.id}-grid`}>
         {usedAxes.map((a, i) => (i === 0 ? a.label : a.label.toLowerCase())).join(' by ') || 'Combinations'}
         <small>
@@ -211,8 +211,8 @@ async function save(event: SubmitEvent) {
       {/if}
     </div>
 
-    {#if error}<p class="error" role="alert">{error}</p>{/if}
-    <div class="actions">
+    {#if error}<p class="smrt-planner-form__error" role="alert">{error}</p>{/if}
+    <div class="smrt-planner-form__actions">
       <button type="submit">Save</button>
       <button type="button" class="smrt-variant-grid-form__secondary" onclick={oncancel} data-smrt-part="action">Cancel</button>
     </div>
@@ -227,7 +227,7 @@ async function save(event: SubmitEvent) {
   p {
     margin: 0;
   }
-  .grid {
+  .smrt-planner-form__grid {
     display: grid;
     gap: var(--smrt-spacing-2);
   }
@@ -242,7 +242,7 @@ async function save(event: SubmitEvent) {
     width: 6rem;
     padding: var(--smrt-spacing-1) var(--smrt-spacing-2);
   }
-  .actions {
+  .smrt-planner-form__actions {
     display: flex;
     gap: var(--smrt-spacing-2);
   }
@@ -284,7 +284,7 @@ async function save(event: SubmitEvent) {
   .smrt-variant-grid-form__sku {
     font-size: 0.85rem;
   }
-  .error {
+  .smrt-planner-form__error {
     color: var(--smrt-color-error);
   }
   button {

@@ -6,7 +6,7 @@ import { join } from 'node:path';
 import { test } from 'node:test';
 import { inspectFiles } from './check-smrt-sort-layers.mjs';
 import { codemodSource, reportCounts } from './codemod-smrt-sort-layers.mjs';
-import { declarationRecords, internalClasses, layerViolations, parseComponent, SHARED_CLASS_EXCEPTIONS, ROOT } from './smrt-sort-layers-lib.mjs';
+import { declarationRecords, internalClasses, layerViolations, parseComponent, ROOT } from './smrt-sort-layers-lib.mjs';
 
 const source = (css) => `<div class="thing"/><style>@layer smrt.reset, smrt.structure, smrt.theme;${css}</style>`;
 const unsorted = (css) => source(`@layer smrt.theme {${css}}`);
@@ -252,19 +252,23 @@ test('published subscription roots are scoped to their owning files', () => {
   }
 });
 
-test('planner shared-style exceptions enumerate exact file/name pairs and reject additions', () => {
-  assert.deepEqual(SHARED_CLASS_EXCEPTIONS, {
-    'packages/planner/src/lib/components/ChildRecords.svelte': ['planner-list', 'sort-button', 'sort-icon'],
-    'packages/planner/src/lib/components/FieldInput.svelte': ['field'],
-    'packages/planner/src/lib/components/FieldMapForm.svelte': ['actions', 'error', 'planner-form'],
-    'packages/planner/src/lib/components/FormWorkspace.svelte': ['planner-list', 'sort-button', 'sort-icon'],
-    'packages/planner/src/lib/components/ModelWorkspace.svelte': ['actions', 'derived', 'error', 'planner-form', 'planner-list', 'sort-button', 'sort-icon', 'totals'],
-    'packages/planner/src/lib/components/VariantGridForm.svelte': ['actions', 'error', 'grid', 'planner-form'],
-  });
-  for (const [file, names] of Object.entries(SHARED_CLASS_EXCEPTIONS)) {
-    const ast = parseComponent(`<div class="${names.join(' ')} new-private"/>`);
-    assert.deepEqual(internalClasses(ast, file), ['new-private']);
-    assert.deepEqual(internalClasses(ast, 'packages/planner/src/lib/components/New.svelte'), [...names, 'new-private'].sort());
+test('planner shared classes require namespacing without file exceptions', () => {
+  const legacy = ['actions', 'derived', 'error', 'field', 'grid', 'planner-form', 'planner-list', 'sort-button', 'sort-icon', 'totals'];
+  for (const name of ['ChildRecords', 'FieldInput', 'FieldMapForm', 'FormWorkspace', 'ModelWorkspace', 'VariantGridForm']) {
+    const file = `packages/planner/src/lib/components/${name}.svelte`;
+    assert.deepEqual(internalClasses(parseComponent(`<div class="${legacy.join(' ')}"/>`), file), legacy);
     assert.deepEqual(internalClasses(parseComponent(readFileSync(join(ROOT, file), 'utf8')), file), []);
+  }
+});
+
+test('planner shared sheets split structure and paint with namespaced selectors', () => {
+  for (const name of ['planner-forms', 'planner-lists']) {
+    const css = readFileSync(join(ROOT, `packages/planner/src/lib/styles/${name}.css`), 'utf8');
+    const source = `<div/><style>${css}</style>`;
+    const ast = parseComponent(source);
+    assert.match(css, /@layer smrt.structure/);
+    assert.match(css, /@layer smrt.theme/);
+    assert.deepEqual(layerViolations(source, ast), []);
+    assert.deepEqual(internalClasses(ast), []);
   }
 });

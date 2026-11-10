@@ -307,7 +307,7 @@ async function remove(row: ModelRecord) {
   <header>
     <h2>{heading} {#if loaded}<small>{recordCount(rows.length)}</small>{/if}</h2>
     {#if failure}
-      <p class="error" role="alert" data-write-error>{failure}</p>
+      <p class="smrt-planner-form__error" role="alert" data-write-error>{failure}</p>
     {/if}
     {#if filterField}
       <p class="smrt-model-workspace__filter" data-list-filter data-smrt-part="meta">
@@ -338,12 +338,12 @@ async function remove(row: ModelRecord) {
         oncancel={() => (editing = null)}
       />
     {:else}
-    <form class="planner-form" onsubmit={save} novalidate>
+    <form class="smrt-planner-form__root" onsubmit={save} novalidate>
       <h3>{editing === 'new' ? `New ${newNoun}` : editTitle || model.name}</h3>
       {#each fields as field (field.name)}
         {#if totalFields.includes(field)}
           {#if field === totalFields[0]}
-            <div class="derived totals" data-derived-group="totals">
+            <div class="smrt-planner-form__derived smrt-planner-form__totals" data-derived-group="totals">
               <dl>
                 {#each totalFields as total (total.name)}
                   <div>
@@ -360,7 +360,7 @@ async function remove(row: ModelRecord) {
             </div>
           {/if}
         {:else if calculated.has(field.name)}
-          <div class="derived">
+          <div class="smrt-planner-form__derived">
             <FieldLabel label={field.label} />
             <output data-derived={field.name}>
               {formatValue(field, draft[field.name] ?? 0, labels) || '—'}
@@ -383,9 +383,9 @@ async function remove(row: ModelRecord) {
         {/if}
       {/each}
       {#if summary}
-        <p class="error" role="alert" data-error-summary>{summary}</p>
+        <p class="smrt-planner-form__error" role="alert" data-error-summary>{summary}</p>
       {/if}
-      <div class="actions">
+      <div class="smrt-planner-form__actions">
         <button type="submit">Save</button>
         <button type="button" class="smrt-model-workspace__secondary" onclick={() => (editing = null)} data-smrt-part="action">
           {childTables.length ? 'Back to list' : 'Cancel'}
@@ -416,13 +416,13 @@ async function remove(row: ModelRecord) {
     <p>No records yet. Create one above.</p>
   {:else}
     <div class="smrt-model-workspace__scroll" data-smrt-part="body">
-      <table class="planner-list">
+      <table class="smrt-planner-list__root">
         <thead>
           <tr>
             {#each columns as column (column.name)}
               <th scope="col" aria-sort={sort?.key === column.name ? sort.direction : 'none'}>
-                <button type="button" class="sort-button" onclick={() => (sort = nextListSort(sort, column.name))}>
-                  {column.label}<span class="sort-icon" aria-hidden="true">{sort?.key === column.name ? (sort.direction === 'ascending' ? '↑' : '↓') : '↕'}</span>
+                <button type="button" class="smrt-planner-list__sort" onclick={() => (sort = nextListSort(sort, column.name))}>
+                  {column.label}<span class="smrt-planner-list__icon" aria-hidden="true">{sort?.key === column.name ? (sort.direction === 'ascending' ? '↑' : '↓') : '↕'}</span>
                 </button>
               </th>
             {/each}
@@ -482,25 +482,25 @@ async function remove(row: ModelRecord) {
   h3 {
     margin: 0;
   }
-  .actions,
+  .smrt-planner-form__actions,
   .smrt-model-workspace__row-actions {
     display: flex;
     gap: var(--smrt-spacing-2);
   }
-  .error {
+  .smrt-planner-form__error {
     margin: 0;
   }
-  .derived {
+  .smrt-planner-form__derived {
     display: grid;
     gap: var(--smrt-spacing-1);
   }
-  .totals dl {
+  .smrt-planner-form__totals dl {
     display: flex;
     flex-wrap: wrap;
     gap: var(--smrt-spacing-2) var(--smrt-spacing-6);
     margin: 0 0 var(--smrt-spacing-1);
   }
-  .totals dd {
+  .smrt-planner-form__totals dd {
     margin: 0;
   }
   .smrt-model-workspace__scroll {
@@ -544,14 +544,14 @@ async function remove(row: ModelRecord) {
     color: var(--smrt-color-on-surface-variant);
     font-weight: 400;
   }
-  .error {
+  .smrt-planner-form__error {
     color: var(--smrt-color-error);
   }
-  .totals dt {
+  .smrt-planner-form__totals dt {
     color: var(--smrt-color-on-surface-variant);
     font-size: 0.875rem;
   }
-  .totals dd {
+  .smrt-planner-form__totals dd {
     font-weight: 600;
   }
   .smrt-model-workspace__filter {
@@ -560,9 +560,6 @@ async function remove(row: ModelRecord) {
   }
   .smrt-model-workspace__row:hover td {
     background: color-mix(in srgb, currentColor calc(var(--smrt-state-hover) * 100%), transparent);
-  }
-  table {
-    border-collapse: collapse;
   }
   th,
   td {

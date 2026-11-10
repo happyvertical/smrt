@@ -472,22 +472,12 @@ families retain their names through a bounded allow-list in
   `SubscriptionSummary` → `smrt-subscription-summary`, `UsageThresholds` →
   `smrt-usage-thresholds`. Only the root and `__` / `--` descendants qualify.
 
-The only legacy private exceptions are the exact file/name pairs below in
-`packages/planner/src/lib/components/`. They are shared across component
-boundaries by the app's unlayered `planner-forms.css` / `planner-lists.css`,
-which are consumer theme/layout overrides rather than component style blocks.
-Keeping these selectors preserves that shared stylesheet contract. No wildcard
-or numeric debt is accepted; tests reject a new name or a new owning file.
-
-| File | Exact classes | Shared stylesheet / reason |
-| --- | --- | --- |
-| `ChildRecords.svelte` | `planner-list`, `sort-button`, `sort-icon` | `planner-lists.css`: table and sortable-header treatment |
-| `FieldInput.svelte` | `field` | `planner-forms.css`: field spanning across the generated form boundary |
-| `FieldMapForm.svelte` | `actions`, `error`, `planner-form` | `planner-forms.css`: form grid, full-width commands and errors |
-| `FormWorkspace.svelte` | `planner-list`, `sort-button`, `sort-icon` | `planner-lists.css`: shared record table treatment |
-| `ModelWorkspace.svelte` | `actions`, `derived`, `error`, `planner-form`, `planner-list`, `sort-button`, `sort-icon`, `totals` | Both sheets: generated form spans and sortable record tables |
-| `VariantGridForm.svelte` | `actions`, `error`, `grid`, `planner-form` | `planner-forms.css`: variant grid and full-width commands/errors |
+Planner's shared `planner-forms.css` and `planner-lists.css` use
+`smrt-planner-form__*` / `smrt-planner-list__*` classes and the same structure/theme
+split as components. There are no legacy private class exceptions. Shared
+sheets own form spanning, table treatment and sort controls across component
+boundaries; component styles must not override their table border model.
 
 The old pilot comparator and its mapping file are retired. The script tests
 retain the ten hand-sorted primitives as idempotence fixtures and exercise strict
-rejection, scoped published families, and the enumerated exceptions.
+rejection, scoped published families, and the namespaced planner sheets.

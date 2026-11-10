@@ -96,7 +96,7 @@ function jsonFrom(raw: string): unknown {
 const dateOf = (stored: string): string => stored.slice(0, 10);
 </script>
 
-<div class="field" data-renderer={renderer} data-invalid={error ? '' : undefined} data-smrt-component="FieldInput">
+<div class="smrt-planner-form__field" data-renderer={renderer} data-invalid={error ? '' : undefined} data-smrt-component="FieldInput">
   {#if renderer === 'boolean'}
     <Switch
       checked={value === true}
@@ -259,7 +259,7 @@ const dateOf = (stored: string): string => stored.slice(0, 10);
 <style>
 @layer smrt.reset, smrt.structure, smrt.theme;
 @layer smrt.structure {
-  .field {
+  .smrt-planner-form__field {
     display: grid;
     gap: var(--smrt-spacing-1);
   }
@@ -292,9 +292,9 @@ const dateOf = (stored: string): string => stored.slice(0, 10);
   .smrt-field-input__error {
     color: var(--smrt-color-error);
   }
-  .field[data-invalid] :global(input),
-  .field[data-invalid] :global(select),
-  .field[data-invalid] :global(textarea) {
+  .smrt-planner-form__field[data-invalid] :global(input),
+  .smrt-planner-form__field[data-invalid] :global(select),
+  .smrt-planner-form__field[data-invalid] :global(textarea) {
     border-color: var(--smrt-color-error);
   }
   small {
