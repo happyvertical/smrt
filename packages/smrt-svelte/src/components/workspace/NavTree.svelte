@@ -88,38 +88,38 @@ function navChildrenId(href: string): string {
 }
 </script>
 
-<nav class="smrt-nav-tree" class:collapsed aria-label={ariaLabel}>
+<nav class="smrt-nav-tree" class:collapsed aria-label={ariaLabel} data-smrt-component="NavTree">
   {#each items as item (item.href)}
     <a
       href={item.href}
-      class="nav-item level-1"
+      class="nav-item smrt-nav-tree__level-1"
       class:active={checkEffectiveActive(item) ||
         (checkActive(item) && !item.children?.length)}
-      class:parent-active={checkParentActive(item) && !!item.children?.length}
+      class:smrt-nav-tree__parent-active={checkParentActive(item) && !!item.children?.length}
       title={collapsed ? item.label : item.description}
       aria-expanded={item.children?.length ? checkExpanded(item) : undefined}
       aria-controls={item.children?.length
         ? navChildrenId(item.href)
         : undefined}
-      onclick={onNavigate}
+      onclick={onNavigate} data-smrt-part="item"
     >
-      <span class="nav-icon-slot" aria-hidden="true">
+      <span class="smrt-nav-tree__nav-icon-slot" aria-hidden="true" data-smrt-part="icon">
         {#if IconComponent && item.icon}
           <IconComponent name={item.icon} size={18} />
         {:else if item.icon}
-          <span class="nav-icon-text">{item.icon}</span>
+          <span class="smrt-nav-tree__nav-icon-text" data-smrt-part="icon">{item.icon}</span>
         {/if}
       </span>
       {#if !collapsed}
-        <span class="nav-label">{item.label}</span>
+        <span class="smrt-nav-tree__nav-label" data-smrt-part="label">{item.label}</span>
         {#if item.badge != null && item.badge !== ''}
-          <span class="nav-badge">{item.badge}</span>
+          <span class="smrt-nav-tree__nav-badge" data-smrt-part="badge">{item.badge}</span>
         {/if}
         {#if item.children?.length}
           <span
-            class="nav-chevron"
-            class:expanded={checkExpanded(item)}
-            aria-hidden="true"
+            class="smrt-nav-tree__nav-chevron"
+            class:smrt-nav-tree__expanded={checkExpanded(item)}
+            aria-hidden="true" data-smrt-part="indicator"
           >
             ›
           </span>
@@ -130,15 +130,15 @@ function navChildrenId(href: string): string {
     {#if item.children?.length}
       <div
         id={navChildrenId(item.href)}
-        class="children level-2"
-        class:expanded={!collapsed && checkExpanded(item)}
+        class="smrt-nav-tree__children smrt-nav-tree__level-2"
+        class:smrt-nav-tree__expanded={!collapsed && checkExpanded(item)} data-smrt-part="list"
       >
         {#each item.children as child (child.href)}
           <a
             href={child.href}
-            class="nav-item level-2"
+            class="nav-item smrt-nav-tree__level-2"
             class:active={checkActive(child) && !child.children?.length}
-            class:parent-active={checkParentActive(child) && !!child.children?.length}
+            class:smrt-nav-tree__parent-active={checkParentActive(child) && !!child.children?.length}
             title={child.description}
             aria-expanded={child.children?.length
               ? checkExpanded(child)
@@ -146,24 +146,24 @@ function navChildrenId(href: string): string {
             aria-controls={child.children?.length
               ? navChildrenId(child.href)
               : undefined}
-            onclick={onNavigate}
+            onclick={onNavigate} data-smrt-part="item"
           >
-            <span class="nav-icon-slot" aria-hidden="true">
+            <span class="smrt-nav-tree__nav-icon-slot" aria-hidden="true" data-smrt-part="icon">
               {#if IconComponent && child.icon}
                 <IconComponent name={child.icon} size={16} />
               {:else if child.icon}
-                <span class="nav-icon-text">{child.icon}</span>
+                <span class="smrt-nav-tree__nav-icon-text" data-smrt-part="icon">{child.icon}</span>
               {/if}
             </span>
-            <span class="nav-label">{child.label}</span>
+            <span class="smrt-nav-tree__nav-label" data-smrt-part="label">{child.label}</span>
             {#if child.badge != null && child.badge !== ''}
-              <span class="nav-badge">{child.badge}</span>
+              <span class="smrt-nav-tree__nav-badge" data-smrt-part="badge">{child.badge}</span>
             {/if}
             {#if child.children?.length}
               <span
-                class="nav-chevron"
-                class:expanded={checkExpanded(child)}
-                aria-hidden="true"
+                class="smrt-nav-tree__nav-chevron"
+                class:smrt-nav-tree__expanded={checkExpanded(child)}
+                aria-hidden="true" data-smrt-part="indicator"
               >
                 ›
               </span>
@@ -173,27 +173,27 @@ function navChildrenId(href: string): string {
           {#if child.children?.length}
             <div
               id={navChildrenId(child.href)}
-              class="children level-3"
-              class:expanded={!collapsed && checkExpanded(child)}
+              class="smrt-nav-tree__children smrt-nav-tree__level-3"
+              class:smrt-nav-tree__expanded={!collapsed && checkExpanded(child)} data-smrt-part="list"
             >
               {#each child.children as grandchild (grandchild.href)}
                 <a
                   href={grandchild.href}
-                  class="nav-item level-3"
+                  class="nav-item smrt-nav-tree__level-3"
                   class:active={checkActive(grandchild)}
                   title={grandchild.description}
-                  onclick={onNavigate}
+                  onclick={onNavigate} data-smrt-part="item"
                 >
-                  <span class="nav-icon-slot" aria-hidden="true">
+                  <span class="smrt-nav-tree__nav-icon-slot" aria-hidden="true" data-smrt-part="icon">
                     {#if IconComponent && grandchild.icon}
                       <IconComponent name={grandchild.icon} size={15} />
                     {:else if grandchild.icon}
-                      <span class="nav-icon-text">{grandchild.icon}</span>
+                      <span class="smrt-nav-tree__nav-icon-text" data-smrt-part="icon">{grandchild.icon}</span>
                     {/if}
                   </span>
-                  <span class="nav-label">{grandchild.label}</span>
+                  <span class="smrt-nav-tree__nav-label" data-smrt-part="label">{grandchild.label}</span>
                   {#if grandchild.badge != null && grandchild.badge !== ''}
-                    <span class="nav-badge">{grandchild.badge}</span>
+                    <span class="smrt-nav-tree__nav-badge" data-smrt-part="badge">{grandchild.badge}</span>
                   {/if}
                 </a>
               {/each}
@@ -207,17 +207,86 @@ function navChildrenId(href: string): string {
 
 <style>
 @layer smrt.reset, smrt.structure, smrt.theme;
-@layer smrt.theme {
+
+@layer smrt.structure {
   .smrt-nav-tree {
     display: flex;
     flex-direction: column;
     width: 100%;
   }
-
   .nav-item {
     display: flex;
     align-items: center;
     gap: 0.625rem;
+  }
+  .smrt-nav-tree__nav-icon-slot {
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    width: 1.25rem;
+    flex-shrink: 0;
+  }
+  .smrt-nav-tree__nav-label {
+    flex: 1;
+    white-space: nowrap;
+    overflow: hidden;
+    text-overflow: ellipsis;
+  }
+  .smrt-nav-tree__nav-badge {
+    flex-shrink: 0;
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    min-width: 1.25rem;
+    padding: 0 0.4rem;
+  }
+  .smrt-nav-tree__nav-chevron {
+    flex-shrink: 0;
+  }
+  /* Level 1 */
+  .nav-item.smrt-nav-tree__level-1 {
+    padding: 0.625rem 1rem;
+  }
+  /* Level 2 */
+  .nav-item.smrt-nav-tree__level-2 {
+    padding: 0.5rem 1rem 0.5rem 2.75rem;
+  }
+  .nav-item.smrt-nav-tree__level-2 .smrt-nav-tree__nav-icon-slot {
+    width: 1rem;
+  }
+  /* Level 3 */
+  .nav-item.smrt-nav-tree__level-3 {
+    padding: 0.45rem 1rem 0.45rem 4rem;
+  }
+  .nav-item.smrt-nav-tree__level-3 .smrt-nav-tree__nav-icon-slot {
+    width: 0.95rem;
+  }
+  /* Children containers — collapsed by default, shown when .expanded */
+  .smrt-nav-tree__children {
+    display: none;
+    flex-direction: column;
+  }
+  .smrt-nav-tree__children.smrt-nav-tree__expanded {
+    display: flex;
+  }
+  /* Collapsed (icon-only) mode */
+  .smrt-nav-tree.collapsed .nav-item.smrt-nav-tree__level-1 {
+    justify-content: center;
+    padding: 0.625rem 0.5rem;
+  }
+  .smrt-nav-tree.collapsed .smrt-nav-tree__nav-label,
+  .smrt-nav-tree.collapsed .smrt-nav-tree__nav-chevron,
+  .smrt-nav-tree.collapsed .smrt-nav-tree__nav-badge {
+    display: none;
+  }
+  /* In collapsed mode, never show nested children. */
+  .smrt-nav-tree.collapsed .smrt-nav-tree__children {
+    display: none;
+  }
+}
+
+@layer smrt.theme {
+  .nav-item {
     color: var(--smrt-color-on-surface-variant);
     text-decoration: none;
     transition:
@@ -226,56 +295,31 @@ function navChildrenId(href: string): string {
       border-color 0.15s ease;
     border-left: 3px solid transparent;
   }
-
   .nav-item:hover {
     color: var(--smrt-color-on-surface);
     background: var(--smrt-color-surface-container-high);
   }
-
   .nav-item:focus-visible {
     outline: 2px solid var(--smrt-color-primary);
     outline-offset: -2px;
   }
-
   .nav-item.active {
     color: var(--smrt-color-on-primary-container);
     background: var(--smrt-color-primary-container);
     border-left-color: var(--smrt-color-primary);
   }
-
-  .nav-item.parent-active {
+  .nav-item.smrt-nav-tree__parent-active {
     color: var(--smrt-color-on-surface);
     font-weight: var(--smrt-typography-weight-medium, 500);
   }
-
-  .nav-icon-slot {
-    display: inline-flex;
-    align-items: center;
-    justify-content: center;
-    width: 1.25rem;
-    flex-shrink: 0;
+  .smrt-nav-tree__nav-icon-slot {
     color: var(--smrt-color-on-surface-variant);
   }
-
-  .nav-icon-text {
+  .smrt-nav-tree__nav-icon-text {
     font-size: var(--smrt-typography-body-large-size, 1rem);
     line-height: 1;
   }
-
-  .nav-label {
-    flex: 1;
-    white-space: nowrap;
-    overflow: hidden;
-    text-overflow: ellipsis;
-  }
-
-  .nav-badge {
-    flex-shrink: 0;
-    display: inline-flex;
-    align-items: center;
-    justify-content: center;
-    min-width: 1.25rem;
-    padding: 0 0.4rem;
+  .smrt-nav-tree__nav-badge {
     font-size: var(--smrt-typography-label-small-size, 0.7rem);
     font-weight: var(--smrt-typography-weight-semibold, 600);
     line-height: var(--smrt-typography-label-small-line-height, 1.2);
@@ -283,9 +327,7 @@ function navChildrenId(href: string): string {
     background: var(--smrt-color-secondary-container);
     color: var(--smrt-color-on-secondary-container);
   }
-
-  .nav-chevron {
-    flex-shrink: 0;
+  .smrt-nav-tree__nav-chevron {
     color: var(--smrt-color-on-surface-variant);
     font-size: var(--smrt-typography-body-large-size, 1rem);
     line-height: 1;
@@ -294,64 +336,27 @@ function navChildrenId(href: string): string {
       transform 0.15s ease,
       color 0.15s ease;
   }
-
-  .nav-chevron.expanded {
+  .smrt-nav-tree__nav-chevron.smrt-nav-tree__expanded {
     transform: rotate(90deg);
     color: var(--smrt-color-on-surface);
   }
-
   /* Level 1 */
-  .nav-item.level-1 {
-    padding: 0.625rem 1rem;
+  .nav-item.smrt-nav-tree__level-1 {
     font-size: var(--smrt-typography-body-medium-size, 0.875rem);
   }
-
   /* Level 2 */
-  .nav-item.level-2 {
-    padding: 0.5rem 1rem 0.5rem 2.75rem;
+  .nav-item.smrt-nav-tree__level-2 {
     font-size: var(--smrt-typography-body-medium-size, 0.8125rem);
   }
-  .nav-item.level-2 .nav-icon-slot {
-    width: 1rem;
-  }
-  .nav-item.level-2 .nav-icon-text {
+  .nav-item.smrt-nav-tree__level-2 .smrt-nav-tree__nav-icon-text {
     font-size: var(--smrt-typography-body-medium-size, 0.875rem);
   }
-
   /* Level 3 */
-  .nav-item.level-3 {
-    padding: 0.45rem 1rem 0.45rem 4rem;
+  .nav-item.smrt-nav-tree__level-3 {
     font-size: var(--smrt-typography-body-small-size, 0.78rem);
   }
-  .nav-item.level-3 .nav-icon-slot {
-    width: 0.95rem;
-  }
-  .nav-item.level-3 .nav-icon-text {
+  .nav-item.smrt-nav-tree__level-3 .smrt-nav-tree__nav-icon-text {
     font-size: var(--smrt-typography-body-medium-size, 0.8125rem);
-  }
-
-  /* Children containers — collapsed by default, shown when .expanded */
-  .children {
-    display: none;
-    flex-direction: column;
-  }
-  .children.expanded {
-    display: flex;
-  }
-
-  /* Collapsed (icon-only) mode */
-  .smrt-nav-tree.collapsed .nav-item.level-1 {
-    justify-content: center;
-    padding: 0.625rem 0.5rem;
-  }
-  .smrt-nav-tree.collapsed .nav-label,
-  .smrt-nav-tree.collapsed .nav-chevron,
-  .smrt-nav-tree.collapsed .nav-badge {
-    display: none;
-  }
-  /* In collapsed mode, never show nested children. */
-  .smrt-nav-tree.collapsed .children {
-    display: none;
   }
 }
 </style>

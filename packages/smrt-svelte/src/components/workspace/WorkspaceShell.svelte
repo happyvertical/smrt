@@ -259,7 +259,7 @@ const sidebarInert = $derived(isMobileViewport && !mobileNavOpen);
   class:sidebar-collapsed={collapsed}
   class:nav-open={mobileNavOpen}
   class:has-inspector={hasInspector}
-  class:has-inspector-rail={hasInspectorRail}
+  class:has-inspector-rail={hasInspectorRail} data-smrt-component="WorkspaceShell"
 >
   <!-- Mobile sidebar backdrop -->
   <!-- raw-primitive-allow: full-bleed click-catching navigation backdrop/scrim; a structural overlay surface, not a styled action button -->
@@ -268,7 +268,7 @@ const sidebarInert = $derived(isMobileViewport && !mobileNavOpen);
     type="button"
     aria-label={t(M['ui.workspace_shell.close_navigation'])}
     tabindex={mobileNavOpen ? 0 : -1}
-    onclick={closeMobileNav}
+    onclick={closeMobileNav} data-smrt-part="scrim"
   ></button>
 
   <!--
@@ -284,31 +284,31 @@ const sidebarInert = $derived(isMobileViewport && !mobileNavOpen);
         class="inspector-backdrop"
         type="button"
         aria-label={t(M['ui.workspace_shell.close_inspector'])}
-        onclick={handleInspectorClose}
+        onclick={handleInspectorClose} data-smrt-part="scrim"
       ></button>
     {:else}
-      <div class="inspector-backdrop" aria-hidden="true"></div>
+      <div class="inspector-backdrop" aria-hidden="true" data-smrt-part="scrim"></div>
     {/if}
   {/if}
 
   <aside
     class="smrt-workspace-sidebar"
     aria-label={t(M['ui.workspace_shell.primary_navigation'])}
-    inert={sidebarInert}
+    inert={sidebarInert} data-smrt-part="left-sidebar"
   >
-    <div class="brand-row">
-      <div class="brand">
+    <div class="smrt-workspace-shell__brand-row" data-smrt-part="header">
+      <div class="brand" data-smrt-part="brand">
         {#if brand}
           {@render brand()}
         {:else}
           {#if eyebrow}
-            <span class="eyebrow">{eyebrow}</span>
+            <span class="smrt-workspace-shell__eyebrow" data-smrt-part="label">{eyebrow}</span>
           {/if}
           {#if title}
             <h1>{title}</h1>
           {/if}
           {#if subtitle}
-            <p class="subtitle">{subtitle}</p>
+            <p class="subtitle" data-smrt-part="description">{subtitle}</p>
           {/if}
         {/if}
       </div>
@@ -322,7 +322,7 @@ const sidebarInert = $derived(isMobileViewport && !mobileNavOpen);
           aria-label={collapsed ? 'Expand sidebar' : 'Collapse sidebar'}
           aria-expanded={!collapsed}
         >
-          <span class="shell-toggle-glyph" aria-hidden="true">
+          <span class="smrt-workspace-shell__shell-toggle-glyph" aria-hidden="true" data-smrt-part="icon">
             {collapsed ? '›' : '‹'}
           </span>
         </Button>
@@ -330,21 +330,21 @@ const sidebarInert = $derived(isMobileViewport && !mobileNavOpen);
     </div>
 
     {#if nav}
-      <nav class="nav-region" aria-label={t(M['ui.workspace_shell.workspace_navigation'])}>
+      <nav class="nav-region" aria-label={t(M['ui.workspace_shell.workspace_navigation'])} data-smrt-part="body">
         {@render nav()}
       </nav>
     {/if}
 
     {#if sidebarFooter}
-      <div class="sidebar-footer">
+      <div class="sidebar-footer" data-smrt-part="footer">
         {@render sidebarFooter()}
       </div>
     {/if}
   </aside>
 
-  <div class="smrt-workspace-main">
-    <header class="smrt-workspace-topbar">
-      <div class="topbar-left">
+  <div class="smrt-workspace-main" data-smrt-part="body">
+    <header class="smrt-workspace-topbar" data-smrt-part="header">
+      <div class="smrt-workspace-shell__topbar-left" data-smrt-part="left">
         <Button
           variant="ghost"
           size="sm"
@@ -355,19 +355,19 @@ const sidebarInert = $derived(isMobileViewport && !mobileNavOpen);
         >
           <span aria-hidden="true">≡</span>
         </Button>
-        <div class="topbar-brand">
+        <div class="smrt-workspace-shell__topbar-brand" data-smrt-part="brand">
           {#if eyebrow}
-            <div class="eyebrow topbar-eyebrow">{eyebrow}</div>
+            <div class="smrt-workspace-shell__eyebrow topbar-eyebrow" data-smrt-part="label">{eyebrow}</div>
           {/if}
           {#if modeLabel}
-            <p class="mode-title">{modeLabel}</p>
+            <p class="smrt-workspace-shell__mode-title" data-smrt-part="title">{modeLabel}</p>
           {/if}
         </div>
       </div>
 
-      <div class="topbar-right">
+      <div class="smrt-workspace-shell__topbar-right" data-smrt-part="right">
         {#if topbarActions}
-          <div class="topbar-actions">
+          <div class="topbar-actions" data-smrt-part="actions">
             {@render topbarActions()}
           </div>
         {/if}
@@ -376,30 +376,30 @@ const sidebarInert = $derived(isMobileViewport && !mobileNavOpen);
             class="mode-badge"
             data-status={modeStatus || 'default'}
             role="status"
-            aria-live="polite"
+            aria-live="polite" data-smrt-part="badge"
           >
-            <span class="mode-dot" aria-hidden="true"></span>
-            <span class="mode-badge-label">{modeLabel || modeStatus}</span>
+            <span class="smrt-workspace-shell__mode-dot" aria-hidden="true" data-smrt-part="indicator"></span>
+            <span class="smrt-workspace-shell__mode-badge-label" data-smrt-part="label">{modeLabel || modeStatus}</span>
           </span>
         {/if}
         {#if modeDetail}
-          <p class="mode-detail">{modeDetail}</p>
+          <p class="smrt-workspace-shell__mode-detail" data-smrt-part="description">{modeDetail}</p>
         {/if}
       </div>
     </header>
 
-    <div class="smrt-workspace-stage">
-      <main class="smrt-workspace-content">
+    <div class="smrt-workspace-stage" data-smrt-part="body">
+      <main class="smrt-workspace-content" data-smrt-part="body">
         {@render children()}
       </main>
 
       {#if hasInspector}
         <aside
           class="smrt-workspace-inspector"
-          aria-label={inspectorTitle}
+          aria-label={inspectorTitle} data-smrt-part="right-sidebar"
         >
-          <div class="inspector-header">
-            <span class="inspector-title">{inspectorTitle}</span>
+          <div class="smrt-workspace-shell__inspector-header" data-smrt-part="header">
+            <span class="inspector-title" data-smrt-part="title">{inspectorTitle}</span>
             {#if onCloseInspector}
               <Button
                 variant="ghost"
@@ -412,7 +412,7 @@ const sidebarInert = $derived(isMobileViewport && !mobileNavOpen);
               </Button>
             {/if}
           </div>
-          <div class="inspector-body">
+          <div class="inspector-body" data-smrt-part="body">
             {@render inspector!()}
           </div>
         </aside>
@@ -423,7 +423,7 @@ const sidebarInert = $derived(isMobileViewport && !mobileNavOpen);
           class="smrt-workspace-inspector-rail"
           role="toolbar"
           aria-label={t(M['ui.workspace_shell.inspector_tools'])}
-          aria-orientation="vertical"
+          aria-orientation="vertical" data-smrt-part="rail"
         >
           {@render inspectorRail!()}
         </div>
@@ -434,7 +434,8 @@ const sidebarInert = $derived(isMobileViewport && !mobileNavOpen);
 
 <style>
 @layer smrt.reset, smrt.structure, smrt.theme;
-@layer smrt.theme {
+
+@layer smrt.structure {
   .smrt-workspace-shell {
     --smrt-ws-sidebar-width: 280px;
     --smrt-ws-sidebar-collapsed-width: 96px;
@@ -442,34 +443,28 @@ const sidebarInert = $derived(isMobileViewport && !mobileNavOpen);
     --smrt-ws-rail-width: 3.25rem;
     --smrt-ws-topbar-height: 3.75rem;
     --smrt-ws-page-pad: 1.5rem;
-
     position: relative;
     display: grid;
     grid-template-columns: var(--smrt-ws-sidebar-width) 1fr;
     min-height: 100vh;
     min-height: 100dvh;
-    background: var(--smrt-color-surface-container-low);
-    color: var(--smrt-color-on-surface);
     isolation: isolate;
   }
-
   .smrt-workspace-shell.sidebar-collapsed {
     grid-template-columns: var(--smrt-ws-sidebar-collapsed-width) 1fr;
     /*
-     * When the sidebar is collapsed, recompute the inspector-width clamp
-     * against the collapsed sidebar so narrower desktops with both the
-     * inspector and a collapsed sidebar still fit content. Without this
-     * override, padding-right on `.smrt-workspace-content` would still be
-     * sized as if the sidebar were full-width.
-     */
+    * When the sidebar is collapsed, recompute the inspector-width clamp
+    * against the collapsed sidebar so narrower desktops with both the
+    * inspector and a collapsed sidebar still fit content. Without this
+    * override, padding-right on `.smrt-workspace-content` would still be
+    * sized as if the sidebar were full-width.
+    */
     --smrt-ws-inspector-width: min(
       420px,
       calc(100vw - var(--smrt-ws-sidebar-collapsed-width) - 1rem)
     );
   }
-
   /* ─── Sidebar ─────────────────────────────────────────── */
-
   .smrt-workspace-sidebar {
     position: sticky;
     top: 0;
@@ -481,80 +476,41 @@ const sidebarInert = $derived(isMobileViewport && !mobileNavOpen);
     height: 100vh;
     height: 100dvh;
     box-sizing: border-box;
-    background: var(--smrt-color-surface);
-    border-right: var(--smrt-hairline);
     min-width: 0;
     overflow: hidden;
     overscroll-behavior: contain;
     z-index: 20;
   }
-
-  .brand-row {
+  .smrt-workspace-shell__brand-row {
     display: flex;
     justify-content: space-between;
     align-items: flex-start;
     gap: 0.75rem;
   }
-
   .brand {
     display: grid;
     gap: 0.35rem;
     min-width: 0;
   }
-
   .brand :global(h1),
   .brand h1 {
     margin: 0;
-    font-size: var(--smrt-typography-title-large-size, 1.25rem);
-    line-height: var(--smrt-typography-title-large-line-height, 1.1);
-    color: var(--smrt-color-on-surface);
-    font-weight: var(--smrt-typography-weight-semibold, 600);
   }
-
   .brand .subtitle {
     margin: 0;
-    color: var(--smrt-color-on-surface-variant);
-    line-height: var(--smrt-typography-body-medium-line-height, 1.4);
-    font-size: var(--smrt-typography-body-medium-size, 0.9rem);
   }
-
-  .eyebrow {
-    font-size: var(--smrt-typography-label-small-size, 0.7rem);
-    font-weight: var(--smrt-typography-weight-bold, 700);
-    letter-spacing: var(--smrt-typography-label-small-tracking, 0.12em);
-    text-transform: uppercase;
-    color: var(--smrt-color-on-surface-variant);
-  }
-
   /* These shell-chrome controls now render through smrt-ui <Button>; pierce
-     Svelte scoping into the child <button> with `.smrt-workspace-shell
-     :global(.class)` (#1589). Button owns focus-visible, so those rules are
-     dropped. The responsive `display` toggles below are preserved. */
+  Svelte scoping into the child <button> with `.smrt-workspace-shell
+  :global(.class)` (#1589). Button owns focus-visible, so those rules are
+  dropped. The responsive `display` toggles below are preserved. */
   .smrt-workspace-shell :global(.shell-toggle) {
-    border: var(--smrt-hairline);
-    background: var(--smrt-color-surface-container);
-    color: var(--smrt-color-on-surface);
-    border-radius: var(--smrt-radius-medium, 0.65rem);
     width: 2rem;
     height: 2rem;
     display: inline-flex;
     align-items: center;
     justify-content: center;
     flex-shrink: 0;
-    transition:
-      background-color 150ms ease,
-      color 150ms ease;
   }
-
-  .smrt-workspace-shell :global(.shell-toggle):hover {
-    background: var(--smrt-color-surface-container-high);
-  }
-
-  .shell-toggle-glyph {
-    font-size: var(--smrt-typography-body-large-size, 1rem);
-    line-height: 1;
-  }
-
   .nav-region {
     display: flex;
     flex-direction: column;
@@ -565,27 +521,21 @@ const sidebarInert = $derived(isMobileViewport && !mobileNavOpen);
     overscroll-behavior: contain;
     scrollbar-gutter: stable;
   }
-
   .sidebar-footer {
     margin-top: auto;
     flex: 0 0 auto;
     display: grid;
     gap: 0.75rem;
     padding-top: 0.75rem;
-    background: var(--smrt-color-surface);
-    border-top: var(--smrt-hairline);
     z-index: 1;
   }
-
   /* ─── Main column ─────────────────────────────────────── */
-
   .smrt-workspace-main {
     display: flex;
     flex-direction: column;
     min-width: 0;
     min-height: 0;
   }
-
   .smrt-workspace-topbar {
     position: sticky;
     top: 0;
@@ -596,122 +546,65 @@ const sidebarInert = $derived(isMobileViewport && !mobileNavOpen);
     gap: 0.85rem;
     padding: 0.75rem var(--smrt-ws-page-pad);
     min-height: var(--smrt-ws-topbar-height);
-    background: var(--smrt-color-surface);
-    border-bottom: var(--smrt-hairline);
-    box-shadow: var(--smrt-elevation-1, 0 1px 2px rgb(0 0 0 / 0.05));
   }
-
-  .topbar-left,
-  .topbar-right {
+  .smrt-workspace-shell__topbar-left,
+  .smrt-workspace-shell__topbar-right {
     display: flex;
     align-items: center;
     gap: 0.7rem;
     min-width: 0;
   }
-
-  .topbar-right {
+  .smrt-workspace-shell__topbar-right {
     justify-content: flex-end;
     flex-wrap: wrap;
   }
-
   .topbar-actions {
     display: flex;
     align-items: center;
     gap: 0.4rem;
     flex-wrap: wrap;
   }
-
-  .topbar-brand {
+  .smrt-workspace-shell__topbar-brand {
     display: grid;
     gap: 0.1rem;
     min-width: 0;
   }
-
-  .topbar-eyebrow {
-    color: var(--smrt-color-on-surface-variant);
-  }
-
-  .mode-title,
-  .mode-detail {
+  .smrt-workspace-shell__mode-title,
+  .smrt-workspace-shell__mode-detail {
     margin: 0;
   }
-
-  .mode-title {
-    font-size: var(--smrt-typography-title-small-size, 0.9rem);
-    font-weight: var(--smrt-typography-weight-semibold, 600);
-    color: var(--smrt-color-on-surface);
-  }
-
-  .mode-detail {
-    color: var(--smrt-color-on-surface-variant);
+  .smrt-workspace-shell__mode-detail {
     max-width: 18rem;
-    text-align: right;
-    font-size: var(--smrt-typography-body-medium-size, 0.85rem);
   }
-
   .mode-badge {
     display: inline-flex;
     align-items: center;
     gap: 0.4rem;
     padding: 0.25rem 0.65rem;
-    border-radius: var(--smrt-radius-full);
-    border: var(--smrt-hairline);
-    background: var(--smrt-color-surface-container);
-    color: var(--smrt-color-on-surface);
-    font-size: var(--smrt-typography-label-medium-size, 0.78rem);
-    font-weight: var(--smrt-typography-weight-semibold, 600);
-    line-height: 1;
     white-space: nowrap;
   }
-
-  .mode-dot {
+  .smrt-workspace-shell__mode-dot {
     width: 0.55rem;
     height: 0.55rem;
-    border-radius: var(--smrt-radius-full);
-    background: var(--smrt-color-on-surface-variant);
     flex-shrink: 0;
   }
-
-  .mode-badge[data-status='active'] .mode-dot {
-    background: var(--smrt-color-success);
-  }
-  .mode-badge[data-status='offline'] .mode-dot {
-    background: var(--smrt-color-on-surface-variant);
-  }
-  .mode-badge[data-status='local-only'] .mode-dot {
-    background: var(--smrt-color-primary);
-  }
-  .mode-badge[data-status='attention'] .mode-dot {
-    background: var(--smrt-color-warning);
-  }
-
   .smrt-workspace-shell :global(.mobile-menu) {
     display: none;
-    border: var(--smrt-hairline);
-    background: var(--smrt-color-surface);
-    color: var(--smrt-color-on-surface);
-    border-radius: var(--smrt-radius-medium, 0.65rem);
     width: 2.35rem;
     height: 2.35rem;
     align-items: center;
     justify-content: center;
-    font-size: var(--smrt-typography-body-large-size, 1.1rem);
-    line-height: 1;
   }
-
   /* ─── Stage / content / inspector ─────────────────────── */
-
   .smrt-workspace-stage {
     flex: 1;
     min-height: 0;
     position: relative;
   }
-
   .smrt-workspace-content {
     padding: var(--smrt-ws-page-pad);
     min-width: 0;
   }
-
   .smrt-workspace-inspector {
     position: fixed;
     top: 0;
@@ -720,55 +613,27 @@ const sidebarInert = $derived(isMobileViewport && !mobileNavOpen);
     width: var(--smrt-ws-inspector-width);
     display: flex;
     flex-direction: column;
-    background: var(--smrt-color-surface);
-    border-left: var(--smrt-hairline);
-    box-shadow: var(--smrt-elevation-2, 0 4px 6px -1px rgb(0 0 0 / 0.1));
     z-index: 22;
   }
-
-  .inspector-header {
+  .smrt-workspace-shell__inspector-header {
     display: flex;
     align-items: center;
     justify-content: space-between;
     padding: 0.85rem 1rem;
-    border-bottom: var(--smrt-hairline);
   }
-
-  .inspector-title {
-    font-weight: var(--smrt-typography-weight-semibold, 600);
-    color: var(--smrt-color-on-surface);
-    font-size: var(--smrt-typography-title-medium-size, 0.95rem);
-  }
-
   .smrt-workspace-shell :global(.inspector-close) {
-    border: 1px solid transparent;
-    background: transparent;
-    color: var(--smrt-color-on-surface-variant);
-    border-radius: var(--smrt-radius-medium, 0.5rem);
     width: 2rem;
     height: 2rem;
     display: inline-flex;
     align-items: center;
     justify-content: center;
-    font-size: var(--smrt-typography-title-large-size, 1.25rem);
-    line-height: 1;
-    transition:
-      background-color 150ms ease,
-      color 150ms ease;
   }
-
-  .smrt-workspace-shell :global(.inspector-close):hover {
-    background: var(--smrt-color-surface-container-high);
-    color: var(--smrt-color-on-surface);
-  }
-
   .inspector-body {
     flex: 1;
     min-height: 0;
     overflow-y: auto;
     padding: 1rem;
   }
-
   .smrt-workspace-inspector-rail {
     position: fixed;
     top: var(--smrt-ws-topbar-height);
@@ -780,166 +645,288 @@ const sidebarInert = $derived(isMobileViewport && !mobileNavOpen);
     align-items: center;
     gap: 0.4rem;
     padding: 0.75rem 0.25rem;
-    background: var(--smrt-color-surface);
-    border-left: var(--smrt-hairline);
     z-index: 18;
   }
-
   /* When both inspector + rail are present, push rail off the panel. */
   .smrt-workspace-shell.has-inspector.has-inspector-rail .smrt-workspace-inspector-rail {
     right: var(--smrt-ws-inspector-width);
   }
-
   /* Reserve room on the right side so content doesn't slide under panel/rail. */
   @media (min-width: 961px) {
     .smrt-workspace-shell.has-inspector .smrt-workspace-content,
     .smrt-workspace-shell.has-inspector .smrt-workspace-topbar {
       padding-right: calc(var(--smrt-ws-inspector-width) + 1rem);
     }
-
     .smrt-workspace-shell.has-inspector-rail:not(.has-inspector)
-      .smrt-workspace-content,
+    .smrt-workspace-content,
     .smrt-workspace-shell.has-inspector-rail:not(.has-inspector)
-      .smrt-workspace-topbar {
+    .smrt-workspace-topbar {
       padding-right: calc(var(--smrt-ws-rail-width) + 1rem);
     }
-
     /*
-     * When both the inspector panel AND the icon rail are present, the rail
-     * sits to the left of the panel (see `.has-inspector.has-inspector-rail
-     * .smrt-workspace-inspector-rail` above). Content padding must reserve
-     * room for both, otherwise the rail overlaps the right edge of content
-     * and topbar.
-     */
+    * When both the inspector panel AND the icon rail are present, the rail
+    * sits to the left of the panel (see `.has-inspector.has-inspector-rail
+    * .smrt-workspace-inspector-rail` above). Content padding must reserve
+    * room for both, otherwise the rail overlaps the right edge of content
+    * and topbar.
+    */
     .smrt-workspace-shell.has-inspector.has-inspector-rail
-      .smrt-workspace-content,
+    .smrt-workspace-content,
     .smrt-workspace-shell.has-inspector.has-inspector-rail
-      .smrt-workspace-topbar {
+    .smrt-workspace-topbar {
       padding-right: calc(
         var(--smrt-ws-inspector-width) + var(--smrt-ws-rail-width) + 1rem
       );
     }
   }
-
   /* ─── Backdrops (mobile only — hidden otherwise) ──────── */
-
   /*
-   * Defence-in-depth: `display: none` already hides these on desktop, but a
-   * consumer global like `button { display: flex }` could undo that. Setting
-   * `pointer-events: none` ensures the backdrop can never intercept clicks
-   * on the desktop even if it slips back into the rendering tree.
-   */
+  * Defence-in-depth: `display: none` already hides these on desktop, but a
+  * consumer global like `button { display: flex }` could undo that. Setting
+  * `pointer-events: none` ensures the backdrop can never intercept clicks
+  * on the desktop even if it slips back into the rendering tree.
+  */
   .mobile-backdrop,
   .inspector-backdrop {
     display: none;
     pointer-events: none;
   }
-
   /* ─── Tablet — collapse sidebar to icon rail ──────────── */
-
   @media (max-width: 1240px) and (min-width: 961px) {
     .smrt-workspace-shell {
       grid-template-columns: var(--smrt-ws-sidebar-collapsed-width) 1fr;
     }
-
-    .smrt-workspace-shell .brand-row {
+    .smrt-workspace-shell .smrt-workspace-shell__brand-row {
       justify-content: center;
     }
-
     .smrt-workspace-shell :global(.shell-toggle) {
       display: none;
     }
-
     .smrt-workspace-shell .brand .subtitle,
     .smrt-workspace-shell.sidebar-collapsed .brand .subtitle {
       display: none;
     }
   }
-
   /* ─── Mobile — drawer sidebar, drawer inspector ───────── */
-
   @media (max-width: 960px) {
     .smrt-workspace-shell,
     .smrt-workspace-shell.sidebar-collapsed {
       grid-template-columns: 1fr;
     }
-
     .smrt-workspace-shell :global(.mobile-menu) {
       display: inline-flex;
     }
-
     .smrt-workspace-shell :global(.shell-toggle) {
       display: none;
     }
-
     .smrt-workspace-sidebar {
       position: fixed;
       inset: 0 auto 0 0;
       width: min(320px, calc(100vw - 3rem));
       transform: translateX(-100%);
-      transition: transform 180ms ease;
       z-index: 30;
     }
-
     .smrt-workspace-shell.nav-open .smrt-workspace-sidebar {
       transform: translateX(0);
     }
-
     .mobile-backdrop {
       display: block;
       position: fixed;
       inset: 0;
-      background: var(--smrt-color-scrim);
       opacity: 0;
       pointer-events: none;
-      transition: opacity 180ms ease;
-      border: 0;
       z-index: 25;
     }
-
     .smrt-workspace-shell.nav-open .mobile-backdrop {
       opacity: 1;
       pointer-events: auto;
     }
-
     /* Override the inspector-width variable on mobile so the rail's right
-     * offset (.has-inspector.has-inspector-rail .smrt-workspace-inspector-rail
-     * uses var(--smrt-ws-inspector-width) for `right`) stays in sync with
-     * the actual rendered inspector width. */
+    * offset (.has-inspector.has-inspector-rail .smrt-workspace-inspector-rail
+    * uses var(--smrt-ws-inspector-width) for `right`) stays in sync with
+    * the actual rendered inspector width. */
     .smrt-workspace-shell {
       --smrt-ws-inspector-width: min(100vw, 420px);
     }
-
     .smrt-workspace-shell.has-inspector .smrt-workspace-inspector-rail,
     .smrt-workspace-shell.has-inspector-rail:not(.has-inspector)
-      .smrt-workspace-inspector-rail {
+    .smrt-workspace-inspector-rail {
       top: 0;
     }
-
     .smrt-workspace-shell.has-inspector .smrt-workspace-content,
     .smrt-workspace-shell.has-inspector .smrt-workspace-topbar {
       padding-right: var(--smrt-ws-page-pad);
     }
-
     .smrt-workspace-shell.has-inspector-rail:not(.has-inspector)
-      .smrt-workspace-content,
+    .smrt-workspace-content,
     .smrt-workspace-shell.has-inspector-rail:not(.has-inspector)
-      .smrt-workspace-topbar {
+    .smrt-workspace-topbar {
       padding-right: calc(var(--smrt-ws-rail-width) + var(--smrt-ws-page-pad));
     }
-
     .inspector-backdrop {
       display: block;
       pointer-events: auto;
       position: fixed;
       inset: 0;
-      background: var(--smrt-color-scrim);
-      border: 0;
       z-index: 21;
     }
-
-    .mode-detail {
+    .smrt-workspace-shell__mode-detail {
       max-width: 100%;
+    }
+  }
+}
+
+@layer smrt.theme {
+  .smrt-workspace-shell {
+    background: var(--smrt-color-surface-container-low);
+    color: var(--smrt-color-on-surface);
+  }
+  /* ─── Sidebar ─────────────────────────────────────────── */
+  .smrt-workspace-sidebar {
+    background: var(--smrt-color-surface);
+    border-right: var(--smrt-hairline);
+  }
+  .brand :global(h1),
+  .brand h1 {
+    font-size: var(--smrt-typography-title-large-size, 1.25rem);
+    line-height: var(--smrt-typography-title-large-line-height, 1.1);
+    color: var(--smrt-color-on-surface);
+    font-weight: var(--smrt-typography-weight-semibold, 600);
+  }
+  .brand .subtitle {
+    color: var(--smrt-color-on-surface-variant);
+    line-height: var(--smrt-typography-body-medium-line-height, 1.4);
+    font-size: var(--smrt-typography-body-medium-size, 0.9rem);
+  }
+  .smrt-workspace-shell__eyebrow {
+    font-size: var(--smrt-typography-label-small-size, 0.7rem);
+    font-weight: var(--smrt-typography-weight-bold, 700);
+    letter-spacing: var(--smrt-typography-label-small-tracking, 0.12em);
+    text-transform: uppercase;
+    color: var(--smrt-color-on-surface-variant);
+  }
+  /* These shell-chrome controls now render through smrt-ui <Button>; pierce
+  Svelte scoping into the child <button> with `.smrt-workspace-shell
+  :global(.class)` (#1589). Button owns focus-visible, so those rules are
+  dropped. The responsive `display` toggles below are preserved. */
+  .smrt-workspace-shell :global(.shell-toggle) {
+    border: var(--smrt-hairline);
+    background: var(--smrt-color-surface-container);
+    color: var(--smrt-color-on-surface);
+    border-radius: var(--smrt-radius-medium, 0.65rem);
+    transition:
+      background-color 150ms ease,
+      color 150ms ease;
+  }
+  .smrt-workspace-shell :global(.shell-toggle):hover {
+    background: var(--smrt-color-surface-container-high);
+  }
+  .smrt-workspace-shell__shell-toggle-glyph {
+    font-size: var(--smrt-typography-body-large-size, 1rem);
+    line-height: 1;
+  }
+  .sidebar-footer {
+    background: var(--smrt-color-surface);
+    border-top: var(--smrt-hairline);
+  }
+  .smrt-workspace-topbar {
+    background: var(--smrt-color-surface);
+    border-bottom: var(--smrt-hairline);
+    box-shadow: var(--smrt-elevation-1, 0 1px 2px rgb(0 0 0 / 0.05));
+  }
+  .topbar-eyebrow {
+    color: var(--smrt-color-on-surface-variant);
+  }
+  .smrt-workspace-shell__mode-title {
+    font-size: var(--smrt-typography-title-small-size, 0.9rem);
+    font-weight: var(--smrt-typography-weight-semibold, 600);
+    color: var(--smrt-color-on-surface);
+  }
+  .smrt-workspace-shell__mode-detail {
+    color: var(--smrt-color-on-surface-variant);
+    text-align: right;
+    font-size: var(--smrt-typography-body-medium-size, 0.85rem);
+  }
+  .mode-badge {
+    border-radius: var(--smrt-radius-full);
+    border: var(--smrt-hairline);
+    background: var(--smrt-color-surface-container);
+    color: var(--smrt-color-on-surface);
+    font-size: var(--smrt-typography-label-medium-size, 0.78rem);
+    font-weight: var(--smrt-typography-weight-semibold, 600);
+    line-height: 1;
+  }
+  .smrt-workspace-shell__mode-dot {
+    border-radius: var(--smrt-radius-full);
+    background: var(--smrt-color-on-surface-variant);
+  }
+  .mode-badge[data-status='active'] .smrt-workspace-shell__mode-dot {
+    background: var(--smrt-color-success);
+  }
+  .mode-badge[data-status='offline'] .smrt-workspace-shell__mode-dot {
+    background: var(--smrt-color-on-surface-variant);
+  }
+  .mode-badge[data-status='local-only'] .smrt-workspace-shell__mode-dot {
+    background: var(--smrt-color-primary);
+  }
+  .mode-badge[data-status='attention'] .smrt-workspace-shell__mode-dot {
+    background: var(--smrt-color-warning);
+  }
+  .smrt-workspace-shell :global(.mobile-menu) {
+    border: var(--smrt-hairline);
+    background: var(--smrt-color-surface);
+    color: var(--smrt-color-on-surface);
+    border-radius: var(--smrt-radius-medium, 0.65rem);
+    font-size: var(--smrt-typography-body-large-size, 1.1rem);
+    line-height: 1;
+  }
+  .smrt-workspace-inspector {
+    background: var(--smrt-color-surface);
+    border-left: var(--smrt-hairline);
+    box-shadow: var(--smrt-elevation-2, 0 4px 6px -1px rgb(0 0 0 / 0.1));
+  }
+  .smrt-workspace-shell__inspector-header {
+    border-bottom: var(--smrt-hairline);
+  }
+  .inspector-title {
+    font-weight: var(--smrt-typography-weight-semibold, 600);
+    color: var(--smrt-color-on-surface);
+    font-size: var(--smrt-typography-title-medium-size, 0.95rem);
+  }
+  .smrt-workspace-shell :global(.inspector-close) {
+    border: 1px solid transparent;
+    background: transparent;
+    color: var(--smrt-color-on-surface-variant);
+    border-radius: var(--smrt-radius-medium, 0.5rem);
+    font-size: var(--smrt-typography-title-large-size, 1.25rem);
+    line-height: 1;
+    transition:
+      background-color 150ms ease,
+      color 150ms ease;
+  }
+  .smrt-workspace-shell :global(.inspector-close):hover {
+    background: var(--smrt-color-surface-container-high);
+    color: var(--smrt-color-on-surface);
+  }
+  .smrt-workspace-inspector-rail {
+    background: var(--smrt-color-surface);
+    border-left: var(--smrt-hairline);
+  }
+  /* ─── Mobile — drawer sidebar, drawer inspector ───────── */
+  @media (max-width: 960px) {
+    .smrt-workspace-sidebar {
+      transition: transform 180ms ease;
+    }
+    .mobile-backdrop {
+      background: var(--smrt-color-scrim);
+      transition: opacity 180ms ease;
+      border: 0;
+    }
+    .inspector-backdrop {
+      background: var(--smrt-color-scrim);
+      border: 0;
+    }
+    .smrt-workspace-shell__mode-detail {
       text-align: left;
     }
   }

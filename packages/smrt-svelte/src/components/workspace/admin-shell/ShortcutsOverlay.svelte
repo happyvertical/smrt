@@ -57,12 +57,12 @@ const edges: PanelEdge[] = ['top', 'left', 'bottom', 'right'];
 
 <style>
 @layer smrt.reset, smrt.structure, smrt.theme;
-@layer smrt.theme {
+
+@layer smrt.structure {
   .smrt-shortcuts-overlay {
     display: grid;
     gap: var(--smrt-spacing-4);
   }
-
   .smrt-shortcuts-overlay header,
   .smrt-shortcuts-overlay div {
     display: flex;
@@ -70,16 +70,17 @@ const edges: PanelEdge[] = ['top', 'left', 'bottom', 'right'];
     justify-content: space-between;
     gap: var(--smrt-spacing-4);
   }
-
   .smrt-shortcuts-overlay h2,
   .smrt-shortcuts-overlay dl,
   .smrt-shortcuts-overlay dd {
     margin: 0;
   }
-
   .smrt-shortcuts-overlay dl {
     display: grid;
     gap: var(--smrt-spacing-3);
   }
+}
+
+@layer smrt.theme {
 }
 </style>

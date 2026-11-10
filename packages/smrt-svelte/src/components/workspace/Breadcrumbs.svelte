@@ -60,21 +60,21 @@ const crumbs = $derived.by((): BreadcrumbItem[] => {
 const lastIndex = $derived(crumbs.length - 1);
 </script>
 
-<nav class="smrt-breadcrumbs" aria-label={ariaLabel}>
-  <ol class="crumb-list">
+<nav class="smrt-breadcrumbs" aria-label={ariaLabel} data-smrt-component="Breadcrumbs">
+  <ol class="smrt-breadcrumbs__crumb-list" data-smrt-part="list">
     {#each crumbs as crumb, i (`${i}:${crumb.href ?? crumb.label}`)}
-      <li class="crumb-item">
+      <li class="crumb-item" data-smrt-part="item">
         {#if i > 0}
-          <span class="separator" aria-hidden="true">/</span>
+          <span class="smrt-breadcrumbs__separator" aria-hidden="true" data-smrt-part="separator">/</span>
         {/if}
         {#if i === lastIndex || !crumb.href}
           <span
-            class="current"
-            aria-current={i === lastIndex ? 'page' : undefined}
+            class="smrt-breadcrumbs__current"
+            aria-current={i === lastIndex ? 'page' : undefined} data-smrt-part="label"
             >{crumb.label}</span
           >
         {:else}
-          <a href={crumb.href} class="crumb-link">{crumb.label}</a>
+          <a href={crumb.href} class="crumb-link" data-smrt-part="link">{crumb.label}</a>
         {/if}
       </li>
     {/each}
@@ -83,12 +83,12 @@ const lastIndex = $derived(crumbs.length - 1);
 
 <style>
 @layer smrt.reset, smrt.structure, smrt.theme;
-@layer smrt.theme {
+
+@layer smrt.structure {
   .smrt-breadcrumbs {
     width: 100%;
   }
-
-  .crumb-list {
+  .smrt-breadcrumbs__crumb-list {
     display: flex;
     flex-wrap: wrap;
     align-items: center;
@@ -96,48 +96,50 @@ const lastIndex = $derived(crumbs.length - 1);
     padding: 0;
     margin: 0;
   }
-
   .crumb-item {
     display: inline-flex;
     align-items: center;
+  }
+  .smrt-breadcrumbs__separator {
+    margin: 0 0.5rem;
+  }
+  @media (max-width: 640px) {
+    .smrt-breadcrumbs__separator {
+      margin: 0 0.35rem;
+    }
+  }
+}
+
+@layer smrt.theme {
+  .crumb-item {
     font-size: var(--smrt-typography-body-medium-size, 0.875rem);
     color: var(--smrt-color-on-surface-variant);
   }
-
-  .separator {
-    margin: 0 0.5rem;
+  .smrt-breadcrumbs__separator {
     color: var(--smrt-color-outline-variant);
     font-size: var(--smrt-typography-label-medium-size, 0.75rem);
   }
-
-  .current {
+  .smrt-breadcrumbs__current {
     font-weight: var(--smrt-typography-weight-medium, 500);
     color: var(--smrt-color-on-surface);
   }
-
   .crumb-link {
     color: var(--smrt-color-on-surface-variant);
     text-decoration: none;
     transition: color 0.15s ease;
   }
-
   .crumb-link:hover {
     color: var(--smrt-color-on-surface);
     text-decoration: underline;
   }
-
   .crumb-link:focus-visible {
     outline: 2px solid var(--smrt-color-primary);
     outline-offset: 2px;
     border-radius: var(--smrt-radius-sm);
   }
-
   @media (max-width: 640px) {
     .crumb-item {
       font-size: var(--smrt-typography-body-medium-size, 0.8125rem);
-    }
-    .separator {
-      margin: 0 0.35rem;
     }
   }
 }

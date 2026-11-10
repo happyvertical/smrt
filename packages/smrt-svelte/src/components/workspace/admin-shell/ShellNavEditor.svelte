@@ -327,7 +327,7 @@ function oncontainermove(move: SortableContainerMove<NavContainer>): void {
       {#if !entry}
         <strong>{container.label}</strong>
       {:else if entry.root}
-        <span class="smrt-nav-editor__top">{container.label}</span>
+        <span class="smrt-nav-editor__top" data-smrt-part="header">{container.label}</span>
       {:else}
         <!-- svelte-ignore a11y_no_static_element_interactions -->
         <div
@@ -336,7 +336,7 @@ function oncontainermove(move: SortableContainerMove<NavContainer>): void {
           data-toolbar-open={open?.id === entry.id ? '' : undefined}
           onpointerleave={() => onleave(entry.id)}
           onkeydown={(event) => onkeydown(entry.id, event)}
-          onfocusout={(event) => onfocusout(entry.id, event)}
+          onfocusout={(event) => onfocusout(entry.id, event)} data-smrt-part="header"
         >
           <!-- raw-primitive-allow: heading button that opens the section toolbar -->
           <button
@@ -349,9 +349,9 @@ function oncontainermove(move: SortableContainerMove<NavContainer>): void {
             aria-expanded={open?.id === entry.id}
             aria-label={t(M['ui.layout_edit.edit_section'], { label: entry.label })}
             onpointerenter={(event) => onhover(entry.id, event)}
-            onclick={() => onactivate(entry.id)}
-          >{#if navMode !== 'items'}<span class="smrt-nav-editor__section-icon"><ShellSectionIcon name={entry.icon} iconComponent={IconComponent} /></span>{/if}{entry.label}</button>
-          <span class="smrt-nav-editor__overlay">
+            onclick={() => onactivate(entry.id)} data-smrt-part="title"
+          >{#if navMode !== 'items'}<span class="smrt-nav-editor__section-icon" data-smrt-part="icon"><ShellSectionIcon name={entry.icon} iconComponent={IconComponent} /></span>{/if}{entry.label}</button>
+          <span class="smrt-nav-editor__overlay" data-smrt-part="panel">
             {@render toggles(entry)}
             {@render actions(entry)}
           </span>
@@ -360,7 +360,7 @@ function oncontainermove(move: SortableContainerMove<NavContainer>): void {
               class="smrt-nav-editor__toolbar"
               role="group"
               aria-label={t(M['ui.layout_edit.section_options'], { label: entry.label })}
-              data-testid="section-toolbar"
+              data-testid="section-toolbar" data-smrt-part="toolbar"
             >
               <Input
                 class="smrt-nav-editor__name"
@@ -400,7 +400,7 @@ function oncontainermove(move: SortableContainerMove<NavContainer>): void {
                 <div
                   class="smrt-nav-editor__icons"
                   role="group"
-                  aria-label={t(M['ui.shell_layout_editor.section_icon'], { label: entry.label })}
+                  aria-label={t(M['ui.shell_layout_editor.section_icon'], { label: entry.label })} data-smrt-part="list"
                 >
                   {#each SHELL_SECTION_ICONS as name (name)}
                     <ShellIconButton
@@ -425,10 +425,10 @@ function oncontainermove(move: SortableContainerMove<NavContainer>): void {
       {@const original = itemDefaults.get(entry.id)}
       <span
         class="smrt-nav-editor__row"
-        class:smrt-nav-editor__row--muted={hidden || layout.isHidden(container.id)}
+        class:smrt-nav-editor__row--muted={hidden || layout.isHidden(container.id)} data-smrt-part="row"
       >
         {#if icon}
-          <span class="smrt-nav-editor__icon" aria-hidden="true">
+          <span class="smrt-nav-editor__icon" aria-hidden="true" data-smrt-part="icon">
             {#if IconComponent}
               <IconComponent name={icon} size={18} />
             {:else}
@@ -490,48 +490,207 @@ function oncontainermove(move: SortableContainerMove<NavContainer>): void {
 
 <style>
 @layer smrt.reset, smrt.structure, smrt.theme;
-@layer smrt.theme {
-  .smrt-nav-editor { display: grid; gap: var(--smrt-spacing-2); min-inline-size: 0; }
-  /* Make the generic Sortable read as the real navigation. */
-  .smrt-nav-editor :global([data-smrt-component="Sortable"]) { gap: var(--smrt-spacing-1); }
-  .smrt-nav-editor :global(.smrt-sortable__containers) { gap: var(--smrt-spacing-1); }
-  .smrt-nav-editor :global(.smrt-sortable__container) { padding: 0; border: 0; background: transparent; gap: var(--smrt-spacing-1); }
-  .smrt-nav-editor :global(.smrt-sortable__item) { padding: 0; border: 0; border-radius: var(--smrt-control-radius); background: transparent; }
-  .smrt-nav-editor :global(.smrt-sortable__item:hover) { background: color-mix(in srgb, currentColor calc(var(--smrt-state-hover) * 100%), transparent); }
-  .smrt-nav-editor :global(.smrt-sortable__items) { padding-inline-start: var(--smrt-spacing-3); min-block-size: 0; }
-  .smrt-nav-editor :global(.smrt-sortable__header) { min-block-size: 0; }
-  .smrt-nav-editor :global(.smrt-sortable__empty) { padding-block: 0; }
-  .smrt-nav-editor :global(.smrt-sortable__handle) { inline-size: 1.5rem; block-size: 2rem; }
 
-  .smrt-nav-editor__top { color: var(--smrt-color-on-surface-variant); font: var(--smrt-typography-label-small-font); text-transform: uppercase; letter-spacing: 0.04em; }
-  .smrt-nav-editor__head { position: relative; flex: 1 1 auto; display: flex; align-items: center; gap: var(--smrt-spacing-1); min-inline-size: 0; }
-  .smrt-nav-editor__title { flex: 1 1 auto; min-inline-size: 0; padding: var(--smrt-spacing-2) var(--smrt-spacing-3); border: 0; border-radius: var(--smrt-control-radius); background: transparent; color: var(--smrt-color-on-surface-variant); font-size: var(--smrt-typography-label-large-size); font-weight: var(--smrt-typography-weight-semibold); text-align: start; cursor: pointer; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
-  .smrt-nav-editor__title:hover, .smrt-nav-editor__head[data-toolbar-open] .smrt-nav-editor__title { background: color-mix(in srgb, currentColor calc(var(--smrt-state-hover) * 100%), transparent); }
-  .smrt-nav-editor__title:focus-visible { outline: var(--smrt-focus-ring-width) solid var(--smrt-focus-ring-color); outline-offset: var(--smrt-focus-ring-offset); }
-  .smrt-nav-editor__title--off { font-style: italic; font-weight: var(--smrt-typography-weight-normal, normal); }
-  .smrt-nav-editor__title--hidden { opacity: 0.55; }
-  .smrt-nav-editor__overlay { display: inline-flex; align-items: center; flex: 0 0 auto; }
-  .smrt-nav-editor__toolbar { position: absolute; inset-block-start: 100%; inset-inline: 0; z-index: 40; display: flex; flex-wrap: wrap; align-items: center; gap: var(--smrt-spacing-1); padding: var(--smrt-spacing-2); border: var(--smrt-hairline); border-radius: var(--smrt-radius-medium); background: var(--smrt-glass-surface-strong); -webkit-backdrop-filter: blur(var(--smrt-glass-blur)) saturate(var(--smrt-glass-saturation)); backdrop-filter: blur(var(--smrt-glass-blur)) saturate(var(--smrt-glass-saturation)); box-shadow: var(--smrt-elevation-3), var(--smrt-inset-highlight); }
-  :global(.smrt-nav-editor__name) { flex: 1 1 100%; min-inline-size: 0; }
-  .smrt-nav-editor__row { flex: 1 1 auto; min-inline-size: 0; display: flex; align-items: center; gap: var(--smrt-spacing-2); box-sizing: border-box; min-block-size: var(--smrt-control-target-min); padding: var(--smrt-spacing-2) var(--smrt-spacing-1); color: var(--smrt-color-on-surface); }
-  @media (max-width: 48rem) {
-    .smrt-nav-editor { --smrt-control-target-min: var(--smrt-touch-target-min); }
+@layer smrt.structure {
+  .smrt-nav-editor {
+    display: grid;
+    gap: var(--smrt-spacing-2);
+    min-inline-size: 0;
   }
-  .smrt-nav-editor__row--muted { opacity: 0.55; }
-  .smrt-nav-editor__row strong { min-inline-size: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; font-weight: var(--smrt-typography-weight-medium, 500); }
+  /* Make the generic Sortable read as the real navigation. */
+  .smrt-nav-editor :global([data-smrt-component="Sortable"]) {
+    gap: var(--smrt-spacing-1);
+  }
+  .smrt-nav-editor :global(.smrt-sortable__containers) {
+    gap: var(--smrt-spacing-1);
+  }
+  .smrt-nav-editor :global(.smrt-sortable__container) {
+    padding: 0;
+    gap: var(--smrt-spacing-1);
+  }
+  .smrt-nav-editor :global(.smrt-sortable__item) {
+    padding: 0;
+  }
+  .smrt-nav-editor :global(.smrt-sortable__items) {
+    padding-inline-start: var(--smrt-spacing-3);
+    min-block-size: 0;
+  }
+  .smrt-nav-editor :global(.smrt-sortable__header) {
+    min-block-size: 0;
+  }
+  .smrt-nav-editor :global(.smrt-sortable__empty) {
+    padding-block: 0;
+  }
+  .smrt-nav-editor :global(.smrt-sortable__handle) {
+    inline-size: 1.5rem;
+    block-size: 2rem;
+  }
+  .smrt-nav-editor__head {
+    position: relative;
+    flex: 1 1 auto;
+    display: flex;
+    align-items: center;
+    gap: var(--smrt-spacing-1);
+    min-inline-size: 0;
+  }
+  .smrt-nav-editor__title {
+    flex: 1 1 auto;
+    min-inline-size: 0;
+    padding: var(--smrt-spacing-2) var(--smrt-spacing-3);
+    cursor: pointer;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+  }
+  .smrt-nav-editor__overlay {
+    display: inline-flex;
+    align-items: center;
+    flex: 0 0 auto;
+  }
+  .smrt-nav-editor__toolbar {
+    position: absolute;
+    inset-block-start: 100%;
+    inset-inline: 0;
+    z-index: 40;
+    display: flex;
+    flex-wrap: wrap;
+    align-items: center;
+    gap: var(--smrt-spacing-1);
+    padding: var(--smrt-spacing-2);
+  }
+  :global(.smrt-nav-editor__name) {
+    flex: 1 1 100%;
+    min-inline-size: 0;
+  }
+  .smrt-nav-editor__row {
+    flex: 1 1 auto;
+    min-inline-size: 0;
+    display: flex;
+    align-items: center;
+    gap: var(--smrt-spacing-2);
+    box-sizing: border-box;
+    min-block-size: var(--smrt-control-target-min);
+    padding: var(--smrt-spacing-2) var(--smrt-spacing-1);
+  }
+  @media (max-width: 48rem) {
+    .smrt-nav-editor {
+      --smrt-control-target-min: var(--smrt-touch-target-min);
+    }
+  }
+  .smrt-nav-editor__row strong {
+    min-inline-size: 0;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+  }
   /* Keep editor rows inside the sidebar: the implicit grid column would size to
-     the rows' min-content and push the trailing icons past the clipped rail. */
-  .smrt-nav-editor :global([data-smrt-component="Sortable"]) { grid-template-columns: minmax(0, 1fr); }
+  the rows' min-content and push the trailing icons past the clipped rail. */
+  .smrt-nav-editor :global([data-smrt-component="Sortable"]) {
+    grid-template-columns: minmax(0, 1fr);
+  }
   .smrt-nav-editor :global(.smrt-sortable__container),
   .smrt-nav-editor :global(.smrt-sortable__items),
-  .smrt-nav-editor :global(.smrt-sortable__item) { min-inline-size: 0; max-inline-size: 100%; box-sizing: border-box; }
-  .smrt-nav-editor__icon { display: inline-grid; place-items: center; inline-size: 1.25rem; block-size: 1.25rem; min-inline-size: 1.25rem; }
-  :global(.smrt-nav-editor__item-name) { flex: 1 1 auto; min-inline-size: 0; }
-  :global(.smrt-nav-editor__new) { justify-self: start; }
+  .smrt-nav-editor :global(.smrt-sortable__item) {
+    min-inline-size: 0;
+    max-inline-size: 100%;
+    box-sizing: border-box;
+  }
+  .smrt-nav-editor__icon {
+    display: inline-grid;
+    place-items: center;
+    inline-size: 1.25rem;
+    block-size: 1.25rem;
+    min-inline-size: 1.25rem;
+  }
+  :global(.smrt-nav-editor__item-name) {
+    flex: 1 1 auto;
+    min-inline-size: 0;
+  }
+  :global(.smrt-nav-editor__new) {
+    justify-self: start;
+  }
   /* Sections mode: the entries are edited on the section's page. */
-  .smrt-nav-editor[data-nav-mode='sections'] :global(.smrt-sortable__items) { display: none; }
-  .smrt-nav-editor__section-icon { display: inline-flex; margin-inline-end: var(--smrt-spacing-2); vertical-align: middle; }
-  .smrt-nav-editor__icons { flex: 1 1 100%; display: grid; grid-template-columns: repeat(auto-fill, minmax(2rem, 1fr)); gap: var(--smrt-spacing-1); padding-block-start: var(--smrt-spacing-1); }
-  .smrt-nav-editor__icons :global(.smrt-shell-icon-button[aria-pressed='true']) { background: var(--smrt-color-primary-container); color: var(--smrt-color-on-primary-container); }
+  .smrt-nav-editor[data-nav-mode='sections'] :global(.smrt-sortable__items) {
+    display: none;
+  }
+  .smrt-nav-editor__section-icon {
+    display: inline-flex;
+    margin-inline-end: var(--smrt-spacing-2);
+  }
+  .smrt-nav-editor__icons {
+    flex: 1 1 100%;
+    display: grid;
+    grid-template-columns: repeat(auto-fill, minmax(2rem, 1fr));
+    gap: var(--smrt-spacing-1);
+    padding-block-start: var(--smrt-spacing-1);
+  }
+}
+
+@layer smrt.theme {
+  .smrt-nav-editor :global(.smrt-sortable__container) {
+    border: 0;
+    background: transparent;
+  }
+  .smrt-nav-editor :global(.smrt-sortable__item) {
+    border: 0;
+    border-radius: var(--smrt-control-radius);
+    background: transparent;
+  }
+  .smrt-nav-editor :global(.smrt-sortable__item:hover) {
+    background: color-mix(in srgb, currentColor calc(var(--smrt-state-hover) * 100%), transparent);
+  }
+  .smrt-nav-editor__top {
+    color: var(--smrt-color-on-surface-variant);
+    font: var(--smrt-typography-label-small-font);
+    text-transform: uppercase;
+    letter-spacing: 0.04em;
+  }
+  .smrt-nav-editor__title {
+    border: 0;
+    border-radius: var(--smrt-control-radius);
+    background: transparent;
+    color: var(--smrt-color-on-surface-variant);
+    font-size: var(--smrt-typography-label-large-size);
+    font-weight: var(--smrt-typography-weight-semibold);
+    text-align: start;
+  }
+  .smrt-nav-editor__title:hover, .smrt-nav-editor__head[data-toolbar-open] .smrt-nav-editor__title {
+    background: color-mix(in srgb, currentColor calc(var(--smrt-state-hover) * 100%), transparent);
+  }
+  .smrt-nav-editor__title:focus-visible {
+    outline: var(--smrt-focus-ring-width) solid var(--smrt-focus-ring-color);
+    outline-offset: var(--smrt-focus-ring-offset);
+  }
+  .smrt-nav-editor__title--off {
+    font-style: italic;
+    font-weight: var(--smrt-typography-weight-normal, normal);
+  }
+  .smrt-nav-editor__title--hidden {
+    opacity: 0.55;
+  }
+  .smrt-nav-editor__toolbar {
+    border: var(--smrt-hairline);
+    border-radius: var(--smrt-radius-medium);
+    background: var(--smrt-glass-surface-strong);
+    -webkit-backdrop-filter: blur(var(--smrt-glass-blur)) saturate(var(--smrt-glass-saturation));
+    backdrop-filter: blur(var(--smrt-glass-blur)) saturate(var(--smrt-glass-saturation));
+    box-shadow: var(--smrt-elevation-3), var(--smrt-inset-highlight);
+  }
+  .smrt-nav-editor__row {
+    color: var(--smrt-color-on-surface);
+  }
+  .smrt-nav-editor__row--muted {
+    opacity: 0.55;
+  }
+  .smrt-nav-editor__row strong {
+    font-weight: var(--smrt-typography-weight-medium, 500);
+  }
+  .smrt-nav-editor__section-icon {
+    vertical-align: middle;
+  }
+  .smrt-nav-editor__icons :global(.smrt-shell-icon-button[aria-pressed='true']) {
+    background: var(--smrt-color-primary-container);
+    color: var(--smrt-color-on-primary-container);
+  }
 }
 </style>
