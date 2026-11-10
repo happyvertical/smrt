@@ -162,6 +162,7 @@ function containerRank(id: string): number {
     class="smrt-sortable__items"
     role="list"
     aria-label={t(M['ui.sortable.group'], { label: container.label, count })}
+    data-smrt-part="list"
   >
     {#each list as entry, index (entry.id)}
       <div
@@ -170,6 +171,7 @@ function containerRank(id: string): number {
         animate:flipRow
         class:smrt-sortable__item--dragging={dragged === entry.id}
         data-smrt-sortable-item-id={entry.id}
+        data-smrt-part="row"
         ondragover={(event) => event.preventDefault()}
         ondrop={(event) => {
           if (!itemSortable.drag) return;
@@ -185,6 +187,7 @@ function containerRank(id: string): number {
           type="button"
           class="smrt-sortable__handle"
           data-smrt-sortable-handle="item"
+          data-smrt-part="trigger"
           draggable={itemSortable.nativeDraggable}
           aria-label={t(M['ui.sortable.move'], { item: entry.label })}
           aria-pressed={dragged === entry.id}
@@ -199,7 +202,7 @@ function containerRank(id: string): number {
           ondragstart={(event) => itemSortable.dragStart(event, entry.id)}
           ondragend={() => itemSortable.dragEnd()}
         ><span aria-hidden="true">⠿</span></button>
-        <div class="smrt-sortable__content">
+        <div class="smrt-sortable__content" data-smrt-part="content">
           {@render itemSnippet({
             item: entry,
             container,
@@ -209,7 +212,7 @@ function containerRank(id: string): number {
         </div>
       </div>
     {:else}
-      <div role="listitem" class="smrt-sortable__empty">
+      <div role="listitem" class="smrt-sortable__empty" data-smrt-part="empty">
         {t(M['ui.sortable.empty'], { container: container.label })}
       </div>
     {/each}
@@ -229,6 +232,7 @@ function containerRank(id: string): number {
     data-smrt-sortable-container-id={container.id}
     data-smrt-sortable-container-item={sortableContainer ? container.id : undefined}
     aria-label={container.label}
+    data-smrt-part="panel"
     ondragover={(event) => event.preventDefault()}
     ondrop={(event) => {
       if (itemSortable.drag) {
@@ -242,13 +246,14 @@ function containerRank(id: string): number {
       }
     }}
   >
-    <header class="smrt-sortable__header">
+    <header class="smrt-sortable__header" data-smrt-part="header">
       {#if sortableContainer}
         <!-- raw-primitive-allow: native button owns keyboard pickup and HTML drag/drop -->
         <button
           type="button"
           class="smrt-sortable__handle"
           data-smrt-sortable-handle="container"
+          data-smrt-part="trigger"
           draggable={containerSortable.nativeDraggable}
           aria-label={t(M['ui.sortable.move'], { item: container.label })}
           aria-pressed={draggingContainer}
@@ -264,7 +269,7 @@ function containerRank(id: string): number {
           ondragend={() => containerSortable.dragEnd()}
         ><span aria-hidden="true">⠿</span></button>
       {/if}
-      <div class="smrt-sortable__content">
+      <div class="smrt-sortable__content" data-smrt-part="content">
         {#if containerHeader}
           {@render containerHeader({ container, count, isDragging: draggingContainer })}
         {:else}
@@ -278,7 +283,7 @@ function containerRank(id: string): number {
 
 <div
   bind:this={root}
-  class="smrt-sortable"
+  class="smrt-sortable__root"
   role="group"
   aria-label={label ?? t(M['ui.sortable.label'])} data-smrt-component="Sortable"
 >
@@ -290,12 +295,13 @@ function containerRank(id: string): number {
       class="smrt-sortable__containers"
       role="list"
       data-smrt-sortable-container-list={LIST_ID}
+      data-smrt-part="list"
     >
       {#each movable as container (container.id)}
         {#if containerMarkerBefore(containerRank(container.id)) && containerSortable.drag?.itemId !== container.id}
           <div class="smrt-sortable__marker" aria-hidden="true"></div>
         {/if}
-        <div role="listitem" class="smrt-sortable__container-slot">
+        <div role="listitem" class="smrt-sortable__container-slot" data-smrt-part="row">
           {@render containerBlock(container, true)}
         </div>
       {/each}
@@ -308,31 +314,142 @@ function containerRank(id: string): number {
       {@render containerBlock(container, false)}
     {/each}
   {/if}
-  <div id={itemLiveId} class="smrt-sortable__live" aria-live="assertive" aria-atomic="true">{itemSortable.announcement}</div>
-  <div id={containerLiveId} class="smrt-sortable__live" aria-live="assertive" aria-atomic="true">{containerSortable.announcement}</div>
+  <div id={itemLiveId} class="smrt-sortable__live" aria-live="assertive" aria-atomic="true" data-smrt-part="status">{itemSortable.announcement}</div>
+  <div id={containerLiveId} class="smrt-sortable__live" aria-live="assertive" aria-atomic="true" data-smrt-part="status">{containerSortable.announcement}</div>
 </div>
 
 <style>
 @layer smrt.reset, smrt.structure, smrt.theme;
-@layer smrt.theme {
-  .smrt-sortable { display: grid; grid-template-columns: minmax(0, 1fr); gap: var(--smrt-spacing-3); min-width: 0; position: relative; }
-  .smrt-sortable__containers { display: grid; grid-template-columns: minmax(0, 1fr); gap: var(--smrt-spacing-3); min-width: 0; }
-  .smrt-sortable__container { display: grid; grid-template-columns: minmax(0, 1fr); gap: var(--smrt-spacing-2); padding: var(--smrt-spacing-3); border: var(--smrt-hairline); border-radius: var(--smrt-radius-md); background: var(--smrt-color-surface-container); min-width: 0; }
-  .smrt-sortable__container--disabled { opacity: 0.6; }
-  .smrt-sortable__container--dragging { opacity: 0.55; }
-  .smrt-sortable__header { display: flex; align-items: center; gap: var(--smrt-spacing-2); min-block-size: 2.25rem; }
-  .smrt-sortable__content { flex: 1 1 auto; min-width: 0; display: flex; align-items: center; gap: var(--smrt-spacing-2); }
-  .smrt-sortable__items { display: grid; grid-template-columns: minmax(0, 1fr); gap: var(--smrt-spacing-1); min-block-size: 2.25rem; min-width: 0; }
-  .smrt-sortable__item { display: flex; align-items: center; gap: var(--smrt-spacing-2); padding: var(--smrt-spacing-1) var(--smrt-spacing-2); border: var(--smrt-hairline); border-radius: var(--smrt-radius-sm); background: var(--smrt-color-surface); min-width: 0; position: relative; }
-  .smrt-sortable__item--dragging { opacity: 0.55; }
-  .smrt-sortable__handle { display: inline-grid; place-items: center; flex: 0 0 auto; inline-size: 2rem; block-size: 2rem; padding: 0; border: 0; border-radius: var(--smrt-radius-sm); background: transparent; color: var(--smrt-color-on-surface-variant); cursor: grab; touch-action: none; }
-  .smrt-sortable__handle:active { cursor: grabbing; }
-  .smrt-sortable__handle:hover { background: var(--smrt-color-surface-container-high); }
-  .smrt-sortable__handle:focus-visible { outline: 2px solid var(--smrt-color-primary); outline-offset: 2px; }
-  .smrt-sortable__handle[aria-pressed='true'] { background: var(--smrt-color-primary-container, var(--smrt-color-surface-container-high)); color: var(--smrt-color-on-primary-container, inherit); }
-  .smrt-sortable__marker { block-size: 0.1875rem; border-radius: var(--smrt-radius-full); background: var(--smrt-color-primary); }
-  .smrt-sortable__marker--before { position: absolute; inset-inline: 0; inset-block-start: calc(-0.5 * (var(--smrt-spacing-1) + 0.1875rem)); }
-  .smrt-sortable__empty { margin: 0; padding: var(--smrt-spacing-2); color: var(--smrt-color-on-surface-variant); font: var(--smrt-typography-body-small-font); }
-  .smrt-sortable__live { position: absolute; inline-size: 1px; block-size: 1px; overflow: hidden; clip: rect(0 0 0 0); clip-path: inset(50%); white-space: nowrap; }
+@layer smrt.structure {
+  .smrt-sortable__root {
+    display: grid;
+    grid-template-columns: minmax(0, 1fr);
+    gap: var(--smrt-spacing-3);
+    min-width: 0;
+    position: relative;
+  }
+  .smrt-sortable__containers {
+    display: grid;
+    grid-template-columns: minmax(0, 1fr);
+    gap: var(--smrt-spacing-3);
+    min-width: 0;
+  }
+  .smrt-sortable__container {
+    display: grid;
+    grid-template-columns: minmax(0, 1fr);
+    gap: var(--smrt-spacing-2);
+    padding: var(--smrt-spacing-3);
+    min-width: 0;
+  }
+  .smrt-sortable__header {
+    display: flex;
+    align-items: center;
+    gap: var(--smrt-spacing-2);
+    min-block-size: 2.25rem;
+  }
+  .smrt-sortable__content {
+    flex: 1 1 auto;
+    min-width: 0;
+    display: flex;
+    align-items: center;
+    gap: var(--smrt-spacing-2);
+  }
+  .smrt-sortable__items {
+    display: grid;
+    grid-template-columns: minmax(0, 1fr);
+    gap: var(--smrt-spacing-1);
+    min-block-size: 2.25rem;
+    min-width: 0;
+  }
+  .smrt-sortable__item {
+    display: flex;
+    align-items: center;
+    gap: var(--smrt-spacing-2);
+    padding: var(--smrt-spacing-1) var(--smrt-spacing-2);
+    min-width: 0;
+    position: relative;
+  }
+  .smrt-sortable__handle {
+    display: inline-grid;
+    place-items: center;
+    flex: 0 0 auto;
+    inline-size: 2rem;
+    block-size: 2rem;
+    padding: 0;
+    cursor: grab;
+    touch-action: none;
+  }
+  .smrt-sortable__handle:active {
+    cursor: grabbing;
+  }
+  .smrt-sortable__marker {
+    block-size: 0.1875rem;
+  }
+  .smrt-sortable__marker--before {
+    position: absolute;
+    inset-inline: 0;
+    inset-block-start: calc(-0.5 * (var(--smrt-spacing-1) + 0.1875rem));
+  }
+  .smrt-sortable__empty {
+    margin: 0;
+    padding: var(--smrt-spacing-2);
+  }
+  .smrt-sortable__live {
+    position: absolute;
+    inline-size: 1px;
+    block-size: 1px;
+    overflow: hidden;
+    clip: rect(0 0 0 0);
+    clip-path: inset(50%);
+    white-space: nowrap;
+  }
 }
+
+@layer smrt.theme {
+  .smrt-sortable__container {
+    border: var(--smrt-hairline);
+    border-radius: var(--smrt-radius-md);
+    background: var(--smrt-color-surface-container);
+  }
+  .smrt-sortable__container--disabled {
+    opacity: 0.6;
+  }
+  .smrt-sortable__container--dragging {
+    opacity: 0.55;
+  }
+  .smrt-sortable__item {
+    border: var(--smrt-hairline);
+    border-radius: var(--smrt-radius-sm);
+    background: var(--smrt-color-surface);
+  }
+  .smrt-sortable__item--dragging {
+    opacity: 0.55;
+  }
+  .smrt-sortable__handle {
+    border: 0;
+    border-radius: var(--smrt-radius-sm);
+    background: transparent;
+    color: var(--smrt-color-on-surface-variant);
+  }
+  .smrt-sortable__handle:hover {
+    background: var(--smrt-color-surface-container-high);
+  }
+  .smrt-sortable__handle:focus-visible {
+    outline: 2px solid var(--smrt-color-primary);
+    outline-offset: 2px;
+  }
+  .smrt-sortable__handle[aria-pressed='true'] {
+    background: var(--smrt-color-primary-container, var(--smrt-color-surface-container-high));
+    color: var(--smrt-color-on-primary-container, inherit);
+  }
+  .smrt-sortable__marker {
+    border-radius: var(--smrt-radius-full);
+    background: var(--smrt-color-primary);
+  }
+  .smrt-sortable__empty {
+    color: var(--smrt-color-on-surface-variant);
+    font: var(--smrt-typography-body-small-font);
+  }
+}
+
 </style>

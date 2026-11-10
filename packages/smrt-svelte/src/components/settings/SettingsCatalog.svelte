@@ -56,13 +56,13 @@ function catalogHref(targetPage: number, selectedId?: string): string {
 }
 </script>
 
-<section class="smrt-settings-catalog" data-smrt-component="SettingsCatalog">
+<section class="smrt-settings-catalog__root" data-smrt-component="SettingsCatalog">
   <aside class="smrt-settings-catalog__browser">
     <Form method="GET" action={baseUrl} preventDefault={false} class="smrt-settings-catalog__search" role="search">
       {#each Object.entries(preservedParams) as [name, value] (name)}
         <Input type="hidden" {name} {value} />
       {/each}
-      <label for="smrt-settings-catalog-query" class="smrt-settings-catalog__sr-only">
+      <label for="smrt-settings-catalog-query" class="smrt-settings-catalog__sr-only" data-smrt-part="label">
         {searchLabel ?? t(M['ui.settings_catalog.search'])}
       </label>
       <Input
@@ -77,7 +77,7 @@ function catalogHref(targetPage: number, selectedId?: string): string {
       </Button>
     </Form>
 
-    <div class="smrt-settings-catalog__summary">
+    <div class="smrt-settings-catalog__summary" data-smrt-part="meta">
       <span>
         {t(M['ui.settings_catalog.result_range'], {
           start: rangeStart,
@@ -90,12 +90,14 @@ function catalogHref(targetPage: number, selectedId?: string): string {
     <nav
       class="smrt-settings-catalog__results"
       aria-label={resultsLabel ?? t(M['ui.settings_catalog.results'])}
+      data-smrt-part="list"
     >
       {#each page.items as item (item.id)}
         <a
           href={catalogHref(page.page, item.id)}
           class:smrt-settings-catalog__result--active={page.selected?.id === item.id}
           aria-current={page.selected?.id === item.id ? 'true' : undefined}
+          data-smrt-part="row"
         >
           {#if item.eyebrow}
             <small>{item.eyebrow}</small>
@@ -109,7 +111,7 @@ function catalogHref(targetPage: number, selectedId?: string): string {
           {/if}
         </a>
       {:else}
-        <p class="smrt-settings-catalog__empty">
+        <p class="smrt-settings-catalog__empty" data-smrt-part="empty">
           {emptyLabel ?? t(M['ui.settings_catalog.no_results'])}
         </p>
       {/each}
@@ -119,6 +121,7 @@ function catalogHref(targetPage: number, selectedId?: string): string {
       <nav
         class="smrt-settings-catalog__pager"
         aria-label={t(M['ui.settings_catalog.pagination'])}
+        data-smrt-part="footer"
       >
         {#if page.page > 1}
           <Button href={catalogHref(page.page - 1)} variant="ghost" size="sm">
@@ -139,7 +142,7 @@ function catalogHref(targetPage: number, selectedId?: string): string {
     {/if}
   </aside>
 
-  <div class="smrt-settings-catalog__detail">
+  <div class="smrt-settings-catalog__detail" data-smrt-part="content">
     {#if page.selected}
       {@render detail({ item: page.selected })}
     {:else}
@@ -150,122 +153,80 @@ function catalogHref(targetPage: number, selectedId?: string): string {
 
 <style>
 @layer smrt.reset, smrt.structure, smrt.theme;
-@layer smrt.theme {
-  .smrt-settings-catalog {
+@layer smrt.structure {
+  .smrt-settings-catalog__root {
     display: grid;
     grid-template-columns: minmax(17rem, 22rem) minmax(0, 1fr);
     gap: var(--smrt-spacing-5);
     align-items: start;
     min-width: 0;
   }
-
   :global(.smrt-settings-catalog__search) {
     display: grid;
     grid-template-columns: minmax(0, 1fr) auto;
     gap: var(--smrt-spacing-2);
     align-items: center;
   }
-
   .smrt-settings-catalog__browser,
   .smrt-settings-catalog__detail {
     min-width: 0;
   }
-
   .smrt-settings-catalog__browser {
     position: sticky;
     top: var(--smrt-spacing-4);
     display: grid;
     gap: var(--smrt-spacing-3);
   }
-
-  .smrt-settings-catalog__summary {
-    color: var(--smrt-color-on-surface-variant);
-    font-size: var(--smrt-typography-label-medium-size);
-  }
-
   .smrt-settings-catalog__results {
     display: grid;
     max-block-size: min(42rem, calc(100vh - 19rem));
     overflow-y: auto;
-    border-block: var(--smrt-hairline);
   }
-
   .smrt-settings-catalog__results a {
     position: relative;
     display: grid;
     gap: var(--smrt-spacing-1);
     min-width: 0;
     padding: var(--smrt-spacing-3);
-    border-bottom: var(--smrt-hairline);
-    color: inherit;
-    text-decoration: none;
   }
-
-  .smrt-settings-catalog__results a:hover,
-  .smrt-settings-catalog__results a.smrt-settings-catalog__result--active {
-    background: var(--smrt-color-surface-container-high);
-  }
-
   .smrt-settings-catalog__results a.smrt-settings-catalog__result--active::before {
     position: absolute;
     inset-block: var(--smrt-spacing-2);
     inset-inline-start: 0;
     inline-size: 3px;
-    border-radius: var(--smrt-radius-full);
-    background: var(--smrt-color-primary);
     content: '';
   }
-
   .smrt-settings-catalog__results small,
   .smrt-settings-catalog__results span,
   .smrt-settings-catalog__results .smrt-settings-catalog__status {
     overflow: hidden;
-    color: var(--smrt-color-on-surface-variant);
-    font-size: var(--smrt-typography-label-medium-size);
     text-overflow: ellipsis;
     white-space: nowrap;
   }
-
   .smrt-settings-catalog__results strong {
     overflow: hidden;
     text-overflow: ellipsis;
     white-space: nowrap;
   }
-
-  .smrt-settings-catalog__results .smrt-settings-catalog__status {
-    color: var(--smrt-color-primary);
-  }
-
   .smrt-settings-catalog__empty,
   .smrt-settings-catalog__detail > p {
     margin: 0;
-    color: var(--smrt-color-on-surface-variant);
   }
-
   .smrt-settings-catalog__empty {
     padding: var(--smrt-spacing-4) var(--smrt-spacing-3);
   }
-
   .smrt-settings-catalog__pager {
     display: grid;
     grid-template-columns: 1fr auto 1fr;
     align-items: center;
     gap: var(--smrt-spacing-2);
-    color: var(--smrt-color-on-surface-variant);
-    font-size: var(--smrt-typography-label-medium-size);
   }
-
   .smrt-settings-catalog__pager :global(a:last-child) {
     justify-self: end;
   }
-
   .smrt-settings-catalog__detail {
-    border: var(--smrt-hairline-strong);
-    border-radius: var(--smrt-radius-medium);
-    background: var(--smrt-color-surface);
     padding: var(--smrt-spacing-4);
   }
-
   .smrt-settings-catalog__sr-only {
     position: absolute;
     inline-size: 1px;
@@ -275,21 +236,66 @@ function catalogHref(targetPage: number, selectedId?: string): string {
     overflow: hidden;
     clip: rect(0, 0, 0, 0);
     white-space: nowrap;
-    border: 0;
   }
-
   @media (max-width: 760px) {
-    .smrt-settings-catalog {
+    .smrt-settings-catalog__root {
       grid-template-columns: minmax(0, 1fr);
     }
-
     .smrt-settings-catalog__browser {
       position: static;
     }
-
     .smrt-settings-catalog__results {
       max-block-size: 18rem;
     }
   }
 }
+
+@layer smrt.theme {
+  .smrt-settings-catalog__summary {
+    color: var(--smrt-color-on-surface-variant);
+    font-size: var(--smrt-typography-label-medium-size);
+  }
+  .smrt-settings-catalog__results {
+    border-block: var(--smrt-hairline);
+  }
+  .smrt-settings-catalog__results a {
+    border-bottom: var(--smrt-hairline);
+    color: inherit;
+    text-decoration: none;
+  }
+  .smrt-settings-catalog__results a:hover,
+  .smrt-settings-catalog__results a.smrt-settings-catalog__result--active {
+    background: var(--smrt-color-surface-container-high);
+  }
+  .smrt-settings-catalog__results a.smrt-settings-catalog__result--active::before {
+    border-radius: var(--smrt-radius-full);
+    background: var(--smrt-color-primary);
+  }
+  .smrt-settings-catalog__results small,
+  .smrt-settings-catalog__results span,
+  .smrt-settings-catalog__results .smrt-settings-catalog__status {
+    color: var(--smrt-color-on-surface-variant);
+    font-size: var(--smrt-typography-label-medium-size);
+  }
+  .smrt-settings-catalog__results .smrt-settings-catalog__status {
+    color: var(--smrt-color-primary);
+  }
+  .smrt-settings-catalog__empty,
+  .smrt-settings-catalog__detail > p {
+    color: var(--smrt-color-on-surface-variant);
+  }
+  .smrt-settings-catalog__pager {
+    color: var(--smrt-color-on-surface-variant);
+    font-size: var(--smrt-typography-label-medium-size);
+  }
+  .smrt-settings-catalog__detail {
+    border: var(--smrt-hairline-strong);
+    border-radius: var(--smrt-radius-medium);
+    background: var(--smrt-color-surface);
+  }
+  .smrt-settings-catalog__sr-only {
+    border: 0;
+  }
+}
+
 </style>
