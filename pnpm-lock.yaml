@@ -444,8 +444,8 @@ importers:
   packages/app-shell:
     dependencies:
       '@happyvertical/ai':
-        specifier: ^0.111.7
-        version: 0.111.7(@mlc-ai/web-llm@0.2.85)(@modelcontextprotocol/sdk@1.32.0(@cfworker/json-schema@4.1.1)(supports-color@10.2.2)(zod@4.6.7))(supports-color@10.2.2)(ws@8.21.0)(zod@4.6.7)
+        specifier: ^0.111.8
+        version: 0.111.8(@mlc-ai/web-llm@0.2.85)(@modelcontextprotocol/sdk@1.32.0(@cfworker/json-schema@4.1.1)(supports-color@10.2.2)(zod@4.6.7))(supports-color@10.2.2)(ws@8.21.0)(zod@4.6.7)
       '@happyvertical/smrt-app-mcp':
         specifier: workspace:*
         version: link:../smrt-app-mcp
@@ -477,8 +477,8 @@ importers:
         specifier: workspace:*
         version: link:../smrt-web
       '@happyvertical/sql':
-        specifier: ^0.111.7
-        version: 0.111.7(@russellthehippo/honker-node@0.3.3)(@sqliteai/sqlite-vector@1.0.0)
+        specifier: ^0.111.8
+        version: 0.111.8(@russellthehippo/honker-node@0.3.3)(@sqliteai/sqlite-vector@1.0.0)
       '@modelcontextprotocol/server':
         specifier: 2.3.1
         version: 2.3.1
