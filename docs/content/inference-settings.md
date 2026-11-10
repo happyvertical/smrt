@@ -21,6 +21,26 @@ through `onSaveKey({ provider, key })` and never receives one back; it shows
 that looks like a credential. A key is bound to the origin of the endpoint
 it was entered for, and the server sends it only to that origin.
 
+## Where the master key comes from
+
+smrt-secrets seals the key under an application master key. A server sets
+`SMRT_SECRET_MASTER_KEY`; the variable always wins. A local or desktop app
+has no environment for it, so the local runtime creates the key on first run
+and keeps it in its vault key store (an owner-only file store, or the desktop
+wrapper's OS keychain). The owner never sees or types it, and it is never
+generated outside the local profile. Pass the runtime's provider when you
+build the secret store:
+
+```ts
+const secrets = await SecretService.create({
+  db: await runtime.database(),
+  masterKeyProvider: () => runtime.secretMasterKey(), // null off the local profile
+});
+const resolver = createUserInferenceResolver({ secrets, fallback });
+```
+
+See the app-runtime README, "Secrets master key".
+
 ## Minimal SvelteKit wiring
 
 ```ts
@@ -61,6 +81,16 @@ export const actions = {
 ```svelte
 <InferenceSettingsPanel {...data} onSaveKey={saveKey} onSaveDefaults={saveChoices} />
 ```
+
+The generated app does this in `src/lib/server/inference-keys.ts` (the
+bind, store and "is it set" steps) and `src/lib/server/settings.ts`
+(`inferenceUserResolver()`, with `masterKeyProvider` above). Its `saveKey`
+action is owner-only: it refuses a session without
+`inference.customize` before reading the body, writes the key at the `user`
+level, and takes a preset key's model from the owner's saved default
+(`defaults.model`). `keySet` is read from the resolver's redacted view, so the
+panel shows "set" only after a key is really stored, and a store that cannot
+be read shows "not set" rather than failing the page.
 
 Register the preference kind and its permissions once at startup:
 `registerPreferenceKind(inferencePreferenceKind)` and
@@ -119,7 +149,7 @@ chain validation of `@happyvertical/smrt-inference` stays outermost:
 
 ```ts
 registerUserInferenceResolver(
-  createUserInferenceResolver({ db, fallback: createInferenceOverrideResolver({ db }) }),
+  createUserInferenceResolver({ secrets, fallback: createInferenceOverrideResolver({ db }) }),
 );
 ```
 

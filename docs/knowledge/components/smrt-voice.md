@@ -5,10 +5,10 @@ description: "Voice profile management for AI-powered voice synthesis and clonin
 status: "stable"
 generated:
   by: "smrt/scripts/generate-knowledge-okf.ts"
-  at: "2026-11-10T01:55:44Z"
+  at: "2026-11-10T02:12:11Z"
 audience: "internal"
 evidence_level: "source-inspected"
-source_revision: "sha256:50a2138d84b47f59684a28b2911f9b55b0ed43732836b60395268bb0d7f28662"
+source_revision: "sha256:50f181ecbe733363277b81418a59b5d8275de5d6127449bae49afae0b2dd26bd"
 sources:
   - id: "manifest"
     resource: "https://github.com/happyvertical/smrt/blob/main/packages/voice/package.json"
@@ -24,7 +24,7 @@ sources:
 
 - Directory: `packages/voice`
 - Private: no
-- Object source: `domain-artifact`
+- Object source: `scanner`
 - Evidence level: `source-inspected`
 
 ## Documentation
@@ -54,15 +54,15 @@ sources:
 
 ## Models
 
-- `VoiceOutput` (collection `contents`, extends `Content`, STI table)
+- `VoiceOutput` (collection `voiceoutputs`, extends `Content`, STI table)
 - `VoiceProfile` (collection `voiceprofiles`, extends `SmrtObject`, STI table)
 - `VoiceSample` (collection `voicesamples`, extends `SmrtObject`, STI table)
 
 ## MCP tools
 
-- `voiceoutput_get`: get on `@happyvertical/smrt-voice:VoiceOutput`
-- `voiceoutput_list`: list on `@happyvertical/smrt-voice:VoiceOutput`
-- `voiceprofile_get`: get on `@happyvertical/smrt-voice:VoiceProfile`
-- `voiceprofile_list`: list on `@happyvertical/smrt-voice:VoiceProfile`
-- `voicesample_get`: get on `@happyvertical/smrt-voice:VoiceSample`
-- `voicesample_list`: list on `@happyvertical/smrt-voice:VoiceSample`
+- `get_voiceoutputs`: get on `@happyvertical/smrt-voice:VoiceOutput`
+- `get_voiceprofiles`: get on `@happyvertical/smrt-voice:VoiceProfile`
+- `get_voicesamples`: get on `@happyvertical/smrt-voice:VoiceSample`
+- `list_voiceoutputs`: list on `@happyvertical/smrt-voice:VoiceOutput`
+- `list_voiceprofiles`: list on `@happyvertical/smrt-voice:VoiceProfile`
+- `list_voicesamples`: list on `@happyvertical/smrt-voice:VoiceSample`

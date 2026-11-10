@@ -29,6 +29,7 @@ export default {
       '@happyvertical/smrt-tenancy',
       '@happyvertical/smrt-users',
       '@happyvertical/smrt-reports',
+      '@happyvertical/smrt-secrets',
     ],
   },
 

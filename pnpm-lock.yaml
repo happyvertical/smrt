@@ -4267,6 +4267,9 @@ importers:
       '@happyvertical/smrt-scanner':
         specifier: workspace:*
         version: link:../scanner
+      '@happyvertical/smrt-secrets':
+        specifier: workspace:*
+        version: link:../secrets
       '@happyvertical/smrt-svelte':
         specifier: workspace:*
         version: link:../smrt-svelte

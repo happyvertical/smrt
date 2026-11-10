@@ -63,6 +63,7 @@
     "@happyvertical/smrt-profiles": "workspace:*",
     "@happyvertical/smrt-prompts": "workspace:*",
     "@happyvertical/smrt-scanner": "workspace:*",
+    "@happyvertical/smrt-secrets": "workspace:*",
     "@happyvertical/smrt-svelte": "workspace:*",
     "@happyvertical/smrt-tenancy": "workspace:*",
     "@happyvertical/smrt-ui": "workspace:*",

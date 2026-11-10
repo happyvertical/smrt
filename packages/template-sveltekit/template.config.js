@@ -28,6 +28,7 @@ export default {
     '@happyvertical/smrt-profiles': '^0.60.16',
     '@happyvertical/smrt-prompts': '^0.60.16',
     '@happyvertical/smrt-reports': '^0.60.16',
+    '@happyvertical/smrt-secrets': '^0.60.16',
     '@happyvertical/smrt-svelte': '^0.60.16',
     '@happyvertical/smrt-tenancy': '^0.60.16',
     '@happyvertical/smrt-ui': '^0.60.16',

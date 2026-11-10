@@ -80,6 +80,34 @@ test('the Inference section loads and accepts the owner’s writes', async ({
   ).toBeVisible();
 });
 
+test('the owner stores a provider key without any master key in the environment', async ({
+  ownerPage,
+}) => {
+  const apiKey = 'sk-e2e-owner-key-0123456789';
+  await ownerPage.goto('/settings/inference', { waitUntil: 'networkidle' });
+
+  const defaults = await postAction(ownerPage, 'saveDefaults', {
+    mode: 'byo',
+    provider: 'openai',
+    model: 'gpt-4o-mini',
+  });
+  expect(defaults.type).toBe('success');
+
+  // The local runtime creates the master key itself; the owner never types it.
+  const saved = await postAction(ownerPage, 'saveKey', {
+    provider: 'openai',
+    key: apiKey,
+  });
+  expect(saved.type).toBe('success');
+
+  await ownerPage.reload({ waitUntil: 'networkidle' });
+  await expect(ownerPage.getByTestId('inference-key-status')).toHaveText(
+    'API key: set',
+  );
+  // The key never comes back to the browser.
+  expect(await ownerPage.content()).not.toContain(apiKey);
+});
+
 test('the Prompts section loads', async ({ ownerPage }) => {
   const response = await ownerPage.goto('/settings/prompts', {
     waitUntil: 'networkidle',

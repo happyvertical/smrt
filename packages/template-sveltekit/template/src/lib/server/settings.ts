@@ -11,12 +11,17 @@
  */
 
 import {
+  createUserInferenceResolver,
+  type InferenceSecretStore,
+  registerUserInferenceResolver,
+  type UserInferenceResolver,
+} from '@happyvertical/smrt-inference/resolver';
+import {
   createInferenceOverrideResolver,
   type InferenceOverrideAuthorizer,
   InferenceSettingsService,
 } from '@happyvertical/smrt-inference/server';
-import { createInferenceResolver } from '@happyvertical/smrt-inference';
-import { setInferenceResolver } from '@happyvertical/smrt-core';
+import { SecretService } from '@happyvertical/smrt-secrets';
 import { createPreferenceStore } from '@happyvertical/smrt-preferences';
 import { PromptSettingsService } from '@happyvertical/smrt-prompts';
 import type { SmrtRuntimeLocals } from '@happyvertical/smrt-app-runtime/sveltekit';
@@ -52,20 +57,57 @@ export function requireSettingsSession(locals: SettingsLocals): SettingsSession 
 }
 
 /**
- * Stored tier bindings, aliases and fusions apply to every inference call in
- * this process. The database is named lazily: the runtime resolves after
- * `src/hooks.server.ts` imports this module. (Stored API keys are a separate
- * layer, `createUserInferenceResolver`, that needs a secrets master key; see
- * the Inference settings page.)
+ * The secrets the user resolver reads and writes. `SMRT_SECRET_MASTER_KEY`
+ * wins where it is set (servers); otherwise the local runtime creates the
+ * master key on first run and keeps it in its vault key store, so the owner
+ * never types or sees it (`runtime.secretMasterKey()` is `null` on deployed
+ * profiles, which need the variable). Built on first use: the database
+ * resolves after `src/hooks.server.ts` imports this module.
+ */
+let secretService: Promise<SecretService> | undefined;
+function secrets(): Promise<SecretService> {
+  secretService ??= (async () =>
+    SecretService.create({
+      db: await runtime.database(),
+      masterKeyProvider: () => runtime.secretMasterKey(),
+    }))().catch((cause: unknown) => {
+    secretService = undefined;
+    throw cause;
+  });
+  return secretService;
+}
+
+const lazySecrets: InferenceSecretStore = {
+  retrieve: async (name) => (await secrets()).retrieve(name),
+  store: async (name, value, options) =>
+    (await secrets()).store(name, value, options),
+  delete: async (name) => (await secrets()).delete(name),
+};
+
+let userResolver: UserInferenceResolver | undefined;
+
+/**
+ * The resolver stored API keys are written through and read from: the
+ * signed-in user's key, then the tenant's, then the stored tier bindings
+ * (`createInferenceOverrideResolver`), then config.
+ */
+export function inferenceUserResolver(): UserInferenceResolver {
+  userResolver ??= createUserInferenceResolver({
+    secrets: lazySecrets,
+    fallback: createInferenceOverrideResolver({
+      db: () => runtime.classOptions('InferenceOverride'),
+    }),
+  });
+  return userResolver;
+}
+
+/**
+ * Stored API keys, tier bindings, aliases and fusions apply to every
+ * inference call in this process. `registerUserInferenceResolver` keeps the
+ * chain validation outermost.
  */
 export function installInferenceOverrides(): void {
-  setInferenceResolver(
-    createInferenceResolver(
-      createInferenceOverrideResolver({
-        db: () => runtime.classOptions('InferenceOverride'),
-      }),
-    ),
-  );
+  registerUserInferenceResolver(inferenceUserResolver());
 }
 
 /** Inference settings reads, plus writes for a session that may customize. */

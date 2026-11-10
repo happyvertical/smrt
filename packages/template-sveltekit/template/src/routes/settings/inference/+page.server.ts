@@ -8,8 +8,14 @@ import {
 } from '@happyvertical/smrt-inference/server';
 import { fail } from '@sveltejs/kit';
 import {
+  type InferenceKeyPayload,
+  inferenceKeyIsSet,
+  saveInferenceKey,
+} from '$lib/server/inference-keys';
+import {
   inferencePreferenceStore,
   inferenceSettingsService,
+  inferenceUserResolver,
   readPayload,
   requireSettingsSession,
   type SettingsLocals,
@@ -78,8 +84,11 @@ export const load: PageServerLoad = async ({ locals, url, depends }) => {
     // The owner customizes the whole app; anyone else reads.
     canEdit: session.can(CUSTOMIZE_INFERENCE_PERMISSION),
     canPersonalize: session.can(PERSONALIZE_INFERENCE_PERMISSION),
-    // No key is ever sent to the browser; storing one is not wired here.
-    defaults: { ...preferences.choices, keySet: false },
+    // No key is ever sent to the browser, only whether one is stored.
+    defaults: {
+      ...preferences.choices,
+      keySet: await inferenceKeyIsSet(inferenceUserResolver()),
+    },
     providers: service.listProviderOptions(),
     tiers: await service.listInferenceSettings({ tenantId }),
     defaultTier: await service.getDefaultTierSetting({ tenantId }),
@@ -120,6 +129,31 @@ export const actions: Actions = {
               : 'These choices were refused.',
         });
       }
+    } catch (cause) {
+      const failure = settingsFailure(cause);
+      return fail(failure.status, { error: failure.error });
+    }
+    return { message: 'Saved.' };
+  },
+
+  // Owner only: the key is stored through the user resolver (as the
+  // `inference.provider-config` secret) and never comes back to the browser.
+  saveKey: async ({ request, locals }) => {
+    const session = requireSettingsSession(locals);
+    if (!session.can(CUSTOMIZE_INFERENCE_PERMISSION)) {
+      return fail(403, { error: 'You are not allowed to change this setting.' });
+    }
+    const change = await readPayload<InferenceKeyPayload>(request);
+    try {
+      // A preset key needs a model: the owner's saved default.
+      const saved = await createInferencePreferences(
+        await inferencePreferenceStore(),
+      ).read();
+      await saveInferenceKey(
+        inferenceUserResolver(),
+        change,
+        saved.choices.model,
+      );
     } catch (cause) {
       const failure = settingsFailure(cause);
       return fail(failure.status, { error: failure.error });

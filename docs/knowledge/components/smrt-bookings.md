@@ -5,10 +5,10 @@ description: "Operator-managed service reservations for SMRT"
 status: "stable"
 generated:
   by: "smrt/scripts/generate-knowledge-okf.ts"
-  at: "2026-11-10T01:55:44Z"
+  at: "2026-11-10T02:12:11Z"
 audience: "internal"
 evidence_level: "manifest-described"
-source_revision: "sha256:0b1e39c4d934202cb361f08c25a153e4ff601669de312d1868672669d0f0e659"
+source_revision: "sha256:079991b480df12baab28a902c8f828e78ce621a2d36d06baed4cdd69efa1ce44"
 sources:
   - id: "manifest"
     resource: "https://github.com/happyvertical/smrt/blob/main/packages/bookings/package.json"
@@ -27,7 +27,7 @@ sources:
 
 - Directory: `packages/bookings`
 - Private: no
-- Object source: `domain-artifact`
+- Object source: `none`
 - Evidence level: `manifest-described`
 
 ## Documentation

@@ -5,10 +5,10 @@ description: "Expense records for the SMRT framework - reviewed costs against a 
 status: "stable"
 generated:
   by: "smrt/scripts/generate-knowledge-okf.ts"
-  at: "2026-11-10T01:55:44Z"
+  at: "2026-11-10T02:12:11Z"
 audience: "internal"
 evidence_level: "source-inspected"
-source_revision: "sha256:31a68b9286b11fff241aeb286186bd89b7aeb21e47f7238289dda30c9334373b"
+source_revision: "sha256:c97d490136beb90dabe3ac5beb2191f99693f7669dbf2cee18eb9cef1ad01af1"
 sources:
   - id: "manifest"
     resource: "https://github.com/happyvertical/smrt/blob/main/packages/expenses/package.json"
@@ -36,7 +36,7 @@ sources:
 
 - Directory: `packages/expenses`
 - Private: no
-- Object source: `domain-artifact`
+- Object source: `scanner`
 - Evidence level: `source-inspected`
 
 ## Documentation
@@ -69,13 +69,13 @@ sources:
 
 ## Models
 
-- `Billings` (collection `expenseallocationbillings`, extends `SmrtCollection`)
+- `Billings` (collection `billingses`, extends `SmrtCollection`)
 - `Expense` (collection `expenses`, extends `SmrtObject`)
 - `ExpenseAllocationBilling` (collection `expenseallocationbillings`, extends `SmrtObject`)
 - `ExpenseAllocationPortion` (collection `expenseallocationportions`, extends `SmrtObject`)
 - `ExpenseAllocationRevision` (collection `expenseallocationrevisions`, extends `SmrtObject`)
-- `ExpenseCollection` (collection `expenses`, extends `SmrtCollection`)
+- `ExpenseCollection` (collection `expensecollections`, extends `SmrtCollection`)
 - `ExpenseReceipt` (collection `expensereceipts`, extends `SmrtObject`)
-- `ExpenseReceiptCollection` (collection `expensereceipts`, extends `SmrtJunction`)
-- `Portions` (collection `expenseallocationportions`, extends `SmrtCollection`)
-- `Revisions` (collection `expenseallocationrevisions`, extends `SmrtCollection`)
+- `ExpenseReceiptCollection` (collection `expensereceiptcollections`, extends `SmrtJunction`)
+- `Portions` (collection `portionses`, extends `SmrtCollection`)
+- `Revisions` (collection `revisionses`, extends `SmrtCollection`)

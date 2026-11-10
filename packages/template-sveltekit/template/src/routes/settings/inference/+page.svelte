@@ -67,6 +67,7 @@
     {message}
     {error}
     onSaveDefaults={(change) => save('saveDefaults', change)}
+    onSaveKey={data.canEdit ? (change) => save('saveKey', change) : undefined}
     onTestConnection={(request) => probe('testConnection', request)}
     onDiscoverModels={discover}
     onSaveTier={(change) => save('saveTier', change)}
