@@ -779,3 +779,31 @@ describe('onboarding chat visibility', () => {
     expect(panel()).toBeNull();
   });
 });
+
+describe('draft bar routes', () => {
+  it.each([
+    '/welcome',
+    '/settings',
+    '/settings/assistant',
+    '/settings/inference',
+    '/settings/appearance',
+    '/approvals',
+  ])('hides draft controls on %s', async (path) => {
+    page.url = new URL(path, 'http://localhost');
+    await render();
+    expect(container.textContent).not.toContain('Start draft');
+    expect(q('[data-testid="draft-header"]')).toBeNull();
+  });
+  it.each([
+    '/',
+    '/m/Customer',
+    '/m/Customer/new',
+    '/m/Customer/record-1',
+    '/history',
+    '/draft/review',
+  ])('shows draft controls on %s', async (path) => {
+    page.url = new URL(path, 'http://localhost');
+    await render();
+    expect(container.textContent).toContain('Start draft');
+  });
+});

@@ -133,7 +133,7 @@ onMount(() => {
   {#snippet panel({ open })}
     <AssistantPanel {open} buildingInDraft={!!data.description?.draft} />
   {/snippet}
-  {#if data.description}<DraftBar description={data.description} />{/if}
+  {#if data.description && (page.url.pathname === '/' || /^\/(m\/|history$|draft\/review$)/.test(page.url.pathname))}<DraftBar description={data.description} />{/if}
   {#key data.description?.mode}
     {@render children()}
   {/key}
