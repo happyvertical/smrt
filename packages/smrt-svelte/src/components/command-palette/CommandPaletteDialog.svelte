@@ -163,7 +163,7 @@ const inputLabel = $derived(label ?? t(M['ui.command_palette.input_label']));
   showClose={false}
   size="md"
 >
-  <div class="smrt-command-palette-dialog__root">
+  <div class="smrt-command-palette-dialog__root" data-smrt-part="body">
     <div class="smrt-command-palette-dialog__field" data-smrt-part="field">
       <svg class="smrt-command-palette-dialog__search-icon" data-smrt-part="icon" viewBox="0 0 24 24" width="18" height="18" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true" focusable="false"><circle cx="11" cy="11" r="7" /><path d="m20 20-3.5-3.5" /></svg>
       <Input
@@ -223,7 +223,7 @@ const inputLabel = $derived(label ?? t(M['ui.command_palette.input_label']));
                   <svg viewBox="0 0 24 24" width="18" height="18" fill="currentColor" focusable="false"><path d={path} /></svg>
                 {/if}
               </span>
-              <span class="smrt-command-palette-dialog__text" data-smrt-part="content">
+              <span class="smrt-command-palette-dialog__text" data-smrt-part="body">
                 <span class="smrt-command-palette-dialog__title" data-smrt-part="title">
                   {#each highlightSegments(result.item.title, result.titleRanges) as segment}
                     {#if segment.match}<mark>{segment.text}</mark>{:else}{segment.text}{/if}
@@ -236,7 +236,7 @@ const inputLabel = $derived(label ?? t(M['ui.command_palette.input_label']));
               {#if typeof result.item.disabled === 'string'}
                 <span class="smrt-command-palette-dialog__note" data-smrt-part="meta">{t(M['ui.command_palette.unavailable'])}</span>
               {:else if shortcut}
-                <kbd class="smrt-command-palette-dialog__shortcut" data-smrt-part="hint">{shortcut}</kbd>
+                <kbd class="smrt-command-palette-dialog__shortcut" data-smrt-part="description">{shortcut}</kbd>
               {/if}
             </div>
           {/each}
@@ -247,7 +247,7 @@ const inputLabel = $derived(label ?? t(M['ui.command_palette.input_label']));
       <p class="smrt-command-palette-dialog__empty" data-smrt-part="empty">{statusText}</p>
     {/if}
 
-    <div class="smrt-command-palette-dialog__hints" aria-hidden="true" data-smrt-part="hint">
+    <div class="smrt-command-palette-dialog__hints" aria-hidden="true" data-smrt-part="description">
       <span><kbd>↑</kbd><kbd>↓</kbd> {t(M['ui.command_palette.hint_move'])}</span>
       <span><kbd>↵</kbd> {t(M['ui.command_palette.hint_select'])}</span>
       <span><kbd>Esc</kbd> {t(M['ui.command_palette.hint_close'])}</span>

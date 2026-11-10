@@ -57,7 +57,7 @@ function catalogHref(targetPage: number, selectedId?: string): string {
 </script>
 
 <section class="smrt-settings-catalog__root" data-smrt-component="SettingsCatalog">
-  <aside class="smrt-settings-catalog__browser">
+  <aside class="smrt-settings-catalog__browser" data-smrt-part="group">
     <Form method="GET" action={baseUrl} preventDefault={false} class="smrt-settings-catalog__search" role="search">
       {#each Object.entries(preservedParams) as [name, value] (name)}
         <Input type="hidden" {name} {value} />
@@ -107,7 +107,7 @@ function catalogHref(targetPage: number, selectedId?: string): string {
             <span>{item.description}</span>
           {/if}
           {#if item.status}
-            <span class="smrt-settings-catalog__status">{item.status}</span>
+            <span class="smrt-settings-catalog__status" data-smrt-part="status">{item.status}</span>
           {/if}
         </a>
       {:else}
@@ -142,7 +142,7 @@ function catalogHref(targetPage: number, selectedId?: string): string {
     {/if}
   </aside>
 
-  <div class="smrt-settings-catalog__detail" data-smrt-part="content">
+  <div class="smrt-settings-catalog__detail" data-smrt-part="body">
     {#if page.selected}
       {@render detail({ item: page.selected })}
     {:else}

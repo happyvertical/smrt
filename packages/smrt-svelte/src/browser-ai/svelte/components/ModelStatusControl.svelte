@@ -104,7 +104,7 @@ async function run(
   </div>
 
   {#if snapshot.status === 'unavailable'}
-    <p class="smrt-model-status-control__hint" data-smrt-part="hint">
+    <p class="smrt-model-status-control__hint" data-smrt-part="description">
       {t(M['ui.model_status.webgpu_unavailable'])}
     </p>
   {:else if snapshot.status === 'loading'}

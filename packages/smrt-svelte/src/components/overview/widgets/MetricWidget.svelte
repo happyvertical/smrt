@@ -58,9 +58,9 @@ const href = $derived(
 {#if valid && metric}
   <div class="smrt-metric__root" data-smrt-component="MetricWidget">
     {#if href}
-      <a class="smrt-metric__value" data-smrt-part="content" {href}>{text}</a>
+      <a class="smrt-metric__value" data-smrt-part="body" {href}>{text}</a>
     {:else}
-      <p class="smrt-metric__value" data-smrt-part="content">{text}</p>
+      <p class="smrt-metric__value" data-smrt-part="body">{text}</p>
     {/if}
     {#if typeof metric.label === 'string' && metric.label}
       <p class="smrt-metric__label" data-smrt-part="label">{metric.label}</p>

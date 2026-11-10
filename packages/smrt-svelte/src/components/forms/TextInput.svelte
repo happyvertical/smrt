@@ -270,8 +270,8 @@ function handleInput(e: Event) {
   {#if label}
     <FieldLabel id={labelId} for={name} {label} {required} />
   {/if}
-  <div class="smrt-text-input__container">
-    <div class="smrt-text-input__content">
+  <div class="smrt-text-input__container" data-smrt-part="field">
+    <div class="smrt-text-input__content" data-smrt-part="body">
       <input
         bind:this={inputEl}
         id={name}
@@ -318,22 +318,22 @@ function handleInput(e: Event) {
       </button>
     {/if}
 
-    <div class="smrt-text-input__active-indicator"></div>
+    <div class="smrt-text-input__active-indicator" data-smrt-part="indicator"></div>
   </div>
 
-  <div id={`${name}-supporting`} class="smrt-text-input__supporting-text" data-smrt-part="hint" aria-live="polite">
+  <div id={`${name}-supporting`} class="smrt-text-input__supporting-text" data-smrt-part="description" aria-live="polite">
     {#if isInitializing}
-      <span class="smrt-text-input__info">{t(M['ui.text_input.downloading_model'], { progress: downloadProgress })}</span>
+      <span class="smrt-text-input__info" data-smrt-part="description">{t(M['ui.text_input.downloading_model'], { progress: downloadProgress })}</span>
     {:else if isHolding}
       <span class="smrt-text-input__success" data-smrt-part="status">Recording...</span>
     {:else if isProcessing}
-      <span class="smrt-text-input__info">Processing...</span>
+      <span class="smrt-text-input__info" data-smrt-part="description">Processing...</span>
     {:else if processError}
       <span class="smrt-text-input__error" data-smrt-part="error">{processError}</span>
     {:else if showInvalid}
       <span class="smrt-text-input__error" data-smrt-part="error">{t(M['ui.text_input.invalid_email'])}</span>
     {:else if description && isFocused}
-      <span class="smrt-text-input__info">{description}</span>
+      <span class="smrt-text-input__info" data-smrt-part="description">{description}</span>
     {/if}
   </div>
 </div>

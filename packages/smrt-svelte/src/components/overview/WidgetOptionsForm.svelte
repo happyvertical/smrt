@@ -135,7 +135,7 @@ const CustomEditor = $derived(optionsEditor ?? definition.optionsEditor);
           label={label(field)}
           bind:checked={() => flags[field.key] === true, (v) => (flags[field.key] = v)}
         />
-        {#if hint(field)}<small class="smrt-widget-form__hint" data-smrt-part="hint">{hint(field)}</small>{/if}
+        {#if hint(field)}<small class="smrt-widget-form__hint" data-smrt-part="description">{hint(field)}</small>{/if}
         {#if issues[field.key]}<small class="smrt-widget-form__error" data-smrt-part="error" role="alert">{issues[field.key]}</small>{/if}
       </div>
     {:else}

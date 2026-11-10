@@ -64,7 +64,7 @@ const hint = $derived(hotkeys[0] ? formatPaletteHotkey(hotkeys[0], apple) : '');
   <svg data-smrt-part="icon" viewBox="0 0 24 24" width="18" height="18" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true" focusable="false"><circle cx="11" cy="11" r="7" /><path d="m20 20-3.5-3.5" /></svg>
   {#if !compact}
     <span class="smrt-command-palette-trigger__label" data-smrt-part="label">{text}</span>
-    {#if hint}<kbd class="smrt-command-palette-trigger__hint" data-smrt-part="hint">{hint}</kbd>{/if}
+    {#if hint}<kbd class="smrt-command-palette-trigger__hint" data-smrt-part="description">{hint}</kbd>{/if}
   {/if}
 </Button>
 

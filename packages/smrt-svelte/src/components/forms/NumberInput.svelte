@@ -238,7 +238,7 @@ function handleInput(e: Event) {
     <FieldLabel id={labelId} for={name} {label} {required} />
   {/if}
 
-  <div class="smrt-number-input__input-wrapper">
+  <div class="smrt-number-input__input-wrapper" data-smrt-part="field">
     <input
       id={name}
       aria-labelledby={label ? labelId : undefined}

@@ -117,7 +117,7 @@ const summaryValues = $derived.by(() => {
   <ul class="smrt-records__root" data-smrt-component="RecordListWidget">
     {#each rows as row (row.id)}
       <li class="smrt-records__row" data-smrt-part="row">
-        <span class="smrt-records__main" data-smrt-part="content">
+        <span class="smrt-records__main" data-smrt-part="body">
           {#if row.href}
             <a class="smrt-records__title" data-smrt-part="title" href={row.href}>{row.title}</a>
           {:else}

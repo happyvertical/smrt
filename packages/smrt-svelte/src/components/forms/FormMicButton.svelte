@@ -97,7 +97,7 @@ function handleKeydown(e: KeyboardEvent) {
       </svg>
     {/if}
     {#if isListening}
-      <span class="smrt-form-mic-button__tooltip" data-smrt-part="hint">{t(M['ui.form_mic_button.tooltip'])}</span>
+      <span class="smrt-form-mic-button__tooltip" data-smrt-part="description">{t(M['ui.form_mic_button.tooltip'])}</span>
     {/if}
   </span>
 {/if}

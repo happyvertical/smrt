@@ -114,24 +114,24 @@ function contactHref(fact: RecordFact, text: string): string | undefined {
     </Button>
   {/if}
   <div class="smrt-record-header__row" data-smrt-part="row">
-    <div class="smrt-record-header__identity">
+    <div class="smrt-record-header__identity" data-smrt-part="label">
       <h1 class="smrt-record-header__title" data-smrt-part="title">
         {#if model.headingIdentifier && model.identifier}
           {model.heading.slice(0, model.heading.length - model.identifier.value.length)}<code
-            class="smrt-record-header__id">{model.identifier.value}</code
+            class="smrt-record-header__id" data-smrt-part="label">{model.identifier.value}</code
           >
         {:else}
           {model.heading}
         {/if}
       </h1>
       {#if model.identifier && !model.headingIdentifier}
-        <code class="smrt-record-header__id smrt-record-header__id--chip" title={model.identifier.field.label}
+        <code class="smrt-record-header__id smrt-record-header__id--chip" title={model.identifier.field.label} data-smrt-part="label"
           >{model.identifier.value}</code
         >
       {/if}
       {#if model.status}
         <Badge variant={statusTone(model.status.value, statusTones)}>
-          <span class="smrt-record-header__sr">{model.status.field.label}: </span>{statusLabel(model.status.value)}
+          <span class="smrt-record-header__sr" data-smrt-part="label">{model.status.field.label}: </span>{statusLabel(model.status.value)}
         </Badge>
       {/if}
     </div>

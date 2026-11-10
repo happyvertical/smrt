@@ -79,7 +79,7 @@ const cards = $derived.by((): Card[] => {
   <ul class="smrt-shortcuts__root" data-presentation={presentation} data-smrt-component="ShortcutsWidget">
     {#each cards as card (card.id)}
       <li class="smrt-shortcuts__card" data-smrt-part="panel">
-        <a class="smrt-shortcuts__link" href={card.href}>
+        <a class="smrt-shortcuts__link" href={card.href} data-smrt-part="action">
           <span class="smrt-shortcuts__heading" data-smrt-part="header">
             <span class="smrt-shortcuts__icon" data-smrt-part="icon">
               <ShellSectionIcon name={card.icon} size={28} {iconComponent} />
@@ -133,7 +133,7 @@ const cards = $derived.by((): Card[] => {
     inline-size: 28px;
     block-size: 28px;
   }
-  .smrt-shortcuts__icon :global(.smrt-shell-section-icon) {
+  .smrt-shortcuts__icon :global([data-smrt-component="ShellSectionIcon"]) {
     inline-size: 28px;
     block-size: 28px;
   }

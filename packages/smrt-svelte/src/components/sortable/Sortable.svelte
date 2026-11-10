@@ -180,7 +180,7 @@ function containerRank(id: string): number {
         }}
       >
         {#if markerBefore(container.id, nonDraggedRank(list, index)) && entry.id !== dragged}
-          <div class="smrt-sortable__marker smrt-sortable__marker--before" aria-hidden="true"></div>
+          <div class="smrt-sortable__marker smrt-sortable__marker--before" aria-hidden="true" data-smrt-part="indicator"></div>
         {/if}
         <!-- raw-primitive-allow: native button owns keyboard pickup and HTML drag/drop -->
         <button
@@ -202,7 +202,7 @@ function containerRank(id: string): number {
           ondragstart={(event) => itemSortable.dragStart(event, entry.id)}
           ondragend={() => itemSortable.dragEnd()}
         ><span aria-hidden="true">⠿</span></button>
-        <div class="smrt-sortable__content" data-smrt-part="content">
+        <div class="smrt-sortable__content" data-smrt-part="body">
           {@render itemSnippet({
             item: entry,
             container,
@@ -217,7 +217,7 @@ function containerRank(id: string): number {
       </div>
     {/each}
     {#if markerBefore(container.id, list.filter((entry) => entry.id !== dragged).length)}
-      <div class="smrt-sortable__marker" aria-hidden="true"></div>
+      <div class="smrt-sortable__marker" aria-hidden="true" data-smrt-part="indicator"></div>
     {/if}
   </div>
 {/snippet}
@@ -269,7 +269,7 @@ function containerRank(id: string): number {
           ondragend={() => containerSortable.dragEnd()}
         ><span aria-hidden="true">⠿</span></button>
       {/if}
-      <div class="smrt-sortable__content" data-smrt-part="content">
+      <div class="smrt-sortable__content" data-smrt-part="body">
         {#if containerHeader}
           {@render containerHeader({ container, count, isDragging: draggingContainer })}
         {:else}
@@ -299,14 +299,14 @@ function containerRank(id: string): number {
     >
       {#each movable as container (container.id)}
         {#if containerMarkerBefore(containerRank(container.id)) && containerSortable.drag?.itemId !== container.id}
-          <div class="smrt-sortable__marker" aria-hidden="true"></div>
+          <div class="smrt-sortable__marker" aria-hidden="true" data-smrt-part="indicator"></div>
         {/if}
         <div role="listitem" class="smrt-sortable__container-slot" data-smrt-part="row">
           {@render containerBlock(container, true)}
         </div>
       {/each}
       {#if containerMarkerBefore(movable.filter((c) => c.id !== containerSortable.drag?.itemId).length)}
-        <div class="smrt-sortable__marker" aria-hidden="true"></div>
+        <div class="smrt-sortable__marker" aria-hidden="true" data-smrt-part="indicator"></div>
       {/if}
     </div>
   {:else}

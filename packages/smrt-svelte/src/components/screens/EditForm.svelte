@@ -210,7 +210,7 @@ const formError = $derived(
         bind:checked={() => draft[field.name] === true, (v) => (draft[field.name] = v)}
       />
       {#if field.help}
-        <small class="smrt-edit-form__hint" data-smrt-part="hint">{field.help}</small>
+        <small class="smrt-edit-form__hint" data-smrt-part="description">{field.help}</small>
       {/if}
       {#if messageFor(field)}
         <small class="smrt-edit-form__error" data-smrt-part="error" role="alert">{messageFor(field)}</small>
@@ -275,7 +275,7 @@ const formError = $derived(
 
 {#snippet fieldList(list: ScreenField[])}
   {#each groupScreenFields(list) as [group, groupFields] (group ?? '')}
-    <fieldset class="smrt-edit-form__group">
+    <fieldset class="smrt-edit-form__group" data-smrt-part="group">
       {#if group}<legend>{group}</legend>{/if}
       {#each groupFields as field (field.name)}
         {@render control(field)}

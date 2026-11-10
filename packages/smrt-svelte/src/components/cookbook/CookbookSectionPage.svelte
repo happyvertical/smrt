@@ -63,7 +63,7 @@ const store = {
     {:else}
       <header data-smrt-part="header">
         <span class="smrt-cookbook-section-page__mark" data-smrt-part="icon"><ShellSectionIcon name={icon} size={28} /></span>
-        <div class="smrt-cookbook-section-page__heading" data-smrt-part="content">
+        <div class="smrt-cookbook-section-page__heading" data-smrt-part="body">
           <h1 data-smrt-part="title">{title}</h1>
           {#if description}<p>{description}</p>{/if}
         </div>
@@ -95,7 +95,7 @@ const store = {
     {@render children?.()}
   {:else}
     <h1 data-smrt-part="title">{t(M['ui.cookbook.section_not_found'])}</h1>
-    <p data-smrt-part="hint">{t(M['ui.cookbook.section_not_found_hint'])}</p>
+    <p data-smrt-part="description">{t(M['ui.cookbook.section_not_found_hint'])}</p>
   {/if}
 </main>
 

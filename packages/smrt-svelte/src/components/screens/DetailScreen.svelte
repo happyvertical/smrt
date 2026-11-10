@@ -145,9 +145,9 @@ async function confirmDelete(): Promise<void> {
 
 {#snippet fieldList(list: ScreenField[])}
   {#each groupScreenFields(list) as [group, groupFields] (group ?? '')}
-    <section class="smrt-detail-screen__group">
+    <section class="smrt-detail-screen__group" data-smrt-part="group">
       {#if group}<h2 class="smrt-detail-screen__group-title" data-smrt-part="title">{group}</h2>{/if}
-      <dl class="smrt-detail-screen__fields">
+      <dl class="smrt-detail-screen__fields" data-smrt-part="field">
         {#each groupFields as field (field.name)}
           {@const text = display(field)}
           <div class="smrt-detail-screen__field" data-smrt-part="field">
@@ -158,7 +158,7 @@ async function confirmDelete(): Promise<void> {
               {:else if field.kind === 'json'}
                 {@const entries = jsonScreenEntries(record[field.name])}
                 {#if entries}
-                  <dl class="smrt-detail-screen__pairs">
+                  <dl class="smrt-detail-screen__pairs" data-smrt-part="field">
                     {#each entries as entry (entry.key)}
                       <div>
                         <dt>{humanizeFieldName(entry.key)}</dt>
@@ -167,19 +167,19 @@ async function confirmDelete(): Promise<void> {
                     {/each}
                   </dl>
                 {:else}
-                  <pre class="smrt-detail-screen__block" data-smrt-part="content">{text}</pre>
+                  <pre class="smrt-detail-screen__block" data-smrt-part="body">{text}</pre>
                 {/if}
               {:else if field.kind === 'textarea'}
-                <pre class="smrt-detail-screen__block" data-smrt-part="content">{text}</pre>
+                <pre class="smrt-detail-screen__block" data-smrt-part="body">{text}</pre>
               {:else if safeHref(field, text)}
                 <a href={safeHref(field, text)}>{text}</a>
               {:else if field.kind === 'reference'}
                 {@const href = hrefFor?.(field, text)}
                 {@const label = referenceLabel(field, text)}
                 {#if href}
-                  <a href={href} class="smrt-detail-screen__reference">{#if label}{label}{:else}{@render shortId(text)}{/if}</a>
+                  <a href={href} class="smrt-detail-screen__reference" data-smrt-part="action">{#if label}{label}{:else}{@render shortId(text)}{/if}</a>
                 {:else if label}
-                  <span class="smrt-detail-screen__reference">{label}</span>
+                  <span class="smrt-detail-screen__reference" data-smrt-part="label">{label}</span>
                 {:else}
                   {@render shortId(text)}
                 {/if}

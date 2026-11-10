@@ -57,14 +57,6 @@
       "unsorted": false,
       "internalClasses": 2
     },
-    "packages/commerce/src/svelte/playground/PartyFormPreview.svelte": {
-      "unsorted": false,
-      "internalClasses": 1
-    },
-    "packages/content/src/svelte/components/ContentList.svelte": {
-      "unsorted": false,
-      "internalClasses": 1
-    },
     "packages/planner/src/lib/components/ChildRecords.svelte": {
       "unsorted": false,
       "internalClasses": 3
@@ -107,14 +99,6 @@
     },
     "packages/smrt-svelte/src/components/app/ShellSettingsPage.svelte": {
       "unsorted": true,
-      "internalClasses": 1
-    },
-    "packages/smrt-svelte/src/components/cookbook/CookbookSectionOverview.svelte": {
-      "unsorted": false,
-      "internalClasses": 1
-    },
-    "packages/smrt-svelte/src/components/forms/__tests__/form-scope.fixture.svelte": {
-      "unsorted": false,
       "internalClasses": 1
     },
     "packages/smrt-svelte/src/components/screens/RecipeScreens.svelte": {
@@ -236,10 +220,6 @@
     "packages/smrt-svelte/src/components/workspace/WorkspaceShell.svelte": {
       "unsorted": true,
       "internalClasses": 34
-    },
-    "packages/smrt-ui/src/components/forms/__tests__/place-picker.fixture.svelte": {
-      "unsorted": false,
-      "internalClasses": 1
     },
     "packages/subscriptions/src/svelte/PlanPicker.svelte": {
       "unsorted": false,

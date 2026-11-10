@@ -313,7 +313,7 @@ function handleBlur() {
     <FieldLabel id={labelId} for={name} {label} {required} />
   {/if}
 
-  <div class="smrt-money-input__input-wrapper">
+  <div class="smrt-money-input__input-wrapper" data-smrt-part="field">
     <input
       id={name}
         aria-labelledby={label ? labelId : undefined}
@@ -334,7 +334,7 @@ function handleBlur() {
       onfocus={handleFocus}
       onblur={handleBlur}
     />
-    <span class="smrt-money-input__currency-code">{currency}</span>
+    <span class="smrt-money-input__currency-code" data-smrt-part="unit">{currency}</span>
   </div>
 
   <!-- Hidden input for form submission with cents value -->

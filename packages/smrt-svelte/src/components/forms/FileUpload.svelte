@@ -274,7 +274,7 @@ function formatFileSize(bytes: number): string {
       </svg>
     </div>
     <p class="smrt-file-upload__drop-zone-label" data-smrt-part="label">{label}</p>
-    <p class="smrt-file-upload__drop-zone-hint" data-smrt-part="hint">{hint}</p>
+    <p class="smrt-file-upload__drop-zone-hint" data-smrt-part="description">{hint}</p>
   </div>
   <!-- Visually hidden rather than `hidden`: a hidden control cannot be focused,
        so the browser could not show its `required` validation bubble and would
@@ -307,8 +307,8 @@ function formatFileSize(bytes: number): string {
     <ul class="smrt-file-upload__file-list" data-smrt-part="list">
       {#each files as file, i (file.name)}
         <li class="smrt-file-upload__file-item" data-smrt-part="row">
-          <span class="smrt-file-upload__file-name">{file.name}</span>
-          <span class="smrt-file-upload__file-size">{formatFileSize(file.size)}</span>
+          <span class="smrt-file-upload__file-name" data-smrt-part="title">{file.name}</span>
+          <span class="smrt-file-upload__file-size" data-smrt-part="meta">{formatFileSize(file.size)}</span>
           <button
             class="smrt-file-upload__file-remove"
             data-smrt-part="close"

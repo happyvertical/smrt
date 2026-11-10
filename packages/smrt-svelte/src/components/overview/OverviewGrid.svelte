@@ -353,7 +353,7 @@ const headingTag = $derived(`h${headingLevel}`);
 
 {#snippet body(row: Row)}
   {@const Widget = components?.get(row.widget.type) ?? row.def?.component}
-  <article class="smrt-overview__widget" aria-labelledby="{uid}-title-{row.widget.id}">
+  <article class="smrt-overview__widget" aria-labelledby="{uid}-title-{row.widget.id}" data-smrt-part="group">
     <svelte:element this={headingTag} class="smrt-overview__title" data-smrt-part="title" id="{uid}-title-{row.widget.id}">{#if heading}{@render heading(row.widget, row.title)}{:else}{row.title}{/if}</svelte:element>
     <div class="smrt-overview__content" data-smrt-part="body" aria-busy={row.status === 'loading'}>
       {#if !row.def}
@@ -377,7 +377,7 @@ const headingTag = $derived(`h${headingLevel}`);
           presentation={editing ? 'card' : presentation}
         />
       {:else}
-        <p class="smrt-overview__state">{t(M['ui.overview.unavailable'])}</p>
+        <p class="smrt-overview__state" data-smrt-part="status">{t(M['ui.overview.unavailable'])}</p>
       {/if}
     </div>
   </article>
@@ -454,7 +454,7 @@ const headingTag = $derived(`h${headingLevel}`);
                 onpointerup={(event) => sortable.pointerUp(event)}
                 onpointercancel={(event) => sortable.pointerCancel(event)}
                 ondragstart={(event) => sortable.dragStart(event, row.widget.id)}
-                ondragend={() => sortable.dragEnd()}
+                ondragend={() => sortable.dragEnd()} data-smrt-part="grabber"
               ><span aria-hidden="true">⠿</span></button>
               <!-- Truncated to one line beside the controls; the tooltip carries the full title. -->
               <span class="smrt-overview__chrome-title" data-smrt-part="label" aria-hidden="true" title={row.title}>{row.title}</span>
@@ -471,7 +471,7 @@ const headingTag = $derived(`h${headingLevel}`);
                 onclick={() => remove(row)}
               />
             </div>
-            <div class="smrt-overview__inert" inert>
+            <div class="smrt-overview__inert" inert data-smrt-part="group">
               {@render body(row)}
             </div>
             {#if row.def}
@@ -489,7 +489,7 @@ const headingTag = $derived(`h${headingLevel}`);
                 onpointerdown={(event) => resizeDown(event, row)}
                 onpointermove={(event) => resizeMove(event, row)}
                 onpointerup={(event) => resizeUp(event, row)}
-                onpointercancel={(event) => resizeUp(event, row)}
+                onpointercancel={(event) => resizeUp(event, row)} data-smrt-part="resize"
               ></div>
             {/if}
           {:else}
@@ -512,9 +512,9 @@ const headingTag = $derived(`h${headingLevel}`);
         {#each controller.addable as def (def.type)}
           <li data-smrt-part="row">
             <Button type="button" variant="ghost" fullWidth onclick={() => chooseType(def.type)}>
-              <span class="smrt-overview__choice">
+              <span class="smrt-overview__choice" data-smrt-part="trigger">
                 {#if def.icon}<ShellSectionIcon name={def.icon} {iconComponent} />{/if}
-                <span class="smrt-overview__choice-text">
+                <span class="smrt-overview__choice-text" data-smrt-part="label">
                   <strong>{t(def.title)}</strong>
                   {#if def.description}<small>{t(def.description)}</small>{/if}
                 </span>

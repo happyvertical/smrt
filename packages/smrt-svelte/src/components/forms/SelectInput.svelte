@@ -141,8 +141,8 @@ function handleChange(e: Event) {
   {#if label}
     <FieldLabel id={labelId} for={name} {label} {required} />
   {/if}
-  <div class="smrt-select-input__container">
-    <div class="smrt-select-input__content">
+  <div class="smrt-select-input__container" data-smrt-part="field">
+    <div class="smrt-select-input__content" data-smrt-part="body">
       <select
         id={name}
         aria-labelledby={label ? labelId : undefined}
@@ -170,12 +170,12 @@ function handleChange(e: Event) {
       <Icon name="chevron-down" size={24} />
     </div>
 
-    <div class="smrt-select-input__active-indicator"></div>
+    <div class="smrt-select-input__active-indicator" data-smrt-part="indicator"></div>
   </div>
 
-  <div id={`${name}-supporting`} class="smrt-select-input__supporting-text" data-smrt-part="hint" aria-live="polite">
+  <div id={`${name}-supporting`} class="smrt-select-input__supporting-text" data-smrt-part="description" aria-live="polite">
     {#if description && isFocused}
-      <span class="smrt-select-input__info">{description}</span>
+      <span class="smrt-select-input__info" data-smrt-part="description">{description}</span>
     {/if}
   </div>
 </div>
