@@ -1944,6 +1944,9 @@ importers:
       '@happyvertical/ai':
         specifier: ^0.111.10
         version: 0.111.10(@mlc-ai/web-llm@0.2.85)(@modelcontextprotocol/sdk@1.32.0(@cfworker/json-schema@4.1.1)(supports-color@10.2.2)(zod@4.6.7))(supports-color@10.2.2)(ws@8.21.0)(zod@4.6.7)
+      '@happyvertical/auth':
+        specifier: 'catalog:'
+        version: 0.111.10(typescript@6.0.3)
       '@happyvertical/smrt-config':
         specifier: workspace:*
         version: link:../config

@@ -76,6 +76,26 @@ always wins), tenant, entitlement, then plan spend caps; a block throws
 `InferenceUnavailableError` (`entitlement`) and writes a `blocked` usage row.
 Details: [agents/hosted.md](agents/hosted.md).
 
+## Sign in with ChatGPT (`src/chatgpt/`, `./server`)
+
+Local profile only; a PREVIEW for open source apps
+([limitations](https://developers.openai.com/siwc/token-sharing-open-source/preview-limitations)).
+`createChatGPTPlanConnection({ appName, credentialsPath })` wraps the SDK's
+`LocalChatGPTSessionManager` (`@happyvertical/auth/local`, loaded lazily): the
+SDK's own owner-only file at `credentialsPath` is the only credential store;
+smrt never reads it, and no result, log or error carries a token (status is
+`signedIn`, `signingIn`, an account label, a fixed-vocabulary error;
+`clientOptions()` hands the provider `{ accessToken }` only). `start()` returns
+the URL only after checking https on `auth.openai.com`. The resolver
+(`createChatGPTPlanResolver`, composed outside the user resolver by
+`createInferenceSettingsHost({ chatgptPlan })`) answers only calls whose
+`appliesTo` is true: `chatgpt-plan` with `source: 'byo'` when signed in,
+`unavailable: 'unconfigured'` otherwise, never an API-key fallback, never a
+default. The provider rejects `maxTokens`, sampling, `user`, response formats,
+reasoning, forced single-function `toolChoice` and `stream()` with tools; the
+caller sends none of them (`classifyChatGPTPlanFailure` names the failures).
+Guide: [docs/content/inference-settings.md](../../docs/content/inference-settings.md).
+
 ## Config
 
 ```ts

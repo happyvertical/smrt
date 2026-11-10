@@ -165,3 +165,61 @@ what each entry replaces (`shadows`) and why the executor would refuse it
 (`issues`, seat prompt keys included). The whole picture (tiers, fallback,
 fusions, modes, hosted inference, usage) is in
 [Inference tiers, bindings and usage](./inference.md).
+
+## Sign in with ChatGPT (local apps)
+
+A local app (one person, on their own computer) can let its owner use their
+own ChatGPT plan instead of an API key, through OpenAI's official flow. It is a
+**preview for open source apps**: read OpenAI's
+[preview limitations](https://developers.openai.com/siwc/token-sharing-open-source/preview-limitations)
+before offering it. `@happyvertical/smrt-inference/server` ships the pieces;
+`@happyvertical/ai` (0.111.10 or later) is the `chatgpt-plan` provider and
+`@happyvertical/auth/local` runs the sign-in.
+
+```ts
+import {
+  createChatGPTPlanConnection,
+  createInferenceSettingsHost,
+} from '@happyvertical/smrt-inference/server';
+
+const chatgpt = createChatGPTPlanConnection({
+  appName: 'My app', // shown on OpenAI's page
+  credentialsPath: join(privateStateDir, 'chatgpt', 'chatgpt.json'),
+});
+const host = createInferenceSettingsHost({
+  database, overrides,
+  chatgptPlan: {
+    connection: chatgpt,
+    // Opt in per call. There is no default: a tier is never moved to the plan.
+    appliesTo: (request) => request.className === 'MyAssistant',
+  },
+});
+host.install();
+```
+
+- **Sign-in.** `chatgpt.start()` returns the authorization URL (checked to be
+  https on `auth.openai.com`); open it in the system browser. The SDK's
+  loopback listener (127.0.0.1, PKCE, dynamic client registration, OIDC
+  validation) receives the callback. `status()` reports `signedIn`,
+  `signingIn`, an account label and a fixed-vocabulary error; `signOut()`
+  clears the local credentials and asks OpenAI to revoke them; `models()` lists
+  the account's models from the plan's catalog (the first is the default).
+- **Credentials.** The SDK keeps them in one owner-only file at
+  `credentialsPath` (directory `0700`, file `0600`, atomic writes). Pass a path
+  in the app's private state area, outside any project. smrt never reads that
+  file, and never logs, returns or copies a token: the provider is handed a
+  `{ accessToken(clientId) }` handle and nothing else.
+- **Opt in, never fall back.** The resolver composes outside the user resolver
+  and applies only to calls whose `appliesTo` returns true. Such a call with
+  nobody signed in is `unavailable: 'unconfigured'`; it does not run on an API
+  key. Every other call resolves as before.
+- **Calling it.** Build the client with `chatgpt.clientOptions({ model,
+  toolNamespace })` and use `chat()` (with `onProgress` for text). The preview
+  rejects `maxTokens`, sampling options, `user`, response formats, reasoning
+  options, a forced single-function `toolChoice`, non-function tools and image
+  tool results with `subscription_sharing_unsupported_capability`;
+  `stream()` rejects tools. `classifyChatGPTPlanFailure()` names a failure
+  `usage_limit`, `session_revoked`, `workspace`, `unavailable` or
+  `unsupported_capability` from the SDK's class and code.
+- **Claude.** There is no equivalent for Claude: its subscription is not
+  offered by this package (`claude-cli` stays refused by the app shell).

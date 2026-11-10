@@ -9,12 +9,20 @@
  * so a key saved on the Inference page is the key the process's inference
  * calls (including the shell's assistant) use, with no restart.
  */
-import type { SmrtClassOptions } from '@happyvertical/smrt-core';
+import {
+  type SmrtClassOptions,
+  setInferenceResolver,
+} from '@happyvertical/smrt-core';
 import {
   type SecretMasterKeyProvider,
   SecretService,
 } from '@happyvertical/smrt-secrets';
 import type { DatabaseInterface } from '@happyvertical/sql';
+import {
+  type ChatGPTPlanResolverOptions,
+  createChatGPTPlanResolver,
+} from '../chatgpt/resolver.js';
+import { createInferenceResolver } from '../register.js';
 import {
   createUserInferenceResolver,
   type InferenceSecretStore,
@@ -37,6 +45,12 @@ export interface InferenceSettingsHostOptions {
   masterKeyProvider?: SecretMasterKeyProvider;
   /** Database options of the `InferenceOverride` collection. */
   overrides: () => SmrtClassOptions;
+  /**
+   * Sign in with ChatGPT (an opt-in billing path, never a fallback): the
+   * connection, and which calls ask for it. Composed OUTSIDE the user
+   * resolver by {@link InferenceSettingsHost.install}.
+   */
+  chatgptPlan?: Omit<ChatGPTPlanResolverOptions, 'fallback'>;
 }
 
 /** The principal of a settings request. */
@@ -109,7 +123,19 @@ export function createInferenceSettingsHost(
   return {
     secrets,
     userResolver,
-    install: () => registerUserInferenceResolver(userResolver()),
+    install: () => {
+      if (!options.chatgptPlan)
+        return registerUserInferenceResolver(userResolver());
+      setInferenceResolver(
+        createInferenceResolver(
+          createChatGPTPlanResolver({
+            ...options.chatgptPlan,
+            fallback: userResolver(),
+          }),
+        ),
+      );
+      return userResolver();
+    },
     settingsService(session, permission) {
       const authorize: InferenceOverrideAuthorizer = (request) =>
         session.can(permission) &&

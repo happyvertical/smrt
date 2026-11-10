@@ -60,6 +60,13 @@ await article.do('Summarize this', { tier: 'great' });
   to targets on the app's allow-list; keys stay in smrt-secrets.
 - **Hosted inference**: per-user gateway keys (`./node`) and the spend gate
   and kill switch (`./gate`).
+- **Sign in with ChatGPT** (`./server`, local apps): a connection service over
+  the SDK's `LocalChatGPTSessionManager` and an opt-in resolver that yields a
+  `chatgpt-plan` target, so a person can use their own ChatGPT plan. It is a
+  preview for open source apps
+  ([limitations](https://developers.openai.com/siwc/token-sharing-open-source/preview-limitations)),
+  never a default and never a fallback. See
+  [Inference settings](../../docs/content/inference-settings.md#sign-in-with-chatgpt-local-apps).
 
 The app-author guide, with a worked example, is
 [Inference tiers, bindings and usage](../../docs/content/inference.md).

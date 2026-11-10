@@ -58,6 +58,7 @@
   },
   "dependencies": {
     "@happyvertical/ai": "catalog:",
+    "@happyvertical/auth": "catalog:",
     "@happyvertical/smrt-config": "workspace:*",
     "@happyvertical/smrt-core": "workspace:*",
     "@happyvertical/smrt-prompts": "workspace:*",

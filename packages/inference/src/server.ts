@@ -14,6 +14,28 @@
 import './__smrt-register__.js';
 
 export {
+  CHATGPT_AUTH_HOST,
+  CHATGPT_PLAN_PROVIDER,
+  CHATGPT_SIGN_IN_WINDOW_MS,
+  type ChatGPTPlanConnection,
+  type ChatGPTPlanConnectionOptions,
+  type ChatGPTPlanModel,
+  type ChatGPTPlanModelLister,
+  type ChatGPTPlanStatus,
+  type ChatGPTSessionStore,
+  ChatGPTSignedOutError,
+  type ChatGPTSignInErrorCode,
+  type ChatGPTTokenSource,
+  createChatGPTPlanConnection,
+  isChatGPTAuthorizationUrl,
+} from './chatgpt/connection.js';
+export {
+  type ChatGPTPlanFailureKind,
+  type ChatGPTPlanResolverOptions,
+  classifyChatGPTPlanFailure,
+  createChatGPTPlanResolver,
+} from './chatgpt/resolver.js';
+export {
   APP_INFERENCE_SCOPE_ID,
   InferenceOverride,
   type InferenceOverrideOptions,
