@@ -63,9 +63,10 @@ import {
   type ShellNavGroup,
   type ShellNavItem,
   type ShellPanelDefaults,
+  type ShellPanelResize,
   type ShellSectionActionsContext,
+  type ShellViewport,
 } from '../workspace/admin-shell/types.js';
-import WorkspaceAccountMenu from '../workspace/admin-shell/WorkspaceAccountMenu.svelte';
 import DockSlot from './DockSlot.svelte';
 import DockToggles from './DockToggles.svelte';
 import type { DockToggle } from './dock-toggle.js';
@@ -76,11 +77,14 @@ import {
   resolvePhoneTabBar,
 } from './phone-tabs.js';
 import RuntimeDiagnosticsWebMcp from './RuntimeDiagnosticsWebMcp.svelte';
+import ShellAccountMenu from './ShellAccountMenu.svelte';
 import ShellColorSchemeToggle from './ShellColorSchemeToggle.svelte';
 import type { ShellUser } from './shell-user.js';
 import type {
   AppShellAccountMenu,
   AppShellCommandPalette,
+  AppShellPanelToggle,
+  AppShellVoiceToggle,
   ShellSlotItem,
 } from './slot-item.js';
 import { runViewTransition } from './view-transition.js';
@@ -149,6 +153,47 @@ interface Props {
    * (trigger, dialog and global shortcut). Off unless given.
    */
   commandPalette?: AppShellCommandPalette;
+  /**
+   * A docked panel between the left sidebar and the main area (sidebar, panel,
+   * content), e.g. an assistant chat. Off unless given, so existing apps are
+   * unchanged. Stays mounted while closed. Off phones it has a draggable,
+   * keyboard-operable separator (`panelResize`); on phones it is a full-size
+   * view over the content that the phone tab bar's panel tab (see
+   * `panelToggle`) switches to.
+   */
+  panel?: Snippet<[{ viewport: ShellViewport; open: boolean }]>;
+  /**
+   * Turn the docked panel (and its toggle and phone tab) off without removing
+   * the `panel` snippet, e.g. when the app runs as a plugin inside a host app
+   * that is the chat. Default true.
+   */
+  panelEnabled?: boolean;
+  /**
+   * Whether the docked panel is open on tablet and desktop (bindable; the
+   * host persists it). On phones the open state is internal: the panel starts
+   * closed and closes when the location changes.
+   */
+  panelOpen?: boolean;
+  /** Accessible name of the docked panel (default "Panel"). */
+  panelLabel?: string;
+  /** Resizing of the docked panel; see `AdminShell` `panelResize` (default on). */
+  panelResize?: boolean | ShellPanelResize;
+  /** Width in px until the user resizes the panel (default 400). */
+  panelSize?: number;
+  /**
+   * The built-in item `item:panel-toggle`: an icon button with `aria-pressed`
+   * that opens and closes the docked panel. Default slot `leftSidebar.footer`,
+   * kept as an icon in the collapsed rail; a tab in the phone tab bar. Needs
+   * `panel`. `false` or omitted: no toggle (the host drives `panelOpen`).
+   */
+  panelToggle?: AppShellPanelToggle | false;
+  /**
+   * The built-in item `item:voice`: an icon button for a voice mode, default
+   * slot `leftSidebar.footer`, above the panel toggle; kept as an icon in the
+   * collapsed rail. See `AppShellVoiceToggle` (a toggle, or an honest
+   * not-available-yet state). `false` or omitted: none.
+   */
+  voiceToggle?: AppShellVoiceToggle | false;
   /** Options for the Provider's WebMCP integration; passed through unchanged. */
   webmcp?: boolean | WebMcpProviderConfig;
   /**
@@ -324,6 +369,14 @@ let {
   appPanelDocs,
   dock,
   dockToggles = [],
+  panel: panelSnippet,
+  panelEnabled = true,
+  panelOpen = $bindable(true),
+  panelLabel,
+  panelResize,
+  panelSize,
+  panelToggle = false,
+  voiceToggle = false,
   slots: hostSlots,
   slotItems = [],
   layoutEditing = false,
@@ -344,6 +397,9 @@ const SHELL_BRAND_ITEM_ID = 'item:brand';
 const SHELL_ACCOUNT_ITEM_ID = 'item:account';
 const SHELL_COLOR_SCHEME_ITEM_ID = 'item:color-scheme';
 const SHELL_COMMAND_PALETTE_ITEM_ID = 'item:command-palette';
+const SHELL_PANEL_TOGGLE_ITEM_ID = 'item:panel-toggle';
+const SHELL_VOICE_ITEM_ID = 'item:voice';
+const panel = $derived(panelEnabled ? panelSnippet : undefined);
 const target = shellTargetAction(provideShellTargets());
 /** Stable id of the built-in edit-layout toggle item. */
 const layoutFloating = $derived(
@@ -357,6 +413,8 @@ const { t } = useI18n();
 interface PlacedEntry extends ShellPlacementItem {
   render?: Snippet;
   toggle?: DockToggle;
+  /** Kept in the collapsed left rail (see `ShellSlotItem.rail`). */
+  rail?: boolean;
   /** Stays interactive and is not draggable while the layout is edited. */
   fixed?: boolean;
 }
@@ -388,6 +446,24 @@ const entries = $derived.by(() => {
     }
   }
   for (const item of slotItems) add({ ...item });
+  if (voiceToggle) {
+    add({
+      id: SHELL_VOICE_ITEM_ID,
+      label: voiceToggle.label,
+      slot: voiceToggle.slot ?? 'leftSidebar.footer',
+      render: voiceItem,
+      rail: true,
+    });
+  }
+  if (panel && panelToggle) {
+    add({
+      id: SHELL_PANEL_TOGGLE_ITEM_ID,
+      label: panelToggle.label,
+      slot: panelToggle.slot ?? 'leftSidebar.footer',
+      render: panelToggleItem,
+      rail: true,
+    });
+  }
   for (const toggle of dockToggles) {
     add({
       id: shellDockItemId(toggle.tool),
@@ -483,7 +559,10 @@ const tabEntries = $derived(
   phoneTabNavEntries(applied.nav, applied.groups, navMode, sectionHref),
 );
 const tabBarOn = $derived(
-  tabBarBudget > 0 && (tabEntries.length > 0 || dockToggles.length > 0),
+  tabBarBudget > 0 &&
+    (tabEntries.length > 0 ||
+      dockToggles.length > 0 ||
+      Boolean(panel && panelToggle)),
 );
 const tabDockToggle = $derived(tabBarOn ? dockToggles[0] : undefined);
 
@@ -492,7 +571,8 @@ const entriesFor = (name: ShellSlot): PlacedEntry[] => {
   const byId = new Map(entries.map((entry) => [entry.id, entry]));
   return slotIds[name].flatMap((id) =>
     (id === SHELL_ACCOUNT_ITEM_ID && accountInRail) ||
-    (id === SHELL_COLOR_SCHEME_ITEM_ID && colorSchemeInSidebar)
+    (id === SHELL_COLOR_SCHEME_ITEM_ID && colorSchemeInSidebar) ||
+    (name === 'leftSidebar.footer' && railFooterActive && byId.get(id)?.rail)
       ? []
       : (byId.get(id) ?? []),
   );
@@ -578,6 +658,39 @@ const accountInRail = $derived(
     shell.isEdgeShown('left') &&
     shell.panels.left === 'collapsed',
 );
+// Footer items flagged `rail` (the panel toggle, a host's voice toggle) stay
+// as icons above the avatar in the collapsed rail.
+const railFooterActive = $derived(
+  !editing &&
+    shell.viewport !== 'phone' &&
+    shell.isEdgeShown('left') &&
+    shell.panels.left === 'collapsed',
+);
+const railEntries = $derived(
+  railFooterActive
+    ? (slotIds['leftSidebar.footer'] ?? []).flatMap((id) => {
+        const entry = entries.find((candidate) => candidate.id === id);
+        return entry?.rail ? [entry] : [];
+      })
+    : [],
+);
+// ---- Docked panel -------------------------------------------------------
+// Desktop and tablet use the host's persisted `panelOpen`; a phone has its
+// own view state that starts on the content and returns to it on navigation.
+let phonePanelOpen = $state(false);
+const panelOpenNow = $derived(
+  shell.viewport === 'phone' ? phonePanelOpen : panelOpen,
+);
+function togglePanel(): void {
+  if (shell.viewport === 'phone') phonePanelOpen = !phonePanelOpen;
+  else panelOpen = !panelOpen;
+}
+let lastHref = untrack(() => currentHref);
+$effect(() => {
+  if (currentHref === lastHref) return;
+  lastHref = currentHref;
+  phonePanelOpen = false;
+});
 // ---- Color scheme ------------------------------------------------------
 // Placed in the left sidebar footer (the default) on desktop, the toggle
 // renders in the sidebar's utility row beside the chevron, expanded or as
@@ -830,6 +943,8 @@ const EDGE_OF_REGION: Record<ShellRegion, PanelEdge> = {
       {#if !(tabDockToggle?.tool === entry.toggle.tool && shell.viewport === 'phone')}
         <DockToggles toggles={[entry.toggle]} />
       {/if}
+    {:else if entry.id === SHELL_PANEL_TOGGLE_ITEM_ID && tabBarOn && shell.viewport === 'phone'}
+      <!-- On phones the tab bar carries this toggle. -->
     {:else if entry.render}
       {@render entry.render()}
     {/if}
@@ -924,7 +1039,9 @@ const EDGE_OF_REGION: Record<ShellRegion, PanelEdge> = {
 {/snippet}
 
 {#snippet accountMenuBody(compact: boolean, rail: boolean)}
-  <WorkspaceAccountMenu
+  <ShellAccountMenu
+    hostItems={typeof accountMenu === 'object' ? accountMenu.items : undefined}
+    themeItem={typeof accountMenu === 'object' && accountMenu.theme === true}
     userName={accountIdentity.name || accountIdentity.email}
     email={accountIdentity.email}
     avatarUrl={accountIdentity.avatarUrl}
@@ -942,7 +1059,51 @@ const EDGE_OF_REGION: Record<ShellRegion, PanelEdge> = {
 {/snippet}
 
 {#snippet railAccount()}
+  {#each railEntries as entry (entry.id)}
+    {@render entryBody(entry)}
+  {/each}
   {#if accountInRail}{@render accountMenuBody(true, true)}{/if}
+{/snippet}
+
+{#snippet voiceItem()}
+  {#if voiceToggle}
+    {@const unavailable = voiceToggle.state === 'unavailable'}
+    {@const name = unavailable
+      ? (voiceToggle.unavailableLabel ?? voiceToggle.label)
+      : voiceToggle.label}
+    <span
+      use:target={SHELL_VOICE_ITEM_ID}
+      class="smrt-app-shell-voice"
+      data-state={voiceToggle.state}
+    >
+      <ShellIconButton
+        icon={voiceToggle.state === 'on' ? 'mic' : 'micOff'}
+        pressed={unavailable ? undefined : voiceToggle.state === 'on'}
+        label={name}
+        tooltip={name}
+        aria-disabled={unavailable ? 'true' : undefined}
+        onclick={(event: MouseEvent) => {
+          if (unavailable) event.preventDefault();
+          else voiceToggle.onpress?.();
+        }}
+      />
+    </span>
+  {/if}
+{/snippet}
+
+{#snippet panelToggleItem()}
+  {#if panelToggle}
+    <span use:target={SHELL_PANEL_TOGGLE_ITEM_ID} class="smrt-app-shell-panel-toggle">
+      <ShellIconButton
+        icon={panelToggle.icon ?? 'chat'}
+        pressed={panelOpenNow}
+        label={panelToggle.label}
+        tooltip={panelToggle.label}
+        aria-controls="smrt-admin-shell-panel-panel"
+        onclick={togglePanel}
+      />
+    </span>
+  {/if}
 {/snippet}
 
 {#snippet colorSchemeItem()}
@@ -1000,6 +1161,7 @@ const EDGE_OF_REGION: Record<ShellRegion, PanelEdge> = {
     {currentHref}
     budget={tabBarBudget}
     dockToggle={tabDockToggle}
+    panelTab={panel && panelToggle ? { label: panelToggle.label, icon: panelToggle.icon ?? 'chat', open: panelOpenNow, toggle: togglePanel } : undefined}
     {iconComponent}
   />
 {/snippet}
@@ -1032,10 +1194,15 @@ const EDGE_OF_REGION: Record<ShellRegion, PanelEdge> = {
       brandInSlot
       phoneDockOpener={dockToggles.length === 0 && !tabBarOn}
       phoneBottomBar={tabBarOn ? phoneTabs : undefined}
-      tenantRailFooter={accountInRail ? railAccount : undefined}
+      tenantRailFooter={accountInRail || railEntries.length > 0 ? railAccount : undefined}
       tenantUtilities={colorSchemeInSidebar ? colorSchemeItem : undefined}
       bind:rootElement={shellRoot}
       {floatingReserve}
+      {panel}
+      panelOpen={panelOpenNow}
+      {panelLabel}
+      {panelResize}
+      {panelSize}
     >
       {#snippet appPanel()}
         <AppScopePanel
@@ -1117,6 +1284,11 @@ const EDGE_OF_REGION: Record<ShellRegion, PanelEdge> = {
   .smrt-layout-toggle--floating :global(.smrt-shell-icon-button) { border-radius: var(--smrt-radius-full); }
   .smrt-layout-toggle :global(.smrt-shell-icon-button[aria-pressed='true']) { background: var(--smrt-color-primary-container); color: var(--smrt-color-on-primary-container); }
   .smrt-app-shell-palette { display: inline-flex; min-inline-size: 0; }
+  .smrt-app-shell-panel-toggle, .smrt-app-shell-voice { display: inline-flex; align-items: center; }
+  .smrt-app-shell-voice[data-state='unavailable'] { opacity: var(--smrt-state-disabled); }
+  .smrt-app-shell-voice[data-state='unavailable'] :global(.smrt-shell-icon-button) { cursor: not-allowed; }
+  .smrt-app-shell-voice :global(.smrt-shell-icon-button[aria-pressed='true']) { background: var(--smrt-color-primary-container); color: var(--smrt-color-on-primary-container); }
+  .smrt-app-shell-panel-toggle :global(.smrt-shell-icon-button[aria-pressed='true']) { background: var(--smrt-color-primary-container); color: var(--smrt-color-on-primary-container); }
   .smrt-app-shell-palette[data-search] :global(.smrt-command-palette-trigger) { inline-size: min(28rem, 40vw); justify-content: flex-start; border: var(--smrt-hairline-strong); border-radius: var(--smrt-radius-full); background: var(--smrt-surface-control); color: var(--smrt-color-on-surface-variant); }
   .smrt-app-shell-palette[data-search] :global(.smrt-command-palette-trigger__hint) { margin-inline-start: auto; }
   .smrt-layout-live { position: absolute; inline-size: 1px; block-size: 1px; overflow: hidden; clip: rect(0 0 0 0); clip-path: inset(50%); white-space: nowrap; }
@@ -1136,6 +1308,8 @@ const EDGE_OF_REGION: Record<ShellRegion, PanelEdge> = {
   @media (forced-colors: active) {
     .smrt-layout-toggle :global(.smrt-shell-icon-button[aria-pressed='true']) { background: Highlight; color: HighlightText; }
     .smrt-edit-item__grip[aria-pressed='true'] { background: Highlight; color: HighlightText; }
+    .smrt-app-shell-panel-toggle :global(.smrt-shell-icon-button[aria-pressed='true']), .smrt-app-shell-voice :global(.smrt-shell-icon-button[aria-pressed='true']) { background: Highlight; color: HighlightText; }
+    .smrt-app-shell-voice[data-state='unavailable'] { opacity: 1; color: GrayText; }
   }
 }
 </style>

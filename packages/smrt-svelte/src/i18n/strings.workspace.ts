@@ -58,6 +58,7 @@ export const M = defineMessages({
   'ui.admin_shell.close_panel': 'Close {label}',
   'ui.admin_shell.open_panel': 'Open {label}',
   'ui.admin_shell.resize_panel': 'Resize {label}',
+  'ui.admin_shell.panel': 'Panel',
   'ui.shell_nav_toggle.collapse': 'Collapse {label}',
   'ui.shell_nav_toggle.expand': 'Expand {label}',
   'ui.shell_nav_toggle.navigation': 'navigation',
@@ -218,6 +219,7 @@ export const M = defineMessages({
   'ui.workspace_account_menu.open': 'Open account menu',
   'ui.workspace_account_menu.current_tenant': '{tenant} — current',
   'ui.workspace_account_menu.sign_out': 'Sign out',
+  'ui.workspace_account_menu.pending': '{count} waiting',
 
   // web/activity-feed adapter demo (#1779) — playground/admin-shell-activity-feed
   'ui.activity_feed.title': 'Live activity feed',
@@ -263,6 +265,10 @@ export const M = defineMessages({
   'ui.app_shell.color_scheme_to_light': 'Switch to light mode',
   'ui.app_shell.command_palette_item': 'Search',
   'ui.app_shell.account_settings': 'Settings',
+  'ui.app_shell.theme_item': 'Theme: {mode}',
+  'ui.app_shell.theme_light': 'Light',
+  'ui.app_shell.theme_dark': 'Dark',
+  'ui.app_shell.panel_toggle': 'Panel',
 
   // components/app/DockToggles not-ready state (issue #3860)
   'ui.dock_toggles.set_up': 'Set up {label}',

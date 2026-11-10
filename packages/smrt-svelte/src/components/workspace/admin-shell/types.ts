@@ -4,6 +4,12 @@ import type { PhoneBottomBarItem } from './mobile-shell.js';
 import type { ShellRegion, ShellSlot } from './slots.js';
 
 export type PanelEdge = 'top' | 'left' | 'right' | 'bottom';
+
+/**
+ * Keys of resizable widths: the four edges plus the docked `panel` (the column
+ * between the left sidebar and the main area, `AdminShell` `panel`).
+ */
+export type ShellSizeKey = PanelEdge | 'panel';
 export type ShellScope = 'app' | 'tenant' | 'focus' | 'system';
 export type PanelState = 'hidden' | 'collapsed' | 'expanded';
 export type VisiblePanelState = Exclude<PanelState, 'hidden'>;
@@ -125,7 +131,7 @@ export interface ShellSettingsDelta {
   keymap?: Partial<Record<PanelEdge, ShellHotkeyBinding | null>>;
   panels?: Partial<Record<PanelEdge, PanelState>>;
   /** Resized expanded widths in px; `null` resets to the configured size. */
-  sizes?: Partial<Record<PanelEdge, number | null>>;
+  sizes?: Partial<Record<ShellSizeKey, number | null>>;
   activeFocusToolId?: string | null;
   /**
    * The user's shell layout customization (panel visibility, navigation
@@ -241,6 +247,25 @@ export interface WorkspaceAccountTenant {
   label: string;
   roleLabel?: string;
   disabled?: boolean;
+}
+
+/**
+ * A host-supplied destination or action in {@link WorkspaceAccountMenu}
+ * (caller-owned, e.g. Approvals or History), shown before Settings. A positive
+ * `badge` shows a count on the item and on the closed trigger.
+ */
+export interface WorkspaceAccountMenuItem {
+  /** Stable id (never shown). */
+  id: string;
+  label: string;
+  /** Navigates (a link); without it the item is a button calling `onselect`. */
+  href?: string;
+  /** Runs when the item is chosen (also for a link, before navigation). */
+  onselect?: () => void;
+  /** Count shown as a badge when greater than zero (capped display at 99+). */
+  badge?: number | null;
+  /** Accessible description of the badge, e.g. "3 waiting"; default the count. */
+  badgeLabel?: string;
 }
 
 export interface ShellFocusTool {

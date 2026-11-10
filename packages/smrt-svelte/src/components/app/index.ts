@@ -39,6 +39,8 @@ export type { ShellUser } from './shell-user.js';
 export type {
   AppShellAccountMenu,
   AppShellCommandPalette,
+  AppShellPanelToggle,
+  AppShellVoiceToggle,
   ShellSlotItem,
 } from './slot-item.js';
 export {

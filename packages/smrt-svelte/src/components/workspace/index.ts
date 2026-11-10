@@ -103,12 +103,14 @@ export { default as SystemScopePanel } from './admin-shell/SystemScopePanel.svel
 export { default as SystemStatusChips } from './admin-shell/SystemStatusChips.svelte';
 export {
   clampPanelSize,
+  DEFAULT_SHELL_DOCKED_PANEL_RESIZE,
   DEFAULT_SHELL_KEYMAP,
   DEFAULT_SHELL_PANEL_RESIZE,
   LocalStorageShellSettingsAdapter,
   mergeShellSettingsDelta,
   panelPersists,
   pruneShellSettingsDelta,
+  resolveDockedPanelResize,
   resolveHotkey,
   resolveInitialPanelState,
   resolvePanelResize,
@@ -192,6 +194,7 @@ export type {
   ShellSectionMenuEntry,
   ShellSettingsAdapter,
   ShellSettingsDelta,
+  ShellSizeKey,
   ShellStateSnapshot,
   ShellStatusChip,
   ShellStatusTone,
@@ -199,6 +202,7 @@ export type {
   ShellSystemPanel,
   ShellViewport,
   VisiblePanelState,
+  WorkspaceAccountMenuItem,
   WorkspaceAccountTenant,
 } from './admin-shell/types.js';
 export {

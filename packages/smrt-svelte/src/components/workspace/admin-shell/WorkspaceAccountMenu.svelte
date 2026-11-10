@@ -4,11 +4,15 @@ import { useI18n } from '@happyvertical/smrt-ui/i18n';
 import { Avatar, Button } from '@happyvertical/smrt-ui/ui';
 import { tick } from 'svelte';
 import { M } from '../../../i18n/strings.workspace.js';
-import type { WorkspaceAccountTenant } from './types.js';
+import type {
+  WorkspaceAccountMenuItem,
+  WorkspaceAccountTenant,
+} from './types.js';
 
 const SIGN_OUT_ID = 'workspace-account:sign-out';
 const SETTINGS_ID = 'workspace-account:settings';
 const TENANT_PREFIX = 'workspace-account:tenant:';
+const ITEM_PREFIX = 'workspace-account:item:';
 
 export interface Props {
   /** Username or identifier displayed in the account menu. */
@@ -38,6 +42,12 @@ export interface Props {
   placement?: DropdownPlacement | 'inline-end';
   /** Disables the account menu button. */
   disabled?: boolean;
+  /**
+   * Host destinations and actions (caller-owned, e.g. Approvals, History),
+   * listed after tenants and before Settings. Their badges also show on the
+   * closed trigger (the total), so a pending count is visible without opening.
+   */
+  items?: WorkspaceAccountMenuItem[];
   /** Adds a Settings link to the menu. */
   settingsHref?: string;
   /**
@@ -67,6 +77,7 @@ let {
   tenantLabel = '',
   roleLabel = '',
   tenants = [],
+  items = [],
   currentTenantId = null,
   placement = 'top-start',
   disabled = false,
@@ -81,7 +92,16 @@ interface Entry {
   label: string;
   disabled?: boolean;
   href?: string;
+  badge?: number;
+  badgeLabel?: string;
+  onselect?: () => void;
 }
+
+const badgeCount = (value: number | null | undefined): number =>
+  typeof value === 'number' && Number.isFinite(value) && value > 0
+    ? Math.floor(value)
+    : 0;
+const badgeText = (count: number): string => (count > 99 ? '99+' : `${count}`);
 
 const { t } = useI18n();
 const instanceId = $props.id();
@@ -97,6 +117,14 @@ const accountContext = $derived(
 );
 const summaryTitle = $derived(
   [identityLabel, activeTenantLabel, roleLabel].filter(Boolean).join(' · '),
+);
+const pendingTotal = $derived(
+  items.reduce((sum, item) => sum + badgeCount(item.badge), 0),
+);
+const triggerLabel = $derived(
+  pendingTotal > 0
+    ? `${summaryTitle} (${t(M['ui.workspace_account_menu.pending'], { count: pendingTotal })})`
+    : summaryTitle,
 );
 const showEmail = $derived(Boolean(email) && email !== identityLabel);
 const entries = $derived.by(() => {
@@ -116,6 +144,18 @@ const entries = $derived.by(() => {
         disabled: tenant.disabled || isCurrent,
       });
     }
+  }
+
+  for (const item of items) {
+    const badge = badgeCount(item.badge);
+    out.push({
+      id: `${ITEM_PREFIX}${item.id}`,
+      label: item.label,
+      href: item.href,
+      badge: badge || undefined,
+      badgeLabel: item.badgeLabel,
+      onselect: item.onselect,
+    });
   }
 
   if (settingsHref) {
@@ -189,6 +229,7 @@ async function runSignOut() {
 
 function select(entry: Entry) {
   if (entry.disabled) return;
+  entry.onselect?.();
   if (entry.id === SIGN_OUT_ID && onSignOut) {
     // The callback owns the menu: it closes on success only.
     void runSignOut();
@@ -268,7 +309,7 @@ $effect(() => {
     {density}
     class="smrt-workspace-account-menu__trigger"
     data-smrt-part="trigger"
-    aria-label={compact ? `${t(M['ui.workspace_account_menu.open'])} ${summaryTitle}` : undefined}
+    aria-label={compact ? `${t(M['ui.workspace_account_menu.open'])} ${triggerLabel}` : undefined}
     aria-haspopup="menu"
     aria-expanded={open}
     aria-controls={open ? menuId : undefined}
@@ -279,9 +320,17 @@ $effect(() => {
     <span class="smrt-workspace-account-menu__open">
       {t(M['ui.workspace_account_menu.open'])}
     </span>
-    <Avatar src={avatarUrl} name={userName} size="sm" aria-hidden="true" />
+    <span class="smrt-workspace-account-menu__avatar">
+      <Avatar src={avatarUrl} name={userName} size="sm" aria-hidden="true" />
+      {#if pendingTotal > 0}
+        <span class="smrt-workspace-account-menu__badge" data-smrt-part="trigger-badge" aria-hidden="true">{badgeText(pendingTotal)}</span>
+      {/if}
+    </span>
     <span class="smrt-workspace-account-menu__identity">
       <span class="smrt-workspace-account-menu__summary">{identityLabel}</span>
+      {#if pendingTotal > 0}
+        <span class="smrt-workspace-account-menu__open">{t(M['ui.workspace_account_menu.pending'], { count: pendingTotal })}</span>
+      {/if}
       {#if accountContext}
         <span class="smrt-workspace-account-menu__context">{accountContext}</span>
       {/if}
@@ -308,7 +357,7 @@ $effect(() => {
               href={entry.href}
               tabindex="-1"
               onclick={() => select(entry)}
-            >{entry.label}</a>
+            >{entry.label}{#if entry.badge}<span class="smrt-workspace-account-menu__badge smrt-workspace-account-menu__badge--item" data-smrt-part="item-badge" aria-label={entry.badgeLabel ?? t(M['ui.workspace_account_menu.pending'], { count: entry.badge })}>{badgeText(entry.badge)}</span>{/if}</a>
           {:else}
             <!-- raw-primitive-allow: role="menuitem" with roving tabindex inside a role="menu"; not a content button -->
             <button
@@ -320,7 +369,7 @@ $effect(() => {
               aria-busy={entry.id === SIGN_OUT_ID && signingOut ? 'true' : undefined}
               tabindex="-1"
               onclick={() => select(entry)}
-            >{entry.label}</button>
+            >{entry.label}{#if entry.badge}<span class="smrt-workspace-account-menu__badge smrt-workspace-account-menu__badge--item" data-smrt-part="item-badge" aria-label={entry.badgeLabel ?? t(M['ui.workspace_account_menu.pending'], { count: entry.badge })}>{badgeText(entry.badge)}</span>{/if}</button>
           {/if}
         {/each}
         {#if signOutFailed}
@@ -464,6 +513,33 @@ $effect(() => {
     text-decoration: none;
     white-space: nowrap;
     cursor: pointer;
+  }
+  .smrt-workspace-account-menu__item {
+    gap: var(--smrt-spacing-2);
+  }
+  .smrt-workspace-account-menu__avatar {
+    position: relative;
+    display: inline-flex;
+  }
+  .smrt-workspace-account-menu__badge {
+    position: absolute;
+    inset-block-start: calc(-1 * var(--smrt-spacing-1));
+    inset-inline-end: calc(-1 * var(--smrt-spacing-1));
+    box-sizing: border-box;
+    min-inline-size: 1rem;
+    block-size: 1rem;
+    padding-inline: var(--smrt-spacing-1);
+    border-radius: var(--smrt-radius-full);
+    background: var(--smrt-color-primary);
+    color: var(--smrt-color-on-primary);
+    font-size: var(--smrt-typography-label-small-size);
+    font-weight: var(--smrt-typography-weight-medium);
+    line-height: 1rem;
+    text-align: center;
+  }
+  .smrt-workspace-account-menu__badge--item {
+    position: static;
+    margin-inline-start: auto;
   }
   .smrt-workspace-account-menu__item:hover:not(:disabled) {
     background: color-mix(in srgb, currentColor calc(var(--smrt-state-hover) * 100%), transparent);

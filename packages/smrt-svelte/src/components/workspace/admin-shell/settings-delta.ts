@@ -12,6 +12,7 @@ import type {
   PanelState,
   ShellHotkeyBinding,
   ShellSettingsDelta,
+  ShellSizeKey,
 } from './types.js';
 
 const EDGES: readonly PanelEdge[] = ['top', 'left', 'right', 'bottom'];
@@ -63,20 +64,24 @@ function readBinding(value: unknown): ShellHotkeyBinding | undefined {
   return binding;
 }
 
-function readEdgeMap<T>(
+function readEdgeMap<T, K extends string = PanelEdge>(
   value: unknown,
   name: string,
   read: (entry: unknown) => T | undefined,
   issues: ShellSettingsIssue[],
-): Partial<Record<PanelEdge, T>> | undefined {
+  extraKeys: readonly string[] = [],
+): Partial<Record<K, T>> | undefined {
   if (value === undefined) return undefined;
   if (!isRecord(value)) {
     issues.push({ path: name, message: 'must be an object keyed by edge' });
     return undefined;
   }
-  const out: Partial<Record<PanelEdge, T>> = {};
+  const out: Partial<Record<K, T>> = {};
   for (const [edge, entry] of Object.entries(value)) {
-    if (!(EDGES as readonly string[]).includes(edge)) {
+    if (
+      !(EDGES as readonly string[]).includes(edge) &&
+      !extraKeys.includes(edge)
+    ) {
       issues.push({ path: `${name}.${edge}`, message: 'unknown edge' });
       continue;
     }
@@ -85,7 +90,7 @@ function readEdgeMap<T>(
       issues.push({ path: `${name}.${edge}`, message: 'invalid value' });
       continue;
     }
-    out[edge as PanelEdge] = parsed;
+    out[edge as K] = parsed;
   }
   return Object.keys(out).length > 0 ? out : undefined;
 }
@@ -152,7 +157,7 @@ export function sanitizeShellSettingsDelta(
   );
   if (panels) delta.panels = panels;
   // A `null` size means "back to the configured width": nothing to store.
-  const sizes = readEdgeMap(
+  const sizes = readEdgeMap<number, ShellSizeKey>(
     isRecord(input.sizes)
       ? Object.fromEntries(
           Object.entries(input.sizes).filter(([, size]) => size !== null),
@@ -167,6 +172,7 @@ export function sanitizeShellSettingsDelta(
         ? entry
         : undefined,
     issues,
+    ['panel'],
   );
   if (sizes) delta.sizes = sizes;
   if (input.layout !== undefined) {

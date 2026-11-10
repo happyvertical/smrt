@@ -32,6 +32,7 @@ import type {
   ShellScope,
   ShellSettingsAdapter,
   ShellSettingsDelta,
+  ShellSizeKey,
   ShellStateSnapshot,
   ShellViewport,
   VisiblePanelState,
@@ -305,13 +306,20 @@ export class ShellState {
     }
   }
 
-  /** Resize limits for an edge, or `null` when it is not resizable. */
-  resizeLimits(edge: PanelEdge): Required<ShellPanelResize> | null {
+  /**
+   * Resize limits of the docked panel (`AdminShell` `panel`), set by the shell
+   * from its `panelResize` prop; `null` when there is none or it is fixed.
+   */
+  dockedPanelLimits = $state<Required<ShellPanelResize> | null>(null);
+
+  /** Resize limits for an edge (or the docked `panel`), or `null` when it is not resizable. */
+  resizeLimits(edge: ShellSizeKey): Required<ShellPanelResize> | null {
+    if (edge === 'panel') return this.dockedPanelLimits;
     return resolvePanelResize(edge, this.config.panels[edge]);
   }
 
   /** The user's resized width for an edge in px, or `null` (configured size). */
-  panelSize(edge: PanelEdge): number | null {
+  panelSize(edge: ShellSizeKey): number | null {
     if (!this.resizeLimits(edge)) return null;
     const size = this.settings.sizes?.[edge];
     return typeof size === 'number' && Number.isFinite(size) ? size : null;
@@ -324,7 +332,7 @@ export class ShellState {
    * opts out of storing its size.
    */
   setPanelSize(
-    edge: PanelEdge,
+    edge: ShellSizeKey,
     size: number | null,
     options: { persist?: boolean } = {},
   ): void {
