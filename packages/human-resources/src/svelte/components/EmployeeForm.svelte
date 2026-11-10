@@ -327,54 +327,43 @@ function handleSubmit() {
 <style>
 @layer smrt.reset, smrt.structure, smrt.theme;
 @layer smrt.structure {
-
-.smrt-employee-form__root :global([data-smrt-component="Form"]) {
-display: flex;
-flex-direction: column;
-gap: var(--smrt-spacing-md, 1rem);
-
-}
-.smrt-employee-form__field {
-display: flex;
-flex-direction: column;
-gap: 0.25rem;
-
-}
-.smrt-employee-form__errors ul {
-margin: 0;
-padding-left: 1.25rem;
-
-}
-.smrt-employee-form__actions {
-display: flex;
-justify-content: flex-end;
-gap: var(--smrt-spacing-sm, 0.5rem);
-margin-top: var(--smrt-spacing-sm, 0.5rem);
-
+  .smrt-employee-form__root :global([data-smrt-component="Form"]) {
+    display: flex;
+    flex-direction: column;
+    gap: var(--smrt-spacing-md, 1rem);
+  }
+  .smrt-employee-form__field {
+    display: flex;
+    flex-direction: column;
+    gap: 0.25rem;
+  }
+  .smrt-employee-form__errors ul {
+    margin: 0;
+    padding-left: 1.25rem;
+  }
+  .smrt-employee-form__actions {
+    display: flex;
+    justify-content: flex-end;
+    gap: var(--smrt-spacing-sm, 0.5rem);
+    margin-top: var(--smrt-spacing-sm, 0.5rem);
+  }
 }
 
-}
 @layer smrt.theme {
-
-label {
-font: var(--smrt-typography-body-medium-font, 500 0.875rem / 1.25 sans-serif);
-color: var(--smrt-color-on-surface-variant, inherit);
-
-}
-.smrt-employee-form__required {
-color: var(--smrt-color-error, inherit);
-
-}
-.smrt-employee-form__hint {
-font: var(--smrt-typography-body-small-font, 0.75rem / 1.25 sans-serif);
-color: var(--smrt-color-on-surface-variant, inherit);
-
-}
-.smrt-employee-form__errors {
-color: var(--smrt-color-error, inherit);
-
-}
-
+  label {
+    font: var(--smrt-typography-body-medium-font, 500 0.875rem / 1.25 sans-serif);
+    color: var(--smrt-color-on-surface-variant, inherit);
+  }
+  .smrt-employee-form__required {
+    color: var(--smrt-color-error, inherit);
+  }
+  .smrt-employee-form__hint {
+    font: var(--smrt-typography-body-small-font, 0.75rem / 1.25 sans-serif);
+    color: var(--smrt-color-on-surface-variant, inherit);
+  }
+  .smrt-employee-form__errors {
+    color: var(--smrt-color-error, inherit);
+  }
 }
 
 </style>

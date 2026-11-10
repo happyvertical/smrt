@@ -103,77 +103,61 @@ const { employees, onselect, emptyMessage }: EmployeeListProps = $props();
 <style>
 @layer smrt.reset, smrt.structure, smrt.theme;
 @layer smrt.structure {
-
-.smrt-employee-list__root {
-overflow-x: auto;
-
-}
-.smrt-employee-list__table {
-width: 100%;
-
-}
-.smrt-employee-list__caption {
-position: absolute;
-width: 1px;
-height: 1px;
-overflow: hidden;
-clip-path: inset(50%);
-white-space: nowrap;
-
-}
-.smrt-employee-list__table th,
+  .smrt-employee-list__root {
+    overflow-x: auto;
+  }
+  .smrt-employee-list__table {
+    width: 100%;
+  }
+  .smrt-employee-list__caption {
+    position: absolute;
+    width: 1px;
+    height: 1px;
+    overflow: hidden;
+    clip-path: inset(50%);
+    white-space: nowrap;
+  }
+  .smrt-employee-list__table th,
   .smrt-employee-list__table td {
-padding: 0.5rem 0.75rem;
-
-}
-.smrt-employee-list__last-day {
-margin-left: 0.5rem;
-white-space: nowrap;
-
-}
-.smrt-employee-list__empty {
-padding: 1rem 0;
-
-}
-
-}
-@layer smrt.theme {
-
-.smrt-employee-list__table {
-border-collapse: collapse;
-
-}
-.smrt-employee-list__table th,
-  .smrt-employee-list__table td {
-text-align: left;
-border-bottom: var(--smrt-hairline);
-
-}
-.smrt-employee-list__table thead th {
-font-size: 0.75rem;
-font-weight: 500;
-color: var(--smrt-color-on-surface-variant, inherit);
-
-}
-.smrt-employee-list__name {
-font-weight: 500;
-
-}
-.smrt-employee-list__number {
-font-variant-numeric: tabular-nums;
-
-}
-.smrt-employee-list__last-day {
-font-size: 0.75rem;
-color: var(--smrt-color-on-surface-variant, inherit);
-
-}
-.smrt-employee-list__none,
+    padding: 0.5rem 0.75rem;
+  }
+  .smrt-employee-list__last-day {
+    margin-left: 0.5rem;
+    white-space: nowrap;
+  }
   .smrt-employee-list__empty {
-color: var(--smrt-color-on-surface-variant, inherit);
-
+    padding: 1rem 0;
+  }
 }
 
+@layer smrt.theme {
+  .smrt-employee-list__table {
+    border-collapse: collapse;
+  }
+  .smrt-employee-list__table th,
+  .smrt-employee-list__table td {
+    text-align: left;
+    border-bottom: var(--smrt-hairline);
+  }
+  .smrt-employee-list__table thead th {
+    font-size: 0.75rem;
+    font-weight: 500;
+    color: var(--smrt-color-on-surface-variant, inherit);
+  }
+  .smrt-employee-list__name {
+    font-weight: 500;
+  }
+  .smrt-employee-list__number {
+    font-variant-numeric: tabular-nums;
+  }
+  .smrt-employee-list__last-day {
+    font-size: 0.75rem;
+    color: var(--smrt-color-on-surface-variant, inherit);
+  }
+  .smrt-employee-list__none,
+  .smrt-employee-list__empty {
+    color: var(--smrt-color-on-surface-variant, inherit);
+  }
 }
 
 </style>

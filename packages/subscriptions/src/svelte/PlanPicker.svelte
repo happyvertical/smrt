@@ -124,55 +124,45 @@ let {
 <style>
 @layer smrt.reset, smrt.structure, smrt.theme;
 @layer smrt.structure {
-
-.smrt-plan-picker {
-display: grid;
-gap: 0.75rem;
-grid-template-columns: repeat(auto-fit, minmax(14rem, 1fr));
-
-}
-.smrt-plan-picker__plan {
-align-items: flex-start;
-cursor: pointer;
-display: grid;
-gap: 0.45rem;
-padding: 1rem;
-
+  .smrt-plan-picker {
+    display: grid;
+    gap: 0.75rem;
+    grid-template-columns: repeat(auto-fit, minmax(14rem, 1fr));
+  }
+  .smrt-plan-picker__plan {
+    align-items: flex-start;
+    cursor: pointer;
+    display: grid;
+    gap: 0.45rem;
+    padding: 1rem;
+  }
 }
 
-}
 @layer smrt.theme {
-
-.smrt-plan-picker__plan {
-background: var(--smrt-color-surface);
-border: var(--smrt-hairline);
-border-radius: var(--smrt-radius-md);
-color: inherit;
-text-align: left;
-
-}
-.smrt-plan-picker__plan.smrt-plan-picker__selected {
-border-color: var(--smrt-color-primary);
-box-shadow: 0 0 0 1px var(--smrt-color-primary);
-
-}
-.smrt-plan-picker__name {
-font-weight: var(--smrt-typography-weight-bold, 650);
-
-}
-.smrt-plan-picker__price {
-font-size: var(--smrt-typography-title-large-size, 1.25rem);
-font-weight: var(--smrt-typography-weight-bold, 700);
-
-}
-.smrt-plan-picker__price small,
+  .smrt-plan-picker__plan {
+    background: var(--smrt-color-surface);
+    border: var(--smrt-hairline);
+    border-radius: var(--smrt-radius-md);
+    color: inherit;
+    text-align: left;
+  }
+  .smrt-plan-picker__plan.smrt-plan-picker__selected {
+    border-color: var(--smrt-color-primary);
+    box-shadow: 0 0 0 1px var(--smrt-color-primary);
+  }
+  .smrt-plan-picker__name {
+    font-weight: var(--smrt-typography-weight-bold, 650);
+  }
+  .smrt-plan-picker__price {
+    font-size: var(--smrt-typography-title-large-size, 1.25rem);
+    font-weight: var(--smrt-typography-weight-bold, 700);
+  }
+  .smrt-plan-picker__price small,
   .smrt-plan-picker__description,
   .smrt-plan-picker__features {
-color: var(--smrt-color-on-surface-variant);
-font-size: var(--smrt-typography-body-medium-size, 0.875rem);
-
-}
-
+    color: var(--smrt-color-on-surface-variant);
+    font-size: var(--smrt-typography-body-medium-size, 0.875rem);
+  }
 }
 
 </style>

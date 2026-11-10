@@ -84,91 +84,72 @@ const lastSyncFormatted = $derived.by(() => {
 <style>
 @layer smrt.reset, smrt.structure, smrt.theme;
 @layer smrt.structure {
-
-.smrt-property-info__root {
-padding: 1rem;
-
-}
-.smrt-property-info__header {
-display: flex;
-align-items: center;
-justify-content: space-between;
-margin-bottom: 0.75rem;
-
-}
-.smrt-property-info__header h3 {
-margin: 0;
-
-}
-.smrt-property-info__details {
-margin: 0;
-
-}
-.smrt-property-info__row {
-display: flex;
-justify-content: space-between;
-padding: 0.375rem 0;
-
-}
-dd {
-margin: 0;
-
-}
-code {
-padding: 0.125rem 0.25rem;
-
-}
-.smrt-property-info__empty {
-margin: 0;
-
+  .smrt-property-info__root {
+    padding: 1rem;
+  }
+  .smrt-property-info__header {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    margin-bottom: 0.75rem;
+  }
+  .smrt-property-info__header h3 {
+    margin: 0;
+  }
+  .smrt-property-info__details {
+    margin: 0;
+  }
+  .smrt-property-info__row {
+    display: flex;
+    justify-content: space-between;
+    padding: 0.375rem 0;
+  }
+  dd {
+    margin: 0;
+  }
+  code {
+    padding: 0.125rem 0.25rem;
+  }
+  .smrt-property-info__empty {
+    margin: 0;
+  }
 }
 
-}
 @layer smrt.theme {
-
-.smrt-property-info__root {
-background: var(--smrt-color-surface);
-border: var(--smrt-hairline);
-border-radius: 0.5rem;
-
-}
-.smrt-property-info__header h3 {
-font-size: var(--smrt-typography-title-medium-size, 1rem);
-font-weight: var(--smrt-typography-weight-semibold, 600);
-
-}
-.smrt-property-info__row {
-border-bottom: var(--smrt-hairline);
-
-}
-.smrt-property-info__row:last-child {
-border-bottom: none;
-
-}
-dt {
-font-size: var(--smrt-typography-label-large-size, 0.8125rem);
-color: var(--smrt-color-on-surface-variant);
-
-}
-dd {
-font-size: var(--smrt-typography-body-medium-size, 0.8125rem);
-font-weight: var(--smrt-typography-weight-medium, 500);
-color: var(--smrt-color-on-surface);
-
-}
-code {
-font-family: var(--smrt-font-family-mono, monospace);
-font-size: var(--smrt-typography-body-small-size, 0.75rem);
-background: var(--smrt-color-surface-container);
-border-radius: 0.25rem;
-
-}
-.smrt-property-info__empty {
-color: var(--smrt-color-on-surface-variant);
-font-size: var(--smrt-typography-body-medium-size, 0.875rem);
-
-}
-
+  .smrt-property-info__root {
+    background: var(--smrt-color-surface);
+    border: var(--smrt-hairline);
+    border-radius: 0.5rem;
+  }
+  .smrt-property-info__header h3 {
+    font-size: var(--smrt-typography-title-medium-size, 1rem);
+    font-weight: var(--smrt-typography-weight-semibold, 600);
+  }
+  .smrt-property-info__row {
+    border-bottom: var(--smrt-hairline);
+  }
+  .smrt-property-info__row:last-child {
+    border-bottom: none;
+  }
+  dt {
+    font-size: var(--smrt-typography-label-large-size, 0.8125rem);
+    color: var(--smrt-color-on-surface-variant);
+  }
+  dd {
+    font-size: var(--smrt-typography-body-medium-size, 0.8125rem);
+    font-weight: var(--smrt-typography-weight-medium, 500);
+    color: var(--smrt-color-on-surface);
+  }
+  code {
+    font-family: var(--smrt-font-family-mono, monospace);
+    font-size: var(--smrt-typography-body-small-size, 0.75rem);
+    background: var(--smrt-color-surface-container);
+    border-radius: 0.25rem;
+  }
+  .smrt-property-info__empty {
+    color: var(--smrt-color-on-surface-variant);
+    font-size: var(--smrt-typography-body-medium-size, 0.875rem);
+  }
 }
 
 </style>

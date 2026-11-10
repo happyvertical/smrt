@@ -58,49 +58,38 @@ function formatCharge(metric: CommercialMetricView): string {
 <style>
 @layer smrt.reset, smrt.structure, smrt.theme;
 @layer smrt.structure {
-
-.smrt-commercial-overview__root {
-display:grid;
-gap:.75rem;
-
-}
-article {
-padding:1rem;
-
-}
-header, dl, dl div {
-display:flex;
-justify-content:space-between;
-gap:1rem;
-
-}
-dl {
-flex-wrap:wrap;
-margin:.75rem 0 0;
-
-}
-dd {
-margin:0;
-
+  .smrt-commercial-overview__root {
+    display:grid;
+    gap:.75rem;
+  }
+  article {
+    padding:1rem;
+  }
+  header, dl, dl div {
+    display:flex;
+    justify-content:space-between;
+    gap:1rem;
+  }
+  dl {
+    flex-wrap:wrap;
+    margin:.75rem 0 0;
+  }
+  dd {
+    margin:0;
+  }
 }
 
-}
 @layer smrt.theme {
-
-article {
-border:var(--smrt-hairline);
-border-radius:var(--smrt-radius-md);
-
-}
-dt {
-color:var(--smrt-color-on-surface-variant);
-
-}
-.smrt-commercial-overview__blocked {
-color:var(--smrt-color-error);
-
-}
-
+  article {
+    border:var(--smrt-hairline);
+    border-radius:var(--smrt-radius-md);
+  }
+  dt {
+    color:var(--smrt-color-on-surface-variant);
+  }
+  .smrt-commercial-overview__blocked {
+    color:var(--smrt-color-error);
+  }
 }
 
 </style>

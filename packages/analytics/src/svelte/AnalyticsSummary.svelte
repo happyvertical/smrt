@@ -46,33 +46,26 @@ const { stats }: Props = $props();
 <style>
 @layer smrt.reset, smrt.structure, smrt.theme;
 @layer smrt.structure {
-
-.smrt-analytics-summary__root {
-display: grid;
-grid-template-columns: repeat(auto-fill, minmax(180px, 1fr));
-gap: 1rem;
-
-}
-.smrt-analytics-summary__empty {
-padding: 2rem;
-
-}
-.smrt-analytics-summary__empty p {
-margin: 0;
-
+  .smrt-analytics-summary__root {
+    display: grid;
+    grid-template-columns: repeat(auto-fill, minmax(180px, 1fr));
+    gap: 1rem;
+  }
+  .smrt-analytics-summary__empty {
+    padding: 2rem;
+  }
+  .smrt-analytics-summary__empty p {
+    margin: 0;
+  }
 }
 
-}
 @layer smrt.theme {
-
-.smrt-analytics-summary__empty {
-text-align: center;
-color: var(--smrt-color-on-surface-variant);
-background: var(--smrt-color-surface-container);
-border-radius: 0.5rem;
-
-}
-
+  .smrt-analytics-summary__empty {
+    text-align: center;
+    color: var(--smrt-color-on-surface-variant);
+    background: var(--smrt-color-surface-container);
+    border-radius: 0.5rem;
+  }
 }
 
 </style>

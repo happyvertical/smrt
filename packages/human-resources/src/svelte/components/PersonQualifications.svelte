@@ -103,75 +103,61 @@ function distance(daysUntilExpiry: number): string {
 <style>
 @layer smrt.reset, smrt.structure, smrt.theme;
 @layer smrt.structure {
-
-.smrt-person-qualifications__root {
-list-style: none;
-margin: 0;
-padding: 0;
-display: flex;
-flex-direction: column;
-
-}
-.smrt-person-qualifications__row {
-display: flex;
-flex-wrap: wrap;
-align-items: center;
-justify-content: space-between;
-gap: 0.75rem;
-padding: 0.5rem 0.25rem;
-
-}
-.smrt-person-qualifications__main {
-display: flex;
-flex-direction: column;
-align-items: flex-start;
-gap: 0.125rem;
-min-width: 0;
-flex: 1;
-
-}
-.smrt-person-qualifications__detail,
+  .smrt-person-qualifications__root {
+    list-style: none;
+    margin: 0;
+    padding: 0;
+    display: flex;
+    flex-direction: column;
+  }
+  .smrt-person-qualifications__row {
+    display: flex;
+    flex-wrap: wrap;
+    align-items: center;
+    justify-content: space-between;
+    gap: 0.75rem;
+    padding: 0.5rem 0.25rem;
+  }
+  .smrt-person-qualifications__main {
+    display: flex;
+    flex-direction: column;
+    align-items: flex-start;
+    gap: 0.125rem;
+    min-width: 0;
+    flex: 1;
+  }
+  .smrt-person-qualifications__detail,
   .smrt-person-qualifications__dates {
-display: flex;
-flex-wrap: wrap;
-gap: 0.5rem;
-
+    display: flex;
+    flex-wrap: wrap;
+    gap: 0.5rem;
+  }
+  .smrt-person-qualifications__empty {
+    padding: 1rem 0;
+  }
 }
-.smrt-person-qualifications__empty {
-padding: 1rem 0;
 
-}
-
-}
 @layer smrt.theme {
-
-.smrt-person-qualifications__row {
-border-bottom: var(--smrt-hairline);
-
-}
-.smrt-person-qualifications__row:last-child {
-border-bottom: none;
-
-}
-.smrt-person-qualifications__name {
-font-weight: 500;
-
-}
-.smrt-person-qualifications__detail,
+  .smrt-person-qualifications__row {
+    border-bottom: var(--smrt-hairline);
+  }
+  .smrt-person-qualifications__row:last-child {
+    border-bottom: none;
+  }
+  .smrt-person-qualifications__name {
+    font-weight: 500;
+  }
+  .smrt-person-qualifications__detail,
   .smrt-person-qualifications__dates {
-font-size: 0.75rem;
-color: var(--smrt-color-on-surface-variant, inherit);
-
-}
-.smrt-person-qualifications__distance {
-font-weight: 500;
-
-}
-.smrt-person-qualifications__empty {
-color: var(--smrt-color-on-surface-variant, inherit);
-
-}
-
+    font-size: 0.75rem;
+    color: var(--smrt-color-on-surface-variant, inherit);
+  }
+  .smrt-person-qualifications__distance {
+    font-weight: 500;
+  }
+  .smrt-person-qualifications__empty {
+    color: var(--smrt-color-on-surface-variant, inherit);
+  }
 }
 
 </style>

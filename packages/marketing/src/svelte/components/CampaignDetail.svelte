@@ -108,134 +108,108 @@ let {
 <style>
 @layer smrt.reset, smrt.structure, smrt.theme;
 @layer smrt.structure {
-
-.smrt-campaign-detail__root {
-display: flex;
-flex-direction: column;
-gap: var(--smrt-spacing-4);
-
-}
-.smrt-campaign-detail__empty,
+  .smrt-campaign-detail__root {
+    display: flex;
+    flex-direction: column;
+    gap: var(--smrt-spacing-4);
+  }
+  .smrt-campaign-detail__empty,
   .smrt-campaign-detail__description {
-margin: 0;
-
-}
-.smrt-campaign-detail__header {
-display: flex;
-align-items: flex-start;
-justify-content: space-between;
-gap: var(--smrt-spacing-4);
-
-}
-.smrt-campaign-detail__eyebrow {
-margin: 0;
-
-}
-h2,
+    margin: 0;
+  }
+  .smrt-campaign-detail__header {
+    display: flex;
+    align-items: flex-start;
+    justify-content: space-between;
+    gap: var(--smrt-spacing-4);
+  }
+  .smrt-campaign-detail__eyebrow {
+    margin: 0;
+  }
+  h2,
   h3 {
-margin: 0;
-
-}
-.smrt-campaign-detail__description {
-margin-top: var(--smrt-spacing-2);
-
-}
-.smrt-campaign-detail__facts {
-display: grid;
-grid-template-columns: repeat(auto-fit, minmax(10rem, 1fr));
-gap: var(--smrt-spacing-4);
-margin: var(--smrt-spacing-5) 0 0;
-
-}
-.smrt-campaign-detail__facts dd {
-margin: var(--smrt-spacing-1) 0 0;
-
-}
-.smrt-campaign-detail__channels h3 {
-margin-bottom: var(--smrt-spacing-3);
-
-}
-ul {
-display: flex;
-flex-direction: column;
-gap: var(--smrt-spacing-2);
-margin: 0;
-padding: 0;
-list-style: none;
-
-}
-li {
-display: flex;
-align-items: center;
-justify-content: space-between;
-gap: var(--smrt-spacing-3);
-padding-bottom: var(--smrt-spacing-2);
-
-}
-.smrt-campaign-detail__channel-name,
+    margin: 0;
+  }
+  .smrt-campaign-detail__description {
+    margin-top: var(--smrt-spacing-2);
+  }
+  .smrt-campaign-detail__facts {
+    display: grid;
+    grid-template-columns: repeat(auto-fit, minmax(10rem, 1fr));
+    gap: var(--smrt-spacing-4);
+    margin: var(--smrt-spacing-5) 0 0;
+  }
+  .smrt-campaign-detail__facts dd {
+    margin: var(--smrt-spacing-1) 0 0;
+  }
+  .smrt-campaign-detail__channels h3 {
+    margin-bottom: var(--smrt-spacing-3);
+  }
+  ul {
+    display: flex;
+    flex-direction: column;
+    gap: var(--smrt-spacing-2);
+    margin: 0;
+    padding: 0;
+    list-style: none;
+  }
+  li {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    gap: var(--smrt-spacing-3);
+    padding-bottom: var(--smrt-spacing-2);
+  }
+  .smrt-campaign-detail__channel-name,
   .smrt-campaign-detail__channel-ref {
-display: block;
-
+    display: block;
+  }
 }
 
-}
 @layer smrt.theme {
-
-.smrt-campaign-detail__empty,
+  .smrt-campaign-detail__empty,
   .smrt-campaign-detail__description,
   .smrt-campaign-detail__channel-ref {
-color: var(--smrt-color-on-surface-variant);
-
-}
-.smrt-campaign-detail__empty,
+    color: var(--smrt-color-on-surface-variant);
+  }
+  .smrt-campaign-detail__empty,
   .smrt-campaign-detail__description {
-font: var(--smrt-typography-body-medium-font);
-
-}
-.smrt-campaign-detail__eyebrow {
-color: var(--smrt-color-on-surface-variant);
-font: var(--smrt-typography-label-medium-font);
-
-}
-h2,
+    font: var(--smrt-typography-body-medium-font);
+  }
+  .smrt-campaign-detail__eyebrow {
+    color: var(--smrt-color-on-surface-variant);
+    font: var(--smrt-typography-label-medium-font);
+  }
+  h2,
   h3 {
-color: var(--smrt-color-on-surface);
-
-}
-h2 {
-font: var(--smrt-typography-headline-small-font);
-
-}
-h3 {
-font: var(--smrt-typography-title-medium-font);
-
-}
-.smrt-campaign-detail__facts dt {
-color: var(--smrt-color-on-surface-variant);
-font: var(--smrt-typography-label-medium-font);
-
-}
-.smrt-campaign-detail__facts dd {
-color: var(--smrt-color-on-surface);
-font: var(--smrt-typography-body-large-font);
-font-weight: var(--smrt-typography-weight-medium);
-
-}
-li {
-border-bottom: var(--smrt-hairline);
-
-}
-.smrt-campaign-detail__channel-name {
-color: var(--smrt-color-on-surface);
-font: var(--smrt-typography-body-medium-font);
-font-weight: var(--smrt-typography-weight-medium);
-
-}
-.smrt-campaign-detail__channel-ref {
-font: var(--smrt-typography-body-small-font);
-
-}
-
+    color: var(--smrt-color-on-surface);
+  }
+  h2 {
+    font: var(--smrt-typography-headline-small-font);
+  }
+  h3 {
+    font: var(--smrt-typography-title-medium-font);
+  }
+  .smrt-campaign-detail__facts dt {
+    color: var(--smrt-color-on-surface-variant);
+    font: var(--smrt-typography-label-medium-font);
+  }
+  .smrt-campaign-detail__facts dd {
+    color: var(--smrt-color-on-surface);
+    font: var(--smrt-typography-body-large-font);
+    font-weight: var(--smrt-typography-weight-medium);
+  }
+  li {
+    border-bottom: var(--smrt-hairline);
+  }
+  .smrt-campaign-detail__channel-name {
+    color: var(--smrt-color-on-surface);
+    font: var(--smrt-typography-body-medium-font);
+    font-weight: var(--smrt-typography-weight-medium);
+  }
+  .smrt-campaign-detail__channel-ref {
+    font: var(--smrt-typography-body-small-font);
+  }
 }
 
 </style>

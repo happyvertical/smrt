@@ -74,77 +74,63 @@ function factorChips(
 <style>
 @layer smrt.reset, smrt.structure, smrt.theme;
 @layer smrt.structure {
-
-.smrt-routing-rationale__root {
-list-style: none;
-margin: 0;
-padding: 0;
-display: flex;
-flex-direction: column;
-gap: 0.5rem;
-
-}
-.smrt-routing-rationale__row {
-display: flex;
-align-items: flex-start;
-justify-content: space-between;
-gap: 0.75rem;
-
-}
-.smrt-routing-rationale__main {
-display: flex;
-flex-direction: column;
-gap: 0.25rem;
-min-width: 0;
-
-}
-.smrt-routing-rationale__head {
-display: flex;
-align-items: center;
-gap: 0.5rem;
-flex-wrap: wrap;
-
-}
-.smrt-routing-rationale__factors {
-display: flex;
-flex-wrap: wrap;
-gap: 0.25rem;
-
-}
-.smrt-routing-rationale__factor {
-padding: 0.0625rem 0.375rem;
-
-}
-.smrt-routing-rationale__empty {
-padding: 1rem 0;
-
+  .smrt-routing-rationale__root {
+    list-style: none;
+    margin: 0;
+    padding: 0;
+    display: flex;
+    flex-direction: column;
+    gap: 0.5rem;
+  }
+  .smrt-routing-rationale__row {
+    display: flex;
+    align-items: flex-start;
+    justify-content: space-between;
+    gap: 0.75rem;
+  }
+  .smrt-routing-rationale__main {
+    display: flex;
+    flex-direction: column;
+    gap: 0.25rem;
+    min-width: 0;
+  }
+  .smrt-routing-rationale__head {
+    display: flex;
+    align-items: center;
+    gap: 0.5rem;
+    flex-wrap: wrap;
+  }
+  .smrt-routing-rationale__factors {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 0.25rem;
+  }
+  .smrt-routing-rationale__factor {
+    padding: 0.0625rem 0.375rem;
+  }
+  .smrt-routing-rationale__empty {
+    padding: 1rem 0;
+  }
 }
 
-}
 @layer smrt.theme {
-
-.smrt-routing-rationale__name {
-font-weight: 500;
-
-}
-.smrt-routing-rationale__score {
-font-size: 0.75rem;
-color: var(--smrt-color-on-surface-variant, inherit);
-
-}
-.smrt-routing-rationale__factor {
-font-size: 0.6875rem;
-border-radius: 0.5rem;
-background: var(--smrt-color-surface-container-highest, transparent);
-color: var(--smrt-color-on-surface-variant, inherit);
-border: var(--smrt-hairline);
-
-}
-.smrt-routing-rationale__empty {
-color: var(--smrt-color-on-surface-variant, inherit);
-
-}
-
+  .smrt-routing-rationale__name {
+    font-weight: 500;
+  }
+  .smrt-routing-rationale__score {
+    font-size: 0.75rem;
+    color: var(--smrt-color-on-surface-variant, inherit);
+  }
+  .smrt-routing-rationale__factor {
+    font-size: 0.6875rem;
+    border-radius: 0.5rem;
+    background: var(--smrt-color-surface-container-highest, transparent);
+    color: var(--smrt-color-on-surface-variant, inherit);
+    border: var(--smrt-hairline);
+  }
+  .smrt-routing-rationale__empty {
+    color: var(--smrt-color-on-surface-variant, inherit);
+  }
 }
 
 </style>

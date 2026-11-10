@@ -71,76 +71,62 @@ function formatDue(iso: string | null): string {
 <style>
 @layer smrt.reset, smrt.structure, smrt.theme;
 @layer smrt.structure {
-
-.smrt-target-list__root {
-list-style: none;
-margin: 0;
-padding: 0;
-display: flex;
-flex-direction: column;
-gap: 0.375rem;
-
-}
-.smrt-target-list__row {
-display: flex;
-align-items: center;
-justify-content: space-between;
-gap: 0.75rem;
-
-}
-.smrt-target-list__main {
-display: flex;
-flex-direction: column;
-gap: 0.125rem;
-min-width: 0;
-
-}
-.smrt-target-list__cycle {
-margin-left: 0.375rem;
-
-}
-.smrt-target-list__meta {
-display: flex;
-align-items: center;
-gap: 0.5rem;
-flex-shrink: 0;
-
-}
-.smrt-target-list__empty {
-padding: 1rem 0;
-
+  .smrt-target-list__root {
+    list-style: none;
+    margin: 0;
+    padding: 0;
+    display: flex;
+    flex-direction: column;
+    gap: 0.375rem;
+  }
+  .smrt-target-list__row {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    gap: 0.75rem;
+  }
+  .smrt-target-list__main {
+    display: flex;
+    flex-direction: column;
+    gap: 0.125rem;
+    min-width: 0;
+  }
+  .smrt-target-list__cycle {
+    margin-left: 0.375rem;
+  }
+  .smrt-target-list__meta {
+    display: flex;
+    align-items: center;
+    gap: 0.5rem;
+    flex-shrink: 0;
+  }
+  .smrt-target-list__empty {
+    padding: 1rem 0;
+  }
 }
 
-}
 @layer smrt.theme {
-
-.smrt-target-list__type {
-font-weight: 500;
-text-transform: capitalize;
-
-}
-.smrt-target-list__cycle {
-font-size: 0.75rem;
-font-weight: 400;
-text-transform: none;
-color: var(--smrt-color-on-surface-variant, inherit);
-
-}
-.smrt-target-list__due,
+  .smrt-target-list__type {
+    font-weight: 500;
+    text-transform: capitalize;
+  }
+  .smrt-target-list__cycle {
+    font-size: 0.75rem;
+    font-weight: 400;
+    text-transform: none;
+    color: var(--smrt-color-on-surface-variant, inherit);
+  }
+  .smrt-target-list__due,
   .smrt-target-list__paused {
-font-size: 0.75rem;
-color: var(--smrt-color-on-surface-variant, inherit);
-
-}
-.smrt-target-list__paused {
-font-style: italic;
-
-}
-.smrt-target-list__empty {
-color: var(--smrt-color-on-surface-variant, inherit);
-
-}
-
+    font-size: 0.75rem;
+    color: var(--smrt-color-on-surface-variant, inherit);
+  }
+  .smrt-target-list__paused {
+    font-style: italic;
+  }
+  .smrt-target-list__empty {
+    color: var(--smrt-color-on-surface-variant, inherit);
+  }
 }
 
 </style>

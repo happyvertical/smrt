@@ -75,72 +75,58 @@ const progress = $derived(pacing ? cappedBudgetProgress(pacing) : 0);
 <style>
 @layer smrt.reset, smrt.structure, smrt.theme;
 @layer smrt.structure {
-
-.smrt-budget-pacing__root {
-display: flex;
-flex-direction: column;
-gap: var(--smrt-spacing-2);
-
-}
-header,
+  .smrt-budget-pacing__root {
+    display: flex;
+    flex-direction: column;
+    gap: var(--smrt-spacing-2);
+  }
+  header,
   .smrt-budget-pacing__progress-label {
-display: flex;
-align-items: center;
-justify-content: space-between;
-gap: var(--smrt-spacing-3);
-
-}
-h3,
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    gap: var(--smrt-spacing-3);
+  }
+  h3,
   .smrt-budget-pacing__empty {
-margin: 0;
-
-}
-.smrt-budget-pacing__facts {
-display: grid;
-grid-template-columns: repeat(auto-fit, minmax(9rem, 1fr));
-gap: var(--smrt-spacing-3);
-margin: var(--smrt-spacing-3) 0 0;
-
-}
-.smrt-budget-pacing__facts dd {
-margin: var(--smrt-spacing-1) 0 0;
-
+    margin: 0;
+  }
+  .smrt-budget-pacing__facts {
+    display: grid;
+    grid-template-columns: repeat(auto-fit, minmax(9rem, 1fr));
+    gap: var(--smrt-spacing-3);
+    margin: var(--smrt-spacing-3) 0 0;
+  }
+  .smrt-budget-pacing__facts dd {
+    margin: var(--smrt-spacing-1) 0 0;
+  }
 }
 
-}
 @layer smrt.theme {
-
-h3 {
-color: var(--smrt-color-on-surface);
-font: var(--smrt-typography-title-medium-font);
-
-}
-.smrt-budget-pacing__empty,
+  h3 {
+    color: var(--smrt-color-on-surface);
+    font: var(--smrt-typography-title-medium-font);
+  }
+  .smrt-budget-pacing__empty,
   .smrt-budget-pacing__progress-label,
   dt {
-color: var(--smrt-color-on-surface-variant);
-
-}
-.smrt-budget-pacing__empty {
-font: var(--smrt-typography-body-medium-font);
-
-}
-.smrt-budget-pacing__progress-label,
+    color: var(--smrt-color-on-surface-variant);
+  }
+  .smrt-budget-pacing__empty {
+    font: var(--smrt-typography-body-medium-font);
+  }
+  .smrt-budget-pacing__progress-label,
   dt {
-font: var(--smrt-typography-body-small-font);
-
-}
-.smrt-budget-pacing__facts dd {
-color: var(--smrt-color-on-surface);
-font: var(--smrt-typography-body-medium-font);
-font-weight: var(--smrt-typography-weight-medium);
-
-}
-.smrt-budget-pacing__facts dd.smrt-budget-pacing__negative {
-color: var(--smrt-color-error);
-
-}
-
+    font: var(--smrt-typography-body-small-font);
+  }
+  .smrt-budget-pacing__facts dd {
+    color: var(--smrt-color-on-surface);
+    font: var(--smrt-typography-body-medium-font);
+    font-weight: var(--smrt-typography-weight-medium);
+  }
+  .smrt-budget-pacing__facts dd.smrt-budget-pacing__negative {
+    color: var(--smrt-color-error);
+  }
 }
 
 </style>

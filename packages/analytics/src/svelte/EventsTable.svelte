@@ -73,144 +73,116 @@ function statusClass(status: string): string {
 <style>
 @layer smrt.reset, smrt.structure, smrt.theme;
 @layer smrt.structure {
-
-.smrt-events-table__root {
-overflow-x: auto;
-
-}
-.smrt-events-table__table {
-width: 100%;
-
-}
-/* Visually hidden but available to assistive tech (table accessible name). */
-	.smrt-events-table__caption {
-position: absolute;
-width: 1px;
-height: 1px;
-padding: 0;
-margin: -1px;
-overflow: hidden;
-clip: rect(0, 0, 0, 0);
-white-space: nowrap;
-
-}
-.smrt-events-table__table th {
-padding: 0.5rem 0.75rem;
-
-}
-.smrt-events-table__table td {
-padding: 0.5rem 0.75rem;
-
-}
-.smrt-events-table__event-page {
-max-width: 200px;
-overflow: hidden;
-text-overflow: ellipsis;
-white-space: nowrap;
-
-}
-.smrt-events-table__event-time {
-white-space: nowrap;
-
-}
-.smrt-events-table__status-pill {
-display: inline-block;
-padding: 0.125rem 0.5rem;
-
-}
-.smrt-events-table__empty {
-padding: 2rem;
-
-}
-.smrt-events-table__overflow {
-padding: 0.5rem;
-
+  .smrt-events-table__root {
+    overflow-x: auto;
+  }
+  .smrt-events-table__table {
+    width: 100%;
+  }
+  /* Visually hidden but available to assistive tech (table accessible name). */
+  .smrt-events-table__caption {
+    position: absolute;
+    width: 1px;
+    height: 1px;
+    padding: 0;
+    margin: -1px;
+    overflow: hidden;
+    clip: rect(0, 0, 0, 0);
+    white-space: nowrap;
+  }
+  .smrt-events-table__table th {
+    padding: 0.5rem 0.75rem;
+  }
+  .smrt-events-table__table td {
+    padding: 0.5rem 0.75rem;
+  }
+  .smrt-events-table__event-page {
+    max-width: 200px;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+  }
+  .smrt-events-table__event-time {
+    white-space: nowrap;
+  }
+  .smrt-events-table__status-pill {
+    display: inline-block;
+    padding: 0.125rem 0.5rem;
+  }
+  .smrt-events-table__empty {
+    padding: 2rem;
+  }
+  .smrt-events-table__overflow {
+    padding: 0.5rem;
+  }
 }
 
-}
 @layer smrt.theme {
-
-.smrt-events-table__table {
-border-collapse: collapse;
-font-size: var(--smrt-typography-body-medium-size, 0.8125rem);
-
-}
-/* Visually hidden but available to assistive tech (table accessible name). */
-	.smrt-events-table__caption {
-border: 0;
-
-}
-.smrt-events-table__table th {
-text-align: left;
-font-weight: var(--smrt-typography-weight-semibold, 600);
-color: var(--smrt-color-on-surface-variant);
-border-bottom: 2px solid var(--smrt-color-outline-variant);
-font-size: var(--smrt-typography-label-medium-size, 0.75rem);
-text-transform: uppercase;
-letter-spacing: var(--smrt-typography-label-medium-tracking, 0.05em);
-
-}
-.smrt-events-table__table td {
-border-bottom: var(--smrt-hairline);
-color: var(--smrt-color-on-surface);
-
-}
-.smrt-events-table__table tbody tr:hover {
-background: var(--smrt-color-surface-container);
-
-}
-.smrt-events-table__event-name {
-font-weight: var(--smrt-typography-weight-medium, 500);
-
-}
-.smrt-events-table__event-page {
-color: var(--smrt-color-on-surface-variant);
-
-}
-.smrt-events-table__event-client {
-font-family: var(--smrt-font-family-mono, monospace);
-font-size: var(--smrt-typography-body-small-size, 0.75rem);
-color: var(--smrt-color-on-surface-variant);
-
-}
-.smrt-events-table__event-time {
-color: var(--smrt-color-on-surface-variant);
-font-size: var(--smrt-typography-label-medium-size, 0.75rem);
-
-}
-.smrt-events-table__status-pill {
-border-radius: var(--smrt-radius-full);
-font-size: var(--smrt-typography-label-small-size, 0.6875rem);
-font-weight: var(--smrt-typography-weight-medium, 500);
-
-}
-.smrt-events-table__status-sent {
-background: var(--smrt-color-success-container);
-color: var(--smrt-color-on-success-container);
-
-}
-.smrt-events-table__status-failed {
-background: var(--smrt-color-error-container);
-color: var(--smrt-color-on-error-container);
-
-}
-.smrt-events-table__status-pending {
-background: var(--smrt-color-warning-container);
-color: var(--smrt-color-on-warning-container);
-
-}
-.smrt-events-table__empty {
-text-align: center;
-color: var(--smrt-color-on-surface-variant);
-
-}
-.smrt-events-table__overflow {
-text-align: center;
-color: var(--smrt-color-on-surface-variant);
-font-size: var(--smrt-typography-body-small-size, 0.75rem);
-
-}
-
+  .smrt-events-table__table {
+    border-collapse: collapse;
+    font-size: var(--smrt-typography-body-medium-size, 0.8125rem);
+  }
+  /* Visually hidden but available to assistive tech (table accessible name). */
+  .smrt-events-table__caption {
+    border: 0;
+  }
+  .smrt-events-table__table th {
+    text-align: left;
+    font-weight: var(--smrt-typography-weight-semibold, 600);
+    color: var(--smrt-color-on-surface-variant);
+    border-bottom: 2px solid var(--smrt-color-outline-variant);
+    font-size: var(--smrt-typography-label-medium-size, 0.75rem);
+    text-transform: uppercase;
+    letter-spacing: var(--smrt-typography-label-medium-tracking, 0.05em);
+  }
+  .smrt-events-table__table td {
+    border-bottom: var(--smrt-hairline);
+    color: var(--smrt-color-on-surface);
+  }
+  .smrt-events-table__table tbody tr:hover {
+    background: var(--smrt-color-surface-container);
+  }
+  .smrt-events-table__event-name {
+    font-weight: var(--smrt-typography-weight-medium, 500);
+  }
+  .smrt-events-table__event-page {
+    color: var(--smrt-color-on-surface-variant);
+  }
+  .smrt-events-table__event-client {
+    font-family: var(--smrt-font-family-mono, monospace);
+    font-size: var(--smrt-typography-body-small-size, 0.75rem);
+    color: var(--smrt-color-on-surface-variant);
+  }
+  .smrt-events-table__event-time {
+    color: var(--smrt-color-on-surface-variant);
+    font-size: var(--smrt-typography-label-medium-size, 0.75rem);
+  }
+  .smrt-events-table__status-pill {
+    border-radius: var(--smrt-radius-full);
+    font-size: var(--smrt-typography-label-small-size, 0.6875rem);
+    font-weight: var(--smrt-typography-weight-medium, 500);
+  }
+  .smrt-events-table__status-sent {
+    background: var(--smrt-color-success-container);
+    color: var(--smrt-color-on-success-container);
+  }
+  .smrt-events-table__status-failed {
+    background: var(--smrt-color-error-container);
+    color: var(--smrt-color-on-error-container);
+  }
+  .smrt-events-table__status-pending {
+    background: var(--smrt-color-warning-container);
+    color: var(--smrt-color-on-warning-container);
+  }
+  .smrt-events-table__empty {
+    text-align: center;
+    color: var(--smrt-color-on-surface-variant);
+  }
+  .smrt-events-table__overflow {
+    text-align: center;
+    color: var(--smrt-color-on-surface-variant);
+    font-size: var(--smrt-typography-body-small-size, 0.75rem);
+  }
 }
 
 </style>

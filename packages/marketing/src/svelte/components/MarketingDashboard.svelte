@@ -88,60 +88,48 @@ const summary = $derived(summarizeMarketingDashboard(campaigns));
 <style>
 @layer smrt.reset, smrt.structure, smrt.theme;
 @layer smrt.structure {
-
-.smrt-marketing-dashboard__root {
-display: flex;
-flex-direction: column;
-gap: var(--smrt-spacing-4);
-
-}
-.smrt-marketing-dashboard__tiles {
-display: grid;
-grid-template-columns: repeat(auto-fit, minmax(10rem, 1fr));
-gap: var(--smrt-spacing-3);
-
-}
-.smrt-marketing-dashboard__tile,
+  .smrt-marketing-dashboard__root {
+    display: flex;
+    flex-direction: column;
+    gap: var(--smrt-spacing-4);
+  }
+  .smrt-marketing-dashboard__tiles {
+    display: grid;
+    grid-template-columns: repeat(auto-fit, minmax(10rem, 1fr));
+    gap: var(--smrt-spacing-3);
+  }
+  .smrt-marketing-dashboard__tile,
   .smrt-marketing-dashboard__currency-total {
-margin: 0;
-
-}
-dd {
-margin: var(--smrt-spacing-1) 0 0;
-
-}
-.smrt-marketing-dashboard__currency-totals {
-display: grid;
-grid-template-columns: repeat(auto-fit, minmax(12rem, 1fr));
-gap: var(--smrt-spacing-4);
-
-}
-.smrt-marketing-dashboard__surface {
-min-width: 0;
-
+    margin: 0;
+  }
+  dd {
+    margin: var(--smrt-spacing-1) 0 0;
+  }
+  .smrt-marketing-dashboard__currency-totals {
+    display: grid;
+    grid-template-columns: repeat(auto-fit, minmax(12rem, 1fr));
+    gap: var(--smrt-spacing-4);
+  }
+  .smrt-marketing-dashboard__surface {
+    min-width: 0;
+  }
 }
 
-}
 @layer smrt.theme {
-
-dt {
-color: var(--smrt-color-on-surface-variant);
-font: var(--smrt-typography-label-medium-font);
-text-transform: uppercase;
-letter-spacing: var(--smrt-typography-label-medium-tracking);
-
-}
-dd {
-color: var(--smrt-color-on-surface);
-font: var(--smrt-typography-title-medium-font);
-
-}
-.smrt-marketing-dashboard__secondary {
-color: var(--smrt-color-on-surface-variant);
-font: var(--smrt-typography-body-small-font);
-
-}
-
+  dt {
+    color: var(--smrt-color-on-surface-variant);
+    font: var(--smrt-typography-label-medium-font);
+    text-transform: uppercase;
+    letter-spacing: var(--smrt-typography-label-medium-tracking);
+  }
+  dd {
+    color: var(--smrt-color-on-surface);
+    font: var(--smrt-typography-title-medium-font);
+  }
+  .smrt-marketing-dashboard__secondary {
+    color: var(--smrt-color-on-surface-variant);
+    font: var(--smrt-typography-body-small-font);
+  }
 }
 
 </style>

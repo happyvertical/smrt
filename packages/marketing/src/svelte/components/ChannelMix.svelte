@@ -64,92 +64,74 @@ const mix = $derived(calculateChannelMix(channels));
 <style>
 @layer smrt.reset, smrt.structure, smrt.theme;
 @layer smrt.structure {
-
-.smrt-channel-mix__root,
+  .smrt-channel-mix__root,
   .smrt-channel-mix__rows {
-display: flex;
-flex-direction: column;
-
-}
-.smrt-channel-mix__root {
-gap: var(--smrt-spacing-3);
-
-}
-.smrt-channel-mix__rows {
-gap: var(--smrt-spacing-2);
-
-}
-h3,
+    display: flex;
+    flex-direction: column;
+  }
+  .smrt-channel-mix__root {
+    gap: var(--smrt-spacing-3);
+  }
+  .smrt-channel-mix__rows {
+    gap: var(--smrt-spacing-2);
+  }
+  h3,
   .smrt-channel-mix__empty {
-margin: 0;
-
-}
-.smrt-channel-mix__head,
+    margin: 0;
+  }
+  .smrt-channel-mix__head,
   .smrt-channel-mix__progress-label {
-display: flex;
-align-items: center;
-justify-content: space-between;
-gap: var(--smrt-spacing-3);
-
-}
-.smrt-channel-mix__name,
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    gap: var(--smrt-spacing-3);
+  }
+  .smrt-channel-mix__name,
   .smrt-channel-mix__secondary {
-display: block;
-
-}
-.smrt-channel-mix__progress-label {
-margin: var(--smrt-spacing-3) 0 var(--smrt-spacing-1);
-
-}
-.smrt-channel-mix__metrics {
-display: grid;
-grid-template-columns: repeat(auto-fit, minmax(8rem, 1fr));
-gap: var(--smrt-spacing-3);
-margin: var(--smrt-spacing-3) 0 0;
-
-}
-.smrt-channel-mix__metrics dd {
-margin: var(--smrt-spacing-1) 0 0;
-
+    display: block;
+  }
+  .smrt-channel-mix__progress-label {
+    margin: var(--smrt-spacing-3) 0 var(--smrt-spacing-1);
+  }
+  .smrt-channel-mix__metrics {
+    display: grid;
+    grid-template-columns: repeat(auto-fit, minmax(8rem, 1fr));
+    gap: var(--smrt-spacing-3);
+    margin: var(--smrt-spacing-3) 0 0;
+  }
+  .smrt-channel-mix__metrics dd {
+    margin: var(--smrt-spacing-1) 0 0;
+  }
 }
 
-}
 @layer smrt.theme {
-
-h3 {
-color: var(--smrt-color-on-surface);
-font: var(--smrt-typography-title-medium-font);
-
-}
-.smrt-channel-mix__empty,
+  h3 {
+    color: var(--smrt-color-on-surface);
+    font: var(--smrt-typography-title-medium-font);
+  }
+  .smrt-channel-mix__empty,
   .smrt-channel-mix__secondary,
   dt,
   .smrt-channel-mix__progress-label {
-color: var(--smrt-color-on-surface-variant);
-
-}
-.smrt-channel-mix__empty,
+    color: var(--smrt-color-on-surface-variant);
+  }
+  .smrt-channel-mix__empty,
   .smrt-channel-mix__name {
-font: var(--smrt-typography-body-medium-font);
-
-}
-.smrt-channel-mix__name {
-color: var(--smrt-color-on-surface);
-font-weight: var(--smrt-typography-weight-medium);
-
-}
-.smrt-channel-mix__secondary,
+    font: var(--smrt-typography-body-medium-font);
+  }
+  .smrt-channel-mix__name {
+    color: var(--smrt-color-on-surface);
+    font-weight: var(--smrt-typography-weight-medium);
+  }
+  .smrt-channel-mix__secondary,
   .smrt-channel-mix__progress-label,
   dt {
-font: var(--smrt-typography-body-small-font);
-
-}
-.smrt-channel-mix__metrics dd {
-color: var(--smrt-color-on-surface);
-font: var(--smrt-typography-body-medium-font);
-
-}
-
+    font: var(--smrt-typography-body-small-font);
+  }
+  .smrt-channel-mix__metrics dd {
+    color: var(--smrt-color-on-surface);
+    font: var(--smrt-typography-body-medium-font);
+  }
 }
 
 </style>

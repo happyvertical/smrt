@@ -36,51 +36,40 @@ let {
 <style>
 @layer smrt.reset, smrt.structure, smrt.theme;
 @layer smrt.structure {
-
-.smrt-usage-thresholds {
-display: grid;
-gap: 0.75rem;
-
-}
-.smrt-usage-thresholds__row {
-display: grid;
-gap: 0.45rem;
-padding: 0.875rem;
-
-}
-.smrt-usage-thresholds__header {
-align-items: center;
-display: flex;
-justify-content: space-between;
-
-}
-.smrt-usage-thresholds p {
-margin: 0;
-
+  .smrt-usage-thresholds {
+    display: grid;
+    gap: 0.75rem;
+  }
+  .smrt-usage-thresholds__row {
+    display: grid;
+    gap: 0.45rem;
+    padding: 0.875rem;
+  }
+  .smrt-usage-thresholds__header {
+    align-items: center;
+    display: flex;
+    justify-content: space-between;
+  }
+  .smrt-usage-thresholds p {
+    margin: 0;
+  }
 }
 
-}
 @layer smrt.theme {
-
-.smrt-usage-thresholds__row {
-border: var(--smrt-hairline);
-border-radius: var(--smrt-radius-md);
-
-}
-.smrt-usage-thresholds__row.smrt-usage-thresholds__warn {
-border-color: var(--smrt-color-warning);
-
-}
-.smrt-usage-thresholds__row.smrt-usage-thresholds__blocked {
-border-color: var(--smrt-color-error);
-
-}
-.smrt-usage-thresholds p {
-color: var(--smrt-color-on-surface-variant);
-font-size: var(--smrt-typography-body-medium-size, 0.875rem);
-
-}
-
+  .smrt-usage-thresholds__row {
+    border: var(--smrt-hairline);
+    border-radius: var(--smrt-radius-md);
+  }
+  .smrt-usage-thresholds__row.smrt-usage-thresholds__warn {
+    border-color: var(--smrt-color-warning);
+  }
+  .smrt-usage-thresholds__row.smrt-usage-thresholds__blocked {
+    border-color: var(--smrt-color-error);
+  }
+  .smrt-usage-thresholds p {
+    color: var(--smrt-color-on-surface-variant);
+    font-size: var(--smrt-typography-body-medium-size, 0.875rem);
+  }
 }
 
 </style>

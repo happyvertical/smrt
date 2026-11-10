@@ -95,77 +95,63 @@ function formatUpdated(iso: string | null): string {
 <style>
 @layer smrt.reset, smrt.structure, smrt.theme;
 @layer smrt.structure {
-
-.smrt-case-queue__root {
-list-style: none;
-margin: 0;
-padding: 0;
-display: flex;
-flex-direction: column;
-gap: 0.25rem;
-
-}
-.smrt-case-queue__line {
-display: flex;
-width: 100%;
-align-items: center;
-justify-content: space-between;
-gap: 0.75rem;
-
-}
-.smrt-case-queue__main {
-display: flex;
-flex-direction: column;
-gap: 0.125rem;
-min-width: 0;
-
-}
-.smrt-case-queue__subject {
-overflow: hidden;
-text-overflow: ellipsis;
-white-space: nowrap;
-
-}
-.smrt-case-queue__meta {
-display: flex;
-align-items: center;
-gap: 0.5rem;
-flex-shrink: 0;
-
-}
-.smrt-case-queue__empty {
-padding: 1rem 0;
-
+  .smrt-case-queue__root {
+    list-style: none;
+    margin: 0;
+    padding: 0;
+    display: flex;
+    flex-direction: column;
+    gap: 0.25rem;
+  }
+  .smrt-case-queue__line {
+    display: flex;
+    width: 100%;
+    align-items: center;
+    justify-content: space-between;
+    gap: 0.75rem;
+  }
+  .smrt-case-queue__main {
+    display: flex;
+    flex-direction: column;
+    gap: 0.125rem;
+    min-width: 0;
+  }
+  .smrt-case-queue__subject {
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+  }
+  .smrt-case-queue__meta {
+    display: flex;
+    align-items: center;
+    gap: 0.5rem;
+    flex-shrink: 0;
+  }
+  .smrt-case-queue__empty {
+    padding: 1rem 0;
+  }
 }
 
-}
 @layer smrt.theme {
-
-.smrt-case-queue__line {
-text-align: left;
-
-}
-.smrt-case-queue__number {
-font-size: 0.75rem;
-color: var(--smrt-color-on-surface-variant, inherit);
-
-}
-.smrt-case-queue__subject {
-font-weight: 500;
-
-}
-.smrt-case-queue__channel,
+  .smrt-case-queue__line {
+    text-align: left;
+  }
+  .smrt-case-queue__number {
+    font-size: 0.75rem;
+    color: var(--smrt-color-on-surface-variant, inherit);
+  }
+  .smrt-case-queue__subject {
+    font-weight: 500;
+  }
+  .smrt-case-queue__channel,
   .smrt-case-queue__assignee,
   .smrt-case-queue__updated {
-font-size: 0.75rem;
-color: var(--smrt-color-on-surface-variant, inherit);
-
-}
-.smrt-case-queue__empty {
-color: var(--smrt-color-on-surface-variant, inherit);
-
-}
-
+    font-size: 0.75rem;
+    color: var(--smrt-color-on-surface-variant, inherit);
+  }
+  .smrt-case-queue__empty {
+    color: var(--smrt-color-on-surface-variant, inherit);
+  }
 }
 
 </style>

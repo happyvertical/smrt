@@ -79,94 +79,75 @@ let { campaigns = [], selectedCampaignId, locale, onSelect }: Props = $props();
 <style>
 @layer smrt.reset, smrt.structure, smrt.theme;
 @layer smrt.structure {
-
-.smrt-campaign-list__root {
-width: 100%;
-overflow-x: auto;
-
-}
-.smrt-campaign-list__empty {
-margin: 0;
-
-}
-table {
-width: 100%;
-
-}
-th,
+  .smrt-campaign-list__root {
+    width: 100%;
+    overflow-x: auto;
+  }
+  .smrt-campaign-list__empty {
+    margin: 0;
+  }
+  table {
+    width: 100%;
+  }
+  th,
   td {
-padding: var(--smrt-spacing-3);
-
-}
-th {
-white-space: nowrap;
-
-}
-.smrt-campaign-list__name,
+    padding: var(--smrt-spacing-3);
+  }
+  th {
+    white-space: nowrap;
+  }
+  .smrt-campaign-list__name,
   .smrt-campaign-list__secondary {
-display: block;
-
-}
-.smrt-campaign-list__number,
+    display: block;
+  }
+  .smrt-campaign-list__number,
   .smrt-campaign-list__action {
-white-space: nowrap;
-
+    white-space: nowrap;
+  }
+  .smrt-campaign-list__visually-hidden {
+    position: absolute;
+    width: 1px;
+    height: 1px;
+    overflow: hidden;
+    clip: rect(0 0 0 0);
+    white-space: nowrap;
+  }
 }
-.smrt-campaign-list__visually-hidden {
-position: absolute;
-width: 1px;
-height: 1px;
-overflow: hidden;
-clip: rect(0 0 0 0);
-white-space: nowrap;
 
-}
-
-}
 @layer smrt.theme {
-
-.smrt-campaign-list__empty {
-color: var(--smrt-color-on-surface-variant);
-font: var(--smrt-typography-body-medium-font);
-
-}
-table {
-border-collapse: collapse;
-color: var(--smrt-color-on-surface);
-font: var(--smrt-typography-body-medium-font);
-
-}
-th,
+  .smrt-campaign-list__empty {
+    color: var(--smrt-color-on-surface-variant);
+    font: var(--smrt-typography-body-medium-font);
+  }
+  table {
+    border-collapse: collapse;
+    color: var(--smrt-color-on-surface);
+    font: var(--smrt-typography-body-medium-font);
+  }
+  th,
   td {
-border-bottom: var(--smrt-hairline);
-text-align: left;
-vertical-align: top;
-
-}
-th {
-background: var(--smrt-color-surface-container);
-font-weight: var(--smrt-typography-weight-semibold);
-
-}
-tr.smrt-campaign-list__selected td {
-background: var(--smrt-color-primary-container);
-
-}
-.smrt-campaign-list__name {
-font-weight: var(--smrt-typography-weight-medium);
-
-}
-.smrt-campaign-list__secondary {
-color: var(--smrt-color-on-surface-variant);
-font: var(--smrt-typography-body-small-font);
-
-}
-.smrt-campaign-list__number,
+    border-bottom: var(--smrt-hairline);
+    text-align: left;
+    vertical-align: top;
+  }
+  th {
+    background: var(--smrt-color-surface-container);
+    font-weight: var(--smrt-typography-weight-semibold);
+  }
+  tr.smrt-campaign-list__selected td {
+    background: var(--smrt-color-primary-container);
+  }
+  .smrt-campaign-list__name {
+    font-weight: var(--smrt-typography-weight-medium);
+  }
+  .smrt-campaign-list__secondary {
+    color: var(--smrt-color-on-surface-variant);
+    font: var(--smrt-typography-body-small-font);
+  }
+  .smrt-campaign-list__number,
   .smrt-campaign-list__action {
-text-align: right;
-
-}
-
+    text-align: right;
+  }
 }
 
 </style>
