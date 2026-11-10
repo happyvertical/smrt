@@ -34,48 +34,44 @@
       "internalClasses": 17
     },
     "packages/app-shell/src/lib/assistant/AssistantDock.svelte": {
-      "unsorted": true,
-      "internalClasses": 25
+      "unsorted": false,
+      "internalClasses": 8
     },
     "packages/app-shell/src/lib/components/ApprovalCard.svelte": {
-      "unsorted": true,
-      "internalClasses": 11
+      "unsorted": false,
+      "internalClasses": 8
     },
     "packages/app-shell/src/lib/components/ConfirmDialog.svelte": {
       "unsorted": false,
       "internalClasses": 5
     },
     "packages/app-shell/src/lib/components/FieldInput.svelte": {
-      "unsorted": true,
-      "internalClasses": 7
+      "unsorted": false,
+      "internalClasses": 6
     },
     "packages/app-shell/src/lib/components/MethodRunner.svelte": {
-      "unsorted": true,
-      "internalClasses": 10
+      "unsorted": false,
+      "internalClasses": 8
     },
     "packages/app-shell/src/lib/components/RecordForm.svelte": {
       "unsorted": false,
       "internalClasses": 9
     },
     "packages/app-shell/src/lib/components/RecordList.svelte": {
-      "unsorted": true,
-      "internalClasses": 14
-    },
-    "packages/app-shell/src/routes/+layout.svelte": {
-      "unsorted": true,
-      "internalClasses": 2
+      "unsorted": false,
+      "internalClasses": 12
     },
     "packages/app-shell/src/routes/+page.svelte": {
-      "unsorted": true,
-      "internalClasses": 14
+      "unsorted": false,
+      "internalClasses": 13
     },
     "packages/app-shell/src/routes/approvals/+page.svelte": {
-      "unsorted": true,
-      "internalClasses": 7
+      "unsorted": false,
+      "internalClasses": 5
     },
     "packages/app-shell/src/routes/history/+page.svelte": {
-      "unsorted": true,
-      "internalClasses": 16
+      "unsorted": false,
+      "internalClasses": 13
     },
     "packages/app-shell/src/routes/m/[model]/[id]/+page.svelte": {
       "unsorted": false,
@@ -425,24 +421,8 @@
       "unsorted": true,
       "internalClasses": 30
     },
-    "packages/smrt-svelte/src/components/app/AppShell.svelte": {
-      "unsorted": true,
-      "internalClasses": 6
-    },
     "packages/smrt-svelte/src/components/app/DockToggles.svelte": {
-      "unsorted": true,
-      "internalClasses": 2
-    },
-    "packages/smrt-svelte/src/components/app/OwnerSetupForm.svelte": {
-      "unsorted": true,
-      "internalClasses": 1
-    },
-    "packages/smrt-svelte/src/components/app/ShellColorSchemeToggle.svelte": {
-      "unsorted": true,
-      "internalClasses": 1
-    },
-    "packages/smrt-svelte/src/components/app/ShellSettingsPage.svelte": {
-      "unsorted": true,
+      "unsorted": false,
       "internalClasses": 1
     },
     "packages/smrt-svelte/src/components/cookbook/CookbookSectionOverview.svelte": {
@@ -457,121 +437,41 @@
       "unsorted": false,
       "internalClasses": 1
     },
-    "packages/smrt-svelte/src/components/workspace/admin-shell/ActivityItem.svelte": {
-      "unsorted": true,
-      "internalClasses": 1
-    },
-    "packages/smrt-svelte/src/components/workspace/admin-shell/ActivityList.svelte": {
-      "unsorted": true,
-      "internalClasses": 1
-    },
     "packages/smrt-svelte/src/components/workspace/admin-shell/ActivityTicker.svelte": {
-      "unsorted": true,
-      "internalClasses": 4
-    },
-    "packages/smrt-svelte/src/components/workspace/admin-shell/ActivityToasts.svelte": {
-      "unsorted": true,
+      "unsorted": false,
       "internalClasses": 2
     },
     "packages/smrt-svelte/src/components/workspace/admin-shell/AdminShell.svelte": {
-      "unsorted": true,
-      "internalClasses": 9
-    },
-    "packages/smrt-svelte/src/components/workspace/admin-shell/AppScopePanel.svelte": {
-      "unsorted": true,
-      "internalClasses": 1
-    },
-    "packages/smrt-svelte/src/components/workspace/admin-shell/HotkeyInput.svelte": {
-      "unsorted": true,
-      "internalClasses": 1
-    },
-    "packages/smrt-svelte/src/components/workspace/admin-shell/PhoneBottomBar.svelte": {
-      "unsorted": true,
+      "unsorted": false,
       "internalClasses": 2
     },
-    "packages/smrt-svelte/src/components/workspace/admin-shell/PhoneTopBar.svelte": {
-      "unsorted": true,
+    "packages/smrt-svelte/src/components/workspace/admin-shell/PhoneBottomBar.svelte": {
+      "unsorted": false,
       "internalClasses": 1
     },
     "packages/smrt-svelte/src/components/workspace/admin-shell/ShellBrand.svelte": {
-      "unsorted": true,
+      "unsorted": false,
       "internalClasses": 2
-    },
-    "packages/smrt-svelte/src/components/workspace/admin-shell/ShellCorner.svelte": {
-      "unsorted": true,
-      "internalClasses": 1
-    },
-    "packages/smrt-svelte/src/components/workspace/admin-shell/ShellIconButton.svelte": {
-      "unsorted": true,
-      "internalClasses": 1
-    },
-    "packages/smrt-svelte/src/components/workspace/admin-shell/ShellLayoutEditor.svelte": {
-      "unsorted": true,
-      "internalClasses": 1
-    },
-    "packages/smrt-svelte/src/components/workspace/admin-shell/ShellNavEditor.svelte": {
-      "unsorted": true,
-      "internalClasses": 1
-    },
-    "packages/smrt-svelte/src/components/workspace/admin-shell/ShellNavToggle.svelte": {
-      "unsorted": true,
-      "internalClasses": 1
-    },
-    "packages/smrt-svelte/src/components/workspace/admin-shell/ShellSectionIcon.svelte": {
-      "unsorted": true,
-      "internalClasses": 1
-    },
-    "packages/smrt-svelte/src/components/workspace/admin-shell/ShellSectionMenu.svelte": {
-      "unsorted": true,
-      "internalClasses": 2
-    },
-    "packages/smrt-svelte/src/components/workspace/admin-shell/ShellSettingsPanel.svelte": {
-      "unsorted": true,
-      "internalClasses": 1
-    },
-    "packages/smrt-svelte/src/components/workspace/admin-shell/ShellTitle.svelte": {
-      "unsorted": true,
-      "internalClasses": 1
-    },
-    "packages/smrt-svelte/src/components/workspace/admin-shell/ShortcutsOverlay.svelte": {
-      "unsorted": true,
-      "internalClasses": 1
-    },
-    "packages/smrt-svelte/src/components/workspace/admin-shell/SystemScopePanel.svelte": {
-      "unsorted": true,
-      "internalClasses": 1
-    },
-    "packages/smrt-svelte/src/components/workspace/admin-shell/SystemStatusChips.svelte": {
-      "unsorted": true,
-      "internalClasses": 1
-    },
-    "packages/smrt-svelte/src/components/workspace/admin-shell/TenantNav.svelte": {
-      "unsorted": true,
-      "internalClasses": 2
-    },
-    "packages/smrt-svelte/src/components/workspace/admin-shell/WorkspaceAccountMenu.svelte": {
-      "unsorted": true,
-      "internalClasses": 1
     },
     "packages/smrt-svelte/src/components/workspace/Breadcrumbs.svelte": {
-      "unsorted": true,
-      "internalClasses": 6
+      "unsorted": false,
+      "internalClasses": 2
     },
     "packages/smrt-svelte/src/components/workspace/NavTree.svelte": {
-      "unsorted": true,
-      "internalClasses": 15
-    },
-    "packages/smrt-svelte/src/components/workspace/RoleShell.svelte": {
-      "unsorted": true,
+      "unsorted": false,
       "internalClasses": 3
     },
+    "packages/smrt-svelte/src/components/workspace/RoleShell.svelte": {
+      "unsorted": false,
+      "internalClasses": 1
+    },
     "packages/smrt-svelte/src/components/workspace/tools-dock/ToolsDock.svelte": {
-      "unsorted": true,
-      "internalClasses": 20
+      "unsorted": false,
+      "internalClasses": 11
     },
     "packages/smrt-svelte/src/components/workspace/WorkspaceShell.svelte": {
-      "unsorted": true,
-      "internalClasses": 34
+      "unsorted": false,
+      "internalClasses": 15
     },
     "packages/smrt-ui/src/components/forms/__tests__/place-picker.fixture.svelte": {
       "unsorted": false,
