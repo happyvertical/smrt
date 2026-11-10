@@ -5,8 +5,10 @@ export {
   type ExecuteOptions,
   isRiskyCommand,
   isRiskyTool,
+  isStructuralCommand,
   type Plan,
   RISKY_COMMANDS,
+  STRUCTURAL_COMMANDS,
   type Template,
 } from './commands.ts';
 export {

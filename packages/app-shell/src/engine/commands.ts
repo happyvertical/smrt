@@ -82,6 +82,38 @@ export function isRiskyCommand(cmd: Command): boolean {
   return false;
 }
 
+/**
+ * Which commands change the app's definition, tables or history. A frozen host
+ * (see `HostOptions.frozen`) refuses every one of them; only `exportTemplate`
+ * reads. It is a total `Record` so that a new command cannot be added without
+ * deciding which side it is on.
+ */
+export const STRUCTURAL_COMMANDS: Readonly<Record<CommandType, boolean>> = {
+  defineModel: true,
+  addField: true,
+  hideField: true,
+  renameField: true,
+  removeField: true,
+  changeFieldType: true,
+  removeModel: true,
+  addMethod: true,
+  enableRecipe: true,
+  undo: true,
+  cleanUp: true,
+  exportTemplate: false,
+  importTemplate: true,
+};
+
+/** True unless the command is known to be read-only (an unknown type counts as structural). */
+export function isStructuralCommand(cmd: { type?: unknown }): boolean {
+  const type = cmd?.type;
+  return !(
+    typeof type === 'string' &&
+    Object.hasOwn(STRUCTURAL_COMMANDS, type) &&
+    STRUCTURAL_COMMANDS[type as CommandType] === false
+  );
+}
+
 /** Generated app tools that delete records need approval. */
 export function isRiskyTool(name: string): boolean {
   return /_delete$/.test(name);

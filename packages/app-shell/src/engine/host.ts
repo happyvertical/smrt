@@ -15,6 +15,7 @@ import {
   type ExecuteOptions,
   isRiskyCommand,
   isRiskyTool,
+  isStructuralCommand,
   overwritesOnUndo,
   type Plan,
   type Template,
@@ -37,6 +38,7 @@ import {
   toolNamesFor,
   validate,
 } from './definition.ts';
+import { type DraftMarker, readDraftMarker, sameDir } from './draft.ts';
 import { ApprovalRequiredError, EngineError } from './errors.ts';
 import { checkSyntax } from './sandbox.ts';
 import type { VersionRecord, VersionStore } from './store.ts';
@@ -50,6 +52,20 @@ export interface HostOptions {
   store: VersionStore;
   /** The worker entry. Defaults to `./app-worker.ts` or `.js` next to this module. */
   workerUrl?: URL | string;
+  /**
+   * Start frozen: every structural command is refused (see
+   * {@link AppHost.setFrozen}). Records, reports, the app's own tools and REST
+   * routes, and `exportTemplate` keep working.
+   */
+  frozen?: boolean;
+  /**
+   * Approve risky commands, `_delete` tools and REST `DELETE` without being
+   * asked. For a DRAFT host only: `open` refuses it unless `dataDir` is a draft
+   * directory made by `forkDraft` (it holds the engine's marker, naming a
+   * different live directory). It is read once, here, into a private field:
+   * there is no setter, so it cannot be turned on later or for the live host.
+   */
+  autoApprove?: boolean;
 }
 
 export interface ChangeResult {
@@ -132,6 +148,13 @@ export class AppHost extends EventEmitter {
   private workerUrl: URL | string;
   private app!: AppWorker;
   private closed = false;
+  #autoApprove = false;
+  private frozenNow = false;
+  /** Set when this host is a draft copy (its directory holds the draft marker). */
+  readonly draft: DraftMarker | null;
+  /** Record/tool/REST calls currently inside the worker. */
+  private inflight = 0;
+  private idleWaiters: (() => void)[] = [];
   /** Changes are applied one at a time. Work inside the queue must not wait on it. */
   private queue: Promise<unknown> = Promise.resolve();
 
@@ -140,9 +163,20 @@ export class AppHost extends EventEmitter {
     this.dataDir = dataDir;
     this.store = opts.store;
     this.workerUrl = opts.workerUrl ?? defaultWorkerUrl();
+    this.frozenNow = opts.frozen === true;
+    this.#autoApprove = opts.autoApprove === true;
+    this.draft = readDraftMarker(dataDir);
   }
 
   static async open(dataDir: string, opts: HostOptions): Promise<AppHost> {
+    if (opts.autoApprove) {
+      const marker = readDraftMarker(dataDir);
+      if (!marker || sameDir(marker.liveDir, dataDir))
+        throw new EngineError(
+          'autoApprove is for draft copies only; this directory is not one',
+          'refused',
+        );
+    }
     mkdirSync(join(dataDir, 'snapshots'), { recursive: true });
     const host = new AppHost(dataDir, opts);
     await host.boot();
@@ -174,6 +208,11 @@ export class AppHost extends EventEmitter {
     if (errs.length)
       throw new EngineError(
         `the stored definition is invalid: ${errs.join('; ')}`,
+      );
+    if (this.draft && !(await this.store.get(this.draft.baseVersion)))
+      throw new EngineError(
+        `the draft's base version ${this.draft.baseVersion} is missing from its store`,
+        'not_found',
       );
     this.def = rec.definition;
     this.version = cur;
@@ -313,7 +352,32 @@ export class AppHost extends EventEmitter {
 
   /** What a command would do, without changing anything. */
   plan(cmd: Command): Promise<Plan> {
-    return this.run(async () => (await this.analyse(cmd)).plan);
+    return this.run(async () => {
+      this.refuseIfFrozen(cmd);
+      return (await this.analyse(cmd)).plan;
+    });
+  }
+
+  /** True while structural commands are refused. */
+  get frozen() {
+    return this.frozenNow;
+  }
+
+  /**
+   * Freeze or thaw the host. Frozen, every command in `STRUCTURAL_COMMANDS`
+   * (and `plan` of it) is refused with code `refused`; nothing about records
+   * changes. The shell freezes the live host while a draft is open.
+   */
+  setFrozen(frozen: boolean) {
+    this.frozenNow = frozen;
+  }
+
+  private refuseIfFrozen(cmd: { type?: unknown }) {
+    if (this.frozenNow && isStructuralCommand(cmd))
+      throw new EngineError(
+        `the app is frozen while a draft is open, so '${String(cmd?.type)}' is refused; make the change in the draft`,
+        'refused',
+      );
   }
 
   /**
@@ -324,8 +388,9 @@ export class AppHost extends EventEmitter {
     if (!opts || typeof opts.author !== 'string' || !opts.author)
       return Promise.reject(new EngineError('execute needs an author'));
     return this.run(async () => {
+      this.refuseIfFrozen(cmd);
       const a = await this.analyse(cmd);
-      if (a.plan.risky && opts.approved !== true)
+      if (a.plan.risky && opts.approved !== true && !this.#autoApprove)
         throw new ApprovalRequiredError(a.plan);
       return a.apply(opts.author);
     });
@@ -897,9 +962,25 @@ export class AppHost extends EventEmitter {
   }
 
   private async onApp<T>(op: WorkerOp, ...args: unknown[]): Promise<T> {
-    await this.queue; // never talk to an app that is being replaced
+    // Never talk to an app that is being replaced: wait until the queue is
+    // idle AND no change was queued while waiting. The check and the call below
+    // run in one synchronous step, so no change can start in between.
+    for (;;) {
+      const q = this.queue;
+      await q;
+      if (q === this.queue) break;
+    }
     if (this.closed) throw new EngineError('the host is closed', 'refused');
-    return this.callApp<T>(op, ...args);
+    this.inflight++;
+    try {
+      return await this.callApp<T>(op, ...args);
+    } finally {
+      if (--this.inflight === 0) {
+        const waiters = this.idleWaiters;
+        this.idleWaiters = [];
+        for (const w of waiters) w();
+      }
+    }
   }
 
   list(model: string, limit = 200) {
@@ -954,7 +1035,7 @@ export class AppHost extends EventEmitter {
     args: Row = {},
     opts: { approved?: boolean } = {},
   ) {
-    if (isRiskyTool(name) && opts.approved !== true)
+    if (isRiskyTool(name) && opts.approved !== true && !this.#autoApprove)
       throw new ApprovalRequiredError({
         summary: `call ${name}`,
         risky: true,
@@ -985,7 +1066,7 @@ export class AppHost extends EventEmitter {
         contentType: 'application/json',
         body: JSON.stringify({ error: 'Not found' }),
       } satisfies RestResult;
-    if (method === 'DELETE' && opts.approved !== true)
+    if (method === 'DELETE' && opts.approved !== true && !this.#autoApprove)
       throw new ApprovalRequiredError({
         summary: `DELETE ${req.url}`,
         risky: true,

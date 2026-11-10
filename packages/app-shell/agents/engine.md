@@ -75,6 +75,28 @@ Covered by core's `runtime-model.test.ts` and engine `profile-subclass.test.ts`.
   params, code), so what the owner approves is what is shown; a template with
   more than 200,000 characters of method code is refused as unreviewable.
 
+## Drafts (draft then publish)
+
+A draft is a second `AppHost` over a COPY of the live data in its own
+directory; publishing replays its changes onto the live data. The engine side
+is documented here; the shell's tables, approvals and UI sit on top.
+
+- **Frozen host.** `HostOptions.frozen` / `host.setFrozen(bool)`: `plan` and
+  `execute` of every command in `STRUCTURAL_COMMANDS` (all but
+  `exportTemplate`, incl. `undo`, `cleanUp`, `importTemplate`) throw
+  `EngineError('refused')`; an unknown command type counts as structural.
+  `STRUCTURAL_COMMANDS` is a total `Record<CommandType, boolean>`, so a new
+  command must pick a side. Records, reports, the app's tools and REST keep
+  working. The shell freezes the live host while a draft is open.
+- **`autoApprove`** (risky commands, `_delete` tools, REST `DELETE`) is read
+  once at construction into a `#private` field: no setter. `AppHost.open`
+  refuses it unless the directory holds the engine's draft marker
+  (`.smrt-draft.json`, written only by `forkDraft`) naming a different live
+  directory. A live directory never has a marker.
+- **Queued calls.** `onApp` (records, tools, REST) waits until the change queue
+  is idle and stable, then runs in the same synchronous step; it counts
+  in-flight calls so a change can wait for them (needed for consistent copies).
+
 ## Lessons
 
 - A worker must not be terminated while `@happyvertical/sql`'s startup HMAC key
