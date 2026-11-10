@@ -1,6 +1,6 @@
 import type { Recipe } from '../../recipes/types.ts';
 import type { Catalog, CatalogPackage } from '../types.ts';
-import { EXCLUDED_PACKAGES } from './exclusions.ts';
+import { EXCLUDED_PACKAGES, NON_CATALOG_PACKAGES } from './exclusions.ts';
 import {
   extractPackage,
   packageId,
@@ -36,6 +36,10 @@ export function assembleCatalog(
 ): Catalog {
   const extracted = [];
   for (const raw of raws) {
+    if (Object.hasOwn(NON_CATALOG_PACKAGES, packageId(raw.packageName))) {
+      log(`exclude ${raw.packageName}: application`);
+      continue;
+    }
     const excluded = EXCLUDED_PACKAGES[packageId(raw.packageName)];
     const pkg = extractPackage(raw);
     if (excluded && !pkg.recipes) {

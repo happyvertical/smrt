@@ -1,6 +1,6 @@
 import { readdir, readFile } from 'node:fs/promises';
 import { dirname, join, resolve } from 'node:path';
-import { PACKAGE_PREFIX } from './exclusions.ts';
+import { NON_CATALOG_PACKAGES, PACKAGE_PREFIX } from './exclusions.ts';
 import type { RawKnowledge, RawManifest, RawPackage } from './extract.ts';
 
 async function readJson<T>(path: string): Promise<T | null> {
@@ -59,6 +59,11 @@ export async function readLocalPackages(
     const pkgDir = join(packagesDir, dir);
     const pkg = await readJson<PackageJson>(join(pkgDir, 'package.json'));
     if (!pkg?.name?.startsWith(PACKAGE_PREFIX) || pkg.private) continue;
+    // An application is no catalog source: skip it before its manifest is read.
+    if (
+      Object.hasOwn(NON_CATALOG_PACKAGES, pkg.name.slice(PACKAGE_PREFIX.length))
+    )
+      continue;
     const declared = manifestPath(pkg);
     if (!declared) continue;
     const manifestFile = join(pkgDir, declared);

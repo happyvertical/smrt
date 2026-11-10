@@ -30,6 +30,18 @@ export const EXCLUDED_PACKAGES: Readonly<Record<string, string>> = {
   tenancy: 'multi-tenancy infrastructure',
 };
 
+/**
+ * Applications that publish a `./manifest` (the release guards require one for
+ * any package that declares `@smrt()` objects) but are not modules a visitor
+ * would pick, and are not built before the planner. Discovery never reads
+ * them: not even an unbuilt manifest is an error. Short names, without the
+ * `smrt-` prefix.
+ */
+export const NON_CATALOG_PACKAGES: Readonly<Record<string, string>> = {
+  'app-shell':
+    "an application (the owner shell for a person's own app), not a module; its models are the shell's own",
+};
+
 export const PACKAGE_SCOPE = '@happyvertical/';
 export const PACKAGE_PREFIX = `${PACKAGE_SCOPE}smrt-`;
 
