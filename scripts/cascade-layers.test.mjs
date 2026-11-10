@@ -131,10 +131,10 @@ describe('findViolations (lint gate)', () => {
     );
   });
 
-  it('holds exempted files to their recorded !important count', () => {
+  it('rejects important in content components without exemptions', () => {
     const exempt = 'packages/content/src/svelte/components/ContentBodyRenderer.svelte';
     const body = '.a { width: 1px !important; }\n.b { width: 2px !important; }';
-    assert.deepEqual(findViolations({ [exempt]: codemodSource(unlayered(body)).source }), []);
+    assert.equal(findViolations({ [exempt]: codemodSource(unlayered(body)).source }).length, 1);
     const extra = `${body}\n.c { width: 3px !important; }`;
     assert.equal(findViolations({ [exempt]: codemodSource(unlayered(extra)).source }).length, 1);
   });

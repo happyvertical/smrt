@@ -237,6 +237,12 @@ Layer order is set by first appearance. If `base` first appears after
 
 Run `smrt doctor` to flag unlayered resets in a project that depends on smrt-ui.
 
+Content body images store their chosen width in the private inline property
+`--smrt-content-body-image-width`, consumed by layered `width: var(...)` rules.
+Legacy inline `width` is normalized at render and editor load. Full-width and
+phone placements win by ordinary specificity; there are no `!important`
+exceptions in the cascade gate.
+
 ## Restyling a component
 
 Consumers depend on three public things only: **token names** (`--smrt-*`),

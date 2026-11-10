@@ -183,7 +183,9 @@ function sanitizeStyle(value: string): string {
     }
 
     if (
-      (name === 'width' || name === 'max-width') &&
+      (name === 'width' ||
+        name === 'max-width' ||
+        name === '--smrt-content-body-image-width') &&
       /^(?:\d{1,4}(?:\.\d+)?px|100%)$/.test(ruleValue)
     ) {
       safeRules.push(`${name}: ${ruleValue}`);
@@ -456,6 +458,8 @@ function allowedAttributeValue(name: string, value: string): string | null {
 }
 
 interface SanitizeBodyOptions {
+  /** Rendering/editor delivery only; the plain sanitizer preserves legacy HTML. */
+  normalizeImageWidths?: boolean;
   /** Replace the thumbnail block image's `src` (already URL-checked). */
   thumbnailSrc?: string;
 }
@@ -481,6 +485,18 @@ function transformBodyTag(
       continue;
     }
     safe[name] = value;
+  }
+
+  if (
+    options.normalizeImageWidths &&
+    safe.style &&
+    (tagName === 'img' || tagName === 'figure')
+  ) {
+    // Rewrite only already-sanitized declarations, never raw HTML/CSS input.
+    safe.style = safe.style.replace(
+      /(^|; )width:/g,
+      '$1--smrt-content-body-image-width:',
+    );
   }
 
   if (
@@ -719,7 +735,7 @@ function parseStyleWidth(value: unknown): number | undefined {
   }
 
   const match = value.match(
-    /(?:^|;)\s*(?:max-)?width\s*:\s*(\d+(?:\.\d+)?)px/i,
+    /(?:^|;)\s*(?:--smrt-content-body-image-width|(?:max-)?width)\s*:\s*(\d+(?:\.\d+)?)px/i,
   );
   if (!match) {
     return undefined;
@@ -893,7 +909,7 @@ export function htmlToMarkdown(html: string): string {
 }
 
 export function normalizeEditorHtml(html: string): string {
-  const sanitized = sanitizeHtml(html);
+  const sanitized = sanitizeBodyHtml(html, { normalizeImageWidths: true });
   if (!sanitized) {
     return '';
   }
@@ -1085,7 +1101,7 @@ export function imageAssetToHtml(
     Math.min(520, Math.round(Number(asset?.width) || 520)),
   );
 
-  return `<img src="${escapeAttribute(src)}" alt="${escapeAttribute(getImageAlt(asset))}"${assetId} data-smrt-inline-image="true" data-smrt-placement="block" data-smrt-width="${width}" style="width: ${width}px; max-width: 100%; height: auto">`;
+  return `<img src="${escapeAttribute(src)}" alt="${escapeAttribute(getImageAlt(asset))}"${assetId} data-smrt-inline-image="true" data-smrt-placement="block" data-smrt-width="${width}" style="--smrt-content-body-image-width: ${width}px; max-width: 100%; height: auto">`;
 }
 
 // ---------------------------------------------------------------------------
@@ -1393,7 +1409,10 @@ export function renderContentBodyHtml(
   // `src=` could otherwise be rewritten into a new attribute).
   return sanitizeBodyHtml(
     resolved === 'markdown' ? renderMarkdownToHtml(source) : source,
-    replacement ? { thumbnailSrc: replacement } : {},
+    {
+      normalizeImageWidths: true,
+      ...(replacement ? { thumbnailSrc: replacement } : {}),
+    },
   );
 }
 
