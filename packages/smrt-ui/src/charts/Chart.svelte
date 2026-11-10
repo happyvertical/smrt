@@ -242,7 +242,7 @@ function step(event: KeyboardEvent) {
 </script>
 
 {#snippet dataTable(hidden: boolean)}
-  <table class={hidden ? 'smrt-chart__table' : 'smrt-chart__data'}>
+  <table class={hidden ? 'smrt-chart__table' : 'smrt-chart__data'} data-smrt-part="table">
     <caption>{t(M['ui.overview.chart.table'])}</caption>
     <thead>
       <tr>
@@ -261,6 +261,7 @@ function step(event: KeyboardEvent) {
 {#snippet linePlot(interactive: boolean)}
   <svg
     class="smrt-chart__line"
+    data-smrt-part="graph"
     viewBox="0 0 100 40"
     preserveAspectRatio="none"
     role={interactive ? undefined : 'img'}
@@ -269,18 +270,19 @@ function step(event: KeyboardEvent) {
   >
     {#if showAxis}
       {#each [4, 20, 36] as y (y)}
-        <line class="smrt-chart__grid" x1="0" x2="100" y1={y} y2={y} vector-effect="non-scaling-stroke" />
+        <line class="smrt-chart__grid" data-smrt-part="grid" x1="0" x2="100" y1={y} y2={y} vector-effect="non-scaling-stroke" />
       {/each}
     {/if}
     <polyline points={polyline} fill="none" stroke="currentColor" stroke-width="2" vector-effect="non-scaling-stroke" />
     {#if activePoint}
-      <line class="smrt-chart__guide" x1={activePoint.x} x2={activePoint.x} y1="0" y2="40" vector-effect="non-scaling-stroke" />
+      <line class="smrt-chart__guide" data-smrt-part="guide" x1={activePoint.x} x2={activePoint.x} y1="0" y2="40" vector-effect="non-scaling-stroke" />
     {/if}
   </svg>
   {#if activePoint}
-    <span class="smrt-chart__dot" style:inset-inline-start="{activePoint.x}%" style:inset-block-start="{(activePoint.y / 40) * 100}%" aria-hidden="true"></span>
+    <span class="smrt-chart__dot" data-smrt-part="marker" style:inset-inline-start="{activePoint.x}%" style:inset-block-start="{(activePoint.y / 40) * 100}%" aria-hidden="true"></span>
     <span
       class="smrt-chart__tip"
+      data-smrt-part="tip"
       data-edge={activePoint.x < 15 ? 'start' : activePoint.x > 85 ? 'end' : undefined}
       style:inset-inline-start="{activePoint.x}%"
       aria-hidden="true"
@@ -291,16 +293,16 @@ function step(event: KeyboardEvent) {
 {#if points.length === 0}
   <p class="smrt-chart__empty" data-smrt-component="Chart">{t(M['ui.overview.no_data'])}</p>
 {:else if style === 'table'}
-  <div class="smrt-chart smrt-chart--table" data-smrt-component="Chart">
+  <div class="smrt-chart__root smrt-chart__type-table" data-smrt-component="Chart">
     {@render dataTable(false)}
   </div>
 {:else if style === 'stat'}
   {#if latest}
-    <div class="smrt-chart smrt-chart--stat" data-smrt-component="Chart">
-      <p class="smrt-chart__headline">{fmt(latest.value)}</p>
-      <p class="smrt-chart__caption">{latest.label}</p>
+    <div class="smrt-chart__root smrt-chart__type-stat" data-smrt-component="Chart">
+      <p class="smrt-chart__headline" data-smrt-part="value">{fmt(latest.value)}</p>
+      <p class="smrt-chart__caption" data-smrt-part="label">{latest.label}</p>
       {#if deltaText}
-        <p class="smrt-chart__delta" data-direction={(delta ?? 0) > 0 ? 'up' : 'down'}>
+        <p class="smrt-chart__delta" data-smrt-part="status" data-direction={(delta ?? 0) > 0 ? 'up' : 'down'}>
           <span aria-hidden="true">{(delta ?? 0) > 0 ? '▲' : '▼'}</span>
           {deltaText}
         </p>
@@ -309,12 +311,13 @@ function step(event: KeyboardEvent) {
   {/if}
 {:else if style === 'pie'}
   {#if total > 0}
-    <div class="smrt-chart smrt-chart--pie" data-smrt-component="Chart">
-      <svg class="smrt-chart__donut" viewBox="0 0 42 42" role="img" aria-label={summary}>
+    <div class="smrt-chart__root smrt-chart__type-pie" data-smrt-component="Chart">
+      <svg class="smrt-chart__donut" data-smrt-part="graph" viewBox="0 0 42 42" role="img" aria-label={summary}>
         {#each slices as slice (slice.index)}
           {#if slice.share > 0}
             <circle
               class="smrt-chart__slice"
+              data-smrt-part="slice"
               data-slot={slice.index % 8}
               cx="21"
               cy="21"
@@ -329,12 +332,12 @@ function step(event: KeyboardEvent) {
           {/if}
         {/each}
       </svg>
-      <ul class="smrt-chart__legend" aria-hidden="true">
+      <ul class="smrt-chart__legend" data-smrt-part="legend" aria-hidden="true">
         {#each slices as slice (slice.index)}
-          <li class="smrt-chart__legend-item">
-            <span class="smrt-chart__swatch" data-slot={slice.index % 8}></span>
-            <span class="smrt-chart__label">{slice.label}</span>
-            <span class="smrt-chart__value">{fmt(slice.value)} · {percent(slice.share)}</span>
+          <li class="smrt-chart__legend-item" data-smrt-part="legend-item">
+            <span class="smrt-chart__swatch" data-smrt-part="swatch" data-slot={slice.index % 8}></span>
+            <span class="smrt-chart__label" data-smrt-part="label">{slice.label}</span>
+            <span class="smrt-chart__value" data-smrt-part="value">{fmt(slice.value)} · {percent(slice.share)}</span>
           </li>
         {/each}
       </ul>
@@ -344,17 +347,18 @@ function step(event: KeyboardEvent) {
     <p class="smrt-chart__empty" data-smrt-component="Chart">{t(M['ui.overview.no_data'])}</p>
   {/if}
 {:else if style === 'line'}
-  <div class="smrt-chart smrt-chart--line" data-size={size} data-smrt-component="Chart">
-    <div class="smrt-chart__frame" class:smrt-chart__frame--axis={showAxis}>
+  <div class="smrt-chart__root smrt-chart__type-line" data-size={size} data-smrt-component="Chart">
+    <div class="smrt-chart__frame" data-smrt-part="frame" class:smrt-chart__frame-axis={showAxis}>
       {#if showAxis}
-        <p class="smrt-chart__values" aria-hidden="true">
+        <p class="smrt-chart__values" data-smrt-part="scale" aria-hidden="true">
           {#each axisValues as value, index (index)}<span>{short(value)}</span>{/each}
         </p>
       {/if}
-      <div class="smrt-chart__body">
+      <div class="smrt-chart__body" data-smrt-part="body">
         {#if explorable}
           <div
             class="smrt-chart__plot"
+            data-smrt-part="plot"
             role="slider"
             tabindex="0"
             aria-label={summary}
@@ -372,18 +376,18 @@ function step(event: KeyboardEvent) {
             {@render linePlot(true)}
           </div>
         {:else}
-          <div class="smrt-chart__plot">{@render linePlot(false)}</div>
+          <div class="smrt-chart__plot" data-smrt-part="plot">{@render linePlot(false)}</div>
         {/if}
         {#if !compact}
-          <p class="smrt-chart__axis" aria-hidden="true">
+          <p class="smrt-chart__axis" data-smrt-part="axis" aria-hidden="true">
             {#each axisLabels as label, index (index)}<span>{label}</span>{/each}
           </p>
         {/if}
       </div>
     </div>
-    {#if explorable}<span id="{uid}-explore" class="smrt-chart__table">{t(M['ui.overview.chart.explore'])}</span>{/if}
+    {#if explorable}<span id="{uid}-explore" class="smrt-chart__table" data-smrt-part="description">{t(M['ui.overview.chart.explore'])}</span>{/if}
     {#if readout && !compact && peak && latest}
-      <p class="smrt-chart__readout">
+      <p class="smrt-chart__readout" data-smrt-part="readout">
         <span>{t(M['ui.overview.chart.peak'], { value: fmt(peak.value), label: peak.label })}</span>
         <span>{t(M['ui.overview.chart.latest'], { value: fmt(latest.value), label: latest.label })}</span>
       </p>
@@ -393,12 +397,12 @@ function step(event: KeyboardEvent) {
 {:else}
   <ul class="smrt-chart__bars" aria-label={summary} data-smrt-component="Chart">
     {#each points as point, index (index)}
-      <li class="smrt-chart__row">
-        <span class="smrt-chart__label">{point.label}</span>
-        <span class="smrt-chart__track" aria-hidden="true">
-          <span class="smrt-chart__bar" style:inline-size="{max > 0 ? (Math.max(0, point.value) / max) * 100 : 0}%"></span>
+      <li class="smrt-chart__row" data-smrt-part="row">
+        <span class="smrt-chart__label" data-smrt-part="label">{point.label}</span>
+        <span class="smrt-chart__track" data-smrt-part="track" aria-hidden="true">
+          <span class="smrt-chart__bar" data-smrt-part="bar" style:inline-size="{max > 0 ? (Math.max(0, point.value) / max) * 100 : 0}%"></span>
         </span>
-        <span class="smrt-chart__value">{fmt(point.value)}</span>
+        <span class="smrt-chart__value" data-smrt-part="value">{fmt(point.value)}</span>
       </li>
     {/each}
   </ul>
@@ -406,80 +410,406 @@ function step(event: KeyboardEvent) {
 
 <style>
 @layer smrt.reset, smrt.structure, smrt.theme;
-@layer smrt.theme {
-  .smrt-chart { display: grid; gap: var(--smrt-spacing-1); color: var(--smrt-color-primary); }
-  .smrt-chart__line { display: block; inline-size: 100%; block-size: 7rem; overflow: visible; }
-  .smrt-chart--line[data-size='compact'] .smrt-chart__line { block-size: 2.5rem; }
-  .smrt-chart--line[data-size='tall'] .smrt-chart__line { block-size: 14rem; }
-  .smrt-chart__frame { display: grid; grid-template-columns: minmax(0, 1fr); gap: var(--smrt-spacing-2); }
-  .smrt-chart__frame--axis { grid-template-columns: auto minmax(0, 1fr); }
-  .smrt-chart__body { display: grid; gap: var(--smrt-spacing-1); min-inline-size: 0; }
-  .smrt-chart__values { display: flex; flex-direction: column; justify-content: space-between; margin: 0; block-size: 14rem; padding-block: calc(14rem * 0.1 - 0.5lh) calc(14rem * 0.1 - 0.5lh); box-sizing: border-box; color: var(--smrt-color-on-surface-variant); font-size: var(--smrt-typography-label-small-size); font-variant-numeric: tabular-nums; text-align: end; }
-  .smrt-chart--line:not([data-size='tall']) .smrt-chart__values { block-size: 7rem; padding-block: calc(7rem * 0.1 - 0.5lh); }
-  .smrt-chart__grid { stroke: var(--smrt-color-outline-variant); stroke-width: 1; stroke-dasharray: 2 3; }
-  .smrt-chart__plot { position: relative; border-radius: var(--smrt-radius-small); outline: none; touch-action: pan-y; }
-  .smrt-chart__plot[role='slider'] { cursor: crosshair; }
-  .smrt-chart__plot:focus-visible { outline: var(--smrt-focus-ring-width) solid var(--smrt-focus-ring-color); outline-offset: var(--smrt-focus-ring-offset); }
-  .smrt-chart__guide { stroke: var(--smrt-color-outline); stroke-width: 1; }
-  .smrt-chart__dot { position: absolute; inline-size: 0.625rem; block-size: 0.625rem; border-radius: var(--smrt-radius-full); background: var(--smrt-color-primary); outline: var(--smrt-focus-ring-width) solid var(--smrt-color-surface); transform: translate(-50%, -50%); pointer-events: none; }
-  .smrt-chart__tip { position: absolute; inset-block-start: 0; display: grid; gap: 0; padding: var(--smrt-spacing-1) var(--smrt-spacing-2); border-radius: var(--smrt-radius-small); background: var(--smrt-color-inverse-surface); color: var(--smrt-color-inverse-on-surface); font-size: var(--smrt-typography-label-medium-size); line-height: 1.3; white-space: nowrap; transform: translate(-50%, calc(-100% - var(--smrt-spacing-1))); pointer-events: none; box-shadow: var(--smrt-elevation-2); font-variant-numeric: tabular-nums; }
-  .smrt-chart__tip[data-edge='start'] { transform: translate(0, calc(-100% - var(--smrt-spacing-1))); }
-  .smrt-chart__tip[data-edge='end'] { transform: translate(-100%, calc(-100% - var(--smrt-spacing-1))); }
-
-  .smrt-chart__axis { display: flex; justify-content: space-between; gap: var(--smrt-spacing-2); margin: 0; color: var(--smrt-color-on-surface-variant); font-size: var(--smrt-typography-label-large-size, 0.75rem); }
-  .smrt-chart__axis span { min-inline-size: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
-  .smrt-chart__axis span:last-child { text-align: end; }
-  .smrt-chart__readout { display: flex; flex-wrap: wrap; justify-content: space-between; gap: var(--smrt-spacing-1) var(--smrt-spacing-3); margin: 0; color: var(--smrt-color-on-surface); font-size: var(--smrt-typography-body-small-size, 0.75rem); font-variant-numeric: tabular-nums; }
-  .smrt-chart__bars { display: grid; gap: var(--smrt-spacing-2); margin: 0; padding: 0; list-style: none; }
-  .smrt-chart__row { display: grid; grid-template-columns: minmax(4rem, 30%) minmax(0, 1fr) auto; align-items: center; gap: var(--smrt-spacing-2); font-size: var(--smrt-typography-body-medium-size, 0.875rem); color: var(--smrt-color-on-surface); }
-  .smrt-chart__label { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
-  .smrt-chart__track { display: block; block-size: 0.625rem; border-radius: var(--smrt-radius-full); background: var(--smrt-color-surface-container-high); overflow: hidden; }
-  .smrt-chart__bar { display: block; block-size: 100%; border-radius: inherit; background: var(--smrt-color-primary); }
-  .smrt-chart__value { font-variant-numeric: tabular-nums; color: var(--smrt-color-on-surface-variant); }
-  .smrt-chart__empty { margin: 0; color: var(--smrt-color-on-surface-variant); }
-  .smrt-chart--table { color: var(--smrt-color-on-surface); }
-  .smrt-chart__data { inline-size: 100%; border-collapse: collapse; font-size: var(--smrt-typography-body-medium-size, 0.875rem); }
-  .smrt-chart__data caption { position: absolute; inline-size: 1px; block-size: 1px; overflow: hidden; clip: rect(0 0 0 0); clip-path: inset(50%); white-space: nowrap; }
-  .smrt-chart__data th, .smrt-chart__data td { padding: var(--smrt-spacing-1) var(--smrt-spacing-2); border-block-end: var(--smrt-hairline); text-align: start; }
-  .smrt-chart__data thead th { background: var(--smrt-surface-sunken); color: var(--smrt-color-on-surface-variant); font-weight: var(--smrt-typography-weight-medium, 500); }
-  .smrt-chart__data tbody th { font-weight: inherit; overflow-wrap: anywhere; }
-  .smrt-chart__data td, .smrt-chart__data thead th:last-child { text-align: end; font-variant-numeric: tabular-nums; }
-  .smrt-chart--stat { gap: var(--smrt-spacing-1); color: var(--smrt-color-on-surface); }
-  .smrt-chart__headline { margin: 0; font-size: var(--smrt-typography-display-small-size, 2rem); font-weight: var(--smrt-typography-weight-medium, 500); line-height: 1.1; font-variant-numeric: tabular-nums; }
-  .smrt-chart__caption { margin: 0; color: var(--smrt-color-on-surface-variant); font-size: var(--smrt-typography-body-medium-size, 0.875rem); }
-  .smrt-chart__delta { margin: 0; color: var(--smrt-color-on-surface-variant); font-size: var(--smrt-typography-label-large-size, 0.875rem); }
-  .smrt-chart--pie { grid-template-columns: minmax(6rem, 10rem) minmax(0, 1fr); align-items: center; gap: var(--smrt-spacing-4); }
-  .smrt-chart__donut { inline-size: 100%; block-size: auto; }
-  .smrt-chart__slice[data-slot='0'], .smrt-chart__swatch[data-slot='0'] { stroke: var(--smrt-color-primary); background: var(--smrt-color-primary); }
-  .smrt-chart__slice[data-slot='1'], .smrt-chart__swatch[data-slot='1'] { stroke: var(--smrt-color-secondary); background: var(--smrt-color-secondary); }
-  .smrt-chart__slice[data-slot='2'], .smrt-chart__swatch[data-slot='2'] { stroke: var(--smrt-color-tertiary); background: var(--smrt-color-tertiary); }
-  .smrt-chart__slice[data-slot='3'], .smrt-chart__swatch[data-slot='3'] { stroke: var(--smrt-color-info); background: var(--smrt-color-info); }
-  .smrt-chart__slice[data-slot='4'], .smrt-chart__swatch[data-slot='4'] { stroke: var(--smrt-color-primary-container); background: var(--smrt-color-primary-container); }
-  .smrt-chart__slice[data-slot='5'], .smrt-chart__swatch[data-slot='5'] { stroke: var(--smrt-color-secondary-container); background: var(--smrt-color-secondary-container); }
-  .smrt-chart__slice[data-slot='6'], .smrt-chart__swatch[data-slot='6'] { stroke: var(--smrt-color-tertiary-container); background: var(--smrt-color-tertiary-container); }
-  .smrt-chart__slice[data-slot='7'], .smrt-chart__swatch[data-slot='7'] { stroke: var(--smrt-color-info-container); background: var(--smrt-color-info-container); }
-  .smrt-chart__legend { display: grid; gap: var(--smrt-spacing-1); margin: 0; padding: 0; list-style: none; color: var(--smrt-color-on-surface); font-size: var(--smrt-typography-body-medium-size, 0.875rem); }
-  .smrt-chart__legend-item { display: grid; grid-template-columns: auto minmax(0, 1fr) auto; align-items: center; gap: var(--smrt-spacing-2); }
-  .smrt-chart__swatch { inline-size: 0.75rem; block-size: 0.75rem; border-radius: var(--smrt-radius-small); }
-  .smrt-chart__legend .smrt-chart__label { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
-  @media (prefers-reduced-motion: no-preference) {
-    .smrt-chart__slice { transition: stroke-dasharray var(--smrt-duration-normal) var(--smrt-easing-standard), stroke-dashoffset var(--smrt-duration-normal) var(--smrt-easing-standard); }
-    .smrt-chart__bar { transition: inline-size var(--smrt-duration-normal) var(--smrt-easing-standard); }
+@layer smrt.structure {
+  .smrt-chart__root {
+    display: grid;
+    gap: var(--smrt-spacing-1);
   }
-  .smrt-chart__table { position: absolute; inline-size: 1px; block-size: 1px; overflow: hidden; clip: rect(0 0 0 0); clip-path: inset(50%); white-space: nowrap; }
-  @media (forced-colors: active) {
-    .smrt-chart__slice[data-slot='0'], .smrt-chart__swatch[data-slot='0'] { stroke: CanvasText; background: CanvasText; }
-    .smrt-chart__slice[data-slot='1'], .smrt-chart__swatch[data-slot='1'] { stroke: Highlight; background: Highlight; }
-    .smrt-chart__slice[data-slot='2'], .smrt-chart__swatch[data-slot='2'] { stroke: LinkText; background: LinkText; }
-    .smrt-chart__slice[data-slot='3'], .smrt-chart__swatch[data-slot='3'] { stroke: VisitedText; background: VisitedText; }
-    .smrt-chart__slice[data-slot='4'], .smrt-chart__swatch[data-slot='4'] { stroke: ActiveText; background: ActiveText; }
-    .smrt-chart__slice[data-slot='5'], .smrt-chart__swatch[data-slot='5'] { stroke: GrayText; background: GrayText; }
-    .smrt-chart__slice[data-slot='6'], .smrt-chart__swatch[data-slot='6'] { stroke: ButtonText; background: ButtonText; }
-    .smrt-chart__slice[data-slot='7'], .smrt-chart__swatch[data-slot='7'] { stroke: MarkText; background: MarkText; }
-    .smrt-chart__swatch { border: var(--smrt-hairline-strong); }
-    .smrt-chart__slice { stroke-linecap: butt; }
-    .smrt-chart__track { background: Canvas; border: var(--smrt-hairline-strong); }
-    .smrt-chart__bar { background: Highlight; }
+  .smrt-chart__line {
+    display: block;
+    inline-size: 100%;
+    block-size: 7rem;
+    overflow: visible;
+  }
+  .smrt-chart__type-line[data-size='compact'] .smrt-chart__line {
+    block-size: 2.5rem;
+  }
+  .smrt-chart__type-line[data-size='tall'] .smrt-chart__line {
+    block-size: 14rem;
+  }
+  .smrt-chart__frame {
+    display: grid;
+    grid-template-columns: minmax(0, 1fr);
+    gap: var(--smrt-spacing-2);
+  }
+  .smrt-chart__frame-axis {
+    grid-template-columns: auto minmax(0, 1fr);
+  }
+  .smrt-chart__body {
+    display: grid;
+    gap: var(--smrt-spacing-1);
+    min-inline-size: 0;
+  }
+  .smrt-chart__values {
+    display: flex;
+    flex-direction: column;
+    justify-content: space-between;
+    margin: 0;
+    block-size: 14rem;
+    padding-block: calc(14rem * 0.1 - 0.5lh) calc(14rem * 0.1 - 0.5lh);
+    box-sizing: border-box;
+  }
+  .smrt-chart__type-line:not([data-size='tall']) .smrt-chart__values {
+    block-size: 7rem;
+    padding-block: calc(7rem * 0.1 - 0.5lh);
+  }
+  .smrt-chart__plot {
+    position: relative;
+    touch-action: pan-y;
+  }
+  .smrt-chart__plot[role='slider'] {
+    cursor: crosshair;
+  }
+  .smrt-chart__dot {
+    position: absolute;
+    inline-size: 0.625rem;
+    block-size: 0.625rem;
+    transform: translate(-50%, -50%);
+    pointer-events: none;
+  }
+  .smrt-chart__tip {
+    position: absolute;
+    inset-block-start: 0;
+    display: grid;
+    gap: 0;
+    padding: var(--smrt-spacing-1) var(--smrt-spacing-2);
+    white-space: nowrap;
+    transform: translate(-50%, calc(-100% - var(--smrt-spacing-1)));
+    pointer-events: none;
+  }
+  .smrt-chart__tip[data-edge='start'] {
+    transform: translate(0, calc(-100% - var(--smrt-spacing-1)));
+  }
+  .smrt-chart__tip[data-edge='end'] {
+    transform: translate(-100%, calc(-100% - var(--smrt-spacing-1)));
+  }
+  .smrt-chart__axis {
+    display: flex;
+    justify-content: space-between;
+    gap: var(--smrt-spacing-2);
+    margin: 0;
+  }
+  .smrt-chart__axis span {
+    min-inline-size: 0;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+  }
+  .smrt-chart__readout {
+    display: flex;
+    flex-wrap: wrap;
+    justify-content: space-between;
+    gap: var(--smrt-spacing-1) var(--smrt-spacing-3);
+    margin: 0;
+  }
+  .smrt-chart__bars {
+    display: grid;
+    gap: var(--smrt-spacing-2);
+    margin: 0;
+    padding: 0;
+    list-style: none;
+  }
+  .smrt-chart__row {
+    display: grid;
+    grid-template-columns: minmax(4rem, 30%) minmax(0, 1fr) auto;
+    align-items: center;
+    gap: var(--smrt-spacing-2);
+  }
+  .smrt-chart__label {
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+  }
+  .smrt-chart__track {
+    display: block;
+    block-size: 0.625rem;
+    overflow: hidden;
+  }
+  .smrt-chart__bar {
+    display: block;
+    block-size: 100%;
+  }
+  .smrt-chart__empty {
+    margin: 0;
+  }
+  .smrt-chart__data {
+    inline-size: 100%;
+  }
+  .smrt-chart__data caption {
+    position: absolute;
+    inline-size: 1px;
+    block-size: 1px;
+    overflow: hidden;
+    clip: rect(0 0 0 0);
+    clip-path: inset(50%);
+    white-space: nowrap;
+  }
+  .smrt-chart__data th, .smrt-chart__data td {
+    padding: var(--smrt-spacing-1) var(--smrt-spacing-2);
+  }
+  .smrt-chart__data tbody th {
+    overflow-wrap: anywhere;
+  }
+  .smrt-chart__type-stat {
+    gap: var(--smrt-spacing-1);
+  }
+  .smrt-chart__headline {
+    margin: 0;
+  }
+  .smrt-chart__caption {
+    margin: 0;
+  }
+  .smrt-chart__delta {
+    margin: 0;
+  }
+  .smrt-chart__type-pie {
+    grid-template-columns: minmax(6rem, 10rem) minmax(0, 1fr);
+    align-items: center;
+    gap: var(--smrt-spacing-4);
+  }
+  .smrt-chart__donut {
+    inline-size: 100%;
+    block-size: auto;
+  }
+  .smrt-chart__legend {
+    display: grid;
+    gap: var(--smrt-spacing-1);
+    margin: 0;
+    padding: 0;
+    list-style: none;
+  }
+  .smrt-chart__legend-item {
+    display: grid;
+    grid-template-columns: auto minmax(0, 1fr) auto;
+    align-items: center;
+    gap: var(--smrt-spacing-2);
+  }
+  .smrt-chart__swatch {
+    inline-size: 0.75rem;
+    block-size: 0.75rem;
+  }
+  .smrt-chart__legend .smrt-chart__label {
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+  }
+  .smrt-chart__table {
+    position: absolute;
+    inline-size: 1px;
+    block-size: 1px;
+    overflow: hidden;
+    clip: rect(0 0 0 0);
+    clip-path: inset(50%);
+    white-space: nowrap;
   }
 }
+
+@layer smrt.theme {
+  .smrt-chart__root {
+    color: var(--smrt-color-primary);
+  }
+  .smrt-chart__values {
+    color: var(--smrt-color-on-surface-variant);
+    font-size: var(--smrt-typography-label-small-size);
+    font-variant-numeric: tabular-nums;
+    text-align: end;
+  }
+  .smrt-chart__grid {
+    stroke: var(--smrt-color-outline-variant);
+    stroke-width: 1;
+    stroke-dasharray: 2 3;
+  }
+  .smrt-chart__plot {
+    border-radius: var(--smrt-radius-small);
+    outline: none;
+  }
+  .smrt-chart__plot:focus-visible {
+    outline: var(--smrt-focus-ring-width) solid var(--smrt-focus-ring-color);
+    outline-offset: var(--smrt-focus-ring-offset);
+  }
+  .smrt-chart__guide {
+    stroke: var(--smrt-color-outline);
+    stroke-width: 1;
+  }
+  .smrt-chart__dot {
+    border-radius: var(--smrt-radius-full);
+    background: var(--smrt-color-primary);
+    outline: var(--smrt-focus-ring-width) solid var(--smrt-color-surface);
+  }
+  .smrt-chart__tip {
+    border-radius: var(--smrt-radius-small);
+    background: var(--smrt-color-inverse-surface);
+    color: var(--smrt-color-inverse-on-surface);
+    font-size: var(--smrt-typography-label-medium-size);
+    line-height: 1.3;
+    box-shadow: var(--smrt-elevation-2);
+    font-variant-numeric: tabular-nums;
+  }
+  .smrt-chart__axis {
+    color: var(--smrt-color-on-surface-variant);
+    font-size: var(--smrt-typography-label-large-size, 0.75rem);
+  }
+  .smrt-chart__axis span:last-child {
+    text-align: end;
+  }
+  .smrt-chart__readout {
+    color: var(--smrt-color-on-surface);
+    font-size: var(--smrt-typography-body-small-size, 0.75rem);
+    font-variant-numeric: tabular-nums;
+  }
+  .smrt-chart__row {
+    font-size: var(--smrt-typography-body-medium-size, 0.875rem);
+    color: var(--smrt-color-on-surface);
+  }
+  .smrt-chart__track {
+    border-radius: var(--smrt-radius-full);
+    background: var(--smrt-color-surface-container-high);
+  }
+  .smrt-chart__bar {
+    border-radius: inherit;
+    background: var(--smrt-color-primary);
+  }
+  .smrt-chart__value {
+    font-variant-numeric: tabular-nums;
+    color: var(--smrt-color-on-surface-variant);
+  }
+  .smrt-chart__empty {
+    color: var(--smrt-color-on-surface-variant);
+  }
+  .smrt-chart__type-table {
+    color: var(--smrt-color-on-surface);
+  }
+  .smrt-chart__data {
+    border-collapse: collapse;
+    font-size: var(--smrt-typography-body-medium-size, 0.875rem);
+  }
+  .smrt-chart__data th, .smrt-chart__data td {
+    border-block-end: var(--smrt-hairline);
+    text-align: start;
+  }
+  .smrt-chart__data thead th {
+    background: var(--smrt-surface-sunken);
+    color: var(--smrt-color-on-surface-variant);
+    font-weight: var(--smrt-typography-weight-medium, 500);
+  }
+  .smrt-chart__data tbody th {
+    font-weight: inherit;
+  }
+  .smrt-chart__data td, .smrt-chart__data thead th:last-child {
+    text-align: end;
+    font-variant-numeric: tabular-nums;
+  }
+  .smrt-chart__type-stat {
+    color: var(--smrt-color-on-surface);
+  }
+  .smrt-chart__headline {
+    font-size: var(--smrt-typography-display-small-size, 2rem);
+    font-weight: var(--smrt-typography-weight-medium, 500);
+    line-height: 1.1;
+    font-variant-numeric: tabular-nums;
+  }
+  .smrt-chart__caption {
+    color: var(--smrt-color-on-surface-variant);
+    font-size: var(--smrt-typography-body-medium-size, 0.875rem);
+  }
+  .smrt-chart__delta {
+    color: var(--smrt-color-on-surface-variant);
+    font-size: var(--smrt-typography-label-large-size, 0.875rem);
+  }
+  .smrt-chart__slice[data-slot='0'], .smrt-chart__swatch[data-slot='0'] {
+    stroke: var(--smrt-color-primary);
+    background: var(--smrt-color-primary);
+  }
+  .smrt-chart__slice[data-slot='1'], .smrt-chart__swatch[data-slot='1'] {
+    stroke: var(--smrt-color-secondary);
+    background: var(--smrt-color-secondary);
+  }
+  .smrt-chart__slice[data-slot='2'], .smrt-chart__swatch[data-slot='2'] {
+    stroke: var(--smrt-color-tertiary);
+    background: var(--smrt-color-tertiary);
+  }
+  .smrt-chart__slice[data-slot='3'], .smrt-chart__swatch[data-slot='3'] {
+    stroke: var(--smrt-color-info);
+    background: var(--smrt-color-info);
+  }
+  .smrt-chart__slice[data-slot='4'], .smrt-chart__swatch[data-slot='4'] {
+    stroke: var(--smrt-color-primary-container);
+    background: var(--smrt-color-primary-container);
+  }
+  .smrt-chart__slice[data-slot='5'], .smrt-chart__swatch[data-slot='5'] {
+    stroke: var(--smrt-color-secondary-container);
+    background: var(--smrt-color-secondary-container);
+  }
+  .smrt-chart__slice[data-slot='6'], .smrt-chart__swatch[data-slot='6'] {
+    stroke: var(--smrt-color-tertiary-container);
+    background: var(--smrt-color-tertiary-container);
+  }
+  .smrt-chart__slice[data-slot='7'], .smrt-chart__swatch[data-slot='7'] {
+    stroke: var(--smrt-color-info-container);
+    background: var(--smrt-color-info-container);
+  }
+  .smrt-chart__legend {
+    color: var(--smrt-color-on-surface);
+    font-size: var(--smrt-typography-body-medium-size, 0.875rem);
+  }
+  .smrt-chart__swatch {
+    border-radius: var(--smrt-radius-small);
+  }
+  @media (prefers-reduced-motion: no-preference) {
+    .smrt-chart__slice {
+      transition: stroke-dasharray var(--smrt-duration-normal) var(--smrt-easing-standard), stroke-dashoffset var(--smrt-duration-normal) var(--smrt-easing-standard);
+    }
+    .smrt-chart__bar {
+      transition: inline-size var(--smrt-duration-normal) var(--smrt-easing-standard);
+    }
+  }
+  @media (forced-colors: active) {
+    .smrt-chart__slice[data-slot='0'], .smrt-chart__swatch[data-slot='0'] {
+      stroke: CanvasText;
+      background: CanvasText;
+    }
+    .smrt-chart__slice[data-slot='1'], .smrt-chart__swatch[data-slot='1'] {
+      stroke: Highlight;
+      background: Highlight;
+    }
+    .smrt-chart__slice[data-slot='2'], .smrt-chart__swatch[data-slot='2'] {
+      stroke: LinkText;
+      background: LinkText;
+    }
+    .smrt-chart__slice[data-slot='3'], .smrt-chart__swatch[data-slot='3'] {
+      stroke: VisitedText;
+      background: VisitedText;
+    }
+    .smrt-chart__slice[data-slot='4'], .smrt-chart__swatch[data-slot='4'] {
+      stroke: ActiveText;
+      background: ActiveText;
+    }
+    .smrt-chart__slice[data-slot='5'], .smrt-chart__swatch[data-slot='5'] {
+      stroke: GrayText;
+      background: GrayText;
+    }
+    .smrt-chart__slice[data-slot='6'], .smrt-chart__swatch[data-slot='6'] {
+      stroke: ButtonText;
+      background: ButtonText;
+    }
+    .smrt-chart__slice[data-slot='7'], .smrt-chart__swatch[data-slot='7'] {
+      stroke: MarkText;
+      background: MarkText;
+    }
+    .smrt-chart__swatch {
+      border: var(--smrt-hairline-strong);
+    }
+    .smrt-chart__slice {
+      stroke-linecap: butt;
+    }
+    .smrt-chart__track {
+      background: Canvas;
+      border: var(--smrt-hairline-strong);
+    }
+    .smrt-chart__bar {
+      background: Highlight;
+    }
+  }
+}
+
 </style>
