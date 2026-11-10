@@ -109,16 +109,16 @@ async function submit() {
 
 <div
   bind:this={container}
-  class="assistant-question"
+  class="smrt-assistant-question-form__root"
   data-smrt-component="AssistantQuestionForm"
 >
   {#if answer}
-    <p class="assistant-question-summary" role="status">
-      <span class="assistant-question-prompt">{question.prompt}</span>
+    <p class="smrt-assistant-question-form__summary" data-smrt-part="summary" role="status">
+      <span class="smrt-assistant-question-form__prompt" data-smrt-part="prompt">{question.prompt}</span>
       {describeAssistantQuestionAnswer(question, answer)}
     </p>
   {:else}
-    <Form class="assistant-question-form" onsubmit={submit} aria-label={question.prompt}>
+    <Form onsubmit={submit} aria-label={question.prompt}>
       <Fieldset legend={question.prompt} stack>
         {#snippet children()}
           {#each question.fields as field (field.name)}
@@ -139,7 +139,7 @@ async function submit() {
                 {/snippet}
               </Fieldset>
             {:else if field.options.length > RADIO_LIMIT}
-              <label class="assistant-question-select">
+              <label class="smrt-assistant-question-form__select" data-smrt-part="field">
                 <span>{field.label}</span>
                 <Select
                   name={`${formId}-${field.name}`}
@@ -180,7 +180,7 @@ async function submit() {
           {/each}
         {/snippet}
       </Fieldset>
-      <div class="assistant-question-actions">
+      <div class="smrt-assistant-question-form__actions" data-smrt-part="actions">
         <Button type="submit" disabled={disabled || submitting || !valid}>
           {question.submitLabel ?? t(M['chat.assistant_question.submit'])}
         </Button>
@@ -191,55 +191,61 @@ async function submit() {
 
 <style>
 @layer smrt.reset, smrt.structure, smrt.theme;
-@layer smrt.theme {
+@layer smrt.structure {
   /* A card spanning the thread, like the other structured cards. */
-  .assistant-question {
+  .smrt-assistant-question-form__root {
     box-sizing: border-box;
     inline-size: 100%;
     padding: var(--smrt-spacing-3);
+  }
+  .smrt-assistant-question-form__root :global([data-smrt-component="Form"]) {
+    display: grid;
+    gap: var(--smrt-spacing-3);
+  }
+  .smrt-assistant-question-form__root :global(fieldset) {
+    min-inline-size: 0;
+    margin: 0;
+  }
+  .smrt-assistant-question-form__select {
+    display: grid;
+    gap: var(--smrt-spacing-1);
+  }
+  .smrt-assistant-question-form__select :global(select) {
+    inline-size: 100%;
+  }
+  /* Actions sit at the end, like a report card's; a narrow dock gives the
+  button the whole row. */
+  .smrt-assistant-question-form__actions {
+    display: flex;
+    justify-content: flex-end;
+  }
+  .smrt-assistant-question-form__summary {
+    margin: 0;
+  }
+  .smrt-assistant-question-form__prompt {
+    display: block;
+  }
+}
+
+@layer smrt.theme {
+  /* A card spanning the thread, like the other structured cards. */
+  .smrt-assistant-question-form__root {
     border: var(--smrt-hairline);
     border-radius: var(--smrt-radius-large);
     background: var(--smrt-color-surface-container);
     color: var(--smrt-color-on-surface);
   }
-
-  .assistant-question :global(.assistant-question-form) {
-    display: grid;
-    gap: var(--smrt-spacing-3);
-  }
-
-  .assistant-question :global(fieldset) {
-    min-inline-size: 0;
-    margin: 0;
-  }
-
-  .assistant-question-select {
-    display: grid;
-    gap: var(--smrt-spacing-1);
+  .smrt-assistant-question-form__select {
     font: var(--smrt-typography-label-large-font);
   }
-
-  .assistant-question-select :global(select) {
-    inline-size: 100%;
-  }
-
-  /* Actions sit at the end, like a report card's; a narrow dock gives the
-     button the whole row. */
-  .assistant-question-actions {
-    display: flex;
-    justify-content: flex-end;
-  }
-
-  .assistant-question-summary {
-    margin: 0;
+  .smrt-assistant-question-form__summary {
     color: var(--smrt-color-on-surface-variant);
     font: var(--smrt-typography-body-small-font);
   }
-
-  .assistant-question-prompt {
-    display: block;
+  .smrt-assistant-question-form__prompt {
     color: var(--smrt-color-on-surface);
     font: var(--smrt-typography-label-large-font);
   }
 }
+
 </style>

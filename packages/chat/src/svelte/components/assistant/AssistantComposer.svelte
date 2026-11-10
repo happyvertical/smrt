@@ -390,30 +390,30 @@ function removeAttachment(id: string) {
 
 <!-- svelte-ignore a11y_no_static_element_interactions -->
 <div
-  class="assistant-composer"
+  class="smrt-assistant-composer__root"
   ondrop={onupload ? handleDrop : undefined}
   ondragover={onupload ? (event) => event.preventDefault() : undefined} data-smrt-component="AssistantComposer"
 >
   {#if sendError}
-    <p class="assistant-composer-error" role="alert">
+    <p class="smrt-assistant-composer__error" data-smrt-part="error" role="alert">
       {t(M['chat.assistant_composer.send_error'], { message: sendError })}
     </p>
   {/if}
   {#if uploadError}
-    <p class="assistant-composer-error" role="alert">
+    <p class="smrt-assistant-composer__error" data-smrt-part="error" role="alert">
       {t(M['chat.assistant_composer.upload_error'], { message: uploadError })}
     </p>
   {/if}
   {#if stagedAttachments.length > 0}
-    <ul class="assistant-composer-attachments">
+    <ul class="smrt-assistant-composer__attachments" data-smrt-part="attachments">
       {#each stagedAttachments as attachment (attachment.id)}
-        <li class="assistant-composer-chip">
-          <span class="assistant-composer-chip-name">{attachment.name}</span>
+        <li class="smrt-assistant-composer__chip" data-smrt-part="chip">
+          <span class="smrt-assistant-composer__chip-name" data-smrt-part="label">{attachment.name}</span>
           <Button
             type="button"
             variant="ghost"
             size="sm"
-            class="assistant-composer-chip-remove"
+            class="smrt-assistant-composer__chip-remove"
             onclick={() => removeAttachment(attachment.id)}
             aria-label={t(M['chat.assistant_composer.remove_attachment'], {
               name: attachment.name,
@@ -428,14 +428,14 @@ function removeAttachment(id: string) {
   {#if canDictate}
     <DictationStatus {dictation} sending={autoSendCountdown || autoSendWaiting} />
   {/if}
-  <div class="assistant-composer-row">
+  <div class="smrt-assistant-composer__row" data-smrt-part="composer">
     {#if onupload}
       <!-- raw-primitive-allow: compact icon-only attach control backed by a hidden native file input; opens the OS picker, matching MessageInput's icon-button send control pattern -->
       <Button
       type="button"
       variant="secondary"
       size="sm"
-      class="assistant-composer-attach"
+      class="smrt-assistant-composer__attach"
       onclick={() => fileInputEl?.click()}
       disabled={disabled || uploading}
       aria-label={t(M['chat.assistant_composer.attach_files'])}
@@ -456,7 +456,7 @@ function removeAttachment(id: string) {
       <input
       bind:this={fileInputEl}
       type="file"
-      class="assistant-composer-file-input"
+      class="smrt-assistant-composer__file-input"
       multiple
       onchange={handleFileChange}
       disabled={disabled || uploading}
@@ -465,7 +465,7 @@ function removeAttachment(id: string) {
       />
     {/if}
     <div
-      class="assistant-composer-field"
+      class="smrt-assistant-composer__field"
       use:longPress={{
         onPressStart: () => primeReadyBeep(),
         onLongPress: startDictationFromHold,
@@ -476,7 +476,7 @@ function removeAttachment(id: string) {
       <Textarea
         bind:this={textareaComponent}
         bind:value={content}
-        class="assistant-composer-textarea"
+        class="smrt-assistant-composer__textarea"
         {placeholder}
         disabled={disabled || uploading}
         rows={1}
@@ -490,7 +490,7 @@ function removeAttachment(id: string) {
     {/if}
     <Button
       type="button"
-      class="assistant-composer-send"
+      class="smrt-assistant-composer__send"
       onclick={() => handleSend()}
       disabled={disabled || uploading || sending || !content.trim()}
     >
@@ -501,23 +501,18 @@ function removeAttachment(id: string) {
 
 <style>
 @layer smrt.reset, smrt.structure, smrt.theme;
-@layer smrt.theme {
-  .assistant-composer {
-    border-top: var(--smrt-hairline);
-    background: var(--smrt-color-surface);
+@layer smrt.structure {
+  .smrt-assistant-composer__root {
     padding: var(--smrt-spacing-2);
     flex-shrink: 0;
     container-type: inline-size;
   }
-
-
-  .assistant-composer-row {
+  .smrt-assistant-composer__row {
     display: flex;
     align-items: flex-end;
     gap: var(--smrt-spacing-2);
   }
-
-  :global(.assistant-composer-attach) {
+  :global(.smrt-assistant-composer__attach) {
     flex-shrink: 0;
     display: inline-flex;
     align-items: center;
@@ -525,68 +520,36 @@ function removeAttachment(id: string) {
     width: 44px;
     height: 44px;
     padding: 0;
-    border: var(--smrt-hairline);
-    border-radius: var(--smrt-radius-full);
-    background: var(--smrt-color-surface-container-low);
-    color: var(--smrt-color-on-surface-variant);
     cursor: pointer;
   }
-
-  :global(.assistant-composer-attach:hover:not(:disabled)) {
-    background: var(--smrt-color-surface-container);
-  }
-
-  :global(.assistant-composer-attach:disabled) {
-    opacity: 0.5;
+  :global(.smrt-assistant-composer__attach:disabled) {
     cursor: not-allowed;
   }
-
-  .assistant-composer-file-input {
+  .smrt-assistant-composer__file-input {
     position: absolute;
     width: 1px;
     height: 1px;
     overflow: hidden;
     clip: rect(0 0 0 0);
   }
-
-  .assistant-composer-field {
+  .smrt-assistant-composer__field {
     flex: 1;
     display: flex;
     min-inline-size: 0;
   }
-
-  :global(.assistant-composer-textarea) {
+  :global(.smrt-assistant-composer__textarea) {
     flex: 1;
     resize: none;
-    /* #3000: form controls don't inherit font; use the theme's family. */
-    font-family: var(--smrt-font-family, inherit);
   }
-
-  /* Phones: 16px text so iOS Safari doesn't zoom the page when the
-     message field gets focus. */
-  @media (max-width: 48rem) {
-    :global(.assistant-composer-textarea) {
-      font-size: max(1rem, 16px);
-    }
-  }
-
-  :global(.assistant-composer-send) {
+  :global(.smrt-assistant-composer__send) {
     flex-shrink: 0;
     padding: var(--smrt-spacing-2) var(--smrt-spacing-3);
-    border: none;
-    border-radius: var(--smrt-radius-medium);
-    background: var(--smrt-color-primary);
-    color: var(--smrt-color-on-primary);
-    font: var(--smrt-typography-label-large-font, 500 0.875rem/1.25 sans-serif);
     cursor: pointer;
   }
-
-  :global(.assistant-composer-send:disabled) {
-    opacity: 0.5;
+  :global(.smrt-assistant-composer__send:disabled) {
     cursor: not-allowed;
   }
-
-  .assistant-composer-attachments {
+  .smrt-assistant-composer__attachments {
     list-style: none;
     display: flex;
     flex-wrap: wrap;
@@ -594,60 +557,100 @@ function removeAttachment(id: string) {
     margin: 0 0 var(--smrt-spacing-2);
     padding: 0;
   }
-
-  .assistant-composer-chip {
+  .smrt-assistant-composer__chip {
     display: inline-flex;
     align-items: center;
     gap: var(--smrt-spacing-1);
     padding: var(--smrt-spacing-1) var(--smrt-spacing-2);
+    max-width: 160px;
+  }
+  .smrt-assistant-composer__chip-name {
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+  }
+  :global(.smrt-assistant-composer__chip-remove) {
+    cursor: pointer;
+    padding: 0;
+  }
+  .smrt-assistant-composer__error {
+    margin: 0 0 var(--smrt-spacing-2);
+    padding: var(--smrt-spacing-2) var(--smrt-spacing-3);
+  }
+  /* A narrow dock (a sidebar a couple of hundred pixels wide): the message
+  field takes the whole row and the attach, dictate and send controls sit
+  under it, so the placeholder never wraps a syllable per line. */
+  @container (max-width: 22rem) {
+    .smrt-assistant-composer__row {
+      flex-wrap: wrap;
+    }
+    .smrt-assistant-composer__field {
+      flex: 1 1 100%;
+      order: -1;
+    }
+    :global(.smrt-assistant-composer__send) {
+      margin-inline-start: auto;
+    }
+  }
+}
+
+@layer smrt.theme {
+  .smrt-assistant-composer__root {
+    border-top: var(--smrt-hairline);
+    background: var(--smrt-color-surface);
+  }
+  :global(.smrt-assistant-composer__attach) {
+    border: var(--smrt-hairline);
+    border-radius: var(--smrt-radius-full);
+    background: var(--smrt-color-surface-container-low);
+    color: var(--smrt-color-on-surface-variant);
+  }
+  :global(.smrt-assistant-composer__attach:hover:not(:disabled)) {
+    background: var(--smrt-color-surface-container);
+  }
+  :global(.smrt-assistant-composer__attach:disabled) {
+    opacity: 0.5;
+  }
+  :global(.smrt-assistant-composer__textarea) {
+    /* #3000: form controls don't inherit font; use the theme's family. */
+    font-family: var(--smrt-font-family, inherit);
+  }
+  /* Phones: 16px text so iOS Safari doesn't zoom the page when the
+  message field gets focus. */
+  @media (max-width: 48rem) {
+    :global(.smrt-assistant-composer__textarea) {
+      font-size: max(1rem, 16px);
+    }
+  }
+  :global(.smrt-assistant-composer__send) {
+    border: none;
+    border-radius: var(--smrt-radius-medium);
+    background: var(--smrt-color-primary);
+    color: var(--smrt-color-on-primary);
+    font: var(--smrt-typography-label-large-font, 500 0.875rem/1.25 sans-serif);
+  }
+  :global(.smrt-assistant-composer__send:disabled) {
+    opacity: 0.5;
+  }
+  .smrt-assistant-composer__chip {
     border-radius: var(--smrt-radius-full);
     background: var(--smrt-color-surface-container-low);
     border: var(--smrt-hairline);
     font: var(--smrt-typography-label-small-font, 500 0.6875rem/1 sans-serif);
     color: var(--smrt-color-on-surface);
-    max-width: 160px;
   }
-
-  .assistant-composer-chip-name {
-    overflow: hidden;
-    text-overflow: ellipsis;
-    white-space: nowrap;
-  }
-
-  :global(.assistant-composer-chip-remove) {
+  :global(.smrt-assistant-composer__chip-remove) {
     border: none;
     background: none;
     color: var(--smrt-color-on-surface-variant);
-    cursor: pointer;
     line-height: 1;
-    padding: 0;
   }
-
-  .assistant-composer-error {
-    margin: 0 0 var(--smrt-spacing-2);
-    padding: var(--smrt-spacing-2) var(--smrt-spacing-3);
+  .smrt-assistant-composer__error {
     border-radius: var(--smrt-radius-medium);
     background: var(--smrt-color-error-container);
     color: var(--smrt-color-on-error-container);
     font: var(--smrt-typography-body-small-font, 0.8125rem/1.4 sans-serif);
   }
-
-  /* A narrow dock (a sidebar a couple of hundred pixels wide): the message
-     field takes the whole row and the attach, dictate and send controls sit
-     under it, so the placeholder never wraps a syllable per line. */
-  @container (max-width: 22rem) {
-    .assistant-composer-row {
-      flex-wrap: wrap;
-    }
-
-    .assistant-composer-field {
-      flex: 1 1 100%;
-      order: -1;
-    }
-
-    :global(.assistant-composer-send) {
-      margin-inline-start: auto;
-    }
-  }
 }
+
 </style>

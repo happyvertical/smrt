@@ -35,15 +35,15 @@ const visibleLines = $derived(lines.slice(-Math.max(1, maxLines)));
 </script>
 
 {#snippet surface()}
-  <section class="spoken-captions" aria-label={speakerLabel} data-smrt-component="SpokenCaptions">
-    <p class="speaker"><span aria-hidden="true">◈</span> {speakerLabel}</p>
-    <div class="caption-lines" aria-live={announce ? 'polite' : 'off'} aria-atomic="false">
+  <section class="smrt-spoken-captions__root" aria-label={speakerLabel} data-smrt-component="SpokenCaptions">
+    <p class="smrt-spoken-captions__speaker" data-smrt-part="label"><span aria-hidden="true">◈</span> {speakerLabel}</p>
+    <div class="smrt-spoken-captions__lines" data-smrt-part="body" aria-live={announce ? 'polite' : 'off'} aria-atomic="false">
       {#each visibleLines as line (line.id)}
         <p>{line.text}</p>
       {/each}
     </div>
     {#if interim}
-      <p class="interim" aria-hidden="true">{interim}</p>
+      <p class="smrt-spoken-captions__interim" data-smrt-part="preview" aria-hidden="true">{interim}</p>
     {/if}
   </section>
 {/snippet}
@@ -58,11 +58,42 @@ const visibleLines = $derived(lines.slice(-Math.max(1, maxLines)));
 
 <style>
 @layer smrt.reset, smrt.structure, smrt.theme;
-@layer smrt.theme {
-  .spoken-captions { box-sizing: border-box; min-inline-size: 0; max-inline-size: min(42rem, calc(100vw - 2rem)); overflow-wrap: anywhere; padding: .7rem .9rem; border: 2px solid var(--smrt-color-outline); background: var(--smrt-color-inverse-surface); color: var(--smrt-color-inverse-on-surface); border-radius: 1rem; box-shadow: var(--smrt-elevation-4, 0 .35rem 1.2rem color-mix(in srgb, var(--smrt-color-shadow, black) 28%, transparent)); }
-  .speaker { margin: 0 0 .3rem; font-weight: var(--smrt-typography-weight-bold, 700); font-size: var(--smrt-typography-label-medium-size, .8rem); }
-  .caption-lines p, .interim { margin: .18rem 0 0; }
-  .interim { opacity: .8; }
-  @media (prefers-reduced-motion: reduce) { .spoken-captions { scroll-behavior: auto; } }
+@layer smrt.structure {
+  .smrt-spoken-captions__root {
+    box-sizing: border-box;
+    min-inline-size: 0;
+    max-inline-size: min(42rem, calc(100vw - 2rem));
+    overflow-wrap: anywhere;
+    padding: .7rem .9rem;
+  }
+  .smrt-spoken-captions__speaker {
+    margin: 0 0 .3rem;
+  }
+  .smrt-spoken-captions__lines p, .smrt-spoken-captions__interim {
+    margin: .18rem 0 0;
+  }
 }
+
+@layer smrt.theme {
+  .smrt-spoken-captions__root {
+    border: 2px solid var(--smrt-color-outline);
+    background: var(--smrt-color-inverse-surface);
+    color: var(--smrt-color-inverse-on-surface);
+    border-radius: 1rem;
+    box-shadow: var(--smrt-elevation-4, 0 .35rem 1.2rem color-mix(in srgb, var(--smrt-color-shadow, black) 28%, transparent));
+  }
+  .smrt-spoken-captions__speaker {
+    font-weight: var(--smrt-typography-weight-bold, 700);
+    font-size: var(--smrt-typography-label-medium-size, .8rem);
+  }
+  .smrt-spoken-captions__interim {
+    opacity: .8;
+  }
+  @media (prefers-reduced-motion: reduce) {
+    .smrt-spoken-captions__root {
+      scroll-behavior: auto;
+    }
+  }
+}
+
 </style>

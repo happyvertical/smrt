@@ -92,15 +92,14 @@ $effect(() => {
 });
 </script>
 
-<div class="agent-chat" aria-label={t(M['chat.agent_chat.conversation'])} data-smrt-component="AgentChat">
-  <Form class="agent-chat__input-bar" onsubmit={(e) => handleSubmit(e)}>
+<div class="smrt-agent-chat__root" aria-label={t(M['chat.agent_chat.conversation'])} data-smrt-component="AgentChat">
+  <Form onsubmit={(e) => handleSubmit(e)}>
     {#if !isActive}
-      <div class="agent-chat__inactive-notice">
+      <div class="smrt-agent-chat__notice" data-smrt-part="notice">
         {t(M['chat.agent_chat.inactive_notice'], { status: session.status })}
       </div>
     {:else}
       <Textarea
-        class="agent-chat__input"
         placeholder={t(M['chat.agent_chat.input_placeholder'])}
         bind:value={inputValue}
         onkeydown={handleKeydown}
@@ -110,7 +109,6 @@ $effect(() => {
       />
       <Button
         variant="ghost"
-        class="agent-chat__send-btn"
         type="submit"
         disabled={!inputValue.trim() || !isActive}
         aria-label={t(M['chat.agent_chat.send_message'])}
@@ -123,7 +121,8 @@ $effect(() => {
   </Form>
 
   <div
-    class="agent-chat__messages"
+    class="smrt-agent-chat__messages"
+    data-smrt-part="body"
     bind:this={messageContainer}
     role="log"
     aria-label={t(M['chat.agent_chat.messages'])}
@@ -133,37 +132,41 @@ $effect(() => {
       {@const isToolCall = msg.messageType === 'tool_call' || msg.messageType === 'tool_result'}
 
       {#if isToolCall && msg.toolCallData}
-        <div class="agent-chat__tool-row">
+        <div class="smrt-agent-chat__tool" data-smrt-part="tool">
           <ToolCallDisplay toolCall={msg.toolCallData} />
         </div>
       {:else}
         <div
-          class="agent-chat__msg"
-          class:agent-chat__msg--user={isUser}
-          class:agent-chat__msg--agent={!isUser && !isToolCall}
-          class:agent-chat__msg--system={msg.role === 'system'}
-        >
-          <div class="agent-chat__bubble" class:agent-chat__bubble--user={isUser} class:agent-chat__bubble--agent={!isUser}>
-            <div class="agent-chat__msg-content">
+          class="smrt-agent-chat__msg"
+          data-smrt-part="row"
+        
+  class:smrt-agent-chat__msg--user={isUser}
+  class:smrt-agent-chat__msg--agent={!isUser && !isToolCall}
+  class:smrt-agent-chat__msg--system={msg.role === 'system'}
+>
+          <div class="smrt-agent-chat__bubble" data-smrt-part="bubble"
+  class:smrt-agent-chat__bubble--user={isUser}
+  class:smrt-agent-chat__bubble--agent={!isUser}
+>
+            <div class="smrt-agent-chat__message" data-smrt-part="message">
               {#if isUser}
                 {msg.content}
               {:else}
                 {#each parseAgentMessageBlocks(msg.content || '') as block}
                   {#if block.type === 'text'}
-                    <span class="text-block">{block.content}</span>
+                    <span class="smrt-agent-chat__text" data-smrt-part="text">{block.content}</span>
                   {:else if block.type === 'fields'}
-                    <div class="field-update-block">
-                      <span class="applied-badge">{t(M['chat.agent_chat.updated_fields'], { count: Object.keys(block.fields).length, plural: Object.keys(block.fields).length !== 1 ? 's' : '' })}</span>
-                      <Button variant="ghost" size="sm" class="diff-btn" type="button" onclick={() => showDiff(block.fields)}>Diff</Button>
+                    <div class="smrt-agent-chat__field-update" data-smrt-part="field-update">
+                      <span class="smrt-agent-chat__badge" data-smrt-part="badge">{t(M['chat.agent_chat.updated_fields'], { count: Object.keys(block.fields).length, plural: Object.keys(block.fields).length !== 1 ? 's' : '' })}</span>
+                      <Button variant="ghost" size="sm" type="button" onclick={() => showDiff(block.fields)}>Diff</Button>
                     </div>
                   {:else if block.type === 'markdown'}
-                    <div class="markdown-block">
-                      <pre class="markdown-block__content"><code>{block.content}</code></pre>
+                    <div class="smrt-agent-chat__markdown" data-smrt-part="markdown">
+                      <pre class="smrt-agent-chat__markdown-content" data-smrt-part="code"><code>{block.content}</code></pre>
                       {#if onapplychange}
                         <Button
                           variant="ghost"
                           size="sm"
-                          class="diff-btn"
                           type="button"
                           onclick={() => onapplychange(block.content)}
                         >
@@ -175,16 +178,16 @@ $effect(() => {
                 {/each}
               {/if}
             </div>
-            <time class="agent-chat__msg-time">{formatTime(msg.createdAt)}</time>
+            <time class="smrt-agent-chat__msg-time" data-smrt-part="time">{formatTime(msg.createdAt)}</time>
           </div>
         </div>
       {/if}
     {/each}
 
     {#if loading}
-      <div class="agent-chat__msg agent-chat__msg--agent">
-        <div class="agent-chat__bubble agent-chat__bubble--agent agent-chat__thinking">
-          <span class="thinking-dots">
+      <div class="smrt-agent-chat__msg smrt-agent-chat__msg--agent" data-smrt-part="row">
+        <div class="smrt-agent-chat__bubble smrt-agent-chat__bubble--agent smrt-agent-chat__thinking" data-smrt-part="bubble">
+          <span class="smrt-agent-chat__thinking-dots" data-smrt-part="indicator">
             <span></span><span></span><span></span>
           </span>
         </div>
@@ -192,25 +195,25 @@ $effect(() => {
     {/if}
 
     {#if messages.length === 0 && !loading}
-      <div class="agent-chat__empty">
-        <span class="agent-chat__empty-text">{t(M['chat.agent_chat.empty'])}</span>
+      <div class="smrt-agent-chat__empty" data-smrt-part="empty">
+        <span class="smrt-agent-chat__empty-text" data-smrt-part="empty-text">{t(M['chat.agent_chat.empty'])}</span>
       </div>
     {/if}
   </div>
 </div>
 
 <!-- Diff Modal -->
-<dialog bind:this={diffDialog} class="diff-dialog" data-smrt-component="AgentChat">
-  <div class="diff-dialog__header">
+<dialog bind:this={diffDialog} class="smrt-agent-chat__dialog" data-smrt-component="AgentChat">
+  <div class="smrt-agent-chat__dialog-header" data-smrt-part="header">
     <h4>{t(M['chat.agent_chat.field_changes'])}</h4>
-    <Button variant="ghost" size="sm" class="diff-dialog__close" type="button" onclick={closeDiff}>✕</Button>
+    <Button variant="ghost" size="sm" type="button" onclick={closeDiff}>✕</Button>
   </div>
   {#if diffDialogFields}
-    <div class="diff-dialog__body">
+    <div class="smrt-agent-chat__dialog-body" data-smrt-part="body">
       {#each Object.entries(diffDialogFields) as [field, value]}
-        <div class="diff-field">
-          <span class="diff-field__name">{field}</span>
-          <pre class="diff-field__value">{value}</pre>
+        <div class="smrt-agent-chat__field" data-smrt-part="field">
+          <span class="smrt-agent-chat__field-name" data-smrt-part="label">{field}</span>
+          <pre class="smrt-agent-chat__field-value" data-smrt-part="value">{value}</pre>
         </div>
       {/each}
     </div>
@@ -219,16 +222,13 @@ $effect(() => {
 
 <style>
 @layer smrt.reset, smrt.structure, smrt.theme;
-@layer smrt.theme {
-  .agent-chat {
+@layer smrt.structure {
+  .smrt-agent-chat__root {
     display: flex;
     flex-direction: column;
     height: 100%;
-    background: var(--smrt-color-surface);
-    color: var(--smrt-color-on-surface);
   }
-
-  .agent-chat__messages {
+  .smrt-agent-chat__messages {
     flex: 1;
     overflow-y: auto;
     padding: var(--smrt-spacing-2) var(--smrt-spacing-3);
@@ -236,134 +236,214 @@ $effect(() => {
     flex-direction: column-reverse;
     gap: var(--smrt-spacing-2);
   }
-
-  .agent-chat__msg {
+  .smrt-agent-chat__msg {
     display: flex;
     max-width: 95%;
   }
-
-  .agent-chat__msg--user {
+  .smrt-agent-chat__msg--user {
     align-self: flex-end;
   }
-
-  .agent-chat__msg--agent {
+  .smrt-agent-chat__msg--agent {
     align-self: flex-start;
   }
-
-  .agent-chat__msg--system {
+  .smrt-agent-chat__msg--system {
     align-self: center;
     max-width: 90%;
   }
-
-  .agent-chat__tool-row {
+  .smrt-agent-chat__tool {
     width: 100%;
     padding: var(--smrt-spacing-1) 0;
   }
-
-  .agent-chat__bubble {
+  .smrt-agent-chat__bubble {
     display: flex;
     flex-direction: column;
     gap: var(--smrt-spacing-1);
     padding: var(--smrt-spacing-2) var(--smrt-spacing-3);
-    border-radius: var(--smrt-radius-lg);
     word-break: break-word;
-    font-size: var(--smrt-typography-body-medium-size, 0.8125rem);
-    line-height: var(--smrt-typography-body-medium-line-height, 1.45);
   }
-
-  .agent-chat__bubble--user {
-    background: var(--smrt-color-primary-container);
-    color: var(--smrt-color-on-primary-container);
-    border-bottom-right-radius: var(--smrt-radius-sm);
-  }
-
-  .agent-chat__bubble--agent {
-    background: var(--smrt-color-surface-container-high);
-    color: var(--smrt-color-on-surface);
-    border-bottom-left-radius: var(--smrt-radius-sm);
-  }
-
-  .agent-chat__msg--system .agent-chat__bubble {
-    background: var(--smrt-color-surface-variant);
-    color: var(--smrt-color-on-surface-variant);
-    font-style: italic;
-    text-align: center;
-  }
-
-  .agent-chat__msg-content {
+  .smrt-agent-chat__message {
     white-space: pre-wrap;
   }
-
-  .agent-chat__msg-time {
-    font-size: var(--smrt-typography-label-small-size, 0.5625rem);
-    color: var(--smrt-color-outline);
+  .smrt-agent-chat__msg-time {
     align-self: flex-end;
-    line-height: 1;
   }
-
-  .agent-chat__empty {
+  .smrt-agent-chat__empty {
     display: flex;
     align-items: center;
     justify-content: center;
     height: 100%;
     min-height: 80px;
   }
-
-  .agent-chat__empty-text {
-    font-size: var(--smrt-typography-body-medium-size, 0.8125rem);
-    color: var(--smrt-color-outline);
-  }
-
   /* :global() targets the Form primitive's rendered <form> (see #1589 scoping trap). */
-  :global(.agent-chat__input-bar) {
+  .smrt-agent-chat__root :global([data-smrt-component="Form"]) {
     display: flex;
     align-items: flex-end;
     gap: var(--smrt-spacing-2);
     padding: var(--smrt-spacing-2) var(--smrt-spacing-3);
-    background: var(--smrt-color-surface);
     flex-shrink: 0;
   }
-
-  .agent-chat__inactive-notice {
+  .smrt-agent-chat__notice {
     flex: 1;
-    text-align: center;
     padding: var(--smrt-spacing-2);
-    font-size: var(--smrt-typography-body-small-size, 0.75rem);
-    color: var(--smrt-color-outline);
-    font-style: italic;
   }
-
   /* Layout for the Textarea primitive's rendered <textarea> (tokenised styling
-     comes from the primitive; this only sizes it within the input bar). */
-  :global(.agent-chat__input) {
+  comes from the primitive; this only sizes it within the input bar). */
+  .smrt-agent-chat__root :global([data-smrt-component="Textarea"]) {
     flex: 1;
     resize: none;
     min-height: 34px;
     max-height: 80px;
   }
-
   /* :global() pierces into the Button child's rendered <button> (see #1589).
-     The ancestor is the Form primitive's <form>, also global. */
-  :global(.agent-chat__input-bar .agent-chat__send-btn) {
+  The ancestor is the Form primitive's <form>, also global. */
+  .smrt-agent-chat__root :global([data-smrt-component="Form"] [data-smrt-component="Button"]) {
     width: 34px;
     height: 34px;
     padding: 0;
-    background: var(--smrt-color-primary);
-    color: var(--smrt-color-on-primary);
-    border-radius: var(--smrt-radius-full);
     flex-shrink: 0;
-    transition: opacity 150ms;
   }
-
-  :global(.agent-chat__input-bar .agent-chat__send-btn:not(:disabled):hover) {
-    background: var(--smrt-color-primary);
-    opacity: 0.85;
-  }
-
-  .applied-badge {
+  .smrt-agent-chat__badge {
     display: inline-flex;
     align-items: center;
     padding: var(--smrt-spacing-1) var(--smrt-spacing-2);
+  }
+  .smrt-agent-chat__field-update {
+    display: flex;
+    align-items: center;
+    gap: var(--smrt-spacing-2);
+    padding: var(--smrt-spacing-1) 0;
+  }
+  .smrt-agent-chat__markdown {
+    display: flex;
+    flex-direction: column;
+    gap: var(--smrt-spacing-2);
+    padding: var(--smrt-spacing-1) 0;
+  }
+  .smrt-agent-chat__markdown-content {
+    margin: 0;
+    padding: var(--smrt-spacing-3);
+    overflow-x: auto;
+    white-space: pre-wrap;
+    word-break: break-word;
+  }
+  /* :global() pierces into each Button's rendered <button> (see #1589). */
+  .smrt-agent-chat__field-update :global([data-smrt-component="Button"]),
+  .smrt-agent-chat__markdown :global([data-smrt-component="Button"]) {
+    padding: var(--smrt-spacing-1) var(--smrt-spacing-2);
+  }
+  .smrt-agent-chat__dialog {
+    padding: 0;
+    width: min(420px, 90vw);
+    max-height: 60vh;
+  }
+  .smrt-agent-chat__dialog-header {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    padding: var(--smrt-spacing-3) var(--smrt-spacing-4);
+  }
+  .smrt-agent-chat__dialog-header h4 {
+    margin: 0;
+  }
+  /* :global() pierces into the Button child's rendered <button> (see #1589). */
+  .smrt-agent-chat__dialog-header :global([data-smrt-component="Button"]) {
+    padding: var(--smrt-spacing-1) var(--smrt-spacing-2);
+  }
+  .smrt-agent-chat__dialog-body {
+    padding: var(--smrt-spacing-3) var(--smrt-spacing-4);
+    overflow-y: auto;
+    max-height: calc(60vh - 60px);
+  }
+  .smrt-agent-chat__field {
+    margin-bottom: var(--smrt-spacing-3);
+  }
+  .smrt-agent-chat__field:last-child {
+    margin-bottom: 0;
+  }
+  .smrt-agent-chat__field-name {
+    display: block;
+    margin-bottom: var(--smrt-spacing-1);
+  }
+  .smrt-agent-chat__field-value {
+    margin: 0;
+    padding: var(--smrt-spacing-2) var(--smrt-spacing-3);
+    white-space: pre-wrap;
+    word-break: break-word;
+    max-height: 200px;
+    overflow-y: auto;
+  }
+  .smrt-agent-chat__thinking {
+    padding: var(--smrt-spacing-3) var(--smrt-spacing-4);
+  }
+  .smrt-agent-chat__thinking-dots {
+    display: inline-flex;
+    gap: var(--smrt-spacing-1);
+    align-items: center;
+  }
+  .smrt-agent-chat__thinking-dots span {
+    width: 6px;
+    height: 6px;
+  }
+}
+
+@layer smrt.theme {
+  .smrt-agent-chat__root {
+    background: var(--smrt-color-surface);
+    color: var(--smrt-color-on-surface);
+  }
+  .smrt-agent-chat__bubble {
+    border-radius: var(--smrt-radius-lg);
+    font-size: var(--smrt-typography-body-medium-size, 0.8125rem);
+    line-height: var(--smrt-typography-body-medium-line-height, 1.45);
+  }
+  .smrt-agent-chat__bubble--user {
+    background: var(--smrt-color-primary-container);
+    color: var(--smrt-color-on-primary-container);
+    border-bottom-right-radius: var(--smrt-radius-sm);
+  }
+  .smrt-agent-chat__bubble--agent {
+    background: var(--smrt-color-surface-container-high);
+    color: var(--smrt-color-on-surface);
+    border-bottom-left-radius: var(--smrt-radius-sm);
+  }
+  .smrt-agent-chat__msg--system .smrt-agent-chat__bubble {
+    background: var(--smrt-color-surface-variant);
+    color: var(--smrt-color-on-surface-variant);
+    font-style: italic;
+    text-align: center;
+  }
+  .smrt-agent-chat__msg-time {
+    font-size: var(--smrt-typography-label-small-size, 0.5625rem);
+    color: var(--smrt-color-outline);
+    line-height: 1;
+  }
+  .smrt-agent-chat__empty-text {
+    font-size: var(--smrt-typography-body-medium-size, 0.8125rem);
+    color: var(--smrt-color-outline);
+  }
+  /* :global() targets the Form primitive's rendered <form> (see #1589 scoping trap). */
+  .smrt-agent-chat__root :global([data-smrt-component="Form"]) {
+    background: var(--smrt-color-surface);
+  }
+  .smrt-agent-chat__notice {
+    text-align: center;
+    font-size: var(--smrt-typography-body-small-size, 0.75rem);
+    color: var(--smrt-color-outline);
+    font-style: italic;
+  }
+  /* :global() pierces into the Button child's rendered <button> (see #1589).
+  The ancestor is the Form primitive's <form>, also global. */
+  .smrt-agent-chat__root :global([data-smrt-component="Form"] [data-smrt-component="Button"]) {
+    background: var(--smrt-color-primary);
+    color: var(--smrt-color-on-primary);
+    border-radius: var(--smrt-radius-full);
+    transition: opacity 150ms;
+  }
+  .smrt-agent-chat__root :global([data-smrt-component="Form"] [data-smrt-component="Button"]:not(:disabled):hover) {
+    background: var(--smrt-color-primary);
+    opacity: 0.85;
+  }
+  .smrt-agent-chat__badge {
     font-size: var(--smrt-typography-label-small-size, 0.6875rem);
     font-weight: var(--smrt-typography-weight-semibold, 600);
     color: var(--smrt-color-on-success-container);
@@ -371,37 +451,15 @@ $effect(() => {
     border: 1px solid var(--smrt-color-success);
     border-radius: var(--smrt-radius-full);
   }
-
-  .field-update-block {
-    display: flex;
-    align-items: center;
-    gap: var(--smrt-spacing-2);
-    padding: var(--smrt-spacing-1) 0;
-  }
-
-  .markdown-block {
-    display: flex;
-    flex-direction: column;
-    gap: var(--smrt-spacing-2);
-    padding: var(--smrt-spacing-1) 0;
-  }
-
-  .markdown-block__content {
-    margin: 0;
-    padding: var(--smrt-spacing-3);
+  .smrt-agent-chat__markdown-content {
     border-radius: var(--smrt-radius-lg);
     background: color-mix(in srgb, var(--smrt-color-surface-container-low) 85%, white);
-    overflow-x: auto;
-    white-space: pre-wrap;
-    word-break: break-word;
     font-size: var(--smrt-typography-body-medium-size, 0.875rem);
     line-height: var(--smrt-typography-body-medium-line-height, 1.45);
   }
-
   /* :global() pierces into each Button's rendered <button> (see #1589). */
-  .field-update-block :global(.diff-btn),
-  .markdown-block :global(.diff-btn) {
-    padding: var(--smrt-spacing-1) var(--smrt-spacing-2);
+  .smrt-agent-chat__field-update :global([data-smrt-component="Button"]),
+  .smrt-agent-chat__markdown :global([data-smrt-component="Button"]) {
     font-size: var(--smrt-typography-label-small-size, 0.625rem);
     font-weight: var(--smrt-typography-weight-semibold, 600);
     border: var(--smrt-hairline);
@@ -409,128 +467,78 @@ $effect(() => {
     background: none;
     color: var(--smrt-color-on-surface-variant);
   }
-
-  .field-update-block :global(.diff-btn:hover),
-  .markdown-block :global(.diff-btn:hover) {
+  .smrt-agent-chat__field-update :global([data-smrt-component="Button"]:hover),
+  .smrt-agent-chat__markdown :global([data-smrt-component="Button"]:hover) {
     background: var(--smrt-color-surface-variant);
     color: var(--smrt-color-primary);
   }
-
-  .diff-dialog {
+  .smrt-agent-chat__dialog {
     border: none;
     border-radius: var(--smrt-radius-lg);
-    padding: 0;
-    width: min(420px, 90vw);
-    max-height: 60vh;
     box-shadow: var(--smrt-elevation-5, 0 8px 32px color-mix(in srgb, var(--smrt-color-shadow) 18%, transparent));
     background: var(--smrt-color-surface);
     color: var(--smrt-color-on-surface);
   }
-
-  .diff-dialog::backdrop {
+  .smrt-agent-chat__dialog::backdrop {
     background: var(--smrt-color-scrim, rgba(0, 0, 0, 0.3));
   }
-
-  .diff-dialog__header {
-    display: flex;
-    align-items: center;
-    justify-content: space-between;
-    padding: var(--smrt-spacing-3) var(--smrt-spacing-4);
+  .smrt-agent-chat__dialog-header {
     border-bottom: var(--smrt-hairline);
   }
-
-  .diff-dialog__header h4 {
-    margin: 0;
+  .smrt-agent-chat__dialog-header h4 {
     font-size: var(--smrt-typography-title-small-size, 0.875rem);
     font-weight: var(--smrt-typography-weight-semibold, 600);
   }
-
   /* :global() pierces into the Button child's rendered <button> (see #1589). */
-  .diff-dialog__header :global(.diff-dialog__close) {
+  .smrt-agent-chat__dialog-header :global([data-smrt-component="Button"]) {
     background: none;
     font-size: var(--smrt-typography-body-large-size, 1rem);
     color: var(--smrt-color-outline);
-    padding: var(--smrt-spacing-1) var(--smrt-spacing-2);
     border-radius: var(--smrt-radius-sm);
   }
-
-  .diff-dialog__header :global(.diff-dialog__close:hover) {
+  .smrt-agent-chat__dialog-header :global([data-smrt-component="Button"]:hover) {
     background: var(--smrt-color-surface-variant);
   }
-
-  .diff-dialog__body {
-    padding: var(--smrt-spacing-3) var(--smrt-spacing-4);
-    overflow-y: auto;
-    max-height: calc(60vh - 60px);
-  }
-
-  .diff-field {
-    margin-bottom: var(--smrt-spacing-3);
-  }
-
-  .diff-field:last-child {
-    margin-bottom: 0;
-  }
-
-  .diff-field__name {
-    display: block;
+  .smrt-agent-chat__field-name {
     font-size: var(--smrt-typography-label-small-size, 0.6875rem);
     font-weight: var(--smrt-typography-weight-semibold, 600);
     text-transform: uppercase;
     letter-spacing: var(--smrt-typography-label-small-tracking, 0.04em);
     color: var(--smrt-color-outline);
-    margin-bottom: var(--smrt-spacing-1);
   }
-
-  .diff-field__value {
-    margin: 0;
-    padding: var(--smrt-spacing-2) var(--smrt-spacing-3);
+  .smrt-agent-chat__field-value {
     font-size: var(--smrt-typography-body-small-size, 0.75rem);
     line-height: var(--smrt-typography-body-small-line-height, 1.5);
     background: var(--smrt-color-surface-container-low);
     border-radius: var(--smrt-radius-md);
-    white-space: pre-wrap;
-    word-break: break-word;
     font-family: inherit;
-    max-height: 200px;
-    overflow-y: auto;
   }
-
-  .agent-chat__thinking {
-    padding: var(--smrt-spacing-3) var(--smrt-spacing-4);
-  }
-
-  .thinking-dots {
-    display: inline-flex;
-    gap: var(--smrt-spacing-1);
-    align-items: center;
-  }
-
-  .thinking-dots span {
-    width: 6px;
-    height: 6px;
+  .smrt-agent-chat__thinking-dots span {
     border-radius: var(--smrt-radius-full);
     background: var(--smrt-color-outline);
     animation: thinking-bounce 1.2s ease-in-out infinite;
   }
-
-  .thinking-dots span:nth-child(2) {
+  .smrt-agent-chat__thinking-dots span:nth-child(2) {
     animation-delay: 0.15s;
   }
-
-  .thinking-dots span:nth-child(3) {
+  .smrt-agent-chat__thinking-dots span:nth-child(3) {
     animation-delay: 0.3s;
   }
-
   @keyframes thinking-bounce {
-    0%, 60%, 100% { transform: translateY(0); opacity: 0.4; }
-    30% { transform: translateY(-4px); opacity: 1; }
+    0%, 60%, 100% {
+      transform: translateY(0);
+      opacity: 0.4;
+    }
+    30% {
+      transform: translateY(-4px);
+      opacity: 1;
+    }
   }
-
   @media (prefers-reduced-motion: reduce) {
-    .thinking-dots span {
+    .smrt-agent-chat__thinking-dots span {
       animation: none;
     }
   }
 }
+
 </style>
