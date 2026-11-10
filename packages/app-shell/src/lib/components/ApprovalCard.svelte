@@ -1,11 +1,17 @@
 <script lang="ts">
 import { Button } from '@happyvertical/smrt-ui';
 import { describeApproval, failureText, statusLabel } from '$lib/ui/approvals';
-import { fullTime, timeAgo } from '$lib/ui/format';
+import {
+  authorName,
+  fullTime,
+  type OwnerProfile,
+  timeAgo,
+} from '$lib/ui/format';
 import type { ApprovalView } from '$lib/ui/types';
 
 interface Props {
   approval: ApprovalView;
+  owner?: OwnerProfile | null;
   /** Set while this card's decision is being sent. */
   busy?: boolean;
   /** Message from the last attempt on this card (404, 409, ...). */
@@ -13,7 +19,13 @@ interface Props {
   ondecide?: (approve: boolean) => void;
 }
 
-let { approval, busy = false, message = '', ondecide }: Props = $props();
+let {
+  approval,
+  owner = null,
+  busy = false,
+  message = '',
+  ondecide,
+}: Props = $props();
 
 const detail = $derived(describeApproval(approval));
 const failed = $derived(failureText(approval));
@@ -48,12 +60,12 @@ const badge = $derived(
     Asked <time datetime={approval.createdAt} title={fullTime(approval.createdAt)}
       >{timeAgo(approval.createdAt)}</time
     >{#if approval.requestedBy}
-      by {approval.requestedBy}{/if}{#if !pending && approval.decidedAt}
+      {' by '}{authorName(approval.requestedBy, owner)}{/if}{#if !pending && approval.decidedAt}
       · {statusLabel(approval.status).toLowerCase()}
       <time datetime={approval.decidedAt} title={fullTime(approval.decidedAt)}
         >{timeAgo(approval.decidedAt)}</time
       >{#if approval.decidedBy}
-        by {approval.decidedBy}{/if}{/if}
+        {' by '}{authorName(approval.decidedBy, owner)}{/if}{/if}
   </p>
 
   {#if failed}<p class="sh-alert sh-alert-error">{failed}</p>{/if}

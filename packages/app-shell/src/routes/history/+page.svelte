@@ -9,7 +9,7 @@ import {
   undoPublish,
 } from '$lib/ui/api';
 import { DEPENDS } from '$lib/ui/events';
-import { fullTime, timeAgo } from '$lib/ui/format';
+import { authorName, fullTime, timeAgo } from '$lib/ui/format';
 import { groupHistory, type HistoryGroup } from '$lib/ui/publish';
 import type { PageProps } from './$types';
 
@@ -101,7 +101,7 @@ async function undo() {
             </div>
             <p class="sh-muted">
               Version {v.version}{#if v.author}
-                · by {v.author}{/if}
+                {' · by '}{authorName(v.author, data.session?.user)}{/if}
               ·
               <time datetime={v.createdAt} title={fullTime(v.createdAt)}
                 >{timeAgo(v.createdAt)}</time

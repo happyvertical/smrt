@@ -75,7 +75,7 @@ async function decide(id: string, summary: string, approve: boolean) {
     {:else}
       <div aria-live="polite">
         {#each groups.pending as approval (approval.id)}
-          <ApprovalCard
+          <ApprovalCard owner={data.session?.user}
             {approval}
             busy={busyId === approval.id}
             message={messages[approval.id]}
@@ -90,7 +90,7 @@ async function decide(id: string, summary: string, approve: boolean) {
     <section aria-labelledby="decided-h" class="decided">
       <h2 id="decided-h">Decided</h2>
       {#each groups.decided as approval (approval.id)}
-        <ApprovalCard {approval} />
+        <ApprovalCard owner={data.session?.user} {approval} />
       {/each}
     </section>
   {/if}

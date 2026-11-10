@@ -131,7 +131,7 @@ onMount(() => {
   bind:panelOpen
 >
   {#snippet panel({ open })}
-    <AssistantPanel {open} buildingInDraft={!!data.description?.draft} />
+    <AssistantPanel {open} owner={data.session.user} buildingInDraft={!!data.description?.draft} />
   {/snippet}
   {#if data.description && (page.url.pathname === '/' || /^\/(m\/|history$|draft\/review$)/.test(page.url.pathname))}<DraftBar description={data.description} />{/if}
   {#key data.description?.mode}

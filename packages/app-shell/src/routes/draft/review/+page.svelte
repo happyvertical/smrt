@@ -116,7 +116,7 @@ onMount(() => {
       <p>Review the latest draft before trying again.</p>
       <Button disabled={busy} onclick={review}>Review again</Button>
     {:else if approval}
-      <ApprovalCard {approval} {busy} ondecide={decide} />
+      <ApprovalCard owner={data.session?.user} {approval} {busy} ondecide={decide} />
     {:else if preview}
       <Button disabled={busy} onclick={publish}>Publish</Button>
     {/if}
