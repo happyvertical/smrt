@@ -427,6 +427,11 @@ built-ins are `manifest-v2`, `manifest-v1` and `plain-files`. SCORM and Common C
 trees that do not map to sections/lessons without design); a host can register
 a reader ahead of the built-ins (`register(reader, { first: true })`).
 
+`plain-files` has no manifest to say what a file is for, so each member is a
+learner-visible `attachment` on its own lesson (Office files as their rendering,
+PDFs and images as supplied; Markdown/text also becomes the lesson body). It
+never guesses teacher-only files (smrt#4715).
+
 `attachCourse` gives the course, sections and lessons it creates the
 deterministic slugs `bundle-course-<id>`, `bundle-section-<id>` and
 `bundle-lesson-<id>` (the id is the `bundleUuid`). Slugs are unique per tenant, so

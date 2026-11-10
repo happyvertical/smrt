@@ -42,9 +42,10 @@ import {
   type OfficeDocumentKind,
   type OfficeText,
 } from './document-converter.js';
-import type {
-  LessonAssetRelationship,
-  MaterialAudience,
+import {
+  LESSON_ASSET_DEFAULT_AUDIENCE,
+  type LessonAssetRelationship,
+  type MaterialAudience,
 } from './lesson-assets.js';
 
 // biome-ignore lint/suspicious/noControlCharactersInRegex: refusing control characters in text
@@ -568,6 +569,10 @@ const humanize = (name: string) => {
 };
 const short = (value: string) => sha256Hex(value).slice(0, 12);
 
+/** Role of a plain-files member: no manifest, so a learner-visible attachment. */
+const PLAIN_FILES_ROLE =
+  'attachment' as const satisfies LessonAssetRelationship;
+
 /**
  * Reader for a plain file set: one lesson per accepted member, sections from
  * the top-level directory, everything in deterministic natural path order.
@@ -616,7 +621,9 @@ export const plainBundleReader: BundleReader = {
             key: lessonKey,
             title: humanize(path.slice(path.lastIndexOf('/') + 1)),
             paths: [path],
-            roles: [''],
+            // No manifest says otherwise, so every file is learner material.
+            roles: [PLAIN_FILES_ROLE],
+            audiences: [LESSON_ASSET_DEFAULT_AUDIENCE[PLAIN_FILES_ROLE]],
           });
         }
         const out = [...sections.values()];
