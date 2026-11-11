@@ -426,7 +426,14 @@ export function createCookbookHost(options: CookbookHostOptions) {
           catalog: app.catalog,
           authorize: async (event) => {
             const p = resolveAssistantPrincipalFromLocals(event.locals);
-            return p && (await isOwner(p.tenantId, p.userId)) ? p : null;
+            return p && (await isOwner(p.tenantId, p.userId))
+              ? {
+                  ...p,
+                  permissions: [
+                    ...((event.locals as SmrtRuntimeLocals).permissions ?? []),
+                  ],
+                }
+              : null;
           },
           invoke: async (actor, name, args) => {
             const permissions = [
@@ -436,11 +443,19 @@ export function createCookbookHost(options: CookbookHostOptions) {
                 ).resolvePermissions(actor.userId, actor.tenantId)
               ).permissions,
             ];
+            if (!actor.permissions?.includes(name))
+              throw new CookbookToolError(
+                'forbidden',
+                'This operation is not in the session permission snapshot.',
+              );
+            const ceiling = permissions.filter((permission) =>
+              actor.permissions!.includes(permission),
+            );
             return continuations.capture(
               {
                 id: actor.userId,
                 tenantId: actor.tenantId,
-                permissions,
+                permissions: ceiling,
                 allowedTools: [name],
               },
               () => service.invoke(name, args, { ...actor, surface: 'mcp' }),

@@ -29,7 +29,11 @@ const initial: OnboardingProgress = {
 };
 const hash = (value: unknown) =>
   createHash('sha256').update(JSON.stringify(value)).digest('hex');
-type Actor = { userId: string; tenantId: string };
+type Actor = {
+  userId: string;
+  tenantId: string;
+  permissions?: readonly string[];
+};
 type Saved = OnboardingProgress & {
   revision: string;
   preview: OnboardingState['preview'];
@@ -288,7 +292,14 @@ export async function createCookbookOnboarding(options: {
           return json({ code: 'invalid_request' }, 400);
       }
       return json(await project(actor, await save(actor, saved, next)));
-    } catch {
+    } catch (error) {
+      if (
+        error &&
+        typeof error === 'object' &&
+        'code' in error &&
+        error.code === 'forbidden'
+      )
+        return json({ code: 'not_allowed' }, 403);
       return json({ code: 'onboarding_failed' }, 503);
     }
   }

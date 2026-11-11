@@ -1364,4 +1364,33 @@ describe('onboarding over real cookbook tools and owner ledger', () => {
     expect(progress.step).toBe('done');
     expect((await host.cookbookApp(tenantId)).cookbook.recipes).toEqual([]);
   });
+  it('refuses a template write outside the session ceiling even when the live owner role grants it', async () => {
+    permissions = permissions.filter((p) => p !== 'cookbook.apply');
+    let progress = await (
+      await request(event('/api/onboarding'), host.onboarding)
+    ).json();
+    for (const action of ['welcome', 'skip']) {
+      const r = await request(
+        event('/api/onboarding', 'POST', {
+          action,
+          revision: progress.revision,
+        }),
+        host.onboarding,
+      );
+      expect(r.status).toBe(200);
+      progress = await r.json();
+    }
+    const r = await request(
+      event('/api/onboarding', 'POST', {
+        action: 'preview',
+        id: 'fresh',
+        revision: progress.revision,
+      }),
+      host.onboarding,
+    );
+    expect(r.status).toBe(403);
+    expect((await host.cookbookApp(tenantId)).cookbook.recipes).toEqual([
+      'host.customers',
+    ]);
+  });
 });
