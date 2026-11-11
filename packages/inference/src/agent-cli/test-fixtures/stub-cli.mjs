@@ -13,7 +13,7 @@
 //   fail                       exit 1 with noise on stderr
 //   resume                     say whether it was resumed and with which id
 import { spawn } from 'node:child_process';
-import { readFileSync, writeFileSync } from 'node:fs';
+import { readFileSync, renameSync, writeFileSync } from 'node:fs';
 import { dirname, join } from 'node:path';
 
 const argv = process.argv.slice(2);
@@ -136,7 +136,10 @@ if (head === 'say') {
   say('dumped');
 } else if (head === 'hang' || head === 'hang-text') {
   const grand = spawn('sleep', ['300'], { stdio: 'ignore' });
-  writeFileSync(sibling('pids.json'), JSON.stringify({ child: process.pid, grand: grand.pid }));
+  // Hosts use existence as readiness: publish the complete snapshot atomically.
+  const snapshot = sibling('pids.json');
+  writeFileSync(`${snapshot}.tmp`, JSON.stringify({ child: process.pid, grand: grand.pid }));
+  renameSync(`${snapshot}.tmp`, snapshot);
   if (head === 'hang-text') say('callback trigger');
   setInterval(() => {}, 1000);
 } else if (head === 'forbidden') {
