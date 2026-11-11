@@ -1,7 +1,7 @@
 import assert from 'node:assert/strict';
 import { execFileSync } from 'node:child_process';
 import { createRequire } from 'node:module';
-import { copyFileSync, existsSync, mkdirSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from 'node:fs';
+import { copyFileSync, existsSync, mkdirSync, mkdtempSync, readFileSync, readdirSync, rmSync, writeFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { resolve } from 'node:path';
 import test from 'node:test';
@@ -92,8 +92,30 @@ test('packed consumers retain different MCP SDK versions for each parent', () =>
     writeFileSync(resolve(fixture, 'package.json'), JSON.stringify({ private: true,
       dependencies: Object.fromEntries(parents.map(p => [p.parent, `file:${p.dir}`])),
     }));
-    writeFileSync(resolve(fixture, 'pnpm-workspace.yaml'), JSON.stringify({ packages: [], overrides }));
-    execFileSync('pnpm', ['install', '--offline', '--ignore-scripts', '--no-frozen-lockfile'], { cwd: fixture, stdio: 'pipe' });
+    // This test checks pnpm's parent selectors, not SDK implementation. Use
+    // SDK-shaped archives at the actual installed versions so it stays offline
+    // even when a registry's tarball cache has been pruned. The packed host gate
+    // separately boots the real SDK dependency graph.
+    const archives = new Map();
+    for (const parent of parents) {
+      assert.equal(overrides[`${parent.parent}@${parent.version}>${parent.dependency}`], parent.resolvedVersion);
+      const sdk = resolve(fixture, `sdk-${parent.resolvedVersion}`);
+      const output = resolve(fixture, `packed-${parent.resolvedVersion}`);
+      mkdirSync(resolve(sdk, 'dist'), { recursive: true });
+      mkdirSync(output);
+      writeFileSync(resolve(sdk, 'package.json'), JSON.stringify({
+        name: parent.dependency, version: parent.resolvedVersion, main: './dist/index.js',
+      }));
+      writeFileSync(resolve(sdk, 'dist/index.js'), `module.exports = { version: '${parent.resolvedVersion}' };`);
+      execFileSync('pnpm', ['pack', '--pack-destination', output], { cwd: sdk, stdio: 'pipe', encoding: 'utf8' });
+      const tarballs = readdirSync(output).filter(file => file.endsWith('.tgz'));
+      assert.equal(tarballs.length, 1);
+      archives.set(parent.resolvedVersion, `file:${resolve(output, tarballs[0])}`);
+    }
+    writeFileSync(resolve(fixture, 'pnpm-workspace.yaml'), JSON.stringify({
+      packages: [], overrides: Object.fromEntries(Object.entries(overrides).map(([parent, version]) => [parent, archives.get(version)])),
+    }));
+    execFileSync('pnpm', ['install', '--offline', '--ignore-scripts', '--no-frozen-lockfile'], { cwd: fixture, stdio: 'pipe', encoding: 'utf8' });
     for (const parent of parents) {
       const require = createRequire(resolve(fixture, 'package.json'));
       const installed = require.resolve(`${parent.parent}/package.json`);
