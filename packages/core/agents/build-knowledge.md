@@ -52,9 +52,10 @@ after inheritance, so every producer (Vite plugin, `ManifestBuilder`,
 `generateManifest`) validates the same way.
 
 - **Display label.** `@smrt({ display: { label: '<field>' } })` names the own
-  field generic pickers and assistants use to label a record. Own fields only —
-  no paths into other packages; a model whose label lives elsewhere ships a
-  selector. Undeclared, it defaults to the first of `name`, `title`, `label`,
+  field generic pickers and assistants use to label a record. A linked name
+  uses `label: { via: 'profileId', field: 'name', fallback: 'Unnamed customer' }`
+  through one declared reference; see [collection reads](collection-reads.md#linked-display-names).
+  Undeclared, it defaults to the first of `name`, `title`, `label`,
   `code` that is a usable own field. Build fails when the declared field is
   missing, `sensitive`, `transient`, or a relationship/json field. The resolved
   field is emitted as `displayLabelField` on the manifest object, on generated
@@ -73,7 +74,7 @@ after inheritance, so every producer (Vite plugin, `ManifestBuilder`,
   `findSelectorFor(manifests, qualifiedName)`; generic forms use the selector
   for any `@foreignKey`/`@crossPackageRef` field targeting that model and fall
   back to a generic picker labelled by `displayLabelField`. `display` is read
-  per class: an STI subclass that declares none uses the default lookup rather
+  per class (same-name app replacements inherit it): an STI subclass that declares none uses the default lookup rather
   than its base's declaration, and a CTI child cannot name a parent's field.
 
 ## Worker registration artifact (#3117)

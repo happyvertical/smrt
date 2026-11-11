@@ -52,6 +52,7 @@ import type {
 } from '../schema/types.js';
 import { generateToolManifest } from '../tools/tool-generator.js';
 import {
+  DISPLAY_LABEL_FIELD,
   displayLabelFieldProblem,
   FIELD_UI_FORMAT_TYPES,
   FIELD_UI_FORMATS,
@@ -62,6 +63,7 @@ import {
   isRelationshipRole,
   RELATIONSHIP_ROLES,
   resolveDisplayLabelField,
+  resolveDisplayLabelProjection,
 } from '../ui-metadata.js';
 import { classnameToTablename, toSnakeCase } from '../utils/naming.js';
 import {
@@ -1048,7 +1050,7 @@ export class ManifestGenerator {
    *   accepts (every widget is text-only; `currency` is an ISO 4217 code
    *   picker, not an amount).
    * - `@smrt({ display: { label } })` must name an own, non-sensitive,
-   *   non-transient, non-relationship field.
+   *   non-transient, non-relationship field, or one public reference hop.
    * - A selector slot's `selects` must resolve when it names this package.
    *
    * Also stamps each object's resolved `displayLabelField` (the declared field,
@@ -1056,6 +1058,7 @@ export class ManifestGenerator {
    */
   applyUiMetadata(manifest: SmartObjectManifest): void {
     const failures: string[] = [];
+    const aggregated = this.createAggregatedManifest(manifest);
 
     for (const key of Object.keys(manifest.objects).sort(compareText)) {
       const obj = manifest.objects[key];
@@ -1107,17 +1110,71 @@ export class ManifestGenerator {
       const display = (obj.decoratorConfig as { display?: unknown } | undefined)
         ?.display;
       let declared: string | undefined;
+      delete obj.displayLabelProjection;
       if (display !== undefined) {
         const label =
           display && typeof display === 'object'
             ? (display as { label?: unknown }).label
             : undefined;
-        if (
+        if (label && typeof label === 'object') {
+          try {
+            const projection = resolveDisplayLabelProjection(label);
+            if (!projection) throw new Error('Invalid display projection.');
+            const edge = obj.fields[projection.via];
+            if (
+              !edge ||
+              !['foreignKey', 'crossPackageRef'].includes(edge.type) ||
+              edge.sensitive ||
+              edge._meta?.sensitive ||
+              edge.transient ||
+              edge._meta?.transient ||
+              edge.readPermission ||
+              edge._meta?.readPermission
+            ) {
+              throw new Error(
+                'display.label.via must name a public, persisted foreignKey or crossPackageRef.',
+              );
+            }
+            if (
+              Object.keys(obj.fields).some(
+                (name) => toSnakeCase(name) === 'display_label',
+              )
+            ) {
+              throw new Error(
+                'displayLabel is reserved for the projected label.',
+              );
+            }
+            const related = edge.related;
+            const target =
+              typeof related === 'string'
+                ? lookupInManifest(aggregated, related)
+                : undefined;
+            if (!target)
+              throw new Error(
+                `display.label target ${related} is unavailable; include its owning package in smrtDependencies.`,
+              );
+            const targetField = target.fields[projection.field];
+            const problem =
+              displayLabelFieldProblem(target.fields, projection.field) ??
+              (targetField?.readPermission || targetField?._meta?.readPermission
+                ? 'it is a permission-gated field'
+                : null);
+            if (problem)
+              throw new Error(
+                `display.label target ${related}.${projection.field}: ${problem}.`,
+              );
+            obj.displayLabelProjection = projection;
+          } catch (error) {
+            failures.push(
+              `${owner}: ${error instanceof Error ? error.message : String(error)}`,
+            );
+          }
+        } else if (
           label !== undefined &&
           (typeof label !== 'string' || label === '')
         ) {
           failures.push(
-            `${owner}: display.label must be the name of an own field (a string literal), not ${JSON.stringify(label)}.`,
+            `${owner}: display.label must be the name of an own field or a one-hop projection, not ${JSON.stringify(label)}.`,
           );
         } else if (typeof label === 'string') {
           const problem = displayLabelFieldProblem(obj.fields, label);
@@ -1132,7 +1189,9 @@ export class ManifestGenerator {
           failures.push(`${owner}: display must be an object ({ label }).`);
         }
       }
-      const resolved = resolveDisplayLabelField(obj.fields, declared);
+      const resolved = obj.displayLabelProjection
+        ? DISPLAY_LABEL_FIELD
+        : resolveDisplayLabelField(obj.fields, declared);
       if (resolved) {
         obj.displayLabelField = resolved;
       } else {

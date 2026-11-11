@@ -138,6 +138,45 @@ export function displayLabelFieldProblem(
   return null;
 }
 
+/** One declared FK hop; the result is read-only, never a persisted name copy. */
+export interface DisplayLabelProjection {
+  via: string;
+  field: string;
+  fallback: string;
+}
+
+/** Reserved DTO field for a declared linked display label. */
+export const DISPLAY_LABEL_FIELD = 'displayLabel';
+
+/** Shared validation for scanner, runtime collections and web definitions. */
+export function resolveDisplayLabelProjection(
+  label: unknown,
+): DisplayLabelProjection | undefined {
+  if (label === undefined || typeof label === 'string') return undefined;
+  if (
+    !label ||
+    typeof label !== 'object' ||
+    Array.isArray(label) ||
+    !('via' in label) ||
+    typeof label.via !== 'string' ||
+    !/^[a-zA-Z][a-zA-Z0-9_]*$/.test(label.via) ||
+    !('field' in label) ||
+    typeof label.field !== 'string' ||
+    !/^[a-zA-Z][a-zA-Z0-9_]*$/.test(label.field) ||
+    !('fallback' in label) ||
+    typeof label.fallback !== 'string' ||
+    !label.fallback.trim() ||
+    Object.keys(label).some(
+      (key) => !['via', 'field', 'fallback'].includes(key),
+    )
+  ) {
+    throw new Error(
+      'display.label must be an own field name or { via, field, fallback } with one relationship hop and a non-empty fallback.',
+    );
+  }
+  return { via: label.via, field: label.field, fallback: label.fallback };
+}
+
 /**
  * The own field generic pickers and assistants use to label a record: the
  * declared `display.label` when present, otherwise the first of
@@ -146,9 +185,10 @@ export function displayLabelFieldProblem(
  */
 export function resolveDisplayLabelField(
   fields: Record<string, LabelCandidate>,
-  declared?: string,
+  declared?: string | DisplayLabelProjection,
 ): string | undefined {
-  if (declared !== undefined) {
+  if (resolveDisplayLabelProjection(declared)) return DISPLAY_LABEL_FIELD;
+  if (typeof declared === 'string') {
     return displayLabelFieldProblem(fields, declared) === null
       ? declared
       : undefined;

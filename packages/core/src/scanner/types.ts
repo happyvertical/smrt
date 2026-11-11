@@ -625,6 +625,9 @@ export interface SmartObjectDefinition {
    */
   displayLabelField?: string;
 
+  /** Read-only one-hop label, resolved by collection reads before pagination. */
+  displayLabelProjection?: import('../ui-metadata.js').DisplayLabelProjection;
+
   /**
    * Auto-generated agent manifest
    * Only present for classes with `agent` in their decorator config
