@@ -19,7 +19,7 @@ adds) and swaps it in once it is ready. The engine must not import SvelteKit,
 - **Migrations** (`app-runtime.ts`) run in one transaction in the new worker,
   reading through the transaction handle. Destructive ones retire the old worker
   first and restart the old definition if the new one fails. They are
-  SQLite-shaped (`RENAME/DROP COLUMN`, `VACUUM INTO`, `pragma_table_info`);
+  SQLite-shaped (`RENAME/DROP COLUMN`, `VACUUM INTO`, `pragma_table_xinfo`);
   Postgres is future work.
 - **Column storage.** No column-type history: re-adding a field checks the real
   column's storage family. Text defaults can be `''`, so counts and archives use
@@ -162,3 +162,16 @@ is documented here; the shell's tables, approvals and UI sit on top.
 - If V8 overflows its own stack inside WebAssembly, QuickJS cannot recover; the
   small QuickJS stack limit keeps its error first, and a host-level failure
   discards the WASM module instance.
+
+## Calculated fields (#4916)
+
+`FieldDef.calculated` uses core's `GeneratedExpression` (SQL SDK operand data).
+`addField` and `setCalculation` validate through `runtimeModelEntry` at plan
+time; hidden inputs and generated-to-generated references are rejected by core.
+SQLite owns the VIRTUAL column. Writes use the common coercer and generated core
+surfaces reject inputs. `setCalculation` replaces the column transactionally;
+clearing creates an empty writable column. Converting a writable field archives
+its originals and is risky. Undo restores those originals or the old expression.
+Renames rewrite expressions; hide/remove/type change refuse named dependents.
+`titleField` optionally names the record label, with first visible text as fallback.
+Test design and required validation: [engine-4916-tests.md](engine-4916-tests.md).

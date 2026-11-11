@@ -30,6 +30,12 @@ const SAMPLES: Record<CommandType, Command> = {
     field: 'notes',
     definition: { type: 'text' },
   },
+  setCalculation: {
+    type: 'setCalculation',
+    model: 'Chore',
+    field: 'title',
+    calculated: null,
+  },
   hideField: { type: 'hideField', model: 'Chore', field: 'title' },
   renameField: {
     type: 'renameField',

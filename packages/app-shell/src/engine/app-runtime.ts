@@ -2,7 +2,7 @@
 // smrt registry: built fresh from one definition, thrown away on the next.
 //
 // Migrations here are SQLite-shaped (RENAME/DROP COLUMN, VACUUM INTO,
-// pragma_table_info). Postgres is future work.
+// pragma_table_xinfo). Postgres is future work.
 import { existsSync, mkdirSync } from 'node:fs';
 import { isAbsolute, join } from 'node:path';
 import {
@@ -181,7 +181,7 @@ export class AppRuntime {
     table: string,
   ): Promise<string[] | null> {
     const rows = (
-      await h.query(`SELECT name FROM pragma_table_info(?)`, [table])
+      await h.query(`SELECT name FROM pragma_table_xinfo(?)`, [table])
     ).rows;
     return rows.length ? rows.map((r: Row) => String(r.name)) : null;
   }
@@ -207,7 +207,7 @@ export class AppRuntime {
     t: string,
   ): Promise<Map<string, string>> {
     const rows = (
-      await h.query(`SELECT name, type FROM pragma_table_info(?)`, [t])
+      await h.query(`SELECT name, type FROM pragma_table_xinfo(?)`, [t])
     ).rows;
     return new Map(rows.map((r: Row) => [String(r.name), String(r.type)]));
   }
@@ -239,6 +239,31 @@ export class AppRuntime {
     const now = new Date().toISOString();
     const up = m.direction === 'up';
     switch (step.op) {
+      case 'calculation': {
+        if (up && step.from && !step.from.calculated)
+          await exec(
+            `INSERT INTO _archive (version, tbl, col, record_id, value, created_at) SELECT ?, ?, ?, id, ${q(step.column)}, ? FROM ${q(step.table)}`,
+            [m.version, step.table, step.column, now],
+          );
+        if ((await this.columnTypes(tx, step.table)).has(step.column))
+          await exec(
+            `ALTER TABLE ${q(step.table)} DROP COLUMN ${q(step.column)}`,
+          );
+        if (!up && step.from && !step.from.calculated) {
+          await exec(
+            `ALTER TABLE ${q(step.table)} ADD COLUMN ${q(step.column)} ${sqlType(step.from.type)}`,
+          );
+          await exec(
+            `UPDATE ${q(step.table)} SET ${q(step.column)} = (SELECT value FROM _archive a WHERE a.version = ? AND a.tbl = ? AND a.col = ? AND a.record_id = ${q(step.table)}.id)`,
+            [m.version, step.table, step.column],
+          );
+          await exec(
+            'DELETE FROM _archive WHERE version = ? AND tbl = ? AND col = ?',
+            [m.version, step.table, step.column],
+          );
+        }
+        break;
+      }
       case 'renameColumn':
         await exec(
           `ALTER TABLE ${q(step.table)} RENAME COLUMN ${q(up ? step.from : step.to)} TO ${q(up ? step.to : step.from)}`,
@@ -648,6 +673,7 @@ export class AppRuntime {
     if (creating)
       for (const [k, fd] of Object.entries(fields))
         if (
+          !fd.calculated &&
           fd.required &&
           (data[k] === undefined || data[k] === null || data[k] === '')
         )
@@ -691,6 +717,8 @@ export class AppRuntime {
       this.modelDef(model);
       for (const row of rows) {
         const { id, createdAt: _c, ...data } = row;
+        for (const [f, fd] of Object.entries(this.fieldsOf(model)))
+          if (fd.calculated) delete data[f];
         await this.create(model, data, {
           id: typeof id === 'string' ? id : undefined,
           refs: false,

@@ -12,6 +12,12 @@ export type Command =
       fields?: Record<string, FieldDef>;
     }
   | { type: 'addField'; model: string; field: string; definition: FieldDef }
+  | {
+      type: 'setCalculation';
+      model: string;
+      field: string;
+      calculated: FieldDef['calculated'] | null;
+    }
   | { type: 'hideField'; model: string; field: string }
   | { type: 'renameField'; model: string; from: string; to: string }
   | { type: 'removeField'; model: string; field: string }
@@ -72,12 +78,13 @@ export const RISKY_COMMANDS: ReadonlySet<CommandType> = new Set<CommandType>([
   'removeField',
   'removeModel',
   'changeFieldType',
+  'setCalculation',
   'cleanUp',
 ]);
 
 /** A migration step whose down path overwrites newer data with archived originals. */
 export function overwritesOnUndo(step: { op: string }): boolean {
-  return step.op === 'convertColumn';
+  return step.op === 'convertColumn' || step.op === 'calculation';
 }
 
 /** Static risk of a command. `undo` is decided by the host from the stored version. */
@@ -99,6 +106,7 @@ export function isRiskyCommand(cmd: Command): boolean {
 export const STRUCTURAL_COMMANDS: Readonly<Record<CommandType, boolean>> = {
   defineModel: true,
   addField: true,
+  setCalculation: true,
   hideField: true,
   renameField: true,
   removeField: true,

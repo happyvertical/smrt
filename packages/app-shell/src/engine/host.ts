@@ -38,6 +38,7 @@ import {
   toolNamesFor,
   validate,
 } from './definition.ts';
+import { fieldDependents, rewriteExpression } from './dependents.ts';
 import {
   checkDraftPath,
   type DraftMarker,
@@ -496,6 +497,7 @@ export class AppHost extends EventEmitter {
       return Promise.reject(new EngineError('execute needs an author'));
     return this.run(async () => {
       this.refuseIfFrozen(cmd);
+      await this.drainInflight();
       const a = await this.analyse(cmd);
       if (a.plan.risky && opts.approved !== true && !this.#autoApprove)
         throw new ApprovalRequiredError(a.plan);
@@ -598,10 +600,49 @@ export class AppHost extends EventEmitter {
         const d = this.clone();
         d.models[cmd.model].fields[cmd.field] = shown(cmd.definition);
         this.assertValid(d);
-        return change(`add ${cmd.model}.${cmd.field}`, d);
+        return change(`add ${cmd.model}.${cmd.field}`, d, {
+          steps: cmd.definition.calculated
+            ? [
+                {
+                  op: 'calculation',
+                  table: tableFor(cmd.model, md),
+                  column: snake(cmd.field),
+                },
+              ]
+            : [],
+        });
+      }
+      case 'setCalculation': {
+        const st = this.storage(cmd.model, cmd.field);
+        this.refuseDependents(cmd.model, cmd.field);
+        const d = this.clone();
+        if (cmd.calculated === null)
+          delete d.models[cmd.model].fields[cmd.field].calculated;
+        else d.models[cmd.model].fields[cmd.field].calculated = cmd.calculated;
+        this.assertValid(d);
+        const a = change(`set calculation ${cmd.model}.${cmd.field}`, d, {
+          steps: [
+            {
+              op: 'calculation',
+              table: st.table,
+              column: st.column,
+              from: st.fd,
+              to: d.models[cmd.model].fields[cmd.field],
+            },
+          ],
+          preview: {
+            model: cmd.model,
+            field: cmd.field,
+            from: st.fd.calculated ?? null,
+            to: cmd.calculated,
+          },
+        });
+        a.plan.risky = !st.fd.calculated;
+        return a;
       }
       case 'hideField': {
         const st = this.storage(cmd.model, cmd.field);
+        this.refuseDependents(cmd.model, cmd.field);
         if (st.fd.hidden)
           throw new EngineError(`${cmd.model}.${cmd.field} is already hidden`);
         const d = this.clone();
@@ -623,6 +664,11 @@ export class AppHost extends EventEmitter {
             v,
           ]),
         );
+        for (const fd of Object.values(d.models[cmd.model].fields))
+          if (fd.calculated)
+            fd.calculated = rewriteExpression(fd.calculated, cmd.from, cmd.to);
+        if (d.models[cmd.model].titleField === cmd.from)
+          d.models[cmd.model].titleField = cmd.to;
         this.assertValid(d);
         return change(`rename ${cmd.model}.${cmd.from} -> ${cmd.to}`, d, {
           steps: [
@@ -642,6 +688,7 @@ export class AppHost extends EventEmitter {
       }
       case 'removeField': {
         const st = this.storage(cmd.model, cmd.field);
+        this.refuseDependents(cmd.model, cmd.field);
         const valuesArchived = await this.callApp<number>(
           'countValues',
           st.table,
@@ -659,18 +706,25 @@ export class AppHost extends EventEmitter {
           },
           affectedMethods: this.methodsMentioning(cmd.field),
           steps: [
-            {
-              op: 'dropColumn',
-              table: st.table,
-              key: 'id',
-              column: st.column,
-              type: st.fd.type,
-            },
+            st.fd.calculated
+              ? { op: 'calculation', table: st.table, column: st.column }
+              : {
+                  op: 'dropColumn',
+                  table: st.table,
+                  key: 'id',
+                  column: st.column,
+                  type: st.fd.type,
+                },
           ],
         });
       }
       case 'changeFieldType': {
         const st = this.storage(cmd.model, cmd.field);
+        this.refuseDependents(cmd.model, cmd.field);
+        if (st.fd.calculated)
+          throw new EngineError(
+            'clear the calculation before changing its type',
+          );
         const to: FieldDef = { ...st.fd, ...cmd.to, hidden: false };
         if (cmd.to.type !== 'choice' && !cmd.to.choices) delete to.choices;
         if (cmd.to.type !== 'reference' && !cmd.to.ref) delete to.ref;
@@ -807,6 +861,15 @@ export class AppHost extends EventEmitter {
           `unknown command ${(cmd as { type?: string }).type}`,
         );
     }
+  }
+
+  private refuseDependents(model: string, field: string) {
+    const deps = fieldDependents(this.def, model, field);
+    if (deps.length)
+      throw new EngineError(
+        `${model}.${field} is used by: ${deps.join(', ')}`,
+        'refused',
+      );
   }
 
   private assertValid(d: AppDefinition) {

@@ -527,3 +527,15 @@ publish under its draft name; **Undo this publish** returns to its first parent
 (and takes back subsequent changes), with an Approval if needed. Lifecycle events
 refresh the bar and pages without reloading. An unusable draft explains the problem
 and keeps Discard available. See [UI validation](agents/draft-ui.md).
+
+### Engine calculated fields
+
+Definitions remain format 1. `addField.definition.calculated` and
+`setCalculation { model, field, calculated }` use core's `GeneratedExpression`
+(the SQL SDK's operand nodes). Pass `null` to clear a calculation. Generated
+values are database-owned and read-only on all write surfaces. Plan validates
+same-model visible inputs and result types. Renames rewrite expressions; hide,
+remove and type changes refuse dependents. Changes and undo run transactionally;
+undo restores the prior expression. A writable-to-calculated change archives
+originals and requires approval. Clearing an expression starts an empty writable
+column. See [engine contracts](agents/engine.md).
