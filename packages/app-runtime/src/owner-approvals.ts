@@ -56,6 +56,8 @@ export interface OwnerApproval extends Omit<OwnerApprovalInput, 'ttlMs'> {
 
 /** Implementations MUST atomically compare status and expiry, scoped to the tenant. */
 export interface OwnerApprovalStore {
+  /** Only legacy host stores with an established indefinite-hold contract opt in. */
+  readonly supportsNonExpiring?: boolean;
   insert(record: OwnerApproval): Promise<void>;
   get(tenantId: string, id: string): Promise<OwnerApproval | null>;
   list(tenantId: string): Promise<OwnerApproval[]>;
@@ -106,7 +108,23 @@ export class OwnerApprovalAuthority {
     private readonly store: OwnerApprovalStore,
     private readonly isOwner: (actor: OwnerApprovalActor) => Promise<boolean>,
     private readonly now: () => number = Date.now,
-  ) {}
+    // Compatibility for existing host stores with non-expiring requests.
+    // The canonical SQLite ledger retains its own bounded TTL policy.
+    private readonly options: {
+      nonExpiring?: boolean;
+      maxInputChars?: number;
+    } = {},
+  ) {
+    if (
+      options.maxInputChars !== undefined &&
+      (!Number.isSafeInteger(options.maxInputChars) ||
+        options.maxInputChars < 1024 ||
+        options.maxInputChars > 16_000_000)
+    )
+      throw new OwnerApprovalError('invalid_request');
+    if (options.nonExpiring && !store.supportsNonExpiring)
+      throw new OwnerApprovalError('invalid_request');
+  }
 
   async request(input: OwnerApprovalInput): Promise<OwnerApproval> {
     const copy = deepFrozenPlainCopy(input) as OwnerApprovalInput;
@@ -128,7 +146,7 @@ export class OwnerApprovalAuthority {
       !copy.context ||
       Array.isArray(copy.context) ||
       typeof copy.context !== 'object' ||
-      JSON.stringify(copy).length > 128_000
+      JSON.stringify(copy).length > (this.options.maxInputChars ?? 128_000)
     )
       throw new OwnerApprovalError('invalid_request');
     const { ttlMs: _, ...data } = copy;
@@ -138,7 +156,9 @@ export class OwnerApprovalAuthority {
       id: randomUUID(),
       status: 'pending',
       createdAt,
-      expiresAt: createdAt + ttl,
+      expiresAt: this.options.nonExpiring
+        ? Number.MAX_SAFE_INTEGER
+        : createdAt + ttl,
       decidedBy: null,
       decidedAt: null,
     };
@@ -267,10 +287,17 @@ export class OwnerApprovalAuthority {
     tenantId: string,
     id: string,
     signal?: AbortSignal,
+    options?: { settled?: boolean },
   ): Promise<OwnerApproval | null> {
     while (!signal?.aborted) {
       const record = await this.get(tenantId, id);
-      if (!record || record.status !== 'pending') return record;
+      if (
+        !record ||
+        !(options?.settled
+          ? ['pending', 'approved', 'executing'].includes(record.status)
+          : record.status === 'pending')
+      )
+        return record;
       await new Promise<void>((resolve) => {
         const finish = () => {
           clearTimeout(timer);

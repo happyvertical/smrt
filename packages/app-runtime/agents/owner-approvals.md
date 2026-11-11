@@ -43,3 +43,17 @@ service retains its own SQLite, DuckDB and PostgreSQL transition suites.
 
 `src/owner-approvals.test.ts` tests the adapter and authority; chat's route tests
 exercise real authenticated holds and resumed execution. No providers or containers.
+
+Legacy custom stores may advertise `supportsNonExpiring` and opt into the
+constructor's `nonExpiring` option to preserve an established indefinite-hold
+contract. The canonical SQLite store does not advertise this and rejects that
+option before writing. Default TTL validation is unchanged. `wait` accepts an
+optional fourth `{ settled: true }` argument to observe a host-executed hold
+through approved/executing until a terminal result; ordinary waits still return
+at the owner's decision. Tricia exercises the custom-store seam over its old
+single-tenant rows rather than migrating history or creating a second ledger.
+
+`maxInputChars` is a bounded constructor option (1 KB..16 MB, default 128 KB) for
+hosts with a larger already-validated recovery payload. Tricia opts into 4 MB;
+its nested template action travels as inert JSON rather than widening the shared
+plain-data depth or accepting executable objects.

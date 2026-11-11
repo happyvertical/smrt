@@ -262,4 +262,18 @@ describe('owner tool holds over the canonical approval ledger (SQLite)', () => {
       tenantId,
     });
   });
+  it('keeps the canonical store bounded even when a host asks for indefinite compatibility', async () => {
+    const store = await createSqliteOwnerApprovalStore(db, () => now);
+    expect(
+      () =>
+        new OwnerApprovalAuthority(
+          store,
+          async () => true,
+          () => now,
+          { nonExpiring: true },
+        ),
+    ).toThrow('invalid_request');
+    const saved = await authority.request(input);
+    expect(saved.expiresAt).toBe(now + 60_000);
+  });
 });
