@@ -58,6 +58,7 @@ const PACKAGE_FOR: Record<string, string> = {
   inventory: '@happyvertical/smrt-inventory',
   ledgers: '@happyvertical/smrt-ledgers',
   products: '@happyvertical/smrt-products',
+  profiles: '@happyvertical/smrt-profiles',
   events: '@happyvertical/smrt-events',
 };
 
