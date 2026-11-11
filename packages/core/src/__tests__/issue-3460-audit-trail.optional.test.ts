@@ -15,6 +15,10 @@ import { APIGenerator } from '../generators/rest.js';
 import { normalizeTypedHttpError } from '../generators/typed-http-error.js';
 import { SmrtObject } from '../object.js';
 import { ObjectRegistry, smrt } from '../registry.js';
+import {
+  hasRuntimeExposureGate,
+  isRuntimeModelEnabled,
+} from '../runtime-exposure.js';
 import type { SmartObjectManifest } from '../scanner/types.js';
 import { getTestDatabase } from '../testing/database.js';
 import { generateSvelteKitRoutes } from '../vite-plugin/sveltekit-generator.js';
@@ -495,6 +499,8 @@ for (const type of ['sqlite', 'duckdb', 'postgres'] as const) {
       shared[key] = {
         records,
         createGeneratedCollectionAccess,
+        isRuntimeModelEnabled,
+        hasRuntimeExposureGate,
         normalizeTypedHttpError,
       };
       try {
@@ -569,7 +575,7 @@ for (const type of ['sqlite', 'duckdb', 'postgres'] as const) {
                     if (args.path === '@happyvertical/smrt-core')
                       return {
                         contents:
-                          'const host = globalThis[Symbol.for("smrt.issue3460.generated-route")]; export const createGeneratedCollectionAccess = host.createGeneratedCollectionAccess; export const normalizeTypedHttpError = host.normalizeTypedHttpError;',
+                          'const host = globalThis[Symbol.for("smrt.issue3460.generated-route")]; export const isRuntimeModelEnabled = host.isRuntimeModelEnabled; export const hasRuntimeExposureGate = host.hasRuntimeExposureGate; export const createGeneratedCollectionAccess = host.createGeneratedCollectionAccess; export const normalizeTypedHttpError = host.normalizeTypedHttpError;',
                         loader: 'js',
                       };
                     if (args.path.endsWith('smrt-register'))

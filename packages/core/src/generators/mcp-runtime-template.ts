@@ -387,6 +387,7 @@ import { existsSync } from 'node:fs';
 import { resolve } from 'node:path';
 import { pathToFileURL } from 'node:url';
 import { ObjectRegistry } from '@happyvertical/smrt-core';
+import { hasRuntimeExposureGate, isRuntimeModelEnabled, subscribeRuntimeExposure } from '@happyvertical/smrt-core';
 import { normalizeCustomActionFailure, SMRT_CUSTOM_ACTION_ERROR_METADATA_KEY } from '@happyvertical/smrt-core';
 import { loadConfig } from '@happyvertical/smrt-config';
 ${hasTaskActions ? "import { McpTaskStore, TaskRunner } from '@happyvertical/smrt-jobs';\n" : ''}
@@ -401,6 +402,15 @@ const DEBUG = ${debug};
 const TOOLS = ${toolsCode};
 const TOOL_LIST_CACHE_HINT = ${JSON.stringify(toolListCacheHint)};
 const TOOL_TARGETS: Record<string, { objectName: string; action: string; registryKey?: string }> = ${JSON.stringify(toolTargets)};
+function runtimeToolEnabled(name: string): boolean {
+  if (!hasRuntimeExposureGate()) return true;
+  const target = TOOL_TARGETS[name];
+  return !!target && isRuntimeModelEnabled(
+    ObjectRegistry.getExposureModel(target.registryKey || target.objectName),
+    { surface: 'mcp', tenantId: process.env.SMRT_MCP_TENANT_ID },
+  );
+}
+
 const CUSTOM_ACTIONS = ${JSON.stringify(customActions)};
 const TASK_ACTIONS = ${JSON.stringify(taskActions)};
 const STI_TARGETS: Record<string, Record<string, string>> = ${JSON.stringify(stiTargets)};
@@ -702,6 +712,7 @@ async function handleTaskExtensionMessage(message: any): Promise<any | null> {
   try {
     const { store } = await getTaskRuntime();
     if (action) {
+      if (!runtimeToolEnabled(params.name)) return jsonRpcError(message.id, -32602, 'Unknown tool');
       if (typeof params.arguments?.id !== 'string') {
         return jsonRpcError(message.id, -32602, 'Task-enabled custom actions require an id');
       }
@@ -829,14 +840,20 @@ ${
       },
       {
         capabilities: {
-          tools: {},
+          tools: { listChanged: true },
           ${hasTaskActions ? "extensions: { 'io.modelcontextprotocol/tasks': {} }," : ''}
         },
         cacheHints: {
-          'tools/list': TOOL_LIST_CACHE_HINT,
+          'tools/list': hasRuntimeExposureGate() ? { ttlMs: 0, cacheScope: 'private' } : TOOL_LIST_CACHE_HINT,
         },
       }
     );
+
+    const unsubscribeExposure = subscribeRuntimeExposure(() => {
+      void server.sendToolListChanged().catch(() => {});
+    });
+    const previousOnClose = server.onclose;
+    server.onclose = () => { unsubscribeExposure(); previousOnClose?.(); };
 
     // Register ListTools handler
     server.setRequestHandler('tools/list', async (_request: ListToolsRequest) => {
@@ -845,7 +862,7 @@ ${
       }
 
       return {
-        tools: [...TOOLS].sort((left, right) => left.name < right.name ? -1 : left.name > right.name ? 1 : 0),
+        tools: TOOLS.filter((tool) => runtimeToolEnabled(tool.name)).sort((left, right) => left.name < right.name ? -1 : left.name > right.name ? 1 : 0),
       };
     });
 
@@ -859,6 +876,7 @@ ${
       }
 
       try {
+        if (!runtimeToolEnabled(toolName)) throw new Error('Unknown tool');
         // Static switch statement for tool execution
         const runToolBody = async () => {
           switch (toolName) {

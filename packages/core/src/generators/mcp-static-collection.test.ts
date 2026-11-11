@@ -2,6 +2,7 @@ import { execFile } from 'node:child_process';
 import { mkdir, mkdtemp, rm, writeFile } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
+import { fileURLToPath } from 'node:url';
 import { promisify } from 'node:util';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { SmrtCollection } from '../collection.js';
@@ -220,6 +221,7 @@ describe('qualified manifest-backed MCP static collection actions (#4308)', () =
           'index.js': `class CollectionReceiver {
             static createQuestion(projectId, title) { return { projectId, title, receiver: this.name }; }
           }
+          export { hasRuntimeExposureGate, isRuntimeModelEnabled, subscribeRuntimeExposure } from ${JSON.stringify(fileURLToPath(new URL('../../dist/runtime-exposure.js', import.meta.url)))};
           export const ObjectRegistry = {
             loadAllManifests() {},
             async getCollection(key) { if (key !== ${JSON.stringify(KEY)}) throw new Error('Wrong identity'); return {}; },

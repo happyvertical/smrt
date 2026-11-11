@@ -24,6 +24,10 @@ import type {
   ApiSerializerReference,
   RegisteredClass,
 } from '../registry/types.js';
+import {
+  isRuntimeModelEnabled,
+  subscribeRuntimeExposure,
+} from '../runtime-exposure.js';
 import type { FieldDefinition, MethodDefinition } from '../scanner/types.js';
 import { resolveDisplayLabelField } from '../ui-metadata.js';
 import { isQualifiedName } from '../utils/qualified-names.js';
@@ -500,9 +504,12 @@ export class MCPGenerator {
     this.context = context;
   }
 
-  /**
-   * Get server name
-   */
+  /** Subscribe a protocol host to live catalog invalidations; unsubscribe on close. */
+  onToolsListChanged(listener: () => void): () => void {
+    return subscribeRuntimeExposure(listener);
+  }
+
+  /** Get server name. */
   get name(): string | undefined {
     return this.config.name;
   }
@@ -518,6 +525,19 @@ export class MCPGenerator {
    * Generate all available tools from registered objects
    */
   async generateTools(): Promise<MCPTool[]> {
+    const tools = await this.generateToolDefinitions();
+    return tools.filter((tool) =>
+      isRuntimeModelEnabled(
+        ObjectRegistry.getExposureModel(
+          this.toolTarget(tool).registryKey ?? this.toolTarget(tool).objectName,
+        ),
+        { surface: 'mcp', tenantId: this.context.tenantId },
+      ),
+    );
+  }
+
+  /** AOT superset, independent of the current cookbook. Never use as a runtime listing. */
+  async generateToolDefinitions(): Promise<MCPTool[]> {
     const tools: MCPTool[] = [];
     const registeredClasses = ObjectRegistry.getAllClasses();
     const scope = this.resolveClassScope(registeredClasses);
@@ -2226,7 +2246,7 @@ export class MCPGenerator {
       );
     } else {
       // Generate single-file server with static tools
-      const tools = await this.generateTools();
+      const tools = await this.generateToolDefinitions();
       const tenantScopedObjects = await this.tenantScopedObjectNames(tools);
       const hasTenantScopedTools =
         tenantScopedObjects.length > 0 ||
@@ -2469,7 +2489,7 @@ export class MCPGenerator {
     await writeGeneratedFile(configPath, configCode, language);
     console.log(`✅ Generated config: ${configPath}`);
 
-    const generatedTools = await this.generateTools();
+    const generatedTools = await this.generateToolDefinitions();
 
     // Generate tools module with tool definitions
     const toolsPath = resolve(toolsDir, `index${extension}`);
@@ -2554,7 +2574,7 @@ export const tools: Array<{
     indent: string = '    ',
     generatedTools?: MCPTool[],
   ): Promise<string> {
-    const tools = generatedTools ?? (await this.generateTools());
+    const tools = generatedTools ?? (await this.generateToolDefinitions());
 
     const switchCases = (
       await Promise.all(
@@ -2764,7 +2784,7 @@ ${indent}}`;
   private async generateHandlersFile(
     tenantScopedObjects: string[] = [],
   ): Promise<string> {
-    const tools = await this.generateTools();
+    const tools = await this.generateToolDefinitions();
     const switchCases = await this.generateToolSwitchCases('        ', tools);
     const stiTargets = this.runtimeStiTargets(tools);
     const toolTargets = this.runtimeToolTargets(tools);
@@ -2790,6 +2810,7 @@ ${indent}}`;
  */
 
 import { ObjectRegistry, normalizeCustomActionFailure, SMRT_CUSTOM_ACTION_ERROR_METADATA_KEY } from '@happyvertical/smrt-core';
+import { hasRuntimeExposureGate, isRuntimeModelEnabled } from '@happyvertical/smrt-core';
 ${hasTenantScoped ? "import { enableTenancy, runTenantScopedEntryPoint } from '@happyvertical/smrt-tenancy';\n" : ''}${
   hasTenantScoped
     ? `
@@ -2804,6 +2825,15 @@ const MCP_ALLOW_CROSS_TENANT = process.env.SMRT_MCP_ALLOW_CROSS_TENANT === 'true
 }
 
 const TOOL_TARGETS: Record<string, { objectName: string; action: string; registryKey?: string }> = ${JSON.stringify(toolTargets)};
+export function runtimeToolEnabled(name: string): boolean {
+  if (!hasRuntimeExposureGate()) return true;
+  const target = TOOL_TARGETS[name];
+  return !!target && isRuntimeModelEnabled(
+    ObjectRegistry.getExposureModel(target.registryKey || target.objectName),
+    { surface: 'mcp', tenantId: process.env.SMRT_MCP_TENANT_ID },
+  );
+}
+
 const PUBLIC_JSON_OPTIONS = {
   permissions: (process.env.SMRT_MCP_PERMISSIONS || '')
     .split(',')
@@ -2936,6 +2966,7 @@ export async function handleToolCall(
   aiConfig: any = {}
 ) {
   try {
+    if (!runtimeToolEnabled(name)) throw new Error('Unknown tool');
     const args = toolArguments;
 
     const runToolBody = async () => {
@@ -3004,7 +3035,8 @@ import { loadConfig } from '@happyvertical/smrt-config';
 
 import { SERVER_NAME, SERVER_VERSION, DEBUG } from './config${extension}';
 import { tools } from './tools/index${extension}';
-import { handleToolCall } from './handlers/index${extension}';
+import { handleToolCall, runtimeToolEnabled } from './handlers/index${extension}';
+import { hasRuntimeExposureGate, subscribeRuntimeExposure } from '@happyvertical/smrt-core';
 
 const TOOL_LIST_CACHE_HINT = ${JSON.stringify(toolListCacheHint)};
 
@@ -3040,13 +3072,19 @@ export async function createServer() {
       },
       {
         capabilities: {
-          tools: {},
+          tools: { listChanged: true },
         },
         cacheHints: {
-          'tools/list': TOOL_LIST_CACHE_HINT,
+          'tools/list': hasRuntimeExposureGate() ? { ttlMs: 0, cacheScope: 'private' } : TOOL_LIST_CACHE_HINT,
         },
       }
     );
+
+    const unsubscribeExposure = subscribeRuntimeExposure(() => {
+      void server.sendToolListChanged().catch(() => {});
+    });
+    const previousOnClose = server.onclose;
+    server.onclose = () => { unsubscribeExposure(); previousOnClose?.(); };
 
     // Register ListTools handler
     server.setRequestHandler('tools/list', async () => {
@@ -3055,7 +3093,7 @@ export async function createServer() {
       }
 
       return {
-        tools: [...tools].sort((left, right) => left.name < right.name ? -1 : left.name > right.name ? 1 : 0),
+        tools: tools.filter((tool) => runtimeToolEnabled(tool.name)).sort((left, right) => left.name < right.name ? -1 : left.name > right.name ? 1 : 0),
       };
     });
 

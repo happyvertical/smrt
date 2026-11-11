@@ -25,6 +25,10 @@ import type {
   RegisteredField,
   SmrtObjectConstructor,
 } from '../registry/types';
+import {
+  hasRuntimeExposureGate,
+  isRuntimeModelEnabled,
+} from '../runtime-exposure.js';
 import type {
   FieldDefinition,
   MethodDefinition,
@@ -131,6 +135,7 @@ export interface APIConfig {
 }
 
 export interface APIContext {
+  tenantId?: string;
   db?: unknown;
   ai?: unknown;
   user?: {
@@ -541,6 +546,15 @@ export class APIGenerator {
 
       const objectName = this.getCollectionObjectName(collection) || objectType;
 
+      if (
+        !isRuntimeModelEnabled(ObjectRegistry.getExposureModel(objectName), {
+          surface: 'rest',
+          tenantId: this.context.tenantId,
+          request: req,
+        })
+      ) {
+        return this.createErrorResponse(404, 'Not found');
+      }
       // Apply auth middleware if configured
       if (this.config.authMiddleware) {
         const authCheck = this.config.authMiddleware(
@@ -580,6 +594,15 @@ export class APIGenerator {
       );
     }
 
+    if (
+      !isRuntimeModelEnabled(classInfo, {
+        surface: 'rest',
+        tenantId: this.context.tenantId,
+        request: req,
+      })
+    ) {
+      return this.createErrorResponse(404, 'Not found');
+    }
     // Apply auth middleware if configured
     if (this.config.authMiddleware) {
       const authCheck = this.config.authMiddleware(
@@ -1518,13 +1541,28 @@ export class APIGenerator {
       // Same canonical-`collection` match as the CRUD path so a client and the
       // batch contract resolve identical segments (#1794).
       const info = this.findClassByCollectionSegment(objectSegment);
-      if (info) {
+      if (
+        info &&
+        isRuntimeModelEnabled(info, {
+          surface: 'rest',
+          tenantId: this.context.tenantId,
+          request: req,
+        })
+      ) {
         collection = await this.getCollection(info);
         objectName = info.name;
       }
     }
 
-    if (!collection || !objectName) {
+    if (
+      !collection ||
+      !objectName ||
+      !isRuntimeModelEnabled(ObjectRegistry.getExposureModel(objectName), {
+        surface: 'rest',
+        tenantId: this.context.tenantId,
+        request: req,
+      })
+    ) {
       return null;
     }
 
@@ -1693,6 +1731,7 @@ export class APIGenerator {
    * because the body varies by caller permissions.
    */
   private resolveReadCachePolicy(objectName: string | undefined): string {
+    if (hasRuntimeExposureGate()) return 'private, no-store';
     const config = objectName
       ? ObjectRegistry.getConfig(objectName)
       : undefined;

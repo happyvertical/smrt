@@ -18,6 +18,7 @@ import { SmrtCollection } from '../collection.js';
 import { clearManifestCache } from '../manifest/manifest-loader.js';
 import { SmrtObject } from '../object.js';
 import { ObjectRegistry, smrt } from '../registry.js';
+import { setRuntimeExposureGate } from '../runtime-exposure.js';
 import type { SmartObjectManifest } from '../scanner/types.js';
 import { snapshotObjectRegistryState } from '../test-utils.js';
 import { generateSvelteKitRoutes } from './sveltekit-generator.js';
@@ -174,6 +175,7 @@ function writeWorkspaceCoreShim(projectRoot: string): void {
   writeFileSync(
     join(packageDir, 'index.js'),
     [
+      `export { isRuntimeModelEnabled, hasRuntimeExposureGate } from ${JSON.stringify(fileURLToPath(new URL('../../dist/runtime-exposure.js', import.meta.url)))};`,
       'globalThis.__smrtGeneratedHelperCalls ??= [];',
       'globalThis.__smrtGeneratedHelperRegistrations ??= [];',
       'export const ObjectRegistry = {',
@@ -292,6 +294,7 @@ describe('generated SvelteKit helper runtime', () => {
   });
 
   afterEach(() => {
+    setRuntimeExposureGate(undefined);
     vi.restoreAllMocks();
     clearCache();
 
@@ -575,6 +578,43 @@ describe('generated SvelteKit helper runtime', () => {
         }),
       ],
     ]);
+  });
+
+  it('gates emitted routes per tenant before collection access, including public and stale URLs', async () => {
+    const route = await importGeneratedCollectionPost();
+    const create = vi.fn(async () => ({
+      toPublicJSON: () => ({ id: 'created' }),
+    }));
+    (globalThis as Record<string, unknown>).__smrtGeneratedRouteCollection = {
+      create,
+    };
+    let enabled = false;
+    setRuntimeExposureGate({
+      isEnabled: (model, context) =>
+        enabled &&
+        context.tenantId === 'a' &&
+        model.qualifiedName === '@test/generated-helper-app:Widget',
+    });
+    const call = (tenantId: string) =>
+      route.POST({
+        locals: {
+          tenantId,
+          permissions: ['widgets.create'],
+          user: { id: 'owner' },
+        },
+        request: new Request('http://fixture/api/widgets', {
+          method: 'POST',
+          body: '{}',
+        }),
+      });
+    await expect(call('a')).rejects.toMatchObject({ status: 404 });
+    expect(create).not.toHaveBeenCalled();
+    enabled = true;
+    expect((await call('a')).status).toBe(201);
+    await expect(call('b')).rejects.toMatchObject({ status: 404 });
+    enabled = false;
+    await expect(call('a')).rejects.toMatchObject({ status: 404 });
+    expect(create).toHaveBeenCalledOnce();
   });
 
   it('executes emitted POST routes with safe typed 4xx errors and opaque 5xx errors', async () => {
@@ -1095,7 +1135,7 @@ describe('generated SvelteKit helper runtime', () => {
       // a mocked factory. It must construct and initialize against this DB.
       writeFileSync(
         join(projectRoot, 'node_modules/@happyvertical/smrt-core/index.js'),
-        `export const { ObjectRegistry, createGeneratedCollectionAccess, normalizeCustomActionFailure, normalizeTypedHttpError, canonicalReadRepresentation, computeTableVersionEtag, getTableVersion, ifNoneMatchHasConcreteMatch, ifNoneMatchSatisfied } = globalThis.__smrt4320Core;`,
+        `export const { ObjectRegistry, isRuntimeModelEnabled, hasRuntimeExposureGate, createGeneratedCollectionAccess, normalizeCustomActionFailure, normalizeTypedHttpError, canonicalReadRepresentation, computeTableVersionEtag, getTableVersion, ifNoneMatchHasConcreteMatch, ifNoneMatchSatisfied } = globalThis.__smrt4320Core;`,
       );
       const objectFilePath = join(projectRoot, 'src/lib/objects/Widget.ts');
       writeFileSync(

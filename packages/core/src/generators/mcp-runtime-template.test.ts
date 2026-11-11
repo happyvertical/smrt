@@ -64,13 +64,13 @@ describe('generated MCP custom-action runtime (#2182)', () => {
     });
 
     expect(source).toContain(
-      "cacheHints: {\n          'tools/list': TOOL_LIST_CACHE_HINT,",
+      "cacheHints: {\n          'tools/list': hasRuntimeExposureGate() ? { ttlMs: 0, cacheScope: 'private' } : TOOL_LIST_CACHE_HINT,",
     );
     expect(source).toContain(
       'const TOOL_LIST_CACHE_HINT = {"ttlMs":86400000,"cacheScope":"private"};',
     );
     expect(source).toContain(
-      'tools: [...TOOLS].sort((left, right) => left.name < right.name ? -1 : left.name > right.name ? 1 : 0)',
+      'tools: TOOLS.filter((tool) => runtimeToolEnabled(tool.name)).sort((left, right) => left.name < right.name ? -1 : left.name > right.name ? 1 : 0)',
     );
   });
 

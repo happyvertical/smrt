@@ -625,6 +625,22 @@ function generateAuthGuardHelper(
   return `
 // Fail-closed authorization (#1540): generated routes require an authenticated
 // principal on \`locals\` unless explicitly marked \`@smrt({ api: { public } })\`.
+import { isRuntimeModelEnabled } from '@happyvertical/smrt-core';
+const RUNTIME_MODEL = ${JSON.stringify({
+    qualifiedName:
+      permissionObjectDef.qualifiedName ??
+      (permissionObjectDef.packageName
+        ? `${permissionObjectDef.packageName}:${permissionObjectDef.className}`
+        : undefined),
+    replacedQualifiedNames: manifest
+      ? Object.entries(manifest.objects)
+          .filter(
+            ([, candidate]) =>
+              candidate.replacedBy === permissionObjectDef.qualifiedName,
+          )
+          .map(([key]) => key)
+      : [],
+  })};
 const PUBLIC_ACCESS: boolean | 'read' = ${JSON.stringify(publicAccess)};
 const READ_PERMISSION_FIELDS: Array<[string, string]> = ${JSON.stringify(readPermissionFields)};
 // Operation permissions (#2977): mutating handlers require
@@ -654,6 +670,13 @@ function hasAuthenticatedPrincipal(locals: unknown): boolean {
 }
 
 function requireRouteAuth(locals: unknown, mutating: boolean): void {
+  const context = locals && typeof locals === 'object' ? locals as Record<string, unknown> : {};
+  const tenantContext = context.tenantContext && typeof context.tenantContext === 'object'
+    ? context.tenantContext as Record<string, unknown> : {};
+  const tenantId = context.tenantId ?? tenantContext.tenantId;
+  if (!isRuntimeModelEnabled(RUNTIME_MODEL, { surface: 'rest', locals, tenantId: typeof tenantId === 'string' ? tenantId : undefined })) {
+    throw error(404, 'Not found');
+  }
   if (PUBLIC_ACCESS === true) return;
   if (PUBLIC_ACCESS === 'read' && !mutating) return;
   if (!hasAuthenticatedPrincipal(locals)) {
@@ -3536,7 +3559,7 @@ ${serializerImports ? `${serializerImports}\n` : ''}${hasPost ? "import { normal
 ${modelType.importStatement ? `${modelType.importStatement}\n` : ''}import type { RequestHandler } from './$types';
 ${collectionAccessImports}
 // Note: ${className} is auto-registered by the Vite plugin scanner
-${generateAuthGuardHelper(objectDef, semanticManifest)}${needsRouteTenantContext(objectDef) ? generateTenantContextHelper(usesPrincipalContext(objectDef), isTenantScoped(objectDef)) : ''}${hasPost ? generateWritablePolicyHelper(objectDef) : ''}${hasPost ? generateTypedRouteErrorHelper() : ''}${hasGet ? generateListBoundsHelper(objectDef) : ''}${hasGet ? generateConditionalGetRouteHelper(objectDef.decoratorConfig?.api, { tenantScoped: isTenantScoped(objectDef), permissionScoped: listUsesPermissionScopedBody, modelName: className, useBodyHash: listUsesBodyHash, manifestHash: webManifestHash }) : ''}`;
+${generateAuthGuardHelper(objectDef, semanticManifest)}${needsRouteTenantContext(objectDef) ? generateTenantContextHelper(usesPrincipalContext(objectDef), isTenantScoped(objectDef)) : ''}${hasPost ? generateWritablePolicyHelper(objectDef) : ''}${hasPost ? generateTypedRouteErrorHelper() : ''}${hasGet ? generateListBoundsHelper(objectDef) : ''}${hasGet ? generateConditionalGetRouteHelper(objectDef.decoratorConfig?.api, { runtimeExposure: true, tenantScoped: isTenantScoped(objectDef), permissionScoped: listUsesPermissionScopedBody, modelName: className, useBodyHash: listUsesBodyHash, manifestHash: webManifestHash }) : ''}`;
 
   // #1782: tenant-scoped reads fail closed to global (NULL-tenant) rows when no
   // tenant context is active (public/anonymous read). Non-tenant models keep the
@@ -3727,7 +3750,7 @@ import { error${hasPut || hasDelete ? ', json' : ''} } from '@sveltejs/kit';
 ${serializerImports ? `${serializerImports}\n` : ''}${hasPut || hasDelete ? "import { normalizeTypedHttpError } from '@happyvertical/smrt-core';\n" : ''}
 ${modelType.importStatement ? `${modelType.importStatement}\n` : ''}import type { RequestHandler } from './$types';
 ${collectionAccessImports}
-${generateAuthGuardHelper(objectDef, semanticManifest)}${needsRouteTenantContext(objectDef) ? generateTenantContextHelper(usesPrincipalContext(objectDef), isTenantScoped(objectDef)) : ''}${hasPut ? generateWritablePolicyHelper(objectDef) : ''}${hasPut || hasDelete ? generateTypedRouteErrorHelper() : ''}${hasGet ? generateConditionalGetRouteHelper(objectDef.decoratorConfig?.api, { tenantScoped: isTenantScoped(objectDef), permissionScoped: getUsesPermissionScopedBody, modelName: className, useBodyHash: getUsesBodyHash, manifestHash: webManifestHash }) : ''}`;
+${generateAuthGuardHelper(objectDef, semanticManifest)}${needsRouteTenantContext(objectDef) ? generateTenantContextHelper(usesPrincipalContext(objectDef), isTenantScoped(objectDef)) : ''}${hasPut ? generateWritablePolicyHelper(objectDef) : ''}${hasPut || hasDelete ? generateTypedRouteErrorHelper() : ''}${hasGet ? generateConditionalGetRouteHelper(objectDef.decoratorConfig?.api, { runtimeExposure: true, tenantScoped: isTenantScoped(objectDef), permissionScoped: getUsesPermissionScopedBody, modelName: className, useBodyHash: getUsesBodyHash, manifestHash: webManifestHash }) : ''}`;
 
   // #1782: a tenant-scoped single read fails closed to global (NULL-tenant)
   // rows when no tenant context is active, so a public/anonymous GET /:id can't

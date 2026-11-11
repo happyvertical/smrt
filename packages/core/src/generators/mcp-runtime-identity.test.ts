@@ -21,6 +21,7 @@ import {
 } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
+import { fileURLToPath } from 'node:url';
 import { promisify } from 'node:util';
 import { afterAll, beforeAll, describe, expect, it } from 'vitest';
 import { SmrtObject } from '../object.js';
@@ -79,7 +80,8 @@ async function installRecordingRuntime(outputDirectory: string) {
       join(packages.core, 'index.js'),
       `export const resolved = [];
 const record = (kind, name) => resolved.push(kind + ':' + name);
-export const ObjectRegistry = {
+export { hasRuntimeExposureGate, isRuntimeModelEnabled, subscribeRuntimeExposure } from ${JSON.stringify(fileURLToPath(new URL('../../dist/runtime-exposure.js', import.meta.url)))};
+          export const ObjectRegistry = {
   loadAllManifests() {},
   async getCollection(name) {
     record('collection', name);

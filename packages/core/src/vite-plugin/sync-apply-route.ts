@@ -50,6 +50,7 @@ interface SyncTargetSpec {
    * simple name.
    */
   registryKey: string;
+  replacedQualifiedNames?: string[];
   /**
    * `<collection>` prefix of the `<collection>.<action>` operation permission
    * the mirrored generated write routes require (#2977) — the same
@@ -220,6 +221,9 @@ export function collectSyncApplyTargets(
     const target: SyncTargetSpec = {
       segment: objectDef.collection,
       registryKey: className,
+      replacedQualifiedNames: Object.entries(manifest.objects)
+        .filter(([, entry]) => entry.replacedBy === className)
+        .map(([key]) => key),
       permissionCollection: resolvePermissionCollection(objectDef),
       ops,
       readonlyFields: collectReadonlyFieldNames(objectDef),
@@ -239,6 +243,7 @@ function serializeTargets(targets: SyncTargetSpec[]): string {
   const entries = targets.map((target) => {
     const fields = [
       `registryKey: ${JSON.stringify(target.registryKey)}`,
+      `replacedQualifiedNames: ${JSON.stringify(target.replacedQualifiedNames ?? [])}`,
       `permissionCollection: ${JSON.stringify(target.permissionCollection)}`,
       `ops: ${JSON.stringify(target.ops)}`,
       `readonlyFields: ${JSON.stringify(target.readonlyFields)}`,
@@ -291,6 +296,7 @@ import {
   type SyncApplyOp,
   type SyncApplyTarget,
 } from '@happyvertical/smrt-core';
+import { isRuntimeModelEnabled } from '@happyvertical/smrt-core';
 import { json } from '@sveltejs/kit';
 import type { RequestHandler } from './$types';
 ${collectionAccessImports}
@@ -298,6 +304,7 @@ ${tenantHelper}
 interface SyncTargetConfig {
   /** Manifest registry key (may be package-qualified), as CRUD routes use. */
   registryKey: string;
+  replacedQualifiedNames?: string[];
   /** \`<collection>\` prefix of the required \`<collection>.<op>\` permission. */
   permissionCollection: string;
   ops: SyncApplyOp[];
@@ -374,6 +381,10 @@ ${anyTenantScoped ? '  establishTenantContext(locals);\n' : ''}
     resolveTarget: async (segment: string): Promise<SyncApplyTarget | null> => {
       const target = SYNC_TARGETS[segment];
       if (!target) return null;
+      const context = locals as Record<string, unknown>;
+      const nested = context.tenantContext && typeof context.tenantContext === 'object' ? context.tenantContext as Record<string, unknown> : {};
+      const tenant = context.tenantId ?? nested.tenantId;
+      if (!isRuntimeModelEnabled({ qualifiedName: target.registryKey, replacedQualifiedNames: target.replacedQualifiedNames }, { surface: 'rest', locals, tenantId: typeof tenant === 'string' ? tenant : undefined })) return null;
       // The verbatim manifest key, exactly as the generated CRUD routes pass
       // it — package-qualified keys stay qualified so same-simple-name
       // classes across packages resolve unambiguously.

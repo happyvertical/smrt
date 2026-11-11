@@ -2,6 +2,7 @@ import { execFile } from 'node:child_process';
 import { mkdir, mkdtemp, rm, writeFile } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
+import { fileURLToPath } from 'node:url';
 import { promisify } from 'node:util';
 import { describe, expect, it, vi } from 'vitest';
 import { SmrtObject } from '../object.js';
@@ -297,6 +298,7 @@ describe('canonical MCP tool identifiers (#3219)', () => {
           };
           // Generated lookups carry the registry key (#3490): '@pkg:Class'.
           const simple = (name) => name.slice(name.lastIndexOf(':') + 1);
+          export { hasRuntimeExposureGate, isRuntimeModelEnabled, subscribeRuntimeExposure } from ${JSON.stringify(fileURLToPath(new URL('../../dist/runtime-exposure.js', import.meta.url)))};
           export const ObjectRegistry = { loadAllManifests() {}, getClass(name) { if (!name.includes(':') || !classes[simple(name)]) throw Error('wrong class '+name); return {constructor: classes[simple(name)]}; }, async getCollection(name) {if(!name.includes(':') || !classes[simple(name)]) throw Error('wrong collection '+name); return {};} };
           export function normalizeCustomActionFailure() {}
           export const SMRT_CUSTOM_ACTION_ERROR_METADATA_KEY = 'smrt';
@@ -388,6 +390,7 @@ describe('canonical MCP tool identifiers (#3219)', () => {
         },
         '@happyvertical/smrt-core': {
           'index.js': `
+          export { hasRuntimeExposureGate, isRuntimeModelEnabled, subscribeRuntimeExposure } from ${JSON.stringify(fileURLToPath(new URL('../../dist/runtime-exposure.js', import.meta.url)))};
           export const ObjectRegistry = {
             loadAllManifests() {},
             getConfig() { return {}; },

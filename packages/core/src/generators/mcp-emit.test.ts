@@ -1,3 +1,4 @@
+import { fileURLToPath } from 'node:url';
 /**
  * Regression tests for the generated MCP server's emit language (#2279).
  *
@@ -84,7 +85,7 @@ async function installGeneratedServerRuntimeStubs(
     ),
     writeFile(
       join(serverPackage, 'index.js'),
-      'export class Server { handlers = new Map(); setRequestHandler(name, handler) { this.handlers.set(name, handler); } }\n',
+      'export class Server { handlers = new Map(); notifications = []; setRequestHandler(name, handler) { this.handlers.set(name, handler); } async sendToolListChanged() { this.notifications.push("notifications/tools/list_changed"); } }\n',
     ),
     writeFile(
       join(serverPackage, 'stdio.js'),
@@ -96,7 +97,7 @@ async function installGeneratedServerRuntimeStubs(
     ),
     writeFile(
       join(smrtPackage, 'index.js'),
-      "export const ObjectRegistry = { loadAllManifests() {} }; export function normalizeCustomActionFailure() {} export const SMRT_CUSTOM_ACTION_ERROR_METADATA_KEY = 'smrt';\n",
+      `export { hasRuntimeExposureGate, isRuntimeModelEnabled, subscribeRuntimeExposure } from ${JSON.stringify(fileURLToPath(new URL('../../dist/runtime-exposure.js', import.meta.url)))}; export const ObjectRegistry = { loadAllManifests() {} }; export function normalizeCustomActionFailure() {} export const SMRT_CUSTOM_ACTION_ERROR_METADATA_KEY = 'smrt';\n`,
     ),
     writeFile(
       join(configPackage, 'package.json'),
@@ -345,7 +346,7 @@ describe('MCPGenerator - generated output is runnable (#2279)', () => {
       },
     });
     delete tools[1].annotations;
-    vi.spyOn(generator, 'generateTools').mockResolvedValue(tools);
+    vi.spyOn(generator, 'generateToolDefinitions').mockResolvedValue(tools);
     const outputDir = join(
       tmpDir,
       modular ? 'metadata-modular' : 'metadata-single',
@@ -372,6 +373,62 @@ describe('MCPGenerator - generated output is runnable (#2279)', () => {
         a.name < b.name ? -1 : a.name > b.name ? 1 : 0,
       ),
     );
+  });
+
+  it.each([
+    false,
+    true,
+  ])('gates emitted catalogs and calls and emits list_changed without regeneration (modular=%s)', async (modular) => {
+    const outputDir = join(tmpDir, modular ? 'live-modular' : 'live-single');
+    const outputPath = join(outputDir, 'index.mjs');
+    await generator.generateServer({ outputPath, modular });
+    await installGeneratedServerRuntimeStubs(outputDir);
+    const rootStub = join(
+      outputDir,
+      'node_modules/@happyvertical/smrt-core/index.js',
+    );
+    await writeFile(
+      rootStub,
+      `${await readFile(rootStub, 'utf8')}\nObjectRegistry.getExposureModel = (name) => ({ qualifiedName: name });`,
+    );
+    const tool = (await generator.generateToolDefinitions())[0];
+    const gatePath = fileURLToPath(
+      new URL('../../dist/runtime-exposure.js', import.meta.url),
+    );
+    await writeFile(
+      join(outputDir, 'live-probe.mjs'),
+      `
+      import { createServer } from './index.mjs';
+      import { setRuntimeExposureGate, notifyRuntimeExposureChanged } from ${JSON.stringify(gatePath)};
+      let enabled = false;
+      setRuntimeExposureGate({ isEnabled: () => enabled });
+      const server = await createServer();
+      const list = () => server.handlers.get('tools/list')({});
+      const call = () => server.handlers.get('tools/call')({ params: { name: ${JSON.stringify(tool.name)}, arguments: {} } });
+      const before = (await list()).tools.length;
+      const refused = (await call()).isError;
+      enabled = true; notifyRuntimeExposureChanged();
+      const after = (await list()).tools.length;
+      enabled = false; notifyRuntimeExposureChanged();
+      const disabledAgain = (await list()).tools.length;
+      server.onclose(); notifyRuntimeExposureChanged();
+      console.log(JSON.stringify({ before, refused, after, disabledAgain, notifications: server.notifications }));
+    `,
+    );
+    const { stdout } = await execFileAsync(process.execPath, [
+      join(outputDir, 'live-probe.mjs'),
+    ]);
+    const result = JSON.parse(stdout.trim().split('\n').at(-1) ?? '{}');
+    expect(result).toMatchObject({
+      before: 0,
+      refused: true,
+      disabledAgain: 0,
+      notifications: [
+        'notifications/tools/list_changed',
+        'notifications/tools/list_changed',
+      ],
+    });
+    expect(result.after).toBeGreaterThan(0);
   });
 
   it('emits modular TypeScript with matching sibling specifiers', async () => {

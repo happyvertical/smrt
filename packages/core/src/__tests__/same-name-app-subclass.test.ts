@@ -4,6 +4,7 @@ import { ManifestAdapter, OxcScanner } from '@happyvertical/smrt-scanner';
 import { getDatabase } from '@happyvertical/sql';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { SmrtCollection } from '../collection';
+import { createCookbookEngine } from '../cookbook/engine/engine.js';
 import { foreignKey } from '../decorators';
 import { MCPGenerator } from '../generators/mcp';
 import { APIGenerator } from '../generators/rest';
@@ -14,6 +15,10 @@ import { collectStatementsFromDiff } from '../migrations/orchestrate';
 import { SmrtObject } from '../object';
 import { ObjectRegistry } from '../registry';
 import { createConsumerWorkspace } from '../registry/__tests__/helpers/consumer-workspace';
+import {
+  createCookbookRuntimeExposure,
+  setRuntimeExposureGate,
+} from '../runtime-exposure.js';
 import { ManifestGenerator } from '../scanner/manifest-generator';
 import type { SmartObjectManifest } from '../scanner/types';
 import { SchemaAggregator } from '../schema/schema-aggregator';
@@ -195,6 +200,7 @@ afterEach(async () => {
   db = undefined;
   process.chdir(cwd);
   ws.dispose();
+  setRuntimeExposureGate(undefined);
   restore();
 });
 
@@ -398,6 +404,67 @@ describe('same-name app subclass', () => {
     expect((await ObjectRegistry.getAllFields(`${UP}:Leaf`)).has('extra')).toBe(
       false,
     );
+  });
+
+  it('keeps the provider cookbook identity when gating an app replacement', async () => {
+    db = await getDatabase({ type: 'sqlite', url: ':memory:' });
+    const fixture = runtime(up, app);
+    const Item = fixture.AppCustomer;
+    if (!Item) throw new Error('App subclass fixture was not registered');
+    class AppCustomers extends SmrtCollection<InstanceType<typeof Item>> {
+      static readonly _itemClass = Item;
+    }
+    register(AppCustomers as unknown as typeof SmrtObject, app, 'Customers');
+    ObjectRegistry.registerCollection(`${APP}:Customers`, AppCustomers);
+    await migrate(merged);
+    const id = `${UP}:Customer`;
+    const catalog = {
+      models: [
+        { id, name: 'Customer', packageId: 'a2-upstream', exposed: true },
+      ],
+      recipes: [],
+    };
+    const engine = createCookbookEngine({ catalog });
+    const gate = createCookbookRuntimeExposure({
+      catalog,
+      engineFor: () => engine,
+    });
+    setRuntimeExposureGate(gate);
+    try {
+      const customers = await ObjectRegistry.getCollection(id, { db });
+      const api = new APIGenerator({ basePath: '/api' }, { db, tenantId: 'a' });
+      api.registerCollection('customers', customers);
+      const request = () =>
+        api.generateHandler()(new Request('http://fixture/api/customers'));
+      const mcp = new MCPGenerator(
+        { classNames: [`${APP}:Customer`] },
+        { db, tenantId: 'a' },
+      );
+      expect((await request()).status).toBe(404);
+      expect(await mcp.generateTools()).toEqual([]);
+      expect(
+        engine.run({ name: 'add_features', input: { ids: [id] } }).ok,
+      ).toBe(true);
+      expect((await request()).status).toBe(200);
+      expect(
+        ObjectRegistry.getExposureModel(`${APP}:Customers`)?.qualifiedName,
+      ).toBe(`${APP}:Customer`);
+      expect(
+        (
+          await new MCPGenerator(
+            { classNames: [`${APP}:Customers`] },
+            { tenantId: 'a' },
+          ).generateTools()
+        ).some((tool) => tool.name === 'customers_list'),
+      ).toBe(true);
+      expect(
+        (await mcp.generateTools()).some(
+          (tool) => tool.name === 'customer_list',
+        ),
+      ).toBe(true);
+    } finally {
+      gate.dispose();
+    }
   });
 
   it('migrates a custom column onto the existing upstream table and serves REST CRUD', async () => {
