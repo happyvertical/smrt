@@ -94,6 +94,7 @@ import {
 } from '@happyvertical/smrt-preferences';
 import { mountConnectAiRoutes } from '@happyvertical/smrt-svelte/connect-ai/server';
 import {
+  buildCookbookShell,
   type CookbookAppData,
   catalogFromManifests,
   readInstalledManifests,
@@ -105,7 +106,8 @@ import {
   RolePermissionCollection,
   registerPermissionDefinitions,
 } from '@happyvertical/smrt-users';
-import type { Handle, RequestEvent } from '@sveltejs/kit';
+import type { Handle, RequestEvent, ServerLoad } from '@sveltejs/kit';
+import { error, redirect } from '@sveltejs/kit';
 import { createCookbookOnboarding } from './onboarding.js';
 import { createCookbookHostState } from './state.js';
 
@@ -1363,5 +1365,56 @@ export function createCookbookHost(options: CookbookHostOptions) {
       setCookbookToolService(undefined);
       turns.clear();
     },
+  };
+}
+
+/** Mount the ordinary cookbook model page with the live session gate. */
+export async function loadCookbookModelPage({
+  params,
+  parent,
+  locals,
+  url,
+}: Parameters<ServerLoad>[0]) {
+  const session = locals as SmrtRuntimeLocals;
+  if (!session.user) redirect(303, '/setup');
+  const { cookbookApp } = (await parent()) as { cookbookApp?: CookbookAppData };
+  if (!cookbookApp) error(404, 'This app has no cookbook.');
+  const shell = buildCookbookShell({
+    cookbook: cookbookApp.cookbook,
+    catalog: cookbookApp.catalog,
+  });
+  const id = `item:${params.pkg}:${params.model}${params.key ? `:${params.key}` : ''}`;
+  const entry = shell.entries.get(id);
+  if (!entry) error(404, 'This page is not in your app.');
+  if (
+    !isRuntimeModelEnabled(ObjectRegistry.getExposureModel(entry.model.id), {
+      surface: 'screen',
+      tenantId: session.tenantId,
+    })
+  )
+    error(404, 'This page is not enabled.');
+  return {
+    recordId: url?.searchParams.get('record') ?? null,
+    referenceHrefs: Object.fromEntries(
+      [...shell.entries.values()]
+        .filter((candidate) => !candidate.filter)
+        .map((candidate) => [
+          ObjectRegistry.getClass(candidate.model.id)?.qualifiedName ??
+            candidate.model.id,
+          candidate.href.replace(/(.)\/$/, '$1'),
+        ]),
+    ),
+    entry: {
+      id: entry.id,
+      label: entry.label,
+      description: entry.description,
+      noun: entry.noun ?? null,
+      filter: entry.filter ?? null,
+      model:
+        ObjectRegistry.getClass(entry.model.id)?.qualifiedName ??
+        entry.model.id,
+      className: entry.model.name,
+    },
+    permissions: session.permissions,
   };
 }

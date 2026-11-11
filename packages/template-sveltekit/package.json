@@ -41,6 +41,10 @@
     "./host/InferenceSettingsPage.svelte": {
       "svelte": "./host/InferenceSettingsPage.svelte",
       "default": "./host/InferenceSettingsPage.svelte"
+    },
+    "./host/CookbookModelPage.svelte": {
+      "svelte": "./host/CookbookModelPage.svelte",
+      "default": "./host/CookbookModelPage.svelte"
     }
   },
   "smrt": {
@@ -57,7 +61,9 @@
     "mcp-apps-template",
     "dist",
     "agents",
-    "host/InferenceSettingsPage.svelte"
+    "host/InferenceSettingsPage.svelte",
+    "host/CookbookModelPage.svelte",
+    "cookbook-template"
   ],
   "keywords": [
     "smrt",

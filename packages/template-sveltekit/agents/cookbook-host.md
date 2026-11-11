@@ -244,3 +244,52 @@ All new execution cases use in-process SQLite, fake providers and existing CLI
 fixtures. Tricia's suites are run unchanged as downstream compatibility evidence.
 
 First-run onboarding: [composition and test contract](onboarding.md).
+## Apply-owned generation (D2)
+
+`host/generate` adds `prepareCookbookHost({root?,objectsDir?,collectionAliases?})`
+and `cookbookHostVite(options)`. The first composes the existing subclass,
+installed-manifest, consumer aggregation, STI separation and snapshot APIs;
+it writes immutable `.smrt/host-snapshots/<digest>.json` and `.smrt/host-options.json`. The second returns the normal
+core preset configured with that snapshot, the installed recipe exposure
+superset and `lazyActivation:true`. All provider models remain in the activation
+graph; only recipe models and explicit cookbook features are hosted as routes.
+User-owned feature identities do not get a second subclass.
+
+Core's `aliasHostedCollections(manifest, aliases?, hosted?)` resolves collection
+collisions in stable qualified-owner order; later owners receive a provider
+prefix. Explicit model-to-collection aliases override that policy. Collection
+classes follow their model. The original permission collection and storage table
+stay attached. Unsafe alias segments are refused. This is host URL policy;
+provider manifests are not mutated.
+
+Mount `loadCookbookModelPage` as the model route's load and
+`host/CookbookModelPage.svelte` with `data` and generated `collectionDefinitions`.
+The loader composes the session, enabled cookbook entry and effective identity;
+the component composes the existing RecipeScreens, entry source and reference
+adapters. Dynamic definitions are merged through the same live screen gate.
+
+The CLI's `cookbook-template/` overlay contains only ordinary app routes and
+presentation plus calls to these public services. Generic profile-capable
+`template/` remains the base. Local sign-in and settings use their original
+runtime/controllers. No new assistant, persistence model or record CRUD exists.
+
+D2 reuse: MCP package reviews covered CLI, core, template, profiles, commerce
+and content. `build_context` searched snapshot/namespace, recipe prerequisites,
+serializer defaults, source checkout and model-page composition; the intent
+index and owning sources (including UI, Svelte, chat and core) were searched by
+name and purpose. The configured MCP offers context/inventory tools, not
+standalone component/recipe/intent search endpoints.
+
+| New production paths | Existing implementation reused |
+| --- | --- |
+| `host/CookbookModelPage.svelte` | Extracted the existing product route's composition of RecipeScreens, createRecipeScreenEntry and createRecipeScreenReferences. No replacement screens or data source. |
+| `cookbook-template/src/**` (route and server mounts) | Existing D1 product mounts, createCookbookApplication, preference/settings controllers, CookbookApp/SectionPage, ConnectAi and approval card. The model route mounts the extracted component/loader. |
+| `cookbook-template/vite.config.ts` | New public cookbookHostVite over the existing core preset. |
+| `cookbook-template/.pnpmfile.cjs` | The CLI-owned checkout hook; returns config unchanged for published installation. |
+| `cli/scripts/source-checkout.cjs` | Moved the existing product checkout integration intact except enabling the published-config path. `rg SMRT_ROOT/local checkout/npm_execpath` found no existing source-link service; build forwarding reuses createPackageManagerRunner. |
+
+New test `template-sveltekit/__tests__/cookbookApply.test.ts` uses the existing
+apply engine and actual adapter Server with offline packages; it is not a new
+runtime or domain helper. ProfileIdentityRecipe extends SmrtRecipe in the
+existing profiles recipe file and reuses Profile/ProfileType; CustomersRecipe
+requires it without importing foreign models into commerce's recipe models.
