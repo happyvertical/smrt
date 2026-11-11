@@ -218,7 +218,12 @@
       "import": "./dist/cookbook/tools.js",
       "default": "./dist/cookbook/tools.js"
     },
-    "./cookbook/v1.schema.json": "./dist/cookbook/v1.schema.json"
+    "./cookbook/v1.schema.json": "./dist/cookbook/v1.schema.json",
+    "./app-models": {
+      "types": "./dist/app-models.d.ts",
+      "import": "./dist/app-models.js",
+      "default": "./dist/app-models.js"
+    }
   },
   "browser": {
     "./dist/host.js": "./dist/host.browser.js",

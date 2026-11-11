@@ -23,9 +23,9 @@ and method surfaces of a decorated class.
   tool passes declared parameters positionally; `registerRuntimeModel` wraps
   each function so it receives one object of those parameters (`this` is the
   record).
-- **The registry only adds.** Re-registering never removes a field and keeps
-  the first exposure config. A host that edits models builds a fresh registry
-  (worker or process) per definition.
+- **Additive refresh.** Default registration keeps the first exposure config.
+  Explicit `refresh: true` refreshes runtime metadata and validators; it never
+  drops storage. The [app model editor](app-models.md) owns versioned edits.
 - **Sync columns.** Entry columns include `_sync_origin_device_id` and
   `_sync_revision`; deletes read them.
 - **Tables are not created for you.** Run `planRuntimeModelDDL` output in the
@@ -98,51 +98,27 @@ migration differ/tracker owns transactions, ordering and migration records.
 The SQLite test uses this path, checks its tracking row and a no-op second
 migration, and exercises the generated REST handler without a listening server.
 
-### A4 application lifecycle is not implemented
+## Same-name replacement and versioned editing
 
-This API remains a trusted, low-level model-definition API. It is **not** the
-versioned editor for a person's fields/lists. In particular:
+Explicit `replaces: true` requires a registered same-name `extends` target.
+It follows the existing app replacement lineage, preserves the provider's real
+constructor/methods, tenancy and table (including CTI), and publishes the app's
+qualified identity as effective. Old provider identities resolve to it.
+Omitting `replaces` retains the coexistence behavior described above.
 
-- Runtime subclasses deliberately coexist with their parent; they do not take
-  the same-name app replacement path used by generated consumer manifests. A
-  default-named CTI parent and same-name runtime child can collide on their
-  physical table. A distinct table would not implement A4's app override.
-- Re-registration merges fields and retains the first exposure configuration.
-  It cannot implement rename/hide/remove/undo by overwriting a definition, and
-  a fresh registry in the serving process would invalidate unrelated users.
-- Runtime REST/MCP generators can read registered metadata. AOT SvelteKit
-  routes, web definitions, static CLI/tool definitions and the cookbook's
-  exposure catalog are separate generated artifacts. Registration does not
-  atomically refresh them or admit a new custom list through the live gate.
-- Cookbook v1's `policies` customize existing fields; `features` enable known
-  catalog models. Neither represents model definitions or source revisions.
-  Unknown-key preservation is not an authored customization contract. No new
-  cookbook field or parallel export format is introduced here.
+`registerRuntimeModel(def, { refresh: true, fieldValidators })` refreshes
+metadata for an existing runtime definition. Custom validators use the record's
+database executor; reference checks therefore retain transaction and tenant
+context. Registry generation invalidates collection field caches and live
+REST/MCP/CLI definitions.
 
-A complete editor needs one agreed portable cookbook/app-definition slot and a
-host activation protocol: persist a pending revision, generate the normal app
-subclass/model sources, regenerate all surfaces, migrate through the tracker,
-start an isolated candidate runtime, and only then publish its catalog and
-route the app to it. Failures must leave the old version serving and the pending
-revision recoverable. Removal should retain columns/data, with undo reactivating
-the prior definition; purge needs a separate explicit migration contract.
-That host protocol is not supplied by core's registry APIs. No end-to-end
-apply/reload latency, durable change log, restart recovery, tenant-safe editor,
-export/import or undo is claimed by these prerequisites.
+Use [`createAppModelEditor()`](app-models.md), exported from `./app-models`,
+for the person's versioned fields/lists. It supplies the cookbook source,
+tracked migrations, host-owned history, pending recovery, policy operations,
+manifest/web projections and publication readiness gate. Low-level registry
+registration alone still does not rewrite static route files or web modules.
 
-### Test design
-
-All executable cases here use in-process SQLite. No new persistence executor,
-authentication path or schema mutation API is introduced. PostgreSQL/DuckDB
-execution, production reloads and tenant-editor authorization are unverified.
-
-| Behavior / trigger | Positive case | Failure case | Context / executor | Edge / level | Validation |
-| --- | --- | --- | --- | --- | --- |
-| Define presentation | Runtime entry, registry and web field projection retain hints/display | Invalid widget/format/type and missing/reference display fields fail before registry mutation | Trusted app definition; no SQL | Manifest/public metadata; unit | core test |
-| Input ownership | Later caller edits do not mutate enum/model/field UI snapshots | Original values remain intact | Trusted app definition; no SQL | Definition boundary; unit | core test |
-| References | Scalar REST round trips, cross-package load, subclass reference back to app list; custom physical FK table | Missing/unqualified targets rejected | Fixture provider/app identities, one SQLite handle | REST, ORM, MCP/provider schema; integration | core test |
-| Migration ownership | Tracker records schema creation; repeated migration is empty | Manual drift must be refused by host (no host editor provided) | Same SQLite handle, normal migration tracker transaction | DDL/tracker; integration | core test |
-
-Executable coverage: `src/__tests__/runtime-model-presentation.test.ts` plus the
-existing `runtime-model.test.ts`. No existing test is weakened. The A4 lifecycle
-items above remain explicit design/implementation gaps, not passing test rows.
+Executable coverage: `src/__tests__/runtime-model.test.ts`,
+`runtime-model-presentation.test.ts`, `same-name-app-subclass.test.ts`,
+and `app-model-editor.test.ts`. All use in-process SQLite; PostgreSQL/DuckDB
+editor activation and packaged desktop behavior are unverified.
