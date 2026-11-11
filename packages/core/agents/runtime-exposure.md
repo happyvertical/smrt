@@ -396,3 +396,16 @@ exclusion or generated-file patch is needed. The activation generator's strict
 consumer fixture includes an empty same-name replacement with no collection
 export, plus a provider with specialized options; process tests still boot and
 recover the emitted JavaScript.
+
+Deferred local app imports use emitted `.js` specifiers even when their source is
+`.ts`; the existing source resolver maps them back for graph construction. This
+keeps generated registration valid under ordinary strict NodeNext consumers,
+without `allowImportingTsExtensions`. The strict consumer regression runs both
+JavaScript and TypeScript same-name app replacements with optional collection
+exports and specialized provider constructors. Built template hosts exercise the
+same emitted imports through Vite and plain-Node server boot.
+
+Host snapshot preparation reuses consumer-plugin's public `findInstalledPackageJson`
+to bind dependency source provenance to the actual installed owning package. A
+publisher checkout outside that package is not a host source, even when it happens
+to exist on the build machine. Workspace-linked providers retain source digests.

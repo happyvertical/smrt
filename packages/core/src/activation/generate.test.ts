@@ -186,13 +186,22 @@ describe('AOT activation generation', () => {
     ).toThrow(/Unresolved activation reference.*UNRESOLVED_CONSTANT/);
   });
 
-  it('typechecks deferred optional collection exports and specialized model constructors in a strict consumer', () => {
+  it.each([
+    'js',
+    'ts',
+  ])('typechecks deferred optional collection exports and specialized constructors with %s app source', (extension) => {
     const { files, manifest } = workspace();
     for (const name of ['Customer', 'Invoice', 'Unused']) {
       files.write(
         `node_modules/@activation/${name.toLowerCase()}/index.d.ts`,
         `import { SmrtObject } from '@happyvertical/smrt-core';
 export class ${name} extends SmrtObject { constructor(options?: { metrics?: string }); }`,
+      );
+    }
+    if (extension === 'ts') {
+      manifest.objects['@activation/app:Customer'].filePath = files.write(
+        'src/lib/objects/typed-customer.ts',
+        "import { Customer as Base } from '@activation/customer'; export class Customer extends Base {}",
       );
     }
     // Neither the provider nor the empty same-name app module exports this
@@ -205,6 +214,14 @@ export class ${name} extends SmrtObject { constructor(options?: { metrics?: stri
       projectRoot: files.root,
       outputDir: files.path('.smrt'),
     });
+    if (extension === 'ts') {
+      expect(generated.source).toContain(
+        'import("../src/lib/objects/typed-customer.js")',
+      );
+      expect(generated.source).not.toContain(
+        'import("../src/lib/objects/typed-customer.ts")',
+      );
+    }
     const source = files.write('.smrt/register.ts', generated.source);
     const checked = spawnSync(
       process.execPath,

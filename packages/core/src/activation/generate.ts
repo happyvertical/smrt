@@ -187,10 +187,11 @@ export function generateActivationRegistration(
         : undefined;
     let specifier = object.importPath ?? object.packageName;
     if (sourcePath) {
-      const path = relative(options.outputDir, sourcePath).replaceAll(
-        '\\',
-        '/',
-      );
+      // Author a normal emitted-JavaScript specifier. TypeScript and Vite
+      // resolve .js back to the local .ts source without a TS-extension flag.
+      const path = relative(options.outputDir, sourcePath)
+        .replaceAll('\\', '/')
+        .replace(/\.ts$/, '.js');
       specifier = path.startsWith('.') ? path : `./${path}`;
     }
     if (!specifier || (local && !sourcePath))

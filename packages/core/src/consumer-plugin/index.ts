@@ -147,7 +147,8 @@ function packageNameFromImportPath(importPath: string): string {
     : (parts[0] ?? importPath);
 }
 
-function findInstalledPackageJson(
+/** Resolve installed package metadata through the actual host/workspace links. */
+export function findInstalledPackageJson(
   packageName: string,
   searchFrom: string,
 ): string | undefined {
