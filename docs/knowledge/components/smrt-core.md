@@ -5,10 +5,10 @@ description: "Core SMRT framework for business objects, persistence, and generat
 status: "stable"
 generated:
   by: "smrt/scripts/generate-knowledge-okf.ts"
-  at: "2026-11-11T05:17:09Z"
+  at: "2026-11-11T05:25:58Z"
 audience: "internal"
 evidence_level: "source-inspected"
-source_revision: "sha256:3193f33ccb6affea1e7709fe6bfdfb53ab7590df12823978a68bcff936a84788"
+source_revision: "sha256:e07927ae8e29bc4dac84799de768697625ab3c5dd3d851bcae8fa1a730a90d14"
 sources:
   - id: "manifest"
     resource: "https://github.com/happyvertical/smrt/blob/main/packages/core/package.json"
@@ -80,15 +80,18 @@ sources:
     resource: "https://github.com/happyvertical/smrt/blob/main/packages/core/agents/run-once.md"
     title: "@happyvertical/smrt-core packages/core/agents/run-once.md"
   - id: "agents-23"
+    resource: "https://github.com/happyvertical/smrt/blob/main/packages/core/agents/runtime-exposure.md"
+    title: "@happyvertical/smrt-core packages/core/agents/runtime-exposure.md"
+  - id: "agents-24"
     resource: "https://github.com/happyvertical/smrt/blob/main/packages/core/agents/runtime-model.md"
     title: "@happyvertical/smrt-core packages/core/agents/runtime-model.md"
-  - id: "agents-24"
+  - id: "agents-25"
     resource: "https://github.com/happyvertical/smrt/blob/main/packages/core/agents/schema-paths.md"
     title: "@happyvertical/smrt-core packages/core/agents/schema-paths.md"
-  - id: "agents-25"
+  - id: "agents-26"
     resource: "https://github.com/happyvertical/smrt/blob/main/packages/core/agents/system-diagnostics.md"
     title: "@happyvertical/smrt-core packages/core/agents/system-diagnostics.md"
-  - id: "agents-26"
+  - id: "agents-27"
     resource: "https://github.com/happyvertical/smrt/blob/main/packages/core/agents/test-types.md"
     title: "@happyvertical/smrt-core packages/core/agents/test-types.md"
 ---
@@ -126,6 +129,7 @@ sources:
 - `packages/core/agents/registry-snapshot.md`
 - `packages/core/agents/revision-guard.md`
 - `packages/core/agents/run-once.md`
+- `packages/core/agents/runtime-exposure.md`
 - `packages/core/agents/runtime-model.md`
 - `packages/core/agents/schema-paths.md`
 - `packages/core/agents/system-diagnostics.md`
@@ -172,6 +176,7 @@ sources:
 - `./prebuild/cli`
 - `./recipe-demo`
 - `./runtime`
+- `./runtime-exposure`
 - `./scanner`
 - `./scanner/types`
 - `./schema`

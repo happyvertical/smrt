@@ -168,3 +168,19 @@ explicitly unimplemented.
 Commands: each touched package's `pnpm turbo run build --filter=<name>...`,
 `pnpm test`, `pnpm typecheck`; root `pnpm lint`, `pnpm format-check`,
 `pnpm knowledge:check --strict`. Existing tests remain unchanged in strength.
+
+## Integration interactions
+
+| Invariant | Positive / failure controls | Executor and level | Validation |
+| --- | --- | --- | --- |
+| Shared STI identity | Child-first registry, provider root or same-name app root; REST/MCP create the effective base only while enabled, disabling refuses and leaves rows unchanged | In-process SQLite; scanned A2 fixture; REST and MCP integration | core `pnpm test` |
+| Held manifest tool | Enabled delete is durably held; disable or unreadable cookbook before owner decision refuses without deleting; terminal saved refusal cannot replay | In-process SQLite; mounted chat routes, real principal and approval ledger | chat `pnpm test` |
+| Approval projection | Tenant owner and thread lists retain only the immutable public hold summary after disable; no args, recovery context, result or live model metadata | Same mounted routes | chat `pnpm test` |
+
+STI shared collection discovery keeps the effective base selected by the CRUD
+resolver; exposure resolves that same qualified base, including provider aliases
+replaced by an app. Explicit subtype declarations keep their own identities.
+Owner approvals re-enter `invokeManifestTool` with the original tenant and live
+exposure. A refused saved effect uses the existing terminal `failed` ledger state
+with `result.status: 'refused'` and a refused transcript outcome. Public approval
+lists expose only the originally saved summary, never current model details.

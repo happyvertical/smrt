@@ -36,7 +36,7 @@ const upstreamSource = `import { smrt, SmrtObject, foreignKey } from '@happyvert
 export class Customer extends SmrtObject { tenantId = ''; profileId = ''; title = ''; greeting() { return 'upstream'; } }
 @smrt({ tableName: 'a2_invoices', api: { public: true } })
 export class Invoice extends SmrtObject { @foreignKey(Customer) customerId = ''; }
-@smrt({ tableName: 'a2_profiles', tableStrategy: 'sti' })
+@smrt({ tableName: 'a2_profiles', tableStrategy: 'sti', api: true, mcp: true })
 export class Profile extends SmrtObject { title = ''; }
 @smrt({ api: false })
 export class Person extends Profile { firstName = ''; }
@@ -316,6 +316,127 @@ describe('same-name app subclass', () => {
         ).getItemClass(),
       ).toBe(f.AppProfile);
     } finally {
+      order.mockRestore();
+    }
+  });
+
+  it.each([
+    false,
+    true,
+  ])('agrees on gated STI collection ownership through REST and MCP with app replacement: %s', async (replacement) => {
+    const fixture = runtime(up, replacement ? app : undefined);
+    db = await getDatabase({ type: 'sqlite', url: ':memory:' });
+    await migrate(replacement ? merged : up);
+    const provider = `${UP}:Profile`;
+    const effective = `${replacement ? APP : UP}:Profile`;
+    const catalog = {
+      models: [
+        {
+          id: provider,
+          name: 'Profile',
+          packageId: 'a2-upstream',
+          exposed: true,
+        },
+      ],
+      recipes: [],
+    };
+    const engine = createCookbookEngine({ catalog });
+    const gate = createCookbookRuntimeExposure({
+      catalog,
+      engineFor: () => engine,
+    });
+    await ObjectRegistry.getCollection(`${UP}:Profile`, { db });
+    await ObjectRegistry.getCollection(`${UP}:Person`, { db });
+    const original = ObjectRegistry.getAllClasses();
+    const order = vi
+      .spyOn(ObjectRegistry, 'getAllClasses')
+      .mockReturnValue(
+        new Map(
+          [...original].sort(
+            (a, b) =>
+              Number(b[1].name === 'Person') - Number(a[1].name === 'Person'),
+          ),
+        ),
+      );
+    const observed: Array<string | undefined> = [];
+    setRuntimeExposureGate({
+      isEnabled(model, context) {
+        observed.push(model.qualifiedName);
+        return gate.isEnabled(model, context);
+      },
+    });
+    try {
+      expect(ObjectRegistry.getExposureModel(provider)?.qualifiedName).toBe(
+        effective,
+      );
+      const api = new APIGenerator(
+        { basePath: '/api', authMiddleware: () => async (req) => req },
+        {
+          db,
+          tenantId: 'a',
+          user: { id: 'test' },
+          permissions: ['profiles.create'],
+        },
+      ).generateHandler();
+      const request = () =>
+        api(
+          new Request('http://fixture/api/profiles', {
+            method: 'POST',
+            headers: { 'content-type': 'application/json' },
+            body: JSON.stringify({ title: 'Gated base' }),
+          }),
+        );
+      const mcp = new MCPGenerator(
+        { classNames: [effective] },
+        { db, tenantId: 'a', user: { id: 'test' } },
+      );
+      const call = () =>
+        mcp.handleToolCall({
+          method: 'tools/call',
+          params: {
+            name: 'profile_create',
+            arguments: { title: 'MCP gated base' },
+          },
+        });
+      const definitions = await mcp.generateToolDefinitions();
+      expect(definitions.some((tool) => tool.name === 'profile_create')).toBe(
+        true,
+      );
+      expect((await request()).status).toBe(404);
+      expect(await mcp.generateTools()).toEqual([]);
+      expect((await call()).isError).toBe(true);
+      expect(
+        engine.run({ name: 'add_features', input: { ids: [provider] } }).ok,
+      ).toBe(true);
+      expect((await request()).status).toBe(201);
+      expect(
+        (await mcp.generateTools()).some(
+          (tool) => tool.name === 'profile_create',
+        ),
+      ).toBe(true);
+      expect((await call()).isError).not.toBe(true);
+      expect(
+        (await db.query('SELECT _meta_type FROM a2_profiles')).rows,
+      ).toEqual([{ _meta_type: effective }, { _meta_type: effective }]);
+      expect(
+        (await ObjectRegistry.getCollection(provider, { db })).getItemClass(),
+      ).toBe(replacement ? fixture.AppProfile : fixture.Profile);
+      // Child-first discovery, registry exposure and MCP all check the effective base.
+      expect(new Set(observed)).toEqual(new Set([effective]));
+      expect(
+        engine.run({ name: 'remove_features', input: { ids: [provider] } }).ok,
+      ).toBe(true);
+      expect((await request()).status).toBe(404);
+      expect(await mcp.generateTools()).toEqual([]);
+      expect((await call()).isError).toBe(true);
+      expect(await mcp.generateToolDefinitions()).toEqual(definitions);
+      expect(
+        (await db.query('SELECT COUNT(*) AS count FROM a2_profiles')).rows[0]
+          .count,
+      ).toBe(2);
+    } finally {
+      setRuntimeExposureGate(undefined);
+      gate.dispose();
       order.mockRestore();
     }
   });
