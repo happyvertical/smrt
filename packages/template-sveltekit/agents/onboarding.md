@@ -14,6 +14,11 @@ API-key setup stays on the inference settings page; returning to onboarding
 refreshes ConnectAi status. Step headings receive focus; controls use shared
 primitives, translated messages and tokens; grids wrap on phones and use no motion.
 
+An unconfigured host renders chat's `AiUnavailableNotice` with its existing
+`unconfigured` reason and a Connect AI link. It does not mount AssistantDock,
+its composer/polling, or the tool-derived greeting until an engine is connected.
+Connected docks retain `aiSettingsHref` for a later unavailable response.
+
 `host/onboarding.ts` persists owner/tenant progress using SQLite CAS in a separate
 host system table. Its primary key is also the index for every query. Same-origin,
 bounded JSON POST accepts only known actions and a current revision. Owner
@@ -56,3 +61,13 @@ preview/approval/resume, settings/engine selection and cookbook nav labels.
 | `smrt-svelte/src/components/onboarding/client.ts` | Follows ConnectAi's bounded same-origin route transport; this endpoint has different action/revision semantics. |
 | `smrt-svelte/src/components/onboarding/types.ts` | Reuses AssistantApprovalView; defines only first-run progress/transport DTOs, not business models. |
 | `smrt-svelte/src/components/onboarding/index.ts`, `i18n/strings.onboarding.ts` | Existing export and defineMessages catalog patterns. |
+
+Integration rebase `c8a329c455`: retain the host's public source-alias table and
+Svelte runtime inference export; drop E2's duplicate generic alias commit.
+Regenerate knowledge from the full build. The real host tests now recreate the
+host between first-run apply and owner decision, prove Fresh closes REST/MCP and
+navigation, and activate a template before exercising effective app Profile STI
+creation, gated subtype refusal and Customer reference labels through REST.
+Customer intentionally publishes read-only MCP; the test preserves that boundary.
+The existing subclass, dispatcher and reference-picker implementations are reused.
+No new production helper or component was introduced in this follow-up.

@@ -1355,6 +1355,15 @@ describe('onboarding over real cookbook tools and owner ledger', () => {
     expect((await host.cookbookApp(tenantId)).cookbook.recipes).toEqual([
       'host.customers',
     ]);
+    const runtime = host.runtime;
+    host.dispose();
+    host = createCookbookHost({
+      runtime,
+      onboarding: true,
+      app: { cookbook, catalog },
+    });
+    await host.init();
+    expect((await read()).approvalId).toBe(progress.approvalId);
     const decision = await chat(`approvals/${progress.approvalId}/decide`, {
       approve: true,
     });
@@ -1363,6 +1372,126 @@ describe('onboarding over real cookbook tools and owner ledger', () => {
     expect(progress.completed).toBe(true);
     expect(progress.step).toBe('done');
     expect((await host.cookbookApp(tenantId)).cookbook.recipes).toEqual([]);
+    const rest = new APIGenerator(
+      { basePath: '/api', authMiddleware: () => async (req) => req },
+      { db, tenantId },
+    ).generateHandler();
+    expect(
+      (await request(event('/api/customers'), (e) => rest(e.request))).status,
+    ).toBe(404);
+    expect(
+      (await mcp()).body.result.tools.some((t: { name: string }) =>
+        /customer/.test(t.name),
+      ),
+    ).toBe(false);
+    const loaded = await host.load(event('/'));
+    expect(loaded.assistantIntroduction).toMatchObject({
+      configured: false,
+      lists: [],
+    });
+    expect(loaded.enabledModels).not.toContain(CUSTOMER);
+  });
+  it('onboarding template approval enables the effective app subclass, STI create and linked reference labels', async () => {
+    const runtime = host.runtime;
+    host.dispose();
+    host = createCookbookHost({
+      runtime,
+      onboarding: true,
+      app: {
+        cookbook: { ...cookbook, recipes: [] },
+        catalog: {
+          ...catalog,
+          cookbooks: [
+            {
+              id: 'customers-template',
+              name: 'Customer business',
+              document: cookbook,
+            },
+          ],
+        },
+      },
+    });
+    await host.init();
+    let progress = await (
+      await request(event('/api/onboarding'), host.onboarding)
+    ).json();
+    const advance = async (action: string, extra = {}) => {
+      const r = await request(
+        event('/api/onboarding', 'POST', {
+          action,
+          revision: progress.revision,
+          ...extra,
+        }),
+        host.onboarding,
+      );
+      expect(r.status).toBe(200);
+      progress = await r.json();
+    };
+    await advance('welcome');
+    await advance('skip');
+    await advance('preview', { id: 'customers-template' });
+    expect(progress.preview.after).toContain('Customers');
+    await advance('apply');
+    expect(progress.approval.status).toBe('pending');
+    expect(
+      (await chat(`approvals/${progress.approvalId}/decide`, { approve: true }))
+        .status,
+    ).toBe(200);
+    const profiles = await ObjectRegistry.getCollection(PROFILE, { db });
+    const before = await profiles.count();
+    const made = await mcp('tools/call', {
+      name: 'profile_create',
+      arguments: {
+        createType: '@fixture/host:Profile',
+        name: 'Onboarded Ada',
+        typeId: profileTypeId,
+      },
+    });
+    expect(made.body.result?.isError).not.toBe(true);
+    const rows = await profiles.list({ where: { name: 'Onboarded Ada' } });
+    expect(rows).toHaveLength(1);
+    expect(rows[0].constructor).toBe(Profile);
+    expect(
+      (
+        await mcp('tools/call', {
+          name: 'profile_create',
+          arguments: {
+            createType: '@happyvertical/smrt-profiles:Bot',
+            name: 'Gated Bot',
+            typeId: profileTypeId,
+          },
+        })
+      ).body.result?.isError,
+    ).toBe(true);
+    expect(await profiles.count()).toBe(before + 1);
+    const rest = new APIGenerator(
+      { basePath: '/api', authMiddleware: () => async (req) => req },
+      { db, tenantId },
+    ).generateHandler();
+    // Customer deliberately publishes read-only MCP; screens author through REST.
+    const customer = await request(
+      event('/api/customers', 'POST', { profileId: rows[0].id }),
+      (e) => rest(e.request),
+    );
+    expect(customer.status).toBe(201);
+    const referencePage = await request(event('/api/customers'), (e) =>
+      rest(e.request),
+    );
+    expect(referencePage.status).toBe(200);
+    expect(JSON.stringify(await referencePage.json())).toContain(
+      'Onboarded Ada',
+    );
+    const linked = await (
+      await ObjectRegistry.getCollection(CUSTOMER, { db })
+    ).list({ displayLabel: true });
+    expect(linked.map((row) => row.toJSON())).toEqual(
+      expect.arrayContaining([
+        expect.objectContaining({ displayLabel: 'Onboarded Ada' }),
+      ]),
+    );
+    const loaded = await host.load(event('/'));
+    expect(loaded.enabledModels).toContain('@fixture/host:Profile');
+    expect(loaded.enabledModels).not.toContain(PROFILE);
   });
   it('refuses a template write outside the session ceiling even when the live owner role grants it', async () => {
     permissions = permissions.filter((p) => p !== 'cookbook.apply');
