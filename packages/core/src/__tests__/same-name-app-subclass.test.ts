@@ -3,6 +3,13 @@ import { readFileSync } from 'node:fs';
 import { ManifestAdapter, OxcScanner } from '@happyvertical/smrt-scanner';
 import { getDatabase } from '@happyvertical/sql';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
+import {
+  screenRecordLabel,
+  screenReferenceTarget,
+} from '../../../smrt-svelte/src/components/screens/references.js';
+import { createRecipeScreenReferences } from '../../../smrt-svelte/src/components/screens/source.js';
+import { buildActivationManifest } from '../activation/generate.js';
+import { createActivationCoordinator } from '../activation.js';
 import { SmrtCollection } from '../collection';
 import { createCookbookEngine } from '../cookbook/engine/engine.js';
 import { foreignKey } from '../decorators';
@@ -26,6 +33,7 @@ import { SchemaAggregator } from '../schema/schema-aggregator';
 import { snapshotObjectRegistryState } from '../test-utils';
 import { generateSvelteKitRoutes } from '../vite-plugin/sveltekit-generator';
 import {
+  buildWebCollectionDefinition,
   buildWebMcpToolDefinitions,
   selectWebCollectionEntries,
 } from '../vite-plugin/web-collections';
@@ -233,6 +241,107 @@ async function migrate(manifest: SmartObjectManifest) {
 }
 
 describe('same-name app subclass', () => {
+  it('serves reference picker search and labels from the effective app model only after lazy activation', async () => {
+    runtime(up, app);
+    db = await getDatabase({
+      type: 'sqlite',
+      url: ':memory:',
+      __smrtSkipVitestSchemaPreparation: true,
+    } as Parameters<typeof getDatabase>[0]);
+    merged.objects[`${APP}:Customer`].displayLabelField = 'title';
+    const activation = createActivationCoordinator({
+      scope: ws.root,
+      db,
+      packageName: APP,
+      manifest: buildActivationManifest(
+        merged,
+        Object.fromEntries(
+          Object.keys(merged.objects).map((id) => [
+            id,
+            { specifier: id, models: [id], dependencies: [] },
+          ]),
+        ),
+      ),
+      loaders: Object.fromEntries(
+        Object.keys(merged.objects).map((id) => [id, async () => {}]),
+      ),
+      readEnabled: async () => [],
+    });
+    let components = true;
+    const catalog = {
+      models: [
+        {
+          id: `${UP}:Customer`,
+          name: 'Customer',
+          packageId: 'a2-upstream',
+          exposed: true,
+        },
+      ],
+      recipes: [],
+    };
+    const engine = createCookbookEngine({ catalog });
+    const gate = createCookbookRuntimeExposure({
+      catalog,
+      engineFor: () => engine,
+      predicate: () => components,
+    });
+    engine.run({ name: 'add_features', input: { ids: [`${UP}:Customer`] } });
+    setRuntimeExposureGate(activation.gate(gate));
+    await activation.boot();
+    const entries = selectWebCollectionEntries(merged);
+    const customerEntry = entries.find(
+      (entry) => entry.obj.qualifiedName === `${APP}:Customer`,
+    )!;
+    const invoiceEntry = entries.find(
+      (entry) => entry.obj.qualifiedName === `${UP}:Invoice`,
+    )!;
+    const customer = {
+      ...buildWebCollectionDefinition(customerEntry, merged),
+      endpoint: '/customers',
+    };
+    const invoice = buildWebCollectionDefinition(invoiceEntry, merged);
+    const handler = new APIGenerator(
+      { basePath: '/api' },
+      { db, tenantId: 'a' },
+    ).generateHandler();
+    const fetcher: typeof fetch = async (input, init) =>
+      handler(new Request(new URL(String(input), 'http://fixture'), init));
+    const references = createRecipeScreenReferences(
+      { customers: customer },
+      { fetch: fetcher },
+    );
+    const target = screenReferenceTarget(
+      invoice,
+      { name: 'customerId' },
+      references,
+    )!;
+    expect(target.definition.objectRef).toBe(`${APP}:Customer`);
+    await expect(
+      target.source.search!({ query: 'Maya', offset: 0, limit: 10 }),
+    ).rejects.toThrow();
+    // Invoice's FK closure activates the provider Customer and its app replacement.
+    await activation.activate([`${UP}:Invoice`]);
+    const customers = await ObjectRegistry.getCollection(`${UP}:Customer`, {
+      db,
+    });
+    const row = await customers.create({ title: 'Maya', favoritePose: 'tree' });
+    const page = await target.source.search!({
+      query: 'Maya',
+      offset: 0,
+      limit: 10,
+    });
+    expect(page.rows).toHaveLength(1);
+    expect(page.rows[0]).toMatchObject({ favoritePose: 'tree' });
+    expect(screenRecordLabel(target.definition, page.rows[0])).toBe('Maya');
+    expect(await target.source.get!(row.id!)).toMatchObject({
+      title: 'Maya',
+      favoritePose: 'tree',
+    });
+    components = false;
+    expect(await target.source.get!(row.id!)).toBeUndefined();
+    expect(activation.isReady(`${APP}:Customer`)).toBe(true);
+    gate.dispose();
+  });
   it('preserves upstream storage and columns for plain, STI and CTI replacements', () => {
     for (const [name, table, inherited] of [
       ['Customer', 'a2_customers', 'tenant_id'],
@@ -325,12 +434,43 @@ describe('same-name app subclass', () => {
   });
 
   it.each([
-    false,
-    true,
-  ])('agrees on gated STI collection ownership through REST and MCP with app replacement: %s', async (replacement) => {
+    { replacement: false, lazy: false },
+    { replacement: true, lazy: false },
+    { replacement: false, lazy: true },
+    { replacement: true, lazy: true },
+  ])('agrees on gated STI collection ownership through REST and MCP: %j', async ({
+    replacement,
+    lazy,
+  }) => {
     const fixture = runtime(up, replacement ? app : undefined);
-    db = await getDatabase({ type: 'sqlite', url: ':memory:' });
-    await migrate(replacement ? merged : up);
+    db = await getDatabase({
+      type: 'sqlite',
+      url: ':memory:',
+      __smrtSkipVitestSchemaPreparation: lazy,
+    } as Parameters<typeof getDatabase>[0]);
+    const manifest = replacement ? merged : up;
+    const activation = lazy
+      ? createActivationCoordinator({
+          scope: ws.root,
+          db,
+          packageName: APP,
+          manifest: buildActivationManifest(
+            manifest,
+            Object.fromEntries(
+              Object.keys(manifest.objects).map((id) => [
+                id,
+                { specifier: id, models: [id], dependencies: [] },
+              ]),
+            ),
+          ),
+          loaders: Object.fromEntries(
+            Object.keys(manifest.objects).map((id) => [id, async () => {}]),
+          ),
+          readEnabled: async () => [],
+        })
+      : undefined;
+    if (activation) await activation.boot();
+    else await migrate(manifest);
     const provider = `${UP}:Profile`;
     const effective = `${replacement ? APP : UP}:Profile`;
     const catalog = {
@@ -349,26 +489,32 @@ describe('same-name app subclass', () => {
       catalog,
       engineFor: () => engine,
     });
-    await ObjectRegistry.getCollection(`${UP}:Profile`, { db });
-    await ObjectRegistry.getCollection(`${UP}:Person`, { db });
-    const original = ObjectRegistry.getAllClasses();
+    if (!lazy) {
+      await ObjectRegistry.getCollection(`${UP}:Profile`, { db });
+      await ObjectRegistry.getCollection(`${UP}:Person`, { db });
+    }
+    const original = ObjectRegistry.getAllClasses.bind(ObjectRegistry);
     const order = vi
       .spyOn(ObjectRegistry, 'getAllClasses')
-      .mockReturnValue(
-        new Map(
-          [...original].sort(
-            (a, b) =>
-              Number(b[1].name === 'Person') - Number(a[1].name === 'Person'),
+      .mockImplementation(
+        () =>
+          new Map(
+            [...original()].sort(
+              (a, b) =>
+                Number(b[1].name === 'Person') - Number(a[1].name === 'Person'),
+            ),
           ),
-        ),
       );
     const observed: Array<string | undefined> = [];
-    setRuntimeExposureGate({
+    const observedGate = {
       isEnabled(model, context) {
         observed.push(model.qualifiedName);
         return gate.isEnabled(model, context);
       },
-    });
+    } satisfies import('../runtime-exposure.js').RuntimeExposureGate;
+    setRuntimeExposureGate(
+      activation ? activation.gate(observedGate) : observedGate,
+    );
     try {
       expect(ObjectRegistry.getExposureModel(provider)?.qualifiedName).toBe(
         effective,
@@ -412,6 +558,18 @@ describe('same-name app subclass', () => {
       expect(
         engine.run({ name: 'add_features', input: { ids: [provider] } }).ok,
       ).toBe(true);
+      if (activation) {
+        expect((await request()).status).toBe(404);
+        await activation.activate([provider]);
+        expect(activation.isReady(`${UP}:Person`)).toBe(true);
+        expect(
+          (
+            await db.query(
+              "SELECT name FROM sqlite_master WHERE type = 'table' AND name LIKE 'a2_%'",
+            )
+          ).rows,
+        ).toEqual([{ name: 'a2_profiles' }]);
+      }
       expect((await request()).status).toBe(201);
       expect(
         (await mcp.generateTools()).some(

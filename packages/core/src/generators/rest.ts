@@ -6,7 +6,7 @@
 
 import http from 'node:http';
 import { getTableVersion } from '../change-feed';
-import type { SmrtCollection } from '../collection';
+import type { SmrtCollection, SmrtCollectionOptions } from '../collection';
 import {
   isTenantScopedClassResolved,
   resolveDispatchTenantScope,
@@ -1591,16 +1591,18 @@ export class APIGenerator {
     classInfo: RegisteredClass,
   ): Promise<SmrtCollection<SmrtObject>> {
     if (!this.collections.has(classInfo.name)) {
-      // `collectionConstructor` is typed optional on RegisteredClass, but the
-      // auto-discovery path only reaches here for classes that declare one.
-      // Narrow to the non-optional constructor type before instantiating.
-      const ctor = classInfo.collectionConstructor as NonNullable<
-        RegisteredClass['collectionConstructor']
-      >;
-      const collection = new ctor({
-        ai: this.context.ai,
-        db: this.context.db,
-      });
+      // Lazy registration can publish a model before any collection has been
+      // requested. Reuse the registry's effective-identity/default factory.
+      const ctor = classInfo.collectionConstructor;
+      const options = { ai: this.context.ai, db: this.context.db };
+      const collection = ctor
+        ? new ctor(options)
+        : await ObjectRegistry.getCollection(
+            classInfo.qualifiedName ?? classInfo.name,
+            // APIContext accepts opaque host adapters, just like the explicit
+            // constructor above; normal collection initialization validates them.
+            options as SmrtCollectionOptions,
+          );
       // Await initialize() so the auto-discovered collection is actually usable
       // (its DB is wired). Without this, list()/get() throw "Database accessed
       // before initialization" — a latent bug that was masked while the
@@ -1608,7 +1610,7 @@ export class APIGenerator {
       // auto-discovery segment (#1794). The explicit-registerCollection() path
       // receives an already-initialized collection from the caller, so this
       // only affects the auto-discovery factory.
-      await collection.initialize();
+      if (ctor) await collection.initialize();
       this.collections.set(classInfo.name, collection);
     }
     const collection = this.collections.get(classInfo.name);
