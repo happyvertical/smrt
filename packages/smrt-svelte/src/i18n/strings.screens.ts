@@ -27,6 +27,8 @@ export const M = defineMessages({
   'ui.screens.no': 'No',
   'ui.screens.load_failed': 'Could not load this data.',
   'ui.screens.save_failed': 'Could not save your changes.',
+  'ui.screens.save_failed_reference':
+    'Could not save your changes. Reference: {requestId}.',
   'ui.screens.delete_failed': 'Could not delete this record.',
   'ui.screens.not_found': 'This record no longer exists.',
   'ui.screens.view_all': 'View all',

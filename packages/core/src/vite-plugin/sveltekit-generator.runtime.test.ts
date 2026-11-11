@@ -16,6 +16,7 @@ import { build } from 'esbuild';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { SmrtCollection } from '../collection.js';
 import { field } from '../decorators/index.js';
+import { reportUnexpectedHttpError } from '../generators/route-error';
 import { clearManifestCache } from '../manifest/manifest-loader.js';
 import { SmrtObject } from '../object.js';
 import { parseRestListWhere } from '../query-bounds.js';
@@ -221,6 +222,7 @@ function writeWorkspaceCoreShim(projectRoot: string): void {
           new URL('../generated-collection-access.ts', import.meta.url),
         ),
       )};`,
+      'export const reportUnexpectedHttpError = globalThis.__smrtGeneratedReportError;',
       'export function normalizeTypedHttpError(error) {',
       "  if (!error || typeof error !== 'object' || !Number.isInteger(error.status) || error.status < 400 || error.status > 499) return undefined;",
       "  const code = typeof error.code === 'string' ? error.code : error.status === 403 ? 'permission_denied' : 'request_rejected';",
@@ -254,6 +256,8 @@ describe('generated SvelteKit helper runtime', () => {
   let projectRoot = '';
 
   beforeEach(async () => {
+    (globalThis as Record<string, unknown>).__smrtGeneratedReportError =
+      reportUnexpectedHttpError;
     (globalThis as Record<string, unknown>).__smrtGeneratedHelperCalls = [];
     (globalThis as Record<string, unknown>).__smrtGeneratedHelperRegistrations =
       [];
@@ -301,6 +305,7 @@ describe('generated SvelteKit helper runtime', () => {
 
   afterEach(() => {
     setRuntimeExposureGate(undefined);
+    delete (globalThis as Record<string, unknown>).__smrtGeneratedReportError;
     vi.restoreAllMocks();
     clearCache();
 
@@ -825,6 +830,7 @@ describe('generated SvelteKit helper runtime', () => {
     expect(failed.status).toBe(500);
     await expect(failed.json()).resolves.toEqual({
       error: 'Internal server error',
+      requestId: expect.stringMatching(/^[0-9a-f-]{36}$/),
     });
   });
 
@@ -1114,6 +1120,9 @@ describe('generated SvelteKit helper runtime', () => {
     const denied = await route.DELETE({
       locals: { permissions: ['widgets.delete'], user: { id: 'user-1' } },
       params: { id: 'foreign-policy' },
+      request: new Request('http://localhost/api/widgets/foreign-policy', {
+        method: 'DELETE',
+      }),
     });
     expect(denied.status).toBe(403);
     await expect(denied.json()).resolves.toEqual({
@@ -1137,10 +1146,14 @@ describe('generated SvelteKit helper runtime', () => {
     const failed = await route.DELETE({
       locals: { permissions: ['widgets.delete'], user: { id: 'user-1' } },
       params: { id: 'foreign-policy' },
+      request: new Request('http://localhost/api/widgets/foreign-policy', {
+        method: 'DELETE',
+      }),
     });
     expect(failed.status).toBe(500);
     await expect(failed.json()).resolves.toEqual({
       error: 'Internal server error',
+      requestId: expect.stringMatching(/^[0-9a-f-]{36}$/),
     });
   });
 
@@ -1295,7 +1308,7 @@ describe('generated SvelteKit helper runtime', () => {
       // a mocked factory. It must construct and initialize against this DB.
       writeFileSync(
         join(projectRoot, 'node_modules/@happyvertical/smrt-core/index.js'),
-        `export const { ObjectRegistry, isRuntimeModelEnabled, hasRuntimeExposureGate, createGeneratedCollectionAccess, normalizeCustomActionFailure, normalizeTypedHttpError, canonicalReadRepresentation, computeTableVersionEtag, getTableVersion, ifNoneMatchHasConcreteMatch, ifNoneMatchSatisfied, parseRestListWhere } = globalThis.__smrt4320Core;`,
+        `export const { ObjectRegistry, isRuntimeModelEnabled, hasRuntimeExposureGate, createGeneratedCollectionAccess, normalizeCustomActionFailure, normalizeTypedHttpError, reportUnexpectedHttpError, canonicalReadRepresentation, computeTableVersionEtag, getTableVersion, ifNoneMatchHasConcreteMatch, ifNoneMatchSatisfied, parseRestListWhere } = globalThis.__smrt4320Core;`,
       );
       const objectFilePath = join(projectRoot, 'src/lib/objects/Widget.ts');
       writeFileSync(

@@ -78,6 +78,7 @@ import {
   PLAYBOOK_PREFLIGHT_ROUTE_SEGMENT,
   type PlaybookPreflightProvider,
 } from './preflight-route';
+import { reportUnexpectedHttpError } from './route-error';
 import { normalizeTypedHttpError } from './typed-http-error';
 
 export interface APIConfig {
@@ -452,7 +453,19 @@ export class APIGenerator {
    * Generate fetch handler function (for serverless environments)
    */
   generateHandler(): (req: Request) => Promise<Response> {
-    return (req) => this.handleRequest(req);
+    return async (req) => {
+      try {
+        return await this.handleRequest(req);
+      } catch (cause) {
+        const failure = normalizeTypedHttpError(cause);
+        if (failure)
+          return this.createJsonResponse({ error: failure }, failure.status);
+        return this.createJsonResponse(
+          reportUnexpectedHttpError(cause, req),
+          500,
+        );
+      }
+    };
   }
 
   /**
@@ -743,8 +756,10 @@ export class APIGenerator {
       if (failure) {
         return this.createJsonResponse({ error: failure }, failure.status);
       }
-      console.error('API Error:', error);
-      return this.createErrorResponse(500, 'Internal server error');
+      return this.createJsonResponse(
+        reportUnexpectedHttpError(error, req),
+        500,
+      );
     }
   }
 

@@ -31,6 +31,7 @@ import {
 import { useI18n } from '@happyvertical/smrt-ui/i18n';
 import { PageHeader } from '@happyvertical/smrt-ui/layout';
 import { Button, Disclosure } from '@happyvertical/smrt-ui/ui';
+import { SmrtWebRequestError } from '@happyvertical/smrt-web';
 import { untrack } from 'svelte';
 import { M } from '../../i18n/strings.screens.js';
 import { tryGetCookbookContext } from '../cookbook/context.js';
@@ -136,7 +137,7 @@ function initialDraft(): ScreenDraft {
 let draft = $state<ScreenDraft>(initialDraft());
 let localErrors = $state<Record<string, ScreenFieldErrorCode>>({});
 let hostErrors = $state<Record<string, string>>({});
-let failed = $state(false);
+let failed = $state<string | null>(null);
 let working = $state(false);
 let advancedOpen = $state(false);
 
@@ -154,7 +155,7 @@ $effect(() => {
     draft = initialDraft();
     localErrors = {};
     hostErrors = {};
-    failed = false;
+    failed = null;
   });
 });
 
@@ -189,7 +190,7 @@ function label(field: ScreenField): string {
 
 async function submit(): Promise<void> {
   if (working || submitting) return;
-  failed = false;
+  failed = null;
   hostErrors = {};
   const parsed = parseDraft(
     allFields.filter((f) => !isDerived(f) && !isReadOnly(f)),
@@ -225,17 +226,22 @@ async function submit(): Promise<void> {
         advancedOpen = true;
       }
     }
-  } catch {
-    failed = true;
+  } catch (cause) {
+    failed =
+      cause instanceof SmrtWebRequestError && cause.publicMessage
+        ? cause.publicMessage
+        : cause instanceof SmrtWebRequestError && cause.requestId
+          ? t(M['ui.screens.save_failed_reference'], {
+              requestId: cause.requestId,
+            })
+          : t(M['ui.screens.save_failed']);
   } finally {
     working = false;
   }
 }
 
 const busy = $derived(working || submitting);
-const formError = $derived(
-  error ?? (failed ? t(M['ui.screens.save_failed']) : null),
-);
+const formError = $derived(error ?? failed);
 </script>
 
 {#snippet control(field: ScreenField)}

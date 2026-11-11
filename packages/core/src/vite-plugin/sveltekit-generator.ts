@@ -3546,10 +3546,10 @@ function isLocalObject(
  */
 function generateTypedRouteErrorHelper(): string {
   return `
-function smrtRouteErrorResponse(cause: unknown) {
+function smrtRouteErrorResponse(cause: unknown, request: Request) {
   const failure = normalizeTypedHttpError(cause);
   if (failure) return json({ error: failure }, { status: failure.status });
-  return json({ error: 'Internal server error' }, { status: 500 });
+  return json(reportUnexpectedHttpError(cause, request), { status: 500 });
 }
 `;
 }
@@ -3605,7 +3605,7 @@ function generateCollectionRouteTemplate(
 
 import { error${hasPost ? ', json' : ''} } from '@sveltejs/kit';
 ${hasGet ? "import { parseRestListWhere } from '@happyvertical/smrt-core';\n" : ''}
-${serializerImports ? `${serializerImports}\n` : ''}${hasPost ? "import { ObjectRegistry, normalizeTypedHttpError } from '@happyvertical/smrt-core';\n" : ''}
+${serializerImports ? `${serializerImports}\n` : ''}${hasPost ? "import { ObjectRegistry, normalizeTypedHttpError, reportUnexpectedHttpError } from '@happyvertical/smrt-core';\n" : ''}
 ${modelType.importStatement ? `${modelType.importStatement}\n` : ''}import type { RequestHandler } from './$types';
 ${collectionAccessImports}
 // Note: ${className} is auto-registered by the Vite plugin scanner
@@ -3689,7 +3689,7 @@ ${
     return json(item.toPublicJSON(publicJsonOptions), { status: 201 });`
 }
   } catch (cause) {
-    return smrtRouteErrorResponse(cause);
+    return smrtRouteErrorResponse(cause, request);
   }
 };
 `
@@ -3800,7 +3800,7 @@ function generateItemRouteTemplate(
 // DO NOT EDIT - changes will be overwritten
 
 import { error${hasPut || hasDelete ? ', json' : ''} } from '@sveltejs/kit';
-${serializerImports ? `${serializerImports}\n` : ''}${hasPut || hasDelete ? "import { normalizeTypedHttpError } from '@happyvertical/smrt-core';\n" : ''}
+${serializerImports ? `${serializerImports}\n` : ''}${hasPut || hasDelete ? "import { normalizeTypedHttpError, reportUnexpectedHttpError } from '@happyvertical/smrt-core';\n" : ''}
 ${modelType.importStatement ? `${modelType.importStatement}\n` : ''}import type { RequestHandler } from './$types';
 ${collectionAccessImports}
 ${generateAuthGuardHelper(objectDef, semanticManifest)}${needsRouteTenantContext(objectDef) ? generateTenantContextHelper(usesPrincipalContext(objectDef), isTenantScoped(objectDef)) : ''}${hasPut ? generateWritablePolicyHelper(objectDef) : ''}${hasPut || hasDelete ? generateTypedRouteErrorHelper() : ''}${hasGet ? generateConditionalGetRouteHelper(objectDef.decoratorConfig?.api, { runtimeExposure: true, tenantScoped: isTenantScoped(objectDef), permissionScoped: getUsesPermissionScopedBody, modelName: className, useBodyHash: getUsesBodyHash, manifestHash: webManifestHash }) : ''}`;
@@ -3869,7 +3869,7 @@ ${generateNotFoundError(className)}
       await bound.save();
     });
   } catch (cause) {
-    return smrtRouteErrorResponse(cause);
+    return smrtRouteErrorResponse(cause, request);
   }
 ${
   serializers.itemSerializerName
@@ -3887,7 +3887,7 @@ ${
   const deleteHandler = hasDelete
     ? `
 // Delete ${simpleClassName.toLowerCase()}
-export const DELETE: RequestHandler = async ({ locals, params }) => {
+export const DELETE: RequestHandler = async ({ request, locals, params }) => {
 ${routeGuardPreamble(objectDef, true, 'delete')}
 ${generateCollectionLoad(className, { typeName: modelType.typeName })}
   const item = await collection.get(params.id);
@@ -3896,7 +3896,7 @@ ${generateNotFoundError(className)}
   try {
     await collection.delete(params.id);
   } catch (cause) {
-    return smrtRouteErrorResponse(cause);
+    return smrtRouteErrorResponse(cause, request);
   }
   return json({ success: true });
 };
@@ -3963,6 +3963,7 @@ function generateActionRouteTemplate(
   const coreImports = [
     'normalizeCustomActionFailure',
     'normalizeTypedHttpError',
+    'reportUnexpectedHttpError',
     ...[...decoderImports].sort(),
   ].join(', ');
   const usesCollection =
@@ -4088,8 +4089,8 @@ function generateActionRouteHandler(
     guardLines.push('  establishTenantContext(locals);');
   }
   const authGuardLine = guardLines.join('\n');
-  const hasInput = actionDef.parameters.length > 0;
-  const needsRequest = hasInput;
+  // Even input-free actions need request context for failure correlation.
+  const needsRequest = true;
   const collectionHandlerArgs = buildRouteHandlerArgs(
     routeConfig.pathParamNames.length > 0,
     needsRequest,
@@ -4138,7 +4139,7 @@ ${optionsLoad}${scopedOptions.source}  let result: unknown;
       invocationArgs,
     )};
   } catch (cause) {
-    return smrtRouteErrorResponse(cause);
+    return smrtRouteErrorResponse(cause, request);
   }
 
   const failure = normalizeCustomActionFailure(result);
@@ -4185,7 +4186,7 @@ ${optionsLoad}${scopedOptions.source}  const ClassRef = registered.constructor a
       invocationArgs,
     )};
   } catch (cause) {
-    return smrtRouteErrorResponse(cause);
+    return smrtRouteErrorResponse(cause, request);
   }
 
   const failure = normalizeCustomActionFailure(result);
@@ -4233,7 +4234,7 @@ ${optionsLoad}  let result: unknown;
       invocationArgs,
     )};
   } catch (cause) {
-    return smrtRouteErrorResponse(cause);
+    return smrtRouteErrorResponse(cause, request);
   }
 
   const failure = normalizeCustomActionFailure(result);

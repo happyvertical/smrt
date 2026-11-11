@@ -672,3 +672,21 @@ untouched, including on STI families; the four-path fixture reproduces that inpu
 Emitted SvelteKit POST tests also call the real registry API for provider/app
 families, check the exact receiver and child writable fields, and prove invalid
 or gated selectors never reach collection creation.
+
+## Unexpected HTTP failures
+
+Both emitted SvelteKit routes and `APIGenerator.generateHandler()` preserve
+typed 4xx failures. Other failures use the server-only
+`reportUnexpectedHttpError(cause, request)` export: the framework logger receives
+a fresh `requestId`, method, pathname and bounded, redacted Error cause chain.
+Request headers, query parameters, bodies and arbitrary thrown objects are not
+logged. The 500 body contains only `error: "Internal server error"` and that
+`requestId`. Keep this helper out of the browser-safe typed-error module.
+
+Reuse check: configured smrt-dev-mcp `review_smrt_project` (core, commerce,
+smrt-web, smrt-svelte), the intent index, and `rg` queries for route errors,
+correlation/request IDs, loggers, redaction, inline writes and template activation
+across core, chat, smrt-ui, smrt-svelte and config found no shared opaque HTTP
+reporter. New `src/generators/route-error.ts` composes the existing SDK logger,
+config secret redactor and core database URL redactor. Its test file exercises
+that helper; no duplicate logger, route, model or tool is introduced.

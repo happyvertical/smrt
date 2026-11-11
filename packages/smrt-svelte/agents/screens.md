@@ -425,3 +425,7 @@ overrides the derived singular label. Reference labels use the target cookbook
 entry; explicit field policy labels win. CookbookApp renders `chat.assistant`
 through its authenticated, host-bound assistant panel and never separately mounts
 the raw recipe component without its transport and registry.
+
+Save failures from `SmrtWebRequestError` display its safe typed `publicMessage`
+for 4xx responses. Unexpected failures display the generic save message with
+the server-created `requestId`; arbitrary server exception text stays hidden.

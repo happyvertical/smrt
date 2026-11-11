@@ -427,25 +427,31 @@ export interface SmrtCrudFetchers {
  * Raised when a generated-client call resolved with an error payload
  * (`{ error: string }` from the generated REST routes) or an unexpected shape.
  * Thrown inside a mutation handler, this triggers the automatic rollback of
- * optimistic state. HTTP 5xx failures are always opaque: their server payload
- * is neither parsed nor retained because it may contain internal detail.
+ * optimistic state. HTTP 5xx failures retain only a validated request reference; server detail
+ * is never retained because it may contain internal data.
  */
 export class SmrtWebRequestError extends Error {
   readonly payload: unknown;
   readonly status?: number;
   readonly code?: string;
+  readonly requestId?: string;
+  readonly publicMessage?: string;
 
   constructor(
     message: string,
     payload?: unknown,
     status?: number,
     code?: string,
+    requestId?: string,
+    publicMessage?: string,
   ) {
     super(message);
     this.name = 'SmrtWebRequestError';
     this.payload = payload;
     if (status !== undefined) this.status = status;
     if (code !== undefined) this.code = code;
+    if (requestId !== undefined) this.requestId = requestId;
+    if (publicMessage !== undefined) this.publicMessage = publicMessage;
   }
 }
 
@@ -472,10 +478,23 @@ function createHttpRequestError(
   // 5xx response bodies often expose exception messages, stack traces, or
   // upstream diagnostic payloads. The browser only gets a generic failure.
   if (status >= 500) {
+    const candidate =
+      payload && typeof payload === 'object'
+        ? (payload as Record<string, unknown>).requestId
+        : undefined;
+    const requestId =
+      typeof candidate === 'string' &&
+      /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i.test(
+        candidate,
+      )
+        ? candidate
+        : undefined;
     return new SmrtWebRequestError(
       `[smrt-web] ${collectionName} request failed: server error`,
       undefined,
       status,
+      undefined,
+      requestId,
     );
   }
   const detail = getWebErrorDetail(payload);
@@ -484,6 +503,8 @@ function createHttpRequestError(
     payload,
     status,
     detail.code,
+    undefined,
+    detail.code ? detail.message : undefined,
   );
 }
 
@@ -653,7 +674,7 @@ export function buildListQuery(params?: Record<string, unknown>): string {
  * scheme and payload handling as the generated REST client
  * (`basePath + endpoint`), with one improvement: HTTP error statuses reject
  * instead of resolving with them. Typed/legacy 4xx detail is retained; 5xx
- * failures stay opaque and payload-free.
+ * failures retain only a validated request reference and stay payload-free.
  */
 export function createDefinitionFetchers(
   definition: Pick<SmrtWebCollectionDefinition<object>, 'name' | 'endpoint'>,
@@ -665,9 +686,6 @@ export function createDefinitionFetchers(
 
   const parse = async (response: Response): Promise<unknown> => {
     if (!response.ok) {
-      if (response.status >= 500) {
-        throw createHttpRequestError(definition.name, response.status);
-      }
       const payload: unknown = await response.json().catch(() => null);
       throw createHttpRequestError(definition.name, response.status, payload);
     }
@@ -703,9 +721,6 @@ export function createDefinitionFetchers(
         headers,
       });
       if (!response.ok) {
-        if (response.status >= 500) {
-          throw createHttpRequestError(definition.name, response.status);
-        }
         const payload: unknown = await response.json().catch(() => null);
         throw createHttpRequestError(definition.name, response.status, payload);
       }
