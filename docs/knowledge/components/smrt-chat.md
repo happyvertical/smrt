@@ -5,10 +5,10 @@ description: "Chat rooms, DMs, threads, and agent conversations for the SMRT fra
 status: "stable"
 generated:
   by: "smrt/scripts/generate-knowledge-okf.ts"
-  at: "2026-11-11T06:07:57Z"
+  at: "2026-11-11T06:51:28Z"
 audience: "internal"
 evidence_level: "source-inspected"
-source_revision: "sha256:94d0a9fe270823334b85b9a91d6808a893a6b76e498a09e1ce8d668cb49f5112"
+source_revision: "sha256:10991a95a1227a3b3a2823db82fc98c40604351434b74f1363a49b44f7670109"
 sources:
   - id: "manifest"
     resource: "https://github.com/happyvertical/smrt/blob/main/packages/chat/package.json"
@@ -35,15 +35,21 @@ sources:
     resource: "https://github.com/happyvertical/smrt/blob/main/packages/chat/agents/recipes.md"
     title: "@happyvertical/smrt-chat packages/chat/agents/recipes.md"
   - id: "agents-8"
+    resource: "https://github.com/happyvertical/smrt/blob/main/packages/chat/agents/runtime-exposure.md"
+    title: "@happyvertical/smrt-chat packages/chat/agents/runtime-exposure.md"
+  - id: "agents-9"
+    resource: "https://github.com/happyvertical/smrt/blob/main/packages/chat/agents/runtime-report-tools.md"
+    title: "@happyvertical/smrt-chat packages/chat/agents/runtime-report-tools.md"
+  - id: "agents-10"
     resource: "https://github.com/happyvertical/smrt/blob/main/packages/chat/agents/token-streaming.md"
     title: "@happyvertical/smrt-chat packages/chat/agents/token-streaming.md"
-  - id: "agents-9"
+  - id: "agents-11"
     resource: "https://github.com/happyvertical/smrt/blob/main/packages/chat/agents/tool-loop.md"
     title: "@happyvertical/smrt-chat packages/chat/agents/tool-loop.md"
-  - id: "agents-10"
+  - id: "agents-12"
     resource: "https://github.com/happyvertical/smrt/blob/main/packages/chat/agents/tool-summaries.md"
     title: "@happyvertical/smrt-chat packages/chat/agents/tool-summaries.md"
-  - id: "agents-11"
+  - id: "agents-13"
     resource: "https://github.com/happyvertical/smrt/blob/main/packages/chat/agents/turn-drivers.md"
     title: "@happyvertical/smrt-chat packages/chat/agents/turn-drivers.md"
 ---
@@ -66,6 +72,8 @@ sources:
 - `packages/chat/agents/overview-tools.md`
 - `packages/chat/agents/owner-approvals.md`
 - `packages/chat/agents/recipes.md`
+- `packages/chat/agents/runtime-exposure.md`
+- `packages/chat/agents/runtime-report-tools.md`
 - `packages/chat/agents/token-streaming.md`
 - `packages/chat/agents/tool-loop.md`
 - `packages/chat/agents/tool-summaries.md`
