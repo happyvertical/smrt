@@ -103,6 +103,16 @@
       "import": "./dist/vite-plugin.js",
       "default": "./dist/vite-plugin.js"
     },
+    "./activation": {
+      "types": "./dist/activation.d.ts",
+      "import": "./dist/activation.js",
+      "default": "./dist/activation.js"
+    },
+    "./activation/generate": {
+      "types": "./dist/activation/generate.d.ts",
+      "import": "./dist/activation/generate.js",
+      "default": "./dist/activation/generate.js"
+    },
     "./runtime-exposure": {
       "types": "./dist/runtime-exposure.d.ts",
       "import": "./dist/runtime-exposure.js",
