@@ -2486,6 +2486,8 @@ declare module '@happyvertical/smrt-virt-web' {
     name: string;
     /** Canonical qualified model identity (\`@package/name:ClassName\`) for policy APIs. */
     objectRef: string;
+    /** Provider identities replaced by this effective app model. */
+    replacedQualifiedNames?: readonly string[];
     className: string;
     endpoint: string;
     idField: string;

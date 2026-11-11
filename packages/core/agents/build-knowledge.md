@@ -485,3 +485,13 @@ Regression gate: `consumer-plugin/load-resolve.test.ts` verifies installed
 manifest aggregation, typed output, SSR/client separation and a real Vite bundle
 whose initial chunk excludes the lazy component marker. The cookbook fixture in
 smrt-svelte exercises rendering and generic fallback without a host export map.
+
+## Cookbook policies with app replacements
+
+`buildWebCollectionDefinition` includes optional `replacedQualifiedNames`, using
+existing `modelReplacements` provenance. The same definition feeds runtime emission
+and cache hashing; producer and consumer declarations retain this optional metadata.
+Screen policy and recipe entry lookups accept only those proven provider identities,
+never a same-name guess. Canonical app policy rows override provider rows sparsely.
+The small declaration mirror in `src/prebuild/index.ts` changes with the producer
+interface; the runtime exposure/REST generators are unchanged.

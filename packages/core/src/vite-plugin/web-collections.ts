@@ -39,7 +39,10 @@ import {
   type ToolIdType,
   type ToolRouteDescriptor,
 } from '../generators/tool-schema.js';
-import { isReplacedModel } from '../manifest/model-replacements';
+import {
+  isReplacedModel,
+  modelReplacements,
+} from '../manifest/model-replacements';
 import { isFrameworkBaseClass } from '../registry/framework-base-classes.js';
 import { readFieldEnum } from '../registry/manifest-field-merge.js';
 import type {
@@ -942,6 +945,7 @@ export function buildWebCollectionDefinition(
 ): {
   name: string;
   objectRef: string;
+  replacedQualifiedNames?: string[];
   className: string;
   endpoint: string;
   idField: string;
@@ -951,9 +955,15 @@ export function buildWebCollectionDefinition(
   displayLabelField?: string;
   displayLabelProjection?: SmartObjectDefinition['displayLabelProjection'];
 } {
+  const objectRef = webCollectionObjectRef(manifest, entry.obj);
+  const replacedQualifiedNames = [...modelReplacements(manifest)]
+    .filter(([, target]) => target === objectRef)
+    .map(([source]) => source)
+    .sort(compareText);
   return {
     name: entry.collection,
-    objectRef: webCollectionObjectRef(manifest, entry.obj),
+    objectRef,
+    ...(replacedQualifiedNames.length ? { replacedQualifiedNames } : {}),
     className: entry.obj.className,
     endpoint: `/${entry.collection}`,
     idField: 'id',

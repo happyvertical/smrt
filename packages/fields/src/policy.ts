@@ -423,10 +423,33 @@ export function resolveFieldPolicyLayers(
   return { objectRef, fields, layers };
 }
 
+/** Select portable identity layers; effective app rows override provider rows sparsely. */
+export function cookbookPolicyLayers(
+  definition: { objectRef: string; replacedQualifiedNames?: readonly string[] },
+  cookbook: { policies: readonly (PolicyRow & { objectRef: string })[] },
+): PolicyRowLayer[] {
+  const aliases = new Set(definition.replacedQualifiedNames ?? []);
+  const rows = [
+    ...cookbook.policies.filter(
+      (row) =>
+        row.objectRef !== definition.objectRef && aliases.has(row.objectRef),
+    ),
+    ...cookbook.policies.filter(
+      (row) => row.objectRef === definition.objectRef,
+    ),
+  ];
+  return rows.map((row) => ({
+    layer: 'app',
+    validateDefaults: true,
+    rows: new Map([[row.fieldName, row]]),
+  }));
+}
+
 /** Resolve raw cookbook app rows over an already-public generated definition. */
 export function resolveCookbookFieldPolicy(
   definition: {
     objectRef: string;
+    replacedQualifiedNames?: readonly string[];
     fields: Readonly<Record<string, PolicyFieldDefinition>>;
   },
   cookbook: { policies: readonly (PolicyRow & { objectRef: string })[] },
@@ -449,17 +472,7 @@ export function resolveCookbookFieldPolicy(
           !getFieldReadPermission(field),
       ),
     ),
-    [
-      {
-        layer: 'app',
-        validateDefaults: true,
-        rows: new Map(
-          cookbook.policies
-            .filter((row) => row.objectRef === definition.objectRef)
-            .map((row) => [row.fieldName, row]),
-        ),
-      },
-    ],
+    cookbookPolicyLayers(definition, cookbook),
   );
 }
 

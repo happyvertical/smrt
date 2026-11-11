@@ -1,3 +1,4 @@
+import { ObjectRegistry } from '@happyvertical/smrt-core';
 import {
   assertTenantReadAllowed,
   getCurrentTenant,
@@ -8,7 +9,7 @@ import { getCachedFieldPolicy, setCachedFieldPolicy } from './cache.js';
 import { FieldPolicyCollection } from './collections/FieldPolicyCollection.js';
 import { getObjectFieldMap } from './field-definitions.js';
 import type { FieldPolicy } from './models/FieldPolicy.js';
-import { resolveFieldPolicyLayers } from './policy.js';
+import { cookbookPolicyLayers, resolveFieldPolicyLayers } from './policy.js';
 import type {
   ExplainedObjectFieldPolicy,
   FieldPolicyTenantHierarchyProvider,
@@ -125,20 +126,17 @@ export async function resolveFieldPolicyExplained(
         ([, row]) => !options.excludePolicyIds?.has(String(row.id)),
       ),
     );
+  const effectiveModel = ObjectRegistry.getExposureModel(objectRef);
   const explained = resolveFieldPolicyLayers(objectRef, fieldMap, [
     { layer: 'app', rows: included(appRows) },
     ...(options.cookbook
-      ? [
+      ? cookbookPolicyLayers(
           {
-            layer: 'app' as const,
-            validateDefaults: true,
-            rows: new Map(
-              options.cookbook.policies
-                .filter((row) => row.objectRef === objectRef)
-                .map((row) => [row.fieldName, row]),
-            ),
+            objectRef: effectiveModel?.qualifiedName ?? objectRef,
+            replacedQualifiedNames: effectiveModel?.replacedQualifiedNames,
           },
-        ]
+          options.cookbook,
+        )
       : []),
     ...survivingChain.map((node) => ({
       layer: 'tenant' as const,

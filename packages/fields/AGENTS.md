@@ -25,10 +25,7 @@ per-field `{defaultValue, visibility, help, label, order, locked}` for any
   (single-segment collection-scoped paths; multi-segment custom paths remain
   SvelteKit-only).
 - `resolveFieldPolicy(objectRef, { tenantId, userId, db })` — merged policy
-- `./policy` — browser-safe pure code seed/merge kernel, extracted from the
-  server resolver. `resolveCookbookFieldPolicy(definition, cookbook)` resolves
-  raw encoded app rows for generated public fields, including `readOnly` record
-  metadata; it imports neither registry, database, tenancy nor model runtime.
+- Portable cookbook policy resolution: [agents/cookbook-policy.md](agents/cookbook-policy.md).
 - `resolveFieldPolicyExplained(...)` — merged policy plus ordered per-layer
   contributions (code/app/tenant/user) for gear/admin UIs (#2049/#2050)
 
@@ -118,20 +115,6 @@ per-field `{defaultValue, visibility, help, label, order, locked}` for any
   the ambient one. An explicit value is never overwritten, so a super-admin
   bypass caller writing ANOTHER tenant's row must go through a server-side
   model call; the generated routes still strip it.
-
-## Portable cookbook rows
-
-`resolveFieldPolicy(objectRef, { cookbook, ...context })` inserts the active
-cookbook rows after stored app rows and before tenant/user tiers, using the same
-`resolveFieldPolicyLayers` kernel as `./policy`. It bypasses both cache reads and
-writes so switching cookbook documents never leaks a prior document's policy.
-Database authorization, surviving tenant-chain selection, org locks and the
-required-field safety net remain unchanged. Portable defaults use the existing
-field-type/security validation; invalid encoded JSON contributes no override.
-The browser boundary omits restricted/system metadata; the trusted server
-resolver still includes sensitive fields for its existing batch projection to
-filter. `readOnly` is portable record-value metadata, not a new database column
-and not the existing `locked` policy-customization flag.
 
 ## Caching and invalidation
 

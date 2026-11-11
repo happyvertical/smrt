@@ -13,7 +13,7 @@ import {
   withTenant,
 } from '@happyvertical/smrt-tenancy';
 import type { DatabaseInterface } from '@happyvertical/sql';
-import { afterEach, beforeEach, describe, expect, it } from 'vitest';
+import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { TenantCollection } from '../../users/src/index.js';
 import { clearFieldPolicyCache } from './cache.js';
 import { FieldPolicyCollection } from './collections/FieldPolicyCollection.js';
@@ -249,6 +249,102 @@ describe('resolveFieldPolicy', () => {
     expect(changed.fields.summary).toMatchObject({
       defaultValue: 'EUR',
       readOnly: false,
+    });
+  });
+
+  it('uses the live effective identity provenance for server cookbook rows', async () => {
+    const alias = '@test/provider:Doc';
+    const provenance = vi
+      .spyOn(ObjectRegistry, 'getExposureModel')
+      .mockReturnValue({
+        ...ObjectRegistry.getClassByQualifiedName(objectRef)!,
+        replacedQualifiedNames: [alias],
+      });
+    try {
+      const cookbook = {
+        policies: [
+          {
+            objectRef: alias,
+            fieldName: 'summary',
+            label: 'Provider label',
+            readOnly: true,
+            defaultValue: '"USD"',
+          },
+          { objectRef, fieldName: 'summary', label: 'App label' },
+        ],
+      };
+      const server = await resolveFieldPolicy(objectRef, { cookbook });
+      const browser = resolveCookbookFieldPolicy(
+        {
+          objectRef,
+          replacedQualifiedNames: [alias],
+          fields: {
+            summary: {
+              type: 'text',
+              default: '',
+              ui: { basic: true, group: 'main', order: 2 },
+            },
+          },
+        },
+        cookbook,
+      );
+      expect(server.fields.summary).toEqual(browser.fields.summary);
+      expect(server.fields.summary).toMatchObject({
+        label: 'App label',
+        readOnly: true,
+        defaultValue: 'USD',
+      });
+    } finally {
+      provenance.mockRestore();
+    }
+  });
+
+  it('merges only proven provider identities, with sparse effective-app overrides', () => {
+    const definition = {
+      objectRef: '@test/app:Doc',
+      replacedQualifiedNames: [objectRef],
+      fields: { summary: { type: 'text', default: '' } },
+    };
+    const cookbook = {
+      policies: [
+        {
+          objectRef: definition.objectRef,
+          fieldName: 'summary',
+          label: 'App label',
+          readOnly: false,
+        },
+        {
+          objectRef,
+          fieldName: 'summary',
+          label: 'Provider label',
+          visibility: 'hidden' as const,
+          defaultValue: '"preserved"',
+          readOnly: true,
+        },
+        {
+          objectRef: '@other/package:Doc',
+          fieldName: 'summary',
+          defaultValue: '"WRONG"',
+        },
+      ],
+    };
+    expect(
+      resolveCookbookFieldPolicy(definition, cookbook).fields.summary,
+    ).toMatchObject({
+      visibility: 'hidden',
+      label: 'App label',
+      defaultValue: 'preserved',
+      readOnly: false,
+    });
+    expect(
+      resolveCookbookFieldPolicy(
+        { ...definition, replacedQualifiedNames: [] },
+        cookbook,
+      ).fields.summary,
+    ).toMatchObject({
+      visibility: 'basic',
+      label: 'App label',
+      defaultValue: '',
     });
   });
 
