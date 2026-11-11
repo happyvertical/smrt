@@ -7,6 +7,8 @@ import EditForm from '../EditForm.svelte';
 import ListScreen from '../ListScreen.svelte';
 import RecipeScreens from '../RecipeScreens.svelte';
 import RecordScreen from '../RecordScreen.svelte';
+import { screenReferenceTarget } from '../references.js';
+import { deriveScreenRelations } from '../relations.js';
 import { deriveFieldRoles } from '../roles.js';
 import {
   createRecipeScreenReferences,
@@ -75,6 +77,30 @@ function mockReferences() {
 }
 
 describe('named screen references', () => {
+  it('shares collection-key and model-name lookup with the existing relation derivation', () => {
+    const { references } = mockReferences();
+    const target = references.people;
+    const aliased = { exposedPeople: target };
+    expect(
+      screenReferenceTarget(definition, { name: 'customerId' }, aliased),
+    ).toBe(target);
+    expect(
+      deriveScreenRelations(
+        { orders: definition, exposedPeople: people },
+        definition.objectRef,
+      ).find(
+        (relation) =>
+          relation.field === 'customerId' && relation.kind === 'reference',
+      )?.model,
+    ).toBe(people.objectRef);
+    expect(
+      screenReferenceTarget(definition, { name: 'missingId' }, aliased),
+    ).toBeUndefined();
+    expect(
+      screenReferenceTarget(definition, { name: 'customerId' }, {}),
+    ).toBeUndefined();
+  });
+
   it('uses the manifest display field as the record title role', () => {
     expect(
       deriveFieldRoles({

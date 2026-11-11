@@ -1,4 +1,5 @@
 /** Shared reference resolution: identities come from edges, names from owning-model metadata. */
+import { targetOf } from './relations.js';
 import type {
   ScreenCollectionDefinition,
   ScreenField,
@@ -18,12 +19,7 @@ export function screenReferenceTarget(
       (edge.kind === 'foreignKey' || edge.kind === 'crossPackageRef'),
   );
   if (!edge) return undefined;
-  return (
-    references[edge.relatedCollection] ??
-    Object.values(references).find(
-      (target) => target.definition.name === edge.relatedCollection,
-    )
-  );
+  return targetOf(references, edge.relatedCollection);
 }
 
 /** No screen-specific name/title heuristics: the manifest has already resolved the label. */

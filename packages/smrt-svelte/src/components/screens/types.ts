@@ -1,3 +1,4 @@
+import type { DataQueryOffsetPage } from '@happyvertical/smrt-types';
 import type { Snippet } from 'svelte';
 import type { WidgetRegistry } from '../overview/registry.js';
 import type {
@@ -214,10 +215,9 @@ export interface RecipeScreensSource {
 }
 
 /** Bounded display-name search of a target collection. */
-export interface ScreenSearchRequest {
+export interface ScreenSearchRequest
+  extends Pick<DataQueryOffsetPage, 'offset' | 'limit'> {
   query: string;
-  offset: number;
-  limit: number;
 }
 
 export interface ScreenSearchPage {

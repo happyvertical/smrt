@@ -282,3 +282,40 @@ serialization and name filtering/pagination, preserving permission and tenant
 boundaries. Commerce can then declare that projection once for `profileId` →
 Profile's display name and add its integration test. No copied-name column or
 screen-specific Customer lookup has been introduced.
+
+## Reuse audit (B1)
+
+Audited the five B1 commits against base `06c0b64fe3`, using Node 26.12.1.
+The added production files are `ReferencePicker.svelte`, `references.ts`,
+`reference-labels.svelte.ts`, and `source.ts`; the fifth added file,
+`__tests__/references.test.ts`, is test-only. New public types in the existing
+`types.ts` are `ScreenSearchRequest`, `ScreenSearchPage`,
+`ScreenReferenceSource`, and `ScreenReferenceSources`; `ReferencePicker.Props`
+is component-local. `RelationInput.more` extends the existing primitive.
+No model, route, or tool was introduced.
+
+The configured smrt-dev-mcp server was available. Ran
+`review-smrt-project` with duplicate detection and source evidence on core,
+smrt-ui, smrt-web, and smrt-svelte; its findings do not identify these additions.
+Used `build-context` architecture queries for the exact names plus their
+purposes (reference picker; display-name/target resolution; bounded REST
+source; search/reference types), `build-package-specialist-context` for
+smrt-ui, smrt-svelte, smrt-web, core, chat, and commerce, and
+`introspect-project` for the commerce model inventory. This server exposes
+context/introspection tools rather than a separate component-search tool.
+Read `docs/knowledge/intents/index.md`. Verified candidates with `rg` by both
+symbol and purpose across those packages, profiles, types, and planner, plus a
+workspace-wide search for record-label/display-label helpers.
+
+| Addition | Searches and existing candidate | Decision |
+| --- | --- | --- |
+| `ReferencePicker.svelte` (including its options/page/search/resolve handlers and Props) | MCP picker context; `rg` ReferencePicker/RelationInput/selector/picker/search/hasMore. Read smrt-ui RelationInput/Combobox, commerce PartySelect/CustomerSelect/VendorSelect, planner RelationField, chat ModelPicker. | Keep the manifest/source adapter over RelationInput. PartySelect requires commerce DTOs; planner RelationField requires its catalog, recipe state, preview source, and nested forms; ModelPicker selects inference models. No other live, metadata-driven paged adapter exists. |
+| `references.ts` (screenReferenceTarget, screenRecordLabel, screenReferenceId) | MCP naming context; `rg` targetOf/relatedCollection/displayLabelField/recordLabel/displayLabel/idOf. Read screens relations.ts, core ui-metadata.ts, planner display.ts/labels.ts, and palette rowTitle. | Reuse the existing targetOf resolver, extended to reference-source maps. Keep the strict resolved-metadata value reader and scalar ID guard: planner/palette helpers guess fallback fields or IDs; core resolves field metadata, not row values; RecipeScreens.idOf is component-bound and accepts broader values. |
+| `reference-labels.svelte.ts` (useScreenReferenceLabels) | MCP naming/source contexts; `rg` relationLabels/cache/dedup/stale/resolveLabel. Read planner relationLabels, smrt-web createSmrtWebQuery/createSmrtWebClient, and Svelte remoteQuery. | Keep snapshot binding to arbitrary source.get. Planner traverses its sample catalog recursively; remoteQuery needs a collection and the canonical query protocol. Neither binds per-field labels to this transport-neutral source. Coalescing lasts only for the current snapshot. |
+| `source.ts` (createRecipeScreensSource, createRecipeScreenReferences) | MCP source context; `rg` createDefinitionFetchers/unwrapListResult/createCollectionImportExport/defaultSearchRows/paging. | Already reuses smrt-web fetchers and envelope/error helpers. Import/export accumulates entire exports; palette search returns ranked navigation items without paging. Keep the small screen-source adapter. |
+| `types.ts` additions | MCP type context; `rg` DataQueryOffsetPage/SmrtWebQueryPage/RelationOption/SearchRequest/ReferenceSource. | Derive ScreenSearchRequest bounds from DataQueryOffsetPage. Keep the source map and minimal page contracts; full query results require protocol metadata, while RelationOption is the existing control's ID/label DTO. |
+| `__tests__/references.test.ts` (mockReferences) | Existing screen fixtures and smrt-ui test-support setup/a11y; `rg` mockReferences and component golden tests. | Reuse the golden-test harness; the new mock is a local fixture for this source contract. |
+
+The planner's Profile-name lookup is preview application code and scans the
+whole Customer/Vendor collection. It cannot provide the missing owning-package
+projection or bounded REST filtering described above; it was not copied.
