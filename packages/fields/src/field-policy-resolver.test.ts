@@ -264,7 +264,7 @@ describe('resolveFieldPolicy', () => {
         ),
       ).toBe(false);
       expect(
-        (await customers.list()).map(
+        (await customers.list({ displayLabel: true })).map(
           (customer) => customer.toJSON().displayLabel,
         ),
       ).toContain('Maya Policy Canary');
