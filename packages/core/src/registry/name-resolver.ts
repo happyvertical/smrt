@@ -400,6 +400,8 @@ export function getClassByConstructor(
  * A deprecated qualified name declared in a class's `previousQualifiedNames`
  * resolves to that class with a one-time deprecation warning naming
  * `source` (#3338).
+ * Same-name subtype replacements are absent under the upstream key; use
+ * `getClass()` for effective runtime resolution instead of registry inspection.
  */
 export function getClassByQualifiedName(
   qualifiedName: string,
@@ -407,7 +409,6 @@ export function getClassByQualifiedName(
 ): RegisteredClass | undefined {
   return (
     getClasses().get(qualifiedName) ??
-    findReplacement(qualifiedName) ??
     resolveQualifiedNameAlias(qualifiedName, source)
   );
 }
@@ -449,7 +450,7 @@ export function findClassesByName(className: string): RegisteredClass[] {
 export function resolveType(shortName: string): QualifiedClassName {
   // If already qualified, validate and return
   if (shortName.includes(':') && shortName.startsWith('@')) {
-    const registered = getClassByQualifiedName(shortName as QualifiedClassName);
+    const registered = findClassStrict(shortName);
     if (!registered) {
       throw new Error(
         `Class "${shortName}" is not registered. ` +

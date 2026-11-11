@@ -671,9 +671,9 @@ describe('same-name app subclass', () => {
 
   it('keeps declared STI and CTI bases while resolving I/O to the app constructor', async () => {
     const f = runtime(up, app);
-    expect(
-      ObjectRegistry.getClassByQualifiedName(`${UP}:Customer`)?.constructor,
-    ).toBe(f.AppCustomer);
+    expect(ObjectRegistry.getClass(`${UP}:Customer`)?.constructor).toBe(
+      f.AppCustomer,
+    );
     expect(ObjectRegistry.getClassByConstructor(f.Customer)?.constructor).toBe(
       f.AppCustomer,
     );
@@ -1039,9 +1039,12 @@ describe('same-name app subclass', () => {
           ObjectRegistry.registerFromManifest(key, entry, manifest.packageName);
         }
       }
+      expect(ObjectRegistry.getClass(`${UP}:Profile`)?.qualifiedName).toBe(
+        `${APP}:Profile`,
+      );
       expect(
-        ObjectRegistry.getClassByQualifiedName(`${UP}:Profile`)?.qualifiedName,
-      ).toBe(`${APP}:Profile`);
+        ObjectRegistry.getClassByQualifiedName(`${UP}:Profile`),
+      ).toBeUndefined();
       expect(ObjectRegistry.getInheritanceChain(`${UP}:Person`)).toEqual([
         `${UP}:Profile`,
         `${UP}:Person`,
@@ -1056,6 +1059,21 @@ describe('same-name app subclass', () => {
       ]);
     });
   }
+
+  it('removes upstream registrations from exact lookups while resolving runtime identities', () => {
+    const f = runtime(up, app);
+    const provider = `${UP}:Customer`;
+    const effective = `${APP}:Customer`;
+    expect(ObjectRegistry.getClassByQualifiedName(provider)).toBeUndefined();
+    expect(ObjectRegistry.getClassInPackage(UP, 'Customer')).toBeUndefined();
+    expect(ObjectRegistry.getAllClasses().has(provider)).toBe(false);
+    expect(ObjectRegistry.getClassByQualifiedName(effective)?.constructor).toBe(
+      f.AppCustomer,
+    );
+    expect(ObjectRegistry.getClass(provider)?.constructor).toBe(f.AppCustomer);
+    expect(ObjectRegistry.resolveType(provider)).toBe(effective);
+    expect(ObjectRegistry.resolveQualifiedName(provider)).toBe(effective);
+  });
 
   it('keeps an app without replacements unchanged and an empty replacement schema identical', async () => {
     const f = runtime(up);

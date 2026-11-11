@@ -85,6 +85,7 @@ import {
 } from './registry/runtime-overrides';
 import {
   clearSubtypeLineage,
+  findReplacement,
   replacedDeclarations,
 } from './registry/subtype-lineage';
 
@@ -1654,7 +1655,8 @@ export class ObjectRegistry {
     options: { source?: string } = {},
   ): string | undefined {
     if (!name.includes(':')) return undefined;
-    const registered = _getClassByQualifiedName(name, options.source);
+    const registered =
+      _getClassByQualifiedName(name, options.source) ?? findReplacement(name);
     if (!registered) return undefined;
     return registered.qualifiedName ?? name;
   }
@@ -1707,7 +1709,8 @@ export class ObjectRegistry {
     options: { source?: string } = {},
   ): string[] {
     if (!name.includes(':')) return [name];
-    const registered = _getClassByQualifiedName(name, options.source);
+    const registered =
+      _getClassByQualifiedName(name, options.source) ?? findReplacement(name);
     if (!registered?.qualifiedName) return [name];
     return [
       registered.qualifiedName,

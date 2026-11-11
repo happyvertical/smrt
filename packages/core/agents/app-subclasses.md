@@ -35,13 +35,18 @@ rule. Unrelated models with the same
 name are not replacements. Competing sibling replacements are refused.
 
 The effective registry contains the app identity, such as
-`@my/app:Customer`. Lookup by the upstream qualified identity or its constructor,
+`@my/app:Customer`. Runtime lookup with `getClass(upstreamQualifiedName)` or the upstream constructor,
 provider collection creation, and relationships targeting the upstream identity
 resolve to the app constructor. REST routes, web collection definitions, MCP and
 CLI commands, generated row types, and knowledge expose the effective model once.
 The raw manifest retains the upstream declaration with `replacedBy` pointing to
 the effective identity, preserving schema and inheritance provenance. Runtime
 replacement lookup is memoized per registry generation.
+Exact inspection with `getClassByQualifiedName()` or `getClassInPackage()` keeps
+the existing consumer-subtype contract: a replaced upstream registration is
+absent. `resolveType()` and `resolveQualifiedName()` normalize the upstream
+identity to the effective app identity. This extends the existing same-name
+consumer replacement mechanism; retained declarations serve ancestry only.
 
 Ancestry is separate from I/O lookup: a provider's `Person extends Profile`
 still has its declared provider `Profile` base after the app replaces Profile.
