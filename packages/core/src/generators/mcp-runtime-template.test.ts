@@ -276,18 +276,14 @@ describe('generated MCP custom-action runtime (#2182)', () => {
           inputSchema: { type: 'object' },
         },
       ],
-      stiTargets: {
-        animal: { '@test/animals:Cat': '@test/animals:Cat' },
-      },
     });
 
-    // The STI table is keyed by the tool prefix; the base resolves through
-    // the target's registry identity (the legacy target's object name here).
+    // Generated handlers resolve current choices through the shared registry API.
+    expect(source).toContain('resolveCreateTarget("Animal", args, aiConfig)');
     expect(source).toContain(
-      'resolveCreateTarget("animal", "Animal", args, aiConfig)',
+      'ObjectRegistry.resolveCreateTarget(baseObjectName, args',
     );
-    expect(source).toContain('const STI_TARGETS');
-    expect(source).toContain('"@test/animals:Cat":"@test/animals:Cat"');
-    expect(source).toContain('applyWritablePolicy(targetObjectName, args)');
+    expect(source).not.toContain('const STI_TARGETS');
+    expect(source).toContain('applyWritablePolicy(targetObjectName, data)');
   });
 });

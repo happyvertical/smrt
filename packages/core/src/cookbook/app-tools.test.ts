@@ -955,13 +955,20 @@ describe('app customization tools', () => {
           exposed: true,
           fields: [{ name: 'name' }],
         },
+        {
+          id: BOT,
+          name: 'Bot',
+          packageId: 'c6-profiles',
+          exposed: true,
+          fields: [{ name: 'name' }, { name: 'code' }],
+        },
       ],
       recipes: [
         ...catalog.recipes,
         {
           id: 'people',
           label: 'People',
-          models: [PROFILE],
+          models: [PROFILE, BOT],
           nav: [{ model: PROFILE, label: 'People' }],
           requires: [],
         },

@@ -115,7 +115,6 @@ export interface RuntimeOptions {
    * empty registry, then loads the approved qualified type through the public
    * collection API.
    */
-  stiTargets?: Record<string, Record<string, string>>;
 
   /**
    * Default list ordering per lowercased MCP object prefix (#2367).
@@ -145,7 +144,6 @@ export function generateRuntimeBootstrap(options: RuntimeOptions = {}): string {
     customActions = {},
     taskActions = {},
     tenantScopedObjects = [],
-    stiTargets = {},
     listOrderBy = {},
     toolListCacheHint = { ttlMs: 86_400_000, cacheScope: 'private' },
   } = options;
@@ -245,9 +243,9 @@ ${indent}}`;
 
           case 'create':
             return `${indent}case '${tool.name}': {
-${indent}  const { collection, objectName: targetObjectName } = await resolveCreateTarget(${JSON.stringify(objectName)}, ${JSON.stringify(lookup)}, args, aiConfig);
+${indent}  const { collection, objectName: targetObjectName, data } = await resolveCreateTarget(${JSON.stringify(lookup)}, args, aiConfig);
 
-${indent}  const newItem = await collection.create(applyWritablePolicy(targetObjectName, args));
+${indent}  const newItem = await collection.create(applyWritablePolicy(targetObjectName, data));
 
 ${indent}  return successResult(newItem.toPublicJSON(PUBLIC_JSON_OPTIONS));
 ${indent}}`;
@@ -414,7 +412,6 @@ function runtimeToolEnabled(name: string): boolean {
 
 const CUSTOM_ACTIONS = ${JSON.stringify(customActions)};
 const TASK_ACTIONS = ${JSON.stringify(taskActions)};
-const STI_TARGETS: Record<string, Record<string, string>> = ${JSON.stringify(stiTargets)};
 ${
   hasTenantScoped
     ? `
@@ -501,20 +498,16 @@ function applyWritablePolicy(objectName: string, data: any): Record<string, any>
 }
 
 /** Resolve an advertised STI discriminator to its registered subtype collection. */
-async function resolveCreateTarget(stiKey: string, baseObjectName: string, args: Record<string, any>, aiConfig: any) {
-  let objectName = baseObjectName;
-  const discriminator = args._meta_type;
-  const targets = STI_TARGETS[stiKey];
-  if (typeof discriminator === 'string' && targets) {
-    const target = targets[discriminator];
-    if (!target) throw new Error('Unknown STI discriminator: ' + discriminator);
-    objectName = target;
-  }
-  const collection = await ObjectRegistry.getCollection(objectName, {
+async function resolveCreateTarget(baseObjectName: string, args: Record<string, any>, aiConfig: any) {
+  const target = ObjectRegistry.resolveCreateTarget(baseObjectName, args, {
+    surface: 'mcp', tenantId: process.env.SMRT_MCP_TENANT_ID,
+  });
+  const objectName = target.collectionName;
+  const collection = await ObjectRegistry.getCollection(target.collectionName, {
     persistence: { type: process.env.DATABASE_TYPE || 'sqlite', url: process.env.DATABASE_URL || ':memory:' },
     ai: aiConfig,
   });
-  return { collection, objectName };
+  return { collection, objectName, data: target.data };
 }
 
 /**

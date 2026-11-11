@@ -399,6 +399,7 @@ export { hasRuntimeExposureGate, isRuntimeModelEnabled, subscribeRuntimeExposure
 export { hasRuntimeExposureGate, isRuntimeModelEnabled, subscribeRuntimeExposure } from ${JSON.stringify(fileURLToPath(new URL('../../dist/runtime-exposure.js', import.meta.url)))};
           export const ObjectRegistry = {
             loadAllManifests() {},
+            resolveCreateTarget(name, data) { return { name, collectionName: name, data }; },
             getConfig() { return {}; },
             getFields() { return new Map(); },
             async getCollection(name) {

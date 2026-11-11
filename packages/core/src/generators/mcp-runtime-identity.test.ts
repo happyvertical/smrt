@@ -87,6 +87,7 @@ export { COOKBOOK_TOOL_NAMES, getCookbookToolService } from ${JSON.stringify(fil
 export { hasRuntimeExposureGate, isRuntimeModelEnabled, subscribeRuntimeExposure } from ${JSON.stringify(fileURLToPath(new URL('../../dist/runtime-exposure.js', import.meta.url)))};
           export const ObjectRegistry = {
   loadAllManifests() {},
+  resolveCreateTarget(name, data) { record('create-target', name); return { name, collectionName: name, data }; },
   async getCollection(name) {
     record('collection', name);
     return {

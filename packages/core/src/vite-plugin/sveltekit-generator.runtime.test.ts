@@ -15,6 +15,7 @@ import { clearCache, loadConfig } from '@happyvertical/smrt-config';
 import { build } from 'esbuild';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { SmrtCollection } from '../collection.js';
+import { field } from '../decorators/index.js';
 import { clearManifestCache } from '../manifest/manifest-loader.js';
 import { SmrtObject } from '../object.js';
 import { parseRestListWhere } from '../query-bounds.js';
@@ -180,6 +181,9 @@ function writeWorkspaceCoreShim(projectRoot: string): void {
       'globalThis.__smrtGeneratedHelperCalls ??= [];',
       'globalThis.__smrtGeneratedHelperRegistrations ??= [];',
       'export const ObjectRegistry = {',
+      '  resolveCreateTarget(name, data, context) { return globalThis.__smrtGeneratedRegistry?.resolveCreateTarget(name, data, context) ?? { name, collectionName: name, data }; },',
+      '  getFields(name) { return globalThis.__smrtGeneratedRegistry?.getFields(name) ?? new Map(); },',
+      '  getConfig(name) { return globalThis.__smrtGeneratedRegistry?.getConfig(name) ?? {}; },',
       '  async getCollection(...args) {',
       '    globalThis.__smrtGeneratedHelperCalls.push(args);',
       '    if (globalThis.__smrtGeneratedCollectionResolver) return globalThis.__smrtGeneratedCollectionResolver(...args);',
@@ -308,6 +312,7 @@ describe('generated SvelteKit helper runtime', () => {
 
     rmSync(projectRoot, { force: true, recursive: true });
     projectRoot = '';
+    delete (globalThis as Record<string, unknown>).__smrtGeneratedRegistry;
     delete (globalThis as Record<string, unknown>).__smrtGeneratedHelperCalls;
     delete (globalThis as Record<string, unknown>)
       .__smrtGeneratedHelperRegistrations;
@@ -675,6 +680,98 @@ describe('generated SvelteKit helper runtime', () => {
     enabled = false;
     await expect(call('a')).rejects.toMatchObject({ status: 404 });
     expect(create).toHaveBeenCalledOnce();
+  });
+
+  it.each([
+    false,
+    true,
+  ])('executes emitted STI create selectors through the real registry (replacement=%s)', async (replace) => {
+    const restore = snapshotObjectRegistryState();
+    const root = '@test/generated-helper-app:Widget';
+    const child = '@test/generated-helper-app:SpecialWidget';
+    const hidden = '@test/generated-helper-app:HiddenWidget';
+    const app = '@test/generated-app:Widget';
+    class Widget extends SmrtObject {
+      name = '';
+    }
+    class SpecialWidget extends Widget {
+      detail = '';
+      locked = '';
+    }
+    class HiddenWidget extends Widget {}
+    class ForeignWidget extends SmrtObject {}
+    field({ type: 'text' })(Widget.prototype, 'name');
+    field({ type: 'text' })(SpecialWidget.prototype, 'detail');
+    field({ type: 'text', readonly: true })(SpecialWidget.prototype, 'locked');
+    ObjectRegistry.register(Widget, {
+      packageName: '@test/generated-helper-app',
+      tableName: 'generated_widgets',
+      tableStrategy: 'sti',
+    });
+    for (const ctor of [SpecialWidget, HiddenWidget, ForeignWidget]) {
+      ObjectRegistry.register(ctor, {
+        packageName: '@test/generated-helper-app',
+      });
+    }
+    if (replace) {
+      const Parent = Widget;
+      ObjectRegistry.register(class Widget extends Parent {}, {
+        packageName: '@test/generated-app',
+      });
+    }
+    const globals = globalThis as Record<string, unknown>;
+    globals.__smrtGeneratedRegistry = ObjectRegistry;
+    const create = vi.fn(async (data) => ({ toPublicJSON: () => data }));
+    globals.__smrtGeneratedRouteCollection = { create };
+    setRuntimeExposureGate({
+      isEnabled: (model) => model.qualifiedName !== hidden,
+    });
+    try {
+      const route = await importGeneratedCollectionPost();
+      const call = (body: Record<string, unknown>) =>
+        route.POST({
+          locals: {
+            tenantId: 'a',
+            user: { id: 'owner' },
+            permissions: ['widgets.create'],
+          },
+          request: new Request('http://fixture/api/widgets', {
+            method: 'POST',
+            body: JSON.stringify(body),
+          }),
+        });
+      expect((await call({ name: 'base' })).status).toBe(201);
+      expect(
+        (
+          await call({
+            name: 'selected',
+            type: child,
+            detail: 'own field',
+            locked: 'forbidden',
+          })
+        ).status,
+      ).toBe(201);
+      expect(create.mock.calls).toEqual([
+        [{ name: 'base' }],
+        [{ name: 'selected', detail: 'own field' }],
+      ]);
+      const calls = globals.__smrtGeneratedHelperCalls as Array<[string]>;
+      expect(calls.map(([name]) => name)).toEqual(['Widget', child]);
+      expect(ObjectRegistry.getCreateTargets(root).base.name).toBe(
+        replace ? app : root,
+      );
+      for (const type of [
+        hidden,
+        '@test/generated-helper-app:ForeignWidget',
+        'missing',
+        42,
+      ]) {
+        expect((await call({ type })).status).toBe(400);
+      }
+      expect(create).toHaveBeenCalledTimes(2);
+    } finally {
+      restore();
+    }
   });
 
   it('executes emitted POST routes with safe typed 4xx errors and opaque 5xx errors', async () => {

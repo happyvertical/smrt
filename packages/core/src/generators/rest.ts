@@ -1439,8 +1439,26 @@ export class APIGenerator {
     req: Request,
     objectName?: string,
   ): Promise<Response> {
-    const data = this.applyWritablePolicy(objectName, await req.json());
-    const object = await collection.create({ ...data, _skipLoad: true });
+    const body = await req.json();
+    let targetName = objectName;
+    let data = body;
+    if (objectName) {
+      const target = ObjectRegistry.resolveCreateTarget(objectName, body, {
+        surface: 'rest',
+        tenantId: this.context.tenantId,
+        request: req,
+      });
+      targetName = target.collectionName;
+      if (target.collectionName !== objectName) {
+        const info = ObjectRegistry.getClass(targetName);
+        if (!info)
+          return this.createErrorResponse(404, 'Create target unavailable');
+        collection = await this.getCollection(info);
+      }
+      data = target.data;
+    }
+    const writable = this.applyWritablePolicy(targetName, data);
+    const object = await collection.create({ ...writable, _skipLoad: true });
     return this.createJsonResponse(this.toPublicData(object), 201);
   }
 

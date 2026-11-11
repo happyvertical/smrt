@@ -30,6 +30,7 @@ import type {
 } from '../registry/types.js';
 import {
   isRuntimeModelEnabled,
+  type RuntimeExposureContext,
   subscribeRuntimeExposure,
 } from '../runtime-exposure.js';
 import type { FieldDefinition, MethodDefinition } from '../scanner/types.js';
@@ -529,7 +530,10 @@ export class MCPGenerator {
    * Generate all available tools from registered objects
    */
   async generateTools(): Promise<MCPTool[]> {
-    const tools = await this.generateToolDefinitions();
+    const tools = await this.generateToolDefinitions({
+      surface: 'mcp',
+      tenantId: this.context.tenantId,
+    });
     const modelTools = tools.filter((tool) =>
       isRuntimeModelEnabled(
         ObjectRegistry.getExposureModel(
@@ -550,8 +554,10 @@ export class MCPGenerator {
     return [...modelTools, ...recipeTools];
   }
 
-  /** AOT superset, independent of the current cookbook. Never use as a runtime listing. */
-  async generateToolDefinitions(): Promise<MCPTool[]> {
+  /** AOT superset unless an explicit live exposure context is supplied. */
+  async generateToolDefinitions(
+    exposureContext?: RuntimeExposureContext,
+  ): Promise<MCPTool[]> {
     const tools: MCPTool[] = [];
     const registeredClasses = ObjectRegistry.getAllClasses();
     const scope = this.resolveClassScope(registeredClasses);
@@ -612,6 +618,7 @@ export class MCPGenerator {
         simpleName,
         shouldInclude,
         key,
+        exposureContext,
       );
       tools.push(...objectTools);
     }
@@ -684,6 +691,7 @@ export class MCPGenerator {
     displayName: string,
     shouldInclude: (endpoint: string) => boolean,
     registryKey: string = displayName,
+    exposureContext?: RuntimeExposureContext,
   ): Promise<MCPTool[]> {
     // Every registry lookup below goes through the exact registration.
     const objectName = registryKey;
@@ -725,7 +733,13 @@ export class MCPGenerator {
       tools.push({
         name: `${lowerName}_create`,
         description: describeAction('create', displayName, labelField),
-        inputSchema: this.buildInputSchema(objectName, 'create', fields),
+        inputSchema: this.buildInputSchema(
+          objectName,
+          'create',
+          fields,
+          undefined,
+          exposureContext,
+        ),
         outputSchema: this.buildOutputSchema(objectName, 'create', fields),
         annotations: mcpToolAnnotations('create'),
       });
@@ -1075,6 +1089,7 @@ export class MCPGenerator {
     action: string,
     fields: Map<string, FieldDefinition>,
     customAction?: CustomActionMetadata,
+    exposureContext?: RuntimeExposureContext,
   ): ToolJsonSchema {
     const schema = buildToolInputSchema(
       action,
@@ -1084,13 +1099,37 @@ export class MCPGenerator {
     );
     if (action !== 'create' && action !== 'update') return schema;
 
-    const variants = this.getStiVariants(objectName);
+    const catalog = ObjectRegistry.getCreateTargets(
+      objectName,
+      exposureContext,
+    );
+    const variants = catalog.polymorphic
+      ? [catalog.base, ...catalog.subtypes].map((target) => ({
+          name: target.name,
+          discriminator: target.name,
+          label: target.label,
+        }))
+      : [];
     if (variants.length === 0) return schema;
 
     const properties = {
       ...((schema.properties as Record<string, ToolJsonSchema> | undefined) ??
         {}),
+      ...(action === 'create'
+        ? {
+            type: {
+              type: 'string',
+              enum: variants.map((variant) => variant.name),
+              description:
+                'Optional create type: ' +
+                variants
+                  .map((variant) => `${variant.name} (${variant.label})`)
+                  .join(', '),
+            },
+          }
+        : {}),
       _meta_type: {
+        enum: variants.map((variant) => variant.name),
         type: 'string',
         description:
           'Optional STI discriminator. When provided for create, selects the declared subtype.',
@@ -1100,10 +1139,18 @@ export class MCPGenerator {
       ...schema,
       properties,
       oneOf: [
-        { not: { required: ['_meta_type'] } },
+        {
+          not: {
+            anyOf: [
+              { required: ['_meta_type'] },
+              ...(action === 'create' ? [{ required: ['type'] }] : []),
+            ],
+          },
+        },
         ...variants.map(({ name, discriminator }) => {
           const variantFields = ObjectRegistry.getFields(name);
           return {
+            ...(action === 'create' ? { not: { required: ['type'] } } : {}),
             properties: {
               ...this.buildFieldSchemaProperties(variantFields),
               _meta_type: { const: discriminator },
@@ -1116,6 +1163,23 @@ export class MCPGenerator {
             ],
           };
         }),
+        ...(action === 'create'
+          ? variants.map(({ name, discriminator }) => ({
+              properties: {
+                ...this.buildFieldSchemaProperties(
+                  ObjectRegistry.getFields(name),
+                ),
+                type: { const: discriminator },
+                _meta_type: { const: discriminator },
+              },
+              required: [
+                'type',
+                ...this.toToolFields(ObjectRegistry.getFields(name))
+                  .filter((field) => field.required)
+                  .map((field) => field.name),
+              ],
+            }))
+          : []),
       ],
     });
   }
@@ -1220,7 +1284,13 @@ export class MCPGenerator {
   ): ToolJsonSchema {
     const properties = this.buildFieldSchemaProperties(fields, true);
 
-    const variants = this.getStiVariants(objectName);
+    const catalog = ObjectRegistry.getCreateTargets(objectName);
+    const variants = catalog.polymorphic
+      ? [catalog.base, ...catalog.subtypes].map((target) => ({
+          name: target.name,
+          discriminator: target.name,
+        }))
+      : [];
     if (variants.length > 0) {
       return {
         oneOf: variants.map(({ name, discriminator }) => ({
@@ -1258,62 +1328,6 @@ export class MCPGenerator {
       properties[name] = { ...fieldTypeToJsonSchema(toolField) };
     }
     return properties;
-  }
-
-  /**
-   * The STI subtypes a create may select, each bound to its exact registry
-   * entry (`name` is its registry key). A subtype is the base itself or a
-   * class whose constructor descends from the base's, or whose declared
-   * qualified ancestry resolves to that base (including app replacements).
-   * Never resolved by simple name: two packages may declare same-named
-   * subtypes of one base (#3490).
-   */
-  private getStiVariants(objectName: string): Array<{
-    name: string;
-    discriminator: string;
-    classInfo: RegisteredClass;
-  }> {
-    if (ObjectRegistry.getTableStrategy(objectName) !== 'sti') return [];
-
-    const base = ObjectRegistry.getClass(objectName);
-    if (!base) return [];
-    const baseKeys = new Set(
-      [objectName, base.qualifiedName].filter(
-        (name): name is string => typeof name === 'string',
-      ),
-    );
-    const isStub = (info: RegisteredClass) =>
-      (info.constructor as { _isManifestStub?: boolean })._isManifestStub ===
-      true;
-    const variants = new Map<
-      string,
-      { name: string; discriminator: string; classInfo: RegisteredClass }
-    >();
-    const seen = new Set<RegisteredClass>();
-    for (const [key, info] of ObjectRegistry.getAllClasses()) {
-      if (seen.has(info)) continue;
-      seen.add(info);
-      const descends =
-        info === base ||
-        (!isStub(info) &&
-          !isStub(base) &&
-          info.constructor.prototype instanceof base.constructor) ||
-        ObjectRegistry.getInheritanceChain(key).some(
-          (ancestor) =>
-            baseKeys.has(ancestor) ||
-            ObjectRegistry.getClass(ancestor) === base,
-        );
-      if (!descends) continue;
-      const discriminator = info.qualifiedName || info.name || key;
-      variants.set(discriminator, {
-        name: key,
-        discriminator,
-        classInfo: info,
-      });
-    }
-    return Array.from(variants.values()).sort((left, right) =>
-      left.discriminator.localeCompare(right.discriminator),
-    );
   }
 
   /**
@@ -1733,25 +1747,22 @@ export class MCPGenerator {
   ): Promise<unknown> {
     let targetCollection = collection;
     let targetObjectName = objectName;
-    if (
-      action === 'create' &&
-      objectName &&
-      typeof args._meta_type === 'string'
-    ) {
-      const variant = this.getStiVariants(objectName).find(
-        (candidate) => candidate.discriminator === args._meta_type,
-      );
-      if (!variant) {
-        throw new Error(`Unknown STI discriminator: ${args._meta_type}`);
+    if (action === 'create' && objectName) {
+      const target = ObjectRegistry.resolveCreateTarget(objectName, args, {
+        surface: 'mcp',
+        tenantId: this.context.tenantId,
+      });
+      args = target.data;
+      if (target.collectionName !== objectName) {
+        const classInfo = ObjectRegistry.getClass(target.name);
+        if (!classInfo)
+          throw new Error(`Create target '${target.name}' is not registered`);
+        targetCollection = await this.getCollection(
+          target.collectionName,
+          classInfo,
+        );
       }
-      // The discriminator selects a registration, not a name: create
-      // through that exact entry, still registered under its key.
-      const classInfo = variant.classInfo;
-      if (ObjectRegistry.getAllClasses().get(variant.name) !== classInfo) {
-        throw new Error(`STI subtype '${variant.name}' is not registered`);
-      }
-      targetCollection = await this.getCollection(variant.name, classInfo);
-      targetObjectName = variant.name;
+      targetObjectName = target.collectionName;
     }
 
     const mutating = action !== 'list' && action !== 'get';
@@ -2305,7 +2316,6 @@ export class MCPGenerator {
         taskActions: await this.runtimeTaskActions(tools),
         tenantScopedObjects,
         listOrderBy: this.runtimeListOrderBy(tools),
-        stiTargets: this.runtimeStiTargets(tools),
         toolListCacheHint: resolveMCPToolListCacheHint(
           this.config.cache?.toolsList,
           hasTenantScopedTools,
@@ -2458,31 +2468,6 @@ export class MCPGenerator {
     }
 
     return orderings;
-  }
-
-  private runtimeStiTargets(
-    tools: MCPTool[],
-  ): Record<string, Record<string, string>> {
-    const targets: Record<string, Record<string, string>> = {};
-
-    for (const tool of tools) {
-      const target = this.toolTarget(tool);
-      if (target.action !== 'create') continue;
-      const objectPrefix = target.objectName.toLowerCase();
-      const owner = this.toolClass(tool);
-      if (!owner) continue;
-      const variants = this.getStiVariants(owner.key);
-      if (variants.length === 0) continue;
-
-      targets[objectPrefix] = Object.fromEntries(
-        variants.map((variant) => [
-          variant.discriminator,
-          variant.discriminator,
-        ]),
-      );
-    }
-
-    return targets;
   }
 
   /**
@@ -2668,9 +2653,9 @@ ${indent}}`;
 
             case 'create':
               return `${indent}case '${tool.name}': {
-${indent}  const { collection, objectName: targetObjectName } = await resolveCreateTarget(${JSON.stringify(objectName)}, ${JSON.stringify(lookup)}, args, aiConfig);
+${indent}  const { collection, objectName: targetObjectName, data } = await resolveCreateTarget(${JSON.stringify(lookup)}, args, aiConfig);
 
-${indent}  const newItem = await collection.create(applyWritablePolicy(targetObjectName, args));
+${indent}  const newItem = await collection.create(applyWritablePolicy(targetObjectName, data));
 
 ${indent}  return successResult(newItem.toPublicJSON(PUBLIC_JSON_OPTIONS));
 ${indent}}`;
@@ -2825,7 +2810,6 @@ ${indent}}`;
   ): Promise<string> {
     const tools = await this.generateToolDefinitions();
     const switchCases = await this.generateToolSwitchCases('        ', tools);
-    const stiTargets = this.runtimeStiTargets(tools);
     const toolTargets = this.runtimeToolTargets(tools);
     const getSerializers = this.runtimeGetSerializers(tools);
     const tenantScopedSet = Array.from(
@@ -2881,7 +2865,6 @@ const PUBLIC_JSON_OPTIONS = {
     .filter(Boolean),
 };
 const GET_SERIALIZERS: Record<string, { importPath: string; exportName: string }> = ${JSON.stringify(getSerializers)};
-const STI_TARGETS: Record<string, Record<string, string>> = ${JSON.stringify(stiTargets)};
 
 async function serializeGetResult(toolName: string, item: any): Promise<any> {
   const reference = GET_SERIALIZERS[toolName];
@@ -2930,20 +2913,16 @@ function applyWritablePolicy(objectName: string, data: any): Record<string, any>
 }
 
 /** Resolve an advertised STI discriminator to its registered subtype collection. */
-async function resolveCreateTarget(stiKey: string, baseObjectName: string, args: Record<string, any>, aiConfig: any) {
-  let objectName = baseObjectName;
-  const discriminator = args._meta_type;
-  const targets = STI_TARGETS[stiKey];
-  if (typeof discriminator === 'string' && targets) {
-    const target = targets[discriminator];
-    if (!target) throw new Error('Unknown STI discriminator: ' + discriminator);
-    objectName = target;
-  }
-  const collection = await ObjectRegistry.getCollection(objectName, {
+async function resolveCreateTarget(baseObjectName: string, args: Record<string, any>, aiConfig: any) {
+  const target = ObjectRegistry.resolveCreateTarget(baseObjectName, args, {
+    surface: 'mcp', tenantId: process.env.SMRT_MCP_TENANT_ID,
+  });
+  const objectName = target.collectionName;
+  const collection = await ObjectRegistry.getCollection(target.collectionName, {
     persistence: { type: process.env.DATABASE_TYPE || 'sqlite', url: process.env.DATABASE_URL || ':memory:' },
     ai: aiConfig,
   });
-  return { collection, objectName };
+  return { collection, objectName, data: target.data };
 }
 
 /**

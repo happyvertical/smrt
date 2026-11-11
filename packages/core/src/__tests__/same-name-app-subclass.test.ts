@@ -649,8 +649,8 @@ describe('same-name app subclass', () => {
       expect(
         (await ObjectRegistry.getCollection(provider, { db })).getItemClass(),
       ).toBe(replacement ? fixture.AppProfile : fixture.Profile);
-      // Child-first discovery, registry exposure and MCP all check the effective base.
-      expect(new Set(observed)).toEqual(new Set([effective]));
+      // Discovery and dispatch gate the effective base; create offerings also gate each subtype.
+      expect(new Set(observed)).toEqual(new Set([effective, `${UP}:Person`]));
       expect(
         engine.run({ name: 'remove_features', input: { ids: [provider] } }).ok,
       ).toBe(true);
@@ -902,9 +902,8 @@ describe('same-name app subclass', () => {
     const customers = await ObjectRegistry.getCollection(`${UP}:Customer`, {
       db,
     });
-    // REST creates through the effective STI root. Its private-field write
-    // filter ignores client discriminators; collection create supports explicit
-    // provider subtypes after their root is replaced by an app subclass.
+    // REST without a selector creates through the effective STI root. Collection
+    // create also supports explicit provider subtypes after app replacement.
     const api = new APIGenerator(
       { basePath: '/api', authMiddleware: () => async (req) => req },
       { db, user: { id: 'owner' }, permissions: ['profiles.create'] },
@@ -917,7 +916,6 @@ describe('same-name app subclass', () => {
         method: 'POST',
         headers: { 'content-type': 'application/json' },
         body: JSON.stringify({
-          _meta_type: `${UP}:Person`,
           title: 'STI name',
           firstName: 'Person',
         }),

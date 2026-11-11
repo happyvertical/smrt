@@ -88,6 +88,10 @@ import {
   findReplacement,
   replacedDeclarations,
 } from './registry/subtype-lineage';
+import {
+  isRuntimeModelEnabled,
+  type RuntimeExposureContext,
+} from './runtime-exposure.js';
 
 export type { RuntimeRegistrationOverride } from './registry/runtime-overrides';
 
@@ -778,6 +782,19 @@ function resolveEffectiveConfig(
     config,
   });
   return config;
+}
+
+/** A create choice uses the exact registry identity, never a simple-name lookup. */
+export interface CreateTarget {
+  name: string;
+  label: string;
+}
+
+/** Static catalog without context; pass trusted context for a live offering. */
+export interface CollectionCreateTargets {
+  base: CreateTarget;
+  subtypes: CreateTarget[];
+  polymorphic: boolean;
 }
 
 /**
@@ -1552,6 +1569,130 @@ export class ObjectRegistry {
    */
   static getClass(name: string): RegisteredClass | undefined {
     return _getClass(name);
+  }
+
+  /**
+   * What this collection can create. Same-name app replacements are effective
+   * I/O identities; declared ancestry keeps provider children in their family.
+   * Context-free calls describe the AOT superset; live callers MUST pass context.
+   */
+  static getCreateTargets(
+    collectionName: string,
+    context?: RuntimeExposureContext,
+  ): CollectionCreateTargets {
+    const base =
+      ObjectRegistry.getExposureModel(collectionName) ??
+      ObjectRegistry.resolveCollectionRegistration(collectionName).registered;
+    if (!base) throw new Error(`Unknown create collection: ${collectionName}`);
+    const name = base.qualifiedName || base.name;
+    const target = (info: RegisteredClass): CreateTarget => ({
+      name: info.qualifiedName || info.name,
+      label:
+        ObjectRegistry.getConfig(info.qualifiedName || info.name).ui?.label ||
+        info.name,
+    });
+    const polymorphic = ObjectRegistry.getTableStrategy(name) === 'sti';
+    const subtypes = new Map<string, CreateTarget>();
+    if (polymorphic) {
+      const isStub = (info: RegisteredClass) =>
+        (info.constructor as { _isManifestStub?: boolean })._isManifestStub ===
+        true;
+      for (const [key, info] of ObjectRegistry.getAllClasses()) {
+        if (info === base || info.config.abstract) continue;
+        const descends =
+          (!isStub(info) &&
+            !isStub(base) &&
+            info.constructor.prototype instanceof base.constructor) ||
+          ObjectRegistry.getInheritanceChain(key).some(
+            (ancestor) => ObjectRegistry.getClass(ancestor) === base,
+          );
+        if (
+          !descends ||
+          ObjectRegistry.getTableName(key) !== ObjectRegistry.getTableName(name)
+        )
+          continue;
+        if (context && !isRuntimeModelEnabled(info, context)) continue;
+        const choice = target(info);
+        subtypes.set(choice.name, choice);
+      }
+    }
+    return {
+      base: target(base),
+      subtypes: [...subtypes.values()].sort((a, b) =>
+        a.name.localeCompare(b.name),
+      ),
+      polymorphic,
+    };
+  }
+
+  /**
+   * Validate a create selector before filtering writable fields. `type` is the
+   * public selector on STI families; `_meta_type` remains a compatible alias.
+   * Plain models retain their ordinary `type` field and unchanged input.
+   */
+  static resolveCreateTarget(
+    collectionName: string,
+    input: unknown,
+    context: RuntimeExposureContext,
+  ): CreateTarget & { collectionName: string; data: Record<string, unknown> } {
+    const catalog = ObjectRegistry.getCreateTargets(collectionName, context);
+    let selected = catalog.base;
+    let data =
+      input && typeof input === 'object' && !Array.isArray(input)
+        ? (input as Record<string, unknown>)
+        : {};
+    if (catalog.polymorphic) {
+      const { type, _meta_type, ...fields } = data;
+      const selector = type !== undefined ? type : _meta_type;
+      if (
+        type !== undefined &&
+        _meta_type !== undefined &&
+        type !== _meta_type
+      ) {
+        throw Object.assign(new Error('Conflicting create type selectors'), {
+          status: 400,
+        });
+      }
+      if (selector !== undefined) {
+        const choice = [catalog.base, ...catalog.subtypes].find(
+          (candidate) => candidate.name === selector,
+        );
+        if (!choice) {
+          const reason =
+            typeof selector === 'string' && ObjectRegistry.getClass(selector)
+              ? `is not a subtype of '${catalog.base.name}' or is unavailable`
+              : 'is not registered';
+          throw Object.assign(
+            new Error(
+              `Unknown STI discriminator: ${String(selector)} ${reason}`,
+            ),
+            { status: 400 },
+          );
+        }
+        selected = choice;
+      }
+      data = fields;
+    }
+    if (
+      !isRuntimeModelEnabled(
+        ObjectRegistry.getExposureModel(catalog.base.name),
+        context,
+      ) ||
+      !isRuntimeModelEnabled(
+        ObjectRegistry.getExposureModel(selected.name),
+        context,
+      )
+    ) {
+      throw Object.assign(new Error('Create target is unavailable'), {
+        status: 404,
+      });
+    }
+    return {
+      ...selected,
+      collectionName:
+        selected.name === catalog.base.name ? collectionName : selected.name,
+      data,
+    };
   }
 
   /** Effective model identity for runtime exposure, including collection-hosted actions. */

@@ -263,7 +263,9 @@ describe('MCPGenerator - generated output is runnable (#2279)', () => {
     expect(content).toContain('emit-js-server');
     // The two annotations that made the shipped `.js` output unparseable.
     expect(content).not.toContain('type CallToolRequest');
-    expect(content).not.toContain('const STI_TARGETS: Record<');
+    expect(content).not.toContain(
+      'async function resolveCreateTarget(baseObjectName: string',
+    );
 
     await expectParsesAsEsModule(outputPath);
     await expectGeneratedServerStarts(outputPath);
@@ -280,7 +282,9 @@ describe('MCPGenerator - generated output is runnable (#2279)', () => {
 
     const content = await readFile(outputPath, 'utf-8');
     expect(content).toContain('type CallToolRequest');
-    expect(content).toContain('const STI_TARGETS: Record<');
+    expect(content).toContain(
+      'async function resolveCreateTarget(baseObjectName: string',
+    );
   });
 
   it('points the Claude config example at the file it generated', async () => {

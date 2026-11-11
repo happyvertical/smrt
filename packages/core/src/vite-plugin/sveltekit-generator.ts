@@ -441,6 +441,7 @@ function getApiWritableAllowlist(apiConfig: unknown): string[] | null {
  */
 function generateWritablePolicyHelper(
   objectDef: SmartObjectDefinition,
+  dynamicTarget = false,
 ): string {
   const readonly = [
     ...collectReadonlyFieldNames(objectDef),
@@ -465,14 +466,22 @@ const SERVER_MANAGED_FIELDS = [
   'updated_at',
 ];
 
-function applyWritablePolicy(data: unknown): Record<string, unknown> {
+function applyWritablePolicy(data: unknown${dynamicTarget ? ', targetName?: string' : ''}): Record<string, unknown> {
   if (!data || typeof data !== 'object') return {};
-  const result: Record<string, unknown> = {};
+${
+  dynamicTarget
+    ? `  const readonlyFields = targetName ? [...ObjectRegistry.getFields(targetName)].filter(([, field]) => field.readonly === true || field._meta?.readonly === true).map(([name]) => name) : READONLY_FIELDS;
+  if (targetName && typeof ObjectRegistry.getConfig(targetName).display?.label === 'object') readonlyFields.push('displayLabel');
+  const api = targetName ? ObjectRegistry.getConfig(targetName).api : undefined;
+  const writable = targetName ? (api && typeof api === 'object' && Array.isArray(api.writable) ? api.writable : null) : WRITABLE_ALLOWLIST;
+`
+    : ''
+}  const result: Record<string, unknown> = {};
   for (const [key, value] of Object.entries(data as Record<string, unknown>)) {
     if (key.startsWith('_')) continue;
     if (SERVER_MANAGED_FIELDS.includes(key)) continue;
-    if (READONLY_FIELDS.includes(key)) continue;
-    if (WRITABLE_ALLOWLIST && !WRITABLE_ALLOWLIST.includes(key)) continue;
+    if (${dynamicTarget ? 'readonlyFields' : 'READONLY_FIELDS'}.includes(key)) continue;
+    if (${dynamicTarget ? 'writable' : 'WRITABLE_ALLOWLIST'} && !${dynamicTarget ? 'writable' : 'WRITABLE_ALLOWLIST'}.includes(key)) continue;
     result[key] = value;
   }
   return result;
@@ -3592,11 +3601,11 @@ function generateCollectionRouteTemplate(
 
 import { error${hasPost ? ', json' : ''} } from '@sveltejs/kit';
 ${hasGet ? "import { parseRestListWhere } from '@happyvertical/smrt-core';\n" : ''}
-${serializerImports ? `${serializerImports}\n` : ''}${hasPost ? "import { normalizeTypedHttpError } from '@happyvertical/smrt-core';\n" : ''}
+${serializerImports ? `${serializerImports}\n` : ''}${hasPost ? "import { ObjectRegistry, normalizeTypedHttpError } from '@happyvertical/smrt-core';\n" : ''}
 ${modelType.importStatement ? `${modelType.importStatement}\n` : ''}import type { RequestHandler } from './$types';
 ${collectionAccessImports}
 // Note: ${className} is auto-registered by the Vite plugin scanner
-${generateAuthGuardHelper(objectDef, semanticManifest)}${needsRouteTenantContext(objectDef) ? generateTenantContextHelper(usesPrincipalContext(objectDef), isTenantScoped(objectDef)) : ''}${hasPost ? generateWritablePolicyHelper(objectDef) : ''}${hasPost ? generateTypedRouteErrorHelper() : ''}${hasGet ? generateListBoundsHelper(objectDef) : ''}${hasGet ? generateConditionalGetRouteHelper(objectDef.decoratorConfig?.api, { runtimeExposure: true, tenantScoped: isTenantScoped(objectDef), permissionScoped: listUsesPermissionScopedBody, modelName: className, useBodyHash: listUsesBodyHash, manifestHash: webManifestHash }) : ''}`;
+${generateAuthGuardHelper(objectDef, semanticManifest)}${needsRouteTenantContext(objectDef) ? generateTenantContextHelper(usesPrincipalContext(objectDef), isTenantScoped(objectDef)) : ''}${hasPost ? generateWritablePolicyHelper(objectDef, true) : ''}${hasPost ? generateTypedRouteErrorHelper() : ''}${hasGet ? generateListBoundsHelper(objectDef) : ''}${hasGet ? generateConditionalGetRouteHelper(objectDef.decoratorConfig?.api, { runtimeExposure: true, tenantScoped: isTenantScoped(objectDef), permissionScoped: listUsesPermissionScopedBody, modelName: className, useBodyHash: listUsesBodyHash, manifestHash: webManifestHash }) : ''}`;
 
   // #1782: tenant-scoped reads fail closed to global (NULL-tenant) rows when no
   // tenant context is active (public/anonymous read). Non-tenant models keep the
@@ -3655,10 +3664,13 @@ export const POST: RequestHandler = async ({ locals, request }) => {
 ${routeGuardPreamble(objectDef, true, 'create')}
   const publicJsonOptions = getPublicJsonOptions(locals);
   const body: unknown = await request.json();
-  const data = applyWritablePolicy(body);
-
-${generateCollectionLoad(className, { typeName: modelType.typeName })}
   try {
+    const scope = locals as { tenantId?: string; tenantContext?: { tenantId?: string } };
+    const target = ObjectRegistry.resolveCreateTarget('${className}', body, {
+      surface: 'rest', tenantId: scope.tenantId ?? scope.tenantContext?.tenantId, locals, request,
+    });
+    const data = applyWritablePolicy(target.data, target.collectionName === '${className}' ? undefined : target.name);
+    const collection = await getCollection${modelType.typeName ? `<${modelType.typeName}>` : ''}(target.collectionName);
     const item = await collection.create(data);
 ${
   serializers.itemSerializerName
