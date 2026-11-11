@@ -37,6 +37,7 @@ import {
   smrt,
   ValidationError,
 } from '@happyvertical/smrt-core';
+import { setRuntimeExposureGate } from '@happyvertical/smrt-core/runtime-exposure';
 import {
   MembershipCollection,
   PermissionCollection,
@@ -368,6 +369,7 @@ describe('runToolLoop', () => {
   });
 
   afterEach(() => {
+    setRuntimeExposureGate(undefined);
     vi.restoreAllMocks();
     if (existsSync(dbPath)) {
       try {
@@ -531,6 +533,54 @@ describe('runToolLoop', () => {
     expect(result.stoppedReason).toBe('stop');
     expect(result.invocations).toHaveLength(1);
     expect(result.invocations[0]).toMatchObject({ ok: true, rejected: false });
+  });
+
+  it('withdraws disabled cookbook tools and refuses a disable during the AI call', async () => {
+    let enabled = false;
+    setRuntimeExposureGate({
+      isEnabled: (_model, context) => enabled && context.tenantId === tenantId,
+    });
+    const executeTool = vi.fn(async () => ({ ok: true }));
+    const declared = tools(['tool_loop_notes.read']);
+    const principal = {
+      runAsUserId: userId,
+      tenantId,
+      allowedTools: NOTE_TOOLS,
+    };
+    const hiddenAI = makeAI((_messages, options) => {
+      expect(toolsOffered(options)).toBe(false);
+      return textResponse('done');
+    });
+    await runToolLoop({
+      ai: hiddenAI,
+      db,
+      messages: [],
+      tools: declared,
+      principal,
+      executeTool,
+      audit: () => {},
+    });
+    expect(executeTool).not.toHaveBeenCalled();
+    enabled = true;
+    const racingAI = makeAI((_messages, options, call) => {
+      if (call === 0) {
+        expect(toolsOffered(options)).toBe(true);
+        enabled = false;
+        return toolCall('tool_loop_notes.read', {});
+      }
+      return textResponse('done');
+    });
+    const result = await runToolLoop({
+      ai: racingAI,
+      db,
+      messages: [],
+      tools: declared,
+      principal,
+      executeTool,
+      audit: () => {},
+    });
+    expect(executeTool).not.toHaveBeenCalled();
+    expect(result.invocations[0]).toMatchObject({ ok: false, rejected: true });
   });
 
   it('correlates each tool observation to its call via tool_call_id', async () => {

@@ -462,3 +462,8 @@ use their existing `approvalNeeded` callback: chat creates the canonical request
 persists/streams it, and waits for the same authority before returning approval.
 Drivers must honor denial and execute through the original principal's live,
 permission-bound host/MCP adapter. See [approval details](agents/owner-approvals.md).
+
+Runtime cookbook gating is opt-in through
+[smrt-core runtime exposure](../core/agents/runtime-exposure.md). Generated
+manifest operations keep their AOT declarations, but live offerings and calls
+must also pass the current tenant's cookbook and host preference gate.

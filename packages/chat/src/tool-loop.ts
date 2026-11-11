@@ -61,6 +61,7 @@ import {
   type SmrtObject,
   ValidationError,
 } from '@happyvertical/smrt-core';
+import { isRuntimeModelEnabled } from '@happyvertical/smrt-core/runtime-exposure';
 import {
   OperationPermissionError,
   PermissionCatalogService,
@@ -952,6 +953,14 @@ export async function invokeManifestTool(
 ): Promise<unknown> {
   // Gate 1: fail-closed allow-list (defense-in-depth behind the offer gate).
   run.assertToolAllowed(tool.slug);
+  if (
+    !isRuntimeModelEnabled(
+      ObjectRegistry.getExposureModel(tool.qualifiedName ?? tool.className),
+      { surface: 'assistant', tenantId: run.context.tenantId },
+    )
+  ) {
+    throw new PrincipalToolNotAllowedError(tool.slug);
+  }
   // Reserved: a stored runtime report is never written through the generic
   // manifest dispatcher, whatever the allow-list says (the catalog filter above
   // is the offer half; the model layer is the final refusal).
@@ -1068,7 +1077,7 @@ export async function runToolLoop(
   const {
     ai,
     messages,
-    tools,
+    tools: declaredTools,
     extraTools = [],
     principal,
     db,
@@ -1101,6 +1110,12 @@ export async function runToolLoop(
   } = options;
   const maxRepeatedCalls = resolveMaxRepeatedCalls(maxRepeatedCallsOption);
 
+  const tools = declaredTools.filter((tool) =>
+    isRuntimeModelEnabled(
+      ObjectRegistry.getExposureModel(tool.qualifiedName ?? tool.className),
+      { surface: 'assistant', tenantId: principal.tenantId },
+    ),
+  );
   const serverNames = new Set<string>([
     ...tools.flatMap((tool) => [tool.slug, toolFunctionName(tool.slug)]),
     ...extraTools.flatMap((tool) => [tool.slug, tool.aiTool.function.name]),
@@ -1239,7 +1254,20 @@ export async function runToolLoop(
             model,
             temperature,
             maxTokens,
-            tools: withTools ? aiTools : undefined,
+            tools: withTools
+              ? aiTools.filter((aiTool) => {
+                  const tool = offered.get(aiTool.function.name);
+                  return (
+                    !tool ||
+                    isRuntimeModelEnabled(
+                      ObjectRegistry.getExposureModel(
+                        tool.qualifiedName ?? tool.className,
+                      ),
+                      { surface: 'assistant', tenantId: principal.tenantId },
+                    )
+                  );
+                })
+              : undefined,
             toolChoice: withTools ? toolChoice : 'none',
             ...(requestTimeoutMs !== undefined
               ? { timeout: requestTimeoutMs }
@@ -1548,6 +1576,17 @@ export async function runToolLoop(
             };
           } else {
             try {
+              if (
+                tool &&
+                !isRuntimeModelEnabled(
+                  ObjectRegistry.getExposureModel(
+                    tool.qualifiedName ?? tool.className,
+                  ),
+                  { surface: 'assistant', tenantId: principal.tenantId },
+                )
+              ) {
+                throw new PrincipalToolNotAllowedError(tool.slug);
+              }
               const hold = await options.holdTool?.({
                 id: call.id,
                 tool: tool ?? extraTool!,
