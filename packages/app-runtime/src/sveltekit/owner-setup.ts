@@ -14,6 +14,7 @@ import {
 } from '@happyvertical/smrt-app-runtime';
 import type { Cookies } from '@sveltejs/kit';
 import { type ActionFailure, fail, redirect } from '@sveltejs/kit';
+import { OWNER_LINK_SECRET_ENV } from './owner-link.js';
 import type { SmrtSvelteKitRuntime } from './runtime.js';
 
 /** Data returned by the setup page `load`. */
@@ -152,7 +153,18 @@ export function createOwnerSetupPage(
   options: OwnerSetupPageOptions = {},
 ): OwnerSetupPage {
   const redirectTo = options.redirectTo ?? '/';
-  const messages = { ...DEFAULT_OWNER_SETUP_MESSAGES, ...options.messages };
+  const messages = {
+    ...DEFAULT_OWNER_SETUP_MESSAGES,
+    ...(process.env[OWNER_LINK_SECRET_ENV]
+      ? {
+          setup_invalid:
+            'This sign-in link is no longer valid. Quit and reopen the app.',
+          setup_conflict:
+            'A workspace for this app already exists. Quit and reopen the app.',
+        }
+      : {}),
+    ...options.messages,
+  };
   const failure = (status: number, code: OwnerSetupErrorCode) =>
     fail(status, { code, message: messages[code] } as OwnerSetupFailure);
   const resolveUser =
@@ -160,7 +172,7 @@ export function createOwnerSetupPage(
     ((event: OwnerSetupEvent) => (event.locals as { user?: unknown }).user);
 
   const load = async (event: OwnerSetupEvent): Promise<OwnerSetupPageData> => {
-    const launch = process.env.SMRT_DESKTOP_OWNER_LINK_SECRET
+    const launch = process.env[OWNER_LINK_SECRET_ENV]
       ? { launchMode: 'desktop' as const }
       : {};
     if (resolveUser(event)) redirect(303, redirectTo);
@@ -171,10 +183,10 @@ export function createOwnerSetupPage(
     const local = await runtime.localRuntime();
     const diagnostics = await local.diagnostics();
     const status = diagnostics.bootstrap.status;
+    const token = event.url.searchParams.get(OWNER_SETUP_FIELDS.token) || '';
     if (status === 'claimed') {
       return { ...launch, available: false, token: '', link: 'unavailable' };
     }
-    const token = event.url.searchParams.get(OWNER_SETUP_FIELDS.token) || '';
     if (status === 'expired')
       return { ...launch, available: true, token: '', link: 'expired' };
     if (!token)

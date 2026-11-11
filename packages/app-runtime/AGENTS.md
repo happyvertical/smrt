@@ -264,6 +264,7 @@ Application infrastructure composition for the validated runtime profiles in
   session, redirect `/`). Never add a second owner-creation path.
 - Owner setup re-checks loopback peer and loopback URL host per request and
   returns only fixed `{ code, message }` failures.
+- Desktop signed-out recovery: [agents/desktop-signin.md](agents/desktop-signin.md).
 - `verifyLocalMcpToken` (local only) and `resolveMcpPrincipal` (hosted only:
   issuer/subject → `oidc_identities` → exactly one active user with exactly
   one active direct membership, else `null`) are the runtime's MCP credential

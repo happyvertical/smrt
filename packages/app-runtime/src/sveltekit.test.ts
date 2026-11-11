@@ -961,6 +961,83 @@ describe('local SvelteKit runtime', () => {
     }
   });
 
+  it('marks desktop signed-out setup for reopen guidance without returning a launch or invitation secret', async () => {
+    const { runtime } = await localRuntime('desktop-reopen');
+    await runtime.init();
+    const token = await bootstrapToken(runtime);
+    const previousSecret = process.env.SMRT_DESKTOP_OWNER_LINK_SECRET;
+    vi.stubEnv('SMRT_DESKTOP_OWNER_LINK_SECRET', 'private-launch-secret');
+    try {
+      const page = createOwnerSetupPage(runtime);
+      expect(await page.load(testEvent(`${SETUP_URL}?token=${token}`))).toEqual(
+        { available: true, token, link: 'ready', launchMode: 'desktop' },
+      );
+      expect(await page.load(testEvent(SETUP_URL))).toEqual({
+        available: true,
+        token: '',
+        link: 'missing',
+        launchMode: 'desktop',
+      });
+      await (await runtime.localRuntime()).claimOwner({
+        token,
+        name: 'Owner',
+        email: 'desktop@example.test',
+      });
+      for (const path of [SETUP_URL, `${SETUP_URL}?token=${token}`]) {
+        const data = await page.load(testEvent(path));
+        expect(data).toEqual({
+          available: false,
+          token: '',
+          link: 'unavailable',
+          launchMode: 'desktop',
+        });
+        expect(JSON.stringify(data)).not.toMatch(/private-launch-secret/);
+      }
+      const spentInvitation = testEvent(SETUP_URL, {
+        form: { token, name: 'Owner', email: 'desktop@example.test' },
+      });
+      const { failure } = await runAction(page, spentInvitation);
+      expect(failure).toMatchObject({
+        status: 400,
+        data: {
+          code: 'setup_invalid',
+          message:
+            'This sign-in link is no longer valid. Quit and reopen the app.',
+        },
+      });
+      const overridden = createOwnerSetupPage(runtime, {
+        messages: { setup_invalid: 'Application-specific recovery.' },
+      });
+      expect(
+        (
+          await runAction(
+            overridden,
+            testEvent(SETUP_URL, {
+              form: { token, name: 'Owner', email: 'desktop@example.test' },
+            }),
+          )
+        ).failure,
+      ).toMatchObject({ data: { message: 'Application-specific recovery.' } });
+      // Remote requests still refuse setup and never expose a token.
+      expect(
+        await page.load(testEvent(SETUP_URL, { clientAddress: '203.0.113.1' })),
+      ).toEqual({
+        available: false,
+        token: '',
+        link: 'unavailable',
+        launchMode: 'desktop',
+      });
+      const signedIn = testEvent(SETUP_URL);
+      signedIn.locals.user = { id: 'signed-in' };
+      await expect(page.load(signedIn)).rejects.toMatchObject({
+        status: 303,
+        location: '/',
+      });
+    } finally {
+      vi.stubEnv('SMRT_DESKTOP_OWNER_LINK_SECRET', previousSecret);
+    }
+  });
+
   it('rejects an expired bootstrap token', async () => {
     let now = new Date('2026-10-02T12:00:00.000Z');
     const { runtime } = await localRuntime('expired', {

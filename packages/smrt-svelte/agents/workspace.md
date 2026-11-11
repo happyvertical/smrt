@@ -747,6 +747,11 @@ lives beside, not inside, `./workspace` so the AdminShell barrel stays free of
   form is a plain `method="POST"`; pass `enhance` from `$app/forms` to enhance
   it. The token is a hidden field only and is never stored, logged or shown.
   Single-use, loopback-only enforcement stays server-side.
+  Optional `data.launchMode: 'desktop'` selects translated reopen guidance for the
+  existing desktop launch flow, suppressing forms, tokens and terminal/server
+  messages for missing, expired or unavailable links. An explicit ready
+  invitation keeps the manual form for non-autoClaim owner-link consumers. The
+  runtime owns detection and authorization; the component only presents its data.
 
 `AppShell chrome={false}` omits generated chrome while retaining Provider,
 ThemeProvider, shell layout context and the canonical `useAdminShell()` state.

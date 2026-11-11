@@ -206,6 +206,7 @@ function parseArgs(argv) {
     else if (flag === '--report') options.report = value();
     else if (flag === '--data-parent') options.dataParent = value();
     else if (flag === '--database-file') options.databaseFile = value();
+    else if (flag === '--sign-out-route') options.signOutRoute = value();
     else throw new Error(`unknown argument ${flag}`);
   }
   for (const required of options.sidecarOnly ? ['bundle', 'triple', 'listRoute', 'dataParent'] : ['wrapper', 'bundle', 'triple']) {
@@ -340,12 +341,23 @@ export async function smokeSidecar(options) {
           throw new Error('packaged sidecar request failed');
         }
       };
+      const signedOut = await request('/setup');
+      const signedOutHtml = await signedOut.text();
+      if (signedOut.status !== 200 || !/reopen (?:the )?(?:desktop )?app/i.test(signedOutHtml) || /pnpm\s|name="(?:email|token)"/.test(signedOutHtml)) throw new Error('desktop signed-out page must offer reopen guidance without terminal commands or a setup form');
       if ((await request(manifest.ownerClaimRoute)).status !== 403) throw new Error('owner link accepted a missing secret');
       const owner = await request(`${manifest.ownerClaimRoute}?launch=${secret}`);
       if (owner.status !== 302) throw new Error('owner link did not sign in');
       const cookie = owner.headers.getSetCookie().map((value) => value.split(';')[0]).join('; ');
       if (!cookie) throw new Error('owner session cookie missing');
       const headers = { cookie };
+      if ((await request('/setup', { headers })).status !== 303) throw new Error('owner remained on setup after launch sign-in');
+      let landing = await request('/', { headers });
+      for (let redirects = 0; redirects < 5 && [302, 303, 307, 308].includes(landing.status); redirects += 1) {
+        const location = landing.headers.get('location');
+        if (!location || new URL(location, origin).origin !== origin || new URL(location, origin).pathname === '/setup') throw new Error('owner launch redirected back to setup or outside the app');
+        landing = await request(new URL(location, origin).pathname + new URL(location, origin).search, { headers });
+      }
+      if (landing.status !== 200 || /data-owner-setup="desktop"/.test(await landing.text())) throw new Error('owner did not reach the app after launch');
       const list = await request(options.listRoute, { headers });
       if (list.status !== 200) throw new Error('authenticated REST list failed');
       await list.arrayBuffer();
@@ -363,9 +375,21 @@ export async function smokeSidecar(options) {
           if ((body.data?.id ?? body.id) !== recordId) throw new Error('relaunch returned a different record');
         }
       }
+      const interactionChecks = await options.verify?.({
+        run: run + 1,
+        dataDirectory: data,
+        request: (path, init = {}) => request(path, { ...init, headers: { ...headers, origin, ...init.headers } }),
+      });
       await sleep(5000);
       const rss = spawnSync('ps', ['-o', 'rss=', '-p', String(child.pid)], { encoding: 'utf8' });
-      results.push({ run: run + 1, firstHttpMs: Math.round(firstHttpMs), idleRssKiB: Number(rss.stdout.trim()), tableCount, health: 200, ownerSession: true, restList: 200 });
+      if (run === 0 && options.signOutRoute) {
+        const signedOut = await request(options.signOutRoute, { method: 'POST', headers: { ...headers, origin } });
+        if (![204, 303].includes(signedOut.status)) throw new Error('owner sign-out failed');
+        const setup = await request('/setup', { headers });
+        if (setup.status !== 200 || !/reopen (?:the )?(?:desktop )?app/i.test(await setup.text())) throw new Error('signed-out owner did not receive reopen guidance');
+        if (![401, 403, 404].includes((await request(options.listRoute, { headers })).status)) throw new Error('signed-out session retained REST access');
+      }
+      results.push({ run: run + 1, firstHttpMs: Math.round(firstHttpMs), idleRssKiB: Number(rss.stdout.trim()), tableCount, health: 200, ownerSession: true, restList: 200, signedOutReopen: true, launchReachedApp: true, ...(run === 0 && options.signOutRoute ? { signedOutSessionRevoked: true } : {}), ...(interactionChecks ? { interactionChecks } : {}) });
       await stopMeasuredProcess(child, seams, 10000);
       const exitInfo = await child.exit;
       if (exitInfo?.signal === 'SIGKILL' || !(exitInfo?.code === 0 || exitInfo?.signal === 'SIGTERM')) throw new Error('sidecar did not shut down gracefully');
