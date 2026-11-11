@@ -31,7 +31,9 @@ provisioning and the spend gate (#4759, #4760). App-author guide:
   bundle-gate browser fixture): the `_smrt_inference_overrides` model;
   generated consumer registration imports it from here.
 - `./server` (Node-only): settings service, override service, override
-  resolver, key rule, preference kind (#4754). `./svelte`: the panel.
+  resolver, key rule, preference kind (#4754); local CLI turns, ChatGPT model
+  rounds and connection diagnostics ([agents/engines.md](agents/engines.md)).
+  `./svelte`: the panel.
 - `./gate` (Node-only, #4760): the hosted spend gate and kill switch
   (below). `browser-safe.test.ts` keeps it off the root graph.
 

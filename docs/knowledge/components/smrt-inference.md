@@ -5,10 +5,10 @@ description: "Inference alias chains with classified failures, recorded fallback
 status: "stable"
 generated:
   by: "smrt/scripts/generate-knowledge-okf.ts"
-  at: "2026-11-10T17:00:32Z"
+  at: "2026-11-11T03:59:45Z"
 audience: "internal"
 evidence_level: "source-inspected"
-source_revision: "sha256:672d68cf2662ef08af0dda38fda0da1ad4b32717dffef7ee3d8583098e5dc8da"
+source_revision: "sha256:961d98c247a48f72015a3238a4da49cdf9d63debed34d6f84255b96d7417a62f"
 sources:
   - id: "manifest"
     resource: "https://github.com/happyvertical/smrt/blob/main/packages/inference/package.json"
@@ -17,15 +17,18 @@ sources:
     resource: "https://github.com/happyvertical/smrt/blob/main/packages/inference/AGENTS.md"
     title: "@happyvertical/smrt-inference packages/inference/AGENTS.md"
   - id: "agents-2"
+    resource: "https://github.com/happyvertical/smrt/blob/main/packages/inference/agents/engines.md"
+    title: "@happyvertical/smrt-inference packages/inference/agents/engines.md"
+  - id: "agents-3"
     resource: "https://github.com/happyvertical/smrt/blob/main/packages/inference/agents/fusions.md"
     title: "@happyvertical/smrt-inference packages/inference/agents/fusions.md"
-  - id: "agents-3"
+  - id: "agents-4"
     resource: "https://github.com/happyvertical/smrt/blob/main/packages/inference/agents/hosted.md"
     title: "@happyvertical/smrt-inference packages/inference/agents/hosted.md"
-  - id: "agents-4"
+  - id: "agents-5"
     resource: "https://github.com/happyvertical/smrt/blob/main/packages/inference/agents/resolver.md"
     title: "@happyvertical/smrt-inference packages/inference/agents/resolver.md"
-  - id: "agents-5"
+  - id: "agents-6"
     resource: "https://github.com/happyvertical/smrt/blob/main/packages/inference/agents/settings.md"
     title: "@happyvertical/smrt-inference packages/inference/agents/settings.md"
 ---
@@ -42,6 +45,7 @@ sources:
 ## Documentation
 
 - `packages/inference/AGENTS.md`
+- `packages/inference/agents/engines.md`
 - `packages/inference/agents/fusions.md`
 - `packages/inference/agents/hosted.md`
 - `packages/inference/agents/resolver.md`

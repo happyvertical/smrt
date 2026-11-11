@@ -11,63 +11,29 @@ import type {
   AssistantStatus,
 } from '../../assistant/events.ts';
 import type { AgentCliStatus } from '../agent-cli/detect.ts';
-import { AGENT_TOOL_INFO, type AgentTool } from '../agent-cli/tools.ts';
+import type { AgentTool } from '../agent-cli/tools.ts';
 import { CHATGPT_SETTINGS_HREF, chatgptConnection } from '../chatgpt.ts';
 import type { Principal } from '../owner.ts';
 import { type AssistantConfigOptions, assistantStatus } from './config.ts';
 
 export const SETUP_ACTION = { label: 'Set up the assistant', href: '/welcome' };
 
-export function cliTool(engine: AssistantEngineId): AgentTool | null {
-  return engine === 'claude-code' || engine === 'codex' ? engine : null;
-}
+export { cliTool, engineLabel } from '@happyvertical/smrt-inference/server';
 
-export function engineLabel(engine: AssistantEngineId): string {
-  const tool = cliTool(engine);
-  if (engine === 'chatgpt') return 'ChatGPT';
-  return tool ? AGENT_TOOL_INFO[tool].label : 'your API key';
-}
-
-/** Status of the ChatGPT engine from the connection (no network call). */
-export async function chatgptEngineStatus(): Promise<AssistantStatus> {
-  const base = { engine: 'chatgpt', engineLabel: 'ChatGPT' } as const;
-  const status = await (await chatgptConnection()).status();
-  if (status.signedIn) return { ...base, configured: true };
-  return {
-    ...base,
-    configured: false,
-    code: 'chatgpt_signed_out',
-    message: 'ChatGPT is not signed in.',
-    action: { label: 'Sign in with ChatGPT', href: CHATGPT_SETTINGS_HREF },
-  };
-}
-
-/** Status of a CLI engine from what the tool itself reported. */
-export function cliEngineStatus(
+import {
+  chatgptEngineStatus as chatgptStatusView,
+  cliEngineStatus as cliStatusView,
+  inferenceEngineStatus,
+} from '@happyvertical/smrt-inference/server';
+export const cliEngineStatus = (
   tool: AgentTool,
   found: Pick<AgentCliStatus, 'installed' | 'signedIn'>,
-): AssistantStatus {
-  const label = AGENT_TOOL_INFO[tool].label;
-  const base = { engine: tool, engineLabel: label } as const;
-  if (!found.installed)
-    return {
-      ...base,
-      configured: false,
-      code: 'agent_cli_missing',
-      message: `${label} is not installed on this computer.`,
-      action: SETUP_ACTION,
-    };
-  if (found.signedIn !== true)
-    return {
-      ...base,
-      configured: false,
-      code: 'agent_cli_signed_out',
-      message: `${label} is not signed in.`,
-      action: SETUP_ACTION,
-    };
-  return { ...base, configured: true };
-}
-
+): AssistantStatus => cliStatusView(tool, found, SETUP_ACTION);
+export const chatgptEngineStatus = async (): Promise<AssistantStatus> =>
+  chatgptStatusView(await chatgptConnection(), {
+    label: 'Sign in with ChatGPT',
+    href: CHATGPT_SETTINGS_HREF,
+  });
 export async function statusFor(
   engine: AssistantEngineId,
   principal: Principal,
@@ -76,21 +42,14 @@ export async function statusFor(
     cliStatus(tool: AgentTool): Promise<AgentCliStatus>;
   },
 ): Promise<AssistantStatus> {
-  const tool = cliTool(engine);
-  if (tool) return cliEngineStatus(tool, await options.cliStatus(tool));
-  if (engine === 'chatgpt') return chatgptEngineStatus();
-  const api = await assistantStatus(principal, options.config);
-  return {
-    ...api,
-    engine: 'api',
-    engineLabel: engineLabel('api'),
-    ...(api.configured
-      ? {}
-      : {
-          action: {
-            label: 'Open Inference settings',
-            href: '/settings/inference',
-          },
-        }),
-  };
+  return inferenceEngineStatus(engine, {
+    cliStatus: options.cliStatus,
+    chatgpt: { status: async () => (await chatgptConnection()).status() },
+    apiStatus: () => assistantStatus(principal, options.config),
+    actions: {
+      cli: SETUP_ACTION,
+      chatgpt: { label: 'Sign in with ChatGPT', href: CHATGPT_SETTINGS_HREF },
+      api: { label: 'Open Inference settings', href: '/settings/inference' },
+    },
+  });
 }

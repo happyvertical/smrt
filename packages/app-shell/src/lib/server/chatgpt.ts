@@ -10,14 +10,10 @@
 // holds a token: the connection answers "signed in?" and an account label, and
 // hands the provider a token handle. Not offered for Claude: its subscription
 // stays on the Claude Code engine (`claude-cli` is refused, config.ts).
-import { spawn } from 'node:child_process';
 import { join } from 'node:path';
 import {
   type ChatGPTPlanConnection,
-  type ChatGPTPlanFailureKind,
-  classifyChatGPTPlanFailure,
   createChatGPTPlanConnection,
-  isChatGPTAuthorizationUrl,
 } from '@happyvertical/smrt-inference/server';
 import { dataRoot } from './host.ts';
 
@@ -73,109 +69,13 @@ export const lazyChatgptConnection: Pick<
   defaultModel: async () => (await chatgptConnection()).defaultModel(),
 };
 
-/** The command that opens `url` in the system browser on `platform`. */
-export function browserCommand(
-  url: string,
-  platform: NodeJS.Platform = process.platform,
-): { command: string; args: string[]; verbatim?: boolean } {
-  if (platform === 'darwin') return { command: 'open', args: [url] };
-  if (platform === 'win32')
-    // `&` and `%` need the URL quoted for cmd.exe; `""` is start's title.
-    return {
-      command: 'cmd',
-      args: ['/c', 'start', '""', `"${url}"`],
-      verbatim: true,
-    };
-  return { command: 'xdg-open', args: [url] };
-}
+export {
+  browserCommand,
+  type ChatGPTFailureNote,
+  openSystemBrowser,
+  type SpawnLike,
+} from '@happyvertical/smrt-inference/server';
 
-export type SpawnLike = (
-  command: string,
-  args: string[],
-  options: {
-    detached: boolean;
-    stdio: 'ignore';
-    windowsVerbatimArguments?: boolean;
-  },
-) => { unref(): void; once(event: 'error', listener: () => void): unknown };
-
-/**
- * Open OpenAI's sign-in page in the system browser from the app process (the
- * desktop wrapper has no browser of its own to hand a link to). Refuses any
- * address that is not https on OpenAI's host, before anything is spawned.
- * Resolves `false` when the opener could not start.
- */
-export async function openSystemBrowser(
-  url: string,
-  deps: { platform?: NodeJS.Platform; spawn?: SpawnLike } = {},
-): Promise<boolean> {
-  if (!isChatGPTAuthorizationUrl(url))
-    throw new Error('Only the ChatGPT sign-in page can be opened.');
-  const { command, args, verbatim } = browserCommand(url, deps.platform);
-  const run = deps.spawn ?? (spawn as unknown as SpawnLike);
-  return new Promise<boolean>((resolve) => {
-    try {
-      const child = run(command, args, {
-        detached: true,
-        stdio: 'ignore',
-        ...(verbatim ? { windowsVerbatimArguments: true } : {}),
-      });
-      child.once('error', () => resolve(false));
-      child.unref();
-      // `open` and friends return at once; an error arrives on the next tick.
-      setTimeout(() => resolve(true), 50);
-    } catch {
-      resolve(false);
-    }
-  });
-}
-
-/** What the dock shows for a plan failure. No provider text, no ids. */
-export interface ChatGPTFailureNote {
-  code: string;
-  message: string;
-  action?: { label: string; href: string };
-}
-
-const SIGN_IN_AGAIN = { label: 'Sign in again', href: CHATGPT_SETTINGS_HREF };
-
-const NOTES: Record<
-  Exclude<ChatGPTPlanFailureKind, 'other'>,
-  ChatGPTFailureNote
-> = {
-  usage_limit: {
-    code: 'chatgpt_usage_limit',
-    message:
-      'Your ChatGPT plan has reached its usage limit. Try again later, or check ChatGPT Settings, Usage.',
-  },
-  session_revoked: {
-    code: 'chatgpt_session_revoked',
-    message:
-      'Your ChatGPT sign-in is no longer valid. Sign in again to keep using the assistant.',
-    action: SIGN_IN_AGAIN,
-  },
-  workspace: {
-    code: 'chatgpt_workspace',
-    message:
-      'This ChatGPT account or workspace is not allowed to be used here. Sign in with another account.',
-    action: SIGN_IN_AGAIN,
-  },
-  unavailable: {
-    code: 'chatgpt_unavailable',
-    message:
-      'ChatGPT plan use is not available right now. You are still signed in. Try again in a moment.',
-  },
-  unsupported_capability: {
-    code: 'chatgpt_unsupported',
-    message:
-      'The assistant sent something ChatGPT plan use does not allow, so nothing was done. This is a fault in the app, not your account.',
-  },
-};
-
-/** The dock note for a ChatGPT plan failure, else `undefined` (not one). */
-export function chatgptFailureNote(
-  error: unknown,
-): ChatGPTFailureNote | undefined {
-  const kind = classifyChatGPTPlanFailure(error);
-  return kind === 'other' ? undefined : NOTES[kind];
-}
+import { chatgptFailureNote as failureNote } from '@happyvertical/smrt-inference/server';
+export const chatgptFailureNote = (error: unknown) =>
+  failureNote(error, CHATGPT_SETTINGS_HREF);

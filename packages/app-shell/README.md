@@ -210,6 +210,11 @@ call, the running tool and any wait.
 - **Threads** persist in shell.db (`assistant_threads`, `assistant_messages`).
 - **Tests** inject a stub model (`modelFactory` option, `test-helpers.ts`).
 
+The reusable CLI engine, ChatGPT model adapter and connection diagnostics live in
+[smrt-inference/server](../inference/agents/engines.md). The shell supplies its
+owner token scope, MCP route, thread persistence, draft guidance and approval
+presentation through thin host adapters; its policy remains the authority.
+
 ### Sign in with ChatGPT (a preview for open source apps)
 
 OpenAI's official flow for local open source apps, a **preview**: the
