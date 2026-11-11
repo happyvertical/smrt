@@ -1,8 +1,8 @@
 import { existsSync, readFileSync, realpathSync } from 'node:fs';
+import { createRequire } from 'node:module';
 import { extname, isAbsolute, relative, resolve } from 'node:path';
 import { fileURLToPath, pathToFileURL } from 'node:url';
 import { resolve as resolveImport } from 'import-meta-resolve';
-import { moduleRunnerTransformSync, transformSync } from 'oxc-transform';
 import { modelReplacements } from '../manifest/model-replacements.js';
 import { isFrameworkBaseClass } from '../registry/framework-base-classes.js';
 import type { SmartObjectManifest } from '../scanner/types.js';
@@ -273,6 +273,11 @@ export function generateActivationRegistration(
         `Activation requires a server model module, received ${file}`,
       );
     }
+    // Core's public root also exports the Vite plugin. Resolve native build
+    // tooling only while generating activation, never while booting an app.
+    const { moduleRunnerTransformSync, transformSync } = createRequire(
+      import.meta.url,
+    )('oxc-transform') as typeof import('oxc-transform');
     const transformed = transformSync(file, readFileSync(file, 'utf8'), {
       decorator: { legacy: true, emitDecoratorMetadata: true },
     });

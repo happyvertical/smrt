@@ -225,6 +225,12 @@ silently switched to this database/store-specific bootstrap.
 
 ### Measurement
 
+Activation generation loads OXC synchronously only when scanning a source module.
+Importing the published core root or building the data-only activation manifest
+does not load the native transformer. Compiled hosts can omit this build tool;
+the existing synchronous generation API still requires it when called. A plain
+Node process test refuses OXC resolution while importing those runtime surfaces.
+
 `node packages/core/scripts/benchmark-activation.mjs --runs=3`, after `pnpm build`,
 uses independent cold Node processes, warm filesystem caches, in-process SQLite,
 real generated loaders, registry schema merge and migration differ/tracker. The

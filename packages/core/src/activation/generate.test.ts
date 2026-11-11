@@ -109,6 +109,29 @@ function workspace() {
 }
 
 describe('AOT activation generation', () => {
+  it('boots the published core root without loading native activation build tooling', () => {
+    const child = spawnSync(
+      process.execPath,
+      [
+        '--input-type=module',
+        '-e',
+        `import { registerHooks } from 'node:module';
+registerHooks({ resolve(specifier, context, next) {
+  if (specifier === 'oxc-transform') throw new Error('build tooling loaded at boot');
+  return next(specifier, context);
+} });
+await import(${JSON.stringify(new URL('../../dist/index.js', import.meta.url).href)});
+const { buildActivationManifest } = await import(${JSON.stringify(new URL('../../dist/activation/generate.js', import.meta.url).href)});
+const graph = buildActivationManifest({ objects: {} }, {});
+if (Object.keys(graph.models).length !== 0) process.exit(2);
+`,
+      ],
+      { cwd: core, encoding: 'utf8', timeout: 30_000 },
+    );
+    expect(child.stderr).not.toContain('build tooling loaded at boot');
+    expect(child.status, child.stderr).toBe(0);
+  });
+
   it('resolves legacy unqualified report ancestry to its framework owner without inventing a table/model', () => {
     const { files, manifest } = workspace();
     manifest.objects['@activation/unused:Unused'].extends = 'SmrtReport';
