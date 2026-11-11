@@ -1,4 +1,5 @@
 <script lang="ts">
+import { AssistantApprovalCard } from '@happyvertical/smrt-chat/svelte';
 import { Button } from '@happyvertical/smrt-ui';
 import { describeApproval, failureText, statusLabel } from '$lib/ui/approvals';
 import {
@@ -27,7 +28,7 @@ let {
   ondecide,
 }: Props = $props();
 
-const detail = $derived(describeApproval(approval));
+const description = $derived(describeApproval(approval));
 const failed = $derived(failureText(approval));
 const pending = $derived(approval.status === 'pending');
 const uid = $derived(`ap-${approval.id}`);
@@ -40,17 +41,17 @@ const badge = $derived(
 );
 </script>
 
-<article class="sh-card" aria-labelledby="{uid}-title">
-  <header class="top">
-    <h3 id="{uid}-title">{approval.summary}</h3>
-    <span class="sh-badge {badge}">{statusLabel(approval.status)}</span>
-  </header>
-
-  {#each detail.lines as line, i (i)}
-    <p class:warn={detail.destructive && i === detail.lines.length - 1}>{line}</p>
+<AssistantApprovalCard presentation={{
+  id: approval.id, summary: approval.summary,
+  statusLabel: statusLabel(approval.status), badgeClass: badge,
+  pending, busy, message, ondecide, busyLabel: 'Working…', headingSize: '1.0625rem',
+}}>
+{#snippet detail()}
+  {#each description.lines as line, i (i)}
+    <p class:warn={description.destructive && i === description.lines.length - 1}>{line}</p>
   {/each}
 
-  {#each detail.blocks as block, i (i)}
+  {#each description.blocks as block, i (i)}
     <p class="sh-muted" id="{uid}-code-{i}">Code for {block.title}</p>
     <!-- svelte-ignore a11y_no_noninteractive_tabindex (keyboard scrolling of long code) -->
     <pre class="sh-code" tabindex="0" aria-labelledby="{uid}-code-{i}"><code>{block.code}</code></pre>
@@ -72,57 +73,18 @@ const badge = $derived(
   {#if approval.status === 'failed' && approval.action?.kind === 'publish-draft'}
     <Button variant="secondary" href="/draft/review">Review again</Button>
   {/if}
-  {#if message}<p class="sh-alert sh-alert-error" role="alert">{message}</p>{/if}
-
-  {#if pending && ondecide}
-    <div class="sh-actions">
-      <button
-        type="button"
-        class="sh-btn sh-btn-primary"
-        disabled={busy}
-        onclick={() => ondecide(true)}
-      >
-        {busy ? 'Working…' : 'Approve'}<span class="sr-only">: {approval.summary}</span>
-      </button>
-      <button
-        type="button"
-        class="sh-btn"
-        disabled={busy}
-        onclick={() => ondecide(false)}
-      >
-        Deny<span class="sr-only">: {approval.summary}</span>
-      </button>
-    </div>
-  {/if}
-</article>
+{/snippet}
+</AssistantApprovalCard>
 
 <style>
 @layer smrt.reset, smrt.structure, smrt.theme;
 @layer smrt.theme {
-  .top {
-    display: flex;
-    flex-wrap: wrap;
-    align-items: baseline;
-    justify-content: space-between;
-    gap: var(--smrt-spacing-sm, 0.5rem);
-  }
-  h3 {
-    margin: 0;
-    font-size: 1.0625rem;
-  }
   p {
     margin: var(--smrt-spacing-sm, 0.5rem) 0;
   }
   .warn {
     font-weight: 600;
   }
-  .sr-only {
-    position: absolute;
-    width: 1px;
-    height: 1px;
-    overflow: hidden;
-    clip-path: inset(50%);
-    white-space: nowrap;
-  }
+
 }
 </style>

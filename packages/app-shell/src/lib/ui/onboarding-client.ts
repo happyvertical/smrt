@@ -22,7 +22,12 @@ export interface ChatGPTInfo {
   signedIn: boolean;
   signingIn: boolean;
   account?: { label: string };
-  error?: { code: string; message: string };
+  error?: {
+    code: NonNullable<
+      import('@happyvertical/smrt-svelte/connect-ai').ConnectAiState['chatgpt']['error']
+    >['code'];
+    message: string;
+  };
 }
 
 export interface OnboardingInfo {
@@ -137,91 +142,15 @@ export const completeFresh = (doFetch: Fetch = fetch) =>
 export const skipOnboarding = (doFetch: Fetch = fetch) =>
   post('/api/shell/onboarding/skip', {}, doFetch);
 
-/** Whether the engine in effect can answer right now. */
-export function engineReady(info: OnboardingInfo): boolean {
-  if (info.engine === 'api') return info.apiReady;
-  if (info.engine === 'chatgpt') return info.chatgpt?.signedIn === true;
-  const tool = info.tools.find((t) => t.tool === info.engine);
-  return !!tool?.installed && tool.signedIn === true;
-}
-
-/**
- * The API-key line under the tools: "in-use" only when the API engine is the
- * one in effect AND a key resolves; "available" when a key resolves but
- * another engine is chosen (or the chosen one is not working); "none" when
- * nothing works yet. Covers every engine: with `chatgpt` chosen and signed in,
- * the API key is "available", never "in use".
- */
-export function apiRow(info: OnboardingInfo): 'in-use' | 'available' | 'none' {
-  if (!info.apiReady) return 'none';
-  return info.engine === 'api' ? 'in-use' : 'available';
-}
-
-/**
- * Which tools each page lists. The welcome step offers Claude Code (and the
- * ChatGPT row); Codex is an advanced option that lives under Settings >
- * Assistant only.
- */
-export function visibleTools(
-  info: OnboardingInfo,
-  variant: 'welcome' | 'settings',
-): { main: ToolInfo[]; advanced: ToolInfo[] } {
-  if (variant === 'settings')
-    return {
-      main: info.tools.filter((t) => t.tool !== 'codex'),
-      advanced: info.tools.filter((t) => t.tool === 'codex'),
-    };
-  return { main: info.tools.filter((t) => t.tool !== 'codex'), advanced: [] };
-}
-
-export type ChatGPTAction =
-  | { kind: 'in-use'; label: string }
-  | { kind: 'use'; label: string }
-  | { kind: 'sign-in'; label: string }
-  | { kind: 'waiting'; label: string };
-
-/** The one button the ChatGPT row gets, and its words. */
-export function chatgptAction(info: OnboardingInfo): ChatGPTAction {
-  const chatgpt = info.chatgpt;
-  if (chatgpt?.signedIn)
-    return info.engine === 'chatgpt'
-      ? { kind: 'in-use', label: 'In use' }
-      : { kind: 'use', label: 'Use ChatGPT' };
-  if (chatgpt?.signingIn)
-    return { kind: 'waiting', label: 'Waiting for sign-in…' };
-  return { kind: 'sign-in', label: 'Sign in with ChatGPT' };
-}
-
-/** The line under the ChatGPT row's name. */
-export function chatgptDescription(info: OnboardingInfo): string {
-  const chatgpt = info.chatgpt;
-  if (chatgpt?.signedIn)
-    return `Signed in${chatgpt.account ? ` as ${chatgpt.account.label}` : ''}.`;
-  if (chatgpt?.signingIn) return 'Finish signing in in your browser.';
-  if (chatgpt?.error) return chatgpt.error.message;
-  return 'Use your own ChatGPT plan. A preview for open source apps.';
-}
-
-export type ToolAction =
-  | { kind: 'in-use'; label: string }
-  | { kind: 'use'; label: string }
-  | { kind: 'sign-in'; label: string }
-  | { kind: 'waiting'; label: string }
-  | { kind: 'install'; label: string }
-  | { kind: 'retry'; label: string };
-
-/** The one button a tool gets, and its words. */
-export function toolAction(tool: ToolInfo, info: OnboardingInfo): ToolAction {
-  if (!tool.installed) return { kind: 'install', label: 'How to install' };
-  if (tool.signedIn === null) return { kind: 'retry', label: 'Check again' };
-  if (tool.signedIn === false)
-    return tool.login === 'running'
-      ? { kind: 'waiting', label: 'Waiting for sign-in…' }
-      : { kind: 'sign-in', label: `Sign in with ${tool.label}` };
-  return info.engine === tool.tool
-    ? { kind: 'in-use', label: 'In use' }
-    : { kind: 'use', label: `Use ${tool.label}` };
-}
+// Shared connection presentation; routes below remain the shell's host policy.
+export {
+  apiRow,
+  chatgptAction,
+  chatgptDescription,
+  engineReady,
+  toolAction,
+  visibleTools,
+} from '@happyvertical/smrt-svelte/connect-ai/client';
 
 /** Pages the first-run welcome never interrupts. */
 const NO_WELCOME = /^\/(welcome|settings|setup|sign-out|approvals)(\/|$)/;
@@ -241,4 +170,48 @@ export function needsWelcome(input: {
     input.modelCount === 0 &&
     !NO_WELCOME.test(input.pathname)
   );
+}
+
+/** Existing shell route DTOs adapted to the shared, provider-free connection component. */
+export function createShellConnectAiClient(options: {
+  onchange?: (info: OnboardingInfo, ready: boolean) => void;
+}): import('@happyvertical/smrt-svelte/connect-ai').ConnectAiClient {
+  const boundFetch =
+    (signal?: AbortSignal): Fetch =>
+    (input, init) =>
+      fetch(input, { ...init, signal });
+  return {
+    async state(signal) {
+      const info = await fetchOnboarding(true, boundFetch(signal));
+      const { engineReady } = await import(
+        '@happyvertical/smrt-svelte/connect-ai/client'
+      );
+      const configured = engineReady(info);
+      options.onchange?.(info, configured);
+      return {
+        ...info,
+        configured,
+        chatgpt: info.chatgpt ?? { signedIn: false, signingIn: false },
+      };
+    },
+    async connect(tool, signal) {
+      await connectTool(tool, boundFetch(signal));
+    },
+    connectOutcome: (tool, signal) => connectTool(tool, boundFetch(signal)),
+    async choose(engine, signal) {
+      await chooseEngine(engine, boundFetch(signal));
+    },
+    startChatGPT: (signal) => startChatGPT(boundFetch(signal)),
+    errorMessage: (error) =>
+      error instanceof OnboardingError
+        ? error.message
+        : 'Something went wrong.',
+    async signOutChatGPT(signal) {
+      await signOutChatGPT(boundFetch(signal));
+    },
+    modelState: (signal) => fetchChatGPT(boundFetch(signal)),
+    async chooseModel(model, signal) {
+      await chooseChatGPTModel(model, boundFetch(signal));
+    },
+  };
 }

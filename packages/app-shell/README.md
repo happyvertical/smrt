@@ -12,6 +12,32 @@ smrt-app-shell (SvelteKit + adapter-node, app-runtime local profile)
 └── <data root>/user-app/                app.db, snapshots (plain files; the newest 20 `method-*` are kept, clean up prunes old migration ones)
 ```
 
+## Shared assistant pieces (Tricia)
+
+The saved data-shell product keeps its own assistant panel, routes, thread
+history, builder and draft policy. Engines use smrt-inference; human tool
+labels use smrt-chat; approval decisions/consumption use app-runtime's
+`OwnerApprovalAuthority` and chat's observation-only hold bridge; connection
+onboarding/settings use smrt-svelte's `ConnectAi` and `mountConnectAiRoutes`.
+
+Existing approvals **stay in `approvals`**: no data copy, migration or new
+approval ids. `Approval` is a compatibility model/endpoint facade and
+`approval-store.ts` adapts those rows to the shared authority. Pending requests
+retain their original indefinite lifetime, preview and requester. Decided
+history retains its timestamps/results. Atomic conditional updates decide and
+consume once across authorities; execution is recorded before live effects.
+Interrupted approvals never replay automatically. An old approved row without a
+result remains an unknown execution outcome and needs manual reconciliation.
+The adapter refuses storage with more than one installation tenant because the
+old rows do not encode tenancy; it cannot safely infer another ownership model.
+
+Opt-in shared compatibility options preserve generic record chips, compact
+connection wording/grouping, the settings-only ChatGPT model preference, API
+selection without a configured key, and remote sign-out confirmation. The
+shell keeps its existing sign-out fallback to the API preference, Fresh/Skip
+steps, detailed builder/code previews and draft-review link. Other applications
+keep the shared defaults. See [adapter contracts and validation](agents/shared-pieces.md).
+
 ## Run it
 
 Build once, then set up the data folder and the owner link, then start the

@@ -41,6 +41,7 @@
     "@happyvertical/ai": "catalog:",
     "@happyvertical/smrt-app-mcp": "workspace:*",
     "@happyvertical/smrt-app-runtime": "workspace:*",
+    "@happyvertical/smrt-chat": "workspace:*",
     "@happyvertical/smrt-config": "workspace:*",
     "@happyvertical/smrt-core": "workspace:*",
     "@happyvertical/smrt-inference": "workspace:*",

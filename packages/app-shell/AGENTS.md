@@ -6,6 +6,8 @@ for one person: the owner. Epic #4867; this package is #4872. The engine is
 documented in [agents/engine.md](agents/engine.md) (it must not import
 SvelteKit or `src/lib`). README has the route and JSON contracts.
 
+Shared assistant adapters and legacy approval storage: [agents/shared-pieces.md](agents/shared-pieces.md).
+
 ## Where things live
 
 | Path | What |
@@ -19,7 +21,7 @@ SvelteKit or `src/lib`). README has the route and JSON contracts.
 | `src/lib/server/target.ts`, `drafts.ts`, `view.ts` | The copy a request names (`live`/`draft`, `CallScope`), the draft lifecycle (start, describe, preview, publish and discard apply, History grouping) and the owner's saved view. README "Draft then publish (the shell)" lists routes, payloads, events. |
 | `src/lib/server/version-store.ts` | `ShellVersionStore` (engine `VersionStore` on `AppVersion` + the `App` row; `commit` is one transaction, a publish's draft mark rides in it) and `DraftVersionStore` (`AppDraftVersion` rows of one `AppDraft`). |
 | `src/lib/server/owner.ts` | Owner check, `Principal`, `assertOwner`, `runAs`. |
-| `src/lib/server/approvals.ts` | Approval service; the only place `approved: true` is set. |
+| `src/lib/server/approvals.ts`, `approval-store.ts` | Shared-authority storage adapter and shell action executor; the only place `approved: true` is set. |
 | `src/lib/server/builder.ts` | `runCommand`/`runAppTool`/`runRest`/`requestRecordDelete`: execute or turn into an Approval. |
 | `src/lib/server/catalog.ts`, `policy.ts`, `mcp-server.ts` | Merged tool catalog, the one policy, the `/mcp` server. |
 | `src/lib/server/http.ts`, `events.ts` | Route plumbing; in-process event bus for SSE. |

@@ -1,3 +1,4 @@
+import { mountConnectAiRoutes } from '@happyvertical/smrt-svelte/connect-ai/server';
 // First-run onboarding and the assistant's engine choice, as owner-only JSON
 // handlers (the route files under `src/routes/api/shell/onboarding/` are
 // one-liners over these).
@@ -31,7 +32,6 @@ import {
   asSettingsOwner,
   assistantSettings,
   cliStatus,
-  invalidateCliStatus,
 } from './agent-cli/service.ts';
 import {
   CHATGPT_MODEL_PATTERN,
@@ -50,6 +50,7 @@ import {
 import { chatgptConnection, openSystemBrowser } from './chatgpt.ts';
 import { isDesktopWrapper } from './desktop.ts';
 import { guarded, HttpError, json, ownerOf, readJson } from './http.ts';
+import { principalFromLocals, requireOwner } from './owner.ts';
 
 type Handler = ReturnType<typeof guarded>;
 
@@ -82,6 +83,63 @@ export function mountOnboardingRoutes(
   } = {},
 ): OnboardingRoutes {
   const openBrowser = options.openBrowser ?? openSystemBrowser;
+  const shared = mountConnectAiRoutes({
+    async authorize(event: Parameters<Handler>[0]) {
+      const owner = await requireOwner(principalFromLocals(event.locals));
+      return {
+        engine: () =>
+          asSettingsOwner(
+            owner,
+            async () => (await assistantSettings().read()).engine,
+          ),
+        select: (engine) =>
+          asSettingsOwner(owner, async () => {
+            await assistantSettings().write({ engine });
+          }),
+        cli: { cliStatus, agentLogin },
+        chatgpt: await chatgptConnection(),
+        apiStatus: () => assistantStatus(owner, options.config),
+      };
+    },
+    openBrowser: (url) =>
+      isDesktopWrapper() ? openBrowser(url) : Promise.resolve(false),
+    allowUnconfiguredApiSelection: true,
+    includeSignOutConfirmation: true,
+  });
+  const sharedAction = async (
+    event: Parameters<Handler>[0],
+    body: Record<string, unknown>,
+  ) => {
+    const response = await shared.POST({
+      ...event,
+      request: new Request(event.url, {
+        method: 'POST',
+        headers: {
+          origin: event.url.origin,
+          'content-type': 'application/json',
+        },
+        body: JSON.stringify(body),
+      }),
+    });
+    const out = (await response.json()) as Record<string, unknown>;
+    if (!response.ok) {
+      if (out.code === 'cli_missing') return { result: 'missing' };
+      if (out.code === 'cli_no_answer')
+        throw new HttpError(
+          502,
+          `${AGENT_TOOL_INFO[body.tool as 'codex' | 'claude-code'].label} did not answer. Try again.`,
+        );
+      if (out.code === 'engine_not_ready')
+        throw new HttpError(
+          409,
+          body.engine === 'chatgpt'
+            ? 'Sign in with ChatGPT first.'
+            : 'That tool is not ready.',
+        );
+      throw new HttpError(response.status, 'Could not connect your AI.');
+    }
+    return out;
+  };
   return {
     state: guarded(async (event) => {
       const owner = await ownerOf(event);
@@ -110,26 +168,15 @@ export function mountOnboardingRoutes(
       const body = await readJson(event.request);
       if (!isAgentTool(body.tool)) throw new HttpError(400, 'unknown tool');
       const tool = body.tool;
-      const status = await cliStatus(tool, { fresh: true });
-      if (!status.installed)
+      const out = await sharedAction(event, { action: 'connect', tool });
+      if (out.result === 'missing')
         return json({
           result: 'missing',
           installUrl: AGENT_TOOL_INFO[tool].installUrl,
         });
-      if (status.signedIn === true) {
-        await asSettingsOwner(owner, () =>
-          assistantSettings().write({ engine: tool }),
-        );
-        return json({ result: 'ready', engine: tool });
-      }
-      if (status.signedIn === null)
-        throw new HttpError(
-          502,
-          `${AGENT_TOOL_INFO[tool].label} did not answer. Try again.`,
-        );
-      const started = await agentLogin().start(tool);
+      if (out.ok) return json({ result: 'ready', engine: tool });
       return json({
-        result: started === 'started' ? 'login_started' : 'login_running',
+        result: out.result === 'started' ? 'login_started' : 'login_running',
       });
     }),
 
@@ -138,24 +185,7 @@ export function mountOnboardingRoutes(
       const body = await readJson(event.request);
       if (!isAssistantEngine(body.engine))
         throw new HttpError(400, 'unknown engine');
-      if (body.engine === 'chatgpt') {
-        const found = await chatgptEngineStatus();
-        if (!found.configured)
-          throw new HttpError(409, 'Sign in with ChatGPT first.');
-      }
-      const tool = cliTool(body.engine);
-      if (tool) {
-        invalidateCliStatus(tool);
-        const found = cliEngineStatus(
-          tool,
-          await cliStatus(tool, { fresh: true }),
-        );
-        if (!found.configured)
-          throw new HttpError(409, found.message ?? 'That tool is not ready.');
-      }
-      await asSettingsOwner(owner, () =>
-        assistantSettings().write({ engine: body.engine as AssistantEngineId }),
-      );
+      await sharedAction(event, { action: 'select', engine: body.engine });
       return json({ engine: body.engine });
     }),
 
@@ -187,21 +217,11 @@ export function mountOnboardingRoutes(
       const body = await readJson(event.request);
       const connection = await chatgptConnection();
       if (body.action === 'start') {
-        const { authorizationUrl } = await connection.start();
-        // The desktop wrapper has no browser to hand a link to: open the
-        // system browser from here (https on OpenAI's host only). A plain
-        // browser session gets the address for a normal link instead.
-        const opened = isDesktopWrapper()
-          ? await openBrowser(authorizationUrl)
-          : false;
-        return json({
-          result: 'login_started',
-          opened,
-          ...(opened ? {} : { authorizationUrl }),
-        });
+        const out = await sharedAction(event, { action: 'chatgpt-start' });
+        return json({ result: 'login_started', ...out });
       }
       if (body.action === 'sign-out') {
-        const out = await connection.signOut();
+        const out = await sharedAction(event, { action: 'chatgpt-sign-out' });
         const settings = await asSettingsOwner(owner, () =>
           assistantSettings().read(),
         );

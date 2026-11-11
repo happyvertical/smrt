@@ -455,6 +455,9 @@ importers:
       '@happyvertical/smrt-app-runtime':
         specifier: workspace:*
         version: link:../app-runtime
+      '@happyvertical/smrt-chat':
+        specifier: workspace:*
+        version: link:../chat
       '@happyvertical/smrt-config':
         specifier: workspace:*
         version: link:../config

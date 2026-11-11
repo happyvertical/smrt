@@ -2,10 +2,13 @@
 // does not run: it becomes an `Approval` row for the owner. Only
 // `decideApproval` (called from `Approval.decide`) ever passes the engine's
 // `approved: true`; nothing taken from a request body can set it.
+
 import { AsyncLocalStorage } from 'node:async_hooks';
 import { createHash } from 'node:crypto';
+import { OwnerApprovalError } from '@happyvertical/smrt-app-runtime';
 import type { Command, Plan } from '../../engine/index.ts';
 import { type Approval, ApprovalCollection } from '../objects/Approval.ts';
+import { shellApprovalAuthority } from './approval-store.ts';
 import { discardNow, publishApproved } from './drafts.ts';
 import { publish } from './events.ts';
 import { getHost, getShellDb } from './host.ts';
@@ -69,8 +72,6 @@ export interface ApprovalOutcome {
   error?: string;
 }
 
-const MAX_RESULT_CHARS = 64_000;
-
 function canonical(value: unknown): string {
   if (Array.isArray(value)) return `[${value.map(canonical).join(',')}]`;
   if (value && typeof value === 'object') {
@@ -88,7 +89,8 @@ export function actionKey(action: ApprovalAction): string {
   return createHash('sha256').update(canonical(action)).digest('hex');
 }
 
-function parseJson(text: string): unknown {
+/** Read a legacy JSON column without breaking saved history on malformed text. */
+export function parseJson(text: string): unknown {
   if (!text) return null;
   try {
     return JSON.parse(text);
@@ -105,7 +107,10 @@ function iso(value: unknown): string {
 function view(row: Approval): ApprovalView {
   return {
     id: row.id as string,
-    status: row.status,
+    status:
+      row.status === 'accepted' || row.status === 'executing'
+        ? 'approved'
+        : row.status,
     summary: row.summary,
     preview: parseJson(row.preview),
     action: parseJson(row.command) as ApprovalAction | null,
@@ -142,25 +147,29 @@ export async function requestApproval(
   const row =
     existing ??
     (await (async () => {
-      const created = await coll.create({
-        command: JSON.stringify(action),
-        actionKey: key,
-        summary: plan.summary,
-        // Flat: the Approval card reads `preview.model`, `preview.code`, ...
-        preview: JSON.stringify({
-          ...(plan.preview ?? {}),
-          ...(plan.affectedMethods
-            ? { affectedMethods: plan.affectedMethods }
-            : {}),
-        }),
-        status: 'pending',
+      const { authority, tenantId } = await shellApprovalAuthority();
+      const saved = await authority.request({
+        tenantId,
         requestedBy,
-        createdAt: new Date().toISOString(),
+        tool: 'shell.action',
+        callId: key,
+        // Definitions may nest more deeply than a tool argument envelope.
+        // Keep their already-validated JSON as inert data, as the legacy table does.
+        args: { action: JSON.stringify(action) },
+        summary: plan.summary,
+        context: {
+          preview: JSON.stringify({
+            ...(plan.preview ?? {}),
+            ...(plan.affectedMethods
+              ? { affectedMethods: plan.affectedMethods }
+              : {}),
+          }),
+        },
       });
-      await created.save();
+      const created = (await coll.get(saved.id))!;
       publish({
         type: 'approval',
-        id: created.id as string,
+        id: saved.id,
         status: 'pending',
         summary: plan.summary,
       });
@@ -199,8 +208,6 @@ export async function listApprovalViews(
 export async function pendingApprovalCount(): Promise<number> {
   return (await listApprovalViews({ status: 'pending' })).length;
 }
-
-const inFlight = new Set<string>();
 
 function isAction(v: unknown): v is ApprovalAction {
   const a = v as ApprovalAction | null;
@@ -264,16 +271,12 @@ export async function decideApproval(
   const coll = await approvals();
   const row = await coll.get(id);
   if (!row) throw new Error('approval not found');
-  if (row.status !== 'pending' || inFlight.has(id))
+  if (row.status !== 'pending')
     throw new Error(`approval is already ${row.status}`);
-  inFlight.add(id);
+  const { authority, tenantId } = await shellApprovalAuthority();
   try {
-    const decidedAt = new Date().toISOString();
     if (!approve) {
-      row.status = 'denied';
-      row.decidedBy = decidedBy;
-      row.decidedAt = decidedAt;
-      await row.save();
+      await authority.decide({ id: decidedBy, tenantId }, id, false);
       publish({
         type: 'approval',
         id,
@@ -284,11 +287,8 @@ export async function decideApproval(
     }
     const action = parseJson(row.command);
     if (!isAction(action)) throw new Error('the stored action is invalid');
-    // Mark it taken before running anything: a second decide sees "approved".
-    row.status = 'approved';
-    row.decidedBy = decidedBy;
-    row.decidedAt = decidedAt;
-    await row.save();
+    await authority.decide({ id: decidedBy, tenantId }, id, true);
+    await authority.consume(tenantId, id);
     let result: unknown;
     let error: string | undefined;
     try {
@@ -331,12 +331,12 @@ export async function decideApproval(
       error = e instanceof Error ? e.message : String(e);
     }
     row.status = error === undefined ? 'approved' : 'failed';
-    const text = JSON.stringify(error === undefined ? result : { error });
-    row.result =
-      text.length > MAX_RESULT_CHARS
-        ? JSON.stringify({ truncated: true })
-        : (text ?? '');
-    await row.save();
+    await authority.complete(
+      tenantId,
+      id,
+      error === undefined,
+      error === undefined ? result : { error },
+    );
     publish({
       type: 'approval',
       id,
@@ -346,7 +346,9 @@ export async function decideApproval(
     return error === undefined
       ? { id, status: 'approved', result }
       : { id, status: 'failed', error };
-  } finally {
-    inFlight.delete(id);
+  } catch (error) {
+    if (error instanceof OwnerApprovalError && error.code === 'conflict')
+      throw new Error('approval is already decided');
+    throw error;
   }
 }
