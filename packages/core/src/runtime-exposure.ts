@@ -3,6 +3,9 @@ import type { CookbookEngine } from './cookbook/engine/engine.js';
 import { modelParts, navItemId } from './cookbook/engine/nav.js';
 import type { EngineCatalog, PlanSnapshot } from './cookbook/engine/types.js';
 
+/** Data-only control identity; bootstraps recipes without model/schema readiness. */
+export const COOKBOOK_TOOLS_MODEL = '@happyvertical/smrt-core:CookbookTools';
+
 export interface RuntimeExposureContext {
   surface: 'rest' | 'mcp' | 'cli' | 'assistant' | 'screen';
   /** Resolved by the host, never from tool arguments. Missing context denies by default. */
@@ -182,7 +185,7 @@ export function createCookbookRuntimeExposure(
       }
       // Cookbook control tools bootstrap recipes; they use the host predicate
       // without depending on membership in an already enabled recipe.
-      if (model.qualifiedName === '@happyvertical/smrt-core:CookbookTools') {
+      if (model.qualifiedName === COOKBOOK_TOOLS_MODEL) {
         return options.predicate
           ? options.predicate(model, context) === true
           : true;

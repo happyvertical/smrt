@@ -2,7 +2,9 @@
 import { createHash, randomUUID } from 'node:crypto';
 import type { AITool } from '@happyvertical/ai';
 import type { Cookbook, RecipeDefinition } from '@happyvertical/smrt-types';
+import type { ActivationCoordinator } from '../activation.js';
 import {
+  COOKBOOK_TOOLS_MODEL,
   isRuntimeModelEnabled,
   notifyRuntimeExposureChanged,
 } from '../runtime-exposure.js';
@@ -10,7 +12,11 @@ import bakery from './__fixtures__/bakery.cookbook.json';
 import mechanic from './__fixtures__/mechanic.cookbook.json';
 import welder from './__fixtures__/welder.cookbook.json';
 import yoga from './__fixtures__/yoga-studio.cookbook.json';
-import { canonical, isEmptyCookbook } from './engine/document.js';
+import {
+  canonical,
+  coveredModels,
+  isEmptyCookbook,
+} from './engine/document.js';
 import { type CookbookEngine, createCookbookEngine } from './engine/engine.js';
 import { modelParts, navItemId } from './engine/nav.js';
 import { buildCommandTools, checkSchema } from './engine/schemas.js';
@@ -22,7 +28,7 @@ import type {
 } from './engine/types.js';
 
 /** Control-plane identity: this is gated by the host predicate, never recipe membership. */
-export const COOKBOOK_TOOLS_MODEL = '@happyvertical/smrt-core:CookbookTools';
+export { COOKBOOK_TOOLS_MODEL } from '../runtime-exposure.js';
 export const COOKBOOK_TOOL_NAMES = [
   'recipes.search',
   'recipes.describe',
@@ -99,6 +105,8 @@ export interface CookbookToolAudit {
   summary: string;
 }
 export interface CookbookToolOptions {
+  /** Opt-in lazy host: activate before committing any newly enabled cookbook models. */
+  activation?: Pick<ActivationCoordinator, 'activate'>;
   catalog: Omit<EngineCatalog, 'recipes'> & {
     recipes: readonly CookbookToolRecipe[];
   };
@@ -611,6 +619,22 @@ export function createCookbookToolService(options: CookbookToolOptions) {
         hold = record!.id;
       }
       try {
+        await assertAllowed(context, name);
+        if (
+          options.activation &&
+          (name === 'recipes.enable' || name === 'cookbook.apply')
+        ) {
+          try {
+            await options.activation.activate(
+              coveredModels(catalog, staged.cookbook()),
+            );
+          } catch (error) {
+            fail(
+              'activation_failed',
+              `Recipe activation failed; cookbook unchanged: ${error instanceof Error ? error.message : String(error)}`,
+            );
+          }
+        }
         // Recheck after approval/storage awaits, including a preference switched off mid-call.
         await assertAllowed(context, name);
         if (!same(options.engineFor(context)!.state(), before))

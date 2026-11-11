@@ -13,8 +13,11 @@ schemas and execution are defined once by `createCookbookToolService`:
 | `cookbook.listTemplates({})` | Bundled bakery, mechanic, welder and yoga-studio documents, or host `catalog.cookbooks`. Report missing installed ids. |
 | `cookbook.apply({id, apply?, expectedRevision?, previewToken?, approvalId?})` | Default: preview, with before/after documents and added/removed recipes. Applying requires the same actor, tenant, revision, template content and preview token. A non-empty cookbook always requires approval. |
 
-Templates only select installed, migrated blocks; these tools do not install
-packages, create schema, generate code or rebuild an app. Tokens last 15 minutes,
+Templates select installed blocks; eager hosts must migrate them before serving.
+Lazy SQLite hosts pass their `ActivationCoordinator` as `options.activation`;
+enable and template apply await its full model closure before committing any
+cookbook state. These tools do not install packages, generate code or rebuild an
+app. Tokens last 15 minutes,
 are bounded to 500 per service and are process-local; after restart/replacement
 of the service, preview again. Durable holds remain in the host approval ledger.
 The engine remains the sole owner of dependency and document validation rules.
@@ -36,6 +39,7 @@ import {
 } from '@happyvertical/smrt-core/runtime-exposure';
 
 const service = createCookbookToolService({
+  activation, // optional: the lazy host's createActivationCoordinator result
   catalog, // installed recipes/models; omit cookbooks for the bundled templates
   engineFor: ({tenantId}) => store.currentEngine(tenantId),
   isOwner: ({tenantId, userId}) =>
@@ -67,6 +71,14 @@ notifications refresh clients after publication. `audit` records reads, previews
 holds and refusals using the host's existing audit rail. Do not pass a no-op sink
 in production. Hosts with multiple processes must invalidate each process's
 engine/preference cache when persisted state changes.
+
+With `activation`, enable/template writes await the coordinator before this CAS.
+`activation_failed` includes a clear migration failure and leaves cookbook state
+unchanged. A later authority, preference or CAS refusal may retain migrated code
+and tables, but grants no tenant exposure. Approval consumption/completion keeps
+its existing durable contract. Install `activation.gate(cookbookGate)` so model
+readiness is also checked; the data-only recipe control tools can bootstrap an
+empty cookbook under their normal live owner/preference checks.
 
 `isOwner` must check live built-in owner membership (reuse app-runtime's
 `isApprovalOwner`); `can` must check the operation slug. All seven tools require

@@ -6,6 +6,7 @@ import {
   createSqliteOwnerApprovalStore,
   OwnerApprovalAuthority,
 } from '../../../app-runtime/src/owner-approvals.js';
+import { createActivationCoordinator } from '../activation.js';
 import { SmrtCollection } from '../collection.js';
 import { MCPGenerator } from '../generators/mcp.js';
 import { APIGenerator } from '../generators/rest.js';
@@ -230,7 +231,181 @@ const rest = () =>
     { db, tenantId: context.tenantId! },
   ).generateHandler();
 
+/** Exercise tools against absent application tables, using the normal registry schemas. */
+async function lazy() {
+  await db.query('DROP TABLE c5_invoices');
+  await db.query('DROP TABLE c5_customers');
+  const activation = createActivationCoordinator({
+    scope: randomUUID(),
+    db,
+    packageName: '@fixture/tools',
+    manifest: {
+      version: 1,
+      modules: {
+        customers: {
+          specifier: 'customers',
+          models: [CUSTOMER],
+          dependencies: [],
+        },
+        billing: {
+          specifier: 'billing',
+          models: [INVOICE],
+          dependencies: ['customers'],
+        },
+      },
+      models: {
+        [CUSTOMER]: {
+          module: 'customers',
+          effective: CUSTOMER,
+          table: 'c5_customers',
+          dependencies: [],
+        },
+        [INVOICE]: {
+          module: 'billing',
+          effective: INVOICE,
+          table: 'c5_invoices',
+          dependencies: [CUSTOMER],
+        },
+      },
+      tables: {
+        c5_customers: { owners: [CUSTOMER], dependencies: [] },
+        c5_invoices: { owners: [INVOICE], dependencies: ['c5_customers'] },
+      },
+    },
+    // Constructors belong to this existing fixture; the independent activation
+    // suite verifies deferred imports/registration. Here DDL/readiness is lazy.
+    loaders: { customers: async () => {}, billing: async () => {} },
+    readEnabled: async () => [],
+  });
+  options.activation = activation;
+  setRuntimeExposureGate(activation.gate(gate));
+  await activation.boot();
+  return activation;
+}
+
 describe('installed recipe server tools (SQLite, in process)', () => {
+  it('activates a lazy closure before publishing enablement, then honors preference and durable disable approval', async () => {
+    const activation = await lazy();
+    const handler = rest();
+    expect(await service.list(context)).toHaveLength(7); // Empty lazy host can bootstrap.
+    expect((await handler(request())).status).toBe(404);
+    expect(activation.isReady(INVOICE)).toBe(false);
+    const result = await mcp().handleToolCall({
+      method: 'tools/call',
+      params: {
+        name: 'recipes.enable',
+        arguments: { id: 'billing', expectedRevision: 0 },
+      },
+    });
+    expect(result.isError).not.toBe(true);
+    expect(activation.isReady(CUSTOMER)).toBe(true);
+    expect(activation.isReady(INVOICE)).toBe(true);
+    expect((await handler(request())).status).toBe(200);
+    enabled = false;
+    notifyRuntimeExposureChanged();
+    expect((await handler(request())).status).toBe(404);
+    expect(await service.list(context)).toEqual([]);
+    enabled = true;
+    const args = { id: 'billing', expectedRevision: revision() };
+    const hold = await call('recipes.disable', args);
+    authority = new OwnerApprovalAuthority(
+      await createSqliteOwnerApprovalStore(db),
+      async () => true,
+    );
+    options.approvals = authority;
+    await authority.decide(
+      { id: context.userId!, tenantId: context.tenantId! },
+      String(hold.approvalId),
+      true,
+    );
+    await call('recipes.disable', { ...args, approvalId: hold.approvalId });
+    expect((await handler(request())).status).toBe(404);
+    expect(activation.isReady(INVOICE)).toBe(true);
+    expect(
+      await authority.get(context.tenantId!, String(hold.approvalId)),
+    ).toMatchObject({ status: 'succeeded' });
+    expect(
+      (
+        await db.query(
+          "SELECT name FROM sqlite_master WHERE name = 'c5_invoices'",
+        )
+      ).rows,
+    ).toHaveLength(1);
+  });
+
+  it('reports lazy migration failure to the tool caller without persisting enablement, and permits retry', async () => {
+    const activation = await lazy();
+    const handler = rest();
+    if (!db.transaction) throw new Error('SQLite transaction required');
+    const transaction = db.transaction.bind(db);
+    const failure = vi.spyOn(db, 'transaction').mockImplementation(async () => {
+      throw new Error('injected activation DDL failure');
+    });
+    await expect(enable()).rejects.toMatchObject({
+      code: 'activation_failed',
+      publicMessage: expect.stringContaining('injected activation DDL failure'),
+    });
+    const refused = await mcp().handleToolCall({
+      method: 'tools/call',
+      params: {
+        name: 'recipes.enable',
+        arguments: { id: 'billing', expectedRevision: 0 },
+      },
+    });
+    expect(refused.isError).toBe(true);
+    expect(JSON.stringify(refused.content)).toContain(
+      'Recipe activation failed; cookbook unchanged',
+    );
+    expect(revision()).toBe(0);
+    expect(activation.isReady(INVOICE)).toBe(false);
+    expect((await handler(request())).status).toBe(404);
+    failure.mockImplementation(transaction);
+    failCommit = true;
+    await expect(enable()).rejects.toThrow('storage failure');
+    expect(activation.isReady(INVOICE)).toBe(true);
+    expect(revision()).toBe(0);
+    expect((await handler(request())).status).toBe(404);
+    failCommit = false;
+    await enable();
+    expect((await handler(request())).status).toBe(200);
+    failure.mockRestore();
+  });
+
+  it('activates templates only after approval and rechecks preference after activation awaits', async () => {
+    const activation = await lazy();
+    options.isAppEmpty = async () => false;
+    const preview = await call('cookbook.apply', { id: 'small-shop' });
+    const args = {
+      id: 'small-shop',
+      apply: true,
+      expectedRevision: 0,
+      previewToken: preview.previewToken,
+    };
+    const hold = await call('cookbook.apply', args);
+    expect(activation.isReady(INVOICE)).toBe(false);
+    await authority.decide(
+      { id: context.userId!, tenantId: context.tenantId! },
+      String(hold.approvalId),
+      true,
+    );
+    const activate = activation.activate.bind(activation);
+    const change = vi
+      .spyOn(activation, 'activate')
+      .mockImplementation(async (models) => {
+        await activate(models);
+        enabled = false;
+      });
+    await expect(
+      call('cookbook.apply', { ...args, approvalId: hold.approvalId }),
+    ).rejects.toMatchObject({ code: 'forbidden' });
+    expect(revision()).toBe(0);
+    expect(activation.isReady(INVOICE)).toBe(true);
+    expect((await rest()(request())).status).toBe(404);
+    expect(
+      await authority.get(context.tenantId!, String(hold.approvalId)),
+    ).toMatchObject({ status: 'failed' });
+    change.mockRestore();
+  });
   it('finds intent words and describes human additions, dependency and enabled state', async () => {
     const result = await call('recipes.search', {
       query: 'collect money',

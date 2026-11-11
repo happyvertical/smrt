@@ -10,6 +10,7 @@ import { migrateSmrtSchemas } from './migrations/orchestrate.js';
 import { isFrameworkBaseClass } from './registry/framework-base-classes.js';
 import { ObjectRegistry } from './registry.js';
 import {
+  COOKBOOK_TOOLS_MODEL,
   notifyRuntimeExposureChanged,
   type RuntimeExposureGate,
   type RuntimeExposureModel,
@@ -182,7 +183,8 @@ export function createActivationCoordinator(
     gate(exposure) {
       return {
         isEnabled: (model, context) =>
-          coordinator.isReady(model) &&
+          (model.qualifiedName === COOKBOOK_TOOLS_MODEL ||
+            coordinator.isReady(model)) &&
           exposure.isEnabled(model, context) === true,
         subscribe: exposure.subscribe?.bind(exposure),
       };
