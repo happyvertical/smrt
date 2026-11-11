@@ -1,5 +1,5 @@
 import { expectNoA11yViolations } from '@happyvertical/smrt-ui/test-support/a11y';
-import { render, screen } from '@testing-library/svelte';
+import { render, screen, within } from '@testing-library/svelte';
 import userEvent from '@testing-library/user-event';
 import { describe, expect, it, vi } from 'vitest';
 import DetailScreen from '../DetailScreen.svelte';
@@ -394,7 +394,9 @@ describe('named screen references', () => {
     });
     answer(ada);
     await vi.waitFor(() => expect(get).toHaveBeenCalledTimes(2));
-    expect(screen.queryByText(ada.name)).not.toBeInTheDocument();
+    await vi.waitFor(() =>
+      expect(screen.queryByText(ada.name)).not.toBeInTheDocument(),
+    );
     expect(screen.getByText('Linked record unavailable')).toBeInTheDocument();
   });
 
@@ -514,5 +516,197 @@ describe('generated REST screen source', () => {
     );
     expect(source.search).toBeUndefined();
     await expect(source.list()).rejects.toThrow('offline');
+  });
+});
+
+describe('inline contact prerequisites', () => {
+  const memberDefinition: ScreenCollectionDefinition = {
+    name: 'members',
+    objectRef: '@test/member:Customer',
+    className: 'Customer',
+    label: 'Members',
+    singularLabel: 'Member',
+    displayLabelField: 'displayLabel',
+    displayLabelProjection: {
+      via: 'profileId',
+      field: 'name',
+      fallback: 'Unnamed member',
+    },
+    listFields: ['email', 'phone'],
+    fields: {
+      displayLabel: { type: 'text', readonly: true },
+      profileId: { type: 'crossPackageRef' },
+      name: {
+        type: 'text',
+        writeThrough: 'profileId',
+        ui: { basic: true, order: -100 },
+      },
+      email: {
+        type: 'text',
+        writeThrough: 'profileId',
+        ui: { basic: true, widget: 'email' },
+      },
+      phone: {
+        type: 'text',
+        writeThrough: 'profileId',
+        ui: { basic: true, widget: 'phone' },
+      },
+    },
+    relationships: [
+      {
+        field: 'profileId',
+        kind: 'crossPackageRef',
+        relatedCollection: 'people',
+      },
+    ],
+  };
+  const member = {
+    id: 'member',
+    profileId: ada.id,
+    displayLabel: ada.name,
+    name: ada.name,
+    email: 'ada@example.test',
+    phone: '555-0102',
+  };
+
+  it('shows inline fields on detail/edit, omits a hidden prerequisite, and keeps a navigable named reference', async () => {
+    const detail = render(DetailScreen, {
+      definition: memberDefinition,
+      record: member,
+    });
+    expect(screen.getByText('ada@example.test')).toBeInTheDocument();
+    expect(screen.getByText('555-0102')).toBeInTheDocument();
+    expect(
+      screen.queryByText(/Profile|Linked record unavailable/),
+    ).not.toBeInTheDocument();
+    detail.unmount();
+    const edit = render(EditForm, {
+      definition: memberDefinition,
+      record: member,
+    });
+    expect(screen.getByLabelText('Name')).toHaveValue(ada.name);
+    expect(screen.getByLabelText('Email')).toHaveValue('ada@example.test');
+    expect(screen.queryByRole('combobox')).not.toBeInTheDocument();
+    edit.unmount();
+    const { references } = mockReferences();
+    render(DetailScreen, {
+      definition: memberDefinition,
+      record: member,
+      references,
+    });
+    await vi.waitFor(() =>
+      expect(screen.getByRole('link', { name: ada.name })).toHaveAttribute(
+        'href',
+        `/people/${ada.id}`,
+      ),
+    );
+  });
+
+  it('edits and clears contact fields with source.get, refreshing the same-id detail and list without a browser reload', async () => {
+    let stored = { ...member };
+    const source = {
+      list: vi.fn(async () => [stored]),
+      get: vi.fn(async () => stored),
+      update: vi.fn(async (_id: string, values: Record<string, unknown>) => {
+        stored = { ...stored, ...values, displayLabel: String(values.name) };
+        return stored;
+      }),
+    };
+    render(RecipeScreens, { definition: memberDefinition, source });
+    await userEvent.click(await screen.findByText(ada.name));
+    await userEvent.click(
+      screen.getByRole('button', { name: 'Edit', exact: true }),
+    );
+    await userEvent.clear(screen.getByLabelText('Name'));
+    await userEvent.type(screen.getByLabelText('Name'), 'Grace Member');
+    await userEvent.clear(screen.getByLabelText('Email'));
+    await userEvent.type(screen.getByLabelText('Email'), 'grace@example.test');
+    await userEvent.clear(screen.getByLabelText('Phone'));
+    await userEvent.type(screen.getByLabelText('Phone'), '555-0909');
+    await userEvent.click(
+      screen.getByRole('button', { name: 'Save', exact: true }),
+    );
+    expect(
+      await screen.findByRole('heading', { level: 1, name: 'Grace Member' }),
+    ).toBeInTheDocument();
+    expect(screen.getByText('grace@example.test')).toBeInTheDocument();
+    await userEvent.click(
+      screen.getByRole('button', { name: 'Edit', exact: true }),
+    );
+    await userEvent.clear(screen.getByLabelText('Email'));
+    await userEvent.clear(screen.getByLabelText('Phone'));
+    await userEvent.click(
+      screen.getByRole('button', { name: 'Save', exact: true }),
+    );
+    await vi.waitFor(() =>
+      expect(source.update).toHaveBeenLastCalledWith(
+        'member',
+        expect.objectContaining({ email: '', phone: '' }),
+      ),
+    );
+    await vi.waitFor(() =>
+      expect(screen.queryByText('grace@example.test')).not.toBeInTheDocument(),
+    );
+    await userEvent.click(
+      screen.getByRole('button', { name: /Back to Members/i }),
+    );
+    expect(await screen.findByText('Grace Member')).toBeInTheDocument();
+    expect(screen.queryByText('grace@example.test')).not.toBeInTheDocument();
+    expect(screen.queryByText(/Profile|customer/i)).not.toBeInTheDocument();
+  });
+
+  it('sorts and searches projected email and metadata phone columns in the shared list', async () => {
+    render(ListScreen, {
+      definition: memberDefinition,
+      rows: [
+        member,
+        {
+          ...member,
+          id: 'second',
+          name: 'Bea',
+          displayLabel: 'Bea',
+          email: 'bea@example.test',
+          phone: '555-0202',
+        },
+      ],
+    });
+    const search = screen.getByRole('searchbox');
+    await userEvent.type(search, '555-0102');
+    expect(screen.getByText(ada.name)).toBeInTheDocument();
+    await vi.waitFor(() =>
+      expect(screen.queryByText('Bea')).not.toBeInTheDocument(),
+    );
+    await userEvent.clear(search);
+    await userEvent.type(search, 'bea@example.test');
+    expect(await screen.findByText('Bea')).toBeInTheDocument();
+    await vi.waitFor(() =>
+      expect(screen.queryByText(ada.name)).not.toBeInTheDocument(),
+    );
+    await userEvent.clear(search);
+    await screen.findByText(ada.name);
+    await userEvent.click(
+      within(screen.getByRole('columnheader', { name: /Email/ })).getByRole(
+        'button',
+      ),
+    );
+    expect(screen.getAllByRole('row')[1]).toHaveTextContent('ada@example.test');
+    await userEvent.click(
+      within(screen.getByRole('columnheader', { name: /Email/ })).getByRole(
+        'button',
+      ),
+    );
+    expect(screen.getAllByRole('row')[1]).toHaveTextContent('bea@example.test');
+    await userEvent.click(
+      within(screen.getByRole('columnheader', { name: /Email/ })).getByRole(
+        'button',
+      ),
+    );
+    expect(screen.getAllByRole('row')[1]).toHaveTextContent('ada@example.test');
+    await userEvent.click(
+      within(screen.getByRole('columnheader', { name: /Phone/ })).getByRole(
+        'button',
+      ),
+    );
+    expect(screen.getAllByRole('row')[1]).toHaveTextContent('555-0102');
   });
 });

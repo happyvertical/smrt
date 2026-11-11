@@ -126,7 +126,11 @@ const roles = $derived(deriveFieldRoles(definition));
 const viewFields = $derived(
   screenSourceError(definition, policy)
     ? []
-    : deriveScreenFields(definition, policy, { mode: 'view', include: fields }),
+    : deriveScreenFields(definition, policy, {
+        mode: 'view',
+        include: fields,
+        references,
+      }),
 );
 const header = $derived(
   deriveRecordHeader(definition, viewFields, record, roles, { title }),

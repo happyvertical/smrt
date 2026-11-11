@@ -574,6 +574,10 @@ it('uses the cookbook singular override and vocabulary in field help', () => {
     objectRef: '@happyvertical/smrt-commerce:Customer',
     className: 'Customer',
     fields: {
+      profileId: { type: 'crossPackageRef' },
+      customerType: { type: 'text' },
+      notesLabel: { type: 'text', label: 'Customer notes' },
+      name: { type: 'text', writeThrough: 'profileId' },
       notes: {
         type: 'text',
         description: 'Notes for this customer and other customers.',
@@ -581,6 +585,9 @@ it('uses the cookbook singular override and vocabulary in field help', () => {
     },
   });
   expect(definition.singularLabel).toBe('Guest');
+  expect(definition.fields.profileId.label).toBe('Existing guest');
+  expect(definition.fields.customerType.label).toBe('Guest type');
+  expect(definition.fields.notesLabel.label).toBe('Guest notes');
   expect(definition.fields.notes.description).toBe(
     'Notes for this guest and other people.',
   );

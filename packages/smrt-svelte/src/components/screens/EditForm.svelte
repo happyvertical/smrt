@@ -119,7 +119,11 @@ const heading = $derived(
 const allFields = $derived(
   sourceError
     ? []
-    : deriveScreenFields(definition, policy, { mode: 'edit', include }),
+    : deriveScreenFields(definition, policy, {
+        mode: 'edit',
+        include,
+        references,
+      }),
 );
 /** Derived fields (a total computed from line items) show but never submit. */
 const isDerived = (field: ScreenField): boolean =>

@@ -429,3 +429,17 @@ the raw recipe component without its transport and registry.
 Save failures from `SmrtWebRequestError` display its safe typed `publicMessage`
 for 4xx responses. Unexpected failures display the generic save message with
 the server-created `requestId`; arbitrary server exception text stays hidden.
+
+
+### Inline prerequisite fields (Q1 follow-up)
+
+`deriveScreenFields` accepts the app's available reference sources. If a link
+owns inline `writeThrough` inputs but its target has no available list, view and
+edit omit that prerequisite link and retain the inline fields. Ordinary
+references keep named links and selectors when the target is available. Cookbook
+vocabulary labels an available existing-record selector with the cookbook's
+singular noun. The same existing vocabulary substitution applies to implicit
+field labels (for example Member type), explicit labels and help. RecipeScreens refreshes the current detail snapshot after saving
+an unchanged record id, as well as refreshing the list. Regression tests exercise
+all three contact values, clearing, client search/sort, prerequisite omission and
+preservation of an available named link; no new component/helper file was added.

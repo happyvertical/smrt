@@ -81,7 +81,11 @@ const sourceError = $derived(screenSourceError(definition, policy));
 const allFields = $derived(
   sourceError
     ? []
-    : deriveScreenFields(definition, policy, { mode: 'view', include }),
+    : deriveScreenFields(definition, policy, {
+        mode: 'view',
+        include,
+        references,
+      }),
 );
 const listed = $derived(
   exclude ? allFields.filter((f) => !exclude.includes(f.name)) : allFields,

@@ -217,7 +217,11 @@ async function update(values: Record<string, unknown>): Promise<void> {
   if (recordId === null) return;
   saving = true;
   try {
-    await source.update?.(recordId, values);
+    const updated = await source.update?.(recordId, values);
+    // A same-id view does not retrigger the get effect. Refresh its snapshot
+    // explicitly so a successful inline edit is visible immediately.
+    fetched = source.get ? await source.get(recordId) : updated;
+    fetchSettled = true;
     await refresh();
     navigate('view', recordId);
   } finally {

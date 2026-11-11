@@ -21,7 +21,7 @@ import {
   type OverviewDefinition,
   type OverviewWidget,
 } from '../overview/types.js';
-import { singularScreenLabel } from '../screens/fields.js';
+import { humanizeLabel, singularScreenLabel } from '../screens/fields.js';
 import type { ScreenCollectionDefinition } from '../screens/types.js';
 import type { ShellLayout } from '../workspace/admin-shell/layout.js';
 import type {
@@ -403,11 +403,25 @@ export function cookbookScreenDefinition(
       : (entry.noun ?? singularScreenLabel(entry.label)));
   const noun = humanize(definition.className);
   const vocabulary = new RegExp(`\\b(${pluralize(noun)}|${noun})\\b`, 'gi');
+  const reword = (text: string) =>
+    text.replace(vocabulary, (word) => {
+      const replacement =
+        word.toLowerCase() === pluralize(noun).toLowerCase()
+          ? entry.label.toLowerCase()
+          : singular.toLowerCase();
+      return /^[A-Z]/.test(word)
+        ? replacement.charAt(0).toUpperCase() + replacement.slice(1)
+        : replacement;
+    });
   const fields = Object.fromEntries(
     Object.entries(definition.fields).map(([name, field]) => [
       name,
       {
         ...field,
+        ...(reword(field.label ?? humanizeLabel(name, field)) !==
+        (field.label ?? humanizeLabel(name, field))
+          ? { label: reword(field.label ?? humanizeLabel(name, field)) }
+          : {}),
         ...((field.type === 'foreignKey' || field.type === 'crossPackageRef') &&
         /Id$/.test(name)
           ? (() => {
@@ -424,17 +438,14 @@ export function cookbookScreenDefinition(
               };
             })()
           : {}),
+        ...(Object.values(definition.fields).some(
+          (input) => input.writeThrough === name,
+        )
+          ? { label: `Existing ${singular.toLowerCase()}` }
+          : {}),
         ...(field.description
           ? {
-              description: field.description.replace(vocabulary, (word) => {
-                const replacement =
-                  word.toLowerCase() === pluralize(noun).toLowerCase()
-                    ? entry.label.toLowerCase()
-                    : singular.toLowerCase();
-                return /^[A-Z]/.test(word)
-                  ? replacement.charAt(0).toUpperCase() + replacement.slice(1)
-                  : replacement;
-              }),
+              description: reword(field.description),
             }
           : {}),
       },

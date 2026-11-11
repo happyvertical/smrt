@@ -10,6 +10,7 @@
  * `basic` markers anywhere => everything basic; any marker => unmarked fields
  * advanced).
  */
+import { screenReferenceTarget } from './references.js';
 import { deriveFieldRoles, type FieldRole } from './roles.js';
 import type {
   ScreenCollectionDefinition,
@@ -18,6 +19,7 @@ import type {
   ScreenInputKind,
   ScreenMode,
   ScreenPolicy,
+  ScreenReferenceSources,
 } from './types.js';
 
 /** Managed by the platform; never editable and never a default column. */
@@ -38,6 +40,8 @@ export const DEFAULT_MAX_LIST_COLUMNS = 6;
 
 export interface DeriveScreenFieldsOptions {
   mode: ScreenMode;
+  /** Navigable references available in this app; inline prerequisites stay inline. */
+  references?: ScreenReferenceSources;
   /**
    * Explicit field names, in the order given. Hidden fields, fields outside
    * the policy, and non-editable system fields are still dropped.
@@ -224,6 +228,11 @@ export function deriveScreenFields(
   const { mode, include, exclude } = options;
   const excluded = new Set(exclude ?? []);
 
+  const inlineLinks = new Set(
+    Object.values(definition.fields).flatMap((field) =>
+      field.writeThrough ? [field.writeThrough] : [],
+    ),
+  );
   const candidates: Candidate[] = Object.entries(definition.fields)
     .map(([name, fieldDefinition], index) => ({
       name,
@@ -234,7 +243,16 @@ export function deriveScreenFields(
       (c) =>
         isDeclaredName(c.name) &&
         !SYSTEM_FIELDS.has(c.name) &&
-        c.name !== definition.idField,
+        c.name !== definition.idField &&
+        !(
+          inlineLinks.has(c.name) &&
+          options.references &&
+          !screenReferenceTarget(
+            definition,
+            { name: c.name },
+            options.references,
+          )
+        ),
     );
 
   const seedBasic = policy ? null : seedBasicSet(candidates);
