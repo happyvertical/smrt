@@ -29,7 +29,7 @@ function gitBlobSha(bytes, length = 40) {
  * This backend makes no admission/initialization decision of its own. Protect
  * its fixed branch and writer credential before enabling runtime use.
  */
-export function createReleaseAdmissionStore({ repository, token, fetchImpl = fetch, apiUrl = 'https://api.github.com' } = {}) {
+export function createReleaseAdmissionStore({ repository, token, fetchImpl = fetch, apiUrl = 'https://api.github.com', sleep = (ms) => new Promise((resolve) => setTimeout(resolve, ms)) } = {}) {
   check(typeof repository === 'string' && /^[A-Za-z0-9_.-]+\/[A-Za-z0-9_.-]+$/.test(repository), 'invalid-repository');
   check(typeof token === 'string' && token.length > 0 && !/[\r\n]/.test(token), 'missing-trusted-token');
   let base;
@@ -41,7 +41,25 @@ export function createReleaseAdmissionStore({ repository, token, fetchImpl = fet
   check(base.protocol === 'https:' && !base.username && !base.password && !base.search && !base.hash, 'invalid-api-origin');
   const endpoint = `${base.href.replace(/\/$/, '')}/repos/${repository}/git`;
 
+  // GitHub intermittently answers 5xx. Reads and content-addressed object
+  // creation are idempotent, so retry them briefly; a lost state write after a
+  // posted status grant otherwise strands the grant until manual recovery.
   async function request(method, path, body) {
+    const idempotent = method === 'GET' || (method === 'POST' && body !== undefined);
+    const attempts = idempotent ? 3 : 1;
+    let result;
+    for (let attempt = 1; attempt <= attempts; attempt += 1) {
+      try { result = await requestOnce(method, path, body); } catch (error) {
+        if (attempt < attempts && error.code === 'github-network-error') { await sleep(200 * attempt); continue; }
+        throw error;
+      }
+      if (attempt < attempts && result.status >= 500) { await sleep(200 * attempt); continue; }
+      return result;
+    }
+    return result;
+  }
+
+  async function requestOnce(method, path, body) {
     let response;
     try {
       response = await fetchImpl(`${endpoint}/${path}`, {
@@ -150,7 +168,21 @@ export function createReleaseAdmissionStore({ repository, token, fetchImpl = fet
     if (current.revision !== expectedSha) return false;
     check(nextState.revision === current.state.revision + 1, 'invalid-next-revision');
     const commitSha = await writeCommit(nextState, [expectedSha]);
-    const response = await request('PATCH', `refs/${REF_SUFFIX}`, { sha: commitSha, force: false });
+    let response;
+    let networkError = null;
+    try { response = await request('PATCH', `refs/${REF_SUFFIX}`, { sha: commitSha, force: false }); } catch (error) {
+      if (error.code !== 'github-network-error') throw error;
+      networkError = error;
+      response = { status: 599 };
+    }
+    if (response.status >= 500) {
+      // The write may have landed before the error; our commit is unique, so
+      // finding it at the head proves success without risking a double write.
+      const landed = await refHead();
+      if (landed === commitSha) return true;
+      if (landed !== null && landed !== expectedSha) return false; // another writer won
+      throw networkError ?? new ReleaseAdmissionStoreError('github-request-rejected', response.status);
+    }
     if (response.status === 422) {
       const refreshed = await refHead();
       if (refreshed !== null && refreshed !== expectedSha) return false;
