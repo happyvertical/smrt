@@ -1,4 +1,6 @@
+import type { AssistantTransport } from '@happyvertical/smrt-chat/svelte';
 import type { Cookbook } from '@happyvertical/smrt-types';
+import { createDataSurfaceRegistry } from '@happyvertical/smrt-ui/data-surface';
 import {
   cleanup,
   fireEvent,
@@ -21,6 +23,7 @@ import { SHELL_ICON_PATHS } from '../../workspace/admin-shell/shell-icons.js';
 import { narrowCatalog } from '../catalog.js';
 import type { CookbookCatalog } from '../types.js';
 import Harness from './app-harness.svelte';
+import AssistantFixture from './assistant-fixture.svelte';
 import { readFixture, workspaceCatalog } from './workspace-catalog.js';
 
 let catalog: CookbookCatalog;
@@ -43,6 +46,44 @@ afterEach(() => {
 });
 
 describe('CookbookApp', () => {
+  it('owns the assistant panel and phone opener using the host transport and registry', async () => {
+    render(Harness, {
+      cookbook,
+      catalog,
+      sectionId: 'custom:shop',
+      assistant: {
+        component: AssistantFixture,
+        registry: createDataSurfaceRegistry(),
+        transport: {} as AssistantTransport,
+      },
+    });
+    const dock = await screen.findByTestId('assistant-dock');
+    expect(dock.dataset.context).toBe('server');
+    expect(dock.dataset.registry).toBe('true');
+    expect(dock.dataset.transport).toBe('true');
+    const toggles = screen.getAllByRole('button', { name: 'Assistant' });
+    expect(toggles.length).toBeGreaterThan(0);
+    const before = dock.dataset.visible;
+    await fireEvent.click(toggles[0]);
+    await waitFor(() => expect(dock.dataset.visible).not.toBe(before));
+  });
+
+  it('does not mount or poll an assistant in embed/plugin mode', async () => {
+    render(Harness, {
+      cookbook,
+      catalog,
+      sectionId: 'custom:shop',
+      embed: true,
+      assistant: {
+        component: AssistantFixture,
+        registry: createDataSurfaceRegistry(),
+        transport: {} as AssistantTransport,
+      },
+    });
+    await screen.findByRole('heading', { name: 'Shop', level: 1 });
+    expect(screen.queryByTestId('assistant-dock')).toBeNull();
+    expect(screen.queryByRole('button', { name: 'Assistant' })).toBeNull();
+  });
   it.each([
     ['receipt', 'receipt'],
     [undefined, 'users'],

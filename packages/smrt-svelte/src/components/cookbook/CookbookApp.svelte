@@ -10,7 +10,9 @@
  * each edit to `oncookbookchange` for the host to persist.
  */
 import { resolveCookbookFieldPolicy } from '@happyvertical/smrt-fields/policy';
+import { useI18n } from '@happyvertical/smrt-ui/i18n';
 import { createRawSnippet, mount, unmount, untrack } from 'svelte';
+import { M } from '../../i18n/strings.workspace.js';
 import AppShell from '../app/AppShell.svelte';
 import type { ShellSlotItem } from '../app/slot-item.js';
 import { parseRecipeExportRef } from '../overview/recipe-widgets.js';
@@ -37,6 +39,8 @@ let {
   cookbook,
   catalog,
   fieldPolicies,
+  assistant,
+  embed = false,
   loaders,
   widgetContext,
   resolveExport: suppliedResolveExport,
@@ -49,8 +53,16 @@ let {
   navMode = 'sections-with-items',
   slotItems = [],
   children,
+  panel,
+  panelEnabled,
+  panelToggle,
+  panelLabel,
   ...shellProps
 }: CookbookAppProps = $props();
+const { t } = useI18n();
+const assistantLabel = $derived(
+  assistant?.label ?? t(M['ui.cookbook.assistant']),
+);
 
 const resolveExport = $derived(
   suppliedResolveExport ??
@@ -248,6 +260,17 @@ setCookbookContext({
 
 <AppShell
   {...shellProps}
+  panel={assistant && !embed ? assistantPanel : panel}
+  panelEnabled={assistant ? !embed : panelEnabled}
+  panelToggle={assistant ? (embed ? false : { label: assistantLabel }) : panelToggle}
+  panelLabel={assistant ? assistantLabel : panelLabel}
+  webmcp={assistant && shellProps.webmcp !== false ? {
+    ...(typeof shellProps.webmcp === 'object' ? shellProps.webmcp : {}),
+    ui: {
+      ...(typeof shellProps.webmcp === 'object' && typeof shellProps.webmcp.ui === 'object' ? shellProps.webmcp.ui : {}),
+      dataSurfaceRegistry: assistant.registry,
+    },
+  } : shellProps.webmcp}
   title={shell.title}
   {navMode}
   navGroups={shell.navGroups}
@@ -266,3 +289,19 @@ setCookbookContext({
 >
   {@render children()}
 </AppShell>
+
+{#snippet assistantPanel({ open }: { open: boolean })}
+  {#if assistant && !embed}
+    {@const Dock = assistant.component}
+    <section class="cookbook-assistant" aria-label={assistantLabel} hidden={!open}>
+      <Dock transport={assistant.transport} registry={assistant.registry} contextMode="server" visible={open} messageFormat="markdown" />
+    </section>
+  {/if}
+{/snippet}
+
+<style>
+  @layer smrt.reset, smrt.structure, smrt.theme;
+  @layer smrt.structure {
+    .cookbook-assistant { height: 100%; min-height: 0; color: var(--smrt-color-on-surface); }
+  }
+</style>

@@ -41,6 +41,7 @@ export {
   type ScreenFieldRoles,
 } from './roles.js';
 export {
+  createRecipeScreenEntry,
   createRecipeScreenReferences,
   createRecipeScreensSource,
 } from './source.js';

@@ -10,18 +10,44 @@ import {
 import type {
   RecipeScreensSource,
   ScreenCollectionDefinition,
+  ScreenRecord,
   ScreenReferenceSources,
 } from './types.js';
 
 export function createRecipeScreensSource(
   definition: ScreenCollectionDefinition,
   fetchers: Pick<SmrtCrudFetchers, 'list'> & Partial<SmrtCrudFetchers>,
+  options: {
+    allPages?: boolean;
+    filter?: { field: string; value: string };
+  } = {},
 ): RecipeScreensSource {
   const name = definition.name ?? definition.objectRef;
   const allowed = (action: string) =>
     definition.actions?.includes(action) === true;
+  const inScope = (row: ScreenRecord) =>
+    !options.filter ||
+    String(row[options.filter.field] ?? '') === options.filter.value;
+  const writeValues = (values: Record<string, unknown>) =>
+    options.filter
+      ? { ...values, [options.filter.field]: options.filter.value }
+      : values;
   const source: RecipeScreensSource = {
-    list: async () => unwrapListResult(await fetchers.list(), name),
+    list: async () => {
+      if (!options.allPages)
+        return unwrapListResult(await fetchers.list(), name).filter(inScope);
+      const rows: ScreenRecord[] = [];
+      // A keyed menu entry can have matching rows beyond the first REST page.
+      for (let page = 0; page < 40; page++) {
+        const items = unwrapListResult(
+          await fetchers.list({ limit: 500, offset: page * 500 }),
+          name,
+        );
+        rows.push(...items.filter(inScope));
+        if (items.length < 500) break;
+      }
+      return rows;
+    },
   };
   const label = definition.displayLabelField;
   if (label && Object.hasOwn(definition.fields, label) && allowed('list')) {
@@ -44,10 +70,11 @@ export function createRecipeScreensSource(
   if (fetchers.get && allowed('get')) {
     source.get = async (id) => {
       try {
-        return unwrapItemResult(
+        const row = unwrapItemResult(
           await fetchers.get?.(encodeURIComponent(id)),
           `get(${name})`,
         );
+        return row && inScope(row) ? row : undefined;
       } catch (error) {
         if (error instanceof SmrtWebRequestError && error.status === 404)
           return undefined;
@@ -57,11 +84,14 @@ export function createRecipeScreensSource(
   }
   if (fetchers.create && allowed('create'))
     source.create = async (values) =>
-      unwrapItemResult(await fetchers.create?.(values), `create(${name})`);
+      unwrapItemResult(
+        await fetchers.create?.(writeValues(values)),
+        `create(${name})`,
+      );
   if (fetchers.update && allowed('update'))
     source.update = async (id, values) =>
       unwrapItemResult(
-        await fetchers.update?.(encodeURIComponent(id), values),
+        await fetchers.update?.(encodeURIComponent(id), writeValues(values)),
         `update(${name})`,
       );
   if (fetchers.delete && allowed('delete'))
@@ -72,6 +102,36 @@ export function createRecipeScreensSource(
       );
     };
   return source;
+}
+
+/** Resolve a cookbook menu entry over generated REST metadata, including keyed row filters. */
+export function createRecipeScreenEntry(
+  definitions: Readonly<Record<string, ScreenCollectionDefinition>>,
+  entry: { model: string; filter?: { field: string; value: string } | null },
+  options: { fetch?: typeof fetch; basePath?: string } = {},
+): {
+  definition: ScreenCollectionDefinition;
+  source: RecipeScreensSource;
+} | null {
+  const definition = Object.values(definitions).find(
+    (candidate) => candidate.objectRef === entry.model,
+  );
+  if (!definition?.endpoint) return null;
+  return {
+    definition,
+    source: createRecipeScreensSource(
+      definition,
+      createDefinitionFetchers(
+        {
+          name: definition.name ?? definition.className,
+          endpoint: definition.endpoint,
+        },
+        options.basePath ?? '/api',
+        options.fetch,
+      ),
+      { allPages: true, ...(entry.filter ? { filter: entry.filter } : {}) },
+    ),
+  };
 }
 
 /** Build once for an app's exposed definitions, then pass the map to RecipeScreens.references. */

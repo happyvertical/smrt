@@ -15,7 +15,11 @@ import type {
 import CookbookApp from '../CookbookApp.svelte';
 import CookbookSectionPage from '../CookbookSectionPage.svelte';
 import { getCookbookContext } from '../context.js';
-import type { CookbookCatalog, CookbookLoaders } from '../types.js';
+import type {
+  CookbookAppProps,
+  CookbookCatalog,
+  CookbookLoaders,
+} from '../types.js';
 
 interface Props {
   cookbook: Cookbook;
@@ -31,6 +35,8 @@ interface Props {
   presentation?: 'plain' | 'card';
   customHeading?: boolean;
   loaders?: CookbookLoaders;
+  assistant?: CookbookAppProps['assistant'];
+  embed?: boolean;
 }
 let {
   cookbook,
@@ -46,6 +52,8 @@ let {
   presentation,
   customHeading = false,
   loaders,
+  assistant,
+  embed,
 }: Props = $props();
 </script>
 
@@ -77,6 +85,9 @@ let {
   {oncookbookchange}
   {resolveExport}
   {loaders}
+  {assistant}
+  {embed}
+  phoneTabBar
   layoutEditing
 >
   {#if exportProps}<ImportExport {...exportProps} />{/if}

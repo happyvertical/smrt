@@ -1,6 +1,8 @@
 /** Shell-dependent props, kept outside the plain cookbook data contract. */
+import type { AssistantTransport } from '@happyvertical/smrt-chat/svelte';
+import type { DataSurfaceRegistry } from '@happyvertical/smrt-ui/data-surface';
 import type { Cookbook } from '@happyvertical/smrt-types';
-import type { ComponentProps } from 'svelte';
+import type { Component, ComponentProps } from 'svelte';
 import type AppShell from '../app/AppShell.svelte';
 import type { RecipeExportResolver } from '../overview/recipe-widgets.js';
 import type { ScreenPolicy } from '../screens/types.js';
@@ -35,6 +37,22 @@ export interface CookbookAppProps
     > {
   cookbook: Cookbook;
   catalog: CookbookCatalog;
+  /** Shared host composition supplies the dock, transport and surface registry. */
+  assistant?: {
+    component: Component<{
+      transport: AssistantTransport;
+      registry: DataSurfaceRegistry;
+      contextMode?: 'data-surfaces' | 'server';
+      visible?: boolean;
+      messageFormat?: 'text' | 'markdown';
+    }>;
+    transport: AssistantTransport;
+    registry: DataSurfaceRegistry;
+    label?: string;
+  };
+  /** Embedded/plugin hosts keep their content and navigation without in-app chat. */
+  embed?: boolean;
+
   /** Resolved once by the owning policy engine at the server boundary. */
   fieldPolicies?: Readonly<Record<string, ScreenPolicy>>;
   /** Expanded section entries are the default; use `sections` for headings only. */

@@ -91,6 +91,12 @@ sample data source are not part of it.
 
 ## `CookbookApp`
 
+`assistant` accepts a host-supplied `{ component, transport, registry, label? }`
+(the template host's `createCookbookAssistant()`). CookbookApp mounts it in the
+shell panel, shares the registry with Provider, and owns the desktop/phone toggle.
+`embed` hides in-app chat by omitting the assistant component. A host without
+`assistant` retains the existing explicit panel/dock snippet API.
+
 `AppShell` with the builder's output. Props: `cookbook`, `catalog`, any
 `AppShell` prop (title, logo, `storageKey`, `user`, `permissions`, `dock`,
 `slotItems`, `settingsHref`, ...), and:

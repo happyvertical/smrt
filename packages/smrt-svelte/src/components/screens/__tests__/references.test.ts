@@ -11,6 +11,7 @@ import { screenReferenceTarget } from '../references.js';
 import { deriveScreenRelations } from '../relations.js';
 import { deriveFieldRoles } from '../roles.js';
 import {
+  createRecipeScreenEntry,
   createRecipeScreenReferences,
   createRecipeScreensSource,
 } from '../source.js';
@@ -429,6 +430,56 @@ describe('named screen references', () => {
 });
 
 describe('generated REST screen source', () => {
+  it('adapts keyed cookbook entries across pages and keeps writes inside their filter', async () => {
+    const first = Array.from({ length: 500 }, (_, i) => ({
+      id: String(i),
+      status: 'open',
+    }));
+    const fetcher = vi.fn(
+      async (url: string | URL | Request, init?: RequestInit) =>
+        new Response(
+          JSON.stringify(
+            init?.body
+              ? { id: 'saved', ...JSON.parse(String(init.body)) }
+              : String(url).includes('offset=500')
+                ? { items: [{ id: 'late', status: 'paid' }] }
+                : { items: first },
+          ),
+        ),
+    );
+    const def = { ...people, actions: ['list', 'get', 'create', 'update'] };
+    const entry = createRecipeScreenEntry(
+      { people: def },
+      { model: people.objectRef, filter: { field: 'status', value: 'paid' } },
+      { fetch: fetcher },
+    );
+    expect(await entry!.source.list()).toEqual([
+      { id: 'late', status: 'paid' },
+    ]);
+    expect(fetcher).toHaveBeenCalledTimes(2);
+    await entry!.source.create!({ status: 'open', name: 'Ada' });
+    await entry!.source.update!('late', { status: 'open' });
+    expect(JSON.parse(String(fetcher.mock.calls[2][1]?.body))).toEqual({
+      status: 'paid',
+      name: 'Ada',
+    });
+    expect(JSON.parse(String(fetcher.mock.calls[3][1]?.body))).toEqual({
+      status: 'paid',
+    });
+    expect(entry!.source.delete).toBeUndefined();
+    expect(
+      createRecipeScreenEntry({ people }, { model: '@unknown/pkg:Missing' }),
+    ).toBeNull();
+  });
+
+  it('refuses an out-of-filter record returned by a keyed entry get', async () => {
+    const source = createRecipeScreensSource(
+      people,
+      { list: vi.fn(), get: async () => ({ id: 'other', status: 'open' }) },
+      { filter: { field: 'status', value: 'paid' } },
+    );
+    expect(await source.get!('other')).toBeUndefined();
+  });
   it('searches the declared display field with stable paging and respects allowed actions', async () => {
     const fetcher = vi.fn(
       async () => new Response(JSON.stringify({ data: [ada, grace] })),

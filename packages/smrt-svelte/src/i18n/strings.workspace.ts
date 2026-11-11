@@ -13,6 +13,7 @@
 import { defineMessages } from '@happyvertical/smrt-ui/i18n';
 
 export const M = defineMessages({
+  'ui.cookbook.assistant': 'Assistant',
   // browser-ai/svelte/components/STTTest.svelte
   'ui.stt_test.heading': 'STT Adapter Test',
   'ui.stt_test.adapter_browser': 'Browser (Web Speech API)',
