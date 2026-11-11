@@ -473,6 +473,9 @@ importers:
       '@happyvertical/smrt-profiles':
         specifier: workspace:*
         version: link:../profiles
+      '@happyvertical/smrt-reports':
+        specifier: workspace:*
+        version: link:../reports
       '@happyvertical/smrt-secrets':
         specifier: workspace:*
         version: link:../secrets

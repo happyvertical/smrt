@@ -1,4 +1,6 @@
 export const WORKER_OPS = [
+  'compileReport',
+  'runReport',
   'list',
   'get',
   'create',

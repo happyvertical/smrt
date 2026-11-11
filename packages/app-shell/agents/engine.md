@@ -175,3 +175,20 @@ its originals and is risky. Undo restores those originals or the old expression.
 Renames rewrite expressions; hide/remove/type change refuse named dependents.
 `titleField` optionally names the record label, with first visible text as fallback.
 Test design and required validation: [engine-4916-tests.md](engine-4916-tests.md).
+
+## Definition reports (#4916)
+
+`reports?: Record<string, { label?, description?, spec: RuntimeReportSpec }>`
+is additive format 1 data, never the RuntimeReport table. `defineReport`,
+`renameReport`, `removeReport` are structural commands. Defining compiles with
+smrt-reports against the app's own visible fields; boot revalidates saved specs.
+Renames rewrite field references; destructive field changes list report dependents.
+`host.runReport(nameOrSpec, { maxRows?, timeoutMs? })` works frozen or in drafts.
+The SQL compiler/runner supplies bounded aggregates on app.db, tenantId null.
+Defaults: 1000 rows, 5000 ms; allowed ceilings: 1000 rows, 10000 ms. A dedicated
+read worker is terminated on query timeout, without killing the app worker.
+Columns carry money/date/choice hints. Reference dimension columns add
+`reference` and `labelColumn`; rows carry that label next to the original id,
+resolved in one query per target model, using titleField or first visible text.
+The server catalog's engine-tools adapter calls the same owner check and builder
+path; app_runreport names the records target, builder commands the structure target.

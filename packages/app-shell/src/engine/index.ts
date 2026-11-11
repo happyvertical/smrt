@@ -76,6 +76,7 @@ export type {
   ModelDiff,
   PublishMethod,
 } from './publish.ts';
+export type { AppReportResult, ReportDef, ReportOptions } from './reports.ts';
 export {
   checkSyntax,
   type MethodInput,

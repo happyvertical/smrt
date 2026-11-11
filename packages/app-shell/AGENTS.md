@@ -12,7 +12,7 @@ Shared assistant adapters and legacy approval storage: [agents/shared-pieces.md]
 
 | Path | What |
 |---|---|
-| `src/engine/` | `AppHost`, worker thread, migrations, calculated fields (`setCalculation`, core SDK expressions), QuickJS sandbox, drafts (`forkDraft`/`previewPublish`/`publishDraft`/`undoTo`, frozen host, draft-only `autoApprove`; see engine.md "Drafts"). Finished and tested on its own. |
+| `src/engine/` | `AppHost`, worker thread, migrations, calculated fields (`setCalculation`, core SDK expressions), definition reports (`runReport`, smrt-reports compiler), QuickJS sandbox, drafts (`forkDraft`/`previewPublish`/`publishDraft`/`undoTo`, frozen host, draft-only `autoApprove`; see engine.md "Drafts"). Finished and tested on its own. |
 | `src/lib/objects/` | Shell models (`objectsDir` in `vite.config.ts`): `App`, `AppVersion`, `Approval`, `AssistantThread`, `AssistantMessage`. |
 | `src/lib/server/smrt.ts` | `createSmrtSvelteKitRuntime`, `prepareDatabase`, `configureShell`. |
 | `src/lib/server/registry.ts` | The ONE startup registration path (permissions, preference kinds); `smrt.ts` imports it before the runtime. app-runtime grants newly registered permissions to an existing owner on every start. `registry.test.ts` guards it. |
@@ -22,6 +22,7 @@ Shared assistant adapters and legacy approval storage: [agents/shared-pieces.md]
 | `src/lib/server/version-store.ts` | `ShellVersionStore` (engine `VersionStore` on `AppVersion` + the `App` row; `commit` is one transaction, a publish's draft mark rides in it) and `DraftVersionStore` (`AppDraftVersion` rows of one `AppDraft`). |
 | `src/lib/server/owner.ts` | Owner check, `Principal`, `assertOwner`, `runAs`. |
 | `src/lib/server/approvals.ts`, `approval-store.ts` | Shared-authority storage adapter and shell action executor; the only place `approved: true` is set. |
+| `src/lib/server/engine-tools.ts` | New engine catalog adapters: owner check, explicit structure/record targets, builder approval path. |
 | `src/lib/server/builder.ts` | `runCommand`/`runAppTool`/`runRest`/`requestRecordDelete`: execute or turn into an Approval. |
 | `src/lib/server/catalog.ts`, `policy.ts`, `mcp-server.ts` | Merged tool catalog, the one policy, the `/mcp` server. |
 | `src/lib/server/http.ts`, `events.ts` | Route plumbing; in-process event bus for SSE. |

@@ -12,6 +12,7 @@ import {
 } from '@happyvertical/smrt-core';
 import { MCPGenerator } from '@happyvertical/smrt-core/generators/mcp';
 import { APIGenerator } from '@happyvertical/smrt-core/generators/rest';
+import type { RuntimeReportSpec } from '@happyvertical/smrt-reports';
 import { getDatabase } from '@happyvertical/sql';
 import {
   type AppDefinition,
@@ -38,6 +39,7 @@ import {
   visible,
 } from './definition.ts';
 import { AppError } from './errors.ts';
+import { compileReport, type ReportOptions, runAppReport } from './reports.ts';
 import {
   type MethodOutput,
   runMethod,
@@ -76,13 +78,16 @@ export class AppRuntime {
    * migration's steps (if any) and then the additive changes, all in one
    * transaction. A failure leaves app.db exactly as it was.
    */
-  async boot(migration?: Migration): Promise<BootResult> {
+  async boot(migration?: Migration, readOnly = false): Promise<BootResult> {
     mkdirSync(join(this.dataDir, 'snapshots'), { recursive: true });
     this.db = await getDatabase({
       type: 'sqlite',
       url: join(this.dataDir, 'app.db'),
     } as any);
     await this.register();
+    for (const report of Object.values(this.def.reports ?? {}))
+      await compileReport(this.def, report.spec);
+    if (readOnly) return { statements: [], snapshot: null };
     const steps = migration?.steps ?? [];
     if (!steps.length) await this.checkColumns(this.db);
     // With steps the tables change first; planning happens inside the transaction.
@@ -598,6 +603,13 @@ export class AppRuntime {
   }
 
   // ---------- records ----------
+
+  compileReport(spec: unknown) {
+    return compileReport(this.def, spec);
+  }
+  runReport(input: string | RuntimeReportSpec, options: ReportOptions) {
+    return runAppReport(this.def, this.db, input, options);
+  }
 
   describe() {
     return describeApp(this.def, this.version);

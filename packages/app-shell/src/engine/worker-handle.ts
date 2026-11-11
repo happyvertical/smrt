@@ -35,6 +35,7 @@ export class AppWorker {
       def: AppDefinition;
       version: number;
       migration?: Migration;
+      readOnly?: boolean;
     },
   ) {
     this.version = init.version;

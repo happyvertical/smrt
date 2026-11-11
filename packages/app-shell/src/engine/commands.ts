@@ -3,8 +3,12 @@
 // the caller passes `approved: true`: the lowest-layer enforcement of the
 // approval gate (a preview only advises).
 import type { AppDefinition, FieldDef, MethodDef } from './definition.ts';
+import type { ReportDef } from './reports.ts';
 
 export type Command =
+  | { type: 'defineReport'; name: string; definition: ReportDef }
+  | { type: 'renameReport'; from: string; to: string }
+  | { type: 'removeReport'; name: string }
   | {
       type: 'defineModel';
       name: string;
@@ -104,6 +108,9 @@ export function isRiskyCommand(cmd: Command): boolean {
  * deciding which side it is on.
  */
 export const STRUCTURAL_COMMANDS: Readonly<Record<CommandType, boolean>> = {
+  defineReport: true,
+  renameReport: true,
+  removeReport: true,
   defineModel: true,
   addField: true,
   setCalculation: true,

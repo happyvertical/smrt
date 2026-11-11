@@ -7,6 +7,9 @@ import {
   runtimeModelEntry,
 } from '@happyvertical/smrt-core';
 
+import { parseRuntimeReportSpec } from '@happyvertical/smrt-reports';
+import type { ReportDef } from './reports.ts';
+
 export const USER_PKG = '@local/app';
 export const FORMAT = 1;
 
@@ -67,6 +70,7 @@ export interface AppDefinition {
   /** Shipped SMRT packages turned on. Only `profiles` for now. */
   recipes: string[];
   models: Record<string, ModelDef>;
+  reports?: Record<string, ReportDef>;
 }
 
 export const EMPTY_APP: AppDefinition = {
@@ -447,6 +451,38 @@ export function validate(def: unknown): string[] {
       }
     }
   }
+  if (d.reports !== undefined) {
+    if (!isObj(d.reports)) errs.push('reports must be an object');
+    else
+      for (const [name, report] of Object.entries(d.reports)) {
+        if (!isValidFieldName(name)) errs.push(`report ${name}: invalid name`);
+        try {
+          if (
+            !isObj(report) ||
+            (report.label !== undefined && typeof report.label !== 'string') ||
+            (report.description !== undefined &&
+              typeof report.description !== 'string')
+          )
+            throw new Error('invalid report');
+          const spec = parseRuntimeReportSpec(report.spec);
+          const model = d.models[spec.source];
+          if (!model) throw new Error('unknown source');
+          const fields = {
+            ...builtInFields(spec.source, model),
+            ...visible(model.fields),
+          };
+          for (const f of [
+            ...spec.dimensions,
+            ...spec.measures,
+            ...spec.filters,
+          ])
+            if (f.field && !Object.hasOwn(fields, f.field))
+              throw new Error(`unknown field '${f.field}'`);
+        } catch (e) {
+          errs.push(`report ${name}: ${(e as Error).message}`);
+        }
+      }
+  }
   return errs;
 }
 
@@ -502,7 +538,13 @@ export function describeApp(def: AppDefinition, version: number) {
       ),
     };
   }
-  return { name: def.name, version, recipes: def.recipes, models };
+  return {
+    name: def.name,
+    version,
+    recipes: def.recipes,
+    models,
+    reports: def.reports ?? {},
+  };
 }
 
 export interface DescribedModel {

@@ -17,7 +17,7 @@ export function fieldDependents(
   model: string,
   field: string,
 ): string[] {
-  return Object.entries(def.models[model].fields)
+  const calculated = Object.entries(def.models[model].fields)
     .filter(
       ([, fd]) =>
         fd.calculated &&
@@ -26,4 +26,33 @@ export function fieldDependents(
         ),
     )
     .map(([name]) => `calculated field ${model}.${name}`);
+  return [
+    ...calculated,
+    ...Object.entries(def.reports ?? {})
+      .filter(
+        ([, r]) =>
+          r.spec.source === model &&
+          [...r.spec.dimensions, ...r.spec.measures, ...r.spec.filters].some(
+            (f) => f.field === field,
+          ),
+      )
+      .map(([name]) => `report ${name}`),
+  ];
+}
+
+export function rewriteReports(
+  def: AppDefinition,
+  model: string,
+  from: string,
+  to: string,
+) {
+  for (const report of Object.values(def.reports ?? {})) {
+    if (report.spec.source !== model) continue;
+    for (const node of [
+      ...report.spec.dimensions,
+      ...report.spec.measures,
+      ...report.spec.filters,
+    ])
+      if (node.field === from) node.field = to;
+  }
 }

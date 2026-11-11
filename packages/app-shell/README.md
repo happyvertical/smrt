@@ -539,3 +539,17 @@ remove and type changes refuse dependents. Changes and undo run transactionally;
 undo restores the prior expression. A writable-to-calculated change archives
 originals and requires approval. Clearing an expression starts an empty writable
 column. See [engine contracts](agents/engine.md).
+
+### Engine reports
+
+`AppDefinition.reports[name] = { label?, description?, spec }` stores a
+smrt-reports `RuntimeReportSpec`. `source` is an app model name. Commands are
+`defineReport { name, definition }`, `renameReport { from, to }`, and
+`removeReport { name }`. Reports participate in history, undo, and draft publish.
+`AppHost.runReport(nameOrSpec, { maxRows?, timeoutMs? })` runs a live aggregate;
+it works on frozen and draft hosts. Only visible app fields are nameable.
+No SQL is accepted. Bounds are 1–1000 rows and 1–10000 ms (defaults 1000/5000).
+Reference dimensions retain ids and add labels in each column's `labelColumn`;
+columns also carry `format`, `choices`, and `reference` hints where applicable.
+The server catalog exposes `app_setcalculation`, `app_definereport`,
+`app_renamereport`, `app_removereport`, `app_runreport` through the owner policy.

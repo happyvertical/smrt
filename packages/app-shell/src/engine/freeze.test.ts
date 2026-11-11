@@ -23,6 +23,13 @@ afterAll(() => rmSync(root, { recursive: true, force: true }));
 
 /** One sample of every command type (the type makes the list exhaustive). */
 const SAMPLES: Record<CommandType, Command> = {
+  defineReport: {
+    type: 'defineReport',
+    name: 'counts',
+    definition: { spec: {} as never },
+  },
+  renameReport: { type: 'renameReport', from: 'a', to: 'b' },
+  removeReport: { type: 'removeReport', name: 'a' },
   defineModel: { type: 'defineModel', name: 'Other' },
   addField: {
     type: 'addField',

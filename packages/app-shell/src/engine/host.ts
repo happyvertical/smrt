@@ -10,6 +10,7 @@ import { EventEmitter } from 'node:events';
 import { existsSync, mkdirSync, renameSync, rmSync } from 'node:fs';
 import { dirname, join } from 'node:path';
 import { fileURLToPath } from 'node:url';
+import type { RuntimeReportSpec } from '@happyvertical/smrt-reports';
 import {
   type Command,
   type ExecuteOptions,
@@ -38,7 +39,11 @@ import {
   toolNamesFor,
   validate,
 } from './definition.ts';
-import { fieldDependents, rewriteExpression } from './dependents.ts';
+import {
+  fieldDependents,
+  rewriteExpression,
+  rewriteReports,
+} from './dependents.ts';
 import {
   checkDraftPath,
   type DraftMarker,
@@ -67,6 +72,7 @@ import {
   restoreAside,
   writeJournal,
 } from './publish.ts';
+import type { AppReportResult, ReportOptions } from './reports.ts';
 import { checkSyntax } from './sandbox.ts';
 import type { VersionRecord, VersionStore } from './store.ts';
 import { AppCallError, AppWorker } from './worker-handle.ts';
@@ -574,6 +580,33 @@ export class AppHost extends EventEmitter {
     });
 
     switch (cmd.type) {
+      case 'defineReport': {
+        const d = this.clone();
+        d.reports ??= {};
+        d.reports[cmd.name] = cmd.definition;
+        this.assertValid(d);
+        await this.callApp('compileReport', cmd.definition.spec);
+        return change(`define report ${cmd.name}`, d);
+      }
+      case 'renameReport': {
+        if (!Object.hasOwn(this.def.reports ?? {}, cmd.from))
+          throw new EngineError('unknown report');
+        if (Object.hasOwn(this.def.reports ?? {}, cmd.to))
+          throw new EngineError('report already exists');
+        const d = this.clone();
+        const reports = d.reports ?? {};
+        reports[cmd.to] = reports[cmd.from];
+        delete reports[cmd.from];
+        this.assertValid(d);
+        return change(`rename report ${cmd.from} -> ${cmd.to}`, d);
+      }
+      case 'removeReport': {
+        if (!Object.hasOwn(this.def.reports ?? {}, cmd.name))
+          throw new EngineError('unknown report');
+        const d = this.clone();
+        delete d.reports?.[cmd.name];
+        return change(`remove report ${cmd.name}`, d);
+      }
       case 'defineModel': {
         if (Object.hasOwn(this.def.models, cmd.name))
           throw new EngineError(`${cmd.name} already exists; use addField`);
@@ -614,7 +647,6 @@ export class AppHost extends EventEmitter {
       }
       case 'setCalculation': {
         const st = this.storage(cmd.model, cmd.field);
-        this.refuseDependents(cmd.model, cmd.field);
         const d = this.clone();
         if (cmd.calculated === null)
           delete d.models[cmd.model].fields[cmd.field].calculated;
@@ -669,6 +701,7 @@ export class AppHost extends EventEmitter {
             fd.calculated = rewriteExpression(fd.calculated, cmd.from, cmd.to);
         if (d.models[cmd.model].titleField === cmd.from)
           d.models[cmd.model].titleField = cmd.to;
+        rewriteReports(d, cmd.model, cmd.from, cmd.to);
         this.assertValid(d);
         return change(`rename ${cmd.model}.${cmd.from} -> ${cmd.to}`, d, {
           steps: [
@@ -1673,6 +1706,53 @@ export class AppHost extends EventEmitter {
         'migration_failed',
       );
     }
+  }
+
+  /** Bounded read worker: a timeout never terminates the live app worker. */
+  runReport(
+    input: string | RuntimeReportSpec,
+    options: ReportOptions = {},
+  ): Promise<AppReportResult> {
+    const timeoutMs = options.timeoutMs ?? 5000;
+    const maxRows = options.maxRows ?? 1000;
+    if (
+      !Number.isInteger(timeoutMs) ||
+      timeoutMs < 1 ||
+      timeoutMs > 10000 ||
+      !Number.isInteger(maxRows) ||
+      maxRows < 1 ||
+      maxRows > 1000
+    )
+      return Promise.reject(
+        new EngineError('report limits: 1-1000 rows and 1-10000 ms'),
+      );
+    return this.run(async () => {
+      const worker = new AppWorker(this.workerUrl, {
+        dataDir: this.dataDir,
+        def: this.def,
+        version: this.version,
+        readOnly: true,
+      });
+      let timer: ReturnType<typeof setTimeout> | undefined;
+      try {
+        await worker.ready;
+        return await Promise.race([
+          worker.call<AppReportResult>('runReport', input, { maxRows }),
+          new Promise<never>((_, reject) => {
+            timer = setTimeout(
+              () =>
+                reject(
+                  new EngineError('report time limit exceeded', 'refused'),
+                ),
+              timeoutMs,
+            );
+          }),
+        ]);
+      } finally {
+        if (timer) clearTimeout(timer);
+        await worker.terminate();
+      }
+    });
   }
 
   list(model: string, limit = 200) {
