@@ -59,6 +59,50 @@ const descriptor: DataSurfaceDescriptor = {
 };
 
 describe('AssistantDock (mounted component)', () => {
+  it('shows one failed-send message with retry and restores the draft', async () => {
+    const transport: AssistantTransport = {
+      async listThreads() {
+        return [
+          {
+            id: 'one',
+            title: 'Conversation',
+            isResolved: false,
+            messageCount: 0,
+          },
+        ];
+      },
+      async loadMessages() {
+        return [];
+      },
+      async sendMessage() {
+        throw new Error(
+          'The local AI could not start. Reference: test-reference',
+        );
+      },
+    };
+    const { container } = render(AssistantDock, {
+      props: {
+        transport,
+        registry: createDataSurfaceRegistry(),
+        contextMode: 'server',
+        conversations: 'single',
+      },
+    });
+    const input = await screen.findByRole('textbox', { name: 'Message' });
+    await vi.waitFor(() => expect(input).toBeEnabled());
+    await userEvent.type(input, 'What lists are in this app?');
+    await userEvent.click(screen.getByRole('button', { name: 'Send' }));
+    expect(
+      await screen.findAllByText(/The local AI could not start/),
+    ).toHaveLength(1);
+    expect(screen.getAllByRole('alert')).toHaveLength(1);
+    expect(screen.getByRole('button', { name: /Retry/ })).toBeEnabled();
+    expect(input).toHaveValue('What lists are in this app?');
+    expect(container.querySelector('.assistant-composer-error')).toBeNull();
+    expect(container.querySelector('.assistant-dock-error')).toBeNull();
+    await expectNoA11yViolations(container);
+  });
+
   it('guides a server-context user to an existing conversation without selecting it for them', async () => {
     const registry = createDataSurfaceRegistry();
     const transport: AssistantTransport = {

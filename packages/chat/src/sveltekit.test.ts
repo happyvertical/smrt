@@ -1,3 +1,4 @@
+import { AssistantTurnUserError } from './assistant-turn.js';
 /**
  * Mountable AssistantDock routes (#3368).
  *
@@ -3011,7 +3012,7 @@ describe('mountAssistantRoutes', () => {
       );
     });
 
-    it('persists partial output and a safe error before the error reaches the stream', async () => {
+    it('persists partial output and sends one safe error without a duplicate fallback bubble', async () => {
       const routes = mount({
         allowedTools: ['data.discover'],
         extraTools: [discoverTool([])],
@@ -3062,8 +3063,17 @@ describe('mountAssistantRoutes', () => {
         'Working on this action',
         'Could not complete this action',
         'Partial answer',
-        'The assistant ran into a problem. Please try again.',
       ]);
+      expect(
+        result.seen.filter((event) => event.type === 'error'),
+      ).toHaveLength(1);
+      expect(
+        rows.some(
+          (row) =>
+            (row.metadata as { fallback?: string })?.fallback ===
+            'provider_error',
+        ),
+      ).toBe(false);
       expect(JSON.stringify(result.seen)).not.toContain(
         'secret provider detail',
       );
@@ -3280,6 +3290,29 @@ describe('mountAssistantRoutes', () => {
       ]);
       expect(waiter).toHaveBeenCalledTimes(1);
     });
+    it('preserves a typed startup cause before storing a user message', async () => {
+      const routes = mount({
+        resolveTurnDriver() {
+          throw new AssistantTurnUserError(
+            'Codex needs a writable temporary directory. Reference: test-reference',
+            'agent_cli_startup',
+          );
+        },
+      });
+      const threadId = await createThread(routes);
+      const response = await send(routes, threadId, {
+        content: 'hello',
+        clientRequestId: 'startup-refusal',
+      });
+      expect(response.status).toBe(503);
+      expect(await response.json()).toMatchObject({
+        code: 'agent_cli_startup',
+        error:
+          'Codex needs a writable temporary directory. Reference: test-reference',
+      });
+      expect(await listMessages(routes, threadId)).toEqual([]);
+    });
+
     it('preserves structured engine status and stores no message when resolution refuses', async () => {
       const routes = mount({
         resolveTurnDriver() {

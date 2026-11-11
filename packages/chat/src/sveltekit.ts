@@ -96,6 +96,7 @@ import {
   type AssistantContinuationStore,
   type AssistantTurnErrorLogger,
   type AssistantTurnState,
+  AssistantTurnUserError,
   type AuthoredToolReply,
   createAssistantTurnResponse,
   createSessionContinuationStore,
@@ -1272,6 +1273,8 @@ export function mountAssistantRoutes(
     } catch (error) {
       const unavailable = unavailableRouteError(error);
       if (unavailable) throw unavailable;
+      if (error instanceof AssistantTurnUserError)
+        throw new AssistantRouteError(503, error.code, error.message);
       safeLog(error);
       throw new AssistantRouteError(
         503,

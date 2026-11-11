@@ -94,6 +94,8 @@ export interface AssistantPendingSend {
   threadId: string;
   content: string;
   status: AssistantPendingSendStatus;
+  /** Safe transport failure, owned by this send's retry presentation. */
+  error?: string;
   sentAt: number;
   attachments?: AssistantAttachmentRef[];
 }
@@ -1475,7 +1477,11 @@ export function createAssistantDockController(
       if (!disposed && epoch === contextEpoch) {
         pendingSends = pendingSends.map((p) =>
           p.clientRequestId === clientRequestId
-            ? { ...p, status: 'failed' as const }
+            ? {
+                ...p,
+                status: 'failed' as const,
+                error: error instanceof Error ? error.message : String(error),
+              }
             : p,
         );
       }
@@ -2038,6 +2044,7 @@ export function createAssistantDockController(
     if (!pending) return;
     // Cycle-4 final finding 1: same epoch discipline as doSend() itself.
     const epoch = contextEpoch;
+    error = null;
     try {
       await doSend(
         pending.threadId,

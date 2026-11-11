@@ -13,6 +13,7 @@ import {
   type InferenceEngineId,
   type InferenceEngineStatusHost,
   inferenceEngineStatus,
+  reportAgentFailure,
   runAgentTurn,
 } from '@happyvertical/smrt-inference/server';
 import { AssistantTurnUserError } from './assistant-turn.js';
@@ -90,9 +91,10 @@ export function createAgentCliTurnDriver(options: {
       });
     },
     async run(context, callbacks) {
-      const binding = await options.bind(context).catch(() => {
+      const binding = await options.bind(context).catch((error) => {
+        const reference = reportAgentFailure(options.tool, 'binding', error);
         throw new AssistantTurnUserError(
-          'The local AI could not start. Check AI settings.',
+          `The local AI could not start. Try again. Reference: ${reference}`,
           'agent_cli_unavailable',
         );
       });
@@ -229,8 +231,9 @@ export function createAgentCliTurnDriver(options: {
         });
       } catch (error) {
         if (error instanceof AssistantTurnUserError) throw error;
+        const reference = reportAgentFailure(options.tool, 'driver', error);
         throw new AssistantTurnUserError(
-          'The local AI turn could not finish. Try again.',
+          `The local AI turn could not finish. Try again. Reference: ${reference}`,
           'agent_cli_failed',
         );
       } finally {
@@ -316,8 +319,22 @@ export function createInferenceAssistantAdapters(options: {
       engine,
       await options.status(context),
     );
-    if (!status.configured)
+    if (!status.configured) {
+      if (engine === 'claude-code' || engine === 'codex') {
+        const reference = reportAgentFailure(
+          engine,
+          'preflight',
+          undefined,
+          status.startError ?? status.code,
+        );
+        if (status.code === 'agent_cli_startup')
+          throw new AssistantTurnUserError(
+            `${status.message} Reference: ${reference}`,
+            'agent_cli_startup',
+          );
+      }
       throw new InferenceUnavailableError({ reason: 'unconfigured' });
+    }
     return engine;
   };
   const select = (context: Context) => {

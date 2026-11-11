@@ -642,11 +642,11 @@ async function handleSend(
 ) {
   // Finding 4 (#2904 review, fresh cycle): controller.send()/doSend()
   // already marks the pendingSend 'failed' and rethrows on a transport
-  // error. Catch here to ALSO record it on controller.error (rendered as a
-  // dock-level banner), then rethrow so AssistantComposer's own `await
-  // onsend(...)` still sees the rejection and restores the user's draft
-  // instead of discarding it.
+  // error. The pending send owns the inline error and retry. Keep the
+  // controller's error for compatibility; the dock suppresses its duplicate.
+  // Rethrow so the composer restores the draft without adding another alert.
   try {
+    controller.setError(null);
     await controller.send(content, attachments);
     controller.setError(null);
     aiUnavailable = null;
@@ -755,7 +755,7 @@ async function handleConfirmAction(requestId: string) {
       {#if aiUnavailable}
         <AiUnavailableNotice status={aiUnavailable} settingsHref={aiSettingsHref} />
       {/if}
-      {#if controller.error}
+      {#if controller.error && !controller.pendingSends.some((p) => p.status === 'failed' && p.error === controller.error)}
         <p class="assistant-dock-error" role="alert">
           {t(M['chat.assistant_dock.error'], { message: controller.error })}
           {#if conversations === 'single' && !controller.activeThreadId}
@@ -1100,8 +1100,8 @@ async function handleConfirmAction(requestId: string) {
                already exists and reuses the same id, so it's the same
                affordance as the stale case. -->
           <div class="assistant-dock-failed">
-            <p>{t(M['chat.assistant_dock.send_failed'])}</p>
             {#each controller.pendingSends.filter((p) => p.status === 'failed') as pending (pending.clientRequestId)}
+              <p role="alert">{pending.error ?? t(M['chat.assistant_dock.send_failed'])}</p>
               <Button
                 type="button"
                 size="sm"
@@ -1143,6 +1143,7 @@ async function handleConfirmAction(requestId: string) {
               () => controller.draft, (text) => controller.setDraft(text)
             }
             onsend={handleSend}
+            showSendError={false}
             onupload={transport.uploadAttachment ? handleUpload : undefined}
             disabled={!controller.activeThreadId || composerDisabled}
             placeholder={composerPlaceholder}

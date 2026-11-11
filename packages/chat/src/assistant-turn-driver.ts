@@ -6,7 +6,6 @@ import type {
 } from '@happyvertical/smrt-agents';
 import { requiresOwnerApproval } from './assistant-approvals.js';
 import {
-  ASSISTANT_TURN_GENERIC_ERROR,
   type AssistantTurnOptions,
   type AssistantTurnResult,
   type AssistantTurnState,
@@ -403,10 +402,6 @@ export async function runExternalAssistantTurn<M>(
         stoppedReason: 'error',
         partial: true,
       });
-    await persist(ASSISTANT_TURN_GENERIC_ERROR, 'text', undefined, {
-      stoppedReason: 'error',
-      fallback: 'provider_error',
-    });
     throw failed
       ? failure
       : new Error('The external driver returned without done.');

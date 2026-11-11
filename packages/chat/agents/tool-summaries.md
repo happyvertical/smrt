@@ -116,3 +116,17 @@ readonly fields, malformed/foreign choices and gated children on SQLite.
 argument supports `recordLabels: 'generic'` and `plainTextSummary: true` for
 saved-product wording/replay. All safety guards remain shared; default labels
 are unchanged. Tricia is a thin policy adapter over these options.
+
+## Live-engine failures (R7/R8)
+
+Engine binding and unexpected driver failures use inference's safe correlated
+server diagnostic before replacing exceptions with fixed user words and a
+reference. External failures preserve real partial output but do not persist a
+second generic error bubble. The existing pending-send entry owns the transport
+error and retry. AssistantDock suppresses only the matching duplicate banner and
+tells AssistantComposer to restore the draft without a second send alert;
+standalone composers retain their default alert and other dock errors stay visible.
+Tests drive the mounted dock, preserve draft/retry/a11y, and launch both inference
+stub engines under the exact desktop `buildSidecarEnv` composition. No desktop
+production environment policy changed. Reuse the desktop environment helper via
+a test-only import; no duplicate environment builder is introduced.

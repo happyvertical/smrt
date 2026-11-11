@@ -13,6 +13,7 @@ import {
   tempDir,
 } from '@happyvertical/smrt-inference/test-support';
 import { afterEach, describe, expect, it, vi } from 'vitest';
+import { buildSidecarEnv } from '../../smrt-desktop/src/sidecar-manifest.js';
 import type {
   AssistantTurnDriverCallbacks,
   AssistantTurnDriverContext,
@@ -152,6 +153,33 @@ describe.each<AgentTool>([
   'claude-code',
   'codex',
 ])('%s driver over inference stub', (tool) => {
+  it('starts the driver under the exact desktop sidecar environment', async () => {
+    const { driver, bind } = setup(tool);
+    const bound = await bind();
+    const directory = await bound.deps.stateDir();
+    bound.deps.baseEnv = buildSidecarEnv(
+      {},
+      {
+        port: 5062,
+        dataDirectory: directory,
+        ownerLinkSecret: 'test-supervisor-secret',
+      },
+      {
+        ...bound.deps.baseEnv,
+        HOME: directory,
+        XDG_CONFIG_HOME: directory,
+        TMPDIR: directory,
+        ANTHROPIC_API_KEY: 'test-provider-key',
+        OPENAI_API_KEY: 'test-provider-key',
+      },
+    );
+    bind.mockResolvedValue(bound);
+    const cb = callbacks();
+    await driver.run(context('say Desktop ready'), cb);
+    expect(cb.done).toHaveBeenCalledExactlyOnceWith({ text: 'Desktop ready' });
+    expect(cb.error).not.toHaveBeenCalled();
+  });
+
   it('streams text and lets chat author the final answer once; cleans up its token', async () => {
     const { driver, mint, revoke } = setup(tool);
     const cb = callbacks();
@@ -472,6 +500,41 @@ describe('ChatGPT chat factory', () => {
 });
 
 describe('per-request inference adapters', () => {
+  it('refuses a failed startup probe with its precise safe cause and a logged reference', async () => {
+    const log = vi.spyOn(console, 'error').mockImplementation(() => {});
+    const adapters = createInferenceAssistantAdapters({
+      binding: async () => 'codex',
+      status: async () => ({
+        cliStatus: async () => ({
+          installed: true,
+          signedIn: true,
+          ready: false,
+          startError: 'working_directory',
+        }),
+        chatgpt: { status: vi.fn() },
+        apiStatus: vi.fn(),
+      }),
+      cli: vi.fn(),
+      chatgpt: vi.fn(),
+    });
+    const context = {
+      event: { request: new Request('http://app.test/send') },
+    } as AssistantRequestContext;
+    await expect(adapters.resolveTurnDriver!(context)).rejects.toMatchObject({
+      code: 'agent_cli_startup',
+      message: expect.stringMatching(
+        /writable temporary directory.*Reference: [a-f0-9-]{36}/,
+      ),
+    });
+    expect(log).toHaveBeenCalledWith(
+      '[smrt-inference] local engine failure',
+      expect.objectContaining({
+        phase: 'preflight',
+        code: 'working_directory',
+      }),
+    );
+  });
+
   it('uses authenticated bindings and checks once per request across route context copies', async () => {
     const driver = { run: vi.fn() };
     const api = { chat: vi.fn() };

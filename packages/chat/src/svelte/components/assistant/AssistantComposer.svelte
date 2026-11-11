@@ -31,6 +31,8 @@ import type { AssistantAttachmentRef } from './assistant-transport.js';
 const { t } = useI18n();
 
 export interface Props {
+  /** A containing dock owns the send error and retry; standalone composers show it locally. */
+  showSendError?: boolean;
   /** Called with the trimmed message text and any staged attachments when
    * the user sends — via Enter or the Send button. May return a Promise
    * (or reject/throw): the draft text and staged attachments are kept until
@@ -108,6 +110,7 @@ export interface Props {
 }
 
 let {
+  showSendError = true,
   onsend,
   onupload,
   disabled = false,
@@ -394,7 +397,7 @@ function removeAttachment(id: string) {
   ondrop={onupload ? handleDrop : undefined}
   ondragover={onupload ? (event) => event.preventDefault() : undefined} data-smrt-component="AssistantComposer"
 >
-  {#if sendError}
+  {#if sendError && showSendError}
     <p class="assistant-composer-error" role="alert">
       {t(M['chat.assistant_composer.send_error'], { message: sendError })}
     </p>
