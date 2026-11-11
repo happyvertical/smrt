@@ -1084,6 +1084,70 @@ describe('local cookbook host composition (SQLite, fake model, no providers)', (
     expect(ObjectRegistry.getClass(PROFILE)?.constructor).toBe(Profile);
   });
 
+  it('assistant creates a named member in one ordinary Customer create call', async () => {
+    let round = 0;
+    response = (_messages, options) => {
+      const create = options.tools?.find(
+        (t) => t.function.name === 'customers-create',
+      );
+      expect(
+        (
+          create?.function as
+            | { parameters?: { properties?: unknown } }
+            | undefined
+        )?.parameters?.properties,
+      ).toHaveProperty('name');
+      round++;
+      return round === 1
+        ? tool('customers-create', {
+            name: 'Typed Member',
+            email: 'typed@example.test',
+            phone: '555-0100',
+          })
+        : text();
+    };
+    const events = await turn(await thread(), 'Add Typed Member');
+    expect(
+      events.some((e) => e.type === 'error'),
+      JSON.stringify(errors),
+    ).toBe(false);
+    const customers = await ObjectRegistry.getCollection(CUSTOMER, { db });
+    const members = await customers.list({ displayLabel: true });
+    const member = members.find(
+      (m) => m.toJSON().displayLabel === 'Typed Member',
+    );
+    expect(member).toBeDefined();
+    const contact = await (
+      await ObjectRegistry.getCollection(PROFILE, { db })
+    ).get(String(member?.toJSON().profileId));
+    expect(contact?.toJSON()).toMatchObject({
+      name: 'Typed Member',
+      email: 'typed@example.test',
+    });
+    expect(contact?.constructor.name).toBe('Profile');
+  });
+
+  it('MCP advertises and accepts Customer inline fields without changing createType dispatch', async () => {
+    const offered = (await mcp()).body.result.tools;
+    expect(
+      offered.find((t: { name: string }) => t.name === 'customer_create')
+        ?.inputSchema.properties,
+    ).toHaveProperty('name');
+    const result = await mcp('tools/call', {
+      name: 'customer_create',
+      arguments: { name: 'MCP Member', email: 'mcp@example.test' },
+    });
+    expect(result.body.result?.isError, JSON.stringify(result.body)).not.toBe(
+      true,
+    );
+    const customers = await ObjectRegistry.getCollection(CUSTOMER, { db });
+    expect(
+      (await customers.list({ displayLabel: true })).map(
+        (m) => m.toJSON().displayLabel,
+      ),
+    ).toContain('MCP Member');
+  });
+
   it('MCP createType follows the effective app base and rejects gated or unrelated create targets before writes', async () => {
     const offered = (await mcp()).body.result.tools;
     expect(offered.map((entry: { name: string }) => entry.name)).toContain(

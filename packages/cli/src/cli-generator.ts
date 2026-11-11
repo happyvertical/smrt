@@ -1228,12 +1228,16 @@ export class CLIGenerator {
       const fields = new Map(
         [targets.base, ...targets.subtypes].flatMap((target) => [
           ...ObjectRegistry.getFields(target.name),
+          ...Object.entries(ObjectRegistry.getWriteThroughFields(target.name)),
         ]),
       );
       for (const [fieldName, field] of fields) {
         const optionName = fieldName.replace(/_/g, '-');
         const description =
-          field.options?.description || `${objectName} ${fieldName}`;
+          (field as { options?: { description?: string } }).options
+            ?.description ||
+          field.description ||
+          `${objectName} ${fieldName}`;
         options[optionName] = { type: 'string', description };
       }
 
@@ -1259,11 +1263,17 @@ export class CLIGenerator {
       };
 
       // Add field options
-      const fields = ObjectRegistry.getFields(objectName);
+      const fields = new Map([
+        ...ObjectRegistry.getFields(objectName),
+        ...Object.entries(ObjectRegistry.getWriteThroughFields(objectName)),
+      ]);
       for (const [fieldName, field] of fields) {
         const optionName = fieldName.replace(/_/g, '-');
         const description =
-          field.options?.description || `${objectName} ${fieldName}`;
+          (field as { options?: { description?: string } }).options
+            ?.description ||
+          field.description ||
+          `${objectName} ${fieldName}`;
         options[optionName] = { type: 'string', description };
       }
 
@@ -2355,7 +2365,12 @@ export class CLIGenerator {
         data = await this.promptForFields(initialTarget.collectionName, {});
       } else {
         // From command line options
-        const fields = ObjectRegistry.getFields(initialTarget.collectionName);
+        const fields = new Map([
+          ...ObjectRegistry.getFields(initialTarget.collectionName),
+          ...Object.entries(
+            ObjectRegistry.getWriteThroughFields(initialTarget.collectionName),
+          ),
+        ]);
         for (const [fieldName] of fields) {
           const optionName = fieldName.replace(/_/g, '-');
           if (options[optionName] !== undefined) {
@@ -2425,7 +2440,10 @@ export class CLIGenerator {
         );
       } else {
         // From command line options
-        const fields = ObjectRegistry.getFields(objectName);
+        const fields = new Map([
+          ...ObjectRegistry.getFields(objectName),
+          ...Object.entries(ObjectRegistry.getWriteThroughFields(objectName)),
+        ]);
         for (const [fieldName] of fields) {
           const optionName = fieldName.replace(/_/g, '-');
           if (options[optionName] !== undefined) {

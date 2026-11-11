@@ -754,7 +754,10 @@ function toolParameters(
     try {
       const registryKey = registryKeyFor(targetTool);
       const policy = writablePolicyFor(targetTool);
-      for (const [name, field] of ObjectRegistry.getFields(registryKey)) {
+      for (const [name, field] of new Map([
+        ...ObjectRegistry.getFields(registryKey),
+        ...Object.entries(ObjectRegistry.getWriteThroughFields(registryKey)),
+      ])) {
         // Create/update offer exactly the fields that the execution path can
         // write. The core helper owns all mass-assignment filtering rules.
         if (!(name in applySyncWritablePolicy({ [name]: true }, policy))) {
@@ -766,7 +769,8 @@ function toolParameters(
           description:
             field.description ??
             field._meta?.description ??
-            field.options?.description,
+            (field as { options?: { description?: string } }).options
+              ?.description,
           default: field.default ?? field._meta?.default,
           maxLength: field.maxLength,
           minLength: field.minLength,

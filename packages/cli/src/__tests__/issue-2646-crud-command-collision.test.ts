@@ -78,6 +78,24 @@ describe('#2646 CLI CRUD-named custom commands', () => {
     return commands.map((command: any) => command.name);
   }
 
+  it('advertises declared inline fields on create and update commands', async () => {
+    stubObject({ name: 'Widget', cli: true });
+    vi.spyOn(ObjectRegistry, 'getWriteThroughFields').mockReturnValue({
+      name: { type: 'text' },
+      email: { type: 'text' },
+    });
+    await (cli as any).ensureManifestLoaded();
+    const commands = await (cli as any).getObjectCommandsLazy('widget');
+    expect(
+      commands.find((c: { name: string }) => c.name === 'widget:create')
+        ?.options,
+    ).toHaveProperty('name');
+    expect(
+      commands.find((c: { name: string }) => c.name === 'widget:update')
+        ?.options,
+    ).toHaveProperty('email');
+  });
+
   it('emits an emitted CRUD verb exactly once when a public method shadows it', async () => {
     stubObject({ name: 'Widget', cli: true, methods: ['list', 'syncNow'] });
 
