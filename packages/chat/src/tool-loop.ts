@@ -815,11 +815,11 @@ function toolParameters(
             properties,
             fieldProps({ ...tool, qualifiedName: choice.name }),
           );
-        properties.type = {
+        properties.createType = {
           type: 'string',
           enum: choices.map((choice) => choice.name),
           description:
-            'Optional create type: ' +
+            'Optional createType target: ' +
             choices
               .map((choice) => `${choice.name} (${choice.label})`)
               .join(', '),

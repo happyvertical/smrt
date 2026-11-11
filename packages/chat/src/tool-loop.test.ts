@@ -473,7 +473,7 @@ describe('runToolLoop', () => {
     { name: 'Profile', target: 'Profile', selector: undefined },
     { name: 'Person', target: 'Person', selector: undefined },
     { name: 'Bot', target: 'Bot', selector: undefined },
-    { name: 'Profile', target: 'Bot', selector: 'type' },
+    { name: 'Profile', target: 'Bot', selector: 'createType' },
     { name: 'Profile', target: 'Bot', selector: '_meta_type' },
   ] as const)('summarizes $name create as $target with selector $selector', async ({
     name,

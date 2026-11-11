@@ -1215,10 +1215,10 @@ export class CLIGenerator {
         tenantId: this.context.tenantId,
       });
       if (targets.polymorphic) {
-        options.type = {
+        options.createType = {
           type: 'string',
           description:
-            'create type: ' +
+            'createType target: ' +
             [targets.base, ...targets.subtypes]
               .map((target) => `${target.name} (${target.label})`)
               .join(', '),
@@ -1231,7 +1231,6 @@ export class CLIGenerator {
         ]),
       );
       for (const [fieldName, field] of fields) {
-        if (targets.polymorphic && fieldName === 'type') continue;
         const optionName = fieldName.replace(/_/g, '-');
         const description =
           field.options?.description || `${objectName} ${fieldName}`;
@@ -2339,7 +2338,7 @@ export class CLIGenerator {
       };
       const initialTarget = ObjectRegistry.resolveCreateTarget(
         objectName,
-        { type: options.type },
+        { createType: options.createType },
         context,
       );
 
@@ -2367,7 +2366,9 @@ export class CLIGenerator {
 
       const target = ObjectRegistry.resolveCreateTarget(
         objectName,
-        options.type === undefined ? data : { ...data, type: options.type },
+        options.createType === undefined
+          ? data
+          : { ...data, createType: options.createType },
         context,
       );
       data = this.applyWritablePolicy(target.collectionName, target.data);

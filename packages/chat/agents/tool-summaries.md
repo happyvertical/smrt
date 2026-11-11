@@ -104,7 +104,8 @@ checks in their existing owning module; external drivers reuse it. No new file.
 Manifest create offerings and execution
 now use core's public `ObjectRegistry.getCreateTargets` / `resolveCreateTarget`
 API ([contract](../../core/agents/generators.md#public-collection-create-targets-a1b)).
-`type` is an optional qualified create target; `_meta_type` is a compatible alias.
+`createType` is an optional qualified create target; `_meta_type` is a compatible alias.
+The model's `type` field remains business data, including on STI families.
 Selection occurs before filtering and uses the selected model's writable policy;
 selectors are not persisted fields. Offerings and execution both use the original
 principal's live runtime exposure context. The Profile/Bot assistant canary and

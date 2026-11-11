@@ -1626,9 +1626,9 @@ export class ObjectRegistry {
   }
 
   /**
-   * Validate a create selector before filtering writable fields. `type` is the
+   * Validate a create selector before filtering writable fields. `createType` is the
    * public selector on STI families; `_meta_type` remains a compatible alias.
-   * Plain models retain their ordinary `type` field and unchanged input.
+   * The business `type` field is never interpreted as a selector.
    */
   static resolveCreateTarget(
     collectionName: string,
@@ -1642,12 +1642,12 @@ export class ObjectRegistry {
         ? (input as Record<string, unknown>)
         : {};
     if (catalog.polymorphic) {
-      const { type, _meta_type, ...fields } = data;
-      const selector = type !== undefined ? type : _meta_type;
+      const { createType, _meta_type, ...fields } = data;
+      const selector = createType !== undefined ? createType : _meta_type;
       if (
-        type !== undefined &&
+        createType !== undefined &&
         _meta_type !== undefined &&
-        type !== _meta_type
+        createType !== _meta_type
       ) {
         throw Object.assign(new Error('Conflicting create type selectors'), {
           status: 400,

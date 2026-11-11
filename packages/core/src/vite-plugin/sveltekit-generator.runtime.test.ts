@@ -693,6 +693,7 @@ describe('generated SvelteKit helper runtime', () => {
     const app = '@test/generated-app:Widget';
     class Widget extends SmrtObject {
       name = '';
+      type = '';
     }
     class SpecialWidget extends Widget {
       detail = '';
@@ -701,6 +702,7 @@ describe('generated SvelteKit helper runtime', () => {
     class HiddenWidget extends Widget {}
     class ForeignWidget extends SmrtObject {}
     field({ type: 'text' })(Widget.prototype, 'name');
+    field({ type: 'text' })(Widget.prototype, 'type');
     field({ type: 'text' })(SpecialWidget.prototype, 'detail');
     field({ type: 'text', readonly: true })(SpecialWidget.prototype, 'locked');
     ObjectRegistry.register(Widget, {
@@ -740,20 +742,21 @@ describe('generated SvelteKit helper runtime', () => {
             body: JSON.stringify(body),
           }),
         });
-      expect((await call({ name: 'base' })).status).toBe(201);
+      expect((await call({ name: 'base', type: 'article' })).status).toBe(201);
       expect(
         (
           await call({
             name: 'selected',
-            type: child,
+            createType: child,
+            type: 'article',
             detail: 'own field',
             locked: 'forbidden',
           })
         ).status,
       ).toBe(201);
       expect(create.mock.calls).toEqual([
-        [{ name: 'base' }],
-        [{ name: 'selected', detail: 'own field' }],
+        [{ name: 'base', type: 'article' }],
+        [{ name: 'selected', type: 'article', detail: 'own field' }],
       ]);
       const calls = globals.__smrtGeneratedHelperCalls as Array<[string]>;
       expect(calls.map(([name]) => name)).toEqual(['Widget', child]);
@@ -766,7 +769,7 @@ describe('generated SvelteKit helper runtime', () => {
         'missing',
         42,
       ]) {
-        expect((await call({ type })).status).toBe(400);
+        expect((await call({ createType: type })).status).toBe(400);
       }
       expect(create).toHaveBeenCalledTimes(2);
     } finally {

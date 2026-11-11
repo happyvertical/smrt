@@ -631,12 +631,12 @@ for AOT artifacts; live offerings pass trusted `RuntimeExposureContext` to remov
 disabled/unready children. No catalog is cached across cookbook changes.
 
 `ObjectRegistry.resolveCreateTarget(collectionKey, input, context)` validates STI
-create `type` (qualified model id) or the compatible `_meta_type` alias. Conflicting,
+create `createType` (qualified model id) or the compatible `_meta_type` alias. Conflicting,
 malformed, unknown, foreign and gated choices fail before writes. It returns the
 selected `name`/`label`, the `collectionName` receiver to execute, and `data` with
 selectors removed. The original receiver is preserved for omitted/base selectors;
-a selected subtype uses its exact collection. Plain models keep their ordinary
-`type` field. Apply the chosen collection's writable policy to `data` afterward; default creates retain receiver restrictions.
+a selected subtype uses its exact collection. Every model keeps its ordinary
+`type` field as business data. Apply the chosen collection's writable policy to `data` afterward; default creates retain receiver restrictions.
 MCP (in-process and emitted), REST (runtime and emitted), CLI and chat share this
 API; generated MCP no longer freezes a private discriminator map. REST OpenAPI
 POST schemas advertise the same optional choices; pass `exposureContext` for live
@@ -646,7 +646,8 @@ documentation. Existing CRUD auth, permission and tenant gates still apply.
 | --- | --- | --- | --- | --- | --- | --- | --- | --- |
 | Family identity and replacement | All four create paths, provider/app fixture | Omitted selector persists effective base; explicit subtype persists child and own writable fields | Foreign/unknown/malformed/gated selectors write zero rows | Authenticated MCP/REST, CLI host and authorized principal stub; trusted tenant | Existing collection lifecycle on one SQLite handle; no new transaction algorithm | Node/SQLite | Registry → transport → persistence / integration | chat full test (`create-targets.test.ts`) |
 | Live offerings | Same MCP/chat/CLI catalog and REST OpenAPI | Exact ids and human labels agree | Disabled child absent; child namespace cannot select parent | Trusted tenant, live gate | No persistence | Node | Catalog / integration | chat full test |
-| Write policy and compatibility | Explicit subtype, legacy alias and plain model | Child writable field survives; selectors removed; plain `type` retained | Readonly field excluded; conflicting aliases refused | Same authorized create | Existing collection and writable policy | Node/SQLite | Input boundary / regression | chat full test; core generator tests |
+| Write policy and compatibility | Explicit subtype, legacy alias and plain model | Child writable field survives; selectors removed; STI business `type` retained | Readonly field excluded; conflicting aliases refused | Same authorized create | Existing collection and writable policy | Node/SQLite | Input boundary / regression | chat full test; core generator tests |
+| Business classification | All four paths with a Content-style STI family | `type: "article"` persists for default base and explicit `createType` child | MCP/schema/OpenAPI/CLI offerings reserve only `createType`; no flat `type` selector | Same authorized create, provider and replaced base | Same SQLite handle | Node/SQLite | Transport schema and dispatch / regression | chat `create-targets.test.ts`; emitted REST runtime test; root content API suite |
 | Users canary | Chat assistant's Profile create tool | Default Profile; explicit Bot via either selector; summary preserves type | Existing offer/execution authority tests remain | Real principal and tenant permissions | Existing SQLite chat/tool-loop fixture | Node/SQLite | Assistant → profiles / integration | chat full test (`tool-loop.test.ts`) |
 
 No PostgreSQL/DuckDB execution is claimed by these new cases; no SQL, schema,
@@ -663,6 +664,11 @@ Regression evidence: with the pre-change chat dispatcher restored temporarily,
 both new Profile→Bot selector canaries failed (actual Profile); the three
 selector-free Profile/Person/Bot controls passed. Restoring this implementation
 passed all five. The dispatcher file was restored before final validation.
+
+The first full-root run exposed the Content collision: `smrt-content`'s
+`contents-api.test.ts` POST create returned 400 for business `type: "article"`.
+The follow-up reserves `createType` across transports and leaves business `type`
+untouched, including on STI families; the four-path fixture reproduces that input.
 Emitted SvelteKit POST tests also call the real registry API for provider/app
 families, check the exact receiver and child writable fields, and prove invalid
 or gated selectors never reach collection creation.

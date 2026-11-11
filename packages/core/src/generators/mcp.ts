@@ -1117,11 +1117,11 @@ export class MCPGenerator {
         {}),
       ...(action === 'create'
         ? {
-            type: {
+            createType: {
               type: 'string',
               enum: variants.map((variant) => variant.name),
               description:
-                'Optional create type: ' +
+                'Optional createType target: ' +
                 variants
                   .map((variant) => `${variant.name} (${variant.label})`)
                   .join(', '),
@@ -1143,14 +1143,16 @@ export class MCPGenerator {
           not: {
             anyOf: [
               { required: ['_meta_type'] },
-              ...(action === 'create' ? [{ required: ['type'] }] : []),
+              ...(action === 'create' ? [{ required: ['createType'] }] : []),
             ],
           },
         },
         ...variants.map(({ name, discriminator }) => {
           const variantFields = ObjectRegistry.getFields(name);
           return {
-            ...(action === 'create' ? { not: { required: ['type'] } } : {}),
+            ...(action === 'create'
+              ? { not: { required: ['createType'] } }
+              : {}),
             properties: {
               ...this.buildFieldSchemaProperties(variantFields),
               _meta_type: { const: discriminator },
@@ -1169,11 +1171,11 @@ export class MCPGenerator {
                 ...this.buildFieldSchemaProperties(
                   ObjectRegistry.getFields(name),
                 ),
-                type: { const: discriminator },
+                createType: { const: discriminator },
                 _meta_type: { const: discriminator },
               },
               required: [
-                'type',
+                'createType',
                 ...this.toToolFields(ObjectRegistry.getFields(name))
                   .filter((field) => field.required)
                   .map((field) => field.name),

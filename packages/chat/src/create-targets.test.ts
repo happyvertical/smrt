@@ -25,16 +25,17 @@ import {
   collection: 'create_targets',
   tableName: 'create_targets',
   tableStrategy: 'sti',
-  api: { public: true, writable: ['name'] },
+  api: { public: true, writable: ['name', 'type'] },
   mcp: { include: ['create'] },
   cli: true,
 })
 class CreateTargetRoot extends SmrtObject {
   name = '';
+  type = ''; // Content-style business classification, independent of STI.
 }
 @smrt({
   packageName: '@happyvertical/smrt-chat',
-  api: { writable: ['name', 'detail'] },
+  api: { writable: ['name', 'type', 'detail'] },
   ui: { label: 'Special records' },
 })
 class CreateTargetChild extends CreateTargetRoot {
@@ -152,16 +153,30 @@ for (const replace of [false, true]) {
       const ai = manifestToolToAITool(tool, 'tenant-a').function.parameters as {
         properties: Record<string, { enum?: string[] }>;
       };
-      expect(ai.properties.type.enum).toEqual([catalog.base.name, child]);
+      expect(ai.properties.createType.enum).toEqual([catalog.base.name, child]);
+      expect(ai.properties.type).toBeDefined();
+      expect(ai.properties.type.enum).toBeUndefined();
       expect(ai.properties.detail).toBeDefined();
       expect(ai.properties.locked).toBeUndefined();
       const [mcp] = await new MCPGenerator(
         { classNames: [root] },
         { tenantId: 'tenant-a' },
       ).generateTools();
-      expect(mcp.inputSchema.properties?.type).toMatchObject({
+      expect(mcp.inputSchema.properties?.createType).toMatchObject({
         enum: [catalog.base.name, child],
       });
+      const typeProperty = mcp.inputSchema.properties?.type as {
+        $ref?: string;
+      };
+      const definitions = mcp.inputSchema.$defs as
+        | Record<string, unknown>
+        | undefined;
+      const businessTypeSchema = typeProperty.$ref
+        ? definitions?.[typeProperty.$ref.split('/').at(-1)!]
+        : typeProperty;
+      expect(businessTypeSchema).toMatchObject({ type: 'string' });
+      expect(businessTypeSchema).not.toHaveProperty('enum');
+      expect(JSON.stringify(mcp.inputSchema)).not.toContain('"type":{"const":');
       const spec = generateOpenAPISpec({
         exposureContext: { surface: 'rest', tenantId: 'tenant-a' },
       });
@@ -175,6 +190,23 @@ for (const replace of [false, true]) {
       >;
       const basePost = paths['/api/v1/createtargetroots'].post;
       expect(JSON.stringify(basePost?.requestBody)).not.toContain(gated);
+      expect(basePost?.requestBody).toMatchObject({
+        content: {
+          'application/json': {
+            schema: {
+              allOf: [
+                expect.anything(),
+                {
+                  properties: {
+                    createType: { enum: [catalog.base.name, child] },
+                  },
+                },
+              ],
+            },
+          },
+        },
+      });
+      expect(JSON.stringify(basePost?.requestBody)).not.toContain('"type":{"');
       const cli = new CLIGenerator({}, { tenantId: 'tenant-a' }) as unknown as {
         generateObjectCommands(
           name: string,
@@ -190,27 +222,35 @@ for (const replace of [false, true]) {
         root,
         ObjectRegistry.getClass(root)!,
       );
-      const description = commands.find((command) =>
+      const createCommand = commands.find((command) =>
         command.name.endsWith(':create'),
-      )!.options.type.description;
+      )!;
+      const description = createCommand.options.createType.description;
       expect(description).toContain(child);
       expect(description).toContain('Special records');
       expect(description).not.toContain(gated);
+      expect(createCommand.options.type.description).not.toContain(child);
+      expect(createCommand.options.type.description).not.toContain(
+        'createType',
+      );
     });
 
     for (const path of ['MCP', 'REST', 'CLI', 'assistant']) {
-      it(`${path}: omitted selector creates the effective base`, async () => {
-        await create(path, { name: 'default' });
+      it(`${path}: business type with no selector creates the effective base`, async () => {
+        await create(path, { name: 'default', type: 'article' });
         const { rows } = await db.query(
-          'SELECT _meta_type FROM create_targets WHERE name = ?',
+          'SELECT _meta_type, type FROM create_targets WHERE name = ?',
           ['default'],
         );
-        expect(rows).toEqual([{ _meta_type: replace ? app : root }]);
+        expect(rows).toEqual([
+          { _meta_type: replace ? app : root, type: 'article' },
+        ]);
       });
-      it(`${path}: explicit subtype uses its fields and writable policy`, async () => {
+      it(`${path}: createType selects a subtype and preserves business type`, async () => {
         await create(path, {
           name: 'selected',
-          type: child,
+          createType: child,
+          type: 'article',
           detail: 'child field',
           locked: 'must not write',
         });
@@ -220,6 +260,7 @@ for (const replace of [false, true]) {
         expect(item.toJSON()).toMatchObject({
           _meta_type: child,
           detail: 'child field',
+          type: 'article',
           locked: '',
         });
       });
@@ -230,9 +271,9 @@ for (const replace of [false, true]) {
         42,
         '',
         null,
-      ])(`${path}: rejects %s before writing`, async (type) => {
+      ])(`${path}: rejects %s before writing`, async (createType) => {
         await expect(
-          create(path, { name: 'rejected', type }),
+          create(path, { name: 'rejected', createType, type: 'article' }),
         ).rejects.toThrow();
         const { rows } = await db.query(
           'SELECT id FROM create_targets WHERE name = ?',
@@ -254,7 +295,7 @@ for (const replace of [false, true]) {
       const description = async () =>
         (await cli.getObjectCommandsLazy('CreateTargetRoot')).find((command) =>
           command.name.endsWith(':create'),
-        )?.options.type.description;
+        )?.options.createType.description;
       expect(await description()).not.toContain(gated);
       setRuntimeExposureGate({ isEnabled: () => true });
       expect(await description()).toContain(gated);
@@ -272,7 +313,7 @@ for (const replace of [false, true]) {
       ObjectRegistry.registerCollection(receiver, CreateTargetCollection);
       const catalog = ObjectRegistry.getCreateTargets(receiver);
       expect(catalog.base.name).toBe(replace ? app : root);
-      for (const input of [{}, { type: catalog.base.name }]) {
+      for (const input of [{}, { createType: catalog.base.name }]) {
         expect(
           ObjectRegistry.resolveCreateTarget(receiver, input, {
             surface: 'assistant',
@@ -282,7 +323,7 @@ for (const replace of [false, true]) {
       expect(
         ObjectRegistry.resolveCreateTarget(
           receiver,
-          { type: child },
+          { createType: child },
           { surface: 'assistant' },
         ).collectionName,
       ).toBe(child);
@@ -300,12 +341,16 @@ for (const replace of [false, true]) {
       expect(() =>
         ObjectRegistry.resolveCreateTarget(
           root,
-          { type: child, _meta_type: root },
+          { createType: child, _meta_type: root },
           context,
         ),
       ).toThrow('Conflicting');
       expect(() =>
-        ObjectRegistry.resolveCreateTarget(child, { type: root }, context),
+        ObjectRegistry.resolveCreateTarget(
+          child,
+          { createType: root },
+          context,
+        ),
       ).toThrow();
       expect(
         ObjectRegistry.resolveCreateTarget(

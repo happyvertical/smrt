@@ -320,11 +320,11 @@ function generatePaths(
               {
                 type: 'object',
                 properties: {
-                  type: {
+                  createType: {
                     type: 'string',
                     enum: choices.map((target) => target.name),
                     description:
-                      'Optional create type: ' +
+                      'Optional createType target: ' +
                       choices
                         .map((target) => `${target.name} (${target.label})`)
                         .join(', '),
