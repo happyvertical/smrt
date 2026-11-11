@@ -601,3 +601,16 @@ These changes select dispatch identities; mutation atomicity, rollback, SQL
 syntax, tenancy and authorization contracts remain owned by existing collection
 and transport tests. No new persistence algorithm or dialect-specific behavior
 is introduced. The cross-path fixture executes SQLite, not external services.
+
+## Live cookbook gating over AOT definitions
+
+[Runtime exposure](runtime-exposure.md) is opt-in and separate from declaration
+exposure. `MCPGenerator.generateToolDefinitions()` returns the build-time superset;
+`generateTools()` is the live per-tenant listing. Runtime REST and generated
+SvelteKit CRUD/custom actions gate before collection access; generated sync-apply
+refuses disabled targets. Generated MCP servers filter static definitions on each
+list/call and emit `notifications/tools/list_changed`. Static definitions, their
+canonical tool names, route files and web manifest hashes remain stable.
+`ObjectRegistry.getExposureModel()` resolves a collection to its effective row
+model using the existing package-qualified collection resolver. Gates preserve
+same-name replacement provenance and never substitute simple-name matches.

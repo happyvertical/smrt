@@ -762,9 +762,11 @@ export {
 // Use the main entry point for Node.js applications that need generators
 
 export * from './external-agent-usage.js';
+export { modelReplacements } from './manifest/model-replacements.js';
 export {
   type OperationPermissionAlias,
   resolveOperationPermissionAlias,
 } from './operation-permission.js';
+export * from './runtime-exposure.js';
 // Presentation metadata helpers (#3599): widget hints, display label, selector lookup
 export * from './ui-metadata.js';

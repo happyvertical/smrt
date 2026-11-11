@@ -1549,6 +1549,39 @@ export class ObjectRegistry {
     return _getClass(name);
   }
 
+  /** Effective model identity for runtime exposure, including collection-hosted actions. */
+  static getExposureModel(name: string): RegisteredClass | undefined {
+    const registered = _getClass(name);
+    if (
+      !registered ||
+      !isCollectionRegistration(name, registered, collectionExposureLookup)
+    )
+      return registered;
+    // A public export alias may differ from constructor.name (AppCustomer ->
+    // Customer). Resolve the exact bound item constructor before textual names.
+    const itemConstructor = (
+      registered.constructor as unknown as {
+        _itemClass?: SmrtObjectConstructor;
+      }
+    )._itemClass;
+    const bound = itemConstructor
+      ? _getClassByConstructor(itemConstructor)
+      : undefined;
+    if (bound) return bound;
+    const itemName = resolveCollectionItemClassName(
+      name,
+      registered,
+      collectionExposureLookup,
+    );
+    return itemName
+      ? resolveRelatedRegistration(
+          itemName,
+          registered,
+          collectionExposureLookup,
+        )
+      : undefined;
+  }
+
   /**
    * Get a registered class by its constructor reference.
    * This is the most reliable lookup method as it avoids name collision issues

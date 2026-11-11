@@ -7,6 +7,17 @@ generating interfaces, or extending the framework runtime. If you want a full
 application scaffold with users and tenancy already wired, start with
 [`smrt-template-sveltekit`](../template-sveltekit/README.md).
 
+## Live cookbook exposure
+
+Generate the installed superset once with explicit `smrt({ expose })`, then install
+`createCookbookRuntimeExposure()` with `setRuntimeExposureGate()` before serving.
+REST answers 404 for disabled models; MCP/CLI and assistant manifest tools filter
+listings and refuse stale calls. Tenant engines and a host predicate decide each
+request. Enable/disable needs no regeneration or restart. Use the same gate to
+project screen definitions and cookbook navigation. See
+[the host integration contract](agents/runtime-exposure.md) for examples,
+notifications, fail-closed storage handling, and the remaining eager-startup limit.
+
 ## Installation
 
 ```bash

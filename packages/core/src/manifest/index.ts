@@ -75,3 +75,5 @@ export default manifest;
 export function getManifest() {
   return Promise.resolve(manifest);
 }
+
+export { modelReplacements } from './model-replacements.js';

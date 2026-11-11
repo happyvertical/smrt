@@ -103,6 +103,11 @@
       "import": "./dist/vite-plugin.js",
       "default": "./dist/vite-plugin.js"
     },
+    "./runtime-exposure": {
+      "types": "./dist/runtime-exposure.d.ts",
+      "import": "./dist/runtime-exposure.js",
+      "default": "./dist/runtime-exposure.js"
+    },
     "./runtime": {
       "types": "./dist/runtime.d.ts",
       "import": "./dist/runtime.js",
