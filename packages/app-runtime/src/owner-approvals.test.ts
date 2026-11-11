@@ -18,9 +18,11 @@ import { afterEach, beforeEach, describe, expect, it } from 'vitest';
 import {
   createSqliteOwnerApprovalStore,
   isApprovalOwner,
+  type OwnerApproval,
   OwnerApprovalAuthority,
   OwnerApprovalContinuations,
   type OwnerApprovalInput,
+  type OwnerApprovalStore,
 } from './owner-approvals.js';
 
 describe('owner tool holds over the canonical approval ledger (SQLite)', () => {
@@ -407,6 +409,176 @@ describe('owner tool holds over the canonical approval ledger (SQLite)', () => {
       tenantId,
     });
   });
+  it('resumes a continuation from a non-expiring legacy SQLite store beyond the default TTL', async () => {
+    // Test-local legacy host storage: preserves the full inert envelope and uses SQL CAS.
+    // The canonical ApprovalService store remains bounded and is not wrapped or bypassed.
+    await db.query(
+      'CREATE TABLE _smrt_legacy_continuation_fixture (tenant TEXT, id TEXT, status TEXT, body TEXT, PRIMARY KEY (tenant, id))',
+    );
+    const store: OwnerApprovalStore = {
+      supportsNonExpiring: true,
+      async insert(record) {
+        await db.query(
+          'INSERT INTO _smrt_legacy_continuation_fixture VALUES (?, ?, ?, ?)',
+          record.tenantId,
+          record.id,
+          record.status,
+          JSON.stringify(record),
+        );
+      },
+      async get(tenant, id) {
+        const row = (
+          await db.query(
+            'SELECT body FROM _smrt_legacy_continuation_fixture WHERE tenant = ? AND id = ?',
+            tenant,
+            id,
+          )
+        ).rows[0];
+        return row ? (JSON.parse(String(row.body)) as OwnerApproval) : null;
+      },
+      async list(tenant) {
+        return (
+          await db.query(
+            'SELECT body FROM _smrt_legacy_continuation_fixture WHERE tenant = ?',
+            tenant,
+          )
+        ).rows.map((row) => JSON.parse(String(row.body)) as OwnerApproval);
+      },
+      async transition(tenant, id, from, to, when, patch) {
+        const record = await store.get(tenant, id);
+        if (!record || record.expiresAt <= when) return false;
+        const next = {
+          ...record,
+          status: to,
+          ...(from === 'pending'
+            ? (patch ?? {})
+            : patch?.result === undefined
+              ? {}
+              : { result: patch.result }),
+        };
+        const changed = await db.query(
+          'UPDATE _smrt_legacy_continuation_fixture SET status = ?, body = ? WHERE tenant = ? AND id = ? AND status = ? RETURNING id',
+          to,
+          JSON.stringify(next),
+          tenant,
+          id,
+          from,
+        );
+        return changed.rows.length === 1;
+      },
+    };
+    const reopen = () =>
+      new OwnerApprovalAuthority(
+        store,
+        async (actor) => actor.id === owner.id && actor.tenantId === tenantId,
+        () => now,
+        { nonExpiring: true, maxInputChars: 4_000_000 },
+      );
+    const first = new OwnerApprovalContinuations(reopen(), {});
+    const saved = await first.capture(
+      {
+        id: owner.id,
+        tenantId,
+        permissions: [input.tool],
+        allowedTools: [input.tool],
+      },
+      () =>
+        first
+          .adapter('legacy', 'continuation')
+          .request({ ...input, context: { review: 'x'.repeat(140_000) } }),
+    );
+    expect(saved.expiresAt).toBe(Number.MAX_SAFE_INTEGER);
+    now += 30 * 24 * 60 * 60_000;
+    let executions = 0;
+    const reopened = new OwnerApprovalContinuations(reopen(), {
+      legacy: async (record) => {
+        expect(record.args).toEqual({ id: 'invoice-1' });
+        expect(String(record.context.review)).toHaveLength(140_000);
+        return { deleted: record.args.id, executions: ++executions };
+      },
+    });
+    await expect(
+      reopened.decide({ ...owner, tenantId: 'foreign' }, saved.id, true),
+    ).rejects.toMatchObject({ code: 'forbidden' });
+    expect(await reopened.decide(owner, saved.id, true)).toMatchObject({
+      status: 'succeeded',
+      result: { deleted: 'invoice-1', executions: 1 },
+    });
+    await expect(reopened.resume(owner, saved.id)).rejects.toMatchObject({
+      code: 'conflict',
+    });
+    expect(await reopened.outcome(owner, saved.id)).toMatchObject({
+      status: 'succeeded',
+      result: { executions: 1 },
+    });
+    expect(executions).toBe(1);
+  });
+
+  it.each([
+    'continuation',
+    'executor',
+  ] as const)('a settled wait observes %s consumption through the recorded result', async (consumption) => {
+    let release!: () => void;
+    let started!: () => void;
+    const executing = new Promise<void>((resolve) => {
+      started = resolve;
+    });
+    const finish = new Promise<void>((resolve) => {
+      release = resolve;
+    });
+    const c = new OwnerApprovalContinuations(authority, {
+      test: async (record) => {
+        if (consumption === 'executor')
+          await authority.consume(tenantId, record.id);
+        started();
+        await finish;
+        const result = { deleted: record.args.id };
+        if (consumption === 'executor')
+          await authority.complete(tenantId, record.id, true, result);
+        return result;
+      },
+    });
+    const hold = await c.capture(
+      {
+        id: owner.id,
+        tenantId,
+        permissions: [input.tool],
+        allowedTools: [input.tool],
+      },
+      () => c.adapter('test', consumption).request(input),
+    );
+    const observer = await open();
+    const abort = new AbortController();
+    let settled = false;
+    const observed = observer
+      .wait(tenantId, hold.id, abort.signal, { settled: true })
+      .then((record) => {
+        settled = true;
+        return record;
+      });
+    try {
+      await authority.decide(owner, hold.id, true);
+      expect((await observer.wait(tenantId, hold.id))?.status).toBe('approved');
+      await new Promise((resolve) => setTimeout(resolve, 125));
+      expect(settled).toBe(false);
+      const resumed = c.resume(owner, hold.id);
+      await executing;
+      expect((await observer.get(tenantId, hold.id))?.status).toBe('executing');
+      await new Promise((resolve) => setTimeout(resolve, 125));
+      expect(settled).toBe(false);
+      release();
+      await resumed;
+      expect(await observed).toMatchObject({
+        status: 'succeeded',
+        result: { deleted: 'invoice-1' },
+      });
+    } finally {
+      release();
+      abort.abort();
+      await observed;
+    }
+  });
+
   it('keeps the canonical store bounded even when a host asks for indefinite compatibility', async () => {
     const store = await createSqliteOwnerApprovalStore(db, () => now);
     expect(

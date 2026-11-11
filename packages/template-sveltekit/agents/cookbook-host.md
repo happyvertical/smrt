@@ -216,3 +216,21 @@ Knowledge retains seven existing ingestion static-surface warnings; Svelte
 typecheck retains 29 warnings. Provider behavior uses fakes/stub CLIs only.
 The SQLite disk-reopen continuation cases and live publication/permission tests
 run in process. No container, desktop packaging or real account verification.
+
+## Second integration rebase
+
+Base `437a68c806191603fe1c00032e8b1fd0f3417f81` already contains the first
+eleven D1 commits. The remaining six are replayed. Conflicts preserve both legacy
+and continuation approval documentation, the card's presentation/detail props
+and its optional thread transport. Generated pages are rebuilt, not hand-merged.
+The authority audit retains legacy TTL/input options and settled waits.
+
+Host interaction tests parameterize the Customer/Profile assistant scenario with
+omitted and explicit `createType` selecting the same-name app Profile. MCP creates
+that effective app base and refuses a gated Bot or unrelated model before writes.
+These extend the existing gate, STI/display-name, recipe activation, reference
+picker/publication and durable approval coverage; no host-side create dispatcher
+is introduced. Reuse: public ObjectRegistry create-target APIs and the existing
+MCP/assistant dispatchers, found through generators.md and name/purpose searches.
+All new execution cases use in-process SQLite, fake providers and existing CLI
+fixtures. Tricia's suites are run unchanged as downstream compatibility evidence.

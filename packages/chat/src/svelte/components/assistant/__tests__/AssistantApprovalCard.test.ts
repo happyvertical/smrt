@@ -14,7 +14,10 @@ const approval: AssistantApprovalView = {
 };
 
 describe('AssistantApprovalCard', () => {
-  it('shows the persisted summary, approves once, and announces the outcome', async () => {
+  it.each([
+    undefined,
+    't1',
+  ])('shows the persisted summary, approves once, and announces the outcome with thread %s', async (threadId) => {
     const transport = createInMemoryAssistantTransport();
     transport.listApprovals = vi.fn(async () => [approval]);
     transport.decideApproval = vi.fn(async () => ({
@@ -23,7 +26,7 @@ describe('AssistantApprovalCard', () => {
     }));
     const ondecided = vi.fn();
     render(AssistantApprovalCard, {
-      props: { approval, threadId: 't1', transport, ondecided },
+      props: { approval, threadId, transport, ondecided },
     });
     expect(screen.getByText(approval.summary)).toBeTruthy();
     const approve = screen.getByRole('button', { name: 'Approve' });
@@ -32,6 +35,7 @@ describe('AssistantApprovalCard', () => {
     );
     await userEvent.click(approve);
     expect(await screen.findByText('Approved and completed')).toBeTruthy();
+    expect(transport.listApprovals).toHaveBeenCalledWith(threadId);
     expect(transport.decideApproval).toHaveBeenCalledExactlyOnceWith(
       'a1',
       true,
@@ -68,14 +72,17 @@ describe('AssistantApprovalCard', () => {
     expect(screen.queryByRole('button', { name: 'Approve' })).toBeNull();
   });
 
-  it('keeps controls disabled until storage verifies the pending state and reports failure accessibly', async () => {
+  it.each([
+    undefined,
+    't1',
+  ])('keeps controls disabled until storage verifies the pending state and reports failure accessibly with thread %s', async (threadId) => {
     const transport = createInMemoryAssistantTransport();
     transport.listApprovals = vi.fn(async () => {
       throw new Error('forbidden');
     });
     transport.decideApproval = vi.fn();
     render(AssistantApprovalCard, {
-      props: { approval, threadId: 't1', transport },
+      props: { approval, threadId, transport },
     });
     expect(await screen.findByRole('alert')).toHaveProperty(
       'textContent',

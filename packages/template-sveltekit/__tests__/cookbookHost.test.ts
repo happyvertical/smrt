@@ -1031,7 +1031,10 @@ describe('local cookbook host composition (SQLite, fake model, no providers)', (
     );
   });
 
-  it('a stub assistant lists customers and creates a Customer linked to a Profile, never a Bot', async () => {
+  it.each([
+    undefined,
+    '@fixture/host:Profile',
+  ])('a stub assistant creates a Customer linked to its effective Profile using createType %s, never a Bot', async (createType) => {
     let round = 0;
     let profileId = '';
     response = (messages, options) => {
@@ -1044,6 +1047,7 @@ describe('local cookbook host composition (SQLite, fake model, no providers)', (
         return tool('profiles-create', {
           name: 'Ada Customer',
           typeId: profileTypeId,
+          ...(createType ? { createType } : {}),
         });
       if (round === 3) {
         profileId = JSON.parse(
@@ -1078,6 +1082,49 @@ describe('local cookbook host composition (SQLite, fake model, no providers)', (
     expect(row._meta_type).toBe('@fixture/host:Profile');
     expect(ObjectRegistry.getClassByQualifiedName(PROFILE)).toBeUndefined();
     expect(ObjectRegistry.getClass(PROFILE)?.constructor).toBe(Profile);
+  });
+
+  it('MCP createType follows the effective app base and rejects gated or unrelated create targets before writes', async () => {
+    const offered = (await mcp()).body.result.tools;
+    expect(offered.map((entry: { name: string }) => entry.name)).toContain(
+      'profile_create',
+    );
+    const profiles = await ObjectRegistry.getCollection(PROFILE, { db });
+    const before = await profiles.count();
+    const created = await mcp('tools/call', {
+      name: 'profile_create',
+      arguments: {
+        createType: '@fixture/host:Profile',
+        name: 'MCP Profile',
+        typeId: profileTypeId,
+      },
+    });
+    expect(created.body.result?.isError, JSON.stringify(created.body)).not.toBe(
+      true,
+    );
+    const rows = await profiles.list({ where: { name: 'MCP Profile' } });
+    expect(rows).toHaveLength(1);
+    expect(rows[0].constructor).toBe(Profile);
+    const row = (
+      await db.query('SELECT _meta_type FROM profiles WHERE id = ?', rows[0].id)
+    ).rows[0];
+    expect(row._meta_type).toBe('@fixture/host:Profile');
+    expect(await profiles.count()).toBe(before + 1);
+    for (const createType of ['@happyvertical/smrt-profiles:Bot', MEMO]) {
+      const refused = await mcp('tools/call', {
+        name: 'profile_create',
+        arguments: {
+          createType,
+          name: 'Must not be saved',
+          typeId: profileTypeId,
+        },
+      });
+      expect(
+        refused.body.result?.isError ?? !!refused.body.error,
+        JSON.stringify(refused.body),
+      ).toBe(true);
+      expect(await profiles.count()).toBe(before + 1);
+    }
   });
 
   it('enables a recipe through an assistant extra tool and exposes its section, REST and MCP without rebuilding', async () => {

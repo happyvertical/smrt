@@ -86,3 +86,22 @@ browser-turn transcript and cannot dispatch durable non-thread tool calls. This
 extends `owner-approvals.ts`; no new store/model/component/file is introduced.
 SQLite tests cover reopened authority, original args/ceiling, concurrent resume,
 native single consumption, deny/expiry, foreign requester and repeated decisions.
+
+## Continuations with legacy stores and settled waits
+
+The D1 second-rebase audit keeps `supportsNonExpiring`, `nonExpiring` and
+`maxInputChars` on the same authority used by continuation adapters. An adapter
+does not construct another authority or override its TTL/input policy. A custom
+store used for continuations must preserve the full inert OwnerApproval envelope,
+including its continuation binding; Tricia continues to use its own action
+executor and installed row mapping unchanged. No legacy schema migration is added.
+
+| Invariant | Trigger / positive | Failure / control | Actor / executor | Runtime / edge / level | Validation |
+| --- | --- | --- | --- | --- | --- |
+| Legacy continuation | Non-expiring SQL fixture reopened after 30 days; 140 KB review under explicit 4 MB budget; original args and one result | Foreign tenant and repeat resume refused; canonical store still rejects indefinite mode | Original owner/tenant, test-local OwnerApprovalStore with SQLite CAS | Node/SQLite, custom host store seam, integration | app-runtime full test |
+| Settled observation | Separate authority waits through approved and executing to recorded result in both consumption modes | Ordinary wait still returns approved; settled never grants permission or executes | Original owner; native executor or continuation owns consume/complete | Node/SQLite, public wait seam, integration | app-runtime full test |
+
+Reuse: repeated MCP package review/context and name/purpose searches for
+continuation, non-expiring storage, settled wait and approval observation across
+runtime/chat/core/Svelte/UI/app-shell. Tests extend owner-approvals.test.ts with an
+inline SQLite legacy-store fixture; no production helper, store or model is added.

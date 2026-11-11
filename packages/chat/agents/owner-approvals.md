@@ -91,3 +91,12 @@ this owner list, reusing the existing HTTP transport. No parallel approval route
 or UI is added. The template host tests exercise the real decision route after
 recreating the host and its authority, including an external MCP delete and a
 native cookbook disable.
+
+D1 second-rebase compatibility: transport mode also works without `threadId`,
+using the existing transport's owner-list endpoint. It still verifies persisted
+state before enabling controls and reports failures. Presentation/detail mode
+keeps precedence, exact legacy labels and no transport polling. The card's
+parameterized DOM cases cover thread and owner-list success/refusal; restoring
+the old thread-only render/poll guards makes both owner-list cases fail. The
+unchanged app-shell suites exercise Tricia's presentation/detail and connection
+contracts. No duplicate card or decision route is introduced.
