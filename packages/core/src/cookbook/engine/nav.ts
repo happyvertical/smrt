@@ -63,7 +63,7 @@ interface RawSection {
 /** The menu a document generates, before its layout. */
 function generated(
   catalog: EngineCatalog,
-  doc: Pick<Cookbook, 'recipes' | 'features'>,
+  doc: Pick<Cookbook, 'recipes' | 'features' | 'models'>,
 ): RawSection[] {
   const byId = new Map(catalog.recipes.map((r) => [r.id, r]));
   const sections = new Map<string, RawSection>();
@@ -106,8 +106,14 @@ function generated(
         const { packageId, name } = modelParts(catalog, id);
         return {
           id: navItemId(packageId, name),
-          label: humanize(name),
-          icon: 'fileText',
+          label:
+            doc.models?.packageName === id.split(':')[0]
+              ? (doc.models.lists[name]?.label ?? humanize(name))
+              : humanize(name),
+          icon:
+            doc.models?.packageName === id.split(':')[0]
+              ? (doc.models.lists[name]?.icon ?? 'fileText')
+              : 'fileText',
         };
       }),
     });
@@ -130,7 +136,9 @@ const order = <T extends { id: string }>(
 /** The menu with the document's layout applied: moves, order, hides, renames. */
 export function buildNav(
   catalog: EngineCatalog,
-  doc: Pick<Cookbook, 'recipes' | 'features'> & { layout?: CookbookLayout },
+  doc: Pick<Cookbook, 'recipes' | 'features' | 'models'> & {
+    layout?: CookbookLayout;
+  },
 ): NavSection[] {
   const layout = doc.layout;
   const raw = generated(catalog, doc);

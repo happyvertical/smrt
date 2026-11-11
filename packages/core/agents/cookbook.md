@@ -128,3 +128,12 @@ its own namespace and is untouched.
 
 The command engine (`@happyvertical/smrt-core/cookbook/engine`) is the one place
 that changes a cookbook: see [cookbook-engine.md](cookbook-engine.md).
+
+## App-owned models
+
+Optional `models: { version: 1, packageName, lists, fields }` carries portable
+app model definitions. Existing cookbooks remain unchanged. Lists declare
+label, icon, displayField and fields; `fields` maps qualified provider identities
+to app-subclass additions. Labels/hidden fields stay in `policies`.
+The validator, JSON Schema, canonical import/export and engine catalogs share
+this contract. See [app model editor](app-models.md) for activation and history.

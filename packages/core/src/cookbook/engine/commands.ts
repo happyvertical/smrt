@@ -1,4 +1,5 @@
 import type { Cookbook, CookbookPolicyRow } from '@happyvertical/smrt-types';
+import { cookbookModelCatalog } from '../models.js';
 import { validateCookbook } from '../validate.js';
 import {
   type AppSettings,
@@ -356,6 +357,7 @@ const handlers: { [N in CommandName]?: Handler<N> } = {
     );
   },
   set_policy(catalog, state, input) {
+    catalog = cookbookModelCatalog(catalog, state.doc.models);
     const model = findModel(catalog, input.model);
     if (!model)
       return fail('not_found', `No such model: ${input.model}.`, {

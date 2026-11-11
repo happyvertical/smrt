@@ -198,6 +198,8 @@ export interface PlanSnapshot {
   };
   recipes: { id: string; label: string }[];
   features: string[];
+  /** Qualified app lists declared by this cookbook (never inferred from registration). */
+  customModels?: string[];
   /** Recipe and feature ids this catalog lacks; kept on export. */
   unavailable: string[];
   settings: {

@@ -8,6 +8,7 @@ import type {
   CookbookTheme,
   RecipeShellSlot,
 } from '@happyvertical/smrt-types';
+import { validateCookbookModels } from './models.js';
 
 export type { Cookbook } from '@happyvertical/smrt-types';
 
@@ -880,6 +881,11 @@ export function validateCookbook(
         if (checked.ok && checked.override) overviews[id] = checked.override;
       }
     }
+  }
+
+  if (input.models !== undefined) {
+    for (const problem of validateCookbookModels(input.models))
+      error(diagnostics, 'invalid_models', problem.path, problem.message);
   }
 
   const errors = diagnostics
