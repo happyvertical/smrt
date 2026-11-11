@@ -19,6 +19,7 @@
  * hosted class advertises exactly the endpoint its route serves.
  */
 import { defaultCollectionName } from '@happyvertical/smrt-scanner';
+import { modelReplacements } from '../manifest/model-replacements.js';
 import type {
   SmartObjectDefinition,
   SmartObjectManifest,
@@ -47,7 +48,9 @@ function inheritedApi(
   let parentName = child.extendsQualified || child.extends;
   while (parentName && !seen.has(parentName)) {
     seen.add(parentName);
-    const parent = findManifestObjectByName(manifest, parentName, child);
+    const parent =
+      manifest.objects[parentName] ??
+      findManifestObjectByName(manifest, parentName, child);
     if (!parent) return undefined;
     // Only an STI relative lends its exposure: it shares the table (and so the
     // inherited collection) or is the declared STI base.
@@ -84,7 +87,8 @@ export function separateHostedStiCollections<M extends object>(
   refOf: (key: string, def: SmartObjectDefinition) => string | undefined,
 ): M {
   const source = manifest as unknown as SmartObjectManifest;
-  const wanted = new Set(hosted);
+  const replacements = modelReplacements(source);
+  const wanted = new Set(hosted.map((ref) => replacements.get(ref) ?? ref));
   let objects: SmartObjectManifest['objects'] | undefined;
   const moved = new Map<SmartObjectDefinition, string>();
   for (const [key, def] of Object.entries(source.objects)) {

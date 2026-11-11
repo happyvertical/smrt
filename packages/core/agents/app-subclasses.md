@@ -67,6 +67,16 @@ same-name subclass keep their previous identities and behavior.
 
 ## Validation contract
 
+Hosted STI route selection canonicalizes the AOT provider exposure list through
+same-name replacements before separating inherited route collections. Replacing
+both `Contract` and `Agreement` therefore keeps `/contracts` for the app base and
+`/agreements` for the app subtype, with the original `contracts.*` permission
+scope. The ancestry walk reads retained provider declarations even though the
+effective I/O index omits them; otherwise an empty subtype loses both its distinct
+route and inherited API restrictions. The host regression generates these two
+routes with collision rejection enabled and verifies that the input manifest is
+unchanged. No persistence, schema or discriminator contract changes.
+
 `src/__tests__/same-name-app-subclass.test.ts` scans an on-disk installed provider
 and app with the real scanner, generates manifests and SvelteKit route files,
 and runs in-process SQLite. No network server or external service is used.

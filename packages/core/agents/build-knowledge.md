@@ -1,5 +1,12 @@
 # Decorators, build integration, and knowledge
 
+The public `smrt({ generationSnapshot })` preset passes the same verified snapshot
+to consumer and producer plugins. Dependency views retain app replacements for
+dependency models alongside original ancestors, preserving inherited fields,
+restrictions and independent hosted STI routes. The public consumer-plugin
+`separateHostedStiCollections` normalizes the merged manifest before serialization;
+genuine collection namespace collisions still fail.
+
 Key options: `tableName`, `tableStrategy` ('cti'|'sti'), `conflictColumns`, `indexes` (declared multi-column indexes; see [schema-paths.md](schema-paths.md)), `api`/`mcp`/`cli` (generation config), `ai` (callable methods), `hooks` (beforeSave/afterSave/beforeDelete/afterDelete), `embeddings` (auto-generate), `tenantScoped`, `agent`, `ui` (`{ icon, label, description }` — nav/help hints round-tripped through the manifest as plain data; `description` is the object-level seed for form-level help, #2046).
 
 Registration sets `SMRT_TABLE_NAME` static property (survives minification).

@@ -70,6 +70,8 @@ export interface SmrtPresetOptions {
    * allowed. Omit to skip the check.
    */
   hostToolNames?: readonly HostToolNameDeclaration[];
+  /** Share one verified generation snapshot between producer and consumer views. */
+  generationSnapshot?: SmrtPluginOptions['generationSnapshot'];
 }
 
 export const SMRT_PRESET_DEFAULTS = {
@@ -226,6 +228,9 @@ export async function smrt(
       smrtConsumer({
         ...(options.lazyActivation ? { lazyActivation: true } : {}),
         ...rootOption,
+        ...(options.generationSnapshot
+          ? { generationSnapshot: options.generationSnapshot }
+          : {}),
         packages,
         generateTypes: true,
         typesDir,
@@ -244,6 +249,9 @@ export async function smrt(
   }
   const pluginOptions: SmrtPluginOptions = {
     ...rootOption,
+    ...(options.generationSnapshot
+      ? { generationSnapshot: options.generationSnapshot }
+      : {}),
     include: options.include ?? [`${objectsDir}/**/*.ts`],
     exclude: options.exclude ?? [...D.exclude],
     generateTypes: true,

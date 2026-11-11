@@ -539,7 +539,11 @@ export function isStiChildModel(
   let parentName = child.extendsQualified || child.extends;
   while (parentName && !seen.has(parentName)) {
     seen.add(parentName);
-    const parent = findManifestObjectByName(manifest, parentName, child);
+    // Ancestry retains replaced provider declarations; the public index selects
+    // effective I/O models and intentionally omits those declarations.
+    const parent =
+      manifest.objects[parentName] ??
+      findManifestObjectByName(manifest, parentName, child);
     if (!parent) return false;
     if (parent.collection === obj.collection) return true;
     child = parent;

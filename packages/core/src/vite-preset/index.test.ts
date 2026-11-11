@@ -69,6 +69,29 @@ export class Item extends SmrtObject {
 describe('smrt() Vite preset', () => {
   let root: string;
   let cwd: string;
+  it('passes one snapshot to both producer and consumer plugins', async () => {
+    const generationSnapshot = {
+      path: 'missing.json',
+      provenance: 'host-test',
+      sha256: 'invalid',
+      sourceRoot: root,
+    };
+    const plugins = (await smrt({
+      projectRoot: root,
+      packages: ['@test/pkg'],
+      expose: [],
+      generationSnapshot,
+    })) as AnyPlugin[];
+    const producer = plugins.find(
+      (plugin) => plugin.name === 'smrt-auto-service',
+    )!;
+    expect(producer.api.options.generationSnapshot).toBe(generationSnapshot);
+    const consumer = plugins.find((plugin) => plugin.name === 'smrt-consumer')!;
+    await callHook(consumer, 'configResolved', { root, build: {}, plugins });
+    await expect(callHook(consumer, 'buildStart', {})).rejects.toThrow(
+      /sha256/,
+    );
+  });
 
   const writeProvider = (name = '@test/pkg', manifest = true) => {
     const dir = join(root, 'node_modules', ...name.split('/'));
