@@ -574,3 +574,7 @@ inlines local `$ref`/`$defs`, drops `$schema`, and removes top-level
 `anyOf`/`oneOf`/`allOf`/`not`/`enum`/`const`, keeping `required` alternatives as
 a description sentence. MCP clients keep the original schema. Test:
 `src/generators/__tests__/provider-tool-schema.test.ts`.
+
+Same-name app replacements select one effective route, collection, tool and row
+type; upstream manifest declarations remain for ancestry. See
+[app-subclasses.md](app-subclasses.md).

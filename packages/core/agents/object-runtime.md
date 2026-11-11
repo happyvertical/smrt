@@ -230,3 +230,6 @@ collisions fail with the ordinary unique-constraint error; the create path of
 run their model guards. The default without options remains strict INSERT for
 every initial save, including generated slugs. Once requested, that stricter
 policy cannot be relaxed by a later opt-in call from the model.
+
+Same-name app subclasses replace the effective I/O identity while retaining
+provider declarations for inheritance. See [app-subclasses.md](app-subclasses.md).

@@ -50,6 +50,30 @@ class ProductCollection extends SmrtCollection<Product> {
 }
 ```
 
+### Extend a package model in your app
+
+Keep a model's public name to replace it throughout your app:
+
+```typescript
+import { Customer as CustomerBase } from '@happyvertical/smrt-commerce';
+import { smrt } from '@happyvertical/smrt-core';
+
+@smrt({})
+export class AppCustomer extends CustomerBase {
+  favoritePose = '';
+}
+export { AppCustomer as Customer };
+```
+
+An empty body works too. The app model inherits the upstream table and columns,
+collection and generated interfaces. Relationships and upstream collections
+resolve to the app model, including its fields and overrides. Build the app,
+then run `smrt db:migrate` to add new fields to the existing table. STI provider
+subclasses retain their original bases and discriminators; CTI children keep
+their own tables. Apps without replacements are unchanged. See the
+[same-name subclass contract](agents/app-subclasses.md) for registration,
+export naming, migration, and compatibility details.
+
 ### Basic CRUD
 
 ```typescript
