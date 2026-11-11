@@ -164,6 +164,8 @@ await content.getReferenceDrift();  // → [{ targetId, citedVersion, currentVer
 
 ## API Contracts
 
+Public JSON serializer: [content-list](agents/content-list.md#public-content-serialization).
+
 `Content` implements `AssetAssociable` and `MetadataAccessor` (issue #1162). Consumers can type their parameters as `Content` (or the interfaces directly) and rely on the methods existing without `typeof === 'function'` defensive checks:
 
 ```typescript

@@ -5,10 +5,10 @@ description: "Content processing module for SMRT framework - handles documents, 
 status: "stable"
 generated:
   by: "smrt/scripts/generate-knowledge-okf.ts"
-  at: "2026-11-08T08:57:02Z"
+  at: "2026-11-11T11:29:00Z"
 audience: "internal"
 evidence_level: "source-inspected"
-source_revision: "sha256:e4fc45aa6e8a339355ea0b75f7e926371600d218fd3fcd5245b904ae55f18b85"
+source_revision: "sha256:8b66dc66d67bb61724ae86826ece2502562429981402e51a6d8def40fc23e943"
 sources:
   - id: "manifest"
     resource: "https://github.com/happyvertical/smrt/blob/main/packages/content/package.json"
