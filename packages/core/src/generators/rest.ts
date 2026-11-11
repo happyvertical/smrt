@@ -1269,17 +1269,20 @@ export class APIGenerator {
   ): Promise<Response> {
     const cacheControl = this.resolveReadCachePolicy(objectName);
 
-    if (
-      this.hasReadPermissionFields(objectName) ||
-      (objectName &&
-        typeof ObjectRegistry.getConfig(objectName).display?.label === 'object')
-    ) {
+    const displayLabel = !!(
+      objectName &&
+      resolveDisplayLabelProjection(
+        ObjectRegistry.getConfig(objectName).display?.label,
+      )
+    );
+    if (this.hasReadPermissionFields(objectName) || displayLabel) {
       // Caller-specific fields and linked names can change without a parent
       // table write. Validate the actual public body in both cases.
       const scope = this.resolveTenantReadScope(objectName);
-      const object = scope
-        ? await collection.get({ id, ...scope })
-        : await collection.get(id);
+      const filter = scope ? { id, ...scope } : id;
+      const object = displayLabel
+        ? await collection.get(filter, { displayLabel: true })
+        : await collection.get(filter);
       if (!object) {
         return this.createErrorResponse(404, 'Object not found');
       }
@@ -1350,6 +1353,12 @@ export class APIGenerator {
     const limit = resolveListLimit(params.get('limit'));
     const offset = resolveListOffset(params.get('offset'));
 
+    const displayLabel = !!(
+      objectName &&
+      resolveDisplayLabelProjection(
+        ObjectRegistry.getConfig(objectName).display?.label,
+      )
+    );
     const buildPayload = async () => {
       // #2367: the default ordering carries a primary-key tiebreak. Rows sharing
       // a `created_at` tick tie under `created_at DESC` alone, and a tie leaves
@@ -1367,6 +1376,7 @@ export class APIGenerator {
       const scopedWhere = this.applyTenantReadScope(objectName, where);
 
       const objects = await collection.list({
+        ...(displayLabel ? { displayLabel: true } : {}),
         where:
           scopedWhere && Object.keys(scopedWhere).length > 0
             ? scopedWhere

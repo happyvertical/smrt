@@ -32,6 +32,7 @@ import {
 import { EmbeddingProvider } from './embeddings/provider';
 import { EmbeddingStorage } from './embeddings/storage';
 import type { ClassEmbeddingConfig } from './embeddings/types';
+import { DatabaseError } from './errors';
 import { buildWhere } from './host.js';
 import {
   createInterceptorContext,
@@ -56,6 +57,7 @@ import {
 } from './relationship-loader';
 import { detectEngine } from './schema/ddl/index';
 import { verifyPersistenceTable } from './schema/table-verifier';
+import { prependSmrtSystemFields } from './system-fields';
 import { resolveDisplayLabelProjection } from './ui-metadata';
 import {
   classnameToTablename,
@@ -429,9 +431,11 @@ export type SmrtSelectField<T extends SmrtObject> =
   | 'context'
   | 'created_at'
   | 'updated_at'
-  | '_meta_type';
+  | '_meta_type'
+  | 'displayLabel';
 
 type SmrtCoreSelectedFieldData = {
+  displayLabel: string;
   id: string | null | undefined;
   slug: string | null | undefined;
   context: string;
@@ -507,12 +511,15 @@ export interface SmrtStiReadScope {
 }
 
 export interface SmrtListOptions<ModelType extends SmrtObject> {
+  /** Include the declared one-hop display label on hydrated rows. Plain reads omit it. */
+  displayLabel?: boolean;
   where?: SmrtListWhereClause<ModelType>;
   offset?: number;
   limit?: number;
   orderBy?: string | string[];
   /**
-   * Column-backed field projection. When present, `list()` returns plain rows
+   * Public field projection, including a declared computed displayLabel.
+   * When present, `list()` returns plain rows
    * instead of hydrated model instances.
    */
   select?: readonly SmrtSelectField<ModelType>[];
@@ -554,7 +561,7 @@ export interface SmrtLatestRelatedOptions {
 /** Options accepted by {@link SmrtCollection.listWithLatestRelated}. */
 export type SmrtLatestRelatedListOptions<ModelType extends SmrtObject> = Omit<
   SmrtListOptions<ModelType>,
-  'select' | 'include' | 'cache'
+  'select' | 'include' | 'cache' | 'displayLabel'
 > & {
   latestRelated: SmrtLatestRelatedOptions;
 };
@@ -1639,10 +1646,11 @@ export class SmrtCollection<ModelType extends SmrtObject> extends SmrtClass {
    * uses its normal beforeList/STI scope and public projection validation, just
    * like listWithLatestRelated. No target object is hydrated per parent row.
    */
-  private async resolveDisplayLabelSource(): Promise<{
+  private async resolveDisplayLabelSource(requested: boolean): Promise<{
     from: string;
     values: unknown[];
   }> {
+    if (!requested) return { from: this.tableName, values: [] };
     const projection = this.getDisplayLabelProjection();
     if (!projection) return { from: this.tableName, values: [] };
     const identity = this.getResolvedItemQualifiedName();
@@ -1669,7 +1677,6 @@ export class SmrtCollection<ModelType extends SmrtObject> extends SmrtClass {
       await resolveRelationshipTargetName(edge),
       this.options,
     );
-    await target.ensureStorageReady();
     const targetFields = target.getFieldsSync();
     const targetIdentity = target.getResolvedItemQualifiedName();
     target.resolveProjectionSelect([projection.field], targetFields, false);
@@ -1761,6 +1768,23 @@ export class SmrtCollection<ModelType extends SmrtObject> extends SmrtClass {
     ]
       .map(q)
       .join(', ');
+    try {
+      await target.ensureStorageReady();
+    } catch (error) {
+      // Only an absent optional target is a display fallback. Authorization,
+      // connection and other schema errors must retain their normal failure.
+      if (
+        error instanceof DatabaseError &&
+        error.code === 'DB_SCHEMA_MISSING' &&
+        error.details?.tableName === target.tableName
+      ) {
+        return {
+          from: `(SELECT p.*, CAST($1 AS TEXT) AS ${q('display_label')} FROM ${q(this.tableName)} p) AS ${q(this.tableName)}`,
+          values: [projection.fallback],
+        };
+      }
+      throw error;
+    }
     const from = `(SELECT p.*, COALESCE(${value}, $1) AS ${q('display_label')} FROM ${q(this.tableName)} p LEFT JOIN (SELECT ${targetColumns} FROM ${q(target.tableName)} ${targetWhereSql}) r ON ${conditions.join(' AND ')}) AS ${q(this.tableName)}`;
     return { from, values };
   }
@@ -1836,6 +1860,7 @@ export class SmrtCollection<ModelType extends SmrtObject> extends SmrtClass {
     select: readonly string[],
     fields: Record<string, CollectionFieldDefinition>,
     isSTI: boolean,
+    displayLabel = false,
   ): { sql: string; outputFields: string[] } {
     if (!Array.isArray(select)) {
       throw new Error(
@@ -1886,6 +1911,8 @@ export class SmrtCollection<ModelType extends SmrtObject> extends SmrtClass {
       }
       validFieldNames.add(fieldName);
     }
+    if (displayLabel && this.getDisplayLabelProjection())
+      validFieldNames.add('displayLabel');
     if (isSTI && (!schemaColumnNames || schemaColumnNames.has('_meta_type'))) {
       validFieldNames.add('_meta_type');
     }
@@ -3087,7 +3114,10 @@ export class SmrtCollection<ModelType extends SmrtObject> extends SmrtClass {
    */
   public async get(
     filter: string | SmrtWhereClause<ModelType>,
-    options: { cache?: CollectionCacheConfig | false } = {},
+    options: {
+      cache?: CollectionCacheConfig | false;
+      displayLabel?: boolean;
+    } = {},
   ): Promise<ModelType | null> {
     await this.ensureStorageReady();
     const itemClassName = this.getResolvedItemClassName();
@@ -3149,7 +3179,9 @@ export class SmrtCollection<ModelType extends SmrtObject> extends SmrtClass {
     // hydrates none of them. The literal is safe to interpolate: it is not
     // caller-derived, and `$n` placeholders here would have to be numbered after
     // the WHERE values on PostgreSQL.
-    const source = await this.resolveDisplayLabelSource();
+    const source = await this.resolveDisplayLabelSource(
+      options.displayLabel === true || /\bdisplay_label\b/.test(whereSql),
+    );
     const scopedWhereSql = whereSql.replace(
       /\$(\d+)/g,
       (_, index: string) => `$${Number(index) + source.values.length}`,
@@ -3300,7 +3332,7 @@ export class SmrtCollection<ModelType extends SmrtObject> extends SmrtClass {
       (options as InterceptorListOptions | undefined) ??
       {};
 
-    let { where, offset, limit, orderBy, select, stiScope } =
+    let { where, offset, limit, orderBy, select, stiScope, displayLabel } =
       interceptedOptions as SmrtListOptions<ModelType>;
 
     // STI: Child collections should automatically filter by _meta_type.
@@ -3321,7 +3353,7 @@ export class SmrtCollection<ModelType extends SmrtObject> extends SmrtClass {
     const fields = this.getFieldsSync();
     const projection =
       select !== undefined
-        ? this.resolveProjectionSelect(select, fields, isSTI)
+        ? this.resolveProjectionSelect(select, fields, isSTI, true)
         : undefined;
     if (
       projection &&
@@ -3334,7 +3366,11 @@ export class SmrtCollection<ModelType extends SmrtObject> extends SmrtClass {
     }
 
     const orderBySql = this.buildOrderBySql(orderBy, fields);
-    const source = await this.resolveDisplayLabelSource();
+    const source = await this.resolveDisplayLabelSource(
+      displayLabel === true ||
+        select?.includes('displayLabel') === true ||
+        /\bdisplay_label\b/.test(`${whereSql} ${orderBySql}`),
+    );
     const scopedWhereSql = whereSql.replace(
       /\$(\d+)/g,
       (_, index: string) => `$${Number(index) + source.values.length}`,
@@ -4347,18 +4383,20 @@ export class SmrtCollection<ModelType extends SmrtObject> extends SmrtClass {
     ) {
       return this._cachedFields;
     }
-    // Fallback to ObjectRegistry sync method if cache not populated
-    // This handles edge cases where collection wasn't created via static create()
+    // Refresh from live metadata after a generation change, retaining the
+    // canonical injected fields supplied by getAllFields()/getFields().
     const fields = ObjectRegistry.getFields(
       this.getResolvedItemQualifiedName(),
     );
     // Convert Map to Record for consistency with getFields() return type.
     // Registry `RegisteredField`s are a structural superset of the members the
     // collection reads (`type`, `sensitive`, `_meta`); view through `unknown`.
-    return Object.fromEntries(fields) as unknown as Record<
-      string,
-      CollectionFieldDefinition
-    >;
+    return Object.fromEntries(
+      fields.size > 0 ||
+        ObjectRegistry.getClass(this.getResolvedItemQualifiedName())
+        ? prependSmrtSystemFields(fields)
+        : fields,
+    ) as unknown as Record<string, CollectionFieldDefinition>;
   }
 
   /**
@@ -4566,7 +4604,9 @@ export class SmrtCollection<ModelType extends SmrtObject> extends SmrtClass {
       this.convertWhereKeys(where || {}),
     );
 
-    const source = await this.resolveDisplayLabelSource();
+    const source = await this.resolveDisplayLabelSource(
+      /\bdisplay_label\b/.test(whereSql),
+    );
     const scopedWhereSql = whereSql.replace(
       /\$(\d+)/g,
       (_, index: string) => `$${Number(index) + source.values.length}`,

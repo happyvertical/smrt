@@ -625,6 +625,7 @@ describe('generated SvelteKit helper runtime', () => {
       expect.objectContaining({
         where: { 'displayLabel like': '%aya%' },
         orderBy: 'displayLabel',
+        displayLabel: true,
       }),
     );
     list.mockClear();

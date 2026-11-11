@@ -3606,7 +3606,7 @@ ${generateAuthGuardHelper(objectDef, semanticManifest)}${needsRouteTenantContext
   // than implied by the database's row order.
   const listAndCount = `  const where = { ...parseRestListWhere(url.searchParams)${isTenantScoped(objectDef) ? ', ...tenantReadScope()' : ''} };
   const orderBy = url.searchParams.get('orderBy') || LIST_ORDER_BY;
-  const items = await collection.list({ limit, offset, orderBy, where });
+  const items = await collection.list({ limit, offset, orderBy, where${objectDef.displayLabelProjection ? ', displayLabel: true' : ''} });
   const count = await collection.count({ where });`;
 
   const getHandler = hasGet
@@ -3796,9 +3796,9 @@ ${generateAuthGuardHelper(objectDef, semanticManifest)}${needsRouteTenantContext
   const getForRead = isTenantScoped(objectDef)
     ? `  const readScope = tenantReadScope();
   const item = await collection.get(
-    readScope ? { id: params.id, ...readScope } : params.id,
+    readScope ? { id: params.id, ...readScope } : params.id,${objectDef.displayLabelProjection ? '\n    { displayLabel: true },' : ''}
   );`
-    : `  const item = await collection.get(params.id);`;
+    : `  const item = await collection.get(params.id${objectDef.displayLabelProjection ? ', { displayLabel: true }' : ''});`;
 
   const getHandler = hasGet
     ? `

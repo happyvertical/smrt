@@ -109,8 +109,9 @@ describe('SvelteKit generated routes: conditional GET (#1757)', () => {
     expect(collectionRoute).toContain(
       "const orderBy = url.searchParams.get('orderBy') || LIST_ORDER_BY;",
     );
+    expect(itemRoute).toContain('{ displayLabel: true }');
     expect(collectionRoute).toContain(
-      'collection.list({ limit, offset, orderBy, where })',
+      'collection.list({ limit, offset, orderBy, where, displayLabel: true })',
     );
     expect(collectionRoute).toContain('collection.count({ where })');
   });

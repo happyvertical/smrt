@@ -123,11 +123,125 @@ function scopeTargets() {
 }
 
 describe('display label projection', () => {
+  it('keeps ordinary list/get/count and persisted selects independent of the display target', async () => {
+    const row = await customers.create({
+      profileId: 'absent-profile',
+      tenantId: null,
+    });
+    await db.query('DROP TABLE display_profiles');
+    const query = vi.spyOn(db, 'query');
+    const tables = vi.spyOn(db, 'tableExists');
+    expect((await customers.list()).map((item) => item.id)).toEqual([row.id]);
+    expect((await customers.get({ id: row.id }))?.toJSON()).not.toHaveProperty(
+      'displayLabel',
+    );
+    expect(await customers.count()).toBe(1);
+    expect(await customers.list({ select: ['id', 'profileId'] })).toEqual([
+      { id: row.id, profileId: 'absent-profile' },
+    ]);
+    expect(
+      tables.mock.calls.some(([table]) => table === 'display_profiles'),
+    ).toBe(false);
+    expect(
+      query.mock.calls.some(([sql]) =>
+        /JOIN|display_profiles/.test(String(sql)),
+      ),
+    ).toBe(false);
+  });
+
+  it('returns the declared fallback for an explicitly requested label when its target table is absent', async () => {
+    const row = await customers.create({
+      profileId: 'absent-profile',
+      tenantId: null,
+    });
+    await db.query('DROP TABLE display_profiles');
+    expect(
+      (await customers.list({ displayLabel: true }))[0].toJSON(),
+    ).toMatchObject({
+      id: row.id,
+      displayLabel: 'Unnamed customer',
+    });
+    expect(
+      (await customers.get({ id: row.id }, { displayLabel: true }))?.toJSON(),
+    ).toMatchObject({
+      displayLabel: 'Unnamed customer',
+    });
+    expect(
+      await customers.list({
+        select: ['id', 'displayLabel'],
+        orderBy: 'displayLabel',
+      }),
+    ).toEqual([{ id: row.id, displayLabel: 'Unnamed customer' }]);
+    expect(
+      await customers.count({ where: { 'displayLabel like': '%Unnamed%' } }),
+    ).toBe(1);
+    expect(
+      await customers.list({ where: { display_label: 'Someone else' } }),
+    ).toEqual([]);
+    const handler = new APIGenerator(
+      { basePath: '/api' },
+      { db },
+    ).generateHandler();
+    const restList = await handler(
+      new Request(
+        'http://fixture/api/displaycustomers?orderBy=displayLabel&displayLabel[like]=%25Unnamed%25',
+      ),
+    );
+    expect(restList.status).toBe(200);
+    expect(await restList.json()).toMatchObject([
+      { id: row.id, displayLabel: 'Unnamed customer' },
+    ]);
+    const restGet = await handler(
+      new Request(`http://fixture/api/displaycustomers/${row.id}`),
+    );
+    expect(restGet.status).toBe(200);
+    expect(await restGet.json()).toMatchObject({
+      displayLabel: 'Unnamed customer',
+    });
+    // Absence is not cached: a normally migrated target becomes readable later.
+    await getTestDatabase({ db, classes: ['DisplayProfile'] });
+    const profile = await profiles.create({
+      name: 'Available now',
+      tenantId: null,
+    });
+    if (!profile.id) throw new Error('Profile fixture has no id');
+    row.profileId = profile.id;
+    await row.save();
+    expect(
+      (await customers.list({ displayLabel: true }))[0].toJSON().displayLabel,
+    ).toBe('Available now');
+  });
+
+  it('propagates target storage failures instead of treating them as an absent target', async () => {
+    await customers.create({ profileId: 'absent-profile', tenantId: null });
+    const tableExists = db.tableExists.bind(db);
+    vi.spyOn(db, 'tableExists').mockImplementation(async (table) => {
+      if (table === 'display_profiles') throw new Error('schema unavailable');
+      return tableExists(table);
+    });
+    await expect(customers.list({ displayLabel: true })).rejects.toThrow(
+      'schema unavailable',
+    );
+  });
+
+  it('projects an explicitly selected name as a plain row without hydrating the target', async () => {
+    const { customer } = await seed('Maya', null);
+    expect(await customers.list({ select: ['id', 'displayLabel'] })).toEqual([
+      { id: customer.id, displayLabel: 'Maya' },
+    ]);
+  });
+
+  it('keeps persisted-only read helpers from accepting a virtual select column', async () => {
+    await expect(
+      customers.facets({ fields: ['displayLabel'] }),
+    ).rejects.toThrow("Invalid select field: 'displayLabel'");
+  });
+
   it('sorts and searches before slicing in one SELECT, independent of page size', async () => {
     await seed('Zoe');
     await seed('Ada');
     await seed('Maya');
-    await customers.list({ limit: 1 }); // warm table verification
+    await customers.list({ limit: 1, displayLabel: true }); // warm table verification
     const query = vi.spyOn(db, 'query');
     const page = await customers.list({
       orderBy: 'displayLabel ASC, id ASC',
@@ -156,11 +270,16 @@ describe('display label projection', () => {
     expect(
       await customers.count({ where: { 'displayLabel like': '%ay%' } }),
     ).toBe(1);
-    const point = await customers.get({ id: found[0].id });
+    const point = await customers.get(
+      { id: found[0].id },
+      { displayLabel: true },
+    );
     expect(point?.toJSON().displayLabel).toBe('Maya');
     await point?.save(); // label must not become a database column on save
     expect(
-      (await customers.get({ id: found[0].id }))?.toJSON().displayLabel,
+      (
+        await customers.get({ id: found[0].id }, { displayLabel: true })
+      )?.toJSON().displayLabel,
     ).toBe('Maya');
   });
 
@@ -183,7 +302,9 @@ describe('display label projection', () => {
       const focused = await DisplayCustomers.create({ db: focusedDb });
       await focused.create({ profileId: 'missing', tenantId: 'a' });
       expect(
-        (await focused.list()).map((row) => row.toJSON().displayLabel),
+        (await focused.list({ displayLabel: true })).map(
+          (row) => row.toJSON().displayLabel,
+        ),
       ).toEqual(['Unnamed customer']);
     } finally {
       await focusedDb.close?.();
@@ -193,7 +314,7 @@ describe('display label projection', () => {
   it('uses a clear fallback for missing and blank targets', async () => {
     await customers.create({ profileId: 'missing', tenantId: 'a' });
     await seed('   ');
-    const rows = await customers.list();
+    const rows = await customers.list({ displayLabel: true });
     expect(rows.map((row) => row.toJSON().displayLabel)).toEqual([
       'Unnamed customer',
       'Unnamed customer',
@@ -212,10 +333,14 @@ describe('display label projection', () => {
       tenantId: null,
     });
     expect(
-      (await customers.get({ id: badLink.id }))?.toJSON().displayLabel,
+      (
+        await customers.get({ id: badLink.id }, { displayLabel: true })
+      )?.toJSON().displayLabel,
     ).toBe('Unnamed customer');
     expect(
-      (await customers.get({ id: globalLink.id }))?.toJSON().displayLabel,
+      (
+        await customers.get({ id: globalLink.id }, { displayLabel: true })
+      )?.toJSON().displayLabel,
     ).toBe('Unnamed customer');
     await seed('Visible a');
     await seed('Hidden a', 'a', false);
@@ -255,7 +380,9 @@ describe('display label projection', () => {
       'DisplayRestrictedCustomer',
       { db },
     );
-    await expect(restricted.list()).rejects.toThrow(/sensitive/);
+    await expect(restricted.list({ displayLabel: true })).rejects.toThrow(
+      /sensitive/,
+    );
   });
 
   it('fails closed on target policy errors', async () => {
@@ -266,7 +393,9 @@ describe('display label projection', () => {
         if (className === 'DisplayProfile') throw new Error('read denied');
       },
     });
-    await expect(customers.list()).rejects.toThrow('read denied');
+    await expect(customers.list({ displayLabel: true })).rejects.toThrow(
+      'read denied',
+    );
   });
 
   it.each([
@@ -341,7 +470,9 @@ describe('display label projection', () => {
     expect(next.status).toBe(200);
     expect(await next.json()).toEqual([]);
     expect(
-      (await customers.get({ id: customer.id }))?.toJSON().displayLabel,
+      (
+        await customers.get({ id: customer.id }, { displayLabel: true })
+      )?.toJSON().displayLabel,
     ).toBe('After');
     const update = await api.generateHandler()(
       new Request(`http://localhost/api/displaycustomers/${customer.id}`, {
@@ -352,7 +483,9 @@ describe('display label projection', () => {
     );
     expect(update.status).toBe(200);
     expect(
-      (await customers.get({ id: customer.id }))?.toJSON().displayLabel,
+      (
+        await customers.get({ id: customer.id }, { displayLabel: true })
+      )?.toJSON().displayLabel,
     ).toBe('After');
   });
 });
