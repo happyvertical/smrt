@@ -13,6 +13,8 @@ import {
 } from './assistant-turn.js';
 import type {
   AssistantApprovalRequest,
+  AssistantClientToolCall,
+  AssistantClientToolResult,
   AssistantTurnEvent,
 } from './assistant-turn-events.js';
 import { sendAgentReply } from './services/ChatService.js';
@@ -52,22 +54,16 @@ export type AssistantApprovalWaiter = (
 ) => Promise<AssistantApprovalDecision>;
 
 /** One external tool call. Names are canonical app tool slugs, not provider aliases. */
-export interface AssistantDriverToolCall {
-  id: string;
-  name: string;
-  args: Record<string, unknown>;
-}
+export type AssistantDriverToolCall = Pick<
+  AssistantClientToolCall,
+  'id' | 'name' | 'args'
+>;
 
 /** Engine callbacks; await tool callbacks so persistence finishes before continuing. */
 export interface AssistantTurnDriverCallbacks {
   text(delta: string): void;
   toolCall(call: AssistantDriverToolCall): Promise<void>;
-  toolResult(result: {
-    id: string;
-    ok: boolean;
-    result?: string;
-    error?: string;
-  }): Promise<void>;
+  toolResult(result: AssistantClientToolResult): Promise<void>;
   approvalNeeded(
     request: AssistantApprovalRequest,
   ): Promise<AssistantApprovalDecision>;

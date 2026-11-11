@@ -109,7 +109,7 @@ UI integration. `approval_needed` itself never grants permission.
 
 ## Validation
 
-`src/sveltekit.turn-driver.test.ts` covers the authenticated SQLite route,
+`src/sveltekit.test.ts` (external turn drivers) covers the authenticated SQLite route,
 stream ordering, tool and text persistence, origin links, safe failures,
 abort propagation, per-user/request driver and model resolution, history,
 offer/ownership gates and approval waits. Existing assistant-turn and dock
@@ -133,3 +133,45 @@ claimed here.
 | Abort/stop | Request abort or body cancel | Signal reaches driver | Never-settling run/approval released; late events ignored | Owner's active turn | ChatService/turn lifetime | Node/SQLite | AbortSignal | Route integration | Package test |
 | Approval seam | Pending tool requests approval | Host decision awaited and event emitted | Missing bridge denies; cancellation denies | Bound principal and pending call | Host hook; durability deferred to C3 | Node/SQLite | Approval request/decision | Route integration | Package test |
 | Default loop | Send with no driver | Existing loop and dock tests unchanged | Existing provider/tool/browser-failure cases retained | Existing principal fixtures | Existing service/loop transactions | Existing package suite runtimes | Existing model and browser wire | Package regression | Package test |
+
+## Reuse audit
+
+Audited against base `06c0b64fe3` using `git diff --stat 06c0b64fe3 HEAD`:
+C1 adds one production helper module and this contract reference; its driver
+tests extend the existing route suite. It adds no component, model, route or
+production tool. Existing
+`mountAssistantRoutes`, `runAssistantTurn`, `AssistantTurnOptions`,
+`MountAssistantRoutesOptions` and `AssistantTurnEvent` are extended in place.
+
+The configured `smrt-dev-mcp` server was available. `review-smrt-project`
+reviewed `packages/chat` with duplicate detection and source evidence;
+`introspect-project` listed the existing chat models, `build-context`
+(architecture) searched for external assistant loops, tool callbacks and
+approval waits, and `build-package-specialist-context` searched chat's
+assistant recipe and tool contracts. This server exposes no dedicated
+component/intent/recipe search tool, so those lookups also read
+`docs/knowledge/intents/index.md`, its human-approvals reference, the recipe
+sources and the source packages with `rg`.
+
+Both names and purposes were searched in `packages/smrt-ui`, `smrt-svelte`,
+`chat`, `core`, `agents`, `inference`, `approvals`, `app-runtime` and
+`app-shell`: `turn.?driver`, `external.*(agent|loop|turn)`, `toolCall`,
+`AssistantClientToolCall`, `AssistantClientToolResult`, `ToolInvocation`,
+`approval.*(wait|decision)`, `approved: boolean`, `confirmSave`, `consent`,
+`holdForUser`, and `chat.assistant`. The results and decisions are:
+
+| Introduced file/symbols | Existing capability and reuse decision |
+| --- | --- |
+| `src/assistant-turn-driver.ts`: `runExternalAssistantTurn`, its local `persist`, `enqueue`, `active` and abort closures | Reuses `sendAgentReply`/ChatService, `resolveTurnReply`, `replyMetadataFor`, the existing turn reporter, SSE producer and status/step/message contracts. No existing loop-independent bridge fits: `runPersonaConversationTurn` and `streamPersonaConversation` own model loops; shell `runAgentTurn` and `holdForUser` depend on shell models, credentials and event bus. Engine extraction belongs to C2, not this bridge. The queue only orders this driver's callbacks; it is not a durable/background queue. |
+| Same file: `AssistantDriverToolCall`, callback tool-result parameter | Derives the call from `Pick<AssistantClientToolCall, 'id' \| 'name' \| 'args'>` and reuses `AssistantClientToolResult` directly. Existing `PendingClientToolCall` adds browser effect; `ToolInvocation` describes completed execution, not a started call. No duplicate field declarations remain. |
+| Same file: `AssistantTurnDriver`, `AssistantTurnDriverContext`, `AssistantTurnDriverCallbacks` | New loop-independent host contract; reuses `AIMessage`, `PrincipalBinding`, `PrincipalTool`, `ManifestTool`, `ToolLoopUsage` and `AbortSignal`; `AssistantTurnOptions.thread` refers to the context's thread type. Existing model-loop options and shell-specific engine dependencies are not interchangeable with a host-owned loop. |
+| Same file: `AssistantApprovalDecision`, `AssistantApprovalWaiter`; existing `src/assistant-turn-events.ts`: `AssistantApprovalRequest` | New transport notification/result and wait-hook contract only. `smrt-approvals` already owns durable `ApprovalRequest`, `ApprovalDecision` (approve/reject/request_changes), `ApprovalService.decide` and `consume`; they are not a callback outcome or chat tool-call notification. C3 must adapt that authority rather than implement another ledger. Shell `HoldOutcome` includes execution results and shell events and cannot serve as a package-neutral wait result. Chat's `RuntimeReportConfirmationHost.confirmSave` accepts only a report spec/hash and rejects to deny; data-surface confirmation is a required/none policy. Neither represents a generic pending tool notification or approval outcome. |
+| Removed `src/sveltekit.turn-driver.test.ts`: its local `Round`, `Actor`, `scriptedAI`, `text`, `discoverTool`, `locals`, `events`, `mount`, `call`, `createThread`, `listMessages`, `send` and setup callbacks | Name/purpose searches found the same private helpers in `src/sveltekit.test.ts`. Moved all 11 driver cases into a nested describe there and deleted the duplicate file. Existing case bodies are unchanged; the new cases now reuse its SQLite/user/tenant fixtures, fake model/tool and SSE reader. No production tool is registered. |
+| `agents/turn-drivers.md` | Contract documentation for the extension of existing `chat.assistant`/`AssistantDock`; no new recipe, UI or model. |
+
+The review's missing-`smrt-svelte` dependency/shell advisories describe the
+existing dev workbench, not new driver imports. `workspace-aliases.js`
+explicitly documents that dev-only source alias: declaring the dependency
+would introduce the prohibited `chat → smrt-svelte → smrt-content → chat`
+cycle. Production driver code introduces neither that import nor a new
+shell; no dependency change is appropriate for C1.

@@ -42,6 +42,7 @@ import type { SmrtClassOptions } from '@happyvertical/smrt-core';
 import type {
   AssistantApprovalWaiter,
   AssistantTurnDriver,
+  AssistantTurnDriverContext,
 } from './assistant-turn-driver.js';
 import { runExternalAssistantTurn } from './assistant-turn-driver.js';
 import type {
@@ -363,7 +364,7 @@ export interface AssistantTurnOptions<M = Record<string, unknown>> {
   /** Host-owned durable approval bridge. Absent: approval requests fail closed. */
   waitForApproval?: AssistantApprovalWaiter;
   /** Server-selected thread identity passed to an external driver. */
-  thread?: { id: string; roomId?: string; agentSessionId: string };
+  thread?: AssistantTurnDriverContext['thread'];
   /** The already-authorized principal every server tool runs as. */
   principal: PrincipalBinding;
   db?: SmrtClassOptions['db'];
