@@ -6,7 +6,7 @@
 
 import { defineConfig } from 'vite';
 import { cpSync, readFileSync, writeFileSync, rmSync } from 'node:fs';
-import { resolve } from 'node:path';
+import { relative, resolve } from 'node:path';
 import { declarations } from '../../scripts/declarations.js';
 import { resolveRecipeIndex } from './src/commands/cookbook/recipe-index.js';
 
@@ -104,9 +104,22 @@ export default defineConfig({
         const template = resolve(__dirname, '../template-sveltekit');
         cpSync(resolve(template, 'template'), target, {
           recursive: true,
-          filter: (file) => !/(?:^|\/)(node_modules|\.svelte-kit)(?:\/|$)/.test(file),
+          filter: (file) => !/(?:^|\/)(node_modules|\.svelte-kit|\.gitignore)(?:\/|$)/.test(file),
         });
-        cpSync(resolve(template, 'cookbook-template'), target, { recursive: true });
+        const overlay = resolve(template, 'cookbook-template');
+        const authoredRoutes = new Set<string>();
+        cpSync(overlay, target, {
+          recursive: true,
+          filter: (file) => {
+            const path = relative(overlay, file).replaceAll('\\', '/');
+            if (path.startsWith('src/routes/api/') && path.endsWith('/+server.ts'))
+              authoredRoutes.add(path);
+            return !/(?:^|\/)\.gitignore$/.test(file);
+          },
+        });
+        // pnpm pack treats nested .gitignore as an exclusion list. Ship only
+        // the renamed template, and keep authored routes tracked after apply.
+        rmSync(resolve(target, '.gitignore'), { force: true });
         const file = resolve(target, 'package.json');
         const pkg = JSON.parse(readFileSync(file, 'utf8'));
         pkg.smrt = { ...pkg.smrt, cookbookHost: true };
@@ -125,7 +138,7 @@ export default defineConfig({
         writeFileSync(file, `${JSON.stringify(pkg, null, 2)}\n`);
         rmSync(resolve(target, 'src/lib/objects'), { recursive: true, force: true });
         const ignore = resolve(target, 'gitignore.template');
-        writeFileSync(ignore, `${readFileSync(ignore, 'utf8')}\n.smrt-local\n`);
+        writeFileSync(ignore, `${readFileSync(ignore, 'utf8')}\n${[...authoredRoutes].sort().map((path) => `!${path}`).join('\n')}\n.smrt-local\n`);
       },
     },
     declarations({

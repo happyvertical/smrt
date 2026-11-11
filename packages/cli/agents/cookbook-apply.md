@@ -130,3 +130,9 @@ denial, launch-secret rejection, owner sign-in, Customer REST/model page,
 settings and rendered cookbook sections. It opens no port. The existing apply
 suite covers dry-run, customization retention and idempotency; the template
 subclass suite checks exclusive-create preservation and path confinement.
+
+
+The CLI bundle ships only `gitignore.template`, never a literal nested `.gitignore`
+(which pnpm pack would use to drop authored API routes). The overlay copier adds
+exceptions for every authored cookbook API route so generated apps track them.
+The real CLI tarball regression checks both packed routes and these exceptions.
