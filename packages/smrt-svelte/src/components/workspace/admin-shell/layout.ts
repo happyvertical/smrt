@@ -53,6 +53,8 @@ export interface ShellLayoutSection {
 export interface ShellLayoutItem {
   /** Replaces the item's label wherever the shell shows it. */
   label?: string;
+  /** Replaces the item's icon with a short shell or host icon identifier. */
+  icon?: string;
   /**
    * Replaces the item's `description` (the line on a section card). Set by
    * hosts or presets; the layout editor does not edit it.
@@ -221,6 +223,11 @@ function readItem(raw: unknown): ShellLayoutItem | undefined {
   const item: ShellLayoutItem = {};
   const label = cleanLabel(raw.label);
   if (label) item.label = label;
+  if (
+    typeof raw.icon === 'string' &&
+    /^[A-Za-z][A-Za-z0-9_-]{0,63}(?![\s\S])/.test(raw.icon)
+  )
+    item.icon = raw.icon;
   const description = cleanLabel(raw.description);
   if (description) item.description = description;
   return hasKeys(item) ? item : undefined;
@@ -448,12 +455,19 @@ export function resolveShellNavModel(
         if (displayedIn(entry.id, native.id) !== section.id) continue;
         defaults.push({
           id: entry.id,
-          item: itemOverrides[entry.id]?.description
-            ? {
-                ...entry.item,
-                description: itemOverrides[entry.id]?.description,
-              }
-            : entry.item,
+          item:
+            itemOverrides[entry.id]?.description ||
+            itemOverrides[entry.id]?.icon
+              ? {
+                  ...entry.item,
+                  ...(itemOverrides[entry.id]?.description
+                    ? { description: itemOverrides[entry.id]?.description }
+                    : {}),
+                  ...(itemOverrides[entry.id]?.icon
+                    ? { icon: itemOverrides[entry.id]?.icon }
+                    : {}),
+                }
+              : entry.item,
           nativeSectionId: native.id,
           sectionId: section.id,
           hidden: hidden.has(entry.id),
@@ -856,11 +870,11 @@ export function renameShellItem(
   if (!entry) return current;
   const clean = cleanLabel(label);
   const items = { ...(current.items ?? {}) };
-  const kept = items[itemId]?.description;
   const next: ShellLayoutItem = {
+    ...items[itemId],
     ...(clean && clean !== entry.defaultLabel ? { label: clean } : {}),
-    ...(kept ? { description: kept } : {}),
   };
+  if (!clean || clean === entry.defaultLabel) delete next.label;
   if (hasKeys(next)) items[itemId] = next;
   else delete items[itemId];
   return compact({ ...current, items });

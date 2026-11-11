@@ -53,6 +53,12 @@ sample data source are not part of it.
   (recipe text, else the model description, else a plain fallback), `noun` and
   `filter` carried through. Feature models share the `More` section after the
   recipes' sections.
+- **Item icons**: `layout.items[id].icon` overrides the recipe icon in the
+  drawer, section menu and overview shortcuts. It is a 1–64 character identifier
+  (ASCII letter first, then letters, digits, `_` or `-`); unknown safe names
+  are retained for host renderers and otherwise use the shell's fallback glyph.
+  Absent overrides keep existing recipe icons and `fileText` defaults. Layout
+  parsing, moves and item renames preserve the override.
 - **Paths** are options: `entryPath` (default `/m/<package>/<Model>/[<key>/]`),
   `sectionPath` (default `/s/<slug>/`, slug = layout id with the first `:`
   turned into `-`), and `href` (a prefix or query helper applied to both).

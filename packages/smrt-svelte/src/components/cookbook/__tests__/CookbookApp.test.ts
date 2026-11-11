@@ -17,6 +17,7 @@ import {
   vi,
 } from 'vitest';
 import type { ShortcutEntry } from '../../overview/widgets/data.js';
+import { SHELL_ICON_PATHS } from '../../workspace/admin-shell/shell-icons.js';
 import { narrowCatalog } from '../catalog.js';
 import type { CookbookCatalog } from '../types.js';
 import Harness from './app-harness.svelte';
@@ -42,6 +43,73 @@ afterEach(() => {
 });
 
 describe('CookbookApp', () => {
+  it.each([
+    ['receipt', 'receipt'],
+    [undefined, 'users'],
+    ['futureHostIcon', 'folder'],
+  ] as const)('renders layout icon %s beside the entry label', async (icon, expected) => {
+    const changed = structuredClone(cookbook);
+    changed.layout ??= { version: 1 };
+    changed.layout.items = {
+      ...changed.layout.items,
+      'item:commerce:Customer': { label: 'Clients', ...(icon ? { icon } : {}) },
+    };
+    render(Harness, { cookbook: changed, catalog, sectionId: 'custom:shop' });
+    await waitFor(() => {
+      const main = document.querySelector(
+        'main.cookbook-section',
+      ) as HTMLElement;
+      const label = within(main).getByText('Clients');
+      const link = label.closest('a');
+      expect(link?.getAttribute('href')).toBe('/m/commerce/Customer/');
+      expect(
+        link?.querySelector('[aria-hidden="true"] path')?.getAttribute('d'),
+      ).toBe(SHELL_ICON_PATHS[expected]);
+    });
+    // The drawer uses the same resolved navigation icon next to the label.
+    const drawer = document.querySelector('[data-smrt-component="TenantNav"]');
+    const link = drawer?.querySelector('a[href="/m/commerce/Customer/"]');
+    expect(link?.textContent).toContain('Clients');
+    expect(link?.querySelector('path')?.getAttribute('d')).toBe(
+      SHELL_ICON_PATHS[expected],
+    );
+  });
+
+  it('renders fileText when neither the layout nor the recipe chooses an icon', async () => {
+    const simple: CookbookCatalog = {
+      recipes: [
+        {
+          id: 'test.menu',
+          label: 'Menu',
+          models: ['@test/app:Note'],
+          nav: [{ model: '@test/app:Note', label: 'Notes' }],
+        },
+      ],
+      models: [{ id: '@test/app:Note', name: 'Note', packageId: 'app' }],
+    };
+    const doc: Cookbook = {
+      $schema: cookbook.$schema,
+      version: 1,
+      recipes: ['test.menu'],
+      features: [],
+      policies: [],
+    };
+    render(Harness, {
+      cookbook: doc,
+      catalog: simple,
+      sectionId: 'section:test.menu',
+    });
+    await waitFor(() => {
+      const link = document.querySelector(
+        'main.cookbook-section a[href="/m/app/Note/"]',
+      );
+      expect(link?.textContent).toContain('Notes');
+      expect(link?.querySelector('path')?.getAttribute('d')).toBe(
+        SHELL_ICON_PATHS.fileText,
+      );
+    });
+  });
+
   it("lists the cookbook's sections in the sidebar and renders the section page", async () => {
     render(Harness, { cookbook, catalog, sectionId: 'custom:shop' });
 

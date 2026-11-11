@@ -149,7 +149,8 @@ export function buildCookbookShell(
     const entry: CookbookEntry = {
       id,
       label: spec.label,
-      icon: spec.icon ?? DEFAULT_ENTRY_ICON,
+      icon:
+        cookbook.layout?.items?.[id]?.icon ?? spec.icon ?? DEFAULT_ENTRY_ICON,
       description: entryDescription(spec.description, spec.model),
       model: spec.model,
       path,

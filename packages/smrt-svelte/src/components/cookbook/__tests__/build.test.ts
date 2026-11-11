@@ -1,6 +1,10 @@
 import type { Cookbook } from '@happyvertical/smrt-types';
 import { beforeAll, describe, expect, it } from 'vitest';
-import { applyShellLayout } from '../../workspace/admin-shell/layout.js';
+import {
+  applyShellLayout,
+  normalizeShellLayout,
+  renameShellItem,
+} from '../../workspace/admin-shell/layout.js';
 import { buildCookbookShell, humanize, pluralize } from '../build.js';
 import { narrowCatalog } from '../catalog.js';
 import type { CookbookCatalog } from '../types.js';
@@ -96,6 +100,46 @@ describe.each(FIXTURE_NAMES)('buildCookbookShell: %s fixture', (name) => {
 });
 
 describe('buildCookbookShell: bakery', () => {
+  it('applies and retains item icons through layout normalization and renames', () => {
+    const cookbook = fixture('bakery');
+    const itemId = 'item:commerce:Customer';
+    cookbook.layout ??= { version: 1 };
+    cookbook.layout.items = {
+      ...cookbook.layout.items,
+      [itemId]: {
+        label: 'Clients',
+        icon: 'receipt',
+        description: 'Our clients',
+      },
+    };
+    const shell = buildCookbookShell({ cookbook, catalog });
+    expect(shell.entries.get(itemId)?.icon).toBe('receipt');
+    const layout = normalizeShellLayout(shell.layout);
+    expect(layout.items?.[itemId]).toEqual(cookbook.layout.items[itemId]);
+    const renamed = renameShellItem([], shell.navGroups, layout, itemId, null);
+    expect(renamed.items?.[itemId]).toEqual({
+      icon: 'receipt',
+      description: 'Our clients',
+    });
+    const item = applyShellLayout([], shell.navGroups, undefined, renamed)
+      .groups.flatMap((g) => g.items)
+      .find((i) => i.id === itemId);
+    expect(item).toMatchObject({
+      label: 'Customers',
+      icon: 'receipt',
+      description: 'Our clients',
+    });
+    expect(
+      normalizeShellLayout({
+        version: 1,
+        items: {
+          bad: { icon: '<svg/>' },
+          good: { icon: 'shoppingBag' },
+        },
+      }).items,
+    ).toEqual({ good: { icon: 'shoppingBag' } });
+  });
+
   it('shows the sections and entry names the planner shows', () => {
     const shell = buildCookbookShell({ cookbook: fixture('bakery'), catalog });
     expect(visibleNav(shell)).toEqual([
