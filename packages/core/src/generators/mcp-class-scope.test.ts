@@ -96,12 +96,13 @@ describe('MCPGenerator class scope (#3490)', () => {
     const generator = new MCPGenerator({
       classNames,
       qualifyCollidingNames: true,
+      snakeCaseNames: true,
     });
     const tools = await generator.generateTools();
     expect(tools).toHaveLength(4);
     expect(new Set(tools.map((tool) => tool.name)).size).toBe(4);
     expect(
-      tools.every((tool) => /^[A-Za-z0-9_.-]{1,64}$/.test(tool.name)),
+      tools.every((tool) => /^[a-z][a-z0-9_]{0,63}$/.test(tool.name)),
     ).toBe(true);
     expect(tools.map((tool) => tool.name)).toContain('scopeitem_list');
     expect(tools.map((tool) => tool.name)).not.toContain('scopecollision_list');
@@ -115,6 +116,7 @@ describe('MCPGenerator class scope (#3490)', () => {
     const reversed = await new MCPGenerator({
       classNames: [...classNames].reverse(),
       qualifyCollidingNames: true,
+      snakeCaseNames: true,
     }).generateTools();
     expect(reversed.map((tool) => tool.name)).toEqual(
       tools.map((tool) => tool.name),
@@ -309,6 +311,7 @@ describe('MCPGenerator scoped by qualified name (#3490)', () => {
           '@fixture/pick-b:PickedThing',
         ],
         qualifyCollidingNames: true,
+        snakeCaseNames: true,
       },
       { db, user },
     );

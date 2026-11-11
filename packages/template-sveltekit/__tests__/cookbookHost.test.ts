@@ -80,6 +80,8 @@ for (const [index, id] of COLLISIONS.entries()) {
   ObjectRegistry.register(class CatalogCollision extends SmrtObject {}, {
     packageName: id.split(':')[0],
     tableName: `host_collision_${index}`,
+    collection: `host_collision_${index}`,
+    api: { include: ['list', 'get'] },
     mcp: { include: ['list'] },
   });
 }
@@ -99,7 +101,7 @@ const catalog = {
     {
       id: 'host.memos',
       label: 'Memos',
-      models: [MEMO],
+      models: [MEMO, ...COLLISIONS],
       nav: [{ model: MEMO, label: 'Memos' }],
       requires: [],
     },
@@ -444,6 +446,39 @@ afterEach(async () => {
 });
 
 describe('local cookbook host composition (SQLite, fake model, no providers)', () => {
+  it('wraps enabled colliding model aliases as valid workflows and keeps discovery gated', async () => {
+    const initial = await mcp();
+    expect(initial.status).toBe(200);
+    const enableName = initial.body.result.tools.find(
+      (tool: { name: string }) => tool.name.endsWith('recipes_enable'),
+    )?.name;
+    expect(enableName).toBeTruthy();
+    const enabled = await mcp('tools/call', {
+      name: enableName,
+      arguments: { id: 'host.memos', expectedRevision: 0 },
+    });
+    expect(JSON.parse(enabled.body.result.content[0].text).status).toBe('ok');
+    const listing = await mcp();
+    expect(listing.status).toBe(200);
+    const collisions = listing.body.result.tools.filter(
+      (tool: { description: string }) =>
+        tool.description.includes('CatalogCollision'),
+    );
+    expect(collisions).toHaveLength(2);
+    expect(
+      new Set(collisions.map((tool: { name: string }) => tool.name)).size,
+    ).toBe(2);
+    expect(
+      collisions.every((tool: { name: string }) =>
+        /^[a-z][a-z0-9_]{0,63}$/.test(tool.name),
+      ),
+    ).toBe(true);
+    expect(
+      listing.body.result.tools.some(
+        (tool: { name: string }) => tool.name === 'profile_create',
+      ),
+    ).toBe(true);
+  });
   it.each([
     'claude-code',
     'codex',

@@ -171,6 +171,8 @@ export interface MCPConfig {
    * retarget an alias. Omitted, duplicate aliases still fail closed.
    */
   qualifyCollidingNames?: boolean;
+  /** Use lowercase snake_case aliases for consumers with a stricter tool grammar. */
+  snakeCaseNames?: boolean;
 }
 
 export const MCP_STABLE_CATALOG_TTL_MS = 86_400_000;
@@ -689,6 +691,7 @@ export class MCPGenerator {
     }
     const names = canonicalMcpToolNames(
       tools.map((tool) => ({ name: tool.name, target: this.toolTarget(tool) })),
+      this.config.snakeCaseNames,
     );
     tools.forEach((tool, index) => {
       tool.name = names[index];

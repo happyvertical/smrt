@@ -620,6 +620,7 @@ export function createCookbookHost(options: CookbookHostOptions) {
       {
         classNames: host.catalog.models.map((model) => model.id),
         qualifyCollidingNames: true,
+        snakeCaseNames: true,
       },
       {
         db: runtime.databaseConfig(),

@@ -499,6 +499,14 @@ dispatch to two real SQLite collections, stable names across exposure changes,
 and stale disabled-call refusal. The host suite includes two disabled colliding
 catalog models so listing enabled tools cannot regress to a 500.
 
+`MCPConfig.snakeCaseNames` opts into the stricter lowercase snake_case grammar
+used by authored workflow adapters. The same canonicalizer preserves compliant
+names, hashes invalid names with the original identity, sanitizes the prefix and
+ensures a lowercase leading letter. Default protocol aliases remain unchanged.
+The cookbook host selects this mode before projecting descriptors as workflows.
+Its enabled-collision regression covers the actual workflow constructor; testing
+only disabled colliding models would miss this consumer grammar boundary.
+
 ## Generated route collection access (#3416)
 
 There is no generated route-access module. Every generated SvelteKit route

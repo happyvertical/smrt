@@ -42,6 +42,8 @@ clients re-list to observe changes; it does not advertise a notification channel
 The host opts into core's `qualifyCollidingNames` over the full installed model
 scope. Unrelated same-name models cannot poison the catalog or trade aliases
 when recipes change; unique model aliases and qualified dispatch stay intact.
+It also selects core's `snakeCaseNames` mode so protocol-valid punctuation and
+qualified aliases satisfy the existing workflow adapter's stricter grammar.
 
 Inference owns saved-key resolution, ChatGPT-plan connections, CLI detection and
 subprocesses. The host supplies per-user selection and private runtime storage.
