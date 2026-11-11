@@ -36,6 +36,10 @@ const names = (id: string) =>
   childLinks(catalog, recipes, id).map((l) => `${l.model.name}.${l.fk}`);
 
 describe('childLinks', () => {
+  it('does not make a classification lookup own its referencing records', () => {
+    expect(names('@happyvertical/smrt-profiles:ProfileType')).toEqual([]);
+  });
+
   it('puts line items under every Contract subtype', () => {
     for (const parent of [
       'Agreement',
