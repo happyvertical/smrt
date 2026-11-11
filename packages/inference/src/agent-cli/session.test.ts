@@ -3,9 +3,9 @@
 import { readFileSync, statSync } from 'node:fs';
 import { join } from 'node:path';
 import { describe, expect, it } from 'vitest';
-import { assertLoopbackUrl, buildAgentRun, TOKEN_ENV } from './session.ts';
-import { claudeParser, codexParser, shellToolName } from './stream.ts';
-import { tempDir } from './test-support.ts';
+import { assertLoopbackUrl, buildAgentRun, TOKEN_ENV } from './session.js';
+import { claudeParser, codexParser, shellToolName } from './stream.js';
+import { tempDir } from './test-support.js';
 
 const TOKEN = `smrt_mcp_${'Q'.repeat(43)}`;
 

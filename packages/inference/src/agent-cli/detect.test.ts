@@ -4,11 +4,11 @@
 import { readFileSync, writeFileSync } from 'node:fs';
 import { join } from 'node:path';
 import { describe, expect, it } from 'vitest';
-import { detectAgentCli, detectAgentClis } from './detect.ts';
-import { childEnv } from './env.ts';
-import { candidateDirs } from './locate.ts';
-import { AgentLogin } from './login.ts';
-import { fakeDeps, installFakeCli, tempDir } from './test-support.ts';
+import { detectAgentCli, detectAgentClis } from './detect.js';
+import { childEnv } from './env.js';
+import { candidateDirs } from './locate.js';
+import { AgentLogin } from './login.js';
+import { fakeDeps, installFakeCli, tempDir } from './test-support.js';
 
 describe('detectAgentCli', () => {
   it('reports an installed, signed-in Claude Code with its version', async () => {
