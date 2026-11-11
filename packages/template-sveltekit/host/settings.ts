@@ -49,7 +49,7 @@ export function createInferenceSettingsPage(
     return fail(outcome.status, { error: outcome.error });
   }
 
-  const load: ServerLoad = async ({ locals, url, depends }) => {
+  const load = (async ({ locals, url, depends }) => {
     depends('smrt:inference-settings');
     const session = requireSettingsSession(locals);
     // No key is ever sent to the browser, only whether one is stored.
@@ -57,7 +57,7 @@ export function createInferenceSettingsPage(
       session,
       url.searchParams.get('by'),
     );
-  };
+  }) satisfies ServerLoad;
 
   const actions: Actions = {
     saveDefaults: async ({ request, locals }) => {

@@ -2,7 +2,9 @@ import { readFileSync } from 'node:fs';
 import { dirname, join } from 'node:path';
 import { fileURLToPath } from 'node:url';
 
-import { describe, expect, it, vi } from 'vitest';
+import type { InferenceSettingsPageData } from '@happyvertical/smrt-inference/server';
+import { describe, expect, expectTypeOf, it, vi } from 'vitest';
+import type { createInferenceSettingsPage } from '../host/settings.js';
 
 // The runtime is built from app config at import; the action refuses before
 // it would ever be touched.
@@ -34,6 +36,10 @@ function locals(permissions: string[]) {
 }
 
 describe('Inference settings saveKey action', () => {
+  it('preserves the load data shape for generated SvelteKit page types', () => {
+    expectTypeOf<Awaited<ReturnType<ReturnType<typeof createInferenceSettingsPage>['load']>>>()
+      .toEqualTypeOf<InferenceSettingsPageData>();
+  });
   it('refuses a member without the customize permission before reading the key', async () => {
     const { actions } = await import(
       '../template/src/routes/settings/inference/+page.server.js'
