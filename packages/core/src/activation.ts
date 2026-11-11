@@ -11,6 +11,7 @@ import { isFrameworkBaseClass } from './registry/framework-base-classes.js';
 import { ObjectRegistry } from './registry.js';
 import {
   COOKBOOK_TOOLS_MODEL,
+  getRuntimeModelReadiness,
   notifyRuntimeExposureChanged,
   type RuntimeExposureGate,
   type RuntimeExposureModel,
@@ -177,6 +178,8 @@ export function createActivationCoordinator(
     isReady(model) {
       const id = typeof model === 'string' ? model : model.qualifiedName;
       if (!id) return false;
+      const runtimeReady = getRuntimeModelReadiness(id);
+      if (runtimeReady !== undefined) return runtimeReady;
       const effective = options.manifest.models[id]?.effective;
       return !!effective && ready.has(effective);
     },

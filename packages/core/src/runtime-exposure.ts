@@ -91,6 +91,11 @@ export function setRuntimeModelReadiness(
   notifyRuntimeExposureChanged();
 }
 
+/** Explicit editor readiness; undefined means this model is not managed by an editor. */
+export function getRuntimeModelReadiness(model: string): boolean | undefined {
+  return globalThis.__smrtModelReadiness?.get(model);
+}
+
 /** Missing identity, unavailable enabled-set and predicate errors all fail closed. */
 export function isRuntimeModelEnabled(
   model: RuntimeExposureModel | string | undefined,
@@ -99,7 +104,7 @@ export function isRuntimeModelEnabled(
   const identity = typeof model === 'string' ? { qualifiedName: model } : model;
   if (
     [identity?.qualifiedName, ...(identity?.replacedQualifiedNames ?? [])].some(
-      (id) => id && globalThis.__smrtModelReadiness?.get(id) === false,
+      (id) => id && getRuntimeModelReadiness(id) === false,
     )
   )
     return false;

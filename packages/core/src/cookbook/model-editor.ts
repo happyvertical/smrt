@@ -251,7 +251,7 @@ export async function createAppModelEditor(options: AppModelEditorOptions) {
         ]
       : [];
 
-  function validate(doc: Cookbook, archived?: CookbookModels) {
+  async function validate(doc: Cookbook, archived?: CookbookModels) {
     if (!doc.models) return;
     const models = doc.models;
     if (models.packageName !== options.packageName)
@@ -336,12 +336,20 @@ export async function createAppModelEditor(options: AppModelEditorOptions) {
           throw new Error(`MODEL_NAME_COLLISION: ${entry.name}`);
       }
       const existing = entry.registered
-        ? ObjectRegistry.getFields(
+        ? await ObjectRegistry.getAllFields(
             entry.registered.qualifiedName ?? entry.registered.name,
           )
         : new Map();
+      const modelProtected = new Set(protectedNames);
+      for (
+        let proto = entry.registered?.constructor.prototype;
+        proto;
+        proto = Object.getPrototypeOf(proto)
+      )
+        for (const name of Object.getOwnPropertyNames(proto))
+          modelProtected.add(name);
       for (const [name, field] of Object.entries(entry.fields)) {
-        if (!isCustomIdentifier(name) || protectedNames.has(name))
+        if (!isCustomIdentifier(name) || modelProtected.has(name))
           throw new Error(`FIELD_NAME_RESERVED: ${name}`);
         for (const columnName of [
           name,
@@ -497,8 +505,14 @@ export async function createAppModelEditor(options: AppModelEditorOptions) {
             fieldValidators: fieldValidators(runtimeFields(fields, all)),
           },
         );
+      const tables = new Set(
+        identities(all)
+          .map((id) => ObjectRegistry.getTableName(id))
+          .filter((name): name is string => !!name),
+      );
       const pending = await getPendingSchemaStatements(options.db, {
         engineHint: 'sqlite',
+        tables,
       });
       if (pending.hasManualDrift)
         throw new Error(
@@ -510,6 +524,8 @@ export async function createAppModelEditor(options: AppModelEditorOptions) {
         version: String(revision),
         name: `app_models_${revision}_${Date.now()}`,
         engineHint: 'sqlite',
+        tables,
+        requireComplete: true,
       });
     }
     doc = structuredClone(target);
@@ -541,7 +557,7 @@ export async function createAppModelEditor(options: AppModelEditorOptions) {
     return projection();
   }
 
-  validate(
+  await validate(
     doc,
     storageModels(history.flatMap((row) => [row.before, row.after])),
   );
@@ -734,7 +750,7 @@ export async function createAppModelEditor(options: AppModelEditorOptions) {
       }
       next = checked(next);
       const archived = storageModels(documents());
-      validate(next, archived);
+      await validate(next, archived);
       // A removed/undone field keeps its stored definition, hidden through the existing policy rail.
       for (const [model, fields] of Object.entries(archived?.fields ?? {}))
         for (const name of Object.entries(fields).flatMap(([name, field]) => [

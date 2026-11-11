@@ -3,6 +3,7 @@
 import type { Cookbook, CookbookModelField } from '@happyvertical/smrt-types';
 import { getDatabase } from '@happyvertical/sql';
 import { afterEach, beforeEach, describe, expect, it } from 'vitest';
+import { createActivationCoordinator } from '../activation.js';
 import { createCookbookEngine } from '../cookbook/engine/engine.js';
 import {
   type AppModelEdit,
@@ -145,6 +146,12 @@ describe('durable app model editor', () => {
   }
 
   it('adds all field types to the same CTI table and the already-running REST/MCP surfaces', async () => {
+    registerRuntimeModel({
+      name: 'Unused',
+      packageName: '@fixture/unused',
+      tableName: 'a4_unused',
+      fields: { title: { type: 'text' } },
+    });
     const e = await editor();
     const handler = api();
     expect((await handler(request('GET', 'customers'))).status).toBe(200);
@@ -227,6 +234,13 @@ describe('durable app model editor', () => {
         ?.fields,
     ).toHaveProperty('preferredInstructor');
     expect(ObjectRegistry.getAllClasses().has(CUSTOMER)).toBe(false);
+    expect(
+      (
+        await db.query(
+          "SELECT name FROM sqlite_master WHERE name = 'a4_unused'",
+        )
+      ).rows,
+    ).toHaveLength(0);
     console.log('A4 field activation milliseconds', JSON.stringify(timings));
   });
 
@@ -236,7 +250,35 @@ describe('durable app model editor', () => {
       catalog,
       engineFor: ({ tenantId }) => (tenantId === TENANT ? engine : null),
     });
-    setRuntimeExposureGate(gate);
+    const activation = createActivationCoordinator({
+      scope: `a4-editor-${crypto.randomUUID()}`,
+      db,
+      packageName: APP,
+      manifest: {
+        version: 1,
+        modules: {
+          customer: {
+            specifier: 'fixture',
+            models: [CUSTOMER],
+            dependencies: [],
+          },
+        },
+        models: {
+          [CUSTOMER]: {
+            module: 'customer',
+            effective: CUSTOMER,
+            table: 'customers',
+            dependencies: [],
+          },
+        },
+        tables: { customers: { owners: [CUSTOMER], dependencies: [] } },
+      },
+      loaders: { customer: async () => {} },
+      readEnabled: async () => [CUSTOMER],
+    });
+    await activation.boot();
+    expect(activation.isReady(`${APP}:LoanerMat`)).toBe(false);
+    setRuntimeExposureGate(activation.gate(gate));
     const e = await editor((snapshot) => {
       engine = createCookbookEngine({ catalog, cookbook: snapshot.cookbook });
     });
@@ -318,7 +360,9 @@ describe('durable app model editor', () => {
     expect(
       ObjectRegistry.getClass(`${APP}:LoanerMat`)?.config.ui,
     ).toMatchObject({ label: 'Studio mats', icon: 'box' });
+    expect(activation.isReady(`${APP}:LoanerMat`)).toBe(true);
     const removed = await edit(e, { type: 'remove_list', name: 'LoanerMat' });
+    expect(activation.isReady(`${APP}:LoanerMat`)).toBe(false);
     expect((await handler(request('GET', 'loaner_mats'))).status).toBe(404);
     expect(
       (await db.query('SELECT COUNT(*) AS n FROM loaner_mats')).rows[0].n,
@@ -418,6 +462,7 @@ describe('durable app model editor', () => {
   it.each([
     'name',
     'save',
+    'greeting',
     'constructor',
     'tenantId',
     'displayLabel',
@@ -431,6 +476,45 @@ describe('durable app model editor', () => {
       { ...owner, expectedRevision: 0, requestId: 'bad' },
     );
     await expect(action).rejects.toThrow();
+    expect(await e.history()).toHaveLength(0);
+  });
+
+  it('refuses a field inherited from an upstream ancestor', async () => {
+    await db.close?.();
+    ObjectRegistry.clear();
+    db = await getDatabase({ type: 'sqlite', url: ':memory:' });
+    class CustomerBase extends SmrtObject {
+      ancestorCode = '';
+    }
+    field({ type: 'text' })(CustomerBase.prototype, 'ancestorCode');
+    ObjectRegistry.register(CustomerBase, {
+      packageName: '@fixture/a4-upstream',
+    });
+    class Customer extends CustomerBase {
+      name = '';
+    }
+    field({ type: 'text' })(Customer.prototype, 'name');
+    ObjectRegistry.register(Customer, {
+      packageName: '@fixture/a4-upstream',
+      tableName: 'customers',
+      tenantScoped: true,
+      api: true,
+    });
+    await migrateSmrtSchemas({
+      db,
+      packageName: APP,
+      name: 'inherited_fixture',
+      engineHint: 'sqlite',
+    });
+    const e = await editor();
+    await expect(
+      edit(e, {
+        type: 'add_field',
+        model: CUSTOMER,
+        name: 'ancestorCode',
+        field: { type: 'text' },
+      }),
+    ).rejects.toThrow('FIELD_NAME_COLLISION');
     expect(await e.history()).toHaveLength(0);
   });
 

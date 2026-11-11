@@ -105,6 +105,15 @@ with the host's existing screens. The editor does not rewrite static SvelteKit
 route files or already-imported AOT web modules; such a host needs this dynamic
 binding before using the API.
 
+When also using A3 lazy activation, boot the installed/provider graph first.
+Its fixed-graph `readEnabled` input excludes only custom-list identities declared
+in the validated cookbook's `models.lists`; unexpected unknown ids must still
+fail. Then await this editor before serving. `ActivationCoordinator.isReady()`
+recognizes editor-managed readiness via the public
+`getRuntimeModelReadiness()`, so its composed tenant gate admits a custom list
+only after the editor's tracked migration and journal completion. Runtime
+definitions remain cookbook data, outside the fixed source-module graph.
+
 Every operation uses the running process:
 
 | Operation | Activation |
@@ -123,7 +132,9 @@ The exposure gate admits cookbook custom lists and denies pending/removed
 models. Unused applications retain the previous behavior.
 
 A pending revision is appended before registration/DDL. Both application
-columns and the optional history table use the migration tracker. Manual
+columns and the optional history table use the migration tracker. Application
+schema reconciliation selects only edited tables and their existing physical
+FK closure; unrelated registered/disabled models are not migrated. Manual
 schema drift refuses activation. After successful migration/publication,
 the journal completes and readiness opens. A failure may have committed
 additive DDL: affected models stay closed, the revision stays pending, and
@@ -152,8 +163,9 @@ and packaged desktop timing are not implemented/verified.
 In-process SQLite fixture: real tenant-scoped provider constructor, app
 same-name subclass, existing REST handler/MCP generator, real tenancy
 interceptor, and a disk database reopened after failed publication.
-Local targeted run: fields 1.5–6.2 ms, list create 2.3 ms, relabel 2.2 ms,
-remove 1.6 ms, field policies 0.8–1.2 ms. These are fixture measurements, not
+Local targeted run: fields 1.5–7.8 ms, list create 2.3 ms, relabel 2.2 ms,
+remove 1.6 ms, field policies 0.8–1.4 ms, boot replay 1.4 ms, undo 0.9 ms
+and import 1.1 ms. These are fixture measurements, not
 desktop performance guarantees; receipts let the host measure its own work.
 
 | Risk | Executable evidence |
@@ -180,3 +192,18 @@ smrt-ui/smrt-svelte/chat by name and purpose. New files:
 - `src/app-models.ts`: Node export entry only; no duplicate implementation.
 - New core/CLI test files introduce fixtures only; no new application model
   or UI component.
+
+The readiness getter extends the existing runtime-exposure state rather than
+adding an activation store. Reuse searches: MCP architecture context
+“runtime readiness query / ActivationCoordinator.isReady”, and rg
+`getRuntimeModelReadiness|isRuntimeModelReady|isReady` across core/UI/Svelte/chat:
+only the fixed-graph coordinator had a readiness query.
+
+Shared source files touched (relative to core `src/`):
+`runtime-model.ts`, `runtime-exposure.ts`, `activation.ts`, `registry.ts`,
+`registry/class-registration.ts`, `registry/validator.ts`, `collection.ts`,
+`generators/rest.ts`, `cookbook/validate.ts`, `cookbook/v1.schema.json`,
+and `cookbook/engine/{commands,document,engine,nav,types}.ts`.
+Outside core: shared cookbook types/exports in `packages/types`, CLI command
+cache in `packages/cli/src/cli-generator.ts` with its test/documentation,
+and generated core/CLI knowledge pages. No other package implementation changes.
