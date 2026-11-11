@@ -88,6 +88,10 @@ export interface MigrateSmrtSchemasOptions {
   emptyTextAsNull?: boolean;
   /** Explicitly allow relaxing live column constraints. */
   relaxColumns?: boolean;
+  /** Opt-in physical-table subset, including its FK closure. Omitted keeps eager behavior. */
+  tables?: Iterable<string>;
+  /** Refuse the entire plan before executing DDL when manual drift remains. */
+  requireComplete?: boolean;
 }
 
 export interface MigrateSmrtSchemasResult {
@@ -156,9 +160,12 @@ export async function getPendingSchemaStatements(
     emptyTextAsNull?: boolean;
     /** Explicitly allow relaxing live column constraints. */
     relaxColumns?: boolean;
+    tables?: Iterable<string>;
   } = {},
 ): Promise<PendingSchemaStatementsResult> {
-  const schemas = ObjectRegistry.getAllSchemasAsDefinitions();
+  const schemas = ObjectRegistry.getAllSchemasAsDefinitions(
+    options.tables ? { tables: options.tables } : undefined,
+  );
   // Forward engineHint into the diff itself so the SchemaComparer's
   // existing-table SQL (ALTER/index drift) uses the same DDL strategy
   // we use for newly-added tables — otherwise the two halves of the
@@ -225,7 +232,11 @@ export async function migrateSmrtSchemas(
     postgresTimestampMigration: options.postgresTimestampMigration,
     emptyTextAsNull: options.emptyTextAsNull,
     relaxColumns: options.relaxColumns,
+    tables: options.tables,
   });
+  if (options.requireComplete && pending.hasManualDrift) {
+    throw new Error('SMRT activation requires a manual schema migration');
+  }
   if (!pending.hasChanges || pending.statements.length === 0) {
     return {
       applied: false,
