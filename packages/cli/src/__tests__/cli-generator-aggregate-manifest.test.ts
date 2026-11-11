@@ -3,7 +3,7 @@ import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { ObjectRegistry } from '@happyvertical/smrt-core';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
-import { CLIGenerator } from '../cli-generator.js';
+import { type CLICommand, CLIGenerator } from '../cli-generator.js';
 import { loadManifest } from '../discovery/manifest-discovery.js';
 
 const { loadLocalTestManifestSyncMock } = vi.hoisted(() => ({
@@ -131,5 +131,63 @@ describe('CLIGenerator aggregate manifest preload', () => {
     expect(
       ObjectRegistry.getClassByQualifiedName('@test/app:ContentFeedSource'),
     ).toBeUndefined();
+  });
+  it('generates one same-name app command group with inherited and custom field options', async () => {
+    const baseKey = '@fixture/upstream:Customer';
+    const appKey = '@test/app:Customer';
+    const base = {
+      name: 'customer',
+      className: 'Customer',
+      collection: 'customers',
+      packageName: '@fixture/upstream',
+      qualifiedName: baseKey as typeof baseKey,
+      filePath: '/fixture/upstream/customer.ts',
+      fields: {
+        tenantId: { type: 'text' as const },
+        profileId: { type: 'text' as const },
+      },
+      methods: {},
+      decoratorConfig: { tableName: 'customers', cli: true },
+    };
+    const child = {
+      ...base,
+      packageName: '@test/app',
+      qualifiedName: appKey as typeof appKey,
+      filePath: '/fixture/app/customer.ts',
+      extends: 'Customer',
+      extendsQualified: baseKey,
+      fields: { ...base.fields, favoritePose: { type: 'text' as const } },
+    };
+    for (const [key, entry] of [
+      [baseKey, base],
+      [appKey, child],
+    ] as const) {
+      ObjectRegistry.registerFromManifest(key, entry);
+    }
+    const cli = new CLIGenerator({ prompt: false, colors: false });
+    const internalCli = cli as unknown as {
+      getObjectCommandsLazy(name: string): Promise<CLICommand[]>;
+    };
+    const commands = await internalCli.getObjectCommandsLazy('customer');
+    expect(commands.map((command) => command.name)).toEqual([
+      'customer:list',
+      'customer:get',
+      'customer:create',
+      'customer:update',
+      'customer:delete',
+    ]);
+    expect(
+      commands.find((command) => command.name === 'customer:create')?.options,
+    ).toEqual(
+      expect.objectContaining({
+        tenantId: expect.any(Object),
+        profileId: expect.any(Object),
+        favoritePose: expect.any(Object),
+      }),
+    );
+    expect(ObjectRegistry.findClassesByName('Customer')).toHaveLength(1);
+    expect(ObjectRegistry.getClassByQualifiedName(baseKey)?.qualifiedName).toBe(
+      appKey,
+    );
   });
 });
