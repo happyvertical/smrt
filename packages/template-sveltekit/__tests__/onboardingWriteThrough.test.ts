@@ -354,9 +354,11 @@ import {${name} as Base} from '@happyvertical/smrt-${pkg}';
     join(root, 'src/routes/api/customers/+server.ts'),
     join(root, 'customer-route.mjs'),
   );
-  // Shared create forms serialize untouched optional text controls as ''.
+  // Only Name is filled; the shared form serializes untouched contacts as ''.
   const made = await request('/api/customers', route.POST, {
     name: 'REST Ada',
+    email: '',
+    phone: '',
   });
   expect(made.status, await made.clone().text()).toBe(201);
   const created = await made.json();
@@ -380,6 +382,11 @@ import {${name} as Base} from '@happyvertical/smrt-${pkg}';
   const clearedList = await request('/api/customers', route.GET);
   const clearedRows = await clearedList.json();
   expect(clearedRows.items ?? clearedRows.data ?? clearedRows).toEqual(expect.arrayContaining([expect.objectContaining({ name: 'REST Ada', email: '', phone: '' })]));
+  // Retain the original populated-email create case alongside name-only first.
+  const contact = await request('/api/customers', route.POST, {
+    name: 'REST Contact', email: 'rest@example.test', phone: '',
+  });
+  expect(contact.status, await contact.clone().text()).toBe(201);
   const thread = await request(
     '/api/assistant/threads',
     (e) => host!.assistant.handle(e),
@@ -413,6 +420,7 @@ import {${name} as Base} from '@happyvertical/smrt-${pkg}';
     );
     for (const [label, email] of [
       ['REST Ada', ''],
+      ['REST Contact', 'rest@example.test'],
       ['Assistant Ada', 'assistant@example.test'],
     ]) {
       const row = rows.find((row) => row.toJSON().displayLabel === label);
