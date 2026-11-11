@@ -186,8 +186,7 @@ describe('CLIGenerator aggregate manifest preload', () => {
       }),
     );
     expect(ObjectRegistry.findClassesByName('Customer')).toHaveLength(1);
-    expect(ObjectRegistry.getClassByQualifiedName(baseKey)?.qualifiedName).toBe(
-      appKey,
-    );
+    expect(ObjectRegistry.getClassByQualifiedName(baseKey)).toBeUndefined();
+    expect(ObjectRegistry.getClass(baseKey)?.qualifiedName).toBe(appKey);
   });
 });
