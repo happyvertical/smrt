@@ -65,6 +65,21 @@ import type { IndexDefinition, SchemaDefinition } from './types.js';
 
 const PKG = '@happyvertical/smrt-parity';
 
+it('honors top-level registry requiredness while retaining explicit nullable overrides', () => {
+  const schema = new SchemaGenerator().generateSchemaFromRegistry(
+    'RequiredFields',
+    'required_fields',
+    new Map<string, FieldDefinition>([
+      ['tenantId', { type: 'text', required: true }],
+      ['optional', { type: 'text', required: true, _meta: { nullable: true } }],
+      ['legacy', { type: 'text', _meta: { required: true } }],
+    ]),
+  );
+  expect(schema.columns.tenant_id.notNull).toBe(true);
+  expect(schema.columns.optional.notNull).toBe(false);
+  expect(schema.columns.legacy.notNull).toBe(true);
+});
+
 describe('same-name physical foreign key parity (#2763)', () => {
   it('rejects invalid ON UPDATE actions in runtime and manifest schema paths', () => {
     // Deliberately bypass the public decorator union to test malformed metadata.
