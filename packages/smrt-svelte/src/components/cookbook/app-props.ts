@@ -1,7 +1,7 @@
 /** Shell-dependent props, kept outside the plain cookbook data contract. */
 import type { AssistantTransport } from '@happyvertical/smrt-chat/svelte';
-import type { DataSurfaceRegistry } from '@happyvertical/smrt-ui/data-surface';
 import type { Cookbook } from '@happyvertical/smrt-types';
+import type { DataSurfaceRegistry } from '@happyvertical/smrt-ui/data-surface';
 import type { Component, ComponentProps } from 'svelte';
 import type AppShell from '../app/AppShell.svelte';
 import type { RecipeExportResolver } from '../overview/recipe-widgets.js';

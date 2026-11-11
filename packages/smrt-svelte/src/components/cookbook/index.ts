@@ -39,6 +39,7 @@ export {
   composeShortcutsLoader,
   createCookbookRegistry,
   loadShortcuts,
+  resolveInstalledRecipeExport,
 } from './registry.js';
 export {
   buildNavSections,

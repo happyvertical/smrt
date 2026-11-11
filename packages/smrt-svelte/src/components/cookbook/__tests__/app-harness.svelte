@@ -12,14 +12,11 @@ import type {
   ScreenPolicy,
   ScreenRecord,
 } from '../../screens/types.js';
+import type { CookbookAppProps } from '../app-props.js';
 import CookbookApp from '../CookbookApp.svelte';
 import CookbookSectionPage from '../CookbookSectionPage.svelte';
 import { getCookbookContext } from '../context.js';
-import type {
-  CookbookAppProps,
-  CookbookCatalog,
-  CookbookLoaders,
-} from '../types.js';
+import type { CookbookCatalog, CookbookLoaders } from '../types.js';
 
 interface Props {
   cookbook: Cookbook;
