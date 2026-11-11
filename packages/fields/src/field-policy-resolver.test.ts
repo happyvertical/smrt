@@ -22,6 +22,7 @@ import {
   resolveFieldPolicy,
   resolveFieldPolicyExplained,
 } from './field-policy-resolver.js';
+import { resolveCookbookFieldPolicy } from './policy.js';
 import type {
   ExplainedObjectFieldPolicy,
   FieldPolicyTenantHierarchyLoader,
@@ -199,6 +200,100 @@ describe('resolveFieldPolicy', () => {
     expect(resolved.fields.id).toBeUndefined();
     expect(resolved.fields.slug).toBeUndefined();
     expect(resolved.fields.context).toBeUndefined();
+  });
+
+  it('resolves active raw cookbook rows through the same kernel without poisoning cached reads', async () => {
+    const original = await resolveFieldPolicy(objectRef, { db });
+    const cookbook = {
+      policies: [
+        {
+          objectRef,
+          fieldName: 'summary',
+          visibility: 'hidden' as const,
+          label: 'Private summary',
+          defaultValue: '"USD"',
+          readOnly: true,
+        },
+        { objectRef, fieldName: 'subtitle', defaultValue: 'null' },
+      ],
+    };
+    const resolved = await resolveFieldPolicy(objectRef, { db, cookbook });
+    expect(resolved.fields.summary).toMatchObject({
+      visibility: 'hidden',
+      label: 'Private summary',
+      defaultValue: 'USD',
+      readOnly: true,
+    });
+    expect(resolved.fields.subtitle).toMatchObject({
+      hasDefault: true,
+      defaultValue: null,
+    });
+    const definition = {
+      objectRef,
+      fields: Object.fromEntries(await ObjectRegistry.getAllFields(objectRef)),
+    };
+    const portable = resolveCookbookFieldPolicy(definition, cookbook);
+    expect(portable.fields.summary).toEqual(resolved.fields.summary);
+    expect(portable.fields.subtitle).toEqual(resolved.fields.subtitle);
+    expect(portable.fields.secret).toBeUndefined();
+    expect(portable.fields.id).toBeUndefined();
+    expect(await resolveFieldPolicy(objectRef, { db })).toEqual(original);
+    const changed = await resolveFieldPolicy(objectRef, {
+      db,
+      cookbook: {
+        policies: [
+          { ...cookbook.policies[0], defaultValue: '"EUR"', readOnly: false },
+        ],
+      },
+    });
+    expect(changed.fields.summary).toMatchObject({
+      defaultValue: 'EUR',
+      readOnly: false,
+    });
+  });
+
+  it('rejects semantic default type errors in raw cookbook rows', async () => {
+    const definition = {
+      objectRef,
+      fields: Object.fromEntries(await ObjectRegistry.getAllFields(objectRef)),
+    };
+    const cookbook = {
+      policies: [
+        { objectRef, fieldName: 'priority', defaultValue: '"not an integer"' },
+      ],
+    };
+    expect(() => resolveCookbookFieldPolicy(definition, cookbook)).toThrow(
+      /must be an integer/,
+    );
+    await expect(
+      resolveFieldPolicy(objectRef, { db, cookbook }),
+    ).rejects.toThrow(/must be an integer/);
+  });
+
+  it('keeps required visibility safety, ignores unknown fields and preserves seed defaults after malformed encoded input', async () => {
+    const definition = {
+      objectRef,
+      fields: Object.fromEntries(await ObjectRegistry.getAllFields(objectRef)),
+    };
+    const resolved = resolveCookbookFieldPolicy(definition, {
+      policies: [
+        { objectRef, fieldName: 'title', visibility: 'hidden' },
+        { objectRef, fieldName: 'priority', defaultValue: '{broken' },
+        { objectRef, fieldName: 'notDeclared', defaultValue: '"no"' },
+        {
+          objectRef: '@other/model:Other',
+          fieldName: 'summary',
+          visibility: 'hidden',
+        },
+      ],
+    });
+    expect(resolved.fields.title).toMatchObject({
+      visibility: 'basic',
+      visibilityForced: true,
+    });
+    expect(resolved.fields.priority.defaultValue).toBe(3);
+    expect(resolved.fields.notDeclared).toBeUndefined();
+    expect(resolved.fields.summary.visibility).toBe('basic');
   });
 
   it('resolves defaults and visibility through app, tenant, and user tiers', async () => {

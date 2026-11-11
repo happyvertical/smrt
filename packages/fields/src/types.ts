@@ -2,6 +2,7 @@ import type {
   SmrtClassOptions,
   SmrtObjectOptions,
 } from '@happyvertical/smrt-core';
+import type { PolicyRow } from './policy.js';
 
 /**
  * Scope tier a {@link FieldPolicy} row belongs to.
@@ -87,6 +88,7 @@ export interface FieldPolicyOptions extends SmrtObjectOptions {
  * null") stays distinguishable from "this layer contributes no default".
  */
 export interface FieldPolicyDelta {
+  readOnly?: boolean;
   default?: { value: unknown };
   visibility?: FieldPolicyVisibility;
   help?: string;
@@ -107,6 +109,8 @@ export interface FieldPolicyLayerContribution {
 
 /** Fully merged policy for a single field. */
 export interface ResolvedFieldPolicy {
+  /** Record-value editing, independent of locking policy customization. */
+  readOnly?: boolean;
   fieldName: string;
   /** True when any layer resolved a default (including an explicit null). */
   hasDefault: boolean;
@@ -171,6 +175,8 @@ export type FieldPolicyTenantHierarchyLoader = (
 ) => Promise<FieldPolicyTenantHierarchyProvider | null>;
 
 export interface ResolveFieldPolicyOptions {
+  /** Active portable app rows; bypass cache and override stored app rows. */
+  cookbook?: { policies: readonly (PolicyRow & { objectRef: string })[] };
   tenantId?: string | null;
   userId?: string | null;
   /**

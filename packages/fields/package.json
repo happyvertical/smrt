@@ -26,6 +26,10 @@
     "./playground": {
       "types": "./dist/playground.d.ts",
       "import": "./dist/playground.js"
+    },
+    "./policy": {
+      "types": "./dist/policy.d.ts",
+      "import": "./dist/policy.js"
     }
   },
   "scripts": {
