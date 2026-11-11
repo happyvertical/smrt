@@ -138,7 +138,7 @@ describe('display label projection', () => {
     ]);
     const selects = () =>
       query.mock.calls.filter(([sql]) =>
-        /SELECT .* FROM .*display_customers/i.test(String(sql)),
+        /^\s*(?:SELECT|WITH)\b/i.test(String(sql)),
       );
     expect(selects()).toHaveLength(1);
     query.mockClear();

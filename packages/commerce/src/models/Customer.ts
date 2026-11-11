@@ -38,6 +38,9 @@ import {
  */
 @TenantScoped({ mode: 'optional' })
 @smrt({
+  display: {
+    label: { via: 'profileId', field: 'name', fallback: 'Unnamed customer' },
+  },
   api: { include: ['list', 'get', 'create', 'update'] },
   mcp: { include: ['list', 'get'] },
   cli: { skipApiCheck: true },

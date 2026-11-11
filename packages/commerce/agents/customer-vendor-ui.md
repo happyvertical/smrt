@@ -186,3 +186,22 @@ fixed USD, not the record's `currency`. The line-item FKs
 `FulfillmentLineItem.fulfillmentId`) carry `role: 'items'`, so record pages
 render them as a line-items table with a totals block;
 `src/__tests__/money-hints-manifest.test.ts` pins both.
+
+
+## Customer display name through Profile (B1b)
+
+Customer declares `display.label: { via: 'profileId', field: 'name', fallback:
+'Unnamed customer' }`. The profiles package owns the human name; commerce does
+not copy it. Core's scoped one-hop display projection supplies `displayLabel`
+on collection and REST list/get DTOs and emits it as the web definition's
+read-only `displayLabelField`. Screens' existing reference source searches,
+sorts and resolves Customers through that definition, without requiring a
+separate exposed Profile endpoint. A missing/invisible Profile returns
+`Unnamed customer`, never its id or the word Profile. See
+[core collection reads](../../core/agents/collection-reads.md#linked-display-names).
+
+`src/__tests__/customer-display-projection.test.ts` exercises the actual
+Customer/Profile models on SQLite with tenancy enabled, generated REST,
+manifest-derived definitions, and `createRecipeScreenReferences`; it checks
+name search/sort, get labels, fallback, rename freshness, and one joined SELECT
+per reference-search page.
