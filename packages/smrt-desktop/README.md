@@ -60,7 +60,7 @@ const sidecar = parseSidecarManifest(
 
 - `version` is the number `1`. The five fields `version`, `executable`,
   `args`, `healthRoute` and `dataDirectory` are required; `env` and
-  `ownerClaimRoute` are optional. Unknown fields and versions are errors. A
+  `ownerClaimRoute` and `workingDirectory` are optional. Unknown fields and versions are errors. A
   future incompatible contract requires a new version.
 - `executable` is the logical Tauri `externalBin` basename: exactly one
   portable segment with no `/`, such as `smrt-notes-node`. The launcher owns the
@@ -71,6 +71,8 @@ const sidecar = parseSidecarManifest(
   passes the array directly as process arguments. The argument strings receive
   no shell expansion, token substitution, or path rewriting. Their
   interpretation belongs to the chosen executable.
+- `workingDirectory: "app"` optionally runs from `resources/app`; absent keeps
+  the resource root. Pair it with `args: ["build/index.js"]`.
 - `healthRoute` is a path on the supervisor-selected loopback origin.
   It begins with one slash and can be `/` or have nonempty segments containing
   only ASCII letters, digits, periods, underscores, tildes, and hyphens.
@@ -495,6 +497,9 @@ root (or an `exclude` entry). The catalog:
 | `toolchain` (cannot be enabled) | `vite`, `rolldown`, `esbuild`, `lightningcss*`, `typescript`, `tsx`, `oxc-*`, `@oxc-parser/*`, `@oxc-transform/*`, `@oxc-resolver/*`, `@oxc-minify/*`, `@oxc-project/types`, `@types/*`, platform packages of these |
 | `google-apis` | `googleapis`, `googleapis-common` |
 | `duckdb` | `@duckdb/*` |
+| `browser` | `@happyvertical/spider`, crawler and browser automation SDKs |
+| `documents` | `@happyvertical/documents`, Kreuzberg and document parsers |
+| `local-ml` | transformer, WebLLM and ONNX runtimes |
 | `vector-sqlite` | `sqlite-vss*` |
 | `images` | `@happyvertical/images`, `sharp`, `@img/*`, `@resvg/*`, `@mediapipe/*`, `jimp`, `@jimp/*`, `satori` |
 | `ai-providers` = `ai-anthropic` + `ai-openai` + `ai-google` | `@anthropic-ai/sdk`, `openai`, `@google/genai` |
@@ -716,3 +721,6 @@ Reproduce: build the app (`pnpm install && pnpm build`), write
 `smrt-desktop.json` as above, create the bridge file, then run the
 `smrt desktop bundle` command with `--measure` (no data directory to prepare)
 and read `measurements` in `bundle-report.json`. Per-OS rows from the CI matrix are item 4's.
+
+Normal built apps, runtimeFiles, unsigned macOS packaging and headless smoke:
+[Built-app packaging](agents/built-apps.md).

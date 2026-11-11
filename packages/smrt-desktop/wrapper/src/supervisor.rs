@@ -693,7 +693,10 @@ impl Core {
         let plan = LaunchPlan {
             program: self.params.manifest.executable.clone(),
             args: self.params.manifest.args.clone(),
-            cwd: self.params.resource_dir.clone(),
+            cwd: match &self.params.manifest.working_directory {
+                Some(dir) => self.params.resource_dir.join(dir),
+                None => self.params.resource_dir.clone(),
+            },
             env: build_child_env(
                 self.params.inherited_env.clone(),
                 &self.params.manifest,

@@ -154,7 +154,9 @@ export interface BundlePlan {
     readonly productVersion: string;
     readonly channel: string;
   };
+  readonly runtimeFiles?: readonly string[];
   readonly sidecar: {
+    readonly workingDirectory?: 'app';
     /** Product-scoped: `<productId>-node`. */
     readonly executable: string;
     readonly args: readonly string[];
@@ -465,7 +467,13 @@ export async function createBundlePlan(
       productVersion: productVersion as string,
       channel,
     },
+    ...(config?.runtimeFiles === undefined
+      ? {}
+      : { runtimeFiles: config.runtimeFiles }),
     sidecar: {
+      ...(sidecarConfig?.workingDirectory === undefined
+        ? {}
+        : { workingDirectory: sidecarConfig.workingDirectory }),
       executable: `${productId}-node`,
       args: sidecarConfig?.args ?? DEFAULT_SIDECAR_ARGS,
       healthRoute: sidecarConfig?.healthRoute ?? DEFAULT_HEALTH_ROUTE,

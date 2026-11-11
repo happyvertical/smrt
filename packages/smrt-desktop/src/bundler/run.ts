@@ -641,11 +641,58 @@ export async function runBundle(
       for (const finding of scan.findings) {
         warnings.push(`secret-looking content in build output: ${finding.rel}`);
       }
+      const runtimeFiles = new Set(plan.runtimeFiles ?? []);
+      if (runtimeFiles.size > 0) {
+        // Runtime data is explicit; never sweep the source tree or its config.
+        for (const file of runtimeFiles) {
+          if (
+            ['package.json', 'build', 'node_modules'].some(
+              (reserved) =>
+                file === reserved || file.startsWith(`${reserved}/`),
+            )
+          ) {
+            throw new BundleTreeError('config_invalid_field', {
+              field: 'runtimeFiles',
+            });
+          }
+        }
+        const runtimeCopy = await copyTree({
+          root: plan.appDir,
+          destRoot: appDir,
+          fs,
+          platform,
+          filter(entry) {
+            if (
+              !runtimeFiles.has(entry.rel) &&
+              ![...runtimeFiles].some((file) =>
+                file.startsWith(`${entry.rel}/`),
+              )
+            )
+              return 'skip';
+            return filter.filter(entry);
+          },
+          inspect: scan.inspect,
+        });
+        if (
+          runtimeCopy.copied.length !== runtimeFiles.size ||
+          runtimeCopy.copied.some((file) => !runtimeFiles.has(file.rel))
+        ) {
+          throw new BundleTreeError('missing_app_file', {
+            field: 'runtimeFiles',
+          });
+        }
+      }
       const entry = plan.sidecar.args.find((arg) => !arg.startsWith('-'));
       const entryStats =
         entry === undefined
           ? undefined
-          : await lstatOrUndefined(fs, at(resourcesDir, ...entry.split('/')));
+          : await lstatOrUndefined(
+              fs,
+              at(
+                plan.sidecar.workingDirectory === 'app' ? appDir : resourcesDir,
+                ...entry.split('/'),
+              ),
+            );
       if (entryStats === undefined || !entryStats.isFile()) {
         throw new BundleError('entry_missing');
       }
@@ -656,6 +703,7 @@ export async function runBundle(
           version: plan.product.productVersion,
           private: true,
           type: 'module',
+          ...(plan.sidecar.workingDirectory === 'app' ? { dependencies } : {}),
         }),
         0o644,
         { fs, platform },
@@ -867,7 +915,10 @@ export async function runBundle(
       const beforePruning = await scanReachable({
         buildRoot: buildDest,
         modulesRoot: installModules,
-        entry: at(resourcesDir, ...entryScript.split('/')),
+        entry: at(
+          plan.sidecar.workingDirectory === 'app' ? appDir : resourcesDir,
+          ...entryScript.split('/'),
+        ),
         graph: segmentation.graph,
         keep: segmentation.result.keep,
         fs,
@@ -966,7 +1017,10 @@ export async function runBundle(
       const reach = await scanReachable({
         buildRoot: buildDest,
         modulesRoot: modulesDest,
-        entry: at(resourcesDir, ...entry.split('/')),
+        entry: at(
+          plan.sidecar.workingDirectory === 'app' ? appDir : resourcesDir,
+          ...entry.split('/'),
+        ),
         graph: segmentation.graph,
         keep: segmentation.result.keep,
         acknowledged: plan.acknowledgedDynamicImports,
@@ -1140,6 +1194,9 @@ export async function runBundle(
       version: 1,
       executable: plan.sidecar.executable,
       args: plan.sidecar.args,
+      ...(plan.sidecar.workingDirectory === undefined
+        ? {}
+        : { workingDirectory: plan.sidecar.workingDirectory }),
       healthRoute: plan.sidecar.healthRoute,
       dataDirectory: plan.sidecar.dataDirectory,
       env: sidecarEnv(plan.product.productId),

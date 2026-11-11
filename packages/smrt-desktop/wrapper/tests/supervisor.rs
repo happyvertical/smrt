@@ -68,6 +68,7 @@ struct Harness {
 
 struct Options {
     mode: &'static str,
+    app_cwd: bool,
     fail_runs: u32,
     health_route: &'static str,
     extra_env: Vec<(&'static str, &'static str)>,
@@ -81,6 +82,7 @@ impl Default for Options {
     fn default() -> Self {
         Self {
             mode: "ok",
+            app_cwd: false,
             fail_runs: 0,
             health_route: "/health",
             extra_env: Vec::new(),
@@ -147,7 +149,11 @@ fn start(node: &Path, options: Options) -> Harness {
     .to_string();
     // The fixture path is absolute, which the argument policy allows: args
     // are literal strings owned by the packaging tool.
-    let manifest = SidecarManifest::parse(&manifest_json).unwrap();
+    let mut manifest = SidecarManifest::parse(&manifest_json).unwrap();
+    if options.app_cwd {
+        fs::create_dir(resource.join("app")).unwrap();
+        manifest.working_directory = Some("app".into());
+    }
 
     let log_dir = options.log_dir.unwrap_or_else(|| scratch("log"));
     let log = Arc::new(Logger::new(log_dir, "supervisor.log"));
@@ -746,4 +752,21 @@ fn an_unwritable_log_directory_does_not_disturb_supervision() {
     h.wait_ready();
     h.supervisor.shutdown();
     assert!(!h.log.path().exists());
+}
+
+#[test]
+fn a_normal_built_app_runs_in_its_app_directory_and_stops_cleanly() {
+    let node = node_or_skip!();
+    let h = start(
+        &node,
+        Options {
+            app_cwd: true,
+            ..Options::default()
+        },
+    );
+    let (origin, _) = h.wait_ready();
+    let seen: serde_json::Value = serde_json::from_str(&get(&format!("{origin}/env"))).unwrap();
+    assert_eq!(seen["cwd"], h.resource.join("app").to_str().unwrap());
+    assert_ne!(seen["cwd"], seen["SMRT_DATA_DIR"]);
+    h.supervisor.shutdown();
 }

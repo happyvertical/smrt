@@ -1708,3 +1708,42 @@ describe('files written around the measured start', () => {
     }
   });
 });
+
+describe('built cookbook app resources', () => {
+  it('launches relative to app, retains discovery metadata and copies only declared runtime data', async () => {
+    const item = fixture({
+      config: {
+        sidecar: { workingDirectory: 'app', args: ['build/index.js'] },
+        runtimeFiles: ['smrt.cookbook.json'],
+      },
+    });
+    writeFileSync(join(item.appDir, 'smrt.cookbook.json'), '{"version":1}');
+    writeFileSync(join(item.appDir, 'private-source.ts'), 'never copied');
+    const result = await runBundle(await item.plan(), item.seams());
+    const tree = readTree(item.outDir);
+    expect(tree.has('resources/app/smrt.cookbook.json')).toBe(true);
+    expect(tree.has('resources/app/private-source.ts')).toBe(false);
+    const manifest = parseSidecarManifest(
+      readFileSync(
+        join(item.outDir, 'resources/sidecar-manifest.json'),
+        'utf8',
+      ),
+    );
+    expect(manifest.workingDirectory).toBe('app');
+    expect(
+      JSON.parse(
+        readFileSync(join(item.outDir, 'resources/app/package.json'), 'utf8'),
+      ).dependencies.a,
+    ).toBeDefined();
+    expect(result.report.files.count).toBeGreaterThan(0);
+  });
+  it('refuses missing or secret runtime files and never publishes partial output', async () => {
+    for (const file of ['missing.json', '.env']) {
+      const item = fixture({ config: { runtimeFiles: [file] } });
+      if (file === '.env') writeFileSync(join(item.appDir, file), 'private');
+      if (file === '.env') await expect(item.plan()).rejects.toThrow();
+      else await failure(runBundle(await item.plan(), item.seams()));
+      assertNothingLeft(item);
+    }
+  });
+});

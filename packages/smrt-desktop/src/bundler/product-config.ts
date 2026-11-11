@@ -141,6 +141,42 @@ export const FEATURE_CATALOG: Readonly<Record<string, FeatureDefinition>> =
       packages: ['@google/genai'],
       enableable: true,
     },
+    browser: {
+      description:
+        'Browser automation (installed only by an explicit product opt-in)',
+      packages: [
+        '@happyvertical/spider',
+        'crawlee',
+        '@crawlee/*',
+        '@happyvertical/browser',
+        'playwright',
+        'playwright-core',
+        'puppeteer*',
+        '@puppeteer/*',
+      ],
+      enableable: true,
+    },
+    documents: {
+      description: 'Document extraction and parsing',
+      packages: [
+        '@happyvertical/documents',
+        '@kreuzberg/*',
+        'kreuzberg',
+        'officeparser',
+      ],
+      enableable: true,
+    },
+    'local-ml': {
+      description: 'Local transformer models and ONNX runtimes',
+      packages: [
+        '@huggingface/transformers',
+        '@xenova/transformers',
+        '@mlc-ai/web-llm',
+        '@mlc-ai/web-runtime',
+        'onnxruntime-*',
+      ],
+      enableable: true,
+    },
     ocr: {
       description: 'Optical character recognition',
       packages: ['@happyvertical/ocr', 'tesseract.js*', 'onnxruntime-*'],
@@ -171,6 +207,7 @@ export interface ProductConfig {
   readonly bridge?: { readonly envPrefix: string; readonly mcpPath: string };
   readonly sidecar: {
     readonly executable?: string;
+    readonly workingDirectory?: 'app';
     readonly args: readonly string[];
     readonly healthRoute: string;
     readonly dataDirectory: string;
@@ -183,6 +220,8 @@ export interface ProductConfig {
     >;
   };
   readonly exclude: readonly string[];
+  /** Public runtime assets copied to the bundled app root. */
+  readonly runtimeFiles?: readonly string[];
   readonly maxSizeMB?: number;
   readonly nativeExceptions: readonly NativeException[];
   readonly acknowledgedDynamicImports: readonly AcknowledgedImport[];
@@ -282,7 +321,14 @@ function parseSidecar(value: unknown): ProductConfig['sidecar'] {
     !hasClosedKeys(
       record,
       [],
-      ['executable', 'args', 'healthRoute', 'dataDirectory', 'ownerClaimRoute'],
+      [
+        'executable',
+        'args',
+        'healthRoute',
+        'dataDirectory',
+        'ownerClaimRoute',
+        'workingDirectory',
+      ],
     )
   ) {
     bad('sidecar');
@@ -299,6 +345,10 @@ function parseSidecar(value: unknown): ProductConfig['sidecar'] {
     healthRoute,
     dataDirectory,
   };
+  if (Object.hasOwn(record, 'workingDirectory')) {
+    if (record.workingDirectory !== 'app') bad('sidecar.workingDirectory');
+    out.workingDirectory = 'app';
+  }
   if (record.executable !== undefined) {
     if (typeof record.executable !== 'string') bad('sidecar.executable');
     out.executable = record.executable as string;
@@ -436,6 +486,7 @@ export function parseProductConfig(text: string): ProductConfig {
         'sidecar',
         'features',
         'exclude',
+        'runtimeFiles',
         'maxSizeMB',
         'nativeExceptions',
         'acknowledgedDynamicImports',
@@ -501,6 +552,16 @@ export function parseProductConfig(text: string): ProductConfig {
     sidecar,
     features: parseFeatures(record.features),
     exclude,
+    ...(record.runtimeFiles === undefined
+      ? {}
+      : {
+          runtimeFiles: stringArray(
+            record.runtimeFiles,
+            'runtimeFiles',
+            32,
+            isPortablePath,
+          ),
+        }),
     ...(maxSizeMB === undefined ? {} : { maxSizeMB }),
     nativeExceptions: parseNativeExceptions(record.nativeExceptions),
     acknowledgedDynamicImports: parseAcknowledged(

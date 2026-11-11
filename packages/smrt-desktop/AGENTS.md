@@ -68,3 +68,5 @@ repo forbids inter-smrt peers) used only by `./launcher`.
 
 From this directory, run `npm run build`, `npm run typecheck`, and
 `smrt test src`.
+
+Normal built-app packaging: [agents/built-apps.md](agents/built-apps.md).
