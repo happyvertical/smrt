@@ -38,13 +38,13 @@
       "import": "./dist/host/sveltekit-client.js",
       "default": "./dist/host/sveltekit-client.js"
     },
-    "./host/InferenceSettingsPage.svelte": "./host/InferenceSettingsPage.svelte"
+    "./host/InferenceSettingsPage.svelte": {
+      "svelte": "./host/InferenceSettingsPage.svelte",
+      "default": "./host/InferenceSettingsPage.svelte"
+    }
   },
   "smrt": {
-    "resourceExports": [
-      "./template/*",
-      "./host/InferenceSettingsPage.svelte"
-    ]
+    "resourceExports": ["./template/*"]
   },
   "files": [
     "CLAUDE.md",

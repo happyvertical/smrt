@@ -1,5 +1,12 @@
 # Local cookbook host
 
+Host TypeScript entry points compile from `host/` to `dist/host/`; smrt-vitest's
+workspace alias table maps all six public entry points back to their authored
+sources. `host/InferenceSettingsPage.svelte` is a runtime component with an
+effective `svelte` export condition. Only copied scaffold files under
+`./template/*` are classified as `smrt.resourceExports`; runtime components must
+remain subject to the packed runtime import and Svelte-condition checks.
+
 `@happyvertical/smrt-template-sveltekit/host/server` exports
 `createCookbookHost({ runtime, root?, title?, app?, assistant?, cli?, chatgpt? })`.
 Construct it beside `createSmrtSvelteKitRuntime()` before startup. It registers
