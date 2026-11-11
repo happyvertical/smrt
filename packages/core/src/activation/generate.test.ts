@@ -186,6 +186,47 @@ describe('AOT activation generation', () => {
     ).toThrow(/Unresolved activation reference.*UNRESOLVED_CONSTANT/);
   });
 
+  it('typechecks deferred optional collection exports and specialized model constructors in a strict consumer', () => {
+    const { files, manifest } = workspace();
+    for (const name of ['Customer', 'Invoice', 'Unused']) {
+      files.write(
+        `node_modules/@activation/${name.toLowerCase()}/index.d.ts`,
+        `import { SmrtObject } from '@happyvertical/smrt-core';
+export class ${name} extends SmrtObject { constructor(options?: { metrics?: string }); }`,
+      );
+    }
+    // Neither the provider nor the empty same-name app module exports this
+    // conventional optional collection name. Its absence is legal at runtime.
+    manifest.objects['@activation/customer:Customer'].collectionExportName =
+      'CustomerCollection';
+    manifest.objects['@activation/app:Customer'].collectionExportName =
+      'CustomerCollection';
+    const generated = generateActivationRegistration(manifest, {
+      projectRoot: files.root,
+      outputDir: files.path('.smrt'),
+    });
+    const source = files.write('.smrt/register.ts', generated.source);
+    const checked = spawnSync(
+      process.execPath,
+      [
+        resolve(core, 'node_modules/typescript/bin/tsc'),
+        '--noEmit',
+        '--strict',
+        '--skipLibCheck',
+        '--allowJs',
+        '--target',
+        'ES2022',
+        '--module',
+        'NodeNext',
+        '--moduleResolution',
+        'NodeNext',
+        source,
+      ],
+      { cwd: files.root, encoding: 'utf8' },
+    );
+    expect(checked.status, checked.stderr || checked.stdout).toBe(0);
+  });
+
   it('generated registration boots, enables and recovers in independent plain Node processes', () => {
     const { files, manifest } = workspace();
     const collectionId = '@activation/app:Customers';

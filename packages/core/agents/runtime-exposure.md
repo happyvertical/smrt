@@ -387,3 +387,12 @@ Outside core: Expenses' model/reference regression, Social's model/reference
 regression and AGENTS target documentation; regenerated root component pages
 for core and Social. The additive activation modules/tests and benchmark script
 are listed in Reuse check above. No chat, UI or Svelte production files changed.
+
+Deferred registration is valid plain JavaScript and strict TypeScript. Manifest
+export names use dynamic Reflect lookups, preserving optional collection exports
+and valid models with specialized constructor options. The existing callable
+export check and registry remain the runtime boundary; no consumer typecheck
+exclusion or generated-file patch is needed. The activation generator's strict
+consumer fixture includes an empty same-name replacement with no collection
+export, plus a provider with specialized options; process tests still boot and
+recover the emitted JavaScript.

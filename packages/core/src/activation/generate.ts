@@ -380,6 +380,10 @@ export function generateActivationRegistration(
       ]),
     ),
   };
+  // Keep this output valid JavaScript and strict TypeScript. Export keys are
+  // manifest data: String() keeps Reflect.get dynamic under TS 6's literal-key
+  // overload, so optional exports and models with specialized constructor
+  // options are checked at the existing runtime registration boundary.
   const loaders = [...entries].map(([module, ids]) => {
     const registrations = ids.map((id) => {
       const object = manifest.objects[id];
@@ -389,16 +393,16 @@ export function generateActivationRegistration(
         const itemId = item ? objectKeys.get(item) : undefined;
         const effective = itemId ? graph.models[itemId]?.effective : undefined;
         return `${options.collectionMetadata?.includes(id) ? `ObjectRegistry.registerPackageManifest({ ...declarations, packageName: ${JSON.stringify(object.packageName)}, objects: { [${JSON.stringify(id)}]: declarations.objects[${JSON.stringify(id)}] } });` : ''}
-if (provider[${JSON.stringify(name)}]) {
-  ObjectRegistry.registerCollection(${JSON.stringify(id)}, provider[${JSON.stringify(name)}]);
-  ${effective ? `ObjectRegistry.registerCollection(${JSON.stringify(effective)}, provider[${JSON.stringify(name)}]);` : ''}
+if (Reflect.get(provider, String(${JSON.stringify(name)}))) {
+  ObjectRegistry.registerCollection(${JSON.stringify(id)}, Reflect.get(provider, String(${JSON.stringify(name)})));
+  ${effective ? `ObjectRegistry.registerCollection(${JSON.stringify(effective)}, Reflect.get(provider, String(${JSON.stringify(name)})));` : ''}
 }`;
       }
       return `{
-  const constructor = provider[${JSON.stringify(name)}];
+  const constructor = Reflect.get(provider, String(${JSON.stringify(name)}));
   if (typeof constructor !== 'function') throw new Error(${JSON.stringify(`Activation export missing: ${id}`)});
   ObjectRegistry.register(constructor, { name: ${JSON.stringify(object.className)}, packageName: ${JSON.stringify(object.packageName)}, _manifest: { ...declarations, packageName: ${JSON.stringify(object.packageName)}, objects: { [${JSON.stringify(id)}]: declarations.objects[${JSON.stringify(id)}] } }, _manifestKey: ${JSON.stringify(id)} });
-  ${object.collectionExportName ? `if (provider[${JSON.stringify(object.collectionExportName)}]) ObjectRegistry.registerCollection(${JSON.stringify(id)}, provider[${JSON.stringify(object.collectionExportName)}]);` : ''}
+  ${object.collectionExportName ? `if (Reflect.get(provider, String(${JSON.stringify(object.collectionExportName)}))) ObjectRegistry.registerCollection(${JSON.stringify(id)}, Reflect.get(provider, String(${JSON.stringify(object.collectionExportName)})));` : ''}
 }`;
     });
     return `${JSON.stringify(module)}: async () => {
