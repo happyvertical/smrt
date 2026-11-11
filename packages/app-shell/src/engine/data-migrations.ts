@@ -1,7 +1,10 @@
 // Replayable data commands. Every handle here is the boot migration's executor;
 // previews use a read transaction and the same preparation path as apply.
 import { createHash } from 'node:crypto';
-import { ObjectRegistry } from '@happyvertical/smrt-core';
+import {
+  ObjectRegistry,
+  withCallerOwnedDatabaseTransaction,
+} from '@happyvertical/smrt-core';
 import {
   type AppDefinition,
   builtInFields,
@@ -38,7 +41,8 @@ export const LOAD_LIMITS = {
 export const quote = (s: string) => `"${s.replace(/"/g, '""')}"`;
 export const fieldsOf = (def: AppDefinition, model: string) => {
   const md = def.models[model];
-  if (!md) throw new AppError(`no model ${model}`);
+  if (!Object.hasOwn(def.models, model))
+    throw new AppError(`no model ${model}`);
   return { ...builtInFields(model, md), ...visible(md.fields) };
 };
 export const collectionFor = (def: AppDefinition, db: any, model: string) => {
@@ -81,23 +85,28 @@ export function replayId(seed: string, key: string): string {
   const hex = createHash('sha256').update(`${seed}:${key}`).digest('hex');
   return `${hex.slice(0, 8)}-${hex.slice(8, 12)}-4${hex.slice(13, 16)}-a${hex.slice(17, 20)}-${hex.slice(20, 32)}`;
 }
-export async function prepareLoad(
-  def: AppDefinition,
-  db: any,
-  cmd: LoadRecordsCommand,
-) {
+/** Bound the whole call before it is cloned or sent to the worker. */
+export function assertLoadBounds(cmd: LoadRecordsCommand) {
   if (!Array.isArray(cmd.rows) || cmd.rows.length > LOAD_LIMITS.rows)
     throw new AppError(`loadRecords accepts at most ${LOAD_LIMITS.rows} rows`);
   let bytes: number;
   try {
-    bytes = Buffer.byteLength(JSON.stringify(cmd.rows));
+    bytes = Buffer.byteLength(JSON.stringify(cmd));
   } catch {
-    throw new AppError('loadRecords needs JSON rows');
+    throw new AppError('loadRecords needs JSON command data');
   }
   if (bytes > LOAD_LIMITS.bytes)
     throw new AppError(
       `loadRecords accepts at most ${LOAD_LIMITS.bytes} bytes`,
     );
+}
+
+export async function prepareLoad(
+  def: AppDefinition,
+  db: any,
+  cmd: LoadRecordsCommand,
+) {
+  assertLoadBounds(cmd);
   if (!['insert', 'upsert'].includes(cmd.mode))
     throw new AppError('loadRecords mode must be insert or upsert');
   const fields = fieldsOf(def, cmd.model);
@@ -302,28 +311,64 @@ export async function applyLoad(
   cmd: LoadRecordsCommand,
   version: number,
   seed: string,
+  defaults: Row = {},
 ) {
   const { preview, writes } = await prepareLoad(def, db, cmd);
   if (preview.rejected)
     throw new AppError(
       `loadRecords rejected ${preview.rejected} rows; no rows loaded`,
     );
-  const collection = await collectionFor(def, db, cmd.model);
-  for (const write of writes) {
-    const id = write.id ?? replayId(seed, String(write.index));
+  const prepared = writes.map((write) => ({
+    ...write,
+    id: write.id ?? replayId(seed, String(write.index)),
+  }));
+  const inserted = prepared.filter((w) => !w.before).map((w) => w.id);
+  for (let offset = 0; offset < inserted.length; offset += 500) {
+    const ids = inserted.slice(offset, offset + 500);
     if (
-      !write.before &&
       (
         await db.query(
-          `SELECT 1 FROM ${quote(tableFor(cmd.model, def.models[cmd.model]))} WHERE id = ?`,
-          [id],
+          `SELECT 1 FROM ${quote(tableFor(cmd.model, def.models[cmd.model]))} WHERE id IN (${ids.map(() => '?').join(',')}) LIMIT 1`,
+          ids,
         )
       ).rows.length
     )
       throw new AppError('loaded record id already exists');
-    await archiveRow(db, version, cmd.model, id, write.before ?? null);
-    if (write.before) await collection.update(id, write.data as never);
-    else await collection.create({ ...write.data, id } as never);
+  }
+  // Every input key is unique after preparation. Journal in bounded SDK batches
+  // before any record writes, on the same executor and transaction.
+  const stamp = new Date().toISOString();
+  for (let offset = 0; offset < prepared.length; offset += 100)
+    await db.insert(
+      '_archive',
+      prepared.slice(offset, offset + 100).map((write) => ({
+        version,
+        tbl: cmd.model,
+        col: '$row',
+        record_id: write.id,
+        value: JSON.stringify(write.before ?? null),
+        created_at: stamp,
+      })),
+    );
+  // Bounded savepoint scopes keep the SDK's operation bookkeeping bounded.
+  // Releasing a savepoint never commits: any later failure rolls back the one
+  // outer migration transaction, including all earlier batches and archives.
+  for (let offset = 0; offset < prepared.length; offset += 100) {
+    await db.transaction((batch: any) =>
+      withCallerOwnedDatabaseTransaction(batch, async () => {
+        const collection = await collectionFor(def, batch, cmd.model);
+        for (const write of prepared.slice(offset, offset + 100)) {
+          if (write.before)
+            await collection.update(write.id, write.data as never);
+          else
+            await collection.create({
+              ...defaults,
+              ...write.data,
+              id: write.id,
+            } as never);
+        }
+      }),
+    );
   }
   return preview;
 }
@@ -336,20 +381,34 @@ export async function undoRows(def: AppDefinition, db: any, version: number) {
       [version],
     )
   ).rows as Row[];
+  const inserted = new Map<string, unknown[]>();
+  for (const entry of entries) {
+    if (JSON.parse(String(entry.value)) !== null) continue;
+    const table = tableFor(String(entry.tbl), def.models[String(entry.tbl)]);
+    const ids = inserted.get(table) ?? [];
+    ids.push(entry.record_id);
+    inserted.set(table, ids);
+  }
+  for (const [table, all] of inserted)
+    for (let offset = 0; offset < all.length; offset += 500) {
+      const ids = all.slice(offset, offset + 500);
+      await db.query(
+        `DELETE FROM ${quote(table)} WHERE id IN (${ids.map(() => '?').join(',')})`,
+        ids,
+      );
+    }
   for (const entry of entries) {
     const model = String(entry.tbl);
     const table = tableFor(model, def.models[model]);
     const before = JSON.parse(String(entry.value)) as Row | null;
-    if (before === null) {
-      await db.query(`DELETE FROM ${quote(table)} WHERE id = ?`, [
-        entry.record_id,
-      ]);
-      continue;
-    }
+    if (before === null) continue;
     const generated = new Set(
-      Object.entries(fieldsOf(def, model))
-        .filter(([, f]) => f.calculated)
-        .map(([f]) => snake(f)),
+      (
+        await db.query(
+          'SELECT name FROM pragma_table_xinfo(?) WHERE hidden > 1',
+          [table],
+        )
+      ).rows.map((r: Row) => String(r.name)),
     );
     const pairs = Object.entries(before).filter(([f]) => !generated.has(f));
     // Refuse a conflicting id reused since a merged row was removed.

@@ -1,4 +1,6 @@
 export const WORKER_OPS = [
+  'columnInfo',
+  'previewMerge',
   'previewExtract',
   'previewLoad',
   'compileReport',

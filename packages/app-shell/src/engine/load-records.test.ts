@@ -69,12 +69,12 @@ it('loads 10,000 coerced rows with batched lookups; undo removes only its insert
   });
   const result = (await run(cmd)) as { snapshot: string | null };
   expect(result.snapshot).toBeTruthy();
-  expect(await host.list('Sale', 10001)).toHaveLength(10000);
+  expect(raw()).toHaveLength(10000);
   expect((await host.list('Sale', 1))[0].total).toBe(20);
   await host.create('Sale', { code: 'later', qty: 9 });
   await run({ type: 'undo' });
   expect((await host.list('Sale')).map((r) => r.code)).toEqual(['later']);
-}, 600000);
+}, 120000);
 
 it('previews bounded row problems and refuses the whole load', async () => {
   const before = raw();
@@ -162,7 +162,9 @@ it('rolls back a mid-load database failure, restarts intact, and replays from a 
       type: 'loadRecords',
       model: 'Sale',
       mode: 'insert',
-      rows: [{ code: 'first' }, { code: 'fail' }],
+      rows: Array.from({ length: 101 }, (_, i) => ({
+        code: i === 100 ? 'fail' : `batch${i}`,
+      })),
     }),
   ).rejects.toThrow(/not applied/);
   expect(raw()).toEqual(before);
@@ -211,4 +213,45 @@ it('rolls back a mid-load database failure, restarts intact, and replays from a 
   } finally {
     await draft.discard();
   }
+});
+
+it('pins queued command data and restores rows with hidden generated storage', async () => {
+  const command: Command = {
+    type: 'loadRecords',
+    model: 'Sale',
+    mode: 'insert',
+    rows: [{ code: 'pinned', qty: 3 }],
+  };
+  const pending = run(command);
+  command.rows[0].qty = 999;
+  await pending;
+  expect((await host.list('Sale')).find((r) => r.code === 'pinned')?.qty).toBe(
+    3,
+  );
+  await run({ type: 'hideField', model: 'Sale', field: 'total' });
+  const before = raw();
+  await run({
+    type: 'loadRecords',
+    model: 'Sale',
+    mode: 'upsert',
+    key: ['code'],
+    rows: [{ code: 'pinned', qty: 4 }],
+  });
+  await run({ type: 'undo' });
+  expect(raw()).toEqual(before);
+  await run({ type: 'undo' });
+});
+
+it('bounds total command bytes before sending oversized metadata to a worker', async () => {
+  await expect(
+    host.plan({
+      type: 'loadRecords',
+      model: 'Sale',
+      rows: [],
+      mode: 'insert',
+      references: {
+        customer: { model: 'Customer', by: 'x'.repeat(8 * 1024 * 1024) },
+      },
+    }),
+  ).rejects.toThrow(/bytes/);
 });

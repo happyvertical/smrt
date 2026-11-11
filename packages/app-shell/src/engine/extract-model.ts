@@ -50,16 +50,10 @@ export async function prepareExtract(
   if (!label) throw new AppError('extract target needs a title field');
   if (target) {
     const fields = fieldsOf(def, cmd.into);
-    if (
-      !['text', 'choice'].includes(fields[label]?.type) ||
-      fields[label].calculated
-    )
+    if (!['text', 'choice'].includes(fields[label]?.type))
       throw new AppError(
         'extract title field must be visible writable text or choice',
       );
-    for (const [field, fd] of Object.entries(fields))
-      if (field !== label && fd.required && !fd.calculated)
-        throw new AppError(`extract target requires '${field}'`);
   }
   const rows = await rawRows(def, db, cmd.model);
   const targets = target ? await rawRows(def, db, cmd.into) : [];
@@ -94,7 +88,21 @@ export async function prepareExtract(
     if (matches.length) {
       group.id = String(matches[0].id);
       matched++;
-    } else if (
+    } else {
+      for (const [field, fd] of Object.entries(
+        target ? fieldsOf(def, cmd.into) : {},
+      ))
+        if (field !== label && fd.required && !fd.calculated)
+          throw new AppError(
+            `extract target requires '${field}' to create new records`,
+          );
+      if (target && fieldsOf(def, cmd.into)[label]?.calculated)
+        throw new AppError(
+          'cannot create a record through a calculated title field',
+        );
+    }
+    if (
+      !matches.length &&
       target?.fields[label]?.type === 'choice' &&
       !target.fields[label].choices?.includes(group.value)
     )

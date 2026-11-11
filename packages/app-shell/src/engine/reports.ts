@@ -68,7 +68,12 @@ export async function runAppReport(
   input: string | RuntimeReportSpec,
   options: ReportOptions = {},
 ): Promise<AppReportResult> {
-  const raw = typeof input === 'string' ? def.reports?.[input]?.spec : input;
+  const raw =
+    typeof input === 'string'
+      ? Object.hasOwn(def.reports ?? {}, input)
+        ? def.reports?.[input]?.spec
+        : undefined
+      : input;
   if (!raw) throw new Error('unknown report');
   const compiled = await compileReport(def, raw);
   const result: AppReportResult = await runRuntimeReport(compiled, {
@@ -80,6 +85,7 @@ export async function runAppReport(
     ...visible(def.models[compiled.spec.source].fields),
   };
   // At most one lookup query per linked model, for all reference dimensions.
+  const outputNames = new Set(result.columns.map((c) => c.id));
   const lookups = new Map<string, { ids: Set<string>; columns: string[] }>();
   for (const column of result.columns) {
     const fd = column.field ? fields[column.field] : undefined;
@@ -90,8 +96,8 @@ export async function runAppReport(
       continue;
     column.reference = fd.ref;
     let labelColumn = `${column.id}Label`;
-    while (result.columns.some((c) => c.id === labelColumn))
-      labelColumn += 'Label';
+    while (outputNames.has(labelColumn)) labelColumn += 'Label';
+    outputNames.add(labelColumn);
     column.labelColumn = labelColumn;
     const batch = lookups.get(fd.ref) ?? {
       ids: new Set<string>(),

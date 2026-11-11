@@ -173,6 +173,8 @@ surfaces reject inputs. `setCalculation` replaces the column transactionally;
 clearing creates an empty writable column. Converting a writable field archives
 its originals and is risky. Undo restores those originals or the old expression.
 Renames rewrite expressions; hide/remove/type change refuse named dependents.
+Changing a calculated field's type replaces its generated column directly and
+validates the expression against the new type, without archiving derived values.
 `titleField` optionally names the record label, with first visible text as fallback.
 Test design and required validation: [engine-4916-tests.md](engine-4916-tests.md).
 
@@ -201,9 +203,12 @@ rows require approval outside a draft. `references[field] = { model, by }`
 resolves lookup values with one query per target model. The dry-run preview
 returns insert/update/unchanged/rejected counts and up to 100 zero-based row,
 field, reason problems, never whole rows. Rejected input refuses the entire load.
-Bounds: 10,000 rows and 8 MiB JSON row data per call. Calculated input is refused.
-Preparation uses the record coercer, then collection writes use the migration
-transaction handle. Original raw rows (including nulls and timestamps) and
+Bounds: 10,000 rows and 8 MiB total JSON command data per call. Calculated input is refused.
+Preparation uses the record coercer, then collection writes use bounded
+100-record SDK savepoint scopes inside the one migration transaction. Releasing
+a savepoint never commits the outer transaction; a later-batch failure rolls
+back all earlier batches and archives. Each scope uses core
+`withCallerOwnedDatabaseTransaction` so record hooks and validation stay intact. Original raw rows (including nulls and timestamps) and
 inserted ids are journaled in `_archive` for exact undo. Every load has a
 pre-migration snapshot and stable per-command ids, so draft publish replays the
 load against current live keys and lookup data rather than copying draft rows.
@@ -220,3 +225,13 @@ rows/distinct/folded/create/matched counts. Empty values retain their exact
 storage. Ambiguous existing labels refuse the command. Undo restores originals
 and deletes only created target rows, refusing surviving references (including
 hidden references) added since extraction. Publish extracts current live values.
+
+## Merging records (#4916)
+
+`mergeRecords { model, keep, merge: ids[], fields?: { [field]: 'keep' | id } }`
+is structural and always risky (1–1000 distinct merged ids). The plan lists
+reference counts by app model, including hidden reference fields. Every reference
+to a removed id is repointed to keep; chosen writable values survive on keep.
+Full raw originals of affected rows are archived before updates/removals. Undo
+restores them and refuses if a removed id has since been reused. Draft publish
+recomputes affected references on current live data. No arbitrary SQL is accepted.

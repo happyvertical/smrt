@@ -48,6 +48,9 @@ it('extracts exact distinct nonempty values; undo restores raw source and remove
     matched: 0,
     rows: 3,
   });
+  await expect(host.execute(cmd, { author: 't' })).rejects.toMatchObject({
+    code: 'approval_required',
+  });
   await run(cmd);
   expect(host.def.models.Sale.fields.category).toMatchObject({
     type: 'reference',
@@ -157,4 +160,34 @@ it('replays extraction on live values and rolls back an injected partial migrati
   } finally {
     await draft.discard();
   }
+});
+
+it('matches existing targets that have other required fields without inventing values', async () => {
+  await run({
+    type: 'defineModel',
+    name: 'Known',
+    fields: {
+      name: { type: 'text', required: true },
+      note: { type: 'text', required: true },
+    },
+  });
+  for (const name of ['Food', 'Live'])
+    await host.create('Known', { name, note: 'Existing metadata' });
+  const before = raw('u_sales');
+  const targets = raw('u_knowns');
+  const command: Command = {
+    type: 'extractModel',
+    model: 'Sale',
+    field: 'category',
+    into: 'Known',
+    normalize: true,
+  };
+  expect((await host.plan(command)).preview).toMatchObject({
+    create: 0,
+    matched: 2,
+  });
+  await run(command);
+  await run({ type: 'undo' });
+  expect(raw('u_sales')).toEqual(before);
+  expect(raw('u_knowns')).toEqual(targets);
 });

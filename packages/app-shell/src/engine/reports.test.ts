@@ -1,6 +1,7 @@
 import { mkdtempSync, rmSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
+import { DatabaseSync } from 'node:sqlite';
 import { parseRuntimeReportSpec } from '@happyvertical/smrt-reports';
 import { afterAll, beforeAll, expect, it } from 'vitest';
 import { AppHost, type Command, MemoryVersionStore } from './index.ts';
@@ -163,5 +164,117 @@ it('renames/removes/replaces with undo, survives restart and runs frozen and dra
     expect((await host.runReport('sales')).rowCount).toBe(2);
   } finally {
     await draft.discard();
+  }
+});
+
+it('keeps display label aliases distinct and rejects prototype names', async () => {
+  const result = await host.runReport(
+    spec({
+      dimensions: [
+        { field: 'customer', as: 'a' },
+        { field: 'customer', as: 'a_label' },
+      ],
+    }),
+  );
+  const labelColumns = result.columns
+    .filter((c) => c.reference)
+    .map((c) => c.labelColumn);
+  expect(new Set(labelColumns).size).toBe(2);
+  for (const column of labelColumns)
+    expect(result.rows[0][String(column)]).toBe('Ada');
+  await expect(
+    host.plan({
+      type: 'defineReport',
+      name: '__proto__',
+      definition: { spec: spec() },
+    }),
+  ).rejects.toThrow(/invalid report name/);
+});
+
+it('terminates a timed-out aggregate without stopping the live worker', async () => {
+  await run({
+    type: 'defineModel',
+    name: 'Slow',
+    fields: { amount: { type: 'integer' } },
+  });
+  const db = new DatabaseSync(join(dir, 'app.db'));
+  try {
+    db.exec(`WITH RECURSIVE n(x) AS (SELECT 1 UNION ALL SELECT x+1 FROM n WHERE x<200000)
+      INSERT INTO u_slows (id, slug, context, created_at, updated_at, amount)
+      SELECT printf('%032d', x), '', '', '2026-01-01', '2026-01-01', x FROM n`);
+  } finally {
+    db.close();
+  }
+  const report = parseRuntimeReportSpec({
+    version: 1,
+    title: 'Slow sum',
+    source: 'Slow',
+    measures: [{ fn: 'sum', field: 'amount' }],
+  });
+  await expect(host.runReport(report, { timeoutMs: 1 })).rejects.toThrow(
+    /time limit/,
+  );
+  expect(host.appAlive).toBe(true);
+  expect((await host.runReport('sales')).rowCount).toBe(2);
+});
+
+it('normalizes omitted spec defaults and compiles template reports against their proposed models', async () => {
+  await run({
+    type: 'defineReport',
+    name: 'minimal',
+    definition: {
+      spec: {
+        version: 1,
+        title: 'Minimal',
+        source: 'Sale',
+        measures: [{ fn: 'sum', field: 'price' }],
+      } as never,
+    },
+  });
+  expect(host.def.reports?.minimal.spec.dimensions).toEqual([]);
+  await expect(
+    host.plan({ type: 'hideField', model: 'Sale', field: 'price' }),
+  ).rejects.toThrow(/report minimal/);
+  const imported = await AppHost.open(`${dir}-import`, {
+    store: new MemoryVersionStore(),
+  });
+  try {
+    const definition = {
+      format: 1 as const,
+      name: 'Import',
+      recipes: [],
+      models: { Order: { fields: { day: { type: 'date' as const } } } },
+      reports: {
+        invalid: {
+          spec: parseRuntimeReportSpec({
+            version: 1,
+            title: 'Invalid aggregate',
+            source: 'Order',
+            measures: [{ fn: 'sum', field: 'day' }],
+          }),
+        },
+      },
+    };
+    await expect(
+      imported.plan({
+        type: 'importTemplate',
+        data: { format: 1, definition },
+      }),
+    ).rejects.toThrow(/numeric|number|sum/);
+    expect(imported.version).toBe(0);
+    definition.reports.invalid.spec = parseRuntimeReportSpec({
+      version: 1,
+      title: 'Orders',
+      source: 'Order',
+      measures: [{ fn: 'count', as: 'orders' }],
+    });
+    await imported.execute(
+      { type: 'importTemplate', data: { format: 1, definition } },
+      { author: 't' },
+    );
+    expect((await imported.runReport('invalid')).rows[0].orders).toBe(0);
+  } finally {
+    await imported.close();
+    rmSync(`${dir}-import`, { recursive: true, force: true });
   }
 });

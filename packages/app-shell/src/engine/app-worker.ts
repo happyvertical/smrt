@@ -22,19 +22,21 @@ const settleStartupJobs = async () => {
 if (!isMainThread && workerData?.appWorker) {
   const { AppRuntime } = await import('./app-runtime.ts');
   const { AppError } = await import('./errors.ts');
-  const { dataDir, def, version, migration, readOnly } = workerData as {
-    dataDir: string;
-    def: AppDefinition;
-    version: number;
-    migration?: Migration;
-    readOnly?: boolean;
-  };
+  const { dataDir, def, version, migration, readOnly, validateOnly } =
+    workerData as {
+      dataDir: string;
+      def: AppDefinition;
+      version: number;
+      migration?: Migration;
+      readOnly?: boolean;
+      validateOnly?: boolean;
+    };
   const rt = new AppRuntime(dataDir, def, version);
   const port = parentPort as NonNullable<typeof parentPort>;
   let ok = false;
   try {
     const t0 = performance.now();
-    const booted = await rt.boot(migration, readOnly);
+    const booted = await rt.boot(migration, readOnly, validateOnly);
     ok = true;
     await settleStartupJobs();
     port.postMessage({

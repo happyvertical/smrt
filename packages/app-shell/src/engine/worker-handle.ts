@@ -36,6 +36,7 @@ export class AppWorker {
       version: number;
       migration?: Migration;
       readOnly?: boolean;
+      validateOnly?: boolean;
     },
   ) {
     this.version = init.version;

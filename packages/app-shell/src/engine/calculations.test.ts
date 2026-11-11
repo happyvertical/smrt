@@ -1,6 +1,7 @@
 import { mkdtempSync, rmSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
+import { DatabaseSync } from 'node:sqlite';
 import { afterAll, beforeAll, expect, it } from 'vitest';
 import { AppHost, type Command, MemoryVersionStore } from './index.ts';
 
@@ -89,7 +90,7 @@ it('validates SDK expressions before applying anything', async () => {
   for (const calculated of [
     { col: 'missing' },
     { col: 'total' },
-    { literal: 'wrong' },
+    { value: 'wrong' },
   ])
     await expect(
       host.plan({
@@ -154,4 +155,103 @@ it('clears and restores an expression and replays changes from a draft on curren
   } finally {
     await draft.discard();
   }
+});
+
+it('preserves writable orphan columns when adding calculations and replaces retained model expressions', async () => {
+  await run({
+    type: 'addField',
+    model: 'Sale',
+    field: 'bonus',
+    definition: { type: 'integer' },
+  });
+  const row = (await host.list('Sale'))[0];
+  await host.update('Sale', String(row.id), { bonus: 123 });
+  await run({ type: 'undo' });
+  const command: Command = {
+    type: 'addField',
+    model: 'Sale',
+    field: 'bonus',
+    definition: { type: 'integer', calculated: { col: 'qty' } },
+  };
+  expect((await host.plan(command)).risky).toBe(true);
+  await run(command);
+  await run({ type: 'undo' });
+  const db = new DatabaseSync(join(dir, 'app.db'), { readOnly: true });
+  try {
+    expect(
+      db.prepare('SELECT bonus FROM u_sales WHERE id = ?').get(String(row.id))
+        ?.bonus,
+    ).toBe(123);
+  } finally {
+    db.close();
+  }
+  const fields = {
+    qty: { type: 'integer' as const },
+    total: { type: 'integer' as const, calculated: { col: 'qty' } },
+  };
+  await run({ type: 'defineModel', name: 'Line', fields });
+  const line = await host.create('Line', { qty: 3 });
+  await run({ type: 'undo' });
+  await run({
+    type: 'defineModel',
+    name: 'Line',
+    fields: {
+      ...fields,
+      total: {
+        type: 'integer',
+        calculated: { op: 'mul', left: { col: 'qty' }, right: { value: 3 } },
+      },
+    },
+  });
+  expect((await host.get('Line', String(line.id))).total).toBe(9);
+});
+
+it('rejects generated writes proposed by sandbox methods', async () => {
+  await run({
+    type: 'addMethod',
+    model: 'Sale',
+    name: 'badWrite',
+    method: {
+      description: 'test read-only',
+      code: "app.create('Sale', { qty: 1, price: 2, total: 7 });",
+    },
+  });
+  await expect(host.runMethod('Sale', 'badWrite')).rejects.toThrow(/read-only/);
+});
+
+it('counts writable values replaced when undo restores a cleared calculation', async () => {
+  const row = (await host.list('Sale'))[0];
+  await run({
+    type: 'setCalculation',
+    model: 'Sale',
+    field: 'total',
+    calculated: null,
+  });
+  await host.update('Sale', String(row.id), { total: 999 });
+  const plan = await host.plan({ type: 'undo' });
+  expect(plan.risky).toBe(true);
+  expect(Number(plan.preview?.replaced)).toBeGreaterThanOrEqual(1);
+  await expect(
+    host.execute({ type: 'undo' }, { author: 't' }),
+  ).rejects.toMatchObject({ code: 'approval_required' });
+  await run({ type: 'undo' });
+  expect((await host.get('Sale', String(row.id))).total).toBe(
+    Number(row.qty) * Number(row.price),
+  );
+});
+
+it('changes a calculated field type directly and undoes without a value archive', async () => {
+  const before = structuredClone(host.def);
+  const row = (await host.list('Sale'))[0];
+  await run({
+    type: 'changeFieldType',
+    model: 'Sale',
+    field: 'total',
+    to: { type: 'number' },
+  });
+  expect(host.def.models.Sale.fields.total.type).toBe('number');
+  expect((await host.get('Sale', String(row.id))).total).toBe(row.total);
+  expect((await host.plan({ type: 'undo' })).risky).toBe(false);
+  await host.execute({ type: 'undo' }, { author: 't' });
+  expect(host.def).toEqual(before);
 });

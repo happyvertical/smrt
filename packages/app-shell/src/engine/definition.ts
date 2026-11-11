@@ -9,6 +9,7 @@ import {
 import { parseRuntimeReportSpec } from '@happyvertical/smrt-reports';
 import type { LoadRecordsCommand } from './data-migrations.ts';
 import type { ExtractModelCommand } from './extract-model.ts';
+import type { MergeRecordsCommand } from './merge-records.ts';
 import type { ReportDef } from './reports.ts';
 
 export const USER_PKG = '@local/app';
@@ -610,6 +611,7 @@ export function toRuntimeModel(
  * need no step: the app runtime adds what the definition lacks.
  */
 export type Step =
+  | { op: 'mergeRecords'; command: MergeRecordsCommand }
   | {
       op: 'extractModel';
       command: ExtractModelCommand;

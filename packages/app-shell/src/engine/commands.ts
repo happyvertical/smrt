@@ -3,11 +3,13 @@ import type { LoadRecordsCommand } from './data-migrations.ts';
 // changing anything; `execute` applies it. Risky commands are refused unless
 // the caller passes `approved: true`: the lowest-layer enforcement of the
 // approval gate (a preview only advises).
-import type { AppDefinition, FieldDef, MethodDef } from './definition.ts';
+import type { AppDefinition, FieldDef, MethodDef, Step } from './definition.ts';
 import type { ExtractModelCommand } from './extract-model.ts';
+import type { MergeRecordsCommand } from './merge-records.ts';
 import type { ReportDef } from './reports.ts';
 
 export type Command =
+  | MergeRecordsCommand
   | ExtractModelCommand
   | LoadRecordsCommand
   | { type: 'defineReport'; name: string; definition: ReportDef }
@@ -86,18 +88,24 @@ export const RISKY_COMMANDS: ReadonlySet<CommandType> = new Set<CommandType>([
   'removeField',
   'removeModel',
   'extractModel',
+  'mergeRecords',
   'changeFieldType',
   'setCalculation',
   'cleanUp',
 ]);
 
 /** A migration step whose down path overwrites newer data with archived originals. */
-export function overwritesOnUndo(step: { op: string }): boolean {
+export function overwritesOnUndo(step: Step): boolean {
+  if (step.op === 'calculation')
+    return (
+      !!(step.from && !step.from.calculated) ||
+      !!(step.to && !step.to.calculated)
+    );
   return (
     step.op === 'convertColumn' ||
-    step.op === 'calculation' ||
     step.op === 'loadRecords' ||
-    step.op === 'extractModel'
+    step.op === 'extractModel' ||
+    step.op === 'mergeRecords'
   );
 }
 
@@ -122,6 +130,7 @@ export const STRUCTURAL_COMMANDS: Readonly<Record<CommandType, boolean>> = {
   defineReport: true,
   renameReport: true,
   removeReport: true,
+  mergeRecords: true,
   extractModel: true,
   loadRecords: true,
   defineModel: true,

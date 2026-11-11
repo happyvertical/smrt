@@ -11,6 +11,18 @@ const string = { type: 'string' };
 const object = { type: 'object' };
 export const ENGINE_TOOLS = [
   {
+    name: 'app_mergerecords',
+    description:
+      'Merge records and repoint every app reference. Always needs live approval.',
+    properties: {
+      model: string,
+      keep: string,
+      merge: { type: 'array', items: string, minItems: 1, maxItems: 1000 },
+      fields: { type: 'object', additionalProperties: string },
+    },
+    required: ['model', 'keep', 'merge'],
+  },
+  {
     name: 'app_extractmodel',
     description: 'Extract distinct text values into referenced records.',
     properties: {
@@ -93,6 +105,7 @@ export async function runEngineTool(
     });
   }
   const types: Record<string, Command['type']> = {
+    app_mergerecords: 'mergeRecords',
     app_extractmodel: 'extractModel',
     app_loadrecords: 'loadRecords',
     app_setcalculation: 'setCalculation',

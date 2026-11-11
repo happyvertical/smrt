@@ -574,3 +574,13 @@ or match an existing target's title field. Exact matching is default;
 The new model uses `titleField` or `name`; existing models use their title field
 or first visible text. Undo restores exact text and removes created targets only
 when no surviving app reference points to them. Catalog: `app_extractmodel`.
+
+### Engine merge
+
+`mergeRecords { model, keep, merge: ids[], fields?: { [field]: 'keep' | id } }`
+repoints all app references to `keep`, archives and removes merged rows, and
+optionally selects surviving field values from one of those records. Always
+requires live approval. Plan lists reference counts per model. Undo restores
+exact rows and references, refusing reused deleted ids. Bounds: 1–1000 merged
+ids. Draft publish recomputes against current live references. Catalog:
+`app_mergerecords`. Calculated fields cannot be selected as writable values.
