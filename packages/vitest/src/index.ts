@@ -819,6 +819,25 @@ export function getWorkspaceViteAliases(
       );
     }
 
+    if (packageName === '@happyvertical/smrt-template-sveltekit') {
+      // This scaffold keeps compiled host modules in host/, outside src/.
+      // Use the authored modules in workspace tests, never their last build.
+      for (const entry of [
+        'server',
+        'client',
+        'generate',
+        'preferences',
+        'settings',
+        'sveltekit-client',
+      ]) {
+        addAliasIfPresent(
+          aliases,
+          `${packageName}/host/${entry}`,
+          join(packageRoot, `host/${entry}.ts`),
+        );
+      }
+    }
+
     if (packageName === '@happyvertical/smrt-vitest') {
       // Shared Svelte component-test harness (S11 #1416). Flat `src/*.ts` files,
       // so the generic `/svelte` → `src/svelte/index.ts` convention misses them;
