@@ -5,10 +5,10 @@ description: "Svelte 5 components for SMRT user management - auth, users, tenant
 status: "stable"
 generated:
   by: "smrt/scripts/generate-knowledge-okf.ts"
-  at: "2026-11-11T05:10:53Z"
+  at: "2026-11-11T05:46:24Z"
 audience: "internal"
 evidence_level: "manifest-described"
-source_revision: "sha256:528cd97174a2c5e0602886e702de29ab9e90d69ebffb33a8f2582fd01c6ec140"
+source_revision: "sha256:6df0d6457034fbbea63e8faaed27858853efca2fa86243977aca075a02afe45f"
 sources:
   - id: "manifest"
     resource: "https://github.com/happyvertical/smrt/blob/main/packages/smrt-svelte/package.json"
@@ -26,30 +26,33 @@ sources:
     resource: "https://github.com/happyvertical/smrt/blob/main/packages/smrt-svelte/agents/components.md"
     title: "@happyvertical/smrt-svelte packages/smrt-svelte/agents/components.md"
   - id: "agents-5"
+    resource: "https://github.com/happyvertical/smrt/blob/main/packages/smrt-svelte/agents/connect-ai.md"
+    title: "@happyvertical/smrt-svelte packages/smrt-svelte/agents/connect-ai.md"
+  - id: "agents-6"
     resource: "https://github.com/happyvertical/smrt/blob/main/packages/smrt-svelte/agents/cookbook-shell.md"
     title: "@happyvertical/smrt-svelte packages/smrt-svelte/agents/cookbook-shell.md"
-  - id: "agents-6"
+  - id: "agents-7"
     resource: "https://github.com/happyvertical/smrt/blob/main/packages/smrt-svelte/agents/i18n.md"
     title: "@happyvertical/smrt-svelte packages/smrt-svelte/agents/i18n.md"
-  - id: "agents-7"
+  - id: "agents-8"
     resource: "https://github.com/happyvertical/smrt/blob/main/packages/smrt-svelte/agents/import-export.md"
     title: "@happyvertical/smrt-svelte packages/smrt-svelte/agents/import-export.md"
-  - id: "agents-8"
+  - id: "agents-9"
     resource: "https://github.com/happyvertical/smrt/blob/main/packages/smrt-svelte/agents/overview-surfaces.md"
     title: "@happyvertical/smrt-svelte packages/smrt-svelte/agents/overview-surfaces.md"
-  - id: "agents-9"
+  - id: "agents-10"
     resource: "https://github.com/happyvertical/smrt/blob/main/packages/smrt-svelte/agents/screens.md"
     title: "@happyvertical/smrt-svelte packages/smrt-svelte/agents/screens.md"
-  - id: "agents-10"
+  - id: "agents-11"
     resource: "https://github.com/happyvertical/smrt/blob/main/packages/smrt-svelte/agents/settings.md"
     title: "@happyvertical/smrt-svelte packages/smrt-svelte/agents/settings.md"
-  - id: "agents-11"
+  - id: "agents-12"
     resource: "https://github.com/happyvertical/smrt/blob/main/packages/smrt-svelte/agents/testing.md"
     title: "@happyvertical/smrt-svelte packages/smrt-svelte/agents/testing.md"
-  - id: "agents-12"
+  - id: "agents-13"
     resource: "https://github.com/happyvertical/smrt/blob/main/packages/smrt-svelte/agents/themes.md"
     title: "@happyvertical/smrt-svelte packages/smrt-svelte/agents/themes.md"
-  - id: "agents-13"
+  - id: "agents-14"
     resource: "https://github.com/happyvertical/smrt/blob/main/packages/smrt-svelte/agents/workspace.md"
     title: "@happyvertical/smrt-svelte packages/smrt-svelte/agents/workspace.md"
 ---
@@ -69,6 +72,7 @@ sources:
 - `packages/smrt-svelte/agents/browser-ai.md`
 - `packages/smrt-svelte/agents/command-palette.md`
 - `packages/smrt-svelte/agents/components.md`
+- `packages/smrt-svelte/agents/connect-ai.md`
 - `packages/smrt-svelte/agents/cookbook-shell.md`
 - `packages/smrt-svelte/agents/i18n.md`
 - `packages/smrt-svelte/agents/import-export.md`
@@ -85,6 +89,7 @@ sources:
 - [smrt-chat](/components/smrt-chat.md)
 - [smrt-content](/components/smrt-content.md)
 - [smrt-core](/components/smrt-core.md)
+- [smrt-inference](/components/smrt-inference.md)
 - [smrt-languages](/components/smrt-languages.md)
 - [smrt-mcp-apps](/components/smrt-mcp-apps.md)
 - [smrt-reports](/components/smrt-reports.md)
@@ -110,6 +115,8 @@ sources:
 - `./browser-ai/svelte`
 - `./browser-ai/whisper-worker`
 - `./command-palette`
+- `./connect-ai`
+- `./connect-ai/server`
 - `./cookbook`
 - `./cookbook/server`
 - `./data`

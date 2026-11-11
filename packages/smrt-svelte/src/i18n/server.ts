@@ -42,6 +42,7 @@ import './strings.screens.js';
 import './strings.palette.js';
 import './strings.overview.js';
 import './strings.settings.js';
+import './strings.connect-ai.js';
 import './strings.browser-ai.js';
 import '../mcp-apps/strings.js';
 

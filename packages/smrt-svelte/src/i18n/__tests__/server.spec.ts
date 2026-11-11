@@ -63,6 +63,17 @@ describe('buildI18nSnapshot', () => {
     expect(snapshot.messages['ui.snapshot_test.b']).toBeUndefined();
   });
 
+  it('includes Connect AI templates from the server entry without importing the component', async () => {
+    const snapshot = await buildI18nSnapshot({
+      locale: 'en',
+      keys: ['ui.connect_ai.title', 'ui.connect_ai.sign_in'],
+    });
+    expect(snapshot.messages).toMatchObject({
+      'ui.connect_ai.title': 'Connect AI',
+      'ui.connect_ai.sign_in': 'Sign in with {tool}',
+    });
+  });
+
   it('includes Board defaults when only the server snapshot entrypoint is imported', async () => {
     const snapshot = await buildI18nSnapshot({
       locale: 'en',

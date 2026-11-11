@@ -178,6 +178,17 @@
       "svelte": "./dist/mcp-apps/index.js",
       "import": "./dist/mcp-apps/index.js",
       "default": "./dist/mcp-apps/index.js"
+    },
+    "./connect-ai": {
+      "types": "./dist/components/connect-ai/index.d.ts",
+      "svelte": "./dist/components/connect-ai/index.js",
+      "import": "./dist/components/connect-ai/index.js",
+      "default": "./dist/components/connect-ai/index.js"
+    },
+    "./connect-ai/server": {
+      "types": "./dist/components/connect-ai/server.d.ts",
+      "import": "./dist/components/connect-ai/server.js",
+      "default": "./dist/components/connect-ai/server.js"
     }
   },
   "files": [
@@ -230,7 +241,8 @@
     "@happyvertical/smrt-web": "workspace:*",
     "@tanstack/db": "^1.0.0-rc.1",
     "@tanstack/svelte-db": "^1.0.0-rc.1",
-    "esm-env": "^1.2.2"
+    "esm-env": "^1.2.2",
+    "@happyvertical/smrt-inference": "workspace:*"
   },
   "peerDependencies": {
     "@happyvertical/speech": ">=0.102.5",
