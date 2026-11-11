@@ -142,6 +142,14 @@ composes installed/signed-in/configured diagnostics; API-key resolution and
 settings destinations come from the host. The saved API-key engine continues
 through the normal inference resolver and SDK, independently of these adapters.
 
+CLI engine tests can import `@happyvertical/smrt-inference/test-support` for
+`tempDir`, `installStub`, `installFakeCli` and `fakeDeps`. The fake CLI source is
+bundled into that Node-only test entry, so host adapter tests share the same
+fixture without reading another package's source tree. Never supply real
+credentials to the fake CLI: its diagnostic scenarios intentionally record the
+fake environment. The [reuse audit](agents/engines.md#reuse-audit-for-the-c2-extraction)
+lists each extracted file and the alternatives checked.
+
 ## Checking bindings
 
 ```bash

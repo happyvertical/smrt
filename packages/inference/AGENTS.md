@@ -34,6 +34,9 @@ provisioning and the spend gate (#4759, #4760). App-author guide:
   resolver, key rule, preference kind (#4754); local CLI turns, ChatGPT model
   rounds and connection diagnostics ([agents/engines.md](agents/engines.md)).
   `./svelte`: the panel.
+- `./test-support` (Node-only): shared fake CLI installers and isolated lookup
+  dependencies for engine/host tests; fixture source is bundled, never run on
+  real credentials ([agents/engines.md](agents/engines.md)).
 - `./gate` (Node-only, #4760): the hosted spend gate and kill switch
   (below). `browser-safe.test.ts` keeps it off the root graph.
 

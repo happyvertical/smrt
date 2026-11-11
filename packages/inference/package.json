@@ -42,6 +42,10 @@
     "./gate": {
       "types": "./dist/gate.d.ts",
       "import": "./dist/gate.js"
+    },
+    "./test-support": {
+      "types": "./dist/agent-cli/test-support.d.ts",
+      "import": "./dist/agent-cli/test-support.js"
     }
   },
   "scripts": {

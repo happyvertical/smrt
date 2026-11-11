@@ -1,55 +1,27 @@
-// The wire contract of an assistant turn, shared by the server (which sends
-// it as server-sent events) and the dock (which reduces it). Pure types and
-// helpers: no server or browser imports.
+// The wire contract shared by the server and dock. Imports are type-only;
+// the browser does not load the inference server entry.
+import type {
+  AgentTurnEvent,
+  AgentTurnStop,
+  InferenceEngineAction,
+  InferenceEngineId,
+  InferenceEngineStatus,
+} from '@happyvertical/smrt-inference/server';
 
-/** Why a turn ended. `waiting` = left an approval undecided. */
-export type TurnStop =
-  | 'complete'
-  | 'max_steps'
-  | 'max_tokens'
-  | 'timeout'
-  | 'aborted'
-  | 'waiting'
-  | 'error';
+/** API-key turns also stop at the host's model-round and token bounds. */
+export type TurnStop = AgentTurnStop | 'max_steps' | 'max_tokens';
 
 export type TurnEvent =
+  | Exclude<AgentTurnEvent, { type: 'done' | 'tool_result' | 'error' }>
   | { type: 'thread'; threadId: string }
-  | { type: 'text'; delta: string }
-  | { type: 'tool_call'; id: string; name: string; args: string }
-  | {
-      type: 'tool_result';
-      id: string;
-      name: string;
-      ok: boolean;
-      summary: string;
-      /**
-       * Which copy of the app the call acted on. Only set while a draft is
-       * open (builder tools: the draft; the app's record tools: the copy the
-       * person is viewing).
-       */
+  | (Omit<Extract<AgentTurnEvent, { type: 'tool_result' }>, 'details'> & {
+      /** The copy the shell's tool acted on, while a draft is open. */
       copy?: 'live' | 'draft';
-    }
-  | {
-      type: 'approval_required';
-      id: string;
-      name: string;
-      approvalId: string;
-      summary: string;
-      preview: unknown;
-    }
-  | {
-      type: 'approval_decided';
-      id: string;
-      approvalId: string;
-      status: 'approved' | 'denied' | 'failed' | 'timeout';
-    }
-  | {
-      type: 'error';
-      code: string;
-      message: string;
-      /** Where to fix it ("Sign in again"), when there is somewhere. */
-      action?: { label: string; href: string };
-    }
+    })
+  | (Extract<AgentTurnEvent, { type: 'error' }> & {
+      /** A host route that fixes the failure, when one exists. */
+      action?: InferenceEngineAction;
+    })
   | { type: 'done'; stop: TurnStop };
 
 /**
@@ -64,24 +36,10 @@ export const ASSISTANT_ENGINES = [
   'codex',
   'chatgpt',
 ] as const;
-export type AssistantEngineId = (typeof ASSISTANT_ENGINES)[number];
+export type AssistantEngineId = InferenceEngineId;
 
 /** `GET /api/assistant/status`. Never carries a key, provider or endpoint. */
-export interface AssistantStatus {
-  configured: boolean;
-  /** The engine in effect. */
-  engine?: AssistantEngineId;
-  /** Plain-text name of that engine for the dock (`Claude Code`, `an API key`). */
-  engineLabel?: string;
-  /**
-   * Set when not configured: `assistant_not_configured`, `ai_unavailable`,
-   * `agent_cli_missing`, `agent_cli_signed_out` or `chatgpt_signed_out`.
-   */
-  code?: string;
-  message?: string;
-  /** Where to fix it, when there is somewhere. */
-  action?: { label: string; href: string };
-}
+export type AssistantStatus = InferenceEngineStatus;
 
 /** Body of a 503 when the assistant cannot run (not a crash). */
 export interface AssistantUnavailable extends AssistantStatus {

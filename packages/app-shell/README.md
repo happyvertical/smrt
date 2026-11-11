@@ -311,7 +311,7 @@ Product names appear as plain text, no logos.
     stream guard are what stop them), and it still reads the person's own global
     Codex instructions file (its home folder AGENTS.md). Codex 0.162.1 needs `--enable mcp_2026_07_28` to
     reach `/mcp`. The tool keeps its own session transcript in its own folder.
-- **Tests:** stub CLIs (`agent-cli/test-fixtures/stub-cli.mjs`) over the real
+- **Tests:** stub CLIs (shared `smrt-inference/test-support`) over the real
   `/mcp` route (`assistant/agent-turn.test.ts`); fake binaries on a temp PATH
   (`agent-cli/detect.test.ts`). An opt-in run against a real installed CLI:
   `REAL_AGENT_CLI=claude-code|codex npx vitest run

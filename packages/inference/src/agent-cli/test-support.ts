@@ -4,33 +4,26 @@
 // stub (test-fixtures/stub-cli.mjs) installed under either name.
 import {
   chmodSync,
-  copyFileSync,
   existsSync,
   mkdirSync,
   mkdtempSync,
   writeFileSync,
 } from 'node:fs';
 import { tmpdir } from 'node:os';
-import { dirname, join } from 'node:path';
-import { fileURLToPath } from 'node:url';
+import { join } from 'node:path';
 import type { LocateDeps } from './locate.js';
+import stubCli from './test-fixtures/stub-cli.mjs?raw';
 import type { AgentTool } from './tools.js';
 
 export function tempDir(prefix = 'agent-cli-'): string {
   return mkdtempSync(join(tmpdir(), prefix));
 }
 
-const STUB = join(
-  dirname(fileURLToPath(import.meta.url)),
-  'test-fixtures',
-  'stub-cli.mjs',
-);
-
 /** `dir/<binary>` is the stream stub; returns its path. */
 export function installStub(dir: string, binary: string): string {
   mkdirSync(dir, { recursive: true });
   const path = join(dir, binary);
-  copyFileSync(STUB, path);
+  writeFileSync(path, stubCli);
   chmodSync(path, 0o755);
   return path;
 }
