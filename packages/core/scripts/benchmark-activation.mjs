@@ -25,11 +25,12 @@ if (childDirectory) {
     const rssMiB = process.memoryUsage().rss / 1048576;
     const models = ObjectRegistry.getAllClasses().size;
     process.stdout.write('activation-ready\n');
+    const nextWasReady = selection.next.every((model) => coordinator.isReady(model));
     const started = performance.now();
     await coordinator.activate(selection.next);
     const enableMs = performance.now() - started;
     const after = (await db.query("SELECT name FROM sqlite_master WHERE type = 'table'")).rows;
-    console.log(JSON.stringify({ tables: tables.length, applicationTables: tables.filter(({ name }) => !name.startsWith('_smrt_') && !name.startsWith('sqlite_')).length, registeredModels: models, rssMiB: +rssMiB.toFixed(2), enableMs: +enableMs.toFixed(2), tablesAfterEnable: after.length }));
+    console.log(JSON.stringify({ tables: tables.length, applicationTables: tables.filter(({ name }) => !name.startsWith('_smrt_') && !name.startsWith('sqlite_')).length, registeredModels: models, rssMiB: +rssMiB.toFixed(2), nextRecipe: selection.nextRecipe, nextWasReady, enableMs: +enableMs.toFixed(2), tablesAfterEnable: after.length, registeredModelsAfterEnable: ObjectRegistry.getAllClasses().size }));
   } finally { await db.close?.(); }
 } else {
   const directory = mkdtempSync(join(tmpdir(), 'smrt-activation-benchmark-'));
@@ -100,7 +101,11 @@ if (childDirectory) {
       };
       for (const id of cookbook.recipes) enable(typeof id === 'string' ? id : id.id);
       const models = (ids) => [...new Set([...ids].flatMap((id) => recipeMap.get(id).models))];
-      selection = { alwaysOn: ['@happyvertical/smrt-users:User'], subset: models(selected), all: models(recipeMap.keys()), next: models(['commerce.estimates']) };
+      selection = { alwaysOn: ['@happyvertical/smrt-users:User'], subset: models(selected), all: models(recipeMap.keys()), nextRecipe: 'education.catalog', next: models(['education.catalog']) };
+      // Content's declared serializer is a host $lib integration. Supply the
+      // existing implementation, as a real host would, without changing its graph.
+      mkdirSync(join(directory, 'src/lib/server'), { recursive: true });
+      writeFileSync(join(directory, 'src/lib/server/content-api-serializers.ts'), `export { serializeContent } from ${JSON.stringify(join(repository, 'packages/content/src/serialization.ts'))};\n`);
       console.log(JSON.stringify({ fixture: 'real', recipePackages: recipePackages.length, providers: included.size, manifestEntries: Object.keys(objects).length }));
     } else {
       // 34 recipe-like modules, 204 physical tables, 12 business fields/model,

@@ -178,6 +178,16 @@ If persisted state already names an unready model, the readiness gate keeps it
 closed until activation/recovery succeeds. The coordinator owns schema/code
 readiness, not cookbook persistence, permission grants or tenant state.
 
+Pass the coordinator as `createCookbookToolService({ activation, ... })` in a
+lazy host. `recipes.enable` and applying a template reuse `coveredModels` on the
+private staged document, await activation after any required approval, recheck
+live authority/preference and revision, then commit through the existing CAS
+adapter. Migration failure returns `CookbookToolError` with `activation_failed`
+and its migration error, leaving the persisted recipe disabled and retryable.
+Successfully migrated tables survive a later preference/CAS refusal, but the
+tenant gate stays closed. The data-only `CookbookTools` control identity bypasses
+model readiness; its live owner, tenant, permission and preference checks remain.
+
 Coordinators live in a `globalThis` process slot. Reusing a scope with the same
 manifest/database handle returns the same coordinator; a conflicting configuration
 or handle is refused. One process queue covers import, registry validation, diff,
@@ -232,20 +242,39 @@ Local Node 26.8.1/macOS run (three independent samples each):
 | Enabled subset | 195, 194, 193 | 18 | 123.36, 124.53, 121.84 | 9.02, 7.67, 9.15 |
 | Full set | 273, 279, 271 | 204 | 178.19, 177.53, 177.30 | 0.03, 0.04, 0.03 (already ready) |
 
-These are fixture observations, not predictions of the product's historical
-15.329 s/810.44 MiB/450-table startup. `--real` attempts yoga-studio versus all
-34 recipe packages using their actual built manifests and Node entry points.
-This worktree's attempt found 34 recipe packages, 45 providers and 928 manifest
-entries after adding optional referenced providers. Generation correctly refused
-`@happyvertical/smrt-expenses:Expense -> @happyvertical/smrt-expenses:PROFILE`.
-The source declares `const PROFILE = '@happyvertical/smrt-profiles:Profile'` and
-uses `@crossPackageRef(PROFILE)` (`expenses/src/models/Expense.ts:85,277,285`),
-but the built manifest retains the identifier `PROFILE` as its target. No target
-was guessed and no package was removed to produce a performance result. The
-proposed prerequisite is scanner constant resolution (or qualified literal
-references in the owning declarations), followed by regeneration and rerunning
-`--real`. Real-package cold start/RSS/enable time and product startup improvement
-remain **unverified**. No files outside core were changed for this attempt.
+Real packages, after rebasing onto `606289dba64890c568528804ed3dac658e795610`:
+`node packages/core/scripts/benchmark-activation.mjs --real --runs=3` scans all
+34 recipe packages, 46 providers and 930 manifest entries. The subset selects
+the seven yoga-studio template recipes and their requirements; both modes always
+include `smrt-users:User`. Content's declared host `$lib` serializer is supplied
+by forwarding to its existing implementation in the temporary host. No provider
+or model is removed from the graph. Filesystem caches are warm; each sample is
+a fresh Node 26.8.1 process with an in-memory SQLite database.
+
+| Mode | Cold readiness ms | Total tables | Registered entries | RSS MiB | Enable education.catalog ms |
+| --- | --- | --- | --- | --- | --- |
+| Yoga-studio | 1434, 1459, 1383 | 221 | 477 | 382.69, 375.20, 380.83 | 1022.74, 959.43, 920.37 |
+| All recipes | 3827, 3823, 3695 | 442 | 923 | 466.61, 455.77, 462.39 | 0.22, 0.20, 0.22 (already ready) |
+
+Yoga's next enable really loads a new closure: 311 total tables and 675 registry
+entries afterward, adding 90 tables/198 entries. Total table counts include the
+migration tracker and domain `_smrt_` tables; excluding `_smrt_`/`sqlite_` names
+gives 183/395 at boot. Registry counts include collection receivers. Coarse
+provider modules and real reference dependencies explain the large closure; a
+recipe is not assumed to equal one table or one independent import.
+
+The initial malformed Expenses `PROFILE` identifier was corrected at all three
+owning decorators to `@happyvertical/smrt-profiles:Profile`. A production-source
+search across every package found no other identifier-form `crossPackageRef`.
+SocialPost's stale `VideoContent` reference now names the registered `VideoShot`
+identity (the old name is only a JavaScript export alias). Built-manifest
+regressions cover both fixes. Legacy unqualified report ancestry resolves its
+unique manifest owner before the shared framework-base filter, preventing an
+invented commerce `SmrtReport` resource.
+
+These observations measure registry and migration readiness, not the product's
+historical 15.329 s/810.44 MiB/450-table first HTTP response. No packaged desktop,
+HTTP, UI, inference or owner bootstrap performance improvement is claimed.
 
 ## Test design and evidence
 
@@ -289,6 +318,10 @@ Commands: each touched package's `pnpm turbo run build --filter=<name>...`,
 | Invariant | Positive / failure controls | Executor and level | Validation |
 | --- | --- | --- | --- |
 | Shared STI identity | Child-first registry, provider root or same-name app root; REST/MCP create the effective base only while enabled, disabling refuses and leaves rows unchanged | In-process SQLite; scanned A2 fixture; REST and MCP integration | core `pnpm test` |
+| Lazy STI readiness | Same scanned fixture with automatic test schema preparation disabled; only the STI physical table migrates; REST factory works without collection priming | SQLite, existing migration tracker, child-first discovery; provider and app-root cases | core `pnpm test` |
+| Reference pickers | Existing Svelte screen source resolves effective app Customer, searches display label and gets custom fields after Invoice FK activation; preference off refuses retained source | Real screen source + AOT web metadata + REST, in-process SQLite | core `pnpm test` |
+| Lazy recipe tools | MCP enable waits for closure then REST 200; migration rollback reports tool error, recipe stays disabled, retry works; CAS failure stays gated | Real coordinator, private cookbook engine and SQLite CAS adapter | core `pnpm test` |
+| Durable tools/preference | Reopened owner authority disables after enable; approval binds template state; preference closing during activation refuses commit and completes consumed approval as failed | Existing app-runtime authority + SQLite ledger, same tool service | core `pnpm test` |
 | Held manifest tool | Enabled delete is durably held; disable or unreadable cookbook before owner decision refuses without deleting; terminal saved refusal cannot replay | In-process SQLite; mounted chat routes, real principal and approval ledger | chat `pnpm test` |
 | Approval projection | Tenant owner and thread lists retain only the immutable public hold summary after disable; no args, recovery context, result or live model metadata | Same mounted routes | chat `pnpm test` |
 
@@ -300,14 +333,57 @@ exposure. A refused saved effect uses the existing terminal `failed` ledger stat
 with `result.status: 'refused'` and a refused transcript outcome. Public approval
 lists expose only the originally saved summary, never current model details.
 
+### Reuse check
+
+MCP `review-smrt-project` covered core, Expenses and Social; `build-context`
+searched architecture for cookbook model projection and activation. The intent
+index and `rg` searches by `activate`, `activationCoordinator`, `coveredModels`,
+`COOKBOOK_TOOLS_MODEL`, migration subset, model references and module imports
+covered core, chat, smrt-ui, smrt-svelte and owning packages. No existing
+activation coordinator or data-only activation graph fit this contract.
+
+| New implementation file | Existing capabilities reused |
+| --- | --- |
+| `src/activation/manifest.ts` | Manifest qualified identities; physical FK/STI ownership semantics |
+| `src/activation/generate.ts` | Manifest replacements, web collection/item resolver, framework-base filter, OXC module analysis, normal registration |
+| `src/activation.ts` | Registry schema subset/merge, migration differ/tracker transactions, runtime exposure notifications/gate |
+| `scripts/benchmark-activation.mjs` | Built recipe manifests, generated loaders, public coordinator and SQLite registry/migrations; existing Content serializer |
+| `src/activation/{activation,generate}.test.ts` | Existing `manifestEntry`, `createConsumerWorkspace`, registry snapshot and SQLite fixtures |
+
+Follow-up extends existing tools and tests; `coveredModels` projects staged
+cookbook models. REST reuses the registry collection factory. Reference tests
+reuse `createRecipeScreenReferences`/`screenReferenceTarget`/`screenRecordLabel`;
+approvals reuse app-runtime's SQLite authority. No UI component, model, route,
+approval ledger or parallel implementation was introduced.
+
 ### A3b validation checkpoint
 
-Node 26.8.1, macOS; all persistence tests in process, no containers. The full
-core suite passed: **505 files passed, 66 skipped; 6,867 tests passed, 513
-skipped** (Vitest reported 7,384 total). The focused activation/generation/
-orchestration run passed **29 tests across 3 files**. Core production and test
-typechecks passed. The documented dependency-closure build passed 5 tasks; a
-full workspace build passed 85 tasks. Root lint and format checks passed.
-Strict knowledge freshness is checked after the final build and page/graph
-regeneration. Optional PostgreSQL service cases remain skipped; lazy migration
-on PostgreSQL/DuckDB is explicitly refused, not advertised as tested support.
+Rebased onto `606289dba64890c568528804ed3dac658e795610`; the sole conflict was
+the generated core knowledge page, retained from integration then regenerated.
+`pnpm install` left the lockfile unchanged. Node 26.8.1, macOS; all persistence
+tests in process, no containers. Full core: **506 files passed, 66 skipped;
+6,884 tests passed, 513 skipped** (Vitest reports 7,401 total, including four
+todo tests). Expenses: **10 files/144 tests passed, four files/129 optional tests
+skipped**, plus **two UI files/15 tests passed**. Social: **two files/34 tests
+passed**. All three full package typechecks pass (core includes test types;
+Expenses/Social Svelte checks report zero errors/warnings). Full workspace build:
+85 tasks passed; dependency-closure build: 47 tasks passed. Root lint, format,
+strict knowledge freshness (zero errors/seven existing ingestion warnings), and
+advisory policy pass. The plain-Node root gate passes with its existing Products
+allowlist: 51 roots load, the one allowlisted root still fails. Optional PostgreSQL
+service cases remain skipped; lazy migration on PostgreSQL/DuckDB is explicitly
+refused, not advertised as tested support. No product HTTP/desktop benchmark or
+external AI/provider execution is claimed.
+
+Shared core files touched by A3b (paths relative to `packages/core`):
+`AGENTS.md`, `package.json`, `agents/runtime-exposure.md`,
+`agents/cookbook-tools.md`, `src/migrations/orchestrate.ts`,
+`src/migrations/__tests__/orchestrate.test.ts`, `src/consumer-plugin/index.ts`,
+`src/vite-plugin/index.ts`, `src/vite-plugin/sveltekit-generator.ts`,
+`src/vite-plugin/sveltekit-route-coordinator.ts`, `src/vite-preset/index.ts`,
+`src/runtime-exposure.ts`, `src/cookbook/tools.ts`, `src/cookbook/tools.test.ts`,
+`src/generators/rest.ts`, `src/__tests__/same-name-app-subclass.test.ts`.
+Outside core: Expenses' model/reference regression, Social's model/reference
+regression and AGENTS target documentation; regenerated root component pages
+for core and Social. The additive activation modules/tests and benchmark script
+are listed in Reuse check above. No chat, UI or Svelte production files changed.
