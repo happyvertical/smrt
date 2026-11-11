@@ -244,6 +244,8 @@ export interface SmrtWebFieldUIHints {
  */
 export interface SmrtWebFieldDefinition {
   type: SmrtWebFieldType;
+  /** Computed public value; consumers exclude it from edit forms. */
+  readonly?: boolean;
   required?: boolean;
   /** Whether the public field contract explicitly permits `null`. */
   nullable?: boolean;
@@ -367,6 +369,8 @@ export interface SmrtWebCollectionDefinition<TData extends object = object> {
   idField: string;
   /** Owning model's resolved display-label field for names and remote pickers. */
   displayLabelField?: string;
+  /** One-hop display declaration; the server supplies the computed value. */
+  displayLabelProjection?: { via: string; field: string; fallback: string };
   /** CRUD + custom actions exposed by the api decorator config. */
   actions: string[];
   /**
