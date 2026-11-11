@@ -137,6 +137,69 @@ describe('cookbook v1', () => {
     expect(parsed.ok && parsed.cookbook).toEqual(doc);
   });
 
+  describe('layout item icons', () => {
+    const document = (item: Record<string, unknown>) => ({
+      version: 1,
+      recipes: [],
+      policies: [],
+      layout: { version: 1, items: { 'item:commerce:Order': item } },
+    });
+
+    it.each([
+      'receipt',
+      'shoppingBag',
+      'fileText',
+      'host-icon_2',
+      'a'.repeat(64),
+    ])('retains safe icon %s in schema and validator', (icon) => {
+      const doc = document({ label: 'Orders', icon });
+      expect(matches(doc)).toBe(true);
+      const parsed = validateCookbook(doc);
+      expect(parsed.ok && parsed.cookbook.layout).toEqual(doc.layout);
+    });
+
+    it.each([
+      '',
+      'a'.repeat(65),
+      '<svg/>',
+      'https://example.com/icon.svg',
+      'data:image/svg+xml,test',
+      'javascript:alert(1)',
+      'two words',
+      'receipt\n',
+      'receipt\r',
+      ' receipt',
+      '1receipt',
+      '😀',
+      null,
+      42,
+      {},
+      [],
+    ])('rejects unsafe or malformed icon %j in both validators', (icon) => {
+      const doc = document({ icon });
+      expect(matches(doc)).toBe(false);
+      const parsed = validateCookbook(doc);
+      expect(parsed.ok).toBe(false);
+      expect(parsed.diagnostics).toContainEqual(
+        expect.objectContaining({
+          code: 'invalid_value',
+          path: 'layout.items.item:commerce:Order.icon',
+        }),
+      );
+    });
+
+    it('keeps an existing item without an icon unchanged', () => {
+      const doc = document({
+        label: 'Orders',
+        description: 'Recent orders',
+        future: true,
+      });
+      expect(matches(doc)).toBe(true);
+      const parsed = validateCookbook(doc);
+      expect(parsed.ok && parsed.cookbook.layout).toEqual(doc.layout);
+    });
+  });
+
   it('reports every problem with its path', () => {
     const doc = {
       version: 1,

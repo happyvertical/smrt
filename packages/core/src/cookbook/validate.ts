@@ -255,6 +255,22 @@ function checkLayout(value: unknown, diagnostics: CookbookDiagnostic[]) {
       );
     }
   }
+  if (isObject(value.items)) {
+    for (const [id, item] of Object.entries(value.items)) {
+      if (!isObject(item) || item.icon === undefined) continue;
+      if (
+        typeof item.icon !== 'string' ||
+        !/^[A-Za-z][A-Za-z0-9_-]{0,63}(?![\s\S])/.test(item.icon)
+      ) {
+        error(
+          diagnostics,
+          'invalid_value',
+          `layout.items.${id}.icon`,
+          'Item icon must be a 1–64 character identifier starting with a letter (letters, digits, _ or -).',
+        );
+      }
+    }
+  }
   const custom = value.customSections;
   if (
     custom !== undefined &&

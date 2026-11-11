@@ -220,7 +220,7 @@ export interface PlanSnapshot {
     id: string;
     label: string;
     hidden: boolean;
-    items: { id: string; label: string; hidden: boolean }[];
+    items: { id: string; label: string; icon: string; hidden: boolean }[];
   }[];
   policies: number;
   /** Undo ids still available, newest last. */

@@ -360,6 +360,78 @@ describe('commands', () => {
     expect(e.cookbook().theme).toEqual({ custom: { primary: '#c2410c' } });
   });
 
+  it('resolves item icons and preserves overrides across rename, export and recovery', () => {
+    const itemId = 'item:commerce:Customer';
+    const layout = {
+      version: 1,
+      items: { [itemId]: { label: 'Clients', icon: 'receipt' } },
+      moved: { [itemId]: 'custom:desk' },
+      customSections: [{ id: 'custom:desk', label: 'Desk' }],
+    };
+    const e = engine();
+    ok(
+      e.run({
+        name: 'import_cookbook',
+        input: {
+          document: {
+            ...IMPORTED,
+            recipes: ['commerce.customers', 'commerce.vendors'],
+            features: ['@happyvertical/smrt-ads:AdFormat'],
+            layout,
+          },
+        },
+      }),
+    );
+    const items = () => e.snapshot().sections.flatMap((s) => s.items);
+    expect(
+      e.snapshot().sections.find((s) => s.id === 'custom:desk')?.items,
+    ).toContainEqual(
+      expect.objectContaining({
+        id: itemId,
+        label: 'Clients',
+        icon: 'receipt',
+      }),
+    );
+    expect(items().find((i) => i.id === 'item:commerce:Vendor')?.icon).toBe(
+      'fileText',
+    );
+    expect(items().find((i) => i.id === 'item:ads:AdFormat')?.icon).toBe(
+      'fileText',
+    );
+    ok(e.run({ name: 'rename_item', input: { id: itemId, label: null } }));
+    expect(e.cookbook().layout?.items?.[itemId]).toEqual({ icon: 'receipt' });
+    const exported = ok(e.run({ name: 'export_cookbook' }));
+    expect(JSON.stringify(exported.data)).toContain('receipt');
+    expect(
+      createCookbookEngine({ catalog, state: e.state() }).snapshot().sections,
+    ).toEqual(e.snapshot().sections);
+    const roundtrip = engine(e.cookbook());
+    expect(roundtrip.snapshot().sections).toEqual(e.snapshot().sections);
+    const before = e.state();
+    expect(
+      code(
+        e.run({
+          name: 'import_cookbook',
+          input: {
+            document: {
+              ...IMPORTED,
+              layout: { ...layout, items: { [itemId]: { icon: '<svg/>' } } },
+            },
+            replace: true,
+          },
+        }),
+      ),
+    ).toBe('invalid_input');
+    expect(e.cookbook()).toEqual(before.cookbook);
+  });
+
+  it('keeps recipe icons when no layout icon is supplied', () => {
+    const e = engine({ ...IMPORTED, recipes: ['commerce.customers'] });
+    expect(e.snapshot().sections.flatMap((s) => s.items)).toContainEqual(
+      expect.objectContaining({ id: 'item:commerce:Customer', icon: 'users' }),
+    );
+  });
+
   it('layout: rename, hide and show touch only the layout and stay sparse', () => {
     const e = engine();
     ok(e.run({ name: 'add_recipes', input: { ids: ['commerce.sales'] } }));

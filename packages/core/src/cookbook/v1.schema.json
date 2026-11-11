@@ -78,7 +78,17 @@
         },
         "items": {
           "type": "object",
-          "additionalProperties": { "type": "object" }
+          "additionalProperties": {
+            "type": "object",
+            "properties": {
+              "icon": {
+                "type": "string",
+                "maxLength": 64,
+                "pattern": "^[A-Za-z][A-Za-z0-9_-]{0,63}(?![\\s\\S])"
+              }
+            },
+            "additionalProperties": true
+          }
         },
         "panels": {
           "type": "object",

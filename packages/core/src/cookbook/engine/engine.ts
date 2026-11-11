@@ -278,6 +278,7 @@ export function createCookbookEngine(
         items: s.items.map((i) => ({
           id: i.id,
           label: i.label,
+          icon: i.icon,
           hidden: i.hidden,
         })),
       })),

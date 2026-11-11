@@ -43,6 +43,29 @@ ignored while it is present. `primaryColor` instead TINTS the current preset by
 overriding only the derived primary colours (`derivePrimaryOverrides`). The
 cookbook has no `primaryColor` field and the shell never passes one.
 
+## Navigation item icons
+
+`layout.items["item:<package>:<Model>[:<key>]"].icon` optionally overrides
+that entry's recipe icon. Use a built-in shell name such as `receipt`, `users`,
+`shoppingBag` or `fileText`. Icons are data, never SVG/HTML or URLs: the validator
+and JSON Schema require 1–64 ASCII characters, starting with a letter, followed
+by letters, digits, `_` or `-`. Unknown safe names remain portable for host icon
+renderers; the shell uses its fallback glyph when it cannot resolve one.
+
+```json
+{
+  "version": 1,
+  "items": {
+    "item:commerce:Customer": { "label": "Clients", "icon": "users" }
+  }
+}
+```
+
+Put this object under `layout`. Without an override, the recipe icon stays;
+entries with no recipe icon use `fileText`. No cookbook version bump is needed.
+The command engine includes the resolved icon in `snapshot().sections[].items[]`
+and retains overrides through import, export, recovery and item renames.
+
 ## Rules
 
 - Versioning: add optional fields within `version: 1`; readers keep and ignore
