@@ -201,7 +201,7 @@ test('the setup action bounds update and install without changing ONNX dependenc
   assert.ok(action.includes('node_path="$(command -v node)"'));
   assert.match(
     action,
-    /sudo "\$node_path" "\$GITHUB_WORKSPACE\/scripts\/run-bounded-command\.mjs"\s+\\\n\s+--stage 'apt-get update'\s+\\\n\s+--timeout-seconds 120\s+\\\n\s+--attempts 3\s+\\\n\s+--backoff-seconds 10\s+\\\n\s+-- apt-get update -o APT::Update::Error-Mode=any\n/,
+    /sudo "\$node_path" "\$GITHUB_WORKSPACE\/scripts\/run-bounded-command\.mjs"\s+\\\n\s+--stage 'apt-get update'\s+\\\n\s+--timeout-seconds "\$1"\s+\\\n\s+--attempts "\$2"\s+\\\n\s+--backoff-seconds 10\s+\\\n\s+-- apt-get update -o APT::Update::Error-Mode=any\n/,
   );
   assert.match(
     action,

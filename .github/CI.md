@@ -225,11 +225,11 @@ If the canonical-archive `apt-get update` still fails after its retries (the
 archive was unreachable from hosted runners on 2026-11-11, failing three Batched
 Release runs), the step restores the runner image's original mirror lists from the
 `.ci-original` backups written by the rewrite (`configure-ubuntu-apt-mirrors.mjs
---restore`) and runs the same bounded update once more. If that also fails the
+--restore`) and runs a bounded update (two 90 s attempts) against them. The canonical phase is a single 45 s attempt so the fallback fits the 6-minute visual-regression job budget. If that also fails the
 step fails closed as before; nothing is skipped.
 
-Each `apt-get update` attempt is bounded at two minutes and is tried up to
-three times with a 10 s / 20 s backoff; `apt-get install` gets ten minutes per
+Each `apt-get update` attempt is bounded (45 s once on the canonical archive,
+then 90 s up to twice on the image mirrors, 10 s backoff); `apt-get install` gets ten minutes per
 attempt and two attempts. A single slow mirror response therefore no longer
 ejects a merge-queue run (#3638 and #3636 were ejected by one 300 s timeout
 each). After the last attempt the stage still fails closed with its named error

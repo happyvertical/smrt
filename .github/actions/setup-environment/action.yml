@@ -310,17 +310,18 @@ runs:
         apt_update() {
           sudo "$node_path" "$GITHUB_WORKSPACE/scripts/run-bounded-command.mjs" \
             --stage 'apt-get update' \
-            --timeout-seconds 120 \
-            --attempts 3 \
+            --timeout-seconds "$1" \
+            --attempts "$2" \
             --backoff-seconds 10 \
             -- apt-get update -o APT::Update::Error-Mode=any
         }
-        # The canonical archive can be unreachable from hosted runners; fall back
-        # to the runner image's own mirror list. Still fails closed if both fail.
-        if ! apt_update; then
+        # The canonical archive can be unreachable from hosted runners. One short
+        # attempt keeps the fallback inside the 6-minute visual-job budget; then use
+        # the runner image's own mirror list. Still fails closed if both fail.
+        if ! apt_update 45 1; then
           echo "::warning::Canonical Ubuntu mirror update failed; retrying with the runner image mirror list"
           sudo "$node_path" "$GITHUB_WORKSPACE/scripts/configure-ubuntu-apt-mirrors.mjs" --restore
-          apt_update
+          apt_update 90 2
         fi
         sudo "$node_path" "$GITHUB_WORKSPACE/scripts/run-bounded-command.mjs" \
           --stage 'apt-get install' \

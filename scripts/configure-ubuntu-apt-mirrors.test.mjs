@@ -81,10 +81,10 @@ test('the actual setup action configures mirrors before bounded apt and preserve
   assert.match(section, /sudo "\$node_path" "\$GITHUB_WORKSPACE\/scripts\/configure-ubuntu-apt-mirrors\.mjs"/);
   assert.match(section, /-- apt-get update -o APT::Update::Error-Mode=any\n/);
   // Fallback restores the image mirror list, then the second update stays fail-closed (set -e, no `|| true`).
-  assert.match(section, /if ! apt_update; then[\s\S]*configure-ubuntu-apt-mirrors\.mjs" --restore\n\s+apt_update\n\s+fi/);
+  assert.match(section, /if ! apt_update 45 1; then[\s\S]*configure-ubuntu-apt-mirrors\.mjs" --restore\n\s+apt_update 90 2\n\s+fi/);
   assert.doesNotMatch(section, /apt_update[^\n]*\|\|/);
   assert.ok(section.indexOf('fi\n        sudo') < section.indexOf("--stage 'apt-get install'"));
-  assert.match(section, /--timeout-seconds 120/);
+  // Worst case 45 s + 10 s + 2 x 90 s stays inside the 6-minute visual-regression job.
   assert.match(section, /--timeout-seconds 600/);
 });
 
