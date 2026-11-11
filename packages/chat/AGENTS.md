@@ -188,6 +188,14 @@ Svelte dock imports it). The dock decides whether a browser call runs or waits
 for the user from the page registry, never the server's echo; destructive
 always waits. Details: [`docs/assistant-dock.md`](../../docs/assistant-dock.md).
 
+## External turn drivers
+
+`mountAssistantRoutes({ turnDriver, resolveTurnDriver })` / `runAssistantTurn({ turnDriver })`
+replace only the loop; chat owns authorization, authoring, SSE and cancellation.
+Contracts, model adapter path, callback example, and the C3 approval-wait seam:
+[agents/turn-drivers.md](agents/turn-drivers.md). Default `runToolLoop` behavior
+and browser continuations remain unchanged. Keep engine imports out of chat.
+
 ## AssistantDock (#2904)
 
 `AssistantDock` (`svelte/components/assistant/`, exported from `./svelte`)

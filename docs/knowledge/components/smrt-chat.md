@@ -5,10 +5,10 @@ description: "Chat rooms, DMs, threads, and agent conversations for the SMRT fra
 status: "stable"
 generated:
   by: "smrt/scripts/generate-knowledge-okf.ts"
-  at: "2026-11-08T22:59:11Z"
+  at: "2026-11-11T04:00:02Z"
 audience: "internal"
 evidence_level: "source-inspected"
-source_revision: "sha256:78fa8f078b95f9a5979d9848ebb14bd46289ef2fa788f178c56203fa8978b5ea"
+source_revision: "sha256:502fb4052e87aceee76c7cb081a571e2698ad74191ea2bb735a6b445926c90d4"
 sources:
   - id: "manifest"
     resource: "https://github.com/happyvertical/smrt/blob/main/packages/chat/package.json"
@@ -37,6 +37,9 @@ sources:
   - id: "agents-8"
     resource: "https://github.com/happyvertical/smrt/blob/main/packages/chat/agents/tool-loop.md"
     title: "@happyvertical/smrt-chat packages/chat/agents/tool-loop.md"
+  - id: "agents-9"
+    resource: "https://github.com/happyvertical/smrt/blob/main/packages/chat/agents/turn-drivers.md"
+    title: "@happyvertical/smrt-chat packages/chat/agents/turn-drivers.md"
 ---
 
 # @happyvertical/smrt-chat
@@ -58,6 +61,7 @@ sources:
 - `packages/chat/agents/recipes.md`
 - `packages/chat/agents/token-streaming.md`
 - `packages/chat/agents/tool-loop.md`
+- `packages/chat/agents/turn-drivers.md`
 
 ## Framework dependencies
 

@@ -8,6 +8,41 @@ Chat rooms, DMs, threads, and agent conversations for the s-m-r-t framework. Sup
 pnpm add @happyvertical/smrt-chat
 ```
 
+## Assistant turn drivers
+
+The assistant uses its existing model/tool loop by default. Supply an `ai`
+client or per-request factory for a model adapter, or a `turnDriver` for an
+external agent that owns its loop:
+
+```ts
+import { mountAssistantRoutes } from '@happyvertical/smrt-chat/sveltekit';
+
+export const { GET, POST } = mountAssistantRoutes({
+  turnDriver: {
+    async run(context, progress) {
+      // A host adapter forwards the agent's callbacks and AbortSignal.
+      context.signal.throwIfAborted();
+      progress.text('Hello from your agent.');
+      progress.done({ text: 'Hello from your agent.' });
+    },
+  },
+  allowedTools: [],
+});
+```
+
+`resolveTurnDriver(ctx)` selects a driver per authenticated request/user.
+Chat keeps thread/message persistence, tool allow-lists, the dock's streaming
+format and stop behavior. Drivers receive history, the new user message,
+system guidance, thread identity, principal, offered server tools and an abort
+signal. Await tool-call/result callbacks to author their transcript. The
+`approvalNeeded` callback and `waitForApproval` host hook reserve the durable
+owner-approval integration; without a hook approval is denied. Durable approval
+storage and UI are not implemented by this seam.
+
+See [turn-driver contracts and callback example](agents/turn-drivers.md),
+including MCP authorization responsibilities, engine status, and browser
+continuation limits.
+
 ## Data-surface bridge security
 
 The `./data-surface-bridge` entry point is the server half of the browser data-
