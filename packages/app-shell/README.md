@@ -544,6 +544,12 @@ undo restores the prior expression. A writable-to-calculated change archives
 originals and requires approval. Clearing an expression starts an empty writable
 column. See [engine contracts](agents/engine.md).
 
+Calculated fields are read-only in record forms, with their formula in field
+labels. New forms show no guessed value; saved records show the engine's value.
+Save payloads omit calculated fields. Model pages list every field and its
+formula, and table headers sort the loaded records, including calculated values.
+Publish review uses the same display-only formula renderer.
+
 ### Engine reports
 
 `AppDefinition.reports[name] = { label?, description?, spec }` stores a

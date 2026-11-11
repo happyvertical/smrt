@@ -20,6 +20,7 @@ import {
 import { AppDraftCollection } from '../objects/AppDraft.ts';
 import type { ReportChange } from '../ui/reports.ts';
 import { reportChanges } from '../ui/reports.ts';
+import type { FieldDef } from '../ui/types.ts';
 import {
   type ApprovalAction,
   type PendingApproval,
@@ -65,7 +66,10 @@ export interface DraftInfo {
   recovery: 'none' | 'rolled-forward' | 'rolled-back';
 }
 
-type PublishPreview = EnginePublishPreview & { reportChanges?: ReportChange[] };
+type PublishPreview = EnginePublishPreview & {
+  reportChanges?: ReportChange[];
+  fields?: Record<string, Record<string, FieldDef>>;
+};
 
 export type DraftPublishResult = Omit<PublishResult, 'snapshot'> & {
   draft: string;
@@ -230,9 +234,15 @@ export async function previewDraft(): Promise<{
   const records = new Map(
     [chain.base, ...chain.versions].map((v) => [v.version, v]),
   );
+  preview.fields = Object.fromEntries(
+    Object.entries(host.describe().models).map(([name, model]) => [
+      name,
+      model.fields,
+    ]),
+  );
   preview.reportChanges = [];
   for (const version of preview.versions) {
-    const record = records.get(version.version);
+    const record = records.get(version.draftVersion);
     if (!record) continue;
     const changes = reportChanges(
       records.get(record.parent ?? -1)?.definition.reports ?? {},
