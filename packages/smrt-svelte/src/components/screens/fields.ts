@@ -246,7 +246,8 @@ export function deriveScreenFields(
     const kind = inputKindFor(c.definition, fieldRoles);
     return {
       name: c.name,
-      readOnly: c.definition.readonly === true || policyField?.readOnly === true,
+      readOnly:
+        c.definition.readonly === true || policyField?.readOnly === true,
       label:
         label ||
         (c.name === definition.displayLabelField &&

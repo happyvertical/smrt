@@ -109,8 +109,9 @@ export function fieldsFromCollectionDefinition(
     const locked = p?.locked === true;
     const enumValues = enums[name];
     const hasDefault =
-      p?.hasDefault === true ||
-      (p?.hasDefault === undefined && def.default !== undefined);
+      def.readonly !== true &&
+      (p?.hasDefault === true ||
+        (p?.hasDefault === undefined && def.default !== undefined));
     const defaultValue = p?.hasDefault === true ? p.defaultValue : def.default;
     const required =
       p?.required ?? (def.required === true && def.nullable !== true);
@@ -121,7 +122,12 @@ export function fieldsFromCollectionDefinition(
         label: p?.label || humanizeFieldName(name),
         type: enumValues ? 'enum' : TYPE_MAP[def.type],
         required: required && !hasDefault,
-        importable: !tenant && !hidden && !locked && p?.readOnly !== true,
+        importable:
+          !tenant &&
+          !hidden &&
+          !locked &&
+          def.readonly !== true &&
+          p?.readOnly !== true,
         exportable: !tenant && !hidden,
         ...(enumValues ? { options: enumValues } : {}),
         ...(def.ui?.widget ? { widget: def.ui.widget } : {}),

@@ -163,6 +163,183 @@ describe('resolveFieldPolicy', () => {
     }
   });
 
+  it('enumerates commerce Customer -> Profile displayLabel for relabel/hide policies without making it writable', async () => {
+    const { CustomerCollection } = await import(
+      '../../commerce/src/collections/CustomerCollection.js'
+    );
+    const { ProfileCollection, ProfileTypeCollection } = await import(
+      '../../profiles/src/index.js'
+    );
+    const { deriveScreenFields } = await import(
+      '../../smrt-svelte/src/components/screens/fields.js'
+    );
+    const { buildWebCollectionDefinition } = await import(
+      '../../core/src/vite-plugin/web-collections.js'
+    );
+    const { manifestEntry } = await import(
+      '../../core/src/registry/__tests__/helpers/consumer-workspace.js'
+    );
+    const { resolveDisplayLabelProjection, resolveDisplayLabelField } =
+      await import('@happyvertical/smrt-core/ui-metadata');
+    const database = await getTestDatabase({
+      classes: ['Customer', 'Profile', 'ProfileType', 'FieldPolicy'],
+    });
+    try {
+      const customers = await CustomerCollection.create({ db: database });
+      const profiles = await ProfileCollection.create({ db: database });
+      const types = await ProfileTypeCollection.create({ db: database });
+      const type = await types.create({ name: 'Person' });
+      if (!type.id) throw new Error('Profile type fixture id missing');
+      const profile = await profiles.create({
+        typeId: type.id,
+        name: 'Maya Policy Canary',
+      });
+      if (!profile.id) throw new Error('Profile fixture id missing');
+      await customers.create({ profileId: profile.id });
+      const customerRef = '@happyvertical/smrt-commerce:Customer';
+      const registeredFields = Object.fromEntries(
+        await ObjectRegistry.getAllFields(customerRef),
+      );
+      const label = ObjectRegistry.getConfig(customerRef).display?.label;
+      const tableName = ObjectRegistry.getTableName(customerRef);
+      if (!tableName) throw new Error('Customer fixture table missing');
+      const object = manifestEntry({
+        className: 'Customer',
+        packageName: '@happyvertical/smrt-commerce',
+        filePath: 'src/models/Customer.ts',
+        tableName,
+        fields: registeredFields,
+      });
+      object.displayLabelProjection = resolveDisplayLabelProjection(label);
+      object.displayLabelField = resolveDisplayLabelField(
+        registeredFields,
+        label,
+      );
+      const manifest = {
+        version: '1.0.0',
+        timestamp: 0,
+        packageName: '@happyvertical/smrt-commerce',
+        objects: { [customerRef]: object },
+      };
+      const definition = buildWebCollectionDefinition(
+        {
+          obj: object,
+          collection: 'customers',
+          actions: ['list', 'get', 'create', 'update'],
+        },
+        manifest,
+      );
+      const cookbook = {
+        policies: [
+          {
+            objectRef: definition.objectRef,
+            fieldName: 'displayLabel',
+            scopeType: 'app' as const,
+            label: 'Client name',
+            readOnly: false,
+          },
+        ],
+      };
+      const resolved = await resolveFieldPolicy(definition.objectRef, {
+        db: database,
+        cookbook,
+      });
+      const portable = resolveCookbookFieldPolicy(definition, cookbook);
+      expect(resolved.fields.displayLabel).toEqual(
+        portable.fields.displayLabel,
+      );
+      expect(resolved.fields.displayLabel).toMatchObject({
+        label: 'Client name',
+        readOnly: true,
+        hasDefault: false,
+      });
+      expect(
+        deriveScreenFields(definition, resolved, { mode: 'list' }).find(
+          (field) => field.name === 'displayLabel',
+        )?.label,
+      ).toBe('Client name');
+      expect(
+        deriveScreenFields(definition, resolved, { mode: 'edit' }).some(
+          (field) => field.name === 'displayLabel',
+        ),
+      ).toBe(false);
+      expect(
+        (await customers.list()).map(
+          (customer) => customer.toJSON().displayLabel,
+        ),
+      ).toContain('Maya Policy Canary');
+      const hidden = await resolveFieldPolicy(definition.objectRef, {
+        db: database,
+        cookbook: {
+          policies: [{ ...cookbook.policies[0], visibility: 'hidden' }],
+        },
+      });
+      expect(hidden.fields.displayLabel).toMatchObject({
+        visibility: 'hidden',
+        readOnly: true,
+      });
+      expect(
+        deriveScreenFields(definition, hidden, { mode: 'list' }).some(
+          (field) => field.name === 'displayLabel',
+        ),
+      ).toBe(false);
+      await expect(
+        resolveFieldPolicy(definition.objectRef, {
+          cookbook: {
+            policies: [{ ...cookbook.policies[0], defaultValue: '"forged"' }],
+          },
+        }),
+      ).rejects.toThrow(/read-only/);
+      const rows = await FieldPolicyCollection.create({ db: database });
+      await seedPolicies(async () => {
+        await rows.create({
+          objectRef: definition.objectRef,
+          fieldName: 'displayLabel',
+          scopeType: 'app',
+          label: 'Saved client name',
+        });
+        await expect(
+          rows.create({
+            objectRef: definition.objectRef,
+            fieldName: 'displayLabel',
+            scopeType: 'app',
+            defaultValueRaw: 'forged',
+          }),
+        ).rejects.toThrow(/read-only/);
+      });
+      expect(
+        (await resolveFieldPolicy(definition.objectRef, { db: database }))
+          .fields.displayLabel.label,
+      ).toBe('Saved client name');
+      const target = ObjectRegistry.resolveRelationshipTarget(
+        definition.objectRef,
+        'profileId',
+      );
+      const originalFields = ObjectRegistry.getAllFields;
+      const restrictedTarget = vi
+        .spyOn(ObjectRegistry, 'getAllFields')
+        .mockImplementation(async (ref) => {
+          const fields = new Map(
+            await originalFields.call(ObjectRegistry, ref),
+          );
+          if (ref === target)
+            fields.set('name', { ...fields.get('name')!, sensitive: true });
+          return fields;
+        });
+      try {
+        await expect(
+          resolveFieldPolicy(definition.objectRef, {
+            cookbook: { policies: [] },
+          }),
+        ).rejects.toThrow(/sensitive/);
+      } finally {
+        restrictedTarget.mockRestore();
+      }
+    } finally {
+      await database.close?.();
+    }
+  });
+
   it('rejects unknown objectRefs', async () => {
     await expect(
       resolveFieldPolicy('@test/nowhere:Nope', { db }),

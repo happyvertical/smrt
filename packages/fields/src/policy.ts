@@ -19,6 +19,7 @@ export interface PolicyFieldDefinition {
   description?: string;
   required?: boolean;
   nullable?: boolean;
+  readonly?: boolean;
   sensitive?: boolean;
   transient?: boolean;
   readPermission?: string;
@@ -179,6 +180,7 @@ export function buildCodeSeedDelta(
 
   return {
     ...(codeDefault ? { default: codeDefault } : {}),
+    ...(field.readonly === true ? { readOnly: true } : {}),
     visibility,
     ...(help !== undefined ? { help } : {}),
     ...(ui?.order !== undefined ? { order: ui.order } : {}),
@@ -362,6 +364,12 @@ export function resolveFieldPolicyLayers(
       const row = layer.rows.get(fieldName);
       if (!row || (layer.layer === 'user' && state.locked === true)) continue;
       const delta = rowToDelta(row);
+      if (fieldDef.readonly && delta.readOnly === false) delete delta.readOnly;
+      if (fieldDef.readonly && delta.default) {
+        throw new Error(
+          `Policy defaults cannot target read-only field ${objectRef}.${fieldName}`,
+        );
+      }
       if (layer.validateDefaults && delta.default) {
         if (
           isSensitiveField(fieldDef) ||
@@ -414,7 +422,9 @@ export function resolveFieldPolicyLayers(
       group: getCodeSeedGroup(fieldDef),
       locked: state.locked === true,
       required,
-      ...(state.readOnly !== undefined ? { readOnly: state.readOnly } : {}),
+      ...(fieldDef.readonly === true || state.readOnly !== undefined
+        ? { readOnly: fieldDef.readonly === true || state.readOnly === true }
+        : {}),
       ...(visibilityForced ? { visibilityForced: true } : {}),
     };
     layers[fieldName] = contributions;

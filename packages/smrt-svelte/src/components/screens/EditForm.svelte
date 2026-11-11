@@ -210,6 +210,7 @@ async function submit(): Promise<void> {
       for (const [name, field] of Object.entries(policy?.fields ?? {})) {
         if (
           Object.hasOwn(definition.fields, name) &&
+          definition.fields[name]?.readonly !== true &&
           field.hasDefault &&
           (field.visibility === 'hidden' || field.readOnly) &&
           !derivedFields.includes(name)

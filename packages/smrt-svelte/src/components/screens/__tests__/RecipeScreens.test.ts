@@ -464,6 +464,85 @@ describe('installed recipe end-to-end fixture', () => {
     );
   });
 
+  it('relabels/hides a projected Profile name from raw policies while keeping virtual values out of writes', async () => {
+    const definition = {
+      ...currencyDefinition,
+      displayLabelField: 'displayLabel',
+      displayLabelProjection: {
+        via: 'profileId',
+        field: 'name',
+        fallback: 'Unnamed customer',
+      },
+      fields: {
+        ...currencyDefinition.fields,
+        displayLabel: {
+          type: 'text' as const,
+          readonly: true,
+          ui: { basic: true },
+        },
+      },
+    };
+    const source = memorySource([
+      { ...taskRows[0], displayLabel: 'Maya Projected' },
+    ]);
+    const raw = {
+      ...cookbook,
+      recipes: ['fixture.generic'],
+      layout: {
+        version: 1 as const,
+        items: { 'item:tasks:Task:generic': { label: 'Customers' } },
+      },
+      policies: [
+        ...cookbook.policies,
+        {
+          objectRef: definition.objectRef,
+          fieldName: 'displayLabel',
+          scopeType: 'app' as const,
+          label: 'Client name',
+          readOnly: false,
+        },
+      ],
+    };
+    const props = {
+      cookbook: raw,
+      catalog,
+      sectionId: 'section:fixture.generic',
+      screenProps: { definition, source },
+    };
+    const mounted = render(CookbookHarness, props);
+    expect(
+      await screen.findByRole('columnheader', { name: /Client name/ }),
+    ).toBeInTheDocument();
+    expect(await screen.findByText('Maya Projected')).toBeInTheDocument();
+    await userEvent.click(
+      screen.getByRole('button', { name: 'New customers' }),
+    );
+    expect(screen.queryByLabelText(/Client name/)).not.toBeInTheDocument();
+    await userEvent.type(screen.getByLabelText(/Customer name/), 'New');
+    await userEvent.click(screen.getByRole('button', { name: 'Save' }));
+    expect(source.create).toHaveBeenCalledWith(
+      expect.not.objectContaining({ displayLabel: expect.anything() }),
+    );
+    await mounted.rerender({
+      ...props,
+      screenProps: { ...props.screenProps, view: 'list' },
+      cookbook: {
+        ...raw,
+        policies: [
+          ...raw.policies,
+          { ...raw.policies.at(-1)!, visibility: 'hidden' },
+        ],
+      },
+    });
+    await vi.waitFor(() =>
+      expect(
+        screen.queryByRole('columnheader', { name: /Client name/ }),
+      ).not.toBeInTheDocument(),
+    );
+    await screen.findByText('Write docs');
+    expect(screen.queryByText('Maya Projected')).not.toBeInTheDocument();
+  });
+
   it('keeps installed surfaces, collection vocabulary and provider policies for a manifest-proven app replacement', async () => {
     const source = memorySource([]);
     const definition = {
