@@ -644,7 +644,14 @@ export class MCPGenerator {
         const candidate = qualified
           ? (info.qualifiedName ?? key)
           : info.name || key;
-        if (candidate.toLowerCase() === wanted) matches.add(info);
+        if (
+          candidate.toLowerCase() === wanted ||
+          (qualified &&
+            info.replacedQualifiedNames?.some(
+              (id) => id.toLowerCase() === wanted,
+            ))
+        )
+          matches.add(info);
       }
       if (matches.size > 1) {
         const names = [...matches]

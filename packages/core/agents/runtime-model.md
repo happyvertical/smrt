@@ -23,6 +23,9 @@ and method surfaces of a decorated class.
   tool passes declared parameters positionally; `registerRuntimeModel` wraps
   each function so it receives one object of those parameters (`this` is the
   record).
+- **Defaults.** Synthesized runtime constructors copy declared field defaults
+  per instance, preserving parent property initializers and explicit options.
+  They read current registry metadata so additive refresh defaults apply too.
 - **Additive refresh.** Default registration keeps the first exposure config.
   Explicit `refresh: true` refreshes runtime metadata and validators; it never
   drops storage. The [app model editor](app-models.md) owns versioned edits.

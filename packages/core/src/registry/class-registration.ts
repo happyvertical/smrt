@@ -2970,6 +2970,21 @@ function registerFromManifestUntracked(
       : SmrtObject;
   const stubConstructor = class extends parentConstructor {
     static readonly _isManifestStub = true;
+    constructor(options: ConstructorParameters<typeof SmrtObject>[0] = {}) {
+      super(options);
+      if (objectDef.filePath?.startsWith('runtime-model:'))
+        for (const [key, field] of getClasses().get(qualifiedNameEarly || name)
+          ?.fields ?? []) {
+          const value =
+            field.default !== undefined ? field.default : field._meta?.default;
+          if (
+            (this as unknown as Record<string, unknown>)[key] === undefined &&
+            value !== undefined
+          )
+            (this as unknown as Record<string, unknown>)[key] =
+              structuredClone(value);
+        }
+    }
   } as typeof SmrtObject;
   Object.defineProperty(stubConstructor, 'name', { value: simpleClassName });
 

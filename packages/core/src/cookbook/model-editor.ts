@@ -33,6 +33,7 @@ import {
 } from '../vite-plugin/web-collections.js';
 import { canonical, coveredModels } from './engine/document.js';
 import { createCookbookEngine } from './engine/engine.js';
+import { buildNav, modelParts, navItemId } from './engine/nav.js';
 import type { EngineCatalog } from './engine/types.js';
 import {
   type AppModelChange,
@@ -47,21 +48,30 @@ import {
 } from './models.js';
 import { validateCookbook } from './validate.js';
 
-export type AppModelEdit =
+export type AppModelEdit = (
   | {
       type: 'add_field';
       model: string;
       name: string;
       field: CookbookModelField;
+      label?: string;
     }
   | { type: 'label_field'; model: string; name: string; label: string | null }
   | { type: 'hide_field'; model: string; name: string; hidden: boolean }
   | { type: 'remove_field'; model: string; name: string }
-  | { type: 'create_list'; name: string; list: CookbookCustomList }
+  | {
+      type: 'create_list';
+      name: string;
+      list: CookbookCustomList;
+      fieldLabels?: Record<string, string>;
+    }
   | { type: 'relabel_list'; name: string; label: string; icon?: string }
   | { type: 'remove_list'; name: string }
   | { type: 'import'; cookbook: unknown }
-  | { type: 'undo' };
+  | { type: 'undo' }
+) & {
+  /** Optional human audit/undo caption, stored with the command. */ summary?: string;
+};
 export interface AppModelEditContext {
   /** Resolved principal and tenant from the host, never from assistant arguments. */
   actor: string;
@@ -85,7 +95,12 @@ export interface AppModelSnapshot {
   revision: number;
   cookbook: Cookbook;
   manifest: SmartObjectManifest;
-  webDefinitions: ReturnType<typeof buildWebCollectionDefinition>[];
+  webDefinitions: (ReturnType<typeof buildWebCollectionDefinition> & {
+    label?: string;
+    icon?: string;
+    fieldPolicies: Record<string, Cookbook['policies'][number]>;
+    customFields: string[];
+  })[];
 }
 export interface AppModelEditReceipt extends AppModelSnapshot {
   path: 'runtime' | 'policy';
@@ -413,6 +428,9 @@ export async function createAppModelEditor(options: AppModelEditorOptions) {
   function projection(): AppModelSnapshot {
     const manifest = getRuntimeManifest();
     const allowed = coveredModels(options.catalog, doc);
+    const catalog = cookbookModelCatalog(options.catalog, doc.models);
+    const nav = buildNav(catalog, doc).flatMap((section) => section.items);
+    const archived = storageModels(documents());
 
     manifest.objects = Object.fromEntries(
       Object.entries(manifest.objects).filter(
@@ -433,9 +451,55 @@ export async function createAppModelEditor(options: AppModelEditorOptions) {
       revision,
       cookbook: structuredClone(doc),
       manifest,
-      webDefinitions: selectWebCollectionEntries(manifest).map((entry) =>
-        buildWebCollectionDefinition(entry, manifest),
-      ),
+      webDefinitions: selectWebCollectionEntries(manifest).map((entry) => {
+        const definition = buildWebCollectionDefinition(entry, manifest);
+        const ids = [
+          definition.objectRef,
+          ...(ObjectRegistry.getClass(definition.objectRef)
+            ?.replacedQualifiedNames ?? []),
+        ];
+        const items = ids.flatMap((id) => {
+          const parts = modelParts(catalog, id);
+          return [
+            navItemId(parts.packageId, parts.name),
+            ...catalog.recipes.flatMap((recipe) =>
+              recipe.nav
+                .filter((item) => item.model === id)
+                .map((item) =>
+                  navItemId(parts.packageId, parts.name, item.key),
+                ),
+            ),
+          ];
+        });
+        const item = nav.find((item) => items.includes(item.id));
+        const customFields = ids.flatMap((id) =>
+          Object.entries(
+            archived?.lists[
+              id.startsWith(`${options.packageName}:`)
+                ? id.split(':').at(-1)!
+                : ''
+            ]?.fields ??
+              archived?.fields[id] ??
+              {},
+          ).flatMap(([name, field]) => [
+            name,
+            ...(field.type === 'money' ? [`${name}Currency`] : []),
+          ]),
+        );
+        return {
+          ...definition,
+          customFields: [...new Set(customFields)],
+          ...(item ? { label: item.label, icon: item.icon } : {}),
+          fieldPolicies: Object.fromEntries(
+            doc.policies
+              .filter(
+                (policy) =>
+                  ids.includes(policy.objectRef) && policy.scopeType === 'app',
+              )
+              .map((policy) => [policy.fieldName, structuredClone(policy)]),
+          ),
+        };
+      }),
     };
   }
 
@@ -643,15 +707,50 @@ export async function createAppModelEditor(options: AppModelEditorOptions) {
           next.features = [
             ...new Set([...next.features, effectiveId(edit.name)]),
           ];
+          for (const [fieldName, label] of Object.entries(
+            edit.fieldLabels ?? {},
+          )) {
+            if (!Object.hasOwn(edit.list.fields, fieldName))
+              throw new Error('FIELD_NOT_FOUND');
+            next.policies.push({
+              objectRef: effectiveId(edit.name),
+              fieldName,
+              scopeType: 'app',
+              label,
+            });
+          }
           break;
         case 'relabel_list':
-          if (!Object.hasOwn(models.lists, edit.name))
+          if (Object.hasOwn(models.lists, edit.name))
+            models.lists[edit.name] = {
+              ...models.lists[edit.name],
+              label: edit.label,
+              ...(edit.icon !== undefined ? { icon: edit.icon } : {}),
+            };
+          else if (!coveredModels(options.catalog, next).has(edit.name))
             throw new Error('MODEL_NOT_FOUND');
-          models.lists[edit.name] = {
-            ...models.lists[edit.name],
-            label: edit.label,
-            ...(edit.icon !== undefined ? { icon: edit.icon } : {}),
-          };
+          {
+            const id = Object.hasOwn(models.lists, edit.name)
+              ? effectiveId(edit.name)
+              : edit.name;
+            const catalog = cookbookModelCatalog(options.catalog, models);
+            const parts = modelParts(catalog, id);
+            const keys = options.catalog.recipes.flatMap((recipe) =>
+              recipe.nav
+                .filter((entry) => entry.model === id)
+                .map((entry) => entry.key),
+            );
+            next.layout ??= { version: 1 };
+            next.layout.items ??= {};
+            for (const key of new Set([undefined, ...keys])) {
+              const itemId = navItemId(parts.packageId, parts.name, key);
+              next.layout.items[itemId] = {
+                ...next.layout.items[itemId],
+                label: edit.label,
+                ...(edit.icon !== undefined ? { icon: edit.icon } : {}),
+              };
+            }
+          }
           break;
         case 'remove_list':
           if (!Object.hasOwn(models.lists, edit.name))
@@ -677,6 +776,13 @@ export async function createAppModelEditor(options: AppModelEditorOptions) {
           if (Object.hasOwn(fields, edit.name))
             throw new Error('FIELD_NAME_COLLISION');
           fields[edit.name] = structuredClone(edit.field);
+          if (edit.label !== undefined)
+            next.policies.push({
+              objectRef: effectiveId(edit.model),
+              fieldName: edit.name,
+              scopeType: 'app',
+              label: edit.label,
+            });
           break;
         }
         case 'label_field':
@@ -843,6 +949,10 @@ export async function createAppModelEditor(options: AppModelEditorOptions) {
     return operation;
   }
   return {
+    /** Server transports reuse the exact editor database, including in-memory SQLite. */
+    get database() {
+      return options.db;
+    },
     apply,
     snapshot,
     export: () => JSON.stringify(snapshot().cookbook, null, 2),
