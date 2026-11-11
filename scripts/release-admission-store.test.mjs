@@ -245,3 +245,24 @@ test('a ref update that lands but answers 5xx is recognized by its unique commit
   server.intercept = null;
   await assert.rejects(backend2.compareAndSwap(cur.revision, admission('b')(cur.state)), { status: 503 });
 });
+
+test('POST retry, PATCH network loss and a competing writer after a PATCH 5xx are handled', async () => {
+  const server = github();
+  const make = (fetchImpl) => createReleaseAdmissionStore({ repository, token: 't', fetchImpl, sleep: async () => {} });
+  const head = await make(server.fetch).initialize(initial());
+  let postFailures = 1;
+  const flakyPost = async (url, options) => (options.method === 'POST' && postFailures-- > 0 ? { status: 502 } : server.fetch(url, options));
+  assert.equal(await make(flakyPost).compareAndSwap(head.revision, admission('a')(head.state)), true);
+  const cur = await make(server.fetch).read();
+  const lostNetwork = async (url, options) => {
+    if (options.method === 'PATCH') throw new Error('socket');
+    return server.fetch(url, options);
+  };
+  await assert.rejects(make(lostNetwork).compareAndSwap(cur.revision, admission('b')(cur.state)), { code: 'github-network-error' });
+  const racing = async (url, options) => {
+    if (options.method !== 'PATCH') return server.fetch(url, options);
+    await make(server.fetch).compareAndSwap(cur.revision, admission('c')(cur.state));
+    return { status: 503 };
+  };
+  assert.equal(await make(racing).compareAndSwap(cur.revision, admission('b')(cur.state)), false);
+});

@@ -169,15 +169,19 @@ export function createReleaseAdmissionStore({ repository, token, fetchImpl = fet
     check(nextState.revision === current.state.revision + 1, 'invalid-next-revision');
     const commitSha = await writeCommit(nextState, [expectedSha]);
     let response;
+    let networkError = null;
     try { response = await request('PATCH', `refs/${REF_SUFFIX}`, { sha: commitSha, force: false }); } catch (error) {
       if (error.code !== 'github-network-error') throw error;
+      networkError = error;
       response = { status: 599 };
     }
     if (response.status >= 500) {
       // The write may have landed before the error; our commit is unique, so
       // finding it at the head proves success without risking a double write.
-      if (await refHead() === commitSha) return true;
-      throw new ReleaseAdmissionStoreError('github-request-rejected', response.status);
+      const landed = await refHead();
+      if (landed === commitSha) return true;
+      if (landed !== null && landed !== expectedSha) return false; // another writer won
+      throw networkError ?? new ReleaseAdmissionStoreError('github-request-rejected', response.status);
     }
     if (response.status === 422) {
       const refreshed = await refHead();
