@@ -76,7 +76,9 @@ const routeSurface = $derived.by(() => {
   const entry = entryId
     ? cookbookContext.shell.entries.get(entryId)
     : [...cookbookContext.shell.entries.values()].find(
-        (e) => e.model.id === definition.objectRef,
+        (e) =>
+          e.model.id === definition.objectRef ||
+          definition.replacedQualifiedNames?.includes(e.model.id),
       );
   return cookbookContext.shell.routes.find(
     (route) =>

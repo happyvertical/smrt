@@ -92,7 +92,7 @@ stays below the domain layer. The app passes them as props, or `CookbookApp` sup
 - **Not the policy-editing surface.** The policy gear, field-usage telemetry and
   the per-field renderer registry live in `ObjectForm`
   (`@happyvertical/smrt-fields/svelte`); `EditForm` is the dependency-light
-  default and does not replace it. Not wired into recipe surfaces yet (#3708).
+  default and does not replace it. Recipe surfaces receive the same resolved screen policy.
 - Component props live in `types.ts`, not in the `.svelte` files, so the barrel
   never re-exports types from a component.
 - **Where a package model's definition and data come from (#3749).** A cookbook
@@ -402,3 +402,9 @@ product sources: all four fail there and pass with the context implementation.
 The installed fixture's nine new regression cases fail against the previous
 committed screen implementation; all twenty screen cases pass on the integrated
 implementation.
+
+Integration cases in `RecipeScreens.test.ts` cover manifest-proven app aliases,
+live host exposure projection, and read-only/hidden reference pickers under raw
+cookbook policies. The read-only picker remains disabled and resolves a display name;
+the hidden picker never loads its target. Existing source and reference-label APIs
+are reused unchanged.

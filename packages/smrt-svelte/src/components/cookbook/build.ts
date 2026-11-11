@@ -385,9 +385,16 @@ export function cookbookScreenDefinition(
   const entry = entryId
     ? shell.entries.get(entryId)
     : [...shell.entries.values()].find(
-        (e) => e.model.id === definition.objectRef,
+        (e) =>
+          e.model.id === definition.objectRef ||
+          definition.replacedQualifiedNames?.includes(e.model.id),
       );
-  if (!entry || entry.model.id !== definition.objectRef) return definition;
+  if (
+    !entry ||
+    (entry.model.id !== definition.objectRef &&
+      !definition.replacedQualifiedNames?.includes(entry.model.id))
+  )
+    return definition;
   return {
     ...definition,
     label: entry.label,

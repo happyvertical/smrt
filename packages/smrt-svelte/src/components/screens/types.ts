@@ -109,6 +109,8 @@ export interface ScreenCollectionDefinition {
   name?: string;
   /** Canonical qualified model identity (`@package/name:ClassName`). */
   objectRef: string;
+  /** Manifest-proven provider identities of an effective app replacement. */
+  replacedQualifiedNames?: readonly string[];
   /** Simple class name, used to derive default titles. */
   className: string;
   /** Collection name shown by the active cookbook. */

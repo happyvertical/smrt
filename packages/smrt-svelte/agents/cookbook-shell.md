@@ -99,9 +99,8 @@ sample data source are not part of it.
   `records` the section pages add the count and latest records; `shortcuts`
   is a `CookbookShortcutsLoader`, below),
 - `widgetContext` (host capabilities for browser-side widget loads),
-- `resolveExport` (a static map of dynamic imports; turns a recipe export
-  reference into a component, used for `shell-widget` slot items and recipe
-  `widget` registration; without it those surfaces are ignored),
+- `resolveExport` (optional override of the installed-manifest generated resolver
+  for shell widgets, recipe widgets and route surfaces),
 - `oncookbookchange(cookbook)` called with the full cookbook after a layout or
   overview edit (layout edits come from the shell's pencil toggle, enabled with
   `layoutEditing`). Without it edits live in memory. Persisting them is the
@@ -179,9 +178,8 @@ listing every problem, including a recipe no installed package declares.
 
 ## Not done here
 
-- **Field policies** (`cookbook.policies`) are returned as `policies` but not
-  applied; applying them to the runtime is `smrt cookbook apply` and the
-  runtime's job. The shell does not render a settings page; pass `settingsHref`.
+- **Policy editing settings** remain host-owned; pass `settingsHref`. The shell
+  automatically resolves raw `cookbook.policies` for its record screens.
 - **Entry pages** (`/m/<package>/<Model>/`) are the app's routes; `./screens`
   (`RecipeScreens`) is the default content for them. Their data comes from the
   package model's generated REST route and its `@smrt/web` definition (#3749).
@@ -290,3 +288,32 @@ imports). Existing owning code was extended rather than duplicated:
 - `__tests__/surface-package/Surface.svelte`: a test-only package route composing
   the existing `EditForm`; its `index.js` is only a re-export and its manifest and
   package.json are fixture data. No new production component/model is introduced.
+
+## Integration contract after the shared train
+
+Client policy code imports only the browser-safe `smrt-fields/policy` and
+`smrt-core/cookbook` entries, never the fields server resolver/root. Installed
+provider recipes keep their entry ids, labels and surface paths after a same-name
+app replacement. Generated `replacedQualifiedNames` is the only alias authority;
+canonical app rows override provider contributions without erasing sparse metadata.
+
+Live exposure remains host-owned: subscribe to exposure changes, refresh navigation
+with `filterRuntimeCookbookSnapshot`, filter definitions with `filterRuntimeExposure`,
+and check direct URLs before mounting a screen. An installed lazy surface map is an
+AOT superset, not authorization. The component integration case closes the host
+preference, removes the projected screen/navigation, then reopens it without a build.
+
+Read-only reference fields compose the existing disabled `ReferencePicker`, retaining
+its manifest display label. Hidden references never mount a picker or issue a target
+lookup. Save payloads preserve existing IDs and use valid raw defaults only on create.
+
+Core's scanned app/STI fixture drives the existing screen field/draft functions into
+REST create and verifies the effective app discriminator and hidden default in SQLite.
+The existing durable cookbook-tool fixture proves policy metadata is unchanged while
+a replacement is held, is published after owner decision/consumption, and cannot replay.
+UI read-only metadata does not grant permission or approve assistant tools.
+
+Reuse audit repeated MCP reviews for core/fields/smrt-svelte and intent-index/name/purpose
+searches across core, fields, smrt-ui, smrt-svelte and chat. `cookbookPolicyLayers` factors
+the two existing raw-row selectors; it uses existing registry/manifest replacement
+provenance and the original sparse merge kernel. No new component/model is introduced.

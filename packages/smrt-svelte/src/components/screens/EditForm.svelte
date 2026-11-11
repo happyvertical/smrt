@@ -238,7 +238,7 @@ const formError = $derived(
 </script>
 
 {#snippet control(field: ScreenField)}
-  {#if isDerived(field) || isReadOnly(field)}
+  {#if isDerived(field) || (isReadOnly(field) && field.kind !== 'reference')}
     <FormGroup label={label(field)} hint={isDerived(field) ? t(M['ui.screens.derived_hint']) : hint(field)}>
       <Input
         name={field.name}
@@ -249,7 +249,7 @@ const formError = $derived(
   {:else if field.kind === 'reference'}
     {@const target = screenReferenceTarget(definition, field, references)}
     {#key target}
-      <ReferencePicker {field} {target} disabled={busy} error={messageFor(field)}
+      <ReferencePicker {field} {target} disabled={busy || isReadOnly(field)} error={messageFor(field)}
         bind:value={() => text(field.name), (v) => setText(field.name, v)} />
     {/key}
   {:else if field.kind === 'boolean'}

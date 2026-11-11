@@ -1,3 +1,10 @@
+import { createCookbookEngine } from '@happyvertical/smrt-core/cookbook/engine';
+import {
+  createCookbookRuntimeExposure,
+  filterRuntimeCookbookSnapshot,
+  filterRuntimeExposure,
+  setRuntimeExposureGate,
+} from '@happyvertical/smrt-core/runtime-exposure';
 import type { Cookbook } from '@happyvertical/smrt-types';
 import { render, screen, within } from '@testing-library/svelte';
 import userEvent from '@testing-library/user-event';
@@ -455,6 +462,235 @@ describe('installed recipe end-to-end fixture', () => {
         priority: 7,
       }),
     );
+  });
+
+  it('keeps installed surfaces, collection vocabulary and provider policies for a manifest-proven app replacement', async () => {
+    const source = memorySource([]);
+    const definition = {
+      ...currencyDefinition,
+      objectRef: '@fixture/app:Task',
+      replacedQualifiedNames: [taskDefinition.objectRef],
+    };
+    render(CookbookHarness, {
+      cookbook: {
+        ...cookbook,
+        policies: [
+          {
+            objectRef: definition.objectRef,
+            fieldName: 'title',
+            scopeType: 'app',
+            label: 'App customer name',
+          },
+          ...cookbook.policies,
+        ],
+      },
+      catalog,
+      sectionId: 'section:fixture.surface',
+      screenProps: { definition, source },
+    });
+    await screen.findByTestId('installed-recipe-surface');
+    expect(
+      screen.getByRole('heading', { name: 'New customers' }),
+    ).toBeInTheDocument();
+    expect(screen.getByLabelText('Currency')).toHaveValue('USD');
+    expect(screen.queryByLabelText('Reference')).not.toBeInTheDocument();
+    expect(screen.getByLabelText('Priority')).toHaveAttribute('readonly');
+    await userEvent.type(
+      screen.getByLabelText(/App customer name/),
+      'App Maya',
+    );
+    await userEvent.click(screen.getByRole('button', { name: 'Save' }));
+    expect(source.create).toHaveBeenCalledWith(
+      expect.objectContaining({
+        title: 'App Maya',
+        reference: 'USD',
+        currency: 'USD',
+        priority: 7,
+      }),
+    );
+  });
+
+  it('removes a lazy recipe surface and navigation when the host refreshes the live exposure projection', async () => {
+    const engineCatalog = {
+      ...catalog,
+      recipes: catalog.recipes.map((recipe) => ({
+        ...recipe,
+        requires: recipe.requires ?? [],
+      })),
+    };
+    const engine = createCookbookEngine({
+      catalog: engineCatalog,
+      cookbook: {
+        ...cookbook,
+        $schema: 'https://s-m-r-t.dev/schemas/cookbook/v1.json',
+      },
+    });
+    const originalCookbook = engine.cookbook();
+    let preference = true;
+    const gate = createCookbookRuntimeExposure({
+      catalog: engineCatalog,
+      engineFor: () => engine,
+      predicate: () => preference,
+    });
+    setRuntimeExposureGate(gate);
+    const source = memorySource([]);
+    const project = () => {
+      const snapshot = filterRuntimeCookbookSnapshot(
+        engine.snapshot(),
+        engineCatalog,
+        { tenantId: 'owner-a' },
+      );
+      const definitions = filterRuntimeExposure(
+        [currencyDefinition],
+        (definition) => definition.objectRef,
+        { tenantId: 'owner-a', surface: 'screen' },
+      );
+      return {
+        cookbook: {
+          ...engine.cookbook(),
+          recipes: snapshot.recipes.map((recipe) => recipe.id),
+          features: snapshot.features,
+        },
+        catalog,
+        sectionId: 'section:fixture.surface',
+        screenProps: definitions[0]
+          ? { definition: definitions[0], source }
+          : undefined,
+      };
+    };
+    try {
+      const mounted = render(CookbookHarness, project());
+      await screen.findByTestId('installed-recipe-surface');
+      const loaded = vi.mocked(source.list).mock.calls.length;
+      preference = false;
+      await mounted.rerender(project());
+      await vi.waitFor(() =>
+        expect(
+          screen.queryByTestId('installed-recipe-surface'),
+        ).not.toBeInTheDocument(),
+      );
+      expect(
+        document.querySelector(
+          '[data-smrt-component="TenantNav"] a[href="/m/tasks/Task/"]',
+        ),
+      ).toBeNull();
+      expect(source.list).toHaveBeenCalledTimes(loaded);
+      expect(engine.cookbook()).toEqual(originalCookbook);
+      preference = true;
+      await mounted.rerender(project());
+      await screen.findByTestId('installed-recipe-surface');
+      mounted.unmount();
+    } finally {
+      setRuntimeExposureGate(undefined);
+      gate.dispose();
+    }
+  });
+
+  it.each([
+    'create',
+    'edit',
+  ] as const)('keeps hidden/read-only cookbook reference policies in the %s picker', async (view) => {
+    const id = 'dd44cefa-5dfe-4133-bb8e-26796c288207';
+    const hiddenId = 'cad90120-86e4-4ca0-9e0f-96c304f94974';
+    const people = {
+      name: 'people',
+      objectRef: '@fixture/people:Person',
+      className: 'Person',
+      displayLabelField: 'name',
+      fields: { name: { type: 'text' as const } },
+    };
+    const get = vi.fn(async () => ({ id, name: 'Ada Lovelace' }));
+    const search = vi.fn(async () => ({ rows: [], hasMore: false }));
+    const definition = {
+      ...currencyDefinition,
+      fields: {
+        ...currencyDefinition.fields,
+        customerId: { type: 'crossPackageRef' as const },
+        approverId: { type: 'foreignKey' as const },
+      },
+      relationships: [
+        {
+          field: 'customerId',
+          kind: 'crossPackageRef' as const,
+          relatedCollection: 'people',
+        },
+        {
+          field: 'approverId',
+          kind: 'foreignKey' as const,
+          relatedCollection: 'people',
+        },
+      ],
+    };
+    const source = memorySource([
+      { ...taskRows[0], customerId: hiddenId, approverId: id },
+    ]);
+    const mounted = render(CookbookHarness, {
+      cookbook: {
+        ...cookbook,
+        policies: [
+          ...cookbook.policies,
+          {
+            objectRef: definition.objectRef,
+            fieldName: 'customerId',
+            scopeType: 'app',
+            visibility: 'hidden',
+            defaultValue: JSON.stringify(hiddenId),
+          },
+          {
+            objectRef: definition.objectRef,
+            fieldName: 'approverId',
+            scopeType: 'app',
+            readOnly: true,
+            label: 'Verified by',
+            defaultValue: JSON.stringify(id),
+          },
+        ],
+      },
+      catalog,
+      sectionId: 'section:fixture.generic',
+      screenProps: {
+        definition,
+        source,
+        view,
+        recordId: view === 'edit' ? 't-1' : null,
+        references: {
+          people: {
+            definition: people,
+            source: { list: vi.fn(async () => []), get, search },
+          },
+        },
+      },
+    });
+    expect(screen.queryByLabelText(/Customer id/)).not.toBeInTheDocument();
+    const picker = await screen.findByRole('combobox', { name: /Verified by/ });
+    await vi.waitFor(() => expect(picker).toHaveValue('Ada Lovelace'));
+    expect(picker).toBeDisabled();
+    expect(search).not.toHaveBeenCalled();
+    expect(get).toHaveBeenCalledWith(id);
+    expect(get).not.toHaveBeenCalledWith(hiddenId);
+    const title = screen.getByLabelText(/Customer name/);
+    await userEvent.clear(title);
+    await userEvent.type(title, 'Reference customer');
+    await userEvent.click(screen.getByRole('button', { name: 'Save' }));
+    if (view === 'create')
+      expect(source.create).toHaveBeenCalledWith(
+        expect.objectContaining({ customerId: hiddenId, approverId: id }),
+      );
+    else {
+      expect(source.update).toHaveBeenCalledWith(
+        't-1',
+        expect.not.objectContaining({ approverId: expect.anything() }),
+      );
+      expect(source.update).toHaveBeenCalledWith(
+        't-1',
+        expect.not.objectContaining({ customerId: expect.anything() }),
+      );
+      expect(source.rows[0]).toMatchObject({
+        customerId: hiddenId,
+        approverId: id,
+      });
+    }
+    mounted.unmount();
   });
 
   it.each([

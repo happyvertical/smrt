@@ -1,4 +1,5 @@
 import { randomUUID } from 'node:crypto';
+import type { Cookbook } from '@happyvertical/smrt-types';
 import type { DatabaseInterface } from '@happyvertical/sql';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import type { PrincipalTool } from '../../../agents/src/invoke-agent.js';
@@ -636,6 +637,64 @@ describe('installed recipe server tools (SQLite, in process)', () => {
       'welder',
       'yoga-studio',
     ]);
+  });
+
+  it('publishes raw screen policies only after the matching durable cookbook approval is consumed', async () => {
+    await enable();
+    const document: Cookbook = {
+      ...catalog.cookbooks![0].document,
+      policies: [
+        {
+          objectRef: INVOICE,
+          fieldName: 'currency',
+          scopeType: 'app',
+          defaultValue: '"USD"',
+          visibility: 'hidden',
+          readOnly: true,
+          label: 'Billing currency',
+        },
+      ],
+    };
+    options.catalog = {
+      ...catalog,
+      cookbooks: [{ id: 'policy-shop', name: 'Policy Shop', document }],
+    };
+    service = createCookbookToolService(options);
+    const before = engines.get(context.tenantId!)!.cookbook();
+    const preview = await call('cookbook.apply', { id: 'policy-shop' });
+    const args = {
+      id: 'policy-shop',
+      apply: true,
+      expectedRevision: revision(),
+      previewToken: preview.previewToken,
+    };
+    const hold = await call('cookbook.apply', args);
+    expect(hold.status).toBe('approval_required');
+    expect(engines.get(context.tenantId!)!.cookbook()).toEqual(before);
+    // Client-provided record readOnly/approved flags do not authorize the replacement.
+    await expect(
+      call('cookbook.apply', {
+        ...args,
+        approvalId: hold.approvalId,
+        approved: true,
+      }),
+    ).rejects.toBeDefined();
+    expect(engines.get(context.tenantId!)!.cookbook()).toEqual(before);
+    await authority.decide(
+      { id: context.userId!, tenantId: context.tenantId! },
+      String(hold.approvalId),
+      true,
+    );
+    await call('cookbook.apply', { ...args, approvalId: hold.approvalId });
+    expect(engines.get(context.tenantId!)!.cookbook().policies).toEqual(
+      document.policies,
+    );
+    expect(
+      await authority.get(context.tenantId!, String(hold.approvalId)),
+    ).toMatchObject({ status: 'succeeded' });
+    await expect(
+      call('cookbook.apply', { ...args, approvalId: hold.approvalId }),
+    ).rejects.toBeDefined();
   });
 
   it('removes every tool when the preference is off and refuses retained MCP/assistant tools and non-owners', async () => {

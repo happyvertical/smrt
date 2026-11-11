@@ -10,6 +10,12 @@ import {
 import { createRecipeScreenReferences } from '../../../smrt-svelte/src/components/screens/source.js';
 import { buildActivationManifest } from '../activation/generate.js';
 import { createActivationCoordinator } from '../activation.js';
+import { resolveCookbookFieldPolicy } from '../../../fields/src/policy.js';
+import { deriveScreenFields } from '../../../smrt-svelte/src/components/screens/fields.js';
+import {
+  draftForCreate,
+  parseDraft,
+} from '../../../smrt-svelte/src/components/screens/values.js';
 import { SmrtCollection } from '../collection';
 import { createCookbookEngine } from '../cookbook/engine/engine.js';
 import { foreignKey } from '../decorators';
@@ -365,6 +371,66 @@ describe('same-name app subclass', () => {
     expect(up.objects[`${UP}:Leaf`].schema?.columns).toHaveProperty(
       'base_value',
     );
+  });
+
+  it('keeps provider cookbook defaults and hidden fields on generated app STI creates', async () => {
+    runtime(up, app);
+    db = await getDatabase({ type: 'sqlite', url: ':memory:' });
+    await migrate(merged);
+    await ObjectRegistry.getCollection(`${UP}:Profile`, { db });
+    const entry = selectWebCollectionEntries(merged).find(
+      (e) => e.obj.qualifiedName === `${APP}:Profile`,
+    )!;
+    const definition = buildWebCollectionDefinition(entry, merged);
+    expect(definition.objectRef).toBe(`${APP}:Profile`);
+    expect(definition.replacedQualifiedNames).toEqual([`${UP}:Profile`]);
+    const cookbook = {
+      policies: [
+        {
+          objectRef: `${UP}:Profile`,
+          fieldName: 'title',
+          label: 'Customer name',
+          defaultValue: '"New customer"',
+        },
+        {
+          objectRef: `${UP}:Profile`,
+          fieldName: 'badge',
+          visibility: 'hidden',
+          defaultValue: '"PRIVATE"',
+        },
+      ],
+    } satisfies Parameters<typeof resolveCookbookFieldPolicy>[1];
+    const policy = resolveCookbookFieldPolicy(definition, cookbook);
+    const fields = deriveScreenFields(definition, policy, { mode: 'edit' });
+    expect(fields.find((field) => field.name === 'badge')).toBeUndefined();
+    expect(fields.find((field) => field.name === 'title')?.label).toBe(
+      'Customer name',
+    );
+    const payload = parseDraft(fields, draftForCreate(fields, policy));
+    expect(payload.errors).toEqual({});
+    // EditForm adds hidden create defaults from the same policy; never synthesize a subtype discriminator.
+    const values = {
+      ...payload.values,
+      badge: policy.fields.badge.defaultValue,
+    };
+    expect(values).not.toHaveProperty('_meta_type');
+    const handler = new APIGenerator(
+      { basePath: '/api', authMiddleware: () => async (req) => req },
+      { db, user: { id: 'test' }, permissions: ['profiles.create'] },
+    ).generateHandler();
+    const response = await handler(
+      new Request(`http://localhost/api${definition.endpoint}`, {
+        method: 'POST',
+        headers: { 'content-type': 'application/json' },
+        body: JSON.stringify(values),
+      }),
+    );
+    expect(response.status, await response.text()).toBe(201);
+    expect(
+      (await db.query('SELECT title, badge, _meta_type FROM a2_profiles')).rows,
+    ).toEqual([
+      { title: 'New customer', badge: 'PRIVATE', _meta_type: `${APP}:Profile` },
+    ]);
   });
 
   it('dispatches shared STI creates to the app root even with children first', async () => {
