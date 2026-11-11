@@ -240,6 +240,24 @@ describe('RepositoryCollection.syncOrganization (#4905)', () => {
     expect(await repos.list({})).toHaveLength(2);
   });
 
+  it('never persists an empty-identity placeholder when the save after create fails', async () => {
+    const original = repos.create.bind(repos);
+    vi.spyOn(repos, 'create').mockImplementationOnce(async (...args) => {
+      const repo = await original(...args);
+      vi.spyOn(repo, 'save').mockRejectedValueOnce(new Error('save failed'));
+      return repo;
+    });
+    await expect(repos.syncOrganization(base())).rejects.toThrow('save failed');
+    vi.restoreAllMocks();
+    const rows = await repos.list({});
+    expect(rows.every((r) => r.owner && r.name)).toBe(true);
+    clock = new Date('2026-11-10T12:01:00Z');
+    const retry = await repos.syncOrganization(base());
+    expect(retry.skipped).toBe(false);
+    const after = await repos.list({});
+    expect(after.map((r) => r.name).sort()).toEqual(['alpha', 'beta']);
+  });
+
   it('matches owner and name case-insensitively without duplicating', async () => {
     await repos.getOrCreate('ACME', 'Alpha');
     const result = await repos.syncOrganization(base());

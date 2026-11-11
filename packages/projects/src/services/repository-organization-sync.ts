@@ -142,26 +142,34 @@ function toDate(value: string | null): Date | null {
   return Number.isNaN(date.getTime()) ? null : date;
 }
 
+function summaryFields(
+  s: OrganizationRepositorySummary,
+  fallbackBranch?: string,
+) {
+  return {
+    owner: s.owner,
+    name: s.name,
+    fullName: `${s.owner}/${s.name}`,
+    description: s.description ?? '',
+    defaultBranch: s.defaultBranch ?? fallbackBranch ?? 'main',
+    isPrivate: s.isPrivate,
+    url: s.url,
+    archived: s.archived,
+    lastPushedAt: toDate(s.pushedAt),
+    openPullRequestCount: s.openPullRequestCount,
+    ciState: s.ciState as RepositoryCiState,
+    latestReleaseTag: s.latestRelease?.tag ?? '',
+    latestReleaseDate: toDate(s.latestRelease?.publishedAt ?? null),
+    latestReleaseUrl: s.latestRelease?.url ?? '',
+    missingSince: null,
+  };
+}
+
 function applySummary(
   repo: Repository,
   s: OrganizationRepositorySummary,
-  now: Date,
 ): void {
-  repo.owner = s.owner;
-  repo.name = s.name;
-  repo.fullName = `${s.owner}/${s.name}`;
-  repo.description = s.description ?? '';
-  repo.defaultBranch = s.defaultBranch ?? repo.defaultBranch ?? 'main';
-  repo.isPrivate = s.isPrivate;
-  repo.url = s.url;
-  repo.archived = s.archived;
-  repo.lastPushedAt = toDate(s.pushedAt);
-  repo.openPullRequestCount = s.openPullRequestCount;
-  repo.ciState = s.ciState as RepositoryCiState;
-  repo.latestReleaseTag = s.latestRelease?.tag ?? '';
-  repo.latestReleaseDate = toDate(s.latestRelease?.publishedAt ?? null);
-  repo.latestReleaseUrl = s.latestRelease?.url ?? '';
-  repo.missingSince = null;
+  Object.assign(repo, summaryFields(s, repo.defaultBranch));
 }
 
 /**
@@ -259,15 +267,18 @@ export async function syncOrganizationRepositories(
     let repo = byKey.get(key);
     if (repo) {
       if (repo.missingSince) result.restored++;
-      applySummary(repo, summary, now);
+      applySummary(repo, summary);
       result.updated++;
     } else {
+      // create() persists immediately: the first row written must already
+      // carry its real identity, or a failed follow-up save would strand an
+      // empty-identity placeholder that breaks the unique index on retry.
       repo = await collection.create({
         providerType,
         tokenConfigKey,
         baseUrl: options.baseUrl ?? '',
+        ...summaryFields(summary),
       });
-      applySummary(repo, summary, now);
       result.created++;
     }
     if (summary.archived) result.archived++;
