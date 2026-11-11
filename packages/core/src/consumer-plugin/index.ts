@@ -71,7 +71,10 @@ export {
   serializeSmrtGenerationSnapshot,
   sha256SmrtGenerationSnapshot,
 } from '../generation-snapshot.js';
-export { separateHostedStiCollections } from './hosted-sti-collections.js';
+export {
+  aliasHostedCollections,
+  separateHostedStiCollections,
+} from './hosted-sti-collections.js';
 
 /**
  * Loosely-typed view of an object definition as carried by an external

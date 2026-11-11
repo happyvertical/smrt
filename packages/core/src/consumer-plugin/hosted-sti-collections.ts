@@ -140,3 +140,76 @@ export function separateHostedStiCollections<M extends object>(
   }
   return { ...manifest, objects } as M;
 }
+
+/** Host route aliases change URLs, never storage or the provider permission namespace. */
+export function aliasHostedCollections<M extends object>(
+  manifest: M,
+  aliases: Readonly<Record<string, string>> = {},
+  hosted?: readonly string[],
+): M {
+  const source = manifest as unknown as SmartObjectManifest;
+  const replacements = modelReplacements(source);
+  const wanted = hosted
+    ? new Set(hosted.map((ref) => replacements.get(ref) ?? ref))
+    : undefined;
+  const origins = new Map<string, string>();
+  for (const [provider, replacement] of replacements) {
+    const previous = origins.get(replacement);
+    if (!previous || provider < previous) origins.set(replacement, provider);
+  }
+  const effective = new Map(
+    Object.entries(aliases).map(([ref, collection]) => {
+      if (!/^[a-z][a-z0-9-]*$/.test(collection))
+        throw new Error(`Invalid hosted collection alias: ${collection}`);
+      return [replacements.get(ref) ?? ref, collection];
+    }),
+  );
+  const owners = new Map<string, string[]>();
+  for (const [key, def] of Object.entries(source.objects)) {
+    const ref = def.qualifiedName ?? key;
+    if (
+      (wanted && !wanted.has(ref)) ||
+      replacements.has(ref) ||
+      isCollectionManifestClass(source, def)
+    )
+      continue;
+    const collection = effective.get(ref) ?? def.collection;
+    const refs = owners.get(collection) ?? [];
+    refs.push(ref);
+    owners.set(collection, refs);
+  }
+  // Stable provider-qualified ordering chooses the unprefixed route. Every
+  // other owner is namespaced; explicit aliases remain the host's choice.
+  for (const [collection, refs] of owners) {
+    const ordered = refs.sort((left, right) =>
+      (origins.get(left) ?? left).localeCompare(origins.get(right) ?? right),
+    );
+    for (const ref of ordered.slice(1)) {
+      if (effective.has(ref))
+        throw new Error(`Hosted collection alias collision: ${collection}`);
+      const pkg = ref.slice(0, ref.indexOf(':')).split('/').pop()!;
+      effective.set(ref, `${pkg.replace(/^smrt-/, '')}-${collection}`);
+    }
+  }
+  const objects = Object.fromEntries(
+    Object.entries(source.objects).map(([key, def]) => {
+      const item = isCollectionManifestClass(source, def)
+        ? resolveCollectionItemObject(source, def)
+        : def;
+      const ref = item?.qualifiedName;
+      const collection = ref ? effective.get(ref) : undefined;
+      return [
+        key,
+        collection
+          ? {
+              ...def,
+              collection,
+              permissionCollection: def.permissionCollection ?? def.collection,
+              decoratorConfig: { ...def.decoratorConfig, collection },
+            }
+          : def,
+      ];
+    }),
+  );
+  return { ...manifest, objects } as M;
+}

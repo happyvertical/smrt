@@ -97,3 +97,9 @@ capability chooses model identity and schema metadata, while existing CRUD,
 transaction and tenant guards continue to own mutation authorization/atomicity.
 SQLite is the executed persistence contract for this fixture; the schema metadata
 is engine-neutral, but this fixture does not claim PostgreSQL or DuckDB execution.
+
+Cookbook host generation now composes these replacement rules in the public
+`smrt-template-sveltekit/host/generate` entry. Core's consumer-plugin export
+`aliasHostedCollections` applies a host URL namespace after STI separation and
+before snapshot serialization. It preserves `permissionCollection`, table
+metadata and provider input, and moves a model's collection class with it.

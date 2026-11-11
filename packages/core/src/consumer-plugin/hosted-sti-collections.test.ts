@@ -96,3 +96,67 @@ it('hosts the effective app STI children when the exposure list names their prov
     await rm(root, { recursive: true, force: true });
   }
 });
+
+it('aliases colliding host routes while preserving storage, permissions and provider input', async () => {
+  const { aliasHostedCollections } = await import(
+    './hosted-sti-collections.js'
+  );
+  const object = (packageName: string) => ({
+    className: 'Account',
+    name: 'account',
+    qualifiedName: `${packageName}:Account`,
+    packageName,
+    collection: 'accounts',
+    filePath: 'account.ts',
+    fields: {},
+    methods: {},
+    decoratorConfig: { tableName: `${packageName.split('/')[1]}_accounts` },
+  });
+  const manifest = {
+    objects: {
+      '@fixture/a:Account': object('@fixture/a'),
+      '@fixture/b:Account': object('@fixture/b'),
+    },
+  };
+  const aliased = aliasHostedCollections(manifest);
+  expect(aliased.objects['@fixture/a:Account'].collection).toBe('accounts');
+  expect(aliased.objects['@fixture/b:Account']).toMatchObject({
+    collection: 'b-accounts',
+    permissionCollection: 'accounts',
+    decoratorConfig: { tableName: 'b_accounts', collection: 'b-accounts' },
+  });
+  expect(
+    aliasHostedCollections(manifest, {}, ['@fixture/b:Account']).objects[
+      '@fixture/b:Account'
+    ].collection,
+  ).toBe('accounts');
+  const replaced = {
+    objects: {
+      ...manifest.objects,
+      '@fixture/z:Account': {
+        ...object('@fixture/z'),
+        extends: 'Account',
+        extendsQualified: '@fixture/a:Account',
+        decoratorConfig: { tableName: 'a_accounts' },
+      },
+    },
+  };
+  const replacementAliases = aliasHostedCollections(replaced, {}, [
+    '@fixture/a:Account',
+    '@fixture/b:Account',
+  ]);
+  expect(replacementAliases.objects['@fixture/z:Account'].collection).toBe(
+    'accounts',
+  );
+  expect(replacementAliases.objects['@fixture/b:Account'].collection).toBe(
+    'b-accounts',
+  );
+  expect(manifest.objects['@fixture/b:Account'].collection).toBe('accounts');
+  expect(
+    aliasHostedCollections(manifest, { '@fixture/b:Account': 'messages' })
+      .objects['@fixture/b:Account'].collection,
+  ).toBe('messages');
+  expect(() =>
+    aliasHostedCollections(manifest, { '@fixture/b:Account': '../escape' }),
+  ).toThrow('Invalid hosted collection alias');
+});
