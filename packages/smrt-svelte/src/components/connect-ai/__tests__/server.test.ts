@@ -1,5 +1,6 @@
 import { rmSync, writeFileSync } from 'node:fs';
 import { join } from 'node:path';
+import { setRuntimeExposureGate } from '@happyvertical/smrt-core/runtime-exposure';
 import {
   type ChatGPTPlanStatus,
   createAgentCliService,
@@ -18,6 +19,7 @@ import {
 
 const cleanups: Array<() => void> = [];
 afterEach(() => {
+  setRuntimeExposureGate(undefined);
   for (const cleanup of cleanups.splice(0)) cleanup();
   vi.restoreAllMocks();
 });
@@ -85,6 +87,25 @@ function event(body?: unknown, headers: Record<string, string> = {}) {
 }
 
 describe('Connect AI route over inference APIs', () => {
+  it('connects AI before any cookbook models are enabled', async () => {
+    const gate = vi.fn(() => false);
+    setRuntimeExposureGate({ isEnabled: gate });
+    const { routes, setApi, binding } = setup();
+    setApi(true);
+    expect(await (await routes.GET(event())).json()).toMatchObject({
+      apiReady: true,
+    });
+    expect(
+      (await routes.POST(event({ action: 'select', engine: 'api' }))).status,
+    ).toBe(200);
+    expect(binding.select).toHaveBeenCalledExactlyOnceWith('api');
+    expect(await (await routes.GET(event())).json()).toMatchObject({
+      engine: 'api',
+      configured: true,
+    });
+    expect(gate).not.toHaveBeenCalled();
+  });
+
   it('projects missing, installed signed-out, signed-in and saved-key states without secrets', async () => {
     const { routes, binding, dir, setApi, setPlan } = setup();
     const response = await routes.GET(event());

@@ -92,3 +92,11 @@ Tests reuse the established Svelte testing/axe harness and inference's
 `installFakeCli`/`fakeDeps` fixtures. New helpers are test-local status fixtures
 and request builders. Package DAG check confirms both new inference edges remain
 acyclic. MCP's existing dependency/UI heuristic findings are not new copies.
+
+## Integration exposure boundary
+
+Connection setup is independent of cookbook model exposure and reference picker
+sources. A tenant with no enabled models must still be able to connect AI before
+onboarding creates its model offerings. The route regression installs a closed
+core gate, verifies API readiness and selection, and proves no model exposure
+lookup is used. No screen, picker, or cookbook module is changed.
