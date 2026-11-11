@@ -13,6 +13,7 @@ export default defineConfig({
   },
   resolve: {
     alias: {
+      '@happyvertical/smrt-template-sveltekit/host/settings': resolve(__dirname, 'host/settings.ts'),
       // Template sources import via SvelteKit's `$lib` alias; resolve it to
       // the template's lib directory so tests can import route modules.
       $lib: resolve(__dirname, 'template/src/lib'),

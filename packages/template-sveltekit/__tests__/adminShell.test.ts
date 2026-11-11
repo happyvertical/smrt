@@ -54,11 +54,13 @@ describe('application shell', () => {
     expect(read('settings/[section=settingsSection]/+page.svelte')).toContain(
       'onSignOut={signOut}',
     );
-    expect(read('../lib/sign-out.ts')).toContain("method: 'POST'");
+    expect(read('../lib/sign-out.ts')).toContain('@happyvertical/smrt-template-sveltekit/host/sveltekit-client');
+    const client = readFileSync(join(__dirname, '..', 'host', 'sveltekit-client.ts'), 'utf8');
+    expect(client).toContain("method: 'POST'");
     expect(read('sign-out/+server.ts')).toContain(
       'export const POST = createSignOutHandler(runtime)',
     );
-    expect(read('../lib/sign-out.ts')).toContain('if (!response.ok)');
+    expect(client).toContain('if (!response.ok)');
   });
 
   it('mounts the shipped owner setup form over the runtime action', () => {

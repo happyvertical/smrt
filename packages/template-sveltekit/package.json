@@ -7,10 +7,44 @@
   "exports": {
     ".": "./index.js",
     "./template.config.js": "./template.config.js",
-    "./template/*": "./template/*"
+    "./template/*": "./template/*",
+    "./host/server": {
+      "types": "./dist/host/server.d.ts",
+      "import": "./dist/host/server.js",
+      "default": "./dist/host/server.js"
+    },
+    "./host/client": {
+      "types": "./dist/host/client.d.ts",
+      "import": "./dist/host/client.js",
+      "default": "./dist/host/client.js"
+    },
+    "./host/generate": {
+      "types": "./dist/host/generate.d.ts",
+      "import": "./dist/host/generate.js",
+      "default": "./dist/host/generate.js"
+    },
+    "./host/preferences": {
+      "types": "./dist/host/preferences.d.ts",
+      "import": "./dist/host/preferences.js",
+      "default": "./dist/host/preferences.js"
+    },
+    "./host/settings": {
+      "types": "./dist/host/settings.d.ts",
+      "import": "./dist/host/settings.js",
+      "default": "./dist/host/settings.js"
+    },
+    "./host/sveltekit-client": {
+      "types": "./dist/host/sveltekit-client.d.ts",
+      "import": "./dist/host/sveltekit-client.js",
+      "default": "./dist/host/sveltekit-client.js"
+    },
+    "./host/InferenceSettingsPage.svelte": "./host/InferenceSettingsPage.svelte"
   },
   "smrt": {
-    "resourceExports": ["./template/*"]
+    "resourceExports": [
+      "./template/*",
+      "./host/InferenceSettingsPage.svelte"
+    ]
   },
   "files": [
     "CLAUDE.md",
@@ -20,7 +54,10 @@
     "template",
     "examples",
     "AGENTS.md",
-    "mcp-apps-template"
+    "mcp-apps-template",
+    "dist",
+    "agents",
+    "host/InferenceSettingsPage.svelte"
   ],
   "keywords": [
     "smrt",
@@ -36,16 +73,29 @@
     "directory": "packages/template-sveltekit"
   },
   "peerDependencies": {
-    "@happyvertical/smrt-core": "workspace:*"
+    "@happyvertical/smrt-core": "workspace:*",
+    "@happyvertical/smrt-agents": "workspace:*",
+    "@happyvertical/smrt-app-runtime": "workspace:*",
+    "@happyvertical/smrt-app-mcp": "workspace:*",
+    "@happyvertical/smrt-chat": "workspace:*",
+    "@happyvertical/smrt-inference": "workspace:*",
+    "@happyvertical/smrt-preferences": "workspace:*",
+    "@happyvertical/smrt-svelte": "workspace:*",
+    "@happyvertical/smrt-types": "workspace:*",
+    "@happyvertical/smrt-ui": "workspace:*",
+    "@happyvertical/smrt-users": "workspace:*",
+    "@sveltejs/kit": "^2.70.3",
+    "svelte": "^5.57.1",
+    "@happyvertical/sql": ">=0.89.12"
   },
   "scripts": {
-    "build": "pnpm run typecheck && node --check index.js",
+    "build": "tsc -p tsconfig.host.json && pnpm run typecheck && node --check index.js",
     "test": "vitest run",
     "test:e2e": "pnpm exec playwright test --config playwright.config.ts",
     "test:m5": "node ../../scripts/run-with-ci-postgres.mjs -- node e2e/support/gate.mjs",
     "test:postgres": "node ../../scripts/run-with-ci-postgres.mjs -- pnpm exec vitest run --no-file-parallelism __tests__/*.postgres.optional.test.ts",
     "test:watch": "vitest",
-    "typecheck": "tsc --noEmit -p tsconfig.fixture.json"
+    "typecheck": "tsc --noEmit -p tsconfig.fixture.json && tsc --noEmit -p tsconfig.host.json"
   },
   "devDependencies": {
     "@happyvertical/smrt-app-cli": "workspace:*",
@@ -82,7 +132,10 @@
     "typescript": "6.0.3",
     "vite": "8.1.6",
     "vitest": "4.1.10",
-    "@happyvertical/smrt-reports": "workspace:*"
+    "@happyvertical/smrt-reports": "workspace:*",
+    "@happyvertical/smrt-agents": "workspace:*",
+    "@happyvertical/smrt-types": "workspace:*",
+    "@happyvertical/smrt-commerce": "workspace:*"
   },
   "publishConfig": {
     "registry": "https://registry.npmjs.org",

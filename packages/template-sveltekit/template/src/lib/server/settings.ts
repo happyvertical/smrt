@@ -18,37 +18,13 @@ import {
 } from '@happyvertical/smrt-inference/server';
 import { createPreferenceStore } from '@happyvertical/smrt-preferences';
 import { PromptSettingsService } from '@happyvertical/smrt-prompts';
-import type { SmrtRuntimeLocals } from '@happyvertical/smrt-app-runtime/sveltekit';
-import { error } from '@sveltejs/kit';
 import { PROMPTS_CUSTOMIZE_PERMISSION } from './settings-registry';
 import { runtime } from './smrt';
 
 export { PROMPTS_CUSTOMIZE_PERMISSION };
 
-/** The request locals the settings pages read. */
-export type SettingsLocals = Pick<
-  SmrtRuntimeLocals,
-  'user' | 'tenantId' | 'permissions'
->;
-
-/** The signed-in principal of a settings request. */
-export interface SettingsSession {
-  tenantId: string;
-  userId: string;
-  /** Whether the session's permission snapshot holds `permission`. */
-  can(permission: string): boolean;
-}
-
-/** The session behind a settings load or action; 401 without one. */
-export function requireSettingsSession(locals: SettingsLocals): SettingsSession {
-  if (!locals.user?.id || !locals.tenantId) error(401, 'Sign in required');
-  const permissions = new Set(locals.permissions ?? []);
-  return {
-    tenantId: locals.tenantId,
-    userId: locals.user.id,
-    can: (permission) => permissions.has(permission),
-  };
-}
+export { requireSettingsSession, readPayload } from '@happyvertical/smrt-template-sveltekit/host/settings';
+import type { SettingsSession } from '@happyvertical/smrt-template-sveltekit/host/settings';
 
 /**
  * Secrets, the user resolver and the settings service, from smrt-inference's
@@ -112,16 +88,4 @@ export function settingsFailure(cause: unknown): { status: number; error: string
     return { status: 403, error: 'You are not allowed to change this setting.' };
   }
   return inferenceSettingsFailure(cause);
-}
-
-/** Parse the JSON `payload` form field the settings pages post. */
-export async function readPayload<T>(request: Request): Promise<T> {
-  const form = await request.formData();
-  const raw = form.get('payload');
-  if (typeof raw !== 'string') error(400, 'Missing payload');
-  try {
-    return JSON.parse(raw) as T;
-  } catch {
-    error(400, 'Invalid payload');
-  }
 }

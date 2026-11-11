@@ -5,6 +5,10 @@ It is the ground-up alternative to `smrt-start`.
 
 ## Exports
 
+- `./host/server` and `./host/client` compose a normal local cookbook app with
+  gated REST/MCP, assistant, owner link and inference settings; see
+  [cookbook host](agents/cookbook-host.md). No product-specific host package.
+
 - `getTemplatePath()` returns the template directory.
 - `copyTemplate(destination, options)` copies authored files, substitutes the
   package name, and skips `.svelte-kit` and test-fixture directories.

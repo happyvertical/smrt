@@ -2,6 +2,7 @@
   "extends": "./tsconfig.json",
   "compilerOptions": {
     "paths": {
+      "@happyvertical/smrt-template-sveltekit/host/*": ["./host/*"],
       "$lib": ["./template/src/lib"],
       // The opt-in MCP Apps overlay is copied into an app's `src/`, so its
       // `$lib` imports resolve against the template first, then the overlay.
@@ -13,11 +14,11 @@
       "@happyvertical/smrt-virt-web": [
         "./__tests__/setup/smrt-virt-web-stub.ts"
       ],
-      "@sveltejs/kit": ["./__tests__/setup/sveltejs-kit-stub.ts"]
     }
   },
   "include": [
     "__tests__/commerceBootstrap.test.ts",
+    "__tests__/cookbookHost.test.ts",
     "__tests__/runtimeEntry.test.ts",
     "__tests__/runtimeOperations.test.ts",
     "__tests__/runtimeProfileReference*.ts",

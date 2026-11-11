@@ -5,10 +5,10 @@ description: "Minimal SvelteKit project template with s-m-r-t framework integrat
 status: "stable"
 generated:
   by: "smrt/scripts/generate-knowledge-okf.ts"
-  at: "2026-11-10T02:33:12Z"
+  at: "2026-11-11T07:55:06Z"
 audience: "internal"
 evidence_level: "source-inspected"
-source_revision: "sha256:fd109830cacd65292b13c76677ccaad726b89c8cf67ab633773936787a4f22ac"
+source_revision: "sha256:8e02de9071e64a6d3b0c5f8102e1095b69c700edd2595e51fa4c340609836245"
 sources:
   - id: "manifest"
     resource: "https://github.com/happyvertical/smrt/blob/main/packages/template-sveltekit/package.json"
@@ -16,6 +16,9 @@ sources:
   - id: "agents"
     resource: "https://github.com/happyvertical/smrt/blob/main/packages/template-sveltekit/AGENTS.md"
     title: "@happyvertical/smrt-template-sveltekit packages/template-sveltekit/AGENTS.md"
+  - id: "agents-2"
+    resource: "https://github.com/happyvertical/smrt/blob/main/packages/template-sveltekit/agents/cookbook-host.md"
+    title: "@happyvertical/smrt-template-sveltekit packages/template-sveltekit/agents/cookbook-host.md"
 ---
 
 # @happyvertical/smrt-template-sveltekit
@@ -30,15 +33,18 @@ sources:
 ## Documentation
 
 - `packages/template-sveltekit/AGENTS.md`
+- `packages/template-sveltekit/agents/cookbook-host.md`
 
 ## Framework dependencies
 
+- [smrt-agents](/components/smrt-agents.md)
 - [smrt-app-cli](/components/smrt-app-cli.md)
 - [smrt-app-mcp](/components/smrt-app-mcp.md)
 - [smrt-app-runtime](/components/smrt-app-runtime.md)
 - [smrt-assets](/components/smrt-assets.md)
 - [smrt-chat](/components/smrt-chat.md)
 - [smrt-cli](/components/smrt-cli.md)
+- [smrt-commerce](/components/smrt-commerce.md)
 - [smrt-config](/components/smrt-config.md)
 - [smrt-core](/components/smrt-core.md)
 - [smrt-inference](/components/smrt-inference.md)
@@ -53,6 +59,7 @@ sources:
 - [smrt-secrets](/components/smrt-secrets.md)
 - [smrt-svelte](/components/smrt-svelte.md)
 - [smrt-tenancy](/components/smrt-tenancy.md)
+- [smrt-types](/components/smrt-types.md)
 - [smrt-ui](/components/smrt-ui.md)
 - [smrt-users](/components/smrt-users.md)
 - [smrt-web](/components/smrt-web.md)
@@ -64,6 +71,13 @@ sources:
 ## Exports
 
 - `.`
+- `./host/InferenceSettingsPage.svelte`
+- `./host/client`
+- `./host/generate`
+- `./host/preferences`
+- `./host/server`
+- `./host/settings`
+- `./host/sveltekit-client`
 - `./template.config.js`
 - `./template/*`
 

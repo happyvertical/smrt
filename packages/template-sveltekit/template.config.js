@@ -30,6 +30,7 @@ export default {
     '@happyvertical/smrt-reports': '^0.60.16',
     '@happyvertical/smrt-secrets': '^0.60.16',
     '@happyvertical/smrt-svelte': '^0.60.16',
+    '@happyvertical/smrt-template-sveltekit': '^0.60.16',
     '@happyvertical/smrt-tenancy': '^0.60.16',
     '@happyvertical/smrt-ui': '^0.60.16',
     '@happyvertical/smrt-users': '^0.60.16',

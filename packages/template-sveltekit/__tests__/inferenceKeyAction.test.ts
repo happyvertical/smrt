@@ -53,14 +53,17 @@ describe('Inference settings saveKey action', () => {
   });
 
   it('is wired to the panel and reports the stored state, never a key', () => {
-    const server = readFileSync(join(route, '+page.server.ts'), 'utf8');
+    const mount = readFileSync(join(route, '+page.server.ts'), 'utf8');
+    expect(mount).toContain('createInferenceSettingsPage(inferenceSettingsController())');
+    const server = readFileSync(join(here, '..', 'host', 'settings.ts'), 'utf8');
     expect(server).toContain('saveKey: async');
     // The load and the write both go through smrt-inference's controller,
     // which reads `keySet` from the resolver's redacted state.
-    expect(server).toContain('.load(session');
+    expect(server).toMatch(/\.load\(\s*session/);
     expect(server).toContain('controller.saveKey(session');
     expect(server).not.toContain('keySet: false');
-    const page = readFileSync(join(route, '+page.svelte'), 'utf8');
+    expect(readFileSync(join(route, '+page.svelte'), 'utf8')).toContain('InferenceSettingsPage {data}');
+    const page = readFileSync(join(here, '..', 'host', 'InferenceSettingsPage.svelte'), 'utf8');
     expect(page).toContain("save('saveKey', change)");
     expect(page).toContain('data.canEdit');
   });

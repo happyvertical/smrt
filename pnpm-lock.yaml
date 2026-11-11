@@ -4252,6 +4252,9 @@ importers:
         specifier: workspace:*
         version: link:../core
     devDependencies:
+      '@happyvertical/smrt-agents':
+        specifier: workspace:*
+        version: link:../agents
       '@happyvertical/smrt-app-cli':
         specifier: workspace:*
         version: link:../app-cli
@@ -4270,6 +4273,9 @@ importers:
       '@happyvertical/smrt-cli':
         specifier: workspace:*
         version: link:../cli
+      '@happyvertical/smrt-commerce':
+        specifier: workspace:*
+        version: link:../commerce
       '@happyvertical/smrt-config':
         specifier: workspace:*
         version: link:../config
@@ -4309,6 +4315,9 @@ importers:
       '@happyvertical/smrt-tenancy':
         specifier: workspace:*
         version: link:../tenancy
+      '@happyvertical/smrt-types':
+        specifier: workspace:*
+        version: link:../types
       '@happyvertical/smrt-ui':
         specifier: workspace:*
         version: link:../smrt-ui
