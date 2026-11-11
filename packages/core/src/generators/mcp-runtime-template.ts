@@ -389,6 +389,7 @@ import { pathToFileURL } from 'node:url';
 import { ObjectRegistry } from '@happyvertical/smrt-core';
 import { hasRuntimeExposureGate, isRuntimeModelEnabled, subscribeRuntimeExposure } from '@happyvertical/smrt-core';
 import { normalizeCustomActionFailure, SMRT_CUSTOM_ACTION_ERROR_METADATA_KEY } from '@happyvertical/smrt-core';
+import { COOKBOOK_TOOL_NAMES, getCookbookToolService } from '@happyvertical/smrt-core/cookbook/tools';
 import { loadConfig } from '@happyvertical/smrt-config';
 ${hasTaskActions ? "import { McpTaskStore, TaskRunner } from '@happyvertical/smrt-jobs';\n" : ''}
 ${hasTenantScoped ? "import { enableTenancy, runTenantScopedEntryPoint } from '@happyvertical/smrt-tenancy';\n" : ''}
@@ -844,7 +845,7 @@ ${
           ${hasTaskActions ? "extensions: { 'io.modelcontextprotocol/tasks': {} }," : ''}
         },
         cacheHints: {
-          'tools/list': hasRuntimeExposureGate() ? { ttlMs: 0, cacheScope: 'private' } : TOOL_LIST_CACHE_HINT,
+          'tools/list': (hasRuntimeExposureGate() || getCookbookToolService()) ? { ttlMs: 0, cacheScope: 'private' } : TOOL_LIST_CACHE_HINT,
         },
       }
     );
@@ -862,7 +863,7 @@ ${
       }
 
       return {
-        tools: TOOLS.filter((tool) => runtimeToolEnabled(tool.name)).sort((left, right) => left.name < right.name ? -1 : left.name > right.name ? 1 : 0),
+        tools: [...TOOLS.filter((tool) => runtimeToolEnabled(tool.name)), ...(await getCookbookToolService()?.list({ surface: 'mcp', tenantId: process.env.SMRT_MCP_TENANT_ID, userId: process.env.SMRT_MCP_USER_ID }) ?? [])].sort((left, right) => left.name < right.name ? -1 : left.name > right.name ? 1 : 0),
       };
     });
 
@@ -876,6 +877,12 @@ ${
       }
 
       try {
+        const recipeName = COOKBOOK_TOOL_NAMES.find(name => name === toolName);
+        const cookbook = getCookbookToolService();
+        if (recipeName && cookbook) {
+          const result = await cookbook.invoke(recipeName, args, { surface: 'mcp', tenantId: process.env.SMRT_MCP_TENANT_ID, userId: process.env.SMRT_MCP_USER_ID });
+          return { content: [{ type: 'text', text: result.summary }], structuredContent: result };
+        }
         if (!runtimeToolEnabled(toolName)) throw new Error('Unknown tool');
         // Static switch statement for tool execution
         const runToolBody = async () => {

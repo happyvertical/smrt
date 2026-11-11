@@ -8,6 +8,10 @@ import { mkdir, writeFile } from 'node:fs/promises';
 import { dirname, resolve } from 'node:path';
 import { SmrtCollection } from '../collection';
 import {
+  COOKBOOK_TOOL_NAMES,
+  getCookbookToolService,
+} from '../cookbook/tools.js';
+import {
   type McpGetSerializer,
   resolveMcpGetSerializer,
 } from '../mcp-serializer.js';
@@ -526,7 +530,7 @@ export class MCPGenerator {
    */
   async generateTools(): Promise<MCPTool[]> {
     const tools = await this.generateToolDefinitions();
-    return tools.filter((tool) =>
+    const modelTools = tools.filter((tool) =>
       isRuntimeModelEnabled(
         ObjectRegistry.getExposureModel(
           this.toolTarget(tool).registryKey ?? this.toolTarget(tool).objectName,
@@ -534,6 +538,16 @@ export class MCPGenerator {
         { surface: 'mcp', tenantId: this.context.tenantId },
       ),
     );
+    const recipeTools =
+      (await getCookbookToolService()?.list({
+        surface: 'mcp',
+        tenantId: this.context.tenantId,
+        userId: this.context.user?.id,
+      })) ?? [];
+    const names = new Set(modelTools.map((tool) => tool.name));
+    if (recipeTools.some((tool) => names.has(tool.name)))
+      throw new Error('Cookbook tool name collision');
+    return [...modelTools, ...recipeTools];
   }
 
   /** AOT superset, independent of the current cookbook. Never use as a runtime listing. */
@@ -1302,6 +1316,24 @@ export class MCPGenerator {
     const { name, arguments: args } = request.params;
 
     try {
+      const cookbook = getCookbookToolService();
+      const context = {
+        surface: 'mcp' as const,
+        tenantId: this.context.tenantId,
+        userId: this.context.user?.id,
+      };
+      const recipeName = COOKBOOK_TOOL_NAMES.find(
+        (candidate) => candidate === name,
+      );
+      if (cookbook && recipeName) {
+        // The service audits refused calls as well as accepted ones; never
+        // bypass its authority boundary just because the caller cannot list it.
+        const result = await cookbook.invoke(recipeName, args, context);
+        return {
+          content: [{ type: 'text', text: result.summary }],
+          structuredContent: result,
+        };
+      }
       // Check if tool exists
       const availableTools = await this.generateTools();
       const tool = availableTools.find((candidate) => candidate.name === name);
@@ -2811,6 +2843,7 @@ ${indent}}`;
 
 import { ObjectRegistry, normalizeCustomActionFailure, SMRT_CUSTOM_ACTION_ERROR_METADATA_KEY } from '@happyvertical/smrt-core';
 import { hasRuntimeExposureGate, isRuntimeModelEnabled } from '@happyvertical/smrt-core';
+import { COOKBOOK_TOOL_NAMES, getCookbookToolService } from '@happyvertical/smrt-core/cookbook/tools';
 ${hasTenantScoped ? "import { enableTenancy, runTenantScopedEntryPoint } from '@happyvertical/smrt-tenancy';\n" : ''}${
   hasTenantScoped
     ? `
@@ -2966,6 +2999,12 @@ export async function handleToolCall(
   aiConfig: any = {}
 ) {
   try {
+    const recipeName = COOKBOOK_TOOL_NAMES.find(tool => tool === name);
+    const cookbook = getCookbookToolService();
+    if (recipeName && cookbook) {
+      const result = await cookbook.invoke(recipeName, toolArguments, { surface: 'mcp', tenantId: process.env.SMRT_MCP_TENANT_ID, userId: process.env.SMRT_MCP_USER_ID });
+      return successResult(result, result.summary);
+    }
     if (!runtimeToolEnabled(name)) throw new Error('Unknown tool');
     const args = toolArguments;
 
@@ -3036,6 +3075,7 @@ import { loadConfig } from '@happyvertical/smrt-config';
 import { SERVER_NAME, SERVER_VERSION, DEBUG } from './config${extension}';
 import { tools } from './tools/index${extension}';
 import { handleToolCall, runtimeToolEnabled } from './handlers/index${extension}';
+import { getCookbookToolService } from '@happyvertical/smrt-core/cookbook/tools';
 import { hasRuntimeExposureGate, subscribeRuntimeExposure } from '@happyvertical/smrt-core';
 
 const TOOL_LIST_CACHE_HINT = ${JSON.stringify(toolListCacheHint)};
@@ -3075,7 +3115,7 @@ export async function createServer() {
           tools: { listChanged: true },
         },
         cacheHints: {
-          'tools/list': hasRuntimeExposureGate() ? { ttlMs: 0, cacheScope: 'private' } : TOOL_LIST_CACHE_HINT,
+          'tools/list': (hasRuntimeExposureGate() || getCookbookToolService()) ? { ttlMs: 0, cacheScope: 'private' } : TOOL_LIST_CACHE_HINT,
         },
       }
     );
@@ -3093,7 +3133,7 @@ export async function createServer() {
       }
 
       return {
-        tools: tools.filter((tool) => runtimeToolEnabled(tool.name)).sort((left, right) => left.name < right.name ? -1 : left.name > right.name ? 1 : 0),
+        tools: [...tools.filter((tool) => runtimeToolEnabled(tool.name)), ...(await getCookbookToolService()?.list({ surface: 'mcp', tenantId: process.env.SMRT_MCP_TENANT_ID, userId: process.env.SMRT_MCP_USER_ID }) ?? [])].sort((left, right) => left.name < right.name ? -1 : left.name > right.name ? 1 : 0),
       };
     });
 

@@ -298,7 +298,8 @@ describe('canonical MCP tool identifiers (#3219)', () => {
           };
           // Generated lookups carry the registry key (#3490): '@pkg:Class'.
           const simple = (name) => name.slice(name.lastIndexOf(':') + 1);
-          export { hasRuntimeExposureGate, isRuntimeModelEnabled, subscribeRuntimeExposure } from ${JSON.stringify(fileURLToPath(new URL('../../dist/runtime-exposure.js', import.meta.url)))};
+          export { COOKBOOK_TOOL_NAMES, getCookbookToolService } from ${JSON.stringify(fileURLToPath(new URL('../../dist/cookbook/tools.js', import.meta.url)))};
+export { hasRuntimeExposureGate, isRuntimeModelEnabled, subscribeRuntimeExposure } from ${JSON.stringify(fileURLToPath(new URL('../../dist/runtime-exposure.js', import.meta.url)))};
           export const ObjectRegistry = { loadAllManifests() {}, getClass(name) { if (!name.includes(':') || !classes[simple(name)]) throw Error('wrong class '+name); return {constructor: classes[simple(name)]}; }, async getCollection(name) {if(!name.includes(':') || !classes[simple(name)]) throw Error('wrong collection '+name); return {};} };
           export function normalizeCustomActionFailure() {}
           export const SMRT_CUSTOM_ACTION_ERROR_METADATA_KEY = 'smrt';
@@ -312,7 +313,11 @@ describe('canonical MCP tool identifiers (#3219)', () => {
           join(directory, 'package.json'),
           JSON.stringify({
             type: 'module',
-            exports: { '.': './index.js', './stdio': './stdio.js' },
+            exports: {
+              '.': './index.js',
+              './stdio': './stdio.js',
+              './cookbook/tools': './index.js',
+            },
           }),
         );
         for (const [file, content] of Object.entries(files))
@@ -390,7 +395,8 @@ describe('canonical MCP tool identifiers (#3219)', () => {
         },
         '@happyvertical/smrt-core': {
           'index.js': `
-          export { hasRuntimeExposureGate, isRuntimeModelEnabled, subscribeRuntimeExposure } from ${JSON.stringify(fileURLToPath(new URL('../../dist/runtime-exposure.js', import.meta.url)))};
+          export { COOKBOOK_TOOL_NAMES, getCookbookToolService } from ${JSON.stringify(fileURLToPath(new URL('../../dist/cookbook/tools.js', import.meta.url)))};
+export { hasRuntimeExposureGate, isRuntimeModelEnabled, subscribeRuntimeExposure } from ${JSON.stringify(fileURLToPath(new URL('../../dist/runtime-exposure.js', import.meta.url)))};
           export const ObjectRegistry = {
             loadAllManifests() {},
             getConfig() { return {}; },
@@ -412,7 +418,11 @@ describe('canonical MCP tool identifiers (#3219)', () => {
           join(directory, 'package.json'),
           JSON.stringify({
             type: 'module',
-            exports: { '.': './index.js', './stdio': './stdio.js' },
+            exports: {
+              '.': './index.js',
+              './stdio': './stdio.js',
+              './cookbook/tools': './index.js',
+            },
           }),
         );
         for (const [file, content] of Object.entries(files))

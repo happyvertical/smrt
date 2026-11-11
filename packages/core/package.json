@@ -203,6 +203,11 @@
       "import": "./dist/cookbook/engine.js",
       "default": "./dist/cookbook/engine.js"
     },
+    "./cookbook/tools": {
+      "types": "./dist/cookbook/tools.d.ts",
+      "import": "./dist/cookbook/tools.js",
+      "default": "./dist/cookbook/tools.js"
+    },
     "./cookbook/v1.schema.json": "./dist/cookbook/v1.schema.json"
   },
   "browser": {

@@ -5,10 +5,10 @@ description: "Core SMRT framework for business objects, persistence, and generat
 status: "stable"
 generated:
   by: "smrt/scripts/generate-knowledge-okf.ts"
-  at: "2026-11-11T05:25:58Z"
+  at: "2026-11-11T05:59:07Z"
 audience: "internal"
 evidence_level: "source-inspected"
-source_revision: "sha256:e07927ae8e29bc4dac84799de768697625ab3c5dd3d851bcae8fa1a730a90d14"
+source_revision: "sha256:3f6add3c52df672aa6ab0a1083b5bc732652d54fd3bf22da452ff843b0f39b4f"
 sources:
   - id: "manifest"
     resource: "https://github.com/happyvertical/smrt/blob/main/packages/core/package.json"
@@ -41,57 +41,60 @@ sources:
     resource: "https://github.com/happyvertical/smrt/blob/main/packages/core/agents/cookbook-engine.md"
     title: "@happyvertical/smrt-core packages/core/agents/cookbook-engine.md"
   - id: "agents-10"
+    resource: "https://github.com/happyvertical/smrt/blob/main/packages/core/agents/cookbook-tools.md"
+    title: "@happyvertical/smrt-core packages/core/agents/cookbook-tools.md"
+  - id: "agents-11"
     resource: "https://github.com/happyvertical/smrt/blob/main/packages/core/agents/cookbook.md"
     title: "@happyvertical/smrt-core packages/core/agents/cookbook.md"
-  - id: "agents-11"
+  - id: "agents-12"
     resource: "https://github.com/happyvertical/smrt/blob/main/packages/core/agents/data-query.md"
     title: "@happyvertical/smrt-core packages/core/agents/data-query.md"
-  - id: "agents-12"
+  - id: "agents-13"
     resource: "https://github.com/happyvertical/smrt/blob/main/packages/core/agents/deployment-phases.md"
     title: "@happyvertical/smrt-core packages/core/agents/deployment-phases.md"
-  - id: "agents-13"
+  - id: "agents-14"
     resource: "https://github.com/happyvertical/smrt/blob/main/packages/core/agents/generators.md"
     title: "@happyvertical/smrt-core packages/core/agents/generators.md"
-  - id: "agents-14"
+  - id: "agents-15"
     resource: "https://github.com/happyvertical/smrt/blob/main/packages/core/agents/inference.md"
     title: "@happyvertical/smrt-core packages/core/agents/inference.md"
-  - id: "agents-15"
+  - id: "agents-16"
     resource: "https://github.com/happyvertical/smrt/blob/main/packages/core/agents/memory.md"
     title: "@happyvertical/smrt-core packages/core/agents/memory.md"
-  - id: "agents-16"
+  - id: "agents-17"
     resource: "https://github.com/happyvertical/smrt/blob/main/packages/core/agents/model-moves.md"
     title: "@happyvertical/smrt-core packages/core/agents/model-moves.md"
-  - id: "agents-17"
+  - id: "agents-18"
     resource: "https://github.com/happyvertical/smrt/blob/main/packages/core/agents/object-runtime.md"
     title: "@happyvertical/smrt-core packages/core/agents/object-runtime.md"
-  - id: "agents-18"
+  - id: "agents-19"
     resource: "https://github.com/happyvertical/smrt/blob/main/packages/core/agents/query-bounds.md"
     title: "@happyvertical/smrt-core packages/core/agents/query-bounds.md"
-  - id: "agents-19"
+  - id: "agents-20"
     resource: "https://github.com/happyvertical/smrt/blob/main/packages/core/agents/recipes.md"
     title: "@happyvertical/smrt-core packages/core/agents/recipes.md"
-  - id: "agents-20"
+  - id: "agents-21"
     resource: "https://github.com/happyvertical/smrt/blob/main/packages/core/agents/registry-snapshot.md"
     title: "@happyvertical/smrt-core packages/core/agents/registry-snapshot.md"
-  - id: "agents-21"
+  - id: "agents-22"
     resource: "https://github.com/happyvertical/smrt/blob/main/packages/core/agents/revision-guard.md"
     title: "@happyvertical/smrt-core packages/core/agents/revision-guard.md"
-  - id: "agents-22"
+  - id: "agents-23"
     resource: "https://github.com/happyvertical/smrt/blob/main/packages/core/agents/run-once.md"
     title: "@happyvertical/smrt-core packages/core/agents/run-once.md"
-  - id: "agents-23"
+  - id: "agents-24"
     resource: "https://github.com/happyvertical/smrt/blob/main/packages/core/agents/runtime-exposure.md"
     title: "@happyvertical/smrt-core packages/core/agents/runtime-exposure.md"
-  - id: "agents-24"
+  - id: "agents-25"
     resource: "https://github.com/happyvertical/smrt/blob/main/packages/core/agents/runtime-model.md"
     title: "@happyvertical/smrt-core packages/core/agents/runtime-model.md"
-  - id: "agents-25"
+  - id: "agents-26"
     resource: "https://github.com/happyvertical/smrt/blob/main/packages/core/agents/schema-paths.md"
     title: "@happyvertical/smrt-core packages/core/agents/schema-paths.md"
-  - id: "agents-26"
+  - id: "agents-27"
     resource: "https://github.com/happyvertical/smrt/blob/main/packages/core/agents/system-diagnostics.md"
     title: "@happyvertical/smrt-core packages/core/agents/system-diagnostics.md"
-  - id: "agents-27"
+  - id: "agents-28"
     resource: "https://github.com/happyvertical/smrt/blob/main/packages/core/agents/test-types.md"
     title: "@happyvertical/smrt-core packages/core/agents/test-types.md"
 ---
@@ -116,6 +119,7 @@ sources:
 - `packages/core/agents/change-signals.md`
 - `packages/core/agents/collection-reads.md`
 - `packages/core/agents/cookbook-engine.md`
+- `packages/core/agents/cookbook-tools.md`
 - `packages/core/agents/cookbook.md`
 - `packages/core/agents/data-query.md`
 - `packages/core/agents/deployment-phases.md`
@@ -157,6 +161,7 @@ sources:
 - `./consumer-plugin`
 - `./cookbook`
 - `./cookbook/engine`
+- `./cookbook/tools`
 - `./cookbook/v1.schema.json`
 - `./filesystem`
 - `./generators`

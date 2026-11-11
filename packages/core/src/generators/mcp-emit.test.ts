@@ -93,15 +93,22 @@ async function installGeneratedServerRuntimeStubs(
     ),
     writeFile(
       join(smrtPackage, 'package.json'),
-      JSON.stringify({ type: 'module', exports: './index.js' }),
+      JSON.stringify({
+        type: 'module',
+        exports: { '.': './index.js', './cookbook/tools': './index.js' },
+      }),
     ),
     writeFile(
       join(smrtPackage, 'index.js'),
-      `export { hasRuntimeExposureGate, isRuntimeModelEnabled, subscribeRuntimeExposure } from ${JSON.stringify(fileURLToPath(new URL('../../dist/runtime-exposure.js', import.meta.url)))}; export const ObjectRegistry = { loadAllManifests() {} }; export function normalizeCustomActionFailure() {} export const SMRT_CUSTOM_ACTION_ERROR_METADATA_KEY = 'smrt';\n`,
+      `export { COOKBOOK_TOOL_NAMES, getCookbookToolService } from ${JSON.stringify(fileURLToPath(new URL('../../dist/cookbook/tools.js', import.meta.url)))};
+export { hasRuntimeExposureGate, isRuntimeModelEnabled, subscribeRuntimeExposure } from ${JSON.stringify(fileURLToPath(new URL('../../dist/runtime-exposure.js', import.meta.url)))}; export const ObjectRegistry = { loadAllManifests() {} }; export function normalizeCustomActionFailure() {} export const SMRT_CUSTOM_ACTION_ERROR_METADATA_KEY = 'smrt';\n`,
     ),
     writeFile(
       join(configPackage, 'package.json'),
-      JSON.stringify({ type: 'module', exports: './index.js' }),
+      JSON.stringify({
+        type: 'module',
+        exports: { '.': './index.js', './cookbook/tools': './index.js' },
+      }),
     ),
     writeFile(
       join(configPackage, 'index.js'),
@@ -373,6 +380,82 @@ describe('MCPGenerator - generated output is runnable (#2279)', () => {
         a.name < b.name ? -1 : a.name > b.name ? 1 : 0,
       ),
     );
+  });
+
+  it.each([
+    false,
+    true,
+  ])('serves installed cookbook tools from the shared service (modular=%s)', async (modular) => {
+    const outputDir = join(
+      tmpDir,
+      modular ? 'cookbook-modular' : 'cookbook-single',
+    );
+    await generator.generateServer({
+      outputPath: join(outputDir, 'index.mjs'),
+      modular,
+    });
+    await installGeneratedServerRuntimeStubs(outputDir);
+    const toolsPath = fileURLToPath(
+      new URL('../../dist/cookbook/tools.js', import.meta.url),
+    );
+    const gatePath = fileURLToPath(
+      new URL('../../dist/runtime-exposure.js', import.meta.url),
+    );
+    const probe = join(outputDir, 'cookbook-probe.mjs');
+    await writeFile(
+      probe,
+      `
+      import { createServer } from './index.mjs';
+      import { setCookbookToolService } from ${JSON.stringify(toolsPath)};
+      import { notifyRuntimeExposureChanged } from ${JSON.stringify(gatePath)};
+      let on = true;
+      const contexts = [];
+      const definition = {name:'recipes.search',description:'Installed recipes',inputSchema:{type:'object'},outputSchema:{type:'object'}};
+      setCookbookToolService({
+        async list(context) { contexts.push(context); return on ? [definition] : []; },
+        async invoke(name, args, context) {
+          contexts.push(context);
+          if (!on) throw new Error('forbidden');
+          return {status:'ok',summary:'Found Billing.',recipes:[{id:'billing'}]};
+        },
+      });
+      const server = await createServer();
+      const list = () => server.handlers.get('tools/list')({});
+      const call = () => server.handlers.get('tools/call')({params:{name:'recipes.search',arguments:{query:'send invoices'}}});
+      const offered = (await list()).tools.find(tool => tool.name === 'recipes.search');
+      const result = await call();
+      on = false; notifyRuntimeExposureChanged();
+      const removed = !(await list()).tools.some(tool => tool.name === 'recipes.search');
+      const refused = (await call()).isError;
+      console.log(JSON.stringify({offered,result,removed,refused,contexts,notifications:server.notifications}));
+    `,
+    );
+    const { stdout } = await execFileAsync(process.execPath, [probe], {
+      cwd: outputDir,
+      env: {
+        ...process.env,
+        SMRT_MCP_TENANT_ID: 'tenant',
+        SMRT_MCP_USER_ID: 'owner',
+      },
+    });
+    const result = JSON.parse(stdout.trim());
+    expect(result.offered).toMatchObject({ name: 'recipes.search' });
+    expect(result.result.structuredContent).toMatchObject({
+      summary: 'Found Billing.',
+      recipes: [{ id: 'billing' }],
+    });
+    expect(result.removed).toBe(true);
+    expect(result.refused).toBe(true);
+    expect(result.contexts.length).toBeGreaterThan(0);
+    expect(
+      result.contexts.every(
+        (context: any) =>
+          context.tenantId === 'tenant' &&
+          context.userId === 'owner' &&
+          context.surface === 'mcp',
+      ),
+    ).toBe(true);
+    expect(result.notifications).toContain('notifications/tools/list_changed');
   });
 
   it.each([

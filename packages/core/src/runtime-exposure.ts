@@ -180,6 +180,13 @@ export function createCookbookRuntimeExposure(
         });
         engines.set(engine, current);
       }
+      // Cookbook control tools bootstrap recipes; they use the host predicate
+      // without depending on membership in an already enabled recipe.
+      if (model.qualifiedName === '@happyvertical/smrt-core:CookbookTools') {
+        return options.predicate
+          ? options.predicate(model, context) === true
+          : true;
+      }
       const identities = [
         model.qualifiedName,
         ...(model.replacedQualifiedNames ?? []),

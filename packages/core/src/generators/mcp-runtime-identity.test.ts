@@ -74,12 +74,16 @@ async function installRecordingRuntime(outputDirectory: string) {
     ),
     writeFile(
       join(packages.core, 'package.json'),
-      JSON.stringify({ type: 'module', exports: './index.js' }),
+      JSON.stringify({
+        type: 'module',
+        exports: { '.': './index.js', './cookbook/tools': './index.js' },
+      }),
     ),
     writeFile(
       join(packages.core, 'index.js'),
       `export const resolved = [];
 const record = (kind, name) => resolved.push(kind + ':' + name);
+export { COOKBOOK_TOOL_NAMES, getCookbookToolService } from ${JSON.stringify(fileURLToPath(new URL('../../dist/cookbook/tools.js', import.meta.url)))};
 export { hasRuntimeExposureGate, isRuntimeModelEnabled, subscribeRuntimeExposure } from ${JSON.stringify(fileURLToPath(new URL('../../dist/runtime-exposure.js', import.meta.url)))};
           export const ObjectRegistry = {
   loadAllManifests() {},
@@ -107,7 +111,10 @@ export const SMRT_CUSTOM_ACTION_ERROR_METADATA_KEY = 'smrt';
     ),
     writeFile(
       join(packages.config, 'package.json'),
-      JSON.stringify({ type: 'module', exports: './index.js' }),
+      JSON.stringify({
+        type: 'module',
+        exports: { '.': './index.js', './cookbook/tools': './index.js' },
+      }),
     ),
     writeFile(
       join(packages.config, 'index.js'),
@@ -115,7 +122,10 @@ export const SMRT_CUSTOM_ACTION_ERROR_METADATA_KEY = 'smrt';
     ),
     writeFile(
       join(packages.serializer, 'package.json'),
-      JSON.stringify({ type: 'module', exports: './index.js' }),
+      JSON.stringify({
+        type: 'module',
+        exports: { '.': './index.js', './cookbook/tools': './index.js' },
+      }),
     ),
     writeFile(
       join(packages.serializer, 'index.js'),
