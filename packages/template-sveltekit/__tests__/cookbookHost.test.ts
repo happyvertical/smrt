@@ -453,6 +453,7 @@ describe('local cookbook host composition (SQLite, fake model, no providers)', (
     expect(issued).toHaveLength(1);
     expect(issued[0].expiresInSeconds).toBe(900);
     expect(issued[0].scopes).toContain('customers.read');
+    expect(issued[0].scopes).toContain('recipes.enable');
     expect(revoked).toEqual([issued[0].holder]);
     expect(tokens.size).toBe(0);
     expect(JSON.stringify(seen).includes(issued[0].token)).toBe(false);
