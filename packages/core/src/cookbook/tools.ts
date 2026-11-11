@@ -735,6 +735,19 @@ export function createCookbookToolService(options: CookbookToolOptions) {
           templates: (catalog.cookbooks ?? []).map((t) => ({
             id: t.id,
             name: t.name,
+            description:
+              t.document.description ??
+              createCookbookEngine({ catalog, cookbook: t.document })
+                .snapshot()
+                .sections.filter((s) => !s.hidden)
+                .map((s) => s.label)
+                .join(' · '),
+            lists: createCookbookEngine({ catalog, cookbook: t.document })
+              .snapshot()
+              .sections.filter((s) => !s.hidden)
+              .flatMap((s) =>
+                s.items.filter((i) => !i.hidden).map((i) => i.label),
+              ),
             recipes: t.document.recipes,
             missing: templateInfo(t.id).missing,
           })),

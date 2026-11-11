@@ -154,3 +154,6 @@ identities still fail activation. The SQLite tool fixture enables billing beside
 a declared custom list through the real coordinator, then proves an unrelated
 unknown feature refuses. The host fixture combines list edits, reference REST and
 subsequent recipe enable under this contract.
+
+`cookbook.listTemplates` also returns `description` and `lists` from each
+document and its resolved visible navigation (including cookbook labels).

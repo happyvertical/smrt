@@ -652,7 +652,14 @@ describe('installed recipe server tools (SQLite, in process)', () => {
 
   it('previews templates without effects; binds apply to actor/revision and requires approval on non-empty apps', async () => {
     expect(await call('cookbook.listTemplates')).toMatchObject({
-      templates: [{ id: 'small-shop', missing: [] }],
+      templates: [
+        {
+          id: 'small-shop',
+          missing: [],
+          description: expect.any(String),
+          lists: expect.arrayContaining(['Invoices']),
+        },
+      ],
     });
     const preview = await call('cookbook.apply', { id: 'small-shop' });
     expect(preview).toMatchObject({
