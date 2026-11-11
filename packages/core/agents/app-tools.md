@@ -163,3 +163,35 @@ schema path ignored top-level `required`, producing a nullable tenant column
 that normal migration parity refused. C6 also fixes provider-qualified MCP
 scope selection after app replacement and synthesized runtime field defaults,
 including money currency after additive refresh.
+
+## Integration rebase interactions
+
+Tool names and their types now live in the browser-safe `cookbook/index.ts`;
+`cookbook/tools` only re-exports that metadata and adds the server executor.
+The app edit adapter imports its name type only. Preferences can register all
+app permissions without reaching crypto, the model editor or MCP generation.
+The existing published-dist preference/browser boundary test covers this edge.
+
+Runtime edit and transport lookup deliberately use `getClass`/effective
+identity resolution. Exact inspection through `getClassByQualifiedName` or
+`getClassInPackage` must still report the replaced provider absent; retained
+provider declarations supply ancestry, not another public registration.
+C6's interaction fixture tests both contracts, STI base versus explicit Bot
+creation after adding a field, and the actual recipe picker source/record-label
+projection. A composed activation/cookbook gate admits a newly edited custom
+list only after publication, closes it on removal and reopens it on undo,
+including when the preference hides pre-built models.
+
+Chat's generic approval bridge also recognizes destructive extra-tool names.
+For service-owned cookbook tools, configure the host's
+`approvalPolicy.tools[slug] = false` to avoid an outer generic hold; this does
+not waive the app service's required approval. The host owner-approval UI must
+decide the service's returned id and re-invoke the exact original arguments
+with `approvalId`. Generic chat decision routes require their own thread/driver
+execution envelope and cannot resume a service-owned id. Conversely, the app
+service refuses a generic chat id because its action/state binding differs.
+The interaction test uses the real chat policy/bridge and the same SQLite
+owner authority, verifies this refusal, then applies the correct single-use
+service approval. Automatic adoption of these holds into chat's generic
+thread-decision endpoint is not implemented here; host UI wiring remains the
+existing service integration contract rather than an approval bypass.

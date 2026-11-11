@@ -8,14 +8,25 @@ import {
   createSqliteOwnerApprovalStore,
   OwnerApprovalAuthority,
 } from '../../../app-runtime/src/owner-approvals.js';
+import {
+  createAssistantApprovalBridge,
+  requiresOwnerApproval,
+} from '../../../chat/src/assistant-approvals.js';
+import {
+  screenRecordLabel,
+  screenReferenceTarget,
+} from '../../../smrt-svelte/src/components/screens/references.js';
+import { createRecipeScreenReferences } from '../../../smrt-svelte/src/components/screens/source.js';
 import { withTenant } from '../../../tenancy/src/context.js';
 import {
   disableTenancy,
   enableTenancy,
 } from '../../../tenancy/src/interceptor.js';
+import { createActivationCoordinator } from '../activation.js';
 import { field } from '../decorators/index.js';
 import { MCPGenerator } from '../generators/mcp.js';
 import { APIGenerator } from '../generators/rest.js';
+import { migrateSmrtSchemas } from '../migrations/orchestrate.js';
 import { SmrtObject } from '../object.js';
 import { ObjectRegistry } from '../registry.js';
 import {
@@ -25,7 +36,10 @@ import {
 import { snapshotObjectRegistryState } from '../test-utils.js';
 import { getTestDatabase } from '../testing/database.js';
 import { type CookbookEngine, createCookbookEngine } from './engine/engine.js';
-import { APP_TOOL_NAMES } from './index.js';
+import {
+  APP_TOOL_NAMES,
+  COOKBOOK_TOOL_NAMES as browserNames,
+} from './index.js';
 import { createAppModelEditor } from './model-editor.js';
 import {
   type CookbookToolContext,
@@ -387,6 +401,32 @@ describe('app customization tools', () => {
       .snapshot()
       .webDefinitions.find((d) => d.className === 'LoanerMats');
     expect(definition?.displayLabelField).toBe('matName');
+    const definitions = editor.snapshot().webDefinitions;
+    const sourceDefinition = definitions.find(
+      (def) => def.className === 'Customer',
+    )!;
+    const fetcher: typeof fetch = async (input, init) =>
+      rest(new Request(new URL(String(input), 'http://fixture'), init));
+    const references = createRecipeScreenReferences(
+      Object.fromEntries(definitions.map((def) => [def.name, def])),
+      { fetch: fetcher },
+    );
+    const target = screenReferenceTarget(
+      sourceDefinition,
+      { name: 'preferredMat' },
+      references,
+    )!;
+    expect(target.definition.objectRef).toBe(`${APP}:LoanerMats`);
+    const page = await target.source.search!({
+      query: 'Blue',
+      offset: 0,
+      limit: 10,
+    });
+    expect(screenRecordLabel(target.definition, page.rows[0])).toBe('Blue mat');
+    expect(await target.source.get!(String(page.rows[0].id))).toMatchObject({
+      matName: 'Blue mat',
+    });
+
     const fields = (await lists()).find(
       (list) => list.label === 'Loaner mats',
     )?.fields;
@@ -706,6 +746,295 @@ describe('app customization tools', () => {
     expect(
       (await lists())[0].fields.find((field) => field.name === 'note'),
     ).toMatchObject({ hidden: true, origin: 'yours' });
+  });
+
+  it('shares every customization permission name with the browser-safe cookbook entry', async () => {
+    expect(browserNames).toEqual(
+      (await import('./tools.js')).COOKBOOK_TOOL_NAMES,
+    );
+    expect(browserNames.filter((name) => name.startsWith('app.'))).toEqual([
+      ...APP_TOOL_NAMES,
+    ]);
+    expect((await service.list(context)).map((tool) => tool.name)).toEqual([
+      ...browserNames,
+    ]);
+  });
+
+  it('keeps exact provider inspection absent while tool edits and I/O resolve the effective app', async () => {
+    await write('app.addField', {
+      list: 'Customers',
+      label: 'Preference',
+      kind: 'text',
+    });
+    expect(ObjectRegistry.getClassByQualifiedName(CUSTOMER)).toBeUndefined();
+    expect(
+      ObjectRegistry.getClassInPackage('Customer', '@fixture/c6-upstream'),
+    ).toBeUndefined();
+    expect(ObjectRegistry.getClass(CUSTOMER)?.qualifiedName).toBe(
+      `${APP}:Customer`,
+    );
+    expect(ObjectRegistry.resolveQualifiedName(CUSTOMER)).toBe(
+      `${APP}:Customer`,
+    );
+    await write('app.renameField', {
+      list: 'Customers',
+      field: 'Preference',
+      label: 'Favourite thing',
+    });
+    expect((await lists())[0].fields).toContainEqual(
+      expect.objectContaining({
+        name: 'preference',
+        label: 'Favourite thing',
+        origin: 'yours',
+      }),
+    );
+    const live = await service.modelTools(context);
+    expect(
+      (await live!.generateTools()).find(
+        (tool) => tool.name === 'customer_create',
+      )?.inputSchema,
+    ).toHaveProperty('properties.preference');
+    const result = await rest(
+      request('POST', 'customers', { name: 'Maya', preference: 'Blue' }),
+    );
+    expect(result.status).toBe(201);
+    expect(await result.json()).toMatchObject({ preference: 'Blue' });
+  });
+
+  it('composes custom-list readiness with activation and a disabled pre-built preference', async () => {
+    const activation = createActivationCoordinator({
+      scope: `c6-${randomUUID()}`,
+      db,
+      packageName: APP,
+      manifest: {
+        version: 1,
+        modules: {
+          customer: {
+            specifier: 'fixture',
+            models: [CUSTOMER],
+            dependencies: [],
+          },
+        },
+        models: {
+          [CUSTOMER]: {
+            module: 'customer',
+            effective: CUSTOMER,
+            table: 'c6_customers',
+            dependencies: [],
+          },
+        },
+        tables: { c6_customers: { owners: [CUSTOMER], dependencies: [] } },
+      },
+      loaders: { customer: async () => {} },
+      readEnabled: async () => [CUSTOMER],
+    });
+    await activation.boot();
+    setRuntimeExposureGate(activation.gate(gate));
+    prebuilt = false;
+    const generator = mcp();
+    const changed = vi.fn();
+    const stop = generator.onToolsListChanged(changed);
+    expect((await service.list(context)).map((tool) => tool.name)).toEqual([
+      ...APP_TOOL_NAMES,
+    ]);
+    expect((await rest(request('GET', 'customers'))).status).toBe(404);
+    expect(activation.isReady(`${APP}:Projects`)).toBe(false);
+    await write('app.addList', {
+      label: 'Projects',
+      fields: [{ label: 'Title', kind: 'text' }],
+      nameField: 'Title',
+    });
+    expect(activation.isReady(`${APP}:Projects`)).toBe(true);
+    expect(
+      (await rest(request('POST', 'projects', { title: 'Garden' }))).status,
+    ).toBe(201);
+    const live = await service.modelTools(context);
+    expect((await live!.generateTools()).map((tool) => tool.name)).toContain(
+      'projects_create',
+    );
+    await approve('app.removeList', { list: 'Projects' });
+    expect(activation.isReady(`${APP}:Projects`)).toBe(false);
+    expect((await rest(request('GET', 'projects'))).status).toBe(404);
+    await approve('app.undo', {});
+    expect(activation.isReady(`${APP}:Projects`)).toBe(true);
+    expect((await rest(request('GET', 'projects'))).status).toBe(200);
+    expect(changed).toHaveBeenCalled();
+    stop();
+  });
+
+  it('keeps the service approval authoritative alongside the chat bridge policy', async () => {
+    await write('app.addField', {
+      list: 'Customers',
+      label: 'Note',
+      kind: 'text',
+    });
+    const tool = (await service.assistantTools(context)).find(
+      (tool) => tool.slug === 'app.removeField',
+    )!;
+    const args = { list: 'Customers', field: 'Note', expectedRevision: 1 };
+    expect(requiresOwnerApproval(tool, args)).toBe(true);
+    // This tool owns its action-specific durable hold; avoid wrapping it in a second chat hold.
+    const bridge = createAssistantApprovalBridge({
+      authority,
+      tenantId: TENANT,
+      requestedBy: USER,
+      context: { driver: 'builtin' },
+      policy: { tools: { [tool.slug]: false } },
+    });
+    expect(requiresOwnerApproval(tool, args, bridge.policy)).toBe(false);
+    const run = {
+      context: { tenantId: TENANT, userId: USER },
+      assertToolAllowed: vi.fn(),
+      assertOperation: vi.fn(async () => {}),
+    };
+    const held = await tool.execute({ run, args });
+    expect(typeof held.approvalId).toBe('string');
+    const heldId = String(held.approvalId);
+    expect(held.status).toBe('approval_required');
+    expect(editor.snapshot().revision).toBe(1);
+    // A generic chat hold is bound to a different context and cannot approve this app edit.
+    const generic = await bridge.request({ id: randomUUID(), tool, args });
+    await authority.decide({ id: USER, tenantId: TENANT }, generic.id, true);
+    await expect(
+      tool.execute({ run, args: { ...args, approvalId: generic.id } }),
+    ).rejects.toThrow('Approval');
+    await authority.decide({ id: USER, tenantId: TENANT }, heldId, true);
+    expect(
+      await tool.execute({
+        run,
+        args: { ...args, approvalId: heldId },
+      }),
+    ).toMatchObject({ status: 'ok' });
+    expect((await authority.get(TENANT, heldId))?.status).toBe('succeeded');
+    await expect(
+      tool.execute({ run, args: { ...args, approvalId: heldId } }),
+    ).rejects.toThrow();
+  });
+
+  it('preserves STI base creates and explicit subtype dispatch after assistant field customization', async () => {
+    const PROFILE = '@fixture/c6-profiles:Profile';
+    const BOT = '@fixture/c6-profiles:Bot';
+    class Profile extends SmrtObject {
+      name = '';
+    }
+    field({ type: 'text' })(Profile.prototype, 'name');
+    ObjectRegistry.register(Profile, {
+      packageName: '@fixture/c6-profiles',
+      tableName: 'c6_profiles',
+      tableStrategy: 'sti',
+      tenantScoped: true,
+      api: true,
+      mcp: true,
+    });
+    class Bot extends Profile {
+      code = '';
+    }
+    field({ type: 'text' })(Bot.prototype, 'code');
+    ObjectRegistry.register(Bot, {
+      packageName: '@fixture/c6-profiles',
+      tableName: 'c6_profiles',
+      tableStrategy: 'sti',
+      tenantScoped: true,
+      api: true,
+      mcp: true,
+    });
+    await migrateSmrtSchemas({
+      db,
+      engineHint: 'sqlite',
+      packageName: '@fixture/c6-profiles',
+      tables: new Set(['c6_profiles']),
+    });
+    const profileCatalog = {
+      ...catalog,
+      models: [
+        ...catalog.models,
+        {
+          id: PROFILE,
+          name: 'Profile',
+          packageId: 'c6-profiles',
+          exposed: true,
+          fields: [{ name: 'name' }],
+        },
+      ],
+      recipes: [
+        ...catalog.recipes,
+        {
+          id: 'people',
+          label: 'People',
+          models: [PROFILE],
+          nav: [{ model: PROFILE, label: 'People' }],
+          requires: [],
+        },
+      ],
+    };
+    const cookbook = { ...initial(), recipes: ['customers', 'people'] };
+    editor = await createAppModelEditor({
+      db,
+      application: 'c6-sti',
+      tenantId: TENANT,
+      packageName: APP,
+      cookbook,
+      catalog: profileCatalog,
+      authorize: (c) => owner && c.actor === USER && c.tenantId === TENANT,
+      publish: (snapshot) => {
+        engine = createCookbookEngine({
+          catalog: profileCatalog,
+          state: {
+            version: 1,
+            revision: snapshot.revision,
+            applied: null,
+            cookbook: snapshot.cookbook,
+            journal: [],
+          },
+        });
+      },
+    });
+    service = createCookbookToolService({
+      ...options,
+      catalog: profileCatalog,
+    });
+    setCookbookToolService(service);
+    gate.dispose();
+    gate = createCookbookRuntimeExposure({
+      catalog: profileCatalog,
+      engineFor: (c) => (c.tenantId === TENANT ? engine : null),
+    });
+    setRuntimeExposureGate(gate);
+    await write('app.addField', {
+      list: 'People',
+      label: 'Favourite colour',
+      kind: 'text',
+    });
+    expect(ObjectRegistry.getClassByQualifiedName(PROFILE)).toBeUndefined();
+    const generator = new MCPGenerator(
+      { classNames: [PROFILE] },
+      { db, tenantId: TENANT, user: { id: USER } },
+    );
+    const created = await generator.handleToolCall({
+      method: 'tools/call',
+      params: {
+        name: 'profile_create',
+        arguments: { name: 'Maya', favouriteColour: 'Blue' },
+      },
+    });
+    expect(created.isError, JSON.stringify(created)).not.toBe(true);
+    const bot = await generator.handleToolCall({
+      method: 'tools/call',
+      params: {
+        name: 'profile_create',
+        arguments: { name: 'Helper', _meta_type: BOT, code: 'bot' },
+      },
+    });
+    expect(bot.isError, JSON.stringify(bot)).not.toBe(true);
+    const rows = (
+      await db.query(
+        'SELECT name, _meta_type, favourite_colour FROM c6_profiles ORDER BY name',
+      )
+    ).rows;
+    expect(rows).toMatchObject([
+      { name: 'Helper', _meta_type: BOT },
+      { name: 'Maya', _meta_type: `${APP}:Profile`, favourite_colour: 'Blue' },
+    ]);
   });
 
   it('binds destructive approvals to the exact action, actor, tenant and revision', async () => {
