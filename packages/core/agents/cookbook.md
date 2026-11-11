@@ -137,3 +137,13 @@ label, icon, displayField and fields; `fields` maps qualified provider identitie
 to app-subclass additions. Labels/hidden fields stay in `policies`.
 The validator, JSON Schema, canonical import/export and engine catalogs share
 this contract. See [app model editor](app-models.md) for activation and history.
+
+## Record read-only metadata and export references
+
+`CookbookPolicyRow.readOnly?: boolean | null` prevents editing the record value;
+`locked` continues to govern policy customization. The v1 validator/JSON Schema
+retain true/false/null and reject other values. The command engine's `set_policy`
+sets or clears readOnly without affecting other row keys. smrt-fields owns
+resolution of these raw rows, including defaults and required-field safety.
+`parseRecipeExportRef` is browser-safe under `./cookbook`; it is the parser
+shared by the manifest-driven web emitter and smrt-svelte recipe widgets.

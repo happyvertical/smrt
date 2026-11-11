@@ -79,6 +79,7 @@ import {
 import {
   buildWebMcpToolDefinitions,
   generateWebModule,
+  renderRecipeSurfaceDeclarations,
   selectWebCollectionEntries,
 } from './web-collections.js';
 import { buildWorkerRegistration } from './worker-registration.js';
@@ -1396,7 +1397,7 @@ export function smrtPlugin(
       return null;
     },
 
-    async load(id) {
+    async load(id, loadOptions) {
       // Load virtual modules (strip the \0 prefix)
       const cleanId = id.startsWith('\0') ? id.slice(1) : id;
 
@@ -1439,6 +1440,7 @@ export function smrtPlugin(
           // Web collection definitions for the browser client data runtime
           // (@happyvertical/smrt-web, #1761)
           return generateWebModule(manifest, {
+            ssr: loadOptions?.ssr,
             kebabRoutes: svelteKit.kebabRoutes ?? false,
           });
 
@@ -2501,6 +2503,7 @@ declare module '@happyvertical/smrt-virt-web' {
 ${webCollectionInterface}
   }
 
+  ${renderRecipeSurfaceDeclarations(manifest)}
   export const collectionDefinitions: SmrtWebCollectionDefinitions;
   /** Every API-backed WebMCP tool, independent of list materialization. */
   export const webMcpToolDefinitions: readonly WebMcpToolDefinition[];

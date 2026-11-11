@@ -6,7 +6,11 @@
 import * as fs from 'node:fs';
 import * as path from 'node:path';
 import { fileURLToPath, pathToFileURL } from 'node:url';
-import type { DomainKnowledgeAgentSurface } from '@happyvertical/smrt-types';
+import { isDeepStrictEqual } from 'node:util';
+import type {
+  DomainKnowledgeAgentSurface,
+  RecipeDefinition,
+} from '@happyvertical/smrt-types';
 import { resolve as resolveImport } from 'import-meta-resolve';
 import { generateActivationRegistration } from '../activation/generate.js';
 import {
@@ -52,6 +56,7 @@ import {
 import {
   generateWebModule,
   isCollectionManifestClass,
+  renderRecipeSurfaceDeclarations,
   resolveCollectionItemObject,
 } from '../vite-plugin/web-collections.js';
 import { publishArtifactFiles } from './artifact-publication.js';
@@ -101,6 +106,7 @@ class AmbiguousProviderGraphError extends Error {}
  * JSON read at the package boundary.
  */
 interface ConsumerManifest {
+  recipes?: RecipeDefinition[];
   version: string;
   timestamp: number;
   packageName?: string;
@@ -1264,6 +1270,10 @@ export function smrtConsumer(
     },
 
     async resolveId(id, importer, resolveOptions) {
+      // Resolve before selective native-SSR externalization. Without this
+      // plugin the real package export is an empty, browser-safe fallback.
+      if (id === '@happyvertical/smrt-svelte/cookbook/surfaces')
+        return '\0smrt-consumer:web';
       if (resolveOptions?.ssr) {
         for (const [packageName, selectivePackage] of selectiveSsrPackages) {
           if (id !== packageName && !id.startsWith(`${packageName}/`)) {
@@ -1347,7 +1357,7 @@ export function smrtConsumer(
       return null;
     },
 
-    async load(id) {
+    async load(id, loadOptions) {
       // Handle virtual modules if types aren't available
       const cleanId = id.startsWith('\0') ? id.slice(1) : id;
 
@@ -1384,6 +1394,7 @@ export function smrtConsumer(
             typeManifest as unknown as SmartObjectManifest,
             {
               kebabRoutes: effectiveKebabRoutes,
+              ssr: loadOptions?.ssr,
             },
           );
 
@@ -1553,6 +1564,7 @@ async function aggregateTypeManifests(
 
   const unresolvedPackages: string[] = [];
   const objectSources = new Map<string, string>();
+  const recipes = new Map<string, RecipeDefinition>();
 
   for (const packageName of packages) {
     let loadedManifest = false;
@@ -1619,6 +1631,16 @@ async function aggregateTypeManifests(
             console.log(
               `[smrt:consumer] Loaded manifest from ${packageName} (${Object.keys(manifest.objects).length} objects)`,
             );
+
+            for (const recipe of manifest.recipes ?? []) {
+              const prior = recipes.get(recipe.id);
+              if (prior && !isDeepStrictEqual(prior, recipe)) {
+                throw new AmbiguousProviderGraphError(
+                  `[smrt:consumer] Conflicting recipe ${recipe.id}`,
+                );
+              }
+              recipes.set(recipe.id, recipe);
+            }
 
             // ENHANCED: Preserve package metadata for each object
             for (const [objectName, objectDef] of Object.entries(
@@ -1706,6 +1728,9 @@ async function aggregateTypeManifests(
     );
   }
 
+  aggregatedManifest.recipes = [...recipes.values()].sort((a, b) =>
+    a.id.localeCompare(b.id),
+  );
   return aggregatedManifest;
 }
 
@@ -2421,7 +2446,11 @@ async function generateProjectTypes(
   typesDir: string,
   projectRoot: string,
 ): Promise<void> {
-  if (!typeManifest || Object.keys(typeManifest.objects).length === 0) {
+  if (
+    !typeManifest ||
+    (Object.keys(typeManifest.objects).length === 0 &&
+      !typeManifest.recipes?.length)
+  ) {
     console.log(
       '[smrt:consumer] No SMRT objects found, skipping type generation',
     );
@@ -2438,6 +2467,13 @@ async function generateProjectTypes(
     includeVirtualModules: true,
     includeObjectTypes: true,
   });
+
+  // Additive declarations alongside the existing generated web declarations.
+  // Keep the installed recipe catalog typed even for packages with no models.
+  fs.writeFileSync(
+    path.resolve(projectRoot, typesDir, 'smrt-recipe-surfaces.d.ts'),
+    `declare module '@smrt/web' {\n${renderRecipeSurfaceDeclarations(typeManifest as unknown as SmartObjectManifest)}\n}\n`,
+  );
 
   console.log(
     `[smrt:consumer] Generated types for ${Object.keys(typeManifest.objects).length} objects`,

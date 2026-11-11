@@ -183,7 +183,11 @@ export interface SmrtVitePlugin<Api = undefined> {
     ) => SmrtAwaitable<string | SmrtResolvedId | null | void>
   >;
   load?: SmrtHook<
-    (this: SmrtHookContext, id: string) => SmrtAwaitable<string | null | void>
+    (
+      this: SmrtHookContext,
+      id: string,
+      options?: { ssr?: boolean },
+    ) => SmrtAwaitable<string | null | void>
   >;
   transformIndexHtml?: SmrtHook<
     (

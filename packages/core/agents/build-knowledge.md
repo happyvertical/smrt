@@ -467,3 +467,21 @@ declarations (`src/vite-plugin/host-tool-names.ts`). Host-vs-host duplicates fai
 construction; a host name shadowing a generated model tool fails after the scan. The same
 `declaredBy` on several surfaces is one operation and is allowed. Unlike the advisory
 intent-vs-generated check, these throw and fail the build.
+
+## Generated recipe surfaces
+
+The consumer aggregator retains installed `recipes` alongside model declarations
+and rejects conflicting declarations for the same recipe id. The existing
+`web-collections.ts` emitter adds `recipeSurfaces` and `resolveExport` to the web
+virtual module, with literal dynamic imports and per-recipe typed tuples.
+Producer declarations and the consumer's additive
+`smrt-recipe-surfaces.d.ts` use the same renderer. Recipe-only providers are
+supported. Component declarations use the Svelte component contract and literal
+metadata, not `typeof import(package/svelte)`, which would pull browser source
+into Node-only declaration builds. Vite's optional load-hook `ssr` flag controls
+server widget loader imports: browser output excludes them.
+
+Regression gate: `consumer-plugin/load-resolve.test.ts` verifies installed
+manifest aggregation, typed output, SSR/client separation and a real Vite bundle
+whose initial chunk excludes the lazy component marker. The cookbook fixture in
+smrt-svelte exercises rendering and generic fallback without a host export map.

@@ -23,6 +23,7 @@
  */
 
 import { createHash } from 'node:crypto';
+import { parseRecipeExportRef } from '../cookbook/export-ref.js';
 import {
   customActionParameterInputName,
   isCrudOperation,
@@ -1399,7 +1400,7 @@ export function computeWebManifestHash(manifest: SmartObjectManifest): string {
  */
 export function generateWebModule(
   manifest: SmartObjectManifest,
-  options: { kebabRoutes?: boolean } = {},
+  options: { kebabRoutes?: boolean; ssr?: boolean } = {},
 ): string {
   const definitions: Record<string, unknown> = {};
   for (const entry of selectWebCollectionEntries(manifest)) {
@@ -1417,6 +1418,8 @@ export function generateWebModule(
 // This file is generated automatically - do not edit
 
 export const collectionDefinitions = ${JSON.stringify(definitions, null, 2)};
+
+${renderRecipeSurfaceModule(manifest, options.ssr === true)}
 
 // Canonical browser-tool definitions. This export is independent of list
 // materialization, so get-only and custom-action-only API routes are included.
@@ -1439,4 +1442,58 @@ export function getCollectionDefinition(name) {
 
 export { collectionDefinitions as default };
 `;
+}
+
+/** Component references remain inert until a selected recipe surface is loaded. */
+function renderRecipeSurfaceModule(
+  manifest: SmartObjectManifest,
+  ssr: boolean,
+): string {
+  const refs = new Set<string>();
+  const recipes = manifest.recipes ?? [];
+  const maps = recipes.map((recipe) => {
+    const surfaces = (recipe.surfaces ?? []).map((surface) => {
+      const parsed = parseRecipeExportRef(surface.export);
+      if (!parsed)
+        throw new Error(`Invalid recipe surface export: ${surface.export}`);
+      refs.add(surface.export);
+      if (surface.kind === 'widget') {
+        if (surface.optionsEditor) refs.add(surface.optionsEditor);
+        if (surface.migrate) refs.add(surface.migrate);
+        // A server loader must never pull a Node package root into a browser chunk.
+        if (ssr && surface.data?.load) refs.add(surface.data.load);
+      }
+      return `{ surface: ${JSON.stringify(surface)}, load: () => resolveExport(${JSON.stringify(parsed.specifier)}, ${JSON.stringify(parsed.exportName)}) }`;
+    });
+    return `${JSON.stringify(recipe.id)}: [${surfaces.join(',')}]`;
+  });
+  const loaders = [...refs].sort().map((ref) => {
+    const parsed = parseRecipeExportRef(ref);
+    if (!parsed) throw new Error(`Invalid recipe export: ${ref}`);
+    return `${JSON.stringify(ref)}: () => import(${JSON.stringify(parsed.specifier)}).then(module => module[${JSON.stringify(parsed.exportName)}])`;
+  });
+  return `// Literal dynamic imports: no recipe component is an initial-module dependency.
+const recipeExportLoaders = { ${loaders.join(',\n')} };
+export const recipeSurfaces = { ${maps.join(',\n')} };
+export async function resolveExport(specifier, exportName) {
+  const ref = specifier + '#' + exportName;
+  return Object.hasOwn(recipeExportLoaders, ref) ? recipeExportLoaders[ref]() : undefined;
+}`;
+}
+
+/** Precise installed recipe ids and export types for both plugin declaration paths. */
+export function renderRecipeSurfaceDeclarations(
+  manifest: SmartObjectManifest,
+): string {
+  const recipes = (manifest.recipes ?? []).map((recipe) => {
+    const surfaces = (recipe.surfaces ?? []).map((surface) => {
+      const parsed = parseRecipeExportRef(surface.export);
+      if (!parsed)
+        throw new Error(`Invalid recipe surface export: ${surface.export}`);
+      return `{ readonly surface: ${JSON.stringify(surface)}; readonly load: () => Promise<import('svelte').Component<Record<string, unknown>> | undefined> }`;
+    });
+    return `readonly ${JSON.stringify(recipe.id)}: readonly [${surfaces.join(', ')}]`;
+  });
+  return `export const recipeSurfaces: { ${recipes.join(';\n')} };
+export function resolveExport(specifier: string, exportName: string): Promise<unknown>;`;
 }

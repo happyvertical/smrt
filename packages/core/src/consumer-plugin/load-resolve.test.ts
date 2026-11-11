@@ -3376,3 +3376,182 @@ describe('smrtConsumer explicit SvelteKit route hosting (#2850)', () => {
     expect(existsSync(join(projectRoot, 'src/routes/api'))).toBe(false);
   });
 });
+
+describe('installed recipe surface emission', () => {
+  beforeEach(() => {
+    const pkg = join(projectRoot, 'node_modules/@fixture/surfaces');
+    mkdirSync(pkg, { recursive: true });
+    writePackageJson(projectRoot, {
+      name: 'fixture-host',
+      type: 'module',
+      dependencies: { '@fixture/surfaces': '0.0.0' },
+    });
+    writePackageJson(pkg, {
+      name: '@fixture/surfaces',
+      version: '0.0.0',
+      type: 'module',
+      exports: {
+        '.': './index.js',
+        './server': './server.js',
+        './manifest.json': './manifest.json',
+      },
+    });
+    writeFileSync(
+      join(pkg, 'index.js'),
+      'export function Surface() { return "LAZY_RECIPE_SURFACE_MARKER"; }',
+    );
+    writeFileSync(
+      join(pkg, 'server.js'),
+      'import "node:fs"; export function loadData() {}',
+    );
+    writeFileSync(
+      join(pkg, 'manifest.json'),
+      JSON.stringify({
+        version: '1.0.0',
+        packageName: '@fixture/surfaces',
+        objects: {},
+        recipes: [
+          {
+            id: 'fixture.surface',
+            label: 'Fixture',
+            models: [],
+            nav: [],
+            surfaces: [
+              {
+                kind: 'widget',
+                type: 'fixture-widget',
+                export: '@fixture/surfaces#Surface',
+                label: 'Fixture',
+                data: { load: '@fixture/surfaces/server#loadData' },
+              },
+            ],
+          },
+          { id: 'fixture.generic', label: 'Generic', models: [], nav: [] },
+        ],
+      }),
+    );
+  });
+
+  it('preserves installed recipe manifests and emits a typed map, lazy imports and server-only loader projection', async () => {
+    const plugin = smrtConsumer({
+      packages: ['@fixture/surfaces'],
+      projectRoot,
+    });
+    await buildStart(plugin as Plugin, {});
+    const load = getHook(plugin, 'load');
+    expect(
+      await getHook(plugin, 'resolveId').call(
+        {},
+        '@happyvertical/smrt-svelte/cookbook/surfaces',
+        undefined,
+      ),
+    ).toBe('\0smrt-consumer:web');
+    const client = await load.call({}, '\0smrt-consumer:web');
+    expect(client).toContain('"fixture.surface"');
+    expect(client).toContain('"fixture.generic": []');
+    expect(client).toContain('() => import("@fixture/surfaces")');
+    expect(client).not.toContain('import("@fixture/surfaces/server")');
+    const server = await load.call({}, '\0smrt-consumer:web', { ssr: true });
+    expect(server).toContain('import("@fixture/surfaces/server")');
+    const declarations = readFileSync(
+      join(projectRoot, 'src/types/smrt-generated/smrt-recipe-surfaces.d.ts'),
+      'utf8',
+    );
+    expect(declarations).toContain('readonly "fixture.surface"');
+    expect(declarations).toContain('Component<Record<string, unknown>>');
+    expect(declarations).not.toContain('typeof import("@fixture/surfaces")');
+    const saved = JSON.parse(
+      readFileSync(join(projectRoot, '.smrt/manifest.json'), 'utf8'),
+    );
+    expect(saved.recipes.map((recipe: { id: string }) => recipe.id)).toEqual([
+      'fixture.generic',
+      'fixture.surface',
+    ]);
+  });
+
+  it('compares repeated recipe declarations structurally and refuses conflicting surfaces', async () => {
+    const duplicate = join(projectRoot, 'node_modules/@fixture/duplicate');
+    mkdirSync(duplicate, { recursive: true });
+    writePackageJson(duplicate, {
+      name: '@fixture/duplicate',
+      version: '0.0.0',
+      exports: { './manifest.json': './manifest.json' },
+    });
+    const first = JSON.parse(
+      readFileSync(
+        join(projectRoot, 'node_modules/@fixture/surfaces/manifest.json'),
+        'utf8',
+      ),
+    );
+    const recipe = Object.fromEntries(
+      Object.entries(first.recipes[0]).reverse(),
+    );
+    const manifest = {
+      version: '1.0.0',
+      packageName: '@fixture/duplicate',
+      objects: {},
+      recipes: [recipe],
+    };
+    writeFileSync(join(duplicate, 'manifest.json'), JSON.stringify(manifest));
+    await expect(
+      buildStart(
+        smrtConsumer({
+          packages: ['@fixture/surfaces', '@fixture/duplicate'],
+          projectRoot,
+          generateTypes: false,
+        }) as Plugin,
+        {},
+      ),
+    ).resolves.toBeUndefined();
+    manifest.recipes[0] = { ...recipe, label: 'Conflicting label' };
+    writeFileSync(join(duplicate, 'manifest.json'), JSON.stringify(manifest));
+    await expect(
+      buildStart(
+        smrtConsumer({
+          packages: ['@fixture/surfaces', '@fixture/duplicate'],
+          projectRoot,
+          generateTypes: false,
+        }) as Plugin,
+        {},
+      ),
+    ).rejects.toThrow(/Conflicting recipe/);
+  });
+
+  it('keeps recipe components and server loaders out of the initial browser bundle', async () => {
+    writeFileSync(
+      join(projectRoot, 'index.js'),
+      'export { recipeSurfaces, resolveExport } from "@happyvertical/smrt-svelte/cookbook/surfaces";',
+    );
+    const result = await build({
+      root: projectRoot,
+      configFile: false,
+      logLevel: 'silent',
+      plugins: [
+        smrtConsumer({
+          packages: ['@fixture/surfaces'],
+          projectRoot,
+        }) as Plugin,
+      ],
+      build: {
+        write: false,
+        minify: false,
+        lib: { entry: 'index.js', formats: ['es'] },
+      },
+    });
+    const outputs = (Array.isArray(result) ? result : [result]).flatMap(
+      (output) => ('output' in output ? output.output : []),
+    );
+    const chunks = outputs.filter((output) => output.type === 'chunk');
+    const entry = chunks.find((chunk) => chunk.isEntry);
+    expect(entry).toBeDefined();
+    expect(entry?.code).not.toContain('LAZY_RECIPE_SURFACE_MARKER');
+    expect(entry?.code).not.toContain('node:fs');
+    expect(entry?.dynamicImports.length).toBeGreaterThan(0);
+    expect(
+      chunks.some(
+        (chunk) =>
+          !chunk.isEntry && chunk.code.includes('LAZY_RECIPE_SURFACE_MARKER'),
+      ),
+    ).toBe(true);
+  });
+});

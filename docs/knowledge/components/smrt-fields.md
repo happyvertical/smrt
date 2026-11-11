@@ -5,10 +5,10 @@ description: "Layered field policy store and resolver (defaults, visibility tier
 status: "stable"
 generated:
   by: "smrt/scripts/generate-knowledge-okf.ts"
-  at: "2026-11-10T22:32:35Z"
+  at: "2026-11-11T08:08:58Z"
 audience: "internal"
 evidence_level: "source-inspected"
-source_revision: "sha256:b5da9360239e879f176aecf30b728ff2f2e63236b0174e5a79d9544d4518b0a8"
+source_revision: "sha256:994fdd3adccad86850dd7e1074605e3858f055a2732e2d434a924d2f08e4e1fb"
 sources:
   - id: "manifest"
     resource: "https://github.com/happyvertical/smrt/blob/main/packages/fields/package.json"
@@ -51,6 +51,7 @@ sources:
 - `./manifest`
 - `./manifest.json`
 - `./playground`
+- `./policy`
 - `./svelte`
 
 ## Models
