@@ -1222,8 +1222,8 @@ export class MCPGenerator {
   /**
    * The STI subtypes a create may select, each bound to its exact registry
    * entry (`name` is its registry key). A subtype is the base itself or a
-   * class whose constructor descends from the base's, or — for manifest-only
-   * entries — whose inheritance chain names the base's qualified identity.
+   * class whose constructor descends from the base's, or whose declared
+   * qualified ancestry resolves to that base (including app replacements).
    * Never resolved by simple name: two packages may declare same-named
    * subtypes of one base (#3490).
    */
@@ -1257,10 +1257,11 @@ export class MCPGenerator {
         (!isStub(info) &&
           !isStub(base) &&
           info.constructor.prototype instanceof base.constructor) ||
-        ((isStub(info) || isStub(base)) &&
-          ObjectRegistry.getInheritanceChain(key).some((ancestor) =>
-            baseKeys.has(ancestor),
-          ));
+        ObjectRegistry.getInheritanceChain(key).some(
+          (ancestor) =>
+            baseKeys.has(ancestor) ||
+            ObjectRegistry.getClass(ancestor) === base,
+        );
       if (!descends) continue;
       const discriminator = info.qualifiedName || info.name || key;
       variants.set(discriminator, {

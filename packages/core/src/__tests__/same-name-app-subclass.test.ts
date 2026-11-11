@@ -2,7 +2,7 @@
 import { readFileSync } from 'node:fs';
 import { ManifestAdapter, OxcScanner } from '@happyvertical/smrt-scanner';
 import { getDatabase } from '@happyvertical/sql';
-import { afterEach, beforeEach, describe, expect, it } from 'vitest';
+import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { SmrtCollection } from '../collection';
 import { foreignKey } from '../decorators';
 import { MCPGenerator } from '../generators/mcp';
@@ -248,6 +248,72 @@ describe('same-name app subclass', () => {
     );
   });
 
+  it('dispatches shared STI creates to the app root even with children first', async () => {
+    const f = runtime(up, app);
+    db = await getDatabase({ type: 'sqlite', url: ':memory:' });
+    await migrate(merged);
+    await ObjectRegistry.getCollection(`${UP}:Profile`, { db });
+    await ObjectRegistry.getCollection(`${UP}:Person`, { db });
+    const original = ObjectRegistry.getAllClasses();
+    const order = vi
+      .spyOn(ObjectRegistry, 'getAllClasses')
+      .mockReturnValue(
+        new Map(
+          [...original].sort(
+            (left, right) =>
+              Number(right[1].name === 'Person') -
+              Number(left[1].name === 'Person'),
+          ),
+        ),
+      );
+    try {
+      const api = new APIGenerator(
+        { basePath: '/api', authMiddleware: () => async (req) => req },
+        { db, user: { id: 'test' }, permissions: ['profiles.create'] },
+      ).generateHandler();
+      const response = await api(
+        new Request('http://localhost/api/profiles', {
+          method: 'POST',
+          headers: { 'content-type': 'application/json' },
+          body: JSON.stringify({ title: 'REST base', badge: 'app' }),
+        }),
+      );
+      expect(response.status, await response.text()).toBe(201);
+      const mcp = new MCPGenerator(
+        { classNames: [`${APP}:Profile`] },
+        { db, user: { id: 'test' } },
+      );
+      for (const discriminator of [undefined, `${UP}:Person`]) {
+        const result = await mcp.handleToolCall({
+          method: 'tools/call',
+          params: {
+            name: 'profile_create',
+            arguments: {
+              title: discriminator ? 'Person' : 'MCP base',
+              ...(discriminator ? { _meta_type: discriminator } : {}),
+            },
+          },
+        });
+        expect(result.isError, JSON.stringify(result)).not.toBe(true);
+      }
+      const { rows } = await db.query(
+        'SELECT title, _meta_type FROM a2_profiles ORDER BY title',
+      );
+      expect(rows).toEqual([
+        { title: 'MCP base', _meta_type: `${APP}:Profile` },
+        { title: 'Person', _meta_type: `${UP}:Person` },
+        { title: 'REST base', _meta_type: `${APP}:Profile` },
+      ]);
+      expect(
+        (
+          await ObjectRegistry.getCollection(`${UP}:Profile`, { db })
+        ).getItemClass(),
+      ).toBe(f.AppProfile);
+    } finally {
+      order.mockRestore();
+    }
+  });
+
   it('keeps declared STI and CTI bases while resolving I/O to the app constructor', async () => {
     const f = runtime(up, app);
     expect(
@@ -347,7 +413,10 @@ describe('same-name app subclass', () => {
     const customers = await ObjectRegistry.getCollection(`${UP}:Customer`, {
       db,
     });
-    const api = new APIGenerator({ basePath: '/api' }, { db });
+    const api = new APIGenerator(
+      { basePath: '/api', authMiddleware: () => async (req) => req },
+      { db },
+    );
     api.registerCollection('customers', customers);
     const handler = api.generateHandler();
     const request = (path = '', method = 'GET', body?: object) =>

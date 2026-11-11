@@ -1985,7 +1985,9 @@ export class APIGenerator {
       if (isFrameworkBaseClass(info.name || key, info.packageName)) continue;
       // Primary match: the canonical manifest `collection` segment.
       if (info.collection === segment) {
-        return info;
+        const baseKey = ObjectRegistry.getSTIBase(info.qualifiedName || key);
+        const base = baseKey ? ObjectRegistry.getClass(baseKey) : undefined;
+        return base?.collection === segment ? base : info;
       }
       // Back-compat fallback for classes registered without a `collection`
       // (inline/test stubs): derive the plural segment from the simple name and
