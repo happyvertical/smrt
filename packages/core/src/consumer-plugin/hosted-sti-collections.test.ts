@@ -151,6 +151,17 @@ it('aliases colliding host routes while preserving storage, permissions and prov
   expect(replacementAliases.objects['@fixture/b:Account'].collection).toBe(
     'b-accounts',
   );
+  const secondary = structuredClone(replaced);
+  secondary.objects['@fixture/z:Account'].extendsQualified =
+    '@fixture/b:Account';
+  secondary.objects['@fixture/z:Account'].decoratorConfig.tableName =
+    'b_accounts';
+  expect(
+    aliasHostedCollections(secondary, {}, [
+      '@fixture/a:Account',
+      '@fixture/b:Account',
+    ]).objects['@fixture/z:Account'].collection,
+  ).toBe('b-accounts');
   expect(manifest.objects['@fixture/b:Account'].collection).toBe('accounts');
   expect(
     aliasHostedCollections(manifest, { '@fixture/b:Account': 'messages' })

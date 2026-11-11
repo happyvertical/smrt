@@ -187,7 +187,8 @@ export function aliasHostedCollections<M extends object>(
     for (const ref of ordered.slice(1)) {
       if (effective.has(ref))
         throw new Error(`Hosted collection alias collision: ${collection}`);
-      const pkg = ref.slice(0, ref.indexOf(':')).split('/').pop()!;
+      const owner = origins.get(ref) ?? ref;
+      const pkg = owner.slice(0, owner.indexOf(':')).split('/').at(-1) ?? '';
       effective.set(ref, `${pkg.replace(/^smrt-/, '')}-${collection}`);
     }
   }
