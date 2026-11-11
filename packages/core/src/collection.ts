@@ -1669,12 +1669,21 @@ export class SmrtCollection<ModelType extends SmrtObject> extends SmrtClass {
         r.fieldName === projection.via &&
         (r.type === 'foreignKey' || r.type === 'crossPackageRef'),
     );
-    if (!edge)
+    const displayTarget =
+      ObjectRegistry.getConfig(identity).display?.references?.[projection.via];
+    if (
+      !edge &&
+      !(
+        fields[projection.via]?.type === 'text' &&
+        typeof displayTarget === 'string' &&
+        displayTarget.includes(':')
+      )
+    )
       throw new Error(
-        'display.label.via must name a declared foreignKey or crossPackageRef.',
+        'display.label.via must name a declared reference or display.references text field.',
       );
     const target = await ObjectRegistry.getCollection(
-      await resolveRelationshipTargetName(edge),
+      edge ? await resolveRelationshipTargetName(edge) : displayTarget!,
       this.options,
     );
     const targetFields = target.getFieldsSync();
@@ -1739,7 +1748,9 @@ export class SmrtCollection<ModelType extends SmrtObject> extends SmrtClass {
     const parentTenant = tenantField(this, fields);
     const targetTenant = tenantField(target, targetFields);
     const conditions = [
-      `r.${q(pk.column)} = p.${q(this.toDbColumnName(projection.via))}`,
+      edge
+        ? `r.${q(pk.column)} = p.${q(this.toDbColumnName(projection.via))}`
+        : `CAST(r.${q(pk.column)} AS TEXT) = p.${q(this.toDbColumnName(projection.via))}`,
     ];
     if (targetTenant) {
       // A global source can see global targets only. Exact owner matching is
@@ -3208,6 +3219,7 @@ export class SmrtCollection<ModelType extends SmrtObject> extends SmrtClass {
 
     const fields = this.getFieldsSync();
     const instance = await this.hydrateResultRow(rows[0], fields, isSTI);
+    if (options.displayLabel) await instance.hydrateWriteThrough();
 
     // Execute afterGet interceptors (e.g., tenant validation)
     return await GlobalInterceptors.executeAfterGet(
@@ -3892,7 +3904,8 @@ export class SmrtCollection<ModelType extends SmrtObject> extends SmrtClass {
       instance.constructor.name;
     const fields = await ObjectRegistry.getAllFields(name);
     for (const key of Object.keys(values)) {
-      const definition = fields.get(key);
+      const definition =
+        fields.get(key) ?? ObjectRegistry.getWriteThroughFields(name)[key];
       if (
         !definition ||
         definition.readonly ||

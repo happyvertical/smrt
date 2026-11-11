@@ -265,3 +265,5 @@ The PostgreSQL lane is required for numeric types, UUID casts, conflict targets,
 timestamps, and migrations. Tests generate their manifest before Vitest; restart
 watch mode after adding decorated classes. Documentation-only changes need
 instruction-chain and knowledge freshness checks, not the runtime test suite.
+
+Inline linked create/edit and display-only references: [write-through](agents/write-through.md).

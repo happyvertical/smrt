@@ -1,3 +1,4 @@
+import { writeThroughFields } from '../write-through.js';
 /**
  * Manifest generator for creating service manifests from AST scan results
  */
@@ -1107,6 +1108,22 @@ export class ManifestGenerator {
         }
       }
 
+      if (obj.decoratorConfig?.writeThrough) {
+        obj.writeThroughFields = writeThroughFields(
+          obj.fields,
+          obj.decoratorConfig.writeThrough,
+          (via) => {
+            const related = obj.fields[via]?.related;
+            const target =
+              typeof related === 'string'
+                ? lookupInManifest(aggregated, related)
+                : undefined;
+            if (!target)
+              throw new Error(`writeThrough target ${related} is unavailable`);
+            return target.fields;
+          },
+        );
+      }
       const display = (obj.decoratorConfig as { display?: unknown } | undefined)
         ?.display;
       let declared: string | undefined;
@@ -1123,7 +1140,16 @@ export class ManifestGenerator {
             const edge = obj.fields[projection.via];
             if (
               !edge ||
-              !['foreignKey', 'crossPackageRef'].includes(edge.type) ||
+              (!['foreignKey', 'crossPackageRef'].includes(edge.type) &&
+                !(
+                  edge.type === 'text' &&
+                  typeof obj.decoratorConfig?.display?.references?.[
+                    projection.via
+                  ] === 'string' &&
+                  obj.decoratorConfig.display.references[
+                    projection.via
+                  ].includes(':')
+                )) ||
               edge.sensitive ||
               edge._meta?.sensitive ||
               edge.transient ||
@@ -1144,7 +1170,11 @@ export class ManifestGenerator {
                 'displayLabel is reserved for the projected label.',
               );
             }
-            const related = edge.related;
+            const related = ['foreignKey', 'crossPackageRef'].includes(
+              edge.type,
+            )
+              ? edge.related
+              : obj.decoratorConfig?.display?.references?.[projection.via];
             const target =
               typeof related === 'string'
                 ? lookupInManifest(aggregated, related)
@@ -3469,7 +3499,7 @@ export class ManifestGenerator {
     obj: SmartObjectDefinition,
     interfaceName: string,
   ): string {
-    const fields = Object.entries(obj.fields)
+    const fields = Object.entries({ ...obj.fields, ...obj.writeThroughFields })
       .map(([name, field]) => {
         const optional = !field.required ? '?' : '';
         const type = this.mapFieldTypeToTS(field.type);

@@ -209,6 +209,9 @@ function runtimeObjectDefinition(
     ObjectRegistry.getConfig(key).display?.label,
   );
   return {
+    ...(ObjectRegistry.getConfig(key).writeThrough
+      ? { writeThroughFields: ObjectRegistry.getWriteThroughFields(key) }
+      : {}),
     ...(displayLabelProjection
       ? { displayLabelProjection, displayLabelField: DISPLAY_LABEL_FIELD }
       : {}),

@@ -37,6 +37,18 @@ class DisplayCustomer extends SmrtObject {
   @field()
   tenantId: string | null = null;
 }
+@smrt({
+  idType: 'text',
+  display: {
+    references: { skuId: '@happyvertical/smrt-core:DisplayProfile' },
+    label: { via: 'skuId', field: 'name', fallback: 'Unknown item' },
+  },
+})
+class DisplayTextReference extends SmrtObject {
+  @field() skuId = '';
+  @field() tenantId: string | null = null;
+}
+
 class DisplayCustomers extends SmrtCollection<DisplayCustomer> {
   static readonly _itemClass = DisplayCustomer;
 }
@@ -123,6 +135,37 @@ function scopeTargets() {
 }
 
 describe('display label projection', () => {
+  it('labels an explicitly declared plain-text reference without changing its storage type or crossing tenants', async () => {
+    const source = await ObjectRegistry.getCollection('DisplayTextReference', {
+      db,
+    });
+    const good = await profiles.create({ name: 'Named item', tenantId: 'a' });
+    const other = await profiles.create({
+      name: 'Private item',
+      tenantId: 'b',
+    });
+    const hidden = await profiles.create({
+      name: 'Hidden item',
+      tenantId: 'a',
+      visible: false,
+    });
+    await source.create({ skuId: good.id, tenantId: 'a' });
+    await source.create({ skuId: other.id, tenantId: 'a' });
+    await source.create({ skuId: hidden.id, tenantId: 'a' });
+    await source.create({ skuId: 'external-not-a-uuid', tenantId: 'a' });
+    scopeTargets();
+    const rows = await source.list({ displayLabel: true });
+    expect(rows.map((r) => r.toJSON().displayLabel)).toEqual([
+      'Named item',
+      'Unknown item',
+      'Unknown item',
+      'Unknown item',
+    ]);
+    expect(
+      ObjectRegistry.getFields('DisplayTextReference').get('skuId')?.type,
+    ).toBe('text');
+  });
+
   it('keeps ordinary list/get/count and persisted selects independent of the display target', async () => {
     const row = await customers.create({
       profileId: 'absent-profile',

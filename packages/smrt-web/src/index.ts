@@ -243,6 +243,8 @@ export interface SmrtWebFieldUIHints {
  * virtual module (generated from the package manifest).
  */
 export interface SmrtWebFieldDefinition {
+  /** Link edited by this virtual input; omitted when selecting a different existing record. */
+  writeThrough?: string;
   type: SmrtWebFieldType;
   /** Computed public value; consumers exclude it from edit forms. */
   readonly?: boolean;
@@ -369,6 +371,8 @@ export interface SmrtWebCollectionDefinition<TData extends object = object> {
   idField: string;
   /** Owning model's resolved display-label field for names and remote pickers. */
   displayLabelField?: string;
+  /** Owning package default list fields, after the human display label. */
+  listFields?: string[];
   /** One-hop display declaration; the server supplies the computed value. */
   displayLabelProjection?: { via: string; field: string; fallback: string };
   /** CRUD + custom actions exposed by the api decorator config. */

@@ -623,6 +623,8 @@ export interface SmartObjectDefinition {
    * `name`/`title`/`label`/`code` when undeclared. Absent when the model has no
    * usable own field (it should ship a selector instead).
    */
+  writeThroughFields?: Record<string, FieldDefinition>;
+
   displayLabelField?: string;
 
   /** Read-only one-hop label, resolved by collection reads before pagination. */

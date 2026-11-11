@@ -1093,7 +1093,12 @@ export class MCPGenerator {
   ): ToolJsonSchema {
     const schema = buildToolInputSchema(
       action,
-      this.toToolFields(fields),
+      this.toToolFields(
+        new Map([
+          ...fields,
+          ...Object.entries(ObjectRegistry.getWriteThroughFields(objectName)),
+        ]),
+      ),
       customAction,
       ObjectRegistry.getConfig(objectName).idType,
     );

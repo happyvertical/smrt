@@ -932,12 +932,19 @@ export interface SmartObjectConfig {
    * @smrt({ display: { label: 'orderNumber' } })
    * ```
    */
+  /** Inline create/edit fields delegated to their linked owning model. */
+  writeThrough?: import('../write-through.js').WriteThroughConfig;
+
   display?: {
     /**
      * Own public scalar field, or one declared reference hop with a fallback.
      * When omitted, the first usable `name`/`title`/`label`/`code` is used.
      */
     label?: string | DisplayLabelProjection;
+    /** Default list columns, after the display label. */
+    list?: string[];
+    /** Read-only display targets for existing plain-text references; no storage/FK change. */
+    references?: Record<string, string>;
   };
 
   /**

@@ -1,3 +1,4 @@
+import { writeThroughFields } from './write-through.js';
 /**
  * Global object registry for SMRT classes
  *
@@ -3250,6 +3251,27 @@ export class ObjectRegistry {
    * api/mcp/cli surfaces it leaves unset come from its model (see
    * `registry/collection-exposure.ts`).
    */
+  /** Virtual writable fields; these never enter the persistence registry/schema. */
+  static getWriteThroughFields(name: string) {
+    if (!ObjectRegistry.getConfig(name).writeThrough) return {};
+    const fields = Object.fromEntries(ObjectRegistry.getFields(name));
+    return writeThroughFields(
+      fields,
+      ObjectRegistry.getConfig(name).writeThrough,
+      (via) => {
+        const related = fields[via]?.related;
+        if (typeof related !== 'string')
+          throw new Error(`writeThrough target for ${via} is unavailable`);
+        const target = ObjectRegistry.getClass(related);
+        if (!target)
+          throw new Error(`writeThrough target ${related} is unavailable`);
+        return Object.fromEntries(
+          ObjectRegistry.getFields(target.qualifiedName ?? target.name),
+        );
+      },
+    );
+  }
+
   static getConfig(name: string): SmartObjectConfig {
     // Issue #951: Use findClass for multi-strategy lookup
     const registered = ObjectRegistry.findClass(name);

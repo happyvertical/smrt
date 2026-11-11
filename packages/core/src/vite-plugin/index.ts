@@ -1987,7 +1987,7 @@ function generateClientModeTypes(manifest: SmartObjectManifest): string {
   for (const { interfaceName, obj: objectMeta } of selectObjectDeclarations(
     manifest,
   )) {
-    const fields = objectMeta.fields || {};
+    const fields = { ...objectMeta.fields, ...objectMeta.writeThroughFields };
     const propertyLines: string[] = [];
 
     for (const [fieldName, fieldDef] of Object.entries(fields)) {

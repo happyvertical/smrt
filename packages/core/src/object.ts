@@ -683,6 +683,200 @@ const TEXT_VERDICT_ASK =
  * ```
  */
 export class SmrtObject extends SmrtClass {
+  private _writeThroughDraft: Record<string, unknown> = {};
+  private _writeThroughRead: Record<string, unknown> = {};
+  private _writingThrough = false;
+  private _writeThroughOriginalLinks: Record<string, unknown> = {};
+
+  /** Domain-owned defaults (for example the linked Profile's classification). */
+  protected async writeThroughDefaults(
+    _via: string,
+  ): Promise<Record<string, unknown>> {
+    return {};
+  }
+  protected async readWriteThroughVirtual(
+    _via: string,
+    _target: SmrtObject,
+  ): Promise<Record<string, unknown>> {
+    return {};
+  }
+  protected async saveWriteThroughVirtual(
+    _via: string,
+    _target: SmrtObject,
+    values: Record<string, unknown>,
+  ): Promise<void> {
+    if (Object.keys(values).length)
+      throw new Error('This model has no write-through virtual-field adapter');
+  }
+
+  private installWriteThroughFields(): void {
+    const config = ObjectRegistry.getConfig(
+      this.getResolvedQualifiedName(),
+    ).writeThrough;
+    const names = Object.values(config ?? {}).flatMap((link) => [
+      ...link.fields,
+      ...Object.keys(link.virtualFields ?? {}),
+    ]);
+    for (const name of names) {
+      if (Object.getOwnPropertyDescriptor(this, name)) continue;
+      Object.defineProperty(this, name, {
+        configurable: true,
+        get: () =>
+          this._writeThroughDraft[name] ?? this._writeThroughRead[name],
+        set: (value: unknown) => {
+          this._writeThroughDraft[name] = value;
+        },
+      });
+      if (this.options[name] !== undefined)
+        this._writeThroughDraft[name] = this.options[name];
+    }
+  }
+
+  /** Populate inline edits only for an explicitly requested web/display read. */
+  public async hydrateWriteThrough(): Promise<void> {
+    const config = ObjectRegistry.getConfig(
+      this.getResolvedQualifiedName(),
+    ).writeThrough;
+    if (!config) return;
+    ObjectRegistry.getWriteThroughFields(this.getResolvedQualifiedName());
+    const own = this as unknown as Record<string, unknown>;
+    for (const [via, link] of Object.entries(config)) {
+      if (!own[via]) continue;
+      const edge = ObjectRegistry.getRelationships(
+        this.getResolvedQualifiedName(),
+      ).find((r) => r.fieldName === via);
+      if (!edge)
+        throw new Error(`writeThrough relationship ${via} is unavailable`);
+      const collection = await ObjectRegistry.getCollection(
+        await resolveRelationshipTargetName(edge),
+        { ...this.options, db: this.db },
+      );
+      const target = await collection.get(String(own[via]), { cache: false });
+      if (
+        !target ||
+        (target as unknown as Record<string, unknown>).tenantId !== own.tenantId
+      )
+        continue;
+      // Public select enforces the target's field policy and beforeList scope.
+      const rows = await collection.list({
+        where: { id: own[via] },
+        select: ['id', ...link.fields] as ['id'],
+        limit: 1,
+      });
+      if (!rows.length) continue;
+      for (const name of link.fields)
+        this._writeThroughRead[name] = (rows[0] as Record<string, unknown>)[
+          name
+        ];
+      if (link.virtualFields) {
+        Object.assign(
+          this._writeThroughRead,
+          await this.readWriteThroughVirtual(via, target),
+        );
+      }
+    }
+  }
+
+  private async persistWriteThrough(): Promise<void> {
+    const config = ObjectRegistry.getConfig(
+      this.getResolvedQualifiedName(),
+    ).writeThrough;
+    if (!config || !Object.keys(this._writeThroughDraft).length) return;
+    ObjectRegistry.getWriteThroughFields(this.getResolvedQualifiedName());
+    const own = this as unknown as Record<string, unknown>;
+    for (const [via, link] of Object.entries(config)) {
+      const names = [...link.fields, ...Object.keys(link.virtualFields ?? {})];
+      const values = Object.fromEntries(
+        names
+          .filter((name) => Object.hasOwn(this._writeThroughDraft, name))
+          .map((name) => [name, this._writeThroughDraft[name]]),
+      );
+      if (!Object.keys(values).length) continue;
+      const edge = ObjectRegistry.getRelationships(
+        this.getResolvedQualifiedName(),
+      ).find((r) => r.fieldName === via);
+      if (!edge)
+        throw new Error(`writeThrough relationship ${via} is unavailable`);
+      const targetName = await resolveRelationshipTargetName(edge);
+      const collection = await ObjectRegistry.getCollection(targetName, {
+        ...this.options,
+        db: this.db,
+      });
+      let target: SmrtObject | null;
+      if (own[via]) {
+        target = await collection.get(String(own[via]), { cache: false });
+        if (!target) throw new Error('The linked record is unavailable');
+        const hasInlineEdits = Object.values(values).some(
+          (v) => v !== '' && v !== null && v !== undefined,
+        );
+        if (
+          hasInlineEdits &&
+          (!this._persisted ||
+            own[via] !== this._writeThroughOriginalLinks[via])
+        )
+          throw new Error(
+            'Choose an existing record without inline edits, or edit the current linked record',
+          );
+        if (
+          (target as unknown as Record<string, unknown>).tenantId !==
+          own.tenantId
+        )
+          throw new Error('Write-through edits require the same tenant');
+        if (
+          !this._persisted &&
+          Object.values(values).every(
+            (v) => v === '' || v === null || v === undefined,
+          )
+        )
+          continue;
+        const permitted = await collection.list({
+          where: { id: own[via] },
+          select: ['id', ...link.fields] as ['id'],
+          limit: 1,
+        });
+        if (!permitted.length)
+          throw new Error('The linked record is unavailable for editing');
+        for (const name of link.fields)
+          if (Object.hasOwn(values, name))
+            (target as unknown as Record<string, unknown>)[name] = values[name];
+        await target.save();
+      } else {
+        const scalar = Object.fromEntries(
+          link.fields
+            .filter((name) => Object.hasOwn(values, name))
+            .map((name) => [name, values[name]]),
+        );
+        if (link.createType) {
+          const info = ObjectRegistry.getClass(link.createType);
+          const base = ObjectRegistry.getClass(targetName);
+          if (
+            !info ||
+            !base ||
+            ((info.qualifiedName ?? info.name) !==
+              (base.qualifiedName ?? base.name) &&
+              !ObjectRegistry.getInheritanceChain(
+                info.qualifiedName ?? info.name,
+              ).includes(base.qualifiedName ?? base.name))
+          )
+            throw new Error('Invalid write-through create type');
+          scalar._meta_type = info.qualifiedName ?? info.name;
+        }
+        target = await collection.create({
+          ...scalar,
+          ...(await this.writeThroughDefaults(via)),
+          tenantId: own.tenantId,
+        });
+        own[via] = target.id;
+      }
+      const virtual = Object.fromEntries(
+        Object.keys(link.virtualFields ?? {})
+          .filter((name) => Object.hasOwn(values, name))
+          .map((name) => [name, values[name]]),
+      );
+      await this.saveWriteThroughVirtual(via, target, virtual);
+    }
+  }
+
   private _displayLabel: string | undefined;
 
   /** @internal Collection hydration only; never populated from request input. */
@@ -1316,6 +1510,7 @@ export class SmrtObject extends SmrtClass {
     // This must run for all classes (decorator-based or not) unless explicitly skipped
     if (!this.options._extractingFields) {
       await this.initializePropertiesFromOptions();
+      this.installWriteThroughFields();
     }
 
     // Defer schema verification until an operation actually touches the
@@ -1328,6 +1523,12 @@ export class SmrtObject extends SmrtClass {
       await this.loadFromSlug();
     }
 
+    this._writeThroughOriginalLinks = Object.fromEntries(
+      Object.keys(
+        ObjectRegistry.getConfig(this.getResolvedQualifiedName())
+          .writeThrough ?? {},
+      ).map((via) => [via, (this as unknown as Record<string, unknown>)[via]]),
+    );
     return this;
   }
 
@@ -2011,6 +2212,7 @@ export class SmrtObject extends SmrtClass {
     const transformed = this.transformJSON(data);
     if (this._displayLabel !== undefined)
       transformed.displayLabel = this._displayLabel;
+    Object.assign(transformed, this._writeThroughRead, this._writeThroughDraft);
     return transformed;
   }
 
@@ -2908,12 +3110,13 @@ export class SmrtObject extends SmrtClass {
         { className },
       );
     }
-    // Validate object state before saving
-    await this.validateBeforeSave();
-
-    // Validate cross-package references that opted into save-time validation
-    await this.validateCrossPackageRefs();
-    await this.validateTypedStiReferences();
+    // Inline creation fills required references after the source tenant guard.
+    // Ordinary saves retain their established validation/hook ordering.
+    if (!this._writingThrough) {
+      await this.validateBeforeSave();
+      await this.validateCrossPackageRefs();
+      await this.validateTypedStiReferences();
+    }
 
     // Execute beforeSave interceptors (e.g., tenancy validation)
     const interceptorContext = createInterceptorContext(
@@ -2924,6 +3127,12 @@ export class SmrtObject extends SmrtClass {
       this.getResolvedQualifiedName(),
     );
     await GlobalInterceptors.executeBeforeSave(this, interceptorContext);
+    if (this._writingThrough) {
+      await this.persistWriteThrough();
+      await this.validateBeforeSave();
+      await this.validateCrossPackageRefs();
+      await this.validateTypedStiReferences();
+    }
 
     if (!this.id) {
       this.id = crypto.randomUUID();
@@ -2990,6 +3199,16 @@ export class SmrtObject extends SmrtClass {
     }
 
     const jsonData = this.toJSON();
+    for (const link of Object.values(
+      ObjectRegistry.getConfig(this.getResolvedQualifiedName()).writeThrough ??
+        {},
+    )) {
+      for (const name of [
+        ...link.fields,
+        ...Object.keys(link.virtualFields ?? {}),
+      ])
+        delete jsonData[name];
+    }
     // A computed relationship label never participates in persistence.
     if (
       typeof ObjectRegistry.getConfig(this.getResolvedQualifiedName()).display
@@ -3248,7 +3467,35 @@ export class SmrtObject extends SmrtClass {
    * await product.save();
    * ```
    */
-  async save(options: SmrtSaveOptions = {}) {
+  async save(options: SmrtSaveOptions = {}): Promise<this> {
+    if (!this._writingThrough && Object.keys(this._writeThroughDraft).length) {
+      const own = this as unknown as Record<string, unknown>;
+      const links = Object.keys(
+        ObjectRegistry.getConfig(this.getResolvedQualifiedName())
+          .writeThrough ?? {},
+      );
+      const previous = Object.fromEntries(links.map((via) => [via, own[via]]));
+      try {
+        const result = await this.withTransaction(async () => {
+          this._writingThrough = true;
+          try {
+            return await this.save(options);
+          } finally {
+            this._writingThrough = false;
+          }
+        });
+        Object.assign(this._writeThroughRead, this._writeThroughDraft);
+        this._writeThroughDraft = {};
+        this._writeThroughOriginalLinks = Object.fromEntries(
+          links.map((via) => [via, own[via]]),
+        );
+        return result;
+      } catch (error) {
+        Object.assign(own, previous);
+        throw error;
+      }
+    }
+
     const className = this.getResolvedClassName();
     const expectedUpdatedAt = options.expectedUpdatedAt;
     const explicitNewId =
@@ -3527,6 +3774,15 @@ export class SmrtObject extends SmrtClass {
       }
 
       await this.completeSave(interceptorContext);
+      this._writeThroughOriginalLinks = Object.fromEntries(
+        Object.keys(
+          ObjectRegistry.getConfig(this.getResolvedQualifiedName())
+            .writeThrough ?? {},
+        ).map((via) => [
+          via,
+          (this as unknown as Record<string, unknown>)[via],
+        ]),
+      );
 
       return this;
     } catch (error) {

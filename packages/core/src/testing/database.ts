@@ -440,11 +440,16 @@ export async function getTestDatabase(
     const edge = ObjectRegistry.getRelationships(className).find(
       (edge) => edge.fieldName === projection.via,
     );
-    if (!edge)
+    const displayTarget =
+      ObjectRegistry.getConfig(className).display?.references?.[projection.via];
+    if (!edge && !displayTarget)
       throw new Error(
         `Missing display relationship on ${className}.${projection.via}`,
       );
-    const target = await resolveRelationshipTargetName(edge);
+    const target = edge
+      ? await resolveRelationshipTargetName(edge)
+      : (ObjectRegistry.getClass(displayTarget!)?.qualifiedName ??
+        displayTarget!);
     if (!classNames.includes(target)) classNames.push(target);
   }
 

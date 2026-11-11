@@ -100,6 +100,8 @@ export type WebFieldType = Exclude<
 
 /** Informational per-column metadata carried by a collection definition. */
 export interface WebFieldDefinition {
+  /** Link edited by this virtual input; omitted when selecting a different existing record. */
+  writeThrough?: string;
   type: WebFieldType;
   required?: boolean;
   /** Computed public value, excluded from edit forms and write schemas. */
@@ -964,6 +966,7 @@ export function buildWebCollectionDefinition(
   actions: string[];
   fields: Record<string, WebFieldDefinition>;
   relationships: WebRelationship[];
+  listFields?: string[];
   displayLabelField?: string;
   displayLabelProjection?: SmartObjectDefinition['displayLabelProjection'];
 } {
@@ -985,6 +988,9 @@ export function buildWebCollectionDefinition(
     ...(entry.obj.displayLabelProjection
       ? { displayLabelProjection: entry.obj.displayLabelProjection }
       : {}),
+    ...(Array.isArray(entry.obj.decoratorConfig?.display?.list)
+      ? { listFields: entry.obj.decoratorConfig.display.list }
+      : {}),
     actions: entry.actions,
     fields: buildWebFieldDefinitions(entry.obj),
     relationships: buildWebRelationships(entry.obj, manifest),
@@ -1001,6 +1007,21 @@ export function buildWebFieldDefinitions(
   obj: SmartObjectDefinition,
 ): Record<string, WebFieldDefinition> {
   const fields: Record<string, WebFieldDefinition> = {};
+  for (const [name, field] of Object.entries(obj.writeThroughFields ?? {})) {
+    fields[name] = {
+      type: field.type as WebFieldType,
+      writeThrough: Object.entries(
+        obj.decoratorConfig?.writeThrough ?? {},
+      ).find(
+        ([, link]) =>
+          link.fields.includes(name) ||
+          Object.hasOwn(link.virtualFields ?? {}, name),
+      )?.[0],
+      required: false,
+      description: readFieldDescription(field),
+      ui: sanitizeFieldUIHints(field._meta?.ui),
+    };
+  }
   for (const [fieldName, field] of Object.entries(obj.fields ?? {})) {
     if (RELATIONSHIP_FIELD_TYPES.has(field.type)) continue;
     if (field.type === 'meta') continue;
