@@ -146,7 +146,10 @@ describe('OwnerSetupForm', () => {
       const commands = [...container.querySelectorAll('code')].map(
         (c) => c.textContent,
       );
-      expect(commands).toEqual(['pnpm app:open', 'pnpm app:recover']);
+      expect(commands).toEqual([
+        'smrt app open',
+        'smrt app stop; smrt app recover; smrt app start; smrt app open',
+      ]);
       unmount(component as never);
       component = undefined;
       container.innerHTML = '';
@@ -170,4 +173,13 @@ describe('OwnerSetupForm', () => {
       container.querySelector('[data-smrt-component="Card"]'),
     ).not.toBeNull();
   });
+});
+
+it('explains desktop sign-in without terminal scripts', async () => {
+  await render({
+    data: { available: false, token: '', launchMode: 'desktop' },
+  });
+  expect(container.textContent).toContain('Reopen the desktop app');
+  expect(container.textContent).not.toContain('pnpm');
+  expect(container.querySelector('form')).toBeNull();
 });

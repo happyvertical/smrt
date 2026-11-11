@@ -136,7 +136,9 @@ export const M = defineMessages({
   'ui.owner_setup.link_missing_heading':
     'This setup link is missing or has expired',
   'ui.owner_setup.link_missing_body':
-    'Setup links work once and only for a short time. Run one of these in the terminal where the app runs.',
+    'Setup links work once and only for a short time. Run these commands from the app folder. Recovery requires stopping the app first.',
+  'ui.owner_setup.desktop_reopen':
+    'Reopen the desktop app to sign in with a fresh link.',
   'ui.owner_setup.recovery_open': 'Open a fresh setup link',
   'ui.owner_setup.recovery_recover': 'Recover the setup invitation',
   'ui.shell_settings.appearance': 'Appearance',

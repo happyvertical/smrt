@@ -943,6 +943,24 @@ describe('local SvelteKit runtime', () => {
     });
   });
 
+  it('reports desktop recovery without exposing the launch secret', async () => {
+    const previous = process.env.SMRT_DESKTOP_OWNER_LINK_SECRET;
+    process.env.SMRT_DESKTOP_OWNER_LINK_SECRET = 'desktop-test-secret';
+    try {
+      const { runtime } = await localRuntime('desktop-setup-mode');
+      await runtime.init();
+      const data = await createOwnerSetupPage(runtime).load(
+        testEvent(SETUP_URL),
+      );
+      expect(data).toMatchObject({ launchMode: 'desktop', link: 'missing' });
+      expect(JSON.stringify(data)).not.toContain('desktop-test-secret');
+    } finally {
+      if (previous === undefined)
+        delete process.env.SMRT_DESKTOP_OWNER_LINK_SECRET;
+      else process.env.SMRT_DESKTOP_OWNER_LINK_SECRET = previous;
+    }
+  });
+
   it('rejects an expired bootstrap token', async () => {
     let now = new Date('2026-10-02T12:00:00.000Z');
     const { runtime } = await localRuntime('expired', {
