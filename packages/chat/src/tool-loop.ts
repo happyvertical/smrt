@@ -365,7 +365,7 @@ export interface ToolExecutionContext {
  */
 export interface ToolLoopOptions {
   /** The AI boundary (the only thing mocked in tests). */
-  ai: AIInterface;
+  ai: Pick<AIInterface, 'chat'>;
   /** The initial conversation messages (system / history / user). */
   messages: AIMessage[];
   /** The manifest operations available this turn (already allow-list-filtered). */

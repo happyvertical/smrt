@@ -1060,7 +1060,12 @@ describe('assistant turn', () => {
 
       // Default: the rejection is persisted, now marked recoverable.
       const plain = rows(await run(recovered));
-      expect(plain.map((row) => row.role)).toEqual(['tool', 'assistant']);
+      expect(plain.map((row) => row.role)).toEqual([
+        'tool',
+        'tool',
+        'assistant',
+      ]);
+      expect(plain[1].content).toBe('Completed this action');
       expect(parse(plain[0].metadata)).toEqual({
         toolStatus: 'error',
         errorKind: 'invalid_request',
@@ -1074,11 +1079,13 @@ describe('assistant turn', () => {
       });
       expect(rows(await run(recovered, false)).map((r) => r.role)).toEqual([
         'tool',
+        'tool',
         'assistant',
       ]);
 
       // Opt-in: a later success of the same tool drops the rejection.
       expect(rows(await run(recovered, true)).map((r) => r.content)).toEqual([
+        'Completed this action',
         'Found articles.',
       ]);
 
@@ -1150,7 +1157,11 @@ describe('assistant turn', () => {
       const persisted = events
         .filter((e) => e.type === 'message')
         .map((e) => e.message as { role: string; metadata: unknown });
-      expect(persisted.map((row) => row.role)).toEqual(['tool', 'assistant']);
+      expect(persisted.map((row) => row.role)).toEqual([
+        'tool',
+        'tool',
+        'assistant',
+      ]);
       const metadata = persisted[0].metadata;
       expect(
         typeof metadata === 'string' ? JSON.parse(metadata) : metadata,

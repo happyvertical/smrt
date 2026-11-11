@@ -920,6 +920,9 @@ importers:
       '@happyvertical/smrt-images':
         specifier: workspace:*
         version: link:../images
+      '@happyvertical/smrt-inference':
+        specifier: workspace:*
+        version: link:../inference
       '@happyvertical/smrt-personas':
         specifier: workspace:*
         version: link:../personas

@@ -314,6 +314,12 @@ export {
   toolFailureAuditMetadata,
   toolFailureRecord,
 } from './tool-loop.js';
+export {
+  type AssistantToolOutcome,
+  type DescribeAssistantTool,
+  describeAssistantTool,
+  toolSummary,
+} from './tool-summary.js';
 // Types
 export type {
   AgentSessionOptions,

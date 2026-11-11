@@ -14,6 +14,7 @@ import {
   createAssistantApprovalBridge,
 } from './assistant-approvals.js';
 import { sendAgentReply } from './services/ChatService.js';
+import type { DescribeAssistantTool } from './tool-summary.js';
 /**
  * Mountable SvelteKit routes for the AssistantDock (#3368).
  *
@@ -296,10 +297,10 @@ export interface MountAssistantRoutesOptions {
    * error, not a fallback.
    */
   ai?:
-    | AIInterface
+    | Pick<AIInterface, 'chat'>
     | ((
         context: AssistantRequestContext & { model?: string },
-      ) => AIInterface | Promise<AIInterface>);
+      ) => Pick<AIInterface, 'chat'> | Promise<Pick<AIInterface, 'chat'>>);
   /**
    * Database for chat persistence, the tool catalog and the principal run:
    * a fixed value, or a resolver called once per request (and once more
@@ -404,9 +405,9 @@ export interface MountAssistantRoutesOptions {
    * committed late as `failed`. Default 60 s.
    */
   turnStartTimeoutMs?: number;
-  describeTool?: (name: string, args?: Record<string, unknown>) => string;
+  describeTool?: DescribeAssistantTool;
   /**
-   * Persist a server tool invocation into the thread (default: none). Its
+   * Persist a successful server tool invocation (default: short summary). Its
    * tool name must be on `allowedTools`, which is mirrored onto the session.
    */
   authorInvocation?: (invocation: ToolInvocation) => AuthoredToolReply | null;
@@ -638,7 +639,7 @@ let configLoad: Promise<unknown> | undefined;
  * reaches `config({ usage: { handlers } })`, not `_smrt_ai_usage`, because a
  * turn's request database does not outlive the turn.
  */
-async function configuredAssistantAI(
+export async function configuredAssistantAI(
   context: AssistantRequestContext,
 ): Promise<AIInterface> {
   if (getConfig() === null) {
@@ -1119,7 +1120,7 @@ export function mountAssistantRoutes(
   const resolveAI = async (
     context: AssistantRequestContext,
     model: string | undefined,
-  ): Promise<AIInterface> => {
+  ): Promise<Pick<AIInterface, 'chat'>> => {
     try {
       const ai =
         typeof aiSource === 'function'
@@ -1376,7 +1377,9 @@ export function mountAssistantRoutes(
         turnDriver: prepared.turnDriver,
         waitForApproval: options.waitForApproval,
         approvals:
-          prepared.turnDriver && options.waitForApproval && !options.approvals
+          prepared.turnDriver &&
+          (options.waitForApproval || prepared.turnDriver.waitForApproval) &&
+          !options.approvals
             ? undefined
             : approvals,
         thread: {

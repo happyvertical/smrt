@@ -25,6 +25,7 @@ import {
   resolveTurnReply,
   type ToolLoopUsage,
 } from './tool-loop.js';
+import type { DescribeAssistantTool } from './tool-summary.js';
 
 /** A decision from the host's owner-approval authority, never from model output. */
 export interface AssistantApprovalDecision {
@@ -77,6 +78,8 @@ export interface AssistantTurnDriverCallbacks {
 
 /** A trusted, host-supplied loop. Call done/error once and settle run; honor signal. */
 export interface AssistantTurnDriver {
+  /** Trusted host-owned durable ledger observer; never decides or executes a hold. */
+  waitForApproval?: AssistantApprovalWaiter;
   run(
     context: AssistantTurnDriverContext,
     callbacks: AssistantTurnDriverCallbacks,
@@ -88,7 +91,7 @@ export async function runExternalAssistantTurn<M>(
   options: AssistantTurnOptions<M>,
   emit: (event: AssistantTurnEvent<M>) => void,
   serialize: (message: unknown) => M,
-  describe: (name: string, args?: Record<string, unknown>) => string,
+  describe: DescribeAssistantTool,
   report: (state: AssistantTurnState['state']) => Promise<boolean>,
 ): Promise<AssistantTurnResult> {
   if (options.resume) {
@@ -105,6 +108,10 @@ export async function runExternalAssistantTurn<M>(
     );
   const driver = options.turnDriver;
   if (!driver) throw new Error('An external turn needs a driver.');
+  if (driver.waitForApproval && options.approvals)
+    throw new Error(
+      'A host-owned approval observer cannot be combined with another approval authority.',
+    );
   const signal = options.signal ?? new AbortController().signal;
   const allowed = new Set(options.principal.allowedTools ?? []);
   const context: AssistantTurnDriverContext = {
@@ -241,16 +248,24 @@ export async function runExternalAssistantTurn<M>(
             kind: 'tool_result',
             callId: call.id,
             tool: call.name,
-            label: describe(call.name),
+            label: describe(call.name, call.args, {
+              ok: result.ok,
+              observation: result.result,
+            }),
             ok: result.ok,
             ...(result.error ? { error: result.error } : {}),
           },
         });
-        await persist(result.result ?? result.error ?? '', 'tool_result', {
+        const label = describe(call.name, call.args, {
+          ok: result.ok,
+          observation: result.result,
+        });
+        await persist(label, 'tool_result', {
           id: call.id,
           name: call.name,
           args: call.args,
           status: result.ok ? 'success' : 'error',
+          label,
         });
       }),
     async approvalNeeded(request) {
@@ -290,21 +305,21 @@ export async function runExternalAssistantTurn<M>(
           })
         : request;
       if (bridge) approvals.set(call.id, approval);
-      if (bridge)
-        await persist(approval.summary, 'tool_call', {
-          id: call.id,
-          name: call.name,
-          args: call.args,
-          approval,
-        });
+      await persist(approval.summary, 'tool_call', {
+        id: call.id,
+        name: call.name,
+        args: call.args,
+        approval,
+      });
       emit({ type: 'approval_needed', approval });
-      if (!options.waitForApproval && !bridge?.wait)
+      const waiter = options.waitForApproval ?? driver.waitForApproval;
+      if (!waiter && !bridge?.wait)
         return { approved: false, reason: 'approval_unavailable' };
       // The same abort race that stops the driver also releases an approval wait.
       const decision = await Promise.race([
         bridge?.wait
           ? bridge.wait(approval, context)
-          : options.waitForApproval!(approval, context),
+          : waiter!(approval, context),
         aborted.then(() => ({ approved: false, reason: 'cancelled' })),
       ]);
       if (decision.approved) approved.add(call.id);

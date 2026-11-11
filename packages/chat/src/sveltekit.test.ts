@@ -2710,6 +2710,90 @@ describe('mountAssistantRoutes', () => {
       ).rejects.toThrow(/does not accept attachments/);
     });
   });
+  describe('tool summary parity', () => {
+    for (const external of [false, true]) {
+      it.each([
+        ['customers.create', { name: 'Ada' }, 'Added customer Ada'],
+        ['customers.update', { name: 'Ada' }, 'Updated customer Ada'],
+        ['customers.delete', {}, 'Deleted customer'],
+        ['invoices.list', [{}, {}, {}], 'Looked up 3 invoices'],
+        [
+          'custom.unknown',
+          { secret: 'sk-not-for-display' },
+          'Completed this action',
+        ],
+      ])(`${external ? 'external' : 'built-in'} %s labels and persists the same summary`, async (name, observation, expected) => {
+        const extra: PrincipalTool = {
+          slug: name,
+          aiTool: {
+            type: 'function',
+            function: {
+              name: name.replaceAll('.', '-'),
+              description: 'Test operation',
+              parameters: { type: 'object', properties: {} },
+            },
+          },
+          async execute({ run }) {
+            run.assertToolAllowed(name);
+            return observation;
+          },
+        };
+        const routes = mount({
+          allowedTools: [name],
+          extraTools: [extra],
+          // This fixture explicitly permits the test delete; real defaults still hold.
+          approvalPolicy: { tools: { [name]: false } },
+          ...(external
+            ? {
+                turnDriver: {
+                  async run(_ctx, cb) {
+                    await cb.toolCall({ id: 'summary-call', name, args: {} });
+                    await cb.toolResult({
+                      id: 'summary-call',
+                      ok: true,
+                      result: JSON.stringify(observation),
+                    });
+                    cb.done({ text: 'Finished.' });
+                  },
+                },
+              }
+            : {
+                ai: scriptedAI([
+                  calls([name.replaceAll('.', '-'), {}, 'summary-call']),
+                  text('Finished.'),
+                ]),
+              }),
+        });
+        const threadId = await createThread(routes);
+        const result = await events(
+          await send(routes, threadId, {
+            content: 'Do it',
+            clientRequestId: 'summary',
+          }),
+        );
+        expect(result.thrown).toBeNull();
+        expect(result.seen).toContainEqual(
+          expect.objectContaining({
+            type: 'step',
+            step: expect.objectContaining({
+              kind: 'tool_result',
+              label: expected,
+              ok: true,
+            }),
+          }),
+        );
+        const rows = await listMessages(routes, threadId);
+        expect(rows.filter((row) => row.role === 'tool').at(-1)).toMatchObject({
+          content: expected,
+          toolCallData: expect.objectContaining({ label: expected }),
+        });
+        expect(
+          rows.some((row) => row.content.includes('sk-not-for-display')),
+        ).toBe(false);
+      });
+    }
+  });
+
   describe('external turn drivers', () => {
     it('streams and authors external text and tool calls using the same thread and principal', async () => {
       const ai = vi.fn(() => {
@@ -2789,8 +2873,8 @@ describe('mountAssistantRoutes', () => {
       ]);
       expect(rows.map((r) => r.content)).toEqual([
         'look around',
-        'data discover',
-        'articles',
+        'Working on this action',
+        'Completed this action',
         'Found articles.',
       ]);
       const chat = await ChatService.create({ db });
@@ -2862,8 +2946,8 @@ describe('mountAssistantRoutes', () => {
       const rows = await listMessages(routes, threadId);
       expect(rows.map((r) => r.content)).toEqual([
         'fail',
-        'data discover',
-        'not_found',
+        'Working on this action',
+        'Could not complete this action',
         'Partial answer',
         'The assistant ran into a problem. Please try again.',
       ]);
@@ -3618,7 +3702,7 @@ describe('mountAssistantRoutes', () => {
     });
     expect(
       (await listMessages(routes, threadId)).some(
-        (message) => message.content === 'deleted invoice-3',
+        (message) => message.content === 'Deleted record',
       ),
     ).toBe(true);
   });

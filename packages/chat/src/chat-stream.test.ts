@@ -889,7 +889,10 @@ describe('runChatConversationStream — persona-bound path', () => {
     });
     expect(
       roomMessages.some(
-        (m) => m.role === 'tool' && m.content.includes('"filed":true'),
+        (m) =>
+          m.role === 'tool' &&
+          m.content === 'Completed this action' &&
+          m.getToolCallData()?.name === 'assistance.request',
       ),
     ).toBe(true);
   });

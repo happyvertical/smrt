@@ -249,3 +249,8 @@ shell widget, an `llm` provider, runtime `both`; help in
 calls and a shared external-driver wait. `AssistantApprovalCard` uses the existing
 transport/wire/i18n and smrt-ui primitives. Contract, failure states and tests:
 [agents/owner-approvals.md](agents/owner-approvals.md).
+
+## Tool summaries and engine adapters
+
+Shared describe/label summaries, CLI driver and per-user ChatGPT/API factories:
+[agents/tool-summaries.md](agents/tool-summaries.md).

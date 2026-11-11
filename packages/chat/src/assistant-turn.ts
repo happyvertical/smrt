@@ -2,6 +2,10 @@ import {
   type AssistantApprovalBridge,
   requiresOwnerApproval,
 } from './assistant-approvals.js';
+import {
+  type DescribeAssistantTool,
+  describeAssistantTool,
+} from './tool-summary.js';
 /**
  * Streamed assistant turn over the bounded tool loop (#2908).
  *
@@ -310,8 +314,7 @@ export interface AssistantTurnAuthor {
   threadId?: string | null;
   /**
    * Maps a SUCCESSFUL server tool invocation to a persisted message, or
-   * `null` to keep it out of the conversation (the default for successful
-   * calls). Failed calls go through {@link authorFailedInvocation}, which
+   * `null` to keep it out of the conversation. The default is a short summary. Failed calls go through {@link authorFailedInvocation}, which
    * persists them by default (#4383, a behaviour change: before, nothing was
    * persisted for a failed call). The message's `toolCallData` tool name
    * must be on the session's `allowedTools` — `sendAgentReply`'s gate is
@@ -362,7 +365,7 @@ function defaultFailedInvocationReply(
 /** Options for {@link runAssistantTurn}. */
 export interface AssistantTurnOptions<M = Record<string, unknown>> {
   /** Required for the default tool loop; unused by an external driver. */
-  ai?: AIInterface;
+  ai?: Pick<AIInterface, 'chat'>;
   /** Omitted: today's bounded tool loop, including browser continuations. */
   turnDriver?: AssistantTurnDriver;
   /** Host-owned durable approval bridge. Absent: approval requests fail closed. */
@@ -488,7 +491,7 @@ export interface AssistantTurnOptions<M = Record<string, unknown>> {
    * On a tool call it also gets the call's arguments, so a label can name
    * the target ("Opening Events"); keep it free of ids and raw values.
    */
-  describeTool?: (name: string, args?: Record<string, unknown>) => string;
+  describeTool?: DescribeAssistantTool;
   /** Mint continuation ids (tests). Default `crypto.randomUUID()`. */
   createId?: () => string;
   /**
@@ -564,10 +567,6 @@ function defaultSerialize<M>(message: unknown): M {
   ) as M;
 }
 
-function defaultDescribe(name: string): string {
-  return name.replace(/[_.-]+/g, ' ').trim();
-}
-
 /** What the browser is told when a turn fails unexpectedly. */
 export const ASSISTANT_TURN_GENERIC_ERROR =
   'The assistant ran into a problem. Please try again.';
@@ -621,7 +620,13 @@ export async function* runAssistantTurn<M = Record<string, unknown>>(
   options: AssistantTurnOptions<M>,
 ): AsyncGenerator<AssistantTurnEvent<M>, AssistantTurnResult> {
   const serialize = options.serializeMessage ?? defaultSerialize<M>;
-  const describe = options.describeTool ?? defaultDescribe;
+  const describe: DescribeAssistantTool = (...args) => {
+    try {
+      return options.describeTool?.(...args) || describeAssistantTool(...args);
+    } catch {
+      return describeAssistantTool(...args);
+    }
+  };
   const status = (value: AssistantStatus): AssistantTurnEvent<M> => ({
     type: 'status',
     status: value,
@@ -733,7 +738,7 @@ async function runTurn<M>(
   emit: (event: AssistantTurnEvent<M>) => void,
   status: (value: AssistantStatus) => AssistantTurnEvent<M>,
   serialize: (message: unknown) => M,
-  describe: (name: string, args?: Record<string, unknown>) => string,
+  describe: DescribeAssistantTool,
   leg: TurnLeg,
 ): Promise<AssistantTurnResult> {
   const { principal, author } = options;
@@ -876,6 +881,7 @@ async function runTurn<M>(
   // Names the model called that resolved to a registered tool. A step for any
   // other name must not echo model-chosen text as its tool or label (#4453).
   const registered = new Set<string>();
+  const resultLabels = new Map<string, string>();
   const sendAgentReply = author
     ? (await import('./services/ChatService.js')).sendAgentReply
     : null;
@@ -896,7 +902,16 @@ async function runTurn<M>(
       ? author.authorFailedInvocation
         ? author.authorFailedInvocation(invocation)
         : defaultFailedInvocationReply(failure)
-      : author.authorInvocation?.(invocation);
+      : author.authorInvocation
+        ? author.authorInvocation(invocation)
+        : {
+            content: describe(invocation.slug, invocation.args, invocation),
+            toolCallData: {
+              name: invocation.slug,
+              args: invocation.args,
+              status: 'success',
+            },
+          };
     if (!reply) return;
     try {
       const message = await sendAgentReply(author.chatService, {
@@ -907,7 +922,10 @@ async function runTurn<M>(
         kind: 'tool',
         content: reply.content,
         messageType: reply.messageType ?? 'tool_result',
-        toolCallData: reply.toolCallData ?? null,
+        toolCallData: {
+          ...reply.toolCallData,
+          label: describe(invocation.slug, invocation.args, invocation),
+        },
         ...(failure
           ? {
               metadata: {
@@ -1059,7 +1077,9 @@ async function runTurn<M>(
           kind: 'tool_result',
           callId: event.callId,
           tool: known ? event.slug : UNKNOWN_TOOL_STEP_NAME,
-          label: known ? labelFor(event.slug) : UNKNOWN_TOOL_STEP_LABEL,
+          label: known
+            ? (resultLabels.get(event.slug) ?? labelFor(event.slug))
+            : UNKNOWN_TOOL_STEP_LABEL,
           ok: event.ok,
           ...(event.error ? { error: event.error } : {}),
         },
@@ -1067,6 +1087,10 @@ async function runTurn<M>(
     },
     onInvocation: async (invocation) => {
       if (invocation.approvalId) return;
+      resultLabels.set(
+        invocation.slug,
+        describe(invocation.slug, invocation.args, invocation),
+      );
       if (!author || !sendAgentReply) return;
       const failure = toolFailureRecord(invocation);
       // A deduped repeat of a failed call (#4382) has no failure record and
