@@ -51,6 +51,11 @@ function stubObject(opts: { name: string; cli?: any; methods?: string[] }) {
     api: false,
     mcp: false,
   } as any);
+  vi.spyOn(ObjectRegistry, 'getCreateTargets').mockReturnValue({
+    base: { name: key, label: opts.name },
+    subtypes: [],
+    polymorphic: false,
+  });
   vi.spyOn(ObjectRegistry, 'getFields').mockReturnValue(new Map());
   vi.spyOn(ObjectRegistry, 'getAllMethods').mockResolvedValue(
     new Map((opts.methods ?? []).map((name) => [name, method(name)])),

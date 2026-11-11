@@ -745,12 +745,15 @@ export function buildManifestToolCatalog(
  * / update schemas are enriched with the object's declared field names (tool arg
  * schemas come from field metadata) when the registry can supply them.
  */
-function toolParameters(tool: ManifestTool): Record<string, unknown> {
-  const fieldProps = (): Record<string, unknown> => {
+function toolParameters(
+  tool: ManifestTool,
+  tenantId?: string | null,
+): Record<string, unknown> {
+  const fieldProps = (targetTool = tool): Record<string, unknown> => {
     const props: Record<string, unknown> = {};
     try {
-      const registryKey = registryKeyFor(tool);
-      const policy = writablePolicyFor(tool);
+      const registryKey = registryKeyFor(targetTool);
+      const policy = writablePolicyFor(targetTool);
       for (const [name, field] of ObjectRegistry.getFields(registryKey)) {
         // Create/update offer exactly the fields that the execution path can
         // write. The core helper owns all mass-assignment filtering rules.
@@ -799,8 +802,31 @@ function toolParameters(tool: ManifestTool): Record<string, unknown> {
         },
         additionalProperties: false,
       };
-    case 'create':
-      return { type: 'object', properties: fieldProps() };
+    case 'create': {
+      const properties = fieldProps();
+      const catalog = ObjectRegistry.getCreateTargets(registryKeyFor(tool), {
+        surface: 'assistant',
+        tenantId,
+      });
+      if (catalog.polymorphic) {
+        const choices = [catalog.base, ...catalog.subtypes];
+        for (const choice of choices)
+          Object.assign(
+            properties,
+            fieldProps({ ...tool, qualifiedName: choice.name }),
+          );
+        properties.type = {
+          type: 'string',
+          enum: choices.map((choice) => choice.name),
+          description:
+            'Optional create type: ' +
+            choices
+              .map((choice) => `${choice.name} (${choice.label})`)
+              .join(', '),
+        };
+      }
+      return { type: 'object', properties };
+    }
     case 'update':
       return {
         type: 'object',
@@ -843,7 +869,10 @@ export function toolFunctionName(slug: string): string {
  * name is the provider-safe rendering of the catalog slug
  * ({@link toolFunctionName}), so the model can only ever name a real operation.
  */
-export function manifestToolToAITool(tool: ManifestTool): AITool {
+export function manifestToolToAITool(
+  tool: ManifestTool,
+  tenantId?: string | null,
+): AITool {
   return {
     type: 'function',
     function: {
@@ -851,7 +880,7 @@ export function manifestToolToAITool(tool: ManifestTool): AITool {
       description:
         tool.description ??
         `Manifest operation '${tool.action}' on '${tool.collection}'.`,
-      parameters: toolParameters(tool),
+      parameters: toolParameters(tool, tenantId),
     },
   };
 }
@@ -979,8 +1008,15 @@ export async function invokeManifestTool(
   // Operate against the principal context's database so RLS (when on) and tenant
   // auto-filtering bound the query; fall back to the supplied handle otherwise.
   const db = (run.context.database ?? options.db) as SmrtClassOptions['db'];
+  const target =
+    tool.action === 'create'
+      ? ObjectRegistry.resolveCreateTarget(registryKeyFor(tool), args, {
+          surface: 'assistant',
+          tenantId: run.context.tenantId,
+        })
+      : undefined;
   const collection = await ObjectRegistry.getCollection(
-    registryKeyFor(tool),
+    target?.collectionName ?? registryKeyFor(tool),
     db ? { db } : {},
   );
 
@@ -1008,7 +1044,13 @@ export async function invokeManifestTool(
     }
     case 'create': {
       const item = (await collection.create(
-        writableToolInput(tool, args),
+        writableToolInput(
+          {
+            ...tool,
+            qualifiedName: target?.collectionName ?? tool.qualifiedName,
+          },
+          target?.data ?? args,
+        ),
       )) as unknown as OperableItem;
       await item.save();
       return itemToObservation(item, run);
@@ -1132,7 +1174,7 @@ export async function runToolLoop(
     }
   }
   const aiTools = [
-    ...tools.map(manifestToolToAITool),
+    ...tools.map((tool) => manifestToolToAITool(tool, principal.tenantId)),
     ...extraTools.map((tool) => tool.aiTool),
     ...[...offeredClient.values()].map(clientToolToAITool),
   ];

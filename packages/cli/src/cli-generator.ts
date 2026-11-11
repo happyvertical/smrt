@@ -932,20 +932,8 @@ export class CLIGenerator {
 
     // Return cached commands if available
     const cachedCommands = this.objectCommandsCache.get(lowerName);
-    if (cachedCommands) {
-      if (!hasRuntimeExposureGate()) return cachedCommands;
-      return cachedCommands.filter((command) =>
-        isRuntimeModelEnabled(
-          ObjectRegistry.getExposureModel(
-            command.runtimeModel?.qualifiedName ?? objectName,
-          ),
-          {
-            surface: 'cli',
-            tenantId: this.context.tenantId,
-          },
-        ),
-      );
-    }
+    // Live create choices can change without a registry generation change.
+    if (cachedCommands && !hasRuntimeExposureGate()) return cachedCommands;
 
     // Find the actual registered class (may have different casing)
     // Issue #951: Match by simple name (info.name), not the qualified map key
@@ -1222,9 +1210,28 @@ export class CLIGenerator {
         'from-file': { type: 'string', description: 'create from JSON file' },
       };
 
-      // Add field options
-      const fields = ObjectRegistry.getFields(objectName);
+      const targets = ObjectRegistry.getCreateTargets(objectName, {
+        surface: 'cli',
+        tenantId: this.context.tenantId,
+      });
+      if (targets.polymorphic) {
+        options.type = {
+          type: 'string',
+          description:
+            'create type: ' +
+            [targets.base, ...targets.subtypes]
+              .map((target) => `${target.name} (${target.label})`)
+              .join(', '),
+        };
+      }
+      // Include subtype fields so an explicit create type can receive its own input.
+      const fields = new Map(
+        [targets.base, ...targets.subtypes].flatMap((target) => [
+          ...ObjectRegistry.getFields(target.name),
+        ]),
+      );
       for (const [fieldName, field] of fields) {
+        if (targets.polymorphic && fieldName === 'type') continue;
         const optionName = fieldName.replace(/_/g, '-');
         const description =
           field.options?.description || `${objectName} ${fieldName}`;
@@ -2326,6 +2333,15 @@ export class CLIGenerator {
   ): Promise<void> {
     try {
       let data: Record<string, unknown> = {};
+      const context = {
+        surface: 'cli' as const,
+        tenantId: this.context.tenantId,
+      };
+      const initialTarget = ObjectRegistry.resolveCreateTarget(
+        objectName,
+        { type: options.type },
+        context,
+      );
 
       // Declared kebab option ('from-file') arrives verbatim from parseCliArgs;
       // keep the camel fallback for handler-direct callers.
@@ -2337,10 +2353,10 @@ export class CLIGenerator {
         data = JSON.parse(content);
       } else if (options.interactive && this.config.prompt) {
         // Interactive mode
-        data = await this.promptForFields(objectName, {});
+        data = await this.promptForFields(initialTarget.collectionName, {});
       } else {
         // From command line options
-        const fields = ObjectRegistry.getFields(objectName);
+        const fields = ObjectRegistry.getFields(initialTarget.collectionName);
         for (const [fieldName] of fields) {
           const optionName = fieldName.replace(/_/g, '-');
           if (options[optionName] !== undefined) {
@@ -2349,13 +2365,15 @@ export class CLIGenerator {
         }
       }
 
-      // The STI discriminator selects the subtype; it is not a field write.
-      const metaType = data._meta_type;
-      data = this.applyWritablePolicy(objectName, data);
-      if (typeof metaType === 'string') data._meta_type = metaType;
+      const target = ObjectRegistry.resolveCreateTarget(
+        objectName,
+        options.type === undefined ? data : { ...data, type: options.type },
+        context,
+      );
+      data = this.applyWritablePolicy(target.collectionName, target.data);
       const spinner = this.createSpinner(`Creating ${objectName}...`);
 
-      const collection = await this.getCollection(objectName);
+      const collection = await this.getCollection(target.collectionName);
       const result = await collection.create(data);
 
       spinner.succeed(`Created ${objectName} with ID: ${result.id}`);

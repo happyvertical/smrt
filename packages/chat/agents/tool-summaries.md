@@ -101,10 +101,12 @@ chat, smrt-ui and smrt-svelte found core's `isRuntimeModelEnabled` and the four
 existing chat dispatcher checks. `isManifestToolEnabled` consolidates those
 checks in their existing owning module; external drivers reuse it. No new file.
 
-Known STI boundary: chat's existing `writableToolInput` intentionally removes
-underscore fields, including `_meta_type`; core's explicit discriminator target
-selection is private to MCPGenerator. This slice does not copy that selector or
-claim base-tool polymorphic create support. Tests cover exact Profile/Person/Bot
-collection dispatch and CLI preservation of full qualified discriminator args.
-A shared core create-target API used by both dispatchers is the proposed follow-up
-for base-tool discriminator selection.
+Manifest create offerings and execution
+now use core's public `ObjectRegistry.getCreateTargets` / `resolveCreateTarget`
+API ([contract](../../core/agents/generators.md#public-collection-create-targets-a1b)).
+`type` is an optional qualified create target; `_meta_type` is a compatible alias.
+Selection occurs before filtering and uses the selected model's writable policy;
+selectors are not persisted fields. Offerings and execution both use the original
+principal's live runtime exposure context. The Profile/Bot assistant canary and
+`src/create-targets.test.ts` cover all four dispatch paths, replacement, labels,
+readonly fields, malformed/foreign choices and gated children on SQLite.

@@ -470,11 +470,18 @@ describe('runToolLoop', () => {
   });
 
   it.each([
-    'Profile',
-    'Person',
-    'Bot',
-  ] as const)('summarizes a create through the exact STI %s collection without changing its discriminator', async (name) => {
+    { name: 'Profile', target: 'Profile', selector: undefined },
+    { name: 'Person', target: 'Person', selector: undefined },
+    { name: 'Bot', target: 'Bot', selector: undefined },
+    { name: 'Profile', target: 'Bot', selector: 'type' },
+    { name: 'Profile', target: 'Bot', selector: '_meta_type' },
+  ] as const)('summarizes $name create as $target with selector $selector', async ({
+    name,
+    target,
+    selector,
+  }) => {
     const model = `@happyvertical/smrt-profiles:${name}`;
+    const targetModel = `@happyvertical/smrt-profiles:${target}`;
     const collectionName = 'profiles';
     const slug = `${collectionName}.create`;
     await grant(slug);
@@ -488,7 +495,11 @@ describe('runToolLoop', () => {
     const turn = runAssistantTurn({
       ai: makeAI((_messages, _options, call) =>
         call === 0
-          ? toolCall(slug, { name: 'Ada', typeId: type.id })
+          ? toolCall(slug, {
+              name: 'Ada',
+              typeId: type.id,
+              ...(selector ? { [selector]: targetModel } : {}),
+            })
           : textResponse('Created.'),
       ),
       db,
@@ -509,7 +520,10 @@ describe('runToolLoop', () => {
     for await (const event of turn) seen.push(event);
     const rows = await collection.list({ where: { name: 'Ada' } });
     expect(rows).toHaveLength(1);
-    expect(rows[0].toJSON()).toMatchObject({ name: 'Ada', _meta_type: model });
+    expect(rows[0].toJSON()).toMatchObject({
+      name: 'Ada',
+      _meta_type: targetModel,
+    });
     expect(seen).toContainEqual(
       expect.objectContaining({
         type: 'step',
