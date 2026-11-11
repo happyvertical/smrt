@@ -30,7 +30,8 @@ Svelte-free entries (`./overview/server`, `./workspace/server`).
 | `src/store.ts` | `createPreferenceStore({ db })`: generic `load` / `save` / `reset(kind, surfaceId, ...)` |
 | `src/kinds/overview.ts`, `src/overview.ts` | The `overview` kind and `createOverviewStore` (`load`, `save`, `reset`, `loadPage`, `loadWidget`, `withTenantDefaults`) |
 | `src/kinds/shell-layout.ts` | The `shell-layout` kind and `createShellSettingsPreferences` (the server half of a `ShellSettingsAdapter`) |
-| `src/kinds/builtin.ts` | Registers the two built-in kinds (imported by the entry and the store) |
+| `src/kinds/prebuilt-components.ts` | Tenant-wide pre-built components toggle, owner facade and exposure invalidation |
+| `src/kinds/builtin.ts` | Registers the built-in kinds (imported by the entry and the store) |
 | `src/context.ts` | The ambient principal and `PreferenceAccessError` |
 | `src/permissions.ts` | `overviews.customize` / `overviews.personalize`, `shell.customize` / `shell.personalize` |
 

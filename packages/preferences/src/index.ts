@@ -26,6 +26,10 @@ export {
   withTenantDefaults,
 } from './kinds/overview.js';
 export {
+  createPrebuiltComponentsPreference,
+  PREBUILT_COMPONENTS_PREFERENCE_KIND,
+} from './kinds/prebuilt-components.js';
+export {
   createShellSettingsPreferences,
   SHELL_LAYOUT_PREFERENCE_KIND,
   type ShellSettingsPreferenceRead,

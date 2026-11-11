@@ -77,3 +77,22 @@ and `createShellSettingsPreferences` (the server half of the shell's
 `ShellSettingsAdapter`: `read(surfaceId)` merges tenant and user with
 `mergeShellSettingsDelta`; `write(surfaceId, delta, { scope?, revision? })`
 is last-writer-wins only when the revision is omitted).
+
+## Pre-built components
+
+`createPrebuiltComponentsPreference({store,isOwner})` wraps the existing generic
+store for the one tenant-wide `pre-built-components` / `app` preference,
+`{enabled: boolean}`. The facade checks live owner membership on writes and the
+store additionally requires `recipes.configure`. Personal tiers are invalid;
+there is no user override. The default is enabled after a successful load with
+no stored preference. Unknown tenants, malformed rows and unreadable storage
+remain disabled. `write(enabled, revision)` uses the existing revision CAS.
+
+Load/refresh before serving and after external changes. Connect its synchronous
+`isEnabled(tenantId)` to the core cookbook runtime gate's host predicate. Writes
+and `invalidate(tenantId)` call `notifyRuntimeExposureChanged`, so MCP hosts emit
+`tools/list_changed`. Invalidation closes the cached value until the next good
+read; multiple host processes must propagate invalidation. Hosts should expose
+this facade to owner settings, not a generic kind/surface write endpoint.
+The core [server tools](../../core/agents/cookbook-tools.md) use this same gate
+for offering and execution, including retained tools and approval resume.
