@@ -39,6 +39,10 @@ export function mountConnectAiRoutes<E extends ConnectAiRequestEvent>(options: {
   authorize(event: E): Promise<ConnectAiServerBinding | null>;
   /** Desktop hosts may open the validated URL. Otherwise return a new-tab link. */
   openBrowser?(url: string): Promise<boolean>;
+  /** Compatibility for hosts that let an API engine remain selected without a key. */
+  allowUnconfiguredApiSelection?: boolean;
+  /** Include inference's non-secret remote revocation confirmation for existing host routes. */
+  includeSignOutConfirmation?: boolean;
 }) {
   const json = (body: unknown, status = 200) =>
     new Response(JSON.stringify(body), {
@@ -159,7 +163,11 @@ export function mountConnectAiRoutes<E extends ConnectAiRequestEvent>(options: {
             chatgpt: binding.chatgpt,
             apiStatus: () => binding.apiStatus(),
           });
-          if (!ready.configured) return error(409, 'engine_not_ready');
+          if (
+            !ready.configured &&
+            !(body.engine === 'api' && options.allowUnconfiguredApiSelection)
+          )
+            return error(409, 'engine_not_ready');
           await binding.select(body.engine);
           return json({ ok: true });
         }
@@ -184,8 +192,13 @@ export function mountConnectAiRoutes<E extends ConnectAiRequestEvent>(options: {
           return json(opened ? { opened } : { opened, authorizationUrl });
         }
         if (body.action === 'chatgpt-sign-out') {
-          await binding.chatgpt.signOut();
-          return json({ ok: true });
+          const out = await binding.chatgpt.signOut();
+          return json({
+            ok: true,
+            ...(options.includeSignOutConfirmation
+              ? { remoteRevocationConfirmed: out.remoteRevocationConfirmed }
+              : {}),
+          });
         }
         return error(400, 'unknown_action');
       } catch {

@@ -100,3 +100,21 @@ sources. A tenant with no enabled models must still be able to connect AI before
 onboarding creates its model offerings. The route regression installs a closed
 core gate, verifies API readiness and selection, and proves no model exposure
 lookup is used. No screen, picker, or cookbook module is changed.
+
+Saved-product hosts can opt into `presentation="compact"` for the original
+Tricia wording/layout: Codex is settings-only under Advanced, account/version
+text is optional host-projected data, and a login started here selects its
+engine after completion. Optional client `modelState`/`chooseModel` methods
+connect the settings-only model picker to the host's existing preference.
+Both presentations use the same serialized request/poll/abort lifecycle.
+`./connect-ai/client` exposes the browser-safe transport and pure presentation
+functions without importing a Svelte component (Node adapter tests can use it).
+The route mount's `allowUnconfiguredApiSelection` and
+`includeSignOutConfirmation` options preserve older host contracts; both default
+false. Fresh/Skip, saved model validation and a sign-out fallback preference
+remain host policy. No new key form, credential store, model or route file.
+
+Compact host clients may additionally supply `connectOutcome` for their existing
+ready/login/missing DTO and `errorMessage` to project fixed key-free errors. The
+ordinary `connect(): Promise<void>` contract and default error policy stay
+unchanged. Tricia uses these hooks for a CLI removed between status and click.

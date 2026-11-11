@@ -238,3 +238,99 @@ it('waits for the initial status request before signing in, so a stale snapshot 
     expect(vi.mocked(api.state).mock.calls.length).toBeGreaterThan(before),
   );
 });
+
+it('compact hosts retain settings-only Codex and the optional ChatGPT model preference', async () => {
+  const info = state();
+  info.chatgpt = {
+    signedIn: true,
+    signingIn: false,
+    account: { label: 'owner@example.test' },
+  };
+  info.engine = 'chatgpt';
+  info.configured = true;
+  const api = client(info);
+  api.modelState = vi.fn(async () => ({
+    model: null,
+    models: [{ id: 'test-model', label: 'Test model' }],
+  }));
+  api.chooseModel = vi.fn(async () => {});
+  const user = userEvent.setup();
+  const { container } = render(ConnectAi, {
+    props: {
+      client: api,
+      apiKeyHref: '/settings/inference',
+      variant: 'settings',
+      presentation: 'compact',
+    },
+  });
+  expect(
+    await screen.findByText('Signed in as owner@example.test.'),
+  ).toBeInTheDocument();
+  expect(container.querySelector('details')?.textContent).toContain('Codex');
+  const select = await screen.findByRole('combobox', { name: 'Model' });
+  await user.selectOptions(select, 'test-model');
+  expect(api.chooseModel).toHaveBeenCalledExactlyOnceWith(
+    'test-model',
+    expect.any(AbortSignal),
+  );
+  expect(await screen.findByText('Model saved.')).toBeInTheDocument();
+});
+
+it('compact hosts select a CLI after the vendor login finishes, including immediate completion', async () => {
+  const info = state();
+  info.tools[0].installed = true;
+  const api = client(info);
+  vi.mocked(api.state).mockImplementation(async () => structuredClone(info));
+  vi.mocked(api.connect).mockImplementation(async () => {
+    info.tools[0].signedIn = true;
+    info.tools[0].login = 'finished';
+    if (vi.mocked(api.connect).mock.calls.length === 2) {
+      info.engine = 'claude-code';
+      info.configured = true;
+    }
+  });
+  render(ConnectAi, {
+    props: { client: api, apiKeyHref: '/settings', presentation: 'compact' },
+  });
+  await userEvent.click(
+    await screen.findByRole('button', { name: 'Sign in with Claude Code' }),
+  );
+  expect(await screen.findByText('In use')).toBeInTheDocument();
+  expect(api.connect).toHaveBeenCalledTimes(2);
+  expect(screen.queryByText('Codex')).toBeNull();
+});
+
+it('compact hosts project their established safe errors without exposing the upstream exception', async () => {
+  const info = state();
+  info.tools[0].installed = true;
+  const api = client(info);
+  vi.mocked(api.connect).mockRejectedValue(new Error('private upstream text'));
+  api.errorMessage = vi.fn(() => 'Claude Code did not answer. Try again.');
+  render(ConnectAi, {
+    props: { client: api, apiKeyHref: '/settings', presentation: 'compact' },
+  });
+  await userEvent.click(
+    await screen.findByRole('button', { name: 'Sign in with Claude Code' }),
+  );
+  expect(await screen.findByRole('alert')).toHaveTextContent(
+    'Claude Code did not answer. Try again.',
+  );
+  expect(screen.queryByText('private upstream text')).toBeNull();
+});
+
+it('compact hosts preserve the missing-tool outcome when a CLI disappears after status', async () => {
+  const info = state();
+  info.tools[0].installed = true;
+  const api = client(info);
+  api.connectOutcome = vi.fn(async () => ({ result: 'missing' as const }));
+  render(ConnectAi, {
+    props: { client: api, apiKeyHref: '/settings', presentation: 'compact' },
+  });
+  await userEvent.click(
+    await screen.findByRole('button', { name: 'Sign in with Claude Code' }),
+  );
+  expect(await screen.findByRole('alert')).toHaveTextContent(
+    'Claude Code is not installed.',
+  );
+  expect(api.connect).not.toHaveBeenCalled();
+});

@@ -194,6 +194,11 @@
       "types": "./dist/components/cookbook/surfaces.d.ts",
       "import": "./dist/components/cookbook/surfaces.js",
       "default": "./dist/components/cookbook/surfaces.js"
+    },
+    "./connect-ai/client": {
+      "types": "./dist/components/connect-ai/client.d.ts",
+      "import": "./dist/components/connect-ai/client.js",
+      "default": "./dist/components/connect-ai/client.js"
     }
   },
   "files": [

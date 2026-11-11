@@ -326,3 +326,26 @@ describe('Connect AI browser transport', () => {
     ).toThrow('same-origin');
   });
 });
+
+it('only opts existing hosts into selecting an unconfigured API engine and revocation metadata', async () => {
+  const { authorize, binding, routes } = setup();
+  expect(
+    (await routes.POST(event({ action: 'select', engine: 'api' }))).status,
+  ).toBe(409);
+  expect(binding.select).not.toHaveBeenCalled();
+  const compatible = mountConnectAiRoutes({
+    authorize,
+    allowUnconfiguredApiSelection: true,
+    includeSignOutConfirmation: true,
+  });
+  expect(
+    (await compatible.POST(event({ action: 'select', engine: 'api' }))).status,
+  ).toBe(200);
+  expect(binding.select).toHaveBeenCalledExactlyOnceWith('api');
+  expect(
+    await (await compatible.POST(event({ action: 'chatgpt-sign-out' }))).json(),
+  ).toEqual({ ok: true, remoteRevocationConfirmed: true });
+  expect(
+    await (await routes.POST(event({ action: 'chatgpt-sign-out' }))).json(),
+  ).toEqual({ ok: true });
+});

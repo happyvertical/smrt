@@ -1,9 +1,18 @@
 <script lang="ts">
+import { Select } from '@happyvertical/smrt-ui/forms';
 import { useI18n } from '@happyvertical/smrt-ui/i18n';
 import { Badge, Button, Card } from '@happyvertical/smrt-ui/ui';
 import { onMount, untrack } from 'svelte';
 import { M } from '../../i18n/strings.connect-ai.js';
 import { safeHref } from '../overview/markdown.js';
+import {
+  apiRow,
+  chatgptAction,
+  chatgptDescription,
+  engineReady,
+  toolAction,
+  visibleTools,
+} from './client.js';
 import type { ConnectAiClient, ConnectAiState } from './types.js';
 
 interface Props {
@@ -19,6 +28,8 @@ interface Props {
   onchange?: (state: ConnectAiState, ready: boolean) => void;
   /** Sign-in polling interval; defaults to 2.5 seconds. */
   pollMs?: number;
+  /** Compact saved-product wording/grouping; defaults stay unchanged. */
+  presentation?: 'compact';
 }
 
 let {
@@ -28,12 +39,38 @@ let {
   initialState,
   onchange,
   pollMs = 2500,
+  presentation,
 }: Props = $props();
 const { t } = useI18n();
 let info = $state<ConnectAiState | undefined>(untrack(() => initialState));
 let busy = $state(false);
 let failed = $state(false);
 let signInUrl = $state<string | undefined>();
+let message = $state('');
+let chatgptState = $state<{
+  model: string | null;
+  models?: { id: string; label: string }[];
+}>();
+const awaiting = new Set<string>();
+let awaitingChatGPT = false;
+const ready = $derived(info ? engineReady(info) : false);
+const compactInfo = $derived(
+  info
+    ? {
+        ...info,
+        tools: info.tools.map((tool) => ({
+          ...tool,
+          label:
+            tool.label ?? (tool.tool === 'codex' ? 'Codex' : 'Claude Code'),
+        })),
+      }
+    : undefined,
+);
+const shown = $derived(
+  compactInfo ? visibleTools(compactInfo, variant) : { main: [], advanced: [] },
+);
+const mainTools = $derived(shown.main);
+const advancedTools = $derived(shown.advanced);
 let stopped = false;
 let refreshing: Promise<void> | undefined;
 const active = new AbortController();
@@ -51,11 +88,49 @@ async function refresh(): Promise<void> {
       const next = await client.state(active.signal);
       if (stopped) return;
       info = next;
-      failed = false;
-      if (!next.chatgpt.signingIn) signInUrl = undefined;
+      if (presentation !== 'compact') failed = false;
+      if (!next.chatgpt.signingIn && !awaitingChatGPT) signInUrl = undefined;
       onchange?.(next, next.configured);
-    } catch {
-      if (!stopped) failed = true;
+      if (presentation === 'compact') {
+        if (!busy) {
+          for (const tool of next.tools) {
+            if (!awaiting.has(tool.tool) || tool.login === 'running') continue;
+            awaiting.delete(tool.tool);
+            if (tool.signedIn && next.engine !== tool.tool) {
+              await client.connect(tool.tool, active.signal);
+              info = await client.state(active.signal);
+              onchange?.(info, info.configured);
+            } else if (!tool.signedIn) {
+              message = `Signing in to ${tool.label ?? (tool.tool === 'codex' ? 'Codex' : 'Claude Code')} did not finish. Try again.`;
+              failed = true;
+            }
+          }
+          if (awaitingChatGPT && !next.chatgpt.signingIn) {
+            awaitingChatGPT = false;
+            signInUrl = undefined;
+            if (next.chatgpt.signedIn) {
+              await client.choose('chatgpt', active.signal);
+              info = await client.state(active.signal);
+              onchange?.(info, info.configured);
+            } else {
+              message =
+                next.chatgpt.error?.message ??
+                'Sign-in with ChatGPT did not finish. Try again.';
+              failed = true;
+            }
+          }
+        }
+        chatgptState =
+          variant === 'settings' && info?.chatgpt.signedIn
+            ? await client.modelState?.(active.signal).catch(() => undefined)
+            : undefined;
+      }
+    } catch (error) {
+      if (!stopped) {
+        failed = true;
+        if (presentation === 'compact')
+          message = client.errorMessage?.(error) ?? 'Could not check.';
+      }
     }
   })();
   refreshing = pending;
@@ -74,10 +149,18 @@ async function act(action: () => Promise<unknown>) {
     await refreshing;
     await action();
     await refresh();
-  } catch {
-    if (!stopped) failed = true;
+  } catch (error) {
+    if (!stopped) {
+      failed = true;
+      if (presentation === 'compact')
+        message = client.errorMessage?.(error) ?? 'Something went wrong.';
+    }
   } finally {
-    if (!stopped) busy = false;
+    if (!stopped) {
+      busy = false;
+      if (presentation === 'compact' && (awaiting.size || awaitingChatGPT))
+        void refresh();
+    }
   }
 }
 
@@ -96,6 +179,57 @@ async function startChatGPT() {
       throw new Error('Invalid sign-in URL.');
     signInUrl = result.authorizationUrl;
   }
+  if (presentation === 'compact') awaitingChatGPT = true;
+}
+
+async function use(tool: ConnectAiState['tools'][number]) {
+  const label = tool.label ?? (tool.tool === 'codex' ? 'Codex' : 'Claude Code');
+  message = `Checking ${label}…`;
+  await act(async () => {
+    const result = client.connectOutcome
+      ? await client.connectOutcome(tool.tool, active.signal)
+      : await client.connect(tool.tool, active.signal);
+    if (result?.result === 'missing') {
+      message = `${label} is not installed.`;
+      failed = true;
+    } else if (result?.result === 'ready' || tool.signedIn)
+      message = `${label} is connected.`;
+    else {
+      awaiting.add(tool.tool);
+      message = `Finish signing in to ${label} in your browser. This page updates when you are done.`;
+    }
+  });
+}
+const useChatGPT = () =>
+  act(async () => {
+    await client.choose('chatgpt', active.signal);
+    message = 'Using ChatGPT.';
+  });
+const signInChatGPT = () =>
+  act(async () => {
+    message = 'Opening ChatGPT in your browser…';
+    await startChatGPT();
+    message = signInUrl
+      ? 'Open the ChatGPT sign-in page below. This page updates when you are done.'
+      : 'Finish signing in with ChatGPT in your browser. This page updates when you are done.';
+  });
+const signOutOfChatGPT = () =>
+  act(async () => {
+    await client.signOutChatGPT(active.signal);
+    awaitingChatGPT = false;
+    message = 'Signed out of ChatGPT.';
+  });
+const useApi = () =>
+  act(async () => {
+    await client.choose('api', active.signal);
+    message = 'Using your API key.';
+  });
+async function pickModel(event: Event) {
+  const value = (event.currentTarget as HTMLSelectElement).value;
+  await act(async () => {
+    await client.chooseModel?.(value || null, active.signal);
+    message = 'Model saved.';
+  });
 }
 
 onMount(() => {
@@ -125,6 +259,97 @@ onMount(() => {
 });
 </script>
 
+{#if presentation === 'compact'}
+<div class="connect" data-smrt-component="ConnectAi" data-variant={variant}>
+  {#if !compactInfo}
+    <p class="sh-muted" role="status">Looking for the AI you can use on this computer…</p>
+  {:else}
+    {@const gpt = chatgptAction(compactInfo)}
+    <ul class="sh-list tools" aria-label="Your AI">
+      {#each mainTools as tool (tool.tool)}
+        {@render toolRow(tool, compactInfo)}
+      {/each}
+      <li class="tool" id="chatgpt">
+        <div class="what">
+          <strong>ChatGPT</strong>
+          <span class="sh-muted">{chatgptDescription(compactInfo)}</span>
+          {#if variant === 'settings' && compactInfo.chatgpt?.signedIn && chatgptState?.models?.length}
+            <label class="model">
+              <span class="sh-muted">Model</span>
+              <Select class="sh-input" disabled={busy} value={chatgptState.model ?? ''} onchange={pickModel}>
+                <option value="">Default ({chatgptState.models[0].label})</option>
+                {#each chatgptState.models as m (m.id)}
+                  <option value={m.id}>{m.label}</option>
+                {/each}
+              </Select>
+            </label>
+          {/if}
+        </div>
+        <div class="row-actions">
+          {#if gpt.kind === 'in-use'}
+            <span class="sh-badge sh-badge-ok">{gpt.label}</span>
+          {:else}
+            <Button
+              type="button"
+              class="sh-btn {gpt.kind === 'use' || gpt.kind === 'sign-in' ? 'sh-btn-primary' : ''}"
+              disabled={busy || gpt.kind === 'waiting'}
+              onclick={() => (gpt.kind === 'use' ? useChatGPT() : signInChatGPT())}
+            >{gpt.label}</Button>
+          {/if}
+          {#if compactInfo.chatgpt?.signedIn}
+            <Button type="button" class="sh-btn" disabled={busy} onclick={signOutOfChatGPT}>Sign out</Button>
+          {/if}
+        </div>
+      </li>
+    </ul>
+    {#if signInUrl}
+      <p class="api">
+        <a class="sh-link" href={signInUrl} target="_blank" rel="noopener noreferrer">Open the ChatGPT sign-in page<span class="sh-sr-only"> (opens in a new tab)</span></a>
+      </p>
+    {/if}
+
+    {#if advancedTools.length}
+      <details class="advanced-tools">
+        <summary>Advanced: other tools on this computer</summary>
+        <ul class="sh-list tools" aria-label="Advanced tools">
+          {#each advancedTools as tool (tool.tool)}
+            {@render toolRow(tool, compactInfo)}
+          {/each}
+        </ul>
+      </details>
+    {/if}
+
+    {@const api = apiRow(compactInfo)}
+    {#if api === 'in-use'}
+      <p class="api">
+        <span class="sh-badge sh-badge-ok">In use</span> An API key (saved here, or found in this computer's settings).
+      </p>
+    {:else if api === 'available'}
+      <p class="api">
+        You also have an API key available.
+        <Button type="button" class="sh-btn sh-btn-small" disabled={busy} onclick={useApi}>Use my API key</Button>
+      </p>
+    {:else if !ready}
+      <p class="api sh-muted">Nothing connected yet.</p>
+    {/if}
+
+    <p class="sh-muted legal">
+      Claude Code runs the app you already have installed, signed in the way its
+      maker requires. Sign in with ChatGPT uses OpenAI's own sign-in page, a
+      <a class="sh-link" href="https://developers.openai.com/siwc/token-sharing-open-source/preview-limitations" target="_blank" rel="noopener noreferrer">preview for open source apps<span class="sh-sr-only"> (opens in a new tab)</span></a>.
+      Either bills your own account, and this app never sees your password.
+    </p>
+
+    <p class="advanced">
+      <a class="sh-link" href={safeHref(apiKeyHref) ?? undefined}>Advanced: use an API key or another provider</a>
+    </p>
+  {/if}
+
+  <p class="sh-alert {failed ? 'sh-alert-error' : message ? 'sh-alert-ok' : ''} note" role={failed ? 'alert' : 'status'} hidden={!message && !failed}>{message || (failed ? t(M['ui.connect_ai.error']) : '')}</p>
+  <p class="sh-sr-only" role="status">{ready ? 'The assistant is ready.' : ''}</p>
+</div>
+
+{:else}
 <section class="smrt-connect-ai" data-smrt-component="ConnectAi" data-variant={variant} aria-labelledby={titleId} aria-busy={busy}>
   <h2 id={titleId}>{t(M['ui.connect_ai.title'])}</h2>
   {#if !info}
@@ -206,9 +431,90 @@ onMount(() => {
   {/if}
 </section>
 
+{/if}
+
+{#snippet toolRow(tool: ConnectAiState['tools'][number], current: ConnectAiState)}
+  {@const action = toolAction(tool, current)}
+  <li class="tool">
+    <div class="what">
+      <strong>{tool.label}</strong>
+      <span class="sh-muted">
+        {#if !tool.installed}
+          Not installed on this computer.
+        {:else if tool.signedIn === null}
+          Installed, but it did not answer.
+        {:else if tool.signedIn}
+          Installed and signed in{tool.version ? `, version ${tool.version}` : ''}.
+        {:else}
+          Installed, not signed in.
+        {/if}
+      </span>
+    </div>
+    {#if action.kind === 'install'}
+      <a
+        class="sh-btn"
+        href={safeHref(tool.installUrl) ?? undefined}
+        target="_blank"
+        rel="noopener noreferrer"
+      >{action.label}<span class="sh-sr-only"> for {tool.label} (opens in a new tab)</span></a>
+    {:else if action.kind === 'in-use'}
+      <span class="sh-badge sh-badge-ok">{action.label}</span>
+    {:else}
+      <Button
+        type="button"
+        class="sh-btn {action.kind === 'use' || action.kind === 'sign-in' ? 'sh-btn-primary' : ''}"
+        disabled={busy || action.kind === 'waiting'}
+        onclick={() => (action.kind === 'retry' ? refresh() : use(tool))}
+      >{action.label}</Button>
+    {/if}
+  </li>
+{/snippet}
+
 <style>
 @layer smrt.reset, smrt.structure, smrt.theme;
 @layer smrt.theme {
+  .tools {
+    list-style: none;
+    margin: 0;
+    padding: 0;
+  }
+  .tool {
+    display: flex;
+    flex-wrap: wrap;
+    align-items: center;
+    justify-content: space-between;
+    gap: var(--smrt-spacing-2) var(--smrt-spacing-3);
+    padding-block: var(--smrt-spacing-2);
+  }
+  .what {
+    display: flex;
+    flex-direction: column;
+    min-inline-size: 12rem;
+    flex: 1 1 12rem;
+  }
+  .row-actions {
+    display: flex;
+    flex-wrap: wrap;
+    gap: var(--smrt-spacing-2);
+  }
+  .model {
+    display: flex;
+    flex-direction: column;
+    gap: var(--smrt-spacing-1);
+    margin-block-start: var(--smrt-spacing-2);
+    max-inline-size: 18rem;
+  }
+  .advanced-tools {
+    margin-block-start: var(--smrt-spacing-3);
+  }
+  .legal,
+  .advanced,
+  .api {
+    margin-block: var(--smrt-spacing-3) 0;
+  }
+  .note {
+    margin-block-start: var(--smrt-spacing-3);
+  }
   .smrt-connect-ai { display: grid; gap: var(--smrt-spacing-4); color: var(--smrt-color-on-surface); }
   .smrt-connect-ai ul { display: grid; gap: var(--smrt-spacing-3); list-style: none; margin: 0; padding: 0; }
   .smrt-connect-ai h2, .smrt-connect-ai h3, .smrt-connect-ai p { margin: 0; }
