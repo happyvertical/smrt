@@ -98,6 +98,12 @@ it('runs and exports display labels, money and RFC 4180 quotes', async () => {
   );
 });
 it('renames and removes only in the draft; history and preview use plain words', async () => {
+  await runCommand(
+    { type: 'defineReport', name: 'temporary', definition: { spec } } as never,
+    h.owner.id,
+    'live',
+  );
+  await runCommand({ type: 'undo' }, h.owner.id, 'live');
   await startDraft('Reports', h.owner.id);
   expect(
     (await POST(event(h.owner, 'live', { action: 'remove' }))).status,

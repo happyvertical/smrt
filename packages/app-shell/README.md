@@ -550,6 +550,16 @@ Save payloads omit calculated fields. Model pages list every field and its
 formula, and table headers sort the loaded records, including calculated values.
 Publish review uses the same display-only formula renderer.
 
+The assistant uses reports for aggregate answers, calculated fields for values
+from the same record, and asks before saving a one-time answer. Run results use
+the same shared report component in chat. Reopened threads keep the summary and
+saved-report link; results run again on the report page.
+
+A deterministic QA import body is [agents/reports-ui-seed.json](agents/reports-ui-seed.json).
+It needs an empty app and can be posted by the signed-in owner to
+`/api/apps/importTemplate?target=live`. It seeds customer links, dates, choices,
+money and calculated totals, bar/line/table reports, empty and capped results.
+
 ### Engine reports
 
 `AppDefinition.reports[name] = { label?, description?, spec }` stores a

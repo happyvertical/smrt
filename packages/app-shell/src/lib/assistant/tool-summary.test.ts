@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import { toolSummary } from './tool-summary.ts';
+import { reportLink, reportPresentation, toolSummary } from './tool-summary.ts';
 
 describe('human tool summaries', () => {
   it.each([
@@ -43,4 +43,38 @@ describe('human tool summaries', () => {
       'Could not complete this action',
     );
   });
+});
+
+it('accepts only a valid engine report result and same-origin report links', async () => {
+  const { result } = await import('../../test/report-fixtures.ts');
+  const data = { ...result, reportName: 'sales' };
+  expect(
+    reportPresentation('app_runreport', {
+      content: [{ text: JSON.stringify(data) }],
+    })?.href,
+  ).toBe('/reports/sales');
+  expect(reportPresentation('other_tool', data)).toBeUndefined();
+  expect(reportPresentation('app_runreport', data, false)).toBeUndefined();
+  expect(
+    reportPresentation('app_runreport', { ...data, rows: [{}] }),
+  ).toBeUndefined();
+  expect(reportLink('javascript:alert(1)')).toBeUndefined();
+  expect(
+    reportPresentation('app_runreport', { ...data, reportName: '../secret' })
+      ?.href,
+  ).toBeUndefined();
+});
+it.each([
+  'Made the report Sales by month',
+  'Ran Sales by month: 12 rows',
+  'Loaded 240 Orders',
+  'Merged 3 Customers into Acme Ltd',
+  'Calculated Total',
+])('preserves safe new-tool summaries: %s', (summary) => {
+  expect(toolSummary('app_runreport', { summary })).toBe(summary);
+  expect(
+    toolSummary('app_mergerecords', {
+      summary: 'Merged into 12345678-1234-1234-1234-123456789012',
+    }),
+  ).not.toContain('12345678');
 });

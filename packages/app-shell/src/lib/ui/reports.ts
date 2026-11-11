@@ -89,7 +89,7 @@ export function reportWords(
       const name = measure
         ? `${measures[measure.fn]}${measure.field ? ` of ${label(measure.field)}` : ' of records'}`
         : 'Removed measure';
-      return `${name} ${operators[h.op]} ${h.value}`;
+      return `${name} ${operators[h.op]} ${measure?.field && fields[measure.field] ? cellText(fields[measure.field], h.value) : h.value}`;
     }),
   );
   return `${spec.measures.map((m) => `${measures[m.fn]}${m.field ? ` of ${label(m.field)}` : ' of records'}`).join(', ')} from ${model?.label ?? 'a removed model'}${spec.dimensions.length ? `, grouped by ${spec.dimensions.map((d) => `${label(d.field)}${d.bucket ? ` by ${d.bucket}` : ''}`).join(', ')}` : ''}${conditions.length ? `, where ${conditions.join(' and ')}` : ''}.`;

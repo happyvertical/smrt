@@ -37,7 +37,8 @@ export const POST: RequestHandler = guarded(async (event) => {
     if (!label || label.length > 120)
       throw new HttpError(400, 'Use a report label of 1 to 120 characters.');
     const host = await hostFor(target);
-    const report = host.describe().reports?.[name];
+    const reports = host.describe().reports ?? {};
+    const report = Object.hasOwn(reports, name) ? reports[name] : undefined;
     if (!report)
       throw new HttpError(404, 'This report is no longer available.');
     return json(
