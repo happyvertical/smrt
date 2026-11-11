@@ -507,6 +507,7 @@ export class CLIGenerator {
   private commandCache: CLICommand[] | null = null;
   /** Lazy-loaded cache for object commands (key: objectName lowercase) */
   private objectCommandsCache = new Map<string, CLICommand[]>();
+  private objectCommandsGeneration = -1;
   /** Set of registered object names (lowercase) for quick lookup */
   private registeredObjectNames: Set<string> | null = null;
   /** Whether manifest/classes have been loaded */
@@ -923,6 +924,11 @@ export class CLIGenerator {
     objectName: string,
   ): Promise<CLICommand[]> {
     const lowerName = objectName.toLowerCase();
+    const generation = ObjectRegistry.getGeneration();
+    if (this.objectCommandsGeneration !== generation) {
+      this.objectCommandsCache.clear();
+      this.objectCommandsGeneration = generation;
+    }
 
     // Return cached commands if available
     const cachedCommands = this.objectCommandsCache.get(lowerName);
@@ -962,6 +968,8 @@ export class CLIGenerator {
     const classInfo = registeredClasses.get(matchedKey);
     const commands = await this.generateObjectCommands(actualName, classInfo);
 
+    // Metadata loading during generation can itself advance the registry.
+    this.objectCommandsGeneration = ObjectRegistry.getGeneration();
     // Cache the commands
     this.objectCommandsCache.set(lowerName, commands);
 
@@ -996,11 +1004,6 @@ export class CLIGenerator {
 
     // Ensure manifest is loaded so we know what objects exist
     await this.ensureManifestLoaded();
-
-    // Check if this is a known object
-    if (!this.registeredObjectNames?.has(objectName.toLowerCase())) {
-      return undefined;
-    }
 
     // Get commands for this object (lazy generation)
     const objectCommands = await this.getObjectCommandsLazy(objectName);

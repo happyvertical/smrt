@@ -786,6 +786,10 @@ function resolveEffectiveConfig(
  * (even from different package resolution paths) share the same registry state.
  */
 export class ObjectRegistry {
+  /** Invalidation token for consumers caching generated definitions. */
+  static getGeneration(): number {
+    return getRegistryGeneration();
+  }
   /**
    * Get the classes map from globalThis, initializing if needed
    */
@@ -1847,6 +1851,11 @@ export class ObjectRegistry {
    * }
    * ```
    */
+  /** Declared ancestry metadata, before same-name replacement redirects I/O. */
+  static getDeclaredClass(name: string): RegisteredClass | undefined {
+    return replacedDeclarations().get(name) ?? getClasses().get(name);
+  }
+
   static getAllClasses(): Map<string, RegisteredClass> {
     return _getAllClasses();
   }

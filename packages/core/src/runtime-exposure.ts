@@ -78,11 +78,31 @@ export function subscribeRuntimeExposure(listener: () => void): () => void {
   };
 }
 
+/** App editors hold models closed while a pending schema revision is being activated. */
+declare global {
+  var __smrtModelReadiness: Map<string, boolean> | undefined;
+}
+export function setRuntimeModelReadiness(
+  models: Iterable<string>,
+  ready: boolean,
+): void {
+  globalThis.__smrtModelReadiness ??= new Map();
+  for (const model of models) globalThis.__smrtModelReadiness.set(model, ready);
+  notifyRuntimeExposureChanged();
+}
+
 /** Missing identity, unavailable enabled-set and predicate errors all fail closed. */
 export function isRuntimeModelEnabled(
   model: RuntimeExposureModel | string | undefined,
   context: RuntimeExposureContext,
 ): boolean {
+  const identity = typeof model === 'string' ? { qualifiedName: model } : model;
+  if (
+    [identity?.qualifiedName, ...(identity?.replacedQualifiedNames ?? [])].some(
+      (id) => id && globalThis.__smrtModelReadiness?.get(id) === false,
+    )
+  )
+    return false;
   const gate = state().gate;
   if (!gate) return true;
   try {
@@ -149,7 +169,9 @@ export function createCookbookRuntimeExposure(
   const effective = (id: string) => options.replacements?.get(id) ?? id;
   const enabledFrom = (snapshot: PlanSnapshot) => {
     const enabled = new Set(
-      snapshot.features.filter((id) => known.has(id)).map(effective),
+      snapshot.features
+        .filter((id) => known.has(id) || snapshot.customModels?.includes(id))
+        .map(effective),
     );
     for (const entry of snapshot.recipes) {
       const recipe = recipes.get(entry.id);

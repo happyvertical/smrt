@@ -47,6 +47,7 @@ import {
   QueryOrderByError,
 } from './query-bounds';
 import { ObjectRegistry } from './registry';
+import { getRegistryGeneration } from './registry/generation.js';
 import { assertRuntimeTableBindings } from './registry/table-mappings.js';
 import type { SmrtObjectConstructor } from './registry/types';
 import {
@@ -674,6 +675,7 @@ export class SmrtCollection<ModelType extends SmrtObject> extends SmrtClass {
    * Populated during create() to avoid async getFields() calls on every query.
    * @private
    */
+  private _cachedFieldsGeneration = -1;
   private _cachedFields: Record<string, CollectionFieldDefinition> | null =
     null;
 
@@ -2758,6 +2760,7 @@ export class SmrtCollection<ModelType extends SmrtObject> extends SmrtClass {
     // This eliminates async getFields() calls on every query
     const fields = await instance.getFields();
     instance._cachedFields = fields;
+    instance._cachedFieldsGeneration = getRegistryGeneration();
 
     // Return fully initialized instance
     return instance;
@@ -4338,7 +4341,10 @@ export class SmrtCollection<ModelType extends SmrtObject> extends SmrtClass {
    * @private
    */
   getFieldsSync(): Record<string, CollectionFieldDefinition> {
-    if (this._cachedFields) {
+    if (
+      this._cachedFields &&
+      this._cachedFieldsGeneration === getRegistryGeneration()
+    ) {
       return this._cachedFields;
     }
     // Fallback to ObjectRegistry sync method if cache not populated

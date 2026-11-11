@@ -61,7 +61,11 @@ export function compileValidators(
     // Required field validator. Check both the `_meta` bag and the top-level
     // `field.required` (some registration paths, e.g. tenantScoped injection,
     // set the top-level flag) — mirrors the `transient` check above.
-    if (options.required || field.required) {
+    // Match the manifest validation path: tenancy populates this field in beforeSave.
+    const autoTenant =
+      options.__tenancy?.isTenantIdField === true &&
+      options.__tenancy.autoPopulate !== false;
+    if ((options.required || field.required) && !autoTenant) {
       validators.push(async (instance) => {
         const value = readInstanceField(instance, fieldName);
         if (value === null || value === undefined || value === '') {
@@ -183,6 +187,7 @@ export function compileValidators(
       custom = true;
       const validateFn = customValidate as (
         value: unknown,
+        instance: SmrtObject,
       ) => boolean | Promise<boolean>;
       const customMessage =
         typeof options.customMessage === 'string'
@@ -191,7 +196,7 @@ export function compileValidators(
       validators.push(async (instance) => {
         const value = readInstanceField(instance, fieldName);
         try {
-          const isValid = await validateFn(value);
+          const isValid = await validateFn(value, instance);
           if (!isValid) {
             const ValidationError = await import('../errors').then(
               (m) => m.ValidationError,

@@ -1,3 +1,4 @@
+import { getRegistryGeneration } from '../registry/generation.js';
 /**
  * High-performance REST API generator for smrt objects using Node.js HTTP server
  *
@@ -172,6 +173,12 @@ function registeredFieldsToManifest(
         ? { readPermission: field.readPermission }
         : {}),
       ...(field._meta !== undefined ? { _meta: field._meta } : {}),
+      ...((field.sensitive ?? field._meta?.sensitive) === true
+        ? { sensitive: true }
+        : {}),
+      ...((field.transient ?? field._meta?.transient) === true
+        ? { transient: true }
+        : {}),
     };
   }
   return result;
@@ -226,9 +233,9 @@ function runtimeObjectDefinition(
  * (#1862). This mirrors the Vite/SvelteKit source (`computeWebManifestHash`)
  * but builds the manifest from `ObjectRegistry` for APIGenerator deployments.
  */
-export function computeRuntimeWebManifestHash(
+export function getRuntimeManifest(
   classes: Iterable<[string, RegisteredClass]> = ObjectRegistry.getAllClasses(),
-): string {
+): SmartObjectManifest {
   const objects: SmartObjectManifest['objects'] = {};
   const seen = new Set<RegisteredClass>();
   for (const [key, info] of classes) {
@@ -236,12 +243,22 @@ export function computeRuntimeWebManifestHash(
     seen.add(info);
     const manifestKey = info.qualifiedName || key;
     objects[manifestKey] = runtimeObjectDefinition(key, info);
+    for (const previous of info.replacedQualifiedNames ?? []) {
+      const declaration = ObjectRegistry.getDeclaredClass(previous);
+      if (declaration)
+        objects[previous] = {
+          ...runtimeObjectDefinition(previous, declaration),
+          replacedBy: manifestKey,
+        };
+    }
   }
-  return computeWebManifestHash({
-    version: 'runtime',
-    timestamp: 0,
-    objects,
-  });
+  return { version: 'runtime', timestamp: 0, objects };
+}
+
+export function computeRuntimeWebManifestHash(
+  classes: Iterable<[string, RegisteredClass]> = ObjectRegistry.getAllClasses(),
+): string {
+  return computeWebManifestHash(getRuntimeManifest(classes));
 }
 
 /**
@@ -252,6 +269,7 @@ export class APIGenerator {
   private collections = new Map<string, SmrtCollection<SmrtObject>>();
   private context: APIContext;
   private runtimeManifestHash: string | undefined;
+  private manifestGeneration = -1;
 
   constructor(config: APIConfig = {}, context: APIContext = {}) {
     this.config = {
@@ -1590,32 +1608,12 @@ export class APIGenerator {
   private async getCollection(
     classInfo: RegisteredClass,
   ): Promise<SmrtCollection<SmrtObject>> {
-    if (!this.collections.has(classInfo.name)) {
-      // Lazy registration can publish a model before any collection has been
-      // requested. Reuse the registry's effective-identity/default factory.
-      const ctor = classInfo.collectionConstructor;
-      const options = { ai: this.context.ai, db: this.context.db };
-      const collection = ctor
-        ? new ctor(options)
-        : await ObjectRegistry.getCollection(
-            classInfo.qualifiedName ?? classInfo.name,
-            // APIContext accepts opaque host adapters, just like the explicit
-            // constructor above; normal collection initialization validates them.
-            options as SmrtCollectionOptions,
-          );
-      // Await initialize() so the auto-discovered collection is actually usable
-      // (its DB is wired). Without this, list()/get() throw "Database accessed
-      // before initialization" — a latent bug that was masked while the
-      // generated client's plural URLs never matched the singular-only
-      // auto-discovery segment (#1794). The explicit-registerCollection() path
-      // receives an already-initialized collection from the caller, so this
-      // only affects the auto-discovery factory.
-      if (ctor) await collection.initialize();
-      this.collections.set(classInfo.name, collection);
-    }
-    const collection = this.collections.get(classInfo.name);
-    if (!collection) throw new Error(`Collection ${classInfo.name} not found`);
-    return collection;
+    return ObjectRegistry.getCollection(
+      classInfo.qualifiedName ?? classInfo.name,
+      { ai: this.context.ai, db: this.context.db } as Parameters<
+        typeof ObjectRegistry.getCollection
+      >[1],
+    );
   }
 
   /**
@@ -1840,6 +1838,11 @@ export class APIGenerator {
   private resolveManifestHash(): string {
     if (this.config.manifestHash !== undefined) {
       return this.config.manifestHash;
+    }
+    const generation = getRegistryGeneration();
+    if (this.manifestGeneration !== generation) {
+      this.runtimeManifestHash = undefined;
+      this.manifestGeneration = generation;
     }
     this.runtimeManifestHash ??= computeRuntimeWebManifestHash();
     return this.runtimeManifestHash;

@@ -2294,7 +2294,7 @@ type TenantScopedOptions = Exclude<
   boolean | undefined
 >;
 
-function normalizeTenantScopedConfig(
+export function normalizeTenantScopedConfig(
   tenantScoped: SmartObjectConfig['tenantScoped'],
 ): RegisteredClass['tenantScopedConfig'] | undefined {
   if (!tenantScoped) {
@@ -2777,6 +2777,10 @@ export interface RuntimeManifestRegistrationOptions {
    * name without the STI child-wins rule replacing the parent's registration.
    */
   extendsRegistered?: string;
+  /** Opt-in same-name app replacement; the ordinary runtime API still coexists. */
+  replaceParent?: boolean;
+  /** Refresh presentation and validators after an editor-owned additive update. */
+  refreshRuntime?: boolean;
 }
 
 export function registerFromManifest(
@@ -2794,6 +2798,24 @@ export function registerFromManifest(
       manifestPackageName,
       runtimeOptions,
     );
+    if (runtimeOptions?.refreshRuntime) {
+      const entry = getClasses().get(name);
+      if (entry) {
+        mergeManifestIntoExistingRegistration(
+          entry,
+          objectDef,
+          manifestPackageName,
+        );
+        entry.config = {
+          ...entry.config,
+          ui: objectDef.decoratorConfig?.ui,
+          display: objectDef.decoratorConfig?.display,
+        };
+        entry.validators = compileValidators(entry.name, entry.fields);
+        entry.validationRules = undefined;
+        invalidateInheritanceEntries(entry);
+      }
+    }
   } finally {
     reconcileSubtypeLineage();
     applyRuntimeOverrides();
@@ -2843,7 +2865,7 @@ function registerFromManifestUntracked(
   const manifestParent = objectDef.extendsQualified ?? objectDef.extends;
   // A run-time subclass keeps its same-named parent registered next to it, so
   // the lineage that lets a descendant replace its parent is not recorded.
-  if (!runtimeOptions?.extendsRegistered) {
+  if (!runtimeOptions?.extendsRegistered || runtimeOptions.replaceParent) {
     recordSubtypeParent(registrationKey, manifestParent);
   }
 
@@ -2873,6 +2895,11 @@ function registerFromManifestUntracked(
             (objectDef.schema?.tableName ??
               objectDef.decoratorConfig?.tableName),
       )?.[1])
+    : undefined;
+  const runtimeParent = runtimeOptions?.extendsRegistered
+    ? (getClasses().get(runtimeOptions.extendsRegistered) ??
+      replacedDeclarations().get(runtimeOptions.extendsRegistered) ??
+      findReplacement(runtimeOptions.extendsRegistered))
     : undefined;
   const existingCanonical = getCanonicalClassName(simpleClassName);
   // A run-time subclass deliberately shares its parent's simple name
@@ -2934,9 +2961,7 @@ function registerFromManifestUntracked(
   // Create stub constructor - not needed for CLI command generation
   // The CLI only needs metadata (fields, methods, config)
   // Mark as manifest stub so real class can replace it during decorator registration
-  const parentRegistration = runtimeOptions?.extendsRegistered
-    ? getClasses().get(runtimeOptions.extendsRegistered)
-    : undefined;
+  const parentRegistration = runtimeParent;
   const parentConstructor =
     parentRegistration &&
     (parentRegistration.constructor as { _isManifestStub?: boolean })

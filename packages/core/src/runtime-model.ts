@@ -18,9 +18,13 @@
 
 import type { DatabaseEngine } from './migrations/types.js';
 import type { SmrtObject } from './object.js';
-import { registerFromManifest } from './registry/class-registration.js';
+import {
+  ensureTenantScopedField,
+  normalizeTenantScopedConfig,
+  registerFromManifest,
+} from './registry/class-registration.js';
 import { fieldsToColumns } from './registry/schema-builder.js';
-import type { SmartObjectConfig } from './registry/types.js';
+import type { RegisteredField, SmartObjectConfig } from './registry/types.js';
 import { ObjectRegistry } from './registry.js';
 import type {
   FieldDefinition,
@@ -96,6 +100,9 @@ export interface RuntimeModelDefinition {
    * when it has one.
    */
   extends?: string;
+  /** Explicit same-name app replacement, sharing its effective parent's table. */
+  replaces?: boolean;
+  tenantScoped?: SmartObjectConfig['tenantScoped'];
   /**
    * Natural conflict key (field names). Defaults to `['id']`: run-time
    * records have no natural key, so the default (slug, context) upsert key,
@@ -217,15 +224,41 @@ export function runtimeModelEntry(
       `Run-time model ${qualifiedName} extends ${parentKey}, which is not registered`,
     );
   }
+  if (
+    def.replaces &&
+    (!parent ||
+      parent.name !== def.name ||
+      (parent.packageName === def.packageName &&
+        parent.qualifiedName !== qualifiedName))
+  ) {
+    throw new Error(
+      'Runtime replacement requires a registered same-name upstream model',
+    );
+  }
+  const parentTable = parentKey
+    ? ObjectRegistry.getTableName(parentKey)
+    : undefined;
+  const parentSchema =
+    def.replaces && parentTable
+      ? ObjectRegistry.getAllSchemasAsDefinitions({ tables: [parentTable] })[
+          parentTable
+        ]
+      : undefined;
   const fields: Record<string, FieldDefinition> = {};
   // A subclass of a one-table-per-class parent has a table of its own that
   // holds only its own fields, so the inherited ones are declared again on it
   // (#4869). An STI subclass shares its parent's table and needs none.
-  if (parent && ObjectRegistry.getSTIBase(def.extends!) === null) {
+  if (
+    parent &&
+    (def.replaces || ObjectRegistry.getSTIBase(def.extends!) === null)
+  ) {
     for (const [name, inherited] of ObjectRegistry.getFields(def.extends!)) {
       fields[name] = {
+        ...inherited,
         type: inherited.type,
-        required: false,
+        required: def.replaces
+          ? (inherited.required ?? inherited._meta?.required ?? false)
+          : false,
         ...(inherited.related ? { related: inherited.related } : {}),
         ...(inherited._meta
           ? {
@@ -252,7 +285,17 @@ export function runtimeModelEntry(
       );
     }
   }
-  const methods: Record<string, MethodDefinition> = {};
+  const tenantScoped = def.tenantScoped ?? parent?.config.tenantScoped;
+  const scopedFields = new Map<string, RegisteredField>(
+    Object.entries(fields).map(([name, field]) => [name, { ...field }]),
+  );
+  ensureTenantScopedField(
+    scopedFields,
+    normalizeTenantScopedConfig(tenantScoped),
+  );
+  Object.assign(fields, Object.fromEntries(scopedFields));
+  const methods: Record<string, MethodDefinition> =
+    def.replaces && parent ? Object.fromEntries(parent.methods) : {};
   for (const [name, md] of Object.entries(def.methods ?? {})) {
     methods[name] = {
       name,
@@ -273,7 +316,8 @@ export function runtimeModelEntry(
   // A subclass shares an STI parent's table. Any other parent's table belongs
   // to the parent alone, so the subclass gets its own.
   const sharesParentTable =
-    !!parent && ObjectRegistry.getSTIBase(parentKey!) !== null;
+    !!parent &&
+    (def.replaces || ObjectRegistry.getSTIBase(parentKey!) !== null);
   const tableName =
     def.tableName ??
     (sharesParentTable
@@ -286,10 +330,20 @@ export function runtimeModelEntry(
   const conflictColumns = def.conflictColumns ?? (parent ? undefined : ['id']);
   const mcp = [...CRUD, ...Object.keys(methods)];
   const decoratorConfig: Record<string, unknown> = {
-    ...(sharesParentTable ? {} : { tableName }),
+    ...(def.replaces ? parent?.config : {}),
+    ...(tenantScoped ? { tenantScoped } : {}),
+    ...(sharesParentTable && !def.replaces ? {} : { tableName }),
     ...(conflictColumns ? { conflictColumns } : {}),
-    api: { include: def.api ?? CRUD },
-    mcp: { include: def.mcp ?? mcp },
+    api: def.api
+      ? { include: def.api }
+      : def.replaces
+        ? parent?.config.api
+        : { include: CRUD },
+    mcp: def.mcp
+      ? { include: def.mcp }
+      : def.replaces
+        ? parent?.config.mcp
+        : { include: mcp },
     ...(def.ui ? { ui: { ...def.ui } } : {}),
     ...(def.display ? { display: { ...def.display } } : {}),
   };
@@ -321,15 +375,31 @@ export function runtimeModelEntry(
       ? { extends: parentSimple, extendsQualified: parentKey }
       : { extends: 'SmrtObject' }),
   };
-  if (!sharesParentTable) {
+  if (!sharesParentTable || def.replaces) {
     const columns = {
       ...baseColumns(false, 'UUID'),
       ...fieldsToColumns(new Map(Object.entries(fields))),
+      ...(parentSchema?.columns ?? {}),
+      ...(def.replaces
+        ? fieldsToColumns(
+            new Map(
+              Object.entries(def.fields ?? {}).map(([name, field]) => [
+                name,
+                toFieldDefinition(field),
+              ]),
+            ),
+          )
+        : {}),
     };
     // fieldsToColumns accepts physical table names. Runtime references name
     // registered models, whose physical tables may be explicitly configured.
     for (const [name, field] of Object.entries(fields)) {
-      if (field.type !== 'foreignKey' || !field.related) continue;
+      if (
+        field.type !== 'foreignKey' ||
+        !field.related ||
+        field._meta?.__tenancy?.isTenantIdField
+      )
+        continue;
       const foreignKey = columns[toSnakeCase(name)]?.foreignKey;
       if (!foreignKey) continue;
       const targetTable = ObjectRegistry.getTableName(field.related);
@@ -343,7 +413,7 @@ export function runtimeModelEntry(
     entry.schema = {
       tableName,
       ddl: '',
-      indexes: [],
+      indexes: parentSchema?.indexes ?? [],
       triggers: [],
       foreignKeys: [],
       dependencies: [],
@@ -355,6 +425,12 @@ export function runtimeModelEntry(
 }
 
 export interface RegisterRuntimeModelOptions {
+  refresh?: boolean;
+  /** Host-side validators; definitions remain portable JSON. */
+  fieldValidators?: Record<
+    string,
+    (value: unknown, instance: SmrtObject) => boolean | Promise<boolean>
+  >;
   /**
    * Functions to set on the model's prototype, by method name. Each should
    * also be declared in `definition.methods`, so the generated MCP tool
@@ -377,9 +453,18 @@ export function registerRuntimeModel(
   options: RegisterRuntimeModelOptions = {},
 ): string {
   const entry = runtimeModelEntry(def);
+  for (const [name, validate] of Object.entries(
+    options.fieldValidators ?? {},
+  )) {
+    if (!entry.fields[name])
+      throw new Error(`Unknown runtime validator field ${name}`);
+    entry.fields[name]._meta = { ...entry.fields[name]._meta, validate };
+  }
   const qualifiedName = entry.qualifiedName as string;
   registerFromManifest(qualifiedName, entry, def.packageName, {
     extendsRegistered: def.extends,
+    replaceParent: def.replaces,
+    refreshRuntime: options.refresh,
   });
   const registered = ObjectRegistry.getClass(qualifiedName);
   if (!registered) {
