@@ -1,8 +1,9 @@
 /** Q1: the ordinary collection/REST write creates and edits the linked contact atomically. */
-import { getTestDatabase } from '@happyvertical/smrt-core';
+import { DatabaseError, getTestDatabase } from '@happyvertical/smrt-core';
 import { APIGenerator } from '@happyvertical/smrt-core/generators/rest';
 import {
   ProfileCollection,
+  ProfileMetafieldCollection,
   ProfileTypeCollection,
 } from '@happyvertical/smrt-profiles';
 import {
@@ -112,6 +113,55 @@ describe('Customer inline contact writes', () => {
           .find((row) => row.id === one.id)
           ?.toJSON(),
       ).toMatchObject({ name: 'Ada Updated', email: '', phone: '' });
+    });
+  });
+
+  it.each([
+    { storage: 'no phone tables', extra: [] },
+    { storage: 'definitions only', extra: ['ProfileMetafield'] },
+  ])('reads names and email without optional phone tables ($storage)', async ({
+    extra,
+  }) => {
+    db = await getTestDatabase({
+      classes: ['Customer', 'Profile', 'ProfileType', ...extra],
+    });
+    const customers = await CustomerCollection.create({ db });
+    enableTenancy();
+    await withTenant({ tenantId: 'tenant-a' }, async () => {
+      const member = await customers.create({
+        name: 'No phone storage',
+        email: 'contact@example.test',
+      });
+      expect(
+        (await customers.list({ displayLabel: true }))[0].toJSON(),
+      ).toMatchObject({
+        name: 'No phone storage',
+        email: 'contact@example.test',
+        phone: '',
+      });
+      expect(
+        (await customers.get(member.id!, { displayLabel: true }))?.toJSON(),
+      ).toMatchObject({
+        name: 'No phone storage',
+        email: 'contact@example.test',
+        phone: '',
+      });
+      expect(await customers.count({ where: { phone: '' } })).toBe(1);
+    });
+  });
+
+  it.each([
+    new Error('metadata policy denied'),
+    DatabaseError.schemaMissing('unrelated_table', 'ProfileMetafield'),
+  ])('propagates metadata failures outside its optional tables (%s)', async (error) => {
+    const { customers } = await setup();
+    await withTenant({ tenantId: 'tenant-a' }, async () => {
+      await customers.create({ name: 'Existing contact' });
+      vi.spyOn(
+        ProfileMetafieldCollection.prototype,
+        'buildProjectionQuery',
+      ).mockRejectedValueOnce(error);
+      await expect(customers.list({ displayLabel: true })).rejects.toBe(error);
     });
   });
 

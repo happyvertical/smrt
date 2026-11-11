@@ -5,6 +5,7 @@
 
 import {
   crossPackageRef,
+  DatabaseError,
   field,
   foreignKey,
   method,
@@ -249,29 +250,56 @@ export class Customer extends SmrtObject {
   ): Promise<Record<string, { sql: string; values: unknown[] }>> {
     if (via !== 'profileId')
       return super.resolveWriteThroughVirtualProjection(via, options);
-    const { ProfileMetadataCollection, ProfileMetafieldCollection } =
-      await import('@happyvertical/smrt-profiles');
+    const {
+      ProfileCollection,
+      ProfileMetadataCollection,
+      ProfileMetafieldCollection,
+    } = await import('@happyvertical/smrt-profiles');
     const metadata = await ProfileMetadataCollection.create(options);
     const metafields = await ProfileMetafieldCollection.create(options);
     // The public column projections validate field policy and run each owning
     // collection's authorization and tenant interceptors, without fetching rows.
-    const fields = await metafields.buildProjectionQuery({
-      where: { slug: 'phone' },
-      select: ['id', 'tenantId'],
-    });
-    const rows = await metadata.buildProjectionQuery({
-      select: ['profileId', 'metafieldId', 'tenantId', 'value'],
-    });
-    const fieldSql = fields.sql.replace(
-      /\$(\d+)/g,
-      (_, index: string) => `$${Number(index) + rows.values.length}`,
-    );
-    return {
-      phone: {
-        sql: `SELECT m."profileId" AS "id", m."tenantId", m."value" FROM (${rows.sql}) m JOIN (${fieldSql}) f ON f."id" = m."metafieldId" AND (f."tenantId" = m."tenantId" OR f."tenantId" IS NULL)`,
-        values: [...rows.values, ...fields.values],
-      },
-    };
+    try {
+      const fields = await metafields.buildProjectionQuery({
+        where: { slug: 'phone' },
+        select: ['id', 'tenantId'],
+      });
+      const rows = await metadata.buildProjectionQuery({
+        select: ['profileId', 'metafieldId', 'tenantId', 'value'],
+      });
+      const fieldSql = fields.sql.replace(
+        /\$(\d+)/g,
+        (_, index: string) => `$${Number(index) + rows.values.length}`,
+      );
+      return {
+        phone: {
+          sql: `SELECT m."profileId" AS "id", m."tenantId", m."value" FROM (${rows.sql}) m JOIN (${fieldSql}) f ON f."id" = m."metafieldId" AND (f."tenantId" = m."tenantId" OR f."tenantId" IS NULL)`,
+          values: [...rows.values, ...fields.values],
+        },
+      };
+    } catch (error) {
+      if (
+        !(error instanceof DatabaseError) ||
+        error.code !== 'DB_SCHEMA_MISSING' ||
+        ![metadata.tableName, metafields.tableName].includes(
+          String(error.details?.tableName),
+        )
+      )
+        throw error;
+      // Phone storage is optional for an existing contact reader. Compose an
+      // empty public Profile projection so native UUID types stay intact;
+      // core's existing scalar COALESCE supplies the empty phone value.
+      const profiles = await ProfileCollection.create(options);
+      const empty = await profiles.buildProjectionQuery({
+        select: ['id', 'tenantId'],
+      });
+      return {
+        phone: {
+          sql: `SELECT p."id", p."tenantId", '' AS "value" FROM (${empty.sql}) p WHERE 1 = 0`,
+          values: empty.values,
+        },
+      };
+    }
   }
 
   protected override async readWriteThroughVirtual(
