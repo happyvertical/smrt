@@ -33,6 +33,7 @@ import { PageHeader } from '@happyvertical/smrt-ui/layout';
 import { Button, Disclosure } from '@happyvertical/smrt-ui/ui';
 import { untrack } from 'svelte';
 import { M } from '../../i18n/strings.screens.js';
+import { tryGetCookbookContext } from '../cookbook/context.js';
 import { statusLabel } from '../overview/widgets/record-table.js';
 import {
   deriveScreenFields,
@@ -60,9 +61,9 @@ import {
 } from './values.js';
 
 let {
-  definition,
+  definition: suppliedDefinition,
   references = {},
-  policy = null,
+  policy: suppliedPolicy,
   record,
   title,
   fields: include,
@@ -76,6 +77,15 @@ let {
   derivedFields = [],
 }: EditFormProps = $props();
 
+const cookbookContext = tryGetCookbookContext();
+const definition = $derived(
+  cookbookContext?.screenDefinition?.(suppliedDefinition) ?? suppliedDefinition,
+);
+const policy = $derived(
+  suppliedPolicy ??
+    cookbookContext?.fieldPolicies?.[definition.objectRef] ??
+    null,
+);
 const { t } = useI18n();
 
 const isNew = $derived(record === undefined);
@@ -96,6 +106,7 @@ const allFields = $derived(
 /** Derived fields (a total computed from line items) show but never submit. */
 const isDerived = (field: ScreenField): boolean =>
   derivedFields.includes(field.name);
+const isReadOnly = (field: ScreenField): boolean => field.readOnly === true;
 const basicFields = $derived(allFields.filter((f) => f.tier === 'basic'));
 const advancedFields = $derived(allFields.filter((f) => f.tier === 'advanced'));
 
@@ -115,7 +126,7 @@ let advancedOpen = $state(false);
 // Re-seed when the host swaps the record (or the field set) under a mounted
 // form; typing never re-seeds because only the identity is tracked.
 const sessionKey = $derived(
-  `${definition.objectRef}:${record ? String(record[definition.idField ?? 'id']) : 'new'}:${allFields.map((f) => f.name).join(',')}`,
+  `${definition.objectRef}:${record ? String(record[definition.idField ?? 'id']) : 'new'}:${allFields.map((f) => f.name).join(',')}:${JSON.stringify(policy)}`,
 );
 let appliedKey = untrack(() => sessionKey);
 $effect(() => {
@@ -164,7 +175,7 @@ async function submit(): Promise<void> {
   failed = false;
   hostErrors = {};
   const parsed = parseDraft(
-    allFields.filter((f) => !isDerived(f)),
+    allFields.filter((f) => !isDerived(f) && !isReadOnly(f)),
     draft,
     { currency, record },
   );
@@ -175,7 +186,21 @@ async function submit(): Promise<void> {
   }
   working = true;
   try {
-    const result = await onsubmit(parsed.values, { isNew });
+    // A hidden value is not a blank control: edits omit it, and creates keep
+    // its resolved default. Never manufacture a null that clears stored data.
+    const defaults: Record<string, unknown> = {};
+    if (isNew) {
+      for (const [name, field] of Object.entries(policy?.fields ?? {})) {
+        if (
+          Object.hasOwn(definition.fields, name) &&
+          field.hasDefault &&
+          (field.visibility === 'hidden' || field.readOnly) &&
+          !derivedFields.includes(name)
+        )
+          defaults[name] = field.defaultValue;
+      }
+    }
+    const result = await onsubmit({ ...defaults, ...parsed.values }, { isNew });
     if (result?.fieldErrors) {
       hostErrors = { ...result.fieldErrors };
       if (advancedFields.some((f) => result.fieldErrors?.[f.name])) {
@@ -196,12 +221,12 @@ const formError = $derived(
 </script>
 
 {#snippet control(field: ScreenField)}
-  {#if isDerived(field)}
-    <FormGroup label={label(field)} hint={t(M['ui.screens.derived_hint'])}>
+  {#if isDerived(field) || isReadOnly(field)}
+    <FormGroup label={label(field)} hint={isDerived(field) ? t(M['ui.screens.derived_hint']) : hint(field)}>
       <Input
         name={field.name}
         readonly
-        value={formatScreenValue(field, record?.[field.name], { currency })}
+        value={formatScreenValue(field, record ? record[field.name] : policy?.fields[field.name]?.hasDefault ? policy.fields[field.name].defaultValue : field.definition.default, { currency })}
       />
     </FormGroup>
   {:else if field.kind === 'reference'}

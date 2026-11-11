@@ -229,3 +229,20 @@ its own `search({ query, offset, limit })` and `get(id)` in the same map. See
 [screens](screens.md) for label metadata, pagination and unavailable-target
 behavior. This shell does not own a model-page router or infer one from an API
 endpoint.
+
+## Shared record-screen vocabulary and policy context
+
+`CookbookApp` shares the active shell's entry labels and its optional
+`fieldPolicies` map with generated and standalone screens. Pass the owning policy
+engine's resolved values keyed by qualified model reference; explicit screen
+policies still work. Layout collection renames reach screen titles, create/edit
+actions, back links and overview model choices without changing API identities.
+Use `RecipeScreens.entryId` for a keyed collection entry. See
+[screens.md](screens.md#cookbook-policy-and-vocabulary-context) for preservation,
+default and read-only semantics and regression evidence.
+
+The server loader still returns raw cookbook policy rows. It does not resolve
+those rows, and `resolveExport` still requires a host resolver: no build-generated
+recipe surface map is provided here. The owning policy resolver is smrt-fields;
+the installed-manifest generator is core's Vite/consumer plugin. Both boundaries
+need owning-package work before cookbook apps can omit that host integration.

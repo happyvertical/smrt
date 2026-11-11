@@ -21,6 +21,7 @@ import {
   type OverviewDefinition,
   type OverviewWidget,
 } from '../overview/types.js';
+import type { ScreenCollectionDefinition } from '../screens/types.js';
 import type { ShellLayout } from '../workspace/admin-shell/layout.js';
 import type {
   ShellNavGroup,
@@ -124,6 +125,7 @@ export function buildCookbookShell(
   const recipes = selectRecipes(options, issues);
 
   const entries = new Map<string, CookbookEntry>();
+  const defaultLabels = new Map<string, string>();
   const sections: CookbookSection[] = [];
   const navGroups: ShellNavGroup[] = [];
 
@@ -148,7 +150,7 @@ export function buildCookbookShell(
     });
     const entry: CookbookEntry = {
       id,
-      label: spec.label,
+      label: cookbook.layout?.items?.[id]?.label ?? spec.label,
       icon:
         cookbook.layout?.items?.[id]?.icon ?? spec.icon ?? DEFAULT_ENTRY_ICON,
       description: entryDescription(spec.description, spec.model),
@@ -160,13 +162,15 @@ export function buildCookbookShell(
       ...(spec.filter ? { filter: spec.filter } : {}),
     };
     entries.set(id, entry);
+    defaultLabels.set(id, spec.label);
     return entry;
   };
 
   const toItem = (entry: CookbookEntry): ShellNavItem => ({
     id: entry.id,
     href: entry.href,
-    label: entry.label,
+    // AppShell applies layout overrides and needs the original for Reset.
+    label: defaultLabels.get(entry.id) ?? entry.label,
     icon: entry.icon,
     description: entry.description,
   });
@@ -277,15 +281,18 @@ export function buildCookbookShell(
     // A hand-edited custom id outside the pattern has no overview: its page
     // shows the menu.
     if (!OVERVIEW_PAGE_ID_PATTERN.test(id)) continue;
+    const lead = leads.get(id);
+    const leadEntry =
+      lead && [...entries.values()].find((e) => e.model.id === lead.id);
     const definition: OverviewDefinition = defineOverview({
       id,
       ...(modelIds.length > 0 ? { models: modelIds } : {}),
       defaults: sectionOverviewDefaults({
-        lead: leads.has(id)
+        lead: lead
           ? {
-              id: leads.get(id)!.id,
-              name: humanize(leads.get(id)!.name),
-              plural: pluralize(humanize(leads.get(id)!.name)),
+              id: lead.id,
+              name: leadEntry?.label ?? humanize(lead.name),
+              plural: leadEntry?.label ?? pluralize(humanize(lead.name)),
             }
           : undefined,
         dataWidgets: options.dataWidgets === true,
@@ -362,5 +369,27 @@ export function buildCookbookShell(
     ...(options.settingsHref ? { settingsHref: options.settingsHref } : {}),
     sectionPath: (id) => href(sectionPath(id)),
     issues,
+  };
+}
+
+/** Apply the selected cookbook entry's vocabulary without changing model identity. */
+export function cookbookScreenDefinition(
+  shell: CookbookShell,
+  definition: ScreenCollectionDefinition,
+  entryId?: string,
+): ScreenCollectionDefinition {
+  if (definition.label) return definition;
+  const entry = entryId
+    ? shell.entries.get(entryId)
+    : [...shell.entries.values()].find(
+        (e) => e.model.id === definition.objectRef,
+      );
+  if (!entry || entry.model.id !== definition.objectRef) return definition;
+  return {
+    ...definition,
+    label: entry.label,
+    singularLabel: shell.layout?.items?.[entry.id]?.label
+      ? entry.label
+      : (entry.noun ?? entry.label),
   };
 }

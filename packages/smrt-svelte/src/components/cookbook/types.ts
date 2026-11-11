@@ -20,6 +20,7 @@ import type {
 } from '../overview/types.js';
 import type { CoreWidgetLoaders } from '../overview/widgets/core.js';
 import type { ShortcutEntry } from '../overview/widgets/data.js';
+import type { ScreenPolicy } from '../screens/types.js';
 import type { ShellLayout } from '../workspace/admin-shell/layout.js';
 import type { ShellNavGroup } from '../workspace/admin-shell/types.js';
 
@@ -262,6 +263,8 @@ export interface CookbookAppProps
     > {
   cookbook: Cookbook;
   catalog: CookbookCatalog;
+  /** Resolved once by the owning policy engine at the server boundary. */
+  fieldPolicies?: Readonly<Record<string, ScreenPolicy>>;
   /** Expanded section entries are the default; use `sections` for headings only. */
   navMode?: 'sections' | 'sections-with-items';
   /**

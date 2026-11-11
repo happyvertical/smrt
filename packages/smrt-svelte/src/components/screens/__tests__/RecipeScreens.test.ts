@@ -1,6 +1,9 @@
+import type { Cookbook } from '@happyvertical/smrt-types';
 import { render, screen, within } from '@testing-library/svelte';
 import userEvent from '@testing-library/user-event';
-import { describe, expect, it, vi } from 'vitest';
+import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
+import CookbookHarness from '../../cookbook/__tests__/app-harness.svelte';
+import type { CookbookCatalog } from '../../cookbook/types.js';
 import RecipeScreens from '../RecipeScreens.svelte';
 import type { RecipeScreensSource, ScreenRecord } from '../types.js';
 import { taskDefinition, taskPolicy, taskRows } from './fixtures.js';
@@ -183,5 +186,172 @@ describe('RecipeScreens', () => {
     ).toBeInTheDocument();
     await userEvent.click(screen.getByRole('button', { name: 'Retry' }));
     expect(await screen.findByText('Write docs')).toBeInTheDocument();
+  });
+});
+
+// The shell receives the policy engine's resolved output, never raw rows.
+const fixtureCookbook: Cookbook = {
+  $schema: '',
+  version: 1,
+  recipes: ['tasks'],
+  features: [],
+  policies: [],
+  layout: { version: 1, items: { 'item:tasks:Task': { label: 'Customers' } } },
+};
+const fixtureCatalog: CookbookCatalog = {
+  models: [
+    {
+      id: taskDefinition.objectRef,
+      name: 'Task',
+      packageId: 'tasks',
+      exposed: true,
+    },
+  ],
+  recipes: [
+    {
+      id: 'tasks',
+      label: 'Work',
+      models: [taskDefinition.objectRef],
+      nav: [{ model: taskDefinition.objectRef, label: 'Tasks', noun: 'Task' }],
+    },
+  ],
+};
+const fixturePolicy = {
+  ...taskPolicy,
+  fields: {
+    ...taskPolicy.fields,
+    title: { ...taskPolicy.fields.title, label: 'Customer name' },
+    reference: {
+      visibility: 'hidden' as const,
+      hasDefault: true,
+      defaultValue: 'USD',
+    },
+    priority: { ...taskPolicy.fields.priority, readOnly: true },
+  },
+};
+
+describe('cookbook screen context', () => {
+  beforeEach(() => {
+    localStorage.clear();
+    vi.stubGlobal('matchMedia', () => ({
+      matches: false,
+      addEventListener() {},
+      removeEventListener() {},
+    }));
+  });
+  afterEach(() => vi.unstubAllGlobals());
+  function fixture(
+    source: RecipeScreensSource,
+    view: 'list' | 'create' | 'edit' = 'list',
+  ) {
+    return render(CookbookHarness, {
+      cookbook: fixtureCookbook,
+      catalog: fixtureCatalog,
+      sectionId: 'section:tasks',
+      fieldPolicies: { [taskDefinition.objectRef]: fixturePolicy },
+      screenProps: {
+        definition: taskDefinition,
+        source,
+        view,
+        ...(view === 'edit' ? { recordId: 't-1' } : {}),
+      },
+    });
+  }
+
+  it('uses the collection rename in navigation, titles, actions and record back links', async () => {
+    fixture(memorySource());
+    expect(
+      await screen.findByRole('heading', { name: 'Customers', level: 1 }),
+    ).toBeInTheDocument();
+    expect(
+      document.querySelector(
+        '[data-smrt-component="TenantNav"] a[href="/m/tasks/Task/"]',
+      )?.textContent,
+    ).toContain('Customers');
+    expect(
+      screen.queryByRole('link', { name: 'Tasks' }),
+    ).not.toBeInTheDocument();
+    expect(
+      screen.getByRole('columnheader', { name: /Customer name/ }),
+    ).toBeInTheDocument();
+    await userEvent.click(
+      screen.getByRole('button', { name: 'New customers' }),
+    );
+    expect(
+      await screen.findByRole('heading', { name: 'New customers', level: 1 }),
+    ).toBeInTheDocument();
+    await userEvent.click(screen.getByRole('button', { name: 'Cancel' }));
+    await userEvent.click(await screen.findByText('Write docs'));
+    expect(
+      await screen.findByRole('button', { name: 'Back to customers' }),
+    ).toBeInTheDocument();
+    await userEvent.click(screen.getByRole('button', { name: 'Edit' }));
+    expect(
+      await screen.findByRole('heading', { name: 'Edit customers' }),
+    ).toBeInTheDocument();
+  });
+
+  it('applies create defaults including hidden values without exposing a hidden control', async () => {
+    const source = memorySource([]);
+    fixture(source, 'create');
+    await userEvent.type(
+      await screen.findByLabelText(/Customer name/),
+      'Fresh customer',
+    );
+    expect(screen.getByLabelText('Priority')).toHaveAttribute('readonly');
+    expect(screen.getByLabelText('Priority')).toHaveValue('5');
+    expect(screen.queryByLabelText('Reference')).not.toBeInTheDocument();
+    await userEvent.click(screen.getByRole('button', { name: 'Save' }));
+    expect(source.create).toHaveBeenCalledWith(
+      expect.objectContaining({
+        title: 'Fresh customer',
+        reference: 'USD',
+        priority: 5,
+      }),
+    );
+  });
+
+  it('omits hidden and read-only values on edit and preserves them in the saved record', async () => {
+    const source = memorySource([
+      { ...taskRows[0], reference: 'KEEP', priority: 99 },
+    ]);
+    fixture(source, 'edit');
+    const name = await screen.findByLabelText(/Customer name/);
+    expect(screen.getByLabelText('Priority')).toHaveAttribute('readonly');
+    expect(screen.getByLabelText('Priority')).toHaveValue('99');
+    expect(screen.queryByText('KEEP')).not.toBeInTheDocument();
+    await userEvent.clear(name);
+    await userEvent.type(name, 'Changed');
+    await userEvent.click(screen.getByRole('button', { name: 'Save' }));
+    expect(source.update).toHaveBeenCalledWith(
+      't-1',
+      expect.not.objectContaining({ reference: expect.anything() }),
+    );
+    expect(source.update).toHaveBeenCalledWith(
+      't-1',
+      expect.not.objectContaining({ priority: expect.anything() }),
+    );
+    expect(source.rows[0]).toMatchObject({
+      title: 'Changed',
+      reference: 'KEEP',
+      priority: 99,
+    });
+    expect(screen.queryByText('KEEP')).not.toBeInTheDocument();
+  });
+
+  it('does not search hidden values on the list', async () => {
+    const source = memorySource([
+      { ...taskRows[0], reference: 'private-search-value' },
+    ]);
+    fixture(source);
+    await screen.findByText('Write docs');
+    const search = screen.getByRole('searchbox', { name: 'Search customers' });
+    await userEvent.type(search, 'private-search-value');
+    await vi.waitFor(() =>
+      expect(screen.queryByText('Write docs')).not.toBeInTheDocument(),
+    );
+    expect(
+      screen.queryByRole('columnheader', { name: 'Reference' }),
+    ).not.toBeInTheDocument();
   });
 });

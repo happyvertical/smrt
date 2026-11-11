@@ -14,7 +14,7 @@ which can also be used on its own. Every screen takes a generated web `definitio
 (`ScreenCollectionDefinition`, structurally a `SmrtWebCollectionDefinition`) and
 an optional resolved `policy` (`ScreenPolicy`, structurally smrt-fields'
 `ResolvedObjectFieldPolicy`). The module imports neither package: smrt-svelte
-stays below the domain layer, and the app passes both in as props.
+stays below the domain layer. The app passes them as props, or `CookbookApp` supplies resolved policies through context.
 
 - **Field selection is `fields.ts`, pure and node-testable.** `deriveScreenFields`
   is the single rule for list / view / edit. A field renders only when it is in
@@ -345,3 +345,42 @@ workspace-wide search for record-label/display-label helpers.
 The planner's Profile-name lookup is preview application code and scans the
 whole Customer/Vendor collection. It cannot provide the missing owning-package
 projection or bounded REST filtering described above; it was not copied.
+
+## Cookbook policy and vocabulary context
+
+`CookbookApp.fieldPolicies` is a map of already-resolved `ScreenPolicy` values,
+keyed by qualified object reference. `RecipeScreens` and standalone `ListScreen`,
+`RecordScreen`, `DetailScreen` and `EditForm` inherit it unless an explicit
+policy is supplied. Resolve policies once at the server boundary with the owning
+policy engine; these components never merge raw `CookbookPolicyRow` values.
+`loadCookbookApp` currently returns raw cookbook rows, not resolved policies.
+A host still needs to apply those rows to its policy engine and provide the map.
+
+Collection vocabulary comes from the active shell entry, including
+`layout.items[id].label`. `RecipeScreens.entryId` selects a keyed entry when the
+same model appears more than once. A layout rename is used as written for both
+collection and record-kind labels; otherwise the recipe's explicit `noun` is
+used when available. There is no singularization guess. A definition's explicit
+`label` / `singularLabel` wins over the shell. Navigation Reset continues to
+restore the recipe label because `navGroups` retain their original labels.
+
+`ScreenFieldPolicy.readOnly` controls editing the record value; `locked` still
+only governs editing the policy. Read-only fields display their formatted value
+and never enter an edit payload. Hidden fields never become controls, columns or
+searchable values. Edits omit them rather than submitting blank/null values, so
+patch updates preserve stored data. Creates include resolved defaults for hidden
+and read-only fields (including an explicit null). Changing the policy re-seeds
+a mounted form, so defaults from a previous cookbook cannot survive a switch.
+
+Regression evidence in `screens/__tests__/RecipeScreens.test.ts` uses the
+existing cookbook harness and a supplied resolved fixture policy:
+
+| Behavior / trigger | Positive | Negative / invariant | Context and executor | Runtime / edge | Level / command |
+| --- | --- | --- | --- | --- | --- |
+| Open list and navigate create/view/edit | Cookbook collection/field labels reach navigation, titles, actions and back link | Original model vocabulary absent from the renamed navigation | Cookbook context; memory source, no SQL transaction | Svelte browser; resolved-policy input | Component; package `pnpm test` |
+| Create with hidden/read-only defaults | Defaults reach create payload | Hidden control absent; read-only control cannot edit | Same context; source create spy | Svelte browser; wire payload | Component; package `pnpm test` |
+| Edit visible value | Visible edit saved | Hidden/read-only stored values preserved | Same context; patch source update spy | Svelte browser; wire payload | Component; package `pnpm test` |
+| Search list | Visible label drives search | Hidden value cannot match a row or become a column | Same context; memory rows | Svelte browser; DataTable | Component; package `pnpm test` |
+
+Raw cookbook-row resolution and build-generated recipe surface imports require
+changes at their owning packages and are not implemented by this context API.

@@ -19,6 +19,7 @@ import { useI18n } from '@happyvertical/smrt-ui/i18n';
 import { PageHeader } from '@happyvertical/smrt-ui/layout';
 import { Button, Disclosure } from '@happyvertical/smrt-ui/ui';
 import { M } from '../../i18n/strings.screens.js';
+import { tryGetCookbookContext } from '../cookbook/context.js';
 import {
   deriveScreenFields,
   groupScreenFields,
@@ -38,9 +39,9 @@ import type {
 import { formatScreenValue, jsonScreenEntries } from './values.js';
 
 let {
-  definition,
+  definition: suppliedDefinition,
   references = {},
-  policy = null,
+  policy: suppliedPolicy,
   record,
   title,
   fields: include,
@@ -62,6 +63,15 @@ let {
   variant = 'plain',
 }: DetailScreenProps = $props();
 
+const cookbookContext = tryGetCookbookContext();
+const definition = $derived(
+  cookbookContext?.screenDefinition?.(suppliedDefinition) ?? suppliedDefinition,
+);
+const policy = $derived(
+  suppliedPolicy ??
+    cookbookContext?.fieldPolicies?.[definition.objectRef] ??
+    null,
+);
 const { t } = useI18n();
 
 const titles = $derived(screenTitles(definition));

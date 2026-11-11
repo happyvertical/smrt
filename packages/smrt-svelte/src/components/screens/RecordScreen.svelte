@@ -27,6 +27,7 @@ import { PhoneSheet } from '@happyvertical/smrt-ui/feedback';
 import { useI18n } from '@happyvertical/smrt-ui/i18n';
 import { onDestroy, untrack } from 'svelte';
 import { M } from '../../i18n/strings.screens.js';
+import { tryGetCookbookContext } from '../cookbook/context.js';
 import { createOverview } from '../overview/controller.svelte.js';
 import type { OverviewModelChoice } from '../overview/grid-types.js';
 import { safeHref } from '../overview/markdown.js';
@@ -55,9 +56,9 @@ import { currencyCodeField, deriveFieldRoles } from './roles.js';
 import type { RecordScreenProps } from './types.js';
 
 let {
-  definition,
+  definition: suppliedDefinition,
   references = {},
-  policy = null,
+  policy: suppliedPolicy,
   record,
   relations = [],
   mode,
@@ -94,6 +95,15 @@ let {
   children,
 }: RecordScreenProps = $props();
 
+const cookbookContext = tryGetCookbookContext();
+const definition = $derived(
+  cookbookContext?.screenDefinition?.(suppliedDefinition) ?? suppliedDefinition,
+);
+const policy = $derived(
+  suppliedPolicy ??
+    cookbookContext?.fieldPolicies?.[definition.objectRef] ??
+    null,
+);
 const { t } = useI18n();
 
 /** Desktop breakpoint: the edit form sits beside the header from here up. */

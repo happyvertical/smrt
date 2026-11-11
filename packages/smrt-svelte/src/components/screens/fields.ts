@@ -81,6 +81,12 @@ export function screenTitles(definition: ScreenCollectionDefinition): {
   singular: string;
   plural: string;
 } {
+  if (definition.label) {
+    return {
+      singular: definition.singularLabel ?? definition.label,
+      plural: definition.label,
+    };
+  }
   const singular = humanizeFieldName(definition.className);
   const last = singular.slice(-1);
   const plural = /(s|x|z|ch|sh)$/i.test(singular)
@@ -240,6 +246,7 @@ export function deriveScreenFields(
     const kind = inputKindFor(c.definition, fieldRoles);
     return {
       name: c.name,
+      readOnly: c.definition.readonly === true || policyField?.readOnly === true,
       label:
         label ||
         (c.name === definition.displayLabelField &&

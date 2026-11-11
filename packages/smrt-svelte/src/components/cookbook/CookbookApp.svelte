@@ -24,7 +24,7 @@ import {
   type ShellLayout,
 } from '../workspace/admin-shell/layout.js';
 import { applyCookbookTheme } from './brand-theme.js';
-import { buildCookbookShell, humanize, pluralize } from './build.js';
+import { buildCookbookShell, cookbookScreenDefinition } from './build.js';
 import { type CookbookContext, setCookbookContext } from './context.js';
 import { createCookbookRegistry } from './registry.js';
 import type { CookbookAppProps } from './types.js';
@@ -32,6 +32,7 @@ import type { CookbookAppProps } from './types.js';
 let {
   cookbook,
   catalog,
+  fieldPolicies,
   loaders,
   widgetContext,
   resolveExport,
@@ -187,13 +188,19 @@ const models = $derived.by(() => {
     seen.add(entry.model.id);
     choices.push({
       value: entry.model.id,
-      label: pluralize(humanize(entry.model.name)),
+      label: entry.label,
     });
   }
   return choices;
 });
 
 setCookbookContext({
+  get fieldPolicies() {
+    return fieldPolicies;
+  },
+  screenDefinition(definition, entryId) {
+    return cookbookScreenDefinition(shell, definition, entryId);
+  },
   get shell() {
     return shell;
   },

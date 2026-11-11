@@ -111,6 +111,10 @@ export interface ScreenCollectionDefinition {
   objectRef: string;
   /** Simple class name, used to derive default titles. */
   className: string;
+  /** Collection name shown by the active cookbook. */
+  label?: string;
+  /** Singular cookbook noun, when explicitly supplied. */
+  singularLabel?: string;
   /** Primary-key field name. Defaults to `id`. */
   idField?: string;
   /** Owning model's resolved @smrt({ display: { label } }) metadata. */
@@ -141,6 +145,8 @@ export interface ScreenFieldPolicy {
   hasDefault?: boolean;
   defaultValue?: unknown;
   locked?: boolean;
+  /** Record value cannot be edited; independent of policy locking. */
+  readOnly?: boolean;
 }
 
 /** Structurally satisfied by smrt-fields' `ResolvedObjectFieldPolicy`. */
@@ -170,6 +176,7 @@ export type ScreenInputKind =
 /** A field selected and decorated for one screen. */
 export interface ScreenField {
   name: string;
+  readOnly?: boolean;
   label: string;
   /** Help text (policy help, else the manifest description). */
   help: string | null;
@@ -482,6 +489,8 @@ export interface RecordScreenProps {
 }
 
 export interface RecipeScreensProps {
+  /** Disambiguates keyed entries for the same model in the cookbook. */
+  entryId?: string;
   /** Exposed target definitions, sources and optional record routes. */
   references?: ScreenReferenceSources;
   definition: ScreenCollectionDefinition;

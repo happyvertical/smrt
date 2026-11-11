@@ -19,6 +19,7 @@ import { useI18n } from '@happyvertical/smrt-ui/i18n';
 import { Button } from '@happyvertical/smrt-ui/ui';
 import { untrack } from 'svelte';
 import { M } from '../../i18n/strings.screens.js';
+import { tryGetCookbookContext } from '../cookbook/context.js';
 import EditForm from './EditForm.svelte';
 import { screenTitles } from './fields.js';
 import ListScreen from './ListScreen.svelte';
@@ -35,9 +36,10 @@ import type {
 } from './types.js';
 
 let {
-  definition,
+  entryId,
+  definition: suppliedDefinition,
   references,
-  policy = null,
+  policy: suppliedPolicy,
   source,
   view = $bindable<RecipeScreenView>('list'),
   recordId = $bindable<string | null>(null),
@@ -52,6 +54,16 @@ let {
   record: recordProps = {},
 }: RecipeScreensProps = $props();
 
+const cookbookContext = tryGetCookbookContext();
+const definition = $derived(
+  cookbookContext?.screenDefinition?.(suppliedDefinition, entryId) ??
+    suppliedDefinition,
+);
+const policy = $derived(
+  suppliedPolicy ??
+    cookbookContext?.fieldPolicies?.[definition.objectRef] ??
+    null,
+);
 const { t } = useI18n();
 const referenceSources = $derived(
   references ?? createRecipeScreenReferences(definitions ?? {}),

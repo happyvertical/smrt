@@ -1,5 +1,7 @@
 <script lang="ts">
 import type { Cookbook } from '@happyvertical/smrt-types';
+import RecipeScreens from '../../screens/RecipeScreens.svelte';
+import type { RecipeScreensProps, ScreenPolicy } from '../../screens/types.js';
 import CookbookApp from '../CookbookApp.svelte';
 import CookbookSectionPage from '../CookbookSectionPage.svelte';
 import { getCookbookContext } from '../context.js';
@@ -7,6 +9,8 @@ import type { CookbookCatalog, CookbookLoaders } from '../types.js';
 
 interface Props {
   cookbook: Cookbook;
+  fieldPolicies?: Record<string, ScreenPolicy>;
+  screenProps?: RecipeScreensProps;
   catalog: CookbookCatalog;
   sectionId: string;
   oncookbookchange?: (cookbook: Cookbook) => void;
@@ -17,6 +21,8 @@ interface Props {
 }
 let {
   cookbook,
+  fieldPolicies,
+  screenProps,
   catalog,
   sectionId,
   oncookbookchange,
@@ -49,6 +55,7 @@ let {
 <CookbookApp
   {cookbook}
   {catalog}
+  {fieldPolicies}
   storageKey="cookbook-test"
   currentHref={`/s/${sectionId.replace(':', '-')}/`}
   {oncookbookchange}
@@ -56,10 +63,14 @@ let {
   {loaders}
   layoutEditing
 >
+  {#if screenProps}
+    <RecipeScreens {...screenProps} />
+  {:else}
   <CookbookSectionPage
     {sectionId}
     {presentation}
     heading={customHeading ? customTitle : undefined}
   />
+  {/if}
   {@render saver()}
 </CookbookApp>
