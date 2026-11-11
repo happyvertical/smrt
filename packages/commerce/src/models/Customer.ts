@@ -38,11 +38,24 @@ import {
  */
 @TenantScoped({ mode: 'optional' })
 @smrt({
+  writeThrough: {
+    profileId: {
+      fields: ['name', 'email'],
+      virtualFields: {
+        phone: {
+          type: 'text',
+          description: 'A phone number for reaching this person.',
+          ui: { widget: 'phone' },
+        },
+      },
+    },
+  },
   display: {
+    list: ['status', 'email', 'phone'],
     label: { via: 'profileId', field: 'name', fallback: 'Unnamed customer' },
   },
   api: { include: ['list', 'get', 'create', 'update'] },
-  mcp: { include: ['list', 'get'] },
+  mcp: { include: ['list', 'get', 'create', 'update'] },
   cli: { skipApiCheck: true },
 })
 export class Customer extends SmrtObject {
@@ -58,8 +71,7 @@ export class Customer extends SmrtObject {
    * Plain string for cross-package reference
    */
   @crossPackageRef('@happyvertical/smrt-profiles:Profile', {
-    description:
-      'Links this customer to their profile record, where their name and contact details are kept.',
+    description: 'Choose an existing contact, or enter a new name above.',
   })
   profileId: string = '';
 
@@ -211,6 +223,57 @@ export class Customer extends SmrtObject {
    * Re-normalize contacts after the framework's option-override pass, which
    * re-applies raw option values (including a stored JSON string).
    */
+  /** Virtual fields owned by the linked Profile, never Customer columns. */
+
+  protected override async writeThroughDefaults(
+    via: string,
+  ): Promise<Record<string, unknown>> {
+    if (via !== 'profileId') return super.writeThroughDefaults(via);
+    const { ProfileTypeCollection } = await import(
+      '@happyvertical/smrt-profiles'
+    );
+    const types = await ProfileTypeCollection.create({ db: this.db });
+    const person = await types.getOrCreateBySlug('person', {
+      name: 'Person',
+      description: 'Individual person profile',
+    });
+    return { typeId: person.id };
+  }
+
+  protected override async readWriteThroughVirtual(
+    via: string,
+    target: SmrtObject,
+  ): Promise<Record<string, unknown>> {
+    if (via !== 'profileId') return super.readWriteThroughVirtual(via, target);
+    const profile = target as import('@happyvertical/smrt-profiles').Profile;
+    return { phone: (await profile.getMetadata()).phone ?? '' };
+  }
+
+  protected override async saveWriteThroughVirtual(
+    via: string,
+    target: SmrtObject,
+    values: Record<string, unknown>,
+  ): Promise<void> {
+    if (via !== 'profileId')
+      return super.saveWriteThroughVirtual(via, target, values);
+    if (!Object.hasOwn(values, 'phone')) return;
+    if (typeof values.phone !== 'string') throw new Error('Phone must be text');
+    const { ProfileMetafieldCollection } = await import(
+      '@happyvertical/smrt-profiles'
+    );
+    const metafields = await ProfileMetafieldCollection.create({ db: this.db });
+    await metafields.getOrUpsert(
+      { slug: 'phone', tenantId: this.tenantId },
+      {
+        name: 'Phone',
+        validation: { type: 'string' },
+      },
+    );
+    await (
+      target as import('@happyvertical/smrt-profiles').Profile
+    ).addMetadata('phone', values.phone);
+  }
+
   override async initialize(): Promise<this> {
     await super.initialize();
     this.contacts = normalizePartyContacts(this.contacts);

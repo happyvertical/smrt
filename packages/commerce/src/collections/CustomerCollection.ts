@@ -3,13 +3,36 @@
  * @packageDocumentation
  */
 
-import { SmrtCollection } from '@happyvertical/smrt-core';
+import {
+  type AuditContext,
+  SmrtCollection,
+  type SmrtCreateInput,
+} from '@happyvertical/smrt-core';
 import { queryGlobal, queryWithGlobals } from '@happyvertical/smrt-tenancy';
 import { Customer } from '../models/Customer.js';
-import { CustomerStatus } from '../types/index.js';
+import { type CustomerOptions, CustomerStatus } from '../types/index.js';
 
 export class CustomerCollection extends SmrtCollection<Customer> {
   static readonly _itemClass = Customer;
+
+  /** The ordinary create/update lifecycle also accepts the declared linked contact fields. */
+  override async create(
+    options: SmrtCreateInput<Customer> &
+      Pick<CustomerOptions, 'name' | 'email' | 'phone'>,
+    context?: Partial<AuditContext>,
+  ): Promise<Customer> {
+    return super.create(options, context);
+  }
+  override async update(
+    id: string,
+    values: Partial<
+      SmrtCreateInput<Customer> &
+        Pick<CustomerOptions, 'name' | 'email' | 'phone'>
+    >,
+    context?: Partial<AuditContext>,
+  ): Promise<Customer | null> {
+    return super.update(id, values, context);
+  }
 
   /**
    * Find customers by profile ID

@@ -205,3 +205,15 @@ Customer/Profile models on SQLite with tenancy enabled, generated REST,
 manifest-derived definitions, and `createRecipeScreenReferences`; it checks
 name search/sort, get labels, fallback, rename freshness, and one joined SELECT
 per reference-search page.
+
+## Inline Customer contact fields
+
+Ordinary `CustomerCollection.create({ name, email, phone })` and
+`update(id, { name, email, phone })` use core's declared
+[write-through lifecycle](../../core/agents/write-through.md). The name/email live
+on the linked Profile; phone uses Profile metadata. The Customer and contact save
+atomically under the same tenant. For an existing contact, provide `profileId`
+without inline edits. Shared cookbook forms expose the same fields at the top,
+with the existing picker available under Advanced. No separate Profile screen is
+needed. This does not replace the server's authenticated principal or the
+existing contacts/address adapters described above.
