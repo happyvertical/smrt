@@ -114,6 +114,7 @@ export function detectEngine(url: string, type?: string): DatabaseEngine {
         // need JSON's UUID-as-TEXT behavior should detect the adapter
         // structurally (exportTable) or request the `json` strategy directly.
         return 'duckdb';
+      case 'pglite':
       case 'postgres':
       case 'postgresql':
       case 'pg':
@@ -128,6 +129,7 @@ export function detectEngine(url: string, type?: string): DatabaseEngine {
   const urlLower = url.toLowerCase();
 
   if (
+    urlLower.startsWith('pglite:') ||
     urlLower.startsWith('postgres://') ||
     urlLower.startsWith('postgresql://')
   ) {
