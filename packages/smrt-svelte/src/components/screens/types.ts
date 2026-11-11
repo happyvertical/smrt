@@ -110,6 +110,11 @@ export interface ScreenCollectionDefinition {
   className: string;
   /** Primary-key field name. Defaults to `id`. */
   idField?: string;
+  /** Owning model's resolved @smrt({ display: { label } }) metadata. */
+  displayLabelField?: string;
+  /** Generated REST endpoint and permitted actions (used by the source factory). */
+  endpoint?: string;
+  actions?: readonly string[];
   fields: Readonly<Record<string, ScreenFieldDefinition>>;
   /** Manifest-derived relationship edges; the source of `deriveScreenRelations`. */
   relationships?: readonly ScreenRelationshipDefinition[];
@@ -196,6 +201,8 @@ export type ScreenDraft = Record<string, ScreenDraftValue>;
 /** Data access a {@link RecipeScreens} instance drives. Transport-neutral. */
 export interface RecipeScreensSource {
   list(): Promise<readonly ScreenRecord[]>;
+  /** Server/data-source search by this model's display label; never a local full-table scan. */
+  search?(request: ScreenSearchRequest): Promise<ScreenSearchPage>;
   /** Optional: when absent the record is looked up in the loaded list. */
   get?(id: string): Promise<ScreenRecord | undefined>;
   create?(values: Record<string, unknown>): Promise<ScreenRecord | undefined>;
@@ -206,11 +213,38 @@ export interface RecipeScreensSource {
   delete?(id: string): Promise<void>;
 }
 
+/** Bounded display-name search of a target collection. */
+export interface ScreenSearchRequest {
+  query: string;
+  offset: number;
+  limit: number;
+}
+
+export interface ScreenSearchPage {
+  rows: readonly ScreenRecord[];
+  hasMore: boolean;
+}
+
+/** One exposed target collection, using the same source abstraction as RecipeScreens. */
+export interface ScreenReferenceSource {
+  definition: ScreenCollectionDefinition;
+  source: RecipeScreensSource;
+  /** Omit when the app exposes data but has no record page for this model. */
+  href?: (id: string) => string | undefined;
+}
+
+/** Keyed by collection name, matching relationships[].relatedCollection. */
+export type ScreenReferenceSources = Readonly<
+  Record<string, ScreenReferenceSource>
+>;
+
 export type RecipeScreenView = 'list' | 'view' | 'create' | 'edit';
 
 // Component props (declared here so the barrel never re-exports types from .svelte files)
 
 export interface ListScreenProps {
+  /** Exposed target definitions, sources and optional record routes. */
+  references?: ScreenReferenceSources;
   /** Generated browser-safe collection definition. */
   definition: ScreenCollectionDefinition;
   /** Resolved field policy for the same object; omit for the code seed. */
@@ -248,6 +282,8 @@ export interface ListScreenProps {
 }
 
 export interface DetailScreenProps {
+  /** Exposed target definitions, sources and optional record routes. */
+  references?: ScreenReferenceSources;
   definition: ScreenCollectionDefinition;
   /** Resolved field policy for the same object; omit for the code seed. */
   policy?: ScreenPolicy | null;
@@ -282,7 +318,7 @@ export interface DetailScreenProps {
   hrefFor?: (field: ScreenField, id: string) => string | undefined;
   /**
    * Display label for a referenced record, keyed by target model id
-   * (`relation.model`); `undefined` falls back to the raw id.
+   * (`relation.model`); `undefined` shows the unavailable notice.
    */
   labels?: Readonly<Record<string, (id: string) => string | undefined>>;
   /** Field names to leave out (the record header shows them). */
@@ -302,6 +338,8 @@ export interface EditFormSubmitResult {
 }
 
 export interface EditFormProps {
+  /** Exposed target definitions, sources and optional record routes. */
+  references?: ScreenReferenceSources;
   definition: ScreenCollectionDefinition;
   /** Resolved field policy for the same object; omit for the code seed. */
   policy?: ScreenPolicy | null;
@@ -343,6 +381,8 @@ export type RecordScreenMode = 'view' | 'edit';
  * desktop and in a full-screen sheet on phones.
  */
 export interface RecordScreenProps {
+  /** Exposed target definitions, sources and optional record routes. */
+  references?: ScreenReferenceSources;
   definition: ScreenCollectionDefinition;
   /** Resolved field policy for the same object; omit for the code seed. */
   policy?: ScreenPolicy | null;
@@ -438,6 +478,8 @@ export interface RecordScreenProps {
 }
 
 export interface RecipeScreensProps {
+  /** Exposed target definitions, sources and optional record routes. */
+  references?: ScreenReferenceSources;
   definition: ScreenCollectionDefinition;
   /** Resolved field policy for the same object; omit for the code seed. */
   policy?: ScreenPolicy | null;
