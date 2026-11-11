@@ -10,6 +10,7 @@
  */
 
 export type { ShortcutEntry } from '../overview/widgets/data.js';
+export type { CookbookAppProps } from './app-props.js';
 export { applyCookbookTheme } from './brand-theme.js';
 export { buildCookbookShell, humanize, pluralize } from './build.js';
 export { default as CookbookApp } from './CookbookApp.svelte';

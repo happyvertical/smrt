@@ -24,6 +24,7 @@ import {
   isShellLayoutEmpty,
   type ShellLayout,
 } from '../workspace/admin-shell/layout.js';
+import type { CookbookAppProps } from './app-props.js';
 import { applyCookbookTheme } from './brand-theme.js';
 import { buildCookbookShell, cookbookScreenDefinition } from './build.js';
 import { type CookbookContext, setCookbookContext } from './context.js';
@@ -31,7 +32,6 @@ import {
   createCookbookRegistry,
   resolveInstalledRecipeExport,
 } from './registry.js';
-import type { CookbookAppProps } from './types.js';
 
 let {
   cookbook,

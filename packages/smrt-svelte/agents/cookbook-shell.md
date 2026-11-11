@@ -340,3 +340,20 @@ across core, fields, smrt-ui, smrt-svelte and chat. It extends existing policy f
 enumeration and the web emitter, reuses public registry/UI validators and the existing
 activation/exposure gates, and adds only the shared load-context type. No production
 component, model, route or file is added.
+
+## Recipe screen import boundary
+
+`context.ts` and `types.ts` are shared by standalone recipe screens. Keep these
+contracts independent of shell components, including type-only imports: downstream
+`svelte-check` follows them into the shell's theme CSS. `CookbookAppProps` lives in
+`app-props.ts` and keeps its public exports from `./cookbook` and
+`./cookbook/server`; standalone screens never import the app props or `AppShell`. Legitimate app hosts use Vite's CSS types (or the package's existing
+ambient CSS declaration), which standalone recipe packages should not need.
+`recipe-screen-boundary.test.mjs` traverses screen imports, including types, to
+prevent the shell dependency from returning.
+
+Reuse check: MCP `review-smrt-project` for smrt-svelte, the intent index, and
+name/purpose searches for `AppShellProps`, `CookbookAppProps`, shell props and
+import-boundary tests in smrt-ui/smrt-svelte/chat/core found the existing
+`CookbookAppProps` in `types.ts`. `app-props.ts` moves that contract unchanged;
+no parallel props type or runtime component is introduced.
