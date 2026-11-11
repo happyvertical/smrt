@@ -20,14 +20,28 @@ import type { DatabaseEngine } from './migrations/types.js';
 import type { SmrtObject } from './object.js';
 import { registerFromManifest } from './registry/class-registration.js';
 import { fieldsToColumns } from './registry/schema-builder.js';
+import type { SmartObjectConfig } from './registry/types.js';
 import { ObjectRegistry } from './registry.js';
 import type {
   FieldDefinition,
+  FieldUIHints,
   MethodDefinition,
   SmartObjectDefinition,
 } from './scanner/types.js';
 import type { ColumnDefinition } from './schema/types.js';
-import { createQualifiedName } from './utils/qualified-names.js';
+import {
+  displayLabelFieldProblem,
+  FIELD_UI_FORMAT_TYPES,
+  FIELD_UI_WIDGET_TYPES,
+  isFieldUIFormat,
+  isFieldUIWidget,
+  resolveDisplayLabelField,
+} from './ui-metadata.js';
+import {
+  createQualifiedName,
+  isQualifiedName,
+  parseQualifiedName,
+} from './utils/qualified-names.js';
 import { toSnakeCase } from './utils.js';
 
 const quoteIdentifier = (id: string) => `"${id.replace(/"/g, '""')}"`;
@@ -39,7 +53,9 @@ export type RuntimeFieldType =
   | 'decimal'
   | 'boolean'
   | 'datetime'
-  | 'json';
+  | 'json'
+  | 'foreignKey'
+  | 'crossPackageRef';
 
 export interface RuntimeFieldDefinition {
   type: RuntimeFieldType;
@@ -48,6 +64,10 @@ export interface RuntimeFieldDefinition {
   enum?: string[];
   description?: string;
   default?: unknown;
+  /** Qualified target model for a reference, as on manifest fields. */
+  related?: string;
+  /** The same presentation hints as @field({ ui }). No storage/security effect. */
+  ui?: FieldUIHints;
 }
 
 export interface RuntimeMethodDefinition {
@@ -87,6 +107,9 @@ export interface RuntimeModelDefinition {
   api?: string[];
   /** Generated MCP actions. Defaults to the same, plus every method. */
   mcp?: string[];
+  /** Presentation metadata, using the normal model/manifest contract. */
+  ui?: SmartObjectConfig['ui'];
+  display?: SmartObjectConfig['display'];
 }
 
 /**
@@ -100,6 +123,8 @@ const WIRE_TYPE: Record<RuntimeFieldType, string> = {
   boolean: 'boolean',
   datetime: 'string',
   json: 'object',
+  foreignKey: 'string',
+  crossPackageRef: 'string',
 };
 
 const CRUD = ['list', 'get', 'create', 'update', 'delete'];
@@ -112,12 +137,38 @@ function pluralize(name: string): string {
 }
 
 function toFieldDefinition(def: RuntimeFieldDefinition): FieldDefinition {
+  if (
+    (def.type === 'foreignKey' || def.type === 'crossPackageRef') &&
+    (typeof def.related !== 'string' || !isQualifiedName(def.related))
+  ) {
+    throw new Error(
+      `Run-time ${def.type} field requires a qualified related model`,
+    );
+  }
+  const widget = def.ui?.widget;
+  if (
+    widget !== undefined &&
+    (!isFieldUIWidget(widget) ||
+      !FIELD_UI_WIDGET_TYPES[widget].includes(def.type))
+  ) {
+    throw new Error(`Invalid ui.widget ${String(widget)} for ${def.type}`);
+  }
+  const format = def.ui?.format;
+  if (
+    format !== undefined &&
+    (!isFieldUIFormat(format) ||
+      !FIELD_UI_FORMAT_TYPES[format].includes(def.type))
+  ) {
+    throw new Error(`Invalid ui.format ${String(format)} for ${def.type}`);
+  }
   return {
     type: def.type,
     required: def.required ?? false,
-    ...(def.enum ? { enum: def.enum } : {}),
+    ...(def.enum ? { enum: [...def.enum] } : {}),
     ...(def.description ? { description: def.description } : {}),
     ...(def.default !== undefined ? { default: def.default } : {}),
+    ...(def.related ? { related: def.related } : {}),
+    ...(def.ui ? { _meta: { ui: { ...def.ui } } } : {}),
   } as FieldDefinition;
 }
 
@@ -176,11 +227,30 @@ export function runtimeModelEntry(
         type: inherited.type,
         required: false,
         ...(inherited.related ? { related: inherited.related } : {}),
+        ...(inherited._meta
+          ? {
+              _meta: {
+                ...inherited._meta,
+                ...(inherited._meta.ui
+                  ? { ui: { ...inherited._meta.ui } }
+                  : {}),
+              },
+            }
+          : {}),
       } as FieldDefinition;
     }
   }
   for (const [name, fd] of Object.entries(def.fields ?? {})) {
     fields[name] = toFieldDefinition(fd);
+    if (
+      fd.type === 'foreignKey' &&
+      fd.related &&
+      parseQualifiedName(fd.related).packageName !== def.packageName
+    ) {
+      throw new Error(
+        `Run-time field ${name}: use crossPackageRef across packages`,
+      );
+    }
   }
   const methods: Record<string, MethodDefinition> = {};
   for (const [name, md] of Object.entries(def.methods ?? {})) {
@@ -220,7 +290,21 @@ export function runtimeModelEntry(
     ...(conflictColumns ? { conflictColumns } : {}),
     api: { include: def.api ?? CRUD },
     mcp: { include: def.mcp ?? mcp },
+    ...(def.ui ? { ui: { ...def.ui } } : {}),
+    ...(def.display ? { display: { ...def.display } } : {}),
   };
+  if (def.display?.label !== undefined) {
+    const problem = displayLabelFieldProblem(fields, def.display.label);
+    if (problem) {
+      throw new Error(
+        `Run-time model ${qualifiedName}: display.label ${problem}`,
+      );
+    }
+  }
+  const displayLabelField = resolveDisplayLabelField(
+    fields,
+    def.display?.label,
+  );
   const entry: SmartObjectDefinition = {
     name: def.name.toLowerCase(),
     className: def.name,
@@ -230,6 +314,7 @@ export function runtimeModelEntry(
     filePath: `runtime-model:${qualifiedName}`,
     fields,
     methods,
+    ...(displayLabelField ? { displayLabelField } : {}),
     decoratorConfig:
       decoratorConfig as SmartObjectDefinition['decoratorConfig'],
     ...(parent
@@ -241,6 +326,20 @@ export function runtimeModelEntry(
       ...baseColumns(false, 'UUID'),
       ...fieldsToColumns(new Map(Object.entries(fields))),
     };
+    // fieldsToColumns accepts physical table names. Runtime references name
+    // registered models, whose physical tables may be explicitly configured.
+    for (const [name, field] of Object.entries(fields)) {
+      if (field.type !== 'foreignKey' || !field.related) continue;
+      const foreignKey = columns[toSnakeCase(name)]?.foreignKey;
+      if (!foreignKey) continue;
+      const targetTable = ObjectRegistry.getTableName(field.related);
+      if (!targetTable) {
+        throw new Error(
+          `Run-time reference target ${field.related} must be registered first`,
+        );
+      }
+      foreignKey.table = targetTable;
+    }
     entry.schema = {
       tableName,
       ddl: '',
