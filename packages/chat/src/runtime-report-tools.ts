@@ -520,7 +520,9 @@ export function createRuntimeReportTools(
       run.assertToolAllowed(RUNTIME_REPORT_SOURCES_TOOL_SLUG);
       principalFromRun(run);
       const context = await compileContext(options, run);
-      const described = [];
+      const described: Awaited<
+        ReturnType<typeof describeRuntimeReportSource>
+      >[] = [];
       for (const source of context.sources) {
         try {
           described.push(await describeRuntimeReportSource(context, source.id));
