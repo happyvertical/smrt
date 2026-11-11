@@ -39,6 +39,10 @@
       "types": "./dist/state.d.ts",
       "import": "./dist/state.js"
     },
+    "./display": {
+      "types": "./dist/display.d.ts",
+      "import": "./dist/display.js"
+    },
     "./spec": {
       "types": "./dist/spec.d.ts",
       "import": "./dist/spec.js"

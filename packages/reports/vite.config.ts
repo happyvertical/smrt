@@ -11,5 +11,6 @@ export default createPackageConfig('reports', {
     'scheduler',
     'state',
     'spec',
+    'display',
   ],
 });
