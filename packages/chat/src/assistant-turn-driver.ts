@@ -20,6 +20,7 @@ import type {
 } from './assistant-turn-events.js';
 import { sendAgentReply } from './services/ChatService.js';
 import {
+  isManifestToolEnabled,
   type ManifestTool,
   replyMetadataFor,
   resolveTurnReply,
@@ -122,7 +123,11 @@ export async function runExternalAssistantTurn<M>(
     systemPrompt: options.systemPrompt ?? '',
     principal: options.principal,
     permissions: options.permissions,
-    tools: (options.tools ?? []).filter((tool) => allowed.has(tool.slug)),
+    tools: (options.tools ?? []).filter(
+      (tool) =>
+        allowed.has(tool.slug) &&
+        isManifestToolEnabled(tool, options.principal.tenantId),
+    ),
     extraTools: (options.extraTools ?? []).filter((tool) =>
       allowed.has(tool.slug),
     ),
@@ -140,6 +145,10 @@ export async function runExternalAssistantTurn<M>(
   const offered = new Set(
     [...context.tools, ...context.extraTools].map((tool) => tool.slug),
   );
+  const enabled = (name: string) => {
+    const tool = context.tools.find((tool) => tool.slug === name);
+    return !tool || isManifestToolEnabled(tool, context.principal.tenantId);
+  };
   const calls = new Map<string, AssistantDriverToolCall>();
   const completed = new Set<string>();
   const approvalRequested = new Set<string>();
@@ -191,7 +200,11 @@ export async function runExternalAssistantTurn<M>(
     },
     toolCall: (call) =>
       enqueue(async () => {
-        if (!offered.has(call.name) || calls.has(call.id)) {
+        if (
+          !offered.has(call.name) ||
+          !enabled(call.name) ||
+          calls.has(call.id)
+        ) {
           throw new Error(
             'The external driver reported an unoffered or duplicate tool call.',
           );
@@ -225,6 +238,8 @@ export async function runExternalAssistantTurn<M>(
           throw new Error(
             'The external driver reported an unmatched tool result.',
           );
+        if (result.ok && !enabled(call.name))
+          throw new Error('The external tool model is no longer enabled.');
         if (
           result.ok &&
           context.requiresApproval(call.name, call.args) &&
@@ -286,7 +301,8 @@ export async function runExternalAssistantTurn<M>(
       const tool = [...context.tools, ...context.extraTools].find(
         (tool) => tool.slug === call.name,
       );
-      if (!tool) throw new Error('Approval requires an offered tool.');
+      if (!tool || !enabled(call.name))
+        throw new Error('Approval requires an enabled offered tool.');
       const bridge =
         options.approvals && context.requiresApproval(call.name, call.args)
           ? options.approvals
@@ -322,6 +338,15 @@ export async function runExternalAssistantTurn<M>(
           : waiter!(approval, context),
         aborted.then(() => ({ approved: false, reason: 'cancelled' })),
       ]);
+      if (decision.approved && !enabled(call.name)) {
+        // A chat bridge has consumed this decision; make the refusal terminal.
+        // Host-owned observers have no bridge and retain their own ledger authority.
+        await bridge?.complete?.(approval, false, {
+          status: 'refused',
+          error: 'The approved tool is no longer enabled.',
+        });
+        return { approved: false, reason: 'model_disabled' };
+      }
       if (decision.approved) approved.add(call.id);
       return decision;
     },

@@ -64,6 +64,18 @@ transaction or dialect behavior is introduced.
 | ChatGPT factory | Fake plan model | Raw calls, progress, usage and signal | No unsupported options or API fallback | Per-request connection | No database writes | Node | Inference createChatGPTModel | Unit | chat test |
 | Per-user selection | Stored binding/status | Each user gets their selected engine | Missing/unknown/unready refused, no fallback | Authenticated Request | Refusal before ChatService writes | Node | Existing resolver hooks | Unit/route regressions | chat test |
 
+## Rebase interaction validation
+
+| Behavior | Positive | Negative | Principal / executor | Boundary / check |
+| --- | --- | --- | --- | --- |
+| External manifest exposure | Enabled tools retain shared summaries | Disabled/unreadable models absent; a live closure refuses callbacks and approval acceptance | Original authenticated tenant; MCP endpoint remains effect authority | Driver bridge and real CLI stubs; chat suite |
+| Saved owner approval | One execution after restart authors the shared outcome label | Refused/denied holds keep diagnostics and cannot replay | Captured principal/permission ceiling; existing durable authority and dispatcher | SQLite mounted routes; chat suite |
+| App replacement and STI | Canonical provider identity gates the effective app class; explicit create subtype survives summary generation | Closed gate prevents dispatch | Original tenant; registry collection dispatcher | Tool-loop integration; chat suite |
+
+Connect AI has no record/reference-picker dependency. It configures inference
+before model offerings exist; reference picker source and screen composition are
+unchanged. No artificial picker adapter is introduced.
+
 ## Reuse check
 
 Configured MCP `review_smrt_project` reviewed chat and smrt-svelte; `build_context`
@@ -82,3 +94,17 @@ route or tool is registered. Its internal serialization queue only adapts the
 synchronous inference emitter to awaited chat callbacks. New tests extend the
 existing SQLite route fixtures, with isolated engine fakes in engines.test.ts.
 No equivalent shared adapter or summary generator existed in the owning packages.
+
+Rebase reuse search: MCP `review_smrt_project` on chat/smrt-svelte and `rg`
+`isManifestToolEnabled|isToolEnabled` plus exposure purpose searches in core,
+chat, smrt-ui and smrt-svelte found core's `isRuntimeModelEnabled` and the four
+existing chat dispatcher checks. `isManifestToolEnabled` consolidates those
+checks in their existing owning module; external drivers reuse it. No new file.
+
+Known STI boundary: chat's existing `writableToolInput` intentionally removes
+underscore fields, including `_meta_type`; core's explicit discriminator target
+selection is private to MCPGenerator. This slice does not copy that selector or
+claim base-tool polymorphic create support. Tests cover exact Profile/Person/Bot
+collection dispatch and CLI preservation of full qualified discriminator args.
+A shared core create-target API used by both dispatchers is the proposed follow-up
+for base-tool discriminator selection.

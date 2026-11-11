@@ -14,7 +14,10 @@ import {
   createAssistantApprovalBridge,
 } from './assistant-approvals.js';
 import { sendAgentReply } from './services/ChatService.js';
-import type { DescribeAssistantTool } from './tool-summary.js';
+import {
+  type DescribeAssistantTool,
+  describeAssistantTool,
+} from './tool-summary.js';
 /**
  * Mountable SvelteKit routes for the AssistantDock (#3368).
  *
@@ -2314,6 +2317,7 @@ export function mountAssistantRoutes(
       content: string,
       ok: boolean,
       refused = false,
+      label = content,
     ) =>
       sendAgentReply(chat, {
         tenantId: original.tenantId,
@@ -2332,6 +2336,7 @@ export function mountAssistantRoutes(
           args: record.args,
           status: refused ? 'refused' : ok ? 'success' : 'error',
           approvalId: id,
+          label,
         },
       });
     if (decision.status === 'denied') {
@@ -2430,7 +2435,25 @@ export function mountAssistantRoutes(
       const completed = await authority.get(original.tenantId, id);
       if (!completed) throw notFound();
       decision = completed;
-      await authorResult(JSON.stringify(completed.result ?? null), ok, refused);
+      let label = describeAssistantTool(record.tool, record.args, {
+        ok,
+        observation: completed.result,
+      });
+      try {
+        label =
+          options.describeTool?.(record.tool, record.args, {
+            ok,
+            observation: completed.result,
+          }) || label;
+      } catch {
+        // A host display callback cannot undo an already completed effect.
+      }
+      await authorResult(
+        ok ? label : JSON.stringify(completed.result ?? null),
+        ok,
+        refused,
+        label,
+      );
     }
     return json({ approval: publicApproval(decision) });
   };

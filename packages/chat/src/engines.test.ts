@@ -2,6 +2,7 @@ import { rmSync } from 'node:fs';
 import { createServer } from 'node:http';
 import type { AddressInfo } from 'node:net';
 import { join } from 'node:path';
+import { setRuntimeExposureGate } from '@happyvertical/smrt-core/runtime-exposure';
 import type {
   AgentTool,
   AgentTurnHost,
@@ -27,6 +28,7 @@ import { toolSummary } from './tool-summary.js';
 
 const cleanups: Array<() => void | Promise<void>> = [];
 afterEach(async () => {
+  setRuntimeExposureGate(undefined);
   for (const cleanup of cleanups.splice(0).reverse()) await cleanup();
   vi.restoreAllMocks();
 });
@@ -171,7 +173,11 @@ describe.each<AgentTool>([
     const original = await bind();
     original.mcpUrl = await mcp();
     bind.mockResolvedValue(original);
-    const args = { name: 'Ada', notes: 'x'.repeat(900) };
+    const args = {
+      name: 'Ada',
+      _meta_type: '@happyvertical/smrt-profiles:Person',
+      notes: 'x'.repeat(900),
+    };
     const cb = callbacks();
     await driver.run(
       context(`tool customers.create ${JSON.stringify(args)}`),
@@ -195,6 +201,8 @@ describe.each<AgentTool>([
     'approved',
     'denied',
     'aborted',
+    'model-disabled',
+    'model-unreadable',
   ] as const)('observes a hold until %s without reporting an executed result', async (outcome) => {
     const listeners = new Set<
       Parameters<AgentTurnHost['approvals']['subscribe']>[0]
@@ -216,6 +224,30 @@ describe.each<AgentTool>([
       'tool customers.create {"name":"Ada"}',
       controller.signal,
     );
+    let enabled = true;
+    let readable = true;
+    if (outcome.startsWith('model-')) {
+      ctx.tools = [
+        {
+          slug: 'customers.create',
+          collection: 'profiles',
+          className: 'Profile',
+          qualifiedName: '@happyvertical/smrt-profiles:Profile',
+          action: 'create',
+        },
+      ];
+      ctx.extraTools = [];
+      setRuntimeExposureGate({
+        isEnabled(model, principal) {
+          expect(model.qualifiedName).toBe(
+            '@happyvertical/smrt-profiles:Profile',
+          );
+          expect(principal.tenantId).toBe('tenant');
+          if (!readable) throw new Error('unreadable');
+          return enabled;
+        },
+      });
+    }
     const original = await bind();
     original.mcpUrl = await mcp(() => {
       for (const listener of listeners)
@@ -238,9 +270,11 @@ describe.each<AgentTool>([
     );
     if (outcome === 'aborted') controller.abort();
     else {
-      status = outcome;
+      enabled = outcome !== 'model-disabled';
+      readable = outcome !== 'model-unreadable';
+      status = outcome.startsWith('model-') ? 'approved' : outcome;
       for (const listener of listeners)
-        listener({ id: 'existing-hold', status: outcome });
+        listener({ id: 'existing-hold', status });
     }
     await running;
     expect(cb.toolResult).not.toHaveBeenCalled();
@@ -320,6 +354,43 @@ describe.each<AgentTool>([
       code: 'agent_cli_failed',
     });
     expect(cb.done).not.toHaveBeenCalled();
+    expect(revoke).toHaveBeenCalledOnce();
+  });
+
+  it.each([
+    'disabled',
+    'unreadable',
+  ] as const)('refuses a CLI manifest call with a %s model before reporting success', async (state) => {
+    const { driver, bind, revoke } = setup(tool);
+    const bound = await bind();
+    bound.mcpUrl = await mcp();
+    bind.mockResolvedValue(bound);
+    const ctx = context('tool customers.create {"name":"Ada"}');
+    ctx.tools = [
+      {
+        slug: 'customers.create',
+        collection: 'profiles',
+        className: 'Profile',
+        qualifiedName: '@happyvertical/smrt-profiles:Profile',
+        action: 'create',
+      },
+    ];
+    ctx.extraTools = [];
+    setRuntimeExposureGate({
+      isEnabled(model, principal) {
+        expect(model.qualifiedName).toBe(
+          '@happyvertical/smrt-profiles:Profile',
+        );
+        expect(principal.tenantId).toBe('tenant');
+        if (state === 'unreadable') throw new Error('offline');
+        return false;
+      },
+    });
+    const cb = callbacks();
+    await expect(driver.run(ctx, cb)).rejects.toMatchObject({
+      code: 'agent_tool_blocked',
+    });
+    expect(cb.toolResult).not.toHaveBeenCalled();
     expect(revoke).toHaveBeenCalledOnce();
   });
 

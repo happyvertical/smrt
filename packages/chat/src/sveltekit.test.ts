@@ -233,6 +233,7 @@ describe('mountAssistantRoutes', () => {
   });
 
   afterEach(() => {
+    setRuntimeExposureGate(undefined);
     // Runs after a timed-out attempt too, so no spy outlives its test.
     vi.restoreAllMocks();
     if (existsSync(dbPath)) {
@@ -2795,6 +2796,118 @@ describe('mountAssistantRoutes', () => {
   });
 
   describe('external turn drivers', () => {
+    it.each([
+      'enabled',
+      'disabled',
+      'unreadable',
+      'closed-call',
+      'closed-result',
+      'closed-approval',
+    ] as const)('applies live manifest exposure to external drivers: %s', async (state) => {
+      let enabled = state !== 'disabled';
+      const model = '@happyvertical/smrt-profiles:Profile';
+      const checked = vi.fn((identity, context) => {
+        expect(identity.qualifiedName).toBe(model);
+        expect(context).toMatchObject({ tenantId, surface: 'assistant' });
+        if (state === 'unreadable') throw new Error('store offline');
+        return enabled;
+      });
+      setRuntimeExposureGate({ isEnabled: checked });
+      try {
+        const decision = vi.fn();
+        const routes = mount({
+          allowedTools: ['profiles.read'],
+          tools: [
+            {
+              slug: 'profiles.read',
+              collection: 'profiles',
+              className: 'Profile',
+              qualifiedName: model,
+              action: 'read',
+            },
+          ],
+          waitForApproval: async () => {
+            enabled = false;
+            return { approved: true };
+          },
+          turnDriver: {
+            async run(ctx, cb) {
+              if (state === 'disabled' || state === 'unreadable') {
+                expect(ctx.tools).toEqual([]);
+                cb.done({ text: 'No model tools.' });
+                return;
+              }
+              expect(ctx.tools.map((tool) => tool.slug)).toEqual([
+                'profiles.read',
+              ]);
+              if (state === 'closed-call') enabled = false;
+              await cb.toolCall({
+                id: 'live',
+                name: 'profiles.read',
+                args: {},
+              });
+              if (state === 'closed-approval') {
+                decision(
+                  await cb.approvalNeeded({
+                    id: 'hold',
+                    callId: 'live',
+                    tool: 'profiles.read',
+                    summary: 'Look up profiles',
+                  }),
+                );
+                cb.done({ text: 'Stopped.' });
+                return;
+              }
+              if (state === 'closed-result') enabled = false;
+              await cb.toolResult({
+                id: 'live',
+                ok: true,
+                result: '[{"name":"Ada"}]',
+              });
+              cb.done({ text: 'Found Ada.' });
+            },
+          },
+        });
+        const threadId = await createThread(routes);
+        const result = await events(
+          await send(routes, threadId, {
+            content: 'Look up profiles',
+            clientRequestId: crypto.randomUUID(),
+          }),
+        );
+        const rows = await listMessages(routes, threadId);
+        const successes = rows.filter(
+          (row) =>
+            (row.toolCallData as { status?: string })?.status === 'success',
+        );
+        if (state === 'enabled') {
+          expect(successes.map((row) => row.content)).toEqual([
+            'Looked up 1 profile',
+          ]);
+          expect(result.seen).toContainEqual(
+            expect.objectContaining({ type: 'done', stoppedReason: 'stop' }),
+          );
+        } else {
+          expect(successes).toEqual([]);
+          if (state === 'closed-approval')
+            expect(decision).toHaveBeenCalledWith({
+              approved: false,
+              reason: 'model_disabled',
+            });
+          if (state === 'closed-call' || state === 'closed-result')
+            expect(result.seen).toContainEqual(
+              expect.objectContaining({
+                type: 'error',
+                code: 'internal_error',
+              }),
+            );
+        }
+        expect(checked).toHaveBeenCalled();
+      } finally {
+        setRuntimeExposureGate(undefined);
+      }
+    });
+
     it('streams and authors external text and tool calls using the same thread and principal', async () => {
       const ai = vi.fn(() => {
         throw new Error('external drivers do not need a model');
@@ -3400,8 +3513,11 @@ describe('mountAssistantRoutes', () => {
       },
     ]);
     expect(
-      (await listMessages(routes, threadId)).some((message) =>
-        message.content.includes('"deleted":"invoice-1"'),
+      (await listMessages(routes, threadId)).some(
+        (message) =>
+          message.content === 'Deleted record' &&
+          (message.toolCallData as { label?: string })?.label ===
+            'Deleted record',
       ),
     ).toBe(true);
     expect(
@@ -3630,7 +3746,19 @@ describe('mountAssistantRoutes', () => {
     ).toBe(409);
   });
 
-  it('resolves an external-driver wait from the same durable authority and authors its outcome', async () => {
+  it.each([
+    'enabled',
+    'disabled',
+    'unreadable',
+  ] as const)('resolves an external-driver wait from the same durable authority with a %s model', async (state) => {
+    let enabled = true;
+    let readable = true;
+    setRuntimeExposureGate({
+      isEnabled() {
+        if (!readable) throw new Error('unreadable');
+        return enabled;
+      },
+    });
     const authority = await durableApprovals();
     let requestId: string | undefined;
     let ready!: () => void;
@@ -3640,19 +3768,27 @@ describe('mountAssistantRoutes', () => {
     const ran: unknown[] = [];
     const routes = mount({
       approvals: authority,
-      allowedTools: ['records.delete'],
-      extraTools: [deleteTool(ran)],
+      allowedTools: ['profiles.delete'],
+      tools: [
+        {
+          slug: 'profiles.delete',
+          className: 'Profile',
+          qualifiedName: '@happyvertical/smrt-profiles:Profile',
+          collection: 'profiles',
+          action: 'delete',
+        },
+      ],
       turnDriver: {
         async run(ctx, cb) {
           await cb.toolCall({
             id: 'external-delete',
-            name: 'records.delete',
+            name: 'profiles.delete',
             args: { id: 'invoice-3' },
           });
           const decision = cb.approvalNeeded({
             id: 'engine-cannot-select-id',
             callId: 'external-delete',
-            tool: 'records.delete',
+            tool: 'profiles.delete',
             summary: 'engine text is not authority',
           });
           // Signal after the request is durably visible; the caller reads the live SSE concurrently.
@@ -3691,20 +3827,29 @@ describe('mountAssistantRoutes', () => {
     await waiting;
     expect(ran).toEqual([]);
     expect(requestId).not.toBe('engine-cannot-select-id');
+    enabled = state !== 'disabled';
+    readable = state !== 'unreadable';
     const decide = await call(routes, 'POST', `approvals/${requestId}/decide`, {
       body: { approve: true },
     });
     expect(decide.status).toBe(200);
     expect((await streamResult).thrown).toBeNull();
-    expect(ran).toEqual([{ userId: ownerA.user.id, id: 'invoice-3' }]);
-    expect(await authority.get(tenantId, requestId!)).toMatchObject({
-      status: 'succeeded',
-    });
+    expect(ran).toEqual(
+      state === 'enabled' ? [{ userId: ownerA.user.id, id: 'invoice-3' }] : [],
+    );
+    expect(await authority.get(tenantId, requestId!)).toMatchObject(
+      state === 'enabled'
+        ? {
+            status: 'succeeded',
+          }
+        : { status: 'failed', result: { status: 'refused' } },
+    );
     expect(
       (await listMessages(routes, threadId)).some(
-        (message) => message.content === 'Deleted record',
+        (message) => message.content === 'Deleted profile',
       ),
-    ).toBe(true);
+    ).toBe(state === 'enabled');
+    setRuntimeExposureGate(undefined);
   });
 
   it('keeps reads immediate and supports host per-tool and per-operation approval policy', async () => {
@@ -3842,8 +3987,11 @@ describe('mountAssistantRoutes', () => {
       { userId: memberB.user.id, tenantId, args: { id: 'colleague-invoice' } },
     ]);
     expect(
-      (await listMessages(routes, threadId, memberB)).some((message) =>
-        message.content.includes('"deleted":"colleague-invoice"'),
+      (await listMessages(routes, threadId, memberB)).some(
+        (message) =>
+          message.content === 'Deleted record' &&
+          (message.toolCallData as { label?: string })?.label ===
+            'Deleted record',
       ),
     ).toBe(true);
     expect(

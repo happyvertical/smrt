@@ -48,6 +48,7 @@ import {
   UserCollection,
 } from '@happyvertical/smrt-users';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
+import { snapshotObjectRegistryState } from '../../core/src/test-utils.js';
 import {
   createAssistantApprovalBridge,
   requiresOwnerApproval,
@@ -389,6 +390,137 @@ describe('runToolLoop', () => {
   function tools(slugs: string[]): ManifestTool[] {
     return buildManifestToolCatalog({ db, allowedTools: slugs });
   }
+
+  it('summarizes the effective same-name app subclass under the provider tool identity', async () => {
+    await grant('tool_loop_notes.archive');
+    const restore = snapshotObjectRegistryState();
+    const upstream =
+      ObjectRegistry.getClassByConstructor(ToolLoopNote)?.qualifiedName;
+    if (!upstream) throw new Error('Missing note registration');
+    let dispatched = 0;
+    const AppNote = class extends ToolLoopNote {
+      override async archive() {
+        dispatched++;
+        return super.archive();
+      }
+    };
+    ObjectRegistry.register(AppNote, {
+      name: 'ToolLoopNote',
+      packageName: '@fixture/c4-app',
+    });
+    const effective = '@fixture/c4-app:ToolLoopNote';
+    try {
+      expect(ObjectRegistry.getExposureModel(upstream)?.qualifiedName).toBe(
+        effective,
+      );
+      const notes = await ObjectRegistry.getCollection(upstream, { db });
+      const note = await notes.create({ title: 'App note', body: 'Keep text' });
+      await note.save();
+      const gate = vi.fn((model, context) => {
+        expect(model.qualifiedName).toBe(effective);
+        expect(context.tenantId).toBe(tenantId);
+        return true;
+      });
+      setRuntimeExposureGate({ isEnabled: gate });
+      const turn = runAssistantTurn({
+        ai: makeAI((_messages, _options, call) =>
+          call === 0
+            ? toolCall('tool_loop_notes.archive', { id: note.id })
+            : textResponse('Archived.'),
+        ),
+        db,
+        userMessage: 'Archive the app note',
+        tools: [
+          {
+            slug: 'tool_loop_notes.archive',
+            className: 'ToolLoopNote',
+            qualifiedName: upstream,
+            collection: 'tool_loop_notes',
+            action: 'archive',
+          },
+        ],
+        principal: {
+          runAsUserId: userId,
+          tenantId,
+          allowedTools: ['tool_loop_notes.archive'],
+        },
+        audit: () => {},
+      });
+      const seen = [];
+      for await (const event of turn) seen.push(event);
+      expect(dispatched).toBe(1);
+      expect((await notes.get(String(note.id)))?.toJSON()).toMatchObject({
+        body: '[archived] Keep text',
+      });
+      expect(seen).toContainEqual(
+        expect.objectContaining({
+          type: 'step',
+          step: expect.objectContaining({
+            kind: 'tool_result',
+            ok: true,
+            label: 'Completed this action',
+          }),
+        }),
+      );
+      expect(gate).toHaveBeenCalled();
+    } finally {
+      setRuntimeExposureGate(undefined);
+      restore();
+    }
+  });
+
+  it.each([
+    'Profile',
+    'Person',
+    'Bot',
+  ] as const)('summarizes a create through the exact STI %s collection without changing its discriminator', async (name) => {
+    const model = `@happyvertical/smrt-profiles:${name}`;
+    const collectionName = 'profiles';
+    const slug = `${collectionName}.create`;
+    await grant(slug);
+    const types = await ObjectRegistry.getCollection(
+      '@happyvertical/smrt-profiles:ProfileType',
+      { db },
+    );
+    const type = await types.create({ name: `C4 ${name}` });
+    await type.save();
+    const collection = await ObjectRegistry.getCollection(model, { db });
+    const turn = runAssistantTurn({
+      ai: makeAI((_messages, _options, call) =>
+        call === 0
+          ? toolCall(slug, { name: 'Ada', typeId: type.id })
+          : textResponse('Created.'),
+      ),
+      db,
+      userMessage: 'Add Ada',
+      tools: [
+        {
+          slug,
+          collection: collectionName,
+          className: name,
+          qualifiedName: model,
+          action: 'create',
+        },
+      ],
+      principal: { runAsUserId: userId, tenantId, allowedTools: [slug] },
+      audit: () => {},
+    });
+    const seen = [];
+    for await (const event of turn) seen.push(event);
+    const rows = await collection.list({ where: { name: 'Ada' } });
+    expect(rows).toHaveLength(1);
+    expect(rows[0].toJSON()).toMatchObject({ name: 'Ada', _meta_type: model });
+    expect(seen).toContainEqual(
+      expect.objectContaining({
+        type: 'step',
+        step: expect.objectContaining({
+          kind: 'tool_result',
+          ok: true,
+          label: expect.stringContaining('Ada'),
+        }),
+      }),
+    );
+  });
 
   it('holds a real manifest delete before the owning collection is mutated', async () => {
     await grant('tool_loop_notes.delete');

@@ -934,6 +934,17 @@ async function itemToObservation(
       : item;
 }
 
+/** Check the effective model identity using the authenticated assistant tenant. */
+export function isManifestToolEnabled(
+  tool: ManifestTool,
+  tenantId?: string | null,
+): boolean {
+  return isRuntimeModelEnabled(
+    ObjectRegistry.getExposureModel(tool.qualifiedName ?? tool.className),
+    { surface: 'assistant', tenantId },
+  );
+}
+
 /**
  * Execute a manifest operation in-process ("side door") under the principal.
  *
@@ -953,12 +964,7 @@ export async function invokeManifestTool(
 ): Promise<unknown> {
   // Gate 1: fail-closed allow-list (defense-in-depth behind the offer gate).
   run.assertToolAllowed(tool.slug);
-  if (
-    !isRuntimeModelEnabled(
-      ObjectRegistry.getExposureModel(tool.qualifiedName ?? tool.className),
-      { surface: 'assistant', tenantId: run.context.tenantId },
-    )
-  ) {
+  if (!isManifestToolEnabled(tool, run.context.tenantId)) {
     throw new PrincipalToolNotAllowedError(tool.slug);
   }
   // Reserved: a stored runtime report is never written through the generic
@@ -1111,10 +1117,7 @@ export async function runToolLoop(
   const maxRepeatedCalls = resolveMaxRepeatedCalls(maxRepeatedCallsOption);
 
   const tools = declaredTools.filter((tool) =>
-    isRuntimeModelEnabled(
-      ObjectRegistry.getExposureModel(tool.qualifiedName ?? tool.className),
-      { surface: 'assistant', tenantId: principal.tenantId },
-    ),
+    isManifestToolEnabled(tool, principal.tenantId),
   );
   const serverNames = new Set<string>([
     ...tools.flatMap((tool) => [tool.slug, toolFunctionName(tool.slug)]),
@@ -1258,13 +1261,7 @@ export async function runToolLoop(
               ? aiTools.filter((aiTool) => {
                   const tool = offered.get(aiTool.function.name);
                   return (
-                    !tool ||
-                    isRuntimeModelEnabled(
-                      ObjectRegistry.getExposureModel(
-                        tool.qualifiedName ?? tool.className,
-                      ),
-                      { surface: 'assistant', tenantId: principal.tenantId },
-                    )
+                    !tool || isManifestToolEnabled(tool, principal.tenantId)
                   );
                 })
               : undefined,
@@ -1576,15 +1573,7 @@ export async function runToolLoop(
             };
           } else {
             try {
-              if (
-                tool &&
-                !isRuntimeModelEnabled(
-                  ObjectRegistry.getExposureModel(
-                    tool.qualifiedName ?? tool.className,
-                  ),
-                  { surface: 'assistant', tenantId: principal.tenantId },
-                )
-              ) {
+              if (tool && !isManifestToolEnabled(tool, principal.tenantId)) {
                 throw new PrincipalToolNotAllowedError(tool.slug);
               }
               const hold = await options.holdTool?.({

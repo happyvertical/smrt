@@ -2,7 +2,6 @@
 import type { AIInterface } from '@happyvertical/ai';
 import { InferenceUnavailableError } from '@happyvertical/smrt-core/inference-availability';
 import {
-  type AgentEngineDeps,
   type AgentTool,
   type AgentTurnHost,
   type AgentTurnMessage,
@@ -25,6 +24,7 @@ import {
   configuredAssistantAI,
   type MountAssistantRoutesOptions,
 } from './sveltekit.js';
+import { isManifestToolEnabled } from './tool-loop.js';
 import { describeAssistantTool } from './tool-summary.js';
 
 /** All credentials, working directories and MCP authority are bound by the host per turn. */
@@ -63,7 +63,15 @@ export function createAgentCliTurnDriver(options: {
           try {
             const found = await binding.approvals.get(request.id);
             if (!found || found.status !== 'pending')
-              finish(found?.status === 'approved', found?.status ?? 'missing');
+              finish(
+                found?.status === 'approved' &&
+                  context.tools.every(
+                    (tool) =>
+                      tool.slug !== request.tool ||
+                      isManifestToolEnabled(tool, context.principal.tenantId),
+                  ),
+                found?.status ?? 'missing',
+              );
           } catch {
             finish(false, 'unavailable');
           }
@@ -138,7 +146,14 @@ export function createAgentCliTurnDriver(options: {
             allowTool: (name) => {
               const canonical = canonicalName(name);
               return (
-                !!canonical && offered.has(canonical) && binding.allowTool(name)
+                !!canonical &&
+                offered.has(canonical) &&
+                binding.allowTool(name) &&
+                context.tools.every(
+                  (tool) =>
+                    tool.slug !== canonical ||
+                    isManifestToolEnabled(tool, context.principal.tenantId),
+                )
               );
             },
             approvals: binding.approvals,
