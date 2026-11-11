@@ -50,7 +50,8 @@
   "files": [
     "dist",
     "CLAUDE.md",
-    "AGENTS.md"
+    "AGENTS.md",
+    "agents"
   ],
   "scripts": {
     "build": "vite build",
@@ -72,6 +73,7 @@
   },
   "dependencies": {
     "@happyvertical/encryption": "catalog:",
+    "@happyvertical/smrt-approvals": "workspace:*",
     "@happyvertical/smrt-config": "workspace:*",
     "@happyvertical/smrt-core": "workspace:*",
     "@happyvertical/smrt-jobs": "workspace:*",

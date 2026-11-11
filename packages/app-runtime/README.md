@@ -1753,3 +1753,24 @@ Losing only the recovery code freezes the account without losing data. Prompt
 the family to confirm the code periodically with `checkRecoverySecret`, and
 tell them up front what a restart costs: a new code, a fresh backup history,
 and every other device re-enrolled.
+
+## Durable owner tool approvals
+
+`OwnerApprovalAuthority` is a host boundary for tool-call holds, backed by an
+`OwnerApprovalStore`. `createSqliteOwnerApprovalStore(db)` is the default adapter:
+it **reuses smrt-approvals `ApprovalService`** for decisions, expiry, the human
+actor ledger, revision binding and single-use consumption. The runtime-owned
+`_smrt_owner_tool_holds` table stores only the immutable tool/principal/arguments
+recovery envelope and execution result. Include smrt-approvals in normal schema
+migrations before serving; the adapter never creates application model schema.
+
+Construct the authority with a mandatory live owner check (normally
+`actor => isApprovalOwner(db, actor)`). Request from trusted host code, list/decide
+with the authenticated human actor, consume before effects, and complete with the
+result. Never offer authority methods as model tools or accept a request body as
+the saved principal. Default expiry is 15 minutes (configurable 1 minute–24 hours).
+A consumed call is never retried automatically: after a process crash during an
+external effect its state is `executing`, requiring operator reconciliation.
+Pending holds and approved but unconsumed decisions survive a restart. The generic
+approval service supplies the append-only decision audit; the host supplies effect
+and transcript authoring. See [the contract](agents/owner-approvals.md).

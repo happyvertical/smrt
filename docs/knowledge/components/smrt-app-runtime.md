@@ -5,10 +5,10 @@ description: "Validated local, self-hosted, and cloud runtime composition for s-
 status: "stable"
 generated:
   by: "smrt/scripts/generate-knowledge-okf.ts"
-  at: "2026-11-10T14:45:59Z"
+  at: "2026-11-11T04:33:55Z"
 audience: "internal"
 evidence_level: "manifest-described"
-source_revision: "sha256:26eaa912fd019895ed6bd939b86cb145a4fc94621eb7aef2a590e26bb5e47d1d"
+source_revision: "sha256:80001554fa4439cf34f8e1074d32bd302f39e051104b32e00646f516e9c5fd9c"
 sources:
   - id: "manifest"
     resource: "https://github.com/happyvertical/smrt/blob/main/packages/app-runtime/package.json"
@@ -20,6 +20,9 @@ sources:
     resource: "https://github.com/happyvertical/smrt/blob/main/packages/app-runtime/README.md"
     title: "@happyvertical/smrt-app-runtime packages/app-runtime/README.md"
   - id: "agents-3"
+    resource: "https://github.com/happyvertical/smrt/blob/main/packages/app-runtime/agents/owner-approvals.md"
+    title: "@happyvertical/smrt-app-runtime packages/app-runtime/agents/owner-approvals.md"
+  - id: "agents-4"
     resource: "https://github.com/happyvertical/smrt/blob/main/packages/app-runtime/agents/windows-custody.md"
     title: "@happyvertical/smrt-app-runtime packages/app-runtime/agents/windows-custody.md"
 ---
@@ -37,10 +40,12 @@ sources:
 
 - `packages/app-runtime/AGENTS.md`
 - `packages/app-runtime/README.md`
+- `packages/app-runtime/agents/owner-approvals.md`
 - `packages/app-runtime/agents/windows-custody.md`
 
 ## Framework dependencies
 
+- [smrt-approvals](/components/smrt-approvals.md)
 - [smrt-config](/components/smrt-config.md)
 - [smrt-core](/components/smrt-core.md)
 - [smrt-jobs](/components/smrt-jobs.md)

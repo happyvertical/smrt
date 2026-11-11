@@ -336,3 +336,10 @@ pnpm --filter @happyvertical/smrt-app-runtime build
 pnpm --filter @happyvertical/smrt-app-runtime test
 pnpm --filter @happyvertical/smrt-app-runtime typecheck
 ```
+
+## Owner tool approvals
+
+`src/owner-approvals.ts` composes the existing smrt-approvals ledger with a host
+recovery envelope and owner check. Contract and validation:
+[agents/owner-approvals.md](agents/owner-approvals.md). Never expose its authority
+methods to a model or create its application schema on request.
