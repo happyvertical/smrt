@@ -1,4 +1,5 @@
 import { describe, expect, it } from 'vitest';
+import { manifestEntry } from '../registry/__tests__/helpers/consumer-workspace';
 import type {
   SmartObjectDefinition,
   SmartObjectManifest,
@@ -14,16 +15,22 @@ function model(
   parent?: string,
   tableName = 'customers',
 ): SmartObjectDefinition {
-  return {
-    name: 'customer',
+  // This case deliberately exercises the decorator table fallback, without a
+  // precomputed schema or root extends edge. Reuse the shared entry factory.
+  const {
+    schema: _schema,
+    extends: _extends,
+    ...definition
+  } = manifestEntry({
     className: 'Customer',
-    collection: 'customers',
     packageName: pkg,
-    qualifiedName: `${pkg}:Customer`,
     filePath: `/${pkg}/customer.ts`,
+    tableName,
     fields: {},
-    methods: {},
-    decoratorConfig: { tableName },
+  });
+  return {
+    ...definition,
+    collection: 'customers',
     ...(parent
       ? { extends: 'Customer', extendsQualified: `${parent}:Customer` }
       : {}),
