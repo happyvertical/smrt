@@ -221,6 +221,13 @@ distribution suites, components, signing keys and required packages are preserve
 Missing mirror-list files leave other runner configurations unchanged. Unexpected
 filesystem failures stop setup; the visual-job budget and apt retries stay intact.
 
+If the canonical-archive `apt-get update` still fails after its retries (the
+archive was unreachable from hosted runners on 2026-11-11, failing three Batched
+Release runs), the step restores the runner image's original mirror lists from the
+`.ci-original` backups written by the rewrite (`configure-ubuntu-apt-mirrors.mjs
+--restore`) and runs the same bounded update once more. If that also fails the
+step fails closed as before; nothing is skipped.
+
 Each `apt-get update` attempt is bounded at two minutes and is tried up to
 three times with a 10 s / 20 s backoff; `apt-get install` gets ten minutes per
 attempt and two attempts. A single slow mirror response therefore no longer

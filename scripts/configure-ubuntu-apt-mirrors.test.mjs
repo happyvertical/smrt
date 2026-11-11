@@ -3,7 +3,7 @@ import { mkdtempSync, mkdirSync, readFileSync, rmSync, statSync, writeFileSync }
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import test from 'node:test';
-import { configureUbuntuAptMirrors, rewriteUbuntuMirrorList } from './configure-ubuntu-apt-mirrors.mjs';
+import { configureUbuntuAptMirrors, restoreUbuntuAptMirrors, rewriteUbuntuMirrorList } from './configure-ubuntu-apt-mirrors.mjs';
 
 test('routes official Ubuntu mirror lists through canonical HTTPS without changing metadata', () => {
   const original = '# runner mirrors\r\n http://azure.archive.ubuntu.com/ubuntu/ priority:1\r\nhttp://archive.ubuntu.com/ubuntu priority:2\r\n';
@@ -79,7 +79,27 @@ test('the actual setup action configures mirrors before bounded apt and preserve
   assert.ok(configure > section.indexOf('command -v apt-get'));
   assert.ok(configure < section.indexOf("--stage 'apt-get update'"));
   assert.match(section, /sudo "\$node_path" "\$GITHUB_WORKSPACE\/scripts\/configure-ubuntu-apt-mirrors\.mjs"/);
-  assert.match(section, /APT::Update::Error-Mode=any &&/);
+  assert.match(section, /-- apt-get update -o APT::Update::Error-Mode=any\n/);
+  // Fallback restores the image mirror list, then the second update stays fail-closed (set -e, no `|| true`).
+  assert.match(section, /if ! apt_update; then[\s\S]*configure-ubuntu-apt-mirrors\.mjs" --restore\n\s+apt_update\n\s+fi/);
+  assert.doesNotMatch(section, /apt_update[^\n]*\|\|/);
+  assert.ok(section.indexOf('fi\n        sudo') < section.indexOf("--stage 'apt-get install'"));
   assert.match(section, /--timeout-seconds 120/);
   assert.match(section, /--timeout-seconds 600/);
+});
+
+test('canonical rewrite keeps the image list as a backup and restore brings it back byte-exact', () => {
+  const directory = mkdtempSync(join(tmpdir(), 'apt-restore-'));
+  try {
+    const hosted = 'http://azure.archive.ubuntu.com/ubuntu/ priority:1\n';
+    writeFileSync(join(directory, 'apt-mirrors.txt'), hosted);
+    configureUbuntuAptMirrors(directory);
+    assert.equal(readFileSync(join(directory, 'apt-mirrors.txt'), 'utf8'), 'https://archive.ubuntu.com/ubuntu/ priority:1\n');
+    configureUbuntuAptMirrors(directory); // idempotent: never overwrites the backup with the rewritten list
+    restoreUbuntuAptMirrors(directory);
+    assert.equal(readFileSync(join(directory, 'apt-mirrors.txt'), 'utf8'), hosted);
+    restoreUbuntuAptMirrors(mkdtempSync(join(tmpdir(), 'apt-empty-'))); // no backups: no-op
+  } finally {
+    rmSync(directory, { recursive: true, force: true });
+  }
 });
