@@ -1,3 +1,7 @@
+import {
+  type AssistantApprovalBridge,
+  requiresOwnerApproval,
+} from './assistant-approvals.js';
 /**
  * Streamed assistant turn over the bounded tool loop (#2908).
  *
@@ -363,6 +367,8 @@ export interface AssistantTurnOptions<M = Record<string, unknown>> {
   turnDriver?: AssistantTurnDriver;
   /** Host-owned durable approval bridge. Absent: approval requests fail closed. */
   waitForApproval?: AssistantApprovalWaiter;
+  /** Durable host gate. Default destructive policy fails closed without a store. */
+  approvals?: AssistantApprovalBridge;
   /** Server-selected thread identity passed to an external driver. */
   thread?: AssistantTurnDriverContext['thread'];
   /** The already-authorized principal every server tool runs as. */
@@ -945,6 +951,37 @@ async function runTurn<M>(
     tools: options.tools ?? [],
     extraTools,
     clientTools,
+    holdTool: async ({ id, tool, args, permissions, authorize }) => {
+      if (!requiresOwnerApproval(tool, args, options.approvals?.policy)) return;
+      await authorize();
+      if (!options.approvals)
+        throw new AssistantTurnUserError(
+          'Owner approval is unavailable.',
+          'approval_unavailable',
+        );
+      const request = await options.approvals.request({
+        id,
+        tool,
+        args,
+        permissions,
+        ...(originMessageId ? { originMessageId } : {}),
+      });
+      if (author && sendAgentReply) {
+        const message = await sendAgentReply(author.chatService, {
+          tenantId: author.tenantId,
+          agentSessionId: author.agentSessionId,
+          threadId: author.threadId ?? null,
+          replyToMessageId: originMessageId ?? null,
+          kind: 'tool',
+          messageType: 'tool_call',
+          content: request.summary,
+          toolCallData: { id, name: tool.slug, args, approval: request },
+        });
+        emit({ type: 'message', message: serialize(message) });
+      }
+      emit({ type: 'approval_needed', approval: request });
+      return request;
+    },
     initialSteps,
     principal,
     db: options.db,
@@ -1029,6 +1066,7 @@ async function runTurn<M>(
       });
     },
     onInvocation: async (invocation) => {
+      if (invocation.approvalId) return;
       if (!author || !sendAgentReply) return;
       const failure = toolFailureRecord(invocation);
       // A deduped repeat of a failed call (#4382) has no failure record and

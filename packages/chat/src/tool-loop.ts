@@ -128,6 +128,8 @@ export interface ManifestTool {
  * The record of one tool invocation attempt in a loop turn.
  */
 export interface ToolInvocation {
+  /** A held call has a durable request, not a successful tool effect. */
+  approvalId?: string;
   /** The tool name the model asked for. */
   slug: string;
   /**
@@ -223,6 +225,7 @@ export type ToolLoopStopReason =
   | 'repeated_calls'
   | 'no_tools'
   | 'client_tools'
+  | 'approval'
   | 'cancelled'
   | 'empty'
   | 'timeout';
@@ -405,6 +408,14 @@ export interface ToolLoopOptions {
    * mechanics without a backing object.
    */
   executeTool?: (ctx: ToolExecutionContext) => Promise<unknown>;
+  /** Trusted host gate, before ANY server tool execution (including extra tools). */
+  holdTool?: (call: {
+    id: string;
+    tool: ManifestTool | PrincipalTool;
+    args: Record<string, unknown>;
+    permissions: readonly string[];
+    authorize: () => Promise<void>;
+  }) => Promise<{ id: string; summary: string } | undefined>;
   /** Notified after each tool invocation (for streaming/telemetry). */
   onInvocation?: (invocation: ToolInvocation) => void | Promise<void>;
   /**
@@ -1400,6 +1411,7 @@ export async function runToolLoop(
         });
 
         const pendingClient: PendingClientToolCall[] = [];
+        let approvalHeld = false;
         for (const call of toolCalls) {
           const requestedName = call.function.name;
           const parsedArgs = parseToolArguments(call.function.arguments);
@@ -1536,18 +1548,37 @@ export async function runToolLoop(
             };
           } else {
             try {
-              const observation = await (tool
-                ? executeTool
-                  ? executeTool({ run, tool, args, db })
-                  : invokeManifestTool(run, tool, args, { db })
-                : // biome-ignore lint/style/noNonNullAssertion: extraTool is defined in this branch (tool is falsy).
-                  extraTool!.execute({ run, args, db }));
+              const hold = await options.holdTool?.({
+                id: call.id,
+                tool: tool ?? extraTool!,
+                args,
+                permissions: run.permissions,
+                authorize: async () => {
+                  run.assertToolAllowed(slug);
+                  if (tool)
+                    await run.assertOperation(tool.collection, tool.action);
+                },
+              });
+              approvalHeld ||= !!hold;
+              const observation = hold
+                ? {
+                    status: 'pending_approval',
+                    approvalId: hold.id,
+                    summary: hold.summary,
+                  }
+                : await (tool
+                    ? executeTool
+                      ? executeTool({ run, tool, args, db })
+                      : invokeManifestTool(run, tool, args, { db })
+                    : // biome-ignore lint/style/noNonNullAssertion: extraTool is defined in this branch (tool is falsy).
+                      extraTool!.execute({ run, args, db }));
               invocation = {
                 slug,
                 args,
                 ok: true,
                 rejected: false,
                 observation,
+                ...(hold ? { approvalId: hold.id } : {}),
               };
             } catch (error) {
               const kind =
@@ -1613,14 +1644,15 @@ export async function runToolLoop(
             await auditFailure(invocation);
           }
           await onInvocation?.(invocation);
-          onStep?.({
-            type: 'tool_result',
-            callId: call.id,
-            slug,
-            ok: invocation.ok,
-            rejected: invocation.rejected,
-            ...(invocation.error ? { error: invocation.error } : {}),
-          });
+          if (!invocation.approvalId)
+            onStep?.({
+              type: 'tool_result',
+              callId: call.id,
+              slug,
+              ok: invocation.ok,
+              rejected: invocation.rejected,
+              ...(invocation.error ? { error: invocation.error } : {}),
+            });
           working.push({
             role: 'tool',
             name: requestedName,
@@ -1638,6 +1670,17 @@ export async function runToolLoop(
 
         executedRounds += 1;
         if (signal?.aborted) return cancelled();
+        if (approvalHeld) {
+          return {
+            content: 'Waiting for owner approval.',
+            steps: executedRounds,
+            stoppedReason: 'approval',
+            invocations,
+            messages: working,
+            totalTokens,
+            pendingClientToolCalls: [],
+          };
+        }
         if (pendingClient.length > 0) {
           return {
             content: response.content ?? '',

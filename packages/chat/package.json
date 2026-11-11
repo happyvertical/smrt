@@ -99,6 +99,7 @@
     "@happyvertical/ai": "catalog:",
     "@happyvertical/speech": "catalog:",
     "@happyvertical/smrt-images": "workspace:*",
+    "@happyvertical/smrt-app-runtime": "workspace:*",
     "@happyvertical/smrt-agents": "workspace:*",
     "@happyvertical/smrt-assets": "workspace:*",
     "@happyvertical/smrt-config": "workspace:*",

@@ -4,6 +4,7 @@ import type {
   PrincipalBinding,
   PrincipalTool,
 } from '@happyvertical/smrt-agents';
+import { requiresOwnerApproval } from './assistant-approvals.js';
 import {
   ASSISTANT_TURN_GENERIC_ERROR,
   type AssistantTurnOptions,
@@ -45,6 +46,8 @@ export interface AssistantTurnDriverContext {
   tools: readonly ManifestTool[];
   extraTools: readonly PrincipalTool[];
   signal: AbortSignal;
+  /** The same host-configured server-write policy used by the built-in loop. */
+  requiresApproval(tool: string, args: Record<string, unknown>): boolean;
 }
 
 /** C3 bridge: persist a request and wait for a durable owner decision. */
@@ -117,12 +120,24 @@ export async function runExternalAssistantTurn<M>(
       allowed.has(tool.slug),
     ),
     signal,
+    requiresApproval(name, args) {
+      const tool = [
+        ...(options.tools ?? []),
+        ...(options.extraTools ?? []),
+      ].find((tool) => tool.slug === name);
+      return (
+        !tool || requiresOwnerApproval(tool, args, options.approvals?.policy)
+      );
+    },
   };
   const offered = new Set(
     [...context.tools, ...context.extraTools].map((tool) => tool.slug),
   );
   const calls = new Map<string, AssistantDriverToolCall>();
   const completed = new Set<string>();
+  const approvalRequested = new Set<string>();
+  const approvals = new Map<string, AssistantApprovalRequest>();
+  const approved = new Set<string>();
   let text = '';
   let final: { text: string; usage?: ToolLoopUsage } | undefined;
   let failure: unknown;
@@ -174,7 +189,7 @@ export async function runExternalAssistantTurn<M>(
             'The external driver reported an unoffered or duplicate tool call.',
           );
         }
-        calls.set(call.id, call);
+        calls.set(call.id, structuredClone(call));
         const label = describe(call.name, call.args);
         emit({
           type: 'step',
@@ -203,7 +218,23 @@ export async function runExternalAssistantTurn<M>(
           throw new Error(
             'The external driver reported an unmatched tool result.',
           );
+        if (
+          result.ok &&
+          context.requiresApproval(call.name, call.args) &&
+          !approved.has(call.id)
+        ) {
+          throw new Error(
+            'A protected tool result requires an owner decision.',
+          );
+        }
         completed.add(result.id);
+        const approval = approvals.get(result.id);
+        if (approval && approved.has(result.id))
+          await options.approvals?.complete?.(
+            approval,
+            result.ok,
+            result.result ?? result.error ?? '',
+          );
         emit({
           type: 'step',
           step: {
@@ -226,19 +257,58 @@ export async function runExternalAssistantTurn<M>(
       await pending;
       if (!active()) return { approved: false, reason: 'cancelled' };
       const call = calls.get(request.callId);
-      if (!call || call.name !== request.tool || completed.has(call.id)) {
+      if (
+        !call ||
+        call.name !== request.tool ||
+        completed.has(call.id) ||
+        approvalRequested.has(call.id)
+      ) {
         throw new Error(
           'The external driver requested approval for an unmatched tool call.',
         );
       }
-      emit({ type: 'approval_needed', approval: request });
-      if (!options.waitForApproval)
+      approvalRequested.add(call.id);
+      const tool = [...context.tools, ...context.extraTools].find(
+        (tool) => tool.slug === call.name,
+      );
+      if (!tool) throw new Error('Approval requires an offered tool.');
+      const bridge =
+        options.approvals && context.requiresApproval(call.name, call.args)
+          ? options.approvals
+          : undefined;
+      const approval = bridge
+        ? await bridge.request({
+            id: call.id,
+            tool,
+            args: call.args,
+            ...(context.permissions
+              ? { permissions: context.permissions }
+              : {}),
+            ...(options.originMessageId
+              ? { originMessageId: options.originMessageId }
+              : {}),
+          })
+        : request;
+      if (bridge) approvals.set(call.id, approval);
+      if (bridge)
+        await persist(approval.summary, 'tool_call', {
+          id: call.id,
+          name: call.name,
+          args: call.args,
+          approval,
+        });
+      emit({ type: 'approval_needed', approval });
+      if (!options.waitForApproval && !bridge?.wait)
         return { approved: false, reason: 'approval_unavailable' };
       // The same abort race that stops the driver also releases an approval wait.
-      return Promise.race([
-        options.waitForApproval(request, context),
+      const decision = await Promise.race([
+        bridge?.wait
+          ? bridge.wait(approval, context)
+          : options.waitForApproval!(approval, context),
         aborted.then(() => ({ approved: false, reason: 'cancelled' })),
       ]);
+      if (decision.approved) approved.add(call.id);
+      return decision;
     },
     done(value) {
       if (!active()) return;

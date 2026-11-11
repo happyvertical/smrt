@@ -62,6 +62,7 @@ export {
   chatUnavailableBody,
   chatUnconfiguredBody,
 } from './ai-unavailable.js';
+export * from './assistant-approvals.js';
 // Streamed assistant turn over the tool loop, with browser-executed tools
 // (#2908). The wire types are browser-safe (`./assistant-turn` subpath).
 export {

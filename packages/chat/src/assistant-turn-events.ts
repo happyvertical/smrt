@@ -94,6 +94,7 @@ export interface AssistantClientToolResult {
 
 /** Why a turn finished. */
 export type AssistantTurnStopReason =
+  | 'approval'
   | 'stop'
   | 'max_steps'
   /** The turn's token or time budget ran out (`maxTurnTokens`/`maxTurnMs`). */
@@ -118,6 +119,13 @@ export interface AssistantApprovalRequest {
   tool: string;
   callId: string;
   summary: string;
+}
+
+// Public projection only: never send the principal/arguments recovery envelope to the browser.
+export interface AssistantApprovalView extends AssistantApprovalRequest {
+  status: import('@happyvertical/smrt-app-runtime').OwnerApprovalStatus;
+  decidedBy?: string | null;
+  decidedAt?: number | null;
 }
 
 /** One event of a streamed assistant turn. `M` is the host's message shape. */

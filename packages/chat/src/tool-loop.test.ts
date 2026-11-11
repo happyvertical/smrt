@@ -26,8 +26,13 @@ import type {
   PrincipalTool,
 } from '@happyvertical/smrt-agents';
 import {
+  createSqliteOwnerApprovalStore,
+  OwnerApprovalAuthority,
+} from '@happyvertical/smrt-app-runtime';
+import {
   field,
   ObjectRegistry,
+  resolveDatabase,
   SmrtObject,
   smrt,
   ValidationError,
@@ -42,6 +47,11 @@ import {
   UserCollection,
 } from '@happyvertical/smrt-users';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
+import {
+  createAssistantApprovalBridge,
+  requiresOwnerApproval,
+} from './assistant-approvals.js';
+import { runAssistantTurn } from './assistant-turn.js';
 import {
   appendClientToolResults,
   buildManifestToolCatalog,
@@ -377,6 +387,45 @@ describe('runToolLoop', () => {
   function tools(slugs: string[]): ManifestTool[] {
     return buildManifestToolCatalog({ db, allowedTools: slugs });
   }
+
+  it('holds a real manifest delete before the owning collection is mutated', async () => {
+    await grant('tool_loop_notes.delete');
+    const notes = await ObjectRegistry.getCollection('ToolLoopNote', { db });
+    const note = await notes.create({ title: 'Keep until approved' });
+    await note.save();
+    const database = await resolveDatabase(db);
+    const authority = new OwnerApprovalAuthority(
+      await createSqliteOwnerApprovalStore(database),
+      async () => true,
+    );
+    const turn = runAssistantTurn({
+      ai: makeAI(() =>
+        toolCall('tool_loop_notes.delete', { id: note.id, approved: true }),
+      ),
+      db,
+      userMessage: 'Delete that note',
+      tools: tools(['tool_loop_notes.delete']),
+      principal: {
+        runAsUserId: userId,
+        tenantId,
+        allowedTools: ['tool_loop_notes.delete'],
+      },
+      approvals: createAssistantApprovalBridge({
+        authority,
+        tenantId,
+        requestedBy: userId,
+        context: {},
+      }),
+      audit: () => {},
+    });
+    const events = [];
+    for await (const event of turn) events.push(event);
+    expect(events).toContainEqual(
+      expect.objectContaining({ type: 'done', stoppedReason: 'approval' }),
+    );
+    expect(await notes.get(String(note.id))).not.toBeNull();
+    expect(await authority.list({ id: userId, tenantId })).toHaveLength(1);
+  });
 
   it('stops with the final text when the model makes no tool call', async () => {
     const ai = makeAI(() => textResponse('nothing to do'));
@@ -2728,5 +2777,50 @@ describe('runToolLoop', () => {
       expect(updated?.calculatedTotal).toBe(120);
       expect(updated?.internalScore).toBe(7);
     });
+  });
+});
+
+describe('server approval policy', () => {
+  const tool: ManifestTool = {
+    slug: 'notes.delete',
+    collection: 'notes',
+    className: 'Note',
+    action: 'delete',
+  };
+  it('uses canonical destructive operations regardless of model-supplied flags or operation names', () => {
+    expect(
+      requiresOwnerApproval(tool, { approved: true, operation: 'read' }),
+    ).toBe(true);
+    expect(
+      requiresOwnerApproval(
+        { ...tool, slug: 'notes.read', action: 'read' },
+        {},
+      ),
+    ).toBe(false);
+    expect(
+      requiresOwnerApproval(
+        { ...tool, slug: 'notes.deleteAll', action: 'deleteAll' },
+        {},
+      ),
+    ).toBe(true);
+  });
+  it('supports explicit per-tool and per-operation overrides with tool precedence', () => {
+    expect(
+      requiresOwnerApproval(tool, {}, { operations: { delete: false } }),
+    ).toBe(false);
+    expect(
+      requiresOwnerApproval(
+        tool,
+        {},
+        { tools: { 'notes.delete': true }, operations: { delete: false } },
+      ),
+    ).toBe(true);
+    expect(
+      requiresOwnerApproval(
+        { ...tool, slug: 'notes.update', action: 'update' },
+        {},
+        { operations: { update: true } },
+      ),
+    ).toBe(true);
   });
 });
