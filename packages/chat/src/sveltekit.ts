@@ -80,6 +80,13 @@ import {
   type ProviderErrorFallback,
   runAssistantTurn,
 } from './assistant-turn.js';
+import type {
+  AssistantApprovalWaiter,
+  AssistantTurnDriver,
+} from './assistant-turn-driver.js';
+
+export type * from './assistant-turn-driver.js';
+
 import type { AssistantTurnEvent } from './assistant-turn-events.js';
 import { MAX_CHAT_STREAM_CONTENT_LENGTH } from './chat-stream.js';
 import type { AgentSession } from './models/AgentSession.js';
@@ -242,6 +249,17 @@ export interface AssistantRouteBoundPrincipal {
 
 /** Options for {@link mountAssistantRoutes}. */
 export interface MountAssistantRoutesOptions {
+  /** External loop; omitted uses the built-in model/tool loop. */
+  turnDriver?: AssistantTurnDriver;
+  /** Resolved once per send/resume, before writes. Undefined selects `turnDriver`. */
+  resolveTurnDriver?: (
+    context: AssistantRequestContext & { model?: string },
+  ) =>
+    | AssistantTurnDriver
+    | undefined
+    | Promise<AssistantTurnDriver | undefined>;
+  /** C3 seam: host persists and waits for an owner decision; absent fails closed. */
+  waitForApproval?: AssistantApprovalWaiter;
   /**
    * The AI client, or a factory called once per turn. Omitted, each turn
    * builds a client from the principal's stored inference binding (#4756,
@@ -1201,7 +1219,25 @@ export function mountAssistantRoutes(
       body.clientTools,
       options.clientToolAllowList ?? [],
     );
-    const ai = await resolveAI(context, model);
+    let turnDriver: AssistantTurnDriver | undefined;
+    try {
+      turnDriver =
+        (await options.resolveTurnDriver?.({ ...context, model })) ??
+        options.turnDriver;
+      if (turnDriver && typeof turnDriver.run !== 'function') {
+        throw new Error('The turn driver has no run method.');
+      }
+    } catch (error) {
+      const unavailable = unavailableRouteError(error);
+      if (unavailable) throw unavailable;
+      safeLog(error);
+      throw new AssistantRouteError(
+        503,
+        'assistant_unavailable',
+        'The assistant is unavailable right now. Please try again later.',
+      );
+    }
+    const ai = turnDriver ? undefined : await resolveAI(context, model);
     // The turn stops when the request is aborted OR the response body is
     // cancelled (a client that left), whichever the adapter reports.
     const abort = new AbortController();
@@ -1212,7 +1248,7 @@ export function mountAssistantRoutes(
         once: true,
       });
     }
-    return { abort, ai, model, allowedTools, clientTools };
+    return { abort, ai, turnDriver, model, allowedTools, clientTools };
   };
   type PreparedTurn = Awaited<ReturnType<typeof prepareTurn>>;
 
@@ -1245,7 +1281,7 @@ export function mountAssistantRoutes(
     );
     // Mirror the allow-list onto the session so the authoring gate
     // (`sendAgentReply`) agrees with the loop's offer gate.
-    if (options.authorInvocation && mirror) {
+    if ((options.authorInvocation || prepared.turnDriver) && mirror) {
       const current = session.getAllowedTools();
       if (
         current.length !== allowedTools.length ||
@@ -1269,6 +1305,13 @@ export function mountAssistantRoutes(
       continuationKey: String(thread.id),
       turn: {
         ai,
+        turnDriver: prepared.turnDriver,
+        waitForApproval: options.waitForApproval,
+        thread: {
+          id: String(thread.id),
+          roomId: String(session.chatRoomId),
+          agentSessionId: String(session.id),
+        },
         principal: {
           runAsUserId: principal.userId,
           tenantId: principal.tenantId,

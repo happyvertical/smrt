@@ -86,6 +86,7 @@ export {
   runAssistantTurn,
   SESSION_CONTINUATIONS_FIELD,
 } from './assistant-turn.js';
+export type * from './assistant-turn-driver.js';
 export * from './assistant-turn-events.js';
 export {
   acceptAppliedChange,
@@ -334,7 +335,6 @@ export type {
   VoiceSessionOptions,
   VoiceSessionStatus,
 } from './types.js';
-
 // UI metadata (no Svelte dependency - import ./svelte for components)
 export { CHAT_MODULE_META, CHAT_UI_SLOTS } from './ui.js';
 export {

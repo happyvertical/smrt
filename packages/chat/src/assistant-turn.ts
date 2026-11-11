@@ -40,6 +40,11 @@ import type {
 } from '@happyvertical/smrt-agents';
 import type { SmrtClassOptions } from '@happyvertical/smrt-core';
 import type {
+  AssistantApprovalWaiter,
+  AssistantTurnDriver,
+} from './assistant-turn-driver.js';
+import { runExternalAssistantTurn } from './assistant-turn-driver.js';
+import type {
   AssistantStatus,
   AssistantTurnEvent,
   AssistantTurnStopReason,
@@ -351,7 +356,14 @@ function defaultFailedInvocationReply(
 
 /** Options for {@link runAssistantTurn}. */
 export interface AssistantTurnOptions<M = Record<string, unknown>> {
-  ai: AIInterface;
+  /** Required for the default tool loop; unused by an external driver. */
+  ai?: AIInterface;
+  /** Omitted: today's bounded tool loop, including browser continuations. */
+  turnDriver?: AssistantTurnDriver;
+  /** Host-owned durable approval bridge. Absent: approval requests fail closed. */
+  waitForApproval?: AssistantApprovalWaiter;
+  /** Server-selected thread identity passed to an external driver. */
+  thread?: { id: string; roomId?: string; agentSessionId: string };
   /** The already-authorized principal every server tool runs as. */
   principal: PrincipalBinding;
   db?: SmrtClassOptions['db'];
@@ -727,6 +739,18 @@ async function runTurn<M>(
       `${Date.now()}-${Math.random().toString(36).slice(2)}`);
 
   emit(status({ state: 'working', label: 'Thinking…', cancellable: true }));
+
+  if (options.turnDriver) {
+    if (options.resume)
+      throw new AssistantTurnUserError(
+        'External turns cannot resume browser tool calls.',
+        'driver_resume_unsupported',
+      );
+    await report('running');
+    return runExternalAssistantTurn(options, emit, serialize, describe, report);
+  }
+  if (!options.ai)
+    throw new Error('The default turn driver needs an AI client.');
 
   // ---- the transcript: a fresh turn, or a resumed suspension -------------
   let messages: AIMessage[];

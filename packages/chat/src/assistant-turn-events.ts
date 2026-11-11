@@ -112,10 +112,19 @@ export type AssistantTurnStopReason =
   /** A model call failed and the host's `providerErrorFallback` answered (#4454). */
   | 'provider_error';
 
+/** A server-owned approval reference; authority and storage belong to the host. */
+export interface AssistantApprovalRequest {
+  id: string;
+  tool: string;
+  callId: string;
+  summary: string;
+}
+
 /** One event of a streamed assistant turn. `M` is the host's message shape. */
 export type AssistantTurnEvent<M = Record<string, unknown>> =
   | { type: 'status'; status: AssistantStatus }
   | { type: 'token'; text: string }
+  | { type: 'approval_needed'; approval: AssistantApprovalRequest }
   | { type: 'step'; step: AssistantTurnStep }
   | { type: 'message'; message: M }
   | {
