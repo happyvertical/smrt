@@ -1,5 +1,11 @@
 # Local cookbook host
 
+Cookbook/app workflow results return both text content and the same object as
+`structuredContent`, matching the bridge's declared object `outputSchema`.
+Current Claude Code and Codex clients reject text-only successful results when
+an output schema is declared. This preserves the existing recipe service result
+and its policy; it adds no execution or authorization path.
+
 Host TypeScript entry points compile from `host/` to `dist/host/`; smrt-vitest's
 workspace alias table maps all six public entry points back to their authored
 sources. `host/InferenceSettingsPage.svelte` is a runtime component with an
@@ -48,7 +54,7 @@ qualified aliases satisfy the existing workflow adapter's stricter grammar.
 Inference owns saved-key resolution, ChatGPT-plan connections, CLI detection and
 subprocesses. The host supplies per-user selection and private runtime storage.
 CLI credentials are scoped to the offered operation/permission intersection,
-last 15 minutes and are revoked at turn completion. A bound CLI delete creates a
+last 15 minutes and are revoked at turn completion. A bound CLI delete, when the model declares MCP delete, creates a
 hold in the same chat thread; the existing assistant owner-decision route executes
 the original operation once under its saved ceiling. External MCP deletes use the
 shared non-thread continuation authority; pending results name their approval id
@@ -389,3 +395,17 @@ with name only, reads it through the generated item route, edits all contact
 fields, reads projected list/detail values, clears email and phone, then checks
 the refreshed list. It uses the same real owner session, template approval and
 lazy activation path; it does not pre-apply a cookbook or replace REST handlers.
+
+The CLI bridge mints scopes from its actual canonical MCP name map, intersected
+with the original permission ceiling. The API catalog is larger than the package
+MCP surface and must not inflate the token request (local tokens keep their
+64-scope bound). No extra scope is minted for an operation that cannot be called.
+The host stub regression asserts API-only deletes are absent from that bridge;
+package MCP restrictions remain in force.
+
+Yoga Studio's Customer omits public MCP delete, so this bridge cannot offer its
+delete even though the built-in chat API dispatcher can hold it. Do not widen
+that package's MCP surface to obtain CLI parity. A separate private, turn-bound
+assistant approval workflow over the existing durable authority is the proposed
+extension; it must preserve the original permission ceiling and expose no raw
+delete on the public MCP surface. This boundary is recorded as a live QA gap.

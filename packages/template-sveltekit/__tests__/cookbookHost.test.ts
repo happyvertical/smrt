@@ -480,6 +480,41 @@ describe('local cookbook host composition (SQLite, fake model, no providers)', (
     ).toBe(true);
   });
   it.each([
+    ['app_describe', {}],
+    ['app_history', {}],
+    ['cookbook_list_templates', {}],
+    ['recipes_search', { query: 'memos' }],
+  ])('returns the declared structured result for %s, as real CLI clients require', async (name, args) => {
+    const runtime = host.runtime;
+    host.dispose();
+    host = createCookbookHost({
+      runtime,
+      packageName: '@fixture/host-app',
+      app: { cookbook, catalog },
+    });
+    await host.init();
+    await request(event('/'), async (e) => json(await host.load(e)));
+    // App initialization seeds workflow permissions after the first snapshot.
+    permissions = [
+      ...(
+        await (
+          await PermissionResolver.create({ db })
+        ).resolvePermissions(owner.id, tenantId)
+      ).permissions,
+    ];
+    const result = await mcp('tools/call', { name, arguments: args });
+    expect(result.status).toBe(200);
+    expect(result.body.error).toBeUndefined();
+    expect(result.body.result.isError).not.toBe(true);
+    expect(result.body.result.structuredContent).toEqual(
+      JSON.parse(result.body.result.content[0].text),
+    );
+    expect(result.body.result.structuredContent).toEqual(
+      expect.objectContaining({ status: expect.any(String) }),
+    );
+  });
+
+  it.each([
     'claude-code',
     'codex',
   ] as const)('runs %s through the real host MCP route with short-lived scoped credentials and no API fallback', async (engine) => {
@@ -539,6 +574,9 @@ describe('local cookbook host composition (SQLite, fake model, no providers)', (
     expect(issued).toHaveLength(1);
     expect(issued[0].expiresInSeconds).toBe(900);
     expect(issued[0].scopes).toContain('customers.read');
+    // API-only tools are not executable through this generated-MCP bridge.
+    expect(issued[0].scopes).not.toContain('customers.delete');
+    expect(issued[0].scopes.length).toBeLessThanOrEqual(64);
     expect(issued[0].scopes).toContain('recipes.enable');
     expect(revoked).toEqual([issued[0].holder]);
     expect(tokens.size).toBe(0);

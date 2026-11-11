@@ -760,9 +760,9 @@ export function createCookbookHost(options: CookbookHostOptions) {
           const credentials = tokenCredentials(async () => local.mcpTokens, {
             holder,
             scopes: [
-              ...new Set(
-                [...turn.tools, ...turn.extraTools].map((t) => t.slug),
-              ),
+              // Mint only tools actually offered by this MCP bridge, not the
+              // larger API permission catalog (which can exceed the token bound).
+              ...new Set(names.values()),
             ].filter((s) => !turn.permissions || turn.permissions.includes(s)),
             label: 'Assistant turn',
           });
@@ -1361,6 +1361,7 @@ export function createCookbookHost(options: CookbookHostOptions) {
                   );
                   return {
                     content: [{ type: 'text', text: JSON.stringify(result) }],
+                    structuredContent: result,
                   };
                 },
               };
