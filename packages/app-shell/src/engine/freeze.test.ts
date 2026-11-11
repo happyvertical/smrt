@@ -23,6 +23,12 @@ afterAll(() => rmSync(root, { recursive: true, force: true }));
 
 /** One sample of every command type (the type makes the list exhaustive). */
 const SAMPLES: Record<CommandType, Command> = {
+  extractModel: {
+    type: 'extractModel',
+    model: 'Chore',
+    field: 'title',
+    into: 'Category',
+  },
   loadRecords: {
     type: 'loadRecords',
     model: 'Chore',

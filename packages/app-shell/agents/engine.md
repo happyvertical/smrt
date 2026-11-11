@@ -208,3 +208,15 @@ inserted ids are journaled in `_archive` for exact undo. Every load has a
 pre-migration snapshot and stable per-command ids, so draft publish replays the
 load against current live keys and lookup data rather than copying draft rows.
 Undo of a data migration requires approval because it can replace newer data.
+
+## Extracting a column (#4916)
+
+`extractModel { model, field, into, titleField?, normalize? }` is structural and
+risky: text/choice values become references, originals remain archived for undo.
+A new target has a required text title field (`name` by default); an existing
+target matches its titleField or first visible text. Exact matching is default;
+`normalize: true` trims and compares case-insensitively. The preview reports
+rows/distinct/folded/create/matched counts. Empty values retain their exact
+storage. Ambiguous existing labels refuse the command. Undo restores originals
+and deletes only created target rows, refusing surviving references (including
+hidden references) added since extraction. Publish extracts current live values.

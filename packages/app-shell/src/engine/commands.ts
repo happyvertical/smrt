@@ -4,9 +4,11 @@ import type { LoadRecordsCommand } from './data-migrations.ts';
 // the caller passes `approved: true`: the lowest-layer enforcement of the
 // approval gate (a preview only advises).
 import type { AppDefinition, FieldDef, MethodDef } from './definition.ts';
+import type { ExtractModelCommand } from './extract-model.ts';
 import type { ReportDef } from './reports.ts';
 
 export type Command =
+  | ExtractModelCommand
   | LoadRecordsCommand
   | { type: 'defineReport'; name: string; definition: ReportDef }
   | { type: 'renameReport'; from: string; to: string }
@@ -83,6 +85,7 @@ export const RISKY_COMMANDS: ReadonlySet<CommandType> = new Set<CommandType>([
   'addMethod',
   'removeField',
   'removeModel',
+  'extractModel',
   'changeFieldType',
   'setCalculation',
   'cleanUp',
@@ -93,7 +96,8 @@ export function overwritesOnUndo(step: { op: string }): boolean {
   return (
     step.op === 'convertColumn' ||
     step.op === 'calculation' ||
-    step.op === 'loadRecords'
+    step.op === 'loadRecords' ||
+    step.op === 'extractModel'
   );
 }
 
@@ -118,6 +122,7 @@ export const STRUCTURAL_COMMANDS: Readonly<Record<CommandType, boolean>> = {
   defineReport: true,
   renameReport: true,
   removeReport: true,
+  extractModel: true,
   loadRecords: true,
   defineModel: true,
   addField: true,

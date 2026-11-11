@@ -1,4 +1,5 @@
 export const WORKER_OPS = [
+  'previewExtract',
   'previewLoad',
   'compileReport',
   'runReport',

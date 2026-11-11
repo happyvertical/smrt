@@ -57,6 +57,7 @@ export {
   type EngineErrorCode,
   WorkerCrashedError,
 } from './errors.ts';
+export type { ExtractModelCommand, ExtractPreview } from './extract-model.ts';
 export {
   AppHost,
   type ChangeResult,

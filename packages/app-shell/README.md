@@ -564,3 +564,13 @@ updates require live approval. Reference lookups are batched per target model.
 Values use single-record coercion; calculated input is refused. Loads are
 versioned, atomic, snapshotted, undone from exact originals, and replayed when
 publishing a draft. Catalog tool: `app_loadrecords`.
+
+### Engine extraction
+
+`extractModel { model, field, into, titleField?, normalize? }` turns a writable
+text/choice field into a reference. Distinct nonempty values create target rows
+or match an existing target's title field. Exact matching is default;
+`normalize: true` trims and compares without case. Plan counts folded values.
+The new model uses `titleField` or `name`; existing models use their title field
+or first visible text. Undo restores exact text and removes created targets only
+when no surviving app reference points to them. Catalog: `app_extractmodel`.

@@ -55,6 +55,7 @@ import {
   writeDraftMarker,
 } from './draft.ts';
 import { ApprovalRequiredError, EngineError } from './errors.ts';
+import type { ExtractPreview } from './extract-model.ts';
 import {
   archivedTables,
   assertNoAside,
@@ -582,6 +583,52 @@ export class AppHost extends EventEmitter {
     });
 
     switch (cmd.type) {
+      case 'extractModel': {
+        const st = this.storage(cmd.model, cmd.field);
+        if (
+          st.fd.hidden ||
+          st.fd.calculated ||
+          !['text', 'choice'].includes(st.fd.type) ||
+          cmd.into === cmd.model
+        )
+          throw new EngineError(
+            'extractModel needs a visible writable text or choice field and a different target model',
+          );
+        this.refuseDependents(cmd.model, cmd.field);
+        const d = this.clone();
+        const title =
+          cmd.titleField ??
+          d.models[cmd.into]?.titleField ??
+          (d.models[cmd.into]
+            ? Object.entries(d.models[cmd.into].fields).find(
+                ([, f]) => f.type === 'text' && !f.hidden,
+              )?.[0]
+            : 'name');
+        if (!title) throw new EngineError('extract target needs a title field');
+        if (!d.models[cmd.into])
+          d.models[cmd.into] = {
+            titleField: title,
+            fields: { [title]: { type: 'text', required: true } },
+          };
+        d.models[cmd.model].fields[cmd.field] = {
+          type: 'reference',
+          ref: cmd.into,
+          label: st.fd.label,
+          required: st.fd.required,
+        };
+        this.assertValid(d);
+        const command = { ...cmd, titleField: title };
+        const preview = await this.callApp<ExtractPreview>(
+          'previewExtract',
+          command,
+        );
+        return change(`extract ${cmd.model}.${cmd.field} into ${cmd.into}`, d, {
+          preview: { ...preview },
+          steps: [
+            { op: 'extractModel', command, from: st.fd, seed: randomUUID() },
+          ],
+        });
+      }
       case 'loadRecords': {
         const preview = await this.callApp<LoadPreview>('previewLoad', cmd);
         const a = change(

@@ -11,6 +11,18 @@ const string = { type: 'string' };
 const object = { type: 'object' };
 export const ENGINE_TOOLS = [
   {
+    name: 'app_extractmodel',
+    description: 'Extract distinct text values into referenced records.',
+    properties: {
+      model: string,
+      field: string,
+      into: string,
+      titleField: string,
+      normalize: { type: 'boolean' },
+    },
+    required: ['model', 'field', 'into'],
+  },
+  {
     name: 'app_loadrecords',
     description:
       'Load rows atomically with optional key upsert and reference lookup.',
@@ -81,6 +93,7 @@ export async function runEngineTool(
     });
   }
   const types: Record<string, Command['type']> = {
+    app_extractmodel: 'extractModel',
     app_loadrecords: 'loadRecords',
     app_setcalculation: 'setCalculation',
     app_definereport: 'defineReport',

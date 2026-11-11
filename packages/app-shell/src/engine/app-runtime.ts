@@ -45,6 +45,12 @@ import {
   visible,
 } from './definition.ts';
 import { AppError } from './errors.ts';
+import {
+  applyExtract,
+  type ExtractModelCommand,
+  prepareExtract,
+  undoExtract,
+} from './extract-model.ts';
 import { compileReport, type ReportOptions, runAppReport } from './reports.ts';
 import {
   type MethodOutput,
@@ -111,7 +117,9 @@ export class AppRuntime {
         await tx.query(
           `CREATE TABLE IF NOT EXISTS _archive (id INTEGER PRIMARY KEY AUTOINCREMENT, version INTEGER NOT NULL, tbl TEXT NOT NULL, col TEXT NOT NULL, record_id TEXT NOT NULL, value TEXT, created_at TEXT NOT NULL)`,
         );
-        if (steps.every((s) => s.op === 'loadRecords'))
+        if (
+          steps.every((s) => s.op === 'loadRecords' || s.op === 'extractModel')
+        )
           statements.push(...(await this.plan(tx, true)));
         await tx.query(
           'CREATE INDEX IF NOT EXISTS _archive_lookup ON _archive (version, tbl, col, record_id)',
@@ -255,6 +263,19 @@ export class AppRuntime {
     const now = new Date().toISOString();
     const up = m.direction === 'up';
     switch (step.op) {
+      case 'extractModel':
+        if (up)
+          await applyExtract(
+            this.def,
+            tx,
+            step.command,
+            step.from,
+            m.version,
+            step.seed,
+          );
+        else await undoExtract(this.def, tx, step.command, m.version);
+        done.push(`-- ${up ? 'extract' : 'undo extract'} model`);
+        break;
       case 'loadRecords':
         if (up)
           await applyLoad(this.def, tx, step.command, m.version, step.seed);
@@ -393,6 +414,12 @@ export class AppRuntime {
   // ---------- previews and archives ----------
 
   /** What a type change would do to existing values, without changing anything. */
+  async previewExtract(cmd: ExtractModelCommand) {
+    return this.db.transaction(
+      async (tx: Handle) => (await prepareExtract(this.def, tx, cmd)).preview,
+    );
+  }
+
   async previewLoad(cmd: LoadRecordsCommand) {
     return this.db.transaction(
       async (tx: Handle) => (await prepareLoad(this.def, tx, cmd)).preview,
@@ -462,7 +489,7 @@ export class AppRuntime {
   async countOverwrites(version: number, steps: Step[]) {
     const out: { table: string; column: string; replaced: number }[] = [];
     for (const step of steps) {
-      if (step.op === 'loadRecords') {
+      if (step.op === 'loadRecords' || step.op === 'extractModel') {
         const count = await this.db.query(
           "SELECT COUNT(*) AS n FROM _archive WHERE version = ? AND col = '$row'",
           [version],
