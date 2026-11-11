@@ -3099,9 +3099,13 @@ export function resolveApiActionSet(
   objectDef: SmartObjectDefinition,
   manifest?: SmartObjectManifest,
   wireability: WireabilityOptions = {},
+  replacements?: ReadonlyMap<string, string>,
 ): Set<string> {
   const apiConfig = objectDef.decoratorConfig?.api;
-  if (apiConfig === false || (manifest && isReplacedModel(manifest, objectDef)))
+  if (
+    apiConfig === false ||
+    (manifest && isReplacedModel(manifest, objectDef, replacements))
+  )
     return new Set();
 
   const objectIsCollectionClass = manifest

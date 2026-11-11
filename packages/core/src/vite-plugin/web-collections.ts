@@ -214,8 +214,9 @@ export function compareText(left: string, right: string): number {
 export function orderedManifestObjectEntries(
   manifest: SmartObjectManifest,
 ): Array<[string, SmartObjectDefinition]> {
+  const replacements = modelReplacements(manifest);
   return Object.entries(manifest.objects)
-    .filter(([, obj]) => !isReplacedModel(manifest, obj))
+    .filter(([, obj]) => !isReplacedModel(manifest, obj, replacements))
     .sort(
       ([leftKey, left], [rightKey, right]) =>
         compareText(
@@ -582,11 +583,12 @@ function selectEntriesQualifiedBy(
   // without a qualifiedName/packageName): every candidate must be ordered
   // here, including ones that never reach {@link buildWebCollectionDefinition}
   // and so never need a resolvable object ref.
+  const replacements = modelReplacements(manifest);
   const sortedEntries = Object.entries(manifest.objects)
     .filter(
       ([, obj]) =>
         !isFrameworkBaseClass(obj.className, obj.packageName) &&
-        !isReplacedModel(manifest, obj),
+        !isReplacedModel(manifest, obj, replacements),
     )
     .sort(
       ([leftKey, left], [rightKey, right]) =>
@@ -602,7 +604,7 @@ function selectEntriesQualifiedBy(
     // Pass the manifest: without it the wire-ability heuristic cannot tell a
     // model class from an options interface, and this selector would qualify a
     // collection on an action the route emitters withhold (#2686).
-    const exposedActions = resolveApiActionSet(obj, manifest);
+    const exposedActions = resolveApiActionSet(obj, manifest, {}, replacements);
     if (!qualifies(exposedActions)) continue;
 
     const isStiChild = isStiChildModel(manifest, obj);
@@ -676,10 +678,11 @@ export function selectWebMcpToolEntries(
   // resources — filtered once here so every loop below (object owners,
   // custom-action hosts, and the collection-class ownership pass) excludes
   // them, regardless of config (#2642).
+  const replacements = modelReplacements(manifest);
   const manifestObjects = Object.values(manifest.objects).filter(
     (obj) =>
       !isFrameworkBaseClass(obj.className, obj.packageName) &&
-      !isReplacedModel(manifest, obj),
+      !isReplacedModel(manifest, obj, replacements),
   );
   const sortedObjects = [...manifestObjects].sort((left, right) =>
     compareText(
@@ -747,7 +750,12 @@ export function selectWebMcpToolEntries(
     const collection = objectOwners.get(host.collection)?.collection;
     if (!collection) continue;
     const bucket = emittedCrudByCollection.get(collection) ?? new Set<string>();
-    for (const action of resolveApiActionSet(host, manifest)) {
+    for (const action of resolveApiActionSet(
+      host,
+      manifest,
+      {},
+      replacements,
+    )) {
       if (isCrudOperation(action)) bucket.add(action);
     }
     emittedCrudByCollection.set(collection, bucket);
@@ -758,9 +766,9 @@ export function selectWebMcpToolEntries(
     if (!owner) continue;
     const emittedCrud =
       emittedCrudByCollection.get(owner.collection) ?? new Set<string>();
-    for (const action of [...resolveApiActionSet(actionHost, manifest)].sort(
-      compareText,
-    )) {
+    for (const action of [
+      ...resolveApiActionSet(actionHost, manifest, {}, replacements),
+    ].sort(compareText)) {
       // A browser tool id is lowercased whole (`${prefix}_${action}`), so this
       // namespace is case-folded even though the API action set that feeds it
       // is not. Two guards, in order (#2648):
@@ -827,7 +835,7 @@ export function selectWebMcpToolEntries(
       emittedCrudByCollection.get(collectionClass.collection) ??
       new Set<string>();
     for (const action of [
-      ...resolveApiActionSet(collectionClass, manifest),
+      ...resolveApiActionSet(collectionClass, manifest, {}, replacements),
     ].sort(compareText)) {
       // Same two guards, same order and conditionality as the object loop
       // above — and the same key shape. Both loops share `entries`, so a case-sensitive key here

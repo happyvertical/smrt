@@ -66,14 +66,16 @@ export function annotateModelReplacements<M extends object>(manifest: M): M {
   };
 }
 
+/** Share a map within one synchronous selection; omit it to inspect the current mutable inventory. */
 export function isReplacedModel(
   manifest: SmartObjectManifest,
   object: SmartObjectDefinition,
+  replacements: ReadonlyMap<string, string> = modelReplacements(manifest),
 ): boolean {
   const key =
     object.qualifiedName ??
     (object.packageName
       ? `${object.packageName}:${object.className}`
       : undefined);
-  return !!key && modelReplacements(manifest).has(key);
+  return !!key && replacements.has(key);
 }
