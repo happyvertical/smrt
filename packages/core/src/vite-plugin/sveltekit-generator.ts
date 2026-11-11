@@ -16,6 +16,7 @@ import {
 } from 'node:fs';
 import { isAbsolute, join, relative, resolve, sep } from 'node:path';
 import type { DomainKnowledgeConfig } from '@happyvertical/smrt-types';
+import { generateActivationRegistration } from '../activation/generate.js';
 import { generateConditionalGetRouteHelper } from '../generators/conditional-get.js';
 import {
   type ApiMethodExposure,
@@ -82,6 +83,8 @@ import {
 } from './web-collections.js';
 
 export interface SvelteKitOptions {
+  /** Emit deferred model loaders instead of eager registration. Host installs activation coordinator. */
+  lazyActivation?: boolean;
   enabled: boolean;
   routesDir: string;
   objectsDir: string;
@@ -267,6 +270,7 @@ function isSameSerializerReference(
 
 function resolveStandardRouteSerializers(
   apiConfig: unknown,
+  lazyActivation = false,
 ): ResolvedStandardRouteSerializers {
   const config = getApiConfigObject(apiConfig);
   const itemSerializer = config?.serializers?.item;
@@ -276,12 +280,20 @@ function resolveStandardRouteSerializers(
   const importStatements: string[] = [];
   let itemSerializerName: string | undefined;
   let listItemSerializerName: string | undefined;
+  const importSerializer = (
+    serializer: ApiSerializerReference,
+    name: string,
+  ) =>
+    lazyActivation
+      ? `async function ${name}(...args: Parameters<typeof import('${serializer.importPath}').${serializer.exportName}>) {
+  const provider = await import('${serializer.importPath}');
+  return provider.${serializer.exportName}(...args);
+}`
+      : `import { ${serializer.exportName} as ${name} } from '${serializer.importPath}';`;
 
   if (itemSerializer) {
     itemSerializerName = 'serializeItemResponse';
-    importStatements.push(
-      `import { ${itemSerializer.exportName} as ${itemSerializerName} } from '${itemSerializer.importPath}';`,
-    );
+    importStatements.push(importSerializer(itemSerializer, itemSerializerName));
   }
 
   if (listItemSerializer) {
@@ -290,7 +302,7 @@ function resolveStandardRouteSerializers(
     } else {
       listItemSerializerName = 'serializeListItemResponse';
       importStatements.push(
-        `import { ${listItemSerializer.exportName} as ${listItemSerializerName} } from '${listItemSerializer.importPath}';`,
+        importSerializer(listItemSerializer, listItemSerializerName),
       );
     }
   }
@@ -2019,6 +2031,57 @@ async function generateRegistrationFile(
   const configPath = options.configPath || 'src/lib/server';
   const configDir = join(projectRoot, configPath);
   const registrationFilePath = join(configDir, 'smrt-register.ts');
+  // Collection decorators install their real constructor under the item,
+  // but do not register their own discovery metadata. Publish only explicitly
+  // exposed HTTP CLI action hosts and the collection ancestry needed to resolve
+  // them; ordinary/default collections retain their side-effect-only startup.
+  const collectionMetadata = new Map<string, SmartObjectDefinition>();
+  const manifestKeys = new Map(
+    Object.entries(manifest.objects).map(([key, value]) => [value, key]),
+  );
+  for (const objectDef of Object.values(manifest.objects)) {
+    if (!isCollectionManifestClass(manifest, objectDef)) continue;
+    if (!isCollectionActionResource(manifest, objectDef)) continue;
+    let current: SmartObjectDefinition | undefined = objectDef;
+    const seen = new Set<SmartObjectDefinition>();
+    while (
+      current &&
+      !seen.has(current) &&
+      isCollectionManifestClass(manifest, current)
+    ) {
+      seen.add(current);
+      const key = manifestKeys.get(current);
+      if (key)
+        collectionMetadata.set(
+          key,
+          portableObjectManifest(projectRoot, current),
+        );
+      const parent: string | undefined =
+        current.extendsQualified || current.extends;
+      current = parent
+        ? findManifestObjectByName(manifest, parent, current)
+        : undefined;
+    }
+  }
+  if (options.lazyActivation) {
+    const generated = generateActivationRegistration(manifest, {
+      projectRoot,
+      outputDir: configDir,
+      collectionMetadata: [...collectionMetadata.keys()],
+    });
+    if (!existsSync(configDir)) mkdirSync(configDir, { recursive: true });
+    // JavaScript is valid TypeScript here; generated metadata is deliberately
+    // JSON, so large superset schemas are never inferred as TypeScript types.
+    writeFileSync(registrationFilePath, generated.source, 'utf8');
+    const smrtDir = join(projectRoot, '.smrt');
+    if (!existsSync(smrtDir)) mkdirSync(smrtDir, { recursive: true });
+    writeFileSync(
+      join(smrtDir, 'activation-manifest.json'),
+      JSON.stringify(generated.manifest, null, 2),
+      'utf8',
+    );
+    return;
+  }
   const externalRuntimeDependencies = (manifest.smrtDependencies || []).filter(
     (dependency) => dependency !== '@happyvertical/smrt-core',
   );
@@ -2220,38 +2283,6 @@ async function generateRegistrationFile(
     };
   }
 
-  // Collection decorators install their real constructor under the item,
-  // but do not register their own discovery metadata. Publish only explicitly
-  // exposed HTTP CLI action hosts and the collection ancestry needed to resolve
-  // them; ordinary/default collections retain their side-effect-only startup.
-  const collectionMetadata = new Map<string, SmartObjectDefinition>();
-  const manifestKeys = new Map(
-    Object.entries(manifest.objects).map(([key, value]) => [value, key]),
-  );
-  for (const objectDef of Object.values(manifest.objects)) {
-    if (!isCollectionManifestClass(manifest, objectDef)) continue;
-    if (!isCollectionActionResource(manifest, objectDef)) continue;
-    let current: SmartObjectDefinition | undefined = objectDef;
-    const seen = new Set<SmartObjectDefinition>();
-    while (
-      current &&
-      !seen.has(current) &&
-      isCollectionManifestClass(manifest, current)
-    ) {
-      seen.add(current);
-      const key = manifestKeys.get(current);
-      if (key)
-        collectionMetadata.set(
-          key,
-          portableObjectManifest(projectRoot, current),
-        );
-      const parent: string | undefined =
-        current.extendsQualified || current.extends;
-      current = parent
-        ? findManifestObjectByName(manifest, parent, current)
-        : undefined;
-    }
-  }
   const collectionMetadataLiteral = JSON.stringify(
     JSON.stringify({
       ...manifest,
@@ -3530,6 +3561,7 @@ function generateCollectionRouteTemplate(
   );
   const serializers = resolveStandardRouteSerializers(
     objectDef.decoratorConfig?.api,
+    options.lazyActivation,
   );
   const serializerImports = serializers.importStatements.join('\n');
   // A custom list serializer can render related-table data the per-table
@@ -3724,6 +3756,7 @@ function generateItemRouteTemplate(
   );
   const serializers = resolveStandardRouteSerializers(
     objectDef.decoratorConfig?.api,
+    options.lazyActivation,
   );
   const serializerImports = serializers.importStatements.join('\n');
   // A custom item serializer can render related-table data the per-table

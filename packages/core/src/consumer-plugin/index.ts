@@ -8,6 +8,7 @@ import * as path from 'node:path';
 import { fileURLToPath, pathToFileURL } from 'node:url';
 import type { DomainKnowledgeAgentSurface } from '@happyvertical/smrt-types';
 import { resolve as resolveImport } from 'import-meta-resolve';
+import { generateActivationRegistration } from '../activation/generate.js';
 import {
   loadVerifiedSmrtGenerationSnapshot,
   type SmrtGenerationSnapshotOptions,
@@ -333,6 +334,8 @@ export interface SmrtConsumerSvelteKitOptions
 }
 
 export interface SmrtConsumerOptions {
+  /** Opt-in data-only registration and deferred model loaders (SQLite hosts). */
+  lazyActivation?: boolean;
   /** SMRT packages to scan (e.g., ['@my-org/products', '@my-org/content']) */
   packages?: string[];
   /** Generate TypeScript declarations */
@@ -1049,6 +1052,7 @@ export function smrtConsumer(
             env,
           );
           const routeOptions = {
+            lazyActivation: options.lazyActivation,
             enabled: true,
             routesDir,
             // Must equal the producer's, or the shared routesDir is refused.
@@ -1090,7 +1094,11 @@ export function smrtConsumer(
                 await generateConfigTypes(routeManifest);
                 // The generated TS registration imports this runtime module.
                 // SvelteKit sync must resolve it before Vite buildStart runs.
-                await generateRegistrationFile(routeManifest, projectRoot);
+                await generateRegistrationFile(
+                  routeManifest,
+                  projectRoot,
+                  options.lazyActivation,
+                );
                 if (ownershipJournaled) return;
                 ownershipJournaled = true;
                 // Preflight has succeeded but no generated output has changed.
@@ -1126,7 +1134,11 @@ export function smrtConsumer(
           // SvelteKit typecheck reaches Vite's later buildStart lifecycle.
           await generateConfigTypes();
           if (options.svelteKit && typeManifest) {
-            await generateRegistrationFile(typeManifest, projectRoot);
+            await generateRegistrationFile(
+              typeManifest,
+              projectRoot,
+              options.lazyActivation,
+            );
           }
           if (previousConsumerRouteRoots.length > 0) {
             await reconcileConsumerSvelteKitRouteRoots(
@@ -1189,7 +1201,11 @@ export function smrtConsumer(
         console.log(
           `[smrt:consumer] Reusing verified generation snapshot (${generationSnapshot.provenance})`,
         );
-        await generateRegistrationFile(typeManifest, projectRoot);
+        await generateRegistrationFile(
+          typeManifest,
+          projectRoot,
+          options.lazyActivation,
+        );
         if (generateTypes && !typesGenerated) {
           await generateProjectTypes(typeManifest, typesDir, projectRoot);
           typesGenerated = true;
@@ -1226,7 +1242,11 @@ export function smrtConsumer(
         );
 
         // Generate registration file for CLI class loading
-        await generateRegistrationFile(typeManifest, projectRoot);
+        await generateRegistrationFile(
+          typeManifest,
+          projectRoot,
+          options.lazyActivation,
+        );
 
         // Generate types if requested
         if (generateTypes && !typesGenerated) {
@@ -1858,9 +1878,34 @@ async function saveAggregatedManifest(
 async function generateRegistrationFile(
   manifest: ConsumerManifest,
   projectRoot: string,
+  lazyActivation = false,
 ): Promise<void> {
   const smrtDir = path.join(projectRoot, '.smrt');
   const registerPath = path.join(smrtDir, 'register.js');
+  if (lazyActivation) {
+    const manifestPath = path.join(smrtDir, 'manifest.json');
+    const existing = fs.existsSync(manifestPath)
+      ? (JSON.parse(fs.readFileSync(manifestPath, 'utf8')) as ConsumerManifest)
+      : undefined;
+    const full = {
+      ...manifest,
+      ...(existing?.packageName ? { packageName: existing.packageName } : {}),
+      objects: { ...existing?.objects, ...manifest.objects },
+    };
+    const generated = generateActivationRegistration(
+      full as unknown as SmartObjectManifest,
+      { projectRoot, outputDir: smrtDir },
+    );
+    fs.mkdirSync(smrtDir, { recursive: true });
+    publishArtifactFiles([
+      { path: registerPath, content: generated.source },
+      {
+        path: path.join(smrtDir, 'activation-manifest.json'),
+        content: JSON.stringify(generated.manifest, null, 2),
+      },
+    ]);
+    return;
+  }
 
   // Bind every imported symbol to a generated local name. Aggregated manifests
   // may contain same-named exports from different packages (and may list a

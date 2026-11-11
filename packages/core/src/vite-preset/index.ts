@@ -21,6 +21,8 @@ import type {
 import { resolveCookbookHostedObjects } from './cookbook-exposure.js';
 
 export interface SmrtPresetOptions {
+  /** Opt-in deferred model registration for a SQLite activation host. Supply the AOT expose superset. */
+  lazyActivation?: boolean;
   /**
    * SMRT packages whose object manifests this app consumes. Takes precedence
    * over `consumer.packages` in `smrt.config.ts`. An empty array declares that
@@ -222,6 +224,7 @@ export async function smrt(
         );
     plugins.push(
       smrtConsumer({
+        ...(options.lazyActivation ? { lazyActivation: true } : {}),
         ...rootOption,
         packages,
         generateTypes: true,
@@ -246,6 +249,7 @@ export async function smrt(
     generateTypes: true,
     typeDeclarationsPath: typesDir,
     svelteKit: {
+      ...(options.lazyActivation ? { lazyActivation: true } : {}),
       enabled: true,
       routesDir,
       objectsDir,

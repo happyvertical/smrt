@@ -174,6 +174,8 @@ export interface SmrtPluginOptions {
   experimentalFastScanner?: boolean;
   /** SvelteKit route auto-generation options */
   svelteKit?: {
+    /** Opt-in deferred registration for SQLite activation hosts; match smrtConsumer. */
+    lazyActivation?: boolean;
     /** Enable SvelteKit route generation (default: false) */
     enabled: boolean;
     /** Output directory for generated routes (default: 'src/routes/api') */
@@ -788,6 +790,7 @@ export function smrtPlugin(
     currentManifest: SmartObjectManifest,
   ): Promise<void> {
     const routeOptions = {
+      lazyActivation: svelteKit.lazyActivation,
       enabled: svelteKit.enabled,
       routesDir: svelteKit.routesDir || 'src/routes/api',
       objectsDir: svelteKit.objectsDir || 'src/lib/objects',
