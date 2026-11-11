@@ -162,6 +162,11 @@ export function codexParser() {
     if (!item || !(type === 'item.started' || type === 'item.completed'))
       return [];
     const kind = str(item.type);
+    if (
+      kind === 'error' &&
+      str(item.message).includes('code-mode host is disabled')
+    )
+      return [{ type: 'done', ok: false, error: 'tool_host_policy' }];
     if (!CODEX_ALLOWED_ITEMS.has(kind))
       return [{ type: 'forbidden', what: kind || 'an item' }];
     if (kind === 'agent_message' && type === 'item.completed' && str(item.text))

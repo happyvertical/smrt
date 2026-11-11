@@ -120,6 +120,7 @@ describe('Codex command line', () => {
     expect(overrides).toContain('sandbox_mode="read-only"');
     expect(overrides).toContain('approval_policy="never"');
     expect(overrides).toContain('web_search="disabled"');
+    expect(overrides).toContain('mcp_servers.smrt.required=true');
     expect(overrides).toContain(
       'mcp_servers.smrt.url="http://127.0.0.1:4801/mcp"',
     );

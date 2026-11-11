@@ -8,7 +8,7 @@ import { tmpdir } from 'node:os';
 import { dirname, join } from 'node:path';
 import { childEnv, nodeDir } from './env.js';
 import { defaultLocateDeps, type LocateDeps, locateBinary } from './locate.js';
-import { runCollect } from './runner.js';
+import { runCollect, runProcess } from './runner.js';
 import { buildAgentRun, TOKEN_ENV } from './session.js';
 import { AGENT_TOOL_INFO, AGENT_TOOLS, type AgentTool } from './tools.js';
 import { reportAgentFailure } from './turn.js';
@@ -24,7 +24,11 @@ export interface AgentCliStatus {
   installUrl: string;
   /** No model request: the exact locked command can start in this process environment. */
   ready?: boolean;
-  startError?: 'runtime_unavailable' | 'cli_invocation' | 'working_directory';
+  startError?:
+    | 'runtime_unavailable'
+    | 'cli_invocation'
+    | 'working_directory'
+    | 'tool_host_policy';
 }
 
 export interface AgentCliLocation {
@@ -115,6 +119,95 @@ export async function preflightAgentCli(
     });
     if (result.spawnError) return fail('runtime_unavailable');
     if (result.exitCode !== 0 || result.timedOut) return fail('cli_invocation');
+    if (tool === 'codex') {
+      // Exercise startup without vendor auth or inference. All credentials and
+      // state stay absent in this private home; the only provider URL is a
+      // non-listening loopback port. Abort at turn.started, before inference.
+      const controller = new AbortController();
+      let started = false;
+      let policyBlocked = false;
+      let startupError = false;
+      const probeEnv: Record<string, string> = {
+        ...spec.env,
+        HOME: directory,
+        CODEX_HOME: directory,
+      };
+      // The probe must never delegate its loopback provider to an HTTP proxy.
+      for (const key of [
+        'HTTP_PROXY',
+        'HTTPS_PROXY',
+        'ALL_PROXY',
+        'http_proxy',
+        'https_proxy',
+        'all_proxy',
+      ])
+        delete probeEnv[key];
+      const probe = await runProcess({
+        command: spec.command,
+        args: [
+          ...spec.args.slice(0, -1),
+          '-c',
+          'mcp_servers.smrt.enabled=false',
+          '-c',
+          'model_provider="smrt_preflight"',
+          '-c',
+          'model_providers.smrt_preflight.name="Startup preflight"',
+          '-c',
+          'model_providers.smrt_preflight.base_url="http://127.0.0.1:1"',
+          '-c',
+          'model_providers.smrt_preflight.wire_api="responses"',
+          '-c',
+          'model_providers.smrt_preflight.requires_openai_auth=false',
+          '-',
+        ],
+        cwd: spec.cwd,
+        env: probeEnv,
+        stdin: 'Startup preflight only.',
+        signal: controller.signal,
+        timeoutMs: VERSION_TIMEOUT_MS,
+        onStdoutLine(line) {
+          let event: {
+            type?: string;
+            item?: { type?: string; message?: string };
+          };
+          try {
+            const value = JSON.parse(line);
+            if (!value || typeof value !== 'object' || Array.isArray(value))
+              return;
+            event = value;
+          } catch {
+            return;
+          }
+          if (
+            event.item?.type === 'error' &&
+            typeof event.item.message === 'string' &&
+            event.item.message?.includes('code-mode host is disabled')
+          ) {
+            policyBlocked = true;
+            controller.abort();
+          } else if (
+            event.item?.type === 'error' &&
+            !(
+              typeof event.item.message === 'string' &&
+              event.item.message.startsWith(
+                'Under-development features enabled:',
+              )
+            )
+          ) {
+            startupError = true;
+            controller.abort();
+          } else if (event.type === 'turn.started') {
+            started = true;
+            controller.abort();
+          }
+        },
+      });
+      if (policyBlocked) return fail('tool_host_policy');
+      if (!started || startupError)
+        return fail(
+          probe.spawnError ? 'runtime_unavailable' : 'cli_invocation',
+        );
+    }
     return { ready: true };
   } catch (error) {
     return fail('working_directory', error);

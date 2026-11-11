@@ -271,6 +271,24 @@ describe.each(['claude-code', 'codex'] as const)('%s engine', (tool) => {
     );
   });
 
+  it('reports required MCP startup failures without disclosing child diagnostics', async () => {
+    const log = vi.spyOn(console, 'error').mockImplementation(() => {});
+    const { events, stop } = await turn(tool, 'mcp-fail');
+    expect(stop).toBe('error');
+    expect(events.find((e) => e.type === 'error')).toMatchObject({
+      code: 'agent_mcp_unavailable',
+      message: expect.stringMatching(/app's tools.*Reference:/),
+    });
+    expect(log).toHaveBeenCalledWith(
+      '[smrt-inference] local engine failure',
+      expect.objectContaining({ code: 'agent_mcp_unavailable' }),
+    );
+    expect(JSON.stringify([events, log.mock.calls])).not.toContain(
+      'secret-in-stderr',
+    );
+    expect(live()).toBeNull();
+  });
+
   it('revokes the token when the turn ends, however it ends', async () => {
     const before = revoked;
     await turn(tool, 'say ok');
@@ -356,6 +374,25 @@ describe('host failures release credentials', () => {
 });
 
 // A fake MCP endpoint proves the contract without a dependency on any host app.
+it('stops Codex on a disabled tool host before publishing a fallback answer', async () => {
+  const log = vi.spyOn(console, 'error').mockImplementation(() => {});
+  const { events, stop, thread } = await turn('codex', 'host-disabled');
+  expect(stop).toBe('error');
+  expect(events.find((e) => e.type === 'error')).toMatchObject({
+    code: 'tool_host_policy',
+    message: expect.stringMatching(/security settings.*Reference:/),
+  });
+  expect(events.some((e) => e.type === 'text')).toBe(false);
+  expect(JSON.stringify([events, thread.messages, log.mock.calls])).not.toMatch(
+    /secret-in-host-error|This answer must never be published/,
+  );
+  expect(log).toHaveBeenCalledWith(
+    '[smrt-inference] local engine failure',
+    expect.objectContaining({ code: 'tool_host_policy' }),
+  );
+  expect(live()).toBeNull();
+});
+
 it.each([
   'claude-code',
   'codex',
@@ -448,10 +485,13 @@ it.each([
   }
 });
 
-it('token mint failures report only a stable code and fixed words', async () => {
+it.each([
+  'LocalRuntimeError',
+  'private-token-from-name',
+])('token mint failures with %s report only a stable code and fixed words', async (name) => {
   const { deps } = setup('codex');
   const error = Object.assign(new Error('secret in token store error'), {
-    name: 'LocalRuntimeError',
+    name,
     code: 'invalid_scope',
   });
   deps.credentials.mint = async () => {
@@ -471,6 +511,21 @@ it('token mint failures report only a stable code and fixed words', async () => 
     }),
   );
   expect(JSON.stringify(events)).toContain(logged.mock.calls[0][1].reference);
+  if (name === 'LocalRuntimeError')
+    expect(logged).toHaveBeenCalledWith(
+      'assistant token failed:',
+      'LocalRuntimeError',
+      'invalid_scope',
+    );
+  else
+    expect(logged).not.toHaveBeenCalledWith(
+      'assistant token failed:',
+      expect.anything(),
+      expect.anything(),
+    );
+  expect(JSON.stringify([events, logged.mock.calls])).not.toContain(
+    'private-token-from-name',
+  );
   expect(JSON.stringify([events, logged.mock.calls])).not.toContain(
     'secret in token store error',
   );

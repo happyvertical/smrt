@@ -184,6 +184,9 @@ function codexSpec(
     ['web_search', toml('disabled')],
     [`${server}.url`, toml(input.mcpUrl)],
     [`${server}.bearer_token_env_var`, toml(TOKEN_ENV)],
+    // Optional servers get only a short grace period: never start a model
+    // without the app's tools while a real catalog is still being prepared.
+    [`${server}.required`, 'true'],
     [`${server}.default_tools_approval_mode`, toml('approve')],
     [`${server}.startup_timeout_sec`, '30'],
     [`${server}.tool_timeout_sec`, '300'],

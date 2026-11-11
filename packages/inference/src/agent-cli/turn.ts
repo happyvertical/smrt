@@ -148,6 +148,7 @@ const diagnosticCodes = new Set([
   'agent_cli_startup',
   'agent_cli_token',
   'agent_cli_failed',
+  'agent_mcp_unavailable',
   'agent_tool_blocked',
   'timeout',
   'invalid_scope',
@@ -155,6 +156,7 @@ const diagnosticCodes = new Set([
   'runtime_unavailable',
   'cli_invocation',
   'working_directory',
+  'tool_host_policy',
 ]);
 
 /** Log only diagnostic structure, never a message, child output, arguments or credentials. */
@@ -263,12 +265,25 @@ async function runAgentTurnImpl(
     stop: AgentTurnStop = 'error',
     cause?: unknown,
   ) => {
+    const causeCode = tokenFailureCode(cause);
     const reference = reportAgentFailure(
       tool,
       code === 'agent_cli_token' ? 'credential' : 'process',
       cause,
-      tokenFailureCode(cause) ?? code,
+      causeCode ?? code,
     );
+    // Retain the shell's safe diagnostic contract without copying arbitrary
+    // Error.name or SDK codes into logs. The correlated record above is primary.
+    if (
+      code === 'agent_cli_token' &&
+      cause instanceof Error &&
+      cause.name === 'LocalRuntimeError' &&
+      causeCode &&
+      diagnosticCodes.has(causeCode)
+    ) {
+      // biome-ignore lint/suspicious/noConsole: fixed legacy tag and allow-listed code only
+      console.error('assistant token failed:', 'LocalRuntimeError', causeCode);
+    }
     emit({
       type: 'error',
       code,
@@ -333,6 +348,7 @@ async function runAgentTurnImpl(
     if (options.signal.aborted) controller.abort();
 
     const handle = async (event: AgentEvent): Promise<void> => {
+      if (stop === 'error' && controller.signal.aborted) return;
       switch (event.type) {
         case 'session':
           sessionId = event.id;
@@ -443,6 +459,15 @@ async function runAgentTurnImpl(
         }
         case 'done':
           finished = event;
+          if (!event.ok && event.error === 'tool_host_policy') {
+            emit({
+              type: 'error',
+              code: 'tool_host_policy',
+              message: `${label} cannot use the app's tools with the required security settings. Choose a compatible engine in AI settings.`,
+            });
+            stop = 'error';
+            controller.abort();
+          }
           return;
       }
     };
@@ -538,6 +563,9 @@ async function runAgentTurnImpl(
       });
       stop = 'error';
     } else if (done ? !done.ok : result.exitCode !== 0) {
+      const mcpUnavailable =
+        result.stderrTail.includes('MCP startup failed') ||
+        done?.error?.includes('MCP startup failed') === true;
       // biome-ignore lint/suspicious/noConsole: exit class only, never output
       console.error(
         'assistant cli turn failed:',
@@ -546,8 +574,10 @@ async function runAgentTurnImpl(
       );
       emit({
         type: 'error',
-        code: 'agent_cli_failed',
-        message: `${label} could not finish. If you signed out, connect it again.`,
+        code: mcpUnavailable ? 'agent_mcp_unavailable' : 'agent_cli_failed',
+        message: mcpUnavailable
+          ? `${label} could not connect to the app's tools. Restart the app, then try again.`
+          : `${label} could not finish. If you signed out, connect it again.`,
       });
       stop = 'error';
     } else {

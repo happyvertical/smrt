@@ -40,6 +40,7 @@ export function installFakeCli(
     version?: string;
     brokenVersion?: boolean;
     brokenHelp?: boolean;
+    toolHostDisabled?: boolean;
   } = {},
 ): string {
   mkdirSync(dir, { recursive: true });
@@ -55,6 +56,13 @@ export function installFakeCli(
   const script = `#!/bin/sh
 env > "$HOME/env-dump"
 case "$*" in *--help*) exit ${options.brokenHelp ? 2 : 0};; esac
+case "$*" in *'model_provider="smrt_preflight"'*)
+  [ -z "$SMRT_SHELL_MCP_TOKEN" ] && [ -z "$OPENAI_API_KEY" ] && [ -z "$ANTHROPIC_API_KEY" ] || exit 3
+  [ ! -f "$HOME/signed-in" ] && [ "$HOME" = "$CODEX_HOME" ] && [ -z "$HTTP_PROXY" ] && [ -z "$HTTPS_PROXY" ] && [ -z "$ALL_PROXY" ] || exit 3
+  case "$*" in *'base_url="http://127.0.0.1:1"'*) ;; *) exit 3;; esac
+  case "$*" in *'requires_openai_auth=false'*) ;; *) exit 3;; esac
+  echo '${options.toolHostDisabled ? '{"type":"item.completed","item":{"type":"error","message":"Code Mode is unavailable because code-mode host is disabled."}}' : '{"type":"turn.started"}'}'
+  exit 0;; esac
 case "$1 $2" in
   "--version "*) ${options.brokenVersion ? 'exit 3' : `echo "${tool === 'claude-code' ? `${version} (Claude Code)` : `codex-cli ${version}`}"`};;
   ${statusCase}) ${status};;

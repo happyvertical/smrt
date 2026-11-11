@@ -12,6 +12,18 @@ import { fakeDeps, installFakeCli, tempDir } from './test-support.js';
 
 describe('detectAgentCli', () => {
   afterEach(() => vi.unstubAllEnvs());
+  it('refuses a signed-in Codex whose default model needs the disabled tool host', async () => {
+    const home = tempDir();
+    const bin = tempDir();
+    installFakeCli(bin, 'codex', { toolHostDisabled: true });
+    writeFileSync(join(home, 'signed-in'), '');
+    expect(await detectAgentCli('codex', fakeDeps(home, [bin]))).toMatchObject({
+      installed: true,
+      signedIn: true,
+      ready: false,
+      startError: 'tool_host_policy',
+    });
+  });
   it.each([
     'claude-code',
     'codex',
@@ -70,8 +82,14 @@ describe('detectAgentCli', () => {
     });
     writeFileSync(join(home, 'signed-in'), '');
     expect(
-      (await detectAgentCli('codex', fakeDeps(home, [bin]))).signedIn,
-    ).toBe(true);
+      await detectAgentCli(
+        'codex',
+        fakeDeps(home, [bin], {
+          HTTP_PROXY: 'http://untrusted-proxy.invalid',
+          ALL_PROXY: 'socks5://untrusted-proxy.invalid',
+        }),
+      ),
+    ).toMatchObject({ signedIn: true, ready: true });
   });
 
   it('reports a missing tool with the vendor install page', async () => {

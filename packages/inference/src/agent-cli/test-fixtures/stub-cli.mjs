@@ -150,6 +150,13 @@ if (head === 'say') {
 } else if (head === 'fail') {
   process.stderr.write('boom secret-in-stderr\n');
   process.exit(1);
+} else if (head === 'host-disabled') {
+  out({ type: 'item.completed', item: { type: 'error', message: 'Code Mode is unavailable because code-mode host is disabled. secret-in-host-error' } });
+  say('This answer must never be published.');
+  setInterval(() => {}, 1000);
+} else if (head === 'mcp-fail') {
+  process.stderr.write('MCP startup failed: secret-in-stderr\n');
+  process.exit(1);
 } else {
   say(`unknown command ${head}`);
 }

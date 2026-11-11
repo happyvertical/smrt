@@ -1,5 +1,29 @@
 # Local assistant engines (`./server`)
 
+Codex readiness also exercises its secured startup in a disposable empty HOME
+and CODEX_HOME, without a token or provider credentials. The probe disables its
+MCP connection, overrides the provider to non-listening `127.0.0.1:1` without
+auth, strips proxy variables, and aborts at `turn.started` or a startup error.
+No vendor model can be called. A native disabled-code-host startup error refuses
+readiness as `tool_host_policy`; the turn parser also stops before publishing a
+fallback answer if a caller skips readiness. Unknown startup errors fail closed.
+
+Live Codex 0.162.1's default model needs its code host, but enabling that host
+still registers `apply_patch` even with machine features disabled and strict
+third-party mode. Keep the host disabled and report incompatibility. A verified
+MCP-only execution host or upstream built-in-tool allow-list is required before
+enabling this profile; do not substitute another model or billing path silently.
+
+Codex's app MCP server is required: it waits for the live catalog within its
+startup timeout instead of continuing after the optional-server grace period
+with no app tools. A failed required MCP startup reports fixed app-connection
+words and a correlated `agent_mcp_unavailable` diagnostic, never child output.
+All machine-tool, user-settings, token and loopback restrictions remain intact.
+
+The legacy `assistant token failed:` diagnostic remains for LocalRuntimeError
+token failures, using a fixed class label and allow-listed code only. It follows
+the correlated failure record; arbitrary error names/messages are never logged.
+
 `src/agent-cli/` owns discovery, CLI-reported authentication, login processes,
 locked-down subprocess invocation, parsing, the process-tree lifetime, MCP token
 lifetime and a subprocess-owned turn. `src/chatgpt/model.ts` adapts one model

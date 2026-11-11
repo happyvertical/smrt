@@ -77,11 +77,13 @@ export function cliEngineStatus(
       code: 'agent_cli_startup',
       ...(found.startError ? { startError: found.startError } : {}),
       message:
-        found.startError === 'working_directory'
-          ? `${label} needs a writable temporary directory.`
-          : found.startError === 'runtime_unavailable'
-            ? `${label} cannot start in this app's process environment. Check its executable and Node installation.`
-            : `${label} does not accept the required locked-down invocation. Update the CLI, then retry.`,
+        found.startError === 'tool_host_policy'
+          ? `${label} cannot use app tools with the required security settings. Its tool host includes built-in file tools; use a compatible engine in AI settings.`
+          : found.startError === 'working_directory'
+            ? `${label} needs a writable temporary directory.`
+            : found.startError === 'runtime_unavailable'
+              ? `${label} cannot start in this app's process environment. Check its executable and Node installation.`
+              : `${label} does not accept the required locked-down invocation. Update the CLI, then retry.`,
       ...(action ? { action } : {}),
     };
   return { ...base, configured: true };
