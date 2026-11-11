@@ -588,6 +588,28 @@ it('uses the cookbook singular override and vocabulary in field help', () => {
   expect(definition.fields.profileId.label).toBe('Existing guest');
   expect(definition.fields.customerType.label).toBe('Guest type');
   expect(definition.fields.notesLabel.label).toBe('Guest notes');
+  const invoice = cookbookScreenDefinition(shell, {
+    name: 'invoices',
+    objectRef: '@happyvertical/smrt-commerce:Invoice',
+    className: 'Invoice',
+    fields: {
+      customerId: {
+        type: 'crossPackageRef',
+        description: 'The customer being billed.',
+      },
+      customerNotes: {
+        type: 'text',
+        description: 'A message for the customer.',
+      },
+    },
+  });
+  expect(invoice.fields.customerId.label).toBe('Guest');
+  expect(invoice.fields.customerId.description).toBe('The guest being billed.');
+  expect(invoice.fields.customerNotes.label).toBe('Guest notes');
+  expect(invoice.fields.customerNotes.description).toBe(
+    'A message for the guest.',
+  );
+
   expect(definition.fields.notes.description).toBe(
     'Notes for this guest and other people.',
   );

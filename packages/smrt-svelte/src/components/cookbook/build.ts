@@ -401,14 +401,34 @@ export function cookbookScreenDefinition(
     (shell.layout?.items?.[entry.id]?.label
       ? singularScreenLabel(entry.label)
       : (entry.noun ?? singularScreenLabel(entry.label)));
+  const vocabularyLabels = new Map<string, string>();
+  for (const candidate of shell.entries.values()) {
+    const noun = humanize(candidate.model.name);
+    const targetSingular =
+      shell.layout?.items?.[candidate.id]?.singularLabel ??
+      singularScreenLabel(candidate.label);
+    // Match the first available target used by reference-field labels below.
+    if (!vocabularyLabels.has(noun.toLowerCase())) {
+      vocabularyLabels.set(noun.toLowerCase(), targetSingular.toLowerCase());
+      vocabularyLabels.set(
+        pluralize(noun).toLowerCase(),
+        candidate.label.toLowerCase(),
+      );
+    }
+  }
   const noun = humanize(definition.className);
-  const vocabulary = new RegExp(`\\b(${pluralize(noun)}|${noun})\\b`, 'gi');
+  vocabularyLabels.set(noun.toLowerCase(), singular.toLowerCase());
+  vocabularyLabels.set(
+    pluralize(noun).toLowerCase(),
+    entry.label.toLowerCase(),
+  );
+  const vocabulary = new RegExp(
+    `\\b(${[...vocabularyLabels.keys()].sort((a, b) => b.length - a.length).join('|')})\\b`,
+    'gi',
+  );
   const reword = (text: string) =>
     text.replace(vocabulary, (word) => {
-      const replacement =
-        word.toLowerCase() === pluralize(noun).toLowerCase()
-          ? entry.label.toLowerCase()
-          : singular.toLowerCase();
+      const replacement = vocabularyLabels.get(word.toLowerCase()) ?? word;
       return /^[A-Z]/.test(word)
         ? replacement.charAt(0).toUpperCase() + replacement.slice(1)
         : replacement;
