@@ -678,6 +678,46 @@ describe('same-name app subclass', () => {
     const customers = await ObjectRegistry.getCollection(`${UP}:Customer`, {
       db,
     });
+    // REST creates through the effective STI root. Its private-field write
+    // filter ignores client discriminators; collection create supports explicit
+    // provider subtypes after their root is replaced by an app subclass.
+    const api = new APIGenerator(
+      { basePath: '/api', authMiddleware: () => async (req) => req },
+      { db, user: { id: 'owner' }, permissions: ['profiles.create'] },
+    );
+    api.registerCollection('profiles', profiles);
+    api.registerCollection('customers', customers);
+    const handler = api.generateHandler();
+    const created = await handler(
+      new Request('http://fixture/api/profiles', {
+        method: 'POST',
+        headers: { 'content-type': 'application/json' },
+        body: JSON.stringify({
+          _meta_type: `${UP}:Person`,
+          title: 'STI name',
+          firstName: 'Person',
+        }),
+      }),
+    );
+    expect(created.status).toBe(201);
+    const restProfile = (await created.json()) as { id: string };
+    expect((await profiles.get(restProfile.id))?.constructor).toBe(
+      models.AppProfile,
+    );
+    const person = await profiles.create({
+      _meta_type: `${UP}:Person`,
+      title: 'STI name',
+    });
+    await customers.create({ profileId: person.id, favoritePose: 'STI' });
+    const subtypeRows = await customers.list({
+      where: { displayLabel: 'STI name' },
+    });
+    expect(subtypeRows[0].toPublicJSON()).toMatchObject({
+      displayLabel: 'STI name',
+    });
+    expect((await subtypeRows[0].loadRelated('profileId'))?.constructor).toBe(
+      models.Person,
+    );
     const profile = await profiles.create({ title: 'Maya', badge: 'app' });
     await customers.create({ profileId: profile.id, favoritePose: 'tree' });
     const rows = await customers.list({
@@ -693,6 +733,36 @@ describe('same-name app subclass', () => {
     expect(await rows[0].loadRelated('profileId')).toBeInstanceOf(
       models.AppProfile,
     );
+    const catalog = {
+      models: [
+        {
+          id: `${UP}:Customer`,
+          name: 'Customer',
+          packageId: 'a2-upstream',
+          exposed: true,
+        },
+      ],
+      recipes: [],
+    };
+    const engine = createCookbookEngine({ catalog });
+    engine.run({ name: 'add_features', input: { ids: [`${UP}:Customer`] } });
+    const gate = createCookbookRuntimeExposure({
+      catalog,
+      engineFor: () => engine,
+      allowWithoutTenant: true,
+    });
+    setRuntimeExposureGate(gate);
+    try {
+      const response = await handler(
+        new Request(
+          'http://fixture/api/customers?displayLabel[like]=%25aya%25',
+        ),
+      );
+      expect(response.status).toBe(200);
+      expect(await response.json()).toMatchObject([{ displayLabel: 'Maya' }]);
+    } finally {
+      gate.dispose();
+    }
   });
 
   it('generates one canonical REST/web/MCP surface and retains ancestry provenance', async () => {

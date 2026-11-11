@@ -195,3 +195,21 @@ original `ManifestGenerator` from base `5368f3bada` and this implementation.
 Base exited 1 with “display.label must be the name of an own field”; head exited
 0 and emitted `displayLabelField: 'displayLabel'`. Temporary proof files were
 removed. The executable scanner and SQLite suites retain the regression cases.
+
+### Integration rebase: live exposure and effective STI identities
+
+Projected names compose with the live exposure gate at the existing REST entry
+boundary: disabled list/get requests return 404 before collection access, SQL or
+conditional ETag evaluation. The collection projection does not change tool
+approval policy or saved approval summaries; it is a read representation, while
+owner decisions keep using the existing live tool gate and original principal.
+No chat/approval implementation was changed.
+
+`display-label-projection.test.ts` tests a retained ETag after enable → disable
+and asserts zero SQL; `sveltekit-generator.runtime.test.ts` executes an emitted
+projected list route, passes name search/order to its source, and verifies closed
+exposure prevents list/count. The scanned same-name fixture also creates through
+REST at the effective app STI root (private client discriminators stay ignored) and creates
+a provider subtype through the collection API, then projects that related
+subtype's name; provider cookbook identity enables the app Customer projection. Existing scoped SQL, sensitive-field and target
+beforeList checks still apply. All persistence is in-process SQLite.

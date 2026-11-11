@@ -7,6 +7,7 @@ import { APIGenerator } from '../generators/rest';
 import { GlobalInterceptors } from '../interceptors';
 import { SmrtObject } from '../object';
 import { ObjectRegistry, smrt } from '../registry';
+import { setRuntimeExposureGate } from '../runtime-exposure';
 import { getTestDatabase } from '../testing/database';
 
 @smrt({ idType: 'text' })
@@ -82,6 +83,7 @@ beforeEach(async () => {
   activeTenant = undefined;
 });
 afterEach(async () => {
+  setRuntimeExposureGate(undefined);
   GlobalInterceptors.unregister('display-test-scope');
   await db.close?.();
   vi.restoreAllMocks();
@@ -291,6 +293,35 @@ describe('display label projection', () => {
     await expect(unsafe.list({ orderBy: 'displayLabel' })).rejects.toThrow(
       /sensitive|readPermission/,
     );
+  });
+
+  it('checks live exposure before any projection SQL, even with a retained ETag', async () => {
+    await seed('Visible', null);
+    const handler = new APIGenerator(
+      { basePath: '/api' },
+      { db },
+    ).generateHandler();
+    let enabled = true;
+    setRuntimeExposureGate({ isEnabled: () => enabled });
+    const url = 'http://localhost/api/displaycustomers?orderBy=displayLabel';
+    const first = await handler(new Request(url));
+    expect(first.status).toBe(200);
+    const sql = vi.spyOn(db, 'query');
+    enabled = false;
+    for (const path of [url, `${url.split('?')[0]}/missing`]) {
+      const response = await handler(
+        new Request(path, {
+          headers: { 'if-none-match': first.headers.get('etag') ?? '' },
+        }),
+      );
+      expect(response.status).toBe(404);
+    }
+    expect(sql).not.toHaveBeenCalled();
+    enabled = true;
+    expect((await handler(new Request(url))).status).toBe(200);
+    expect(
+      sql.mock.calls.some(([query]) => /LEFT JOIN/.test(String(query))),
+    ).toBe(true);
   });
 
   it('REST revalidates when the linked name changes and ignores label writes', async () => {

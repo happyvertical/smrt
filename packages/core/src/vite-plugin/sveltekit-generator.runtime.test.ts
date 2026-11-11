@@ -488,19 +488,31 @@ describe('generated SvelteKit helper runtime', () => {
 
   async function importGeneratedCollectionList(
     fields: SmartObjectManifest['objects'][string]['fields'] = {},
+    projection = false,
   ) {
     const objectFilePath = join(projectRoot, 'src/lib/objects/Widget.ts');
-    await generateSvelteKitRoutes(
+    const manifest = createManifest(
       projectRoot,
-      createManifest(projectRoot, objectFilePath, ['list'], false, fields),
-      {
-        configFileName: 'smrt.ts',
-        configPath: 'src/lib/server',
-        enabled: true,
-        objectsDir: 'src/lib/objects',
-        routesDir: 'src/routes/api',
-      },
+      objectFilePath,
+      ['list'],
+      false,
+      fields,
     );
+    if (projection) {
+      manifest.objects.Widget.displayLabelField = 'displayLabel';
+      manifest.objects.Widget.displayLabelProjection = {
+        via: 'profileId',
+        field: 'name',
+        fallback: 'Unnamed widget',
+      };
+    }
+    await generateSvelteKitRoutes(projectRoot, manifest, {
+      configFileName: 'smrt.ts',
+      configPath: 'src/lib/server',
+      enabled: true,
+      objectsDir: 'src/lib/objects',
+      routesDir: 'src/routes/api',
+    });
 
     return await bundleGeneratedRoute(
       'src/routes/api/widgets/+server.ts',
@@ -580,6 +592,51 @@ describe('generated SvelteKit helper runtime', () => {
         }),
       ],
     ]);
+  });
+
+  it('gates emitted projected list routes before collection access and ETag evaluation', async () => {
+    const route = await importGeneratedCollectionList({}, true);
+    const list = vi.fn(async () => [
+      { toPublicJSON: () => ({ displayLabel: 'Maya' }) },
+    ]);
+    const count = vi.fn(async () => 1);
+    (globalThis as Record<string, unknown>).__smrtGeneratedRouteCollection = {
+      list,
+      count,
+    };
+    let enabled = true;
+    setRuntimeExposureGate({ isEnabled: () => enabled });
+    const url = new URL(
+      'http://fixture/api/widgets?displayLabel[like]=%25aya%25&orderBy=displayLabel',
+    );
+    const call = (etag?: string) =>
+      route.GET({
+        locals: { tenantId: 'a', user: { id: 'owner' } },
+        url,
+        request: new Request(url, {
+          headers: etag ? { 'if-none-match': etag } : {},
+        }),
+      });
+    const first = await call();
+    expect(await first.json()).toMatchObject({
+      items: [{ displayLabel: 'Maya' }],
+    });
+    expect(list).toHaveBeenCalledWith(
+      expect.objectContaining({
+        where: { 'displayLabel like': '%aya%' },
+        orderBy: 'displayLabel',
+      }),
+    );
+    list.mockClear();
+    count.mockClear();
+    enabled = false;
+    await expect(call(first.headers.get('etag') ?? '')).rejects.toMatchObject({
+      status: 404,
+    });
+    expect(list).not.toHaveBeenCalled();
+    expect(count).not.toHaveBeenCalled();
+    enabled = true;
+    expect((await call()).status).toBe(200);
   });
 
   it('gates emitted routes per tenant before collection access, including public and stale URLs', async () => {
