@@ -1,6 +1,7 @@
 import { readFileSync } from 'node:fs';
 import { fileURLToPath } from 'node:url';
 import { extractFieldRefs } from '@happyvertical/smrt-core';
+import { ProfileIdentityRecipe } from '@happyvertical/smrt-profiles';
 import { describe, expect, it } from 'vitest';
 import { Order, PurchaseOrder } from '../models/Contract.js';
 import { ContractLineItem } from '../models/ContractLineItem.js';
@@ -76,8 +77,8 @@ describe('commerce recipes (#3590)', () => {
     expect(
       PurchasesRecipe.nav.map((entry) => [entry.label, entry.model]),
     ).toEqual([['Purchase orders', PurchaseOrder]]);
-    expect(CustomersRecipe.requires).toEqual([]);
-    expect(VendorsRecipe.requires).toEqual([]);
+    expect(CustomersRecipe.requires).toEqual(['profiles.identity']);
+    expect(VendorsRecipe.requires).toEqual(['profiles.identity']);
     expect(SalesRecipe.requires).toEqual(['commerce.customers']);
     expect(PurchasesRecipe.requires).toEqual(['commerce.vendors']);
   });
@@ -96,7 +97,10 @@ describe('commerce recipes (#3590)', () => {
   });
 
   it('only requires recipes that exist', () => {
-    const ids = new Set(recipes.map((recipe) => recipe.id));
+    const ids = new Set([
+      ...recipes.map((recipe) => recipe.id),
+      ProfileIdentityRecipe.id,
+    ]);
     for (const recipe of recipes) {
       for (const required of recipe.requires)
         expect(ids.has(required)).toBe(true);
