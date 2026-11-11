@@ -52,6 +52,11 @@ export interface StockMovementOptions extends SmrtObjectOptions {
 
 @TenantScoped({ mode: 'optional' })
 @smrt({
+  display: {
+    references: { skuId: '@happyvertical/smrt-products:Sku' },
+    label: { via: 'skuId', field: 'name', fallback: 'Unknown item' },
+    list: ['displayLabel', 'reasonCode', 'qty', 'occurredAt'],
+  },
   tableName: 'inventory_stock_movements',
   // Append-only: the natural key is the surrogate id, so updates can
   // never collide on conflictColumns. Setting `id` explicitly here

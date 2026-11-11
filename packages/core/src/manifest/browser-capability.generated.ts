@@ -33,7 +33,7 @@ export const PACKAGE_BROWSER_CAPABILITY: Readonly<Record<string, PackageBrowserC
   "@happyvertical/smrt-images": {"status":"server-only","issues":["#3624","#3628"],"reason":"sharp, node:fs/promises, node:crypto, resvg native addon","via":["@happyvertical/smrt-tenancy"]},
   "@happyvertical/smrt-inference": {"status":"server-only","issues":["#3617","#3624","#3626","#3627"],"via":["@happyvertical/smrt-profiles","@happyvertical/smrt-secrets","@happyvertical/smrt-tenancy","@happyvertical/smrt-users"]},
   "@happyvertical/smrt-ingestion": {"status":"server-only","issues":["#3615","#3617","#3624","#3625","#3626","#3627"],"via":["@happyvertical/smrt-agents","@happyvertical/smrt-jobs","@happyvertical/smrt-profiles","@happyvertical/smrt-reports","@happyvertical/smrt-secrets","@happyvertical/smrt-tenancy","@happyvertical/smrt-users"]},
-  "@happyvertical/smrt-inventory": {"status":"server-only","issues":["#3624"],"via":["@happyvertical/smrt-tenancy"]},
+  "@happyvertical/smrt-inventory": {"status":"server-only","issues":["#3616","#3624","#3626"],"via":["@happyvertical/smrt-products","@happyvertical/smrt-tenancy"]},
   "@happyvertical/smrt-jobs": {"status":"server-only","issues":["#3615","#3624","#3627"],"reason":"worker_threads runner (the edge commerce inherits), node:events/crypto, bull/bullmq/cloud-tasks SDK graph","via":["@happyvertical/smrt-tenancy"]},
   "@happyvertical/smrt-languages": {"status":"server-only","issues":["#3615","#3618","#3624","#3627"],"reason":"node:crypto","via":["@happyvertical/smrt-features","@happyvertical/smrt-jobs","@happyvertical/smrt-tenancy"]},
   "@happyvertical/smrt-ledgers": {"status":"server-only","issues":["#3624","#3626"],"reason":"core migrations (node:os, node:crypto)","via":["@happyvertical/smrt-tenancy"]},

@@ -40,6 +40,11 @@ export interface StockLevelOptions extends SmrtObjectOptions {
 
 @TenantScoped({ mode: 'optional' })
 @smrt({
+  display: {
+    references: { skuId: '@happyvertical/smrt-products:Sku' },
+    label: { via: 'skuId', field: 'name', fallback: 'Unknown item' },
+    list: ['displayLabel', 'state', 'qty'],
+  },
   tableName: 'inventory_stock_levels',
   conflictColumns: ['sku_id', 'location_id', 'state', 'tenant_id'],
   // StockLevel is materialized state, written only by StockService.
