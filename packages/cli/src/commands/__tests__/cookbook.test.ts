@@ -54,6 +54,7 @@ let template: string;
 /** Package that owns each recipe prefix in the stub manifests. */
 const PACKAGE_FOR: Record<string, string> = {
   commerce: '@happyvertical/smrt-commerce',
+  profiles: '@happyvertical/smrt-profiles',
   inventory: '@happyvertical/smrt-inventory',
   ledgers: '@happyvertical/smrt-ledgers',
   products: '@happyvertical/smrt-products',
@@ -511,6 +512,37 @@ describe('cookbook apply', () => {
     expect(readJson(join(dir, 'smrt.cookbook.json')).recipes).toContain(
       'commerce.wholesale',
     );
+  });
+
+  it('previews and preserves customized policies and app model declarations', async () => {
+    const dir = join(work, 'customized');
+    await apply('yoga-studio', dir);
+    const file = join(dir, 'smrt.cookbook.json');
+    const before = readJson(file);
+    before.models = {
+      version: 1,
+      packageName: '@fixture/custom',
+      lists: {},
+      fields: {},
+    };
+    before.policies[0] = {
+      ...before.policies[0],
+      label: 'My wording',
+      visibility: 'hidden',
+    };
+    writeFileSync(file, `${JSON.stringify(before, null, 2)}\n`);
+    const preview = await apply('bakery', dir, { dryRun: true });
+    expect(preview.result.plan.cookbookDiff.before).toEqual(before);
+    expect(preview.result.plan.cookbookDiff.after.models).toEqual(
+      before.models,
+    );
+    expect(preview.result.plan.cookbookDiff.after.policies).toContainEqual(
+      before.policies[0],
+    );
+    expect(readJson(file)).toEqual(before);
+    await apply('bakery', dir);
+    expect(readJson(file)).toEqual(preview.result.plan.cookbookDiff.after);
+    expect((await apply('bakery', dir)).result.written).toEqual([]);
   });
 
   it('applies --into an existing project', async () => {
