@@ -382,3 +382,10 @@ creation. The new test composes the existing host, activation/route generators,
 manifest catalog, real runtime writer lease and assistant stream reader. Its
 empty Customer/Profile/ProfileType fixture subclasses reproduce the generated
 app replacements; they add no production model or parallel write path.
+
+
+The Q1 onboarding regression additionally starts each bundled template's contact
+with name only, reads it through the generated item route, edits all contact
+fields, reads projected list/detail values, clears email and phone, then checks
+the refreshed list. It uses the same real owner session, template approval and
+lazy activation path; it does not pre-apply a cookbook or replace REST handlers.

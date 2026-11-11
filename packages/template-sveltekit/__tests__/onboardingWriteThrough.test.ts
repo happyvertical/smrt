@@ -357,10 +357,29 @@ import {${name} as Base} from '@happyvertical/smrt-${pkg}';
   // Shared create forms serialize untouched optional text controls as ''.
   const made = await request('/api/customers', route.POST, {
     name: 'REST Ada',
-    email: 'rest@example.test',
-    phone: '',
   });
   expect(made.status, await made.clone().text()).toBe(201);
+  const created = await made.json();
+  const itemRoute = await compile(join(root, 'src/routes/api/customers/[id]/+server.ts'), join(root, 'customer-item-route.mjs'));
+  const itemRequest = async (method: 'GET' | 'PUT', values?: unknown) => {
+    const e = event(`/api/customers/${created.id}`, method, values);
+    e.params = { id: created.id };
+    return host!.handle({ event: e, resolve: (requestEvent) => itemRoute[method](requestEvent) });
+  };
+  expect((await (await itemRequest('GET')).json()).name).toBe('REST Ada');
+  const edited = await itemRequest('PUT', { name: 'REST Ada Edited', email: 'edited@example.test', phone: '555-0109' });
+  expect(edited.status, await edited.clone().text()).toBe(200);
+  const listing = await request('/api/customers?orderBy=email%20ASC', route.GET);
+  expect(listing.status, await listing.clone().text()).toBe(200);
+  const listed = await listing.json();
+  expect(listed.items ?? listed.data ?? listed).toEqual(expect.arrayContaining([expect.objectContaining({ id: created.id, name: 'REST Ada Edited', email: 'edited@example.test', phone: '555-0109' })]));
+  expect(await (await itemRequest('GET')).json()).toMatchObject({ name: 'REST Ada Edited', email: 'edited@example.test', phone: '555-0109' });
+  const cleared = await itemRequest('PUT', { name: 'REST Ada', email: '', phone: '' });
+  expect(cleared.status, await cleared.clone().text()).toBe(200);
+  expect(await (await itemRequest('GET')).json()).toMatchObject({ name: 'REST Ada', email: '', phone: '' });
+  const clearedList = await request('/api/customers', route.GET);
+  const clearedRows = await clearedList.json();
+  expect(clearedRows.items ?? clearedRows.data ?? clearedRows).toEqual(expect.arrayContaining([expect.objectContaining({ name: 'REST Ada', email: '', phone: '' })]));
   const thread = await request(
     '/api/assistant/threads',
     (e) => host!.assistant.handle(e),
@@ -393,7 +412,7 @@ import {${name} as Base} from '@happyvertical/smrt-${pkg}';
       { db },
     );
     for (const [label, email] of [
-      ['REST Ada', 'rest@example.test'],
+      ['REST Ada', ''],
       ['Assistant Ada', 'assistant@example.test'],
     ]) {
       const row = rows.find((row) => row.toJSON().displayLabel === label);
