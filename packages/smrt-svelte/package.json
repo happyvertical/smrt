@@ -199,6 +199,12 @@
       "types": "./dist/components/connect-ai/client.d.ts",
       "import": "./dist/components/connect-ai/client.js",
       "default": "./dist/components/connect-ai/client.js"
+    },
+    "./onboarding": {
+      "types": "./dist/components/onboarding/index.d.ts",
+      "svelte": "./dist/components/onboarding/index.js",
+      "import": "./dist/components/onboarding/index.js",
+      "default": "./dist/components/onboarding/index.js"
     }
   },
   "files": [

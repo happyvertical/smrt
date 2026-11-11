@@ -380,6 +380,7 @@ beforeEach(async () => {
       : null;
   };
   host = createCookbookHost({
+    onboarding: true,
     runtime,
     cli,
     app: { cookbook, catalog },
@@ -1321,3 +1322,46 @@ describe('local cookbook host composition (SQLite, fake model, no providers)', (
 function json(value: unknown) {
   return Response.json(value);
 }
+
+describe('onboarding over real cookbook tools and owner ledger', () => {
+  it('previews Fresh, creates a durable hold, applies only after an owner decision, then resumes done', async () => {
+    const read = async () => {
+      const r = await request(event('/api/onboarding'), host.onboarding);
+      expect(r.status).toBe(200);
+      return r.json();
+    };
+    let progress = await read();
+    const change = async (action: string, extra = {}) => {
+      const r = await request(
+        event('/api/onboarding', 'POST', {
+          action,
+          revision: progress.revision,
+          ...extra,
+        }),
+        host.onboarding,
+      );
+      expect(r.status).toBe(200);
+      progress = await r.json();
+    };
+    await change('welcome');
+    await change('skip');
+    expect(progress.templates.map((t: { id: string }) => t.id)).toContain(
+      'fresh',
+    );
+    await change('preview', { id: 'fresh' });
+    expect(progress.preview.after).toEqual([]);
+    await change('apply');
+    expect(progress.approval.status).toBe('pending');
+    expect((await host.cookbookApp(tenantId)).cookbook.recipes).toEqual([
+      'host.customers',
+    ]);
+    const decision = await chat(`approvals/${progress.approvalId}/decide`, {
+      approve: true,
+    });
+    expect(decision.status).toBe(200);
+    progress = await read();
+    expect(progress.completed).toBe(true);
+    expect(progress.step).toBe('done');
+    expect((await host.cookbookApp(tenantId)).cookbook.recipes).toEqual([]);
+  });
+});

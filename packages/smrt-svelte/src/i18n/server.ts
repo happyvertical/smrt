@@ -32,6 +32,7 @@ import {
 // registers the leaf's own primitive catalogs (`strings.ts` + `strings.ui.ts`).
 import '@happyvertical/smrt-ui/i18n';
 import './strings.forms.js';
+import './strings.onboarding.js';
 import './strings.board.js';
 import './strings.sortable.js';
 import './strings.audit.js';

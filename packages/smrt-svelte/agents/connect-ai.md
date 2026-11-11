@@ -118,3 +118,6 @@ Compact host clients may additionally supply `connectOutcome` for their existing
 ready/login/missing DTO and `errorMessage` to project fixed key-free errors. The
 ordinary `connect(): Promise<void>` contract and default error policy stay
 unchanged. Tricia uses these hooks for a CLI removed between status and click.
+
+`./onboarding` composes this step with durable template selection; see
+[host first-run contract](../../template-sveltekit/agents/onboarding.md).

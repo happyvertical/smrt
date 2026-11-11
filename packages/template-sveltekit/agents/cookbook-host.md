@@ -241,3 +241,5 @@ is introduced. Reuse: public ObjectRegistry create-target APIs and the existing
 MCP/assistant dispatchers, found through generators.md and name/purpose searches.
 All new execution cases use in-process SQLite, fake providers and existing CLI
 fixtures. Tricia's suites are run unchanged as downstream compatibility evidence.
+
+First-run onboarding: [composition and test contract](onboarding.md).

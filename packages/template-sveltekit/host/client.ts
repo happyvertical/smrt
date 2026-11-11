@@ -1,9 +1,7 @@
 /** Browser half of the cookbook host. No SvelteKit globals or server imports. */
-import {
-  AssistantDock,
-  createAssistantHttpTransport,
-} from '@happyvertical/smrt-chat/svelte';
+import { createAssistantHttpTransport } from '@happyvertical/smrt-chat/svelte';
 import type { CookbookAppProps } from '@happyvertical/smrt-svelte/cookbook';
+import { OnboardingAssistant } from '@happyvertical/smrt-svelte/onboarding';
 import { createDataSurfaceRegistry } from '@happyvertical/smrt-ui/data-surface';
 
 /** One registry shared by CookbookApp's Provider, mounted screens and assistant. */
@@ -11,6 +9,7 @@ export function createCookbookAssistant(
   options: {
     endpoint?: string;
     label?: string;
+    introduction?: NonNullable<CookbookAppProps['assistant']>['introduction'];
     onchange?: () => void | Promise<void>;
   } = {},
 ): NonNullable<CookbookAppProps['assistant']> {
@@ -23,7 +22,7 @@ export function createCookbookAssistant(
     return result;
   };
   return {
-    component: AssistantDock,
+    component: OnboardingAssistant,
     transport: {
       ...transport,
       sendMessage: (input) => refresh(transport.sendMessage(input)),
@@ -38,6 +37,7 @@ export function createCookbookAssistant(
         : {}),
     },
     registry: createDataSurfaceRegistry(),
+    introduction: options.introduction,
     ...(options.label ? { label: options.label } : {}),
   };
 }

@@ -5,10 +5,10 @@ description: "Minimal SvelteKit project template with s-m-r-t framework integrat
 status: "stable"
 generated:
   by: "smrt/scripts/generate-knowledge-okf.ts"
-  at: "2026-11-11T14:13:02Z"
+  at: "2026-11-11T19:04:13Z"
 audience: "internal"
 evidence_level: "source-inspected"
-source_revision: "sha256:915b1f1d373f6ba140d20999f7b1e582f63ec153e6a9f46e751e6d1bfc6d47a7"
+source_revision: "sha256:bfd616797388ec818cc56fa29cbf8bc86c29f2791584a10ea30a3223c7c35054"
 sources:
   - id: "manifest"
     resource: "https://github.com/happyvertical/smrt/blob/main/packages/template-sveltekit/package.json"

@@ -59,6 +59,7 @@ import {
 } from '@happyvertical/smrt-core/app-models';
 import { validateCookbook } from '@happyvertical/smrt-core/cookbook';
 import {
+  BUNDLED_COOKBOOK_TEMPLATES,
   COOKBOOK_TOOL_NAMES,
   CookbookToolError,
   type CookbookToolOptions,
@@ -97,6 +98,7 @@ import {
   catalogFromManifests,
   readInstalledManifests,
 } from '@happyvertical/smrt-svelte/cookbook/server';
+import type { OnboardingState } from '@happyvertical/smrt-svelte/onboarding';
 import type { Cookbook } from '@happyvertical/smrt-types';
 import {
   PermissionResolver,
@@ -104,6 +106,7 @@ import {
   registerPermissionDefinitions,
 } from '@happyvertical/smrt-users';
 import type { Handle, RequestEvent } from '@sveltejs/kit';
+import { createCookbookOnboarding } from './onboarding.js';
 import { createCookbookHostState } from './state.js';
 
 export interface CookbookHostOptions {
@@ -115,6 +118,8 @@ export interface CookbookHostOptions {
   /** Inject a validated installed catalog/document in tests or generated hosts. */
   app?: { cookbook: Cookbook; catalog: CookbookToolOptions['catalog'] };
   title?: string;
+  /** Opt-in first-run composition; owner sign-in remains runtime-owned. */
+  onboarding?: boolean;
   assistant?: Pick<
     MountAssistantRoutesOptions,
     'ai' | 'systemPrompt' | 'onError'
@@ -124,7 +129,9 @@ export interface CookbookHostOptions {
   chatgpt?: ChatGPTPlanConnection;
 }
 
-async function readHostApp(options: Pick<CookbookHostOptions, 'root' | 'app'>) {
+async function readHostApp(
+  options: Pick<CookbookHostOptions, 'root' | 'app'>,
+): Promise<NonNullable<CookbookHostOptions['app']>> {
   const root = options.root ?? process.cwd();
   return (
     options.app ??
@@ -278,7 +285,25 @@ export function createCookbookHost(options: CookbookHostOptions) {
         'Cookbook host currently requires the local SQLite runtime',
       );
     const db = await runtime.database();
-    const app = await readHostApp(options);
+    const app = { ...(await readHostApp(options)) };
+    if (options.onboarding)
+      app.catalog = {
+        ...app.catalog,
+        cookbooks: [
+          {
+            id: 'fresh',
+            name: 'Fresh',
+            document: {
+              $schema: 'https://s-m-r-t.dev/schemas/cookbook/v1.json',
+              version: 1,
+              recipes: [],
+              features: [],
+              policies: [],
+            },
+          },
+          ...(app.catalog.cookbooks ?? BUNDLED_COOKBOOK_TEMPLATES),
+        ],
+      };
     const state = await createCookbookHostState(db, app.catalog, app.cookbook);
     const authority = new OwnerApprovalAuthority(
       await createSqliteOwnerApprovalStore(db),
@@ -395,8 +420,50 @@ export function createCookbookHost(options: CookbookHostOptions) {
     };
     setCookbookToolService(service);
     setRuntimeExposureGate(gate);
+    const onboarding = options.onboarding
+      ? await createCookbookOnboarding({
+          db,
+          catalog: app.catalog,
+          authorize: async (event) => {
+            const p = resolveAssistantPrincipalFromLocals(event.locals);
+            return p && (await isOwner(p.tenantId, p.userId)) ? p : null;
+          },
+          invoke: async (actor, name, args) => {
+            const permissions = [
+              ...(
+                await (
+                  await PermissionResolver.create({ db })
+                ).resolvePermissions(actor.userId, actor.tenantId)
+              ).permissions,
+            ];
+            return continuations.capture(
+              {
+                id: actor.userId,
+                tenantId: actor.tenantId,
+                permissions,
+                allowedTools: [name],
+              },
+              () => service.invoke(name, args, { ...actor, surface: 'mcp' }),
+            );
+          },
+          approval: async (actor, id) => {
+            const record = await authority.get(actor.tenantId, id);
+            if (!record || record.requestedBy !== actor.userId) return null;
+            return {
+              id: record.id,
+              tool: record.tool,
+              callId: record.callId,
+              summary: record.summary,
+              status: record.status,
+              decidedBy: record.decidedBy,
+              decidedAt: record.decidedAt,
+            };
+          },
+        })
+      : undefined;
     return {
       ...app,
+      onboarding,
       state,
       authority,
       continuations,
@@ -817,6 +884,10 @@ export function createCookbookHost(options: CookbookHostOptions) {
       dynamicDefinitions: AppModelSnapshot['webDefinitions'];
       enabledModels: string[];
       cookbookApp: CookbookAppData;
+      onboarding: OnboardingState | null;
+      assistantIntroduction:
+        | { lists: string[]; actions: string[]; configured: boolean }
+        | undefined;
     }
   > {
     const data = await session(event);
@@ -827,8 +898,47 @@ export function createCookbookHost(options: CookbookHostOptions) {
     const visible = snapshot
       ? filterRuntimeCookbookSnapshot(snapshot, host.catalog, { tenantId })
       : undefined;
+    const p = resolveAssistantPrincipalFromLocals(event.locals);
+    const onboarding =
+      p && host.onboarding ? await host.onboarding.load(event) : null;
+    const offered = p ? manifest(p.tenantId) : [];
+    const extras = p
+      ? await host.service.list({
+          surface: 'assistant',
+          tenantId: p.tenantId,
+          userId: p.userId,
+        })
+      : [];
+    const connectStatus = p ? await connectAi.GET(event as RequestEvent) : null;
+    const connected = connectStatus?.ok
+      ? (await connectStatus.json()).configured === true
+      : false;
     return {
       ...data,
+      onboarding,
+      assistantIntroduction: p
+        ? {
+            lists:
+              visible?.sections
+                .filter((s) => !s.hidden)
+                .flatMap((s) =>
+                  s.items.filter((i) => !i.hidden).map((i) => i.label),
+                ) ?? [],
+            actions: [
+              ...new Set(
+                offered
+                  .map((t) => t.action)
+                  .filter((a) =>
+                    ['read', 'create', 'update', 'delete'].includes(a),
+                  ),
+              ),
+              ...(extras.some((t) => t.name === 'app.addList')
+                ? ['customize']
+                : []),
+            ],
+            configured: connected,
+          }
+        : undefined,
       dynamicDefinitions: tenantId
         ? (publishedDefinitions.get(tenantId) ?? [])
         : [],
@@ -881,6 +991,10 @@ export function createCookbookHost(options: CookbookHostOptions) {
     assistant,
     connectAi,
     inferenceSettings,
+    async onboarding(event: RequestEvent) {
+      const mounted = (await ready()).onboarding;
+      return mounted ? mounted.handle(event) : json({ code: 'not_found' }, 404);
+    },
     async modelEditor(tenantId: string) {
       await prepare(tenantId);
       return editors.get(tenantId);

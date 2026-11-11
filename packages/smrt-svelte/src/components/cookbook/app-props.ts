@@ -45,10 +45,16 @@ export interface CookbookAppProps
       contextMode?: 'data-surfaces' | 'server';
       visible?: boolean;
       messageFormat?: 'text' | 'markdown';
+      introduction?: {
+        lists: string[];
+        actions: string[];
+        configured: boolean;
+      };
     }>;
     transport: AssistantTransport;
     registry: DataSurfaceRegistry;
     label?: string;
+    introduction?: { lists: string[]; actions: string[]; configured: boolean };
   };
   /** Embedded/plugin hosts keep their content and navigation without in-app chat. */
   embed?: boolean;
