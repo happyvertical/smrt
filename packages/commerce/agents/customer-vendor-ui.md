@@ -217,3 +217,10 @@ without inline edits. Shared cookbook forms expose the same fields at the top,
 with the existing picker available under Advanced. No separate Profile screen is
 needed. This does not replace the server's authenticated principal or the
 existing contacts/address adapters described above.
+
+Blank or whitespace-only inline phone values mean no phone: create skips
+metadata, and edit removes an existing phone with `Profile.removeMetadata()`.
+Both operations stay in the parent write-through transaction. Profile metadata
+values remain required; never save an empty metadata row for an optional form
+control. The regression includes name/email-only onboarding creates and a
+phone-removal rollback when saving the Customer fails.

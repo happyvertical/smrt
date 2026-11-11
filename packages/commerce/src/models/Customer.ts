@@ -258,6 +258,13 @@ export class Customer extends SmrtObject {
       return super.saveWriteThroughVirtual(via, target, values);
     if (!Object.hasOwn(values, 'phone')) return;
     if (typeof values.phone !== 'string') throw new Error('Phone must be text');
+    const profile = target as import('@happyvertical/smrt-profiles').Profile;
+    // Empty optional controls mean no phone. Metadata values remain required.
+    if (!values.phone.trim()) {
+      if (Object.hasOwn(await profile.getMetadata(), 'phone'))
+        await profile.removeMetadata('phone');
+      return;
+    }
     const { ProfileMetafieldCollection } = await import(
       '@happyvertical/smrt-profiles'
     );
@@ -269,9 +276,7 @@ export class Customer extends SmrtObject {
         validation: { type: 'string' },
       },
     );
-    await (
-      target as import('@happyvertical/smrt-profiles').Profile
-    ).addMetadata('phone', values.phone);
+    await profile.addMetadata('phone', values.phone);
   }
 
   override async initialize(): Promise<this> {

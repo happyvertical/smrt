@@ -358,3 +358,22 @@ host.onboarding and FirstRunOnboarding. They contain no new workflow/helper/mode
 The existing Fresh, settings and layout mounts are extended. The packed CLI route
 test includes onboarding so pnpm cannot silently omit it. Integration's authored
 source aliases remain the sole Vitest host-resolution mechanism.
+
+## Onboarding write-through regression
+
+`__tests__/onboardingWriteThrough.test.ts` starts with an empty cookbook and a
+fresh local state root, claims an owner, completes onboarding/template approval,
+and uses deferred activation with same-name app contact replacements. Each
+bundled template exercises generated REST and the assistant create dispatcher
+with a typed name/email and an untouched blank phone. It uses real SQLite,
+sessions, permissions, approval and migration paths; only the external AI reply
+and SvelteKit response helpers are substituted.
+
+Reuse check: MCP review, the intent index and `rg` searches for onboarding, lazy
+activation, cookbookHost, runtimeProfileReference, create-targets and inline
+contact writes found existing host and generated-route fixtures, but none
+combined fresh lazy activation with template approval and inline contact
+creation. The new test composes the existing host, activation/route generators,
+manifest catalog, real runtime writer lease and assistant stream reader. Its
+empty Customer/Profile/ProfileType fixture subclasses reproduce the generated
+app replacements; they add no production model or parallel write path.

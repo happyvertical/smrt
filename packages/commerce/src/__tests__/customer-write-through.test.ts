@@ -72,6 +72,58 @@ describe('Customer inline contact writes', () => {
     });
   });
 
+  it.each([
+    '',
+    '   ',
+  ])('accepts a blank optional phone (%j) from a create form without creating metadata', async (phone) => {
+    const { customers, profiles } = await setup();
+    await withTenant({ tenantId: 'tenant-a' }, async () => {
+      const member = await customers.create({
+        name: 'Ada Member',
+        email: 'ada@example.test',
+        phone,
+      });
+      const profile = await profiles.get(member.profileId);
+      expect(profile?.name).toBe('Ada Member');
+      expect(await profile?.getMetadata()).not.toHaveProperty('phone');
+      expect(
+        (await customers.list({ displayLabel: true }))[0].toJSON().displayLabel,
+      ).toBe('Ada Member');
+    });
+  });
+
+  it('clears a phone with the existing metadata removal API and rolls the removal back if the member save fails', async () => {
+    const { customers, profiles } = await setup();
+    await withTenant({ tenantId: 'tenant-a' }, async () => {
+      const member = await customers.create({ name: 'Ada', phone: '555-0117' });
+      const normalize = vi
+        .spyOn(
+          Customer.prototype as unknown as {
+            normalizePersistenceData(): undefined;
+          },
+          'normalizePersistenceData',
+        )
+        .mockImplementationOnce(() => {
+          throw new Error('parent failed');
+        });
+      await expect(
+        customers.update(member.id!, { phone: '' }),
+      ).rejects.toThrow();
+      normalize.mockRestore();
+      expect(
+        await (
+          await profiles.get(member.profileId, { cache: false })
+        )?.getMetadata(),
+      ).toMatchObject({ phone: '555-0117' });
+      await customers.update(member.id!, { phone: '' });
+      expect(
+        await (
+          await profiles.get(member.profileId, { cache: false })
+        )?.getMetadata(),
+      ).not.toHaveProperty('phone');
+    });
+  });
+
   it('keeps explicitly owned phone metadata on the same tenant without an ambient context', async () => {
     const { customers, profiles } = await setup();
     const member = await customers.create({
