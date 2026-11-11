@@ -8,7 +8,7 @@
  */
 
 import { getInheritanceChain } from './inheritance-resolver';
-import { findClass } from './name-resolver';
+import { findClass, getClassByConstructor } from './name-resolver';
 import { getClasses } from './shared-state';
 import type {
   RegisteredClass,
@@ -24,10 +24,10 @@ function resolveTarget(
   const classes = getClasses();
   const ctor = field._meta?.relatedConstructor;
   if (typeof ctor === 'function') {
-    const match = Array.from(classes).find(
-      ([, entry]) => entry.constructor === ctor,
-    );
-    return match ? (match[1].qualifiedName ?? match[0]) : null;
+    const target =
+      getClassByConstructor(ctor as import('./types').SmrtObjectConstructor) ??
+      [...classes.values()].find((entry) => entry.constructor === ctor);
+    return target ? (target.qualifiedName ?? target.name) : null;
   }
   const related = field.related;
   if (!related) return null;

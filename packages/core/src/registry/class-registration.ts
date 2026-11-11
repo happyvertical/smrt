@@ -89,9 +89,12 @@ import {
   verboseLog,
 } from './shared-state';
 import {
+  findReplacement,
   isSubtypeOf,
   reconcileSubtypeLineage,
   recordSubtypeParent,
+  replacedDeclarations,
+  retainReplacedDeclaration,
 } from './subtype-lineage';
 import type {
   RegisteredClass,
@@ -669,6 +672,7 @@ function applyManifestCollisionPolicy(args: {
       );
       return 'return';
     case 'replace':
+      retainReplacedDeclaration(args.existingKey, args.existing);
       args.replacedQualifiedNames.add(args.existingKey);
       for (const ancestor of args.existing.replacedQualifiedNames ?? []) {
         args.replacedQualifiedNames.add(ancestor);
@@ -1312,24 +1316,37 @@ function registerUntracked(
   // depth and is never inferred from the shared name/table alone.
   for (const [key, existing] of getClasses()) {
     if (existing.name !== name || ctor === existing.constructor) continue;
-    const incomingTable = resolveTableName(ctor, name, {
-      ...config,
-      ...(newPackageName ? { packageName: newPackageName } : {}),
-    });
+    const incomingTable =
+      config.tableName ??
+      isolatedManifestEntry?.schema?.tableName ??
+      isolatedManifestEntry?.decoratorConfig?.tableName ??
+      existing.schema?.tableName;
     if (incomingTable !== existing.schema?.tableName) continue;
     if (ctor.prototype instanceof existing.constructor) {
-      if (isolatedManifestEntry) {
-        // An isolated manifest owns all child metadata. Build a fresh entry
-        // below rather than retaining the parent's fields/schema/policy.
-        isolatedSubtypeParent = [key, existing];
-        promotedCollectionConstructor ??= existing.collectionConstructor;
-        break;
-      }
-      upsertExistingEntry(key, existing);
-      return;
+      // Build fresh child metadata while retaining the declared base separately.
+      isolatedSubtypeParent = [key, existing];
+      const { previousQualifiedNames: _aliases, ...parentConfig } =
+        existing.config;
+      config = {
+        ...parentConfig,
+        ...isolatedManifestEntry?.decoratorConfig,
+        ...config,
+        tableName: incomingTable,
+      };
+      promotedCollectionConstructor ??= existing.collectionConstructor;
+      break;
     }
     if (existing.constructor.prototype instanceof ctor) return;
   }
+
+  const replayReplacement = ownQualifiedKey
+    ? findReplacement(ownQualifiedKey)
+    : undefined;
+  if (
+    replayReplacement &&
+    replayReplacement.constructor.prototype instanceof ctor
+  )
+    return;
 
   // 1. Exact-match check (existingKey === name)
   const exactExisting = getClasses().get(name);
@@ -1508,8 +1525,12 @@ function registerUntracked(
       'CONFIG_TENANT_MANIFEST_CONFLICT',
     );
   }
-  const fields = new Map<string, RegisteredField>();
-  const methods = new Map<string, MethodDefinition>();
+  const fields = new Map<string, RegisteredField>(
+    isolatedSubtypeParent?.[1].fields,
+  );
+  const methods = new Map<string, MethodDefinition>(
+    isolatedSubtypeParent?.[1].methods,
+  );
   let packageName: string | undefined;
 
   verboseLog(
@@ -2041,6 +2062,7 @@ function registerUntracked(
   assertQualifiedNameAliasesAvailable(registrationKey, registration);
   if (isolatedSubtypeParent) {
     const [parentKey, parent] = isolatedSubtypeParent;
+    retainReplacedDeclaration(parentKey, parent);
     registration.replacedQualifiedNames = [
       ...new Set([
         ...(registration.replacedQualifiedNames ?? []),
@@ -2810,6 +2832,13 @@ function registerFromManifestUntracked(
     ? createQualifiedName(packageName, simpleClassName)
     : objectDef.qualifiedName;
   const registrationKey = (qualifiedNameEarly || name) as string;
+  const effectiveReplacement = findReplacement(registrationKey);
+  if (
+    effectiveReplacement &&
+    replacedDeclarations().has(registrationKey) &&
+    !runtimeOptions?.extendsRegistered
+  )
+    return;
   const replacedQualifiedNames = new Set<string>();
   const manifestParent = objectDef.extendsQualified ?? objectDef.extends;
   // A run-time subclass keeps its same-named parent registered next to it, so
@@ -2832,6 +2861,19 @@ function registerFromManifestUntracked(
   // `getCanonicalClassName` returns undefined) is NOT fed through the table.
   // It falls through both checks into the new-registration code below,
   // preserving issue #951's coexistence semantics.
+  // An aggregate can load the app before its upstream declaration. Retain
+  // that declaration for ancestry without restoring it as an effective model.
+  const replacedBy = !runtimeOptions?.extendsRegistered
+    ? (effectiveReplacement ??
+      [...getClasses().entries()].find(
+        ([key, entry]) =>
+          entry.name === simpleClassName &&
+          isSubtypeOf(key, registrationKey) &&
+          entry.schema?.tableName ===
+            (objectDef.schema?.tableName ??
+              objectDef.decoratorConfig?.tableName),
+      )?.[1])
+    : undefined;
   const existingCanonical = getCanonicalClassName(simpleClassName);
   // A run-time subclass deliberately shares its parent's simple name
   // (`@local/app:Profile` extends `@pkg:Profile`); the parent stays registered.
@@ -2839,7 +2881,7 @@ function registerFromManifestUntracked(
     runtimeOptions?.extendsRegistered !== undefined &&
     existingCanonical === runtimeOptions.extendsRegistered &&
     existingCanonical !== registrationKey;
-  if (existingCanonical && !sharesParentName) {
+  if (existingCanonical && !sharesParentName && !replacedBy) {
     const existing = getClasses().get(existingCanonical);
     if (existing) {
       const outcome = applyManifestCollisionPolicy({
@@ -2859,7 +2901,7 @@ function registerFromManifestUntracked(
     // else: stale map entry (key exists but class was removed) — allow registration
   }
 
-  if (getClasses().has(registrationKey)) {
+  if (!replacedBy && getClasses().has(registrationKey)) {
     const existing = getClasses().get(registrationKey);
     if (!existing) return;
     const outcome = applyManifestCollisionPolicy({
@@ -3056,6 +3098,17 @@ function registerFromManifestUntracked(
     visibility, // New: Visibility control for manifest filtering
   };
   // #3338: a deprecated alias must never name a second live class.
+  if (replacedBy) {
+    retainReplacedDeclaration(registrationKey, registration);
+    replacedBy.replacedQualifiedNames = [
+      ...new Set([
+        ...(replacedBy.replacedQualifiedNames ?? []),
+        registrationKey,
+      ]),
+    ];
+    getInheritanceCache().clear();
+    return;
+  }
   assertQualifiedNameAliasesAvailable(registrationKey, registration);
   getClasses().set(registrationKey, registration);
   // A run-time class is looked up by constructor to resolve its own identity

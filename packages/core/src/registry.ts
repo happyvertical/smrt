@@ -83,7 +83,10 @@ import {
   type RuntimeRegistrationOverride,
   registerRuntimeOverride,
 } from './registry/runtime-overrides';
-import { clearSubtypeLineage } from './registry/subtype-lineage';
+import {
+  clearSubtypeLineage,
+  replacedDeclarations,
+} from './registry/subtype-lineage';
 
 export type { RuntimeRegistrationOverride } from './registry/runtime-overrides';
 
@@ -332,7 +335,8 @@ function manifestParentUpdate(
     registered.extends &&
     isQualifiedName(registered.extends) &&
     parseQualifiedName(registered.extends).className === parent &&
-    getClasses().has(registered.extends)
+    (getClasses().has(registered.extends) ||
+      replacedDeclarations().has(registered.extends))
   ) {
     return undefined;
   }
@@ -4368,7 +4372,10 @@ export class ObjectRegistry {
       if (childKey === targetKey) continue;
 
       const chain = ObjectRegistry.getInheritanceChain(childKey);
-      if (chain.includes(targetKey)) {
+      if (
+        chain.includes(targetKey) ||
+        target?.replacedQualifiedNames?.some((name) => chain.includes(name))
+      ) {
         descendants.push(childKey);
       }
     }

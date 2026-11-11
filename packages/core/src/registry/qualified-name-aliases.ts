@@ -35,6 +35,7 @@ import {
 import { recordRegistryDiagnostic } from './diagnostics';
 import { getRegistryGeneration } from './generation';
 import { getClasses } from './shared-state';
+import { findReplacement, replacedDeclarations } from './subtype-lineage';
 import type { RegisteredClass } from './types';
 
 export {
@@ -111,8 +112,9 @@ function getAliasIndex(): Map<string, RegisteredClass> {
   }
 
   const byAlias = new Map<string, RegisteredClass>();
-  for (const [key, entry] of classes) {
-    for (const alias of readPreviousQualifiedNames(entry.config)) {
+  for (const [key, declaration] of [...replacedDeclarations(), ...classes]) {
+    const entry = findReplacement(key) ?? declaration;
+    for (const alias of readPreviousQualifiedNames(declaration.config)) {
       // A live class always wins over an alias (registration refuses the
       // collision; this guards registries assembled before that check ran).
       if (classes.has(alias)) continue;

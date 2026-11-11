@@ -16,6 +16,7 @@ import {
   getInheritanceConfig,
   verboseLog,
 } from './shared-state';
+import { replacedDeclarations } from './subtype-lineage';
 import type { RegisteredClass, RegisteredField } from './types';
 
 const logger = createLogger({ level: 'info' });
@@ -75,7 +76,10 @@ function findParentClassStrict(
   parentName: string,
 ): RegisteredClass | undefined {
   try {
-    return findClassStrict(parentName, child.packageName);
+    return (
+      replacedDeclarations().get(parentName) ??
+      findClassStrict(parentName, child.packageName)
+    );
   } catch (error) {
     if (
       !(error instanceof ConfigurationError) ||
@@ -247,7 +251,8 @@ export async function getAllFields(
       // with whatever runtime metadata is already available.
     }
 
-    const ancestor = findClass(ancestorName);
+    const ancestor =
+      replacedDeclarations().get(ancestorName) ?? findClass(ancestorName);
     if (!ancestor) {
       // Handle missing ancestors according to config
       const message = `Missing ancestor class "${ancestorName}" in inheritance chain for "${className}"`;
@@ -448,7 +453,8 @@ export async function getAllMethods(
       // Continue to next ancestor
     }
 
-    const ancestor = findClass(ancestorName);
+    const ancestor =
+      replacedDeclarations().get(ancestorName) ?? findClass(ancestorName);
     if (!ancestor) continue;
 
     // Merge parent methods into result

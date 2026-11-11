@@ -34,6 +34,7 @@ import {
 import { getRegistryGeneration } from './generation';
 import { resolveQualifiedNameAlias } from './qualified-name-aliases';
 import { getClasses, getConstructorIndex, verboseLog } from './shared-state';
+import { findReplacement } from './subtype-lineage';
 import type { RegisteredClass, SmrtObjectConstructor } from './types';
 
 // ── Simple-name iteration (replaces classNameMap reads) ─────────────
@@ -185,7 +186,7 @@ export function findClass(
   const classes = getClasses();
 
   // 1. Direct hit on classes map (fast path, works for qualified keys)
-  const registered = classes.get(name);
+  const registered = classes.get(name) ?? findReplacement(name);
   if (registered) {
     return registered;
   }
@@ -263,7 +264,7 @@ export function findClassStrict(
   const classes = getClasses();
 
   // 1. Direct hit on classes map (fast path, works for qualified keys)
-  const registered = classes.get(name);
+  const registered = classes.get(name) ?? findReplacement(name);
   if (registered) {
     return registered;
   }
@@ -277,7 +278,8 @@ export function findClassStrict(
   // 3. If fromPackage provided, try constructing qualified name for direct lookup
   if (fromPackage) {
     const qualifiedAttempt = createQualifiedName(fromPackage, name);
-    const byQualified = classes.get(qualifiedAttempt);
+    const byQualified =
+      classes.get(qualifiedAttempt) ?? findReplacement(qualifiedAttempt);
     if (byQualified) {
       return byQualified;
     }
@@ -387,7 +389,7 @@ export function getClassByConstructor(
 ): RegisteredClass | undefined {
   const registeredName = getConstructorIndex().get(ctor);
   if (registeredName) {
-    return getClasses().get(registeredName);
+    return getClasses().get(registeredName) ?? findReplacement(registeredName);
   }
   return undefined;
 }
@@ -405,6 +407,7 @@ export function getClassByQualifiedName(
 ): RegisteredClass | undefined {
   return (
     getClasses().get(qualifiedName) ??
+    findReplacement(qualifiedName) ??
     resolveQualifiedNameAlias(qualifiedName, source)
   );
 }

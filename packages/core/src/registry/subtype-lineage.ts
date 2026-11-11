@@ -1,12 +1,44 @@
 /** Qualified manifest lineage outlives registrations replaced by descendants. */
 
 import { ConfigurationError } from '../errors';
+import { getRegistryGeneration } from './generation';
 import { transferRuntimeOverride } from './runtime-overrides';
 import { getClasses, getInheritanceCache } from './shared-state';
 import type { RegisteredClass } from './types';
 
 declare global {
   var __smrtSubtypeParents: Map<string, string> | undefined;
+  var __smrtReplacedDeclarations: Map<string, RegisteredClass> | undefined;
+}
+/** Keep declared bases for inheritance; I/O resolves their effective replacement. */
+export function replacedDeclarations(): Map<string, RegisteredClass> {
+  globalThis.__smrtReplacedDeclarations ??= new Map();
+  return globalThis.__smrtReplacedDeclarations;
+}
+export function retainReplacedDeclaration(
+  key: string,
+  entry: RegisteredClass,
+): void {
+  replacedDeclarations().set(key, {
+    ...entry,
+    fields: new Map(entry.fields),
+    methods: new Map(entry.methods),
+  });
+}
+let replacementGeneration = -1;
+let replacementIndex = new Map<string, RegisteredClass>();
+export function findReplacement(key: string): RegisteredClass | undefined {
+  const generation = getRegistryGeneration();
+  if (generation !== replacementGeneration) {
+    replacementIndex = new Map();
+    for (const entry of getClasses().values()) {
+      for (const previous of entry.replacedQualifiedNames ?? []) {
+        replacementIndex.set(previous, entry);
+      }
+    }
+    replacementGeneration = generation;
+  }
+  return replacementIndex.get(key);
 }
 function parents(): Map<string, string> {
   globalThis.__smrtSubtypeParents ??= new Map();
@@ -14,6 +46,7 @@ function parents(): Map<string, string> {
 }
 export function clearSubtypeLineage(): void {
   parents().clear();
+  replacedDeclarations().clear();
 }
 export function recordSubtypeParent(
   name: string,
@@ -68,6 +101,7 @@ export function reconcileSubtypeLineage(): void {
           ]),
         ];
         transferRuntimeOverride(parentKey, childKey);
+        retainReplacedDeclaration(parentKey, parent);
         classes.delete(parentKey);
         getInheritanceCache().clear();
         child.inheritanceChain = undefined;

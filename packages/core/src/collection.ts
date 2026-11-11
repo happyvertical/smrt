@@ -2376,7 +2376,12 @@ export class SmrtCollection<ModelType extends SmrtObject> extends SmrtClass {
 
       throw new Error(errorMessage);
     }
-    return ctor._itemClass;
+    const registered = ObjectRegistry.getClassByConstructor(ctor._itemClass);
+    return (
+      registered?.replacedQualifiedNames?.length
+        ? registered.constructor
+        : ctor._itemClass
+    ) as SmrtCollectionItemClass<ModelType>;
   }
 
   /**
