@@ -27,8 +27,7 @@ stays below the domain layer, and the app passes both in as props.
 - **Without a policy the code seed applies**: `ui.basic` / `ui.group` / `ui.order`
   hints and the cold-start rule (no `basic` markers => everything basic; any
   marker => unmarked fields advanced). Order is `order`, then declaration order.
-- **Tiers**: list shows basic scalar columns only (no long text, JSON or raw
-  reference columns; capped at `DEFAULT_MAX_LIST_COLUMNS`, an explicit `columns`
+- **Tiers**: list shows basic scalar and named reference columns (no long text or JSON; capped at `DEFAULT_MAX_LIST_COLUMNS`, an explicit `columns`
   list is never capped); view and edit show advanced fields behind a disclosure
   (the edit one opens itself when an advanced field has a problem). Policy
   `label`, `help` and `required` win over the manifest; on create, a resolved
@@ -47,15 +46,37 @@ stays below the domain layer, and the app passes both in as props.
   key/value rows (`jsonScreenEntries`). Empty optional text becomes `null` when the field is nullable and `''`
   otherwise (unset text persists as `''`); every other empty optional field is
   `null`. Errors are codes, mapped to messages by the component via `useI18n`.
-- **Reference fields link (`relations`, `hrefFor`, `labels`).** `DetailScreen`
-  renders a `foreignKey` / `crossPackageRef` value as `<a href={hrefFor(field,
-  id)}>{labels[model](id)}</a>`; without an href the label alone, without a
-  label a shortened id (`shortScreenId`: first eight characters and `…`) in
-  `<code>` with the full id as its tooltip, inside the link when there is one. `labels` is keyed by the **target model id**,
-  which the screen finds through the `reference` relations (below), so pass
-  `relations` whenever you pass `labels`.
+- **Named references use `references: ScreenReferenceSources`.** Each entry holds
+  the exposed target's definition, the same `RecipeScreensSource` used for its
+  screen, and an optional `href(id)` for its record route. Edges resolve by
+  `relationships[].relatedCollection`; names read only the owning manifest's
+  `displayLabelField`, never per-screen guesses. `ListScreen` includes basic
+  foreign-key and cross-package columns, resolves repeated IDs once per source
+  and snapshot, and sorts/filters their displayed names. `DetailScreen` and the
+  record header link names when the target supplies a route. Failed, deleted,
+  unnamed or unavailable targets show “Linked record unavailable”; a late answer
+  from a previous snapshot cannot replace the current name. The legacy
+  `relations` / `labels` / `hrefFor` props remain supported.
+- **Create/edit references use smrt-ui `RelationInput`.** It calls the target's
+  `source.search({ query, offset, limit })` with 25-row pages, resolves the
+  initial selection through `get`, and submits the ID. Search never downloads
+  the collection through `list`. Arrow keys / Enter select, Escape restores the
+  committed label, Tab reaches “Load more records”, and optional references
+  have a named Clear button. Search errors and empty results are announced.
+  A missing target or searchable display label disables the picker with an
+  explanation while preserving the stored ID on unrelated edits. All picker
+  messages use `strings.screens.ts`.
+- **REST adapters.** `createRecipeScreensSource(definition, fetchers)` uses
+  smrt-web's envelope/error handling and exposes only permitted mutations.
+  `search` requests `limit + 1` rows, `offset`, a display-field `like` filter,
+  and stable display-field/ID ordering. `createRecipeScreenReferences(definitions,
+  { basePath, fetch, hrefFor })` builds the map for the exposed definitions;
+  `basePath` defaults to `/api`. Pass the app's record-route resolver as
+  `hrefFor(definition, id)`; no route is guessed for a model with data only.
+  `RecipeScreens` forwards the map to every mode; absent an explicit map it
+  builds REST sources from `definitions` (routes still belong to the host).
 - **Transport-neutral.** `RecipeScreens` drives a `RecipeScreensSource`
-  (`list` / `get` / `create` / `update` / `delete`); an operation the source lacks
+  (`list` / `search` / `get` / `create` / `update` / `delete`); an operation the source lacks
   (or `can` turns off) is simply not offered, so a read-only source is a
   read-only screen set. `view` and `recordId` are bindable and `onnavigate`
   fires on every user navigation, so an app can mirror them into its router.
@@ -226,3 +247,38 @@ below, and the edit form as a **mode** of the same screen. Props are
   "View all" hrefs, host-owned override edits, record change reload) and the
   link cases in `__tests__/DetailScreen.test.ts`; `overview/__tests__/record.test.ts`
   and the parent-context case in `overview/__tests__/load.test.ts`.
+
+## Reference validation and remaining projection requirement
+
+`__tests__/references.test.ts` uses mock data sources and an injected REST
+fetcher; `smrt-ui`'s `RelationInput.behavior.test.ts` covers the pagination
+primitive. Run `pnpm --filter @happyvertical/smrt-svelte test` and
+`pnpm --filter @happyvertical/smrt-ui test`.
+
+| Behavior / trigger | Positive case | Failure / invariant | Evidence |
+| --- | --- | --- | --- |
+| List mounts with FK/cross-package IDs | Both columns show names; name search retains row | Repeated IDs share lookup; late/deleted targets cannot show old names | Component mock-source test |
+| Record/detail opens | Name links through target route in detail and party header | Missing name shows unavailable notice; legacy callbacks still work | Component tests and axe |
+| Create/edit opens and searches | Initial label; bounded name search; next page; keyboard select posts ID | Empty/offline search preserves selection; no full-list call | Component mock-source test |
+| Clear/save | Optional clear submits null | Required empty blocks save; unavailable target keeps stored ID | Component tests |
+| REST search | Declared label, limit/offset, stable ordering | No search without label; disallowed mutations absent; transport errors propagate | Injected-fetch test |
+| Pagination action | Tab reaches action, appends unique results, returns focus | Old page discarded on new query; failed page retains prior results | smrt-ui component tests and axe |
+
+Actor: browser user; data executor: mock source or injected REST fetch, no
+persistence/transaction changes. Runtime: Svelte 5 / jsdom / Node 26; SQL dialect
+coverage is N/A because transport-neutral screens do not execute SQL. Existing
+field-policy exclusion tests remain mandatory. The new default-column assertion
+was also executed against isolated copies of the base and head derivation modules:
+the base failed the reference-column assertion and the head passed.
+
+**Blocked canary: commerce Customer → Profile name.** Core's existing
+`display.label` contract accepts an own persisted, non-sensitive field only
+(`core/src/ui-metadata.ts`); dotted paths, references, and transient fields are
+rejected by manifest generation. REST name filtering also operates on persisted
+columns. A metadata-only change cannot make Customer searchable by its linked
+Profile's current name. This needs an owning core relationship projection contract
+carried through manifests/web definitions and applied to both collection list/get
+serialization and name filtering/pagination, preserving permission and tenant
+boundaries. Commerce can then declare that projection once for `profileId` →
+Profile's display name and add its integration test. No copied-name column or
+screen-specific Customer lookup has been introduced.

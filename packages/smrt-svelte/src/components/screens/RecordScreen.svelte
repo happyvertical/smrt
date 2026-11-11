@@ -56,6 +56,7 @@ import type { RecordScreenProps } from './types.js';
 
 let {
   definition,
+  references = {},
   policy = null,
   record,
   relations = [],
@@ -327,6 +328,7 @@ function cancel(): void {
   {#if onsave}
     {#key recordId}
       <EditForm
+        {references}
         {definition}
         {policy}
         currency={recordCurrency}
@@ -357,6 +359,7 @@ function cancel(): void {
 >
   <div class="smrt-record-screen__main">
     <RecordHeader
+      {references}
       {definition}
       model={header}
       {record}
@@ -374,6 +377,7 @@ function cancel(): void {
       {extraActions}
     />
     <DetailScreen
+      {references}
       {definition}
       {policy}
       {record}

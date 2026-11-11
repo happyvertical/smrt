@@ -104,7 +104,7 @@ describe('deriveScreenFields with a resolved policy', () => {
     );
   });
 
-  it('list: basic scalar fields only, without long text, JSON or raw references', () => {
+  it('list: basic scalar and reference fields, without long text or JSON', () => {
     const fields = deriveScreenFields(taskDefinition, taskPolicy, {
       mode: 'list',
     });
@@ -114,6 +114,7 @@ describe('deriveScreenFields with a resolved policy', () => {
       'budget',
       'done',
       'dueAt',
+      'ownerId',
     ]);
   });
 

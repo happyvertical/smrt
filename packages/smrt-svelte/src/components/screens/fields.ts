@@ -197,7 +197,7 @@ function byOrder(
  * - `edit`: basic and advanced tiers, system fields never.
  * - `view`: basic and advanced tiers, then `createdAt`/`updatedAt` as
  *   read-only advanced meta when the definition has them.
- * - `list`: basic tier only, without long text, JSON or raw reference columns,
+ * - `list`: basic tier only, without long text, JSON columns,
  *   capped at {@link DEFAULT_MAX_LIST_COLUMNS}; `include` overrides all of it.
  */
 export function deriveScreenFields(
@@ -302,11 +302,7 @@ export function deriveScreenFields(
     const cap = options.maxListColumns ?? DEFAULT_MAX_LIST_COLUMNS;
     return ordered
       .filter(
-        (f) =>
-          f.tier === 'basic' &&
-          f.kind !== 'json' &&
-          f.kind !== 'textarea' &&
-          f.kind !== 'reference',
+        (f) => f.tier === 'basic' && f.kind !== 'json' && f.kind !== 'textarea',
       )
       .slice(0, Math.max(0, cap));
   }

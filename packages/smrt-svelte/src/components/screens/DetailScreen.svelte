@@ -12,8 +12,7 @@
  * Empty values (an empty JSON object or array included) show the "Not set"
  * placeholder; a JSON object shows as a compact key/value list. A reference
  * shows its target's label from `labels` (a link when `hrefFor` gives one);
- * without a label it falls back to a shortened id in `<code>`, the full id in
- * its tooltip.
+ * without a label it shows an unavailable notice, with the id in its tooltip.
  */
 import { Alert, ConfirmDialog } from '@happyvertical/smrt-ui/feedback';
 import { useI18n } from '@happyvertical/smrt-ui/i18n';
@@ -27,6 +26,8 @@ import {
   screenSourceError,
   screenTitles,
 } from './fields.js';
+import { useScreenReferenceLabels } from './reference-labels.svelte.js';
+import { screenReferenceTarget } from './references.js';
 import type {
   DetailScreenProps,
   ScreenCollectionDefinition,
@@ -34,14 +35,11 @@ import type {
   ScreenPolicy,
   ScreenRecord,
 } from './types.js';
-import {
-  formatScreenValue,
-  jsonScreenEntries,
-  shortScreenId,
-} from './values.js';
+import { formatScreenValue, jsonScreenEntries } from './values.js';
 
 let {
   definition,
+  references = {},
   policy = null,
   record,
   title,
@@ -88,7 +86,9 @@ const secondary = $derived(filled.filter((f) => f.tier === 'advanced'));
 
 const heading = $derived.by(() => {
   if (title) return title;
-  const label = allFields.find((f) => f.kind === 'text' && f.tier === 'basic');
+  const label =
+    allFields.find((f) => f.name === definition.displayLabelField) ??
+    allFields.find((f) => f.kind === 'text' && f.tier === 'basic');
   const value = label ? record[label.name] : undefined;
   return typeof value === 'string' && value.trim() !== ''
     ? value
@@ -121,10 +121,19 @@ function targetModel(field: ScreenField): string | undefined {
 
 /** The referenced record's label, or `undefined` when nothing names it. */
 function referenceLabel(field: ScreenField, id: string): string | undefined {
+  const resolved = referenceNames.label(field, id);
+  if (resolved) return resolved;
   const model = targetModel(field);
   const label = model ? labels?.[model]?.(id) : undefined;
   return label && label.trim() !== '' ? label : undefined;
 }
+
+const referenceNames = useScreenReferenceLabels(() => ({
+  definition,
+  fields: allFields,
+  rows: [record],
+  references,
+}));
 
 let confirmOpen = $state(false);
 let deleteError = $state(false);
@@ -141,7 +150,7 @@ async function confirmDelete(): Promise<void> {
 }
 </script>
 
-{#snippet shortId(id: string)}<code title={id}>{shortScreenId(id)}</code>{/snippet}
+{#snippet unavailableReference(id: string)}<span title={id}>{t(M['ui.screens.reference_unavailable'])}</span>{/snippet}
 
 {#snippet fieldList(list: ScreenField[])}
   {#each groupScreenFields(list) as [group, groupFields] (group ?? '')}
@@ -174,14 +183,14 @@ async function confirmDelete(): Promise<void> {
               {:else if safeHref(field, text)}
                 <a href={safeHref(field, text)}>{text}</a>
               {:else if field.kind === 'reference'}
-                {@const href = hrefFor?.(field, text)}
+                {@const href = hrefFor?.(field, text) ?? screenReferenceTarget(definition, field, references)?.href?.(text)}
                 {@const label = referenceLabel(field, text)}
                 {#if href}
-                  <a href={href} class="smrt-detail-screen__reference">{#if label}{label}{:else}{@render shortId(text)}{/if}</a>
+                  <a href={href} class="smrt-detail-screen__reference">{#if label}{label}{:else}{@render unavailableReference(text)}{/if}</a>
                 {:else if label}
                   <span class="smrt-detail-screen__reference">{label}</span>
                 {:else}
-                  {@render shortId(text)}
+                  {@render unavailableReference(text)}
                 {/if}
               {:else}
                 {text}

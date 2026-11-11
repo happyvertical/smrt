@@ -215,3 +215,17 @@ tsc excludes test files) holds the type assertions that smrt-types'
 `OverviewOverride`. `CookbookApp.test.ts` mounts the shell with the bakery
 cookbook (nav, section page, brand theme, edit callback); `server.test.ts` runs
 the loader over a temp project with a fake installed package.
+
+## Named reference screens
+
+The host's model page mounts `RecipeScreens` from `./screens`. Pass all exposed
+`collectionDefinitions` as `definitions` to enable the default REST reference
+sources. For linked record navigation, build the sources once with
+`createRecipeScreenReferences(collectionDefinitions, { hrefFor })` and pass them
+as `references`; `hrefFor(definition, id)` maps the qualified model to the app's
+record URL. Use the cookbook shell's model entries to determine which models
+have pages; omit a URL for a model with no page. A custom data source supplies
+its own `search({ query, offset, limit })` and `get(id)` in the same map. See
+[screens](screens.md) for label metadata, pagination and unavailable-target
+behavior. This shell does not own a model-page router or infer one from an API
+endpoint.

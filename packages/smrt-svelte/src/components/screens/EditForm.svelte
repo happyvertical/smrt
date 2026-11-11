@@ -40,6 +40,8 @@ import {
   screenSourceError,
   screenTitles,
 } from './fields.js';
+import ReferencePicker from './ReferencePicker.svelte';
+import { screenReferenceTarget } from './references.js';
 import type {
   EditFormProps,
   ScreenCollectionDefinition,
@@ -59,6 +61,7 @@ import {
 
 let {
   definition,
+  references = {},
   policy = null,
   record,
   title,
@@ -201,6 +204,12 @@ const formError = $derived(
         value={formatScreenValue(field, record?.[field.name], { currency })}
       />
     </FormGroup>
+  {:else if field.kind === 'reference'}
+    {@const target = screenReferenceTarget(definition, field, references)}
+    {#key target}
+      <ReferencePicker {field} {target} disabled={busy} error={messageFor(field)}
+        bind:value={() => text(field.name), (v) => setText(field.name, v)} />
+    {/key}
   {:else if field.kind === 'boolean'}
     <div class="smrt-edit-form__check">
       <Checkbox

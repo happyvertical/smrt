@@ -143,7 +143,7 @@ describe('DetailScreen', () => {
     );
     expect(document.querySelector('code')).toBeNull();
 
-    // No href: the label still replaces the raw id. No label either: a short id in <code>.
+    // No href: the label still replaces the raw id. No label either: an explicit unavailable notice.
     rerender({
       definition: taskDefinition,
       policy: taskPolicy,
@@ -161,11 +161,13 @@ describe('DetailScreen', () => {
       relations,
       labels: undefined,
     });
-    const code = document.querySelector('code');
-    expect(code?.textContent).toBe('0b0c7b5e…');
-    expect(code).toHaveAttribute('title', String(record.ownerId));
+    expect(screen.getByText('Linked record unavailable')).toHaveAttribute(
+      'title',
+      String(record.ownerId),
+    );
+    expect(document.querySelector('code')).toBeNull();
 
-    // A link without a label shows the short id inside the link.
+    // A link without a label keeps the unavailable notice inside the link.
     rerender({
       definition: taskDefinition,
       policy: taskPolicy,
@@ -174,9 +176,12 @@ describe('DetailScreen', () => {
       hrefFor: (_field, id) => `/users/${id}`,
       labels: undefined,
     });
-    const link = screen.getByRole('link', { name: '0b0c7b5e…' });
+    const link = screen.getByRole('link', {
+      name: 'Linked record unavailable',
+    });
     expect(link).toHaveAttribute('href', `/users/${record.ownerId}`);
-    expect(link.querySelector('code')).not.toBeNull();
+    expect(link).toHaveTextContent('Linked record unavailable');
+    expect(link.querySelector('code')).toBeNull();
   });
 
   it('shows an empty JSON object as Not set and a filled one as a key/value list', () => {

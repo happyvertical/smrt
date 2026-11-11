@@ -30,6 +30,18 @@ export const M = defineMessages({
   'ui.screens.delete_failed': 'Could not delete this record.',
   'ui.screens.not_found': 'This record no longer exists.',
   'ui.screens.view_all': 'View all',
+  'ui.screens.reference_unavailable': 'Linked record unavailable',
+  'ui.screens.reference_missing_target':
+    'This list is not available in this app.',
+  'ui.screens.reference_missing_label':
+    'This list does not provide searchable record names.',
+  'ui.screens.reference_search': 'Search {name}',
+  'ui.screens.reference_clear': 'Clear {name}',
+  'ui.screens.reference_loading': 'Searching…',
+  'ui.screens.reference_empty': 'No matching records',
+  'ui.screens.reference_error': 'Could not search records. Try again.',
+  'ui.screens.reference_results': '{count} records available',
+  'ui.screens.reference_more': 'Load more records',
   'ui.screens.related': 'Related records',
   'ui.screens.error.required': 'This field is required.',
   'ui.screens.error.invalid_integer': 'Enter a whole number.',

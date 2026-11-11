@@ -24,6 +24,7 @@ import { screenTitles } from './fields.js';
 import ListScreen from './ListScreen.svelte';
 import RecordScreen from './RecordScreen.svelte';
 import { deriveScreenRelations } from './relations.js';
+import { createRecipeScreenReferences } from './source.js';
 import type {
   RecipeScreensProps,
   RecipeScreensSource,
@@ -35,6 +36,7 @@ import type {
 
 let {
   definition,
+  references,
   policy = null,
   source,
   view = $bindable<RecipeScreenView>('list'),
@@ -51,6 +53,9 @@ let {
 }: RecipeScreensProps = $props();
 
 const { t } = useI18n();
+const referenceSources = $derived(
+  references ?? createRecipeScreenReferences(definitions ?? {}),
+);
 
 const titles = $derived(screenTitles(definition));
 const idField = $derived(definition.idField ?? 'id');
@@ -178,7 +183,8 @@ async function remove(): Promise<void> {
 
 <div class="smrt-recipe-screens" data-smrt-component="RecipeScreens">
   {#if view === 'create' && allowCreate}
-          <EditForm
+    <EditForm
+        references={referenceSources}
         {definition}
         {policy}
         {currency}
@@ -191,6 +197,7 @@ async function remove(): Promise<void> {
     {#if current}
       {#key definition.objectRef}
         <RecordScreen
+          references={referenceSources}
           {definition}
           {policy}
           {currency}
@@ -217,6 +224,7 @@ async function remove(): Promise<void> {
     {/if}
   {:else}
     <ListScreen
+      references={referenceSources}
       {definition}
       {policy}
       {rows}
