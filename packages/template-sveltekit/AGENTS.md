@@ -1,13 +1,10 @@
 # template-sveltekit
 
-Minimal SvelteKit project template used by `smrt gnode create --template=sveltekit`.
-It is the ground-up alternative to `smrt-start`.
+`smrt gnode create --template=sveltekit` scaffold; an alternative to `smrt-start`.
 
 ## Exports
 
-- `./host/server` and `./host/client` compose a normal local cookbook app with
-  gated REST/MCP, assistant, owner link and inference settings; see
-  [cookbook host](agents/cookbook-host.md). No product-specific host package.
+- [Cookbook host](agents/cookbook-host.md).
 
 - `getTemplatePath()` returns the template directory.
 - `copyTemplate(destination, options)` copies authored files, substitutes the
