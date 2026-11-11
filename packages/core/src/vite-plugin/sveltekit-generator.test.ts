@@ -3308,7 +3308,12 @@ describe('SvelteKit Route Generator', () => {
       expect(collectionContent).toContain(
         'const { limit, offset } = listBounds(url);',
       );
-      expect(collectionContent).toContain('orderBy: LIST_ORDER_BY');
+      expect(collectionContent).toContain(
+        "const orderBy = url.searchParams.get('orderBy') || LIST_ORDER_BY;",
+      );
+      expect(collectionContent).toContain(
+        'const count = await collection.count({ where });',
+      );
       expect(collectionContent).not.toContain(
         "Number(url.searchParams.get('limit')) || 50",
       );

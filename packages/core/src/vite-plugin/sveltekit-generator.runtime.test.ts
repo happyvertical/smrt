@@ -17,6 +17,7 @@ import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { SmrtCollection } from '../collection.js';
 import { clearManifestCache } from '../manifest/manifest-loader.js';
 import { SmrtObject } from '../object.js';
+import { parseRestListWhere } from '../query-bounds.js';
 import { ObjectRegistry, smrt } from '../registry.js';
 import { setRuntimeExposureGate } from '../runtime-exposure.js';
 import type { SmartObjectManifest } from '../scanner/types.js';
@@ -205,6 +206,7 @@ function writeWorkspaceCoreShim(projectRoot: string): void {
       "  return 'W/\"' + version + '-' + representation + '\"';",
       '}',
       'export async function getTableVersion() { return 1; }',
+      `export const parseRestListWhere = (${parseRestListWhere.toString()});`,
       'export function ifNoneMatchHasConcreteMatch() { return false; }',
       'export function ifNoneMatchSatisfied() { return false; }',
       'export function normalizeCustomActionFailure() { return undefined; }',
@@ -1135,7 +1137,7 @@ describe('generated SvelteKit helper runtime', () => {
       // a mocked factory. It must construct and initialize against this DB.
       writeFileSync(
         join(projectRoot, 'node_modules/@happyvertical/smrt-core/index.js'),
-        `export const { ObjectRegistry, isRuntimeModelEnabled, hasRuntimeExposureGate, createGeneratedCollectionAccess, normalizeCustomActionFailure, normalizeTypedHttpError, canonicalReadRepresentation, computeTableVersionEtag, getTableVersion, ifNoneMatchHasConcreteMatch, ifNoneMatchSatisfied } = globalThis.__smrt4320Core;`,
+        `export const { ObjectRegistry, isRuntimeModelEnabled, hasRuntimeExposureGate, createGeneratedCollectionAccess, normalizeCustomActionFailure, normalizeTypedHttpError, canonicalReadRepresentation, computeTableVersionEtag, getTableVersion, ifNoneMatchHasConcreteMatch, ifNoneMatchSatisfied, parseRestListWhere } = globalThis.__smrt4320Core;`,
       );
       const objectFilePath = join(projectRoot, 'src/lib/objects/Widget.ts');
       writeFileSync(

@@ -430,7 +430,10 @@ function getApiWritableAllowlist(apiConfig: unknown): string[] | null {
 function generateWritablePolicyHelper(
   objectDef: SmartObjectDefinition,
 ): string {
-  const readonly = collectReadonlyFieldNames(objectDef);
+  const readonly = [
+    ...collectReadonlyFieldNames(objectDef),
+    ...(objectDef.displayLabelProjection ? ['displayLabel'] : []),
+  ];
   const writable = getApiWritableAllowlist(objectDef.decoratorConfig?.api);
 
   return `
@@ -3537,7 +3540,8 @@ function generateCollectionRouteTemplate(
     objectDef,
     semanticManifest,
   );
-  const listUsesPermissionScopedBody = readPermissionFields.length > 0;
+  const listUsesPermissionScopedBody =
+    readPermissionFields.length > 0 || !!objectDef.displayLabelProjection;
   const listUsesBodyHash = listUsesSerializer || listUsesPermissionScopedBody;
   // The build-time web-collection shape digest (#1764) salts the v2 read ETag so
   // a shape-only deploy (no table write) busts every read validator. Deterministic
@@ -3555,6 +3559,7 @@ function generateCollectionRouteTemplate(
 // DO NOT EDIT - changes will be overwritten
 
 import { error${hasPost ? ', json' : ''} } from '@sveltejs/kit';
+${hasGet ? "import { parseRestListWhere } from '@happyvertical/smrt-core';\n" : ''}
 ${serializerImports ? `${serializerImports}\n` : ''}${hasPost ? "import { normalizeTypedHttpError } from '@happyvertical/smrt-core';\n" : ''}
 ${modelType.importStatement ? `${modelType.importStatement}\n` : ''}import type { RequestHandler } from './$types';
 ${collectionAccessImports}
@@ -3567,12 +3572,10 @@ ${generateAuthGuardHelper(objectDef, semanticManifest)}${needsRouteTenantContext
   // #2367: every generated page is ordered. `LIST_ORDER_BY` is emitted as a
   // module constant so the ordering is visible in the generated file rather
   // than implied by the database's row order.
-  const listAndCount = isTenantScoped(objectDef)
-    ? `  const readScope = tenantReadScope();
-  const items = await collection.list({ limit, offset, orderBy: LIST_ORDER_BY, where: readScope });
-  const count = await collection.count({ where: readScope });`
-    : `  const items = await collection.list({ limit, offset, orderBy: LIST_ORDER_BY });
-  const count = await collection.count();`;
+  const listAndCount = `  const where = { ...parseRestListWhere(url.searchParams)${isTenantScoped(objectDef) ? ', ...tenantReadScope()' : ''} };
+  const orderBy = url.searchParams.get('orderBy') || LIST_ORDER_BY;
+  const items = await collection.list({ limit, offset, orderBy, where });
+  const count = await collection.count({ where });`;
 
   const getHandler = hasGet
     ? `
@@ -3731,7 +3734,8 @@ function generateItemRouteTemplate(
     objectDef,
     semanticManifest,
   );
-  const getUsesPermissionScopedBody = readPermissionFields.length > 0;
+  const getUsesPermissionScopedBody =
+    readPermissionFields.length > 0 || !!objectDef.displayLabelProjection;
   const getUsesBodyHash = getUsesSerializer || getUsesPermissionScopedBody;
   // The build-time web-collection shape digest (#1764) salts the v2 read ETag —
   // same value as the list route and the generated virt-web module (see above).

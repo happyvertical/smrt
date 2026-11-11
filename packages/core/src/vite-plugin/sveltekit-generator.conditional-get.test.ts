@@ -47,11 +47,23 @@ function manifestFor(api: unknown): SmartObjectManifest {
   } as unknown as SmartObjectManifest;
 }
 
-async function generateAndRead(api: unknown): Promise<{
+async function generateAndRead(
+  api: unknown,
+  projected = false,
+): Promise<{
   collectionRoute: string;
   itemRoute: string;
 }> {
-  await generateSvelteKitRoutes(projectRoot, manifestFor(api), {
+  const manifest = manifestFor(api);
+  if (projected) {
+    manifest.objects.Product.displayLabelField = 'displayLabel';
+    manifest.objects.Product.displayLabelProjection = {
+      via: 'profileId',
+      field: 'name',
+      fallback: 'Unnamed product',
+    };
+  }
+  await generateSvelteKitRoutes(projectRoot, manifest, {
     enabled: true,
     routesDir: 'src/routes/api',
     objectsDir: 'src/lib/objects',
@@ -77,6 +89,30 @@ describe('SvelteKit generated routes: conditional GET (#1757)', () => {
 
   afterEach(() => {
     vi.clearAllMocks();
+  });
+
+  it('uses scoped query inputs and body hashes for linked labels while stripping computed writes', async () => {
+    const { collectionRoute, itemRoute } = await generateAndRead(true, true);
+    for (const route of [collectionRoute, itemRoute]) {
+      expect(route).toContain('function conditionalJson(');
+      expect(route).not.toContain('conditionalVersionedRead');
+      expect(route).toContain(
+        'const READONLY_FIELDS: string[] = ["displayLabel"];',
+      );
+    }
+    expect(collectionRoute).toContain(
+      "import { parseRestListWhere } from '@happyvertical/smrt-core';",
+    );
+    expect(collectionRoute).toContain(
+      '...parseRestListWhere(url.searchParams)',
+    );
+    expect(collectionRoute).toContain(
+      "const orderBy = url.searchParams.get('orderBy') || LIST_ORDER_BY;",
+    );
+    expect(collectionRoute).toContain(
+      'collection.list({ limit, offset, orderBy, where })',
+    );
+    expect(collectionRoute).toContain('collection.count({ where })');
   });
 
   it('inlines the v2 helper and wraps list/get queries in conditionalVersionedRead', async () => {
