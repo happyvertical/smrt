@@ -236,4 +236,30 @@ describe('owner tool holds over the canonical approval ledger (SQLite)', () => {
     await user.save();
     expect(await isApprovalOwner(db, actor)).toBe(false);
   });
+  it('pins the deciding actor before an asynchronous owner check yields', async () => {
+    let release!: () => void;
+    const checked = new Promise<void>((resolve) => {
+      release = resolve;
+    });
+    const guarded = new OwnerApprovalAuthority(
+      await createSqliteOwnerApprovalStore(db, () => now),
+      async (actor) => {
+        const allowed = actor.id === owner.id && actor.tenantId === tenantId;
+        await checked;
+        return allowed;
+      },
+      () => now,
+    );
+    const record = await guarded.request(input);
+    const actor = { ...owner };
+    const decision = guarded.decide(actor, record.id, true);
+    actor.id = 'impersonated-after-check';
+    actor.tenantId = randomUUID();
+    release();
+    expect(await decision).toMatchObject({
+      status: 'approved',
+      decidedBy: owner.id,
+      tenantId,
+    });
+  });
 });

@@ -146,9 +146,19 @@ export class OwnerApprovalAuthority {
     return record;
   }
 
-  async authorize(actor: OwnerApprovalActor) {
-    if (!actor.id || !actor.tenantId || !(await this.isOwner(actor)))
+  /** Snapshot caller-owned identity before the live owner check can yield. */
+  async authorize(actor: OwnerApprovalActor): Promise<OwnerApprovalActor> {
+    const snapshot = deepFrozenPlainCopy(actor) as OwnerApprovalActor;
+    if (
+      !snapshot ||
+      typeof snapshot.id !== 'string' ||
+      !snapshot.id ||
+      typeof snapshot.tenantId !== 'string' ||
+      !snapshot.tenantId ||
+      !(await this.isOwner(snapshot))
+    )
       throw new OwnerApprovalError('forbidden');
+    return snapshot;
   }
 
   /** Internal trusted-host read; callers must check thread access before presenting it. */
@@ -174,7 +184,7 @@ export class OwnerApprovalAuthority {
     actor: OwnerApprovalActor,
     pendingOnly = true,
   ): Promise<OwnerApproval[]> {
-    await this.authorize(actor);
+    actor = await this.authorize(actor);
     const records = await this.store.list(actor.tenantId);
     const fresh = await Promise.all(
       records.map((r) => this.get(actor.tenantId, r.id)),
@@ -192,7 +202,7 @@ export class OwnerApprovalAuthority {
   ): Promise<OwnerApproval> {
     if (typeof approve !== 'boolean')
       throw new OwnerApprovalError('invalid_request');
-    await this.authorize(actor);
+    actor = await this.authorize(actor);
     const record = await this.get(actor.tenantId, id);
     if (!record) throw new OwnerApprovalError('not_found');
     const now = this.now();

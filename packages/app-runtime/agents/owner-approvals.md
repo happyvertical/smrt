@@ -11,7 +11,9 @@ failed request are invisible and cannot execute.
 
 `isApprovalOwner` reuses users' built-in system-role lookup and direct membership:
 active user, active membership, exact tenant, canonical system owner role id.
-Tenant-local roles called owner and inherited membership do not qualify. Hosts may
+Tenant-local roles called owner and inherited membership do not qualify.
+Actor identity is snapshotted before asynchronous authorization, including the
+decision tenant and the audit actor. Hosts may
 inject another live owner check, but may never derive it from model output.
 The adapter's synthetic ledger permission is minted only after this host check;
 it is not a permission claim accepted from a client. The kind explicitly allows
