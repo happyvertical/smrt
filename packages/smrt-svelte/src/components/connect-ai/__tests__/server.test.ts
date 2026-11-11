@@ -109,6 +109,7 @@ describe('Connect AI route over inference APIs', () => {
   it('projects missing, installed signed-out, signed-in and saved-key states without secrets', async () => {
     const { routes, binding, dir, setApi, setPlan } = setup();
     const response = await routes.GET(event());
+    expect(response.status).toBe(200); // Unconfigured is a normal status response.
     expect(response.headers.get('cache-control')).toBe('no-store');
     expect(await response.json()).toMatchObject({
       engine: null,

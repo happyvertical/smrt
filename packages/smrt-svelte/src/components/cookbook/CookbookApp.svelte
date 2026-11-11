@@ -165,6 +165,8 @@ $effect(() => {
   void (async () => {
     const items: ShellSlotItem[] = [];
     for (const widget of widgets) {
+      // This recipe needs authenticated transport/registry bindings supplied by the host panel.
+      if (widget.recipeId === 'chat.assistant') continue;
       const ref = parseRecipeExportRef(widget.export);
       if (!ref) continue;
       try {

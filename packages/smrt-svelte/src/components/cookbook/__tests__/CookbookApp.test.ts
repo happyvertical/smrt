@@ -68,6 +68,31 @@ describe('CookbookApp', () => {
     await waitFor(() => expect(dock.dataset.visible).not.toBe(before));
   });
 
+  it('renders the assistant recipe only through the authenticated host panel', async () => {
+    const resolveExport = vi.fn(() => AssistantFixture);
+    render(Harness, {
+      cookbook: {
+        ...cookbook,
+        recipes: [...cookbook.recipes, 'chat.assistant'],
+      },
+      catalog: await workspaceCatalog(),
+      sectionId: 'custom:shop',
+      resolveExport,
+      assistant: {
+        component: AssistantFixture,
+        registry: createDataSurfaceRegistry(),
+        transport: {} as AssistantTransport,
+      },
+    });
+    await screen.findByTestId('assistant-dock');
+    await new Promise((resolve) => setTimeout(resolve, 20));
+    expect(screen.getAllByTestId('assistant-dock')).toHaveLength(1);
+    expect(resolveExport).not.toHaveBeenCalledWith(
+      '@happyvertical/smrt-chat/svelte',
+      'AssistantDock',
+    );
+  });
+
   it('does not mount or poll an assistant in embed/plugin mode', async () => {
     render(Harness, {
       cookbook,
