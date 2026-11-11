@@ -22,6 +22,8 @@ export default defineConfig(async ({ command, mode }) => {
         // Browser-safe assistant-turn wire contract + SSE reader (#2908),
         // shared by the server engine and the AssistantDock.
         'assistant-turn-events',
+        'tool-summary',
+        'assistant-approvals',
         // Browser-safe helper presentation DTOs. Keep the Profile/SQL adapter
         // in the package root server surface, never in this subpath.
         'helper-preferences',

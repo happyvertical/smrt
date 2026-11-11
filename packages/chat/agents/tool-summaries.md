@@ -111,3 +111,8 @@ selectors are not persisted fields. Offerings and execution both use the origina
 principal's live runtime exposure context. The Profile/Bot assistant canary and
 `src/create-targets.test.ts` cover all four dispatch paths, replacement, labels,
 readonly fields, malformed/foreign choices and gated children on SQLite.
+
+`./tool-summary` is a browser-safe entry. The optional fourth `toolSummary`
+argument supports `recordLabels: 'generic'` and `plainTextSummary: true` for
+saved-product wording/replay. All safety guards remain shared; default labels
+are unchanged. Tricia is a thin policy adapter over these options.

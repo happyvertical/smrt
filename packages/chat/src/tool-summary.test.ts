@@ -56,3 +56,53 @@ describe('shared tool descriptions', () => {
     );
   });
 });
+
+describe('host compatibility label options', () => {
+  const options = { recordLabels: 'generic', plainTextSummary: true } as const;
+  it('preserves generic records and old free-text labels without changing defaults', () => {
+    expect(toolSummary('product_list', [{}], true, options)).toBe(
+      'Checked records',
+    );
+    expect(toolSummary('product_list', [{}])).toBe('Looked up 1 product');
+    expect(toolSummary('chore_create', { title: 'Fern' }, true, options)).toBe(
+      'Completed this action',
+    );
+    expect(toolSummary('chore_create', { title: 'Fern' })).toBe(
+      'Added chore Fern',
+    );
+    expect(
+      toolSummary('app_addfield', 'add Product.notes', true, options),
+    ).toBe('add Product.notes');
+    expect(toolSummary('app_addfield', 'add Product.notes')).toBe(
+      'Completed this action',
+    );
+    expect(
+      toolSummary('app_addfield', JSON.stringify('created'), true, options),
+    ).toBe('created');
+    expect(toolSummary('app_addfield', 'null', true, options)).toBe(
+      'Completed this action',
+    );
+    expect(
+      toolSummary('app_addfield', { data: 'created' }, true, options),
+    ).toBe('created');
+    expect(toolSummary('app_addfield', 'created', true, options)).toBe(
+      'created',
+    );
+    expect(toolSummary('product_list', [], false, options)).toBe(
+      'Could not complete this action',
+    );
+  });
+  it('keeps payload and credential guards in compatibility mode', () => {
+    for (const result of [
+      '{"data":',
+      '/Users/person/app.db',
+      'SELECT * FROM data',
+      'Bearer abc',
+      'sk-sensitive',
+      '<script>',
+    ])
+      expect(toolSummary('unknown', result, true, options)).toBe(
+        'Completed this action',
+      );
+  });
+});

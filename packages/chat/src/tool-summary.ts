@@ -8,6 +8,7 @@ export type DescribeAssistantTool = (
   name: string,
   args?: Record<string, unknown>,
   outcome?: AssistantToolOutcome,
+  options?: { recordLabels?: 'generic' },
 ) => string;
 
 // Tool payloads belong to the model, never to a chip or its title attribute.
@@ -27,13 +28,14 @@ function safeText(value: unknown): string | undefined {
 function payload(
   value: unknown,
   depth = 0,
+  plainText = false,
 ): Record<string, unknown> | unknown[] | undefined {
   if (depth > 6) return;
   if (typeof value === 'string') {
     try {
-      return payload(JSON.parse(value), depth + 1);
+      return payload(JSON.parse(value), depth + 1, plainText);
     } catch {
-      return;
+      return plainText ? { summary: value } : undefined;
     }
   }
   if (!value || typeof value !== 'object') return;
@@ -41,12 +43,12 @@ function payload(
   const record = value as Record<string, unknown>;
   if (typeof record.summary === 'string') return record;
   for (const key of ['data', 'result', 'structuredContent']) {
-    const found = payload(record[key], depth + 1);
+    const found = payload(record[key], depth + 1, plainText);
     if (found) return found;
   }
   if (Array.isArray(record.content)) {
     for (const block of record.content) {
-      const found = payload(block?.text, depth + 1);
+      const found = payload(block?.text, depth + 1, plainText);
       if (found) return found;
     }
   }
@@ -58,6 +60,7 @@ export const describeAssistantTool: DescribeAssistantTool = (
   name,
   _args,
   outcome,
+  options,
 ) => {
   if (outcome && !outcome.ok) return 'Could not complete this action';
   const special: Record<string, string> = {
@@ -66,6 +69,12 @@ export const describeAssistantTool: DescribeAssistantTool = (
     approval_pending: 'Checked pending approvals',
   };
   if (outcome && special[name]) return special[name];
+  if (
+    outcome &&
+    options?.recordLabels === 'generic' &&
+    /(?:_list|_search|_get)$/.test(name)
+  )
+    return 'Checked records';
   const match =
     /^([a-z][a-z\d]*(?:[._-][a-z][a-z\d]*)*)[._-](create|update|delete|remove|list|search|read|get)$/i.exec(
       name,
@@ -74,6 +83,8 @@ export const describeAssistantTool: DescribeAssistantTool = (
   const summary =
     record && !Array.isArray(record) ? safeText(record.summary) : undefined;
   if (summary) return summary;
+  if (outcome && options?.recordLabels === 'generic')
+    return 'Completed this action';
   if (!match) {
     return outcome ? 'Completed this action' : 'Working on this action';
   }
@@ -110,17 +121,38 @@ export const describeAssistantTool: DescribeAssistantTool = (
 };
 
 /** Shell-compatible result entry point, using the same describe/label mechanism. */
-export function toolSummary(name: string, result: unknown, ok = true): string {
-  const text = safeText(result);
+export function toolSummary(
+  name: string,
+  result: unknown,
+  ok = true,
+  options?: { recordLabels?: 'generic'; plainTextSummary?: boolean },
+): string {
+  if (!ok) return 'Could not complete this action';
+  const compatible = options?.plainTextSummary
+    ? payload(result, 0, true)
+    : undefined;
+  const text = safeText(
+    options?.plainTextSummary
+      ? compatible && !Array.isArray(compatible)
+        ? compatible.summary
+        : undefined
+      : result,
+  );
   const summary =
     text &&
-    /^(?:Added|Updated|Deleted|Removed|Created|Checked|Looked up|Completed|Could not)\b/i.test(
-      text,
-    )
+    (options?.plainTextSummary ||
+      /^(?:Added|Updated|Deleted|Removed|Created|Checked|Looked up|Completed|Could not)\b/i.test(
+        text,
+      ))
       ? text
       : undefined;
-  return describeAssistantTool(name, undefined, {
-    ok,
-    observation: summary ? { summary } : result,
-  });
+  return describeAssistantTool(
+    name,
+    undefined,
+    {
+      ok,
+      observation: summary ? { summary } : result,
+    },
+    options,
+  );
 }

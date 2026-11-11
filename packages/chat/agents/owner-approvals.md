@@ -71,3 +71,12 @@ the reusable UI layer for AssistantApprovalCard.
 | `app-runtime/src/owner-approvals.ts` | MCP review/context + intent index; `rg` approval/hold/owner/decision in runtime, approvals, users, core and shell. Extends ApprovalService with tool execution envelopes; uses canonical owner-role membership APIs. No new approval model. |
 | `chat/src/assistant-approvals.ts` | MCP review/context; `rg` approval/policy/destructive/wait in chat, runtime, shell and inference. Adapts the existing tool/driver callbacks to OwnerApprovalAuthority; no existing host-neutral durable tool adapter fit. |
 | `chat/src/svelte/components/assistant/AssistantApprovalCard.svelte` | MCP review, architecture and approvals specialist context; `rg` by approval/decision/confirmation names and purpose across packages. Reuses smrt-ui Card/Button/i18n; domain widgets above do not accept tool holds. |
+
+The browser-free `./assistant-approvals` entry exports `observeAssistantApproval`
+for hosts that already execute approved actions. It observes the same authority
+until completion, with abort/timeout cleanup, without consuming or executing.
+`AssistantApprovalCard` optionally accepts a host-authorized `presentation` and
+`detail` snippet for an existing decision endpoint and server-loaded view.
+Tricia supplies its builder/draft preview through that snippet; the shared card
+owns headings, status, controls and messages. The normal transport-verified card
+keeps its existing behavior and polling.

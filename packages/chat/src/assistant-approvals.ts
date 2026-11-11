@@ -109,3 +109,25 @@ export function createAssistantApprovalBridge(options: {
     },
   };
 }
+
+/** Observe a host-executed durable hold without deciding, consuming or replaying it. */
+export async function observeAssistantApproval(options: {
+  authority: OwnerApprovalAuthority;
+  tenantId: string;
+  id: string;
+  signal: AbortSignal;
+  timeoutMs: number;
+}) {
+  const timeout = new AbortController();
+  const timer = setTimeout(() => timeout.abort(), options.timeoutMs);
+  try {
+    return await options.authority.wait(
+      options.tenantId,
+      options.id,
+      AbortSignal.any([options.signal, timeout.signal]),
+      { settled: true },
+    );
+  } finally {
+    clearTimeout(timer);
+  }
+}

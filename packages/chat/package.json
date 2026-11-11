@@ -58,6 +58,14 @@
     "./engines": {
       "types": "./dist/engines.d.ts",
       "import": "./dist/engines.js"
+    },
+    "./tool-summary": {
+      "types": "./dist/tool-summary.d.ts",
+      "import": "./dist/tool-summary.js"
+    },
+    "./assistant-approvals": {
+      "types": "./dist/assistant-approvals.d.ts",
+      "import": "./dist/assistant-approvals.js"
     }
   },
   "files": [
