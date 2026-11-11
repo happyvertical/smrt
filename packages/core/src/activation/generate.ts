@@ -66,10 +66,27 @@ export function buildActivationManifest(
             : '@happyvertical/smrt-core',
         )
       ) {
-        const resolved = parent.includes(':')
+        let resolved = parent.includes(':')
           ? parent
           : `${object.packageName}:${parent}`;
-        dependencies.push(resolved);
+        if (!parent.includes(':') && !manifest.objects[resolved]) {
+          const candidates = Object.entries(manifest.objects).filter(
+            ([, entry]) => entry.className === parent,
+          );
+          if (
+            candidates.length === 1 &&
+            findManifestObjectByName(manifest, parent, object) ===
+              candidates[0][1]
+          )
+            resolved = candidates[0][0];
+        }
+        if (
+          !isFrameworkBaseClass(
+            resolved.split(':').at(-1),
+            resolved.split(':')[0],
+          )
+        )
+          dependencies.push(resolved);
       }
       // Logical references (including cross-package refs) need constructors even
       // when the schema deliberately omits a physical FK constraint.

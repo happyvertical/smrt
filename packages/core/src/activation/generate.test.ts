@@ -109,6 +109,26 @@ function workspace() {
 }
 
 describe('AOT activation generation', () => {
+  it('resolves legacy unqualified report ancestry to its framework owner without inventing a table/model', () => {
+    const { files, manifest } = workspace();
+    manifest.objects['@activation/unused:Unused'].extends = 'SmrtReport';
+    manifest.objects['@happyvertical/smrt-reports:SmrtReport'] = manifestEntry({
+      className: 'SmrtReport',
+      packageName: '@happyvertical/smrt-reports',
+      filePath: '/framework/report.ts',
+      tableName: 'not_a_resource',
+      fields: {},
+    });
+    const generated = generateActivationRegistration(manifest, {
+      projectRoot: files.root,
+      outputDir: files.path('.smrt'),
+    });
+    expect(
+      activationClosure(generated.manifest, ['@activation/unused:Unused'])
+        .models,
+    ).toEqual(['@activation/unused:Unused']);
+    expect(generated.manifest.tables).not.toHaveProperty('not_a_resource');
+  });
   it('refuses a different nested provider context instead of importing the host copy', () => {
     const { files, manifest } = workspace();
     const entry = manifest.objects['@activation/customer:Customer'];
