@@ -5,10 +5,10 @@ description: "Svelte 5 components for SMRT user management - auth, users, tenant
 status: "stable"
 generated:
   by: "smrt/scripts/generate-knowledge-okf.ts"
-  at: "2026-11-11T08:08:58Z"
+  at: "2026-11-11T08:10:47Z"
 audience: "internal"
 evidence_level: "manifest-described"
-source_revision: "sha256:afe3befadd89397bbbbc8c0ab52613c7782ca95835b12b7f28cf63fd2d1f9d4a"
+source_revision: "sha256:d858b80c5e5b5faf2fea4bd3d5ef247347d723f6e144a5a3e043957b9e43ac92"
 sources:
   - id: "manifest"
     resource: "https://github.com/happyvertical/smrt/blob/main/packages/smrt-svelte/package.json"
@@ -89,6 +89,7 @@ sources:
 - [smrt-chat](/components/smrt-chat.md)
 - [smrt-content](/components/smrt-content.md)
 - [smrt-core](/components/smrt-core.md)
+- [smrt-fields](/components/smrt-fields.md)
 - [smrt-inference](/components/smrt-inference.md)
 - [smrt-languages](/components/smrt-languages.md)
 - [smrt-mcp-apps](/components/smrt-mcp-apps.md)
@@ -119,6 +120,7 @@ sources:
 - `./connect-ai/server`
 - `./cookbook`
 - `./cookbook/server`
+- `./cookbook/surfaces`
 - `./data`
 - `./data-surface`
 - `./forms`
