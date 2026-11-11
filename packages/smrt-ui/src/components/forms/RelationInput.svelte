@@ -50,6 +50,10 @@ export interface Props {
   description?: string;
   /** Look up records matching the text; called with '' when the list opens. */
   search: (query: string) => Promise<RelationOption[]>;
+  /** Optional next page for the current query; appended without losing focus or selection. */
+  loadMore?: () => Promise<RelationOption[]>;
+  hasMore?: boolean;
+  moreLabel?: string;
   /** Look up the current value's label when it has not been searched yet. */
   resolve?: (id: string) => Promise<{ id: string; label: string } | null>;
   /**
@@ -89,6 +93,9 @@ let {
   placeholder,
   description,
   search,
+  loadMore,
+  hasMore = false,
+  moreLabel = 'Load more',
   resolve,
   onCreate,
   debounceMs = 250,
@@ -114,6 +121,7 @@ let loading = $state(false);
 let failed = $state(false);
 let selectedLabel = $state('');
 let creating = $state(false);
+let loadingMore = $state(false);
 
 // Plain bookkeeping, deliberately not reactive.
 let labelledId = '';
@@ -167,7 +175,26 @@ async function runSearch(query: string) {
   }
 }
 
+async function more() {
+  if (!loadMore || loading || loadingMore || disabled || !hasMore) return;
+  const seq = searchSeq;
+  loadingMore = true;
+  failed = false;
+  try {
+    const found = await loadMore();
+    if (seq !== searchSeq) return;
+    const ids = new Set(results.map((item) => item.id));
+    results = [...results, ...found.filter((item) => !ids.has(item.id))];
+    if (rootEl?.contains(rootEl.ownerDocument.activeElement)) focusInput();
+  } catch {
+    if (seq === searchSeq) failed = true;
+  } finally {
+    if (seq === searchSeq) loadingMore = false;
+  }
+}
+
 function handleQuery(query: string) {
+  loadingMore = false;
   clearTimeout(timer);
   lastQuery = query;
   if (query === '') {
@@ -312,6 +339,12 @@ $effect(() => () => clearTimeout(timer));
         <span class="option-label">{option.label}</span>
         {#if detailById.get(String(option.value))}
           <span class="option-detail">{detailById.get(String(option.value))}</span>
+        {/if}
+      {/snippet}
+      {#snippet footer()}
+        {#if loadMore && (hasMore || loadingMore)}
+          <Button variant="ghost" size="sm" disabled={disabled || loading || loadingMore}
+            loading={loadingMore} onclick={more}>{moreLabel}</Button>
         {/if}
       {/snippet}
     </Combobox>

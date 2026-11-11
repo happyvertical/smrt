@@ -55,6 +55,8 @@ export interface Props {
    * every keystroke. Pair with `filter={false}` and fresh `options`.
    */
   onquery?: (query: string) => void;
+  /** Extra actions below the listbox, kept inside its focus boundary. */
+  footer?: Snippet;
   /**
    * Message announced politely to assistive technology while the list is open
    * ("Searching…", "3 results", "No results"). It is also shown inside the
@@ -87,6 +89,7 @@ let {
   valueLabel,
   filter = true,
   onquery,
+  footer,
   status,
   busy = false,
   invalid = false,
@@ -341,14 +344,31 @@ useControlRegistration(() => {
   <input bind:this={inputEl} id={inputId} role="combobox" autocomplete="off" {placeholder} {disabled} required={required && !value} aria-required={required ? 'true' : undefined} value={query}
     aria-expanded={open} aria-controls={listId} aria-busy={busy ? 'true' : undefined} aria-invalid={invalid ? 'true' : undefined} aria-describedby={describedby} aria-autocomplete="list" aria-activedescendant={open && filtered[activeIndex] ? `${listId}-${activeIndex}` : undefined}
     onfocus={openList} onclick={openList} oninput={handleInput} onkeydown={handleKeydown} />
-  {#if open && filtered.length}<div id={listId} class="options" role="listbox">{#each filtered as option, index (option.value)}<button id={`${listId}-${index}`} type="button" role="option"
-      aria-selected={String(option.value) === value} class:active={index === activeIndex} disabled={option.disabled} onpointerdown={(event) => event.preventDefault()} onclick={() => commit(option, true)}>{#if optionContent}{@render optionContent(option)}{:else}{option.label}{/if}</button>{/each}</div>
-  {:else if open && status}<div class="options empty" aria-hidden="true">{status}</div>{/if}
+  {#if open && (filtered.length || status || footer)}
+    <div class="options">
+      {#if filtered.length}
+        <div id={listId} class="option-list" role="listbox">
+          {#each filtered as option, index (option.value)}
+            <button id={`${listId}-${index}`} type="button" role="option" tabindex="-1"
+              aria-selected={String(option.value) === value} class:active={index === activeIndex}
+              disabled={option.disabled} onpointerdown={(event) => event.preventDefault()}
+              onclick={() => commit(option, true)}>
+              {#if optionContent}{@render optionContent(option)}{:else}{option.label}{/if}
+            </button>
+          {/each}
+        </div>
+      {:else if status}
+        <div class="empty" aria-hidden="true">{status}</div>
+      {/if}
+      {#if footer}{@render footer()}{/if}
+    </div>
+  {/if}
   {#if status !== undefined}<div class="sr-status" role="status" aria-live="polite">{open ? status : ''}</div>{/if}
 </div>
 <style>
 @layer smrt.reset, smrt.structure, smrt.theme;
 @layer smrt.theme {
+  .option-list { display: grid; }
   .combobox { position: relative; display: grid; gap: 0; color: var(--smrt-color-on-surface); }
   input { box-sizing: border-box; width: 100%; padding: var(--smrt-spacing-2) var(--smrt-spacing-3); border: var(--smrt-hairline-strong); border-radius: var(--smrt-radius-small); background: var(--smrt-color-surface); color: inherit; }
   input:focus { outline: var(--smrt-focus-ring-width) solid var(--smrt-focus-ring-color); outline-offset: var(--smrt-focus-ring-offset); } .options { position: absolute; z-index: var(--smrt-z-index-dropdown); top: 100%; left: 0; right: 0; display: grid; padding: var(--smrt-spacing-1); border: var(--smrt-hairline); border-radius: var(--smrt-radius-small); background: var(--smrt-color-surface-container); box-shadow: var(--smrt-elevation-2); }
