@@ -381,7 +381,7 @@ ${anyTenantScoped ? '  establishTenantContext(locals);\n' : ''}
     resolveTarget: async (segment: string): Promise<SyncApplyTarget | null> => {
       const target = SYNC_TARGETS[segment];
       if (!target) return null;
-      const context = locals as Record<string, unknown>;
+      const context = locals as { tenantId?: unknown; tenantContext?: unknown };
       const nested = context.tenantContext && typeof context.tenantContext === 'object' ? context.tenantContext as Record<string, unknown> : {};
       const tenant = context.tenantId ?? nested.tenantId;
       if (!isRuntimeModelEnabled({ qualifiedName: target.registryKey, replacedQualifiedNames: target.replacedQualifiedNames }, { surface: 'rest', locals, tenantId: typeof tenant === 'string' ? tenant : undefined })) return null;
