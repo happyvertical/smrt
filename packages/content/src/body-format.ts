@@ -490,7 +490,12 @@ function transformBodyTag(
   if (
     options.normalizeImageWidths &&
     safe.style &&
-    (tagName === 'img' || tagName === 'figure')
+    // Every body `img` consumes the private width; a `figure` only does when it
+    // carries the editor's layout markers, so an ordinary figure keeps its
+    // inline width (nothing layered competes with it).
+    (tagName === 'img' ||
+      (tagName === 'figure' &&
+        ('data-smrt-inline-image' in safe || 'data-smrt-placement' in safe)))
   ) {
     // Rewrite only already-sanitized declarations, never raw HTML/CSS input.
     safe.style = safe.style.replace(

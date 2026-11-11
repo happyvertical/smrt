@@ -217,6 +217,16 @@ describe('content body format utilities', () => {
 });
 
 describe('component-private image widths', () => {
+  it('keeps the inline width of a figure without editor layout markers', () => {
+    const plain =
+      '<figure style="width: 180px"><img src="/image.png"><figcaption>Caption</figcaption></figure>';
+    const rendered = renderContentBodyHtml(plain, 'html');
+    expect(rendered).toContain('<figure style="width: 180px">');
+    expect(rendered).not.toContain('--smrt-content-body-image-width');
+    const saved = editorHtmlToBody(bodyToEditorHtml(plain, 'html'), 'html');
+    expect(saved).toContain('<figure style="width: 180px">');
+  });
+
   it.each([
     'img',
     'figure',
