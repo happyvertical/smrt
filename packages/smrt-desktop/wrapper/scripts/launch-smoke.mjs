@@ -358,6 +358,11 @@ export async function smokeSidecar(options) {
         landing = await request(new URL(location, origin).pathname + new URL(location, origin).search, { headers });
       }
       if (landing.status !== 200 || /data-owner-setup="desktop"/.test(await landing.text())) throw new Error('owner did not reach the app after launch');
+      const interactionChecks = await options.verify?.({
+        run: run + 1,
+        dataDirectory: data,
+        request: (path, init = {}) => request(path, { ...init, headers: { ...headers, origin, ...init.headers } }),
+      });
       const list = await request(options.listRoute, { headers });
       if (list.status !== 200) throw new Error('authenticated REST list failed');
       await list.arrayBuffer();
@@ -375,11 +380,6 @@ export async function smokeSidecar(options) {
           if ((body.data?.id ?? body.id) !== recordId) throw new Error('relaunch returned a different record');
         }
       }
-      const interactionChecks = await options.verify?.({
-        run: run + 1,
-        dataDirectory: data,
-        request: (path, init = {}) => request(path, { ...init, headers: { ...headers, origin, ...init.headers } }),
-      });
       await sleep(5000);
       const rss = spawnSync('ps', ['-o', 'rss=', '-p', String(child.pid)], { encoding: 'utf8' });
       if (run === 0 && options.signOutRoute) {

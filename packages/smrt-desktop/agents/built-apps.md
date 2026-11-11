@@ -94,7 +94,8 @@ page (never back to setup). `--sign-out-route <path>` opts into a real same-orig
 POST sign-out before the first shutdown: the old cookie must lose REST access
 and receive desktop guidance; the second launch must recover without a terminal.
 The exported `smokeSidecar` accepts an optional trusted `verify({run, request,
-dataDirectory})` test callback after basic checks. Its request function supplies
+dataDirectory})` test callback after owner landing and before REST/persistence checks, so a real
+first-run onboarding flow can publish the enabled app before record operations. Its request function supplies
 the owner cookie and exact Origin. Return only non-secret check results for the
 report. This is local test orchestration, never an app-supplied execution hook.
 The product uses it for runtime exposure, effective app STI creates, reference
