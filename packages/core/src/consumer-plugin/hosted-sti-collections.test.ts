@@ -7,6 +7,7 @@ import type {
   SmartObjectManifest,
 } from '../scanner/types.js';
 import { generateSvelteKitRoutes } from '../vite-plugin/sveltekit-generator.js';
+import { buildWebRelationships } from '../vite-plugin/web-collections.js';
 import { separateHostedStiCollections } from './hosted-sti-collections.js';
 
 it('hosts the effective app STI children when the exposure list names their providers', async () => {
@@ -46,11 +47,22 @@ it('hosts the effective app STI children when the exposure list names their prov
       timestamp: 0,
       objects,
     } as SmartObjectManifest;
+    objects['@fixture/app:Agreement'].fields.contractId = {
+      type: 'foreignKey',
+      related: '@fixture/provider:Contract',
+    };
     const hosted = separateHostedStiCollections(
       manifest,
       ['@fixture/provider:Contract', '@fixture/provider:Agreement'],
       (key, def) => def.qualifiedName ?? key,
     );
+    expect(
+      buildWebRelationships(hosted.objects['@fixture/app:Agreement'], hosted),
+    ).toContainEqual({
+      field: 'contractId',
+      kind: 'foreignKey',
+      relatedCollection: 'contracts',
+    });
     expect(hosted.objects['@fixture/app:Agreement']).toMatchObject({
       collection: 'agreements',
       permissionCollection: 'contracts',

@@ -1095,6 +1095,7 @@ export function buildWebRelationships(
   obj: SmartObjectDefinition,
   manifest: SmartObjectManifest,
 ): WebRelationship[] {
+  const replacements = modelReplacements(manifest);
   // The set of REST collections that are actually materialized as web
   // collections. An edge to a model outside this set has no client cache to
   // invalidate, so it is dropped.
@@ -1111,9 +1112,10 @@ export function buildWebRelationships(
     // Normalize first: `@foreignKey(() => Scene)` thunks serialize as the raw
     // "() => Scene" source, which findManifestObjectByName cannot match on its
     // own.
+    const related = normalizeRelatedName(field.related);
     const target = findManifestObjectByName(
       manifest,
-      normalizeRelatedName(field.related),
+      replacements.get(related) ?? related,
       obj,
     );
     if (!target) continue;
