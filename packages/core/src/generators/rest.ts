@@ -1985,9 +1985,14 @@ export class APIGenerator {
       if (isFrameworkBaseClass(info.name || key, info.packageName)) continue;
       // Primary match: the canonical manifest `collection` segment.
       if (info.collection === segment) {
-        const baseKey = ObjectRegistry.getSTIBase(info.qualifiedName || key);
-        const base = baseKey ? ObjectRegistry.getClass(baseKey) : undefined;
-        return base?.collection === segment ? base : info;
+        const registryKey = info.qualifiedName || key;
+        if (ObjectRegistry.getSTIBase(registryKey)) {
+          const owner = ObjectRegistry.getInheritanceChain(registryKey)
+            .map((ancestor) => ObjectRegistry.getClass(ancestor))
+            .find((ancestor) => ancestor?.collection === segment);
+          if (owner) return owner;
+        }
+        return info;
       }
       // Back-compat fallback for classes registered without a `collection`
       // (inline/test stubs): derive the plural segment from the simple name and

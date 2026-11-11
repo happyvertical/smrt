@@ -117,7 +117,8 @@ handlers, endpoints, CLI and jobs use assertOperationPermission(). It requires
 catalog presence then resolves permissions, throwing fail-closed by default.
 Shared STI CRUD catalog entries name the effective base model, independent of
 registration order. Subtypes cannot overwrite `profiles.create` (formerly Bot
-when Bot registered last). An explicit child collection keeps its own CRUD;
+when Bot registered last). An explicit child collection keeps its own CRUD,
+and deeper descendants sharing that namespace cannot replace its owner;
 child custom actions and field permissions are still catalogued. Same-name app
 replacements supply the effective base identity through the public registry.
 `sti-create-dispatch.test.ts` exercises real Profile/Bot and a generic family

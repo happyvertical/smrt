@@ -582,7 +582,9 @@ type; upstream manifest declarations remain for ancestry. See
 ## Shared STI create identity
 
 Runtime REST collection discovery resolves a shared collection to its effective
-STI root even when a subtype registered first. MCP's discriminator catalog walks
+STI root even when a subtype registered first. An explicit child namespace uses
+its oldest matching ancestor, so deeper descendants cannot retarget it.
+MCP's discriminator catalog walks
 qualified ancestry through registry replacements, so provider children remain
 selectable after an app replaces their same-name base. Omitted discriminators
 create the effective base; explicit MCP discriminators must name an advertised
@@ -590,7 +592,7 @@ family member. Unknown or unrelated identities fail before any create.
 
 | Invariant | Trigger and positive case | Failure/control | Context and executor | Edge / level | Command |
 | --- | --- | --- | --- | --- | --- |
-| Shared CRUD owner | Profile/Bot and generic family, either registry order, base and same-name app root | Subtypes never replace base metadata | Users catalog, no database | Assistant dispatch metadata / regression | users `pnpm test` |
+| Shared CRUD owner | Profile/Bot and generic family, explicit branch namespaces, either registry order, base and same-name app root | Subtypes never replace base metadata | Users catalog, no database | Assistant dispatch metadata / regression | users `pnpm test` |
 | Default create | REST, MCP, CLI create handler and assistant choose Profile or generic root | Persisted discriminator is never the sibling's | Authenticated transport or authorized principal stub, one in-process SQLite handle, ordinary create lifecycle | Generated dispatch / integration | users `pnpm test` |
 | App root and children | Child-first REST and MCP create app Profile; explicit provider Person stays Person | Unknown/unrelated MCP discriminator writes nothing | In-process Node and SQLite for app fixture; recording collection for rejection | Qualified identity / integration and unit | core `pnpm test` |
 

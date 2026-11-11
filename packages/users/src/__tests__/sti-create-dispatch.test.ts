@@ -34,19 +34,29 @@ class CreateDispatchRoot extends SmrtObject {
   name = '';
 }
 @smrt()
+class CreateDispatchSibling extends CreateDispatchRoot {}
+@smrt({ collection: 'createdispatchbranches' })
 class CreateDispatchChild extends CreateDispatchRoot {}
+@smrt({ collection: 'createdispatchbranches' })
+class CreateDispatchGrandchild extends CreateDispatchChild {}
 
 const families = [
+  {
+    model: CreateDispatchChild,
+    child: CreateDispatchGrandchild,
+    collection: 'createdispatchbranches',
+    replace: false,
+  },
   { model: Profile, child: Bot, collection: 'profiles', replace: false },
   {
     model: CreateDispatchRoot,
-    child: CreateDispatchChild,
+    child: CreateDispatchSibling,
     collection: 'createdispatchroots',
     replace: false,
   },
   {
     model: CreateDispatchRoot,
-    child: CreateDispatchChild,
+    child: CreateDispatchSibling,
     collection: 'createdispatchroots',
     replace: true,
   },
@@ -63,9 +73,12 @@ describe('STI generated create paths', () => {
         types.getOrCreateGlobalBySlug('person', { name: 'Person' }),
       )
     ).id!;
-    for (const { model } of families) {
-      const key = ObjectRegistry.getClassByConstructor(model)!.qualifiedName!;
-      await ObjectRegistry.getCollection(key, { db });
+    for (const { model, child } of families) {
+      for (const modelClass of [model, child]) {
+        const key =
+          ObjectRegistry.getClassByConstructor(modelClass)!.qualifiedName!;
+        await ObjectRegistry.getCollection(key, { db });
+      }
     }
   });
   afterAll(async () => {
@@ -89,6 +102,19 @@ describe('STI generated create paths', () => {
       }
       const key = ObjectRegistry.getClassByConstructor(model)!.qualifiedName!;
       await ObjectRegistry.getCollection(key, { db });
+      const registrations = ObjectRegistry.getAllClasses();
+      const order = vi
+        .spyOn(ObjectRegistry, 'getAllClasses')
+        .mockReturnValue(
+          new Map(
+            [...registrations].sort((left, right) =>
+              path === 'REST'
+                ? Number(right[1].constructor === child) -
+                  Number(left[1].constructor === child)
+                : 0,
+            ),
+          ),
+        );
       const data = {
         name: `${path}-${randomUUID()}`,
         ...(model === Profile ? { typeId } : {}),
@@ -152,7 +178,7 @@ describe('STI generated create paths', () => {
           );
         }
         const { rows } = await db.query(
-          `SELECT _meta_type FROM "${collection}" WHERE name = ?`,
+          `SELECT _meta_type FROM "${ObjectRegistry.getTableName(key)}" WHERE name = ?`,
           [data.name],
         );
         expect(rows).toHaveLength(1);
@@ -162,6 +188,7 @@ describe('STI generated create paths', () => {
         );
       } finally {
         log.mockRestore();
+        order.mockRestore();
         restore();
       }
     });
