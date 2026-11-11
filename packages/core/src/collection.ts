@@ -55,10 +55,12 @@ import {
 } from './relationship-loader';
 import { detectEngine } from './schema/ddl/index';
 import { verifyPersistenceTable } from './schema/table-verifier';
+import { resolveDisplayLabelProjection } from './ui-metadata';
 import {
   classnameToTablename,
   fieldsFromClass,
   formatDataJs,
+  isReservedMetaDataKey,
   toCamelCase,
   toSafeInteger,
   toSnakeCase,
@@ -848,6 +850,7 @@ export class SmrtCollection<ModelType extends SmrtObject> extends SmrtClass {
     validFieldNames.add('context');
     validFieldNames.add('created_at');
     validFieldNames.add('updated_at');
+    if (this.getDisplayLabelProjection()) validFieldNames.add('display_label');
 
     // Add STI discriminator field for polymorphic queries.
     // R5-canon: use the qualified item name as the lookup key so a
@@ -1620,6 +1623,144 @@ export class SmrtCollection<ModelType extends SmrtObject> extends SmrtClass {
         db.config?.type ||
         (isDuckDbConnection ? 'duckdb' : undefined),
     );
+  }
+
+  private getDisplayLabelProjection() {
+    return resolveDisplayLabelProjection(
+      ObjectRegistry.getConfig(this.getResolvedItemQualifiedName()).display
+        ?.label,
+    );
+  }
+
+  /**
+   * One SQL statement for label, filtering, sorting and pagination. The target
+   * uses its normal beforeList/STI scope and public projection validation, just
+   * like listWithLatestRelated. No target object is hydrated per parent row.
+   */
+  private async resolveDisplayLabelSource(): Promise<{
+    from: string;
+    values: unknown[];
+  }> {
+    const projection = this.getDisplayLabelProjection();
+    if (!projection) return { from: this.tableName, values: [] };
+    const identity = this.getResolvedItemQualifiedName();
+    const fields = this.getFieldsSync();
+    if (
+      Object.keys(fields).some((name) => toSnakeCase(name) === 'display_label')
+    ) {
+      throw new Error('displayLabel is reserved for the projected label.');
+    }
+    // Validate the link itself as well as the target scalar: a secret/gated FK
+    // must not become a name oracle through a public projection.
+    this.resolveProjectionSelect([projection.via], fields, false);
+    this.buildOrderBySql(projection.via, fields);
+    const edge = ObjectRegistry.getRelationships(identity).find(
+      (r) =>
+        r.fieldName === projection.via &&
+        (r.type === 'foreignKey' || r.type === 'crossPackageRef'),
+    );
+    if (!edge)
+      throw new Error(
+        'display.label.via must name a declared foreignKey or crossPackageRef.',
+      );
+    const target = await ObjectRegistry.getCollection(
+      await resolveRelationshipTargetName(edge),
+      this.options,
+    );
+    await target.ensureStorageReady();
+    const targetFields = target.getFieldsSync();
+    const targetIdentity = target.getResolvedItemQualifiedName();
+    target.resolveProjectionSelect([projection.field], targetFields, false);
+    // The shared order validator also covers sensitive/gated STI descendants.
+    target.buildOrderBySql(projection.field, targetFields);
+    const labelType = targetFields[projection.field]?.type;
+    if (
+      !labelType ||
+      [
+        'foreignKey',
+        'crossPackageRef',
+        'json',
+        'meta',
+        'oneToMany',
+        'manyToMany',
+      ].includes(labelType)
+    ) {
+      throw new Error(
+        'display.label.field must name a public persisted scalar.',
+      );
+    }
+    const context = createInterceptorContext(
+      target.getResolvedItemClassName(),
+      'list',
+      target.constructor.name,
+      undefined,
+      targetIdentity,
+    );
+    const scoped = (await GlobalInterceptors.executeBeforeList(
+      target.getResolvedItemClassName(),
+      { where: {} },
+      context,
+    )) ?? { where: {} };
+    const where = resolveMetaTypeInWhere(
+      target.applyStiReadScope(scoped.where, undefined),
+    );
+    const predicate = buildWhere(target.convertWhereKeys(where || {}));
+    const pk = target.resolvePrimaryKeyField(
+      targetFields,
+      'Display label target',
+    );
+    const q = (name: string) => this.quoteProjectionIdentifier(name);
+    const tenantField = (
+      collection: SmrtCollection<SmrtObject>,
+      defs: Record<string, CollectionFieldDefinition>,
+    ) => {
+      const config = ObjectRegistry.getConfig(
+        collection.getResolvedItemQualifiedName(),
+      ).tenantScoped;
+      return (
+        (typeof config === 'object' && config.field) ||
+        Object.keys(defs).find(
+          (name) =>
+            isReservedMetaDataKey(name, defs) &&
+            name !== 'id' &&
+            !name.startsWith('_'),
+        )
+      );
+    };
+    const parentTenant = tenantField(this, fields);
+    const targetTenant = tenantField(target, targetFields);
+    const conditions = [
+      `r.${q(pk.column)} = p.${q(this.toDbColumnName(projection.via))}`,
+    ];
+    if (targetTenant) {
+      // A global source can see global targets only. Exact owner matching is
+      // deliberately stricter than loadRelated's null-owner compatibility.
+      const r = `r.${q(target.toDbColumnName(targetTenant))}`;
+      const p = parentTenant
+        ? `p.${q(this.toDbColumnName(parentTenant))}`
+        : 'NULL';
+      conditions.push(`(${r} = ${p} OR (${r} IS NULL AND ${p} IS NULL))`);
+    }
+    const label = `r.${q(target.toDbColumnName(projection.field))}`;
+    const value = `NULLIF(TRIM(CAST(${label} AS TEXT)), '')`;
+    // Keep placeholder numbering in lexical order as well as PostgreSQL's
+    // numeric order: SQLite adapters normalize numbered placeholders to '?'.
+    const values = [projection.fallback, ...predicate.values];
+    const targetWhereSql = predicate.sql.replace(
+      /\$(\d+)/g,
+      (_, index: string) => `$${Number(index) + 1}`,
+    );
+    const targetColumns = [
+      ...new Set([
+        pk.column,
+        target.toDbColumnName(projection.field),
+        ...(targetTenant ? [target.toDbColumnName(targetTenant)] : []),
+      ]),
+    ]
+      .map(q)
+      .join(', ');
+    const from = `(SELECT p.*, COALESCE(${value}, $1) AS ${q('display_label')} FROM ${q(this.tableName)} p LEFT JOIN (SELECT ${targetColumns} FROM ${q(target.tableName)} ${targetWhereSql}) r ON ${conditions.join(' AND ')}) AS ${q(this.tableName)}`;
+    return { from, values };
   }
 
   private getHydrationSelectSql(
@@ -3005,11 +3146,18 @@ export class SmrtCollection<ModelType extends SmrtObject> extends SmrtClass {
     // hydrates none of them. The literal is safe to interpolate: it is not
     // caller-derived, and `$n` placeholders here would have to be numbered after
     // the WHERE values on PostgreSQL.
-    const fullSQL = `SELECT ${this.getHydrationSelectSql()} FROM ${this.tableName} ${whereSql} LIMIT 1`;
+    const source = await this.resolveDisplayLabelSource();
+    const scopedWhereSql = whereSql.replace(
+      /\$(\d+)/g,
+      (_, index: string) => `$${Number(index) + source.values.length}`,
+    );
+    const fullSQL = `SELECT ${this.getHydrationSelectSql()} FROM ${source.from} ${scopedWhereSql} LIMIT 1`;
     const rows = await this.queryRowsWithCache(
       fullSQL,
-      whereValues,
-      this.resolveReadCacheConfig(options.cache),
+      [...source.values, ...whereValues],
+      source.values.length
+        ? undefined
+        : this.resolveReadCacheConfig(options.cache),
       this.hasDuckDbUuidColumnsOutsideHydrationSelect(),
     );
 
@@ -3183,10 +3331,15 @@ export class SmrtCollection<ModelType extends SmrtObject> extends SmrtClass {
     }
 
     const orderBySql = this.buildOrderBySql(orderBy, fields);
+    const source = await this.resolveDisplayLabelSource();
+    const scopedWhereSql = whereSql.replace(
+      /\$(\d+)/g,
+      (_, index: string) => `$${Number(index) + source.values.length}`,
+    );
 
     let limitOffsetSql = '';
     const limitOffsetValues: (number | undefined)[] = [];
-    let paramIndex = whereValues.length + 1;
+    let paramIndex = source.values.length + whereValues.length + 1;
 
     // #2367: reject a malformed bound here rather than binding it. A NaN or
     // fractional `limit` used to reach the driver verbatim, where PostgreSQL
@@ -3208,8 +3361,8 @@ export class SmrtCollection<ModelType extends SmrtObject> extends SmrtClass {
     const selectSql = projection
       ? projection.sql
       : this.getHydrationSelectSql();
-    const sql = `SELECT ${selectSql} FROM ${this.tableName} ${whereSql} ${orderBySql} ${limitOffsetSql}`;
-    const params = [...whereValues, ...limitOffsetValues];
+    const sql = `SELECT ${selectSql} FROM ${source.from} ${scopedWhereSql} ${orderBySql} ${limitOffsetSql}`;
+    const params = [...source.values, ...whereValues, ...limitOffsetValues];
 
     // Resolve the cache preference from the post-interceptor options —
     // beforeList interceptors may legally set or clear `cache` (e.g. force
@@ -3217,9 +3370,12 @@ export class SmrtCollection<ModelType extends SmrtObject> extends SmrtClass {
     const rows = await this.queryRowsWithCache(
       sql,
       params,
-      this.resolveReadCacheConfig(
-        (interceptedOptions as { cache?: CollectionCacheConfig | false }).cache,
-      ),
+      source.values.length
+        ? undefined
+        : this.resolveReadCacheConfig(
+            (interceptedOptions as { cache?: CollectionCacheConfig | false })
+              .cache,
+          ),
       !projection && this.hasDuckDbUuidColumnsOutsideHydrationSelect(),
     );
 
@@ -4404,8 +4560,14 @@ export class SmrtCollection<ModelType extends SmrtObject> extends SmrtClass {
       this.convertWhereKeys(where || {}),
     );
 
+    const source = await this.resolveDisplayLabelSource();
+    const scopedWhereSql = whereSql.replace(
+      /\$(\d+)/g,
+      (_, index: string) => `$${Number(index) + source.values.length}`,
+    );
     const result = await this.db.query(
-      `SELECT COUNT(*) as count FROM ${this.tableName} ${whereSql}`,
+      `SELECT COUNT(*) as count FROM ${source.from} ${scopedWhereSql}`,
+      ...source.values,
       ...whereValues,
     );
 
@@ -4741,7 +4903,14 @@ export class SmrtCollection<ModelType extends SmrtObject> extends SmrtClass {
       polymorphicFields,
     );
     const formattedData = this.withHydratedCoreFields(
-      formatDataJs(row, hydrationFields),
+      formatDataJs(
+        this.getDisplayLabelProjection()
+          ? Object.fromEntries(
+              Object.entries(row).filter(([key]) => key !== 'display_label'),
+            )
+          : row,
+        hydrationFields,
+      ),
     );
 
     const metaType = formattedData._meta_type;
@@ -4751,6 +4920,8 @@ export class SmrtCollection<ModelType extends SmrtObject> extends SmrtClass {
         formattedData,
         row,
       );
+      if (this.getDisplayLabelProjection())
+        polymorphicInstance._setDisplayLabel(row.display_label);
       return polymorphicInstance;
     }
 
@@ -4771,6 +4942,8 @@ export class SmrtCollection<ModelType extends SmrtObject> extends SmrtClass {
     // caller-created `_skipLoad` instance remains unpersisted.
     instance.markAsPersisted();
     await instance.initialize();
+    if (this.getDisplayLabelProjection())
+      instance._setDisplayLabel(row.display_label);
 
     if (isSTI) {
       const registeredClass = ObjectRegistry.getClass(this._itemClass.name);

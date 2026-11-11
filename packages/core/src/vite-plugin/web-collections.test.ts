@@ -508,6 +508,39 @@ describe('buildWebToolDescriptors', () => {
 });
 
 describe('collection display labels', () => {
+  it('publishes a read-only display value without adding a write-tool argument', () => {
+    const projection = {
+      via: 'profileId',
+      field: 'name',
+      fallback: 'Unnamed customer',
+    };
+    const model = obj({
+      className: 'Customer',
+      collection: 'customers',
+      decoratorConfig: { api: { include: ['list', 'create', 'update'] } },
+      fields: { profileId: { type: 'crossPackageRef' } },
+      displayLabelField: 'displayLabel',
+      displayLabelProjection: projection,
+    });
+    const m = manifest(model);
+    const entry = selectWebCollectionEntries(m)[0];
+    const definition = buildWebCollectionDefinition(entry, m);
+    expect(definition.displayLabelProjection).toEqual(projection);
+    expect(definition.fields.displayLabel).toMatchObject({
+      type: 'text',
+      readonly: true,
+    });
+    for (const tool of buildWebToolDescriptors(entry)) {
+      expect(tool.inputSchema.properties).not.toHaveProperty('displayLabel');
+    }
+    const hash = computeWebManifestHash(m);
+    model.displayLabelProjection = {
+      ...projection,
+      fallback: 'Missing customer',
+    };
+    expect(computeWebManifestHash(m)).not.toBe(hash);
+  });
+
   it('carries the owning manifest label into web definitions and their cache hash', () => {
     const model = obj({
       className: 'Order',

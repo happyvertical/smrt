@@ -28,6 +28,7 @@ import {
 import { recordRegistryDiagnostic } from '../registry/diagnostics.js';
 import { isFrameworkBaseClass } from '../registry/framework-base-classes.js';
 import { ObjectRegistry } from '../registry.js';
+import { resolveRelationshipTargetName } from '../relationship-loader.js';
 import { detectEngine } from '../schema/ddl/index.js';
 import {
   schemaForeignKeys,
@@ -38,6 +39,7 @@ import { SchemaGenerator } from '../schema/generator.js';
 import type { SchemaDefinition } from '../schema/types.js';
 import { ensureLegacySystemTableCompatibility } from '../system/compatibility.js';
 import { getSystemTableDDL } from '../system/schema.js';
+import { resolveDisplayLabelProjection } from '../ui-metadata.js';
 
 type TestDatabaseConnectionOptions = Parameters<typeof getDatabase>[0] & {
   __smrtSkipVitestSchemaPreparation?: boolean;
@@ -427,6 +429,24 @@ export async function getTestDatabase(
   const classNames = resolveRequestedSchemaClassNames(
     classes ?? ObjectRegistry.getQualifiedClassNames(),
   );
+
+  // Display references are read dependencies even when crossPackageRef does
+  // not emit a physical FK. Keep focused fixtures usable through normal get/list.
+  for (const className of classNames) {
+    const projection = resolveDisplayLabelProjection(
+      ObjectRegistry.getConfig(className).display?.label,
+    );
+    if (!projection) continue;
+    const edge = ObjectRegistry.getRelationships(className).find(
+      (edge) => edge.fieldName === projection.via,
+    );
+    if (!edge)
+      throw new Error(
+        `Missing display relationship on ${className}.${projection.via}`,
+      );
+    const target = await resolveRelationshipTargetName(edge);
+    if (!classNames.includes(target)) classNames.push(target);
+  }
 
   // Skip if no classes registered. When the caller left `classes` implicit,
   // an empty registry usually means registration never reached this

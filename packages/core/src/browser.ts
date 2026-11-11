@@ -587,6 +587,7 @@ export {
   DEFAULT_LIST_ORDER_BY,
   type ListBoundOptions,
   MAX_LIST_LIMIT,
+  parseRestListWhere,
   QueryBoundsError,
   QueryOrderByError,
   resolveListLimit,

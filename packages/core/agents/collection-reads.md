@@ -12,6 +12,71 @@ returns plain rows without hydrating objects. It composes with `where`,
 `orderBy`, `limit`, and `offset`, runs normal `beforeList`/tenant interceptors,
 and is limited to column-backed fields; it cannot combine with `include`.
 
+## Linked display names
+
+A model can name its records through one `foreignKey` or qualified
+`crossPackageRef`, without maintaining a second copy of the name:
+
+```typescript
+@smrt({ display: { label: {
+  via: 'profileId', field: 'name', fallback: 'Unnamed customer',
+} } })
+```
+
+`via` is the local persisted reference field, `field` is a persisted scalar on
+its target, and `fallback` is a required non-empty human-readable string.
+Dotted paths and extra options are rejected. The build validates the owning
+package's target manifest (declare the target package as a dependency). Both
+ends must be public: sensitive, transient, relationship-valued and
+`readPermission`-gated label fields are refused. Runtime repeats these checks
+against the effective target, so an app replacement cannot weaken them.
+`displayLabel` / `display_label` is reserved on models with this declaration.
+
+The manifest carries `displayLabelProjection` and
+`displayLabelField: 'displayLabel'`; web collection definitions add a read-only
+text field. Collection `list()` and `get()` expose `displayLabel` on its JSON/public DTO. `where: { 'displayLabel like': '%Maya%' }`,
+`orderBy: 'displayLabel ASC, id ASC'`, and `count({ where })` use the same SQL
+LEFT JOIN. Filtering, ordering and pagination happen in the database, with one
+data SELECT per list page, independent of row count. Target lookup uses its
+primary key's existing index; no new persisted column or index is needed.
+Plain `select` projections remain restricted to persisted columns.
+
+The join resolves the effective qualified target (including same-name app
+subclasses), runs the target collection's `beforeList` authorization/tenant
+scope and STI branch predicate, and never hydrates target records. Like other
+plain projections, target `afterList` hooks do not run; row authorization must
+be expressed in `beforeList`. Source/target tenant owners must match exactly,
+including global-to-global links; a global source cannot reveal a tenant-owned
+name. Missing, invisible, cross-owner, null or blank targets return the declared
+fallback. There is no cross-tenant option on the projection. Explicit reviewed
+cross-tenant workflows continue to use `loadRelated('profileId', { allowCrossTenant: true })`.
+
+The label is a snapshot of the read, never a writeable model field. Saving a
+hydrated object excludes it from persistence, and REST strips label input.
+Fresh, unqueried instances do not have a projected label; reload through the
+collection after a write. Projected collection reads bypass the row cache and
+REST uses a body-hash ETag so target renames cannot leave stale names behind.
+Generated SvelteKit list routes share `parseRestListWhere()` with runtime REST,
+honor explicit `orderBy` with the existing stable default, and count the filtered
+rows. Their tenant predicate still applies to client-supplied filters. Generated
+list/get routes use the same body-hash rule and strip computed label writes.
+
+### B1b test design
+
+All tests use in-process SQLite and one database handle per fixture. No
+projection writes exist, so rollback/idempotency cases are N/A; the save case
+proves computed values never enter persistence. PostgreSQL/DuckDB execution of
+the new join remains unverified.
+
+| Behavior / reachable trigger | Positive | Negative / failure | Actor and executor | Contract / level | Command |
+| --- | --- | --- | --- | --- | --- |
+| Build a display declaration | One cross-package hop survives manifest/web generation | Missing/gated/sensitive/transient target, malformed hop, unknown option, reserved field rejected | Build author / scanner | Metadata / integration | core `pnpm test` |
+| List/get/search/sort/count | Names filtered and ordered before a page; one SELECT for differently sized pages | Missing/blank link gets declared fallback; save never writes name | Collection caller / shared SQLite handle | DTO, pagination, query count / integration | core `pnpm test` |
+| Target authorization | Visible owner A/B names match active scope | Other-owner/global links and hidden rows yield fallback; policy errors propagate | Tenant A, B, no active tenant / scoped SQL | Information boundary / integration | core `pnpm test` |
+| Replacement target and source | App Customer projects app Profile title and custom field | Provider-only and existing ancestry/CRUD controls remain passing | App / public fixture migrations | Qualified relationship identity / integration | core `pnpm test` |
+| REST freshness / input | Profile rename changes response and ETag | Caller label cannot become persisted input | REST caller / same SQLite executor | HTTP representation / integration | core `pnpm test` |
+| Commerce canary | Customer's REST list/get/search source reads Profile name | Missing Profile displays Unnamed customer | Signed-in tenant owner / shared SQLite handle | REST → screens source / integration | commerce `pnpm test` |
+
 ## Bounded STI discriminator scopes
 
 An STI child collection reads its own qualified `_meta_type` and all registered descendants by default. A migration that must read registered sibling types may opt into an
@@ -92,3 +157,41 @@ in a CTE per candidate chunk. Only the scalar eligibility mask leaves the
 application database. Candidate chunks use the remaining conservative 999-bind
 budget (minimum 1); a predicate already larger than that budget retains the
 adapter’s existing capacity instead of being rejected by a new API limit.
+
+
+### B1b reuse check and integration boundary
+
+No production component, model, route, tool or file was added. Before extending
+these APIs, the configured smrt-dev-mcp `review-smrt-project` ran on core,
+commerce, smrt-svelte and smrt-web, and `build-context` architecture searched
+for displayLabelField, display.label, one-hop names, relationship projections
+and reference sources. The server offers context/introspection rather than a
+separate component-search tool. Read `docs/knowledge/intents/index.md` and used
+`rg` by name and purpose in core, commerce, profiles, smrt-ui, smrt-svelte and
+chat, plus workspace-wide displayLabel searches. Planner's preview name lookup
+is not a bounded, authorized collection query and was not reused.
+
+| Addition in existing module | Existing capability reused / reason for extension |
+| --- | --- |
+| `DisplayLabelProjection`, `resolveDisplayLabelProjection` in ui-metadata | Extends the owning display-label contract; the existing resolver only accepted own fields |
+| `resolveDisplayLabelSource` in collection | Reuses latest-related's target `beforeList`/STI pattern, public projection and ordering validation, primary-key resolution, and qualified relationship resolver |
+| SmrtObject serialization / `_setDisplayLabel` | Uses the existing hydration and framework serialization seams; computed labels never enter registered/persisted fields |
+| `parseRestListWhere` in query-bounds | Extracts the existing REST bracket decoder for generated SvelteKit list/count queries; MCP architecture and `rg` parser/operator searches across core, smrt-web, smrt-svelte, smrt-ui and chat found no existing server decoder outside REST |
+| Test-schema dependency expansion | Extends `getTestDatabase`'s existing physical-FK closure to the declared display read dependency |
+| `display-label-projection.test.ts` | Test-only Display* models and fixtures reuse `getTestDatabase`, real SQLite, `GlobalInterceptors`, and generated REST; existing tests covered projections and relationships separately |
+| commerce `customer-display-projection.test.ts` | Test-only setup reuses actual Customer, Profile, generated REST/web definitions and existing screens `createRecipeScreenReferences`/`screenRecordLabel`; no duplicate screen adapter |
+
+The reference source and label resolver already accept the generated computed
+field, as the commerce canary proves. Current screen field derivation does not
+honor web `readonly` metadata and drops fields absent from a persisted-field
+policy. Completing read-only forms and policy-independent record titles requires
+small changes in smrt-svelte `screens/types.ts` and `screens/fields.ts`, outside
+this worker's reference-source/label-file restriction. That UI change remains
+pending scope approval; RecipeScreens and cookbook files are untouched.
+
+
+Regression evidence: the same metadata assertion was executed against the
+original `ManifestGenerator` from base `5368f3bada` and this implementation.
+Base exited 1 with “display.label must be the name of an own field”; head exited
+0 and emitted `displayLabelField: 'displayLabel'`. Temporary proof files were
+removed. The executable scanner and SQLite suites retain the regression cases.

@@ -14,6 +14,7 @@ import {
 import type { PublicJsonOptions, SmrtObject } from '../object';
 import {
   buildDefaultListOrderBy,
+  parseRestListWhere,
   resolveListLimit,
   resolveListOffset,
 } from '../query-bounds';
@@ -41,6 +42,10 @@ import {
   type SyncApplyOp,
   type SyncApplyTarget,
 } from '../sync/apply';
+import {
+  DISPLAY_LABEL_FIELD,
+  resolveDisplayLabelProjection,
+} from '../ui-metadata';
 import { computeWebManifestHash } from '../vite-plugin/web-collections';
 import { handleChangesRoute } from './changes-route';
 import {
@@ -193,7 +198,13 @@ function runtimeObjectDefinition(
   info: RegisteredClass,
 ): SmartObjectDefinition {
   const className = info.name || key;
+  const displayLabelProjection = resolveDisplayLabelProjection(
+    ObjectRegistry.getConfig(key).display?.label,
+  );
   return {
+    ...(displayLabelProjection
+      ? { displayLabelProjection, displayLabelField: DISPLAY_LABEL_FIELD }
+      : {}),
     className,
     name: className.toLowerCase(),
     collection: info.collection || pluralizeRuntimeCollectionName(className),
@@ -1240,10 +1251,13 @@ export class APIGenerator {
   ): Promise<Response> {
     const cacheControl = this.resolveReadCachePolicy(objectName);
 
-    if (this.hasReadPermissionFields(objectName)) {
-      // Field-level read permissions make the response body vary by caller
-      // permissions, so the validator must cover the redacted body returned to
-      // this caller rather than only the table version.
+    if (
+      this.hasReadPermissionFields(objectName) ||
+      (objectName &&
+        typeof ObjectRegistry.getConfig(objectName).display?.label === 'object')
+    ) {
+      // Caller-specific fields and linked names can change without a parent
+      // table write. Validate the actual public body in both cases.
       const scope = this.resolveTenantReadScope(objectName);
       const object = scope
         ? await collection.get({ id, ...scope })
@@ -1328,35 +1342,7 @@ export class APIGenerator {
         ? orderByParam
         : this.resolveDefaultListOrderBy(objectName);
 
-      // Build where clause from query params
-      // Convert REST-style operators (price[gt]) to SQL-style (price >)
-      const where: Record<string, string | string[]> = {};
-      for (const [key, value] of params.entries()) {
-        if (!['limit', 'offset', 'orderBy'].includes(key)) {
-          // Parse REST operator format: field[operator]
-          const match = key.match(/^(.+)\[(.+)\]$/);
-          if (match) {
-            const field = match[1];
-            const operator = match[2];
-            // Map REST operators to SQL operators
-            const operatorMap: Record<string, string> = {
-              gt: '>',
-              gte: '>=',
-              lt: '<',
-              lte: '<=',
-              ne: '!=',
-              in: 'in',
-              like: 'like',
-            };
-            const sqlOperator = operatorMap[operator] || operator;
-            const sqlKey = `${field} ${sqlOperator}`;
-            // Handle 'in' operator - convert comma-separated string to array
-            where[sqlKey] = operator === 'in' ? value.split(',') : value;
-          } else {
-            where[key] = value;
-          }
-        }
-      }
+      const where = parseRestListWhere(params);
 
       // #1782: fail closed to global (NULL-tenant) rows for a public/anonymous
       // read of a tenant-scoped model with no active tenant context.
@@ -1375,9 +1361,13 @@ export class APIGenerator {
       return objects.map((object: SmrtObject) => this.toPublicData(object));
     };
 
-    if (this.hasReadPermissionFields(objectName)) {
-      // Field-level read permissions make the response body vary by caller
-      // permissions, so use the v1 body-hash path over the redacted payload.
+    if (
+      this.hasReadPermissionFields(objectName) ||
+      (objectName &&
+        typeof ObjectRegistry.getConfig(objectName).display?.label === 'object')
+    ) {
+      // Hash the public payload: permissions and linked-table writes can
+      // change it without advancing the parent table version.
       return conditionalJsonResponse(req, await buildPayload(), cacheControl);
     }
 
@@ -1397,32 +1387,7 @@ export class APIGenerator {
     params: URLSearchParams,
     objectName?: string,
   ): Promise<Response> {
-    // Build where clause from query params (same logic as handleList)
-    const where: Record<string, string | string[]> = {};
-    for (const [key, value] of params.entries()) {
-      // Parse REST operator format: field[operator]
-      const match = key.match(/^(.+)\[(.+)\]$/);
-      if (match) {
-        const field = match[1];
-        const operator = match[2];
-        // Map REST operators to SQL operators
-        const operatorMap: Record<string, string> = {
-          gt: '>',
-          gte: '>=',
-          lt: '<',
-          lte: '<=',
-          ne: '!=',
-          in: 'in',
-          like: 'like',
-        };
-        const sqlOperator = operatorMap[operator] || operator;
-        const sqlKey = `${field} ${sqlOperator}`;
-        // Handle 'in' operator - convert comma-separated string to array
-        where[sqlKey] = operator === 'in' ? value.split(',') : value;
-      } else {
-        where[key] = value;
-      }
-    }
+    const where = parseRestListWhere(params);
 
     // #1782: a count leaks cross-tenant cardinality just as a list leaks rows,
     // so apply the same fail-closed global scope for anonymous tenant reads.
@@ -1687,6 +1652,10 @@ export class APIGenerator {
         writable = (apiConfig as { writable: string[] }).writable;
       }
 
+      if (
+        typeof ObjectRegistry.getConfig(objectName).display?.label === 'object'
+      )
+        readonly.add('displayLabel');
       for (const [name, def] of ObjectRegistry.getFields(objectName)) {
         if (def && (def.readonly === true || def._meta?.readonly === true)) {
           readonly.add(name);

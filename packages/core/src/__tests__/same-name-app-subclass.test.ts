@@ -9,6 +9,7 @@ import { foreignKey } from '../decorators';
 import { MCPGenerator } from '../generators/mcp';
 import { APIGenerator } from '../generators/rest';
 import { buildDomainKnowledgeManifest } from '../knowledge';
+import { clearManifestCache } from '../manifest/manifest-loader';
 import { annotateModelReplacements } from '../manifest/model-replacements';
 import { generateSchemaDiff } from '../migrations/differ';
 import { collectStatementsFromDiff } from '../migrations/orchestrate';
@@ -115,6 +116,8 @@ function runtime(up: SmartObjectManifest, app?: SmartObjectManifest) {
     baseValue = '';
     leafValue = '';
   }
+  if (up.objects[`${UP}:Customer`].decoratorConfig.display)
+    foreignKey(Profile)(Customer.prototype, 'profileId');
   foreignKey(Customer)(Invoice.prototype, 'customerId');
   for (const ctor of [Customer, Invoice, Profile, Person, Base, Leaf])
     register(ctor, up);
@@ -201,6 +204,7 @@ afterEach(async () => {
   process.chdir(cwd);
   ws.dispose();
   setRuntimeExposureGate(undefined);
+  clearManifestCache();
   restore();
 });
 
@@ -642,6 +646,53 @@ describe('same-name app subclass', () => {
     expect((await request()).status).toBe(200);
     expect((await request(`/${row.id}`, 'DELETE')).status).toBe(204);
     expect((await request(`/${row.id}`)).status).toBe(404);
+  });
+
+  it('projects the current name through both app replacements without N+1 reads', async () => {
+    ws.write(
+      'node_modules/@fixture/a2-upstream/src/models.ts',
+      upstreamSource
+        .replace(
+          "@smrt({ tableName: 'a2_customers',",
+          "@smrt({ display: { label: { via: 'profileId', field: 'title', fallback: 'Unnamed customer' } }, tableName: 'a2_customers',",
+        )
+        .replace("profileId = '';", "@foreignKey('Profile') profileId = '';"),
+    );
+    up = await scan(ws.path('node_modules/@fixture/a2-upstream'), UP);
+    ws.write(
+      'node_modules/@fixture/a2-upstream/dist/manifest.json',
+      JSON.stringify(up),
+    );
+    clearManifestCache();
+    app = await scan(ws.path('app'), APP, [UP]);
+    merged = annotateModelReplacements({
+      ...app,
+      objects: { ...up.objects, ...app.objects },
+    });
+    const models = runtime(up, merged);
+    db = await getDatabase({ type: 'sqlite', url: ':memory:' });
+    await migrate(merged);
+    const profiles = await ObjectRegistry.getCollection(`${UP}:Profile`, {
+      db,
+    });
+    const customers = await ObjectRegistry.getCollection(`${UP}:Customer`, {
+      db,
+    });
+    const profile = await profiles.create({ title: 'Maya', badge: 'app' });
+    await customers.create({ profileId: profile.id, favoritePose: 'tree' });
+    const rows = await customers.list({
+      where: { 'displayLabel like': '%aya%' },
+      orderBy: 'displayLabel ASC',
+    });
+    expect(rows).toHaveLength(1);
+    expect(rows[0]).toBeInstanceOf(models.AppCustomer);
+    expect(rows[0].toPublicJSON()).toMatchObject({
+      displayLabel: 'Maya',
+      favoritePose: 'tree',
+    });
+    expect(await rows[0].loadRelated('profileId')).toBeInstanceOf(
+      models.AppProfile,
+    );
   });
 
   it('generates one canonical REST/web/MCP surface and retains ancestry provenance', async () => {

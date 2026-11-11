@@ -683,6 +683,13 @@ const TEXT_VERDICT_ASK =
  * ```
  */
 export class SmrtObject extends SmrtClass {
+  private _displayLabel: string | undefined;
+
+  /** @internal Collection hydration only; never populated from request input. */
+  _setDisplayLabel(value: unknown): void {
+    this._displayLabel = typeof value === 'string' ? value : undefined;
+  }
+
   /**
    * Database table name for this object
    */
@@ -2001,7 +2008,10 @@ export class SmrtObject extends SmrtClass {
 
     // Call transformation hook to allow safe customization
     // This enables subclasses to add/modify fields without overriding toJSON()
-    return this.transformJSON(data);
+    const transformed = this.transformJSON(data);
+    if (this._displayLabel !== undefined)
+      transformed.displayLabel = this._displayLabel;
+    return transformed;
   }
 
   /**
@@ -2980,6 +2990,12 @@ export class SmrtObject extends SmrtClass {
     }
 
     const jsonData = this.toJSON();
+    // A computed relationship label never participates in persistence.
+    if (
+      typeof ObjectRegistry.getConfig(this.getResolvedQualifiedName()).display
+        ?.label === 'object'
+    )
+      delete jsonData.displayLabel;
 
     // STI: Fail-fast validation for _meta_type discriminator
     if (tableStrategy === 'sti') {

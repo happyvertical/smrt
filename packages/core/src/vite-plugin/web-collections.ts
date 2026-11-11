@@ -98,6 +98,8 @@ export type WebFieldType = Exclude<
 export interface WebFieldDefinition {
   type: WebFieldType;
   required?: boolean;
+  /** Computed public value, excluded from edit forms and write schemas. */
+  readonly?: boolean;
   /** Whether the public field contract explicitly permits `null`. */
   nullable?: boolean;
   default?: unknown;
@@ -946,6 +948,7 @@ export function buildWebCollectionDefinition(
   fields: Record<string, WebFieldDefinition>;
   relationships: WebRelationship[];
   displayLabelField?: string;
+  displayLabelProjection?: SmartObjectDefinition['displayLabelProjection'];
 } {
   return {
     name: entry.collection,
@@ -955,6 +958,9 @@ export function buildWebCollectionDefinition(
     idField: 'id',
     ...(entry.obj.displayLabelField
       ? { displayLabelField: entry.obj.displayLabelField }
+      : {}),
+    ...(entry.obj.displayLabelProjection
+      ? { displayLabelProjection: entry.obj.displayLabelProjection }
       : {}),
     actions: entry.actions,
     fields: buildWebFieldDefinitions(entry.obj),
@@ -993,6 +999,9 @@ export function buildWebFieldDefinitions(
       ...(description !== undefined ? { description } : {}),
       ...(ui ? { ui } : {}),
     };
+  }
+  if (obj.displayLabelProjection) {
+    fields.displayLabel = { type: 'text', readonly: true, ui: { basic: true } };
   }
   return fields;
 }
@@ -1169,8 +1178,9 @@ function buildWebToolDescriptorsForHost(input: {
     return true;
   });
   const webFields = buildWebFieldDefinitions(owner);
-  const fields: ToolFieldMeta[] = Object.entries(webFields).map(
-    ([name, def]) => ({
+  const fields: ToolFieldMeta[] = Object.entries(webFields)
+    .filter(([, def]) => !def.readonly)
+    .map(([name, def]) => ({
       name,
       type: def.type,
       ...(def.required !== undefined ? { required: def.required } : {}),
@@ -1186,8 +1196,7 @@ function buildWebToolDescriptorsForHost(input: {
       ...(readFieldEnum(owner.fields?.[name])
         ? { enum: readFieldEnum(owner.fields?.[name]) }
         : {}),
-    }),
-  );
+    }));
   const descriptors = buildToolDescriptors({
     className: owner.className,
     fields,
