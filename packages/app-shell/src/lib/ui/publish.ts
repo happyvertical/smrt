@@ -29,6 +29,7 @@ export function publishLines(preview: PublishPreview): string[] {
     ...d.recipesAdded.map((r) => `Add recipe ${r}.`),
     ...d.recipesRemoved.map((r) => `Remove recipe ${r}.`),
   );
+  lines.push(...(preview.reportChanges ?? []).map((c) => c.text));
   return lines;
 }
 
@@ -70,6 +71,14 @@ export function publishGroups(preview: PublishPreview): PublishGroup[] {
       added.push(`Add method ${method.model}.${method.name}().`);
     if (method.change === 'changed')
       changed.push(`Change method ${method.model}.${method.name}().`);
+  }
+  for (const change of preview.reportChanges ?? []) {
+    (change.kind === 'added'
+      ? added
+      : change.kind === 'removed'
+        ? removed
+        : changed
+    ).push(change.text);
   }
   const conversions = preview.versions
     .flatMap((v) => v.steps)

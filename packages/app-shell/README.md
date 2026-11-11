@@ -92,7 +92,7 @@ The same names and parameters on both surfaces. A wrong-shaped argument is a
 | `undoTo` (`app_undoto`) | `version` |
 | `startDraft`, `previewPublish`, `publishDraft`, `discardDraft` | `name?`; none; `expect?`; none. See [Draft then publish](#draft-then-publish-the-shell). `?target=live\|draft` (REST) names the copy a builder operation acts on |
 
-A FieldDef is `{ type, label?, required?, choices?, ref? }`; `type` is one of
+A FieldDef is `{ type, label?, required?, choices?, ref?, calculated? }`; `type` is one of
 text, number, integer, boolean, date, money, choice, reference, json. Field names
 are camelCase (`dueDate`).
 
@@ -114,6 +114,10 @@ owner). Writes must be same-origin `application/json`. Errors are
 | `GET /PUT /api/shell/records/<Model>/<id>?target=` | PUT: changed fields | the record |
 | `DELETE /api/shell/records/<Model>/<id>?target=` | | live: **202** `PendingApproval`, nothing is deleted until approved; draft: **200** `{ deleted: id }` |
 | `/api/app/<route>` (any method; copy in the `x-shell-target` header) | as the app's REST | the app's generated REST (`/api/app/chores` is the app's `/api/chores`); `DELETE` answers **202** `PendingApproval`; only the app's own collection routes are served (`sync/apply`, `_changes`, `_events` and unknown collections are 404) |
+| `GET /reports`, `GET /reports/<name>` | | Saved report list and live result in the owner's saved copy; sidebar group appears when reports exist |
+| `GET /api/shell/reports/<name>?target=` | | Bounded engine result; labels and reference destinations remain separate from raw ids |
+| `GET /api/shell/reports/<name>/csv?target=` | | Server-generated RFC 4180 CSV, screen formatting, labels instead of ids, formula-safe text |
+| `POST /api/shell/reports/<name>?target=` | `{ action: 'rename', label }` (display label) or `{ action: 'rename', to }` (definition key) or `{ action: 'remove' }` | Existing builder result or pending approval; live structure is frozen during a draft |
 | `GET /api/events` | | server-sent events |
 | `POST /mcp` | MCP Streamable HTTP | shell tools plus app tools, one policy |
 

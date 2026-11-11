@@ -11,6 +11,7 @@ import {
   draftInfo,
 } from '../test/draft-fixtures.ts';
 import { layoutState } from '../test/layout-state.svelte.ts';
+import { report } from '../test/report-fixtures.ts';
 import Layout from './+layout.svelte';
 
 const navigation = vi.hoisted(() => ({
@@ -825,4 +826,21 @@ it('starts the phone drawer closed despite a remembered expanded desktop sidebar
   expect(JSON.parse(localStorage.getItem(LAYOUT_KEY) ?? '{}').panels.left).toBe(
     'expanded',
   );
+});
+
+it('puts reports below models and marks only draft-only reports new', async () => {
+  const live = { ...draftDescription('live'), reports: { sales: report } };
+  const draft = {
+    ...draftDescription('draft'),
+    reports: { sales: report, newReport: { ...report, label: 'New answer' } },
+  };
+  await render(data({ description: draft, liveDescription: live }));
+  const group = container.querySelector('a[href="/reports"]');
+  expect(group?.textContent).toContain('Reports');
+  expect(
+    container.querySelector('a[href="/reports/newReport"]')?.textContent,
+  ).toContain('new');
+  expect(
+    container.querySelector('a[href="/reports/sales"]')?.textContent,
+  ).not.toContain('new');
 });

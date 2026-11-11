@@ -3,7 +3,7 @@
 The content header owns draft controls on home, model, history and review pages; welcome and settings have none. Chat is hidden during onboarding. The publish preview groups Added, Removed, Changed and Archived items in counted cards before its ordered changes and full method code. The saved owner view selects the
 layout description; loaders and mutations carry that description's explicit
 target. Changing copies remounts forms and returns home. Approvals always name
-live. No report route is present. Shell copy uses the existing plain-text
+live. Reports use the same saved copy at `/reports` and `/reports/[name]`; both keep the content-header draft controls. Shell copy uses the existing plain-text
 pattern (the package has no message catalog).
 
 | Behavior | Trigger and positive case | Failure case | Context / executor | Runtime / edge | Level / command |
@@ -72,3 +72,24 @@ Real paid model turns, ChatGPT OAuth and real key saves were not exercised;
 connection transitions and resumed-engine inputs were verified with DOM tests,
 the stub model and both stub CLIs. Each numbered fix has failing pre-fix
 regression evidence and passing fixed-code evidence. No containers were used.
+
+
+## Reports UI (#4917)
+
+Reuse check: read the intent index and ran smrt-dev-mcp review on app-shell.
+Existing `ReportResult`, `reportCsv`, chart formatters, shell cell/money formatters,
+`hostFor`, `runCommand`, and SSE dependencies are reused. No Svelte MCP is
+available in this session. Formula wording is display-only, never evaluation.
+
+| Behavior / invariant | Reachable trigger | Positive | Negative / failure | Actor / context | Executor / transaction | Runtime / dialect | External edge | Level / command |
+|---|---|---|---|---|---|---|---|---|
+| Report navigation | Saved reports in viewed description | Group below models, draft-only new badge | No reports hides group; live has no draft items | Owner / saved copy | Description read; N/A mutation | Svelte 5 / jsdom | smrt-svelte nav children | DOM / app-shell test |
+| Report results | Open report, record/definition SSE invalidation | Shared result, chart, record links, empty and truncation | Plain error and back link | Owner / explicit live or draft | Engine read, no result persistence | Node 26 / SQLite; Svelte 5 | reports display callbacks | Node + DOM / app-shell test |
+| CSV | Download action | Display labels, money, RFC 4180 and formula-safe text | Anonymous/member/other tenant, missing report/copy, invalid target | Verified owner, explicit copy | Same bounded engine read | Node 26 / SQLite | HTTP attachment | Node / app-shell test |
+| Report changes | Rename/remove, define through catalog | runCommand, review/history added/changed/renamed/removed | Live frozen, unknown action/name, cross-origin refused | Verified owner / draft split | Existing builder transaction and approval gate; no new writes | Node 26 / SQLite | Existing command contract | Node + DOM / app-shell test |
+| Calculated values | Open new/existing record, save, list fields | Read-only formatted value, formula, sorted column | No value before save; never submitted, even injected form values | Owner / viewed copy | Existing record mutation; generated column remains database-owned | Svelte 5, Node 26 / SQLite | Closed SDK expression grammar | Unit + DOM / app-shell test |
+| Assistant reports | Catalog tool result and saved thread replay | Safe summaries, shared result in chat, saved-report link | Failed/malformed payload never rendered; no approval bypass | Owner / one catalog policy | Existing turn/thread store; rows stay transient | Node 26, Svelte 5 | API + CLI event details | Unit + Node + DOM / app-shell test |
+
+UI additions have no prior implementation to compare as a bug-fix base. Existing
+engine rollback, replay and approval idempotence suites remain the transaction
+evidence. Browser visual QA is delegated to the coordinator, not claimed here.
