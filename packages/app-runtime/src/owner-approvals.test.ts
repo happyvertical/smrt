@@ -1,4 +1,7 @@
 import { randomUUID } from 'node:crypto';
+import { mkdtemp, rm } from 'node:fs/promises';
+import { tmpdir } from 'node:os';
+import { join } from 'node:path';
 import { ApprovalEventCollection } from '@happyvertical/smrt-approvals';
 import { getTestDatabase } from '@happyvertical/smrt-core';
 import { withTenant } from '@happyvertical/smrt-tenancy';
@@ -16,6 +19,7 @@ import {
   createSqliteOwnerApprovalStore,
   isApprovalOwner,
   OwnerApprovalAuthority,
+  OwnerApprovalContinuations,
   type OwnerApprovalInput,
 } from './owner-approvals.js';
 
@@ -66,6 +70,147 @@ describe('owner tool holds over the canonical approval ledger (SQLite)', () => {
   });
   afterEach(async () => {
     await db?.close();
+  });
+
+  it('reopens a non-thread continuation and records one original-caller result under concurrent resume', async () => {
+    let executions = 0;
+    const principal = {
+      id: owner.id,
+      tenantId,
+      permissions: ['invoices.delete'],
+      allowedTools: ['invoices.delete'],
+    };
+    const first = new OwnerApprovalContinuations(authority, {});
+    const hold = await first.capture(principal, () =>
+      first.adapter('delete', 'continuation').request(input),
+    );
+    principal.permissions.push('secret.read');
+    const reopened = new OwnerApprovalContinuations(await open(), {
+      delete: async (record) => {
+        expect(record.continuation?.principal.permissions).toEqual([
+          'invoices.delete',
+        ]);
+        expect(record.requestedBy).toBe(owner.id);
+        expect(record.args).toEqual({ id: 'invoice-1' });
+        executions++;
+        return { deleted: record.args.id };
+      },
+    });
+    await authority.decide(owner, hold.id, true);
+    const results = await Promise.allSettled([
+      reopened.resume(owner, hold.id),
+      reopened.resume(owner, hold.id),
+    ]);
+    expect(results.filter((r) => r.status === 'fulfilled')).toHaveLength(1);
+    expect(executions).toBe(1);
+    expect(await reopened.outcome(owner, hold.id)).toMatchObject({
+      status: 'succeeded',
+      result: { deleted: 'invoice-1' },
+    });
+    await expect(
+      reopened.outcome({ ...owner, id: 'someone-else' }, hold.id),
+    ).rejects.toMatchObject({ code: 'not_found' });
+    await expect(reopened.resume(owner, hold.id)).rejects.toMatchObject({
+      code: 'conflict',
+    });
+  });
+
+  it('resumes a pending hold from a closed and reopened SQLite file', async () => {
+    const directory = await mkdtemp(join(tmpdir(), 'owner-continuation-'));
+    try {
+      await db.close();
+      const options = {
+        type: 'sqlite' as const,
+        url: join(directory, 'holds.sqlite'),
+        classes: [
+          '@happyvertical/smrt-approvals:ApprovalRequest',
+          '@happyvertical/smrt-approvals:ApprovalEvent',
+          '@happyvertical/smrt-approvals:ApprovalPolicy',
+        ],
+      };
+      db = await getTestDatabase(options);
+      authority = await open();
+      const first = new OwnerApprovalContinuations(authority, {});
+      const hold = await first.capture(
+        {
+          id: owner.id,
+          tenantId,
+          permissions: [input.tool],
+          allowedTools: [input.tool],
+        },
+        () => first.adapter('disk', 'continuation').request(input),
+      );
+      await db.close();
+      db = await getTestDatabase(options);
+      authority = await open();
+      let count = 0;
+      const reopened = new OwnerApprovalContinuations(authority, {
+        disk: async () => ({ executions: ++count }),
+      });
+      expect(await reopened.decide(owner, hold.id, true)).toMatchObject({
+        status: 'succeeded',
+        result: { executions: 1 },
+      });
+      await db.close();
+      db = await getTestDatabase(options);
+      authority = await open();
+      expect(
+        await new OwnerApprovalContinuations(authority, {}).outcome(
+          owner,
+          hold.id,
+        ),
+      ).toMatchObject({ status: 'succeeded', result: { executions: 1 } });
+      expect(count).toBe(1);
+    } finally {
+      await db.close();
+      await rm(directory, { recursive: true, force: true });
+    }
+  });
+
+  it('retains native binding and lets the executor consume and complete its own hold once', async () => {
+    const continuations = new OwnerApprovalContinuations(authority, {
+      native: async (record) => {
+        expect(record.context).toEqual(input.context);
+        await authority.consume(tenantId, record.id);
+        await authority.complete(tenantId, record.id, true, { revision: 2 });
+      },
+    });
+    const hold = await continuations.capture(
+      {
+        id: owner.id,
+        tenantId,
+        permissions: ['invoices.delete'],
+        allowedTools: ['invoices.delete'],
+      },
+      () => continuations.adapter('native').request(input),
+    );
+    expect(await continuations.decide(owner, hold.id, true)).toMatchObject({
+      status: 'succeeded',
+      result: { revision: 2 },
+    });
+    await expect(
+      continuations.adapter('native').request(input),
+    ).rejects.toMatchObject({ code: 'forbidden' });
+  });
+
+  it('denies and expires non-thread continuations without running their executor', async () => {
+    let executions = 0;
+    const c = new OwnerApprovalContinuations(authority, {
+      test: async () => executions++,
+    });
+    const request = () =>
+      c.capture(
+        { id: owner.id, tenantId, permissions: [], allowedTools: [input.tool] },
+        () => c.adapter('test', 'continuation').request(input),
+      );
+    const denied = await request();
+    expect((await c.decide(owner, denied.id, false)).status).toBe('denied');
+    const expired = await request();
+    now += 60_001;
+    await expect(c.decide(owner, expired.id, true)).rejects.toMatchObject({
+      code: 'conflict',
+    });
+    expect(executions).toBe(0);
   });
 
   it('survives re-creating authority, records the human actor, and consumes once across instances', async () => {

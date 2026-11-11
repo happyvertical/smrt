@@ -61,7 +61,7 @@ const labels = {
 };
 
 onMount(() => {
-  if (presentation || !approval || !transport || !threadId) return;
+  if (presentation || !approval || !transport) return;
   const boundTransport = transport;
   const boundThread = threadId;
   const boundApproval = approval;
@@ -126,7 +126,7 @@ async function decide(approve: boolean) {
     </div>
   {/if}
 </article>
-{:else if approval && transport && threadId}
+{:else if approval && transport}
 <div data-smrt-component="AssistantApprovalCard">
 <Card padding="sm">
   <div class="approval" aria-busy={busy}>

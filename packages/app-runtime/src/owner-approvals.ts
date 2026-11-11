@@ -1,4 +1,5 @@
 /** Durable, single-use holds for host tools. Never expose this authority to a model. */
+import { AsyncLocalStorage } from 'node:async_hooks';
 import { createHash, randomUUID } from 'node:crypto';
 import {
   type ApprovalPrincipal,
@@ -42,6 +43,8 @@ export interface OwnerApprovalInput {
   /** Host recovery envelope (thread, principal, permission ceiling), never request-body authority. */
   context: Record<string, unknown>;
   ttlMs?: number;
+  /** Trusted executor binding; independent of a tool's own context fingerprint. */
+  continuation?: OwnerToolContinuation;
 }
 
 export interface OwnerApproval extends Omit<OwnerApprovalInput, 'ttlMs'> {
@@ -484,4 +487,124 @@ export async function createSqliteOwnerApprovalStore(
       );
     },
   };
+}
+
+/** Saved caller authority can only shrink when the registered executor resumes it. */
+export interface OwnerToolContinuation {
+  executor: string;
+  principal: {
+    id: string;
+    tenantId: string;
+    permissions: string[];
+    allowedTools: string[];
+  };
+  consumption: 'executor' | 'continuation';
+}
+
+/** No second ledger: this dispatches the canonical authority's durable envelopes. */
+export class OwnerApprovalContinuations {
+  private readonly callers = new AsyncLocalStorage<
+    OwnerToolContinuation['principal']
+  >();
+  constructor(
+    readonly authority: OwnerApprovalAuthority,
+    private readonly executors: Readonly<
+      Record<string, (record: OwnerApproval) => Promise<unknown>>
+    >,
+  ) {}
+
+  capture<T>(
+    principal: OwnerToolContinuation['principal'],
+    work: () => Promise<T>,
+  ): Promise<T> {
+    return this.callers.run(
+      deepFrozenPlainCopy(principal) as typeof principal,
+      work,
+    );
+  }
+
+  /** Adapt native-hold tools without changing their pinned args/context or consuming twice. */
+  adapter(
+    executor: string,
+    consumption: OwnerToolContinuation['consumption'] = 'executor',
+  ) {
+    const authority = this.authority;
+    return {
+      request: async (input: OwnerApprovalInput) => {
+        const principal = this.callers.getStore();
+        if (
+          !principal ||
+          principal.id !== input.requestedBy ||
+          principal.tenantId !== input.tenantId ||
+          !principal.allowedTools.includes(input.tool)
+        )
+          throw new OwnerApprovalError('forbidden');
+        return authority.request({
+          ...input,
+          continuation: { executor, consumption, principal },
+        });
+      },
+      get: authority.get.bind(authority),
+      consume: authority.consume.bind(authority),
+      complete: authority.complete.bind(authority),
+    };
+  }
+
+  /** Result reads are scoped to the requesting principal, including after restart. */
+  async outcome(actor: OwnerApprovalActor, id: string): Promise<OwnerApproval> {
+    actor = deepFrozenPlainCopy(actor) as OwnerApprovalActor;
+    const record = await this.authority.get(actor.tenantId, id);
+    if (!record || record.requestedBy !== actor.id)
+      throw new OwnerApprovalError('not_found');
+    return record;
+  }
+
+  async decide(
+    actor: OwnerApprovalActor,
+    id: string,
+    approve: boolean,
+  ): Promise<OwnerApproval> {
+    actor = await this.authority.authorize(actor);
+    const record = await this.authority.get(actor.tenantId, id);
+    const binding = record?.continuation;
+    if (!record || !binding || !this.executors[binding.executor])
+      throw new OwnerApprovalError('not_found');
+    const decision = await this.authority.decide(actor, id, approve);
+    if (decision.status !== 'approved') return decision;
+    return this.resume(actor, id);
+  }
+
+  /** Resume an approved, unconsumed call after a process restart. Never retry executing calls. */
+  async resume(actor: OwnerApprovalActor, id: string): Promise<OwnerApproval> {
+    actor = await this.authority.authorize(actor);
+    const record = await this.authority.get(actor.tenantId, id);
+    const binding = record?.continuation;
+    const execute = binding && this.executors[binding.executor];
+    if (!record || !binding || !execute || record.status !== 'approved')
+      throw new OwnerApprovalError('conflict');
+    if (binding.consumption === 'continuation')
+      await this.authority.consume(actor.tenantId, id);
+    try {
+      const result = await this.capture(binding.principal, () =>
+        execute(record),
+      );
+      if (binding.consumption === 'continuation')
+        await this.authority.complete(actor.tenantId, id, true, result);
+    } catch (error) {
+      // Native tools own consumption and completion. Fail closed if validation refused before effects.
+      const fresh = await this.authority.get(actor.tenantId, id);
+      if (fresh?.status === 'approved')
+        await this.authority.consume(actor.tenantId, id);
+      if (
+        fresh?.status === 'approved' ||
+        (binding.consumption === 'continuation' &&
+          fresh?.status === 'executing')
+      )
+        await this.authority.complete(actor.tenantId, id, false, {
+          error: 'Approved call refused or failed.',
+        });
+      throw error;
+    }
+    return (await this.authority.get(actor.tenantId, id))!;
+  }
 }

@@ -286,6 +286,10 @@ export interface MountAssistantRoutesOptions {
   waitForApproval?: AssistantApprovalWaiter;
   /** Host authority override; default uses the runtime database and live owner membership. */
   approvals?: AssistantRouteValue<OwnerApprovalAuthority>;
+  /** Shared non-thread tool continuations; the host binds original-principal executors. */
+  approvalContinuations?: AssistantRouteValue<
+    import('@happyvertical/smrt-app-runtime').OwnerApprovalContinuations
+  >;
   approvalPolicy?: AssistantApprovalPolicy;
   /**
    * The AI client, or a factory called once per turn. Omitted, each turn
@@ -2259,6 +2263,7 @@ export function mountAssistantRoutes(
     status: record.status,
     decidedBy: record.decidedBy,
     decidedAt: record.decidedAt,
+    ...(record.result === undefined ? {} : { result: record.result }),
   });
   const listApprovals = async (
     context: AssistantRequestContext,
@@ -2297,6 +2302,18 @@ export function mountAssistantRoutes(
     await authority.authorize(approvalActor(context));
     const record = await authority.get(context.principal.tenantId, id);
     if (!record) throw notFound();
+    if (record.continuation) {
+      const continuations = await resolveValue(
+        options.approvalContinuations,
+        context,
+      );
+      if (!continuations) throw notFound();
+      return json({
+        approval: publicApproval(
+          await continuations.decide(approvalActor(context), id, body.approve),
+        ),
+      });
+    }
     const original = record.context.principal as unknown as AssistantPrincipal;
     const originalContext: AssistantRequestContext = {
       event: context.event,
@@ -2511,7 +2528,9 @@ export function mountAssistantRoutes(
         case 'owner-approvals':
           return json({
             approvals: (
-              await (await authorityFor(context)).list(approvalActor(context))
+              await (
+                await authorityFor(context)
+              ).list(approvalActor(context), false)
             ).map(publicApproval),
           });
         case 'approvals':

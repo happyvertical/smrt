@@ -80,3 +80,14 @@ until completion, with abort/timeout cleanup, without consuming or executing.
 Tricia supplies its builder/draft preview through that snippet; the shared card
 owns headings, status, controls and messages. The normal transport-verified card
 keeps its existing behavior and polling.
+## Holds outside a thread
+
+Pass `approvalContinuations` alongside the same `approvals` authority to
+`mountAssistantRoutes`. The existing owner approvals list includes persisted
+non-thread records and outcomes. Its same-origin decision route delegates only
+records with a trusted continuation binding; ordinary thread holds retain their
+existing thread/session checks. `AssistantApprovalCard` accepts no `threadId` for
+this owner list, reusing the existing HTTP transport. No parallel approval route
+or UI is added. The template host tests exercise the real decision route after
+recreating the host and its authority, including an external MCP delete and a
+native cookbook disable.

@@ -57,3 +57,32 @@ single-tenant rows rather than migrating history or creating a second ledger.
 hosts with a larger already-validated recovery payload. Tricia opts into 4 MB;
 its nested template action travels as inert JSON rather than widening the shared
 plain-data depth or accepting executable objects.
+## Non-thread tool continuations
+
+`OwnerApprovalContinuations` reuses this authority and its canonical ledger. Its
+`capture(principal, work)` takes a frozen original user/tenant, permission ceiling
+and tool allow-list. `adapter(executor, consumption)` decorates native tool holds
+with a separate `continuation` envelope; it does not alter args or the tool's own
+context fingerprint. Executors are registered by trusted host code, never a
+client-supplied module or callback. Native tools use `executor` consumption; generic
+model tools use `continuation` consumption. Exactly one consumer wins the ledger
+CAS. The executor must re-resolve live permissions and intersect the saved ceiling.
+
+`decide(owner,id,approve)` authorizes the live owner, records the decision and
+resumes the saved call. `resume(owner,id)` recovers an approved but unconsumed
+call after restart. `outcome(requester,id)` reveals only that requester's tenant
+record and recorded result. Chat's existing owner list/decision route dispatches
+these records without requiring a thread. MCP hosts provide a scoped outcome tool.
+Denied/expired calls never execute. Already executing calls never replay: a crash
+after consumption remains an explicit unknown outcome, requiring reconciliation.
+This is at-most-once dispatch, not a claim of transactional exactly-once external
+effects. Hosts must not silently retry such effects.
+
+Reuse audit: MCP project reviews for app-runtime/chat/core/template/Svelte, intent
+index, and `rg` continuation/resume/approval/execute across core, runtime, approvals,
+chat, smrt-ui and smrt-svelte found the existing authority, ApprovalService, plain
+snapshot validator and assistant continuation store. The last is a short-lived
+browser-turn transcript and cannot dispatch durable non-thread tool calls. This
+extends `owner-approvals.ts`; no new store/model/component/file is introduced.
+SQLite tests cover reopened authority, original args/ceiling, concurrent resume,
+native single consumption, deny/expiry, foreign requester and repeated decisions.
