@@ -115,6 +115,14 @@ STI base's), so an STI subtype resolves its STI base's collection
 bundle decorated before its manifest loads (#3125). Hand-written mutations in form
 handlers, endpoints, CLI and jobs use assertOperationPermission(). It requires
 catalog presence then resolves permissions, throwing fail-closed by default.
+Shared STI CRUD catalog entries name the effective base model, independent of
+registration order. Subtypes cannot overwrite `profiles.create` (formerly Bot
+when Bot registered last). An explicit child collection keeps its own CRUD;
+child custom actions and field permissions are still catalogued. Same-name app
+replacements supply the effective base identity through the public registry.
+`sti-create-dispatch.test.ts` exercises real Profile/Bot and a generic family
+through REST, MCP, CLI's create handler and assistant manifest dispatch on SQLite;
+`permission-catalog.test.ts` checks reversed order and app replacement metadata.
 Use onDeny: 'return', checkOperationPermission or hasOperationPermission only
 when the caller handles a structured/boolean denial.
 
