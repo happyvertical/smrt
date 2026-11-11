@@ -1747,3 +1747,32 @@ describe('built cookbook app resources', () => {
     }
   });
 });
+
+describe('disabled dependency closure validation', () => {
+  it('prunes a disabled package with a missing dependency but refuses the same kept package', async () => {
+    const options = {
+      packages: [
+        { name: 'a', files: { 'index.js': 'export default 1;' } },
+        {
+          name: 'googleapis',
+          version: '170.0.0',
+          dependencies: { missing: '1.0.0' },
+          files: { 'index.js': 'export default 2;' },
+        },
+      ],
+    };
+    const disabled = fixture(options);
+    await expect(
+      runBundle(await disabled.plan(), disabled.seams()),
+    ).resolves.toBeDefined();
+    const enabled = fixture({
+      ...options,
+      config: { features: { default: ['google-apis'] } },
+    });
+    const error = await failure(
+      runBundle(await enabled.plan(), enabled.seams()),
+    );
+    expect(error.code).toBe('unresolved_dependency');
+    assertNothingLeft(enabled);
+  });
+});

@@ -13,7 +13,10 @@ versions. Other dependency ranges remain the app's ranges; the stage generates a
 standalone production lockfile, then the existing bundler consumes it frozen.
 This is a local-checkout packaging workflow, not proof of equality to the source
 app's development lockfile. The registry stops in finally and its publishing
-credential is removed. Production packages still pass the bundler's install,
+credential is removed. Dependency validation follows feature segmentation: a missing required dependency
+of a retained package still refuses the bundle, while a removed package cannot
+make its unused dependency mandatory. The regression keeps both controls.
+Production packages still pass the bundler's install,
 feature, import, native, secret-content and digest gates without bypasses.
 
 For a normal app, product configuration adds:

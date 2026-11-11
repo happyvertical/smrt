@@ -866,8 +866,8 @@ export async function runBundle(
         throw new BundleError('lockfile_non_registry', { subjects: offending });
       }
       const graph = buildDependencyGraph(packages, Object.keys(dependencies));
-      assertNoMissingDependencies(graph);
       const result = computeSegmentation(graph, plan.features.disabled);
+      assertNoMissingDependencies(graph, result.keep);
 
       // Packages that would have needed a build step (an install script,
       // `gypfile`, or a root `binding.gyp`, which npm builds without any
