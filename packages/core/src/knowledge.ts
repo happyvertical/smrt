@@ -4,6 +4,7 @@ import {
   readAgentModuleDocs,
   resolveAgentModuleDocPaths,
 } from '@happyvertical/smrt-scanner/knowledge';
+import { isReplacedModel } from './manifest/model-replacements';
 
 export {
   publishArtifactFiles,
@@ -169,7 +170,9 @@ export function buildDomainKnowledgeManifest(
     ...record(packageJson.peerDependencies),
   };
   const manifestObjects = Object.values(options.manifest.objects).filter(
-    (object) => object.decoratorConfig?.knowledge !== false,
+    (object) =>
+      object.decoratorConfig?.knowledge !== false &&
+      !isReplacedModel(options.manifest, object),
   );
   const objects = manifestObjects.map((object) =>
     buildKnowledgeObject(object, options.manifest),

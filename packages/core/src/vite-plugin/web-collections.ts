@@ -38,6 +38,7 @@ import {
   type ToolIdType,
   type ToolRouteDescriptor,
 } from '../generators/tool-schema.js';
+import { isReplacedModel } from '../manifest/model-replacements';
 import { isFrameworkBaseClass } from '../registry/framework-base-classes.js';
 import { readFieldEnum } from '../registry/manifest-field-merge.js';
 import type {
@@ -207,13 +208,15 @@ export function compareText(left: string, right: string): number {
 export function orderedManifestObjectEntries(
   manifest: SmartObjectManifest,
 ): Array<[string, SmartObjectDefinition]> {
-  return Object.entries(manifest.objects).sort(
-    ([leftKey, left], [rightKey, right]) =>
-      compareText(
-        left.qualifiedName || leftKey,
-        right.qualifiedName || rightKey,
-      ) || compareText(leftKey, rightKey),
-  );
+  return Object.entries(manifest.objects)
+    .filter(([, obj]) => !isReplacedModel(manifest, obj))
+    .sort(
+      ([leftKey, left], [rightKey, right]) =>
+        compareText(
+          left.qualifiedName || leftKey,
+          right.qualifiedName || rightKey,
+        ) || compareText(leftKey, rightKey),
+    );
 }
 
 function manifestObjectPackage(
@@ -570,7 +573,11 @@ function selectEntriesQualifiedBy(
   // here, including ones that never reach {@link buildWebCollectionDefinition}
   // and so never need a resolvable object ref.
   const sortedEntries = Object.entries(manifest.objects)
-    .filter(([, obj]) => !isFrameworkBaseClass(obj.className, obj.packageName))
+    .filter(
+      ([, obj]) =>
+        !isFrameworkBaseClass(obj.className, obj.packageName) &&
+        !isReplacedModel(manifest, obj),
+    )
     .sort(
       ([leftKey, left], [rightKey, right]) =>
         compareText(
@@ -660,7 +667,9 @@ export function selectWebMcpToolEntries(
   // custom-action hosts, and the collection-class ownership pass) excludes
   // them, regardless of config (#2642).
   const manifestObjects = Object.values(manifest.objects).filter(
-    (obj) => !isFrameworkBaseClass(obj.className, obj.packageName),
+    (obj) =>
+      !isFrameworkBaseClass(obj.className, obj.packageName) &&
+      !isReplacedModel(manifest, obj),
   );
   const sortedObjects = [...manifestObjects].sort((left, right) =>
     compareText(

@@ -1,4 +1,5 @@
 import { resolveOperationPermissionAlias } from '../operation-permission.js';
+
 /**
  * SvelteKit route auto-generation from SMRT objects
  * Generates real TypeScript files in src/routes/api/ based on discovered SMRT objects
@@ -32,6 +33,7 @@ import {
   resolveEffectiveActionMetadata,
   type WireabilityOptions,
 } from '../generators/custom-action.js';
+import { isReplacedModel } from '../manifest/model-replacements';
 import {
   buildDefaultListOrderBy,
   DEFAULT_LIST_LIMIT,
@@ -3033,7 +3035,8 @@ export function resolveApiActionSet(
   wireability: WireabilityOptions = {},
 ): Set<string> {
   const apiConfig = objectDef.decoratorConfig?.api;
-  if (apiConfig === false) return new Set();
+  if (apiConfig === false || (manifest && isReplacedModel(manifest, objectDef)))
+    return new Set();
 
   const objectIsCollectionClass = manifest
     ? isCollectionManifestClass(manifest, objectDef)

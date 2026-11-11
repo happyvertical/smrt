@@ -14,6 +14,7 @@ import {
 } from '../generation-snapshot.js';
 import { buildDomainKnowledgeManifest } from '../knowledge.js';
 import { resolveFileKnowledgeConfig } from '../knowledge-config.js';
+import { annotateModelReplacements } from '../manifest/model-replacements';
 import { selectObjectDeclarations } from '../manifest/object-declarations.js';
 import { manifestExportCandidates } from '../manifest/package-manifest-exports.js';
 import { isTestArtifactManifest } from '../manifest/test-artifacts.js';
@@ -1791,6 +1792,8 @@ async function saveAggregatedManifest(
         // Unreadable/corrupt existing file — fall back to a plain write.
       }
     }
+
+    merged = annotateModelReplacements(merged);
 
     // smrtPlugin writes the local knowledge artifact before this consumer
     // plugin merges external package entries into the same manifest. Refresh

@@ -498,6 +498,8 @@ export interface AgentManifest {
 // ── Core manifest types ─────────────────────────────────────────────────
 
 export interface SmartObjectDefinition {
+  /** Effective same-name subclass; this entry remains only as a declared ancestor. */
+  replacedBy?: string;
   /**
    * Qualified name in format "@package/name:ClassName"
    * This is the PRIMARY KEY for manifest lookups.

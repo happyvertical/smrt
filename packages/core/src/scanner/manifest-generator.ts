@@ -16,6 +16,7 @@ import {
   loadExternalManifestSync,
   lookupInManifest,
 } from '../manifest/manifest-loader.js';
+import { annotateModelReplacements } from '../manifest/model-replacements';
 import { selectObjectDeclarations } from '../manifest/object-declarations.js';
 import { findField, type HelpModel, validateHelp } from '../recipe-help.js';
 import {
@@ -440,6 +441,51 @@ export class ManifestGenerator {
       assertScopedPackageName(options?.packageName);
     }
 
+    // An app may keep its source constructor name while exporting the upstream name.
+    const publicNames = new Map<string, string>();
+    for (const [key, obj] of Object.entries(manifest.objects)) {
+      const parentName = (obj.extendsQualified ?? obj.extends)
+        ?.split(':')
+        .at(-1);
+      const publicName =
+        obj.decoratorConfig.name ??
+        (obj.exportName === parentName ? obj.exportName : undefined);
+      if (!publicName || publicName === obj.className) continue;
+      const packageName = obj.packageName ?? options?.packageName;
+      if (!packageName) throw new Error(`Missing package for ${key}`);
+      const nextKey = createQualifiedName(packageName, publicName);
+      if (manifest.objects[nextKey] && manifest.objects[nextKey] !== obj) {
+        throw new Error(`Class name collision for public model ${nextKey}`);
+      }
+      publicNames.set(obj.className, publicName);
+      publicNames.set(key, nextKey);
+      obj.className = publicName;
+      obj.name = publicName.toLowerCase();
+      obj.decoratorConfig.name = publicName;
+      obj.qualifiedName = nextKey;
+      delete manifest.objects[key];
+      manifest.objects[obj.qualifiedName] = obj;
+    }
+
+    // Local collection generics, subclasses and references still use the
+    // source identifier; keep those edges attached to its public identity.
+    for (const obj of Object.values(manifest.objects)) {
+      for (const property of [
+        'extends',
+        'extendsQualified',
+        'extendsTypeArg',
+        'collectionOf',
+      ] as const) {
+        const value = obj[property];
+        if (value && publicNames.has(value))
+          obj[property] = publicNames.get(value);
+      }
+      for (const field of Object.values(obj.fields)) {
+        if (field.related && publicNames.has(field.related))
+          field.related = publicNames.get(field.related);
+      }
+    }
+
     // `exclude: ['*']` closes a surface; no generator reads `'*'` as a
     // wildcard, so normalize it before any pass or manifest reader sees it
     // (#3468, smrt-profiles MagicLinkToken).
@@ -585,6 +631,7 @@ export class ManifestGenerator {
     // Fifth pass: Generate schemas for each object (build-time schema generation)
     // This pre-computes DDL, indexes, and columns for efficient external package consumption
     this.generateSchemas(manifest);
+    Object.assign(manifest, annotateModelReplacements(manifest));
     this.assertTenantScopedSchemaContract(manifest);
 
     // Sixth pass: Generate agent manifests for Agent subclasses
@@ -2299,6 +2346,21 @@ export class ManifestGenerator {
       //     methods previously went unmerged (the under-report half of
       //     #2624).
       const usesSTI = this.isSTIClass(obj, objectsByName, manifest);
+      const directParent = this.resolveParentDefinition(
+        this.parentRef(obj) ?? obj.extends,
+        obj,
+        manifest,
+        objectsByName,
+      );
+      const replacementParent =
+        directParent?.className === obj.className &&
+        (!obj.decoratorConfig.tableName ||
+          obj.decoratorConfig.tableName ===
+            (directParent.schema?.tableName ??
+              directParent.decoratorConfig.tableName ??
+              this.classNameToTableName(directParent.className)))
+          ? directParent
+          : undefined;
 
       logger.debug(
         `[manifest-generator] Merging inherited fields for ${obj.className} from ${obj.extends}`,
@@ -2370,7 +2432,11 @@ export class ManifestGenerator {
         // columns are needed. CTI subclasses pull fields only from framework
         // abstract bases — a concrete `@smrt()` ancestor has its own table,
         // so merging its columns here would generate the wrong schema.
-        if (usesSTI || ancestorIsFrameworkBase) {
+        if (
+          usesSTI ||
+          ancestorIsFrameworkBase ||
+          ancestor === replacementParent
+        ) {
           // Keep the oldest concrete STI declaration, but let a concrete
           // class replace a framework abstract default. For example, Event
           // refines SmrtHierarchical.parentId with its relationship target
@@ -2458,6 +2524,22 @@ export class ManifestGenerator {
       // Update object definition with merged fields
       obj.fields = mergedFields;
       obj.methods = mergedMethods;
+
+      if (replacementParent) {
+        // Model-move aliases belong to the declaring identity, not subclasses.
+        const { previousQualifiedNames: _aliases, ...parentConfig } =
+          replacementParent.decoratorConfig;
+        obj.decoratorConfig = {
+          ...parentConfig,
+          ...obj.decoratorConfig,
+          tableName:
+            replacementParent.schema?.tableName ??
+            replacementParent.decoratorConfig.tableName ??
+            this.classNameToTableName(replacementParent.className),
+        };
+        obj.collection =
+          obj.decoratorConfig.collection ?? replacementParent.collection;
+      }
 
       // Share storage while allowing an explicit independent route collection.
       const stiBase = this.findSTIBase(obj, objectsByName, manifest);
