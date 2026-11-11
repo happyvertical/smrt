@@ -3,7 +3,60 @@ import type { RuntimeReportResult } from './runtime-compiler.js';
 
 type Column = RuntimeReportResult['columns'][number];
 
-export { validReportResult } from './svelte/result.js';
+/** Validate untrusted result data before formatting, including integer precision. */
+export function validReportResult(
+  value: unknown,
+): value is RuntimeReportResult {
+  if (!value || typeof value !== 'object') return false;
+  const r = value as RuntimeReportResult;
+  return (
+    r.version === 1 &&
+    typeof r.title === 'string' &&
+    typeof r.specHash === 'string' &&
+    typeof r.ranAt === 'string' &&
+    typeof r.truncated === 'boolean' &&
+    Array.isArray(r.columns) &&
+    r.columns.length > 0 &&
+    r.columns.length <= 10 &&
+    new Set(r.columns.map((c) => c?.id)).size === r.columns.length &&
+    r.columns.every(
+      (c) =>
+        c &&
+        typeof c.id === 'string' &&
+        typeof c.label === 'string' &&
+        ['dimension', 'measure'].includes(c.role) &&
+        ['string', 'integer', 'decimal', 'boolean', 'datetime', 'id'].includes(
+          c.type,
+        ),
+    ) &&
+    Array.isArray(r.rows) &&
+    r.rows.length <= 1000 &&
+    r.rowCount === r.rows.length &&
+    r.rows.every(
+      (row) =>
+        row &&
+        typeof row === 'object' &&
+        r.columns.every((c) => {
+          const v = row[c.id];
+          if (v === null) return true;
+          if (c.type === 'integer')
+            return typeof v === 'number' && Number.isSafeInteger(v);
+          if (c.type === 'decimal')
+            return typeof v === 'number' && Number.isFinite(v);
+          if (c.type === 'boolean') return typeof v === 'boolean';
+          return typeof v === 'string';
+        }),
+    ) &&
+    !!r.chart &&
+    ['bar', 'line', 'table', 'pie', 'stat'].includes(r.chart.type) &&
+    (r.chart.y === undefined ||
+      (Array.isArray(r.chart.y) &&
+        r.chart.y.every((id) =>
+          r.columns.some((c) => c.id === id && c.role === 'measure'),
+        ))) &&
+    (r.chart.x === undefined || r.columns.some((c) => c.id === r.chart.x))
+  );
+}
 
 /**
  * A cell as CSV text: quoted when needed, and a text cell is never read as a
