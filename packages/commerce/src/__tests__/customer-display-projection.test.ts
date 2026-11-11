@@ -17,8 +17,13 @@ import {
   buildWebCollectionDefinition,
   selectWebCollectionEntries,
 } from '../../../core/src/vite-plugin/web-collections';
+import { deriveScreenFields } from '../../../smrt-svelte/src/components/screens/fields';
 import { screenRecordLabel } from '../../../smrt-svelte/src/components/screens/references';
 import { createRecipeScreenReferences } from '../../../smrt-svelte/src/components/screens/source';
+import {
+  draftForCreate,
+  parseDraft,
+} from '../../../smrt-svelte/src/components/screens/values';
 import { CustomerCollection } from '../collections/CustomerCollection';
 
 let db: Awaited<ReturnType<typeof getTestDatabase>> | undefined;
@@ -64,6 +69,13 @@ describe('Customer linked display label', () => {
       if (!entry) throw new Error('Customer REST collection missing');
       const definition = buildWebCollectionDefinition(entry, manifest);
       expect(definition.displayLabelField).toBe('displayLabel');
+      const fields = deriveScreenFields(definition, null, {
+        mode: 'edit',
+        references: {},
+      });
+      const draft = draftForCreate(fields);
+      draft.name = 'Name only';
+      expect(parseDraft(fields, draft).values.status).toBe('active');
       expect(definition.fields.displayLabel).toMatchObject({
         type: 'text',
         readonly: true,

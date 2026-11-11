@@ -152,6 +152,7 @@ export class Customer extends SmrtObject {
    * Customer status
    */
   @field({
+    default: 'active',
     description:
       'Whether you are still dealing with this customer: active, inactive or suspended.',
   })
