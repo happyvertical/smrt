@@ -3,12 +3,14 @@
 import { describe, expect, it, vi } from 'vitest';
 import {
   browserCommand,
-  CHATGPT_SETTINGS_HREF,
   chatgptFailureNote,
   openSystemBrowser,
   type SpawnLike,
-} from './chatgpt.ts';
+} from './support.js';
 
+const CHATGPT_SETTINGS_HREF = '/settings/assistant#chatgpt';
+const failureNote = chatgptFailureNote;
+const noteFor = (error: unknown) => failureNote(error, CHATGPT_SETTINGS_HREF);
 const URL_OK =
   'https://auth.openai.com/api/accounts/authorize?client_id=c&redirect_uri=http%3A%2F%2F127.0.0.1%3A5%2Fauth%2Fcallback&state=s&nonce=n';
 
@@ -92,29 +94,27 @@ describe('chatgptFailureNote', () => {
   const named = (name: string, code?: string) =>
     Object.assign(new Error('x'), { name, code });
   it('gives each plan failure words, and a sign-in action only where it helps', () => {
-    const revoked = chatgptFailureNote(named('ChatGPTPlanSessionRevokedError'));
+    const revoked = noteFor(named('ChatGPTPlanSessionRevokedError'));
     expect(revoked?.action).toEqual({
       label: 'Sign in again',
       href: CHATGPT_SETTINGS_HREF,
     });
+    expect(noteFor(named('ChatGPTPlanWorkspaceError'))?.action).toBeDefined();
     expect(
-      chatgptFailureNote(named('ChatGPTPlanWorkspaceError'))?.action,
-    ).toBeDefined();
-    expect(
-      chatgptFailureNote(named('ChatGPTPlanUsageLimitError'))?.action,
+      noteFor(named('ChatGPTPlanUsageLimitError'))?.action,
     ).toBeUndefined();
     expect(
-      chatgptFailureNote(named('ChatGPTPlanUsageUnavailableError'))?.action,
+      noteFor(named('ChatGPTPlanUsageUnavailableError'))?.action,
     ).toBeUndefined();
     expect(
-      chatgptFailureNote(
+      noteFor(
         named(
           'ChatGPTPlanError',
           'subscription_sharing_unsupported_capability',
         ),
       )?.code,
     ).toBe('chatgpt_unsupported');
-    expect(chatgptFailureNote(new Error('boom'))).toBeUndefined();
+    expect(noteFor(new Error('boom'))).toBeUndefined();
     expect(vi.isMockFunction(chatgptFailureNote)).toBe(false);
   });
 });

@@ -79,3 +79,17 @@ it('the root graph covers the executor and config', () => {
     ]),
   );
 });
+
+it('server engine code never imports a host or approval authority', () => {
+  const files = graph('server.ts').filter((name) =>
+    /^(agent-cli\/|chatgpt\/model|engine-)/.test(name),
+  );
+  expect(files.length).toBeGreaterThan(10);
+  for (const name of files) {
+    const source = readFileSync(join(SRC, name), 'utf8');
+    expect(source, name).not.toMatch(
+      /from ['"]@happyvertical\/smrt-(app-shell|chat|app-runtime)/,
+    );
+    expect(source, name).not.toMatch(/decideApproval|approved\s*:\s*true/);
+  }
+});

@@ -14,6 +14,79 @@
 import './__smrt-register__.js';
 
 export {
+  AGENT_TOKEN_TTL_SECONDS,
+  type AgentCredentials,
+  type McpTokenStoreLike,
+  tokenCredentials,
+} from './agent-cli/credentials.js';
+// Local engine adapters (Node-only).
+export {
+  type AgentCliLocation,
+  type AgentCliStatus,
+  cliEnv,
+  detectAgentCli,
+  detectAgentClis,
+  locateCli,
+} from './agent-cli/detect.js';
+export {
+  childEnv,
+  nodeDir,
+} from './agent-cli/env.js';
+export {
+  candidateDirs,
+  defaultLocateDeps,
+  type LocateDeps,
+  locateBinary,
+} from './agent-cli/locate.js';
+export {
+  AgentLogin,
+  LOGIN_TIMEOUT_MS,
+  type LoginSnapshot,
+  type LoginState,
+} from './agent-cli/login.js';
+export {
+  type CollectResult,
+  killTree,
+  type RunOptions,
+  type RunResult,
+  runCollect,
+  runProcess,
+} from './agent-cli/runner.js';
+export { createAgentCliService } from './agent-cli/service.js';
+export {
+  type AgentRunSpec,
+  assertLoopbackUrl,
+  buildAgentRun,
+  type SpecInput,
+  TOKEN_ENV,
+} from './agent-cli/session.js';
+export {
+  type AgentEvent,
+  claudeParser,
+  codexParser,
+  MCP_SERVER_NAME,
+  shellToolName,
+} from './agent-cli/stream.js';
+export {
+  AGENT_TOOL_INFO,
+  AGENT_TOOLS,
+  type AgentTool,
+  type AgentToolInfo,
+  isAgentTool,
+} from './agent-cli/tools.js';
+export {
+  type AgentEngineDeps,
+  type AgentTurnEvent,
+  type AgentTurnHost,
+  type AgentTurnLimits,
+  type AgentTurnMessage,
+  type AgentTurnOptions,
+  type AgentTurnStop,
+  DEFAULT_AGENT_LIMITS,
+  runAgentTurn,
+  tokenFailureMessage,
+} from './agent-cli/turn.js';
+export {
   CHATGPT_AUTH_HOST,
   CHATGPT_PLAN_PROVIDER,
   CHATGPT_SIGN_IN_WINDOW_MS,
@@ -30,11 +103,41 @@ export {
   isChatGPTAuthorizationUrl,
 } from './chatgpt/connection.js';
 export {
+  type ChatGPTModelOptions,
+  createChatGPTModel,
+} from './chatgpt/model.js';
+export {
   type ChatGPTPlanFailureKind,
   type ChatGPTPlanResolverOptions,
   classifyChatGPTPlanFailure,
   createChatGPTPlanResolver,
 } from './chatgpt/resolver.js';
+export {
+  browserCommand,
+  type ChatGPTFailureNote,
+  chatgptFailureNote,
+  openSystemBrowser,
+  type SpawnLike,
+} from './chatgpt/support.js';
+export {
+  type EngineModel,
+  EngineModelFailure,
+  type EngineModelReply,
+  type EngineModelRequest,
+  type EngineModelToolCall,
+  engineModelReply,
+} from './engine-model.js';
+export {
+  chatgptEngineStatus,
+  cliEngineStatus,
+  cliTool,
+  engineLabel,
+  type InferenceEngineAction,
+  type InferenceEngineId,
+  type InferenceEngineStatus,
+  type InferenceEngineStatusHost,
+  inferenceEngineStatus,
+} from './engine-status.js';
 export {
   APP_INFERENCE_SCOPE_ID,
   InferenceOverride,
