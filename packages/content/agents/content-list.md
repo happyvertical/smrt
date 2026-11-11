@@ -291,3 +291,9 @@ Reuse check: smrt-dev-mcp package review, intent index and `rg` serializeContent
 serialization/export searches in content, core, UI/Svelte/chat found the existing
 implementation and its internal route wrapper; no public export existed. Only the
 root export is added. No new component/helper/model implementation is introduced.
+
+The default Content API item serializer imports `serializeContent` from the
+public `@happyvertical/smrt-content` entry. Hosts need no forwarding module at
+`$lib/server/content-api-serializers`. An app subclass can explicitly supply its
+own `api.serializers.item` reference while retaining the provider's API exposure
+restrictions; the normal serializer and inheritance contracts still apply.
