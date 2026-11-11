@@ -25,6 +25,7 @@ import {
   Profile as ProfileBase,
   ProfileTypeCollection,
 } from '@happyvertical/smrt-profiles';
+import { buildCookbookShell } from '@happyvertical/smrt-svelte/cookbook/server';
 import {
   disableTenancy,
   enableTenancy,
@@ -49,7 +50,7 @@ import {
 } from '@modelcontextprotocol/server';
 import type { RequestEvent } from '@sveltejs/kit';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
-import { createCookbookHost } from '../host/server.js';
+import { createCookbookHost, loadCookbookModelPage } from '../host/server.js';
 import { createCookbookHostState } from '../host/state.js';
 
 @smrt({
@@ -656,6 +657,111 @@ describe('local cookbook host composition (SQLite, fake model, no providers)', (
     expect((await memos.get(memo.id!))?.toJSON()).toMatchObject({
       title: 'Do not replay',
     });
+  });
+
+  it('keeps dependency identity tools and app references after approved business removal without inventing lists', async () => {
+    const runtime = host.runtime;
+    host.dispose();
+    const app = {
+      cookbook: { ...cookbook, recipes: ['host.customers', 'host.identity'] },
+      catalog: {
+        ...catalog,
+        recipes: [
+          {
+            ...catalog.recipes[0],
+            models: [CUSTOMER],
+            requires: ['host.identity'],
+          },
+          catalog.recipes[1],
+          {
+            id: 'host.identity',
+            label: 'Identity prerequisites',
+            models: [PROFILE],
+            nav: [],
+            requires: [],
+          },
+        ],
+      },
+    };
+    host = createCookbookHost({
+      runtime,
+      app,
+      packageName: '@fixture/host-prerequisites',
+    });
+    await host.init();
+    const listing = await mcp();
+    const names = listing.body.result.tools.map(
+      (tool: { name: string }) => tool.name,
+    );
+    expect(names).toContain('profile_create');
+    expect(names).toContain('app_describe');
+    const described = await mcp('tools/call', {
+      name: 'app_describe',
+      arguments: {},
+    });
+    expect(
+      JSON.parse(described.body.result.content[0].text).lists.map(
+        (list: { label: string }) => list.label,
+      ),
+    ).toEqual(['Customers']);
+    const projection = await host.cookbookApp(tenantId);
+    const shell = buildCookbookShell(projection);
+    expect([...shell.entries.values()].map((entry) => entry.label)).toEqual([
+      'Customers',
+    ]);
+    expect(shell.sections).toHaveLength(1);
+    const page = await loadCookbookModelPage({
+      ...event('/m/commerce/Customer'),
+      params: { pkg: 'commerce', model: 'Customer' },
+      parent: async () => ({ cookbookApp: projection }),
+    } as unknown as Parameters<typeof loadCookbookModelPage>[0]);
+    expect(page.referenceHrefs['@fixture/host:Profile']).toBeUndefined();
+    expect(page.entry.model).toBe(CUSTOMER);
+    const held = await mcp('tools/call', {
+      name: names.find((name: string) => name.endsWith('recipes_disable')),
+      arguments: { id: 'host.customers', expectedRevision: 0 },
+    });
+    const pending = JSON.parse(held.body.result.content[0].text);
+    expect(pending.status).toBe('approval_required');
+    expect((await host.cookbookApp(tenantId)).cookbook.recipes).toContain(
+      'host.customers',
+    );
+    host.dispose();
+    host = createCookbookHost({
+      runtime,
+      app,
+      packageName: '@fixture/host-prerequisites',
+    });
+    await host.init();
+    const decision = await chat(`approvals/${pending.approvalId}/decide`, {
+      approve: true,
+    });
+    expect(decision.status).toBe(200);
+    expect((await decision.json()).approval.status).toBe('succeeded');
+    const remaining = await host.cookbookApp(tenantId);
+    expect(remaining.cookbook.recipes).toEqual(['host.identity']);
+    expect(buildCookbookShell(remaining).navGroups).toEqual([]);
+    const created = await mcp('tools/call', {
+      name: 'profile_create',
+      arguments: {
+        createType: '@fixture/host:Profile',
+        name: 'Framework identity',
+        typeId: profileTypeId,
+      },
+    });
+    expect(created.body.result.isError, JSON.stringify(created.body)).not.toBe(
+      true,
+    );
+    expect(ObjectRegistry.getClass(PROFILE)?.constructor).toBe(Profile);
+    expect(
+      (await mcp()).body.result.tools.map(
+        (tool: { name: string }) => tool.name,
+      ),
+    ).not.toContain('customer_create');
+    expect(
+      (await chat(`approvals/${pending.approvalId}/decide`, { approve: true }))
+        .status,
+    ).toBe(409);
   });
 
   it('continues a native cookbook disable without a thread or double consumption', async () => {

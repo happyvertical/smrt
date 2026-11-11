@@ -1,4 +1,12 @@
-import { mkdtemp, readFile, rm, symlink, writeFile } from 'node:fs/promises';
+import {
+  mkdir,
+  mkdtemp,
+  readFile,
+  realpath,
+  rm,
+  symlink,
+  writeFile,
+} from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
@@ -26,11 +34,15 @@ vi.mock('@happyvertical/smrt-svelte/cookbook/server', () => ({
   }),
 }));
 
-import { generateCookbookSubclasses } from '../host/generate.js';
+import { loadVerifiedSmrtGenerationSnapshot } from '@happyvertical/smrt-core/vite-plugin';
+import {
+  generateCookbookSubclasses,
+  prepareCookbookHost,
+} from '../host/generate.js';
 
 let root: string;
 beforeEach(async () => {
-  root = await mkdtemp(join(tmpdir(), 'smrt-subclasses-'));
+  root = await realpath(await mkdtemp(join(tmpdir(), 'smrt-subclasses-')));
   await writeFile(
     join(root, 'package.json'),
     JSON.stringify({ name: '@fixture/app' }),
@@ -76,5 +88,76 @@ describe('cookbook app customization points', () => {
     } finally {
       await rm(outside, { recursive: true, force: true });
     }
+  });
+  it('prepares packed-provider provenance without a publisher checkout and still verifies local source', async () => {
+    await mkdir(join(root, 'node_modules/vite'), { recursive: true });
+    await writeFile(
+      join(root, 'node_modules/vite/package.json'),
+      JSON.stringify({ name: 'vite', type: 'module', main: 'index.js' }),
+    );
+    await writeFile(
+      join(root, 'node_modules/vite/index.js'),
+      `
+      import { readFile, writeFile } from 'node:fs/promises';
+      import { join } from 'node:path';
+      export async function build({ root }) {
+        await writeFile(join(root, '.smrt/manifest.json'), await readFile(join(root, 'scanned.json')));
+      }
+    `,
+    );
+    const localFile = join(root, 'src/lib/objects/profiles/Profile.ts');
+    const provider = {
+      className: 'Profile',
+      packageName: '@happyvertical/smrt-profiles',
+      packageVersion: '0.60.16',
+      importPath: '@happyvertical/smrt-profiles',
+      filePath: '/deleted/publisher/packages/profiles/src/Profile.ts',
+      fields: {},
+      methods: {},
+      decoratorConfig: { tableName: 'profiles' },
+    };
+    const scanned = {
+      version: '1.0.0',
+      timestamp: 0,
+      packageName: '@fixture/app',
+      objects: {
+        '@happyvertical/smrt-profiles:Profile': provider,
+        '@fixture/app:Profile': {
+          ...provider,
+          packageName: '@fixture/app',
+          filePath: localFile,
+          extendsQualified: '@happyvertical/smrt-profiles:Profile',
+        },
+      },
+    };
+    await writeFile(join(root, 'scanned.json'), JSON.stringify(scanned));
+    const result = await prepareCookbookHost({ root });
+    expect(result.generationSnapshot.sourceRoot).toBe(root);
+    const artifact = JSON.parse(
+      await readFile(join(root, result.generationSnapshot.path), 'utf8'),
+    );
+    expect(
+      artifact.manifest.objects['@happyvertical/smrt-profiles:Profile'],
+    ).toMatchObject({
+      importPath: provider.importPath,
+      packageVersion: provider.packageVersion,
+    });
+    expect(
+      artifact.manifest.objects['@happyvertical/smrt-profiles:Profile']
+        .filePath,
+    ).toBeUndefined();
+    expect(Object.keys(artifact.sourceDigests)).toContain(
+      'src/lib/objects/profiles/Profile.ts',
+    );
+    await writeFile(localFile, '// edited after preparation');
+    expect(() =>
+      loadVerifiedSmrtGenerationSnapshot(result.generationSnapshot, root),
+    ).toThrow(/digest mismatch/);
+    scanned.objects['@fixture/app:Profile'].filePath = join(
+      root,
+      'missing-local.ts',
+    );
+    await writeFile(join(root, 'scanned.json'), JSON.stringify(scanned));
+    await expect(prepareCookbookHost({ root })).rejects.toThrow(/ENOENT/);
   });
 });

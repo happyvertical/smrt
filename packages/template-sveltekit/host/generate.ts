@@ -1,4 +1,5 @@
 /** Source customization points for a normal cookbook app, generated from installed manifests. */
+import { existsSync } from 'node:fs';
 import { mkdir, readFile, realpath, writeFile } from 'node:fs/promises';
 import { createRequire } from 'node:module';
 import { dirname, isAbsolute, join, relative, resolve } from 'node:path';
@@ -171,8 +172,20 @@ export async function prepareCookbookHost(
   let sourceRoot = root;
   for (const definition of Object.values(manifest.objects) as Array<{
     filePath?: string;
+    packageName?: string;
   }>) {
     if (!definition.filePath || !isAbsolute(definition.filePath)) continue;
+    // Published manifests retain authored build-machine paths, but ship only
+    // compiled exports. Keep their import/version provenance, never hash a
+    // nonexistent publisher checkout as though it were a linked source tree.
+    if (
+      definition.packageName &&
+      definition.packageName !== manifest.packageName &&
+      !existsSync(definition.filePath)
+    ) {
+      delete definition.filePath;
+      continue;
+    }
     while (relative(sourceRoot, definition.filePath).startsWith('..'))
       sourceRoot = dirname(sourceRoot);
   }

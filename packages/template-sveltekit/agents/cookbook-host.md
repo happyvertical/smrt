@@ -293,3 +293,36 @@ apply engine and actual adapter Server with offline packages; it is not a new
 runtime or domain helper. ProfileIdentityRecipe extends SmrtRecipe in the
 existing profiles recipe file and reuses Profile/ProfileType; CustomersRecipe
 requires it without importing foreign models into commerce's recipe models.
+
+### D2 prerequisite visibility and rebase interactions
+
+An identity prerequisite has models and an empty `nav`; keep it in the cookbook
+for activation, migrations and framework tools. Do not add its classes as
+`features`: that is explicit navigation placement. The model-page loader accepts
+only shell entries, so unplaced identity URLs return 404 and reference pickers
+retain lookup access without linking to an invented page. Core's `app.describe`
+uses the same placement boundary for assistant-facing list names.
+
+The four applied-host proofs check active Profile/ProfileType HTTP collections,
+refused identity pages, refused installed-but-disabled Leases, every list screen's
+cookbook title, and sidebar/shortcut paths. Their labels must come from selected
+recipe menus or cookbook layout overrides. The in-process host regression combines
+same-name Profile replacement, dependency-only exposure, reference-page mapping,
+durable business removal across restart and refusal of approval replay.
+
+The integration rebase keeps its compiled-host Vitest aliases; D2's package-root
+fallback was dropped. Inference settings retains integration's Svelte runtime
+export alongside the new cookbook page export. Generated knowledge is rebuilt.
+Reuse search: MCP review/core architecture context, the intent index, and name
+and purpose searches for prerequisite/nav/features/describeApp in core, Svelte,
+chat and UI found these existing projections; this follow-up adds no production
+component, model, route or file. The packed-consumer fixture extends its existing
+external-version map with parent-qualified selectors; its isolated pnpm regression
+verifies CLI's MCP SDK 2.3.1 and app-mcp's 2.4.0 coexist without global pinning.
+
+Packed providers retain `importPath`/version provenance when authored source files
+are not shipped. Host preparation removes only missing foreign absolute `filePath`
+metadata before computing the source-root boundary; app source and existing linked
+provider files still require matching digests. The subclass/snapshot fixture proves
+missing publisher source is accepted, changed app source is refused, and missing
+app source is never discarded. No fallback import or verification bypass is added.
