@@ -8,7 +8,8 @@ import { page } from '$app/state';
 import type { LayoutProps } from './$types';
 
 let { data, children }: LayoutProps = $props();
-const assistant = createCookbookAssistant({ onchange: invalidateAll });
+const assistantBase = createCookbookAssistant({ onchange: invalidateAll });
+const assistant = $derived({ ...assistantBase, introduction: data.assistantIntroduction });
 async function saveEdits(next: Cookbook) {
   const response = await fetch('/api/cookbook/preferences', {
     method: 'POST',
@@ -39,7 +40,7 @@ async function saveEdits(next: Cookbook) {
     runtimeDiagnostics={data.session.authenticated}
     layoutEditing={data.session.authenticated}
     oncookbookchange={data.session.authenticated ? saveEdits : undefined}
-    chrome={!page.route.id?.startsWith('/setup')}
+    chrome={!page.route.id?.startsWith('/setup') && !page.route.id?.startsWith('/onboarding')}
   >
     {@render children()}
   </CookbookApp>

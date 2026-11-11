@@ -331,3 +331,30 @@ app source is never discarded. No fallback import or verification bypass is adde
 The installed-package boundary reuses core consumer-plugin's existing
 `findInstalledPackageJson` resolver, now public; it follows real workspace links
 without assuming published package source exists beside its compiled exports.
+
+
+## D2 onboarding integration rebase
+
+The apply overlay opts into `onboarding: true`, mounts the existing host endpoint
+and `FirstRunOnboarding`, forwards `assistantIntroduction`, hides shell chrome on
+first-run screens, and exposes the existing Settings restart confirmation. Fresh
+renders the shared empty state. No second onboarding authority or component exists.
+
+The four real generated hosts exercise welcome → skip AI → Fresh → owner approval
+→ empty app, then Settings-style restart → their template → approval → populated
+sections. Each creates a named Customer using the declared inline name/email/phone
+inputs, reads the projected name, and checks readable Customer table headers rendered from its
+actual generated effective web definition. Identity routes stay active while identity
+navigation/screens remain absent. Existing host tests retain restart-safe holds,
+live exposure, explicit/omitted STI create dispatch and reference label controls.
+
+Reuse check: repeated MCP `review_smrt_project` and `build_context` for first-run
+composition, writeThrough and display.list; read the intent index and searched
+FirstRunOnboarding/createOnboardingClient/first-run/typed Customer/default columns
+across UI, Svelte, chat, core and template. New scaffold files
+`src/routes/onboarding/{+page.server.ts,+page.svelte}` and
+`src/routes/api/onboarding/+server.ts` reuse the landed product's thin mounts of
+host.onboarding and FirstRunOnboarding. They contain no new workflow/helper/model.
+The existing Fresh, settings and layout mounts are extended. The packed CLI route
+test includes onboarding so pnpm cannot silently omit it. Integration's authored
+source aliases remain the sole Vitest host-resolution mechanism.

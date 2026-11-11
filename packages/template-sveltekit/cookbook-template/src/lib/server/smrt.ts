@@ -5,6 +5,7 @@ import './settings-registry';
 
 export const host = createCookbookApplication({
   packageName: name,
+  onboarding: true,
   lazyActivation: { manifest: activationManifest, loaders: activationLoaders, scope: name },
 });
 export const runtime = host.runtime;

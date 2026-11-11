@@ -38,9 +38,11 @@ const { manifest } = await import(pathToFileURL(join(root, '.svelte-kit/output/s
 const server = new Server(manifest);
 await server.init({ env: process.env });
 const origin = 'http://127.0.0.1:4999';
-const request = async (path, cookie) => {
+const request = async (path, cookie, body) => {
   const response = await server.respond(new Request(origin + path, {
-    headers: cookie ? { cookie, origin } : {},
+    method: body ? 'POST' : 'GET',
+    headers: cookie ? { cookie, origin, 'content-type': 'application/json' } : {},
+    ...(body ? { body: JSON.stringify(body) } : {}),
   }), { getClientAddress: () => '127.0.0.1' });
   return response.status === 308
     ? request(new URL(response.headers.get('location'), origin).pathname, cookie)
@@ -53,6 +55,42 @@ const claimed = await request('/api/_runtime/owner-link?launch=' + process.env.S
 assert.equal(claimed.status, 302);
 const cookie = claimed.headers.getSetCookie().map(value => value.split(';')[0]).join('; ');
 assert.ok(cookie);
+// Exercise the scaffolded first-run mounts through Fresh and the selected template.
+let onboarding = await (await request('/api/onboarding', cookie)).json();
+const change = async (action, extra = {}) => {
+  const response = await request('/api/onboarding', cookie, { action, revision: onboarding.revision, ...extra });
+  assert.equal(response.status, 200, action + ': ' + await response.clone().text());
+  onboarding = await response.json();
+};
+const approve = async () => {
+  await change('apply');
+  assert.equal(onboarding.approval.status, 'pending');
+  const decision = await request('/api/assistant/approvals/' + onboarding.approvalId + '/decide', cookie, { approve: true });
+  assert.equal(decision.status, 200);
+  onboarding = await (await request('/api/onboarding', cookie)).json();
+  assert.equal(onboarding.step, 'done');
+  assert.equal(onboarding.completed, true);
+};
+assert.equal(onboarding.step, 'welcome');
+assert.equal((await request('/', cookie)).headers.get('location'), '/onboarding');
+assert.equal((await request('/onboarding', cookie)).status, 200);
+await change('welcome');
+assert.equal(onboarding.step, 'ai');
+await change('skip');
+assert.equal(onboarding.step, 'template');
+await change('preview', { id: 'fresh' });
+assert.deepEqual(onboarding.preview.after, []);
+await approve();
+assert.equal((await request('/', cookie)).status, 200, 'Fresh home');
+assert.equal((await request('/api/customers', cookie)).status, 404, 'Fresh closes installed routes');
+await change('restart');
+await change('preview', { id: process.env.SMRT_TEST_COOKBOOK });
+assert.ok(onboarding.preview.after.length);
+assert.ok(onboarding.preview.after.every(label => !/Profile/.test(label)));
+await approve();
+const customer = await request('/api/customers', cookie, { name: 'Maya Second Host', email: 'maya@example.test', phone: '555-0101' });
+assert.equal(customer.status, 201, await customer.clone().text());
+assert.ok(JSON.stringify(await (await request('/api/customers', cookie)).json()).includes('Maya Second Host'));
 assert.equal((await request('/api/customers', cookie)).status, 200);
 // Identity is live/migrated for framework operations, but has no person-facing page.
 for (const collection of ['profiles', 'profiletypes'])
@@ -69,6 +107,13 @@ for (const entry of expected.entries) {
   const body = await screen.text();
   const title = body.match(/<title>([^<]*)<[/]title>/)?.[1];
   assert.equal(title, entry.label, entry.path);
+  // SSR uses the actual generated web definition and shared screen column derivation.
+  if (entry.path.includes('/commerce/Customer')) {
+    const headings = [...body.matchAll(/<th(?:\\s[^>]*)?>([^]*?)<[/]th>/g)].map(match => match[1].replace(/<[^>]*>/g, '').replace(/[↕↑↓]/g, '').trim());
+    assert.ok(headings.includes('Name'), JSON.stringify(headings));
+    assert.ok(headings.includes('Status'), JSON.stringify(headings));
+    assert.ok(!headings.some(label => /Profile|hash|json|authority|provenance|journal|backend|external/i.test(label)), JSON.stringify(headings));
+  }
   assert.ok(!/Profile/.test(title), title);
   assert.ok(!expected.rawNames.includes(title), title);
 }
@@ -221,6 +266,7 @@ describe('complete bundled cookbook hosts', () => {
           ...process.env,
           ...Object.fromEntries([
             ['SMRT_RUNTIME_PROFILE', 'local'],
+            ['SMRT_TEST_COOKBOOK', name],
             ['SMRT_DATA_DIR', join(temp, 'private-data')],
             [
               'SMRT_DESKTOP_OWNER_LINK_SECRET',

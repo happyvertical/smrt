@@ -10,10 +10,16 @@ import {
 } from '@happyvertical/smrt-svelte/connect-ai';
 import { signOut } from '@happyvertical/smrt-template-sveltekit/host/sveltekit-client';
 import { Toggle } from '@happyvertical/smrt-ui/forms';
+import { defineMessages, useI18n } from '@happyvertical/smrt-ui/i18n';
+import { Button } from '@happyvertical/smrt-ui/ui';
 import { invalidateAll } from '$app/navigation';
 import type { PageProps } from './$types';
 
 let { data }: PageProps = $props();
+const M = defineMessages({
+  'cookbook.settings.template': 'Start over from a template',
+});
+const { t } = useI18n();
 const client = createConnectAiClient({ endpoint: '/api/connect-ai' });
 let busy = $state(false);
 let message = $state('');
@@ -26,6 +32,7 @@ const transport = createAssistantHttpTransport({ endpoint: '/api/assistant' });
 
 <!-- Appearance, account, and layout; preferences persist through the shell storageKey. -->
 <ShellSettingsPage onSignOut={signOut}>
+  <Button href="/onboarding?restart=1">{t(M['cookbook.settings.template'])}</Button>
   <ConnectAi {client} variant="settings" apiKeyHref="/settings/inference" />
   <Toggle label="Pre-built components" checked={data.prebuilt.enabled} disabled={busy} onchange={async enabled => {
     busy = true;

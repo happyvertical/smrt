@@ -56,7 +56,7 @@ test('real CLI tarball retains every authored cookbook API route', () => {
     assert.equal(files.has(`${prefix}.gitignore`), false);
     const ignored = spawnSync('tar', ['-xOf', tarball, `${prefix}gitignore.template`], { encoding: 'utf8' });
     assert.equal(ignored.status, 0, ignored.stderr);
-    for (const route of ['_runtime/owner-link', 'assistant/[...path]', 'connect-ai', 'cookbook/prebuilt', 'cookbook/preferences']) {
+    for (const route of ['_runtime/owner-link', 'assistant/[...path]', 'connect-ai', 'cookbook/prebuilt', 'cookbook/preferences', 'onboarding']) {
       const path = `src/routes/api/${route}/+server.ts`;
       assert.ok(files.has(`${prefix}${path}`), `Missing packed authored route ${path}`);
       assert.ok(ignored.stdout.split('\n').includes(`!${path}`), `Authored route must remain tracked: ${path}`);
