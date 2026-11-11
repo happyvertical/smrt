@@ -1,6 +1,7 @@
 # Installed recipe server tools
 
-`@happyvertical/smrt-core/cookbook/tools` owns the seven server tools. Their
+`@happyvertical/smrt-core/cookbook/tools` owns the seven recipe server tools.
+The same service optionally supplies [app customization tools](app-tools.md). Their
 schemas and execution are defined once by `createCookbookToolService`:
 
 | Tool | Behavior |

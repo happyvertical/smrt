@@ -439,7 +439,7 @@ describe('installed recipe server tools (SQLite, in process)', () => {
     const unsubscribe = generator.onToolsListChanged(changed);
     expect((await handler(request())).status).toBe(404);
     expect((await generator.generateTools()).map((t) => t.name)).toEqual([
-      ...COOKBOOK_TOOL_NAMES,
+      ...COOKBOOK_TOOL_NAMES.filter((name) => !name.startsWith('app.')),
     ]);
     const enabledResult = await generator.handleToolCall({
       method: 'tools/call',
@@ -704,7 +704,9 @@ describe('installed recipe server tools (SQLite, in process)', () => {
       surface: 'assistant',
     });
     const contract: PrincipalTool[] = assistant;
-    expect(contract.map((t) => t.slug)).toEqual([...COOKBOOK_TOOL_NAMES]);
+    expect(contract.map((t) => t.slug)).toEqual([
+      ...COOKBOOK_TOOL_NAMES.filter((name) => !name.startsWith('app.')),
+    ]);
     const changed = vi.fn();
     const unsubscribe = generator.onToolsListChanged(changed);
     enabled = false;

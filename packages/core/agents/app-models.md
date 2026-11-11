@@ -2,7 +2,8 @@
 
 Node-only public entry: `@happyvertical/smrt-core/app-models`.
 `await createAppModelEditor(options)` is the single programmatic editor.
-No UI or assistant edit tool is included. Await construction before serving:
+The shared [app tools](app-tools.md) adapt human labels for MCP/assistant use.
+Await construction before serving:
 it replays persisted definitions and completes any pending activation.
 
 ## Source and API
@@ -64,15 +65,18 @@ Rows retain the existing tenancy interceptor; install it as for normal models.
 
 `editor.apply(edit, { actor, tenantId, requestId, expectedRevision })` supports:
 
-- `add_field { model, name, field }`.
+- `add_field { model, name, field, label? }` (atomic initial policy label).
 - `label_field { model, name, label }` (null resets).
 - `hide_field { model, name, hidden }` and `remove_field { model, name }`.
-- `create_list { name, list }`, `relabel_list { name, label, icon? }`,
+- `create_list { name, list, fieldLabels? }`, `relabel_list { name, label, icon? }`,
   `remove_list { name }`.
 - `import { cookbook }`, `undo`.
 
 For list fields, `model` is the simple list name or its qualified app identity.
 Provider and effective app identities are accepted for override policies.
+Each edit may carry an optional `summary` caption persisted in its command.
+`relabel_list` also accepts a qualified enabled provider model and updates its
+cookbook navigation labels/icons, including keyed entries.
 Labels and hiding use existing cookbook `policies`; no parallel label/hidden
 metadata is added. Removing a list disables its feature. Removing a field hides
 it (and its money companion). No operation drops columns/tables or data.

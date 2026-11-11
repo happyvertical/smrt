@@ -3,6 +3,7 @@ import { createHash, randomUUID } from 'node:crypto';
 import type { AITool } from '@happyvertical/ai';
 import type { Cookbook, RecipeDefinition } from '@happyvertical/smrt-types';
 import type { ActivationCoordinator } from '../activation.js';
+import type { MCPContext, MCPGenerator } from '../generators/mcp.js';
 import {
   COOKBOOK_TOOLS_MODEL,
   isRuntimeModelEnabled,
@@ -12,6 +13,7 @@ import bakery from './__fixtures__/bakery.cookbook.json';
 import mechanic from './__fixtures__/mechanic.cookbook.json';
 import welder from './__fixtures__/welder.cookbook.json';
 import yoga from './__fixtures__/yoga-studio.cookbook.json';
+import { AppToolQuestion, describeApp, planAppEdit } from './app-tool-edits.js';
 import {
   canonical,
   coveredModels,
@@ -26,7 +28,13 @@ import type {
   EngineState,
   JsonSchema,
 } from './engine/types.js';
-import { COOKBOOK_TOOL_NAMES, type CookbookToolName } from './index.js';
+import {
+  APP_TOOL_NAMES,
+  type AppToolName,
+  COOKBOOK_TOOL_NAMES,
+  type CookbookToolName,
+} from './index.js';
+import type { createAppModelEditor } from './model-editor.js';
 
 /** Control-plane identity: this is gated by the host predicate, never recipe membership. */
 export { COOKBOOK_TOOLS_MODEL } from '../runtime-exposure.js';
@@ -55,7 +63,12 @@ export interface CookbookToolDefinition {
   };
 }
 export interface CookbookToolResult {
-  status: 'ok' | 'preview' | 'approval_required';
+  status:
+    | 'ok'
+    | 'preview'
+    | 'approval_required'
+    | 'clarification_required'
+    | 'collision';
   summary: string;
   [key: string]: unknown;
 }
@@ -93,10 +106,20 @@ export interface CookbookToolApprovals {
 export interface CookbookToolAudit {
   context: CookbookToolContext;
   tool: CookbookToolName;
-  outcome: 'read' | 'preview' | 'approval_required' | 'changed' | 'refused';
+  outcome:
+    | 'read'
+    | 'preview'
+    | 'approval_required'
+    | 'requested'
+    | 'changed'
+    | 'refused';
   summary: string;
 }
 export interface CookbookToolOptions {
+  /** Tenant-bound editor; its awaited publisher updates engineFor and the host web definitions. */
+  modelEditorFor?(
+    context: CookbookToolContext,
+  ): Awaited<ReturnType<typeof createAppModelEditor>> | null | undefined;
   /** Opt-in lazy host: activate before committing any newly enabled cookbook models. */
   activation?: Pick<ActivationCoordinator, 'activate'>;
   catalog: Omit<EngineCatalog, 'recipes'> & {
@@ -142,7 +165,12 @@ export class CookbookToolError extends Error {
 const fail = (code: string, message: string): never => {
   throw new CookbookToolError(code, message);
 };
-const text = { type: 'string', minLength: 1, maxLength: 200 };
+const text = {
+  type: 'string',
+  minLength: 1,
+  maxLength: 200,
+  pattern: /\S/.source,
+};
 const object = (
   properties: Record<string, unknown>,
   required: string[] = [],
@@ -160,6 +188,9 @@ const writes = new Set<CookbookToolName>([
   'recipes.disable',
   'recipes.configure',
   'cookbook.apply',
+  ...APP_TOOL_NAMES.filter(
+    (name) => name !== 'app.describe' && name !== 'app.history',
+  ),
 ]);
 
 /** Bundled portable documents, not package installation. Unavailable templates are reported. */
@@ -183,7 +214,85 @@ export function createCookbookToolService(options: CookbookToolOptions) {
     expectedRevision: { type: 'integer', minimum: 0 },
     approvalId: text,
   };
+  const fieldInput = {
+    label: text,
+    kind: {
+      type: 'string',
+      enum: [
+        'text',
+        'long text',
+        'number',
+        'money',
+        'date',
+        'date-time',
+        'yes/no',
+        'choice',
+        'link',
+      ],
+    },
+    options: {
+      type: 'array',
+      minItems: 1,
+      maxItems: 100,
+      uniqueItems: true,
+      items: text,
+    },
+    currency: { type: 'string', pattern: '^[A-Z]{3}$' },
+    linkTo: text,
+  };
+  const appMutation = mutation;
   const schemas: Record<CookbookToolName, JsonSchema> = {
+    'app.describe': object({}),
+    'app.history': object({}),
+    'app.addField': object({ list: text, ...fieldInput, ...appMutation }, [
+      'list',
+      'label',
+      'kind',
+      'expectedRevision',
+    ]),
+    'app.renameField': object(
+      { list: text, field: text, label: text, ...appMutation },
+      ['list', 'field', 'label', 'expectedRevision'],
+    ),
+    'app.hideField': object({ list: text, field: text, ...appMutation }, [
+      'list',
+      'field',
+      'expectedRevision',
+    ]),
+    'app.showField': object({ list: text, field: text, ...appMutation }, [
+      'list',
+      'field',
+      'expectedRevision',
+    ]),
+    'app.removeField': object({ list: text, field: text, ...appMutation }, [
+      'list',
+      'field',
+      'expectedRevision',
+    ]),
+    'app.addList': object(
+      {
+        label: text,
+        fields: {
+          type: 'array',
+          minItems: 1,
+          maxItems: 50,
+          items: object(fieldInput, ['label', 'kind']),
+        },
+        nameField: text,
+        iconMeaning: text,
+        ...appMutation,
+      },
+      ['label', 'fields', 'nameField', 'expectedRevision'],
+    ),
+    'app.renameList': object(
+      { list: text, label: text, iconMeaning: text, ...appMutation },
+      ['list', 'label', 'expectedRevision'],
+    ),
+    'app.removeList': object({ list: text, ...appMutation }, [
+      'list',
+      'expectedRevision',
+    ]),
+    'app.undo': object(appMutation, ['expectedRevision']),
     'recipes.search': object(
       {
         query: { ...text, maxLength: 1000 },
@@ -230,6 +339,25 @@ export function createCookbookToolService(options: CookbookToolOptions) {
     ),
   };
   const descriptions: Record<CookbookToolName, string> = {
+    'app.describe':
+      'Describe the live app lists and fields in plain language, with human labels, ownership and the customization revision.',
+    'app.history': 'Show the durable history of changes to your app.',
+    'app.addField':
+      'Add a field using its human label and kind; internal names are derived for you. Money is integer minor units; supply currency. Choice needs options; link needs linkTo, a list label.',
+    'app.renameField':
+      'Rename a field label everywhere without changing its stored data.',
+    'app.hideField': 'Hide a field while keeping its data.',
+    'app.showField': 'Show a hidden field.',
+    'app.removeField':
+      'Remove a field from view and keep its data; durable owner approval is required.',
+    'app.addList':
+      'Create your own list from a name and a few fields; nameField is the human label of the record name field. Choose an icon by describing its meaning.',
+    'app.renameList':
+      'Rename a list and choose its icon by meaning; use the current human list label.',
+    'app.removeList':
+      'Remove one of your own lists and keep its data; durable owner approval is required.',
+    'app.undo':
+      'Undo the last app change and explain what was undone; durable approval is required because undo may hide fields or lists.',
     'recipes.search':
       'Find installed building blocks by what you want to do. Reports what each adds and whether it is on.',
     'recipes.describe':
@@ -254,7 +382,11 @@ export function createCookbookToolService(options: CookbookToolOptions) {
       annotations: {
         readOnlyHint: !writes.has(name),
         destructiveHint:
-          name === 'recipes.disable' || name === 'cookbook.apply',
+          name === 'recipes.disable' ||
+          name === 'cookbook.apply' ||
+          name === 'app.removeField' ||
+          name === 'app.removeList' ||
+          name === 'app.undo',
         idempotentHint: !writes.has(name),
         openWorldHint: false,
       },
@@ -274,7 +406,9 @@ export function createCookbookToolService(options: CookbookToolOptions) {
       return (
         !!context.tenantId &&
         !!context.userId &&
-        isRuntimeModelEnabled(COOKBOOK_TOOLS_MODEL, context) &&
+        (name.startsWith('app.')
+          ? !!options.modelEditorFor?.(context)
+          : isRuntimeModelEnabled(COOKBOOK_TOOLS_MODEL, context)) &&
         !!options.engineFor(context) &&
         (await options.isOwner(context)) &&
         (await options.can(context, name))
@@ -290,7 +424,7 @@ export function createCookbookToolService(options: CookbookToolOptions) {
     if (!(await allowed(context, name)))
       fail(
         'forbidden',
-        'Recipe tools require the owner, permission and pre-built components preference.',
+        'Tools require a signed-in owner, permission and an available app; recipe tools also require pre-built components.',
       );
   }
   function describe(recipe: CookbookToolRecipe, engine: CookbookEngine) {
@@ -337,6 +471,196 @@ export function createCookbookToolService(options: CookbookToolOptions) {
       missing: [...new Set([...unknownRecipes, ...missingModels])],
     };
   }
+  async function approveChange(
+    name: CookbookToolName,
+    args: Record<string, unknown>,
+    context: CookbookToolContext,
+    binding: Record<string, unknown>,
+    summary: string,
+  ): Promise<string | CookbookToolResult> {
+    const { approvalId: _, ...boundArgs } = args;
+    if (typeof args.approvalId !== 'string') {
+      const request = await options.approvals.request({
+        tenantId: context.tenantId!,
+        requestedBy: context.userId!,
+        tool: name,
+        callId: randomUUID(),
+        args: boundArgs,
+        summary,
+        context: binding,
+      });
+      await options.audit({
+        context,
+        tool: name,
+        outcome: 'approval_required',
+        summary,
+      });
+      return {
+        status: 'approval_required',
+        summary: `Owner approval required: ${summary}`,
+        approvalId: request.id,
+      };
+    }
+    const record = await options.approvals.get(
+      context.tenantId!,
+      args.approvalId,
+    );
+    if (
+      !record ||
+      record.status !== 'approved' ||
+      record.tenantId !== context.tenantId ||
+      record.requestedBy !== context.userId ||
+      record.tool !== name ||
+      !same(record.args, boundArgs) ||
+      !same(record.context, binding)
+    )
+      fail(
+        'forbidden',
+        'Approval is missing, stale or belongs to another action.',
+      );
+    await options.approvals.consume(context.tenantId!, record!.id);
+    return record!.id;
+  }
+  async function invokeApp(
+    name: AppToolName,
+    args: Record<string, unknown>,
+    context: CookbookToolContext,
+  ): Promise<CookbookToolResult> {
+    const editor = options.modelEditorFor?.(context);
+    if (!editor) return fail('unavailable', 'Your app editor is unavailable.');
+    const before = editor.snapshot();
+    const read = async (result: CookbookToolResult) => {
+      await options.audit({
+        context,
+        tool: name,
+        outcome: 'read',
+        summary: result.summary,
+      });
+      return result;
+    };
+    if (name === 'app.describe') {
+      const lists = describeApp(before, options.catalog);
+      return read({
+        status: 'ok',
+        summary: `Your app has ${lists.length} lists.`,
+        revision: before.revision,
+        lists,
+      });
+    }
+    if (name === 'app.history') {
+      const history = await editor.history();
+      return read({
+        status: 'ok',
+        summary: `Your app has ${history.length} recorded changes.`,
+        revision: before.revision,
+        changes: history.map((row) => ({
+          revision: row.revision,
+          actor: row.actor,
+          status: row.status,
+          change: JSON.parse(row.command),
+          summary: (JSON.parse(row.command) as { summary?: string }).summary,
+          undoes: row.undoes,
+        })),
+      });
+    }
+    if (args.expectedRevision !== before.revision)
+      return fail(
+        'conflict',
+        'Your app changed; describe it again before editing.',
+      );
+    let planned: ReturnType<typeof planAppEdit>;
+    try {
+      planned = planAppEdit(name, args, before, options.catalog);
+    } catch (error) {
+      if (error instanceof AppToolQuestion) return read(error.result);
+      throw error;
+    }
+    if (name === 'app.undo') {
+      const history = await editor.history();
+      const undone = new Set(history.map((row) => row.undoes));
+      const previous = history.findLast(
+        (row) =>
+          row.status === 'applied' &&
+          row.undoes === undefined &&
+          !undone.has(row.revision),
+      );
+      if (!previous) return fail('not_found', 'There is no change to undo.');
+      const edit = JSON.parse(previous.command) as {
+        summary?: string;
+        type: string;
+        label?: string;
+        name?: string;
+      };
+      planned.summary = `Undid change ${previous.revision}: ${edit.summary?.replace(/[.!?]$/, '') ?? `${edit.type.replaceAll('_', ' ')}${edit.label || edit.name ? ` “${edit.label ?? edit.name}”` : ''}`}.`;
+      planned.data = { undoneRevision: previous.revision, change: edit };
+    }
+    let hold: string | undefined;
+    if (
+      name === 'app.removeField' ||
+      name === 'app.removeList' ||
+      name === 'app.undo' ||
+      options.requiresApproval?.(name, context)
+    ) {
+      const approval = await approveChange(
+        name,
+        args,
+        context,
+        {
+          appTools: 1,
+          before: digest(before.cookbook),
+          revision: before.revision,
+          edit: planned.edit,
+        },
+        planned.summary,
+      );
+      if (typeof approval !== 'string') return approval;
+      hold = approval;
+    }
+    try {
+      await assertAllowed(context, name);
+      if (
+        options.modelEditorFor?.(context) !== editor ||
+        !same(editor.snapshot(), before)
+      )
+        return fail(
+          'conflict',
+          'Your app changed before this action could apply.',
+        );
+      // The editor journal is the durable mutation audit; the host sink records the tool/transport identity.
+      await options.audit({
+        context,
+        tool: name,
+        outcome: 'requested',
+        summary: planned.summary,
+      });
+      await assertAllowed(context, name);
+      const receipt = await editor.apply(
+        { ...planned.edit, summary: planned.summary },
+        {
+          actor: context.userId!,
+          tenantId: context.tenantId!,
+          expectedRevision: before.revision,
+          requestId: hold ?? randomUUID(),
+        },
+      );
+      const result: CookbookToolResult = {
+        status: 'ok',
+        summary: planned.summary,
+        revision: receipt.revision,
+        data: planned.data,
+        lists: describeApp(receipt, options.catalog),
+      };
+      if (hold)
+        await options.approvals.complete(context.tenantId!, hold, true, result);
+      return result;
+    } catch (error) {
+      if (hold)
+        await options.approvals.complete(context.tenantId!, hold, false, {
+          status: 'refused',
+        });
+      throw error;
+    }
+  }
   async function invoke(
     name: CookbookToolName,
     input: Record<string, unknown>,
@@ -349,6 +673,8 @@ export function createCookbookToolService(options: CookbookToolOptions) {
       await assertAllowed(context, name);
       const problem = checkSchema(schemas[name], args);
       if (problem) fail('invalid_input', problem.message);
+      if (name.startsWith('app.'))
+        return await invokeApp(name as AppToolName, args, context);
       const engine = options.engineFor(context)!;
       const before = engine.state();
       const staged = createCookbookEngine({ catalog, state: before });
@@ -566,49 +892,21 @@ export function createCookbookToolService(options: CookbookToolOptions) {
         (options.requiresApproval?.(name, context) ??
           name === 'recipes.disable');
       let hold: string | undefined;
-      const { approvalId: _, ...boundArgs } = args;
       const binding = {
         cookbookTools: 1,
         before: digest(before),
         after: digest(staged.state()),
       };
       if (approvalRequired) {
-        if (typeof args.approvalId !== 'string') {
-          const request = await options.approvals.request({
-            tenantId: context.tenantId!,
-            requestedBy: context.userId!,
-            tool: name,
-            callId: randomUUID(),
-            args: boundArgs,
-            summary,
-            context: binding,
-          });
-          await options.audit(event('approval_required', summary));
-          return {
-            status: 'approval_required',
-            summary: `Owner approval required: ${summary}`,
-            approvalId: request.id,
-          };
-        }
-        const record = await options.approvals.get(
-          context.tenantId!,
-          args.approvalId,
+        const approval = await approveChange(
+          name,
+          args,
+          context,
+          binding,
+          summary,
         );
-        if (
-          !record ||
-          record.status !== 'approved' ||
-          record.tenantId !== context.tenantId ||
-          record.requestedBy !== context.userId ||
-          record.tool !== name ||
-          !same(record.args, boundArgs) ||
-          !same(record.context, binding)
-        )
-          fail(
-            'forbidden',
-            'Approval is missing, stale or belongs to another action.',
-          );
-        await options.approvals.consume(context.tenantId!, record!.id);
-        hold = record!.id;
+        if (typeof approval !== 'string') return approval;
+        hold = approval;
       }
       try {
         await assertAllowed(context, name);
@@ -640,12 +938,35 @@ export function createCookbookToolService(options: CookbookToolOptions) {
           revision: staged.snapshot().revision,
           snapshot: staged.snapshot(),
         };
-        await options.commit({
-          context,
-          before,
-          after: staged.state(),
-          audit: event('changed', summary),
-        });
+        const editor = options.modelEditorFor?.(context);
+        if (editor) {
+          const snapshot = editor.snapshot();
+          if (!same(canonical(snapshot.cookbook), canonical(before.cookbook)))
+            fail(
+              'conflict',
+              'The app editor and cookbook are out of sync; refresh the host publication.',
+            );
+          await options.audit(event('requested', summary));
+          await assertAllowed(context, name);
+          await editor.apply(
+            { type: 'import', cookbook: staged.cookbook(), summary },
+            {
+              actor: context.userId!,
+              tenantId: context.tenantId!,
+              expectedRevision: snapshot.revision,
+              requestId: hold ?? randomUUID(),
+            },
+          );
+          result.revision = options.engineFor(context)!.snapshot().revision;
+          result.snapshot = options.engineFor(context)!.snapshot();
+        } else {
+          await options.commit({
+            context,
+            before,
+            after: staged.state(),
+            audit: event('changed', summary),
+          });
+        }
         notifyRuntimeExposureChanged();
         if (hold)
           await options.approvals.complete(
@@ -667,12 +988,40 @@ export function createCookbookToolService(options: CookbookToolOptions) {
         context,
         tool: name,
         outcome: 'refused',
-        summary: 'Recipe tool refused.',
+        summary: 'App tool refused.',
       });
       throw error;
     }
   }
   return {
+    /** Generated hosts reuse the normal runtime generator for edited fields and new lists. */
+    async modelTools(
+      context: CookbookToolContext,
+      execution: Pick<MCPContext, 'ai' | 'permissions'> = {},
+    ): Promise<MCPGenerator | undefined> {
+      const editor = options.modelEditorFor?.(context);
+      if (
+        !editor ||
+        !context.tenantId ||
+        !context.userId ||
+        !options.engineFor(context)
+      )
+        return undefined;
+      const { MCPGenerator } = await import('../generators/mcp.js');
+      return new MCPGenerator(
+        {
+          classNames: describeApp(editor.snapshot(), options.catalog).map(
+            (list) => list.id,
+          ),
+        },
+        {
+          db: editor.database,
+          tenantId: context.tenantId,
+          user: { id: context.userId },
+          ...execution,
+        },
+      );
+    },
     async list(
       context: CookbookToolContext,
     ): Promise<CookbookToolDefinition[]> {
