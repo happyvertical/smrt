@@ -1,4 +1,7 @@
-import { executeAsPrincipal } from '@happyvertical/smrt-agents';
+import {
+  executeAsPrincipal,
+  PrincipalToolNotAllowedError,
+} from '@happyvertical/smrt-agents';
 import {
   createSqliteOwnerApprovalStore,
   isApprovalOwner,
@@ -2304,7 +2307,11 @@ export function mountAssistantRoutes(
       id,
       body.approve,
     );
-    const authorResult = async (content: string, ok: boolean) =>
+    const authorResult = async (
+      content: string,
+      ok: boolean,
+      refused = false,
+    ) =>
       sendAgentReply(chat, {
         tenantId: original.tenantId,
         agentSessionId: String(session.id),
@@ -2320,7 +2327,7 @@ export function mountAssistantRoutes(
           id: record.callId,
           name: record.tool,
           args: record.args,
-          status: ok ? 'success' : 'error',
+          status: refused ? 'refused' : ok ? 'success' : 'error',
           approvalId: id,
         },
       });
@@ -2345,6 +2352,7 @@ export function mountAssistantRoutes(
       await authority.consume(original.tenantId, id);
       let result: unknown;
       let ok = false;
+      let refused = false;
       try {
         // Re-resolve offerings and permissions: the original ceiling can only shrink.
         const allowed = (await allowedToolsFor(originalContext)).filter(
@@ -2408,14 +2416,18 @@ export function mountAssistantRoutes(
         );
       } catch (error) {
         safeLog(error);
-        result = { error: 'The approved tool could not run.' };
+        refused = error instanceof PrincipalToolNotAllowedError;
+        result = {
+          ...(refused ? { status: 'refused' } : {}),
+          error: 'The approved tool could not run.',
+        };
       }
       // Complete before authoring: transcript failure must never make effects retryable.
       await authority.complete(original.tenantId, id, ok, result);
       const completed = await authority.get(original.tenantId, id);
       if (!completed) throw notFound();
       decision = completed;
-      await authorResult(JSON.stringify(completed.result ?? null), ok);
+      await authorResult(JSON.stringify(completed.result ?? null), ok, refused);
     }
     return json({ approval: publicApproval(decision) });
   };

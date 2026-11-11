@@ -23,8 +23,13 @@ import {
   createSqliteOwnerApprovalStore,
   OwnerApprovalAuthority,
 } from '@happyvertical/smrt-app-runtime';
-import { resolveDatabase } from '@happyvertical/smrt-core';
+import { ObjectRegistry, resolveDatabase } from '@happyvertical/smrt-core';
+import { createCookbookEngine } from '@happyvertical/smrt-core/cookbook/engine';
 import { InferenceUnavailableError } from '@happyvertical/smrt-core/inference-availability';
+import {
+  createCookbookRuntimeExposure,
+  setRuntimeExposureGate,
+} from '@happyvertical/smrt-core/runtime-exposure';
 import {
   MembershipCollection,
   PermissionCollection,
@@ -3323,6 +3328,148 @@ describe('mountAssistantRoutes', () => {
       ).status,
     ).toBe(409);
     expect(ran).toHaveLength(1);
+  });
+
+  it.each([
+    'disabled',
+    'unreadable',
+  ] as const)('refuses a saved manifest delete after its cookbook becomes %s without expanding the approval projection', async (state) => {
+    const model = '@happyvertical/smrt-profiles:Profile';
+    const catalog = {
+      models: [
+        { id: model, name: 'Profile', packageId: 'profiles', exposed: true },
+      ],
+      recipes: [],
+    };
+    const engine = createCookbookEngine({ catalog });
+    expect(
+      engine.run({ name: 'add_features', input: { ids: [model] } }).ok,
+    ).toBe(true);
+    let readable = true;
+    const gate = createCookbookRuntimeExposure({
+      catalog,
+      engineFor: ({ tenantId: requested }) =>
+        requested === tenantId && readable ? engine : null,
+    });
+    const collection = await ObjectRegistry.getCollection(model, { db });
+    const types = await ObjectRegistry.getCollection(
+      '@happyvertical/smrt-profiles:ProfileType',
+      { db },
+    );
+    const profileType = await types.create({ name: 'Held type' });
+    const profile = await collection.create({
+      name: 'Held record',
+      typeId: profileType.id,
+    });
+    await profile.save();
+    const membership = await (
+      await MembershipCollection.create({ db })
+    ).findByUserAndTenant(ownerA.user.id, tenantId);
+    if (!membership) throw new Error('missing membership');
+    const permission = await (await PermissionCollection.create({ db })).create(
+      { slug: 'profiles.delete', name: 'Delete profiles' },
+    );
+    await permission.save();
+    await (await RolePermissionCollection.create({ db })).addPermission(
+      membership.roleId,
+      String(permission.id),
+    );
+    const authority = await durableApprovals();
+    const routes = mount({
+      approvals: authority,
+      allowedTools: ['profiles.delete'],
+      tools: [
+        {
+          slug: 'profiles.delete',
+          collection: 'profiles',
+          className: 'Profile',
+          qualifiedName: model,
+          action: 'delete',
+        },
+      ],
+      ai: scriptedAI([
+        () => ({
+          content: '',
+          toolCalls: [
+            {
+              id: 'disabled-hold',
+              type: 'function',
+              function: {
+                name: 'profiles-delete',
+                arguments: JSON.stringify({ id: profile.id }),
+              },
+            },
+          ],
+        }),
+      ]),
+    });
+    setRuntimeExposureGate(gate);
+    try {
+      const threadId = await createThread(routes);
+      const turn = await events(
+        await send(routes, threadId, {
+          content: 'Delete',
+          clientRequestId: crypto.randomUUID(),
+        }),
+      );
+      expect(turn.seen).toContainEqual(
+        expect.objectContaining({ type: 'done', stoppedReason: 'approval' }),
+      );
+      const [record] = await authority.list({ id: ownerA.user.id, tenantId });
+      expect(record).toBeDefined();
+      const before = (await (await call(routes, 'GET', 'approvals')).json())
+        .approvals;
+      if (state === 'disabled') {
+        expect(
+          engine.run({ name: 'remove_features', input: { ids: [model] } }).ok,
+        ).toBe(true);
+      } else readable = false;
+      for (const path of ['approvals', `threads/${threadId}/approvals`]) {
+        const listing = (await (await call(routes, 'GET', path)).json())
+          .approvals;
+        expect(listing).toEqual(before);
+        expect(Object.keys(listing[0]).sort()).toEqual(
+          [
+            'id',
+            'tool',
+            'callId',
+            'summary',
+            'status',
+            'decidedBy',
+            'decidedAt',
+          ].sort(),
+        );
+      }
+      const response = await call(
+        routes,
+        'POST',
+        `approvals/${record.id}/decide`,
+        { body: { approve: true } },
+      );
+      expect(response.status).toBe(200);
+      expect((await response.json()).approval.status).toBe('failed');
+      // A new authority recovers a terminal refusal, not a replayable effect.
+      expect(
+        await (await durableApprovals()).get(tenantId, record.id),
+      ).toMatchObject({ status: 'failed', result: { status: 'refused' } });
+      expect(await collection.get(String(profile.id))).not.toBeNull();
+      expect(
+        (await listMessages(routes, threadId)).some(
+          (message) =>
+            (message.toolCallData as { status?: string })?.status === 'refused',
+        ),
+      ).toBe(true);
+      expect(
+        (
+          await call(routes, 'POST', `approvals/${record.id}/decide`, {
+            body: { approve: true },
+          })
+        ).status,
+      ).toBe(409);
+    } finally {
+      setRuntimeExposureGate(undefined);
+      gate.dispose();
+    }
   });
 
   it('denies without execution, refuses non-owners, foreign tenants, foreign origins and malformed decisions', async () => {

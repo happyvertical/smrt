@@ -467,3 +467,7 @@ Runtime cookbook gating is opt-in through
 [smrt-core runtime exposure](../core/agents/runtime-exposure.md). Generated
 manifest operations keep their AOT declarations, but live offerings and calls
 must also pass the current tenant's cookbook and host preference gate.
+
+Saved manifest calls recheck runtime exposure when approved. A disabled or
+unreadable model gate records a terminal refused result without running the tool;
+approval lists retain only the original public hold summary.

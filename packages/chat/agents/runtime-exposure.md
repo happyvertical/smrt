@@ -11,3 +11,11 @@ executor. `invokeManifestTool` independently rechecks using the principal run's
 tenant. The AOT permission catalog remains intact for typo validation. Extra
 tools, browser tools and external drivers remain host integrations and must
 use core's gate when they expose model operations.
+
+Durably held manifest calls re-enter the same dispatcher on owner approval; a
+model disabled in the meantime (or an unreadable enabled set) refuses execution.
+The existing ledger records terminal `failed` with `result.status: 'refused'`,
+and the transcript records `status: 'refused'`. It cannot be retried by approving
+again. Approval lists keep their original saved public projection, without
+arguments, recovery context, results or current model metadata. The SQLite
+mounted-route regression covers both disabling and store-read failure.
