@@ -43,6 +43,7 @@ import {
 } from './fields.js';
 import ReferencePicker from './ReferencePicker.svelte';
 import { screenReferenceTarget } from './references.js';
+import { currencyCodeField } from './roles.js';
 import type {
   EditFormProps,
   ScreenCollectionDefinition,
@@ -67,7 +68,7 @@ let {
   record,
   title,
   fields: include,
-  currency = DEFAULT_SCREEN_CURRENCY,
+  currency: suppliedCurrency,
   showHeader = true,
   submitting = false,
   fieldErrors = {},
@@ -83,12 +84,28 @@ const definition = $derived(
 );
 const policy = $derived(
   suppliedPolicy ??
+    cookbookContext?.fieldPolicy?.(definition) ??
     cookbookContext?.fieldPolicies?.[definition.objectRef] ??
     null,
 );
 const { t } = useI18n();
 
 const isNew = $derived(record === undefined);
+const currency = $derived.by(() => {
+  if (suppliedCurrency) return suppliedCurrency;
+  const name = currencyCodeField(definition);
+  const field = name ? policy?.fields[name] : undefined;
+  const value = record
+    ? record[name ?? '']
+    : field?.hasDefault
+      ? field.defaultValue
+      : name
+        ? definition.fields[name].default
+        : undefined;
+  return typeof value === 'string' && /^[A-Za-z]{3}$/.test(value.trim())
+    ? value.trim().toUpperCase()
+    : DEFAULT_SCREEN_CURRENCY;
+});
 const titles = $derived(screenTitles(definition));
 const sourceError = $derived(screenSourceError(definition, policy));
 const heading = $derived(

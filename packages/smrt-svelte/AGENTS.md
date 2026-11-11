@@ -241,6 +241,8 @@ for a data-surface one — for exactly the component's lifetime.
 
 ## Dependencies
 
+- Cookbook integration uses the browser-safe `@happyvertical/smrt-fields/policy` and `@happyvertical/smrt-core/cookbook` entries. Never import the fields server resolver/root into client components.
+
 - `@happyvertical/smrt-types` (shared types) — includes the identity data contracts (`User`, `Role`, `Membership`, `Tenant`) the role/membership components type against, so no dependency on `smrt-users` / `smrt-profiles` is needed
 - `@happyvertical/smrt-ui` (UI runtime: primitives, theme system, i18n client, module registry) is a hard `dependency`. The agent-admin shells that used to type against `@happyvertical/smrt-agents/ui` moved to `@happyvertical/smrt-agents/svelte` (#1589), so `smrt-agents` is no longer a dependency here — this drops smrt-svelte below smrt-agents in the package DAG.
 - `@happyvertical/smrt-languages` is a hard `dependency` (not an optional peer): the Node-only `/i18n/server` subpath imports its resolver. The browser bundle still excludes it — the client `/i18n` layer never imports the languages root, so it tree-shakes out.

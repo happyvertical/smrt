@@ -1,7 +1,17 @@
 <script lang="ts">
 import type { Cookbook } from '@happyvertical/smrt-types';
+import ImportExport from '../../import-export/ImportExport.svelte';
+import type { ImportExportProps } from '../../import-export/props.js';
+import DetailScreen from '../../screens/DetailScreen.svelte';
+import EditForm from '../../screens/EditForm.svelte';
+import ListScreen from '../../screens/ListScreen.svelte';
 import RecipeScreens from '../../screens/RecipeScreens.svelte';
-import type { RecipeScreensProps, ScreenPolicy } from '../../screens/types.js';
+import RecordScreen from '../../screens/RecordScreen.svelte';
+import type {
+  RecipeScreensProps,
+  ScreenPolicy,
+  ScreenRecord,
+} from '../../screens/types.js';
 import CookbookApp from '../CookbookApp.svelte';
 import CookbookSectionPage from '../CookbookSectionPage.svelte';
 import { getCookbookContext } from '../context.js';
@@ -11,6 +21,9 @@ interface Props {
   cookbook: Cookbook;
   fieldPolicies?: Record<string, ScreenPolicy>;
   screenProps?: RecipeScreensProps;
+  standalone?: 'list' | 'detail' | 'record' | 'form';
+  standaloneRecord?: ScreenRecord;
+  exportProps?: ImportExportProps;
   catalog: CookbookCatalog;
   sectionId: string;
   oncookbookchange?: (cookbook: Cookbook) => void;
@@ -23,6 +36,9 @@ let {
   cookbook,
   fieldPolicies,
   screenProps,
+  standalone,
+  standaloneRecord,
+  exportProps,
   catalog,
   sectionId,
   oncookbookchange,
@@ -63,7 +79,22 @@ let {
   {loaders}
   layoutEditing
 >
-  {#if screenProps}
+  {#if exportProps}<ImportExport {...exportProps} />{/if}
+  {#if standalone && screenProps}
+    {#if standalone === 'list'}
+      <ListScreen definition={screenProps.definition} rows={standaloneRecord ? [standaloneRecord] : []} />
+    {:else if standalone === 'detail' && standaloneRecord}
+      <DetailScreen definition={screenProps.definition} record={standaloneRecord} />
+    {:else if standalone === 'record' && standaloneRecord}
+      <RecordScreen definition={screenProps.definition} record={standaloneRecord} mode="view" />
+    {:else if standalone === 'form'}
+      <EditForm definition={screenProps.definition} record={standaloneRecord}
+        onsubmit={async values => {
+          if (standaloneRecord) await screenProps.source.update?.(String(standaloneRecord.id), values);
+          else await screenProps.source.create?.(values);
+        }} />
+    {/if}
+  {:else if screenProps}
     <RecipeScreens {...screenProps} />
   {:else}
   <CookbookSectionPage

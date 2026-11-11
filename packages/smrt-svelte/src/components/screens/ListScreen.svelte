@@ -60,6 +60,7 @@ const definition = $derived(
 );
 const policy = $derived(
   suppliedPolicy ??
+    cookbookContext?.fieldPolicy?.(definition) ??
     cookbookContext?.fieldPolicies?.[definition.objectRef] ??
     null,
 );

@@ -3,7 +3,8 @@ import { render, screen, within } from '@testing-library/svelte';
 import userEvent from '@testing-library/user-event';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import CookbookHarness from '../../cookbook/__tests__/app-harness.svelte';
-import type { CookbookCatalog } from '../../cookbook/types.js';
+import surfaceManifest from '../../cookbook/__tests__/surface-package/manifest.json';
+import type { CookbookCatalog, CookbookRecipe } from '../../cookbook/types.js';
 import RecipeScreens from '../RecipeScreens.svelte';
 import type { RecipeScreensSource, ScreenRecord } from '../types.js';
 import { taskDefinition, taskPolicy, taskRows } from './fixtures.js';
@@ -353,5 +354,270 @@ describe('cookbook screen context', () => {
     expect(
       screen.queryByRole('columnheader', { name: 'Reference' }),
     ).not.toBeInTheDocument();
+  });
+});
+
+describe('installed recipe end-to-end fixture', () => {
+  beforeEach(() => {
+    localStorage.clear();
+    vi.stubGlobal('matchMedia', () => ({
+      matches: false,
+      addEventListener() {},
+      removeEventListener() {},
+    }));
+  });
+  afterEach(() => vi.unstubAllGlobals());
+  const currencyDefinition: typeof taskDefinition = {
+    ...taskDefinition,
+    fields: {
+      ...taskDefinition.fields,
+      currency: {
+        type: 'text',
+        default: 'CAD',
+        ui: { basic: true, widget: 'currency' },
+      },
+    },
+  };
+  const cookbook: Cookbook = {
+    $schema: '',
+    version: 1,
+    recipes: surfaceManifest.recipes.map((r) => r.id),
+    features: [],
+    policies: [
+      {
+        objectRef: taskDefinition.objectRef,
+        fieldName: 'currency',
+        scopeType: 'app',
+        defaultValue: '"USD"',
+      },
+      {
+        objectRef: taskDefinition.objectRef,
+        fieldName: 'reference',
+        scopeType: 'app',
+        visibility: 'hidden',
+        defaultValue: '"USD"',
+      },
+      {
+        objectRef: taskDefinition.objectRef,
+        fieldName: 'title',
+        scopeType: 'app',
+        label: 'Customer name',
+      },
+      {
+        objectRef: taskDefinition.objectRef,
+        fieldName: 'priority',
+        scopeType: 'app',
+        readOnly: true,
+        defaultValue: '7',
+      },
+    ],
+    layout: {
+      version: 1,
+      items: { 'item:tasks:Task': { label: 'Customers' } },
+    },
+  };
+  const catalog: CookbookCatalog = {
+    models: fixtureCatalog.models,
+    recipes: surfaceManifest.recipes as CookbookRecipe[],
+  };
+
+  it('renders an installed package surface with raw policies and no host resolver or resolved policy map', async () => {
+    const source = memorySource([]);
+    render(CookbookHarness, {
+      cookbook,
+      catalog,
+      sectionId: 'section:fixture.surface',
+      screenProps: { definition: currencyDefinition, source },
+    });
+    expect(
+      await screen.findByTestId('installed-recipe-surface'),
+    ).toBeInTheDocument();
+    expect(
+      screen.getByRole('heading', { name: 'New customers' }),
+    ).toBeInTheDocument();
+    const name = screen.getByLabelText(/Customer name/);
+    expect(screen.getByLabelText('Currency')).toHaveValue('USD');
+    expect(screen.queryByLabelText('Reference')).not.toBeInTheDocument();
+    expect(screen.getByLabelText('Priority')).toHaveAttribute('readonly');
+    expect(screen.getByLabelText('Priority')).toHaveValue('7');
+    expect(
+      document.querySelector(
+        '[data-smrt-component="TenantNav"] a[href="/m/tasks/Task/"]',
+      )?.textContent,
+    ).toContain('Customers');
+    await userEvent.type(name, 'Maya');
+    await userEvent.click(screen.getByRole('button', { name: 'Save' }));
+    expect(source.create).toHaveBeenCalledWith(
+      expect.objectContaining({
+        title: 'Maya',
+        currency: 'USD',
+        reference: 'USD',
+        priority: 7,
+      }),
+    );
+  });
+
+  it.each([
+    'generic',
+    'missing',
+  ])('falls back to generic screens for a %s surface', async (key) => {
+    render(CookbookHarness, {
+      cookbook,
+      catalog,
+      sectionId: `section:fixture.${key}`,
+      screenProps: {
+        definition: currencyDefinition,
+        source: memorySource(),
+        entryId: `item:tasks:Task:${key}`,
+      },
+    });
+    expect(await screen.findByText('Write docs')).toBeInTheDocument();
+    expect(
+      screen.queryByTestId('installed-recipe-surface'),
+    ).not.toBeInTheDocument();
+    expect(
+      screen.getByRole('columnheader', { name: /Customer name/ }),
+    ).toBeInTheDocument();
+    expect(
+      screen.queryByRole('columnheader', { name: /Reference/ }),
+    ).not.toBeInTheDocument();
+  });
+
+  it.each([
+    'list',
+    'detail',
+    'record',
+  ] as const)('applies raw hidden policies to standalone %s screens', async (standalone) => {
+    render(CookbookHarness, {
+      cookbook,
+      catalog,
+      sectionId: 'section:fixture.surface',
+      standalone,
+      standaloneRecord: { ...taskRows[0], reference: 'KEEP_PRIVATE' },
+      screenProps: { definition: currencyDefinition, source: memorySource() },
+    });
+    expect((await screen.findAllByText('Write docs')).length).toBeGreaterThan(
+      0,
+    );
+    expect(screen.queryByText('KEEP_PRIVATE')).not.toBeInTheDocument();
+    expect(screen.queryByText('Reference')).not.toBeInTheDocument();
+  });
+
+  it('applies raw defaults and read-only metadata to a standalone create form', async () => {
+    const source = memorySource([]);
+    render(CookbookHarness, {
+      cookbook,
+      catalog,
+      sectionId: 'section:fixture.surface',
+      standalone: 'form',
+      screenProps: { definition: currencyDefinition, source },
+    });
+    expect(screen.getByLabelText('Currency')).toHaveValue('USD');
+    expect(screen.getByLabelText('Priority')).toHaveAttribute('readonly');
+    expect(screen.getByLabelText('Priority')).toHaveValue('7');
+    expect(screen.queryByLabelText('Reference')).not.toBeInTheDocument();
+    await userEvent.type(screen.getByLabelText(/Customer name/), 'Standalone');
+    await userEvent.click(screen.getByRole('button', { name: 'Save' }));
+    expect(source.create).toHaveBeenCalledWith(
+      expect.objectContaining({
+        title: 'Standalone',
+        currency: 'USD',
+        priority: 7,
+        reference: 'USD',
+      }),
+    );
+  });
+
+  it('preserves existing hidden/read-only values and does not apply create defaults in a standalone edit', async () => {
+    const row = {
+      ...taskRows[0],
+      currency: 'CAD',
+      priority: 99,
+      reference: 'KEEP_PRIVATE',
+    };
+    const source = memorySource([row]);
+    render(CookbookHarness, {
+      cookbook,
+      catalog,
+      sectionId: 'section:fixture.surface',
+      standalone: 'form',
+      standaloneRecord: row,
+      screenProps: { definition: currencyDefinition, source },
+    });
+    expect(screen.getByLabelText('Currency')).toHaveValue('CAD');
+    expect(screen.getByLabelText('Budget (CAD)')).toBeInTheDocument();
+    expect(screen.getByLabelText('Priority')).toHaveValue('99');
+    expect(screen.queryByText('KEEP_PRIVATE')).not.toBeInTheDocument();
+    const name = screen.getByLabelText(/Customer name/);
+    await userEvent.clear(name);
+    await userEvent.type(name, 'Changed');
+    await userEvent.click(screen.getByRole('button', { name: 'Save' }));
+    expect(source.rows[0]).toMatchObject({
+      title: 'Changed',
+      currency: 'CAD',
+      priority: 99,
+      reference: 'KEEP_PRIVATE',
+    });
+    expect(source.update).toHaveBeenCalledWith(
+      't-1',
+      expect.not.objectContaining({ reference: expect.anything() }),
+    );
+    expect(source.update).toHaveBeenCalledWith(
+      't-1',
+      expect.not.objectContaining({ priority: expect.anything() }),
+    );
+  });
+
+  it('uses the resolved currency default for exact money conversion', async () => {
+    const source = memorySource([]);
+    const kwd = {
+      ...cookbook,
+      policies: cookbook.policies.map((row) =>
+        row.fieldName === 'currency' ? { ...row, defaultValue: '"KWD"' } : row,
+      ),
+    };
+    render(CookbookHarness, {
+      cookbook: kwd,
+      catalog,
+      sectionId: 'section:fixture.surface',
+      standalone: 'form',
+      screenProps: { definition: currencyDefinition, source },
+    });
+    await userEvent.type(
+      screen.getByLabelText(/Customer name/),
+      'Kuwait customer',
+    );
+    await userEvent.type(screen.getByLabelText('Budget (KWD)'), '1.234');
+    await userEvent.click(screen.getByRole('button', { name: 'Save' }));
+    expect(source.create).toHaveBeenCalledWith(
+      expect.objectContaining({ currency: 'KWD', budget: 1234 }),
+    );
+  });
+
+  it('exports only the active cookbook-visible fields without a host policy projection', async () => {
+    const ondownload = vi.fn();
+    render(CookbookHarness, {
+      cookbook,
+      catalog,
+      sectionId: 'section:fixture.generic',
+      screenProps: {
+        definition: currencyDefinition,
+        source: memorySource(),
+        entryId: 'item:tasks:Task:generic',
+      },
+      exportProps: {
+        definition: currencyDefinition,
+        mode: 'export',
+        loadRows: async () => [{ ...taskRows[0], reference: 'NEVER_EXPORT' }],
+        ondownload,
+      },
+    });
+    expect(
+      screen.queryByRole('checkbox', { name: 'Reference' }),
+    ).not.toBeInTheDocument();
+    await userEvent.click(screen.getByRole('button', { name: /Export/ }));
+    await vi.waitFor(() => expect(ondownload).toHaveBeenCalledOnce());
+    expect(JSON.stringify(ondownload.mock.calls)).not.toContain('NEVER_EXPORT');
+    expect(JSON.stringify(ondownload.mock.calls)).toContain('Write docs');
   });
 });

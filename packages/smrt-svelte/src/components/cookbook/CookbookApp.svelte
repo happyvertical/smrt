@@ -9,6 +9,7 @@
  * `buildCookbookShell`, keeps layout and overview edits in memory, and hands
  * each edit to `oncookbookchange` for the host to persist.
  */
+import { resolveCookbookFieldPolicy } from '@happyvertical/smrt-fields/policy';
 import { createRawSnippet, mount, unmount, untrack } from 'svelte';
 import AppShell from '../app/AppShell.svelte';
 import type { ShellSlotItem } from '../app/slot-item.js';
@@ -26,7 +27,10 @@ import {
 import { applyCookbookTheme } from './brand-theme.js';
 import { buildCookbookShell, cookbookScreenDefinition } from './build.js';
 import { type CookbookContext, setCookbookContext } from './context.js';
-import { createCookbookRegistry } from './registry.js';
+import {
+  createCookbookRegistry,
+  resolveInstalledRecipeExport,
+} from './registry.js';
 import type { CookbookAppProps } from './types.js';
 
 let {
@@ -35,7 +39,7 @@ let {
   fieldPolicies,
   loaders,
   widgetContext,
-  resolveExport,
+  resolveExport: suppliedResolveExport,
   oncookbookchange,
   recipeOrder,
   entryPath,
@@ -47,6 +51,10 @@ let {
   children,
   ...shellProps
 }: CookbookAppProps = $props();
+
+const resolveExport = $derived(
+  suppliedResolveExport ?? resolveInstalledRecipeExport,
+);
 
 const shell = $derived(
   buildCookbookShell({
@@ -195,6 +203,15 @@ const models = $derived.by(() => {
 });
 
 setCookbookContext({
+  get resolveExport() {
+    return resolveExport;
+  },
+  fieldPolicy(definition) {
+    return (
+      fieldPolicies?.[definition.objectRef] ??
+      resolveCookbookFieldPolicy(definition, cookbook)
+    );
+  },
   get fieldPolicies() {
     return fieldPolicies;
   },

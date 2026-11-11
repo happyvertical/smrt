@@ -348,39 +348,57 @@ projection or bounded REST filtering described above; it was not copied.
 
 ## Cookbook policy and vocabulary context
 
-`CookbookApp.fieldPolicies` is a map of already-resolved `ScreenPolicy` values,
-keyed by qualified object reference. `RecipeScreens` and standalone `ListScreen`,
-`RecordScreen`, `DetailScreen` and `EditForm` inherit it unless an explicit
-policy is supplied. Resolve policies once at the server boundary with the owning
-policy engine; these components never merge raw `CookbookPolicyRow` values.
-`loadCookbookApp` currently returns raw cookbook rows, not resolved policies.
-A host still needs to apply those rows to its policy engine and provide the map.
+`CookbookApp` resolves its raw `cookbook.policies` automatically through
+`@happyvertical/smrt-fields/policy.resolveCookbookFieldPolicy`. That is the pure
+kernel extracted from the existing server resolver: code seeds, sparse encoded
+app rows, required-field safety and policy locks have one implementation.
+`RecipeScreens`, standalone list/record/detail/edit screens and definition-driven
+`ImportExport` consume the context. A host supplies its cookbook, catalog and
+normal definitions/sources; it never needs to pre-resolve field policies.
+Explicit screen policies and the older `CookbookApp.fieldPolicies` override
+remain supported for hosts that already resolve tenant/user layers on the server.
 
 Collection vocabulary comes from the active shell entry, including
-`layout.items[id].label`. `RecipeScreens.entryId` selects a keyed entry when the
-same model appears more than once. A layout rename is used as written for both
-collection and record-kind labels; otherwise the recipe's explicit `noun` is
-used when available. There is no singularization guess. A definition's explicit
-`label` / `singularLabel` wins over the shell. Navigation Reset continues to
-restore the recipe label because `navGroups` retain their original labels.
+`layout.items[id].label`. `RecipeScreens.entryId` disambiguates keyed entries for
+the same model. A layout rename is used as written for both collection and
+record-kind labels; otherwise the recipe's explicit `noun` wins. There is no
+singularization guess. Explicit definition `label` / `singularLabel` wins over
+the shell. Navigation Reset still restores the recipe label because `navGroups`
+retain their originals.
 
-`ScreenFieldPolicy.readOnly` controls editing the record value; `locked` still
-only governs editing the policy. Read-only fields display their formatted value
-and never enter an edit payload. Hidden fields never become controls, columns or
-searchable values. Edits omit them rather than submitting blank/null values, so
-patch updates preserve stored data. Creates include resolved defaults for hidden
-and read-only fields (including an explicit null). Changing the policy re-seeds
-a mounted form, so defaults from a previous cookbook cannot survive a switch.
+`ScreenFieldPolicy.readOnly` controls the record value; `locked` controls policy
+customization. Read-only controls show the formatted value and never enter edit
+payloads. Hidden fields never become controls, columns, search values or exports.
+Edits omit hidden/read-only values, preserving existing data under patch updates.
+Creates include resolved defaults for hidden/read-only fields, explicit null
+included. Changing the policy re-seeds a mounted form. Raw default values are
+validated by the owning field resolver against the generated field type. The
+resolved currency default also controls minor-unit conversion (KWD uses three
+decimals); edits format and preserve the record's own currency.
 
-Regression evidence in `screens/__tests__/RecipeScreens.test.ts` uses the
-existing cookbook harness and a supplied resolved fixture policy:
+`RecipeScreens` loads a recipe-owned `route` surface when its declared path
+exactly matches the selected entry path. `surfacePath` selects another declared
+route, including a record route managed by a host router. The component receives
+`definition`, resolved `policy`, `source`, `view`, `recordId` and optional
+`surfaceProps`. No declared match, unavailable export or failed import uses the
+generic screens. Components load through the shell's generated resolver; no host
+component map is needed. This is client-side lazy replacement; SSR retains the
+generic screen until the selected component loads.
+
+Regression evidence uses the existing cookbook harness and an installed fixture
+package in `screens/__tests__/RecipeScreens.test.ts`:
 
 | Behavior / trigger | Positive | Negative / invariant | Context and executor | Runtime / edge | Level / command |
 | --- | --- | --- | --- | --- | --- |
-| Open list and navigate create/view/edit | Cookbook collection/field labels reach navigation, titles, actions and back link | Original model vocabulary absent from the renamed navigation | Cookbook context; memory source, no SQL transaction | Svelte browser; resolved-policy input | Component; package `pnpm test` |
-| Create with hidden/read-only defaults | Defaults reach create payload | Hidden control absent; read-only control cannot edit | Same context; source create spy | Svelte browser; wire payload | Component; package `pnpm test` |
-| Edit visible value | Visible edit saved | Hidden/read-only stored values preserved | Same context; patch source update spy | Svelte browser; wire payload | Component; package `pnpm test` |
-| Search list | Visible label drives search | Hidden value cannot match a row or become a column | Same context; memory rows | Svelte browser; DataTable | Component; package `pnpm test` |
+| Navigate list/create/view/edit | Cookbook collection/field labels reach navigation, titles, actions and back links | Original model vocabulary absent from renamed navigation | Cookbook context; memory source, no SQL transaction | Svelte browser; resolved-policy input | Component; package `pnpm test` |
+| Create with raw hidden/read-only defaults | Defaults reach create payload | Hidden control absent; read-only value cannot edit | Raw cookbook; same source create spy | Svelte browser; wire payload | Installed-package fixture; package `pnpm test` |
+| Edit a visible value | Visible edit saved | Hidden/read-only stored values preserved | Cookbook context; patch update spy | Svelte browser; wire payload | Component; package `pnpm test` |
+| Search/export | Visible fields remain searchable/exportable | Hidden value cannot match a row, become a column or reach CSV | Raw cookbook; memory rows and download spy | Svelte browser; DataTable/ImportExport | Component; package `pnpm test` |
+| Select a recipe route | Installed manifest component renders with raw policies | Recipe without a surface or with a missing export retains generic screens | Actual consumer plugin, fixture package; no host mapping | Svelte browser; generated dynamic import | Fixture; package `pnpm test` |
 
-Raw cookbook-row resolution and build-generated recipe surface imports require
-changes at their owning packages and are not implemented by this context API.
+The four original context regression tests were also run against the original
+product sources: all four fail there and pass with the context implementation.
+
+The installed fixture's nine new regression cases fail against the previous
+committed screen implementation; all twenty screen cases pass on the integrated
+implementation.

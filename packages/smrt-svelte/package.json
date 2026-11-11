@@ -189,6 +189,11 @@
       "types": "./dist/components/connect-ai/server.d.ts",
       "import": "./dist/components/connect-ai/server.js",
       "default": "./dist/components/connect-ai/server.js"
+    },
+    "./cookbook/surfaces": {
+      "types": "./dist/components/cookbook/surfaces.d.ts",
+      "import": "./dist/components/cookbook/surfaces.js",
+      "default": "./dist/components/cookbook/surfaces.js"
     }
   },
   "files": [
@@ -234,6 +239,8 @@
   },
   "dependencies": {
     "@happyvertical/logger": "catalog:",
+    "@happyvertical/smrt-core": "workspace:*",
+    "@happyvertical/smrt-fields": "workspace:*",
     "@happyvertical/smrt-languages": "workspace:*",
     "@happyvertical/smrt-mcp-apps": "workspace:*",
     "@happyvertical/smrt-types": "workspace:*",
@@ -277,7 +284,6 @@
     "@happyvertical/smrt-agents": "workspace:*",
     "@happyvertical/smrt-chat": "workspace:*",
     "@happyvertical/smrt-content": "workspace:*",
-    "@happyvertical/smrt-core": "workspace:*",
     "@happyvertical/smrt-reports": "workspace:*",
     "@happyvertical/smrt-scanner": "workspace:*",
     "@happyvertical/smrt-tenancy": "workspace:*",

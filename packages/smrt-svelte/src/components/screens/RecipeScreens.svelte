@@ -17,9 +17,10 @@
 import { Alert } from '@happyvertical/smrt-ui/feedback';
 import { useI18n } from '@happyvertical/smrt-ui/i18n';
 import { Button } from '@happyvertical/smrt-ui/ui';
-import { untrack } from 'svelte';
+import { type Component, untrack } from 'svelte';
 import { M } from '../../i18n/strings.screens.js';
 import { tryGetCookbookContext } from '../cookbook/context.js';
+import { parseRecipeExportRef } from '../overview/recipe-widgets.js';
 import EditForm from './EditForm.svelte';
 import { screenTitles } from './fields.js';
 import ListScreen from './ListScreen.svelte';
@@ -37,6 +38,8 @@ import type {
 
 let {
   entryId,
+  surfacePath,
+  surfaceProps = {},
   definition: suppliedDefinition,
   references,
   policy: suppliedPolicy,
@@ -61,9 +64,49 @@ const definition = $derived(
 );
 const policy = $derived(
   suppliedPolicy ??
+    cookbookContext?.fieldPolicy?.(definition) ??
     cookbookContext?.fieldPolicies?.[definition.objectRef] ??
     null,
 );
+let surfaceComponent = $state.raw<Component<Record<string, unknown>> | null>(
+  null,
+);
+const routeSurface = $derived.by(() => {
+  if (!cookbookContext || (view !== 'list' && !surfacePath)) return undefined;
+  const entry = entryId
+    ? cookbookContext.shell.entries.get(entryId)
+    : [...cookbookContext.shell.entries.values()].find(
+        (e) => e.model.id === definition.objectRef,
+      );
+  return cookbookContext.shell.routes.find(
+    (route) =>
+      route.recipeId === entry?.recipeId &&
+      route.path === (surfacePath ?? entry?.path),
+  );
+});
+$effect(() => {
+  const ref = routeSurface && parseRecipeExportRef(routeSurface.export);
+  const resolve = cookbookContext?.resolveExport;
+  surfaceComponent = null;
+  if (!ref || !resolve) return;
+  let cancelled = false;
+  void Promise.resolve(resolve(ref.specifier, ref.exportName))
+    .then((loaded) => {
+      const value =
+        loaded && typeof loaded === 'object' && 'default' in loaded
+          ? loaded.default
+          : loaded;
+      if (!cancelled && typeof value === 'function')
+        surfaceComponent = value as Component<Record<string, unknown>>;
+    })
+    .catch(() => {
+      /* The generic screen is the unavailable-surface fallback. */
+    });
+  return () => {
+    cancelled = true;
+  };
+});
+
 const { t } = useI18n();
 const referenceSources = $derived(
   references ?? createRecipeScreenReferences(definitions ?? {}),
@@ -194,7 +237,10 @@ async function remove(): Promise<void> {
 </script>
 
 <div class="smrt-recipe-screens" data-smrt-component="RecipeScreens">
-  {#if view === 'create' && allowCreate}
+  {#if surfaceComponent && routeSurface}
+    {@const Surface = surfaceComponent}
+    <Surface {definition} {policy} {source} {view} {recordId} {...surfaceProps} />
+  {:else if view === 'create' && allowCreate}
     <EditForm
         references={referenceSources}
         {definition}

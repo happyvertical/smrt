@@ -232,17 +232,61 @@ endpoint.
 
 ## Shared record-screen vocabulary and policy context
 
-`CookbookApp` shares the active shell's entry labels and its optional
-`fieldPolicies` map with generated and standalone screens. Pass the owning policy
-engine's resolved values keyed by qualified model reference; explicit screen
-policies still work. Layout collection renames reach screen titles, create/edit
-actions, back links and overview model choices without changing API identities.
-Use `RecipeScreens.entryId` for a keyed collection entry. See
-[screens.md](screens.md#cookbook-policy-and-vocabulary-context) for preservation,
-default and read-only semantics and regression evidence.
+`CookbookApp` passes raw cookbook rows to the browser-safe smrt-fields resolver
+and shares the result with generated/standalone screens and definition-driven
+import/export. Hosts no longer provide `fieldPolicies`; that prop remains an
+explicit compatibility override for server-resolved tenant/user policies.
+Collection renames reach titles, create/edit actions, back links and overview
+model choices without changing API identities. Use `RecipeScreens.entryId` for a
+keyed collection entry. See [screens.md](screens.md#cookbook-policy-and-vocabulary-context).
 
-The server loader still returns raw cookbook policy rows. It does not resolve
-those rows, and `resolveExport` still requires a host resolver: no build-generated
-recipe surface map is provided here. The owning policy resolver is smrt-fields;
-the installed-manifest generator is core's Vite/consumer plugin. Both boundaries
-need owning-package work before cookbook apps can omit that host integration.
+## Installed recipe surface imports
+
+The existing core producer/consumer web-module emitter now exports
+`recipeSurfaces` and `resolveExport` from `@smrt/web` (producer alias:
+`@happyvertical/smrt-virt-web`). `recipeSurfaces[recipeId]` is a typed tuple of
+`{ surface, load }`; `load()` returns the component or undefined. Recipe ids and
+surface metadata are literal types. Declarations use Svelte's component type
+rather than importing every package's Svelte source into a Node-only typecheck.
+
+`CookbookApp` uses `./cookbook/surfaces` by default; the consumer plugin replaces
+that optional port with the generated web module. Without a plugin, its empty
+resolver preserves generic screens and explicit host resolvers remain usable.
+The shell uses the generated resolver for widget/shell-widget surfaces and
+shares it with `RecipeScreens` for declared route surfaces. Explicit
+`resolveExport` remains an override. Hosts need the normal SMRT consumer plugin,
+not a handwritten export map. Imports are literal dynamic imports, one per
+export reference; reading a manifest or map imports no recipe component. Missing
+route exports and rejected imports retain generic screens. Server widget data
+loaders are emitted only in the SSR projection; the browser map never imports
+those server modules. Hosts still supply authenticated server widget data and
+any capabilities a package component requires, not component import mappings.
+
+The installed fixture package under `__tests__/surface-package/` exercises this
+through the real consumer plugin and an ordinary cookbook harness. Its consumer
+project root is a disposable temporary directory: fixture manifests and knowledge
+must never be written into the real package's `.smrt` directory. Core's
+`consumer-plugin/load-resolve.test.ts` separately builds an installed fixture and
+proves its marker exists in a dynamic chunk and not the initial chunk, and its
+server loader is absent from the browser import graph.
+
+## Reuse inventory for policy/surface integration
+
+MCP `review-smrt-project` ran on fields/core/types/smrt-svelte; architecture
+context queried field policy resolution, raw rows, generated surfaces and
+`resolveExport`. The intent index and owning packages were searched by symbol
+and purpose (`resolveFieldPolicy`, `buildCodeSeedVisibility`, `rowToDelta`,
+`applyDelta`, `parseRecipeExportRef`, `generateWebModule`, surface maps and lazy
+imports). Existing owning code was extended rather than duplicated:
+
+- `fields/src/policy.ts`: moves the existing pure seed/merge helpers and exposes
+  the same kernel to server resolution and cookbook consumers. The registry,
+  authorization, database reads and cache stay in the original server resolver.
+- `core/src/cookbook/export-ref.ts`: moves the existing export-reference parser
+  from overview recipe widgets; the emitter and UI now reuse it.
+- `surfaces.ts`: an empty optional integration port; the consumer plugin resolves
+  it to its existing emitter rather than requiring a virtual module in plain
+  Svelte hosts. No parallel surface registry is implemented.
+- `__tests__/surface-package/Surface.svelte`: a test-only package route composing
+  the existing `EditForm`; its `index.js` is only a re-export and its manifest and
+  package.json are fixture data. No new production component/model is introduced.

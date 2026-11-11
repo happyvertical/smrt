@@ -1,3 +1,7 @@
+import { mkdirSync, existsSync, symlinkSync, unlinkSync, mkdtempSync, writeFileSync, rmSync } from 'node:fs';
+import { tmpdir } from 'node:os';
+import { join } from 'node:path';
+import { smrtConsumer } from '../core/src/consumer-plugin/index.ts';
 import { defineConfig } from 'vitest/config';
 import { svelte } from '@sveltejs/vite-plugin-svelte';
 import { fileURLToPath } from 'node:url';
@@ -14,8 +18,22 @@ const usePublishedEntries = process.env.SMRT_SVELTE_PUBLISHED_ENTRY === '1';
 const built = (packageName: string, entry: string) =>
   fileURLToPath(new URL(`../${packageName}/dist/${entry}`, import.meta.url));
 
+// Install the fixture package as a consumer would; no surface export mapping.
+const fixtureLink = fileURLToPath(new URL('./node_modules/@fixture/cookbook-surfaces', import.meta.url));
+mkdirSync(fileURLToPath(new URL('./node_modules/@fixture', import.meta.url)), { recursive: true });
+if (!existsSync(fixtureLink)) symlinkSync(fileURLToPath(new URL('./src/components/cookbook/__tests__/surface-package', import.meta.url)), fixtureLink, 'dir');
+
+// Consumer plugins write manifests and knowledge: isolate all fixture artifacts
+// from the package's real .smrt directory, including during conformance runs.
+const fixtureHost = mkdtempSync(join(tmpdir(), 'smrt-svelte-cookbook-host-'));
+mkdirSync(join(fixtureHost, 'node_modules/@fixture'), { recursive: true });
+symlinkSync(fileURLToPath(new URL('./src/components/cookbook/__tests__/surface-package', import.meta.url)), join(fixtureHost, 'node_modules/@fixture/cookbook-surfaces'), 'dir');
+writeFileSync(join(fixtureHost, 'package.json'), JSON.stringify({ name: '@fixture/cookbook-host', version: '0.0.0', type: 'module', dependencies: { '@fixture/cookbook-surfaces': '0.0.0' } }));
+
 export default defineConfig({
   plugins: [
+    smrtConsumer({ packages: ['@fixture/cookbook-surfaces'], projectRoot: fixtureHost, generateTypes: false }),
+    { name: 'fixture-package-cleanup', closeBundle() { if (existsSync(fixtureLink)) unlinkSync(fixtureLink); rmSync(fixtureHost, { recursive: true, force: true }); } },
     smrtVitestPlugin({
       verbose: true,
       // The test is a published-entry compatibility gate. Avoid source-mode
@@ -23,8 +41,11 @@ export default defineConfig({
       // and creates strict-registry constructor collisions with their built
       // exports. The built workspace manifests are loaded below instead.
       generateManifest: !usePublishedEntries,
+      // The optional surface port must reach the real consumer plugin, not
+      // Vitest's source alias to its intentionally empty fallback module.
       aliasFilter: ({ find }) =>
-        !usePublishedEntries ||
+        find !== '@happyvertical/smrt-svelte/cookbook/surfaces' &&
+        (!usePublishedEntries ||
         ![
           '@happyvertical/smrt-agents',
           '@happyvertical/smrt-agents/server',
@@ -42,7 +63,7 @@ export default defineConfig({
           '@happyvertical/smrt-tags',
           '@happyvertical/smrt-tenancy',
           '@happyvertical/smrt-users',
-        ].includes(find),
+        ].includes(find)),
       // The composed WebMCP fixture declares decorated test-only models. Keep
       // them out of the package manifest so other workers cannot discover
       // fixture classes; the integration test runs its own explicit scanner

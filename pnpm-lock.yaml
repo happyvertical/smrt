@@ -3757,6 +3757,12 @@ importers:
       '@happyvertical/logger':
         specifier: ^0.111.10
         version: 0.111.10(@sentry/node@10.75.0(@opentelemetry/core@2.11.0(@opentelemetry/api@1.9.1))(supports-color@10.2.2))
+      '@happyvertical/smrt-core':
+        specifier: workspace:*
+        version: link:../core
+      '@happyvertical/smrt-fields':
+        specifier: workspace:*
+        version: link:../fields
       '@happyvertical/smrt-inference':
         specifier: workspace:*
         version: link:../inference
@@ -3809,9 +3815,6 @@ importers:
       '@happyvertical/smrt-content':
         specifier: workspace:*
         version: link:../content
-      '@happyvertical/smrt-core':
-        specifier: workspace:*
-        version: link:../core
       '@happyvertical/smrt-reports':
         specifier: workspace:*
         version: link:../reports

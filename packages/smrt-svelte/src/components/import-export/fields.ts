@@ -17,6 +17,7 @@ export interface ImportExportFieldPolicy {
   order?: number | null;
   /** An org-locked field keeps its resolved default and is never overwritten by import. */
   locked?: boolean;
+  readOnly?: boolean;
   hasDefault?: boolean;
   defaultValue?: unknown;
   required?: boolean;
@@ -120,7 +121,7 @@ export function fieldsFromCollectionDefinition(
         label: p?.label || humanizeFieldName(name),
         type: enumValues ? 'enum' : TYPE_MAP[def.type],
         required: required && !hasDefault,
-        importable: !tenant && !hidden && !locked,
+        importable: !tenant && !hidden && !locked && p?.readOnly !== true,
         exportable: !tenant && !hidden,
         ...(enumValues ? { options: enumValues } : {}),
         ...(def.ui?.widget ? { widget: def.ui.widget } : {}),

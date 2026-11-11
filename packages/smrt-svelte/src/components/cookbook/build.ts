@@ -153,7 +153,10 @@ export function buildCookbookShell(
       label: cookbook.layout?.items?.[id]?.label ?? spec.label,
       icon:
         cookbook.layout?.items?.[id]?.icon ?? spec.icon ?? DEFAULT_ENTRY_ICON,
-      description: entryDescription(spec.description, spec.model),
+      description: entryDescription(spec.description, {
+        ...spec.model,
+        name: cookbook.layout?.items?.[id]?.label ?? spec.noun ?? spec.label,
+      }),
       model: spec.model,
       path,
       href: href(path),

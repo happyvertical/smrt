@@ -489,6 +489,10 @@ export interface RecordScreenProps {
 }
 
 export interface RecipeScreensProps {
+  /** Route declared by the active recipe; defaults to the selected collection entry path. */
+  surfacePath?: string;
+  /** Additional capabilities required by a recipe-owned route component. */
+  surfaceProps?: Record<string, unknown>;
   /** Disambiguates keyed entries for the same model in the cookbook. */
   entryId?: string;
   /** Exposed target definitions, sources and optional record routes. */
