@@ -27,12 +27,14 @@
 // tricia: `--filter=@happyvertical/smrt-app-shell...` plus the cli and app-cli).
 // POSIX hosts only (the CI job runs on Linux; the targets are cross-bundled).
 
+import { stageBundle } from './release-preflight.mjs';
 import { spawn, spawnSync } from 'node:child_process';
 import { createServer } from 'node:net';
 import {
   cpSync,
   existsSync,
   mkdirSync,
+  lstatSync,
   readdirSync,
   readFileSync,
   realpathSync,
@@ -298,7 +300,7 @@ export function listShellFiles(shellDir) {
 /** The pnpm workspace file of an app tree: only the build scripts it needs. */
 export const SHELL_APP_WORKSPACE_YAML = 'allowBuilds:\n  esbuild: true\n  protobufjs: true\n';
 
-function parseArgs(argv) {
+export function parseArgs(argv) {
   const options = {
     app: 'generic',
     out: undefined,
@@ -306,6 +308,9 @@ function parseArgs(argv) {
     measure: false,
     port: 0,
     bridge: undefined,
+    buildDir: undefined,
+    native: false,
+    closeBehavior: 'hide',
   };
   for (let i = 0; i < argv.length; i += 1) {
     const flag = argv[i];
@@ -320,14 +325,21 @@ function parseArgs(argv) {
     else if (flag === '--measure') options.measure = true;
     else if (flag === '--port') options.port = Number(value());
     else if (flag === '--bridge') options.bridge = value();
+    else if (flag === '--build-dir') options.buildDir = value();
+    else if (flag === '--native') options.native = true;
+    else if (flag === '--close-behavior') options.closeBehavior = value();
     else throw new Error(`unknown argument ${flag}`);
   }
   if (!Object.hasOwn(APPS, options.app)) {
-    throw new Error(`--app must be one of ${Object.keys(APPS).join(', ')}`);
+    options.app = realpathSync(options.app);
+    if (!existsSync(join(options.app, 'package.json'))) {
+      throw new Error('--app must name a built app directory or a known example');
+    }
   }
+  if (!['hide', 'quit'].includes(options.closeBehavior)) throw new Error('--close-behavior must be hide or quit');
   if (!options.out) throw new Error('--out is required');
   if (options.targets.length === 0) throw new Error('--targets is required');
-  if (!Number.isInteger(options.port) || options.port < 0) {
+  if (!Number.isInteger(options.port) || options.port < 0 || options.port > 65535) {
     throw new Error('--port must be a port number (0 picks a free one)');
   }
   return options;
@@ -504,6 +516,70 @@ async function instantiateApp(app, root, registryUrl, manifest) {
   return dir;
 }
 
+/**
+ * Production-only input for an already built adapter-node app. Workspace links
+ * become the exact versions served by this run's registry. No source, dev
+ * tooling, ambient pnpm hooks, scripts or credentials enter the staging app.
+ */
+export function builtAppManifest(manifest, packages) {
+  const resolved = (dependencies) => Object.fromEntries(
+    Object.entries(dependencies ?? {}).map(([name, range]) => {
+      const workspace = packages.get(name);
+      if (workspace) return [name, workspace.json.version];
+      if (/^(?:link:|file:|workspace:|catalog:)/.test(range)) {
+        throw new Error(`non-registry dependency ${name} is not in this workspace`);
+      }
+      return [name, range];
+    }),
+  );
+  return {
+    name: manifest.name,
+    version: manifest.version,
+    private: true,
+    type: 'module',
+    packageManager: manifest.packageManager,
+    dependencies: resolved(manifest.dependencies),
+    optionalDependencies: resolved(manifest.optionalDependencies),
+  };
+}
+
+/** Stage only compiled output and public packaging inputs, never app source. */
+export function stageBuiltApp(app, buildDir, root, registryUrl, manifest) {
+  const dir = join(root, 'app');
+  if (existsSync(dir)) throw new Error('staging app already exists; use a new --out');
+  const build = realpathSync(buildDir ?? join(app, 'build'));
+  if (!lstatSync(join(build, 'index.js')).isFile()) {
+    throw new Error('build the adapter-node app with smrt app build first');
+  }
+  // cp must not turn a symlink to source or a secret outside the build into
+  // a regular packaged file. The bundler performs its own stricter copy too.
+  const check = (path) => {
+    for (const entry of readdirSync(path, { withFileTypes: true })) {
+      if (entry.isSymbolicLink()) throw new Error('built app must contain no symlinks');
+      if (entry.isDirectory()) check(join(path, entry.name));
+      else if (!entry.isFile()) throw new Error('built app must contain only regular files');
+    }
+  };
+  check(build);
+  mkdirSync(dir, { recursive: true });
+  cpSync(build, join(dir, 'build'), { recursive: true });
+  const config = JSON.parse(readFileSync(join(app, 'smrt-desktop.json'), 'utf8'));
+  for (const file of config.runtimeFiles ?? []) {
+    if (typeof file !== 'string' || !/^(?:[A-Za-z0-9_-]+\/)*[A-Za-z0-9_.-]+$/.test(file) || file.split('/').some((part) => part === '.' || part === '..') || ['package.json', 'build', 'node_modules'].includes(file.split('/')[0])) {
+      throw new Error('invalid runtime file');
+    }
+    const source = join(app, file);
+    if (!lstatSync(source).isFile() || !isInside(realpathSync(app), realpathSync(source))) throw new Error('runtime file must be a regular app file');
+    mkdirSync(dirname(join(dir, file)), { recursive: true });
+    cpSync(source, join(dir, file));
+  }
+  cpSync(join(app, 'smrt-desktop.json'), join(dir, 'smrt-desktop.json'));
+  writeFileSync(join(dir, 'package.json'), `${JSON.stringify(manifest, null, 2)}\n`);
+  writeFileSync(join(dir, 'pnpm-workspace.yaml'), 'packages: []\n');
+  writeFileSync(join(dir, '.npmrc'), appNpmrc(registryUrl));
+  return dir;
+}
+
 function buildBridge(root, given) {
   if (given) return resolve(given);
   const entry = join(repoRoot, 'packages', 'app-cli', 'dist', 'bin', 'smrt-mcp-bridge.js');
@@ -525,6 +601,42 @@ function buildBridge(root, given) {
   return bridge;
 }
 
+/** Local unsigned macOS packaging; release signing remains release-preflight's. */
+export function buildNativeApp(bundle, root, target, closeBehavior = 'hide') {
+  if (process.platform !== 'darwin' || target !== `${process.arch === 'arm64' ? 'aarch64' : 'x86_64'}-apple-darwin`) {
+    throw new Error('--native requires the matching macOS host target');
+  }
+  const report = JSON.parse(readFileSync(join(bundle, 'bundle-report.json'), 'utf8'));
+  const stage = join(root, 'native', target);
+  if (existsSync(stage)) throw new Error('native staging directory already exists');
+  cpSync(resolve(here, '..'), stage, { recursive: true, filter: (path) => {
+    const rel = relative(resolve(here, '..'), path).split(sep)[0];
+    return !['target', 'binaries', 'resources'].includes(rel);
+  } });
+  const files = readFileSync(join(bundle, 'bundle-files.sha256'), 'utf8').trim().split('\n').map((line) => {
+    const match = /^([0-9a-f]{64})  ((?:binaries|resources)\/[^\0]+)$/.exec(line);
+    if (!match || match[2].split('/').includes('..')) throw new Error('invalid bundle file list');
+    return { sha256: match[1], path: match[2] };
+  });
+  stageBundle(bundle, files, stage);
+  const overlay = {
+    productName: report.product.displayName,
+    identifier: report.product.bundleId,
+    version: report.product.productVersion,
+    app: { windows: JSON.parse(readFileSync(join(stage, 'tauri.conf.json'), 'utf8')).app.windows.map((window) => ({ ...window, title: report.product.displayName })) },
+    bundle: { externalBin: [`binaries/${report.product.productId}-node`], resources: { 'resources/': './' }, createUpdaterArtifacts: false },
+    plugins: { 'smrt-desktop': { closeBehavior } },
+  };
+  writeFileSync(join(stage, 'tauri.local.json'), `${JSON.stringify(overlay, null, 2)}\n`);
+  run('tauri', ['build', '--no-sign', '--bundles', 'app', '--config', 'tauri.local.json', '--', '--locked'], {
+    cwd: stage, env: { CARGO_TARGET_DIR: join(stage, 'target') },
+  });
+  const app = join(stage, 'target', 'release', 'bundle', 'macos', `${report.product.displayName}.app`);
+  const zip = join(root, `${report.product.productId}-${target}-unsigned.zip`);
+  run('ditto', ['-c', '-k', '--sequesterRsrc', '--keepParent', app, zip]);
+  return { app, zip };
+}
+
 async function main() {
   const options = parseArgs(process.argv.slice(2));
   mkdirSync(options.out, { recursive: true });
@@ -533,8 +645,13 @@ async function main() {
     throw new Error('--out must be outside the repository checkout');
   }
   const appSpec = APPS[options.app];
+  if (!appSpec && isInside(realpathSync(options.app), root)) {
+    throw new Error('--out must be outside the app checkout');
+  }
   const packages = readWorkspacePackages(repoRoot);
-  const manifest = appRootManifest(appSpec, packages);
+  const manifest = appSpec
+    ? appRootManifest(appSpec, packages)
+    : builtAppManifest(JSON.parse(readFileSync(join(options.app, 'package.json'), 'utf8')), packages);
   const names = workspaceClosure(packages, manifest);
   console.error(`workspace packages to serve locally: ${names.length}`);
 
@@ -542,14 +659,16 @@ async function main() {
   try {
     publishWorkspace(packages, names, registry, root);
     backdateLocalRegistry(root, names);
-    const app = await instantiateApp(appSpec, root, registry.url, manifest);
+    const app = appSpec
+      ? await instantiateApp(appSpec, root, registry.url, manifest)
+      : stageBuiltApp(options.app, options.buildDir, root, registry.url, manifest);
     // The first install resolves the lock against the local registry; the
     // build is adapter-node's (`smrt app build` for the template, the same
     // Vite build for the shell).
     run('pnpm', ['install', '--ignore-scripts'], { cwd: app });
-    if (appSpec.source === 'template') {
+    if (appSpec?.source === 'template') {
       run('pnpm', ['exec', 'smrt', 'app', 'build'], { cwd: app });
-    } else {
+    } else if (appSpec) {
       run('pnpm', ['exec', 'svelte-kit', 'sync'], { cwd: app });
       run('pnpm', ['exec', 'vite', 'build'], { cwd: app });
     }
@@ -571,12 +690,20 @@ async function main() {
         target,
         '--out',
         out,
+        '--node-cache',
+        join(root, 'node-cache'),
         ...(options.measure ? ['--measure'] : []),
       ]);
       console.error(`bundled ${target}`);
+      if (options.native) buildNativeApp(out, root, target, options.closeBehavior);
     }
   } finally {
+    const stopped = registry.child.exitCode !== null || registry.child.signalCode !== null
+      ? Promise.resolve()
+      : new Promise((done) => registry.child.once('exit', done));
     registry.child.kill('SIGTERM');
+    await stopped;
+    rmSync(join(root, 'registry'), { recursive: true, force: true });
   }
 }
 

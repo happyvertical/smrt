@@ -26,6 +26,7 @@
 // to a copy of it in a `target/debug` layout, which is where a non-installed
 // Tauri build looks for them (see STAGE_RUN_DIR).
 
+import { randomBytes } from 'node:crypto';
 import { spawn, spawnSync } from 'node:child_process';
 import {
   chmodSync,
@@ -68,6 +69,12 @@ export function appLocalDataDir({ platform, env, home, identifier }) {
   }
   const base = env.XDG_DATA_HOME || join(home, '.local', 'share');
   return join(base, identifier);
+}
+
+/** Standard OS log location, matching Tauri's app_log_dir. */
+export function appLogDir({ platform, env, home, identifier }) {
+  if (platform === 'darwin') return join(home, 'Library', 'Logs', identifier);
+  return join(appLocalDataDir({ platform, env, home, identifier }), 'logs');
 }
 
 /**
@@ -192,11 +199,20 @@ function parseArgs(argv) {
     else if (flag === '--timeout-ms') options.timeoutMs = Number(value());
     else if (flag === '--keep') options.keep = true;
     else if (flag === '--identifier') options.identifier = value();
+    else if (flag === '--sidecar-only') options.sidecarOnly = true;
+    else if (flag === '--list-route') options.listRoute = value();
+    else if (flag === '--record-route') options.recordRoute = value();
+    else if (flag === '--record-json') options.recordJson = value();
+    else if (flag === '--report') options.report = value();
+    else if (flag === '--data-parent') options.dataParent = value();
+    else if (flag === '--database-file') options.databaseFile = value();
     else throw new Error(`unknown argument ${flag}`);
   }
-  for (const required of ['wrapper', 'bundle', 'triple']) {
+  for (const required of options.sidecarOnly ? ['bundle', 'triple', 'listRoute', 'dataParent'] : ['wrapper', 'bundle', 'triple']) {
     if (!options[required]) throw new Error(`--${required} is required`);
   }
+  if (options.databaseFile && !/^[A-Za-z0-9_-]+\.(?:sqlite|db)$/.test(options.databaseFile)) throw new Error('--database-file must be a database basename');
+  if (Boolean(options.recordRoute) !== Boolean(options.recordJson)) throw new Error('--record-route and --record-json must be used together');
   return options;
 }
 
@@ -247,13 +263,13 @@ function listProcesses() {
   return { text: result.stdout ?? '', format: 'ps' };
 }
 
-async function waitFor(check, timeoutMs, what) {
+async function waitFor(check, timeoutMs, what, pollMs = 500) {
   const deadline = Date.now() + timeoutMs;
   for (;;) {
     const value = await check();
     if (value) return value;
     if (Date.now() > deadline) throw new Error(`timed out waiting for ${what}`);
-    await sleep(500);
+    await sleep(pollMs);
   }
 }
 
@@ -273,8 +289,105 @@ function directoryHasFiles(dir) {
   }
 }
 
+/** Exercise the actual manifest/executable without a display or vendor calls. */
+export async function smokeSidecar(options) {
+  const { buildSidecarEnv } = await import('../../dist/index.js');
+  const { createNodeMeasureSeams, stopMeasuredProcess } = await import('../../dist/bundler.js');
+  const seams = createNodeMeasureSeams();
+  const bundle = resolve(options.bundle);
+  const report = JSON.parse(readFileSync(join(bundle, 'bundle-report.json'), 'utf8'));
+  const manifest = JSON.parse(readFileSync(join(bundle, 'resources/sidecar-manifest.json'), 'utf8'));
+  const resources = join(bundle, 'resources');
+  const plan = stagePlan({ productId: report.product.productId, triple: options.triple, windows: process.platform === 'win32' });
+  mkdirSync(options.dataParent, { recursive: true, mode: 0o700 });
+  const scratch = realpathSync(mkdtempSync(join(options.dataParent, 'sidecar-smoke-')));
+  const data = join(scratch, 'data');
+  const results = [];
+  let recordId;
+  let child;
+  let failure;
+  try {
+    for (let run = 0; run < 2; run += 1) {
+      const port = await seams.freePort();
+      if (port <= 4900) throw new Error('the free port must be above 4900');
+      const secret = randomBytes(32).toString('hex');
+      const origin = `http://127.0.0.1:${port}`;
+      const env = buildSidecarEnv(manifest, { port, dataDirectory: data, ownerLinkSecret: secret }, {});
+      // HOME is needed for CLI detection, never for the location of app data.
+      env.HOME = scratch;
+      env.PATH = process.env.PATH;
+      const started = seams.now();
+      child = seams.spawn({ command: join(bundle, plan.sidecarFrom), args: manifest.args, cwd: manifest.workingDirectory === 'app' ? join(resources, 'app') : resources, env });
+      let exited = false;
+      child.exit.then(() => { exited = true; });
+      await waitFor(async () => {
+        if (exited) throw new Error('packaged sidecar exited before health');
+        return (await seams.health(`${origin}${manifest.healthRoute}`, 500)) === 200;
+      }, options.timeoutMs ?? 120000, 'packaged sidecar health', 20);
+      const firstHttpMs = seams.now() - started;
+      let tableCount;
+      if (options.databaseFile) {
+        const { DatabaseSync } = await import('node:sqlite');
+        const database = new DatabaseSync(join(data, options.databaseFile), { readOnly: true });
+        try {
+          tableCount = Number(database.prepare("SELECT count(*) AS count FROM sqlite_schema WHERE type = 'table' AND name NOT LIKE 'sqlite_%'").get().count);
+        } finally { database.close(); }
+      }
+      const request = async (path, init = {}) => {
+        try {
+          return await fetch(`${origin}${path}`, { redirect: 'manual', signal: AbortSignal.timeout(30000), ...init });
+        } catch {
+          throw new Error('packaged sidecar request failed');
+        }
+      };
+      if ((await request(manifest.ownerClaimRoute)).status !== 403) throw new Error('owner link accepted a missing secret');
+      const owner = await request(`${manifest.ownerClaimRoute}?launch=${secret}`);
+      if (owner.status !== 302) throw new Error('owner link did not sign in');
+      const cookie = owner.headers.getSetCookie().map((value) => value.split(';')[0]).join('; ');
+      if (!cookie) throw new Error('owner session cookie missing');
+      const headers = { cookie };
+      const list = await request(options.listRoute, { headers });
+      if (list.status !== 200) throw new Error('authenticated REST list failed');
+      await list.arrayBuffer();
+      if (options.recordRoute) {
+        if (run === 0) {
+          const created = await request(options.recordRoute, { method: 'POST', headers: { ...headers, 'content-type': 'application/json', origin }, body: options.recordJson });
+          if (![200, 201].includes(created.status)) throw new Error(`persistence probe create failed (${created.status})`);
+          const body = await created.json();
+          recordId = body.data?.id ?? body.id;
+          if (typeof recordId !== 'string') throw new Error('persistence probe id missing');
+        } else {
+          const persisted = await request(`${options.recordRoute}/${encodeURIComponent(recordId)}`, { headers });
+          if (persisted.status !== 200) throw new Error('record was lost after relaunch');
+          const body = await persisted.json();
+          if ((body.data?.id ?? body.id) !== recordId) throw new Error('relaunch returned a different record');
+        }
+      }
+      await sleep(5000);
+      const rss = spawnSync('ps', ['-o', 'rss=', '-p', String(child.pid)], { encoding: 'utf8' });
+      results.push({ run: run + 1, firstHttpMs: Math.round(firstHttpMs), idleRssKiB: Number(rss.stdout.trim()), tableCount, health: 200, ownerSession: true, restList: 200 });
+      await stopMeasuredProcess(child, seams, 10000);
+      const exitInfo = await child.exit;
+      if (exitInfo?.signal === 'SIGKILL' || !(exitInfo?.code === 0 || exitInfo?.signal === 'SIGTERM')) throw new Error('sidecar did not shut down gracefully');
+      child = undefined;
+      if ((await seams.health(`${origin}${manifest.healthRoute}`, 500)) !== undefined) throw new Error('sidecar still responds after shutdown');
+    }
+  } catch (error) {
+    failure = error;
+  } finally {
+    if (child) await stopMeasuredProcess(child, seams, 10000);
+    if (!options.keep) rmSync(scratch, { recursive: true, force: true });
+  }
+  if (failure) throw failure;
+  const result = { target: options.triple, runs: results, cleanShutdown: true, persistedRecord: Boolean(recordId), firstWindowMs: null };
+  if (options.report) writeFileSync(options.report, `${JSON.stringify(result, null, 2)}\n`);
+  console.log(JSON.stringify(result, null, 2));
+  return result;
+}
+
 async function main() {
   const options = parseArgs(process.argv.slice(2));
+  if (options.sidecarOnly) return smokeSidecar(options);
   const windows = process.platform === 'win32';
   const bundle = resolve(options.bundle);
   const report = JSON.parse(readFileSync(join(bundle, 'bundle-report.json'), 'utf8'));
@@ -313,7 +426,8 @@ async function main() {
     chmodSync(join(runDir, plan.sidecarTo), 0o755);
   }
 
-  const logPath = join(dataRoot, '.desktop-wrapper', 'supervisor.log');
+  const logRoot = appLogDir({ platform: process.platform, env: process.env, home: homedir(), identifier });
+  const logPath = join(logRoot, 'supervisor.log');
   const secrets = [];
   let stderrTail = '';
   let child;
@@ -453,6 +567,7 @@ async function main() {
     if (!options.keep) {
       rmSync(stage, { recursive: true, force: true });
       rmSync(dataRoot, { recursive: true, force: true });
+      rmSync(logRoot, { recursive: true, force: true });
     }
   }
   if (failure) {

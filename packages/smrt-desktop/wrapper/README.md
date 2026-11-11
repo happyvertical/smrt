@@ -16,8 +16,8 @@ signing secret in a URL query is deliberately not carried over.
    contract, see `../README.md`) and parses it strictly (`src/manifest.rs`).
 2. Picks a free loopback port and starts the `externalBin` sidecar through
    `tauri-plugin-shell` (`Command::sidecar`) with:
-   - working directory = the resource directory (the packaged app root),
-     separate from the data directory;
+   - working directory = the resource directory, or its `app` child when
+     `workingDirectory: "app"` is declared; separate from the data directory;
    - a cleared environment rebuilt from the parent environment, then the
      manifest `env`, then the supervisor values, which always win:
      `HOST=127.0.0.1`, `PORT=<port>`, `ORIGIN=http://127.0.0.1:<port>`,
@@ -51,10 +51,10 @@ directory writer lease or operation lock; gave up after 5 restarts`.
 | `requestSingleInstanceLock`, `second-instance` shows the window | `tauri-plugin-single-instance`, registered first; the second launch focuses the window and exits |
 | Tray with Open / Quit and a disabled status line; startup error text in the menu | Status line, **Open**, **Restart** (enabled only in `Failed`), **Quit**; tooltip repeats the status |
 | Window created only after the runtime is reachable | Window is created hidden; navigated and shown on the first `Ready` only (restarts never re-raise a hidden window) |
-| Close hides, `quitting` flag lets quit through | `CloseRequested` is prevented and hides the window unless quitting |
+| Close hides, `quitting` flag lets quit through | Default close hides; explicit `plugins.smrt-desktop.closeBehavior: quit` drains the supervisor and exits |
 | `will-quit` stops the runtime before exiting | `RunEvent::ExitRequested{None}` (Cmd+Q) and the tray Quit run the same shutdown, then `exit(0)`; `RunEvent::Exit` is a safety net |
 | Child stop: SIGTERM then SIGKILL after 5 s | `shutdown.rs`: graceful 10 s, forced kill, wait for exit; configurable |
-| Append-only log, failures never break the tray | `log.rs`, under `<app_local_data_dir>/.desktop-wrapper/supervisor.log`, 512 KiB cap plus one `.1` file, never panics |
+| Append-only log, failures never break the tray | `log.rs`, under Tauri's app_log_dir (`~/Library/Logs/<bundle-id>/supervisor.log` on macOS), 512 KiB cap plus one `.1` file, never panics |
 | `uncaughtException` logged | Supervisor thread panics kill the sidecar and surface `Failed`; a main-thread panic hook kills the sidecar |
 | Health wait accepted any status below 500 and followed redirects | Only 2xx is healthy; any 3xx fails immediately and is never followed |
 | Fixed ports | Ephemeral loopback port per launch, preferring the previous port on restart |
@@ -650,7 +650,7 @@ Manual smoke run: in a debug build the resource directory is the executable dire
 `sidecar-manifest.json`, the sidecar script and a symlink named like the
 manifest's `executable` (pointing at a `node` binary) in
 `target/debug/` and run `target/debug/smrt-desktop-wrapper`. The log is at
-`<app_local_data_dir>/.desktop-wrapper/supervisor.log`.
+Tauri's app_log_dir (`~/Library/Logs/<bundle-id>/supervisor.log` on macOS).
 
 ## Deferred to later slices (clean seams only)
 
@@ -678,3 +678,6 @@ manifest's `executable` (pointing at a `node` binary) in
 - CI covers Linux only. The Windows code paths (`taskkill` stop, job-object
   kill via the shell plugin) were not compiled or run, and the GUI paths were
   only exercised on macOS (tray, window and quit were not inspected visually).
+
+For normal built apps, app-root cwd, optional quit-on-close, unsigned macOS
+archives and headless persistence smoke, see [built apps](../agents/built-apps.md).

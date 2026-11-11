@@ -2,6 +2,7 @@ import assert from 'node:assert/strict';
 import test from 'node:test';
 import {
   appLocalDataDir,
+  appLogDir,
   CARGO_LOCK,
   containsLaunchSecretShape,
   STAGE_RUN_DIR,
@@ -144,4 +145,9 @@ test('a 64-hex run is the shape of the launch secret', () => {
     ),
     false,
   );
+});
+
+
+test('macOS logs use Library Logs independently of application data', () => {
+  assert.equal(appLogDir({ platform: 'darwin', env: {}, home: '/Users/u', identifier: 'com.test.app' }), '/Users/u/Library/Logs/com.test.app');
 });

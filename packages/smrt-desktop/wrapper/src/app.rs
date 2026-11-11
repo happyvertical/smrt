@@ -26,7 +26,6 @@ use crate::signals::{block_termination_signals, wait_for_termination_signal};
 use crate::supervisor::{emergency_kill, Phase, Supervisor, SupervisorConfig, SupervisorParams};
 
 const MAIN_WINDOW: &str = "main";
-const LOG_DIR: &str = ".desktop-wrapper";
 const LOG_FILE: &str = "supervisor.log";
 const TRAY_ICON: &[u8] = include_bytes!("../icons/32x32.png");
 /// Opt-in debugging switch: log a truncated tail of the child's output when a
@@ -280,7 +279,7 @@ fn setup(app: &mut tauri::App) -> Result<(), Box<dyn std::error::Error>> {
     // socket state to other machines. On macOS and Linux the two coincide.
     let app_local_data_dir = app.path().app_local_data_dir()?;
     let resource_dir = app.path().resource_dir()?;
-    let logger = Arc::new(Logger::new(app_local_data_dir.join(LOG_DIR), LOG_FILE));
+    let logger = Arc::new(Logger::new(app.path().app_log_dir()?, LOG_FILE));
     logger.info("wrapper starting");
 
     app.manage(Wrapper::default());
@@ -381,6 +380,14 @@ fn install_panic_hook() {
     }));
 }
 
+/// Product opt-in; existing tray apps keep their hide-on-close behavior.
+fn quits_on_close(config: Option<&serde_json::Value>) -> bool {
+    config
+        .and_then(|value| value.get("closeBehavior"))
+        .and_then(|value| value.as_str())
+        == Some("quit")
+}
+
 /// Run the desktop wrapper.
 pub fn run() {
     // Before any other thread exists, so every thread inherits the mask.
@@ -401,7 +408,11 @@ pub fn run() {
                     .is_some_and(|wrapper| wrapper.quitting.load(Ordering::SeqCst));
                 if !quitting {
                     api.prevent_close();
-                    let _ = window.hide();
+                    if quits_on_close(window.app_handle().config().plugins.0.get("smrt-desktop")) {
+                        begin_quit(window.app_handle());
+                    } else {
+                        let _ = window.hide();
+                    }
                 }
             }
         })
@@ -446,6 +457,17 @@ mod tests {
             "app.rs must resolve the data directory with app_local_data_dir"
         );
         assert!(production.contains(".app_local_data_dir()"));
+    }
+
+    #[test]
+    fn close_behavior_defaults_to_hide_and_quit_is_explicit() {
+        assert!(!quits_on_close(None));
+        assert!(!quits_on_close(Some(
+            &serde_json::json!({"closeBehavior":"hide"})
+        )));
+        assert!(quits_on_close(Some(
+            &serde_json::json!({"closeBehavior":"quit"})
+        )));
     }
 
     #[test]

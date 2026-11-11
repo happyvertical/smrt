@@ -1,10 +1,14 @@
 import assert from 'node:assert/strict';
-import { existsSync, readdirSync, readFileSync } from 'node:fs';
+import { existsSync, mkdirSync, mkdtempSync, readdirSync, readFileSync, realpathSync, rmSync, symlinkSync, writeFileSync } from 'node:fs';
 import { dirname, join, resolve } from 'node:path';
 import test from 'node:test';
+import { tmpdir } from 'node:os';
 import { fileURLToPath } from 'node:url';
 import {
   APPS,
+  builtAppManifest,
+  stageBuiltApp,
+  parseArgs,
   appNpmrc,
   BACKDATED_PUBLISH_TIME,
   backdatePackument,
@@ -274,4 +278,47 @@ test('backdating changes only the publish times', () => {
   });
   assert.equal(packument.time.created, '2030-01-01T00:00:00.000Z');
   assert.deepEqual(backdatePackument({ name: 'q' }).time, {});
+});
+
+
+test('a built consumer stages compiled output without app source or dev dependencies', () => {
+  const scratch = mkdtempSync(join(tmpdir(), 'smrt-built-consumer-'));
+  try {
+    const app = join(scratch, 'consumer');
+    const build = join(scratch, 'compiled');
+    const output = join(scratch, 'out');
+    mkdirSync(app);
+    mkdirSync(build);
+    mkdirSync(output);
+    writeFileSync(join(app, 'package.json'), '{}');
+    writeFileSync(join(app, 'private-source.ts'), 'private source');
+    writeFileSync(join(app, '.env'), 'private environment');
+    writeFileSync(join(app, 'smrt-desktop.json'), '{"version":1,"runtimeFiles":["smrt.cookbook.json"]}');
+    writeFileSync(join(app, 'smrt.cookbook.json'), '{"recipes":[]}');
+    writeFileSync(join(build, 'index.js'), 'console.log("built")');
+    const manifest = builtAppManifest({
+      name: 'consumer', version: '1.2.3', packageManager: 'pnpm@11.25.0',
+      dependencies: { '@happyvertical/smrt-core': 'link:../core', external: '2.0.0' },
+      devDependencies: { vitest: '4' }, scripts: { postinstall: 'never' },
+      pnpm: { overrides: { external: 'link:../secret' } },
+    }, new Map([['@happyvertical/smrt-core', { json: { version: '0.60.16' } }]]));
+    assert.deepEqual(manifest.dependencies, { '@happyvertical/smrt-core': '0.60.16', external: '2.0.0' });
+    assert.equal(manifest.devDependencies, undefined);
+    assert.equal(manifest.scripts, undefined);
+    assert.equal(manifest.pnpm, undefined);
+    const staged = stageBuiltApp(app, build, output, 'http://127.0.0.1:4999/', manifest);
+    assert.deepEqual(readdirSync(staged).sort(), ['.npmrc', 'build', 'package.json', 'pnpm-workspace.yaml', 'smrt-desktop.json', 'smrt.cookbook.json']);
+    assert.deepEqual(JSON.parse(readFileSync(join(staged, 'package.json'), 'utf8')), manifest);
+    assert.equal(readFileSync(join(staged, 'smrt.cookbook.json'), 'utf8'), '{"recipes":[]}');
+    assert.equal(readFileSync(join(staged, 'build/index.js'), 'utf8'), 'console.log("built")');
+    assert.throws(() => stageBuiltApp(app, build, output, '', manifest), /already exists/);
+    assert.equal(parseArgs(['--app', app, '--out', output, '--build-dir', build, '--targets', 'aarch64-apple-darwin']).app, realpathSync(app));
+    assert.throws(() => builtAppManifest({ dependencies: { unknown: 'file:../unknown' } }, new Map()), /non-registry dependency/);
+    symlinkSync(join(app, '.env'), join(build, 'leak.js'));
+    const next = join(scratch, 'next');
+    mkdirSync(next);
+    assert.throws(() => stageBuiltApp(app, build, next, '', manifest), /no symlinks/);
+  } finally {
+    rmSync(scratch, { recursive: true, force: true });
+  }
 });
