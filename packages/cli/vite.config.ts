@@ -5,7 +5,10 @@
 // library-mode lib bundle. createPackageConfig is library-mode only.
 
 import { defineConfig } from 'vite';
+import { cpSync, readFileSync, writeFileSync, rmSync } from 'node:fs';
+import { resolve } from 'node:path';
 import { declarations } from '../../scripts/declarations.js';
+import { resolveRecipeIndex } from './src/commands/cookbook/recipe-index.js';
 
 export default defineConfig({
   build: {
@@ -94,6 +97,37 @@ export default defineConfig({
     outDir: 'dist',
   },
   plugins: [
+    {
+      name: 'smrt:bundle-cookbook-template',
+      async closeBundle() {
+        const target = resolve(__dirname, 'dist/templates/cookbook');
+        const template = resolve(__dirname, '../template-sveltekit');
+        cpSync(resolve(template, 'template'), target, {
+          recursive: true,
+          filter: (file) => !/(?:^|\/)(node_modules|\.svelte-kit)(?:\/|$)/.test(file),
+        });
+        cpSync(resolve(template, 'cookbook-template'), target, { recursive: true });
+        const file = resolve(target, 'package.json');
+        const pkg = JSON.parse(readFileSync(file, 'utf8'));
+        pkg.smrt = { ...pkg.smrt, cookbookHost: true };
+        for (const name of ['agents', 'app-mcp', 'chat', 'types'])
+          pkg.dependencies[`@happyvertical/smrt-${name}`] = pkg.dependencies['@happyvertical/smrt-core'];
+        const index = await resolveRecipeIndex({}, { dir: __dirname, registry: false });
+        const providers = new Set<string>(Object.keys(pkg.dependencies));
+        for (const name of providers) {
+          for (const dependency of index.packages.get(name)?.manifest.smrtDependencies ?? []) {
+            providers.add(dependency);
+            pkg.dependencies[dependency] ??= pkg.dependencies['@happyvertical/smrt-core'];
+          }
+        }
+        pkg.scripts.build = 'vite build';
+        pkg.scripts['smrt:build'] = 'smrt source build';
+        writeFileSync(file, `${JSON.stringify(pkg, null, 2)}\n`);
+        rmSync(resolve(target, 'src/lib/objects'), { recursive: true, force: true });
+        const ignore = resolve(target, 'gitignore.template');
+        writeFileSync(ignore, `${readFileSync(ignore, 'utf8')}\n.smrt-local\n`);
+      },
+    },
     declarations({
       packageDir: __dirname,
       entries: { app: 'src/app/index.ts' },

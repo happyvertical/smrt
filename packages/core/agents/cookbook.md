@@ -96,8 +96,7 @@ and retains overrides through import, export, recovery and item renames.
 `smrt cookbook validate <file|url>` and `smrt cookbook apply <file|url> [dir]`
 (`packages/cli/agents/cookbook-apply.md`) are the consumers. Apply writes
 `smrt.cookbook.json` at the project root, plus the packages the recipes,
-features and policies need, into `package.json`. The file is the cookbook
-verbatim (legacy `$schema` rewritten); apps read it, apply does not interpret it.
+features and policies need, into `package.json`. New hosts receive the normalized cookbook (legacy `$schema` rewritten); reapply preserves app-owned models and existing field policies. The CLI bundled host composes and builds the public template services automatically.
 `policies` is required by the validator (use `[]`). The cookbook carries no package
 versions, so apply uses the project's smrt line.
 
