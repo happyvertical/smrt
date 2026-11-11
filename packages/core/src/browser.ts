@@ -1,3 +1,8 @@
+export {
+  type GeneratedExpression,
+  GeneratedFieldError,
+  rejectGeneratedInput,
+} from './generated-fields.js';
 /**
  * @smrt/core - Browser-safe entry point
  *

@@ -1,3 +1,4 @@
+import { generatedExpression } from '../generated-fields.js';
 /**
  * OpenAPI documentation generation for smrt APIs
  *
@@ -120,6 +121,7 @@ function generateSchemas(): Record<string, OpenAPISchemaObject> {
       continue;
     }
     schemas[name] = generateObjectSchema(name);
+    schemas[`${name}Input`] = generateObjectSchema(name, true);
     schemas[`${name}List`] = {
       type: 'object',
       properties: {
@@ -146,7 +148,10 @@ function generateSchemas(): Record<string, OpenAPISchemaObject> {
 /**
  * Generate schema for a specific object
  */
-function generateObjectSchema(objectName: string): OpenAPISchemaObject {
+function generateObjectSchema(
+  objectName: string,
+  input = false,
+): OpenAPISchemaObject {
   const fields = ObjectRegistry.getFields(objectName);
   const properties: Record<string, OpenAPISchemaObject> = {
     id: { type: 'string', format: 'uuid' },
@@ -158,6 +163,7 @@ function generateObjectSchema(objectName: string): OpenAPISchemaObject {
   const required = ['id'];
 
   for (const [fieldName, field] of fields) {
+    if (input && generatedExpression(field) !== undefined) continue;
     properties[fieldName] = fieldToOpenAPISchema(field);
     if (field._meta?.required) {
       required.push(fieldName);
@@ -316,7 +322,7 @@ function generatePaths(
       const createSchema = targets.polymorphic
         ? {
             allOf: [
-              { $ref: `#/components/schemas/${name}` },
+              { $ref: `#/components/schemas/${name}Input` },
               {
                 type: 'object',
                 properties: {
@@ -333,7 +339,7 @@ function generatePaths(
               },
             ],
           }
-        : { $ref: `#/components/schemas/${name}` };
+        : { $ref: `#/components/schemas/${name}Input` };
       paths[objectPath].post = {
         summary: `Create ${name}`,
         tags: [name],
@@ -390,7 +396,7 @@ function generatePaths(
           required: true,
           content: {
             'application/json': {
-              schema: { $ref: `#/components/schemas/${name}` },
+              schema: { $ref: `#/components/schemas/${name}Input` },
             },
           },
         },

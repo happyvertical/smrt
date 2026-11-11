@@ -1,3 +1,7 @@
+import {
+  generatedExpressionsMatch,
+  readGeneratedColumns,
+} from '../generated-fields.js';
 /**
  * Schema Differ
  *
@@ -1995,6 +1999,30 @@ export class SchemaComparer {
     dbSchema: SqlTableSchemaInfo,
   ): Promise<SchemaChange[]> {
     const changes: SchemaChange[] = [];
+    const hasGenerated = Object.values(manifest.columns).some(
+      (column) => column.generated !== undefined,
+    );
+    const generated = hasGenerated
+      ? await readGeneratedColumns(this.db, tableName, this.engine)
+      : new Map<string, string>();
+    if (this.engine === 'sqlite' && generated.size) {
+      const { rows } = await this.db.query(
+        `SELECT * FROM pragma_table_xinfo($1)`,
+        [tableName],
+      );
+      for (const row of rows)
+        if (
+          generated.has(String(row.name)) &&
+          !dbSchema.columns[String(row.name)]
+        ) {
+          dbSchema.columns[String(row.name)] = {
+            type: String(row.type),
+            notNull: Boolean(row.notnull),
+            primaryKey: Boolean(row.pk),
+            defaultValue: row.dflt_value,
+          };
+        }
+    }
     const dbColumnNames = new Set(Object.keys(dbSchema.columns));
 
     // Check for new and modified columns
@@ -2014,6 +2042,47 @@ export class SchemaComparer {
           )),
         );
       } else {
+        if (colDef.generated !== undefined) {
+          const actual = generated.get(colName);
+          if (
+            actual === undefined ||
+            !(await generatedExpressionsMatch(
+              this.db,
+              tableName,
+              actual,
+              colDef.generated,
+              this.engine,
+            ))
+          ) {
+            const table = this.quoteIdentifier(tableName);
+            const column = this.quoteIdentifier(colName);
+            const indexes = manifest.indexes.filter((index) =>
+              index.columns.includes(colName),
+            );
+            const statements = [
+              ...indexes.map(
+                (index) =>
+                  `DROP INDEX IF EXISTS ${this.quoteIdentifier(index.name)}`,
+              ),
+              `ALTER TABLE ${table} DROP COLUMN ${column}`,
+              `ALTER TABLE ${table} ADD COLUMN ${this.ddlStrategy.generateColumnDefinition(colName, colDef)}`,
+              ...this.ddlStrategy.generateIndexes({ ...manifest, indexes }),
+            ];
+            changes.push({
+              type: 'alter_column',
+              table: tableName,
+              name: colName,
+              column: colDef,
+              sql: statements[0],
+              sqlStatements: statements,
+              mismatch: {
+                expected: JSON.stringify(colDef.generated),
+                actual: actual ?? 'ordinary column',
+              },
+            });
+            continue;
+          }
+        }
         // Column exists - check for type mismatch
         const dbCol = dbSchema.columns[colName];
         let typeDrifted = false;
@@ -4942,6 +5011,17 @@ export class SchemaComparer {
     colDef: ColumnDefinition,
     inlineReferences: ForeignKeyDefinition[] = [],
   ): Promise<SchemaChange[]> {
+    if (colDef.generated !== undefined) {
+      return [
+        {
+          type: 'add_column',
+          table: tableName,
+          name: colName,
+          column: colDef,
+          sql: `ALTER TABLE ${this.quoteIdentifier(tableName)} ADD COLUMN ${this.ddlStrategy.generateColumnDefinition(colName, colDef)}`,
+        },
+      ];
+    }
     // mapType maps abstract types per dialect (UUID→native uuid / TEXT — R11);
     // invalid types fall back to TEXT, matching the compareColumns guard.
     const validatedType: SQLDataType = isValidSQLDataType(colDef.type)

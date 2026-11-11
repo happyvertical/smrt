@@ -1017,6 +1017,10 @@ export function buildWebFieldDefinitions(
       // Safe: the three skips above are exactly the types WebFieldType excludes.
       type: field.type as WebFieldType,
       ...(field.required !== undefined ? { required: field.required } : {}),
+      ...(field.generated !== undefined ||
+      (field._meta?.generated && field._meta.generated !== true)
+        ? { readonly: true }
+        : {}),
       ...(field._meta?.nullable === true ? { nullable: true } : {}),
       ...(field.default !== undefined ? { default: field.default } : {}),
       ...(description !== undefined ? { description } : {}),

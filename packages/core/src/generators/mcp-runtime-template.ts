@@ -486,6 +486,7 @@ function applyWritablePolicy(objectName: string, data: any): Record<string, any>
       readonly.add(name);
     }
   }
+  if ([...ObjectRegistry.getFields(objectName).values()].some(field => typeof (field.generated ?? field._meta?.generated) === 'object')) ObjectRegistry.assertWritableInput(objectName, data);
   const result: Record<string, any> = {};
   for (const [key, value] of Object.entries(data)) {
     if (key.startsWith('_')) continue;

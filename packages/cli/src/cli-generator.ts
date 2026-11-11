@@ -1231,6 +1231,8 @@ export class CLIGenerator {
         ]),
       );
       for (const [fieldName, field] of fields) {
+        if (typeof (field.generated ?? field._meta?.generated) === 'object')
+          continue;
         const optionName = fieldName.replace(/_/g, '-');
         const description =
           field.options?.description || `${objectName} ${fieldName}`;
@@ -1261,6 +1263,8 @@ export class CLIGenerator {
       // Add field options
       const fields = ObjectRegistry.getFields(objectName);
       for (const [fieldName, field] of fields) {
+        if (typeof (field.generated ?? field._meta?.generated) === 'object')
+          continue;
         const optionName = fieldName.replace(/_/g, '-');
         const description =
           field.options?.description || `${objectName} ${fieldName}`;
@@ -2302,6 +2306,14 @@ export class CLIGenerator {
       Array.isArray((apiConfig as { writable?: unknown }).writable)
         ? ((apiConfig as { writable: string[] }).writable as string[])
         : null;
+    const declaredFields = ObjectRegistry.getFields(objectName);
+    if (
+      [...declaredFields.values()].some(
+        (field) =>
+          typeof (field.generated ?? field._meta?.generated) === 'object',
+      )
+    )
+      ObjectRegistry.assertWritableInput(objectName, data);
     const readonly = new Set<string>();
     for (const [name, definition] of ObjectRegistry.getFields(objectName)) {
       const meta = definition as {
@@ -2942,6 +2954,8 @@ export class CLIGenerator {
     const result: Record<string, unknown> = {};
 
     for (const [fieldName, field] of fields) {
+      if (typeof (field.generated ?? field._meta?.generated) === 'object')
+        continue;
       const currentValue = current[fieldName];
       let message = `${fieldName}`;
       if (field.options?.description) {

@@ -1,3 +1,4 @@
+import type { GeneratedExpression } from '../generated-fields.js';
 /**
  * Schema definition types for SMRT objects
  * Used for build-time schema generation and runtime table management
@@ -18,6 +19,8 @@ export type SQLDataType =
   | 'UUID';
 
 export interface ColumnDefinition {
+  /** Physical-column expression (col nodes are snake-case SQL column names). */
+  generated?: GeneratedExpression;
   type: SQLDataType;
   primaryKey?: boolean;
   /**

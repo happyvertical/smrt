@@ -1,3 +1,4 @@
+import { rejectGeneratedInput } from './generated-fields.js';
 /**
  * Global object registry for SMRT classes
  *
@@ -2924,6 +2925,14 @@ export class ObjectRegistry {
    * Get field definitions for a registered class.
    * Supports both qualified names and simple class names.
    */
+  /** Reject caller values for database-owned fields before writable-policy filtering. */
+  static assertWritableInput(name: string, data: object): void {
+    const fields = new Map(
+      this.getInheritanceChain(name).flatMap((key) => [...this.getFields(key)]),
+    );
+    rejectGeneratedInput(fields, data);
+  }
+
   static getFields(name: string): Map<string, RegisteredField> {
     // Issue #951: Use findClass for multi-strategy lookup (qualified key, classNameMap, case-insensitive)
     const registered = ObjectRegistry.findClass(name);

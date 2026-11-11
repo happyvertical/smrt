@@ -1,3 +1,4 @@
+import type { GeneratedExpression } from '../generated-fields.js';
 /**
  * Field decorators for SMRT objects
  *
@@ -83,6 +84,8 @@ export type FieldType =
   | 'manyToMany';
 
 export interface FieldOptions {
+  /** Database-computed, output-only column. Uses SQL SDK row-expression nodes. */
+  generated?: GeneratedExpression;
   /** Use this field in the natural primary key, as supported by schema generation. */
   primaryKey?: boolean;
   /** Explicit field type for runtime-only registration paths */

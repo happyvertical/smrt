@@ -1,3 +1,8 @@
+import {
+  type GeneratedExpression,
+  GeneratedFieldError,
+  validateGeneratedFields,
+} from './generated-fields.js';
 /**
  * Run-time models (#4871): define a smrt model from data, with no class
  * source and no rebuild.
@@ -63,6 +68,9 @@ export type RuntimeFieldType =
 
 export interface RuntimeFieldDefinition {
   type: RuntimeFieldType;
+  generated?: GeneratedExpression;
+  sensitive?: boolean;
+  readPermission?: string;
   required?: boolean;
   /** Allowed values of a text field. */
   enum?: string[];
@@ -152,6 +160,8 @@ function toFieldDefinition(def: RuntimeFieldDefinition): FieldDefinition {
       `Run-time ${def.type} field requires a qualified related model`,
     );
   }
+  if (def.generated !== undefined && def.default !== undefined)
+    throw new GeneratedFieldError('Generated fields cannot declare a default');
   const widget = def.ui?.widget;
   if (
     widget !== undefined &&
@@ -170,6 +180,9 @@ function toFieldDefinition(def: RuntimeFieldDefinition): FieldDefinition {
   }
   return {
     type: def.type,
+    ...(def.generated !== undefined ? { generated: def.generated } : {}),
+    ...(def.sensitive !== undefined ? { sensitive: def.sensitive } : {}),
+    ...(def.readPermission ? { readPermission: def.readPermission } : {}),
     required: def.required ?? false,
     ...(def.enum ? { enum: [...def.enum] } : {}),
     ...(def.description ? { description: def.description } : {}),
@@ -245,20 +258,23 @@ export function runtimeModelEntry(
         ]
       : undefined;
   const fields: Record<string, FieldDefinition> = {};
-  // A subclass of a one-table-per-class parent has a table of its own that
-  // holds only its own fields, so the inherited ones are declared again on it
-  // (#4869). An STI subclass shares its parent's table and needs none.
-  if (
-    parent &&
-    (def.replaces || ObjectRegistry.getSTIBase(def.extends!) === null)
-  ) {
-    for (const [name, inherited] of ObjectRegistry.getFields(def.extends!)) {
+  // Carry inherited field metadata on runtime subclasses too: writes and
+  // generated surfaces must see database-owned fields even on an STI child.
+  // A CTI subclass also needs their physical columns on its separate table.
+  if (parent) {
+    const inheritedFields = new Map(
+      ObjectRegistry.getInheritanceChain(def.extends!).flatMap((key) => [
+        ...ObjectRegistry.getFields(key),
+      ]),
+    );
+    for (const [name, inherited] of inheritedFields) {
       fields[name] = {
         ...inherited,
         type: inherited.type,
-        required: def.replaces
-          ? (inherited.required ?? inherited._meta?.required ?? false)
-          : false,
+        required:
+          def.replaces || ObjectRegistry.getSTIBase(def.extends!) !== null
+            ? (inherited.required ?? inherited._meta?.required ?? false)
+            : false,
         ...(inherited.related ? { related: inherited.related } : {}),
         ...(inherited._meta
           ? {
@@ -294,6 +310,12 @@ export function runtimeModelEntry(
     normalizeTenantScopedConfig(tenantScoped),
   );
   Object.assign(fields, Object.fromEntries(scopedFields));
+  validateGeneratedFields(
+    new Map([
+      ...(parent ? ObjectRegistry.getFields(parentKey!) : []),
+      ...Object.entries(fields),
+    ]),
+  );
   const methods: Record<string, MethodDefinition> =
     def.replaces && parent ? Object.fromEntries(parent.methods) : {};
   for (const [name, md] of Object.entries(def.methods ?? {})) {

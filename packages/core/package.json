@@ -279,6 +279,7 @@
     }
   },
   "devDependencies": {
+    "@electric-sql/pglite": "^0.5.16",
     "@faker-js/faker": "^10.6.0",
     "@huggingface/transformers": "^4.3.0",
     "@sveltejs/kit": "2.69.3",

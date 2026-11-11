@@ -115,6 +115,17 @@ export function createFieldFromManifest(
     metaRecord.enum = [...fieldDef.enum];
   }
 
+  for (const key of [
+    'generated',
+    'sensitive',
+    'readonly',
+    'readPermission',
+    'transient',
+  ] as const) {
+    const value = fieldDef[key] ?? fieldDef._meta?.[key];
+    if (value !== undefined) metaRecord[key] = value;
+  }
+
   // Preserve top-level `related` for relationship-graph lookups
   // (foreignKey / crossPackageRef / oneToMany / manyToMany all rely on it).
   const out: RegisteredField = {
@@ -161,6 +172,16 @@ export function mergeManifestField(
     nextMetaRecord.enum = [...fieldDef.enum];
   }
 
+  for (const key of [
+    'generated',
+    'sensitive',
+    'readonly',
+    'readPermission',
+    'transient',
+  ] as const) {
+    const value = fieldDef[key] ?? fieldDef._meta?.[key];
+    if (value !== undefined) nextMetaRecord[key] = value;
+  }
   return {
     ...existingField,
     type:
