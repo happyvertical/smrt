@@ -27,7 +27,8 @@
     "./app": {
       "types": "./dist/app.d.ts",
       "import": "./dist/app.js"
-    }
+    },
+    "./source-checkout": "./scripts/source-checkout.cjs"
   },
   "scripts": {
     "build": "vite build",
