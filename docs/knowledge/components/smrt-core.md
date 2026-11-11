@@ -5,10 +5,10 @@ description: "Core SMRT framework for business objects, persistence, and generat
 status: "stable"
 generated:
   by: "smrt/scripts/generate-knowledge-okf.ts"
-  at: "2026-11-11T12:58:41Z"
+  at: "2026-11-11T17:29:58Z"
 audience: "internal"
 evidence_level: "source-inspected"
-source_revision: "sha256:d1316cd177856abbe60d300b6126fd007ebecdd8215d45c7666f82241f25de48"
+source_revision: "sha256:2f438fb33855fb6e8dbcbad0877c26055f57e736c66273f065fcb974a7920c58"
 sources:
   - id: "manifest"
     resource: "https://github.com/happyvertical/smrt/blob/main/packages/core/package.json"
@@ -103,6 +103,9 @@ sources:
   - id: "agents-30"
     resource: "https://github.com/happyvertical/smrt/blob/main/packages/core/agents/test-types.md"
     title: "@happyvertical/smrt-core packages/core/agents/test-types.md"
+  - id: "agents-31"
+    resource: "https://github.com/happyvertical/smrt/blob/main/packages/core/agents/write-through.md"
+    title: "@happyvertical/smrt-core packages/core/agents/write-through.md"
 ---
 
 # @happyvertical/smrt-core
@@ -146,6 +149,7 @@ sources:
 - `packages/core/agents/schema-paths.md`
 - `packages/core/agents/system-diagnostics.md`
 - `packages/core/agents/test-types.md`
+- `packages/core/agents/write-through.md`
 
 ## Framework dependencies
 
