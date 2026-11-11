@@ -19,10 +19,17 @@ import type {
   ChatOptions,
 } from '@happyvertical/ai';
 import type { PrincipalRun, PrincipalTool } from '@happyvertical/smrt-agents';
+import {
+  createSqliteOwnerApprovalStore,
+  OwnerApprovalAuthority,
+} from '@happyvertical/smrt-app-runtime';
+import { resolveDatabase } from '@happyvertical/smrt-core';
 import { InferenceUnavailableError } from '@happyvertical/smrt-core/inference-availability';
 import {
   MembershipCollection,
+  PermissionCollection,
   RoleCollection,
+  RolePermissionCollection,
   TenantCollection,
   UserCollection,
 } from '@happyvertical/smrt-users';
@@ -3188,5 +3195,494 @@ describe('mountAssistantRoutes', () => {
       expect(rows.map((r) => r.content)).not.toContain('late final');
       expect(rows.map((r) => r.content)).not.toContain('too late');
     });
+  });
+  async function durableApprovals() {
+    const database = await resolveDatabase(db);
+    return new OwnerApprovalAuthority(
+      await createSqliteOwnerApprovalStore(database),
+      async (actor) =>
+        actor.id === ownerA.user.id && actor.tenantId === tenantId,
+    );
+  }
+
+  function deleteTool(
+    ran: Array<unknown>,
+    slug = 'records.delete',
+  ): PrincipalTool {
+    return {
+      slug,
+      aiTool: {
+        type: 'function',
+        function: {
+          name: slug.replaceAll('.', '-'),
+          description: 'Delete one record',
+          parameters: { type: 'object', properties: {} },
+        },
+      },
+      async execute({ run, args }) {
+        run.assertToolAllowed(slug);
+        ran.push({
+          userId: run.context.userId,
+          tenantId: run.context.tenantId,
+          args,
+        });
+        return { deleted: args.id };
+      },
+    };
+  }
+
+  it('holds a built-in server delete durably, then approves once with the original principal and authors the result', async () => {
+    const authority = await durableApprovals();
+    const ran: unknown[] = [];
+    const tool = deleteTool(ran);
+    const ai = scriptedAI([
+      () => ({
+        content: '',
+        finishReason: 'tool_calls',
+        toolCalls: [
+          {
+            id: 'delete-1',
+            type: 'function',
+            function: {
+              name: 'records-delete',
+              arguments: JSON.stringify({ id: 'invoice-1', approved: true }),
+            },
+          },
+        ],
+      }),
+    ]);
+    const options = {
+      ai,
+      approvals: authority,
+      allowedTools: [tool.slug],
+      extraTools: [tool],
+    };
+    let routes = mount(options);
+    const threadId = await createThread(routes);
+    const result = await events(
+      await send(routes, threadId, {
+        content: 'Delete invoice 1',
+        clientRequestId: crypto.randomUUID(),
+      }),
+    );
+    expect(result.thrown).toBeNull();
+    expect(ran).toEqual([]);
+    expect(
+      result.seen.some(
+        (event) =>
+          event.type === 'step' &&
+          event.step.kind === 'tool_result' &&
+          event.step.tool === 'records.delete',
+      ),
+    ).toBe(false);
+    expect(result.seen).toContainEqual(
+      expect.objectContaining({ type: 'done', stoppedReason: 'approval' }),
+    );
+    const needed = result.seen.find(
+      (event) => event.type === 'approval_needed',
+    );
+    if (needed?.type !== 'approval_needed') throw new Error('expected hold');
+    expect(
+      (await listMessages(routes, threadId)).some(
+        (message) =>
+          (message.toolCallData as { approval?: { id: string } })?.approval
+            ?.id === needed.approval.id,
+      ),
+    ).toBe(true);
+    // A new route instance/authority must recover the saved arguments and thread.
+    routes = mount({ ...options, approvals: await durableApprovals() });
+    const listing = await call(routes, 'GET', `threads/${threadId}/approvals`);
+    expect((await listing.json()).approvals).toContainEqual(
+      expect.objectContaining({ id: needed.approval.id, status: 'pending' }),
+    );
+    const decision = await call(
+      routes,
+      'POST',
+      `approvals/${needed.approval.id}/decide`,
+      { body: { approve: true, args: { id: 'another-invoice' } } },
+    );
+    expect(decision.status).toBe(200);
+    expect((await decision.json()).approval.status).toBe('succeeded');
+    expect(ran).toEqual([
+      {
+        userId: ownerA.user.id,
+        tenantId,
+        args: { id: 'invoice-1', approved: true },
+      },
+    ]);
+    expect(
+      (await listMessages(routes, threadId)).some((message) =>
+        message.content.includes('"deleted":"invoice-1"'),
+      ),
+    ).toBe(true);
+    expect(
+      (
+        await call(routes, 'POST', `approvals/${needed.approval.id}/decide`, {
+          body: { approve: true },
+        })
+      ).status,
+    ).toBe(409);
+    expect(ran).toHaveLength(1);
+  });
+
+  it('denies without execution, refuses non-owners, foreign tenants, foreign origins and malformed decisions', async () => {
+    const authority = await durableApprovals();
+    const ran: unknown[] = [];
+    const tool = deleteTool(ran);
+    const routes = mount({
+      approvals: authority,
+      allowedTools: [tool.slug],
+      extraTools: [tool],
+      ai: scriptedAI([
+        () => ({
+          content: '',
+          toolCalls: [
+            {
+              id: 'delete-2',
+              type: 'function',
+              function: {
+                name: 'records-delete',
+                arguments: '{"id":"invoice-2"}',
+              },
+            },
+          ],
+        }),
+      ]),
+    });
+    const threadId = await createThread(routes);
+    await events(
+      await send(routes, threadId, {
+        content: 'Delete invoice 2',
+        clientRequestId: crypto.randomUUID(),
+      }),
+    );
+    const [record] = await authority.list({ id: ownerA.user.id, tenantId });
+    const path = `approvals/${record.id}/decide`;
+    expect(
+      (
+        await call(routes, 'POST', path, {
+          actor: memberB,
+          body: { approve: true },
+        })
+      ).status,
+    ).toBe(403);
+    expect(
+      (
+        await call(routes, 'POST', path, {
+          actor: ownerAElsewhere,
+          body: { approve: true },
+        })
+      ).status,
+    ).toBe(403);
+    expect(
+      (
+        await call(routes, 'POST', path, {
+          body: { approve: true },
+          origin: 'https://attacker.test',
+        })
+      ).status,
+    ).toBe(403);
+    expect(
+      (await call(routes, 'POST', path, { body: { approve: 'yes' } })).status,
+    ).toBe(400);
+    expect(
+      (await call(routes, 'POST', path, { body: { approve: false } })).status,
+    ).toBe(200);
+    expect(ran).toEqual([]);
+    expect(
+      (await listMessages(routes, threadId)).some((message) =>
+        message.content.includes('owner denied'),
+      ),
+    ).toBe(true);
+    expect(
+      (await call(routes, 'POST', path, { body: { approve: true } })).status,
+    ).toBe(409);
+  });
+
+  it('resolves an external-driver wait from the same durable authority and authors its outcome', async () => {
+    const authority = await durableApprovals();
+    let requestId: string | undefined;
+    let ready!: () => void;
+    const waiting = new Promise<void>((resolve) => {
+      ready = resolve;
+    });
+    const ran: unknown[] = [];
+    const routes = mount({
+      approvals: authority,
+      allowedTools: ['records.delete'],
+      extraTools: [deleteTool(ran)],
+      turnDriver: {
+        async run(ctx, cb) {
+          await cb.toolCall({
+            id: 'external-delete',
+            name: 'records.delete',
+            args: { id: 'invoice-3' },
+          });
+          const decision = cb.approvalNeeded({
+            id: 'engine-cannot-select-id',
+            callId: 'external-delete',
+            tool: 'records.delete',
+            summary: 'engine text is not authority',
+          });
+          // Signal after the request is durably visible; the caller reads the live SSE concurrently.
+          const poll = async () => {
+            const records = await authority.list({
+              id: ownerA.user.id,
+              tenantId,
+            });
+            if (records[0]) {
+              requestId = records[0].id;
+              ready();
+            } else
+              setTimeout(() => {
+                void poll();
+              }, 10);
+          };
+          void poll();
+          const allowed = await decision;
+          if (allowed.approved)
+            ran.push({ userId: ctx.principal.runAsUserId, id: 'invoice-3' });
+          await cb.toolResult({
+            id: 'external-delete',
+            ok: allowed.approved,
+            result: allowed.approved ? 'deleted invoice-3' : 'owner refused',
+          });
+          cb.done({ text: 'Decision handled.' });
+        },
+      },
+    });
+    const threadId = await createThread(routes);
+    const response = await send(routes, threadId, {
+      content: 'Delete 3',
+      clientRequestId: crypto.randomUUID(),
+    });
+    const streamResult = events(response);
+    await waiting;
+    expect(ran).toEqual([]);
+    expect(requestId).not.toBe('engine-cannot-select-id');
+    const decide = await call(routes, 'POST', `approvals/${requestId}/decide`, {
+      body: { approve: true },
+    });
+    expect(decide.status).toBe(200);
+    expect((await streamResult).thrown).toBeNull();
+    expect(ran).toEqual([{ userId: ownerA.user.id, id: 'invoice-3' }]);
+    expect(await authority.get(tenantId, requestId!)).toMatchObject({
+      status: 'succeeded',
+    });
+    expect(
+      (await listMessages(routes, threadId)).some(
+        (message) => message.content === 'deleted invoice-3',
+      ),
+    ).toBe(true);
+  });
+
+  it('keeps reads immediate and supports host per-tool and per-operation approval policy', async () => {
+    const authority = await durableApprovals();
+    const ran: unknown[] = [];
+    const tool = deleteTool(ran, 'records.update');
+    const routes = mount({
+      approvals: authority,
+      allowedTools: [tool.slug],
+      extraTools: [tool],
+      approvalPolicy: { tools: { 'records.update': true } },
+      ai: scriptedAI([
+        () => ({
+          content: '',
+          toolCalls: [
+            {
+              id: 'update-1',
+              type: 'function',
+              function: {
+                name: 'records-update',
+                arguments: '{"id":"invoice-4"}',
+              },
+            },
+          ],
+        }),
+      ]),
+    });
+    const threadId = await createThread(routes);
+    await events(
+      await send(routes, threadId, {
+        content: 'Update',
+        clientRequestId: crypto.randomUUID(),
+      }),
+    );
+    expect(ran).toEqual([]);
+    expect(await authority.list({ id: ownerA.user.id, tenantId })).toHaveLength(
+      1,
+    );
+  });
+  it('refuses a tool removed from the live host offering after approval was requested', async () => {
+    const authority = await durableApprovals();
+    const ran: unknown[] = [];
+    const tool = deleteTool(ran);
+    let allowed = [tool.slug];
+    const routes = mount({
+      approvals: authority,
+      allowedTools: () => allowed,
+      extraTools: [tool],
+      ai: scriptedAI([
+        () => ({
+          content: '',
+          toolCalls: [
+            {
+              id: 'revoked',
+              type: 'function',
+              function: {
+                name: 'records-delete',
+                arguments: '{"id":"revoked-invoice"}',
+              },
+            },
+          ],
+        }),
+      ]),
+    });
+    const threadId = await createThread(routes);
+    await events(
+      await send(routes, threadId, {
+        content: 'Delete',
+        clientRequestId: crypto.randomUUID(),
+      }),
+    );
+    const [record] = await authority.list({ id: ownerA.user.id, tenantId });
+    allowed = [];
+    const response = await call(
+      routes,
+      'POST',
+      `approvals/${record.id}/decide`,
+      { body: { approve: true } },
+    );
+    expect(response.status).toBe(200);
+    expect((await response.json()).approval.status).toBe('failed');
+    expect(ran).toEqual([]);
+    expect(await authority.get(tenantId, record.id)).toMatchObject({
+      status: 'failed',
+    });
+  });
+  it('allows a tenant owner to approve a colleague hold while executing as that colleague', async () => {
+    const authority = await durableApprovals();
+    const ran: unknown[] = [];
+    const tool = deleteTool(ran);
+    const routes = mount({
+      approvals: authority,
+      allowedTools: [tool.slug],
+      extraTools: [tool],
+      ai: scriptedAI([
+        () => ({
+          content: '',
+          toolCalls: [
+            {
+              id: 'colleague',
+              type: 'function',
+              function: {
+                name: 'records-delete',
+                arguments: '{"id":"colleague-invoice"}',
+              },
+            },
+          ],
+        }),
+      ]),
+    });
+    const threadId = await createThread(routes, memberB);
+    await events(
+      await send(
+        routes,
+        threadId,
+        { content: 'Delete', clientRequestId: crypto.randomUUID() },
+        memberB,
+      ),
+    );
+    expect(
+      (await call(routes, 'GET', 'approvals', { actor: memberB })).status,
+    ).toBe(403);
+    const listing = await call(routes, 'GET', 'approvals');
+    expect(listing.status).toBe(200);
+    const [record] = (await listing.json()).approvals;
+    expect(record).not.toHaveProperty('context');
+    const response = await call(
+      routes,
+      'POST',
+      `approvals/${record.id}/decide`,
+      { body: { approve: true } },
+    );
+    expect(response.status).toBe(200);
+    expect(ran).toEqual([
+      { userId: memberB.user.id, tenantId, args: { id: 'colleague-invoice' } },
+    ]);
+    expect(
+      (await listMessages(routes, threadId, memberB)).some((message) =>
+        message.content.includes('"deleted":"colleague-invoice"'),
+      ),
+    ).toBe(true);
+    expect(
+      (await call(routes, 'GET', `threads/${threadId}/messages`)).status,
+    ).toBe(404);
+  });
+  it.each([
+    'revoke',
+    'grant',
+  ] as const)('keeps the captured permission ceiling when permissions change: %s', async (change) => {
+    const authority = await durableApprovals();
+    const permissions = await PermissionCollection.create({ db });
+    const grants = await RolePermissionCollection.create({ db });
+    const membership = await (
+      await MembershipCollection.create({ db })
+    ).findByUserAndTenant(ownerA.user.id, tenantId);
+    if (!membership) throw new Error('missing fixture membership');
+    const permission = await permissions.create({
+      slug: 'profiles.read',
+      name: 'Read profiles',
+    });
+    await permission.save();
+    if (change === 'revoke')
+      await grants.addPermission(membership.roleId, String(permission.id));
+    const ran = vi.fn();
+    const tool = deleteTool([]);
+    tool.execute = async ({ run }) => {
+      await run.assertOperation('profiles', 'read');
+      ran();
+      return { deleted: true };
+    };
+    const routes = mount({
+      approvals: authority,
+      allowedTools: [tool.slug],
+      extraTools: [tool],
+      ai: scriptedAI([
+        () => ({
+          content: '',
+          toolCalls: [
+            {
+              id: 'permission-change',
+              type: 'function',
+              function: {
+                name: 'records-delete',
+                arguments: '{"id":"invoice-permission"}',
+              },
+            },
+          ],
+        }),
+      ]),
+    });
+    const threadId = await createThread(routes);
+    await events(
+      await send(routes, threadId, {
+        content: 'Delete',
+        clientRequestId: crypto.randomUUID(),
+      }),
+    );
+    const [record] = await authority.list({ id: ownerA.user.id, tenantId });
+    if (change === 'revoke')
+      await grants.removePermission(membership.roleId, String(permission.id));
+    else await grants.addPermission(membership.roleId, String(permission.id));
+    const response = await call(
+      routes,
+      'POST',
+      `approvals/${record.id}/decide`,
+      { body: { approve: true } },
+    );
+    expect(response.status).toBe(200);
+    expect((await response.json()).approval.status).toBe('failed');
+    expect(ran).not.toHaveBeenCalled();
   });
 });

@@ -428,3 +428,37 @@ the voice helpers.
 
 See [`AGENTS.md`](./AGENTS.md) for package architecture, invariants, validation,
 and contributor guidance.
+
+### Durable approvals for server tools
+
+`mountAssistantRoutes` holds destructive server calls by default (delete/remove/
+destroy/purge/drop/truncate, including extra tools). A built-in turn persists a
+pending approval in its thread, streams `approval_needed`, and ends with
+`stoppedReason: 'approval'`. It makes no further model call. Approve executes the
+saved tool with its original principal and arguments after live permission and
+offering checks, then authors the result. Deny authors a refusal. Model-supplied
+`approved` values have no effect on this gate.
+
+The default authority uses app-runtime's SQLite envelope adapter over the existing
+smrt-approvals ledger; include its models in normal database migrations. Supply
+`approvals` for another store/host authority. `approvalPolicy.tools` and
+`approvalPolicy.operations` explicitly override the default per tool or canonical
+operation; e.g. `{ tools: { 'invoices.update': true } }` also holds updates.
+Direct `runAssistantTurn` callers supply `createAssistantApprovalBridge`; a
+protected call without one fails closed. This does not change low-level
+`runToolLoop` or persona conversation policy, which remain host integration APIs.
+
+Owner-only routes: `GET approvals` (tenant-wide pending summaries), `GET threads/:threadId/approvals` and
+`POST approvals/:id/decide` with `{ approve: boolean }`, under the same mount.
+Thread reads keep their ownership checks; owner decision uses the saved requester's thread binding and cannot read arbitrary thread history. Tenant and mutation-origin checks match the
+other routes. They return only the public approval projection. The default owner
+check requires the active user's active direct membership in the canonical system
+owner role. A second decision is 409. A failed consumed effect cannot be replayed.
+
+`createAssistantHttpTransport` supplies the approval methods; `AssistantDock`
+automatically renders `AssistantApprovalCard` for persisted holds, with translated,
+keyboard-accessible Approve/Deny controls and persisted outcomes. External drivers
+use their existing `approvalNeeded` callback: chat creates the canonical request,
+persists/streams it, and waits for the same authority before returning approval.
+Drivers must honor denial and execute through the original principal's live,
+permission-bound host/MCP adapter. See [approval details](agents/owner-approvals.md).

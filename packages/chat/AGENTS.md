@@ -242,3 +242,10 @@ shell widget, an `llm` provider, runtime `both`; help in
 - **Session expiry**: check `isActive()` before allowing messages (expiresAt or limit-based)
 - **DM identity**: derived from the deterministic per-tenant `canonicalDmRoomId()` and the authoritative `chat_participants` join, not client metadata; concurrent creates upsert onto one row.
 - **Tenant-bound lookups**: membership/session/DM lookups REQUIRE `tenantId` and always bind it into the WHERE clause (`findActiveMembership`/`isActiveMember`/`findActiveSession` take a required `tenantId`; AgentSession's `null` tenant is an explicit bound scope, not "any tenant") so they can never resolve a row from another tenant.
+
+## Durable server-tool approvals
+
+`mountAssistantRoutes` supplies owner-authorized holds for destructive server
+calls and a shared external-driver wait. `AssistantApprovalCard` uses the existing
+transport/wire/i18n and smrt-ui primitives. Contract, failure states and tests:
+[agents/owner-approvals.md](agents/owner-approvals.md).

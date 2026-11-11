@@ -93,19 +93,22 @@ driver on a browser continuation explicitly fails with
 suspended browser turn. Existing dock token, step, message and terminal event
 handling renders external progress without a new transport or panel.
 
-## Owner approval bridge (C3 seam)
+## Owner approval bridge
 
 `AssistantApprovalRequest`, `AssistantApprovalDecision` and
-`AssistantApprovalWaiter` reserve the typed server-write approval boundary.
-A host may supply `waitForApproval(request, context)` to both entry points;
-it must durably record the request, verify the deciding owner's authority,
-and resolve `{ approved, reason? }` only for that exact request. The request
-must name a pending, offered tool call. Without a bridge the callback returns
-`{ approved: false, reason: 'approval_unavailable' }`; abort releases the wait
-with a denied decision. The driver must await approval before executing a
-write and respect denial. This seam implements neither durable storage nor a
-decision HTTP endpoint nor a dock approval card; C3 owns those policies and
-UI integration. `approval_needed` itself never grants permission.
+`AssistantApprovalWaiter` define the server-write boundary. Mounted routes default
+to app-runtime's durable owner authority over the canonical smrt-approvals ledger.
+Chat rebuilds requests from the pending offered call, authors them to the thread,
+streams `approval_needed`, and waits for the authenticated owner's exact decision.
+The driver must await it before executing and honor denial; its host/MCP adapter
+must execute under the original principal with live permissions and the supplied
+ceiling. It must never expose the decision route as a model tool.
+
+An explicitly supplied `waitForApproval` without `approvals` retains the trusted
+host callback integration: it must durably store the exact call and authorize the
+owner itself. Direct entry points without any bridge deny. Abort releases the
+wait without granting permission. Durable defaults, policy, routes, card and crash
+limits: [owner-approvals.md](owner-approvals.md).
 
 ## Validation
 

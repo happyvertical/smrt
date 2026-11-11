@@ -1,3 +1,16 @@
+import { executeAsPrincipal } from '@happyvertical/smrt-agents';
+import {
+  createSqliteOwnerApprovalStore,
+  isApprovalOwner,
+  OwnerApprovalAuthority,
+  OwnerApprovalError,
+} from '@happyvertical/smrt-app-runtime';
+import {
+  type AssistantApprovalBridge,
+  type AssistantApprovalPolicy,
+  createAssistantApprovalBridge,
+} from './assistant-approvals.js';
+import { sendAgentReply } from './services/ChatService.js';
 /**
  * Mountable SvelteKit routes for the AssistantDock (#3368).
  *
@@ -59,6 +72,8 @@ import {
   toAIClientOptions,
 } from '@happyvertical/smrt-config';
 import {
+  ObjectRegistry,
+  resolveDatabase,
   resolveInferenceTarget,
   type SmrtClassOptions,
 } from '@happyvertical/smrt-core';
@@ -66,6 +81,7 @@ import { withTenant } from '@happyvertical/smrt-tenancy';
 import {
   getCurrentSessionPermissionContext,
   getRequestScopedDatabase,
+  PermissionResolver,
 } from '@happyvertical/smrt-users';
 import { chatUnavailableBody, chatUnconfiguredBody } from './ai-unavailable.js';
 import {
@@ -103,6 +119,7 @@ import {
   buildManifestToolCatalog,
   type ClientToolResultInput,
   FALLBACK_HISTORY_PLACEHOLDER,
+  invokeManifestTool,
   isFallbackReply,
   MAX_CLIENT_TOOL_RESULT_CHARS,
   MAX_CLIENT_TOOLS,
@@ -260,6 +277,9 @@ export interface MountAssistantRoutesOptions {
     | Promise<AssistantTurnDriver | undefined>;
   /** C3 seam: host persists and waits for an owner decision; absent fails closed. */
   waitForApproval?: AssistantApprovalWaiter;
+  /** Host authority override; default uses the runtime database and live owner membership. */
+  approvals?: AssistantRouteValue<OwnerApprovalAuthority>;
+  approvalPolicy?: AssistantApprovalPolicy;
   /**
    * The AI client, or a factory called once per turn. Omitted, each turn
    * builds a client from the principal's stored inference binding (#4756,
@@ -857,6 +877,9 @@ function isAuthorizationFailure(error: unknown): boolean {
 // ---------------------------------------------------------------------------
 
 type RouteMatch =
+  | { route: 'owner-approvals' }
+  | { route: 'approvals'; threadId: string }
+  | { route: 'decide-approval'; id: string }
   | { route: 'threads' }
   | { route: 'thread-messages'; threadId: string }
   | { route: 'thread-resume'; threadId: string }
@@ -864,6 +887,9 @@ type RouteMatch =
   | { route: 'actions'; phase: 'preview' | 'apply' };
 
 const ROUTE_METHODS: Record<RouteMatch['route'], readonly string[]> = {
+  'owner-approvals': ['GET'],
+  approvals: ['GET'],
+  'decide-approval': ['POST'],
   threads: ['GET', 'POST'],
   'thread-messages': ['GET', 'POST'],
   'thread-resume': ['POST'],
@@ -874,6 +900,11 @@ const ROUTE_METHODS: Record<RouteMatch['route'], readonly string[]> = {
 function matchRoute(segments: string[]): RouteMatch | null {
   const [a, b, c, ...rest] = segments;
   if (rest.length > 0) return null;
+  if (a === 'approvals' && b === undefined) return { route: 'owner-approvals' };
+  if (a === 'threads' && b && c === 'approvals')
+    return { route: 'approvals', threadId: b };
+  if (a === 'approvals' && b && c === 'decide')
+    return { route: 'decide-approval', id: b };
   if (a === 'threads' && b === undefined) return { route: 'threads' };
   if (a === 'threads' && b && c === 'messages') {
     return { route: 'thread-messages', threadId: b };
@@ -1281,7 +1312,7 @@ export function mountAssistantRoutes(
     );
     // Mirror the allow-list onto the session so the authoring gate
     // (`sendAgentReply`) agrees with the loop's offer gate.
-    if ((options.authorInvocation || prepared.turnDriver) && mirror) {
+    if (mirror) {
       const current = session.getAllowedTools();
       if (
         current.length !== allowedTools.length ||
@@ -1295,6 +1326,40 @@ export function mountAssistantRoutes(
         });
       }
     }
+    let bridge: Promise<AssistantApprovalBridge> | undefined;
+    const bridgeFor = () =>
+      (bridge ??= authorityFor(context).then(async (authority) =>
+        createAssistantApprovalBridge({
+          authority,
+          tenantId: principal.tenantId,
+          requestedBy: principal.userId,
+          policy: options.approvalPolicy,
+          context: JSON.parse(
+            JSON.stringify({
+              principal,
+              permissionCeiling: principal.permissions ?? [
+                ...(
+                  await (
+                    await PermissionResolver.create({ ...(db ? { db } : {}) })
+                  ).resolvePermissions(principal.userId, principal.tenantId)
+                ).permissions,
+              ],
+              threadId: String(thread.id),
+              agentSessionId: String(session.id),
+              driver: prepared.turnDriver ? 'external' : 'builtin',
+              allowedTools,
+            }),
+          ),
+        }),
+      ));
+    const approvals: AssistantApprovalBridge = {
+      policy: options.approvalPolicy,
+      request: async (call) => (await bridgeFor()).request(call),
+      wait: async (request, driverContext) =>
+        (await bridgeFor()).wait!(request, driverContext),
+      complete: async (request, ok, result) =>
+        (await bridgeFor()).complete!(request, ok, result),
+    };
     const continuations = continuationStoreFor(context, chat, session);
     return {
       abort,
@@ -1307,6 +1372,10 @@ export function mountAssistantRoutes(
         ai,
         turnDriver: prepared.turnDriver,
         waitForApproval: options.waitForApproval,
+        approvals:
+          prepared.turnDriver && options.waitForApproval && !options.approvals
+            ? undefined
+            : approvals,
         thread: {
           id: String(thread.id),
           roomId: String(session.chatRoomId),
@@ -2149,6 +2218,208 @@ export function mountAssistantRoutes(
     }
   };
 
+  // Approval identity/arguments come exclusively from the saved server envelope.
+  const authorityFor = async (context: AssistantRequestContext) => {
+    const supplied = await resolveValue(options.approvals, context);
+    if (supplied) return supplied;
+    const configured = await dbFor(context);
+    const db = configured
+      ? await resolveDatabase(configured)
+      : (
+          await ObjectRegistry.getCollection(
+            '@happyvertical/smrt-chat:AgentSession',
+            {},
+          )
+        ).db;
+    return new OwnerApprovalAuthority(
+      await createSqliteOwnerApprovalStore(db),
+      (actor) => isApprovalOwner(db, actor),
+    );
+  };
+  const approvalActor = (context: AssistantRequestContext) => ({
+    id: context.principal.userId,
+    tenantId: context.principal.tenantId,
+  });
+  const publicApproval = (
+    record: import('@happyvertical/smrt-app-runtime').OwnerApproval,
+  ) => ({
+    id: record.id,
+    tool: record.tool,
+    callId: record.callId,
+    summary: record.summary,
+    status: record.status,
+    decidedBy: record.decidedBy,
+    decidedAt: record.decidedAt,
+  });
+  const listApprovals = async (
+    context: AssistantRequestContext,
+    threadId: string,
+  ) => {
+    const chat = await chatFor(context);
+    await requireOwnThread(
+      chat,
+      context.principal,
+      await findSession(chat, context.principal),
+      threadId,
+    );
+    const rows = await (await authorityFor(context)).list(
+      approvalActor(context),
+      false,
+    );
+    return json({
+      approvals: rows
+        .filter(
+          (r) =>
+            r.context.threadId === threadId &&
+            (r.context.principal as AssistantPrincipal).profileId ===
+              context.principal.profileId,
+        )
+        .map(publicApproval),
+    });
+  };
+  const decideApproval = async (
+    context: AssistantRequestContext,
+    id: string,
+  ) => {
+    const body = await readJsonObject(context.event.request, maxBody);
+    if (typeof body.approve !== 'boolean')
+      throw badRequest('Choose approve or deny.');
+    const authority = await authorityFor(context);
+    await authority.authorize(approvalActor(context));
+    const record = await authority.get(context.principal.tenantId, id);
+    if (!record) throw notFound();
+    const original = record.context.principal as unknown as AssistantPrincipal;
+    const originalContext: AssistantRequestContext = {
+      event: context.event,
+      principal: original,
+    };
+    const chat = await chatFor(originalContext);
+    const session = await findSession(chat, original);
+    const threadId = String(record.context.threadId);
+    await requireOwnThread(chat, original, session, threadId);
+    if (!session || String(session.id) !== record.context.agentSessionId)
+      throw notFound();
+    let decision = await authority.decide(
+      approvalActor(context),
+      id,
+      body.approve,
+    );
+    const authorResult = async (content: string, ok: boolean) =>
+      sendAgentReply(chat, {
+        tenantId: original.tenantId,
+        agentSessionId: String(session.id),
+        threadId,
+        replyToMessageId:
+          typeof record.context.originMessageId === 'string'
+            ? record.context.originMessageId
+            : null,
+        kind: 'tool',
+        messageType: 'tool_result',
+        content,
+        toolCallData: {
+          id: record.callId,
+          name: record.tool,
+          args: record.args,
+          status: ok ? 'success' : 'error',
+          approvalId: id,
+        },
+      });
+    if (decision.status === 'denied') {
+      await authorResult(
+        'The owner denied this tool call. It did not run.',
+        false,
+      );
+      await sendAgentReply(chat, {
+        tenantId: original.tenantId,
+        agentSessionId: String(session.id),
+        threadId,
+        kind: 'assistant',
+        messageType: 'text',
+        content: 'The owner denied this tool call. It did not run.',
+        metadata: { approvalId: id, approvalStatus: 'denied' },
+      });
+    } else if (
+      decision.status === 'approved' &&
+      record.context.driver === 'builtin'
+    ) {
+      await authority.consume(original.tenantId, id);
+      let result: unknown;
+      let ok = false;
+      try {
+        // Re-resolve offerings and permissions: the original ceiling can only shrink.
+        const allowed = (await allowedToolsFor(originalContext)).filter(
+          (name) =>
+            (record.context.allowedTools as string[]).includes(name) &&
+            session.getAllowedTools().includes(name),
+        );
+        const db = await dbFor(originalContext);
+        const resolver = await PermissionResolver.create({
+          ...(db ? { db } : {}),
+        });
+        const live = (
+          await resolver.resolvePermissions(original.userId, original.tenantId)
+        ).permissions;
+        const permissions = [...live].filter((permission) =>
+          (record.context.permissionCeiling as string[]).includes(permission),
+        );
+        const extra = [
+          ...((await resolveValue(options.extraTools, originalContext)) ?? []),
+        ];
+        const tools = await manifestToolsFor(
+          originalContext,
+          allowed,
+          extra,
+          db,
+        );
+        result = await executeAsPrincipal(
+          {
+            principal: {
+              runAsUserId: original.userId,
+              tenantId: original.tenantId,
+              allowedTools: allowed,
+            },
+            ...(db ? { db } : {}),
+            permissions,
+            postgresRls: options.postgresRls,
+            audit: options.audit,
+          },
+          async (run) => {
+            run.assertToolAllowed(record.tool);
+            const tool = tools.find((tool) => tool.slug === record.tool);
+            if (tool)
+              return invokeManifestTool(run, tool, record.args, {
+                db: run.context.database ?? db,
+              });
+            const custom = extra.find((tool) => tool.slug === record.tool);
+            if (!custom)
+              throw new Error('The approved tool is no longer offered.');
+            return custom.execute({
+              run,
+              args: record.args,
+              db: run.context.database ?? db,
+            });
+          },
+        );
+        ok = !(
+          result &&
+          typeof result === 'object' &&
+          'isError' in result &&
+          result.isError === true
+        );
+      } catch (error) {
+        safeLog(error);
+        result = { error: 'The approved tool could not run.' };
+      }
+      // Complete before authoring: transcript failure must never make effects retryable.
+      await authority.complete(original.tenantId, id, ok, result);
+      const completed = await authority.get(original.tenantId, id);
+      if (!completed) throw notFound();
+      decision = completed;
+      await authorResult(JSON.stringify(completed.result ?? null), ok);
+    }
+    return json({ approval: publicApproval(decision) });
+  };
+
   // ---- dispatch ----------------------------------------------------------
 
   const handle: AssistantRouteHandler = async (event) => {
@@ -2199,6 +2470,22 @@ export function mountAssistantRoutes(
       }
       const context: AssistantRequestContext = { event, principal };
       switch (match.route) {
+        case 'owner-approvals':
+          return json({
+            approvals: (
+              await (await authorityFor(context)).list(approvalActor(context))
+            ).map(publicApproval),
+          });
+        case 'approvals':
+          return await listApprovals(
+            context,
+            requireId(match.threadId, 'thread id'),
+          );
+        case 'decide-approval':
+          return await decideApproval(
+            context,
+            requireId(match.id, 'approval id'),
+          );
         case 'threads':
           return method === 'GET'
             ? await listThreads(context)
@@ -2220,6 +2507,17 @@ export function mountAssistantRoutes(
           return await runAction(context, match.phase);
       }
     } catch (error) {
+      if (error instanceof OwnerApprovalError)
+        return json(
+          { error: error.message, code: error.code },
+          error.code === 'forbidden'
+            ? 403
+            : error.code === 'not_found'
+              ? 404
+              : error.code === 'invalid_request'
+                ? 400
+                : 409,
+        );
       if (error instanceof AssistantRouteError) return errorResponse(error);
       if (isAuthorizationFailure(error)) return errorResponse(notFound());
       safeLog(error);
