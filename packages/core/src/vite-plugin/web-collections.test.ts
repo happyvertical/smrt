@@ -507,6 +507,29 @@ describe('buildWebToolDescriptors', () => {
   });
 });
 
+describe('collection display labels', () => {
+  it('carries the owning manifest label into web definitions and their cache hash', () => {
+    const model = obj({
+      className: 'Order',
+      collection: 'orders',
+      decoratorConfig: { api: { include: ['list'] } },
+      fields: { number: { type: 'text' } },
+      displayLabelField: 'number',
+    });
+    const m = manifest(model);
+    const entry = selectWebCollectionEntries(m)[0];
+    expect(buildWebCollectionDefinition(entry, m).displayLabelField).toBe(
+      'number',
+    );
+    const labelledHash = computeWebManifestHash(m);
+    delete model.displayLabelField;
+    expect(buildWebCollectionDefinition(entry, m)).not.toHaveProperty(
+      'displayLabelField',
+    );
+    expect(computeWebManifestHash(m)).not.toBe(labelledHash);
+  });
+});
+
 describe('canonical WebMCP tool definitions (#2518)', () => {
   const publicMethod = (
     name: string,

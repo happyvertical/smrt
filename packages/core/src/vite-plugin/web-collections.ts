@@ -945,6 +945,7 @@ export function buildWebCollectionDefinition(
   actions: string[];
   fields: Record<string, WebFieldDefinition>;
   relationships: WebRelationship[];
+  displayLabelField?: string;
 } {
   return {
     name: entry.collection,
@@ -952,6 +953,9 @@ export function buildWebCollectionDefinition(
     className: entry.obj.className,
     endpoint: `/${entry.collection}`,
     idField: 'id',
+    ...(entry.obj.displayLabelField
+      ? { displayLabelField: entry.obj.displayLabelField }
+      : {}),
     actions: entry.actions,
     fields: buildWebFieldDefinitions(entry.obj),
     relationships: buildWebRelationships(entry.obj, manifest),

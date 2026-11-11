@@ -57,7 +57,8 @@ after inheritance, so every producer (Vite plugin, `ManifestBuilder`,
   selector. Undeclared, it defaults to the first of `name`, `title`, `label`,
   `code` that is a usable own field. Build fails when the declared field is
   missing, `sensitive`, `transient`, or a relationship/json field. The resolved
-  field is emitted as `displayLabelField` on the manifest object and in the
+  field is emitted as `displayLabelField` on the manifest object, on generated
+  web collection definitions (for record names and paged pickers), and in the
   knowledge artifact, and generated MCP/WebMCP `list`/`get`/`update`/`delete`
   descriptions end with ``Records are identified by their `<field>` field.``
   (`describeAction` in `generators/tool-schema.ts`; nothing is added when the

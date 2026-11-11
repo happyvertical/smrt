@@ -365,6 +365,8 @@ export interface SmrtWebCollectionDefinition<TData extends object = object> {
   endpoint: string;
   /** Primary key field name (`id` for SmrtObject). */
   idField: string;
+  /** Owning model's resolved display-label field for names and remote pickers. */
+  displayLabelField?: string;
   /** CRUD + custom actions exposed by the api decorator config. */
   actions: string[];
   /**
