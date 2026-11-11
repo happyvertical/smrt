@@ -345,7 +345,8 @@
         "help": { "type": ["string", "null"] },
         "label": { "type": ["string", "null"] },
         "displayOrder": { "type": ["number", "null"] },
-        "locked": { "type": ["boolean", "null"] }
+        "locked": { "type": ["boolean", "null"] },
+        "readOnly": { "type": ["boolean", "null"] }
       },
       "additionalProperties": true
     },

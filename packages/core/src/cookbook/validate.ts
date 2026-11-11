@@ -192,6 +192,14 @@ function checkPolicy(
       `${at}.locked must be a boolean`,
     );
   }
+  if (value.readOnly != null && typeof value.readOnly !== 'boolean') {
+    error(
+      diagnostics,
+      'invalid_type',
+      `${at}.readOnly`,
+      `${at}.readOnly must be a boolean`,
+    );
+  }
 }
 
 function checkLayout(value: unknown, diagnostics: CookbookDiagnostic[]) {

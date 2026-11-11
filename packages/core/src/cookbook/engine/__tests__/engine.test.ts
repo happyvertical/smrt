@@ -1276,3 +1276,46 @@ describe('the ./cookbook/engine package export', () => {
     );
   });
 });
+
+describe('read-only cookbook policy command', () => {
+  it('sets, overrides and clears record readOnly independently of policy locks', () => {
+    const e = engine();
+    ok(e.run({ name: 'add_recipes', input: { ids: ['commerce.customers'] } }));
+    for (const readOnly of [true, false]) {
+      ok(
+        e.run({
+          name: 'set_policy',
+          input: { model: `${C}Customer`, field: 'notes', readOnly },
+        }),
+      );
+      expect(
+        e
+          .cookbook()
+          .policies.find(
+            (row) =>
+              row.objectRef === `${C}Customer` && row.fieldName === 'notes',
+          )?.readOnly,
+      ).toBe(readOnly);
+    }
+    expect(
+      e.run({
+        name: 'set_policy',
+        input: { model: `${C}Customer`, field: 'notes', readOnly: 'true' },
+      }).ok,
+    ).toBe(false);
+    ok(
+      e.run({
+        name: 'set_policy',
+        input: { model: `${C}Customer`, field: 'notes', readOnly: null },
+      }),
+    );
+    expect(
+      e
+        .cookbook()
+        .policies.find(
+          (row) =>
+            row.objectRef === `${C}Customer` && row.fieldName === 'notes',
+        ),
+    ).toBeUndefined();
+  });
+});

@@ -398,7 +398,7 @@ const handlers: { [N in CommandName]?: Handler<N> } = {
       scopeType: 'app',
     };
     const before = JSON.stringify(row);
-    for (const key of ['visibility', 'label', 'help'] as const) {
+    for (const key of ['visibility', 'label', 'help', 'readOnly'] as const) {
       const value = input[key];
       if (value === undefined) continue;
       if (value === null) delete row[key];

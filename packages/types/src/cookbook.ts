@@ -35,6 +35,8 @@ export interface CookbookPolicyRow {
   label?: string | null;
   displayOrder?: number | null;
   locked?: boolean | null;
+  /** Read-only record value; independent of locking policy customization. */
+  readOnly?: boolean | null;
 }
 
 /** Structural copy of smrt-svelte's `ShellLayoutSection`. */

@@ -111,6 +111,7 @@ export interface CommandInputs {
     visibility?: 'basic' | 'advanced' | 'hidden' | null;
     label?: string | null;
     help?: string | null;
+    readOnly?: boolean | null;
   };
   set_theme: {
     preset?: string;

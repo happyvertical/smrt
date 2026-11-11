@@ -461,3 +461,37 @@ describe('the ./cookbook package export', () => {
     expect(readdirSync(join(import.meta.dirname, '..'))).toContain(source);
   });
 });
+
+describe('cookbook read-only value metadata', () => {
+  it.each([true, false, null])('retains readOnly %s', (readOnly) => {
+    const result = validateCookbook({
+      version: 1,
+      recipes: [],
+      policies: [
+        {
+          objectRef: '@test/pkg:Thing',
+          fieldName: 'name',
+          scopeType: 'app',
+          readOnly,
+        },
+      ],
+    });
+    expect(result.ok && result.cookbook.policies[0].readOnly).toBe(readOnly);
+  });
+  it('rejects malformed readOnly metadata', () => {
+    const result = validateCookbook({
+      version: 1,
+      recipes: [],
+      policies: [
+        {
+          objectRef: '@test/pkg:Thing',
+          fieldName: 'name',
+          scopeType: 'app',
+          readOnly: 'true',
+        },
+      ],
+    });
+    expect(result.ok).toBe(false);
+    if (!result.ok) expect(result.errors.join(' ')).toContain('readOnly');
+  });
+});
