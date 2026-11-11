@@ -3,7 +3,7 @@
 // environment. No real CLI is started.
 import { readFileSync, writeFileSync } from 'node:fs';
 import { join } from 'node:path';
-import { describe, expect, it } from 'vitest';
+import { afterEach, describe, expect, it, vi } from 'vitest';
 import { detectAgentCli, detectAgentClis } from './detect.js';
 import { childEnv } from './env.js';
 import { candidateDirs } from './locate.js';
@@ -11,6 +11,35 @@ import { AgentLogin } from './login.js';
 import { fakeDeps, installFakeCli, tempDir } from './test-support.js';
 
 describe('detectAgentCli', () => {
+  afterEach(() => vi.unstubAllEnvs());
+  it.each([
+    'claude-code',
+    'codex',
+  ] as const)('refuses readiness for signed-in %s when locked invocation cannot start', async (tool) => {
+    const home = tempDir();
+    const bin = tempDir();
+    installFakeCli(bin, tool, { brokenHelp: true });
+    writeFileSync(join(home, 'signed-in'), '');
+    expect(await detectAgentCli(tool, fakeDeps(home, [bin]))).toMatchObject({
+      installed: true,
+      signedIn: true,
+      ready: false,
+      startError: 'cli_invocation',
+    });
+  });
+  it('reports an unwritable preflight directory without attempting a model turn', async () => {
+    const home = tempDir();
+    const bin = tempDir();
+    installFakeCli(bin, 'codex');
+    writeFileSync(join(home, 'signed-in'), '');
+    vi.stubEnv('TMPDIR', join(home, 'missing-directory'));
+    expect(await detectAgentCli('codex', fakeDeps(home, [bin]))).toMatchObject({
+      signedIn: true,
+      ready: false,
+      startError: 'working_directory',
+    });
+  });
+
   it('reports an installed, signed-in Claude Code with its version', async () => {
     const home = tempDir();
     const bin = tempDir();
@@ -84,6 +113,7 @@ describe('detectAgentCli', () => {
     const home = tempDir();
     const bin = tempDir();
     installFakeCli(bin, 'claude-code');
+    writeFileSync(join(home, 'signed-in'), '');
     await detectAgentCli(
       'claude-code',
       fakeDeps(home, [bin], {

@@ -36,7 +36,11 @@ export function installStub(dir: string, binary: string): string {
 export function installFakeCli(
   dir: string,
   tool: AgentTool,
-  options: { version?: string; brokenVersion?: boolean } = {},
+  options: {
+    version?: string;
+    brokenVersion?: boolean;
+    brokenHelp?: boolean;
+  } = {},
 ): string {
   mkdirSync(dir, { recursive: true });
   const path = join(dir, tool === 'claude-code' ? 'claude' : 'codex');
@@ -50,6 +54,7 @@ export function installFakeCli(
   const loginCase = tool === 'claude-code' ? '"auth login"' : '"login "';
   const script = `#!/bin/sh
 env > "$HOME/env-dump"
+case "$*" in *--help*) exit ${options.brokenHelp ? 2 : 0};; esac
 case "$1 $2" in
   "--version "*) ${options.brokenVersion ? 'exit 3' : `echo "${tool === 'claude-code' ? `${version} (Claude Code)` : `codex-cli ${version}`}"`};;
   ${statusCase}) ${status};;

@@ -11,6 +11,7 @@ export interface InferenceEngineStatus {
   engine?: InferenceEngineId;
   engineLabel?: string;
   code?: string;
+  startError?: AgentCliStatus['startError'];
   message?: string;
   action?: InferenceEngineAction;
 }
@@ -45,7 +46,10 @@ export async function chatgptEngineStatus(
 /** Status of a CLI engine from what the tool itself reported. */
 export function cliEngineStatus(
   tool: AgentTool,
-  found: Pick<AgentCliStatus, 'installed' | 'signedIn'>,
+  found: Pick<
+    AgentCliStatus,
+    'installed' | 'signedIn' | 'ready' | 'startError'
+  >,
   action?: InferenceEngineAction,
 ): InferenceEngineStatus {
   const label = AGENT_TOOL_INFO[tool].label;
@@ -66,6 +70,20 @@ export function cliEngineStatus(
       message: `${label} is not signed in.`,
       ...(action ? { action } : {}),
     };
+  if (found.ready === false)
+    return {
+      ...base,
+      configured: false,
+      code: 'agent_cli_startup',
+      ...(found.startError ? { startError: found.startError } : {}),
+      message:
+        found.startError === 'working_directory'
+          ? `${label} needs a writable temporary directory.`
+          : found.startError === 'runtime_unavailable'
+            ? `${label} cannot start in this app's process environment. Check its executable and Node installation.`
+            : `${label} does not accept the required locked-down invocation. Update the CLI, then retry.`,
+      ...(action ? { action } : {}),
+    };
   return { ...base, configured: true };
 }
 
@@ -73,7 +91,9 @@ export function cliEngineStatus(
 export interface InferenceEngineStatusHost {
   cliStatus(
     tool: AgentTool,
-  ): Promise<Pick<AgentCliStatus, 'installed' | 'signedIn'>>;
+  ): Promise<
+    Pick<AgentCliStatus, 'installed' | 'signedIn' | 'ready' | 'startError'>
+  >;
   chatgpt: Pick<ChatGPTPlanConnection, 'status'>;
   apiStatus(): Promise<InferenceEngineStatus>;
   actions?: {

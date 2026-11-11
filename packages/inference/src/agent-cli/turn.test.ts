@@ -13,9 +13,42 @@ import {
   type AgentEngineDeps,
   type AgentTurnHost,
   type AgentTurnMessage,
+  reportAgentFailure,
   runAgentTurn,
   type AgentTurnEvent as TurnEvent,
 } from './turn.js';
+
+describe('safe correlated engine diagnostics', () => {
+  it('logs the cause class and code location once, with no exception message, cause or unsafe code', () => {
+    const log = vi.spyOn(console, 'error').mockImplementation(() => {});
+    const error = new TypeError('Bearer secret-test-token', {
+      cause: { apiKey: 'secret-test-key' },
+    });
+    error.stack += '\n    at /private/secret-test-token.js:12:34';
+    const reference = reportAgentFailure(
+      'codex',
+      'binding',
+      error,
+      'secret-test-code',
+    );
+    expect(reference).toMatch(/^[a-f0-9-]{36}$/);
+    expect(reportAgentFailure('codex', 'driver', error)).toBe(reference);
+    expect(log).toHaveBeenCalledOnce();
+    expect(log).toHaveBeenCalledWith(
+      '[smrt-inference] local engine failure',
+      expect.objectContaining({
+        reference,
+        phase: 'binding',
+        cause: 'TypeError',
+        code: 'unexpected_failure',
+        sites: expect.any(Array),
+      }),
+    );
+    expect(JSON.stringify(log.mock.calls)).not.toMatch(
+      /secret-test|Bearer|apiKey/,
+    );
+  });
+});
 
 const minted: string[] = [];
 let revoked = 0;
@@ -430,10 +463,14 @@ it('token mint failures report only a stable code and fixed words', async () => 
   expect(events[0]).toMatchObject({ type: 'error', code: 'agent_cli_token' });
   expect(JSON.stringify(events)).toContain('permission');
   expect(logged).toHaveBeenCalledWith(
-    'assistant token failed:',
-    'LocalRuntimeError',
-    'invalid_scope',
+    '[smrt-inference] local engine failure',
+    expect.objectContaining({
+      phase: 'credential',
+      code: 'invalid_scope',
+      reference: expect.stringMatching(/^[a-f0-9-]{36}$/),
+    }),
   );
+  expect(JSON.stringify(events)).toContain(logged.mock.calls[0][1].reference);
   expect(JSON.stringify([events, logged.mock.calls])).not.toContain(
     'secret in token store error',
   );

@@ -1,5 +1,6 @@
 // One subprocess-owned turn. Hosts own authenticated persistence, guidance,
 // tool policy and approval authority; this engine never decides an approval.
+import { randomUUID } from 'node:crypto';
 import type { AIToolCall } from '@happyvertical/ai';
 import type { AgentCredentials } from './credentials.js';
 import type { AgentCliLocation } from './detect.js';
@@ -140,19 +141,139 @@ export function tokenFailureMessage(code: string | undefined): string {
   return 'The assistant could not start. Try again.';
 }
 
-/** Run one subprocess turn; host callback failures propagate after cleanup. */
+const reportedFailures = new WeakMap<object, string>();
+const diagnosticCodes = new Set([
+  'agent_cli_missing',
+  'agent_cli_signed_out',
+  'agent_cli_startup',
+  'agent_cli_token',
+  'agent_cli_failed',
+  'agent_tool_blocked',
+  'timeout',
+  'invalid_scope',
+  'owner_unavailable',
+  'runtime_unavailable',
+  'cli_invocation',
+  'working_directory',
+]);
+
+/** Log only diagnostic structure, never a message, child output, arguments or credentials. */
+export function reportAgentFailure(
+  tool: AgentTool,
+  phase:
+    | 'binding'
+    | 'process'
+    | 'guard'
+    | 'credential'
+    | 'preflight'
+    | 'driver',
+  error?: unknown,
+  code?: string,
+): string {
+  if (error && typeof error === 'object') {
+    const existing = reportedFailures.get(error);
+    if (existing) return existing;
+  }
+  const reference = randomUUID();
+  const cause =
+    error instanceof TypeError
+      ? 'TypeError'
+      : error instanceof RangeError
+        ? 'RangeError'
+        : error instanceof Error
+          ? 'Error'
+          : 'unavailable';
+  // Exclude the first line (the error message). Keep code locations only, no paths.
+  const sites =
+    error instanceof Error
+      ? (error.stack ?? '')
+          .slice(0, 4096)
+          .split('\n')
+          .slice(1)
+          .flatMap((line) => {
+            const match = line.match(
+              /(?:\(|\s)([^()\s]+\.[cm]?[jt]s):(\d+):(\d+)\)?$/,
+            );
+            if (!match) return [];
+            const subsystem =
+              /\/packages\/(core|chat|inference|app-runtime|users)\//.exec(
+                match[1],
+              )?.[1] ?? 'host';
+            // Fixed subsystem labels and numeric coordinates only: even a forged
+            // stack cannot smuggle a token through a filename or function name.
+            return [`${subsystem}:${match[2]}:${match[3]}`];
+          })
+          .slice(0, 6)
+      : [];
+  // Codes come from this module's fixed vocabulary, never arbitrary SDK fields.
+  try {
+    // biome-ignore lint/suspicious/noConsole: secret-free server diagnostic, correlated to the safe wire message
+    console.error('[smrt-inference] local engine failure', {
+      reference,
+      tool,
+      phase,
+      cause,
+      code: code && diagnosticCodes.has(code) ? code : 'unexpected_failure',
+      sites,
+    });
+  } catch {
+    /* A failed log sink must not change cleanup or refusal. */
+  }
+  if (error && typeof error === 'object')
+    reportedFailures.set(error, reference);
+  return reference;
+}
+
+/** Run a turn and log unexpected host/process failures before preserving their cleanup contract. */
 export async function runAgentTurn(
   options: AgentTurnOptions,
 ): Promise<AgentTurnStop> {
-  const { host, emit, tool, deps } = options;
+  try {
+    return await runAgentTurnImpl(options);
+  } catch (error) {
+    reportAgentFailure(options.tool, 'process', error);
+    throw error;
+  }
+}
+
+/** Run one subprocess turn; host callback failures propagate after cleanup. */
+async function runAgentTurnImpl(
+  options: AgentTurnOptions,
+): Promise<AgentTurnStop> {
+  const { host, tool, deps } = options;
+  const emit: AgentTurnOptions['emit'] = (event) => {
+    if (event.type === 'error' && !event.message.includes(' Reference: ')) {
+      const reference = reportAgentFailure(
+        tool,
+        'process',
+        undefined,
+        event.code,
+      );
+      options.emit({
+        ...event,
+        message: `${event.message} Reference: ${reference}`,
+      });
+    } else options.emit(event);
+  };
   const limits = { ...DEFAULT_AGENT_LIMITS, ...deps.limits };
   const label = AGENT_TOOL_INFO[tool].label;
   const fail = (
     code: string,
     message: string,
     stop: AgentTurnStop = 'error',
+    cause?: unknown,
   ) => {
-    emit({ type: 'error', code, message });
+    const reference = reportAgentFailure(
+      tool,
+      code === 'agent_cli_token' ? 'credential' : 'process',
+      cause,
+      tokenFailureCode(cause) ?? code,
+    );
+    emit({
+      type: 'error',
+      code,
+      message: `${message} Reference: ${reference}`,
+    });
     emit({ type: 'done', stop });
     return stop;
   };
@@ -173,13 +294,7 @@ export async function runAgentTurn(
     token = await deps.credentials.mint();
   } catch (error) {
     const code = tokenFailureCode(error);
-    // biome-ignore lint/suspicious/noConsole: class and stable code only, never a message
-    console.error(
-      'assistant token failed:',
-      error instanceof Error ? error.name : 'unknown',
-      code ?? 'no_code',
-    );
-    return fail('agent_cli_token', tokenFailureMessage(code));
+    return fail('agent_cli_token', tokenFailureMessage(code), 'error', error);
   }
 
   let unsubscribe: (() => void) | undefined;

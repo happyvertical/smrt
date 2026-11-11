@@ -17,6 +17,7 @@ import { readFileSync, renameSync, writeFileSync } from 'node:fs';
 import { dirname, join } from 'node:path';
 
 const argv = process.argv.slice(2);
+if (argv.includes('--help')) process.exit(0);
 const isCodex = argv[0] === 'exec';
 const prompt = readFileSync(0, 'utf8');
 const [head, ...rest] = prompt.split('\n')[0].split(' ');

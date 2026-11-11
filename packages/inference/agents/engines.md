@@ -150,3 +150,18 @@ The MCP reviews raised only existing hosted flag detection, existing shell
 approval/polling code and a downstream-UI heuristic for inference. None is a
 copy introduced by C2: inference remains framework-agnostic, and owner approval
 authority stays with the host. This audit does not replace that authority.
+
+## Live desktop regression design (R7/R8)
+
+| Behavior | Trigger / positive | Failure control | Actor / executor | Boundary / validation |
+| --- | --- | --- | --- | --- |
+| Process readiness | CLI help with locked invocation, own auth status, private writable cwd | Missing runtime/flags, signed-out CLI, inaccessible directory; no model request | Local owner; no database effect | Exact desktop environment + inference stub tests |
+| Failure diagnostics | Start/stream failure logs reference, phase, fixed cause and code location | Credential-shaped message/output never logged | Server only; existing turn cleanup | Inference/chat tests and built-app log |
+| Single failure | Failed turn restores draft and offers one retry | No duplicate banner, stored fallback or composer alert | Authenticated thread; ChatService | Dock component regression |
+| Live effects | Both CLIs read lists and create a named member | Delete held until independent owner decision, replay refused, abort kills tree | Original owner/tenant; existing MCP dispatcher and durable authority | Built app, fresh SQLite; docs/qa-live-engines.md in product |
+
+Reuse search: MCP reviews of inference, chat, desktop, Svelte and template host;
+intent index; `rg` name/purpose searches for preflight, engine diagnostics,
+reference/error IDs, environment helpers and retry presentation in owning
+packages, core, smrt-ui and smrt-svelte. Extend existing detection, turn error
+boundary and dock instead of adding a second engine or error presentation.

@@ -3,11 +3,15 @@
 // status`): no credential file or keychain item is read. The output of a
 // status command can hold an email or an organisation name; it is parsed in
 // memory for the one yes/no that is needed and dropped.
-import { dirname } from 'node:path';
+import { mkdtempSync, rmSync } from 'node:fs';
+import { tmpdir } from 'node:os';
+import { dirname, join } from 'node:path';
 import { childEnv, nodeDir } from './env.js';
 import { defaultLocateDeps, type LocateDeps, locateBinary } from './locate.js';
 import { runCollect } from './runner.js';
+import { buildAgentRun, TOKEN_ENV } from './session.js';
 import { AGENT_TOOL_INFO, AGENT_TOOLS, type AgentTool } from './tools.js';
+import { reportAgentFailure } from './turn.js';
 
 /** What the browser may know about a tool. No path, no account detail. */
 export interface AgentCliStatus {
@@ -18,6 +22,9 @@ export interface AgentCliStatus {
   /** `null` when it could not be asked (the tool did not start). */
   signedIn: boolean | null;
   installUrl: string;
+  /** No model request: the exact locked command can start in this process environment. */
+  ready?: boolean;
+  startError?: 'runtime_unavailable' | 'cli_invocation' | 'working_directory';
 }
 
 export interface AgentCliLocation {
@@ -69,6 +76,54 @@ function signedInFrom(
   return exitCode === 0;
 }
 
+/** Cheap startup probe: exact locked flags and empty cwd, with --help and no model/token request. */
+export async function preflightAgentCli(
+  tool: AgentTool,
+  location: AgentCliLocation,
+  baseEnv: LocateDeps['env'],
+): Promise<Pick<AgentCliStatus, 'ready' | 'startError'>> {
+  const fail = (
+    startError: NonNullable<AgentCliStatus['startError']>,
+    cause?: unknown,
+  ) => {
+    reportAgentFailure(tool, 'preflight', cause, startError);
+    return { ready: false, startError };
+  };
+  let directory: string | undefined;
+  let spec: ReturnType<typeof buildAgentRun> | undefined;
+  try {
+    directory = mkdtempSync(join(tmpdir(), 'smrt-engine-preflight-'));
+    spec = buildAgentRun({
+      tool,
+      location,
+      stateDir: directory,
+      mcpUrl: 'http://127.0.0.1:1/mcp',
+      token: '',
+      systemPrompt: '',
+      prompt: '',
+      baseEnv,
+    });
+    // Help needs no MCP credential, not even an empty token variable.
+    delete spec.env[TOKEN_ENV];
+    const result = await runCollect({
+      command: spec.command,
+      args: [...spec.args, '--help'],
+      cwd: spec.cwd,
+      env: spec.env,
+      stdin: '',
+      timeoutMs: VERSION_TIMEOUT_MS,
+    });
+    if (result.spawnError) return fail('runtime_unavailable');
+    if (result.exitCode !== 0 || result.timedOut) return fail('cli_invocation');
+    return { ready: true };
+  } catch (error) {
+    return fail('working_directory', error);
+  } finally {
+    spec?.cleanup();
+    if (directory) rmSync(directory, { recursive: true, force: true });
+  }
+}
+
 export async function detectAgentCli(
   tool: AgentTool,
   deps: LocateDeps = defaultLocateDeps(),
@@ -97,14 +152,18 @@ export async function detectAgentCli(
     timeoutMs: STATUS_TIMEOUT_MS,
   });
   const found = versionOf(version.stdout);
+  const signedIn =
+    status.spawnError || status.timedOut
+      ? null
+      : signedInFrom(tool, status.exitCode, status.stdout);
+  const startup =
+    signedIn === true ? await preflightAgentCli(tool, location, deps.env) : {};
   return {
     ...base,
     installed: true,
     ...(found ? { version: found } : {}),
-    signedIn:
-      status.spawnError || status.timedOut
-        ? null
-        : signedInFrom(tool, status.exitCode, status.stdout),
+    signedIn,
+    ...startup,
   };
 }
 

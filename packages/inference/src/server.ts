@@ -27,6 +27,7 @@ export {
   detectAgentCli,
   detectAgentClis,
   locateCli,
+  preflightAgentCli,
 } from './agent-cli/detect.js';
 export {
   childEnv,
@@ -83,6 +84,7 @@ export {
   type AgentTurnOptions,
   type AgentTurnStop,
   DEFAULT_AGENT_LIMITS,
+  reportAgentFailure,
   runAgentTurn,
   tokenFailureMessage,
 } from './agent-cli/turn.js';
