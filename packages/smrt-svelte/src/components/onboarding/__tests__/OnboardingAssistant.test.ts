@@ -2,7 +2,8 @@ import { createDataSurfaceRegistry } from '@happyvertical/smrt-ui/data-surface';
 import { render, screen } from '@testing-library/svelte';
 import { describe, expect, it, vi } from 'vitest';
 
-vi.mock('@happyvertical/smrt-chat/svelte', async () => ({
+vi.mock('@happyvertical/smrt-chat/svelte', async (importOriginal) => ({
+  ...(await importOriginal<object>()),
   AssistantDock: (
     await import('../../cookbook/__tests__/assistant-fixture.svelte')
   ).default,
@@ -11,7 +12,7 @@ vi.mock('@happyvertical/smrt-chat/svelte', async () => ({
 import OnboardingAssistant from '../OnboardingAssistant.svelte';
 
 describe('tool-derived assistant introduction', () => {
-  it('uses cookbook words and only offered actions; no engine is a calm connect prompt', () => {
+  it('uses cookbook words and only offered actions when connected', () => {
     render(OnboardingAssistant, {
       props: {
         transport: { sendMessage: vi.fn() },
@@ -19,7 +20,7 @@ describe('tool-derived assistant introduction', () => {
         introduction: {
           lists: ['Customers', 'Classes'],
           actions: ['read', 'customize', 'imaginary'],
-          configured: false,
+          configured: true,
         },
       },
     });
@@ -31,11 +32,37 @@ describe('tool-derived assistant introduction', () => {
         'Available actions: read records, customize lists and fields.',
       ),
     ).toBeInTheDocument();
-    expect(screen.getByRole('link', { name: 'Connect AI' })).toHaveAttribute(
-      'href',
-      '/settings',
-    );
     expect(screen.queryByRole('alert')).not.toBeInTheDocument();
     expect(screen.queryByText(/Profile|imaginary/)).not.toBeInTheDocument();
+  });
+  it('uses the shared unconfigured notice without a greeting, composer or transport work', () => {
+    const sendMessage = vi.fn();
+    const listThreads = vi.fn();
+    render(OnboardingAssistant, {
+      props: {
+        transport: { sendMessage, listThreads },
+        registry: createDataSurfaceRegistry(),
+        introduction: {
+          lists: ['Members'],
+          actions: ['create'],
+          configured: false,
+        },
+      },
+    });
+    expect(screen.getByRole('status')).toHaveAttribute(
+      'data-reason',
+      'unconfigured',
+    );
+    expect(
+      screen.getByRole('link', { name: 'Connect an AI to chat' }),
+    ).toHaveAttribute('href', '/settings');
+    expect(
+      screen.queryByText(/I can help|Available actions/),
+    ).not.toBeInTheDocument();
+    expect(screen.queryByTestId('assistant-dock')).not.toBeInTheDocument();
+    expect(screen.queryByRole('textbox')).not.toBeInTheDocument();
+    expect(screen.queryByRole('alert')).not.toBeInTheDocument();
+    expect(sendMessage).not.toHaveBeenCalled();
+    expect(listThreads).not.toHaveBeenCalled();
   });
 });

@@ -35,8 +35,7 @@ export const M = defineMessages({
   'ui.onboarding.restart_hint':
     'Preview a template before changing this app. Applying it needs your explicit owner approval.',
   'ui.onboarding.cancel': 'Keep my current app',
-  'ui.onboarding.connect_prompt':
-    'Connect AI to use the assistant. You can keep using the app by hand or with a plugin.',
+  'ui.onboarding.connect_prompt': 'Connect an AI to chat',
   'ui.onboarding.lists': 'I can help you work with {lists}.',
   'ui.onboarding.tools': 'Available actions: {actions}.',
   'ui.onboarding.build': 'I can help you build your app with lists and fields.',

@@ -1,5 +1,6 @@
 <script lang="ts">
 import {
+  AiUnavailableNotice,
   AssistantDock,
   type AssistantDockController,
   type AssistantTransport,
@@ -34,16 +35,19 @@ const labels = {
 };
 </script>
 <div class="onboarding-assistant" data-smrt-component="OnboardingAssistant">
+{#if introduction?.configured === false}
+  <AiUnavailableNotice status={{ reason: 'unconfigured' }} settingsHref="/settings" settingsLabel={t(M['ui.onboarding.connect_prompt'])} />
+{:else}
 {#if introduction && !controller?.messages.length}
   <div class="introduction" aria-label={t(M['ui.onboarding.ai'])}>
     {#if introduction.lists.length}<p>{t(M['ui.onboarding.lists'], { lists: introduction.lists.join(', ') })}</p>{/if}
     {#if introduction.actions.length}<p>{t(M['ui.onboarding.tools'], { actions: introduction.actions.filter(a => a in labels).map(a => t(labels[a as keyof typeof labels])).join(', ') })}</p>{/if}
-    {#if !introduction.configured}<p>{t(M['ui.onboarding.connect_prompt'])} <a href="/settings">{t(M['ui.onboarding.ai'])}</a></p>{/if}
   </div>
 {/if}
 <div class="dock"><AssistantDock {transport} {registry} {visible} {contextMode} {messageFormat} aiSettingsHref="/settings" oncontroller={next => { controller = next; }} /></div>
+{/if}
 </div>
 <style>
 @layer smrt.reset, smrt.structure, smrt.theme;
-@layer smrt.structure { .onboarding-assistant { display: flex; flex-direction: column; height: 100%; min-height: 0; } .dock { flex: 1; min-height: 0; } .introduction { padding: var(--smrt-spacing-3); color: var(--smrt-color-on-surface); } a { color: var(--smrt-color-primary); } }
+@layer smrt.structure { .onboarding-assistant { display: flex; flex-direction: column; height: 100%; min-height: 0; } .dock { flex: 1; min-height: 0; } .introduction { padding: var(--smrt-spacing-3); color: var(--smrt-color-on-surface); } }
 </style>
