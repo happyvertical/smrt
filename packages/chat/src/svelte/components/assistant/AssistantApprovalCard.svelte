@@ -121,12 +121,8 @@ async function decide(approve: boolean) {
   {#if presentation.message}<p class="sh-alert sh-alert-error" role="alert">{presentation.message}</p>{/if}
   {#if presentation.pending && presentation.ondecide}
     <div class="sh-actions">
-      <Button class="sh-btn sh-btn-primary" disabled={presentation.busy} aria-label={`${presentation.busy ? (presentation.busyLabel ?? t(M['chat.approval.pending'])) : t(M['chat.approval.approve'])}: ${presentation.summary}`} onclick={() => presentation.ondecide?.(true)}>
-        {presentation.busy ? (presentation.busyLabel ?? t(M['chat.approval.pending'])) : t(M['chat.approval.approve'])}
-      </Button>
-      <Button class="sh-btn" variant="secondary" disabled={presentation.busy} aria-label={`${t(M['chat.approval.deny'])}: ${presentation.summary}`} onclick={() => presentation.ondecide?.(false)}>
-        {t(M['chat.approval.deny'])}
-      </Button>
+      <Button labelWhitespace="trim" class="sh-btn sh-btn-primary" disabled={presentation.busy} aria-label={`${presentation.busy ? (presentation.busyLabel ?? t(M['chat.approval.pending'])) : t(M['chat.approval.approve'])}: ${presentation.summary}`} onclick={() => presentation.ondecide?.(true)}>{presentation.busy ? (presentation.busyLabel ?? t(M['chat.approval.pending'])) : t(M['chat.approval.approve'])}</Button>
+      <Button labelWhitespace="trim" class="sh-btn" variant="secondary" disabled={presentation.busy} aria-label={`${t(M['chat.approval.deny'])}: ${presentation.summary}`} onclick={() => presentation.ondecide?.(false)}>{t(M['chat.approval.deny'])}</Button>
     </div>
   {/if}
 </article>
