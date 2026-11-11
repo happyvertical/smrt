@@ -54,3 +54,20 @@ smrt-svelte, chat, core, app-runtime, approvals and app-shell. Existing generic
 represent a durable inline thread card; app-shell's ApprovalCard is tied to shell
 object/action/draft types and shell styling, so the shared chat card composes the
 existing primitives while shell remains untouched.
+
+The integration rebase audit repeated MCP package-specialist context for
+`approvals` and the architecture query for a reusable Svelte decision card,
+then inspected package exports and all approval/decision/confirmation Svelte
+sources. `smrt-approvals` exports the gate/ledger and no Svelte UI.
+Projects' ApprovalActions/PreviewApprovalPanel require project workflow states
+or preview identities; timesheets' queue requires time-entry rows; commerce's
+PricingVersionDecision requires a pricing version; reports' ReportConfirmation
+requires a report proposal and save operation. Those domain contracts cannot
+represent a server-tool hold without fabricating domain data. Card/Button remain
+the reusable UI layer for AssistantApprovalCard.
+
+| New production file | Reuse search and result |
+| --- | --- |
+| `app-runtime/src/owner-approvals.ts` | MCP review/context + intent index; `rg` approval/hold/owner/decision in runtime, approvals, users, core and shell. Extends ApprovalService with tool execution envelopes; uses canonical owner-role membership APIs. No new approval model. |
+| `chat/src/assistant-approvals.ts` | MCP review/context; `rg` approval/policy/destructive/wait in chat, runtime, shell and inference. Adapts the existing tool/driver callbacks to OwnerApprovalAuthority; no existing host-neutral durable tool adapter fit. |
+| `chat/src/svelte/components/assistant/AssistantApprovalCard.svelte` | MCP review, architecture and approvals specialist context; `rg` by approval/decision/confirmation names and purpose across packages. Reuses smrt-ui Card/Button/i18n; domain widgets above do not accept tool holds. |

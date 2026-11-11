@@ -186,7 +186,7 @@ export function createAssistantHttpTransport(
   const threadPath = (threadId: string, leaf: string) =>
     `/threads/${encodeURIComponent(threadId)}/${leaf}`;
 
-  return createSmrtAssistantTransport({
+  const transport = createSmrtAssistantTransport({
     readEndpoint: base,
     token: '',
     fetchImpl: ((url: string | URL | Request, init?: RequestInit) =>
@@ -252,6 +252,24 @@ export function createAssistantHttpTransport(
       },
     },
   });
+  return {
+    ...transport,
+    async listApprovals(threadId) {
+      const response = await request(
+        `${base}${threadId ? threadPath(threadId, 'approvals') : '/approvals'}`,
+      );
+      if (!response.ok) throw await failure(response);
+      return (await response.json()).approvals;
+    },
+    async decideApproval(id, approve) {
+      const response = await postJson(
+        `/approvals/${encodeURIComponent(id)}/decide`,
+        { approve },
+      );
+      if (!response.ok) throw await failure(response);
+      return (await response.json()).approval;
+    },
+  };
 }
 
 /** Options for {@link createAssistantHttpActionClient}. */

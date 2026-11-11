@@ -30,6 +30,7 @@
  */
 
 import {
+  type AssistantApprovalView,
   type AssistantClientToolCall,
   type AssistantClientToolDeclaration,
   type AssistantClientToolResult,
@@ -144,6 +145,8 @@ export interface AssistantSendMessageResult {
 }
 
 export interface AssistantTransport {
+  listApprovals?(threadId?: string): Promise<AssistantApprovalView[]>;
+  decideApproval?(id: string, approve: boolean): Promise<AssistantApprovalView>;
   listThreads(): Promise<AssistantThreadSummary[]>;
   /** Creates another conversation when the backend supports multiple threads.
    * Omit this method for a fixed, single-session assistant. */

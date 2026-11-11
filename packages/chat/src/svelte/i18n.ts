@@ -12,6 +12,17 @@
 import { defineMessages } from '@happyvertical/smrt-ui/i18n';
 
 export const M = defineMessages({
+  'chat.approval.approve': 'Approve',
+  'chat.approval.deny': 'Deny',
+  'chat.approval.pending': 'Waiting for your approval',
+  'chat.approval.approved': 'Approved',
+  'chat.approval.denied': 'Denied. The tool did not run.',
+  'chat.approval.expired': 'Expired. The tool did not run.',
+  'chat.approval.executing': 'Approved. Running…',
+  'chat.approval.succeeded': 'Approved and completed',
+  'chat.approval.failed': 'The approved tool failed',
+  'chat.approval.error': 'Could not update this approval. Try again.',
+  'chat.approval.unavailable': 'Approval controls are unavailable.',
   // Character conversation workbench
   'chat.character_conversation.saved_conversation':
     'Saved character conversation',

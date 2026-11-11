@@ -34,6 +34,7 @@ import { M } from '../../i18n.js';
 import ToolCallDisplay from '../agent/ToolCallDisplay.svelte';
 import AiUnavailableNotice from '../shared/AiUnavailableNotice.svelte';
 import ModelPicker from '../shared/ModelPicker.svelte';
+import AssistantApprovalCard from './AssistantApprovalCard.svelte';
 import AssistantChoiceCards from './AssistantChoiceCards.svelte';
 import AssistantComposer from './AssistantComposer.svelte';
 import AssistantQuestionForm from './AssistantQuestionForm.svelte';
@@ -898,6 +899,13 @@ async function handleConfirmAction(requestId: string) {
                 <div class="assistant-dock-card">
                   <ResultComponent {message} />
                 </div>
+              {:else if message.role === 'tool' && message.toolCallData && typeof message.toolCallData === 'object' && 'approval' in message.toolCallData}
+                <AssistantApprovalCard
+                  approval={(message.toolCallData as { approval: import('../../../assistant-turn-events.js').AssistantApprovalRequest }).approval}
+                  threadId={message.threadId}
+                  {transport}
+                  ondecided={() => controller.openThread(message.threadId)}
+                />
               {:else}
                 <MessageBubble
                   variant={bubbleVariant(message.role)}

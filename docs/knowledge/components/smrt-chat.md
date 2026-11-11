@@ -5,10 +5,10 @@ description: "Chat rooms, DMs, threads, and agent conversations for the SMRT fra
 status: "stable"
 generated:
   by: "smrt/scripts/generate-knowledge-okf.ts"
-  at: "2026-11-11T04:29:12Z"
+  at: "2026-11-11T04:54:32Z"
 audience: "internal"
 evidence_level: "source-inspected"
-source_revision: "sha256:6bb202252fff478d876533ef5b45ac759d7225f6d450a5982162263ed7162b34"
+source_revision: "sha256:be7af23603336e10fdda30c90bef89a86746bc07bff953520881137003afeecd"
 sources:
   - id: "manifest"
     resource: "https://github.com/happyvertical/smrt/blob/main/packages/chat/package.json"
@@ -29,15 +29,18 @@ sources:
     resource: "https://github.com/happyvertical/smrt/blob/main/packages/chat/agents/overview-tools.md"
     title: "@happyvertical/smrt-chat packages/chat/agents/overview-tools.md"
   - id: "agents-6"
+    resource: "https://github.com/happyvertical/smrt/blob/main/packages/chat/agents/owner-approvals.md"
+    title: "@happyvertical/smrt-chat packages/chat/agents/owner-approvals.md"
+  - id: "agents-7"
     resource: "https://github.com/happyvertical/smrt/blob/main/packages/chat/agents/recipes.md"
     title: "@happyvertical/smrt-chat packages/chat/agents/recipes.md"
-  - id: "agents-7"
+  - id: "agents-8"
     resource: "https://github.com/happyvertical/smrt/blob/main/packages/chat/agents/token-streaming.md"
     title: "@happyvertical/smrt-chat packages/chat/agents/token-streaming.md"
-  - id: "agents-8"
+  - id: "agents-9"
     resource: "https://github.com/happyvertical/smrt/blob/main/packages/chat/agents/tool-loop.md"
     title: "@happyvertical/smrt-chat packages/chat/agents/tool-loop.md"
-  - id: "agents-9"
+  - id: "agents-10"
     resource: "https://github.com/happyvertical/smrt/blob/main/packages/chat/agents/turn-drivers.md"
     title: "@happyvertical/smrt-chat packages/chat/agents/turn-drivers.md"
 ---
@@ -58,6 +61,7 @@ sources:
 - `packages/chat/agents/assistant-questions.md`
 - `packages/chat/agents/dev-workbench.md`
 - `packages/chat/agents/overview-tools.md`
+- `packages/chat/agents/owner-approvals.md`
 - `packages/chat/agents/recipes.md`
 - `packages/chat/agents/token-streaming.md`
 - `packages/chat/agents/tool-loop.md`
@@ -66,6 +70,7 @@ sources:
 ## Framework dependencies
 
 - [smrt-agents](/components/smrt-agents.md)
+- [smrt-app-runtime](/components/smrt-app-runtime.md)
 - [smrt-assets](/components/smrt-assets.md)
 - [smrt-config](/components/smrt-config.md)
 - [smrt-core](/components/smrt-core.md)

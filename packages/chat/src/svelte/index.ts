@@ -392,3 +392,5 @@ ModuleUIRegistry.register(
   'helper-control-panel',
   HelperControlPanel,
 );
+
+export { default as AssistantApprovalCard } from './components/assistant/AssistantApprovalCard.svelte';
