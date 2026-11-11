@@ -614,3 +614,7 @@ canonical tool names, route files and web manifest hashes remain stable.
 `ObjectRegistry.getExposureModel()` resolves a collection to its effective row
 model using the existing package-qualified collection resolver. Gates preserve
 same-name replacement provenance and never substitute simple-name matches.
+
+Provider-qualified MCP class scopes follow explicit app replacement provenance;
+they never match an unrelated class with the same simple name. Generated hosts
+with an app editor reuse the live MCP generator; see [app tools](app-tools.md).

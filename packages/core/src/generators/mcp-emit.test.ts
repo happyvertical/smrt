@@ -385,6 +385,70 @@ describe('MCPGenerator - generated output is runnable (#2279)', () => {
   it.each([
     false,
     true,
+  ])('delegates edited model lists/calls to the shared live generator (modular=%s)', async (modular) => {
+    const outputDir = join(tmpDir, modular ? 'app-modular' : 'app-single');
+    await generator.generateServer({
+      outputPath: join(outputDir, 'index.mjs'),
+      modular,
+    });
+    await installGeneratedServerRuntimeStubs(outputDir);
+    const toolsPath = fileURLToPath(
+      new URL('../../dist/cookbook/tools.js', import.meta.url),
+    );
+    const probe = join(outputDir, 'app-probe.mjs');
+    await writeFile(
+      probe,
+      `
+      import {createServer} from './index.mjs';
+      import {setCookbookToolService} from ${JSON.stringify(toolsPath)};
+      const contexts = [];
+      setCookbookToolService({
+        async list() {return [];},
+        async modelTools(context) {
+          contexts.push(context);
+          return {
+            async generateTools() {return [{name:'projects_create',inputSchema:{type:'object',properties:{projectTitle:{type:'string'}}}}];},
+            async handleToolCall(request) {return {content:[{type:'text',text:'Created Garden.'}],structuredContent:{name:request.params.name,title:request.params.arguments.projectTitle}};},
+          };
+        },
+      });
+      const server = await createServer();
+      const listed = await server.handlers.get('tools/list')({});
+      const result = await server.handlers.get('tools/call')({params:{name:'projects_create',arguments:{projectTitle:'Garden'}}});
+      console.log(JSON.stringify({listed,result,contexts}));
+    `,
+    );
+    const { stdout } = await execFileAsync(process.execPath, [probe], {
+      cwd: outputDir,
+      env: {
+        ...process.env,
+        SMRT_MCP_TENANT_ID: 'tenant',
+        SMRT_MCP_USER_ID: 'owner',
+      },
+    });
+    const result = JSON.parse(stdout.trim());
+    expect(result.listed.tools).toEqual([
+      {
+        name: 'projects_create',
+        inputSchema: {
+          type: 'object',
+          properties: { projectTitle: { type: 'string' } },
+        },
+      },
+    ]);
+    expect(result.result.structuredContent).toEqual({
+      name: 'projects_create',
+      title: 'Garden',
+    });
+    expect(result.contexts).toEqual([
+      { surface: 'mcp', tenantId: 'tenant', userId: 'owner' },
+      { surface: 'mcp', tenantId: 'tenant', userId: 'owner' },
+    ]);
+  });
+
+  it.each([
+    false,
+    true,
   ])('serves installed cookbook tools from the shared service (modular=%s)', async (modular) => {
     const outputDir = join(
       tmpDir,

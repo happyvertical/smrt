@@ -862,6 +862,8 @@ ${
         console.error(\`[MCP] ListTools request received\`);
       }
 
+      const live = await getCookbookToolService()?.modelTools?.({surface: 'mcp', tenantId: process.env.SMRT_MCP_TENANT_ID, userId: process.env.SMRT_MCP_USER_ID}, {ai: aiConfig, permissions: PUBLIC_JSON_OPTIONS.permissions});
+      if (live) return {tools: await live.generateTools()};
       return {
         tools: [...TOOLS.filter((tool) => runtimeToolEnabled(tool.name)), ...(await getCookbookToolService()?.list({ surface: 'mcp', tenantId: process.env.SMRT_MCP_TENANT_ID, userId: process.env.SMRT_MCP_USER_ID }) ?? [])].sort((left, right) => left.name < right.name ? -1 : left.name > right.name ? 1 : 0),
       };
@@ -883,6 +885,8 @@ ${
           const result = await cookbook.invoke(recipeName, args, { surface: 'mcp', tenantId: process.env.SMRT_MCP_TENANT_ID, userId: process.env.SMRT_MCP_USER_ID });
           return { content: [{ type: 'text', text: result.summary }], structuredContent: result };
         }
+        const live = await cookbook?.modelTools?.({surface: 'mcp', tenantId: process.env.SMRT_MCP_TENANT_ID, userId: process.env.SMRT_MCP_USER_ID}, {ai: aiConfig, permissions: PUBLIC_JSON_OPTIONS.permissions});
+        if (live && !Object.hasOwn(TASK_ACTIONS, toolName)) return live.handleToolCall({method: 'tools/call', params: {name: toolName, arguments: args}});
         if (!runtimeToolEnabled(toolName)) throw new Error('Unknown tool');
         // Static switch statement for tool execution
         const runToolBody = async () => {
