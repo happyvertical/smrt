@@ -42,66 +42,78 @@ export function describeApp(
   const doc = snapshot.cookbook;
   const catalog = cookbookModelCatalog(source, doc.models);
   const nav = buildNav(catalog, doc).flatMap((section) => section.items);
-  return [...coveredModels(catalog, doc)].map((id) => {
-    const parts = modelParts(catalog, id);
-    const list = id.startsWith(`${doc.models?.packageName}:`)
-      ? doc.models?.lists[parts.name]
-      : undefined;
-    const itemId = navItemId(parts.packageId, parts.name);
-    const recipeItems = source.recipes
+  // Prerequisites are active framework capabilities, not person-facing lists.
+  // Only an explicit recipe menu or feature placement gives them a list name.
+  const placed = new Set([
+    ...doc.features,
+    ...catalog.recipes
       .filter((recipe) => doc.recipes.includes(recipe.id))
-      .flatMap((recipe) =>
-        recipe.nav
-          .filter((entry) => entry.model === id)
-          .map((entry) => navItemId(parts.packageId, parts.name, entry.key)),
-      );
-    const item =
-      nav.find((entry) => recipeItems.includes(entry.id)) ??
-      nav.find((entry) => entry.id === itemId);
-    const effective = ObjectRegistry.getClass(id)?.qualifiedName ?? id;
-    const definition = snapshot.webDefinitions.find(
-      (entry) => entry.objectRef === effective || entry.objectRef === id,
-    );
-    const customFields = list?.fields ?? doc.models?.fields[id] ?? {};
-    const aliases = source.recipes
-      .filter(
-        (recipe) =>
-          doc.recipes.includes(recipe.id) && recipe.models.includes(id),
-      )
-      .flatMap((recipe) => recipe.synonyms ?? []);
-    return {
-      id,
-      name: parts.name,
-      label: item?.label ?? list?.label ?? humanize(parts.name),
-      icon: item?.icon ?? list?.icon ?? 'fileText',
-      origin: list ? 'yours' : 'pre-built',
-      synonyms: aliases,
-      fields: Object.entries(definition?.fields ?? {}).map(([name, field]) => {
-        const policy = doc.policies.find(
-          (row) =>
-            (row.objectRef === id || row.objectRef === effective) &&
-            row.fieldName === name &&
-            row.scopeType === 'app',
+      .flatMap((recipe) => recipe.nav.map((entry) => entry.model)),
+  ]);
+  return [...coveredModels(catalog, doc)]
+    .filter((id) => placed.has(id))
+    .map((id) => {
+      const parts = modelParts(catalog, id);
+      const list = id.startsWith(`${doc.models?.packageName}:`)
+        ? doc.models?.lists[parts.name]
+        : undefined;
+      const itemId = navItemId(parts.packageId, parts.name);
+      const recipeItems = source.recipes
+        .filter((recipe) => doc.recipes.includes(recipe.id))
+        .flatMap((recipe) =>
+          recipe.nav
+            .filter((entry) => entry.model === id)
+            .map((entry) => navItemId(parts.packageId, parts.name, entry.key)),
         );
-        return {
-          name,
-          label: policy?.label ?? humanize(name),
-          type: customFields[name]?.type ?? field.type,
-          origin:
-            customFields[name] || definition?.customFields.includes(name)
-              ? 'yours'
-              : 'pre-built',
-          hidden: policy?.visibility === 'hidden',
-          ...(customFields[name]?.choices
-            ? { options: customFields[name].choices }
-            : {}),
-          ...(customFields[name]?.target
-            ? { target: customFields[name].target }
-            : {}),
-        };
-      }),
-    };
-  });
+      const item =
+        nav.find((entry) => recipeItems.includes(entry.id)) ??
+        nav.find((entry) => entry.id === itemId);
+      const effective = ObjectRegistry.getClass(id)?.qualifiedName ?? id;
+      const definition = snapshot.webDefinitions.find(
+        (entry) => entry.objectRef === effective || entry.objectRef === id,
+      );
+      const customFields = list?.fields ?? doc.models?.fields[id] ?? {};
+      const aliases = source.recipes
+        .filter(
+          (recipe) =>
+            doc.recipes.includes(recipe.id) && recipe.models.includes(id),
+        )
+        .flatMap((recipe) => recipe.synonyms ?? []);
+      return {
+        id,
+        name: parts.name,
+        label: item?.label ?? list?.label ?? humanize(parts.name),
+        icon: item?.icon ?? list?.icon ?? 'fileText',
+        origin: list ? 'yours' : 'pre-built',
+        synonyms: aliases,
+        fields: Object.entries(definition?.fields ?? {}).map(
+          ([name, field]) => {
+            const policy = doc.policies.find(
+              (row) =>
+                (row.objectRef === id || row.objectRef === effective) &&
+                row.fieldName === name &&
+                row.scopeType === 'app',
+            );
+            return {
+              name,
+              label: policy?.label ?? humanize(name),
+              type: customFields[name]?.type ?? field.type,
+              origin:
+                customFields[name] || definition?.customFields.includes(name)
+                  ? 'yours'
+                  : 'pre-built',
+              hidden: policy?.visibility === 'hidden',
+              ...(customFields[name]?.choices
+                ? { options: customFields[name].choices }
+                : {}),
+              ...(customFields[name]?.target
+                ? { target: customFields[name].target }
+                : {}),
+            };
+          },
+        ),
+      };
+    });
 }
 type AppList = ReturnType<typeof describeApp>[number];
 function resolveList(lists: AppList[], reference: string): AppList {

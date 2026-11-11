@@ -195,3 +195,9 @@ owner authority, verifies this refusal, then applies the correct single-use
 service approval. Automatic adoption of these holds into chat's generic
 thread-decision endpoint is not implemented here; host UI wiring remains the
 existing service integration contract rather than an approval bypass.
+
+Prerequisite-only recipe models remain in `coveredModels` for activation, schema and
+framework tools. `app.describe` and list-name resolution require an explicit recipe
+navigation entry or cookbook feature placement; they never invent a user-facing
+list from a raw class name. Hiding a layout entry does not revoke framework access.
+The app-tool regression covers implicit identity and explicit placement separately.

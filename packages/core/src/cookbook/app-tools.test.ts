@@ -35,6 +35,8 @@ import {
 } from '../runtime-exposure.js';
 import { snapshotObjectRegistryState } from '../test-utils.js';
 import { getTestDatabase } from '../testing/database.js';
+import { describeApp } from './app-tool-edits.js';
+import { coveredModels } from './engine/document.js';
 import { type CookbookEngine, createCookbookEngine } from './engine/engine.js';
 import {
   APP_TOOL_NAMES,
@@ -249,6 +251,45 @@ const rest = (req: Request) =>
   );
 
 describe('app customization tools', () => {
+  it('keeps prerequisite models active without inventing assistant list names', async () => {
+    const prerequisite = '@fixture/c6-upstream:Profile';
+    const source = {
+      ...catalog,
+      models: [
+        ...catalog.models,
+        {
+          id: prerequisite,
+          name: 'Profile',
+          packageId: 'c6-upstream',
+          exposed: true,
+        },
+      ],
+      recipes: [
+        ...catalog.recipes,
+        {
+          id: 'identity',
+          label: 'Identity',
+          models: [prerequisite],
+          nav: [],
+          requires: [],
+        },
+      ],
+    };
+    const doc = { ...initial(), recipes: ['customers', 'identity'] };
+    const snapshot = { ...editor.snapshot(), cookbook: doc };
+    expect(coveredModels(source, doc).has(prerequisite)).toBe(true);
+    expect(describeApp(snapshot, source).map((list) => list.label)).toEqual([
+      'Customers',
+    ]);
+    // Explicit cookbook placement restores the prerequisite as an editable list.
+    expect(
+      describeApp(
+        { ...snapshot, cookbook: { ...doc, features: [prerequisite] } },
+        source,
+      ).map((list) => list.label),
+    ).toEqual(['Customers', 'Profile']);
+  });
+
   it('describes cookbook labels, ownership and synonyms without needing class names', async () => {
     expect(await lists()).toMatchObject([
       {
