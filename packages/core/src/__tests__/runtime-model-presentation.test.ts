@@ -154,6 +154,60 @@ describe('runtime model presentation and references (A4 prerequisites)', () => {
     ).toThrow('display.label');
   });
 
+  it('preserves an upstream linked display label during same-name runtime replacement', async () => {
+    const customer = registerRuntimeModel({
+      name: 'Customer',
+      packageName: '@fixture/a4-provider',
+      fields: { name: { type: 'text' } },
+    });
+    const projection = { via: 'customerId', field: 'name', fallback: 'Mat' };
+    const parent = registerRuntimeModel({
+      ...definition,
+      display: { label: projection },
+    });
+    const replacement = {
+      name: 'LoanerMat',
+      packageName: '@fixture/a4-custom',
+      extends: parent,
+      replaces: true,
+      fields: { inspector: { type: 'text' as const } },
+    };
+    expect(runtimeModelEntry(replacement)).toMatchObject({
+      displayLabelField: 'displayLabel',
+      displayLabelProjection: projection,
+      decoratorConfig: { display: { label: projection } },
+    });
+    const effective = registerRuntimeModel(replacement, { refresh: true });
+    await migrateSmrtSchemas({
+      db,
+      packageName: '@fixture/a4-custom',
+      name: 'a4_projected_override',
+      engineHint: 'sqlite',
+    });
+    const person = await (
+      await ObjectRegistry.getCollection(customer, { db })
+    ).create({ name: 'Maya' });
+    const mats = await ObjectRegistry.getCollection(effective, { db });
+    const mat = await mats.create({
+      size: 'large',
+      customerId: person.id,
+      inspector: 'Ada',
+    });
+    const api = new APIGenerator(
+      { basePath: '/api', authMiddleware: () => async (r) => r },
+      { db },
+    );
+    api.registerCollection('mats', mats);
+    const response = await api.generateHandler()(
+      new Request(`http://x/api/mats/${mat.id}`),
+    );
+    expect(response.status).toBe(200);
+    expect(await response.json()).toMatchObject({
+      inspector: 'Ada',
+      displayLabel: 'Maya',
+    });
+  });
+
   it('refuses a physical FK before its target is registered', () => {
     expect(() =>
       registerRuntimeModel({

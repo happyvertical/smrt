@@ -166,7 +166,8 @@ function fieldValidators(fields: Record<string, RuntimeFieldDefinition>) {
         if (field.type === 'text')
           return (
             typeof value === 'string' &&
-            (!field.enum || field.enum.includes(value))
+            (!field.enum || field.enum.includes(value)) &&
+            (field.ui?.widget !== 'currency' || /^[A-Z]{3}$/.test(value))
           );
         if (field.type === 'foreignKey' || field.type === 'crossPackageRef') {
           if (typeof value !== 'string') return false;

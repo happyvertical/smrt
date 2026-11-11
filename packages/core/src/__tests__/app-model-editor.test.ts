@@ -203,6 +203,7 @@ describe('durable app model editor', () => {
     ).toBe(404);
     for (const invalid of [
       { fee: 1.5 },
+      { feeCurrency: 'not-a-currency' },
       { visits: 'many' },
       { level: 'unknown' },
     ]) {
@@ -419,6 +420,7 @@ describe('durable app model editor', () => {
     'save',
     'constructor',
     'tenantId',
+    'displayLabel',
     '__proto__',
     'bad-name',
     'select',

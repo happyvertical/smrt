@@ -45,7 +45,7 @@ function state() {
 
 /** Whether this process opted into live exposure (also controls catalog cache policy). */
 export function hasRuntimeExposureGate(): boolean {
-  return !!state().gate;
+  return !!state().gate || (globalThis.__smrtModelReadiness?.size ?? 0) > 0;
 }
 
 /** Invalidate connected tool catalogs after cookbook or host-preference changes. */

@@ -9,9 +9,8 @@
  * class. A run-time model may extend a real registered class
  * (`extends: '@pkg:Profile'`): the app-subclass rule of #4869.
  *
- * The registry only adds. Re-registering a changed definition never removes a
- * field and keeps the first exposure config, so a host that edits models
- * builds a fresh registry (a worker or process) per definition.
+ * Explicit refresh/replacement supports the versioned app model editor.
+ * Storage is additive; migrations and host publication remain separate.
  *
  * @module
  */
@@ -40,6 +39,7 @@ import {
   isFieldUIFormat,
   isFieldUIWidget,
   resolveDisplayLabelField,
+  resolveDisplayLabelProjection,
 } from './ui-metadata.js';
 import {
   createQualifiedName,
@@ -347,18 +347,33 @@ export function runtimeModelEntry(
     ...(def.ui ? { ui: { ...def.ui } } : {}),
     ...(def.display ? { display: { ...def.display } } : {}),
   };
-  if (def.display?.label !== undefined) {
-    const problem = displayLabelFieldProblem(fields, def.display.label);
+  const label = (decoratorConfig.display as SmartObjectConfig['display'])
+    ?.label;
+  const displayLabelProjection = resolveDisplayLabelProjection(label);
+  if (typeof label === 'string') {
+    const problem = displayLabelFieldProblem(fields, label);
     if (problem) {
       throw new Error(
         `Run-time model ${qualifiedName}: display.label ${problem}`,
       );
     }
   }
-  const displayLabelField = resolveDisplayLabelField(
-    fields,
-    def.display?.label,
-  );
+  if (displayLabelProjection) {
+    decoratorConfig.display = { label: { ...displayLabelProjection } };
+    const via = fields[displayLabelProjection.via];
+    if (!via?.related || !['foreignKey', 'crossPackageRef'].includes(via.type))
+      throw new Error('Runtime display projection requires an own reference');
+    const targetFields = Object.fromEntries(
+      ObjectRegistry.getFields(via.related),
+    );
+    const problem = displayLabelFieldProblem(
+      targetFields,
+      displayLabelProjection.field,
+    );
+    if (problem)
+      throw new Error(`Runtime display projection target: ${problem}`);
+  }
+  const displayLabelField = resolveDisplayLabelField(fields, label);
   const entry: SmartObjectDefinition = {
     name: def.name.toLowerCase(),
     className: def.name,
@@ -369,6 +384,7 @@ export function runtimeModelEntry(
     fields,
     methods,
     ...(displayLabelField ? { displayLabelField } : {}),
+    ...(displayLabelProjection ? { displayLabelProjection } : {}),
     decoratorConfig:
       decoratorConfig as SmartObjectDefinition['decoratorConfig'],
     ...(parent
