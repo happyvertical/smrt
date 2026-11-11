@@ -1441,6 +1441,7 @@ export function smrtPlugin(
           // (@happyvertical/smrt-web, #1761)
           return generateWebModule(manifest, {
             ssr: loadOptions?.ssr,
+            lazyActivation: svelteKit.lazyActivation,
             kebabRoutes: svelteKit.kebabRoutes ?? false,
           });
 

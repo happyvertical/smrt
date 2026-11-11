@@ -1,3 +1,4 @@
+import type { RecipeSurfaceLoadContext } from '@happyvertical/smrt-types';
 /**
  * The widget registry of a cookbook app's section pages (#3749): the core
  * widgets (a shortcuts loader that reads the shell's resolved sections, plus
@@ -134,9 +135,10 @@ export async function createCookbookRegistry(
 export async function resolveInstalledRecipeExport(
   specifier: string,
   exportName: string,
+  context?: RecipeSurfaceLoadContext,
 ): Promise<unknown> {
   const generated = await import(
     '@happyvertical/smrt-svelte/cookbook/surfaces'
   );
-  return generated.resolveExport(specifier, exportName);
+  return generated.resolveExport(specifier, exportName, context);
 }

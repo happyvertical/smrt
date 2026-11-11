@@ -53,7 +53,11 @@ let {
 }: CookbookAppProps = $props();
 
 const resolveExport = $derived(
-  suppliedResolveExport ?? resolveInstalledRecipeExport,
+  suppliedResolveExport ??
+    ((specifier: string, exportName: string) =>
+      resolveInstalledRecipeExport(specifier, exportName, {
+        recipes: cookbook.recipes,
+      })),
 );
 
 const shell = $derived(

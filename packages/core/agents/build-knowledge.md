@@ -495,3 +495,32 @@ Screen policy and recipe entry lookups accept only those proven provider identit
 never a same-name guess. Canonical app policy rows override provider rows sparsely.
 The small declaration mirror in `src/prebuild/index.ts` changes with the producer
 interface; the runtime exposure/REST generators are unchanged.
+
+## Lazy recipe-surface imports
+
+Both web emitters pass `lazyActivation` into the existing surface generator. With
+it enabled, `recipeSurfaces[id][n].load(context)` and `resolveExport(specifier,
+exportName, context)` refuse before invoking any literal dynamic import unless the
+current `context.recipes` contains that export's owning recipe. Per-surface loaders
+bind the owner id; an unrelated enabled recipe cannot unlock a different export.
+No context means generic fallback. Eager hosts retain the previous optional-context
+behavior. Shared type: `smrt-types.RecipeSurfaceLoadContext`.
+
+SSR additionally requires the installed live runtime exposure gate (the host wraps
+it with `activation.gate(...)`) and trusted `context.tenantId` where tenancy applies.
+The generated module imports only the browser-safe gate leaf, not constructors or
+the Node activation coordinator. Readiness without published recipe membership is
+insufficient; unavailable gate/store and stale disabled contexts refuse.
+
+Browsers consume the host's current screen-visible cookbook projection. They cannot
+inspect server SQLite readiness; the host publishes recipe ids after activation and
+refreshes the projection on exposure changes, as in the runtime exposure contract.
+`CookbookApp` supplies that cookbook's recipe ids automatically through its existing
+resolver, without a component mapping or a host-resolved policy map. This UI projection
+is not an authorization token: REST, tools and SSR retain their live server gates.
+
+The installed fixture consumer runs in lazy mode. A separate generated-module test
+boots a real SQLite coordinator, proves map evaluation/disabled calls never evaluate
+the surface package, activates its model and publishes the recipe, then uses the SAME
+server/client modules to load the surface. Disabling and missing server gates refuse.
+The existing bundle test still proves component bytes stay out of the initial chunk.

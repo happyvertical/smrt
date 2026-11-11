@@ -3,19 +3,19 @@ import { readFileSync } from 'node:fs';
 import { ManifestAdapter, OxcScanner } from '@happyvertical/smrt-scanner';
 import { getDatabase } from '@happyvertical/sql';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
+import { resolveCookbookFieldPolicy } from '../../../fields/src/policy.js';
+import { deriveScreenFields } from '../../../smrt-svelte/src/components/screens/fields.js';
 import {
   screenRecordLabel,
   screenReferenceTarget,
 } from '../../../smrt-svelte/src/components/screens/references.js';
 import { createRecipeScreenReferences } from '../../../smrt-svelte/src/components/screens/source.js';
-import { buildActivationManifest } from '../activation/generate.js';
-import { createActivationCoordinator } from '../activation.js';
-import { resolveCookbookFieldPolicy } from '../../../fields/src/policy.js';
-import { deriveScreenFields } from '../../../smrt-svelte/src/components/screens/fields.js';
 import {
   draftForCreate,
   parseDraft,
 } from '../../../smrt-svelte/src/components/screens/values.js';
+import { buildActivationManifest } from '../activation/generate.js';
+import { createActivationCoordinator } from '../activation.js';
 import { SmrtCollection } from '../collection';
 import { createCookbookEngine } from '../cookbook/engine/engine.js';
 import { foreignKey } from '../decorators';

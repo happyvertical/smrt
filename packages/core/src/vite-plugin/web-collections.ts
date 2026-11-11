@@ -1410,7 +1410,11 @@ export function computeWebManifestHash(manifest: SmartObjectManifest): string {
  */
 export function generateWebModule(
   manifest: SmartObjectManifest,
-  options: { kebabRoutes?: boolean; ssr?: boolean } = {},
+  options: {
+    kebabRoutes?: boolean;
+    ssr?: boolean;
+    lazyActivation?: boolean;
+  } = {},
 ): string {
   const definitions: Record<string, unknown> = {};
   for (const entry of selectWebCollectionEntries(manifest)) {
@@ -1429,7 +1433,7 @@ export function generateWebModule(
 
 export const collectionDefinitions = ${JSON.stringify(definitions, null, 2)};
 
-${renderRecipeSurfaceModule(manifest, options.ssr === true)}
+${renderRecipeSurfaceModule(manifest, options.ssr === true, options.lazyActivation === true)}
 
 // Canonical browser-tool definitions. This export is independent of list
 // materialization, so get-only and custom-action-only API routes are included.
@@ -1458,22 +1462,28 @@ export { collectionDefinitions as default };
 function renderRecipeSurfaceModule(
   manifest: SmartObjectManifest,
   ssr: boolean,
+  lazyActivation: boolean,
 ): string {
   const refs = new Set<string>();
+  const owners = new Map<string, string[]>();
+  const addRef = (ref: string, recipeId: string) => {
+    refs.add(ref);
+    owners.set(ref, [...new Set([...(owners.get(ref) ?? []), recipeId])]);
+  };
   const recipes = manifest.recipes ?? [];
   const maps = recipes.map((recipe) => {
     const surfaces = (recipe.surfaces ?? []).map((surface) => {
       const parsed = parseRecipeExportRef(surface.export);
       if (!parsed)
         throw new Error(`Invalid recipe surface export: ${surface.export}`);
-      refs.add(surface.export);
+      addRef(surface.export, recipe.id);
       if (surface.kind === 'widget') {
-        if (surface.optionsEditor) refs.add(surface.optionsEditor);
-        if (surface.migrate) refs.add(surface.migrate);
+        if (surface.optionsEditor) addRef(surface.optionsEditor, recipe.id);
+        if (surface.migrate) addRef(surface.migrate, recipe.id);
         // A server loader must never pull a Node package root into a browser chunk.
-        if (ssr && surface.data?.load) refs.add(surface.data.load);
+        if (ssr && surface.data?.load) addRef(surface.data.load, recipe.id);
       }
-      return `{ surface: ${JSON.stringify(surface)}, load: () => resolveExport(${JSON.stringify(parsed.specifier)}, ${JSON.stringify(parsed.exportName)}) }`;
+      return `{ surface: ${JSON.stringify(surface)}, load: (context) => resolveExport(${JSON.stringify(parsed.specifier)}, ${JSON.stringify(parsed.exportName)}, { ...context, recipeId: ${JSON.stringify(recipe.id)} }) }`;
     });
     return `${JSON.stringify(recipe.id)}: [${surfaces.join(',')}]`;
   });
@@ -1482,11 +1492,26 @@ function renderRecipeSurfaceModule(
     if (!parsed) throw new Error(`Invalid recipe export: ${ref}`);
     return `${JSON.stringify(ref)}: () => import(${JSON.stringify(parsed.specifier)}).then(module => module[${JSON.stringify(parsed.exportName)}])`;
   });
-  return `// Literal dynamic imports: no recipe component is an initial-module dependency.
+  const guard = lazyActivation
+    ? `
+${ssr ? "import { hasRuntimeExposureGate, isRuntimeModelEnabled } from '@happyvertical/smrt-core/runtime-exposure';" : ''}
+const recipeExportOwners = ${JSON.stringify(Object.fromEntries(owners))};
+const recipeModels = ${JSON.stringify(Object.fromEntries(recipes.map((recipe) => [recipe.id, recipe.models])))};
+function canLoadRecipeSurface(ref, context) {
+  if (!Array.isArray(context?.recipes)) return false;
+  return (recipeExportOwners[ref] ?? []).some(id => {
+    if ((context.recipeId && context.recipeId !== id) || !context.recipes.includes(id)) return false;
+    return ${ssr ? "hasRuntimeExposureGate() && recipeModels[id].some(qualifiedName => isRuntimeModelEnabled(qualifiedName, { surface: 'screen', tenantId: context.tenantId }))" : 'true'};
+  });
+}`
+    : '';
+  return `${guard}
+// Literal dynamic imports: no recipe component is an initial-module dependency.
 const recipeExportLoaders = { ${loaders.join(',\n')} };
 export const recipeSurfaces = { ${maps.join(',\n')} };
-export async function resolveExport(specifier, exportName) {
+export async function resolveExport(specifier, exportName, context) {
   const ref = specifier + '#' + exportName;
+  ${lazyActivation ? 'if (!canLoadRecipeSurface(ref, context)) return undefined;' : ''}
   return Object.hasOwn(recipeExportLoaders, ref) ? recipeExportLoaders[ref]() : undefined;
 }`;
 }
@@ -1500,10 +1525,10 @@ export function renderRecipeSurfaceDeclarations(
       const parsed = parseRecipeExportRef(surface.export);
       if (!parsed)
         throw new Error(`Invalid recipe surface export: ${surface.export}`);
-      return `{ readonly surface: ${JSON.stringify(surface)}; readonly load: () => Promise<import('svelte').Component<Record<string, unknown>> | undefined> }`;
+      return `{ readonly surface: ${JSON.stringify(surface)}; readonly load: (context?: import('@happyvertical/smrt-types').RecipeSurfaceLoadContext) => Promise<import('svelte').Component<Record<string, unknown>> | undefined> }`;
     });
     return `readonly ${JSON.stringify(recipe.id)}: readonly [${surfaces.join(', ')}]`;
   });
   return `export const recipeSurfaces: { ${recipes.join(';\n')} };
-export function resolveExport(specifier: string, exportName: string): Promise<unknown>;`;
+export function resolveExport(specifier: string, exportName: string, context?: import('@happyvertical/smrt-types').RecipeSurfaceLoadContext): Promise<unknown>;`;
 }

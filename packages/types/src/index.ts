@@ -165,6 +165,7 @@ export type {
   RecipeSection,
   RecipeShellSlot,
   RecipeSurface,
+  RecipeSurfaceLoadContext,
 } from './recipe.js';
 export type {
   RecipeWidgetData,

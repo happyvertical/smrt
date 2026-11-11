@@ -32,7 +32,7 @@ writeFileSync(join(fixtureHost, 'package.json'), JSON.stringify({ name: '@fixtur
 
 export default defineConfig({
   plugins: [
-    smrtConsumer({ packages: ['@fixture/cookbook-surfaces'], projectRoot: fixtureHost, generateTypes: false }),
+    smrtConsumer({ lazyActivation: true, packages: ['@fixture/cookbook-surfaces'], projectRoot: fixtureHost, generateTypes: false }),
     { name: 'fixture-package-cleanup', closeBundle() { if (existsSync(fixtureLink)) unlinkSync(fixtureLink); rmSync(fixtureHost, { recursive: true, force: true }); } },
     smrtVitestPlugin({
       verbose: true,

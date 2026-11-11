@@ -1395,6 +1395,7 @@ export function smrtConsumer(
             {
               kebabRoutes: effectiveKebabRoutes,
               ssr: loadOptions?.ssr,
+              lazyActivation: options.lazyActivation,
             },
           );
 

@@ -317,3 +317,26 @@ Reuse audit repeated MCP reviews for core/fields/smrt-svelte and intent-index/na
 searches across core, fields, smrt-ui, smrt-svelte and chat. `cookbookPolicyLayers` factors
 the two existing raw-row selectors; it uses existing registry/manifest replacement
 provenance and the original sparse merge kernel. No new component/model is introduced.
+
+## Lazy activation and virtual names
+
+With the consumer plugin's `lazyActivation`, the generated resolver requires current
+visible recipe ids. `CookbookApp` passes `cookbook.recipes` automatically. Supply the
+host's filtered cookbook snapshot and update it after successful activation/persistence
+and exposure changes (including store failure); do not render an AOT installed catalog
+as a live cookbook. SSR callers additionally pass a trusted tenant and install the
+combined readiness/exposure gate. A refused import returns undefined for generic
+fallback and is retried on the next current projection, with no rebuild.
+
+The shared Fields resolver enumerates validated virtual display labels for stored
+and raw policies. They keep the linked Profile name, can be relabelled/hidden, and
+remain excluded from forms, create defaults and CSV imports. Visible names can be
+exported; policy-hidden names cannot. The screen field selector retains the projected
+`Name` fallback as well as cookbook labels/read-only metadata.
+
+This rebase's reuse check repeated MCP package reviews and architecture context,
+the intent index and `rg` searches for projection/readonly/activation/surface helpers
+across core, fields, smrt-ui, smrt-svelte and chat. It extends existing policy field
+enumeration and the web emitter, reuses public registry/UI validators and the existing
+activation/exposure gates, and adds only the shared load-context type. No production
+component, model, route or file is added.
