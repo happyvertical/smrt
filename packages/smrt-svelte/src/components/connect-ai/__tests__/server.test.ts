@@ -106,6 +106,32 @@ describe('Connect AI route over inference APIs', () => {
     expect(gate).not.toHaveBeenCalled();
   });
 
+  it('refuses both connection and selection after a signed-in CLI fails its startup probe', async () => {
+    const { routes, binding, dir } = setup();
+    installFakeCli(join(dir, 'bin'), 'codex', { brokenHelp: true });
+    writeFileSync(join(dir, 'signed-in'), '');
+    for (const body of [
+      { action: 'connect', tool: 'codex' },
+      { action: 'select', engine: 'codex' },
+    ]) {
+      const response = await routes.POST(event(body));
+      expect(response.status).toBe(409);
+      expect(await response.json()).toMatchObject({ code: 'engine_not_ready' });
+    }
+    expect(binding.select).not.toHaveBeenCalled();
+    expect(await (await routes.GET(event())).json()).toMatchObject({
+      configured: false,
+      tools: expect.arrayContaining([
+        expect.objectContaining({
+          tool: 'codex',
+          signedIn: true,
+          ready: false,
+          startError: 'cli_invocation',
+        }),
+      ]),
+    });
+  });
+
   it('projects missing, installed signed-out, signed-in and saved-key states without secrets', async () => {
     const { routes, binding, dir, setApi, setPlan } = setup();
     const response = await routes.GET(event());

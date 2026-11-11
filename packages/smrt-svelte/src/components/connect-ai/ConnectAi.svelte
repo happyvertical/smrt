@@ -368,15 +368,16 @@ onMount(() => {
               <div>
                 <h3>{label}</h3>
                 <p>{t(!found?.installed ? M['ui.connect_ai.missing'] : found.signedIn === null ? M['ui.connect_ai.unknown'] : found.signedIn ? M['ui.connect_ai.signed_in'] : M['ui.connect_ai.signed_out'])}</p>
+                {#if found?.startError}<p role="alert">{t(M[`ui.connect_ai.${found.startError}`])}</p>{/if}
                 {#if found?.login === 'failed'}<p role="alert">{t(M['ui.connect_ai.sign_in_error'])}</p>{/if}
               </div>
               {#if !found?.installed}
                 <Button href={safeHref(found?.installUrl ?? '') ?? undefined} target="_blank" rel="noopener noreferrer" variant="secondary">{t(M['ui.connect_ai.install'], { tool: label })} {t(M['ui.connect_ai.new_tab'])}</Button>
-              {:else if found.signedIn && info.engine === option.tool}
+              {:else if found.signedIn && found.ready !== false && info.engine === option.tool}
                 <Badge>{t(M['ui.connect_ai.in_use'])}</Badge>
               {:else}
-                <Button disabled={busy || found.login === 'running'} onclick={() => act(() => found.signedIn === null ? refresh() : client.connect(option.tool, active.signal))}>
-                  {t(found.login === 'running' ? M['ui.connect_ai.waiting'] : found.signedIn === null ? M['ui.connect_ai.retry'] : found.signedIn ? M['ui.connect_ai.use'] : M['ui.connect_ai.sign_in'], { tool: label })}
+                <Button disabled={busy || found.login === 'running'} onclick={() => act(() => found.signedIn === null || found.ready === false ? refresh() : client.connect(option.tool, active.signal))}>
+                  {t(found.login === 'running' ? M['ui.connect_ai.waiting'] : found.signedIn === null || found.ready === false ? M['ui.connect_ai.retry'] : found.signedIn ? M['ui.connect_ai.use'] : M['ui.connect_ai.sign_in'], { tool: label })}
                 </Button>
               {/if}
             </div>
@@ -452,6 +453,7 @@ onMount(() => {
           Installed, not signed in.
         {/if}
       </span>
+      {#if tool.startError}<p role="alert">{t(M[`ui.connect_ai.${tool.startError}`])}</p>{/if}
     </div>
     {#if action.kind === 'install'}
       <a

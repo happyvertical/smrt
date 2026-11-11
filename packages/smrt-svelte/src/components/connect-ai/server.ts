@@ -68,6 +68,8 @@ export function mountConnectAiRoutes<E extends ConnectAiRequestEvent>(options: {
             installUrl: AGENT_TOOL_INFO[tool].installUrl,
             installed: found.installed,
             signedIn: found.signedIn,
+            ...(found.ready !== undefined ? { ready: found.ready } : {}),
+            ...(found.startError ? { startError: found.startError } : {}),
             login: binding.cli.agentLogin().snapshot(tool).state,
           };
         }),
@@ -176,6 +178,7 @@ export function mountConnectAiRoutes<E extends ConnectAiRequestEvent>(options: {
           const found = await binding.cli.cliStatus(body.tool, { fresh: true });
           if (!found.installed) return error(409, 'cli_missing');
           if (found.signedIn === null) return error(502, 'cli_no_answer');
+          if (found.ready === false) return error(409, 'engine_not_ready');
           if (found.signedIn) {
             await binding.select(body.tool);
             return json({ ok: true });

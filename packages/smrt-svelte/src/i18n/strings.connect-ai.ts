@@ -1,6 +1,12 @@
 import { defineMessages } from '@happyvertical/smrt-ui/i18n';
 
 export const M = defineMessages({
+  'ui.connect_ai.working_directory':
+    'The local AI needs a writable temporary directory. Check the app permissions, then retry.',
+  'ui.connect_ai.runtime_unavailable':
+    'The local AI cannot start in this app. Check its executable and Node installation, then retry.',
+  'ui.connect_ai.cli_invocation':
+    'The local AI does not accept the required secure options. Update the CLI, then retry.',
   'ui.connect_ai.title': 'Connect AI',
   'ui.connect_ai.loading': 'Checking the AI available on this computer…',
   'ui.connect_ai.options': 'Your AI',

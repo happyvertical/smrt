@@ -38,6 +38,41 @@ function client(info: ConnectAiState): ConnectAiClient {
     signOutChatGPT: vi.fn(async () => {}),
   };
 }
+describe.each([
+  undefined,
+  'compact',
+] as const)('startup readiness in %s presentation', (presentation) => {
+  it.each([
+    'working_directory',
+    'runtime_unavailable',
+    'cli_invocation',
+  ] as const)('does not claim readiness when startup preflight fails: %s', async (startError) => {
+    const info = state();
+    info.engine = 'claude-code';
+    Object.assign(info.tools[0], {
+      installed: true,
+      signedIn: true,
+      ready: false,
+      startError,
+    });
+    const onchange = vi.fn();
+    const { container } = render(ConnectAi, {
+      client: client(info),
+      presentation,
+      apiKeyHref: '/settings/inference',
+      initialState: info,
+      onchange,
+    });
+    expect(await screen.findByRole('alert')).toHaveTextContent(
+      /temporary directory|Node installation|secure options/,
+    );
+    expect(screen.queryByText('The assistant is ready.')).toBeNull();
+    expect(screen.getByRole('button', { name: 'Check again' })).toBeEnabled();
+    expect(screen.queryByText('In use')).toBeNull();
+    await expectNoA11yViolations(container);
+  });
+});
+
 afterEach(() => vi.restoreAllMocks());
 
 describe.each([

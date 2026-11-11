@@ -11,7 +11,10 @@ export interface ConnectAiState {
   engine: InferenceEngineId | null;
   configured: boolean;
   tools: Array<
-    Pick<AgentCliStatus, 'tool' | 'installed' | 'signedIn' | 'installUrl'> & {
+    Pick<
+      AgentCliStatus,
+      'tool' | 'installed' | 'signedIn' | 'installUrl' | 'ready' | 'startError'
+    > & {
       login: LoginSnapshot['state'];
       label?: string;
       version?: string;

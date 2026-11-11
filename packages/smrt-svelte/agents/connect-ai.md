@@ -125,3 +125,15 @@ unchanged. Tricia uses these hooks for a CLI removed between status and click.
 An enclosing wizard may pass `headingId` to reference its existing heading.
 The standard step then omits its own heading and keeps its labelled region;
 standalone/settings and compact presentations retain their existing defaults.
+
+## Startup readiness
+
+Inference CLI status now carries optional `ready` and fixed-vocabulary
+`startError`. Signed-in status alone never overrides a failed startup probe.
+The probe starts the exact locked invocation with `--help` in a private empty
+working directory, in the same sanitized process environment; it performs no
+model request or credential mint. The existing 15-second detection cache owns
+its lifetime. Connect AI projects only these safe fields and translates specific
+runtime, invocation and directory failures; it neither renders provider output
+nor offers a ready selection when the probe fails. The mounted tests cover all
+three failures and accessible presentation. No new component/helper file.
