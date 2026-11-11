@@ -221,13 +221,13 @@ async function addImage(row: ModelRecord, file: File) {
   {:else}
     <ProductMedia rows={rows} {images} onselect={addImage} />
     <div class="smrt-form-workspace__scroll" data-smrt-part="panel">
-      <table class="planner-list">
+      <table class="smrt-planner-list__root">
         <thead>
           <tr>
             {#each [{ key: 'name', label: 'Name' }, { key: 'kind', label: 'Kind' }, { key: 'price', label: 'Price' }, ...(showStock ? [{ key: 'stock', label: 'Stock' }] : [])] as column (column.key)}
               <th scope="col" aria-sort={sort?.key === column.key ? sort.direction : 'none'}>
-                <button type="button" class="sort-button" onclick={() => (sort = nextListSort(sort, column.key))}>
-                  {column.label}<span class="sort-icon" aria-hidden="true">{sort?.key === column.key ? (sort.direction === 'ascending' ? '↑' : '↓') : '↕'}</span>
+                <button type="button" class="smrt-planner-list__sort" onclick={() => (sort = nextListSort(sort, column.key))}>
+                  {column.label}<span class="smrt-planner-list__icon" aria-hidden="true">{sort?.key === column.key ? (sort.direction === 'ascending' ? '↑' : '↓') : '↕'}</span>
                 </button>
               </th>
             {/each}
@@ -322,9 +322,6 @@ async function addImage(row: ModelRecord, file: File) {
   small {
     color: var(--smrt-color-on-surface-variant);
     font-weight: 400;
-  }
-  table {
-    border-collapse: collapse;
   }
   th,
   td {

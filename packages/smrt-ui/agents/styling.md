@@ -27,6 +27,10 @@ breaking change, so follow these rules rather than improvising names.
 The gate is `pnpm check:component-roots` (part of `pnpm lint`). It fails when an
 exported component's root lacks its hook. Add the hook when you add a component;
 the codemod `node scripts/component-roots.mjs --write` is idempotent.
+The gate follows real TypeScript export statements (including direct `.svelte`
+exports), ignores commented examples and rune `.svelte.ts` modules, and fails
+if an exported component source is missing. Build generated sources before
+running it; generated components obey the same root and layer contract.
 
 ## Part hook: `data-smrt-part`
 
@@ -233,6 +237,12 @@ Layer order is set by first appearance. If `base` first appears after
 
 Run `smrt doctor` to flag unlayered resets in a project that depends on smrt-ui.
 
+Content body images store their chosen width in the private inline property
+`--smrt-content-body-image-width`, consumed by layered `width: var(...)` rules.
+Legacy inline `width` is normalized at render and editor load. Full-width and
+phone placements win by ordinary specificity; there are no `!important`
+exceptions in the cascade gate.
+
 ## Restyling a component
 
 Consumers depend on three public things only: **token names** (`--smrt-*`),
@@ -318,6 +328,14 @@ Headings, role utilities (`.smrt-display-large` ... `.smrt-label-small`) and tab
 ## ThemeProvider runtime features
 
 Built-in presets stay static (no inline token payload); only user overrides go inline: non-`md` `borderRadius` (control radius tokens), `primaryColor` (derived set via `derivePrimaryOverrides`) and `density`. `data-smrt-theme-changing` marks one `--smrt-duration-scheme` after a post-mount scheme change (not on first paint, not under reduced motion); `data-contrast` (`standard|more|forced`) and `data-forced-colors` come from `prefers-contrast`/`forced-colors` or the `contrast` prop. `themeScript()` stamps `data-contrast`/`data-density` pre-paint from the same persisted config; keep it tiny. Forced-colors contract: hairlines `CanvasText`, focus rings `Highlight`, no painting over system colours.
+
+
+In development, `ThemeProvider` checks `--smrt-color-background` on its wrapper
+once after mount and warns if a built-in preset has no resolved token. Import
+`@happyvertical/smrt-ui/themes/styles/<preset>.css` (or `themes/styles/all.css`)
+in the app. The check runs after persisted preferences settle, skips custom
+themes and `inlineVariables={true}`, and is absent in production and SSR. It
+never injects a preset stylesheet or token values.
 
 ## Forced colors
 
@@ -460,22 +478,12 @@ families retain their names through a bounded allow-list in
   `SubscriptionSummary` → `smrt-subscription-summary`, `UsageThresholds` →
   `smrt-usage-thresholds`. Only the root and `__` / `--` descendants qualify.
 
-The only legacy private exceptions are the exact file/name pairs below in
-`packages/planner/src/lib/components/`. They are shared across component
-boundaries by the app's unlayered `planner-forms.css` / `planner-lists.css`,
-which are consumer theme/layout overrides rather than component style blocks.
-Keeping these selectors preserves that shared stylesheet contract. No wildcard
-or numeric debt is accepted; tests reject a new name or a new owning file.
-
-| File | Exact classes | Shared stylesheet / reason |
-| --- | --- | --- |
-| `ChildRecords.svelte` | `planner-list`, `sort-button`, `sort-icon` | `planner-lists.css`: table and sortable-header treatment |
-| `FieldInput.svelte` | `field` | `planner-forms.css`: field spanning across the generated form boundary |
-| `FieldMapForm.svelte` | `actions`, `error`, `planner-form` | `planner-forms.css`: form grid, full-width commands and errors |
-| `FormWorkspace.svelte` | `planner-list`, `sort-button`, `sort-icon` | `planner-lists.css`: shared record table treatment |
-| `ModelWorkspace.svelte` | `actions`, `derived`, `error`, `planner-form`, `planner-list`, `sort-button`, `sort-icon`, `totals` | Both sheets: generated form spans and sortable record tables |
-| `VariantGridForm.svelte` | `actions`, `error`, `grid`, `planner-form` | `planner-forms.css`: variant grid and full-width commands/errors |
+Planner's shared `planner-forms.css` and `planner-lists.css` use
+`smrt-planner-form__*` / `smrt-planner-list__*` classes and the same structure/theme
+split as components. There are no legacy private class exceptions. Shared
+sheets own form spanning, table treatment and sort controls across component
+boundaries; component styles must not override their table border model.
 
 The old pilot comparator and its mapping file are retired. The script tests
 retain the ten hand-sorted primitives as idempotence fixtures and exercise strict
-rejection, scoped published families, and the enumerated exceptions.
+rejection, scoped published families, and the namespaced planner sheets.

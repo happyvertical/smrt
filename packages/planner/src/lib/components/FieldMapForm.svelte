@@ -107,7 +107,7 @@ async function save(event: SubmitEvent) {
 {#if !loaded}
   <p>Loading...</p>
 {:else}
-  <form class="planner-form" onsubmit={save} novalidate data-smrt-component="FieldMapForm">
+  <form class="smrt-planner-form__root" onsubmit={save} novalidate data-smrt-component="FieldMapForm">
     <h3>{id === undefined ? 'New' : 'Edit'} {createNoun(active.form.label, noun, noun !== undefined)}</h3>
     {#each inputs as { field, catalogField, modelId } (field.id)}
       <FieldInput
@@ -124,9 +124,9 @@ async function save(event: SubmitEvent) {
         }}
       />
     {/each}
-    {#if summary}<p class="error" role="alert" data-error-summary>{summary}</p>{/if}
-    {#if error}<p class="error" role="alert">{error}</p>{/if}
-    <div class="actions">
+    {#if summary}<p class="smrt-planner-form__error" role="alert" data-error-summary>{summary}</p>{/if}
+    {#if error}<p class="smrt-planner-form__error" role="alert">{error}</p>{/if}
+    <div class="smrt-planner-form__actions">
       <button type="submit">Save</button>
       <button type="button" class="smrt-field-map-form__secondary" data-smrt-part="action" onclick={oncancel}>Cancel</button>
     </div>
@@ -139,11 +139,11 @@ async function save(event: SubmitEvent) {
   h3 {
     margin: 0;
   }
-  .actions {
+  .smrt-planner-form__actions {
     display: flex;
     gap: var(--smrt-spacing-2);
   }
-  .error {
+  .smrt-planner-form__error {
     margin: 0;
   }
   button {
@@ -153,7 +153,7 @@ async function save(event: SubmitEvent) {
 }
 
 @layer smrt.theme {
-  .error {
+  .smrt-planner-form__error {
     color: var(--smrt-color-error);
   }
   button {

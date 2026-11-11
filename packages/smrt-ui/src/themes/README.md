@@ -17,6 +17,14 @@ A comprehensive, multi-theme system for SMRT Svelte with support for Material De
 npm install @happyvertical/smrt-ui
 ```
 
+
+In development, `ThemeProvider` checks `--smrt-color-background` on its wrapper
+once after mount and warns if a built-in preset has no resolved token. Import
+`@happyvertical/smrt-ui/themes/styles/<preset>.css` (or `themes/styles/all.css`)
+in the app. The check runs after persisted preferences settle, skips custom
+themes and `inlineVariables={true}`, and is absent in production and SSR. It
+never injects a preset stylesheet or token values.
+
 ## Creating Custom Themes
 
 You can create your own themes and use them alongside or instead of the built-in themes.

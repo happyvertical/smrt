@@ -602,7 +602,7 @@ function setImageWidth(frame: HTMLElement, width: number) {
   );
 
   frame.setAttribute('data-smrt-width', String(clamped));
-  frame.style.width = `${clamped}px`;
+  frame.style.setProperty('--smrt-content-body-image-width', `${clamped}px`);
   frame.style.maxWidth = '100%';
 
   if (getImagePlacement(frame) === 'full') {
@@ -1033,13 +1033,15 @@ function applyImagePlacement(placement: ContentBodyImagePlacement) {
 
   if (placement === 'full') {
     frame.removeAttribute('data-smrt-width');
-    frame.style.width = '100%';
+    frame.style.removeProperty('--smrt-content-body-image-width');
     frame.style.maxWidth = '100%';
   } else if (placement === 'left' || placement === 'right') {
     const wrappedWidth = Math.min(360, Math.round(getMaxImageWidth() * 0.45));
     setImageWidth(frame, Math.min(getImageWidth(frame), wrappedWidth));
-  } else if (frame.style.width === '100%') {
-    frame.style.removeProperty('width');
+  } else if (
+    frame.style.getPropertyValue('--smrt-content-body-image-width') === '100%'
+  ) {
+    frame.style.removeProperty('--smrt-content-body-image-width');
   }
 
   selectImageElement(image, { notify: false });
@@ -2037,7 +2039,7 @@ function handleEditorDragEnd() {
   }
   .smrt-content-body-editor__surface :global(figure[data-smrt-inline-image]) {
     display: block;
-    width: min(100%, 32rem);
+    width: var(--smrt-content-body-image-width, min(100%, 32rem));
     max-width: 100%;
     margin: 1.25rem 0;
     clear: none;
@@ -2050,13 +2052,13 @@ function handleEditorDragEnd() {
   .smrt-content-body-editor__surface :global(figure[data-smrt-placement='left']),
   .smrt-content-body-editor__surface :global(img[data-smrt-placement='left']) {
     float: left;
-    width: min(45%, 22rem);
+    width: var(--smrt-content-body-image-width, min(45%, 22rem));
     margin: 0.4rem 1.25rem 0.75rem 0;
   }
   .smrt-content-body-editor__surface :global(figure[data-smrt-placement='right']),
   .smrt-content-body-editor__surface :global(img[data-smrt-placement='right']) {
     float: right;
-    width: min(45%, 22rem);
+    width: var(--smrt-content-body-image-width, min(45%, 22rem));
     margin: 0.4rem 0 0.75rem 1.25rem;
   }
   .smrt-content-body-editor__surface :global(figure[data-smrt-placement='center']),
@@ -2070,9 +2072,10 @@ function handleEditorDragEnd() {
     margin-right: auto;
   }
   .smrt-content-body-editor__surface :global(figure[data-smrt-placement='full']),
-  .smrt-content-body-editor__surface :global(img[data-smrt-placement='full']) {
+  .smrt-content-body-editor__surface :global(img[data-smrt-placement='full']),
+  .smrt-content-body-editor__surface :global(img[data-smrt-inline-image][data-smrt-placement='full']) {
     float: none;
-    width: 100% !important;
+    width: 100%;
     max-width: 100%;
     margin-left: 0;
     margin-right: 0;
@@ -2080,13 +2083,14 @@ function handleEditorDragEnd() {
   }
   .smrt-content-body-editor__surface :global(img) {
     display: block;
+    width: var(--smrt-content-body-image-width, auto);
     max-width: min(100%, 44rem);
     height: auto;
     /* iOS: no callout on a long press, which asks for a change instead. */
     -webkit-touch-callout: none;
   }
   .smrt-content-body-editor__surface :global(img[data-smrt-inline-image]) {
-    width: min(100%, 32rem);
+    width: var(--smrt-content-body-image-width, min(100%, 32rem));
     max-width: 100%;
     margin-top: 1.25rem;
     margin-bottom: 1.25rem;
@@ -2094,7 +2098,7 @@ function handleEditorDragEnd() {
   }
   .smrt-content-body-editor__surface :global(img[data-smrt-inline-image][data-smrt-placement='left']),
   .smrt-content-body-editor__surface :global(img[data-smrt-inline-image][data-smrt-placement='right']) {
-    width: min(45%, 22rem);
+    width: var(--smrt-content-body-image-width, min(45%, 22rem));
     clear: none;
   }
   .smrt-content-body-editor__surface :global(figure[data-smrt-inline-image] img) {
@@ -2102,7 +2106,8 @@ function handleEditorDragEnd() {
     max-width: 100%;
     margin: 0;
   }
-  .smrt-content-body-editor__surface :global(img[data-smrt-placement='full']) {
+  .smrt-content-body-editor__surface :global(img[data-smrt-placement='full']),
+  .smrt-content-body-editor__surface :global(img[data-smrt-inline-image][data-smrt-placement='full']) {
     width: 100%;
     max-width: 100%;
   }
@@ -2117,9 +2122,11 @@ function handleEditorDragEnd() {
     .smrt-content-body-editor__surface :global(figure[data-smrt-placement='left']),
     .smrt-content-body-editor__surface :global(figure[data-smrt-placement='right']),
     .smrt-content-body-editor__surface :global(img[data-smrt-placement='left']),
-    .smrt-content-body-editor__surface :global(img[data-smrt-placement='right']) {
+    .smrt-content-body-editor__surface :global(img[data-smrt-placement='right']),
+    .smrt-content-body-editor__surface :global(img[data-smrt-inline-image][data-smrt-placement='left']),
+    .smrt-content-body-editor__surface :global(img[data-smrt-inline-image][data-smrt-placement='right']) {
       float: none;
-      width: 100% !important;
+      width: 100%;
       margin: 0.75rem 0;
     }
   }

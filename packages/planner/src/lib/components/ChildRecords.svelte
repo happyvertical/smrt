@@ -234,13 +234,13 @@ async function remove(row: ModelRecord) {
     <p class="smrt-child-records__empty" data-smrt-part="empty">None yet.</p>
   {:else}
     <div class="smrt-child-records__scroll" data-smrt-part="body">
-      <table class="planner-list">
+      <table class="smrt-planner-list__root">
         <thead>
           <tr>
             {#each columns as column (column.name)}
               <th scope="col" aria-sort={sort?.key === column.name ? sort.direction : 'none'}>
-                <button type="button" class="sort-button" onclick={() => (sort = nextListSort(sort, column.name))}>
-                  {column.label}<span class="sort-icon" aria-hidden="true">{sort?.key === column.name ? (sort.direction === 'ascending' ? '↑' : '↓') : '↕'}</span>
+                <button type="button" class="smrt-planner-list__sort" onclick={() => (sort = nextListSort(sort, column.name))}>
+                  {column.label}<span class="smrt-planner-list__icon" aria-hidden="true">{sort?.key === column.name ? (sort.direction === 'ascending' ? '↑' : '↓') : '↕'}</span>
                 </button>
               </th>
             {/each}
@@ -357,7 +357,6 @@ async function remove(row: ModelRecord) {
     color: var(--smrt-color-error);
   }
   table {
-    border-collapse: collapse;
     font-size: 0.875rem;
   }
   th,

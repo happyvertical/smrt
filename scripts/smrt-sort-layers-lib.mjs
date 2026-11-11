@@ -129,17 +129,6 @@ function publishedShellClass(name, file) {
     : name === prefix || name.startsWith(`${prefix}-`) || name.startsWith(`${prefix}__`));
 }
 
-// Shared planner styles target these exact legacy classes across component boundaries.
-// Keep the file/name pairs bounded: a new helper or another component is rejected.
-export const SHARED_CLASS_EXCEPTIONS = {
-  'packages/planner/src/lib/components/ChildRecords.svelte': ['planner-list', 'sort-button', 'sort-icon'],
-  'packages/planner/src/lib/components/FieldInput.svelte': ['field'],
-  'packages/planner/src/lib/components/FieldMapForm.svelte': ['actions', 'error', 'planner-form'],
-  'packages/planner/src/lib/components/FormWorkspace.svelte': ['planner-list', 'sort-button', 'sort-icon'],
-  'packages/planner/src/lib/components/ModelWorkspace.svelte': ['actions', 'derived', 'error', 'planner-form', 'planner-list', 'sort-button', 'sort-icon', 'totals'],
-  'packages/planner/src/lib/components/VariantGridForm.svelte': ['actions', 'error', 'grid', 'planner-form'],
-};
-
 function publishedClass(name, file) {
   if (publishedShellClass(name, file)) return true;
   const roots = {
@@ -195,7 +184,7 @@ export function internalClasses(ast, file = '') {
   }
   markup(ast.fragment);
   return [...names].filter((name) => !/^smrt-[a-z0-9]+(?:-[a-z0-9]+)*__[a-z0-9][a-z0-9_-]*$/.test(name)
-    && !publishedClass(name, file) && !SHARED_CLASS_EXCEPTIONS[file]?.includes(name)).sort();
+    && !publishedClass(name, file)).sort();
 }
 
 export function layerViolations(source, ast = parseComponent(source)) {
