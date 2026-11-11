@@ -228,3 +228,5 @@ The review and correction calls bind the tier through `prepareAiOperation()`.
 - **Tenant-local keys rollout (#3305 M1)**: `smrt db:migrate` adds `<table>_tenant_id_{email,key}_idx` and drops the superseded `<table>_{email,key}_idx` in one migration; rows are untouched (every row satisfies the wider key). Old code upserts on the old arbiter, so deploy the code and the migration together in a writer-drained window; reverting afterwards needs collision analysis, since tenants may then share a key
 - **Chat tables**: chat endpoint requires `@happyvertical/smrt-chat` tables; dev server handles missing tables gracefully
 - **Dev server bootstraps all classes**: `hooks.server.ts` generates schemas for all 13 local `@smrt()` classes plus cross-package manifests
+
+Optional loading boundaries: [agents/optional-capabilities.md](agents/optional-capabilities.md).
