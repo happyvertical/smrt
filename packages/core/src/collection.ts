@@ -3862,6 +3862,17 @@ export class SmrtCollection<ModelType extends SmrtObject> extends SmrtClass {
       );
     }
 
+    if (!hydrationRow) {
+      const itemType = this.getResolvedItemQualifiedName();
+      const selectedType =
+        registeredClass.qualifiedName || registeredClass.name;
+      if (!this.getStiReadTypes(itemType).includes(selectedType)) {
+        throw new Error(
+          `STI discriminator '${className}' is not a subtype of '${itemType}'.`,
+        );
+      }
+    }
+
     const params = {
       ai: this.options.ai,
       decisions: this.options.decisions,

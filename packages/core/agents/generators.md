@@ -594,6 +594,7 @@ family member. Unknown or unrelated identities fail before any create.
 | --- | --- | --- | --- | --- | --- |
 | Shared CRUD owner | Profile/Bot and generic family, explicit branch namespaces, either registry order, base and same-name app root | Subtypes never replace base metadata | Users catalog, no database | Assistant dispatch metadata / regression | users `pnpm test` |
 | Default create | REST, MCP, CLI create handler and assistant choose Profile or generic root | Persisted discriminator is never the sibling's | Authenticated transport or authorized principal stub, one in-process SQLite handle, ordinary create lifecycle | Generated dispatch / integration | users `pnpm test` |
+| Explicit CLI selector | JSON file names a valid descendant | Unknown, unrelated and sibling identities fail before creation | CLI create handler and public collection, in-process Node/SQLite | Discriminator validation / regression | users and core `pnpm test` |
 | App root and children | Child-first REST and MCP create app Profile; explicit provider Person stays Person | Unknown/unrelated MCP discriminator writes nothing | In-process Node and SQLite for app fixture; recording collection for rejection | Qualified identity / integration and unit | core `pnpm test` |
 
 These changes select dispatch identities; mutation atomicity, rollback, SQL

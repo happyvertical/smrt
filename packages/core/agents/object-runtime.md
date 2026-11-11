@@ -191,6 +191,10 @@ instances and never use this path to overwrite a loaded revision.
   `@meta()` (a same-named column then belongs to an STI sibling). `id`, tenant-ownership and `_`-prefixed
   keys (`isReservedMetaDataKey`, inherited tenant fields included) are dropped
   from the blob on hydration and save, object or JSON text (`sanitizeMetaData`).
+- Explicit create discriminators must resolve to the collection's own model or a
+  registered descendant. `createPolymorphic()` checks this before constructing
+  the selected model; unknown classes and unrelated/sibling branches fail before
+  persistence. It reuses the collection's existing qualified subtree resolver.
 - Polymorphic queries: collection loads `_meta_type`, creates correct subclass dynamically
 - Validation: fail-fast on save if `_meta_type` missing or mismatched
 - Multi-level STI collections read their own discriminator and every registered descendant, never sibling branches. Decorate every intermediate with `@smrt()`; registration rejects an undecorated intermediate beneath an STI root.
