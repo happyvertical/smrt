@@ -714,3 +714,10 @@ across core, chat, smrt-ui, smrt-svelte and config found no shared opaque HTTP
 reporter. New `src/generators/route-error.ts` composes the existing SDK logger,
 config secret redactor and core database URL redactor. Its test file exercises
 that helper; no duplicate logger, route, model or tool is introduced.
+
+Hosted collection aliases select REST routes, not MCP class identities. The
+class-scope regression applies aliasHostedCollections to two same-name models,
+registers those distinct collections and proves default MCP still rejects the
+ambiguous alias. The existing optional canonicalizer mode then yields two valid
+workflow names with exact original identities. These are distinct protocol
+boundaries; no additional REST or MCP alias mechanism is introduced.

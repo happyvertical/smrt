@@ -123,6 +123,64 @@ describe('MCPGenerator class scope (#3490)', () => {
     );
   });
 
+  it('keeps MCP collision identity independent from hosted collection route aliases', async () => {
+    const { aliasHostedCollections } = await import(
+      '../consumer-plugin/hosted-sti-collections.js'
+    );
+    const packages = ['@fixture/scope-one', '@fixture/scope-two'];
+    const manifest = aliasHostedCollections({
+      objects: Object.fromEntries(
+        packages.map((packageName) => [
+          `${packageName}:ScopeCollision`,
+          {
+            className: 'ScopeCollision',
+            name: 'scopecollision',
+            qualifiedName: `${packageName}:ScopeCollision`,
+            packageName,
+            collection: 'collisions',
+            fields: {},
+            methods: {},
+            decoratorConfig: {},
+          },
+        ]),
+      ),
+    });
+    expect(
+      new Set(Object.values(manifest.objects).map((item) => item.collection))
+        .size,
+    ).toBe(2);
+    ObjectRegistry.clear();
+    for (const [identity, item] of Object.entries(manifest.objects)) {
+      ObjectRegistry.register(
+        named(class extends SmrtObject {}, 'ScopeCollision'),
+        {
+          packageName: item.packageName,
+          collection: item.collection,
+          mcp: { include: ['list'] },
+        },
+      );
+      expect(ObjectRegistry.getConfig(identity).collection).toBe(
+        item.collection,
+      );
+    }
+    await expect(new MCPGenerator().generateTools()).rejects.toThrow(
+      'Duplicate MCP tool name: scopecollision_list',
+    );
+    const generator = new MCPGenerator({
+      qualifyCollidingNames: true,
+      snakeCaseNames: true,
+    });
+    const tools = await generator.generateTools();
+    expect(tools).toHaveLength(2);
+    expect(new Set(tools.map((tool) => tool.name)).size).toBe(2);
+    expect(
+      tools.every((tool) => /^[a-z][a-z0-9_]{0,63}$/.test(tool.name)),
+    ).toBe(true);
+    expect(
+      tools.map((tool) => generator.getToolIdentity(tool).qualifiedName).sort(),
+    ).toEqual(Object.keys(manifest.objects).sort());
+  });
+
   it('fails closed on a simple name that matches more than one class', async () => {
     await expect(
       new MCPGenerator({ classNames: ['ScopeCollision'] }).generateTools(),
