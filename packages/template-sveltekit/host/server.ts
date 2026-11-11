@@ -403,7 +403,11 @@ export function createCookbookHost(options: CookbookHostOptions) {
                       status:
                         record.status === 'succeeded'
                           ? 'approved'
-                          : record.status,
+                          : record.status === 'executing'
+                            ? 'pending'
+                            : record.status === 'expired'
+                              ? 'timeout'
+                              : record.status,
                       summary: record.summary,
                       preview: null,
                     }
