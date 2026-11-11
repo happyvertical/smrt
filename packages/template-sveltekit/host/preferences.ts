@@ -16,11 +16,15 @@ import {
   createOverviewStore,
   createPreferenceStore,
   createShellSettingsPreferences,
+  getPreferencePrincipal,
   PreferenceAccessError,
   type PreferenceScope,
 } from '@happyvertical/smrt-preferences';
 import type { CookbookAppProps } from '@happyvertical/smrt-svelte/cookbook';
-import { createCookbookRegistry } from '@happyvertical/smrt-svelte/cookbook';
+import {
+  createCookbookRegistry,
+  resolveInstalledRecipeExport,
+} from '@happyvertical/smrt-svelte/cookbook';
 import {
   buildCookbookShell,
   type CookbookAppData,
@@ -70,7 +74,13 @@ export function createCookbookPreferences(options: {
     });
     const { registry } = await createCookbookRegistry({
       widgets: shell.widgets,
-      resolveExport,
+      resolveExport:
+        resolveExport ??
+        ((specifier, name) =>
+          resolveInstalledRecipeExport(specifier, name, {
+            recipes: app.cookbook.recipes,
+            tenantId: getPreferencePrincipal()?.tenantId,
+          })),
     });
     return { shell, registry };
   }

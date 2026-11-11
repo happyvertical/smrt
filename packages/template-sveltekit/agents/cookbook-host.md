@@ -38,8 +38,10 @@ subprocesses. The host supplies per-user selection and private runtime storage.
 CLI credentials are scoped to the offered operation/permission intersection,
 last 15 minutes and are revoked at turn completion. A bound CLI delete creates a
 hold in the same chat thread; the existing assistant owner-decision route executes
-the original operation once under its saved ceiling. An unbound external MCP
-delete refuses because it has no owned chat-thread approval continuation.
+the original operation once under its saved ceiling. External MCP deletes use the
+shared non-thread continuation authority; pending results name their approval id
+and `owner_approval_outcome`. The original caller can read the terminal result.
+Settings can mount the existing AssistantApprovalCard without a thread id.
 
 `host.inferenceSettings` is the existing inference settings controller. The app
 mounts its own thin page load/actions using the signed-in session; it never adds
@@ -117,15 +119,100 @@ collections. `assistant-fixture.svelte` only observes injected dock props.
 app edits and refuses path escapes. `cookbookHost.test.ts` reuses the inference stub
 CLI, runtime principal branding, users collections and SQLite.
 
-## Remaining approval integration boundary
+## SQLite lazy host and live model publication
 
-Model-delete approval is mounted and tested end to end. The cookbook service's
-`recipes.disable` and nonempty `cookbook.apply` holds use a cookbook-state
-fingerprint, while chat's decision route expects a thread/principal continuation.
-Those contracts currently do not compose: the hold prevents changes but cannot
-be approved through the dock. A shared durable continuation adapter must preserve
-the fingerprint, original permission ceiling and thread ownership, emit
-`approval_needed`, and resume the service exactly once. Do not remove the hold or
-approve a second synthetic request to bypass this boundary. External MCP deletes
-without a bound chat thread also refuse. ChatGPT-plan and saved-key adapters are
-wired to existing APIs; no live provider account was used.
+`createCookbookApplication({packageName, application?, lazyActivation: {manifest,
+loaders, scope, alwaysOn?}, ...hostOptions})` creates the normal runtime and host.
+Export its `runtime` from the app server module. Feed generated
+`activationManifest`/`activationLoaders` from `smrt-register`, and opt into
+`smrt({lazyActivation:true})` during generation. Its runtime preparation disables
+eager full-registry schema creation and awaits the existing activation coordinator.
+Boot reads the latest editor journal document for every checkpointed tenant,
+falling back to that checkpoint/default only without history. It excludes only
+declared custom-list identities from the fixed graph; pending journal recipes
+are activated before editor replay. Host auth/chat/preferences/inference/approval models are
+always on; the caller can supply an explicit always-on set. The ready gate is
+composed with the cookbook/preference gate; recipe enables pass the coordinator
+to the existing service before publication.
+
+Before serving authenticated tenant data, the host opens `createAppModelEditor`
+and awaits replay/publication. `host.modelEditor(trustedTenant)` is the server seam;
+`modelEditorFor` supplies the landed `app.*` tools from the same service. Its
+native holds own consumption; chat policy delegates those control tools instead
+of creating a second hold. Publication
+updates the normal cookbook engine and catalog, and supplies dynamic definitions
+in layout data. The host handles those registered collection URLs with the existing
+APIGenerator under session identity/permissions. Model screens merge these data
+with AOT definitions, then apply the same enabled-model filter. Direct URLs retain
+the gate. The core service imports recipe writes through the editor journal,
+which is the durable authority. Host engine persistence is a derived checkpoint
+with a monotonic revision. Custom lists and `app.*` tools remain available when
+pre-built components are off; the preference still gates provider models/recipes.
+
+Pass the projected raw cookbook to CookbookApp: it owns raw policy resolution and
+uses the generated installed-recipe surface resolver. Hosts need no export map or
+resolved field-policy copy. `cookbookModelCatalog` (core app-models) and
+`coveredModels` (core cookbook/engine) expose existing engine projection helpers;
+they do not introduce competing model-selection rules.
+
+Non-thread native holds use the shared app-runtime continuation adapter with
+executor-owned consumption. Cookbook context fingerprints remain unchanged.
+Chat's existing owner list/decision routes and card handle these holds; generic
+MCP deletes use continuation-owned consumption. Already executing calls do not
+replay after a crash; generic external effects cannot claim transactional
+exactly-once guarantees. No live provider account was used.
+
+Follow-up reuse check repeated MCP reviews and name/purpose searches across
+smrt-ui/smrt-svelte/chat/core/runtime/approvals. Existing host/server.ts and state.ts
+compose activation, editor, migration tracker, engine projection and APIGenerator;
+no new production file/model/component was added. The app removes its manual
+surface resolver and reuses the existing owner approval card/transport.
+
+The Profile fixture is now an empty same-name app subclass. The real customer
+turn asserts exact upstream registration is absent, effective lookup returns the
+app constructor, persisted create uses that app Profile discriminator (never Bot),
+and Customer's JSON projects the linked Profile displayLabel. Published dynamic
+definitions are cached only for editor-managed lists/fields; unchanged collections
+retain their ordinary generated routes and are not duplicated in layout data.
+CookbookToolError uses the existing workflow mapError contract, preserving authored
+activation errors while unexpected exception details remain redacted.
+
+The second rebase onto fcf069448e adopts C6's native journal publication path,
+removing the host's former duplicate editor-import wrapper. New host tests hold
+app.removeField from an assistant turn (one native hold), approve it, hold
+app.removeList over MCP and recreate the host before decision. Template apply also
+survives host/preview-cache recreation. An owner request resumes an approved but
+unconsumed continuation after restart; executing calls remain explicit unknown
+outcomes. Repeated outcome reads never replay an already completed call. MCP
+control aliases reuse core's public toSnakeCase helper and preserve canonical slugs.
+
+Publication reuses users' seedNewCatalogPermissions inside the existing embedded
+transaction helper, so newly registered list operations get owner grants without
+re-granting removed permissions. It runs before checkpoint publication. The host
+fixture resolves permissions from the real SQLite role mappings instead of
+injecting new-list scopes, and proves an old customers.create revocation stays
+removed. Reuse search: MCP users package review plus rg seedNew/catalog/created
+across users/runtime/core/host found this existing users upgrade API; no parallel
+permission algorithm or helper is added.
+
+## Rebased D1 verification (Node 26.8.1)
+
+Base: `fcf069448e6144578bee8b5bfe01165cb56ff670`. Generated knowledge was
+rebuilt with the full build, OKF and graph commands, not hand-merged. Dependency
+builds passed for all six changed packages (48 tasks); the full root build passed
+85 tasks. Full suites and each package typecheck passed:
+
+| Package | Passed | Skipped |
+| --- | ---: | ---: |
+| core | 7016 | 513 (+4 existing todos) |
+| smrt-svelte | 2052 Vitest + 5 Node + 4 conformance | 0 |
+| template-sveltekit | 118 | 16 |
+| chat | 1119 | 16 |
+| app-runtime | 917 | 17 |
+| content | 1276 | 3 |
+
+Root lint, format-check, strict knowledge and all 87 instruction chains pass.
+Knowledge retains seven existing ingestion static-surface warnings; Svelte
+typecheck retains 29 warnings. Provider behavior uses fakes/stub CLIs only.
+The SQLite disk-reopen continuation cases and live publication/permission tests
+run in process. No container, desktop packaging or real account verification.

@@ -13,16 +13,20 @@ import {
   createSqliteOwnerApprovalStore,
   isApprovalOwner,
   OwnerApprovalAuthority,
+  OwnerApprovalContinuations,
 } from '@happyvertical/smrt-app-runtime';
 import {
   createOwnerLinkHandler,
   createSessionLayoutLoad,
+  createSmrtSvelteKitRuntime,
   type SmrtRuntimeLocals,
   type SmrtSvelteKitRuntime,
+  type SmrtSvelteKitRuntimeOptions,
 } from '@happyvertical/smrt-app-runtime/sveltekit';
 import {
   buildManifestToolCatalog,
   describeAssistantTool,
+  invokeManifestTool,
   type ManifestTool,
   requiresOwnerApproval,
 } from '@happyvertical/smrt-chat';
@@ -37,15 +41,32 @@ import {
   mountAssistantRoutes,
   resolveAssistantPrincipalFromLocals,
 } from '@happyvertical/smrt-chat/sveltekit';
-import { ObjectRegistry } from '@happyvertical/smrt-core';
+import {
+  ObjectRegistry,
+  toSnakeCase,
+  withEmbeddedWriteTransaction,
+} from '@happyvertical/smrt-core';
+import {
+  type ActivationCoordinator,
+  type ActivationManifest,
+  createActivationCoordinator,
+} from '@happyvertical/smrt-core/activation';
+import {
+  type AppModelSnapshot,
+  cookbookModelCatalog,
+  createAppModelEditor,
+  createSqliteAppModelHistory,
+} from '@happyvertical/smrt-core/app-models';
 import { validateCookbook } from '@happyvertical/smrt-core/cookbook';
 import {
   COOKBOOK_TOOL_NAMES,
+  CookbookToolError,
   type CookbookToolOptions,
   createCookbookToolService,
   setCookbookToolService,
 } from '@happyvertical/smrt-core/cookbook/tools';
 import { MCPGenerator } from '@happyvertical/smrt-core/generators/mcp';
+import { APIGenerator } from '@happyvertical/smrt-core/generators/rest';
 import {
   createCookbookRuntimeExposure,
   filterRuntimeCookbookSnapshot,
@@ -67,6 +88,7 @@ import {
 import {
   createPrebuiltComponentsPreference,
   createPreferenceStore,
+  getPreferencePrincipal,
   registerPreferenceKind,
 } from '@happyvertical/smrt-preferences';
 import { mountConnectAiRoutes } from '@happyvertical/smrt-svelte/connect-ai/server';
@@ -78,6 +100,7 @@ import {
 import type { Cookbook } from '@happyvertical/smrt-types';
 import {
   PermissionResolver,
+  RolePermissionCollection,
   registerPermissionDefinitions,
 } from '@happyvertical/smrt-users';
 import type { Handle, RequestEvent } from '@sveltejs/kit';
@@ -85,6 +108,9 @@ import { createCookbookHostState } from './state.js';
 
 export interface CookbookHostOptions {
   runtime: SmrtSvelteKitRuntime;
+  packageName?: string;
+  application?: string;
+  activation?: () => ActivationCoordinator;
   root?: string;
   /** Inject a validated installed catalog/document in tests or generated hosts. */
   app?: { cookbook: Cookbook; catalog: CookbookToolOptions['catalog'] };
@@ -96,6 +122,108 @@ export interface CookbookHostOptions {
   /** In-process test/host seams; inference still owns vendor discovery and credentials. */
   cli?: ReturnType<typeof createAgentCliService>;
   chatgpt?: ChatGPTPlanConnection;
+}
+
+async function readHostApp(options: Pick<CookbookHostOptions, 'root' | 'app'>) {
+  const root = options.root ?? process.cwd();
+  return (
+    options.app ??
+    (await (async () => {
+      const manifests = await readInstalledManifests(root);
+      const catalog = catalogFromManifests(manifests);
+      const checked = validateCookbook(
+        JSON.parse(await readFile(join(root, 'smrt.cookbook.json'), 'utf8')),
+        { recipes: catalog.recipes.map((r) => r.id) },
+      );
+      if (!checked.ok) throw new Error(checked.errors.join('; '));
+      // Preserve recipe search/help metadata from installed manifests.
+      const recipes = manifests.flatMap((m) =>
+        Array.isArray(m.recipes) ? m.recipes : [],
+      );
+      return {
+        cookbook: checked.cookbook,
+        catalog: {
+          ...catalog,
+          recipes: catalog.recipes.map((r) => ({
+            ...recipes.find((raw) => raw.id === r.id),
+            ...r,
+            requires: r.requires ?? [],
+          })),
+        },
+      };
+    })())
+  );
+}
+
+/** Normal local runtime, with fixed-graph SQLite activation before owner bootstrap. */
+export function createCookbookApplication(
+  options: Omit<
+    CookbookHostOptions,
+    'runtime' | 'activation' | 'packageName'
+  > & {
+    packageName: string;
+    lazyActivation: {
+      manifest: ActivationManifest;
+      loaders: Record<string, () => Promise<unknown>>;
+      scope: string;
+      alwaysOn?: string[];
+    };
+    runtimeOptions?: Omit<
+      SmrtSvelteKitRuntimeOptions,
+      'createSchema' | 'prepareDatabase'
+    >;
+  },
+) {
+  let activation: ActivationCoordinator;
+  const runtime = createSmrtSvelteKitRuntime({
+    ...options.runtimeOptions,
+    createSchema: false,
+    prepareDatabase: async (db, context) => {
+      if (context.profile !== 'local')
+        throw new Error('Cookbook host requires the local SQLite runtime');
+      const app = await readHostApp(options);
+      const state = await createCookbookHostState(
+        db,
+        app.catalog,
+        app.cookbook,
+      );
+      const graph = options.lazyActivation;
+      activation = createActivationCoordinator({
+        scope: graph.scope,
+        packageName: options.packageName!,
+        db,
+        manifest: graph.manifest,
+        loaders: graph.loaders,
+        alwaysOn:
+          graph.alwaysOn ??
+          Object.keys(graph.manifest.models).filter((id) =>
+            /^@happyvertical\/smrt-(users|profiles|tenancy|chat|approvals|preferences|inference|secrets|jobs):/.test(
+              id,
+            ),
+          ),
+        readEnabled: () =>
+          state.enabledModelUnion(
+            async (tenantId) =>
+              (
+                await (
+                  await createSqliteAppModelHistory({
+                    db,
+                    tenantId,
+                    application: options.application ?? options.packageName,
+                  })
+                ).read()
+              ).at(-1)?.after,
+          ),
+      });
+      setRuntimeExposureGate({ isEnabled: () => false });
+      await activation.boot();
+    },
+  });
+  return createCookbookHost({
+    ...options,
+    runtime,
+    activation: () => activation,
+  });
 }
 
 /** One local owner host per process. Construct before runtime.init seeds permissions. */
@@ -129,7 +257,8 @@ export function createCookbookHost(options: CookbookHostOptions) {
   >();
   const digest = (token: string) =>
     createHash('sha256').update(token).digest('hex');
-  const wireName = (slug: string) => slug.replace(/[^a-z0-9_]/g, '_');
+  const wireName = (slug: string) =>
+    toSnakeCase(slug).replace(/[^a-z0-9_]/g, '_');
   const isManifestToolEnabled = (tool: ManifestTool, tenantId: string) =>
     isRuntimeModelEnabled(
       ObjectRegistry.getExposureModel(tool.qualifiedName ?? tool.className),
@@ -149,33 +278,7 @@ export function createCookbookHost(options: CookbookHostOptions) {
         'Cookbook host currently requires the local SQLite runtime',
       );
     const db = await runtime.database();
-    const root = options.root ?? process.cwd();
-    const app =
-      options.app ??
-      (await (async () => {
-        const manifests = await readInstalledManifests(root);
-        const catalog = catalogFromManifests(manifests);
-        const checked = validateCookbook(
-          JSON.parse(await readFile(join(root, 'smrt.cookbook.json'), 'utf8')),
-          { recipes: catalog.recipes.map((r) => r.id) },
-        );
-        if (!checked.ok) throw new Error(checked.errors.join('; '));
-        // Preserve recipe search/help metadata from installed manifests.
-        const recipes = manifests.flatMap((m) =>
-          Array.isArray(m.recipes) ? m.recipes : [],
-        );
-        return {
-          cookbook: checked.cookbook,
-          catalog: {
-            ...catalog,
-            recipes: catalog.recipes.map((r) => ({
-              ...recipes.find((raw) => raw.id === r.id),
-              ...r,
-              requires: r.requires ?? [],
-            })),
-          },
-        };
-      })());
+    const app = await readHostApp(options);
     const state = await createCookbookHostState(db, app.catalog, app.cookbook);
     const authority = new OwnerApprovalAuthority(
       await createSqliteOwnerApprovalStore(db),
@@ -185,7 +288,73 @@ export function createCookbookHost(options: CookbookHostOptions) {
       store: createPreferenceStore({ db }),
       isOwner: (p) => isOwner(p.tenantId, p.userId),
     });
+    const continuations = new OwnerApprovalContinuations(authority, {
+      cookbook: async (record) =>
+        executeSaved(record, async () =>
+          service.invoke(
+            record.tool as Parameters<typeof service.invoke>[0],
+            { ...record.args, approvalId: record.id },
+            {
+              surface: 'mcp',
+              tenantId: record.tenantId,
+              userId: record.requestedBy,
+            },
+          ),
+        ),
+      model: async (record) =>
+        executeSaved(record, async (run) => {
+          const tool = manifest(record.tenantId).find(
+            (t) => t.slug === record.tool,
+          );
+          if (!tool) throw new Error('Approved tool is no longer offered');
+          return invokeManifestTool(run, tool, record.args, {
+            db: run.context.database ?? runtime.databaseConfig(),
+          });
+        }),
+    });
+    const executeSaved = async (
+      record: import('@happyvertical/smrt-app-runtime').OwnerApproval,
+      execute: (
+        run: import('@happyvertical/smrt-agents').PrincipalRun,
+      ) => Promise<unknown>,
+    ) => {
+      const principal = record.continuation!.principal;
+      await prepare(principal.tenantId, false);
+      return executeAsPrincipal(
+        {
+          principal: {
+            runAsUserId: principal.id,
+            tenantId: principal.tenantId,
+            allowedTools: principal.allowedTools,
+          },
+          db: runtime.databaseConfig(),
+          permissions: [
+            ...(
+              await (
+                await PermissionResolver.create({
+                  db: await runtime.database(),
+                })
+              ).resolvePermissions(principal.id, principal.tenantId)
+            ).permissions,
+          ].filter((permission) => principal.permissions.includes(permission)),
+        },
+        async (run) => {
+          run.assertToolAllowed(record.tool);
+          const at = record.tool.lastIndexOf('.');
+          await run.assertOperation(
+            record.tool.slice(0, at),
+            record.tool.slice(at + 1),
+          );
+          return execute(run);
+        },
+      );
+    };
     const service = createCookbookToolService({
+      ...(options.activation ? { activation: options.activation() } : {}),
+      ...{
+        modelEditorFor: (c: { tenantId?: string | null }) =>
+          c.tenantId ? editors.get(c.tenantId) : undefined,
+      },
       catalog: app.catalog,
       engineFor: state.engineFor,
       isOwner: (c) => isOwner(c.tenantId, c.userId),
@@ -197,27 +366,144 @@ export function createCookbookHost(options: CookbookHostOptions) {
           ).resolvePermissions(c.userId, c.tenantId)
         ).permissions.has(slug);
       },
-      approvals: authority,
+      approvals: continuations.adapter('cookbook'),
       // Conservative: replacing a template always needs owner approval. No unproven empty-data shortcut.
       isAppEmpty: async () => false,
       commit: state.commit,
       audit: state.audit,
     });
-    const gate = createCookbookRuntimeExposure({
+    const cookbookGate = createCookbookRuntimeExposure({
       catalog: app.catalog,
       engineFor: state.engineFor,
-      predicate: (_model, c) => preferences.isEnabled(c.tenantId),
+      predicate: (model, c) => {
+        if (preferences.isEnabled(c.tenantId)) return true;
+        const document = state.engineFor(c)?.cookbook();
+        return (
+          !!document?.models &&
+          Object.keys(document.models.lists).some(
+            (name) =>
+              model.qualifiedName === `${document.models!.packageName}:${name}`,
+          )
+        );
+      },
     });
+    const gate = {
+      ...(options.activation
+        ? options.activation().gate(cookbookGate)
+        : cookbookGate),
+      dispose: () => cookbookGate.dispose(),
+    };
     setCookbookToolService(service);
     setRuntimeExposureGate(gate);
-    return { ...app, state, authority, preferences, service, gate };
+    return {
+      ...app,
+      state,
+      authority,
+      continuations,
+      preferences,
+      service,
+      gate,
+    };
   }
   const ready = () =>
     (starting ??= initialize().then((value) => (current = value)));
-  const prepare = async (tenantId: string) => {
+  const publishedDefinitions = new Map<
+    string,
+    AppModelSnapshot['webDefinitions']
+  >();
+  const editors = new Map<
+    string,
+    Awaited<ReturnType<typeof createAppModelEditor>>
+  >();
+  const editorStarts = new Map<string, Promise<void>>();
+  const prepare = async (tenantId: string, recover = true) => {
     const host = await ready();
     await host.state.refresh(tenantId);
     await host.preferences.read();
+    if (options.packageName && !editors.has(tenantId)) {
+      let opening = editorStarts.get(tenantId);
+      if (!opening) {
+        opening = (async () => {
+          const engine = host.state.engineFor({ tenantId });
+          if (!engine) throw new Error('Cookbook unavailable');
+          const editor = await createAppModelEditor({
+            db: await runtime.database(),
+            application: options.application ?? options.packageName!,
+            tenantId,
+            packageName: options.packageName!,
+            cookbook: engine.cookbook(),
+            catalog: host.catalog,
+            authorize: (c) => isOwner(c.tenantId, c.actor),
+            publish: async (snapshot) => {
+              // Reuse the users upgrade rail; only newly catalogued slugs get owner grants.
+              // One transaction prevents a crash between permission creation and its role grant.
+              await withEmbeddedWriteTransaction(
+                await runtime.database(),
+                true,
+                async (tx) => {
+                  await (
+                    await RolePermissionCollection.create({ db: tx })
+                  ).seedNewCatalogPermissions();
+                },
+              );
+              host.catalog.models = cookbookModelCatalog(
+                host.catalog,
+                snapshot.cookbook.models,
+              ).models;
+              await host.state.publishModels(
+                tenantId,
+                snapshot.cookbook,
+                snapshot.revision,
+              );
+              publishedDefinitions.set(
+                tenantId,
+                snapshot.webDefinitions.filter(
+                  (definition) =>
+                    definition.customFields.length > 0 ||
+                    (definition.objectRef.startsWith(
+                      `${snapshot.cookbook.models?.packageName}:`,
+                    ) &&
+                      Object.hasOwn(
+                        snapshot.cookbook.models?.lists ?? {},
+                        definition.objectRef.split(':').at(-1) ?? '',
+                      )),
+                ),
+              );
+            },
+          });
+          editors.set(tenantId, editor);
+        })();
+        editorStarts.set(tenantId, opening);
+      }
+      try {
+        await opening;
+      } finally {
+        editorStarts.delete(tenantId);
+      }
+    }
+    if (recover) {
+      const actor = getPreferencePrincipal();
+      if (
+        actor?.tenantId === tenantId &&
+        actor.userId &&
+        (await isOwner(tenantId, actor.userId))
+      ) {
+        const owner = { id: actor.userId, tenantId };
+        for (const record of await host.authority.list(owner, false)) {
+          if (record.status !== 'approved' || !record.continuation) continue;
+          try {
+            await host.continuations.resume(owner, record.id);
+          } catch (error) {
+            // A concurrent claimant or a recorded refusal is already visible to the requester.
+            if (
+              (await host.authority.get(tenantId, record.id))?.status ===
+              'approved'
+            )
+              throw error;
+          }
+        }
+      }
+    }
     return host;
   };
   const chatgpt = async () => {
@@ -278,12 +564,32 @@ export function createCookbookHost(options: CookbookHostOptions) {
         : [];
     });
   };
-  const extra = async (context: AssistantRequestContext) =>
-    (await ready()).service.assistantTools({
-      surface: 'assistant',
-      tenantId: context.principal.tenantId,
-      userId: context.principal.userId,
-    });
+  const extra = async (context: AssistantRequestContext) => {
+    const host = await ready();
+    return (
+      await host.service.assistantTools({
+        surface: 'assistant',
+        tenantId: context.principal.tenantId,
+        userId: context.principal.userId,
+      })
+    ).map((tool) => ({
+      ...tool,
+      execute: (
+        input: Parameters<typeof tool.execute>[0] & {
+          run: import('@happyvertical/smrt-agents').PrincipalRun;
+        },
+      ) =>
+        host.continuations.capture(
+          {
+            id: context.principal.userId,
+            tenantId: context.principal.tenantId,
+            permissions: [...input.run.permissions],
+            allowedTools: [...input.run.allowedTools],
+          },
+          () => tool.execute(input),
+        ),
+    }));
+  };
   const allowed = async (context: AssistantRequestContext) => [
     ...manifest(context.principal.tenantId).map((t) => t.slug),
     ...(await extra(context)).map((t) => t.slug),
@@ -461,6 +767,13 @@ export function createCookbookHost(options: CookbookHostOptions) {
     ...adapters,
     allowedTools: allowed,
     extraTools: extra,
+    approvalContinuations: async () => (await ready()).continuations,
+    // These tools hold in their own canonical service; never create a second chat hold.
+    approvalPolicy: {
+      tools: Object.fromEntries(
+        COOKBOOK_TOOL_NAMES.map((name) => [name, false]),
+      ),
+    },
     describeTool: describeAssistantTool,
     systemPrompt:
       'Help the owner work with their business records and installed recipes. Use the provided tools. A customer is a Customer linked to their Profile name; never create a Bot for a customer.',
@@ -472,12 +785,40 @@ export function createCookbookHost(options: CookbookHostOptions) {
       ...input,
       resolve: async (event, resolveOptions) => {
         const locals = event.locals as SmrtRuntimeLocals;
-        if (locals.tenantId) await prepare(locals.tenantId);
+        if (locals.tenantId) {
+          await prepare(locals.tenantId);
+          const definition = publishedDefinitions
+            .get(locals.tenantId)
+            ?.find(
+              (d) =>
+                event.url.pathname === `/api/${d.name}` ||
+                event.url.pathname.startsWith(`/api/${d.name}/`),
+            );
+          if (definition && locals.user?.id)
+            return new APIGenerator(
+              {
+                basePath: '/api',
+                authMiddleware: () => async (request) => request,
+              },
+              {
+                tenantId: locals.tenantId,
+                user: { id: locals.user.id },
+                permissions: locals.permissions,
+                db: runtime.databaseConfig(),
+              },
+            ).generateHandler()(event.request);
+        }
         return input.resolve(event, resolveOptions);
       },
     });
   const session = createSessionLayoutLoad();
-  async function load(event: Parameters<typeof session>[0]) {
+  async function load(event: Parameters<typeof session>[0]): Promise<
+    Awaited<ReturnType<typeof session>> & {
+      dynamicDefinitions: AppModelSnapshot['webDefinitions'];
+      enabledModels: string[];
+      cookbookApp: CookbookAppData;
+    }
+  > {
     const data = await session(event);
     const host = await ready();
     const tenantId = (event.locals as SmrtRuntimeLocals).tenantId;
@@ -488,6 +829,9 @@ export function createCookbookHost(options: CookbookHostOptions) {
       : undefined;
     return {
       ...data,
+      dynamicDefinitions: tenantId
+        ? (publishedDefinitions.get(tenantId) ?? [])
+        : [],
       enabledModels: filterRuntimeExposure(
         host.catalog.models,
         (m) => ObjectRegistry.getExposureModel(m.id),
@@ -537,6 +881,10 @@ export function createCookbookHost(options: CookbookHostOptions) {
     assistant,
     connectAi,
     inferenceSettings,
+    async modelEditor(tenantId: string) {
+      await prepare(tenantId);
+      return editors.get(tenantId);
+    },
     ownerLink: createOwnerLinkHandler(runtime, { autoClaim: true }),
     /** Request-scoped: never pass a browser tenant id or retain this across requests. */
     async cookbookApp(tenantId: string) {
@@ -673,6 +1021,7 @@ export function createCookbookHost(options: CookbookHostOptions) {
                 },
                 model: tool,
                 generator,
+                annotations: descriptor.annotations,
               })),
               ...recipeTools
                 .filter(
@@ -692,6 +1041,7 @@ export function createCookbookHost(options: CookbookHostOptions) {
                   },
                   model: undefined,
                   generator: undefined,
+                  annotations: tool.annotations,
                 })),
             ];
             const names = new Set<string>();
@@ -701,7 +1051,8 @@ export function createCookbookHost(options: CookbookHostOptions) {
                 throw new Error('Conflicting MCP tool aliases');
               names.add(name);
               const destructive =
-                !!spec.model && requiresOwnerApproval(spec.model, {});
+                spec.annotations?.destructiveHint === true ||
+                (!!spec.model && requiresOwnerApproval(spec.model, {}));
               return {
                 name,
                 description: spec.ai.function.description ?? spec.slug,
@@ -709,11 +1060,15 @@ export function createCookbookHost(options: CookbookHostOptions) {
                 outputSchema: { type: 'object', additionalProperties: true },
                 effect: destructive
                   ? 'destructive'
-                  : /\.(read|search|describe|listTemplates)$/.test(spec.slug)
+                  : spec.annotations?.readOnlyHint === true
                     ? 'read'
                     : 'write',
-                idempotent: false,
-                openWorld: false,
+                idempotent: spec.annotations?.idempotentHint === true,
+                openWorld: spec.annotations?.openWorldHint === true,
+                mapError: (error) =>
+                  error instanceof CookbookToolError
+                    ? { code: error.code, message: error.publicMessage }
+                    : undefined,
                 execute: async ({ arguments: args, principal: caller }) => {
                   if (
                     !caller?.id ||
@@ -725,34 +1080,52 @@ export function createCookbookHost(options: CookbookHostOptions) {
                   const tool = spec.model;
                   if (tool && !isManifestToolEnabled(tool, caller.tenantId))
                     throw new Error('Tool disabled');
-                  if (tool && requiresOwnerApproval(tool, args)) {
-                    if (!binding?.turn.thread)
-                      throw new Error(
-                        'Destructive MCP tools require a bound assistant turn',
-                      );
-                    const hold = await host.authority.request({
+                  if (
+                    tool &&
+                    (requiresOwnerApproval(tool, args) ||
+                      spec.annotations?.destructiveHint === true)
+                  ) {
+                    const input = {
                       tenantId: caller.tenantId,
                       requestedBy: caller.id,
                       tool: spec.slug,
                       callId: randomUUID(),
                       args,
                       summary: describeAssistantTool(spec.slug, args),
-                      context: {
-                        principal: binding.context.principal,
-                        threadId: binding.turn.thread.id,
-                        agentSessionId: binding.turn.thread.agentSessionId,
-                        originMessageId: binding.turn.originMessageId,
-                        allowedTools: binding.turn.principal.allowedTools ?? [],
-                        permissionCeiling: binding.turn.permissions ?? [
-                          ...scope,
-                        ],
-                        driver: 'builtin',
-                      },
-                    });
+                      context: binding?.turn.thread
+                        ? {
+                            principal: binding.context.principal,
+                            threadId: binding.turn.thread.id,
+                            agentSessionId: binding.turn.thread.agentSessionId,
+                            originMessageId: binding.turn.originMessageId,
+                            allowedTools:
+                              binding.turn.principal.allowedTools ?? [],
+                            permissionCeiling: binding.turn.permissions ?? [
+                              ...scope,
+                            ],
+                            driver: 'builtin',
+                          }
+                        : {},
+                    };
+                    const hold = binding?.turn.thread
+                      ? await host.authority.request(input)
+                      : await host.continuations.capture(
+                          {
+                            id: caller.id,
+                            tenantId: caller.tenantId,
+                            permissions: [...(caller.scopes ?? [])],
+                            allowedTools: [spec.slug],
+                          },
+                          () =>
+                            host.continuations
+                              .adapter('model', 'continuation')
+                              .request(input),
+                        );
                     const result = {
                       status: 'approval_required',
                       approvalId: hold.id,
                       summary: hold.summary,
+                      outcomeTool: 'owner_approval_outcome',
                     };
                     return {
                       content: [{ type: 'text', text: JSON.stringify(result) }],
@@ -779,14 +1152,23 @@ export function createCookbookHost(options: CookbookHostOptions) {
                         });
                       },
                     );
-                  const result = await host.service.invoke(
-                    spec.slug as Parameters<typeof host.service.invoke>[0],
-                    args,
+                  const result = await host.continuations.capture(
                     {
-                      surface: 'mcp',
+                      id: caller.id,
                       tenantId: caller.tenantId,
-                      userId: caller.id,
+                      permissions: [...(caller.scopes ?? [])],
+                      allowedTools: [spec.slug],
                     },
+                    () =>
+                      host.service.invoke(
+                        spec.slug as Parameters<typeof host.service.invoke>[0],
+                        args,
+                        {
+                          surface: 'mcp',
+                          tenantId: caller.tenantId,
+                          userId: caller.id,
+                        },
+                      ),
                   );
                   return {
                     content: [{ type: 'text', text: JSON.stringify(result) }],
@@ -794,6 +1176,49 @@ export function createCookbookHost(options: CookbookHostOptions) {
                 },
               };
             });
+            if (
+              (
+                await host.authority.list(
+                  { id: principal.id!, tenantId: principal.tenantId! },
+                  false,
+                )
+              ).some((r) => r.requestedBy === principal.id)
+            )
+              workflows.push({
+                name: 'owner_approval_outcome',
+                description:
+                  'Read your pending owner approval or its recorded outcome.',
+                inputSchema: {
+                  type: 'object',
+                  properties: { id: { type: 'string' } },
+                  required: ['id'],
+                  additionalProperties: false,
+                },
+                outputSchema: { type: 'object', additionalProperties: true },
+                effect: 'read',
+                idempotent: true,
+                openWorld: false,
+                execute: async ({ arguments: args, principal: caller }) => {
+                  if (!caller?.id || !caller.tenantId)
+                    throw new Error('Authentication required');
+                  const record = await host.continuations.outcome(
+                    { id: caller.id, tenantId: caller.tenantId },
+                    String(args.id),
+                  );
+                  if (!caller.scopes?.includes(record.tool))
+                    throw new Error('Approval outcome scope required');
+                  const result = {
+                    id: record.id,
+                    status: record.status,
+                    summary: record.summary,
+                    result: record.result ?? null,
+                  };
+                  return {
+                    content: [{ type: 'text', text: JSON.stringify(result) }],
+                    structuredContent: result,
+                  };
+                },
+              });
           },
         );
       return mountMcpAppRoute({
@@ -804,7 +1229,7 @@ export function createCookbookHost(options: CookbookHostOptions) {
       })({ ...event, locals: { ...event.locals } });
     },
     dispose() {
-      current?.gate.dispose();
+      current?.gate.dispose?.();
       setRuntimeExposureGate(undefined);
       setCookbookToolService(undefined);
       turns.clear();

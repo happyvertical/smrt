@@ -3,7 +3,11 @@ import { mkdir, mkdtemp, readFile, rm, writeFile } from 'node:fs/promises';
 import { createServer, type Server } from 'node:http';
 import { tmpdir } from 'node:os';
 import { dirname, join } from 'node:path';
-import { LOCAL_MCP_TOKEN_PRINCIPAL } from '@happyvertical/smrt-app-runtime';
+import {
+  createSqliteOwnerApprovalStore,
+  LOCAL_MCP_TOKEN_PRINCIPAL,
+  OwnerApprovalAuthority,
+} from '@happyvertical/smrt-app-runtime';
 import type { SmrtSvelteKitRuntime } from '@happyvertical/smrt-app-runtime/sveltekit';
 import { readAssistantTurnStream } from '@happyvertical/smrt-chat/assistant-turn';
 import { Customer } from '@happyvertical/smrt-commerce';
@@ -17,14 +21,23 @@ import {
 import { APIGenerator } from '@happyvertical/smrt-core/generators/rest';
 import { getTestDatabase } from '@happyvertical/smrt-core/testing';
 import { createAgentCliService } from '@happyvertical/smrt-inference/server';
-import { Profile, ProfileTypeCollection } from '@happyvertical/smrt-profiles';
-import { withTenant } from '@happyvertical/smrt-tenancy';
+import {
+  Profile as ProfileBase,
+  ProfileTypeCollection,
+} from '@happyvertical/smrt-profiles';
+import {
+  disableTenancy,
+  enableTenancy,
+  withTenant,
+} from '@happyvertical/smrt-tenancy';
 import type { Cookbook } from '@happyvertical/smrt-types';
 import {
   MembershipCollection,
   MembershipStatus,
+  PermissionCollection,
   PermissionResolver,
   RoleCollection,
+  RolePermissionCollection,
   TenantCollection,
   UserCollection,
   UserStatus,
@@ -49,6 +62,9 @@ import { createCookbookHostState } from '../host/state.js';
 class HostMemo extends SmrtObject {
   @field() title = '';
 }
+// Same empty replacement the public generator emits; retain provider STI ancestry.
+@smrt({ packageName: '@fixture/host', name: 'Profile' })
+class Profile extends ProfileBase {}
 void HostMemo;
 void Customer;
 void Profile;
@@ -161,9 +177,15 @@ async function turn(id: string, content: string) {
   });
   expect(r.status, JSON.stringify(errors)).toBe(200);
   const events: Array<Record<string, unknown>> = [];
-  await readAssistantTurnStream(r, (e) => {
-    events.push(e as unknown as Record<string, unknown>);
-  });
+  try {
+    await readAssistantTurnStream(r, (e) => {
+      events.push(e as unknown as Record<string, unknown>);
+    });
+  } catch (error) {
+    throw new Error(
+      `${String(error)}; fixture errors: ${JSON.stringify(errors)}`,
+    );
+  }
   return events;
 }
 const tool = (name: string, args: unknown) => ({
@@ -205,6 +227,11 @@ async function mcp(
   e.request.headers.delete('accept');
   e.request.headers.set('mcp-protocol-version', '2026-07-28');
   e.request.headers.set('mcp-method', method);
+  if (method === 'tools/call')
+    e.request.headers.set(
+      'mcp-name',
+      String((params as { name: string }).name),
+    );
   const r = await request(e, host.mcp);
   const raw = await r.text();
   if (r.status === 200) expect(raw, `MCP response ${r.status}`).not.toBe('');
@@ -212,6 +239,7 @@ async function mcp(
 }
 
 beforeEach(async () => {
+  enableTenancy();
   origin = 'http://127.0.0.1:4999';
   stateDirectory = await mkdtemp(join(tmpdir(), 'cookbook-host-cli-'));
   const bin = join(stateDirectory, 'bin');
@@ -391,6 +419,7 @@ afterEach(async () => {
     http = undefined;
   }
   host?.dispose();
+  disableTenancy();
   await db?.close?.();
   await rm(stateDirectory, { recursive: true, force: true });
   vi.restoreAllMocks();
@@ -502,6 +531,506 @@ describe('local cookbook host composition (SQLite, fake model, no providers)', (
     expect((await mcp('tools/list', undefined, 'invalid')).status).toBe(401);
   });
 
+  it('persists an external MCP delete and resumes it once through the owner route after host restart', async () => {
+    const state = await createCookbookHostState(db, catalog, cookbook);
+    await state.refresh(tenantId);
+    const before = state.engineFor({ tenantId })!.state();
+    const after = structuredClone(before);
+    after.revision++;
+    after.cookbook.recipes.push('host.memos');
+    await state.commit({
+      context: { surface: 'assistant', tenantId, userId: owner.id },
+      before,
+      after,
+      audit: {
+        context: { surface: 'assistant', tenantId, userId: owner.id },
+        tool: 'recipes.enable',
+        outcome: 'changed',
+        summary: 'Enable fixture',
+      },
+    });
+    const customers = await ObjectRegistry.getCollection(MEMO, { db });
+    const customer = await customers.create({ title: 'Held memo' });
+    await customer.save();
+    const listing = await mcp();
+    const name = listing.body.result.tools.find(
+      (t: { name: string }) =>
+        t.name.includes('hostmemo') && t.name.includes('delete'),
+    )?.name;
+    expect(name).toBeTruthy();
+    const held = await mcp('tools/call', {
+      name,
+      arguments: { id: customer.id },
+    });
+    expect(held.body.result, JSON.stringify(held.body)).toBeTruthy();
+    const pending = JSON.parse(held.body.result.content[0].text);
+    expect(pending).toMatchObject({
+      status: 'approval_required',
+      outcomeTool: 'owner_approval_outcome',
+    });
+    expect(await customers.get(customer.id!)).toBeTruthy();
+    const runtime = host.runtime;
+    host.dispose();
+    host = createCookbookHost({ runtime, app: { cookbook, catalog } });
+    await host.init();
+    const rows = await (await chat('approvals', undefined, 'GET')).json();
+    expect(rows.approvals).toContainEqual(
+      expect.objectContaining({ id: pending.approvalId, status: 'pending' }),
+    );
+    const decision = await chat(`approvals/${pending.approvalId}/decide`, {
+      approve: true,
+    });
+    expect(decision.status).toBe(200);
+    expect((await decision.json()).approval.status).toBe('succeeded');
+    expect(await customers.get(customer.id!)).toBeFalsy();
+    expect(
+      (await chat(`approvals/${pending.approvalId}/decide`, { approve: true }))
+        .status,
+    ).toBe(409);
+    const outcome = await mcp('tools/call', {
+      name: 'owner_approval_outcome',
+      arguments: { id: pending.approvalId },
+    });
+    expect(JSON.parse(outcome.body.result.content[0].text)).toMatchObject({
+      status: 'succeeded',
+    });
+  });
+
+  it('recovers an approved but unconsumed external call after restart without replaying its outcome', async () => {
+    const state = await createCookbookHostState(db, catalog, cookbook);
+    await state.refresh(tenantId);
+    const before = state.engineFor({ tenantId })!.state();
+    const after = structuredClone(before);
+    after.revision++;
+    after.cookbook.recipes.push('host.memos');
+    await state.commit({
+      context: { surface: 'assistant', tenantId, userId: owner.id },
+      before,
+      after,
+      audit: {
+        context: { surface: 'assistant', tenantId },
+        tool: 'recipes.enable',
+        outcome: 'changed',
+        summary: 'Fixture enable',
+      },
+    });
+    const memos = await ObjectRegistry.getCollection(MEMO, { db });
+    const memo = await memos.create({ title: 'Recover this call' });
+    await memo.save();
+    const held = await mcp('tools/call', {
+      name: 'hostmemo_delete',
+      arguments: { id: memo.id },
+    });
+    const pending = JSON.parse(held.body.result.content[0].text);
+    const authority = new OwnerApprovalAuthority(
+      await createSqliteOwnerApprovalStore(db),
+      async (actor) => actor.id === owner.id && actor.tenantId === tenantId,
+    );
+    await authority.decide(
+      { id: owner.id, tenantId },
+      pending.approvalId,
+      true,
+    ); // Crash boundary before dispatch.
+    const runtime = host.runtime;
+    host.dispose();
+    host = createCookbookHost({ runtime, app: { cookbook, catalog } });
+    await host.init();
+    const outcome = await mcp('tools/call', {
+      name: 'owner_approval_outcome',
+      arguments: { id: pending.approvalId },
+    });
+    expect(JSON.parse(outcome.body.result.content[0].text).status).toBe(
+      'succeeded',
+    );
+    expect(await memos.get(memo.id!)).toBeNull();
+    const replacement = await memos.create({
+      id: memo.id,
+      title: 'Do not replay',
+    });
+    await replacement.save();
+    await mcp('tools/call', {
+      name: 'owner_approval_outcome',
+      arguments: { id: pending.approvalId },
+    });
+    expect((await memos.get(memo.id!))?.toJSON()).toMatchObject({
+      title: 'Do not replay',
+    });
+  });
+
+  it('continues a native cookbook disable without a thread or double consumption', async () => {
+    const disableName = (await mcp()).body.result.tools.find(
+      (t: { name: string }) => t.name.endsWith('recipes_disable'),
+    )?.name;
+    expect(disableName).toBeTruthy();
+    const held = await mcp('tools/call', {
+      name: disableName,
+      arguments: { id: 'host.customers', expectedRevision: 0 },
+    });
+    expect(held.body.result, JSON.stringify(held.body)).toBeTruthy();
+    const pending = JSON.parse(held.body.result.content[0].text);
+    expect(pending.status).toBe('approval_required');
+    const runtime = host.runtime;
+    host.dispose();
+    host = createCookbookHost({ runtime, app: { cookbook, catalog } });
+    await host.init();
+    const decision = await chat(`approvals/${pending.approvalId}/decide`, {
+      approve: true,
+    });
+    expect(decision.status).toBe(200);
+    expect((await decision.json()).approval.status).toBe('succeeded');
+    expect((await host.cookbookApp(tenantId)).cookbook.recipes).toEqual([]);
+    expect(
+      (await chat(`approvals/${pending.approvalId}/decide`, { approve: true }))
+        .status,
+    ).toBe(409);
+  });
+
+  it('resumes app remove-field and remove-list holds through the shared owner route across restart', async () => {
+    const runtime = host.runtime;
+    host.dispose();
+    const app = { cookbook, catalog: structuredClone(catalog) };
+    host = createCookbookHost({
+      runtime,
+      packageName: '@fixture/host-remove',
+      app,
+      assistant: {
+        ai: {
+          chat: async (m: unknown, o: unknown) =>
+            response(m as never, o as never),
+        } as never,
+      },
+    });
+    await host.init();
+    let editor: Awaited<ReturnType<typeof host.modelEditor>>;
+    await request(event('/'), async () => {
+      editor = await host.modelEditor(tenantId);
+      return new Response();
+    });
+    await editor!.apply(
+      {
+        type: 'create_list',
+        name: 'ApprovalMat',
+        list: {
+          label: 'Loaner mats',
+          icon: 'layers',
+          displayField: 'size',
+          fields: { size: { type: 'text' } },
+        },
+      },
+      {
+        actor: owner.id,
+        tenantId,
+        requestId: randomUUID(),
+        expectedRevision: 0,
+      },
+    );
+    const offered = (await mcp()).body.result.tools;
+    expect(
+      offered.find(
+        (entry: { name: string }) => entry.name === 'app_remove_list',
+      ).annotations.destructiveHint,
+    ).toBe(true);
+    expect(
+      offered.find((entry: { name: string }) => entry.name === 'app_history')
+        .annotations.readOnlyHint,
+    ).toBe(true);
+    let rounds = 0;
+    response = () =>
+      ++rounds === 1
+        ? tool('app.removeField', {
+            list: 'Loaner mats',
+            field: 'Size',
+            expectedRevision: editor!.snapshot().revision,
+          })
+        : text();
+    const seen = await turn(
+      await thread(),
+      'Remove the Size field from Loaner mats',
+    );
+    expect(seen.some((e) => e.type === 'error')).toBe(false);
+    const ownerRows = (await (await chat('approvals', undefined, 'GET')).json())
+      .approvals;
+    const fieldRows = ownerRows.filter(
+      (row: { tool: string }) => row.tool === 'app.removeField',
+    );
+    expect(fieldRows).toHaveLength(1);
+    const fieldHold = { approvalId: fieldRows[0].id };
+    expect(fieldRows[0].status).toBe('pending');
+    expect(editor!.snapshot().revision).toBe(1);
+    const fieldDecision = await chat(
+      `approvals/${fieldHold.approvalId}/decide`,
+      { approve: true },
+    );
+    expect(fieldDecision.status).toBe(200);
+    expect((await fieldDecision.json()).approval.status).toBe('succeeded');
+    expect(editor!.snapshot().cookbook.policies).toContainEqual(
+      expect.objectContaining({ fieldName: 'size', visibility: 'hidden' }),
+    );
+    const listCall = await mcp('tools/call', {
+      name: 'app_remove_list',
+      arguments: {
+        list: 'Loaner mats',
+        expectedRevision: editor!.snapshot().revision,
+      },
+    });
+    const listHold = JSON.parse(listCall.body.result.content[0].text);
+    expect(listHold.status).toBe('approval_required');
+    host.dispose();
+    host = createCookbookHost({
+      runtime,
+      packageName: '@fixture/host-remove',
+      app,
+    });
+    await host.init();
+    const listDecision = await chat(`approvals/${listHold.approvalId}/decide`, {
+      approve: true,
+    });
+    expect(listDecision.status).toBe(200);
+    expect((await listDecision.json()).approval.status).toBe('succeeded');
+    expect((await host.cookbookApp(tenantId)).cookbook.features).not.toContain(
+      '@fixture/host-remove:ApprovalMat',
+    );
+    expect(
+      (await chat(`approvals/${listHold.approvalId}/decide`, { approve: true }))
+        .status,
+    ).toBe(409);
+    const outcome = await mcp('tools/call', {
+      name: 'owner_approval_outcome',
+      arguments: { id: listHold.approvalId },
+    });
+    expect(JSON.parse(outcome.body.result.content[0].text).status).toBe(
+      'succeeded',
+    );
+  });
+
+  it('continues an approved template apply after recreating the host and its preview cache', async () => {
+    const runtime = host.runtime;
+    host.dispose();
+    const app = {
+      cookbook,
+      catalog: {
+        ...structuredClone(catalog),
+        cookbooks: [
+          {
+            id: 'host-template',
+            name: 'Memos only',
+            document: { ...cookbook, recipes: ['host.memos'] },
+          },
+        ],
+      },
+    };
+    host = createCookbookHost({
+      runtime,
+      packageName: '@fixture/host-app',
+      app,
+    });
+    await host.init();
+    const previewCall = await mcp('tools/call', {
+      name: 'cookbook_apply',
+      arguments: { id: 'host-template' },
+    });
+    const preview = JSON.parse(previewCall.body.result.content[0].text);
+    const held = await mcp('tools/call', {
+      name: 'cookbook_apply',
+      arguments: {
+        id: 'host-template',
+        apply: true,
+        expectedRevision: preview.revision,
+        previewToken: preview.previewToken,
+      },
+    });
+    const pending = JSON.parse(held.body.result.content[0].text);
+    expect(pending.status).toBe('approval_required');
+    host.dispose();
+    host = createCookbookHost({
+      runtime,
+      packageName: '@fixture/host-app',
+      app,
+    });
+    await host.init();
+    const decision = await chat(`approvals/${pending.approvalId}/decide`, {
+      approve: true,
+    });
+    expect(decision.status).toBe(200);
+    expect((await decision.json()).approval.status).toBe('succeeded');
+    expect((await host.cookbookApp(tenantId)).cookbook.recipes).toEqual([
+      'host.memos',
+    ]);
+  });
+
+  it('publishes a live custom list and reference through gated dynamic REST and keeps later recipe changes', async () => {
+    const runtime = host.runtime;
+    host.dispose();
+    host = createCookbookHost({
+      runtime,
+      packageName: '@fixture/host-app',
+      app: { cookbook, catalog: structuredClone(catalog) },
+      activation: () => ({
+        boot: async () => {},
+        gate: (gate) => gate,
+        isReady: () => true,
+        activate: async (ids) => {
+          expect([...ids]).not.toContain('@fixture/host-app:LoanerMat');
+        },
+      }),
+    });
+    await host.init();
+    let editor: Awaited<ReturnType<typeof host.modelEditor>>;
+    await request(event('/'), async () => {
+      editor = await host.modelEditor(tenantId);
+      return new Response();
+    });
+    const permission = await (
+      await PermissionCollection.create({ db })
+    ).findBySlug('customers.create');
+    const role = await (
+      await RoleCollection.create({ db })
+    ).findSystemRoleBySlug('owner');
+    const grants = await (await RolePermissionCollection.create({ db })).list({
+      where: { roleId: role!.id, permissionId: permission!.id },
+    });
+    expect(grants).toHaveLength(1);
+    await grants[0].delete(); // An existing operator revocation must stay removed.
+    const added = await editor!.apply(
+      {
+        type: 'create_list',
+        name: 'LoanerMat',
+        list: {
+          label: 'Loaner mats',
+          icon: 'layers',
+          displayField: 'size',
+          fields: {
+            size: { type: 'text' },
+            customerId: { type: 'reference', target: CUSTOMER },
+          },
+        },
+      },
+      {
+        actor: owner.id,
+        tenantId,
+        requestId: randomUUID(),
+        expectedRevision: editor!.snapshot().revision,
+      },
+    );
+    const definition = added.webDefinitions.find(
+      (d) => d.objectRef === '@fixture/host-app:LoanerMat',
+    )!;
+    permissions = [
+      ...(
+        await (
+          await PermissionResolver.create({ db })
+        ).resolvePermissions(owner.id, tenantId)
+      ).permissions,
+    ];
+    expect(permissions).toContain(`${definition.name}.create`);
+    expect(permissions).toContain(`${definition.name}.read`);
+    expect(permissions).not.toContain('customers.create');
+    const created = await request(
+      event(`/api/${definition.name}`, 'POST', { size: 'large' }),
+      () => new Response(null, { status: 404 }),
+    );
+    expect(created.status, await created.clone().text()).toBe(201);
+    const load = await request(event('/'), async (e) =>
+      json(await host.load(e)),
+    ).then((r) => r.json());
+    expect(load.enabledModels).toContain('@fixture/host-app:LoanerMat');
+    expect(
+      load.dynamicDefinitions.find(
+        (d: { objectRef: string }) => d.objectRef === definition.objectRef,
+      ).relationships,
+    ).toContainEqual(
+      expect.objectContaining({
+        field: 'customerId',
+        relatedCollection: 'customers',
+      }),
+    );
+    const revision = (await editor!.snapshot()).revision;
+    const enableName = (await mcp()).body.result.tools.find(
+      (t: { name: string }) => t.name.endsWith('recipes_enable'),
+    )?.name;
+    const enable = await mcp('tools/call', {
+      name: enableName,
+      arguments: { id: 'host.memos', expectedRevision: revision },
+    });
+    expect(JSON.parse(enable.body.result.content[0].text).status).toBe('ok');
+    await editor!.apply(
+      { type: 'relabel_list', name: 'LoanerMat', label: 'Studio mats' },
+      {
+        actor: owner.id,
+        tenantId,
+        requestId: randomUUID(),
+        expectedRevision: editor!.snapshot().revision,
+      },
+    );
+    expect((await host.cookbookApp(tenantId)).cookbook.recipes).toContain(
+      'host.memos',
+    );
+    const pref = await (
+      await request(event('/api/cookbook/prebuilt'), host.prebuilt)
+    ).json();
+    await request(
+      event('/api/cookbook/prebuilt', 'POST', {
+        enabled: false,
+        revision: pref.revision,
+      }),
+      host.prebuilt,
+    );
+    const listing = (await mcp()).body.result.tools.map(
+      (tool: { name: string }) => tool.name,
+    );
+    expect(listing).toContain('app_describe');
+    const projected = await request(event('/'), async (e) =>
+      json(await host.load(e)),
+    ).then((r) => r.json());
+    expect(projected.enabledModels).toContain('@fixture/host-app:LoanerMat');
+    expect(projected.enabledModels).not.toContain(CUSTOMER);
+  });
+
+  it('awaits activation before publishing a recipe and leaves failed activation disabled', async () => {
+    const runtime = host.runtime;
+    host.dispose();
+    let fail = true;
+    const activate = vi.fn(async (ids: Iterable<string>) => {
+      expect([...ids]).toContain(MEMO);
+      expect((await host.cookbookApp(tenantId)).cookbook.recipes).not.toContain(
+        'host.memos',
+      );
+      if (fail) throw new Error('Fixture migration failed');
+    });
+    host = createCookbookHost({
+      runtime,
+      app: { cookbook, catalog },
+      activation: () => ({
+        activate,
+        boot: async () => {},
+        isReady: () => true,
+        gate: (gate) => gate,
+      }),
+    });
+    await host.init();
+    const name = (await mcp()).body.result.tools.find((t: { name: string }) =>
+      t.name.endsWith('recipes_enable'),
+    ).name;
+    const refused = await mcp('tools/call', {
+      name,
+      arguments: { id: 'host.memos', expectedRevision: 0 },
+    });
+    expect(JSON.stringify(refused.body)).toContain('activation_failed');
+    expect((await host.cookbookApp(tenantId)).cookbook.recipes).not.toContain(
+      'host.memos',
+    );
+    fail = false;
+    const enabled = await mcp('tools/call', {
+      name,
+      arguments: { id: 'host.memos', expectedRevision: 0 },
+    });
+    expect(JSON.parse(enabled.body.result.content[0].text).status).toBe('ok');
+    expect(activate).toHaveBeenCalledTimes(2);
+    expect((await host.cookbookApp(tenantId)).cookbook.recipes).toContain(
+      'host.memos',
+    );
+  });
+
   it('a stub assistant lists customers and creates a Customer linked to a Profile, never a Bot', async () => {
     let round = 0;
     let profileId = '';
@@ -534,11 +1063,21 @@ describe('local cookbook host composition (SQLite, fake model, no providers)', (
     expect(profile?.toJSON()).toMatchObject({ name: 'Ada Customer' });
     expect(profile?.constructor.name).toBe('Profile');
     const customers = await ObjectRegistry.getCollection(CUSTOMER, { db });
-    expect(await customers.list({ where: { profileId } })).toHaveLength(1);
+    const createdCustomers = await customers.list({
+      where: { profileId },
+      displayLabel: true,
+    });
+    expect(createdCustomers).toHaveLength(1);
+    expect(createdCustomers[0].toJSON()).toMatchObject({
+      displayLabel: 'Ada Customer',
+    });
     const row = (
       await db.query('SELECT _meta_type FROM profiles WHERE id = ?', profileId)
     ).rows[0];
     expect(String(row._meta_type)).not.toContain('Bot');
+    expect(row._meta_type).toBe('@fixture/host:Profile');
+    expect(ObjectRegistry.getClassByQualifiedName(PROFILE)).toBeUndefined();
+    expect(ObjectRegistry.getClass(PROFILE)?.constructor).toBe(Profile);
   });
 
   it('enables a recipe through an assistant extra tool and exposes its section, REST and MCP without rebuilding', async () => {
@@ -640,6 +1179,32 @@ describe('local cookbook host composition (SQLite, fake model, no providers)', (
     expect(second.engineFor({ tenantId })!.state().revision).toBe(
       after.revision,
     );
+    const custom = '@fixture/history:PendingList';
+    const bootIds = await second.enabledModelUnion(async (tenant) => {
+      expect(tenant).toBe(tenantId);
+      return {
+        ...cookbook,
+        recipes: ['host.memos'],
+        features: [custom, '@fixture/missing:Unknown'],
+        models: {
+          version: 1,
+          packageName: '@fixture/history',
+          fields: {},
+          lists: {
+            ['PendingList']: {
+              label: 'Pending list',
+              icon: 'layers',
+              displayField: 'name',
+              fields: { name: { type: 'text' } },
+            },
+          },
+        },
+      };
+    });
+    expect(bootIds).toContain(MEMO);
+    expect(bootIds).not.toContain(CUSTOMER); // Journal supersedes the older checkpoint.
+    expect(bootIds).not.toContain(custom); // Only declared custom lists leave the fixed graph.
+    expect(bootIds).toContain('@fixture/missing:Unknown');
   });
 });
 function json(value: unknown) {

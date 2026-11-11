@@ -1,6 +1,7 @@
 /** Local host persistence. Cookbook publication and its audit share one SQLite transaction. */
 import {
   type CookbookEngine,
+  coveredModels,
   createCookbookEngine,
   type EngineState,
 } from '@happyvertical/smrt-core/cookbook/engine';
@@ -63,6 +64,69 @@ export async function createCookbookHostState(
   }
   return {
     refresh,
+    async enabledModelUnion(
+      historyFor?: (tenantId: string) => Promise<Cookbook | undefined>,
+    ) {
+      const rows = (
+        await db.query(
+          `SELECT tenant_id, state FROM ${TABLE} WHERE user_id = ''`,
+        )
+      ).rows;
+      const documents = rows.length
+        ? await Promise.all(
+            rows.map(
+              async (r) =>
+                (await historyFor?.(String(r.tenant_id))) ??
+                (JSON.parse(String(r.state)) as EngineState).cookbook,
+            ),
+          )
+        : [cookbook];
+      return [
+        ...new Set(
+          documents.flatMap((doc) => {
+            const custom = new Set(
+              Object.keys(doc.models?.lists ?? {}).map(
+                (name) => `${doc.models!.packageName}:${name}`,
+              ),
+            );
+            return [...coveredModels(catalog, doc)].filter(
+              (id) => !custom.has(id),
+            );
+          }),
+        ),
+      ];
+    },
+    async publishModels(
+      tenantId: string,
+      document: Cookbook,
+      revision: number,
+    ) {
+      const before = engines.get(tenantId)?.state();
+      if (!before) throw new Error('Cookbook unavailable');
+      const changed =
+        JSON.stringify(before.cookbook) !== JSON.stringify(document);
+      const nextRevision = Math.max(
+        before.revision + (changed ? 1 : 0),
+        revision,
+      );
+      if (!changed && before.revision === nextRevision) return;
+      const after = createCookbookEngine({
+        catalog,
+        cookbook: document,
+      }).state();
+      after.revision = nextRevision;
+      await this.commit({
+        context: { surface: 'assistant', tenantId },
+        before,
+        after,
+        audit: {
+          context: { surface: 'assistant', tenantId },
+          tool: 'cookbook.apply',
+          outcome: 'changed',
+          summary: 'Published app model definitions.',
+        },
+      });
+    },
     engineFor: ({ tenantId }: { tenantId?: string | null }) =>
       tenantId ? engines.get(tenantId) : undefined,
     async commit(change: Parameters<CookbookToolOptions['commit']>[0]) {
