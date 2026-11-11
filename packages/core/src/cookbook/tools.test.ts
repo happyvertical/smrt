@@ -285,6 +285,64 @@ async function lazy() {
 }
 
 describe('installed recipe server tools (SQLite, in process)', () => {
+  it('activates installed recipes beside editor-owned lists, while refusing other unknown identities', async () => {
+    const activation = await lazy();
+    const custom = '@fixture/app:LoanerMat';
+    const before = engines.get(context.tenantId!)!.state();
+    const document: Cookbook = {
+      ...before.cookbook,
+      features: [custom],
+      models: {
+        version: 1,
+        packageName: '@fixture/app',
+        fields: {},
+        lists: {
+          LoanerMat: {
+            label: 'Loaner mats',
+            icon: 'layers',
+            displayField: 'size',
+            fields: { size: { type: 'text' } },
+          },
+        },
+      },
+    };
+    const after = createCookbookEngine({ catalog, cookbook: document }).state();
+    after.revision = before.revision + 1;
+    await options.commit({
+      context,
+      before,
+      after,
+      audit: {
+        context,
+        tool: 'cookbook.apply',
+        outcome: 'changed',
+        summary: 'Fixture app model document',
+      },
+    });
+    expect((await enable()).status).toBe('ok');
+    expect(activation.isReady(INVOICE)).toBe(true);
+    expect((await rest()(request())).status).toBe(200);
+    expect(engines.get(context.tenantId!)!.cookbook().features).toContain(
+      custom,
+    );
+    const current = engines.get(context.tenantId!)!.state();
+    const unknown = structuredClone(current);
+    unknown.revision++;
+    unknown.cookbook.features.push('@fixture/missing:Unknown');
+    await options.commit({
+      context,
+      before: current,
+      after: unknown,
+      audit: {
+        context,
+        tool: 'cookbook.apply',
+        outcome: 'changed',
+        summary: 'Fixture unknown identity',
+      },
+    });
+    await expect(enable()).rejects.toMatchObject({ code: 'activation_failed' });
+  });
+
   it('activates a lazy closure before publishing enablement, then honors preference and durable disable approval', async () => {
     const activation = await lazy();
     const handler = rest();
@@ -630,6 +688,8 @@ describe('installed recipe server tools (SQLite, in process)', () => {
       String(hold.approvalId),
       true,
     );
+    // Restart the tool service: the durable hold restores its pinned preview.
+    service = createCookbookToolService(options);
     await call('cookbook.apply', { ...args, approvalId: hold.approvalId });
     expect(BUNDLED_COOKBOOK_TEMPLATES.map((t) => t.id)).toEqual([
       'bakery',

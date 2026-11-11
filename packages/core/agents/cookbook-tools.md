@@ -137,3 +137,20 @@ network MCP transport or host application wiring is claimed by this slice.
 
 Existing generated-server suites execute the single-file/modular code in plain
 Node; their stubs forward the new core subpath to the actual implementation.
+
+### Durable template preview receipts
+
+When a validated template apply is held, its existing preview receipt is included
+in the ledger's pinned context. An approved replay with identical original args,
+requester and live template/revision can restore that receipt after a service
+restart. Expired previews, changed templates, foreign actors and stale revisions
+still refuse before effects. The native service alone consumes/completes its hold;
+a host continuation must use executor-owned consumption. `tools.test.ts` recreates
+the service between decision and replay to cover the restart boundary.
+
+Lazy tool activation excludes only validated `models.lists` identities from its
+fixed source graph; the editor owns their schema/readiness. Other unknown model
+identities still fail activation. The SQLite tool fixture enables billing beside
+a declared custom list through the real coordinator, then proves an unrelated
+unknown feature refuses. The host fixture combines list edits, reference REST and
+subsequent recipe enable under this contract.

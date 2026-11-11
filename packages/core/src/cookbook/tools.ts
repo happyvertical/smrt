@@ -805,6 +805,29 @@ export function createCookbookToolService(options: CookbookToolOptions) {
             },
           });
         }
+        // A durable approved hold pins the original preview through restart.
+        // Only the host ledger can supply this receipt; arguments alone never restore it.
+        if (typeof args.approvalId === 'string') {
+          const held = await options.approvals.get(
+            context.tenantId!,
+            args.approvalId,
+          );
+          const { approvalId: _, ...boundArgs } = args;
+          if (
+            held?.status === 'approved' &&
+            held.requestedBy === context.userId &&
+            held.tool === name &&
+            same(held.args, boundArgs) &&
+            held.context.preview
+          ) {
+            previews.set(
+              String(args.previewToken),
+              held.context.preview as NonNullable<
+                ReturnType<typeof previews.get>
+              >,
+            );
+          }
+        }
         const preview = previews.get(String(args.previewToken));
         if (
           !preview ||
@@ -896,6 +919,9 @@ export function createCookbookToolService(options: CookbookToolOptions) {
         cookbookTools: 1,
         before: digest(before),
         after: digest(staged.state()),
+        ...(name === 'cookbook.apply'
+          ? { preview: previews.get(String(args.previewToken)) }
+          : {}),
       };
       if (approvalRequired) {
         const approval = await approveChange(
@@ -915,8 +941,18 @@ export function createCookbookToolService(options: CookbookToolOptions) {
           (name === 'recipes.enable' || name === 'cookbook.apply')
         ) {
           try {
+            const document = staged.cookbook();
+            // Editor-owned lists are outside the fixed source graph. Never hide
+            // an undeclared unknown identity: the coordinator must still refuse it.
+            const customLists = new Set(
+              Object.keys(document.models?.lists ?? {}).map(
+                (name) => `${document.models?.packageName}:${name}`,
+              ),
+            );
             await options.activation.activate(
-              coveredModels(catalog, staged.cookbook()),
+              [...coveredModels(catalog, document)].filter(
+                (id) => !customLists.has(id),
+              ),
             );
           } catch (error) {
             fail(

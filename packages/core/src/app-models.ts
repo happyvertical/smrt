@@ -7,3 +7,5 @@ export type {
 } from '@happyvertical/smrt-types';
 export * from './cookbook/model-editor.js';
 export * from './cookbook/model-history.js';
+
+export { cookbookModelCatalog } from './cookbook/models.js';
