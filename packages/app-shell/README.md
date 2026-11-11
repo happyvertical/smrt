@@ -553,3 +553,14 @@ Reference dimensions retain ids and add labels in each column's `labelColumn`;
 columns also carry `format`, `choices`, and `reference` hints where applicable.
 The server catalog exposes `app_setcalculation`, `app_definereport`,
 `app_renamereport`, `app_removereport`, `app_runreport` through the owner policy.
+
+### Engine bulk load
+
+`loadRecords { model, rows, mode: 'insert' | 'upsert', key?: string[],
+references?: { [field]: { model, by } } }` loads at most 10,000 rows / 8 MiB.
+Plan returns counts and up to 100 row problems (zero-based row, field, reason).
+Any rejected row aborts execute. Key upsert counts insert/update/unchanged;
+updates require live approval. Reference lookups are batched per target model.
+Values use single-record coercion; calculated input is refused. Loads are
+versioned, atomic, snapshotted, undone from exact originals, and replayed when
+publishing a draft. Catalog tool: `app_loadrecords`.

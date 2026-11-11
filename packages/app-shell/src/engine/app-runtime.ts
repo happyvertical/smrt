@@ -15,6 +15,12 @@ import { APIGenerator } from '@happyvertical/smrt-core/generators/rest';
 import type { RuntimeReportSpec } from '@happyvertical/smrt-reports';
 import { getDatabase } from '@happyvertical/sql';
 import {
+  applyLoad,
+  type LoadRecordsCommand,
+  prepareLoad,
+  undoRows,
+} from './data-migrations.ts';
+import {
   type AppDefinition,
   builtInFields,
   classNameFor,
@@ -104,6 +110,11 @@ export class AppRuntime {
       await this.db.transaction(async (tx: Handle) => {
         await tx.query(
           `CREATE TABLE IF NOT EXISTS _archive (id INTEGER PRIMARY KEY AUTOINCREMENT, version INTEGER NOT NULL, tbl TEXT NOT NULL, col TEXT NOT NULL, record_id TEXT NOT NULL, value TEXT, created_at TEXT NOT NULL)`,
+        );
+        if (steps.every((s) => s.op === 'loadRecords'))
+          statements.push(...(await this.plan(tx, true)));
+        await tx.query(
+          'CREATE INDEX IF NOT EXISTS _archive_lookup ON _archive (version, tbl, col, record_id)',
         );
         const ordered =
           migration?.direction === 'down' ? [...steps].reverse() : steps;
@@ -244,6 +255,12 @@ export class AppRuntime {
     const now = new Date().toISOString();
     const up = m.direction === 'up';
     switch (step.op) {
+      case 'loadRecords':
+        if (up)
+          await applyLoad(this.def, tx, step.command, m.version, step.seed);
+        else await undoRows(this.def, tx, m.version);
+        done.push(`-- ${up ? 'load' : 'undo load'} records`);
+        break;
       case 'calculation': {
         if (up && step.from && !step.from.calculated)
           await exec(
@@ -376,6 +393,12 @@ export class AppRuntime {
   // ---------- previews and archives ----------
 
   /** What a type change would do to existing values, without changing anything. */
+  async previewLoad(cmd: LoadRecordsCommand) {
+    return this.db.transaction(
+      async (tx: Handle) => (await prepareLoad(this.def, tx, cmd)).preview,
+    );
+  }
+
   async previewConversion(
     table: string,
     key: string,
@@ -439,6 +462,30 @@ export class AppRuntime {
   async countOverwrites(version: number, steps: Step[]) {
     const out: { table: string; column: string; replaced: number }[] = [];
     for (const step of steps) {
+      if (step.op === 'loadRecords') {
+        const count = await this.db.query(
+          "SELECT COUNT(*) AS n FROM _archive WHERE version = ? AND col = '$row'",
+          [version],
+        );
+        out.push({
+          table: step.command.model,
+          column: '*',
+          replaced: Number(count.rows[0].n),
+        });
+        continue;
+      }
+      if (step.op === 'calculation') {
+        const count = await this.db.query(
+          'SELECT COUNT(*) AS n FROM _archive WHERE version = ? AND tbl = ? AND col = ?',
+          [version, step.table, step.column],
+        );
+        out.push({
+          table: step.table,
+          column: step.column,
+          replaced: Number(count.rows[0].n),
+        });
+        continue;
+      }
       if (step.op !== 'convertColumn') continue;
       let replaced = 0;
       if (

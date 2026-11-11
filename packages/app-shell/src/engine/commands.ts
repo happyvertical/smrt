@@ -1,3 +1,4 @@
+import type { LoadRecordsCommand } from './data-migrations.ts';
 // Builder operations are commands. `plan` says what one would do without
 // changing anything; `execute` applies it. Risky commands are refused unless
 // the caller passes `approved: true`: the lowest-layer enforcement of the
@@ -6,6 +7,7 @@ import type { AppDefinition, FieldDef, MethodDef } from './definition.ts';
 import type { ReportDef } from './reports.ts';
 
 export type Command =
+  | LoadRecordsCommand
   | { type: 'defineReport'; name: string; definition: ReportDef }
   | { type: 'renameReport'; from: string; to: string }
   | { type: 'removeReport'; name: string }
@@ -88,12 +90,17 @@ export const RISKY_COMMANDS: ReadonlySet<CommandType> = new Set<CommandType>([
 
 /** A migration step whose down path overwrites newer data with archived originals. */
 export function overwritesOnUndo(step: { op: string }): boolean {
-  return step.op === 'convertColumn' || step.op === 'calculation';
+  return (
+    step.op === 'convertColumn' ||
+    step.op === 'calculation' ||
+    step.op === 'loadRecords'
+  );
 }
 
 /** Static risk of a command. `undo` is decided by the host from the stored version. */
 export function isRiskyCommand(cmd: Command): boolean {
   if (RISKY_COMMANDS.has(cmd.type)) return true;
+  if (cmd.type === 'loadRecords') return cmd.mode === 'upsert';
   if (cmd.type === 'importTemplate')
     return Object.values(cmd.data?.definition?.models ?? {}).some(
       (m) => Object.keys(m?.methods ?? {}).length > 0,
@@ -111,6 +118,7 @@ export const STRUCTURAL_COMMANDS: Readonly<Record<CommandType, boolean>> = {
   defineReport: true,
   renameReport: true,
   removeReport: true,
+  loadRecords: true,
   defineModel: true,
   addField: true,
   setCalculation: true,

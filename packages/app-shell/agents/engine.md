@@ -192,3 +192,19 @@ Columns carry money/date/choice hints. Reference dimension columns add
 resolved in one query per target model, using titleField or first visible text.
 The server catalog's engine-tools adapter calls the same owner check and builder
 path; app_runreport names the records target, builder commands the structure target.
+
+## Atomic bulk loads (#4916)
+
+`loadRecords { model, rows, mode: 'insert'|'upsert', key?, references? }`
+is structural. Upsert requires visible writable key fields; updates of existing
+rows require approval outside a draft. `references[field] = { model, by }`
+resolves lookup values with one query per target model. The dry-run preview
+returns insert/update/unchanged/rejected counts and up to 100 zero-based row,
+field, reason problems, never whole rows. Rejected input refuses the entire load.
+Bounds: 10,000 rows and 8 MiB JSON row data per call. Calculated input is refused.
+Preparation uses the record coercer, then collection writes use the migration
+transaction handle. Original raw rows (including nulls and timestamps) and
+inserted ids are journaled in `_archive` for exact undo. Every load has a
+pre-migration snapshot and stable per-command ids, so draft publish replays the
+load against current live keys and lookup data rather than copying draft rows.
+Undo of a data migration requires approval because it can replace newer data.

@@ -11,6 +11,19 @@ const string = { type: 'string' };
 const object = { type: 'object' };
 export const ENGINE_TOOLS = [
   {
+    name: 'app_loadrecords',
+    description:
+      'Load rows atomically with optional key upsert and reference lookup.',
+    properties: {
+      model: string,
+      rows: { type: 'array', items: object, maxItems: 10000 },
+      mode: { type: 'string', enum: ['insert', 'upsert'] },
+      key: { type: 'array', items: string },
+      references: object,
+    },
+    required: ['model', 'rows', 'mode'],
+  },
+  {
     name: 'app_setcalculation',
     description: 'Set or clear a database-calculated field.',
     properties: {
@@ -68,6 +81,7 @@ export async function runEngineTool(
     });
   }
   const types: Record<string, Command['type']> = {
+    app_loadrecords: 'loadRecords',
     app_setcalculation: 'setCalculation',
     app_definereport: 'defineReport',
     app_renamereport: 'renameReport',

@@ -1,3 +1,4 @@
+import { randomUUID } from 'node:crypto';
 // The host: owns the version history (through a VersionStore) and the data
 // directory, and manages the user app, which runs as its own runtime in a
 // worker thread. Every definition change starts a fresh app runtime from the
@@ -21,6 +22,7 @@ import {
   type Plan,
   type Template,
 } from './commands.ts';
+import type { LoadPreview } from './data-migrations.ts';
 import {
   type AppDefinition,
   builtInFields,
@@ -580,6 +582,31 @@ export class AppHost extends EventEmitter {
     });
 
     switch (cmd.type) {
+      case 'loadRecords': {
+        const preview = await this.callApp<LoadPreview>('previewLoad', cmd);
+        const a = change(
+          `load ${cmd.rows.length} ${cmd.model} records`,
+          this.clone(),
+          {
+            preview: { ...preview },
+            steps: [
+              {
+                op: 'loadRecords',
+                command: structuredClone(cmd),
+                seed: randomUUID(),
+              },
+            ],
+          },
+        );
+        a.plan.risky = preview.update > 0;
+        if (preview.rejected)
+          a.apply = async () => {
+            throw new EngineError(
+              `loadRecords rejected ${preview.rejected} rows; no rows loaded`,
+            );
+          };
+        return a;
+      }
       case 'defineReport': {
         const d = this.clone();
         d.reports ??= {};
