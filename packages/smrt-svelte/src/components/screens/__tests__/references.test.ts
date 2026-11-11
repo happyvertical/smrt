@@ -101,6 +101,79 @@ describe('named screen references', () => {
     ).toBeUndefined();
   });
 
+  it('renders a projected name in list and record headers, honors policies, and never submits it', async () => {
+    const customer: ScreenCollectionDefinition = {
+      objectRef: '@test:Customer',
+      className: 'Customer',
+      displayLabelField: 'displayLabel',
+      displayLabelProjection: {
+        via: 'profileId',
+        field: 'name',
+        fallback: 'Unnamed customer',
+      },
+      fields: {
+        note: { type: 'text' },
+        displayLabel: { type: 'text', readonly: true, ui: { basic: true } },
+      },
+    };
+    const record = {
+      id: 'customer-id',
+      displayLabel: 'Maya Proof',
+      note: 'Hello',
+    };
+    const policy = {
+      objectRef: customer.objectRef,
+      fields: {
+        displayLabel: { visibility: 'basic' as const, label: 'Customer name' },
+        note: { visibility: 'basic' as const },
+      },
+    };
+    const list = render(ListScreen, {
+      definition: customer,
+      rows: [record],
+      policy,
+    });
+    expect(
+      screen.getByRole('columnheader', { name: /Customer name/ }),
+    ).toBeInTheDocument();
+    expect(screen.getByText('Maya Proof')).toBeInTheDocument();
+    list.unmount();
+    const view = render(RecordScreen, {
+      definition: customer,
+      record,
+      policy,
+      mode: 'view',
+    });
+    expect(
+      screen.getByRole('heading', { name: 'Maya Proof' }),
+    ).toBeInTheDocument();
+    view.unmount();
+    const hidden = render(RecordScreen, {
+      definition: customer,
+      record,
+      mode: 'view',
+      policy: {
+        ...policy,
+        fields: { ...policy.fields, displayLabel: { visibility: 'hidden' } },
+      },
+    });
+    expect(screen.queryByText('Maya Proof')).not.toBeInTheDocument();
+    hidden.unmount();
+    const onsubmit = vi.fn();
+    render(EditForm, {
+      definition: customer,
+      record,
+      policy,
+      fields: ['displayLabel', 'note'],
+      onsubmit,
+    });
+    expect(
+      screen.queryByRole('textbox', { name: /Customer name/ }),
+    ).not.toBeInTheDocument();
+    await userEvent.click(screen.getByRole('button', { name: 'Save' }));
+    expect(onsubmit).toHaveBeenCalledWith({ note: 'Hello' }, { isNew: false });
+  });
+
   it('uses the manifest display field as the record title role', () => {
     expect(
       deriveFieldRoles({

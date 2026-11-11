@@ -271,17 +271,43 @@ field-policy exclusion tests remain mandatory. The new default-column assertion
 was also executed against isolated copies of the base and head derivation modules:
 the base failed the reference-column assertion and the head passed.
 
-**Blocked canary: commerce Customer → Profile name.** Core's existing
-`display.label` contract accepts an own persisted, non-sensitive field only
-(`core/src/ui-metadata.ts`); dotted paths, references, and transient fields are
-rejected by manifest generation. REST name filtering also operates on persisted
-columns. A metadata-only change cannot make Customer searchable by its linked
-Profile's current name. This needs an owning core relationship projection contract
-carried through manifests/web definitions and applied to both collection list/get
-serialization and name filtering/pagination, preserving permission and tenant
-boundaries. Commerce can then declare that projection once for `profileId` →
-Profile's display name and add its integration test. No copied-name column or
-screen-specific Customer lookup has been introduced.
+**Linked display names.** Core supports `display.label: { via, field,
+fallback }`; generated definitions carry `displayLabelField: 'displayLabel'`,
+`displayLabelProjection`, and a public text field with `readonly: true`.
+The server resolves the related name before filtering, sorting and pagination.
+Reference sources use the same bounded name query as an own-field label; screens
+never load the Profile collection themselves. Commerce Customer declares this
+for `profileId` → Profile.name, with `Unnamed customer` for a missing target.
+
+`deriveScreenFields` keeps readonly fields out of edit inputs and submitted
+payloads, even with explicit `fields`. Their values remain available in the
+record header/view and list name column. The display field leads default columns
+when no explicit order overrides it. A resolved policy still owns visibility
+and labels: hidden or omitted fields never reach the header/list, a custom label
+wins, and policy inclusion cannot make a server-computed field writable. This
+uses the existing field intersection and title role, with no new policy resolver.
+
+B1b interaction tests extend existing `fields.test.ts` and `references.test.ts`:
+manifest-readonly cannot be overridden by explicit edit fields; policy label,
+hidden and omitted cases; rendered record heading/list column; and submitted
+payload exclusion. The commerce canary exercises the actual REST-to-reference
+source path; core tests check SQL query bounds and live exposure before reads.
+
+Registry-based `smrt-fields.resolveFieldPolicy` currently enumerates registered
+model fields and does not enumerate the virtual `displayLabel`. Such a policy
+omits the name, and screens continue to exclude omitted fields. The owning
+policy resolver must expose the validated readonly projection as an addressable
+presentation field for cookbook policies to label/hide it; defaulting around a
+missing policy entry in screens would weaken the existing exclusion rule. The
+B1b screen tests use explicit structural policies and do not claim that resolver
+integration is implemented here.
+
+Reuse check: repeated MCP `review_smrt_project` on smrt-svelte; read the intent
+index and searched readonly/readOnly/derivedFields/displayLabel/ScreenFieldPolicy
+in screens, smrt-ui, chat, core and smrt-fields. Reused `deriveScreenFields`, the
+existing title-role/header and source implementations, and the existing test
+fixtures. No production file, helper or component was added. Structural types
+mirror core/web projection and readonly metadata; `ScreenFieldPolicy` is unchanged.
 
 ## Reuse audit (B1)
 

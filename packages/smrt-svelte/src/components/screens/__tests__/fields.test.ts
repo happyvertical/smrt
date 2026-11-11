@@ -220,3 +220,71 @@ describe('screenSourceError', () => {
     ).toMatch(/not '@acme\/tasks:Task'/);
   });
 });
+
+describe('projected display fields', () => {
+  const definition: ScreenCollectionDefinition = {
+    objectRef: '@test:Customer',
+    className: 'Customer',
+    displayLabelField: 'displayLabel',
+    displayLabelProjection: {
+      via: 'profileId',
+      field: 'name',
+      fallback: 'Unnamed customer',
+    },
+    fields: {
+      profileId: { type: 'crossPackageRef' },
+      displayLabel: { type: 'text', readonly: true, ui: { basic: true } },
+    },
+  };
+  it('uses the name column and title role, but never creates a writable form field', () => {
+    expect(
+      deriveScreenFields(definition, null, { mode: 'list' }),
+    ).toMatchObject([
+      { name: 'displayLabel', label: 'Name', roles: ['title'] },
+    ]);
+    expect(
+      names(
+        deriveScreenFields(definition, null, {
+          mode: 'edit',
+          include: ['displayLabel', 'profileId'],
+        }),
+      ),
+    ).toEqual(['profileId']);
+  });
+  it('honors policy labels and hidden/omitted fields without making computed values writable', () => {
+    const policy = {
+      objectRef: definition.objectRef,
+      fields: {
+        displayLabel: { visibility: 'basic' as const, label: 'Customer name' },
+      },
+    };
+    expect(
+      deriveScreenFields(definition, policy, { mode: 'view' })[0],
+    ).toMatchObject({
+      label: 'Customer name',
+      roles: ['title'],
+    });
+    expect(deriveScreenFields(definition, policy, { mode: 'edit' })).toEqual(
+      [],
+    );
+    expect(
+      deriveScreenFields(
+        definition,
+        {
+          ...policy,
+          fields: {
+            displayLabel: { visibility: 'hidden' },
+          },
+        },
+        { mode: 'list', include: ['displayLabel'] },
+      ),
+    ).toEqual([]);
+    expect(
+      deriveScreenFields(
+        definition,
+        { ...policy, fields: {} },
+        { mode: 'view' },
+      ),
+    ).toEqual([]);
+  });
+});

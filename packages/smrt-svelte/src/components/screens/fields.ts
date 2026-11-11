@@ -233,13 +233,19 @@ export function deriveScreenFields(
         ? 'basic'
         : 'advanced';
     if (tier === 'hidden') return null;
+    if (mode === 'edit' && c.definition.readonly === true) return null;
     const label = policyField?.label?.trim();
     const help = policyField?.help ?? c.definition.description ?? null;
     const fieldRoles = roles[c.name] ?? [];
     const kind = inputKindFor(c.definition, fieldRoles);
     return {
       name: c.name,
-      label: label || humanizeLabel(c.name, c.definition),
+      label:
+        label ||
+        (c.name === definition.displayLabelField &&
+        definition.displayLabelProjection
+          ? 'Name'
+          : humanizeLabel(c.name, c.definition)),
       help: help && help.trim() !== '' ? help : null,
       type: c.definition.type,
       kind,
@@ -294,7 +300,14 @@ export function deriveScreenFields(
 
   const ordered = decorated
     .map((e) => e.field)
-    .map((field, position) => ({ field, order: field.order, index: position }))
+    .map((field, position) => ({
+      field,
+      order: field.order,
+      index:
+        mode === 'list' && field.name === definition.displayLabelField
+          ? -1
+          : position,
+    }))
     .sort(byOrder)
     .map((e) => e.field);
 

@@ -60,6 +60,8 @@ export interface ScreenFieldDefinition {
   type: ScreenFieldType;
   required?: boolean;
   nullable?: boolean;
+  /** Server-computed value: viewable, never an editable input or submit value. */
+  readonly?: boolean;
   default?: unknown;
   /** Developer-authored `@field({ description })`; the code-seed help text. */
   description?: string;
@@ -113,6 +115,8 @@ export interface ScreenCollectionDefinition {
   idField?: string;
   /** Owning model's resolved @smrt({ display: { label } }) metadata. */
   displayLabelField?: string;
+  /** Validated one-hop projection resolved by the server, never by a screen. */
+  displayLabelProjection?: { via: string; field: string; fallback: string };
   /** Generated REST endpoint and permitted actions (used by the source factory). */
   endpoint?: string;
   actions?: readonly string[];
