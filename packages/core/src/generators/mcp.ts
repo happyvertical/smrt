@@ -35,7 +35,10 @@ import {
 } from '../runtime-exposure.js';
 import type { FieldDefinition, MethodDefinition } from '../scanner/types.js';
 import { resolveDisplayLabelField } from '../ui-metadata.js';
-import { isQualifiedName } from '../utils/qualified-names.js';
+import {
+  isQualifiedName,
+  parseQualifiedName,
+} from '../utils/qualified-names.js';
 import {
   buildCustomActionInvocationArgs,
   type CustomActionFailure,
@@ -162,6 +165,12 @@ export interface MCPConfig {
    * or calls (#3490). Duplicate tool names within the scope still fail.
    */
   classNames?: readonly string[];
+  /**
+   * Qualify all tools of models whose aliases collide inside classNames.
+   * Names are chosen before live exposure filtering, so recipe changes cannot
+   * retarget an alias. Omitted, duplicate aliases still fail closed.
+   */
+  qualifyCollidingNames?: boolean;
 }
 
 export const MCP_STABLE_CATALOG_TTL_MS = 86_400_000;
@@ -623,6 +632,61 @@ export class MCPGenerator {
       tools.push(...objectTools);
     }
 
+    if (this.config.qualifyCollidingNames) {
+      const owners = new Map<string, Set<string>>();
+      for (const tool of tools) {
+        const target = this.toolTarget(tool);
+        const owner =
+          registeredClasses.get(target.registryKey ?? '')?.qualifiedName ??
+          target.registryKey ??
+          target.objectName;
+        const entries = owners.get(tool.name) ?? new Set<string>();
+        entries.add(owner);
+        owners.set(tool.name, entries);
+      }
+      const collisions = new Set(
+        [...owners.values()]
+          .filter((entries) => entries.size > 1)
+          .flatMap((entries) => [...entries]),
+      );
+      // Reserve deferred declarations too: enabling a not-yet-imported model
+      // must not rename another model that already published an alias.
+      const declaredOwners = new Map<string, Set<string>>();
+      const byIdentity = new Map<string, RegisteredClass>();
+      for (const info of registeredClasses.values()) {
+        for (const id of [
+          info.qualifiedName,
+          ...(info.replacedQualifiedNames ?? []),
+        ]) {
+          if (id) byIdentity.set(id.toLowerCase(), info);
+        }
+      }
+      for (const requested of this.config.classNames ?? []) {
+        if (!isQualifiedName(requested)) continue;
+        const info = byIdentity.get(requested.toLowerCase());
+        const owner = info?.qualifiedName ?? requested;
+        const name = (
+          info?.name ?? parseQualifiedName(requested).className
+        ).toLowerCase();
+        const entries = declaredOwners.get(name) ?? new Set<string>();
+        entries.add(owner);
+        declaredOwners.set(name, entries);
+      }
+      for (const entries of declaredOwners.values()) {
+        if (entries.size > 1)
+          for (const owner of entries) collisions.add(owner);
+      }
+      for (const tool of tools) {
+        const target = this.toolTarget(tool);
+        const owner =
+          registeredClasses.get(target.registryKey ?? '')?.qualifiedName ??
+          target.registryKey ??
+          target.objectName;
+        if (collisions.has(owner)) {
+          tool.name = `${owner.toLowerCase()}_${target.action}`;
+        }
+      }
+    }
     const names = canonicalMcpToolNames(
       tools.map((tool) => ({ name: tool.name, target: this.toolTarget(tool) })),
     );

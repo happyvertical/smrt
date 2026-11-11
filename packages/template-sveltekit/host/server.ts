@@ -617,7 +617,10 @@ export function createCookbookHost(options: CookbookHostOptions) {
   const mcpModels = async (principal: McpAppPrincipal) => {
     const host = await ready();
     const generator = new MCPGenerator(
-      { classNames: host.catalog.models.map((model) => model.id) },
+      {
+        classNames: host.catalog.models.map((model) => model.id),
+        qualifyCollidingNames: true,
+      },
       {
         db: runtime.databaseConfig(),
         tenantId: principal.tenantId,

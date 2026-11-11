@@ -483,6 +483,22 @@ A host with an allow-list passes it so the duplicate-name check runs over the
 published set only: an unrelated collision among classes it never lists must
 not fail its catalog or calls (#3490). App MCP always scopes its generators.
 
+`MCPConfig.qualifyCollidingNames` is an opt-in for a host whose declared scope
+contains unrelated models with the same aliases. Before live exposure filtering,
+every tool of each colliding model gets its qualified registry identity as the
+prefix, then the existing protocol canonicalizer handles punctuation/length.
+Qualified `classNames` also reserve names for deferred, not-yet-imported models;
+effective registered replacement aliases collapse to their actual identity.
+Unique models keep their published aliases; the original name/class/action
+binding never changes. Duplicate aliases within one model and any remaining
+collision still fail closed. Keep the declared scope stable across recipe
+changes: filtering the scope to enabled models would let an old alias retarget
+another model. The cookbook host opts in over its entire installed catalog.
+Class-scope tests cover unchanged default refusal, unique aliases, qualified
+dispatch to two real SQLite collections, stable names across exposure changes,
+and stale disabled-call refusal. The host suite includes two disabled colliding
+catalog models so listing enabled tools cannot regress to a 500.
+
 ## Generated route collection access (#3416)
 
 There is no generated route-access module. Every generated SvelteKit route

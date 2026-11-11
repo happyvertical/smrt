@@ -39,6 +39,9 @@ MCP descriptors**, preserving package MCP restrictions and aliases, through the
 existing app-MCP principal workflow seam. Tokens are verified by app-runtime;
 each call rechecks scopes and live exposure. This endpoint is stateless HTTP:
 clients re-list to observe changes; it does not advertise a notification channel.
+The host opts into core's `qualifyCollidingNames` over the full installed model
+scope. Unrelated same-name models cannot poison the catalog or trade aliases
+when recipes change; unique model aliases and qualified dispatch stay intact.
 
 Inference owns saved-key resolution, ChatGPT-plan connections, CLI detection and
 subprocesses. The host supplies per-user selection and private runtime storage.

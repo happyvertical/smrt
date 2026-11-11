@@ -16,6 +16,7 @@ import {
 import { SmrtCollection } from '../collection.js';
 import { SmrtObject } from '../object.js';
 import { ObjectRegistry } from '../registry.js';
+import { setRuntimeExposureGate } from '../runtime-exposure.js';
 import { snapshotObjectRegistryState } from '../test-utils.js';
 import { getTestDatabase } from '../testing/database.js';
 import { MCPGenerator } from './mcp.js';
@@ -86,6 +87,40 @@ describe('MCPGenerator class scope (#3490)', () => {
     ).rejects.toThrow('Duplicate MCP tool name: scopecollision_list');
   });
 
+  it('optionally qualifies colliding models without changing unique aliases or identities', async () => {
+    const classNames = [
+      'ScopeItem',
+      '@fixture/scope-one:ScopeCollision',
+      '@fixture/scope-two:ScopeCollision',
+    ];
+    const generator = new MCPGenerator({
+      classNames,
+      qualifyCollidingNames: true,
+    });
+    const tools = await generator.generateTools();
+    expect(tools).toHaveLength(4);
+    expect(new Set(tools.map((tool) => tool.name)).size).toBe(4);
+    expect(
+      tools.every((tool) => /^[A-Za-z0-9_.-]{1,64}$/.test(tool.name)),
+    ).toBe(true);
+    expect(tools.map((tool) => tool.name)).toContain('scopeitem_list');
+    expect(tools.map((tool) => tool.name)).not.toContain('scopecollision_list');
+    const identities = tools.map((tool) => generator.getToolIdentity(tool));
+    expect(
+      identities
+        .filter((identity) => identity.originalName === 'scopecollision_list')
+        .map((identity) => identity.qualifiedName)
+        .sort(),
+    ).toEqual(classNames.slice(1));
+    const reversed = await new MCPGenerator({
+      classNames: [...classNames].reverse(),
+      qualifyCollidingNames: true,
+    }).generateTools();
+    expect(reversed.map((tool) => tool.name)).toEqual(
+      tools.map((tool) => tool.name),
+    );
+  });
+
   it('fails closed on a simple name that matches more than one class', async () => {
     await expect(
       new MCPGenerator({ classNames: ['ScopeCollision'] }).generateTools(),
@@ -100,6 +135,75 @@ describe('MCPGenerator class scope (#3490)', () => {
     });
     expect(response.isError).toBe(true);
     expect(response.content[0].text).toContain('is ambiguous');
+  });
+
+  it('reserves deferred same-name declarations before the second model is imported', async () => {
+    ObjectRegistry.clear();
+    ObjectRegistry.register(
+      named(class extends SmrtObject {}, 'DeferredItem'),
+      {
+        packageName: '@fixture/deferred-one',
+        mcp: { include: ['list'] },
+      },
+    );
+    const generator = new MCPGenerator({
+      classNames: [
+        '@fixture/deferred-one:DeferredItem',
+        '@fixture/deferred-two:DeferredItem',
+      ],
+      qualifyCollidingNames: true,
+    });
+    const first = await generator.generateTools();
+    expect(first).toHaveLength(1);
+    expect(first[0].name).not.toBe('deferreditem_list');
+    ObjectRegistry.register(
+      named(class extends SmrtObject {}, 'DeferredItem'),
+      {
+        packageName: '@fixture/deferred-two',
+        mcp: { include: ['list'] },
+      },
+    );
+    const second = await generator.generateTools();
+    expect(second).toHaveLength(2);
+    expect(second.map((tool) => tool.name)).toContain(first[0].name);
+    expect(new Set(second.map((tool) => tool.name)).size).toBe(2);
+  });
+
+  it('keeps aliases stable across live exposure changes and rejects stale disabled calls', async () => {
+    const generator = new MCPGenerator(
+      {
+        classNames: [
+          '@fixture/scope-one:ScopeCollision',
+          '@fixture/scope-two:ScopeCollision',
+        ],
+        qualifyCollidingNames: true,
+      },
+      { user: { id: 'owner' }, tenantId: 'tenant' },
+    );
+    let enabled = '@fixture/scope-one:ScopeCollision';
+    try {
+      setRuntimeExposureGate({
+        isEnabled: (model) => model.qualifiedName === enabled,
+      });
+      const first = await generator.generateTools();
+      expect(first).toHaveLength(1);
+      enabled = '@fixture/scope-two:ScopeCollision';
+      const second = await generator.generateTools();
+      expect(second).toHaveLength(1);
+      expect(second[0].name).not.toBe(first[0].name);
+      expect(generator.getToolIdentity(second[0]).qualifiedName).toBe(enabled);
+      const stale = await generator.handleToolCall({
+        method: 'tools/call',
+        params: { name: first[0].name, arguments: {} },
+      });
+      expect(stale.isError).toBe(true);
+      enabled = '@fixture/scope-one:ScopeCollision';
+      expect(
+        (await generator.generateTools()).map((tool) => tool.name),
+      ).toEqual(first.map((tool) => tool.name));
+    } finally {
+      setRuntimeExposureGate(undefined);
+    }
   });
 
   it('builds nothing for a scope that names no registered class', async () => {
@@ -195,5 +299,43 @@ describe('MCPGenerator scoped by qualified name (#3490)', () => {
     );
     expect(fromA).toContain('from-a');
     expect(fromA).not.toContain('from-b');
+  });
+
+  it('dispatches qualified collision aliases to their exact collections and refuses the old ambiguous alias', async () => {
+    const generator = new MCPGenerator(
+      {
+        classNames: [
+          '@fixture/pick-a:PickedThing',
+          '@fixture/pick-b:PickedThing',
+        ],
+        qualifyCollidingNames: true,
+      },
+      { db, user },
+    );
+    const tools = await generator.generateTools();
+    for (const suffix of ['a', 'b']) {
+      const tool = tools.find((candidate) => {
+        const identity = generator.getToolIdentity(candidate);
+        return (
+          identity.qualifiedName === `@fixture/pick-${suffix}:PickedThing` &&
+          identity.action === 'list'
+        );
+      });
+      if (!tool) throw new Error(`Missing tool for pick-${suffix}`);
+      const result = await generator.handleToolCall({
+        method: 'tools/call',
+        params: { name: tool.name, arguments: {} },
+      });
+      expect(result.isError).not.toBe(true);
+      const json = JSON.stringify(result.structuredContent);
+      expect(json).toContain(`from-${suffix}`);
+      expect(json).not.toContain(`from-${suffix === 'a' ? 'b' : 'a'}`);
+    }
+    const result = await generator.handleToolCall({
+      method: 'tools/call',
+      params: { name: 'pickedthing_list', arguments: {} },
+    });
+    expect(result.isError).toBe(true);
+    expect(result.content[0].text).toContain('Unknown tool');
   });
 });

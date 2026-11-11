@@ -72,6 +72,17 @@ void Profile;
 const CUSTOMER = '@happyvertical/smrt-commerce:Customer';
 const PROFILE = '@happyvertical/smrt-profiles:Profile';
 const MEMO = '@fixture/host:HostMemo';
+const COLLISIONS = [
+  '@fixture/collision-one:CatalogCollision',
+  '@fixture/collision-two:CatalogCollision',
+];
+for (const [index, id] of COLLISIONS.entries()) {
+  ObjectRegistry.register(class CatalogCollision extends SmrtObject {}, {
+    packageName: id.split(':')[0],
+    tableName: `host_collision_${index}`,
+    mcp: { include: ['list'] },
+  });
+}
 class HostMemos extends SmrtCollection<HostMemo> {
   static readonly _itemClass = HostMemo;
 }
@@ -97,6 +108,11 @@ const catalog = {
     { id: CUSTOMER, name: 'Customer', packageId: 'commerce' },
     { id: PROFILE, name: 'Profile', packageId: 'profiles' },
     { id: MEMO, name: 'HostMemo', packageId: 'host' },
+    ...COLLISIONS.map((id) => ({
+      id,
+      name: 'CatalogCollision',
+      packageId: id.split(':')[0],
+    })),
   ],
 };
 const cookbook: Cookbook = {
@@ -499,6 +515,15 @@ describe('local cookbook host composition (SQLite, fake model, no providers)', (
     ).toBe(404);
     const listing = await mcp();
     expect(listing.status).toBe(200);
+    expect(
+      new Set(listing.body.result.tools.map((t: { name: string }) => t.name))
+        .size,
+    ).toBe(listing.body.result.tools.length);
+    expect(
+      listing.body.result.tools.some((t: { name: string }) =>
+        t.name.includes('catalogcollision'),
+      ),
+    ).toBe(false);
     expect(
       listing.body.result.tools.some((t: { name: string }) =>
         t.name.includes('customer'),
