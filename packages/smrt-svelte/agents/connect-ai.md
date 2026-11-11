@@ -1,5 +1,9 @@
 # Connect AI (`./connect-ai`, `./connect-ai/server`)
 
+`tool_host_policy` is an inference startup failure, not a signed-out state.
+Connect AI shows its translated app-only-tools incompatibility, suppresses ready
+and In use, and offers Check again. It never enables the CLI's built-in tools.
+
 `ConnectAi` is a Provider-free, Svelte 5 onboarding step or settings panel. It
 composes smrt-ui Button/Card/Badge and translated `ui.connect_ai.*` messages,
 with token-only styling, heading/region names, live status, accessible errors,

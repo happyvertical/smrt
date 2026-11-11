@@ -1,6 +1,8 @@
 import { defineMessages } from '@happyvertical/smrt-ui/i18n';
 
 export const M = defineMessages({
+  'ui.connect_ai.tool_host_policy':
+    'Codex cannot use app tools with the required security settings. Its tool host includes built-in file tools. Use a compatible engine.',
   'ui.connect_ai.working_directory':
     'The local AI needs a writable temporary directory. Check the app permissions, then retry.',
   'ui.connect_ai.runtime_unavailable':

@@ -46,6 +46,7 @@ describe.each([
     'working_directory',
     'runtime_unavailable',
     'cli_invocation',
+    'tool_host_policy',
   ] as const)('does not claim readiness when startup preflight fails: %s', async (startError) => {
     const info = state();
     info.engine = 'claude-code';
@@ -64,7 +65,7 @@ describe.each([
       onchange,
     });
     expect(await screen.findByRole('alert')).toHaveTextContent(
-      /temporary directory|Node installation|secure options/,
+      /temporary directory|Node installation|secure options|built-in file tools/,
     );
     expect(screen.queryByText('The assistant is ready.')).toBeNull();
     expect(screen.getByRole('button', { name: 'Check again' })).toBeEnabled();
