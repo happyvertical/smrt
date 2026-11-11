@@ -62,8 +62,9 @@ Browser layout:
 <script lang="ts">
   import { CookbookApp } from '@happyvertical/smrt-svelte/cookbook';
   import { createCookbookAssistant } from '@happyvertical/smrt-template-sveltekit/host/client';
-  const assistant = createCookbookAssistant();
+  const assistantBase = createCookbookAssistant();
   let { data, children } = $props();
+  const assistant = $derived({ ...assistantBase, introduction: data.assistantIntroduction });
 </script>
 <CookbookApp {...data.cookbookApp} assistant={data.session.authenticated ? assistant : undefined} embed={false} phoneTabBar>
   {@render children()}

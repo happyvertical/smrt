@@ -61,6 +61,14 @@ preview/approval/resume, settings/engine selection and cookbook nav labels.
 | `smrt-svelte/src/components/onboarding/client.ts` | Follows ConnectAi's bounded same-origin route transport; this endpoint has different action/revision semantics. |
 | `smrt-svelte/src/components/onboarding/types.ts` | Reuses AssistantApprovalView; defines only first-run progress/transport DTOs, not business models. |
 | `smrt-svelte/src/components/onboarding/index.ts`, `i18n/strings.onboarding.ts` | Existing export and defineMessages catalog patterns. |
+| `__tests__/onboarding.test.ts` | Reuses core's `getTestDatabase` and the existing host/ConnectAi request-fixture pattern. Its private event/read/change functions exercise this new revision-bound endpoint; no reusable first-run request fixture existed. |
+| `smrt-svelte/src/components/onboarding/__tests__/FirstRunOnboarding.test.ts` | Reuses Testing Library, userEvent and UI's `expectNoA11yViolations`, as in ConnectAi tests. Its private fixture fakes the new first-run DTO/client plus the existing ConnectAi contract. |
+| `smrt-svelte/src/components/onboarding/__tests__/OnboardingAssistant.test.ts` | Reuses cookbook's existing dock test fixture and actual AiUnavailableNotice; mocks only the dock to observe mount/transport behavior. |
+
+Test-fixture searches used `rg` for `fixture`, `event`, `getTestDatabase` and
+`expectNoA11yViolations` in the owning ConnectAi tests, cookbook host tests and
+onboarding tests, alongside the first-run/approval searches above. These remain
+test-local adapters rather than exported framework helpers.
 
 Integration rebase `c8a329c455`: retain the host's public source-alias table and
 Svelte runtime inference export; drop E2's duplicate generic alias commit.
