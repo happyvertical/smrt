@@ -7,6 +7,7 @@ import {
   crossPackageRef,
   field,
   foreignKey,
+  method,
   SmrtObject,
   type SmrtSaveOptions,
   smrt,
@@ -238,6 +239,38 @@ export class Customer extends SmrtObject {
       description: 'Individual person profile',
     });
     return { typeId: person.id };
+  }
+
+  @method({ expose: false })
+  static override async resolveWriteThroughVirtualProjection(
+    via: string,
+    options: import('@happyvertical/smrt-core').SmrtObjectOptions,
+  ): Promise<Record<string, { sql: string; values: unknown[] }>> {
+    if (via !== 'profileId')
+      return super.resolveWriteThroughVirtualProjection(via, options);
+    const { ProfileMetadataCollection, ProfileMetafieldCollection } =
+      await import('@happyvertical/smrt-profiles');
+    const metadata = await ProfileMetadataCollection.create(options);
+    const metafields = await ProfileMetafieldCollection.create(options);
+    // The public column projections validate field policy and run each owning
+    // collection's authorization and tenant interceptors, without fetching rows.
+    const fields = await metafields.buildProjectionQuery({
+      where: { slug: 'phone' },
+      select: ['id', 'tenantId'],
+    });
+    const rows = await metadata.buildProjectionQuery({
+      select: ['profileId', 'metafieldId', 'tenantId', 'value'],
+    });
+    const fieldSql = fields.sql.replace(
+      /\$(\d+)/g,
+      (_, index: string) => `$${Number(index) + rows.values.length}`,
+    );
+    return {
+      phone: {
+        sql: `SELECT m."profileId" AS "id", m."tenantId", m."value" FROM (${rows.sql}) m JOIN (${fieldSql}) f ON f."id" = m."metafieldId" AND (f."tenantId" = m."tenantId" OR f."tenantId" IS NULL)`,
+        values: [...rows.values, ...fields.values],
+      },
+    };
   }
 
   protected override async readWriteThroughVirtual(

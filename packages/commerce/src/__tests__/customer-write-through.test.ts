@@ -30,6 +30,91 @@ async function setup() {
 }
 
 describe('Customer inline contact writes', () => {
+  it('projects contact columns without per-row reads, filters/orders email before pagination, and never dirties reads', async () => {
+    const { customers, profiles } = await setup();
+    await withTenant({ tenantId: 'tenant-a' }, async () => {
+      const one = await customers.create({
+        name: 'Ada',
+        email: 'z@example.test',
+        phone: '555-0111',
+      });
+      const two = await customers.create({
+        name: 'Bea',
+        email: 'a@example.test',
+        phone: '555-0222',
+      });
+      await customers.list({ displayLabel: true });
+      const query = vi.spyOn(db!, 'query');
+      await customers.list({ displayLabel: true, limit: 1 });
+      const firstCount = query.mock.calls.filter(([sql]) =>
+        /^SELECT/i.test(String(sql).trim()),
+      ).length;
+      expect(firstCount).toBe(1);
+      query.mockClear();
+      const list = await customers.list({ displayLabel: true, limit: 50 });
+      expect(
+        query.mock.calls.filter(([sql]) => /^SELECT/i.test(String(sql).trim())),
+      ).toHaveLength(firstCount);
+      expect(list.map((row) => row.toJSON())).toEqual(
+        expect.arrayContaining([
+          expect.objectContaining({
+            id: one.id,
+            name: 'Ada',
+            email: 'z@example.test',
+            phone: '555-0111',
+          }),
+          expect.objectContaining({
+            id: two.id,
+            name: 'Bea',
+            email: 'a@example.test',
+            phone: '555-0222',
+          }),
+        ]),
+      );
+      expect(
+        (await customers.list({ orderBy: 'email ASC', limit: 1 }))[0].id,
+      ).toBe(two.id);
+      expect(
+        (await customers.list({ where: { 'email like': '%z@%' } })).map(
+          (row) => row.id,
+        ),
+      ).toEqual([one.id]);
+      expect(await customers.count({ where: { 'email like': '%z@%' } })).toBe(
+        1,
+      );
+      expect(
+        (await customers.list({ orderBy: 'phone DESC', limit: 1 }))[0].id,
+      ).toBe(two.id);
+      expect(
+        (await customers.list({ where: { 'phone like': '%0111' } })).map(
+          (row) => row.id,
+        ),
+      ).toEqual([one.id]);
+      expect(await customers.count({ where: { 'phone like': '%0111' } })).toBe(
+        1,
+      );
+      // A projected snapshot is not a pending edit: saving it must preserve a later contact update.
+      const read = list.find((row) => row.id === one.id)!;
+      const profile = await profiles.get(one.profileId);
+      profile!.email = 'fresh@example.test';
+      await profile!.save();
+      await read.save();
+      expect((await profiles.get(one.profileId, { cache: false }))?.email).toBe(
+        'fresh@example.test',
+      );
+      await customers.update(one.id!, {
+        name: 'Ada Updated',
+        email: '',
+        phone: '',
+      });
+      expect(
+        (await customers.list({ displayLabel: true }))
+          .find((row) => row.id === one.id)
+          ?.toJSON(),
+      ).toMatchObject({ name: 'Ada Updated', email: '', phone: '' });
+    });
+  });
+
   it('creates the name, email and metadata phone in the parent transaction and serves them for editing', async () => {
     const { customers, profiles } = await setup();
     await withTenant({ tenantId: 'tenant-a' }, async () => {

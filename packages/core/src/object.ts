@@ -688,6 +688,22 @@ export class SmrtObject extends SmrtClass {
   private _writingThrough = false;
   private _writeThroughOriginalLinks: Record<string, unknown> = {};
 
+  /** Owning-model SQL projections for non-column inline fields.
+   * Each query returns id, tenantId, value; compose authorized public selects
+   * through collection.buildProjectionQuery(). Never use request-derived SQL.
+   */
+  static async resolveWriteThroughVirtualProjection(
+    _via: string,
+    _options: SmrtObjectOptions,
+  ): Promise<Record<string, { sql: string; values: unknown[] }>> {
+    return {};
+  }
+
+  /** Collection read snapshot; never marks an inline field dirty. */
+  _setWriteThroughRead(values: Record<string, unknown>): void {
+    Object.assign(this._writeThroughRead, values);
+  }
+
   /** Domain-owned defaults (for example the linked Profile's classification). */
   protected async writeThroughDefaults(
     _via: string,

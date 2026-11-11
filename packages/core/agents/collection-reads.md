@@ -252,3 +252,43 @@ consumers retain plain reads unless they request the name. Repository-wide tests
 exercise the remaining callers. MCP review/context and name/purpose searches in
 core, commerce, profiles, smrt-svelte, smrt-ui and chat found the existing system
 field and table-verifier APIs; no new production helper or file was added.
+
+
+## Inline contact columns (Q1 follow-up)
+
+The existing linked display projection also reads the `writeThrough` fields on
+its declared `via` link. Explicit display reads, or filtering/ordering/selecting
+an inline field, share the same authorized target join. `name`, `email` and
+`phone` are projected snapshots, never dirty inputs or source-table columns.
+One list page still issues one data SELECT; sorting, filtering, counting and
+pagination happen in SQL. Plain source reads remain independent of the target.
+
+For non-column inline values, the owning model implements
+`static resolveWriteThroughVirtualProjection(via, options)`: each named plan
+returns bound SQL yielding `id` (linked target id), `tenantId`, `value`. Core
+correlates it only to the authorized joined target with exact owner equality.
+Use `collection.buildProjectionQuery({ select, where })` to compose those plans:
+it reuses public scalar selection checks, normal beforeList policy and STI/tenant
+scope without fetching or hydrating rows. It does not run afterList, like plain
+`select`. SQL text is framework-authored; caller values remain bind parameters.
+Commerce composes ProfileMetadata and ProfileMetafield public projections for
+phone, retaining metadata ownership and the existing phone write/removal APIs.
+No additional screen lookup, cache or duplicated contact storage exists.
+
+Tests retain the original exact-one-SELECT REST canary. Additional cases compare
+query counts across page sizes; filter/order/count email and phone before a
+page; preserve later target edits when a read snapshot is saved; clear optional
+values; refuse sensitive/gated projection fields; and apply target row scope.
+Fresh owner onboarding applies each of the four bundled templates under lazy
+activation before generated REST create(name only), detail, edit and clear,
+plus assistant create. Execution is in-process SQLite; PostgreSQL execution of
+the virtual scalar subquery remains unverified.
+
+Reuse check: no new production file. Configured smrt-dev-mcp
+`review-smrt-project` ran for core, commerce, smrt-svelte and template-sveltekit;
+`build-context` searched projection composition, buildProjectionQuery,
+resolveProjectionSource and readWriteThroughVirtualProjection. Read the intent
+index and searched core, commerce, profiles, smrt-ui, smrt-svelte and chat by
+name and purpose (displayLabel, metadata, list projections, writeThrough,
+reference sources). The new methods extend the existing display/select builders
+and snapshot setter seams; Profile's existing metadata writes remain canonical.

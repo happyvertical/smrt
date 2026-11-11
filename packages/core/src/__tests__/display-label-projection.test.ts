@@ -135,6 +135,36 @@ function scopeTargets() {
 }
 
 describe('display label projection', () => {
+  it('composes a public projection without fetching, retaining row scopes and refusing gated fields', async () => {
+    await seed('Visible a');
+    await seed('Hidden a', 'a', false);
+    await seed('Visible b', 'b');
+    scopeTargets();
+    activeTenant = 'a';
+    await profiles.list({ select: ['id'] });
+    const query = vi.spyOn(db, 'query');
+    const plan = await profiles.buildProjectionQuery({
+      select: ['id', 'name'],
+      where: { 'name like': '%a' },
+    });
+    expect(query).not.toHaveBeenCalled();
+    const rows = await db.query(plan.sql, ...plan.values);
+    expect(rows.rows).toEqual([expect.objectContaining({ name: 'Visible a' })]);
+    await expect(
+      profiles.buildProjectionQuery({ select: ['secret'] }),
+    ).rejects.toThrow(/sensitive/);
+    await expect(
+      profiles.buildProjectionQuery({ select: ['internalName'] }),
+    ).rejects.toThrow(/readPermission/);
+    await expect(
+      profiles.buildProjectionQuery({
+        select: ['name'],
+        where: { secret: 'hidden' },
+      }),
+    ).rejects.toThrow(/sensitive/);
+    query.mockRestore();
+  });
+
   it('labels an explicitly declared plain-text reference without changing its storage type or crossing tenants', async () => {
     const source = await ObjectRegistry.getCollection('DisplayTextReference', {
       db,

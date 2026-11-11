@@ -638,6 +638,7 @@ export type SmrtCollectionItemClass<ModelType extends SmrtObject> = (new (
 ) => ModelType) & {
   // biome-ignore lint/suspicious/noExplicitAny: contravariant `create()` option bag — same variance constraint as the constructor above. S4 #1579.
   create(options: any): ModelType | Promise<ModelType>;
+  resolveWriteThroughVirtualProjection?: typeof SmrtObject.resolveWriteThroughVirtualProjection;
 };
 
 /**
@@ -859,7 +860,18 @@ export class SmrtCollection<ModelType extends SmrtObject> extends SmrtClass {
     validFieldNames.add('context');
     validFieldNames.add('created_at');
     validFieldNames.add('updated_at');
-    if (this.getDisplayLabelProjection()) validFieldNames.add('display_label');
+    if (this.getDisplayLabelProjection()) {
+      validFieldNames.add('display_label');
+      const config = ObjectRegistry.getConfig(
+        this.getResolvedItemQualifiedName(),
+      );
+      for (const link of Object.values(config.writeThrough ?? {}))
+        for (const name of [
+          ...link.fields,
+          ...Object.keys(link.virtualFields ?? {}),
+        ])
+          validFieldNames.add(toSnakeCase(name));
+    }
 
     // Add STI discriminator field for polymorphic queries.
     // R5-canon: use the qualified item name as the lookup key so a
@@ -1634,11 +1646,62 @@ export class SmrtCollection<ModelType extends SmrtObject> extends SmrtClass {
     );
   }
 
+  /** Authorized plain SELECT for composition by owning-package read projections.
+   * Same column policy, beforeList, tenant and STI scope as list({ select });
+   * no hydration or afterList hooks. Bind values in lexical SQL order.
+   */
+  async buildProjectionQuery(options: {
+    select: readonly string[];
+    where?: SmrtListWhereClause<ModelType>;
+  }): Promise<{ sql: string; values: unknown[] }> {
+    await this.ensureStorageReady();
+    const fields = this.getFieldsSync();
+    const projection = this.resolveProjectionSelect(
+      options.select,
+      fields,
+      false,
+    );
+    const context = createInterceptorContext(
+      this.getResolvedItemClassName(),
+      'list',
+      this.constructor.name,
+      undefined,
+      this.getResolvedItemQualifiedName(),
+    );
+    const scoped = (await GlobalInterceptors.executeBeforeList(
+      this.getResolvedItemClassName(),
+      { where: options.where ?? {} },
+      context,
+    )) ?? { where: options.where ?? {} };
+    const where = resolveMetaTypeInWhere(
+      this.applyStiReadScope(scoped.where, undefined),
+    );
+    const predicate = buildWhere(this.convertWhereKeys(where ?? {}));
+    return {
+      sql: `SELECT ${projection.sql} FROM ${this.quoteProjectionIdentifier(this.tableName)} ${predicate.sql}`,
+      values: predicate.values,
+    };
+  }
+
   private getDisplayLabelProjection() {
     return resolveDisplayLabelProjection(
       ObjectRegistry.getConfig(this.getResolvedItemQualifiedName()).display
         ?.label,
     );
+  }
+
+  private requestsDisplayFields(sql: string): boolean {
+    const config = ObjectRegistry.getConfig(
+      this.getResolvedItemQualifiedName(),
+    );
+    return [
+      'display_label',
+      ...Object.values(config.writeThrough ?? {}).flatMap((link) =>
+        [...link.fields, ...Object.keys(link.virtualFields ?? {})].map(
+          toSnakeCase,
+        ),
+      ),
+    ].some((name) => new RegExp(`\\b${name}\\b`).test(sql));
   }
 
   /**
@@ -1687,6 +1750,16 @@ export class SmrtCollection<ModelType extends SmrtObject> extends SmrtClass {
       this.options,
     );
     const targetFields = target.getFieldsSync();
+    const link =
+      ObjectRegistry.getConfig(identity).writeThrough?.[projection.via];
+    if (link) ObjectRegistry.getWriteThroughFields(identity);
+    const inlineFields = link?.fields ?? [];
+    if (inlineFields.length)
+      target.resolveProjectionSelect(inlineFields, targetFields, false);
+    const inlineSql = inlineFields.map(
+      (name) =>
+        `r.${this.quoteProjectionIdentifier(target.toDbColumnName(name))} AS ${this.quoteProjectionIdentifier(toSnakeCase(name))}`,
+    );
     const targetIdentity = target.getResolvedItemQualifiedName();
     target.resolveProjectionSelect([projection.field], targetFields, false);
     // The shared order validator also covers sensitive/gated STI descendants.
@@ -1765,20 +1838,7 @@ export class SmrtCollection<ModelType extends SmrtObject> extends SmrtClass {
     const value = `NULLIF(TRIM(CAST(${label} AS TEXT)), '')`;
     // Keep placeholder numbering in lexical order as well as PostgreSQL's
     // numeric order: SQLite adapters normalize numbered placeholders to '?'.
-    const values = [projection.fallback, ...predicate.values];
-    const targetWhereSql = predicate.sql.replace(
-      /\$(\d+)/g,
-      (_, index: string) => `$${Number(index) + 1}`,
-    );
-    const targetColumns = [
-      ...new Set([
-        pk.column,
-        target.toDbColumnName(projection.field),
-        ...(targetTenant ? [target.toDbColumnName(targetTenant)] : []),
-      ]),
-    ]
-      .map(q)
-      .join(', ');
+    const virtualNames = Object.keys(link?.virtualFields ?? {});
     try {
       await target.ensureStorageReady();
     } catch (error) {
@@ -1790,13 +1850,61 @@ export class SmrtCollection<ModelType extends SmrtObject> extends SmrtClass {
         error.details?.tableName === target.tableName
       ) {
         return {
-          from: `(SELECT p.*, CAST($1 AS TEXT) AS ${q('display_label')} FROM ${q(this.tableName)} p) AS ${q(this.tableName)}`,
+          from: `(SELECT p.*, CAST($1 AS TEXT) AS ${q('display_label')}${[
+            ...inlineFields,
+            ...virtualNames,
+          ]
+            .map(toSnakeCase)
+            .map((name) => `, NULL AS ${q(name)}`)
+            .join('')} FROM ${q(this.tableName)} p) AS ${q(this.tableName)}`,
           values: [projection.fallback],
         };
       }
       throw error;
     }
-    const from = `(SELECT p.*, COALESCE(${value}, $1) AS ${q('display_label')} FROM ${q(this.tableName)} p LEFT JOIN (SELECT ${targetColumns} FROM ${q(target.tableName)} ${targetWhereSql}) r ON ${conditions.join(' AND ')}) AS ${q(this.tableName)}`;
+    const values: unknown[] = [projection.fallback];
+    const extra = [
+      ...inlineSql,
+      ...(link ? [`r.${q(pk.column)} AS ${q('_smrt_inline_target')}`] : []),
+    ];
+    const virtual = virtualNames.length
+      ? ((await this._itemClass.resolveWriteThroughVirtualProjection?.(
+          projection.via,
+          { ...this.options, db: this.db },
+        )) ?? {})
+      : {};
+    for (const name of virtualNames) {
+      const plan = virtual[name];
+      if (!plan) throw new Error(`No read projection for inline field ${name}`);
+      const sql = plan.sql.replace(
+        /\$(\d+)/g,
+        (_, index: string) => `$${Number(index) + values.length}`,
+      );
+      values.push(...plan.values);
+      const owner = targetTenant
+        ? `r.${q(target.toDbColumnName(targetTenant))}`
+        : 'NULL';
+      extra.push(
+        `CASE WHEN r.${q(pk.column)} IS NULL THEN NULL ELSE COALESCE((SELECT v.${q('value')} FROM (${sql}) v WHERE v.${q('id')} = r.${q(pk.column)} AND (v.${q('tenantId')} = ${owner} OR (v.${q('tenantId')} IS NULL AND ${owner} IS NULL)) LIMIT 1), '') END AS ${q(toSnakeCase(name))}`,
+      );
+    }
+    const targetParameterOffset = values.length;
+    values.push(...predicate.values);
+    const targetWhereSql = predicate.sql.replace(
+      /\$(\d+)/g,
+      (_, index: string) => `$${Number(index) + targetParameterOffset}`,
+    );
+    const targetColumns = [
+      ...new Set([
+        pk.column,
+        target.toDbColumnName(projection.field),
+        ...inlineFields.map((name) => target.toDbColumnName(name)),
+        ...(targetTenant ? [target.toDbColumnName(targetTenant)] : []),
+      ]),
+    ]
+      .map(q)
+      .join(', ');
+    const from = `(SELECT p.*, COALESCE(${value}, $1) AS ${q('display_label')}${extra.length ? `, ${extra.join(', ')}` : ''} FROM ${q(this.tableName)} p LEFT JOIN (SELECT ${targetColumns} FROM ${q(target.tableName)} ${targetWhereSql}) r ON ${conditions.join(' AND ')}) AS ${q(this.tableName)}`;
     return { from, values };
   }
 
@@ -1922,8 +2030,16 @@ export class SmrtCollection<ModelType extends SmrtObject> extends SmrtClass {
       }
       validFieldNames.add(fieldName);
     }
-    if (displayLabel && this.getDisplayLabelProjection())
+    if (displayLabel && this.getDisplayLabelProjection()) {
       validFieldNames.add('displayLabel');
+      for (const name of Object.values(
+        ObjectRegistry.getConfig(itemQualifiedName).writeThrough ?? {},
+      ).flatMap((link) => [
+        ...link.fields,
+        ...Object.keys(link.virtualFields ?? {}),
+      ]))
+        validFieldNames.add(name);
+    }
     if (isSTI && (!schemaColumnNames || schemaColumnNames.has('_meta_type'))) {
       validFieldNames.add('_meta_type');
     }
@@ -1954,7 +2070,11 @@ export class SmrtCollection<ModelType extends SmrtObject> extends SmrtClass {
         );
       }
 
-      const fieldDef = fields[fieldName];
+      const fieldDef =
+        fields[fieldName] ??
+        (displayLabel
+          ? ObjectRegistry.getWriteThroughFields(itemQualifiedName)[fieldName]
+          : undefined);
       const fieldType = fieldDef?.type;
       if (this.isSensitiveFieldDefinition(fieldDef)) {
         throw new Error(
@@ -3191,7 +3311,7 @@ export class SmrtCollection<ModelType extends SmrtObject> extends SmrtClass {
     // caller-derived, and `$n` placeholders here would have to be numbered after
     // the WHERE values on PostgreSQL.
     const source = await this.resolveDisplayLabelSource(
-      options.displayLabel === true || /\bdisplay_label\b/.test(whereSql),
+      options.displayLabel === true || this.requestsDisplayFields(whereSql),
     );
     const scopedWhereSql = whereSql.replace(
       /\$(\d+)/g,
@@ -3219,7 +3339,8 @@ export class SmrtCollection<ModelType extends SmrtObject> extends SmrtClass {
 
     const fields = this.getFieldsSync();
     const instance = await this.hydrateResultRow(rows[0], fields, isSTI);
-    if (options.displayLabel) await instance.hydrateWriteThrough();
+    if (options.displayLabel && !this.getDisplayLabelProjection())
+      await instance.hydrateWriteThrough();
 
     // Execute afterGet interceptors (e.g., tenant validation)
     return await GlobalInterceptors.executeAfterGet(
@@ -3380,8 +3501,10 @@ export class SmrtCollection<ModelType extends SmrtObject> extends SmrtClass {
     const orderBySql = this.buildOrderBySql(orderBy, fields);
     const source = await this.resolveDisplayLabelSource(
       displayLabel === true ||
-        select?.includes('displayLabel') === true ||
-        /\bdisplay_label\b/.test(`${whereSql} ${orderBySql}`),
+        select?.some((name) =>
+          this.requestsDisplayFields(toSnakeCase(name)),
+        ) === true ||
+        this.requestsDisplayFields(`${whereSql} ${orderBySql}`),
     );
     const scopedWhereSql = whereSql.replace(
       /\$(\d+)/g,
@@ -4618,7 +4741,7 @@ export class SmrtCollection<ModelType extends SmrtObject> extends SmrtClass {
     );
 
     const source = await this.resolveDisplayLabelSource(
-      /\bdisplay_label\b/.test(whereSql),
+      this.requestsDisplayFields(whereSql),
     );
     const scopedWhereSql = whereSql.replace(
       /\$(\d+)/g,
@@ -4946,6 +5069,44 @@ export class SmrtCollection<ModelType extends SmrtObject> extends SmrtClass {
     );
   }
 
+  private inlineReadNames(): string[] {
+    return Object.values(
+      ObjectRegistry.getConfig(this.getResolvedItemQualifiedName())
+        .writeThrough ?? {},
+    ).flatMap((link) =>
+      [...link.fields, ...Object.keys(link.virtualFields ?? {})].map(
+        toSnakeCase,
+      ),
+    );
+  }
+
+  private setInlineRead(
+    instance: SmrtObject,
+    row: Record<string, unknown>,
+  ): void {
+    if (!row._smrt_inline_target) return;
+    const definitions = ObjectRegistry.getWriteThroughFields(
+      this.getResolvedItemQualifiedName(),
+    );
+    const names = Object.values(
+      ObjectRegistry.getConfig(this.getResolvedItemQualifiedName())
+        .writeThrough ?? {},
+    ).flatMap((link) => [
+      ...link.fields,
+      ...Object.keys(link.virtualFields ?? {}),
+    ]);
+    instance._setWriteThroughRead(
+      formatDataJs(
+        Object.fromEntries(
+          names
+            .filter((name) => Object.hasOwn(row, toSnakeCase(name)))
+            .map((name) => [toSnakeCase(name), row[toSnakeCase(name)]]),
+        ),
+        definitions,
+      ),
+    );
+  }
+
   private async hydrateResultRow(
     row: Record<string, unknown>,
     fields: Record<string, CollectionFieldDefinition>,
@@ -4965,7 +5126,12 @@ export class SmrtCollection<ModelType extends SmrtObject> extends SmrtClass {
       formatDataJs(
         this.getDisplayLabelProjection()
           ? Object.fromEntries(
-              Object.entries(row).filter(([key]) => key !== 'display_label'),
+              Object.entries(row).filter(
+                ([key]) =>
+                  key !== 'display_label' &&
+                  key !== '_smrt_inline_target' &&
+                  !this.inlineReadNames().includes(key),
+              ),
             )
           : row,
         hydrationFields,
@@ -4981,6 +5147,7 @@ export class SmrtCollection<ModelType extends SmrtObject> extends SmrtClass {
       );
       if (this.getDisplayLabelProjection())
         polymorphicInstance._setDisplayLabel(row.display_label);
+      this.setInlineRead(polymorphicInstance, row);
       return polymorphicInstance;
     }
 
@@ -5012,6 +5179,7 @@ export class SmrtCollection<ModelType extends SmrtObject> extends SmrtClass {
         registeredClass?.qualifiedName || this._itemClass.name;
     }
 
+    this.setInlineRead(instance, row);
     return instance;
   }
 
