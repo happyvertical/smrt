@@ -3,8 +3,9 @@
 Generate REST routes, web collection definitions and tool definitions for a
 **declared installed superset**, using the existing explicit `smrt({ expose })`
 preset option. Declaration-level `api`/`mcp`/`cli` restrictions still apply; this
-runtime gate can only narrow them. Run normal migrations for that superset before
-serving. Installing a package alone grants no cookbook access when the gate is on.
+runtime gate can only narrow them. Eager hosts migrate that superset before
+serving; SQLite hosts can opt into the activation contract below. Installing a
+package alone grants no cookbook access when the gate is on.
 No gate installed preserves existing apps.
 
 ## Host integration
@@ -96,60 +97,162 @@ contain no tenant information; clients re-list in their own tenant context.
 A stateless HTTP adapter with no notification channel must add the transport's
 subscription support to deliver notifications; the gate cannot open that channel.
 
-## Startup limitation and required lazy-activation design
+## Opt-in SQLite lazy activation
 
-This change does **not** defer imports, registrations or application migrations.
-The public fixture benchmark is `node packages/core/scripts/benchmark-runtime-exposure.mjs`:
-independent cold processes, two package identities, SQLite in memory, real
-`migrateSmrtSchemas`, first REST response, table count and RSS. It compares the
-same installed/migrated superset without/with gating. No package pruning or lazy
-migration is claimed, and these fixture numbers do not predict the 34-package
-product measurement.
+`@happyvertical/smrt-core/activation` exports `createActivationCoordinator()` and
+`activationClosure()`. `@happyvertical/smrt-core/activation/generate` exports
+`generateActivationRegistration()` and `buildActivationManifest()` for build tools.
+No opt-in means the existing eager registration/migration and gate behavior.
 
-One local run (Node 26.8.1, macOS, cold processes with warm filesystem caches):
-baseline -> gated first response **178 -> 196 ms**, RSS **117.30 -> 118.44 MiB**,
-**16 -> 16 tables** (two application tables in each). The disabled Estimates
-response changed **200 -> 404**. This measures gating overhead and confirms the
-startup/table cost is still eager; one run is not a performance distribution.
+Enable `smrt({ lazyActivation: true, packages, expose: installedSuperset })`
+through the public preset. Its `expose` is the explicit installed superset, not
+the current cookbook. For the lower-level plugins, set
+`smrtConsumer({ lazyActivation: true })` and
+`smrtPlugin({ svelteKit: { enabled: true, lazyActivation: true } })`. Coordinated
+producer/consumer plugins must agree. Both generated registration entry points
+now export `activationManifest` and `activationLoaders`, with no static model
+imports or eager calls to `registerAll()`. `.smrt/activation-manifest.json` is
+data only: module specifiers and static import dependencies, qualified model
+identities, effective same-name replacements, physical table owners (the full
+STI family), and logical FK/cross-package-reference plus physical FK closure.
+Routes and web/tool definitions remain the AOT superset and retain their gates.
+App subclasses stay behind deferred module imports, including their providers.
 
+The generator parses static imports/re-exports with the existing Oxc transformer;
+it never evaluates provider code. A provider barrel is a conservative activation
+unit: importing any of its declared modules includes its full manifest inventory
+and static dependency closure. Splitting a provider into independently activatable
+units requires genuinely independent published modules; a per-model callback
+cannot undo a barrel's registration side effects. App source modules retain
+individual loaders. An app model also activates its declared collection module;
+collection receivers bind to the effective replacement identity, with existing
+HTTP CLI action metadata retained. Route serializers are deferred until the gated handler calls
+them, with their static model dependencies included in the activation graph.
+Every required reference must be in the build manifest;
+missing references/imports fail generation with their qualified identity. Provider
+provenance must resolve to the same package context as the host; differing nested
+peer copies are refused rather than registering the wrong constructor. Explicit
+`.cjs` model modules are refused. Computed/dynamic model imports must not register
+undeclared constructors; newly imported registrations outside the declared closure
+fail activation before migration and remain refused on retry until regeneration
+and restart. This contract is for a fixed build graph, not
+package installation at runtime. Runtime table bindings that disagree with the AOT
+physical names are refused; regenerate the graph with the host's bindings.
 
-Why a per-package import callback would be incorrect:
+A host supplies its existing database, persisted cookbook store, tenant gate and
+always-on models. Install the readiness gate **before accepting requests**, and
+await boot instead of importing eager registration or migrating the full registry:
 
-1. `consumer-plugin/index.ts` writes static provider imports into `.smrt/register.js`;
-   `vite-plugin/sveltekit-generator.ts` also statically imports app subclasses.
-   Importing a subclass necessarily imports its provider. Removing registration
-   afterward cannot undo import side effects, memory, or decorator registration.
-2. The registry is process-wide while enablement is per tenant. A package enabled
-   for one tenant stays imported and registered for all; request gates still
-   must deny other tenants, and disabling cannot safely unload constructors.
-3. Schema ownership is by physical table, not by package. STI siblings and
-   same-name app replacements share tables and columns. Foreign keys need a
-   dependency closure, including models outside the recipe's own package.
-4. `migrateSmrtSchemas()` plans the registered schema set and has no public
-   package/physical-table activation subset. Runtime collection initialization
-   only verifies tables and must not become a migration side effect.
+```ts
+import { createActivationCoordinator } from '@happyvertical/smrt-core/activation';
+import { setRuntimeExposureGate } from '@happyvertical/smrt-core/runtime-exposure';
+import { activationManifest, activationLoaders } from './smrt-register.js';
 
-The needed design is an AOT data-only activation manifest: package/module lazy
-loaders, effective replacement identities, full STI/table owners, and required
-FK/module dependencies. A process coordinator must serialize first activation,
-load that dependency closure, plan the **physical-table** schema subset with the
-existing migration differ/tracker and transaction guarantees, then publish
-readiness and the enabled cookbook atomically from the caller's perspective.
-Failures must leave the model gated, retries reconcile committed DDL, and
-concurrent tenant activations coalesce. Persistence/restart recovery and
-PostgreSQL maintenance-window changes need explicit contracts. The startup floor
-still includes the host, core, cookbook store and enabled dependency closure;
-AOT route/definition metadata is unavoidable, but disabled constructors need not
-be. This is a wider consumer-generation/migration contract change, not a safe
-incidental package-local optimization. No lazy DDL was improvised here.
+const activation = createActivationCoordinator({
+  scope: 'my-app:local-database', // stable singleton slot for this database
+  packageName: '@my/app',
+  db,
+  manifest: activationManifest,
+  loaders: activationLoaders,
+  alwaysOn: hostModelIds, // auth, cookbook persistence and other host needs
+  readEnabled: () => store.readEnabledModelUnion(), // ALL tenants, not current user
+});
+setRuntimeExposureGate(activation.gate(gate)); // gate from Host integration above
+await activation.boot();
+```
+
+`readEnabled` must return qualified model identities after recipe requirements
+have been expanded by the existing cookbook engine. It reads persisted state
+on each boot attempt; an unreadable store rejects boot. Pass the generated effective
+identity map as the cookbook gate's `replacements` when using AOT definitions:
+`new Map(Object.entries(activationManifest.models).map(([id, m]) => [id, m.effective]))`.
+Readiness and always-on membership grant no tenant access by themselves; the live
+cookbook gate and host predicate still decide access on every request.
+
+Before persisting/publishing a cookbook enable, `await activation.activate(ids)`
+for the resulting enabled model set. Then commit and publish the new cookbook
+through the host's existing store/engine update, notifying exposure subscribers.
+The host must serialize its cookbook updates and publish only persisted state;
+do not mutate the live engine first and leave it changed after a failed save.
+If persisted state already names an unready model, the readiness gate keeps it
+closed until activation/recovery succeeds. The coordinator owns schema/code
+readiness, not cookbook persistence, permission grants or tenant state.
+
+Coordinators live in a `globalThis` process slot. Reusing a scope with the same
+manifest/database handle returns the same coordinator; a conflicting configuration
+or handle is refused. One process queue covers import, registry validation, diff,
+tracker apply, and synchronous readiness publication, including concurrent requests
+and tenants. Equal pending closures share one promise. Overlapping closures reuse
+loaded modules and ready tables. Failed work never poisons the queue.
+
+`migrateSmrtSchemas({ tables, requireComplete: true })` and
+`getPendingSchemaStatements(db, { tables })` extend the existing public migration
+orchestrator. `tables` uses the registry's existing physical-table/FK merge;
+there is no package-filtered DDL and no collection-init DDL. All owners of a table
+are loaded before diffing. Missing/extra physical tables or manual drift refuse
+readiness; `requireComplete` refuses manual drift before applying any plan.
+Activation uses unique migration names so rapid enables cannot collide with the
+eager orchestrator's second-resolution default names. SQLite migration DDL and
+tracking use the existing atomic transaction path. A failed batch rolls back and
+stays gated; retry re-diffs against the real database without repeating successful
+module loads. Imported code stays resident on failure. Node caches a rejected
+module evaluation; fixing that module requires a corrected build/process restart,
+whereas migration failures can be retried in the same process.
+
+Restart calls `boot()` against the persisted union, imports that closure again in
+the fresh process and reconciles existing tables through the differ/tracker.
+Committed DDL without cookbook publication is harmless: the gate stays closed,
+and retry/restart reuses it. Disabling removes tenant exposure only; it never
+unloads constructors, drops tables, or deletes rows. Disabled tables from earlier
+runs are retained and are outside later subset plans.
+
+**Backend boundary:** lazy migration supports SQLite only. Coordinator creation
+refuses PostgreSQL and DuckDB before imports or DDL, with an instruction to keep
+eager registration and normal `migrateSmrtSchemas`. PostgreSQL maintenance-window
+and concurrent-index contracts are unchanged; this feature claims no lazy support
+for them. Hosts must opt in deliberately; the generic host template is not
+silently switched to this database/store-specific bootstrap.
+
+### Measurement
+
+`node packages/core/scripts/benchmark-activation.mjs --runs=3`, after `pnpm build`,
+uses independent cold Node processes, warm filesystem caches, in-process SQLite,
+real generated loaders, registry schema merge and migration differ/tracker. The
+synthetic fixture has 34 modules, 204 physical tables, twelve business fields per
+model, static module imports and cross-package FK dependencies. Boot's enabled
+set is three modules; the next enable adds six tables. The measured boundary is
+process spawn to **registry + migrations ready**, not first HTTP response. Only
+the migration tracker system table is provisioned here; host/system bootstrap,
+owner sign-in, UI, AI engines and desktop packaging are excluded.
+
+Local Node 26.8.1/macOS run (three independent samples each):
+
+| Mode | Cold readiness ms | Application tables | RSS MiB | Next enable ms |
+| --- | --- | --- | --- | --- |
+| Enabled subset | 195, 194, 193 | 18 | 123.36, 124.53, 121.84 | 9.02, 7.67, 9.15 |
+| Full set | 273, 279, 271 | 204 | 178.19, 177.53, 177.30 | 0.03, 0.04, 0.03 (already ready) |
+
+These are fixture observations, not predictions of the product's historical
+15.329 s/810.44 MiB/450-table startup. `--real` attempts yoga-studio versus all
+34 recipe packages using their actual built manifests and Node entry points.
+This worktree's attempt found 34 recipe packages, 45 providers and 928 manifest
+entries after adding optional referenced providers. Generation correctly refused
+`@happyvertical/smrt-expenses:Expense -> @happyvertical/smrt-expenses:PROFILE`.
+The source declares `const PROFILE = '@happyvertical/smrt-profiles:Profile'` and
+uses `@crossPackageRef(PROFILE)` (`expenses/src/models/Expense.ts:85,277,285`),
+but the built manifest retains the identifier `PROFILE` as its target. No target
+was guessed and no package was removed to produce a performance result. The
+proposed prerequisite is scanner constant resolution (or qualified literal
+references in the owning declarations), followed by regeneration and rerunning
+`--real`. Real-package cold start/RSS/enable time and product startup improvement
+remain **unverified**. No files outside core were changed for this attempt.
 
 ## Test design and evidence
 
 All executable persistence cases below use in-process SQLite; no PostgreSQL,
 DuckDB or packaged desktop performance is claimed. Gates themselves are
-browser-safe pure predicates and subscriptions. No schema writes are added to a
-request, so rollback/DDL atomicity is unchanged and lazy-migration cases remain
-explicitly unimplemented.
+browser-safe pure predicates and subscriptions. Ordinary model requests do not migrate; explicit activation runs migrations
+before readiness is published. The activation cases below exercise SQLite atomicity.
 
 | Behavior/invariant | Reachable trigger and positive case | Negative/failure case | Actor/context and executor | Contract edge / level | Validation |
 | --- | --- | --- | --- | --- | --- |
@@ -164,6 +267,18 @@ explicitly unimplemented.
 | Compatibility | No installed gate retains REST/MCP behavior | Static declaration restrictions still narrow gate | Existing apps / SQLite and existing suites | Public API / regression | core test |
 | CLI stale cache | Cached definitions become visible after enable | Retained handler refuses after disable | Host tenant; executor spy before persistence | CLI / unit | CLI test |
 | Assistant | Principal turn offers enabled tool | Disabled tool and disable-during-turn never execute | Existing authenticated SQLite principal fixture | AI offering/side-door execution / integration | chat test |
+
+### Lazy activation evidence matrix
+
+| Behavior/invariant | Reachable positive trigger | Failure/negative control | Actor/context; executor | Contract/runtime; level | Validation |
+| --- | --- | --- | --- | --- | --- |
+| Enabled startup union | Boot two tenants + host always-on | Disabled package has no constructor/table | Host reads persisted union; real SQLite | Activation bootstrap; integration | core test |
+| Full physical closure | Enable Invoice -> cross-package Customer -> Profile/STI; app Customer contributes column | Unused model remains absent; unknown edge refuses | Two tenant gates; same SQLite handle | Registry/physical schema/AOT; integration | core test |
+| Coalescing/serialization | Equal calls share promise; overlapping closures import/migrate once | Other tenant stays denied | Concurrent callers; one process queue + tracker transaction | SQLite; integration | core test |
+| Failure/retry | Inject failure after earlier CREATE TABLE statements; retry succeeds | Entire application batch rolls back, gate stays shut | Transaction-bound SQLite executor; retained modules | Migration/readiness; integration | core test |
+| Recovery | Independent Node processes read saved enablement and reuse existing SQLite tables | Disabled constructors stay unimported; retained rows survive | Host persisted union + SQLite file | Plain Node restart; process integration | core test |
+| Data-only generation | Parse static module side effect; generated register import evaluates no models | Missing graph edges fail generation | Build-time generator and fresh Node process | Consumer + SvelteKit AOT; integration | core test |
+| Compatibility/backend | No subset preserves eager migration; no gate preserves access | PG/DuckDB lazy request rejects before imports/DDL | Non-opt-in host / unsupported adapter | SQLite + backend refusal; regression | core test |
 
 Commands: each touched package's `pnpm turbo run build --filter=<name>...`,
 `pnpm test`, `pnpm typecheck`; root `pnpm lint`, `pnpm format-check`,
@@ -184,3 +299,15 @@ Owner approvals re-enter `invokeManifestTool` with the original tenant and live
 exposure. A refused saved effect uses the existing terminal `failed` ledger state
 with `result.status: 'refused'` and a refused transcript outcome. Public approval
 lists expose only the originally saved summary, never current model details.
+
+### A3b validation checkpoint
+
+Node 26.8.1, macOS; all persistence tests in process, no containers. The full
+core suite passed: **505 files passed, 66 skipped; 6,867 tests passed, 513
+skipped** (Vitest reported 7,384 total). The focused activation/generation/
+orchestration run passed **29 tests across 3 files**. Core production and test
+typechecks passed. The documented dependency-closure build passed 5 tasks; a
+full workspace build passed 85 tasks. Root lint and format checks passed.
+Strict knowledge freshness is checked after the final build and page/graph
+regeneration. Optional PostgreSQL service cases remain skipped; lazy migration
+on PostgreSQL/DuckDB is explicitly refused, not advertised as tested support.
