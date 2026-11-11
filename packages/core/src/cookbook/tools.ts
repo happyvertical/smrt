@@ -26,19 +26,11 @@ import type {
   EngineState,
   JsonSchema,
 } from './engine/types.js';
+import { COOKBOOK_TOOL_NAMES, type CookbookToolName } from './index.js';
 
 /** Control-plane identity: this is gated by the host predicate, never recipe membership. */
 export { COOKBOOK_TOOLS_MODEL } from '../runtime-exposure.js';
-export const COOKBOOK_TOOL_NAMES = [
-  'recipes.search',
-  'recipes.describe',
-  'recipes.enable',
-  'recipes.disable',
-  'recipes.configure',
-  'cookbook.listTemplates',
-  'cookbook.apply',
-] as const;
-export type CookbookToolName = (typeof COOKBOOK_TOOL_NAMES)[number];
+export { COOKBOOK_TOOL_NAMES, type CookbookToolName } from './index.js';
 export type CookbookToolRecipe = EngineRecipe &
   Partial<Pick<RecipeDefinition, 'summary' | 'synonyms' | 'help'>> & {
     /** Installed manifest/knowledge intent descriptions associated with this recipe. */

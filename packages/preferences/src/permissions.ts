@@ -1,4 +1,4 @@
-import { COOKBOOK_TOOL_NAMES } from '@happyvertical/smrt-core/cookbook/tools';
+import { COOKBOOK_TOOL_NAMES } from '@happyvertical/smrt-core/cookbook';
 import {
   type PermissionDefinition,
   registerPermissionDefinitions,

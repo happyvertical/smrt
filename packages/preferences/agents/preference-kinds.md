@@ -96,3 +96,9 @@ read; multiple host processes must propagate invalidation. Hosts should expose
 this facade to owner settings, not a generic kind/surface write endpoint.
 The core [server tools](../../core/agents/cookbook-tools.md) use this same gate
 for offering and execution, including retained tools and approval resume.
+
+The permission registry reads the shared cookbook tool names from core's
+browser-safe `./cookbook` entry. Do not import the server-only `./cookbook/tools`
+adapter from this model package root: even a metadata import makes its
+`node:crypto` dependency reachable to browser bundlers. The preferences suite
+reuses bundle-gate's browser build and ownership attribution to guard this edge.
