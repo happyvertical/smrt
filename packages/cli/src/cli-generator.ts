@@ -21,6 +21,11 @@ import {
   ObjectRegistry,
 } from '@happyvertical/smrt-core';
 import { loadLocalTestManifestSync } from '@happyvertical/smrt-core/manifest';
+import {
+  hasRuntimeExposureGate,
+  isRuntimeModelEnabled,
+  type RuntimeExposureModel,
+} from '@happyvertical/smrt-core/runtime-exposure';
 import type { DatabaseInterface } from '@happyvertical/sql';
 import {
   type Command,
@@ -170,6 +175,8 @@ export interface CLIConfig {
 }
 
 export interface CLIContext {
+  /** Trusted host-selected tenant; never inferred from command arguments. */
+  tenantId?: string;
   db?: DatabaseInterface;
   /**
    * Opaque AI client passed through to collection/instance configs. The
@@ -219,6 +226,7 @@ export interface CLIOptionConfig extends OptionConfig {
 // only the final occurrence, so the local wrapper below restores the complete
 // argv selection for explicitly repeatable options.
 export interface CLICommand extends Omit<Command, 'options'> {
+  runtimeModel?: RuntimeExposureModel;
   options?: Record<string, CLIOptionConfig>;
 }
 
@@ -919,7 +927,18 @@ export class CLIGenerator {
     // Return cached commands if available
     const cachedCommands = this.objectCommandsCache.get(lowerName);
     if (cachedCommands) {
-      return cachedCommands;
+      if (!hasRuntimeExposureGate()) return cachedCommands;
+      return cachedCommands.filter((command) =>
+        isRuntimeModelEnabled(
+          ObjectRegistry.getExposureModel(
+            command.runtimeModel?.qualifiedName ?? objectName,
+          ),
+          {
+            surface: 'cli',
+            tenantId: this.context.tenantId,
+          },
+        ),
+      );
     }
 
     // Find the actual registered class (may have different casing)
@@ -946,7 +965,18 @@ export class CLIGenerator {
     // Cache the commands
     this.objectCommandsCache.set(lowerName, commands);
 
-    return commands;
+    if (!hasRuntimeExposureGate()) return commands;
+    return commands.filter((command) =>
+      isRuntimeModelEnabled(
+        ObjectRegistry.getExposureModel(
+          command.runtimeModel?.qualifiedName ?? objectName,
+        ),
+        {
+          surface: 'cli',
+          tenantId: this.context.tenantId,
+        },
+      ),
+    );
   }
 
   /**
@@ -1417,7 +1447,28 @@ export class CLIGenerator {
       });
     }
 
-    return commands;
+    const runtimeModel = _classInfo;
+    return commands.map((command) => ({
+      ...command,
+      runtimeModel,
+      handler: async (...args) => {
+        if (
+          hasRuntimeExposureGate() &&
+          !isRuntimeModelEnabled(
+            ObjectRegistry.getExposureModel(
+              runtimeModel?.qualifiedName ?? objectName,
+            ),
+            {
+              surface: 'cli',
+              tenantId: this.context.tenantId,
+            },
+          )
+        ) {
+          throw new Error('Unknown command');
+        }
+        return command.handler?.(...args);
+      },
+    }));
   }
 
   /**
