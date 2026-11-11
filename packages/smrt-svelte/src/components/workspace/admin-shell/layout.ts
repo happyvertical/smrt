@@ -51,6 +51,8 @@ export interface ShellLayoutSection {
 
 /** A user's override of one navigation item's presentation. */
 export interface ShellLayoutItem {
+  /** Singular name used by create and edit screens. */
+  singularLabel?: string;
   /** Replaces the item's label wherever the shell shows it. */
   label?: string;
   /** Replaces the item's icon with a short shell or host icon identifier. */
@@ -228,6 +230,8 @@ function readItem(raw: unknown): ShellLayoutItem | undefined {
     /^[A-Za-z][A-Za-z0-9_-]{0,63}(?![\s\S])/.test(raw.icon)
   )
     item.icon = raw.icon;
+  const singularLabel = cleanLabel(raw.singularLabel);
+  if (singularLabel) item.singularLabel = singularLabel;
   const description = cleanLabel(raw.description);
   if (description) item.description = description;
   return hasKeys(item) ? item : undefined;

@@ -21,6 +21,7 @@ import {
   type OverviewDefinition,
   type OverviewWidget,
 } from '../overview/types.js';
+import { singularScreenLabel } from '../screens/fields.js';
 import type { ScreenCollectionDefinition } from '../screens/types.js';
 import type { ShellLayout } from '../workspace/admin-shell/layout.js';
 import type {
@@ -395,11 +396,54 @@ export function cookbookScreenDefinition(
       !definition.replacedQualifiedNames?.includes(entry.model.id))
   )
     return definition;
+  const singular =
+    shell.layout?.items?.[entry.id]?.singularLabel ??
+    (shell.layout?.items?.[entry.id]?.label
+      ? singularScreenLabel(entry.label)
+      : (entry.noun ?? singularScreenLabel(entry.label)));
+  const noun = humanize(definition.className);
+  const vocabulary = new RegExp(`\\b(${pluralize(noun)}|${noun})\\b`, 'gi');
+  const fields = Object.fromEntries(
+    Object.entries(definition.fields).map(([name, field]) => [
+      name,
+      {
+        ...field,
+        ...((field.type === 'foreignKey' || field.type === 'crossPackageRef') &&
+        /Id$/.test(name)
+          ? (() => {
+              const target = [...shell.entries.values()].find(
+                (e) =>
+                  e.model.name.toLowerCase() ===
+                  name.slice(0, -2).toLowerCase(),
+              );
+              if (!target) return {};
+              return {
+                label:
+                  shell.layout?.items?.[target.id]?.singularLabel ??
+                  singularScreenLabel(target.label),
+              };
+            })()
+          : {}),
+        ...(field.description
+          ? {
+              description: field.description.replace(vocabulary, (word) => {
+                const replacement =
+                  word.toLowerCase() === pluralize(noun).toLowerCase()
+                    ? entry.label.toLowerCase()
+                    : singular.toLowerCase();
+                return /^[A-Z]/.test(word)
+                  ? replacement.charAt(0).toUpperCase() + replacement.slice(1)
+                  : replacement;
+              }),
+            }
+          : {}),
+      },
+    ]),
+  );
   return {
     ...definition,
+    fields,
     label: entry.label,
-    singularLabel: shell.layout?.items?.[entry.id]?.label
-      ? entry.label
-      : (entry.noun ?? entry.label),
+    singularLabel: singular,
   };
 }

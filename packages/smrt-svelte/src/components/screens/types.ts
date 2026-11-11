@@ -57,6 +57,10 @@ export interface ScreenFieldUIHints {
 
 /** Browser-safe subset of one generated web field definition. */
 export interface ScreenFieldDefinition {
+  /** Link edited by this virtual input; omitted when selecting a different existing record. */
+  writeThrough?: string;
+  /** Contextual label supplied by the cookbook. Resolved policy labels win. */
+  label?: string;
   type: ScreenFieldType;
   required?: boolean;
   nullable?: boolean;
@@ -120,6 +124,7 @@ export interface ScreenCollectionDefinition {
   /** Primary-key field name. Defaults to `id`. */
   idField?: string;
   /** Owning model's resolved @smrt({ display: { label } }) metadata. */
+  listFields?: readonly string[];
   displayLabelField?: string;
   /** Validated one-hop projection resolved by the server, never by a screen. */
   displayLabelProjection?: { via: string; field: string; fallback: string };

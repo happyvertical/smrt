@@ -343,6 +343,9 @@ const formError = $derived(
 <section class="smrt-edit-form" aria-label={heading} data-smrt-component="EditForm">
   {#if sourceError}
     <Alert variant="error">{sourceError}</Alert>
+  {:else if allFields.length === 0}
+    <Alert variant="info">{t(M['ui.screens.no_editable_fields'])}</Alert>
+    {#if oncancel}<Button type="button" variant="ghost" onclick={oncancel}>{t(M['ui.screens.cancel'])}</Button>{/if}
   {:else}
     <Form onsubmit={submit} novalidate>
       {#if formError}

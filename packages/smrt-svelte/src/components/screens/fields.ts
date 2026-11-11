@@ -76,6 +76,15 @@ export function humanizeLabel(
   return humanizeFieldName(name);
 }
 
+/** Conservative English label fallback; cookbook singularLabel wins for irregular nouns. */
+export function singularScreenLabel(label: string): string {
+  if (/(?:series|species|news|status)$/i.test(label)) return label;
+  if (/ies$/i.test(label)) return `${label.slice(0, -3)}y`;
+  if (/(?:sses|xes|zes|ches|shes)$/i.test(label)) return label.slice(0, -2);
+  if (/[^s]s$/i.test(label)) return label.slice(0, -1);
+  return label;
+}
+
 /** Singular and plural display names derived from the class name. */
 export function screenTitles(definition: ScreenCollectionDefinition): {
   singular: string;
@@ -83,7 +92,8 @@ export function screenTitles(definition: ScreenCollectionDefinition): {
 } {
   if (definition.label) {
     return {
-      singular: definition.singularLabel ?? definition.label,
+      singular:
+        definition.singularLabel ?? singularScreenLabel(definition.label),
       plural: definition.label,
     };
   }
@@ -250,6 +260,7 @@ export function deriveScreenFields(
         c.definition.readonly === true || policyField?.readOnly === true,
       label:
         label ||
+        c.definition.label ||
         (c.name === definition.displayLabelField &&
         definition.displayLabelProjection
           ? 'Name'
@@ -320,12 +331,33 @@ export function deriveScreenFields(
     .map((e) => e.field);
 
   if (mode === 'list') {
+    const declared = definition.listFields;
+    const safe = ordered.filter(
+      (f) =>
+        f.kind !== 'json' &&
+        f.kind !== 'textarea' &&
+        !/(?:hash|json|authority|provenance|external|synced|revision|metadata|historical|credited|backend|journal)/i.test(
+          f.name,
+        ) &&
+        !(f.type === 'text' && /Id$/.test(f.name)),
+    );
+    const byName = new Map(safe.map((f) => [f.name, f]));
+    const humanName =
+      definition.displayLabelField ??
+      safe.find((f) => f.roles?.includes('title'))?.name ??
+      safe.find((f) => f.roles?.includes('identifier'))?.name ??
+      safe.find((f) => f.kind === 'reference')?.name;
+    const preferred = [humanName, ...(declared ?? [])].filter(
+      (name): name is string => !!name,
+    );
+    const selected = preferred.flatMap((name) =>
+      byName.has(name) ? [byName.get(name)!] : [],
+    );
+    const remaining = declared
+      ? []
+      : safe.filter((f) => !preferred.includes(f.name) && f.tier === 'basic');
     const cap = options.maxListColumns ?? DEFAULT_MAX_LIST_COLUMNS;
-    return ordered
-      .filter(
-        (f) => f.tier === 'basic' && f.kind !== 'json' && f.kind !== 'textarea',
-      )
-      .slice(0, Math.max(0, cap));
+    return [...new Set(selected), ...remaining].slice(0, Math.max(0, cap));
   }
 
   if (mode === 'view') {
@@ -335,6 +367,18 @@ export function deriveScreenFields(
     return [...ordered, ...metas];
   }
 
+  if (mode === 'edit') {
+    for (const field of ordered) {
+      if (
+        field.required ||
+        field.roles?.includes('title') ||
+        field.roles?.includes('identifier')
+      )
+        field.tier = 'basic';
+    }
+    if (!ordered.some((f) => f.tier === 'basic') && ordered.length)
+      ordered[0].tier = 'basic';
+  }
   return ordered;
 }
 

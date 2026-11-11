@@ -5,7 +5,12 @@ import {
   normalizeShellLayout,
   renameShellItem,
 } from '../../workspace/admin-shell/layout.js';
-import { buildCookbookShell, humanize, pluralize } from '../build.js';
+import {
+  buildCookbookShell,
+  cookbookScreenDefinition,
+  humanize,
+  pluralize,
+} from '../build.js';
 import { narrowCatalog } from '../catalog.js';
 import type { CookbookCatalog } from '../types.js';
 import {
@@ -551,4 +556,32 @@ it('the actual cookbook builder preserves explicit legacy count edits without in
   ).toContain('count');
   expect(projected.overviews[id].override).toEqual(cookbook.overviews[id]);
   expect(JSON.stringify(cookbook)).toBe(raw);
+});
+
+it('uses the cookbook singular override and vocabulary in field help', () => {
+  const cookbook = fixture('yoga-studio');
+  cookbook.layout = {
+    ...cookbook.layout,
+    version: 1,
+    items: {
+      ...cookbook.layout?.items,
+      'item:commerce:Customer': { label: 'People', singularLabel: 'Guest' },
+    },
+  };
+  const shell = buildCookbookShell({ cookbook, catalog });
+  const definition = cookbookScreenDefinition(shell, {
+    name: 'customers',
+    objectRef: '@happyvertical/smrt-commerce:Customer',
+    className: 'Customer',
+    fields: {
+      notes: {
+        type: 'text',
+        description: 'Notes for this customer and other customers.',
+      },
+    },
+  });
+  expect(definition.singularLabel).toBe('Guest');
+  expect(definition.fields.notes.description).toBe(
+    'Notes for this guest and other people.',
+  );
 });

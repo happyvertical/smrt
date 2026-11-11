@@ -204,3 +204,19 @@ describe('EditForm', () => {
     await expectNoA11yViolations(container);
   });
 });
+
+it('never renders an empty form when every field is read-only or hidden', async () => {
+  render(EditForm, {
+    definition: {
+      ...taskDefinition,
+      fields: { displayLabel: { type: 'text', readonly: true } },
+    },
+    onsubmit: vi.fn(),
+  });
+  expect(
+    screen.getByText('No editable fields are available for this record.'),
+  ).toBeInTheDocument();
+  expect(
+    screen.queryByRole('button', { name: 'Save', exact: true }),
+  ).toBeNull();
+});

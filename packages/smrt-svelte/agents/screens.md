@@ -408,3 +408,20 @@ live host exposure projection, and read-only/hidden reference pickers under raw
 cookbook policies. The read-only picker remains disabled and resolves a display name;
 the hidden picker never loads its target. Existing source and reference-label APIs
 are reused unchanged.
+
+## Q1 shared-screen defaults
+
+Generated `listFields` comes from the owning model's `display.list`; the display
+label leads. Internal hash/JSON/authority/provenance and plain id columns are never
+defaults. Explicit policy exclusions remain authoritative. Required and primary
+edit fields render in the basic tier; if no basic field remains, the first allowed
+input is promoted. An empty editable set renders a notice instead of an empty form.
+
+Virtual inputs carry `writeThrough: '<link field>'`. Selecting a different existing
+record omits those inputs from the payload, preserving that contact's own values.
+The server still owns linked writes and transaction/tenant enforcement; see
+[core's contract](../../core/agents/write-through.md). Cookbook item `singularLabel`
+overrides the derived singular label. Reference labels use the target cookbook
+entry; explicit field policy labels win. CookbookApp renders `chat.assistant`
+through its authenticated, host-bound assistant panel and never separately mounts
+the raw recipe component without its transport and registry.

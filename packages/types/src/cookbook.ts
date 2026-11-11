@@ -48,6 +48,8 @@ export interface CookbookLayoutSection {
 
 /** Structural copy of smrt-svelte's `ShellLayoutItem`. */
 export interface CookbookLayoutItem {
+  /** Singular name used by create and edit screens. */
+  singularLabel?: string;
   label?: string;
   /** Shell icon name: 1–64 ASCII letters, digits, `_` or `-`, starting with a letter. */
   icon?: string;

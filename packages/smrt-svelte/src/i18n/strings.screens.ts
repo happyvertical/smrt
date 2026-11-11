@@ -30,6 +30,8 @@ export const M = defineMessages({
   'ui.screens.delete_failed': 'Could not delete this record.',
   'ui.screens.not_found': 'This record no longer exists.',
   'ui.screens.view_all': 'View all',
+  'ui.screens.no_editable_fields':
+    'No editable fields are available for this record.',
   'ui.screens.reference_unavailable': 'Linked record unavailable',
   'ui.screens.reference_missing_target':
     'This list is not available in this app.',

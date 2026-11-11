@@ -282,11 +282,9 @@ describe('cookbook screen context', () => {
     expect(
       screen.getByRole('columnheader', { name: /Customer name/ }),
     ).toBeInTheDocument();
-    await userEvent.click(
-      screen.getByRole('button', { name: 'New customers' }),
-    );
+    await userEvent.click(screen.getByRole('button', { name: 'New customer' }));
     expect(
-      await screen.findByRole('heading', { name: 'New customers', level: 1 }),
+      await screen.findByRole('heading', { name: 'New customer', level: 1 }),
     ).toBeInTheDocument();
     await userEvent.click(screen.getByRole('button', { name: 'Cancel' }));
     await userEvent.click(await screen.findByText('Write docs'));
@@ -295,7 +293,7 @@ describe('cookbook screen context', () => {
     ).toBeInTheDocument();
     await userEvent.click(screen.getByRole('button', { name: 'Edit' }));
     expect(
-      await screen.findByRole('heading', { name: 'Edit customers' }),
+      await screen.findByRole('heading', { name: 'Edit customer' }),
     ).toBeInTheDocument();
   });
 
@@ -440,7 +438,7 @@ describe('installed recipe end-to-end fixture', () => {
       await screen.findByTestId('installed-recipe-surface'),
     ).toBeInTheDocument();
     expect(
-      screen.getByRole('heading', { name: 'New customers' }),
+      screen.getByRole('heading', { name: 'New customer' }),
     ).toBeInTheDocument();
     const name = screen.getByLabelText(/Customer name/);
     expect(screen.getByLabelText('Currency')).toHaveValue('USD');
@@ -514,9 +512,7 @@ describe('installed recipe end-to-end fixture', () => {
       await screen.findByRole('columnheader', { name: /Client name/ }),
     ).toBeInTheDocument();
     expect(await screen.findByText('Maya Projected')).toBeInTheDocument();
-    await userEvent.click(
-      screen.getByRole('button', { name: 'New customers' }),
-    );
+    await userEvent.click(screen.getByRole('button', { name: 'New customer' }));
     expect(screen.queryByLabelText(/Client name/)).not.toBeInTheDocument();
     await userEvent.type(screen.getByLabelText(/Customer name/), 'New');
     await userEvent.click(screen.getByRole('button', { name: 'Save' }));
@@ -569,7 +565,7 @@ describe('installed recipe end-to-end fixture', () => {
     });
     await screen.findByTestId('installed-recipe-surface');
     expect(
-      screen.getByRole('heading', { name: 'New customers' }),
+      screen.getByRole('heading', { name: 'New customer' }),
     ).toBeInTheDocument();
     expect(screen.getByLabelText('Currency')).toHaveValue('USD');
     expect(screen.queryByLabelText('Reference')).not.toBeInTheDocument();
