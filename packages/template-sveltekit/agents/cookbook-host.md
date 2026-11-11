@@ -321,8 +321,13 @@ external-version map with parent-qualified selectors; its isolated pnpm regressi
 verifies CLI's MCP SDK 2.3.1 and app-mcp's 2.4.0 coexist without global pinning.
 
 Packed providers retain `importPath`/version provenance when authored source files
-are not shipped. Host preparation removes only missing foreign absolute `filePath`
-metadata before computing the source-root boundary; app source and existing linked
+are not shipped. Host preparation removes foreign absolute `filePath` metadata that is missing or
+outside the actual installed owning package (even if a publisher checkout exists) before computing the source-root boundary; app source and existing linked
 provider files still require matching digests. The subclass/snapshot fixture proves
-missing publisher source is accepted, changed app source is refused, and missing
+missing or existing out-of-package publisher source is omitted, changed app source
+is refused, and missing
 app source is never discarded. No fallback import or verification bypass is added.
+
+The installed-package boundary reuses core consumer-plugin's existing
+`findInstalledPackageJson` resolver, now public; it follows real workspace links
+without assuming published package source exists beside its compiled exports.

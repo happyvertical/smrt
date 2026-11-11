@@ -89,7 +89,11 @@ describe('cookbook app customization points', () => {
       await rm(outside, { recursive: true, force: true });
     }
   });
-  it('prepares packed-provider provenance without a publisher checkout and still verifies local source', async () => {
+  it.each([
+    'missing',
+    'existing',
+    'installed',
+  ])('prepares %s provider source provenance and still verifies app source', async (publisher) => {
     await mkdir(join(root, 'node_modules/vite'), { recursive: true });
     await writeFile(
       join(root, 'node_modules/vite/package.json'),
@@ -105,13 +109,31 @@ describe('cookbook app customization points', () => {
       }
     `,
     );
+    await mkdir(join(root, 'node_modules/@happyvertical/smrt-profiles'), {
+      recursive: true,
+    });
+    await writeFile(
+      join(root, 'node_modules/@happyvertical/smrt-profiles/package.json'),
+      JSON.stringify({
+        name: '@happyvertical/smrt-profiles',
+        version: '0.60.16',
+      }),
+    );
+    const publisherFile =
+      publisher === 'installed'
+        ? join(root, 'node_modules/@happyvertical/smrt-profiles/src/Profile.ts')
+        : join(root, 'publisher/Profile.ts');
+    if (publisher !== 'missing') {
+      await mkdir(join(publisherFile, '..'), { recursive: true });
+      await writeFile(publisherFile, 'export class Profile {}');
+    }
     const localFile = join(root, 'src/lib/objects/profiles/Profile.ts');
     const provider = {
       className: 'Profile',
       packageName: '@happyvertical/smrt-profiles',
       packageVersion: '0.60.16',
       importPath: '@happyvertical/smrt-profiles',
-      filePath: '/deleted/publisher/packages/profiles/src/Profile.ts',
+      filePath: publisherFile,
       fields: {},
       methods: {},
       decoratorConfig: { tableName: 'profiles' },
@@ -142,10 +164,24 @@ describe('cookbook app customization points', () => {
       importPath: provider.importPath,
       packageVersion: provider.packageVersion,
     });
-    expect(
-      artifact.manifest.objects['@happyvertical/smrt-profiles:Profile']
-        .filePath,
-    ).toBeUndefined();
+    if (publisher === 'installed') {
+      expect(
+        artifact.manifest.objects['@happyvertical/smrt-profiles:Profile']
+          .filePath,
+      ).toBe(
+        '@smrt/source-root/node_modules/@happyvertical/smrt-profiles/src/Profile.ts',
+      );
+      await writeFile(publisherFile, '// changed installed provider');
+      expect(() =>
+        loadVerifiedSmrtGenerationSnapshot(result.generationSnapshot, root),
+      ).toThrow(/digest mismatch/);
+      await writeFile(publisherFile, 'export class Profile {}');
+    } else {
+      expect(
+        artifact.manifest.objects['@happyvertical/smrt-profiles:Profile']
+          .filePath,
+      ).toBeUndefined();
+    }
     expect(Object.keys(artifact.sourceDigests)).toContain(
       'src/lib/objects/profiles/Profile.ts',
     );

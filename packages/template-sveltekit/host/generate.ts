@@ -2,7 +2,7 @@
 import { existsSync } from 'node:fs';
 import { mkdir, readFile, realpath, writeFile } from 'node:fs/promises';
 import { createRequire } from 'node:module';
-import { dirname, isAbsolute, join, relative, resolve } from 'node:path';
+import { dirname, isAbsolute, join, relative, resolve, sep } from 'node:path';
 import { pathToFileURL } from 'node:url';
 import { validateCookbook } from '@happyvertical/smrt-core/cookbook';
 import {
@@ -132,8 +132,12 @@ export async function prepareCookbookHost(
     serializeSmrtGenerationSnapshot,
     sha256SmrtGenerationSnapshot,
   } = await import('@happyvertical/smrt-core/vite-plugin');
-  const { smrtConsumer, separateHostedStiCollections, aliasHostedCollections } =
-    await import('@happyvertical/smrt-core/consumer-plugin');
+  const {
+    smrtConsumer,
+    separateHostedStiCollections,
+    aliasHostedCollections,
+    findInstalledPackageJson,
+  } = await import('@happyvertical/smrt-core/consumer-plugin');
   await mkdir(join(root, '.smrt'), { recursive: true });
   const entry = join(root, '.smrt/exposure-entry.js');
   await writeFile(entry, 'export {};\n');
@@ -170,21 +174,40 @@ export async function prepareCookbookHost(
   // Linked provider sources may live outside the host. Snapshot paths are
   // portable under their common ancestor and verified by core on every use.
   let sourceRoot = root;
+  const providerSourceRoots = new Map<string, string | undefined>();
   for (const definition of Object.values(manifest.objects) as Array<{
     filePath?: string;
     packageName?: string;
   }>) {
     if (!definition.filePath || !isAbsolute(definition.filePath)) continue;
-    // Published manifests retain authored build-machine paths, but ship only
-    // compiled exports. Keep their import/version provenance, never hash a
-    // nonexistent publisher checkout as though it were a linked source tree.
+    // A published manifest can name an existing publisher checkout. Only
+    // source belonging to this installed provider (including workspace links)
+    // may widen the snapshot root or contribute a source digest.
     if (
       definition.packageName &&
-      definition.packageName !== manifest.packageName &&
-      !existsSync(definition.filePath)
+      definition.packageName !== manifest.packageName
     ) {
-      delete definition.filePath;
-      continue;
+      if (!providerSourceRoots.has(definition.packageName)) {
+        const metadata = findInstalledPackageJson(definition.packageName, root);
+        providerSourceRoots.set(
+          definition.packageName,
+          metadata ? dirname(metadata) : undefined,
+        );
+      }
+      const packageRoot = providerSourceRoots.get(definition.packageName);
+      const path = packageRoot
+        ? relative(packageRoot, definition.filePath)
+        : '..';
+      if (
+        !packageRoot ||
+        path === '..' ||
+        path.startsWith(`..${sep}`) ||
+        isAbsolute(path) ||
+        !existsSync(definition.filePath)
+      ) {
+        delete definition.filePath;
+        continue;
+      }
     }
     while (relative(sourceRoot, definition.filePath).startsWith('..'))
       sourceRoot = dirname(sourceRoot);

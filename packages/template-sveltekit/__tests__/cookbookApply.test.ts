@@ -59,6 +59,7 @@ for (const collection of ['profiles', 'profiletypes'])
   assert.equal((await request('/api/' + collection, cookie)).status, 200, collection);
 for (const model of ['Profile', 'ProfileType'])
   assert.equal((await request('/m/profiles/' + model, cookie)).status, 404, model);
+assert.match(await (await request('/s/section-people', cookie)).text(), /<h1[^>]*>Section not found<[/]h1>/);
 // Installed Commerce includes Leases in the AOT superset; this cookbook did not enable it.
 assert.equal((await request('/api/leases', cookie)).status, 404);
 const expected = JSON.parse(readFileSync(join(root, '.smrt/navigation-proof.json'), 'utf8'));
