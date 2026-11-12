@@ -108,12 +108,12 @@ export interface StartedReferenceApp {
   stop(): Promise<void>;
 }
 
-/** Reserve a loopback port, then hand it to the app via `--strictPort`. */
+/** Reserve a loopback port (optionally SMRT_E2E_PORT), then use `--strictPort`. */
 async function reserveLoopbackPort(): Promise<number> {
   return await new Promise<number>((resolvePort, rejectPort) => {
     const probe = createServer();
     probe.on('error', rejectPort);
-    probe.listen(0, '127.0.0.1', () => {
+    probe.listen(Number(process.env.SMRT_E2E_PORT ?? 0), '127.0.0.1', () => {
       const address = probe.address();
       if (typeof address === 'string' || address === null) {
         probe.close(() => rejectPort(new Error('No loopback port available.')));
