@@ -15,6 +15,10 @@ export interface WorkProfileBudgets {
   repairRetries: number;
   toolResultChars: number;
 }
+/** App-wide owner choices; never accepted from a model or a work profile. Choices default on. */
+export interface AssistantSafetySettings {
+  requireRemovalApproval?: boolean;
+}
 export interface WorkProfileSettings {
   engine?: InferenceEngineId;
   model?: string;

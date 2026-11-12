@@ -650,6 +650,9 @@ export function createCookbookHost(options: CookbookHostOptions) {
         ).permissions.has(slug);
       },
       approvals: continuations.adapter('cookbook'),
+      requireRemovalApproval: async () =>
+        (await workProfiles.read()).settings.safety?.requireRemovalApproval !==
+        false,
       previewBeforeApply: async (context) => {
         if (context.designAction && context.userId && context.tenantId) {
           const saved = await createDesignRunStore({
@@ -908,7 +911,7 @@ export function createCookbookHost(options: CookbookHostOptions) {
                   },
                   () =>
                     service.invoke(operation.tool, operation.args, {
-                      surface: 'mcp',
+                      surface: 'assistant',
                       tenantId,
                       userId: ownerId,
                       profileId: user.profileId,
@@ -1579,17 +1582,26 @@ export function createCookbookHost(options: CookbookHostOptions) {
       return {
         ...saved,
         resolved,
-        editable: await isOwner(principal.tenantId, principal.userId),
+        editable:
+          typeof (event.locals as SmrtRuntimeLocals).sessionId === 'string' &&
+          (await isOwner(principal.tenantId, principal.userId)),
         chatgptSignedIn: (await (await chatgpt()).status()).signedIn,
       };
     },
     async write(
       event: RequestEvent,
-      payload: { settings: WorkProfilePreferences; revision: string | null },
+      payload: {
+        settings: WorkProfilePreferences;
+        revision: string | null;
+      },
     ) {
       const principal = resolveAssistantPrincipalFromLocals(event.locals);
-      if (!principal || !(await isOwner(principal.tenantId, principal.userId)))
-        error(403, 'Owner required');
+      if (
+        !principal ||
+        typeof (event.locals as SmrtRuntimeLocals).sessionId !== 'string' ||
+        !(await isOwner(principal.tenantId, principal.userId))
+      )
+        error(403, 'Owner session required');
       if (
         !payload ||
         typeof payload !== 'object' ||
@@ -1603,7 +1615,11 @@ export function createCookbookHost(options: CookbookHostOptions) {
     },
     async reset(event: RequestEvent, revision: string | null) {
       const principal = resolveAssistantPrincipalFromLocals(event.locals);
-      if (!principal || !(await isOwner(principal.tenantId, principal.userId)))
+      if (
+        !principal ||
+        typeof (event.locals as SmrtRuntimeLocals).sessionId !== 'string' ||
+        !(await isOwner(principal.tenantId, principal.userId))
+      )
         error(403, 'Owner required');
       if (!(revision === null || typeof revision === 'string'))
         error(400, 'Invalid revision');
@@ -1903,11 +1919,14 @@ export function createCookbookHost(options: CookbookHostOptions) {
     extraTools: extra,
     approvalContinuations: async () => (await ready()).continuations,
     // These tools hold in their own canonical service; never create a second chat hold.
-    approvalPolicy: {
+    approvalPolicy: async () => ({
+      allowRemovalsInChat:
+        (await (await ready()).workProfiles.read()).settings.safety
+          ?.requireRemovalApproval === false,
       tools: Object.fromEntries(
         COOKBOOK_TOOL_NAMES.map((name) => [name, false]),
       ),
-    },
+    }),
     ...options.assistant,
     toolPresentation: 'generic',
     presentApproval: async (record) => {
@@ -2922,10 +2941,27 @@ export function createCookbookHost(options: CookbookHostOptions) {
                   const tool = spec.model;
                   if (tool && !isManifestToolEnabled(tool, caller.tenantId))
                     throw new Error('Tool disabled');
+                  const approvalPolicy =
+                    binding?.turn.thread &&
+                    !designRequests.has(binding.context.event.request)
+                      ? {
+                          allowRemovalsInChat:
+                            (await host.workProfiles.read()).settings.safety
+                              ?.requireRemovalApproval === false,
+                        }
+                      : undefined;
                   if (
                     tool &&
-                    (requiresOwnerApproval(tool, args) ||
-                      spec.annotations?.destructiveHint === true)
+                    (requiresOwnerApproval(
+                      tool,
+                      args,
+                      approvalPolicy,
+                      spec.annotations?.destructiveHint === true,
+                    ) ||
+                      // A preference may tighten an active request, but cannot
+                      // waive the authoring gate bound when that turn started.
+                      (!!binding?.turn.thread &&
+                        binding.turn.requiresApproval(spec.slug, args)))
                   ) {
                     const input = {
                       tenantId: caller.tenantId,
@@ -3045,7 +3081,7 @@ export function createCookbookHost(options: CookbookHostOptions) {
                         spec.slug as Parameters<typeof host.service.invoke>[0],
                         args,
                         {
-                          surface: 'mcp',
+                          surface: binding?.turn.thread ? 'assistant' : 'mcp',
                           tenantId: caller.tenantId,
                           userId: caller.id,
                         },

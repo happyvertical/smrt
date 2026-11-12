@@ -15,6 +15,8 @@ export interface AssistantApprovalCall {
 
 /** Tool override, then operation override, then destructive-name default. */
 export interface AssistantApprovalPolicy {
+  /** Trusted host choice for in-app chat only. Never read from tool arguments. */
+  allowRemovalsInChat?: boolean;
   tools?: Readonly<Record<string, boolean>>;
   operations?: Readonly<Record<string, boolean>>;
 }
@@ -23,6 +25,7 @@ export function requiresOwnerApproval(
   tool: ManifestTool | PrincipalTool,
   args: Record<string, unknown>,
   policy?: AssistantApprovalPolicy,
+  destructiveHint = false,
 ): boolean {
   const operation =
     'action' in tool ? tool.action : (tool.slug.split('.').at(-1) ?? '');
@@ -30,12 +33,29 @@ export function requiresOwnerApproval(
     /(?:^|[._-])(delete|remove|destroy|purge|drop|truncate)(?:$|[._-])/i.test(
       value.replace(/([a-z])([A-Z])/g, '$1_$2'),
     );
+  const values = [
+    operation,
+    tool.slug,
+    String(args.operation ?? args.action ?? ''),
+  ].map((value) => value.replace(/([a-z])([A-Z])/g, '$1_$2'));
+  const purge = values.some((value) =>
+    /(?:^|[._-])(purge|drop|truncate|destroy)(?:$|[._-])/i.test(value),
+  );
+  const removal = values.some((value) =>
+    /(?:^|[._-])(delete|remove)(?:$|[._-])/i.test(value),
+  );
+  if (purge) return true;
+  // Native tools may own an independent hold (the existing explicit overrides).
+  // The new chat setting itself can never waive a purge or an unknown effect.
   return (
     policy?.tools?.[tool.slug] ??
     policy?.operations?.[operation] ??
-    (destructive(operation) ||
-      destructive(tool.slug) ||
-      destructive(String(args.operation ?? args.action ?? '')))
+    (policy?.allowRemovalsInChat && removal && !purge
+      ? false
+      : destructiveHint ||
+        destructive(operation) ||
+        destructive(tool.slug) ||
+        destructive(String(args.operation ?? args.action ?? '')))
   );
 }
 

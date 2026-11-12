@@ -336,3 +336,28 @@ it('links an unsigned-in ChatGPT engine choice to the shared connection section'
     screen.getByRole('link', { name: 'Sign in with ChatGPT in Connect AI' }),
   ).toHaveAttribute('href', '/settings#chatgpt');
 });
+
+it('reflects recommended safety defaults after reset and disables safety edits for a reader', async () => {
+  const onreset = vi.fn(async () => {});
+  const { rerender } = render(WorkProfileSettings, {
+    settings: {
+      safety: { requireRemovalApproval: false },
+    },
+    resolved,
+    onsave: vi.fn(),
+    onreset,
+  });
+  expect(
+    screen.getByLabelText('Ask before deleting or removing'),
+  ).not.toBeChecked();
+  await userEvent.click(
+    screen.getByRole('button', { name: 'Reset to recommended' }),
+  );
+  expect(onreset).toHaveBeenCalledOnce();
+  await rerender({ settings: {} });
+  for (const label of ['Ask before deleting or removing'])
+    expect(screen.getByLabelText(label)).toBeChecked();
+  await rerender({ editable: false });
+  for (const label of ['Ask before deleting or removing'])
+    expect(screen.getByLabelText(label)).toBeDisabled();
+});

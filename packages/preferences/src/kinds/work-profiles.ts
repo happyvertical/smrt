@@ -1,5 +1,6 @@
 /** Owner work-profile overrides; inference owns recommendations and resolution. */
 import type {
+  AssistantSafetySettings,
   WorkProfileName,
   WorkProfileSettings,
 } from '@happyvertical/smrt-inference';
@@ -13,7 +14,7 @@ import type { PreferenceStore } from '../store.js';
 
 export type WorkProfilePreferences = Partial<
   Record<WorkProfileName, WorkProfileSettings>
->;
+> & { safety?: AssistantSafetySettings };
 export const WORK_PROFILES_PREFERENCE_KIND = 'work-profiles';
 const SURFACE = 'assistant';
 const profiles = new Set(['design', 'assist', 'background']);
@@ -77,8 +78,15 @@ export const workProfilesPreferenceKind: PreferenceKindDefinition = {
       context.scope === 'tenant' &&
       (payload === null ||
         (record(payload) &&
-          Object.entries(payload).every(
-            ([name, value]) => profiles.has(name) && validSettings(value),
+          Object.entries(payload).every(([name, value]) =>
+            name === 'safety'
+              ? record(value) &&
+                Object.entries(value).every(
+                  ([key, v]) =>
+                    ['requireRemovalApproval'].includes(key) &&
+                    typeof v === 'boolean',
+                )
+              : profiles.has(name) && validSettings(value),
           )));
     return valid
       ? { ok: true, canonical: payload, issues: [] }

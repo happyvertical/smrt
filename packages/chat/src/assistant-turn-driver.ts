@@ -185,7 +185,12 @@ async function runExternalAssistantAttempt<M>(
         ...(options.extraTools ?? []),
       ].find((tool) => tool.slug === name);
       return (
-        !tool || requiresOwnerApproval(tool, args, options.approvals?.policy)
+        !tool ||
+        requiresOwnerApproval(
+          tool,
+          args,
+          options.approvals?.policy ?? options.approvalPolicy,
+        )
       );
     },
   };

@@ -1,5 +1,6 @@
 <script lang="ts">
 import type {
+  AssistantSafetySettings,
   WorkProfileSettings as OwnerWorkProfileSettings,
   ResolvedWorkProfile,
   WorkProfileBudgets,
@@ -38,7 +39,6 @@ const M = defineMessages({
   'ui.work_profiles.effort_max': 'maximum effort',
   'ui.work_profiles.unavailable':
     'This connection is unavailable. You can change its settings or reset to recommended.',
-  'ui.work_profiles.connect_chatgpt': 'Sign in with ChatGPT in Connect AI',
   'ui.work_profiles.provider': 'Best available from your provider',
   'ui.work_profiles.escalate':
     'Automatically use system design for structure changes',
@@ -49,8 +49,11 @@ const M = defineMessages({
     'The change could not be saved. Refresh and try again.',
   'ui.work_profiles.cli_limits':
     'CLI connections enforce app tool steps and pass time limits. Token budgets depend on usage reported by the CLI; a per-call token ceiling cannot be guaranteed.',
-  'ui.work_profiles.safety':
-    'Destructive actions still require owner approval. CLI security protections always apply.',
+  'ui.work_profiles.safety': 'Safety',
+  'ui.work_profiles.removals': 'Ask before deleting or removing',
+  'ui.work_profiles.removals_help':
+    'Applies to chat in this app. Deleted records cannot be restored. Requests from outside this app and permanent purges always need owner approval. Design previews still apply.',
+  'ui.work_profiles.connect_chatgpt': 'Sign in with ChatGPT in Connect AI',
   'ui.work_profiles.maxSteps': 'Tool steps per pass',
   'ui.work_profiles.maxTokens': 'Output tokens per call',
   'ui.work_profiles.maxTurnTokens': 'Tokens per pass',
@@ -74,19 +77,25 @@ let {
   chatgptSignedIn = false,
   connectAiHref = '/settings#chatgpt',
 }: {
-  settings: Partial<Record<WorkProfileName, OwnerWorkProfileSettings>>;
+  settings: Partial<Record<WorkProfileName, OwnerWorkProfileSettings>> & {
+    safety?: AssistantSafetySettings;
+  };
   resolved: (ResolvedWorkProfile & { unavailable?: boolean })[];
   onsave(
-    settings: Partial<Record<WorkProfileName, OwnerWorkProfileSettings>>,
+    settings: Partial<Record<WorkProfileName, OwnerWorkProfileSettings>> & {
+      safety?: AssistantSafetySettings;
+    },
   ): Promise<void>;
   onreset(): Promise<void>;
   editable?: boolean;
   chatgptSignedIn?: boolean;
   connectAiHref?: string;
 } = $props();
-let drafts = $state<Partial<Record<WorkProfileName, OwnerWorkProfileSettings>>>(
-  {},
-);
+let drafts = $state<
+  Partial<Record<WorkProfileName, OwnerWorkProfileSettings>> & {
+    safety?: AssistantSafetySettings;
+  }
+>({});
 let busy = $state(false);
 let failed = $state(false);
 let durationEdits = $state<Record<string, { value: string; invalid: boolean }>>(
@@ -205,10 +214,15 @@ async function save(reset = false) {
       <Toggle label={t(M['ui.work_profiles.preview'])} checked={drafts[profile.name]?.previewBeforeApply ?? profile.previewBeforeApply} disabled={!editable || busy} onchange={checked => change(profile.name, 'previewBeforeApply', checked)} />
     </Card>
   {/each}
-  <p>{t(M['ui.work_profiles.safety'])}</p>
+  <Card>
+    <h3>{t(M['ui.work_profiles.safety'])}</h3>
+    <Toggle label={t(M['ui.work_profiles.removals'])} checked={drafts.safety?.requireRemovalApproval !== false} disabled={!editable || busy} onchange={checked => { drafts = { ...drafts, safety: { ...drafts.safety, requireRemovalApproval: checked } }; }} />
+    <p>{t(M['ui.work_profiles.removals_help'])}</p>
+  </Card>
   {#if resolved.some(profile => profile.engine === 'claude-code' || profile.engine === 'codex')}<p>{t(M['ui.work_profiles.cli_limits'])}</p>{/if}
   {#if failed}<p role="alert">{t(M['ui.work_profiles.failed'])}</p>{/if}
   {#if invalidDuration}<p role="alert">{t(M['ui.work_profiles.time_precision'])}</p>{/if}
   <Button disabled={!editable || busy || invalidDuration} onclick={() => save()}>{t(M['ui.work_profiles.save'])}</Button>
   <Button disabled={!editable || busy} onclick={() => save(true)}>{t(M['ui.work_profiles.reset'])}</Button>
 </section>
+

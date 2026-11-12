@@ -4302,6 +4302,39 @@ describe('mountAssistantRoutes', () => {
     };
   }
 
+  it('runs an owner-opted-out built-in chat removal once and persists its human tool result', async () => {
+    const ran: unknown[] = [];
+    const tool = deleteTool(ran);
+    const policy = vi.fn(async () => ({ allowRemovalsInChat: true }));
+    const routes = mount({
+      ai: scriptedAI([
+        calls(['records-delete', { id: 'scratch' }]),
+        text('Done.'),
+      ]),
+      approvals: await durableApprovals(),
+      approvalPolicy: policy,
+      allowedTools: [tool.slug],
+      extraTools: [tool],
+    });
+    const threadId = await createThread(routes);
+    const result = await events(
+      await send(routes, threadId, {
+        content: 'Delete scratch',
+        clientRequestId: crypto.randomUUID(),
+      }),
+    );
+    expect(result.thrown).toBeNull();
+    expect(policy).toHaveBeenCalledTimes(1);
+    expect(result.seen.some((event) => event.type === 'approval_needed')).toBe(
+      false,
+    );
+    expect(ran).toHaveLength(1);
+    expect(
+      (await listMessages(routes, threadId)).some(
+        (message) => message.content === 'Deleted record',
+      ),
+    ).toBe(true);
+  });
   it('holds a built-in server delete durably, then approves once with the original principal and authors the result', async () => {
     const authority = await durableApprovals();
     const ran: unknown[] = [];

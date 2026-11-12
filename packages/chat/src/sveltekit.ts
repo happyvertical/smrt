@@ -332,7 +332,7 @@ export interface MountAssistantRoutesOptions {
   approvalContinuations?: AssistantRouteValue<
     import('@happyvertical/smrt-app-runtime').OwnerApprovalContinuations
   >;
-  approvalPolicy?: AssistantApprovalPolicy;
+  approvalPolicy?: AssistantRouteValue<AssistantApprovalPolicy>;
   /**
    * The AI client, or a factory called once per turn. Omitted, each turn
    * builds a client from the principal's stored inference binding (#4756,
@@ -1457,6 +1457,7 @@ export function mountAssistantRoutes(
         });
       }
     }
+    const approvalPolicy = await resolveValue(options.approvalPolicy, context);
     let bridge: Promise<AssistantApprovalBridge> | undefined;
     const bridgeFor = () =>
       (bridge ??= authorityFor(context).then(async (authority) =>
@@ -1464,7 +1465,7 @@ export function mountAssistantRoutes(
           authority,
           tenantId: principal.tenantId,
           requestedBy: principal.userId,
-          policy: options.approvalPolicy,
+          policy: approvalPolicy,
           context: JSON.parse(
             JSON.stringify({
               principal,
@@ -1484,7 +1485,7 @@ export function mountAssistantRoutes(
         }),
       ));
     const approvals: AssistantApprovalBridge = {
-      policy: options.approvalPolicy,
+      policy: approvalPolicy,
       request: async (call) => (await bridgeFor()).request(call),
       wait: async (request, driverContext) =>
         (await bridgeFor()).wait!(request, driverContext),
@@ -1544,6 +1545,7 @@ export function mountAssistantRoutes(
             }
           : {}),
         waitForApproval: options.waitForApproval,
+        approvalPolicy,
         approvals:
           prepared.turnDriver &&
           (options.waitForApproval || prepared.turnDriver.waitForApproval) &&

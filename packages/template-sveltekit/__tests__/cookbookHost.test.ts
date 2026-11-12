@@ -17,6 +17,7 @@ import {
 import { Customer } from '@happyvertical/smrt-commerce';
 import {
   field,
+  getChangesSince,
   ObjectRegistry,
   SmrtCollection,
   SmrtObject,
@@ -246,7 +247,12 @@ function event(
     }),
     params: { path: url.pathname.replace('/api/assistant/', '') },
     locals: authenticated
-      ? { user: owner, tenantId, permissions }
+      ? {
+          user: owner,
+          tenantId,
+          permissions,
+          sessionId: 'verified-owner-session',
+        }
       : { user: null },
   } as unknown as RequestEvent;
 }
@@ -2426,9 +2432,11 @@ describe('local cookbook host composition (SQLite, fake model, no providers)', (
   });
 
   it.each([
-    'claude-code',
-    'codex',
-  ] as const)('runs %s through the real host MCP route with short-lived scoped credentials and no API fallback', async (engine) => {
+    ['claude-code', true],
+    ['codex', true],
+    ['claude-code', false],
+    ['codex', false],
+  ] as const)('runs %s (removal approval %s) through the real host MCP route with short-lived scoped credentials and no API fallback', async (engine, removalApproval) => {
     const state = await createCookbookHostState(db, catalog, cookbook);
     await state.refresh(tenantId);
     const before = state.engineFor({ tenantId })!.state();
@@ -2459,6 +2467,7 @@ describe('local cookbook host composition (SQLite, fake model, no providers)', (
       }>
     > = [];
     let beforeMcpResponse: (() => Promise<void>) | undefined;
+    let beforeMcpCall: (() => Promise<void>) | undefined;
     http = createServer(async (incoming, outgoing) => {
       try {
         const chunks: Buffer[] = [];
@@ -2477,6 +2486,7 @@ describe('local cookbook host composition (SQLite, fake model, no providers)', (
           incoming.headers.authorization!.slice(7),
         );
         seenCatalogs.push(scoped.body.result.tools);
+        await beforeMcpCall?.();
         const result = await request(e, host.mcp);
         await beforeMcpResponse?.();
         outgoing.writeHead(result.status, Object.fromEntries(result.headers));
@@ -2510,7 +2520,12 @@ describe('local cookbook host composition (SQLite, fake model, no providers)', (
       expect(
         (
           await host.workProfiles.write(e, {
-            settings: { assist: { model: 'fixture-best' } },
+            settings: {
+              assist: { model: 'fixture-best' },
+              safety: {
+                requireRemovalApproval: removalApproval,
+              },
+            },
             revision: state.revision,
           })
         ).ok,
@@ -2574,25 +2589,27 @@ describe('local cookbook host composition (SQLite, fake model, no providers)', (
     expect(
       (await introduction.json()).assistantIntroduction.actions,
     ).not.toContain('delete');
-    const made = await turn(
-      await thread(),
-      `tool ${create.name} ${JSON.stringify({ name: 'Test Person', email: '', phone: '' })}`,
-    );
-    expect(
-      made.some((e) => e.type === 'error'),
-      JSON.stringify(made),
-    ).toBe(false);
-    expect(JSON.stringify(made)).toContain('Completed this action');
-    await withTenant({ tenantId }, async () => {
-      const customers = await ObjectRegistry.getCollection(CUSTOMER, { db });
-      const members = await customers.list({ displayLabel: true });
-      expect(members.map((member) => member.toJSON().displayLabel)).toContain(
-        'Test Person',
+    if (removalApproval) {
+      const made = await turn(
+        await thread(),
+        `tool ${create.name} ${JSON.stringify({ name: 'Test Person', email: '', phone: '' })}`,
       );
-    });
+      expect(
+        made.some((e) => e.type === 'error'),
+        JSON.stringify(made),
+      ).toBe(false);
+      expect(JSON.stringify(made)).toContain('Completed this action');
+      await withTenant({ tenantId }, async () => {
+        const customers = await ObjectRegistry.getCollection(CUSTOMER, { db });
+        const members = await customers.list({ displayLabel: true });
+        expect(members.map((member) => member.toJSON().displayLabel)).toContain(
+          'Test Person',
+        );
+      });
+    }
 
     const memos = await ObjectRegistry.getCollection(MEMO, { db });
-    const memo = await withTenant({ tenantId }, async () => {
+    let memo = await withTenant({ tenantId }, async () => {
       const record = await memos.create({ title: 'CLI held delete' });
       await record.save();
       return record;
@@ -2600,6 +2617,115 @@ describe('local cookbook host composition (SQLite, fake model, no providers)', (
     const deleteName = liveTools.find((t) =>
       /^memos_delete$/.test(t.name),
     )!.name;
+    if (!removalApproval) {
+      const deleted = vi.spyOn(HostMemo.prototype, 'delete');
+      const events = await turn(
+        await thread(),
+        `tool ${deleteName} ${JSON.stringify({ id: memo.id })}`,
+      );
+      expect(
+        events.some((e) => e.type === 'approval_needed' || e.type === 'error'),
+      ).toBe(false);
+      expect(deleted).toHaveBeenCalledTimes(1);
+      expect(
+        await withTenant({ tenantId }, () => memos.get(memo.id!)),
+      ).toBeFalsy();
+      const changes = await getChangesSince(db, {
+        since: 0,
+        tables: ['host_memos'],
+        tenantId,
+      });
+      expect(changes.changes).toContainEqual(
+        expect.objectContaining({ operation: 'delete', rowId: memo.id }),
+      );
+
+      const next = await withTenant({ tenantId }, async () => {
+        const row = await memos.create({ title: 'Outside client still held' });
+        await row.save();
+        return row;
+      });
+      const outsideList = await mcp();
+      expect(
+        outsideList.body.result.tools.some((t: { name: string }) =>
+          /preference|work_profile|assistant_safety/i.test(t.name),
+        ),
+      ).toBe(false);
+      const outsideName = outsideList.body.result.tools.find(
+        (t: { name: string }) => /memo.*delete$/i.test(t.name),
+      )?.name;
+      expect(outsideName).toBeTruthy();
+      const outside = await mcp('tools/call', {
+        name: outsideName,
+        arguments: { id: next.id },
+      });
+      expect(JSON.stringify(outside.body)).toContain('approval');
+      expect(
+        await withTenant({ tenantId }, () => memos.get(next.id!)),
+      ).toBeTruthy();
+      expect(deleted).toHaveBeenCalledTimes(1);
+      const forbidden = await mcp('tools/call', {
+        name: 'work_profiles_update',
+        arguments: {
+          safety: { requireRemovalApproval: true, protectLocalCli: true },
+        },
+      });
+      expect(
+        forbidden.body.error ?? forbidden.body.result?.isError,
+      ).toBeTruthy();
+      await request(event('/settings/inference'), async (e) => {
+        expect((await host.workProfiles.read(e)).settings.safety).toEqual({
+          requireRemovalApproval: false,
+        });
+        return new Response();
+      });
+      const noSession = event('/settings/inference', 'POST', {});
+      delete (noSession.locals as { sessionId?: string }).sessionId;
+      await expect(
+        request(noSession, async (e) =>
+          json(
+            await host.workProfiles.write(e, { settings: {}, revision: null }),
+          ),
+        ),
+      ).rejects.toMatchObject({ status: 403 });
+      deleted.mockRestore();
+      // A running turn must not lose its initial hold policy if the owner
+      // disables approval while the CLI is approaching the MCP boundary.
+      await request(event('/settings/inference'), async (e) => {
+        const saved = await host.workProfiles.read(e);
+        await host.workProfiles.write(e, {
+          settings: {
+            ...saved.settings,
+            safety: { ...saved.settings.safety, requireRemovalApproval: true },
+          },
+          revision: saved.revision,
+        });
+        return new Response();
+      });
+      memo = await withTenant({ tenantId }, async () => {
+        const record = await memos.create({
+          title: 'In-flight removal policy',
+        });
+        await record.save();
+        return record;
+      });
+      beforeMcpCall = async () => {
+        beforeMcpCall = undefined;
+        await request(event('/settings/inference'), async (e) => {
+          const saved = await host.workProfiles.read(e);
+          await host.workProfiles.write(e, {
+            settings: {
+              ...saved.settings,
+              safety: {
+                ...saved.settings.safety,
+                requireRemovalApproval: false,
+              },
+            },
+            revision: saved.revision,
+          });
+          return new Response();
+        });
+      };
+    }
     const threadId = await thread();
     let approvalReady!: (id: string) => void;
     const approval = new Promise<string>((resolve) => {
@@ -2689,6 +2815,7 @@ describe('local cookbook host composition (SQLite, fake model, no providers)', (
       (await chat(`approvals/${approvalId}/decide`, { approve: true })).status,
     ).toBe(409);
     expect(deleted).toHaveBeenCalledTimes(1);
+    if (!removalApproval) return;
     const blockedMemo = await withTenant({ tenantId }, async () => {
       const record = await memos.create({ title: 'Revoked CLI delete' });
       await record.save();

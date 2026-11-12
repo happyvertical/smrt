@@ -3055,6 +3055,38 @@ describe('server approval policy', () => {
       ),
     ).toBe(true);
   });
+  it('allows only trusted in-app removal opt-outs and keeps purge effects held', () => {
+    expect(requiresOwnerApproval(tool, { allowRemovalsInChat: true })).toBe(
+      true,
+    );
+    expect(requiresOwnerApproval(tool, {}, { allowRemovalsInChat: true })).toBe(
+      false,
+    );
+    expect(
+      requiresOwnerApproval(tool, {}, { allowRemovalsInChat: false }),
+    ).toBe(true);
+    for (const action of ['purge', 'delete', 'remove']) {
+      const candidate = { ...tool, slug: `notes.${action}`, action };
+      expect(
+        requiresOwnerApproval(candidate, {}, { allowRemovalsInChat: true }),
+      ).toBe(action === 'purge');
+    }
+    expect(
+      requiresOwnerApproval(
+        tool,
+        { operation: 'purge' },
+        { allowRemovalsInChat: true },
+      ),
+    ).toBe(true);
+    expect(
+      requiresOwnerApproval(
+        { ...tool, slug: 'notes.custom', action: 'custom' },
+        {},
+        { allowRemovalsInChat: true },
+        true,
+      ),
+    ).toBe(true);
+  });
   it('supports explicit per-tool and per-operation overrides with tool precedence', () => {
     expect(
       requiresOwnerApproval(tool, {}, { operations: { delete: false } }),

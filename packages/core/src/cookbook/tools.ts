@@ -136,6 +136,10 @@ export interface CookbookToolOptions {
   activation?: Pick<ActivationCoordinator, 'activate'>;
   /** Owner preference; skipping review never waives revision or destructive approval checks. */
   previewBeforeApply?(context: CookbookToolContext): boolean | Promise<boolean>;
+  /** Trusted owner setting for in-app removals only. MCP always keeps its hold. */
+  requireRemovalApproval?(
+    context: CookbookToolContext,
+  ): boolean | Promise<boolean>;
   catalog: Omit<EngineCatalog, 'recipes'> & {
     recipes: readonly CookbookToolRecipe[];
   };
@@ -364,15 +368,15 @@ export function createCookbookToolService(options: CookbookToolOptions) {
     'app.hideField': 'Hide a field while keeping its data.',
     'app.showField': 'Show a hidden field.',
     'app.removeField':
-      'Remove a field from view and keep its data; durable owner approval is required.',
+      'Remove a field from view and keep its data; owner approval is required unless disabled for in-app chat.',
     'app.addList':
       'Create your own list from a name and a few fields; nameField is the human label of the record name field. Choose an icon by describing its meaning.',
     'app.renameList':
       'Rename a list and choose its icon by meaning; use the current human list label.',
     'app.removeList':
-      'Remove one of your own lists and keep its data; durable owner approval is required.',
+      'Remove one of your own lists and keep its data; owner approval is required unless disabled for in-app chat.',
     'app.undo':
-      'Reverse the last structure change. Hidden lists and fields keep their data. Deleted records are permanent and are not restored. Durable owner approval is required.',
+      'Reverse the last structure change. Hidden lists and fields keep their data. Deleted records are permanent and are not restored. Owner approval is required unless disabled for in-app chat.',
     'recipes.search':
       'Find installed building blocks by what you want to do. Reports what each adds and whether it is on.',
     'recipes.describe':
@@ -763,9 +767,11 @@ export function createCookbookToolService(options: CookbookToolOptions) {
     }
     let hold: string | undefined;
     if (
-      name === 'app.removeField' ||
-      name === 'app.removeList' ||
-      name === 'app.undo' ||
+      ((name === 'app.removeField' ||
+        name === 'app.removeList' ||
+        name === 'app.undo') &&
+        (context.surface !== 'assistant' ||
+          (await options.requireRemovalApproval?.(context)) !== false)) ||
       options.requiresApproval?.(name, context) ||
       (context.designAction &&
         (await options.previewBeforeApply?.(context)) !== false)
@@ -1139,7 +1145,9 @@ export function createCookbookToolService(options: CookbookToolOptions) {
       summary ||= 'No changes needed; dependencies still in use are retained.';
       const approvalRequired =
         replacingApp ||
-        name === 'recipes.disable' ||
+        (name === 'recipes.disable' &&
+          (context.surface !== 'assistant' ||
+            (await options.requireRemovalApproval?.(context)) !== false)) ||
         options.requiresApproval?.(name, context) === true ||
         (context.designAction &&
           (await options.previewBeforeApply?.(context)) !== false);

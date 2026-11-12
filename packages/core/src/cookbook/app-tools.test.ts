@@ -2067,3 +2067,35 @@ describe('host design action durable boundary', () => {
     expect(await editor.history()).toHaveLength(2);
   });
 });
+
+it.each([
+  'assistant',
+  'mcp',
+] as const)('uses the owner removal setting only for %s while preserving audit and outside holds', async (surface) => {
+  options.requireRemovalApproval = async () => false;
+  await write('app.addField', {
+    list: 'Customers',
+    label: 'Scratch',
+    kind: 'text',
+  });
+  const before = editor.snapshot().revision;
+  const result = await call(
+    'app.removeField',
+    { list: 'Customers', field: 'Scratch', expectedRevision: before },
+    { ...context, surface },
+  );
+  if (surface === 'assistant') {
+    expect(result.status).toBe('ok');
+    expect(editor.snapshot().revision).toBe(before + 1);
+    expect(await editor.history()).toHaveLength(2);
+    expect(audit).toHaveBeenCalledWith(
+      expect.objectContaining({
+        tool: 'app.removeField',
+        outcome: 'requested',
+      }),
+    );
+  } else {
+    expect(result.status).toBe('approval_required');
+    expect(editor.snapshot().revision).toBe(before);
+  }
+});

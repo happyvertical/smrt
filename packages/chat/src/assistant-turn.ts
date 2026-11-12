@@ -1,5 +1,6 @@
 import {
   type AssistantApprovalBridge,
+  type AssistantApprovalPolicy,
   requiresOwnerApproval,
 } from './assistant-approvals.js';
 import {
@@ -386,6 +387,8 @@ export interface AssistantTurnOptions<M = Record<string, unknown>>
   waitForApproval?: AssistantApprovalWaiter;
   /** Durable host gate. Default destructive policy fails closed without a store. */
   approvals?: AssistantApprovalBridge;
+  /** Trusted policy retained when an external driver owns its approval waiter. */
+  approvalPolicy?: AssistantApprovalPolicy;
   /** Server-selected thread identity passed to an external driver. */
   thread?: AssistantTurnDriverContext['thread'];
   /** The already-authorized principal every server tool runs as. */
@@ -1053,7 +1056,13 @@ async function runTurn<M>(
       clientTools,
       beforeToolExecution: (tool) => assertWorkProfileTool(options, tool),
       holdTool: async ({ id, tool, args, permissions, authorize }) => {
-        if (!requiresOwnerApproval(tool, args, options.approvals?.policy))
+        if (
+          !requiresOwnerApproval(
+            tool,
+            args,
+            options.approvals?.policy ?? options.approvalPolicy,
+          )
+        )
           return;
         await authorize();
         if (!options.approvals)

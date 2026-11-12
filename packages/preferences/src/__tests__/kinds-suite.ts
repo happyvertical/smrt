@@ -116,6 +116,7 @@ export function preferenceKindsSuite(
           });
           expect((await profiles.read()).settings).toEqual({});
           const settings = {
+            safety: { requireRemovalApproval: false },
             assist: { effort: 'high' as const, autoEscalate: false },
             design: {
               engine: 'codex' as const,
@@ -144,6 +145,8 @@ export function preferenceKindsSuite(
             PreferenceAccessError,
           );
           for (const payload of [
+            { safety: { modelCanChange: true } },
+            { safety: { requireRemovalApproval: 'false' } },
             { design: { approvals: false } },
             { assist: { effort: ['high'] } },
             { design: { budgets: { passes: 0 } } },
