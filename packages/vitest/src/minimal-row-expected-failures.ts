@@ -407,7 +407,7 @@ export const minimalRowExpectedFailures: readonly MinimalRowExpectedFailure[] =
       field: 'authorUserId',
       error: 'Revision requires an author',
       reason:
-        'packages/education/src/course-authoring-models.ts: CourseRevision requires nonempty authorUserId although metadata permits empty/default. Changing required/NOT NULL would change schema.',
+        'CourseRevision.authorUserId is checked by the save guard (course-authoring-models.ts:117) and returned as provenance (course-authoring-service.ts:1461); no key or authorization read was found. Keep until the provenance guard is decided; none of the five reasons justifies that read alone.',
     },
     {
       model: '@happyvertical/smrt-education:LessonRevision',
@@ -415,7 +415,7 @@ export const minimalRowExpectedFailures: readonly MinimalRowExpectedFailure[] =
       field: 'lessonKey',
       error: 'Lesson revision requires a lesson key',
       reason:
-        'packages/education/src/course-authoring-models.ts: LessonRevision requires nonempty lessonKey although metadata permits empty/default. Changing required/NOT NULL would change schema.',
+        'LessonRevision.lessonKey identifies a conflict-key member (course-authoring-models.ts:147), but a trial required declaration exposed the next optional title guard. Keep the original finding pending a coordinated decision on the remaining guards; the model has not been shown to pass.',
     },
     {
       model: '@happyvertical/smrt-education:CourseDraftHead',
@@ -423,7 +423,7 @@ export const minimalRowExpectedFailures: readonly MinimalRowExpectedFailure[] =
       field: 'headRevisionId.authorUserId',
       error: 'Revision requires an author',
       reason:
-        'packages/education/src/course-authoring-models.ts: CourseRevision requires nonempty authorUserId although metadata permits empty/default. Changing required/NOT NULL would change schema.',
+        'Required-parent path headRevisionId.authorUserId reaches the CourseRevision save guard (course-authoring-models.ts:117); its only observed later author read is provenance (course-authoring-service.ts:1461). Keep pending the provenance-guard decision; no identity or authorization dependency was found for the author.',
     },
     {
       model: '@happyvertical/smrt-education:CourseRelease',
@@ -431,7 +431,7 @@ export const minimalRowExpectedFailures: readonly MinimalRowExpectedFailure[] =
       field: 'revisionId.authorUserId',
       error: 'Revision requires an author',
       reason:
-        'packages/education/src/course-authoring-models.ts: CourseRevision requires nonempty authorUserId although metadata permits empty/default. Changing required/NOT NULL would change schema.',
+        'Required-parent path revisionId.authorUserId reaches the CourseRevision save guard (course-authoring-models.ts:117); its only observed later author read is provenance (course-authoring-service.ts:1461). Keep pending the provenance-guard decision; the model still fails.',
     },
     {
       model: '@happyvertical/smrt-education:ReleasedLesson',
@@ -439,7 +439,7 @@ export const minimalRowExpectedFailures: readonly MinimalRowExpectedFailure[] =
       field: 'releaseId.revisionId.authorUserId',
       error: 'Revision requires an author',
       reason:
-        'packages/education/src/course-authoring-models.ts: CourseRevision requires nonempty authorUserId although metadata permits empty/default. Changing required/NOT NULL would change schema.',
+        'Required-parent path releaseId.revisionId.authorUserId reaches the CourseRevision save guard (course-authoring-models.ts:117); author is only returned as provenance (course-authoring-service.ts:1461). Nullable section metadata does not repair this independent parent failure.',
     },
     {
       model: '@happyvertical/smrt-education:CourseArchiveDecision',
@@ -447,7 +447,7 @@ export const minimalRowExpectedFailures: readonly MinimalRowExpectedFailure[] =
       field: 'actorUserId',
       error: 'Archive decision requires an actor',
       reason:
-        'packages/education/src/course-authoring-models.ts: CourseArchiveDecision requires nonempty actorUserId although metadata permits empty/default. Changing required/NOT NULL would change schema.',
+        'actorUserId is checked by the save guard (course-authoring-models.ts:414) and returned in archive history (course-authoring-service.ts:1773), with no authorization or conflict-key read. Keep pending a decision on the provenance-only guard; display alone does not establish a requiredFor reason.',
     },
     {
       model: '@happyvertical/smrt-education:CourseVisibilityChange',
@@ -455,7 +455,7 @@ export const minimalRowExpectedFailures: readonly MinimalRowExpectedFailure[] =
       field: 'actorUserId',
       error: 'Visibility change requires an actor',
       reason:
-        'packages/education/src/course-authoring-models.ts: CourseVisibilityChange requires nonempty actorUserId although metadata permits empty/default. Changing required/NOT NULL would change schema.',
+        'actorUserId is checked by the save guard (course-authoring-models.ts:465); setVisibility replays by requestKey, visibility and delegationId (course-authoring-service.ts:2528), without reading the stored actor. Keep pending a decision on the provenance-only guard; no permitted reason was established.',
     },
     {
       model: '@happyvertical/smrt-education:CourseCoverChange',
@@ -463,7 +463,7 @@ export const minimalRowExpectedFailures: readonly MinimalRowExpectedFailure[] =
       field: 'actorUserId',
       error: 'Cover change requires an actor',
       reason:
-        'packages/education/src/course-authoring-models.ts: CourseCoverChange requires nonempty actorUserId although metadata permits empty/default. Changing required/NOT NULL would change schema.',
+        'actorUserId is checked by the save guard (course-authoring-models.ts:518); setCover replays by requestKey, assetId and delegationId (course-authoring-service.ts:2741), without reading the stored actor. Keep pending a decision on the provenance-only guard; no permitted reason was established.',
     },
     {
       model: '@happyvertical/smrt-education:CourseDiscardTombstone',
@@ -471,7 +471,7 @@ export const minimalRowExpectedFailures: readonly MinimalRowExpectedFailure[] =
       field: 'actorUserId',
       error: 'Discard requires an actor',
       reason:
-        'packages/education/src/course-authoring-models.ts: CourseDiscardTombstone requires nonempty actorUserId although metadata permits empty/default. Changing required/NOT NULL would change schema.',
+        'actorUserId is checked by the save guard (course-authoring-models.ts:565); discard replay checks request_key and delegation_id (course-authoring-service.ts:2889), without reading the stored actor. Keep pending a decision on the provenance-only guard; no permitted reason was established.',
     },
     {
       model: '@happyvertical/smrt-education:EnrollmentReleasePin',
@@ -489,7 +489,7 @@ export const minimalRowExpectedFailures: readonly MinimalRowExpectedFailure[] =
       field: 'actorUserId',
       error: 'Upgrade choice requires an actor',
       reason:
-        'packages/education/src/course-authoring-models.ts: CourseUpgradeChoice requires nonempty actorUserId although metadata permits empty/default. Changing required/NOT NULL would change schema.',
+        'The stored actor is reauthorized for automatic upgrades (course-authoring-service.ts:3382-3430), so identity applies; a trial required declaration exposed requestKey and policyBasis guards. Keep the original finding until those guards are audited together; the model has not been shown to pass.',
     },
     {
       model: '@happyvertical/smrt-education:EnrollmentAutoUpgradeSkip',
@@ -526,7 +526,7 @@ export const minimalRowExpectedFailures: readonly MinimalRowExpectedFailure[] =
       field: 'bundleIdentity',
       error: 'Bundle requires an identity',
       reason:
-        'packages/education/src/course-bundle-models.ts: CourseBundleImport requires nonempty bundleIdentity although metadata permits empty/default. Changing required/NOT NULL would change schema.',
+        'bundleIdentity is the replay key (course-bundle-service.ts:963-966; course-bundle-models.ts:65), but a trial required declaration exposed the optional readerId guard. Keep pending a coordinated decision on the remaining import guards; the model has not been shown to pass.',
     },
     {
       model: '@happyvertical/smrt-education:CourseBundleMember',
@@ -534,7 +534,7 @@ export const minimalRowExpectedFailures: readonly MinimalRowExpectedFailure[] =
       field: 'importId.bundleIdentity',
       error: 'Bundle requires an identity',
       reason:
-        'packages/education/src/course-bundle-models.ts: CourseBundleImport requires nonempty bundleIdentity although metadata permits empty/default. Changing required/NOT NULL would change schema.',
+        'Required-parent path importId.bundleIdentity reaches the import replay identity (course-bundle-models.ts:65); making it required exposes the parent readerId guard. Keep until the import guards are audited together; this child has not been shown to pass.',
     },
     {
       model: '@happyvertical/smrt-education:CourseBundleRendering',
@@ -542,7 +542,7 @@ export const minimalRowExpectedFailures: readonly MinimalRowExpectedFailure[] =
       field: 'importId.bundleIdentity',
       error: 'Bundle requires an identity',
       reason:
-        'packages/education/src/course-bundle-models.ts: CourseBundleImport requires nonempty bundleIdentity although metadata permits empty/default. Changing required/NOT NULL would change schema.',
+        'Required-parent path importId.bundleIdentity reaches the import replay identity (course-bundle-models.ts:65); making it required exposes the parent readerId guard. Keep until the import guards are audited together; this child has not been shown to pass.',
     },
     {
       model: '@happyvertical/smrt-education:CourseBundleAttachment',
@@ -550,7 +550,7 @@ export const minimalRowExpectedFailures: readonly MinimalRowExpectedFailure[] =
       field: 'importId.bundleIdentity',
       error: 'Bundle requires an identity',
       reason:
-        'packages/education/src/course-bundle-models.ts: CourseBundleImport requires nonempty bundleIdentity although metadata permits empty/default. Changing required/NOT NULL would change schema.',
+        'Required-parent path importId.bundleIdentity reaches the import replay identity (course-bundle-models.ts:65); making it required exposes the parent readerId guard. Keep until the import guards are audited together; this child has not been shown to pass.',
     },
     {
       model: '@happyvertical/smrt-education:CourseBundleAudienceChoice',
@@ -558,7 +558,7 @@ export const minimalRowExpectedFailures: readonly MinimalRowExpectedFailure[] =
       field: 'importId.bundleIdentity',
       error: 'Bundle requires an identity',
       reason:
-        'packages/education/src/course-bundle-models.ts: CourseBundleImport requires nonempty bundleIdentity although metadata permits empty/default. Changing required/NOT NULL would change schema.',
+        'Required-parent path importId.bundleIdentity reaches the import replay identity (course-bundle-models.ts:65); making it required exposes the parent readerId guard. Keep until the import guards are audited together; this child has not been shown to pass.',
     },
     {
       model: '@happyvertical/smrt-education:CourseBundlePlacement',
@@ -566,7 +566,7 @@ export const minimalRowExpectedFailures: readonly MinimalRowExpectedFailure[] =
       field: 'key',
       error: 'Placement requires a key',
       reason:
-        'packages/education/src/course-bundle-models.ts: CourseBundlePlacement requires nonempty key although metadata permits empty/default. Changing required/NOT NULL would change schema.',
+        'key identifies the placement conflict key (course-bundle-models.ts:458) and the part reconciliation lookup (course-bundle-service.ts:2083); a trial required declaration exposed the optional title guard. Keep until that guard is decided; the model has not been shown to pass.',
     },
     {
       model: '@happyvertical/smrt-education:CourseBundleUnit',
@@ -574,7 +574,7 @@ export const minimalRowExpectedFailures: readonly MinimalRowExpectedFailure[] =
       field: 'unitKey',
       error: 'Unit requires a key',
       reason:
-        'packages/education/src/course-bundle-models.ts: CourseBundleUnit requires nonempty unitKey although metadata permits empty/default. Changing required/NOT NULL would change schema.',
+        'unitKey identifies the transaction lock row (course-bundle-service.ts:2357-2361), but a trial required declaration exposed the optional derived courseId guard. Keep until that guard is decided; the model has not been shown to pass.',
     },
     {
       model: '@happyvertical/smrt-education:CourseBundleSupersession',
@@ -582,7 +582,7 @@ export const minimalRowExpectedFailures: readonly MinimalRowExpectedFailure[] =
       field: 'importId.bundleIdentity',
       error: 'Bundle requires an identity',
       reason:
-        'packages/education/src/course-bundle-models.ts: CourseBundleImport requires nonempty bundleIdentity although metadata permits empty/default. Changing required/NOT NULL would change schema.',
+        'Required-parent path importId.bundleIdentity reaches the import replay identity (course-bundle-models.ts:65); making it required exposes the parent readerId guard. Keep until the import guards are audited together; this child has not been shown to pass.',
     },
     {
       model: '@happyvertical/smrt-education:CourseGenerationJob',
