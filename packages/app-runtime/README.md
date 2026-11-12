@@ -707,6 +707,15 @@ Not yet provided: hosted HTTP routes, a durable hosted link store, unlinking.
 
 ### Local MCP tokens
 
+`store.isOwnerSession({ userId, tenantId })` is a read-only check for the exact
+sole active local owner. It reuses the desktop credential owner's canonical
+identity, membership and permission check; it never issues a session or token.
+Use it before exposing installation-wide local credential settings. A tenant
+owner role alone does not identify the installation owner; ambiguous ownership
+fails closed. Legacy custom stores may omit this capability.
+Pass that same actor as `issue(input, ownerSession)` to recheck the binding at
+issuance and avoid minting for a different owner if ownership changes meanwhile.
+
 `openLocalMcpTokenStore()` (and `smrt app token`) issue owner-bound, scoped
 bearer tokens; only a domain-separated HMAC keyed by the installation secret is
 stored. Credentials renew themselves instead of expiring on a short clock:

@@ -497,12 +497,15 @@ export interface OwnerToolContinuation {
     tenantId: string;
     permissions: string[];
     allowedTools: string[];
+    /** Owner-assigned local credential label, supplied by a trusted adapter. */
+    clientName?: string;
   };
   consumption: 'executor' | 'continuation';
 }
 
 /** No second ledger: this dispatches the canonical authority's durable envelopes. */
 export class OwnerApprovalContinuations {
+  private readonly nativeResumes = new Map<string, Promise<OwnerApproval>>();
   private readonly callers = new AsyncLocalStorage<
     OwnerToolContinuation['principal']
   >();
@@ -541,6 +544,9 @@ export class OwnerApprovalContinuations {
           throw new OwnerApprovalError('forbidden');
         return authority.request({
           ...input,
+          ...(principal.clientName
+            ? { summary: `${principal.clientName}: ${input.summary}` }
+            : {}),
           continuation: { executor, consumption, principal },
         });
       },
@@ -580,31 +586,47 @@ export class OwnerApprovalContinuations {
     const record = await this.authority.get(actor.tenantId, id);
     const binding = record?.continuation;
     const execute = binding && this.executors[binding.executor];
+    const key = `${actor.tenantId}/${id}`;
+    const pending = this.nativeResumes.get(key);
+    if (pending) return pending;
     if (!record || !binding || !execute || record.status !== 'approved')
       throw new OwnerApprovalError('conflict');
-    if (binding.consumption === 'continuation')
-      await this.authority.consume(actor.tenantId, id);
-    try {
-      const result = await this.capture(binding.principal, () =>
-        execute(record),
-      );
+    const dispatch = async () => {
       if (binding.consumption === 'continuation')
-        await this.authority.complete(actor.tenantId, id, true, result);
-    } catch (error) {
-      // Native tools own consumption and completion. Fail closed if validation refused before effects.
-      const fresh = await this.authority.get(actor.tenantId, id);
-      if (fresh?.status === 'approved')
         await this.authority.consume(actor.tenantId, id);
-      if (
-        fresh?.status === 'approved' ||
-        (binding.consumption === 'continuation' &&
-          fresh?.status === 'executing')
-      )
-        await this.authority.complete(actor.tenantId, id, false, {
-          error: 'Approved call refused or failed.',
-        });
-      throw error;
+      try {
+        const result = await this.capture(binding.principal, () =>
+          execute(record),
+        );
+        if (binding.consumption === 'continuation')
+          await this.authority.complete(actor.tenantId, id, true, result);
+      } catch (error) {
+        // Native tools own consumption and completion. Fail closed if validation refused before effects.
+        const fresh = await this.authority.get(actor.tenantId, id);
+        if (fresh?.status === 'approved')
+          await this.authority.consume(actor.tenantId, id);
+        if (
+          fresh?.status === 'approved' ||
+          (binding.consumption === 'continuation' &&
+            fresh?.status === 'executing')
+        )
+          await this.authority.complete(actor.tenantId, id, false, {
+            error: 'Approved call refused or failed.',
+          });
+        throw error;
+      }
+      return (await this.authority.get(actor.tenantId, id))!;
+    };
+    // The native executor owns ledger consumption. Discovery/recovery can race
+    // the owner's decision; share that in-flight dispatch instead of invoking
+    // the same executor twice before it reaches its own consumption CAS.
+    if (binding.consumption !== 'executor') return dispatch();
+    const running = dispatch();
+    this.nativeResumes.set(key, running);
+    try {
+      return await running;
+    } finally {
+      this.nativeResumes.delete(key);
     }
-    return (await this.authority.get(actor.tenantId, id))!;
   }
 }

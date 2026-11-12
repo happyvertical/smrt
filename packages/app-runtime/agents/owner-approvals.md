@@ -105,3 +105,14 @@ Reuse: repeated MCP package review/context and name/purpose searches for
 continuation, non-expiring storage, settled wait and approval observation across
 runtime/chat/core/Svelte/UI/app-shell. Tests extend owner-approvals.test.ts with an
 inline SQLite legacy-store fixture; no production helper, store or model is added.
+
+A trusted local MCP adapter may capture `principal.clientName` from the owner's
+credential label. The continuation adapter prefixes that label onto the saved
+approval summary without changing native args/context fingerprints or consumption.
+Token verification exposes non-enumerable `clientName`/`tokenId` provenance to the
+host; serialized principals and their permission snapshots retain their existing
+shape. Client-supplied MCP names never establish identity or approval authority.
+
+Concurrent recovery and owner-decision resumes share an in-flight native executor
+dispatch within one continuation adapter. The native executor still owns durable
+consumption; generic continuation dispatch retains its canonical consumption CAS.

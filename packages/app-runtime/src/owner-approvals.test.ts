@@ -183,9 +183,11 @@ describe('owner tool holds over the canonical approval ledger (SQLite)', () => {
         tenantId,
         permissions: ['invoices.delete'],
         allowedTools: ['invoices.delete'],
+        clientName: 'Claude Desktop',
       },
       () => continuations.adapter('native').request(input),
     );
+    expect(hold.summary).toBe(`Claude Desktop: ${input.summary}`);
     expect(await continuations.decide(owner, hold.id, true)).toMatchObject({
       status: 'succeeded',
       result: { revision: 2 },
@@ -193,6 +195,46 @@ describe('owner tool holds over the canonical approval ledger (SQLite)', () => {
     await expect(
       continuations.adapter('native').request(input),
     ).rejects.toMatchObject({ code: 'forbidden' });
+  });
+
+  it('shares a native executor between an owner decision and concurrent catalog recovery', async () => {
+    let executions = 0;
+    let release!: () => void;
+    const barrier = new Promise<void>((resolve) => {
+      release = resolve;
+    });
+    const continuations = new OwnerApprovalContinuations(authority, {
+      native: async (record) => {
+        executions++;
+        await barrier;
+        await authority.consume(tenantId, record.id);
+        await authority.complete(tenantId, record.id, true, { deleted: true });
+      },
+    });
+    const hold = await continuations.capture(
+      {
+        id: owner.id,
+        tenantId,
+        permissions: ['invoices.delete'],
+        allowedTools: ['invoices.delete'],
+      },
+      () => continuations.adapter('native').request(input),
+    );
+    const deciding = continuations.decide(owner, hold.id, true);
+    await expect.poll(() => executions).toBe(1);
+    const recovering = continuations.resume(owner, hold.id);
+    await new Promise((resolve) => setTimeout(resolve, 20));
+    expect(executions).toBe(1);
+    release();
+    expect(
+      (await Promise.all([deciding, recovering])).map(
+        (record) => record.status,
+      ),
+    ).toEqual(['succeeded', 'succeeded']);
+    expect(executions).toBe(1);
+    await expect(continuations.resume(owner, hold.id)).rejects.toMatchObject({
+      code: 'conflict',
+    });
   });
 
   it('denies and expires non-thread continuations without running their executor', async () => {
