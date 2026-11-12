@@ -592,13 +592,23 @@ function buildManifestCollisionInputs(args: {
 
   const newSourceFile = objectDef.filePath;
   const bothSourceFilesKnown = !!(newSourceFile && existing.sourceFilePath);
-  const sameSourceFile =
-    bothSourceFilesKnown && newSourceFile === existing.sourceFilePath;
   const existingIsPackageQualified = !!existing.packageName?.startsWith('@');
   const samePackage =
     !!packageName &&
     !!existing.packageName &&
     packageName === existing.packageName;
+  // Built manifests carry package-relative paths, so two packages' same-named
+  // classes at one relative path (`src/models/Account.ts`) have equal paths
+  // (#4948). A re-export is ONE package's class arriving twice: when both
+  // packages are known and differ, the equal path proves nothing.
+  const differentKnownPackages =
+    !!packageName &&
+    !!existing.packageName &&
+    packageName !== existing.packageName;
+  const sameSourceFile =
+    bothSourceFilesKnown &&
+    newSourceFile === existing.sourceFilePath &&
+    !differentKnownPackages;
 
   return {
     origin: 'manifest',

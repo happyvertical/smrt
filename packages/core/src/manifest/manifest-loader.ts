@@ -44,6 +44,7 @@ import {
   isModuleRunnerFramePath,
   isSmrtCoreFramePath,
 } from '../utils/stack-frames.js';
+import { isAbsoluteManifestPath } from './file-paths.js';
 import { LocalManifestReader } from './local-manifest-reader.js';
 import {
   dirname,
@@ -1459,13 +1460,7 @@ export async function discoverManifestEntry(
       // Normalize file paths so the same source file with different absolute
       // prefixes (local dev vs CI build) is recognized as identical.
       // Extract the relative path from the last "packages/" segment onward.
-      let key = entry.filePath || `${entry.packageName}:${className}`;
-      if (entry.filePath) {
-        const pkgIdx = entry.filePath.lastIndexOf('packages/');
-        if (pkgIdx !== -1) {
-          key = entry.filePath.slice(pkgIdx);
-        }
-      }
+      const key = manifestEntrySourceKey(entry, className);
       if (!uniqueByFile.has(key)) {
         uniqueByFile.set(key, entry);
       }
@@ -1513,6 +1508,29 @@ export async function discoverManifestEntry(
   }
 
   return undefined;
+}
+
+/**
+ * The identity under which two manifest entries for one class name count as
+ * the same source file (a re-export) rather than a collision.
+ *
+ * A path from a workspace root (`.../packages/x/src/...`) is compared from its
+ * last `packages/` segment so local and CI prefixes agree. A package-relative
+ * path (`src/models/Account.ts`) is unique only within its package: two
+ * packages' same-named classes share it, so it is keyed with the declaring
+ * package (an entry copied verbatim into a consumer manifest still names the
+ * declaring package, so a real re-export keeps one key). #4948.
+ */
+export function manifestEntrySourceKey(
+  found: { entry: ManifestEntry; packageName: string; filePath?: string },
+  className: string,
+): string {
+  const filePath = found.filePath;
+  if (!filePath) return `${found.packageName}:${className}`;
+  const pkgIdx = filePath.lastIndexOf('packages/');
+  if (pkgIdx !== -1) return filePath.slice(pkgIdx);
+  if (isAbsoluteManifestPath(filePath)) return filePath;
+  return `${found.entry.packageName ?? found.packageName}\0${filePath}`;
 }
 
 /**
