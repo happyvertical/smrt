@@ -26,13 +26,18 @@ import {
   type MountAssistantRoutesOptions,
 } from './sveltekit.js';
 import { isManifestToolEnabled } from './tool-loop.js';
-import { describeAssistantTool } from './tool-summary.js';
+import {
+  type DescribeAssistantTool,
+  describeAssistantTool,
+} from './tool-summary.js';
 
 /** All credentials, working directories and MCP authority are bound by the host per turn. */
 export type AgentCliChatBinding = Pick<AgentTurnOptions, 'mcpUrl' | 'deps'> &
   Pick<AgentTurnHost, 'allowTool' | 'approvals'> & {
     /** Optional MCP wire-name → canonical offered chat slug mapping. Unknown names deny. */
     canonicalToolName?(name: string): string | undefined;
+    /** Existing describe seam, bound to this turn's server-authored vocabulary. */
+    describeTool?: DescribeAssistantTool;
   };
 
 /** A CLI loop driver. Starts a fresh CLI session with chat's authenticated history each turn. */
@@ -160,7 +165,7 @@ export function createAgentCliTurnDriver(options: {
             },
             approvals: binding.approvals,
             describeResult: async ({ name, text, ok }) => ({
-              summary: describeAssistantTool(
+              summary: (binding.describeTool ?? describeAssistantTool)(
                 canonicalName(name) ?? '',
                 undefined,
                 {
@@ -193,7 +198,10 @@ export function createAgentCliTurnDriver(options: {
                       id: event.approvalId,
                       callId: call.id,
                       tool: call.name,
-                      summary: describeAssistantTool(call.name, call.args),
+                      summary: (binding.describeTool ?? describeAssistantTool)(
+                        call.name,
+                        call.args,
+                      ),
                     })
                   ).approved;
                 }

@@ -541,7 +541,11 @@ describe('per-request inference adapters', () => {
     const binding = vi.fn(async (ctx: AssistantRequestContext) =>
       ctx.principal.userId === 'a' ? ('codex' as const) : ('api' as const),
     );
-    const cliStatus = vi.fn(async () => ({ installed: true, signedIn: true }));
+    const cliStatus = vi.fn(async () => ({
+      installed: true,
+      signedIn: true,
+      ready: true,
+    }));
     const apiStatus = vi.fn(async () => ({ configured: true }));
     const cli = vi.fn(() => driver);
     const adapters = createInferenceAssistantAdapters({

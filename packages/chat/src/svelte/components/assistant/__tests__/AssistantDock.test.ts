@@ -59,6 +59,52 @@ const descriptor: DataSurfaceDescriptor = {
 };
 
 describe('AssistantDock (mounted component)', () => {
+  it('shows the existing stopped status after cancelling an active tool step', async () => {
+    const transport = createInMemoryAssistantTransport();
+    await transport.createThread('Stop test');
+    let activeSignal: AbortSignal | undefined;
+    transport.sendMessage = async (input) => {
+      activeSignal = input.signal;
+      input.onEvent?.({
+        type: 'step',
+        step: {
+          kind: 'tool_call',
+          callId: 'active-call',
+          tool: 'customers.read',
+          label: 'Looking up members',
+          location: 'server',
+        },
+      });
+      return new Promise((_, reject) => {
+        input.signal?.addEventListener('abort', () =>
+          reject(new DOMException('Stopped', 'AbortError')),
+        );
+      });
+    };
+    render(AssistantDock, {
+      props: {
+        transport,
+        registry: createDataSurfaceRegistry(),
+        contextMode: 'server',
+        conversations: 'single',
+      },
+    });
+    const input = await screen.findByRole('textbox', { name: 'Message' });
+    await vi.waitFor(() => expect(input).toBeEnabled());
+    await userEvent.type(input, 'What lists are in this app?');
+    await userEvent.click(screen.getByRole('button', { name: 'Send' }));
+    await userEvent.click(await screen.findByRole('button', { name: 'Stop' }));
+    expect(await screen.findByText('Stopped', { exact: true })).toBeVisible();
+    expect(activeSignal?.aborted).toBe(true);
+    expect(screen.queryByRole('alert')).not.toBeInTheDocument();
+    expect(
+      screen.queryByRole('button', { name: /Retry/ }),
+    ).not.toBeInTheDocument();
+    expect(
+      screen.queryByRole('button', { name: 'Stop' }),
+    ).not.toBeInTheDocument();
+  });
+
   it('shows one failed-send message with retry and restores the draft', async () => {
     const transport: AssistantTransport = {
       async listThreads() {

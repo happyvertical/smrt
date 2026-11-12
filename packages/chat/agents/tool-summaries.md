@@ -119,6 +119,23 @@ are unchanged. Tricia is a thin policy adapter over these options.
 
 ## Live-engine failures (R7/R8)
 
+### Next live round: behavior contract
+
+| Behavior / trigger | Positive | Refusal/control | Actor, executor and runtime | Evidence |
+| --- | --- | --- | --- | --- |
+| CLI offerings | Named Customer create exposes inline contact fields and recipe vocabulary | Dependency-only identities and API-only deletes absent; revoked/gated offers cannot resume | Captured user/tenant, original ceiling; existing MCP dispatcher; Node/SQLite | Real host + inference stub, then bounded built-app Claude turn |
+| Held CLI delete | Existing continuation binds thread, original arguments and principal; owner decides once | Repeated decision, revoked offer/permission, foreign owner/tenant and abort cannot replay | Existing OwnerApprovalContinuations/authority CAS, existing collection executor; Node/SQLite | Host route fixture + live exposed-list delete |
+| Capability words | Introduction and model guidance follow selected engine's offered operations | No blanket deletion claim when any named list omits it | Authenticated host; no effect executor | Host introduction and built browser |
+| Startup readiness | Only an explicit successful preflight is ready | Missing/false preflight, signed out, absent CLI and unsupported tool host refuse | CLI's own status, sanitized environment; no model request | Inference/Connect tests + built app |
+| Active stop | Abort while a real app tool is in flight leaves no CLI child and a stopped thread | Never report a pending hold or an interrupted effect as completed | Existing child tree cleanup and ChatService turn state | Stub abort + bounded live read/tool turn |
+
+Reuse: repeated MCP `review_smrt_project` on chat, inference, runtime, Svelte and
+template; `build_context` searched turn-bound continuations, hidden prerequisite
+offerings and recipe labels. Intent index and name/purpose `rg` searches across
+UI/Svelte/chat/core/runtime found OwnerApprovalContinuations, buildCookbookShell,
+the existing describe callback and live MCP identity map. Extend those paths;
+no new approval store, dispatcher, model, route or component is introduced.
+
 Engine binding and unexpected driver failures use inference's safe correlated
 server diagnostic before replacing exceptions with fixed user words and a
 reference. External failures preserve real partial output but do not persist a
@@ -126,6 +143,10 @@ second generic error bubble. The existing pending-send entry owns the transport
 error and retry. AssistantDock suppresses only the matching duplicate banner and
 tells AssistantComposer to restore the draft without a second send alert;
 standalone composers retain their default alert and other dock errors stay visible.
+The same status line also renders the controller's existing idle `Stopped`
+label after cancellation; it does not duplicate transport errors or invent a
+completed reply for an interrupted turn. A mounted active-tool cancellation
+test verifies the stopped line, aborted signal, no retry and no error alert.
 Tests drive the mounted dock, preserve draft/retry/a11y, and launch both inference
 stub engines under the exact desktop `buildSidecarEnv` composition. No desktop
 production environment policy changed. Reuse the desktop environment helper via

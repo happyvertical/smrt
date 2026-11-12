@@ -1114,7 +1114,7 @@ async function handleConfirmAction(requestId: string) {
         {/if}
       </div>
 
-      {#if controller.status.state === 'working'}
+      {#if controller.status.state === 'working' || (controller.status.state === 'idle' && controller.status.label)}
         <div class="assistant-dock-status" role="status" aria-live="polite">
           <span class="assistant-dock-status-label">{controller.status.label}</span>
           {#if controller.status.cancellable}
