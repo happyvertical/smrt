@@ -1580,6 +1580,7 @@ export function createCookbookHost(options: CookbookHostOptions) {
         ...saved,
         resolved,
         editable: await isOwner(principal.tenantId, principal.userId),
+        chatgptSignedIn: (await (await chatgpt()).status()).signedIn,
       };
     },
     async write(

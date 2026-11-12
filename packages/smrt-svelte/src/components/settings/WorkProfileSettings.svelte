@@ -9,6 +9,7 @@ import { engineLabel } from '@happyvertical/smrt-inference';
 import { FormGroup, Input, Select, Toggle } from '@happyvertical/smrt-ui/forms';
 import { defineMessages, useI18n } from '@happyvertical/smrt-ui/i18n';
 import { Button, Card, Disclosure } from '@happyvertical/smrt-ui/ui';
+import { safeHref } from '../overview/markdown.js';
 
 const M = defineMessages({
   'ui.work_profiles.title': 'Assistant',
@@ -37,6 +38,7 @@ const M = defineMessages({
   'ui.work_profiles.effort_max': 'maximum effort',
   'ui.work_profiles.unavailable':
     'This connection is unavailable. You can change its settings or reset to recommended.',
+  'ui.work_profiles.connect_chatgpt': 'Sign in with ChatGPT in Connect AI',
   'ui.work_profiles.provider': 'Best available from your provider',
   'ui.work_profiles.escalate':
     'Automatically use system design for structure changes',
@@ -69,6 +71,8 @@ let {
   onsave,
   onreset,
   editable = true,
+  chatgptSignedIn = false,
+  connectAiHref = '/settings#chatgpt',
 }: {
   settings: Partial<Record<WorkProfileName, OwnerWorkProfileSettings>>;
   resolved: (ResolvedWorkProfile & { unavailable?: boolean })[];
@@ -77,6 +81,8 @@ let {
   ): Promise<void>;
   onreset(): Promise<void>;
   editable?: boolean;
+  chatgptSignedIn?: boolean;
+  connectAiHref?: string;
 } = $props();
 let drafts = $state<Partial<Record<WorkProfileName, OwnerWorkProfileSettings>>>(
   {},
@@ -174,6 +180,9 @@ async function save(reset = false) {
           <option value="claude-code">Claude Code</option><option value="codex">Codex</option><option value="chatgpt">ChatGPT</option><option value="api">API key</option>
         </Select>
       </FormGroup>
+      {#if !chatgptSignedIn && (drafts[profile.name]?.engine ?? profile.engine) === 'chatgpt'}
+        <Button variant="secondary" href={safeHref(connectAiHref) ?? undefined}>{t(M['ui.work_profiles.connect_chatgpt'])}</Button>
+      {/if}
       <Disclosure title={t(M['ui.work_profiles.advanced'])}>
       <p>{t(M['ui.work_profiles.requested_model'])}: <code>{profile.modelSelection?.requestedModel ?? profile.model ?? t(M['ui.work_profiles.default_model'])}</code></p>
       <p>{t(M['ui.work_profiles.current_model'])}: <code>{profile.modelSelection?.resolvedModel ?? profile.model ?? t(M['ui.work_profiles.default_model'])}</code></p>

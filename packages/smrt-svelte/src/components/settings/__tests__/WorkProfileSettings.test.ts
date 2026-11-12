@@ -320,3 +320,19 @@ describe('WorkProfileSettings', () => {
     expect(screen.queryByText('private')).not.toBeInTheDocument();
   });
 });
+
+it('links an unsigned-in ChatGPT engine choice to the shared connection section', async () => {
+  render(WorkProfileSettings, {
+    settings: {},
+    resolved,
+    onsave: vi.fn(),
+    onreset: vi.fn(),
+  });
+  await userEvent.selectOptions(
+    screen.getAllByLabelText('Engine')[0],
+    'chatgpt',
+  );
+  expect(
+    screen.getByRole('link', { name: 'Sign in with ChatGPT in Connect AI' }),
+  ).toHaveAttribute('href', '/settings#chatgpt');
+});
