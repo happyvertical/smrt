@@ -10,6 +10,8 @@ export const M = defineMessages({
     'You can use the app by hand or with a plugin. Connect AI any time in Settings.',
   'ui.onboarding.continue': 'Continue',
   'ui.onboarding.back': 'Back',
+  'ui.onboarding.back_settings': 'Back to Settings',
+  'ui.onboarding.step': 'Step {step} of {total}',
   'ui.onboarding.templates_off':
     'Turn on pre-built components in Settings to choose a template.',
   'ui.onboarding.templates': 'Start from',
@@ -37,6 +39,18 @@ export const M = defineMessages({
   'ui.onboarding.cancel': 'Keep my current app',
   'ui.onboarding.connect_prompt': 'Connect an AI to chat',
   'ui.onboarding.lists': 'I can help you work with {lists}.',
+  'ui.onboarding.find_add': 'Ask me to find things or add something new.',
+  'ui.onboarding.find': 'Ask me to find what you need.',
+  'ui.onboarding.add': 'Ask me to add something new.',
+  'ui.onboarding.change': 'Ask me to help make changes.',
+  'ui.onboarding.prebuilt': 'Pre-built components',
+  'ui.onboarding.prebuilt_toggle': 'Use pre-built components',
+  'ui.onboarding.prebuilt_hint':
+    'Choose whether ready-made templates and features are available. Turning this off keeps your existing information.',
+  'ui.onboarding.prebuilt_on': 'On',
+  'ui.onboarding.prebuilt_off': 'Off',
+  'ui.onboarding.prebuilt_error':
+    'The setting could not be saved. Your previous choice is kept. Try again.',
   'ui.onboarding.tools': 'Available actions: {actions}.',
   'ui.onboarding.build': 'I can help you build your app with lists and fields.',
   'ui.onboarding.read': 'read records',

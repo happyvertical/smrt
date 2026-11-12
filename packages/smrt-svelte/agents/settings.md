@@ -23,3 +23,13 @@ The summary-row type and selected-detail type may differ: list pages can remain
 cheap while only the selected definition is fully resolved. This is the
 scalability contract; do not resolve every settings editor before passing data
 to the catalog.
+
+## Pre-built components
+
+`PrebuiltComponentsSettings` composes the existing preference control and restart
+link. Supply the current `enabled` value and an authorized `onsave` callback;
+failed saves restore the last persisted choice and show a fixed translated error.
+The checkbox has a visible On/Off status and a plain explanation. Optional
+existing approval views render only pending/approved/executing decisions;
+terminal outcomes belong in the approvals/history surface. The component owns
+no preference store or approval authority.

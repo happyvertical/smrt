@@ -26,13 +26,19 @@ let {
 } = $props();
 const { t } = useI18n();
 let controller = $state<AssistantDockController>();
-const labels = {
-  read: M['ui.onboarding.read'],
-  create: M['ui.onboarding.create'],
-  update: M['ui.onboarding.update'],
-  delete: M['ui.onboarding.delete'],
-  customize: M['ui.onboarding.customize'],
-};
+const help = $derived(
+  introduction?.actions.includes('read')
+    ? introduction.actions.includes('create')
+      ? M['ui.onboarding.find_add']
+      : M['ui.onboarding.find']
+    : introduction?.actions.includes('create')
+      ? M['ui.onboarding.add']
+      : introduction?.actions.includes('update')
+        ? M['ui.onboarding.change']
+        : introduction?.actions.includes('customize')
+          ? M['ui.onboarding.build']
+          : undefined,
+);
 </script>
 <div class="onboarding-assistant" data-smrt-component="OnboardingAssistant">
 {#if introduction?.configured === false}
@@ -40,8 +46,8 @@ const labels = {
 {:else}
 {#if introduction && !controller?.messages.length}
   <div class="introduction" aria-label={t(M['ui.onboarding.ai'])}>
-    {#if introduction.lists.length}<p>{t(M['ui.onboarding.lists'], { lists: introduction.lists.join(', ') })}</p>{/if}
-    {#if introduction.actions.length}<p>{t(M['ui.onboarding.tools'], { actions: introduction.actions.filter(a => a in labels).map(a => t(labels[a as keyof typeof labels])).join(', ') })}</p>{/if}
+    {#if introduction.lists.length}<p>{t(M['ui.onboarding.lists'], { lists: introduction.lists.slice(0, 3).join(', ') })}</p>{/if}
+    {#if help}<p>{t(help)}</p>{/if}
   </div>
 {/if}
 <div class="dock"><AssistantDock {transport} {registry} {visible} {contextMode} {messageFormat} aiSettingsHref="/settings" oncontroller={next => { controller = next; }} /></div>

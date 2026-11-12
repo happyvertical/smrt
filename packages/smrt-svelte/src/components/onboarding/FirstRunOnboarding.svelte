@@ -3,7 +3,7 @@ import {
   AssistantApprovalCard,
   type AssistantTransport,
 } from '@happyvertical/smrt-chat/svelte';
-import { ConfirmDialog } from '@happyvertical/smrt-ui/feedback';
+import { ConfirmDialog, Progress } from '@happyvertical/smrt-ui/feedback';
 import { useI18n } from '@happyvertical/smrt-ui/i18n';
 import { Button, Card } from '@happyvertical/smrt-ui/ui';
 import { onMount, tick, untrack } from 'svelte';
@@ -25,6 +25,7 @@ let {
   description,
   apiKeyHref,
   oncomplete,
+  backHref = '/settings',
 }: {
   client: OnboardingClient;
   connectAi: ConnectAiClient;
@@ -34,6 +35,7 @@ let {
   description: string;
   apiKeyHref: string;
   oncomplete: () => void | Promise<void>;
+  backHref?: string;
 } = $props();
 const { t } = useI18n();
 let progress = $state<OnboardingState>(untrack(() => initialState));
@@ -42,6 +44,10 @@ let failed = $state(false);
 let ready = $state(false);
 let confirming = $state(false);
 let heading: HTMLHeadingElement;
+let reviewHeading = $state<HTMLHeadingElement>();
+let decision = $state<HTMLElement>();
+let errorNotice = $state<HTMLElement>();
+const headingId = $props.id();
 const active = new AbortController();
 let disposed = false;
 async function accept(next: OnboardingState) {
@@ -52,7 +58,13 @@ async function accept(next: OnboardingState) {
     return;
   }
   await tick();
-  heading?.focus();
+  const target = next.approvalId
+    ? decision
+    : next.preview
+      ? reviewHeading
+      : heading;
+  target?.focus({ preventScroll: true });
+  target?.scrollIntoView?.({ block: 'center', behavior: 'instant' });
 }
 async function change(action: OnboardingAction) {
   if (busy) return;
@@ -62,6 +74,9 @@ async function change(action: OnboardingAction) {
     await accept(await client.change(action, progress.revision, active.signal));
   } catch {
     if (!disposed) failed = true;
+    await tick();
+    errorNotice?.focus();
+    errorNotice?.scrollIntoView?.({ block: 'center', behavior: 'instant' });
   } finally {
     if (!disposed) busy = false;
   }
@@ -73,6 +88,9 @@ async function refresh() {
     await accept(await client.state(active.signal));
   } catch {
     if (!disposed) failed = true;
+    await tick();
+    errorNotice?.focus();
+    errorNotice?.scrollIntoView?.({ block: 'center', behavior: 'instant' });
   } finally {
     if (!disposed) busy = false;
   }
@@ -96,17 +114,24 @@ const title = $derived(
       ? t(M['ui.onboarding.ai'])
       : t(M['ui.onboarding.templates']),
 );
+const step = $derived(
+  progress.step === 'welcome' ? 1 : progress.step === 'ai' ? 2 : 3,
+);
 </script>
 
 <main class="onboarding" data-smrt-component="FirstRunOnboarding" aria-busy={busy}>
+<div class="onboarding-content">
   <Card padding="lg">
-    <h1 bind:this={heading} tabindex="-1">{title}</h1>
+    <p>{t(M['ui.onboarding.step'], { step, total: 3 })}</p>
+    <Progress value={step} max={3} label={t(M['ui.onboarding.step'], { step, total: 3 })} />
+    <h1 id={headingId} bind:this={heading} tabindex="-1">{title}</h1>
     {#if progress.step === 'welcome'}
       <p>{description}</p>
       <p>{t(M['ui.onboarding.owner'])}</p>
       <Button disabled={busy} onclick={() => change({ action: 'welcome' })}>{t(M['ui.onboarding.start'])}</Button>
+      <Button variant="ghost" href={backHref}>{t(M['ui.onboarding.back_settings'])}</Button>
     {:else if progress.step === 'ai'}
-      <ConnectAi client={connectAi} {apiKeyHref} onchange={(_, configured) => { ready = configured; }} />
+      <ConnectAi client={connectAi} {apiKeyHref} {headingId} onchange={(_, configured) => { ready = configured; }} />
       <p>{t(M['ui.onboarding.skip_hint'])}</p>
       <div class="actions">
         <Button variant="ghost" disabled={busy} onclick={() => change({ action: 'back' })}>{t(M['ui.onboarding.back'])}</Button>
@@ -128,7 +153,7 @@ const title = $derived(
       </div>
       {#if progress.preview}
         <section aria-label={t(M['ui.onboarding.review'])}>
-          <h2>{t(M['ui.onboarding.review'])}</h2>
+          <h2 bind:this={reviewHeading} tabindex="-1">{t(M['ui.onboarding.review'])}</h2>
           <h3>{t(M['ui.onboarding.before'])}</h3><p>{progress.preview.before.join(', ') || t(M['ui.onboarding.empty'])}</p>
           <h3>{t(M['ui.onboarding.after'])}</h3><p>{progress.preview.after.join(', ') || t(M['ui.onboarding.empty'])}</p>
           <p>{t(M['ui.onboarding.retained'])}</p>
@@ -138,6 +163,7 @@ const title = $derived(
         </section>
       {/if}
       {#if progress.approval}
+        <section bind:this={decision} tabindex="-1" aria-label={t(M['ui.onboarding.pending'])}>
         <p>{t(M['ui.onboarding.pending'])}</p>
         {#key progress.approval.id}
           <AssistantApprovalCard approval={progress.approval} transport={approvalTransport} ondecided={refresh} />
@@ -145,9 +171,12 @@ const title = $derived(
         {#if ['denied', 'failed', 'expired'].includes(progress.approval.status)}
           <Button disabled={busy} onclick={() => change({ action: 'preview', id: progress.selected! })}>{t(M['ui.onboarding.retry'])}</Button>
         {/if}
+        </section>
       {/if}
       <div class="actions">
-        {#if progress.rerunning}
+        {#if pendingApproval}
+          <Button variant="ghost" href={backHref}>{t(M['ui.onboarding.back_settings'])}</Button>
+        {:else if progress.rerunning}
           <Button variant="ghost" disabled={busy || pendingApproval} onclick={() => change({ action: 'cancel' })}>{t(M['ui.onboarding.cancel'])}</Button>
         {:else}
           <Button variant="ghost" disabled={busy || pendingApproval} onclick={() => change({ action: 'back' })}>{t(M['ui.onboarding.back'])}</Button>
@@ -156,19 +185,22 @@ const title = $derived(
     {:else}
       <p>{t(M['ui.onboarding.restart_hint'])}</p>
       <Button disabled={busy} onclick={() => { confirming = true; }}>{t(M['ui.onboarding.restart'])}</Button>
+      <Button variant="ghost" href={backHref}>{t(M['ui.onboarding.back_settings'])}</Button>
     {/if}
     {#if failed}
-      <p role="alert">{t(M['ui.onboarding.error'])}</p>
+      <p bind:this={errorNotice} tabindex="-1" role="alert">{t(M['ui.onboarding.error'])}</p>
       <Button variant="secondary" disabled={busy} onclick={refresh}>{t(M['ui.onboarding.retry'])}</Button>
     {/if}
   </Card>
+</div>
 </main>
 <ConfirmDialog open={confirming} title={t(M['ui.onboarding.restart'])} message={t(M['ui.onboarding.restart_hint'])} confirmLabel={t(M['ui.onboarding.continue'])} cancelLabel={t(M['ui.onboarding.cancel'])} oncancel={() => { confirming = false; }} onconfirm={() => { confirming = false; void change({ action: 'restart' }); }} />
 
 <style>
 @layer smrt.reset, smrt.structure, smrt.theme;
 @layer smrt.structure {
-  .onboarding { inline-size: 100%; max-inline-size: calc(var(--smrt-spacing-24) * 10); margin-inline: auto; padding: var(--smrt-spacing-4); box-sizing: border-box; color: var(--smrt-color-on-surface); }
+  .onboarding { inline-size: 100%; min-block-size: 100dvh; padding: var(--smrt-spacing-4); box-sizing: border-box; color: var(--smrt-color-on-surface); background: var(--smrt-color-background); }
+  .onboarding-content { max-inline-size: calc(var(--smrt-spacing-24) * 10); margin-inline: auto; }
   .templates { display: grid; grid-template-columns: repeat(auto-fit, minmax(min(100%, calc(var(--smrt-spacing-16) * 4)), 1fr)); gap: var(--smrt-spacing-3); }
   .actions { display: flex; flex-wrap: wrap; gap: var(--smrt-spacing-3); margin-block-start: var(--smrt-spacing-4); }
   h1:focus { outline: none; }

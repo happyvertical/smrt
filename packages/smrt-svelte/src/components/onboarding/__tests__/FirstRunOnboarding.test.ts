@@ -93,11 +93,25 @@ describe('FirstRunOnboarding', () => {
     const user = userEvent.setup();
     const { container } = render(FirstRunOnboarding, { props: f.props });
     expect(screen.getByRole('heading', { level: 1 })).toHaveFocus();
+    expect(screen.getByRole('progressbar')).toHaveAttribute(
+      'aria-valuenow',
+      '1',
+    );
+    expect(
+      screen.getByRole('link', { name: 'Back to Settings' }),
+    ).toHaveAttribute('href', '/settings');
     await user.tab();
     await user.keyboard('{Enter}');
     expect(
       await screen.findByRole('heading', { level: 1, name: 'Connect AI' }),
     ).toHaveFocus();
+    expect(screen.getAllByRole('heading', { name: 'Connect AI' })).toHaveLength(
+      1,
+    );
+    expect(screen.getByRole('progressbar')).toHaveAttribute(
+      'aria-valuenow',
+      '2',
+    );
     expect(screen.getByRole('button', { name: 'Continue' })).toBeDisabled();
     expect(
       await screen.findByRole('button', { name: /Use my Codex/ }),
@@ -112,10 +126,46 @@ describe('FirstRunOnboarding', () => {
     expect(
       await screen.findByRole('region', { name: 'Review your changes' }),
     ).toHaveTextContent('Members');
+    expect(
+      screen.getByRole('heading', { name: 'Review your changes' }),
+    ).toHaveFocus();
     expect(screen.queryByText('Profile')).not.toBeInTheDocument();
     await expectNoA11yViolations(container);
     await user.click(screen.getByRole('button', { name: 'Use this template' }));
     await waitFor(() => expect(f.oncomplete).toHaveBeenCalledOnce());
+  });
+  it('moves focus from review to the pending owner decision without claiming success', async () => {
+    const f = fixture('template');
+    const user = userEvent.setup();
+    render(FirstRunOnboarding, { props: f.props });
+    await user.click(
+      screen.getByRole('button', { name: 'Preview Yoga Studio' }),
+    );
+    vi.mocked(f.api.change).mockResolvedValueOnce({
+      ...f.props.initialState,
+      step: 'template',
+      selected: 'yoga-studio',
+      approvalId: 'hold',
+      approval: {
+        id: 'hold',
+        callId: 'call',
+        tool: 'cookbook.apply',
+        summary: 'Use Yoga Studio.',
+        status: 'pending',
+      },
+      preview: null,
+    });
+    await user.click(screen.getByRole('button', { name: 'Use this template' }));
+    expect(
+      await screen.findByRole('region', {
+        name: 'Confirm the owner approval below to apply these changes.',
+      }),
+    ).toHaveFocus();
+    expect(screen.queryByText(/set up\./)).not.toBeInTheDocument();
+    expect(
+      screen.getByRole('link', { name: 'Back to Settings' }),
+    ).toBeInTheDocument();
+    expect(f.oncomplete).not.toHaveBeenCalled();
   });
   it('resumes on the AI step with a detected ready CLI', async () => {
     const f = fixture('ai', true);

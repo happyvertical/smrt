@@ -28,12 +28,36 @@ describe('tool-derived assistant introduction', () => {
       screen.getByText('I can help you work with Customers, Classes.'),
     ).toBeInTheDocument();
     expect(
-      screen.getByText(
-        'Available actions: read records, customize lists and fields.',
-      ),
+      screen.getByText('Ask me to find what you need.'),
     ).toBeInTheDocument();
     expect(screen.queryByRole('alert')).not.toBeInTheDocument();
-    expect(screen.queryByText(/Profile|imaginary/)).not.toBeInTheDocument();
+    expect(
+      screen.queryByText(
+        /Profile|imaginary|Available actions|request deletion|approval/,
+      ),
+    ).not.toBeInTheDocument();
+  });
+  it('keeps the introduction short and only describes supported help', () => {
+    render(OnboardingAssistant, {
+      props: {
+        transport: { sendMessage: vi.fn() },
+        registry: createDataSurfaceRegistry(),
+        introduction: {
+          lists: ['Classes', 'Members', 'Shop', 'Accounts', 'Journals'],
+          actions: ['read', 'create', 'delete'],
+          configured: true,
+        },
+      },
+    });
+    expect(
+      screen.getByText('I can help you work with Classes, Members, Shop.'),
+    ).toBeInTheDocument();
+    expect(
+      screen.getByText('Ask me to find things or add something new.'),
+    ).toBeInTheDocument();
+    expect(
+      screen.queryByText(/Accounts|Journals|approval|deletion|records/),
+    ).not.toBeInTheDocument();
   });
   it('uses the shared unconfigured notice without a greeting, composer or transport work', () => {
     const sendMessage = vi.fn();

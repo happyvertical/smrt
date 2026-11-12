@@ -30,6 +30,8 @@ interface Props {
   pollMs?: number;
   /** Compact saved-product wording/grouping; defaults stay unchanged. */
   presentation?: 'compact';
+  /** Parent step heading. Reuses its name instead of rendering a second heading. */
+  headingId?: string;
 }
 
 let {
@@ -40,6 +42,7 @@ let {
   onchange,
   pollMs = 2500,
   presentation,
+  headingId,
 }: Props = $props();
 const { t } = useI18n();
 let info = $state<ConnectAiState | undefined>(untrack(() => initialState));
@@ -350,8 +353,8 @@ onMount(() => {
 </div>
 
 {:else}
-<section class="smrt-connect-ai" data-smrt-component="ConnectAi" data-variant={variant} aria-labelledby={titleId} aria-busy={busy}>
-  <h2 id={titleId}>{t(M['ui.connect_ai.title'])}</h2>
+<section class="smrt-connect-ai" data-smrt-component="ConnectAi" data-variant={variant} aria-labelledby={headingId ?? titleId} aria-busy={busy}>
+  {#if !headingId}<h2 id={titleId}>{t(M['ui.connect_ai.title'])}</h2>{/if}
   {#if !info}
     <p role="status">{t(M['ui.connect_ai.loading'])}</p>
   {:else}

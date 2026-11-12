@@ -121,3 +121,7 @@ unchanged. Tricia uses these hooks for a CLI removed between status and click.
 
 `./onboarding` composes this step with durable template selection; see
 [host first-run contract](../../template-sveltekit/agents/onboarding.md).
+
+An enclosing wizard may pass `headingId` to reference its existing heading.
+The standard step then omits its own heading and keeps its labelled region;
+standalone/settings and compact presentations retain their existing defaults.
