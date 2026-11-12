@@ -231,6 +231,19 @@ jobs:
           git fetch --no-tags --depth=1 origin "$BASE_SHA"
           node scripts/check-required-reasons.mjs --against "$BASE_SHA"
 
+      # Rule 2 of the data-shape policy (#4930): no new hand-written table
+      # statement in a package outside the migrator. Plain Node, no install.
+      - name: Check hand-written table statements
+        run: node scripts/check-hand-written-ddl.mjs
+
+      - name: Check hand-written table baseline did not grow
+        if: github.event.pull_request.base.sha != ''
+        env:
+          BASE_SHA: ${{ github.event.pull_request.base.sha }}
+        run: |
+          git fetch --no-tags --depth=1 origin "$BASE_SHA"
+          node scripts/check-hand-written-ddl.mjs --against "$BASE_SHA"
+
   affected-typecheck:
     name: Affected Typecheck
     needs: affected-scope

@@ -18,3 +18,8 @@ use named `$props()` interfaces to avoid recursive inline intersections.
   `required: true` field in `packages/*/src` states `requiredFor` or sits in
   `scripts/required-reasons-baseline.json`, which only shrinks
   (`--prune` drops fixed entries).
+- `pnpm lint` also runs `scripts/check-hand-written-ddl.mjs` (#4930): a new
+  hand-written `CREATE`/`ALTER`/`DROP TABLE` in `packages/*/src` outside the
+  migrator, the schema code and core's `system/` tables fails, naming file and
+  line. Existing ones sit in `scripts/hand-written-ddl-baseline.json`, which
+  only shrinks (`--prune`). Declare the shape on a model instead.
