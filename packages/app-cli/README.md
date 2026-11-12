@@ -292,3 +292,14 @@ Each generated catalog contains one entry. For a shared catalog, merge the
 entry into the catalog maintained by the packager. Live installation and
 execution in Claude Desktop and ChatGPT desktop require the production
 launcher and separate host verification.
+
+### Generated local-client setup
+
+`generateLocalMcpSetup({name,command,args})` renders Claude Code's shell-quoted
+`claude mcp add`, Claude Desktop/`.mcp.json` JSON and Codex TOML for an existing
+owner-authorized stdio launcher. Pass public executable/launcher paths only,
+never a bearer. `CliConfigContext.configPath` lets the app write its private
+connection directly through `saveCliConfig` without mutating process environment.
+Modern stdio bridges advertise `tools.listChanged` and poll the stateless upstream
+catalog every two seconds (including pages). Changed descriptors, revocation and
+recovery invalidate discovery; close clears the timer. No shared catalog cache.
