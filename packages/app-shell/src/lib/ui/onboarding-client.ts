@@ -13,6 +13,7 @@ export interface ToolInfo {
   version?: string;
   /** `null`: the tool did not answer. */
   signedIn: boolean | null;
+  ready?: boolean;
   installUrl: string;
   login: 'idle' | 'running' | 'finished' | 'failed';
 }

@@ -16,6 +16,7 @@ const tool = (over: Partial<ToolInfo> = {}): ToolInfo => ({
   label: 'Claude Code',
   installed: true,
   signedIn: true,
+  ready: true,
   installUrl: 'https://example.test/install',
   login: 'idle',
   ...over,
