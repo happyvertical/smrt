@@ -204,3 +204,67 @@ test('the repository passes its own check', () => {
   const out = spawnSync(process.execPath, [script], { encoding: 'utf8' });
   assert.equal(out.status, 0, out.stderr);
 });
+
+test('covers the fields a caller must supply, written or inferred (#4935)', () => {
+  const found = findRequiredFields(`
+class Order {
+  @field({ required: true }) written = '';
+  @field({ required: true }) status: string = 'active';
+  @field({ required: true }) count = 0;
+  @field({ required: true }) flag: boolean = false;
+  @field({ type: 'text', required: true, default: 'x' }) decoratorDefault!: string;
+  @field() inferred!: string;
+  @field() withInitializer: string = 'a';
+  @field() maybe?: string;
+  @field({ type: 'text', default: 'x' }) hasDefaultOption!: string;
+  @field({ nullable: true }) nullableField!: string;
+  @foreignKey('Customer') customerId!: string;
+  @foreignKey('Customer') optionalFk?: string;
+  @crossPackageRef('@x/y:Z')
+  @field({ required: true })
+  stackedRef: string = '';
+  @tenantId() tenantId!: string;
+  @tenantId({ nullable: true }) looseTenant!: string;
+  @field({ required: true, requiredFor: 'identity' }) reasoned: string = 'k';
+  get fake() { return 1; }
+}`);
+  const by = Object.fromEntries(found.map((f) => [f.field, f]));
+  const demanded = found.filter((f) => f.demanded).map((f) => f.field).sort();
+  assert.deepEqual(demanded, [
+    'customerId',
+    'decoratorDefault',
+    'inferred',
+    'stackedRef',
+    'tenantId',
+    'written',
+  ]);
+  // A real class initializer satisfies the save check: not demanded.
+  for (const f of ['status', 'count', 'flag', 'reasoned']) assert.equal(by[f].demanded, false, f);
+  assert.equal(by.tenantId.implicit, true);
+  assert.equal(by.reasoned.requiredFor, 'identity');
+  for (const f of ['withInitializer', 'maybe', 'hasDefaultOption', 'nullableField', 'optionalFk', 'looseTenant']) {
+    assert.equal(by[f], undefined, `${f} is not required`);
+  }
+});
+
+test('a field a real initializer satisfies needs neither a reason nor a baseline entry', () => {
+  const root = repo(
+    {
+      'packages/a/src/thing.ts': MODEL(`@field({ required: true })\n  status: string = 'active';`),
+    },
+    [],
+  );
+  assert.equal(run(root).status, 0);
+  rmSync(root, { recursive: true });
+});
+
+test('an inferred required field with no reason fails and names the field', () => {
+  const root = repo(
+    { 'packages/a/src/thing.ts': MODEL(`@field()\n  owner!: string;`) },
+    [],
+  );
+  const result = run(root);
+  assert.equal(result.status, 1);
+  assert.match(result.stderr, /thing\.ts:\d+ Thing\.owner is required with no reason/);
+  rmSync(root, { recursive: true });
+});

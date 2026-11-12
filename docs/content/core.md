@@ -957,14 +957,20 @@ that subclasses a smrt object owns the rest of its shape and may tighten or
 loosen any field that has no reason. It may not loosen a field that has one.
 
 `node scripts/check-required-reasons.mjs` runs with `pnpm lint` and in CI. It
-fails on a `required: true` field in `packages/*/src` that has no reason and is
-not in `scripts/required-reasons-baseline.json`, and it names the file, class
-and field. The baseline lists the fields that had no reason when the check
-began. It may only shrink: give a field a reason or make it optional, then
-run `node scripts/check-required-reasons.mjs --prune`. The check does not
-judge whether a reason is true; review does that. It reads the literal
-`required: true` in source, so a field the scanner infers as required from its
-TypeScript type is outside it.
+covers the fields a caller must supply. On save, `required` means the value
+may not be null, undefined or an empty string, so a class initializer that
+holds a real value (`= 0`, `= false`, `= 'active'`) already satisfies it. A
+`default` option alone does not put a value on the object, so it does not.
+`required` is written (`required: true`) or inferred from the declaration (no
+initializer and no `?`). The check fails on such a field in `packages/*/src`
+that has no reason and is not in `scripts/required-reasons-baseline.json`, and
+it names the file, class and field. A required `@tenantId()` is explained by
+itself: it is `tenant-scope`. The baseline lists the fields that had no reason
+when the check began. It may only shrink: give a field a reason or make it
+optional, then run `node scripts/check-required-reasons.mjs --prune`. The
+check does not judge whether a reason is true; review does that. It reads
+decorated properties only, so a plain property that the scanner infers as
+required is outside it.
 
 ### Adding a required column to a table that already has rows
 

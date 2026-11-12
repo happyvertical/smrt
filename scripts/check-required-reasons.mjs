@@ -9,12 +9,22 @@
  * Values: identity, tenant-scope, idempotency, workflow-state, system-table.
  * The option is carried into the manifest (`_meta.requiredFor`).
  *
+ * Which fields it covers (#4935, P11): the ones a caller must supply. At save
+ * time `required` means the instance value must not be null, undefined or an
+ * empty string, so a class initializer that holds a real value (`= 0`,
+ * `= false`, `= 'active'`) already satisfies it and the caller supplies
+ * nothing. A decorator `default` option does NOT put a value on the instance,
+ * so it does not count. `required` is written (`required: true`) or inferred
+ * from the TypeScript declaration (no initializer, not `?`), as the scanner
+ * does (`manifest-adapter.ts` `inferFieldType`). A required `@tenantId()` is
+ * explained by itself (tenant-scope).
+ *
  * What this script does:
  *   - Reads every `packages/<pkg>/src/**\/*.ts` (tests, fixtures and `dist`
- *     excluded) and finds each property decorator whose options literal sets
- *     `required: true`.
- *   - Fails when that field has no valid `requiredFor` and is not in the
- *     baseline, and names the file, class and field.
+ *     excluded) and finds each decorated property that is required, written
+ *     or inferred.
+ *   - Fails when a field the caller must supply has no valid `requiredFor`
+ *     and is not in the baseline, and names the file, class and field.
  *   - Fails when `requiredFor` is not one of the allowed values, or is set on
  *     a field that is not required.
  *   - The baseline (`scripts/required-reasons-baseline.json`) lists today's
@@ -110,11 +120,69 @@ function stringLiteral(value) {
   return m ? m[2] : undefined;
 }
 
+const FIELD_DECORATORS = new Set(['field', 'foreignKey', 'crossPackageRef', 'meta', 'tenantId']);
+const EMPTY_INITIALIZERS = new Set(["''", '""', '``', 'null', 'undefined']);
+
 /**
- * Every decorated property in `source` whose decorator options literal states
- * `required: true`. Each entry: class, field, requiredFor (the literal, or
- * `null` when absent, or `undefined` when present but not a plain string),
- * line.
+ * What follows a property name: `?` / `!` marker and the initializer text.
+ * Returns { optional, initializer } (initializer is null when there is none).
+ */
+function readDeclarationTail(src, pos) {
+  let optional = false;
+  if (src[pos] === '?') {
+    optional = true;
+    pos++;
+  } else if (src[pos] === '!') pos++;
+  let depth = 0;
+  let i = pos;
+  let init = null;
+  for (; i < src.length; i++) {
+    const c = src[i];
+    if (c === "'" || c === '"') i = skipString(src, i) - 1;
+    else if (c === '`') i = skipTemplate(src, i) - 1;
+    else if (c === '(' || c === '[' || c === '{') {
+      const close = matchBracket(src, i);
+      if (close === -1) break;
+      i = close;
+    } else if (c === '<') depth++;
+    else if (c === '>' && src[i - 1] !== '=') depth = Math.max(0, depth - 1);
+    else if (depth === 0 && c === ';') break;
+    else if (depth === 0 && c === '=' && src[i + 1] !== '>' && src[i + 1] !== '=') {
+      // Initializer runs to the next top-level `;` or a newline that ends it.
+      let j = i + 1;
+      for (; j < src.length; j++) {
+        const d = src[j];
+        if (d === "'" || d === '"') j = skipString(src, j) - 1;
+        else if (d === '`') j = skipTemplate(src, j) - 1;
+        else if (d === '(' || d === '[' || d === '{') {
+          const close = matchBracket(src, j);
+          if (close === -1) break;
+          j = close;
+        } else if (d === ';') break;
+        else if (d === '\n') {
+          const rest = src.slice(j + 1).trimStart();
+          const prev = src.slice(i + 1, j).trimEnd().slice(-1);
+          if (!/^[.?:+\-*/%&|<>=]/.test(rest) && !/[.?:+\-*/%&|<>=,(]$/.test(prev)) break;
+        }
+      }
+      init = src.slice(i + 1, j).trim();
+      break;
+    } else if (depth === 0 && c === '\n') {
+      const rest = src.slice(i + 1).trimStart();
+      if (!/^[|&]/.test(rest) && !/[|&:]$/.test(src.slice(pos, i).trimEnd())) break;
+    }
+  }
+  return { optional, initializer: init };
+}
+
+/**
+ * Every decorated property in `source` that is required (written or
+ * inferred) or states a `requiredFor`. Each entry: class, field,
+ * requiredFor (the literal, or `null` when absent, or `undefined` when
+ * present but not a plain string), line, required (the field is required),
+ * demanded (a caller must supply it: required and the class initializer does
+ * not hold a real value), implicit (a required `@tenantId()`, explained by
+ * itself).
  */
 export function findRequiredFields(source) {
   const src = maskComments(source);
@@ -124,37 +192,44 @@ export function findRequiredFields(source) {
   for (let m = classRe.exec(src); m; m = classRe.exec(src)) {
     classes.push({ name: m[1], at: m.index });
   }
-  const decoRe = /@([A-Za-z_$][\w$.]*)\s*\(/g;
+  const decoRe = /@([A-Za-z_$][\w$.]*)\s*(\(|(?=\s))/g;
+  const records = new Map();
   for (let m = decoRe.exec(src); m; m = decoRe.exec(src)) {
-    const open = m.index + m[0].length - 1;
-    const close = matchBracket(src, open);
-    if (close === -1) continue;
-    const args = src.slice(open + 1, close);
-    // The options object is the last object-literal argument.
-    let objStart = -1;
-    for (let k = 0; k < args.length; k++) {
-      const c = args[k];
-      if (c === "'" || c === '"') k = skipString(args, k) - 1;
-      else if (c === '`') k = skipTemplate(args, k) - 1;
-      else if (c === '{') {
-        objStart = k;
-        const end = matchBracket(args, k);
-        if (end === -1) break;
-        k = end;
-      } else if (c === '(' || c === '[') {
-        const end = matchBracket(args, k);
-        if (end === -1) break;
-        k = end;
+    const decoName = m[1].split('.').pop();
+    let props = [];
+    let close = m.index + m[0].length - 1;
+    if (m[2] === '(') {
+      const open = m.index + m[0].length - 1;
+      close = matchBracket(src, open);
+      if (close === -1) continue;
+      const args = src.slice(open + 1, close);
+      // The options object is the last object-literal argument.
+      let objStart = -1;
+      for (let k = 0; k < args.length; k++) {
+        const c = args[k];
+        if (c === "'" || c === '"') k = skipString(args, k) - 1;
+        else if (c === '`') k = skipTemplate(args, k) - 1;
+        else if (c === '{') {
+          objStart = k;
+          const end = matchBracket(args, k);
+          if (end === -1) break;
+          k = end;
+        } else if (c === '(' || c === '[') {
+          const end = matchBracket(args, k);
+          if (end === -1) break;
+          k = end;
+        }
       }
-    }
-    if (objStart === -1) continue;
-    const objEnd = matchBracket(args, objStart);
-    if (objEnd === -1) continue;
-    const props = topLevelProperties(args.slice(objStart + 1, objEnd));
-    const required = props.find((p) => p.key === 'required');
-    const reason = props.find((p) => p.key === 'requiredFor');
-    const requiredTrue = required?.value === 'true';
-    if (!requiredTrue && !reason) continue;
+      if (objStart !== -1) {
+        const objEnd = matchBracket(args, objStart);
+        if (objEnd === -1) continue;
+        props = topLevelProperties(args.slice(objStart + 1, objEnd));
+      }
+    } else if (!FIELD_DECORATORS.has(decoName)) continue;
+    const isFieldDecorator = FIELD_DECORATORS.has(decoName);
+    const statesIt = props.some((p) => p.key === 'requiredFor') ||
+      props.find((p) => p.key === 'required')?.value === 'true';
+    if (!isFieldDecorator && !statesIt) continue;
 
     // The decorated property: skip further decorators and modifiers.
     let pos = close + 1;
@@ -184,17 +259,55 @@ export function findRequiredFields(source) {
     IDENT.lastIndex = pos;
     const name = IDENT.exec(src);
     if (!name) continue;
+    // A property is a name followed by `?`, `!`, `:`, `=`, `;` or a line end.
+    // Anything else (`get x()`, `fields` in prose inside a template string)
+    // is not a field.
+    if (!/^[ \t]*(?:[?!:=;]|\r?\n|\}|$)/.test(src.slice(pos + name[0].length, pos + name[0].length + 40))) continue;
+    // A property stacked under several decorators is visited once per
+    // decorator; their options are read together.
+    let rec = records.get(pos);
+    if (!rec) {
+      rec = { pos, name: name[0], at: m.index, decorators: [], props: [] };
+      records.set(pos, rec);
+    }
+    rec.decorators.push(decoName);
+    rec.props.push(...props);
+    rec.at = Math.min(rec.at, m.index);
+  }
+  for (const rec of records.values()) {
+    const { props, decorators } = rec;
+    const required = props.find((p) => p.key === 'required');
+    const reason = props.find((p) => p.key === 'requiredFor');
+    const decoName = decorators.includes('tenantId')
+      ? 'tenantId'
+      : (decorators.find((d) => FIELD_DECORATORS.has(d)) ?? decorators[0]);
+    const isFieldDecorator = FIELD_DECORATORS.has(decoName);
+    const tail = readDeclarationTail(src, rec.pos + rec.name.length);
+    const hasInitializer = tail.initializer !== null;
+    const initializerHoldsValue =
+      hasInitializer && !EMPTY_INITIALIZERS.has(tail.initializer);
+    const nullable = props.find((p) => p.key === 'nullable')?.value === 'true';
+    const hasDefaultOption = props.some((p) => p.key === 'default');
+    let isRequired;
+    if (required?.value === 'true') isRequired = true;
+    else if (required?.value === 'false') isRequired = false;
+    else if (decoName === 'tenantId') isRequired = !nullable;
+    else if (isFieldDecorator) {
+      isRequired = !nullable && !tail.optional && !hasInitializer && !hasDefaultOption;
+    } else isRequired = false;
+    if (!isRequired && !reason) continue;
+
     let owner = '<unknown>';
-    for (const c of classes) if (c.at < m.index) owner = c.name;
-    const line = source.slice(0, m.index).split('\n').length;
+    for (const c of classes) if (c.at < rec.at) owner = c.name;
+    const line = source.slice(0, rec.at).split('\n').length;
     found.push({
       class: owner,
-      field: name[0],
+      field: rec.name,
       line,
-      required: requiredTrue,
-      requiredFor: reason
-        ? (stringLiteral(reason.value) ?? undefined)
-        : null,
+      required: isRequired,
+      demanded: isRequired && !initializerHoldsValue,
+      implicit: decoName === 'tenantId' && isRequired && !reason,
+      requiredFor: reason ? (stringLiteral(reason.value) ?? undefined) : null,
     });
   }
   return found;
@@ -219,7 +332,7 @@ export function scanPackages(root) {
       const rel = relative(root, file).split(sep).join('/');
       if (!isSourceFile(rel.slice(`packages/${pkg}/`.length))) continue;
       const text = readFileSync(file, 'utf8');
-      if (!text.includes('required')) continue;
+      if (!text.includes('@')) continue;
       for (const f of findRequiredFields(text)) {
         const key = `${rel}#${f.class}.${f.field}`;
         const where = `${rel}:${f.line} ${f.class}.${f.field}`;
@@ -235,13 +348,16 @@ export function scanPackages(root) {
           problems.push(`${where}: requiredFor '${f.requiredFor}' is not one of ${REQUIRED_FOR_VALUES.join(', ')}.`);
           continue;
         }
+        // Not demanded of the caller (a real class initializer satisfies it):
+        // out of scope unless it states a reason.
+        if (!f.demanded && f.requiredFor === null) continue;
         entries.push({
           key,
           file: rel,
           line: f.line,
           class: f.class,
           field: f.field,
-          explained: f.requiredFor !== null,
+          explained: f.requiredFor !== null || f.implicit,
         });
       }
     }
