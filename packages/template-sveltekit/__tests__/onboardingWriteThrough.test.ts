@@ -18,6 +18,7 @@ import { defaultWriterLease } from '@happyvertical/smrt-app-runtime/sveltekit';
 import { readAssistantTurnStream } from '@happyvertical/smrt-chat/assistant-turn';
 import { resolveApplicationRuntime } from '@happyvertical/smrt-config';
 import { ObjectRegistry, toSnakeCase } from '@happyvertical/smrt-core';
+import { resolveManifestPath } from '@happyvertical/smrt-core/manifest/discover-smrt-packages';
 import { generateActivationRegistration } from '@happyvertical/smrt-core/activation/generate';
 import { BUNDLED_COOKBOOK_TEMPLATES } from '@happyvertical/smrt-core/cookbook/tools';
 import {
@@ -100,8 +101,8 @@ it.each(
     const info = JSON.parse(readFileSync(join(pkg, 'package.json'), 'utf8'));
     if (!info.name?.startsWith('@happyvertical/')) continue;
     symlinkSync(pkg, join(root, 'node_modules', info.name));
-    const file = join(pkg, 'dist/manifest.json');
-    if (existsSync(file))
+    const file = resolveManifestPath(info.name, root);
+    if (file)
       manifests.push(JSON.parse(readFileSync(file, 'utf8')));
   }
   writeFileSync(
