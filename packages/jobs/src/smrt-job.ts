@@ -134,7 +134,7 @@ export class SmrtJob extends SmrtObject {
   queue: string = 'default';
 
   /** Type of object to invoke method on */
-  @field({ type: 'text', required: true })
+  @field({ type: 'text', required: true, requiredFor: 'identity' })
   objectType: string = '';
 
   /** ID of the specific object (null for static methods) */
@@ -142,7 +142,7 @@ export class SmrtJob extends SmrtObject {
   objectId: string | null = null;
 
   /** Method name to invoke */
-  @field({ type: 'text', required: true })
+  @field({ type: 'text', required: true, requiredFor: 'identity' })
   method: string = '';
 
   /** Arguments to pass to the method (JSON) */

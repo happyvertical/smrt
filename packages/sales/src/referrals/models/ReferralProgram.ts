@@ -42,6 +42,7 @@ export class ReferralProgram extends SmrtObject {
   /** Stable program key within the tenant (natural-key component). */
   @field({
     required: true,
+    requiredFor: 'identity',
     description: 'A short name for the program, used in links and reports.',
   })
   key: string = '';
