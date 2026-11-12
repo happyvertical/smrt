@@ -354,6 +354,15 @@ reasoning/format controls on plan requests; omit them, retain requested effort i
 metadata, and never claim vendor enforcement. Live sign-in/entitlement/inference
 requires the owner and is not proven by fake catalog tests.
 
+The browser-safe root exports the same `engineLabel` used by server status;
+product names come from the existing pure CLI metadata. No server-status graph
+is imported by settings. `ResolvedWorkProfile.modelSelection` is derived display
+evidence: `strongest` requires the recommended Claude `fable` alias or the
+selected top-ranked catalog entry; an explicit model is `custom`, and an
+unverified/provider selection is `configured`. Tier names alone do not establish
+model strength. The metadata includes requested and resolved selection ids when
+known; these are selection aliases, not a claimed provider-reported model.
+
 `runAgentTurn({ profile, outputSchema })` supplies explicit model and effort,
 Claude `--json-schema`, or Codex `--output-schema` through a private per-pass
 file. Codex maximum maps to `model_reasoning_effort="xhigh"`. Existing machine
@@ -382,6 +391,17 @@ One fallback step is allowed, with shared fixed wording. The host persists the
 memo under owner, engine, refused requested model and a connection/catalog key;
 change the key after account/catalog or selection changes. No engine or billing
 path fallback is performed. No live CLI/provider call is needed for tests.
+
+For Settings, pass a freshly resolved profile through
+`projectWorkModelSelection` with that same tenant-scoped store, owner, engine,
+requested model and connection key. A remembered different model changes only
+display metadata to `fallback`; `profile.model` remains the original request so
+execution reads the same memo and cannot begin a fallback-of-fallback chain.
+The projector only reads the existing memo: it performs no provider probe,
+notification or write and exposes no connection key in the result. Hosts must
+share their key derivation between display and execution, invalidating it after
+connection/selection changes. The existing profile and browser-safety tests cover
+selection evidence, scope, model immutability and the public label import.
 
 Reuse audit: smrt-dev-mcp `review_smrt_project` on inference and
 `build_context(task: architecture)` inventoried package exports/models. The

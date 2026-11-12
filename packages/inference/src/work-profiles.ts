@@ -32,6 +32,12 @@ export interface ResolvedWorkProfile {
   budgets: WorkProfileBudgets;
   autoEscalate: boolean;
   previewBeforeApply: boolean;
+  /** Derived display evidence only; model remains the immutable requested selection. */
+  modelSelection?: {
+    kind: 'strongest' | 'custom' | 'configured' | 'fallback';
+    requestedModel?: string;
+    resolvedModel?: string;
+  };
 }
 export interface WorkModelCatalogEntry {
   id: string;
@@ -172,18 +178,19 @@ export function resolveWorkProfile(input: {
   const claude = ['fable', 'opus', 'sonnet'].find((model) =>
     claudeModels.includes(model),
   );
+  const strongest = strongestWorkModel(
+    input.catalog ??
+      (engine === 'codex'
+        ? rankOpenAIWorkModels(
+            Object.keys(OPENAI_WORK_MODEL_RANKS).map((id) => ({ id })),
+          )
+        : []),
+  );
   const model =
     settings.model ??
     (engine === 'api'
       ? undefined
-      : (strongestWorkModel(
-          input.catalog ??
-            (engine === 'codex'
-              ? rankOpenAIWorkModels(
-                  Object.keys(OPENAI_WORK_MODEL_RANKS).map((id) => ({ id })),
-                )
-              : []),
-        ) ??
+      : (strongest ??
         (engine === 'claude-code'
           ? name === 'background' && claudeModels.includes('sonnet')
             ? 'sonnet'
@@ -202,6 +209,17 @@ export function resolveWorkProfile(input: {
     autoEscalate: settings.autoEscalate ?? defaults.autoEscalate,
     previewBeforeApply:
       settings.previewBeforeApply ?? defaults.previewBeforeApply,
+    modelSelection: {
+      kind:
+        settings.model !== undefined
+          ? 'custom'
+          : model !== undefined &&
+              (model === strongest ||
+                (engine === 'claude-code' && model === 'fable'))
+            ? 'strongest'
+            : 'configured',
+      ...(model ? { requestedModel: model, resolvedModel: model } : {}),
+    },
   };
 }
 
@@ -223,6 +241,34 @@ export interface WorkModelFallbackStore {
     connectionKey: string,
     model: string,
   ): Promise<void>;
+}
+
+/** Read-only Settings projection over the execution memo, without changing its request key. */
+export async function projectWorkModelSelection(input: {
+  ownerId: string;
+  connectionKey: string;
+  profile: ResolvedWorkProfile;
+  store: Pick<WorkModelFallbackStore, 'read'>;
+}): Promise<ResolvedWorkProfile> {
+  const requested = input.profile.model;
+  if (!requested) return input.profile;
+  validateWorkModel(requested);
+  const remembered = await input.store.read(
+    input.ownerId,
+    input.profile.engine,
+    requested,
+    input.connectionKey,
+  );
+  if (remembered === undefined || remembered === requested)
+    return input.profile;
+  return {
+    ...input.profile,
+    modelSelection: {
+      kind: 'fallback',
+      requestedModel: requested,
+      resolvedModel: validateWorkModel(remembered),
+    },
+  };
 }
 
 /** One step only, only a classified plan refusal before any output or tool execution. */

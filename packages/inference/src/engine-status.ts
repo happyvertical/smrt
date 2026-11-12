@@ -1,9 +1,9 @@
 import type { AgentCliStatus } from './agent-cli/detect.js';
 import { AGENT_TOOL_INFO, type AgentTool } from './agent-cli/tools.js';
 import type { ChatGPTPlanConnection } from './chatgpt/connection.js';
-import type { InferenceEngineId } from './engine-id.js';
+import { engineLabel, type InferenceEngineId } from './engine-id.js';
 
-export type { InferenceEngineId } from './engine-id.js';
+export { engineLabel, type InferenceEngineId } from './engine-id.js';
 export interface InferenceEngineAction {
   label: string;
   href: string;
@@ -20,12 +20,6 @@ export interface InferenceEngineStatus {
 
 export function cliTool(engine: InferenceEngineId): AgentTool | null {
   return engine === 'claude-code' || engine === 'codex' ? engine : null;
-}
-
-export function engineLabel(engine: InferenceEngineId): string {
-  const tool = cliTool(engine);
-  if (engine === 'chatgpt') return 'ChatGPT';
-  return tool ? AGENT_TOOL_INFO[tool].label : 'your API key';
 }
 
 /** Status of the ChatGPT engine from the connection (no network call). */

@@ -91,4 +91,5 @@ export {
 registerInference();
 
 export * from './design-run.js';
+export { engineLabel, type InferenceEngineId } from './engine-id.js';
 export * from './work-profiles.js';

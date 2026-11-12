@@ -70,6 +70,8 @@ describe('Inference settings saveKey action', () => {
     expect(server).not.toContain('keySet: false');
     expect(readFileSync(join(route, '+page.svelte'), 'utf8')).toContain('InferenceSettingsPage {data}');
     const page = readFileSync(join(here, '..', 'host', 'InferenceSettingsPage.svelte'), 'utf8');
+    expect(page).toContain('<title>Assistant · Settings</title>');
+    expect(page).toContain('basePath="/settings" title="Assistant"');
     expect(page).toContain("save('saveKey', change)");
     expect(page).toContain('data.canEdit');
   });

@@ -54,10 +54,10 @@ async function discover(): Promise<void> {
 </script>
 
 <svelte:head>
-  <title>Inference · Settings</title>
+  <title>Assistant · Settings</title>
 </svelte:head>
 
-<ShellSettingsPage basePath="/settings" title="Inference">
+<ShellSettingsPage basePath="/settings" title="Assistant">
   <!-- The owner edits the whole app (app scope); a member without the
        permission reads it, and the server refuses their writes. -->
   {#if data.workProfiles}

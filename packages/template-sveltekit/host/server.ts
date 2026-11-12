@@ -98,6 +98,7 @@ import {
   locateCli,
   nextWorkModel,
   OPENAI_WORK_MODEL_RANKS,
+  projectWorkModelSelection,
   type ResolvedWorkProfile,
   rankOpenAIWorkModels,
   recommendedWorkProfile,
@@ -162,11 +163,14 @@ const describePublicAssistantTool: typeof describeAssistantTool = (
 
 // Only the core editor's bounded human command captions may become public.
 // Labels containing implementation syntax fall back without altering the ledger.
-const personChangeSummary = (value: unknown): string | undefined => {
+const personChangeSummary = (
+  value: unknown,
+  prospective = false,
+): string | undefined => {
   if (
     typeof value !== 'string' ||
     value.length > 180 ||
-    !/^(Added|Renamed|Removed|Hid|Showed|Undid) [\p{L}\p{N} ’'(),-]+\.?$/u.test(
+    !/^(Added|Renamed|Removed|Hid|Showed|Undid|Use|Used|Configured|Enabled|Disabled) [\p{L}\p{N} ’'(),-]+\.?$/u.test(
       value,
     ) ||
     /[a-z][A-Z]/.test(value) ||
@@ -175,7 +179,25 @@ const personChangeSummary = (value: unknown): string | undefined => {
     )
   )
     return undefined;
-  return value;
+  if (!prospective) return value.replace(/^Use /, 'Used ');
+  const verbs: Record<string, string> = {
+    added: 'Add',
+    renamed: 'Rename',
+    removed: 'Remove',
+    hid: 'Hide',
+    showed: 'Show',
+    use: 'Use',
+    used: 'Use',
+    configured: 'Configure',
+    enabled: 'Enable',
+    disabled: 'Disable',
+  };
+  return value
+    .replace(
+      /^(Added|Renamed|Removed|Hid|Showed|Use|Used|Configured|Enabled|Disabled) /,
+      (verb) => `${verbs[verb.trim().toLowerCase()]} `,
+    )
+    .replace(/ and kept its data(\.?)$/, ' and keep its data$1');
 };
 
 export interface CookbookHostOptions {
@@ -1459,6 +1481,12 @@ export function createCookbookHost(options: CookbookHostOptions) {
       ...(await extra(context)).map((t) => t.slug),
     ];
   };
+  // Exactly the execution memo generation. Never key a fallback by its resolved model.
+  async function workModelConnectionKey(tenantId: string, ownerId: string) {
+    const host = await ready();
+    return `${(await cli.cliStatus('claude-code')).version ?? 'unknown'}:${await host.state.engineGeneration(tenantId, ownerId)}:${(await host.workProfiles.read()).revision ?? 'recommended'}`;
+  }
+
   async function resolveProfile(
     context: AssistantRequestContext,
     profile?: WorkProfileName,
@@ -1504,10 +1532,24 @@ export function createCookbookHost(options: CookbookHostOptions) {
       const resolved = await Promise.all(
         (['design', 'assist', 'background'] as const).map(async (name) => {
           try {
-            return {
-              ...(await resolveProfile(context, name)),
-              unavailable: false,
-            };
+            const profile = await resolveProfile(context, name);
+            const projected =
+              profile.engine === 'claude-code' &&
+              profile.model &&
+              ['fable', 'opus'].includes(profile.model)
+                ? await projectWorkModelSelection({
+                    profile,
+                    ownerId: principal.userId,
+                    connectionKey: await workModelConnectionKey(
+                      principal.tenantId,
+                      principal.userId,
+                    ),
+                    store: (await ready()).state.fallbackStore(
+                      principal.tenantId,
+                    ),
+                  })
+                : profile;
+            return { ...projected, unavailable: false };
           } catch {
             const defaults = recommendedWorkProfile(name);
             const setting = saved.settings[name];
@@ -1640,7 +1682,10 @@ export function createCookbookHost(options: CookbookHostOptions) {
               ? {
                   fallback: {
                     ownerId: context.principal.userId,
-                    connectionKey: `${(await cli.cliStatus(tool)).version ?? 'unknown'}:${await host.state.engineGeneration(context.principal.tenantId, context.principal.userId)}:${(await host.workProfiles.read()).revision ?? 'recommended'}`,
+                    connectionKey: await workModelConnectionKey(
+                      context.principal.tenantId,
+                      context.principal.userId,
+                    ),
                     nextModel:
                       tool === 'claude-code'
                         ? turn.workProfile.model === 'fable'
@@ -1860,11 +1905,32 @@ export function createCookbookHost(options: CookbookHostOptions) {
         (label) => label === binding?.clientName,
       );
       if ((COOKBOOK_TOOL_NAMES as readonly string[]).includes(record.tool)) {
-        const caption =
+        let caption =
           client && record.summary.startsWith(`${client}: `)
             ? record.summary.slice(client.length + 2)
             : record.summary;
-        const summary = personChangeSummary(caption);
+        if (record.tool === 'cookbook.apply') {
+          const template = (
+            (await ready()).catalog.cookbooks ?? BUNDLED_COOKBOOK_TEMPLATES
+          ).find((entry) => entry.id === record.args.id);
+          caption = template ? `Use ${template.name}.` : caption;
+        } else if (
+          ['recipes.enable', 'recipes.disable', 'recipes.configure'].includes(
+            record.tool,
+          )
+        ) {
+          const recipe = (await ready()).catalog.recipes.find(
+            (entry) => entry.id === record.args.id,
+          );
+          if (recipe)
+            caption = `${record.tool === 'recipes.enable' ? 'Enabled' : record.tool === 'recipes.disable' ? 'Disabled' : 'Configured'} ${recipe.label}.`;
+        }
+        const summary =
+          record.tool === 'app.undo'
+            ? record.status === 'succeeded'
+              ? 'Reversed the last structure change'
+              : 'Reverse the last structure change'
+            : personChangeSummary(caption, record.status !== 'succeeded');
         return summary
           ? { summary: client ? `${client}: ${summary}` : summary }
           : undefined;
@@ -1889,7 +1955,17 @@ export function createCookbookHost(options: CookbookHostOptions) {
       )
         return undefined;
       const verb =
-        action === 'delete' ? 'Delete' : action === 'create' ? 'Add' : 'Update';
+        record.status === 'succeeded'
+          ? action === 'delete'
+            ? 'Deleted'
+            : action === 'create'
+              ? 'Added'
+              : 'Updated'
+          : action === 'delete'
+            ? 'Delete'
+            : action === 'create'
+              ? 'Add'
+              : 'Update';
       return { summary: `${client ? `${client}: ` : ''}${verb} ${model.noun}` };
     },
     describeTool: describePublicAssistantTool,
@@ -2466,7 +2542,11 @@ export function createCookbookHost(options: CookbookHostOptions) {
                   {
                     id: String(row.revision),
                     action:
-                      personChangeSummary(row.summary) ?? 'Changed your app',
+                      (row.change as { type?: unknown } | undefined)?.type ===
+                      'undo'
+                        ? 'Reversed the last structure change'
+                        : (personChangeSummary(row.summary) ??
+                          'Changed your app'),
                     resourceType: 'Your app',
                     resourceId: 'Changes',
                     ...(row.actor === principal.userId

@@ -641,3 +641,22 @@ or complex work expands to the configured maximum. Explicit pass counts remain
 fixed. Private classification metadata grants no authority, and the actual proposal
 index survives native holds, Stop and replacement-worker recovery without padded
 outputs or reset usage. See [design runs](cookbook-design-runs.md) for boundaries.
+
+Settings at `/settings/inference` is titled Assistant. Resolved profiles keep the
+requested model; their derived `modelSelection` may show the existing remembered
+downgrade. Settings and native execution share the same memo connection key:
+CLI version, owner engine generation and raw work-profile revision, scoped by
+tenant, owner, engine and requested model. Reading this projection neither probes
+a provider nor writes a fallback, and a remembered model never becomes the key
+for another fallback. Unknown model strength stays configured.
+
+Canonical approval captions describe pending, approved and executing changes in
+prospective language; successful captions and history describe completed changes.
+The bounded human-caption validator preserves business labels and rejects unsafe
+implementation/identity labels. Recipe and template captions reuse their canonical
+catalog labels. Whole remove grammar changes to “Remove … and keep its data”;
+Undo is “Reverse the last structure change” and completed history is “Reversed
+the last structure change”, without promising record restoration. Stored approval
+summaries, operation bindings, receipts and history commands are unchanged. Tests
+cover delayed real execution through these statuses and its actual Undo/history,
+as well as Settings-to-native memo selection and scope/key invalidation.

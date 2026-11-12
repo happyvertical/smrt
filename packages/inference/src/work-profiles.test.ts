@@ -1,6 +1,7 @@
 import { describe, expect, it, vi } from 'vitest';
 import {
   nextWorkModel,
+  projectWorkModelSelection,
   rankOpenAIWorkModels,
   recommendedWorkProfile,
   resolveWorkProfile,
@@ -10,6 +11,176 @@ import {
 } from './work-profiles.js';
 
 describe('owner work profiles', () => {
+  it('reports model strength only from recommended native or ranked selection evidence', () => {
+    expect(
+      resolveWorkProfile({ engine: 'claude-code', profile: 'design' }),
+    ).toMatchObject({
+      model: 'fable',
+      effort: 'max',
+      modelSelection: {
+        kind: 'strongest',
+        requestedModel: 'fable',
+        resolvedModel: 'fable',
+      },
+    });
+    expect(
+      resolveWorkProfile({
+        engine: 'claude-code',
+        claudeModels: ['opus', 'sonnet'],
+      }).modelSelection?.kind,
+    ).toBe('configured');
+    expect(
+      resolveWorkProfile({ engine: 'claude-code', profile: 'background' })
+        .modelSelection?.kind,
+    ).toBe('configured');
+    expect(
+      resolveWorkProfile({
+        engine: 'claude-code',
+        settings: { model: 'fable' },
+      }).modelSelection?.kind,
+    ).toBe('custom');
+    expect(
+      resolveWorkProfile({
+        engine: 'chatgpt',
+        catalog: [{ id: 'ranked', intelligenceRank: 1 }],
+      }).modelSelection,
+    ).toEqual({
+      kind: 'strongest',
+      requestedModel: 'ranked',
+      resolvedModel: 'ranked',
+    });
+    expect(resolveWorkProfile({ engine: 'api' }).modelSelection).toEqual({
+      kind: 'configured',
+    });
+    expect(
+      resolveWorkProfile({ engine: 'api', catalog: [{ id: 'unverified' }] })
+        .modelSelection?.kind,
+    ).toBe('configured');
+    expect(
+      resolveWorkProfile({
+        engine: 'codex',
+        settings: { model: 'unranked-custom' },
+      }).modelSelection?.kind,
+    ).toBe('custom');
+  });
+
+  it('projects an existing refusal memo without changing execution identity or starting a fallback chain', async () => {
+    const profile = resolveWorkProfile({
+      engine: 'claude-code',
+      profile: 'design',
+    });
+    const original = structuredClone(profile);
+    const store = {
+      read: vi.fn(async () => 'opus'),
+      write: vi.fn(async () => {}),
+    };
+    const input = {
+      ownerId: 'owner',
+      connectionKey: 'cli:account:selection',
+      profile,
+      store,
+    };
+    const presented = await projectWorkModelSelection(input);
+    expect(presented).toMatchObject({
+      model: 'fable',
+      modelSelection: {
+        kind: 'fallback',
+        requestedModel: 'fable',
+        resolvedModel: 'opus',
+      },
+    });
+    expect(profile).toEqual(original);
+    expect(store.read).toHaveBeenCalledExactlyOnceWith(
+      'owner',
+      'claude-code',
+      'fable',
+      'cli:account:selection',
+    );
+    expect(store.write).not.toHaveBeenCalled();
+    const execute = vi.fn(async () => 'answer');
+    await runWorkModelWithFallback({
+      ...input,
+      profile: presented,
+      nextModel: 'sonnet',
+      execute,
+      isPlanModelRefusal: () => true,
+      notify: vi.fn(),
+    });
+    expect(execute).toHaveBeenCalledOnce();
+    expect(execute).toHaveBeenCalledWith('opus', expect.any(Object));
+    expect(store.write).not.toHaveBeenCalled();
+    expect(store.read.mock.calls[1]).toEqual(store.read.mock.calls[0]);
+  });
+
+  it('leaves unknown/provider defaults and absent or unchanged refusal memos unchanged', async () => {
+    const read = vi.fn(async (): Promise<string | undefined> => undefined);
+    const input = {
+      ownerId: 'owner',
+      connectionKey: 'version:account:revision',
+      store: { read },
+    };
+    const provider = resolveWorkProfile({ engine: 'api' });
+    expect(
+      await projectWorkModelSelection({ ...input, profile: provider }),
+    ).toBe(provider);
+    expect(read).not.toHaveBeenCalled();
+    const custom = resolveWorkProfile({
+      engine: 'claude-code',
+      settings: { model: 'owner-choice' },
+    });
+    expect(await projectWorkModelSelection({ ...input, profile: custom })).toBe(
+      custom,
+    );
+    read.mockResolvedValue('owner-choice');
+    expect(await projectWorkModelSelection({ ...input, profile: custom })).toBe(
+      custom,
+    );
+    read.mockResolvedValue('--unsafe');
+    await expect(
+      projectWorkModelSelection({ ...input, profile: custom }),
+    ).rejects.toThrow('Invalid work profile model');
+  });
+
+  it('looks up only the supplied owner, engine, request and connection scope', async () => {
+    const memo = new Map([
+      ['owner:claude-code:fable:version:account:revision', 'opus'],
+    ]);
+    const store = {
+      read: vi.fn(
+        async (
+          owner: string,
+          engine: string,
+          request: string,
+          connection: string,
+        ) => memo.get(`${owner}:${engine}:${request}:${connection}`),
+      ),
+    };
+    const profile = resolveWorkProfile({ engine: 'claude-code' });
+    const input = {
+      ownerId: 'owner',
+      profile,
+      connectionKey: 'version:account:revision',
+      store,
+    };
+    expect((await projectWorkModelSelection(input)).modelSelection?.kind).toBe(
+      'fallback',
+    );
+    for (const changed of [
+      { ownerId: 'other' },
+      { connectionKey: 'newversion:account:revision' },
+      { connectionKey: 'version:newaccount:revision' },
+      { connectionKey: 'version:account:newrevision' },
+      { profile: { ...profile, engine: 'codex' as const } },
+      { profile: { ...profile, model: 'opus' } },
+      { store: { read: async () => undefined } },
+    ]) {
+      expect(
+        (await projectWorkModelSelection({ ...input, ...changed }))
+          .modelSelection?.kind,
+      ).toBe('strongest');
+    }
+  });
+
   it('prioritizes intelligence for design and assist on every selected engine', () => {
     for (const engine of ['claude-code', 'codex', 'chatgpt', 'api'] as const) {
       const catalog = [

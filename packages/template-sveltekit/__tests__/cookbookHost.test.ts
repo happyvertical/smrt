@@ -212,6 +212,7 @@ let response: (
 ) => unknown;
 const errors: unknown[] = [];
 let stateDirectory: string;
+let cli: ReturnType<typeof createAgentCliService>;
 let restoreRegistry: (() => void) | undefined;
 const activeTurns = new Map<AbortController, Promise<unknown>>();
 let http: Server | undefined;
@@ -373,7 +374,7 @@ beforeEach(async ({ task }) => {
   );
   for (const binary of ['claude', 'codex'])
     await writeFile(join(bin, binary), fixture, { mode: 0o700 });
-  const cli = createAgentCliService({
+  cli = createAgentCliService({
     env: Object.fromEntries([
       ...Object.entries(testHomeEnvironment()),
       ['HOME', stateDirectory],
@@ -821,6 +822,231 @@ describe('local cookbook host composition (SQLite, fake model, no providers)', (
     });
   });
 
+  it('projects the same requested-model memo into Settings and native execution within its exact scope', async () => {
+    const state = await createCookbookHostState(db, catalog, cookbook);
+    expect(
+      (
+        await request(
+          event('/api/connect-ai', 'POST', {
+            action: 'select',
+            engine: 'claude-code',
+          }),
+          host.connectAi.POST,
+        )
+      ).status,
+    ).toBe(200);
+    await request(event('/settings/inference'), async (e) => {
+      const saved = await host.workProfiles.read(e);
+      expect(
+        (
+          await host.workProfiles.write(e, {
+            settings: {
+              design: { engine: 'claude-code' },
+              assist: { engine: 'claude-code' },
+            },
+            revision: saved.revision,
+          })
+        ).ok,
+      ).toBe(true);
+      return new Response();
+    });
+    const read = async (selected = event('/settings/inference')) =>
+      (
+        await request(selected, async (e) =>
+          json(await host.workProfiles.read(e)),
+        )
+      ).json();
+    const before = await read();
+    const profile = before.resolved.find(
+      (value: { name: string }) => value.name === 'design',
+    );
+    expect(profile).toMatchObject({
+      model: 'fable',
+      modelSelection: {
+        kind: 'strongest',
+        requestedModel: 'fable',
+        resolvedModel: 'fable',
+      },
+    });
+    const version = (await cli.cliStatus('claude-code')).version ?? 'unknown';
+    const generation = await state.engineGeneration(tenantId, owner.id);
+    const connection = `${version}:${generation}:${before.revision ?? 'recommended'}`;
+    const store = state.fallbackStore(tenantId);
+    await store.write(
+      owner.id,
+      'claude-code',
+      'fable',
+      `other:${generation}:${before.revision}`,
+      'opus',
+    );
+    await store.write(
+      owner.id,
+      'claude-code',
+      'fable',
+      `${version}:other:${before.revision}`,
+      'opus',
+    );
+    await store.write(
+      owner.id,
+      'claude-code',
+      'fable',
+      `${version}:${generation}:other`,
+      'opus',
+    );
+    await store.write(randomUUID(), 'claude-code', 'fable', connection, 'opus');
+    await state
+      .fallbackStore(randomUUID())
+      .write(owner.id, 'claude-code', 'fable', connection, 'opus');
+    await store.write(owner.id, 'claude-code', 'opus', connection, 'sonnet');
+    expect(
+      (await read()).resolved.find(
+        (value: { name: string }) => value.name === 'design',
+      ).modelSelection.kind,
+    ).toBe('strongest');
+    await store.write(owner.id, 'claude-code', 'fable', connection, 'opus');
+    const downgraded = await read();
+    expect(
+      downgraded.resolved.find(
+        (value: { name: string }) => value.name === 'design',
+      ),
+    ).toMatchObject({
+      model: 'fable',
+      modelSelection: {
+        kind: 'fallback',
+        requestedModel: 'fable',
+        resolvedModel: 'opus',
+      },
+    });
+    expect(downgraded.settings).toEqual(before.settings);
+    expect(JSON.stringify(downgraded)).not.toContain(connection);
+    const other = event('/settings/inference');
+    (other.locals as { user: typeof owner }).user = {
+      ...owner,
+      id: randomUUID(),
+    };
+    expect(
+      (await read(other)).resolved.find(
+        (value: { name: string }) => value.name === 'design',
+      ).modelSelection.kind,
+    ).not.toBe('fallback');
+    const path = join(stateDirectory, 'bin', 'claude');
+    const binary = await readFile(path, 'utf8');
+    await writeFile(
+      path,
+      binary.replace(
+        "if (head === 'say') {",
+        "if (head === 'selected-model') { say(argv[argv.indexOf('--model') + 1]); } else if (head === 'say') {",
+      ),
+      { mode: 0o700 },
+    );
+    response = () => {
+      throw new Error('API fallback is forbidden');
+    };
+    const actual = await turn(await thread(), 'selected-model');
+    expect(actual.find((value) => value.type === 'done')).toMatchObject({
+      message: { content: 'opus' },
+    });
+    expect(issued).toHaveLength(1);
+    expect(revoked).toContain(issued[0].holder);
+    const currentStatus = await cli.cliStatus('claude-code');
+    const changedVersion = vi
+      .spyOn(cli, 'cliStatus')
+      .mockResolvedValue({ ...currentStatus, version: 'changed' });
+    expect(
+      (await read()).resolved.find(
+        (value: { name: string }) => value.name === 'design',
+      ).modelSelection.kind,
+    ).toBe('strongest');
+    changedVersion.mockRestore();
+    expect(
+      (await read()).resolved.find(
+        (value: { name: string }) => value.name === 'design',
+      ).modelSelection.kind,
+    ).toBe('fallback');
+    await request(event('/settings/inference'), async (e) => {
+      const saved = await host.workProfiles.read(e);
+      expect(
+        (
+          await host.workProfiles.write(e, {
+            settings: {
+              ...saved.settings,
+              assist: { ...saved.settings.assist, autoEscalate: false },
+            },
+            revision: saved.revision,
+          })
+        ).ok,
+      ).toBe(true);
+      return new Response();
+    });
+    expect(
+      (await read()).resolved.find(
+        (value: { name: string }) => value.name === 'design',
+      ),
+    ).toMatchObject({
+      model: 'fable',
+      modelSelection: { kind: 'strongest', resolvedModel: 'fable' },
+    });
+  });
+
+  it('keeps ranked, custom and configured selection metadata honest in the Settings loader', async () => {
+    const runtime = host.runtime;
+    await host.shutdown();
+    host.dispose();
+    host = createCookbookHost({
+      runtime,
+      cli,
+      app: { cookbook, catalog },
+      chatgpt: {
+        models: async () => [
+          { id: 'catalog-basic', intelligenceRank: 1 },
+          { id: 'catalog-best', intelligenceRank: 2 },
+        ],
+        status: async () => ({ ready: true }),
+      } as never,
+    });
+    await host.init();
+    await request(event('/settings/inference'), async (e) => {
+      let saved = await host.workProfiles.read(e);
+      expect(
+        saved.resolved.find((value) => value.name === 'design')?.modelSelection
+          ?.kind,
+      ).toBe('configured');
+      expect(
+        (
+          await host.workProfiles.write(e, {
+            settings: { design: { engine: 'chatgpt' } },
+            revision: saved.revision,
+          })
+        ).ok,
+      ).toBe(true);
+      saved = await host.workProfiles.read(e);
+      expect(
+        saved.resolved.find((value) => value.name === 'design'),
+      ).toMatchObject({
+        model: 'catalog-best',
+        modelSelection: { kind: 'strongest', resolvedModel: 'catalog-best' },
+      });
+      expect(
+        (
+          await host.workProfiles.write(e, {
+            settings: {
+              design: { engine: 'chatgpt', model: 'unranked-custom' },
+            },
+            revision: saved.revision,
+          })
+        ).ok,
+      ).toBe(true);
+      saved = await host.workProfiles.read(e);
+      expect(
+        saved.resolved.find((value) => value.name === 'design'),
+      ).toMatchObject({
+        model: 'unranked-custom',
+        modelSelection: { kind: 'custom', resolvedModel: 'unranked-custom' },
+      });
+      return new Response();
+    });
+  });
+
   it('admits a durable design proposal before a structural tool executes', async () => {
     await durableDesignHost();
     await request(event('/api/onboarding'), host.onboarding);
@@ -1227,6 +1453,123 @@ describe('local cookbook host composition (SQLite, fake model, no providers)', (
     }
     const history = await request(event('/api/history'), host.history);
     expect((await history.json()).entries).toEqual([]);
+  });
+
+  it('presents prospective canonical app, recipe and template captions without changing the ledger', async () => {
+    await durableDesignHost();
+    const id = await thread();
+    const user = await (await UserCollection.create({ db })).get({
+      id: owner.id,
+    });
+    const authority = new OwnerApprovalAuthority(
+      await createSqliteOwnerApprovalStore(db),
+      async () => true,
+    );
+    // Projection-only requests exercise canonical records without inventing
+    // successful effects. Real execution and history are checked below in Stop.
+    for (const item of [
+      {
+        tool: 'app.addField',
+        args: {},
+        summary: 'Added Visit note to Customers.',
+        expected: 'Add Visit note to Customers.',
+      },
+      {
+        tool: 'app.renameField',
+        args: {},
+        summary: 'Renamed Note to Visit note.',
+        expected: 'Rename Note to Visit note.',
+      },
+      {
+        tool: 'app.removeField',
+        args: {},
+        summary: 'Removed Size from Loaner mats and kept its data.',
+        expected: 'Remove Size from Loaner mats and keep its data.',
+      },
+      {
+        tool: 'app.hideField',
+        args: {},
+        summary: 'Hid Email in Customers.',
+        expected: 'Hide Email in Customers.',
+      },
+      {
+        tool: 'app.showField',
+        args: {},
+        summary: 'Showed Email in Customers.',
+        expected: 'Show Email in Customers.',
+      },
+      {
+        tool: 'app.undo',
+        args: {},
+        summary: 'Undid change 2: Added hidden implementation details.',
+        expected: 'Reverse the last structure change',
+      },
+      {
+        tool: 'recipes.configure',
+        args: { id: 'host.memos' },
+        summary: 'Configured Memos.',
+        expected: 'Configure Memos.',
+      },
+      {
+        tool: 'recipes.enable',
+        args: { id: 'host.memos' },
+        summary: 'Internal receipt @fixture/host:Memos',
+        expected: 'Enable Memos.',
+      },
+      {
+        tool: 'recipes.disable',
+        args: { id: 'host.customers' },
+        summary: 'Internal receipt @fixture/host:Customer',
+        expected: 'Disable Customers.',
+      },
+      {
+        tool: 'cookbook.apply',
+        args: { id: 'mechanic' },
+        summary: 'Use Mechanic.',
+        expected: 'Use Mechanic.',
+      },
+    ]) {
+      const saved = await authority.request({
+        tenantId,
+        requestedBy: owner.id,
+        tool: item.tool,
+        args: item.args,
+        summary: item.summary,
+        callId: randomUUID(),
+        context: {
+          threadId: id,
+          principal: { userId: owner.id, tenantId, profileId: user!.profileId },
+        },
+        continuation: {
+          executor: 'cookbook',
+          consumption: 'executor',
+          principal: {
+            id: owner.id,
+            tenantId,
+            permissions: [...permissions],
+            allowedTools: [item.tool],
+          },
+        },
+      });
+      const { approvals } = await (
+        await chat(`threads/${id}/approvals`, undefined, 'GET')
+      ).json();
+      const card = approvals.find(
+        (record: { id: string }) => record.id === saved.id,
+      );
+      expect(card).toMatchObject({
+        status: 'pending',
+        summary: item.expected,
+        presentation: { summary: item.expected },
+      });
+      expect((await authority.get(tenantId, saved.id))?.summary).toBe(
+        item.summary,
+      );
+    }
+    expect(
+      (await (await request(event('/api/history'), host.history)).json())
+        .entries,
+    ).toEqual([]);
   });
 
   it('keeps structure history owner-scoped and permission-bound without leaking change documents', async () => {
@@ -1640,6 +1983,7 @@ describe('local cookbook host composition (SQLite, fake model, no providers)', (
       await (await chat(`threads/${id}/approvals`, undefined, 'GET')).json()
     ).approvals;
     expect(holds).toHaveLength(1);
+    expect(holds[0].summary).toBe('Add Paused note to Customers.');
     expect(await designState(runId)).toMatchObject({
       phase: 'check',
       passIndex: 0,
@@ -1650,14 +1994,60 @@ describe('local cookbook host composition (SQLite, fake model, no providers)', (
       approve: true,
     });
     expect(decision.status).toBe(200);
-    expect((await decision.json()).approval.status).toBe('approved');
+    const approved = (await decision.json()).approval;
+    expect(approved).toMatchObject({
+      status: 'approved',
+      summary: 'Add Paused note to Customers.',
+    });
     expect((await designState(runId)).status).toBe('stopped');
     expect(
       (await mcp('tools/call', { name: 'app_history', arguments: {} })).body
         .result.structuredContent.changes,
     ).toHaveLength(0);
     expect(calls).toHaveBeenCalledTimes(1);
-    expect((await chat(`design-runs/${runId}/resume`, {})).status).toBe(200);
+    const editor = (await withTenant({ tenantId, userId: owner.id }, () =>
+      host.modelEditor(tenantId),
+    ))!;
+    const originalApply = editor.apply;
+    let release!: () => void;
+    const delayed = new Promise<void>((resolve) => {
+      release = resolve;
+    });
+    let executing = false;
+    const apply = vi
+      .spyOn(editor, 'apply')
+      .mockImplementation(async (...args) => {
+        executing = true;
+        await delayed;
+        return originalApply(...args);
+      });
+    try {
+      expect((await chat(`design-runs/${runId}/resume`, {})).status).toBe(200);
+      await vi.waitFor(() => expect(executing).toBe(true), { timeout: 15000 });
+      const records = (
+        await (await chat(`threads/${id}/approvals`, undefined, 'GET')).json()
+      ).approvals;
+      expect(
+        records.find((record: { id: string }) => record.id === holds[0].id),
+      ).toMatchObject({
+        status: 'executing',
+        summary: 'Add Paused note to Customers.',
+      });
+      const raw = new OwnerApprovalAuthority(
+        await createSqliteOwnerApprovalStore(db),
+        async () => true,
+      );
+      expect((await raw.get(tenantId, holds[0].id))?.summary).toBe(
+        'Added Paused note to Customers.',
+      );
+      expect(
+        (await (await request(event('/api/history'), host.history)).json())
+          .entries,
+      ).toHaveLength(0);
+    } finally {
+      release();
+    }
+
     await vi.waitFor(
       async () => expect((await designState(runId)).status).toBe('done'),
       { timeout: 15000 },
@@ -1666,11 +2056,51 @@ describe('local cookbook host composition (SQLite, fake model, no providers)', (
       (await mcp('tools/call', { name: 'app_history', arguments: {} })).body
         .result.structuredContent.changes,
     ).toHaveLength(1);
+    apply.mockRestore();
     const after = (
       await (await chat(`threads/${id}/approvals`, undefined, 'GET')).json()
     ).approvals;
     expect(after).toHaveLength(1);
-    expect(after[0]).toMatchObject({ id: holds[0].id, status: 'succeeded' });
+    expect(after[0]).toMatchObject({
+      id: holds[0].id,
+      status: 'succeeded',
+      summary: 'Added Paused note to Customers.',
+    });
+    const history = await (
+      await request(event('/api/history'), host.history)
+    ).json();
+    expect(history.entries[0].action).toBe('Added Paused note to Customers.');
+    const undo = (
+      await mcp('tools/call', {
+        name: 'app_undo',
+        arguments: { expectedRevision: 1 },
+      })
+    ).body.result.structuredContent;
+    expect(undo.status).toBe('approval_required');
+    const undoCards = (await (await chat('approvals', undefined, 'GET')).json())
+      .approvals;
+    expect(
+      undoCards.find((record: { id: string }) => record.id === undo.approvalId)
+        ?.summary,
+    ).toBe('Reverse the last structure change');
+    const reversed = await chat(`approvals/${undo.approvalId}/decide`, {
+      approve: true,
+    });
+    expect(reversed.status).toBe(200);
+    expect((await reversed.json()).approval).toMatchObject({
+      status: 'succeeded',
+      summary: 'Reversed the last structure change',
+    });
+    const reversedHistory = await (
+      await request(event('/api/history'), host.history)
+    ).json();
+    expect(reversedHistory.entries).toHaveLength(2);
+    expect(reversedHistory.entries[0].action).toBe(
+      'Reversed the last structure change',
+    );
+    expect(
+      /restor|revision|cookbook/i.test(reversedHistory.entries[0].action),
+    ).toBe(false);
     expect(calls).toHaveBeenCalledTimes(1);
   });
 
