@@ -238,7 +238,7 @@ export async function createAppModelEditor(options: AppModelEditorOptions) {
     );
   if (getDatabaseEngine(options.db) !== 'sqlite')
     throw new Error(
-      'MODEL_ENGINE_UNSUPPORTED: live app model editor currently requires SQLite',
+      'MODEL_ENGINE_UNSUPPORTED: live app model editor currently requires SQLite; PostgreSQL needs advisory-locked schema inspection and cross-process registry revision fencing (see agents/postgres-parity.md)',
     );
   const store = options.store ?? (await createSqliteAppModelHistory(options));
   let history = await store.read();
@@ -762,7 +762,9 @@ export async function createAppModelEditor(options: AppModelEditorOptions) {
           break;
         case 'add_field': {
           if (!isCustomIdentifier(edit.name))
-            throw new Error('FIELD_NAME_RESERVED');
+            throw new Error(
+              `FIELD_NAME_RESERVED: ${edit.name}; choose a descriptive name such as sortOrder, groupName, fromDate or toDate (unquoted SDK columns, sdk#1513)`,
+            );
           if (
             !Object.hasOwn(models.lists, edit.model) &&
             !new RegExp(CUSTOM_MODEL_REF).test(edit.model)

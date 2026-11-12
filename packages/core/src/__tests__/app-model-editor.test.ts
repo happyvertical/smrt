@@ -2,13 +2,14 @@
 
 import type { Cookbook, CookbookModelField } from '@happyvertical/smrt-types';
 import { getDatabase } from '@happyvertical/sql';
-import { afterEach, beforeEach, describe, expect, it } from 'vitest';
+import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { createActivationCoordinator } from '../activation.js';
 import { createCookbookEngine } from '../cookbook/engine/engine.js';
 import {
   type AppModelEdit,
   createAppModelEditor,
 } from '../cookbook/model-editor.js';
+import { createSqliteAppModelHistory } from '../cookbook/model-history.js';
 import { COOKBOOK_SCHEMA_URL, validateCookbook } from '../cookbook/validate.js';
 import { field } from '../decorators/index.js';
 import { MCPGenerator } from '../generators/mcp.js';
@@ -23,6 +24,7 @@ import {
 } from '../runtime-exposure.js';
 import { registerRuntimeModel } from '../runtime-model.js';
 import { snapshotObjectRegistryState } from '../test-utils.js';
+import { getTestDatabase } from '../testing/database.js';
 
 const APP = '@fixture/a4-editor';
 const CUSTOMER = '@fixture/a4-upstream:Customer';
@@ -469,6 +471,10 @@ describe('durable app model editor', () => {
     '__proto__',
     'bad-name',
     'select',
+    'order',
+    'group',
+    'from',
+    'to',
   ])('refuses protected names or collisions: %s', async (name) => {
     const e = await editor();
     const action = e.apply(
@@ -785,3 +791,46 @@ describe('app model activation recovery', () => {
     }
   });
 });
+
+// Live PostgreSQL publication is refused until transaction-bound introspection
+// and cross-process registry revision fencing exist. Do not silently use SQLite DDL.
+describe.runIf(process.env.SMRT_TEST_PGLITE === '1')(
+  'PostgreSQL app model editor refusal',
+  () => {
+    it('refuses before history mutation, schema changes or host publication', async () => {
+      const db = await getTestDatabase({
+        type: 'pglite',
+        url: 'memory://',
+        includeSystemTables: false,
+        classes: [],
+      });
+      try {
+        const query = vi.spyOn(db, 'query');
+        const publish = vi.fn();
+        await expect(
+          createAppModelEditor({
+            db,
+            application: 'pg-editor',
+            tenantId: TENANT,
+            packageName: APP,
+            cookbook: book(),
+            catalog,
+            authorize: () => true,
+            publish,
+          }),
+        ).rejects.toThrow('MODEL_ENGINE_UNSUPPORTED');
+        await expect(
+          createSqliteAppModelHistory({
+            db,
+            application: 'pg-editor',
+            tenantId: TENANT,
+          }),
+        ).rejects.toThrow('requires SQLite');
+        expect(query).not.toHaveBeenCalled();
+        expect(publish).not.toHaveBeenCalled();
+      } finally {
+        await db.close?.();
+      }
+    });
+  },
+);

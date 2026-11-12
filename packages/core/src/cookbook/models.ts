@@ -15,7 +15,7 @@ export const CUSTOM_FIELD_TYPES = [
   'reference',
 ] as const;
 const RESERVED = new Set(
-  '__proto__ prototype constructor id slug context tenantId displayLabel createdAt updatedAt metaType metaData _meta_type _meta_data abstract arguments await boolean break byte case catch char class const continue debugger default delete do double else enum eval export extends false final finally float for function goto if implements import in instanceof int interface let long native new null package private protected public return short static super switch synchronized this throw throws transient true try typeof var void volatile while with yield save initialize toJSON toPublicJSON then select from where table column group order insert update values join limit offset drop alter create index primary foreign key references'.split(
+  '__proto__ prototype constructor id slug context tenantId displayLabel createdAt updatedAt metaType metaData _meta_type _meta_data abstract arguments await boolean break byte case catch char class const continue debugger default delete do double else enum eval export extends false final finally float for function goto if implements import in instanceof int interface let long native new null package private protected public return short static super switch synchronized this throw throws transient true try typeof var void volatile while with yield save initialize toJSON toPublicJSON then select from to where table column group order insert update values join limit offset drop alter create index primary foreign key references'.split(
     ' ',
   ),
 );
@@ -66,7 +66,11 @@ export function validateCookbookModels(
     const columns = new Set<string>();
     for (const [name, field] of Object.entries(value)) {
       const at = `${path}.${name}`;
-      if (!isCustomIdentifier(name)) bad(at, 'Unsafe or reserved field name');
+      if (!isCustomIdentifier(name))
+        bad(
+          at,
+          'Unsafe or reserved field name; choose a descriptive name such as sortOrder, groupName, fromDate or toDate (unquoted SDK columns, sdk#1513)',
+        );
       const column = toSnakeCase(name);
       if (columns.has(column)) bad(at, 'Field storage name collision');
       columns.add(column);

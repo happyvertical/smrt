@@ -102,6 +102,24 @@ describe('cookbook app model contract', () => {
     expect(validateCookbook(value).ok).toBe(false);
     expect(schema(value)).toBe(false);
   });
+  it.each([
+    'order',
+    'group',
+    'from',
+    'to',
+  ])('rejects the unquoted SQL field name %s before import', (name) => {
+    const value = structuredClone(doc);
+    value.models!.lists.LoanerMat.fields[name] = { type: 'text' };
+    expect(schema(value), JSON.stringify(schema.errors)).toBe(false);
+    expect(validateCookbook(value)).toMatchObject({
+      ok: false,
+      diagnostics: expect.arrayContaining([
+        expect.objectContaining({
+          message: expect.stringContaining('sdk#1513'),
+        }),
+      ]),
+    });
+  });
   it('keeps legacy cookbooks unchanged and treats models as non-empty for replacement', () => {
     const legacy = {
       $schema: COOKBOOK_SCHEMA_URL,
