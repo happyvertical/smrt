@@ -518,6 +518,35 @@ describe('local cookbook host composition (SQLite, fake model, no providers)', (
     'claude-code',
     'codex',
   ] as const)('runs %s through the real host MCP route with short-lived scoped credentials and no API fallback', async (engine) => {
+    const state = await createCookbookHostState(db, catalog, cookbook);
+    await state.refresh(tenantId);
+    const before = state.engineFor({ tenantId })!.state();
+    const after = structuredClone(before);
+    after.revision++;
+    after.cookbook.recipes.push('host.memos');
+    after.cookbook.layout = {
+      version: 1,
+      items: {
+        'item:commerce:Customer': { label: 'Members', singularLabel: 'member' },
+      },
+    };
+    await state.commit({
+      context: { surface: 'assistant', tenantId, userId: owner.id },
+      before,
+      after,
+      audit: {
+        context: { surface: 'assistant', tenantId, userId: owner.id },
+        tool: 'recipes.enable',
+        outcome: 'changed',
+        summary: 'Enable CLI fixture',
+      },
+    });
+    const seenCatalogs: Array<
+      Array<{
+        name: string;
+        inputSchema: { properties: Record<string, unknown> };
+      }>
+    > = [];
     http = createServer(async (incoming, outgoing) => {
       try {
         const chunks: Buffer[] = [];
@@ -530,6 +559,12 @@ describe('local cookbook host composition (SQLite, fake model, no providers)', (
         );
         for (const [name, value] of Object.entries(incoming.headers))
           if (typeof value === 'string') e.request.headers.set(name, value);
+        const scoped = await mcp(
+          'tools/list',
+          undefined,
+          incoming.headers.authorization!.slice(7),
+        );
+        seenCatalogs.push(scoped.body.result.tools);
         const result = await request(e, host.mcp);
         outgoing.writeHead(result.status, Object.fromEntries(result.headers));
         outgoing.end(await result.text());
@@ -581,6 +616,169 @@ describe('local cookbook host composition (SQLite, fake model, no providers)', (
     expect(revoked).toEqual([issued[0].holder]);
     expect(tokens.size).toBe(0);
     expect(JSON.stringify(seen).includes(issued[0].token)).toBe(false);
+
+    const liveTools = seenCatalogs[0];
+    expect(liveTools.some((t) => /profile/.test(t.name))).toBe(false);
+    const create = liveTools.find((t) => /customer_create$/.test(t.name))!;
+    expect(create).toHaveProperty(
+      'description',
+      expect.stringContaining('Members'),
+    );
+    expect(Object.keys(create.inputSchema.properties)).toEqual(
+      expect.arrayContaining(['name', 'email', 'phone']),
+    );
+    expect(liveTools.some((t) => /customer_delete$/.test(t.name))).toBe(false);
+    const introduction = await request(event('/'), async (e) =>
+      json(await host.load(e)),
+    );
+    expect(
+      (await introduction.json()).assistantIntroduction.actions,
+    ).not.toContain('delete');
+    const made = await turn(
+      await thread(),
+      `tool ${create.name} ${JSON.stringify({ name: 'Test Person', email: '', phone: '' })}`,
+    );
+    expect(
+      made.some((e) => e.type === 'error'),
+      JSON.stringify(made),
+    ).toBe(false);
+    expect(JSON.stringify(made)).toContain('Added member Test Person');
+    await withTenant({ tenantId }, async () => {
+      const customers = await ObjectRegistry.getCollection(CUSTOMER, { db });
+      const members = await customers.list({ displayLabel: true });
+      expect(members.map((member) => member.toJSON().displayLabel)).toContain(
+        'Test Person',
+      );
+    });
+
+    const memos = await ObjectRegistry.getCollection(MEMO, { db });
+    const memo = await withTenant({ tenantId }, async () => {
+      const record = await memos.create({ title: 'CLI held delete' });
+      await record.save();
+      return record;
+    });
+    const deleteName = liveTools.find((t) =>
+      /hostmemo_delete$/.test(t.name),
+    )!.name;
+    const threadId = await thread();
+    const running = turn(
+      threadId,
+      `tool ${deleteName} ${JSON.stringify({ id: memo.id })}`,
+    );
+    let approvalId = '';
+    await vi.waitFor(async () => {
+      const records = await (await chat('approvals', undefined, 'GET')).json();
+      approvalId = records.approvals.find(
+        (record: { tool: string; status: string }) =>
+          record.tool === 'host_memos.delete' && record.status === 'pending',
+      )?.id;
+      expect(approvalId).toBeTruthy();
+    });
+    const authority = new OwnerApprovalAuthority(
+      await createSqliteOwnerApprovalStore(db),
+      async () => true,
+    );
+    const saved = await authority.get(tenantId, approvalId);
+    expect(saved).toMatchObject({
+      args: { id: memo.id },
+      context: { threadId },
+      continuation: {
+        executor: 'model',
+        consumption: 'continuation',
+        principal: {
+          id: owner.id,
+          tenantId,
+          allowedTools: ['host_memos.delete'],
+        },
+      },
+    });
+    expect(
+      await withTenant({ tenantId }, () => memos.get(memo.id!)),
+    ).toBeTruthy();
+    const foreign = event(
+      `/api/assistant/approvals/${approvalId}/decide`,
+      'POST',
+      { approve: true },
+    );
+    (foreign.locals as { user: typeof owner }).user = {
+      ...owner,
+      id: randomUUID(),
+    };
+    expect((await request(foreign, host.assistant.handle)).status).toBe(403);
+    const foreignTenant = event(
+      `/api/assistant/approvals/${approvalId}/decide`,
+      'POST',
+      { approve: true },
+    );
+    (foreignTenant.locals as { tenantId: string }).tenantId = randomUUID();
+    expect((await request(foreignTenant, host.assistant.handle)).status).toBe(
+      403,
+    );
+    const deleted = vi.spyOn(HostMemo.prototype, 'delete');
+    expect(
+      (await chat(`approvals/${approvalId}/decide`, { approve: true })).status,
+    ).toBe(200);
+    const completed = await running;
+    expect(
+      completed.some((e) => e.type === 'error'),
+      JSON.stringify(completed),
+    ).toBe(false);
+    expect((await authority.get(tenantId, approvalId))?.status).toBe(
+      'succeeded',
+    );
+    expect(
+      await withTenant({ tenantId }, () => memos.get(memo.id!)),
+    ).toBeFalsy();
+    expect(deleted).toHaveBeenCalledTimes(1);
+    expect(
+      (await chat(`approvals/${approvalId}/decide`, { approve: true })).status,
+    ).toBe(409);
+    expect(deleted).toHaveBeenCalledTimes(1);
+    const blockedMemo = await withTenant({ tenantId }, async () => {
+      const record = await memos.create({ title: 'Revoked CLI delete' });
+      await record.save();
+      return record;
+    });
+    const blockedTurn = turn(
+      await thread(),
+      `tool ${deleteName} ${JSON.stringify({ id: blockedMemo.id })}`,
+    ).then(
+      (events) => ({ events, error: null }),
+      (error: unknown) => ({ events: null, error }),
+    );
+    let blockedId = '';
+    await vi.waitFor(async () => {
+      const records = await (await chat('approvals', undefined, 'GET')).json();
+      blockedId = records.approvals.find(
+        (record: { tool: string; status: string }) =>
+          record.tool === 'host_memos.delete' && record.status === 'pending',
+      )?.id;
+      expect(blockedId).toBeTruthy();
+    });
+    const preference = await (
+      await request(event('/api/cookbook/prebuilt'), host.prebuilt)
+    ).json();
+    expect(
+      (
+        await request(
+          event('/api/cookbook/prebuilt', 'POST', {
+            enabled: false,
+            revision: preference.revision,
+          }),
+          host.prebuilt,
+        )
+      ).status,
+    ).toBe(200);
+    const refused = await chat(`approvals/${blockedId}/decide`, {
+      approve: true,
+    });
+    expect(refused.status).toBe(500);
+    expect((await authority.get(tenantId, blockedId))?.status).toBe('failed');
+    expect((await blockedTurn).error).toBeInstanceOf(Error);
+    expect(
+      await withTenant({ tenantId }, () => memos.get(blockedMemo.id!)),
+    ).toBeTruthy();
+    expect(deleted).toHaveBeenCalledTimes(1);
   });
   it('gates REST, MCP and navigation together; preference disable closes them', async () => {
     const rest = new APIGenerator(

@@ -31,6 +31,7 @@ import {
   requiresOwnerApproval,
 } from '@happyvertical/smrt-chat';
 import {
+  type AgentCliChatBinding,
   createAgentCliTurnDriver,
   createInferenceAssistantAdapters,
 } from '@happyvertical/smrt-chat/engines';
@@ -66,7 +67,10 @@ import {
   createCookbookToolService,
   setCookbookToolService,
 } from '@happyvertical/smrt-core/cookbook/tools';
-import { MCPGenerator } from '@happyvertical/smrt-core/generators/mcp';
+import {
+  MCPGenerator,
+  type MCPTool,
+} from '@happyvertical/smrt-core/generators/mcp';
 import { APIGenerator } from '@happyvertical/smrt-core/generators/rest';
 import {
   createCookbookRuntimeExposure,
@@ -260,6 +264,8 @@ export function createCookbookHost(options: CookbookHostOptions) {
   const turns = new Map<
     string,
     {
+      id: string;
+      approvalRequired(id: string): void;
       context: AssistantRequestContext;
       turn: Parameters<
         Parameters<typeof createAgentCliTurnDriver>[0]['bind']
@@ -332,11 +338,18 @@ export function createCookbookHost(options: CookbookHostOptions) {
         ),
       model: async (record) =>
         executeSaved(record, async (run) => {
-          const tool = manifest(record.tenantId).find(
-            (t) => t.slug === record.tool,
-          );
-          if (!tool) throw new Error('Approved tool is no longer offered');
-          return invokeManifestTool(run, tool, record.args, {
+          const offered = (
+            await mcpModels(
+              {
+                id: record.requestedBy,
+                tenantId: record.tenantId,
+                scopes: [...run.permissions],
+              },
+              !!record.context.threadId,
+            )
+          ).find((t) => t.tool.slug === record.tool);
+          if (!offered) throw new Error('Approved tool is no longer offered');
+          return invokeManifestTool(run, offered.tool, record.args, {
             db: run.context.database ?? runtime.databaseConfig(),
           });
         }),
@@ -646,8 +659,24 @@ export function createCookbookHost(options: CookbookHostOptions) {
     buildManifestToolCatalog({ all: true }).filter((tool) =>
       isManifestToolEnabled(tool, tenantId),
     );
-  const mcpModels = async (principal: McpAppPrincipal) => {
+  const mcpModels = async (
+    principal: McpAppPrincipal,
+    placedOnly = false,
+  ): Promise<
+    Array<{
+      descriptor: MCPTool;
+      tool: ManifestTool;
+      generator: MCPGenerator;
+      noun: string | undefined;
+    }>
+  > => {
     const host = await ready();
+    const document = host.state
+      .engineFor({ tenantId: principal.tenantId })
+      ?.cookbook();
+    const shell = document
+      ? buildCookbookShell({ cookbook: document, catalog: host.catalog })
+      : undefined;
     const generator = new MCPGenerator(
       {
         classNames: host.catalog.models.map((model) => model.id),
@@ -667,6 +696,15 @@ export function createCookbookHost(options: CookbookHostOptions) {
       if ((COOKBOOK_TOOL_NAMES as readonly string[]).includes(descriptor.name))
         return [];
       const identity = generator.getToolIdentity(descriptor);
+      const entry = [...(shell?.entries.values() ?? [])].find(
+        (candidate) =>
+          ObjectRegistry.getClass(candidate.model.id)?.qualifiedName ===
+          ObjectRegistry.getClass(identity.qualifiedName ?? identity.objectName)
+            ?.qualifiedName,
+      );
+      if (placedOnly && !entry) return [];
+      if (placedOnly && entry)
+        descriptor.description += ` App list label (data): ${JSON.stringify(entry.label)}.`;
       const action = ['list', 'get'].includes(identity.action)
         ? 'read'
         : identity.action;
@@ -680,7 +718,19 @@ export function createCookbookHost(options: CookbookHostOptions) {
             )?.qualifiedName,
       );
       return tool && principal.scopes?.includes(tool.slug)
-        ? [{ descriptor, tool, generator }]
+        ? [
+            {
+              descriptor,
+              tool,
+              generator,
+              noun: entry
+                ? (shell?.layout?.items?.[entry.id]?.singularLabel ??
+                  (shell?.layout?.items?.[entry.id]?.label
+                    ? entry.label
+                    : (entry.noun ?? entry.label)))
+                : undefined,
+            },
+          ]
         : [];
     });
   };
@@ -710,10 +760,32 @@ export function createCookbookHost(options: CookbookHostOptions) {
         ),
     }));
   };
-  const allowed = async (context: AssistantRequestContext) => [
-    ...manifest(context.principal.tenantId).map((t) => t.slug),
-    ...(await extra(context)).map((t) => t.slug),
-  ];
+  const allowed = async (context: AssistantRequestContext) => {
+    const host = await ready();
+    const engine = await host.state.engine(
+      context.principal.tenantId,
+      context.principal.userId,
+    );
+    const tools =
+      engine === 'claude-code' || engine === 'codex'
+        ? (
+            await mcpModels(
+              {
+                id: context.principal.userId,
+                tenantId: context.principal.tenantId,
+                scopes:
+                  context.principal.permissions ??
+                  (context.event.locals as SmrtRuntimeLocals).permissions,
+              },
+              true,
+            )
+          ).map((t) => t.tool)
+        : manifest(context.principal.tenantId);
+    return [
+      ...tools.map((t) => t.slug),
+      ...(await extra(context)).map((t) => t.slug),
+    ];
+  };
   const adapters = createInferenceAssistantAdapters({
     binding: async (c) =>
       (await ready()).state
@@ -745,12 +817,18 @@ export function createCookbookHost(options: CookbookHostOptions) {
             throw new Error('Owner required');
           const local = await runtime.localRuntime();
           const holder = `assistant-${randomUUID()}`;
+          const listeners = new Set<
+            Parameters<AgentCliChatBinding['approvals']['subscribe']>[0]
+          >();
           let tokenHash: string | undefined;
-          const models = await mcpModels({
-            id: context.principal.userId,
-            tenantId: context.principal.tenantId,
-            scopes: [...(turn.permissions ?? [])],
-          });
+          const models = await mcpModels(
+            {
+              id: context.principal.userId,
+              tenantId: context.principal.tenantId,
+              scopes: [...(turn.permissions ?? [])],
+            },
+            true,
+          );
           const names = new Map([
             ...models
               .filter((t) => turn.tools.some((v) => v.slug === t.tool.slug))
@@ -769,9 +847,20 @@ export function createCookbookHost(options: CookbookHostOptions) {
           return {
             mcpUrl: new URL('/mcp', context.event.url).href,
             canonicalToolName: (name) => names.get(name),
+            describeTool: (name, args, outcome) => {
+              const model = models.find((entry) => entry.tool.slug === name);
+              return describeAssistantTool(
+                model?.noun
+                  ? `${toSnakeCase(model.noun).toLowerCase()}.${model.tool.action}`
+                  : name,
+                args,
+                outcome,
+              );
+            },
             allowTool: (name) => names.has(name),
             approvals: {
               subscribe: (listener) => {
+                listeners.add(listener);
                 let disposed = false;
                 let polling = false;
                 const poll = async () => {
@@ -789,7 +878,9 @@ export function createCookbookHost(options: CookbookHostOptions) {
                       if (
                         !disposed &&
                         record.requestedBy === context.principal.userId &&
-                        record.context.threadId === turn.thread?.id
+                        record.context.cliTurnId === holder &&
+                        record.context.threadId === turn.thread?.id &&
+                        record.status !== 'pending'
                       )
                         listener({
                           id: record.id,
@@ -813,6 +904,7 @@ export function createCookbookHost(options: CookbookHostOptions) {
                 }, 100);
                 return () => {
                   disposed = true;
+                  listeners.delete(listener);
                   clearInterval(timer);
                 };
               },
@@ -823,6 +915,7 @@ export function createCookbookHost(options: CookbookHostOptions) {
                 );
                 return record &&
                   record.requestedBy === context.principal.userId &&
+                  record.context.cliTurnId === holder &&
                   record.context.threadId === turn.thread?.id
                   ? {
                       id,
@@ -858,7 +951,15 @@ export function createCookbookHost(options: CookbookHostOptions) {
                     );
                   }
                   tokenHash = digest(token);
-                  turns.set(tokenHash, { context, turn });
+                  turns.set(tokenHash, {
+                    context,
+                    turn,
+                    id: holder,
+                    approvalRequired: (id) => {
+                      for (const listener of listeners)
+                        listener({ id, status: 'pending' });
+                    },
+                  });
                   return token;
                 },
                 revoke: async () => {
@@ -896,7 +997,7 @@ export function createCookbookHost(options: CookbookHostOptions) {
     },
     describeTool: describeAssistantTool,
     systemPrompt:
-      'Help the owner work with their business records and installed recipes. Use the provided tools. A customer is a Customer linked to their Profile name; never create a Bot for a customer.',
+      "Help the owner work with their business records and installed recipes. Use only the provided tools and their inline inputs. Claim an operation only when it is offered for that list. When deletion is absent, explain the available update or custom actions from that list's tool schemas instead; never invent a delete operation or require the person to manage internal identity records.",
     ...options.assistant,
   });
 
@@ -954,7 +1055,14 @@ export function createCookbookHost(options: CookbookHostOptions) {
     const p = resolveAssistantPrincipalFromLocals(event.locals);
     const onboarding =
       p && host.onboarding ? await host.onboarding.load(event) : null;
-    const offered = p ? manifest(p.tenantId) : [];
+    const allowedSlugs = p
+      ? new Set(
+          await allowed({ event, principal: p } as AssistantRequestContext),
+        )
+      : new Set<string>();
+    const offered = p
+      ? manifest(p.tenantId).filter((t) => allowedSlugs.has(t.slug))
+      : [];
     const extras = p
       ? await host.service.list({
           surface: 'assistant',
@@ -1003,8 +1111,16 @@ export function createCookbookHost(options: CookbookHostOptions) {
               ...new Set(
                 offered
                   .map((t) => t.action)
-                  .filter((a) =>
-                    ['read', 'create', 'update', 'delete'].includes(a),
+                  .filter(
+                    (a) =>
+                      ['read', 'create', 'update', 'delete'].includes(a) &&
+                      offered.every((tool) =>
+                        offered.some(
+                          (candidate) =>
+                            candidate.collection === tool.collection &&
+                            candidate.action === a,
+                        ),
+                      ),
                   ),
               ),
               ...(extras.some((t) => t.name === 'app.addList')
@@ -1187,7 +1303,7 @@ export function createCookbookHost(options: CookbookHostOptions) {
             await prepare(principal.tenantId!);
             const scope = new Set(bound?.scopes ?? []);
             const modelTools = (
-              await mcpModels({ ...principal, scopes: [...scope] })
+              await mcpModels({ ...principal, scopes: [...scope] }, !!binding)
             ).filter(
               (t) =>
                 !binding ||
@@ -1284,6 +1400,7 @@ export function createCookbookHost(options: CookbookHostOptions) {
                       context: binding?.turn.thread
                         ? {
                             principal: binding.context.principal,
+                            cliTurnId: binding.id,
                             threadId: binding.turn.thread.id,
                             agentSessionId: binding.turn.thread.agentSessionId,
                             originMessageId: binding.turn.originMessageId,
@@ -1292,30 +1409,33 @@ export function createCookbookHost(options: CookbookHostOptions) {
                             permissionCeiling: binding.turn.permissions ?? [
                               ...scope,
                             ],
-                            driver: 'builtin',
+                            driver: 'external',
                           }
                         : {},
                     };
-                    const hold = binding?.turn.thread
-                      ? await host.authority.request(input)
-                      : await host.continuations.capture(
-                          {
-                            id: caller.id,
-                            tenantId: caller.tenantId,
-                            permissions: [...(caller.scopes ?? [])],
-                            allowedTools: [spec.slug],
-                          },
-                          () =>
-                            host.continuations
-                              .adapter('model', 'continuation')
-                              .request(input),
-                        );
+                    const hold = await host.continuations.capture(
+                      {
+                        id: caller.id,
+                        tenantId: caller.tenantId,
+                        permissions: [...(caller.scopes ?? [])],
+                        allowedTools: [spec.slug],
+                      },
+                      () =>
+                        host.continuations
+                          .adapter('model', 'continuation')
+                          .request(input),
+                    );
                     const result = {
                       status: 'approval_required',
                       approvalId: hold.id,
                       summary: hold.summary,
-                      outcomeTool: 'owner_approval_outcome',
+                      ...(!binding
+                        ? { outcomeTool: 'owner_approval_outcome' }
+                        : {}),
                     };
+                    // Publish the canonical persisted hold before the fast MCP
+                    // response can outrun the background status poll.
+                    binding?.approvalRequired(hold.id);
                     return {
                       content: [{ type: 'text', text: JSON.stringify(result) }],
                       structuredContent: result,
@@ -1367,6 +1487,7 @@ export function createCookbookHost(options: CookbookHostOptions) {
               };
             });
             if (
+              !binding &&
               (
                 await host.authority.list(
                   { id: principal.id!, tenantId: principal.tenantId! },

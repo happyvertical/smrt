@@ -403,9 +403,36 @@ MCP surface and must not inflate the token request (local tokens keep their
 The host stub regression asserts API-only deletes are absent from that bridge;
 package MCP restrictions remain in force.
 
-Yoga Studio's Customer omits public MCP delete, so this bridge cannot offer its
-delete even though the built-in chat API dispatcher can hold it. Do not widen
-that package's MCP surface to obtain CLI parity. A separate private, turn-bound
-assistant approval workflow over the existing durable authority is the proposed
-extension; it must preserve the original permission ceiling and expose no raw
-delete on the public MCP surface. This boundary is recorded as a live QA gap.
+Yoga Studio's Customer omits public MCP delete; the bridge never widens it.
+CLI turn tokens and tool lists use the selected cookbook's existing shell
+placements, so dependency-only identity models remain available to framework
+lookups without being offered as model-facing lists. Same-name app replacements
+are matched through the registry's qualified identity. Inline Customer contact
+inputs come from the existing write-through schema and ordinary save path.
+
+The CLI path now captures thread-bound destructive MCP calls through the same
+OwnerApprovalContinuations adapter as non-thread MCP. The existing chat owner
+decision route resumes them with the original argument/permission ceiling, and
+the executor rechecks the live MCP offer as well as permissions before effects.
+No raw delete, new dispatch authority, route or approval store is added. The
+driver observes the persisted outcome; a second decision cannot execute again.
+The host publishes a persisted pending hold synchronously before returning its
+MCP response; only terminal states are polled. This fixes a fast-response race
+that reached chat's protected-result guard before the 100 ms poll. Observers are
+bound to a random turn holder as well as the original thread/user/tenant, so an
+unrelated hold cannot satisfy the wait. Approval ids from model output remain
+unauthoritative. The extended CLI cases failed at that guard before this fix.
+
+The per-turn `describeTool` callback reuses chat's existing label mechanism with
+the shell's selected noun/label; successful inline create therefore says
+“Added member Test Person” without exposing internal Profile identities. The
+introduction reports only operations common to its offered lists, and model
+guidance limits claims/alternatives to each live tool schema. It cannot promise
+deletion for every list merely because one exposed list supports it.
+
+Both stub CLI host cases check inline name/email/phone creation, inherited
+contact-name projection, hidden prerequisite offerings, the canonical alias
+mapping, recipe vocabulary, thread-bound continuation context, foreign-owner
+refusal and one delete after approval with a refused repeat. Existing explicit
+STI/replacement, reference-picker and restart/permission-revocation cases remain
+intact; no separate model/reference dispatcher is introduced.
