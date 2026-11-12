@@ -2,9 +2,10 @@ import { randomUUID } from 'node:crypto';
 import { existsSync, unlinkSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
+import type { Worker } from 'node:worker_threads';
 import { getTestDatabase } from '@happyvertical/smrt-core';
 import type { DatabaseInterface } from '@happyvertical/sql';
-import { afterEach, describe, expect, it } from 'vitest';
+import { afterEach, describe, expect, it, vi } from 'vitest';
 import { createTaskRunner } from '../runner.js';
 import { SmrtWorkerCollection } from '../smrt-worker.js';
 import { runLivenessTicker } from '../worker-liveness-ticker.js';
@@ -137,6 +138,34 @@ describe('off-loop liveness (Stage 2)', () => {
     expect(existsSync(new URL(resolved))).toBe(true);
   });
 
+  it('stop() lets the liveness thread exit on its own instead of terminating it (#4865)', async () => {
+    const dbUrl = tmpDbUrl('liveness-exit');
+    dbPaths.push(dbUrl.replace('file:', ''));
+    const db = await getTestDatabase({ type: 'sqlite', url: dbUrl });
+
+    const runner = createTaskRunner({
+      pollInterval: 1_000,
+      leaseTickMs: 40,
+      leaseTtlMs: 10_000,
+    });
+    await runner.initialize(db);
+    await runner.start();
+
+    const worker = (runner as unknown as { livenessWorker: Worker | null })
+      .livenessWorker as Worker;
+    expect(worker).not.toBeNull();
+    const terminate = vi.spyOn(worker, 'terminate');
+    const exitCode = new Promise((resolve) => worker.once('exit', resolve));
+
+    await runner.stop();
+
+    // A thread that drained its own event loop exits with 0; terminate()
+    // would report 1. Terminating a thread with a pending crypto completion
+    // aborts the process on Node 24 and 26.
+    expect(await exitCode).toBe(0);
+    expect(terminate).not.toHaveBeenCalled();
+  });
+
   it('falls back to main-loop renewal when the liveness thread dies', async () => {
     const dbUrl = tmpDbUrl('liveness-fallback');
     dbPaths.push(dbUrl.replace('file:', ''));
@@ -152,16 +181,20 @@ describe('off-loop liveness (Stage 2)', () => {
 
     try {
       const internals = runner as unknown as {
-        livenessWorker: { terminate(): Promise<number> } | null;
+        livenessWorker: Worker | null;
         leaseTimer: unknown;
         workerKey: string;
       };
       expect(internals.livenessWorker).not.toBeNull();
       expect(internals.leaseTimer).toBeNull();
 
-      // Simulate the thread dying: terminate it; the 'exit' handler should
-      // start main-loop renewal.
-      await internals.livenessWorker?.terminate();
+      // Simulate the thread dying behind the runner's back: make it exit on
+      // its own; the 'exit' handler should start main-loop renewal. Not
+      // terminate(): that can abort the whole test process (smrt#4865).
+      const worker = internals.livenessWorker as Worker;
+      const exited = new Promise((resolve) => worker.once('exit', resolve));
+      worker.postMessage('stop');
+      await exited;
 
       // Wait for the exit event + fallback to engage.
       const deadline = Date.now() + 2_000;

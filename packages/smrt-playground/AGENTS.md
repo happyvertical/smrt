@@ -95,6 +95,6 @@ with `update_visual_baselines=true`, download `playground-visual-baselines` into
 `packages/smrt-playground/e2e/__screenshots__/`, inspect the changed PNGs, rerun
 comparison and commit explicit baseline paths alongside the intentional change.
 The workflow never commits or approves its own updates. PR runs always compare.
-Because `pull_request_target` loads trusted base YAML, workflow edits take effect
-for PR events after merging; manual dispatch on the feature branch can exercise
-the new visual job before that. Wave-2 changes should cite the job/run URL.
+PR validation runs on `pull_request` (#4881), so a same-repository PR's
+workflow edits take effect on its own PR events; manual dispatch on the feature
+branch can also exercise the visual job. Wave-2 changes should cite the job/run URL.

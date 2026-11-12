@@ -170,6 +170,34 @@ export interface TaskRunnerEvents {
  * falling back to main-loop renewal (guards against a hung connect in-thread).
  */
 const LIVENESS_THREAD_START_TIMEOUT_MS = 10000;
+/**
+ * Max time to wait for a liveness thread that has been asked to stop (or has
+ * already failed) to exit on its own before terminating it.
+ */
+const LIVENESS_THREAD_EXIT_TIMEOUT_MS = 5000;
+
+/**
+ * Wait (bounded) for a liveness thread to exit on its own; terminate it only
+ * if it does not. Never terminate first: Node aborts the whole process when a
+ * worker is terminated while a crypto job's completion is still pending, and
+ * the SDK starts one when the thread imports it (smrt#4865).
+ */
+async function retireLivenessWorker(
+  worker: Worker,
+  exited: Promise<void>,
+): Promise<void> {
+  let timer: ReturnType<typeof setTimeout> | undefined;
+  const exitedInTime = await Promise.race([
+    exited.then(() => true),
+    new Promise<boolean>((resolve) => {
+      timer = setTimeout(() => resolve(false), LIVENESS_THREAD_EXIT_TIMEOUT_MS);
+      if (typeof timer.unref === 'function') timer.unref();
+    }),
+  ]);
+  clearTimeout(timer);
+  if (!exitedInTime) await worker.terminate().catch(() => {});
+}
+
 const DEFAULT_IDLE_POLL_INTERVAL_MULTIPLIER = 20;
 /** Ids per surplus-release statement, well under driver bind-parameter caps. */
 const SURPLUS_RELEASE_CHUNK = 500;
@@ -315,6 +343,8 @@ export class TaskRunner extends EventEmitter {
   /** Periodic system-table retention sweep, when not opted out (#2375). */
   private retentionSweeper: RetentionSweeper | null = null;
   private livenessWorker: Worker | null = null;
+  /** Resolves when {@link livenessWorker} has exited (set together with it). */
+  private livenessWorkerExited: Promise<void> | null = null;
   private shutdownPromise: Promise<void> | null = null;
   private db: DatabaseInterface | null = null;
   private logger = createLogger(true);
@@ -1671,49 +1701,61 @@ export class TaskRunner extends EventEmitter {
     } catch {
       return false;
     }
+    const exited = new Promise<void>((resolve) => {
+      worker.once('exit', () => resolve());
+    });
 
     // Bound the handshake so a hung connect inside the thread (slow/unreachable
     // database) can't stall start() forever — fall back to main-loop renewal.
-    const ready = await new Promise<boolean>((resolve) => {
-      const onMessage = (message: unknown) => {
-        if (message === 'ready') {
+    const handshake = await new Promise<'ready' | 'failed' | 'timeout'>(
+      (resolve) => {
+        const onMessage = (message: unknown) => {
+          if (message === 'ready') {
+            cleanup();
+            resolve('ready');
+          } else if (
+            message &&
+            typeof message === 'object' &&
+            (message as { type?: string }).type === 'error'
+          ) {
+            cleanup();
+            resolve('failed');
+          }
+        };
+        const onFail = () => {
           cleanup();
-          resolve(true);
-        } else if (
-          message &&
-          typeof message === 'object' &&
-          (message as { type?: string }).type === 'error'
-        ) {
+          resolve('failed');
+        };
+        const cleanup = () => {
+          clearTimeout(timer);
+          worker.off('message', onMessage);
+          worker.off('error', onFail);
+          worker.off('exit', onFail);
+        };
+        const timer = setTimeout(() => {
           cleanup();
-          resolve(false);
-        }
-      };
-      const onFail = () => {
-        cleanup();
-        resolve(false);
-      };
-      const cleanup = () => {
-        clearTimeout(timer);
-        worker.off('message', onMessage);
-        worker.off('error', onFail);
-        worker.off('exit', onFail);
-      };
-      const timer = setTimeout(() => {
-        cleanup();
-        resolve(false);
-      }, LIVENESS_THREAD_START_TIMEOUT_MS);
-      if (typeof timer.unref === 'function') timer.unref();
-      worker.on('message', onMessage);
-      worker.once('error', onFail);
-      worker.once('exit', onFail);
-    });
+          resolve('timeout');
+        }, LIVENESS_THREAD_START_TIMEOUT_MS);
+        if (typeof timer.unref === 'function') timer.unref();
+        worker.on('message', onMessage);
+        worker.once('error', onFail);
+        worker.once('exit', onFail);
+      },
+    );
 
-    if (!ready) {
+    if (handshake === 'timeout') {
+      // A hung thread will not exit on its own; terminating is the last resort.
       await worker.terminate().catch(() => {});
+      return false;
+    }
+    if (handshake === 'failed') {
+      // A failed startup leaves the thread nothing to wait on: it exits.
+      await retireLivenessWorker(worker, exited);
       return false;
     }
 
     this.livenessWorker = worker;
+    this.livenessWorkerExited = exited;
     // Don't keep the process alive on the liveness thread alone.
     worker.unref();
     // If the thread dies while we're still running, fall back to main-loop
@@ -1726,40 +1768,32 @@ export class TaskRunner extends EventEmitter {
   private handleLivenessThreadLoss(worker: Worker): void {
     if (this.livenessWorker !== worker) return;
     this.livenessWorker = null;
+    this.livenessWorkerExited = null;
     if (this.running && !this.leaseTimer) {
       this.startLeaseRenewal();
     }
   }
 
-  /** Stop the liveness thread (graceful, with a short bound), if running. */
+  /**
+   * Stop the liveness thread, if running: ask it to stop, then let it exit on
+   * its own (bounded; terminated only if it does not, see
+   * {@link retireLivenessWorker}).
+   */
   private async stopLivenessThread(): Promise<void> {
     const worker = this.livenessWorker;
-    if (!worker) return;
+    const exited = this.livenessWorkerExited;
+    if (!worker || !exited) return;
     this.livenessWorker = null;
+    this.livenessWorkerExited = null;
 
-    const stopped = new Promise<void>((resolve) => {
-      const done = () => {
-        clearTimeout(timer);
-        worker.off('message', onMessage);
-        resolve();
-      };
-      const onMessage = (message: unknown) => {
-        if (message === 'stopped') done();
-      };
-      worker.on('message', onMessage);
-      worker.once('exit', done);
-      const timer = setTimeout(done, 2000);
-      if (typeof timer.unref === 'function') timer.unref();
-    });
     try {
       // The worker may have already exited (it's unref'd and best-effort);
       // postMessage to a dead worker throws ERR_WORKER_NOT_RUNNING.
       worker.postMessage('stop');
     } catch {
-      // Nothing to ask it to do; fall through to terminate.
+      // Nothing to ask it to do; the exit wait below returns at once.
     }
-    await stopped;
-    await worker.terminate().catch(() => {});
+    await retireLivenessWorker(worker, exited);
   }
 
   /**

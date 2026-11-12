@@ -38,7 +38,7 @@ jobs:
     # validation on the same lever. Testing the event rather than merge_group
     # also keeps the workflow_dispatch escape hatch working.
     if: >-
-      github.event_name != 'pull_request_target' ||
+      github.event_name != 'pull_request' ||
       vars.CI_MERGE_QUEUE_ENABLED != 'true'
     # Linux publish validation uses the same explicit hosted runner as Required CI.
     runs-on: ubuntu-latest
@@ -298,7 +298,7 @@ jobs:
     # upstream results, so it must not consume scarce metal capacity.
     if: >-
       !cancelled() && always() &&
-      (github.event_name != 'pull_request_target' ||
+      (github.event_name != 'pull_request' ||
       vars.CI_MERGE_QUEUE_ENABLED != 'true')
     runs-on: ubuntu-latest
     timeout-minutes: 10

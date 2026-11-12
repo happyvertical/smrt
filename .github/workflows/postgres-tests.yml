@@ -6,14 +6,22 @@ name: PostgreSQL Tests
 # when the change cannot affect a suite, and fails when any package's suite
 # fails. See .github/CI.md, "PostgreSQL isolation".
 on:
-  # Loads this file from the trusted base branch, like on-pull-request.yml, so
-  # an external fork cannot rewrite runner selection or the fork guard below.
-  pull_request_target:
+  # `pull_request`, like on-pull-request.yml (#4881): GitHub blocks
+  # `pull_request_target` on public repositories from 2026-12-02. A fork run
+  # has a read-only token and no secrets; postgres-required runs the trusted
+  # approval gate for it, and its suites run only in Fork PR Validation.
+  pull_request:
     branches: [main]
     types: [opened, synchronize, reopened]
   merge_group:
     types: [checks_requested]
   workflow_call:
+    inputs:
+      fork_sandbox:
+        description: 'Fork PR Validation only: run the suites on fork code in the sandbox'
+        required: false
+        type: boolean
+        default: false
   workflow_dispatch:
   schedule:
     - cron: '0 8 * * *'
@@ -25,7 +33,7 @@ concurrency:
       github.event.merge_group.head_sha ||
       github.ref
     }}-${{ github.event_name }}
-  cancel-in-progress: ${{ github.event_name == 'pull_request_target' }}
+  cancel-in-progress: ${{ github.event_name == 'pull_request' }}
 
 env:
   FORCE_JAVASCRIPT_ACTIONS_TO_NODE24: 'true'
@@ -52,7 +60,7 @@ jobs:
       # outcome. Every other event (merge groups included) always runs.
       - name: Detect code changes
         id: filter
-        if: github.event_name == 'pull_request_target'
+        if: github.event_name == 'pull_request'
         uses: dorny/paths-filter@ceb8a2b8f2d89434be7ff52d3de7ec3738c5cc9d # v4
         with:
           predicate-quantifier: every
@@ -69,13 +77,16 @@ jobs:
           HEAD_REPO: ${{ github.event.pull_request.head.repo.full_name }}
           REPOSITORY: ${{ github.repository }}
           CODE_CHANGED: ${{ steps.filter.outputs.code }}
+          FORK_SANDBOX: ${{ inputs.fork_sandbox == true }}
         run: |
           set -euo pipefail
           trusted=true
           run=true
-          if [ "$EVENT_NAME" = pull_request_target ]; then
-            # Fork code never runs with trusted PR-head credentials.
-            if [ "$HEAD_REPO" != "$REPOSITORY" ]; then trusted=false; fi
+          if [ "$EVENT_NAME" = pull_request ]; then
+            # Fork code runs only in the sandboxed Fork PR Validation call.
+            if [ "$HEAD_REPO" != "$REPOSITORY" ] && [ "$FORK_SANDBOX" != true ]; then
+              trusted=false
+            fi
             if [ "$CODE_CHANGED" != true ]; then run=false; fi
           fi
           if [ "$trusted" != true ]; then run=false; fi
@@ -199,14 +210,17 @@ jobs:
       # workflow; here they pass only on a maintainer approval of the current
       # head (#4558, .github/CI.md).
       FORK_PR: >-
-        ${{ github.event_name == 'pull_request_target' &&
-        github.event.pull_request.head.repo.full_name != github.repository }}
+        ${{ github.event_name == 'pull_request' &&
+        github.event.pull_request.head.repo.full_name != github.repository &&
+        inputs.fork_sandbox != true }}
     steps:
+      # github.sha is the fork-controlled merge commit on `pull_request`;
+      # the gate script always comes from the PR's base commit on main.
       - name: Checkout trusted fork approval gate
         if: env.FORK_PR == 'true'
         uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7
         with:
-          ref: ${{ github.sha }}
+          ref: ${{ github.event.pull_request.base.sha }}
           persist-credentials: false
           sparse-checkout: scripts/fork-pr-approval.mjs
           sparse-checkout-cone-mode: false

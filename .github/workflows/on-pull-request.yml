@@ -7,21 +7,26 @@ on:
         description: 'Generate Linux visual baselines for download and review (never commits)'
         type: boolean
         default: false
-  # This event always loads workflow YAML from the trusted base branch, so an
-  # external fork cannot modify runner selection in its merge commit.
-  pull_request_target:
+  # `pull_request`, not `pull_request_target`, which GitHub blocks on public
+  # repositories from 2026-12-02 (#4881). GitHub loads this YAML from the PR
+  # merge commit, as merge_group already does. Fork runs get a read-only token
+  # and no secrets, need a maintainer's run approval, and their Required CI
+  # runs the approval gate from the base revision (see .github/CI.md).
+  pull_request:
     branches: [main]
     types: [opened, synchronize, reopened]
   merge_group:
     types: [checks_requested]
 concurrency:
+  # The event name keeps a run of this file from cancelling, or being
+  # cancelled by, a run of another event for the same pull request.
   group: >-
-    ${{ github.workflow }}-${{
+    ${{ github.workflow }}-${{ github.event_name }}-${{
       github.event.pull_request.number ||
       github.event.merge_group.head_sha ||
       github.ref
     }}-${{
-      github.event_name == 'pull_request_target' &&
+      github.event_name == 'pull_request' &&
       !contains(fromJSON('["opened","synchronize","reopened"]'), github.event.action) &&
       !(github.event.action == 'edited' && github.event.changes.base != null) &&
       'lifecycle' ||
@@ -35,7 +40,8 @@ env:
   # base revision; their reusable trusted-head workflows are skipped below.
   CHECKOUT_REF: >-
     ${{ github.event.pull_request.head.repo.full_name == github.repository &&
-    github.event.pull_request.head.sha || github.sha }}
+    github.event.pull_request.head.sha ||
+    github.event.pull_request.base.sha || github.sha }}
 
 permissions:
   contents: read
@@ -49,7 +55,7 @@ jobs:
     name: Validate Conventional Commits
     if: >-
       github.event_name == 'merge_group' ||
-      (github.event_name == 'pull_request_target' &&
+      (github.event_name == 'pull_request' &&
       contains(fromJSON('["opened","synchronize","reopened"]'), github.event.action))
     runs-on: ubuntu-latest
 
@@ -83,7 +89,7 @@ jobs:
 
       - name: Validate commit messages
         env:
-          # GITHUB_BASE_REF is set by GitHub for pull_request_target events
+          # GITHUB_BASE_REF is set by GitHub for pull_request events
           # and always carries a branch name (GitHub-validated).
           # Reading it into an env var keeps the shell substitution
           # out of the ${{ ... }} layer to satisfy the workflow-
@@ -104,7 +110,7 @@ jobs:
       # later inside the merge group (#2210 was ejected exactly this way:
       # derived header 121 > 100).
       - name: Validate squash-derived header (PR title)
-        if: github.event_name == 'pull_request_target'
+        if: github.event_name == 'pull_request'
         env:
           # PR titles are user-authored text; env-inject, never inline.
           PR_TITLE: ${{ github.event.pull_request.title }}
@@ -118,7 +124,7 @@ jobs:
     name: Validate Workflow Files
     if: >-
       github.event_name == 'merge_group' ||
-      (github.event_name == 'pull_request_target' &&
+      (github.event_name == 'pull_request' &&
       contains(fromJSON('["opened","synchronize","reopened"]'), github.event.action))
     runs-on: ubuntu-latest
     steps:
@@ -194,7 +200,7 @@ jobs:
     name: Check SDK Version Alignment
     if: >-
       github.event_name == 'merge_group' ||
-      (github.event_name == 'pull_request_target' &&
+      (github.event_name == 'pull_request' &&
       contains(fromJSON('["opened","synchronize","reopened"]'), github.event.action))
     runs-on: ubuntu-latest
     steps:
@@ -210,7 +216,7 @@ jobs:
     name: Secret Scan (gitleaks)
     if: >-
       github.event_name == 'merge_group' ||
-      (github.event_name == 'pull_request_target' &&
+      (github.event_name == 'pull_request' &&
       contains(fromJSON('["opened","synchronize","reopened"]'), github.event.action))
     runs-on: ubuntu-latest
     steps:
@@ -261,7 +267,7 @@ jobs:
     name: Check Monorepo Standards
     if: >-
       github.event_name == 'merge_group' ||
-      (github.event_name == 'pull_request_target' &&
+      (github.event_name == 'pull_request' &&
       contains(fromJSON('["opened","synchronize","reopened"]'), github.event.action))
     runs-on: ubuntu-latest
     timeout-minutes: 10
@@ -403,7 +409,7 @@ jobs:
     name: Dependency Vulnerability Audit
     if: >-
       github.event_name == 'merge_group' ||
-      (github.event_name == 'pull_request_target' &&
+      (github.event_name == 'pull_request' &&
       contains(fromJSON('["opened","synchronize","reopened"]'), github.event.action))
     runs-on: ubuntu-latest
     # Deliberately below the 45-minute standard: this is GitHub-hosted, so it
@@ -448,7 +454,7 @@ jobs:
     name: CI Control Plane Regression
     if: >-
       github.event_name == 'merge_group' ||
-      (github.event_name == 'pull_request_target' &&
+      (github.event_name == 'pull_request' &&
       github.event.pull_request.head.repo.full_name == github.repository &&
       contains(fromJSON('["opened","synchronize","reopened"]'), github.event.action))
     runs-on: ubuntu-latest
@@ -495,7 +501,7 @@ jobs:
     name: Validate Changes
     if: >-
       github.event_name == 'merge_group' ||
-      (github.event_name == 'pull_request_target' &&
+      (github.event_name == 'pull_request' &&
       github.event.pull_request.head.repo.full_name == github.repository &&
       contains(fromJSON('["opened","synchronize","reopened"]'), github.event.action))
     uses: ./.github/workflows/test-suite.yml
@@ -515,7 +521,7 @@ jobs:
     # #2214 item 4 lives inside publish-dry-run.yml instead.
     if: >-
       github.event_name == 'merge_group' ||
-      (github.event_name == 'pull_request_target' &&
+      (github.event_name == 'pull_request' &&
       github.event.pull_request.head.repo.full_name == github.repository &&
       contains(fromJSON('["opened","synchronize","reopened"]'), github.event.action))
     uses: ./.github/workflows/publish-dry-run.yml
@@ -530,7 +536,7 @@ jobs:
     if: >-
       github.event_name == 'workflow_dispatch' ||
       github.event_name == 'merge_group' ||
-      (github.event_name == 'pull_request_target' &&
+      (github.event_name == 'pull_request' &&
       github.event.pull_request.head.repo.full_name == github.repository)
     runs-on: ubuntu-latest
     outputs:
@@ -607,7 +613,7 @@ jobs:
     name: Detect Planner Browser Scope
     if: >-
       github.event_name == 'merge_group' ||
-      (github.event_name == 'pull_request_target' &&
+      (github.event_name == 'pull_request' &&
       github.event.pull_request.head.repo.full_name == github.repository)
     runs-on: ubuntu-latest
     timeout-minutes: 10
@@ -675,7 +681,7 @@ jobs:
     name: Detect Docs Site Scope
     if: >-
       github.event_name == 'merge_group' ||
-      (github.event_name == 'pull_request_target' &&
+      (github.event_name == 'pull_request' &&
       github.event.pull_request.head.repo.full_name == github.repository)
     runs-on: ubuntu-latest
     timeout-minutes: 10
@@ -771,14 +777,16 @@ jobs:
       # External fork PRs skip trusted validation above; they pass only on a
       # maintainer approval of the current head (#4558, .github/CI.md).
       FORK_PR: >-
-        ${{ github.event_name == 'pull_request_target' &&
+        ${{ github.event_name == 'pull_request' &&
         github.event.pull_request.head.repo.full_name != github.repository }}
     steps:
+      # github.sha is the fork-controlled merge commit on `pull_request`;
+      # the gate script always comes from the PR's base commit on main.
       - name: Checkout trusted fork approval gate
         if: env.FORK_PR == 'true'
         uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7
         with:
-          ref: ${{ github.sha }}
+          ref: ${{ github.event.pull_request.base.sha }}
           persist-credentials: false
           sparse-checkout: scripts/fork-pr-approval.mjs
           sparse-checkout-cone-mode: false
