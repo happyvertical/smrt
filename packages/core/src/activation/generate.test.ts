@@ -181,7 +181,7 @@ assert.ok(globalThis.activationImports.includes('Unused'));
     expect(child.status, child.stderr).toBe(0);
   });
 
-  it('boots the published core root without loading native activation build tooling', () => {
+  it('boots the published core root without loading SQL adapters or native activation build tooling', () => {
     const child = spawnSync(
       process.execPath,
       [
@@ -192,6 +192,7 @@ import { registerHooks } from 'node:module';
 let buildAllowed = false;
 registerHooks({ resolve(specifier, context, next) {
   if (specifier === 'oxc-transform') throw new Error('build tooling loaded at boot');
+  if (!buildAllowed && specifier === '@happyvertical/sql') throw new Error('SQL adapters loaded at boot');
   return next(specifier, context);
 }, load(url, context, next) {
   if (!buildAllowed && ['/vite-plugin/index.js', '/vite-plugin/sveltekit-generator.js', '/activation/generate.js'].some((path) => url.endsWith(path))) throw new Error('Vite plugin loaded at boot');

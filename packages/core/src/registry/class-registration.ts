@@ -899,11 +899,16 @@ function assertStiSensitivity(
     return root !== undefined && canonicalName(root) === rootName;
   };
   for (const existing of getClasses().values()) {
-    const root = rootOf(existing);
-    if (!root || !belongsToHierarchy(existing)) continue;
     // The incoming declaration replaces this member's config; comparing its
     // superseded config would falsely reject a uniform/singleton update.
     if (canonicalName(existing) === canonicalName(incoming)) continue;
+    // Matching sensitivity cannot be a conflict, regardless of ancestry. Keep
+    // the complete hierarchy walk (and fail-closed table marking) for mismatches
+    // without allocating ancestry sets for every unrelated nonsensitive class.
+    if ((existing.config.sensitive === true) === (config.sensitive === true))
+      continue;
+    const root = rootOf(existing);
+    if (!root || canonicalName(root) !== rootName) continue;
     if ((existing.config.sensitive === true) !== (config.sensitive === true)) {
       // A caller may catch registration errors; keep historical rows/signals
       // closed even then, without accepting the invalid hierarchy.
@@ -1314,7 +1319,8 @@ function registerUntracked(
   // A same-named runtime subclass on its parent's table is a replacement,
   // even with explicit package attribution. Prototype ancestry works at every
   // depth and is never inferred from the shared name/table alone.
-  for (const [key, existing] of getClasses()) {
+  for (const key of getClasses().keys()) {
+    const existing = getClasses().get(key)!;
     if (existing.name !== name || ctor === existing.constructor) continue;
     const incomingTable =
       config.tableName ??
@@ -1374,7 +1380,8 @@ function registerUntracked(
   // 2. Case-insensitive check for manifest stubs (Issue #531, #847) and
   //    other same-name-different-case collisions.
   const lowerName = name.toLowerCase();
-  for (const [existingKey, existing] of getClasses().entries()) {
+  for (const existingKey of getClasses().keys()) {
+    const existing = getClasses().get(existingKey)!;
     if (existing === isolatedSubtypeParent?.[1]) continue;
     const keyMatches = existingKey.toLowerCase() === lowerName;
     const nameMatches = existing.name?.toLowerCase() === lowerName;
@@ -2885,17 +2892,23 @@ function registerFromManifestUntracked(
   // preserving issue #951's coexistence semantics.
   // An aggregate can load the app before its upstream declaration. Retain
   // that declaration for ancestry without restoring it as an effective model.
-  const replacedBy = !runtimeOptions?.extendsRegistered
-    ? (effectiveReplacement ??
-      [...getClasses().entries()].find(
-        ([key, entry]) =>
-          entry.name === simpleClassName &&
-          isSubtypeOf(key, registrationKey) &&
-          entry.schema?.tableName ===
-            (objectDef.schema?.tableName ??
-              objectDef.decoratorConfig?.tableName),
-      )?.[1])
-    : undefined;
+  let replacedBy = runtimeOptions?.extendsRegistered
+    ? undefined
+    : effectiveReplacement;
+  if (!runtimeOptions?.extendsRegistered && !replacedBy) {
+    for (const key of getClasses().keys()) {
+      const entry = getClasses().get(key)!;
+      if (
+        entry.name === simpleClassName &&
+        isSubtypeOf(key, registrationKey) &&
+        entry.schema?.tableName ===
+          (objectDef.schema?.tableName ?? objectDef.decoratorConfig?.tableName)
+      ) {
+        replacedBy = entry;
+        break;
+      }
+    }
+  }
   const runtimeParent = runtimeOptions?.extendsRegistered
     ? (getClasses().get(runtimeOptions.extendsRegistered) ??
       replacedDeclarations().get(runtimeOptions.extendsRegistered) ??

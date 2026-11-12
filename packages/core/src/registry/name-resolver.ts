@@ -91,33 +91,29 @@ function getSimpleNameIndex(): Map<string, string[]> {
     return simpleNameIndex.keysByName;
   }
 
-  const byName = new Map<string, Map<RegisteredClass, string>>();
+  const keysByName = new Map<string, string[]>();
+  const seen = new Map<RegisteredClass, string>();
   for (const [key, value] of classes.entries()) {
     const lower = value.name?.toLowerCase();
     if (!lower) continue;
 
-    let seen = byName.get(lower);
-    if (!seen) {
-      seen = new Map<RegisteredClass, string>();
-      byName.set(lower, seen);
-    }
-
     const existing = seen.get(value);
     if (!existing) {
+      const keys = keysByName.get(lower);
+      if (keys) keys.push(key);
+      else keysByName.set(lower, [key]);
       seen.set(value, key);
       continue;
     }
 
     // Two keys for the same object: prefer the qualified form.
     if (key.includes(':') && !existing.includes(':')) {
+      const keys = keysByName.get(lower)!;
+      keys[keys.indexOf(existing)] = key;
       seen.set(value, key);
     }
   }
 
-  const keysByName = new Map<string, string[]>();
-  for (const [lower, seen] of byName) {
-    keysByName.set(lower, [...seen.values()]);
-  }
   simpleNameIndex = { generation, classes, keysByName };
   return keysByName;
 }

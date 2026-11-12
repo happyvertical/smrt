@@ -91,9 +91,18 @@ export function isSubtypeOf(child: string, ancestor: string): boolean {
 }
 /** Late intermediate manifests can connect a previously disjoint parent/leaf. */
 export function reconcileSubtypeLineage(): void {
+  if (parents().size === 0) return;
   const classes = getClasses();
+  // Only a recorded child can replace a parent. Avoid allocating a group for
+  // every unrelated class on every registration in a large cookbook.
+  const names = new Set<string>();
+  for (const key of parents().keys()) {
+    const child = classes.get(key);
+    if (child) names.add(child.name);
+  }
   const groups = new Map<string, Array<[string, RegisteredClass]>>();
   for (const pair of classes) {
+    if (!names.has(pair[1].name)) continue;
     const group = groups.get(pair[1].name) ?? [];
     group.push(pair);
     groups.set(pair[1].name, group);

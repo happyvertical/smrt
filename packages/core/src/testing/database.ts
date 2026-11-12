@@ -17,8 +17,8 @@
  */
 
 import type { DatabaseInterface } from '@happyvertical/sql';
-import { getDatabase } from '@happyvertical/sql';
 import { ensurePostgresChangeFeedAppendFunction } from '../change-feed.js';
+import { getDatabase } from '../host.js';
 import {
   type CollectionRegistrationLookup,
   isCollectionRegistration,

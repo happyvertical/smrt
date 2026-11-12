@@ -444,6 +444,19 @@ with Node >=26 `createRequire` only when called. Direct build subpaths remain
 available. Do not add a static Vite-plugin root re-export: ordinary model imports
 must not evaluate the route generator or activation build graph.
 
+Startup registration also avoids allocating per-class temporary name maps and
+unrelated subtype groups on every mutation. Alias validation takes a values-only
+scan when neither side declares aliases; declarations still run the full
+collision validation. All name indexes retain generation-based invalidation.
+`getRelationships(name)` builds only that class's relationship bucket, resolving
+targets against the complete registry. `getRelationshipMap()` still returns a
+fresh, complete mutable graph. No field metadata is frozen or shared across
+callers as a side effect of this allocation reduction.
+STI sensitivity validation walks ancestry only for a possible sensitivity
+mismatch. Mismatched hierarchies still run the complete ancestry check and
+close every known physical alias before rejecting mixed sensitivity, including
+child-first registration and caught errors.
+
 | Invariant | Reachable trigger / positive case | Negative control | Context / executor / runtime / contract | Level / validation |
 | --- | --- | --- | --- | --- |
 | Disabled declarations stay unparsed | Generated loader activates Invoice, then Unused parses its own metadata | Boot and Invoice activation never parse Unused's marker | Fresh Node process, synthetic provider/app manifests; no DB; public generated loaders | Core `activation/generate.test.ts`; full core test |

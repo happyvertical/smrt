@@ -3689,7 +3689,7 @@ export class ObjectRegistry {
   static getRelationships(className: string): RelationshipMetadata[] {
     const registered = ObjectRegistry.getClass(className);
     const key = registered?.qualifiedName || className;
-    return ObjectRegistry.getRelationshipMap().get(key) || [];
+    return _getRelationshipMap(key).get(key) || [];
   }
 
   /**

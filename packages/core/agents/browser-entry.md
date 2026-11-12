@@ -44,6 +44,14 @@ follows the same rule.
 
 ## How a Node-only dependency stays out
 
+The Node host exports synchronous query helpers from `@happyvertical/sql/query`.
+Its existing asynchronous `getDatabase` seam imports the SQL factory on first
+use, preserving the SDK's options, results and rejection. Importing the host
+alone does not resolve the SQL root or its providers. Opening SQLite still
+loads the installed SDK's public root, which statically imports `pg`; removing
+that last provider requires an SDK lazy factory or public SQLite-only factory.
+Do not reach into hashed SDK chunks to bypass the published boundary.
+
 Never import it statically from a module the browser graph reaches. Pick one:
 
 | Need | Use |
