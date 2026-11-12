@@ -54,6 +54,12 @@ export async function buildPackageForBrowser(
     name: 'smrt-browser-boundary-guard',
     enforce: 'pre',
     resolveId(source) {
+      // PGlite is the sanctioned browser database (see boundary.ts) and guards
+      // its own Node imports at runtime, so it is a leaf here whether or not a
+      // package has it installed; core's browser evaluation does the same.
+      if (/^@electric-sql\/pglite(\/|$)/.test(source)) {
+        return { id: source, external: true };
+      }
       if (!matchForbiddenModule(source)) return null;
       forbidden.add(source);
       return { id: source, external: true };
