@@ -29,6 +29,7 @@ export {
   getClassNames,
   getPublicClasses,
   getQualifiedClassNames,
+  getReplacementClassByConstructor,
   hasClass,
   hasClassCaseInsensitive,
   qualifyExtendsName,

@@ -197,6 +197,27 @@ instances and never use this path to overwrite a loaded revision.
 - `@smrt({ abstract: true })` makes a registered STI type readable but prevents saving an instance with its own discriminator. A base collection can still create a concrete descendant by passing that descendant's `_meta_type`. Generated surfaces expose only `list` and `get` for abstract models, including when custom actions were explicitly included.
 - Set `validateSubtype: true` on a foreign key or cross-package reference targeting an STI child when it must reject sibling rows. Save checks through the child's collection, and `loadRelated()` rejects a stored sibling row. The physical FK targets the shared root table, so the collection's discriminator and tenant read scope provide the subtype check. Saves fail when the subtype target cannot be loaded, even if ordinary cross-package validation is disabled.
 
+## Same-named subclass replaces its parent (#4921)
+
+An app class that extends a smrt class and declares the SAME simple name takes
+over the registry entry (`sti-child-wins`, `registry/collision-policy.ts`) and
+records the old key in `replacedQualifiedNames`. smrt's own collections follow
+it: `create()` and non-STI hydration build the app's class (`get()`/`list()` on
+a shared table already resolved by `_meta_type`), and the STI discriminator is
+the replacing class's qualified name (`@scope/pkg:Class`), so rows written
+through either collection agree. A subclass with a DIFFERENT name is a new kind
+and is not substituted; neither is an unrelated same-named class of another
+package or a class that was never replaced.
+
+- Lookup: `ObjectRegistry.getEffectiveClassByConstructor(ctor)` = live
+  `getClassByConstructor(ctor)`, else the entry whose `replacedQualifiedNames`
+  holds the key `ctor` registered under and whose constructor extends `ctor`
+  (index memoized per registry generation, #3047). Never resolve by simple name.
+- `SmrtCollection.resolveItemConstructor()` is the single place a collection
+  picks the constructor to build; `getRegisteredItemClass()` uses the same lookup.
+- Limit: a direct `new Model(...)` in a service bypasses the collection and still
+  builds the class it imported.
+
 ## Child Accessors (R10)
 
 `src/child-accessors.ts` installs a consistent `get<FieldName>()` instance method for every `@oneToMany` field at `@smrt()` registration time (e.g. `@oneToMany('OrderItem') items` → `order.getItems()`), delegating to `loadRelatedMany`. Two invariants:
