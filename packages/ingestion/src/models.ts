@@ -43,31 +43,31 @@ import { TenantScoped, tenantId } from '@happyvertical/smrt-tenancy';
 export class IntakeItem extends SmrtObject {
   @tenantId()
   tenantId: string = '';
-  @field({ type: 'text', required: true })
+  @field({ type: 'text', required: true, requiredFor: 'tenant-scope' })
   confidentialScopeId: string = '';
 
-  @field({ type: 'text', required: true })
+  @field({ type: 'text', required: true, requiredFor: 'identity' })
   sourceId: string = '';
 
   @field({ type: 'text', required: true })
   sourceVersion: string = '';
 
-  @field({ type: 'text', required: true })
+  @field({ type: 'text', required: true, requiredFor: 'identity' })
   deliveryKey: string = '';
 
-  @field({ type: 'text', required: true })
+  @field({ type: 'text', required: true, requiredFor: 'idempotency' })
   payloadDigest: string = '';
 
-  @field({ type: 'text', required: true })
+  @field({ type: 'text', required: true, requiredFor: 'idempotency' })
   scopeDigest: string = '';
 
-  @field({ type: 'text', required: true })
+  @field({ type: 'text', required: true, requiredFor: 'workflow-state' })
   receiptState: string = '';
 
-  @field({ type: 'text', required: true })
+  @field({ type: 'text', required: true, requiredFor: 'workflow-state' })
   processingState: string = '';
 
-  @field({ type: 'text', required: true })
+  @field({ type: 'text', required: true, requiredFor: 'workflow-state' })
   visibility: string = '';
 
   @field({ type: 'integer', required: true })
@@ -94,11 +94,16 @@ export class IntakeItem extends SmrtObject {
   @field({ type: 'boolean', required: true })
   cancelled: boolean = false;
 
-  @field({ type: 'text', required: true })
+  @field({ type: 'text' })
   traceId: string = '';
 
   /** Authenticated actor recorded by the server at receipt; never source metadata. */
-  @field({ type: 'text', required: true, default: '' })
+  @field({
+    type: 'text',
+    required: true,
+    requiredFor: 'identity',
+    default: '',
+  })
   submitterId: string = '';
 
   /** `<kind>:<id>` of the lifecycle owner for owner-bound retention; '' otherwise. */
@@ -333,19 +338,19 @@ export class IntakeAnalysisAttempt extends SmrtObject {
 export class IntakePlan extends SmrtObject {
   @tenantId()
   tenantId: string = '';
-  @field({ type: 'text', required: true })
+  @field({ type: 'text', required: true, requiredFor: 'tenant-scope' })
   confidentialScopeId: string = '';
 
-  @foreignKey('IntakeItem', { required: true })
+  @foreignKey('IntakeItem', { required: true, requiredFor: 'identity' })
   itemId: string = '';
 
-  @field({ type: 'text', required: true })
+  @field({ type: 'text', required: true, requiredFor: 'identity' })
   planKey: string = '';
 
   @field({ type: 'integer', required: true })
   revision: number = 0;
 
-  @field({ type: 'text', required: true })
+  @field({ type: 'text', required: true, requiredFor: 'idempotency' })
   digest: string = '';
 
   @field({ type: 'json', required: true })
@@ -550,13 +555,13 @@ export class IntakeReviewDecision extends SmrtObject {
 export class IntakeExecution extends SmrtObject {
   @tenantId()
   tenantId: string = '';
-  @field({ type: 'text', required: true })
+  @field({ type: 'text', required: true, requiredFor: 'tenant-scope' })
   confidentialScopeId: string = '';
 
-  @foreignKey('IntakeItem', { required: true })
+  @foreignKey('IntakeItem', { required: true, requiredFor: 'identity' })
   itemId: string = '';
 
-  @foreignKey('IntakeAction', { required: true })
+  @foreignKey('IntakeAction', { required: true, requiredFor: 'identity' })
   actionId: string = '';
 
   @field({ type: 'integer', required: true })
@@ -565,7 +570,7 @@ export class IntakeExecution extends SmrtObject {
   @field({ type: 'integer', required: true })
   fence: number = 0;
 
-  @field({ type: 'text', required: true })
+  @field({ type: 'text', required: true, requiredFor: 'workflow-state' })
   state: string = '';
 
   @field({ type: 'text', required: true })
@@ -574,7 +579,7 @@ export class IntakeExecution extends SmrtObject {
   @field({ type: 'text', required: true })
   resultDigest: string = '';
 
-  @field({ type: 'text', required: true })
+  @field({ type: 'text', required: true, requiredFor: 'idempotency' })
   idempotencyKey: string = '';
 
   @field({ type: 'json', required: true })
@@ -609,19 +614,19 @@ export class IntakeExecution extends SmrtObject {
 export class IntakeFeedback extends SmrtObject {
   @tenantId()
   tenantId: string = '';
-  @field({ type: 'text', required: true })
+  @field({ type: 'text', required: true, requiredFor: 'tenant-scope' })
   confidentialScopeId: string = '';
 
-  @foreignKey('IntakeItem', { required: true })
+  @foreignKey('IntakeItem', { required: true, requiredFor: 'identity' })
   itemId: string = '';
 
-  @field({ type: 'text', required: true })
+  @field({ type: 'text', required: true, requiredFor: 'identity' })
   requestKey: string = '';
 
   @foreignKey('IntakeFeedback', { nullable: true })
   supersedesId: string | null = null;
 
-  @field({ type: 'text', required: true })
+  @field({ type: 'text', required: true, requiredFor: 'identity' })
   kind: string = '';
 
   @field({ type: 'json', required: true })
