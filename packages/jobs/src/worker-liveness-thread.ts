@@ -20,6 +20,11 @@ async function main(): Promise<void> {
     if (message === 'stop') {
       await ticker.stop();
       parentPort?.postMessage('stopped');
+      // Let the thread exit by draining its own event loop instead of being
+      // terminated: terminate() while a crypto job's completion is still
+      // pending (the SDK starts one at import) aborts the whole process
+      // (smrt#4865).
+      parentPort?.unref();
     }
   });
 
