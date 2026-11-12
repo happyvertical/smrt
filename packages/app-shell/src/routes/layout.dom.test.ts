@@ -544,6 +544,36 @@ describe('draft controls in the content column', () => {
     );
   });
 
+  it('keeps review unreachable throughout a delayed draft start and enables it after readiness', async () => {
+    const state = layoutState(data());
+    const fetcher = vi.mocked(fetch);
+    const original = fetcher.getMockImplementation();
+    let finish!: (response: Response) => void;
+    const started = new Promise<Response>((resolve) => {
+      finish = resolve;
+    });
+    fetcher.mockImplementation(async (path, init) => {
+      if (String(path).startsWith('/api/shell/draft?')) return started;
+      return original!(path, init);
+    });
+    navigation.invalidateAll.mockImplementation(async () => {
+      state.description = draftDescription();
+    });
+    await render(state);
+    button('Start draft')?.click();
+    await tick();
+    expect(button('Start draft')?.disabled).toBe(true);
+    expect(q('a[href="/draft/review"]')).toBeNull();
+    // A layout refresh may learn about the draft before the start request resolves.
+    state.description = draftDescription();
+    await tick();
+    expect(q('a[href="/draft/review"]')).toBeNull();
+    finish(new Response(JSON.stringify(draftInfo)));
+    await vi.waitFor(() => expect(q('a[href="/draft/review"]')).toBeTruthy());
+    expect(container.textContent).not.toContain('no draft open');
+    expect(q('[role="alert"]')).toBeNull();
+  });
+
   it('shows the switch, count, actions, warning, sidebar new marker and chat badge', async () => {
     await render(draftData());
     expect(button('Draft')?.getAttribute('aria-pressed')).toBe('true');

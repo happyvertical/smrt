@@ -104,3 +104,9 @@ message. Record input limits are unchanged.
 Report key renames change the report's link. Draft review, History and tool
 summaries say this using the report label; visible renames use labels on both
 sides and never display the key.
+
+Draft review rechecks the server's current draft after the parent layout loads,
+so layout data fetched during a draft start cannot produce a false no-draft
+screen. With no open draft the loader redirects home and the component never
+requests a preview. The draft bar keeps review links disabled through the
+start request and view refresh.
