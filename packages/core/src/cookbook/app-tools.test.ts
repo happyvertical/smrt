@@ -1,4 +1,4 @@
-/** C6: one tool service, real editor/approvals, SQLite and existing generated transports. */
+/** C6: one tool service, real editor/approvals and existing generated transports. */
 import { randomUUID } from 'node:crypto';
 import type { Cookbook } from '@happyvertical/smrt-types';
 import type { DatabaseInterface } from '@happyvertical/sql';
@@ -52,6 +52,8 @@ import {
   setCookbookToolService,
 } from './tools.js';
 
+const databaseType = process.env.SMRT_TEST_PGLITE === '1' ? 'pglite' : 'sqlite';
+const engineHint = databaseType === 'pglite' ? 'postgres' : 'sqlite';
 const APP = '@fixture/c6-app';
 const CUSTOMER = '@fixture/c6-upstream:Customer';
 const TENANT = randomUUID();
@@ -117,7 +119,7 @@ beforeEach(async () => {
   });
   enableTenancy();
   db = await getTestDatabase({
-    type: 'sqlite',
+    type: databaseType,
     url: ':memory:',
     classes: [
       CUSTOMER,
@@ -382,10 +384,15 @@ describe('app customization tools', () => {
     expect(
       (
         await db.query(
-          'SELECT membership_fee, typeof(membership_fee) AS storage FROM c6_customers',
+          databaseType === 'pglite'
+            ? 'SELECT membership_fee, pg_typeof(membership_fee)::text AS storage FROM c6_customers'
+            : 'SELECT membership_fee, typeof(membership_fee) AS storage FROM c6_customers',
         )
       ).rows[0],
-    ).toMatchObject({ membership_fee: 2500, storage: 'integer' });
+    ).toMatchObject({
+      membership_fee: 2500,
+      storage: databaseType === 'pglite' ? 'bigint' : 'integer',
+    });
     expect(
       (
         await rest(
@@ -981,7 +988,10 @@ describe('app customization tools', () => {
     });
     await migrateSmrtSchemas({
       db,
-      engineHint: 'sqlite',
+      engineHint,
+      ...(databaseType === 'pglite'
+        ? { atomic: true, postgresSafe: false, useConcurrentIndexes: false }
+        : {}),
       packageName: '@fixture/c6-profiles',
       tables: new Set(['c6_profiles']),
     });

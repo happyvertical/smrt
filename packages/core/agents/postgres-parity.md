@@ -1,6 +1,7 @@
 # Plebeos PostgreSQL parity
 
-Run the same capability suites through SDK SQLite (default) and SDK PGlite:
+Build first, then run the same capability suites through SDK SQLite (default)
+and SDK PGlite (real PostgreSQL in process):
 
 ```sh
 pnpm --filter @happyvertical/smrt-core test:pglite
@@ -8,156 +9,143 @@ pnpm --filter @happyvertical/smrt-commerce test:pglite
 pnpm --filter @happyvertical/smrt-app-runtime test:pglite
 ```
 
-Build the workspace first. These commands set `SMRT_TEST_PGLITE=1`; they need no
-services, containers or ports. Core/commerce `test:postgres` also run this matrix
-after their server suites; runtime `test:postgres` runs its PGlite lane. The
-runner reuses the browser QA peer fixture, installing the pinned SDK and PGlite
-from its isolated lockfile. It leaves the workspace's browser dependency graph
-unchanged. `getTestDatabase({ type: 'pglite' })` emits PostgreSQL DDL, including
-native UUID identities/references and BIGINT integers, with fresh `memory://`
-instances. `:memory:` is normalized only for that test adapter. An explicit file
-URL still permits close/reopen tests. PGlite has PostgreSQL SQL/transaction
-semantics but remains embedded for write serialization and revision fallback.
+These opt-in commands need no services, containers or ports. Core/commerce
+`test:postgres` append this matrix to their server suites; runtime uses it as
+its PostgreSQL lane. The runner reuses the isolated browser peer fixture and
+its pinned SDK/PGlite lockfile, preserving the workspace's browser dependency
+boundary. It checks that the SDK pin matches the workspace. Default tests do
+not load PostgreSQL/WASM. Fresh `memory://` handles have separate caches;
+explicit file URLs support close/reopen recovery.
 
-| Capability | SQLite | In-process PostgreSQL evidence |
+| Capability | SQLite | PostgreSQL in-process |
 | --- | --- | --- |
-| Same-name app subclass | Full existing suite | Eager plain/STI/CTI, custom-column migration, REST/MCP, relationships, labels; UUID id and >int4 BIGINT hydration |
-| One-hop labels | Full existing suite | Native UUID joins; opaque text references cast the target id; scoped list/get/search/sort/count, fallback, policy denials and ETags |
-| Inline contacts | Full commerce suite | Atomic name/email/metadata-phone writes, rollback/retry, tenant isolation, no N+1 projections and absent optional metadata tables |
-| Runtime exposure | Full existing suite | Live REST/MCP closures and tenant gates; retained handlers fail closed |
-| Cookbook tools | Full existing suite | Eager enable/configure/apply, durable approval, initial empty-app shortcut, CAS/audit rollback; six lazy-specific cases intentionally SQLite-only |
-| Owner approvals/continuations | Full existing suite | Real ApprovalService ledger, concurrent decision/consume, owner revalidation, expiry, settled observation, close/reopen and original caller/result |
-| Lazy activation | Supported | Explicit refusal, before imports/DDL/readiness |
-| Live app model editor/history | Supported | Explicit refusal, before history/DDL/host publication |
+| Same-name app subclass | Pass | Eager and lazy plain/STI/CTI, custom-column migration, REST/MCP, labels and relationships; native UUID and >int4 BIGINT hydration |
+| One-hop labels | Pass | Native UUID joins, opaque text references, scoped list/get/search/sort/count, fallback, policy denials and ETags |
+| Inline contacts | Pass | Atomic name/email/phone writes, rollback/retry, tenant isolation and bounded list projections |
+| Runtime exposure | Pass | Live REST/MCP tenant gates and retained-handler refusal |
+| Cookbook tools | Pass | Eager and lazy enable/configure/apply, owner holds, empty-app shortcut, CAS/audit failure and retry |
+| Owner approvals/continuations | Pass | Canonical ApprovalService, concurrent decision/consume, owner revalidation, expiry, restart and original-caller result |
+| Lazy activation | Pass | Fresh transaction-bound inspection, atomic subset DDL/marker, concurrent first use, rollback/retry and restart |
+| App editor/history | Pass | Every field type, list/reference CRUD, label rename, hide/remove, ordered history, undo/import/restart, revision fencing and pending publication recovery |
+| Hosted onboarding/credentials | Local-only host | Outside this feature; the host intentionally remains local-only |
 
-The `like` operator retains SQL LIKE semantics: SQLite's default ASCII folding
-and PostgreSQL's case-sensitive comparison. This is the existing documented
-operator contract, not an ILIKE claim. Case-insensitive portable search needs the
-SDK query contract (sdk#1192), rather than regex rewriting generated SQL. Explicit
-`NULLS FIRST`/`NULLS LAST` terms retain the existing bounded sort parser contract.
+SQL `like` retains its existing semantics: SQLite ASCII folding versus
+PostgreSQL case-sensitive LIKE. Portable ILIKE requires the SDK query contract
+(sdk#1192), not rewriting SQL. Explicit NULLS FIRST/LAST remains supported.
+Person-created `order`, `group`, `from`, `to` fields are rejected with descriptive
+alternatives until sdk#1513; the SDK is not patched here.
 
-## Why live PostgreSQL activation remains refused
+## PostgreSQL migration scope
 
-The process queue only serializes one process. PostgreSQL needs an advisory lock
-covering **fresh schema inspection, planning, DDL and migration recording** on the
-same connection; DDL and the completion marker must commit together, before
-readiness opens. The current orchestrator inspects before the tracker transaction.
-SDK 0.111.10 transaction handles and acquired sessions lack `getTableSchema()`;
-using the pooled root for inspection while holding a transaction can inspect a
-different snapshot or deadlock a one-connection pool/PGlite. Copying the SDK's
-introspector or locking one session while doing DDL elsewhere is not a safe fix.
+`schema/inspection.ts` exports `inspectTableSchema(db, table, engine)` through
+`./schema`. It reuses a supplied public adapter inspector. PostgreSQL transaction
+handles without that method read pg_catalog through their own `query()`:
+columns/defaults/primary keys, ordered indexes/predicates and FK actions. Names
+are parameters in the transaction fallback, including quoted identifiers, within
+the existing public-schema migration contract. Adapter inspectors retain their
+own identifier validation.
+No pooled/root handle is borrowed to inspect uncommitted DDL. SchemaComparer
+uses this fallback; table/predicate catalogs retain their public-schema scope.
 
-Needed: SDK transaction-bound schema inspection, then a public migration scope
-that takes a bounded transaction advisory lock before diffing and atomically
-applies the subset and tracker marker, with multi-session race/crash tests on a
-real server. Existing int4 columns stay parity-equivalent to int8; live activation
-must never run `db:migrate-int8`, which requires a maintenance window. Until then,
-use eager registration plus operator-run `migrateSmrtSchemas`/`smrt db:migrate`
-before serving PostgreSQL applications.
+Activation imports and validates its declared closure in the existing process
+queue. PostgreSQL then uses `runSerializedAgainstSystemTableBootstrap` for a
+bounded transaction advisory lock. The **fresh diff**, ordinary transactional
+DDL and MigrationTracker completion marker use that same connection. Readiness
+opens after commit. Independent coordinators re-diff committed tables and do not
+reapply DDL. Failed DDL rolls back the application subset and its marker; retry
+reuses loaded modules. Runtime record initialization still checks tables only.
 
-The app editor additionally replaces process-global registry state before
-migration/publication and coordinates only through an in-process queue. It needs
-cross-process revision fencing, pending-revision recovery and refresh of every
-writer before opening new fields. SQL history portability alone would not make
-that contract safe. Keep explicit editor/history refusal, and use static app
-subclasses with ordinary migrations/restart for PostgreSQL custom fields/lists.
-DuckDB live activation/editor remain refused; existing eager DuckDB support is
-unchanged.
+Live migrations use `atomic: true`, `postgresSafe: false` and ordinary indexes;
+CONCURRENTLY cannot run in this transaction. Eager/operator migration defaults
+remain unchanged. Manual drift still refuses before DDL. Existing int4 columns
+remain parity-equivalent to int8: the restart test verifies they are not widened.
+`db:migrate-int8` remains an explicit maintenance-window operation. Live changes
+never invoke it. Operators must coordinate maintenance migrations with writers.
 
-## Host boundaries
+## Revision fencing and recovery
 
-The complete template cookbook host explicitly refuses non-local profiles in
-`host/server.ts`, before provisioning host state or onboarding. Its host audit
-DDL uses SQLite AUTOINCREMENT and its shared-state user key is an empty-string
-sentinel; those tables are not PostgreSQL-ready. Its onboarding/engine-selection
-state and desktop/plugin credentials therefore remain **local SQLite only**.
-A cloud host needs native UUID identities with an explicit sentinel migration,
-PostgreSQL audit identity DDL, hosted owner/credential adapters, and the live
-activation/editor work above. This slice does not change another worker's host,
-preferences or inference credential paths. Recipe-tool setup logic is tested
-through the eager PostgreSQL tool service, not claimed as a deployed onboarding
-or plugin credential test.
+The existing journal factory is now `createAppModelHistory`; the old
+`createSqliteAppModelHistory` name is an alias. PostgreSQL history has a native
+UUID tenant identity, BIGINT revisions/durations and application/tenant-scoped
+revision/request keys. Integer reads are JS-safe; PostgreSQL durations are rounded
+to whole milliseconds. Existing TEXT-identity PostgreSQL tables require an
+explicit validated migration rather than runtime type conversion.
 
-## Reuse check
+`AppModelHistoryStore.transaction(work)` binds a scoped store and executor to the
+same locked transaction. PostgreSQL custom stores must provide it; otherwise
+creation reports `MODEL_HISTORY_TRANSACTION_REQUIRED`. The editor claims the
+expected revision with the existing INSERT/SELECT CAS before changing registry
+state. That claim, the schema change and migration marker commit together. A
+stale/concurrent editor receives MODEL_EDIT_CONFLICT, never a raw uniqueness
+error, and must reopen/refresh before editing again.
 
-Read the intent index; MCP `review_smrt_project` on core, commerce, app-runtime
-and template-sveltekit; MCP architecture context for PostgreSQL/PGlite testing,
-activation locks, history and identifier validation. This server exposes context
-and project inventories rather than separate component search. `rg` searched
-smrt-ui, smrt-svelte, chat, core and the owning packages by name/purpose for
-PGlite, database helpers, projections, inline writes, approvals, continuations,
-SQL identifiers, migration sessions and onboarding storage.
+`withRuntimeSchemaActivation` reuses activation's process queue for editor
+registration/DDL/publication. `ObjectRegistry.checkpointRegistrations` rolls back
+only the edited identities and lineage after failed PostgreSQL DDL, retaining
+unrelated classes and restrictive consumer policies. Readiness and editor state
+are restored; the same failed request can retry because its journal insert also
+rolled back. Tests inject a real PostgreSQL error after earlier DDL statements
+and verify no new field, revision or completed marker survives. A separate boot
+commit-failure regression verifies registry restoration after the callback has
+already succeeded.
 
-No new production component/helper/model file was added. Extended the existing
-test database, engine detector, memory-URL predicate/caches, cookbook identifier
-validator and owner approval adapter. `createOwnerApprovalStore` is the existing
-canonical adapter with a portable name; `createSqliteOwnerApprovalStore` remains
-an alias. It reuses ApprovalService and core's serialized system-table bootstrap,
-with native UUID hold identities on PostgreSQL. New test helpers reuse the existing browser fixture provisioner:
-- `scripts/pglite-fixture.mjs` extracts the existing `provisionPglite` from
-  `browser-entry-evaluation.mjs` for both browser and Node QA.
-- `scripts/test-pglite.mjs` runs the ordinary package Vitest command with that
-  isolated SDK factory, and cleans its temporary peer installation.
+After schema commit, affected models stay gated while the host's existing
+`publish` callback runs. A callback failure leaves durable **pending** history;
+reopening replays it, completes the same revision and opens readiness. No host
+callback runs before the DDL transaction commits. Completion is fenced against
+a newer revision. This deliberately preserves the SQLite publication/recovery
+contract; SQLite retains its existing append-before-migration journal behavior.
 
-The same MCP/context and `rg` PGlite/helper/fixture queries found the provisioner;
-no parallel database adapter or SQL implementation is introduced. The other new
-file is this module doc.
-Reserved person-created fields `order`, `group`, `from`, `to` are rejected with a
-clear alternative-name message until sdk#1513 lands; the SDK is not patched here.
+Schema edits are additive: rename changes a human label; hide/remove/undo keep
+stored columns/tables and data. Stored identifier/type changes and purge still
+need an explicit data migration contract. The SQL fence coordinates writers in
+other processes; it does not broadcast registry or host-engine projections.
+Each serving process must reopen/refresh from durable history before adopting a
+new revision. A stale writer is refused. Independently customized apps must use
+separate registry namespaces/processes, as on SQLite.
 
-PGlite cannot verify server pools, independent backend advisory-lock contention,
-network commit ambiguity, RLS deployment, LISTEN/NOTIFY, or real-server concurrent
-index rollout. Keep the existing `test:postgres` lane for those server contracts.
+## Remaining boundaries
 
-## Change-specific test design
+DuckDB lazy activation/editor are explicitly refused. They have no implemented
+transaction-bound inspection/history scope or validated live ALTER/rollback
+coordinator here; PostgreSQL pg_catalog/advisory SQL cannot provide those
+contracts for DuckDB. Existing eager DuckDB behavior is unchanged.
 
-| Invariant / trigger | Positive / failure control | Actor/context | Executor/transaction | Runtime and contract edge | Level / command |
-| --- | --- | --- | --- | --- | --- |
-| Independent memory handles open collections | Fresh system tables and one-hop sources in every handle; missing optional target yields fallback; real table errors propagate | Collection caller, null owner and two UUID tenants | SDK PGlite handles; no application DDL from reads | Node 26, SQLite/PostgreSQL, REST/collection SQL | Integration: core/commerce `test:pglite`, full default suites |
-| Native identities and large integers | Subclass custom field migrated on its original table with completed durable markers; >int4 value remains a JS number; opaque display string stays TEXT | Same-name app/provider identities | Existing schema differ, atomic MigrationTracker and ordinary CRUD | SQLite/PostgreSQL, migration/REST/related-load | Integration: core `test:pglite` |
-| Inline contacts and projections | Name/email/phone atomic update, one SELECT list/count; parent write failure rolls back contact/metadata; cross-tenant edits refuse | Tenant A × target owner A/B/null × ambient/explicit tenant | Ordinary `save()` transaction; profile metafield adapter bound to parent tx | SQLite/PostgreSQL, collection/REST input and projection | Integration: commerce `test:pglite` |
-| Canonical owner holds and recovery | Approve/consume/record result once; concurrent resume has one winner; deny/expire never executes; restart uses original args/ceiling | Live owner, non-owner, foreign tenant/requester; active/inactive memberships | ApprovalService CAS/event transaction; SQL envelope result CAS | SQLite/PostgreSQL, authority/continuation | Integration: runtime `test:pglite` |
-| Native hold storage | UUID id/tenant/gate columns; legacy TEXT identity table explicitly refuses | Trusted host adapter setup; no user-supplied schema | Existing serialized system-bootstrap scope; no application-table provisioning | PostgreSQL, portable adapter and compatibility alias | Integration: runtime `test:pglite` |
-| Person-created SQL fields | Descriptive custom names remain valid; order/group/from/to rejected before journal mutation | Owner editor and cookbook importer | Browser-safe validation before DDL/history | All engines, cookbook import/editor tools | Unit/integration: models + app-model-editor in core suites |
-| Unsupported live DDL | SQLite activation/editor retain full recovery coverage; real PGlite refuses without queries, imports or host publication | Host coordinator/editor; no tenant authority gained by readiness | No SQL on refusal | PostgreSQL; no readiness, history or application schema mutation | Integration: activation + app-model-editor `test:pglite` |
+Hosted onboarding and credentials remain outside scope: the template host is
+local-only by design. No hosted storage/credential adapter is introduced.
 
-Before the cache fixes, PGlite projection/commerce suites failed on absent tables
-and same-name subclass REST deletion failed with HTTP 500 after a previous handle
-had bootstrapped system tables. Fresh `memory://` handles now keep separate caches;
-the exact missing-table, policy-error, inline-write and CRUD regressions pass.
-Evaluating the baseline validator reproduced acceptance of reserved `to`; the
-reader and JSON Schema now both reject it. Other reserved names retain their prior rejection coverage.
+PGlite verifies SQL, transactions and durable files, but cannot establish
+independent backend/pool lock contention, network commit ambiguity, deployment
+RLS, LISTEN/NOTIFY or real-server concurrent index rollout. Those still require
+real PostgreSQL server coverage; none is claimed by this matrix.
 
-The subclass matrix applies generated DDL through the existing atomic migration
-tracker. Its PostgreSQL regression initially failed because the nested tracker
-dropped the resolved engine and created SQLite-style timestamp columns. Passing
-the resolved engine into that tracker preserves PostgreSQL DDL and completion
-markers inside the same transaction; the identical regression now passes.
+## Test design and reuse
 
+| Invariant / reachable trigger | Positive / failure control | Actor/context; executor | Runtime / contract edge; level | Validation |
+| --- | --- | --- | --- | --- |
+| Transaction inspection | Uncommitted CREATE/ALTER visible; rollback removes schema; quoted table, FK/index and bound hostile name | Migration caller; supplied transaction only, pooled query/inspector spies throw | PGlite / SchemaComparer; integration | core test:pglite |
+| First recipe use | Same-name closure ready once, overlapping/equal calls coalesce, independent coordinator rechecks | Two tenant gates; shared process queue and locked tracker transaction | SQLite/PGlite / REST, MCP and recipe tools; integration | core test:pglite and default tests |
+| Activation failure/retry | Later CREATE fails after earlier tables; entire subset rolls back, gate stays shut; retry succeeds | Enabled owner; real transaction and retained loaders | SQLite/PGlite / readiness; integration | activation + tools suites |
+| Native storage | UUID ids/FKs and BIGINT field/history columns; >int4 value hydrates safely; legacy int4 stays int4 | Tenant-scoped records; normal save executor and transaction inspection | SQLite/PGlite / schema and REST; integration | subclass + editor suites |
+| Editor revision fence | Concurrent editors have one winner; an intervening store writer is caught inside the DDL transaction | Owner × correct/foreign tenant × reader; scoped history CAS and migration executor | SQLite/PGlite / apply/history; integration | editor + customization-tool suites |
+| Editor DDL failure | SQL error after ALTER leaves no field, history revision or marker; same request retries | Authorized owner; checkpointed registry and one transaction | PGlite / DDL, authority and retry; integration | editor suite |
+| Publication recovery | Failed callback remains gated/pending; file reopen completes the original revision | Host callback; commit first, then publish/complete | SQLite/PGlite / durable host publication; integration | editor recovery suite |
+| Restrictive metadata | Rollback restores lineage and preserves unrelated classes/new denials | Trusted consumer tightening policy during staged registration | Both engines (no SQL) / registry authority; unit | runtime-overrides suite |
+| Unsafe field names | Descriptive names pass; reserved/colliding names fail before history/DDL | Owner editor/importer; existing validator | All engines / JSON Schema and editor; integration | models + editor suites |
 
-Validation coordination: after editing package manifests, complete one
-`pnpm install --frozen-lockfile` before other pnpm commands. pnpm's automatic
-dependency refresh can run prepare/build scripts even for a read-only command;
-overlapping Turbo or pnpm invocations can then remove declarations or package
-staging files another invocation is using. Run final build, knowledge generation,
-test and typecheck commands serially; do not skip hooks or change toolchains to
-hide those failures.
+Reuse discovery: MCP `review_smrt_project` on core and architecture context for
+transaction-bound inspection, advisory locks and history/revision CAS; intent
+index; `rg` by name and purpose across core, smrt-ui, smrt-svelte and chat. The
+SDK exposes TableSchemaInfo but exports no query-only inspector for transaction
+handles. Existing live-parity catalogs do not return that table-schema contract.
+The new `src/schema/inspection.ts` supplies that missing owning-layer seam for
+the existing comparer; `inspection.test.ts` reuses getTestDatabase and real SDK
+transactions. Other changes extend existing modules: bootstrap locking, tracker,
+history CAS, runtime registration, policy/lineage ownership and activation queue.
+The scoped production checkpoint preserves authority/unrelated state; the broad
+Vitest-only snapshot/reset helper remains test isolation. No parallel model,
+route, component, approval ledger or database adapter is added.
 
-The initial global PGlite dev dependency failed bundle-gate's unchanged browser
-reachability test by exposing the peer's guarded Node fallback imports. Reusing
-the documented isolated browser peer fixture fixes the dependency boundary; no
-audit exemption or weakened test was added. The browser execution fixture still
-uses the same peer/WASM import map and now shares its provisioner with Node QA.
-
-Drive-by fix: root `turbo.json` includes package `scripts/**` in build inputs,
-because core copies those scripts into dist. Changes to the shared fixture
-runner must invalidate that copied artifact. The provisioner also rejects an
-isolated SDK pin that differs from the installed workspace SDK.
-
-Measured opt-in lane durations on Node 26.8.1/pnpm 11.25.0 with other workers
-active: core 63.96 s (107 passed, 7 intentional lazy-only skips), commerce
-35.86 s (18 passed), runtime 23.75 s (17 passed): 123.57 s combined. The default
-suite performs no PostgreSQL/WASM startup; its extra checks are validation,
-cache-identity and compatibility-alias regressions. The unchanged browser
-boundary suite passes 3/3; core's full browser command also passes plain JSON,
-503-export evaluation, real PGlite cascades on memory/idb and unbundled Vite dev.
+The two positive PostgreSQL startup/editor tests were executed with their
+integration-base implementations: both failed with the old explicit refusals.
+The same cases pass with transaction inspection and revision fencing enabled.

@@ -216,12 +216,15 @@ and retry/restart reuses it. Disabling removes tenant exposure only; it never
 unloads constructors, drops tables, or deletes rows. Disabled tables from earlier
 runs are retained and are outside later subset plans.
 
-**Backend boundary:** lazy migration supports SQLite only. Coordinator creation
-refuses PostgreSQL and DuckDB before imports or DDL, with an instruction to keep
-eager registration and normal `migrateSmrtSchemas`. PostgreSQL maintenance-window
-and concurrent-index contracts are unchanged; this feature claims no lazy support
-for them. Hosts must opt in deliberately; the generic host template is not
-silently switched to this database/store-specific bootstrap.
+**Backend boundary:** lazy migration supports SQLite and PostgreSQL. PostgreSQL
+uses the shared system-bootstrap advisory lock before fresh schema inspection;
+DDL and its tracker marker commit on the same transaction connection before
+readiness opens. Ordinary transactional indexes are used, never CONCURRENTLY.
+The existing int4/int8 equivalence and explicit maintenance-window widening rule
+remain unchanged. DuckDB is refused because its transaction-bound inspection
+and live-DDL rollback coordinator are not implemented. Hosts opt in explicitly;
+normal collection initialization still never creates application tables. See
+[PostgreSQL parity](postgres-parity.md) for revision fencing, tests and limits.
 
 ### Measurement
 
@@ -284,10 +287,11 @@ HTTP, UI, inference or owner bootstrap performance improvement is claimed.
 
 ## Test design and evidence
 
-All executable persistence cases below use in-process SQLite; no PostgreSQL,
-DuckDB or packaged desktop performance is claimed. Gates themselves are
+The activation, recipe-tool and subclass cases run on in-process SQLite and
+PostgreSQL/PGlite. The historical measurements above are SQLite only; no DuckDB
+or packaged desktop performance is claimed. Gates themselves are
 browser-safe pure predicates and subscriptions. Ordinary model requests do not migrate; explicit activation runs migrations
-before readiness is published. The activation cases below exercise SQLite atomicity.
+before readiness is published. Activation cases exercise SQLite and PostgreSQL atomicity.
 
 | Behavior/invariant | Reachable trigger and positive case | Negative/failure case | Actor/context and executor | Contract edge / level | Validation |
 | --- | --- | --- | --- | --- | --- |
@@ -307,13 +311,13 @@ before readiness is published. The activation cases below exercise SQLite atomic
 
 | Behavior/invariant | Reachable positive trigger | Failure/negative control | Actor/context; executor | Contract/runtime; level | Validation |
 | --- | --- | --- | --- | --- | --- |
-| Enabled startup union | Boot two tenants + host always-on | Disabled package has no constructor/table | Host reads persisted union; real SQLite | Activation bootstrap; integration | core test |
-| Full physical closure | Enable Invoice -> cross-package Customer -> Profile/STI; app Customer contributes column | Unused model remains absent; unknown edge refuses | Two tenant gates; same SQLite handle | Registry/physical schema/AOT; integration | core test |
-| Coalescing/serialization | Equal calls share promise; overlapping closures import/migrate once | Other tenant stays denied | Concurrent callers; one process queue + tracker transaction | SQLite; integration | core test |
-| Failure/retry | Inject failure after earlier CREATE TABLE statements; retry succeeds | Entire application batch rolls back, gate stays shut | Transaction-bound SQLite executor; retained modules | Migration/readiness; integration | core test |
-| Recovery | Independent Node processes read saved enablement and reuse existing SQLite tables | Disabled constructors stay unimported; retained rows survive | Host persisted union + SQLite file | Plain Node restart; process integration | core test |
+| Enabled startup union | Boot two tenants + host always-on | Disabled package has no constructor/table | Host reads persisted union; real SQLite/PGlite | Activation bootstrap; integration | core test |
+| Full physical closure | Enable Invoice -> cross-package Customer -> Profile/STI; app Customer contributes column | Unused model remains absent; unknown edge refuses | Two tenant gates; same SQLite/PGlite handle | Registry/physical schema/AOT; integration | core test |
+| Coalescing/serialization | Equal calls share promise; overlapping closures import/migrate once | Other tenant stays denied | Concurrent callers; one process queue + tracker transaction | SQLite/PGlite; integration | core test |
+| Failure/retry | Inject failure after earlier CREATE TABLE statements; retry succeeds | Entire application batch rolls back, gate stays shut | Transaction-bound SQLite/PGlite executor; retained modules | Migration/readiness; integration | core test |
+| Recovery | SQLite independent Node processes and PostgreSQL fresh coordinators reuse saved enablement/tables | Disabled constructors stay unimported; retained rows survive | Host persisted union; SQLite file / PGlite transaction | Restart or registry reset; integration | core test |
 | Data-only generation | Parse static module side effect; generated register import evaluates no models | Missing graph edges fail generation | Build-time generator and fresh Node process | Consumer + SvelteKit AOT; integration | core test |
-| Compatibility/backend | No subset preserves eager migration; no gate preserves access | PG/DuckDB lazy request rejects before imports/DDL | Non-opt-in host / unsupported adapter | SQLite + backend refusal; regression | core test |
+| Compatibility/backend | No subset preserves eager migration; no gate preserves access | DuckDB lazy request rejects before imports/DDL | Non-opt-in host / unsupported adapter | SQLite/PostgreSQL + DuckDB refusal; regression | core test |
 
 Commands: each touched package's `pnpm turbo run build --filter=<name>...`,
 `pnpm test`, `pnpm typecheck`; root `pnpm lint`, `pnpm format-check`,
@@ -362,7 +366,7 @@ reuse `createRecipeScreenReferences`/`screenReferenceTarget`/`screenRecordLabel`
 approvals reuse app-runtime's SQLite authority. No UI component, model, route,
 approval ledger or parallel implementation was introduced.
 
-### A3b validation checkpoint
+### Historical A3b validation checkpoint (before PostgreSQL activation)
 
 Rebased onto `606289dba64890c568528804ed3dac658e795610`; the sole conflict was
 the generated core knowledge page, retained from integration then regenerated.
@@ -416,4 +420,4 @@ to bind dependency source provenance to the actual installed owning package. A
 publisher checkout outside that package is not a host source, even when it happens
 to exist on the build machine. Workspace-linked providers retain source digests.
 
-PostgreSQL/PGlite refusal, migration lock prerequisites and validation: [PostgreSQL parity](postgres-parity.md).
+Current PostgreSQL/PGlite transaction scope, fencing and validation: [PostgreSQL parity](postgres-parity.md).

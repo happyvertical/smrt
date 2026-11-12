@@ -114,7 +114,7 @@ awaits, and journal CAS serializes competing revisions.
 ## Test design and evidence
 
 Executor: the real editor/migration tracker and approval authority on in-process
-SQLite, with an upstream provider and its effective app subclass. Every row is
+SQLite and PostgreSQL/PGlite, with an upstream provider and its effective app subclass. Every row is
 an integration test unless identified as a generated-boundary test. Commands:
 core `pnpm test` / `pnpm typecheck`; focused development uses
 `pnpm exec vitest run src/cookbook/app-tools.test.ts src/cookbook/tools.test.ts
@@ -125,16 +125,16 @@ src/__tests__/app-model-editor.test.ts src/__tests__/runtime-model.test.ts`.
 | --- | --- | --- | --- |
 | Every app tool / invoke or generated call | Labels, each kind, create/rename/hide/show/remove/history/undo | Unknown kind, extra tenant argument, missing choice/currency, stale revision | Owner; shared JSON schemas and sentence/structured result |
 | Human resolution / customer-list utterance | Cookbook label, synonym, singular/plural, safe numeric/reserved names | Two list/field labels; existing/storage-name collision; no partial list | Owner; candidate arrays, no person-authored identifier |
-| Live publication / field or list edit | Warm MCP catalog updates; REST create; web field/policy/list labels; cookbook navigation | Removed REST route denied, data retained; approval holds leave revisions unchanged | Owner; normal REST/MCP/web projection, SQLite journal |
-| Money and links / normal record creation | SQLite integer minor units, currency defaults after metadata refresh; reference resolves named row with declared display field | Fractional money refused; existing editor tests cover cross-tenant links | Tenant owner; owning collection and tenancy interceptor |
-| Durable approvals / remove or undo | Reopen authority over SQLite, approve, apply; persisted caption identifies undone change | Pending, tampered args, revoked owner, stale revision refused | Owner × action × tenant; single-use authority binding |
+| Live publication / field or list edit | Warm MCP catalog updates; REST create; web field/policy/list labels; cookbook navigation | Removed REST route denied, data retained; approval holds leave revisions unchanged | Owner; normal REST/MCP/web projection, SQLite/PGlite journal |
+| Money and links / normal record creation | SQLite INTEGER/PostgreSQL BIGINT minor units, currency defaults after metadata refresh; reference resolves named row with declared display field | Fractional money refused; existing editor tests cover cross-tenant links | Tenant owner; owning collection and tenancy interceptor |
+| Durable approvals / remove or undo | Reopen authority over SQLite/PGlite, approve, apply; persisted caption identifies undone change | Pending, tampered args, revoked owner, stale revision refused | Owner × action × tenant; single-use authority binding |
 | Authority / list and retained call | Owner allowed, app tools remain with pre-built parts off | Non-owner, wrong tenant/user, missing identity, permission denial; revocation during audit | MCP identity and structural assistant PrincipalTool contract |
 | Concurrency / two writes at same revision | Exactly one applied revision | Other request refuses without duplicate effect; audit failure prevents writes | Same owner/tenant; editor queue and journal CAS |
-| Generated servers / tools/list and call | Single-file/modular entries delegate live schema and CRUD execution | Legacy no-editor path remains covered by existing emit tests | Plain Node; boundary stubs + real shared-generator SQLite test |
+| Generated servers / tools/list and call | Single-file/modular entries delegate live schema and CRUD execution | Legacy no-editor path remains covered by existing emit tests | Plain Node; boundary stubs + real shared-generator test |
 
-SQLite is the supported editor backend. This slice does not validate desktop
-screens, live LLM conversations, network MCP transport, or PostgreSQL/DuckDB
-editor activation. Static SvelteKit hosts still need the documented dynamic
+SQLite and PostgreSQL/PGlite run the editor/customization-tool matrix. This
+slice does not validate desktop screens, live LLM conversations, network MCP
+transport, or DuckDB editor activation. Static SvelteKit hosts still need the documented dynamic
 REST catch-all and publication binding; tools do not rewrite route source.
 
 ## Reuse check and shared files

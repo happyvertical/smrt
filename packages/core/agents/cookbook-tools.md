@@ -15,7 +15,7 @@ schemas and execution are defined once by `createCookbookToolService`:
 | `cookbook.apply({id, apply?, expectedRevision?, previewToken?, approvalId?})` | Default: preview, with before/after documents and added/removed recipes. Applying requires the same actor, tenant, revision, template content and preview token. Replacement requires approval except trusted first-run setup with no application records. |
 
 Templates select installed blocks; eager hosts must migrate them before serving.
-Lazy SQLite hosts pass their `ActivationCoordinator` as `options.activation`;
+Lazy SQLite/PostgreSQL hosts pass their `ActivationCoordinator` as `options.activation`;
 enable and template apply await its full model closure before committing any
 cookbook state. These tools do not install packages, generate code or rebuild an
 app. Tokens last 15 minutes,
@@ -127,18 +127,18 @@ explicit invalidations notify `tools/list_changed`; retained tools still refuse.
 
 ## Test design and evidence
 
-All persistence below is in-process SQLite; no PostgreSQL/DuckDB, desktop,
+The tool suites run on in-process SQLite and PostgreSQL/PGlite; no DuckDB, desktop,
 network MCP transport or host application wiring is claimed by this slice.
 
 | Invariant | Trigger / positive | Failure control | Actor and executor | Edge / level / command |
 | --- | --- | --- | --- | --- |
 | Search and describe | Intent words find billing; human additions and enabled state | Unknown recipe, malformed input | Tenant owner; installed data catalog | Server schema / integration / core `pnpm test` |
-| Live activation | Tool enables billing and customers; same REST handler 200, model MCP listed | Disabled 404, disable gates again; AOT definitions unchanged | Owner; two fixture package identities, SQLite | REST/MCP / integration / core `pnpm test` |
-| Durable approval | Reopen authority, decide and consume disable | Changed args, foreign tenant, stale state, repeat call refused | Owner authority; canonical SQLite approval ledger | Cross-package hold / integration / core `pnpm test` |
-| Configure | Policy defaults, labels, visibility and nav icon in snapshot | Foreign recipe target, bad icon, unknown field; whole batch unchanged | Owner; private engine, SQLite CAS + audit transaction | Engine/document / integration / core `pnpm test` |
-| Template | Preview without mutation; fresh apply; non-empty apply held | Missing/stale preview or unavailable installed ids refused | Same owner/tenant; engine + SQLite store | Versioned document / integration / core `pnpm test` |
+| Live activation | Tool enables billing and customers; same REST handler 200, model MCP listed | Disabled 404, disable gates again; AOT definitions unchanged | Owner; two fixture package identities, SQLite/PGlite | REST/MCP / integration / core `pnpm test` |
+| Durable approval | Reopen authority, decide and consume disable | Changed args, foreign tenant, stale state, repeat call refused | Owner authority; canonical SQLite/PGlite approval ledger | Cross-package hold / integration / core `pnpm test` |
+| Configure | Policy defaults, labels, visibility and nav icon in snapshot | Foreign recipe target, bad icon, unknown field; whole batch unchanged | Owner; private engine, SQLite/PGlite CAS + audit transaction | Engine/document / integration / core `pnpm test` |
+| Template | Preview without mutation; fresh apply; non-empty apply held | Missing/stale preview or unavailable installed ids refused | Same owner/tenant; engine + SQLite/PGlite store | Versioned document / integration / core `pnpm test` |
 | Authority/exposure | All seven available to permitted owner | Non-owner, no permission, no tenant, unreadable store, preference off; retained assistant/MCP refused | Trusted principal, predicate | MCP/assistant / integration / core `pnpm test` |
-| Atomic publication | Persisted state and audit commit together | Failed transaction leaves both storage and live gate unchanged | Host CAS transaction on same SQLite executor | Storage / integration / core `pnpm test` |
+| Atomic publication | Persisted state and audit commit together | Failed transaction leaves both storage and live gate unchanged | Host CAS transaction on same SQLite/PGlite executor | Storage / integration / core `pnpm test` |
 | Preference | Persist off, reopen, on with current revision; tenant isolation | Non-owner, missing permission, personal tier, invalid payload, stale revision, corrupt/unreadable storage | Ambient principal; existing preference store on SQLite | Preference / integration / preferences `pnpm test` |
 
 Existing generated-server suites execute the single-file/modular code in plain
@@ -156,7 +156,7 @@ the service between decision and replay to cover the restart boundary.
 
 Lazy tool activation excludes only validated `models.lists` identities from its
 fixed source graph; the editor owns their schema/readiness. Other unknown model
-identities still fail activation. The SQLite tool fixture enables billing beside
+identities still fail activation. The SQLite/PGlite tool fixture enables billing beside
 a declared custom list through the real coordinator, then proves an unrelated
 unknown feature refuses. The host fixture combines list edits, reference REST and
 subsequent recipe enable under this contract.

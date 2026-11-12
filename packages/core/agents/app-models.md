@@ -127,7 +127,7 @@ Every operation uses the running process:
 | List relabel/remove | Runtime presentation refresh / feature removal, same publication protocol |
 | Undo | Restore previous cookbook, keep union of historical storage fields hidden, tracked additive reconciliation, publish |
 
-No rebuild/restart/source-generation fallback is used by supported SQLite
+No rebuild/restart/source-generation fallback is used by supported SQLite and PostgreSQL
 operations. Runtime REST and MCP regenerate from the registry; CLI command
 options invalidate on registry generation. Assistant provider schemas use
 the existing MCP/provider schema conversion. Runtime manifest hashes,
@@ -135,22 +135,28 @@ relationship/display metadata and web definitions use the normal projection.
 The exposure gate admits cookbook custom lists and denies pending/removed
 models. Unused applications retain the previous behavior.
 
-A pending revision is appended before registration/DDL. Both application
-columns and the optional history table use the migration tracker. Application
-schema reconciliation selects only edited tables and their existing physical
-FK closure; unrelated registered/disabled models are not migrated. Manual
-schema drift refuses activation. After successful migration/publication,
-the journal completes and readiness opens. A failure may have committed
-additive DDL: affected models stay closed, the revision stays pending, and
-reopening the editor retries idempotently. The API does not promise that the
-old schema keeps serving through a failed activation.
+SQLite appends a pending revision before registration/DDL. Its existing failure
+contract keeps affected models closed and recovers pending work on reopen.
+PostgreSQL claims the revision and migrates application columns plus the tracker
+marker in one advisory-locked transaction, using transaction-bound inspection.
+DDL failure rolls back the history insert and registry registration, restores
+readiness, and permits the same request to retry. After commit, host publication
+runs while models remain gated; a publication failure stays durably pending and
+reopen completes that revision. No columns/tables are dropped. Reconciliation
+selects edited tables and their existing physical FK closure; unrelated models
+are not migrated. Manual drift still requires an operator migration. See the
+[PostgreSQL scope and test matrix](postgres-parity.md).
 
 ## Durable history
 
 `AppModelHistoryStore` has `read()`, atomic
 `append(change, expectedRevision)` and `complete(revision, elapsedMs)`.
 A supplied host store must scope reads/writes to one app/tenant and preserve
-the pending/CAS contract. The default `createSqliteAppModelHistory()` migrates
+the pending/CAS contract. PostgreSQL stores must also implement
+`transaction(work)` with a scoped store/executor, so revision CAS and DDL share
+one locked transaction. Completion is fenced; a concurrent/stale edit gets
+`MODEL_EDIT_CONFLICT` and must refresh/reopen. The default
+`createAppModelHistory()` (`createSqliteAppModelHistory` remains an alias) migrates
 `_smrt_app_model_changes` through `MigrationTracker`, with composite
 app/tenant/revision primary key and app/tenant/request uniqueness. History is
 permanent. Undo appends a compensating revision for the latest not-yet-undone
@@ -158,16 +164,20 @@ edit; it never deletes history. The persisted cookbook is authoritative over
 the startup default. Export contains portable definitions/policies, not host
 actor/history records.
 
-SQLite is the supported editor backend; see [PostgreSQL refusal and prerequisites](postgres-parity.md#why-live-postgresql-activation-remains-refused). PostgreSQL/DuckDB activation,
-cross-process registry propagation, purge, automatic static host conversion,
-and packaged desktop timing are not implemented/verified.
+SQLite and PostgreSQL are supported. PostgreSQL history stores native UUID
+tenant ids and JS-safe BIGINT revisions/durations. Existing int4 application
+columns remain equivalent to int8; automatic widening is forbidden. DuckDB
+still lacks this transaction-bound inspection/history and live-DDL rollback
+scope. Cross-process registry/engine broadcasting, purge, automatic static-host
+conversion and packaged desktop timing are not implemented. Hosts refresh each
+process from durable revisions; the database CAS fences stale writers.
 
 ## Evidence and reuse
 
-In-process SQLite fixture: real tenant-scoped provider constructor, app
+In-process SQLite/PGlite fixtures: real tenant-scoped provider constructor, app
 same-name subclass, existing REST handler/MCP generator, real tenancy
 interceptor, and a disk database reopened after failed publication.
-Local targeted run: fields 1.5–7.8 ms, list create 2.3 ms, relabel 2.2 ms,
+Historical SQLite-only targeted run: fields 1.5–7.8 ms, list create 2.3 ms, relabel 2.2 ms,
 remove 1.6 ms, field policies 0.8–1.4 ms, boot replay 1.4 ms, undo 0.9 ms
 and import 1.1 ms. These are fixture measurements, not
 desktop performance guarantees; receipts let the host measure its own work.
