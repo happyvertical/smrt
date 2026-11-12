@@ -373,6 +373,25 @@ export function mergeFieldConfigs(
 }
 
 /**
+ * Whether `SmrtHierarchical` is among a registered class's ancestors, i.e. its
+ * `parentId` is the framework's self-referencing tree link that the field
+ * inheritance rule binds to the class's own table (as opposed to a foreign key
+ * some concrete class declared itself).
+ */
+export function inheritsHierarchicalBase(registered: RegisteredClass): boolean {
+  const key = registered.qualifiedName ?? registered.name;
+  return getInheritanceChain(key).some((ancestorName) => {
+    const ancestor = findClass(ancestorName);
+    return (
+      ancestor !== undefined &&
+      ancestor !== registered &&
+      ancestor.name === 'SmrtHierarchical' &&
+      isFrameworkBaseClass(ancestor.name, ancestor.packageName)
+    );
+  });
+}
+
+/**
  * The fields of an own-table class including its ancestors' (#4922, #4940),
  * resolved synchronously from the registry as it stands. Used where the
  * authoritative schema is built without awaiting manifest loads. Other

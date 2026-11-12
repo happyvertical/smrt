@@ -19,7 +19,10 @@
 import type { DatabaseEngine } from './migrations/types.js';
 import type { SmrtObject } from './object.js';
 import { registerFromManifest } from './registry/class-registration.js';
-import { getOwnTableFieldsSync } from './registry/inheritance-resolver.js';
+import {
+  getOwnTableFieldsSync,
+  inheritsHierarchicalBase,
+} from './registry/inheritance-resolver.js';
 import { fieldsToColumns } from './registry/schema-builder.js';
 import { ObjectRegistry } from './registry.js';
 import type {
@@ -175,11 +178,13 @@ export function runtimeModelEntry(
   // yields a single column (its own declaration wins below). An STI subclass
   // shares its parent's table and needs none.
   if (parent && ObjectRegistry.getSTIBase(def.extends!) === null) {
+    const hierarchical = inheritsHierarchicalBase(parent);
     for (const [name, inherited] of getOwnTableFieldsSync(parent)) {
       // A hierarchical parent's `parentId` points at the parent's own table;
-      // the subclass has its own table, and its tree links to itself.
+      // the subclass has its own table, and its tree links to itself. A
+      // foreign key a concrete class declared itself keeps its target.
       const related =
-        name === 'parentId' && inherited.related === parent.name
+        name === 'parentId' && hierarchical && inherited.related === parent.name
           ? def.name
           : inherited.related;
       fields[name] = {

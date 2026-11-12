@@ -4,7 +4,7 @@
  */
 import { getDatabase } from '@happyvertical/sql';
 import { afterEach, beforeEach, describe, expect, it } from 'vitest';
-import { field } from '../decorators/index.js';
+import { field, foreignKey } from '../decorators/index.js';
 import { MCPGenerator } from '../generators/mcp.js';
 import { APIGenerator } from '../generators/rest.js';
 import { SmrtHierarchical } from '../hierarchical.js';
@@ -409,6 +409,24 @@ describe('#4871 run-time models', () => {
         'rt4940_nodes',
       );
       expect(schemas[table].columns.parent_id?.foreignKey?.table).toBe(table);
+    });
+
+    it("a subclass of a parent that declares its own self-reference keeps the parent's target (#4940)", async () => {
+      @smrt({ tableName: 'rt4940_folders' })
+      class Folder4940 extends SmrtObject {
+        @foreignKey(Folder4940, { required: false }) parentId = '';
+      }
+      const q = registerRuntimeModel({
+        name: 'SharedFolder4940',
+        packageName: '@test/rt4940b',
+        extends: qn(Folder4940),
+        fields: { shared: { type: 'boolean' } },
+      });
+      // The subclass's `parentId` keeps the target the parent's declaration
+      // names; only SmrtHierarchical's tree link is rebound to the subclass.
+      expect(ObjectRegistry.getFields(q).get('parentId')?.related).toBe(
+        'Folder4940',
+      );
     });
 
     it("a subclass that shares its parent's simple name leaves the parent family intact", async () => {
