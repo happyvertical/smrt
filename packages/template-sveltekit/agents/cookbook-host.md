@@ -9,6 +9,13 @@ uses the test's current cookbook (renamed Members plus enabled Memos), rather th
 the earlier Customers-only snapshot. It still requires configured readiness and
 the same full create/hold/decision/revocation behavior for both compatible stubs.
 
+The host supports one app model registry per process. Disposable host tests
+snapshot and restore it through core's public `testing` API, after streamed turns
+settle and the host shuts down. Applied runtime subclasses must not leak into the
+next fixture's catalog. Native CLI approval tests await the actual streamed hold;
+revocation tests gate the real persisted MCP response before delivering it to the
+stub. They do not depend on CLI startup completing within a polling interval.
+
 Cookbook/app workflow results return both text content and the same object as
 `structuredContent`, matching the bridge's declared object `outputSchema`.
 Current Claude Code and Codex clients reject text-only successful results when

@@ -796,6 +796,7 @@ instead of matching messages.
 | `generateSvelteKitRoutes` | SvelteKit route generator |
 | `resetVerifiedTables` | Resets table verification cache (testing) |
 | `getTestDatabase` | Creates isolated test databases |
+| `snapshotObjectRegistryState()` | Returns a restore callback for sequential tests that mutate the process registry (`@happyvertical/smrt-core/testing`) |
 | `parse` / `stringify` / `clone` | JSON utilities with optional SIMD |
 | `createQualifiedName` / `parseQualifiedName` | STI qualified name helpers |
 

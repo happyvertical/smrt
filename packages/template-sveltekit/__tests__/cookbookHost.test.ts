@@ -9,7 +9,10 @@ import {
   OwnerApprovalAuthority,
 } from '@happyvertical/smrt-app-runtime';
 import type { SmrtSvelteKitRuntime } from '@happyvertical/smrt-app-runtime/sveltekit';
-import { readAssistantTurnStream } from '@happyvertical/smrt-chat/assistant-turn';
+import {
+  type AssistantTurnEvent,
+  readAssistantTurnStream,
+} from '@happyvertical/smrt-chat/assistant-turn';
 import { Customer } from '@happyvertical/smrt-commerce';
 import {
   field,
@@ -19,7 +22,10 @@ import {
   smrt,
 } from '@happyvertical/smrt-core';
 import { APIGenerator } from '@happyvertical/smrt-core/generators/rest';
-import { getTestDatabase } from '@happyvertical/smrt-core/testing';
+import {
+  getTestDatabase,
+  snapshotObjectRegistryState,
+} from '@happyvertical/smrt-core/testing';
 import { createAgentCliService } from '@happyvertical/smrt-inference/server';
 import {
   SmrtWorkerCollection,
@@ -204,6 +210,8 @@ let response: (
 ) => unknown;
 const errors: unknown[] = [];
 let stateDirectory: string;
+let restoreRegistry: (() => void) | undefined;
+const activeTurns = new Map<AbortController, Promise<unknown>>();
 let http: Server | undefined;
 let issued: Array<{
   token: string;
@@ -255,23 +263,40 @@ async function thread() {
   expect(r.status, JSON.stringify(errors)).toBe(201);
   return (await r.json()).thread.id as string;
 }
-async function turn(id: string, content: string) {
-  const r = await chat(`threads/${id}/messages`, {
-    content,
-    clientRequestId: randomUUID(),
-  });
-  expect(r.status, JSON.stringify(errors)).toBe(200);
-  const events: Array<Record<string, unknown>> = [];
-  try {
-    await readAssistantTurnStream(r, (e) => {
-      events.push(e as unknown as Record<string, unknown>);
+async function turn(
+  id: string,
+  content: string,
+  onEvent?: (event: AssistantTurnEvent) => void,
+) {
+  const controller = new AbortController();
+  const pending = (async () => {
+    const e = event(`/api/assistant/threads/${id}/messages`, 'POST', {
+      content,
+      clientRequestId: randomUUID(),
     });
-  } catch (error) {
-    throw new Error(
-      `${String(error)}; fixture errors: ${JSON.stringify(errors)}`,
-    );
+    e.request = new Request(e.request, { signal: controller.signal });
+    const r = await request(e, host.assistant.handle);
+    expect(r.status, JSON.stringify(errors)).toBe(200);
+    const events: Array<Record<string, unknown>> = [];
+    try {
+      await readAssistantTurnStream(r, (e) => {
+        const current = e as unknown as Record<string, unknown>;
+        events.push(current);
+        onEvent?.(e);
+      });
+    } catch (error) {
+      throw new Error(
+        `${String(error)}; fixture errors: ${JSON.stringify(errors)}`,
+      );
+    }
+    return events;
+  })();
+  activeTurns.set(controller, pending);
+  try {
+    return await pending;
+  } finally {
+    activeTurns.delete(controller);
   }
-  return events;
 }
 const tool = (name: string, args: unknown) => ({
   content: '',
@@ -324,6 +349,7 @@ async function mcp(
 }
 
 beforeEach(async ({ task }) => {
+  restoreRegistry = snapshotObjectRegistryState();
   enableTenancy();
   origin = 'http://127.0.0.1:4999';
   stateDirectory = await mkdtemp(join(tmpdir(), 'cookbook-host-cli-'));
@@ -507,6 +533,10 @@ beforeEach(async ({ task }) => {
   await host.init();
 });
 afterEach(async () => {
+  // Abort and settle streamed turns before closing their database or restoring
+  // the process-wide registry used by this one-host-per-process fixture.
+  for (const controller of activeTurns.keys()) controller.abort();
+  await Promise.allSettled(activeTurns.values());
   checkpointFault.errors.length = 0;
   checkpointFault.beforeSave = undefined;
   await host?.shutdown();
@@ -520,6 +550,8 @@ afterEach(async () => {
   await db?.close?.();
   await rm(stateDirectory, { recursive: true, force: true });
   vi.restoreAllMocks();
+  restoreRegistry?.();
+  restoreRegistry = undefined;
 });
 
 describe('local cookbook host composition (SQLite, fake model, no providers)', () => {
@@ -1457,6 +1489,7 @@ describe('local cookbook host composition (SQLite, fake model, no providers)', (
         inputSchema: { properties: Record<string, unknown> };
       }>
     > = [];
+    let beforeMcpResponse: (() => Promise<void>) | undefined;
     http = createServer(async (incoming, outgoing) => {
       try {
         const chunks: Buffer[] = [];
@@ -1476,6 +1509,7 @@ describe('local cookbook host composition (SQLite, fake model, no providers)', (
         );
         seenCatalogs.push(scoped.body.result.tools);
         const result = await request(e, host.mcp);
+        await beforeMcpResponse?.();
         outgoing.writeHead(result.status, Object.fromEntries(result.headers));
         outgoing.end(await result.text());
       } catch {
@@ -1598,25 +1632,38 @@ describe('local cookbook host composition (SQLite, fake model, no providers)', (
       /^memos_delete$/.test(t.name),
     )!.name;
     const threadId = await thread();
+    let approvalReady!: (id: string) => void;
+    const approval = new Promise<string>((resolve) => {
+      approvalReady = resolve;
+    });
     const running = turn(
       threadId,
       `tool ${deleteName} ${JSON.stringify({ id: memo.id })}`,
+      (event) => {
+        if (event.type === 'approval_needed') approvalReady(event.approval.id);
+      },
+    ).then(
+      (events) => ({ events, error: null }),
+      (error: unknown) => ({ events: null, error }),
     );
-    let approvalId = '';
-    await vi.waitFor(async () => {
-      const records = await (await chat('approvals', undefined, 'GET')).json();
-      approvalId = records.approvals.find(
-        (record: { tool: string; status: string }) =>
-          record.tool === 'host_memos.delete' && record.status === 'pending',
-      )?.id;
-      expect(approvalId).toBeTruthy();
-    });
+    // Native process startup is asynchronous. Await the actual hold event,
+    // rather than assuming the process reaches MCP within vi.waitFor's 1s.
+    const approvalId = await Promise.race([
+      approval,
+      running.then((result) => {
+        throw (
+          result.error ?? new Error('CLI turn ended before its approval hold')
+        );
+      }),
+    ]);
     const authority = new OwnerApprovalAuthority(
       await createSqliteOwnerApprovalStore(db),
       async () => true,
     );
     const saved = await authority.get(tenantId, approvalId);
     expect(saved).toMatchObject({
+      tool: 'host_memos.delete',
+      status: 'pending',
       args: { id: memo.id },
       context: { threadId },
       continuation: {
@@ -1655,7 +1702,9 @@ describe('local cookbook host composition (SQLite, fake model, no providers)', (
     expect(
       (await chat(`approvals/${approvalId}/decide`, { approve: true })).status,
     ).toBe(200);
-    const completed = await running;
+    const result = await running;
+    expect(result.error).toBeNull();
+    const completed = result.events!;
     expect(
       completed.some((e) => e.type === 'error'),
       JSON.stringify(completed),
@@ -1676,6 +1725,26 @@ describe('local cookbook host composition (SQLite, fake model, no providers)', (
       await record.save();
       return record;
     });
+    let blockedApprovalReady!: (id: string) => void;
+    const blockedApproval = new Promise<string>((resolve) => {
+      blockedApprovalReady = resolve;
+    });
+    let releaseResponse!: () => void;
+    const responseReleased = new Promise<void>((resolve) => {
+      releaseResponse = resolve;
+    });
+    // Pause only the fake network response, after the real MCP route persisted
+    // the hold. Revoke exposure before the CLI parses that held tool result.
+    beforeMcpResponse = async () => {
+      const records = await (await chat('approvals', undefined, 'GET')).json();
+      const pending = records.approvals.find(
+        (record: { tool: string; status: string }) =>
+          record.tool === 'host_memos.delete' && record.status === 'pending',
+      );
+      if (!pending) throw new Error('MCP did not persist the expected hold');
+      blockedApprovalReady(pending.id);
+      await responseReleased;
+    };
     const blockedTurn = turn(
       await thread(),
       `tool ${deleteName} ${JSON.stringify({ id: blockedMemo.id })}`,
@@ -1683,29 +1752,34 @@ describe('local cookbook host composition (SQLite, fake model, no providers)', (
       (events) => ({ events, error: null }),
       (error: unknown) => ({ events: null, error }),
     );
-    let blockedId = '';
-    await vi.waitFor(async () => {
-      const records = await (await chat('approvals', undefined, 'GET')).json();
-      blockedId = records.approvals.find(
-        (record: { tool: string; status: string }) =>
-          record.tool === 'host_memos.delete' && record.status === 'pending',
-      )?.id;
-      expect(blockedId).toBeTruthy();
-    });
-    const preference = await (
-      await request(event('/api/cookbook/prebuilt'), host.prebuilt)
-    ).json();
-    expect(
-      (
-        await request(
-          event('/api/cookbook/prebuilt', 'POST', {
-            enabled: false,
-            revision: preference.revision,
-          }),
-          host.prebuilt,
-        )
-      ).status,
-    ).toBe(200);
+    let blockedId: string;
+    try {
+      blockedId = await Promise.race([
+        blockedApproval,
+        blockedTurn.then((result) => {
+          throw (
+            result.error ?? new Error('CLI turn ended before its approval hold')
+          );
+        }),
+      ]);
+      const preference = await (
+        await request(event('/api/cookbook/prebuilt'), host.prebuilt)
+      ).json();
+      expect(
+        (
+          await request(
+            event('/api/cookbook/prebuilt', 'POST', {
+              enabled: false,
+              revision: preference.revision,
+            }),
+            host.prebuilt,
+          )
+        ).status,
+      ).toBe(200);
+    } finally {
+      beforeMcpResponse = undefined;
+      releaseResponse();
+    }
     const refused = await chat(`approvals/${blockedId}/decide`, {
       approve: true,
     });
