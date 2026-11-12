@@ -71,6 +71,93 @@ function resolved(
 describe('ManifestAdapter conversion', () => {
   const adapter = new ManifestAdapter();
 
+  it('records written false and null options separately from inferred values (#4942)', () => {
+    const result = adapter.convertField(
+      field({
+        name: 'code',
+        typeAnnotation: 'string',
+        optional: true,
+        decorators: [
+          {
+            name: 'field',
+            arguments: [
+              '{ required: false, unique: false, sqlType: null, default: null, backfill: null, min: null, max: null, minLength: null, maxLength: null, pattern: null, description: null, readPermission: null }',
+            ],
+          },
+        ],
+      }),
+    );
+    expect(result?._meta).toMatchObject({
+      required: false,
+      unique: false,
+      sqlType: null,
+      default: null,
+      backfill: null,
+      min: null,
+      max: null,
+      minLength: null,
+      maxLength: null,
+      pattern: null,
+      description: null,
+      readPermission: null,
+    });
+    expect(result?._meta?.__statedOptions).toEqual([
+      'required',
+      'unique',
+      'sqlType',
+      'default',
+      'backfill',
+      'min',
+      'max',
+      'minLength',
+      'maxLength',
+      'pattern',
+      'description',
+      'readPermission',
+    ]);
+    const inferred = adapter.convertField(
+      field({ name: 'taxMinor', initializer: '0', numericValue: 0 }),
+    );
+    expect(inferred).toMatchObject({
+      required: true,
+      default: 0,
+      // The initializer is the class's own default, so it counts as stated.
+      _meta: { __statedOptions: ['default'] },
+    });
+  });
+
+  it('keeps all written foreignKey options, including null clears (#4942)', () => {
+    const result = adapter.convertField(
+      field({
+        name: 'ownerId',
+        typeAnnotation: 'string',
+        initializer: "''",
+        decorators: [
+          {
+            name: 'foreignKey',
+            arguments: [
+              'Owner',
+              '{ required: false, indexed: false, sqlType: null, backfill: null }',
+            ],
+          },
+        ],
+      }),
+    );
+    expect(result?._meta).toMatchObject({
+      required: false,
+      indexed: false,
+      sqlType: null,
+      backfill: null,
+    });
+    expect(result?._meta?.__statedOptions).toEqual([
+      'required',
+      'indexed',
+      'sqlType',
+      'backfill',
+      'related',
+    ]);
+  });
+
   describe('convertField exclusions', () => {
     it('drops non-public fields', () => {
       expect(

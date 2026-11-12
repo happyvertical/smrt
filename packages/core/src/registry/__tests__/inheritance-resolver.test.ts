@@ -369,14 +369,14 @@ describe('inheritance-resolver: mergeFieldConfigs', () => {
     expect(childValidate).toHaveBeenCalled();
   });
 
-  it('the nearer declaration decides `unique`: a bare redeclaration drops it (#4940)', () => {
+  it('a bare redeclaration inherits unique; an explicit option overrides it (#4942)', () => {
     expect(
       mergeFieldConfigs(
         { type: 'text', _meta: { unique: true } },
         { type: 'text', _meta: {} },
         'email',
       )._meta?.unique,
-    ).toBeUndefined();
+    ).toBe(true);
     expect(
       mergeFieldConfigs(
         { type: 'text', _meta: { unique: false } },

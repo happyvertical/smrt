@@ -67,6 +67,8 @@ export interface FieldUIHints {
  * forcing every consumer through `any`.
  */
 export interface FieldMeta {
+  /** Written options, before registry normalization adds inferred values. */
+  __statedOptions?: string[];
   /** Explicit SQL type override (e.g. 'UUID') applied during schema generation. */
   sqlType?: string;
   /** Storage type for cross-package reference ids ('text' forces TEXT). */

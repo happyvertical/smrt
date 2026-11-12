@@ -42,7 +42,7 @@ registry paths, and through `getAllSchemasAsDefinitions()`, asserting identical
 column and index sets. Extend that fixture with every generator change; a
 divergence is a bug in the generator, not an exception to add to the test.
 
-### Field inheritance: one rule, one module (#4922, #4940)
+### Field inheritance: one rule, one module (#4922, #4940, #4942)
 
 "What fields does a class have, counting what it inherits" is decided in ONE
 place: `resolveInheritedFields()` in `src/schema/field-inheritance.ts`, a pure
@@ -56,14 +56,26 @@ second merge loop; extend the module and the differential test.
 
 Ancestors apply base to child, then the class's own fields last:
 
-- **Nearest concrete declaration wins**, between ancestors too, for own-table
-  and shared-table (STI) classes alike. The app owns its shape: a nearer
-  declaration may widen or narrow a bound, drop `unique`, relax `required`,
-  or change the type; nothing of the replaced declaration (`required`,
-  `sqlType`, `backfill`, `unique`, `min`/`max`, default) survives. Only a
-  missing `enum` / `description` is filled from the replaced one (registry
-  representation also keeps the tenancy marker, combines validators and keeps
-  a runtime `value`; a manifest carries none of those).
+- **A redeclared field inherits parent options as defaults.** Only options the
+  child states override them. Nearest wins per option, in either direction,
+  for own-table and shared-table (STI) classes. A bare redeclaration keeps all
+  options. To loosen, say so: `required: false`, `unique: false`, a lower `min`
+  or a wider `max`. Scanner-inferred `required` and `default` apply to new
+  fields. A same-type redeclaration keeps the parent value or its absence. A type change may use
+  fresh inferred defaults for the new type. `_meta.__statedOptions` records the
+  written decorator options, plus enum and relationship declarations, before
+  registry normalization can mix inferred values into `_meta`. Decorator-only
+  and older fields without that list use the options they carry.
+- A type change drops inherited `sqlType`, `min`, `max`, `enum`, `default`,
+  `backfill`, `minLength`, `maxLength` and `pattern`. Other options still
+  inherit. Type means the field type (`text`, `integer`, etc.); changing it
+  drops these type-bound options even between numeric types.
+- `null` clears an inherited option. Leaving it out inherits it. The effective
+  field has no value for a cleared option, at either the top level or in
+  `_meta`. The stated name remains so the clear survives later merges.
+  This applies to `sqlType`, `default`, `backfill`, bounds, `pattern`,
+  `description` and `readPermission`. Registry fields also keep tenancy
+  markers, combine validators and fill a missing runtime `value`.
 - A concrete declaration replaces a framework abstract base's default whole.
 - `SmrtHierarchical.parentId` becomes a nullable self-referencing
   `foreignKey` bound to the class's own table: the class itself (own-table),

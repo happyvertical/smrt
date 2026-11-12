@@ -1,6 +1,6 @@
 /**
  * The one rule for "what fields does a class have, counting what it inherits"
- * (#4940).
+ * (#4940, #4942).
  *
  * The build step (`ManifestGenerator.mergeInheritedFields()`) and the registry
  * (`getAllFields()`, `getOwnTableFieldsSync()`, and through them
@@ -20,14 +20,16 @@
  * Ancestors are applied base to child, then the class's own fields last.
  *
  * - A field new to the result is taken as declared.
- * - A concrete declaration replaces what it finds, wholesale: the NEAREST
- *   declaration wins, between ancestors too, for own-table and shared-table
- *   classes alike. Replacing a concrete declaration fills only what the
- *   replacement lacks from it: `enum`, `description`, and (registry
- *   representation only) the tenancy marker, combined validators and a
- *   runtime `value`. Replacing a framework abstract base's default takes the
- *   declaration whole, with nothing filled. The class's own declaration
- *   applies last and always fills.
+ * - A redeclaration inherits its parent's options as defaults. Only stated
+ *   options override them, nearest first, for own-table and shared-table alike.
+ *   Scanner `_meta.__statedOptions` records written decorator options (plus
+ *   enum and relationship declarations), before inferred values are normalized
+ *   by the registry. Bare and partial redeclarations keep the other options.
+ *   Null clears an option; the effective value is absent. A type change drops
+ *   inherited sqlType, min/max, minLength/maxLength, pattern, enum, default and
+ *   backfill. Registry fields also keep tenancy markers, combine validators
+ *   and fill a missing runtime value. Replacing a framework abstract base's
+ *   default takes the declaration whole. The class's own declaration is last.
  * - A framework abstract base's own default is never replaced by another
  *   framework base's in a shared-table family (the first stays; only `enum`
  *   and `description` follow the later one); in an own-table class the later
@@ -64,9 +66,9 @@ export interface FieldInheritanceLink<F extends InheritableField> {
 }
 
 /**
- * How fills are written. A manifest `FieldDefinition` carries `enum` and
- * `description` at the top level; a registry field mirrors them under `_meta`
- * and carries runtime-only state (tenancy marker, validators, `value`).
+ * How options are written. A manifest `FieldDefinition` has first-class
+ * attributes and decorator `_meta`; registry fields mirror effective options
+ * under `_meta` and carry runtime-only tenancy, validators and `value`.
  */
 export type FieldRepresentation = 'manifest' | 'registry';
 
@@ -94,11 +96,53 @@ const HIERARCHICAL_BASE = 'SmrtHierarchical';
 
 type Bag = Record<string, unknown>;
 
-/** Whether a replacement field already states a value for `key`. */
-function stated(field: InheritableField, key: 'enum' | 'description'): boolean {
-  return (
-    (field as Bag)[key] !== undefined ||
-    (field._meta as Bag | undefined)?.[key] !== undefined
+/** Options tied to the field type, rather than its role in the model. */
+const TYPE_BOUND_OPTIONS = new Set([
+  'sqlType',
+  'min',
+  'max',
+  'enum',
+  'default',
+  'backfill',
+  'minLength',
+  'maxLength',
+  'pattern',
+]);
+const FIELD_SHAPE_KEYS = new Set(['type', '_meta', 'value', '__tenancy']);
+const MANIFEST_OPTIONS = new Set([
+  'required',
+  'default',
+  'min',
+  'max',
+  'minLength',
+  'maxLength',
+  'enum',
+  'description',
+  'related',
+  'transient',
+  'sensitive',
+  'readonly',
+  'readPermission',
+  'exported',
+]);
+
+/**
+ * Scanner fields name their stated options before registry normalization can
+ * copy inferred values into `_meta`. Decorator-only and older fields use the
+ * options they carry. Undefined leaves an option out; null explicitly clears it.
+ */
+function stated(field: InheritableField): Set<string> {
+  const names = field._meta?.__statedOptions;
+  return new Set(
+    Array.isArray(names)
+      ? names.filter((key): key is string => typeof key === 'string')
+      : [...Object.keys(field), ...Object.keys(field._meta ?? {})].filter(
+          (key) =>
+            !FIELD_SHAPE_KEYS.has(key) &&
+            !key.startsWith('__') &&
+            (field._meta?.[key] !== undefined ||
+              (field as Bag)[key] !== undefined),
+        ),
   );
 }
 
@@ -107,59 +151,108 @@ function fillMissing<F extends InheritableField>(
   own: F,
   representation: FieldRepresentation,
 ): F {
-  if (representation === 'manifest') {
-    return {
-      ...own,
-      ...(own.enum === undefined && inherited.enum !== undefined
-        ? { enum: inherited.enum }
-        : {}),
-      ...(own.description === undefined && inherited.description !== undefined
-        ? { description: inherited.description }
-        : {}),
-    };
-  }
-  const meta: Bag = { ...(own._meta ?? {}) };
   const inheritedBag = inherited as Bag;
-  const inheritedMeta = (inherited._meta ?? {}) as Bag;
-  const inheritedEnum = inheritedBag.enum ?? inheritedMeta.enum;
-  if (!stated(own, 'enum') && inheritedEnum) meta.enum = inheritedEnum;
-  const inheritedDescription =
-    inheritedBag.description ?? inheritedMeta.description;
-  if (!stated(own, 'description') && inheritedDescription !== undefined) {
-    meta.description = inheritedDescription;
+  const ownBag = own as Bag;
+  const inheritedMeta = inherited._meta ?? {};
+  const ownMeta = own._meta ?? {};
+  const meta: Bag = { ...inheritedMeta, ...ownMeta };
+  const out = { ...own } as Bag;
+  const ownStated = stated(own);
+  const inheritedStated = stated(inherited);
+  const typeChanged =
+    !!inherited.type && !!own.type && inherited.type !== own.type;
+  const keys = new Set([
+    ...Object.keys(inherited),
+    ...Object.keys(inheritedMeta),
+    ...Object.keys(own),
+    ...Object.keys(ownMeta),
+    ...ownStated,
+    ...inheritedStated,
+  ]);
+  for (const key of keys) {
+    if (FIELD_SHAPE_KEYS.has(key) || key.startsWith('__')) continue;
+    const ownValue = ownMeta[key] !== undefined ? ownMeta[key] : ownBag[key];
+    const parentValue =
+      inheritedMeta[key] !== undefined ? inheritedMeta[key] : inheritedBag[key];
+    // `required` and `nullable` are two spellings of one option: a replacement
+    // that states `required` does not inherit the parent's `nullable`.
+    const canInherit =
+      !(typeChanged && TYPE_BOUND_OPTIONS.has(key)) &&
+      !(
+        key === 'nullable' &&
+        ownStated.has('required') &&
+        !ownStated.has('nullable')
+      );
+    // A stated name with no value records a previous clear. Keep that clear
+    // when an already-resolved manifest passes through the registry again.
+    const value = ownStated.has(key)
+      ? ownValue
+      : canInherit && inherited.type !== undefined
+        ? parentValue
+        : ownValue;
+    delete out[key];
+    delete meta[key];
+    if (value !== undefined && value !== null) {
+      if (
+        (representation === 'manifest' && MANIFEST_OPTIONS.has(key)) ||
+        key in ownBag ||
+        key in inheritedBag
+      )
+        out[key] = value;
+      if (
+        representation === 'registry' ||
+        key in ownMeta ||
+        key in inheritedMeta ||
+        !MANIFEST_OPTIONS.has(key)
+      )
+        meta[key] = value;
+    }
   }
-  // Runtime-only state a manifest never carries.
-  if (meta.__tenancy === undefined && inheritedMeta.__tenancy !== undefined) {
-    meta.__tenancy = inheritedMeta.__tenancy;
+  if (ownStated.has('nullable') && ownMeta.nullable === true) {
+    out.required = false;
+    meta.required = false;
+    ownStated.add('required');
   }
-  const inheritedValidate = inheritedMeta.validate;
-  const ownValidate = meta.validate;
   if (
-    typeof inheritedValidate === 'function' &&
-    typeof ownValidate === 'function'
+    Array.isArray(ownMeta.__statedOptions) ||
+    Array.isArray(inheritedMeta.__statedOptions)
   ) {
-    type Validator = (value: unknown) => boolean | Promise<boolean>;
-    meta.validate = async (value: unknown) =>
-      (await (inheritedValidate as Validator)(value)) &&
-      (await (ownValidate as Validator)(value));
+    meta.__statedOptions = [
+      ...new Set([
+        ...[...inheritedStated].filter(
+          (key) => !(typeChanged && TYPE_BOUND_OPTIONS.has(key)),
+        ),
+        ...ownStated,
+      ]),
+    ];
   }
-  return {
-    ...own,
-    _meta: meta as F['_meta'],
-    // The @tenantId decorator's marker survives a redeclaration whose scanner
-    // type conflicts with it (#841); on a clash the inherited marker wins.
-    ...(inherited.__tenancy !== undefined
-      ? {
-          __tenancy: {
-            ...((own.__tenancy as Bag | undefined) ?? {}),
-            ...(inherited.__tenancy as Bag),
-          },
-        }
-      : {}),
-    ...(own.value === undefined && inherited.value !== undefined
-      ? { value: inherited.value }
-      : {}),
-  };
+  if (representation === 'registry') {
+    // Runtime-only state a manifest never carries.
+    if (meta.__tenancy === undefined && inheritedMeta.__tenancy !== undefined)
+      meta.__tenancy = inheritedMeta.__tenancy;
+    const inheritedValidate = inheritedMeta.validate;
+    const ownValidate = ownMeta.validate;
+    if (
+      typeof inheritedValidate === 'function' &&
+      typeof ownValidate === 'function'
+    ) {
+      type Validator = (value: unknown) => boolean | Promise<boolean>;
+      meta.validate = async (value: unknown) =>
+        (await (inheritedValidate as Validator)(value)) &&
+        (await (ownValidate as Validator)(value));
+    }
+    // The @tenantId marker survives a scanner type conflict (#841).
+    if (inherited.__tenancy !== undefined) {
+      out.__tenancy = {
+        ...((own.__tenancy as Bag | undefined) ?? {}),
+        ...(inherited.__tenancy as Bag),
+      };
+    }
+    if (own.value === undefined && inherited.value !== undefined)
+      out.value = inherited.value;
+  }
+  if (Object.keys(meta).length > 0 || own._meta !== undefined) out._meta = meta;
+  return out as F;
 }
 
 /** A later framework base's `enum` / `description` follow onto the kept field. */
@@ -223,7 +316,7 @@ export function resolveInheritedFields<F extends InheritableField>(
       const current = result.get(name);
       const owner = owners.get(name);
       if (current === undefined || owner === undefined) {
-        result.set(name, field);
+        result.set(name, fillMissing({} as F, field, representation));
         owners.set(name, link);
         continue;
       }
@@ -240,7 +333,7 @@ export function resolveInheritedFields<F extends InheritableField>(
         result.set(
           name,
           owner.frameworkBase || link.frameworkBase
-            ? field
+            ? fillMissing({} as F, field, representation)
             : replace(name, current, field),
         );
         owners.set(name, link);
@@ -252,7 +345,9 @@ export function resolveInheritedFields<F extends InheritableField>(
       } else {
         result.set(
           name,
-          owner.frameworkBase ? field : replace(name, current, field),
+          owner.frameworkBase
+            ? fillMissing({} as F, field, representation)
+            : replace(name, current, field),
         );
         owners.set(name, link);
       }
@@ -261,7 +356,12 @@ export function resolveInheritedFields<F extends InheritableField>(
 
   for (const [name, declared] of own) {
     const current = result.get(name);
-    result.set(name, current ? replace(name, current, declared) : declared);
+    result.set(
+      name,
+      current
+        ? replace(name, current, declared)
+        : fillMissing({} as F, declared, representation),
+    );
   }
   return result;
 }
