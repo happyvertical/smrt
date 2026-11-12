@@ -1,5 +1,5 @@
 import assert from 'node:assert/strict';
-import { readFileSync } from 'node:fs';
+import { readdirSync, readFileSync } from 'node:fs';
 import test from 'node:test';
 import {
   APPROVAL_LABEL,
@@ -241,13 +241,15 @@ test('each required context gates a fork PR on the trusted approval script only'
     const required = job(workflow(file), name);
     assert.match(
       required,
-      /FORK_PR: >-\n\s+\$\{\{ github\.event_name == 'pull_request_target' &&\n\s+github\.event\.pull_request\.head\.repo\.full_name != github\.repository \}\}/,
+      /FORK_PR: >-\n\s+\$\{\{ github\.event_name == 'pull_request' &&\n\s+github\.event\.pull_request\.head\.repo\.full_name != github\.repository( &&\n\s+inputs\.fork_sandbox != true)? \}\}/,
       file,
     );
     const steps = required.split(/^      - name: /m).slice(1);
     const [checkout, gate, ...rest] = steps;
     assert.match(checkout, /^Checkout trusted fork approval gate\n\s+if: env\.FORK_PR == 'true'/, file);
-    assert.match(checkout, /ref: \$\{\{ github\.sha \}\}/, file);
+    // On `pull_request` github.sha is the fork-controlled merge commit (#4881).
+    assert.match(checkout, /ref: \$\{\{ github\.event\.pull_request\.base\.sha \}\}/, file);
+    assert.doesNotMatch(checkout, /github\.sha/, file);
     assert.match(gate, /if: env\.FORK_PR == 'true'/, file);
     assert.match(gate, /run: node scripts\/fork-pr-approval\.mjs gate/, file);
     assert.ok(rest.length > 0, file);
@@ -256,6 +258,44 @@ test('each required context gates a fork PR on the trusted approval script only'
     }
     assert.match(required, /^      actions: read$/m, file);
     assert.match(required, /^      statuses: read$/m, file);
+  }
+});
+
+test('only the two no-PR-code workflows keep pull_request_target (#4881)', () => {
+  // GitHub blocks pull_request_target on public repositories from 2026-12-02;
+  // the repository's Actions event policy allows it for exactly these files
+  // (.github/CI.md). Required contexts must come from pull_request runs.
+  const dir = new URL('../.github/workflows/', import.meta.url);
+  const users = readdirSync(dir)
+    .filter((name) => /\.ya?ml$/.test(name))
+    .filter((name) => /^\s+pull_request_target:/m.test(workflow(name)))
+    .sort();
+  assert.deepEqual(users, ['fork-pr-approval.yml', 'merge-queue-watchdog.yml']);
+  for (const file of ['on-pull-request.yml', 'postgres-tests.yml']) {
+    const source = workflow(file);
+    const on = source.slice(source.indexOf('\non:'), source.indexOf('\nconcurrency:'));
+    assert.match(on, /^  pull_request:\n    branches: \[main\]\n    types: \[opened, synchronize, reopened\]$/m, file);
+    assert.match(on, /^  merge_group:$/m, file);
+    assert.doesNotMatch(source, /'pull_request_target'|= pull_request_target\b/, file);
+  }
+});
+
+test('Fork PR Validation runs the PostgreSQL suites on fork code only via fork_sandbox', () => {
+  const source = workflow('postgres-tests.yml');
+  assert.match(source, /^      fork_sandbox:\n(?:        .*\n)*?        default: false$/m);
+  const decide = job(source, 'scope');
+  assert.match(decide, /FORK_SANDBOX: \$\{\{ inputs\.fork_sandbox == true \}\}/);
+  assert.match(
+    decide,
+    /if \[ "\$HEAD_REPO" != "\$REPOSITORY" \] && \[ "\$FORK_SANDBOX" != true \]; then\n\s+trusted=false/,
+  );
+  const caller = workflow('fork-pr-validation.yml');
+  assert.match(
+    caller,
+    /uses: \.\/\.github\/workflows\/postgres-tests\.yml\n    with:\n      fork_sandbox: true\n/,
+  );
+  for (const file of ['on-demand-validation.yml', 'on-pull-request.yml']) {
+    assert.doesNotMatch(workflow(file), /fork_sandbox/, file);
   }
 });
 

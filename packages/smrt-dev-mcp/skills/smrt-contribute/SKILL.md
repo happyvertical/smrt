@@ -51,8 +51,10 @@ You submit the PR, so read and understand every line of it before opening it.
 
 ## CI on a fork PR
 
-- A maintainer must approve the **Fork PR Validation** run before it executes.
-- Until then `Required CI` and `postgres-required` fail with "awaiting
+- A maintainer must approve your workflow runs (**Fork PR Validation**,
+  **Pull Request Validation**, **PostgreSQL Tests**) before they execute.
+- Until a maintainer approves your head commit, `Required CI` and
+  `postgres-required` wait for that run approval or fail with "awaiting
   maintainer approval". That is expected; do not try to fix it.
 - A maintainer applies `ci: fork-approved` after reviewing and approving the
   head commit. A new push removes the label and needs a fresh approval.

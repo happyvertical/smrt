@@ -226,7 +226,8 @@ runs:
     # below: those runs carry main's cache write scope while pnpm install
     # executes PR-head lifecycle scripts, so saving the store there would
     # give unreviewed code a main-scoped entry that trusted runs restore.
-    # Hosted fallback PR jobs install cold instead.
+    # PR validation runs on `pull_request` (#4881), whose saves stay in the
+    # PR's own pull-request ref scope, so PR jobs keep this cache.
     - name: Setup pnpm cache
       id: pnpm-cache
       if: >-
@@ -262,9 +263,9 @@ runs:
     # pull_request_target is excluded: those runs use the base branch's cache
     # write scope (main) while executing PR-head code, so enabling the shim
     # there would let an unreviewed PR write task artifacts every other run
-    # restores. Hosted PR validation therefore builds cold; merge-group and
-    # main-push hosted runs keep the shim (their writes land in their own
-    # branch scope and only reads come from main).
+    # restores. PR validation runs on `pull_request` (#4881), so PR jobs keep
+    # the shim like merge-group and main-push runs: their writes land in their
+    # own ref scope and only reads come from main.
     #
     # continue-on-error: if the shim fails to start (port in use, slow VM),
     # no TURBO_* is exported and turbo simply builds cold — the step must

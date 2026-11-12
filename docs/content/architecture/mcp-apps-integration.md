@@ -222,8 +222,7 @@ prefix before PR checkout. Local workspace runs use the normal TypeScript import
 a configured missing compiler path fails rather than falling back or skipping
 validation. The gate never installs a compiler itself.
 
-For the currently deployed `pull_request_target` base workflow, which may not yet
-export that variable, a missing workspace TypeScript package is resolved only in
+For a standards workflow that does not export that variable, a missing workspace TypeScript package is resolved only in
 GitHub Actions (`GITHUB_ACTIONS=true`) from the fixed
 `$RUNNER_TEMP/readme-validator/node_modules/typescript/lib/typescript.js` prefix.
 `RUNNER_TEMP` must be absolute. An explicit path takes priority; compiler load
