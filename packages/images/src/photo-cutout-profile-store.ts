@@ -4,7 +4,6 @@ import {
   validatePhotoCutoutRig,
 } from '@happyvertical/animation';
 import type { Asset, AssetRuntimeLike } from '@happyvertical/smrt-assets';
-import sharp from 'sharp';
 
 const RELATIONSHIP = 'character_cutout';
 const MANIFEST_VERSION = 1;
@@ -356,6 +355,7 @@ async function assertPngMatchesRig(
   ) {
     throw new Error('Photo cutout must be a PNG');
   }
+  const { default: sharp } = await import('sharp');
   const metadata = await sharp(png).metadata();
   if (!metadata.width || !metadata.height || metadata.format !== 'png') {
     throw new Error('Photo cutout PNG dimensions are invalid');
