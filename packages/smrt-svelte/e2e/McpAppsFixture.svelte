@@ -11,7 +11,7 @@ import { nextIntent, stageIntent } from './mcp-apps.intents.js';
 
 const app = useMcpApp(() => ({
   hostWindow: parent,
-  hostOrigin: 'http://127.0.0.1:47851',
+  hostOrigin: window.location.origin,
   appInfo: { name: 'Svelte registry fixture', version: '1' },
 }));
 let value = $state('Original');
