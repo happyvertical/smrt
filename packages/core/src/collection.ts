@@ -699,7 +699,7 @@ export class SmrtCollection<ModelType extends SmrtObject> extends SmrtClass {
    * subclass of it, the registry's effective class wins, so smrt's own
    * collections create and hydrate the app's class. Otherwise `_itemClass`.
    */
-  private resolveItemConstructor(): SmrtCollectionItemClass<ModelType> {
+  protected resolveItemConstructor(): SmrtCollectionItemClass<ModelType> {
     const itemClass = this._itemClass;
     const effective = ObjectRegistry.getEffectiveClassByConstructor(
       itemClass as unknown as SmrtObjectConstructor,
@@ -2608,7 +2608,7 @@ export class SmrtCollection<ModelType extends SmrtObject> extends SmrtClass {
     if (staticSelf._isJunctionBase === true) {
       const itemCtor = staticSelf._itemClass;
       const itemRegistered =
-        itemCtor && ObjectRegistry.getClassByConstructor(itemCtor);
+        itemCtor && ObjectRegistry.getEffectiveClassByConstructor(itemCtor);
       if (!itemRegistered) {
         throw new Error(
           `SmrtJunction subclass "${this.name}" has no registered item class. ` +

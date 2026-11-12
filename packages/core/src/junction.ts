@@ -248,7 +248,11 @@ export abstract class SmrtJunction<
     // Custom create/attach implementations remain authoritative. No opt-in is
     // inferred from a method name, class name, or interceptor registration name.
     if (
-      SmrtObject.hasBaseJunctionLifecycle(this._itemClass.prototype) &&
+      // Judge the class `createUnsaved()` will build: a same-named app
+      // subclass that replaced `_itemClass` may override the lifecycle (#4921).
+      SmrtObject.hasBaseJunctionLifecycle(
+        this.resolveItemConstructor().prototype,
+      ) &&
       GlobalInterceptors.supportsBulkMutation(
         this.getResolvedItemClassName(),
       ) &&

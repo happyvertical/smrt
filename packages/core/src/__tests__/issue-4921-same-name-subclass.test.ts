@@ -15,6 +15,7 @@ import { getTestDatabase } from '../testing/database.js';
 import {
   Account4921 as SmrtAccount,
   SmrtAccountCollection4921,
+  SmrtLinks4921,
   Own4921 as SmrtOwn,
   SmrtOwnCollection4921,
   Shared4921 as SmrtShared,
@@ -145,6 +146,32 @@ describe('#4921 same-name app subclass is used by smrt collections', () => {
     const stored = await metaTypes(String(table));
     expect(stored.length).toBeGreaterThan(0);
     expect(new Set(stored)).toEqual(new Set([qualified]));
+  });
+
+  it('a smrt junction builds each replacing-class link once in setLinks()', async () => {
+    const links = await SmrtLinks4921.create({ db });
+
+    // What one sequential attach costs in `initialize()` runs.
+    app.linkInitializations.count = 0;
+    const attached = await links.attach('probe-owner', 'probe');
+    const perLink = app.linkInitializations.count;
+    expect(attached).toBeInstanceOf(app.Link4921);
+    expect(perLink).toBeGreaterThan(0);
+
+    // The app class overrides a lifecycle method, so the batch path does not
+    // apply. `setLinks()` must see that before it builds anything: building a
+    // batch it then discards would run the app's `initialize()` twice per link.
+    app.linkInitializations.count = 0;
+    await links.setLinks('owner', ['a', 'b', 'c']);
+    expect(app.linkInitializations.count).toBe(3 * perLink);
+
+    const stored = await links.list({ where: { ownerId: 'owner' } });
+    expect(
+      stored
+        .map((link) => (link as unknown as { assetId: string }).assetId)
+        .sort(),
+    ).toEqual(['a', 'b', 'c']);
+    for (const link of stored) expect(link).toBeInstanceOf(app.Link4921);
   });
 
   describe('effective-class lookup', () => {

@@ -2,6 +2,7 @@
 import { SmrtCollection } from '../collection.js';
 import { field } from '../decorators/index.js';
 import { SmrtObject, smrt } from '../index.js';
+import { SmrtJunction } from '../junction.js';
 
 // A smrt class whose subclasses share its table.
 @smrt({ packageName: '@happyvertical/smrt-fixture4921', tableStrategy: 'sti' })
@@ -39,4 +40,21 @@ export class Account4921 extends SmrtObject {
 }
 export class SmrtAccountCollection4921 extends SmrtCollection<Account4921> {
   static readonly _itemClass = Account4921;
+}
+
+// A smrt junction model. `setLinks()` batches only models with the base
+// lifecycle, so it must judge the class it will actually build.
+@smrt({
+  packageName: '@happyvertical/smrt-fixture4921',
+  conflictColumns: ['owner_id', 'asset_id'],
+})
+export class Link4921 extends SmrtObject {
+  @field({ required: true }) ownerId = '';
+  @field({ required: true }) assetId = '';
+  @field() sortOrder = 0;
+}
+export class SmrtLinks4921 extends SmrtJunction<Link4921> {
+  static readonly _itemClass = Link4921;
+  protected leftField = 'ownerId';
+  protected rightField = 'assetId';
 }

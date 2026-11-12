@@ -2,6 +2,7 @@
 import { SmrtCollection } from '../collection.js';
 import { SmrtObject, smrt } from '../index.js';
 import {
+  Link4921 as SmrtLink,
   Own4921 as SmrtOwn,
   Shared4921 as SmrtShared,
 } from './issue-4921-smrt.fixture.js';
@@ -41,5 +42,17 @@ export class Account4921 extends SmrtObject {
   name: string = '';
   appOnly() {
     return 'unrelated app account';
+  }
+}
+
+/** Counts `initialize()` runs of the app's junction subclass. */
+export const linkInitializations = { count: 0 };
+
+// Same-named junction subclass that overrides a lifecycle method.
+@smrt({ packageName: '@local/app-fixture4921' })
+export class Link4921 extends SmrtLink {
+  override async initialize(): Promise<this> {
+    linkInitializations.count += 1;
+    return super.initialize();
   }
 }

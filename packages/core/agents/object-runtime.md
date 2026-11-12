@@ -215,6 +215,9 @@ package or a class that was never replaced.
   (index memoized per registry generation, #3047). Never resolve by simple name.
 - `SmrtCollection.resolveItemConstructor()` is the single place a collection
   picks the constructor to build; `getRegisteredItemClass()` uses the same lookup.
+  A junction collection is created against the effective class too, and
+  `setLinks()` judges batch eligibility on the constructor it will build, so an
+  app subclass that overrides the lifecycle takes the sequential path at once.
 - Limit: a direct `new Model(...)` in a service bypasses the collection and still
   builds the class it imported.
 
