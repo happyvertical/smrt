@@ -129,7 +129,7 @@ const step = $derived(
       <p>{description}</p>
       <p>{t(M['ui.onboarding.owner'])}</p>
       <Button disabled={busy} onclick={() => change({ action: 'welcome' })}>{t(M['ui.onboarding.start'])}</Button>
-      <Button variant="ghost" href={backHref}>{t(M['ui.onboarding.back_settings'])}</Button>
+      {#if progress.completed || progress.rerunning}<Button variant="ghost" href={backHref}>{t(M['ui.onboarding.back_settings'])}</Button>{/if}
     {:else if progress.step === 'ai'}
       <ConnectAi client={connectAi} {apiKeyHref} {headingId} onchange={(_, configured) => { ready = configured; }} />
       <p>{t(M['ui.onboarding.skip_hint'])}</p>

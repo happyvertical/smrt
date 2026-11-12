@@ -98,9 +98,7 @@ describe('FirstRunOnboarding', () => {
       'aria-valuenow',
       '1',
     );
-    expect(
-      screen.getByRole('link', { name: 'Back to Settings' }),
-    ).toHaveAttribute('href', '/settings');
+    expect(screen.queryByRole('link', { name: 'Back to Settings' })).toBeNull();
     await user.tab();
     await user.keyboard('{Enter}');
     expect(
@@ -213,4 +211,17 @@ describe('FirstRunOnboarding', () => {
       ),
     );
   });
+});
+
+it('offers Settings when revisiting a completed installation', () => {
+  const f = fixture();
+  f.props.initialState = {
+    ...f.props.initialState,
+    completed: true,
+    rerunning: true,
+  };
+  render(FirstRunOnboarding, { props: f.props });
+  expect(
+    screen.getByRole('link', { name: 'Back to Settings' }),
+  ).toHaveAttribute('href', '/settings');
 });
