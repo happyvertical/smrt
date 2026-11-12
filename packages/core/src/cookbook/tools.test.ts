@@ -287,11 +287,7 @@ async function lazy() {
 }
 
 describe(`installed recipe server tools (${databaseType}, in process)`, () => {
-  it('activates installed recipes beside editor-owned lists, while refusing other unknown identities', async ({
-    skip,
-  }) => {
-    // The real PostgreSQL coordinator refusal is tested in activation.test.ts.
-    if (databaseType === 'pglite') skip();
+  it('activates installed recipes beside editor-owned lists, while refusing other unknown identities', async () => {
     const activation = await lazy();
     const custom = '@fixture/app:LoanerMat';
     const before = engines.get(context.tenantId!)!.state();
@@ -349,11 +345,7 @@ describe(`installed recipe server tools (${databaseType}, in process)`, () => {
     await expect(enable()).rejects.toMatchObject({ code: 'activation_failed' });
   });
 
-  it('activates a lazy closure before publishing enablement, then honors preference and durable disable approval', async ({
-    skip,
-  }) => {
-    // The real PostgreSQL coordinator refusal is tested in activation.test.ts.
-    if (databaseType === 'pglite') skip();
+  it('activates a lazy closure before publishing enablement, then honors preference and durable disable approval', async () => {
     const activation = await lazy();
     const handler = rest();
     expect(await service.list(context)).toHaveLength(7); // Empty lazy host can bootstrap.
@@ -396,24 +388,28 @@ describe(`installed recipe server tools (${databaseType}, in process)`, () => {
     expect(
       (
         await db.query(
-          "SELECT name FROM sqlite_master WHERE name = 'c5_invoices'",
+          databaseType === 'pglite'
+            ? "SELECT table_name AS name FROM information_schema.tables WHERE table_schema = current_schema() AND table_name = 'c5_invoices'"
+            : "SELECT name FROM sqlite_master WHERE name = 'c5_invoices'",
         )
       ).rows,
     ).toHaveLength(1);
   });
 
-  it('reports lazy migration failure to the tool caller without persisting enablement, and permits retry', async ({
-    skip,
-  }) => {
-    // The real PostgreSQL coordinator refusal is tested in activation.test.ts.
-    if (databaseType === 'pglite') skip();
+  it('reports lazy migration failure to the tool caller without persisting enablement, and permits retry', async () => {
     const activation = await lazy();
     const handler = rest();
     if (!db.transaction) throw new Error('SQLite transaction required');
-    const transaction = db.transaction.bind(db);
-    const failure = vi.spyOn(db, 'transaction').mockImplementation(async () => {
-      throw new Error('injected activation DDL failure');
-    });
+    const failure = vi
+      .spyOn(
+        db,
+        databaseType === 'pglite' && db.beginTransaction
+          ? 'beginTransaction'
+          : 'transaction',
+      )
+      .mockImplementation(async () => {
+        throw new Error('injected activation DDL failure');
+      });
     await expect(enable()).rejects.toMatchObject({
       code: 'activation_failed',
       publicMessage: expect.stringContaining('injected activation DDL failure'),
@@ -432,7 +428,7 @@ describe(`installed recipe server tools (${databaseType}, in process)`, () => {
     expect(revision()).toBe(0);
     expect(activation.isReady(INVOICE)).toBe(false);
     expect((await handler(request())).status).toBe(404);
-    failure.mockImplementation(transaction);
+    failure.mockRestore();
     failCommit = true;
     await expect(enable()).rejects.toThrow('storage failure');
     expect(activation.isReady(INVOICE)).toBe(true);
@@ -444,11 +440,7 @@ describe(`installed recipe server tools (${databaseType}, in process)`, () => {
     failure.mockRestore();
   });
 
-  it('activates templates only after approval and rechecks preference after activation awaits', async ({
-    skip,
-  }) => {
-    // The real PostgreSQL coordinator refusal is tested in activation.test.ts.
-    if (databaseType === 'pglite') skip();
+  it('activates templates only after approval and rechecks preference after activation awaits', async () => {
     const activation = await lazy();
     options.isAppEmpty = async () => false;
     const preview = await call('cookbook.apply', { id: 'small-shop' });
@@ -695,11 +687,7 @@ describe(`installed recipe server tools (${databaseType}, in process)`, () => {
       (await call('cookbook.apply', { id: 'small-shop' })).approvalRequired,
     ).toBe(true);
   });
-  it('refuses the empty-app shortcut if records arrive while lazy activation is awaited', async ({
-    skip,
-  }) => {
-    // The real PostgreSQL coordinator refusal is tested in activation.test.ts.
-    if (databaseType === 'pglite') skip();
+  it('refuses the empty-app shortcut if records arrive while lazy activation is awaited', async () => {
     const activation = await lazy();
     const activate = activation.activate.bind(activation);
     let empty = true;
@@ -720,11 +708,7 @@ describe(`installed recipe server tools (${databaseType}, in process)`, () => {
     ).rejects.toMatchObject({ code: 'conflict' });
     expect(revision()).toBe(0);
   });
-  it('rechecks live exposure after the host empty-data check before committing', async ({
-    skip,
-  }) => {
-    // The real PostgreSQL coordinator refusal is tested in activation.test.ts.
-    if (databaseType === 'pglite') skip();
+  it('rechecks live exposure after the host empty-data check before committing', async () => {
     const activation = await lazy();
     const activate = activation.activate.bind(activation);
     let activated = false;

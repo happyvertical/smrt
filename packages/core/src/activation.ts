@@ -16,6 +16,7 @@ import {
   type RuntimeExposureGate,
   type RuntimeExposureModel,
 } from './runtime-exposure.js';
+import { runSerializedAgainstSystemTableBootstrap } from './system/bootstrap.js';
 
 export type {
   ActivationManifest,
@@ -60,12 +61,27 @@ declare global {
   var __smrtActivation: ActivationProcess | undefined;
 }
 
+/** Serialize explicit runtime schema writers sharing the process-wide registry. */
+export function withRuntimeSchemaActivation<T>(
+  work: () => Promise<T>,
+): Promise<T> {
+  globalThis.__smrtActivation ??= { tail: Promise.resolve(), slots: new Map() };
+  const process = globalThis.__smrtActivation;
+  const operation = process.tail.then(work);
+  process.tail = operation.then(
+    () => {},
+    () => {},
+  );
+  return operation;
+}
+
 export function createActivationCoordinator(
   options: ActivationCoordinatorOptions,
 ): ActivationCoordinator {
-  if (resolveMigrationEngine(options.db) !== 'sqlite') {
+  const engine = resolveMigrationEngine(options.db);
+  if (engine !== 'sqlite' && engine !== 'postgres') {
     throw new Error(
-      'SMRT lazy activation supports SQLite only. Keep eager registration and migrateSmrtSchemas for PostgreSQL/DuckDB; live PostgreSQL activation requires transaction-bound schema inspection under an advisory lock (see agents/postgres-parity.md).',
+      'SMRT lazy activation supports SQLite and PostgreSQL only; keep eager registration and operator migrations for DuckDB.',
     );
   }
   activationClosure(options.manifest, Object.keys(options.manifest.models));
@@ -109,7 +125,7 @@ export function createActivationCoordinator(
       const key = JSON.stringify(closure.models);
       const existing = pending.get(key);
       if (existing) return existing;
-      const work = process.tail.then(async () => {
+      const work = withRuntimeSchemaActivation(async () => {
         if (closure.models.every((id) => ready.has(id))) return;
         if (invalidGraph) throw invalidGraph;
         const before = new Set(ObjectRegistry.getAllClasses().keys());
@@ -156,21 +172,32 @@ export function createActivationCoordinator(
             'SMRT activation manifest disagrees with registered physical tables; regenerate it',
           );
         }
-        await migrateSmrtSchemas({
-          db: options.db,
-          packageName: options.packageName,
-          engineHint: 'sqlite',
-          name: `smrt_activation_${randomUUID()}`,
-          tables: closure.tables,
-          requireComplete: true,
-        });
+        await runSerializedAgainstSystemTableBootstrap(
+          options.db,
+          engine,
+          async (db) =>
+            migrateSmrtSchemas({
+              db,
+              packageName: options.packageName,
+              engineHint: engine,
+              ...(engine === 'postgres'
+                ? {
+                    atomic: true,
+                    postgresSafe: false,
+                    useConcurrentIndexes: false,
+                  }
+                : {}),
+              name: `smrt_activation_${randomUUID()}`,
+              tables: closure.tables,
+              requireComplete: true,
+            }),
+        );
         // No await between successful migration and publication. A failed import,
         // diff or transaction never publishes readiness. Retry re-diffs committed DDL.
         for (const id of closure.models) ready.add(id);
         notifyRuntimeExposureChanged();
       });
       // Rejection must not poison the process queue or the next retry.
-      process.tail = work.catch(() => {});
       pending.set(key, work);
       void work.finally(() => pending.delete(key)).catch(() => {});
       return work;

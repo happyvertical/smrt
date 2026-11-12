@@ -16,6 +16,7 @@ import type {
   SmartObjectDefinition,
   SmartObjectManifest,
 } from '../scanner/types.js';
+import { inspectTableSchema } from '../schema/inspection.js';
 import { snapshotObjectRegistryState } from '../test-utils.js';
 import { getTestDatabase } from '../testing/database.js';
 import { buildActivationManifest } from './generate.js';
@@ -32,13 +33,18 @@ let restore: () => void;
 let db: DatabaseInterface;
 let directory: string;
 let sequence = 0;
+const databaseType = process.env.SMRT_TEST_PGLITE === '1' ? 'pglite' : 'sqlite';
+const engine = databaseType === 'pglite' ? 'postgres' : 'sqlite';
+const SAVED = '33333333-3333-4333-8333-333333333333';
 beforeEach(async () => {
   restore = snapshotObjectRegistryState();
   ObjectRegistry.clear();
   directory = mkdtempSync(join(tmpdir(), 'smrt-activation-'));
-  db = await getDatabase({
-    type: 'sqlite',
+  db = await getTestDatabase({
+    type: databaseType,
     url: join(directory, 'app.sqlite'),
+    classes: [],
+    includeSystemTables: false,
   });
 });
 afterEach(async () => {
@@ -61,10 +67,11 @@ function fixture() {
       fields: {},
     });
     entry.schema!.columns = {
-      id: { type: 'TEXT', primaryKey: true },
+      id: { type: 'UUID', primaryKey: true },
       title: { type: 'TEXT' },
+      visits: { type: 'INTEGER' },
     };
-    entry.fields = { title: { type: 'text' } };
+    entry.fields = { title: { type: 'text' }, visits: { type: 'integer' } };
     entry.decoratorConfig = { tableName, api: { public: true } };
     if (parent) {
       entry.extends = parent.split(':')[1];
@@ -81,7 +88,7 @@ function fixture() {
   const customer = define(CUSTOMER, 'activation_customers');
   customer.fields.profileId = { type: 'crossPackageRef', related: PERSON };
   customer.schema!.columns.profile_id = {
-    type: 'TEXT',
+    type: 'UUID',
     foreignKey: { table: 'activation_profiles', column: 'id' },
   };
   const app = define(APP, 'activation_customers', CUSTOMER);
@@ -93,7 +100,7 @@ function fixture() {
   const invoice = define(INVOICE, 'activation_invoices');
   invoice.fields.customerId = { type: 'crossPackageRef', related: CUSTOMER };
   invoice.schema!.columns.customer_id = {
-    type: 'TEXT',
+    type: 'UUID',
     foreignKey: { table: 'activation_customers', column: 'id' },
   };
   define(UNUSED, 'activation_unused');
@@ -170,12 +177,14 @@ function fixture() {
 }
 async function applicationTables() {
   const { rows } = await db.query(
-    "SELECT name FROM sqlite_master WHERE type = 'table' AND name LIKE 'activation_%' ORDER BY name",
+    databaseType === 'pglite'
+      ? "SELECT table_name AS name FROM information_schema.tables WHERE table_schema = current_schema() AND table_name LIKE 'activation_%' ORDER BY table_name"
+      : "SELECT name FROM sqlite_master WHERE type = 'table' AND name LIKE 'activation_%' ORDER BY name",
   );
   return rows.map((row) => row.name);
 }
 
-describe('SQLite lazy activation', () => {
+describe(`${engine} lazy activation`, () => {
   it('boots only the persisted union plus always-on, without registering the disabled superset', async () => {
     const { coordinator, enabled } = fixture();
     enabled.get('b')?.add(UNUSED);
@@ -214,10 +223,21 @@ describe('SQLite lazy activation', () => {
       'activation_invoices',
       'activation_profiles',
     ]);
-    const schema = await db.query('PRAGMA table_info(activation_customers)');
-    expect(schema.rows.map((row) => row.name)).toContain('preferred_pose');
-    const fks = await db.query('PRAGMA foreign_key_list(activation_invoices)');
-    expect(fks.rows.map((row) => row.table)).toEqual(['activation_customers']);
+    const schema = await inspectTableSchema(db, 'activation_customers', engine);
+    expect(schema?.columns).toHaveProperty('preferred_pose');
+    const invoiceSchema = await inspectTableSchema(
+      db,
+      'activation_invoices',
+      engine,
+    );
+    expect(invoiceSchema?.foreignKeys.map((fk) => fk.referencesTable)).toEqual([
+      'activation_customers',
+    ]);
+    if (engine === 'postgres') {
+      expect(schema?.columns.id.type).toBe('uuid');
+      expect(schema?.columns.visits.type).toBe('bigint');
+      expect(invoiceSchema?.columns.customer_id.type).toBe('uuid');
+    }
     expect(ObjectRegistry.getClass(APP)?.constructor.name).toBe('Customer');
     expect(coordinator.isReady(CUSTOMER)).toBe(true);
     expect(coordinator.isReady(STUDENT)).toBe(true);
@@ -255,26 +275,83 @@ describe('SQLite lazy activation', () => {
     expect(Number(rows[0].count)).toBe(3); // boot, first closure, unused; overlap no-op
   });
 
+  it('rechecks committed tables for independent coordinators without escaping the migration transaction', async () => {
+    const { coordinator, options } = fixture();
+    const other = createActivationCoordinator({
+      ...options,
+      scope: `${options.scope}-other`,
+    });
+    const forbidden =
+      engine === 'postgres'
+        ? [
+            vi
+              .spyOn(db, 'query')
+              .mockRejectedValue(
+                new Error('pooled executor forbidden during activation'),
+              ),
+            vi
+              .spyOn(db, 'getTableSchema')
+              .mockRejectedValue(
+                new Error('pooled inspector forbidden during activation'),
+              ),
+          ]
+        : [];
+    await Promise.all([
+      coordinator.activate([INVOICE]),
+      other.activate([INVOICE]),
+    ]);
+    for (const spy of forbidden) {
+      expect(spy).not.toHaveBeenCalled();
+      spy.mockRestore();
+    }
+    expect(coordinator.isReady(INVOICE)).toBe(true);
+    expect(other.isReady(INVOICE)).toBe(true);
+    expect(await applicationTables()).toHaveLength(4);
+    expect(
+      Number(
+        (
+          await db.query(
+            "SELECT count(*) AS count FROM _smrt_schema_migrations WHERE status = 'completed'",
+          )
+        ).rows[0].count,
+      ),
+    ).toBe(1);
+  });
+
   it('rolls back a failed migration, keeps exposure closed, and retries the same loaded closure', async () => {
     const { coordinator, enabled, loaders } = fixture();
     await coordinator.boot();
     enabled.get('a')?.add(INVOICE);
     if (!db.transaction) throw new Error('SQLite transaction support required');
-    const transaction = db.transaction.bind(db);
     let failed = false;
-    vi.spyOn(db, 'transaction').mockImplementation((callback) =>
-      transaction(async (tx) => {
-        const wrapped = Object.create(tx) as DatabaseInterface;
-        wrapped.query = async (...args: Parameters<typeof db.query>) => {
-          if (!failed && /CREATE TABLE.*activation_invoices/s.test(args[0])) {
-            failed = true;
-            throw new Error('Injected DDL failure');
-          }
-          return tx.query(...args);
-        };
-        return callback(wrapped);
-      }),
-    );
+    const wrap = (tx: DatabaseInterface): DatabaseInterface => {
+      const wrapped = Object.create(tx) as DatabaseInterface;
+      wrapped.query = async (...args: Parameters<typeof db.query>) => {
+        if (!failed && /CREATE TABLE.*activation_invoices/s.test(args[0])) {
+          failed = true;
+          throw new Error('Injected DDL failure');
+        }
+        return tx.query(...args);
+      };
+      if (tx.transaction)
+        wrapped.transaction = (callback) =>
+          tx.transaction!((nested) => callback(wrap(nested)));
+      return wrapped;
+    };
+    if (engine === 'postgres' && db.beginTransaction) {
+      const begin = db.beginTransaction.bind(db);
+      vi.spyOn(db, 'beginTransaction').mockImplementation(
+        async () =>
+          wrap(await begin()) as Awaited<
+            ReturnType<NonNullable<typeof db.beginTransaction>>
+          >,
+      );
+    } else {
+      const transaction = db.transaction.bind(db);
+      vi.spyOn(db, 'transaction').mockImplementation((callback) =>
+        transaction((tx) => callback(wrap(tx))),
+      );
+    }
     await expect(coordinator.activate([INVOICE])).rejects.toThrow(
       'Injected DDL failure',
     );
@@ -297,8 +374,12 @@ describe('SQLite lazy activation', () => {
     await coordinator.activate([INVOICE]);
     enabled.get('b')?.add(INVOICE);
     await db.query(
-      "INSERT INTO activation_invoices (id, slug, context, title) VALUES ('saved', 'saved', '', 'retained')",
+      `INSERT INTO activation_invoices (id, slug, context, title) VALUES ('${SAVED}', 'saved', '', 'retained')`,
     );
+    if (engine === 'postgres')
+      await db.query(
+        'ALTER TABLE activation_host ALTER COLUMN visits TYPE INTEGER',
+      );
     ObjectRegistry.clear(); // a fresh process's registry
     const restarted = createActivationCoordinator({
       ...options,
@@ -307,51 +388,28 @@ describe('SQLite lazy activation', () => {
     await restarted.boot();
     expect(restarted.isReady(INVOICE)).toBe(true);
     expect(await applicationTables()).toHaveLength(4);
+    if (engine === 'postgres')
+      expect(
+        (await inspectTableSchema(db, 'activation_host', engine))?.columns
+          .visits.type,
+      ).toBe('integer');
     expect(
       (
         await db.query(
-          "SELECT title FROM activation_invoices WHERE id = 'saved'",
+          `SELECT title FROM activation_invoices WHERE id = '${SAVED}'`,
         )
       ).rows[0].title,
     ).toBe('retained');
   });
-
-  it.runIf(process.env.SMRT_TEST_PGLITE === '1')(
-    'refuses real in-process PostgreSQL before loader, DDL or readiness publication',
-    async () => {
-      const { options, loaders } = fixture();
-      const postgres = await getTestDatabase({
-        type: 'pglite',
-        url: 'memory://',
-        includeSystemTables: false,
-        classes: [],
-      });
-      try {
-        const query = vi.spyOn(postgres, 'query');
-        expect(() =>
-          createActivationCoordinator({
-            ...options,
-            scope: `${options.scope}-postgres`,
-            db: postgres,
-          }),
-        ).toThrow(/SQLite only.*eager/);
-        expect(query).not.toHaveBeenCalled();
-        for (const loader of Object.values(loaders))
-          expect(loader).not.toHaveBeenCalled();
-      } finally {
-        await postgres.close?.();
-      }
-    },
-  );
 
   it('refuses unsupported engines before importing or migrating and rejects bad graph edges', () => {
     const { options, graph, loaders } = fixture();
     expect(() =>
       createActivationCoordinator({
         ...options,
-        db: { url: 'postgresql://localhost/example' } as DatabaseInterface,
+        db: { url: 'duckdb://example' } as DatabaseInterface,
       }),
-    ).toThrow(/SQLite only.*eager/);
+    ).toThrow(/SQLite and PostgreSQL only.*eager/);
     expect(() => activationClosure(graph, ['@unknown/pkg:Missing'])).toThrow(
       /Unknown activation model/,
     );
@@ -415,6 +473,7 @@ describe('SQLite lazy activation', () => {
     await migrateSmrtSchemas({
       db,
       packageName: '@activation/app',
+      engineHint: engine,
       name: 'subset',
       tables: ['activation_host'],
     });
@@ -422,6 +481,7 @@ describe('SQLite lazy activation', () => {
     await migrateSmrtSchemas({
       db,
       packageName: '@activation/app',
+      engineHint: engine,
       name: 'eager',
     });
     expect(await applicationTables()).toEqual([

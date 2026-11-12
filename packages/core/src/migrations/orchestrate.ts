@@ -30,6 +30,8 @@ import { MigrationTracker } from './tracker.js';
 
 export interface MigrateSmrtSchemasOptions {
   db: DatabaseInterface;
+  /** Keep tracked DDL and its marker atomic; safe inside a caller-owned transaction. */
+  atomic?: boolean;
   /** Stored on the migration record so the audit log shows which app applied it. */
   packageName: string;
   /**
@@ -267,6 +269,7 @@ export async function migrateSmrtSchemas(
   );
 
   const results = await tracker.applyAll([migration], {
+    atomic: options.atomic,
     postgresSafe: options.postgresSafe ?? true,
     reconcile: options.reconcile ?? true,
   });

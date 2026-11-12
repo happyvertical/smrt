@@ -44,6 +44,7 @@ import {
   requireForeignKeyAction,
 } from '../schema/foreign-key-policy.js';
 import { shortenIdentifier } from '../schema/index-utils.js';
+import { inspectTableSchema } from '../schema/inspection.js';
 import {
   isEmptyTextOnlyProbe,
   maskSampleValue,
@@ -1042,11 +1043,12 @@ export class SchemaComparer {
   private async getLiveSchema(
     tableName: string,
   ): Promise<SqlTableSchemaInfo | undefined> {
+    if (!this.db.getTableSchema && this.engine !== 'postgres') return undefined;
     if (this.liveSchemas.has(tableName)) {
       return this.liveSchemas.get(tableName) ?? undefined;
     }
     const schema = unquoteIndexColumns(
-      await this.db.getTableSchema?.(tableName),
+      await inspectTableSchema(this.db, tableName, this.engine),
     );
     this.liveSchemas.set(tableName, schema);
     return schema ?? undefined;
@@ -1074,7 +1076,11 @@ export class SchemaComparer {
    * `introspectionConcurrency` introspections in flight on the pool.
    */
   private async prefetchLiveSchemas(tableNames: string[]): Promise<void> {
-    if (typeof this.db.getTableSchema !== 'function') return;
+    if (
+      typeof this.db.getTableSchema !== 'function' &&
+      this.engine !== 'postgres'
+    )
+      return;
     const pending = tableNames.filter(
       (tableName) => !this.liveSchemas.has(tableName),
     );
@@ -1085,7 +1091,9 @@ export class SchemaComparer {
       pending,
       concurrency,
       async (tableName) =>
-        unquoteIndexColumns(await this.db.getTableSchema?.(tableName)),
+        unquoteIndexColumns(
+          await inspectTableSchema(this.db, tableName, this.engine),
+        ),
     );
     pending.forEach((tableName, index) => {
       this.liveSchemas.set(tableName, schemas[index]);

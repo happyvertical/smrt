@@ -273,11 +273,8 @@ async function migrate(manifest: SmartObjectManifest) {
 }
 
 describe('same-name app subclass', () => {
-  // Live DDL remains SQLite-only; eager PostgreSQL subclass CRUD is covered below.
-  it('serves reference picker search and labels from the effective app model only after lazy activation', async ({
-    skip,
-  }) => {
-    if (databaseType === 'pglite') skip();
+  // Both engines use the same lazy readiness and effective app identity contract.
+  it('serves reference picker search and labels from the effective app model only after lazy activation', async () => {
     runtime(up, app);
     db = await getTestDatabase({
       type: databaseType,
@@ -546,12 +543,8 @@ describe('same-name app subclass', () => {
   it.each([
     { replacement: false, lazy: false },
     { replacement: true, lazy: false },
-    ...(databaseType === 'sqlite'
-      ? [
-          { replacement: false, lazy: true },
-          { replacement: true, lazy: true },
-        ]
-      : []),
+    { replacement: false, lazy: true },
+    { replacement: true, lazy: true },
   ])('agrees on gated STI collection ownership through REST and MCP: %j', async ({
     replacement,
     lazy,
@@ -684,7 +677,9 @@ describe('same-name app subclass', () => {
         expect(
           (
             await db.query(
-              "SELECT name FROM sqlite_master WHERE type = 'table' AND name LIKE 'a2_%'",
+              databaseType === 'pglite'
+                ? "SELECT table_name AS name FROM information_schema.tables WHERE table_schema = current_schema() AND table_name LIKE 'a2_%'"
+                : "SELECT name FROM sqlite_master WHERE type = 'table' AND name LIKE 'a2_%'",
             )
           ).rows,
         ).toEqual([{ name: 'a2_profiles' }]);
