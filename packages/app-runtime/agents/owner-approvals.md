@@ -116,3 +116,18 @@ shape. Client-supplied MCP names never establish identity or approval authority.
 Concurrent recovery and owner-decision resumes share an in-flight native executor
 dispatch within one continuation adapter. The native executor still owns durable
 consumption; generic continuation dispatch retains its canonical consumption CAS.
+
+## PostgreSQL envelope adapter
+
+`createOwnerApprovalStore(db, now?)` is the portable name of the existing
+canonical ApprovalService adapter. `createSqliteOwnerApprovalStore` remains an
+alias for current hosts. SQLite and PostgreSQL/PGlite are supported; other
+engines refuse. PostgreSQL hold, tenant and gate IDs are native UUIDs. The host
+system table is provisioned under core's existing serialized system-bootstrap
+lock; application approval tables still require ordinary migrations.
+`pnpm --filter @happyvertical/smrt-app-runtime test:pglite` reruns this package's
+owner-approval/continuation suite on in-process PostgreSQL, including a database
+close/reopen, single consumption, actor revalidation and results. No hosted
+credential or external-effects exactly-once guarantee is implied.
+
+Legacy PostgreSQL envelopes with TEXT identities fail with `OWNER_APPROVAL_MIGRATION_REQUIRED`; validate their values and migrate the system table to UUID before serving. Runtime never rewrites those identities.

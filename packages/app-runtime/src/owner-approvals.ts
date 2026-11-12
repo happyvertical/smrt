@@ -6,6 +6,10 @@ import {
   ApprovalService,
   defineApprovalKind,
 } from '@happyvertical/smrt-approvals';
+import {
+  getDatabaseEngine,
+  runSerializedAgainstSystemTableBootstrap,
+} from '@happyvertical/smrt-core';
 import { withTenant } from '@happyvertical/smrt-tenancy';
 import {
   DEFAULT_ROLE_SLUGS,
@@ -319,19 +323,37 @@ export class OwnerApprovalAuthority {
 const TABLE = '_smrt_owner_tool_holds';
 const DECIDE_PERMISSION = 'runtime.owner-approval.decide';
 
-/** SQLite envelope adapter. ApprovalService remains the only decision/consumption authority.
+/** SQLite/PostgreSQL envelope adapter. ApprovalService remains the only decision/consumption authority.
  * Application migrations must include smrt-approvals before this adapter is used.
  * Only the host envelope is a runtime system table; no duplicate approval model/ledger.
  */
-export async function createSqliteOwnerApprovalStore(
+export async function createOwnerApprovalStore(
   db: DatabaseInterface,
   now: () => number = Date.now,
 ): Promise<OwnerApprovalStore> {
   const service = new ApprovalService({ db, now: () => new Date(now()) });
-  await db.query(`CREATE TABLE IF NOT EXISTS ${TABLE} (
-    id TEXT PRIMARY KEY, tenant_id TEXT NOT NULL, gate_id TEXT,
-    execution_status TEXT, record TEXT NOT NULL, result TEXT
-  )`);
+  const engine = getDatabaseEngine(db);
+  if (engine !== 'sqlite' && engine !== 'postgres')
+    throw new Error(
+      'Owner approval storage supports SQLite and PostgreSQL only',
+    );
+  const idType = engine === 'postgres' ? 'UUID' : 'TEXT';
+  await runSerializedAgainstSystemTableBootstrap(db, engine, async (tx) => {
+    await tx.query(`CREATE TABLE IF NOT EXISTS ${TABLE} (
+      id ${idType} PRIMARY KEY, tenant_id ${idType} NOT NULL, gate_id ${idType},
+      execution_status TEXT, record TEXT NOT NULL, result TEXT
+    )`);
+    if (engine === 'postgres') {
+      const { rows } = await tx.query(
+        `SELECT data_type FROM information_schema.columns WHERE table_schema = current_schema() AND table_name = ? AND column_name IN ('id', 'tenant_id', 'gate_id')`,
+        TABLE,
+      );
+      if (rows.length !== 3 || rows.some((row) => row.data_type !== 'uuid'))
+        throw new Error(
+          'OWNER_APPROVAL_MIGRATION_REQUIRED: PostgreSQL hold identities must be UUID; validate and migrate the legacy system table before serving',
+        );
+    }
+  });
   const principal = (
     tenantId: string,
     id: string,
@@ -488,6 +510,9 @@ export async function createSqliteOwnerApprovalStore(
     },
   };
 }
+
+/** Compatibility name retained for existing local hosts. */
+export const createSqliteOwnerApprovalStore = createOwnerApprovalStore;
 
 /** Saved caller authority can only shrink when the registered executor resumes it. */
 export interface OwnerToolContinuation {

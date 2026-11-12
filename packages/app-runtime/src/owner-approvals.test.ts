@@ -16,6 +16,7 @@ import {
 import type { DatabaseInterface } from '@happyvertical/sql';
 import { afterEach, beforeEach, describe, expect, it } from 'vitest';
 import {
+  createOwnerApprovalStore,
   createSqliteOwnerApprovalStore,
   isApprovalOwner,
   type OwnerApproval,
@@ -25,7 +26,9 @@ import {
   type OwnerApprovalStore,
 } from './owner-approvals.js';
 
-describe('owner tool holds over the canonical approval ledger (SQLite)', () => {
+const databaseType = process.env.SMRT_TEST_PGLITE === '1' ? 'pglite' : 'sqlite';
+
+describe(`owner tool holds over the canonical approval ledger (${databaseType})`, () => {
   let db: DatabaseInterface;
   let authority: OwnerApprovalAuthority;
   let now: number;
@@ -34,13 +37,13 @@ describe('owner tool holds over the canonical approval ledger (SQLite)', () => {
   let input: OwnerApprovalInput;
   const open = async () =>
     new OwnerApprovalAuthority(
-      await createSqliteOwnerApprovalStore(db, () => now),
+      await createOwnerApprovalStore(db, () => now),
       async (actor) => actor.id === owner.id && actor.tenantId === tenantId,
       () => now,
     );
   beforeEach(async () => {
     db = await getTestDatabase({
-      type: 'sqlite',
+      type: databaseType,
       url: ':memory:',
       classes: [
         '@happyvertical/smrt-users:User',
@@ -73,6 +76,36 @@ describe('owner tool holds over the canonical approval ledger (SQLite)', () => {
   afterEach(async () => {
     await db?.close();
   });
+
+  it('retains the local alias and uses native UUIDs for PostgreSQL hold identities', async () => {
+    expect(createSqliteOwnerApprovalStore).toBe(createOwnerApprovalStore);
+    if (databaseType === 'pglite') {
+      const { rows } = await db.query(
+        "SELECT column_name, data_type FROM information_schema.columns WHERE table_name = '_smrt_owner_tool_holds' AND column_name IN ('id', 'tenant_id', 'gate_id') ORDER BY column_name",
+      );
+      expect(rows).toEqual(
+        ['gate_id', 'id', 'tenant_id'].map((column_name) => ({
+          column_name,
+          data_type: 'uuid',
+        })),
+      );
+    }
+  });
+
+  it.runIf(databaseType === 'pglite')(
+    'refuses legacy text hold identifiers before using the ledger',
+    async () => {
+      await db.query(
+        'ALTER TABLE _smrt_owner_tool_holds ALTER COLUMN gate_id TYPE TEXT USING gate_id::TEXT',
+      );
+      await expect(createOwnerApprovalStore(db)).rejects.toThrow(
+        'OWNER_APPROVAL_MIGRATION_REQUIRED',
+      );
+      expect(
+        (await db.query('SELECT * FROM _smrt_owner_tool_holds')).rows,
+      ).toHaveLength(0);
+    },
+  );
 
   it('reopens a non-thread continuation and records one original-caller result under concurrent resume', async () => {
     let executions = 0;
@@ -117,12 +150,12 @@ describe('owner tool holds over the canonical approval ledger (SQLite)', () => {
     });
   });
 
-  it('resumes a pending hold from a closed and reopened SQLite file', async () => {
+  it('resumes a pending hold from a closed and reopened database', async () => {
     const directory = await mkdtemp(join(tmpdir(), 'owner-continuation-'));
     try {
       await db.close();
       const options = {
-        type: 'sqlite' as const,
+        type: databaseType,
         url: join(directory, 'holds.sqlite'),
         classes: [
           '@happyvertical/smrt-approvals:ApprovalRequest',
@@ -431,7 +464,7 @@ describe('owner tool holds over the canonical approval ledger (SQLite)', () => {
       release = resolve;
     });
     const guarded = new OwnerApprovalAuthority(
-      await createSqliteOwnerApprovalStore(db, () => now),
+      await createOwnerApprovalStore(db, () => now),
       async (actor) => {
         const allowed = actor.id === owner.id && actor.tenantId === tenantId;
         await checked;
@@ -622,7 +655,7 @@ describe('owner tool holds over the canonical approval ledger (SQLite)', () => {
   });
 
   it('keeps the canonical store bounded even when a host asks for indefinite compatibility', async () => {
-    const store = await createSqliteOwnerApprovalStore(db, () => now);
+    const store = await createOwnerApprovalStore(db, () => now);
     expect(
       () =>
         new OwnerApprovalAuthority(
