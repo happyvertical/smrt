@@ -7,6 +7,7 @@
  * setup isn't needed here.
  */
 
+import { spawnSync } from 'node:child_process';
 import {
   ObjectRegistry,
   type SmartObjectManifest,
@@ -27,6 +28,26 @@ import {
   type ResolvedSession,
   type ResourceListResponseBody,
 } from '../sveltekit/resource-list-handler.js';
+
+it('imports published resource discovery without the Vite route emitter', () => {
+  const child = spawnSync(
+    process.execPath,
+    [
+      '--input-type=module',
+      '-e',
+      `import { registerHooks } from 'node:module';
+registerHooks({ load(url, context, next) {
+  if (['/vite-plugin/index.js', '/vite-plugin/sveltekit-generator.js', '/activation/generate.js'].some((path) => url.endsWith(path))) throw new Error('build tooling loaded by resource discovery');
+  return next(url, context);
+} });
+const users = await import(${JSON.stringify(new URL('../../dist/sveltekit.js', import.meta.url).href)});
+if (typeof users.createResourceListHandler !== 'function') process.exit(2);
+`,
+    ],
+    { encoding: 'utf8', timeout: 30_000 },
+  );
+  expect(child.status, child.stderr).toBe(0);
+});
 
 /* ── helpers ──────────────────────────────────────────────────────────── */
 

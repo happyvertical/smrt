@@ -239,3 +239,13 @@ introduced. Metadata registration and catalog sync do not grant a user, role,
 tenant or resource permission. Existing persisted grants/current authority checks
 remain required. Use the public portable entry rather than private service paths
 when a model package needs declarations without the server runtime.
+
+### Runtime resource discovery imports
+
+`src/sveltekit/resource-list-handler.ts` imports shared action/name policy from
+`@happyvertical/smrt-core/api-actions`, not the Vite-plugin barrel. This is the
+same implementation re-exported by the route generator; permissions, wireability,
+custom-action receiver resolution and paths are unchanged. The existing resource
+handler suite retains positive and refusal coverage, and its fresh-Node published
+entry guard rejects Vite route-emitter/activation-generator loads. No SQL executor,
+transaction, authentication or tenant-boundary behavior changes in this import fix.
