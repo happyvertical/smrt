@@ -21,6 +21,7 @@ import {
   resolveForeignKeyDeleteAction,
   resolveForeignKeyUpdateAction,
 } from '../schema/foreign-key-policy.js';
+import { SchemaGenerator } from '../schema/generator.js';
 import { shortenIdentifier } from '../schema/index-utils.js';
 import {
   formatDefaultValue as formatDefaultValueShared,
@@ -732,6 +733,8 @@ function buildMergedTableSchemas(
     const contributors = contributorsByTable.get(tableName) ?? [];
     assertSingleTableFamily(tableName, contributors);
     const orderedContributors = sortTableContributors(contributors);
+    const completionFields = new Map<string, FieldDefinition>();
+    let needsIndexCompletion = false;
     for (const contributor of orderedContributors) {
       const { registered, simpleName, isSTI } = contributor;
       const conflictColumns = ObjectRegistry.getConflictColumns(
@@ -753,6 +756,21 @@ function buildMergedTableSchemas(
         contributorFields,
         { stiUnionColumns: isSTI, conflictColumns },
       );
+
+      // Complete only the runtime fallback, after every contributor's indexes
+      // has been collected. A current manifest already owns its full index set.
+      if (!registered.schema) needsIndexCompletion = true;
+      for (const [fieldName, field] of contributorFields) {
+        const columnName = toSnakeCase(fieldName);
+        if (
+          (!registered.schema?.columns?.[columnName] &&
+            columnsToUse[columnName]) ||
+          (!registered.schema && field.type === 'meta')
+        ) {
+          needsIndexCompletion = true;
+          completionFields.set(fieldName, field);
+        }
+      }
 
       let tableSchema = tableSchemas[tableName];
       if (!tableSchema) {
@@ -845,6 +863,26 @@ function buildMergedTableSchemas(
         if (existing >= 0) tableSchema.indexes[existing] = childIndex;
         else tableSchema.indexes.push(childIndex);
       }
+    }
+    if (needsIndexCompletion) {
+      const owner = orderedContributors[0];
+      new SchemaGenerator().completeIndexes(
+        tableSchema.indexes,
+        tableSchema.columns,
+        tableName,
+        {
+          fields: completionFields,
+          sti: tableSchema.isSTI,
+          declaredIndexes: owner.registered.config.indexes,
+          subclassDeclarations: tableSchema.isSTI
+            ? orderedContributors.slice(1).map((contributor) => ({
+                className: contributor.qualifiedName,
+                indexes: contributor.registered.config.indexes,
+              }))
+            : [],
+          subtreeOf: (className) => ObjectRegistry.getDescendants(className),
+        },
+      );
     }
     if (scope) {
       for (const foreignKey of schemaForeignKeys({

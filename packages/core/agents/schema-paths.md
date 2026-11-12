@@ -35,6 +35,17 @@ Production DDL takes the manifest route:
                         use; no in-repo caller outside its own tests)
 ```
 
+All four entry points share `SchemaGenerator.completeIndexes()` (#4946), the
+single ordered tail after conflict/discriminator/unique indexes: slug lookup,
+opt-in fields (including STI JSON paths), declared indexes (then STI descendant
+declarations), default list ordering, polymorphic owner lookup, reference
+columns **last**, then identifier limits. The registry schema builder calls the
+same sequence after merging every contributor and conflict index whenever it
+adds runtime columns absent from a manifest, or a class has no manifest schema.
+It supplies the missing fields for opt-in indexing and preserves supplied
+manifest indexes; reference suppression sees the complete table's indexes.
+Current manifests that already supply every column retain their index sets.
+
 Since #2359 the two families share one set of index helpers and
 `src/schema/schema-path-parity.test.ts` runs the same fixture manifest through
 the manifest paths, through `ObjectRegistry.registerFromManifest()` + the
