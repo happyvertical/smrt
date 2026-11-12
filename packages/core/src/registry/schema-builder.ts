@@ -192,6 +192,8 @@ function createBaseColumns(
   isSTI: boolean,
 ): Record<string, ColumnDefinition> {
   const baseColumns: Record<string, ColumnDefinition> = {
+    _sync_origin_device_id: { type: 'TEXT' },
+    _sync_revision: { type: 'INTEGER' },
     id: {
       type: registered.config?.idType === 'text' ? 'TEXT' : 'UUID',
       primaryKey: true,

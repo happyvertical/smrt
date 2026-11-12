@@ -1053,3 +1053,9 @@ names; validation is memoized by registry generation and binding configuration.
 Configuration must load before first database use and stay
 fixed for that process. This is not an implicit data migration; see
 [consumer table bindings](../../../docs/content/table-bindings.md).
+
+Fallback registry aggregation includes `_sync_origin_device_id` and
+`_sync_revision` even without a generated manifest schema. Migration-created
+source-only models must support the same tracked delete path as compiled models.
+The fallback id-type regression also asserts these columns; the plugin fixture
+exercises delete after owner approval against a fresh runtime database.
