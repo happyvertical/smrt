@@ -31,6 +31,7 @@ import {
   createCookbookRuntimeExposure,
   setRuntimeExposureGate,
 } from '@happyvertical/smrt-core/runtime-exposure';
+import { resolveWorkProfile } from '@happyvertical/smrt-inference';
 import {
   MembershipCollection,
   PermissionCollection,
@@ -330,6 +331,157 @@ describe('mountAssistantRoutes', () => {
     body: Record<string, unknown>,
     actor: Actor = ownerA,
   ) => call(routes, 'POST', `threads/${threadId}/messages`, { actor, body });
+
+  it.each([
+    'unknown',
+    'zero',
+    'partial',
+  ] as const)('preserves %s provider usage in stored turn metadata', async (mode) => {
+    const answer: Round = () => ({
+      content: 'Done',
+      model: 'reported-model',
+      finishReason: 'stop',
+      ...(mode === 'zero'
+        ? { usage: { promptTokens: 0, completionTokens: 0, totalTokens: 0 } }
+        : {}),
+    });
+    const knownCall: Round = () => ({
+      ...calls(['data-discover', {}])([], undefined),
+      usage: { promptTokens: 10, completionTokens: 2, totalTokens: 12 },
+    });
+    const ai = scriptedAI(mode === 'partial' ? [knownCall, answer] : [answer]);
+    const routes = mount({
+      ai,
+      resolveWorkProfile: async () => resolveWorkProfile({ engine: 'api' }),
+      allowedTools: mode === 'partial' ? ['data.discover'] : [],
+      extraTools: mode === 'partial' ? [discoverTool([])] : [],
+      onWorkRun: () => {},
+    });
+    const threadId = await createThread(routes);
+    expect(
+      (
+        await events(
+          await send(routes, threadId, {
+            content: 'Help',
+            clientRequestId: `usage-${mode}`,
+          }),
+        )
+      ).thrown,
+    ).toBeNull();
+    const stored = await listMessages(routes, threadId);
+    const metadata = stored.at(-1)?.metadata?.workRun;
+    expect(metadata).toMatchObject({
+      profile: 'assist',
+      toolCalls: mode === 'partial' ? 1 : 0,
+    });
+    if (mode === 'zero') expect(metadata).toHaveProperty('tokens', 0);
+    else expect(metadata).not.toHaveProperty('tokens');
+    expect(metadata).toHaveProperty('durationMs');
+    // Unknown usage must not prevent the other execution facts being recorded.
+    expect(metadata).toHaveProperty('model', 'reported-model');
+  });
+
+  it.each([
+    true,
+    false,
+  ])('stores assist handoff accounting before durable design (usage known: %s)', async (known) => {
+    const ran: PrincipalRun[] = [];
+    const ai = scriptedAI([
+      () => ({
+        ...calls(['data-discover', {}])([], undefined),
+        model: 'reported-assist',
+        ...(known
+          ? {
+              usage: { promptTokens: 10, completionTokens: 2, totalTokens: 12 },
+            }
+          : {}),
+      }),
+    ]);
+    const accounting = vi.fn();
+    const routes = mount({
+      ai,
+      resolveWorkProfile: async () => resolveWorkProfile({ engine: 'api' }),
+      allowedTools: ['data.discover'],
+      extraTools: [discoverTool(ran)],
+      designTools: ['data.discover'],
+      onDesignEscalation: async () => ({ runId: 'queued-design' }),
+      onWorkRun: accounting,
+    });
+    const threadId = await createThread(routes);
+    const response = await events(
+      await send(routes, threadId, {
+        content: 'Build',
+        clientRequestId: 'handoff',
+      }),
+    );
+    expect(response.thrown).toBeNull();
+    expect(ran).toHaveLength(0);
+    const stored = (await listMessages(routes, threadId)).at(-1);
+    expect(stored).toMatchObject({
+      role: 'assistant',
+      content: 'Thinking this through',
+      metadata: {
+        designRunId: 'queued-design',
+        workRun: { profile: 'assist', model: 'reported-assist', toolCalls: 0 },
+      },
+    });
+    if (known) expect(stored?.metadata?.workRun).toHaveProperty('tokens', 12);
+    else expect(stored?.metadata?.workRun).not.toHaveProperty('tokens');
+    expect(accounting).toHaveBeenCalledTimes(1);
+    const messageIndex = response.seen.findIndex(
+      (event) => event.type === 'message' && event.message.role === 'assistant',
+    );
+    const doneIndex = response.seen.findIndex((event) => event.type === 'done');
+    expect(messageIndex).toBeGreaterThanOrEqual(0);
+    expect(doneIndex).toBeGreaterThan(messageIndex);
+  });
+
+  it('runs a trusted internal pass without authoring a technical user message and preserves structured output', async () => {
+    const routes = mount();
+    const threadId = await createThread(routes);
+    await events(
+      await send(routes, threadId, {
+        content: 'Build my app',
+        clientRequestId: 'original',
+      }),
+    );
+    const original = (await listMessages(routes, threadId)).find(
+      (message) => message.role === 'user',
+    )!;
+    const ai = scriptedAI([text('{"summary":"A readable plan","models":[]}')]);
+    const internal = mount({
+      ai,
+      internalTurn: () => ({
+        userMessage: 'PRIVATE PASS PROMPT',
+        originMessageId: original.id,
+      }),
+      formatAssistantReply: (content) => ({
+        content: JSON.parse(content).summary,
+        metadata: {
+          designOutput: JSON.parse(content),
+          privateHostDetail: 'never on wire',
+        },
+      }),
+    });
+    const response = await events(
+      await send(internal, threadId, {
+        content: 'Build my app',
+        clientRequestId: 'internal',
+      }),
+    );
+    expect(response.thrown).toBeNull();
+    const stored = await listMessages(routes, threadId);
+    expect(stored.filter((message) => message.role === 'user')).toHaveLength(1);
+    expect(
+      stored.some((message) => message.content.includes('PRIVATE PASS PROMPT')),
+    ).toBe(false);
+    expect(stored.at(-1)).toMatchObject({
+      content: 'A readable plan',
+      metadata: { designOutput: { summary: 'A readable plan', models: [] } },
+    });
+    expect(stored.at(-1)?.metadata).not.toHaveProperty('privateHostDetail');
+    expect(ai.seen.at(-1)?.at(-1)?.content).toBe('PRIVATE PASS PROMPT');
+  });
 
   // ---- 1. principal -----------------------------------------------------
 

@@ -127,6 +127,7 @@ export interface AssistantResumeTurnInput extends AssistantTurnStreamInput {
 }
 
 export interface AssistantSendMessageResult {
+  runId?: string;
   /** True when the assistant turn has not resolved yet and the caller should
    * poll `loadMessages` for the reply (mirrors anytown's `payload.inProgress`,
    * `PortalChatTool.svelte:391`). */
@@ -144,7 +145,24 @@ export interface AssistantSendMessageResult {
   };
 }
 
+/** Durable design progress, supplied by an authenticated host. */
+export interface AssistantDesignRun {
+  runId: string;
+  pass: { index: number; count: number; name: string };
+  status:
+    | 'running'
+    | 'checking'
+    | 'waiting-approval'
+    | 'stopped'
+    | 'failed'
+    | 'done';
+  note?: string;
+}
+
 export interface AssistantTransport {
+  designRun?(threadId: string): Promise<AssistantDesignRun | undefined>;
+  stopDesignRun?(runId: string): Promise<AssistantDesignRun | undefined>;
+  resumeDesignRun?(runId: string): Promise<AssistantDesignRun | undefined>;
   listApprovals?(threadId?: string): Promise<AssistantApprovalView[]>;
   decideApproval?(id: string, approve: boolean): Promise<AssistantApprovalView>;
   listThreads(): Promise<AssistantThreadSummary[]>;
@@ -697,6 +715,7 @@ export async function readAssistantTurnResult<W = Record<string, unknown>>(
     } else if (event.type === 'done') {
       options.onEvent({
         type: 'done',
+        ...(event.runId ? { runId: event.runId } : {}),
         stoppedReason: event.stoppedReason,
         // Why tools were withdrawn, kept when the turn then ended `empty`
         // or `timeout` (#4379): the dock still offers Continue.
@@ -715,6 +734,7 @@ export async function readAssistantTurnResult<W = Record<string, unknown>>(
     .find((m) => m.role === 'assistant');
   return {
     inProgress: false,
+    ...(outcome.done?.runId ? { runId: outcome.done.runId } : {}),
     messages: mapped,
     ...(assistantMessage ? { assistantMessage } : {}),
     ...(outcome.clientToolCalls

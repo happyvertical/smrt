@@ -59,6 +59,45 @@ const descriptor: DataSurfaceDescriptor = {
 };
 
 describe('AssistantDock (mounted component)', () => {
+  it.each([
+    'running',
+    'stopped',
+    'failed',
+    'done',
+  ] as const)('renders durable %s controls without offering unsupported resume', async (status) => {
+    const transport = createInMemoryAssistantTransport();
+    await transport.createThread('Design');
+    const read = vi.fn(async () => ({
+      runId: 'design',
+      pass: { index: 1, count: 2, name: 'Shape the plan' },
+      status,
+    }));
+    transport.designRun = read;
+    transport.stopDesignRun = vi.fn(async () => undefined);
+    transport.resumeDesignRun = vi.fn(async () => undefined);
+    render(AssistantDock, {
+      props: {
+        transport,
+        registry: createDataSurfaceRegistry(),
+        contextMode: 'server',
+        conversations: 'single',
+      },
+    });
+    await vi.waitFor(() => expect(read).toHaveBeenCalled());
+    if (status !== 'done')
+      expect(
+        await screen.findByText(/Thinking this through · Shape the plan/),
+      ).toBeVisible();
+    await vi.waitFor(() => {
+      expect(
+        !!screen.queryByRole('button', { name: 'Stop', exact: true }),
+      ).toBe(status === 'running');
+      expect(
+        !!screen.queryByRole('button', { name: 'Resume', exact: true }),
+      ).toBe(status === 'stopped');
+    });
+  });
+
   it('shows the existing stopped status after cancelling an active tool step', async () => {
     const transport = createInMemoryAssistantTransport();
     await transport.createThread('Stop test');

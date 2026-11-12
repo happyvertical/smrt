@@ -1,3 +1,9 @@
+export {
+  type AssistantWorkProfileOptions,
+  assertWorkProfileTool,
+  WorkProfileEscalation,
+} from './work-profile.js';
+
 /**
  * @happyvertical/smrt-chat
  *

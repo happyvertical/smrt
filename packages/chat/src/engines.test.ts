@@ -67,6 +67,7 @@ function context(
       },
     ],
     requiresApproval: () => false,
+    beforeToolExecution: () => {},
   };
 }
 

@@ -19,6 +19,7 @@ import type {
   ChatOptions,
 } from '@happyvertical/ai';
 import type { PrincipalTool } from '@happyvertical/smrt-agents';
+import { resolveWorkProfile } from '@happyvertical/smrt-inference';
 import {
   MembershipCollection,
   RoleCollection,
@@ -190,6 +191,46 @@ describe('assistant turn', () => {
     runAsUserId: userId,
     tenantId,
     allowedTools: ['data.discover'],
+  });
+
+  it('restarts a design batch before executing any assist calls and preserves spent tokens', async () => {
+    const ran: string[] = [];
+    const metadata: unknown[] = [];
+    const ai = scriptedAI([
+      calls(['data-discover', {}]),
+      calls(['data-discover', {}]),
+      () => ({
+        content: 'Done',
+        finishReason: 'stop',
+        usage: { promptTokens: 0, completionTokens: 0, totalTokens: 0 },
+      }),
+    ]);
+    const events = await collect(
+      runAssistantTurn({
+        ai,
+        db,
+        principal: principal(),
+        userMessage: 'Build the app',
+        extraTools: [readTool(ran)],
+        designTools: ['data.discover'],
+        workProfile: resolveWorkProfile({ engine: 'api' }),
+        resolveWorkProfile: async () =>
+          resolveWorkProfile({ engine: 'api', profile: 'design' }),
+        onWorkRun: (value) => metadata.push(value),
+        audit: () => {},
+      }),
+    );
+    expect(ran).toEqual(['data.discover']);
+    expect(metadata).toEqual([
+      expect.objectContaining({ profile: 'design', tokens: 24, toolCalls: 1 }),
+    ]);
+    expect(
+      events.some(
+        (event) =>
+          event.type === 'status' &&
+          event.status.label === 'Thinking this through',
+      ),
+    ).toBe(true);
   });
 
   describe('runToolLoop browser tools', () => {

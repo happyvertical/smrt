@@ -1,3 +1,11 @@
+import type { WorkRunMetadata } from '@happyvertical/smrt-inference';
+
+export {
+  type AssistantWorkProfileOptions,
+  assertWorkProfileTool,
+  WorkProfileEscalation,
+} from './work-profile.js';
+
 /** Node-only adapters over inference's engines; chat retains transcript ownership. */
 import type { AIInterface } from '@happyvertical/ai';
 import { InferenceUnavailableError } from '@happyvertical/smrt-core/inference-availability';
@@ -32,7 +40,10 @@ import {
 } from './tool-summary.js';
 
 /** All credentials, working directories and MCP authority are bound by the host per turn. */
-export type AgentCliChatBinding = Pick<AgentTurnOptions, 'mcpUrl' | 'deps'> &
+export type AgentCliChatBinding = Pick<
+  AgentTurnOptions,
+  'mcpUrl' | 'deps' | 'fallback' | 'outputSchema'
+> &
   Pick<AgentTurnHost, 'allowTool' | 'approvals'> & {
     /** Optional MCP wire-name → canonical offered chat slug mapping. Unknown names deny. */
     canonicalToolName?(name: string): string | undefined;
@@ -119,6 +130,7 @@ export function createAgentCliTurnDriver(options: {
       let queue = Promise.resolve();
       let failure: unknown;
       let text = '';
+      let workRun: WorkRunMetadata | undefined;
       let decision: boolean | undefined;
       const append = async (message: AgentTurnMessage) => {
         // Inference clips event.args for display; the persisted engine callback
@@ -139,12 +151,19 @@ export function createAgentCliTurnDriver(options: {
       try {
         const stop = await runAgentTurn({
           tool: options.tool,
+          profile: context.workProfile,
           text: context.userMessage,
           mcpUrl: binding.mcpUrl,
           deps: binding.deps,
+          fallback: binding.fallback,
+          outputSchema: binding.outputSchema,
           signal,
           host: {
             appendMessage: append,
+            recordExecution: async (metadata) => {
+              workRun = metadata;
+              callbacks.execution?.(metadata);
+            },
             lastSession: async () => null,
             guidance: async () => ({
               systemPrompt: context.systemPrompt,
@@ -231,6 +250,7 @@ export function createAgentCliTurnDriver(options: {
         // A pending MCP response is NOT a successful effect. No auto-resume or
         // approval decision is performed here; only the host can execute a hold.
         callbacks.done({
+          workRun,
           text: held.size
             ? decision
               ? 'Approval recorded. Ask the assistant to continue.'
@@ -254,7 +274,11 @@ export function createAgentCliTurnDriver(options: {
 /** An SDK chat client over inference's plan-only model; no API-key fallback. */
 export async function createChatGPTAssistantAI(
   options: ChatGPTModelOptions,
-): Promise<Pick<AIInterface, 'chat'>> {
+): Promise<
+  Pick<AIInterface, 'chat'> & {
+    getWorkRunMetadata(): WorkRunMetadata | undefined;
+  }
+> {
   const safeFailure = (error: unknown): never => {
     if (error instanceof ChatGPTSignedOutError)
       throw new InferenceUnavailableError({ reason: 'unconfigured' });
@@ -265,8 +289,16 @@ export async function createChatGPTAssistantAI(
       'chatgpt_unavailable',
     );
   };
-  const model = await createChatGPTModel(options).catch(safeFailure);
+  let workRun: WorkRunMetadata | undefined;
+  const model = await createChatGPTModel({
+    ...options,
+    recordExecution: async (metadata) => {
+      workRun = metadata;
+      await options.recordExecution?.(metadata);
+    },
+  }).catch(safeFailure);
   return {
+    getWorkRunMetadata: () => workRun,
     async chat(messages, request) {
       const reply = await model
         .complete({
@@ -279,13 +311,18 @@ export async function createChatGPTAssistantAI(
         .catch(safeFailure);
       return {
         content: reply.text,
+        ...(workRun?.model ? { model: workRun.model } : {}),
         ...(reply.raw ? { toolCalls: reply.raw } : {}),
         finishReason: reply.toolCalls.length ? 'tool_calls' : 'stop',
-        usage: {
-          promptTokens: 0,
-          completionTokens: 0,
-          totalTokens: reply.totalTokens ?? 0,
-        },
+        ...(reply.totalTokens !== undefined
+          ? {
+              usage: {
+                promptTokens: 0,
+                completionTokens: 0,
+                totalTokens: reply.totalTokens,
+              },
+            }
+          : {}),
       };
     },
   };
@@ -320,7 +357,8 @@ export function createInferenceAssistantAdapters(options: {
   type Context = Parameters<typeof options.binding>[0];
   const selected = new WeakMap<Request, Promise<InferenceEngineId>>();
   const resolve = async (context: Context) => {
-    const engine = (await options.binding(context)) ?? 'api';
+    const engine =
+      context.workProfile?.engine ?? (await options.binding(context)) ?? 'api';
     if (!['api', 'chatgpt', 'claude-code', 'codex'].includes(engine))
       throw new InferenceUnavailableError({ reason: 'unconfigured' });
     const status = await inferenceEngineStatus(
@@ -346,6 +384,7 @@ export function createInferenceAssistantAdapters(options: {
     return engine;
   };
   const select = (context: Context) => {
+    if (context.workProfile) return resolve(context);
     let pending = selected.get(context.event.request);
     if (!pending) {
       pending = resolve(context);
@@ -363,7 +402,20 @@ export function createInferenceAssistantAdapters(options: {
     async ai(context) {
       const engine = await select(context);
       if (engine === 'chatgpt')
-        return createChatGPTAssistantAI(await options.chatgpt(context));
+        return createChatGPTAssistantAI({
+          ...(await options.chatgpt(context)),
+          ...(context.workProfile
+            ? {
+                profile: context.workProfile.name,
+                model: context.workProfile.model,
+                settings: {
+                  model: context.workProfile.model,
+                  effort: context.workProfile.effort,
+                  budgets: context.workProfile.budgets,
+                },
+              }
+            : {}),
+        });
       if (engine !== 'api')
         throw new Error('A CLI engine requires its turn driver.');
       const api = options.api ?? configuredAssistantAI;

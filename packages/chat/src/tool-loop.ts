@@ -1,3 +1,4 @@
+import { WorkProfileEscalation } from './work-profile.js';
 /**
  * ToolLoop — a bounded `tool_call → observe → respond` agentic loop over the
  * SMRT manifest operation surface (L3 of the learning-agents epic, #1891).
@@ -115,6 +116,8 @@ export interface ManifestTool {
   slug: string;
   /** Trusted host presentation alias; permission checks and dispatch retain `slug`. */
   functionName?: string;
+  /** Trusted host metadata; never model arguments. */
+  annotations?: { workProfile?: 'design' };
   /** Collection (permission resource), e.g. `articles`. */
   collection: string;
   /** Registry class name used to resolve the backing collection, e.g. `Article`. */
@@ -324,6 +327,8 @@ export interface ToolLoopResult {
   invocations: ToolInvocation[];
   /** The full working transcript (input messages + assistant/tool turns). */
   messages: AIMessage[];
+  /** False if any completion omitted token usage; totalTokens remains the known numeric subtotal. */
+  usageKnown?: boolean;
   /** Total tokens reported by the AI boundary, when available. */
   totalTokens: number;
   /**
@@ -400,8 +405,11 @@ export interface ToolLoopOptions {
   model?: string;
   /** Sampling temperature. */
   temperature?: number;
+  reasoning?: ChatOptions['reasoning'];
   /** Max tokens per completion. */
   maxTokens?: number;
+  /** Host-selected maximum serialized server observation size. */
+  toolResultChars?: number;
   /** Tool-choice behaviour while tools are offered. Default `'auto'`. */
   toolChoice?: ChatOptions['toolChoice'];
   /**
@@ -410,6 +418,7 @@ export interface ToolLoopOptions {
    * dispatches through the ObjectRegistry. Tests inject a stub to exercise loop
    * mechanics without a backing object.
    */
+  beforeToolExecution?: (tool: ManifestTool | PrincipalTool) => void;
   executeTool?: (ctx: ToolExecutionContext) => Promise<unknown>;
   /** Trusted host gate, before ANY server tool execution (including extra tools). */
   holdTool?: (call: {
@@ -490,6 +499,10 @@ export interface ToolLoopOptions {
    * attribution (e.g. a per-tenant ledger). Never changes the loop.
    */
   onUsage?: (usage: ToolLoopUsage) => void;
+  /** At least one completion omitted valid token counts. */
+  onUsageUnknown?: () => void;
+  /** Exact model reported by a completion, independent of whether usage is available. */
+  onModel?: (model: string) => void;
   /**
    * Token sink for live streaming (#1936). When set, each `ai.chat` round is run
    * with `stream: true` and the model's text deltas are forwarded here as they
@@ -1254,6 +1267,7 @@ export async function runToolLoop(
       };
       let executedRounds = Math.max(0, Math.floor(initialSteps));
       let totalTokens = 0;
+      let usageKnown = true;
       let response: AIResponse;
       const cancelled = (): ToolLoopResult => ({
         content: '',
@@ -1262,6 +1276,7 @@ export async function runToolLoop(
         invocations,
         messages: working,
         totalTokens,
+        usageKnown,
         pendingClientToolCalls: [],
       });
       const timedOut = (
@@ -1274,6 +1289,7 @@ export async function runToolLoop(
         invocations,
         messages: working,
         totalTokens,
+        usageKnown,
         pendingClientToolCalls: [],
         ...(emptyRetried ? { emptyRetried } : {}),
         ...(capReason ? { capReason } : {}),
@@ -1306,6 +1322,7 @@ export async function runToolLoop(
         let result: AIResponse;
         try {
           result = await ai.chat(callMessages, {
+            ...(options.reasoning ? { reasoning: options.reasoning } : {}),
             model,
             temperature,
             maxTokens,
@@ -1333,13 +1350,37 @@ export async function runToolLoop(
           if (isModelTimeoutError(error)) return 'timeout';
           throw error;
         }
-        totalTokens += result.usage?.totalTokens ?? 0;
+        if (result.model) {
+          try {
+            options.onModel?.(result.model);
+          } catch {
+            /* Accounting never breaks a turn. */
+          }
+        }
+        const usage = result.usage;
+        const validCount = (value: unknown): value is number =>
+          typeof value === 'number' && Number.isFinite(value) && value >= 0;
+        const roundTokens = validCount(usage?.totalTokens)
+          ? usage.totalTokens
+          : validCount(usage?.promptTokens) &&
+              validCount(usage?.completionTokens)
+            ? usage.promptTokens + usage.completionTokens
+            : undefined;
+        if (roundTokens === undefined) {
+          usageKnown = false;
+          try {
+            options.onUsageUnknown?.();
+          } catch {
+            /* Accounting never breaks a turn. */
+          }
+        }
+        totalTokens += roundTokens ?? 0;
         if (result.usage && onUsage) {
           try {
             onUsage({
               promptTokens: result.usage.promptTokens ?? 0,
               completionTokens: result.usage.completionTokens ?? 0,
-              totalTokens: result.usage.totalTokens ?? 0,
+              totalTokens: roundTokens ?? 0,
               ...(result.model || model
                 ? { model: result.model ?? model }
                 : {}),
@@ -1472,12 +1513,28 @@ export async function runToolLoop(
             invocations,
             messages: working,
             totalTokens,
+            usageKnown,
             pendingClientToolCalls: [],
             ...(emptyRetried ? { emptyRetried } : {}),
             ...(capReason ? { capReason } : {}),
             ...(reasoning ? { reasoning } : {}),
             ...(contentFromReasoning ? { contentFromReasoning } : {}),
           };
+        }
+
+        // Preflight the whole batch before any call in it executes. A restart
+        // retains completed earlier rounds, so their writes are never replayed.
+        try {
+          for (const call of toolCalls) {
+            const tool =
+              offered.get(call.function.name) ??
+              offeredExtra.get(call.function.name);
+            if (tool) options.beforeToolExecution?.(tool);
+          }
+        } catch (error) {
+          if (error instanceof WorkProfileEscalation)
+            error.messages = [...working];
+          throw error;
         }
 
         // Record the assistant's tool-call turn before appending observations.
@@ -1682,6 +1739,7 @@ export async function runToolLoop(
           // call can be persisted with the exact text it was shown (#4383).
           invocation.modelContent = serverObservationContent(
             invocation.observation,
+            options.toolResultChars,
           );
           invocations.push(invocation);
           if ((tool || extraTool) && !isReadOnlyTool(tool, extraTool)) {
@@ -1758,6 +1816,7 @@ export async function runToolLoop(
             invocations,
             messages: working,
             totalTokens,
+            usageKnown,
             pendingClientToolCalls: [],
           };
         }
@@ -1769,6 +1828,7 @@ export async function runToolLoop(
             invocations,
             messages: working,
             totalTokens,
+            usageKnown,
             pendingClientToolCalls: pendingClient,
           };
         }
@@ -2217,7 +2277,10 @@ export const SERVER_TOOL_OBSERVATION_TRUNCATED_MARKER =
   'add a filter, project fewer fields, request a smaller page, or use a count.]';
 
 /** Serialize a server observation for the transcript, bounded. */
-function serverObservationContent(observation: unknown): string {
+function serverObservationContent(
+  observation: unknown,
+  maxChars = MAX_SERVER_TOOL_OBSERVATION_CHARS,
+): string {
   let serialized: string;
   try {
     // A tool that returns nothing observes `null`, not a missing content.
@@ -2226,8 +2289,8 @@ function serverObservationContent(observation: unknown): string {
     // Circular or BigInt-bearing results: report, never echo them.
     return JSON.stringify({ error: 'unserializable_result' });
   }
-  return serialized.length > MAX_SERVER_TOOL_OBSERVATION_CHARS
-    ? `${sliceOnCodePoint(serialized, MAX_SERVER_TOOL_OBSERVATION_CHARS)}${SERVER_TOOL_OBSERVATION_TRUNCATED_MARKER}`
+  return serialized.length > maxChars
+    ? `${sliceOnCodePoint(serialized, maxChars)}${SERVER_TOOL_OBSERVATION_TRUNCATED_MARKER}`
     : serialized;
 }
 

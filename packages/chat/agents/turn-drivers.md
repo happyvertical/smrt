@@ -178,3 +178,75 @@ explicitly documents that dev-only source alias: declaring the dependency
 would introduce the prohibited `chat → smrt-svelte → smrt-content → chat`
 cycle. Production driver code introduces neither that import nor a new
 shell; no dependency change is appropriate for C1.
+
+## Work profiles and design interception
+
+`resolveWorkProfile(context, name?)` selects intelligence from authenticated
+owner settings before authoring the user message. It receives a requested name
+only on escalation; known design flows select `design` in the initial callback.
+The resolved profile is forwarded to inference and its budgets govern the loop.
+Background work must request `background` explicitly. Profile selection never
+changes principal, tenant, permission ceiling, allow-list or owner approvals.
+
+Hosts declare structural tools with `designTools`, or trusted tool metadata
+`annotations.workProfile: 'design'` (core cookbook tools provide this annotation).
+The built-in loop checks the whole proposed batch before executing any call.
+External drivers MUST call `context.beforeToolExecution(canonicalSlug)` at their
+**authenticated MCP execution boundary**, before effects or approval creation.
+A later CLI tool-call stream event is too late. Interception aborts and settles
+the old pass, then restarts once under design while retaining completed tool
+observations. The intercepted assist call never executes.
+
+Production hosts use `onDesignEscalation(context, input)` to enqueue a durable
+design job. Returning `{runId, message?}` ends the request with `done.runId` and
+prevents inline restart. Without the hook, the shared bounded turn restarts
+inline once. `resolveWorkProfileRuntime` reselects an engine on that restart.
+`Thinking this through` identifies escalation using the existing status stream.
+
+Stored assistant rows contain `metadata.workRun`: profile, engine, actual model
+when reported by the engine, effort, cumulative tokens, duration, tool calls and
+fallback. `onWorkRun` receives the same sanitized accounting; the default logs
+one line. CLI adapters report observed execution through `callbacks.execution`;
+this also preserves spent assist work when escalation aborts its attempt.
+
+Reuse audit: the developer intent index and MCP build-context architecture
+inventory, plus name/purpose searches in chat/core/inference/smrt-ui/smrt-svelte,
+identified the existing turn driver, tool-loop and cookbook annotations as the
+owning seams. This extends those APIs; it adds no alternate approval ledger,
+model registry, UI component or tool executor.
+
+For durable jobs, the browser's `createAssistantHttpTransport({designRuns:true})`
+reads `GET /design-runs?threadId=…` and posts `/design-runs/{runId}/stop` or
+`/resume`. Hosts authenticate and owner-scope these routes. Each returns
+`{run?:{runId,pass:{index,count,name},status,note?}}` with a one-based pass index.
+The dock reloads progress when opening a thread, polls it, and reuses its status
+and Stop controls; stopped/failed jobs offer Resume. Closing/unmounting the dock
+leaves a durable job running. No browser id grants access to a run.
+
+`formatAssistantReply(content, context)` is a trusted host presentation hook for
+structured pass output. It returns human-facing `content` and optional metadata
+before persistence; hosts can keep the validated output under
+`metadata.designOutput` for their durable runner. Ordinary replies are unchanged.
+
+Known design flows set `deferDesignTurn` to queue through that same durable hook
+before any model call. Detached passes use the trusted `internalTurn(context)`
+callback to supply private pass input and the original owner-message id. The
+route still authenticates ownership and validates that original message against
+the same thread and actor, but authors no synthetic user message and does not
+rewrite the original send's lifecycle. Private pass bindings belong to the host,
+not browser request flags. Only `designOutput` and `workRun` metadata are projected
+onto assistant message wire objects; other stored metadata remains private.
+
+Token accounting is conservative: `workRun.tokens` is omitted if any completion
+omits valid usage, including across escalation and browser continuations. An
+explicit zero remains zero. `ToolLoopResult.totalTokens` remains the numeric
+known subtotal; `usageKnown` distinguishes it from complete usage. API model
+metadata uses a provider-reported model when available; effort describes the
+requested profile effort, subject to provider support and normalization.
+
+On durable admission, the intercepted assist turn is recorded separately before
+`done`: a human handoff message carries `metadata.designRunId` and its original
+`workRun` (spent tokens when fully known, elapsed time and calls). The durable
+job's budget begins at its own admission; earlier assist work is not presented
+as part of that job's usage. Missing observed external models remain unknown;
+the requested profile alias is never substituted as an actual model.

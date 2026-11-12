@@ -1,3 +1,15 @@
+import type {
+  ResolvedWorkProfile,
+  WorkProfileName,
+  WorkRunMetadata,
+} from '@happyvertical/smrt-inference';
+
+export {
+  type AssistantWorkProfileOptions,
+  assertWorkProfileTool,
+  WorkProfileEscalation,
+} from './work-profile.js';
+
 import {
   executeAsPrincipal,
   PrincipalToolNotAllowedError,
@@ -181,6 +193,8 @@ export type AssistantPrincipalResolver = (
 
 /** What every per-request option callback receives. */
 export interface AssistantRequestContext {
+  /** Server-selected profile; never populated from request input. */
+  workProfile?: ResolvedWorkProfile;
   event: AssistantRouteEvent;
   principal: AssistantPrincipal;
   /**
@@ -274,6 +288,33 @@ export interface AssistantRouteBoundPrincipal {
 
 /** Options for {@link mountAssistantRoutes}. */
 export interface MountAssistantRoutesOptions {
+  deferDesignTurn?: AssistantRouteValue<boolean>;
+  /** Trusted detached pass binding, never a request body flag. Does not author a user message. */
+  internalTurn?(
+    context: AssistantRequestContext,
+  ):
+    | { userMessage: string; originMessageId?: string }
+    | undefined
+    | Promise<{ userMessage: string; originMessageId?: string } | undefined>;
+  /** Authenticated host selection; request body profile values are never accepted. */
+  resolveWorkProfile?(
+    context: AssistantRequestContext,
+    name?: WorkProfileName,
+  ): Promise<ResolvedWorkProfile>;
+  designTools?: readonly string[];
+  onWorkRun?(metadata: WorkRunMetadata): void;
+  formatAssistantReply?(
+    content: string,
+    context: AssistantRequestContext,
+  ): { content: string; metadata?: Record<string, unknown> };
+  onDesignEscalation?(
+    context: AssistantRequestContext,
+    input: Parameters<
+      NonNullable<
+        import('./work-profile.js').AssistantWorkProfileOptions['onDesignEscalation']
+      >
+    >[0],
+  ): Promise<{ runId: string; message?: string }>;
   /** External loop; omitted uses the built-in model/tool loop. */
   turnDriver?: AssistantTurnDriver;
   /** Resolved once per send/resume, before writes. Undefined selects `turnDriver`. */
@@ -493,6 +534,12 @@ export interface AssistantThreadWire {
 
 /** Message as the routes send it (chronological in lists). */
 export interface AssistantMessageWire {
+  /** Explicit host design output and sanitized execution accounting only. */
+  metadata?: {
+    designOutput?: unknown;
+    workRun?: unknown;
+    designRunId?: string;
+  };
   id: string;
   threadId: string;
   content: string;
@@ -678,6 +725,7 @@ export async function configuredAssistantAI(
         ...(base ? { base } : {}),
         tenantId: principal.tenantId,
         className: 'AssistantRoute',
+        ...(context.workProfile ? { tier: context.workProfile.tier } : {}),
         usage: { className: 'AssistantRoute', tenantId: principal.tenantId },
         // smrt-chat stores the conversation itself: never a second copy in
         // `_smrt_ai_transcripts` (#4780, owner decision).
@@ -688,7 +736,10 @@ export async function configuredAssistantAI(
   // Imported per turn, as the dev routes do: mounting (and SvelteKit's
   // build-time route analysis) never loads a provider SDK.
   const { getAI } = await import('@happyvertical/ai');
-  return getAI(resolved.options as Parameters<typeof getAI>[0]);
+  return getAI({
+    ...resolved.options,
+    ...(context.workProfile?.model ? { model: context.workProfile.model } : {}),
+  } as Parameters<typeof getAI>[0]);
 }
 
 /**
@@ -875,6 +926,22 @@ export function toAssistantMessageWire(
     createdAt: toIso(message.created_at) ?? new Date(0).toISOString(),
     ...(attachments.length > 0 ? { attachments } : {}),
     ...(toolCallData ? { toolCallData } : {}),
+    ...(metadata &&
+    ('designOutput' in metadata ||
+      'workRun' in metadata ||
+      'designRunId' in metadata)
+      ? {
+          metadata: {
+            ...('designOutput' in metadata
+              ? { designOutput: metadata.designOutput }
+              : {}),
+            ...('workRun' in metadata ? { workRun: metadata.workRun } : {}),
+            ...(typeof metadata.designRunId === 'string'
+              ? { designRunId: metadata.designRunId }
+              : {}),
+          },
+        }
+      : {}),
     ...(clientRequestId ? { clientRequestId } : {}),
   };
 }
@@ -1256,7 +1323,9 @@ export function mountAssistantRoutes(
     context: AssistantRequestContext,
     body: Record<string, unknown>,
   ) => {
-    const model = resolveModel(body.model);
+    const workProfile = await options.resolveWorkProfile?.(context);
+    context = { ...context, workProfile };
+    const model = workProfile?.model ?? resolveModel(body.model);
     const allowedTools = await allowedToolsFor(context);
     const clientTools = sanitizeClientToolDeclarations(
       body.clientTools,
@@ -1293,7 +1362,15 @@ export function mountAssistantRoutes(
         once: true,
       });
     }
-    return { abort, ai, turnDriver, model, allowedTools, clientTools };
+    return {
+      abort,
+      ai,
+      turnDriver,
+      model,
+      allowedTools,
+      clientTools,
+      workProfile,
+    };
   };
   type PreparedTurn = Awaited<ReturnType<typeof prepareTurn>>;
 
@@ -1385,6 +1462,47 @@ export function mountAssistantRoutes(
       turn: {
         ai,
         turnDriver: prepared.turnDriver,
+        workProfile: prepared.workProfile,
+        deferDesignTurn: await resolveValue(options.deferDesignTurn, context),
+        designTools: options.designTools,
+        resolveWorkProfileRuntime: async (workProfile: ResolvedWorkProfile) => {
+          const nextContext = { ...context, workProfile };
+          const turnDriver =
+            (await options.resolveTurnDriver?.({
+              ...nextContext,
+              model: workProfile.model,
+            })) ?? options.turnDriver;
+          return {
+            turnDriver,
+            ai: turnDriver
+              ? undefined
+              : await resolveAI(nextContext, workProfile.model),
+          };
+        },
+        onWorkRun: options.onWorkRun,
+        ...(options.formatAssistantReply
+          ? {
+              formatAssistantReply: (content: string) =>
+                options.formatAssistantReply!(content, context),
+            }
+          : {}),
+        ...(options.onDesignEscalation
+          ? {
+              onDesignEscalation: (
+                input: Parameters<
+                  NonNullable<
+                    import('./work-profile.js').AssistantWorkProfileOptions['onDesignEscalation']
+                  >
+                >[0],
+              ) => options.onDesignEscalation!(context, input),
+            }
+          : {}),
+        ...(options.resolveWorkProfile
+          ? {
+              resolveWorkProfile: (name: WorkProfileName) =>
+                options.resolveWorkProfile!(context, name),
+            }
+          : {}),
         waitForApproval: options.waitForApproval,
         approvals:
           prepared.turnDriver &&
@@ -1906,6 +2024,64 @@ export function mountAssistantRoutes(
     const session = await findSession(chat, principal);
     const thread = await requireOwnThread(chat, principal, session, threadId);
     if (!session?.chatRoomId) throw notFound();
+
+    const internal = await options.internalTurn?.(context);
+    if (internal) {
+      if (!internal.userMessage.trim())
+        throw badRequest('The pass input is empty.');
+      if (internal.originMessageId) {
+        const original = await chat.getThreadMessageReplies({
+          threadId,
+          messageId: internal.originMessageId,
+          actorProfileId: principal.profileId,
+          tenantId: principal.tenantId,
+        });
+        if (
+          original?.message?.role !== 'user' ||
+          original.message.senderProfileId !== principal.profileId
+        )
+          throw notFound();
+      }
+      const prepared = await prepareTurn(context, body);
+      const setup = await turnSetup(context, chat, session, thread, prepared);
+      const earlier =
+        historyLimit > 0
+          ? await chat.getThreadMessages({
+              threadId,
+              actorProfileId: principal.profileId,
+              tenantId: principal.tenantId,
+              limit: historyLimit,
+              roles: HISTORY_REPLAY_ROLES,
+            })
+          : [];
+      const history: AIMessage[] = earlier
+        .filter(
+          (message) => message.role === 'user' || message.role === 'assistant',
+        )
+        .map((message) => ({
+          role: message.role as 'user' | 'assistant',
+          content:
+            message.role === 'assistant' && isFallbackReply(message)
+              ? FALLBACK_HISTORY_PLACEHOLDER
+              : message.content,
+        }));
+      return respondWithTurn(
+        context,
+        chat,
+        session,
+        thread,
+        prepared,
+        setup,
+        null,
+        (_turnChat, turnSetupFor) =>
+          runAssistantTurn<AssistantMessageWire>({
+            ...turnSetupFor.turn,
+            history,
+            userMessage: internal.userMessage,
+            originMessageId: internal.originMessageId,
+          }),
+      );
+    }
 
     // The reservation is the user message's deterministic primary key, scoped
     // to tenant, room, thread, actor and clientRequestId: the database's

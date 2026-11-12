@@ -130,6 +130,7 @@ export {
 } from './components/assistant/assistant-question.js';
 export {
   type AssistantAttachmentRef,
+  type AssistantDesignRun,
   type AssistantMessage,
   type AssistantResumeTurnInput,
   type AssistantSendMessageInput,

@@ -114,6 +114,7 @@ export const M = defineMessages({
     'There is not a conversation available for this workspace yet.',
   // Streamed turns and browser tools (#2908)
   'chat.assistant_dock.stop': 'Stop',
+  'chat.assistant_dock.resume_design': 'Resume',
   'chat.assistant_dock.tool_request_title': 'The assistant wants to do this:',
   'chat.assistant_dock.choices_pick': 'Pick one to use it.',
   'chat.assistant_dock.choices_none': 'None of these',

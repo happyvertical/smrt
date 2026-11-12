@@ -142,6 +142,8 @@ export type AssistantTurnEvent<M = Record<string, unknown>> =
     }
   | {
       type: 'done';
+      /** Durable design run accepted by the authenticated host. */
+      runId?: string;
       message?: M;
       stoppedReason: AssistantTurnStopReason;
       /**
