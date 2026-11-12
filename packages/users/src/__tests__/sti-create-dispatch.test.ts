@@ -162,7 +162,8 @@ describe('STI generated create paths', () => {
           packageName: '@fixture/create-app',
         });
       }
-      const key = ObjectRegistry.getClassByConstructor(model)!.qualifiedName!;
+      const key =
+        ObjectRegistry.getEffectiveClassByConstructor(model)!.qualifiedName!;
       await ObjectRegistry.getCollection(key, { db });
       const registrations = ObjectRegistry.getAllClasses();
       const order = vi
