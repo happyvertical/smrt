@@ -422,3 +422,26 @@ it.each([
     'An alternative if you already use the Codex CLI.',
   );
 });
+
+it.each([
+  undefined,
+  'compact',
+] as const)('keeps an engine-selection failure visible after refresh in %s', async (presentation) => {
+  const info = state();
+  info.chatgpt.signedIn = true;
+  const api = client(info);
+  vi.mocked(api.choose).mockRejectedValue(new Error('403 secret-body'));
+  render(ConnectAi, {
+    client: api,
+    presentation,
+    apiKeyHref: '/settings',
+    pollMs: 250,
+  });
+  await userEvent.click(
+    await screen.findByRole('button', { name: /Use (my )?ChatGPT/ }),
+  );
+  expect(await screen.findByRole('alert')).not.toHaveTextContent('secret-body');
+  window.dispatchEvent(new Event('focus'));
+  await waitFor(() => expect(api.state).toHaveBeenCalledTimes(2));
+  expect(screen.getByRole('alert')).toBeVisible();
+});

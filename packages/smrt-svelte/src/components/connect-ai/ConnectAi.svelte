@@ -48,6 +48,7 @@ const { t } = useI18n();
 let info = $state<ConnectAiState | undefined>(untrack(() => initialState));
 let busy = $state(false);
 let failed = $state(false);
+let actionFailed = $state(false);
 let signInUrl = $state<string | undefined>();
 let message = $state('');
 let chatgptState = $state<{
@@ -92,7 +93,7 @@ async function refresh(): Promise<void> {
       const next = await client.state(active.signal);
       if (stopped) return;
       info = next;
-      if (presentation !== 'compact') failed = false;
+      if (presentation !== 'compact' && !actionFailed) failed = false;
       if (!next.chatgpt.signingIn && !awaitingChatGPT) signInUrl = undefined;
       onchange?.(next, engineReady(next));
       if (presentation === 'compact') {
@@ -153,6 +154,7 @@ async function act(action: () => Promise<unknown>) {
   if (busy || stopped) return;
   busy = true;
   failed = false;
+  actionFailed = false;
   try {
     await refreshing;
     await action();
@@ -160,6 +162,7 @@ async function act(action: () => Promise<unknown>) {
   } catch (error) {
     if (!stopped) {
       failed = true;
+      actionFailed = true;
       if (presentation === 'compact')
         message = client.errorMessage?.(error) ?? 'Something went wrong.';
     }
@@ -437,7 +440,7 @@ onMount(() => {
   {/if}
   {#if failed}
     <p role="alert">{t(M['ui.connect_ai.error'])}</p>
-    <Button variant="secondary" disabled={busy} onclick={() => refresh()}>{t(M['ui.connect_ai.retry'])}</Button>
+    <Button variant="secondary" disabled={busy} onclick={() => { actionFailed = false; failed = false; void refresh(); }}>{t(M['ui.connect_ai.retry'])}</Button>
   {/if}
 </section>
 
