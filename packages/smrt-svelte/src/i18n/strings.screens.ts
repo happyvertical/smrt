@@ -7,7 +7,8 @@ export const M = defineMessages({
   'ui.screens.edit': 'Edit',
   'ui.screens.delete': 'Delete',
   'ui.screens.delete_title': 'Delete this {name}?',
-  'ui.screens.delete_message': 'This cannot be undone.',
+  'ui.screens.delete_message':
+    'Deleting this record is permanent. It cannot be restored from Change history.',
   'ui.screens.back': 'Back to {name}',
   'ui.screens.save': 'Save',
   'ui.screens.cancel': 'Cancel',

@@ -33,3 +33,21 @@ The checkbox has a visible On/Off status and a plain explanation. Optional
 existing approval views render only pending/approved/executing decisions;
 terminal outcomes belong in the approvals/history surface. The component owns
 no preference store or approval authority.
+
+## Assistant quality
+
+`WorkProfileSettings` composes smrt-ui Card, FormGroup, Input, Select, Toggle and
+Button. The host supplies sparse overrides, resolved profiles, an editable flag,
+and authorized save/reset callbacks. Each profile exposes engine, model, effort,
+all inference budgets and preview; assist additionally exposes automatic design
+escalation. It owns no model policy, persistence or approval authority. Unknown
+engine/catalog resolution is shown as unavailable while editing/reset remain
+usable. CLI token limits are explicitly advisory where the CLI cannot enforce a
+per-call ceiling; app-tool count and wall-time checks remain host-enforced.
+The note describes own-plan/API-key billing. Safety switches are absent.
+
+MCP architecture inventory and intent/name/purpose searches found inference's
+resolver, preferences' kind store, SettingsCatalog and ConnectAi. The editor adds
+only the missing domain composition, reusing the shared visual/form primitives
+and translated messages. Mounted tests exercise edit/save/reset, refused save,
+unavailable connection repair and accessibility.
