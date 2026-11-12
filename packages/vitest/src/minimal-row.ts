@@ -67,7 +67,8 @@ const systemFields = new Set([
   '_meta_data',
 ]);
 
-function fieldOptions(field: RegisteredField): RegisteredField {
+// Inferred return: an option a subclass cleared is `null` in `_meta` (#4942).
+function fieldOptions(field: RegisteredField) {
   return { ...field._meta, ...field.options, ...field };
 }
 

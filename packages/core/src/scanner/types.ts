@@ -67,6 +67,8 @@ export interface FieldUIHints {
  * forcing every consumer through `any`.
  */
 export interface FieldMeta {
+  /** Written options, before registry normalization adds inferred values. */
+  __statedOptions?: string[];
   /** Explicit SQL type override (e.g. 'UUID') applied during schema generation. */
   sqlType?: string;
   /** Storage type for cross-package reference ids ('text' forces TEXT). */
@@ -79,6 +81,13 @@ export interface FieldMeta {
   default?: unknown;
   /** Per-row SQL backfill for adding/tightening a required column (#3008). */
   backfill?: string;
+  /** Why smrt's own code needs this required field (#4923). */
+  requiredFor?:
+    | 'identity'
+    | 'tenant-scope'
+    | 'idempotency'
+    | 'workflow-state'
+    | 'system-table';
   /** Marks the field as the primary key column. */
   primaryKey?: boolean;
   /** Marks the column as unique. */

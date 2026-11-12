@@ -751,7 +751,8 @@ function toolParameters(tool: ManifestTool): Record<string, unknown> {
           description:
             field.description ??
             field._meta?.description ??
-            field.options?.description,
+            field.options?.description ??
+            undefined,
           default: field.default ?? field._meta?.default,
           maxLength: field.maxLength,
           minLength: field.minLength,

@@ -248,6 +248,32 @@ describe('ManifestBuilder coverage', () => {
     }
   });
 
+  it('writes package-relative filePaths when filePathBase is package (#4948)', async () => {
+    // The workspace root is above the package, as in the monorepo.
+    writeFileSync(join(dir, 'pnpm-workspace.yaml'), 'packages: []\n');
+    const pkg = join(dir, 'packages', 'pkg');
+    mkdirSync(join(pkg, 'src'), { recursive: true });
+    writeFileSync(join(pkg, 'src', 'rel.ts'), LOCAL_CLASS_SRC);
+
+    process.chdir(pkg);
+    const asWorkspace = await new ManifestBuilder().generate({
+      include: ['src/**/*.ts'],
+      outputDir: join(dir, 'out'),
+      generateTypeStub: false,
+    });
+    const asPackage = await new ManifestBuilder().generate({
+      include: ['src/**/*.ts'],
+      outputDir: join(dir, 'out'),
+      generateTypeStub: false,
+      filePathBase: 'package',
+    });
+
+    expect(Object.values(asWorkspace.objects)[0]?.filePath).toBe(
+      'packages/pkg/src/rel.ts',
+    );
+    expect(Object.values(asPackage.objects)[0]?.filePath).toBe('src/rel.ts');
+  });
+
   it('aborts instead of emitting a manifest from scan errors', async () => {
     writeFileSync(
       join(dir, 'src', 'unsafe.ts'),

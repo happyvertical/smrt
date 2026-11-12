@@ -265,7 +265,9 @@ export {
   method,
   type NumericFieldOptions,
   oneToMany,
+  REQUIRED_FOR_REASONS,
   type RelationshipFieldOptions,
+  type RequiredForReason,
   type TextFieldOptions,
 } from './decorators/index';
 // Dispatch system (inter-agent communication)

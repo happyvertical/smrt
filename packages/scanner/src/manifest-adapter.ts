@@ -71,14 +71,14 @@ type FieldDecoratorOptions = {
   required?: boolean;
   nullable?: boolean;
   default?: unknown;
-  min?: number;
-  max?: number;
-  maxLength?: number;
-  minLength?: number;
+  min?: number | null;
+  max?: number | null;
+  maxLength?: number | null;
+  minLength?: number | null;
   related?: string;
   /** oneToMany explicit inverse foreign-key field on the target class */
   foreignKey?: string;
-  description?: string;
+  description?: string | null;
   transient?: boolean;
   unique?: boolean;
   /** crossPackageRef opt-in save-time validation */
@@ -100,7 +100,7 @@ type FieldDecoratorOptions = {
   /** read-only over generated write surfaces */
   readonly?: boolean;
   /** permission slug required before the field is included in public reads */
-  readPermission?: string;
+  readPermission?: string | null;
   /** report grouping/bucket/aggregate metadata */
   __report?: Record<string, unknown>;
   [key: string]: unknown;
@@ -821,23 +821,38 @@ export class ManifestAdapter {
       definition.related = fieldDecoratorOptions.related;
     }
 
-    if (fieldDecoratorOptions.description !== undefined) {
+    if (
+      fieldDecoratorOptions.description !== undefined &&
+      fieldDecoratorOptions.description !== null
+    ) {
       definition.description = fieldDecoratorOptions.description;
     }
 
-    if (fieldDecoratorOptions.min !== undefined) {
+    if (
+      fieldDecoratorOptions.min !== undefined &&
+      fieldDecoratorOptions.min !== null
+    ) {
       definition.min = fieldDecoratorOptions.min;
     }
 
-    if (fieldDecoratorOptions.max !== undefined) {
+    if (
+      fieldDecoratorOptions.max !== undefined &&
+      fieldDecoratorOptions.max !== null
+    ) {
       definition.max = fieldDecoratorOptions.max;
     }
 
-    if (fieldDecoratorOptions.minLength !== undefined) {
+    if (
+      fieldDecoratorOptions.minLength !== undefined &&
+      fieldDecoratorOptions.minLength !== null
+    ) {
       definition.minLength = fieldDecoratorOptions.minLength;
     }
 
-    if (fieldDecoratorOptions.maxLength !== undefined) {
+    if (
+      fieldDecoratorOptions.maxLength !== undefined &&
+      fieldDecoratorOptions.maxLength !== null
+    ) {
       definition.maxLength = fieldDecoratorOptions.maxLength;
     }
 
@@ -904,6 +919,26 @@ export class ManifestAdapter {
       definition.readPermission = fieldDecoratorOptions.readPermission;
     }
 
+    // Keep author intent separate from required/default values inferred from
+    // TypeScript. Registration later mirrors those inferred values into _meta.
+    definition._meta = {
+      ...definition._meta,
+      __statedOptions: [
+        ...new Set([
+          ...Object.keys(fieldDecoratorOptions).filter(
+            (key) => fieldDecoratorOptions[key] !== undefined,
+          ),
+          ...Object.keys(inference._meta ?? {}).filter(
+            (key) => inference._meta?.[key] !== undefined,
+          ),
+          // An initializer is the class's own default: a redeclaration that
+          // writes `= 'submit'` states that default.
+          ...(inference.defaultValue !== undefined ? ['default'] : []),
+          ...(definition.enum !== undefined ? ['enum'] : []),
+          ...(definition.related !== undefined ? ['related'] : []),
+        ]),
+      ].filter((key) => key !== 'type'),
+    };
     return definition;
   }
 
@@ -1298,9 +1333,17 @@ export class ManifestAdapter {
         continue;
       }
 
-      if (decorator.name !== 'field') continue;
-
-      const parsed = this.parseFieldDecoratorOptions(decorator.arguments[0]);
+      const optionArgument = [
+        'foreignKey',
+        'crossPackageRef',
+        'oneToMany',
+        'manyToMany',
+      ].includes(decorator.name)
+        ? decorator.arguments[1]
+        : ['field', 'meta'].includes(decorator.name)
+          ? decorator.arguments[0]
+          : undefined;
+      const parsed = this.parseFieldDecoratorOptions(optionArgument);
       if (parsed) {
         Object.assign(options, parsed);
       }

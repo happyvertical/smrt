@@ -82,19 +82,61 @@ export type FieldType =
   | 'oneToMany'
   | 'manyToMany';
 
+/**
+ * Why a smrt package makes a field required (#4923, policy rule 1). smrt
+ * requires a field only when its own code would be wrong or unsafe without it;
+ * `requiredFor` names which of these cases applies. It is carried in the
+ * manifest as `_meta.requiredFor` so other packages and the app build can read
+ * it.
+ *
+ * - `identity`: the field identifies the row or what it belongs to (ids, keys).
+ * - `tenant-scope`: smrt scopes reads or writes by it (tenant ownership).
+ * - `idempotency`: smrt uses it to detect a duplicate or replayed write.
+ * - `workflow-state`: a smrt service steps the row through its values.
+ * - `system-table`: the field is in an internal `_smrt_*` table.
+ */
+export const REQUIRED_FOR_REASONS = [
+  'identity',
+  'tenant-scope',
+  'idempotency',
+  'workflow-state',
+  'system-table',
+] as const;
+
+export type RequiredForReason = (typeof REQUIRED_FOR_REASONS)[number];
+
+/**
+ * A redeclared field keeps parent options it leaves out. Set an option to
+ * `null` to clear it. The effective field then has no value for that option.
+ */
 export interface FieldOptions {
   /** Use this field in the natural primary key, as supported by schema generation. */
   primaryKey?: boolean;
   /** Explicit field type for runtime-only registration paths */
   type?: FieldType;
-  /** Explicit SQL storage type when runtime and persistence contracts differ */
-  sqlType?: SQLDataType;
+  /** Explicit SQL storage type. `null` clears an inherited override. */
+  sqlType?: SQLDataType | null;
   /** Whether the field is required */
   required?: boolean;
+  /**
+   * The reason smrt's own code needs this field (see
+   * {@link RequiredForReason}). Every `required: true` field in a smrt package
+   * states one, and `scripts/check-required-reasons.mjs` fails the lint gate
+   * when it does not. The value must be a string literal so the scanner and
+   * the check can read it from source. An app may not loosen a field that
+   * states a reason, because smrt's code depends on it. A field with no
+   * reason is the app's to tighten or loosen.
+   *
+   * ```typescript
+   * @field({ required: true, requiredFor: 'identity' })
+   * slug: string = '';
+   * ```
+   */
+  requiredFor?: RequiredForReason;
   /** Validate that an STI reference resolves to the declared subtype on save/load. */
   validateSubtype?: boolean;
-  /** Default value for the field */
-  default?: unknown;
+  /** Default value for the field. `null` clears an inherited default. */
+  default?: unknown | null;
   /**
    * Per-row SQL expression `db:migrate` uses to fill existing rows when this
    * field is added as a required column (no `default`) to a table that
@@ -108,12 +150,13 @@ export interface FieldOptions {
    * openKey: string = '';
    * ```
    *
-   * Must be a string literal (the build-time scanner reads it from source).
+   * Use `null` to clear an inherited backfill. Otherwise use a string literal
+   * (the build-time scanner reads it from source).
    * Write it in SQL that every engine you run accepts (`||`, `CASE`,
    * `COALESCE`, `CAST`); columns are the table's snake_case names. It is not
    * a default: the model must still supply a value on every insert.
    */
-  backfill?: string;
+  backfill?: string | null;
   /** Whether the field is unique */
   unique?: boolean;
   /**
@@ -163,10 +206,11 @@ export interface FieldOptions {
    * Fields with a read permission are fail-closed: generated serializers omit
    * them unless the caller's resolved permission set contains this slug.
    * `sensitive: true` still wins and omits the field for every caller.
+   * `null` clears an inherited read permission.
    */
-  readPermission?: string;
-  /** Field description */
-  description?: string;
+  readPermission?: string | null;
+  /** Field description. `null` clears an inherited description. */
+  description?: string | null;
   /**
    * Static UI hints for the field-policy rail (#2046, epic #2045).
    *
@@ -190,22 +234,22 @@ export interface FieldOptions {
  * Options for text fields
  */
 export interface TextFieldOptions extends FieldOptions {
-  /** Minimum length for text fields */
-  minLength?: number;
-  /** Maximum length for text fields */
-  maxLength?: number;
-  /** Regex pattern for validation */
-  pattern?: RegExp | string;
+  /** Minimum text length. `null` clears an inherited limit. */
+  minLength?: number | null;
+  /** Maximum text length. `null` clears an inherited limit. */
+  maxLength?: number | null;
+  /** Validation pattern. `null` clears an inherited pattern. */
+  pattern?: RegExp | string | null;
 }
 
 /**
  * Options for numeric fields
  */
 export interface NumericFieldOptions extends FieldOptions {
-  /** Minimum value */
-  min?: number;
-  /** Maximum value */
-  max?: number;
+  /** Minimum value. `null` clears an inherited limit. */
+  min?: number | null;
+  /** Maximum value. `null` clears an inherited limit. */
+  max?: number | null;
 }
 
 /**
