@@ -115,6 +115,7 @@ async function turn(
     deps?: AgentEngineDeps;
     signal?: AbortSignal;
     onEvent?: (e: TurnEvent) => void;
+    outputSchema?: Record<string, unknown>;
   } = {},
 ) {
   return runOn(
@@ -130,11 +131,16 @@ async function runOn(
   text: string,
   deps: AgentEngineDeps,
   thread: { messages: AgentTurnMessage[] },
-  options: { signal?: AbortSignal; onEvent?: (e: TurnEvent) => void } = {},
+  options: {
+    signal?: AbortSignal;
+    onEvent?: (e: TurnEvent) => void;
+    outputSchema?: Record<string, unknown>;
+  } = {},
 ) {
   const events: TurnEvent[] = [];
   const stop = await runAgentTurn({
     text,
+    outputSchema: options.outputSchema,
     tool,
     mcpUrl: 'http://127.0.0.1:4801/mcp',
     deps,
@@ -750,4 +756,98 @@ console.log(JSON.stringify({type:'turn.completed',usage:{input_tokens:10,output_
       tokens: 12,
     }),
   );
+});
+
+describe('blocked tool diagnostics and schema result channels', () => {
+  it.each([
+    'Bash',
+    'Bash\nforged-log',
+    'Bash\u001b[31m',
+    'Bash\u202eforged',
+    'x'.repeat(129),
+  ])('redacts unsafe builtin names: %j', async (name) => {
+    const log = vi.spyOn(console, 'error').mockImplementation(() => {});
+    const { events, thread, stop } = await turn(
+      'claude-code',
+      `blocked-name ${JSON.stringify(name)}`,
+    );
+    const safe = name === 'Bash' ? 'Bash' : 'unknown';
+    expect(stop).toBe('error');
+    expect(events.find((e) => e.type === 'error')).toMatchObject({
+      code: 'agent_tool_blocked',
+      message: expect.stringContaining(`builtin: ${safe}`),
+    });
+    expect(log).toHaveBeenCalledWith(
+      '[smrt-inference] local engine failure',
+      expect.objectContaining({
+        phase: 'guard',
+        blockedTool: safe,
+        blockedKind: 'builtin',
+        code: 'agent_tool_blocked',
+      }),
+    );
+    const all = JSON.stringify([
+      events,
+      thread.messages.filter((m) => m.role !== 'user'),
+      log.mock.calls,
+    ]);
+    expect(all).not.toContain('raw-payload');
+    if (name !== 'Bash')
+      expect(all).not.toContain(JSON.stringify(name).slice(1, -1));
+  });
+  it('identifies unoffered MCP names without exposing arguments', async () => {
+    const log = vi.spyOn(console, 'error').mockImplementation(() => {});
+    const { events, thread, stop } = await turn(
+      'codex',
+      'blocked-name "approval_decide"',
+    );
+    expect(stop).toBe('error');
+    expect(events.find((e) => e.type === 'error')).toMatchObject({
+      message: expect.stringContaining('unoffered_mcp: approval_decide'),
+    });
+    expect(log).toHaveBeenCalledWith(
+      '[smrt-inference] local engine failure',
+      expect.objectContaining({
+        blockedTool: 'approval_decide',
+        blockedKind: 'unoffered_mcp',
+      }),
+    );
+    expect(
+      JSON.stringify([events, thread.messages, log.mock.calls]),
+    ).not.toContain('raw-payload');
+  });
+  it('publishes only the canonical schema result and no executable tool event', async () => {
+    const log = vi.spyOn(console, 'info').mockImplementation(() => {});
+    const { events, thread, stop } = await turn('claude-code', 'structured', {
+      outputSchema: { type: 'object' },
+    });
+    expect(stop).toBe('complete');
+    expect(textOf(events)).toBe('{"ok":true}');
+    expect(log).toHaveBeenCalledWith(
+      '[smrt-inference] local engine result channel',
+      {
+        reference: expect.stringMatching(/^[a-f0-9-]{36}$/),
+        tool: 'claude-code',
+        name: 'StructuredOutput',
+      },
+    );
+    expect(JSON.stringify(log.mock.calls)).not.toMatch(/raw-payload|ok|true/);
+    expect(
+      events.some((e) => e.type === 'tool_call' || e.type === 'tool_result'),
+    ).toBe(false);
+    expect(JSON.stringify([events, thread.messages])).not.toContain(
+      'raw-payload',
+    );
+  });
+  it('refuses StructuredOutput without a host schema', async () => {
+    const log = vi.spyOn(console, 'error').mockImplementation(() => {});
+    const { events, stop } = await turn('claude-code', 'structured');
+    expect(stop).toBe('error');
+    expect(events.find((e) => e.type === 'error')).toMatchObject({
+      message: expect.stringContaining('builtin: StructuredOutput'),
+    });
+    expect(JSON.stringify([events, log.mock.calls])).not.toContain(
+      'raw-payload',
+    );
+  });
 });

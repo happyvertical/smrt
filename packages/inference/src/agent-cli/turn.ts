@@ -158,6 +158,9 @@ export function tokenFailureMessage(code: string | undefined): string {
 }
 
 const reportedFailures = new WeakMap<object, string>();
+function blockedToolName(name: string): string {
+  return /^[a-zA-Z0-9][a-zA-Z0-9_.:-]{0,127}$/.test(name) ? name : 'unknown';
+}
 const diagnosticCodes = new Set([
   'agent_cli_missing',
   'agent_cli_signed_out',
@@ -187,6 +190,10 @@ export function reportAgentFailure(
     | 'driver',
   error?: unknown,
   code?: string,
+  blocked?: {
+    name: string;
+    kind: 'builtin' | 'unoffered_mcp' | 'unknown_item';
+  },
 ): string {
   if (error && typeof error === 'object') {
     const existing = reportedFailures.get(error);
@@ -233,6 +240,12 @@ export function reportAgentFailure(
       cause,
       code: code && diagnosticCodes.has(code) ? code : 'unexpected_failure',
       sites,
+      ...(blocked
+        ? {
+            blockedTool: blockedToolName(blocked.name),
+            blockedKind: blocked.kind,
+          }
+        : {}),
     });
   } catch {
     /* A failed log sink must not change cleanup or refusal. */
@@ -385,11 +398,47 @@ async function runAgentTurnImpl(
     options.signal.addEventListener('abort', onAbort, { once: true });
     if (options.signal.aborted) controller.abort();
 
+    const blockTool = (
+      name: string,
+      kind: 'builtin' | 'unoffered_mcp' | 'unknown_item',
+    ) => {
+      stop = 'error';
+      controller.abort();
+      const safeName = blockedToolName(name);
+      const reference = reportAgentFailure(
+        tool,
+        'guard',
+        undefined,
+        'agent_tool_blocked',
+        {
+          name: safeName,
+          kind,
+        },
+      );
+      emit({
+        type: 'error',
+        code: 'agent_tool_blocked',
+        message: `${label} tried to use a blocked tool (${kind}: ${safeName}). I stopped it. Reference: ${reference}`,
+      });
+    };
+
     const handle = async (event: AgentEvent): Promise<void> => {
       if (stop === 'error' && controller.signal.aborted) return;
       switch (event.type) {
         case 'session':
           sessionId = event.id;
+          return;
+        case 'result_channel':
+          try {
+            // biome-ignore lint/suspicious/noConsole: fixed name-only protocol diagnostic, never result data
+            console.info('[smrt-inference] local engine result channel', {
+              reference: randomUUID(),
+              tool,
+              name: 'StructuredOutput',
+            });
+          } catch {
+            /* A failed log sink must not change the result channel. */
+          }
           return;
         case 'text':
           streamedAny = true;
@@ -405,24 +454,12 @@ async function runAgentTurnImpl(
         }
         case 'forbidden':
           // A tool outside the shell's own appeared in the stream: stop at once.
-          stop = 'error';
-          controller.abort();
-          emit({
-            type: 'error',
-            code: 'agent_tool_blocked',
-            message: `${label} tried to use something other than this app's tools. I stopped it.`,
-          });
+          blockTool(event.what, event.kind ?? 'builtin');
           return;
         case 'tool_use': {
           toolCalls++;
           if (!host.allowTool(event.name)) {
-            stop = 'error';
-            controller.abort();
-            emit({
-              type: 'error',
-              code: 'agent_tool_blocked',
-              message: 'The assistant cannot decide approvals. I stopped it.',
-            });
+            blockTool(event.name, 'unoffered_mcp');
             return;
           }
           sawTool = true;

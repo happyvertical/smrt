@@ -577,6 +577,177 @@ describe('local cookbook host composition (SQLite, fake model, no providers)', (
     );
   });
 
+  it('admits a direct owner design request with concrete structural schemas and read-only model tools', async () => {
+    const runtime = host.runtime;
+    await host.shutdown();
+    host.dispose();
+    const calls: Array<{
+      messages: Array<{ role: string; content: string }>;
+      options: { tools?: Array<{ function: { name: string } }> };
+    }> = [];
+    host = createCookbookHost({
+      runtime,
+      packageName: '@fixture/host-app',
+      app: { cookbook, catalog },
+      assistant: {
+        ai: {
+          chat: async (messages: never, options: never) => {
+            calls.push({ messages, options });
+            return {
+              content: JSON.stringify({
+                summary: 'Add Birthday to Customers.',
+                checks: ['Customers exists.'],
+                ready: true,
+                operations: [
+                  {
+                    tool: 'app.addField',
+                    args: {
+                      list: 'Customers',
+                      label: 'Birthday',
+                      kind: 'date',
+                      expectedRevision: 0,
+                    },
+                  },
+                ],
+              }),
+              finishReason: 'stop',
+            };
+          },
+        } as never,
+      },
+    });
+    await host.init();
+    await request(event('/'), async (e) => json(await host.load(e)));
+    permissions = [
+      ...(
+        await (
+          await PermissionResolver.create({ db })
+        ).resolvePermissions(owner.id, tenantId)
+      ).permissions,
+    ];
+    await request(event('/settings/inference'), async (e) => {
+      const saved = await host.workProfiles.read(e);
+      expect(
+        (
+          await host.workProfiles.write(e, {
+            settings: { design: { budgets: { passes: 3 } } },
+            revision: saved.revision,
+          })
+        ).ok,
+      ).toBe(true);
+      return new Response();
+    });
+    const id = await thread();
+    const admitted = await chat('design-runs', {
+      threadId: id,
+      content: 'Add a birthday field to Customers.',
+    });
+    expect(admitted.status).toBe(202);
+    const runId = (await admitted.json()).run.runId;
+    await vi.waitFor(
+      async () => {
+        const state = JSON.parse(
+          String(
+            (
+              await db.query(
+                'SELECT payload FROM _smrt_inference_design_runs WHERE id = ?',
+                runId,
+              )
+            ).rows[0].payload,
+          ),
+        );
+        expect(state.status).toBe('waiting-approval');
+        expect(state.definition).toBe('cookbook-design/v2/3');
+        expect(state.outputs[2].operations[0].tool).toBe('app.addField');
+      },
+      { timeout: 15000 },
+    );
+    expect(calls).toHaveLength(3);
+    for (const call of calls) {
+      expect(JSON.stringify(call.messages)).toContain('app.addField');
+      expect(
+        call.options.tools?.some(
+          (tool) => tool.function.name === 'app_add_field',
+        ),
+      ).not.toBe(true);
+    }
+    const history = await mcp('tools/call', {
+      name: 'app_history',
+      arguments: {},
+    });
+    expect(history.body.result.structuredContent.changes).toEqual([]);
+  });
+
+  it('rejects forged direct design authority, foreign threads and cross-origin admission before any model call', async () => {
+    const calls = vi.fn();
+    response = calls;
+    const id = await thread();
+    for (const key of [
+      'profile',
+      'workProfile',
+      'engine',
+      'actionKey',
+      'actionId',
+      'runId',
+      'designAction',
+      'approvalId',
+      'ownerId',
+      'userId',
+      'tenantId',
+    ]) {
+      expect(
+        (
+          await chat('design-runs', {
+            threadId: id,
+            content: 'Review Customers.',
+            [key]: 'forged',
+          })
+        ).status,
+      ).toBe(400);
+    }
+    expect(
+      (
+        await chat('design-runs', {
+          threadId: randomUUID(),
+          content: 'Review Customers.',
+        })
+      ).status,
+    ).toBe(404);
+    expect(
+      (
+        await chat('design-runs', {
+          threadId: id,
+          content: 'x'.repeat(140_000),
+        })
+      ).status,
+    ).toBe(413);
+    const crossOrigin = event('/api/assistant/design-runs', 'POST', {
+      threadId: id,
+      content: 'Review Customers.',
+    });
+    crossOrigin.request.headers.set('origin', 'https://other.invalid');
+    expect((await request(crossOrigin, host.assistant.handle)).status).toBe(
+      403,
+    );
+    expect(
+      (
+        await request(
+          event(
+            '/api/assistant/design-runs',
+            'POST',
+            { threadId: id, content: 'Review Customers.' },
+            false,
+          ),
+          host.assistant.handle,
+        )
+      ).status,
+    ).toBe(403);
+    expect(calls).not.toHaveBeenCalled();
+    expect(
+      (await db.query('SELECT id FROM _smrt_inference_design_runs')).rows,
+    ).toHaveLength(0);
+  });
+
   it.each([
     1, 20,
   ])('resumes the same design run with current aggregate token cap %s and retained usage', async (cap) => {

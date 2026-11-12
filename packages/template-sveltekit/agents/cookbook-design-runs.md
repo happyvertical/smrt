@@ -39,6 +39,21 @@ next input. This generic check establishes output structure, not application
 schema correctness. Cookbook policy, revision checks and the existing apply
 preview and approvals remain the authority for actual changes.
 
+New runs pin `cookbook-design/v2/<passes>`. Their operation schema is a `oneOf`
+of the current core cookbook structural tool names and input schemas, resolved
+under the live owner. Approval ids are excluded from proposal arguments. The
+model sees those exact schemas as proposal data while its callable tools remain
+read-only; unknown tool names, MCP wire names and extra arguments enter the same
+bounded schema repair path without effects. Persisted v1 runs retain their
+original schema and review-pending semantics; their completed outputs are never
+reinterpreted as valid v2 actions.
+
+Authenticated same-origin `POST /api/assistant/design-runs` admits a design job
+directly using exactly `{ threadId, content }`. It reuses chat's own thread-read
+handler to check session ownership, then resolves the design profile and
+permission ceiling on the server. It accepts no identity, engine, profile or
+action-key overrides and performs no preliminary model turn.
+
 The server's pass executor uses its existing authenticated assistant route and
 engine adapters with job-bound limits. Design passes offer only read/proposal
 tools: replay and schema repair cannot repeat mutation effects. The run produces

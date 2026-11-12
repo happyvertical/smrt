@@ -144,6 +144,30 @@ and unknown Codex action kinds. Stop/timeout kills the process group (Windows
 uses taskkill /T). CLI credentials are never read: query the CLI's own status
 and run its own login command, which opens the vendor page itself.
 
+Claude's `StructuredOutput` is accepted only when the host supplies
+`outputSchema` (and thus `--json-schema`). It is a result channel: its call
+and correlated result never become executable app tools or tool messages;
+only the final `structured_output` is published, with intermediate prose
+suppressed. Without a host schema it remains forbidden. All CLI lockdown
+flags stay intact. Blocked tools report a bounded ASCII name (unsafe names
+become `unknown`) and `builtin`, `unoffered_mcp`, or `unknown_item` in the
+correlated guard diagnostic and safe error message, never their arguments.
+
+Native continuation proof (2026-11-12 UTC): a fresh built product chat request
+escalated before `app.addField` executed, then completed all three v2 design
+passes with the exact core-owned proposal (`Members`, `Visit note`, text,
+`expectedRevision: 1`). Each requested `fable` / maximum effort and reported
+`claude-fable-5-1`; provider-reported effort was unavailable. Pass duration,
+tokens and app-tool calls were respectively 26783 ms / 53618 / 1,
+28841 ms / 54889 / 1, and 26331 ms / 56277 / 1. All three accepted the native
+`StructuredOutput` channel; no schema repair or write occurred. The identical
+schema-enabled formatter event is forbidden by the base parser and accepted
+as a non-executable result channel by this parser. Without a host schema it
+remains forbidden. The earlier v1 proof completed its passes but could not
+prepare a supported operation because write schemas were absent; v2 supplies
+their metadata while retaining read-only execution. This proves proposal
+completion, not final Apply, which requires the trusted durable host action seam.
+
 Do not offer in-app Claude subscription login or proxy/store its credentials.
 The person uses their own unmodified Claude Code CLI and its vendor login.
 ChatGPT plan sign-in is a separate, opt-in preview for local open-source apps;

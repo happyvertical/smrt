@@ -143,6 +143,15 @@ if (head === 'say') {
   renameSync(`${snapshot}.tmp`, snapshot);
   if (head === 'hang-text') say('callback trigger');
   setInterval(() => {}, 1000);
+} else if (head === 'structured') {
+  out({ type: 'assistant', message: { content: [{ type: 'tool_use', id: 'result', name: 'StructuredOutput', input: { raw: 'raw-payload' } }] } });
+  out({ type: 'user', message: { content: [{ type: 'tool_result', tool_use_id: 'result', content: 'raw-payload' }] } });
+  out({ type: 'result', subtype: 'success', structured_output: { ok: true } });
+} else if (head === 'blocked-name') {
+  const name = JSON.parse(rest.join(' '));
+  if (isCodex) out({ type: 'item.started', item: { id: 'x', type: 'mcp_tool_call', server: 'smrt', tool: name, arguments: { secret: 'raw-payload' } } });
+  else out({ type: 'assistant', message: { content: [{ type: 'tool_use', id: 'x', name, input: { secret: 'raw-payload' } }] } });
+  setInterval(() => {}, 1000);
 } else if (head === 'forbidden') {
   if (isCodex) out({ type: 'item.completed', item: { id: 'x', type: 'command_execution', command: 'ls' } });
   else out({ type: 'assistant', message: { content: [{ type: 'tool_use', id: 'x', name: 'Bash', input: { command: 'ls' } }] } });

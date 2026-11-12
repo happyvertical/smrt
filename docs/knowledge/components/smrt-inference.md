@@ -5,10 +5,10 @@ description: "Inference alias chains with classified failures, recorded fallback
 status: "stable"
 generated:
   by: "smrt/scripts/generate-knowledge-okf.ts"
-  at: "2026-11-12T05:12:16Z"
+  at: "2026-11-12T06:40:35Z"
 audience: "internal"
 evidence_level: "source-inspected"
-source_revision: "sha256:3129a76ac8f58acf7b9532217f9fca12562c629cb2aed8afb0d33ce8b649ad80"
+source_revision: "sha256:f45501a5d5a27392ed3a96c7e5a52ed138bcb734539717ca2641b6144ec1a466"
 sources:
   - id: "manifest"
     resource: "https://github.com/happyvertical/smrt/blob/main/packages/inference/package.json"

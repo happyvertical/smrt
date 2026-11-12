@@ -144,7 +144,7 @@ function claudeSpec(
     cwd: work,
     env: cliEnv(input.location, input.baseEnv, { [TOKEN_ENV]: input.token }),
     stdin: input.prompt,
-    parse: claudeParser(),
+    parse: claudeParser(input.outputSchema),
     sessionId,
     cleanup: () => rmSync(runDir, { recursive: true, force: true }),
   };

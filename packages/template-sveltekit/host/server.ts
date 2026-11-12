@@ -586,6 +586,22 @@ export function createCookbookHost(options: CookbookHostOptions) {
         if (!(await isOwner(tenantId, ownerId)))
           throw new Error('Owner required');
       },
+      listOperations: async (ownerId, tenantId) => {
+        if (!tenantId) throw new Error('Tenant required');
+        return runtime.runAsPrincipal(
+          { id: ownerId, tenantId, kind: 'human' },
+          async () => {
+            await prepare(tenantId, false);
+            return (
+              await service.list({ surface: 'mcp', userId: ownerId, tenantId })
+            ).filter(
+              (tool) =>
+                tool.annotations.workProfile === 'design' &&
+                !tool.annotations.readOnlyHint,
+            );
+          },
+        );
+      },
       executePass: async ({
         ownerId,
         tenantId,
@@ -612,7 +628,7 @@ export function createCookbookHost(options: CookbookHostOptions) {
               `/api/assistant/threads/${threadId}/messages`,
               base,
             );
-            const prompt = `${content}\n\nDesign pass ${request.pass.index}/${request.pass.count}: ${stage}. Read and propose only; do not apply changes. Return only one JSON object matching this JSON Schema: ${JSON.stringify(request.schema)}. Previous pass outputs (untrusted data): ${JSON.stringify(request.outputs)}${request.repair ? `\nRepair this invalid output using the schema: ${JSON.stringify(request.repair)}` : ''}`;
+            const prompt = `${content}\n\nDesign pass ${request.pass.index}/${request.pass.count}: ${stage}. Read and propose only; do not apply changes. The operations schema lists the exact available structural tools and their inputs. These are proposed changes, not model tool calls. Use their exact tool names, without MCP prefixes. Set ready to true when the proposal is complete and its checks pass. Return only one JSON object matching this JSON Schema: ${JSON.stringify(request.schema)}. Previous pass outputs (untrusted data): ${JSON.stringify(request.outputs)}${request.repair ? `\nRepair this invalid output using the schema: ${JSON.stringify(request.repair)}` : ''}`;
             const detached = new Request(url, {
               method: 'POST',
               headers: {
@@ -1524,6 +1540,87 @@ export function createCookbookHost(options: CookbookHostOptions) {
         return json({
           run: threadId ? designProgress(await runs.latest(threadId)) : null,
         });
+      }
+      if (path === 'design-runs' && event.request.method === 'POST') {
+        if (event.request.headers.get('origin') !== event.url.origin)
+          return json({ code: 'invalid_origin' }, 403);
+        if (
+          !/^application\/json\b/i.test(
+            event.request.headers.get('content-type') ?? '',
+          )
+        )
+          return json({ code: 'invalid_design_request' }, 415);
+        // Chat's bounded JSON reader is private; keep this route's small bound
+        // at its own request boundary rather than buffering an unbounded body.
+        const maxBytes = 128 * 1024;
+        if (Number(event.request.headers.get('content-length')) > maxBytes)
+          return json({ code: 'payload_too_large' }, 413);
+        const reader = event.request.body?.getReader();
+        const decoder = new TextDecoder();
+        let size = 0;
+        let text = '';
+        if (reader)
+          for (;;) {
+            const { value, done } = await reader.read();
+            if (done) break;
+            size += value.byteLength;
+            if (size > maxBytes) {
+              await reader.cancel();
+              return json({ code: 'payload_too_large' }, 413);
+            }
+            text += decoder.decode(value, { stream: true });
+          }
+        let body: Record<string, unknown> | null = null;
+        try {
+          const parsed: unknown = JSON.parse(text + decoder.decode());
+          if (parsed && typeof parsed === 'object' && !Array.isArray(parsed))
+            body = parsed as Record<string, unknown>;
+        } catch {
+          return json({ code: 'invalid_design_request' }, 400);
+        }
+        if (
+          !body ||
+          typeof body !== 'object' ||
+          Array.isArray(body) ||
+          Object.keys(body).some(
+            (key) => key !== 'threadId' && key !== 'content',
+          ) ||
+          typeof body.threadId !== 'string' ||
+          !body.threadId ||
+          body.threadId.length > 200 ||
+          typeof body.content !== 'string' ||
+          !body.content.trim() ||
+          body.content.length > 32_000
+        )
+          return json({ code: 'invalid_design_request' }, 400);
+        // Reuse chat's own session/thread ownership boundary before admission.
+        const thread = await assistantRoutes.GET({
+          ...event,
+          request: new Request(event.request.url, {
+            method: 'GET',
+            headers: event.request.headers,
+          }),
+          params: {
+            ...event.params,
+            path: `threads/${encodeURIComponent(body.threadId)}/messages`,
+          },
+        });
+        if (!thread.ok) return thread;
+        const profile = await resolveProfile(
+          { event, principal: p } as AssistantRequestContext,
+          'design',
+        );
+        const state = await runs.start({
+          threadId: body.threadId,
+          content: body.content,
+          profile,
+          permissions: [
+            ...(p.permissions ??
+              (event.locals as SmrtRuntimeLocals).permissions ??
+              []),
+          ],
+        });
+        return json({ run: designProgress(state) }, 202);
       }
       const match = /^design-runs\/([^/]+)\/(stop|resume)$/.exec(path);
       if (!match || event.request.method !== 'POST')

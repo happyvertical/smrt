@@ -235,7 +235,9 @@ describe('stream parsers', () => {
         item: { type: 'command_execution' },
       }),
     );
-    expect(codex).toEqual([{ type: 'forbidden', what: 'command_execution' }]);
+    expect(codex).toEqual([
+      { type: 'forbidden', what: 'command_execution', kind: 'unknown_item' },
+    ]);
   });
 
   it('Codex: anything but the shell’s own tools and messages is forbidden', () => {
@@ -249,7 +251,7 @@ describe('stream parsers', () => {
     ])
       expect(
         parse(JSON.stringify({ type: 'item.started', item: { type } })),
-      ).toEqual([{ type: 'forbidden', what: type }]);
+      ).toEqual([{ type: 'forbidden', what: type, kind: 'unknown_item' }]);
     // an MCP call on any other server
     expect(
       parse(
@@ -395,7 +397,7 @@ it('keeps unexpected structured-output tools forbidden and captures runtime mode
         usage: { input_tokens: 15, output_tokens: 5 },
       }),
     ),
-  ).toEqual([{ type: 'done', ok: true, text: '{"ok":true}', tokens: 20 }]);
+  ).toEqual([{ type: 'done', ok: true, tokens: 20 }]);
 });
 
 it('includes Anthropic cache usage without double-counting Codex cached input', () => {
@@ -452,4 +454,158 @@ it.each([
       prompt: '',
     }),
   ).toThrow('Invalid work profile model');
+});
+
+it('treats host-enabled StructuredOutput as a result channel with no executable tool events', () => {
+  const parse = claudeParser({ type: 'object' });
+  expect(
+    parse(
+      JSON.stringify({
+        type: 'assistant',
+        message: {
+          content: [
+            {
+              type: 'tool_use',
+              id: 'result',
+              name: 'StructuredOutput',
+              input: { ignored: 'raw-payload' },
+            },
+          ],
+        },
+      }),
+    ),
+  ).toEqual([{ type: 'result_channel', name: 'StructuredOutput' }]);
+  expect(
+    parse(
+      JSON.stringify({
+        type: 'user',
+        message: {
+          content: [
+            {
+              type: 'tool_result',
+              tool_use_id: 'result',
+              content: 'raw-payload',
+            },
+          ],
+        },
+      }),
+    ),
+  ).toEqual([]);
+  expect(
+    parse(
+      JSON.stringify({
+        type: 'result',
+        subtype: 'success',
+        structured_output: { ok: true },
+      }),
+    ),
+  ).toEqual([{ type: 'done', ok: true, text: '{"ok":true}' }]);
+  expect(
+    parse(
+      JSON.stringify({
+        type: 'assistant',
+        message: {
+          content: [{ type: 'tool_use', id: 'bad', name: 'Bash', input: {} }],
+        },
+      }),
+    ),
+  ).toEqual([{ type: 'forbidden', what: 'Bash' }]);
+});
+
+it('keeps schema result channels separate from mixed app tool calls and prose', () => {
+  const parse = claudeParser({ type: 'object' });
+  expect(
+    parse(
+      JSON.stringify({
+        type: 'assistant',
+        message: {
+          content: [
+            { type: 'text', text: 'Preparing a result' },
+            {
+              type: 'tool_use',
+              id: 'app',
+              name: 'mcp__smrt__app_describe',
+              input: {},
+            },
+            {
+              type: 'tool_use',
+              id: 'schema',
+              name: 'StructuredOutput',
+              input: {},
+            },
+          ],
+        },
+      }),
+    ),
+  ).toEqual([
+    { type: 'tool_use', id: 'app', name: 'app_describe', args: '{}' },
+    { type: 'result_channel', name: 'StructuredOutput' },
+  ]);
+  expect(
+    parse(
+      JSON.stringify({
+        type: 'user',
+        message: {
+          content: [
+            {
+              type: 'tool_result',
+              tool_use_id: 'schema',
+              content: 'internal result',
+            },
+            {
+              type: 'tool_result',
+              tool_use_id: 'app',
+              content: 'app observation',
+            },
+            {
+              type: 'tool_result',
+              tool_use_id: 'unmatched',
+              content: 'unknown observation',
+            },
+          ],
+        },
+      }),
+    ),
+  ).toEqual([
+    { type: 'tool_result', id: 'app', ok: true, text: 'app observation' },
+    {
+      type: 'tool_result',
+      id: 'unmatched',
+      ok: true,
+      text: 'unknown observation',
+    },
+  ]);
+  expect(
+    parse(
+      JSON.stringify({
+        type: 'stream_event',
+        event: {
+          type: 'content_block_delta',
+          delta: { type: 'text_delta', text: 'prose' },
+        },
+      }),
+    ),
+  ).toEqual([]);
+});
+
+it('classifies foreign Claude MCP tools separately from builtins', () => {
+  expect(
+    claudeParser()(
+      JSON.stringify({
+        type: 'assistant',
+        message: {
+          content: [
+            {
+              type: 'tool_use',
+              id: 'foreign',
+              name: 'mcp__foreign__read',
+              input: { secret: 'raw-payload' },
+            },
+          ],
+        },
+      }),
+    ),
+  ).toEqual([
+    { type: 'forbidden', what: 'mcp__foreign__read', kind: 'unoffered_mcp' },
+  ]);
 });

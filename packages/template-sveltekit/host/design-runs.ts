@@ -1,4 +1,5 @@
 import { randomUUID } from 'node:crypto';
+import type { CookbookToolDefinition } from '@happyvertical/smrt-core/cookbook/tools';
 import {
   createDesignRunDriver,
   createDesignRunStore,
@@ -21,6 +22,16 @@ import Ajv from 'ajv/dist/2020.js';
 export interface CookbookDesignRunsOptions {
   db: DatabaseInterface;
   authorize(ownerId: string, tenantId: string | null): Promise<void>;
+  /** Current core-owned structural schemas, resolved under the live owner. */
+  listOperations?(
+    ownerId: string,
+    tenantId: string | null,
+  ): Promise<
+    readonly Pick<
+      CookbookToolDefinition,
+      'name' | 'inputSchema' | 'description'
+    >[]
+  >;
   executePass(input: {
     ownerId: string;
     tenantId: string | null;
@@ -63,7 +74,7 @@ const outputSchema = {
     },
   },
 };
-const definitionPrefix = 'cookbook-design/v1/';
+const definitionPrefix = 'cookbook-design/v2/';
 
 /**
  * Concrete cookbook workflow on inference checkpoints and the existing jobs queue.
@@ -72,18 +83,62 @@ const definitionPrefix = 'cookbook-design/v1/';
  */
 export function createCookbookDesignRuns(options: CookbookDesignRunsOptions) {
   const ajv = new Ajv({ strict: true, allErrors: true });
-  const validateOutput = ajv.compile(outputSchema);
   const jobs = SmrtJobCollection.create({ db: options.db });
   const controllers = new Map<string, AbortController>();
 
-  function driver(
+  async function driver(
     ownerId: string,
     tenantId: string | null,
     count: number,
     claim?: { jobId: string; workerId: string; attempt: number },
+    definition = `${definitionPrefix}${count}`,
   ) {
     if (!Number.isSafeInteger(count) || count < 1 || count > 64)
       throw new Error('Design passes must be between 1 and 64');
+    // v1 outputs retain their original contract. New runs advertise the actual
+    // owning schemas without granting the model any mutation tools.
+    const operations = definition.startsWith(definitionPrefix)
+      ? ((await options.listOperations?.(ownerId, tenantId)) ?? [])
+      : [];
+    const schema = definition.startsWith(definitionPrefix)
+      ? {
+          ...outputSchema,
+          properties: {
+            ...outputSchema.properties,
+            operations: {
+              ...outputSchema.properties.operations,
+              description:
+                'Proposed changes only. Use the exact tool names and arguments below; never MCP wire names or invented tools. Set ready to true when the proposal is complete and its checks pass.',
+              items: operations.length
+                ? {
+                    oneOf: operations.map((operation) => {
+                      const args = structuredClone(operation.inputSchema);
+                      if (
+                        args.properties &&
+                        typeof args.properties === 'object'
+                      )
+                        delete (args.properties as Record<string, unknown>)
+                          .approvalId;
+                      if (Array.isArray(args.required))
+                        args.required = args.required.filter(
+                          (key) => key !== 'approvalId',
+                        );
+                      args.additionalProperties = false;
+                      return {
+                        type: 'object',
+                        additionalProperties: false,
+                        required: ['tool', 'args'],
+                        description: operation.description,
+                        properties: { tool: { const: operation.name }, args },
+                      };
+                    }),
+                  }
+                : false,
+            },
+          },
+        }
+      : outputSchema;
+    const validateOutput = ajv.compile(schema);
     const store = createDesignRunStore({
       db: options.db,
       ownerId,
@@ -140,7 +195,7 @@ export function createCookbookDesignRuns(options: CookbookDesignRunsOptions) {
     });
     return createDesignRunDriver({
       store,
-      definition: `${definitionPrefix}${count}`,
+      definition,
       passes: Array.from({ length: count }, (_, index) => ({
         name:
           index === 0
@@ -148,7 +203,7 @@ export function createCookbookDesignRuns(options: CookbookDesignRunsOptions) {
             : index === 1
               ? 'Propose the design'
               : 'Check and revise the design',
-        schema: outputSchema,
+        schema,
         async check(output: unknown, state: Readonly<DesignRunState>) {
           // Mechanical validation is repeated after a crash before advancing.
           if (!validateOutput(output))
@@ -227,9 +282,9 @@ export function createCookbookDesignRuns(options: CookbookDesignRunsOptions) {
   }
 
   function passCount(definition: string) {
-    if (!definition.startsWith(definitionPrefix))
-      throw new Error('Design run definition changed');
-    return Number(definition.slice(definitionPrefix.length));
+    const match = /^cookbook-design\/v[12]\/(\d+)$/.exec(definition);
+    if (!match) throw new Error('Design run definition changed');
+    return Number(match[1]);
   }
 
   const dispose = installDesignRunExecutor(
@@ -259,11 +314,19 @@ export function createCookbookDesignRuns(options: CookbookDesignRunsOptions) {
       context.signal.addEventListener('abort', abort, { once: true });
       controllers.set(state.id, controller);
       try {
-        return await driver(ownerId, tenantId, passCount(state.definition), {
-          jobId: context.job.jobId,
-          workerId,
-          attempt: context.job.attempt,
-        }).run(state.id, ownerId, controller.signal);
+        return await (
+          await driver(
+            ownerId,
+            tenantId,
+            passCount(state.definition),
+            {
+              jobId: context.job.jobId,
+              workerId,
+              attempt: context.job.attempt,
+            },
+            state.definition,
+          )
+        ).run(state.id, ownerId, controller.signal);
       } finally {
         controllers.delete(state.id);
         context.signal.removeEventListener('abort', abort);
@@ -287,7 +350,13 @@ export function createCookbookDesignRuns(options: CookbookDesignRunsOptions) {
         });
         const state = await store.load(id, ownerId);
         if (!state) throw new Error('Design run not found');
-        return driver(ownerId, tenantId, passCount(state.definition));
+        return driver(
+          ownerId,
+          tenantId,
+          passCount(state.definition),
+          undefined,
+          state.definition,
+        );
       }
       return {
         async start(input: {
@@ -303,7 +372,7 @@ export function createCookbookDesignRuns(options: CookbookDesignRunsOptions) {
           if (input.profile.name !== 'design')
             throw new Error('Design runs require the design profile');
           const budget = input.profile.budgets;
-          return driver(ownerId, tenantId, budget.passes).start({
+          return (await driver(ownerId, tenantId, budget.passes)).start({
             id: randomUUID(),
             ownerId,
             resourceIds: input.resourceIds ?? [],
