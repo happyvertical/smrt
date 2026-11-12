@@ -58,10 +58,13 @@ token on fork PRs and must never run PR code: `fork-pr-approval.yml` and
 admin allows the event for exactly those files (Settings → Actions →
 Policies, an event policy whose workflow-path targeting includes the two
 files and whose allowed events are `pull_request_target`; REST:
-`POST /repos/happyvertical/smrt/actions/policies`). Without that policy they
-fail closed: fork PRs cannot be approved (the gate requires the
-`fork-approval` status only Fork PR Approval writes) and dequeues go
-uncommented; same-repository PRs, bots and the merge queue are unaffected.
+`POST /repos/happyvertical/smrt/actions/policies`). Without that policy (and
+during a brownout) fork approval fails closed, because the gate requires the
+`fork-approval` status only Fork PR Approval writes, and dequeues go
+uncommented. The Fork Workflow Change Guard goes dark too, so a missing guard
+result is not clearance: check the fork PR's changed files for `.github/`
+yourself before approving its workflow runs. Same-repository PRs, bots and
+the merge queue are unaffected.
 `scripts/fork-pr-approval.test.mjs` pins the set of `pull_request_target`
 workflows to those two files.
 
@@ -100,7 +103,8 @@ Fork code never runs with trusted credentials before the merge queue (#4558).
    and gates every merge.
 6. The required jobs run from the fork's merge-commit YAML on `pull_request`,
    so their gate holds only while the fork leaves `.github/` alone: never
-   approve the workflow runs of a fork PR the guard flagged. That is the same
+   approve the workflow runs of a fork PR the guard flagged, or of one with
+   no guard result whose changed files you have not checked. That is the same
    trust the guard already protected, since such a PR could add its own
    workflow with a job named like a required context.
 

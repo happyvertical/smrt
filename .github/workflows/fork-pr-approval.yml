@@ -15,7 +15,8 @@ name: Fork PR Approval
 # GitHub blocks `pull_request_target` on public repositories from 2026-12-02
 # unless an Actions event policy allows it (#4881). This file and
 # merge-queue-watchdog.yml are the only allowed ones; without the policy fork
-# PRs cannot be approved (the gate fails closed). See .github/CI.md.
+# PRs cannot be approved (the gate fails closed) and the guard below posts no
+# result, so maintainers check .github/ changes by hand. See .github/CI.md.
 on:
   pull_request_target:
     branches: [main]
