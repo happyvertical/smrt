@@ -684,11 +684,33 @@ export class SmrtCollection<ModelType extends SmrtObject> extends SmrtClass {
   private _maxListLimit: number | undefined;
 
   private getRegisteredItemClass() {
+    // The effective lookup follows a same-named subclass that replaced
+    // `_itemClass` in the registry (#4921) before falling back to the name.
     return (
-      ObjectRegistry.getClassByConstructor(
+      ObjectRegistry.getEffectiveClassByConstructor(
         this._itemClass as unknown as SmrtObjectConstructor,
       ) || ObjectRegistry.getClass(this._itemClass.name)
     );
+  }
+
+  /**
+   * Constructor to build for this collection's model (#4921). When an app
+   * class replaced `_itemClass` by declaring the same simple name as a
+   * subclass of it, the registry's effective class wins, so smrt's own
+   * collections create and hydrate the app's class. Otherwise `_itemClass`.
+   */
+  protected resolveItemConstructor(): SmrtCollectionItemClass<ModelType> {
+    const itemClass = this._itemClass;
+    const effective = ObjectRegistry.getEffectiveClassByConstructor(
+      itemClass as unknown as SmrtObjectConstructor,
+    )?.constructor as unknown as SmrtCollectionItemClass<ModelType> | undefined;
+    // Only a true subclass substitutes: any other entry shape keeps the
+    // collection's own class, exactly as before.
+    return effective &&
+      effective !== itemClass &&
+      effective.prototype instanceof itemClass
+      ? effective
+      : itemClass;
   }
 
   protected getResolvedItemClassName(): string {
@@ -2586,7 +2608,7 @@ export class SmrtCollection<ModelType extends SmrtObject> extends SmrtClass {
     if (staticSelf._isJunctionBase === true) {
       const itemCtor = staticSelf._itemClass;
       const itemRegistered =
-        itemCtor && ObjectRegistry.getClassByConstructor(itemCtor);
+        itemCtor && ObjectRegistry.getEffectiveClassByConstructor(itemCtor);
       if (!itemRegistered) {
         throw new Error(
           `SmrtJunction subclass "${this.name}" has no registered item class. ` +
@@ -3783,7 +3805,7 @@ export class SmrtCollection<ModelType extends SmrtObject> extends SmrtClass {
     };
 
     // Direct instantiation - all SmrtObject classes support this pattern
-    const instance = new this._itemClass(params);
+    const instance = new (this.resolveItemConstructor())(params);
     await instance.initialize();
 
     // For STI collections, set _meta_type to the qualified class name (fix for issue #442)
@@ -4748,7 +4770,7 @@ export class SmrtCollection<ModelType extends SmrtObject> extends SmrtClass {
       ...formattedData,
     };
 
-    const instance = new this._itemClass(instanceParams);
+    const instance = new (this.resolveItemConstructor())(instanceParams);
     instance.hydrateSyncMetadata(row);
     // Mark before initialize() so model lifecycle guards can safely snapshot
     // authoritative hydrated values without probing the database. A fresh
@@ -4757,11 +4779,10 @@ export class SmrtCollection<ModelType extends SmrtObject> extends SmrtClass {
     await instance.initialize();
 
     if (isSTI) {
-      const registeredClass = ObjectRegistry.getClass(this._itemClass.name);
       // Dynamic STI discriminator write — `_meta_type` is a runtime-only field
       // not in the static SmrtObject shape; view as a writable bag.
       (instance as unknown as { _meta_type?: string })._meta_type =
-        registeredClass?.qualifiedName || this._itemClass.name;
+        this.getResolvedItemQualifiedName();
     }
 
     return instance;

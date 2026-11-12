@@ -145,6 +145,7 @@ import {
   getClassNames as _getClassNames,
   getPublicClasses as _getPublicClasses,
   getQualifiedClassNames as _getQualifiedClassNames,
+  getReplacementClassByConstructor as _getReplacementClassByConstructor,
   hasClass as _hasClass,
   hasClassCaseInsensitive as _hasClassCaseInsensitive,
   hasClassForPackage as _hasClassForPackage,
@@ -1568,6 +1569,25 @@ export class ObjectRegistry {
     ctor: SmrtObjectConstructor,
   ): RegisteredClass | undefined {
     return _getClassByConstructor(ctor);
+  }
+
+  /**
+   * Get the class in effect for a constructor (#4921). Like
+   * {@link ObjectRegistry.getClassByConstructor}, but when `ctor`'s entry was
+   * replaced by a same-named subclass (an app class extending the smrt class
+   * it shares a name with), returns the replacing entry. Memoized per registry
+   * generation; never resolves by simple name.
+   *
+   * @param ctor - The class constructor to look up
+   * @returns The live entry for `ctor`, else its same-named replacement, else undefined
+   */
+  static getEffectiveClassByConstructor(
+    ctor: SmrtObjectConstructor,
+  ): RegisteredClass | undefined {
+    return (
+      ObjectRegistry.getClassByConstructor(ctor) ??
+      _getReplacementClassByConstructor(ctor)
+    );
   }
 
   /**
