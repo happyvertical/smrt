@@ -145,6 +145,12 @@ import { toSafeInteger } from './utils/safe-integer.js';
 const DEFERRED_COMPATIBILITY_VERSION_SUFFIX = '+deferred-compat';
 
 const logger = createLogger({ level: 'info' });
+// The SDK console logger is stateless and exposes no mutable level API. Keep
+// one default instance, replacing it when its documented environment input changes.
+// Per-object buses/adapters and all explicitly configured loggers remain separate.
+let defaultSignalLogger:
+  | { envLevel: string | undefined; logger: ReturnType<typeof createLogger> }
+  | undefined;
 
 type DatabaseWithConfig = DatabaseInterface & {
   config?: {
@@ -2352,7 +2358,19 @@ export class SmrtClass {
       const { createLogger, LoggerAdapter } = await import(
         '@happyvertical/logger'
       );
-      const logger = createLogger(config.logging ?? true);
+      const logging = config.logging ?? true;
+      let logger: ReturnType<typeof createLogger>;
+      if (logging === true) {
+        const envLevel =
+          typeof process === 'undefined'
+            ? undefined
+            : process.env?.HAVE_LOGGER_LEVEL;
+        if (!defaultSignalLogger || defaultSignalLogger.envLevel !== envLevel)
+          defaultSignalLogger = { envLevel, logger: createLogger(true) };
+        logger = defaultSignalLogger.logger;
+      } else {
+        logger = createLogger(logging);
+      }
       const adapter = new LoggerAdapter(logger);
       this._signalBus.register(adapter);
       this._registeredAdapters.push(adapter);

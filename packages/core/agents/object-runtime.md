@@ -237,3 +237,21 @@ policy cannot be relaxed by a later opt-in call from the model.
 
 Same-name app subclasses replace the effective I/O identity while retaining
 provider declarations for inheritance. See [app-subclasses.md](app-subclasses.md).
+
+### Default signal logger reuse
+
+`SmrtClass.registerAdapters()` keeps one SDK default console logger per module,
+keyed by the SDK's documented `HAVE_LOGGER_LEVEL` input. Replacing that one cache
+entry preserves existing instances' levels when the environment changes. Buses
+and adapter instances remain per object; explicit logger configurations are
+created independently. The shared logger exposes only stateless logging methods,
+not tenant/user state or a public level setter. No SDK provider-selection or
+configuration parser is copied.
+
+Reuse inspection used MCP core review, the intent index, logging/default-adapter
+searches and the installed SDK's public `Logger`/`ConsoleLogger` contracts. The
+signal integration regression was red before the cache: two default instances
+rescanned the environment twice. It now verifies no second scan, separate buses,
+old/new levels across an environment change and independent custom configurations.
+The cleanup/bus/sanitizer suites remain unchanged. This is runtime-neutral and
+has no database executor, persistence or transaction changes.

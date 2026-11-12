@@ -1210,7 +1210,7 @@ export function smrtPlugin(
             configPath: svelteKit.configPath,
             configFileName: svelteKit.configFileName,
           });
-          return injected === null ? null : { code: injected, map: null };
+          if (injected !== null) return { code: injected, map: null };
         }
         // Library builds only: inline the scanned manifest into the package's
         // __smrt-register__ shim so the published dist registers field metadata
@@ -1221,8 +1221,23 @@ export function smrtPlugin(
         // #1507). Dev/test flows are untouched: the vitest plugin populates
         // manifests through its own path, and non-library builds keep the
         // original shim.
-        if (!config?.build?.lib || !manifest) {
-          return null;
+        if (!manifest) return null;
+        // Lazy app constructors also need explicit identity before activation's
+        // metadata upgrade; inferring it reads the full project superset.
+        if (!config?.build?.lib) {
+          const cleanId = id.split('?')[0];
+          const packageName = manifest.packageName;
+          const ownsSource =
+            svelteKit.lazyActivation &&
+            Object.values(manifest.objects).some(
+              (object) =>
+                object.packageName === packageName &&
+                object.filePath &&
+                resolve(projectRoot, object.filePath) === resolve(cleanId),
+            );
+          return ownsSource && !isRegisterShimModuleId(id)
+            ? stampPackageModule(code, id, manifest)
+            : null;
         }
         if (isRegisterShimModuleId(id)) {
           return {

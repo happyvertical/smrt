@@ -476,3 +476,22 @@ see its existing resource-list tests and permissions module.
 | --- | --- | --- | --- |
 | Runtime API policy shares the build implementation | Existing 103 emitter and 66 web tests; old/public-leaf binding identity; fresh users SvelteKit import refuses all emitter/build paths | Metadata only, no SQL; Node >=26; existing public build exports preserved and new `api-actions` entry | Core targeted/full suites and users 46-case resource suite/full suite |
 | Recipe help stays in its owning catalog | Generated source/data omit the help probe; original manifest retains it, in both output modes | Synthetic manifest; no SQL; registration metadata only | Activation generation suite; real product first-run and all-recipe tools |
+
+### Lazy host constructor stamps
+
+The Vite transform also applies the existing constructor package stamp to
+non-library builds with `svelteKit.lazyActivation`. Registration shims stay
+unchanged outside library builds. This identifies each bundled app subclass
+before its decorator fires and before the activation metadata upgrade, avoiding
+source-based fallback reads of the complete project manifest. It preserves exact
+constructor identity, same-name provider isolation and authoritative generated
+registration. The transform regression fails without this branch; the existing
+library/non-library shim and same-name registration tests stay enabled.
+
+| Behavior/invariant | Trigger and positive case | Negative case | Context/executor/runtime/edge | Test/command |
+| --- | --- | --- | --- | --- |
+| Explicit lazy app identity | Transform a local decorated app class in a non-library lazy build | Ordinary non-library shim remains untouched; dependency and unscoped stamps refused | Build-time only; no DB; Node 26, existing package-stamp protocol | register-inline-manifest + package-stamp + issue-3490 suites, full core test |
+
+Reuse: MCP core review and architecture context, intent index and name/purpose
+searches found `stampPackageModule` and `getStampedPackageName`. This extends
+those existing paths rather than introducing another attribution mechanism.
