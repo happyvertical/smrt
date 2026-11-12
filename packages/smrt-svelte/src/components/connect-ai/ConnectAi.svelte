@@ -80,6 +80,7 @@ const active = new AbortController();
 const titleId = $props.id();
 const tools = [
   { tool: 'claude-code' as const, key: M['ui.connect_ai.claude'] },
+  { tool: 'chatgpt' as const, key: M['ui.connect_ai.chatgpt'] },
   { tool: 'codex' as const, key: M['ui.connect_ai.codex'] },
 ];
 
@@ -282,12 +283,13 @@ onMount(() => {
       <li class="tool" id="chatgpt">
         <div class="what">
           <strong>ChatGPT</strong>
+          <span class="sh-muted">{t(M['ui.connect_ai.chatgpt_recommended'])}</span>
           <span class="sh-muted">{chatgptDescription(compactInfo)}</span>
           {#if variant === 'settings' && compactInfo.chatgpt?.signedIn && chatgptState?.models?.length}
             <label class="model">
               <span class="sh-muted">Model</span>
               <Select class="sh-input" disabled={busy} value={chatgptState.model ?? ''} onchange={pickModel}>
-                <option value="">Default ({chatgptState.models[0].label})</option>
+                <option value="">{t(M['ui.connect_ai.recommended_model'])}</option>
                 {#each chatgptState.models as m (m.id)}
                   <option value={m.id}>{m.label}</option>
                 {/each}
@@ -311,22 +313,14 @@ onMount(() => {
           {/if}
         </div>
       </li>
+      {#each advancedTools as tool (tool.tool)}
+        {@render toolRow(tool, compactInfo)}
+      {/each}
     </ul>
     {#if signInUrl}
       <p class="api">
         <a class="sh-link" href={signInUrl} target="_blank" rel="noopener noreferrer">Open the ChatGPT sign-in page<span class="sh-sr-only"> (opens in a new tab)</span></a>
       </p>
-    {/if}
-
-    {#if advancedTools.length}
-      <details class="advanced-tools">
-        <summary>Advanced: other tools on this computer</summary>
-        <ul class="sh-list tools" aria-label="Advanced tools">
-          {#each advancedTools as tool (tool.tool)}
-            {@render toolRow(tool, compactInfo)}
-          {/each}
-        </ul>
-      </details>
     {/if}
 
     {@const api = apiRow(compactInfo)}
@@ -367,35 +361,13 @@ onMount(() => {
   {:else}
     <ul aria-label={t(M['ui.connect_ai.options'])}>
       {#each tools as option (option.tool)}
-        {@const found = info.tools.find((tool) => tool.tool === option.tool)}
-        {@const label = t(option.key)}
-        <li>
-          <Card>
-            <div class="smrt-connect-ai__row">
-              <div>
-                <h3>{label}</h3>
-                <p>{t(!found?.installed ? M['ui.connect_ai.missing'] : found.signedIn === null ? M['ui.connect_ai.unknown'] : found.signedIn && found.ready !== true ? M['ui.connect_ai.unusable'] : found.signedIn ? M['ui.connect_ai.signed_in'] : M['ui.connect_ai.signed_out'])}</p>
-                {#if found?.startError}<p role="alert">{t(M[`ui.connect_ai.${found.startError}`])}</p>{/if}
-                {#if found?.login === 'failed'}<p role="alert">{t(M['ui.connect_ai.sign_in_error'])}</p>{/if}
-              </div>
-              {#if !found?.installed}
-                <Button href={safeHref(found?.installUrl ?? '') ?? undefined} target="_blank" rel="noopener noreferrer" variant="secondary">{t(M['ui.connect_ai.install'], { tool: label })} {t(M['ui.connect_ai.new_tab'])}</Button>
-              {:else if found.signedIn && found.ready === true && info.engine === option.tool}
-                <Badge>{t(M['ui.connect_ai.in_use'])}</Badge>
-              {:else}
-                <Button disabled={busy || found.login === 'running'} onclick={() => act(() => found.signedIn === null || (found.signedIn && found.ready !== true) ? refresh() : client.connect(option.tool, active.signal))}>
-                  {t(found.login === 'running' ? M['ui.connect_ai.waiting'] : found.signedIn === null || (found.signedIn && found.ready !== true) ? M['ui.connect_ai.retry'] : found.signedIn ? M['ui.connect_ai.use'] : M['ui.connect_ai.sign_in'], { tool: label })}
-                </Button>
-              {/if}
-            </div>
-          </Card>
-        </li>
-      {/each}
+        {#if option.tool === 'chatgpt'}
       <li>
         <Card>
           <div class="smrt-connect-ai__row">
             <div>
               <h3>{t(M['ui.connect_ai.chatgpt'])}</h3>
+              <p>{t(M['ui.connect_ai.chatgpt_recommended'])}</p>
               <p>{t(info.chatgpt.signedIn ? M['ui.connect_ai.chatgpt_signed_in'] : info.chatgpt.signingIn ? M['ui.connect_ai.waiting'] : M['ui.connect_ai.chatgpt_description'])}</p>
               {#if info.chatgpt.error}<p role="alert">{t(M['ui.connect_ai.sign_in_error'])}</p>{/if}
             </div>
@@ -414,6 +386,33 @@ onMount(() => {
           </div>
         </Card>
       </li>
+        {:else}
+        {@const found = info.tools.find((tool) => tool.tool === option.tool)}
+        {@const label = t(option.key)}
+        <li>
+          <Card>
+            <div class="smrt-connect-ai__row">
+              <div>
+                <h3>{label}</h3>
+                {#if option.tool === 'codex'}<p>{t(M['ui.connect_ai.codex_description'])}</p>{/if}
+                <p>{t(!found?.installed ? M['ui.connect_ai.missing'] : found.signedIn === null ? M['ui.connect_ai.unknown'] : found.signedIn && found.ready !== true ? M['ui.connect_ai.unusable'] : found.signedIn ? M['ui.connect_ai.signed_in'] : M['ui.connect_ai.signed_out'])}</p>
+                {#if found?.startError}<p role="alert">{t(M[`ui.connect_ai.${found.startError}`])}</p>{/if}
+                {#if found?.login === 'failed'}<p role="alert">{t(M['ui.connect_ai.sign_in_error'])}</p>{/if}
+              </div>
+              {#if !found?.installed}
+                <Button href={safeHref(found?.installUrl ?? '') ?? undefined} target="_blank" rel="noopener noreferrer" variant="secondary">{t(M['ui.connect_ai.install'], { tool: label })} {t(M['ui.connect_ai.new_tab'])}</Button>
+              {:else if found.signedIn && found.ready === true && info.engine === option.tool}
+                <Badge>{t(M['ui.connect_ai.in_use'])}</Badge>
+              {:else}
+                <Button disabled={busy || found.login === 'running'} onclick={() => act(() => found.signedIn === null || (found.signedIn && found.ready !== true) ? refresh() : client.connect(option.tool, active.signal))}>
+                  {t(found.login === 'running' ? M['ui.connect_ai.waiting'] : found.signedIn === null || (found.signedIn && found.ready !== true) ? M['ui.connect_ai.retry'] : found.signedIn ? M['ui.connect_ai.use'] : M['ui.connect_ai.sign_in'], { tool: label })}
+                </Button>
+              {/if}
+            </div>
+          </Card>
+        </li>
+        {/if}
+      {/each}
       <li>
         <Card>
           <div class="smrt-connect-ai__row">
@@ -449,6 +448,7 @@ onMount(() => {
   <li class="tool">
     <div class="what">
       <strong>{tool.label}</strong>
+      {#if tool.tool === 'codex'}<span class="sh-muted">{t(M['ui.connect_ai.codex_description'])}</span>{/if}
       <span class="sh-muted">
         {#if !tool.installed}
           Not installed on this computer.
@@ -517,9 +517,6 @@ onMount(() => {
     gap: var(--smrt-spacing-1);
     margin-block-start: var(--smrt-spacing-2);
     max-inline-size: 18rem;
-  }
-  .advanced-tools {
-    margin-block-start: var(--smrt-spacing-3);
   }
   .legal,
   .advanced,

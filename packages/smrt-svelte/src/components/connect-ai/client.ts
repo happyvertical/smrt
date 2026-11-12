@@ -68,9 +68,8 @@ export function apiRow(info: OnboardingInfo): 'in-use' | 'available' | 'none' {
 }
 
 /**
- * Which tools each page lists. The welcome step offers Claude Code (and the
- * ChatGPT row); Codex is an advanced option that lives under Settings >
- * Assistant only.
+ * CLI rows before and after the recommended ChatGPT option, in either host.
+ * The legacy `advanced` DTO field now supplies the visible Codex alternative.
  */
 export function visibleTools(
   info: OnboardingInfo,
@@ -81,7 +80,10 @@ export function visibleTools(
       main: info.tools.filter((t) => t.tool !== 'codex'),
       advanced: info.tools.filter((t) => t.tool === 'codex'),
     };
-  return { main: info.tools.filter((t) => t.tool !== 'codex'), advanced: [] };
+  return {
+    main: info.tools.filter((t) => t.tool !== 'codex'),
+    advanced: info.tools.filter((t) => t.tool === 'codex'),
+  };
 }
 
 export type ChatGPTAction =

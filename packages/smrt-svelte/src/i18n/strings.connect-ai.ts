@@ -2,7 +2,7 @@ import { defineMessages } from '@happyvertical/smrt-ui/i18n';
 
 export const M = defineMessages({
   'ui.connect_ai.tool_host_policy':
-    'Not supported with this Codex version yet. App tools require a host that also exposes built-in file tools. Use a compatible engine.',
+    'This Codex version cannot start the app tool host. Update Codex, then check again.',
   'ui.connect_ai.unusable': 'Installed, but not usable in this app.',
   'ui.connect_ai.working_directory':
     'The local AI needs a writable temporary directory. Check the app permissions, then retry.',
@@ -29,9 +29,14 @@ export const M = defineMessages({
   'ui.connect_ai.api_missing': 'Save a key in AI settings.',
   'ui.connect_ai.save_key': 'Save an API key',
   'ui.connect_ai.use_key': 'Use my API key',
+  'ui.connect_ai.recommended_model': 'Recommended model',
   'ui.connect_ai.chatgpt': 'ChatGPT',
   'ui.connect_ai.claude': 'Claude Code',
   'ui.connect_ai.codex': 'Codex',
+  'ui.connect_ai.chatgpt_recommended':
+    'Recommended for using your OpenAI plan: sign in with ChatGPT.',
+  'ui.connect_ai.codex_description':
+    'An alternative if you already use the Codex CLI.',
   'ui.connect_ai.chatgpt_description':
     'Use your own ChatGPT plan. A preview for local open source apps.',
   'ui.connect_ai.chatgpt_signed_in': 'Signed in.',

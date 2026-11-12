@@ -88,7 +88,7 @@ describe.each([
       onchange,
     });
     expect(await screen.findByRole('alert')).toHaveTextContent(
-      /temporary directory|Node installation|secure options|built-in file tools/,
+      /temporary directory|Node installation|secure options|app tool host/,
     );
     expect(screen.queryByText('The assistant is ready.')).toBeNull();
     expect(screen.getByRole('button', { name: 'Check again' })).toBeEnabled();
@@ -299,7 +299,7 @@ it('waits for the initial status request before signing in, so a stale snapshot 
   );
 });
 
-it('compact hosts retain settings-only Codex and the optional ChatGPT model preference', async () => {
+it('compact hosts offer Codex after ChatGPT and retain and the optional ChatGPT model preference', async () => {
   const info = state();
   info.chatgpt = {
     signedIn: true,
@@ -326,7 +326,8 @@ it('compact hosts retain settings-only Codex and the optional ChatGPT model pref
   expect(
     await screen.findByText('Signed in as owner@example.test.'),
   ).toBeInTheDocument();
-  expect(container.querySelector('details')?.textContent).toContain('Codex');
+  expect(container.querySelector('details')).toBeNull();
+  expect(container.textContent).toContain('Codex');
   const select = await screen.findByRole('combobox', { name: 'Model' });
   await user.selectOptions(select, 'test-model');
   expect(api.chooseModel).toHaveBeenCalledExactlyOnceWith(
@@ -358,7 +359,7 @@ it('compact hosts select a CLI after the vendor login finishes, including immedi
   );
   expect(await screen.findByText('In use')).toBeInTheDocument();
   expect(api.connect).toHaveBeenCalledTimes(2);
-  expect(screen.queryByText('Codex')).toBeNull();
+  expect(screen.getByText('Codex')).toBeInTheDocument();
 });
 
 it('compact hosts project their established safe errors without exposing the upstream exception', async () => {
@@ -394,4 +395,30 @@ it('compact hosts preserve the missing-tool outcome when a CLI disappears after 
     'Claude Code is not installed.',
   );
   expect(api.connect).not.toHaveBeenCalled();
+});
+
+it.each([
+  undefined,
+  'compact',
+] as const)('orders the OpenAI plan before the CLI alternative in %s presentation', async (presentation) => {
+  const info = state();
+  const { container } = render(ConnectAi, {
+    props: { client: client(info), apiKeyHref: '/settings', presentation },
+  });
+  await screen.findByText('ChatGPT');
+  const rows = [...container.querySelectorAll('li')].map(
+    (row) => row.textContent ?? '',
+  );
+  expect(rows.findIndex((row) => row.includes('Claude Code'))).toBeLessThan(
+    rows.findIndex((row) => row.includes('ChatGPT')),
+  );
+  expect(rows.findIndex((row) => row.includes('ChatGPT'))).toBeLessThan(
+    rows.findIndex((row) => row.includes('Codex')),
+  );
+  expect(container.textContent).toContain(
+    'Recommended for using your OpenAI plan',
+  );
+  expect(container.textContent).toContain(
+    'An alternative if you already use the Codex CLI.',
+  );
 });

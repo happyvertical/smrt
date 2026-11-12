@@ -172,13 +172,11 @@ describe('Tricia shared component adapters', () => {
     expect(container.textContent).toContain(
       "An API key (saved here, or found in this computer's settings).",
     );
-    expect(container.textContent?.includes('Codex')).toBe(
-      variant === 'settings',
-    );
-    if (variant === 'settings')
-      expect(container.querySelector('details')?.textContent).toContain(
-        'Codex',
-      );
+    expect(container.textContent).toContain('Codex');
+    expect(container.querySelector('details')).toBeNull();
+    const text = container.textContent ?? '';
+    expect(text.indexOf('Claude Code')).toBeLessThan(text.indexOf('ChatGPT'));
+    expect(text.indexOf('ChatGPT')).toBeLessThan(text.indexOf('Codex'));
     expect(onchange).toHaveBeenLastCalledWith(
       expect.objectContaining({ engine: 'api' }),
       true,

@@ -154,10 +154,10 @@ describe('Sign in with ChatGPT on the welcome page', () => {
     expect(apiRow(info({ engine: 'api', apiReady: true }))).toBe('in-use');
   });
 
-  it('Codex leaves the welcome page and lives under Settings > Assistant', () => {
+  it('Codex is an alternative after ChatGPT in welcome and settings', () => {
     const welcome = visibleTools(info(), 'welcome');
     expect(welcome.main.map((t) => t.tool)).toEqual(['claude-code']);
-    expect(welcome.advanced).toEqual([]);
+    expect(welcome.advanced.map((t) => t.tool)).toEqual(['codex']);
     const settings = visibleTools(info(), 'settings');
     expect(settings.main.map((t) => t.tool)).toEqual(['claude-code']);
     expect(settings.advanced.map((t) => t.tool)).toEqual(['codex']);
