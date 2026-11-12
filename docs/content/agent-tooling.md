@@ -65,6 +65,11 @@ cannot answer says why, and never fabricates.
    introspects; drops and relaxations are never proposed.
 5. **`generate-smrt-class`** scaffolds an idiomatic `@smrt()` class from a
    field list. The output is source text meant to be pasted, not an envelope.
+6. **`harden-smrt-class`** suggests a same-named subclass that makes a smrt
+   class stricter (for example `required: true` on a field). It returns JSON
+   with the source; with `write: true` it creates the file in the app and never
+   overwrites one. It never touches a database. The build and `smrt db:migrate`
+   apply the rule.
 
 For a change review or a design question, **`build-context`** with
 `task: "review"` (changed files, focus) or `task: "architecture"` (an idea)
