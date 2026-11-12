@@ -14,6 +14,7 @@ import mechanic from './__fixtures__/mechanic.cookbook.json';
 import welder from './__fixtures__/welder.cookbook.json';
 import yoga from './__fixtures__/yoga-studio.cookbook.json';
 import { AppToolQuestion, describeApp, planAppEdit } from './app-tool-edits.js';
+import { adopt } from './engine/commands.js';
 import {
   canonical,
   coveredModels,
@@ -1001,7 +1002,9 @@ export function createCookbookToolService(options: CookbookToolOptions) {
         const editor = options.modelEditorFor?.(context);
         if (editor) {
           const snapshot = editor.snapshot();
-          if (!same(canonical(snapshot.cookbook), canonical(before.cookbook)))
+          if (
+            !same(adopt(catalog, snapshot.cookbook), canonical(before.cookbook))
+          )
             fail(
               'conflict',
               'The app editor and cookbook are out of sync; refresh the host publication.',

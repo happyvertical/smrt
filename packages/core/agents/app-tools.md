@@ -201,3 +201,8 @@ framework tools. `app.describe` and list-name resolution require an explicit rec
 navigation entry or cookbook feature placement; they never invent a user-facing
 list from a raw class name. Hiding a layout entry does not revoke framework access.
 The app-tool regression covers implicit identity and explicit placement separately.
+
+Before a recipe mutation, compare the engine document to the editor document after
+the existing `adopt` normalization. Editor policies for removed lists remain for
+undo; adoption prunes inactive policies. Comparing raw documents would incorrectly
+refuse a subsequent recipe disable after an approved `app.removeList`.

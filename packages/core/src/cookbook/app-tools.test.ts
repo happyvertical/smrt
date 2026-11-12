@@ -1183,6 +1183,31 @@ describe('app customization tools', () => {
     expect((await rest(request('GET', 'projects'))).status).toBe(200);
   });
 
+  it('compares the published engine projection after removing a labelled custom list', async () => {
+    await write('app.addList', {
+      label: 'Projects',
+      fields: [{ label: 'Title', kind: 'text' }],
+      nameField: 'Title',
+    });
+    await approve('app.removeList', { list: 'Projects' });
+    // A normal host publishes cookbook documents through engine adoption.
+    const projected = createCookbookEngine({
+      catalog,
+      cookbook: editor.snapshot().cookbook,
+    });
+    engine = createCookbookEngine({
+      catalog,
+      state: { ...engine.state(), cookbook: projected.cookbook() },
+    });
+    expect(editor.snapshot().cookbook.policies.length).toBeGreaterThan(
+      engine.cookbook().policies.length,
+    );
+    expect(await approve('recipes.disable', { id: 'customers' })).toMatchObject(
+      { status: 'ok' },
+    );
+    expect(engine.cookbook().recipes).not.toContain('customers');
+  });
+
   it('asks about missing choices/currency and ambiguous field labels without journaling', async () => {
     expect(
       await write('app.addField', {
