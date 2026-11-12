@@ -1546,6 +1546,19 @@ export class ObjectRegistry {
     return _getClass(name);
   }
 
+  /** True after a model's executable constructor replaces manifest-only metadata. */
+  static hasRuntimeConstructor(name: string): boolean {
+    const registered = ObjectRegistry.getClass(name);
+    return (
+      !!registered &&
+      (
+        registered.constructor as typeof SmrtObject & {
+          _isManifestStub?: boolean;
+        }
+      )._isManifestStub !== true
+    );
+  }
+
   /**
    * Get a registered class by its constructor reference.
    * This is the most reliable lookup method as it avoids name collision issues
