@@ -65,6 +65,10 @@ export const describeAssistantTool: DescribeAssistantTool = (
   if (outcome && !outcome.ok) return 'Could not complete this action';
   const special: Record<string, string> = {
     app_describe: 'Checked the app structure',
+    'app.describe': 'Checked the app structure',
+    'app.history': 'Checked app history',
+    'recipes.search': 'Looked for useful lists',
+    'recipes.describe': 'Checked how a list works',
     app_history: 'Checked app history',
     approval_pending: 'Checked pending approvals',
   };
