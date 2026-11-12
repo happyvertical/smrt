@@ -9,10 +9,7 @@
 
 import type { AIClient, AIClientOptions } from '@happyvertical/ai';
 import type { fetchStaticMap, StaticMapProvider } from '@happyvertical/geo';
-import {
-  generateHeadlineCard,
-  type HeadlineCardTemplate,
-} from '@happyvertical/images';
+import type { HeadlineCardTemplate } from '@happyvertical/images';
 import {
   type DatabaseConfig,
   importOptionalDependency,
@@ -260,6 +257,7 @@ export class ThumbnailGenerator {
   private async generateHeadlineCard(
     options: HeadlineCardThumbnailOptions,
   ): Promise<Image> {
+    const { generateHeadlineCard } = await import('@happyvertical/images');
     const title = this.content.title || this.content.name || 'Untitled';
 
     const result = await generateHeadlineCard(title, {

@@ -16,3 +16,13 @@ SDK resolution. sharp/resvg are runtime-native externals, matching real apps.
 Reuse: intent index, smrt-dev-mcp content review, rg by name and purpose in core,
 content, images, chat and UI found importOptionalDependency and the existing
 consumer-boundary gate; no new production helper or file is introduced.
+
+Headline-card rendering also imports the image SDK inside the existing async
+thumbnail operation. Importing content models or using other thumbnail strategies
+must not initialize that SDK or Sharp. `thumbnail-generator.test.ts` adds a
+fresh-Node published-root guard (fails on the original build) and retains the
+headline-card input/output, persistence and other-strategy tests. The guard
+refuses both image SDK and Sharp resolution; the existing rendering tests verify
+that first use still dispatches to the SDK. No new public API, component, helper,
+model or persistence path is introduced. All runtimes supported by this Node-only
+server operation keep its async signature; SQL dialect behavior is unchanged.
