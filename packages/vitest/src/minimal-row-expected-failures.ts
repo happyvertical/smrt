@@ -672,7 +672,7 @@ export const minimalRowExpectedFailures: readonly MinimalRowExpectedFailure[] =
       field: 'assetId, intakeId.ownerProfileId',
       error: 'Family original ownership mismatch',
       reason:
-        'FamilyIntakeAsset code requires assetId, intakeId.ownerProfileId although registry metadata allows it empty/default; changing required/NOT NULL would change schema. ',
+        'family-intake-models.ts save checks an existing private asset against the intake tenant and owner profile. A required flag alone cannot provide that cross-row ownership match; retain until minimal-row setup can represent the exact shared owner.',
     },
     {
       model: '@happyvertical/smrt-education:GroupLearnerInvitation',
@@ -822,15 +822,7 @@ export const minimalRowExpectedFailures: readonly MinimalRowExpectedFailure[] =
       field: 'provider, videoId, title',
       error: 'Invalid external video reference',
       reason:
-        'LessonExternalVideo code requires provider, videoId, title although registry metadata allows it empty/default; changing required/NOT NULL would change schema. ',
-    },
-    {
-      model: '@happyvertical/smrt-education:LessonPage',
-      kind: 'optional-field',
-      field: 'pageKey',
-      error: 'Invalid lesson page',
-      reason:
-        'LessonPage code requires pageKey although registry metadata allows it empty/default; changing required/NOT NULL would change schema. ',
+        'lesson-assets.ts save requires a supported provider, an 11-character YouTube id and a bounded nonempty title; submission-service.ts uses the provider/id for the embed URL. Generic required text does not supply this domain identity, and no allowed reason describes the title-content rule; retain pending a domain-value decision.',
     },
     {
       model: '@happyvertical/smrt-education:WorkCompletionDecision',

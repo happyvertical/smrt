@@ -208,8 +208,12 @@ async function courseOf(
 })
 export class LessonAsset extends SmrtObject {
   @tenantId({ nullable: true }) tenantId: string | null = null;
-  @foreignKey('Lesson', { required: true }) lessonId = '';
-  @crossPackageRef('@happyvertical/smrt-assets:Asset', { required: true })
+  @foreignKey('Lesson', { required: true, requiredFor: 'identity' }) lessonId =
+    '';
+  @crossPackageRef('@happyvertical/smrt-assets:Asset', {
+    required: true,
+    requiredFor: 'identity',
+  })
   assetId = '';
   @field({ required: true }) relationship: LessonAssetRelationship =
     'attachment';
@@ -300,8 +304,12 @@ export class LessonAsset extends SmrtObject {
 })
 export class CourseAsset extends SmrtObject {
   @tenantId({ nullable: true }) tenantId: string | null = null;
-  @foreignKey('Course', { required: true }) courseId = '';
-  @crossPackageRef('@happyvertical/smrt-assets:Asset', { required: true })
+  @foreignKey('Course', { required: true, requiredFor: 'identity' }) courseId =
+    '';
+  @crossPackageRef('@happyvertical/smrt-assets:Asset', {
+    required: true,
+    requiredFor: 'identity',
+  })
   assetId = '';
   @field({ required: true }) relationship: LessonAssetRelationship =
     'attachment';
@@ -416,7 +424,8 @@ export function externalVideoEmbedUrl(
 })
 export class LessonExternalVideo extends SmrtObject {
   @tenantId({ nullable: true }) tenantId: string | null = null;
-  @foreignKey('Lesson', { required: true }) lessonId = '';
+  @foreignKey('Lesson', { required: true, requiredFor: 'identity' }) lessonId =
+    '';
   provider: ExternalVideoProvider = 'youtube';
   videoId = '';
   title = '';
