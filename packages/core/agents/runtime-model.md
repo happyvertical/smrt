@@ -46,12 +46,13 @@ Answers to the open checks of #4869, each with a test in
 `src/__tests__/runtime-model.test.ts`:
 
 1. **One-table-per-class parent.** The subclass gets its own table (its name's
-   plural, or `tableName`) holding the base columns and the subclass's fields.
-   Inherited fields are not stored in a subclass's table by smrt itself
-   (decorated subclasses behave the same), so `runtimeModelEntry` declares the
-   parent's fields again on the subclass. The parent's table and collection do
+   plural, or `tableName`) holding the base columns, the parent's fields
+   (concrete ancestors' too, nearest declaration winning) and the subclass's
+   own (#4922). `runtimeModelEntry` lists the inherited fields on the entry,
+   relaxed to optional; a definition that restates one still yields one
+   column, its own declaration winning. The parent's table and collection do
    not see the subclass's records. An empty subclass of such a parent is **not
-   free**: it adds a table.
+   free**: it adds a table, which holds the inherited columns.
 2. **Package schema migrations.** Subclass columns on an STI parent's table are
    tolerated: comparing the database to the parent's own schema reports them as
    advisory `orphan_column`s with no SQL, and drops them only with

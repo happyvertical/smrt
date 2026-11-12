@@ -39,6 +39,7 @@ import {
   isCollectionRegistration,
 } from './collection-resolution';
 import { isFrameworkBaseClass } from './framework-base-classes';
+import { getOwnTableFieldsSync } from './inheritance-resolver';
 import { readFieldAttribute } from './manifest-field-merge';
 import { findClass } from './name-resolver';
 import { getClasses, getCollectionTableNames } from './shared-state';
@@ -47,7 +48,7 @@ import {
   assertTableFamilies,
   mappedSchema,
 } from './table-mappings.js';
-import type { RegisteredClass } from './types';
+import type { RegisteredClass, RegisteredField } from './types';
 
 type ForeignKeyAction = NonNullable<
   NonNullable<ColumnDefinition['foreignKey']>['onDelete']
@@ -424,9 +425,10 @@ interface MergedTableSchema {
 function applyContributorForeignKeys(
   tableSchema: MergedTableSchema,
   contributor: TableContributor,
+  fields: Map<string, RegisteredField>,
 ): void {
   const conflictColumns = new Set(tableSchema.conflictColumns);
-  for (const [fieldName, field] of contributor.registered.fields) {
+  for (const [fieldName, field] of fields) {
     if (field.type !== 'foreignKey' || !field.related) continue;
     const columnName = toSnakeCase(fieldName);
     const column = tableSchema.columns[columnName];
@@ -730,10 +732,15 @@ function buildMergedTableSchemas(
       // Runtime field metadata backfills columns the manifest never had (for
       // example tenantScoped injections) and applies explicit sqlType
       // overrides, without erasing richer manifest metadata.
+      // An own-table subclass's table also holds its concrete ancestors'
+      // columns (#4922), whether or not its manifest already merged them.
+      const contributorFields = isSTI
+        ? registered.fields
+        : getOwnTableFieldsSync(registered);
       const columnsToUse = mergeRuntimeFieldColumns(
         simpleName,
         registered.schema?.columns,
-        registered.fields,
+        contributorFields,
         { stiUnionColumns: isSTI, conflictColumns },
       );
 
@@ -761,7 +768,7 @@ function buildMergedTableSchemas(
         }
       }
 
-      applyContributorForeignKeys(tableSchema, contributor);
+      applyContributorForeignKeys(tableSchema, contributor, contributorFields);
 
       // Merge indexes, keeping the first definition of each name.
       const schemaIndexes = registered.schema?.indexes;

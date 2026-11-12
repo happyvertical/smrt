@@ -37,4 +37,21 @@ describe('issue #2970 aggregated-manifest attribution probe', () => {
     expect(() => ObjectRegistry.resolveType('SmrtHierarchical')).not.toThrow();
     expect(() => ObjectRegistry.getAllSchemasAsDefinitions()).not.toThrow();
   });
+
+  it('builds the table of a concrete subclass of a hierarchical class (#4922)', async () => {
+    const registerModule: string = '../.smrt/register.js';
+    await import(registerModule);
+
+    // `Branch extends TreeNode extends SmrtHierarchical`: an own-table
+    // subclass carries its concrete parent's fields. A first version of
+    // #4922 also pulled the framework base's `parentId` into this path and
+    // made the foreign-key pass throw for every hierarchical class here.
+    const schemas = ObjectRegistry.getAllSchemasAsDefinitions();
+    expect(Object.keys(schemas.branches.columns)).toEqual(
+      expect.arrayContaining(['label', 'depth']),
+    );
+    // The parent's own table is what it was before #4922.
+    expect(Object.keys(schemas.tree_nodes.columns)).toContain('label');
+    expect(schemas.tree_nodes.columns).not.toHaveProperty('depth');
+  });
 });

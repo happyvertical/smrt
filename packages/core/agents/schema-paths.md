@@ -42,6 +42,24 @@ registry paths, and through `getAllSchemasAsDefinitions()`, asserting identical
 column and index sets. Extend that fixture with every generator change; a
 divergence is a bug in the generator, not an exception to add to the test.
 
+### Own-table subclasses carry ancestor fields (#4922)
+
+A model with its own table (CTI) that extends a concrete own-table model has
+the ancestors' fields in its table definition, base to child, the nearest
+declaration replacing a farther one and the subclass's own winning over all.
+This holds for a differently named subclass (`VipCustomer extends Customer`
+gets `name`/`phone` in `vip_customers`) and a same-named one (an app
+`Customer` extending a package `Customer` keeps the parent's columns on
+`customers`; the parent comes from the dependency manifest through
+`extendsQualified`). An STI family keeps the oldest-owner rule; framework
+abstract bases merge as before (`SmrtHierarchical.parentId` stays bound to the
+descendant). Sites: `ManifestGenerator.mergeInheritedFields()` (build),
+`getAllFields()` / `getOwnTableFieldsSync()` in `registry/inheritance-resolver.ts`
+(registry path and `getAllSchemasAsDefinitions()`), `runtimeModelEntry()`.
+`packages/scanner` delegates non-STI merging to core. Existing databases only
+gain columns: a required inherited column with no default on a populated table
+is the usual "required column not added" report.
+
 ### Index rules (#2359)
 
 - **Reference columns are always indexed.** `ensureReferenceColumnIndexes()`

@@ -10,6 +10,7 @@ import type { SmrtObject } from '../object';
 import { ObjectRegistry } from '../registry';
 import type { MethodDefinition } from '../scanner/types.js';
 import { prependSmrtSystemFields } from '../system-fields';
+import { isFrameworkBaseClass } from './framework-base-classes';
 import { findClass, findClassStrict } from './name-resolver';
 import {
   getInheritanceCache,
@@ -227,7 +228,14 @@ export async function getAllFields(
 
   // For local classes (not from manifests), merge fields from inheritance chain
   const allFields = new Map<string, InheritedFieldDefinition>();
+  const frameworkOwned = new Set<string>();
   const chain = getInheritanceChain(className);
+
+  // An own-table subclass carries its concrete ancestors' fields in its own
+  // table with the nearest declaration winning (#4922), as the manifest path
+  // does; STI keeps the merge-in-place rule (storage stays with the oldest
+  // owner).
+  const ownTable = ObjectRegistry.getSTIBase(className) === null;
 
   // Walk chain from base to child (parent fields first)
   for (const ancestorName of chain) {
@@ -272,31 +280,175 @@ export async function getAllFields(
       continue;
     }
 
-    // Merge fields from this ancestor
-    for (const [fieldName, field] of ancestor.fields) {
-      const normalizedField = normalizeFrameworkInheritedField(
-        ancestorName,
-        fieldName,
-        field,
-        className,
-      );
-      const existingField = allFields.get(fieldName);
-      if (!existingField) {
-        // New field from parent
-        allFields.set(fieldName, normalizedField);
-      } else {
-        // Field exists - merge configs
-        allFields.set(
-          fieldName,
-          mergeFieldConfigs(existingField, normalizedField, fieldName),
-        );
-      }
-    }
+    mergeAncestorFields(
+      allFields,
+      ancestorName,
+      ancestor,
+      className,
+      ownTable,
+      frameworkOwned,
+    );
   }
 
   registered.inheritedFields = new Map(allFields);
 
   return prependSmrtSystemFields(new Map<string, RegisteredField>(allFields));
+}
+
+/**
+ * Merge one ancestor's fields into `allFields`.
+ *
+ * An own-table class (#4922) takes its nearer CONCRETE declaration of a field
+ * whole, as the manifest path does: nothing of the replaced declaration
+ * (`required`, `sqlType`, `backfill`, ...) survives except a missing `enum` /
+ * `description` and the tenancy marker. A field that started at a framework
+ * abstract base (`frameworkOwned`) and every STI field keep the
+ * `mergeFieldConfigs` merge, so a framework binding is never replaced.
+ */
+function mergeAncestorFields(
+  allFields: Map<string, InheritedFieldDefinition>,
+  ancestorName: string,
+  ancestor: RegisteredClass,
+  className: string,
+  ownTable: boolean,
+  frameworkOwned: Set<string>,
+): void {
+  const fromFramework = isFrameworkBaseClass(
+    ancestor.name,
+    ancestor.packageName,
+  );
+  for (const [fieldName, field] of ancestor.fields) {
+    const normalizedField = normalizeFrameworkInheritedField(
+      ancestorName,
+      fieldName,
+      field,
+      className,
+    );
+    const existingField = allFields.get(fieldName);
+    if (!existingField) {
+      // New field from parent
+      allFields.set(fieldName, normalizedField);
+      if (fromFramework) frameworkOwned.add(fieldName);
+      continue;
+    }
+    if (ownTable && !frameworkOwned.has(fieldName)) {
+      allFields.set(
+        fieldName,
+        replaceInheritedField(existingField, normalizedField, fieldName),
+      );
+      continue;
+    }
+    // Field exists - merge configs
+    allFields.set(
+      fieldName,
+      mergeFieldConfigs(existingField, normalizedField, fieldName),
+    );
+  }
+}
+
+/**
+ * The nearer declaration replaces the inherited one (the registry twin of
+ * `mergeInheritedFieldOverride`): it fills only a missing `enum` or
+ * `description`, plus the tenant-id marker a decorator registered, which the
+ * merge path has always preserved.
+ */
+function replaceInheritedField(
+  inherited: InheritedFieldDefinition,
+  own: InheritedFieldDefinition,
+  fieldName: string,
+): InheritedFieldDefinition {
+  // Same developer warning the merge path gives; the child's type still wins.
+  const isTenantField =
+    inherited.__tenancy?.isTenantIdField ||
+    inherited._meta?.__tenancy?.isTenantIdField;
+  if (
+    own.type &&
+    own.type !== inherited.type &&
+    !(isTenantField && fieldName === 'tenantId')
+  ) {
+    logger.warn(
+      `Field type mismatch: "${fieldName}" is ${inherited.type} in parent but ${own.type} in child. Using child type.`,
+    );
+  }
+  const meta: Record<string, unknown> = { ...(own._meta || {}) };
+  const inheritedEnum = inherited.enum ?? inherited._meta?.enum;
+  if (own.enum === undefined && meta.enum === undefined && inheritedEnum) {
+    meta.enum = inheritedEnum;
+  }
+  const inheritedDescription =
+    inherited.description ?? inherited._meta?.description;
+  if (
+    own.description === undefined &&
+    meta.description === undefined &&
+    inheritedDescription !== undefined
+  ) {
+    meta.description = inheritedDescription;
+  }
+  return {
+    ...own,
+    _meta: meta as InheritedFieldDefinition['_meta'],
+    ...(own.__tenancy === undefined && inherited.__tenancy !== undefined
+      ? { __tenancy: inherited.__tenancy }
+      : {}),
+  };
+}
+
+/**
+ * The fields of an own-table class including its concrete ancestors' (#4922),
+ * resolved synchronously from the registry as it stands. Used where the
+ * authoritative schema is built without awaiting manifest loads. Other
+ * classes (STI members, classes without a registered ancestor) return their
+ * own fields unchanged.
+ */
+export function getOwnTableFieldsSync(
+  registered: RegisteredClass,
+): Map<string, RegisteredField> {
+  const key = registered.qualifiedName ?? registered.name;
+  if (ObjectRegistry.getSTIBase(key) !== null) return registered.fields;
+  const chain = getInheritanceChain(key);
+  const concrete: Array<[string, RegisteredClass]> = [];
+  let hierarchical = false;
+  for (const ancestorName of chain) {
+    if (ancestorName === key) continue;
+    const ancestor = findClass(ancestorName);
+    if (!ancestor || ancestor === registered) continue;
+    if (isFrameworkBaseClass(ancestor.name, ancestor.packageName)) {
+      hierarchical ||= ancestor.name === 'SmrtHierarchical';
+      continue;
+    }
+    concrete.push([ancestorName, ancestor]);
+  }
+  // A class with no concrete ancestor keeps exactly its registered fields:
+  // a framework abstract base's fields already reach it through registration,
+  // bound to this class's own table.
+  if (concrete.length === 0) return registered.fields;
+  const allFields = new Map<string, InheritedFieldDefinition>();
+  const frameworkOwned = new Set<string>();
+  for (const [ancestorName, ancestor] of concrete) {
+    mergeAncestorFields(
+      allFields,
+      ancestorName,
+      ancestor,
+      key,
+      true,
+      frameworkOwned,
+    );
+  }
+  // The class's own registered fields apply last.
+  mergeAncestorFields(allFields, key, registered, key, true, frameworkOwned);
+  // A relationship target belongs to the declaring class. A concrete
+  // ancestor's `SmrtHierarchical.parentId` points at that ancestor's table;
+  // here it must point at this class's own.
+  for (const [fieldName, field] of allFields) {
+    const own = registered.fields.get(fieldName);
+    const related =
+      own?.related ??
+      (hierarchical && fieldName === 'parentId' ? registered.name : undefined);
+    if (related !== undefined && field.related !== related) {
+      allFields.set(fieldName, { ...field, related });
+    }
+  }
+  return allFields;
 }
 
 function normalizeFrameworkInheritedField(

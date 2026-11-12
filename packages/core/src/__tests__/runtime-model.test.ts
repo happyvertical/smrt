@@ -314,7 +314,7 @@ describe('#4871 run-time models', () => {
       ]);
     });
 
-    it('#4869 check 1: a subclass of a one-table-per-class parent gets its own table, with the inherited fields declared again', async () => {
+    it('#4869 check 1 (#4922): a subclass of a one-table-per-class parent gets its own table holding the inherited fields, restated or not, once each', async () => {
       const db = await getDatabase({ type: 'sqlite', url: ':memory:' });
       const parent = qn(Gadget4871);
       const q = registerRuntimeModel({
@@ -329,6 +329,22 @@ describe('#4871 run-time models', () => {
         ObjectRegistry.getAllSchemasAsDefinitions().gadgets.columns,
       );
       expect(cols).toEqual(expect.arrayContaining(['label', 'voltage']));
+      // A definition that restates the inherited field still yields one column.
+      const restated = registerRuntimeModel({
+        name: 'GadgetRestated',
+        packageName: '@test/rt4871cti3',
+        extends: parent,
+        fields: { label: { type: 'text' }, voltage: { type: 'integer' } },
+      });
+      const restatedCols = Object.keys(
+        ObjectRegistry.getAllSchemasAsDefinitions()[
+          ObjectRegistry.getTableName(restated) as string
+        ].columns,
+      );
+      expect(restatedCols.filter((c) => c === 'label')).toHaveLength(1);
+      expect(restatedCols).toEqual(
+        expect.arrayContaining(['label', 'voltage']),
+      );
       await migrate(db, q);
       const gadgets: any = await ObjectRegistry.getCollection(q, { db });
       const g = await gadgets.create({ label: 'amp', voltage: 12 });
@@ -340,7 +356,8 @@ describe('#4871 run-time models', () => {
       expect(
         (await db.query('SELECT COUNT(*) AS n FROM rt4871_gadgets')).rows[0].n,
       ).toBe(0);
-      // An empty subclass of such a parent is not free: it adds a table.
+      // An empty subclass of such a parent is not free: it adds a table, which
+      // now holds the inherited columns too.
       const before = await tables(db);
       const e = registerRuntimeModel({
         name: 'Gadget',

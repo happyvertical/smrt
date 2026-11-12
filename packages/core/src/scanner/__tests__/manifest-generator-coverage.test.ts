@@ -376,9 +376,10 @@ describe('ManifestGenerator coverage', () => {
       ]);
 
       const invoice = manifest.objects.invoice;
-      // CTI: Contract's own fields must NOT merge onto Invoice — they have
-      // separate tables.
-      expect(invoice.fields.name).toBeUndefined();
+      // CTI: Invoice keeps its own table, which also holds Contract's fields
+      // (#4922: an own-table subclass carries its concrete ancestors' fields).
+      expect(invoice.fields.name).toBeDefined();
+      expect(invoice.fields.total).toBeDefined();
       // But Contract's public method IS inherited at runtime
       // (ObjectRegistry.getAllMethods() already walks this chain), so the
       // manifest must agree and merge it too.
