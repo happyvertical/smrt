@@ -26,6 +26,9 @@ import {
 } from '../../../smrt-svelte/src/components/screens/values';
 import { CustomerCollection } from '../collections/CustomerCollection';
 
+const databaseType = process.env.SMRT_TEST_PGLITE === '1' ? 'pglite' : 'sqlite';
+const TENANT_A = '11111111-1111-4111-8111-111111111111';
+
 let db: Awaited<ReturnType<typeof getTestDatabase>> | undefined;
 afterEach(async () => {
   disableTenancy();
@@ -35,13 +38,16 @@ afterEach(async () => {
 
 describe('Customer linked display label', () => {
   it('serves Profile names through generated REST and the screens reference source with bounded SQL', async () => {
-    const database = await getTestDatabase({ type: 'sqlite', url: ':memory:' });
+    const database = await getTestDatabase({
+      type: databaseType,
+      url: ':memory:',
+    });
     db = database;
     const customers = await CustomerCollection.create({ db });
     const profiles = await ProfileCollection.create({ db });
     const types = await ProfileTypeCollection.create({ db });
     enableTenancy();
-    await withTenant({ tenantId: 'tenant-a' }, async () => {
+    await withTenant({ tenantId: TENANT_A }, async () => {
       const type = await types.create({ name: 'Person' });
       const maya = await profiles.create({
         typeId: type.id,
@@ -55,7 +61,9 @@ describe('Customer linked display label', () => {
       });
       const customer = await customers.create({ profileId: maya.id });
       await customers.create({ profileId: ada.id });
-      await customers.create({ profileId: 'missing-profile' });
+      await customers.create({
+        profileId: 'aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa',
+      });
       const manifest = JSON.parse(
         readFileSync(
           new URL('../../dist/manifest.json', import.meta.url),

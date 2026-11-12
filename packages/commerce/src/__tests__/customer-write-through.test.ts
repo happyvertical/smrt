@@ -15,6 +15,11 @@ import { afterEach, describe, expect, it, vi } from 'vitest';
 import { CustomerCollection } from '../collections/CustomerCollection';
 import { Customer } from '../models/Customer';
 
+const databaseType = process.env.SMRT_TEST_PGLITE === '1' ? 'pglite' : 'sqlite';
+const TENANT_A = '11111111-1111-4111-8111-111111111111';
+const TENANT_B = '22222222-2222-4222-8222-222222222222';
+const TENANT_C = '33333333-3333-4333-8333-333333333333';
+
 let db: Awaited<ReturnType<typeof getTestDatabase>> | undefined;
 afterEach(async () => {
   vi.restoreAllMocks();
@@ -23,7 +28,7 @@ afterEach(async () => {
   db = undefined;
 });
 async function setup() {
-  db = await getTestDatabase({ type: 'sqlite', url: ':memory:' });
+  db = await getTestDatabase({ type: databaseType, url: ':memory:' });
   const customers = await CustomerCollection.create({ db });
   const profiles = await ProfileCollection.create({ db });
   enableTenancy();
@@ -33,7 +38,7 @@ async function setup() {
 describe('Customer inline contact writes', () => {
   it('projects contact columns without per-row reads, filters/orders email before pagination, and never dirties reads', async () => {
     const { customers, profiles } = await setup();
-    await withTenant({ tenantId: 'tenant-a' }, async () => {
+    await withTenant({ tenantId: TENANT_A }, async () => {
       const one = await customers.create({
         name: 'Ada',
         email: 'z@example.test',
@@ -123,11 +128,12 @@ describe('Customer inline contact writes', () => {
     extra,
   }) => {
     db = await getTestDatabase({
+      type: databaseType,
       classes: ['Customer', 'Profile', 'ProfileType', ...extra],
     });
     const customers = await CustomerCollection.create({ db });
     enableTenancy();
-    await withTenant({ tenantId: 'tenant-a' }, async () => {
+    await withTenant({ tenantId: TENANT_A }, async () => {
       const member = await customers.create({
         name: 'No phone storage',
         email: 'contact@example.test',
@@ -155,7 +161,7 @@ describe('Customer inline contact writes', () => {
     DatabaseError.schemaMissing('unrelated_table', 'ProfileMetafield'),
   ])('propagates metadata failures outside its optional tables (%s)', async (error) => {
     const { customers } = await setup();
-    await withTenant({ tenantId: 'tenant-a' }, async () => {
+    await withTenant({ tenantId: TENANT_A }, async () => {
       await customers.create({ name: 'Existing contact' });
       vi.spyOn(
         ProfileMetafieldCollection.prototype,
@@ -167,7 +173,7 @@ describe('Customer inline contact writes', () => {
 
   it('creates the name, email and metadata phone in the parent transaction and serves them for editing', async () => {
     const { customers, profiles } = await setup();
-    await withTenant({ tenantId: 'tenant-a' }, async () => {
+    await withTenant({ tenantId: TENANT_A }, async () => {
       const member = await customers.create({
         name: 'Maya Member',
         email: 'maya@example.test',
@@ -177,11 +183,13 @@ describe('Customer inline contact writes', () => {
       expect(profile?.toJSON()).toMatchObject({
         name: 'Maya Member',
         email: 'maya@example.test',
-        tenantId: 'tenant-a',
+        tenantId: TENANT_A,
       });
       expect(await profile?.getTypeSlug()).toBe('person');
       expect(profile?.toJSON()._meta_type).not.toContain('Bot');
-      expect(await profile?.getMetadata()).toMatchObject({ phone: '555-0117' });
+      expect(await profile?.getMetadata()).toMatchObject({
+        phone: '555-0117',
+      });
       const read = await customers.get(member.id!, {
         displayLabel: true,
         cache: false,
@@ -212,7 +220,7 @@ describe('Customer inline contact writes', () => {
     '   ',
   ])('accepts a blank optional phone (%j) from a create form without creating metadata', async (phone) => {
     const { customers, profiles } = await setup();
-    await withTenant({ tenantId: 'tenant-a' }, async () => {
+    await withTenant({ tenantId: TENANT_A }, async () => {
       const member = await customers.create({
         name: 'Ada Member',
         email: 'ada@example.test',
@@ -229,8 +237,11 @@ describe('Customer inline contact writes', () => {
 
   it('clears a phone with the existing metadata removal API and rolls the removal back if the member save fails', async () => {
     const { customers, profiles } = await setup();
-    await withTenant({ tenantId: 'tenant-a' }, async () => {
-      const member = await customers.create({ name: 'Ada', phone: '555-0117' });
+    await withTenant({ tenantId: TENANT_A }, async () => {
+      const member = await customers.create({
+        name: 'Ada',
+        phone: '555-0117',
+      });
       const normalize = vi
         .spyOn(
           Customer.prototype as unknown as {
@@ -262,13 +273,11 @@ describe('Customer inline contact writes', () => {
   it('keeps explicitly owned phone metadata on the same tenant without an ambient context', async () => {
     const { customers, profiles } = await setup();
     const member = await customers.create({
-      tenantId: 'explicit-tenant',
+      tenantId: TENANT_C,
       name: 'Explicit owner',
       phone: '555-0199',
     });
-    expect((await profiles.get(member.profileId))?.tenantId).toBe(
-      'explicit-tenant',
-    );
+    expect((await profiles.get(member.profileId))?.tenantId).toBe(TENANT_C);
     expect(
       await (await profiles.get(member.profileId))?.getMetadata(),
     ).toMatchObject({ phone: '555-0199' });
@@ -283,7 +292,7 @@ describe('Customer inline contact writes', () => {
       email: 'global@example.test',
       typeId: type.id,
     });
-    await withTenant({ tenantId: 'tenant-a' }, async () => {
+    await withTenant({ tenantId: TENANT_A }, async () => {
       const member = await customers.create({ profileId: profile.id! });
       const read = await customers.get(member.id!, {
         displayLabel: true,
@@ -299,9 +308,11 @@ describe('Customer inline contact writes', () => {
 
   it('still links an existing contact without creating another one', async () => {
     const { customers, profiles } = await setup();
-    await withTenant({ tenantId: 'tenant-a' }, async () => {
+    await withTenant({ tenantId: TENANT_A }, async () => {
       const types = await ProfileTypeCollection.create({ db });
-      const type = await types.getOrCreateBySlug('person', { name: 'Person' });
+      const type = await types.getOrCreateBySlug('person', {
+        name: 'Person',
+      });
       const profile = await profiles.create({
         name: 'Existing person',
         typeId: type.id,
@@ -323,7 +334,7 @@ describe('Customer inline contact writes', () => {
 
   it('rolls back the contact and metadata when the parent write fails, then permits retry', async () => {
     const { customers, profiles } = await setup();
-    await withTenant({ tenantId: 'tenant-a' }, async () => {
+    await withTenant({ tenantId: TENANT_A }, async () => {
       const before = await profiles.count();
       const normalize = vi
         .spyOn(
@@ -352,7 +363,7 @@ describe('Customer inline contact writes', () => {
 
   it('rolls back linked edits when the parent update is refused', async () => {
     const { customers, profiles } = await setup();
-    await withTenant({ tenantId: 'tenant-a' }, async () => {
+    await withTenant({ tenantId: TENANT_A }, async () => {
       const member = await customers.create({ name: 'Original' });
       vi.spyOn(
         Customer.prototype as unknown as {
@@ -373,7 +384,7 @@ describe('Customer inline contact writes', () => {
 
   it('never renames an existing selection or a newly relinked contact with stale inline values', async () => {
     const { customers, profiles } = await setup();
-    await withTenant({ tenantId: 'tenant-a' }, async () => {
+    await withTenant({ tenantId: TENANT_A }, async () => {
       const first = await customers.create({ name: 'First member' });
       const second = await customers.create({ name: 'Second member' });
       await expect(
@@ -397,17 +408,17 @@ describe('Customer inline contact writes', () => {
   it('refuses linked edits across tenant ownership', async () => {
     const { customers, profiles } = await setup();
     let profileId = '';
-    await withTenant({ tenantId: 'tenant-b' }, async () => {
+    await withTenant({ tenantId: TENANT_B }, async () => {
       const member = await customers.create({ name: 'Other tenant' });
       profileId = member.profileId;
     });
-    await withTenant({ tenantId: 'tenant-a' }, async () => {
+    await withTenant({ tenantId: TENANT_A }, async () => {
       await expect(
         customers.create({ profileId, name: 'Hijack' }),
       ).rejects.toThrow();
       expect(await customers.count()).toBe(0);
     });
-    await withTenant({ tenantId: 'tenant-b' }, async () =>
+    await withTenant({ tenantId: TENANT_B }, async () =>
       expect((await profiles.get(profileId))?.name).toBe('Other tenant'),
     );
   });
@@ -418,7 +429,7 @@ describe('Customer inline contact writes', () => {
       { basePath: '/api', authMiddleware: () => async (req) => req },
       {
         db,
-        tenantId: 'tenant-a',
+        tenantId: TENANT_A,
         user: { id: 'owner' },
         permissions: ['customers.create', 'customers.update', 'customers.read'],
       },
@@ -431,7 +442,7 @@ describe('Customer inline contact writes', () => {
           name: 'REST Member',
           email: 'rest@example.test',
           phone: '555-0100',
-          tenantId: 'tenant-b',
+          tenantId: TENANT_B,
         }),
       }),
     );

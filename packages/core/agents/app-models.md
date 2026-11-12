@@ -158,7 +158,7 @@ edit; it never deletes history. The persisted cookbook is authoritative over
 the startup default. Export contains portable definitions/policies, not host
 actor/history records.
 
-SQLite is the supported editor backend. PostgreSQL/DuckDB activation,
+SQLite is the supported editor backend; see [PostgreSQL refusal and prerequisites](postgres-parity.md#why-live-postgresql-activation-remains-refused). PostgreSQL/DuckDB activation,
 cross-process registry propagation, purge, automatic static host conversion,
 and packaged desktop timing are not implemented/verified.
 

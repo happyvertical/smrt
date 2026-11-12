@@ -17,6 +17,7 @@ import type {
   SmartObjectManifest,
 } from '../scanner/types.js';
 import { snapshotObjectRegistryState } from '../test-utils.js';
+import { getTestDatabase } from '../testing/database.js';
 import { buildActivationManifest } from './generate.js';
 import { activationClosure } from './manifest.js';
 
@@ -314,6 +315,34 @@ describe('SQLite lazy activation', () => {
       ).rows[0].title,
     ).toBe('retained');
   });
+
+  it.runIf(process.env.SMRT_TEST_PGLITE === '1')(
+    'refuses real in-process PostgreSQL before loader, DDL or readiness publication',
+    async () => {
+      const { options, loaders } = fixture();
+      const postgres = await getTestDatabase({
+        type: 'pglite',
+        url: 'memory://',
+        includeSystemTables: false,
+        classes: [],
+      });
+      try {
+        const query = vi.spyOn(postgres, 'query');
+        expect(() =>
+          createActivationCoordinator({
+            ...options,
+            scope: `${options.scope}-postgres`,
+            db: postgres,
+          }),
+        ).toThrow(/SQLite only.*eager/);
+        expect(query).not.toHaveBeenCalled();
+        for (const loader of Object.values(loaders))
+          expect(loader).not.toHaveBeenCalled();
+      } finally {
+        await postgres.close?.();
+      }
+    },
+  );
 
   it('refuses unsupported engines before importing or migrating and rejects bad graph edges', () => {
     const { options, graph, loaders } = fixture();

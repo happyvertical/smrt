@@ -65,7 +65,7 @@ export function createActivationCoordinator(
 ): ActivationCoordinator {
   if (resolveMigrationEngine(options.db) !== 'sqlite') {
     throw new Error(
-      'SMRT lazy activation supports SQLite only. Keep eager registration and migrateSmrtSchemas for PostgreSQL/DuckDB.',
+      'SMRT lazy activation supports SQLite only. Keep eager registration and migrateSmrtSchemas for PostgreSQL/DuckDB; live PostgreSQL activation requires transaction-bound schema inspection under an advisory lock (see agents/postgres-parity.md).',
     );
   }
   activationClosure(options.manifest, Object.keys(options.manifest.models));

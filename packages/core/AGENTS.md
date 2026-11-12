@@ -267,3 +267,5 @@ watch mode after adding decorated classes. Documentation-only changes need
 instruction-chain and knowledge freshness checks, not the runtime test suite.
 
 Inline linked create/edit and display-only references: [write-through](agents/write-through.md).
+
+PostgreSQL capability matrix, in-process lane and live-DDL refusals: [agents/postgres-parity.md](agents/postgres-parity.md).

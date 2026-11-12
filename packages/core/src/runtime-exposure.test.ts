@@ -19,6 +19,8 @@ import {
 import { snapshotObjectRegistryState } from './test-utils.js';
 import { getTestDatabase } from './testing/database.js';
 
+const databaseType = process.env.SMRT_TEST_PGLITE === '1' ? 'pglite' : 'sqlite';
+
 const CUSTOMER = '@fixture/customers:Customer';
 const ESTIMATE = '@fixture/estimates:Estimate';
 const catalog: EngineCatalog = {
@@ -201,9 +203,9 @@ describe('live cookbook runtime exposure', () => {
     expect(changed).toHaveBeenCalledOnce();
   });
 
-  it('SQLite: disabled 404/absent/refused -> enable 200/tools -> disable, with isolated tenants and no regeneration', async () => {
+  it(`${databaseType}: disabled 404/absent/refused -> enable 200/tools -> disable, with isolated tenants and no regeneration`, async () => {
     register();
-    db = await getTestDatabase({ type: 'sqlite', url: ':memory:' });
+    db = await getTestDatabase({ type: databaseType, url: ':memory:' });
     const a = engine();
     const b = engine();
     b.run({ name: 'add_recipes', input: { ids: ['estimates'] } });
@@ -283,7 +285,7 @@ describe('live cookbook runtime exposure', () => {
 
   it('non-opted-in app retains REST and MCP behavior', async () => {
     register();
-    db = await getTestDatabase({ type: 'sqlite', url: ':memory:' });
+    db = await getTestDatabase({ type: databaseType, url: ':memory:' });
     const api = new APIGenerator(
       { basePath: '/api' },
       { db },

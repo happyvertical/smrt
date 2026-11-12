@@ -254,17 +254,18 @@
     "generate:test": "node scripts/generate-test-manifest.js",
     "test": "node scripts/generate-test-manifest.js && vitest run",
     "test:browser": "node scripts/browser-plain-json-regression.mjs && node scripts/browser-entry-evaluation.mjs && node scripts/browser-entry-evaluation.mjs --pglite-cascade && node scripts/browser-unbundled-dev.mjs",
-    "test:postgres": "node scripts/generate-test-manifest.js && NODE_OPTIONS=--trace-deprecation node ../../scripts/run-with-ci-postgres.mjs -- pnpm exec vitest run optional.test.ts",
+    "test:postgres": "node scripts/generate-test-manifest.js && NODE_OPTIONS=--trace-deprecation node ../../scripts/run-with-ci-postgres.mjs -- pnpm exec vitest run optional.test.ts && pnpm run test:pglite",
     "test:integration": "TEST_INTEGRATION=1 vitest run src/__tests__/full-registry-integration.test.ts src/__tests__/manifest-no-leak.test.ts",
     "test:watch": "node scripts/generate-test-manifest.js && vitest",
     "build": "node scripts/generate-manifest.js && vite build && cp -r src/vite-plugin/templates dist/vite-plugin/ && cp -r scripts dist/ && cp src/manifest/static-manifest.json dist/manifest.json && cp src/manifest/smrt-knowledge.json dist/smrt-knowledge.json && cp src/cookbook/v1.schema.json dist/cookbook/v1.schema.json",
     "build:watch": "vite build --watch",
     "clean": "rm -rf dist docs",
     "dev": "npm run build:watch & npm run test:watch",
-    "verify:consumer-plugin": "node -e \"try { const { smrtConsumer } = require('./dist/consumer-plugin.js'); const plugin = smrtConsumer(); console.log('✅ Consumer plugin working:', plugin.name); } catch(e) { console.error('❌ Consumer plugin failed:', e.message); process.exit(1); }\"",
-    "verify:exports": "node --input-type=module -e \"import { readFileSync, existsSync } from 'fs'; const pkg = JSON.parse(readFileSync('./package.json', 'utf-8')); Object.entries(pkg.exports).forEach(([key, path]) => { if (typeof path === 'string' && existsSync(path)) { console.log('✅', key, '→', path); } else if (typeof path === 'object') { const paths = [path.types, path.browser, path.default, path.import, path.require].filter(Boolean); if (paths.every(p => existsSync(p))) { console.log('✅', key, '→', JSON.stringify(path)); } else { console.error('❌', key, '→', JSON.stringify(path), '(some missing)'); process.exit(1); } } else { console.error('❌', key, '→', path, '(missing)'); process.exit(1); } });\"",
+    "verify:consumer-plugin": "node -e \"try { const { smrtConsumer } = require('./dist/consumer-plugin.js'); const plugin = smrtConsumer(); console.log('\u2705 Consumer plugin working:', plugin.name); } catch(e) { console.error('\u274c Consumer plugin failed:', e.message); process.exit(1); }\"",
+    "verify:exports": "node --input-type=module -e \"import { readFileSync, existsSync } from 'fs'; const pkg = JSON.parse(readFileSync('./package.json', 'utf-8')); Object.entries(pkg.exports).forEach(([key, path]) => { if (typeof path === 'string' && existsSync(path)) { console.log('\u2705', key, '\u2192', path); } else if (typeof path === 'object') { const paths = [path.types, path.browser, path.default, path.import, path.require].filter(Boolean); if (paths.every(p => existsSync(p))) { console.log('\u2705', key, '\u2192', JSON.stringify(path)); } else { console.error('\u274c', key, '\u2192', JSON.stringify(path), '(some missing)'); process.exit(1); } } else { console.error('\u274c', key, '\u2192', path, '(missing)'); process.exit(1); } });\"",
     "build:fresh": "npm run clean && npm run build && npm run verify:exports && npm run verify:consumer-plugin",
-    "prepack": "node scripts/prepack.js && node ../../scripts/ship-knowledge-pages.mjs ."
+    "prepack": "node scripts/prepack.js && node ../../scripts/ship-knowledge-pages.mjs .",
+    "test:pglite": "node scripts/generate-test-manifest.js && node scripts/test-pglite.mjs src/__tests__/same-name-app-subclass.test.ts src/__tests__/display-label-projection.test.ts src/runtime-exposure.test.ts src/cookbook/tools.test.ts src/cookbook/models.test.ts src/activation/activation.test.ts src/__tests__/app-model-editor.test.ts src/embedded-write-queue.test.ts"
   },
   "peerDependencies": {
     "@huggingface/transformers": ">=3.0.0 <5.0.0",

@@ -10,7 +10,11 @@ import { ObjectRegistry, smrt } from '../registry';
 import { setRuntimeExposureGate } from '../runtime-exposure';
 import { getTestDatabase } from '../testing/database';
 
-@smrt({ idType: 'text' })
+const databaseType = process.env.SMRT_TEST_PGLITE === '1' ? 'pglite' : 'sqlite';
+const TENANT_A = '11111111-1111-4111-8111-111111111111';
+const TENANT_B = '22222222-2222-4222-8222-222222222222';
+
+@smrt({ idType: 'uuid' })
 class DisplayProfile extends SmrtObject {
   @field()
   name = '';
@@ -25,7 +29,7 @@ class DisplayProfile extends SmrtObject {
 }
 
 @smrt({
-  idType: 'text',
+  idType: 'uuid',
   api: { public: true, include: ['list', 'get', 'update'] },
   display: {
     label: { via: 'profileId', field: 'name', fallback: 'Unnamed customer' },
@@ -38,7 +42,7 @@ class DisplayCustomer extends SmrtObject {
   tenantId: string | null = null;
 }
 @smrt({
-  idType: 'text',
+  idType: 'uuid',
   display: {
     references: { skuId: '@happyvertical/smrt-core:DisplayProfile' },
     label: { via: 'skuId', field: 'name', fallback: 'Unknown item' },
@@ -56,7 +60,7 @@ class DisplayProfiles extends SmrtCollection<DisplayProfile> {
   static readonly _itemClass = DisplayProfile;
 }
 
-@smrt({ tableStrategy: 'sti', idType: 'text' })
+@smrt({ tableStrategy: 'sti', idType: 'uuid' })
 class DisplayRestrictedProfile extends SmrtObject {
   @field()
   name = '';
@@ -67,7 +71,7 @@ class DisplayRestrictedChild extends DisplayRestrictedProfile {
   override name = '';
 }
 @smrt({
-  idType: 'text',
+  idType: 'uuid',
   display: {
     label: { via: 'profileId', field: 'name', fallback: 'Unavailable' },
   },
@@ -77,7 +81,7 @@ class DisplayRestrictedCustomer extends SmrtObject {
   profileId = '';
 }
 
-@smrt({ idType: 'text', display: { label: 'displayLabel' } })
+@smrt({ idType: 'uuid', display: { label: 'displayLabel' } })
 class DisplayOwnLabel extends SmrtObject {
   @field()
   displayLabel = '';
@@ -89,7 +93,7 @@ let profiles: DisplayProfiles;
 let activeTenant: string | null | undefined;
 
 beforeEach(async () => {
-  db = await getTestDatabase({ type: 'sqlite', url: ':memory:' });
+  db = await getTestDatabase({ type: databaseType, url: ':memory:' });
   customers = await DisplayCustomers.create({ db });
   profiles = await DisplayProfiles.create({ db });
   activeTenant = undefined;
@@ -103,7 +107,7 @@ afterEach(async () => {
 
 async function seed(
   name: string,
-  tenantId: string | null = 'a',
+  tenantId: string | null = TENANT_A,
   visible = true,
 ) {
   const profile = await profiles.create({
@@ -137,10 +141,10 @@ function scopeTargets() {
 describe('display label projection', () => {
   it('composes a public projection without fetching, retaining row scopes and refusing gated fields', async () => {
     await seed('Visible a');
-    await seed('Hidden a', 'a', false);
-    await seed('Visible b', 'b');
+    await seed('Hidden a', TENANT_A, false);
+    await seed('Visible b', TENANT_B);
     scopeTargets();
-    activeTenant = 'a';
+    activeTenant = TENANT_A;
     await profiles.list({ select: ['id'] });
     const query = vi.spyOn(db, 'query');
     const plan = await profiles.buildProjectionQuery({
@@ -169,20 +173,35 @@ describe('display label projection', () => {
     const source = await ObjectRegistry.getCollection('DisplayTextReference', {
       db,
     });
-    const good = await profiles.create({ name: 'Named item', tenantId: 'a' });
+    const good = await profiles.create({
+      name: 'Named item',
+      tenantId: TENANT_A,
+    });
     const other = await profiles.create({
       name: 'Private item',
-      tenantId: 'b',
+      tenantId: TENANT_B,
     });
     const hidden = await profiles.create({
       name: 'Hidden item',
-      tenantId: 'a',
+      tenantId: TENANT_A,
       visible: false,
     });
-    await source.create({ skuId: good.id, tenantId: 'a' });
-    await source.create({ skuId: other.id, tenantId: 'a' });
-    await source.create({ skuId: hidden.id, tenantId: 'a' });
-    await source.create({ skuId: 'external-not-a-uuid', tenantId: 'a' });
+    await source.create({
+      skuId: good.id,
+      tenantId: TENANT_A,
+    });
+    await source.create({
+      skuId: other.id,
+      tenantId: TENANT_A,
+    });
+    await source.create({
+      skuId: hidden.id,
+      tenantId: TENANT_A,
+    });
+    await source.create({
+      skuId: 'external-not-a-uuid',
+      tenantId: TENANT_A,
+    });
     scopeTargets();
     const rows = await source.list({ displayLabel: true });
     expect(rows.map((r) => r.toJSON().displayLabel)).toEqual([
@@ -198,7 +217,7 @@ describe('display label projection', () => {
 
   it('keeps ordinary list/get/count and persisted selects independent of the display target', async () => {
     const row = await customers.create({
-      profileId: 'absent-profile',
+      profileId: 'aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa',
       tenantId: null,
     });
     await db.query('DROP TABLE display_profiles');
@@ -210,7 +229,7 @@ describe('display label projection', () => {
     );
     expect(await customers.count()).toBe(1);
     expect(await customers.list({ select: ['id', 'profileId'] })).toEqual([
-      { id: row.id, profileId: 'absent-profile' },
+      { id: row.id, profileId: 'aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa' },
     ]);
     expect(
       tables.mock.calls.some(([table]) => table === 'display_profiles'),
@@ -224,7 +243,7 @@ describe('display label projection', () => {
 
   it('returns the declared fallback for an explicitly requested label when its target table is absent', async () => {
     const row = await customers.create({
-      profileId: 'absent-profile',
+      profileId: 'aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa',
       tenantId: null,
     });
     await db.query('DROP TABLE display_profiles');
@@ -286,7 +305,10 @@ describe('display label projection', () => {
   });
 
   it('propagates target storage failures instead of treating them as an absent target', async () => {
-    await customers.create({ profileId: 'absent-profile', tenantId: null });
+    await customers.create({
+      profileId: 'aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa',
+      tenantId: null,
+    });
     const tableExists = db.tableExists.bind(db);
     vi.spyOn(db, 'tableExists').mockImplementation(async (table) => {
       if (table === 'display_profiles') throw new Error('schema unavailable');
@@ -356,6 +378,30 @@ describe('display label projection', () => {
     ).toBe('Maya');
   });
 
+  it('keeps SQL LIKE case semantics and explicit NULL ordering consistent before pagination', async () => {
+    await seed('MaYa', null);
+    await seed('Zulu', TENANT_A);
+    const where = { 'displayLabel like': '%maya%' };
+    // LIKE is intentionally not a portable ILIKE operator (sdk#1192).
+    const matches = databaseType === 'pglite' ? 0 : 1;
+    expect(await customers.count({ where })).toBe(matches);
+    expect(await customers.list({ where })).toHaveLength(matches);
+    expect(
+      await customers.count({ where: { 'displayLabel like': '%aY%' } }),
+    ).toBe(1);
+    for (const [nulls, label] of [
+      ['FIRST', 'MaYa'],
+      ['LAST', 'Zulu'],
+    ]) {
+      const page = await customers.list({
+        displayLabel: true,
+        orderBy: `tenantId ASC NULLS ${nulls}, displayLabel ASC`,
+        limit: 1,
+      });
+      expect(page[0].toJSON().displayLabel).toBe(label);
+    }
+  });
+
   it('preserves ordinary models that already own a displayLabel field', async () => {
     const own = await ObjectRegistry.getCollection<DisplayOwnLabel>(
       'DisplayOwnLabel',
@@ -367,13 +413,16 @@ describe('display label projection', () => {
 
   it('provisions display targets for an explicitly scoped test database', async () => {
     const focusedDb = await getTestDatabase({
-      type: 'sqlite',
+      type: databaseType,
       url: ':memory:',
       classes: ['DisplayCustomer'],
     });
     try {
       const focused = await DisplayCustomers.create({ db: focusedDb });
-      await focused.create({ profileId: 'missing', tenantId: 'a' });
+      await focused.create({
+        profileId: 'bbbbbbbb-bbbb-4bbb-8bbb-bbbbbbbbbbbb',
+        tenantId: TENANT_A,
+      });
       expect(
         (await focused.list({ displayLabel: true })).map(
           (row) => row.toJSON().displayLabel,
@@ -385,7 +434,10 @@ describe('display label projection', () => {
   });
 
   it('uses a clear fallback for missing and blank targets', async () => {
-    await customers.create({ profileId: 'missing', tenantId: 'a' });
+    await customers.create({
+      profileId: 'bbbbbbbb-bbbb-4bbb-8bbb-bbbbbbbbbbbb',
+      tenantId: TENANT_A,
+    });
     await seed('   ');
     const rows = await customers.list({ displayLabel: true });
     expect(rows.map((row) => row.toJSON().displayLabel)).toEqual([
@@ -395,11 +447,11 @@ describe('display label projection', () => {
   });
 
   it('keeps target row policies in search/sort and rejects cross-owner links without a context', async () => {
-    const { profile } = await seed('Private b', 'b');
+    const { profile } = await seed('Private b', TENANT_B);
     if (!profile.id) throw new Error('Profile fixture has no id');
     const badLink = await customers.create({
       profileId: profile.id,
-      tenantId: 'a',
+      tenantId: TENANT_A,
     });
     const globalLink = await customers.create({
       profileId: profile.id,
@@ -416,10 +468,10 @@ describe('display label projection', () => {
       )?.toJSON().displayLabel,
     ).toBe('Unnamed customer');
     await seed('Visible a');
-    await seed('Hidden a', 'a', false);
+    await seed('Hidden a', TENANT_A, false);
     await seed('Global', null);
     scopeTargets();
-    activeTenant = 'a';
+    activeTenant = TENANT_A;
     expect(
       await customers.list({ where: { 'displayLabel like': '%Private%' } }),
     ).toEqual([]);
@@ -431,7 +483,7 @@ describe('display label projection', () => {
         await customers.list({ where: { 'displayLabel like': '%Visible%' } })
       ).map((row) => row.toJSON().displayLabel),
     ).toEqual(['Visible a']);
-    activeTenant = 'b';
+    activeTenant = TENANT_B;
     expect(
       (
         await customers.list({ where: { 'displayLabel like': '%Private%' } })

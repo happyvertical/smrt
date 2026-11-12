@@ -415,3 +415,5 @@ Host snapshot preparation reuses consumer-plugin's public `findInstalledPackageJ
 to bind dependency source provenance to the actual installed owning package. A
 publisher checkout outside that package is not a host source, even when it happens
 to exist on the build machine. Workspace-linked providers retain source digests.
+
+PostgreSQL/PGlite refusal, migration lock prerequisites and validation: [PostgreSQL parity](postgres-parity.md).
