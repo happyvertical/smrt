@@ -316,6 +316,7 @@ export async function smokeSidecar(options) {
       const origin = `http://127.0.0.1:${port}`;
       const env = buildSidecarEnv(manifest, { port, dataDirectory: data, ownerLinkSecret: secret }, {});
       // Keep custody state and CLI detection in the owned smoke tree on every OS.
+      env.SMRT_FORBIDDEN_STATE_BASES = process.env.SMRT_FORBIDDEN_STATE_BASES;
       env.HOME = scratch;
       env.USERPROFILE = scratch;
       env.XDG_STATE_HOME = join(scratch, '.local', 'state');

@@ -16,6 +16,7 @@ import { fileURLToPath } from 'node:url';
 import type { Cookbook } from '@happyvertical/smrt-types';
 import { create } from 'tar';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
+import { testHomeEnvironment } from '../../../../vitest/src/test-home.js';
 import {
   acquireTemplate,
   applyCookbook,
@@ -1088,7 +1089,11 @@ applyCookbook({ cookbook: { version: 1, recipes: [], features: [], policies: [] 
     );
     const tsx = join(here, '../../../../../node_modules/.bin/tsx');
     const run = spawnSync(tsx, [script], {
-      env: { PATH: `${bin}:${process.env.PATH}`, HOME: work },
+      env: {
+        ...testHomeEnvironment(),
+        PATH: `${bin}:${process.env.PATH}`,
+        HOME: work,
+      },
       encoding: 'utf-8',
     });
     expect(run.status, run.stderr).toBe(0);

@@ -50,6 +50,7 @@ import {
 } from '@modelcontextprotocol/server';
 import type { RequestEvent } from '@sveltejs/kit';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
+import { testHomeEnvironment } from '../../vitest/src/test-home.js';
 import { createCookbookHost, loadCookbookModelPage } from '../host/server.js';
 import { createCookbookHostState } from '../host/state.js';
 
@@ -275,12 +276,13 @@ beforeEach(async () => {
   // whose code-mode host policy is refused by inference's native probe.
   const fixture = stub.replace(
     '#!/usr/bin/env node',
-    `#!${process.execPath}\nif (process.argv.includes('--version')) { console.log('1.2.3'); process.exit(0); }\nif (process.argv.slice(2).join(' ') === 'auth status') { console.log('{"loggedIn":true}'); process.exit(0); }\nif (process.argv.slice(2).join(' ') === 'login status') { console.log('Logged in using ChatGPT'); process.exit(0); }`,
+    `#!${process.execPath}\nObject.assign(process.env, ${JSON.stringify(Object.fromEntries([['SMRT_FORBIDDEN_STATE_BASES', process.env.SMRT_FORBIDDEN_STATE_BASES]]))});\nif (process.argv.includes('--version')) { console.log('1.2.3'); process.exit(0); }\nif (process.argv.slice(2).join(' ') === 'auth status') { console.log('{"loggedIn":true}'); process.exit(0); }\nif (process.argv.slice(2).join(' ') === 'login status') { console.log('Logged in using ChatGPT'); process.exit(0); }`,
   );
   for (const binary of ['claude', 'codex'])
     await writeFile(join(bin, binary), fixture, { mode: 0o700 });
   const cli = createAgentCliService({
     env: Object.fromEntries([
+      ...Object.entries(testHomeEnvironment()),
       ['HOME', stateDirectory],
       ['PATH', `${bin}:${dirname(process.execPath)}:/usr/bin:/bin`],
     ]),

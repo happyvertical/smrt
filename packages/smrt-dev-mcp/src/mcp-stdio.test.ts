@@ -6,6 +6,7 @@ import { fileURLToPath } from 'node:url';
 import { Client } from '@modelcontextprotocol/client';
 import { StdioClientTransport } from '@modelcontextprotocol/client/stdio';
 import { afterEach, beforeEach, describe, expect, it } from 'vitest';
+import { testHomeEnvironment } from '../../vitest/src/test-home.js';
 
 const __dirname = dirname(fileURLToPath(import.meta.url));
 const packageRoot = resolve(__dirname, '..');
@@ -148,6 +149,7 @@ async function createMcpClient() {
   expect(existsSync(tsxBin)).toBe(true);
 
   const transport = new StdioClientTransport({
+    env: testHomeEnvironment(),
     command: tsxBin,
     args: [join(packageRoot, 'src', 'index.ts')],
     cwd: fixtureRoot,

@@ -43,6 +43,7 @@ import {
   screenReferenceTarget,
 } from '../../smrt-svelte/src/components/screens/references.js';
 import { createRecipeScreenReferences } from '../../smrt-svelte/src/components/screens/source.js';
+import { testHomeEnvironment } from '../../vitest/src/test-home.js';
 import type { PluginModeState } from '../host/plugin-mode.js';
 import { createCookbookHost } from '../host/server.js';
 
@@ -158,6 +159,7 @@ it('generates private setup; bridges live tools, writes and durable owner decisi
     dataDirectory: join(root, 'data'),
     runtime: resolveApplicationRuntime({ profile: 'local' }),
     env: Object.fromEntries([
+      ...Object.entries(testHomeEnvironment()),
       ['NODE_ENV', 'development'],
       ['HOST', '127.0.0.1'],
     ]),
@@ -356,6 +358,7 @@ it('generates private setup; bridges live tools, writes and durable owner decisi
     try {
       await otherClient.connect(
         new StdioClientTransport({
+          env: testHomeEnvironment(),
           command: otherSetup.entry.command,
           args: otherSetup.entry.args,
           stderr: 'pipe',
@@ -390,6 +393,7 @@ it('generates private setup; bridges live tools, writes and durable owner decisi
     }
   }
   const transport = new StdioClientTransport({
+    env: testHomeEnvironment(),
     command: setup.entry.command,
     args: setup.entry.args,
     stderr: 'pipe',
