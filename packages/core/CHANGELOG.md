@@ -1,5 +1,33 @@
 # @happyvertical/smrt-core
 
+## 0.60.17
+
+### Patch Changes
+
+- ### Features
+  
+  - organization repository sync and activity snapshot (#4909) (projects)
+  - sort every component into structure/theme layers; exact styleless mode (#4896) (styling)
+  - deployed profiles without app glue (#4864) (#4892) (app-runtime,config)
+  
+  ### Bug Fixes
+  
+  - make snapshot publication and restore durable (#4850) (cli)
+  - prevent entitlement clock rollback and watermark races (#4860) (app-runtime)
+  - retry and verify gitleaks release downloads (#4847) (ci)
+  - contract follow-ups — theme warning, planner sheets, last !important rules (#4913) (styling)
+  - retry transient GitHub 5xx in release admission store (#4911) (ci)
+  - fall back to the runner image apt mirror when canonical update fails (#4912) (ci)
+  - unique bundle slugs and plain-files lesson materials (#4895) (education)
+  
+  ### Other Changes
+  
+  - chore: sync sdk packages to v0.112.2 (#4919) (deps)
+  - chore: sync sdk packages to v0.111.11 (#4910) (deps)
+- @happyvertical/smrt-config@0.60.17
+  - @happyvertical/smrt-scanner@0.60.17
+  - @happyvertical/smrt-types@0.60.17
+
 ## 0.60.16
 
 ### Patch Changes
