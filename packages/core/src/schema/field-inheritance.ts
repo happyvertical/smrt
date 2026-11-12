@@ -159,8 +159,23 @@ function fillMissing<F extends InheritableField>(
   const out = { ...own } as Bag;
   const ownStated = stated(own);
   const inheritedStated = stated(inherited);
+  // A type the scanner could not resolve is a fallback, not a stated type: the
+  // field keeps its parent's type and options (#4942).
+  const typeUnresolved =
+    ownMeta.__typeUnresolved === true && inherited.type !== undefined;
   const typeChanged =
-    !!inherited.type && !!own.type && inherited.type !== own.type;
+    !typeUnresolved &&
+    !!inherited.type &&
+    !!own.type &&
+    inherited.type !== own.type;
+  if (typeUnresolved) out.type = inherited.type;
+  // The marker follows the type that won: the parent's when the type was
+  // inherited, the class's own otherwise.
+  const unresolvedMarker = typeUnresolved
+    ? inheritedMeta.__typeUnresolved
+    : ownMeta.__typeUnresolved;
+  if (unresolvedMarker === true) meta.__typeUnresolved = true;
+  else delete meta.__typeUnresolved;
   const keys = new Set([
     ...Object.keys(inherited),
     ...Object.keys(inheritedMeta),

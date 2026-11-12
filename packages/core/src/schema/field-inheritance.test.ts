@@ -87,6 +87,48 @@ describe.each([
     });
   });
 
+  it('a type the scanner could not resolve is not a type change (#4942)', () => {
+    // `override productType: ProductType = ...` with an enum the scanner cannot
+    // see: it types the field json and marks the type as a fallback.
+    const fields = resolve(
+      strategy,
+      [
+        link('A', {
+          kind: {
+            type: 'text',
+            required: true,
+            enum: ['a', 'b'],
+            _meta: { sqlType: 'VARCHAR(8)', __statedOptions: ['enum'] },
+          } as F,
+        }),
+      ],
+      {
+        kind: {
+          type: 'json',
+          required: false,
+          _meta: { __statedOptions: [], __typeUnresolved: true },
+        } as F,
+      },
+    );
+    expect(fields.get('kind')).toMatchObject({
+      type: 'text',
+      required: true,
+      enum: ['a', 'b'],
+    });
+    expect(fields.get('kind')?._meta?.sqlType).toBe('VARCHAR(8)');
+    expect(fields.get('kind')?._meta?.__typeUnresolved).toBeUndefined();
+  });
+
+  it('a resolved, different type is still a type change (#4942)', () => {
+    const fields = resolve(
+      strategy,
+      [link('A', { kind: { type: 'text', enum: ['a'], required: true } })],
+      { kind: { type: 'json', _meta: { __statedOptions: [] } } },
+    );
+    expect(fields.get('kind')?.type).toBe('json');
+    expect(fields.get('kind')?.enum).toBeUndefined();
+  });
+
   it('keeps a missing enum and overrides a stated description', () => {
     const fields = resolve(
       strategy,

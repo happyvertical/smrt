@@ -80,7 +80,11 @@ Ancestors apply base to child, then the class's own fields last:
 - A type change drops inherited `sqlType`, `min`, `max`, `enum`, `default`,
   `backfill`, `minLength`, `maxLength` and `pattern`. Other options still
   inherit. Type means the field type (`text`, `integer`, etc.); changing it
-  drops these type-bound options even between numeric types.
+  drops these type-bound options even between numeric types. A type the
+  scanner could not resolve (an enum or class imported from a file it cannot
+  read) is not a stated type: the build types it `json` and marks it
+  `_meta.__typeUnresolved`, and the redeclaration keeps the parent's type and
+  options (#4942).
 - `null` clears an inherited option. Leaving it out inherits it. The effective
   field has no value for a cleared option, at either the top level or in
   `_meta`. The stated name remains so the clear survives later merges.

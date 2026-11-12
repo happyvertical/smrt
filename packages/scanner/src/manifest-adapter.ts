@@ -879,6 +879,12 @@ export class ManifestAdapter {
       };
     }
 
+    // The type is a fallback, not something the author wrote. A redeclaration
+    // of the field inherits its parent's type instead (#4942, P10).
+    if (inference.typeUnresolved) {
+      definition._meta = { ...definition._meta, __typeUnresolved: true };
+    }
+
     // For meta fields, store the underlying type for hydration coercion
     if (inference.underlyingType) {
       definition._meta = {
@@ -1685,6 +1691,7 @@ export class ManifestAdapter {
       type: 'json',
       required: isRequired,
       source: 'default',
+      typeUnresolved: true,
     };
   }
 

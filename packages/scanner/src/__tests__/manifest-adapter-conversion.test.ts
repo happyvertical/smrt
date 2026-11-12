@@ -659,4 +659,24 @@ describe('ManifestAdapter conversion', () => {
       });
     }
   });
+
+  describe('unresolved field types (#4942)', () => {
+    it('marks a type it fell back to json for, and not one it resolved', () => {
+      const adapter = new ManifestAdapter();
+      const imported = adapter.convertField(
+        field({ name: 'kind', typeAnnotation: 'ImportedEnum' }),
+      );
+      expect(imported?.type).toBe('json');
+      expect(imported?._meta?.__typeUnresolved).toBe(true);
+      expect(imported?._meta?.__statedOptions).not.toContain(
+        '__typeUnresolved',
+      );
+
+      const real = adapter.convertField(
+        field({ name: 'tags', typeAnnotation: 'string[]' }),
+      );
+      expect(real?.type).toBe('json');
+      expect(real?._meta?.__typeUnresolved).toBeUndefined();
+    });
+  });
 });
