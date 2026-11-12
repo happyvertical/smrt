@@ -1,7 +1,7 @@
-/** A4 contract: real registry, generated REST/MCP, SQLite tracked migrations and durable history. */
+/** A4 contract: real registry, generated REST/MCP, tracked migrations and durable history. */
 
 import type { Cookbook, CookbookModelField } from '@happyvertical/smrt-types';
-import { getDatabase } from '@happyvertical/sql';
+import type { getDatabase } from '@happyvertical/sql';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { createActivationCoordinator } from '../activation.js';
 import { createCookbookEngine } from '../cookbook/engine/engine.js';
@@ -9,13 +9,17 @@ import {
   type AppModelEdit,
   createAppModelEditor,
 } from '../cookbook/model-editor.js';
-import { createSqliteAppModelHistory } from '../cookbook/model-history.js';
+import {
+  createAppModelHistory,
+  createSqliteAppModelHistory,
+} from '../cookbook/model-history.js';
 import { COOKBOOK_SCHEMA_URL, validateCookbook } from '../cookbook/validate.js';
 import { field } from '../decorators/index.js';
 import { MCPGenerator } from '../generators/mcp.js';
 import { toProviderToolSchema } from '../generators/provider-tool-schema.js';
 import { APIGenerator } from '../generators/rest.js';
 import { migrateSmrtSchemas } from '../migrations/orchestrate.js';
+import { MigrationTracker } from '../migrations/tracker.js';
 import { SmrtObject } from '../object.js';
 import { ObjectRegistry } from '../registry.js';
 import {
@@ -23,8 +27,12 @@ import {
   setRuntimeExposureGate,
 } from '../runtime-exposure.js';
 import { registerRuntimeModel } from '../runtime-model.js';
+import { inspectTableSchema } from '../schema/inspection.js';
 import { snapshotObjectRegistryState } from '../test-utils.js';
 import { getTestDatabase } from '../testing/database.js';
+
+const databaseType = process.env.SMRT_TEST_PGLITE === '1' ? 'pglite' : 'sqlite';
+const engine = databaseType === 'pglite' ? 'postgres' : 'sqlite';
 
 const APP = '@fixture/a4-editor';
 const CUSTOMER = '@fixture/a4-upstream:Customer';
@@ -91,10 +99,14 @@ describe('durable app model editor', () => {
     restore = snapshotObjectRegistryState();
     ObjectRegistry.clear();
     globalThis.__smrtModelReadiness?.clear();
-    db = await getDatabase({ type: 'sqlite', url: ':memory:' });
+    db = await getTestDatabase({
+      type: databaseType,
+      classes: [],
+      includeSystemTables: false,
+    });
     upstream();
     enableTenancy();
-    await migrateSmrtSchemas({ db, packageName: APP, engineHint: 'sqlite' });
+    await migrateSmrtSchemas({ db, packageName: APP, engineHint: engine });
   });
   afterEach(async () => {
     setRuntimeExposureGate(undefined);
@@ -184,7 +196,7 @@ describe('durable app model editor', () => {
       name: 'Maya',
       preferredInstructor: 'Ada',
       notes: 'Long\nnotes',
-      visits: 3,
+      visits: 2 ** 31 + 3,
       confidence: 0.75,
       fee: 2500,
       feeCurrency: 'CAD',
@@ -239,7 +251,9 @@ describe('durable app model editor', () => {
     expect(
       (
         await db.query(
-          "SELECT name FROM sqlite_master WHERE name = 'a4_unused'",
+          databaseType === 'pglite'
+            ? "SELECT table_name AS name FROM information_schema.tables WHERE table_schema = current_schema() AND table_name = 'a4_unused'"
+            : "SELECT name FROM sqlite_master WHERE name = 'a4_unused'",
         )
       ).rows,
     ).toHaveLength(0);
@@ -488,7 +502,11 @@ describe('durable app model editor', () => {
   it('refuses a field inherited from an upstream ancestor', async () => {
     await db.close?.();
     ObjectRegistry.clear();
-    db = await getDatabase({ type: 'sqlite', url: ':memory:' });
+    db = await getTestDatabase({
+      type: databaseType,
+      classes: [],
+      includeSystemTables: false,
+    });
     class CustomerBase extends SmrtObject {
       ancestorCode = '';
     }
@@ -510,7 +528,10 @@ describe('durable app model editor', () => {
       db,
       packageName: APP,
       name: 'inherited_fixture',
-      engineHint: 'sqlite',
+      engineHint: engine,
+      ...(databaseType === 'pglite'
+        ? { atomic: true, postgresSafe: false, useConcurrentIndexes: false }
+        : {}),
     });
     const e = await editor();
     await expect(
@@ -527,7 +548,11 @@ describe('durable app model editor', () => {
   it('extends an STI provider in its existing table without losing sibling fields', async () => {
     await db.close?.();
     ObjectRegistry.clear();
-    db = await getDatabase({ type: 'sqlite', url: ':memory:' });
+    db = await getTestDatabase({
+      type: databaseType,
+      classes: [],
+      includeSystemTables: false,
+    });
     upstream(true);
     const base = ObjectRegistry.getClass(CUSTOMER)!
       .constructor as typeof SmrtObject;
@@ -543,7 +568,10 @@ describe('durable app model editor', () => {
       db,
       packageName: APP,
       name: 'fixture_sti',
-      engineHint: 'sqlite',
+      engineHint: engine,
+      ...(databaseType === 'pglite'
+        ? { atomic: true, postgresSafe: false, useConcurrentIndexes: false }
+        : {}),
     });
     const e = await editor();
     await edit(e, {
@@ -595,16 +623,24 @@ describe('durable app model editor', () => {
         .sort(),
     ).toEqual(['fee', 'feeCurrency']);
     expect(
-      (await db.query('PRAGMA table_info(customers)')).rows.some(
-        (r) => r.name === 'fee',
-      ),
+      (
+        await db.query(
+          databaseType === 'pglite'
+            ? "SELECT column_name AS name FROM information_schema.columns WHERE table_schema = current_schema() AND table_name = 'customers'"
+            : 'PRAGMA table_info(customers)',
+        )
+      ).rows.some((r) => r.name === 'fee'),
     ).toBe(true);
     await db.close?.();
     ObjectRegistry.clear();
     globalThis.__smrtModelReadiness?.clear();
     upstream();
-    db = await getDatabase({ type: 'sqlite', url: ':memory:' });
-    await migrateSmrtSchemas({ db, packageName: APP, engineHint: 'sqlite' });
+    db = await getTestDatabase({
+      type: databaseType,
+      classes: [],
+      includeSystemTables: false,
+    });
+    await migrateSmrtSchemas({ db, packageName: APP, engineHint: engine });
     expect(ObjectRegistry.getFields(CUSTOMER).has('fee')).toBe(false);
     e = await editor();
     expect(e.snapshot().cookbook.models).toBeUndefined();
@@ -657,6 +693,258 @@ describe('durable app model editor', () => {
     });
   });
 
+  it('fences concurrent editors before the losing edit can change registry or storage', async () => {
+    const first = await editor();
+    const second = await editor();
+    const command = (name: string) =>
+      ({
+        type: 'add_field',
+        model: CUSTOMER,
+        name,
+        field: { type: 'text' },
+      }) as const;
+    const results = await Promise.allSettled([
+      first.apply(command('firstField'), {
+        ...owner,
+        expectedRevision: 0,
+        requestId: 'first-editor',
+      }),
+      second.apply(command('secondField'), {
+        ...owner,
+        expectedRevision: 0,
+        requestId: 'second-editor',
+      }),
+    ]);
+    expect(results[0].status).toBe('fulfilled');
+    expect(results[1]).toMatchObject({
+      status: 'rejected',
+      reason: { message: 'MODEL_EDIT_CONFLICT' },
+    });
+    const history = await first.history();
+    expect(history.map((row) => [row.revision, row.status])).toEqual([
+      [1, 'applied'],
+    ]);
+    const schema = await inspectTableSchema(db, 'customers', engine);
+    expect(schema?.columns).toHaveProperty('first_field');
+    expect(schema?.columns).not.toHaveProperty('second_field');
+    expect(ObjectRegistry.getFields(CUSTOMER).has('secondField')).toBe(false);
+    const reopened = await editor();
+    expect(reopened.snapshot().revision).toBe(1);
+    expect(createSqliteAppModelHistory).toBe(createAppModelHistory);
+    if (engine === 'postgres') {
+      const journal = await inspectTableSchema(
+        db,
+        '_smrt_app_model_changes',
+        engine,
+      );
+      expect(journal?.columns.tenant_id.type).toBe('uuid');
+      expect(journal?.columns.revision.type).toBe('bigint');
+    }
+  });
+
+  it.runIf(databaseType === 'pglite')(
+    'restores staged boot registrations when the enclosing DDL commit fails',
+    async () => {
+      const store = await createAppModelHistory({
+        db,
+        application: 'fixture-app',
+        tenantId: TENANT,
+      });
+      const initial = {
+        ...book(),
+        models: {
+          version: 1 as const,
+          packageName: APP,
+          lists: {},
+          fields: { [CUSTOMER]: { bootTag: { type: 'text' as const } } },
+        },
+      };
+      const publish = vi.fn();
+      const open = () =>
+        createAppModelEditor({
+          db,
+          application: 'fixture-app',
+          tenantId: TENANT,
+          packageName: APP,
+          cookbook: initial,
+          catalog,
+          store,
+          authorize: () => true,
+          publish,
+        });
+      const begin = db.beginTransaction!.bind(db);
+      const failure = vi
+        .spyOn(db, 'beginTransaction')
+        .mockImplementation(async () => {
+          const tx = await begin();
+          vi.spyOn(tx, 'commit').mockRejectedValueOnce(
+            new Error('injected commit failure'),
+          );
+          return tx;
+        });
+      await expect(open()).rejects.toThrow('injected commit failure');
+      failure.mockRestore();
+      expect(publish).not.toHaveBeenCalled();
+      expect(
+        (await inspectTableSchema(db, 'customers', engine))?.columns,
+      ).not.toHaveProperty('boot_tag');
+      expect(ObjectRegistry.getFields(CUSTOMER).has('bootTag')).toBe(false);
+      expect(await store.read()).toEqual([]);
+      const recovered = await open();
+      expect(
+        recovered.snapshot().cookbook.models?.fields[CUSTOMER].bootTag.type,
+      ).toBe('text');
+    },
+  );
+
+  it.runIf(databaseType === 'pglite')(
+    'rolls back field DDL, registry, history and markers together, then retries the same request',
+    async () => {
+      const publish = vi.fn();
+      const e = await editor(publish);
+      await edit(e, {
+        type: 'add_field',
+        model: CUSTOMER,
+        name: 'stableField',
+        field: { type: 'text' },
+      });
+      const markers = (
+        await db.query(
+          'SELECT name, status FROM _smrt_schema_migrations ORDER BY name',
+        )
+      ).rows;
+      const publications = publish.mock.calls.length;
+      const original = MigrationTracker.prototype.apply;
+      let fail = true;
+      const injection = vi
+        .spyOn(MigrationTracker.prototype, 'apply')
+        .mockImplementation(function (
+          this: MigrationTracker,
+          definition,
+          options,
+        ) {
+          if (fail && definition.id.startsWith('app_models_')) {
+            fail = false;
+            return original.call(
+              this,
+              {
+                ...definition,
+                up: [
+                  ...definition.up,
+                  'SELECT * FROM _smrt_injected_missing_relation',
+                ],
+              },
+              options,
+            );
+          }
+          return original.call(this, definition, options);
+        });
+      const command = {
+        type: 'add_field',
+        model: CUSTOMER,
+        name: 'retryField',
+        field: { type: 'text' },
+      } as const;
+      const context = {
+        ...owner,
+        expectedRevision: 1,
+        requestId: 'retry-after-ddl',
+      };
+      await expect(e.apply(command, context)).rejects.toThrow('does not exist');
+      injection.mockRestore();
+      expect(publish.mock.calls).toHaveLength(publications);
+      expect(e.snapshot().revision).toBe(1);
+      expect((await e.history()).map((row) => row.revision)).toEqual([1]);
+      expect(
+        (
+          await db.query(
+            'SELECT name, status FROM _smrt_schema_migrations ORDER BY name',
+          )
+        ).rows,
+      ).toEqual(markers);
+      expect(
+        (await inspectTableSchema(db, 'customers', engine))?.columns,
+      ).not.toHaveProperty('retry_field');
+      expect(ObjectRegistry.getFields(CUSTOMER).has('stableField')).toBe(true);
+      expect(ObjectRegistry.getFields(CUSTOMER).has('retryField')).toBe(false);
+      await e.apply(command, context);
+      expect(
+        (await e.history()).map((row) => [row.revision, row.status]),
+      ).toEqual([
+        [1, 'applied'],
+        [2, 'applied'],
+      ]);
+      expect(ObjectRegistry.getFields(CUSTOMER).has('retryField')).toBe(true);
+    },
+  );
+
+  it.runIf(databaseType === 'pglite')(
+    'rechecks revision CAS inside the DDL transaction after a competing writer commits',
+    async () => {
+      const store = await createAppModelHistory({
+        db,
+        application: 'fixture-app',
+        tenantId: TENANT,
+      });
+      const read = store.read.bind(store);
+      let race = false;
+      store.read = async () => {
+        const observed = await read();
+        if (race) {
+          race = false;
+          await store.transaction!(async (scoped, tx) => {
+            await scoped.append(
+              {
+                revision: 1,
+                requestId: 'other-process',
+                actor: 'owner',
+                command: 'remote',
+                before: book(),
+                after: book(),
+                status: 'pending',
+              },
+              0,
+            );
+            await tx.query(
+              'ALTER TABLE customers ADD COLUMN remote_field TEXT',
+            );
+            await scoped.complete(1, 1);
+          });
+        }
+        return observed;
+      };
+      const e = await createAppModelEditor({
+        db,
+        application: 'fixture-app',
+        tenantId: TENANT,
+        packageName: APP,
+        cookbook: book(),
+        catalog,
+        store,
+        authorize: () => true,
+      });
+      race = true;
+      await expect(
+        e.apply(
+          {
+            type: 'add_field',
+            model: CUSTOMER,
+            name: 'losingField',
+            field: { type: 'text' },
+          },
+          { ...owner, expectedRevision: 0, requestId: 'loser' },
+        ),
+      ).rejects.toThrow('MODEL_EDIT_CONFLICT');
+      expect((await read()).map((row) => row.requestId)).toEqual([
+        'other-process',
+      ]);
+      expect(
+        (await inspectTableSchema(db, 'customers', engine))?.columns,
+      ).not.toHaveProperty('losing_field');
+      expect(ObjectRegistry.getFields(CUSTOMER).has('losingField')).toBe(false);
+    },
+  );
+
   it('refuses stale revisions, another owner, and request-id content reuse; replays a committed retry', async () => {
     const e = await editor();
     const command = {
@@ -692,9 +980,11 @@ describe('app model activation recovery', () => {
     const { isRuntimeModelEnabled } = await import('../runtime-exposure.js');
     const restore = snapshotObjectRegistryState();
     const directory = await mkdtemp(join(tmpdir(), 'a4-history-'));
-    let db = await getDatabase({
-      type: 'sqlite',
+    let db = await getTestDatabase({
+      type: databaseType,
       url: join(directory, 'app.sqlite'),
+      classes: [],
+      includeSystemTables: false,
     });
     try {
       ObjectRegistry.clear();
@@ -749,9 +1039,11 @@ describe('app model activation recovery', () => {
       ObjectRegistry.clear();
       register();
       fail = false;
-      db = await getDatabase({
-        type: 'sqlite',
+      db = await getTestDatabase({
+        type: databaseType,
         url: join(directory, 'app.sqlite'),
+        classes: [],
+        includeSystemTables: false,
       });
       e = await createAppModelEditor(options());
       expect(e.snapshot().revision).toBe(1);
@@ -778,9 +1070,13 @@ describe('app model activation recovery', () => {
         expect.objectContaining({ fieldName: 'tag', visibility: 'hidden' }),
       );
       expect(
-        (await db.query('PRAGMA table_info(customers)')).rows.map(
-          (row) => row.name,
-        ),
+        (
+          await db.query(
+            databaseType === 'pglite'
+              ? "SELECT column_name AS name FROM information_schema.columns WHERE table_schema = current_schema() AND table_name = 'customers'"
+              : 'PRAGMA table_info(customers)',
+          )
+        ).rows.map((row) => row.name),
       ).toContain('tag');
     } finally {
       await db.close?.();
@@ -791,46 +1087,3 @@ describe('app model activation recovery', () => {
     }
   });
 });
-
-// Live PostgreSQL publication is refused until transaction-bound introspection
-// and cross-process registry revision fencing exist. Do not silently use SQLite DDL.
-describe.runIf(process.env.SMRT_TEST_PGLITE === '1')(
-  'PostgreSQL app model editor refusal',
-  () => {
-    it('refuses before history mutation, schema changes or host publication', async () => {
-      const db = await getTestDatabase({
-        type: 'pglite',
-        url: 'memory://',
-        includeSystemTables: false,
-        classes: [],
-      });
-      try {
-        const query = vi.spyOn(db, 'query');
-        const publish = vi.fn();
-        await expect(
-          createAppModelEditor({
-            db,
-            application: 'pg-editor',
-            tenantId: TENANT,
-            packageName: APP,
-            cookbook: book(),
-            catalog,
-            authorize: () => true,
-            publish,
-          }),
-        ).rejects.toThrow('MODEL_ENGINE_UNSUPPORTED');
-        await expect(
-          createSqliteAppModelHistory({
-            db,
-            application: 'pg-editor',
-            tenantId: TENANT,
-          }),
-        ).rejects.toThrow('requires SQLite');
-        expect(query).not.toHaveBeenCalled();
-        expect(publish).not.toHaveBeenCalled();
-      } finally {
-        await db.close?.();
-      }
-    });
-  },
-);

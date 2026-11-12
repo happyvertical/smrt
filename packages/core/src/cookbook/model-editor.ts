@@ -7,6 +7,7 @@ import type {
   CookbookModels,
 } from '@happyvertical/smrt-types';
 import type { DatabaseInterface } from '@happyvertical/sql';
+import { withRuntimeSchemaActivation } from '../activation.js';
 import { getRuntimeManifest } from '../generators/rest.js';
 import {
   getPendingSchemaStatements,
@@ -15,6 +16,7 @@ import {
 import { SmrtObject } from '../object.js';
 import { ObjectRegistry } from '../registry.js';
 import {
+  getRuntimeModelReadiness,
   notifyRuntimeExposureChanged,
   setRuntimeModelReadiness,
 } from '../runtime-exposure.js';
@@ -38,7 +40,7 @@ import type { EngineCatalog } from './engine/types.js';
 import {
   type AppModelChange,
   type AppModelHistoryStore,
-  createSqliteAppModelHistory,
+  createAppModelHistory,
 } from './model-history.js';
 import {
   CUSTOM_MODEL_REF,
@@ -236,11 +238,16 @@ export async function createAppModelEditor(options: AppModelEditorOptions) {
     throw new Error(
       'App model editor requires an application, tenant and authorizer',
     );
-  if (getDatabaseEngine(options.db) !== 'sqlite')
+  const engine = getDatabaseEngine(options.db);
+  if (engine !== 'sqlite' && engine !== 'postgres')
     throw new Error(
-      'MODEL_ENGINE_UNSUPPORTED: live app model editor currently requires SQLite; PostgreSQL needs advisory-locked schema inspection and cross-process registry revision fencing (see agents/postgres-parity.md)',
+      'MODEL_ENGINE_UNSUPPORTED: live app model editor supports SQLite and PostgreSQL; DuckDB transactional DDL and revision fencing are not supported',
     );
-  const store = options.store ?? (await createSqliteAppModelHistory(options));
+  const store = options.store ?? (await createAppModelHistory(options));
+  if (engine === 'postgres' && !store.transaction)
+    throw new Error(
+      'MODEL_HISTORY_TRANSACTION_REQUIRED: PostgreSQL history must bind revision CAS and migration DDL to one locked transaction',
+    );
   let history = await store.read();
   let revision = history.at(-1)?.revision ?? 0;
   let doc = checked(history.at(-1)?.after ?? options.cookbook);
@@ -503,7 +510,12 @@ export async function createAppModelEditor(options: AppModelEditorOptions) {
     };
   }
 
-  async function activate(target: Cookbook, all: CookbookModels | undefined) {
+  async function activate(
+    target: Cookbook,
+    all: CookbookModels | undefined,
+    db = options.db,
+    publishNow = true,
+  ) {
     const held = identities(all);
     setRuntimeModelReadiness(held, false);
     ready = false;
@@ -574,8 +586,8 @@ export async function createAppModelEditor(options: AppModelEditorOptions) {
           .map((id) => ObjectRegistry.getTableName(id))
           .filter((name): name is string => !!name),
       );
-      const pending = await getPendingSchemaStatements(options.db, {
-        engineHint: 'sqlite',
+      const pending = await getPendingSchemaStatements(db, {
+        engineHint: engine,
         tables,
       });
       if (pending.hasManualDrift)
@@ -583,16 +595,23 @@ export async function createAppModelEditor(options: AppModelEditorOptions) {
           `MODEL_MIGRATION_REQUIRED: ${JSON.stringify(pending.unactionableChanges)}`,
         );
       await migrateSmrtSchemas({
-        db: options.db,
+        db,
         packageName: options.packageName,
         version: String(revision),
         name: `app_models_${revision}_${Date.now()}`,
-        engineHint: 'sqlite',
+        engineHint: engine,
+        ...(engine === 'postgres'
+          ? { atomic: true, postgresSafe: false, useConcurrentIndexes: false }
+          : {}),
         tables,
         requireComplete: true,
       });
     }
     doc = structuredClone(target);
+    return publishNow ? publish() : projection();
+  }
+
+  async function publish() {
     const current = projection();
     try {
       await options.publish?.(current);
@@ -621,18 +640,44 @@ export async function createAppModelEditor(options: AppModelEditorOptions) {
     return projection();
   }
 
-  await validate(
-    doc,
-    storageModels(history.flatMap((row) => [row.before, row.after])),
-  );
-  const started = performance.now();
-  await activate(doc, storageModels(documents()));
-  if (history.at(-1)?.status === 'pending') {
-    await store.complete(revision, performance.now() - started);
-    history = await store.read();
-  }
-
-  release(storageModels(documents()));
+  await withRuntimeSchemaActivation(async () => {
+    const started = performance.now();
+    if (engine === 'postgres') {
+      let restore = () => {};
+      try {
+        await store.transaction!(async (scoped, db) => {
+          history = await scoped.read();
+          revision = history.at(-1)?.revision ?? 0;
+          doc = checked(history.at(-1)?.after ?? options.cookbook);
+          await validate(
+            doc,
+            storageModels(history.flatMap((row) => [row.before, row.after])),
+          );
+          restore = ObjectRegistry.checkpointRegistrations(
+            identities(storageModels(documents())),
+          );
+          await activate(doc, storageModels(documents()), db, false);
+        });
+      } catch (error) {
+        // The surrounding transaction can fail while committing, after the
+        // migration callback itself succeeded. Restore that boundary too.
+        restore();
+        throw error;
+      }
+      await publish();
+    } else {
+      await validate(
+        doc,
+        storageModels(history.flatMap((row) => [row.before, row.after])),
+      );
+      await activate(doc, storageModels(documents()));
+    }
+    if (history.at(-1)?.status === 'pending') {
+      await store.complete(revision, performance.now() - started);
+      history = await store.read();
+    }
+    release(storageModels(documents()));
+  });
 
   async function apply(
     edit: AppModelEdit,
@@ -919,10 +964,40 @@ export async function createAppModelEditor(options: AppModelEditorOptions) {
         status: 'pending',
         ...(undoes ? { undoes } : {}),
       };
-      await store.append(change, revision);
-      history = [...latest, change];
-      revision = change.revision;
-      await activate(next, storageModels([...documents(), next]));
+      if (engine === 'postgres') {
+        const previous = { history, revision, doc, ready };
+        const all = storageModels([...documents(), next]);
+        const held = identities(all);
+        const readiness = new Map(
+          held.map((id) => [id, getRuntimeModelReadiness(id)]),
+        );
+        let restore = () => {};
+        try {
+          await store.transaction!(async (scoped, db) => {
+            // Claim before touching the registry. The lock and this CAS fence
+            // every process, including two editors created at the same revision.
+            await scoped.append(change, revision);
+            restore = ObjectRegistry.checkpointRegistrations(held);
+            history = [...latest, change];
+            revision = change.revision;
+            await activate(next, all, db, false);
+          });
+        } catch (error) {
+          restore();
+          ({ history, revision, doc, ready } = previous);
+          for (const [id, value] of readiness)
+            setRuntimeModelReadiness([id], value);
+          throw error;
+        }
+        // Schema + pending history are durable before any external publication.
+        // A callback failure stays pending and closed, and boot retries it.
+        await publish();
+      } else {
+        await store.append(change, revision);
+        history = [...latest, change];
+        revision = change.revision;
+        await activate(next, storageModels([...documents(), next]));
+      }
       const elapsedMs = performance.now() - began;
       await store.complete(revision, elapsedMs);
       history = await store.read();
@@ -943,7 +1018,7 @@ export async function createAppModelEditor(options: AppModelEditorOptions) {
         elapsedMs,
       };
     };
-    const operation = tail.then(execute);
+    const operation = tail.then(() => withRuntimeSchemaActivation(execute));
     tail = operation.then(
       () => {},
       () => {},

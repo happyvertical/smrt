@@ -84,10 +84,12 @@ declare global {
 }
 export function setRuntimeModelReadiness(
   models: Iterable<string>,
-  ready: boolean,
+  ready: boolean | undefined,
 ): void {
   globalThis.__smrtModelReadiness ??= new Map();
-  for (const model of models) globalThis.__smrtModelReadiness.set(model, ready);
+  for (const model of models)
+    if (ready === undefined) globalThis.__smrtModelReadiness.delete(model);
+    else globalThis.__smrtModelReadiness.set(model, ready);
   notifyRuntimeExposureChanged();
 }
 
