@@ -650,6 +650,78 @@ describe('installed recipe server tools (SQLite, in process)', () => {
     expect(engines.get(context.tenantId!)!.state()).toEqual(before);
   });
 
+  it('allows only trusted initial setup to replace an empty configured app without an extra hold', async () => {
+    await enable();
+    expect(
+      (await call('cookbook.apply', { id: 'small-shop' })).approvalRequired,
+    ).toBe(true);
+    await expect(
+      call('cookbook.apply', { id: 'small-shop', initialSetup: true }),
+    ).rejects.toMatchObject({ code: 'invalid_input' });
+    context.initialSetup = true;
+    const preview = await call('cookbook.apply', { id: 'small-shop' });
+    expect(preview.approvalRequired).toBe(false);
+    expect(preview.summary).not.toMatch(/set up|completed/i);
+    expect(
+      (
+        await call('cookbook.apply', {
+          id: 'small-shop',
+          apply: true,
+          expectedRevision: revision(),
+          previewToken: preview.previewToken,
+        })
+      ).status,
+    ).toBe('ok');
+    options.isAppEmpty = async () => false;
+    expect(
+      (await call('cookbook.apply', { id: 'small-shop' })).approvalRequired,
+    ).toBe(true);
+  });
+  it('refuses the empty-app shortcut if records arrive while lazy activation is awaited', async () => {
+    const activation = await lazy();
+    const activate = activation.activate.bind(activation);
+    let empty = true;
+    options.isAppEmpty = async () => empty;
+    context.initialSetup = true;
+    const preview = await call('cookbook.apply', { id: 'small-shop' });
+    vi.spyOn(activation, 'activate').mockImplementation(async (models) => {
+      await activate(models);
+      empty = false;
+    });
+    await expect(
+      call('cookbook.apply', {
+        id: 'small-shop',
+        apply: true,
+        expectedRevision: 0,
+        previewToken: preview.previewToken,
+      }),
+    ).rejects.toMatchObject({ code: 'conflict' });
+    expect(revision()).toBe(0);
+  });
+  it('rechecks live exposure after the host empty-data check before committing', async () => {
+    const activation = await lazy();
+    const activate = activation.activate.bind(activation);
+    let activated = false;
+    vi.spyOn(activation, 'activate').mockImplementation(async (models) => {
+      await activate(models);
+      activated = true;
+    });
+    context.initialSetup = true;
+    options.isAppEmpty = async () => {
+      if (activated) enabled = false;
+      return true;
+    };
+    const preview = await call('cookbook.apply', { id: 'small-shop' });
+    await expect(
+      call('cookbook.apply', {
+        id: 'small-shop',
+        apply: true,
+        expectedRevision: 0,
+        previewToken: preview.previewToken,
+      }),
+    ).rejects.toMatchObject({ code: 'forbidden' });
+    expect(revision()).toBe(0);
+  });
   it('previews templates without effects; binds apply to actor/revision and requires approval on non-empty apps', async () => {
     expect(await call('cookbook.listTemplates')).toMatchObject({
       templates: [

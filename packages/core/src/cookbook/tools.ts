@@ -49,6 +49,8 @@ export interface CookbookToolContext {
   tenantId?: string | null;
   userId?: string | null;
   surface: 'mcp' | 'assistant';
+  /** Trusted human first-run route, derived from durable server state; never tool arguments. */
+  initialSetup?: boolean;
 }
 export interface CookbookToolDefinition {
   name: CookbookToolName;
@@ -133,7 +135,7 @@ export interface CookbookToolOptions {
   can(context: CookbookToolContext, tool: CookbookToolName): Promise<boolean>;
   approvals: CookbookToolApprovals;
   /** True only when the host has no application records/configuration to replace.
-   * A cookbook with enabled content is non-empty regardless of this answer. */
+   * Enabled content still requires approval except for trusted initialSetup. */
   isAppEmpty(context: CookbookToolContext): Promise<boolean>;
   /** Optional host policy. Non-empty template replacement ALWAYS requires approval. */
   requiresApproval?(
@@ -770,7 +772,7 @@ export function createCookbookToolService(options: CookbookToolOptions) {
       let summary: string;
       const replacingApp =
         name === 'cookbook.apply' &&
-        (!isEmptyCookbook(before.cookbook) ||
+        ((!context.initialSetup && !isEmptyCookbook(before.cookbook)) ||
           !(await options.isAppEmpty(context)));
       if (name === 'cookbook.apply') {
         const { template, missing } = templateInfo(String(args.id));
@@ -784,8 +786,8 @@ export function createCookbookToolService(options: CookbookToolOptions) {
           input: { id: template.id, replace: true },
         });
         if (!result.ok) return fail(result.error.code, result.error.message);
-        summary =
-          result.receipt.summary || 'The cookbook already has these settings.';
+        // A preview or pending decision is an intention, never a success claim.
+        summary = `Use ${template.name}.`;
         if (args.apply !== true) {
           for (const [key, value] of previews)
             if (value.expires <= Date.now()) previews.delete(key);
@@ -974,7 +976,16 @@ export function createCookbookToolService(options: CookbookToolOptions) {
             );
           }
         }
-        // Recheck after approval/storage awaits, including a preference switched off mid-call.
+        if (
+          name === 'cookbook.apply' &&
+          !hold &&
+          !(await options.isAppEmpty(context))
+        )
+          fail(
+            'conflict',
+            'Your app now contains records. Preview again before applying.',
+          );
+        // Recheck after every host await, including the live empty-data check.
         await assertAllowed(context, name);
         if (!same(options.engineFor(context)!.state(), before))
           fail(

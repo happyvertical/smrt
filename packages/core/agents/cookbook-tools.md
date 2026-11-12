@@ -12,7 +12,7 @@ schemas and execution are defined once by `createCookbookToolService`:
 | `recipes.disable({id, expectedRevision, approvalId?})` | Engine `remove_recipes`, retaining required dependencies. Default: durable owner approval. |
 | `recipes.configure({id, expectedRevision, fields?, items?, approvalId?})` | Atomic engine field policies plus cookbook navigation label/icon overrides. `fields` uses `set_policy` inputs; `items` uses `{id,label?,icon?}`. Null restores an override. Only this enabled recipe's fields/items are accepted. |
 | `cookbook.listTemplates({})` | Bundled bakery, mechanic, welder and yoga-studio documents, or host `catalog.cookbooks`. Report missing installed ids. |
-| `cookbook.apply({id, apply?, expectedRevision?, previewToken?, approvalId?})` | Default: preview, with before/after documents and added/removed recipes. Applying requires the same actor, tenant, revision, template content and preview token. A non-empty cookbook always requires approval. |
+| `cookbook.apply({id, apply?, expectedRevision?, previewToken?, approvalId?})` | Default: preview, with before/after documents and added/removed recipes. Applying requires the same actor, tenant, revision, template content and preview token. Replacement requires approval except trusted first-run setup with no application records. |
 
 Templates select installed blocks; eager hosts must migrate them before serving.
 Lazy SQLite hosts pass their `ActivationCoordinator` as `options.activation`;
@@ -59,8 +59,14 @@ setRuntimeExposureGate(createCookbookRuntimeExposure({
 }));
 ```
 
-`isAppEmpty` is a required host check of application records/configuration, so
-an empty cookbook with existing data still requires replacement approval.
+`isAppEmpty` is a required, live server check of application records/configuration.
+An empty cookbook with existing data still requires replacement approval. The
+trusted context `initialSetup` may waive the cookbook-configuration part only for
+a durable unfinished human first run; it is never a tool argument or MCP/assistant
+flag. The template host counts the current cookbook list collections under the
+actor tenant (including STI scope), excluding technical owner identity records.
+Settings restarts never receive this context. The service checks emptiness again
+after lazy activation and before commit; arriving data refuses the shortcut.
 
 `commit` is a required host storage adapter: serialize writes or CAS the exact
 `before` state, persist `after` and the provided audit event in the same
@@ -96,7 +102,7 @@ original arguments and that id. The adapter checks tenant, requester, tool,
 arguments and before/after state fingerprints, consumes once before effects,
 and records completion. Live authority/exposure is rechecked before commit.
 There is no model-supplied `approved` flag. `requiresApproval` can configure
-other writes, including enable; it cannot waive non-empty template approval.
+other writes, including enable; it cannot waive replacement approval for an app containing data.
 
 `setCookbookToolService` makes tools available to the existing in-process
 `MCPGenerator` and generated single-file/modular servers. Generated stdio hosts
