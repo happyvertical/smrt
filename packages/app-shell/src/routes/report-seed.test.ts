@@ -1,6 +1,7 @@
 import { readFileSync } from 'node:fs';
 import { RuntimeReportError } from '@happyvertical/smrt-reports';
 import { expect, it } from 'vitest';
+import { toolSummary } from '../lib/assistant/tool-summary.ts';
 import {
   call,
   drive,
@@ -9,6 +10,7 @@ import {
 } from '../lib/server/assistant/test-helpers.ts';
 import { runCommand } from '../lib/server/builder.ts';
 import { getHost } from '../lib/server/host.ts';
+import { callTool } from '../lib/server/policy.ts';
 import { openShell } from '../lib/server/test-support.ts';
 import { GET } from './api/shell/reports/[name]/+server.ts';
 import { GET as csv } from './api/shell/reports/[name]/csv/+server.ts';
@@ -104,6 +106,13 @@ it('explains an unsafe seeded total consistently across the worker, page, CSV an
       fetch: async () => GET(event),
     } as never);
     expect(page).toMatchObject({ result: null, problem: message });
+    const failedTool = await callTool(h.owner, 'app_runreport', {
+      report: 'salesByCustomer',
+    });
+    expect(failedTool.isError).toBe(true);
+    expect(
+      toolSummary('app_runreport', JSON.stringify(failedTool), false),
+    ).toBe(message);
     const { model } = scripted([
       () => say('', call('app_runreport', { report: 'salesByCustomer' })),
       () => say('Please check the order.'),

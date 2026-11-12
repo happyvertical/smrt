@@ -110,3 +110,8 @@ so layout data fetched during a draft start cannot produce a false no-draft
 screen. With no open draft the loader redirects home and the component never
 requests a preview. The draft bar keeps review links disabled through the
 start request and view refresh.
+
+Failed report tools return an MCP `isError` result tagged `report_failure` with
+the already sanitized summary. Both API and local CLI assistants preserve that
+summary through the shared text sanitizer; untagged or unsafe failures keep the
+generic failure label. Failed reports never become report result projections.

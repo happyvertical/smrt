@@ -78,3 +78,29 @@ it.each([
     }),
   ).not.toContain('12345678');
 });
+
+it('preserves a server-tagged report failure across CLI/MCP envelopes while keeping failures sanitized', () => {
+  const summary =
+    'The total of Total is too large to show exactly. One of the Orders probably has a mistyped Quantity or Price.';
+  const failure = { kind: 'report_failure', summary };
+  for (const value of [
+    failure,
+    { structuredContent: failure },
+    { content: [{ text: JSON.stringify(failure) }] },
+    JSON.stringify({ result: failure }),
+  ])
+    expect(toolSummary('app_runreport', value, false)).toBe(summary);
+  expect(
+    toolSummary(
+      'app_runreport',
+      {
+        kind: 'report_failure',
+        summary: 'SELECT password FROM /private/app.db',
+      },
+      false,
+    ),
+  ).toBe('Could not complete this action');
+  expect(toolSummary('app_runreport', 'arbitrary driver text', false)).toBe(
+    'Could not complete this action',
+  );
+});

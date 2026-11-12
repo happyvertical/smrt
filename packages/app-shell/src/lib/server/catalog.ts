@@ -17,6 +17,7 @@ import { collectIssuedApprovals, type PendingApproval } from './approvals.ts';
 import { runAppTool } from './builder.ts';
 import { ENGINE_TOOLS, isEngineTool, runEngineTool } from './engine-tools.ts';
 import { getShellDb, hostFor, shellDbSync } from './host.ts';
+import { HttpError } from './http.ts';
 import { runAs } from './owner.ts';
 import {
   type CallScope,
@@ -265,8 +266,25 @@ async function dispatchInner(
     return runAs({ id: principal.id, tenantId: principal.tenantId ?? '' }, () =>
       withScope(scope, async () => {
         if (isEngineTool(tool.name)) {
-          const value = await runEngineTool(tool.name, args, scope);
-          return { content: asText(value), structuredContent: value };
+          try {
+            const value = await runEngineTool(tool.name, args, scope);
+            return { content: asText(value), structuredContent: value };
+          } catch (error) {
+            if (tool.name !== 'app_runreport' || !(error instanceof HttpError))
+              throw error;
+            // Only the report adapter's sanitized message crosses this boundary.
+            // Both assistant engines retain it as an error, not a report result.
+            const value = {
+              kind: 'report_failure',
+              summary: error.message,
+              error: error.message,
+            };
+            return {
+              isError: true,
+              content: asText(value),
+              structuredContent: value,
+            };
+          }
         }
         return (await shellMcpServer().callTool({
           name: tool.name,
