@@ -44,6 +44,7 @@ import {
   requireForeignKeyAction,
 } from '../schema/foreign-key-policy.js';
 import { shortenIdentifier } from '../schema/index-utils.js';
+import { STI_CHECK_PREFIX } from '../schema/sti-hardening.js';
 import {
   isEmptyTextOnlyProbe,
   maskSampleValue,
@@ -953,12 +954,15 @@ export class SchemaComparer {
       dbIndexPredicates,
       inlineUniqueSignatures,
     );
-    const foreignKeyChanges = await this.compareForeignKeys(
-      tableName,
-      manifest,
-      dbSchema,
-      manifestSchemas,
-    );
+    const foreignKeyChanges = [
+      ...(await this.compareForeignKeys(
+        tableName,
+        manifest,
+        dbSchema,
+        manifestSchemas,
+      )),
+      ...(await this.compareTableChecks(tableName, manifest)),
+    ];
     if (notAdded.size === 0) {
       changes.push(...indexChanges, ...foreignKeyChanges);
       return changes;
@@ -1429,6 +1433,96 @@ export class SchemaComparer {
       parentColumn: foreignKey.referencesColumn,
       parentType,
     });
+  }
+
+  /**
+   * Shared-table class rules (#4932): the `smrt_ck_` constraints of a
+   * PostgreSQL table against the manifest's `checks`. A missing one is added
+   * unless live rows already break it, in which case the change is report-only
+   * with the repair spelled out. A `smrt_ck_` constraint the manifest no longer
+   * declares is dropped: its name carries a hash of its rule, so a changed rule
+   * is a new constraint. Constraints with other names are never touched.
+   */
+  private async compareTableChecks(
+    tableName: string,
+    manifest: SchemaDefinition,
+  ): Promise<SchemaChange[]> {
+    if (!this.ddlStrategy.supportsTableChecks()) return [];
+    const declared = manifest.checks ?? [];
+    let live: string[];
+    try {
+      const result = await this.db.query(
+        `SELECT con.conname AS name FROM pg_constraint AS con ` +
+          `JOIN pg_class AS rel ON rel.oid = con.conrelid ` +
+          `JOIN pg_namespace AS ns ON ns.oid = rel.relnamespace ` +
+          `WHERE con.contype = 'c' AND ns.nspname = 'public' ` +
+          `AND rel.relname = ${this.quoteLiteral(tableName)} ` +
+          `AND con.conname LIKE 'smrt\\_ck\\_%'`,
+      );
+      const rows = (
+        Array.isArray(result) ? result : result.rows || []
+      ) as Array<Record<string, unknown>>;
+      live = rows
+        .map((row) => String(row.name))
+        .filter((name) => name.startsWith(STI_CHECK_PREFIX));
+    } catch {
+      return [];
+    }
+    const quotedTable = this.quoteIdentifier(tableName);
+    const changes: SchemaChange[] = [];
+    for (const check of declared) {
+      if (live.includes(check.name)) continue;
+      const column = check.columns[0];
+      const add = `ALTER TABLE ${quotedTable} ADD CONSTRAINT ${this.quoteIdentifier(check.name)} CHECK (${check.expression})`;
+      let violated = false;
+      try {
+        const result = await this.db.query(
+          `SELECT 1 FROM ${quotedTable} WHERE NOT (${check.expression}) LIMIT 1`,
+        );
+        const rows = Array.isArray(result) ? result : result.rows || [];
+        violated = rows.length > 0;
+      } catch {
+        // A column added in this same batch does not exist yet: no rows can
+        // break the rule.
+        violated = false;
+      }
+      changes.push({
+        type: 'alter_column',
+        table: tableName,
+        name: column,
+        alteration: 'set_check',
+        mismatch: { expected: `CHECK (${check.expression})`, actual: '(none)' },
+        ...(violated
+          ? {
+              sql: `-- ${tableName}.${column} is required for some classes but live rows of those classes hold NULL`,
+              advisory: {
+                severity: 'warning' as const,
+                message:
+                  `${tableName}.${column} is required for some classes of this shared table, ` +
+                  'but live rows of those classes hold NULL. Fill them, then rerun the migration.',
+                suggestedSql: [
+                  `UPDATE ${quotedTable} SET ${this.quoteIdentifier(column)} = <value> WHERE NOT (${check.expression})`,
+                  add,
+                ],
+              },
+            }
+          : { sqlStatements: [add] }),
+      });
+    }
+    for (const name of live) {
+      if (declared.some((check) => check.name === name)) continue;
+      changes.push({
+        type: 'alter_column',
+        table: tableName,
+        name,
+        alteration: 'drop_check',
+        mismatch: { expected: '(not declared)', actual: name },
+        sqlStatements: [
+          `ALTER TABLE ${quotedTable} DROP CONSTRAINT IF EXISTS ${this.quoteIdentifier(name)}`,
+        ],
+      });
+    }
+    return changes;
   }
 
   private async compareForeignKeys(

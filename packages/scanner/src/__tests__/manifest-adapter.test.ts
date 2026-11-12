@@ -395,6 +395,8 @@ describe('ManifestAdapter', () => {
           required: true,
           _meta: {
             sqlType: 'UUID',
+            // smrt's tenant filter needs it: the manifest says so (#4932).
+            requiredFor: 'tenant-scope',
             __tenancy: {
               isTenantIdField: true,
               autoFilter: true,
@@ -404,6 +406,23 @@ describe('ManifestAdapter', () => {
             },
           },
         });
+      });
+
+      it('gives no reason to a tenant ID that is not required', () => {
+        const field: RawFieldDefinition = {
+          name: 'tenantId',
+          accessibility: 'public',
+          typeAnnotation: 'string | null',
+          initializer: 'null',
+          optional: false,
+          hasDecimalPoint: false,
+          numericValue: null,
+          decorators: [{ name: 'tenantId', arguments: ['{ nullable: true }'] }],
+          isStatic: false,
+          readonly: false,
+          line: 1,
+        };
+        expect(adapter.convertField(field)?._meta?.requiredFor).toBeUndefined();
       });
 
       it('should preserve nullable tenant ID decorator options', () => {

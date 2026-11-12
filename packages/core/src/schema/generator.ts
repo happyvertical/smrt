@@ -39,6 +39,7 @@ import {
   quoteIdentifier,
   quoteStringLiteral,
 } from './sql-identifiers.js';
+import { stiHardeningChecks } from './sti-hardening.js';
 import type {
   ColumnDefinition,
   DeclaredIndexDefinition,
@@ -1903,17 +1904,36 @@ export class SchemaGenerator {
       subtreeOf: (className) => ObjectRegistry.getDescendants(className),
     });
 
+    // A subclass that makes a field required the base leaves optional (#4932).
+    const hardeningChecks = stiHardeningChecks(
+      tableName,
+      (fieldName) => this.toSnakeCase(fieldName),
+      await ObjectRegistry.getAllFields(baseClassName),
+      await Promise.all(
+        descendants.map(async (className) => ({
+          className,
+          fields: await ObjectRegistry.getAllFields(className),
+        })),
+      ),
+    );
+
     return {
       tableName,
       columns,
       indexes,
       triggers: [],
+      ...(hardeningChecks.length > 0 ? { checks: hardeningChecks } : {}),
       foreignKeys: this.extractForeignKeys(columns),
       dependencies: this.extractForeignKeys(columns)
         .map((foreignKey) => foreignKey.referencesTable)
         .filter((dependency) => dependency !== tableName),
       version: sha256Hex(
-        JSON.stringify({ columns, baseClassName, descendants }),
+        JSON.stringify({
+          columns,
+          baseClassName,
+          descendants,
+          ...(hardeningChecks.length > 0 ? { hardeningChecks } : {}),
+        }),
       ).substring(0, 8),
       packageName: 'runtime',
       baseClass: 'SmrtObject',
@@ -2137,6 +2157,17 @@ export class SchemaGenerator {
         this.findDescendantsInManifest(className, manifest),
     });
 
+    // A subclass that makes a field required the base leaves optional (#4932).
+    const hardeningChecks = stiHardeningChecks(
+      tableName,
+      (fieldName) => this.toSnakeCase(fieldName),
+      Object.entries(manifest.objects[baseKey]?.fields ?? {}),
+      descendants.map((className) => ({
+        className,
+        fields: Object.entries(manifest.objects[className]?.fields ?? {}),
+      })),
+    );
+
     const schemaDefinition: SchemaDefinition = {
       tableName,
       columns: this.convertManifestColumnsToSchemaColumns(columns),
@@ -2150,6 +2181,7 @@ export class SchemaGenerator {
         jsonPath: idx.jsonPath,
       })),
       triggers: [],
+      ...(hardeningChecks.length > 0 ? { checks: hardeningChecks } : {}),
       foreignKeys: this.extractForeignKeys(
         this.convertManifestColumnsToSchemaColumns(columns),
       ),
@@ -2166,7 +2198,12 @@ export class SchemaGenerator {
 
     // Generate version hash
     const version = sha256Hex(
-      JSON.stringify({ columns, baseClassName, descendants }),
+      JSON.stringify({
+        columns,
+        baseClassName,
+        descendants,
+        ...(hardeningChecks.length > 0 ? { hardeningChecks } : {}),
+      }),
     ).substring(0, 8);
 
     return {
@@ -2174,6 +2211,7 @@ export class SchemaGenerator {
       ddl,
       columns,
       indexes,
+      ...(hardeningChecks.length > 0 ? { checks: hardeningChecks } : {}),
       version,
     };
   }
