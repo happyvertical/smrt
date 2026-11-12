@@ -18,6 +18,7 @@ export default defineConfig({
     },
   },
   test: {
+    globalSetup: ['../vitest/src/test-home.global-setup.ts'],
     globals: true,
     environment: 'jsdom',
     // jsdom's storage under Node 26 (the host accessor shadows it).

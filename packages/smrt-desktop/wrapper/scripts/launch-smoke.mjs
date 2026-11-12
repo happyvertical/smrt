@@ -46,6 +46,7 @@ import { homedir, tmpdir } from 'node:os';
 import { basename, dirname, join, resolve } from 'node:path';
 import { setTimeout as sleep } from 'node:timers/promises';
 import { fileURLToPath } from 'node:url';
+import { installTestHome } from '../../../vitest/src/test-home.ts';
 
 const here = dirname(fileURLToPath(import.meta.url));
 const wrapperDir = resolve(here, '..');
@@ -314,8 +315,12 @@ export async function smokeSidecar(options) {
       const secret = randomBytes(32).toString('hex');
       const origin = `http://127.0.0.1:${port}`;
       const env = buildSidecarEnv(manifest, { port, dataDirectory: data, ownerLinkSecret: secret }, {});
-      // HOME is needed for CLI detection, never for the location of app data.
+      // Keep custody state and CLI detection in the owned smoke tree on every OS.
       env.HOME = scratch;
+      env.USERPROFILE = scratch;
+      env.XDG_STATE_HOME = join(scratch, '.local', 'state');
+      env.LOCALAPPDATA = join(scratch, 'AppData', 'Local');
+      env.APPDATA = join(scratch, 'AppData', 'Roaming');
       env.PATH = process.env.PATH;
       const started = seams.now();
       child = seams.spawn({ command: join(bundle, plan.sidecarFrom), args: manifest.args, cwd: manifest.workingDirectory === 'app' ? join(resources, 'app') : resources, env });
@@ -602,7 +607,10 @@ async function main() {
 }
 
 if (process.argv[1] && resolve(process.argv[1]) === fileURLToPath(import.meta.url)) {
-  main().catch((error) => {
+  // The wrapper derives OS data/log paths too, before it starts its sidecar.
+  // Even --keep never retains the temporary home or one-time owner links.
+  const disposeTestHome = installTestHome();
+  main().finally(disposeTestHome).catch((error) => {
     console.error(`launch-smoke: ${error.message}`);
     process.exit(1);
   });

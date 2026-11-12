@@ -339,6 +339,9 @@ async function provisionReferenceApp(
     ...inheritedEnvironment,
     // Keep every derived state/lock/cache root inside the temporary tree.
     HOME: homeRoot,
+    USERPROFILE: homeRoot,
+    LOCALAPPDATA: join(homeRoot, 'AppData', 'Local'),
+    APPDATA: join(homeRoot, 'AppData', 'Roaming'),
     XDG_STATE_HOME: join(homeRoot, '.local', 'state'),
     SMRT_DATA_DIR: dataRoot,
     SMRT_RUNTIME_PROFILE: 'local',

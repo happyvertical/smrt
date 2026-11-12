@@ -37,7 +37,7 @@ export default defineConfig({
     // The template's tsconfig extends `./.svelte-kit/tsconfig.json`, which
     // only exists after a consumer runs `svelte-kit sync`. This setup
     // writes a minimal stub before tests run and removes it after.
-    globalSetup: ['./__tests__/setup/svelte-kit-stub.ts'],
+    globalSetup: ['../vitest/src/test-home.global-setup.ts', './__tests__/setup/svelte-kit-stub.ts'],
     // CI runners are slow and the server-load test walks the real
     // collection bootstrap path (registry + sqlite) before failing over.
     // The hook timeout covers its beforeAll, which imports smrt-core.

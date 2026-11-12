@@ -9,6 +9,7 @@
     "scripts/prune-svelte-package-artifacts.js",
     "scripts/package-test-artifacts.mjs",
     "vitest.workspace.ts",
+    "packages/vitest/src/test-home*.ts",
     "biome.json",
     "**/AGENTS.md",
     "**/agents/**/*.md",
@@ -26,6 +27,7 @@
     "TMP",
     "TEMP",
     "CI_TEST_TMPDIR",
+    "SMRT_TEST_REAL_STATE_BASES",
     "NODE_COMPILE_CACHE"
   ],
   "tasks": {
