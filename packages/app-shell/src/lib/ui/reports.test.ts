@@ -56,6 +56,21 @@ it('names added, changed, renamed and removed reports in review', () => {
     expect.arrayContaining(changes.map((c) => c.text)),
   );
   expect(changes.map((c) => c.text).join(' ')).toContain(
-    'Renamed report Sales by customer to newSales.',
+    'Changed the link of report Sales by customer.',
   );
+});
+
+it('uses labels on both sides when a key rename also changes the visible name', () => {
+  expect(
+    reportChanges(
+      { sales: report },
+      { draftSummary: { ...report, label: 'Customer totals' } },
+      'rename report sales -> draftSummary',
+    ),
+  ).toEqual([
+    {
+      kind: 'changed',
+      text: 'Renamed report Sales by customer to Customer totals.',
+    },
+  ]);
 });

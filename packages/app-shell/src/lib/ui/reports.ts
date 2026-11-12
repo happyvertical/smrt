@@ -106,12 +106,15 @@ export function reportChanges(
 ): ReportChange[] {
   const rename = /rename report (\w+) -> (\w+)/.exec(summary);
   const label = (name: string, reports: Record<string, ReportDef>) =>
-    reports[name]?.label ?? reports[name]?.spec.title ?? name;
+    reports[name]?.label ?? reports[name]?.spec.title ?? 'Untitled report';
   if (rename && before[rename[1]] && after[rename[2]])
     return [
       {
         kind: 'changed',
-        text: `Renamed report ${label(rename[1], before)} to ${rename[2]}.`,
+        text:
+          label(rename[1], before) === label(rename[2], after)
+            ? `Changed the link of report ${label(rename[1], before)}.`
+            : `Renamed report ${label(rename[1], before)} to ${label(rename[2], after)}.`,
       },
     ];
   return [

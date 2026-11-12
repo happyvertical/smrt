@@ -154,7 +154,7 @@ export async function runEngineTool(
       break;
     }
     case 'app_renamereport':
-      summary = `Renamed the report ${report?.label ?? report?.spec.title ?? 'you chose'} to ${String(args.to)}`;
+      summary = `Changed the link of report ${report?.label ?? report?.spec.title ?? 'you chose'}.`;
       break;
     case 'app_removereport':
       summary = `Removed the report ${report?.label ?? report?.spec.title ?? 'you chose'}`;

@@ -100,3 +100,7 @@ sum's source field label and calculated input labels when available. Results,
 CSV and failed assistant runs use the same safe wording; compiler/driver text
 and stacks are never displayed. Changed-field failures retain their repair
 message. Record input limits are unchanged.
+
+Report key renames change the report's link. Draft review, History and tool
+summaries say this using the report label; visible renames use labels on both
+sides and never display the key.

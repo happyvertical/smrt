@@ -113,10 +113,10 @@ it('renames and removes only in the draft; history and preview use plain words',
       .status,
   ).toBe(200);
   expect((await previewDraft()).preview.versions.at(-1)?.summary).toContain(
-    'Renamed report Sales',
+    'Changed the link of report Sales.',
   );
   expect((await historyFor('draft')).at(-1)?.summary).toContain(
-    'Renamed report Sales',
+    'Changed the link of report Sales.',
   );
   expect((await GET(event(h.owner, 'live'))).status).toBe(200);
   expect((await GET(event(h.owner, 'draft'))).status).toBe(404);

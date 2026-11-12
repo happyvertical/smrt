@@ -84,3 +84,23 @@ it('uses the kept record label in a draft merge summary without exposing ids', a
   });
   await discardNow();
 });
+
+it('describes a report key rename as a link change without printing either key', async () => {
+  await startDraft('Report link', h.owner.id);
+  try {
+    const result = await callTool(
+      h.owner,
+      'app_renamereport',
+      { from: 'sales', to: 'draftSummary' },
+      { structure: 'draft', records: 'draft' },
+    );
+    expect(result.structuredContent).toMatchObject({
+      summary: 'Changed the link of report Revenue.',
+    });
+    expect(
+      (result.structuredContent as { summary: string }).summary,
+    ).not.toMatch(/sales|draftSummary/);
+  } finally {
+    await discardNow();
+  }
+});
