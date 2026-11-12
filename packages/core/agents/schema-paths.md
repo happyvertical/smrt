@@ -42,23 +42,61 @@ registry paths, and through `getAllSchemasAsDefinitions()`, asserting identical
 column and index sets. Extend that fixture with every generator change; a
 divergence is a bug in the generator, not an exception to add to the test.
 
-### Own-table subclasses carry ancestor fields (#4922)
+### Field inheritance: one rule, one module (#4922, #4940)
 
-A model with its own table (CTI) that extends a concrete own-table model has
-the ancestors' fields in its table definition, base to child, the nearest
-declaration replacing a farther one and the subclass's own winning over all.
-This holds for a differently named subclass (`VipCustomer extends Customer`
-gets `name`/`phone` in `vip_customers`) and a same-named one (an app
-`Customer` extending a package `Customer` keeps the parent's columns on
-`customers`; the parent comes from the dependency manifest through
-`extendsQualified`). An STI family keeps the oldest-owner rule; framework
-abstract bases merge as before (`SmrtHierarchical.parentId` stays bound to the
-descendant). Sites: `ManifestGenerator.mergeInheritedFields()` (build),
-`getAllFields()` / `getOwnTableFieldsSync()` in `registry/inheritance-resolver.ts`
-(registry path and `getAllSchemasAsDefinitions()`), `runtimeModelEntry()`.
-`packages/scanner` delegates non-STI merging to core. Existing databases only
-gain columns: a required inherited column with no default on a populated table
-is the usual "required column not added" report.
+"What fields does a class have, counting what it inherits" is decided in ONE
+place: `resolveInheritedFields()` in `src/schema/field-inheritance.ts`, a pure
+module (no registry or scanner imports, generic over any field shape with
+`type` / `required` / `enum` / `description` / `related` / `_meta`). Callers:
+`ManifestGenerator.mergeInheritedFields()` (build; manifest representation),
+`getAllFields()` and `getOwnTableFieldsSync()` in
+`registry/inheritance-resolver.ts` (registry representation; the latter feeds
+`getAllSchemasAsDefinitions()` and `runtimeModelEntry()`). Do not write a
+second merge loop; extend the module and the differential test.
+
+Ancestors apply base to child, then the class's own fields last:
+
+- **Nearest concrete declaration wins**, between ancestors too, for own-table
+  and shared-table (STI) classes alike. The app owns its shape: a nearer
+  declaration may widen or narrow a bound, drop `unique`, relax `required`,
+  or change the type; nothing of the replaced declaration (`required`,
+  `sqlType`, `backfill`, `unique`, `min`/`max`, default) survives. Only a
+  missing `enum` / `description` is filled from the replaced one (registry
+  representation also keeps the tenancy marker, combines validators and keeps
+  a runtime `value`; a manifest carries none of those).
+- A concrete declaration replaces a framework abstract base's default whole.
+- `SmrtHierarchical.parentId` becomes a nullable self-referencing
+  `foreignKey` bound to the class's own table: the class itself (own-table),
+  the family root, i.e. the first concrete class in the chain (shared-table).
+  A concrete ancestor's own `parentId` never replaces an own-table class's
+  binding. The registry table of a hierarchical class gains `parent_id` even
+  when its registration declares no `parentId` (decorated classes, an
+  unmerged manifest); the schema builder's FK pass binds that field to the
+  class's own table without a relationship lookup.
+- Methods merge by a different rule (`mergeInheritedFields()` methods loop)
+  and are not part of this.
+
+An own-table class carries the ancestors' fields in its table definition: a
+differently named subclass (`VipCustomer extends Customer` gets `name`/`phone`
+in `vip_customers`) and a same-named one (an app `Customer` extending a package
+`Customer` keeps the parent's columns on `customers`; the parent comes from the
+dependency manifest through `extendsQualified`). Existing databases only gain
+columns: a required inherited column with no default on a populated table is
+the usual "required column not added" report. How a shared table unions its
+family's columns is the schema builder's job and is unchanged.
+
+`src/schema/field-inheritance-parity.test.ts` runs 144 declaration shapes
+(table strategy x chain depth/placement x `SmrtHierarchical` base x the
+nearer class's behaviour) through the manifest path (real scanner, manifest
+generation, `registerFromManifest`) and two registry routes (decorated classes;
+an unmerged manifest) and requires identical effective fields and columns. Its
+known-disagreement list is empty and stays empty.
+
+`packages/scanner/src/inheritance-resolver.ts` (`mergeFieldsForSTI`) still
+pre-merges shared-table fields at the raw AST level, nearest declaration
+winning, before types are converted. It works on `RawFieldDefinition`s (type
+annotations and decorators), not converted fields, so it does not use this
+module; the two agree because core's rule is nearest-wins as well.
 
 ### Index rules (#2359)
 

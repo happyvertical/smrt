@@ -43,9 +43,9 @@ describe('issue #2970 aggregated-manifest attribution probe', () => {
     await import(registerModule);
 
     // `Branch extends TreeNode extends SmrtHierarchical`: an own-table
-    // subclass carries its concrete parent's fields. A first version of
-    // #4922 also pulled the framework base's `parentId` into this path and
-    // made the foreign-key pass throw for every hierarchical class here.
+    // subclass carries its concrete parent's fields. Pulling the framework
+    // base's `parentId` into this path once made the foreign-key pass throw
+    // for every hierarchical class here; it must resolve (asserted below).
     const schemas = ObjectRegistry.getAllSchemasAsDefinitions();
     expect(Object.keys(schemas.branches.columns)).toEqual(
       expect.arrayContaining(['label', 'depth']),
@@ -53,5 +53,16 @@ describe('issue #2970 aggregated-manifest attribution probe', () => {
     // The parent's own table is what it was before #4922.
     expect(Object.keys(schemas.tree_nodes.columns)).toContain('label');
     expect(schemas.tree_nodes.columns).not.toHaveProperty('depth');
+
+    // A hierarchical class's table has `parent_id`, bound to its OWN table
+    // (#4940, #4941): the field comes from the framework base through the
+    // one field-inheritance rule and the foreign-key pass resolves it for a
+    // class registered from a consumer manifest.
+    expect(schemas.tree_nodes.columns.parent_id?.foreignKey?.table).toBe(
+      'tree_nodes',
+    );
+    expect(schemas.branches.columns.parent_id?.foreignKey?.table).toBe(
+      'branches',
+    );
   });
 });

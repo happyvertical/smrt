@@ -195,7 +195,7 @@ describe('#4922 manifest: own-table subclass fields (row 1)', () => {
     expect(columns.filter((c) => c === 'name')).toHaveLength(1);
   });
 
-  it('keeps the STI rule: the oldest owner keeps storage', () => {
+  it('shared table: the nearest concrete declaration wins, between ancestors too (#4940)', () => {
     const manifest = generate(APP, [
       def(
         APP,
@@ -206,8 +206,11 @@ describe('#4922 manifest: own-table subclass fields (row 1)', () => {
       def(APP, 'Memo', { title: { type: 'text' } }, { extends: 'Doc' }),
       def(APP, 'Note', { body: { type: 'text' } }, { extends: 'Memo' }),
     ]);
-    // Note does not redeclare `title`: the oldest owner's declaration stays.
-    expect(manifest.objects[`${APP}:Note`].fields.title.required).toBe(true);
+    // Memo's declaration is nearer than Doc's, and Note does not redeclare it.
+    // (Before #4940 the oldest owner's `required: true` stayed for definitions
+    // the scanner had not pre-merged; a scanned same-package chain was
+    // already nearest-wins.)
+    expect(manifest.objects[`${APP}:Note`].fields.title.required).toBeFalsy();
   });
 
   it('keeps the SmrtHierarchical parentId bound to the subclass itself', () => {

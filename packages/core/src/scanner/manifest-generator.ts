@@ -40,6 +40,10 @@ import {
 } from '../schema/conflict-target.js';
 import type { DatabaseEngine } from '../schema/ddl/types.js';
 import {
+  type FieldInheritanceLink,
+  resolveInheritedFields,
+} from '../schema/field-inheritance.js';
+import {
   resolveForeignKeyDeleteAction,
   resolveForeignKeyUpdateAction,
 } from '../schema/foreign-key-policy.js';
@@ -2182,68 +2186,10 @@ export class ManifestGenerator {
     return classnameToTablename(className);
   }
 
-  private normalizeFrameworkInheritedField(
-    ancestorName: string,
-    fieldName: string,
-    fieldDef: FieldDefinition,
-    childClassName: string,
-  ): FieldDefinition {
-    if (
-      this.simpleClassName(ancestorName) === 'SmrtHierarchical' &&
-      fieldName === 'parentId'
-    ) {
-      return {
-        ...fieldDef,
-        type: 'foreignKey',
-        related: childClassName,
-        required: false,
-        _meta: {
-          ...(fieldDef._meta || {}),
-          nullable: true,
-        },
-      };
-    }
-
-    return fieldDef;
-  }
-
   private simpleClassName(className: string): string {
     return className.includes(':')
       ? className.split(':').pop() || className
       : className;
-  }
-
-  /**
-   * Fill missing manifest metadata on a child's own redeclared field from the
-   * inherited (nearest declaring ancestor) definition it replaces.
-   *
-   * Child-wins: every property the child's own field carries is kept, so a
-   * redeclaration that sets its own options still replaces the ancestor's.
-   * But a bare redeclaration — no annotation, no decorator, common for STI
-   * discriminators like `override contractType = ContractType.ORDER` —
-   * converts to a bare field and would otherwise drop the ancestor's
-   * `enum` and `description` during this manifest-level merge, most visibly
-   * when the child's manifest comes from an external package built by a
-   * scanner that predates the raw-level fill (#4005). Fill only what is
-   * missing so closed literal sets and field docs survive the merge.
-   *
-   * @param inherited - The merged ancestor field being overridden.
-   * @param own - The child's own field definition, which wins.
-   * @returns The child's field with missing `enum`/`description` filled in.
-   */
-  private mergeInheritedFieldOverride(
-    inherited: FieldDefinition,
-    own: FieldDefinition,
-  ): FieldDefinition {
-    return {
-      ...own,
-      ...(own.enum === undefined && inherited.enum !== undefined
-        ? { enum: inherited.enum }
-        : {}),
-      ...(own.description === undefined && inherited.description !== undefined
-        ? { description: inherited.description }
-        : {}),
-    };
   }
 
   /**
@@ -2253,10 +2199,11 @@ export class ManifestGenerator {
    * (they inherit from parent). This method merges parent fields into child manifests
    * so that runtime code doesn't need to do field resolution.
    *
-   * An own-table (CTI) subclass of a concrete own-table class also gets its
-   * ancestors' fields (#4922), the nearest declaration winning and its own
-   * declaration winning over all; framework abstract bases and STI merge as
-   * before.
+   * Fields merge by the one rule in `schema/field-inheritance.ts` (#4940),
+   * shared with the registry: ancestors base to child, the nearest concrete
+   * declaration winning and the class's own declaration winning over all.
+   * An own-table (CTI) subclass of a concrete own-table class gets its
+   * ancestors' fields too (#4922).
    *
    * Also handles collection classes (SmrtCollection<T>) that should inherit their
    * item class's tableName and collection when the item uses STI.
@@ -2353,17 +2300,15 @@ export class ManifestGenerator {
         `[manifest-generator] Inheritance chain for ${obj.className}: ${inheritanceChain.join(' -> ')}`,
       );
 
-      // Merge fields from ancestors (base to child).
-      //
-      // STI path: pull in fields from every ancestor — they all share one
-      // table.
-      //
-      // Own-table (CTI) path: pull in fields from framework abstract bases
-      // (SmrtHierarchical, …) and from concrete ancestors (#4922). A nearer
-      // ancestor's declaration REPLACES a farther one, unlike STI where the
-      // oldest owner keeps storage; the child's own fields apply last.
-      const mergedFields: Record<string, FieldDefinition> = {};
-      const mergedFieldOwners = new Map<string, string>();
+      // Merge fields from ancestors (base to child) by the one shared rule
+      // (`resolveInheritedFields`, #4940): STI subclasses share one table, so
+      // every ancestor's columns are needed; an own-table (CTI) subclass
+      // carries its concrete ancestors' fields and framework abstract bases'
+      // too (#4922). Both: the nearest declaration wins and the child's own
+      // fields apply last. The universal object/collection primitives are not
+      // models: for an own-table class their own fields (core's manifest
+      // declares them) never merge.
+      const fieldLinks: Array<FieldInheritanceLink<FieldDefinition>> = [];
       const mergedMethods: Record<string, MethodDefinition> = {};
 
       for (const [index, ancestorName] of inheritanceChain.entries()) {
@@ -2373,74 +2318,20 @@ export class ManifestGenerator {
         const ancestorIsFrameworkBase =
           FRAMEWORK_ABSTRACT_BASE_NAMES.has(ancestorName);
 
-        // FIELDS: STI subclasses share one table, so every ancestor's
-        // columns are needed. An own-table subclass carries its concrete
-        // ancestors' fields in its own table definition too (#4922), so every
-        // ancestor contributes; only the replacement rule differs (below).
-        if (usesSTI) {
-          // Keep the oldest concrete STI declaration, but let a concrete
-          // class replace a framework abstract default. For example, Event
-          // refines SmrtHierarchical.parentId with its relationship target
-          // and an engine-scoped physical constraint. The local child's own
-          // fields are still applied after this loop.
-          for (const [fieldName, fieldDef] of Object.entries(ancestor.fields)) {
-            const existingOwner = mergedFieldOwners.get(fieldName);
-            const replacesFrameworkDefault =
-              existingOwner !== undefined &&
-              FRAMEWORK_ABSTRACT_BASE_NAMES.has(
-                this.simpleClassName(existingOwner),
-              ) &&
-              !FRAMEWORK_ABSTRACT_BASE_NAMES.has(
-                this.simpleClassName(ancestorName),
-              );
-            if (!existingOwner || replacesFrameworkDefault) {
-              mergedFields[fieldName] = this.normalizeFrameworkInheritedField(
-                ancestorName,
-                fieldName,
-                fieldDef,
-                obj.className,
-              );
-              mergedFieldOwners.set(fieldName, ancestorName);
-            } else if (usesSTI) {
-              // Storage stays with its oldest owner; enum/docs follow the
-              // nearest declaring ancestor, including prebuilt manifests.
-              mergedFields[fieldName] = {
-                ...mergedFields[fieldName],
-                ...(fieldDef.enum !== undefined ? { enum: fieldDef.enum } : {}),
-                ...(fieldDef.description !== undefined
-                  ? { description: fieldDef.description }
-                  : {}),
-              };
-            }
-          }
-        }
-
-        // The universal object/collection primitives are not models: their
-        // own fields (core's manifest declares them) never merge into a model.
         if (
-          !usesSTI &&
-          (ancestorIsFrameworkBase ||
-            !FRAMEWORK_METHOD_BASE_NAMES.has(ancestorName))
+          usesSTI ||
+          ancestorIsFrameworkBase ||
+          !FRAMEWORK_METHOD_BASE_NAMES.has(ancestorName)
         ) {
-          for (const [fieldName, fieldDef] of Object.entries(ancestor.fields)) {
-            const existingOwner = mergedFieldOwners.get(fieldName);
-            // `SmrtHierarchical.parentId` points at the class that owns the
-            // table, so a concrete ancestor's own binding never replaces the
-            // framework's normalized one for a descendant's table.
-            const keepsFrameworkBinding =
-              !ancestorIsFrameworkBase &&
-              existingOwner !== undefined &&
-              this.simpleClassName(existingOwner) === 'SmrtHierarchical' &&
-              fieldName === 'parentId';
-            if (keepsFrameworkBinding) continue;
-            mergedFields[fieldName] = this.normalizeFrameworkInheritedField(
-              ancestorName,
-              fieldName,
-              fieldDef,
-              obj.className,
-            );
-            mergedFieldOwners.set(fieldName, ancestorName);
-          }
+          fieldLinks.push({
+            name: ancestorName,
+            fields: Object.entries(ancestor.fields),
+            // The object/collection primitives are scaffolding too: a
+            // shared-table family reaches them through its chain.
+            frameworkBase:
+              ancestorIsFrameworkBase ||
+              FRAMEWORK_METHOD_BASE_NAMES.has(ancestorName),
+          });
         }
 
         // METHODS (#2624): methods are not columns and never needed the
@@ -2477,13 +2368,15 @@ export class ManifestGenerator {
         }
       }
 
-      // Add child's own fields (override any parent fields with same name)
-      for (const [fieldName, fieldDef] of Object.entries(obj.fields)) {
-        const inherited = mergedFields[fieldName];
-        mergedFields[fieldName] = inherited
-          ? this.mergeInheritedFieldOverride(inherited, fieldDef)
-          : fieldDef;
-      }
+      const mergedFields = Object.fromEntries(
+        resolveInheritedFields({
+          strategy: usesSTI ? 'shared-table' : 'own-table',
+          className: obj.className,
+          ancestors: fieldLinks,
+          own: Object.entries(obj.fields),
+          representation: 'manifest',
+        }),
+      );
 
       // Add child's own methods
       for (const [methodName, methodDef] of Object.entries(obj.methods || {})) {

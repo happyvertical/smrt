@@ -445,10 +445,20 @@ function applyContributorForeignKeys(
       continue;
     }
     const [legacyTargetName, declaredTargetColumn] = field.related.split('.');
-    const resolvedTarget = ObjectRegistry.resolveRelationshipTarget(
-      contributor.qualifiedName,
-      fieldName,
-    );
+    // `SmrtHierarchical.parentId` that this class's registration does not
+    // declare itself (decorated classes, an unmerged manifest) was bound to
+    // the class's own table by the field-inheritance rule (#4940); there is no
+    // relationship declaration to resolve, and the class is its own target.
+    const bindsOwnTable =
+      fieldName === 'parentId' &&
+      field.related === contributor.registered.name &&
+      !contributor.registered.fields.has(fieldName);
+    const resolvedTarget = bindsOwnTable
+      ? contributor.qualifiedName
+      : ObjectRegistry.resolveRelationshipTarget(
+          contributor.qualifiedName,
+          fieldName,
+        );
     if (resolvedTarget === null) {
       throw new Error(
         `Cannot resolve foreign key ${contributor.qualifiedName}.${fieldName}: target constructor is unregistered or the target name is ambiguous`,

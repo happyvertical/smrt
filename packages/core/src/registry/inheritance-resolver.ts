@@ -9,6 +9,10 @@ import { ConfigurationError } from '../errors';
 import type { SmrtObject } from '../object';
 import { ObjectRegistry } from '../registry';
 import type { MethodDefinition } from '../scanner/types.js';
+import {
+  type FieldInheritanceLink,
+  resolveInheritedFields,
+} from '../schema/field-inheritance';
 import { prependSmrtSystemFields } from '../system-fields';
 import { isFrameworkBaseClass } from './framework-base-classes';
 import { findClass, findClassStrict } from './name-resolver';
@@ -227,15 +231,8 @@ export async function getAllFields(
   const { onMissingAncestor } = getInheritanceConfig();
 
   // For local classes (not from manifests), merge fields from inheritance chain
-  const allFields = new Map<string, InheritedFieldDefinition>();
-  const frameworkOwned = new Set<string>();
   const chain = getInheritanceChain(className);
-
-  // An own-table subclass carries its concrete ancestors' fields in its own
-  // table with the nearest declaration winning (#4922), as the manifest path
-  // does; STI keeps the merge-in-place rule (storage stays with the oldest
-  // owner).
-  const ownTable = ObjectRegistry.getSTIBase(className) === null;
+  const ancestors: Array<FieldInheritanceLink<InheritedFieldDefinition>> = [];
 
   // Walk chain from base to child (parent fields first)
   for (const ancestorName of chain) {
@@ -280,287 +277,122 @@ export async function getAllFields(
       continue;
     }
 
-    mergeAncestorFields(
-      allFields,
-      ancestorName,
-      ancestor,
-      className,
-      ownTable,
-      frameworkOwned,
-    );
+    if (ancestor !== registered) ancestors.push(toLink(ancestor));
   }
+
+  // An own-table subclass carries its concrete ancestors' fields in its own
+  // table with the nearest declaration winning (#4922); a shared-table family
+  // resolves by the same rule (#4940).
+  const allFields = resolveRegistryFields(
+    registered,
+    ancestors,
+    ObjectRegistry.getSTIBase(className) === null
+      ? 'own-table'
+      : 'shared-table',
+  );
 
   registered.inheritedFields = new Map(allFields);
 
   return prependSmrtSystemFields(new Map<string, RegisteredField>(allFields));
 }
 
-/**
- * Merge one ancestor's fields into `allFields`.
- *
- * An own-table class (#4922) takes its nearer CONCRETE declaration of a field
- * whole, as the manifest path does: nothing of the replaced declaration
- * (`required`, `sqlType`, `backfill`, ...) survives except a missing `enum` /
- * `description` and the tenancy marker. A field that started at a framework
- * abstract base (`frameworkOwned`) and every STI field keep the
- * `mergeFieldConfigs` merge, so a framework binding is never replaced.
- */
-function mergeAncestorFields(
-  allFields: Map<string, InheritedFieldDefinition>,
-  ancestorName: string,
+function toLink(
   ancestor: RegisteredClass,
-  className: string,
-  ownTable: boolean,
-  frameworkOwned: Set<string>,
-): void {
-  const fromFramework = isFrameworkBaseClass(
-    ancestor.name,
-    ancestor.packageName,
-  );
-  for (const [fieldName, field] of ancestor.fields) {
-    const normalizedField = normalizeFrameworkInheritedField(
-      ancestorName,
-      fieldName,
-      field,
-      className,
-    );
-    const existingField = allFields.get(fieldName);
-    if (!existingField) {
-      // New field from parent
-      allFields.set(fieldName, normalizedField);
-      if (fromFramework) frameworkOwned.add(fieldName);
-      continue;
-    }
-    if (ownTable && !frameworkOwned.has(fieldName)) {
-      allFields.set(
-        fieldName,
-        replaceInheritedField(existingField, normalizedField, fieldName),
-      );
-      continue;
-    }
-    // Field exists - merge configs
-    allFields.set(
-      fieldName,
-      mergeFieldConfigs(existingField, normalizedField, fieldName),
-    );
-  }
-}
-
-/**
- * The nearer declaration replaces the inherited one (the registry twin of
- * `mergeInheritedFieldOverride`): it fills only a missing `enum` or
- * `description`, plus the tenant-id marker a decorator registered, which the
- * merge path has always preserved.
- */
-function replaceInheritedField(
-  inherited: InheritedFieldDefinition,
-  own: InheritedFieldDefinition,
-  fieldName: string,
-): InheritedFieldDefinition {
-  // Same developer warning the merge path gives; the child's type still wins.
-  const isTenantField =
-    inherited.__tenancy?.isTenantIdField ||
-    inherited._meta?.__tenancy?.isTenantIdField;
-  if (
-    own.type &&
-    own.type !== inherited.type &&
-    !(isTenantField && fieldName === 'tenantId')
-  ) {
-    logger.warn(
-      `Field type mismatch: "${fieldName}" is ${inherited.type} in parent but ${own.type} in child. Using child type.`,
-    );
-  }
-  const meta: Record<string, unknown> = { ...(own._meta || {}) };
-  const inheritedEnum = inherited.enum ?? inherited._meta?.enum;
-  if (own.enum === undefined && meta.enum === undefined && inheritedEnum) {
-    meta.enum = inheritedEnum;
-  }
-  const inheritedDescription =
-    inherited.description ?? inherited._meta?.description;
-  if (
-    own.description === undefined &&
-    meta.description === undefined &&
-    inheritedDescription !== undefined
-  ) {
-    meta.description = inheritedDescription;
-  }
+): FieldInheritanceLink<InheritedFieldDefinition> {
   return {
-    ...own,
-    _meta: meta as InheritedFieldDefinition['_meta'],
-    ...(own.__tenancy === undefined && inherited.__tenancy !== undefined
-      ? { __tenancy: inherited.__tenancy }
-      : {}),
+    name: ancestor.name,
+    fields: ancestor.fields,
+    frameworkBase: isFrameworkBaseClass(ancestor.name, ancestor.packageName),
   };
 }
 
+/** The one field-inheritance rule, with the registry's representation. */
+function resolveRegistryFields(
+  registered: RegisteredClass,
+  ancestors: Array<FieldInheritanceLink<InheritedFieldDefinition>>,
+  strategy: 'own-table' | 'shared-table',
+): Map<string, InheritedFieldDefinition> {
+  return resolveRegistryFieldMap(
+    registered.name,
+    ancestors,
+    registered.fields,
+    strategy,
+  );
+}
+
+function resolveRegistryFieldMap(
+  className: string,
+  ancestors: Array<FieldInheritanceLink<InheritedFieldDefinition>>,
+  own: Iterable<readonly [string, InheritedFieldDefinition]>,
+  strategy: 'own-table' | 'shared-table',
+): Map<string, InheritedFieldDefinition> {
+  return resolveInheritedFields<InheritedFieldDefinition>({
+    strategy,
+    className,
+    ancestors,
+    own,
+    representation: 'registry',
+    onTypeMismatch: (fieldName, inheritedType, ownType, inherited) => {
+      // The @tenantId decorator registers 'foreignKey' while the AST sees
+      // 'text': an expected conflict, not worth a warning.
+      const isTenantField =
+        inherited.__tenancy?.isTenantIdField ||
+        inherited._meta?.__tenancy?.isTenantIdField;
+      if (isTenantField && fieldName === 'tenantId') return;
+      logger.warn(
+        `Field type mismatch: "${fieldName}" is ${inheritedType} in parent but ${ownType} in child. Using child type.`,
+      );
+    },
+  });
+}
+
 /**
- * The fields of an own-table class including its concrete ancestors' (#4922),
+ * One field redeclared by a child over its parent's declaration, resolved by
+ * the shared rule (`schema/field-inheritance.ts`): the child's declaration
+ * wins. Kept as a small entry point for callers and tests that hold exactly
+ * one pair; it is not a second implementation.
+ */
+export function mergeFieldConfigs(
+  parentField: InheritedFieldDefinition,
+  childField: InheritedFieldDefinition,
+  fieldName: string,
+): InheritedFieldDefinition {
+  const merged = resolveRegistryFieldMap(
+    'Child',
+    [
+      {
+        name: 'Parent',
+        fields: [[fieldName, parentField]],
+        frameworkBase: false,
+      },
+    ],
+    [[fieldName, childField]],
+    'own-table',
+  ).get(fieldName);
+  return merged ?? childField;
+}
+
+/**
+ * The fields of an own-table class including its ancestors' (#4922, #4940),
  * resolved synchronously from the registry as it stands. Used where the
  * authoritative schema is built without awaiting manifest loads. Other
- * classes (STI members, classes without a registered ancestor) return their
- * own fields unchanged.
+ * classes (shared-table members, classes with no registered ancestor) return
+ * their registered fields.
  */
 export function getOwnTableFieldsSync(
   registered: RegisteredClass,
 ): Map<string, RegisteredField> {
   const key = registered.qualifiedName ?? registered.name;
   if (ObjectRegistry.getSTIBase(key) !== null) return registered.fields;
-  const chain = getInheritanceChain(key);
-  const concrete: Array<[string, RegisteredClass]> = [];
-  let hierarchical = false;
-  for (const ancestorName of chain) {
+  const ancestors: Array<FieldInheritanceLink<InheritedFieldDefinition>> = [];
+  for (const ancestorName of getInheritanceChain(key)) {
     if (ancestorName === key) continue;
     const ancestor = findClass(ancestorName);
     if (!ancestor || ancestor === registered) continue;
-    if (isFrameworkBaseClass(ancestor.name, ancestor.packageName)) {
-      hierarchical ||= ancestor.name === 'SmrtHierarchical';
-      continue;
-    }
-    concrete.push([ancestorName, ancestor]);
+    ancestors.push(toLink(ancestor));
   }
-  // A class with no concrete ancestor keeps exactly its registered fields:
-  // a framework abstract base's fields already reach it through registration,
-  // bound to this class's own table.
-  if (concrete.length === 0) return registered.fields;
-  const allFields = new Map<string, InheritedFieldDefinition>();
-  const frameworkOwned = new Set<string>();
-  for (const [ancestorName, ancestor] of concrete) {
-    mergeAncestorFields(
-      allFields,
-      ancestorName,
-      ancestor,
-      key,
-      true,
-      frameworkOwned,
-    );
-  }
-  // The class's own registered fields apply last.
-  mergeAncestorFields(allFields, key, registered, key, true, frameworkOwned);
-  // A relationship target belongs to the declaring class. A concrete
-  // ancestor's `SmrtHierarchical.parentId` points at that ancestor's table;
-  // here it must point at this class's own.
-  for (const [fieldName, field] of allFields) {
-    const own = registered.fields.get(fieldName);
-    const related =
-      own?.related ??
-      (hierarchical && fieldName === 'parentId' ? registered.name : undefined);
-    if (related !== undefined && field.related !== related) {
-      allFields.set(fieldName, { ...field, related });
-    }
-  }
-  return allFields;
-}
-
-function normalizeFrameworkInheritedField(
-  ancestorName: string,
-  fieldName: string,
-  field: InheritedFieldDefinition,
-  childClassName: string,
-): InheritedFieldDefinition {
-  const simpleAncestorName = ancestorName.includes(':')
-    ? ancestorName.split(':').pop()
-    : ancestorName;
-
-  if (simpleAncestorName === 'SmrtHierarchical' && fieldName === 'parentId') {
-    return {
-      ...field,
-      type: 'foreignKey',
-      related: childClassName,
-      required: false,
-      _meta: {
-        ...(field._meta || {}),
-        nullable: true,
-      },
-    };
-  }
-
-  return field;
-}
-
-export function mergeFieldConfigs(
-  parentField: InheritedFieldDefinition,
-  childField: InheritedFieldDefinition,
-  fieldName: string,
-): InheritedFieldDefinition {
-  // Start with parent field as base
-  const merged: InheritedFieldDefinition = { ...parentField };
-
-  // Type: Child wins (warn if different)
-  if (childField.type && childField.type !== parentField.type) {
-    // Don't warn for tenantId field - expected type conflict between decorator and AST
-    // The @tenantId decorator registers as 'foreignKey' but AST sees 'text' from type annotation
-    // __tenancy can be at root level (from @tenantId decorator) or under _meta (from @smrt({ tenantScoped: true }))
-    const isTenantField =
-      parentField.__tenancy?.isTenantIdField ||
-      parentField._meta?.__tenancy?.isTenantIdField;
-    if (!(isTenantField && fieldName === 'tenantId')) {
-      logger.warn(
-        `Field type mismatch: "${fieldName}" is ${parentField.type} in parent but ${childField.type} in child. Using child type.`,
-      );
-    }
-    merged.type = childField.type;
-  }
-
-  // _meta: Merge with child precedence
-  if (childField._meta || parentField._meta) {
-    merged._meta = {
-      ...(parentField._meta || {}),
-      ...(childField._meta || {}),
-    };
-
-    // Special handling for numeric constraints (take strictest)
-    if (
-      parentField._meta?.min !== undefined &&
-      childField._meta?.min !== undefined
-    ) {
-      // Take the larger min (strictest lower bound)
-      merged._meta.min = Math.max(parentField._meta.min, childField._meta.min);
-    }
-    if (
-      parentField._meta?.max !== undefined &&
-      childField._meta?.max !== undefined
-    ) {
-      // Take the smaller max (strictest upper bound)
-      merged._meta.max = Math.min(parentField._meta.max, childField._meta.max);
-    }
-
-    // Validators: Combine (both must pass)
-    if (parentField._meta?.validate && childField._meta?.validate) {
-      // `_meta.validate` is carried through the open `FieldMeta` index
-      // signature as `unknown`; both sides are field-validator callbacks.
-      type FieldValidator = (value: unknown) => boolean | Promise<boolean>;
-      const parentValidator = parentField._meta.validate as FieldValidator;
-      const childValidator = childField._meta.validate as FieldValidator;
-      merged._meta.validate = async (value: unknown) => {
-        const parentResult = await parentValidator(value);
-        const childResult = await childValidator(value);
-        return parentResult && childResult;
-      };
-    }
-
-    // Unique: Take OR (unique if either says unique)
-    if (parentField._meta?.unique || childField._meta?.unique) {
-      merged._meta.unique = true;
-    }
-  }
-
-  // __tenancy: Preserve from parent (decorator takes precedence)
-  // This ensures @tenantId decorator metadata survives type conflicts (Issue #841)
-  // The decorator registers __tenancy metadata, but AST scanner may override the type.
-  // We need to preserve __tenancy so the interceptor can identify tenant fields.
-  if (parentField.__tenancy || childField.__tenancy) {
-    merged.__tenancy = {
-      ...(childField.__tenancy || {}),
-      ...(parentField.__tenancy || {}), // Parent (decorator) wins
-    };
-  }
-
-  // Value: Child wins
-  if (childField.value !== undefined) {
-    merged.value = childField.value;
-  }
-
-  return merged;
+  if (ancestors.length === 0) return registered.fields;
+  return resolveRegistryFields(registered, ancestors, 'own-table');
 }
 
 export async function getAllMethods(

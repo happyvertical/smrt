@@ -3487,18 +3487,12 @@ export class ObjectRegistry {
   }
 
   /**
-   * Merge field configurations from parent and child.
+   * Resolve one field redeclared by a child over its parent's declaration.
    *
-   * Thin wrapper around the single shared implementation in
-   * registry/inheritance-resolver (#1378). The previous inline copy here had
-   * drifted from the module; both paths now run the same code. Kept as a
-   * private static so existing reach-in tests (issue #841 field-merge coverage)
-   * still resolve it.
-   *
-   * @param parentField - Field config from parent class
-   * @param childField - Field config from child class
-   * @param fieldName - Name of the field (for warning messages)
-   * @returns Merged field configuration
+   * Thin wrapper over the shared field-inheritance rule
+   * (`schema/field-inheritance.ts`, #4940) via registry/inheritance-resolver.
+   * Kept as a private static so existing reach-in tests (issue #841
+   * field-merge coverage) still resolve it.
    */
   // biome-ignore lint/correctness/noUnusedPrivateClassMembers: reached in by issue #841 field-merge tests via `(ObjectRegistry as any).mergeFieldConfigs`; kept as the registry-side surface delegating to the shared resolver impl.
   private static mergeFieldConfigs(
