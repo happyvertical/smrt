@@ -26,6 +26,7 @@ export function testHomeEnvironment(): Record<string, string> {
   return Object.fromEntries(
     [
       'SMRT_FORBIDDEN_STATE_BASES',
+      'PLAYWRIGHT_BROWSERS_PATH',
       'HOME',
       'USERPROFILE',
       'XDG_STATE_HOME',
@@ -52,6 +53,18 @@ export function installTestHome(): () => void {
   mkdirSync(parent, { recursive: true });
   const home = mkdtempSync(join(realpathSync(parent), 'home-'));
   const environment = {
+    // Browser binaries are installed prerequisites, separate from writable app state.
+    // Resolve their cache before HOME/XDG isolation so Playwright workers can launch.
+    PLAYWRIGHT_BROWSERS_PATH:
+      process.env.PLAYWRIGHT_BROWSERS_PATH ??
+      join(
+        process.platform === 'darwin'
+          ? join(homedir(), 'Library', 'Caches')
+          : process.platform === 'win32'
+            ? (process.env.LOCALAPPDATA ?? join(homedir(), 'AppData', 'Local'))
+            : (process.env.XDG_CACHE_HOME ?? join(homedir(), '.cache')),
+        'ms-playwright',
+      ),
     SMRT_FORBIDDEN_STATE_BASES:
       process.env.SMRT_FORBIDDEN_STATE_BASES ??
       JSON.stringify(realTestStateBases()),

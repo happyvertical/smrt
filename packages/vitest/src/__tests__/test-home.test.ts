@@ -49,8 +49,47 @@ describe('test home isolation', () => {
     expect(result.bases).toContain(join(result.real, 'AppData', 'Local'));
     expect(existsSync(result.home)).toBe(false);
     expect(Object.keys(testHomeEnvironment()).sort()).toEqual(
-      [...names, 'SMRT_FORBIDDEN_STATE_BASES'].sort(),
+      [
+        ...names,
+        'SMRT_FORBIDDEN_STATE_BASES',
+        'PLAYWRIGHT_BROWSERS_PATH',
+      ].sort(),
     );
+  });
+
+  it('preserves browser prerequisites while isolating state and restores the caller', () => {
+    const original = process.env.PLAYWRIGHT_BROWSERS_PATH;
+    for (const configured of [undefined, '/test/browser-cache', '0']) {
+      if (configured === undefined) delete process.env.PLAYWRIGHT_BROWSERS_PATH;
+      else process.env.PLAYWRIGHT_BROWSERS_PATH = configured;
+      const beforeHome = process.env.HOME;
+      const dispose = installTestHome();
+      try {
+        expect(process.env.HOME).not.toBe(beforeHome);
+        if (configured === undefined) {
+          expect(process.env.PLAYWRIGHT_BROWSERS_PATH).toMatch(
+            /ms-playwright$/,
+          );
+          expect(process.env.PLAYWRIGHT_BROWSERS_PATH).not.toContain(
+            process.env.HOME,
+          );
+        } else {
+          expect(process.env.PLAYWRIGHT_BROWSERS_PATH).toBe(configured);
+        }
+        expect(testHomeEnvironment().PLAYWRIGHT_BROWSERS_PATH).toBe(
+          process.env.PLAYWRIGHT_BROWSERS_PATH,
+        );
+        const nestedDispose = installTestHome();
+        const browserPath = process.env.PLAYWRIGHT_BROWSERS_PATH;
+        nestedDispose();
+        expect(process.env.PLAYWRIGHT_BROWSERS_PATH).toBe(browserPath);
+      } finally {
+        dispose();
+      }
+      expect(process.env.PLAYWRIGHT_BROWSERS_PATH).toBe(configured);
+    }
+    if (original === undefined) delete process.env.PLAYWRIGHT_BROWSERS_PATH;
+    else process.env.PLAYWRIGHT_BROWSERS_PATH = original;
   });
 
   it('isolates all OS paths, passes them to production children, and restores/cleans up', () => {

@@ -3,7 +3,10 @@
 `smrtVitestPlugin()` prepends `test-home.global-setup` to root and inline-project
 `globalSetup`. It installs HOME, USERPROFILE, XDG state/data/config/cache homes,
 LOCALAPPDATA and APPDATA
-before test modules and workers start. Production-mode children inherit them,
+before test modules and workers start. The installed Playwright browser binary
+cache is resolved before replacing HOME/XDG paths and retained through
+`PLAYWRIGHT_BROWSERS_PATH`; an explicit caller path (including `0`) wins.
+This preserves installed test prerequisites while app state stays isolated. Production-mode children inherit them,
 including operator CLIs, launchers and sidecars. Do not drop these variables
 when constructing a child environment. Do not use `userInfo().homedir` for
 writable fixtures; `homedir()` reads the isolated HOME.
