@@ -511,4 +511,49 @@ describe('schema orchestration', () => {
     expect(result.applied).toBe(false);
     expect(result.hasManualDrift).toBe(false);
   });
+
+  it('reports each applied relaxation by table and column and logs it as its own line (#4897)', async () => {
+    await db.query(
+      'CREATE TABLE notes (id TEXT PRIMARY KEY, body TEXT NOT NULL);',
+    );
+    vi.spyOn(ObjectRegistry, 'getAllSchemasAsDefinitions').mockReturnValue({
+      notes: {
+        tableName: 'notes',
+        columns: {
+          id: { type: 'TEXT', primaryKey: true },
+          body: { type: 'TEXT' },
+        },
+        indexes: [],
+        triggers: [],
+        foreignKeys: [],
+        dependencies: [],
+        version: '1.0.0',
+      },
+    });
+    const output: string[] = [];
+    for (const method of ['log', 'info', 'warn', 'error'] as const) {
+      vi.spyOn(console, method).mockImplementation((...args: unknown[]) => {
+        output.push(args.map(String).join(' '));
+      });
+    }
+
+    // SQLite keeps relaxation opt-in: nothing is relaxed or reported by default.
+    const pending = await getPendingSchemaStatements(db);
+    expect(pending.relaxedColumns).toEqual([]);
+
+    const result = await migrateSmrtSchemas({
+      db,
+      packageName: 'test',
+      version: '1.0.0',
+      relaxColumns: true,
+    });
+    expect(result.applied).toBe(true);
+    expect(result.relaxedColumns).toEqual([
+      { table: 'notes', column: 'body', alteration: 'drop_not_null' },
+    ]);
+    expect(
+      output.filter((line) => line.includes('Relaxed notes.body')),
+    ).toHaveLength(1);
+    await db.query("INSERT INTO notes (id, body) VALUES ('n1', NULL)");
+  });
 });

@@ -454,7 +454,7 @@ postgresDescribe(
       expect((await compare(manifest)).changes).toEqual([]);
     });
 
-    it('relaxes live columns stricter than the manifest only with relaxColumns, reporting them otherwise', async () => {
+    it('drops NOT NULL on manifest-nullable columns by default and still gates DROP DEFAULT behind relaxColumns (#4897)', async () => {
       const table = T('relax');
       await create(
         `CREATE TABLE "${table}" (id TEXT PRIMARY KEY, note TEXT NOT NULL, kind TEXT DEFAULT 'a')`,
@@ -467,17 +467,30 @@ postgresDescribe(
           kind: { type: 'TEXT' },
         }),
       };
-      const reportOnly = await compare(manifest);
-      expect(reportOnly.changes.every(isAdvisoryOnlyChange)).toBe(true);
-      expect(reportOnly.changes.map((c) => c.alteration).sort()).toEqual([
-        'drop_default',
-        'drop_not_null',
+      // Default: DROP NOT NULL is planned as executable SQL and reported as
+      // its own change naming the column; DROP DEFAULT stays report-only.
+      const byDefault = await compare(manifest);
+      expect(getSQLFromDiff(byDefault)).toEqual([
+        `ALTER TABLE "${table}" ALTER COLUMN "note" DROP NOT NULL`,
+      ]);
+      const planned = byDefault.changes.filter(
+        (c) => c.type === 'alter_column' && !isAdvisoryOnlyChange(c),
+      );
+      expect(planned.map((c) => `${c.name}:${c.alteration}`)).toEqual([
+        'note:drop_not_null',
+      ]);
+      const reportOnly = byDefault.changes.filter(isAdvisoryOnlyChange);
+      expect(reportOnly.map((c) => `${c.name}:${c.alteration}`)).toEqual([
+        'kind:drop_default',
       ]);
 
+      await apply(getSQLFromDiff(byDefault));
+      await db.query(`INSERT INTO "${table}" (id) VALUES ('r0')`);
+
+      // relaxColumns additionally makes DROP DEFAULT executable.
       const relaxed = await compare(manifest, { relaxColumns: true });
-      expect(getSQLFromDiff(relaxed).sort()).toEqual([
+      expect(getSQLFromDiff(relaxed)).toEqual([
         `ALTER TABLE "${table}" ALTER COLUMN "kind" DROP DEFAULT`,
-        `ALTER TABLE "${table}" ALTER COLUMN "note" DROP NOT NULL`,
       ]);
       await apply(getSQLFromDiff(relaxed));
       await db.query(`INSERT INTO "${table}" (id) VALUES ('r1')`);

@@ -255,7 +255,9 @@ T2) live in app-runtime's `src/operator-primitives.test.ts`.
 
 `smrt app migrate --relax-columns` explicitly forwards constraint relaxation to
 `db:migrate` under the same operation lock and writer-lease refusal. Without the
-flag, live constraints remain protected. SQLite ordinary inline NOT NULL
+flag, live constraints remain protected on SQLite and DuckDB; on PostgreSQL
+`DROP NOT NULL` of a manifest-nullable column applies by default (#4897,
+happyvertical/smrt#4920). SQLite ordinary inline NOT NULL
 relaxation uses the tracker-owned atomic rebuild; see the core schema-paths
 contract for unsupported shapes and FK validation. Unknown migrate options fail
 before touching local custody or starting the child command.
