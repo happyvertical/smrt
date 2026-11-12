@@ -33,3 +33,36 @@ describe('requiredFor reaches the manifest (#4923)', () => {
     expect(fields?.label._meta?.requiredFor).toBeUndefined();
   });
 });
+
+const RELATION_SOURCE = `import { SmrtObject, smrt, field, foreignKey, crossPackageRef, meta } from '@happyvertical/smrt-core';
+
+@smrt()
+export class Link extends SmrtObject {
+  @foreignKey('Account', { required: true, requiredFor: 'identity' })
+  accountId: string = '';
+
+  @crossPackageRef('@test/other:Thing', { required: true, requiredFor: 'identity' })
+  thingId: string = '';
+
+  @foreignKey('Account', { required: true })
+  plainId: string = '';
+}
+`;
+
+describe('requiredFor on relationship fields reaches the manifest (#4935)', () => {
+  it('carries the reason for foreignKey and crossPackageRef', () => {
+    const parsed = parseSource(RELATION_SOURCE);
+    expect(parsed.errors).toHaveLength(0);
+    const resolver = new InheritanceResolver();
+    resolver.addClasses(parsed.classes);
+    const manifest = new ManifestAdapter().toManifest(resolver.resolveAll(), {
+      packageName: '@test/pkg',
+    });
+    const fields = Object.values(manifest.objects).find(
+      (o) => o.className === 'Link',
+    )?.fields;
+    expect(fields?.accountId._meta?.requiredFor).toBe('identity');
+    expect(fields?.thingId._meta?.requiredFor).toBe('identity');
+    expect(fields?.plainId._meta?.requiredFor).toBeUndefined();
+  });
+});
