@@ -70,7 +70,7 @@ test('Required CI rejects a failed, cancelled, skipped or absent control-plane r
     successful[match[1]] = 'success';
   }
   Object.assign(successful, {
-    EVENT_NAME: 'pull_request_target',
+    EVENT_NAME: 'pull_request',
     PUBLISH_DRY_RUN: 'skipped',
     VISUAL_SELECTED: 'false',
     VISUAL_RESULT: 'skipped',

@@ -36,13 +36,37 @@ never prevent the tests from running.
 `CI_HOSTED_FALLBACK_ENABLED` no longer controls a workflow runner or matrix
 cap. It is safe to remove if it has no external use.
 
-The PR caller uses `pull_request_target`, so GitHub loads runner selection from
-the trusted base branch rather than contributor-controlled merge YAML. It passes
-a PR head SHA to reusable general-CI workflows only when the head repository
-equals `github.repository`; merge-group and trusted push workflows use the
-same hosted runner. External fork PRs keep a base-revision hosted control-plane
-check while the trusted validation call is skipped; their `Required CI` runs the
-maintainer approval gate instead (see "External fork PRs").
+The PR callers (`on-pull-request.yml`, `postgres-tests.yml`) run on
+`pull_request` (#4881): GitHub blocks `pull_request_target` on public
+repositories from 2026-12-02, after brownouts on 2026-11-09 and 2026-11-16
+(16:00-18:00 UTC) in which every such run ended `startup_failure` with no jobs.
+GitHub loads `pull_request` YAML from the PR merge commit, exactly as it
+already did for `merge_group`, so a workflow change takes effect on its own PR.
+A same-repository PR gets the declared token permissions; an external fork run
+gets a read-only token and no secrets and waits for a maintainer to approve
+it. The caller passes a PR head SHA to reusable general-CI workflows only when
+the head repository equals `github.repository`. External fork PRs keep a
+base-revision hosted control-plane check while the trusted validation call is
+skipped; their `Required CI` and `postgres-required` run the maintainer
+approval gate, checked out from the PR's base commit
+(`github.event.pull_request.base.sha`), never from the fork-controlled merge
+commit (see "External fork PRs").
+
+Two workflows still use `pull_request_target`, because they need a write
+token on fork PRs and must never run PR code: `fork-pr-approval.yml` and
+`merge-queue-watchdog.yml`. From 2026-12-02 they run only if a repository
+admin allows the event for exactly those files (Settings → Actions →
+Policies, an event policy whose workflow-path targeting includes the two
+files and whose allowed events are `pull_request_target`; REST:
+`POST /repos/happyvertical/smrt/actions/policies`). Without that policy (and
+during a brownout) fork approval fails closed, because the gate requires the
+`fork-approval` status only Fork PR Approval writes, and dequeues go
+uncommented. The Fork Workflow Change Guard goes dark too, so a missing guard
+result is not clearance: check the fork PR's changed files for `.github/`
+yourself before approving its workflow runs. Same-repository PRs, bots and
+the merge queue are unaffected.
+`scripts/fork-pr-approval.test.mjs` pins the set of `pull_request_target`
+workflows to those two files.
 
 ### External fork PRs
 
@@ -77,6 +101,12 @@ Fork code never runs with trusted credentials before the merge queue (#4558).
    checks fail until a maintainer reviews and approves again. The push also
    removes the label. The merge queue's trusted full validation is unchanged
    and gates every merge.
+6. The required jobs run from the fork's merge-commit YAML on `pull_request`,
+   so their gate holds only while the fork leaves `.github/` alone: never
+   approve the workflow runs of a fork PR the guard flagged, or of one with
+   no guard result whose changed files you have not checked. That is the same
+   trust the guard already protected, since such a PR could add its own
+   workflow with a job named like a required context.
 
 Every job in the two fork workflows is skipped on same-repository PRs.
 
@@ -127,7 +157,11 @@ code a write path into entries every other run restores — and it sets
 build instead of failing it. The pnpm-store `actions/cache` step in the same
 action is skipped on `pull_request_target` for the same write-scope reason:
 `pnpm install` runs PR-head lifecycle scripts, and the saved store would be
-a main-scoped entry trusted runs restore.
+a main-scoped entry trusted runs restore. PR validation now runs on
+`pull_request` (#4881), whose cache writes land in the PR's own
+`refs/pull/<n>/merge` scope and are never restored by main, merge-group or
+other PR runs, so PR jobs use both caches (reading main's entries) instead of
+building cold.
 
 Two properties of this pool differ from the internal server and matter for
 trust in it. Entries are immutable: a save against an existing `turbogha_`
@@ -454,10 +488,11 @@ also exports `SMRT_TEST_POSTGRES_ADMIN_URL` for that database; without it,
 that variable equals the ordinary test URL.
 
 `postgres-tests.yml` (#2659) is the lane. It triggers on
-`pull_request_target` (base-branch YAML, like `on-pull-request.yml`, so a fork
-cannot rewrite the runner selection or the fork guard), `merge_group`, a
+`pull_request` (like `on-pull-request.yml`, #4881), `merge_group`, a
 nightly `schedule`, `workflow_dispatch`, and `workflow_call` from the
-dispatch-only `on-demand-validation.yml`. There is no enabling variable.
+dispatch-only `on-demand-validation.yml` and from Fork PR Validation, which
+passes `fork_sandbox: true` so the suites run on fork code there with a
+read-only token. There is no enabling variable.
 
 - **`scope`** (hosted) decides whether suites run: a same-repository PR runs
   them unless every changed file is Markdown or under `docs/`; merge groups and
@@ -673,9 +708,9 @@ to `true`, PR validation re-resolved every job from the self-hosted label to
 | Lint | 0.3 min | 10 |
 | `Detect Affected Validation Scope` | 0.1 min | 10 |
 
-Nothing approached a ceiling, and these are cold numbers: PR validation runs
-on `pull_request_target`, where the Turbo shim is refused, so no job restored
-from the hosted cache pool. The last two rows carry their post-#2236 ceilings;
+Nothing approached a ceiling, and these are cold numbers: PR validation ran
+on `pull_request_target` then, where the Turbo shim is refused, so no job
+restored from the hosted cache pool. The last two rows carry their post-#2236 ceilings;
 they were at the 90-minute heavy-suite ceiling when the rehearsal ran.
 
 Two limits on what that rehearsal proves. It exercised the pull-request path
@@ -731,10 +766,11 @@ Both constraints were fleet politeness, so both now key off the lane: the cap
 is an expression on all four matrix jobs, and the affected matrices no longer
 chain (see Pull requests and merge groups for the shape and the fleet trade).
 
-A workflow change cannot be proven on its own pull request — PR validation runs
-main's copy of the YAML on `pull_request_target` — so `actionlint`, `yamllint`,
-and a diff read are the pre-merge gates, and the first execution is the
-merge-group transit that lands the change. Watch there:
+When this was written a workflow change could not be proven on its own pull
+request — PR validation ran main's copy of the YAML on `pull_request_target`
+(since #4881 it runs the PR's own copy on `pull_request`) — so `actionlint`,
+`yamllint`, and a diff read were the pre-merge gates, and the first execution
+was the merge-group transit that lands the change. Watch there:
 
 | measure | before | after |
 | --- | --- | --- |

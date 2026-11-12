@@ -14,6 +14,8 @@ name: Merge Queue Watchdog
 # declared write token for fork PRs. SECURITY INVARIANT: because this trigger
 # grants a write token in the base context, this workflow must never check
 # out or execute pull-request code — it only reads the event payload.
+# From 2026-12-02 it runs only under the repository's Actions event policy
+# that allows `pull_request_target` for this file (#4881, .github/CI.md).
 on:
   pull_request_target:
     types: [dequeued]
