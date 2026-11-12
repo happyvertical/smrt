@@ -136,6 +136,7 @@ import type { Handle, RequestEvent, ServerLoad } from '@sveltejs/kit';
 import { error, redirect } from '@sveltejs/kit';
 import {
   createCookbookDesignRuns,
+  isCookbookDesignFinalCheck,
   presentCookbookDesignProgress,
 } from './design-runs.js';
 import { createCookbookOnboarding } from './onboarding.js';
@@ -446,7 +447,7 @@ export function createCookbookHost(options: CookbookHostOptions) {
       }).load(action.runId, record.requestedBy);
       if (
         !saved ||
-        !/^cookbook-design\/v[34]\//.test(saved.definition) ||
+        !/^cookbook-design\/v[345]\//.test(saved.definition) ||
         !user?.profileId ||
         principal?.profileId !== user.profileId ||
         (saved.input as { threadId?: unknown }).threadId !==
@@ -528,9 +529,8 @@ export function createCookbookHost(options: CookbookHostOptions) {
           // effects; explicit Resume performs the same stable action.
           if (
             saved?.status === 'stopped' &&
-            /^cookbook-design\/v[34]\//.test(saved.definition) &&
-            saved.phase === 'check' &&
-            saved.passIndex === Number(saved.definition.split('/').at(-1)) - 1
+            /^cookbook-design\/v[345]\//.test(saved.definition) &&
+            isCookbookDesignFinalCheck(saved)
           )
             return {
               status: 'deferred',
@@ -762,25 +762,46 @@ export function createCookbookHost(options: CookbookHostOptions) {
           },
         })
       : undefined;
+    const describeDesignApp = async (
+      ownerId: string,
+      tenantId: string | null,
+      optional = false,
+    ) => {
+      if (!tenantId) throw new Error('Tenant required');
+      return runtime.runAsPrincipal(
+        { id: ownerId, tenantId, kind: 'human' },
+        async () => {
+          await prepare(tenantId, false);
+          const context = {
+            surface: 'mcp' as const,
+            tenantId,
+            userId: ownerId,
+          };
+          if (
+            optional &&
+            !(await service.list(context)).some(
+              (tool) => tool.name === 'app.describe',
+            )
+          )
+            return undefined;
+          return service.invoke(
+            'app.describe',
+            {},
+            { surface: 'mcp', tenantId, userId: ownerId },
+          );
+        },
+      );
+    };
     const designRuns = createCookbookDesignRuns({
       db,
       authorizeThread: authorizeDesignThread,
+      describeApp: (ownerId, tenantId) =>
+        describeDesignApp(ownerId, tenantId, true),
       currentRevision: async (ownerId, tenantId) => {
-        if (!tenantId) throw new Error('Tenant required');
-        return runtime.runAsPrincipal(
-          { id: ownerId, tenantId, kind: 'human' },
-          async () => {
-            await prepare(tenantId, false);
-            const result = await service.invoke(
-              'app.describe',
-              {},
-              { surface: 'mcp', tenantId, userId: ownerId },
-            );
-            if (!Number.isSafeInteger(result.revision))
-              throw new Error('Application revision unavailable');
-            return result.revision as number;
-          },
-        );
+        const result = await describeDesignApp(ownerId, tenantId);
+        if (!result || !Number.isSafeInteger(result.revision))
+          throw new Error('Application revision unavailable');
+        return result.revision as number;
       },
       authorize: async (ownerId, tenantId) => {
         if (!(await isOwner(tenantId, ownerId)))
@@ -1795,12 +1816,17 @@ export function createCookbookHost(options: CookbookHostOptions) {
         throw new Error('Design runs require a saved thread and user request');
       const host = await ready();
       const profile = await resolveProfile(context, 'design');
+      const fixedPasses = Object.hasOwn(
+        (await host.workProfiles.read()).settings.design?.budgets ?? {},
+        'passes',
+      );
       const state = await host.designRuns
         .forOwner(context.principal.userId, context.principal.tenantId)
         .start({
           threadId: String(input.thread.id),
           content: original,
           profile,
+          fixedPasses,
           permissions: [...(context.principal.permissions ?? [])],
         });
       return { runId: state.id, message: 'Thinking this through' };
@@ -1896,24 +1922,27 @@ export function createCookbookHost(options: CookbookHostOptions) {
     state: import('@happyvertical/smrt-inference/server').DesignRunState | null,
   ) =>
     state
-      ? presentCookbookDesignProgress({
-          runId: state.id,
-          pass: {
-            index: Math.min(
-              state.passIndex + 1,
-              Number(state.definition.split('/').at(-1)),
-            ),
-            count: Number(state.definition.split('/').at(-1)),
-            name:
-              state.passIndex === 0
-                ? 'Understand the request'
-                : state.passIndex === 1
-                  ? 'Propose the design'
-                  : 'Check and revise the design',
+      ? presentCookbookDesignProgress(
+          {
+            runId: state.id,
+            pass: {
+              index: Math.min(
+                state.passIndex + 1,
+                Number(state.definition.split('/').at(-1)),
+              ),
+              count: Number(state.definition.split('/').at(-1)),
+              name:
+                state.passIndex === 0
+                  ? 'Understand the request'
+                  : state.passIndex === 1
+                    ? 'Propose the design'
+                    : 'Check and revise the design',
+            },
+            status: state.status,
+            ...(state.note ? { note: state.note } : {}),
           },
-          status: state.status,
-          ...(state.note ? { note: state.note } : {}),
-        })
+          state,
+        )
       : null;
   const assistantHandler = async (
     event: Parameters<typeof assistantRoutes.handle>[0],
@@ -2054,6 +2083,11 @@ export function createCookbookHost(options: CookbookHostOptions) {
           threadId: body.threadId,
           content: body.content,
           profile,
+          fixedPasses: Object.hasOwn(
+            (await (await ready()).workProfiles.read()).settings.design
+              ?.budgets ?? {},
+            'passes',
+          ),
           permissions: [
             ...(p.permissions ??
               (event.locals as SmrtRuntimeLocals).permissions ??

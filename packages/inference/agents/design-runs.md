@@ -48,6 +48,20 @@ validated output, input, usage and attempts; it takes precedence over an approva
 hold or repeat. Never copy model output or caught exception text into `failure`.
 Ordinary thrown errors still receive the driver's generic failure explanation.
 
+A trusted host check may return `complete: true` after mechanically validating
+and applying its accepted proposal. This ends the run at its actual pass index,
+retaining the `check` phase, input, outputs, attempts and accumulated usage. It
+does not manufacture later passes or their usage. Failure, approval hold and
+bounded repeat take precedence over completion, in that order. An approval hold
+therefore resumes the same check before completion, without another model call.
+Model output fields cannot select completion. Done runs remain terminal for
+`run`, `stop` and `resume` even when their index is below the configured count.
+The host owns versioned adaptive eligibility and exact owner-selected pass-count
+semantics; the inference driver does not reinterpret work-profile budgets.
+The existing design-run tests cover first/later completion, conflicting check
+results, approval resume, lost completion CAS with same-action recovery under a
+replacement claim, and stale completion after Stop.
+
 Inputs carry resource ids. `readResource` rejects ids outside the host's pinned
 list; the host checks current owner access and supplies summary-first pages with
 opaque cursors. A page exceeding `toolResultChars`, including its envelope, is

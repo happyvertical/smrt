@@ -62,3 +62,11 @@ resolver, preferences' kind store, SettingsCatalog and ConnectAi. The editor add
 only the missing domain composition, reusing the shared visual/form primitives
 and translated messages. Mounted tests exercise edit/save/reset, refused save,
 unavailable connection repair and accessibility.
+
+Save forwards sparse owner overrides, not the resolved defaults shown in the
+controls. Untouched Save and unrelated effort/preview/budget edits must not
+materialize `budgets.passes`; the design host can size a default run within its
+recommended maximum. An explicitly saved pass count, including the recommended
+number itself, remains an owner override. Reset removes the preference and the
+next loader supplies `{}`. Mounted regressions cover untouched/unrelated edits,
+explicit two/four-pass round trips and reset followed by sparse Save.

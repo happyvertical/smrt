@@ -30,16 +30,41 @@ settlement, even with a long call deadline. An external engine that ignores
 cancellation keeps its lease until actual settlement or the lease deadline; a new
 process recovers through jobs' worker-liveness contract.
 
-The default ordered passes understand the request, propose the design, then check
-and revise it. The owner's pass count controls the number of passes; further
-passes revise. Ajv validates every engine's JSON result against the same schema
-(`summary`, `checks`, `ready`, `operations`), including repairs. Between passes deterministic
-code rechecks schema and feeds the checked pass number and readiness into the
-next input. This generic check establishes output structure, not application
-schema correctness. Cookbook policy, revision checks and the existing apply
-preview and approvals remain the authority for actual changes.
+New runs pin `cookbook-design/v5/<maximum>`. Their first real pass proposes the
+change. With no raw owner `design.budgets.passes` property, a ready proposal of
+small changes on one existing list may finish after that pass's normal mechanical
+check and native Apply. Additive scalar/choice/money fields, field rename/hide and
+list display-label rename are eligible; money's paired currency column remains
+one logical field. Relationship fields, multiple resolved lists, removal and
+restructuring expand to the configured maximum. Existing schemas, permissions,
+revision checks and approvals remain authoritative; eligibility grants no access.
 
-New runs pin `cookbook-design/v3/<passes>`. Their operation schema is a `oneOf`
+When the normal service catalog offers `app.describe`, one ordinary read pins
+its revision and bounded canonical list IDs, labels and aliases solely for
+classification. If that read is not offered (for example, a recipe-only host
+without an app editor), classification is absent and the full path remains
+available. No permission or app-editor requirement is added to admission; owner
+and thread authorization remain mandatory. Current-revision reads for actual
+Apply/recovery remain strict. Exact unambiguous descriptor
+matches and sequential list-label renames establish same-list identity. Unknown
+or ambiguous references expand rather than guessing. A proved pre-effect core
+collision or clarification expands the remaining work; after any receipt/hold,
+or an uncertain thrown failure, the host never starts another planning pass.
+Explicit raw pass counts (including four) remain fixed; untouched defaults,
+unrelated edits and Reset `{}` stay adaptive. The private descriptor/fixed-count
+pins cannot be supplied by HTTP/tool metadata. No new preference is introduced.
+
+Ajv validates every engine result and repair against the pinned schema, including
+separate raw `summary` and untrusted `personSummary` fields. The host keeps their
+raw values privately and publishes fixed safe person notes. An early completion
+retains its actual checked index, outputs, attempts and consumed usage; no skipped
+pass receives fabricated metadata. Public progress starts with one planned pass
+and expands only when more work is needed. Native holds, Stop/Resume and real
+replacement job claims replay that same proposal/action identity without another
+model call. Pinned v3/v4 contracts and their original pass ordering remain intact;
+the narrow historical v2 migration still targets v3, never v5.
+
+Their operation schema is a `oneOf`
 of the current core cookbook structural tool names and input schemas, resolved
 under the live owner. Approval ids are excluded from proposal arguments. The
 model sees those exact schemas as proposal data while its callable tools remain
@@ -58,7 +83,7 @@ The server's pass executor uses its existing authenticated assistant route and
 engine adapters with job-bound limits. Design passes offer only read/proposal
 tools: replay and schema repair cannot repeat mutation effects. The run produces
 a concrete proposal (`operations: [{ tool, args }]`) in the original thread.
-A ready v3 final proposal is applied by its deterministic check through the
+A ready durable proposal is applied by its deterministic check through the
 existing core cookbook service. The host supplies an application/run/action
 identity; an action's index is stable and core pins its exact arguments. Preview
 creates a native durable owner hold in the existing thread approval UI. Its
@@ -67,7 +92,7 @@ intersected with the original ceiling, then queues the same final check. That
 check recovers the exact core result before advancing to `done`; it never makes
 another model call. With preview off, additive changes apply directly and still
 enter change history. Destructive changes always retain native owner approval.
-An unready final v3 proposal terminates as failed with the host's plain note that
+An unready final durable proposal terminates as failed with the host's plain note that
 no changes were applied and more information is needed. It creates no approval
 hold or history entry. Historical v1/v2 review semantics are preserved. The
 profile grants no authority. The model
@@ -84,13 +109,13 @@ does not reverse an effect already recorded in change history.
 Explicit owner Resume can migrate a completed v2 `app.addField` review proposal
 to v3's final check without repeating its model passes. This narrow adapter pins
 the core argument schema from committed `d3b879bef0` using core's exported
-`stableStringify`; other v2 operations require a fresh v3 run. Migration requires
+`stableStringify`; other v2 operations require a fresh run. Migration requires
 a ready nonempty proposal valid against the current supported core schemas, its
 original permission ceiling, live thread ownership and application revision, and
 no job or execution lease. One
 transaction compares the exact old payload, revision and scoped identity before
 changing the definition; attempts, outputs, usage and run id are preserved. A
-proposal/schema fingerprint prevents later drift. New v3 runs persist their own
+proposal/schema fingerprint prevents later drift. Durable runs persist their own
 schema pin, preserve it through every check and validate it before native
 continuation effects. V1 and unready v2 outputs are never migrated. HTTP cannot
 select a definition, action or profile.

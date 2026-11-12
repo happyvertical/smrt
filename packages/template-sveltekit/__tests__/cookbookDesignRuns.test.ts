@@ -128,8 +128,8 @@ describe('cookbook durable design jobs', () => {
     expect(done.outputs).toHaveLength(3);
     expect(done.tokens).toBe(6);
     expect(execute.mock.calls.map(([input]) => input.stage)).toEqual([
-      'profile',
       'propose',
+      'revise',
       'revise',
     ]);
     expect(execute.mock.calls[1][0].request.input).toMatchObject({
@@ -309,7 +309,7 @@ describe('cookbook durable design jobs', () => {
     );
     expect(done.tokens).toBe(8);
   });
-  it('requires the separate v4 person field and repairs it on the same read-only pass', async () => {
+  it('requires the separate v5 person field and repairs it on the same read-only pass', async () => {
     const { personSummary: _missing, ...missingPersonField } = output;
     const execute = vi
       .fn<CookbookDesignRunsOptions['executePass']>()
@@ -325,7 +325,7 @@ describe('cookbook durable design jobs', () => {
     await startWorker();
     const done = await terminal(created.id);
     expect(done.status).toBe('done');
-    expect(done.definition).toBe('cookbook-design/v4/3');
+    expect(done.definition).toBe('cookbook-design/v5/3');
     expect(execute).toHaveBeenCalledTimes(4);
     expect(execute.mock.calls[1][0].request.repair?.errors.join(' ')).toContain(
       'personSummary',
@@ -393,6 +393,7 @@ describe('cookbook durable design jobs', () => {
       threadId: 'thread',
       content: 'Add a birthday field',
       profile: selected,
+      fixedPasses: true,
       permissions: ['app.addField'],
     });
     await startWorker();
@@ -407,7 +408,7 @@ describe('cookbook durable design jobs', () => {
       privateReasoning,
     );
     expect(execute).toHaveBeenCalledTimes(3);
-    expect(pending.definition).toBe('cookbook-design/v4/3');
+    expect(pending.definition).toBe('cookbook-design/v5/3');
     expect(execute.mock.calls[0][0].request.schema).toMatchObject({
       required: expect.arrayContaining(['summary', 'personSummary']),
       properties: {
@@ -450,6 +451,363 @@ describe('cookbook durable design jobs', () => {
     ]);
     expect(execute).toHaveBeenCalledTimes(3);
   });
+  it.each([
+    'add',
+    'add-number',
+    'add-date',
+    'add-date-time',
+    'add-long-text',
+    'add-yes-no',
+    'add-choice',
+    'rename-field',
+    'hide',
+    'rename-list',
+    'same-list-chain',
+    'cross-list',
+    'ambiguous',
+    'oversized-aliases',
+    'unavailable-descriptor',
+    'remove',
+    'link',
+    'money',
+    'money-clarification',
+    'fixed-four',
+    'collision',
+    'unready',
+    'partial-collision',
+    'unknown-after-effect',
+  ])('classifies v5 checked work without inventing passes: %s', async (scenario) => {
+    const service = createCookbookToolService({
+      catalog: { recipes: [], models: [] },
+      engineFor: () => ({}) as never,
+      modelEditorFor: () => ({}) as never,
+      isOwner: async () => true,
+      can: async () => true,
+      approvals: {} as never,
+      isAppEmpty: async () => true,
+      commit: async () => {},
+      audit: async () => {},
+    });
+    const definitions = await service.list({
+      surface: 'mcp',
+      userId: 'owner',
+      tenantId: 'tenant',
+    });
+    const field = {
+      tool: 'app.addField',
+      args: {
+        list: 'Customers',
+        label: 'Note',
+        kind: 'text',
+        expectedRevision: 1,
+      },
+    };
+    const kinds: Record<string, string> = {
+      'add-number': 'number',
+      'add-date': 'date',
+      'add-date-time': 'date-time',
+      'add-long-text': 'long text',
+      'add-yes-no': 'yes/no',
+      'add-choice': 'choice',
+    };
+    const kind = kinds[scenario];
+    if (kind) field.args.kind = kind;
+    const baseField =
+      scenario === 'add-choice'
+        ? { ...field, args: { ...field.args, options: ['New', 'Returning'] } }
+        : field;
+    const operations =
+      scenario === 'rename-field'
+        ? [
+            {
+              tool: 'app.renameField',
+              args: {
+                list: 'Clients',
+                field: 'Name',
+                label: 'Full name',
+                expectedRevision: 1,
+              },
+            },
+          ]
+        : scenario === 'hide'
+          ? [
+              {
+                tool: 'app.hideField',
+                args: {
+                  list: 'a:Customer',
+                  field: 'Email',
+                  expectedRevision: 1,
+                },
+              },
+            ]
+          : scenario === 'rename-list'
+            ? [
+                {
+                  tool: 'app.renameList',
+                  args: {
+                    list: 'Customers',
+                    label: 'Members',
+                    expectedRevision: 1,
+                  },
+                },
+              ]
+            : scenario === 'same-list-chain'
+              ? [
+                  {
+                    tool: 'app.renameList',
+                    args: {
+                      list: 'a:Customer',
+                      label: 'Members',
+                      expectedRevision: 1,
+                    },
+                  },
+                  {
+                    tool: 'app.addField',
+                    args: {
+                      list: 'Members',
+                      label: 'Note',
+                      kind: 'text',
+                      expectedRevision: 2,
+                    },
+                  },
+                  {
+                    tool: 'app.renameField',
+                    args: {
+                      list: 'Clients',
+                      field: 'Note',
+                      label: 'Visit note',
+                      expectedRevision: 3,
+                    },
+                  },
+                  {
+                    tool: 'app.hideField',
+                    args: {
+                      list: 'a:Customer',
+                      field: 'Email',
+                      expectedRevision: 4,
+                    },
+                  },
+                ]
+              : scenario === 'cross-list'
+                ? [
+                    field,
+                    {
+                      ...field,
+                      args: {
+                        ...field.args,
+                        list: 'Suppliers',
+                        expectedRevision: 2,
+                      },
+                    },
+                  ]
+                : scenario === 'ambiguous' || scenario === 'oversized-aliases'
+                  ? [
+                      {
+                        ...field,
+                        args: {
+                          ...field.args,
+                          list:
+                            scenario === 'oversized-aliases'
+                              ? 'Clients'
+                              : 'Shared',
+                        },
+                      },
+                    ]
+                  : scenario === 'remove'
+                    ? [
+                        {
+                          tool: 'app.removeField',
+                          args: {
+                            list: 'Customers',
+                            field: 'Email',
+                            expectedRevision: 1,
+                          },
+                        },
+                      ]
+                    : scenario === 'link'
+                      ? [
+                          {
+                            ...field,
+                            args: {
+                              ...field.args,
+                              kind: 'link',
+                              linkTo: 'Suppliers',
+                            },
+                          },
+                        ]
+                      : scenario === 'money' ||
+                          scenario === 'money-clarification'
+                        ? [
+                            {
+                              ...field,
+                              args: {
+                                ...field.args,
+                                kind: 'money',
+                                currency: 'CAD',
+                              },
+                            },
+                          ]
+                        : scenario === 'partial-collision'
+                          ? [
+                              field,
+                              {
+                                ...field,
+                                args: {
+                                  ...field.args,
+                                  label: 'Another',
+                                  expectedRevision: 2,
+                                },
+                              },
+                            ]
+                          : [baseField];
+    const effect = vi.fn();
+    let operationsCalled = 0;
+    const apply = vi.fn<
+      NonNullable<CookbookDesignRunsOptions['executeOperation']>
+    >(async () => {
+      operationsCalled++;
+      if (
+        (['collision', 'money-clarification'].includes(scenario) &&
+          operationsCalled === 1) ||
+        (scenario === 'partial-collision' && operationsCalled === 2)
+      )
+        return {
+          status:
+            scenario === 'money-clarification'
+              ? 'clarification_required'
+              : 'collision',
+          summary: 'Choose another field label.',
+        };
+      effect();
+      if (scenario === 'unknown-after-effect')
+        throw new Error('Uncertain completion');
+      return { status: 'ok', summary: 'Changed the app.' };
+    });
+    const execute = vi.fn<CookbookDesignRunsOptions['executePass']>(
+      async ({ request }) => ({
+        output: {
+          ...output,
+          ready: scenario !== 'unready' || request.pass.index > 1,
+          operations:
+            scenario === 'money-clarification' && request.pass.index === 1
+              ? operations.map((operation) => {
+                  const args: Record<string, unknown> = { ...operation.args };
+                  delete args.currency;
+                  return { ...operation, args };
+                })
+              : operations,
+        },
+        metadata,
+      }),
+    );
+    const progress = vi.fn();
+    const bound = install(execute, async () => definitions, {
+      executeOperation: apply,
+      onProgress: progress,
+      describeApp: async () =>
+        scenario === 'unavailable-descriptor'
+          ? undefined
+          : {
+              status: 'ok',
+              summary: 'Your app lists.',
+              revision: 1,
+              lists: [
+                {
+                  id: 'a:Customer',
+                  label: 'Customers',
+                  synonyms: ['Clients', 'Shared'],
+                },
+                {
+                  id: 'b:Supplier',
+                  label: 'Suppliers',
+                  synonyms:
+                    scenario === 'oversized-aliases'
+                      ? [
+                          ...Array.from({ length: 32 }, () => 'Other'),
+                          'Clients',
+                        ]
+                      : ['Shared'],
+                },
+              ],
+            },
+    });
+    const selected = profile();
+    if (scenario === 'fixed-four') selected.budgets.passes = 4;
+    const created = await bound.start({
+      threadId: 'thread',
+      content: 'Change my lists',
+      profile: selected,
+      permissions: definitions.map((tool) => tool.name),
+      fixedPasses: scenario === 'fixed-four',
+    });
+    await startWorker();
+    const done = await terminal(created.id);
+    const small =
+      [
+        'add',
+        'rename-field',
+        'hide',
+        'rename-list',
+        'same-list-chain',
+        'money',
+      ].includes(scenario) || scenario.startsWith('add-');
+    const failed = ['partial-collision', 'unknown-after-effect'].includes(
+      scenario,
+    );
+    const count = small || failed ? 1 : scenario === 'fixed-four' ? 4 : 3;
+    expect(done.status).toBe(failed ? 'failed' : 'done');
+    expect(execute).toHaveBeenCalledTimes(count);
+    expect(done.outputs).toHaveLength(count);
+    expect(done.attempts).toHaveLength(count);
+    expect(done.tokens).toBe(count * 2);
+    expect(execute.mock.calls[0][0].stage).toBe('propose');
+    if (small) {
+      expect(done).toMatchObject({ phase: 'check', passIndex: 0 });
+      expect(progress.mock.calls.at(-1)?.[0].pass.count).toBe(1);
+      await bound.stop(created.id);
+      await expect(bound.resume(created.id)).rejects.toThrow('ended');
+      expect((await bound.status(created.id)).status).toBe('done');
+      expect(execute).toHaveBeenCalledTimes(1);
+    } else if (!failed)
+      expect(progress.mock.calls.at(-1)?.[0].pass.count).toBe(count);
+    expect(effect).toHaveBeenCalledTimes(failed ? 1 : operations.length);
+    if (scenario === 'collision') expect(apply).toHaveBeenCalledTimes(2);
+  });
+
+  it('replays pinned v4 schemas and its original first profile pass unchanged', async () => {
+    const execute = vi.fn<CookbookDesignRunsOptions['executePass']>(
+      async () => ({ output, metadata }),
+    );
+    const bound = install(execute);
+    const created = await bound.start({
+      threadId: 'thread',
+      content: 'Review my app',
+      profile: profile(),
+      fixedPasses: true,
+    });
+    const state = await bound.status(created.id);
+    const legacyInput = { ...(state.input as Record<string, unknown>) };
+    delete legacyInput.fixedPasses;
+    const legacy = {
+      ...state,
+      definition: 'cookbook-design/v4/3',
+      input: legacyInput,
+    };
+    await db.query(
+      'UPDATE _smrt_inference_design_runs SET payload = ? WHERE id = ?',
+      JSON.stringify(legacy),
+      created.id,
+    );
+    await startWorker();
+    expect((await terminal(created.id)).status).toBe('done');
+    expect(execute.mock.calls.map(([call]) => call.stage)).toEqual([
+      'profile',
+      'propose',
+      'revise',
+    ]);
+    expect(execute).toHaveBeenCalledTimes(3);
+  });
+
   it('keeps completed v1 proposal contracts unchanged rather than reinterpreting unsupported operations', async () => {
     const execute = vi.fn<CookbookDesignRunsOptions['executePass']>();
     const bound = install(execute);

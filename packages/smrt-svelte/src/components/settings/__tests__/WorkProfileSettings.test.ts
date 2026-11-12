@@ -13,6 +13,89 @@ const resolved = (['design', 'assist', 'background'] as const).map((profile) =>
   }),
 );
 describe('WorkProfileSettings', () => {
+  it('saves untouched recommendations without materializing a fixed pass count', async () => {
+    const onsave = vi.fn(async () => {});
+    render(WorkProfileSettings, {
+      props: { settings: {}, resolved, onsave, onreset: vi.fn() },
+    });
+    await userEvent
+      .setup()
+      .click(screen.getByRole('button', { name: 'Save assistant quality' }));
+    expect(onsave).toHaveBeenCalledExactlyOnceWith({});
+  });
+
+  it('keeps unrelated effort and preview edits sparse for host sizing', async () => {
+    const onsave = vi.fn(async () => {});
+    render(WorkProfileSettings, {
+      props: { settings: {}, resolved, onsave, onreset: vi.fn() },
+    });
+    const user = userEvent.setup();
+    await user.selectOptions(
+      screen.getAllByRole('combobox', { name: 'Reasoning effort' })[0],
+      'high',
+    );
+    await user.click(
+      screen.getAllByRole('checkbox', {
+        name: 'Preview before applying design changes',
+      })[0],
+    );
+    await user.click(
+      screen.getByRole('button', { name: 'Save assistant quality' }),
+    );
+    expect(onsave).toHaveBeenCalledExactlyOnceWith({
+      design: { effort: 'high', previewBeforeApply: false },
+    });
+  });
+
+  it.each([
+    2, 4,
+  ])('preserves an explicit %i-pass override across an unrelated edit', async (passes) => {
+    const onsave = vi.fn(async () => {});
+    render(WorkProfileSettings, {
+      props: {
+        settings: { design: { budgets: { passes } } },
+        resolved,
+        onsave,
+        onreset: vi.fn(),
+      },
+    });
+    const user = userEvent.setup();
+    await user.click(
+      screen.getAllByRole('checkbox', {
+        name: 'Preview before applying design changes',
+      })[0],
+    );
+    await user.click(
+      screen.getByRole('button', { name: 'Save assistant quality' }),
+    );
+    expect(onsave).toHaveBeenCalledExactlyOnceWith({
+      design: { budgets: { passes }, previewBeforeApply: false },
+    });
+  });
+
+  it('saves sparse recommendations after the authorized reset returns no overrides', async () => {
+    const onsave = vi.fn(async () => {});
+    const onreset = vi.fn(async () => {});
+    const { rerender } = render(WorkProfileSettings, {
+      props: {
+        settings: { design: { budgets: { passes: 2 } } },
+        resolved,
+        onsave,
+        onreset,
+      },
+    });
+    const user = userEvent.setup();
+    await user.click(
+      screen.getByRole('button', { name: 'Reset to recommended' }),
+    );
+    expect(onreset).toHaveBeenCalledOnce();
+    await rerender({ settings: {}, resolved, onsave, onreset });
+    await user.click(
+      screen.getByRole('button', { name: 'Save assistant quality' }),
+    );
+    expect(onsave).toHaveBeenCalledExactlyOnceWith({});
+  });
+
   it('edits budgets and escalation, saves overrides and resets recommendations', async () => {
     const onsave = vi.fn(async () => {});
     const onreset = vi.fn(async () => {});

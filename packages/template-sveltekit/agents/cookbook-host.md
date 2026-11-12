@@ -535,13 +535,13 @@ queue runner; `host.shutdown()` drains the runner and disposes its executor.
 Internal passes reuse authenticated assistant adapters with a private server
 profile binding, original permission ceiling intersected with live permissions,
 read-only tools, full schema validation, and a detached job cancellation signal.
-Technical prompts and raw reasoning stay server-side. New v4 proposals require
+Technical prompts and raw reasoning stay server-side. V4 and newer proposals require
 separate `summary` and bounded `personSummary` fields; neither model field is
 trusted as public prose. The host explicitly projects progress to short fixed
 person-facing notes, including errors, repairs and reloaded state. Raw outputs
 remain unchanged in durable checkpoints. Pinned v3 schemas and deterministic
 Apply/recovery remain supported; the historical v2 adapter still upgrades only
-to its exact v3 schema. Ready v3/v4 proposals enter a deterministic final check using
+to its exact v3 schema. Ready durable proposals enter a deterministic final check using
 core's stable design-action identity and exact result recovery. Preview uses the
 existing native thread approval UI; preview-off applies additive changes directly
 with change history, while destructive changes retain approval. Completing an
@@ -632,3 +632,12 @@ review fallback. This presentation does not change the stored hold or execution
 authority, and safe business previews persist after completion. Change history
 retains its count/order and stable technical DTO keys, but displays human command
 captions with a safe fallback and no revision labels, raw edits or invented dates.
+
+V5 design runs begin by proposing. Without an explicit raw owner pass-count
+override, checked scalar/choice/money field additions, field rename/hide and
+list-label rename on one existing list can complete after one real pass. Exact
+canonical descriptor identities/aliases come from normal `app.describe`; uncertain
+or complex work expands to the configured maximum. Explicit pass counts remain
+fixed. Private classification metadata grants no authority, and the actual proposal
+index survives native holds, Stop and replacement-worker recovery without padded
+outputs or reset usage. See [design runs](cookbook-design-runs.md) for boundaries.

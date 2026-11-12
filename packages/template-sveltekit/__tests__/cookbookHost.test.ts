@@ -695,7 +695,7 @@ describe('local cookbook host composition (SQLite, fake model, no providers)', (
       return new Response();
     });
   }
-  async function durableDesignHost(preview = true) {
+  async function durableDesignHost(preview = true, passes: number | null = 3) {
     const runtime = host.runtime;
     await host.shutdown();
     host.dispose();
@@ -723,7 +723,10 @@ describe('local cookbook host composition (SQLite, fake model, no providers)', (
         (
           await host.workProfiles.write(e, {
             settings: {
-              design: { previewBeforeApply: preview, budgets: { passes: 3 } },
+              design: {
+                previewBeforeApply: preview,
+                ...(passes === null ? {} : { budgets: { passes } }),
+              },
             },
             revision: saved.revision,
           })
@@ -985,7 +988,7 @@ describe('local cookbook host composition (SQLite, fake model, no providers)', (
           ),
         );
         expect(state.status).toBe('waiting-approval');
-        expect(state.definition).toBe('cookbook-design/v4/3');
+        expect(state.definition).toBe('cookbook-design/v5/3');
         expect(state.outputs[2].operations[0].tool).toBe('app.addField');
       },
       { timeout: 15000 },
@@ -1052,6 +1055,9 @@ describe('local cookbook host composition (SQLite, fake model, no providers)', (
     for (const key of [
       'profile',
       'workProfile',
+      'fixedPasses',
+      'listCatalog',
+      'expanded',
       'engine',
       'actionKey',
       'actionId',
@@ -1358,7 +1364,7 @@ describe('local cookbook host composition (SQLite, fake model, no providers)', (
     expect(calls).toHaveBeenCalledTimes(3);
   });
 
-  it('fails an unready final v4 proposal with a clear host note and no approval or changes', async () => {
+  it('fails an unready final v5 proposal with a clear host note and no approval or changes', async () => {
     const calls = await durableDesignHost();
     response = () => ({
       content: JSON.stringify({
@@ -1400,8 +1406,204 @@ describe('local cookbook host composition (SQLite, fake model, no providers)', (
     expect(calls).toHaveBeenCalledTimes(3);
   });
 
+  it.each([
+    'untouched',
+    'unrelated',
+    'reset',
+    'explicit-four',
+  ])('pins raw owner pass intent while proposing small work: %s', async (mode) => {
+    const calls = await durableDesignHost(true, null);
+    await request(event('/settings/inference'), async (e) => {
+      let saved = await host.workProfiles.read(e);
+      if (mode === 'unrelated') {
+        expect(
+          (
+            await host.workProfiles.write(e, {
+              settings: { ...saved.settings, assist: { autoEscalate: false } },
+              revision: saved.revision,
+            })
+          ).ok,
+        ).toBe(true);
+      } else if (mode === 'reset' || mode === 'explicit-four') {
+        expect(
+          (
+            await host.workProfiles.write(e, {
+              settings: { design: { budgets: { passes: 4 } } },
+              revision: saved.revision,
+            })
+          ).ok,
+        ).toBe(true);
+        if (mode === 'reset') {
+          saved = await host.workProfiles.read(e);
+          expect((await host.workProfiles.reset(e, saved.revision)).ok).toBe(
+            true,
+          );
+        }
+      }
+      return new Response();
+    });
+    response = () => ({
+      content: JSON.stringify({
+        summary: 'Add a note.',
+        personSummary: 'I’m checking the requested changes.',
+        checks: ['Customers exists.'],
+        ready: true,
+        operations: [
+          {
+            tool: 'app.addField',
+            args: {
+              list: 'Customers',
+              label: 'Smart note',
+              kind: 'text',
+              expectedRevision: 0,
+            },
+          },
+        ],
+      }),
+      finishReason: 'stop',
+    });
+    const id = await thread();
+    const admission = await chat('design-runs', {
+      threadId: id,
+      content: 'Add a note to Customers',
+    });
+    expect(admission.status).toBe(202);
+    const runId = (await admission.json()).run.runId;
+    await vi.waitFor(
+      async () =>
+        expect((await designState(runId)).status).toBe('waiting-approval'),
+      { timeout: 15000 },
+    );
+    const state = await designState(runId);
+    const actual = mode === 'explicit-four' ? 4 : 1;
+    expect(state.input.fixedPasses).toBe(mode === 'explicit-four');
+    expect(state.input.profile.budgets.passes).toBe(4);
+    expect(state.outputs).toHaveLength(actual);
+    expect(state.attempts).toHaveLength(actual);
+    expect(state.passIndex).toBe(actual - 1);
+    expect(calls).toHaveBeenCalledTimes(actual);
+    const progress = await (
+      await chat(`design-runs?threadId=${id}`, undefined, 'GET')
+    ).json();
+    expect(progress.run.pass).toMatchObject({ index: actual, count: actual });
+    const { approvals } = await (
+      await chat(`threads/${id}/approvals`, undefined, 'GET')
+    ).json();
+    expect(approvals).toHaveLength(1);
+    expect(approvals[0].summary).toContain('Smart note');
+    expect(
+      (await mcp('tools/call', { name: 'app_history', arguments: {} })).body
+        .result.structuredContent.changes,
+    ).toHaveLength(0);
+  });
+
+  it('replays one actual proposal across same-list native action holds without another model turn', async () => {
+    const calls = await durableDesignHost(true, null);
+    const operations = [
+      {
+        tool: 'app.addField',
+        args: {
+          list: 'Customers',
+          label: 'Visit purpose',
+          kind: 'text',
+          expectedRevision: 0,
+        },
+      },
+      {
+        tool: 'app.renameField',
+        args: {
+          list: 'Customers',
+          field: 'Visit purpose',
+          label: 'Service note',
+          expectedRevision: 1,
+        },
+      },
+      {
+        tool: 'app.hideField',
+        args: { list: 'Customers', field: 'Service note', expectedRevision: 2 },
+      },
+      {
+        tool: 'app.renameList',
+        args: { list: 'Customers', label: 'Members', expectedRevision: 3 },
+      },
+    ];
+    response = () => ({
+      content: JSON.stringify({
+        summary: 'Make the requested small changes.',
+        personSummary: 'I’m checking the requested changes.',
+        checks: ['Customers exists.'],
+        ready: true,
+        operations,
+      }),
+      finishReason: 'stop',
+    });
+    const id = await thread();
+    const admission = await chat('design-runs', {
+      threadId: id,
+      content: 'Add, label and hide a field, then label the list Members.',
+    });
+    expect(admission.status).toBe(202);
+    const runId = (await admission.json()).run.runId;
+    const authority = new OwnerApprovalAuthority(
+      await createSqliteOwnerApprovalStore(db),
+      async () => true,
+    );
+    const holds: string[] = [];
+    for (const [index, operation] of operations.entries()) {
+      let hold: { id: string } | undefined;
+      await vi.waitFor(
+        async () => {
+          const { approvals } = await (
+            await chat(`threads/${id}/approvals`, undefined, 'GET')
+          ).json();
+          const pending = approvals.filter(
+            (record: { status: string }) => record.status === 'pending',
+          );
+          expect(pending).toHaveLength(1);
+          expect(holds).not.toContain(pending[0].id);
+          hold = pending[0];
+        },
+        { timeout: 15000 },
+      );
+      holds.push(hold!.id);
+      expect(await authority.get(tenantId, hold!.id)).toMatchObject({
+        tool: operation.tool,
+        args: operation.args,
+        context: { designAction: { runId, actionId: String(index) } },
+      });
+      expect(await designState(runId)).toMatchObject({
+        passIndex: 0,
+        phase: 'check',
+        outputs: [expect.any(Object)],
+      });
+      expect(calls).toHaveBeenCalledTimes(1);
+      expect(
+        (await chat(`approvals/${hold!.id}/decide`, { approve: true })).status,
+      ).toBe(200);
+    }
+    await vi.waitFor(
+      async () => expect((await designState(runId)).status).toBe('done'),
+      { timeout: 15000 },
+    );
+    const done = await designState(runId);
+    expect(done).toMatchObject({
+      passIndex: 0,
+      phase: 'check',
+      outputs: [expect.any(Object)],
+      attempts: [expect.any(Object)],
+    });
+    expect(done.input.results).toHaveLength(4);
+    expect(calls).toHaveBeenCalledTimes(1);
+    expect(
+      (await mcp('tools/call', { name: 'app_history', arguments: {} })).body
+        .result.structuredContent.changes,
+    ).toHaveLength(4);
+    for (const hold of holds)
+      expect((await authority.get(tenantId, hold))?.status).toBe('succeeded');
+  });
+
   it('records approval while stopped and waits for explicit Resume before applying the same hold', async () => {
-    const calls = await durableDesignHost();
+    const calls = await durableDesignHost(true, null);
     response = () => ({
       content: JSON.stringify({
         summary: 'Add Paused note.',
@@ -1438,6 +1640,11 @@ describe('local cookbook host composition (SQLite, fake model, no providers)', (
       await (await chat(`threads/${id}/approvals`, undefined, 'GET')).json()
     ).approvals;
     expect(holds).toHaveLength(1);
+    expect(await designState(runId)).toMatchObject({
+      phase: 'check',
+      passIndex: 0,
+      outputs: [expect.any(Object)],
+    });
     expect((await chat(`design-runs/${runId}/stop`, {})).status).toBe(200);
     const decision = await chat(`approvals/${holds[0].id}/decide`, {
       approve: true,
@@ -1449,7 +1656,7 @@ describe('local cookbook host composition (SQLite, fake model, no providers)', (
       (await mcp('tools/call', { name: 'app_history', arguments: {} })).body
         .result.structuredContent.changes,
     ).toHaveLength(0);
-    expect(calls).toHaveBeenCalledTimes(3);
+    expect(calls).toHaveBeenCalledTimes(1);
     expect((await chat(`design-runs/${runId}/resume`, {})).status).toBe(200);
     await vi.waitFor(
       async () => expect((await designState(runId)).status).toBe('done'),
@@ -1464,11 +1671,11 @@ describe('local cookbook host composition (SQLite, fake model, no providers)', (
     ).approvals;
     expect(after).toHaveLength(1);
     expect(after[0]).toMatchObject({ id: holds[0].id, status: 'succeeded' });
-    expect(calls).toHaveBeenCalledTimes(3);
+    expect(calls).toHaveBeenCalledTimes(1);
   });
 
   it('recovers the exact applied result after simulated worker death before the final checkpoint', async () => {
-    const calls = await durableDesignHost(false);
+    const calls = await durableDesignHost(false, null);
     response = () => ({
       content: JSON.stringify({
         summary: 'Add Visit note.',
@@ -1506,10 +1713,10 @@ describe('local cookbook host composition (SQLite, fake model, no providers)', (
       | undefined;
     checkpointFault.beforeSave = async (state) => {
       if (
-        state.definition === 'cookbook-design/v4/3' &&
-        state.phase === 'model' &&
-        state.passIndex === 3 &&
-        state.status === 'checking'
+        state.definition === 'cookbook-design/v5/4' &&
+        state.phase === 'check' &&
+        state.passIndex === 0 &&
+        state.status === 'done'
       ) {
         checkpointFault.beforeSave = undefined;
         captured = structuredClone(state);
@@ -1544,7 +1751,7 @@ describe('local cookbook host composition (SQLite, fake model, no providers)', (
       expect(before).toMatchObject({
         status: 'checking',
         phase: 'check',
-        passIndex: 2,
+        passIndex: 0,
       });
       expect(before.leaseRevision).toBeTypeOf('number');
       expect(before.leaseUntil).toBeTypeOf('number');
@@ -1607,7 +1814,7 @@ describe('local cookbook host composition (SQLite, fake model, no providers)', (
         arguments: {},
       });
       expect(history.body.result.structuredContent.changes).toHaveLength(1);
-      expect(calls).toHaveBeenCalledTimes(3);
+      expect(calls).toHaveBeenCalledTimes(1);
       const claims = await db.query(
         'SELECT id, attempts FROM _smrt_jobs WHERE object_id = ?',
         runId,
@@ -1684,6 +1891,8 @@ describe('local cookbook host composition (SQLite, fake model, no providers)', (
       { timeout: 15000 },
     );
     const before = await state();
+    expect(before.input.listCatalog).toBeUndefined();
+    expect(before.phase).toBe('check');
     expect(before.tokens).toBe(2);
     await setCap(cap);
     const resumed = await chat(`design-runs/${runId}/resume`, {});

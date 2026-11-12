@@ -634,6 +634,212 @@ describe('approval-gated check checkpoints', () => {
   });
 });
 
+describe('trusted host early completion', () => {
+  it.each([
+    0, 1,
+  ])('completes at actual pass %i and stays terminal without invented work', async (index) => {
+    const f = fixture();
+    f.options.passes = f.options.passes.map((pass, current) => ({
+      ...pass,
+      check: async () => ({
+        complete: current === index,
+        input: { checked: current },
+      }),
+    }));
+    const driver = createDesignRunDriver(f.options);
+    await driver.start(f.input);
+    const done = await driver.run('run', 'owner');
+    expect(done).toMatchObject({
+      status: 'done',
+      passIndex: index,
+      phase: 'check',
+      tokens: (index + 1) * 10,
+      input: { checked: index },
+    });
+    expect(done.outputs).toHaveLength(index + 1);
+    expect(done.attempts).toHaveLength(index + 1);
+    expect(done.leaseRevision).toBeUndefined();
+    expect(done.leaseUntil).toBeUndefined();
+    expect(await driver.run('run', 'owner')).toEqual(done);
+    expect(await driver.stop('run', 'owner')).toEqual(done);
+    expect(await driver.status('run', 'owner')).toEqual(done);
+    await expect(driver.resume('run', 'owner')).rejects.toThrow('has ended');
+    expect(f.executePass).toHaveBeenCalledTimes(index + 1);
+    expect(f.events.at(-1)).toMatchObject({
+      status: 'done',
+      pass: { index: index + 1, count: 3 },
+    });
+  });
+
+  it('ignores a completion field returned by the model', async () => {
+    const f = fixture();
+    const result = await f.executePass({} as never);
+    f.executePass.mockClear();
+    f.executePass.mockResolvedValue({
+      ...result,
+      output: { valid: true, complete: true },
+    });
+    const driver = createDesignRunDriver(f.options);
+    await driver.start(f.input);
+    expect((await driver.run('run', 'owner')).passIndex).toBe(3);
+    expect(f.executePass).toHaveBeenCalledTimes(3);
+  });
+
+  it('holds the first proposal then completes its same check without another provider call', async () => {
+    const f = fixture();
+    let approved = false;
+    f.options.passes = f.options.passes.map((pass) => ({
+      ...pass,
+      check: async () => ({
+        complete: true,
+        waitingApproval: !approved,
+        input: { approval: 'same-hold' },
+      }),
+    }));
+    const driver = createDesignRunDriver(f.options);
+    await driver.start(f.input);
+    const held = await driver.run('run', 'owner');
+    expect(held).toMatchObject({
+      status: 'waiting-approval',
+      passIndex: 0,
+      phase: 'check',
+    });
+    approved = true;
+    const fresh = createDesignRunDriver(f.options);
+    await fresh.resume('run', 'owner');
+    const done = await fresh.run('run', 'owner');
+    expect(done).toMatchObject({
+      status: 'done',
+      passIndex: 0,
+      phase: 'check',
+      tokens: held.tokens,
+      attempts: held.attempts,
+      outputs: held.outputs,
+      input: held.input,
+    });
+    expect(f.executePass).toHaveBeenCalledOnce();
+  });
+
+  it('honors repeat before completion and never lets completion override failure', async () => {
+    const f = fixture();
+    let checks = 0;
+    f.options.passes = [
+      {
+        name: 'Propose',
+        schema: {},
+        maxRepeats: 1,
+        check: async () => ({
+          complete: true,
+          repeat: ++checks === 1,
+          ...(checks === 2 ? { failure: 'The change is unavailable.' } : {}),
+        }),
+      },
+    ];
+    const driver = createDesignRunDriver(f.options);
+    await driver.start(f.input);
+    expect(await driver.run('run', 'owner')).toMatchObject({
+      status: 'failed',
+      note: 'The change is unavailable.',
+      passIndex: 0,
+    });
+    expect(f.executePass).toHaveBeenCalledTimes(2);
+  });
+
+  it('recovers the same action after an early completion CAS is lost, requiring replacement ownership', async () => {
+    const f = fixture();
+    let approved = false;
+    const effects = new Set<string>();
+    const keys: string[] = [];
+    const check = vi.fn(
+      async (_output: unknown, state: Readonly<DesignRunState>) => {
+        if (!approved) return { waitingApproval: true, complete: true };
+        const key = `${state.id}:${state.passIndex}:0`;
+        keys.push(key);
+        effects.add(key);
+        return { complete: true };
+      },
+    );
+    f.options.passes = f.options.passes.map((pass) => ({ ...pass, check }));
+    const save = f.store.save.bind(f.store);
+    let loseCompletion = true;
+    f.store.save = (state, expected) =>
+      loseCompletion && state.status === 'done'
+        ? Promise.resolve(false)
+        : save(state, expected);
+    const driver = createDesignRunDriver(f.options);
+    await driver.start(f.input);
+    expect(await driver.run('run', 'owner')).toMatchObject({
+      status: 'waiting-approval',
+      phase: 'check',
+      passIndex: 0,
+    });
+    approved = true;
+    await driver.resume('run', 'owner');
+    await expect(driver.run('run', 'owner')).rejects.toBeInstanceOf(
+      DesignRunConflictError,
+    );
+    const checkpoint = await driver.status('run', 'owner');
+    expect(checkpoint).toMatchObject({
+      status: 'checking',
+      phase: 'check',
+      passIndex: 0,
+    });
+    await expect(
+      createDesignRunDriver(f.options).run('run', 'owner'),
+    ).rejects.toBeInstanceOf(DesignRunConflictError);
+    loseCompletion = false;
+    const replacement = createDesignRunDriver({
+      ...f.options,
+      ownsExecution: async () => true,
+    });
+    expect(await replacement.run('run', 'owner')).toMatchObject({
+      status: 'done',
+      passIndex: 0,
+      tokens: checkpoint.tokens,
+      attempts: checkpoint.attempts,
+      outputs: checkpoint.outputs,
+    });
+    expect(keys).toEqual(['run:0:0', 'run:0:0']);
+    expect(effects.size).toBe(1);
+    expect(f.executePass).toHaveBeenCalledOnce();
+  });
+
+  it('cannot overwrite Stop with an early completion from a stale check', async () => {
+    const f = fixture();
+    let finish!: () => void;
+    let began!: () => void;
+    const started = new Promise<void>((resolve) => {
+      began = resolve;
+    });
+    f.options.passes = [
+      {
+        name: 'Propose',
+        schema: {},
+        check: async () => {
+          began();
+          await new Promise<void>((resolve) => {
+            finish = resolve;
+          });
+          return { complete: true };
+        },
+      },
+    ];
+    const driver = createDesignRunDriver(f.options);
+    await driver.start(f.input);
+    const running = driver.run('run', 'owner');
+    await started;
+    await driver.stop('run', 'owner');
+    finish();
+    await expect(running).rejects.toBeInstanceOf(DesignRunConflictError);
+    expect(await driver.status('run', 'owner')).toMatchObject({
+      status: 'stopped',
+      phase: 'check',
+      passIndex: 0,
+    });
+    expect(f.executePass).toHaveBeenCalledOnce();
+  });
+});
+
 describe('trusted host check failures', () => {
   it('fails terminally with the host explanation while retaining the accepted checkpoint', async () => {
     const f = fixture();

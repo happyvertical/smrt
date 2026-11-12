@@ -35,6 +35,11 @@ export interface CookbookDesignRunsOptions {
     threadId: string,
   ): Promise<void>;
   currentRevision?(ownerId: string, tenantId: string | null): Promise<number>;
+  /** Normal app.describe read; its pinned catalog only classifies work, never authorizes it. */
+  describeApp?(
+    ownerId: string,
+    tenantId: string | null,
+  ): Promise<CookbookToolResult | undefined>;
   executeOperation?(input: {
     ownerId: string;
     tenantId: string | null;
@@ -97,9 +102,9 @@ const outputSchema = {
     },
   },
 };
-const definitionPrefix = 'cookbook-design/v4/';
+const definitionPrefix = 'cookbook-design/v5/';
 const legacyDurablePrefix = 'cookbook-design/v3/';
-const applicableDefinitions = /^cookbook-design\/v[34]\//;
+const applicableDefinitions = /^cookbook-design\/v[345]\//;
 // d3b879bef0: core app.addField inputSchema after the v2 adapter excludes
 // approvalId. Derived with core's exported stableStringify, never a copied schema.
 const v2AddFieldSchemaPin =
@@ -107,9 +112,100 @@ const v2AddFieldSchemaPin =
 const fingerprint = (value: unknown) =>
   createHash('sha256').update(stableStringify(value)).digest('hex');
 
+/** The actual checked proposal, including a v5 first-pass proposal, owns Apply. */
+export function isCookbookDesignFinalCheck(
+  state: Readonly<DesignRunState>,
+): boolean {
+  if (!applicableDefinitions.test(state.definition) || state.phase !== 'check')
+    return false;
+  if (state.passIndex === Number(state.definition.split('/').at(-1)) - 1)
+    return true;
+  const input = state.input as Record<string, unknown>;
+  if (
+    !state.definition.startsWith(definitionPrefix) ||
+    state.passIndex !== 0 ||
+    input.fixedPasses === true ||
+    input.expanded === true
+  )
+    return false;
+  const proposal = state.outputs[state.passIndex] as
+    | {
+        ready?: boolean;
+        operations?: Array<{ tool: string; args: Record<string, unknown> }>;
+      }
+    | undefined;
+  const catalog = input.listCatalog as
+    | {
+        revision?: number;
+        lists?: Array<{ id: string; label: string; synonyms: string[] }>;
+      }
+    | undefined;
+  if (
+    !proposal?.ready ||
+    !proposal.operations?.length ||
+    !catalog?.lists?.length ||
+    !Number.isSafeInteger(catalog.revision)
+  )
+    return false;
+  const lists = catalog.lists.map((list) => ({ ...list }));
+  let target: string | undefined;
+  for (const [index, operation] of proposal.operations.entries()) {
+    if (
+      ![
+        'app.addField',
+        'app.renameField',
+        'app.hideField',
+        'app.renameList',
+      ].includes(operation.tool) ||
+      (operation.tool === 'app.addField' &&
+        ![
+          'text',
+          'long text',
+          'number',
+          'date',
+          'date-time',
+          'yes/no',
+          'choice',
+          'money',
+        ].includes(String(operation.args.kind))) ||
+      operation.args.expectedRevision !== Number(catalog.revision) + index
+    )
+      return false;
+    // Exact descriptor matches are a conservative subset of core's resolution.
+    // Unknown spelling/normalization expands the work rather than guessing identity.
+    const exact = lists.filter(
+      (list) =>
+        list.id === operation.args.list || list.label === operation.args.list,
+    );
+    const matches = exact.length
+      ? exact
+      : lists.filter((list) =>
+          list.synonyms.includes(String(operation.args.list)),
+        );
+    if (
+      matches.length !== 1 ||
+      (target !== undefined && target !== matches[0].id)
+    )
+      return false;
+    target = matches[0].id;
+    if (operation.tool === 'app.renameList') {
+      if (
+        typeof operation.args.label !== 'string' ||
+        lists.some(
+          (list) => list.id !== target && list.label === operation.args.label,
+        )
+      )
+        return false;
+      matches[0].label = operation.args.label;
+    }
+  }
+  return true;
+}
+
 /** Public progress is host-owned; model prose and raw checkpoint notes stay private. */
 export function presentCookbookDesignProgress(
   event: DesignRunProgress,
+  state?: Readonly<DesignRunState>,
 ): DesignRunProgress {
   const notes = {
     running: 'I’m working through your request.',
@@ -119,15 +215,24 @@ export function presentCookbookDesignProgress(
     failed: 'I couldn’t finish this request. Please try again.',
     done: 'This work is complete.',
   };
+  const adaptive =
+    state?.definition.startsWith(definitionPrefix) &&
+    (state.input as { fixedPasses?: boolean; expanded?: boolean })
+      .fixedPasses !== true &&
+    (state.input as { expanded?: boolean }).expanded !== true;
   return {
     runId: event.runId,
     status: event.status,
     pass: {
       index: event.pass.index,
-      count: event.pass.count,
+      count: adaptive
+        ? Math.max(1, state?.outputs.length ?? 0)
+        : event.pass.count,
       name:
         event.pass.index === 1
-          ? 'Checking your request'
+          ? state?.definition.startsWith(definitionPrefix)
+            ? 'Planning your changes'
+            : 'Checking your request'
           : event.pass.index === 2
             ? 'Planning your changes'
             : 'Checking the proposed changes',
@@ -187,7 +292,7 @@ export function createCookbookDesignRuns(options: CookbookDesignRunsOptions) {
     const operations = structured
       ? ((await options.listOperations?.(ownerId, tenantId)) ?? [])
       : [];
-    const versionedOutputSchema = definition.startsWith(definitionPrefix)
+    const versionedOutputSchema = /^cookbook-design\/v[45]\//.test(definition)
       ? {
           ...outputSchema,
           required: [...outputSchema.required, 'personSummary'],
@@ -284,8 +389,11 @@ export function createCookbookDesignRuns(options: CookbookDesignRunsOptions) {
       store,
       definition,
       passes: Array.from({ length: count }, (_, index) => ({
-        name:
-          index === 0
+        name: definition.startsWith(definitionPrefix)
+          ? index === 0
+            ? 'Propose the design'
+            : 'Check and revise the design'
+          : index === 0
             ? 'Understand the request'
             : index === 1
               ? 'Propose the design'
@@ -306,7 +414,8 @@ export function createCookbookDesignRuns(options: CookbookDesignRunsOptions) {
             }>;
             ready: boolean;
           };
-          const final = index === count - 1;
+          const maximum = index === count - 1;
+          const final = isCookbookDesignFinalCheck(state);
           const input = readInput(state.input);
           if (
             applicableDefinitions.test(definition) &&
@@ -317,7 +426,7 @@ export function createCookbookDesignRuns(options: CookbookDesignRunsOptions) {
               'The design schema changed; start a new design run',
             );
           const preview = input.profile.previewBeforeApply;
-          if (final && applicableDefinitions.test(definition) && !plan.ready)
+          if (maximum && applicableDefinitions.test(definition) && !plan.ready)
             return {
               failure:
                 'No changes were applied. The design needs more information before it can propose a supported change.',
@@ -374,10 +483,37 @@ export function createCookbookDesignRuns(options: CookbookDesignRunsOptions) {
                   },
                 };
               }
-              if (result.status !== 'ok') throw new Error(result.summary);
+              if (result.status !== 'ok') {
+                // These statuses are core planning questions before any hold/effect.
+                // Never replan after a receipt, an approval, or an uncertain throw.
+                if (
+                  !maximum &&
+                  results.length === 0 &&
+                  !(state.input as Record<string, unknown>).pendingApprovalId &&
+                  ['collision', 'clarification_required'].includes(
+                    result.status,
+                  )
+                )
+                  return {
+                    input: {
+                      ...(state.input as Record<string, unknown>),
+                      expanded: true,
+                      previousCheck: {
+                        pass: index + 1,
+                        ready: false,
+                        checked: true,
+                        status: result.status,
+                      },
+                    },
+                  };
+                throw new Error(result.summary);
+              }
               results.push(result);
             }
             return {
+              ...(definition.startsWith(definitionPrefix)
+                ? { complete: true }
+                : {}),
               input: {
                 ...(state.input as Record<string, unknown>),
                 pendingApprovalId: undefined,
@@ -387,7 +523,7 @@ export function createCookbookDesignRuns(options: CookbookDesignRunsOptions) {
             };
           }
           return {
-            ...(final && (plan.operations.length > 0 || !plan.ready)
+            ...(maximum && (plan.operations.length > 0 || !plan.ready)
               ? {
                   waitingApproval: true,
                   note: !plan.ready
@@ -399,6 +535,9 @@ export function createCookbookDesignRuns(options: CookbookDesignRunsOptions) {
               : {}),
             input: {
               ...(state.input as Record<string, unknown>),
+              ...(definition.startsWith(definitionPrefix)
+                ? { expanded: true }
+                : {}),
               previousCheck: {
                 pass: index + 1,
                 ready: (output as { ready: boolean }).ready,
@@ -431,8 +570,11 @@ export function createCookbookDesignRuns(options: CookbookDesignRunsOptions) {
           content: input.content,
           profile: input.profile,
           permissions: input.permissions,
-          stage:
-            request.pass.index === 1
+          stage: definition.startsWith(definitionPrefix)
+            ? request.pass.index === 1
+              ? 'propose'
+              : 'revise'
+            : request.pass.index === 1
               ? 'profile'
               : request.pass.index === 2
                 ? 'propose'
@@ -458,14 +600,21 @@ export function createCookbookDesignRuns(options: CookbookDesignRunsOptions) {
             },
           }
         : {}),
-      onProgress: (event) =>
-        options.onProgress?.(presentCookbookDesignProgress(event)),
+      onProgress: async (event) => {
+        if (options.onProgress)
+          await options.onProgress(
+            presentCookbookDesignProgress(
+              event,
+              (await store.load(event.runId, ownerId)) ?? undefined,
+            ),
+          );
+      },
     });
     return { ...workflow, validateProposal: validateOutput, schema };
   }
 
   function passCount(definition: string) {
-    const match = /^cookbook-design\/v[1234]\/(\d+)$/.exec(definition);
+    const match = /^cookbook-design\/v[12345]\/(\d+)$/.exec(definition);
     if (!match) throw new Error('Design run definition changed');
     return Number(match[1]);
   }
@@ -549,12 +698,52 @@ export function createCookbookDesignRuns(options: CookbookDesignRunsOptions) {
           resourceIds?: string[];
           /** Captured authenticated permission ceiling; never model supplied. */
           permissions?: readonly string[];
+          /** Presence of a raw owner pass override, supplied only by the host. */
+          fixedPasses?: boolean;
         }) {
           await options.authorize(ownerId, tenantId);
           readInput(input);
           if (input.profile.name !== 'design')
             throw new Error('Design runs require the design profile');
           const budget = input.profile.budgets;
+          const description =
+            input.fixedPasses !== true
+              ? await options.describeApp?.(ownerId, tenantId)
+              : undefined;
+          const lists =
+            Array.isArray(description?.lists) && description.lists.length <= 512
+              ? description.lists.flatMap((value: unknown) => {
+                  if (!value || typeof value !== 'object') return [];
+                  const list = value as Record<string, unknown>;
+                  return typeof list.id === 'string' &&
+                    list.id.length <= 512 &&
+                    typeof list.label === 'string' &&
+                    list.label.length <= 120 &&
+                    Array.isArray(list.synonyms) &&
+                    list.synonyms.length <= 32 &&
+                    list.synonyms.every(
+                      (alias: unknown) =>
+                        typeof alias === 'string' && alias.length <= 120,
+                    )
+                    ? [
+                        {
+                          id: list.id,
+                          label: list.label,
+                          synonyms: [...list.synonyms] as string[],
+                        },
+                      ]
+                    : [];
+                })
+              : [];
+          // Never truncate away an ambiguous target. An incomplete bounded
+          // descriptor snapshot disables the shortcut for this entire run.
+          const listCatalog =
+            description?.status === 'ok' &&
+            Number.isSafeInteger(description.revision) &&
+            Array.isArray(description.lists) &&
+            lists.length === description.lists.length
+              ? { revision: description.revision as number, lists }
+              : undefined;
           const run = await driver(ownerId, tenantId, budget.passes);
           return run.start({
             id: randomUUID(),
@@ -565,6 +754,8 @@ export function createCookbookDesignRuns(options: CookbookDesignRunsOptions) {
               content: input.content,
               profile: input.profile,
               permissions: [...(input.permissions ?? [])],
+              fixedPasses: input.fixedPasses === true,
+              ...(listCatalog ? { listCatalog } : {}),
               schemaPin: fingerprint(run.schema),
             },
             budget: {
@@ -602,12 +793,11 @@ export function createCookbookDesignRuns(options: CookbookDesignRunsOptions) {
         ) {
           const run = await existing(id);
           const state = await run.status(id, ownerId);
-          const output = state.outputs[passCount(state.definition) - 1];
+          const output = state.outputs[state.passIndex];
           const input = readInput(state.input);
           if (
             !applicableDefinitions.test(state.definition) ||
-            state.phase !== 'check' ||
-            state.passIndex !== passCount(state.definition) - 1 ||
+            !isCookbookDesignFinalCheck(state) ||
             !['waiting-approval', 'running', 'checking'].includes(
               state.status,
             ) ||
@@ -791,9 +981,8 @@ export function createCookbookDesignRuns(options: CookbookDesignRunsOptions) {
             );
           if (
             applicableDefinitions.test(state.definition) &&
-            state.phase === 'check' &&
-            ['running', 'checking'].includes(state.status) &&
-            state.passIndex === passCount(state.definition) - 1
+            isCookbookDesignFinalCheck(state) &&
+            ['running', 'checking'].includes(state.status)
           ) {
             const output = state.outputs[state.passIndex];
             if (
@@ -907,6 +1096,9 @@ function readInput(input: unknown): {
   content: string;
   profile: ResolvedWorkProfile;
   permissions: string[];
+  fixedPasses?: boolean;
+  listCatalog?: unknown;
+  expanded?: boolean;
 } {
   if (!input || typeof input !== 'object')
     throw new Error('Invalid design input');
@@ -931,5 +1123,12 @@ function readInput(input: unknown): {
     content: value.content,
     profile: value.profile as ResolvedWorkProfile,
     permissions: (value.permissions as string[] | undefined) ?? [],
+    ...(typeof value.fixedPasses === 'boolean'
+      ? { fixedPasses: value.fixedPasses }
+      : {}),
+    ...(value.listCatalog !== undefined
+      ? { listCatalog: value.listCatalog }
+      : {}),
+    ...(value.expanded === true ? { expanded: true } : {}),
   };
 }

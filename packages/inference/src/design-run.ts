@@ -72,6 +72,8 @@ export interface DesignRunStore {
 /** Mechanical checks run after a validated model pass, including on replay. */
 export interface DesignPassCheck {
   input?: unknown;
+  /** Trusted host completion after a successful check; never model-selected. */
+  complete?: boolean;
   /** Safe terminal explanation authored by the trusted host check, never model output. */
   failure?: string;
   repeat?: boolean;
@@ -408,6 +410,13 @@ export function createDesignRunDriver(options: DesignRunDriverOptions) {
                   'Design checks still failed after the allowed revisions',
                 );
               state.iteration++;
+            } else if (check?.complete) {
+              // Retain the actual checked proposal index and its checkpoint.
+              // No unexecuted pass receives an output or usage record.
+              state.status = 'done';
+              state.note = undefined;
+              await save(state);
+              return state;
             } else {
               state.passIndex++;
               state.iteration = 0;
