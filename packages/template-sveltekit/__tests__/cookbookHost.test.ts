@@ -2524,9 +2524,11 @@ describe('local cookbook host composition (SQLite, fake model, no providers)', (
               assist: { model: 'fixture-best' },
               safety: {
                 requireRemovalApproval: removalApproval,
+                ...(!removalApproval ? { protectLocalCli: false } : {}),
               },
             },
             revision: state.revision,
+            confirmUnprotectedCli: !removalApproval,
           })
         ).ok,
       ).toBe(true);
@@ -2675,6 +2677,7 @@ describe('local cookbook host composition (SQLite, fake model, no providers)', (
       await request(event('/settings/inference'), async (e) => {
         expect((await host.workProfiles.read(e)).settings.safety).toEqual({
           requireRemovalApproval: false,
+          protectLocalCli: false,
         });
         return new Response();
       });

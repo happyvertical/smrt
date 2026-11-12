@@ -83,8 +83,9 @@ export const workProfilesPreferenceKind: PreferenceKindDefinition = {
               ? record(value) &&
                 Object.entries(value).every(
                   ([key, v]) =>
-                    ['requireRemovalApproval'].includes(key) &&
-                    typeof v === 'boolean',
+                    ['requireRemovalApproval', 'protectLocalCli'].includes(
+                      key,
+                    ) && typeof v === 'boolean',
                 )
               : profiles.has(name) && validSettings(value),
           )));
@@ -128,8 +129,22 @@ export function createWorkProfilesPreference(options: {
         issues: state.issues,
       };
     },
-    async write(settings: WorkProfilePreferences, revision: string | null) {
+    async write(
+      settings: WorkProfilePreferences,
+      revision: string | null,
+      confirmation?: { confirmUnprotectedCli?: boolean },
+    ) {
       await owner();
+      if (
+        settings?.safety?.protectLocalCli === false &&
+        confirmation?.confirmUnprotectedCli !== true
+      ) {
+        const previous = await this.read();
+        if (previous.settings.safety?.protectLocalCli !== false)
+          throw new PreferenceAccessError(
+            'Confirm that chat can run commands and change files on this computer',
+          );
+      }
       return options.store.save(WORK_PROFILES_PREFERENCE_KIND, SURFACE, {
         scope: 'tenant',
         payload: settings,

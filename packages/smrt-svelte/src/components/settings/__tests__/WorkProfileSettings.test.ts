@@ -321,6 +321,43 @@ describe('WorkProfileSettings', () => {
   });
 });
 
+it('defaults both safety controls on and requires explicit risk confirmation before disabling CLI protection', async () => {
+  const user = userEvent.setup();
+  const onsave = vi.fn(async () => {});
+  render(WorkProfileSettings, {
+    settings: {},
+    resolved,
+    onsave,
+    onreset: vi.fn(),
+  });
+  const removals = screen.getByLabelText('Ask before deleting or removing');
+  const protection = screen.getByLabelText(
+    'Protect this computer from local AI tools',
+  );
+  expect(removals).toBeChecked();
+  expect(protection).toBeChecked();
+  expect(screen.getByText(/Deleted records cannot be restored/)).toBeVisible();
+  await user.click(removals);
+  await user.click(protection);
+  expect(screen.getByRole('dialog')).toHaveTextContent(
+    'A chat message in this app can run commands and change files on this computer.',
+  );
+  expect(protection).toBeChecked();
+  expect(onsave).not.toHaveBeenCalled();
+  await user.click(screen.getByRole('button', { name: 'Cancel' }));
+  expect(protection).toBeChecked();
+  await user.click(protection);
+  await user.click(screen.getByRole('button', { name: 'Turn off protection' }));
+  expect(protection).not.toBeChecked();
+  await user.click(
+    screen.getByRole('button', { name: 'Save assistant settings' }),
+  );
+  expect(onsave).toHaveBeenCalledExactlyOnceWith(
+    { safety: { requireRemovalApproval: false, protectLocalCli: false } },
+    { confirmUnprotectedCli: true },
+  );
+});
+
 it('links an unsigned-in ChatGPT engine choice to the shared connection section', async () => {
   render(WorkProfileSettings, {
     settings: {},
@@ -341,7 +378,7 @@ it('reflects recommended safety defaults after reset and disables safety edits f
   const onreset = vi.fn(async () => {});
   const { rerender } = render(WorkProfileSettings, {
     settings: {
-      safety: { requireRemovalApproval: false },
+      safety: { requireRemovalApproval: false, protectLocalCli: false },
     },
     resolved,
     onsave: vi.fn(),
@@ -355,9 +392,15 @@ it('reflects recommended safety defaults after reset and disables safety edits f
   );
   expect(onreset).toHaveBeenCalledOnce();
   await rerender({ settings: {} });
-  for (const label of ['Ask before deleting or removing'])
+  for (const label of [
+    'Ask before deleting or removing',
+    'Protect this computer from local AI tools',
+  ])
     expect(screen.getByLabelText(label)).toBeChecked();
   await rerender({ editable: false });
-  for (const label of ['Ask before deleting or removing'])
+  for (const label of [
+    'Ask before deleting or removing',
+    'Protect this computer from local AI tools',
+  ])
     expect(screen.getByLabelText(label)).toBeDisabled();
 });

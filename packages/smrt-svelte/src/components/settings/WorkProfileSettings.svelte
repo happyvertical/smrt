@@ -7,9 +7,11 @@ import type {
   WorkProfileName,
 } from '@happyvertical/smrt-inference';
 import { engineLabel } from '@happyvertical/smrt-inference';
+import { ConfirmDialog } from '@happyvertical/smrt-ui/feedback';
 import { FormGroup, Input, Select, Toggle } from '@happyvertical/smrt-ui/forms';
 import { defineMessages, useI18n } from '@happyvertical/smrt-ui/i18n';
 import { Button, Card, Disclosure } from '@happyvertical/smrt-ui/ui';
+import { tick } from 'svelte';
 import { safeHref } from '../overview/markdown.js';
 
 const M = defineMessages({
@@ -53,6 +55,14 @@ const M = defineMessages({
   'ui.work_profiles.removals': 'Ask before deleting or removing',
   'ui.work_profiles.removals_help':
     'Applies to chat in this app. Deleted records cannot be restored. Requests from outside this app and permanent purges always need owner approval. Design previews still apply.',
+  'ui.work_profiles.protection': 'Protect this computer from local AI tools',
+  'ui.work_profiles.protection_help':
+    'When on, Claude Code and Codex use the app’s protected tool setup. When off, they can use their own tools, settings and plugins in the app’s data folder.',
+  'ui.work_profiles.protection_confirm': 'Turn off local AI protection?',
+  'ui.work_profiles.protection_risk':
+    'A chat message in this app can run commands and change files on this computer.',
+  'ui.work_profiles.protection_off': 'Turn off protection',
+  'ui.work_profiles.cancel': 'Cancel',
   'ui.work_profiles.connect_chatgpt': 'Sign in with ChatGPT in Connect AI',
   'ui.work_profiles.maxSteps': 'Tool steps per pass',
   'ui.work_profiles.maxTokens': 'Output tokens per call',
@@ -85,12 +95,16 @@ let {
     settings: Partial<Record<WorkProfileName, OwnerWorkProfileSettings>> & {
       safety?: AssistantSafetySettings;
     },
+    confirmation?: { confirmUnprotectedCli?: boolean },
   ): Promise<void>;
   onreset(): Promise<void>;
   editable?: boolean;
   chatgptSignedIn?: boolean;
   connectAiHref?: string;
 } = $props();
+let protectionChecked = $state(true);
+let confirmingProtection = $state(false);
+let confirmedProtection = $state(false);
 let drafts = $state<
   Partial<Record<WorkProfileName, OwnerWorkProfileSettings>> & {
     safety?: AssistantSafetySettings;
@@ -106,6 +120,8 @@ const invalidDuration = $derived(
 );
 $effect(() => {
   drafts = structuredClone(settings);
+  confirmedProtection = false;
+  protectionChecked = settings.safety?.protectLocalCli !== false;
   durationEdits = {};
 });
 const budgetKeys: (keyof WorkProfileBudgets)[] = [
@@ -168,6 +184,8 @@ async function save(reset = false) {
   failed = false;
   try {
     if (reset) await onreset();
+    else if (confirmedProtection)
+      await onsave(drafts, { confirmUnprotectedCli: true });
     else await onsave(drafts);
   } catch {
     failed = true;
@@ -218,6 +236,8 @@ async function save(reset = false) {
     <h3>{t(M['ui.work_profiles.safety'])}</h3>
     <Toggle label={t(M['ui.work_profiles.removals'])} checked={drafts.safety?.requireRemovalApproval !== false} disabled={!editable || busy} onchange={checked => { drafts = { ...drafts, safety: { ...drafts.safety, requireRemovalApproval: checked } }; }} />
     <p>{t(M['ui.work_profiles.removals_help'])}</p>
+    <Toggle label={t(M['ui.work_profiles.protection'])} bind:checked={protectionChecked} disabled={!editable || busy} onchange={async checked => { if (!checked) { confirmingProtection = true; await tick(); protectionChecked = true; } else { confirmedProtection = false; drafts = { ...drafts, safety: { ...drafts.safety, protectLocalCli: true } }; } }} />
+    <p>{t(M['ui.work_profiles.protection_help'])}</p>
   </Card>
   {#if resolved.some(profile => profile.engine === 'claude-code' || profile.engine === 'codex')}<p>{t(M['ui.work_profiles.cli_limits'])}</p>{/if}
   {#if failed}<p role="alert">{t(M['ui.work_profiles.failed'])}</p>{/if}
@@ -226,3 +246,4 @@ async function save(reset = false) {
   <Button disabled={!editable || busy} onclick={() => save(true)}>{t(M['ui.work_profiles.reset'])}</Button>
 </section>
 
+<ConfirmDialog open={confirmingProtection} title={t(M['ui.work_profiles.protection_confirm'])} message={t(M['ui.work_profiles.protection_risk'])} confirmLabel={t(M['ui.work_profiles.protection_off'])} cancelLabel={t(M['ui.work_profiles.cancel'])} destructive oncancel={() => { confirmingProtection = false; }} onconfirm={() => { confirmingProtection = false; confirmedProtection = true; protectionChecked = false; drafts = { ...drafts, safety: { ...drafts.safety, protectLocalCli: false } }; }} />

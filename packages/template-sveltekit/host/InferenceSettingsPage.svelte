@@ -62,7 +62,7 @@ async function discover(): Promise<void> {
        permission reads it, and the server refuses their writes. -->
   {#if data.workProfiles}
     <WorkProfileSettings settings={data.workProfiles.settings} resolved={data.workProfiles.resolved} editable={data.workProfiles.editable} chatgptSignedIn={data.workProfiles.chatgptSignedIn}
-      onsave={async (settings) => { const result = await postSetting('saveWorkProfiles', { settings, revision: data.workProfiles?.revision }); if (!result.ok) throw new Error('Save refused'); }}
+      onsave={async (settings, confirmation) => { const result = await postSetting('saveWorkProfiles', { settings, ...confirmation, revision: data.workProfiles?.revision }); if (!result.ok) throw new Error('Save refused'); }}
       onreset={async () => { const result = await postSetting('resetWorkProfiles', { revision: data.workProfiles?.revision }); if (!result.ok) throw new Error('Reset refused'); }} />
   {/if}
   <InferenceSettingsPanel

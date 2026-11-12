@@ -116,7 +116,7 @@ export function preferenceKindsSuite(
           });
           expect((await profiles.read()).settings).toEqual({});
           const settings = {
-            safety: { requireRemovalApproval: false },
+            safety: { requireRemovalApproval: false, protectLocalCli: false },
             assist: { effort: 'high' as const, autoEscalate: false },
             design: {
               engine: 'codex' as const,
@@ -125,7 +125,17 @@ export function preferenceKindsSuite(
               budgets: { maxSteps: 72, repairRetries: 0 },
             },
           };
-          expect((await profiles.write(settings, null)).ok).toBe(true);
+          await expect(profiles.write(settings, null)).rejects.toThrow(
+            PreferenceAccessError,
+          );
+          expect((await profiles.read()).settings).toEqual({});
+          expect(
+            (
+              await profiles.write(settings, null, {
+                confirmUnprotectedCli: true,
+              })
+            ).ok,
+          ).toBe(true);
           const saved = await profiles.read();
           expect(saved.settings).toEqual(settings);
           expect(await profiles.write({}, null)).toEqual({

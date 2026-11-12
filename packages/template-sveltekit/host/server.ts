@@ -1593,6 +1593,7 @@ export function createCookbookHost(options: CookbookHostOptions) {
       payload: {
         settings: WorkProfilePreferences;
         revision: string | null;
+        confirmUnprotectedCli?: boolean;
       },
     ) {
       const principal = resolveAssistantPrincipalFromLocals(event.locals);
@@ -1608,10 +1609,17 @@ export function createCookbookHost(options: CookbookHostOptions) {
         !(payload.revision === null || typeof payload.revision === 'string')
       )
         error(400, 'Invalid settings');
-      return (await ready()).workProfiles.write(
-        payload.settings,
-        payload.revision,
-      );
+      try {
+        return await (await ready()).workProfiles.write(
+          payload.settings,
+          payload.revision,
+          { confirmUnprotectedCli: payload.confirmUnprotectedCli === true },
+        );
+      } catch (cause) {
+        if (cause instanceof Error && cause.name === 'PreferenceAccessError')
+          error(403, 'Owner confirmation required to change assistant safety');
+        throw cause;
+      }
     },
     async reset(event: RequestEvent, revision: string | null) {
       const principal = resolveAssistantPrincipalFromLocals(event.locals);
@@ -1632,7 +1640,12 @@ export function createCookbookHost(options: CookbookHostOptions) {
         .engine(c.principal.tenantId, c.principal.userId)
         .then((v) => v ?? undefined),
     status: async (c) => ({
-      cliStatus: cli.cliStatus,
+      cliStatus: async (tool) =>
+        cli.cliStatus(tool, {
+          protection:
+            (await (await ready()).workProfiles.read()).settings.safety
+              ?.protectLocalCli !== false,
+        }),
       chatgpt: { status: async () => (await chatgpt()).status() },
       apiStatus: () => apiStatus(c),
       actions: { api: { label: 'Connect AI', href: '/settings/inference' } },
@@ -1689,6 +1702,9 @@ export function createCookbookHost(options: CookbookHostOptions) {
             label: 'Assistant turn',
           });
           return {
+            protection:
+              (await host.workProfiles.read()).settings.safety
+                ?.protectLocalCli !== false,
             mcpUrl: new URL('/mcp', context.event.url).href,
             ...(designRequests.get(context.event.request)
               ? {
@@ -2540,7 +2556,20 @@ export function createCookbookHost(options: CookbookHostOptions) {
         engine: () => host.state.engine(principal.tenantId, principal.userId),
         select: (engine) =>
           host.state.select(principal.tenantId, principal.userId, engine),
-        cli,
+        cli: {
+          ...cli,
+          cliStatus: async (tool, statusOptions) =>
+            runtime.runAsPrincipal(
+              { id: principal.userId, tenantId: principal.tenantId },
+              async () =>
+                cli.cliStatus(tool, {
+                  ...statusOptions,
+                  protection:
+                    (await host.workProfiles.read()).settings.safety
+                      ?.protectLocalCli !== false,
+                }),
+            ),
+        },
         chatgpt: await chatgpt(),
         apiStatus: () => apiStatus({ event, principal }),
       };
