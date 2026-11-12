@@ -2849,6 +2849,10 @@ export function createCookbookHost(options: CookbookHostOptions) {
     },
     dispose() {
       process.removeListener('sveltekit:shutdown', onShutdown);
+      // Release this database's design-run executor now so a replacement host
+      // can install its own; the task runner stops through the shared shutdown.
+      disposeDesignRuns?.();
+      void shutdown().catch(() => {});
       current?.gate.dispose?.();
       setRuntimeExposureGate(undefined);
       setCookbookToolService(undefined);
