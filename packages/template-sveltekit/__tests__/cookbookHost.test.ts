@@ -270,6 +270,9 @@ beforeEach(async () => {
     ),
     'utf8',
   );
+  // Both fixtures model a compatible MCP-only CLI: locked flags are accepted
+  // and MCP works with built-ins absent. This is not native Codex 0.162.1,
+  // whose code-mode host policy is refused by inference's native probe.
   const fixture = stub.replace(
     '#!/usr/bin/env node',
     `#!${process.execPath}\nif (process.argv.includes('--version')) { console.log('1.2.3'); process.exit(0); }\nif (process.argv.slice(2).join(' ') === 'auth status') { console.log('{"loggedIn":true}'); process.exit(0); }\nif (process.argv.slice(2).join(' ') === 'login status') { console.log('Logged in using ChatGPT'); process.exit(0); }`,
@@ -575,6 +578,16 @@ describe('local cookbook host composition (SQLite, fake model, no providers)', (
     });
     await new Promise<void>((resolve) => http!.listen(0, '127.0.0.1', resolve));
     origin = `http://127.0.0.1:${(http.address() as { port: number }).port}`;
+    const connection = await (
+      await request(event('/api/connect-ai'), host.connectAi.GET)
+    ).json();
+    expect(
+      connection.tools.find((tool: { tool: string }) => tool.tool === engine),
+    ).toMatchObject({
+      installed: true,
+      signedIn: true,
+      ready: true,
+    });
     const selection = await request(
       event('/api/connect-ai', 'POST', { action: 'select', engine }),
       host.connectAi.POST,
@@ -582,7 +595,7 @@ describe('local cookbook host composition (SQLite, fake model, no providers)', (
     expect(selection.status).toBe(200);
     expect((await host.load(event('/'))).assistantIntroduction).toMatchObject({
       configured: true,
-      lists: ['Customers'],
+      lists: ['Members', 'Memos'],
     });
     const listing = await mcp();
     const name = listing.body.result.tools.find((t: { name: string }) =>

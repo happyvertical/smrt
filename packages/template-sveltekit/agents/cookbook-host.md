@@ -1,5 +1,14 @@
 # Local cookbook host
 
+The real-HTTP CLI fixture in `__tests__/cookbookHost.test.ts` models a compatible
+MCP-only host for both stream protocols: it accepts the locked flags, preflights
+successfully, and calls the app MCP endpoint with built-ins absent. It does not
+model native Codex 0.162.1's incompatible code-mode host; that version remains
+refused as documented in inference's engine contract. The introduction assertion
+uses the test's current cookbook (renamed Members plus enabled Memos), rather than
+the earlier Customers-only snapshot. It still requires configured readiness and
+the same full create/hold/decision/revocation behavior for both compatible stubs.
+
 Cookbook/app workflow results return both text content and the same object as
 `structuredContent`, matching the bridge's declared object `outputSchema`.
 Current Claude Code and Codex clients reject text-only successful results when
