@@ -393,10 +393,17 @@ it('stops Codex on a disabled tool host before publishing a fallback answer', as
   expect(live()).toBeNull();
 });
 
-it.each([
-  'claude-code',
-  'codex',
-] as const)('%s reports host tool results and pending approvals', async (tool) => {
+it.each(
+  (['claude-code', 'codex'] as const).flatMap((tool) =>
+    (['pending', 'approved', 'denied'] as const).map((decision) => ({
+      tool,
+      decision,
+    })),
+  ),
+)('$tool correlates a canonical hold when its decision is $decision before the result', async ({
+  tool,
+  decision,
+}) => {
   const { deps } = setup(tool);
   const messages: AgentTurnMessage[] = [];
   const host = threadHost('tool record_delete {"id":"record-1"}', messages);
@@ -437,6 +444,8 @@ it.each([
     });
     pending = { id: 'approval-1', status: 'pending' };
     listener?.(pending);
+    // The independent owner's decision can win the response-parsing race.
+    pending = { ...pending, status: decision };
     res.setHeader('content-type', 'application/json');
     res.end(
       JSON.stringify({
@@ -458,7 +467,7 @@ it.each([
       emit: (e) => events.push(e),
       host,
     });
-    expect(stop).toBe('waiting');
+    expect(stop).toBe(decision === 'pending' ? 'waiting' : 'complete');
     expect(events.find((e) => e.type === 'tool_call')).toMatchObject({
       name: 'record_delete',
       args: '{"id":"record-1"}',

@@ -14,6 +14,54 @@ third-party mode. Keep the host disabled and report incompatibility. A verified
 MCP-only execution host or upstream built-in-tool allow-list is required before
 enabling this profile; do not substitute another model or billing path silently.
 
+## Codex 0.162.1 compatibility evidence and owner options
+
+Native probes on the installed CLI use its default model, disposable empty
+HOME/CODEX_HOME, a loopback fake Responses provider with auth disabled, and one
+fixture MCP read tool. No provider credential, account request or real model
+turn is used. The fake reply only enumerates the host's tool registry and, in
+the MCP-call control, invokes that fixture read. No built-in file/shell tool is
+executed. These are protocol facts, not a claim of complete OS sandbox testing.
+
+Common invocation: `exec --json --skip-git-repo-check --ignore-user-config
+--ignore-rules`, prompt on stdin, private empty cwd, `--enable mcp_2026_07_28`,
+and `-c sandbox_mode="read-only" -c approval_policy="never"
+-c web_search="disabled"`. The app server is loopback, `required=true`, with
+`bearer_token_env_var` naming the existing environment variable; no token goes
+in argv or files. `default_tools_approval_mode="approve"` refers only to MCP
+transport: the server still owns permissions and independent owner holds.
+
+Baseline `--disable` features: `shell_tool`, `unified_exec`, `apps`, `plugins`,
+`hooks`, `multi_agent`, `multi_agent_v2`, `view_image`, `image_generation`,
+`browser_use`, `computer_use`, `in_app_browser`, `memories`, `skill_search`,
+`tool_suggest`, `goals`, `code_mode`, `code_mode_host`,
+`request_permissions_tool`. Native `features list` in the disposable home also
+reports `apply_patch_freeform` as **removed/false**, not an available kill switch.
+
+| Option tried (changes from baseline only) | Native result | Capability/security consequence |
+| --- | --- | --- |
+| No change: code host disabled | MCP discovery/list succeeds, but its tool is absent from the model registry; native execution returns `code-mode host is disabled` | Current supported app policy: fail closed as `tool_host_policy`; no model turn is started by readiness. |
+| Enable only `code_mode_host` | Registry contains `mcp__smrt__probe` **and `apply_patch`**; fixture `tools/call` succeeds with protocol 2026-07-28 | App MCP works, but the model retains a built-in filesystem-editing interface. Read-only sandbox and never-approve remain; this does not satisfy “built-ins absent”. Not enabled by SMRT. |
+| Also enable `code_mode_only_strict_3p_tools` | Same MCP + `apply_patch` registry | The strict flag does not remove the built-in tool. Not enabled. |
+| Also enable both `code_mode_only` and `code_mode_only_strict_3p_tools` | Same registry | Combining the strict flags still does not yield MCP-only tools. Not enabled. |
+| Enable `code_mode_host` and `code_mode` | Same registry | Legacy code-mode flag does not remove `apply_patch`. Not enabled. |
+| Enable `code_mode_host` and `shell_tool` (keep `unified_exec` disabled) | Also registers `exec_command` and `write_stdin` | Adds a model-visible shell interface. Read-only/never-approve are narrower than full access but are not an app-only capability boundary. Not enabled. |
+
+The empty cwd is not a filesystem visibility jail. A read-only sandbox permits
+inspection according to its platform policy; it does not prove that arbitrary
+absolute paths outside the cwd are invisible. No write/network boundary bypass
+was attempted, and no platform-wide enforcement guarantee is inferred from
+registry enumeration. Provider/MCP transport access is separate from a spawned
+command's network policy. See the official [sandbox contract](https://learn.chatgpt.com/docs/sandboxing)
+and [CLI flags](https://learn.chatgpt.com/docs/cli/reference).
+
+Owner choices are: retain this refusal and use a compatible engine; request an
+upstream built-in-tool allow-list/MCP-only host; or explicitly review a broader
+filesystem/shell policy in a separate change. This implementation adopts only
+the first choice. Connect AI says “Not supported with this Codex version yet”
+and explains the file-tool conflict. No model downgrade, API billing fallback,
+code-host enable or sandbox weakening is implemented.
+
 Codex's app MCP server is required: it waits for the live catalog within its
 startup timeout instead of continuing after the optional-server grace period
 with no app tools. A failed required MCP startup reports fixed app-connection
@@ -72,6 +120,13 @@ host })`. `tool` is `claude-code` or `codex`:
   filtered by the host. `describeResult` supplies UI words and optional host
   metadata (`details`, also persisted on the tool message); `completionNote?`
   supplies a closing note for host-specific state such as drafts.
+
+The host publishes canonical pending holds before returning a tool response.
+A fast independent decision may already be approved/denied when inference reads
+it; it remains a held call and emits the existing approval event, never an
+ordinary successful result that bypasses chat's protected-result guard. Both CLI
+fixtures cover pending, early-approved and early-denied correlation. Model output
+does not supply approval identity or authority.
 - `emit` receives text, tool_call, tool_result, approval_required,
   approval_decided, done and error events. `done.stop` is complete, waiting,
   aborted, timeout or error. Pending approvals return waiting; only the owner's

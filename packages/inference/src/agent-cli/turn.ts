@@ -416,7 +416,14 @@ async function runAgentTurnImpl(
             fresh.attached = true;
             toolIdOf.set(fresh.approvalId, event.id);
             const view = await host.approvals.get(fresh.approvalId);
-            if (view?.status === 'pending') {
+            // An independent owner can decide before this fast response is
+            // parsed. It is still a held call, never an unapproved tool result.
+            if (
+              view &&
+              ['pending', 'approved', 'denied', 'failed', 'timeout'].includes(
+                view.status,
+              )
+            ) {
               approvalId = fresh.approvalId;
               emit({
                 type: 'approval_required',

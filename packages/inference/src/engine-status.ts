@@ -70,7 +70,7 @@ export function cliEngineStatus(
       message: `${label} is not signed in.`,
       ...(action ? { action } : {}),
     };
-  if (found.ready === false)
+  if (found.ready !== true)
     return {
       ...base,
       configured: false,
@@ -78,7 +78,7 @@ export function cliEngineStatus(
       ...(found.startError ? { startError: found.startError } : {}),
       message:
         found.startError === 'tool_host_policy'
-          ? `${label} cannot use app tools with the required security settings. Its tool host includes built-in file tools; use a compatible engine in AI settings.`
+          ? `${label} is not supported with this Codex version yet. App tools require a host that also exposes built-in file tools; use a compatible engine in AI settings.`
           : found.startError === 'working_directory'
             ? `${label} needs a writable temporary directory.`
             : found.startError === 'runtime_unavailable'

@@ -5,6 +5,19 @@ import { cliEngineStatus, inferenceEngineStatus } from './engine-status.js';
 
 const action = { label: 'Connect', href: '/host/connect' };
 describe('host-driven engine diagnostics', () => {
+  it('refuses an installed signed-in engine until startup preflight explicitly succeeds', () => {
+    expect(
+      cliEngineStatus(
+        'claude-code',
+        { installed: true, signedIn: true },
+        action,
+      ),
+    ).toMatchObject({
+      configured: false,
+      code: 'agent_cli_startup',
+      action,
+    });
+  });
   it.each([
     'claude-code',
     'codex',
@@ -21,15 +34,27 @@ describe('host-driven engine diagnostics', () => {
         action,
       });
     expect(
-      cliEngineStatus(tool, { installed: true, signedIn: true }, action),
+      cliEngineStatus(
+        tool,
+        { installed: true, signedIn: true, ready: true },
+        action,
+      ),
     ).toMatchObject({ configured: true });
     expect(
-      cliEngineStatus(tool, { installed: true, signedIn: true }, action).action,
+      cliEngineStatus(
+        tool,
+        { installed: true, signedIn: true, ready: true },
+        action,
+      ).action,
     ).toBeUndefined();
   });
 
   it('consults only the selected engine and uses host destinations', async () => {
-    const cliStatus = vi.fn(async () => ({ installed: true, signedIn: true }));
+    const cliStatus = vi.fn(async () => ({
+      installed: true,
+      signedIn: true,
+      ready: true,
+    }));
     const status = vi.fn(async () => ({ signedIn: false, signingIn: false }));
     const apiStatus = vi.fn(async () => ({
       configured: false,
