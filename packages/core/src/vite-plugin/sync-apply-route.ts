@@ -73,7 +73,7 @@ function getApiConfigObject(apiConfig: unknown): ApiConfig | null {
 }
 
 /**
- * Mirror of sveltekit-generator.ts `resolveStandardCrudActions`, narrowed to
+ * Mirror of web-collections.ts `resolveStandardCrudActions`, narrowed to
  * the mutating subset the sync contract can carry. Kept local so this module
  * needs no exports added to the (parallel-edited) shared generator file.
  */

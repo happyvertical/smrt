@@ -1,3 +1,4 @@
+import { createHash } from 'node:crypto';
 import { existsSync, readFileSync, realpathSync } from 'node:fs';
 import { createRequire } from 'node:module';
 import { extname, isAbsolute, relative, resolve } from 'node:path';
@@ -167,8 +168,14 @@ export function generateActivationRegistration(
     projectRoot: string;
     outputDir: string;
     collectionMetadata?: readonly string[];
+    /** Emit deferred data modules beside the registration; publish `files` too. */
+    splitDeclarations?: boolean;
   },
-): { manifest: ActivationManifest; source: string } {
+): {
+  manifest: ActivationManifest;
+  source: string;
+  files: Record<string, string>;
+} {
   const modules: Record<string, ActivationModule> = {};
   const entries = new Map<string, string[]>();
   const packageModules = new Map<string, Set<string>>();
@@ -379,6 +386,9 @@ export function generateActivationRegistration(
   const graph = buildActivationManifest(manifest, modules);
   const portable = {
     ...manifest,
+    // Runtime registration consumes object metadata; the host loads its recipe
+    // catalog separately. Never duplicate that documentation per activation unit.
+    recipes: undefined,
     objects: Object.fromEntries(
       Object.entries(manifest.objects).map(([id, object]) => [
         id,
@@ -390,7 +400,21 @@ export function generateActivationRegistration(
   // manifest data: String() keeps Reflect.get dynamic under TS 6's literal-key
   // overload, so optional exports and models with specialized constructor
   // options are checked at the existing runtime registration boundary.
+  const files: Record<string, string> = {};
   const loaders = [...entries].map(([module, ids]) => {
+    const data = JSON.stringify({
+      ...portable,
+      objects: Object.fromEntries(ids.map((id) => [id, portable.objects[id]])),
+    });
+    const parse = `JSON.parse(${JSON.stringify(data)})`;
+    let declaration = `const declarations = ${parse};`;
+    if (options.splitDeclarations) {
+      const stem = `.smrt/activation/${createHash('sha256').update(module).digest('hex')}`;
+      files[`${stem}.js`] = `export default ${parse};\n`;
+      files[`${stem}.d.ts`] =
+        'declare const declarations: import("@happyvertical/smrt-core").SmartObjectManifest;\nexport default declarations;\n';
+      declaration = `const { default: declarations } = await import(${JSON.stringify(`./${stem}.js`)});`;
+    }
     const registrations = ids.map((id) => {
       const object = manifest.objects[id];
       const name = object.exportName ?? object.className;
@@ -413,11 +437,13 @@ if (Reflect.get(provider, String(${JSON.stringify(name)}))) {
     });
     return `${JSON.stringify(module)}: async () => {
   const provider = await import(${JSON.stringify(module)});
+  ${declaration}
   ${registrations.join('\n')}
 }`;
   });
   return {
     manifest: graph,
-    source: `// Generated SMRT activation: declarations and deferred imports only.\nimport { ObjectRegistry } from '@happyvertical/smrt-core';\nexport const activationManifest = JSON.parse(${JSON.stringify(JSON.stringify(graph))});\nconst declarations = JSON.parse(${JSON.stringify(JSON.stringify(portable))});\nexport const activationLoaders = {\n${loaders.join(',\n')}\n};\n`,
+    files,
+    source: `// Generated SMRT activation: declarations and deferred imports only.\nimport { ObjectRegistry } from '@happyvertical/smrt-core';\nexport const activationManifest = JSON.parse(${JSON.stringify(JSON.stringify(graph))});\nexport const activationLoaders = {\n${loaders.join(',\n')}\n};\n`,
   };
 }

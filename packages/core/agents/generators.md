@@ -721,3 +721,16 @@ registers those distinct collections and proves default MCP still rejects the
 ambiguous alias. The existing optional canonicalizer mode then yields two valid
 workflow names with exact original identities. These are distinct protocol
 boundaries; no additional REST or MCP alias mechanism is introduced.
+
+## Runtime API discovery entry
+
+`@happyvertical/smrt-core/api-actions` exposes the existing method-name, action-set,
+custom-action and route-configuration resolvers for Node runtime discovery.
+Their implementation lives with the pure manifest projection in
+`vite-plugin/web-collections.ts`. The SvelteKit emitter re-exports those same
+bindings for compatibility; runtime consumers must use the leaf rather than the
+Vite-plugin barrel. This keeps route emission and resource discovery on one
+policy without importing the emitter, activation generator or scanner build graph.
+Existing emitter/web projection tests cover CRUD, custom receivers, withheld
+methods, replacements, collection ownership and malformed config. The published
+root/leaf guard also checks binding identity with the old build API.

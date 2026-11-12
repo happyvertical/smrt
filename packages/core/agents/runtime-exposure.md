@@ -421,3 +421,58 @@ publisher checkout outside that package is not a host source, even when it happe
 to exist on the build machine. Workspace-linked providers retain source digests.
 
 Current PostgreSQL/PGlite transaction scope, fencing and validation: [PostgreSQL parity](postgres-parity.md).
+
+PostgreSQL/PGlite refusal, migration lock prerequisites and validation: [PostgreSQL parity](postgres-parity.md).
+
+### Startup declaration and build-tool loading
+
+Activation registration keeps declaration JSON inside each deferred module loader.
+Importing the generated registration parses only the small activation graph;
+activating a module parses that module's entries. The full catalog remains
+available for later activation. Host generators opt into `splitDeclarations`:
+the small registration dynamically imports per-module data under its own
+`.smrt/activation/` directory, so disabled metadata is not compiled or parsed at
+boot. `generateActivationRegistration` returns these relative-path `files` for
+publication alongside `source` and `manifest`. Its default remains standalone
+source. Both host emitters reuse `publishArtifactFiles` to publish data before
+the registration with synchronous-failure rollback. Stable module-name hashes
+avoid creating a new data filename on every rebuild. Provider exports, collection metadata, same-name
+replacement registration and retry behavior are unchanged.
+
+The Node root's synchronous `smrtPlugin` API resolves its ESM build implementation
+with Node >=26 `createRequire` only when called. Direct build subpaths remain
+available. Do not add a static Vite-plugin root re-export: ordinary model imports
+must not evaluate the route generator or activation build graph.
+
+| Invariant | Reachable trigger / positive case | Negative control | Context / executor / runtime / contract | Level / validation |
+| --- | --- | --- | --- | --- |
+| Disabled declarations stay unparsed | Generated loader activates Invoice, then Unused parses its own metadata | Boot and Invoice activation never parse Unused's marker | Fresh Node process, synthetic provider/app manifests; no DB; public generated loaders | Core `activation/generate.test.ts`; full core test |
+| Synchronous plugin compatibility | Call the published root's plugin factory and inspect its API immediately | Root import fails if it loads `vite-plugin/index.js`; native transformer always refused | Plain Node >=26; no DB; existing root export signature | Same process regression; full build and core typecheck |
+| Existing activation semantics | Existing strict JS/TS consumers, module dependency closure, same-name app and independent-process recovery | Existing graph/refusal and optional-export controls retained | SQLite and existing consumer fixtures; public loader/coordinator boundary | Full core test |
+
+Both startup controls fail against the original build. No new production helper,
+model, component, route or type was introduced. Reuse inspection used the intent
+index, MCP `review-smrt-project` on core, `build-context` for startup/activation,
+and `rg` by boot/module/memory/manifest purpose across core, chat, smrt-ui and
+smrt-svelte. This extends the existing generator and root API.
+
+Per-unit registration metadata omits the host's `recipes` catalog: registry
+registration consumes object declarations, while host search/help reads installed
+manifests through the existing cookbook catalog loader. Repeating that catalog
+in each data module would increase boot source and retained allocations. The
+parse-probe regression asserts that recipe help is absent from generated
+registration/data and remains intact on the caller's manifest.
+
+Reuse for `src/api-actions.ts`: MCP core/users reviews, architecture lookup for
+runtime action-set/route policy and `rg` by `resolveApiActionSet`,
+`resolveApiCustomActions`, `resolveApiActionRouteConfig`, `methodNameToKebab`
+and discovery purpose found the existing emitter implementations. They moved
+unchanged into the existing web projection module, which already owns collection
+ancestry and replacement resolution. The new file is only a public leaf re-export;
+there is no second policy implementation. Users changes only its import path;
+see its existing resource-list tests and permissions module.
+
+| Additional invariant | Positive / negative evidence | Context / executor / runtime / contract | Validation |
+| --- | --- | --- | --- |
+| Runtime API policy shares the build implementation | Existing 103 emitter and 66 web tests; old/public-leaf binding identity; fresh users SvelteKit import refuses all emitter/build paths | Metadata only, no SQL; Node >=26; existing public build exports preserved and new `api-actions` entry | Core targeted/full suites and users 46-case resource suite/full suite |
+| Recipe help stays in its owning catalog | Generated source/data omit the help probe; original manifest retains it, in both output modes | Synthetic manifest; no SQL; registration metadata only | Activation generation suite; real product first-run and all-recipe tools |

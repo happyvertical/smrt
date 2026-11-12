@@ -17,6 +17,8 @@
  * - MCPGenerator: Create MCP servers for AI model integration
  */
 
+import { createRequire } from 'node:module';
+
 // Built-in signal adapters
 export * from './adapters/index';
 // Opt-in AI call transcripts (#4780), capture side. Browser-safe; keep this
@@ -704,5 +706,13 @@ export {
   parseQualifiedName,
   qualifiedNamesEqual,
 } from './utils/qualified-names';
-// Vite plugin for auto-service generation
-export { smrtPlugin } from './vite-plugin/index';
+// Preserve the synchronous build API without importing the Vite/scanner graph
+// into every Node runtime. Node >=26 supports synchronous require(ESM).
+export const smrtPlugin: typeof import('./vite-plugin/index').smrtPlugin = (
+  ...args
+) => {
+  const { smrtPlugin: createPlugin } = createRequire(import.meta.url)(
+    '@happyvertical/smrt-core/vite-plugin',
+  ) as typeof import('./vite-plugin/index');
+  return createPlugin(...args);
+};

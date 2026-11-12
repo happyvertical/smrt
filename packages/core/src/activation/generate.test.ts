@@ -109,18 +109,103 @@ function workspace() {
 }
 
 describe('AOT activation generation', () => {
+  it('keeps the source root plugin factory synchronous through its public build subpath', async () => {
+    const { smrtPlugin } = await import('../index.js');
+    const plugin = smrtPlugin({ watch: false });
+    expect(plugin.name).toBe('smrt-auto-service');
+    expect(typeof plugin.api.resolveKnowledgeConfig).toBe('function');
+  });
+
+  it.each([
+    false,
+    true,
+  ])('parses declarations only for the module being activated (split: %s)', (splitDeclarations) => {
+    const { files, manifest } = workspace();
+    manifest.objects['@activation/unused:Unused'].description =
+      'UNUSED_DECLARATION_PARSE_PROBE';
+    manifest.recipes = [
+      {
+        id: 'fixture.help',
+        className: 'FixtureHelp',
+        label: 'Fixture help',
+        summary: 'Fixture recipe help',
+        synonyms: [],
+        requires: [],
+        models: [],
+        nav: [],
+        help: { markdown: 'RECIPE_HELP_DUPLICATION_PROBE', fieldRefs: [] },
+      },
+    ];
+    const generated = generateActivationRegistration(manifest, {
+      projectRoot: files.root,
+      outputDir: files.path('.smrt'),
+      splitDeclarations,
+    });
+    for (const [file, content] of Object.entries(generated.files))
+      files.write(`.smrt/${file}`, content);
+    expect(generated.source).not.toContain('RECIPE_HELP_DUPLICATION_PROBE');
+    expect(Object.values(generated.files).join('')).not.toContain(
+      'RECIPE_HELP_DUPLICATION_PROBE',
+    );
+    expect(manifest.recipes[0].help?.markdown).toBe(
+      'RECIPE_HELP_DUPLICATION_PROBE',
+    );
+    if (splitDeclarations) {
+      expect(generated.source).not.toContain('UNUSED_DECLARATION_PARSE_PROBE');
+      expect(Object.keys(generated.files).length).toBeGreaterThan(0);
+    } else expect(generated.files).toEqual({});
+    const source = files.write('.smrt/register.js', generated.source);
+    const child = spawnSync(
+      process.execPath,
+      [
+        '--input-type=module',
+        '-e',
+        `import assert from 'node:assert/strict';
+const parse = JSON.parse;
+let unusedParses = 0;
+JSON.parse = function(value, ...args) {
+  if (typeof value === 'string' && value.includes('UNUSED_DECLARATION_PARSE_PROBE')) unusedParses++;
+  return parse(value, ...args);
+};
+const { activationLoaders } = await import(${JSON.stringify(source)});
+assert.equal(unusedParses, 0, 'boot must not parse disabled declarations');
+await activationLoaders['@activation/invoice']();
+assert.equal(unusedParses, 0, 'another module must not parse disabled declarations');
+await activationLoaders['@activation/unused']();
+assert.equal(unusedParses, 1, 'activation must parse its own declaration');
+assert.ok(globalThis.activationImports.includes('Unused'));
+`,
+      ],
+      { cwd: files.root, encoding: 'utf8', timeout: 30_000 },
+    );
+    expect(child.status, child.stderr).toBe(0);
+  });
+
   it('boots the published core root without loading native activation build tooling', () => {
     const child = spawnSync(
       process.execPath,
       [
         '--input-type=module',
         '-e',
-        `import { registerHooks } from 'node:module';
+        `import assert from 'node:assert/strict';
+import { registerHooks } from 'node:module';
+let buildAllowed = false;
 registerHooks({ resolve(specifier, context, next) {
   if (specifier === 'oxc-transform') throw new Error('build tooling loaded at boot');
   return next(specifier, context);
+}, load(url, context, next) {
+  if (!buildAllowed && ['/vite-plugin/index.js', '/vite-plugin/sveltekit-generator.js', '/activation/generate.js'].some((path) => url.endsWith(path))) throw new Error('Vite plugin loaded at boot');
+  return next(url, context);
 } });
-await import(${JSON.stringify(new URL('../../dist/index.js', import.meta.url).href)});
+const { smrtPlugin } = await import(${JSON.stringify(new URL('../../dist/index.js', import.meta.url).href)});
+const policy = await import(${JSON.stringify(new URL('../../dist/api-actions.js', import.meta.url).href)});
+assert.equal(policy.methodNameToKebab('discoverFromUrl'), 'discover-from-url');
+buildAllowed = true;
+const plugin = smrtPlugin({ watch: false });
+assert.equal(plugin.name, 'smrt-auto-service');
+assert.equal(typeof plugin.api.resolveKnowledgeConfig, 'function');
+const buildApi = await import(${JSON.stringify(new URL('../../dist/vite-plugin.js', import.meta.url).href)});
+assert.equal(buildApi.resolveApiActionSet, policy.resolveApiActionSet);
 const { buildActivationManifest } = await import(${JSON.stringify(new URL('../../dist/activation/generate.js', import.meta.url).href)});
 const graph = buildActivationManifest({ objects: {} }, {});
 if (Object.keys(graph.models).length !== 0) process.exit(2);
@@ -245,11 +330,19 @@ export class ${name} extends SmrtObject { constructor(options?: { metrics?: stri
         'import("../src/lib/objects/typed-customer.ts")',
       );
     }
-    const source = files.write('.smrt/register.ts', generated.source);
+    const split = generateActivationRegistration(manifest, {
+      projectRoot: files.root,
+      outputDir: files.path('.smrt'),
+      splitDeclarations: true,
+    });
+    for (const [file, content] of Object.entries(split.files))
+      files.write(`.smrt/${file}`, content);
+    const source = files.write('.smrt/register.ts', split.source);
     const checked = spawnSync(
       process.execPath,
       [
         resolve(core, 'node_modules/typescript/bin/tsc'),
+        '--ignoreConfig',
         '--noEmit',
         '--strict',
         '--skipLibCheck',

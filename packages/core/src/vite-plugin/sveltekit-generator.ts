@@ -17,6 +17,7 @@ import {
 import { isAbsolute, join, relative, resolve, sep } from 'node:path';
 import type { DomainKnowledgeConfig } from '@happyvertical/smrt-types';
 import { generateActivationRegistration } from '../activation/generate.js';
+import { publishArtifactFiles } from '../consumer-plugin/artifact-publication.js';
 import { generateConditionalGetRouteHelper } from '../generators/conditional-get.js';
 import {
   type ApiMethodExposure,
@@ -77,9 +78,15 @@ import {
   computeWebManifestHash,
   findManifestObjectByName,
   isCollectionManifestClass,
+  methodNameToKebab,
   orderedManifestObjectEntries,
+  type ResolvedApiActionRouteConfig,
+  resolveApiActionRouteConfig,
+  resolveApiActionSet,
+  resolveApiCustomActions,
   resolveCollectionItemObject,
   resolveCollectionItemTypeName,
+  resolveStandardCrudActions,
 } from './web-collections.js';
 
 export interface SvelteKitOptions {
@@ -146,19 +153,21 @@ export interface SvelteKitOptions {
 
 // Keep this aligned with biome.json formatter.lineWidth.
 const BIOME_LINE_WIDTH = 80;
+
+export {
+  methodNameToKebab,
+  type ResolvedApiActionRouteConfig,
+  resolveApiActionRouteConfig,
+  resolveApiActionSet,
+  resolveApiCustomActions,
+} from './web-collections.js';
+
 const GITIGNORE_MANAGED_BLOCK_START =
   '# BEGIN SMRT auto-generated routes (Vite plugin)';
 const GITIGNORE_MANAGED_BLOCK_END =
   '# END SMRT auto-generated routes (Vite plugin)';
 const LEGACY_GITIGNORE_HEADER =
   '# SMRT auto-generated routes (from Vite plugin)';
-
-export interface ResolvedApiActionRouteConfig {
-  scope: 'item' | 'collection';
-  method: ApiHttpMethod;
-  pathSegments: string[];
-  pathParamNames: string[];
-}
 
 interface GeneratedActionRouteSpec {
   lookupClassName: string;
@@ -197,15 +206,6 @@ function extractSimpleClassName(qualifiedName: string): string {
     return qualifiedName.substring(colonIndex + 1);
   }
   return qualifiedName;
-}
-
-/**
- * Check if an object definition represents a SmrtCollection class.
- * Collection classes share route paths with their item class (via inherited `collection` field),
- * so generating routes for both would cause file collisions.
- */
-function isCollectionClass(objectDef: SmartObjectDefinition): boolean {
-  return objectDef.extends === 'SmrtCollection' || !!objectDef.extendsTypeArg;
 }
 
 function getRegistrationPackageName(
@@ -1086,107 +1086,6 @@ function routeGuardPreamble(
     lines.push('  establishTenantContext(locals);');
   }
   return lines.join('\n');
-}
-
-function normalizeApiHttpMethod(method?: string): ApiHttpMethod {
-  switch (method?.toUpperCase()) {
-    case 'GET':
-    case 'POST':
-    case 'PUT':
-    case 'PATCH':
-    case 'DELETE':
-      return method.toUpperCase() as ApiHttpMethod;
-    default:
-      return 'POST';
-  }
-}
-
-/**
- * Convert a camelCase / PascalCase method name to a kebab-case URL segment.
- * Examples:
- *   discoverFromUrl -> discover-from-url
- *   XMLExport       -> xml-export
- *   URL             -> url
- *   a1B2c3          -> a1-b2c3
- *
- * Known limitation: consecutive uppercase acronyms aren't split apart, e.g.
- * `HTMLAPIExport` becomes `htmlapi-export` rather than `html-api-export`.
- * Override with an explicit `api.routes[name].path` if you need a specific
- * segmentation.
- */
-export function methodNameToKebab(name: string): string {
-  return name
-    .replace(/([a-z0-9])([A-Z])/g, '$1-$2')
-    .replace(/([A-Z]+)([A-Z][a-z])/g, '$1-$2')
-    .toLowerCase();
-}
-
-function normalizeCustomRoutePath(
-  actionName: string,
-  path?: string,
-  options: { kebabRoutes?: boolean } = {},
-): string[] {
-  // Explicit path override always wins, and is used verbatim (split on /).
-  if (path) {
-    const segments = path
-      .split('/')
-      .map((segment) => segment.trim())
-      .filter(Boolean);
-    if (segments.length > 0) {
-      return segments;
-    }
-  }
-
-  const segment = options.kebabRoutes
-    ? methodNameToKebab(actionName)
-    : actionName;
-  return [segment];
-}
-
-function extractRoutePathParamNames(pathSegments: string[]): string[] {
-  return pathSegments
-    .filter((segment) => /^\[[^\]]+\]$/.test(segment))
-    .map((segment) => segment.slice(1, -1))
-    .filter(Boolean);
-}
-
-export function resolveApiActionRouteConfig(
-  actionName: string,
-  actionDef: { isStatic?: boolean; decoratorConfig?: Record<string, unknown> },
-  apiConfig: unknown,
-  routeOptions: { kebabRoutes?: boolean } = {},
-  defaultScope: 'item' | 'collection' = actionDef.isStatic
-    ? 'collection'
-    : 'item',
-): ResolvedApiActionRouteConfig {
-  // `@method({ httpMethod, path })` wins field by field over the class-level
-  // `api.routes[action]` entry, so migrating one option off the map does not
-  // reset the ones left on it (#2686).
-  const effective = resolveEffectiveActionMetadata({
-    actionName,
-    method: actionDef,
-    apiConfig,
-  });
-
-  const pathSegments = normalizeCustomRoutePath(
-    actionName,
-    effective.path,
-    routeOptions,
-  );
-
-  const scope = resolveCustomActionMetadata({
-    actionName,
-    method: actionDef,
-    apiConfig,
-    defaultScope,
-  }).scope;
-
-  return {
-    scope,
-    method: normalizeApiHttpMethod(effective.httpMethod),
-    pathSegments,
-    pathParamNames: extractRoutePathParamNames(pathSegments),
-  };
 }
 
 function buildRouteHandlerArgs(
@@ -2077,18 +1976,26 @@ async function generateRegistrationFile(
       projectRoot,
       outputDir: configDir,
       collectionMetadata: [...collectionMetadata.keys()],
+      splitDeclarations: true,
     });
     if (!existsSync(configDir)) mkdirSync(configDir, { recursive: true });
     // JavaScript is valid TypeScript here; generated metadata is deliberately
     // JSON, so large superset schemas are never inferred as TypeScript types.
-    writeFileSync(registrationFilePath, generated.source, 'utf8');
+    for (const file of Object.keys(generated.files))
+      mkdirSync(resolve(configDir, file, '..'), { recursive: true });
     const smrtDir = join(projectRoot, '.smrt');
     if (!existsSync(smrtDir)) mkdirSync(smrtDir, { recursive: true });
-    writeFileSync(
-      join(smrtDir, 'activation-manifest.json'),
-      JSON.stringify(generated.manifest, null, 2),
-      'utf8',
-    );
+    publishArtifactFiles([
+      ...Object.entries(generated.files).map(([file, content]) => ({
+        path: join(configDir, file),
+        content,
+      })),
+      {
+        path: join(smrtDir, 'activation-manifest.json'),
+        content: JSON.stringify(generated.manifest, null, 2),
+      },
+      { path: registrationFilePath, content: generated.source },
+    ]);
     return;
   }
   const externalRuntimeDependencies = (manifest.smrtDependencies || []).filter(
@@ -2939,89 +2846,6 @@ async function generateCollectionRoutesForObject(
 }
 
 /**
- * Resolve the list of standard CRUD actions exposed by the API for a given
- * apiConfig. Single source of truth for both the route generator and the
- * cli↔api coherence lint.
- */
-function resolveStandardCrudActions(apiConfig: unknown): string[] {
-  if (apiConfig === false) return [];
-  if (apiConfig === true || apiConfig === undefined) {
-    return [...CRUD_OPERATIONS];
-  }
-  if (typeof apiConfig !== 'object' || apiConfig === null) {
-    return [...CRUD_OPERATIONS];
-  }
-
-  const config = apiConfig as { include?: string[]; exclude?: string[] };
-  let crud: string[] = Array.isArray(config.include)
-    ? config.include.filter((a) => isCrudOperation(a))
-    : [...CRUD_OPERATIONS];
-  if (Array.isArray(config.exclude)) {
-    const exclude = config.exclude;
-    crud = crud.filter((a) => !exclude.includes(a));
-  }
-  return crud;
-}
-
-/**
- * Partition an object's custom (non-CRUD) methods into the ones the API
- * exposes and the ones it withholds, with a reason for each rejection.
- *
- * The ONE place route generation, `resolveApiActionSet`, and the knowledge
- * artifact's API projection agree, by all three reading
- * {@link resolveApiMethodExposure}. Before #2686 each re-derived a subset and
- * could disagree — most damagingly, a gate applied only to the coherence
- * resolver would report a method unreachable while the emitter next door still
- * wrote its route file.
- */
-export function resolveApiCustomActions(
-  objectDef: SmartObjectDefinition,
-  manifest: SmartObjectManifest | undefined,
-  objectIsCollectionClass: boolean,
-  wireability: WireabilityOptions = {},
-): {
-  exposed: Array<[string, MethodDefinition]>;
-  rejected: Array<[string, ApiMethodExposure]>;
-} {
-  if (
-    objectIsCollectionClass &&
-    manifest &&
-    resolveCollectionItemObject(manifest, objectDef)?.decoratorConfig
-      ?.abstract === true
-  ) {
-    return { exposed: [], rejected: [] };
-  }
-  const apiConfig = objectDef.decoratorConfig?.api;
-  const isModelClassName =
-    wireability.isModelClassName ?? createManifestClassNamePredicate(manifest);
-  const exposed: Array<[string, MethodDefinition]> = [];
-  const rejected: Array<[string, ApiMethodExposure]> = [];
-
-  for (const [name, method] of Object.entries(objectDef.methods || {})) {
-    const decision = resolveApiMethodExposure({
-      actionName: name,
-      method,
-      apiConfig,
-      isCollectionClass: objectIsCollectionClass,
-      ...(isModelClassName ? { isModelClassName } : {}),
-    });
-    if (decision.exposed) {
-      exposed.push([name, method]);
-      continue;
-    }
-    // CRUD reservation and non-public methods are not "rejections" worth
-    // reporting: neither was ever a candidate custom action, and listing every
-    // private helper would bury the rejections a developer can act on.
-    if (decision.code === 'crud-reserved' || decision.code === 'not-public') {
-      continue;
-    }
-    rejected.push([name, decision]);
-  }
-
-  return { exposed, rejected };
-}
-
-/**
  * Warn about the one rejection class that would be a structural failure rather
  * than a configuration choice: an action whose declared scope has no receiver
  * to bind. Both emitters carried this warning before #2686 moved the check into
@@ -3078,53 +2902,6 @@ function warnDeclaredScopeMismatch(
       `method already lives; it cannot move it. Make ${actionName} static to reach it on the ` +
       'collection, or drop the scope option.',
   );
-}
-
-/**
- * Compute the set of action names (standard CRUD + custom methods) that the
- * API exposes for a given object definition. This is the same resolution used
- * to drive route generation, exposed so coherence checks (e.g. CLI vs API)
- * can ask "what does the API expose?" without re-implementing the logic.
- *
- * Pass a class inventory: without one the wire-ability heuristic cannot tell a
- * model class from an options interface and therefore accepts both, so the
- * caller silently disagrees with the emitters on the LARGEST group of withheld
- * methods (see `WireabilityOptions.isModelClassName`). Supply either
- * `manifest`, or `wireability.isModelClassName` when the caller's inventory is
- * the live registry rather than a manifest — `@happyvertical/smrt-users`' CLI
- * resource listing is the second kind. Both stay optional only because this is
- * public API.
- */
-export function resolveApiActionSet(
-  objectDef: SmartObjectDefinition,
-  manifest?: SmartObjectManifest,
-  wireability: WireabilityOptions = {},
-  replacements?: ReadonlyMap<string, string>,
-): Set<string> {
-  const apiConfig = objectDef.decoratorConfig?.api;
-  if (
-    apiConfig === false ||
-    (manifest && isReplacedModel(manifest, objectDef, replacements))
-  )
-    return new Set();
-
-  const objectIsCollectionClass = manifest
-    ? isCollectionManifestClass(manifest, objectDef)
-    : isCollectionClass(objectDef);
-  const actions = objectIsCollectionClass
-    ? new Set<string>()
-    : new Set<string>(resolveStandardCrudActions(apiConfig));
-
-  for (const [name] of resolveApiCustomActions(
-    objectDef,
-    manifest,
-    objectIsCollectionClass,
-    wireability,
-  ).exposed) {
-    actions.add(name);
-  }
-
-  return actions;
 }
 
 /**

@@ -1925,10 +1925,16 @@ async function generateRegistrationFile(
     };
     const generated = generateActivationRegistration(
       full as unknown as SmartObjectManifest,
-      { projectRoot, outputDir: smrtDir },
+      { projectRoot, outputDir: smrtDir, splitDeclarations: true },
     );
     fs.mkdirSync(smrtDir, { recursive: true });
+    for (const file of Object.keys(generated.files))
+      fs.mkdirSync(path.dirname(path.join(smrtDir, file)), { recursive: true });
     publishArtifactFiles([
+      ...Object.entries(generated.files).map(([file, content]) => ({
+        path: path.join(smrtDir, file),
+        content,
+      })),
       { path: registerPath, content: generated.source },
       {
         path: path.join(smrtDir, 'activation-manifest.json'),

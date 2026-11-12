@@ -988,7 +988,7 @@ function resolveActionScope(
   }
 }
 
-/** Mirrors `normalizeApiHttpMethod` in `vite-plugin/sveltekit-generator.ts`. */
+/** Mirrors `normalizeApiHttpMethod` in `vite-plugin/web-collections.ts`. */
 function normalizeApiMethod(method: unknown): string {
   const normalized =
     typeof method === 'string' ? method.toUpperCase() : undefined;

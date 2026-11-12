@@ -25,10 +25,16 @@
 import { createHash } from 'node:crypto';
 import { parseRecipeExportRef } from '../cookbook/export-ref.js';
 import {
+  type ApiMethodExposure,
+  CRUD_OPERATIONS,
+  createManifestClassNamePredicate,
   customActionParameterInputName,
   isCrudOperation,
   isCrudToolAction,
+  resolveApiMethodExposure,
   resolveCustomActionMetadata,
+  resolveEffectiveActionMetadata,
+  type WireabilityOptions,
 } from '../generators/custom-action.js';
 import {
   buildToolDescriptors,
@@ -45,9 +51,11 @@ import {
 } from '../manifest/model-replacements';
 import { isFrameworkBaseClass } from '../registry/framework-base-classes.js';
 import { readFieldEnum } from '../registry/manifest-field-merge.js';
+import type { ApiHttpMethod } from '../registry/types.js';
 import type {
   FieldDefinition,
   FieldUIHints,
+  MethodDefinition,
   SmartObjectDefinition,
   SmartObjectManifest,
 } from '../scanner/types.js';
@@ -56,10 +64,253 @@ import {
   isFieldUIWidget,
   isRelationshipRole,
 } from '../ui-metadata.js';
-import {
-  resolveApiActionRouteConfig,
-  resolveApiActionSet,
-} from './sveltekit-generator.js';
+
+export interface ResolvedApiActionRouteConfig {
+  scope: 'item' | 'collection';
+  method: ApiHttpMethod;
+  pathSegments: string[];
+  pathParamNames: string[];
+}
+
+/**
+ * Check if an object definition represents a SmrtCollection class.
+ * Collection classes share route paths with their item class (via inherited `collection` field),
+ * so generating routes for both would cause file collisions.
+ */
+function isCollectionClass(objectDef: SmartObjectDefinition): boolean {
+  return objectDef.extends === 'SmrtCollection' || !!objectDef.extendsTypeArg;
+}
+
+function normalizeApiHttpMethod(method?: string): ApiHttpMethod {
+  switch (method?.toUpperCase()) {
+    case 'GET':
+    case 'POST':
+    case 'PUT':
+    case 'PATCH':
+    case 'DELETE':
+      return method.toUpperCase() as ApiHttpMethod;
+    default:
+      return 'POST';
+  }
+}
+
+/**
+ * Convert a camelCase / PascalCase method name to a kebab-case URL segment.
+ * Examples:
+ *   discoverFromUrl -> discover-from-url
+ *   XMLExport       -> xml-export
+ *   URL             -> url
+ *   a1B2c3          -> a1-b2c3
+ *
+ * Known limitation: consecutive uppercase acronyms aren't split apart, e.g.
+ * `HTMLAPIExport` becomes `htmlapi-export` rather than `html-api-export`.
+ * Override with an explicit `api.routes[name].path` if you need a specific
+ * segmentation.
+ */
+export function methodNameToKebab(name: string): string {
+  return name
+    .replace(/([a-z0-9])([A-Z])/g, '$1-$2')
+    .replace(/([A-Z]+)([A-Z][a-z])/g, '$1-$2')
+    .toLowerCase();
+}
+
+function normalizeCustomRoutePath(
+  actionName: string,
+  path?: string,
+  options: { kebabRoutes?: boolean } = {},
+): string[] {
+  // Explicit path override always wins, and is used verbatim (split on /).
+  if (path) {
+    const segments = path
+      .split('/')
+      .map((segment) => segment.trim())
+      .filter(Boolean);
+    if (segments.length > 0) {
+      return segments;
+    }
+  }
+
+  const segment = options.kebabRoutes
+    ? methodNameToKebab(actionName)
+    : actionName;
+  return [segment];
+}
+
+function extractRoutePathParamNames(pathSegments: string[]): string[] {
+  return pathSegments
+    .filter((segment) => /^\[[^\]]+\]$/.test(segment))
+    .map((segment) => segment.slice(1, -1))
+    .filter(Boolean);
+}
+
+export function resolveApiActionRouteConfig(
+  actionName: string,
+  actionDef: { isStatic?: boolean; decoratorConfig?: Record<string, unknown> },
+  apiConfig: unknown,
+  routeOptions: { kebabRoutes?: boolean } = {},
+  defaultScope: 'item' | 'collection' = actionDef.isStatic
+    ? 'collection'
+    : 'item',
+): ResolvedApiActionRouteConfig {
+  // `@method({ httpMethod, path })` wins field by field over the class-level
+  // `api.routes[action]` entry, so migrating one option off the map does not
+  // reset the ones left on it (#2686).
+  const effective = resolveEffectiveActionMetadata({
+    actionName,
+    method: actionDef,
+    apiConfig,
+  });
+
+  const pathSegments = normalizeCustomRoutePath(
+    actionName,
+    effective.path,
+    routeOptions,
+  );
+
+  const scope = resolveCustomActionMetadata({
+    actionName,
+    method: actionDef,
+    apiConfig,
+    defaultScope,
+  }).scope;
+
+  return {
+    scope,
+    method: normalizeApiHttpMethod(effective.httpMethod),
+    pathSegments,
+    pathParamNames: extractRoutePathParamNames(pathSegments),
+  };
+}
+
+/**
+ * Resolve the list of standard CRUD actions exposed by the API for a given
+ * apiConfig. Single source of truth for both the route generator and the
+ * cli↔api coherence lint.
+ */
+export function resolveStandardCrudActions(apiConfig: unknown): string[] {
+  if (apiConfig === false) return [];
+  if (apiConfig === true || apiConfig === undefined) {
+    return [...CRUD_OPERATIONS];
+  }
+  if (typeof apiConfig !== 'object' || apiConfig === null) {
+    return [...CRUD_OPERATIONS];
+  }
+
+  const config = apiConfig as { include?: string[]; exclude?: string[] };
+  let crud: string[] = Array.isArray(config.include)
+    ? config.include.filter((a) => isCrudOperation(a))
+    : [...CRUD_OPERATIONS];
+  if (Array.isArray(config.exclude)) {
+    const exclude = config.exclude;
+    crud = crud.filter((a) => !exclude.includes(a));
+  }
+  return crud;
+}
+
+/**
+ * Partition an object's custom (non-CRUD) methods into the ones the API
+ * exposes and the ones it withholds, with a reason for each rejection.
+ *
+ * The ONE place route generation, `resolveApiActionSet`, and the knowledge
+ * artifact's API projection agree, by all three reading
+ * {@link resolveApiMethodExposure}. Before #2686 each re-derived a subset and
+ * could disagree — most damagingly, a gate applied only to the coherence
+ * resolver would report a method unreachable while the emitter next door still
+ * wrote its route file.
+ */
+export function resolveApiCustomActions(
+  objectDef: SmartObjectDefinition,
+  manifest: SmartObjectManifest | undefined,
+  objectIsCollectionClass: boolean,
+  wireability: WireabilityOptions = {},
+): {
+  exposed: Array<[string, MethodDefinition]>;
+  rejected: Array<[string, ApiMethodExposure]>;
+} {
+  if (
+    objectIsCollectionClass &&
+    manifest &&
+    resolveCollectionItemObject(manifest, objectDef)?.decoratorConfig
+      ?.abstract === true
+  ) {
+    return { exposed: [], rejected: [] };
+  }
+  const apiConfig = objectDef.decoratorConfig?.api;
+  const isModelClassName =
+    wireability.isModelClassName ?? createManifestClassNamePredicate(manifest);
+  const exposed: Array<[string, MethodDefinition]> = [];
+  const rejected: Array<[string, ApiMethodExposure]> = [];
+
+  for (const [name, method] of Object.entries(objectDef.methods || {})) {
+    const decision = resolveApiMethodExposure({
+      actionName: name,
+      method,
+      apiConfig,
+      isCollectionClass: objectIsCollectionClass,
+      ...(isModelClassName ? { isModelClassName } : {}),
+    });
+    if (decision.exposed) {
+      exposed.push([name, method]);
+      continue;
+    }
+    // CRUD reservation and non-public methods are not "rejections" worth
+    // reporting: neither was ever a candidate custom action, and listing every
+    // private helper would bury the rejections a developer can act on.
+    if (decision.code === 'crud-reserved' || decision.code === 'not-public') {
+      continue;
+    }
+    rejected.push([name, decision]);
+  }
+
+  return { exposed, rejected };
+}
+
+/**
+ * Compute the set of action names (standard CRUD + custom methods) that the
+ * API exposes for a given object definition. This is the same resolution used
+ * to drive route generation, exposed so coherence checks (e.g. CLI vs API)
+ * can ask "what does the API expose?" without re-implementing the logic.
+ *
+ * Pass a class inventory: without one the wire-ability heuristic cannot tell a
+ * model class from an options interface and therefore accepts both, so the
+ * caller silently disagrees with the emitters on the LARGEST group of withheld
+ * methods (see `WireabilityOptions.isModelClassName`). Supply either
+ * `manifest`, or `wireability.isModelClassName` when the caller's inventory is
+ * the live registry rather than a manifest — `@happyvertical/smrt-users`' CLI
+ * resource listing is the second kind. Both stay optional only because this is
+ * public API.
+ */
+export function resolveApiActionSet(
+  objectDef: SmartObjectDefinition,
+  manifest?: SmartObjectManifest,
+  wireability: WireabilityOptions = {},
+  replacements?: ReadonlyMap<string, string>,
+): Set<string> {
+  const apiConfig = objectDef.decoratorConfig?.api;
+  if (
+    apiConfig === false ||
+    (manifest && isReplacedModel(manifest, objectDef, replacements))
+  )
+    return new Set();
+
+  const objectIsCollectionClass = manifest
+    ? isCollectionManifestClass(manifest, objectDef)
+    : isCollectionClass(objectDef);
+  const actions = objectIsCollectionClass
+    ? new Set<string>()
+    : new Set<string>(resolveStandardCrudActions(apiConfig));
+
+  for (const [name] of resolveApiCustomActions(
+    objectDef,
+    manifest,
+    objectIsCollectionClass,
+    wireability,
+  ).exposed) {
+    actions.add(name);
+  }
+
+  return actions;
+}
 
 /**
  * Field types that are relationship pseudo-columns rather than persisted
@@ -398,7 +649,7 @@ function normalizeRelatedName(related: string): string {
  * classes describe access, not row shapes, so they never become web
  * collection definitions.
  *
- * NOTE: deliberately stronger than sveltekit-generator's private
+ * NOTE: deliberately stronger than the legacy no-inventory
  * `isCollectionClass`, which only inspects the direct base / a type argument.
  * A deeper subclass (`SpecialWidgetCollection extends WidgetCollection`)
  * carries no type argument of its own; without walking the extends chain it
