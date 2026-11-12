@@ -3,7 +3,19 @@ import { mkdtemp, rm } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { ApprovalEventCollection } from '@happyvertical/smrt-approvals';
-import { getTestDatabase } from '@happyvertical/smrt-core';
+import {
+  field,
+  getTestDatabase,
+  ObjectRegistry,
+  SmrtObject,
+} from '@happyvertical/smrt-core';
+import { createAppModelEditor } from '@happyvertical/smrt-core/app-models';
+import { createCookbookEngine } from '@happyvertical/smrt-core/cookbook/engine';
+import {
+  type CookbookToolOptions,
+  createCookbookToolService,
+} from '@happyvertical/smrt-core/cookbook/tools';
+import { snapshotObjectRegistryState } from '@happyvertical/smrt-core/testing';
 import { withTenant } from '@happyvertical/smrt-tenancy';
 import {
   MembershipCollection,
@@ -116,6 +128,11 @@ describe(`owner tool holds over the canonical approval ledger (${databaseType})`
     ]);
     expect(new Set(records.map((r) => r.id)).size).toBe(1);
     const saved = records[0];
+    expect(saved.id).toMatch(
+      databaseType === 'pglite'
+        ? /^[a-f0-9]{8}-[a-f0-9]{4}-8[a-f0-9]{3}-[89ab][a-f0-9]{3}-[a-f0-9]{12}$/
+        : /^action-[a-f0-9]{64}$/,
+    );
     now += 10_000;
     authority = await open();
     expect(await authority.request(stable)).toStrictEqual(saved);
@@ -145,6 +162,11 @@ describe(`owner tool holds over the canonical approval ledger (${databaseType})`
       tenantId: randomUUID(),
     });
     expect(foreign.id).not.toBe(saved.id);
+    const approved = await authority.decide(owner, saved.id, true);
+    authority = await open();
+    expect(await authority.request(stable)).toStrictEqual(approved);
+    expect(approved.id).toBe(saved.id);
+    expect(approved.expiresAt).toBe(saved.expiresAt);
   });
   it('repairs an interrupted native envelope link using the original canonical request key', async () => {
     const stable = { ...input, requestKey: 'recovery' };
@@ -751,5 +773,209 @@ describe(`owner tool holds over the canonical approval ledger (${databaseType})`
     ).toThrow('invalid_request');
     const saved = await authority.request(input);
     expect(saved.expiresAt).toBe(now + 60_000);
+  });
+});
+
+describe(`canonical owner approval and stable core design Apply (${databaseType})`, () => {
+  it('previews, approves, applies once and recovers the exact immutable result with authority/revision guards', async () => {
+    const restore = snapshotObjectRegistryState();
+    let db: DatabaseInterface | undefined;
+    try {
+      class RuntimeDesignCustomer extends SmrtObject {
+        name = '';
+      }
+      field({ type: 'text' })(RuntimeDesignCustomer.prototype, 'name');
+      const model = '@fixture/runtime-design-upstream:RuntimeDesignCustomer';
+      ObjectRegistry.register(RuntimeDesignCustomer, {
+        packageName: '@fixture/runtime-design-upstream',
+        tableName: 'runtime_design_customers',
+        tenantScoped: true,
+        api: true,
+        mcp: true,
+        display: { label: 'name' },
+      });
+      db = await getTestDatabase({
+        type: databaseType,
+        url: ':memory:',
+        classes: [
+          model,
+          '@happyvertical/smrt-approvals:ApprovalRequest',
+          '@happyvertical/smrt-approvals:ApprovalEvent',
+          '@happyvertical/smrt-approvals:ApprovalPolicy',
+        ],
+      });
+      const activeDb = db;
+      const tenantId = randomUUID(),
+        userId = randomUUID();
+      const application = 'runtime-design-fixture';
+      let liveOwner = true;
+      let allowed = true;
+      const actor = { id: userId, tenantId };
+      const catalog: CookbookToolOptions['catalog'] = {
+        models: [
+          {
+            id: model,
+            name: 'RuntimeDesignCustomer',
+            packageId: 'runtime-design-upstream',
+            exposed: true,
+            fields: [{ name: 'name' }],
+          },
+        ],
+        recipes: [
+          {
+            id: 'customers',
+            label: 'Customers',
+            models: [model],
+            nav: [{ model, label: 'Customers', icon: 'users' }],
+            synonyms: [],
+            requires: [],
+          },
+        ],
+      };
+      const cookbook = {
+        $schema: 'https://s-m-r-t.dev/schemas/cookbook/v1.json',
+        version: 1 as const,
+        recipes: ['customers'],
+        features: [],
+        policies: [],
+      };
+      let engine = createCookbookEngine({ catalog, cookbook });
+      const openEditor = () =>
+        createAppModelEditor({
+          db: activeDb,
+          application,
+          tenantId,
+          packageName: '@fixture/runtime-design',
+          cookbook,
+          catalog,
+          authorize: (context) =>
+            liveOwner &&
+            context.actor === userId &&
+            context.tenantId === tenantId,
+          publish: (snapshot) => {
+            engine = createCookbookEngine({
+              catalog,
+              state: {
+                version: 1,
+                revision: snapshot.revision,
+                applied: null,
+                cookbook: snapshot.cookbook,
+                journal: [],
+              },
+            });
+          },
+        });
+      let editor = await openEditor();
+      const openAuthority = async () =>
+        new OwnerApprovalAuthority(
+          await createOwnerApprovalStore(activeDb),
+          async (actor) =>
+            liveOwner && actor.id === userId && actor.tenantId === tenantId,
+        );
+      let authority = await openAuthority();
+      const options: CookbookToolOptions = {
+        catalog,
+        modelEditorFor: (context) =>
+          context.tenantId === tenantId ? editor : null,
+        engineFor: (context) => (context.tenantId === tenantId ? engine : null),
+        isOwner: async (context) =>
+          liveOwner &&
+          context.userId === userId &&
+          context.tenantId === tenantId,
+        can: async () => allowed,
+        approvals: authority,
+        isAppEmpty: async () => true,
+        audit: async () => {},
+        commit: async () => {
+          throw new Error('The real model editor owns mutation');
+        },
+      };
+      let service = createCookbookToolService(options);
+      const context = {
+        surface: 'mcp' as const,
+        tenantId,
+        userId,
+        designAction: { application, runId: randomUUID(), actionId: 'final/1' },
+      };
+      const args = {
+        list: 'Customers',
+        label: 'Visit note',
+        kind: 'text',
+        expectedRevision: 0,
+      };
+      const pending = await service.invoke('app.addField', args, context);
+      expect(pending.status).toBe('approval_required');
+      expect(await service.invoke('app.addField', args, context)).toStrictEqual(
+        pending,
+      );
+      expect(await editor.history()).toHaveLength(0);
+      expect(await authority.list(actor, false)).toHaveLength(1);
+      const holdId = String(pending.approvalId);
+      if (databaseType === 'pglite')
+        expect(holdId).toMatch(
+          /^[a-f0-9]{8}-[a-f0-9]{4}-8[a-f0-9]{3}-[89ab][a-f0-9]{3}-[a-f0-9]{12}$/,
+        );
+      await authority.decide(actor, holdId, true);
+      const applied = await service.invoke('app.addField', args, context);
+      expect(applied.status).toBe('ok');
+      expect((await authority.get(tenantId, holdId))?.status).toBe('succeeded');
+      const originalHistory = await editor.history();
+      expect(originalHistory).toHaveLength(1);
+      expect(originalHistory[0]).toMatchObject({
+        status: 'applied',
+        result: applied,
+      });
+      const receipt = originalHistory[0].receipt;
+      expect(receipt).toBeDefined();
+      await db.query(
+        'SELECT visit_note FROM runtime_design_customers WHERE 1 = 0',
+      );
+      // Reopen all host-facing state while retaining only durable database facts.
+      editor = await openEditor();
+      authority = await openAuthority();
+      options.approvals = authority;
+      service = createCookbookToolService(options);
+      expect(await service.invoke('app.addField', args, context)).toStrictEqual(
+        applied,
+      );
+      expect(await editor.history()).toStrictEqual(originalHistory);
+      expect(await authority.list(actor, false)).toHaveLength(1);
+      expect(
+        (
+          await db.query(
+            'SELECT COUNT(*) AS n FROM approval_requests WHERE tenant_id = ?',
+            tenantId,
+          )
+        ).rows[0].n,
+      ).toBe(1);
+      for (const changed of [
+        { ...args, label: 'Changed intent' },
+        { ...args, expectedRevision: 1 },
+      ])
+        await expect(
+          service.invoke('app.addField', changed, context),
+        ).rejects.toThrow('REUSED');
+      allowed = false;
+      await expect(
+        service.invoke('app.addField', args, context),
+      ).rejects.toThrow('signed-in owner');
+      allowed = true;
+      liveOwner = false;
+      await expect(
+        service.invoke('app.addField', args, context),
+      ).rejects.toThrow('signed-in owner');
+      liveOwner = true;
+      await expect(
+        service.invoke('app.addField', args, {
+          ...context,
+          tenantId: randomUUID(),
+        }),
+      ).rejects.toThrow('signed-in owner');
+      expect(await editor.history()).toStrictEqual(originalHistory);
+      expect(await authority.get(randomUUID(), holdId)).toBeNull();
+    } finally {
+      await db?.close();
+      restore();
+    }
   });
 });

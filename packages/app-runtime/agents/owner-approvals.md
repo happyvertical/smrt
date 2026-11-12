@@ -2,7 +2,7 @@
 
 `src/owner-approvals.ts` adapts the existing smrt-approvals ledger, rather than
 introducing another approval model. `OwnerApprovalStore` is a trusted host storage
-interface; its default SQLite adapter retains the original principal, permission
+interface; its SQLite/PostgreSQL adapter retains the original principal, permission
 ceiling, arguments, tool and recovery context in a runtime system table. Decision
 and consumption compare-and-set operations and their audit events remain in
 `ApprovalService`. A revision hash pins the whole saved envelope. Application
@@ -29,9 +29,11 @@ decide. Cancellation releases a waiter without deleting its durable hold.
 
 ## Test design and evidence
 
-All new persistence behavior is exercised in-process on Node/SQLite. Other stores
-are interfaces only; this adapter does not claim another dialect. The canonical
-service retains its own SQLite, DuckDB and PostgreSQL transition suites.
+Persistence behavior is exercised in-process on Node/SQLite and PostgreSQL via
+PGlite. The canonical service retains its own SQLite, DuckDB and PostgreSQL
+transition suites. The combined runtime test uses the real core design-action
+editor and this canonical approval adapter: preview, owner decision, one field
+and journal result, reopen/replay, immutable intent and live authority conflicts.
 
 | Behavior/invariant | Reachable trigger | Positive case | Negative/failure | Actor/context | Executor/transaction | Runtime/dialect | External edge | Level | Validation |
 | --- | --- | --- | --- | --- | --- | --- | --- | --- | --- |
@@ -135,7 +137,7 @@ Legacy PostgreSQL envelopes with TEXT identities fail with `OWNER_APPROVAL_MIGRA
 
 `OwnerApprovalInput.requestKey` is an optional trusted host correlation key. The
 authority derives an envelope id scoped to tenant and requester, then uses the
-canonical SQLite store's `insertOrGet`. The first immutable envelope wins; tool,
+canonical store's `insertOrGet`. The first immutable envelope wins; tool,
 arguments, call id, context, continuation, summary and TTL mismatches refuse.
 Retries preserve the original expiry and terminal decision. A legacy custom store
 without this explicit capability rejects a keyed request before insertion.
@@ -151,3 +153,11 @@ existing single-use transitions; no generic executing continuation replay is add
 The cookbook editor can reconcile an executing native hold only when its durable
 journal proves the identical action's completed result. An executing hold without
 that proof remains an explicit unknown outcome requiring reconciliation.
+
+
+PostgreSQL encodes a keyed request's scoped SHA-256 digest as an RFC 9562 UUIDv8
+inside the envelope adapter, before insertion and canonical gate linking. Random
+UUID request identities are unchanged. SQLite and custom stores preserve their
+existing `action-<digest>` keyed identities, so reopening a deployed local store
+recovers the same hold, expiry and decision rather than issuing another hold.
+The adapter changes representation only; it adds no token or continuation ledger.

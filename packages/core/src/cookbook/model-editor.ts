@@ -695,6 +695,7 @@ export async function createAppModelEditor(options: AppModelEditorOptions) {
     const started = performance.now();
     if (engine === 'postgres') {
       let restore = () => {};
+      const readiness = new Map<string, boolean | undefined>();
       try {
         await store.transaction!(async (scoped, db) => {
           history = await scoped.read();
@@ -704,15 +705,18 @@ export async function createAppModelEditor(options: AppModelEditorOptions) {
             doc,
             storageModels(history.flatMap((row) => [row.before, row.after])),
           );
-          restore = ObjectRegistry.checkpointRegistrations(
-            identities(storageModels(documents())),
-          );
+          const held = identities(storageModels(documents()));
+          for (const id of held)
+            readiness.set(id, getRuntimeModelReadiness(id));
+          restore = ObjectRegistry.checkpointRegistrations(held);
           await activate(doc, storageModels(documents()), db, false);
         });
       } catch (error) {
         // The surrounding transaction can fail while committing, after the
         // migration callback itself succeeded. Restore that boundary too.
         restore();
+        for (const [id, value] of readiness)
+          setRuntimeModelReadiness([id], value);
         throw error;
       }
       await publish();

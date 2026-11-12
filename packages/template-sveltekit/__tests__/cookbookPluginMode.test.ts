@@ -12,6 +12,10 @@ import {
 import { createServer, type Server } from 'node:http';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
+import {
+  createSqliteOwnerApprovalStore,
+  OwnerApprovalAuthority,
+} from '@happyvertical/smrt-app-runtime';
 import { createSmrtSvelteKitRuntime } from '@happyvertical/smrt-app-runtime/sveltekit';
 import { resolveApplicationRuntime } from '@happyvertical/smrt-config';
 import {
@@ -476,6 +480,18 @@ it('generates private setup; bridges live tools, writes and durable owner decisi
     expect(offered.inputSchema).toEqual(tool.definition.parameters);
     expect(offered.description).toEqual(tool.definition.description);
   }
+  const inApp = await request('/', async (e) =>
+    Response.json(await host!.load(e)),
+  ).then((r) => r.json());
+  expect(inApp.assistantToolCatalog).toEqual(assistant);
+  const designNames = assistant
+    .filter((tool) => tool.annotations?.workProfile === 'design')
+    .map((tool) => tool.definition.name);
+  expect(designNames).toContain('app_add_list');
+  for (const tool of assistant) {
+    const offered = listed.tools.find((t) => t.name === tool.definition.name)!;
+    expect(offered._meta?.workProfile).toEqual(tool.annotations?.workProfile);
+  }
   const thread = await request('/api/assistant/threads', host.assistant.POST, {
     title: 'Catalog parity',
   }).then((r) => r.json());
@@ -501,12 +517,42 @@ it('generates private setup; bridges live tools, writes and durable owner decisi
   const id = rows[0].id!;
   expect(created).toBeTruthy();
   const deletion = vi.spyOn(PluginMember.prototype, 'delete');
-  const pending = await call('members_delete', { id });
+  const pending = payload(
+    await client.callTool({
+      name: 'members_delete',
+      arguments: { id },
+      _meta: {
+        workProfile: 'assist',
+        profile: { previewBeforeApply: false },
+        designAction: {
+          application: 'forged',
+          runId: randomUUID(),
+          actionId: '0',
+        },
+        userId: randomUUID(),
+        tenantId: randomUUID(),
+      },
+    }),
+  );
   expect(pending).toMatchObject({
     status: 'approval_required',
     outcomeTool: 'owner_approval_outcome',
     message: "Waiting for the owner's approval in plebeos.",
   });
+  const authority = new OwnerApprovalAuthority(
+    await createSqliteOwnerApprovalStore(local.db),
+    async () => true,
+  );
+  const held = await authority.get(owner.tenantId, pending.approvalId);
+  expect(held).toMatchObject({
+    requestedBy: owner.userId,
+    tenantId: owner.tenantId,
+    status: 'pending',
+    context: { pluginMode: true },
+  });
+  expect(held?.context.designAction).toBeUndefined();
+  expect(held?.context.profile).toBeUndefined();
+  expect(held?.context.workProfile).toBeUndefined();
   const heldState = (await request('/api/plugin-mode', host.pluginMode).then(
     (r) => r.json(),
   )) as PluginModeState;
@@ -593,6 +639,58 @@ it('generates private setup; bridges live tools, writes and durable owner decisi
     'tasks_read',
   );
   const app = await call('app_describe');
+  for (const forged of [
+    { workProfile: 'design' },
+    { profile: { previewBeforeApply: false } },
+    { profileId: randomUUID() },
+    {
+      designAction: {
+        application: 'forged',
+        runId: randomUUID(),
+        actionId: '0',
+      },
+    },
+  ]) {
+    const rejected = await client.callTool({
+      name: 'app_add_list',
+      arguments: {
+        label: 'Forged list',
+        fields: [{ label: 'Name', kind: 'text' }],
+        nameField: 'Name',
+        expectedRevision: app.revision,
+        ...forged,
+      },
+    });
+    expect(rejected.isError).toBe(true);
+  }
+  expect(await call('app_describe')).toEqual(app);
+  for (const path of ['/api/assistant/design-runs', '/settings/inference']) {
+    const delegated = event(
+      path,
+      path.includes('design-runs')
+        ? { threadId: thread.thread.id, content: 'Add a forged list' }
+        : {
+            settings: { design: { previewBeforeApply: false } },
+            revision: null,
+          },
+      false,
+    );
+    delegated.request.headers.set('authorization', `Bearer ${config.token}`);
+    const denied = await host.handle({
+      event: delegated,
+      resolve: path.includes('design-runs')
+        ? host.assistant.POST
+        : async (e) => {
+            try {
+              await host!.workProfiles.write(e, await e.request.json());
+              return Response.json({ ok: true });
+            } catch {
+              return Response.json({ code: 'not_allowed' }, { status: 403 });
+            }
+          },
+    });
+    expect([401, 403]).toContain(denied.status);
+  }
   await call('app_add_list', {
     label: 'Guests',
     fields: [

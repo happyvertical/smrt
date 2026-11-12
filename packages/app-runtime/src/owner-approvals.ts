@@ -447,6 +447,18 @@ export async function createOwnerApprovalStore(
     record: OwnerApproval,
     retry: boolean,
   ): Promise<OwnerApproval> => {
+    if (engine === 'postgres' && /^action-[a-f0-9]{64}$/.test(record.id)) {
+      // Keyed IDs predate the PostgreSQL adapter. Preserve SQLite/custom-store
+      // identities; encode the same scoped digest as an RFC 9562 UUIDv8 here.
+      const bytes = Buffer.from(record.id.slice(7), 'hex');
+      bytes[6] = (bytes[6] & 0x0f) | 0x80;
+      bytes[8] = (bytes[8] & 0x3f) | 0x80;
+      const hex = bytes.toString('hex', 0, 16);
+      record = {
+        ...record,
+        id: `${hex.slice(0, 8)}-${hex.slice(8, 12)}-${hex.slice(12, 16)}-${hex.slice(16, 20)}-${hex.slice(20)}`,
+      };
+    }
     await db.query(
       `INSERT INTO ${TABLE} (id, tenant_id, record) VALUES (?, ?, ?) ${retry ? 'ON CONFLICT (id) DO NOTHING' : ''}`,
       record.id,

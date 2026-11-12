@@ -27,6 +27,7 @@ explicit file URLs support close/reopen recovery.
 | Owner approvals/continuations | Pass | Canonical ApprovalService, concurrent decision/consume, owner revalidation, expiry, restart and original-caller result |
 | Lazy activation | Pass | Fresh transaction-bound inspection, atomic subset DDL/marker, concurrent first use, rollback/retry and restart |
 | App editor/history | Pass | Every field type, list/reference CRUD, label rename, hide/remove, ordered history, undo/import/restart, revision fencing and pending publication recovery |
+| Durable design Apply | Pass | Real cookbook tool Apply, canonical native review holds, transaction-bound operation/receipt/result persistence, exact replay after later edits, owner/tenant/content checks and rolled-back DDL retry |
 | Hosted onboarding/credentials | Local-only host | Outside this feature; the host intentionally remains local-only |
 
 SQL `like` retains its existing semantics: SQLite ASCII folding versus
@@ -87,7 +88,7 @@ are restored; the same failed request can retry because its journal insert also
 rolled back. Tests inject a real PostgreSQL error after earlier DDL statements
 and verify no new field, revision or completed marker survives. A separate boot
 commit-failure regression verifies registry restoration after the callback has
-already succeeded.
+already succeeded; it also restores the prior readiness of provider and app identities.
 
 After schema commit, affected models stay gated while the host's existing
 `publish` callback runs. A callback failure leaves durable **pending** history;
@@ -149,3 +150,11 @@ route, component, approval ledger or database adapter is added.
 The two positive PostgreSQL startup/editor tests were executed with their
 integration-base implementations: both failed with the old explicit refusals.
 The same cases pass with transaction inspection and revision fencing enabled.
+
+The core `test:pglite` script includes `cookbook/app-tools.test.ts`, including the
+host-owned `designAction` path rather than only programmatic editor edits. The
+scoped history store retains its durable-operation capability; PostgreSQL
+completion forwards the original receipt and tool result under the revision
+fence. Its immutable first completion and recovered pending publication obey
+the same native-approval protocol as SQLite. These in-process assertions do not
+establish independent-backend contention or network commit reconciliation.

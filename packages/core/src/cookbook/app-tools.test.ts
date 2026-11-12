@@ -5,7 +5,7 @@ import type { DatabaseInterface } from '@happyvertical/sql';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import type { PrincipalTool } from '../../../agents/src/invoke-agent.js';
 import {
-  createSqliteOwnerApprovalStore,
+  createOwnerApprovalStore,
   OwnerApprovalAuthority,
 } from '../../../app-runtime/src/owner-approvals.js';
 import {
@@ -27,12 +27,14 @@ import { field } from '../decorators/index.js';
 import { MCPGenerator } from '../generators/mcp.js';
 import { APIGenerator } from '../generators/rest.js';
 import { migrateSmrtSchemas } from '../migrations/orchestrate.js';
+import { MigrationTracker } from '../migrations/tracker.js';
 import { SmrtObject } from '../object.js';
 import { ObjectRegistry } from '../registry.js';
 import {
   createCookbookRuntimeExposure,
   setRuntimeExposureGate,
 } from '../runtime-exposure.js';
+import { inspectTableSchema } from '../schema/inspection.js';
 import { snapshotObjectRegistryState } from '../test-utils.js';
 import { getTestDatabase } from '../testing/database.js';
 import { describeApp } from './app-tool-edits.js';
@@ -45,7 +47,7 @@ import {
 import { createAppModelEditor } from './model-editor.js';
 import {
   type AppModelHistoryStore,
-  createSqliteAppModelHistory,
+  createAppModelHistory,
 } from './model-history.js';
 import {
   type CookbookToolContext,
@@ -158,7 +160,7 @@ beforeEach(async () => {
     },
   });
   authority = new OwnerApprovalAuthority(
-    await createSqliteOwnerApprovalStore(db),
+    await createOwnerApprovalStore(db),
     async () => owner,
   );
   audit.mockReset();
@@ -220,7 +222,7 @@ async function approve(name: CookbookToolName, args: Record<string, unknown>) {
   expect(hold.status).toBe('approval_required');
   // Reopen authority against the durable SQLite ledger, as a process restart would.
   authority = new OwnerApprovalAuthority(
-    await createSqliteOwnerApprovalStore(db),
+    await createOwnerApprovalStore(db),
     async () => owner,
   );
   options.approvals = authority;
@@ -1329,6 +1331,91 @@ describe('host design action durable boundary', () => {
     kind: 'text',
     expectedRevision: 0,
   };
+  it('retains durable capability and exact Apply receipt on the transaction-bound journal', async () => {
+    const store = await createAppModelHistory({
+      db,
+      application: 'c6',
+      tenantId: TENANT,
+    });
+    if (store.transaction)
+      await store.transaction(async (scoped, tx) => {
+        expect(scoped.supportsDurableOperations).toBe(true);
+        const schema = await inspectTableSchema(
+          tx,
+          '_smrt_app_model_changes',
+          engineHint,
+        );
+        expect(schema?.columns.tenant_id.type).toBe('uuid');
+        expect(schema?.columns.revision.type).toBe('bigint');
+        expect(schema?.columns).toHaveProperty('operation_json');
+        expect(schema?.columns).toHaveProperty('receipt_json');
+        expect(schema?.columns).toHaveProperty('result_json');
+      });
+    options.previewBeforeApply = () => false;
+    const result = await call('app.addField', add, host());
+    const first = (await store.read())[0];
+    expect(first.result).toStrictEqual(result);
+    expect(first.receipt?.revision).toBe(1);
+    expect(Number.isSafeInteger(first.revision)).toBe(true);
+    expect(first.operation?.binding).toMatchObject({
+      tool: 'app.addField',
+      designAction: host().designAction,
+      args: add,
+    });
+    expect(
+      (await inspectTableSchema(db, 'c6_customers', engineHint))?.columns,
+    ).toHaveProperty('preferred_colour');
+    await reopenEditor();
+    expect(await call('app.addField', add, host())).toStrictEqual(result);
+    expect(await store.read()).toHaveLength(1);
+  });
+  it.runIf(databaseType === 'pglite')(
+    'rolls back failed design Apply DDL and its request claim before retrying the same action',
+    async () => {
+      options.previewBeforeApply = () => false;
+      const original = MigrationTracker.prototype.apply;
+      const inject = vi
+        .spyOn(MigrationTracker.prototype, 'apply')
+        .mockImplementation(function (
+          this: MigrationTracker,
+          definition,
+          options,
+        ) {
+          return original.call(
+            this,
+            definition.id.startsWith('app_models_')
+              ? {
+                  ...definition,
+                  up: [
+                    ...definition.up,
+                    'SELECT * FROM _smrt_missing_design_apply_relation',
+                  ],
+                }
+              : definition,
+            options,
+          );
+        });
+      try {
+        await expect(call('app.addField', add, host())).rejects.toThrow(
+          'does not exist',
+        );
+      } finally {
+        inject.mockRestore();
+      }
+      expect(await editor.history()).toHaveLength(0);
+      expect(editor.snapshot().revision).toBe(0);
+      expect(ObjectRegistry.getFields(CUSTOMER).has('preferredColour')).toBe(
+        false,
+      );
+      expect(
+        (await inspectTableSchema(db, 'c6_customers', engineHint))?.columns,
+      ).not.toHaveProperty('preferred_colour');
+      const result = await call('app.addField', add, host());
+      expect(result.status).toBe('ok');
+      expect(await call('app.addField', add, host())).toStrictEqual(result);
+      expect(await editor.history()).toHaveLength(1);
+    },
+  );
   it('returns the exact original result after later edits, registry/catalog changes and reopen', async () => {
     options.previewBeforeApply = () => false;
     const original = await call('app.addField', add, host());
@@ -1413,7 +1500,7 @@ describe('host design action durable boundary', () => {
     ).rejects.toThrow();
   });
   it('fails closed before mutation when a custom history store has no exact-result capability', async () => {
-    const store = await createSqliteAppModelHistory({
+    const store = await createAppModelHistory({
       db,
       application: 'c6',
       tenantId: TENANT,
@@ -1422,6 +1509,7 @@ describe('host design action durable boundary', () => {
       read: store.read,
       append: store.append,
       complete: store.complete,
+      ...(store.transaction ? { transaction: store.transaction } : {}),
     });
     await expect(call('app.addField', add, host())).rejects.toThrow(
       'safely recover',
@@ -1439,7 +1527,7 @@ describe('host design action durable boundary', () => {
     ).toBe('ok');
   });
   it('recovers pending publication bookkeeping, reconciles the executing hold and never mutates twice', async () => {
-    const store = await createSqliteAppModelHistory({
+    const store = await createAppModelHistory({
       db,
       application: 'c6',
       tenantId: TENANT,
@@ -1489,7 +1577,7 @@ describe('host design action durable boundary', () => {
     else {
       const now = Date.now() + 20 * 60_000;
       authority = new OwnerApprovalAuthority(
-        await createSqliteOwnerApprovalStore(db, () => now),
+        await createOwnerApprovalStore(db, () => now),
         async () => true,
         () => now,
       );
@@ -1529,7 +1617,7 @@ describe('host design action durable boundary', () => {
     options.previewBeforeApply = () => false;
     const first = await call('app.addField', add, host());
     const stored = (await editor.history())[0];
-    const store = await createSqliteAppModelHistory({
+    const store = await createAppModelHistory({
       db,
       application: 'c6',
       tenantId: TENANT,

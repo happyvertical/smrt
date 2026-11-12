@@ -133,7 +133,11 @@ import type { Handle, RequestEvent, ServerLoad } from '@sveltejs/kit';
 import { error, redirect } from '@sveltejs/kit';
 import { createCookbookDesignRuns } from './design-runs.js';
 import { createCookbookOnboarding } from './onboarding.js';
-import { createPluginMode, PLUGIN_PERMISSION } from './plugin-mode.js';
+import {
+  createPluginMode,
+  PLUGIN_PERMISSION,
+  type PluginModeState,
+} from './plugin-mode.js';
 import { createCookbookHostState } from './state.js';
 
 export interface CookbookHostOptions {
@@ -1252,6 +1256,7 @@ export function createCookbookHost(options: CookbookHostOptions) {
     )
       .filter(
         (tool) =>
+          !context.event ||
           !designRequests.has(context.event.request) ||
           tool.annotations?.readOnlyHint === true,
       )
@@ -1981,53 +1986,73 @@ export function createCookbookHost(options: CookbookHostOptions) {
       },
     });
   const session = createSessionLayoutLoad();
+  const assistantToolCatalog = async (actor: {
+    id: string;
+    tenantId: string;
+  }): Promise<NonNullable<PluginModeState['tools']>> =>
+    runtime.runAsPrincipal(actor, async (bound) => {
+      const host = await prepare(actor.tenantId);
+      const scopes = [...(bound?.scopes ?? [])];
+      const context = {
+        principal: {
+          userId: actor.id,
+          tenantId: actor.tenantId,
+          permissions: scopes,
+        },
+      } as AssistantRequestContext;
+      const shell = buildCookbookShell({
+        cookbook: host.state.engineFor(actor)!.cookbook(),
+        catalog: host.catalog,
+      });
+      const nativeDefinitions = new Map(
+        (
+          await host.service.list({
+            surface: 'assistant',
+            tenantId: actor.tenantId,
+            userId: actor.id,
+          })
+        ).map((tool) => [tool.name as string, tool.annotations]),
+      );
+      return [
+        ...(await manifest(actor.tenantId, actor.id, scopes)).map((tool) => ({
+          definition: manifestToolToAITool(tool, actor.tenantId).function,
+          source: 'model' as const,
+          annotations: {
+            readOnlyHint: tool.action === 'read',
+            destructiveHint: requiresOwnerApproval(tool, {}),
+            idempotentHint: tool.action === 'read',
+            openWorldHint: false as const,
+          },
+          model: tool.qualifiedName ?? tool.className,
+          operation: tool.action,
+          recipe:
+            [...shell.entries.values()].find(
+              (entry) =>
+                ObjectRegistry.getClass(entry.model.id)?.qualifiedName ===
+                ObjectRegistry.getClass(tool.qualifiedName ?? tool.className)
+                  ?.qualifiedName,
+            )?.recipeId ?? undefined,
+        })),
+        ...(await extra(context))
+          .filter((tool) => scopes.includes(tool.slug))
+          .map((tool) => ({
+            definition: tool.aiTool.function,
+            annotations: nativeDefinitions.get(tool.slug),
+            source:
+              tool.slug === 'app.approvals'
+                ? ('lifecycle' as const)
+                : tool.slug.startsWith('app.')
+                  ? ('app' as const)
+                  : ('recipe' as const),
+          })),
+      ];
+    });
   const pluginMode = createPluginMode({
     runtime,
     sourceRoot: options.root ?? process.cwd(),
     name: options.application ?? 'smrt-app',
     state: async () => (await ready()).state,
-    tools: async (actor) =>
-      runtime.runAsPrincipal(actor, async (bound) => {
-        const host = await prepare(actor.tenantId);
-        const scopes = [...(bound?.scopes ?? [])];
-        const context = {
-          principal: {
-            userId: actor.id,
-            tenantId: actor.tenantId,
-            permissions: scopes,
-          },
-        } as AssistantRequestContext;
-        const shell = buildCookbookShell({
-          cookbook: host.state.engineFor(actor)!.cookbook(),
-          catalog: host.catalog,
-        });
-        return [
-          ...(await manifest(actor.tenantId, actor.id, scopes)).map((tool) => ({
-            definition: manifestToolToAITool(tool, actor.tenantId).function,
-            source: 'model' as const,
-            model: tool.qualifiedName ?? tool.className,
-            operation: tool.action,
-            recipe:
-              [...shell.entries.values()].find(
-                (entry) =>
-                  ObjectRegistry.getClass(entry.model.id)?.qualifiedName ===
-                  ObjectRegistry.getClass(tool.qualifiedName ?? tool.className)
-                    ?.qualifiedName,
-              )?.recipeId ?? undefined,
-          })),
-          ...(await extra(context))
-            .filter((tool) => scopes.includes(tool.slug))
-            .map((tool) => ({
-              definition: tool.aiTool.function,
-              source:
-                tool.slug === 'app.approvals'
-                  ? ('lifecycle' as const)
-                  : tool.slug.startsWith('app.')
-                    ? ('app' as const)
-                    : ('recipe' as const),
-            })),
-        ];
-      }),
+    tools: assistantToolCatalog,
     authorize: async (event) => {
       const p = resolveAssistantPrincipalFromLocals(event.locals);
       if (!p) return null;
@@ -2057,6 +2082,7 @@ export function createCookbookHost(options: CookbookHostOptions) {
   });
   async function load(event: Parameters<typeof session>[0]): Promise<
     Awaited<ReturnType<typeof session>> & {
+      assistantToolCatalog: NonNullable<PluginModeState['tools']>;
       dynamicDefinitions: AppModelSnapshot['webDefinitions'];
       enabledModels: string[];
       cookbookApp: CookbookAppData;
@@ -2119,6 +2145,10 @@ export function createCookbookHost(options: CookbookHostOptions) {
         )
       : null;
     return {
+      assistantToolCatalog:
+        p && tenantId && (await isOwner(tenantId, p.userId))
+          ? await assistantToolCatalog({ id: p.userId, tenantId })
+          : [],
       ...data,
       embed: p ? await host.state.embed(p.tenantId, p.userId) : false,
       onboarding,
@@ -2551,6 +2581,11 @@ export function createCookbookHost(options: CookbookHostOptions) {
                   : spec.annotations?.readOnlyHint === true
                     ? 'read'
                     : 'write',
+                ...(spec.annotations &&
+                'workProfile' in spec.annotations &&
+                spec.annotations.workProfile === 'design'
+                  ? { metadata: { workProfile: spec.annotations.workProfile } }
+                  : {}),
                 idempotent: spec.annotations?.idempotentHint === true,
                 openWorld: spec.annotations?.openWorldHint === true,
                 mapError: (error) =>

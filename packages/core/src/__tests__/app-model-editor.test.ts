@@ -24,7 +24,9 @@ import { SmrtObject } from '../object.js';
 import { ObjectRegistry } from '../registry.js';
 import {
   createCookbookRuntimeExposure,
+  getRuntimeModelReadiness,
   setRuntimeExposureGate,
+  setRuntimeModelReadiness,
 } from '../runtime-exposure.js';
 import { registerRuntimeModel } from '../runtime-model.js';
 import { inspectTableSchema } from '../schema/inspection.js';
@@ -772,6 +774,8 @@ describe('durable app model editor', () => {
           authorize: () => true,
           publish,
         });
+      setRuntimeModelReadiness([CUSTOMER], true);
+      expect(getRuntimeModelReadiness(`${APP}:Customer`)).toBeUndefined();
       const begin = db.beginTransaction!.bind(db);
       const failure = vi
         .spyOn(db, 'beginTransaction')
@@ -784,6 +788,8 @@ describe('durable app model editor', () => {
         });
       await expect(open()).rejects.toThrow('injected commit failure');
       failure.mockRestore();
+      expect(getRuntimeModelReadiness(CUSTOMER)).toBe(true);
+      expect(getRuntimeModelReadiness(`${APP}:Customer`)).toBeUndefined();
       expect(publish).not.toHaveBeenCalled();
       expect(
         (await inspectTableSchema(db, 'customers', engine))?.columns,

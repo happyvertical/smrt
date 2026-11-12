@@ -6,6 +6,7 @@ import type { PrincipalTool } from '@happyvertical/smrt-agents';
 import type { generateLocalMcpSetup } from '@happyvertical/smrt-app-cli';
 import type { LocalMcpTokenRecord } from '@happyvertical/smrt-app-runtime';
 import type { SmrtSvelteKitRuntime } from '@happyvertical/smrt-app-runtime/sveltekit';
+import type { CookbookToolDefinition } from '@happyvertical/smrt-core/cookbook/tools';
 import type { RequestEvent } from '@sveltejs/kit';
 import type { createCookbookHostState } from './state.js';
 
@@ -30,6 +31,7 @@ export type PluginModeState = {
   /** The same live definitions supplied to the in-app assistant. */
   tools?: Array<{
     definition: PrincipalTool['aiTool']['function'];
+    annotations?: CookbookToolDefinition['annotations'];
     source: 'model' | 'recipe' | 'app' | 'lifecycle';
     model?: string;
     operation?: string;

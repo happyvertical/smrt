@@ -556,3 +556,13 @@ settings are advisory while reported usage bounds subsequent passes.
 Explicit Resume adopts current owner design aggregate token/time settings while
 retaining consumed usage and the pinned engine, model and pass definition. A
 lowered cap may pause the same run immediately; it never resets its allowance.
+
+The owner layout's `assistantToolCatalog` and plugin settings use one live,
+principal-filtered host projection. Native cookbook definitions supply their
+annotations, including `workProfile: design`; MCP preserves that presentation
+hint in `_meta.workProfile`. Provider function schemas remain unchanged. This
+metadata cannot select a profile or grant authority: tool arguments retain their
+closed schemas, and delegated plugin tokens cannot write owner work profiles or
+start host design runs. Native decisions use `OwnerApprovalContinuations` and
+its canonical adapters; the design runner only schedules its deterministic
+checkpoint after the recorded native outcome.
