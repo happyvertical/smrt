@@ -7,6 +7,7 @@ import type {
 } from '@happyvertical/smrt-inference/server';
 import type { Actions, ServerLoad } from '@sveltejs/kit';
 import { error, fail } from '@sveltejs/kit';
+import type { createCookbookHost } from './server.js';
 
 export interface SettingsSession {
   tenantId: string;
@@ -35,6 +36,7 @@ export async function readPayload<T>(request: Request): Promise<T> {
 
 export function createInferenceSettingsPage(
   controller: InferenceSettingsController,
+  workProfiles?: ReturnType<typeof createCookbookHost>['workProfiles'],
 ) {
   const inferenceSettingsController = () => controller;
   type Payload<K extends keyof InferenceSettingsController> = Parameters<
@@ -53,13 +55,46 @@ export function createInferenceSettingsPage(
     depends('smrt:inference-settings');
     const session = requireSettingsSession(locals);
     // No key is ever sent to the browser, only whether one is stored.
-    return inferenceSettingsController().load(
-      session,
-      url.searchParams.get('by'),
-    );
+    return {
+      ...(await inferenceSettingsController().load(
+        session,
+        url.searchParams.get('by'),
+      )),
+      ...(workProfiles
+        ? {
+            workProfiles: await workProfiles.read({ locals, url } as Parameters<
+              typeof workProfiles.read
+            >[0]),
+          }
+        : {}),
+    };
   }) satisfies ServerLoad;
 
   const actions: Actions = {
+    saveWorkProfiles: async (event) => {
+      if (!workProfiles) error(404, 'Unavailable');
+      const payload = await readPayload<
+        Parameters<typeof workProfiles.write>[1]
+      >(event.request);
+      const outcome = await workProfiles.write(event, payload);
+      return outcome.ok
+        ? outcome
+        : fail(outcome.reason === 'conflict' ? 409 : 400, {
+            error: 'The change was refused.',
+          });
+    },
+    resetWorkProfiles: async (event) => {
+      if (!workProfiles) error(404, 'Unavailable');
+      const payload = await readPayload<{ revision: string | null }>(
+        event.request,
+      );
+      const outcome = await workProfiles.reset(event, payload.revision);
+      return outcome.ok
+        ? outcome
+        : fail(outcome.reason === 'conflict' ? 409 : 400, {
+            error: 'The change was refused.',
+          });
+    },
     saveDefaults: async ({ request, locals }) => {
       const session = requireSettingsSession(locals);
       const change = await readPayload<Payload<'saveDefaults'>>(request);

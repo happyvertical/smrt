@@ -1,4 +1,5 @@
 /** Local host persistence. Cookbook publication and its audit share one SQLite transaction. */
+import { randomUUID } from 'node:crypto';
 import {
   type CookbookEngine,
   coveredModels,
@@ -136,11 +137,30 @@ export async function createCookbookHostState(
           'Local cookbook needs a tenant and SQLite transactions',
         );
       await db.transaction(async (tx) => {
+        const row = (
+          await tx.query(
+            `SELECT state FROM ${TABLE} WHERE tenant_id = ? AND user_id = ''`,
+            tenantId,
+          )
+        ).rows[0];
+        // Hydration can add required recipe dependencies from the current catalog.
+        // Compare logical snapshots, then CAS against the exact bytes observed.
+        const raw = row && String(row.state);
+        if (
+          !raw ||
+          JSON.stringify(
+            createCookbookEngine({
+              catalog,
+              state: JSON.parse(raw) as EngineState,
+            }).state(),
+          ) !== JSON.stringify(change.before)
+        )
+          throw new Error('Cookbook changed; refresh and try again');
         const changed = await tx.query(
           `UPDATE ${TABLE} SET state = ? WHERE tenant_id = ? AND user_id = '' AND state = ? RETURNING tenant_id`,
           JSON.stringify(change.after),
           tenantId,
-          JSON.stringify(change.before),
+          raw,
         );
         if (changed.rows.length !== 1)
           throw new Error('Cookbook changed; refresh and try again');
@@ -150,6 +170,61 @@ export async function createCookbookHostState(
     },
     async audit(event: Parameters<CookbookToolOptions['audit']>[0]) {
       if (event.context.tenantId) await audit(event, event.context.tenantId);
+    },
+    /** Persistent fallback memo; identity and connection generation are host-bound. */
+    fallbackStore(tenantId: string) {
+      const key = (
+        ownerId: string,
+        engine: string,
+        requested: string,
+        connection: string,
+      ) =>
+        `work-model:${JSON.stringify([ownerId, engine, requested, connection])}`;
+      return {
+        async read(
+          ownerId: string,
+          engine: string,
+          requested: string,
+          connection: string,
+        ) {
+          const row = (
+            await db.query(
+              `SELECT state FROM ${TABLE} WHERE tenant_id = ? AND user_id = ?`,
+              tenantId,
+              key(ownerId, engine, requested, connection),
+            )
+          ).rows[0];
+          if (!row) return undefined;
+          const saved = JSON.parse(String(row.state));
+          return typeof saved.model === 'string' ? saved.model : undefined;
+        },
+        async write(
+          ownerId: string,
+          engine: string,
+          requested: string,
+          connection: string,
+          model: string,
+        ) {
+          await db.query(
+            `INSERT INTO ${TABLE} (tenant_id, user_id, state) VALUES (?, ?, ?) ON CONFLICT(tenant_id,user_id) DO UPDATE SET state = excluded.state`,
+            tenantId,
+            key(ownerId, engine, requested, connection),
+            JSON.stringify({ model }),
+          );
+        },
+      };
+    },
+    async engineGeneration(tenantId: string, userId: string) {
+      const row = (
+        await db.query(
+          `SELECT state FROM ${TABLE} WHERE tenant_id = ? AND user_id = ?`,
+          tenantId,
+          userId,
+        )
+      ).rows[0];
+      return row
+        ? (JSON.parse(String(row.state)).generation ?? 'initial')
+        : 'initial';
     },
     async engine(
       tenantId: string,
@@ -179,7 +254,7 @@ export async function createCookbookHostState(
         `INSERT INTO ${TABLE} (tenant_id, user_id, state) VALUES (?, ?, ?) ON CONFLICT(tenant_id, user_id) DO UPDATE SET state = json_set(${TABLE}.state, '$.engine', json_extract(excluded.state, '$.engine'))`,
         tenantId,
         userId,
-        JSON.stringify({ engine }),
+        JSON.stringify({ engine, generation: randomUUID() }),
       );
     },
     async embed(tenantId: string, userId: string): Promise<boolean> {

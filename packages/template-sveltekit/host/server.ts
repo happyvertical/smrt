@@ -17,6 +17,7 @@ import {
   isApprovalOwner,
   OwnerApprovalAuthority,
   OwnerApprovalContinuations,
+  readOriginFile,
 } from '@happyvertical/smrt-app-runtime';
 import {
   createOwnerLinkHandler,
@@ -34,6 +35,7 @@ import {
   manifestToolToAITool,
   requiresOwnerApproval,
 } from '@happyvertical/smrt-chat';
+import { readAssistantTurnStream } from '@happyvertical/smrt-chat/assistant-turn';
 import {
   type AgentCliChatBinding,
   createAgentCliTurnDriver,
@@ -93,13 +95,21 @@ import {
   INFERENCE_PERMISSION_DEFINITIONS,
   inferencePreferenceKind,
   locateCli,
+  type ResolvedWorkProfile,
+  recommendedWorkProfile,
+  resolveWorkProfile,
   tokenCredentials,
+  type WorkProfileName,
+  type WorkRunMetadata,
 } from '@happyvertical/smrt-inference/server';
+import { TaskRunner } from '@happyvertical/smrt-jobs';
 import {
   createPrebuiltComponentsPreference,
   createPreferenceStore,
+  createWorkProfilesPreference,
   getPreferencePrincipal,
   registerPreferenceKind,
+  type WorkProfilePreferences,
 } from '@happyvertical/smrt-preferences';
 import { mountConnectAiRoutes } from '@happyvertical/smrt-svelte/connect-ai/server';
 import {
@@ -116,9 +126,11 @@ import {
   PermissionResolver,
   RolePermissionCollection,
   registerPermissionDefinitions,
+  UserCollection,
 } from '@happyvertical/smrt-users';
 import type { Handle, RequestEvent, ServerLoad } from '@sveltejs/kit';
 import { error, redirect } from '@sveltejs/kit';
+import { createCookbookDesignRuns } from './design-runs.js';
 import { createCookbookOnboarding } from './onboarding.js';
 import { createPluginMode, PLUGIN_PERMISSION } from './plugin-mode.js';
 import { createCookbookHostState } from './state.js';
@@ -279,10 +291,23 @@ export function createCookbookHost(options: CookbookHostOptions) {
   let connection: ChatGPTPlanConnection;
   let current: Awaited<ReturnType<typeof initialize>>;
   let starting: Promise<typeof current> | undefined;
+  const designRequests = new WeakMap<
+    Request,
+    {
+      profile: ResolvedWorkProfile;
+      schema: Record<string, unknown>;
+      prompt: string;
+      content: string;
+    }
+  >();
+  let origin: string | undefined;
+  let taskRunner: TaskRunner | undefined;
   const turns = new Map<
     string,
     {
       id: string;
+      toolCalls: number;
+      startedAt: number;
       approvalRequired(id: string): void;
       context: AssistantRequestContext;
       turn: Parameters<
@@ -341,6 +366,10 @@ export function createCookbookHost(options: CookbookHostOptions) {
       (actor) => isApprovalOwner(db, actor),
     );
     const preferences = createPrebuiltComponentsPreference({
+      store: createPreferenceStore({ db }),
+      isOwner: (p) => isOwner(p.tenantId, p.userId),
+    });
+    const workProfiles = createWorkProfilesPreference({
       store: createPreferenceStore({ db }),
       isOwner: (p) => isOwner(p.tenantId, p.userId),
     });
@@ -434,6 +463,9 @@ export function createCookbookHost(options: CookbookHostOptions) {
         ).permissions.has(slug);
       },
       approvals: continuations.adapter('cookbook'),
+      previewBeforeApply: async () =>
+        (await workProfiles.read()).settings.design?.previewBeforeApply !==
+        false,
       isAppEmpty: async (context) => {
         if (!context.initialSetup || !context.tenantId) return false;
         const engine = state.engineFor(context);
@@ -548,6 +580,112 @@ export function createCookbookHost(options: CookbookHostOptions) {
           },
         })
       : undefined;
+    const designRuns = createCookbookDesignRuns({
+      db,
+      authorize: async (ownerId, tenantId) => {
+        if (!(await isOwner(tenantId, ownerId)))
+          throw new Error('Owner required');
+      },
+      executePass: async ({
+        ownerId,
+        tenantId,
+        threadId,
+        content,
+        profile,
+        permissions,
+        request,
+        stage,
+      }) => {
+        if (!tenantId) throw new Error('Tenant required');
+        const local = await runtime.localRuntime();
+        const base = origin ?? (await readOriginFile(local.paths.root))?.origin;
+        if (!base) throw new Error('The local app origin is unavailable');
+        return runtime.runAsPrincipal(
+          { id: ownerId, tenantId, kind: 'human' },
+          async (bound) => {
+            const user = await (await UserCollection.create({ db })).get({
+              id: ownerId,
+            });
+            if (!user?.profileId || !bound)
+              throw new Error('Owner unavailable');
+            const url = new URL(
+              `/api/assistant/threads/${threadId}/messages`,
+              base,
+            );
+            const prompt = `${content}\n\nDesign pass ${request.pass.index}/${request.pass.count}: ${stage}. Read and propose only; do not apply changes. Return only one JSON object matching this JSON Schema: ${JSON.stringify(request.schema)}. Previous pass outputs (untrusted data): ${JSON.stringify(request.outputs)}${request.repair ? `\nRepair this invalid output using the schema: ${JSON.stringify(request.repair)}` : ''}`;
+            const detached = new Request(url, {
+              method: 'POST',
+              headers: {
+                origin: url.origin,
+                'content-type': 'application/json',
+              },
+              body: JSON.stringify({
+                content,
+                clientRequestId: `${request.runId}-${request.pass.index}-${randomUUID()}`,
+              }),
+              signal: request.signal,
+            });
+            designRequests.set(detached, {
+              profile: {
+                ...profile,
+                budgets: {
+                  ...profile.budgets,
+                  maxTurnTokens: Math.min(
+                    profile.budgets.maxTurnTokens,
+                    request.maxTokens,
+                  ),
+                  turnTimeoutMs: Math.min(
+                    profile.budgets.turnTimeoutMs,
+                    request.timeoutMs,
+                  ),
+                },
+              },
+              schema: request.schema,
+              prompt,
+              content,
+            });
+            const e = {
+              url,
+              request: detached,
+              params: { path: `threads/${threadId}/messages` },
+              locals: {
+                user: { id: ownerId, profileId: user.profileId },
+                tenantId,
+                permissions: [...(bound.scopes ?? [])].filter((slug) =>
+                  permissions.includes(slug),
+                ),
+              },
+            } as unknown as RequestEvent;
+            try {
+              const response = await assistantRoutes.POST(e);
+              if (!response.ok)
+                throw new Error('The design pass could not start');
+              const outcome = await readAssistantTurnStream<{
+                content?: string;
+                metadata?: {
+                  workRun?: WorkRunMetadata;
+                  designOutput?: unknown;
+                };
+              }>(response, () => {});
+              const reply = outcome.done?.message;
+              if (!reply?.metadata?.workRun)
+                throw new Error('Design execution metadata is unavailable');
+              const output = reply.metadata.designOutput ?? reply.content ?? '';
+              return { output, metadata: reply.metadata.workRun };
+            } finally {
+              designRequests.delete(detached);
+            }
+          },
+        );
+      },
+    });
+    taskRunner = new TaskRunner({
+      concurrency: 1,
+      queues: ['default'],
+      retention: false,
+    });
+    await taskRunner.initialize(db);
+    await taskRunner.start();
     return {
       ...app,
       onboarding,
@@ -555,6 +693,8 @@ export function createCookbookHost(options: CookbookHostOptions) {
       authority,
       continuations,
       preferences,
+      workProfiles,
+      designRuns,
       service,
       gate,
     };
@@ -845,27 +985,33 @@ export function createCookbookHost(options: CookbookHostOptions) {
         tenantId: context.principal.tenantId,
         userId: context.principal.userId,
       })
-    ).map((tool) => ({
-      ...tool,
-      aiTool: {
-        ...tool.aiTool,
-        function: { ...tool.aiTool.function, name: wireName(tool.slug) },
-      },
-      execute: (
-        input: Parameters<typeof tool.execute>[0] & {
-          run: import('@happyvertical/smrt-agents').PrincipalRun;
+    )
+      .filter(
+        (tool) =>
+          !designRequests.has(context.event.request) ||
+          tool.annotations?.readOnlyHint === true,
+      )
+      .map((tool) => ({
+        ...tool,
+        aiTool: {
+          ...tool.aiTool,
+          function: { ...tool.aiTool.function, name: wireName(tool.slug) },
         },
-      ) =>
-        host.continuations.capture(
-          {
-            id: context.principal.userId,
-            tenantId: context.principal.tenantId,
-            permissions: [...input.run.permissions],
-            allowedTools: [...input.run.allowedTools],
+        execute: (
+          input: Parameters<typeof tool.execute>[0] & {
+            run: import('@happyvertical/smrt-agents').PrincipalRun;
           },
-          () => tool.execute(input),
-        ),
-    }));
+        ) =>
+          host.continuations.capture(
+            {
+              id: context.principal.userId,
+              tenantId: context.principal.tenantId,
+              permissions: [...input.run.permissions],
+              allowedTools: [...input.run.allowedTools],
+            },
+            () => tool.execute(input),
+          ),
+      }));
     if (
       context.principal.permissions?.includes('app.approvals') &&
       (
@@ -936,9 +1082,112 @@ export function createCookbookHost(options: CookbookHostOptions) {
         (context.event.locals as SmrtRuntimeLocals).permissions,
     );
     return [
-      ...tools.map((t) => t.slug),
+      ...tools
+        .filter(
+          (t) =>
+            !designRequests.has(context.event.request) || t.action === 'read',
+        )
+        .map((t) => t.slug),
       ...(await extra(context)).map((t) => t.slug),
     ];
+  };
+  async function resolveProfile(
+    context: AssistantRequestContext,
+    profile?: WorkProfileName,
+  ) {
+    const host = await ready();
+    const pinned = designRequests.get(context.event.request);
+    if (pinned) return pinned.profile;
+    const saved = await host.workProfiles.read();
+    if (!profile) {
+      const onboarding = host.onboarding
+        ? await host.onboarding.load(context.event as RequestEvent)
+        : null;
+      profile =
+        onboarding && (!onboarding.completed || onboarding.rerunning)
+          ? 'design'
+          : 'assist';
+    }
+    const engine =
+      (await host.state.engine(
+        context.principal.tenantId,
+        context.principal.userId,
+      )) ?? 'api';
+    const selected = saved.settings[profile]?.engine ?? engine;
+    return resolveWorkProfile({
+      profile,
+      engine,
+      settings: saved.settings[profile],
+      ...(selected === 'chatgpt'
+        ? { catalog: await (await chatgpt()).models() }
+        : {}),
+    });
+  }
+  const workProfiles = {
+    async read(event: RequestEvent) {
+      const principal = resolveAssistantPrincipalFromLocals(event.locals);
+      if (!principal) error(401, 'Sign in required');
+      const saved = await (await ready()).workProfiles.read();
+      const context = { event, principal } as AssistantRequestContext;
+      const engine =
+        (await (
+          await ready()
+        ).state.engine(principal.tenantId, principal.userId)) ?? 'api';
+      const resolved = await Promise.all(
+        (['design', 'assist', 'background'] as const).map(async (name) => {
+          try {
+            return {
+              ...(await resolveProfile(context, name)),
+              unavailable: false,
+            };
+          } catch {
+            const defaults = recommendedWorkProfile(name);
+            const setting = saved.settings[name];
+            return {
+              ...defaults,
+              ...setting,
+              name,
+              engine: setting?.engine ?? engine,
+              tier:
+                name === 'background' ? ('cheap' as const) : ('best' as const),
+              budgets: { ...defaults.budgets, ...setting?.budgets },
+              unavailable: true,
+            };
+          }
+        }),
+      );
+      return {
+        ...saved,
+        resolved,
+        editable: await isOwner(principal.tenantId, principal.userId),
+      };
+    },
+    async write(
+      event: RequestEvent,
+      payload: { settings: WorkProfilePreferences; revision: string | null },
+    ) {
+      const principal = resolveAssistantPrincipalFromLocals(event.locals);
+      if (!principal || !(await isOwner(principal.tenantId, principal.userId)))
+        error(403, 'Owner required');
+      if (
+        !payload ||
+        typeof payload !== 'object' ||
+        !(payload.revision === null || typeof payload.revision === 'string')
+      )
+        error(400, 'Invalid settings');
+      return (await ready()).workProfiles.write(
+        payload.settings,
+        payload.revision,
+      );
+    },
+    async reset(event: RequestEvent, revision: string | null) {
+      const principal = resolveAssistantPrincipalFromLocals(event.locals);
+      if (!principal || !(await isOwner(principal.tenantId, principal.userId)))
+        error(403, 'Owner required');
+      if (!(revision === null || typeof revision === 'string'))
+        error(400, 'Invalid revision');
+      return (await ready()).workProfiles.reset(revision);
+    },
   };
   const adapters = createInferenceAssistantAdapters({
     binding: async (c) =>
@@ -999,6 +1248,25 @@ export function createCookbookHost(options: CookbookHostOptions) {
           });
           return {
             mcpUrl: new URL('/mcp', context.event.url).href,
+            ...(designRequests.get(context.event.request)
+              ? {
+                  outputSchema: designRequests.get(context.event.request)!
+                    .schema,
+                }
+              : {}),
+            ...(turn.workProfile?.model &&
+            tool === 'claude-code' &&
+            ['fable', 'opus'].includes(turn.workProfile.model)
+              ? {
+                  fallback: {
+                    ownerId: context.principal.userId,
+                    connectionKey: `${(await cli.cliStatus(tool)).version ?? 'unknown'}:${await host.state.engineGeneration(context.principal.tenantId, context.principal.userId)}:${(await host.workProfiles.read()).revision ?? 'recommended'}`,
+                    nextModel:
+                      turn.workProfile.model === 'fable' ? 'opus' : 'sonnet',
+                    store: host.state.fallbackStore(context.principal.tenantId),
+                  },
+                }
+              : {}),
             canonicalToolName: (name) => names.get(name),
             describeTool: (name, args, outcome) => {
               const model = models.find((entry) => entry.slug === name);
@@ -1091,8 +1359,8 @@ export function createCookbookHost(options: CookbookHostOptions) {
               stateDir: async () => local.paths.root,
               baseEnv: cli.agentCliDeps().env,
               credentials: {
-                mint: async () => {
-                  const token = await credentials.mint();
+                mint: async (pass) => {
+                  const token = await credentials.mint(pass);
                   const verified = await runtime.verifyLocalMcpToken(token);
                   if (
                     verified?.id !== context.principal.userId ||
@@ -1108,6 +1376,8 @@ export function createCookbookHost(options: CookbookHostOptions) {
                     context,
                     turn,
                     id: holder,
+                    toolCalls: 0,
+                    startedAt: Date.now(),
                     approvalRequired: (id) => {
                       for (const listener of listeners)
                         listener({ id, status: 'pending' });
@@ -1125,7 +1395,7 @@ export function createCookbookHost(options: CookbookHostOptions) {
         },
       }),
   });
-  const assistant = mountAssistantRoutes({
+  const assistantRoutes = mountAssistantRoutes({
     runtime,
     resolvePrincipal: (event) => {
       const principal = resolveAssistantPrincipalFromLocals(event.locals);
@@ -1139,6 +1409,37 @@ export function createCookbookHost(options: CookbookHostOptions) {
         : null;
     },
     ...adapters,
+    resolveWorkProfile: resolveProfile,
+    internalTurn: (context) => {
+      const design = designRequests.get(context.event.request);
+      return design ? { userMessage: design.content } : undefined;
+    },
+    deferDesignTurn: (context) => !designRequests.has(context.event.request),
+    onDesignEscalation: async (context, input) => {
+      const original =
+        input.userMessage ??
+        [...(input.history ?? [])]
+          .reverse()
+          .find((message) => message.role === 'user')?.content;
+      if (!input.thread?.id || typeof original !== 'string' || !original.trim())
+        throw new Error('Design runs require a saved thread and user request');
+      const host = await ready();
+      const profile = await resolveProfile(context, 'design');
+      const state = await host.designRuns
+        .forOwner(context.principal.userId, context.principal.tenantId)
+        .start({
+          threadId: String(input.thread.id),
+          content: original,
+          profile,
+          permissions: [...(context.principal.permissions ?? [])],
+        });
+      return { runId: state.id, message: 'Thinking this through' };
+    },
+    designTools: COOKBOOK_TOOL_NAMES.filter((name) =>
+      /^(recipes\.(enable|disable|configure)|cookbook\.apply|app\.(add|remove|rename|hide))/.test(
+        name,
+      ),
+    ),
     allowedTools: allowed,
     tools: (context) =>
       manifest(
@@ -1156,15 +1457,107 @@ export function createCookbookHost(options: CookbookHostOptions) {
       ),
     },
     describeTool: describeAssistantTool,
-    systemPrompt:
-      "Help the owner work with their business records and installed recipes. Use only the provided tools and their inline inputs. Claim an operation only when it is offered for that list. When deletion is absent, explain the available update or custom actions from that list's tool schemas instead; never invent a delete operation or require the person to manage internal identity records.",
     ...options.assistant,
+    systemPrompt: async (context) => {
+      const base = options.assistant?.systemPrompt;
+      const prompt =
+        typeof base === 'function'
+          ? await base(context)
+          : (base ??
+            "Help the owner work with their business records and installed recipes. Use only the provided tools and their inline inputs. Claim an operation only when it is offered for that list. When deletion is absent, explain the available update or custom actions from that list's tool schemas instead; never invent a delete operation or require the person to manage internal identity records.");
+      const design = designRequests.get(context.event.request);
+      return design ? `${prompt}\n\n${design.prompt}` : prompt;
+    },
+    formatAssistantReply: (content, context) => {
+      if (!designRequests.has(context.event.request)) return { content };
+      let output: unknown;
+      try {
+        output = JSON.parse(content);
+      } catch {
+        output = content;
+      }
+      const summary =
+        output &&
+        typeof output === 'object' &&
+        typeof (output as { summary?: unknown }).summary === 'string'
+          ? (output as { summary: string }).summary
+          : 'The design needs another check.';
+      return { content: summary, metadata: { designOutput: output } };
+    },
   });
+
+  const designProgress = (
+    state: import('@happyvertical/smrt-inference/server').DesignRunState | null,
+  ) =>
+    state
+      ? {
+          runId: state.id,
+          pass: {
+            index: Math.min(
+              state.passIndex + 1,
+              Number(state.definition.split('/').at(-1)),
+            ),
+            count: Number(state.definition.split('/').at(-1)),
+            name:
+              state.passIndex === 0
+                ? 'Understand the request'
+                : state.passIndex === 1
+                  ? 'Propose the design'
+                  : 'Check and revise the design',
+          },
+          status: state.status,
+          ...(state.note ? { note: state.note } : {}),
+        }
+      : null;
+  const assistantHandler = async (
+    event: Parameters<typeof assistantRoutes.handle>[0],
+  ) => {
+    const path = event.params?.path ?? '';
+    if (!path.startsWith('design-runs')) return assistantRoutes.handle(event);
+    const p = resolveAssistantPrincipalFromLocals(event.locals);
+    if (!p || !(await isOwner(p.tenantId, p.userId)))
+      return json({ code: 'not_allowed' }, 403);
+    const runs = (await ready()).designRuns.forOwner(p.userId, p.tenantId);
+    try {
+      if (path === 'design-runs' && event.request.method === 'GET') {
+        const threadId = event.url.searchParams.get('threadId');
+        return json({
+          run: threadId ? designProgress(await runs.latest(threadId)) : null,
+        });
+      }
+      const match = /^design-runs\/([^/]+)\/(stop|resume)$/.exec(path);
+      if (!match || event.request.method !== 'POST')
+        return json({ code: 'not_found' }, 404);
+      if (event.request.headers.get('origin') !== event.url.origin)
+        return json({ code: 'invalid_origin' }, 403);
+      const saved = await (await ready()).workProfiles.read();
+      const budgets = {
+        ...recommendedWorkProfile('design').budgets,
+        ...saved.settings.design?.budgets,
+      };
+      // Explicit Resume adopts the owner's current aggregate allowances, without
+      // resetting usage or changing the run's pinned engine, model or passes.
+      const state =
+        match[2] === 'stop'
+          ? await runs.stop(match[1])
+          : await runs.resume(match[1], {
+              maxTokens: budgets.maxRunTokens,
+              maxDurationMs: budgets.runTimeoutMs,
+            });
+      return json({ run: designProgress(state) });
+    } catch {
+      return json({ code: 'design_run_unavailable' }, 409);
+    }
+  };
+  const assistant = { ...assistantRoutes, handle: assistantHandler };
+  assistant.GET = assistantHandler;
+  assistant.POST = assistantHandler;
 
   const handle: Handle = (input) =>
     runtime.handle({
       ...input,
       resolve: async (event, resolveOptions) => {
+        origin = event.url.origin;
         const locals = event.locals as SmrtRuntimeLocals;
         if (locals.tenantId) {
           await prepare(locals.tenantId);
@@ -1416,11 +1809,16 @@ export function createCookbookHost(options: CookbookHostOptions) {
     init: async () => {
       await ready();
     },
+    shutdown: async () => {
+      await taskRunner?.stop();
+      current?.designRuns.dispose();
+    },
     load,
     assistant,
     connectAi,
     pluginMode: pluginMode.handle,
     inferenceSettings,
+    workProfiles,
     async onboarding(event: RequestEvent) {
       const mounted = (await ready()).onboarding;
       return mounted ? mounted.handle(event) : json({ code: 'not_found' }, 404);
@@ -1708,6 +2106,26 @@ export function createCookbookHost(options: CookbookHostOptions) {
                     caller.tenantId !== principal.tenantId
                   )
                     throw new Error('Principal changed');
+                  binding?.turn.beforeToolExecution(spec.slug);
+                  if (binding) {
+                    const budget = binding.turn.workProfile?.budgets;
+                    if (
+                      budget &&
+                      (binding.toolCalls >= budget.maxSteps ||
+                        Date.now() - binding.startedAt >= budget.turnTimeoutMs)
+                    )
+                      throw new Error(
+                        'This pass has reached its tool or time limit',
+                      );
+                    if (
+                      designRequests.has(binding.context.event.request) &&
+                      spec.annotations?.readOnlyHint !== true
+                    )
+                      throw new Error(
+                        'Design passes can only read and propose',
+                      );
+                    binding.toolCalls += 1;
+                  }
                   const tool = spec.model;
                   if (tool && !isManifestToolEnabled(tool, caller.tenantId))
                     throw new Error('Tool disabled');

@@ -2,11 +2,21 @@
 import type { InferenceSettingsPageData } from '@happyvertical/smrt-inference/server';
 import { InferenceSettingsPanel } from '@happyvertical/smrt-inference/svelte';
 import { ShellSettingsPage } from '@happyvertical/smrt-svelte/app';
+import { WorkProfileSettings } from '@happyvertical/smrt-svelte/settings';
+import type { createCookbookHost } from '@happyvertical/smrt-template-sveltekit/host/server';
 import { postSetting } from '@happyvertical/smrt-template-sveltekit/host/sveltekit-client';
 import { goto } from '$app/navigation';
 import { page } from '$app/state';
 
-let { data }: { data: InferenceSettingsPageData } = $props();
+let {
+  data,
+}: {
+  data: InferenceSettingsPageData & {
+    workProfiles?: Awaited<
+      ReturnType<ReturnType<typeof createCookbookHost>['workProfiles']['read']>
+    >;
+  };
+} = $props();
 
 let busy = $state(false);
 let message = $state<string | null>(null);
@@ -50,6 +60,11 @@ async function discover(): Promise<void> {
 <ShellSettingsPage basePath="/settings" title="Inference">
   <!-- The owner edits the whole app (app scope); a member without the
        permission reads it, and the server refuses their writes. -->
+  {#if data.workProfiles}
+    <WorkProfileSettings settings={data.workProfiles.settings} resolved={data.workProfiles.resolved} editable={data.workProfiles.editable}
+      onsave={async (settings) => { const result = await postSetting('saveWorkProfiles', { settings, revision: data.workProfiles?.revision }); if (!result.ok) throw new Error('Save refused'); }}
+      onreset={async () => { const result = await postSetting('resetWorkProfiles', { revision: data.workProfiles?.revision }); if (!result.ok) throw new Error('Reset refused'); }} />
+  {/if}
   <InferenceSettingsPanel
     defaults={data.defaults}
     providers={data.providers}

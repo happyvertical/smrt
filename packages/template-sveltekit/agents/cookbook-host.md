@@ -501,3 +501,45 @@ covers setup, live tools, writes, owner decisions, revocation and secret refusal
 no auth, persistence, retry or protocol implementation is duplicated. Reuse searches
 for CLI setup/config and bridge imports found `generateLocalMcpSetup`,
 `saveCliConfig`, and the existing async plugin operations; no new helper is added.
+
+## Assistant work profiles
+
+The host resolves owner work-profile preferences in inference for each request.
+Normal owner work defaults to assist; actual assistant calls while durable
+onboarding is unfinished or rerunning use design. Deterministic Fresh/template
+preview and apply remain the canonical onboarding operations. An assist design
+tool attempt is intercepted before execution and admitted as a durable design
+job; authenticated CLI MCP calls run the same check before side effects. Each
+CLI binding also checks app-tool count and pass wall time before execution.
+
+`createInferenceSettingsPage(host.inferenceSettings,host.workProfiles)` composes
+the owner quality editor into the existing settings route. Missing engine/model
+catalogs leave editing/reset usable. The preferences facade preserves live owner
+checks, `inference.customize` and revisions. CLI fallback memos reuse host state,
+keyed by owner, engine, requested model, CLI version, connection selection
+generation and work-profile preference revision. Selection changes invalidate
+old memos; an external CLI account change cannot currently be detected by its
+sanitized status API. ChatGPT fallback requires a verified catalog rank, which
+the current SDK projection does not provide.
+
+[Durable design runs](cookbook-design-runs.md) use inference checkpoints and the
+existing TaskRunner. The host installs its executor before starting one default
+queue runner; `host.shutdown()` drains the runner and disposes its executor.
+Internal passes reuse authenticated assistant adapters with a private server
+profile binding, original permission ceiling intersected with live permissions,
+read-only tools, full schema validation, and a detached job cancellation signal.
+Technical prompts stay server-side; the owner sees each design summary and
+reviewable operations. Current proposal runs cannot atomically apply a final
+operation and checkpoint it; final review is explicitly pending. Preview-off
+reports that blocker instead of pretending the operation was applied.
+
+The existing assistant endpoint additionally handles owner-scoped design-run
+status by thread and same-origin Stop/Resume. `createCookbookAssistant` enables
+this transport so tab closure leaves the job alive and reopening restores its
+progress. No profile grants authority, disables owner approval, or enables CLI
+built-ins. Native CLI per-call output-token limits are unavailable; their token
+settings are advisory while reported usage bounds subsequent passes.
+
+Explicit Resume adopts current owner design aggregate token/time settings while
+retaining consumed usage and the pinned engine, model and pass definition. A
+lowered cap may pause the same run immediately; it never resets its allowance.

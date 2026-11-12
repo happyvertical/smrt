@@ -15,6 +15,7 @@ export function createCookbookAssistant(
 ): NonNullable<CookbookAppProps['assistant']> {
   const transport = createAssistantHttpTransport({
     endpoint: options.endpoint ?? '/api/assistant',
+    designRuns: true,
   });
   const refresh = async <T>(work: Promise<T>): Promise<T> => {
     const result = await work;

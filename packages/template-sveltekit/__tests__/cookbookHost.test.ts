@@ -168,7 +168,7 @@ function event(
       },
       ...(body === undefined ? {} : { body: JSON.stringify(body) }),
     }),
-    params: { path: path.replace('/api/assistant/', '') },
+    params: { path: url.pathname.replace('/api/assistant/', '') },
     locals: authenticated
       ? { user: owner, tenantId, permissions }
       : { user: null },
@@ -438,6 +438,7 @@ beforeEach(async () => {
   await host.init();
 });
 afterEach(async () => {
+  await host?.shutdown();
   if (http) {
     http.closeAllConnections();
     await new Promise<void>((resolve) => http!.close(() => resolve()));
@@ -451,6 +452,220 @@ afterEach(async () => {
 });
 
 describe('local cookbook host composition (SQLite, fake model, no providers)', () => {
+  beforeEach(async () => {
+    // These scenarios model the ordinary daily app; the separate onboarding
+    // suite retains fresh progress. Seed only the fixture's owner progress.
+    await request(event('/api/onboarding'), host.onboarding);
+    await db.query(
+      `UPDATE _smrt_cookbook_onboarding SET state = ? WHERE tenant_id = ? AND user_id = ?`,
+      JSON.stringify({
+        step: 'done',
+        completed: true,
+        rerunning: false,
+        selected: null,
+        approvalId: null,
+        preview: null,
+      }),
+      tenantId,
+      owner.id,
+    );
+  });
+  async function directStructuralService() {
+    // These legacy service/continuation cases explicitly exercise the owner's
+    // supported opt-out. The default durable-escalation regression stays on.
+    await request(event('/settings/inference'), async (e) => {
+      const state = await host.workProfiles.read(e);
+      const result = await host.workProfiles.write(e, {
+        settings: {
+          ...state.settings,
+          assist: { ...state.settings.assist, autoEscalate: false },
+        },
+        revision: state.revision,
+      });
+      expect(result.ok).toBe(true);
+      return new Response();
+    });
+  }
+
+  it('loads owner quality overrides, rejects stale saves, and resets without exposing unavailable model failures', async () => {
+    await request(event('/settings/inference'), async (e) => {
+      const before = await host.workProfiles.read(e);
+      expect(before.settings).toEqual({});
+      expect(before.resolved.find((p) => p.name === 'assist')?.effort).toBe(
+        'high',
+      );
+      const settings = {
+        design: { engine: 'chatgpt' as const, budgets: { passes: 6 } },
+      };
+      expect(
+        (
+          await host.workProfiles.write(e, {
+            settings,
+            revision: before.revision,
+          })
+        ).ok,
+      ).toBe(true);
+      const saved = await host.workProfiles.read(e);
+      expect(saved.settings).toEqual(settings);
+      expect(saved.resolved.find((p) => p.name === 'design')?.unavailable).toBe(
+        true,
+      );
+      expect(
+        await host.workProfiles.write(e, { settings: {}, revision: null }),
+      ).toEqual({ ok: false, reason: 'conflict' });
+      expect((await host.workProfiles.reset(e, saved.revision)).ok).toBe(true);
+      expect((await host.workProfiles.read(e)).settings).toEqual({});
+      return new Response();
+    });
+  });
+
+  it('admits a durable design proposal before a structural tool executes', async () => {
+    await request(event('/api/onboarding'), host.onboarding);
+    await db.query(
+      `UPDATE _smrt_cookbook_onboarding SET state = ? WHERE tenant_id = ? AND user_id = ?`,
+      JSON.stringify({
+        step: 'done',
+        completed: true,
+        rerunning: false,
+        selected: null,
+        approvalId: null,
+        preview: null,
+      }),
+      tenantId,
+      owner.id,
+    );
+    const id = await thread();
+    response = (messages) =>
+      messages.some((m) => m.content.includes('Design pass '))
+        ? {
+            content: JSON.stringify({
+              summary: 'Enable the Memos recipe after review.',
+              checks: ['Recipe exists'],
+              ready: true,
+              operations: [
+                {
+                  tool: 'recipes.enable',
+                  args: { id: 'host.memos', expectedRevision: 0 },
+                },
+              ],
+            }),
+            finishReason: 'stop',
+          }
+        : tool('recipes.enable', { id: 'host.memos', expectedRevision: 0 });
+    const events = await turn(id, 'Enable memos');
+    const done = events.find((e) => e.type === 'done');
+    expect(done?.runId).toBeTruthy();
+    expect((await host.cookbookApp(tenantId)).cookbook.recipes).not.toContain(
+      'host.memos',
+    );
+    await vi.waitFor(
+      async () => {
+        const response = await chat(
+          `design-runs?threadId=${id}`,
+          undefined,
+          'GET',
+        );
+        expect(response.status).toBe(200);
+        const body = await response.json();
+        expect(body.run.runId).toBe(done?.runId);
+        expect(['done', 'waiting-approval']).toContain(body.run.status);
+      },
+      { timeout: 15000 },
+    );
+    expect((await host.cookbookApp(tenantId)).cookbook.recipes).not.toContain(
+      'host.memos',
+    );
+  });
+
+  it.each([
+    1, 20,
+  ])('resumes the same design run with current aggregate token cap %s and retained usage', async (cap) => {
+    async function setCap(value: number) {
+      await request(event('/settings/inference'), async (e) => {
+        const saved = await host.workProfiles.read(e);
+        expect(
+          (
+            await host.workProfiles.write(e, {
+              settings: { design: { budgets: { maxRunTokens: value } } },
+              revision: saved.revision,
+            })
+          ).ok,
+        ).toBe(true);
+        return new Response();
+      });
+    }
+    await setCap(2);
+    const id = await thread();
+    response = (messages) =>
+      messages.some((m) => m.content.includes('Design pass '))
+        ? {
+            content: JSON.stringify({
+              summary: 'No changes applied.',
+              checks: ['Read-only design'],
+              ready: true,
+              operations: [],
+            }),
+            finishReason: 'stop',
+            usage: { promptTokens: 1, completionTokens: 1, totalTokens: 2 },
+          }
+        : tool('recipes.enable', { id: 'host.memos', expectedRevision: 0 });
+    const events = await turn(id, 'Review the Memos setup');
+    const runId = events.find((e) => e.type === 'done')?.runId;
+    expect(runId).toBeTruthy();
+    async function state() {
+      const row = (
+        await db.query(
+          'SELECT payload FROM _smrt_inference_design_runs WHERE id = ? AND owner_id = ? AND tenant_id = ?',
+          runId,
+          owner.id,
+          tenantId,
+        )
+      ).rows[0];
+      return JSON.parse(String(row.payload));
+    }
+    await vi.waitFor(
+      async () => {
+        expect((await state()).status).toBe('stopped');
+        const active = await db.query(
+          "SELECT id FROM _smrt_jobs WHERE object_id = ? AND status = 'running'",
+          runId,
+        );
+        expect(active.rows).toHaveLength(0);
+      },
+      { timeout: 15000 },
+    );
+    const before = await state();
+    expect(before.tokens).toBe(2);
+    await setCap(cap);
+    const resumed = await chat(`design-runs/${runId}/resume`, {});
+    expect(resumed.status).toBe(200);
+    await vi.waitFor(
+      async () => {
+        const after = await state();
+        expect(after.id).toBe(before.id);
+        expect(after.definition).toBe(before.definition);
+        expect(after.budget.maxTokens).toBe(cap);
+        expect(after.tokens).toBeGreaterThanOrEqual(before.tokens);
+        expect(after.status).toBe(cap < before.tokens ? 'stopped' : 'done');
+        if (cap < before.tokens) expect(after.tokens).toBe(before.tokens);
+      },
+      { timeout: 15000 },
+    );
+    const messages = await (
+      await chat(`threads/${id}/messages`, undefined, 'GET')
+    ).json();
+    expect(
+      messages.items.filter(
+        (message: { role: string }) => message.role === 'user',
+      ),
+    ).toHaveLength(1);
+    expect(
+      JSON.stringify(
+        messages.items.map((message: { content: string }) => message.content),
+      ),
+    ).not.toContain('JSON Schema');
+  });
+
   it('wraps enabled colliding model aliases as valid workflows and keeps discovery gated', async () => {
     const initial = await mcp();
     expect(initial.status).toBe(200);
@@ -491,6 +706,8 @@ describe('local cookbook host composition (SQLite, fake model, no providers)', (
     ['recipes_search', { query: 'memos' }],
   ])('returns the declared structured result for %s, as real CLI clients require', async (name, args) => {
     const runtime = host.runtime;
+    host.dispose();
+    await host.shutdown();
     host.dispose();
     host = createCookbookHost({
       runtime,
@@ -595,6 +812,21 @@ describe('local cookbook host composition (SQLite, fake model, no providers)', (
       host.connectAi.POST,
     );
     expect(selection.status).toBe(200);
+    // The compatible fake CLI has this explicit fixture model; no native
+    // strongest-model claim is inferred from its synthetic catalog.
+    await request(event('/settings/inference'), async (e) => {
+      const state = await host.workProfiles.read(e);
+      expect(
+        (
+          await host.workProfiles.write(e, {
+            settings: { assist: { model: 'fixture-best' } },
+            revision: state.revision,
+          })
+        ).ok,
+      ).toBe(true);
+      return new Response();
+    });
+
     expect((await host.load(event('/'))).assistantIntroduction).toMatchObject({
       configured: true,
       lists: ['Members', 'Memos'],
@@ -890,6 +1122,8 @@ describe('local cookbook host composition (SQLite, fake model, no providers)', (
     expect(await customers.get(customer.id!)).toBeTruthy();
     const runtime = host.runtime;
     host.dispose();
+    await host.shutdown();
+    host.dispose();
     host = createCookbookHost({ runtime, app: { cookbook, catalog } });
     await host.init();
     const rows = await (await chat('approvals', undefined, 'GET')).json();
@@ -952,6 +1186,8 @@ describe('local cookbook host composition (SQLite, fake model, no providers)', (
     ); // Crash boundary before dispatch.
     const runtime = host.runtime;
     host.dispose();
+    await host.shutdown();
+    host.dispose();
     host = createCookbookHost({ runtime, app: { cookbook, catalog } });
     await host.init();
     const outcome = await mcp('tools/call', {
@@ -1000,10 +1236,16 @@ describe('local cookbook host composition (SQLite, fake model, no providers)', (
         ],
       },
     };
+    await host.shutdown();
+    host.dispose();
     host = createCookbookHost({
       runtime,
       app,
       packageName: '@fixture/host-prerequisites',
+      assistant: {
+        onError: (error) =>
+          errors.push(error instanceof Error ? error.stack : String(error)),
+      },
     });
     await host.init();
     const listing = await mcp();
@@ -1044,16 +1286,25 @@ describe('local cookbook host composition (SQLite, fake model, no providers)', (
       'host.customers',
     );
     host.dispose();
+    await host.shutdown();
+    host.dispose();
     host = createCookbookHost({
       runtime,
       app,
       packageName: '@fixture/host-prerequisites',
+      assistant: {
+        onError: (error) =>
+          errors.push(error instanceof Error ? error.stack : String(error)),
+      },
     });
     await host.init();
     const decision = await chat(`approvals/${pending.approvalId}/decide`, {
       approve: true,
     });
-    expect(decision.status).toBe(200);
+    expect(
+      decision.status,
+      `${await decision.clone().text()} ${JSON.stringify(errors)}`,
+    ).toBe(200);
     expect((await decision.json()).approval.status).toBe('succeeded');
     const remaining = await host.cookbookApp(tenantId);
     expect(remaining.cookbook.recipes).toEqual(['host.identity']);
@@ -1094,6 +1345,8 @@ describe('local cookbook host composition (SQLite, fake model, no providers)', (
     const pending = JSON.parse(held.body.result.content[0].text);
     expect(pending.status).toBe('approval_required');
     const runtime = host.runtime;
+    host.dispose();
+    await host.shutdown();
     host.dispose();
     host = createCookbookHost({ runtime, app: { cookbook, catalog } });
     await host.init();
@@ -1158,9 +1411,12 @@ describe('local cookbook host composition (SQLite, fake model, no providers)', (
   });
 
   it('resumes app remove-field and remove-list holds through the shared owner route across restart', async () => {
+    await directStructuralService();
     const runtime = host.runtime;
     host.dispose();
     const app = { cookbook, catalog: structuredClone(catalog) };
+    await host.shutdown();
+    host.dispose();
     host = createCookbookHost({
       runtime,
       packageName: '@fixture/host-remove',
@@ -1248,6 +1504,8 @@ describe('local cookbook host composition (SQLite, fake model, no providers)', (
     const listHold = JSON.parse(listCall.body.result.content[0].text);
     expect(listHold.status).toBe('approval_required');
     host.dispose();
+    await host.shutdown();
+    host.dispose();
     host = createCookbookHost({
       runtime,
       packageName: '@fixture/host-remove',
@@ -1291,6 +1549,8 @@ describe('local cookbook host composition (SQLite, fake model, no providers)', (
         ],
       },
     };
+    await host.shutdown();
+    host.dispose();
     host = createCookbookHost({
       runtime,
       packageName: '@fixture/host-app',
@@ -1314,6 +1574,8 @@ describe('local cookbook host composition (SQLite, fake model, no providers)', (
     const pending = JSON.parse(held.body.result.content[0].text);
     expect(pending.status).toBe('approval_required');
     host.dispose();
+    await host.shutdown();
+    host.dispose();
     host = createCookbookHost({
       runtime,
       packageName: '@fixture/host-app',
@@ -1332,6 +1594,8 @@ describe('local cookbook host composition (SQLite, fake model, no providers)', (
 
   it('publishes a live custom list and reference through gated dynamic REST and keeps later recipe changes', async () => {
     const runtime = host.runtime;
+    host.dispose();
+    await host.shutdown();
     host.dispose();
     host = createCookbookHost({
       runtime,
@@ -1469,6 +1733,8 @@ describe('local cookbook host composition (SQLite, fake model, no providers)', (
       );
       if (fail) throw new Error('Fixture migration failed');
     });
+    await host.shutdown();
+    host.dispose();
     host = createCookbookHost({
       runtime,
       app: { cookbook, catalog },
@@ -1743,6 +2009,7 @@ describe('local cookbook host composition (SQLite, fake model, no providers)', (
   });
 
   it('enables a recipe through an assistant extra tool and exposes its section, REST and MCP without rebuilding', async () => {
+    await directStructuralService();
     let round = 0;
     response = () =>
       ++round === 1
@@ -1954,6 +2221,8 @@ describe('onboarding over real cookbook tools and owner ledger', () => {
     ]);
     const runtime = host.runtime;
     host.dispose();
+    await host.shutdown();
+    host.dispose();
     host = createCookbookHost({
       runtime,
       onboarding: true,
@@ -1995,6 +2264,8 @@ describe('onboarding over real cookbook tools and owner ledger', () => {
   });
   it('empty first-run setup needs one confirmation and enables the effective app subclass, STI create and linked reference labels', async () => {
     const runtime = host.runtime;
+    host.dispose();
+    await host.shutdown();
     host.dispose();
     host = createCookbookHost({
       runtime,
