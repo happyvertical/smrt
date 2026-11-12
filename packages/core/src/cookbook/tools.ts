@@ -59,6 +59,7 @@ export interface CookbookToolDefinition {
   inputSchema: JsonSchema;
   outputSchema: { type: 'object'; additionalProperties: true };
   annotations: {
+    workProfile?: 'design';
     readOnlyHint: boolean;
     destructiveHint: boolean;
     idempotentHint: boolean;
@@ -125,6 +126,8 @@ export interface CookbookToolOptions {
   ): Awaited<ReturnType<typeof createAppModelEditor>> | null | undefined;
   /** Opt-in lazy host: activate before committing any newly enabled cookbook models. */
   activation?: Pick<ActivationCoordinator, 'activate'>;
+  /** Owner preference; skipping review never waives revision or destructive approval checks. */
+  previewBeforeApply?(context: CookbookToolContext): boolean | Promise<boolean>;
   catalog: Omit<EngineCatalog, 'recipes'> & {
     recipes: readonly CookbookToolRecipe[];
   };
@@ -344,7 +347,8 @@ export function createCookbookToolService(options: CookbookToolOptions) {
   const descriptions: Record<CookbookToolName, string> = {
     'app.describe':
       'Describe the live app lists and fields in plain language, with human labels, ownership and the customization revision.',
-    'app.history': 'Show the durable history of changes to your app.',
+    'app.history':
+      'Show Change history for structure changes. The last structure change can be reversed; hidden lists and fields keep their data.',
     'app.addField':
       'Add a field using its human label and kind; internal names are derived for you. Money is integer minor units; supply currency. Choice needs options; link needs linkTo, a list label.',
     'app.renameField':
@@ -360,7 +364,7 @@ export function createCookbookToolService(options: CookbookToolOptions) {
     'app.removeList':
       'Remove one of your own lists and keep its data; durable owner approval is required.',
     'app.undo':
-      'Undo the last app change and explain what was undone; durable approval is required because undo may hide fields or lists.',
+      'Reverse the last structure change. Hidden lists and fields keep their data. Deleted records are permanent and are not restored. Durable owner approval is required.',
     'recipes.search':
       'Find installed building blocks by what you want to do. Reports what each adds and whether it is on.',
     'recipes.describe':
@@ -383,6 +387,7 @@ export function createCookbookToolService(options: CookbookToolOptions) {
       inputSchema: schemas[name],
       outputSchema: { type: 'object', additionalProperties: true },
       annotations: {
+        ...(writes.has(name) ? { workProfile: 'design' as const } : {}),
         readOnlyHint: !writes.has(name),
         destructiveHint:
           name === 'recipes.disable' ||
@@ -554,7 +559,7 @@ export function createCookbookToolService(options: CookbookToolOptions) {
       const history = await editor.history();
       return read({
         status: 'ok',
-        summary: `Your app has ${history.length} recorded changes.`,
+        summary: `Change history: ${history.length} structure changes. The last structure change can be reversed. Hidden lists and fields keep their data; deleted records are not restored.`,
         revision: before.revision,
         changes: history.map((row) => ({
           revision: row.revision,
@@ -789,7 +794,9 @@ export function createCookbookToolService(options: CookbookToolOptions) {
         if (!result.ok) return fail(result.error.code, result.error.message);
         // A preview or pending decision is an intention, never a success claim.
         summary = `Use ${template.name}.`;
-        if (args.apply !== true) {
+        const requiresPreview =
+          (await options.previewBeforeApply?.(context)) !== false;
+        if (args.apply !== true && requiresPreview) {
           for (const [key, value] of previews)
             if (value.expires <= Date.now()) previews.delete(key);
           if (previews.size >= 500)
@@ -844,16 +851,22 @@ export function createCookbookToolService(options: CookbookToolOptions) {
             );
           }
         }
+        if (!requiresPreview && args.expectedRevision !== before.revision)
+          fail(
+            'conflict',
+            'The cookbook changed. Read it again before editing.',
+          );
         const preview = previews.get(String(args.previewToken));
         if (
-          !preview ||
-          preview.expires <= Date.now() ||
-          preview.tenantId !== context.tenantId ||
-          preview.userId !== context.userId ||
-          preview.revision !== before.revision ||
-          args.expectedRevision !== before.revision ||
-          preview.template !== template.id ||
-          preview.document !== digest(canonical(staged.cookbook()))
+          requiresPreview &&
+          (!preview ||
+            preview.expires <= Date.now() ||
+            preview.tenantId !== context.tenantId ||
+            preview.userId !== context.userId ||
+            preview.revision !== before.revision ||
+            args.expectedRevision !== before.revision ||
+            preview.template !== template.id ||
+            preview.document !== digest(canonical(staged.cookbook())))
         )
           fail('conflict', 'Preview this template again before applying it.');
       } else if (name === 'recipes.configure') {
@@ -1099,6 +1112,7 @@ export function createCookbookToolService(options: CookbookToolOptions) {
     async assistantTools(context: CookbookToolContext) {
       return (await this.list(context)).map((definition) => ({
         slug: definition.name,
+        annotations: definition.annotations,
         aiTool: {
           type: 'function',
           function: {

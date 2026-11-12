@@ -163,3 +163,11 @@ subsequent recipe enable under this contract.
 
 `cookbook.listTemplates` also returns `description` and `lists` from each
 document and its resolved visible navigation (including cookbook labels).
+
+Structural write definitions expose the trusted annotation
+`annotations.workProfile: 'design'`; `assistantTools()` preserves it for chat's
+pre-execution interception. This is intelligence metadata only: permissions,
+revision checks and durable owner approvals remain authoritative.
+`previewBeforeApply(context)` is an optional owner-preference callback, default
+true. False permits cookbook application without a preview token but still
+requires the current `expectedRevision` and all destructive approval checks.

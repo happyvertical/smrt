@@ -660,6 +660,40 @@ describe(`installed recipe server tools (${databaseType}, in process)`, () => {
     expect(engines.get(context.tenantId!)!.state()).toEqual(before);
   });
 
+  it('allows owner preview preference off while retaining revision and destructive holds', async () => {
+    options.previewBeforeApply = () => false;
+    const definitions = await service.list(context);
+    expect(
+      definitions.find((tool) => tool.name === 'recipes.enable')?.annotations
+        .workProfile,
+    ).toBe('design');
+    expect(
+      definitions.find((tool) => tool.name === 'app.describe')?.annotations
+        .workProfile,
+    ).toBeUndefined();
+    await expect(
+      call('cookbook.apply', { id: 'small-shop' }),
+    ).rejects.toMatchObject({ code: 'conflict' });
+    context.initialSetup = true;
+    expect(
+      (
+        await call('cookbook.apply', {
+          id: 'small-shop',
+          expectedRevision: revision(),
+        })
+      ).status,
+    ).toBe('ok');
+    context.initialSetup = false;
+    options.isAppEmpty = async () => false;
+    expect(
+      (
+        await call('cookbook.apply', {
+          id: 'small-shop',
+          expectedRevision: revision(),
+        })
+      ).status,
+    ).toBe('approval_required');
+  });
   it('allows only trusted initial setup to replace an empty configured app without an extra hold', async () => {
     await enable();
     expect(
