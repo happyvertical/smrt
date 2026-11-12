@@ -95,9 +95,11 @@ function trimRecipe(recipe: RecipeDefinition | CookbookRecipe): CookbookRecipe {
 /**
  * The catalog of the given manifests. Recipes keep their declaration order
  * across manifests (the order given); a repeated recipe id keeps the first.
+ * Hosts may keep recipe search/help details without retaining object schemas.
  */
 export function catalogFromManifests(
   manifests: readonly CookbookManifest[],
+  includeRecipeDetails = false,
 ): CookbookCatalog {
   const recipes: CookbookRecipe[] = [];
   const seen = new Set<string>();
@@ -119,7 +121,11 @@ export function catalogFromManifests(
       for (const recipe of manifest.recipes) {
         if (!isRecipe(recipe) || seen.has(recipe.id)) continue;
         seen.add(recipe.id);
-        recipes.push(trimRecipe(recipe));
+        recipes.push(
+          includeRecipeDetails
+            ? { ...recipe, ...trimRecipe(recipe) }
+            : trimRecipe(recipe),
+        );
       }
     }
   }

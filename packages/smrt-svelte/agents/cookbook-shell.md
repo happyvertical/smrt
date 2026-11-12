@@ -363,3 +363,11 @@ name/purpose searches for `AppShellProps`, `CookbookAppProps`, shell props and
 import-boundary tests in smrt-ui/smrt-svelte/chat/core found the existing
 `CookbookAppProps` in `types.ts`. `app-props.ts` moves that contract unchanged;
 no parallel props type or runtime component is introduced.
+
+`catalogFromManifests(manifests, true)` retains recipe search/help details while
+still projecting model declarations to shell metadata. The default trimmed
+projection is unchanged. Template host compilation uses this projection to avoid
+reading full installed manifests at runtime; schemas remain activation-owned.
+The catalog test covers both projections and verifies no object-schema map is
+retained. Reuse inspection: MCP package review, intent index and exact/purpose
+searches found this existing canonical projection; no new helper or type.
