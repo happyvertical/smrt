@@ -13,7 +13,7 @@ smrt db:status               # Pending schema changes + failed migration classif
 smrt db:status --parity      # Same, plus live-schema parity (see below)
 smrt db:orphans              # agents/db-orphans.md
 smrt users:provision-owner   # Trusted PostgreSQL owner provisioning; password from private file/stdin, never argv/env (users README)
-smrt db:migrate              # agents/type-drift.md, agents/db-migrate-concurrency.md
+smrt db:migrate              # agents/type-drift.md, agents/db-migrate-concurrency.md; successful non-dry runs (also in-sync) append core release/packages/schema fingerprint to _smrt_migrate_runs; stops/errors never stamp; read API none = first run (../core/agents/schema-paths.md)
 smrt db:migrate --postgres-safe # PostgreSQL concurrent-index mode (see below)
 smrt db:migrate --force-migration <exact-id> [--force-migration <exact-id>...] # Force exact generated migrations in one atomic batch
 smrt db:migrate --apply-unblocked / --null-orphans # agents/db-migrate-partial-apply.md

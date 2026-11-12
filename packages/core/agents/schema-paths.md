@@ -1112,6 +1112,29 @@ Adding live trigger generation requires a migration rollout design.
 `_smrt_signals` and database-persisted registry APIs are retired; see
 `RETIRED_SYSTEM_TABLES` in `src/system/schema.ts`.
 
+## Successful migrate record (#4926)
+
+`migrations/migrate-record.ts` owns `_smrt_migrate_runs`, provisioned by
+`ensureSystemTables` (system schema 1.16.0). A successful whole-schema migrate,
+including an already-current database, records the core release, sorted unique
+packages seen in the registry, and `computeSchemaFingerprint(schemas)`. Classes
+without a package use `<unqualified>`. Failed, stopped, and dry runs never stamp
+it. Identical release/packages/fingerprint skip the insert; changed values append
+and preserve history. This permanent ledger has no retention/prune task.
+`readLastMigrateRecord` is SELECT-only and returns `state: 'none'` for an absent
+or empty table: the first run under this scheme, not a schema mismatch. The latest
+row orders by `created_at`, then `id`. Call the writer on the caller's database
+handle while its migration lock is held; it also works without a tracker.
+
+The fingerprint hashes canonical sorted JSON of abstract tables, columns,
+defaults, CHECKs, physical foreign keys, indexes (including predicates and JSON
+paths), and triggers. Defaults use the shared DDL formatter; nested JSON keys
+are canonicalized. Presentation metadata, source paths, version hashes,
+timestamps and registration order do not participate. Build tooling can call
+this pure browser-safe function on the build manifest's schema definitions;
+the runtime calls the same function on `getAllSchemasAsDefinitions()`. Build
+output and startup enforcement are separate follow-up work.
+
 ## PostgreSQL migration execution
 
 `MigrationTracker.applyAll({ atomic: true })` sets local lock/statement timeouts

@@ -18,6 +18,7 @@ import {
   ObjectRegistry,
   planForeignKeyCreation,
   planPostgresSystemTimestampMigrations,
+  recordSuccessfulMigrate,
   SchemaComparer,
 } from '@happyvertical/smrt-core';
 import type {
@@ -3178,6 +3179,16 @@ export default testManifest;
               db,
             }),
           );
+          if (
+            manualInterventions.length === 0 &&
+            withheldForDependency.length === 0 &&
+            tableErrorCount === 0 &&
+            errorCount === 0 &&
+            stiErrorCount === 0 &&
+            (applySchemaMigrations || schemaUpToDate)
+          ) {
+            await recordSuccessfulMigrate(db, { engineHint: dbType });
+          }
         }
 
         console.log('💡 Next steps:');

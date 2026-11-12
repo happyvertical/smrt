@@ -95,6 +95,15 @@ export {
   preflightIntegerWidthWidening,
   widenIntegerColumnsToBigInt,
 } from './integer-width.js';
+export {
+  collectMigrateRecordInput,
+  type LastMigrateRecord,
+  type MigrateRecord,
+  type MigrateRecordInput,
+  type MigrateRecordOptions,
+  readLastMigrateRecord,
+  recordSuccessfulMigrate,
+} from './migrate-record.js';
 // Cross-process serialization of db:migrate runs (#3634)
 export {
   type AcquireMigrationLockOptions,
@@ -155,6 +164,7 @@ export {
   type LegacyQualifiedNameTarget,
   legacyQualifiedNamesBackfillName,
 } from './qualified-name-aliases.js';
+export { computeSchemaFingerprint } from './schema-fingerprint.js';
 // SQLite table rebuild (type changes SQLite cannot ALTER in place)
 export {
   type BuildSqliteRebuildStatementsInput,

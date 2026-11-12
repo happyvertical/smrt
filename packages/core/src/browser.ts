@@ -764,6 +764,16 @@ export {
 export * from './external-agent-usage.js';
 export * from './migrations/change-kinds.js';
 export {
+  collectMigrateRecordInput,
+  type LastMigrateRecord,
+  type MigrateRecord,
+  type MigrateRecordInput,
+  type MigrateRecordOptions,
+  readLastMigrateRecord,
+  recordSuccessfulMigrate,
+} from './migrations/migrate-record.js';
+export { computeSchemaFingerprint } from './migrations/schema-fingerprint.js';
+export {
   type OperationPermissionAlias,
   resolveOperationPermissionAlias,
 } from './operation-permission.js';

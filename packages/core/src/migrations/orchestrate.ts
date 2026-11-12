@@ -30,6 +30,7 @@ import {
   createMigrationDefinition,
   generateMigrationTimestamp,
 } from './generator.js';
+import { recordSuccessfulMigrate } from './migrate-record.js';
 import { MigrationTracker } from './tracker.js';
 
 const logger = createLogger({ level: 'info' });
@@ -285,6 +286,11 @@ export async function migrateSmrtSchemas(
     relaxColumns: options.relaxColumns,
   });
   if (!pending.hasChanges || pending.statements.length === 0) {
+    if (!pending.hasManualDrift) {
+      await recordSuccessfulMigrate(options.db, {
+        engineHint: options.engineHint,
+      });
+    }
     return {
       applied: false,
       results: [],
@@ -324,6 +330,12 @@ export async function migrateSmrtSchemas(
     throw failed.error instanceof Error
       ? failed.error
       : new Error(String(failed.error ?? `Migration ${failed.name} failed`));
+  }
+
+  if (!pending.hasManualDrift) {
+    await recordSuccessfulMigrate(options.db, {
+      engineHint: options.engineHint,
+    });
   }
 
   const applied = results.some(

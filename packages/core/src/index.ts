@@ -489,6 +489,16 @@ export {
   isManualOrAdvisoryChange,
   SchemaComparer,
 } from './migrations/differ';
+export {
+  collectMigrateRecordInput,
+  type LastMigrateRecord,
+  type MigrateRecord,
+  type MigrateRecordInput,
+  type MigrateRecordOptions,
+  readLastMigrateRecord,
+  recordSuccessfulMigrate,
+} from './migrations/migrate-record.js';
+export { computeSchemaFingerprint } from './migrations/schema-fingerprint.js';
 export * from './object';
 export {
   type OperationPermissionAlias,
