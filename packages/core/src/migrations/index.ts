@@ -138,6 +138,7 @@ export {
   type MigrateSmrtSchemasResult,
   migrateSmrtSchemas,
   type PendingSchemaStatementsResult,
+  type RelaxedColumn,
 } from './orchestrate.js';
 // Stored deprecated qualified names: doctor counts + opt-in backfill (#3338)
 export {

@@ -23,7 +23,10 @@ import {
   REQUIRED_COLUMN_NOT_ADDED,
   SchemaComparer,
 } from '../differ.js';
-import { getPendingSchemaStatements } from '../orchestrate.js';
+import {
+  collectRelaxedColumns,
+  getPendingSchemaStatements,
+} from '../orchestrate.js';
 
 function schema(
   tableName: string,
@@ -1324,6 +1327,36 @@ describe('SchemaComparer PostgreSQL SQL shape for #2369 (mocked adapter)', () =>
     expect((await pgComparer(relaxedLive).compare(manifest)).changes).toEqual(
       [],
     );
+  });
+
+  it('lists each executable relaxation by table and column so none is applied silently (#4897)', async () => {
+    const manifest = {
+      items: schema('items', {
+        id: { type: 'TEXT', primaryKey: true, notNull: true },
+        note: { type: 'TEXT' },
+        kind: { type: 'TEXT' },
+      }),
+    };
+    const live = {
+      id: { type: 'text', notNull: true, primaryKey: true },
+      note: { type: 'text', notNull: true },
+      kind: { type: 'text', notNull: false, defaultValue: "'a'::text" },
+    };
+    // Default: only DROP NOT NULL is executable, so only it is listed.
+    expect(
+      collectRelaxedColumns(await pgComparer(live).compare(manifest)),
+    ).toEqual([
+      { table: 'items', column: 'note', alteration: 'drop_not_null' },
+    ]);
+    // relaxColumns also makes DROP DEFAULT executable, and it is listed too.
+    expect(
+      collectRelaxedColumns(
+        await pgComparer(live, { relaxColumns: true }).compare(manifest),
+      ),
+    ).toEqual([
+      { table: 'items', column: 'note', alteration: 'drop_not_null' },
+      { table: 'items', column: 'kind', alteration: 'drop_default' },
+    ]);
   });
 
   it("sets a JSON literal default, not raw '', for an `any = ''` field on a jsonb column (#3533)", async () => {

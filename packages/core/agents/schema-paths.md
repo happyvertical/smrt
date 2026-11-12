@@ -315,7 +315,7 @@ an ordinary inline `NOT NULL` clause on a manifest-declared column. The local
 application entry point forwards `smrt app migrate --relax-columns` under its
 existing operation lock and refuses a live application writer. The programmatic
 `migrateSmrtSchemas` / `getPendingSchemaStatements` entry points accept the same
-explicit `relaxColumns` option. Defaults remain advisory; this does not relax
+explicit `relaxColumns` option. On SQLite the default remains advisory (PostgreSQL relaxes `NOT NULL` by default, see above); this does not relax
 orphan columns or change SQLite defaults/tightening behavior.
 
 The rebuild preserves live DDL, indexes/triggers and assigned rowids. Named
@@ -343,14 +343,22 @@ and always reports what it will not touch:
   backfill of the manifest default; without a default the live data is probed
   and, if NULLs exist, the change is reported (comment SQL + `advisory`) instead
   of emitting an ALTER that would abort the atomic batch.
-- **Relaxing.** `DROP NOT NULL` on a column the manifest declares nullable is
-  executable by default on PostgreSQL (DuckDB rejects `ALTER COLUMN` on indexed
-  tables, so it stays opt-in there): it
+- **Relaxing.** On PostgreSQL the migrator drops `NOT NULL` from a column the
+  manifest declares nullable by default, with no flag and no opt-out (#4897). It
   loses no data and rejects no row, and the manifest is already trusted to
   tighten columns (`SET NOT NULL`), so a package release that relaxes a column
-  must not strand consumers on manual drift (#4897). `DROP DEFAULT`, orphan
-  `DROP NOT NULL` and the SQLite rebuild stay report-only advisories until the
-  caller passes `relaxColumns` (`db:migrate --relax-columns`).
+  must not strand consumers on `manual_migration_required`. The owner's
+  direction is that the migrator makes the database match the code without
+  asking, whenever that is safe (happyvertical/smrt#4920). Every such change is
+  visible: `db:migrate` lists it under "Columns to alter" and logs
+  `Altered column <table>.<column> (drop_not_null)`, and `migrateSmrtSchemas` /
+  `getPendingSchemaStatements` return it in `relaxedColumns` (the former also
+  logs one `Relaxed <table>.<column>` line each). This covers nullability only.
+  `DROP DEFAULT`, orphan `DROP NOT NULL`, DuckDB (which rejects `ALTER COLUMN`
+  on indexed tables) and the SQLite rebuild remain report-only advisories until
+  the caller passes `relaxColumns` (`db:migrate --relax-columns`); a stricter
+  live column on those engines, and any other kind of drift, is never changed
+  silently.
 - **Orphans** — DB columns absent from the manifest, DB tables no manifest
   declares (`SchemaDiff.orphan_tables`), and unclaimed `*_key` unique constraint
   indexes — are always reported. A NOT NULL orphan without a default is a

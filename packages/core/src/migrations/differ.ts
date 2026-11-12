@@ -178,9 +178,9 @@ export interface DiffOptions {
    * `DROP DEFAULT` on live columns that are stricter than the manifest,
    * `DROP NOT NULL` on orphan NOT NULL columns, and (SQLite only) the
    * table-rebuild `DROP NOT NULL`. Default: false — those are reported as
-   * advisories with the suggested SQL. On PostgreSQL,
-   * `DROP NOT NULL` on a column the manifest declares nullable is always
-   * executable: it loses no data and rejects no row.
+   * advisories with the suggested SQL. On PostgreSQL, `DROP NOT NULL` on a
+   * column the manifest declares nullable is always executable (it loses no
+   * data and rejects no row) and is listed per column by the orchestrator.
    * Strengthening repairs (`SET NOT NULL`, `SET DEFAULT`) are always emitted
    * where the engine supports `ALTER COLUMN` (#2369).
    */
@@ -3460,8 +3460,9 @@ export class SchemaComparer {
    *   emitting an ALTER the engine would reject mid-batch.
    * - Relaxing `DROP NOT NULL` on a column the manifest declares nullable is
    *   executable by default on PostgreSQL (it loses no data and rejects no
-   *   row; DuckDB rejects ALTER COLUMN on indexed tables, so it stays opt-in). `DROP DEFAULT` is reported as an advisory
-   *   unless `relaxColumns` is set, in which case it is executable.
+   *   row; DuckDB rejects ALTER COLUMN on indexed tables, so it stays opt-in).
+   *   `DROP DEFAULT` is reported as an advisory unless `relaxColumns` is set,
+   *   in which case it is executable.
    * - SQLite has no `ALTER COLUMN`; explicit supported NOT NULL relaxation
    *   uses the table rebuild (#4413). Other alterations remain manual except
    *   declared backfill rebuilds (#3008).
@@ -3709,9 +3710,9 @@ export class SchemaComparer {
           // Dropping NOT NULL from a column the manifest declares nullable
           // loses no data and rejects no row, so on PostgreSQL it is
           // executable by default (DuckDB rejects ALTER COLUMN on a table with
-          // any index, so it stays opt-in there): a package release
-          // that relaxes a column must not strand every consumer on a
-          // fail-closed migration. SQLite keeps the opt-in rebuild path, and
+          // any index, so it stays opt-in there): a package release that
+          // relaxes a column must not strand every consumer on a fail-closed
+          // migration (#4897, direction in #4920). SQLite keeps the opt-in rebuild path, and
           // DROP DEFAULT / orphan relaxations still require `relaxColumns`.
           relaxation:
             this.engine === 'postgres'

@@ -72,8 +72,9 @@ column — strictly worse than omitting the flag.
 
 **An orphan-blocked `add_foreign_key`'s block is a row-data condition, not
 a column-state one — an `alter_column` relaxation on that same column is
-its remediation, not something unsafe against it.** With `--relax-columns
---apply-unblocked`, a FK child column that is physically `NOT NULL` while
+its remediation, not something unsafe against it.** With `--apply-unblocked` (and
+`--relax-columns` on engines where `DROP NOT NULL` is still opt-in; PostgreSQL
+applies it by default, #4897), a FK child column that is physically `NOT NULL` while
 the manifest declares it nullable (with live orphan rows) stays
 orphan-blocked — `--null-orphans` can't resolve a NOT NULL child. The
 executable `DROP NOT NULL` relaxation for that same column is exactly what
