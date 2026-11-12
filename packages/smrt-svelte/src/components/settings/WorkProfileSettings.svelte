@@ -60,7 +60,7 @@ const M = defineMessages({
     'When on, Claude Code and Codex use the app’s protected tool setup. When off, they can use their own tools, settings and plugins in the app’s data folder.',
   'ui.work_profiles.protection_confirm': 'Turn off local AI protection?',
   'ui.work_profiles.protection_risk':
-    'A chat message in this app can run commands and change files on this computer.',
+    "A chat message in this app can run commands and change files on this computer. That includes this app's own data, so records can be changed or deleted without asking you first.",
   'ui.work_profiles.protection_off': 'Turn off protection',
   'ui.work_profiles.cancel': 'Cancel',
   'ui.work_profiles.connect_chatgpt': 'Sign in with ChatGPT in Connect AI',

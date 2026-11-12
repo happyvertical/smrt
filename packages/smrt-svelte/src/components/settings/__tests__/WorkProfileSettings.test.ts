@@ -340,7 +340,7 @@ it('defaults both safety controls on and requires explicit risk confirmation bef
   await user.click(removals);
   await user.click(protection);
   expect(screen.getByRole('dialog')).toHaveTextContent(
-    'A chat message in this app can run commands and change files on this computer.',
+    "A chat message in this app can run commands and change files on this computer. That includes this app's own data, so records can be changed or deleted without asking you first.",
   );
   expect(protection).toBeChecked();
   expect(onsave).not.toHaveBeenCalled();
