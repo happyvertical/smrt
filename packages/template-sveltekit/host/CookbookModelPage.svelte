@@ -64,7 +64,15 @@ const references = $derived(
 </main>
 
 <style>
+@layer smrt.reset, smrt.structure, smrt.theme;
+
+@layer smrt.structure {
   main {
     padding: var(--smrt-spacing-6);
   }
+}
+
+@layer smrt.theme {
+}
+
 </style>

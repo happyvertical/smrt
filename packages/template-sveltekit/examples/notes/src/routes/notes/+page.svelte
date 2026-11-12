@@ -45,7 +45,7 @@
   <title>Notes</title>
 </svelte:head>
 
-<main class="page">
+<main class="smrt-notes-page__root">
   <h1>Notes</h1>
 
   {#if data.loadError}
@@ -97,7 +97,7 @@
         }}
       />
     {:else}
-      <ul class="notes">
+      <ul class="smrt-notes-page__notes">
         {#each data.notes as note (note.id)}
           <li>
             <Card>
@@ -112,31 +112,34 @@
 </main>
 
 <style>
-  @layer smrt.theme {
-    .page {
-      display: grid;
-      gap: var(--smrt-spacing-6);
-      width: min(100%, 48rem);
-      margin-inline: auto;
-      padding: var(--smrt-spacing-6) var(--smrt-spacing-4);
-    }
+@layer smrt.reset, smrt.structure, smrt.theme;
 
-    .notes {
-      display: grid;
-      gap: var(--smrt-spacing-3);
-      margin: 0;
-      padding: 0;
-      list-style: none;
-    }
-
-    h1,
-    h2,
-    p {
-      margin: 0;
-    }
-
-    h2 {
-      font: var(--smrt-typography-title-medium);
-    }
+@layer smrt.structure {
+  .smrt-notes-page__root {
+    display: grid;
+    gap: var(--smrt-spacing-6);
+    width: min(100%, 48rem);
+    margin-inline: auto;
+    padding: var(--smrt-spacing-6) var(--smrt-spacing-4);
   }
+  .smrt-notes-page__notes {
+    display: grid;
+    gap: var(--smrt-spacing-3);
+    margin: 0;
+    padding: 0;
+    list-style: none;
+  }
+  h1,
+  h2,
+  p {
+    margin: 0;
+  }
+}
+
+@layer smrt.theme {
+  h2 {
+    font: var(--smrt-typography-title-medium-font);
+  }
+}
+
 </style>

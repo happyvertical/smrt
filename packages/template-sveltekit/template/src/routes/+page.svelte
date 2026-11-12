@@ -6,7 +6,7 @@
   <title>Home</title>
 </svelte:head>
 
-<main class="page">
+<main class="smrt-template-home__root">
   <h1>Home</h1>
   <EmptyState
     title="Nothing here yet"
@@ -15,15 +15,20 @@
 </main>
 
 <style>
-  @layer smrt.theme {
-    .page {
-      width: min(100%, 48rem);
-      margin-inline: auto;
-      padding: var(--smrt-spacing-6) var(--smrt-spacing-4);
-    }
+@layer smrt.reset, smrt.structure, smrt.theme;
 
-    h1 {
-      margin: 0 0 var(--smrt-spacing-4);
-    }
+@layer smrt.structure {
+  .smrt-template-home__root {
+    width: min(100%, 48rem);
+    margin-inline: auto;
+    padding: var(--smrt-spacing-6) var(--smrt-spacing-4);
   }
+  h1 {
+    margin: 0 0 var(--smrt-spacing-4);
+  }
+}
+
+@layer smrt.theme {
+}
+
 </style>
