@@ -135,7 +135,7 @@ function toFilterColumnName(key: string): string {
 // below (logger.debug, inside `if (process.env.DEBUG_STI)` guards) actually emit;
 // otherwise they're filtered at the default 'info' level.
 const logger = createLogger({
-  level: process.env.DEBUG_STI ? 'debug' : 'info',
+  level: globalThis.process?.env?.DEBUG_STI ? 'debug' : 'info',
 });
 
 /**
@@ -424,7 +424,7 @@ let didWarnSkipRehydrate = false;
 function warnIfSkipRehydrateSet(): void {
   if (didWarnSkipRehydrate) return;
   didWarnSkipRehydrate = true;
-  if (process.env.SMRT_SKIP_STI_REHYDRATE !== undefined) {
+  if (globalThis.process?.env?.SMRT_SKIP_STI_REHYDRATE !== undefined) {
     logger.warn(
       '[smrt] SMRT_SKIP_STI_REHYDRATE is set but has no effect since ' +
         'Release C (#1134). The flag is retired; unconditional STI ' +
@@ -1589,7 +1589,7 @@ export class SmrtObject extends SmrtClass {
     data = await this.canonicalizePersistedUuidRow(data);
     const className = this.getResolvedClassName();
 
-    if (process.env.DEBUG_STI) {
+    if (globalThis.process?.env?.DEBUG_STI) {
       logger.debug('[loadDataFromDb] Loading', {
         class: className,
         dataKeys: Object.keys(data),
@@ -1600,7 +1600,7 @@ export class SmrtObject extends SmrtClass {
     // Get field definitions to pass to formatDataJs
     const fields = await this.getFields();
 
-    if (process.env.DEBUG_STI) {
+    if (globalThis.process?.env?.DEBUG_STI) {
       logger.debug('[loadDataFromDb] Field definitions', {
         class: className,
         fieldKeys: Object.keys(fields),
@@ -1620,7 +1620,7 @@ export class SmrtObject extends SmrtClass {
     );
     const isSTI = tableStrategy === 'sti';
 
-    if (process.env.DEBUG_STI) {
+    if (globalThis.process?.env?.DEBUG_STI) {
       logger.debug('[loadDataFromDb] After formatDataJs', {
         class: className,
         isSTI,
@@ -1658,7 +1658,7 @@ export class SmrtObject extends SmrtClass {
     // STI: Meta fields are already merged by formatDataJs
     // No additional processing needed
 
-    if (process.env.DEBUG_STI) {
+    if (globalThis.process?.env?.DEBUG_STI) {
       logger.debug('[loadDataFromDb] Starting field hydration', {
         class: className,
         fieldCount: Object.keys(fields).length,
@@ -1692,7 +1692,7 @@ export class SmrtObject extends SmrtClass {
           // formatDataJs() already handles type conversions (dates, booleans, etc.)
           const value = formattedData[field];
 
-          if (process.env.DEBUG_STI && value !== undefined) {
+          if (globalThis.process?.env?.DEBUG_STI && value !== undefined) {
             logger.debug(`[loadDataFromDb] Setting field '${field}'`, {
               value,
               valueType: typeof value,
@@ -1703,7 +1703,7 @@ export class SmrtObject extends SmrtClass {
           hydratedCount++;
         } else {
           skippedCount++;
-          if (process.env.DEBUG_STI) {
+          if (globalThis.process?.env?.DEBUG_STI) {
             logger.debug(`[loadDataFromDb] Skipping readonly field '${field}'`);
           }
         }
@@ -1728,7 +1728,7 @@ export class SmrtObject extends SmrtClass {
         | undefined;
     }
 
-    if (process.env.DEBUG_STI) {
+    if (globalThis.process?.env?.DEBUG_STI) {
       logger.debug('[loadDataFromDb] Hydration complete', {
         class: className,
         hydratedCount,
@@ -3178,7 +3178,7 @@ export class SmrtObject extends SmrtClass {
     );
 
     // Development-mode warning: Detect unsafe toJSON() overrides in STI classes
-    if (process.env.NODE_ENV === 'development') {
+    if (globalThis.process?.env?.NODE_ENV === 'development') {
       const hasOverride = this.toJSON !== SmrtObject.prototype.toJSON;
       const usesSTI = tableStrategy === 'sti';
 

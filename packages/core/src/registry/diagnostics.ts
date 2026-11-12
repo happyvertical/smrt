@@ -61,7 +61,7 @@ function getBuffer(): RegistryDiagnostic[] {
  * restore the pre-Release-C permissive behavior.
  */
 function strictModeEnabled(): boolean {
-  return process.env.SMRT_STRICT_REGISTRY !== 'false';
+  return globalThis.process?.env?.SMRT_STRICT_REGISTRY !== 'false';
 }
 
 /**

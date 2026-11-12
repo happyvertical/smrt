@@ -191,16 +191,17 @@ function getSTISiblingCache(): Map<
  * @see https://github.com/happyvertical/smrt/issues/729
  */
 const DEBUG_ENABLED =
-  process.env.DEBUG_MANIFEST === 'true' ||
-  process.env.DEBUG_MANIFEST === '1' ||
-  process.env.DEBUG?.includes('manifest') ||
+  globalThis.process?.env?.DEBUG_MANIFEST === 'true' ||
+  globalThis.process?.env?.DEBUG_MANIFEST === '1' ||
+  globalThis.process?.env?.DEBUG?.includes('manifest') ||
   false;
 
 // The debug traces below are gated by DEBUG_MANIFEST / DEBUG_TEST_ENV, so the
 // logger level must allow debug when either is set (a fixed 'info' would filter
 // them out and silently break those debug switches).
 const logger = createLogger({
-  level: DEBUG_ENABLED || process.env.DEBUG_TEST_ENV ? 'debug' : 'info',
+  level:
+    DEBUG_ENABLED || globalThis.process?.env?.DEBUG_TEST_ENV ? 'debug' : 'info',
 });
 
 /**
@@ -284,11 +285,11 @@ function getClassNameIndex(
 function isTestEnvironment(): boolean {
   const result = isTestEnvFromStore();
 
-  if (process.env.DEBUG_TEST_ENV) {
+  if (globalThis.process?.env?.DEBUG_TEST_ENV) {
     logger.debug('[manifest-loader] isTestEnvironment check', {
-      NODE_ENV: process.env.NODE_ENV,
-      VITEST: process.env.VITEST,
-      JEST_WORKER_ID: process.env.JEST_WORKER_ID,
+      NODE_ENV: globalThis.process?.env?.NODE_ENV,
+      VITEST: globalThis.process?.env?.VITEST,
+      JEST_WORKER_ID: globalThis.process?.env?.JEST_WORKER_ID,
       result,
     });
   }
@@ -327,7 +328,7 @@ function getTestManifest(): SmartObjectManifest | null {
 
     // CRITICAL: Scope the core test manifest to smrt-core's own test suite.
     if (!shouldLoadCoreTestManifest()) {
-      if (process.env.DEBUG_TEST_ENV) {
+      if (globalThis.process?.env?.DEBUG_TEST_ENV) {
         logger.debug(
           '[manifest-loader] ⚠️  Skipping core test manifest load (not smrt-core test environment)',
         );
@@ -345,13 +346,13 @@ function getTestManifest(): SmartObjectManifest | null {
         ),
       );
       setTestManifestCache(manifest);
-      if (process.env.DEBUG_TEST_ENV) {
+      if (globalThis.process?.env?.DEBUG_TEST_ENV) {
         logger.debug(
           `[manifest-loader] ✅ Loaded test manifest (${Object.keys(manifest?.objects || {}).length} objects)`,
         );
       }
     } catch (error) {
-      if (process.env.DEBUG_TEST_ENV) {
+      if (globalThis.process?.env?.DEBUG_TEST_ENV) {
         logger.debug(
           '[manifest-loader] ⚠️  Test manifest not found (this is normal in production)',
         );

@@ -3077,8 +3077,8 @@ export class ObjectRegistry {
         it?: unknown;
       };
       const isTestEnv =
-        process.env.NODE_ENV === 'test' ||
-        process.env.VITEST === 'true' ||
+        globalThis.process?.env?.NODE_ENV === 'test' ||
+        globalThis.process?.env?.VITEST === 'true' ||
         typeof testGlobals.describe !== 'undefined' ||
         typeof testGlobals.it !== 'undefined';
 

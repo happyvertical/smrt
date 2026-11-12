@@ -773,7 +773,7 @@ export class SmrtClass {
           (this.options.ai ||
             globalConfig.ai ||
             aiConfigBlock ||
-            process.env.SMRT_AI_PROVIDER)
+            globalThis.process?.env?.SMRT_AI_PROVIDER)
         ) {
           // Check if options.ai is already a client-like object with embed method
           // This allows passing mock AI clients for testing

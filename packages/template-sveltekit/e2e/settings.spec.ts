@@ -57,8 +57,12 @@ test('/settings lists the sections and each is its own page', async ({
 
 test('the Inference section loads and accepts the owner’s writes', async ({
   ownerPage,
+  referenceApp,
 }) => {
-  await ownerPage.goto('/settings/inference', { waitUntil: 'networkidle' });
+  const response = await ownerPage.goto('/settings/inference', {
+    waitUntil: 'networkidle',
+  });
+  expect(response?.status(), referenceApp.failureOutput()).toBe(200);
   await expect(
     ownerPage.getByTestId('inference-settings-panel'),
   ).toBeVisible();

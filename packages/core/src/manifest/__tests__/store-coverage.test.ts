@@ -31,12 +31,14 @@ import {
   findWorkspaceRootSync,
   getCurrentPackageName,
   getManifestCache,
+  isTestEnvironment,
   loadExternalManifestSyncWithNode,
   loadManifestFromPathSyncWithNode,
   lookupCachedManifestEntry,
   resolveInstalledPackageJsonPathSync,
   resolveManifestExportPathSync,
   resolveWorkspacePackageJsonPathSync,
+  shouldLoadCoreTestManifest,
 } from '../store.js';
 
 type ManifestGlobals = typeof globalThis & {
@@ -55,6 +57,24 @@ function manifest(
 }
 
 describe('manifest/store coverage', () => {
+  it('reports no Node test or package environment when process is absent', () => {
+    const descriptor = Object.getOwnPropertyDescriptor(globalThis, 'process')!;
+    let result: unknown;
+    try {
+      Object.defineProperty(globalThis, 'process', {
+        configurable: true,
+        value: undefined,
+      });
+      result = [
+        isTestEnvironment(),
+        getCurrentPackageName(),
+        shouldLoadCoreTestManifest(),
+      ];
+    } finally {
+      Object.defineProperty(globalThis, 'process', descriptor);
+    }
+    expect(result).toEqual([false, null, false]);
+  });
   let snapshot: {
     cache?: Map<string, SmartObjectManifest>;
     staticM?: SmartObjectManifest | null;
