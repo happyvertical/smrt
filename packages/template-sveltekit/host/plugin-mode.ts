@@ -3,10 +3,7 @@ import { access, mkdir, unlink, writeFile } from 'node:fs/promises';
 import { dirname, join, relative } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import type { PrincipalTool } from '@happyvertical/smrt-agents';
-import {
-  generateLocalMcpSetup,
-  saveCliConfig,
-} from '@happyvertical/smrt-app-cli';
+import type { generateLocalMcpSetup } from '@happyvertical/smrt-app-cli';
 import type { LocalMcpTokenRecord } from '@happyvertical/smrt-app-runtime';
 import type { SmrtSvelteKitRuntime } from '@happyvertical/smrt-app-runtime/sveltekit';
 import type { RequestEvent } from '@sveltejs/kit';
@@ -109,6 +106,9 @@ export function createPluginMode(options: {
   }
   async function setup(client: PluginClient) {
     const { launcher } = await locations(client);
+    const { generateLocalMcpSetup } = await import(
+      '@happyvertical/smrt-app-cli'
+    );
     return generateLocalMcpSetup({
       name: options.name,
       command: process.execPath,
@@ -122,6 +122,9 @@ export function createPluginMode(options: {
     const local = await runtime.localRuntime();
     if (!local.mcpTokens) throw new Error('Local MCP token store unavailable');
     const records = await local.mcpTokens.list();
+    const { generateLocalMcpSetup } = await import(
+      '@happyvertical/smrt-app-cli'
+    );
     return {
       tools: await options.tools?.(actor),
       embed: await (await options.state()).embed(actor.tenantId, actor.id),
@@ -237,6 +240,7 @@ export function createPluginMode(options: {
           { userId: actor.id, tenantId: actor.tenantId },
         );
         try {
+          const { saveCliConfig } = await import('@happyvertical/smrt-app-cli');
           await saveCliConfig(
             { envPrefix: 'SMRT_PLUGIN', configPath: paths.config },
             { serverUrl: event.url.origin, token: issued.token },

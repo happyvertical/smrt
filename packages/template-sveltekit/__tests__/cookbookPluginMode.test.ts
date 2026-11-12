@@ -1,4 +1,5 @@
 /** Real owner tokens, SQLite host, generated launchers and stdio MCP client. */
+import { spawnSync } from 'node:child_process';
 import { randomUUID } from 'node:crypto';
 import {
   mkdir,
@@ -46,6 +47,37 @@ import { createRecipeScreenReferences } from '../../smrt-svelte/src/components/s
 import { testHomeEnvironment } from '../../vitest/src/test-home.js';
 import type { PluginModeState } from '../host/plugin-mode.js';
 import { createCookbookHost } from '../host/server.js';
+
+it('loads the published host without CLI bridge SDKs and preserves the first-use error', () => {
+  const child = spawnSync(
+    process.execPath,
+    [
+      '--input-type=module',
+      '-e',
+      `
+    import { registerHooks } from 'node:module';
+    registerHooks({ resolve(specifier, context, next) {
+      if (specifier === '@happyvertical/smrt-app-cli') throw new Error('App CLI unavailable');
+      if (specifier.startsWith('@modelcontextprotocol/')) throw new Error('Unexpected eager MCP SDK');
+      return next(specifier, context);
+    } });
+    await import(${JSON.stringify(new URL('../dist/host/server.js', import.meta.url).href)});
+    const { createPluginMode } = await import(${JSON.stringify(new URL('../dist/host/plugin-mode.js', import.meta.url).href)});
+    const plugin = createPluginMode({
+      runtime: { localRuntime: async () => ({ mcpTokens: { list: async () => [] } }) },
+      sourceRoot: '.', name: 'fixture', state: async () => ({ embed: async () => false }),
+      authorize: async () => null,
+    });
+    let failed = false;
+    try { await plugin.read({ id: 'owner', tenantId: 'tenant' }); }
+    catch (error) { if (error.message !== 'App CLI unavailable') throw error; failed = true; }
+    if (!failed) process.exit(2);
+  `,
+    ],
+    { encoding: 'utf8', timeout: 30000 },
+  );
+  expect(child.status, child.stderr).toBe(0);
+});
 
 @smrt({
   packageName: '@fixture/plugin',

@@ -447,3 +447,57 @@ STI/replacement, reference-picker and restart/permission-revocation cases remain
 intact; no separate model/reference dispatcher is introduced.
 
 Local harness setup and Settings: [plugin mode](plugin-mode.md).
+
+### Compiled cookbook catalog
+
+`cookbookHostVite()` also provides `virtual:smrt-cookbook-app` (`app`). Pass that
+value through the existing `createCookbookApplication({ app, ... })` seam to use
+the validated build document and a slim installed catalog. The projection uses
+`catalogFromManifests(manifests, true)`: recipe search/help is retained, model
+schemas/methods are not. Model details still arrive through activation's deferred
+data modules. Default file-based hosts remain supported. Rebuild after changing
+installed recipes or the initial cookbook, as for the existing activation graph.
+The preset's generated type directory receives `cookbook-host.d.ts`.
+
+The generated module parses once and freezes its JSON records bottom-up. Both
+activation preparation and host initialization share those immutable records.
+Host initialization forks only its writable catalog envelope; app-model editing
+continues to replace its own models array. Request/session/tenant state is not
+shared through the catalog. Editable cookbook documents still use the engine's
+existing independent copies, and registry schema copies remain independent.
+
+| Behavior/invariant | Positive / negative case | Actor/context/executor/runtime/edge | Evidence |
+| --- | --- | --- | --- |
+| Slim catalog preserves features and recipe help | Existing catalog model selection plus optional rich projection; no object schemas in payload | Build-only installed metadata; no DB or provider requests; Node 26 + Vite public virtual module | Catalog unit suite, host generation suite and real Yoga/all-recipes harness |
+| Immutable sharing preserves edits | Frozen model/array refuses direct mutation; host owns writable envelope | Separate per-tenant engine and model editor, existing transactions and permission checks unchanged | Host generation freeze test, full host model/history/approval tests |
+| Unrelated modules remain untouched | Virtual resolve/load returns null for unrelated ids | Vite build/dev; no external contract | Host generation suite |
+
+Reuse: MCP reviews for template-sveltekit/smrt-svelte and product app, the intent
+index and searches by installed manifest, recipe catalog, virtual modules and
+immutable metadata found `catalogFromManifests`, the host's `app` injection seam,
+`prepareCookbookHost`, and the preset's generated type directory. No parallel
+catalog, runtime route or provider implementation is added.
+
+The same virtual module exports `initialApp` for the no-principal preferences
+fallback. It uses `narrowCatalog` over the shared records, so resolving the initial
+shell does not re-read every installed manifest. It contains only the initial
+build document and no personal/request data. Person-specific preferences still
+resolve `host.cookbookApp(principal.tenantId)` through the existing principal seam.
+
+The host Vite plugin externalizes the Node-only `smrt-app-mcp` and `smrt-app-cli`
+server seams. Plugin setup/config imports the CLI only inside its existing async
+read/setup/connect operations, after the unchanged local-owner policy checks. This
+keeps the published package responsible for resolving its SDK dependency and
+preserves its deferred transport imports. Bundling a workspace-linked copy can
+otherwise hoist the SDK into a shared host chunk despite dynamic imports. This
+is a host packaging boundary, not an application-supplied external/alias list;
+Node cookbook hosts already retain installed runtime packages. The generated
+initial preferences data also preserves cookbook validation warnings.
+
+The published-host startup test refuses CLI and MCP SDK resolution, then checks
+the plugin's first-use read rejects with the original CLI import error. It fails
+against the eager build. The existing real-token/SQLite/stdio plugin test still
+covers setup, live tools, writes, owner decisions, revocation and secret refusal;
+no auth, persistence, retry or protocol implementation is duplicated. Reuse searches
+for CLI setup/config and bridge imports found `generateLocalMcpSetup`,
+`saveCliConfig`, and the existing async plugin operations; no new helper is added.

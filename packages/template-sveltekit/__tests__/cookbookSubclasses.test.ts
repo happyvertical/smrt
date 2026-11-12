@@ -11,31 +11,38 @@ import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 
-vi.mock('@happyvertical/smrt-svelte/cookbook/server', () => ({
-  readInstalledManifests: async () => [
-    {
-      packageName: '@happyvertical/smrt-profiles',
-      objects: {
-        '@happyvertical/smrt-profiles:Profile': {
-          qualifiedName: '@happyvertical/smrt-profiles:Profile',
+vi.mock(
+  '@happyvertical/smrt-svelte/cookbook/server',
+  async (importOriginal) => ({
+    ...(await importOriginal<
+      typeof import('@happyvertical/smrt-svelte/cookbook/server')
+    >()),
+    readInstalledManifests: async () => [
+      {
+        packageName: '@happyvertical/smrt-profiles',
+        objects: {
+          '@happyvertical/smrt-profiles:Profile': {
+            qualifiedName: '@happyvertical/smrt-profiles:Profile',
+          },
         },
       },
-    },
-  ],
-  catalogFromManifests: () => ({
-    recipes: [],
-    models: [
-      {
-        id: '@happyvertical/smrt-profiles:Profile',
-        name: 'Profile',
-        packageId: 'profiles',
-      },
     ],
+    catalogFromManifests: () => ({
+      recipes: [],
+      models: [
+        {
+          id: '@happyvertical/smrt-profiles:Profile',
+          name: 'Profile',
+          packageId: 'profiles',
+        },
+      ],
+    }),
   }),
-}));
+);
 
 import { loadVerifiedSmrtGenerationSnapshot } from '@happyvertical/smrt-core/vite-plugin';
 import {
+  cookbookHostVite,
   generateCookbookSubclasses,
   prepareCookbookHost,
 } from '../host/generate.js';
@@ -153,8 +160,69 @@ describe('cookbook app customization points', () => {
       },
     };
     await writeFile(join(root, 'scanned.json'), JSON.stringify(scanned));
+    if (publisher === 'existing') {
+      const document = JSON.parse(
+        await readFile(join(root, 'smrt.cookbook.json'), 'utf8'),
+      );
+      document.$schema = 'https://s-m-r-t.dev/schemas/blueprint/v1.json';
+      await writeFile(
+        join(root, 'smrt.cookbook.json'),
+        JSON.stringify(document),
+      );
+    }
     const result = await prepareCookbookHost({ root });
     expect(result.generationSnapshot.sourceRoot).toBe(root);
+    expect(result.app.cookbook.features).toEqual([
+      '@happyvertical/smrt-profiles:Profile',
+    ]);
+    expect(result.app.catalog.models[0].id).toBe(
+      '@happyvertical/smrt-profiles:Profile',
+    );
+    expect(result.app.catalog).not.toHaveProperty('objects');
+    expect(
+      await readFile(
+        join(root, 'src/lib/types/smrt-generated/cookbook-host.d.ts'),
+        'utf8',
+      ),
+    ).toContain("declare module 'virtual:smrt-cookbook-app'");
+    const catalogPlugin = (await cookbookHostVite({ root })).find(
+      (p) => p.name === 'smrt-cookbook-catalog',
+    ) as any;
+    expect(catalogPlugin.resolveId('virtual:smrt-cookbook-app')).toBe(
+      '\0virtual:smrt-cookbook-app',
+    );
+    expect(catalogPlugin.resolveId('unrelated')).toBeNull();
+    expect(catalogPlugin.config().ssr.external).toContain(
+      '@happyvertical/smrt-app-mcp',
+    );
+    expect(catalogPlugin.config().ssr.external).toContain(
+      '@happyvertical/smrt-app-cli',
+    );
+    const code = catalogPlugin.load('\0virtual:smrt-cookbook-app');
+    const { narrowCatalog } = await import(
+      '@happyvertical/smrt-svelte/cookbook/server'
+    );
+    const { app: emitted, initialApp } = new Function(
+      'narrowCatalog',
+      `${code.replace(/^import .*\n/, '').replaceAll('export const', 'const')}; return { app, initialApp };`,
+    )(narrowCatalog);
+    expect(initialApp.catalog).toEqual(
+      narrowCatalog(result.app.catalog, {
+        recipes: result.app.cookbook.recipes,
+        features: result.app.cookbook.features ?? [],
+      }),
+    );
+    expect(Object.isFrozen(initialApp.catalog.models)).toBe(true);
+    expect(initialApp.warnings).toEqual(result.warnings);
+    expect(result.warnings).toHaveLength(publisher === 'existing' ? 1 : 0);
+    expect(emitted).toEqual(result.app);
+    expect(Object.isFrozen(emitted.catalog.models)).toBe(true);
+    expect(Object.isFrozen(emitted.catalog.models[0])).toBe(true);
+    expect(() => {
+      emitted.catalog.models[0].name = 'changed';
+    }).toThrow(TypeError);
+    expect(catalogPlugin.load('unrelated')).toBeNull();
+
     const artifact = JSON.parse(
       await readFile(join(root, result.generationSnapshot.path), 'utf8'),
     );

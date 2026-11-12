@@ -1109,6 +1109,54 @@ describe('local cookbook host composition (SQLite, fake model, no providers)', (
     ).toBe(409);
   });
 
+  it('edits models with a shared frozen catalog without changing the compiled snapshot', async () => {
+    const runtime = host.runtime;
+    host.dispose();
+    const app = JSON.parse(
+      JSON.stringify({ cookbook, catalog }),
+      (_key, value) =>
+        value && typeof value === 'object' ? Object.freeze(value) : value,
+    );
+    const original = JSON.stringify(app);
+    host = createCookbookHost({
+      runtime,
+      packageName: '@fixture/frozen-catalog',
+      app,
+    });
+    await host.init();
+    let editor: Awaited<ReturnType<typeof host.modelEditor>>;
+    await request(event('/'), async () => {
+      editor = await host.modelEditor(tenantId);
+      return new Response();
+    });
+    await editor!.apply(
+      {
+        type: 'create_list',
+        name: 'FrozenCatalogMat',
+        list: {
+          label: 'Shared catalog mats',
+          icon: 'layers',
+          displayField: 'size',
+          fields: { size: { type: 'text' } },
+        },
+      },
+      {
+        actor: owner.id,
+        tenantId,
+        requestId: randomUUID(),
+        expectedRevision: 0,
+      },
+    );
+    expect(editor!.snapshot().revision).toBe(1);
+    expect(
+      (await host.cookbookApp(tenantId)).catalog.models.some(
+        (model) => model.id === '@fixture/frozen-catalog:FrozenCatalogMat',
+      ),
+    ).toBe(true);
+    expect(JSON.stringify(app)).toBe(original);
+    expect(Object.isFrozen(app.catalog.models)).toBe(true);
+  });
+
   it('resumes app remove-field and remove-list holds through the shared owner route across restart', async () => {
     const runtime = host.runtime;
     host.dispose();

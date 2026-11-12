@@ -151,22 +151,18 @@ async function readHostApp(
     options.app ??
     (await (async () => {
       const manifests = await readInstalledManifests(root);
-      const catalog = catalogFromManifests(manifests);
+      const catalog = catalogFromManifests(manifests, true);
       const checked = validateCookbook(
         JSON.parse(await readFile(join(root, 'smrt.cookbook.json'), 'utf8')),
         { recipes: catalog.recipes.map((r) => r.id) },
       );
       if (!checked.ok) throw new Error(checked.errors.join('; '));
-      // Preserve recipe search/help metadata from installed manifests.
-      const recipes = manifests.flatMap((m) =>
-        Array.isArray(m.recipes) ? m.recipes : [],
-      );
+      // The catalog keeps search/help while dropping full model declarations.
       return {
         cookbook: checked.cookbook,
         catalog: {
           ...catalog,
           recipes: catalog.recipes.map((r) => ({
-            ...recipes.find((raw) => raw.id === r.id),
             ...r,
             requires: r.requires ?? [],
           })),
@@ -317,7 +313,10 @@ export function createCookbookHost(options: CookbookHostOptions) {
         'Cookbook host currently requires the local SQLite runtime',
       );
     const db = await runtime.database();
-    const app = { ...(await readHostApp(options)) };
+    const loaded = await readHostApp(options);
+    // Fork only the writable envelope; compiled catalog records are immutable
+    // and shared with activation. Model editing replaces its models array.
+    const app = { ...loaded, catalog: { ...loaded.catalog } };
     if (options.onboarding)
       app.catalog = {
         ...app.catalog,
