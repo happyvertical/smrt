@@ -13,6 +13,7 @@ import {
   createOverviewStore,
   createPreferenceStore,
   createShellSettingsPreferences,
+  createWorkProfilesPreference,
   listPreferenceKinds,
   PERSONALIZE_OVERVIEW_PERMISSION,
   PERSONALIZE_SHELL_PERMISSION,
@@ -98,6 +99,73 @@ export function preferenceKindsSuite(
       NOTE_TENANT,
       NOTE_USER,
     ];
+
+    it('round trips owner work-profile settings, conflicts on stale writes and resets recommendations', async () => {
+      const dispose = registerPermissionDefinitions([
+        {
+          slug: 'inference.customize',
+          category: 'inference',
+          name: 'Configure inference',
+        },
+      ]);
+      try {
+        await as(['inference.customize'], async () => {
+          const profiles = createWorkProfilesPreference({
+            store,
+            isOwner: async () => true,
+          });
+          expect((await profiles.read()).settings).toEqual({});
+          const settings = {
+            assist: { effort: 'high' as const, autoEscalate: false },
+            design: {
+              engine: 'codex' as const,
+              model: 'gpt-6.1',
+              previewBeforeApply: false,
+              budgets: { maxSteps: 72, repairRetries: 0 },
+            },
+          };
+          expect((await profiles.write(settings, null)).ok).toBe(true);
+          const saved = await profiles.read();
+          expect(saved.settings).toEqual(settings);
+          expect(await profiles.write({}, null)).toEqual({
+            ok: false,
+            reason: 'conflict',
+          });
+          expect((await profiles.reset(saved.revision)).ok).toBe(true);
+          expect((await profiles.read()).settings).toEqual({});
+          const denied = createWorkProfilesPreference({
+            store,
+            isOwner: async () => false,
+          });
+          await expect(denied.write({}, null)).rejects.toThrow(
+            PreferenceAccessError,
+          );
+          await expect(denied.reset(null)).rejects.toThrow(
+            PreferenceAccessError,
+          );
+          for (const payload of [
+            { design: { approvals: false } },
+            { assist: { effort: ['high'] } },
+            { design: { budgets: { passes: 0 } } },
+            { design: { model: '--help' } },
+            { design: { model: ' fable' } },
+            { design: { model: 'fable\n' } },
+          ]) {
+            expect(
+              (
+                await store.save('work-profiles', 'assistant', {
+                  scope: 'tenant',
+                  payload,
+                  revision: null,
+                })
+              ).ok,
+            ).toBe(false);
+          }
+        });
+      } finally {
+        dispose();
+      }
+    });
 
     it('registers the built-in kinds', () => {
       expect(listPreferenceKinds()).toEqual(

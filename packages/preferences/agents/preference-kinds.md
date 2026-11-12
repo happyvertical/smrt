@@ -102,3 +102,21 @@ browser-safe `./cookbook` entry. Do not import the server-only `./cookbook/tools
 adapter from this model package root: even a metadata import makes its
 `node:crypto` dependency reachable to browser bundlers. The preferences suite
 reuses bundle-gate's browser build and ownership attribution to guard this edge.
+
+## Assistant work profiles
+
+`createWorkProfilesPreference({store,isOwner})` owns the tenant-wide
+`work-profiles` / `assistant` kind. Its sparse design, assist and background
+settings contain engine, model, effort, budgets, automatic escalation and preview
+preferences. Inference owns recommendations and resolution; this package imports
+only its types, preserving the dependency direction. Missing settings resolve to
+recommendations. `write(settings,revision)` and `reset(revision)` both check the
+live owner plus `inference.customize`, and retain store CAS. User-tier overrides,
+unknown fields (including approval/CLI authority), malformed budgets and models
+are refused. Reads return validation issues without rewriting stored data.
+
+Reuse inventory: MCP architecture context and name/purpose searches of the intent
+index, preferences, inference, chat, core, smrt-ui and smrt-svelte found the generic
+kind/store and the existing owner pre-built facade. This new kind reuses both;
+no new table or preference persistence layer was added. Round-trip/reset and
+owner/conflict/invalid-value assertions run in the existing SQLite/DuckDB suite.

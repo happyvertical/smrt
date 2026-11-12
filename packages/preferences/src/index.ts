@@ -38,6 +38,12 @@ export {
   shellLayoutPreferenceKind,
 } from './kinds/shell-layout.js';
 export {
+  createWorkProfilesPreference,
+  WORK_PROFILES_PREFERENCE_KIND,
+  type WorkProfilePreferences,
+  workProfilesPreferenceKind,
+} from './kinds/work-profiles.js';
+export {
   getPreferenceKind,
   listPreferenceKinds,
   PREFERENCE_KIND_PATTERN,
