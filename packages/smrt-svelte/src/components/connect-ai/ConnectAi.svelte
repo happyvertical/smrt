@@ -457,7 +457,7 @@ onMount(() => {
         {:else if tool.signedIn && tool.ready !== true}
           {t(M['ui.connect_ai.unusable'])}
         {:else if tool.signedIn}
-          Installed and signed in{tool.version ? `, version ${tool.version}` : ''}.
+          {t(tool.version ? M['ui.connect_ai.ready_version'] : M['ui.connect_ai.signed_in'], { version: tool.version ?? '' })}
         {:else}
           Installed, not signed in.
         {/if}

@@ -13,6 +13,10 @@ The native Codex compatibility/options evidence lives in inference's
 [engine contract](../../inference/agents/engines.md#codex-01621-compatibility-evidence-and-owner-options).
 Mounted tests refuse absent preflight even when `configured: true`; existing
 positive sign-in fixtures explicitly complete preflight before selection.
+Both presentations call that final state “Ready in this app”; compact hosts
+retain the validated CLI version in the translated ready message. Installed and
+signed-in alone is never the final readiness claim. Tricia delegates its state
+GET to the shared route helper and supplements only host presentation metadata.
 
 `ConnectAi` is a Provider-free, Svelte 5 onboarding step or settings panel. It
 composes smrt-ui Button/Card/Badge and translated `ui.connect_ai.*` messages,
