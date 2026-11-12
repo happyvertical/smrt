@@ -5,10 +5,10 @@ description: "Minimal SvelteKit project template with s-m-r-t framework integrat
 status: "stable"
 generated:
   by: "smrt/scripts/generate-knowledge-okf.ts"
-  at: "2026-11-12T03:21:45Z"
+  at: "2026-11-12T05:03:29Z"
 audience: "internal"
 evidence_level: "source-inspected"
-source_revision: "sha256:4272d5c28718e238f41b03df19fc5070357efa33bba4ad1ae06290be04f97d8a"
+source_revision: "sha256:f20173fbc51994af71b0a2116ec7be1966860ddb9a26b1c2d90a9bac19b722b8"
 sources:
   - id: "manifest"
     resource: "https://github.com/happyvertical/smrt/blob/main/packages/template-sveltekit/package.json"
@@ -47,6 +47,7 @@ sources:
 - [smrt-commerce](/components/smrt-commerce.md)
 - [smrt-config](/components/smrt-config.md)
 - [smrt-core](/components/smrt-core.md)
+- [smrt-desktop](/components/smrt-desktop.md)
 - [smrt-inference](/components/smrt-inference.md)
 - [smrt-jobs](/components/smrt-jobs.md)
 - [smrt-mcp-openai](/components/smrt-mcp-openai.md)
@@ -75,6 +76,7 @@ sources:
 - `./host/InferenceSettingsPage.svelte`
 - `./host/client`
 - `./host/generate`
+- `./host/plugin-mode`
 - `./host/preferences`
 - `./host/server`
 - `./host/settings`
