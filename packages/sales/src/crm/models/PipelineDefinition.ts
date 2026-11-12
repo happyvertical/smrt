@@ -47,7 +47,11 @@ export class PipelineDefinition extends SmrtObject {
    * Stable machine key, unique per tenant (natural key with `tenantId`).
    * Required — e.g. `'default'`, `'enterprise'`.
    */
-  @field({ required: true, description: 'A short code for the pipeline.' })
+  @field({
+    required: true,
+    requiredFor: 'identity',
+    description: 'A short code for the pipeline.',
+  })
   key: string = '';
 
   /** Human-readable pipeline name shown on CRM surfaces. */

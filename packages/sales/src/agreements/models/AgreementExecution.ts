@@ -39,7 +39,7 @@ export class AgreementExecution extends SmrtObject {
   @tenantId()
   tenantId: string = '';
 
-  @field({ required: true })
+  @field({ required: true, requiredFor: 'identity' })
   provider: string = '';
 
   /** Non-secret provider account/region reference used for operations. */
@@ -48,13 +48,13 @@ export class AgreementExecution extends SmrtObject {
   /** SDK/SMRT secret-store reference only; never a credential value. */
   credentialRef: string = '';
 
-  @field({ required: true })
+  @field({ required: true, requiredFor: 'idempotency' })
   idempotencyKey: string = '';
 
-  @field({ required: true })
+  @field({ required: true, requiredFor: 'identity' })
   sourceKind: string = '';
 
-  @field({ required: true })
+  @field({ required: true, requiredFor: 'identity' })
   sourceId: string = '';
 
   sourceVersion: number = 1;

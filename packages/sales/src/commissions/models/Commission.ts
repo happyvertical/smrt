@@ -86,7 +86,7 @@ export class Commission extends SmrtObject {
 
   /** The {@link Earner} this commission belongs to. Required. */
   @field({ description: 'The affiliate who earned this commission.' })
-  @foreignKey('Earner', { required: true })
+  @foreignKey('Earner', { required: true, requiredFor: 'identity' })
   earnerId: string = '';
 
   /** The {@link EarningEvent} evidence row this commission derives from. */
@@ -195,6 +195,7 @@ export class Commission extends SmrtObject {
    */
   @field({
     required: true,
+    requiredFor: 'idempotency',
     description:
       'A reference that stops the same commission being recorded twice.',
   })
