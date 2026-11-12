@@ -93,6 +93,7 @@ describe('smrtVitestPlugin config', () => {
     const userConfig = {
       test: {
         setupFiles: ['existing-root-setup'],
+        globalSetup: ['existing-global-setup'],
         projects: [
           {
             test: {
@@ -113,6 +114,12 @@ describe('smrtVitestPlugin config', () => {
     expect(config).toMatchObject({
       test: {
         setupFiles: ['existing-root-setup', defaultSetupFile],
+        globalSetup: [
+          fileURLToPath(
+            new URL('../test-home.global-setup.ts', import.meta.url),
+          ),
+          'existing-global-setup',
+        ],
       },
     });
     expect(
@@ -129,6 +136,11 @@ describe('smrtVitestPlugin config', () => {
           {
             test: {
               setupFiles: ['existing-project-setup', defaultSetupFile],
+              globalSetup: [
+                fileURLToPath(
+                  new URL('../test-home.global-setup.ts', import.meta.url),
+                ),
+              ],
             },
           },
           {

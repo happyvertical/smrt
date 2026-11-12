@@ -1743,6 +1743,20 @@ export function smrtVitestPlugin(
   let manifestsLoaded = false;
   const testRunManifestPath = resolveTestRunManifestPath(root);
   const setupFileId = setupFile;
+  const homeSetupSource = fileURLToPath(
+    new URL('./test-home.global-setup.ts', import.meta.url),
+  );
+  const homeSetup = existsSync(homeSetupSource)
+    ? homeSetupSource
+    : fileURLToPath(new URL('./test-home.global-setup.js', import.meta.url));
+  const ensureGlobalSetup = (
+    value: string | string[] | undefined,
+  ): string[] => [
+    ...new Set([
+      homeSetup,
+      ...(Array.isArray(value) ? value : value ? [value] : []),
+    ]),
+  ];
   const workspaceAliases = getWorkspaceViteAliases(root, {
     filter: aliasFilter,
   });
@@ -1823,6 +1837,7 @@ export function smrtVitestPlugin(
       const projectConfig = project as Record<string, unknown> & {
         test?: {
           setupFiles?: string | string[];
+          globalSetup?: string | string[];
           retry?: RetryConfig;
           exclude?: string[];
         };
@@ -1839,6 +1854,7 @@ export function smrtVitestPlugin(
         // per-project value unless SMRT_VITEST_RETRY forces one.
         retry: resolveRetry(projectConfig.test?.retry ?? rootRetry),
         setupFiles: ensureSetupFiles(projectConfig.test?.setupFiles),
+        globalSetup: ensureGlobalSetup(projectConfig.test?.globalSetup),
       };
     });
   };
@@ -1965,6 +1981,7 @@ export function smrtVitestPlugin(
         test: {
           exclude,
           setupFiles,
+          globalSetup: ensureGlobalSetup(userConfig.test?.globalSetup),
           // Re-run a failed test before failing the run, in CI only. Several
           // packages have rare, CI-environment-specific timing flakes that pass
           // on re-run (observed: every flaky "Test Packages" failure went green
