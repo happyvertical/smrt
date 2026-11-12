@@ -91,13 +91,13 @@ function handleClose() {
   closeOnBackdrop={!loading}
   closeOnEscape={!loading}
 >
-  <div class="invite-form-shell">
+  <div class="smrt-invite-user-modal__root" data-smrt-part="body">
     <Form id={formId} class="invite-form" onsubmit={handleSubmit}>
       {#if error}
-        <div class="error">{error}</div>
+        <div class="smrt-invite-user-modal__error" data-smrt-part="error">{error}</div>
       {/if}
 
-      <div class="field">
+      <div class="smrt-invite-user-modal__field" data-smrt-part="field">
         <label for="invite-email">{t(M['users.invite_user_modal.email_address'])}</label>
         <Input
           id="invite-email"
@@ -109,7 +109,7 @@ function handleClose() {
         />
       </div>
 
-      <div class="field">
+      <div class="smrt-invite-user-modal__field" data-smrt-part="field">
         <label for="invite-role">Role</label>
         <RoleSelector
           {roles}
@@ -120,14 +120,14 @@ function handleClose() {
         />
       </div>
 
-      <div class="checkbox-field">
+      <div class="smrt-invite-user-modal__checkbox-field" data-smrt-part="control">
         <!-- raw-primitive-allow: native checkbox; no Provider-free checkbox primitive (Toggle is a switch with different semantics, CheckboxInput requires a Provider) -->
         <input id="send-email" type="checkbox" bind:checked={sendEmail} disabled={loading} />
         <label for="send-email">{t(M['users.invite_user_modal.send_invitation_email'])}</label>
       </div>
 
       {#if !sendEmail}
-        <div class="hint">
+        <div class="smrt-invite-user-modal__hint" data-smrt-part="description">
           {t(M['users.invite_user_modal.pending_hint'])}
         </div>
       {/if}
@@ -150,58 +150,61 @@ function handleClose() {
 
 <style>
 @layer smrt.reset, smrt.structure, smrt.theme;
-@layer smrt.theme {
+@layer smrt.structure {
   /* The dialog chrome (backdrop, surface, header, footer bar, close button) is
-     supplied by the smrt-ui Modal. Only the form-content + footer-button styles
-     live here. */
-  .invite-form-shell :global(.invite-form) {
+  supplied by the smrt-ui Modal. Only the form-content + footer-button styles
+  live here. */
+  .smrt-invite-user-modal__root :global(.invite-form) {
     display: flex;
     flex-direction: column;
     gap: var(--smrt-spacing-md, 1rem);
   }
-
-  .error {
+  .smrt-invite-user-modal__error {
     padding: var(--smrt-spacing-sm, 0.75rem);
+  }
+  .smrt-invite-user-modal__field {
+    display: flex;
+    flex-direction: column;
+    gap: 0.375rem;
+  }
+  .smrt-invite-user-modal__checkbox-field {
+    display: flex;
+    align-items: center;
+    gap: var(--smrt-spacing-sm, 0.5rem);
+  }
+  .smrt-invite-user-modal__checkbox-field input {
+    width: 1rem;
+    height: 1rem;
+  }
+  .smrt-invite-user-modal__hint {
+    padding: var(--smrt-spacing-sm, 0.5rem);
+  }
+}
+
+@layer smrt.theme {
+  .smrt-invite-user-modal__error {
     background: var(--smrt-color-error-container);
     border: 1px solid var(--smrt-color-error);
     border-radius: var(--smrt-radius-medium, 0.5rem);
     color: var(--smrt-color-on-error-container);
     font: var(--smrt-typography-body-medium-font, 0.875rem / 1.25 sans-serif);
   }
-
-  .field {
-    display: flex;
-    flex-direction: column;
-    gap: 0.375rem;
-  }
-
   label {
     font: var(--smrt-typography-body-medium-font, 500 0.875rem / 1.25 sans-serif);
     color: var(--smrt-color-on-surface-variant);
   }
-
-  .checkbox-field {
-    display: flex;
-    align-items: center;
-    gap: var(--smrt-spacing-sm, 0.5rem);
-  }
-
-  .checkbox-field input {
-    width: 1rem;
-    height: 1rem;
+  .smrt-invite-user-modal__checkbox-field input {
     accent-color: var(--smrt-color-primary);
   }
-
-  .checkbox-field label {
+  .smrt-invite-user-modal__checkbox-field label {
     font-weight: var(--smrt-typography-weight-normal, 400);
   }
-
-  .hint {
+  .smrt-invite-user-modal__hint {
     font: var(--smrt-typography-body-small-font, 0.75rem / 1.25 sans-serif);
     color: var(--smrt-color-on-surface-variant);
-    padding: var(--smrt-spacing-sm, 0.5rem);
     background: var(--smrt-color-surface-container-low);
     border-radius: var(--smrt-radius-small, 0.25rem);
   }
 }
+
 </style>

@@ -136,26 +136,61 @@ useControlRegistration(() => {
   };
 });
 </script>
-<fieldset bind:this={fieldsetEl} data-density={density} class="radio-group {className}" {disabled}
+<fieldset bind:this={fieldsetEl} data-density={density} class="smrt-radio-group__root {className}" {disabled}
   aria-describedby={description ? `${name}-description` : undefined} data-smrt-control={controlId} data-smrt-form={interactionContext?.formId}
   data-smrt-subject-type={interaction === false ? undefined : interaction?.subject?.type}
   data-smrt-subject-id={interaction === false ? undefined : interaction?.subject?.id} data-smrt-component="RadioGroup">
   {#if label}<legend>{label}{#if required}<span aria-hidden="true"> *</span>{/if}</legend>{/if}
-  {#if description}<p id={`${name}-description`} class="description">{description}</p>{/if}
-  <div class="options">{@render children()}</div>
-  {#if error}<p class="error" role="alert">{error}</p>{/if}
+  {#if description}<p id={`${name}-description`} class="smrt-radio-group__description" data-smrt-part="description">{description}</p>{/if}
+  <div class="smrt-radio-group__options" data-smrt-part="list">{@render children()}</div>
+  {#if error}<p class="smrt-radio-group__error" data-smrt-part="error" role="alert">{error}</p>{/if}
 </fieldset>
 <style>
 @layer smrt.reset, smrt.structure, smrt.theme;
-@layer smrt.theme {
-  .radio-group { margin: 0; padding: 0; border: 0; color: var(--smrt-color-on-surface); }
-  legend { margin-bottom: var(--smrt-spacing-2); font: var(--smrt-typography-label-large-font); }
-  .description, .error { margin: var(--smrt-spacing-1) 0 var(--smrt-spacing-2); font: var(--smrt-typography-body-small-font); color: var(--smrt-color-on-surface-variant); }
-  .error { color: var(--smrt-color-error); }
-  .options { display: flex; flex-wrap: wrap; gap: var(--smrt-spacing-3); }
-  :global(.radio-group[data-smrt-highlighted='true']) { outline: 3px solid var(--smrt-color-tertiary); outline-offset: 4px; border-radius: var(--smrt-radius-small); }
-
-  .radio-group[data-density='touch'] { --smrt-control-target-min: var(--smrt-touch-target-min); }
-  .radio-group[data-density='comfortable'] { --smrt-control-target-min: 0px; }
+@layer smrt.structure {
+  .smrt-radio-group__root {
+    margin: 0;
+    padding: 0;
+  }
+  legend {
+    margin-bottom: var(--smrt-spacing-2);
+  }
+  .smrt-radio-group__description, .smrt-radio-group__error {
+    margin: var(--smrt-spacing-1) 0 var(--smrt-spacing-2);
+  }
+  .smrt-radio-group__options {
+    display: flex;
+    flex-wrap: wrap;
+    gap: var(--smrt-spacing-3);
+  }
+  .smrt-radio-group__root[data-density='touch'] {
+    --smrt-control-target-min: var(--smrt-touch-target-min);
+  }
+  .smrt-radio-group__root[data-density='comfortable'] {
+    --smrt-control-target-min: 0px;
+  }
 }
+
+@layer smrt.theme {
+  .smrt-radio-group__root {
+    border: 0;
+    color: var(--smrt-color-on-surface);
+  }
+  legend {
+    font: var(--smrt-typography-label-large-font);
+  }
+  .smrt-radio-group__description, .smrt-radio-group__error {
+    font: var(--smrt-typography-body-small-font);
+    color: var(--smrt-color-on-surface-variant);
+  }
+  .smrt-radio-group__error {
+    color: var(--smrt-color-error);
+  }
+  :global(.smrt-radio-group__root[data-smrt-highlighted='true']) {
+    outline: 3px solid var(--smrt-color-tertiary);
+    outline-offset: 4px;
+    border-radius: var(--smrt-radius-small);
+  }
+}
+
 </style>

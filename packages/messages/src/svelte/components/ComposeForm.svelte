@@ -145,11 +145,11 @@ export interface Props {
   }
 </script>
 
-<div class="compose-form-shell" data-smrt-component="ComposeForm">
+<div class="smrt-compose-form__root" data-smrt-component="ComposeForm">
 <Form class="compose-form" onsubmit={handleSend}>
   {#if accounts.length > 1}
-    <div class="field">
-      <label class="field-label" for="compose-account">From</label>
+    <div class="smrt-compose-form__field" data-smrt-part="field">
+      <label class="smrt-compose-form__label" data-smrt-part="label" for="compose-account">From</label>
       <Select
         id="compose-account"
         class="select"
@@ -189,7 +189,7 @@ export interface Props {
     {/if}
 
     {#if !showCc || !showBcc}
-      <div class="cc-toggles">
+      <div class="smrt-compose-form__toggles" data-smrt-part="actions">
         {#if !showCc}
           <Button variant="ghost" size="sm" class="link-btn" onclick={() => showCc = true}>Cc</Button>
         {/if}
@@ -199,8 +199,8 @@ export interface Props {
       </div>
     {/if}
 
-    <div class="field">
-      <label class="field-label" for="compose-subject">Subject</label>
+    <div class="smrt-compose-form__field" data-smrt-part="field">
+      <label class="smrt-compose-form__label" data-smrt-part="label" for="compose-subject">Subject</label>
       <Input
         id="compose-subject"
         type="text"
@@ -211,8 +211,8 @@ export interface Props {
       />
     </div>
   {:else if type === 'slack'}
-    <div class="field">
-      <label class="field-label" for="compose-channel">Channel</label>
+    <div class="smrt-compose-form__field" data-smrt-part="field">
+      <label class="smrt-compose-form__label" data-smrt-part="label" for="compose-channel">Channel</label>
       <Input
         id="compose-channel"
         type="text"
@@ -224,7 +224,7 @@ export interface Props {
     </div>
   {/if}
 
-  <div class="body-field">
+  <div class="smrt-compose-form__body" data-smrt-part="body">
     <Textarea
       bind:value={body}
       oninput={markDirty}
@@ -232,7 +232,7 @@ export interface Props {
       rows={type === 'tweet' ? 4 : 10}
     />
     {#if type === 'tweet'}
-      <div class="char-count" class:over-limit={isOverLimit}>
+      <div class="smrt-compose-form__count" class:smrt-compose-form__over-limit={isOverLimit} data-smrt-part="count">
         {charCount}/280
       </div>
     {/if}
@@ -261,12 +261,12 @@ export interface Props {
   {/if}
 
   {#if sendError}
-    <div class="send-error" role="alert" aria-live="assertive">
+    <div class="smrt-compose-form__message" role="alert" aria-live="assertive" data-smrt-part="message">
       {sendError}
     </div>
   {/if}
 
-  <div class="actions">
+  <div class="smrt-compose-form__actions" data-smrt-part="actions">
     <Button
       type="submit"
       variant="primary"
@@ -286,127 +286,149 @@ export interface Props {
 
 <style>
 @layer smrt.reset, smrt.structure, smrt.theme;
-@layer smrt.theme {
+@layer smrt.structure {
   /*
-   * The form now renders through smrt-ui's <Form> (Provider-free base `<form>`).
-   * `class="compose-form"` lands on the real `<form>` inside the Form child, so
-   * `.compose-form-shell :global(.compose-form)` anchors on the wrapper and
-   * pierces the child scope to keep the column layout / padding (issue #1589).
-   */
-  .compose-form-shell :global(.compose-form) {
+  * The form now renders through smrt-ui's <Form> (Provider-free base `<form>`).
+  * `class="compose-form"` lands on the real `<form>` inside the Form child, so
+  * `.smrt-compose-form__root :global(.compose-form)` anchors on the wrapper and
+  * pierces the child scope to keep the column layout / padding (issue #1589).
+  */
+  .smrt-compose-form__root :global(.compose-form) {
     display: flex;
     flex-direction: column;
     gap: var(--smrt-spacing-2);
     padding: var(--smrt-spacing-4);
-    font-family: var(--smrt-font-family, system-ui);
   }
-
-  .field {
+  .smrt-compose-form__field {
     display: flex;
     align-items: center;
     gap: var(--smrt-spacing-2);
     padding: var(--smrt-spacing-1) 0;
-    border-bottom: var(--smrt-hairline);
   }
-
-  .field-label {
-    font-size: var(--smrt-typography-label-large-size);
-    color: var(--smrt-color-on-surface-variant);
+  .smrt-compose-form__label {
     min-width: 56px;
   }
-
   /*
-   * The From <Select> and Subject/Channel <Input>s now render through smrt-ui's
-   * form primitives. These are naked, borderless inline fields that sit on the
-   * `.field` row's bottom-border, so `.field :global([data-smrt-component="Select"])` /
-   * `.field :global(.text-input)` pierce the child scopes to strip the
-   * primitives' border / background / focus box-shadow and restore the flush
-   * inline look. `appearance: auto` brings back the Select's native arrow (the
-   * primitive paints a chevron on its own background, which we've cleared) —
-   * issue #1589.
-   */
-  .field :global([data-smrt-component="Select"]),
-  .field :global(.text-input) {
+  * The From <Select> and Subject/Channel <Input>s now render through smrt-ui's
+  * form primitives. These are naked, borderless inline fields that sit on the
+  * `.smrt-compose-form__field` row's bottom-border, so `.smrt-compose-form__field :global([data-smrt-component="Select"])` /
+  * `.smrt-compose-form__field :global(.text-input)` pierce the child scopes to strip the
+  * primitives' border / background / focus box-shadow and restore the flush
+  * inline look. `appearance: auto` brings back the Select's native arrow (the
+  * primitive paints a chevron on its own background, which we've cleared) —
+  * issue #1589.
+  */
+  .smrt-compose-form__field :global([data-smrt-component="Select"]),
+  .smrt-compose-form__field :global(.text-input) {
     flex: 1;
+    padding: var(--smrt-spacing-2) 0;
+  }
+  .smrt-compose-form__field :global([data-smrt-component="Select"]) {
+    cursor: pointer;
+  }
+  .smrt-compose-form__toggles {
+    display: flex;
+    gap: var(--smrt-spacing-2);
+    justify-content: flex-end;
+  }
+  .smrt-compose-form__body {
+    position: relative;
+  }
+  .smrt-compose-form__count {
+    padding-top: var(--smrt-spacing-1);
+  }
+  .smrt-compose-form__message {
+    padding: var(--smrt-spacing-2) var(--smrt-spacing-3);
+  }
+  .smrt-compose-form__actions {
+    display: flex;
+    gap: var(--smrt-spacing-2);
+    padding-top: var(--smrt-spacing-2);
+  }
+}
+
+@layer smrt.theme {
+  /*
+  * The form now renders through smrt-ui's <Form> (Provider-free base `<form>`).
+  * `class="compose-form"` lands on the real `<form>` inside the Form child, so
+  * `.smrt-compose-form__root :global(.compose-form)` anchors on the wrapper and
+  * pierces the child scope to keep the column layout / padding (issue #1589).
+  */
+  .smrt-compose-form__root :global(.compose-form) {
+    font-family: var(--smrt-font-family, system-ui);
+  }
+  .smrt-compose-form__field {
+    border-bottom: var(--smrt-hairline);
+  }
+  .smrt-compose-form__label {
+    font-size: var(--smrt-typography-label-large-size);
+    color: var(--smrt-color-on-surface-variant);
+  }
+  /*
+  * The From <Select> and Subject/Channel <Input>s now render through smrt-ui's
+  * form primitives. These are naked, borderless inline fields that sit on the
+  * `.smrt-compose-form__field` row's bottom-border, so `.smrt-compose-form__field :global([data-smrt-component="Select"])` /
+  * `.smrt-compose-form__field :global(.text-input)` pierce the child scopes to strip the
+  * primitives' border / background / focus box-shadow and restore the flush
+  * inline look. `appearance: auto` brings back the Select's native arrow (the
+  * primitive paints a chevron on its own background, which we've cleared) —
+  * issue #1589.
+  */
+  .smrt-compose-form__field :global([data-smrt-component="Select"]),
+  .smrt-compose-form__field :global(.text-input) {
     border: none;
     outline: none;
     box-shadow: none;
     font-family: inherit;
     font-size: var(--smrt-typography-body-medium-size);
-    padding: var(--smrt-spacing-2) 0;
     background: transparent;
     color: var(--smrt-color-on-surface);
   }
-
-  .field :global([data-smrt-component="Select"]) {
+  .smrt-compose-form__field :global([data-smrt-component="Select"]) {
     appearance: auto;
-    cursor: pointer;
   }
-
-  .field :global([data-smrt-component="Select"]):focus,
-  .field :global(.text-input):focus {
+  .smrt-compose-form__field :global([data-smrt-component="Select"]):focus,
+  .smrt-compose-form__field :global(.text-input):focus {
     border: none;
     box-shadow: none;
   }
-
-  .cc-toggles {
-    display: flex;
-    gap: var(--smrt-spacing-2);
-    justify-content: flex-end;
-  }
-
   /*
-   * The Cc/Bcc toggles now render through smrt-ui's <Button variant="ghost">.
-   * `.cc-toggles :global(.link-btn)` anchors on the real `.cc-toggles` element
-   * and pierces the Button child scope to keep the underlined text-link look
-   * (issue #1589).
-   */
-  .cc-toggles :global(.link-btn) {
+  * The Cc/Bcc toggles now render through smrt-ui's <Button variant="ghost">.
+  * `.smrt-compose-form__toggles :global(.link-btn)` anchors on the real `.smrt-compose-form__toggles` element
+  * and pierces the Button child scope to keep the underlined text-link look
+  * (issue #1589).
+  */
+  .smrt-compose-form__toggles :global(.link-btn) {
     background: none;
     border: none;
     color: var(--smrt-color-primary);
     font-size: var(--smrt-typography-label-large-size);
     text-decoration: underline;
   }
-
-  .body-field {
-    position: relative;
-  }
-
-  .char-count {
+  .smrt-compose-form__count {
     text-align: right;
     font-size: var(--smrt-typography-label-medium-size);
     color: var(--smrt-color-outline);
-    padding-top: var(--smrt-spacing-1);
   }
-
-  .char-count.over-limit {
+  .smrt-compose-form__count.smrt-compose-form__over-limit {
     color: var(--smrt-color-error);
     font-weight: var(--smrt-typography-weight-semibold, 600);
   }
-
-  .send-error {
-    padding: var(--smrt-spacing-2) var(--smrt-spacing-3);
+  .smrt-compose-form__message {
     border-radius: var(--smrt-radius-sm);
     background: var(--smrt-color-error-container);
     color: var(--smrt-color-on-error-container);
     font-size: var(--smrt-typography-body-small-size);
   }
-
-  .actions {
-    display: flex;
-    gap: var(--smrt-spacing-2);
-    padding-top: var(--smrt-spacing-2);
-  }
-
   /*
-   * Send/Save-draft now use Button's primary/secondary variants directly (dead
-   * .btn-primary/.btn-secondary CSS removed). The Discard button keeps its
-   * neutral on-surface-variant text via `.actions :global(.btn-text)` (Button's
-   * ghost uses the primary color) — issue #1589.
-   */
-  .actions :global(.btn-text) {
+  * Send/Save-draft now use Button's primary/secondary variants directly (dead
+  * .btn-primary/.btn-secondary CSS removed). The Discard button keeps its
+  * neutral on-surface-variant text via `.smrt-compose-form__actions :global(.btn-text)` (Button's
+  * ghost uses the primary color) — issue #1589.
+  */
+  .smrt-compose-form__actions :global(.btn-text) {
     color: var(--smrt-color-on-surface-variant);
   }
 }
+
 </style>

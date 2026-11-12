@@ -105,47 +105,47 @@ async function loadTransparency(contentIdToLoad = savedContentId) {
 }
 </script>
 
-<div class="governance-tool" data-smrt-component="ContentTransparencyTool">
+<div class="smrt-content-transparency-tool__root" data-smrt-component="ContentTransparencyTool">
   {#if error}
-    <p class="tool-error">{error}</p>
+    <p class="smrt-content-transparency-tool__error" data-smrt-part="error">{error}</p>
   {/if}
 
   {#if !savedContentId}
-    <p class="empty-copy">{t(M['content.transparency_tool.save_to_preview_transparency'])}</p>
+    <p class="smrt-content-transparency-tool__empty" data-smrt-part="empty">{t(M['content.transparency_tool.save_to_preview_transparency'])}</p>
   {:else if busy && !transparencyPreview}
-    <p class="empty-copy">{t(M['content.transparency_tool.loading_transparency'])}</p>
+    <p class="smrt-content-transparency-tool__empty" data-smrt-part="empty">{t(M['content.transparency_tool.loading_transparency'])}</p>
   {:else if governanceState && !governanceState.transparencyEnabled}
-    <p class="empty-copy">{t(M['content.transparency_tool.transparency_snapshots_not_enabled'])}</p>
+    <p class="smrt-content-transparency-tool__empty" data-smrt-part="empty">{t(M['content.transparency_tool.transparency_snapshots_not_enabled'])}</p>
   {:else if !transparencyPreview}
-    <p class="empty-copy">{t(M['content.transparency_tool.no_transparency_preview'])}</p>
+    <p class="smrt-content-transparency-tool__empty" data-smrt-part="empty">{t(M['content.transparency_tool.no_transparency_preview'])}</p>
   {:else}
-    <p class="section-caption">
+    <p class="smrt-content-transparency-tool__caption" data-smrt-part="caption">
       {t(M['content.transparency_tool.transparency_preview_explainer'])}
     </p>
 
-    <div class="transparency-stats">
-      <div class="transparency-stat">
+    <div class="smrt-content-transparency-tool__stats" data-smrt-part="group">
+      <div class="smrt-content-transparency-tool__stat" data-smrt-part="value">
         <strong>{transparencyPreview.factsUsed.length}</strong>
         <span>{t(M['content.transparency_tool.facts_used'])}</span>
       </div>
-      <div class="transparency-stat">
+      <div class="smrt-content-transparency-tool__stat" data-smrt-part="value">
         <strong>{transparencyPreview.references.length}</strong>
         <span>References</span>
       </div>
-      <div class="transparency-stat">
+      <div class="smrt-content-transparency-tool__stat" data-smrt-part="value">
         <strong>{transparencyPreview.otherExtractedFacts.length}</strong>
         <span>{t(M['content.transparency_tool.other_extracted_facts'])}</span>
       </div>
-      <div class="transparency-stat">
+      <div class="smrt-content-transparency-tool__stat" data-smrt-part="value">
         <strong>{transparencyPreview.corrections.length}</strong>
         <span>{t(M['content.transparency_tool.public_corrections'])}</span>
       </div>
     </div>
 
-    <div class="transparency-card">
-      <div class="tool-card-header">
+    <div class="smrt-content-transparency-tool__card" data-smrt-part="item">
+      <div class="smrt-content-transparency-tool__header" data-smrt-part="header">
         <strong>{t(M['content.transparency_tool.current_preview'])}</strong>
-        <span class="pill pill--neutral">{transparencyPreview.snapshotKind}</span>
+        <span class="smrt-content-transparency-tool__pill smrt-content-transparency-tool__pill--neutral" data-smrt-part="badge">{transparencyPreview.snapshotKind}</span>
       </div>
       <span>
         {#if transparencyPreview.generation.publicPrompt}
@@ -155,19 +155,19 @@ async function loadTransparency(contentIdToLoad = savedContentId) {
         {/if}
       </span>
       {#if transparencyPreview.generation.publicPrompt}
-        <p class="transparency-card-prompt">
+        <p class="smrt-content-transparency-tool__prompt" data-smrt-part="field">
           {transparencyPreview.generation.publicPrompt}
         </p>
       {/if}
 
-      <div class="tool-list">
-        <div class="tool-list-section">
-          <div class="section-caption">{t(M['content.transparency_tool.facts_used_in_article'])}</div>
+      <div class="smrt-content-transparency-tool__list" data-smrt-part="list">
+        <div class="smrt-content-transparency-tool__list-section" data-smrt-part="group">
+          <div class="smrt-content-transparency-tool__caption" data-smrt-part="caption">{t(M['content.transparency_tool.facts_used_in_article'])}</div>
           {#if transparencyPreview.factsUsed.length === 0}
-            <p class="empty-copy">{t(M['content.transparency_tool.no_used_facts_public'])}</p>
+            <p class="smrt-content-transparency-tool__empty" data-smrt-part="empty">{t(M['content.transparency_tool.no_used_facts_public'])}</p>
           {:else}
             {#each transparencyPreview.factsUsed.slice(0, 3) as fact (fact.id ?? fact.textRefined ?? fact.textRaw)}
-              <div class="transparency-list-item">
+              <div class="smrt-content-transparency-tool__item" data-smrt-part="item">
                 <strong>{fact.textRefined || fact.textRaw || fact.id}</strong>
                 <span>
                   {fact.relationship || 'linked'}
@@ -180,13 +180,13 @@ async function loadTransparency(contentIdToLoad = savedContentId) {
           {/if}
         </div>
 
-        <div class="tool-list-section">
-          <div class="section-caption">{t(M['content.transparency_tool.source_material'])}</div>
+        <div class="smrt-content-transparency-tool__list-section" data-smrt-part="group">
+          <div class="smrt-content-transparency-tool__caption" data-smrt-part="caption">{t(M['content.transparency_tool.source_material'])}</div>
           {#if transparencyPreview.references.length === 0}
-            <p class="empty-copy">{t(M['content.transparency_tool.no_references_public'])}</p>
+            <p class="smrt-content-transparency-tool__empty" data-smrt-part="empty">{t(M['content.transparency_tool.no_references_public'])}</p>
           {:else}
             {#each transparencyPreview.references.slice(0, 3) as reference (reference.id ?? reference.url ?? reference.title)}
-              <div class="transparency-list-item">
+              <div class="smrt-content-transparency-tool__item" data-smrt-part="item">
                 <strong>{getReferenceLabel(reference)}</strong>
                 <span>
                   {t(M['content.transparency_tool.reference_fact_counts'], { used: reference.usedFactIds.length, extracted: reference.extractedFacts.length })}
@@ -198,11 +198,11 @@ async function loadTransparency(contentIdToLoad = savedContentId) {
       </div>
     </div>
 
-    <div class="transparency-card">
-      <div class="tool-card-header">
+    <div class="smrt-content-transparency-tool__card" data-smrt-part="item">
+      <div class="smrt-content-transparency-tool__header" data-smrt-part="header">
         <strong>{t(M['content.transparency_tool.latest_published_snapshot'])}</strong>
         {#if publishedTransparency?.publicationVersion?.version !== null && publishedTransparency?.publicationVersion?.version !== undefined}
-          <span class="pill pill--passed">v{publishedTransparency.publicationVersion.version}</span>
+          <span class="smrt-content-transparency-tool__pill smrt-content-transparency-tool__pill--passed" data-smrt-part="badge">v{publishedTransparency.publicationVersion.version}</span>
         {/if}
       </div>
 
@@ -214,7 +214,7 @@ async function loadTransparency(contentIdToLoad = savedContentId) {
           {t(M['content.transparency_tool.timeline_and_corrections'], { events: publishedTransparency.versionHistory.length, corrections: publishedTransparency.corrections.length })}
         </span>
       {:else}
-        <p class="empty-copy">
+        <p class="smrt-content-transparency-tool__empty" data-smrt-part="empty">
           {t(M['content.transparency_tool.no_published_snapshot'])}
         </p>
       {/if}
@@ -224,114 +224,111 @@ async function loadTransparency(contentIdToLoad = savedContentId) {
 
 <style>
 @layer smrt.reset, smrt.structure, smrt.theme;
-@layer smrt.theme {
+@layer smrt.structure {
   /* The tool lays itself out by its own width, not the viewport, so it
-     fits a full page, a side panel, the assistant dock or a phone. */
-  .governance-tool {
+  fits a full page, a side panel, the assistant dock or a phone. */
+  .smrt-content-transparency-tool__root {
     container-type: inline-size;
     container-name: governance-tool;
   }
-
-  .governance-tool,
-  .tool-list,
-  .tool-list-section,
-  .transparency-card {
+  .smrt-content-transparency-tool__root,
+  .smrt-content-transparency-tool__list,
+  .smrt-content-transparency-tool__list-section,
+  .smrt-content-transparency-tool__card {
     display: flex;
     flex-direction: column;
     gap: 0.75rem;
   }
-
-  .transparency-stats {
+  .smrt-content-transparency-tool__stats {
     display: grid;
     gap: 0.75rem;
     grid-template-columns: repeat(auto-fit, minmax(min(120px, 100%), 1fr));
   }
-
-  .transparency-stat,
-  .transparency-card,
-  .transparency-list-item {
-    background: var(--smrt-card-background, var(--smrt-color-surface));
-    border: var(--smrt-card-border, var(--smrt-hairline));
-    box-shadow: var(--smrt-card-shadow, none);
-    border-radius: 0.75rem;
-  }
-
-  .transparency-stat {
+  .smrt-content-transparency-tool__stat {
     padding: 0.8rem;
     display: flex;
     flex-direction: column;
     gap: 0.25rem;
   }
-
-  .transparency-card {
+  .smrt-content-transparency-tool__card {
     padding: 0.9rem;
   }
-
-  .tool-card-header {
+  .smrt-content-transparency-tool__header {
     display: flex;
     align-items: center;
     justify-content: space-between;
     gap: 0.75rem;
   }
-
-  .transparency-list-item {
-    background: color-mix(in srgb, var(--smrt-color-on-surface) 6%, transparent);
+  .smrt-content-transparency-tool__item {
     padding: 0.7rem 0.8rem;
     display: flex;
     flex-direction: column;
     gap: 0.2rem;
   }
-
-  .transparency-card span,
-  .transparency-list-item span,
-  .transparency-stat span,
-  .empty-copy,
-  .section-caption {
-    color: var(--smrt-color-on-surface-variant);
-    font-size: var(--smrt-typography-body-medium-size, 0.85rem);
-  }
-
-  .transparency-card-prompt,
-  .empty-copy {
+  .smrt-content-transparency-tool__prompt,
+  .smrt-content-transparency-tool__empty {
     margin: 0;
   }
-
-  .transparency-card-prompt {
-    color: var(--smrt-color-on-surface-variant);
+  .smrt-content-transparency-tool__prompt {
     white-space: pre-wrap;
   }
-
-  .pill {
-    border-radius: var(--smrt-radius-full);
+  .smrt-content-transparency-tool__pill {
     padding: 0.2rem 0.55rem;
-    font-size: var(--smrt-typography-label-medium-size, 0.75rem);
-    font-weight: var(--smrt-typography-weight-bold, 700);
-    text-transform: capitalize;
   }
-
-  .pill--passed {
-    background: color-mix(in srgb, var(--smrt-color-success) 14%, transparent);
-    color: var(--smrt-color-on-success-container);
-  }
-
-  .pill--neutral {
-    background: color-mix(in srgb, var(--smrt-color-primary) 14%, transparent);
-    color: var(--smrt-color-on-primary-container);
-  }
-
-  .tool-error {
+  .smrt-content-transparency-tool__error {
     margin: 0;
-    border-radius: 0.6rem;
     padding: 0.75rem 0.9rem;
-    background: color-mix(in srgb, var(--smrt-color-error) 10%, transparent);
-    color: var(--smrt-color-on-error-container);
-    font-size: var(--smrt-typography-body-medium-size, 0.9rem);
   }
-
   @container governance-tool (max-width: 30rem) {
-    .tool-card-header {
+    .smrt-content-transparency-tool__header {
       flex-wrap: wrap;
     }
   }
 }
+
+@layer smrt.theme {
+  .smrt-content-transparency-tool__stat,
+  .smrt-content-transparency-tool__card,
+  .smrt-content-transparency-tool__item {
+    background: var(--smrt-card-background, var(--smrt-color-surface));
+    border: var(--smrt-card-border, var(--smrt-hairline));
+    box-shadow: var(--smrt-card-shadow, none);
+    border-radius: 0.75rem;
+  }
+  .smrt-content-transparency-tool__item {
+    background: color-mix(in srgb, var(--smrt-color-on-surface) 6%, transparent);
+  }
+  .smrt-content-transparency-tool__card span,
+  .smrt-content-transparency-tool__item span,
+  .smrt-content-transparency-tool__stat span,
+  .smrt-content-transparency-tool__empty,
+  .smrt-content-transparency-tool__caption {
+    color: var(--smrt-color-on-surface-variant);
+    font-size: var(--smrt-typography-body-medium-size, 0.85rem);
+  }
+  .smrt-content-transparency-tool__prompt {
+    color: var(--smrt-color-on-surface-variant);
+  }
+  .smrt-content-transparency-tool__pill {
+    border-radius: var(--smrt-radius-full);
+    font-size: var(--smrt-typography-label-medium-size, 0.75rem);
+    font-weight: var(--smrt-typography-weight-bold, 700);
+    text-transform: capitalize;
+  }
+  .smrt-content-transparency-tool__pill--passed {
+    background: color-mix(in srgb, var(--smrt-color-success) 14%, transparent);
+    color: var(--smrt-color-on-success-container);
+  }
+  .smrt-content-transparency-tool__pill--neutral {
+    background: color-mix(in srgb, var(--smrt-color-primary) 14%, transparent);
+    color: var(--smrt-color-on-primary-container);
+  }
+  .smrt-content-transparency-tool__error {
+    border-radius: 0.6rem;
+    background: color-mix(in srgb, var(--smrt-color-error) 10%, transparent);
+    color: var(--smrt-color-on-error-container);
+    font-size: var(--smrt-typography-body-medium-size, 0.9rem);
+  }
+}
+
 </style>

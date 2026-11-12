@@ -271,24 +271,24 @@ onMount(() => {
 </script>
 
 {#if presentation === 'compact'}
-<div class="connect" data-smrt-component="ConnectAi" data-variant={variant}>
+<div class="smrt-connect-ai__connect" data-smrt-component="ConnectAi" data-variant={variant}>
   {#if !compactInfo}
-    <p class="sh-muted" role="status">Looking for the AI you can use on this computer…</p>
+    <p class="smrt-app-shell__muted" role="status">Looking for the AI you can use on this computer…</p>
   {:else}
     {@const gpt = chatgptAction(compactInfo)}
-    <ul class="sh-list tools" aria-label="Your AI">
+    <ul class="smrt-app-shell__list smrt-connect-ai__tools" aria-label="Your AI">
       {#each mainTools as tool (tool.tool)}
         {@render toolRow(tool, compactInfo)}
       {/each}
-      <li class="tool" id="chatgpt">
-        <div class="what">
+      <li class="smrt-connect-ai__tool" id="chatgpt">
+        <div class="smrt-connect-ai__what">
           <strong>ChatGPT</strong>
-          <span class="sh-muted">{t(M['ui.connect_ai.chatgpt_recommended'])}</span>
-          <span class="sh-muted">{chatgptDescription(compactInfo)}</span>
+          <span class="smrt-app-shell__muted">{t(M['ui.connect_ai.chatgpt_recommended'])}</span>
+          <span class="smrt-app-shell__muted">{chatgptDescription(compactInfo)}</span>
           {#if variant === 'settings' && compactInfo.chatgpt?.signedIn && chatgptState?.models?.length}
-            <label class="model">
-              <span class="sh-muted">Model</span>
-              <Select class="sh-input" disabled={busy} value={chatgptState.model ?? ''} onchange={pickModel}>
+            <label class="smrt-connect-ai__model">
+              <span class="smrt-app-shell__muted">Model</span>
+              <Select class="smrt-app-shell__input" disabled={busy} value={chatgptState.model ?? ''} onchange={pickModel}>
                 <option value="">{t(M['ui.connect_ai.recommended_model'])}</option>
                 {#each chatgptState.models as m (m.id)}
                   <option value={m.id}>{m.label}</option>
@@ -297,19 +297,19 @@ onMount(() => {
             </label>
           {/if}
         </div>
-        <div class="row-actions">
+        <div class="smrt-connect-ai__row-actions">
           {#if gpt.kind === 'in-use'}
-            <span class="sh-badge sh-badge-ok">{gpt.label}</span>
+            <span class="smrt-app-shell__badge smrt-app-shell__badge-ok">{gpt.label}</span>
           {:else}
             <Button
               type="button"
-              class="sh-btn {gpt.kind === 'use' || gpt.kind === 'sign-in' ? 'sh-btn-primary' : ''}"
+              class="smrt-app-shell__btn {gpt.kind === 'use' || gpt.kind === 'sign-in' ? 'smrt-app-shell__btn-primary' : ''}"
               disabled={busy || gpt.kind === 'waiting'}
               onclick={() => (gpt.kind === 'use' ? useChatGPT() : signInChatGPT())}
             >{gpt.label}</Button>
           {/if}
           {#if compactInfo.chatgpt?.signedIn}
-            <Button type="button" class="sh-btn" disabled={busy} onclick={signOutOfChatGPT}>Sign out</Button>
+            <Button type="button" class="smrt-app-shell__btn" disabled={busy} onclick={signOutOfChatGPT}>Sign out</Button>
           {/if}
         </div>
       </li>
@@ -318,43 +318,43 @@ onMount(() => {
       {/each}
     </ul>
     {#if signInUrl}
-      <p class="api">
-        <a class="sh-link" href={signInUrl} target="_blank" rel="noopener noreferrer">Open the ChatGPT sign-in page<span class="sh-sr-only"> (opens in a new tab)</span></a>
+      <p class="smrt-connect-ai__api">
+        <a class="smrt-app-shell__link" href={signInUrl} target="_blank" rel="noopener noreferrer">Open the ChatGPT sign-in page<span class="smrt-app-shell__sr-only"> (opens in a new tab)</span></a>
       </p>
     {/if}
 
     {@const api = apiRow(compactInfo)}
     {#if api === 'in-use'}
-      <p class="api">
-        <span class="sh-badge sh-badge-ok">In use</span> An API key (saved here, or found in this computer's settings).
+      <p class="smrt-connect-ai__api">
+        <span class="smrt-app-shell__badge smrt-app-shell__badge-ok">In use</span> An API key (saved here, or found in this computer's settings).
       </p>
     {:else if api === 'available'}
-      <p class="api">
+      <p class="smrt-connect-ai__api">
         You also have an API key available.
-        <Button type="button" class="sh-btn sh-btn-small" disabled={busy} onclick={useApi}>Use my API key</Button>
+        <Button type="button" class="smrt-app-shell__btn smrt-app-shell__btn-small" disabled={busy} onclick={useApi}>Use my API key</Button>
       </p>
     {:else if !ready}
-      <p class="api sh-muted">Nothing connected yet.</p>
+      <p class="smrt-connect-ai__api smrt-app-shell__muted">Nothing connected yet.</p>
     {/if}
 
-    <p class="sh-muted legal">
+    <p class="smrt-app-shell__muted smrt-connect-ai__legal">
       Claude Code runs the app you already have installed, signed in the way its
       maker requires. Sign in with ChatGPT uses OpenAI's own sign-in page, a
-      <a class="sh-link" href="https://developers.openai.com/siwc/token-sharing-open-source/preview-limitations" target="_blank" rel="noopener noreferrer">preview for open source apps<span class="sh-sr-only"> (opens in a new tab)</span></a>.
+      <a class="smrt-app-shell__link" href="https://developers.openai.com/siwc/token-sharing-open-source/preview-limitations" target="_blank" rel="noopener noreferrer">preview for open source apps<span class="smrt-app-shell__sr-only"> (opens in a new tab)</span></a>.
       Either bills your own account, and this app never sees your password.
     </p>
 
-    <p class="advanced">
-      <a class="sh-link" href={safeHref(apiKeyHref) ?? undefined}>Advanced: use an API key or another provider</a>
+    <p class="smrt-connect-ai__advanced">
+      <a class="smrt-app-shell__link" href={safeHref(apiKeyHref) ?? undefined}>Advanced: use an API key or another provider</a>
     </p>
   {/if}
 
-  <p class="sh-alert {failed ? 'sh-alert-error' : message ? 'sh-alert-ok' : ''} note" role={failed ? 'alert' : 'status'} hidden={!message && !failed}>{message || (failed ? t(M['ui.connect_ai.error']) : '')}</p>
-  <p class="sh-sr-only" role="status">{ready ? 'The assistant is ready.' : ''}</p>
+  <p class="smrt-app-shell__alert {failed ? 'smrt-app-shell__alert-error' : message ? 'smrt-app-shell__alert-ok' : ''} smrt-connect-ai__note" role={failed ? 'alert' : 'status'} hidden={!message && !failed}>{message || (failed ? t(M['ui.connect_ai.error']) : '')}</p>
+  <p class="smrt-app-shell__sr-only" role="status">{ready ? 'The assistant is ready.' : ''}</p>
 </div>
 
 {:else}
-<section class="smrt-connect-ai" data-smrt-component="ConnectAi" data-variant={variant} aria-labelledby={headingId ?? titleId} aria-busy={busy}>
+<section class="smrt-connect-ai__root" data-smrt-component="ConnectAi" data-variant={variant} aria-labelledby={headingId ?? titleId} aria-busy={busy}>
   {#if !headingId}<h2 id={titleId}>{t(M['ui.connect_ai.title'])}</h2>{/if}
   {#if !info}
     <p role="status">{t(M['ui.connect_ai.loading'])}</p>
@@ -445,11 +445,11 @@ onMount(() => {
 
 {#snippet toolRow(tool: ConnectAiState['tools'][number], current: ConnectAiState)}
   {@const action = toolAction(tool, current)}
-  <li class="tool">
-    <div class="what">
+  <li class="smrt-connect-ai__tool">
+    <div class="smrt-connect-ai__what">
       <strong>{tool.label}</strong>
-      {#if tool.tool === 'codex'}<span class="sh-muted">{t(M['ui.connect_ai.codex_description'])}</span>{/if}
-      <span class="sh-muted">
+      {#if tool.tool === 'codex'}<span class="smrt-app-shell__muted">{t(M['ui.connect_ai.codex_description'])}</span>{/if}
+      <span class="smrt-app-shell__muted">
         {#if !tool.installed}
           Not installed on this computer.
         {:else if tool.signedIn === null}
@@ -466,17 +466,17 @@ onMount(() => {
     </div>
     {#if action.kind === 'install'}
       <a
-        class="sh-btn"
+        class="smrt-app-shell__btn"
         href={safeHref(tool.installUrl) ?? undefined}
         target="_blank"
         rel="noopener noreferrer"
-      >{action.label}<span class="sh-sr-only"> for {tool.label} (opens in a new tab)</span></a>
+      >{action.label}<span class="smrt-app-shell__sr-only"> for {tool.label} (opens in a new tab)</span></a>
     {:else if action.kind === 'in-use'}
-      <span class="sh-badge sh-badge-ok">{action.label}</span>
+      <span class="smrt-app-shell__badge smrt-app-shell__badge-ok">{action.label}</span>
     {:else}
       <Button
         type="button"
-        class="sh-btn {action.kind === 'use' || action.kind === 'sign-in' ? 'sh-btn-primary' : ''}"
+        class="smrt-app-shell__btn {action.kind === 'use' || action.kind === 'sign-in' ? 'smrt-app-shell__btn-primary' : ''}"
         disabled={busy || action.kind === 'waiting'}
         onclick={() => (action.kind === 'retry' ? refresh() : use(tool))}
       >{action.label}</Button>
@@ -486,13 +486,14 @@ onMount(() => {
 
 <style>
 @layer smrt.reset, smrt.structure, smrt.theme;
-@layer smrt.theme {
-  .tools {
+
+@layer smrt.structure {
+  .smrt-connect-ai__tools {
     list-style: none;
     margin: 0;
     padding: 0;
   }
-  .tool {
+  .smrt-connect-ai__tool {
     display: flex;
     flex-wrap: wrap;
     align-items: center;
@@ -500,38 +501,67 @@ onMount(() => {
     gap: var(--smrt-spacing-2) var(--smrt-spacing-3);
     padding-block: var(--smrt-spacing-2);
   }
-  .what {
+  .smrt-connect-ai__what {
     display: flex;
     flex-direction: column;
     min-inline-size: 12rem;
     flex: 1 1 12rem;
   }
-  .row-actions {
+  .smrt-connect-ai__row-actions {
     display: flex;
     flex-wrap: wrap;
     gap: var(--smrt-spacing-2);
   }
-  .model {
+  .smrt-connect-ai__model {
     display: flex;
     flex-direction: column;
     gap: var(--smrt-spacing-1);
     margin-block-start: var(--smrt-spacing-2);
     max-inline-size: 18rem;
   }
-  .legal,
-  .advanced,
-  .api {
+  .smrt-connect-ai__legal,
+  .smrt-connect-ai__advanced,
+  .smrt-connect-ai__api {
     margin-block: var(--smrt-spacing-3) 0;
   }
-  .note {
+  .smrt-connect-ai__note {
     margin-block-start: var(--smrt-spacing-3);
   }
-  .smrt-connect-ai { display: grid; gap: var(--smrt-spacing-4); color: var(--smrt-color-on-surface); }
-  .smrt-connect-ai ul { display: grid; gap: var(--smrt-spacing-3); list-style: none; margin: 0; padding: 0; }
-  .smrt-connect-ai h2, .smrt-connect-ai h3, .smrt-connect-ai p { margin: 0; }
-  .smrt-connect-ai p { margin-block-start: var(--smrt-spacing-2); }
-  .smrt-connect-ai__row, .smrt-connect-ai__actions { display: flex; flex-wrap: wrap; align-items: center; justify-content: space-between; gap: var(--smrt-spacing-3); }
-  .smrt-connect-ai [role='alert'] { color: var(--smrt-color-error); }
-  .smrt-connect-ai a { color: var(--smrt-color-primary); }
+  .smrt-connect-ai__root {
+    display: grid;
+    gap: var(--smrt-spacing-4);
+  }
+  .smrt-connect-ai__root ul {
+    display: grid;
+    gap: var(--smrt-spacing-3);
+    list-style: none;
+    margin: 0;
+    padding: 0;
+  }
+  .smrt-connect-ai__root h2, .smrt-connect-ai__root h3, .smrt-connect-ai__root p {
+    margin: 0;
+  }
+  .smrt-connect-ai__root p {
+    margin-block-start: var(--smrt-spacing-2);
+  }
+  .smrt-connect-ai__row, .smrt-connect-ai__actions {
+    display: flex;
+    flex-wrap: wrap;
+    align-items: center;
+    justify-content: space-between;
+    gap: var(--smrt-spacing-3);
+  }
+}
+
+@layer smrt.theme {
+  .smrt-connect-ai__root {
+    color: var(--smrt-color-on-surface);
+  }
+  .smrt-connect-ai__root [role='alert'] {
+    color: var(--smrt-color-error);
+  }
+  .smrt-connect-ai__root a {
+    color: var(--smrt-color-primary);
+  }
 }
 </style>

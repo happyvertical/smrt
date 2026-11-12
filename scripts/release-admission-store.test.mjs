@@ -218,3 +218,51 @@ test('malformed created tree or commit is rejected before any ref update', async
     assert.equal(server.head, head.revision);
   }
 });
+
+test('transient 5xx on reads and object creation is retried; persistent 5xx still fails', async () => {
+  const server = github();
+  const fast = (fetchImpl) => createReleaseAdmissionStore({ repository, token: 't', fetchImpl, sleep: async () => {} });
+  const head = await fast(server.fetch).initialize(initial());
+  let failures = 2;
+  const flaky = async (url, options) => (options.method === 'GET' && failures-- > 0 ? { status: 503 } : server.fetch(url, options));
+  assert.deepEqual((await fast(flaky).read()).state, head.state);
+  const always = fast(async () => ({ status: 503 }));
+  await assert.rejects(always.read(), { code: 'github-request-rejected', status: 503 });
+});
+
+test('a ref update that lands but answers 5xx is recognized by its unique commit', async () => {
+  const server = github();
+  const head = await store(server).initialize(initial());
+  const lossy = async (url, options) => {
+    const response = await server.fetch(url, options);
+    return options.method === 'PATCH' ? { status: 503 } : response;
+  };
+  const backend = createReleaseAdmissionStore({ repository, token: 't', fetchImpl: lossy, sleep: async () => {} });
+  assert.equal(await backend.compareAndSwap(head.revision, admission('a')(head.state)), true);
+  const never = async (url, options) => (options.method === 'PATCH' ? { status: 503 } : server.fetch(url, options));
+  const backend2 = createReleaseAdmissionStore({ repository, token: 't', fetchImpl: never, sleep: async () => {} });
+  const cur = await backend2.read();
+  server.intercept = null;
+  await assert.rejects(backend2.compareAndSwap(cur.revision, admission('b')(cur.state)), { status: 503 });
+});
+
+test('POST retry, PATCH network loss and a competing writer after a PATCH 5xx are handled', async () => {
+  const server = github();
+  const make = (fetchImpl) => createReleaseAdmissionStore({ repository, token: 't', fetchImpl, sleep: async () => {} });
+  const head = await make(server.fetch).initialize(initial());
+  let postFailures = 1;
+  const flakyPost = async (url, options) => (options.method === 'POST' && postFailures-- > 0 ? { status: 502 } : server.fetch(url, options));
+  assert.equal(await make(flakyPost).compareAndSwap(head.revision, admission('a')(head.state)), true);
+  const cur = await make(server.fetch).read();
+  const lostNetwork = async (url, options) => {
+    if (options.method === 'PATCH') throw new Error('socket');
+    return server.fetch(url, options);
+  };
+  await assert.rejects(make(lostNetwork).compareAndSwap(cur.revision, admission('b')(cur.state)), { code: 'github-network-error' });
+  const racing = async (url, options) => {
+    if (options.method !== 'PATCH') return server.fetch(url, options);
+    await make(server.fetch).compareAndSwap(cur.revision, admission('c')(cur.state));
+    return { status: 503 };
+  };
+  assert.equal(await make(racing).compareAndSwap(cur.revision, admission('b')(cur.state)), false);
+});

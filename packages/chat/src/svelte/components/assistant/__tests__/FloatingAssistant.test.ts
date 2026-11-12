@@ -46,7 +46,7 @@ describe('FloatingAssistant', () => {
 
     await userEvent.keyboard('{Escape}');
     const panel = container.querySelector<HTMLElement>(
-      '.floating-assistant-panel',
+      '[data-smrt-part="panel"]',
     );
     await vi.waitFor(() => {
       expect(panel).toHaveAttribute('aria-hidden', 'true');
@@ -72,9 +72,10 @@ describe('FloatingAssistant', () => {
     expect(
       screen.queryByRole('button', { name: 'Open assistant' }),
     ).not.toBeInTheDocument();
-    expect(
-      container.querySelector('.floating-assistant-panel'),
-    ).toHaveAttribute('aria-hidden', 'true');
+    expect(container.querySelector('[data-smrt-part="panel"]')).toHaveAttribute(
+      'aria-hidden',
+      'true',
+    );
   });
 
   it.each([
@@ -112,9 +113,10 @@ describe('FloatingAssistant', () => {
     expect(
       screen.getByRole('button', { name: 'Open assistant' }),
     ).toBeVisible();
-    expect(
-      container.querySelector('.floating-assistant-panel'),
-    ).toHaveAttribute('aria-hidden', 'false');
+    expect(container.querySelector('[data-smrt-part="panel"]')).toHaveAttribute(
+      'aria-hidden',
+      'false',
+    );
   });
 
   it('preserves idle controls chrome by default for existing hosts', () => {
@@ -124,9 +126,10 @@ describe('FloatingAssistant', () => {
     expect(
       screen.getByRole('button', { name: 'Open assistant' }),
     ).toBeVisible();
-    expect(
-      container.querySelector('.floating-assistant-panel'),
-    ).toHaveAttribute('aria-hidden', 'false');
+    expect(container.querySelector('[data-smrt-part="panel"]')).toHaveAttribute(
+      'aria-hidden',
+      'false',
+    );
   });
 
   it('returns controls-only chrome to idle after a completed run', async () => {
@@ -142,7 +145,7 @@ describe('FloatingAssistant', () => {
       screen.queryByRole('button', { name: 'Open assistant' }),
     ).not.toBeInTheDocument();
     expect(
-      fixture.container.querySelector('.floating-assistant-panel'),
+      fixture.container.querySelector('[data-smrt-part="panel"]'),
     ).toHaveAttribute('aria-hidden', 'true');
   });
 
@@ -150,13 +153,13 @@ describe('FloatingAssistant', () => {
     const { container, rerender } = render(FloatingAssistant, {
       props: props(),
     });
-    expect(container.querySelector('.floating-assistant')).not.toHaveClass(
-      'bottom-left',
-    );
+    expect(
+      container.querySelector('[data-smrt-component="FloatingAssistant"]'),
+    ).not.toHaveClass('smrt-floating-assistant__bottom-left');
     rerender({ placement: 'bottom-left' });
-    expect(container.querySelector('.floating-assistant')).toHaveClass(
-      'bottom-left',
-    );
+    expect(
+      container.querySelector('[data-smrt-component="FloatingAssistant"]'),
+    ).toHaveClass('smrt-floating-assistant__bottom-left');
   });
 });
 
@@ -191,7 +194,7 @@ describe('FloatingAssistant decision authority', () => {
     );
     await fixture.rerender({ expanded: false });
     expect(
-      fixture.container.querySelector('.floating-assistant-panel'),
+      fixture.container.querySelector('[data-smrt-part="panel"]'),
     ).toHaveAttribute('aria-hidden', 'false');
     expect(fixture.evidence.keys).toEqual([]);
     expect(
@@ -220,7 +223,7 @@ describe('FloatingAssistant decision authority', () => {
     const sending = fixture.controller.send('tool');
     const decide = await screen.findByRole('button', { name: decision });
     expect(
-      fixture.container.querySelector('.floating-assistant-panel'),
+      fixture.container.querySelector('[data-smrt-part="panel"]'),
     ).toHaveAttribute('aria-hidden', 'false');
     await userEvent.keyboard('{Escape}');
     expect(fixture.evidence.executions).toBe(0);
@@ -255,10 +258,10 @@ describe('FloatingAssistant decision authority', () => {
     );
     await fixture.rerender({ expanded: false });
     expect(
-      fixture.container.querySelector('.floating-assistant-panel'),
+      fixture.container.querySelector('[data-smrt-part="panel"]'),
     ).toHaveAttribute('aria-hidden', 'false');
     expect(
-      fixture.container.querySelector('.floating-assistant-panel'),
+      fixture.container.querySelector('[data-smrt-part="panel"]'),
     ).not.toHaveAttribute('inert');
     expect(fixture.evidence.choices).toEqual([]);
     await userEvent.click(choice);
@@ -272,7 +275,9 @@ describe('FloatingAssistant decision authority', () => {
     expect(fixture.controller.run?.state).toBe('waiting');
     expect(fixture.controller.run?.waitingFor?.kind).toBe('choice');
     expect(
-      fixture.container.querySelector('.assistant-dock-run'),
+      fixture.container.querySelector(
+        '[data-smrt-component="AssistantDock"] [data-smrt-part="summary"]',
+      ),
     ).toHaveTextContent('Pick a layout');
     await userEvent.click(
       await screen.findByRole('button', { name: /Compact layout/ }),
@@ -422,7 +427,9 @@ describe('FloatingAssistant host visibility', () => {
         screen.queryByRole('button', { name: 'Open assistant' }),
       ).not.toBeInTheDocument();
       expect(
-        fixture.container.querySelector('.floating-assistant'),
+        fixture.container.querySelector(
+          '[data-smrt-component="FloatingAssistant"]',
+        ),
       ).toHaveAttribute('hidden');
       const hiddenLoads = fixture.evidence.loads;
       await vi.advanceTimersByTimeAsync(30001);

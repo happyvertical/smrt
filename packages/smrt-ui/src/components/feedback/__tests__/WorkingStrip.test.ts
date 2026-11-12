@@ -59,7 +59,7 @@ describe('WorkingStrip', () => {
     const strip = screen.getByTestId('working-strip');
     expect(strip).toHaveAttribute('data-phase', 'done');
     expect(strip.textContent).toContain('Done');
-    expect(container.querySelector('.working-strip__spinner')).toBeNull();
+    expect(container.querySelector('[data-smrt-part="spinner"]')).toBeNull();
     expect(screen.queryByRole('button', { name: 'Stop' })).toBeNull();
   });
 

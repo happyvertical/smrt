@@ -131,7 +131,7 @@ const methods = $derived(Object.entries(info.methods));
   onsubmit={save}
   novalidate aria-describedby={formError ? `${uid}-err` : undefined}>
   {#if formError}
-    <p class="sh-alert sh-alert-error" role="alert" id="{uid}-err">{formError}</p>
+    <p class="smrt-app-shell__alert smrt-app-shell__alert-error" role="alert" id="{uid}-err">{formError}</p>
   {/if}
   {#each specs as spec (spec.name)}
     <FieldInput
@@ -145,18 +145,18 @@ const methods = $derived(Object.entries(info.methods));
     />
   {/each}
   {#if specs.length === 0}
-    <p class="sh-muted">This model has no fields yet. Ask the assistant to add some.</p>
+    <p class="smrt-app-shell__muted">This model has no fields yet. Ask the assistant to add some.</p>
   {/if}
 
-  <div class="sh-actions">
-    <button type="submit" class="sh-btn sh-btn-primary" disabled={saving || specs.length === 0}>
+  <div class="smrt-app-shell__actions">
+    <button type="submit" class="smrt-app-shell__btn smrt-app-shell__btn-primary" disabled={saving || specs.length === 0}>
       {saving ? 'Saving…' : editing ? 'Save changes' : 'Create'}
     </button>
-    <a class="sh-btn" href={modelHref(model)}>{editing ? 'Back to list' : 'Cancel'}</a>
+    <a class="smrt-app-shell__btn" href={modelHref(model)}>{editing ? 'Back to list' : 'Cancel'}</a>
     {#if editing}
       <button
         type="button"
-        class="sh-btn sh-btn-danger"
+        class="smrt-app-shell__btn smrt-app-shell__btn-danger"
         onclick={() => {
           deleteError = '';
           confirming = true;
@@ -166,13 +166,13 @@ const methods = $derived(Object.entries(info.methods));
       </button>
     {/if}
   </div>
-  <p class="sh-muted" aria-live="polite" role="status">{saved ? 'Saved.' : ''}</p>
+  <p class="smrt-app-shell__muted" aria-live="polite" role="status">{saved ? 'Saved.' : ''}</p>
 </form>
 
 {#if pending}
-  <p class="sh-alert sh-alert-warn" role="status">
+  <p class="smrt-app-shell__alert smrt-app-shell__alert-warn" role="status">
     Waiting for your approval: {pending.summary}. Nothing is deleted yet.
-    <a class="sh-link" href="/approvals">Review it on the Approvals page</a>.
+    <a class="smrt-app-shell__link" href="/approvals">Review it on the Approvals page</a>.
   </p>
 {/if}
 

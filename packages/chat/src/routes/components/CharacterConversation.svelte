@@ -518,11 +518,16 @@ onMount(() => {
 });
 </script>
 
-<section class="character-conversation" class:bottom-left={helperPreferences?.placement === 'bottom-left'} aria-label={t(M['chat.character_conversation.saved_conversation'])}>
-  <div class:bottom-left={helperPreferences?.placement === 'bottom-left'} class:bottom-right={helperPreferences?.placement !== 'bottom-left'} class="character-stage" bind:this={target} aria-label={helperPreferences?.name || t(M['chat.character_conversation.saved_character'])}></div>
-  {#if helperPreferences}<p class="helper-name">{helperPreferences.name}</p>{/if}
+<section class="smrt-character-conversation__root" aria-label={t(M['chat.character_conversation.saved_conversation'])}
+  class:smrt-character-conversation__bottom-left={helperPreferences?.placement === 'bottom-left'} data-smrt-component="CharacterConversation"
+>
+  <div class="smrt-character-conversation__stage" data-smrt-part="panel" bind:this={target} aria-label={helperPreferences?.name || t(M['chat.character_conversation.saved_character'])}
+  class:smrt-character-conversation__bottom-left={helperPreferences?.placement === 'bottom-left'}
+  class:smrt-character-conversation__bottom-right={helperPreferences?.placement !== 'bottom-left'}
+></div>
+  {#if helperPreferences}<p class="smrt-character-conversation__name" data-smrt-part="title">{helperPreferences.name}</p>{/if}
   {#if unavailable}<p role="status">{unavailable}</p>{/if}
-  <div class="conversation-controls">
+  <div class="smrt-character-conversation__controls" data-smrt-part="actions">
     <Button type="button" variant="secondary" aria-pressed={listening} onclick={toggleListening}>
       {listening ? 'Leave listening mode' : 'Listening mode'}
     </Button>
@@ -536,7 +541,7 @@ onMount(() => {
     <CharacterConversationVoice onfinal={sendSpokenTurn} heardSubtitles={helperPreferences?.heardSubtitles ?? true} disabled={!conversationReady || attentionRequired || turnPending} />
   {/if}
   {#if listening && latestReply}
-    <section class="latest-reply" aria-label={t(M['chat.character_conversation.assistant_reply'])} aria-live={audioEnabled && !speechError ? 'off' : 'polite'}>
+    <section class="smrt-character-conversation__reply" data-smrt-part="panel" aria-label={t(M['chat.character_conversation.assistant_reply'])} aria-live={audioEnabled && !speechError ? 'off' : 'polite'}>
       <p>{latestReply}</p>
     </section>
   {/if}
@@ -546,33 +551,72 @@ onMount(() => {
 
 <style>
 @layer smrt.reset, smrt.structure, smrt.theme;
-@layer smrt.theme {
+@layer smrt.structure {
   /* The dock is a fixed bottom-corner surface. Keep the listening composer
-     above its launcher/closed bar so a pointer can reach Submit. */
-  .character-conversation { position: relative; min-block-size: 18rem; padding-block-end: 10rem; }
-  .character-stage { min-block-size: 16rem; inline-size: min(18rem, 48vw); margin: 0 auto; }
-  .character-stage.bottom-left { margin-inline: 0 auto; }
-  .character-stage.bottom-right { margin-inline: auto 0; }
-  .helper-name { margin: 0; text-align: center; font-weight: var(--smrt-typography-weight-semibold, 600); }
-  .conversation-controls { display: grid; justify-items: center; gap: .5rem; }
-  .latest-reply { margin-block: var(--smrt-spacing-3); }
-  .latest-reply p { margin: 0; }
-  .character-conversation.bottom-left .conversation-controls { justify-items: start; }
-  .character-stage :global(canvas), .character-stage :global(svg) { inline-size: 100%; block-size: 100%; }
+  above its launcher/closed bar so a pointer can reach Submit. */
+  .smrt-character-conversation__root {
+    position: relative;
+    min-block-size: 18rem;
+    padding-block-end: 10rem;
+  }
+  .smrt-character-conversation__stage {
+    min-block-size: 16rem;
+    inline-size: min(18rem, 48vw);
+    margin: 0 auto;
+  }
+  .smrt-character-conversation__stage.smrt-character-conversation__bottom-left {
+    margin-inline: 0 auto;
+  }
+  .smrt-character-conversation__stage.smrt-character-conversation__bottom-right {
+    margin-inline: auto 0;
+  }
+  .smrt-character-conversation__name {
+    margin: 0;
+  }
+  .smrt-character-conversation__controls {
+    display: grid;
+    justify-items: center;
+    gap: .5rem;
+  }
+  .smrt-character-conversation__reply {
+    margin-block: var(--smrt-spacing-3);
+  }
+  .smrt-character-conversation__reply p {
+    margin: 0;
+  }
+  .smrt-character-conversation__root.smrt-character-conversation__bottom-left .smrt-character-conversation__controls {
+    justify-items: start;
+  }
+  .smrt-character-conversation__stage :global(canvas), .smrt-character-conversation__stage :global(svg) {
+    inline-size: 100%;
+    block-size: 100%;
+  }
   @media (min-width: 48rem) {
-    .character-conversation { padding-inline-end: 30rem; }
-    .character-conversation.bottom-left {
+    .smrt-character-conversation__root {
+      padding-inline-end: 30rem;
+    }
+    .smrt-character-conversation__root.smrt-character-conversation__bottom-left {
       padding-inline-start: 30rem;
       padding-inline-end: 0;
     }
-    .character-conversation :global(.character-conversation-voice) {
+    .smrt-character-conversation__root :global([data-smrt-component="CharacterConversationVoice"]) {
       inline-size: min(100%, calc(100vw - 32rem));
     }
   }
   @media (max-width: 47.99rem) {
     /* An expanded dock can fill the lower phone viewport; preserve a scroll
-       lane above it for the voice composer rather than letting it be covered. */
-    .character-conversation { padding-block-end: min(42rem, calc(100dvh - 4rem)); }
+    lane above it for the voice composer rather than letting it be covered. */
+    .smrt-character-conversation__root {
+      padding-block-end: min(42rem, calc(100dvh - 4rem));
+    }
   }
 }
+
+@layer smrt.theme {
+  .smrt-character-conversation__name {
+    text-align: center;
+    font-weight: var(--smrt-typography-weight-semibold, 600);
+  }
+}
+
 </style>

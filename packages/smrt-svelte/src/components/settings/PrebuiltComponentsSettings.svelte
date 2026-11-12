@@ -50,7 +50,7 @@ async function save(next: boolean) {
   <Card>
     <h2 id={titleId}>{t(M['ui.onboarding.prebuilt'])}</h2>
     <p>{t(M['ui.onboarding.prebuilt_hint'])}</p>
-    <div class="choice">
+    <div class="smrt-prebuilt-components-settings__choice">
       <Toggle label={t(M['ui.onboarding.prebuilt_toggle'])} bind:checked disabled={busy} onchange={save} />
       <span role="status">{t(checked ? M['ui.onboarding.prebuilt_on'] : M['ui.onboarding.prebuilt_off'])}</span>
     </div>
@@ -64,8 +64,20 @@ async function save(next: boolean) {
 
 <style>
 @layer smrt.reset, smrt.structure, smrt.theme;
+
 @layer smrt.structure {
-  .choice { display: flex; flex-wrap: wrap; align-items: center; gap: var(--smrt-spacing-3); margin-block: var(--smrt-spacing-4); }
-  [role='alert'] { color: var(--smrt-color-error); }
+  .smrt-prebuilt-components-settings__choice {
+    display: flex;
+    flex-wrap: wrap;
+    align-items: center;
+    gap: var(--smrt-spacing-3);
+    margin-block: var(--smrt-spacing-4);
+  }
+}
+
+@layer smrt.theme {
+  [role='alert'] {
+    color: var(--smrt-color-error);
+  }
 }
 </style>

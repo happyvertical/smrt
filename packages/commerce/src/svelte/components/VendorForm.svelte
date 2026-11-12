@@ -119,7 +119,7 @@ function attachEnhance(form: HTMLFormElement) {
 
 <Form
   bind:this={formComponent}
-  class="party-form"
+  class="smrt-vendor-form__form"
   action={transport.action}
   method={transport.method ?? 'post'}
   preventDefault={false}
@@ -134,20 +134,20 @@ function attachEnhance(form: HTMLFormElement) {
     <Input interaction={false} type="hidden" name={names.profileId} value={values.profileId} />
   {/if}
   {#if !readOnly && canSubmit}
-    <span class="native-default-submit" aria-hidden="true">
+    <span class="smrt-vendor-form__native-submit" aria-hidden="true" data-smrt-part="actions">
       <Button type="submit" name={intentName} value={transport.saveIntent ?? 'save'} tabindex={-1}>
         {labels.save ?? (labels.singular ? t(M[mode === 'create' ? 'commerce.party.add_named' : 'commerce.party.save_named'], { singular: labels.singular }) : t(M[mode === 'create' ? 'commerce.vendor.add' : 'commerce.vendor.save']))}
       </Button>
     </span>
   {/if}
 
-  {#if errors.form}<p class="form-error" role="alert">{errors.form}</p>{/if}
+  {#if errors.form}<p class="smrt-vendor-form__error" role="alert" data-smrt-part="error">{errors.form}</p>{/if}
   <ErrorSummary errors={errorList} />
 
-  <fieldset class="form-section">
+  <fieldset class="smrt-vendor-form__section" data-smrt-part="group">
     <legend>{t(M['commerce.party.identity'])}</legend>
     {#if lockIdentityKind && values.identityKind}
-      <p class="locked-value">{t(M['commerce.party.identity'])}: {values.identityKind === 'business' ? t(M['commerce.party.identity_business']) : t(M['commerce.party.identity_person'])}</p>
+      <p class="smrt-vendor-form__locked-value" data-smrt-part="value">{t(M['commerce.party.identity'])}: {values.identityKind === 'business' ? t(M['commerce.party.identity_business']) : t(M['commerce.party.identity_person'])}</p>
       <Input interaction={false} type="hidden" name={names.identityKind} value={values.identityKind} />
     {:else}
       <FormGroup label={t(M['commerce.party.identity'])} required error={errors.fields?.identityKind}>
@@ -161,7 +161,7 @@ function attachEnhance(form: HTMLFormElement) {
     <FormGroup label={t(M['commerce.party.name'], { singular })} required error={errors.fields?.name}>
       <Input name={names.name} value={values.name ?? ''} maxlength={160} required readonly={readOnly} />
     </FormGroup>
-    <div class="field-grid">
+    <div class="smrt-vendor-form__field-grid" data-smrt-part="group">
       <FormGroup label={t(M['commerce.party.profile_email'])} error={errors.fields?.email}>
         <Input name={names.email} type="email" value={values.email ?? ''} maxlength={320} readonly={readOnly} />
       </FormGroup>
@@ -181,9 +181,9 @@ function attachEnhance(form: HTMLFormElement) {
     </FormGroup>
   </fieldset>
 
-  <fieldset class="form-section">
+  <fieldset class="smrt-vendor-form__section" data-smrt-part="group">
     <legend>{t(M['commerce.party.commercial_terms'])}</legend>
-    <div class="field-grid">
+    <div class="smrt-vendor-form__field-grid" data-smrt-part="group">
       <FormGroup label={t(M['commerce.vendor.lead_time'])} error={errors.fields?.leadTimeDays}>
         <Input name={names.leadTimeDays} inputmode="numeric" value={values.leadTimeDays ?? ''} readonly={readOnly} />
       </FormGroup>
@@ -237,14 +237,68 @@ function attachEnhance(form: HTMLFormElement) {
 
 <style>
 @layer smrt.reset, smrt.structure, smrt.theme;
-@layer smrt.theme {
-  :global(.party-form) { display: grid; gap: var(--smrt-spacing-5); min-inline-size: 0; padding-block-end: var(--smrt-spacing-8); }
-  .native-default-submit { position: absolute; inline-size: 1px; block-size: 1px; padding: 0; margin: -1px; overflow: hidden; clip: rect(0, 0, 0, 0); white-space: nowrap; border: 0; }
-  .form-error { margin: 0; padding: var(--smrt-spacing-4); border-inline-start: 4px solid var(--smrt-color-error); background: var(--smrt-color-error-container); color: var(--smrt-color-on-error-container); border-radius: var(--smrt-radius-small); }
-  .form-section { min-inline-size: 0; margin: 0; padding: var(--smrt-spacing-4); border: var(--smrt-hairline); border-radius: var(--smrt-radius-medium); }
-  legend { padding-inline: var(--smrt-spacing-2); font: var(--smrt-typography-title-medium-font); color: var(--smrt-color-on-surface); }
-  .locked-value { color: var(--smrt-color-on-surface-variant); }
-  .field-grid { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 0 var(--smrt-spacing-4); }
-  @media (max-width: 42rem) { .field-grid { grid-template-columns: minmax(0, 1fr); } }
+@layer smrt.structure {
+  :global(.smrt-vendor-form__form) {
+    display: grid;
+    gap: var(--smrt-spacing-5);
+    min-inline-size: 0;
+    padding-block-end: var(--smrt-spacing-8);
+  }
+  .smrt-vendor-form__native-submit {
+    position: absolute;
+    inline-size: 1px;
+    block-size: 1px;
+    padding: 0;
+    margin: -1px;
+    overflow: hidden;
+    clip: rect(0, 0, 0, 0);
+    white-space: nowrap;
+  }
+  .smrt-vendor-form__error {
+    margin: 0;
+    padding: var(--smrt-spacing-4);
+  }
+  .smrt-vendor-form__section {
+    min-inline-size: 0;
+    margin: 0;
+    padding: var(--smrt-spacing-4);
+  }
+  legend {
+    padding-inline: var(--smrt-spacing-2);
+  }
+  .smrt-vendor-form__field-grid {
+    display: grid;
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+    gap: 0 var(--smrt-spacing-4);
+  }
+  @media (max-width: 42rem) {
+    .smrt-vendor-form__field-grid {
+      grid-template-columns: minmax(0, 1fr);
+    }
+  }
 }
+
+@layer smrt.theme {
+  .smrt-vendor-form__native-submit {
+    border: 0;
+  }
+  .smrt-vendor-form__error {
+    border-inline-start: 4px solid var(--smrt-color-error);
+    background: var(--smrt-color-error-container);
+    color: var(--smrt-color-on-error-container);
+    border-radius: var(--smrt-radius-small);
+  }
+  .smrt-vendor-form__section {
+    border: var(--smrt-hairline);
+    border-radius: var(--smrt-radius-medium);
+  }
+  legend {
+    font: var(--smrt-typography-title-medium-font);
+    color: var(--smrt-color-on-surface);
+  }
+  .smrt-vendor-form__locked-value {
+    color: var(--smrt-color-on-surface-variant);
+  }
+}
+
 </style>

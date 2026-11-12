@@ -315,8 +315,8 @@ $effect(() => {
 $effect(() => () => clearTimeout(timer));
 </script>
 
-<div class="relation-input" bind:this={rootEl} data-smrt-component="RelationInput">
-  <div class="field">
+<div class="smrt-relation-input__root" bind:this={rootEl} data-smrt-component="RelationInput">
+  <div class="smrt-relation-input__field" data-smrt-part="field">
     <Combobox
       {name}
       {label}
@@ -336,9 +336,9 @@ $effect(() => () => clearTimeout(timer));
       onvaluechange={handleValueChange}
     >
       {#snippet optionContent(option)}
-        <span class="option-label">{option.label}</span>
+        <span class="smrt-relation-input__option-label">{option.label}</span>
         {#if detailById.get(String(option.value))}
-          <span class="option-detail">{detailById.get(String(option.value))}</span>
+          <span class="smrt-relation-input__option-detail">{detailById.get(String(option.value))}</span>
         {/if}
       {/snippet}
       {#snippet footer()}
@@ -352,7 +352,7 @@ $effect(() => () => clearTimeout(timer));
       <Button
         variant="ghost"
         size="sm"
-        class="clear"
+        class="smrt-relation-input__clear"
         aria-label={clearLabel ?? `Clear ${label}`}
         onclick={clear}
       >
@@ -360,55 +360,62 @@ $effect(() => () => clearTimeout(timer));
       </Button>
     {/if}
   </div>
-  {#if description}<p id={hintId} class="hint">{description}</p>{/if}
+  {#if description}<p id={hintId} class="smrt-relation-input__hint" data-smrt-part="description">{description}</p>{/if}
   {#if onCreate}
     <Button
       variant="ghost"
       size="sm"
-      class="create"
+      class="smrt-relation-input__create"
       disabled={disabled || creating}
       onclick={create}
     >
       + {newLabel}
     </Button>
   {/if}
-  {#if error}<p id={errorId} class="error" role="alert">{error}</p>{/if}
+  {#if error}<p id={errorId} class="smrt-relation-input__error" data-smrt-part="error" role="alert">{error}</p>{/if}
 </div>
 
 <style>
 @layer smrt.reset, smrt.structure, smrt.theme;
-@layer smrt.theme {
-  .relation-input {
+@layer smrt.structure {
+  .smrt-relation-input__root {
     display: grid;
     gap: var(--smrt-spacing-1);
     min-width: 0;
   }
-  .field {
+  .smrt-relation-input__field {
     position: relative;
   }
-  .field :global(.clear) {
+  .smrt-relation-input__field :global(.smrt-relation-input__clear) {
     position: absolute;
     right: var(--smrt-spacing-1);
     bottom: var(--smrt-spacing-1);
   }
-  .option-label,
-  .option-detail {
+  .smrt-relation-input__option-label,
+  .smrt-relation-input__option-detail {
     display: block;
   }
-  .option-detail {
-    font-size: var(--smrt-typography-body-small-size, 0.75rem);
-    color: var(--smrt-color-on-surface-variant);
-  }
-  .hint,
-  .error {
+  .smrt-relation-input__hint,
+  .smrt-relation-input__error {
     margin: 0;
-    font-size: var(--smrt-typography-body-small-size, 0.75rem);
   }
-  .hint {
+}
+
+@layer smrt.theme {
+  .smrt-relation-input__option-detail {
+    font-size: var(--smrt-typography-body-small-size, 0.75rem);
     color: var(--smrt-color-on-surface-variant);
   }
-  .error {
+  .smrt-relation-input__hint,
+  .smrt-relation-input__error {
+    font-size: var(--smrt-typography-body-small-size, 0.75rem);
+  }
+  .smrt-relation-input__hint {
+    color: var(--smrt-color-on-surface-variant);
+  }
+  .smrt-relation-input__error {
     color: var(--smrt-color-error);
   }
 }
+
 </style>

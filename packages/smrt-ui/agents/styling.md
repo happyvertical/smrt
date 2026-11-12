@@ -27,6 +27,10 @@ breaking change, so follow these rules rather than improvising names.
 The gate is `pnpm check:component-roots` (part of `pnpm lint`). It fails when an
 exported component's root lacks its hook. Add the hook when you add a component;
 the codemod `node scripts/component-roots.mjs --write` is idempotent.
+The gate follows real TypeScript export statements (including direct `.svelte`
+exports), ignores commented examples and rune `.svelte.ts` modules, and fails
+if an exported component source is missing. Build generated sources before
+running it; generated components obey the same root and layer contract.
 
 ## Part hook: `data-smrt-part`
 
@@ -71,14 +75,123 @@ Notes:
 - `Tabs` uses `tab` for both the tablist button and the link-mode anchor,
   `list` for the tablist and the link-mode nav, and `trigger` for the overflow
   `<summary>`.
-- The wave-2 pilot also exposes Chip `body`/`close`; Alert `marker`/`body`/`title`/`message`/`actions`/`close`; Checkbox `input`/`box`/`indicator`/`label`; Switch `input`/`control`/`track`/`thumb`/`label`; and Tabs `row`/`overflow`/`body`/`indicator`/`marker`/`description`. Checkbox reuses `indicator` for the check and indeterminate dash. Badge, Input and Select have no owned internal parts. Other packages add parts incrementally under the same rules.
+- The wave-2 pilot also exposes Chip `body`/`close`; Alert `marker`/`body`/`title`/`message`/`actions`/`close`; Checkbox `input`/`control`/`indicator`/`label`; Switch `input`/`control`/`track`/`thumb`/`label`; and Tabs `row`/`overflow`/`body`/`indicator`/`marker`/`description`. Checkbox reuses `indicator` for the check and indeterminate dash. Badge, Input and Select have no owned internal parts. Other packages add parts incrementally under the same rules.
+
+### smrt-ui part vocabulary (wave 3)
+
+Use these names for the same roles throughout smrt-ui. Internal class names may
+be more specific; public parts describe the role. Repeat a part for repeated
+items or responsive alternatives, and scope it through its parent part or native
+attributes when needed. A component root, including a conditional or sibling
+root, carries only `data-smrt-component`, never `data-smrt-part`.
+
+`body` replaces generic `content`/`details`; `header` replaces `heading`;
+`description` replaces `hint`; `control` names the Checkbox/Radio mark shell.
+Calendar event representations share `event`, and their children share `time`,
+`title`, `body`, `meta`, and `label`. Responsive label lengths, required state,
+and dictation state do not create new part names. `empty`, `error`, and `status`
+name feedback regions; they do not replace native/ARIA state attributes.
+
+| Part | Role | Examples |
+| --- | --- | --- |
+| `action` | An individual secondary command. | `CameraCapture`, `DocumentViewer` |
+| `actions` | A group of commands or toolbar actions. | `Alert`, `CameraCapture` |
+| `adornment` | Content attached before or after a field. | `InputGroup` |
+| `author` | The author identity of a message. | `MessageBubble` |
+| `axis` | Chart category-axis labels. | `Chart` |
+| `back` | Navigation to the parent or previous surface. | `DayView`, `PageHeader` |
+| `backdrop` | The overlay scrim behind a panel. | `LoadingOverlay` |
+| `badge` | An auxiliary badge attached to a label. | `RoleSelector`, `Tabs` |
+| `bar` | A chart datum rendered against a track. | `Chart` |
+| `body` | The primary content region of a component or item. | `Alert`, `Avatar` |
+| `cancel` | The dialog cancellation command. | `ConfirmDialog` |
+| `caption` | The accessible title of a table. | `DataTable` |
+| `cell` | A cell in a table, grid, or repeated layout row. | `Calendar`, `CalendarView` |
+| `clear` | The command that clears a field. | `SearchInput` |
+| `close` | The command that dismisses a surface. | `Alert`, `CalendarView` |
+| `confirm` | The dialog confirmation command. | `ConfirmDialog` |
+| `control` | The field or choice-control shell, including its visible mark. | `Checkbox`, `CollectionList` |
+| `count` | A count attached to a label or collection. | `CollectionToolbar`, `DayView` |
+| `description` | Supporting prose or accessible instructions. | `Chart`, `DayView` |
+| `display` | The formatted keypad readout, including its affixes. | `NumericKeypad` |
+| `empty` | The region explaining an empty collection. | `CalendarView`, `DataTable` |
+| `error` | Validation or failure feedback; a semantic feedback region, not a state modifier. | `DataTable`, `DictationStatus` |
+| `event` | A calendar event, whether shown in a cell, across days, or in an agenda. | `Calendar`, `CalendarView` |
+| `expand` | The command that reveals details of a table row. | `DataTable` |
+| `field` | A field-registration or form-submission boundary. | `CameraCapture`, `RelationInput` |
+| `filters` | The collection-filter surface. | `CollectionToolbar` |
+| `footer` | The concluding region of a surface. | `Card`, `Modal` |
+| `frame` | The chart coordinate frame around its axis and plot. | `Chart` |
+| `grabber` | The sheet drag handle. | `PhoneSheet` |
+| `graph` | The rendered chart graphic. | `Chart` |
+| `grid` | The calendar/keypad grid or chart reference grid. | `Calendar`, `CalendarView` |
+| `group` | A labelled group of related entries. | `CalendarView`, `DayView` |
+| `guide` | The chart reference line for the explored datum. | `Chart` |
+| `header` | The introductory or heading region of a surface or item. | `Calendar`, `CalendarView` |
+| `high` | The forecast maximum temperature. | `DayView` |
+| `icon` | A content or command icon. | `ColorSchemeToggle`, `DataTable` |
+| `indicator` | A selected, progress, status, or expansion indicator; state stays on its owner. | `AccordionItem`, `Avatar` |
+| `input` | A native form input or select. | `CameraCapture`, `Checkbox` |
+| `item` | An entry in a list, menu, legend, or tree. | `Chart`, `CollectionList` |
+| `key` | A keypad key. | `NumericKeypad` |
+| `label` | A control or item label, including responsive and accessible alternatives. | `Avatar`, `Button` |
+| `legend` | The chart series/datum legend. | `Chart` |
+| `list` | A collection of related entries, options, or navigation links. | `Calendar`, `CalendarView` |
+| `low` | The forecast minimum temperature. | `DayView` |
+| `marker` | An auxiliary meaning-bearing marker, including required-field and typing markers. | `Alert`, `Chart` |
+| `media` | Captured photo or camera preview media. | `CameraCapture` |
+| `menu` | An overflow menu. | `Tabs` |
+| `message` | Message text, transcript text, or status feedback. | `Alert`, `CameraCapture` |
+| `meta` | Supplementary metadata. | `CalendarView`, `DayView` |
+| `month` | The calendar month selector. | `Calendar` |
+| `more` | The affordance or count for additional entries. | `Calendar`, `CalendarView` |
+| `nav` | Calendar navigation and date-selection controls. | `Calendar`, `CalendarView` |
+| `next` | Navigation to the next calendar period. | `Calendar`, `CalendarView` |
+| `option` | A selectable option in a choice surface. | `Combobox`, `FilterChips` |
+| `overflow` | The tab-overflow region. | `Tabs` |
+| `page` | The rendered document page. | `DocumentViewer` |
+| `panel` | A disclosed, popup, dialog, or selected-content region. | `AccordionItem`, `CalendarView` |
+| `picker` | The trigger for native file selection. | `CameraCapture` |
+| `placeholder` | A skeleton content placeholder, independent of its shape. | `Skeleton` |
+| `plot` | The chart plotting/interaction surface. | `Chart` |
+| `prefix` | The prefix affix of a numeric readout. | `NumericKeypad` |
+| `previous` | Navigation to the preceding calendar period. | `Calendar`, `CalendarView` |
+| `progress` | The aggregate progress readout. | `LoadingOverlay` |
+| `reactions` | The reactions attached to a message. | `MessageBubble` |
+| `readout` | The chart or keypad value readout region. | `Chart`, `NumericKeypad` |
+| `resize` | The table-column resize handle. | `DataTable` |
+| `retry` | The command that retries a failed operation. | `DataTable`, `DocumentViewer` |
+| `role` | The membership role. | `MembershipCard` |
+| `row` | A repeated table, grid, or layout row. | `Calendar`, `CalendarView` |
+| `scale` | The chart value-axis scale labels. | `Chart` |
+| `search` | The collection or permission search region. | `CollectionToolbar`, `PermissionPicker` |
+| `slice` | A datum in a proportional chart. | `Chart` |
+| `sort` | The command that changes column sorting. | `DataTable`, `SortableHeader` |
+| `spacer` | An intentional layout or virtual-scroll spacer. | `CollectionToolbar`, `DataTable` |
+| `spinner` | An indeterminate activity indicator. | `Button`, `CollectionList` |
+| `status` | The live or supplementary status region. | `Chart`, `Combobox` |
+| `submit` | The keypad submission command. | `NumericKeypad` |
+| `summary` | The aggregate working-status summary, optionally interactive. | `WorkingStrip` |
+| `swatch` | The legend key identifying a chart datum. | `Chart` |
+| `tab` | A tab-navigation option. | `Tabs` |
+| `table` | A data table or accessible chart-data alternative. | `Chart`, `DataTable` |
+| `thumb` | The movable switch/toggle thumb. | `Switch`, `Toggle` |
+| `time` | An event, message, or metadata timestamp. | `CalendarView`, `DayView` |
+| `title` | The heading or name of a surface, group, or item. | `Alert`, `Calendar` |
+| `today` | Navigation to the current date. | `Calendar`, `CalendarView` |
+| `track` | The track behind an indicator, thumb, or chart bar. | `Chart`, `LoadingOverlay` |
+| `trigger` | The primary command that opens, selects, or activates a surface/date. | `Calendar`, `CalendarView` |
+| `unit` | The unit affix of a numeric readout. | `NumericKeypad` |
+| `value` | The presented numeric, progress, page, or selected value. | `Chart`, `ConfidenceBadge` |
+| `venue` | The event location. | `DayView` |
+| `weather` | The aggregate forecast readout. | `DayView` |
+| `year` | The calendar year selector. | `Calendar` |
 
 ## Cascade layers
 
 Every component `<style>` block declares and uses the smrt layers, lowest to
-highest: `smrt.reset < smrt.structure < smrt.theme`. Button, Badge, Chip, Card, Alert, Input, Select, Checkbox, Switch and Tabs
-split their rules between `smrt.structure` and `smrt.theme`; other components
-still put their rules in `smrt.theme`. Unlayered consumer CSS always beats every smrt
+highest: `smrt.reset < smrt.structure < smrt.theme`. smrt-ui components split layout and interaction rules into `smrt.structure`
+and paint and motion into `smrt.theme`. All component style blocks across the repository are sorted. Unlayered consumer CSS always beats every smrt
 layer, so restyling needs no `:global()` and no `!important`. The declaration is
 [`src/styles/layers.css`](../src/styles/layers.css)
 (`@happyvertical/smrt-ui/styles/layers.css`), injected by `ThemeProvider`. Keep
@@ -124,6 +237,12 @@ Layer order is set by first appearance. If `base` first appears after
 
 Run `smrt doctor` to flag unlayered resets in a project that depends on smrt-ui.
 
+Content body images store their chosen width in the private inline property
+`--smrt-content-body-image-width`, consumed by layered `width: var(...)` rules.
+Legacy inline `width` is normalized at render and editor load. Full-width and
+phone placements win by ordinary specificity; there are no `!important`
+exceptions in the cascade gate.
+
 ## Restyling a component
 
 Consumers depend on three public things only: **token names** (`--smrt-*`),
@@ -134,7 +253,8 @@ Consumers depend on three public things only: **token names** (`--smrt-*`),
    changes.
 2. Target a root or part from unlayered CSS for one-off changes:
    `[data-smrt-component="Card"]`, `[data-smrt-component="Modal"] [data-smrt-part="header"]`.
-3. Use your own classes on your own elements.
+3. Use role-named `data-smrt-part` hooks for internal regions, scoped through the component root.
+4. Import `unstyled.css` and supply an unlayered theme when replacing all component paint.
 
 Do not reach into hashed Svelte classes (`.svelte-1x2y3z`); they change on every
 build.
@@ -159,32 +279,35 @@ its layout:
 import '@happyvertical/smrt-ui/styles/unstyled.css';
 ```
 
-- **Kept (layout):** `display`, flex/grid, `gap`, `padding`, `position`, sizing,
-  and everything else not in the list below. Shells, editors, and chat threads
-  depend on this layout CSS.
-- **Reverted (look):** `background`, `border`, `border-radius`, `box-shadow`,
-  `color`, `font`, `letter-spacing`, `text-decoration`, `text-transform`,
-  `text-shadow`, `outline`, `filter`, `backdrop-filter`. Each one falls back to
-  `smrt.structure`, then to the browser default.
-- **Reset:** buttons, inputs, selects, and textareas inside component trees get
-  `margin`, `padding`, `border`, `background`, `color`, and `font` reset, so a
-  stripped control does not show UA chrome such as the 2px outset border.
-- **Specificity:** the revert selector carries three `:not(#\#)` boosts (specificity
-  `(3,1,0)`), which beats Svelte's hashed `.svelte-*` selectors without
-  `!important`.
-- **Consumer CSS wins:** unlayered rules override the revert. Style stripped
-  components with unlayered CSS, `--smrt-*` tokens, or the hooks above.
+- **Structure survives:** `display`, `flex-direction`, `grid-template-columns`,
+  `gap`, `padding`, `margin`, `width`, `height`, `position`, `inset`, `overflow`,
+  `white-space`, `cursor`, and `pointer-events`. Transparent hit areas, hidden
+  native inputs (`opacity: 0`), and stateful Switch thumb `transform` are
+  structural too. Nested components in slots retain their own structure.
+- **Theme is removed exactly:** `all: revert-layer` in `smrt.theme` targets
+  `[data-smrt-component]` roots, every descendant, and `::before` / `::after`.
+  `background`, complete `border` declarations, `border-radius`, `box-shadow`,
+  `color`, `font`, `outline`, `filter`, `transition`, and `animation` fall back
+  through `smrt.structure` to `smrt.reset` and browser defaults. Typography
+  changes can change text wrapping and intrinsic dimensions; authored layout
+  remains. CSS `all` does not reset custom properties, `direction`, or
+  `unicode-bidi`.
+- **Reset:** component text uses `font: inherit`; buttons, inputs, selects, and
+  textareas also reset `margin`, `padding`, `border`, `border-radius`,
+  `background`, and `color`, removing native control chrome. Higher structure
+  declarations restore control spacing and hit targets.
+- **Specificity:** each selector has three `:not(#\#)` boosts, `(3,1,0)` on
+  elements and `(3,1,1)` on pseudo-elements. This beats Svelte's scoped selectors
+  without `!important`.
+- **Restyle:** tokens such as `--smrt-color-primary` and `--smrt-radius-md`
+  customize the stock theme. Unlayered CSS wins over every smrt layer. Scope
+  `[data-smrt-part="header"]` through `[data-smrt-component="Card"]` to style
+  a role. For a complete theme replacement, import `unstyled.css` and supply
+  your own unlayered `background`, `border`, `color`, and `font` rules.
 
-The reverted list is explicit on purpose. `all: revert-layer` would also drop
-layout declarations until per-package structure/theme sorting lands, in components that have not been sorted yet. The ten pilot primitives retain
-their layout with `all`, but a pilot root can contain an unsorted component in
-a snippet. The Chromium regression demonstrates that the candidate reset strips
-that nested component's layout. Keep the production list until the entire
-reachable subtree is sorted; the playground's **Try all: revert-layer** toggle
-exercises the candidate on the ten pilot subtrees, including pseudo-elements.
-
-With the production explicit list, component `transition` declarations still run, so a stripped Card or Button
-fades to its unstyled colours over its usual duration.
+The Styleless Mode entry has one toggle for the production stylesheet. The
+Styleless Shell entry in smrt-svelte covers shell regions and a Disclosure inside
+a Card slot. There is no experimental reset or component allow-list.
 
 Verification: the jsdom contract test
 (`src/themes/__tests__/unstyled-css.test.ts`) asserts the declared rule and its
@@ -205,6 +328,14 @@ Headings, role utilities (`.smrt-display-large` ... `.smrt-label-small`) and tab
 ## ThemeProvider runtime features
 
 Built-in presets stay static (no inline token payload); only user overrides go inline: non-`md` `borderRadius` (control radius tokens), `primaryColor` (derived set via `derivePrimaryOverrides`) and `density`. `data-smrt-theme-changing` marks one `--smrt-duration-scheme` after a post-mount scheme change (not on first paint, not under reduced motion); `data-contrast` (`standard|more|forced`) and `data-forced-colors` come from `prefers-contrast`/`forced-colors` or the `contrast` prop. `themeScript()` stamps `data-contrast`/`data-density` pre-paint from the same persisted config; keep it tiny. Forced-colors contract: hairlines `CanvasText`, focus rings `Highlight`, no painting over system colours.
+
+
+In development, `ThemeProvider` checks `--smrt-color-background` on its wrapper
+once after mount and warns if a built-in preset has no resolved token. Import
+`@happyvertical/smrt-ui/themes/styles/<preset>.css` (or `themes/styles/all.css`)
+in the app. The check runs after persisted preferences settle, skips custom
+themes and `inlineVariables={true}`, and is absent in production and SSR. It
+never injects a preset stylesheet or token values.
 
 ## Forced colors
 
@@ -265,12 +396,94 @@ applicable layer; put animation keyframes with their animation in theme.
   modifiers, as `smrt-<component>__<part-or-modifier>`. Consumer classes passed
   through props remain untouched. Use role-based part attributes in consumer
   CSS and tests; keep state on existing native/ARIA attributes.
-- Keep the explicit reset during incremental rollout. A root allowlist alone
-  cannot protect an unsorted nested component. `all` also needs pseudo-element
-  coverage; keep transparent hit targets in structure so they survive it.
+- Every reachable component is now sorted. The production reset uses
+  `all: revert-layer` on complete component subtrees and their pseudo-elements;
+  transparent hit targets remain in structure.
 
-The Styleless Mode fixture now includes all ten primitives. Its second checkbox
-is experimental and only takes effect while **Apply unstyled.css** is enabled.
-The candidate strips transition and decorative opacity too; production retains
-its prior behavior. Pixel baselines for the original fixture establish that the
-split itself does not change rendering; fixture additions are reviewed separately.
+The Styleless Mode fixture includes all ten primitives and one production toggle.
+The previous candidate stylesheet and experimental checkbox are removed.
+
+## Sorting a wave-3 slice
+
+Preview only the assigned files, then write the same selection:
+
+```sh
+node scripts/codemod-smrt-sort-layers.mjs --check --file packages/smrt-ui/src/components/ui/Avatar.svelte --report /tmp/avatar-sort.json
+node scripts/codemod-smrt-sort-layers.mjs --write --file packages/smrt-ui/src/components/ui/Avatar.svelte --report /tmp/avatar-sort.json
+```
+
+Repeat `--file` for a slice, or use `--package smrt-ui` only when the whole package
+is assigned. A selection is required; no arguments never rewrites the repository.
+For a read-only repository inventory, use `--report` with no selection (optionally
+followed by a JSON output path). It never enables a repository-wide `--write`.
+`--check` (also the default) is read-only and exits 1 for pending changes or TODOs.
+`--write` exits 1 when TODOs remain, even after writing the mechanical split.
+A second run leaves the output unchanged and reports the remaining TODO markers.
+Already sorted files are not reclassified.
+The codemod output is the canonical formatting for sorted layers.
+Use `--format` with an explicit selection to reformat already-sorted layers without reclassification.
+
+The codemod puts `display`, `flex`, `grid-template-columns`, `gap`, `padding`,
+`margin`, `width`, `height`, `position`, `inset`, `overflow`, `clip`, `white-space`,
+`text-overflow`, and `cursor` in `smrt.structure`. It puts `color`, `background`,
+`border` (including `border-width`), `border-radius`, `box-shadow`, `font-size`,
+`outline`, `filter`, `transition`, and `animation` in `smrt.theme`. Selectors,
+`:global()`, conditional wrappers, and declaration order within each layer are
+preserved; keyframes stay intact in theme with animation, including declarations
+such as `transform` inside them. Forced-colors paint stays in theme.
+
+The JSON report contains each file's TODO line, selector/wrapper path, declaration,
+and reason, plus counts of auto-placed and TODO declarations and an `unparseable`
+flag. TODO declaration counts include declarations inside unresolved wrappers;
+unparseable files have zero classified counts. Already sorted files contribute
+zero auto-placed declarations. `opacity`, `transform`, `transform-origin`, `visibility`, `content`,
+and `pointer-events` need role review; the codemod conservatively reports all
+`pointer-events`, including hit areas. Custom properties such as
+`--smrt-checkbox-hit` need consumer review. Unknown properties, unsupported
+wrappers and parse failures are reported rather than guessed. Unresolved CSS
+stays in its original theme layer with a `smrt-sort-todo:` comment; parse failures
+leave the entire file unchanged. Move each declaration to its reviewed layer and
+remove its marker only after deciding it. The gate rejects unresolved markers.
+The codemod does not rename classes, add parts, remove token fallbacks, or invent
+forced-colors rules. Complete those judgment steps under the pilot rules above.
+
+`node scripts/check-smrt-sort-layers.mjs` runs inside root `pnpm lint`. Once a
+component uses a `smrt.structure` block, layout in theme or paint in structure
+fails. `opacity`, `transform`, `visibility`, and `content` are allowed in either;
+keyframe declarations are exempt from ordinary property placement checks.
+The gate is strict: any unsorted component or new un-namespaced owned class
+fails. There is no ratchet file or `--write` escape. Empty `smrt.structure`
+explicitly marks a paint-only component as sorted. Local CSS selectors, static
+native-element class attributes and class directives count; repeated selectors
+count once. `:global()` consumer classes and classes passed to child components
+do not count. Dynamic expressions are checked through their local CSS selectors;
+the gate does not prove every runtime-generated string is namespaced.
+
+New private classes use `smrt-<component>__<part-or-modifier>`. Published class
+families retain their names through a bounded allow-list in
+`scripts/smrt-sort-layers-lib.mjs`, with boundary and source-scope tests:
+
+- In smrt-svelte `workspace/`, `app/`, and `screens/`: `smrt-admin-shell`,
+  `smrt-workspace-`, `smrt-phone-`, `smrt-shell-`, `smrt-activity-`,
+  `smrt-app-scope-panel`, `smrt-hotkey-input`, `smrt-nav-editor`,
+  `smrt-section-menu`, `smrt-shortcuts-overlay`, `smrt-system-scope-panel`,
+  `smrt-system-status-chips`, `smrt-tenant-nav`, `smrt-role-shell`,
+  `smrt-nav-tree`, `smrt-breadcrumbs`, `smrt-dock-toggles`, `smrt-app-shell`,
+  `smrt-layout-`, `smrt-edit-`, `smrt-owner-setup`, `smrt-recipe-screens`.
+  Names ending in `-` are family prefixes; other names accept only the exact
+  root or a `-` / `__` boundary. These published names are already namespaced;
+  generic helpers and state classes are not exempt.
+- Subscription roots, each only in its matching `.svelte` file under
+  `packages/subscriptions/src/svelte/`: `PlanPicker` → `smrt-plan-picker`,
+  `SubscriptionSummary` → `smrt-subscription-summary`, `UsageThresholds` →
+  `smrt-usage-thresholds`. Only the root and `__` / `--` descendants qualify.
+
+Planner's shared `planner-forms.css` and `planner-lists.css` use
+`smrt-planner-form__*` / `smrt-planner-list__*` classes and the same structure/theme
+split as components. There are no legacy private class exceptions. Shared
+sheets own form spanning, table treatment and sort controls across component
+boundaries; component styles must not override their table border model.
+
+The old pilot comparator and its mapping file are retired. The script tests
+retain the ten hand-sorted primitives as idempotence fixtures and exercise strict
+rejection, scoped published families, and the namespaced planner sheets.

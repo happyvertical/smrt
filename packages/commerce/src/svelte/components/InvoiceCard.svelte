@@ -79,17 +79,17 @@ function formatDate(date: Date | string | null | undefined): string {
 const statusClass = $derived.by(() => {
   switch (invoice.status) {
     case 'paid':
-      return 'status-paid';
+      return 'smrt-invoice-card__status-paid';
     case 'overdue':
-      return 'status-error';
+      return 'smrt-invoice-card__status-error';
     case 'sent':
-      return 'status-info';
+      return 'smrt-invoice-card__status-info';
     case 'viewed':
-      return 'status-info';
+      return 'smrt-invoice-card__status-info';
     case 'cancelled':
-      return 'status-error';
+      return 'smrt-invoice-card__status-error';
     default:
-      return 'status-default';
+      return 'smrt-invoice-card__status-default';
   }
 });
 
@@ -107,25 +107,25 @@ const isOverdue = $derived.by(() => {
 </script>
 
 {#if href}
-  <a class="invoice-card" {href} use:ripple data-smrt-component="InvoiceCard">
-    <div class="card-header">
-      <span class="invoice-number">{invoice.invoiceNumber}</span>
-      <span class="status-badge {isOverdue ? 'status-error' : statusClass}">
+  <a class="smrt-invoice-card__root" {href} use:ripple data-smrt-component="InvoiceCard">
+    <div class="smrt-invoice-card__header" data-smrt-part="header">
+      <span class="smrt-invoice-card__title" data-smrt-part="title">{invoice.invoiceNumber}</span>
+      <span class="smrt-invoice-card__status {isOverdue ? 'smrt-invoice-card__status-error' : statusClass}" data-smrt-part="status">
         {isOverdue ? 'Overdue' : retained?.statusLabel ?? invoice.status}
       </span>
     </div>
 
-    <div class="card-body">
+    <div class="smrt-invoice-card__body" data-smrt-part="body">
       {#if invoice.customerName}
-        <span class="customer-name">{invoice.customerName}</span>
+        <span class="smrt-invoice-card__customer" data-smrt-part="label">{invoice.customerName}</span>
       {/if}
-      <span class="invoice-amount">{amountText}</span>
+      <span class="smrt-invoice-card__amount" data-smrt-part="value">{amountText}</span>
     </div>
 
-    <div class="card-footer">
-      <span class="issue-date">{formatDate(invoice.issueDate)}</span>
+    <div class="smrt-invoice-card__footer" data-smrt-part="footer">
+      <span class="smrt-invoice-card__issue-date" data-smrt-part="meta">{formatDate(invoice.issueDate)}</span>
       {#if invoice.dueDate}
-        <span class="due-date" class:overdue={isOverdue}>
+        <span class="smrt-invoice-card__due-date" data-smrt-part="meta" class:smrt-invoice-card__overdue={isOverdue}>
           Due {formatDate(invoice.dueDate)}
         </span>
       {/if}
@@ -133,42 +133,42 @@ const isOverdue = $derived.by(() => {
     {#if retained}{@render details?.(retained)}{/if}
   </a>
 {:else if retained}
-  <article class="invoice-card" data-smrt-component="InvoiceCard">
-    <div class="card-header">
-      <span class="invoice-number">{invoice.invoiceNumber}</span>
-      <span class="status-badge {statusClass}">{retained.statusLabel}</span>
+  <article class="smrt-invoice-card__root" data-smrt-component="InvoiceCard">
+    <div class="smrt-invoice-card__header" data-smrt-part="header">
+      <span class="smrt-invoice-card__title" data-smrt-part="title">{invoice.invoiceNumber}</span>
+      <span class="smrt-invoice-card__status {statusClass}" data-smrt-part="status">{retained.statusLabel}</span>
     </div>
-    <div class="card-body">
-      {#if invoice.customerName}<span class="customer-name">{invoice.customerName}</span>{/if}
-      <span class="invoice-amount">{amountText}</span>
+    <div class="smrt-invoice-card__body" data-smrt-part="body">
+      {#if invoice.customerName}<span class="smrt-invoice-card__customer" data-smrt-part="label">{invoice.customerName}</span>{/if}
+      <span class="smrt-invoice-card__amount" data-smrt-part="value">{amountText}</span>
     </div>
-    <div class="card-footer">
-      <span class="issue-date">{formatDate(invoice.issueDate)}</span>
-      {#if invoice.dueDate}<span class="due-date">Due {formatDate(invoice.dueDate)}</span>{/if}
+    <div class="smrt-invoice-card__footer" data-smrt-part="footer">
+      <span class="smrt-invoice-card__issue-date" data-smrt-part="meta">{formatDate(invoice.issueDate)}</span>
+      {#if invoice.dueDate}<span class="smrt-invoice-card__due-date" data-smrt-part="meta">Due {formatDate(invoice.dueDate)}</span>{/if}
     </div>
     {@render details?.(retained)}
   </article>
 {:else}
   <!-- raw-primitive-allow: large pressable invoice card wrapping rich header/body/footer content with use:ripple, a structural selection control no Button primitive should own (mirrors the href anchor branch) -->
-  <button type="button" class="invoice-card" onclick={onclick} use:ripple data-smrt-component="InvoiceCard">
-    <div class="card-header">
-      <span class="invoice-number">{invoice.invoiceNumber}</span>
-      <span class="status-badge {isOverdue ? 'status-error' : statusClass}">
+  <button type="button" class="smrt-invoice-card__root" onclick={onclick} use:ripple data-smrt-component="InvoiceCard">
+    <div class="smrt-invoice-card__header" data-smrt-part="header">
+      <span class="smrt-invoice-card__title" data-smrt-part="title">{invoice.invoiceNumber}</span>
+      <span class="smrt-invoice-card__status {isOverdue ? 'smrt-invoice-card__status-error' : statusClass}" data-smrt-part="status">
         {isOverdue ? 'Overdue' : invoice.status}
       </span>
     </div>
 
-    <div class="card-body">
+    <div class="smrt-invoice-card__body" data-smrt-part="body">
       {#if invoice.customerName}
-        <span class="customer-name">{invoice.customerName}</span>
+        <span class="smrt-invoice-card__customer" data-smrt-part="label">{invoice.customerName}</span>
       {/if}
-      <span class="invoice-amount">{amountText}</span>
+      <span class="smrt-invoice-card__amount" data-smrt-part="value">{amountText}</span>
     </div>
 
-    <div class="card-footer">
-      <span class="issue-date">{formatDate(invoice.issueDate)}</span>
+    <div class="smrt-invoice-card__footer" data-smrt-part="footer">
+      <span class="smrt-invoice-card__issue-date" data-smrt-part="meta">{formatDate(invoice.issueDate)}</span>
       {#if invoice.dueDate}
-        <span class="due-date" class:overdue={isOverdue}>
+        <span class="smrt-invoice-card__due-date" data-smrt-part="meta" class:smrt-invoice-card__overdue={isOverdue}>
           Due {formatDate(invoice.dueDate)}
         </span>
       {/if}
@@ -178,111 +178,110 @@ const isOverdue = $derived.by(() => {
 
 <style>
 @layer smrt.reset, smrt.structure, smrt.theme;
-@layer smrt.theme {
-  .invoice-card {
+@layer smrt.structure {
+  .smrt-invoice-card__root {
     display: flex;
     flex-direction: column;
     gap: var(--smrt-spacing-3);
     padding: var(--smrt-spacing-4);
-    background-color: var(--smrt-color-surface-container-low);
-    border-radius: var(--smrt-radius-large);
-    text-decoration: none;
-    color: var(--smrt-color-on-surface);
     cursor: pointer;
-    transition: 
-      background-color var(--smrt-duration-normal, 200ms) var(--smrt-easing-standard, cubic-bezier(0.2, 0, 0, 1)),
-      box-shadow var(--smrt-duration-normal, 200ms) var(--smrt-easing-standard, cubic-bezier(0.2, 0, 0, 1));
-    text-align: left;
     width: 100%;
-    border: none;
     position: relative;
     overflow: hidden;
-    box-shadow: var(--smrt-elevation-1);
   }
-
-  @media (prefers-reduced-motion: reduce) {
-    .invoice-card {
-      transition: none;
-    }
-  }
-
-  .invoice-card:hover {
-    background-color: var(--smrt-color-surface-container-high);
-    box-shadow: var(--smrt-elevation-2);
-  }
-
-  .card-header {
+  .smrt-invoice-card__header {
     display: flex;
     justify-content: space-between;
     align-items: center;
   }
-
-  .invoice-number {
-    font: var(--smrt-typography-label-large-font);
-    font-weight: var(--smrt-typography-weight-semibold, 600);
-    color: var(--smrt-color-on-surface);
-  }
-
-  .status-badge {
+  .smrt-invoice-card__status {
     display: inline-flex;
     padding: 0 var(--smrt-spacing-2);
     height: 20px;
     align-items: center;
+  }
+  .smrt-invoice-card__body {
+    display: flex;
+    flex-direction: column;
+    gap: var(--smrt-spacing-1);
+  }
+  .smrt-invoice-card__footer {
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+  }
+}
+
+@layer smrt.theme {
+  .smrt-invoice-card__root {
+    background-color: var(--smrt-color-surface-container-low);
+    border-radius: var(--smrt-radius-large);
+    text-decoration: none;
+    color: var(--smrt-color-on-surface);
+    transition: 
+      background-color var(--smrt-duration-normal, 200ms) var(--smrt-easing-standard, cubic-bezier(0.2, 0, 0, 1)),
+      box-shadow var(--smrt-duration-normal, 200ms) var(--smrt-easing-standard, cubic-bezier(0.2, 0, 0, 1));
+    text-align: left;
+    border: none;
+    box-shadow: var(--smrt-elevation-1);
+  }
+  @media (prefers-reduced-motion: reduce) {
+    .smrt-invoice-card__root {
+      transition: none;
+    }
+  }
+  .smrt-invoice-card__root:hover {
+    background-color: var(--smrt-color-surface-container-high);
+    box-shadow: var(--smrt-elevation-2);
+  }
+  .smrt-invoice-card__title {
+    font: var(--smrt-typography-label-large-font);
+    font-weight: var(--smrt-typography-weight-semibold, 600);
+    color: var(--smrt-color-on-surface);
+  }
+  .smrt-invoice-card__status {
     font: var(--smrt-typography-label-small-font);
     font-weight: var(--smrt-typography-weight-semibold, 600);
     border-radius: var(--smrt-radius-full);
     text-transform: uppercase;
     letter-spacing: 0.5px;
   }
-
   /* Status Badge Colors */
-  .status-default { 
+  .smrt-invoice-card__status-default {
     background-color: var(--smrt-color-surface-variant);
     color: var(--smrt-color-on-surface-variant);
   }
-  .status-paid {
+  .smrt-invoice-card__status-paid {
     background-color: var(--smrt-color-secondary-container);
     color: var(--smrt-color-on-secondary-container);
   }
-  .status-info {
+  .smrt-invoice-card__status-info {
     background-color: var(--smrt-color-primary-container);
     color: var(--smrt-color-on-primary-container);
   }
-  .status-error {
+  .smrt-invoice-card__status-error {
     background-color: var(--smrt-color-error-container);
     color: var(--smrt-color-on-error-container);
   }
-
-  .card-body {
-    display: flex;
-    flex-direction: column;
-    gap: var(--smrt-spacing-1);
-  }
-
-  .customer-name {
+  .smrt-invoice-card__customer {
     font: var(--smrt-typography-body-small-font);
     color: var(--smrt-color-on-surface-variant);
   }
-
-  .invoice-amount {
+  .smrt-invoice-card__amount {
     font: var(--smrt-typography-headline-small-font);
     font-weight: var(--smrt-typography-weight-semibold, 600);
     color: var(--smrt-color-on-surface);
     font-variant-numeric: tabular-nums;
   }
-
-  .card-footer {
-    display: flex;
-    justify-content: space-between;
-    align-items: center;
+  .smrt-invoice-card__footer {
     font: var(--smrt-typography-body-small-font);
     color: var(--smrt-color-on-surface-variant);
     opacity: 0.8;
   }
-
-  .due-date.overdue {
+  .smrt-invoice-card__due-date.smrt-invoice-card__overdue {
     color: var(--smrt-color-error);
     font-weight: var(--smrt-typography-weight-semibold, 600);
   }
 }
+
 </style>

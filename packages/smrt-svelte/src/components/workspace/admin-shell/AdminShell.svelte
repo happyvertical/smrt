@@ -1283,7 +1283,7 @@ function buildLayoutStyle(shell: ModuleShellState): string {
         height="18"
         fill="currentColor"
         aria-hidden="true"
-        focusable="false"
+        focusable="false" data-smrt-part="icon"
       ><path d={SHELL_ICON_PATHS.chevronRight} /></svg>
       <ActivityBadge edge="left" />
     </Button>
@@ -1298,7 +1298,7 @@ function buildLayoutStyle(shell: ModuleShellState): string {
     >
       <span>{labelFor(edge)}</span>
       {#if showsHotkeyFor(edge)}
-        <kbd class="smrt-admin-shell__edge-toggle-kbd">{hotkeyFor(edge)}</kbd>
+        <kbd class="smrt-admin-shell__edge-toggle-kbd" data-smrt-part="hint">{hotkeyFor(edge)}</kbd>
       {/if}
       <ActivityBadge {edge} />
     </Button>
@@ -1352,6 +1352,7 @@ function buildLayoutStyle(shell: ModuleShellState): string {
     class="smrt-admin-shell__main"
     bind:this={mainElement}
     inert={overlayEdge !== null || (isPhone && panelShown)}
+    data-smrt-part="body"
   >
     {@render children()}
   </main>
@@ -1378,7 +1379,7 @@ function buildLayoutStyle(shell: ModuleShellState): string {
       data-testid={`admin-shell-resizer-${edge}`}
       onpointerdown={(event) => onResizePointerdown(event, edge)}
       onkeydown={(event) => onResizeKeydown(event, edge)}
-      ondblclick={() => shell.setPanelSize(edge, null)}
+      ondblclick={() => shell.setPanelSize(edge, null)} data-smrt-part="separator"
     ></div>
   {/if}
 {/snippet}
@@ -1392,7 +1393,7 @@ function buildLayoutStyle(shell: ModuleShellState): string {
     {@const FocusComponent = tool.component}
     <FocusComponent {tool} {shell} />
   {:else}
-    <p class="smrt-admin-shell__empty">
+    <p class="smrt-admin-shell__empty" data-smrt-part="empty">
       {t(M['ui.admin_shell.no_focus_tools'])}
     </p>
   {/if}
@@ -1409,7 +1410,7 @@ function buildLayoutStyle(shell: ModuleShellState): string {
         class="smrt-admin-shell__slot smrt-admin-shell__slot--{name.replace('.', '-')} smrt-admin-shell__slot--editing"
         data-slot={name}
         data-smrt-edit-zone={name}
-        data-drop-target={layoutEdit.highlight === name ? '' : undefined}
+        data-drop-target={layoutEdit.highlight === name ? '' : undefined} data-smrt-part={name.endsWith(".header") ? "header" : name.endsWith(".footer") ? "footer" : name.endsWith(".start") ? "left" : name.endsWith(".center") ? "middle" : "right"}
       >
         {@render layoutEdit.zone(name)}
       </div>
@@ -1417,7 +1418,7 @@ function buildLayoutStyle(shell: ModuleShellState): string {
   {:else if slotContent[name]?.length}
     <div
       class="smrt-admin-shell__slot smrt-admin-shell__slot--{name.replace('.', '-')}"
-      data-slot={name}
+      data-slot={name} data-smrt-part={name.endsWith(".header") ? "header" : name.endsWith(".footer") ? "footer" : name.endsWith(".start") ? "left" : name.endsWith(".center") ? "middle" : "right"}
     >
       {#each slotContent[name] ?? [] as content}{@render content()}{/each}
     </div>
@@ -1426,7 +1427,7 @@ function buildLayoutStyle(shell: ModuleShellState): string {
 
 {#snippet regionEdit(region: ShellRegion)}
   {#if layoutEdit?.active && layoutEdit.regionControl && regionControllable(region)}
-    <div class="smrt-admin-shell__region-edit" data-region-edit={region}>
+    <div class="smrt-admin-shell__region-edit" data-region-edit={region} data-smrt-part="actions">
       {@render layoutEdit.regionControl(region)}
     </div>
   {/if}
@@ -1436,7 +1437,7 @@ function buildLayoutStyle(shell: ModuleShellState): string {
   {#if stripRegions.includes(region)}
     <div
       class="smrt-admin-shell__strip smrt-admin-shell__strip--{region}"
-      data-region-strip={region}
+      data-region-strip={region} data-smrt-part="toolbar"
     >
       {@render layoutEdit?.strip?.(region)}
     </div>
@@ -1463,7 +1464,7 @@ function buildLayoutStyle(shell: ModuleShellState): string {
     <div
       id="smrt-admin-shell-header"
       class="smrt-admin-shell__header"
-      data-testid="admin-shell-header"
+      data-testid="admin-shell-header" data-smrt-part="header"
     >
       {@render header?.({ viewport })}
     </div>
@@ -1476,16 +1477,16 @@ function buildLayoutStyle(shell: ModuleShellState): string {
       class="smrt-admin-shell__edge smrt-admin-shell__edge--top"
       data-state={panelState('top')}
       data-presentation={shell.config.panels.top.presentation}
-      style:--smrt-admin-shell-edge-columns={topEdgeColumns}
+      style:--smrt-admin-shell-edge-columns={topEdgeColumns} data-smrt-part="header"
     >
       {#if topLeftCorner}
-        <div class="smrt-admin-shell__corner smrt-admin-shell__corner--top-left">
+        <div class="smrt-admin-shell__corner smrt-admin-shell__corner--top-left" data-smrt-part="left">
           {@render topLeftCorner()}
         </div>
       {/if}
       <div
         class="smrt-admin-shell__band smrt-admin-shell__band--top"
-        style:--smrt-admin-shell-band-column={2}
+        style:--smrt-admin-shell-band-column={2} data-smrt-part="middle"
       >
         {#if appBar}
           {@render appBar()}
@@ -1494,14 +1495,14 @@ function buildLayoutStyle(shell: ModuleShellState): string {
           {#if showToggle('top')}{@render edgeToggle('top')}{/if}
         {/if}
         {#if !(layoutEdit?.active && !isPhone) && shell.config.panels.left.initial !== 'hidden' && shell.layoutPanels.left?.visible !== false && (!isPhone || shell.phonePresentation('left') !== 'hidden')}
-          <div class="smrt-admin-shell__tenant-opener" class:restore-hidden={panelState('left') === 'hidden'}>
+          <div class="smrt-admin-shell__tenant-opener" class:smrt-admin-shell__restore-hidden={panelState('left') === 'hidden'} data-smrt-part="trigger">
             {@render menuOpener()}
           </div>
         {/if}
         {@render slotGroup('header.start')}
         {@render slotGroup('header.center')}
         {#if account || footerInHeader}
-          <div class="smrt-admin-shell__account">
+          <div class="smrt-admin-shell__account" data-smrt-part="account">
             {#if account}{@render account()}{:else if tenantFooter}{@render tenantFooter()}{/if}
           </div>
         {/if}
@@ -1510,7 +1511,7 @@ function buildLayoutStyle(shell: ModuleShellState): string {
         {@render regionEdit('header')}
       </div>
       {#if topRightCorner}
-        <div class="smrt-admin-shell__corner smrt-admin-shell__corner--top-right">
+        <div class="smrt-admin-shell__corner smrt-admin-shell__corner--top-right" data-smrt-part="right">
           {@render topRightCorner()}
         </div>
       {/if}
@@ -1518,12 +1519,12 @@ function buildLayoutStyle(shell: ModuleShellState): string {
         <section
           class="smrt-admin-shell__drawer smrt-admin-shell__drawer--top"
           aria-label={labelFor('top')}
-          hidden={!edgeExpanded('top')}
+          hidden={!edgeExpanded('top')} data-smrt-part="panel"
         >
           {#if appPanel}
             {@render appPanel()}
           {:else}
-            <p class="smrt-admin-shell__empty">
+            <p class="smrt-admin-shell__empty" data-smrt-part="empty">
               {t(M['ui.admin_shell.no_app_panel'])}
             </p>
           {/if}
@@ -1553,15 +1554,15 @@ function buildLayoutStyle(shell: ModuleShellState): string {
         direction: 'left',
         onDismiss: () => shell.collapsePanel('left'),
         enabled: isPhone && phoneSwipeToClose && edgeExpanded('left'),
-      }}
+      }} data-smrt-part="left-sidebar"
     >
       {@render resizer('left')}
-      <div class="smrt-admin-shell__rail">
+      <div class="smrt-admin-shell__rail" data-smrt-part="rail">
         {@render regionEdit('leftSidebar')}
         {#if isPhone}
           <!-- Phone drawer: the app title and an icon-only close control. -->
           <div class="smrt-admin-shell__drawer-head" data-smrt-part="header">
-            <div class="smrt-admin-shell__drawer-title">{@render shellBrand()}</div>
+            <div class="smrt-admin-shell__drawer-title" data-smrt-part="title">{@render shellBrand()}</div>
             <!-- raw-primitive-allow: shell chrome control, not a content button -->
             <button
               type="button"
@@ -1578,10 +1579,10 @@ function buildLayoutStyle(shell: ModuleShellState): string {
         {#if shownOpen('left') || (tenantPanel && keepsContent('left')) || (isPhone && slotHas('leftSidebar.header', 'leftSidebar.footer'))}
           <div
             class="smrt-admin-shell__tenant-stack"
-            hidden={!shownOpen('left')}
+            hidden={!shownOpen('left')} data-smrt-part="body"
           >
             {@render slotGroup('leftSidebar.header')}
-            <div class="smrt-admin-shell__tenant-content">
+            <div class="smrt-admin-shell__tenant-content" data-smrt-part="body">
               {#if tenantPanel}
                 {@render tenantPanel()}
               {:else if tenantRail}
@@ -1590,7 +1591,7 @@ function buildLayoutStyle(shell: ModuleShellState): string {
             </div>
             {#if shownOpen('left') && !isPhone && (tenantUtilities || showToggle('left'))}{@render tenantUtilityRow()}{/if}
             {#if tenantFooter && !footerInHeader}
-              <div class="smrt-admin-shell__tenant-footer">
+              <div class="smrt-admin-shell__tenant-footer" data-smrt-part="footer">
                 {@render tenantFooter()}
               </div>
             {/if}
@@ -1598,13 +1599,13 @@ function buildLayoutStyle(shell: ModuleShellState): string {
           </div>
         {/if}
         {#if !shownOpen('left') && (tenantRail || tenantRailFooter || tenantUtilities)}
-          <div class="smrt-admin-shell__tenant-rail-stack">
-            <div class="smrt-admin-shell__tenant-rail-content">
+          <div class="smrt-admin-shell__tenant-rail-stack" data-smrt-part="body">
+            <div class="smrt-admin-shell__tenant-rail-content" data-smrt-part="body">
               {#if tenantRail}{@render tenantRail()}{/if}
             </div>
             {#if !isPhone && (tenantUtilities || showToggle('left'))}{@render tenantUtilityRow()}{/if}
             {#if tenantRailFooter}
-              <div class="smrt-admin-shell__tenant-rail-footer">
+              <div class="smrt-admin-shell__tenant-rail-footer" data-smrt-part="footer">
                 {@render tenantRailFooter()}
               </div>
             {/if}
@@ -1629,7 +1630,7 @@ function buildLayoutStyle(shell: ModuleShellState): string {
         inert={!panelShown || overlayEdge !== null}
         style={`--smrt-admin-shell-panel-width: ${currentSize('panel')}px`}
       >
-        <div class="smrt-admin-shell__dock-panel-body">
+        <div class="smrt-admin-shell__dock-panel-body" data-smrt-part="body">
           {@render panel({ viewport, open: panelShown })}
         </div>
         {@render resizer('panel')}
@@ -1641,14 +1642,14 @@ function buildLayoutStyle(shell: ModuleShellState): string {
   {/if}
 
   {#if showPhoneTop}
-    <div class="smrt-admin-shell__phone-top" data-testid="admin-shell-phone-top">
+    <div class="smrt-admin-shell__phone-top" data-testid="admin-shell-phone-top" data-smrt-part="header">
       {#if phoneTopBar}
         {@render phoneTopBar({ hidden: chromeHidden })}
       {:else if showDefaultPhoneTenantOpener}
-        <div class="smrt-admin-shell__phone-default-top">
+        <div class="smrt-admin-shell__phone-default-top" data-smrt-part="header">
           {#if leftOpenerShown}{@render menuOpener()}{/if}
           {#if rightOpenerShown}
-            <span class="smrt-admin-shell__phone-default-end">{@render toolsOpener()}</span>
+            <span class="smrt-admin-shell__phone-default-end" data-smrt-part="right">{@render toolsOpener()}</span>
           {/if}
         </div>
       {/if}
@@ -1669,7 +1670,7 @@ function buildLayoutStyle(shell: ModuleShellState): string {
         ],
       )}
       data-testid="admin-shell-scrim"
-      onclick={collapsePhoneSurfaces}
+      onclick={collapsePhoneSurfaces} data-smrt-part="scrim"
     ></button>
   {/if}
 
@@ -1691,7 +1692,7 @@ function buildLayoutStyle(shell: ModuleShellState): string {
       data-closing={overlayEdge ? undefined : ''}
       onclick={() => {
         if (overlayEdge) shell.collapsePanel(scrimEdge);
-      }}
+      }} data-smrt-part="scrim"
     ></button>
   {/if}
 
@@ -1721,7 +1722,7 @@ function buildLayoutStyle(shell: ModuleShellState): string {
           rightPhone === 'drawer' &&
           phoneSwipeToClose &&
           edgeExpanded('right'),
-      }}
+      }} data-smrt-part="right-sidebar"
     >
       {@render resizer('right')}
       {#if rightPhone === 'sheet'}
@@ -1732,12 +1733,12 @@ function buildLayoutStyle(shell: ModuleShellState): string {
             direction: 'down',
             onDismiss: () => shell.collapsePanel('right'),
             enabled: edgeExpanded('right'),
-          }}
+          }} data-smrt-part="handle"
         >
           <span></span>
         </div>
       {/if}
-      <div class="smrt-admin-shell__rail">
+      <div class="smrt-admin-shell__rail" data-smrt-part="rail">
         {@render regionEdit('rightSidebar')}
         {#if rightPhone === 'drawer'}
           <!-- raw-primitive-allow: shell chrome control, not a content button -->
@@ -1757,19 +1758,19 @@ function buildLayoutStyle(shell: ModuleShellState): string {
         {:else if focusRail}
           {@render focusRail()}
         {:else if shell.focusTools.length > 0}
-          <nav class="smrt-admin-shell__focus-rail" aria-label={t(M['ui.admin_shell.focus_tools'])}>
+          <nav class="smrt-admin-shell__focus-rail" aria-label={t(M['ui.admin_shell.focus_tools'])} data-smrt-part="list">
             {#each shell.focusTools as tool (tool.id)}
               <!-- raw-primitive-allow: shell chrome toggle, not a content button -->
               <button
                 type="button"
                 class="smrt-admin-shell__focus-tool"
-                class:active={shell.activeFocusToolId ===
+                class:smrt-admin-shell__active={shell.activeFocusToolId ===
                   tool.id && edgeExpanded('right')}
                 aria-pressed={shell.activeFocusToolId ===
                   tool.id && edgeExpanded('right')}
                 aria-label={tool.label}
                 title={tool.label}
-                onclick={() => shell.toggleFocusTool(tool.id)}
+                onclick={() => shell.toggleFocusTool(tool.id)} data-smrt-part="trigger"
               >
                 {#if tool.icon}
                   <tool.icon />
@@ -1777,7 +1778,7 @@ function buildLayoutStyle(shell: ModuleShellState): string {
                   <svg viewBox="0 0 24 24" width="20" height="20" fill="currentColor" aria-hidden="true" focusable="false"><path d={SHELL_ICON_PATHS[SHELL_DEFAULT_TOOL_ICON]} /></svg>
                 {/if}
                 {#if tool.badge != null}
-                  <span class="smrt-admin-shell__focus-tool-badge">
+                  <span class="smrt-admin-shell__focus-tool-badge" data-smrt-part="badge">
                     {tool.badge}
                   </span>
                 {/if}
@@ -1792,7 +1793,7 @@ function buildLayoutStyle(shell: ModuleShellState): string {
         <div
           class="smrt-admin-shell__panel smrt-admin-shell__panel--right"
           tabindex="-1"
-          hidden={!shownOpen('right')}
+          hidden={!shownOpen('right')} data-smrt-part="body"
         >
           {@render slotGroup('rightSidebar.header')}
           {#key shell.activeFocusToolId}
@@ -1815,13 +1816,13 @@ function buildLayoutStyle(shell: ModuleShellState): string {
       aria-label={t(M['ui.admin_shell.open_panel'], {
         label: editIndicator.map((tool) => tool.label).join(', '),
       })}
-      onclick={openFromIndicator}
+      onclick={openFromIndicator} data-smrt-part="trigger"
     >
       {#if editIndicator[0].icon}
         {@const Icon = editIndicator[0].icon}
         <Icon />
       {/if}
-      <span class="smrt-admin-shell__edit-indicator-label">
+      <span class="smrt-admin-shell__edit-indicator-label" data-smrt-part="label">
         {editIndicator.map((tool) => tool.label).join(', ')}
       </span>
     </button>
@@ -1834,16 +1835,16 @@ function buildLayoutStyle(shell: ModuleShellState): string {
       class="smrt-admin-shell__edge smrt-admin-shell__edge--bottom"
       data-state={panelState('bottom')}
       data-presentation={shell.config.panels.bottom.presentation}
-      style:--smrt-admin-shell-edge-columns={bottomEdgeColumns}
+      style:--smrt-admin-shell-edge-columns={bottomEdgeColumns} data-smrt-part="footer"
     >
       {#if bottomLeftCorner}
-        <div class="smrt-admin-shell__corner smrt-admin-shell__corner--bottom-left">
+        <div class="smrt-admin-shell__corner smrt-admin-shell__corner--bottom-left" data-smrt-part="left">
           {@render bottomLeftCorner()}
         </div>
       {/if}
       <div
         class="smrt-admin-shell__band smrt-admin-shell__band--bottom"
-        style:--smrt-admin-shell-band-column={2}
+        style:--smrt-admin-shell-band-column={2} data-smrt-part="middle"
       >
         {@render slotGroup('footer.start')}
         {@render slotGroup('footer.center')}
@@ -1853,7 +1854,7 @@ function buildLayoutStyle(shell: ModuleShellState): string {
         {#if showToggle('bottom') && (systemPanel || !systemBar)}{@render edgeToggle('bottom')}{/if}
       </div>
       {#if bottomRightCorner}
-        <div class="smrt-admin-shell__corner smrt-admin-shell__corner--bottom-right">
+        <div class="smrt-admin-shell__corner smrt-admin-shell__corner--bottom-right" data-smrt-part="right">
           {@render bottomRightCorner()}
         </div>
       {/if}
@@ -1861,12 +1862,12 @@ function buildLayoutStyle(shell: ModuleShellState): string {
         <section
           class="smrt-admin-shell__drawer smrt-admin-shell__drawer--bottom"
           aria-label={labelFor('bottom')}
-          hidden={!edgeExpanded('bottom')}
+          hidden={!edgeExpanded('bottom')} data-smrt-part="panel"
         >
           {#if systemPanel}
             {@render systemPanel()}
           {:else}
-            <p class="smrt-admin-shell__empty">
+            <p class="smrt-admin-shell__empty" data-smrt-part="empty">
               {t(M['ui.admin_shell.no_system_panel'])}
             </p>
           {/if}
@@ -1876,13 +1877,13 @@ function buildLayoutStyle(shell: ModuleShellState): string {
   {/if}
 
   {#if overlays}
-    <div class="smrt-admin-shell__overlays">
+    <div class="smrt-admin-shell__overlays" data-smrt-part="overlays">
       {@render overlays({ viewport, bottomBar })}
     </div>
   {/if}
 
   {#if bottomBar === 'nav'}
-    <div class="smrt-admin-shell__phone-bar" data-testid="admin-shell-phone-bar">
+    <div class="smrt-admin-shell__phone-bar" data-testid="admin-shell-phone-bar" data-smrt-part="footer">
       {@render phoneBottomBar?.()}
     </div>
   {/if}
@@ -1894,9 +1895,9 @@ function buildLayoutStyle(shell: ModuleShellState): string {
       aria-modal="true"
       aria-label={t(M['ui.admin_shell.shell_shortcuts'])}
       tabindex="-1"
-      use:focusTrap
+      use:focusTrap data-smrt-part="overlay"
     >
-      <div class="smrt-admin-shell__shortcuts-panel">
+      <div class="smrt-admin-shell__shortcuts-panel" data-smrt-part="panel">
         {#if shortcutsOverlay}
           {@render shortcutsOverlay()}
         {:else}
@@ -1931,14 +1932,15 @@ function buildLayoutStyle(shell: ModuleShellState): string {
 
 <style>
 @layer smrt.reset, smrt.structure, smrt.theme;
-@layer smrt.theme {
+
+@layer smrt.structure {
   /* Spacing hooks, all optional (set on the shell or an ancestor); defaults
-     are the current theme tokens:
-       --smrt-admin-shell-band-padding-inline          top/bottom band side padding (--smrt-spacing-4)
-       --smrt-admin-shell-left-rail-padding            expanded left rail padding (--smrt-spacing-3)
-       --smrt-admin-shell-left-rail-padding-collapsed  collapsed left rail inline padding (--smrt-spacing-2)
-       --smrt-admin-shell-tenant-gap                   gap between tenant panel rows (--smrt-spacing-3)
-     The tenant panel only spaces rows it renders: no tenantFooter, no gap. */
+  are the current theme tokens:
+  --smrt-admin-shell-band-padding-inline          top/bottom band side padding (--smrt-spacing-4)
+  --smrt-admin-shell-left-rail-padding            expanded left rail padding (--smrt-spacing-3)
+  --smrt-admin-shell-left-rail-padding-collapsed  collapsed left rail inline padding (--smrt-spacing-2)
+  --smrt-admin-shell-tenant-gap                   gap between tenant panel rows (--smrt-spacing-3)
+  The tenant panel only spaces rows it renders: no tenantFooter, no gap. */
   .smrt-admin-shell {
     --smrt-shell-floating-reserve-inline: 0px;
     --smrt-shell-floating-reserve-block: 0px;
@@ -1952,20 +1954,17 @@ function buildLayoutStyle(shell: ModuleShellState): string {
     --smrt-admin-shell-left-expanded: 16rem;
     --smrt-admin-shell-right-expanded: 20rem;
     --smrt-admin-shell-header-size: 3.5rem;
-    /* The content beside a docked panel never gets narrower than this. */
-    --smrt-admin-shell-panel-main-min: 20rem;
     --smrt-admin-shell-header-track: 0rem;
     --smrt-admin-shell-phone-top-size: 3.5rem;
     --smrt-admin-shell-phone-bar-size: calc(3.5rem + env(safe-area-inset-bottom));
     --smrt-admin-shell-phone-bar-track: 0rem;
-    --smrt-admin-shell-chrome-duration: var(--smrt-duration-short4, 200ms);
     position: relative;
     display: grid;
     grid-template-columns:
       var(--smrt-admin-shell-left-track) minmax(0, 1fr)
       var(--smrt-admin-shell-right-track);
     /* header · top edge · body · bottom edge · phone bottom bar. The extra
-       rows are 0 unless the header / phone bar render. */
+    rows are 0 unless the header / phone bar render. */
     grid-template-rows:
       var(--smrt-admin-shell-header-track)
       var(--smrt-admin-shell-top-track) minmax(0, 1fr)
@@ -1973,58 +1972,21 @@ function buildLayoutStyle(shell: ModuleShellState): string {
       var(--smrt-admin-shell-phone-bar-track);
     min-block-size: 100svh;
     block-size: 100svh;
-    /* Themeable: an app sets --smrt-admin-shell-background on the shell or an
-       ancestor (a tinted page behind cards, for instance). */
-    background: var(--smrt-admin-shell-background, var(--smrt-surface-ground));
-    color: var(--smrt-color-on-surface);
     /* `clip`, not `hidden`: a hidden box is still programmatically scrollable
-       (focus / scrollIntoView on a grid-track child shifts the whole shell
-       and its sidebars); a clipped box can never scroll. Only main and the
-       sidebars scroll. */
+    (focus / scrollIntoView on a grid-track child shifts the whole shell
+    and its sidebars); a clipped box can never scroll. Only main and the
+    sidebars scroll. */
     overflow: hidden;
     overflow: clip;
-    /* Themed, thin scrollbars for every scroller inside the shell. Override
-       --smrt-admin-shell-scrollbar-track / -thumb / -thumb-hover to retint. */
-    scrollbar-color: var(--smrt-admin-shell-scrollbar-thumb, var(--smrt-scrollbar-thumb))
-      var(--smrt-admin-shell-scrollbar-track, var(--smrt-scrollbar-track));
   }
-
-  .smrt-admin-shell :global(*) {
-    scrollbar-width: thin;
-  }
-
   .smrt-admin-shell :global(*)::-webkit-scrollbar {
     width: 0.7rem;
     height: 0.7rem;
   }
-
-  .smrt-admin-shell :global(*)::-webkit-scrollbar-track {
-    background: var(--smrt-admin-shell-scrollbar-track, var(--smrt-scrollbar-track));
-  }
-
-  .smrt-admin-shell :global(*)::-webkit-scrollbar-thumb {
-    background-color: var(--smrt-admin-shell-scrollbar-thumb, var(--smrt-scrollbar-thumb));
-    background-clip: padding-box;
-    border: 2px solid transparent;
-    border-radius: var(--smrt-radius-full);
-  }
-
-  .smrt-admin-shell :global(*)::-webkit-scrollbar-thumb:hover {
-    background-color: var(--smrt-admin-shell-scrollbar-thumb-hover, color-mix(in srgb, var(--smrt-color-on-surface) 38%, transparent));
-  }
-
-  .smrt-admin-shell :global(*)::-webkit-scrollbar-corner {
-    background: transparent;
-  }
-
   .smrt-admin-shell__edge {
     min-width: 0;
     min-height: 0;
-    background: var(--smrt-surface-panel);
-    color: var(--smrt-color-on-surface);
-    border-color: var(--smrt-hairline-color);
   }
-
   .smrt-admin-shell__header {
     grid-column: 1 / -1;
     grid-row: 1;
@@ -2036,20 +1998,12 @@ function buildLayoutStyle(shell: ModuleShellState): string {
     min-block-size: 0;
     padding: 0 calc(var(--smrt-spacing-3) + var(--smrt-shell-floating-reserve-inline)) 0 var(--smrt-spacing-2);
     /* Clip long titles sideways only: menus and popovers opened from the
-       header's actions (a notifications bell, an account menu) must be able
-       to drop below it. `clip` (unlike `hidden`) allows a visible block axis. */
+    header's actions (a notifications bell, an account menu) must be able
+    to drop below it. `clip` (unlike `hidden`) allows a visible block axis. */
     overflow-x: clip;
     overflow-y: visible;
-    border-block-end: var(--smrt-hairline);
-    /* Glass chrome: translucent with blur in the Glass preset, the opaque
-       panel surface (blur 0) everywhere else. */
-    background: var(--smrt-glass-surface);
-    -webkit-backdrop-filter: blur(var(--smrt-glass-blur)) saturate(var(--smrt-glass-saturation));
-    backdrop-filter: blur(var(--smrt-glass-blur)) saturate(var(--smrt-glass-saturation));
-    color: var(--smrt-color-on-surface);
     z-index: 30;
   }
-
   .smrt-admin-shell__edge--top {
     grid-column: 1 / -1;
     grid-row: 2;
@@ -2059,38 +2013,26 @@ function buildLayoutStyle(shell: ModuleShellState): string {
       var(--smrt-admin-shell-left-collapsed) minmax(0, 1fr)
         var(--smrt-admin-shell-right-collapsed)
     );
-    border-block-end: var(--smrt-hairline);
     z-index: 30;
   }
-
   .smrt-admin-shell__edge--left {
     position: relative;
     grid-column: 1;
     grid-row: 3;
-    border-inline-end: var(--smrt-hairline);
     z-index: 20;
   }
-
   .smrt-admin-shell__edge--right {
     position: relative;
     grid-column: 3;
     grid-row: 3;
-    border-inline-start: var(--smrt-hairline);
     z-index: 20;
-    /* The dock is the raised glass region of the shell. */
-    background: var(--smrt-glass-surface-strong);
-    -webkit-backdrop-filter: blur(var(--smrt-glass-blur)) saturate(var(--smrt-glass-saturation));
-    backdrop-filter: blur(var(--smrt-glass-blur)) saturate(var(--smrt-glass-saturation));
-    box-shadow: var(--smrt-elevation-3), var(--smrt-inset-highlight);
   }
-
   .smrt-admin-shell__edge--right[data-state='expanded'] {
     display: grid;
     grid-template-columns:
       minmax(0, 1fr)
       min(var(--smrt-admin-shell-right-collapsed), 100%);
   }
-
   .smrt-admin-shell__edge--bottom {
     grid-column: 1 / -1;
     grid-row: 4;
@@ -2100,10 +2042,8 @@ function buildLayoutStyle(shell: ModuleShellState): string {
       var(--smrt-admin-shell-left-collapsed) minmax(0, 1fr)
         var(--smrt-admin-shell-right-collapsed)
     );
-    border-block-start: var(--smrt-hairline);
     z-index: 30;
   }
-
   .smrt-admin-shell__main {
     grid-column: 2;
     grid-row: 3;
@@ -2111,9 +2051,7 @@ function buildLayoutStyle(shell: ModuleShellState): string {
     min-height: 0;
     overflow: auto;
     padding-block-start: var(--smrt-shell-floating-reserve-main);
-    background: var(--smrt-surface-ground);
   }
-
   .smrt-admin-shell__band {
     display: flex;
     align-items: center;
@@ -2123,22 +2061,15 @@ function buildLayoutStyle(shell: ModuleShellState): string {
     min-block-size: 0;
     padding: 0 var(--smrt-admin-shell-band-padding-inline, var(--smrt-spacing-4));
   }
-
   .smrt-admin-shell__band--top,
   .smrt-admin-shell__band--bottom {
     grid-column: var(--smrt-admin-shell-band-column, 2);
   }
-
   /* The header's slots can render in the top band too: keep the floating
-     layout toggle's corner clear there as well. */
+  layout toggle's corner clear there as well. */
   .smrt-admin-shell__band--top {
     padding-inline-end: calc(var(--smrt-admin-shell-band-padding-inline, var(--smrt-spacing-4)) + var(--smrt-shell-floating-reserve-inline));
   }
-
-  .smrt-admin-shell__empty {
-    color: var(--smrt-color-on-surface-variant);
-  }
-
   .smrt-admin-shell__rail {
     box-sizing: border-box;
     min-width: 0;
@@ -2147,86 +2078,43 @@ function buildLayoutStyle(shell: ModuleShellState): string {
     overflow: auto;
     padding: var(--smrt-spacing-3);
   }
-
   /* A right rail never pads wider than its own track: a rail collapsed to 0
-     (an app that shows nothing there) paints no padding. */
+  (an app that shows nothing there) paints no padding. */
   .smrt-admin-shell__edge--right .smrt-admin-shell__rail {
     padding-inline: min(
       var(--smrt-spacing-3),
       calc(var(--smrt-admin-shell-right-collapsed) / 4)
     );
   }
-
   .smrt-admin-shell__focus-rail {
     display: grid;
     /* Center tracks, not just items: buttons may be wider than the
-       collapsed strip's content box (see ToolsDock). */
+    collapsed strip's content box (see ToolsDock). */
     justify-content: center;
     justify-items: center;
     gap: var(--smrt-spacing-2, 0.5rem);
   }
-
   .smrt-admin-shell__focus-tool {
     position: relative;
     display: grid;
     place-items: center;
     width: var(--smrt-control-height-small);
     height: var(--smrt-control-height-small);
-    border: 1px solid transparent;
-    border-radius: var(--smrt-control-radius);
-    background: transparent;
-    color: var(--smrt-color-on-surface-variant);
     cursor: pointer;
-    font: inherit;
   }
-
   /* One state layer per control: a currentColor veil whose opacity is the
-     theme's hover / pressed / selected token. */
+  theme's hover / pressed / selected token. */
   .smrt-admin-shell__focus-tool::after,
   .smrt-admin-shell__edit-indicator::after {
-    content: '';
     position: absolute;
     inset: 0;
-    border-radius: inherit;
-    background: currentColor;
-    opacity: 0;
     pointer-events: none;
   }
-
-  .smrt-admin-shell__focus-tool:hover::after,
-  .smrt-admin-shell__edit-indicator:hover::after {
-    opacity: var(--smrt-state-hover);
-  }
-
-  .smrt-admin-shell__focus-tool:hover {
-    color: var(--smrt-color-on-surface);
-  }
-
-  .smrt-admin-shell__focus-tool.active {
-    color: var(--smrt-color-primary);
-  }
-
-  .smrt-admin-shell__focus-tool.active::after {
-    opacity: var(--smrt-state-selected);
-  }
-
-  .smrt-admin-shell__focus-tool:active::after,
-  .smrt-admin-shell__edit-indicator:active::after {
-    opacity: var(--smrt-state-pressed);
-  }
-
-  .smrt-admin-shell__focus-tool:focus-visible {
-    outline: var(--smrt-focus-ring-width) solid var(--smrt-focus-ring-color);
-    outline-offset: var(--smrt-focus-ring-offset);
-  }
-
   .smrt-admin-shell__focus-tool:disabled {
-    opacity: var(--smrt-state-disabled);
     cursor: default;
   }
-
   /* Edit-mode tab for a closed railless right edge: pinned to the shell's
-     right edge, vertically centred, over the page without taking space. */
+  right edge, vertically centred, over the page without taking space. */
   .smrt-admin-shell__edit-indicator {
     grid-column: 1 / -1;
     grid-row: 3;
@@ -2238,61 +2126,35 @@ function buildLayoutStyle(shell: ModuleShellState): string {
     gap: var(--smrt-spacing-1, 0.25rem);
     position: relative;
     padding: var(--smrt-spacing-2, 0.5rem) var(--smrt-spacing-2, 0.5rem);
-    border: var(--smrt-hairline);
-    border-inline-end: 0;
-    border-start-start-radius: var(--smrt-control-radius);
-    border-end-start-radius: var(--smrt-control-radius);
-    background: var(--smrt-surface-raised);
-    box-shadow: var(--smrt-elevation-2), var(--smrt-inset-highlight);
-    color: var(--smrt-color-on-surface-variant);
-    font: inherit;
-    font-size: var(--smrt-typography-label-small-size, 0.75rem);
     cursor: pointer;
   }
-
-  .smrt-admin-shell__edit-indicator:hover {
-    color: var(--smrt-color-primary);
-  }
-
-  .smrt-admin-shell__edit-indicator:focus-visible {
-    outline: var(--smrt-focus-ring-width) solid var(--smrt-focus-ring-color);
-    outline-offset: var(--smrt-focus-ring-offset);
-  }
-
   .smrt-admin-shell__edit-indicator :global(svg) {
     inline-size: 1rem;
     block-size: 1rem;
   }
-
   .smrt-admin-shell__focus-tool-badge {
     position: absolute;
     inset-block-start: -0.25rem;
     inset-inline-end: -0.25rem;
     min-width: 1rem;
-    border-radius: var(--smrt-radius-full);
-    background: var(--smrt-color-error);
-    color: var(--smrt-color-on-error);
-    font-size: var(--smrt-typography-label-small-size, 0.625rem);
-    line-height: 1rem;
-    text-align: center;
   }
-
   .smrt-admin-shell__edge--left[data-state='expanded']
-    .smrt-admin-shell__rail {
+  .smrt-admin-shell__rail {
     overflow: hidden;
   }
-
   .smrt-admin-shell__account {
     min-inline-size: 0;
     max-inline-size: min(20rem, 45vw);
     flex: 1 1 12rem;
   }
   .smrt-admin-shell__account :global(.smrt-workspace-account-menu__popover) {
-    top: 100%; bottom: auto; right: 0; left: auto;
+    top: 100%;
+    bottom: auto;
+    right: 0;
+    left: auto;
     inline-size: max-content;
     max-inline-size: calc(100vw - 2 * var(--smrt-spacing-4));
   }
-
   .smrt-admin-shell__chrome-button {
     flex: 0 0 auto;
     display: inline-grid;
@@ -2301,28 +2163,11 @@ function buildLayoutStyle(shell: ModuleShellState): string {
     inline-size: var(--smrt-control-height);
     block-size: var(--smrt-control-height);
     padding: 0;
-    border: 0;
-    border-radius: var(--smrt-control-radius);
-    background: transparent;
-    color: var(--smrt-color-on-surface-variant);
     cursor: pointer;
   }
-  .smrt-admin-shell__chrome-button:hover {
-    background: color-mix(in srgb, currentColor calc(var(--smrt-state-hover) * 100%), transparent);
-    color: var(--smrt-color-on-surface);
-  }
-  .smrt-admin-shell__chrome-button:active {
-    background: color-mix(in srgb, currentColor calc(var(--smrt-state-pressed) * 100%), transparent);
-  }
-  .smrt-admin-shell__chrome-button:focus-visible {
-    outline: var(--smrt-focus-ring-width) solid var(--smrt-focus-ring-color);
-    outline-offset: var(--smrt-focus-ring-offset);
-  }
   .smrt-admin-shell__chrome-button:disabled {
-    opacity: var(--smrt-state-disabled);
     cursor: default;
   }
-
   .smrt-admin-shell__drawer-head {
     display: flex;
     align-items: center;
@@ -2335,12 +2180,19 @@ function buildLayoutStyle(shell: ModuleShellState): string {
     overflow: hidden;
     text-overflow: ellipsis;
   }
-  .smrt-admin-shell__rail-close { justify-self: center; }
-
-  .smrt-admin-shell__tenant-opener { display: none; flex-shrink: 0; }
-  .smrt-admin-shell__tenant-opener.restore-hidden { display: block; }
-  .smrt-admin-shell__edge--left[data-state='collapsed'] .smrt-admin-shell__rail { padding-inline: var(--smrt-admin-shell-left-rail-padding-collapsed, var(--smrt-spacing-2)); }
-
+  .smrt-admin-shell__rail-close {
+    justify-self: center;
+  }
+  .smrt-admin-shell__tenant-opener {
+    display: none;
+    flex-shrink: 0;
+  }
+  .smrt-admin-shell__tenant-opener.smrt-admin-shell__restore-hidden {
+    display: block;
+  }
+  .smrt-admin-shell__edge--left[data-state='collapsed'] .smrt-admin-shell__rail {
+    padding-inline: var(--smrt-admin-shell-left-rail-padding-collapsed, var(--smrt-spacing-2));
+  }
   .smrt-admin-shell__edge--left .smrt-admin-shell__rail {
     display: flex;
     flex-direction: column;
@@ -2348,16 +2200,14 @@ function buildLayoutStyle(shell: ModuleShellState): string {
     padding: var(--smrt-admin-shell-left-rail-padding, var(--smrt-spacing-3));
     overflow: visible;
   }
-
   /* A collapsed `keepMounted` edge keeps its panel in the DOM but hidden;
-     the panel classes set `display`, which would otherwise win over the
-     `hidden` attribute. */
+  the panel classes set `display`, which would otherwise win over the
+  `hidden` attribute. */
   .smrt-admin-shell__tenant-stack[hidden],
   .smrt-admin-shell__panel[hidden],
   .smrt-admin-shell__drawer[hidden] {
     display: none;
   }
-
   .smrt-admin-shell__tenant-stack {
     flex: 1;
     display: flex;
@@ -2366,83 +2216,55 @@ function buildLayoutStyle(shell: ModuleShellState): string {
     min-width: 0;
     min-height: 0;
   }
-
   /* Only the navigation/content area grows; the sidebar header and footer
-     slots (and the legacy tenant footer) keep their natural height. */
+  slots (and the legacy tenant footer) keep their natural height. */
   .smrt-admin-shell__tenant-content {
     flex: 1 1 auto;
     min-width: 0;
     min-height: 0;
     overflow: auto;
   }
-
   .smrt-admin-shell__region-edit {
     display: flex;
     flex: 0 0 auto;
     align-items: center;
     justify-content: flex-end;
   }
-
   .smrt-admin-shell__edge--top .smrt-admin-shell__region-edit,
   .smrt-admin-shell__edge--bottom .smrt-admin-shell__region-edit {
     margin-inline-start: auto;
   }
-
   .smrt-admin-shell__slot {
     display: flex;
     align-items: center;
     gap: var(--smrt-spacing-1);
     min-width: 0;
   }
-
   .smrt-admin-shell__slot--header-center,
   .smrt-admin-shell__slot--footer-center {
     flex: 1 1 auto;
     justify-content: center;
   }
-
   .smrt-admin-shell__slot--header-end,
   .smrt-admin-shell__slot--footer-end {
     margin-inline-start: auto;
   }
-
   .smrt-admin-shell__slot--leftSidebar-header,
   .smrt-admin-shell__slot--rightSidebar-header {
     padding-block-end: var(--smrt-spacing-3);
-    border-block-end: var(--smrt-hairline);
   }
-
   .smrt-admin-shell__slot--leftSidebar-footer,
   .smrt-admin-shell__slot--rightSidebar-footer {
     padding-block-start: var(--smrt-spacing-3);
-    border-block-start: var(--smrt-hairline);
   }
-
-  /* `sidebarFooterDivider={false}`: the host draws its own line at this height. */
-  .smrt-admin-shell[data-footer-divider='off'] .smrt-admin-shell__slot--leftSidebar-footer,
-  .smrt-admin-shell[data-footer-divider='off'] .smrt-admin-shell__slot--rightSidebar-footer,
-  .smrt-admin-shell[data-footer-divider='off'] .smrt-admin-shell__tenant-rail-footer {
-    padding-block-start: 0;
-    border-block-start: 0;
-  }
-
-  /* Icon controls share a row; the full-width account menu takes its own. */
-  .smrt-admin-shell__slot--leftSidebar-footer {
-    flex-wrap: wrap;
-  }
-
   .smrt-admin-shell__slot--rightSidebar-header {
     position: sticky;
     inset-block-start: 0;
-    background: var(--smrt-surface-raised);
   }
-
   .smrt-admin-shell__slot--rightSidebar-footer {
     position: sticky;
     inset-block-end: 0;
-    background: var(--smrt-surface-raised);
   }
-
   /* Layout editing: slots as dashed drop zones, hidden regions as strips. */
   .smrt-admin-shell__slot--editing {
     flex-wrap: wrap;
@@ -2450,15 +2272,6 @@ function buildLayoutStyle(shell: ModuleShellState): string {
     min-inline-size: 4rem;
     min-block-size: 2.25rem;
     padding: var(--smrt-spacing-1);
-    border: var(--smrt-hairline);
-    border-style: dashed;
-    border-radius: var(--smrt-control-radius);
-    background: color-mix(in srgb, var(--smrt-color-primary) calc(var(--smrt-state-hover) * 50%), transparent);
-  }
-  .smrt-admin-shell__slot--editing[data-drop-target] {
-    border-style: solid;
-    border-color: var(--smrt-color-primary);
-    background: color-mix(in srgb, var(--smrt-color-primary) calc(var(--smrt-state-dragged) * 100%), transparent);
   }
   .smrt-admin-shell__slot--editing.smrt-admin-shell__slot--header-center,
   .smrt-admin-shell__slot--editing.smrt-admin-shell__slot--footer-center {
@@ -2473,26 +2286,36 @@ function buildLayoutStyle(shell: ModuleShellState): string {
     min-inline-size: 0;
     min-block-size: 0;
     overflow: hidden;
-    border: var(--smrt-hairline);
-    border-style: dashed;
-    background: var(--smrt-surface-sunken);
-    color: var(--smrt-color-on-surface-variant);
-    font: var(--smrt-typography-label-small-font);
     z-index: 25;
   }
-  .smrt-admin-shell__strip--header { grid-column: 1 / -1; grid-row: 2; }
-  .smrt-admin-shell__strip--footer { grid-column: 1 / -1; grid-row: 4; }
-  .smrt-admin-shell__strip--leftSidebar { grid-column: 1; grid-row: 3; writing-mode: vertical-rl; flex-direction: row; }
-  .smrt-admin-shell__strip--rightSidebar { grid-column: 3; grid-row: 3; writing-mode: vertical-rl; flex-direction: row; }
+  .smrt-admin-shell__strip--header {
+    grid-column: 1 / -1;
+    grid-row: 2;
+  }
+  .smrt-admin-shell__strip--footer {
+    grid-column: 1 / -1;
+    grid-row: 4;
+  }
+  .smrt-admin-shell__strip--leftSidebar {
+    grid-column: 1;
+    grid-row: 3;
+    writing-mode: vertical-rl;
+    flex-direction: row;
+  }
+  .smrt-admin-shell__strip--rightSidebar {
+    grid-column: 3;
+    grid-row: 3;
+    writing-mode: vertical-rl;
+    flex-direction: row;
+  }
   .smrt-admin-shell[data-viewport='phone'] .smrt-admin-shell__strip--leftSidebar,
-  .smrt-admin-shell[data-viewport='phone'] .smrt-admin-shell__strip--rightSidebar { display: none; }
-
+  .smrt-admin-shell[data-viewport='phone'] .smrt-admin-shell__strip--rightSidebar {
+    display: none;
+  }
   .smrt-admin-shell__tenant-footer {
     min-width: 0;
     padding-block-start: var(--smrt-spacing-3);
-    border-block-start: var(--smrt-hairline);
   }
-
   .smrt-admin-shell__tenant-rail-stack {
     display: grid;
     grid-template-rows: minmax(0, 1fr) auto auto;
@@ -2500,29 +2323,23 @@ function buildLayoutStyle(shell: ModuleShellState): string {
     min-width: 0;
     min-height: 0;
   }
-
   .smrt-admin-shell__tenant-rail-content {
     min-width: 0;
     min-height: 0;
     overflow: auto;
   }
-
   .smrt-admin-shell__tenant-rail-footer {
     position: relative;
     z-index: 1;
     grid-row: 3;
     min-width: 0;
     padding-block-start: var(--smrt-spacing-2);
-    border-block-start: var(--smrt-hairline);
     overflow: visible;
   }
-
   .smrt-admin-shell__edge--right[data-state='expanded']
-    .smrt-admin-shell__rail {
+  .smrt-admin-shell__rail {
     grid-column: 2;
-    border-inline-start: var(--smrt-hairline);
   }
-
   .smrt-admin-shell__panel {
     box-sizing: border-box;
     min-width: 0;
@@ -2531,18 +2348,16 @@ function buildLayoutStyle(shell: ModuleShellState): string {
     overflow: auto;
     padding: var(--smrt-spacing-3);
   }
-
   .smrt-admin-shell__panel--right {
     grid-column: 1;
     grid-row: 1;
     padding-block-start: var(--smrt-shell-floating-reserve-block);
   }
-
   /* The left chevron closes the navigation region: after the navigation and
-     above the sidebar footer slot (the account menu), never below it.
-     `margin-block-start: auto` pins it to the end of the nav region even when
-     nothing above it grows. Expanded it hugs the inner edge and points left;
-     collapsed it is centred in the narrow rail and points right. */
+  above the sidebar footer slot (the account menu), never below it.
+  `margin-block-start: auto` pins it to the end of the nav region even when
+  nothing above it grows. Expanded it hugs the inner edge and points left;
+  collapsed it is centred in the narrow rail and points right. */
   .smrt-admin-shell__tenant-utilities {
     display: flex;
     flex: 0 0 auto;
@@ -2562,8 +2377,6 @@ function buildLayoutStyle(shell: ModuleShellState): string {
     inline-size: max(2rem, var(--smrt-control-target-min));
     block-size: max(2rem, var(--smrt-control-target-min));
     padding: 0;
-    border-radius: var(--smrt-control-radius);
-    color: var(--smrt-color-on-surface-variant);
   }
   .smrt-admin-shell__edge--left[data-state='collapsed'] :global(.smrt-admin-shell__edge-toggle--left) {
     align-self: center;
@@ -2573,7 +2386,7 @@ function buildLayoutStyle(shell: ModuleShellState): string {
     grid-row: 2;
   }
   /* In the row the chevron keeps the inner edge (expanded) or the centre
-     (rail); the row itself is what is pinned to the end of the nav region. */
+  (rail); the row itself is what is pinned to the end of the nav region. */
   .smrt-admin-shell__tenant-utilities > :global(.smrt-admin-shell__edge-toggle--left) {
     align-self: center;
     margin-block-start: 0;
@@ -2582,51 +2395,21 @@ function buildLayoutStyle(shell: ModuleShellState): string {
   .smrt-admin-shell__edge--left[data-state='collapsed'] .smrt-admin-shell__tenant-utilities > :global(.smrt-admin-shell__edge-toggle--left) {
     margin-inline-start: 0;
   }
-  .smrt-admin-shell__edge--left[data-state='expanded'] :global(.smrt-admin-shell__edge-toggle-chevron) {
-    transform: scaleX(-1);
-  }
   .smrt-admin-shell__edge-toggle-kbd {
     padding: 0 var(--smrt-spacing-1);
-    border-radius: var(--smrt-radius-small);
-    background: var(--smrt-surface-sunken);
-    color: var(--smrt-color-on-surface-variant);
-    font-size: var(--smrt-typography-body-small-size);
   }
-
   :global(.smrt-admin-shell__edge-toggle--left[data-smrt-component="Button"]) {
     flex: 0 0 auto;
     inline-size: max(2.75rem, var(--smrt-control-target-min));
     block-size: max(2.75rem, var(--smrt-control-target-min));
     padding: 0;
-    color: var(--smrt-color-on-surface-variant);
   }
-
-  :global(.smrt-admin-shell__edge-toggle--left[data-smrt-component="Button"]) {
-    border-radius: var(--smrt-control-radius);
-  }
-
-  :global(.smrt-admin-shell__edge-toggle--left[data-smrt-component="Button"]:hover) {
-    background: color-mix(in srgb, currentColor calc(var(--smrt-state-hover) * 100%), transparent);
-    color: var(--smrt-color-on-surface);
-  }
-
-  :global(.smrt-admin-shell__edge-toggle--left[data-smrt-component="Button"]:active) {
-    background: color-mix(in srgb, currentColor calc(var(--smrt-state-pressed) * 100%), transparent);
-  }
-
   .smrt-admin-shell__drawer {
     position: absolute;
     z-index: 40;
     overflow: auto;
     padding: var(--smrt-spacing-5);
-    border: var(--smrt-hairline);
-    background: var(--smrt-glass-surface-strong);
-    -webkit-backdrop-filter: blur(var(--smrt-glass-blur)) saturate(var(--smrt-glass-saturation));
-    backdrop-filter: blur(var(--smrt-glass-blur)) saturate(var(--smrt-glass-saturation));
-    color: var(--smrt-color-on-surface);
-    box-shadow: var(--smrt-elevation-4), var(--smrt-inset-highlight);
   }
-
   .smrt-admin-shell__drawer--top {
     inset-block-start: calc(
       var(--smrt-admin-shell-header-track) + var(--smrt-admin-shell-top-track)
@@ -2635,44 +2418,30 @@ function buildLayoutStyle(shell: ModuleShellState): string {
       var(--smrt-admin-shell-right-track);
     max-block-size: var(--smrt-admin-shell-top-expanded);
   }
-
   .smrt-admin-shell__drawer--bottom {
     inset-block-end: calc(
       var(--smrt-admin-shell-bottom-track) +
         var(--smrt-admin-shell-phone-bar-track)
     );
     /* The system scope is the application footer. Its expanded drawer must
-       remain footer-wide while it rises above every desktop pane. */
+    remain footer-wide while it rises above every desktop pane. */
     inset-inline: 0;
     max-block-size: var(--smrt-admin-shell-bottom-expanded);
-    animation: smrt-admin-shell-bottom-drawer-in var(--smrt-duration-short2)
-      var(--smrt-easing-standard);
   }
-
-  @keyframes smrt-admin-shell-bottom-drawer-in {
-    from {
-      clip-path: inset(100% 0 0);
-    }
-  }
-
   .smrt-admin-shell__corner {
     display: grid;
     align-items: center;
     min-width: 0;
     padding: 0 var(--smrt-spacing-3);
-    background: var(--smrt-surface-panel);
   }
-
   .smrt-admin-shell__corner--top-left,
   .smrt-admin-shell__corner--bottom-left {
     grid-column: 1;
   }
-
   .smrt-admin-shell__corner--top-right,
   .smrt-admin-shell__corner--bottom-right {
     grid-column: 3;
   }
-
   .smrt-admin-shell__shortcuts {
     position: fixed;
     inset: 0;
@@ -2680,22 +2449,13 @@ function buildLayoutStyle(shell: ModuleShellState): string {
     display: grid;
     place-items: center;
     padding: var(--smrt-spacing-5);
-    background: var(--smrt-surface-overlay);
   }
-
   .smrt-admin-shell__shortcuts-panel {
     inline-size: min(32rem, 100%);
     max-block-size: min(36rem, 100%);
     overflow: auto;
-    border: var(--smrt-hairline);
-    border-radius: var(--smrt-radius-large);
-    background: var(--smrt-glass-surface-strong);
-    -webkit-backdrop-filter: blur(var(--smrt-glass-blur)) saturate(var(--smrt-glass-saturation));
-    backdrop-filter: blur(var(--smrt-glass-blur)) saturate(var(--smrt-glass-saturation));
     padding: var(--smrt-spacing-5);
-    box-shadow: var(--smrt-elevation-4), var(--smrt-inset-highlight);
   }
-
   .smrt-admin-shell__shortcuts-panel header,
   .smrt-admin-shell__shortcuts-panel div {
     display: flex;
@@ -2703,25 +2463,19 @@ function buildLayoutStyle(shell: ModuleShellState): string {
     justify-content: space-between;
     gap: var(--smrt-spacing-4);
   }
-
   .smrt-admin-shell__shortcuts-panel h2,
   .smrt-admin-shell__shortcuts-panel dl {
     margin: 0;
   }
-
   .smrt-admin-shell__shortcuts-panel dl {
     display: grid;
     gap: var(--smrt-spacing-3);
     margin-block-start: var(--smrt-spacing-4);
   }
-
   .smrt-admin-shell__shortcuts-panel dd {
     margin: 0;
-    font-family: var(--smrt-font-family-mono);
   }
-
   /* ---- Resizable side edges ------------------------------------------ */
-
   .smrt-admin-shell__resizer {
     position: absolute;
     inset-block: 0;
@@ -2730,130 +2484,52 @@ function buildLayoutStyle(shell: ModuleShellState): string {
     cursor: col-resize;
     touch-action: none;
   }
-
   .smrt-admin-shell__resizer--left {
     inset-inline-end: -0.375rem;
   }
-
   .smrt-admin-shell__resizer--right {
     inset-inline-start: -0.375rem;
   }
-
-  /* ---- Docked panel (sidebar -> panel -> content) ---------------------- */
-
-  .smrt-admin-shell__body {
-    grid-column: 2;
-    grid-row: 3;
-    position: relative;
-    display: flex;
-    min-width: 0;
-    min-height: 0;
-  }
-
-  .smrt-admin-shell__body > .smrt-admin-shell__main {
-    flex: 1 1 0;
-  }
-
-  .smrt-admin-shell__dock-panel {
-    position: relative;
-    display: flex;
-    flex-direction: column;
-    flex: 0 0 auto;
-    box-sizing: border-box;
-    inline-size: var(--smrt-admin-shell-panel-width, 25rem);
-    /* Neither side collapses: the content keeps its minimum width. */
-    max-inline-size: calc(100% - var(--smrt-admin-shell-panel-main-min));
-    min-inline-size: 0;
-    min-block-size: 0;
-    border-inline-end: var(--smrt-hairline);
-    background: var(--smrt-surface-raised);
-    color: var(--smrt-color-on-surface);
-    z-index: 15;
-  }
-
-  /* Clips the content; the separator straddles the edge, so it is a sibling. */
-  .smrt-admin-shell__dock-panel-body {
-    display: flex;
-    flex-direction: column;
-    flex: 1 1 auto;
-    min-inline-size: 0;
-    min-block-size: 0;
-    overflow: hidden;
-  }
-
-  .smrt-admin-shell__dock-panel[hidden] {
-    display: none;
-  }
-
-  .smrt-admin-shell__resizer--panel {
-    inset-inline-end: -0.375rem;
-  }
-
   .smrt-admin-shell__resizer::after {
-    content: '';
     position: absolute;
     inset-block: 0;
     inset-inline-start: calc(50% - 1px);
     inline-size: 2px;
-    background: var(--smrt-color-primary);
-    opacity: 0;
-    transition: opacity var(--smrt-duration-short2, 100ms)
-      var(--smrt-easing-standard, ease);
   }
-
-  .smrt-admin-shell__resizer:hover::after,
-  .smrt-admin-shell__resizer:focus-visible::after,
-  .smrt-admin-shell[data-resizing] .smrt-admin-shell__resizer::after {
-    opacity: 1;
-  }
-
-  .smrt-admin-shell__resizer:focus-visible {
-    outline: none;
-  }
-
   .smrt-admin-shell[data-resizing] {
     cursor: col-resize;
     user-select: none;
   }
-
   /* ---- Phone chrome ----------------------------------------------------- */
-
   .smrt-admin-shell__phone-top {
     grid-column: 1 / -1;
     grid-row: 3;
     align-self: start;
     z-index: 10;
     min-inline-size: 0;
-    background: var(--smrt-surface-ground);
-    transition: transform var(--smrt-admin-shell-chrome-duration)
-      var(--smrt-easing-standard, ease);
   }
-
-  .smrt-admin-shell__phone-default-end { margin-inline-start: auto; }
-
+  .smrt-admin-shell__phone-default-end {
+    margin-inline-start: auto;
+  }
   .smrt-admin-shell__phone-default-top {
     display: flex;
     align-items: center;
     min-block-size: var(--smrt-admin-shell-phone-top-size);
     padding-inline: var(--smrt-spacing-3);
   }
-
   .smrt-admin-shell[data-chrome-hidden] .smrt-admin-shell__phone-top {
     transform: translateY(-100%);
   }
-
   .smrt-admin-shell[data-phone-top] .smrt-admin-shell__main {
     padding-block-start: var(--smrt-admin-shell-phone-top-size);
     scroll-padding-block-start: var(--smrt-admin-shell-phone-top-size);
   }
-
   .smrt-admin-shell__phone-bar {
     grid-column: 1 / -1;
     grid-row: 5;
     z-index: 30;
     min-inline-size: 0;
   }
-
   .smrt-admin-shell__overlays {
     position: relative;
     grid-column: 1 / -1;
@@ -2863,151 +2539,66 @@ function buildLayoutStyle(shell: ModuleShellState): string {
     min-block-size: 0;
     pointer-events: none;
   }
-
   .smrt-admin-shell__overlays > :global(*) {
     pointer-events: auto;
   }
-
   .smrt-admin-shell__scrim {
     grid-column: 1 / -1;
     grid-row: 1 / 5;
     z-index: 19;
     margin: 0;
     padding: 0;
-    border: 0;
-    background: var(--smrt-surface-overlay);
     opacity: 0.36;
     cursor: pointer;
   }
-
   /* Tablet/desktop overlay: an expanded side edge whose `overlayMedia`
-     matches slides over the page instead of taking a grid track. */
+  matches slides over the page instead of taking a grid track. */
   .smrt-admin-shell__edge--left[data-presentation='overlay'][data-state='expanded'],
   .smrt-admin-shell__edge--right[data-presentation='overlay'][data-state='expanded'] {
     grid-column: 1 / -1;
     z-index: 25;
-    background: var(--smrt-glass-surface-strong);
-    -webkit-backdrop-filter: blur(var(--smrt-glass-blur)) saturate(var(--smrt-glass-saturation));
-    backdrop-filter: blur(var(--smrt-glass-blur)) saturate(var(--smrt-glass-saturation));
-    box-shadow: var(--smrt-elevation-4), var(--smrt-inset-highlight);
-    outline: none;
   }
-
   .smrt-admin-shell__edge--left[data-presentation='overlay'][data-state='expanded'] {
     justify-self: start;
     inline-size: min(var(--smrt-admin-shell-left-expanded), 100%);
-    animation: smrt-admin-shell-slide-from-left
-      var(--smrt-admin-shell-chrome-duration) ease-out;
   }
-
   .smrt-admin-shell__edge--right[data-presentation='overlay'][data-state='expanded'] {
     justify-self: end;
     inline-size: min(var(--smrt-admin-shell-right-expanded), 100%);
-    animation: smrt-admin-shell-slide-from-right
-      var(--smrt-admin-shell-chrome-duration) ease-out;
   }
-
   .smrt-admin-shell__overlay-scrim {
     grid-column: 1 / -1;
     grid-row: 3;
     z-index: 22;
     margin: 0;
     padding: 0;
-    border: 0;
-    background: var(--smrt-surface-overlay);
     opacity: 0.24;
     cursor: pointer;
-    animation: smrt-admin-shell-scrim-in var(--smrt-admin-shell-chrome-duration)
-      ease-out;
   }
-
-  .smrt-admin-shell__edge--left[data-presentation='overlay'][data-closing] {
-    animation: smrt-admin-shell-slide-to-left
-      var(--smrt-admin-shell-chrome-duration) ease-in forwards;
-  }
-
-  .smrt-admin-shell__edge--right[data-presentation='overlay'][data-closing] {
-    animation: smrt-admin-shell-slide-to-right
-      var(--smrt-admin-shell-chrome-duration) ease-in forwards;
-  }
-
   .smrt-admin-shell__overlay-scrim[data-closing] {
     pointer-events: none;
-    animation: smrt-admin-shell-scrim-out
-      var(--smrt-admin-shell-chrome-duration) ease-in forwards;
   }
-
-  @keyframes smrt-admin-shell-slide-to-right {
-    to {
-      transform: translateX(100%);
-    }
-  }
-
-  @keyframes smrt-admin-shell-slide-to-left {
-    to {
-      transform: translateX(-100%);
-    }
-  }
-
-  @keyframes smrt-admin-shell-scrim-out {
-    to {
-      opacity: 0;
-    }
-  }
-
-  @keyframes smrt-admin-shell-slide-from-right {
-    from {
-      transform: translateX(100%);
-    }
-  }
-
-  @keyframes smrt-admin-shell-slide-from-left {
-    from {
-      transform: translateX(-100%);
-    }
-  }
-
-  @keyframes smrt-admin-shell-scrim-in {
-    from {
-      opacity: 0;
-    }
-  }
-
-  @media (prefers-reduced-motion: reduce) {
-    .smrt-admin-shell__edge--left[data-presentation='overlay'][data-state='expanded'],
-    .smrt-admin-shell__edge--right[data-presentation='overlay'][data-state='expanded'],
-    .smrt-admin-shell__edge[data-presentation='overlay'][data-closing],
-    .smrt-admin-shell__overlay-scrim {
-      animation: none;
-    }
-  }
-
   .smrt-admin-shell__sheet-grabber {
     display: grid;
     place-items: center;
     block-size: 1.5rem;
     touch-action: pan-x;
   }
-
   .smrt-admin-shell__sheet-grabber span {
     inline-size: 2.5rem;
     block-size: 0.25rem;
-    border-radius: var(--smrt-radius-full);
-    background: var(--smrt-hairline-strong-color);
   }
-
   /* Phone page contracts: breadcrumbs give way to the top bar, and so does
-     the page title (visually hidden: screen readers and the outline keep
-     it); page tabs stick under it and slide away with it; a form's action
-     row is fixed to the bottom and replaces the bottom bar. */
+  the page title (visually hidden: screen readers and the outline keep
+  it); page tabs stick under it and slide away with it; a form's action
+  row is fixed to the bottom and replaces the bottom bar. */
   .smrt-admin-shell[data-phone-top]:has(
-    > .smrt-admin-shell__phone-top :global([data-shell-page-navigation-replacement])
+  > .smrt-admin-shell__phone-top :global([data-shell-page-navigation-replacement])
   ) :global([data-shell-breadcrumbs]) {
     display: none;
   }
-
   .smrt-admin-shell[data-phone-top]:has(
-    > .smrt-admin-shell__phone-top :global([data-shell-page-title-replacement])
+  > .smrt-admin-shell__phone-top :global([data-shell-page-title-replacement])
   ) :global([data-shell-page-title]) {
     position: absolute;
     inline-size: 1px;
@@ -3017,35 +2608,27 @@ function buildLayoutStyle(shell: ModuleShellState): string {
     overflow: hidden;
     clip-path: inset(50%);
     white-space: nowrap;
-    border: 0;
   }
-
   /* Tabs inside a page header (a content item's tabs under its title) stick
-     like any page tabs: the header's boxes step aside on phones so the tabs'
-     sticky range is the page, not the header. */
+  like any page tabs: the header's boxes step aside on phones so the tabs'
+  sticky range is the page, not the header. */
   .smrt-admin-shell[data-phone-top]
-    :global([data-page-header]:has([data-shell-tabs])),
+  :global([data-page-header]:has([data-shell-tabs])),
   .smrt-admin-shell[data-phone-top]
-    :global([data-page-header-extra]:has([data-shell-tabs])) {
+  :global([data-page-header-extra]:has([data-shell-tabs])) {
     display: contents;
   }
-
   .smrt-admin-shell[data-phone-top] :global([data-shell-tabs]) {
     position: sticky;
     inset-block-start: var(--smrt-admin-shell-phone-top-size);
     z-index: 6;
-    background: var(--smrt-surface-ground);
-    transition: transform var(--smrt-admin-shell-chrome-duration)
-      var(--smrt-easing-standard, ease);
   }
-
   .smrt-admin-shell[data-phone-top][data-chrome-hidden]
-    :global([data-shell-tabs]) {
+  :global([data-shell-tabs]) {
     transform: translateY(
       calc(-100% - var(--smrt-admin-shell-phone-top-size))
     );
   }
-
   .smrt-admin-shell[data-viewport='phone'] :global([data-form-action-bar]) {
     position: fixed;
     inset: auto 0 0;
@@ -3057,37 +2640,30 @@ function buildLayoutStyle(shell: ModuleShellState): string {
     margin: 0;
     padding: var(--smrt-spacing-2) var(--smrt-spacing-4)
       calc(var(--smrt-spacing-2) + env(safe-area-inset-bottom));
-    border-block-start: var(--smrt-hairline);
-    background: var(--smrt-glass-surface);
-    -webkit-backdrop-filter: blur(var(--smrt-glass-blur)) saturate(var(--smrt-glass-saturation));
-    backdrop-filter: blur(var(--smrt-glass-blur)) saturate(var(--smrt-glass-saturation));
   }
-
   .smrt-admin-shell[data-viewport='phone'] :global([data-form-action-bar] > *) {
     flex: 1 1 0;
     min-block-size: 2.75rem;
   }
-
   :global(:root[data-keyboard-open])
-    .smrt-admin-shell[data-viewport='phone']
-    :global([data-form-action-bar]) {
+  .smrt-admin-shell[data-viewport='phone']
+  :global([data-form-action-bar]) {
     display: none;
   }
-
   .smrt-admin-shell[data-bottom-bar='form'] .smrt-admin-shell__main {
     padding-block-end: calc(5rem + env(safe-area-inset-bottom));
   }
-
   /* The phone bottom bar sits at the bottom of the dynamic viewport so the
-     browser's collapsing toolbar never hides it. */
+  browser's collapsing toolbar never hides it. */
   .smrt-admin-shell[data-bottom-bar='nav'],
   .smrt-admin-shell[data-bottom-bar='form'] {
     min-block-size: 100dvh;
     block-size: 100dvh;
   }
-
   @media (max-width: 48rem) {
-    .smrt-admin-shell__band--top :global(.smrt-admin-shell__brand.compact) { margin-block-end: 0; }
+    .smrt-admin-shell__band--top :global(.smrt-admin-shell__brand.smrt-shell-brand__compact) {
+      margin-block-end: 0;
+    }
     .smrt-admin-shell__band--top {
       gap: var(--smrt-spacing-1);
       padding-inline-start: var(--smrt-spacing-2);
@@ -3101,22 +2677,12 @@ function buildLayoutStyle(shell: ModuleShellState): string {
         var(--smrt-admin-shell-bottom-track)
         var(--smrt-admin-shell-phone-bar-track);
     }
-
     .smrt-admin-shell__resizer {
       display: none;
     }
-
-    /* The docked panel is a full-size view over main on phones. */
-    .smrt-admin-shell__dock-panel {
-      position: absolute;
-      inset: 0;
-      inline-size: auto;
-      max-inline-size: none;
-      border-inline-end: 0;
+    .smrt-admin-shell__tenant-opener {
+      display: block;
     }
-
-    .smrt-admin-shell__tenant-opener { display: block; }
-
     /* Touch rows: every phone chrome control meets the touch target. */
     .smrt-admin-shell__chrome-button,
     .smrt-admin-shell__focus-tool {
@@ -3124,7 +2690,9 @@ function buildLayoutStyle(shell: ModuleShellState): string {
       min-block-size: var(--smrt-touch-target-min);
     }
     .smrt-admin-shell__edge--left:not([data-state='expanded']),
-    .smrt-admin-shell__edge--right:not([data-state='expanded']) { visibility: hidden; }
+    .smrt-admin-shell__edge--right:not([data-state='expanded']) {
+      visibility: hidden;
+    }
     .smrt-admin-shell__edge--left,
     .smrt-admin-shell__edge--right {
       position: absolute;
@@ -3138,29 +2706,19 @@ function buildLayoutStyle(shell: ModuleShellState): string {
             var(--smrt-admin-shell-phone-bar-track)
         );
       inline-size: min(22rem, 86vw);
-      background: var(--smrt-glass-surface-strong);
-      -webkit-backdrop-filter: blur(var(--smrt-glass-blur)) saturate(var(--smrt-glass-saturation));
-      backdrop-filter: blur(var(--smrt-glass-blur)) saturate(var(--smrt-glass-saturation));
-      box-shadow: var(--smrt-elevation-4), var(--smrt-inset-highlight);
       transform: translateX(-100%);
-      transition: transform var(--smrt-duration-short2)
-        var(--smrt-easing-standard);
     }
-
     .smrt-admin-shell__edge--left {
       inset-inline-start: 0;
     }
-
     .smrt-admin-shell__edge--right {
       inset-inline-end: 0;
       transform: translateX(100%);
     }
-
     .smrt-admin-shell__edge--left[data-state='expanded'],
     .smrt-admin-shell__edge--right[data-state='expanded'] {
       transform: translateX(0);
     }
-
     /* Right edge as a bottom sheet. */
     .smrt-admin-shell__edge--right[data-phone='sheet'] {
       display: grid;
@@ -3172,64 +2730,42 @@ function buildLayoutStyle(shell: ModuleShellState): string {
           var(--smrt-admin-shell-top-track) + var(--smrt-spacing-8)
       );
       inline-size: auto;
-      border-inline-start: 0;
-      border-start-start-radius: var(--smrt-radius-lg);
-      border-start-end-radius: var(--smrt-radius-lg);
-      border-block-start: var(--smrt-hairline);
-      background: var(--smrt-glass-surface-strong);
-      -webkit-backdrop-filter: blur(var(--smrt-glass-blur)) saturate(var(--smrt-glass-saturation));
-    backdrop-filter: blur(var(--smrt-glass-blur)) saturate(var(--smrt-glass-saturation));
-      box-shadow: var(--smrt-elevation-4), var(--smrt-inset-highlight);
       transform: translateY(100%);
       visibility: hidden;
-      transition:
-        transform var(--smrt-duration-short2) var(--smrt-easing-standard),
-        visibility 0s linear var(--smrt-duration-short2);
     }
-
     .smrt-admin-shell__edge--right[data-phone='sheet'][data-state='expanded'] {
       grid-template-columns: minmax(0, 1fr);
       transform: none;
       visibility: visible;
-      transition: transform var(--smrt-duration-short2)
-        var(--smrt-easing-standard);
     }
-
     .smrt-admin-shell__edge--right[data-phone='sheet'] .smrt-admin-shell__rail {
       display: none;
     }
-
     .smrt-admin-shell__edge--right[data-phone='sheet'] .smrt-admin-shell__panel--right {
       grid-column: 1;
       grid-row: 2;
     }
-
     .smrt-admin-shell__edge--top,
     .smrt-admin-shell__edge--bottom {
       grid-template-columns: minmax(0, 1fr);
     }
-
     .smrt-admin-shell__band--top,
     .smrt-admin-shell__band--bottom {
       grid-column: 1;
     }
-
     .smrt-admin-shell__corner {
       display: none;
     }
-
     .smrt-admin-shell__drawer {
       box-sizing: border-box;
       inset-inline: 0;
     }
-
     .smrt-admin-shell__drawer--top {
       max-block-size: min(
         var(--smrt-admin-shell-top-expanded),
         calc(100% - var(--smrt-admin-shell-top-track) - var(--smrt-admin-shell-bottom-track))
       );
     }
-
     .smrt-admin-shell__drawer--bottom {
       max-block-size: min(
         var(--smrt-admin-shell-bottom-expanded),
@@ -3237,25 +2773,436 @@ function buildLayoutStyle(shell: ModuleShellState): string {
       );
     }
   }
+}
 
+@layer smrt.theme {
+  /* Spacing hooks, all optional (set on the shell or an ancestor); defaults
+  are the current theme tokens:
+  --smrt-admin-shell-band-padding-inline          top/bottom band side padding (--smrt-spacing-4)
+  --smrt-admin-shell-left-rail-padding            expanded left rail padding (--smrt-spacing-3)
+  --smrt-admin-shell-left-rail-padding-collapsed  collapsed left rail inline padding (--smrt-spacing-2)
+  --smrt-admin-shell-tenant-gap                   gap between tenant panel rows (--smrt-spacing-3)
+  The tenant panel only spaces rows it renders: no tenantFooter, no gap. */
+  .smrt-admin-shell {
+    --smrt-admin-shell-chrome-duration: var(--smrt-duration-short4, 200ms);
+    /* Themeable: an app sets --smrt-admin-shell-background on the shell or an
+    ancestor (a tinted page behind cards, for instance). */
+    background: var(--smrt-admin-shell-background, var(--smrt-surface-ground));
+    color: var(--smrt-color-on-surface);
+    /* Themed, thin scrollbars for every scroller inside the shell. Override
+    --smrt-admin-shell-scrollbar-track / -thumb / -thumb-hover to retint. */
+    scrollbar-color: var(--smrt-admin-shell-scrollbar-thumb, var(--smrt-scrollbar-thumb))
+      var(--smrt-admin-shell-scrollbar-track, var(--smrt-scrollbar-track));
+  }
+  .smrt-admin-shell :global(*) {
+    scrollbar-width: thin;
+  }
+  .smrt-admin-shell :global(*)::-webkit-scrollbar-track {
+    background: var(--smrt-admin-shell-scrollbar-track, var(--smrt-scrollbar-track));
+  }
+  .smrt-admin-shell :global(*)::-webkit-scrollbar-thumb {
+    background-color: var(--smrt-admin-shell-scrollbar-thumb, var(--smrt-scrollbar-thumb));
+    background-clip: padding-box;
+    border: 2px solid transparent;
+    border-radius: var(--smrt-radius-full);
+  }
+  .smrt-admin-shell :global(*)::-webkit-scrollbar-thumb:hover {
+    background-color: var(--smrt-admin-shell-scrollbar-thumb-hover, color-mix(in srgb, var(--smrt-color-on-surface) 38%, transparent));
+  }
+  .smrt-admin-shell :global(*)::-webkit-scrollbar-corner {
+    background: transparent;
+  }
+  .smrt-admin-shell__edge {
+    background: var(--smrt-surface-panel);
+    color: var(--smrt-color-on-surface);
+    border-color: var(--smrt-hairline-color);
+  }
+  .smrt-admin-shell__header {
+    border-block-end: var(--smrt-hairline);
+    /* Glass chrome: translucent with blur in the Glass preset, the opaque
+    panel surface (blur 0) everywhere else. */
+    background: var(--smrt-glass-surface);
+    -webkit-backdrop-filter: blur(var(--smrt-glass-blur)) saturate(var(--smrt-glass-saturation));
+    backdrop-filter: blur(var(--smrt-glass-blur)) saturate(var(--smrt-glass-saturation));
+    color: var(--smrt-color-on-surface);
+  }
+  .smrt-admin-shell__edge--top {
+    border-block-end: var(--smrt-hairline);
+  }
+  .smrt-admin-shell__edge--left {
+    border-inline-end: var(--smrt-hairline);
+  }
+  .smrt-admin-shell__edge--right {
+    border-inline-start: var(--smrt-hairline);
+    /* The dock is the raised glass region of the shell. */
+    background: var(--smrt-glass-surface-strong);
+    -webkit-backdrop-filter: blur(var(--smrt-glass-blur)) saturate(var(--smrt-glass-saturation));
+    backdrop-filter: blur(var(--smrt-glass-blur)) saturate(var(--smrt-glass-saturation));
+    box-shadow: var(--smrt-elevation-3), var(--smrt-inset-highlight);
+  }
+  .smrt-admin-shell__edge--bottom {
+    border-block-start: var(--smrt-hairline);
+  }
+  .smrt-admin-shell__main {
+    background: var(--smrt-surface-ground);
+  }
+  .smrt-admin-shell__empty {
+    color: var(--smrt-color-on-surface-variant);
+  }
+  .smrt-admin-shell__focus-tool {
+    border: 1px solid transparent;
+    border-radius: var(--smrt-control-radius);
+    background: transparent;
+    color: var(--smrt-color-on-surface-variant);
+    font: inherit;
+  }
+  /* One state layer per control: a currentColor veil whose opacity is the
+  theme's hover / pressed / selected token. */
+  .smrt-admin-shell__focus-tool::after,
+  .smrt-admin-shell__edit-indicator::after {
+    content: '';
+    border-radius: inherit;
+    background: currentColor;
+    opacity: 0;
+  }
+  .smrt-admin-shell__focus-tool:hover::after,
+  .smrt-admin-shell__edit-indicator:hover::after {
+    opacity: var(--smrt-state-hover);
+  }
+  .smrt-admin-shell__focus-tool:hover {
+    color: var(--smrt-color-on-surface);
+  }
+  .smrt-admin-shell__focus-tool.smrt-admin-shell__active {
+    color: var(--smrt-color-primary);
+  }
+  .smrt-admin-shell__focus-tool.smrt-admin-shell__active::after {
+    opacity: var(--smrt-state-selected);
+  }
+  .smrt-admin-shell__focus-tool:active::after,
+  .smrt-admin-shell__edit-indicator:active::after {
+    opacity: var(--smrt-state-pressed);
+  }
+  .smrt-admin-shell__focus-tool:focus-visible {
+    outline: var(--smrt-focus-ring-width) solid var(--smrt-focus-ring-color);
+    outline-offset: var(--smrt-focus-ring-offset);
+  }
+  .smrt-admin-shell__focus-tool:disabled {
+    opacity: var(--smrt-state-disabled);
+  }
+  /* Edit-mode tab for a closed railless right edge: pinned to the shell's
+  right edge, vertically centred, over the page without taking space. */
+  .smrt-admin-shell__edit-indicator {
+    border: var(--smrt-hairline);
+    border-inline-end: 0;
+    border-start-start-radius: var(--smrt-control-radius);
+    border-end-start-radius: var(--smrt-control-radius);
+    background: var(--smrt-surface-raised);
+    box-shadow: var(--smrt-elevation-2), var(--smrt-inset-highlight);
+    color: var(--smrt-color-on-surface-variant);
+    font: inherit;
+    font-size: var(--smrt-typography-label-small-size, 0.75rem);
+  }
+  .smrt-admin-shell__edit-indicator:hover {
+    color: var(--smrt-color-primary);
+  }
+  .smrt-admin-shell__edit-indicator:focus-visible {
+    outline: var(--smrt-focus-ring-width) solid var(--smrt-focus-ring-color);
+    outline-offset: var(--smrt-focus-ring-offset);
+  }
+  .smrt-admin-shell__focus-tool-badge {
+    border-radius: var(--smrt-radius-full);
+    background: var(--smrt-color-error);
+    color: var(--smrt-color-on-error);
+    font-size: var(--smrt-typography-label-small-size, 0.625rem);
+    line-height: 1rem;
+    text-align: center;
+  }
+  .smrt-admin-shell__chrome-button {
+    border: 0;
+    border-radius: var(--smrt-control-radius);
+    background: transparent;
+    color: var(--smrt-color-on-surface-variant);
+  }
+  .smrt-admin-shell__chrome-button:hover {
+    background: color-mix(in srgb, currentColor calc(var(--smrt-state-hover) * 100%), transparent);
+    color: var(--smrt-color-on-surface);
+  }
+  .smrt-admin-shell__chrome-button:active {
+    background: color-mix(in srgb, currentColor calc(var(--smrt-state-pressed) * 100%), transparent);
+  }
+  .smrt-admin-shell__chrome-button:focus-visible {
+    outline: var(--smrt-focus-ring-width) solid var(--smrt-focus-ring-color);
+    outline-offset: var(--smrt-focus-ring-offset);
+  }
+  .smrt-admin-shell__chrome-button:disabled {
+    opacity: var(--smrt-state-disabled);
+  }
+  .smrt-admin-shell__slot--leftSidebar-header,
+  .smrt-admin-shell__slot--rightSidebar-header {
+    border-block-end: var(--smrt-hairline);
+  }
+  .smrt-admin-shell__slot--leftSidebar-footer,
+  .smrt-admin-shell__slot--rightSidebar-footer {
+    border-block-start: var(--smrt-hairline);
+  }
+  .smrt-admin-shell__slot--rightSidebar-header {
+    background: var(--smrt-surface-raised);
+  }
+  .smrt-admin-shell__slot--rightSidebar-footer {
+    background: var(--smrt-surface-raised);
+  }
+  /* Layout editing: slots as dashed drop zones, hidden regions as strips. */
+  .smrt-admin-shell__slot--editing {
+    border: var(--smrt-hairline);
+    border-style: dashed;
+    border-radius: var(--smrt-control-radius);
+    background: color-mix(in srgb, var(--smrt-color-primary) calc(var(--smrt-state-hover) * 50%), transparent);
+  }
+  .smrt-admin-shell__slot--editing[data-drop-target] {
+    border-style: solid;
+    border-color: var(--smrt-color-primary);
+    background: color-mix(in srgb, var(--smrt-color-primary) calc(var(--smrt-state-dragged) * 100%), transparent);
+  }
+  .smrt-admin-shell__strip {
+    border: var(--smrt-hairline);
+    border-style: dashed;
+    background: var(--smrt-surface-sunken);
+    color: var(--smrt-color-on-surface-variant);
+    font: var(--smrt-typography-label-small-font);
+  }
+  .smrt-admin-shell__tenant-footer {
+    border-block-start: var(--smrt-hairline);
+  }
+  .smrt-admin-shell__tenant-rail-footer {
+    border-block-start: var(--smrt-hairline);
+  }
+  .smrt-admin-shell__edge--right[data-state='expanded']
+  .smrt-admin-shell__rail {
+    border-inline-start: var(--smrt-hairline);
+  }
+  .smrt-admin-shell__edge--left :global(.smrt-admin-shell__edge-toggle--left) {
+    border-radius: var(--smrt-control-radius);
+    color: var(--smrt-color-on-surface-variant);
+  }
+  .smrt-admin-shell__edge--left[data-state='expanded'] :global(.smrt-admin-shell__edge-toggle-chevron) {
+    transform: scaleX(-1);
+  }
+  .smrt-admin-shell__edge-toggle-kbd {
+    border-radius: var(--smrt-radius-small);
+    background: var(--smrt-surface-sunken);
+    color: var(--smrt-color-on-surface-variant);
+    font-size: var(--smrt-typography-body-small-size);
+  }
+  :global(.smrt-admin-shell__edge-toggle--left[data-smrt-component="Button"]) {
+    color: var(--smrt-color-on-surface-variant);
+  }
+  :global(.smrt-admin-shell__edge-toggle--left[data-smrt-component="Button"]) {
+    border-radius: var(--smrt-control-radius);
+  }
+  :global(.smrt-admin-shell__edge-toggle--left[data-smrt-component="Button"]:hover) {
+    background: color-mix(in srgb, currentColor calc(var(--smrt-state-hover) * 100%), transparent);
+    color: var(--smrt-color-on-surface);
+  }
+  :global(.smrt-admin-shell__edge-toggle--left[data-smrt-component="Button"]:active) {
+    background: color-mix(in srgb, currentColor calc(var(--smrt-state-pressed) * 100%), transparent);
+  }
+  .smrt-admin-shell__drawer {
+    border: var(--smrt-hairline);
+    background: var(--smrt-glass-surface-strong);
+    -webkit-backdrop-filter: blur(var(--smrt-glass-blur)) saturate(var(--smrt-glass-saturation));
+    backdrop-filter: blur(var(--smrt-glass-blur)) saturate(var(--smrt-glass-saturation));
+    color: var(--smrt-color-on-surface);
+    box-shadow: var(--smrt-elevation-4), var(--smrt-inset-highlight);
+  }
+  .smrt-admin-shell__drawer--bottom {
+    animation: smrt-admin-shell-bottom-drawer-in var(--smrt-duration-short2)
+      var(--smrt-easing-standard);
+  }
+  @keyframes smrt-admin-shell-bottom-drawer-in {
+    from {
+      clip-path: inset(100% 0 0);
+    }
+  }
+  .smrt-admin-shell__corner {
+    background: var(--smrt-surface-panel);
+  }
+  .smrt-admin-shell__shortcuts {
+    background: var(--smrt-surface-overlay);
+  }
+  .smrt-admin-shell__shortcuts-panel {
+    border: var(--smrt-hairline);
+    border-radius: var(--smrt-radius-large);
+    background: var(--smrt-glass-surface-strong);
+    -webkit-backdrop-filter: blur(var(--smrt-glass-blur)) saturate(var(--smrt-glass-saturation));
+    backdrop-filter: blur(var(--smrt-glass-blur)) saturate(var(--smrt-glass-saturation));
+    box-shadow: var(--smrt-elevation-4), var(--smrt-inset-highlight);
+  }
+  .smrt-admin-shell__shortcuts-panel dd {
+    font-family: var(--smrt-font-family-mono);
+  }
+  .smrt-admin-shell__resizer::after {
+    content: '';
+    background: var(--smrt-color-primary);
+    opacity: 0;
+    transition: opacity var(--smrt-duration-short2, 100ms)
+      var(--smrt-easing-standard, ease);
+  }
+  .smrt-admin-shell__resizer:hover::after,
+  .smrt-admin-shell__resizer:focus-visible::after,
+  .smrt-admin-shell[data-resizing] .smrt-admin-shell__resizer::after {
+    opacity: 1;
+  }
+  .smrt-admin-shell__resizer:focus-visible {
+    outline: none;
+  }
+  /* ---- Phone chrome ----------------------------------------------------- */
+  .smrt-admin-shell__phone-top {
+    background: var(--smrt-surface-ground);
+    transition: transform var(--smrt-admin-shell-chrome-duration)
+      var(--smrt-easing-standard, ease);
+  }
+  .smrt-admin-shell__scrim {
+    border: 0;
+    background: var(--smrt-surface-overlay);
+  }
+  /* Tablet/desktop overlay: an expanded side edge whose `overlayMedia`
+  matches slides over the page instead of taking a grid track. */
+  .smrt-admin-shell__edge--left[data-presentation='overlay'][data-state='expanded'],
+  .smrt-admin-shell__edge--right[data-presentation='overlay'][data-state='expanded'] {
+    background: var(--smrt-glass-surface-strong);
+    -webkit-backdrop-filter: blur(var(--smrt-glass-blur)) saturate(var(--smrt-glass-saturation));
+    backdrop-filter: blur(var(--smrt-glass-blur)) saturate(var(--smrt-glass-saturation));
+    box-shadow: var(--smrt-elevation-4), var(--smrt-inset-highlight);
+    outline: none;
+  }
+  .smrt-admin-shell__edge--left[data-presentation='overlay'][data-state='expanded'] {
+    animation: smrt-admin-shell-slide-from-left
+      var(--smrt-admin-shell-chrome-duration) ease-out;
+  }
+  .smrt-admin-shell__edge--right[data-presentation='overlay'][data-state='expanded'] {
+    animation: smrt-admin-shell-slide-from-right
+      var(--smrt-admin-shell-chrome-duration) ease-out;
+  }
+  .smrt-admin-shell__overlay-scrim {
+    border: 0;
+    background: var(--smrt-surface-overlay);
+    animation: smrt-admin-shell-scrim-in var(--smrt-admin-shell-chrome-duration)
+      ease-out;
+  }
+  .smrt-admin-shell__edge--left[data-presentation='overlay'][data-closing] {
+    animation: smrt-admin-shell-slide-to-left
+      var(--smrt-admin-shell-chrome-duration) ease-in forwards;
+  }
+  .smrt-admin-shell__edge--right[data-presentation='overlay'][data-closing] {
+    animation: smrt-admin-shell-slide-to-right
+      var(--smrt-admin-shell-chrome-duration) ease-in forwards;
+  }
+  .smrt-admin-shell__overlay-scrim[data-closing] {
+    animation: smrt-admin-shell-scrim-out
+      var(--smrt-admin-shell-chrome-duration) ease-in forwards;
+  }
+  @keyframes smrt-admin-shell-slide-to-right {
+    to {
+      transform: translateX(100%);
+    }
+  }
+  @keyframes smrt-admin-shell-slide-to-left {
+    to {
+      transform: translateX(-100%);
+    }
+  }
+  @keyframes smrt-admin-shell-scrim-out {
+    to {
+      opacity: 0;
+    }
+  }
+  @keyframes smrt-admin-shell-slide-from-right {
+    from {
+      transform: translateX(100%);
+    }
+  }
+  @keyframes smrt-admin-shell-slide-from-left {
+    from {
+      transform: translateX(-100%);
+    }
+  }
+  @keyframes smrt-admin-shell-scrim-in {
+    from {
+      opacity: 0;
+    }
+  }
+  @media (prefers-reduced-motion: reduce) {
+    .smrt-admin-shell__edge--left[data-presentation='overlay'][data-state='expanded'],
+    .smrt-admin-shell__edge--right[data-presentation='overlay'][data-state='expanded'],
+    .smrt-admin-shell__edge[data-presentation='overlay'][data-closing],
+    .smrt-admin-shell__overlay-scrim {
+      animation: none;
+    }
+  }
+  .smrt-admin-shell__sheet-grabber span {
+    border-radius: var(--smrt-radius-full);
+    background: var(--smrt-hairline-strong-color);
+  }
+  .smrt-admin-shell[data-phone-top]:has(
+  > .smrt-admin-shell__phone-top :global([data-shell-page-title-replacement])
+  ) :global([data-shell-page-title]) {
+    border: 0;
+  }
+  .smrt-admin-shell[data-phone-top] :global([data-shell-tabs]) {
+    background: var(--smrt-surface-ground);
+    transition: transform var(--smrt-admin-shell-chrome-duration)
+      var(--smrt-easing-standard, ease);
+  }
+  .smrt-admin-shell[data-viewport='phone'] :global([data-form-action-bar]) {
+    border-block-start: var(--smrt-hairline);
+    background: var(--smrt-glass-surface);
+    -webkit-backdrop-filter: blur(var(--smrt-glass-blur)) saturate(var(--smrt-glass-saturation));
+    backdrop-filter: blur(var(--smrt-glass-blur)) saturate(var(--smrt-glass-saturation));
+  }
+  @media (max-width: 48rem) {
+    .smrt-admin-shell__edge--left,
+    .smrt-admin-shell__edge--right {
+      background: var(--smrt-glass-surface-strong);
+      -webkit-backdrop-filter: blur(var(--smrt-glass-blur)) saturate(var(--smrt-glass-saturation));
+      backdrop-filter: blur(var(--smrt-glass-blur)) saturate(var(--smrt-glass-saturation));
+      box-shadow: var(--smrt-elevation-4), var(--smrt-inset-highlight);
+      transition: transform var(--smrt-duration-short2)
+        var(--smrt-easing-standard);
+    }
+    /* Right edge as a bottom sheet. */
+    .smrt-admin-shell__edge--right[data-phone='sheet'] {
+      border-inline-start: 0;
+      border-start-start-radius: var(--smrt-radius-lg);
+      border-start-end-radius: var(--smrt-radius-lg);
+      border-block-start: var(--smrt-hairline);
+      background: var(--smrt-glass-surface-strong);
+      -webkit-backdrop-filter: blur(var(--smrt-glass-blur)) saturate(var(--smrt-glass-saturation));
+      backdrop-filter: blur(var(--smrt-glass-blur)) saturate(var(--smrt-glass-saturation));
+      box-shadow: var(--smrt-elevation-4), var(--smrt-inset-highlight);
+      transition:
+        transform var(--smrt-duration-short2) var(--smrt-easing-standard),
+        visibility 0s linear var(--smrt-duration-short2);
+    }
+    .smrt-admin-shell__edge--right[data-phone='sheet'][data-state='expanded'] {
+      transition: transform var(--smrt-duration-short2)
+        var(--smrt-easing-standard);
+    }
+  }
   /* ---- Motion --------------------------------------------------------- */
   /* `data-motion` is set after hydration and two frames, so first paint,
-     SSR and a persisted layout restoring never animate. The pointer-drag
-     resize stays immediate (`data-resizing`). Phone drawers keep their own
-     animation handshake (onEdgeAnimationEnd / waitForPanelAnimations).
-     Every rule below sits in `no-preference`, so reduced motion is off by
-     construction, matching the reduced-motion block at the end. */
-
+  SSR and a persisted layout restoring never animate. The pointer-drag
+  resize stays immediate (`data-resizing`). Phone drawers keep their own
+  animation handshake (onEdgeAnimationEnd / waitForPanelAnimations).
+  Every rule below sits in `no-preference`, so reduced motion is off by
+  construction, matching the reduced-motion block at the end. */
   @media (prefers-reduced-motion: no-preference) {
     .smrt-admin-shell[data-motion]:not([data-viewport='phone']) {
       transition: grid-template-columns var(--smrt-duration-short4)
         var(--smrt-easing-emphasized);
     }
-
     .smrt-admin-shell[data-motion][data-resizing]:not([data-viewport='phone']) {
       transition: none;
     }
-
     /* One colour-scheme crossfade, flagged by the scheme observer. */
     .smrt-admin-shell[data-smrt-theme-changing]:not([data-viewport='phone']) {
       transition:
@@ -3264,7 +3211,6 @@ function buildLayoutStyle(shell: ModuleShellState): string {
         background-color var(--smrt-duration-medium1) var(--smrt-easing-standard),
         color var(--smrt-duration-medium1) var(--smrt-easing-standard);
     }
-
     .smrt-admin-shell[data-smrt-theme-changing]:not([data-viewport='phone']) .smrt-admin-shell__edge,
     .smrt-admin-shell[data-smrt-theme-changing]:not([data-viewport='phone']) .smrt-admin-shell__header,
     .smrt-admin-shell[data-smrt-theme-changing]:not([data-viewport='phone']) .smrt-admin-shell__main {
@@ -3273,14 +3219,12 @@ function buildLayoutStyle(shell: ModuleShellState): string {
         border-color var(--smrt-duration-medium1) var(--smrt-easing-standard),
         color var(--smrt-duration-medium1) var(--smrt-easing-standard);
     }
-
     /* Newly revealed sidebar / dock content fades in. */
     .smrt-admin-shell[data-motion]:not([data-viewport='phone']) .smrt-admin-shell__edge[data-presentation='push'] .smrt-admin-shell__tenant-stack:not([hidden]),
     .smrt-admin-shell[data-motion]:not([data-viewport='phone']) .smrt-admin-shell__edge[data-presentation='push'] .smrt-admin-shell__panel--right:not([hidden]) {
       animation: smrt-admin-shell-content-in var(--smrt-duration-short2)
         var(--smrt-easing-standard) backwards;
     }
-
     /* Layout edit mode: zones, strips and region controls fade / scale in. */
     .smrt-admin-shell__slot--editing,
     .smrt-admin-shell__strip,
@@ -3289,52 +3233,139 @@ function buildLayoutStyle(shell: ModuleShellState): string {
         var(--smrt-easing-standard) backwards;
     }
   }
-
   @keyframes smrt-admin-shell-content-in {
-    from { opacity: 0; }
+    from {
+      opacity: 0;
+    }
   }
-
   @keyframes smrt-admin-shell-edit-in {
-    from { opacity: 0; transform: scale(0.96); }
+    from {
+      opacity: 0;
+      transform: scale(0.96);
+    }
   }
-
   /* View transitions: the names exist only while runViewTransition runs
-     (html[data-smrt-view-transition]); they must be unique per document, so
-     hosts must not reuse them. */
+  (html[data-smrt-view-transition]); they must be unique per document, so
+  hosts must not reuse them. */
   :global([data-smrt-view-transition]) .smrt-admin-shell:not([data-viewport='phone']) :global(.smrt-admin-shell__brand) {
     view-transition-name: smrt-shell-brand;
   }
-
   :global([data-smrt-view-transition]) .smrt-admin-shell:not([data-viewport='phone']) .smrt-admin-shell__tenant-content,
   :global([data-smrt-view-transition]) .smrt-admin-shell:not([data-viewport='phone']) .smrt-admin-shell__tenant-rail-content {
     view-transition-name: smrt-shell-nav;
   }
-
   :global([data-smrt-view-transition]) .smrt-admin-shell:not([data-viewport='phone']) .smrt-admin-shell__edge--right {
     view-transition-name: smrt-shell-dock;
   }
-
   @media (prefers-reduced-motion: reduce) {
     .smrt-admin-shell {
       --smrt-admin-shell-chrome-duration: 0ms;
-
     }
-
     .smrt-admin-shell__edge--left,
     .smrt-admin-shell__edge--right,
     .smrt-admin-shell__edge--right[data-phone='sheet'],
     .smrt-admin-shell__edge--right[data-phone='sheet'][data-state='expanded'] {
       transition: none;
     }
-
     .smrt-admin-shell__drawer--bottom {
       animation: none;
     }
   }
   /* Forced colors (#3908): selected and open states keep a non-colour indicator. */
   @media (forced-colors: active) {
-    .smrt-admin-shell__focus-tool.active { background: Highlight; color: HighlightText; border-color: Highlight; }
-    .smrt-admin-shell__focus-tool:disabled, .smrt-admin-shell__focus-tool.active:disabled { opacity: 1; background: Canvas; color: GrayText; border-color: GrayText; }
+    .smrt-admin-shell__focus-tool.smrt-admin-shell__active {
+      background: Highlight;
+      color: HighlightText;
+      border-color: Highlight;
+    }
+    .smrt-admin-shell__focus-tool:disabled, .smrt-admin-shell__focus-tool.smrt-admin-shell__active:disabled {
+      opacity: 1;
+      background: Canvas;
+      color: GrayText;
+      border-color: GrayText;
+    }
+  }
+}
+
+@layer smrt.structure {
+  .smrt-admin-shell[data-footer-divider='off'] .smrt-admin-shell__slot--leftSidebar-footer,
+  .smrt-admin-shell[data-footer-divider='off'] .smrt-admin-shell__slot--rightSidebar-footer,
+  .smrt-admin-shell[data-footer-divider='off'] .smrt-admin-shell__tenant-rail-footer {
+    padding-block-start: 0;
+  }
+  .smrt-admin-shell__slot--leftSidebar-footer {
+    flex-wrap: wrap;
+  }
+  .smrt-admin-shell__body {
+    grid-column: 2;
+    grid-row: 3;
+    position: relative;
+    display: flex;
+    min-width: 0;
+    min-height: 0;
+  }
+  .smrt-admin-shell__body > .smrt-admin-shell__main {
+    flex: 1 1 0;
+  }
+  .smrt-admin-shell__dock-panel {
+    position: relative;
+    display: flex;
+    flex-direction: column;
+    flex: 0 0 auto;
+    box-sizing: border-box;
+    inline-size: var(--smrt-admin-shell-panel-width, 25rem);
+    max-inline-size: calc(100% - var(--smrt-admin-shell-panel-main-min));
+    min-inline-size: 0;
+    min-block-size: 0;
+    z-index: 15;
+  }
+  .smrt-admin-shell__dock-panel-body {
+    display: flex;
+    flex-direction: column;
+    flex: 1 1 auto;
+    min-inline-size: 0;
+    min-block-size: 0;
+    overflow: hidden;
+  }
+  .smrt-admin-shell__dock-panel[hidden] {
+    display: none;
+  }
+  .smrt-admin-shell__resizer--panel {
+    inset-inline-end: -0.375rem;
+  }
+  @media (max-width: 48rem) {
+    .smrt-admin-shell__dock-panel {
+      position: absolute;
+      inset: 0;
+      inline-size: auto;
+      max-inline-size: none;
+    }
+  }
+}
+
+@layer smrt.theme {
+  .smrt-admin-shell {
+  }
+  .smrt-admin-shell[data-footer-divider='off'] .smrt-admin-shell__slot--leftSidebar-footer,
+  .smrt-admin-shell[data-footer-divider='off'] .smrt-admin-shell__slot--rightSidebar-footer,
+  .smrt-admin-shell[data-footer-divider='off'] .smrt-admin-shell__tenant-rail-footer {
+    border-block-start: 0;
+  }
+  .smrt-admin-shell__dock-panel {
+    border-inline-end: var(--smrt-hairline);
+    background: var(--smrt-surface-raised);
+    color: var(--smrt-color-on-surface);
+  }
+  @media (max-width: 48rem) {
+    .smrt-admin-shell__dock-panel {
+      border-inline-end: 0;
+    }
+  }
+}
+
+@layer smrt.structure {
+  .smrt-admin-shell {
+    --smrt-admin-shell-panel-main-min: 20rem;
   }
 }
 </style>

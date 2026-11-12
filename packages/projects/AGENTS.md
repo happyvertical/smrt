@@ -48,7 +48,7 @@ time-entry Svelte components are re-exported from smrt-timesheets too. See
 
 | Model | Key Fields | Notes |
 |-------|-----------|-------|
-| **Repository** | `owner`, `name`, `providerType`, `tokenConfigKey` | `sync()`, `getIssues()`, `getPullRequests()` |
+| **Repository** | `owner`, `name`, `providerType`, `tokenConfigKey`, `archived`, `lastPushedAt`, `openPullRequestCount`, `ciState`, `latestReleaseTag/Date/Url`, `lastObservedAt`, `missingSince` | `sync()`, `getIssues()`, `getPullRequests()`. Unique per (tenant, provider, owner, name); independent of any project |
 | **Issue** | `repositoryId` (optional FK), `projectId` (optional FK), `number`, `title`, `body`, `state`, `labels[]` | `incorporateFeedback()`, `rollback()`, `suggestLabels()` |
 | **PullRequest** | extends Issue + `headRef`, `baseRef`, `merged`, `draft` | STI on Issue table. `summarize()`, `merge()` |
 | **Project** | `projectId`, `title`, `statuses[]`, `statusFieldId` | GitHub Projects V2. `addItem()`, `moveItem()`, `analyzeHealth()` |
@@ -59,6 +59,8 @@ time-entry Svelte components are re-exported from smrt-timesheets too. See
 | **Label** | `repositoryId` (optional FK), `projectId` (optional FK), `name`, `color` | Scope: repository, project, or neither |
 
 ## Key Patterns
+
+- **Organization sync (#4905)**: `RepositoryCollection.syncOrganization({ owner, tokenConfigKey, tenantId?, force?, throttleMs?, lister? })` lists the owner through `@happyvertical/repos` `listOrganizationRepositories` (needs >= 0.111.11), upserts one `Repository` per listed repo, sets `archived` and the activity snapshot (`lastPushedAt`, `openPullRequestCount`, `ciState` of the default-branch head, `latestRelease*`), and sets `missingSince` on same-owner rows no longer listed (cleared if they return; an empty listing withholds vanish detection). Throttled by the newest `lastObservedAt` (`SYNC_THROTTLE_MS`); `force` bypasses. Opens no transaction, so a failed run leaves earlier rows saved and a rerun converges. Works with a read-only token named by `tokenConfigKey`; run it from a scheduled job. `listActive()` hides archived and missing rows. Repositories outside the org are added with `getOrCreate(owner, name)` and are never touched by another owner's sync. The default `lister` is injectable; tests stub it. Project links (H2) attach by repository id and must not change the unique key. Scope: the ambient tenant (or `tenantId`); with no tenant context only null-tenant rows are touched. `lastObservedAt` is stamped only when a pass completes. Owner/name match case-insensitively. Migration: `db:migrate` adds the columns and a unique index `repositories_tenant_provider_owner_name_key`; databases that already hold duplicate (tenant, provider, owner, name) rows must dedupe them first or the index fails. NULL-tenant rows are not DB-unique (SQL NULL semantics); the service dedupes them.
 
 - **Repository is optional (project-native issues)**: an Issue/Label may carry only a `projectId`. `issue.hasRepository()` gates every provider call: `sync()` is a no-op, `close/addLabels/removeLabel/assign/addComment/rollback/incorporateFeedback(apply)` change local state only, `getComments()` reads stored `Comment` rows, `getRepository()` throws, `getUrl()` returns `''`. No unique key spans `repositoryId`+`number` (lookups only), so NULL repositories need no partial index. Schema change adds `issues.project_id`/`labels.project_id` and relaxes `repository_id` to nullable on both; `db:migrate` generates it from the manifest.
 

@@ -451,7 +451,7 @@ const dockToggles = $derived(
 {/snippet}
 
 {#snippet back()}
-  <a class="back" href={backLink?.href} data-planner-back>
+  <a class="smrt-planner__back" href={backLink?.href} data-planner-back data-smrt-part="nav">
     <span aria-hidden="true">←</span>
     <span>{backLink?.label}</span>
   </a>
@@ -559,7 +559,7 @@ const dockToggles = $derived(
 >
   <ThemeBridge deferInitial={persistence === 'host'} presetOverride={applyCookbookTheme(shell.theme)} />
   <PlannerLifecycle {controller} {basePath} {inference} {persistence} {onready} {initialConversation} {cookbookOffers} {conversationalAction} nativeAssistant links="hash" onreset={resetProject} />
-  <main class="content">
+  <main class="smrt-planner__content" data-smrt-part="body">
     {#if sectionSlug}
       {#if cookbookStore.loaded}
         {#key `${sectionSlug}:${dataGeneration}`}
@@ -601,19 +601,50 @@ const dockToggles = $derived(
 
 <style>
 @layer smrt.reset, smrt.structure, smrt.theme;
-@layer smrt.theme {
+@layer smrt.structure {
   /* `view-transition-name`s: one per surface per screen (a duplicate aborts
-     the transition). AppShell names its brand, nav and dock (`smrt-shell-*`,
-     reserved); these are the planner's own. Like the shell's, they apply only
-     while a transition runs (`html[data-smrt-view-transition]`, set by
-     `runViewTransition`): a name makes a stacking context, and a permanent
-     one on `.content` trapped the record page's phone edit sheet under the
-     shell's top bar. */
-  .content { width: min(100%, 72rem); margin-inline: auto; padding: var(--smrt-spacing-6); }
-  :global([data-smrt-view-transition]) .content { view-transition-name: planner-content; }
-  :global([data-smrt-view-transition]) .back { view-transition-name: planner-back; }
-  .back { display: inline-flex; align-items: center; gap: var(--smrt-spacing-1); block-size: 2rem; padding-inline: var(--smrt-spacing-2); color: var(--smrt-color-on-surface-variant); font-size: var(--smrt-typography-body-small-size, 0.8125rem); text-decoration: none; white-space: nowrap; border-radius: var(--smrt-radius-medium, 0.5rem); }
-  .back:hover { background: color-mix(in srgb, currentColor calc(var(--smrt-state-hover) * 100%), transparent); color: var(--smrt-color-on-surface); }
-  .back:focus-visible { outline: var(--smrt-focus-ring-width) solid var(--smrt-focus-ring-color); outline-offset: var(--smrt-focus-ring-offset); }
+  the transition). AppShell names its brand, nav and dock (`smrt-shell-*`,
+  reserved); these are the planner's own. Like the shell's, they apply only
+  while a transition runs (`html[data-smrt-view-transition]`, set by
+  `runViewTransition`): a name makes a stacking context, and a permanent
+  one on `.smrt-planner__content` trapped the record page's phone edit sheet
+  under the shell's top bar. */
+  .smrt-planner__content {
+    width: min(100%, 72rem);
+    margin-inline: auto;
+    padding: var(--smrt-spacing-6);
+  }
+  .smrt-planner__back {
+    display: inline-flex;
+    align-items: center;
+    gap: var(--smrt-spacing-1);
+    block-size: 2rem;
+    padding-inline: var(--smrt-spacing-2);
+    white-space: nowrap;
+  }
 }
+
+@layer smrt.theme {
+  :global([data-smrt-view-transition]) .smrt-planner__content {
+    view-transition-name: planner-content;
+  }
+  :global([data-smrt-view-transition]) .smrt-planner__back {
+    view-transition-name: planner-back;
+  }
+  .smrt-planner__back {
+    color: var(--smrt-color-on-surface-variant);
+    font-size: var(--smrt-typography-body-small-size, 0.8125rem);
+    text-decoration: none;
+    border-radius: var(--smrt-radius-medium, 0.5rem);
+  }
+  .smrt-planner__back:hover {
+    background: color-mix(in srgb, currentColor calc(var(--smrt-state-hover) * 100%), transparent);
+    color: var(--smrt-color-on-surface);
+  }
+  .smrt-planner__back:focus-visible {
+    outline: var(--smrt-focus-ring-width) solid var(--smrt-focus-ring-color);
+    outline-offset: var(--smrt-focus-ring-offset);
+  }
+}
+
 </style>

@@ -46,24 +46,24 @@ const { t } = useI18n();
       {/if}
     </div>
     {#if environment}
-      <Badge variant="info" size="sm"><span class="smrt-app-scope-panel__environment">{environment}</span></Badge>
+      <Badge variant="info" size="sm"><span class="smrt-app-scope-panel__environment" data-smrt-part="badge">{environment}</span></Badge>
     {/if}
   </header>
 
   {#if switcher}
-    <div class="smrt-app-scope-panel__section">
+    <div class="smrt-app-scope-panel__section" data-smrt-part="section">
       {@render switcher()}
     </div>
   {/if}
 
   {#if search}
-    <div class="smrt-app-scope-panel__section">
+    <div class="smrt-app-scope-panel__section" data-smrt-part="section">
       {@render search()}
     </div>
   {/if}
 
   {#if docs}
-    <div class="smrt-app-scope-panel__section">
+    <div class="smrt-app-scope-panel__section" data-smrt-part="section">
       {@render docs()}
     </div>
   {/if}
@@ -75,7 +75,8 @@ const { t } = useI18n();
 
 <style>
 @layer smrt.reset, smrt.structure, smrt.theme;
-@layer smrt.theme {
+
+@layer smrt.structure {
   .smrt-app-scope-panel {
     display: grid;
     grid-template-columns: minmax(0, 1fr);
@@ -83,7 +84,6 @@ const { t } = useI18n();
     overflow-wrap: anywhere;
     gap: var(--smrt-spacing-5);
   }
-
   .smrt-app-scope-panel header {
     display: flex;
     flex-wrap: wrap;
@@ -91,26 +91,24 @@ const { t } = useI18n();
     justify-content: space-between;
     gap: var(--smrt-spacing-4);
   }
-
   .smrt-app-scope-panel header > div {
     min-inline-size: 0;
   }
-
   .smrt-app-scope-panel__environment {
     white-space: normal;
   }
-
   .smrt-app-scope-panel h2,
   .smrt-app-scope-panel p {
     margin: 0;
   }
-
-  .smrt-app-scope-panel p {
-    color: var(--smrt-color-on-surface-variant);
-  }
-
   .smrt-app-scope-panel__section {
     min-width: 0;
+  }
+}
+
+@layer smrt.theme {
+  .smrt-app-scope-panel p {
+    color: var(--smrt-color-on-surface-variant);
   }
 }
 </style>

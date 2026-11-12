@@ -130,13 +130,13 @@ function matches(permission: PermissionPickerItem, category: string): boolean {
 }
 </script>
 
-<section class="permission-picker" aria-labelledby={labelId} data-smrt-component="PermissionPicker">
-  <div class="heading">
+<section class="smrt-permission-picker__root" aria-labelledby={labelId} data-smrt-component="PermissionPicker">
+  <div class="smrt-permission-picker__heading" data-smrt-part="header">
     <div>
       <h2 id={labelId}>{label}</h2>
       {#if description}<p>{description}</p>{/if}
     </div>
-    <label class="search">
+    <label class="smrt-permission-picker__search" data-smrt-part="search">
       <span>{searchLabel}</span>
       <Input
         type="search"
@@ -150,19 +150,19 @@ function matches(permission: PermissionPickerItem, category: string): boolean {
 
   {#key selected}
   <fieldset {disabled}>
-    <legend class="visually-hidden">{label}</legend>
-    <div class="groups">
+    <legend class="smrt-permission-picker__visually-hidden" data-smrt-part="description">{label}</legend>
+    <div class="smrt-permission-picker__groups" data-smrt-part="list">
       {#each groups as group (group.label)}
         {@const groupVisible = group.items.some((permission) => matches(permission, group.label))}
         {@const selectedCount = group.items.filter((permission) => currentSelectedSlugs.has(permission.slug)).length}
-        <details class="group" open={normalizedQuery ? groupVisible : undefined} hidden={!groupVisible}>
+        <details class="smrt-permission-picker__group" data-smrt-part="group" open={normalizedQuery ? groupVisible : undefined} hidden={!groupVisible}>
           <summary id={group.id}>
             <span>{group.label}</span>
-            <span class="selected-count">{selectedCount} selected</span>
+            <span class="smrt-permission-picker__count" data-smrt-part="count">{selectedCount} selected</span>
           </summary>
-          <div class="choices">
+          <div class="smrt-permission-picker__choices" data-smrt-part="list">
             {#each group.items as permission (permission.id ?? permission.slug)}
-              <div class="choice" hidden={!matches(permission, group.label)}>
+              <div class="smrt-permission-picker__choice" data-smrt-part="option" hidden={!matches(permission, group.label)}>
                 <Checkbox
                   {name}
                   value={permission.slug}
@@ -183,34 +183,147 @@ function matches(permission: PermissionPickerItem, category: string): boolean {
   {/key}
 
   {#if normalizedQuery && visibleCount === 0}
-    <p class="no-results" role="status">No permissions match “{query.trim()}”.</p>
+    <p class="smrt-permission-picker__no-results" data-smrt-part="empty" role="status">No permissions match “{query.trim()}”.</p>
   {/if}
 </section>
 
 <style>
 @layer smrt.reset, smrt.structure, smrt.theme;
-@layer smrt.theme {
-  .permission-picker { display: grid; gap: var(--smrt-spacing-4); min-inline-size: 0; }
-  .heading { display: flex; flex-wrap: wrap; align-items: end; justify-content: space-between; gap: var(--smrt-spacing-4); }
-  h2, p { margin: 0; }
-  h2 { color: var(--smrt-color-on-surface); font: var(--smrt-typography-title-large-font); }
-  .heading p, .choice p, code, .no-results { color: var(--smrt-color-on-surface-variant); font: var(--smrt-typography-body-small-font); }
-  .heading p { margin-block-start: var(--smrt-spacing-1); }
-  .search { display: grid; flex: 1 1 16rem; max-inline-size: 28rem; gap: var(--smrt-spacing-1); color: var(--smrt-color-on-surface); font: var(--smrt-typography-label-medium-font); }
-  fieldset { min-inline-size: 0; margin: 0; padding: 0; border: 0; }
-  .groups { display: grid; grid-template-columns: repeat(auto-fit, minmax(min(20rem, 100%), 1fr)); gap: var(--smrt-spacing-4); align-items: start; }
-  .group { min-inline-size: 0; border: var(--smrt-hairline); border-radius: var(--smrt-radius-medium); background: var(--smrt-color-surface); }
-  summary { display: flex; min-block-size: 2.75rem; align-items: center; justify-content: space-between; gap: var(--smrt-spacing-3); padding: var(--smrt-spacing-3) var(--smrt-spacing-4); color: var(--smrt-color-on-surface); font: var(--smrt-typography-title-medium-font); cursor: pointer; }
-  summary:focus-visible { outline: var(--smrt-focus-ring-width) solid var(--smrt-focus-ring-color); outline-offset: var(--smrt-focus-ring-offset); }
-  .selected-count { flex: 0 0 auto; color: var(--smrt-color-on-surface-variant); font: var(--smrt-typography-label-medium-font); }
-  .choices { display: grid; gap: var(--smrt-spacing-4); padding: 0 var(--smrt-spacing-4) var(--smrt-spacing-4); border-block-start: var(--smrt-hairline); padding-block-start: var(--smrt-spacing-4); }
-  .choice { display: grid; min-inline-size: 0; gap: var(--smrt-spacing-1); }
-  .choice :global([data-smrt-component="Checkbox"]) { min-inline-size: 0; }
-  .choice :global([data-smrt-component="Checkbox"] [data-smrt-part="label"]), code, .choice p { overflow-wrap: anywhere; }
-  code { padding-inline-start: calc(1.125rem + var(--smrt-spacing-2)); }
-  .choice p { padding-inline-start: calc(1.125rem + var(--smrt-spacing-2)); }
-  .no-results { padding: var(--smrt-spacing-4); border-radius: var(--smrt-radius-medium); background: var(--smrt-color-surface-container-low); }
-  .visually-hidden { position: absolute; inline-size: 1px; block-size: 1px; margin: -1px; padding: 0; overflow: hidden; clip: rect(0 0 0 0); white-space: nowrap; border: 0; }
-  [hidden] { display: none; }
+@layer smrt.structure {
+  .smrt-permission-picker__root {
+    display: grid;
+    gap: var(--smrt-spacing-4);
+    min-inline-size: 0;
+  }
+  .smrt-permission-picker__heading {
+    display: flex;
+    flex-wrap: wrap;
+    align-items: end;
+    justify-content: space-between;
+    gap: var(--smrt-spacing-4);
+  }
+  h2, p {
+    margin: 0;
+  }
+  .smrt-permission-picker__heading p {
+    margin-block-start: var(--smrt-spacing-1);
+  }
+  .smrt-permission-picker__search {
+    display: grid;
+    flex: 1 1 16rem;
+    max-inline-size: 28rem;
+    gap: var(--smrt-spacing-1);
+  }
+  fieldset {
+    min-inline-size: 0;
+    margin: 0;
+    padding: 0;
+  }
+  .smrt-permission-picker__groups {
+    display: grid;
+    grid-template-columns: repeat(auto-fit, minmax(min(20rem, 100%), 1fr));
+    gap: var(--smrt-spacing-4);
+    align-items: start;
+  }
+  .smrt-permission-picker__group {
+    min-inline-size: 0;
+  }
+  summary {
+    display: flex;
+    min-block-size: 2.75rem;
+    align-items: center;
+    justify-content: space-between;
+    gap: var(--smrt-spacing-3);
+    padding: var(--smrt-spacing-3) var(--smrt-spacing-4);
+    cursor: pointer;
+  }
+  .smrt-permission-picker__count {
+    flex: 0 0 auto;
+  }
+  .smrt-permission-picker__choices {
+    display: grid;
+    gap: var(--smrt-spacing-4);
+    padding: 0 var(--smrt-spacing-4) var(--smrt-spacing-4);
+    padding-block-start: var(--smrt-spacing-4);
+  }
+  .smrt-permission-picker__choice {
+    display: grid;
+    min-inline-size: 0;
+    gap: var(--smrt-spacing-1);
+  }
+  .smrt-permission-picker__choice :global([data-smrt-component="Checkbox"]) {
+    min-inline-size: 0;
+  }
+  .smrt-permission-picker__choice :global([data-smrt-component="Checkbox"] [data-smrt-part="label"]), code, .smrt-permission-picker__choice p {
+    overflow-wrap: anywhere;
+  }
+  code {
+    padding-inline-start: calc(1.125rem + var(--smrt-spacing-2));
+  }
+  .smrt-permission-picker__choice p {
+    padding-inline-start: calc(1.125rem + var(--smrt-spacing-2));
+  }
+  .smrt-permission-picker__no-results {
+    padding: var(--smrt-spacing-4);
+  }
+  .smrt-permission-picker__visually-hidden {
+    position: absolute;
+    inline-size: 1px;
+    block-size: 1px;
+    margin: -1px;
+    padding: 0;
+    overflow: hidden;
+    clip: rect(0 0 0 0);
+    white-space: nowrap;
+  }
+  [hidden] {
+    display: none;
+  }
 }
+
+@layer smrt.theme {
+  h2 {
+    color: var(--smrt-color-on-surface);
+    font: var(--smrt-typography-title-large-font);
+  }
+  .smrt-permission-picker__heading p, .smrt-permission-picker__choice p, code, .smrt-permission-picker__no-results {
+    color: var(--smrt-color-on-surface-variant);
+    font: var(--smrt-typography-body-small-font);
+  }
+  .smrt-permission-picker__search {
+    color: var(--smrt-color-on-surface);
+    font: var(--smrt-typography-label-medium-font);
+  }
+  fieldset {
+    border: 0;
+  }
+  .smrt-permission-picker__group {
+    border: var(--smrt-hairline);
+    border-radius: var(--smrt-radius-medium);
+    background: var(--smrt-color-surface);
+  }
+  summary {
+    color: var(--smrt-color-on-surface);
+    font: var(--smrt-typography-title-medium-font);
+  }
+  summary:focus-visible {
+    outline: var(--smrt-focus-ring-width) solid var(--smrt-focus-ring-color);
+    outline-offset: var(--smrt-focus-ring-offset);
+  }
+  .smrt-permission-picker__count {
+    color: var(--smrt-color-on-surface-variant);
+    font: var(--smrt-typography-label-medium-font);
+  }
+  .smrt-permission-picker__choices {
+    border-block-start: var(--smrt-hairline);
+  }
+  .smrt-permission-picker__no-results {
+    border-radius: var(--smrt-radius-medium);
+    background: var(--smrt-color-surface-container-low);
+  }
+  .smrt-permission-picker__visually-hidden {
+    border: 0;
+  }
+}
+
 </style>

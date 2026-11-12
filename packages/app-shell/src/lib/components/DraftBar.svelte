@@ -43,17 +43,17 @@ async function act(operation: 'start' | 'discard' | Target) {
 }
 </script>
 
-<div class="draft-header" data-testid="draft-header">
-  <div class="draft-bar" aria-label="App copy">
+<div class="smrt-draft-bar__draft-header" data-testid="draft-header">
+  <div class="smrt-draft-bar__root" aria-label="App copy">
     {#if draft}
-      <div class="copy-switch" role="group" aria-label="View copy">
+      <div class="smrt-draft-bar__copy-switch" role="group" aria-label="View copy">
         <Button variant="ghost" aria-pressed={description.mode === 'live'} disabled={busy} onclick={() => act('live')}>Live</Button>
-        <div class:active-draft={description.mode === 'draft'}>
+        <div class:smrt-draft-bar__active-draft={description.mode === 'draft'}>
           <Button variant="ghost" aria-pressed={description.mode === 'draft'} disabled={busy || !draft.publishable} onclick={() => act('draft')}>Draft</Button>
         </div>
       </div>
       <span>{draft.changes} {draft.changes === 1 ? 'change' : 'changes'}, not published</span>
-      <div class="draft-actions">
+      <div class="smrt-draft-bar__draft-actions">
         <Button variant="secondary" disabled={busy} onclick={() => (confirming = true)}>Discard</Button>
         <Button href="/draft/review" disabled={busy || !draft.publishable}>Review and publish</Button>
       </div>
@@ -62,14 +62,14 @@ async function act(operation: 'start' | 'discard' | Target) {
     {/if}
   </div>
   {#if draft && description.mode === 'draft'}
-    <p class="draft-strip" role="note">Draft: a test copy. Records you add here are thrown away when you publish.</p>
+    <p class="smrt-draft-bar__draft-strip" role="note">Draft: a test copy. Records you add here are thrown away when you publish.</p>
   {/if}
   {#if draft && !draft.publishable}
-    <p class="draft-strip" role="alert">This draft cannot be published. {draft.problem} Discard it to start again.</p>
+    <p class="smrt-draft-bar__draft-strip" role="alert">This draft cannot be published. {draft.problem} Discard it to start again.</p>
   {:else if draft?.recovery === 'rolled-back'}
-    <p class="draft-strip" role="status">The last publish was interrupted and taken back. Review the draft and publish again.</p>
+    <p class="smrt-draft-bar__draft-strip" role="status">The last publish was interrupted and taken back. Review the draft and publish again.</p>
   {/if}
-  {#if error && !confirming}<p class="sh-alert sh-alert-error" role="alert">{error}</p>{/if}
+  {#if error && !confirming}<p class="smrt-app-shell__alert smrt-app-shell__alert-error" role="alert">{error}</p>{/if}
 </div>
 
 <Modal open={confirming} title="Discard this draft?" showClose={false} closeOnEscape={!busy} closeOnBackdrop={!busy} onClose={() => (confirming = false)}>
@@ -83,19 +83,46 @@ async function act(operation: 'start' | 'discard' | Target) {
 
 <style>
 @layer smrt.reset, smrt.structure, smrt.theme;
-@layer smrt.theme {
-  .draft-header { color: var(--smrt-color-on-surface); }
-  .draft-bar, .copy-switch, .draft-actions {
+
+@layer smrt.structure {
+  .smrt-draft-bar__root, .smrt-draft-bar__copy-switch, .smrt-draft-bar__draft-actions {
     display: flex;
     align-items: center;
     flex-wrap: wrap;
     gap: var(--smrt-spacing-sm);
   }
-  .draft-bar { padding: var(--smrt-spacing-md) var(--smrt-spacing-lg); }
-  .draft-actions { margin-inline-start: auto; }
-  .copy-switch { border-radius: var(--smrt-radius-md); background: var(--smrt-color-surface-container); }
-  .active-draft { border-radius: var(--smrt-radius-md); background: var(--smrt-color-warning-container); color: var(--smrt-color-on-warning-container); }
-  .copy-switch :global([aria-pressed='true']) { font-weight: var(--smrt-typography-weight-bold); text-decoration: underline; }
-  .draft-strip { margin: 0; padding: var(--smrt-spacing-sm) var(--smrt-spacing-lg); background: var(--smrt-color-warning-container); color: var(--smrt-color-on-warning-container); }
+  .smrt-draft-bar__root {
+    padding: var(--smrt-spacing-md) var(--smrt-spacing-lg);
+  }
+  .smrt-draft-bar__draft-actions {
+    margin-inline-start: auto;
+  }
+  .smrt-draft-bar__draft-strip {
+    margin: 0;
+    padding: var(--smrt-spacing-sm) var(--smrt-spacing-lg);
+  }
+}
+
+@layer smrt.theme {
+  .smrt-draft-bar__draft-header {
+    color: var(--smrt-color-on-surface);
+  }
+  .smrt-draft-bar__copy-switch {
+    border-radius: var(--smrt-radius-md);
+    background: var(--smrt-color-surface-container);
+  }
+  .smrt-draft-bar__active-draft {
+    border-radius: var(--smrt-radius-md);
+    background: var(--smrt-color-warning-container);
+    color: var(--smrt-color-on-warning-container);
+  }
+  .smrt-draft-bar__copy-switch :global([aria-pressed='true']) {
+    font-weight: var(--smrt-typography-weight-bold);
+    text-decoration: underline;
+  }
+  .smrt-draft-bar__draft-strip {
+    background: var(--smrt-color-warning-container);
+    color: var(--smrt-color-on-warning-container);
+  }
 }
 </style>

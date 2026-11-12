@@ -49,7 +49,7 @@ describe('PhoneSheet', () => {
       sheet.hasAttribute('inert') ||
         (sheet as HTMLElement & { inert?: boolean }).inert,
     ).toBe(true);
-    expect(sheet.classList.contains('open')).toBe(false);
+    expect(sheet.classList.contains('smrt-phone-sheet__open')).toBe(false);
   });
 
   it('closes on the close button and on Escape', async () => {
@@ -109,7 +109,11 @@ describe('PhoneSheet', () => {
         children: body,
       },
     });
-    expect(container.querySelector('.phone-sheet__grabber')).not.toBeNull();
-    expect(container.querySelector('.phone-sheet--sheet')).not.toBeNull();
+    expect(
+      container.querySelector('[data-smrt-part="grabber"]'),
+    ).not.toBeNull();
+    expect(
+      container.querySelector('[data-smrt-component="PhoneSheet"]')?.classList,
+    ).toContain('smrt-phone-sheet__sheet');
   });
 });

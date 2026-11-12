@@ -36,11 +36,12 @@ const lineIndexes = $derived(
 );
 </script>
 
-<span class="skeleton-wrap" role="status" aria-label={label} data-smrt-component="Skeleton">
+<span class="smrt-skeleton__root" role="status" aria-label={label} data-smrt-component="Skeleton">
   {#if variant === 'text'}
     {#each lineIndexes as i (i)}
       <span
-        class="skeleton skeleton--text"
+        class="smrt-skeleton__bar smrt-skeleton__text"
+        data-smrt-part="placeholder"
         style:width={width}
         style:height={height}
         aria-hidden="true"
@@ -48,7 +49,8 @@ const lineIndexes = $derived(
     {/each}
   {:else}
     <span
-      class="skeleton skeleton--{variant}"
+      class="smrt-skeleton__bar smrt-skeleton__{variant}"
+      data-smrt-part="placeholder"
       style:width={width}
       style:height={height}
       aria-hidden="true"
@@ -58,16 +60,32 @@ const lineIndexes = $derived(
 
 <style>
 @layer smrt.reset, smrt.structure, smrt.theme;
-@layer smrt.theme {
-  .skeleton-wrap {
+@layer smrt.structure {
+  .smrt-skeleton__root {
     display: inline-flex;
     flex-direction: column;
     gap: var(--smrt-spacing-2);
     width: 100%;
   }
-
-  .skeleton {
+  .smrt-skeleton__bar {
     display: block;
+  }
+  .smrt-skeleton__text {
+    width: 100%;
+    height: var(--smrt-typography-body-medium-size, 1rem);
+  }
+  .smrt-skeleton__circle {
+    width: 48px;
+    height: 48px;
+  }
+  .smrt-skeleton__rect {
+    width: 100%;
+    height: 96px;
+  }
+}
+
+@layer smrt.theme {
+  .smrt-skeleton__bar {
     background: var(--smrt-color-surface-container-highest);
     background-image: linear-gradient(
       90deg,
@@ -79,25 +97,15 @@ const lineIndexes = $derived(
     animation: smrt-skeleton-shimmer 1.4s ease-in-out infinite;
     border-radius: var(--smrt-radius-small);
   }
-
-  .skeleton--text {
-    width: 100%;
-    height: var(--smrt-typography-body-medium-size, 1rem);
+  .smrt-skeleton__text {
     border-radius: var(--smrt-radius-extra-small);
   }
-
-  .skeleton--circle {
-    width: 48px;
-    height: 48px;
+  .smrt-skeleton__circle {
     border-radius: var(--smrt-radius-full);
   }
-
-  .skeleton--rect {
-    width: 100%;
-    height: 96px;
+  .smrt-skeleton__rect {
     border-radius: var(--smrt-radius-medium);
   }
-
   @keyframes smrt-skeleton-shimmer {
     from {
       background-position: 200% 0;
@@ -106,11 +114,11 @@ const lineIndexes = $derived(
       background-position: -200% 0;
     }
   }
-
   @media (prefers-reduced-motion: reduce) {
-    .skeleton {
+    .smrt-skeleton__bar {
       animation: none;
     }
   }
 }
+
 </style>

@@ -49,7 +49,7 @@ describe('ContentBodyEditor moving a picture in the story', () => {
 
   function popoverButton(root: HTMLElement, label: string): HTMLButtonElement {
     const button = root.querySelector(
-      `.image-control-popover button[aria-label="${label}"]`,
+      `.smrt-content-body-editor__image-control-popover button[aria-label="${label}"]`,
     ) as HTMLButtonElement | null;
     if (!button) throw new Error(`no "${label}" button`);
     return button;

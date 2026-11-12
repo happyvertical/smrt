@@ -153,12 +153,12 @@ function handleDragStart(event: DragEvent, image: ImageLike) {
 }
 </script>
 
-<div class="smrt-assets-gallery" data-smrt-component="AssetsGallery">
-  <div class="gallery-header">
+<div class="smrt-assets-gallery__root" data-smrt-component="AssetsGallery">
+  <div class="smrt-assets-gallery__header" data-smrt-part="header">
     <h3>{t(M['images.assets_gallery.title'])}</h3>
     
-    <div class="toolbar">
-      <div class="search-box">
+    <div class="smrt-assets-gallery__toolbar" data-smrt-part="actions">
+      <div class="smrt-assets-gallery__search" data-smrt-part="field">
         <Input
           type="search"
           bind:value={searchQuery}
@@ -166,8 +166,8 @@ function handleDragStart(event: DragEvent, image: ImageLike) {
         />
       </div>
 
-      <div class="filters">
-        <Select class="orientation-select" bind:value={orientationFilter}>
+      <div class="smrt-assets-gallery__filters" data-smrt-part="group">
+        <Select class="smrt-assets-gallery__orientation" bind:value={orientationFilter}>
           <option value="all">{t(M['images.assets_gallery.any_orientation'])}</option>
           <option value="landscape">Wide</option>
           <option value="portrait">Tall</option>
@@ -178,67 +178,68 @@ function handleDragStart(event: DragEvent, image: ImageLike) {
           type="number"
           bind:value={minWidth}
           placeholder={t(M['images.assets_gallery.min_width_placeholder'])}
-          class="size-input"
+          class="smrt-assets-gallery__size-input"
         />
         <Input
           type="number"
           bind:value={minHeight}
           placeholder={t(M['images.assets_gallery.min_height_placeholder'])}
-          class="size-input"
+          class="smrt-assets-gallery__size-input"
         />
       </div>
     </div>
   </div>
   
   {#if error}
-    <div class="error-msg">{error}</div>
+    <div class="smrt-assets-gallery__error" data-smrt-part="error">{error}</div>
   {/if}
   
-  <div class="gallery-grid">
+  <div class="smrt-assets-gallery__grid" data-smrt-part="list">
     {#each images as image (image.id)}
       {#if onSelect}
         <!-- raw-primitive-allow: large draggable selection card wrapping rich image content, not a standard action button -->
         <button
           type="button"
-          class="gallery-item"
-          class:selectable={true}
+          class="smrt-assets-gallery__item"
+          class:smrt-assets-gallery__selectable={true}
           draggable={enableDragToEditor}
           ondragstart={(event) => handleDragStart(event, image)}
           onclick={() => handleSelect(image)}
+          data-smrt-part="item"
         >
-          <div class="img-container">
+          <div class="smrt-assets-gallery__thumbnail" data-smrt-part="media">
             <img src={image.sourceUri || image.url} alt={image.alt || image.name} loading="lazy" />
           </div>
-          <div class="item-info">
-            <span class="item-name" title={image.name}>{image.name}</span>
-            <span class="item-meta">{image.width} × {image.height}</span>
+          <div class="smrt-assets-gallery__details" data-smrt-part="body">
+            <span class="smrt-assets-gallery__name" data-smrt-part="title" title={image.name}>{image.name}</span>
+            <span class="smrt-assets-gallery__meta" data-smrt-part="meta">{image.width} × {image.height}</span>
           </div>
         </button>
       {:else}
-        <div class="gallery-item">
-          <div class="img-container">
+        <div class="smrt-assets-gallery__item" data-smrt-part="item">
+          <div class="smrt-assets-gallery__thumbnail" data-smrt-part="media">
             <img src={image.sourceUri || image.url} alt={image.alt || image.name} loading="lazy" />
           </div>
-          <div class="item-info">
-            <span class="item-name" title={image.name}>{image.name}</span>
-            <span class="item-meta">{image.width} × {image.height}</span>
+          <div class="smrt-assets-gallery__details" data-smrt-part="body">
+            <span class="smrt-assets-gallery__name" data-smrt-part="title" title={image.name}>{image.name}</span>
+            <span class="smrt-assets-gallery__meta" data-smrt-part="meta">{image.width} × {image.height}</span>
           </div>
         </div>
       {/if}
     {/each}
     
     {#if images.length === 0 && !isLoading}
-      <div class="empty-state">
+      <div class="smrt-assets-gallery__empty" data-smrt-part="empty">
         <p>{t(M['images.assets_gallery.no_images_found'])}</p>
       </div>
     {/if}
   </div>
   
   {#if hasMore}
-    <div class="load-more">
+    <div class="smrt-assets-gallery__load-more" data-smrt-part="actions">
       <Button
         variant="ghost"
-        class="load-more-btn--pill"
+        class="smrt-assets-gallery__load-more-button"
         onclick={() => loadImages(false)}
         disabled={isLoading}
       >
@@ -250,165 +251,169 @@ function handleDragStart(event: DragEvent, image: ImageLike) {
 
 <style>
 @layer smrt.reset, smrt.structure, smrt.theme;
-@layer smrt.theme {
-  .smrt-assets-gallery {
+@layer smrt.structure {
+  .smrt-assets-gallery__root {
     display: flex;
     flex-direction: column;
     gap: 1.5rem;
     height: 100%;
     min-height: 400px;
-    background: var(--smrt-color-surface);
-    color: var(--smrt-color-on-surface);
   }
-
-  .gallery-header {
+  .smrt-assets-gallery__header {
     display: flex;
     flex-direction: column;
     gap: 1rem;
     padding: 1rem;
-    background: var(--smrt-color-surface-container);
-    border-radius: var(--smrt-radius-lg);
-    border: var(--smrt-hairline);
   }
-
-  .gallery-header h3 {
+  .smrt-assets-gallery__header h3 {
     margin: 0;
-    font-size: var(--smrt-typography-title-large-size, 1.25rem);
   }
-
-  .toolbar {
+  .smrt-assets-gallery__toolbar {
     display: flex;
     flex-wrap: wrap;
     gap: 1rem;
     align-items: center;
     justify-content: space-between;
   }
-
-  .search-box {
+  .smrt-assets-gallery__search {
     flex: 1;
     min-width: 250px;
   }
-
-  .filters {
+  .smrt-assets-gallery__filters {
     display: flex;
     gap: 0.75rem;
     flex-wrap: wrap;
   }
-
   /* Layout-only overrides for the migrated filter primitives. The Input / Select
-     primitives own the visual styling; these :global() rules only pierce their
-     rendered controls to size the boxes within the flex row (see #1589 scoping
-     rule). The orientation Select sizes to its content instead of the primitive's
-     full-width default; the min-width/min-height Inputs are capped. */
-  .filters :global(.orientation-select) {
+  primitives own the visual styling; these :global() rules only pierce their
+  rendered controls to size the boxes within the flex row (see #1589 scoping
+  rule). The orientation Select sizes to its content instead of the primitive's
+  full-width default; the min-width/min-height Inputs are capped. */
+  .smrt-assets-gallery__filters :global(.smrt-assets-gallery__orientation) {
     width: auto;
   }
-
-  .filters :global(.size-input) {
+  .smrt-assets-gallery__filters :global(.smrt-assets-gallery__size-input) {
     width: 120px;
   }
-
-  .error-msg {
-    color: var(--smrt-color-error);
-    background: color-mix(in srgb, var(--smrt-color-error) 10%, transparent);
+  .smrt-assets-gallery__error {
     padding: 1rem;
-    border-radius: var(--smrt-radius-md);
   }
-
-  .gallery-grid {
+  .smrt-assets-gallery__grid {
     display: grid;
     grid-template-columns: repeat(auto-fill, minmax(200px, 1fr));
     gap: 1rem;
     overflow-y: auto;
     padding: 0.25rem;
   }
-
-  .gallery-item {
+  .smrt-assets-gallery__item {
     display: flex;
     flex-direction: column;
     align-items: stretch;
     padding: 0;
-    background: var(--smrt-color-surface-container);
-    border-radius: var(--smrt-radius-lg);
-    border: 1px solid var(--smrt-color-surface-container-high);
-    box-shadow: var(--smrt-elevation-1, 0 1px 3px color-mix(in srgb, var(--smrt-color-shadow) 12%, transparent), 0 1px 2px color-mix(in srgb, var(--smrt-color-shadow) 24%, transparent));
     overflow: hidden;
-    color: inherit;
-    text-align: left;
-    transition: transform 0.2s, box-shadow 0.2s, border-color 0.2s;
   }
-
-  .gallery-item.selectable {
+  .smrt-assets-gallery__item.smrt-assets-gallery__selectable {
     cursor: pointer;
   }
-
-  .gallery-item.selectable:hover, .gallery-item.selectable:focus {
-    transform: translateY(-2px);
-    border-color: var(--smrt-color-primary);
-    box-shadow: var(--smrt-elevation-2, 0 3px 6px color-mix(in srgb, var(--smrt-color-shadow) 16%, transparent), 0 3px 6px color-mix(in srgb, var(--smrt-color-shadow) 23%, transparent));
-    outline: none;
-  }
-
-  .img-container {
+  .smrt-assets-gallery__thumbnail {
     aspect-ratio: 1;
     width: 100%;
-    background: var(--smrt-color-surface-container-high);
     display: flex;
     align-items: center;
     justify-content: center;
     overflow: hidden;
   }
-
-  .img-container img {
+  .smrt-assets-gallery__thumbnail img {
     max-width: 100%;
     max-height: 100%;
     object-fit: cover;
     width: 100%;
     height: 100%;
   }
-
-  .item-info {
+  .smrt-assets-gallery__details {
     padding: 1rem;
     display: flex;
     flex-direction: column;
     gap: 0.35rem;
   }
-
-  .item-name {
-    font-weight: var(--smrt-typography-weight-medium, 500);
-    font-size: var(--smrt-typography-title-medium-size, 1rem);
+  .smrt-assets-gallery__name {
     white-space: nowrap;
     overflow: hidden;
     text-overflow: ellipsis;
+  }
+  .smrt-assets-gallery__empty {
+    grid-column: 1 / -1;
+    padding: 3rem;
+  }
+  .smrt-assets-gallery__load-more {
+    display: flex;
+    justify-content: center;
+    padding: 1rem 0;
+  }
+  /* Bespoke pill look for the migrated Load More Button. :global() pierces into
+  the Button child's rendered <button>, which carries its own scope hash
+  (see #1589 scoping rule). */
+  .smrt-assets-gallery__load-more :global(.smrt-assets-gallery__load-more-button) {
+    padding: 0.75rem 2rem;
+  }
+}
+
+@layer smrt.theme {
+  .smrt-assets-gallery__root {
+    background: var(--smrt-color-surface);
+    color: var(--smrt-color-on-surface);
+  }
+  .smrt-assets-gallery__header {
+    background: var(--smrt-color-surface-container);
+    border-radius: var(--smrt-radius-lg);
+    border: var(--smrt-hairline);
+  }
+  .smrt-assets-gallery__header h3 {
+    font-size: var(--smrt-typography-title-large-size, 1.25rem);
+  }
+  .smrt-assets-gallery__error {
+    color: var(--smrt-color-error);
+    background: color-mix(in srgb, var(--smrt-color-error) 10%, transparent);
+    border-radius: var(--smrt-radius-md);
+  }
+  .smrt-assets-gallery__item {
+    background: var(--smrt-color-surface-container);
+    border-radius: var(--smrt-radius-lg);
+    border: 1px solid var(--smrt-color-surface-container-high);
+    box-shadow: var(--smrt-elevation-1, 0 1px 3px color-mix(in srgb, var(--smrt-color-shadow) 12%, transparent), 0 1px 2px color-mix(in srgb, var(--smrt-color-shadow) 24%, transparent));
+    color: inherit;
+    text-align: left;
+    transition: transform 0.2s, box-shadow 0.2s, border-color 0.2s;
+  }
+  .smrt-assets-gallery__item.smrt-assets-gallery__selectable:hover, .smrt-assets-gallery__item.smrt-assets-gallery__selectable:focus {
+    transform: translateY(-2px);
+    border-color: var(--smrt-color-primary);
+    box-shadow: var(--smrt-elevation-2, 0 3px 6px color-mix(in srgb, var(--smrt-color-shadow) 16%, transparent), 0 3px 6px color-mix(in srgb, var(--smrt-color-shadow) 23%, transparent));
+    outline: none;
+  }
+  .smrt-assets-gallery__thumbnail {
+    background: var(--smrt-color-surface-container-high);
+  }
+  .smrt-assets-gallery__name {
+    font-weight: var(--smrt-typography-weight-medium, 500);
+    font-size: var(--smrt-typography-title-medium-size, 1rem);
     letter-spacing: var(--smrt-typography-title-medium-tracking);
   }
-
-  .item-meta {
+  .smrt-assets-gallery__meta {
     font-size: var(--smrt-typography-label-large-size, 0.85rem);
     color: var(--smrt-color-outline);
   }
-
-  .empty-state {
-    grid-column: 1 / -1;
+  .smrt-assets-gallery__empty {
     text-align: center;
-    padding: 3rem;
     color: var(--smrt-color-outline);
     background: var(--smrt-color-surface-container);
     border-radius: var(--smrt-radius-lg);
     border: 1px dashed var(--smrt-color-outline-variant);
   }
-
-  .load-more {
-    display: flex;
-    justify-content: center;
-    padding: 1rem 0;
-  }
-
   /* Bespoke pill look for the migrated Load More Button. :global() pierces into
-     the Button child's rendered <button>, which carries its own scope hash
-     (see #1589 scoping rule). */
-  .load-more :global(.load-more-btn--pill) {
-    padding: 0.75rem 2rem;
+  the Button child's rendered <button>, which carries its own scope hash
+  (see #1589 scoping rule). */
+  .smrt-assets-gallery__load-more :global(.smrt-assets-gallery__load-more-button) {
     background: var(--smrt-color-surface-container-high);
     color: var(--smrt-color-primary);
     border: var(--smrt-hairline);
@@ -416,8 +421,7 @@ function handleDragStart(event: DragEvent, image: ImageLike) {
     font-weight: var(--smrt-typography-weight-medium, 500);
     transition: background 0.2s;
   }
-
-  .load-more :global(.load-more-btn--pill:hover:not(:disabled)) {
+  .smrt-assets-gallery__load-more :global(.smrt-assets-gallery__load-more-button:hover:not(:disabled)) {
     background: var(--smrt-color-surface-container-highest);
   }
 }

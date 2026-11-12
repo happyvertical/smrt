@@ -187,7 +187,7 @@ const moneyTaxError = $derived.by(() =>
   ),
 );
 </script>
-<section class="purchase-editor" aria-label={title} data-smrt-component="PurchaseOrderEditor">
+<section class="smrt-purchase-order-editor__root" aria-label={title} data-smrt-component="PurchaseOrderEditor">
  <h2>{title}</h2>
  <p>{t(P['commerce.purchase.boundary'])}</p>
  <p>{source.vendor} — {source.label} · {currency}</p>
@@ -213,7 +213,7 @@ const moneyTaxError = $derived.by(() =>
    <fieldset>
     <legend>{labels.allocations??t(P['commerce.purchase.allocations'])} ({currency})</legend>
     {#each values.allocations as allocation (allocation.id)}
-     <div class="allocation">
+     <div class="smrt-purchase-order-editor__allocation" data-smrt-part="item">
       <Input type="hidden" name={fields.allocationId} value={allocation.id} />
       <FormGroup label={allocation.label} error={errors[allocation.id]} required={operation==='reduce' && allocation.retained || allocation.required}>
        <Input name={fields.allocationAmount} value={allocation.amount} inputmode="decimal" required={operation==='reduce' && allocation.retained || allocation.required} density="touch" />
@@ -241,25 +241,58 @@ const moneyTaxError = $derived.by(() =>
     <Input type="hidden" name={fields.fingerprint} value={fingerprint} />
     {#if !readonly}
      {#key fingerprint}<Checkbox name={fields.confirmation} value={confirmationValue} label={labels.confirmation??t(P['commerce.purchase.confirm'])} required density="touch" />{/key}
-     <div class="actions"><Button type="submit" name={intents.name} value={intents.record} density="touch">{labels.record??t(P['commerce.purchase.record'])}</Button><Button type="submit" name={intents.name} value={intents.edit} formnovalidate variant="secondary" density="touch">{t(P['commerce.purchase.edit'])}</Button></div>
+     <div class="smrt-purchase-order-editor__actions" data-smrt-part="actions"><Button type="submit" name={intents.name} value={intents.record} density="touch">{labels.record??t(P['commerce.purchase.record'])}</Button><Button type="submit" name={intents.name} value={intents.edit} formnovalidate variant="secondary" density="touch">{t(P['commerce.purchase.edit'])}</Button></div>
     {/if}
    {:else if !readonly}<Button type="submit" name={intents.name} value={intents.review} density="touch">{labels.review??t(P['commerce.purchase.review_button'])}</Button>{/if}
   </fieldset>
   {#if cancelHref}<Button href={cancelHref} variant="secondary" density="touch">{t(P['commerce.purchase.cancel'])}</Button>{/if}
  </Form>
   {#if attachments}
-    <fieldset class="editor-attachments" disabled={readonly || busy}>
+    <fieldset class="smrt-purchase-order-editor__attachments" data-smrt-part="group" disabled={readonly || busy}>
       {@render attachments()}
     </fieldset>
   {/if}
 </section>
 <style>
 @layer smrt.reset, smrt.structure, smrt.theme;
-@layer smrt.theme {
-.editor-attachments { min-width: 0; margin: 0; padding: 0; border: 0; }
-.purchase-editor{max-width:48rem;min-width:0;overflow-wrap:anywhere;color:var(--smrt-color-on-surface)}
-fieldset{min-width:0;margin-block:var(--smrt-spacing-4,1rem);padding:var(--smrt-spacing-4,1rem);border:var(--smrt-hairline);border-radius:var(--smrt-radius-md,0.5rem)}
-.allocation{margin-block:var(--smrt-spacing-4,1rem)}
-.actions{display:flex;flex-wrap:wrap;gap:var(--smrt-spacing-3,0.75rem);margin-block:var(--smrt-spacing-4,1rem)}
+@layer smrt.structure {
+  .smrt-purchase-order-editor__attachments {
+    min-width: 0;
+    margin: 0;
+    padding: 0;
+  }
+  .smrt-purchase-order-editor__root {
+    max-width:48rem;
+    min-width:0;
+    overflow-wrap:anywhere;
+  }
+  fieldset {
+    min-width:0;
+    margin-block:var(--smrt-spacing-4,1rem);
+    padding:var(--smrt-spacing-4,1rem);
+  }
+  .smrt-purchase-order-editor__allocation {
+    margin-block:var(--smrt-spacing-4,1rem);
+  }
+  .smrt-purchase-order-editor__actions {
+    display:flex;
+    flex-wrap:wrap;
+    gap:var(--smrt-spacing-3,0.75rem);
+    margin-block:var(--smrt-spacing-4,1rem);
+  }
 }
+
+@layer smrt.theme {
+  .smrt-purchase-order-editor__attachments {
+    border: 0;
+  }
+  .smrt-purchase-order-editor__root {
+    color:var(--smrt-color-on-surface);
+  }
+  fieldset {
+    border:var(--smrt-hairline);
+    border-radius:var(--smrt-radius-md,0.5rem);
+  }
+}
+
 </style>

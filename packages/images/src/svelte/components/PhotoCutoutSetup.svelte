@@ -370,66 +370,174 @@ async function playSpeech() {
 }
 </script>
 
-<section class="setup" aria-busy={busy !== null} aria-labelledby="cutout-title" data-smrt-component="PhotoCutoutSetup">
+<section class="smrt-photo-cutout-setup__root" aria-busy={busy !== null} aria-labelledby="cutout-title" data-smrt-component="PhotoCutoutSetup">
   <h2 id="cutout-title">{t(M['images.photo_cutout_setup.title'])}</h2>
-  <ol class="steps" aria-label={t(M['images.photo_cutout_setup.steps_label'])}>
-    <li class:current={!source && !ready} class:complete={source !== null || ready} aria-current={!source && !ready ? 'step' : undefined}>{t(M['images.photo_cutout_setup.step_choose'])}</li>
-    <li class:current={source !== null && !head && !ready} class:complete={head !== null || ready} aria-current={source !== null && !head && !ready ? 'step' : undefined}>{t(M['images.photo_cutout_setup.step_isolate'])}</li>
-    <li class:current={head !== null && !ready} class:complete={ready} aria-current={head !== null && !ready ? 'step' : undefined}>{t(M['images.photo_cutout_setup.step_mouth'])}</li>
-    <li class:current={ready} aria-current={ready ? 'step' : undefined}>{t(M['images.photo_cutout_setup.step_save'])}</li>
+  <ol class="smrt-photo-cutout-setup__steps" data-smrt-part="nav" aria-label={t(M['images.photo_cutout_setup.steps_label'])}>
+    <li class:smrt-photo-cutout-setup__current={!source && !ready} class:smrt-photo-cutout-setup__complete={source !== null || ready} aria-current={!source && !ready ? 'step' : undefined} data-smrt-part="item">{t(M['images.photo_cutout_setup.step_choose'])}</li>
+    <li class:smrt-photo-cutout-setup__current={source !== null && !head && !ready} class:smrt-photo-cutout-setup__complete={head !== null || ready} aria-current={source !== null && !head && !ready ? 'step' : undefined} data-smrt-part="item">{t(M['images.photo_cutout_setup.step_isolate'])}</li>
+    <li class:smrt-photo-cutout-setup__current={head !== null && !ready} class:smrt-photo-cutout-setup__complete={ready} aria-current={head !== null && !ready ? 'step' : undefined} data-smrt-part="item">{t(M['images.photo_cutout_setup.step_mouth'])}</li>
+    <li class:smrt-photo-cutout-setup__current={ready} aria-current={ready ? 'step' : undefined} data-smrt-part="item">{t(M['images.photo_cutout_setup.step_save'])}</li>
   </ol>
-  <p class:error={failed !== null} class:success={ready} role={failed ? 'alert' : undefined} aria-live={failed ? 'assertive' : 'polite'}>{message}{#if busy} ({elapsed}s){/if}</p>
+  <p class:smrt-photo-cutout-setup__error={failed !== null} class:smrt-photo-cutout-setup__success={ready} role={failed ? 'alert' : undefined} aria-live={failed ? 'assertive' : 'polite'} data-smrt-part="status">{message}{#if busy} ({elapsed}s){/if}</p>
   <FilePicker accept="image/png,image/jpeg,image/webp" label={t(M['images.photo_cutout_setup.choose_photo'])} description={t(M['images.photo_cutout_setup.photo_formats'])} aria-label={t(M['images.photo_cutout_setup.choose_photo'])} onchangefiles={select} disabled={persisting !== null} />
-  <div class="workflow-actions">
-    <div class="primary-action">
+  <div class="smrt-photo-cutout-setup__actions" data-smrt-part="actions">
+    <div class="smrt-photo-cutout-setup__primary" data-smrt-part="group">
       {#if ready && saveSetup}<Button onclick={saveCharacter} disabled={persisting !== null}>{persisting === 'save' ? 'Saving…' : 'Save character'}</Button>
       {:else if ready}<Button onclick={toggleMouth}>{open ? 'Close mouth' : 'Open mouth'}</Button>
       {:else if !head}<Button onclick={() => run('outline')} disabled={!source || busy !== null}>{failed === 'outline' ? 'Retry head isolation' : 'Isolate head'}</Button>
       {:else if !ready}<Button onclick={() => run('mouth-landmarks')} disabled={busy !== null}>{failed === 'mouth-landmarks' ? 'Retry mouth segmentation' : 'Continue: segment mouth'}</Button>
       {/if}
-      {#if busy}<span class="spinner" aria-label={busy === 'outline' ? 'Isolating head' : 'Segmenting mouth'}></span><Button variant="secondary" onclick={cancel}>Cancel</Button>{/if}
+      {#if busy}<span class="smrt-photo-cutout-setup__spinner" data-smrt-part="spinner" aria-label={busy === 'outline' ? 'Isolating head' : 'Segmenting mouth'}></span><Button variant="secondary" onclick={cancel}>Cancel</Button>{/if}
     </div>
-    {#if ready && saveSetup}<p class="save-hint">{t(M['images.photo_cutout_setup.save_hint'])}</p>{/if}
-    <div class="secondary-actions" aria-label={t(M['images.photo_cutout_setup.options_label'])}>
+    {#if ready && saveSetup}<p class="smrt-photo-cutout-setup__save-hint" data-smrt-part="description">{t(M['images.photo_cutout_setup.save_hint'])}</p>{/if}
+    <div class="smrt-photo-cutout-setup__secondary" data-smrt-part="nav" aria-label={t(M['images.photo_cutout_setup.options_label'])}>
       {#if head}<Button variant="secondary" onclick={() => run('outline')} disabled={busy !== null || persisting !== null}>{t(M['images.photo_cutout_setup.redo_head'])}</Button>{/if}
       {#if head && ready}<Button variant="secondary" onclick={() => run('mouth-landmarks')} disabled={busy !== null || persisting !== null}>{t(M['images.photo_cutout_setup.redo_mouth'])}</Button>{/if}
       {#if ready && saveSetup}<Button variant="secondary" onclick={toggleMouth}>{open ? 'Close mouth' : 'Open mouth'}</Button>{/if}
       {#if loadSetup}<Button variant="secondary" onclick={loadCharacter} disabled={busy !== null || persisting !== null}>{persisting === 'load' ? 'Loading…' : 'Load saved character'}</Button>{/if}
     </div>
   </div>
-  {#if ready && speechPreview}<div class="speech"><label>{t(M['images.photo_cutout_setup.preview_speech'])} <Textarea bind:value={speechText} maxlength={500} disabled={speaking} /></label><Button onclick={playSpeech} disabled={speaking || !speechText.trim()}>{speaking ? speechStarted ? 'Speaking…' : 'Preparing…' : 'Play speech'}</Button>{#if speaking}<Button onclick={() => stopSpeech()}>{t(M['images.photo_cutout_setup.stop_speech'])}</Button>{/if}</div>{/if}
-  <div class="previews">
-    {#if head}<figure><figcaption>{t(M['images.photo_cutout_setup.transparent_head'])}</figcaption><img class="checkerboard" src={head.url} alt={t(M['images.photo_cutout_setup.isolated_head_alt'])} /></figure>
+  {#if ready && speechPreview}<div class="smrt-photo-cutout-setup__speech" data-smrt-part="panel"><label>{t(M['images.photo_cutout_setup.preview_speech'])} <Textarea bind:value={speechText} maxlength={500} disabled={speaking} /></label><Button onclick={playSpeech} disabled={speaking || !speechText.trim()}>{speaking ? speechStarted ? 'Speaking…' : 'Preparing…' : 'Play speech'}</Button>{#if speaking}<Button onclick={() => stopSpeech()}>{t(M['images.photo_cutout_setup.stop_speech'])}</Button>{/if}</div>{/if}
+  <div class="smrt-photo-cutout-setup__previews" data-smrt-part="list">
+    {#if head}<figure><figcaption>{t(M['images.photo_cutout_setup.transparent_head'])}</figcaption><img class="smrt-photo-cutout-setup__checkerboard" data-smrt-part="media" src={head.url} alt={t(M['images.photo_cutout_setup.isolated_head_alt'])} /></figure>
     {:else if source}<figure><figcaption>{t(M['images.photo_cutout_setup.step_choose'])}</figcaption><img src={source.url} alt={t(M['images.photo_cutout_setup.source_alt'])} /></figure>{/if}
-    <div bind:this={target} class="preview-target" class:preview={ready} class:checkerboard={ready} aria-label={ready ? t(M['images.photo_cutout_setup.preview_label']) : undefined} aria-hidden={!ready}></div>
+    <div bind:this={target} class="smrt-photo-cutout-setup__preview-target" data-smrt-part="panel" class:smrt-photo-cutout-setup__preview={ready} class:smrt-photo-cutout-setup__checkerboard={ready} aria-label={ready ? t(M['images.photo_cutout_setup.preview_label']) : undefined} aria-hidden={!ready}></div>
   </div>
 </section>
 
 <style>
 @layer smrt.reset, smrt.structure, smrt.theme;
-@layer smrt.theme {
-.setup { max-width: 42rem; margin: var(--smrt-spacing-6, 1.5rem) auto; padding: var(--smrt-spacing-5, 1.25rem); border: var(--smrt-hairline); border-radius: var(--smrt-radius-xl); }
-.steps { display: grid; grid-template-columns: repeat(4, 1fr); gap: var(--smrt-spacing-2, .5rem); padding: 0; margin: var(--smrt-spacing-4, 1rem) 0; list-style: none; color: var(--smrt-color-on-surface-variant); font-size: var(--smrt-typography-body-small-size, .875rem); }
-.steps li { padding-bottom: var(--smrt-spacing-1, .25rem); border-bottom: 2px solid var(--smrt-color-outline-variant); }
-.steps .current { color: var(--smrt-color-primary); border-color: var(--smrt-color-primary); font-weight: var(--smrt-typography-weight-semibold, 600); }
-.steps .complete { color: var(--smrt-color-success); }
-.workflow-actions { margin: var(--smrt-spacing-4, 1rem) 0; }
-.primary-action, .secondary-actions, .speech { display: flex; flex-wrap: wrap; align-items: center; gap: var(--smrt-spacing-3, .75rem); }
-.secondary-actions { margin-top: var(--smrt-spacing-3, .75rem); }
-.save-hint { margin: var(--smrt-spacing-2, .5rem) 0 0; color: var(--smrt-color-on-surface-variant); font-size: var(--smrt-typography-body-small-size, .875rem); }
-.speech { margin-top: var(--smrt-spacing-4, 1rem); }
-.previews { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: var(--smrt-spacing-4, 1rem); align-items: start; }
-figure { margin: 0; }
-figure figcaption { margin-bottom: var(--smrt-spacing-2, .5rem); font-size: var(--smrt-typography-body-small-size, .875rem); }
-.setup img, .preview :global(svg) { display: block; width: 100%; height: auto; max-height: 18rem; object-fit: contain; }
-.preview, .preview-target { min-width: 0; }
-.preview-target:not(.preview) { display: none; }
-.checkerboard { background-color: var(--smrt-color-surface); background-image: linear-gradient(45deg, var(--smrt-color-surface-container-highest) 25%, transparent 25%), linear-gradient(-45deg, var(--smrt-color-surface-container-highest) 25%, transparent 25%), linear-gradient(45deg, transparent 75%, var(--smrt-color-surface-container-highest) 75%), linear-gradient(-45deg, transparent 75%, var(--smrt-color-surface-container-highest) 75%); background-size: 16px 16px; background-position: 0 0, 0 8px, 8px -8px, -8px 0; }
-.error { color: var(--smrt-color-error); font-weight: var(--smrt-typography-weight-semibold, 600); }
-.success { color: var(--smrt-color-success); }
-.spinner { width: 1rem; height: 1rem; border: 2px solid currentColor; border-right-color: transparent; border-radius: var(--smrt-radius-full); animation: spin .7s linear infinite; }
-@keyframes spin { to { transform: rotate(360deg); } }
-@media (prefers-reduced-motion: reduce) { .spinner { animation: none; border-right-color: currentColor; } }
-@media (max-width: 40rem) { .steps { grid-template-columns: repeat(2, 1fr); } .previews { grid-template-columns: 1fr; } }
+@layer smrt.structure {
+  .smrt-photo-cutout-setup__root {
+    max-width: 42rem;
+    margin: var(--smrt-spacing-6, 1.5rem) auto;
+    padding: var(--smrt-spacing-5, 1.25rem);
+  }
+  .smrt-photo-cutout-setup__steps {
+    display: grid;
+    grid-template-columns: repeat(4, 1fr);
+    gap: var(--smrt-spacing-2, .5rem);
+    padding: 0;
+    margin: var(--smrt-spacing-4, 1rem) 0;
+    list-style: none;
+  }
+  .smrt-photo-cutout-setup__steps li {
+    padding-bottom: var(--smrt-spacing-1, .25rem);
+  }
+  .smrt-photo-cutout-setup__actions {
+    margin: var(--smrt-spacing-4, 1rem) 0;
+  }
+  .smrt-photo-cutout-setup__primary, .smrt-photo-cutout-setup__secondary, .smrt-photo-cutout-setup__speech {
+    display: flex;
+    flex-wrap: wrap;
+    align-items: center;
+    gap: var(--smrt-spacing-3, .75rem);
+  }
+  .smrt-photo-cutout-setup__secondary {
+    margin-top: var(--smrt-spacing-3, .75rem);
+  }
+  .smrt-photo-cutout-setup__save-hint {
+    margin: var(--smrt-spacing-2, .5rem) 0 0;
+  }
+  .smrt-photo-cutout-setup__speech {
+    margin-top: var(--smrt-spacing-4, 1rem);
+  }
+  .smrt-photo-cutout-setup__previews {
+    display: grid;
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+    gap: var(--smrt-spacing-4, 1rem);
+    align-items: start;
+  }
+  figure {
+    margin: 0;
+  }
+  figure figcaption {
+    margin-bottom: var(--smrt-spacing-2, .5rem);
+  }
+  .smrt-photo-cutout-setup__root img, .smrt-photo-cutout-setup__preview :global(svg) {
+    display: block;
+    width: 100%;
+    height: auto;
+    max-height: 18rem;
+    object-fit: contain;
+  }
+  .smrt-photo-cutout-setup__preview, .smrt-photo-cutout-setup__preview-target {
+    min-width: 0;
+  }
+  .smrt-photo-cutout-setup__preview-target:not(.smrt-photo-cutout-setup__preview) {
+    display: none;
+  }
+  .smrt-photo-cutout-setup__spinner {
+    width: 1rem;
+    height: 1rem;
+  }
+  @media (max-width: 40rem) {
+    .smrt-photo-cutout-setup__steps {
+      grid-template-columns: repeat(2, 1fr);
+    }
+    .smrt-photo-cutout-setup__previews {
+      grid-template-columns: 1fr;
+    }
+  }
 }
+
+@layer smrt.theme {
+  .smrt-photo-cutout-setup__root {
+    border: var(--smrt-hairline);
+    border-radius: var(--smrt-radius-xl);
+  }
+  .smrt-photo-cutout-setup__steps {
+    color: var(--smrt-color-on-surface-variant);
+    font-size: var(--smrt-typography-body-small-size, .875rem);
+  }
+  .smrt-photo-cutout-setup__steps li {
+    border-bottom: 2px solid var(--smrt-color-outline-variant);
+  }
+  .smrt-photo-cutout-setup__steps .smrt-photo-cutout-setup__current {
+    color: var(--smrt-color-primary);
+    border-color: var(--smrt-color-primary);
+    font-weight: var(--smrt-typography-weight-semibold, 600);
+  }
+  .smrt-photo-cutout-setup__steps .smrt-photo-cutout-setup__complete {
+    color: var(--smrt-color-success);
+  }
+  .smrt-photo-cutout-setup__save-hint {
+    color: var(--smrt-color-on-surface-variant);
+    font-size: var(--smrt-typography-body-small-size, .875rem);
+  }
+  figure figcaption {
+    font-size: var(--smrt-typography-body-small-size, .875rem);
+  }
+  .smrt-photo-cutout-setup__checkerboard {
+    background-color: var(--smrt-color-surface);
+    background-image: linear-gradient(45deg, var(--smrt-color-surface-container-highest) 25%, transparent 25%), linear-gradient(-45deg, var(--smrt-color-surface-container-highest) 25%, transparent 25%), linear-gradient(45deg, transparent 75%, var(--smrt-color-surface-container-highest) 75%), linear-gradient(-45deg, transparent 75%, var(--smrt-color-surface-container-highest) 75%);
+    background-size: 16px 16px;
+    background-position: 0 0, 0 8px, 8px -8px, -8px 0;
+  }
+  .smrt-photo-cutout-setup__error {
+    color: var(--smrt-color-error);
+    font-weight: var(--smrt-typography-weight-semibold, 600);
+  }
+  .smrt-photo-cutout-setup__success {
+    color: var(--smrt-color-success);
+  }
+  .smrt-photo-cutout-setup__spinner {
+    border: 2px solid currentColor;
+    border-right-color: transparent;
+    border-radius: var(--smrt-radius-full);
+    animation: spin .7s linear infinite;
+  }
+  @keyframes spin {
+    to {
+      transform: rotate(360deg);
+    }
+  }
+  @media (prefers-reduced-motion: reduce) {
+    .smrt-photo-cutout-setup__spinner {
+      animation: none;
+      border-right-color: currentColor;
+    }
+  }
+}
+
 </style>

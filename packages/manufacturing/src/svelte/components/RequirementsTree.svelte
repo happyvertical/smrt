@@ -46,7 +46,7 @@ function componentText(name: string, skuCode: string): string {
 </script>
 
 {#if lines.length === 0}
-  <p class="requirements-empty" data-smrt-component="RequirementsTree">{t(M['manufacturing.requirements.empty'])}</p>
+  <p class="smrt-requirements-tree__empty" data-smrt-component="RequirementsTree">{t(M['manufacturing.requirements.empty'])}</p>
 {:else}
   <RequirementsTreeLevel
     {lines}
@@ -55,8 +55,8 @@ function componentText(name: string, skuCode: string): string {
 {/if}
 
 {#if totals && totals.length > 0}
-  <div class="requirements-scroll" data-smrt-component="RequirementsTree">
-    <table class="requirements-totals">
+  <div class="smrt-requirements-tree__root" data-smrt-component="RequirementsTree">
+    <table class="smrt-requirements-tree__totals" data-smrt-part="group">
       <caption>{t(M['manufacturing.requirements.totals_caption'])}</caption>
       <thead>
         <tr>
@@ -72,10 +72,10 @@ function componentText(name: string, skuCode: string): string {
         {#each totals as total (total.componentSkuId)}
           <tr>
             <th scope="row">{componentText(total.name, total.skuCode)}</th>
-            <td class="requirements-number">{quantity(total.required)}</td>
+            <td class="smrt-requirements-tree__number" data-smrt-part="cell">{quantity(total.required)}</td>
             <td>{total.uom}</td>
             {#if showShort}
-              <td class="requirements-number">
+              <td class="smrt-requirements-tree__number" data-smrt-part="cell">
                 {#if total.short !== null && total.short > 0}
                   <Badge size="sm" variant="error">{quantity(total.short)}</Badge>
                 {:else}
@@ -92,37 +92,45 @@ function componentText(name: string, skuCode: string): string {
 
 <style>
 @layer smrt.reset, smrt.structure, smrt.theme;
-@layer smrt.theme {
-  .requirements-empty {
+@layer smrt.structure {
+  .smrt-requirements-tree__empty {
     margin: 0;
-    color: var(--smrt-color-on-surface-variant, inherit);
   }
-
-  .requirements-scroll {
+  .smrt-requirements-tree__root {
     overflow-x: auto;
     margin-top: 1rem;
   }
-
-  .requirements-totals {
+  .smrt-requirements-tree__totals {
     width: 100%;
-    border-collapse: collapse;
   }
-
-  .requirements-totals caption {
-    text-align: left;
-    font-weight: var(--smrt-typography-title-medium-weight, 500);
+  .smrt-requirements-tree__totals caption {
     padding-bottom: 0.5rem;
   }
-
-  .requirements-totals th,
-  .requirements-totals td {
+  .smrt-requirements-tree__totals th,
+  .smrt-requirements-tree__totals td {
     padding: 0.375rem 0.5rem;
+  }
+}
+
+@layer smrt.theme {
+  .smrt-requirements-tree__empty {
+    color: var(--smrt-color-on-surface-variant, inherit);
+  }
+  .smrt-requirements-tree__totals {
+    border-collapse: collapse;
+  }
+  .smrt-requirements-tree__totals caption {
+    text-align: left;
+    font-weight: var(--smrt-typography-title-medium-weight, 500);
+  }
+  .smrt-requirements-tree__totals th,
+  .smrt-requirements-tree__totals td {
     text-align: left;
     border-bottom: var(--smrt-hairline);
   }
-
-  .requirements-number {
+  .smrt-requirements-tree__number {
     font-variant-numeric: tabular-nums;
   }
 }
+
 </style>

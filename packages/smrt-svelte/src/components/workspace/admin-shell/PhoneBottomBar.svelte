@@ -45,21 +45,21 @@ function accessibleName(item: PhoneBottomBarEntry): string {
 
 {#snippet content(item: PhoneBottomBarEntry)}
   {@const name = typeof item.icon === 'string' ? item.icon : item.iconName}
-  <span class="smrt-phone-bottom-bar__icon" aria-hidden="true">
+  <span class="smrt-phone-bottom-bar__icon" aria-hidden="true" data-smrt-part="icon">
     {#if item.icon && typeof item.icon !== 'string'}
       <item.icon size={22} />
     {:else}
       <ShellSectionIcon name={name ?? SHELL_PLACEHOLDER_ICON} size={22} {iconComponent} />
     {/if}
     {#if item.badge}
-      <span class="smrt-phone-bottom-bar__badge">
+      <span class="smrt-phone-bottom-bar__badge" data-smrt-part="badge">
         {item.badge > 9 ? '9+' : item.badge}
       </span>
     {:else if item.dot}
-      <span class="smrt-phone-bottom-bar__dot"></span>
+      <span class="smrt-phone-bottom-bar__dot" data-smrt-part="indicator"></span>
     {/if}
   </span>
-  <span class="smrt-phone-bottom-bar__label" aria-hidden="true">{item.label}</span>
+  <span class="smrt-phone-bottom-bar__label" aria-hidden="true" data-smrt-part="label">{item.label}</span>
 {/snippet}
 
 <nav
@@ -71,12 +71,12 @@ function accessibleName(item: PhoneBottomBarEntry): string {
     {#if item.href}
       <a
         class="smrt-phone-bottom-bar__item"
-        class:active={item.active}
+        class:smrt-phone-bottom-bar__active={item.active}
         href={item.href}
         aria-label={accessibleName(item)}
         aria-current={item.active ? 'page' : undefined}
         data-item={item.id}
-        onclick={item.onclick}
+        onclick={item.onclick} data-smrt-part="item"
       >
         {@render content(item)}
       </a>
@@ -85,12 +85,12 @@ function accessibleName(item: PhoneBottomBarEntry): string {
       <button
         type="button"
         class="smrt-phone-bottom-bar__item"
-        class:active={item.active}
+        class:smrt-phone-bottom-bar__active={item.active}
         aria-label={accessibleName(item)}
         aria-expanded={item.expanded}
         aria-controls={item.controls}
         data-item={item.id}
-        onclick={item.onclick}
+        onclick={item.onclick} data-smrt-part="item"
       >
         {@render content(item)}
       </button>
@@ -100,7 +100,8 @@ function accessibleName(item: PhoneBottomBarEntry): string {
 
 <style>
 @layer smrt.reset, smrt.structure, smrt.theme;
-@layer smrt.theme {
+
+@layer smrt.structure {
   .smrt-phone-bottom-bar {
     display: grid;
     grid-auto-columns: minmax(0, 1fr);
@@ -109,12 +110,7 @@ function accessibleName(item: PhoneBottomBarEntry): string {
     box-sizing: content-box;
     block-size: 3.5rem;
     padding: 0 var(--smrt-spacing-2) env(safe-area-inset-bottom);
-    border-block-start: var(--smrt-hairline);
-    background: var(--smrt-glass-surface);
-    -webkit-backdrop-filter: blur(var(--smrt-glass-blur)) saturate(var(--smrt-glass-saturation));
-    backdrop-filter: blur(var(--smrt-glass-blur)) saturate(var(--smrt-glass-saturation));
   }
-
   .smrt-phone-bottom-bar__item {
     display: grid;
     place-items: center;
@@ -123,72 +119,25 @@ function accessibleName(item: PhoneBottomBarEntry): string {
     min-inline-size: var(--smrt-touch-target-min);
     min-block-size: var(--smrt-touch-target-min);
     padding: var(--smrt-spacing-1) 0;
-    border: 0;
-    border-radius: var(--smrt-control-radius);
-    background: transparent;
-    color: var(--smrt-color-on-surface-variant);
-    font: inherit;
-    text-decoration: none;
     cursor: pointer;
-    -webkit-tap-highlight-color: transparent;
   }
-
   .smrt-phone-bottom-bar__item {
     position: relative;
   }
-
   /* State layer over the whole tab; the selected indicator pill keeps its
-     container fill. */
+  container fill. */
   .smrt-phone-bottom-bar__item::after {
-    content: '';
     position: absolute;
     inset: 0;
-    border-radius: inherit;
-    background: currentColor;
-    opacity: 0;
     pointer-events: none;
   }
-
-  .smrt-phone-bottom-bar__item:hover::after {
-    opacity: var(--smrt-state-hover);
-  }
-
-  .smrt-phone-bottom-bar__item:active::after {
-    opacity: var(--smrt-state-pressed);
-  }
-
-  .smrt-phone-bottom-bar__item:disabled,
-  .smrt-phone-bottom-bar__item[aria-disabled='true'] {
-    opacity: var(--smrt-state-disabled);
-  }
-
-  .smrt-phone-bottom-bar__item.active {
-    color: var(--smrt-color-primary);
-  }
-
-  .smrt-phone-bottom-bar__item.active .smrt-phone-bottom-bar__icon {
-    background: var(--smrt-color-primary-container);
-    color: var(--smrt-color-on-primary-container);
-  }
-
-  .smrt-phone-bottom-bar__item:focus-visible {
-    outline: var(--smrt-focus-ring-width) solid var(--smrt-focus-ring-color);
-    outline-offset: calc(-1 * var(--smrt-focus-ring-width));
-  }
-
   .smrt-phone-bottom-bar__icon {
     position: relative;
     display: grid;
     place-items: center;
     inline-size: 3.5rem;
     block-size: 1.75rem;
-    border-radius: var(--smrt-radius-full);
   }
-
-  .smrt-phone-bottom-bar__label {
-    font: var(--smrt-typography-label-small-font);
-  }
-
   .smrt-phone-bottom-bar__badge {
     position: absolute;
     inset-block-start: -0.2rem;
@@ -197,6 +146,68 @@ function accessibleName(item: PhoneBottomBarEntry): string {
     min-inline-size: 1.1rem;
     block-size: 1.1rem;
     padding: 0 var(--smrt-spacing-1);
+  }
+  .smrt-phone-bottom-bar__dot {
+    position: absolute;
+    inset-block-start: 0.1rem;
+    inset-inline-end: 1rem;
+    inline-size: 0.6rem;
+    block-size: 0.6rem;
+  }
+}
+
+@layer smrt.theme {
+  .smrt-phone-bottom-bar {
+    border-block-start: var(--smrt-hairline);
+    background: var(--smrt-glass-surface);
+    -webkit-backdrop-filter: blur(var(--smrt-glass-blur)) saturate(var(--smrt-glass-saturation));
+    backdrop-filter: blur(var(--smrt-glass-blur)) saturate(var(--smrt-glass-saturation));
+  }
+  .smrt-phone-bottom-bar__item {
+    border: 0;
+    border-radius: var(--smrt-control-radius);
+    background: transparent;
+    color: var(--smrt-color-on-surface-variant);
+    font: inherit;
+    text-decoration: none;
+    -webkit-tap-highlight-color: transparent;
+  }
+  /* State layer over the whole tab; the selected indicator pill keeps its
+  container fill. */
+  .smrt-phone-bottom-bar__item::after {
+    content: '';
+    border-radius: inherit;
+    background: currentColor;
+    opacity: 0;
+  }
+  .smrt-phone-bottom-bar__item:hover::after {
+    opacity: var(--smrt-state-hover);
+  }
+  .smrt-phone-bottom-bar__item:active::after {
+    opacity: var(--smrt-state-pressed);
+  }
+  .smrt-phone-bottom-bar__item:disabled,
+  .smrt-phone-bottom-bar__item[aria-disabled='true'] {
+    opacity: var(--smrt-state-disabled);
+  }
+  .smrt-phone-bottom-bar__item.smrt-phone-bottom-bar__active {
+    color: var(--smrt-color-primary);
+  }
+  .smrt-phone-bottom-bar__item.smrt-phone-bottom-bar__active .smrt-phone-bottom-bar__icon {
+    background: var(--smrt-color-primary-container);
+    color: var(--smrt-color-on-primary-container);
+  }
+  .smrt-phone-bottom-bar__item:focus-visible {
+    outline: var(--smrt-focus-ring-width) solid var(--smrt-focus-ring-color);
+    outline-offset: calc(-1 * var(--smrt-focus-ring-width));
+  }
+  .smrt-phone-bottom-bar__icon {
+    border-radius: var(--smrt-radius-full);
+  }
+  .smrt-phone-bottom-bar__label {
+    font: var(--smrt-typography-label-small-font);
+  }
+  .smrt-phone-bottom-bar__badge {
     border-radius: var(--smrt-radius-full);
     background: var(--smrt-color-error);
     color: var(--smrt-color-on-error);
@@ -204,25 +215,38 @@ function accessibleName(item: PhoneBottomBarEntry): string {
     line-height: 1.1rem;
     text-align: center;
   }
-
   .smrt-phone-bottom-bar__dot {
-    position: absolute;
-    inset-block-start: 0.1rem;
-    inset-inline-end: 1rem;
-    inline-size: 0.6rem;
-    block-size: 0.6rem;
     border: var(--smrt-focus-ring-width) solid var(--smrt-surface-panel);
     border-radius: var(--smrt-radius-full);
     background: var(--smrt-color-primary);
   }
   /* Forced colors (#3908): selected and open states keep a non-colour indicator. */
   @media (forced-colors: active) {
-    .smrt-phone-bottom-bar__item.active { color: CanvasText; font-weight: var(--smrt-typography-weight-bold); }
-    .smrt-phone-bottom-bar__item.active .smrt-phone-bottom-bar__icon { background: Highlight; color: HighlightText; }
-    .smrt-phone-bottom-bar__badge { background: CanvasText; color: Canvas; }
-    .smrt-phone-bottom-bar__dot { background: Highlight; border-color: Canvas; }
-    .smrt-phone-bottom-bar__item:disabled, .smrt-phone-bottom-bar__item.active:disabled { opacity: 1; color: GrayText; font-weight: inherit; }
-    .smrt-phone-bottom-bar__item.active:disabled .smrt-phone-bottom-bar__icon { background: Canvas; color: GrayText; }
+    .smrt-phone-bottom-bar__item.smrt-phone-bottom-bar__active {
+      color: CanvasText;
+      font-weight: var(--smrt-typography-weight-bold);
+    }
+    .smrt-phone-bottom-bar__item.smrt-phone-bottom-bar__active .smrt-phone-bottom-bar__icon {
+      background: Highlight;
+      color: HighlightText;
+    }
+    .smrt-phone-bottom-bar__badge {
+      background: CanvasText;
+      color: Canvas;
+    }
+    .smrt-phone-bottom-bar__dot {
+      background: Highlight;
+      border-color: Canvas;
+    }
+    .smrt-phone-bottom-bar__item:disabled, .smrt-phone-bottom-bar__item.smrt-phone-bottom-bar__active:disabled {
+      opacity: 1;
+      color: GrayText;
+      font-weight: inherit;
+    }
+    .smrt-phone-bottom-bar__item.smrt-phone-bottom-bar__active:disabled .smrt-phone-bottom-bar__icon {
+      background: Canvas;
+      color: GrayText;
+    }
   }
 }
 </style>

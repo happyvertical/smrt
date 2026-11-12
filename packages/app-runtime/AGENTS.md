@@ -158,9 +158,11 @@ Application infrastructure composition for the validated runtime profiles in
   no keys. `status()` and `grantSource()` never throw; `install()`/`refresh()`
   report a reason and keep what is stored. Invalid *configuration* (non-Ed25519
   or private key, empty key set, out-of-range durations) throws at construction.
-- Replay: the newest accepted `issuedAt` lives in `<filePath>.watermark`; install
-  and load both compare against it. Deleting/corrupting the watermark or rolling the
-  clock back replays an unexpired snapshot; the issuer's lifetime bounds that.
+- Entitlement cache reads and installs share `<filePath>.lock`; its watermark
+  records issuance, observed time and signed-envelope identity before replacement.
+  Rollback, replay and lock contention fail closed; only authenticated expiry
+  dates are exposed. See [cache persistence](README.md#device-entitlement-cache)
+  for legacy, retry and standalone-verifier behavior.
 - Grace (`gracePeriodMs`, default 0, max 30 d) keeps keys on past `expiresAt`
   (`state: 'grace'`); skew applies to `issuedAt` only, never extends expiry.
 - Features integration is structural: `cache.grantSource()` is a

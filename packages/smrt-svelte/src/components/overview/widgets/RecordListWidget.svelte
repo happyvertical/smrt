@@ -114,18 +114,18 @@ const summaryValues = $derived.by(() => {
 {:else if rows.length === 0}
   <p class="smrt-records__empty" data-smrt-component="RecordListWidget">{t(M['ui.overview.records.empty'])}</p>
 {:else}
-  <ul class="smrt-records" data-smrt-component="RecordListWidget">
+  <ul class="smrt-records__root" data-smrt-component="RecordListWidget">
     {#each rows as row (row.id)}
-      <li class="smrt-records__row">
-        <span class="smrt-records__main">
+      <li class="smrt-records__row" data-smrt-part="row">
+        <span class="smrt-records__main" data-smrt-part="body">
           {#if row.href}
-            <a class="smrt-records__title" href={row.href}>{row.title}</a>
+            <a class="smrt-records__title" data-smrt-part="title" href={row.href}>{row.title}</a>
           {:else}
-            <span class="smrt-records__title">{row.title}</span>
+            <span class="smrt-records__title" data-smrt-part="title">{row.title}</span>
           {/if}
-          {#if row.subtitle}<span class="smrt-records__sub">{row.subtitle}</span>{/if}
+          {#if row.subtitle}<span class="smrt-records__sub" data-smrt-part="meta">{row.subtitle}</span>{/if}
         </span>
-        {#if row.meta}<span class="smrt-records__meta">{row.meta}</span>{/if}
+        {#if row.meta}<span class="smrt-records__meta" data-smrt-part="meta">{row.meta}</span>{/if}
       </li>
     {/each}
   </ul>
@@ -141,18 +141,78 @@ const summaryValues = $derived.by(() => {
 
 <style>
 @layer smrt.reset, smrt.structure, smrt.theme;
-@layer smrt.theme {
-  .smrt-records { display: grid; margin: 0; padding: 0; list-style: none; }
-  .smrt-records__row { display: flex; align-items: baseline; justify-content: space-between; gap: var(--smrt-spacing-3); padding: var(--smrt-spacing-2) 0; border-block-end: var(--smrt-hairline); }
-  .smrt-records__row:last-child { border-block-end: 0; }
-  .smrt-records__main { display: grid; min-inline-size: 0; }
-  .smrt-records__title { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; color: var(--smrt-color-on-surface); font-weight: var(--smrt-typography-weight-medium, 500); text-decoration: none; }
-  a.smrt-records__title:hover { text-decoration: underline; }
-  .smrt-records__sub, .smrt-records__meta { color: var(--smrt-color-on-surface-variant); font-size: var(--smrt-typography-body-medium-size, 0.875rem); }
-  .smrt-records__meta { flex: 0 0 auto; font-variant-numeric: tabular-nums; }
-  .smrt-records__foot { display: flex; justify-content: space-between; gap: var(--smrt-spacing-3); margin: var(--smrt-spacing-2) 0 0; color: var(--smrt-color-on-surface-variant); font-size: var(--smrt-typography-body-medium-size, 0.875rem); }
-  .smrt-records__foot--end { justify-content: flex-end; }
-  .smrt-records__foot a { color: var(--smrt-color-primary); }
-  .smrt-records__empty { margin: 0; color: var(--smrt-color-on-surface-variant); }
+@layer smrt.structure {
+  .smrt-records__root {
+    display: grid;
+    margin: 0;
+    padding: 0;
+    list-style: none;
+  }
+  .smrt-records__row {
+    display: flex;
+    align-items: baseline;
+    justify-content: space-between;
+    gap: var(--smrt-spacing-3);
+    padding: var(--smrt-spacing-2) 0;
+  }
+  .smrt-records__main {
+    display: grid;
+    min-inline-size: 0;
+  }
+  .smrt-records__title {
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+  }
+  .smrt-records__meta {
+    flex: 0 0 auto;
+  }
+  .smrt-records__foot {
+    display: flex;
+    justify-content: space-between;
+    gap: var(--smrt-spacing-3);
+    margin: var(--smrt-spacing-2) 0 0;
+  }
+  .smrt-records__foot--end {
+    justify-content: flex-end;
+  }
+  .smrt-records__empty {
+    margin: 0;
+  }
 }
+
+@layer smrt.theme {
+  .smrt-records__row {
+    border-block-end: var(--smrt-hairline);
+  }
+  .smrt-records__row:last-child {
+    border-block-end: 0;
+  }
+  .smrt-records__title {
+    color: var(--smrt-color-on-surface);
+    font-weight: var(--smrt-typography-weight-medium, 500);
+    text-decoration: none;
+  }
+  a.smrt-records__title:hover {
+    text-decoration: underline;
+  }
+  .smrt-records__sub, .smrt-records__meta {
+    color: var(--smrt-color-on-surface-variant);
+    font-size: var(--smrt-typography-body-medium-size, 0.875rem);
+  }
+  .smrt-records__meta {
+    font-variant-numeric: tabular-nums;
+  }
+  .smrt-records__foot {
+    color: var(--smrt-color-on-surface-variant);
+    font-size: var(--smrt-typography-body-medium-size, 0.875rem);
+  }
+  .smrt-records__foot a {
+    color: var(--smrt-color-primary);
+  }
+  .smrt-records__empty {
+    color: var(--smrt-color-on-surface-variant);
+  }
+}
+
 </style>

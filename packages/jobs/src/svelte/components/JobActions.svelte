@@ -56,7 +56,7 @@ function handleDelete() {
 }
 </script>
 
-<div class="job-actions" class:compact data-smrt-component="JobActions">
+<div class="smrt-job-actions__root" class:smrt-job-actions__compact={compact} data-smrt-component="JobActions">
   {#if showRetry && canRetry}
     <Button
       variant="secondary"
@@ -90,15 +90,18 @@ function handleDelete() {
 
 <style>
 @layer smrt.reset, smrt.structure, smrt.theme;
-@layer smrt.theme {
-  .job-actions {
+@layer smrt.structure {
+  .smrt-job-actions__root {
     display: flex;
     gap: var(--smrt-spacing-sm, 0.5rem);
     align-items: center;
   }
-
-  .compact {
+  .smrt-job-actions__compact {
     gap: var(--smrt-spacing-xs, 0.25rem);
   }
 }
+
+@layer smrt.theme {
+}
+
 </style>

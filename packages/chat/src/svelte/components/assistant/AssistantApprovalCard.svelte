@@ -119,28 +119,28 @@ async function decide(approve: boolean) {
 </script>
 
 {#if presentation}
-<article class="sh-card" data-smrt-component="AssistantApprovalCard" aria-labelledby="ap-{presentation.id}-title" style:--smrt-approval-heading-size={presentation.headingSize ?? 'var(--smrt-typography-title-medium-size)'}>
-  <header class="top">
+<article class="smrt-app-shell__card" data-smrt-component="AssistantApprovalCard" aria-labelledby="ap-{presentation.id}-title" style:--smrt-approval-heading-size={presentation.headingSize ?? 'var(--smrt-typography-title-medium-size)'}>
+  <header class="smrt-assistant-approval-card__top">
     <h3 id="ap-{presentation.id}-title">{presentation.summary}</h3>
-    <span class="sh-badge {presentation.badgeClass}">{presentation.statusLabel}</span>
+    <span class="smrt-app-shell__badge {presentation.badgeClass}">{presentation.statusLabel}</span>
   </header>
   {@render detail?.()}
-  {#if presentation.message}<p class="sh-alert sh-alert-error" role="alert">{presentation.message}</p>{/if}
+  {#if presentation.message}<p class="smrt-app-shell__alert smrt-app-shell__alert-error" role="alert">{presentation.message}</p>{/if}
   {#if presentation.pending && presentation.ondecide}
-    <div class="sh-actions">
-      <Button labelWhitespace="trim" class="sh-btn sh-btn-primary" disabled={presentation.busy} aria-label={`${presentation.busy ? (presentation.busyLabel ?? t(M['chat.approval.pending'])) : t(M['chat.approval.approve'])}: ${presentation.summary}`} onclick={() => presentation.ondecide?.(true)}>{presentation.busy ? (presentation.busyLabel ?? t(M['chat.approval.pending'])) : t(M['chat.approval.approve'])}</Button>
-      <Button labelWhitespace="trim" class="sh-btn" variant="secondary" disabled={presentation.busy} aria-label={`${t(M['chat.approval.deny'])}: ${presentation.summary}`} onclick={() => presentation.ondecide?.(false)}>{t(M['chat.approval.deny'])}</Button>
+    <div class="smrt-app-shell__actions">
+      <Button labelWhitespace="trim" class="smrt-app-shell__btn smrt-app-shell__btn-primary" disabled={presentation.busy} aria-label={`${presentation.busy ? (presentation.busyLabel ?? t(M['chat.approval.pending'])) : t(M['chat.approval.approve'])}: ${presentation.summary}`} onclick={() => presentation.ondecide?.(true)}>{presentation.busy ? (presentation.busyLabel ?? t(M['chat.approval.pending'])) : t(M['chat.approval.approve'])}</Button>
+      <Button labelWhitespace="trim" class="smrt-app-shell__btn" variant="secondary" disabled={presentation.busy} aria-label={`${t(M['chat.approval.deny'])}: ${presentation.summary}`} onclick={() => presentation.ondecide?.(false)}>{t(M['chat.approval.deny'])}</Button>
     </div>
   {/if}
 </article>
 {:else if approval && transport}
 <div data-smrt-component="AssistantApprovalCard">
 <Card padding="sm">
-  <div class="approval" aria-busy={busy}>
+  <div class="smrt-assistant-approval-card__approval" aria-busy={busy}>
     <p>{toolPresentation === 'generic' ? view.presentation?.summary ?? t(M['chat.approval.review_change']) : view.summary}</p>
     <p role="status" aria-live="polite">{t(labels[view.status])}</p>
     {#if view.status === 'pending' && transport.decideApproval && transport.listApprovals}
-      <div class="actions">
+      <div class="smrt-assistant-approval-card__actions">
         <Button disabled={busy || !verified} onclick={() => decide(true)}>{t(M['chat.approval.approve'])}</Button>
         <Button variant="secondary" disabled={busy || !verified} onclick={() => decide(false)}>{t(M['chat.approval.deny'])}</Button>
       </div>
@@ -155,11 +155,38 @@ async function decide(approve: boolean) {
 
 <style>
 @layer smrt.reset, smrt.structure, smrt.theme;
+
 @layer smrt.structure {
-.top { display: flex; flex-wrap: wrap; align-items: baseline; justify-content: space-between; gap: var(--smrt-spacing-2); }
-.top h3 { margin: 0; font-size: var(--smrt-approval-heading-size); }
-.approval { display: grid; gap: var(--smrt-spacing-2); color: var(--smrt-color-on-surface); }
-.approval p { margin: var(--smrt-spacing-0); }
-.actions { display: flex; gap: var(--smrt-spacing-2); flex-wrap: wrap; }
+  .smrt-assistant-approval-card__top {
+    display: flex;
+    flex-wrap: wrap;
+    align-items: baseline;
+    justify-content: space-between;
+    gap: var(--smrt-spacing-2);
+  }
+  .smrt-assistant-approval-card__top h3 {
+    margin: 0;
+  }
+  .smrt-assistant-approval-card__approval {
+    display: grid;
+    gap: var(--smrt-spacing-2);
+  }
+  .smrt-assistant-approval-card__approval p {
+    margin: var(--smrt-spacing-0);
+  }
+  .smrt-assistant-approval-card__actions {
+    display: flex;
+    gap: var(--smrt-spacing-2);
+    flex-wrap: wrap;
+  }
+}
+
+@layer smrt.theme {
+  .smrt-assistant-approval-card__top h3 {
+    font-size: var(--smrt-approval-heading-size);
+  }
+  .smrt-assistant-approval-card__approval {
+    color: var(--smrt-color-on-surface);
+  }
 }
 </style>

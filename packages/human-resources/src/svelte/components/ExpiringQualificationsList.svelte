@@ -38,14 +38,14 @@ function distance(daysUntilExpiry: number): string {
 </script>
 
 {#if sorted.length === 0}
-  <p class="expiring-qualifications-empty" data-smrt-component="ExpiringQualificationsList">
+  <p class="smrt-expiring-qualifications__empty" data-smrt-component="ExpiringQualificationsList" >
     {emptyMessage ?? t(M['human_resources.expiring_qualifications_list.empty'])}
   </p>
 {:else}
-  <ul class="expiring-qualifications" data-smrt-component="ExpiringQualificationsList">
+  <ul class="smrt-expiring-qualifications__root" data-smrt-component="ExpiringQualificationsList">
     {#each sorted as item (item.id)}
-      <li class="expiring-qualification">
-        <div class="expiring-qualification-main">
+      <li class="smrt-expiring-qualifications__row" data-smrt-part="row">
+        <div class="smrt-expiring-qualifications__main" data-smrt-part="body">
           {#if onselect}
             <Button
               variant="ghost"
@@ -56,12 +56,12 @@ function distance(daysUntilExpiry: number): string {
               {item.qualificationName}
             </Button>
           {:else}
-            <span class="expiring-qualification-name">{item.qualificationName}</span>
+            <span class="smrt-expiring-qualifications__name" data-smrt-part="title">{item.qualificationName}</span>
           {/if}
-          <span class="expiring-qualification-person">{item.displayName}</span>
+          <span class="smrt-expiring-qualifications__person" data-smrt-part="author">{item.displayName}</span>
         </div>
-        <div class="expiring-qualification-when">
-          <span class="expiring-qualification-distance">{distance(item.daysUntilExpiry)}</span>
+        <div class="smrt-expiring-qualifications__when" data-smrt-part="meta">
+          <span class="smrt-expiring-qualifications__distance" data-smrt-part="meta">{distance(item.daysUntilExpiry)}</span>
           <span>{t(M['human_resources.expiring_qualifications_list.expires_on'], { date: item.expiresOn })}</span>
         </div>
       </li>
@@ -71,30 +71,23 @@ function distance(daysUntilExpiry: number): string {
 
 <style>
 @layer smrt.reset, smrt.structure, smrt.theme;
-@layer smrt.theme {
-  .expiring-qualifications {
+@layer smrt.structure {
+  .smrt-expiring-qualifications__root {
     list-style: none;
     margin: 0;
     padding: 0;
     display: flex;
     flex-direction: column;
   }
-
-  .expiring-qualification {
+  .smrt-expiring-qualifications__row {
     display: flex;
     flex-wrap: wrap;
     align-items: center;
     justify-content: space-between;
     gap: 0.75rem;
     padding: 0.5rem 0.25rem;
-    border-bottom: var(--smrt-hairline);
   }
-
-  .expiring-qualification:last-child {
-    border-bottom: none;
-  }
-
-  .expiring-qualification-main {
+  .smrt-expiring-qualifications__main {
     display: flex;
     flex-direction: column;
     align-items: flex-start;
@@ -102,28 +95,36 @@ function distance(daysUntilExpiry: number): string {
     min-width: 0;
     flex: 1;
   }
-
-  .expiring-qualification-name,
-  .expiring-qualification-distance {
-    font-weight: 500;
-  }
-
-  .expiring-qualification-person,
-  .expiring-qualification-when {
-    font-size: 0.75rem;
-    color: var(--smrt-color-on-surface-variant, inherit);
-  }
-
-  .expiring-qualification-when {
+  .smrt-expiring-qualifications__when {
     display: flex;
     flex-direction: column;
     align-items: flex-end;
     gap: 0.125rem;
   }
-
-  .expiring-qualifications-empty {
-    color: var(--smrt-color-on-surface-variant, inherit);
+  .smrt-expiring-qualifications__empty {
     padding: 1rem 0;
   }
 }
+
+@layer smrt.theme {
+  .smrt-expiring-qualifications__row {
+    border-bottom: var(--smrt-hairline);
+  }
+  .smrt-expiring-qualifications__row:last-child {
+    border-bottom: none;
+  }
+  .smrt-expiring-qualifications__name,
+  .smrt-expiring-qualifications__distance {
+    font-weight: 500;
+  }
+  .smrt-expiring-qualifications__person,
+  .smrt-expiring-qualifications__when {
+    font-size: 0.75rem;
+    color: var(--smrt-color-on-surface-variant, inherit);
+  }
+  .smrt-expiring-qualifications__empty {
+    color: var(--smrt-color-on-surface-variant, inherit);
+  }
+}
+
 </style>

@@ -28,46 +28,46 @@ let {
 const summary = $derived(summarizeMarketingDashboard(campaigns));
 </script>
 
-<section class="marketing-dashboard" data-smrt-component="MarketingDashboard">
-  <div class="tiles">
+<section class="smrt-marketing-dashboard__root" data-smrt-component="MarketingDashboard">
+  <div class="smrt-marketing-dashboard__tiles" data-smrt-part="list">
     <Card padding="sm">
-      <dl class="tile">
+      <dl class="smrt-marketing-dashboard__tile" data-smrt-part="item">
         <dt>Campaigns</dt>
         <dd>{summary.activeCampaignCount} active</dd>
-        <dd class="secondary">{summary.campaignCount} total</dd>
+        <dd class="smrt-marketing-dashboard__secondary" data-smrt-part="value">{summary.campaignCount} total</dd>
       </dl>
     </Card>
     <Card padding="sm">
-      <dl class="tile">
+      <dl class="smrt-marketing-dashboard__tile" data-smrt-part="item">
         <dt>Channels</dt>
         <dd>{summary.channelCount}</dd>
-        <dd class="secondary">linked executions</dd>
+        <dd class="smrt-marketing-dashboard__secondary" data-smrt-part="value">linked executions</dd>
       </dl>
     </Card>
     <Card padding="sm">
-      <dl class="tile">
+      <dl class="smrt-marketing-dashboard__tile" data-smrt-part="item">
         <dt>Leads</dt>
         <dd>{formatNumber(summary.leads, locale)}</dd>
-        <dd class="secondary">{formatNumber(summary.conversions, locale)} conversions</dd>
+        <dd class="smrt-marketing-dashboard__secondary" data-smrt-part="value">{formatNumber(summary.conversions, locale)} conversions</dd>
       </dl>
     </Card>
     <Card padding="sm">
-      <dl class="tile">
+      <dl class="smrt-marketing-dashboard__tile" data-smrt-part="item">
         <dt>Reach</dt>
         <dd>{formatNumber(summary.impressions, locale)}</dd>
-        <dd class="secondary">{formatNumber(summary.clicks, locale)} clicks</dd>
+        <dd class="smrt-marketing-dashboard__secondary" data-smrt-part="value">{formatNumber(summary.clicks, locale)} clicks</dd>
       </dl>
     </Card>
   </div>
 
   {#if summary.currencyTotals.length > 0}
     <Card padding="sm">
-      <div class="currency-totals">
+      <div class="smrt-marketing-dashboard__currency-totals" data-smrt-part="meta">
         {#each summary.currencyTotals as total (total.currency)}
-          <dl class="currency-total">
+          <dl class="smrt-marketing-dashboard__currency-total" data-smrt-part="value">
             <dt>{total.currency}</dt>
             <dd>{formatCents(total.spendCents, total.currency, locale)} spent</dd>
-            <dd class="secondary">
+            <dd class="smrt-marketing-dashboard__secondary" data-smrt-part="value">
               of {formatCents(total.budgetCents, total.currency, locale)} budget
             </dd>
           </dl>
@@ -77,60 +77,59 @@ const summary = $derived(summarizeMarketingDashboard(campaigns));
   {/if}
 
   {#if campaignList}
-    <div class="surface">{@render campaignList()}</div>
+    <div class="smrt-marketing-dashboard__surface" data-smrt-part="body">{@render campaignList()}</div>
   {/if}
   {#if detail}
-    <div class="surface">{@render detail()}</div>
+    <div class="smrt-marketing-dashboard__surface" data-smrt-part="body">{@render detail()}</div>
   {/if}
   {@render children?.()}
 </section>
 
 <style>
 @layer smrt.reset, smrt.structure, smrt.theme;
-@layer smrt.theme {
-  .marketing-dashboard {
+@layer smrt.structure {
+  .smrt-marketing-dashboard__root {
     display: flex;
     flex-direction: column;
     gap: var(--smrt-spacing-4);
   }
-
-  .tiles {
+  .smrt-marketing-dashboard__tiles {
     display: grid;
     grid-template-columns: repeat(auto-fit, minmax(10rem, 1fr));
     gap: var(--smrt-spacing-3);
   }
-
-  .tile,
-  .currency-total {
+  .smrt-marketing-dashboard__tile,
+  .smrt-marketing-dashboard__currency-total {
     margin: 0;
   }
+  dd {
+    margin: var(--smrt-spacing-1) 0 0;
+  }
+  .smrt-marketing-dashboard__currency-totals {
+    display: grid;
+    grid-template-columns: repeat(auto-fit, minmax(12rem, 1fr));
+    gap: var(--smrt-spacing-4);
+  }
+  .smrt-marketing-dashboard__surface {
+    min-width: 0;
+  }
+}
 
+@layer smrt.theme {
   dt {
     color: var(--smrt-color-on-surface-variant);
     font: var(--smrt-typography-label-medium-font);
     text-transform: uppercase;
     letter-spacing: var(--smrt-typography-label-medium-tracking);
   }
-
   dd {
-    margin: var(--smrt-spacing-1) 0 0;
     color: var(--smrt-color-on-surface);
     font: var(--smrt-typography-title-medium-font);
   }
-
-  .secondary {
+  .smrt-marketing-dashboard__secondary {
     color: var(--smrt-color-on-surface-variant);
     font: var(--smrt-typography-body-small-font);
   }
-
-  .currency-totals {
-    display: grid;
-    grid-template-columns: repeat(auto-fit, minmax(12rem, 1fr));
-    gap: var(--smrt-spacing-4);
-  }
-
-  .surface {
-    min-width: 0;
-  }
 }
+
 </style>

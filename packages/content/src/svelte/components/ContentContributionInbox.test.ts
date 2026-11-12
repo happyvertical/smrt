@@ -44,9 +44,9 @@ describe('ContentContributionInbox', () => {
       ],
     });
 
-    const pills = Array.from(target.querySelectorAll('.pill')).map((pill) =>
-      pill.textContent?.trim(),
-    );
+    const pills = Array.from(
+      target.querySelectorAll('.smrt-content-contribution-inbox__pill'),
+    ).map((pill) => pill.textContent?.trim());
 
     expect(pills).toContain('submitted');
     expect(pills.filter((text) => text === 'submitted')).toHaveLength(2);

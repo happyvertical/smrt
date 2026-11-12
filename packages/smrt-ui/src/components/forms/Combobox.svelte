@@ -335,7 +335,7 @@ useControlRegistration(() => {
   };
 });
 </script>
-<div bind:this={rootEl} class="combobox {className}" data-smrt-control={controlId} data-smrt-form={interactionContext?.formId}
+<div bind:this={rootEl} class="smrt-combobox__root {className}" data-smrt-control={controlId} data-smrt-form={interactionContext?.formId}
   data-smrt-subject-type={interaction === false ? undefined : interaction?.subject?.type}
   data-smrt-subject-id={interaction === false ? undefined : interaction?.subject?.id} data-smrt-component="Combobox">
   <FieldLabel for={inputId} {label} {required} />
@@ -345,12 +345,13 @@ useControlRegistration(() => {
     aria-expanded={open} aria-controls={listId} aria-busy={busy ? 'true' : undefined} aria-invalid={invalid ? 'true' : undefined} aria-describedby={describedby} aria-autocomplete="list" aria-activedescendant={open && filtered[activeIndex] ? `${listId}-${activeIndex}` : undefined}
     onfocus={openList} onclick={openList} oninput={handleInput} onkeydown={handleKeydown} />
   {#if open && (filtered.length || status || footer)}
-    <div class="options">
+    <div class="smrt-combobox__options" data-smrt-part="panel">
       {#if filtered.length}
-        <div id={listId} class="option-list" role="listbox">
+        <div id={listId} class="smrt-combobox__option-list" role="listbox" data-smrt-part="list">
           {#each filtered as option, index (option.value)}
             <button id={`${listId}-${index}`} type="button" role="option" tabindex="-1"
-              aria-selected={String(option.value) === value} class:active={index === activeIndex}
+              aria-selected={String(option.value) === value} class:smrt-combobox__active={index === activeIndex}
+              data-smrt-part="option"
               disabled={option.disabled} onpointerdown={(event) => event.preventDefault()}
               onclick={() => commit(option, true)}>
               {#if optionContent}{@render optionContent(option)}{:else}{option.label}{/if}
@@ -358,23 +359,96 @@ useControlRegistration(() => {
           {/each}
         </div>
       {:else if status}
-        <div class="empty" aria-hidden="true">{status}</div>
+        <div class="smrt-combobox__empty" aria-hidden="true">{status}</div>
       {/if}
       {#if footer}{@render footer()}{/if}
     </div>
   {/if}
-  {#if status !== undefined}<div class="sr-status" role="status" aria-live="polite">{open ? status : ''}</div>{/if}
+  {#if status !== undefined}<div class="smrt-combobox__status" data-smrt-part="status" role="status" aria-live="polite">{open ? status : ''}</div>{/if}
 </div>
 <style>
 @layer smrt.reset, smrt.structure, smrt.theme;
+
+@layer smrt.structure {
+  .smrt-combobox__option-list {
+    display: grid;
+  }
+  .smrt-combobox__root {
+    position: relative;
+    display: grid;
+    gap: 0;
+  }
+  input {
+    box-sizing: border-box;
+    width: 100%;
+    padding: var(--smrt-spacing-2) var(--smrt-spacing-3);
+  }
+  .smrt-combobox__options {
+    position: absolute;
+    z-index: var(--smrt-z-index-dropdown);
+    top: 100%;
+    left: 0;
+    right: 0;
+    display: grid;
+    padding: var(--smrt-spacing-1);
+  }
+  .smrt-combobox__options button {
+    padding: var(--smrt-spacing-2) var(--smrt-spacing-3);
+  }
+  .smrt-combobox__empty {
+    padding: var(--smrt-spacing-2) var(--smrt-spacing-3);
+  }
+  .smrt-combobox__status {
+    position: absolute;
+    width: 1px;
+    height: 1px;
+    margin: -1px;
+    padding: 0;
+    overflow: hidden;
+    clip-path: inset(50%);
+    white-space: nowrap;
+  }
+}
+
 @layer smrt.theme {
-  .option-list { display: grid; }
-  .combobox { position: relative; display: grid; gap: 0; color: var(--smrt-color-on-surface); }
-  input { box-sizing: border-box; width: 100%; padding: var(--smrt-spacing-2) var(--smrt-spacing-3); border: var(--smrt-hairline-strong); border-radius: var(--smrt-radius-small); background: var(--smrt-color-surface); color: inherit; }
-  input:focus { outline: var(--smrt-focus-ring-width) solid var(--smrt-focus-ring-color); outline-offset: var(--smrt-focus-ring-offset); } .options { position: absolute; z-index: var(--smrt-z-index-dropdown); top: 100%; left: 0; right: 0; display: grid; padding: var(--smrt-spacing-1); border: var(--smrt-hairline); border-radius: var(--smrt-radius-small); background: var(--smrt-color-surface-container); box-shadow: var(--smrt-elevation-2); }
-  .options button { padding: var(--smrt-spacing-2) var(--smrt-spacing-3); border: 0; border-radius: var(--smrt-radius-extra-small); background: transparent; color: var(--smrt-color-on-surface); text-align: left; } .options button.active { background: var(--smrt-color-secondary-container); }
-  .options.empty { padding: var(--smrt-spacing-2) var(--smrt-spacing-3); color: var(--smrt-color-on-surface-variant); }
-  .sr-status { position: absolute; width: 1px; height: 1px; margin: -1px; padding: 0; overflow: hidden; clip-path: inset(50%); white-space: nowrap; border: 0; }
-  :global(.combobox[data-smrt-highlighted='true']) { outline: 3px solid var(--smrt-color-tertiary); outline-offset: 4px; }
+  .smrt-combobox__root {
+    color: var(--smrt-color-on-surface);
+  }
+  input {
+    border: var(--smrt-hairline-strong);
+    border-radius: var(--smrt-radius-small);
+    background: var(--smrt-color-surface);
+    color: inherit;
+  }
+  input:focus {
+    outline: var(--smrt-focus-ring-width) solid var(--smrt-focus-ring-color);
+    outline-offset: var(--smrt-focus-ring-offset);
+  }
+  .smrt-combobox__options {
+    border: var(--smrt-hairline);
+    border-radius: var(--smrt-radius-small);
+    background: var(--smrt-color-surface-container);
+    box-shadow: var(--smrt-elevation-2);
+  }
+  .smrt-combobox__options button {
+    border: 0;
+    border-radius: var(--smrt-radius-extra-small);
+    background: transparent;
+    color: var(--smrt-color-on-surface);
+    text-align: left;
+  }
+  .smrt-combobox__options button.smrt-combobox__active {
+    background: var(--smrt-color-secondary-container);
+  }
+  .smrt-combobox__empty {
+    color: var(--smrt-color-on-surface-variant);
+  }
+  .smrt-combobox__status {
+    border: 0;
+  }
+  :global(.smrt-combobox__root[data-smrt-highlighted='true']) {
+    outline: 3px solid var(--smrt-color-tertiary);
+    outline-offset: 4px;
+  }
 }
 </style>

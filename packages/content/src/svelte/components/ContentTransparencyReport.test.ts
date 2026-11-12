@@ -176,7 +176,9 @@ describe('ContentTransparencyReport component', () => {
     );
     expect(target.textContent).toContain('Write a transparent summary');
 
-    const highlightedFact = target.querySelector('.pill-list .used');
+    const highlightedFact = target.querySelector(
+      '.smrt-content-transparency-report__pill-list .smrt-content-transparency-report__used',
+    );
     expect(highlightedFact?.textContent).toContain(
       'The city approved the project in February.',
     );

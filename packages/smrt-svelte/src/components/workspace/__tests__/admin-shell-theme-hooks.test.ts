@@ -22,13 +22,21 @@ function ruleBody(source: string, selector: string): string {
 
 describe('AdminShell theme hooks', () => {
   it('reads its page background from --smrt-admin-shell-background', () => {
-    expect(ruleBody(shell, '.smrt-admin-shell')).toMatch(
+    expect(
+      ruleBody(
+        shell.slice(shell.indexOf('@layer smrt.theme {')),
+        '.smrt-admin-shell',
+      ),
+    ).toMatch(
       /background:\s*var\(--smrt-admin-shell-background,\s*var\(--smrt-surface-ground\)\)/,
     );
   });
 
   it('themes thin scrollbars from tokens, overridable per app', () => {
-    const root = ruleBody(shell, '.smrt-admin-shell');
+    const root = ruleBody(
+      shell.slice(shell.indexOf('@layer smrt.theme {')),
+      '.smrt-admin-shell',
+    );
     expect(root).toMatch(
       /scrollbar-color:[^;]*--smrt-admin-shell-scrollbar-thumb[^;]*--smrt-admin-shell-scrollbar-track/s,
     );
@@ -64,8 +72,11 @@ describe('AdminShell theme hooks', () => {
   });
 
   it('lets an app set the shell title font family', () => {
-    expect(ruleBody(title, '.smrt-shell-title')).toMatch(
-      /font-family:\s*var\(--smrt-shell-title-font-family/,
-    );
+    expect(
+      ruleBody(
+        title.slice(title.indexOf('@layer smrt.theme {')),
+        '.smrt-shell-title',
+      ),
+    ).toMatch(/font-family:\s*var\(--smrt-shell-title-font-family/);
   });
 });

@@ -43,9 +43,9 @@ describe('DateTimeInput — behavior', () => {
     container.style.width = '80px';
     const input = screen.getByLabelText('When');
 
-    expect(input).toHaveClass('smrt-input');
+    expect(input).toHaveClass('smrt-date-time-input__input');
     expect(dateTimeInputSource).toMatch(
-      /\.smrt-input\s*\{[^}]*box-sizing:\s*border-box;[^}]*min-width:\s*0;[^}]*width:\s*100%;/,
+      /\.smrt-date-time-input__input\s*\{[^}]*box-sizing:\s*border-box;[^}]*min-width:\s*0;[^}]*width:\s*100%;/,
     );
   });
 

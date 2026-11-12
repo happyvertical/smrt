@@ -47,13 +47,13 @@ describe('one label class across generated form fields', () => {
     ['DateTimeInput', DateTimeInput, {}],
     ['NumberInput', NumberInput, {}],
     ['PhoneInput', PhoneInput, {}],
-  ] as const)('%s uses .smrt-field-label, never the themed .smrt-label', (_n, Component, extra) => {
+  ] as const)('%s uses .smrt-field-label__root, never the themed .smrt-label', (_n, Component, extra) => {
     const { container } = render(Component as never, {
       props: { name: 'f', label: 'The label', ...extra },
     });
     const label = container.querySelector('label');
     expect(label).not.toBeNull();
-    expect(label?.classList.contains('smrt-field-label')).toBe(true);
+    expect(label?.classList.contains('smrt-field-label__root')).toBe(true);
     expect(label?.classList.contains('smrt-label')).toBe(false);
     expect(label?.classList.contains('label')).toBe(false);
   });

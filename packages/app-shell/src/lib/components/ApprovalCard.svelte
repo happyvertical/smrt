@@ -34,10 +34,10 @@ const pending = $derived(approval.status === 'pending');
 const uid = $derived(`ap-${approval.id}`);
 const badge = $derived(
   approval.status === 'approved'
-    ? 'sh-badge-ok'
+    ? 'smrt-app-shell__badge-ok'
     : approval.status === 'pending'
-      ? 'sh-badge-warn'
-      : 'sh-badge-bad',
+      ? 'smrt-app-shell__badge-warn'
+      : 'smrt-app-shell__badge-bad',
 );
 </script>
 
@@ -48,16 +48,16 @@ const badge = $derived(
 }}>
 {#snippet detail()}
   {#each description.lines as line, i (i)}
-    <p class:warn={description.destructive && i === description.lines.length - 1}>{line}</p>
+    <p class:smrt-approval-card__warn={description.destructive && i === description.lines.length - 1}>{line}</p>
   {/each}
 
   {#each description.blocks as block, i (i)}
-    <p class="sh-muted" id="{uid}-code-{i}">Code for {block.title}</p>
+    <p class="smrt-app-shell__muted" id="{uid}-code-{i}">Code for {block.title}</p>
     <!-- svelte-ignore a11y_no_noninteractive_tabindex (keyboard scrolling of long code) -->
-    <pre class="sh-code" tabindex="0" aria-labelledby="{uid}-code-{i}"><code>{block.code}</code></pre>
+    <pre class="smrt-app-shell__code" tabindex="0" aria-labelledby="{uid}-code-{i}" data-smrt-part="code"><code>{block.code}</code></pre>
   {/each}
 
-  <p class="sh-muted">
+  <p class="smrt-app-shell__muted" data-smrt-part="description">
     Asked <time datetime={approval.createdAt} title={fullTime(approval.createdAt)}
       >{timeAgo(approval.createdAt)}</time
     >{#if approval.requestedBy}
@@ -69,7 +69,7 @@ const badge = $derived(
         {' by '}{authorName(approval.decidedBy, owner)}{/if}{/if}
   </p>
 
-  {#if failed}<p class="sh-alert sh-alert-error">{failed}</p>{/if}
+  {#if failed}<p class="smrt-app-shell__alert smrt-app-shell__alert-error">{failed}</p>{/if}
   {#if approval.status === 'failed' && approval.action?.kind === 'publish-draft'}
     <Button variant="secondary" href="/draft/review">Review again</Button>
   {/if}
@@ -78,13 +78,16 @@ const badge = $derived(
 
 <style>
 @layer smrt.reset, smrt.structure, smrt.theme;
-@layer smrt.theme {
+
+@layer smrt.structure {
   p {
     margin: var(--smrt-spacing-sm, 0.5rem) 0;
   }
-  .warn {
+}
+
+@layer smrt.theme {
+  .smrt-approval-card__warn {
     font-weight: 600;
   }
-
 }
 </style>

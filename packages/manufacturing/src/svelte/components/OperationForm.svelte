@@ -107,11 +107,11 @@ function handleSubmit() {
 }
 </script>
 
-<div class="operation-form-shell" data-smrt-component="OperationForm">
+<div class="smrt-operation-form__root" data-smrt-component="OperationForm">
   <Form class="operation-form" onsubmit={handleSubmit}>
-    <div class="field">
+    <div class="smrt-operation-form__field" data-smrt-part="field">
       <label for="{uid}-code">
-        {t(M['manufacturing.operation_form.code'])}<span class="required" aria-hidden="true">*</span>
+        {t(M['manufacturing.operation_form.code'])}<span class="smrt-operation-form__required" data-smrt-part="marker" aria-hidden="true">*</span>
       </label>
       <Input
         id="{uid}-code"
@@ -125,15 +125,15 @@ function handleSubmit() {
         aria-describedby={describedBy('code', isNew ? undefined : `${uid}-code-hint`)}
       />
       {#if !isNew}
-        <span class="hint" id="{uid}-code-hint">
+        <span class="smrt-operation-form__hint" data-smrt-part="description" id="{uid}-code-hint">
           {t(M['manufacturing.operation_form.code_edit_help'])}
         </span>
       {/if}
     </div>
 
-    <div class="field">
+    <div class="smrt-operation-form__field" data-smrt-part="field">
       <label for="{uid}-name">
-        {t(M['manufacturing.operation_form.name'])}<span class="required" aria-hidden="true">*</span>
+        {t(M['manufacturing.operation_form.name'])}<span class="smrt-operation-form__required" data-smrt-part="marker" aria-hidden="true">*</span>
       </label>
       <Input
         id="{uid}-name"
@@ -147,7 +147,7 @@ function handleSubmit() {
       />
     </div>
 
-    <div class="field">
+    <div class="smrt-operation-form__field" data-smrt-part="field">
       <label for="{uid}-category">{t(M['manufacturing.operation_form.category'])}</label>
       <Input
         id="{uid}-category"
@@ -164,12 +164,12 @@ function handleSubmit() {
           <option value={suggestion}></option>
         {/each}
       </datalist>
-      <span class="hint" id="{uid}-category-hint">
+      <span class="smrt-operation-form__hint" data-smrt-part="description" id="{uid}-category-hint">
         {t(M['manufacturing.operation_form.category_help'])}
       </span>
     </div>
 
-    <div class="field">
+    <div class="smrt-operation-form__field" data-smrt-part="field">
       <label for="{uid}-qualification">{t(M['manufacturing.operation_form.qualification'])}</label>
       <Input
         id="{uid}-qualification"
@@ -179,13 +179,13 @@ function handleSubmit() {
         disabled={loading}
         aria-describedby="{uid}-qualification-hint"
       />
-      <span class="hint" id="{uid}-qualification-hint">
+      <span class="smrt-operation-form__hint" data-smrt-part="description" id="{uid}-qualification-hint">
         {t(M['manufacturing.operation_form.qualification_help'])}
       </span>
     </div>
 
     {#if errors.length > 0}
-      <div class="errors" role="alert">
+      <div class="smrt-operation-form__errors" data-smrt-part="error" role="alert">
         <ul>
           {#each errors as error (error.field)}
             <li id={errorId(error.field)}>{error.message}</li>
@@ -194,7 +194,7 @@ function handleSubmit() {
       </div>
     {/if}
 
-    <div class="actions">
+    <div class="smrt-operation-form__actions" data-smrt-part="actions">
       {#if oncancel}
         <Button variant="secondary" type="button" onclick={oncancel} disabled={loading}>
           {t(M['manufacturing.operation_form.cancel'])}
@@ -215,47 +215,44 @@ function handleSubmit() {
 
 <style>
 @layer smrt.reset, smrt.structure, smrt.theme;
-@layer smrt.theme {
-  .operation-form-shell :global(.operation-form) {
+@layer smrt.structure {
+  .smrt-operation-form__root :global(.operation-form) {
     display: flex;
     flex-direction: column;
     gap: var(--smrt-spacing-md, 1rem);
   }
-
-  .field {
+  .smrt-operation-form__field {
     display: flex;
     flex-direction: column;
     gap: 0.25rem;
   }
-
-  label {
-    font: var(--smrt-typography-body-medium-font, 500 0.875rem / 1.25 sans-serif);
-    color: var(--smrt-color-on-surface-variant, inherit);
-  }
-
-  .required {
-    color: var(--smrt-color-error, inherit);
-  }
-
-  .hint {
-    font: var(--smrt-typography-body-small-font, 0.75rem / 1.25 sans-serif);
-    color: var(--smrt-color-on-surface-variant, inherit);
-  }
-
-  .errors {
-    color: var(--smrt-color-error, inherit);
-  }
-
-  .errors ul {
+  .smrt-operation-form__errors ul {
     margin: 0;
     padding-left: 1.25rem;
   }
-
-  .actions {
+  .smrt-operation-form__actions {
     display: flex;
     justify-content: flex-end;
     gap: var(--smrt-spacing-sm, 0.5rem);
     margin-top: var(--smrt-spacing-sm, 0.5rem);
   }
 }
+
+@layer smrt.theme {
+  label {
+    font: var(--smrt-typography-body-medium-font, 500 0.875rem / 1.25 sans-serif);
+    color: var(--smrt-color-on-surface-variant, inherit);
+  }
+  .smrt-operation-form__required {
+    color: var(--smrt-color-error, inherit);
+  }
+  .smrt-operation-form__hint {
+    font: var(--smrt-typography-body-small-font, 0.75rem / 1.25 sans-serif);
+    color: var(--smrt-color-on-surface-variant, inherit);
+  }
+  .smrt-operation-form__errors {
+    color: var(--smrt-color-error, inherit);
+  }
+}
+
 </style>

@@ -6,7 +6,6 @@
  */
 
 import { getRepository } from '@happyvertical/repos';
-import { getModuleConfig } from '@happyvertical/smrt-config';
 import {
   ObjectRegistry,
   SmrtObject,
@@ -17,10 +16,12 @@ import {
 import { TenantScoped, tenantId } from '@happyvertical/smrt-tenancy';
 import { SYNC_THROTTLE_MS } from '../constants';
 import { getScopedRepositoryClient } from '../repository-client-scope';
+import { resolveRepositoryToken } from '../repository-token';
 import type {
   CreateIssueInput,
   CreatePRInput,
   IRepository,
+  RepositoryCiState,
   RepositoryProviderType,
   SDKRepository,
   SearchFilters,
@@ -40,6 +41,16 @@ export interface RepositoryOptions extends SmrtObjectOptions {
   baseUrl?: string;
   tokenConfigKey?: string;
   tenantId?: string | null;
+  url?: string;
+  archived?: boolean;
+  lastPushedAt?: Date | null;
+  openPullRequestCount?: number;
+  ciState?: RepositoryCiState;
+  latestReleaseTag?: string;
+  latestReleaseDate?: Date | null;
+  latestReleaseUrl?: string;
+  lastObservedAt?: Date | null;
+  missingSince?: Date | null;
 }
 
 @TenantScoped({ mode: 'optional' })
@@ -49,6 +60,15 @@ export interface RepositoryOptions extends SmrtObjectOptions {
   // sync is an operator command invoked in-process via the CLI;
   // it intentionally isn't exposed over HTTP today.
   cli: { include: ['list', 'get', 'sync', 'create'], skipApiCheck: true },
+  // One record per (tenant, provider, owner, name). Independent of any
+  // project: project links (smrt#4906) attach by id without touching this key.
+  indexes: [
+    {
+      name: 'repositories_tenant_provider_owner_name_key',
+      columns: ['tenantId', 'providerType', 'owner', 'name'],
+      unique: true,
+    },
+  ],
 })
 export class Repository extends SmrtObject {
   /**
@@ -109,6 +129,61 @@ export class Repository extends SmrtObject {
   lastSyncedAt: Date | null = null;
 
   /**
+   * Web URL of the repository on the provider (set by organization sync)
+   */
+  url: string = '';
+
+  /**
+   * Whether the provider reports the repository as archived. Consumers hide
+   * archived repositories by default.
+   */
+  archived: boolean = false;
+
+  /**
+   * Time of the last push, or null when never pushed / not yet observed
+   */
+  lastPushedAt: Date | null = null;
+
+  /**
+   * Open pull request count at the last observation
+   */
+  openPullRequestCount: number = 0;
+
+  /**
+   * Rolled-up CI state of the default-branch head commit. 'unknown' until
+   * the first organization sync observes the repository.
+   */
+  ciState: RepositoryCiState = 'unknown';
+
+  /**
+   * Tag of the latest release, or empty when the repository has none
+   */
+  latestReleaseTag: string = '';
+
+  /**
+   * Publication time of the latest release
+   */
+  latestReleaseDate: Date | null = null;
+
+  /**
+   * Web URL of the latest release, or empty
+   */
+  latestReleaseUrl: string = '';
+
+  /**
+   * Last time an organization sync saw this repository in the provider
+   * listing. Drives the organization-sync throttle.
+   */
+  lastObservedAt: Date | null = null;
+
+  /**
+   * Set when an organization sync no longer lists the repository (deleted,
+   * transferred, or access lost); cleared when it reappears. Rows are kept so
+   * links and history survive.
+   */
+  missingSince: Date | null = null;
+
+  /**
    * Transient: Cached repository client (not persisted)
    */
   private _client?: IRepository;
@@ -129,6 +204,23 @@ export class Repository extends SmrtObject {
     if (options.tokenConfigKey !== undefined)
       this.tokenConfigKey = options.tokenConfigKey;
     if (options.tenantId !== undefined) this.tenantId = options.tenantId;
+    if (options.url !== undefined) this.url = options.url;
+    if (options.archived !== undefined) this.archived = options.archived;
+    if (options.lastPushedAt !== undefined)
+      this.lastPushedAt = options.lastPushedAt;
+    if (options.openPullRequestCount !== undefined)
+      this.openPullRequestCount = options.openPullRequestCount;
+    if (options.ciState !== undefined) this.ciState = options.ciState;
+    if (options.latestReleaseTag !== undefined)
+      this.latestReleaseTag = options.latestReleaseTag;
+    if (options.latestReleaseDate !== undefined)
+      this.latestReleaseDate = options.latestReleaseDate;
+    if (options.latestReleaseUrl !== undefined)
+      this.latestReleaseUrl = options.latestReleaseUrl;
+    if (options.lastObservedAt !== undefined)
+      this.lastObservedAt = options.lastObservedAt;
+    if (options.missingSince !== undefined)
+      this.missingSince = options.missingSince;
   }
 
   /**
@@ -150,19 +242,7 @@ export class Repository extends SmrtObject {
       return this._client;
     }
 
-    // Resolve token from environment or config
-    const token =
-      process.env[this.tokenConfigKey] ||
-      (getModuleConfig<Record<string, string>>('smrt-projects', {})[
-        this.tokenConfigKey
-      ] as string);
-
-    if (!token) {
-      throw new Error(
-        `Token not found for key '${this.tokenConfigKey}'. ` +
-          `Set the ${this.tokenConfigKey} environment variable or configure it in smrt.config.`,
-      );
-    }
+    const token = resolveRepositoryToken(this.tokenConfigKey);
 
     this._client = await getRepository({
       type: this.providerType,

@@ -27,7 +27,8 @@ const docks = [250, 285, 800].map((width) => ({
 <ThemeProvider colorScheme="light">
   {#each docks as dock (dock.width)}
     <div
-      class="dock-box"
+      class="smrt-assistant-dock-narrow__dock-box"
+      data-smrt-part="panel"
       data-width={dock.width}
       style:width="{dock.width}px"
       style:--smrt-font-family="Georgia, serif"
@@ -43,10 +44,14 @@ const docks = [250, 285, 800].map((width) => ({
 
 <style>
 @layer smrt.reset, smrt.structure, smrt.theme;
-@layer smrt.theme {
-  .dock-box {
+@layer smrt.structure {
+  .smrt-assistant-dock-narrow__dock-box {
     height: 420px;
     margin: var(--smrt-spacing-2);
   }
 }
+
+@layer smrt.theme {
+}
+
 </style>

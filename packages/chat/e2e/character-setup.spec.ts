@@ -118,7 +118,7 @@ test('local model load failure is retryable and never uploads the photo', async 
   await expect(page.getByAltText('Isolated head on transparent background')).toHaveCount(0);
   await page.getByRole('button', { name: 'Retry head isolation' }).click();
   await expect.poll(() => calls).toBe(2);
-  await expect(page.locator('section.setup')).toHaveAttribute('aria-busy', 'false');
+  await expect(page.locator('[data-smrt-component="PhotoCutoutSetup"]')).toHaveAttribute('aria-busy', 'false');
   expect(uploads).toBe(0);
 });
 
@@ -139,7 +139,7 @@ test('cancelled model load cannot replace a newly selected photo', async ({ page
   release();
   await expect(page.getByAltText('Selected character source')).toBeVisible();
   await expect(page.getByAltText('Isolated head on transparent background')).toHaveCount(0);
-  await expect(page.locator('section.setup')).toHaveAttribute('aria-busy', 'false');
+  await expect(page.locator('[data-smrt-component="PhotoCutoutSetup"]')).toHaveAttribute('aria-busy', 'false');
   await expect(page.getByText('Photo is local.', { exact: false })).toBeVisible();
 });
 

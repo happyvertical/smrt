@@ -85,7 +85,7 @@ function picked(id: string) {
 
 {#if !target}
   <!-- The target is not in the catalog: all there is to show is the id. -->
-  <label class="plain">
+  <label class="smrt-relation-field__plain" data-smrt-component="RelationField">
     {label}
     <input
       type="text"
@@ -137,10 +137,11 @@ function picked(id: string) {
 
 {#if createForm && creating}
   <dialog
-    class="create"
+    class="smrt-relation-field__create"
     aria-label={`New ${targetName}`}
     {@attach modalInBody}
     onclose={() => (creating = false)}
+    data-smrt-component="RelationField"
   >
     {#key createKey}
       <FieldMapForm
@@ -154,25 +155,29 @@ function picked(id: string) {
 
 <style>
 @layer smrt.reset, smrt.structure, smrt.theme;
-@layer smrt.theme {
-  .plain {
+@layer smrt.structure {
+  .smrt-relation-field__plain {
     display: grid;
     gap: var(--smrt-spacing-1);
   }
-
-  .create {
+  .smrt-relation-field__create {
     width: min(40rem, 94vw);
     max-height: 90vh;
     padding: var(--smrt-spacing-2);
     overflow: auto;
+  }
+}
+
+@layer smrt.theme {
+  .smrt-relation-field__create {
     border: var(--smrt-hairline);
     border-radius: var(--smrt-radius-large);
     background: var(--smrt-surface-raised);
     color: var(--smrt-color-on-surface);
   }
-
-  .create::backdrop {
+  .smrt-relation-field__create::backdrop {
     background: rgb(0 0 0 / 0.5);
   }
 }
+
 </style>

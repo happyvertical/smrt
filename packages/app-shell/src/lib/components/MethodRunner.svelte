@@ -71,9 +71,9 @@ async function run(event: SubmitEvent) {
 }
 </script>
 
-<form class="sh-card method" onsubmit={run} novalidate>
-  <p class="label"><strong>{humanize(name)}</strong></p>
-  {#if method.description}<p class="sh-muted">{method.description}</p>{/if}
+<form class="smrt-app-shell__card smrt-method-runner__root" onsubmit={run} novalidate data-smrt-component="MethodRunner">
+  <p class="smrt-method-runner__label" data-smrt-part="label"><strong>{humanize(name)}</strong></p>
+  {#if method.description}<p class="smrt-app-shell__muted" data-smrt-part="description">{method.description}</p>{/if}
   {#each specs as spec (spec.name)}
     <FieldInput
       id="{uid}-{spec.name}"
@@ -83,19 +83,19 @@ async function run(event: SubmitEvent) {
       disabled={busy}
     />
   {/each}
-  <button type="submit" class="sh-btn sh-btn-small" disabled={busy}>
+  <button type="submit" class="smrt-app-shell__btn smrt-app-shell__btn-small" disabled={busy} data-smrt-part="trigger">
     {busy ? 'Running…' : `Run ${humanize(name).toLowerCase()}`}
   </button>
   <div aria-live="polite">
-    {#if failure}<p class="sh-alert sh-alert-error" role="alert">{failure}</p>{/if}
+    {#if failure}<p class="smrt-app-shell__alert smrt-app-shell__alert-error" role="alert" data-smrt-part="status">{failure}</p>{/if}
     {#if outcome}
-      <p class="sh-alert sh-alert-ok">
+      <p class="smrt-app-shell__alert smrt-app-shell__alert-ok" data-smrt-part="status">
         Done{#if outcome.applied} · {outcome.applied}
           {outcome.applied === 1 ? 'change' : 'changes'} saved{/if}.
       </p>
       {#if outcome.text && outcome.text !== 'null'}
         <!-- svelte-ignore a11y_no_noninteractive_tabindex (keyboard scrolling of long output) -->
-        <pre class="sh-code" tabindex="0">{outcome.text}</pre>
+        <pre class="smrt-app-shell__code" tabindex="0" data-smrt-part="code">{outcome.text}</pre>
       {/if}
     {/if}
   </div>
@@ -103,12 +103,16 @@ async function run(event: SubmitEvent) {
 
 <style>
 @layer smrt.reset, smrt.structure, smrt.theme;
-@layer smrt.theme {
-  .method {
+
+@layer smrt.structure {
+  .smrt-method-runner__root {
     margin-block-start: var(--smrt-spacing-md, 0.75rem);
   }
-  .label {
+  .smrt-method-runner__label {
     margin: 0;
   }
+}
+
+@layer smrt.theme {
 }
 </style>

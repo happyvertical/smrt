@@ -130,10 +130,10 @@ function oncontainermove(move: SortableContainerMove<NavContainer>): void {
     </Button>
   </header>
 
-  <fieldset class="smrt-shell-layout-editor__panels">
+  <fieldset class="smrt-shell-layout-editor__panels" data-smrt-part="list">
     <legend>{t(M['ui.shell_layout_editor.panels'])}</legend>
     {#each panels as panel (panel.edge)}
-      <div class="smrt-shell-layout-editor__row" data-edge={panel.edge}>
+      <div class="smrt-shell-layout-editor__row" data-edge={panel.edge} data-smrt-part="row">
         {#if panel.available}
           <Switch
             interaction={false}
@@ -153,7 +153,7 @@ function oncontainermove(move: SortableContainerMove<NavContainer>): void {
               })}
           />
         {:else}
-          <span class="smrt-shell-layout-editor__muted">
+          <span class="smrt-shell-layout-editor__muted" data-smrt-part="description">
             {t(M['ui.shell_layout_editor.panel_unavailable'], { panel: panel.label })}
           </span>
         {/if}
@@ -161,9 +161,9 @@ function oncontainermove(move: SortableContainerMove<NavContainer>): void {
     {/each}
   </fieldset>
 
-  <div class="smrt-shell-layout-editor__body">
-    <div class="smrt-shell-layout-editor__nav">
-      <div class="smrt-shell-layout-editor__nav-head">
+  <div class="smrt-shell-layout-editor__body" data-smrt-part="body">
+    <div class="smrt-shell-layout-editor__nav" data-smrt-part="list">
+      <div class="smrt-shell-layout-editor__nav-head" data-smrt-part="header">
         <h3>{t(M['ui.shell_layout_editor.navigation'])}</h3>
         <Button variant="secondary" size="sm" onclick={createSection}>
           {t(M['ui.shell_layout_editor.new_section'])}
@@ -213,7 +213,7 @@ function oncontainermove(move: SortableContainerMove<NavContainer>): void {
         {/snippet}
         {#snippet item({ item: entry, container })}
           {@const hidden = layout.isHidden(entry.id)}
-          <span class="smrt-shell-layout-editor__label" class:smrt-shell-layout-editor__muted={hidden || layout.isHidden(container.id)}>{entry.label}</span>
+          <span class="smrt-shell-layout-editor__label" class:smrt-shell-layout-editor__muted={hidden || layout.isHidden(container.id)} data-smrt-part="label">{entry.label}</span>
           <ShellIconButton
             icon={hidden ? 'eyeOff' : 'eye'}
             pressed={!hidden}
@@ -225,13 +225,13 @@ function oncontainermove(move: SortableContainerMove<NavContainer>): void {
     </div>
 
     {#if preview}
-      <div class="smrt-shell-layout-editor__preview">
+      <div class="smrt-shell-layout-editor__preview" data-smrt-part="preview">
         <h3>{t(M['ui.shell_layout_editor.preview'])}</h3>
         <div
           class="smrt-shell-layout-editor__preview-frame"
           role="group"
           aria-label={t(M['ui.shell_layout_editor.preview_label'])}
-          inert
+          inert data-smrt-part="panel"
         >
           <TenantNav
             items={applied.nav}
@@ -247,25 +247,97 @@ function oncontainermove(move: SortableContainerMove<NavContainer>): void {
 
 <style>
 @layer smrt.reset, smrt.structure, smrt.theme;
-@layer smrt.theme {
-  .smrt-shell-layout-editor { display: grid; gap: var(--smrt-spacing-4); min-inline-size: 0; overflow-wrap: anywhere; }
-  .smrt-shell-layout-editor header { display: flex; align-items: flex-start; justify-content: space-between; gap: var(--smrt-spacing-3); }
-  .smrt-shell-layout-editor h2, .smrt-shell-layout-editor h3, .smrt-shell-layout-editor p { margin: 0; }
-  .smrt-shell-layout-editor p, .smrt-shell-layout-editor__muted { color: var(--smrt-color-on-surface-variant); }
-  .smrt-shell-layout-editor h3 { font: var(--smrt-typography-title-small-font); margin-block-end: var(--smrt-spacing-2); }
-  .smrt-shell-layout-editor__panels { display: grid; gap: var(--smrt-spacing-2); margin: 0; padding: var(--smrt-spacing-3); border: var(--smrt-hairline); border-radius: var(--smrt-radius-md); }
-  .smrt-shell-layout-editor__panels legend { padding-inline: var(--smrt-spacing-1); font: var(--smrt-typography-title-small-font); }
-  .smrt-shell-layout-editor__row { display: flex; flex-wrap: wrap; align-items: center; gap: var(--smrt-spacing-4); }
-  .smrt-shell-layout-editor__body { display: grid; grid-template-columns: minmax(0, 2fr) minmax(0, 1fr); gap: var(--smrt-spacing-4); align-items: start; }
-  .smrt-shell-layout-editor__nav-head { display: flex; align-items: center; justify-content: space-between; gap: var(--smrt-spacing-3); }
-  .smrt-shell-layout-editor__nav-head h3 { margin-block-end: 0; }
-  :global(.smrt-shell-layout-editor__name) { flex: 1 1 8rem; min-inline-size: 0; }
-  .smrt-shell-layout-editor__label { flex: 1 1 auto; min-inline-size: 0; }
-  .smrt-shell-layout-editor__preview-frame { padding: var(--smrt-spacing-3); border: var(--smrt-hairline); border-style: dashed; border-radius: var(--smrt-radius-md); background: var(--smrt-surface-sunken); }
+
+@layer smrt.structure {
+  .smrt-shell-layout-editor {
+    display: grid;
+    gap: var(--smrt-spacing-4);
+    min-inline-size: 0;
+    overflow-wrap: anywhere;
+  }
+  .smrt-shell-layout-editor header {
+    display: flex;
+    align-items: flex-start;
+    justify-content: space-between;
+    gap: var(--smrt-spacing-3);
+  }
+  .smrt-shell-layout-editor h2, .smrt-shell-layout-editor h3, .smrt-shell-layout-editor p {
+    margin: 0;
+  }
+  .smrt-shell-layout-editor h3 {
+    margin-block-end: var(--smrt-spacing-2);
+  }
+  .smrt-shell-layout-editor__panels {
+    display: grid;
+    gap: var(--smrt-spacing-2);
+    margin: 0;
+    padding: var(--smrt-spacing-3);
+  }
+  .smrt-shell-layout-editor__panels legend {
+    padding-inline: var(--smrt-spacing-1);
+  }
+  .smrt-shell-layout-editor__row {
+    display: flex;
+    flex-wrap: wrap;
+    align-items: center;
+    gap: var(--smrt-spacing-4);
+  }
+  .smrt-shell-layout-editor__body {
+    display: grid;
+    grid-template-columns: minmax(0, 2fr) minmax(0, 1fr);
+    gap: var(--smrt-spacing-4);
+    align-items: start;
+  }
+  .smrt-shell-layout-editor__nav-head {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    gap: var(--smrt-spacing-3);
+  }
+  .smrt-shell-layout-editor__nav-head h3 {
+    margin-block-end: 0;
+  }
+  :global(.smrt-shell-layout-editor__name) {
+    flex: 1 1 8rem;
+    min-inline-size: 0;
+  }
+  .smrt-shell-layout-editor__label {
+    flex: 1 1 auto;
+    min-inline-size: 0;
+  }
+  .smrt-shell-layout-editor__preview-frame {
+    padding: var(--smrt-spacing-3);
+  }
   /* Label on its own line (never broken mid-word); the select and Reset share the next line. */
   @media (max-width: 48rem) {
-    .smrt-shell-layout-editor header { flex-direction: column; }
-    .smrt-shell-layout-editor__body { grid-template-columns: minmax(0, 1fr); }
+    .smrt-shell-layout-editor header {
+      flex-direction: column;
+    }
+    .smrt-shell-layout-editor__body {
+      grid-template-columns: minmax(0, 1fr);
+    }
+  }
+}
+
+@layer smrt.theme {
+  .smrt-shell-layout-editor p, .smrt-shell-layout-editor__muted {
+    color: var(--smrt-color-on-surface-variant);
+  }
+  .smrt-shell-layout-editor h3 {
+    font: var(--smrt-typography-title-small-font);
+  }
+  .smrt-shell-layout-editor__panels {
+    border: var(--smrt-hairline);
+    border-radius: var(--smrt-radius-md);
+  }
+  .smrt-shell-layout-editor__panels legend {
+    font: var(--smrt-typography-title-small-font);
+  }
+  .smrt-shell-layout-editor__preview-frame {
+    border: var(--smrt-hairline);
+    border-style: dashed;
+    border-radius: var(--smrt-radius-md);
+    background: var(--smrt-surface-sunken);
   }
 }
 </style>

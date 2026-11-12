@@ -127,7 +127,7 @@ function handleKeydown(e: KeyboardEvent) {
   <!-- svelte-ignore a11y_no_noninteractive_element_interactions -->
   <dialog
     bind:this={backdropEl}
-    class="dialog-backdrop"
+    class="smrt-confirm-dialog__root"
     aria-modal="true"
     aria-labelledby={`${instanceId}-title`}
     aria-describedby={`${instanceId}-message`}
@@ -136,9 +136,9 @@ function handleKeydown(e: KeyboardEvent) {
     onkeydown={handleKeydown}
     oncancel={handleCancel} data-smrt-component="ConfirmDialog"
   >
-    <div class="dialog-content">
-      <h2 id={`${instanceId}-title`} class="dialog-title">{title}</h2>
-      <div id={`${instanceId}-message`} class="dialog-message">
+    <div class="smrt-confirm-dialog__content" data-smrt-part="panel">
+      <h2 id={`${instanceId}-title`} class="smrt-confirm-dialog__title" data-smrt-part="title">{title}</h2>
+      <div id={`${instanceId}-message`} class="smrt-confirm-dialog__message" data-smrt-part="body">
         {#if typeof message === 'string'}
           {message}
         {:else}
@@ -146,10 +146,11 @@ function handleKeydown(e: KeyboardEvent) {
         {/if}
       </div>
 
-      <div class="dialog-actions">
+      <div class="smrt-confirm-dialog__actions" data-smrt-part="actions">
         <button
           type="button"
-          class="btn btn-text"
+          class="smrt-confirm-dialog__button smrt-confirm-dialog__button--text"
+          data-smrt-part="cancel"
           onclick={oncancel}
           disabled={loading}
           use:ripple
@@ -159,14 +160,15 @@ function handleKeydown(e: KeyboardEvent) {
         <button
           bind:this={confirmBtnEl}
           type="button"
-          class="btn btn-filled"
-          class:destructive
+          class="smrt-confirm-dialog__button smrt-confirm-dialog__button--filled"
+          class:smrt-confirm-dialog__button--destructive={destructive}
+          data-smrt-part="confirm"
           onclick={onconfirm}
           disabled={loading}
           use:ripple
         >
           {#if loading}
-            <span class="spinner"></span>
+            <span class="smrt-confirm-dialog__spinner" data-smrt-part="spinner"></span>
           {/if}
           {confirmLabel}
         </button>
@@ -177,8 +179,8 @@ function handleKeydown(e: KeyboardEvent) {
 
 <style>
 @layer smrt.reset, smrt.structure, smrt.theme;
-@layer smrt.theme {
-  .dialog-backdrop {
+@layer smrt.structure {
+  .smrt-confirm-dialog__root {
     position: fixed;
     inset: 0;
     display: flex;
@@ -189,29 +191,65 @@ function handleKeydown(e: KeyboardEvent) {
     max-width: 100%;
     max-height: 100%;
     margin: 0;
-    border: none;
     box-sizing: border-box;
-    background: transparent;
     padding: 1rem;
   }
-
-  .dialog-backdrop::backdrop {
-    background-color: var(--smrt-color-scrim, rgba(0, 0, 0, 0.4));
-    backdrop-filter: blur(2px);
-  }
-
-  .dialog-content {
-    background-color: var(--smrt-color-surface-container-high);
-    border-radius: var(--smrt-radius-3xl);
+  .smrt-confirm-dialog__content {
     padding: var(--smrt-spacing-6);
     max-width: 400px;
     width: 100%;
-    box-shadow: var(--smrt-elevation-3);
-    animation: dialogEnter 300ms cubic-bezier(0.2, 0, 0, 1);
     display: flex;
     flex-direction: column;
   }
+  .smrt-confirm-dialog__title {
+    margin: 0 0 var(--smrt-spacing-4);
+  }
+  .smrt-confirm-dialog__message {
+    margin: 0 0 var(--smrt-spacing-6);
+  }
+  .smrt-confirm-dialog__actions {
+    display: flex;
+    justify-content: flex-end;
+    gap: var(--smrt-spacing-2);
+  }
+  .smrt-confirm-dialog__button {
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    gap: var(--smrt-spacing-2);
+    height: 40px;
+    padding: 0 var(--smrt-spacing-6);
+    cursor: pointer;
+    position: relative;
+    overflow: hidden;
+  }
+  .smrt-confirm-dialog__button:disabled {
+    cursor: not-allowed;
+  }
+  .smrt-confirm-dialog__button--text {
+    padding: 0 var(--smrt-spacing-3);
+  }
+  .smrt-confirm-dialog__spinner {
+    width: 18px;
+    height: 18px;
+  }
+}
 
+@layer smrt.theme {
+  .smrt-confirm-dialog__root {
+    border: none;
+    background: transparent;
+  }
+  .smrt-confirm-dialog__root::backdrop {
+    background-color: var(--smrt-color-scrim, rgba(0, 0, 0, 0.4));
+    backdrop-filter: blur(2px);
+  }
+  .smrt-confirm-dialog__content {
+    background-color: var(--smrt-color-surface-container-high);
+    border-radius: var(--smrt-radius-3xl);
+    box-shadow: var(--smrt-elevation-3);
+    animation: dialogEnter 300ms cubic-bezier(0.2, 0, 0, 1);
+  }
   @keyframes dialogEnter {
     from {
       opacity: 0;
@@ -222,95 +260,63 @@ function handleKeydown(e: KeyboardEvent) {
       transform: translateY(0) scale(1);
     }
   }
-
-  .dialog-title {
+  .smrt-confirm-dialog__title {
     font: var(--smrt-typography-headline-small-font);
     color: var(--smrt-color-on-surface);
-    margin: 0 0 var(--smrt-spacing-4);
   }
-
-  .dialog-message {
+  .smrt-confirm-dialog__message {
     font: var(--smrt-typography-body-medium-font);
     color: var(--smrt-color-on-surface-variant);
-    margin: 0 0 var(--smrt-spacing-6);
     line-height: 1.5;
   }
-
-  .dialog-actions {
-    display: flex;
-    justify-content: flex-end;
-    gap: var(--smrt-spacing-2);
-  }
-
-  .btn {
-    display: inline-flex;
-    align-items: center;
-    justify-content: center;
-    gap: var(--smrt-spacing-2);
-    height: 40px;
-    padding: 0 var(--smrt-spacing-6);
+  .smrt-confirm-dialog__button {
     font: var(--smrt-typography-label-large-font);
     font-weight: var(--smrt-typography-weight-medium, 500);
     border-radius: var(--smrt-radius-2xl);
-    cursor: pointer;
     transition: all var(--smrt-duration-short3, 200ms) var(--smrt-easing-standard, ease);
     border: none;
-    position: relative;
-    overflow: hidden;
   }
-
-  .btn:disabled {
+  .smrt-confirm-dialog__button:disabled {
     opacity: 0.38;
-    cursor: not-allowed;
   }
-
-  .btn-text {
+  .smrt-confirm-dialog__button--text {
     background: transparent;
     color: var(--smrt-color-primary);
-    padding: 0 var(--smrt-spacing-3);
   }
-
-  .btn-text:hover:not(:disabled) {
+  .smrt-confirm-dialog__button--text:hover:not(:disabled) {
     background-color: var(--smrt-color-surface-container-highest);
   }
-
-  .btn-filled {
+  .smrt-confirm-dialog__button--filled {
     background-color: var(--smrt-color-primary);
     color: var(--smrt-color-on-primary);
     box-shadow: var(--smrt-elevation-1);
   }
-
-  .btn-filled:hover:not(:disabled) {
+  .smrt-confirm-dialog__button--filled:hover:not(:disabled) {
     box-shadow: var(--smrt-elevation-2);
   }
-
-  .btn-filled.destructive {
+  .smrt-confirm-dialog__button--filled.smrt-confirm-dialog__button--destructive {
     background-color: var(--smrt-color-error);
     color: var(--smrt-color-on-error);
   }
-
-  .spinner {
-    width: 18px;
-    height: 18px;
+  .smrt-confirm-dialog__spinner {
     border: 2px solid transparent;
     border-top-color: currentColor;
     border-radius: var(--smrt-radius-full);
     animation: spin 0.8s linear infinite;
   }
-
   @keyframes spin {
     to {
       transform: rotate(360deg);
     }
   }
-
   @media (prefers-reduced-motion: reduce) {
-    .dialog-content {
+    .smrt-confirm-dialog__content {
       animation: none;
     }
-    .spinner {
+    .smrt-confirm-dialog__spinner {
       animation: none;
     }
   }
 }
+
 </style>

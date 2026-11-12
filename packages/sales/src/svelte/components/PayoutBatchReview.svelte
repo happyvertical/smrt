@@ -86,51 +86,51 @@ function methodLabel(method: string): string {
 }
 </script>
 
-<section class="sales-payout-review" data-smrt-component="PayoutBatchReview">
+<section class="smrt-payout-batch-review__root" data-smrt-component="PayoutBatchReview">
   {#if payouts.length === 0}
-    <p class="empty">No payout batches to review.</p>
+    <p class="smrt-payout-batch-review__empty" data-smrt-part="empty">No payout batches to review.</p>
   {:else}
     {#each payouts as payout (payout.id)}
       {@const actions = payoutActionsFor(payout.status)}
       <Card variant="outlined">
-        <div class="head">
-          <span class="head__earner">{payout.earnerName ?? 'Earner'}</span>
+        <div class="smrt-payout-batch-review__header" data-smrt-part="header">
+          <span class="smrt-payout-batch-review__earner" data-smrt-part="author">{payout.earnerName ?? 'Earner'}</span>
           <Badge variant={payoutStatusBadgeVariant(payout.status)} size="sm">
             {payout.status}
           </Badge>
         </div>
 
-        <dl class="facts">
-          <div class="facts__item">
+        <dl class="smrt-payout-batch-review__facts" data-smrt-part="meta">
+          <div class="smrt-payout-batch-review__fact" data-smrt-part="item">
             <dt>Period</dt>
             <dd>
               {formatDate(payout.periodStart, locale)} – {formatDate(payout.periodEnd, locale)}
             </dd>
           </div>
-          <div class="facts__item">
+          <div class="smrt-payout-batch-review__fact" data-smrt-part="item">
             <dt>Method</dt>
             <dd>{methodLabel(payout.payoutMethod)}</dd>
           </div>
-          <div class="facts__item">
+          <div class="smrt-payout-batch-review__fact" data-smrt-part="item">
             <dt>Commissions</dt>
             <dd>{formatCents(payout.commissionTotalCents, payout.currency, locale)}</dd>
           </div>
-          <div class="facts__item">
+          <div class="smrt-payout-batch-review__fact" data-smrt-part="item">
             <dt>Adjustments</dt>
-            <dd class:negative={payout.adjustmentTotalCents < 0}>
+            <dd class:smrt-payout-batch-review__negative={payout.adjustmentTotalCents < 0} data-smrt-part="value">
               {formatCents(payout.adjustmentTotalCents, payout.currency, locale)}
             </dd>
           </div>
-          <div class="facts__item facts__item--net">
+          <div class="smrt-payout-batch-review__fact smrt-payout-batch-review__fact--net" data-smrt-part="item">
             <dt>Net</dt>
-            <dd class:negative={payout.totalAmountCents < 0}>
+            <dd class:smrt-payout-batch-review__negative={payout.totalAmountCents < 0} data-smrt-part="value">
               {formatCents(payout.totalAmountCents, payout.currency, locale)}
             </dd>
           </div>
         </dl>
 
         {#if payout.status === 'completed' && payout.paymentReference}
-          <p class="settled">
+          <p class="smrt-payout-batch-review__settled" data-smrt-part="message">
             Settled with reference <code>{payout.paymentReference}</code>
             {#if payout.paidAt}
               on {formatDate(payout.paidAt, locale)}
@@ -139,11 +139,11 @@ function methodLabel(method: string): string {
         {/if}
 
         {#if (payout.status === 'failed' || payout.status === 'rejected') && payout.notes}
-          <p class="failed-note">{payout.notes}</p>
+          <p class="smrt-payout-batch-review__failed-note" data-smrt-part="error">{payout.notes}</p>
         {/if}
 
         {#if actions.canApprove && onApprove}
-          <div class="actions">
+          <div class="smrt-payout-batch-review__actions" data-smrt-part="actions">
             <Button
               variant="primary"
               size="sm"
@@ -156,7 +156,7 @@ function methodLabel(method: string): string {
         {/if}
 
         {#if actions.canMarkProcessing && onMarkProcessing}
-          <div class="actions">
+          <div class="smrt-payout-batch-review__actions" data-smrt-part="actions">
             <Button
               variant="secondary"
               size="sm"
@@ -169,7 +169,7 @@ function methodLabel(method: string): string {
         {/if}
 
         {#if actions.canComplete && onComplete}
-          <div class="actions actions--form">
+          <div class="smrt-payout-batch-review__actions smrt-payout-batch-review__actions--form" data-smrt-part="actions">
             <FormGroup
               label="Payment reference"
               required
@@ -197,7 +197,7 @@ function methodLabel(method: string): string {
         {/if}
 
         {#if actions.canFail && onFail}
-          <div class="actions actions--form">
+          <div class="smrt-payout-batch-review__actions smrt-payout-batch-review__actions--form" data-smrt-part="actions">
             <FormGroup label="Failure reason" required>
               <Input
                 value={failReasonDrafts[payout.id] ?? ''}
@@ -221,7 +221,7 @@ function methodLabel(method: string): string {
         {/if}
 
         {#if actions.canReject && onReject}
-          <div class="actions actions--form">
+          <div class="smrt-payout-batch-review__actions smrt-payout-batch-review__actions--form" data-smrt-part="actions">
             <FormGroup
               label="Rejection reason"
               required
@@ -255,81 +255,76 @@ function methodLabel(method: string): string {
 
 <style>
 @layer smrt.reset, smrt.structure, smrt.theme;
-@layer smrt.theme {
-  .sales-payout-review {
+@layer smrt.structure {
+  .smrt-payout-batch-review__root {
     display: flex;
     flex-direction: column;
     gap: var(--smrt-spacing-4, 1rem);
   }
-
-  .empty {
+  .smrt-payout-batch-review__empty {
     margin: 0;
-    color: var(--smrt-color-on-surface-variant);
-    font-style: italic;
   }
-
-  .head {
+  .smrt-payout-batch-review__header {
     display: flex;
     align-items: center;
     justify-content: space-between;
     gap: var(--smrt-spacing-2, 0.5rem);
     margin-bottom: var(--smrt-spacing-2, 0.5rem);
   }
-
-  .head__earner {
-    font-weight: var(--smrt-typography-weight-semibold, 600);
-  }
-
-  .facts {
+  .smrt-payout-batch-review__facts {
     display: flex;
     flex-wrap: wrap;
     gap: var(--smrt-spacing-4, 1rem);
     margin: 0 0 var(--smrt-spacing-2, 0.5rem);
   }
-
-  .facts__item dt {
-    color: var(--smrt-color-on-surface-variant);
-    font-size: var(--smrt-typography-label-medium-size, 0.75rem);
-    text-transform: uppercase;
-    letter-spacing: 0.04em;
-  }
-
-  .facts__item dd {
+  .smrt-payout-batch-review__fact dd {
     margin: 0;
   }
-
-  .facts__item--net dd {
-    font-weight: var(--smrt-typography-weight-bold, 700);
-  }
-
-  .negative {
-    color: var(--smrt-color-error);
-  }
-
-  .settled {
+  .smrt-payout-batch-review__settled {
     margin: 0 0 var(--smrt-spacing-2, 0.5rem);
   }
-
-  .failed-note {
+  .smrt-payout-batch-review__failed-note {
     margin: 0 0 var(--smrt-spacing-2, 0.5rem);
-    color: var(--smrt-color-error);
   }
-
-  .actions {
+  .smrt-payout-batch-review__actions {
     display: flex;
     align-items: flex-end;
     gap: var(--smrt-spacing-2, 0.5rem);
     margin-top: var(--smrt-spacing-2, 0.5rem);
   }
-
-  .actions--form :global(.form-group) {
+  .smrt-payout-batch-review__actions--form :global([data-smrt-component="FormGroup"]) {
     margin-bottom: 0;
     flex: 1 1 14rem;
   }
+}
 
+@layer smrt.theme {
+  .smrt-payout-batch-review__empty {
+    color: var(--smrt-color-on-surface-variant);
+    font-style: italic;
+  }
+  .smrt-payout-batch-review__earner {
+    font-weight: var(--smrt-typography-weight-semibold, 600);
+  }
+  .smrt-payout-batch-review__fact dt {
+    color: var(--smrt-color-on-surface-variant);
+    font-size: var(--smrt-typography-label-medium-size, 0.75rem);
+    text-transform: uppercase;
+    letter-spacing: 0.04em;
+  }
+  .smrt-payout-batch-review__fact--net dd {
+    font-weight: var(--smrt-typography-weight-bold, 700);
+  }
+  .smrt-payout-batch-review__negative {
+    color: var(--smrt-color-error);
+  }
+  .smrt-payout-batch-review__failed-note {
+    color: var(--smrt-color-error);
+  }
   code {
     font-family: var(--smrt-font-family-mono, ui-monospace, monospace);
     font-size: var(--smrt-typography-body-small-size, 0.8125rem);
   }
 }
+
 </style>

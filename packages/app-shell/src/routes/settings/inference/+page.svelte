@@ -49,7 +49,7 @@ async function discover(): Promise<void> {
 
 <ShellSettingsPage basePath="/settings" title="Inference">
   {#if fromWelcome}
-    <p><a class="sh-link" href="/welcome">Back to the welcome steps</a></p>
+    <p><a class="smrt-app-shell__link" href="/welcome">Back to the welcome steps</a></p>
   {/if}
   <!-- The owner is the only person here: the key they save is the one the
        assistant uses on its next turn. The page never receives a key back. -->

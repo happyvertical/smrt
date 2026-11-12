@@ -138,12 +138,12 @@ function isOpenTask(activity: SalesActivityView): boolean {
 }
 </script>
 
-<article class="sales-lead-detail" data-smrt-component="LeadDetail">
-  <header class="head">
+<article class="smrt-lead-detail__root" data-smrt-component="LeadDetail">
+  <header class="smrt-lead-detail__header" data-smrt-part="header">
     <div>
-      <h2 class="head__name">{lead.name}</h2>
+      <h2 class="smrt-lead-detail__title" data-smrt-part="title">{lead.name}</h2>
       {#if lead.organizationName}
-        <p class="head__organization">{lead.organizationName}</p>
+        <p class="smrt-lead-detail__organization" data-smrt-part="meta">{lead.organizationName}</p>
       {/if}
     </div>
     <Badge variant={leadStatusBadgeVariant(lead.status)} size="sm">
@@ -151,31 +151,31 @@ function isOpenTask(activity: SalesActivityView): boolean {
     </Badge>
   </header>
 
-  <dl class="facts">
-    <div class="facts__item">
+  <dl class="smrt-lead-detail__facts" data-smrt-part="meta">
+    <div class="smrt-lead-detail__fact" data-smrt-part="item">
       <dt>Contact</dt>
       <dd>{lead.contactName ?? '—'}</dd>
     </div>
-    <div class="facts__item">
+    <div class="smrt-lead-detail__fact" data-smrt-part="item">
       <dt>Email</dt>
       <dd>{lead.email ?? '—'}</dd>
     </div>
-    <div class="facts__item">
+    <div class="smrt-lead-detail__fact" data-smrt-part="item">
       <dt>Phone</dt>
       <dd>{lead.phone ?? '—'}</dd>
     </div>
-    <div class="facts__item">
+    <div class="smrt-lead-detail__fact" data-smrt-part="item">
       <dt>Owner</dt>
       <dd>{lead.ownerName ?? 'Unassigned'}</dd>
     </div>
   </dl>
 
   {#if lead.status === 'merged' && lead.mergedIntoId}
-    <p class="merged-note">This lead was merged into <code>{lead.mergedIntoId}</code>.</p>
+    <p class="smrt-lead-detail__merged-note" data-smrt-part="meta">This lead was merged into <code>{lead.mergedIntoId}</code>.</p>
   {/if}
 
   {#if opportunity}
-    <section class="linked-opportunity" aria-label="Linked opportunity">
+    <section class="smrt-lead-detail__opportunity" data-smrt-part="panel" aria-label="Linked opportunity">
       {#if opportunitySummary}
         {@render opportunitySummary(opportunity)}
       {:else}
@@ -186,13 +186,13 @@ function isOpenTask(activity: SalesActivityView): boolean {
           <span>{opportunity.name}</span>
         {/if}
         <Badge variant={opportunity.status === 'won' ? 'success' : opportunity.status === 'lost' ? 'error' : 'default'} size="sm">{opportunity.status}</Badge>
-        {#if opportunity.stageName}<span class="secondary">{opportunity.stageName}</span>{/if}
+        {#if opportunity.stageName}<span class="smrt-lead-detail__secondary" data-smrt-part="meta">{opportunity.stageName}</span>{/if}
       {/if}
     </section>
   {/if}
 
   {#if actions.canAssign || actions.canStartWorking || actions.canDisqualify || actions.canQualify}
-    <section class="controls" aria-label="Lead workflow actions">
+    <section class="smrt-lead-detail__actions" data-smrt-part="actions" aria-label="Lead workflow actions">
       {#if actions.canAssign && onAssign && reps.length > 0}
         <Form class="control-form" onsubmit={submitAssignment}>
           <FormGroup label="Owner">
@@ -259,25 +259,25 @@ function isOpenTask(activity: SalesActivityView): boolean {
     </section>
   {/if}
 
-  <section class="timeline" aria-label="Lead activity timeline">
+  <section class="smrt-lead-detail__timeline" data-smrt-part="list" aria-label="Lead activity timeline">
     <h3>Activity timeline</h3>
     {#if activities.length === 0}
-      <p class="empty">No activity recorded yet.</p>
+      <p class="smrt-lead-detail__empty" data-smrt-part="empty">No activity recorded yet.</p>
     {:else}
-      <ol class="timeline__list">
+      <ol class="smrt-lead-detail__timeline-list" data-smrt-part="list">
         {#each activities as activity (activity.id)}
           {@const openTask = isOpenTask(activity)}
-          <li class="timeline__item" class:next-action={openTask}>
-            <div class="timeline__content">
-              <span class="timeline__kind">{activity.activityKind}</span>
-              <span class="timeline__summary">{activity.summary}</span>
+          <li class="smrt-lead-detail__timeline-item" class:smrt-lead-detail__next-action={openTask} data-smrt-part="item">
+            <div class="smrt-lead-detail__timeline-content" data-smrt-part="body">
+              <span class="smrt-lead-detail__timeline-kind" data-smrt-part="meta">{activity.activityKind}</span>
+              <span class="smrt-lead-detail__timeline-summary" data-smrt-part="message">{activity.summary}</span>
             </div>
-            <div class="timeline__meta">
+            <div class="smrt-lead-detail__timeline-meta" data-smrt-part="meta">
               {#if activity.createdAt}
                 <span>recorded {formatDate(activity.createdAt, locale)}</span>
               {/if}
               {#if activity.dueAt}
-                <span class:overdue={openTask && isOverdue(activity.dueAt)}>
+                <span class:smrt-lead-detail__overdue={openTask && isOverdue(activity.dueAt)} data-smrt-part="meta">
                   due {formatDate(activity.dueAt, locale)}
                 </span>
               {/if}
@@ -305,7 +305,7 @@ function isOpenTask(activity: SalesActivityView): boolean {
   </section>
 
   {#if actions.canRecordActivity && onRecordActivity}
-    <section class="composer" aria-label="Record follow-up activity">
+    <section class="smrt-lead-detail__composer" data-smrt-part="panel" aria-label="Record follow-up activity">
       <h3>Record follow-up</h3>
       <Form class="composer__form" onsubmit={submitHumanActivity}>
         <FormGroup label="Kind">
@@ -346,7 +346,7 @@ function isOpenTask(activity: SalesActivityView): boolean {
   {/if}
 
   {#if actions.canScheduleNextAction && onScheduleNextAction}
-    <section class="composer" aria-label="Schedule next action">
+    <section class="smrt-lead-detail__composer" data-smrt-part="panel" aria-label="Schedule next action">
       <h3>Schedule next action</h3>
       <Form class="composer__form" onsubmit={submitNextAction}>
         <FormGroup label="Summary" required>
@@ -385,95 +385,74 @@ function isOpenTask(activity: SalesActivityView): boolean {
 
 <style>
 @layer smrt.reset, smrt.structure, smrt.theme;
-@layer smrt.theme {
-  .sales-lead-detail {
+@layer smrt.structure {
+  .smrt-lead-detail__root {
     display: flex;
     flex-direction: column;
     gap: var(--smrt-spacing-4, 1rem);
   }
-
-  .head {
+  .smrt-lead-detail__header {
     display: flex;
     flex-wrap: wrap;
     align-items: center;
     justify-content: space-between;
     gap: var(--smrt-spacing-2, 0.5rem);
   }
-
-  .head__name,
+  .smrt-lead-detail__title,
   h3 {
     margin: 0;
   }
-
-  .head__name {
-    font-size: var(--smrt-typography-title-large-size, 1.25rem);
-  }
-
-  .head__organization,
-  .empty,
-  .merged-note {
+  .smrt-lead-detail__organization,
+  .smrt-lead-detail__empty,
+  .smrt-lead-detail__merged-note {
     margin: var(--smrt-spacing-1, 0.25rem) 0 0;
-    color: var(--smrt-color-on-surface-variant);
   }
-
-  .facts {
+  .smrt-lead-detail__facts {
     display: grid;
     grid-template-columns: repeat(auto-fit, minmax(10rem, 1fr));
     gap: var(--smrt-spacing-3, 0.75rem);
     margin: 0;
   }
-
-  .facts__item dt,
-  .timeline__kind {
-    color: var(--smrt-color-on-surface-variant);
-    font-size: var(--smrt-typography-label-medium-size, 0.75rem);
-  }
-
-  .facts__item dd {
+  .smrt-lead-detail__fact dd {
     margin: var(--smrt-spacing-1, 0.25rem) 0 0;
     overflow-wrap: anywhere;
   }
-
-  .linked-opportunity { display: flex; flex-wrap: wrap; align-items: center; gap: var(--smrt-spacing-2, 0.5rem); padding: var(--smrt-spacing-3, 0.75rem); border: var(--smrt-hairline); border-radius: var(--smrt-radius-md, 0.5rem); }
-  .linked-opportunity h3 { flex-basis: 100%; font-size: var(--smrt-typography-title-small-size, 1rem); }
-
-  .controls,
-  .sales-lead-detail :global(.composer__form) {
+  .smrt-lead-detail__opportunity {
+    display: flex;
+    flex-wrap: wrap;
+    align-items: center;
+    gap: var(--smrt-spacing-2, 0.5rem);
+    padding: var(--smrt-spacing-3, 0.75rem);
+  }
+  .smrt-lead-detail__opportunity h3 {
+    flex-basis: 100%;
+  }
+  .smrt-lead-detail__actions,
+  .smrt-lead-detail__root :global(.composer__form) {
     display: flex;
     flex-wrap: wrap;
     align-items: flex-end;
     gap: var(--smrt-spacing-3, 0.75rem);
     padding: var(--smrt-spacing-3, 0.75rem);
-    border: var(--smrt-hairline);
-    border-radius: var(--smrt-radius-md);
   }
-
-  .sales-lead-detail :global(.control-form) {
+  .smrt-lead-detail__root :global(.control-form) {
     display: flex;
     flex: 1 1 16rem;
     flex-wrap: wrap;
     align-items: flex-end;
     gap: var(--smrt-spacing-2, 0.5rem);
   }
-
-  .sales-lead-detail :global(.control-form--disqualify) {
+  .smrt-lead-detail__root :global(.control-form--disqualify) {
     flex-basis: min(100%, 24rem);
   }
-
-  .sales-lead-detail :global(.form-group) {
+  .smrt-lead-detail__root :global([data-smrt-component="FormGroup"]) {
     flex: 1 1 10rem;
     margin-bottom: 0;
   }
-
   h3 {
     margin-bottom: var(--smrt-spacing-2, 0.5rem);
-    color: var(--smrt-color-on-surface-variant);
-    font-size: var(--smrt-typography-title-small-size, 0.875rem);
-    letter-spacing: 0.04em;
-    text-transform: uppercase;
   }
-
-  .timeline__list {
+  .smrt-lead-detail__timeline-list {
     display: flex;
     flex-direction: column;
     gap: var(--smrt-spacing-2, 0.5rem);
@@ -481,63 +460,93 @@ function isOpenTask(activity: SalesActivityView): boolean {
     padding: 0;
     list-style: none;
   }
-
-  .timeline__item {
+  .smrt-lead-detail__timeline-item {
     display: flex;
     flex-wrap: wrap;
     align-items: center;
     gap: var(--smrt-spacing-2, 0.5rem);
     padding: var(--smrt-spacing-2, 0.5rem);
-    border: var(--smrt-hairline);
-    border-radius: var(--smrt-radius-sm);
   }
-
-  .timeline__item.next-action {
-    border-color: var(--smrt-color-primary);
-    background: var(--smrt-color-primary-container);
-  }
-
-  .timeline__content {
+  .smrt-lead-detail__timeline-content {
     display: grid;
     flex: 1 1 14rem;
     gap: var(--smrt-spacing-1, 0.25rem);
   }
-
-  .timeline__kind {
-    letter-spacing: 0.04em;
-    text-transform: uppercase;
-  }
-
-  .timeline__summary {
+  .smrt-lead-detail__timeline-summary {
     overflow-wrap: anywhere;
   }
-
-  .timeline__meta {
+  .smrt-lead-detail__timeline-meta {
     display: flex;
     flex: 1 1 12rem;
     flex-wrap: wrap;
     gap: var(--smrt-spacing-2, 0.5rem);
-    color: var(--smrt-color-on-surface-variant);
-    font-size: var(--smrt-typography-body-small-size, 0.75rem);
   }
-
-  .timeline__meta .overdue {
-    color: var(--smrt-color-error);
-    font-weight: var(--smrt-typography-weight-semibold, 600);
-  }
-
   @media (max-width: 40rem) {
-    .sales-lead-detail :global(.control-form),
-    .sales-lead-detail :global(.composer__form) {
+    .smrt-lead-detail__root :global(.control-form),
+    .smrt-lead-detail__root :global(.composer__form) {
       align-items: stretch;
       flex-direction: column;
     }
-
-    .sales-lead-detail :global(.form-group),
-    .sales-lead-detail :global(.control-form),
-    .sales-lead-detail :global(.control-form--disqualify) {
+    .smrt-lead-detail__root :global([data-smrt-component="FormGroup"]),
+    .smrt-lead-detail__root :global(.control-form),
+    .smrt-lead-detail__root :global(.control-form--disqualify) {
       width: 100%;
     }
   }
 }
+
+@layer smrt.theme {
+  .smrt-lead-detail__title {
+    font-size: var(--smrt-typography-title-large-size, 1.25rem);
+  }
+  .smrt-lead-detail__organization,
+  .smrt-lead-detail__empty,
+  .smrt-lead-detail__merged-note {
+    color: var(--smrt-color-on-surface-variant);
+  }
+  .smrt-lead-detail__fact dt,
+  .smrt-lead-detail__timeline-kind {
+    color: var(--smrt-color-on-surface-variant);
+    font-size: var(--smrt-typography-label-medium-size, 0.75rem);
+  }
+  .smrt-lead-detail__opportunity {
+    border: var(--smrt-hairline);
+    border-radius: var(--smrt-radius-md, 0.5rem);
+  }
+  .smrt-lead-detail__opportunity h3 {
+    font-size: var(--smrt-typography-title-small-size, 1rem);
+  }
+  .smrt-lead-detail__actions,
+  .smrt-lead-detail__root :global(.composer__form) {
+    border: var(--smrt-hairline);
+    border-radius: var(--smrt-radius-md);
+  }
+  h3 {
+    color: var(--smrt-color-on-surface-variant);
+    font-size: var(--smrt-typography-title-small-size, 0.875rem);
+    letter-spacing: 0.04em;
+    text-transform: uppercase;
+  }
+  .smrt-lead-detail__timeline-item {
+    border: var(--smrt-hairline);
+    border-radius: var(--smrt-radius-sm);
+  }
+  .smrt-lead-detail__timeline-item.smrt-lead-detail__next-action {
+    border-color: var(--smrt-color-primary);
+    background: var(--smrt-color-primary-container);
+  }
+  .smrt-lead-detail__timeline-kind {
+    letter-spacing: 0.04em;
+    text-transform: uppercase;
+  }
+  .smrt-lead-detail__timeline-meta {
+    color: var(--smrt-color-on-surface-variant);
+    font-size: var(--smrt-typography-body-small-size, 0.75rem);
+  }
+  .smrt-lead-detail__timeline-meta .smrt-lead-detail__overdue {
+    color: var(--smrt-color-error);
+    font-weight: var(--smrt-typography-weight-semibold, 600);
+  }
+}
+
 </style>

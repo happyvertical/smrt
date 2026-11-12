@@ -1,6 +1,7 @@
 <script lang="ts">
+import { DEV } from 'esm-env';
 import type { Snippet } from 'svelte';
-import { onMount, untrack } from 'svelte';
+import { onMount, tick, untrack } from 'svelte';
 import { SMRT_CASCADE_LAYERS_CSS } from '../styles/layers.js';
 import {
   setThemeContext,
@@ -43,7 +44,7 @@ interface Props {
   /**
    * Paint the theme's background/color/font onto the wrapper. Set false when
    * the host app owns its surface palette and only wants the CSS variables +
-   * scheme context — avoids specificity-fighting `.smrt-theme-root`.
+   * scheme context — avoids specificity-fighting `.smrt-theme-provider__root`.
    */
   paintSurface?: boolean;
   /** Persist preferences to localStorage */
@@ -382,6 +383,28 @@ onMount(() => {
   }
 });
 
+// Wait for persisted preferences and root attributes to settle before reading CSS.
+// DEV is a build-time constant, so production drops this diagnostic entirely.
+if (DEV) {
+  onMount(() => {
+    let active = true;
+    void tick().then(() => {
+      if (!active || !rootEl || !isBuiltInPreset || useInlineVariables) return;
+      const background = getComputedStyle(rootEl)
+        .getPropertyValue('--smrt-color-background')
+        .trim();
+      if (!background) {
+        console.warn(
+          `[smrt-ui] ThemeProvider preset "${config.preset}" has no resolved theme tokens. Add import '@happyvertical/smrt-ui/themes/styles/${config.preset}.css' (or themes/styles/all.css) to your app.`,
+        );
+      }
+    });
+    return () => {
+      active = false;
+    };
+  });
+}
+
 // Update document classes and attributes
 $effect(() => {
   if (typeof document !== 'undefined' && mounted && writesDocument) {
@@ -560,10 +583,10 @@ $effect(() => {
 
 <div
   bind:this={rootEl}
-  class="smrt-theme-root"
-  class:dark={isDark}
-  class:no-paint={!paintSurface}
-  class:smrt-theme-glass={config.preset === 'glass'}
+  class="smrt-theme-provider__root"
+  class:smrt-theme-provider__dark={isDark}
+  class:smrt-theme-provider__no-paint={!paintSurface}
+  class:smrt-theme-provider__glass={config.preset === 'glass'}
   style={styleString || undefined}
   data-theme={config.preset}
   data-color-scheme={resolvedScheme}
@@ -578,31 +601,35 @@ $effect(() => {
 
 <style>
 @layer smrt.reset, smrt.structure, smrt.theme;
-@layer smrt.theme {
-  .smrt-theme-root {
+@layer smrt.structure {
+  .smrt-theme-provider__root {
     /* Ensure theme variables cascade properly */
     /* Note: Using block display instead of contents so styles apply correctly */
     display: block;
+  }
+}
+
+@layer smrt.theme {
+  .smrt-theme-provider__root {
     color: var(--smrt-color-on-background);
     background-color: var(--smrt-color-background);
     font-family: var(--smrt-font-family);
   }
-
-  .smrt-theme-root.no-paint {
+  .smrt-theme-provider__root.smrt-theme-provider__no-paint {
     color: inherit;
     background-color: transparent;
     font-family: inherit;
   }
-
   /* HappyVertical ("Day Shift") focus indicator (#2318).
-   * The brand focus ring is part of the preset, so it has to travel on BOTH
-   * delivery paths: this mirrors the identical rule in
-   * themes/styles/happyvertical.css so an app using ThemeProvider without
-   * importing the static stylesheet still gets it. Component-scoped
-   * :focus-visible rules are more specific and continue to win. */
+  * The brand focus ring is part of the preset, so it has to travel on BOTH
+  * delivery paths: this mirrors the identical rule in
+  * themes/styles/happyvertical.css so an app using ThemeProvider without
+  * importing the static stylesheet still gets it. Component-scoped
+  * :focus-visible rules are more specific and continue to win. */
   :global([data-theme='happyvertical'] :focus-visible) {
     outline: 2px solid var(--smrt-color-primary);
     outline-offset: 2px;
   }
 }
+
 </style>

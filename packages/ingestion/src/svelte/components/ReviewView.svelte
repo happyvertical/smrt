@@ -868,7 +868,7 @@ onMount(() => {
 {:else}
 {@const extracted = view.analysis ? extractedContent(view.analysis.result.output) : []}
 <h2>{view.entry.label}</h2><p>{t(M[`ingestion.${view.entry.state}`])}</p>
-<div class="review-grid" class:stacked={layout === 'stacked'}><EvidenceViewer evidence={view.evidence} pages={observedPages(view)} layout={layout === 'stacked' ? 'pager' : 'stack'} bind:chosen={viewerPart} bind:page={viewerPages} /><div class="details">
+<div class="smrt-review-view__grid" data-smrt-part="grid" class:smrt-review-view__stacked={layout === 'stacked'}><EvidenceViewer evidence={view.evidence} pages={observedPages(view)} layout={layout === 'stacked' ? 'pager' : 'stack'} bind:chosen={viewerPart} bind:page={viewerPages} /><div class="smrt-review-view__details" data-smrt-part="body">
 {#if view.instruction}
 {@const applied = view.instruction.applied}{@const current = view.instruction.current}
 {#if inFlight(view) && current}<p role="status" data-testid="reinterpreting">{t(M['ingestion.reinterpreting'])}</p>{/if}
@@ -929,7 +929,7 @@ onMount(() => {
 {/if}
 {:else}
 {#if host.startAction && view.catalog?.some((entry) => entry.kind === 'operation')}
-<fieldset class="start"><legend>{t(M['ingestion.startAs'])}</legend>
+<fieldset class="smrt-review-view__start" data-smrt-part="submit"><legend>{t(M['ingestion.startAs'])}</legend>
 <Select aria-label={t(M['ingestion.startHandler'])} bind:value={startHandler} onchange={draftStart} disabled={pending}><option value="">{t(M['ingestion.startHandler'])}</option>{#each view.catalog as entry (`${entry.id}@${entry.version}`)}{#if entry.kind === 'operation'}<option value={`${entry.id}@${entry.version}`}>{entry.label ?? entry.id}</option>{/if}{/each}</Select>
 {#if startEntry}
 <p>{startEntry.description}</p>
@@ -944,7 +944,7 @@ onMount(() => {
 </fieldset>
 {/if}
 {#if host.resolve}
-<fieldset class="resolve"><legend>{t(M['ingestion.resolveNoAction'])}</legend>
+<fieldset class="smrt-review-view__resolve" data-smrt-part="confirm"><legend>{t(M['ingestion.resolveNoAction'])}</legend>
 <Input aria-label={t(M['ingestion.resolveReason'])} bind:value={resolveReason} disabled={pending} />
 <Button disabled={pending} onclick={resolve}>{t(M['ingestion.resolveNoAction'])}</Button>
 </fieldset>
@@ -960,7 +960,62 @@ onMount(() => {
 </section>
 <style>
 @layer smrt.reset, smrt.structure, smrt.theme;
-@layer smrt.theme {
-section{overflow-wrap:anywhere;max-width:90rem;margin-inline:auto;padding:1rem;color:var(--smrt-color-on-surface)}header{display:flex;align-items:center;justify-content:space-between;gap:1rem}.review-grid{display:grid;grid-template-columns:minmax(0,1fr) minmax(0,1fr);gap:1.5rem}.review-grid.stacked{grid-template-columns:minmax(0,1fr)}.details,article{min-width:0}pre{white-space:pre-wrap;overflow-wrap:anywhere;max-height:24rem;overflow:auto}article{padding-block:1rem;border-block-end:var(--smrt-hairline)}fieldset{margin-block:1rem;min-width:0;display:grid;gap:.5rem}@media(max-width:48rem){.review-grid{grid-template-columns:minmax(0,1fr)}header{flex-wrap:wrap}}
+@layer smrt.structure {
+  section {
+    overflow-wrap:anywhere;
+    max-width:90rem;
+    margin-inline:auto;
+    padding:1rem;
+  }
+  header {
+    display:flex;
+    align-items:center;
+    justify-content:space-between;
+    gap:1rem;
+  }
+  .smrt-review-view__grid {
+    display:grid;
+    grid-template-columns:minmax(0,1fr) minmax(0,1fr);
+    gap:1.5rem;
+  }
+  .smrt-review-view__grid.smrt-review-view__stacked {
+    grid-template-columns:minmax(0,1fr);
+  }
+  .smrt-review-view__details,article {
+    min-width:0;
+  }
+  pre {
+    white-space:pre-wrap;
+    overflow-wrap:anywhere;
+    max-height:24rem;
+    overflow:auto;
+  }
+  article {
+    padding-block:1rem;
+  }
+  fieldset {
+    margin-block:1rem;
+    min-width:0;
+    display:grid;
+    gap:.5rem;
+  }
+  @media(max-width:48rem) {
+    .smrt-review-view__grid {
+      grid-template-columns:minmax(0,1fr);
+    }
+    header {
+      flex-wrap:wrap;
+    }
+  }
 }
+
+@layer smrt.theme {
+  section {
+    color:var(--smrt-color-on-surface);
+  }
+  article {
+    border-block-end:var(--smrt-hairline);
+  }
+}
+
 </style>

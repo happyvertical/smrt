@@ -100,7 +100,7 @@ $effect(() => {
   <img
     src={imageUrl}
     alt={t(M['content.image_thumbnail.thumbnail_preview'])}
-    class="smrt-thumbnail-img"
+    class="smrt-image-thumbnail__img"
     loading="lazy"
     onerror={() => {
       imageUrl = null;
@@ -112,36 +112,42 @@ $effect(() => {
           expiresAt: Date.now() + THUMBNAIL_FAILURE_TTL_MS,
         });
       }
-    }}
+    }} data-smrt-component="ImageThumbnail"
   />
 {:else if thumbnailState === 'loading'}
-  <div class="smrt-thumbnail-skeleton" aria-hidden="true"></div>
+  <div class="smrt-image-thumbnail__skeleton" aria-hidden="true" data-smrt-component="ImageThumbnail"></div>
 {:else}
-  <div class="smrt-thumbnail-missing" aria-label={t(M['content.image_thumbnail.thumbnail_unavailable'])}>
+  <div class="smrt-image-thumbnail__missing" aria-label={t(M['content.image_thumbnail.thumbnail_unavailable'])} data-smrt-component="ImageThumbnail">
     <span>{t(M['content.image_thumbnail.preview_unavailable'])}</span>
   </div>
 {/if}
 
 <style>
 @layer smrt.reset, smrt.structure, smrt.theme;
-@layer smrt.theme {
-  .smrt-thumbnail-img {
+@layer smrt.structure {
+  .smrt-image-thumbnail__img {
     width: 100%;
     height: 100%;
     object-fit: cover;
   }
-  .smrt-thumbnail-skeleton {
+  .smrt-image-thumbnail__skeleton {
     width: 100%;
     height: 100%;
-    background: var(--smrt-color-surface-container-high);
   }
-
-  .smrt-thumbnail-missing {
+  .smrt-image-thumbnail__missing {
     width: 100%;
     height: 100%;
     display: grid;
     place-items: center;
     padding: 0.75rem;
+  }
+}
+
+@layer smrt.theme {
+  .smrt-image-thumbnail__skeleton {
+    background: var(--smrt-color-surface-container-high);
+  }
+  .smrt-image-thumbnail__missing {
     background:
       linear-gradient(
         135deg,
@@ -151,12 +157,12 @@ $effect(() => {
     color: var(--smrt-color-on-surface-variant);
     text-align: center;
   }
-
-  .smrt-thumbnail-missing span {
+  .smrt-image-thumbnail__missing span {
     font-size: var(--smrt-typography-label-medium-size, 0.75rem);
     font-weight: var(--smrt-typography-weight-semibold, 600);
     letter-spacing: var(--smrt-typography-label-medium-tracking, 0.04em);
     text-transform: uppercase;
   }
 }
+
 </style>

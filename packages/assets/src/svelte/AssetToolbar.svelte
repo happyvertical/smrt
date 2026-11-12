@@ -99,11 +99,11 @@ const views: { key: AssetViewMode; label: string; icon: string }[] = [
 ];
 </script>
 
-<div class="asset-toolbar" data-smrt-component="AssetToolbar">
-  <div class="asset-toolbar__left">
+<div class="smrt-asset-toolbar__root" data-smrt-component="AssetToolbar">
+  <div class="smrt-asset-toolbar__left" data-smrt-part="group">
     <!-- Search -->
-    <div class="asset-toolbar__search">
-      <span class="search-icon" aria-hidden="true">
+    <div class="smrt-asset-toolbar__search" data-smrt-part="field">
+      <span class="smrt-asset-toolbar__search-icon" data-smrt-part="icon" aria-hidden="true">
         <svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
           <circle cx="11" cy="11" r="8"></circle>
           <line x1="21" y1="21" x2="16.65" y2="16.65"></line>
@@ -111,14 +111,13 @@ const views: { key: AssetViewMode; label: string; icon: string }[] = [
       </span>
       <Input
         type="search"
-        class="search-field"
         placeholder={t(M['assets.asset_toolbar.search_placeholder'])}
         value={searchValue}
         oninput={handleSearch}
         aria-label={t(M['assets.asset_toolbar.search_assets'])}
       />
       {#if searchValue}
-        <Button variant="ghost" size="sm" class="search-clear" onclick={handleClearSearch} aria-label={t(M['assets.asset_toolbar.clear_search'])}>
+        <Button variant="ghost" size="sm" onclick={handleClearSearch} aria-label={t(M['assets.asset_toolbar.clear_search'])}>
           <svg xmlns="http://www.w3.org/2000/svg" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
             <line x1="18" y1="6" x2="6" y2="18"></line>
             <line x1="6" y1="6" x2="18" y2="18"></line>
@@ -128,7 +127,7 @@ const views: { key: AssetViewMode; label: string; icon: string }[] = [
     </div>
 
     <!-- Type Filter -->
-    <Select class="asset-toolbar__select" value={typeValue} onchange={handleTypeFilter} aria-label={t(M['assets.asset_toolbar.filter_by_type'])}>
+    <Select value={typeValue} onchange={handleTypeFilter} aria-label={t(M['assets.asset_toolbar.filter_by_type'])}>
       <option value="">{t(M['assets.asset_toolbar.all_types'])}</option>
       <option value="image">Images</option>
       <option value="video">Videos</option>
@@ -137,7 +136,7 @@ const views: { key: AssetViewMode; label: string; icon: string }[] = [
     </Select>
 
     <!-- Sort -->
-    <Select class="asset-toolbar__select" value={sortValue} onchange={handleSortChange} aria-label={t(M['assets.asset_toolbar.sort_assets'])}>
+    <Select value={sortValue} onchange={handleSortChange} aria-label={t(M['assets.asset_toolbar.sort_assets'])}>
       <option value="createdAt:desc">{t(M['assets.asset_toolbar.newest_first'])}</option>
       <option value="createdAt:asc">{t(M['assets.asset_toolbar.oldest_first'])}</option>
       <option value="name:asc">{t(M['assets.asset_toolbar.name_a_z'])}</option>
@@ -146,13 +145,12 @@ const views: { key: AssetViewMode; label: string; icon: string }[] = [
     </Select>
   </div>
 
-  <div class="asset-toolbar__right">
+  <div class="smrt-asset-toolbar__right" data-smrt-part="actions">
     <!-- View Toggle -->
-    <div class="view-toggle" role="group" aria-label={t(M['assets.asset_toolbar.view_mode'])}>
+    <div class="smrt-asset-toolbar__view-toggle" data-smrt-part="group" role="group" aria-label={t(M['assets.asset_toolbar.view_mode'])}>
       {#each views as v (v.key)}
         <Button
           variant={view === v.key ? 'primary' : 'ghost'}
-          class="view-toggle__btn"
           onclick={() => (onviewchange ?? onViewChange)(v.key)}
           aria-label={t(M['assets.asset_toolbar.view_label'], { label: v.label })}
           aria-pressed={view === v.key}
@@ -181,7 +179,6 @@ const views: { key: AssetViewMode; label: string; icon: string }[] = [
     <!-- Upload Button -->
     <Button
       variant="primary"
-      class="upload-btn"
       onclick={() => (onupload ?? onUpload)()}
     >
       <svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
@@ -196,19 +193,16 @@ const views: { key: AssetViewMode; label: string; icon: string }[] = [
 
 <style>
 @layer smrt.reset, smrt.structure, smrt.theme;
-@layer smrt.theme {
-  .asset-toolbar {
+@layer smrt.structure {
+  .smrt-asset-toolbar__root {
     display: flex;
     align-items: center;
     justify-content: space-between;
     gap: var(--smrt-spacing-3, 0.75rem);
     padding: var(--smrt-spacing-3, 0.75rem) var(--smrt-spacing-4, 1rem);
-    background: var(--smrt-color-surface);
-    border-bottom: var(--smrt-hairline);
     flex-wrap: wrap;
   }
-
-  .asset-toolbar__left {
+  .smrt-asset-toolbar__left {
     display: flex;
     align-items: center;
     gap: var(--smrt-spacing-2, 0.5rem);
@@ -216,160 +210,186 @@ const views: { key: AssetViewMode; label: string; icon: string }[] = [
     min-width: 0;
     flex-wrap: wrap;
   }
-
-  .asset-toolbar__right {
+  .smrt-asset-toolbar__right {
     display: flex;
     align-items: center;
     gap: var(--smrt-spacing-2, 0.5rem);
     flex-shrink: 0;
   }
-
   /* Search */
-  .asset-toolbar__search {
+  .smrt-asset-toolbar__search {
     display: flex;
     align-items: center;
     flex: 1;
     min-width: 180px;
     max-width: 320px;
     height: 36px;
+  }
+  .smrt-asset-toolbar__search-icon {
+    display: flex;
+    align-items: center;
+    padding-left: var(--smrt-spacing-2, 0.5rem);
+  }
+  /* The search field renders via <Input> (issue #1589). It sits inside the
+  bordered .smrt-asset-toolbar__search shell, so the overrides strip the
+  primitive's own border/background/box-shadow to keep it transparent and
+  reach the child <input> through :global() scoping. */
+  .smrt-asset-toolbar__search :global([data-smrt-component="Input"]) {
+    flex: 1;
+    padding: var(--smrt-spacing-1, 0.25rem) var(--smrt-spacing-2, 0.5rem);
+    min-width: 0;
+  }
+  .smrt-asset-toolbar__search :global([data-smrt-component="Input"]::-webkit-search-cancel-button) {
+    display: none;
+  }
+  /* The clear control renders via <Button> (issue #1589). The overrides shape it
+  into a small round icon button and reach the child <button> via :global()
+  scoping. */
+  .smrt-asset-toolbar__search :global([data-smrt-component="Button"]) {
+    width: 24px;
+    height: 24px;
+    margin-right: var(--smrt-spacing-1, 0.25rem);
+    padding: 0;
+  }
+  /* Selects render via <Select> (issue #1589). The base select primitive owns
+  the chevron + focus ring; these overrides pin the toolbar-matching 36px
+  height, container-low fill, and width, and reach the child <select> through
+  :global() scoping. */
+  .smrt-asset-toolbar__left :global([data-smrt-component="Select"]) {
+    width: auto;
+    height: 36px;
+    padding: 0 var(--smrt-spacing-8, 2rem) 0 var(--smrt-spacing-3, 0.75rem);
+    cursor: pointer;
+  }
+  /* View Toggle */
+  .smrt-asset-toolbar__view-toggle {
+    display: flex;
+    overflow: hidden;
+  }
+  /* The toggle buttons render via <Button> (issue #1589); the active state is
+  the `primary` variant, the inactive state the `ghost` variant. These overrides
+  give the buttons their square icon footprint and the segmented divider, and
+  reach the child <button> via :global() scoping. */
+  .smrt-asset-toolbar__view-toggle :global([data-smrt-component="Button"]) {
+    width: 36px;
+    height: 36px;
+    padding: 0;
+  }
+  /* Upload Button — renders via <Button variant="primary"> (issue #1589). The
+  primary variant owns the fill/hover; the override only pins the
+  toolbar-matching 36px height and gap, reaching the child <button> via
+  :global() scoping. */
+  .smrt-asset-toolbar__right > :global([data-smrt-component="Button"]) {
+    gap: var(--smrt-spacing-1, 0.25rem);
+    height: 36px;
+    padding: 0 var(--smrt-spacing-3, 0.75rem);
+  }
+  @media (max-width: 640px) {
+    .smrt-asset-toolbar__root {
+      flex-direction: column;
+      align-items: stretch;
+    }
+    .smrt-asset-toolbar__left {
+      flex-direction: column;
+    }
+    .smrt-asset-toolbar__search {
+      max-width: none;
+    }
+    .smrt-asset-toolbar__right {
+      justify-content: space-between;
+    }
+  }
+}
+
+@layer smrt.theme {
+  .smrt-asset-toolbar__root {
+    background: var(--smrt-color-surface);
+    border-bottom: var(--smrt-hairline);
+  }
+  /* Search */
+  .smrt-asset-toolbar__search {
     background: var(--smrt-color-surface-container-low);
     border: var(--smrt-hairline);
     border-radius: var(--smrt-radius-medium, 0.5rem);
     transition: border-color 150ms ease;
   }
-
-  .asset-toolbar__search:focus-within {
+  .smrt-asset-toolbar__search:focus-within {
     border-color: var(--smrt-color-primary);
     box-shadow: 0 0 0 2px var(--smrt-color-primary-container, rgba(0, 90, 193, 0.1));
   }
-
-  .search-icon {
-    display: flex;
-    align-items: center;
-    padding-left: var(--smrt-spacing-2, 0.5rem);
+  .smrt-asset-toolbar__search-icon {
     color: var(--smrt-color-on-surface-variant);
   }
-
-  /* The search field renders via <Input class="search-field"> (issue #1589). It
-     sits inside the bordered .asset-toolbar__search shell, so the overrides strip
-     the primitive's own border/background/box-shadow to keep it transparent and
-     reach the child <input> through :global() scoping. */
-  .asset-toolbar__search :global(.search-field) {
-    flex: 1;
+  /* The search field renders via <Input> (issue #1589). It sits inside the
+  bordered .smrt-asset-toolbar__search shell, so the overrides strip the
+  primitive's own border/background/box-shadow to keep it transparent and
+  reach the child <input> through :global() scoping. */
+  .smrt-asset-toolbar__search :global([data-smrt-component="Input"]) {
     border: none;
     border-radius: 0;
     background: transparent;
     box-shadow: none;
-    padding: var(--smrt-spacing-1, 0.25rem) var(--smrt-spacing-2, 0.5rem);
     font-family: inherit;
     font-size: var(--smrt-typography-body-medium-size, 0.875rem);
     color: var(--smrt-color-on-surface);
     outline: none;
-    min-width: 0;
   }
-
-  .asset-toolbar__search :global(.search-field:focus) {
+  .smrt-asset-toolbar__search :global([data-smrt-component="Input"]:focus) {
     border: none;
     box-shadow: none;
   }
-
-  .asset-toolbar__search :global(.search-field::placeholder) {
+  .smrt-asset-toolbar__search :global([data-smrt-component="Input"]::placeholder) {
     color: var(--smrt-color-on-surface-variant);
   }
-
-  .asset-toolbar__search :global(.search-field::-webkit-search-cancel-button) {
-    display: none;
-  }
-
-  /* search-clear renders via <Button class="search-clear"> (issue #1589). The
-     overrides shape it into a small round icon button and reach the child
-     <button> via :global() scoping. */
-  .asset-toolbar__search :global(.search-clear) {
-    width: 24px;
-    height: 24px;
-    margin-right: var(--smrt-spacing-1, 0.25rem);
-    padding: 0;
+  /* The clear control renders via <Button> (issue #1589). The overrides shape it
+  into a small round icon button and reach the child <button> via :global()
+  scoping. */
+  .smrt-asset-toolbar__search :global([data-smrt-component="Button"]) {
     border: none;
     background: transparent;
     color: var(--smrt-color-on-surface-variant);
     border-radius: var(--smrt-radius-full);
   }
-
-  .asset-toolbar__search :global(.search-clear:hover) {
+  .smrt-asset-toolbar__search :global([data-smrt-component="Button"]:hover) {
     color: var(--smrt-color-on-surface);
     background: var(--smrt-color-surface-container);
   }
-
-  /* Selects render via <Select class="asset-toolbar__select"> (issue #1589). The
-     base .select primitive owns the chevron + focus ring; these overrides pin the
-     toolbar-matching 36px height, container-low fill, and width, and reach the
-     child <select> through :global() scoping. */
-  .asset-toolbar__left :global(.asset-toolbar__select) {
-    width: auto;
-    height: 36px;
-    padding: 0 var(--smrt-spacing-8, 2rem) 0 var(--smrt-spacing-3, 0.75rem);
+  /* Selects render via <Select> (issue #1589). The base select primitive owns
+  the chevron + focus ring; these overrides pin the toolbar-matching 36px
+  height, container-low fill, and width, and reach the child <select> through
+  :global() scoping. */
+  .smrt-asset-toolbar__left :global([data-smrt-component="Select"]) {
     background-color: var(--smrt-color-surface-container-low);
     border: var(--smrt-hairline);
     border-radius: var(--smrt-radius-medium, 0.5rem);
     font-family: inherit;
     font-size: var(--smrt-typography-body-medium-size, 0.875rem);
     color: var(--smrt-color-on-surface);
-    cursor: pointer;
   }
-
   /* View Toggle */
-  .view-toggle {
-    display: flex;
+  .smrt-asset-toolbar__view-toggle {
     border: var(--smrt-hairline);
     border-radius: var(--smrt-radius-medium, 0.5rem);
-    overflow: hidden;
   }
-
-  /* view-toggle__btn renders via <Button> (issue #1589); the active state is the
-     `primary` variant, the inactive state the `ghost` variant. These overrides
-     give the buttons their square icon footprint and the segmented divider, and
-     reach the child <button> via :global() scoping. */
-  .view-toggle :global(.view-toggle__btn) {
-    width: 36px;
-    height: 36px;
-    padding: 0;
+  /* The toggle buttons render via <Button> (issue #1589); the active state is
+  the `primary` variant, the inactive state the `ghost` variant. These overrides
+  give the buttons their square icon footprint and the segmented divider, and
+  reach the child <button> via :global() scoping. */
+  .smrt-asset-toolbar__view-toggle :global([data-smrt-component="Button"]) {
     border: none;
     border-radius: 0;
   }
-
-  .view-toggle :global(.view-toggle__btn:not(:last-child)) {
+  .smrt-asset-toolbar__view-toggle :global([data-smrt-component="Button"]:not(:last-child)) {
     border-right: var(--smrt-hairline);
   }
-
-  /* Upload Button — renders via <Button variant="primary" class="upload-btn">
-     (issue #1589). The primary variant owns the fill/hover; the override only
-     pins the toolbar-matching 36px height and gap, reaching the child <button>
-     via :global() scoping. */
-  .asset-toolbar__right :global(.upload-btn) {
-    gap: var(--smrt-spacing-1, 0.25rem);
-    height: 36px;
-    padding: 0 var(--smrt-spacing-3, 0.75rem);
+  /* Upload Button — renders via <Button variant="primary"> (issue #1589). The
+  primary variant owns the fill/hover; the override only pins the
+  toolbar-matching 36px height and gap, reaching the child <button> via
+  :global() scoping. */
+  .smrt-asset-toolbar__right > :global([data-smrt-component="Button"]) {
     font-size: var(--smrt-typography-body-medium-size, 0.875rem);
     font-weight: var(--smrt-typography-weight-medium, 500);
   }
-
-  @media (max-width: 640px) {
-    .asset-toolbar {
-      flex-direction: column;
-      align-items: stretch;
-    }
-
-    .asset-toolbar__left {
-      flex-direction: column;
-    }
-
-    .asset-toolbar__search {
-      max-width: none;
-    }
-
-    .asset-toolbar__right {
-      justify-content: space-between;
-    }
-  }
 }
+
 </style>

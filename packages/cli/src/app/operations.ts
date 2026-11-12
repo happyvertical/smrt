@@ -978,7 +978,6 @@ async function backup(context: AppContext, args: string[]): Promise<void> {
             'Backup destination must remain outside local storage.',
           );
         }
-        ensurePrivateDirectorySync(dirname(destination));
         if (snapshotKeys) {
           if (existsSync(destination)) {
             throw new Error(
@@ -1005,6 +1004,7 @@ async function backup(context: AppContext, args: string[]): Promise<void> {
           });
           return;
         }
+        ensurePrivateDirectorySync(dirname(destination));
         try {
           mkdirSync(destination, { mode: 0o700 });
         } catch (error) {

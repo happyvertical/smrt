@@ -18,8 +18,8 @@ const groups = $derived(publishGroups(preview));
           </Stack>
           {#if group.items.length}
             <ul>{#each group.items as item (item)}<li>{item}</li>{/each}</ul>
-          {:else}<p class="sh-muted">None.</p>{/if}
-          {#if group.note}<p class="sh-muted">{group.note}</p>{/if}
+          {:else}<p class="smrt-app-shell__muted">None.</p>{/if}
+          {#if group.note}<p class="smrt-app-shell__muted">{group.note}</p>{/if}
         </Stack>
       </Card>
     </section>
@@ -40,7 +40,7 @@ const groups = $derived(publishGroups(preview));
     <h3>{method.model}.{method.name}() · {method.change}</h3>
     <p>{method.description}</p>
     <!-- svelte-ignore a11y_no_noninteractive_tabindex (keyboard scrolling of full method code) -->
-    <pre class="sh-code" tabindex="0" aria-label="Code for {method.model}.{method.name}"><code>{method.code}</code></pre>
+    <pre class="smrt-app-shell__code" tabindex="0" aria-label="Code for {method.model}.{method.name}"><code>{method.code}</code></pre>
   </section>
 {/each}
 

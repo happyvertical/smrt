@@ -93,11 +93,13 @@ describe('ThemeProvider persistence', () => {
     const { container, rerender } = render(ThemeProvider, {
       props: { children: child() },
     });
-    const root = container.querySelector('.smrt-theme-root');
-    expect(root).not.toHaveClass('no-paint');
+    const root = container.querySelector(
+      '[data-smrt-component="ThemeProvider"]',
+    );
+    expect(root).not.toHaveClass('smrt-theme-provider__no-paint');
 
     await rerender({ paintSurface: false, children: child() });
-    expect(root).toHaveClass('no-paint');
+    expect(root).toHaveClass('smrt-theme-provider__no-paint');
   });
 
   it('ignores invalid persisted theme values instead of breaking hydration', async () => {
@@ -134,7 +136,9 @@ describe('ThemeProvider persistence', () => {
     const { container } = render(ThemeProvider, {
       props: { children: child() },
     });
-    const root = container.querySelector('.smrt-theme-root');
+    const root = container.querySelector(
+      '[data-smrt-component="ThemeProvider"]',
+    );
     const style = root?.getAttribute('style') ?? '';
 
     // Built-in presets ship their full variable set as static stylesheets
@@ -154,7 +158,9 @@ describe('ThemeProvider persistence', () => {
       },
     });
     const style =
-      container.querySelector('.smrt-theme-root')?.getAttribute('style') ?? '';
+      container
+        .querySelector('[data-smrt-component="ThemeProvider"]')
+        ?.getAttribute('style') ?? '';
 
     expect(style).toContain('--smrt-color-primary: #123456');
     expect(style).toContain('--smrt-color-tertiary: #654321');
@@ -177,7 +183,9 @@ describe('ThemeProvider persistence', () => {
       props: { preset: 'provider-test-brand', children: child() },
     });
     const style =
-      container.querySelector('.smrt-theme-root')?.getAttribute('style') ?? '';
+      container
+        .querySelector('[data-smrt-component="ThemeProvider"]')
+        ?.getAttribute('style') ?? '';
 
     // No static stylesheet can exist for a registered custom theme, so the
     // provider falls back to the legacy runtime-generated variable set.
@@ -190,7 +198,9 @@ describe('ThemeProvider persistence', () => {
       props: { preset: 'material', inlineVariables: true, children: child() },
     });
     const style =
-      container.querySelector('.smrt-theme-root')?.getAttribute('style') ?? '';
+      container
+        .querySelector('[data-smrt-component="ThemeProvider"]')
+        ?.getAttribute('style') ?? '';
 
     expect(style).toContain('--smrt-color-background');
   });
@@ -221,7 +231,9 @@ describe('ThemeProvider premium features (#3869)', () => {
   });
 
   const style = (c: HTMLElement) =>
-    c.querySelector('.smrt-theme-root')?.getAttribute('style') ?? '';
+    c
+      .querySelector('[data-smrt-component="ThemeProvider"]')
+      ?.getAttribute('style') ?? '';
 
   it('maps borderRadius to control radius tokens, emitting nothing for md', () => {
     mockMedia([]);
@@ -288,7 +300,7 @@ describe('ThemeProvider premium features (#3869)', () => {
     );
     expect(
       more.container
-        .querySelector('.smrt-theme-root')
+        .querySelector('[data-smrt-component="ThemeProvider"]')
         ?.getAttribute('data-contrast'),
     ).toBe('more');
     more.unmount();
@@ -315,7 +327,7 @@ describe('ThemeProvider premium features (#3869)', () => {
     );
     expect(
       forced.container
-        .querySelector('.smrt-theme-root')
+        .querySelector('[data-smrt-component="ThemeProvider"]')
         ?.hasAttribute('data-forced-colors'),
     ).toBe(true);
   });
@@ -359,7 +371,9 @@ describe('ThemeProvider premium features (#3869)', () => {
     const { container, rerender } = render(ThemeProvider, {
       props: { colorScheme: 'light', children: child() },
     });
-    const root = container.querySelector('.smrt-theme-root') as HTMLElement;
+    const root = container.querySelector(
+      '[data-smrt-component="ThemeProvider"]',
+    ) as HTMLElement;
     await waitFor(() =>
       expect(document.documentElement.getAttribute('data-color-scheme')).toBe(
         'light',
@@ -384,7 +398,9 @@ describe('ThemeProvider premium features (#3869)', () => {
     const { container, rerender } = render(ThemeProvider, {
       props: { colorScheme: 'light', children: child() },
     });
-    const root = container.querySelector('.smrt-theme-root') as HTMLElement;
+    const root = container.querySelector(
+      '[data-smrt-component="ThemeProvider"]',
+    ) as HTMLElement;
     await waitFor(() =>
       expect(document.documentElement.getAttribute('data-color-scheme')).toBe(
         'light',

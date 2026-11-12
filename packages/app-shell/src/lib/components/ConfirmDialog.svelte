@@ -37,7 +37,7 @@ $effect(() => {
 
 <dialog
   bind:this={dialog}
-  class="sh-dialog"
+  class="smrt-app-shell__dialog"
   aria-labelledby={titleId}
   oncancel={(e) => {
     e.preventDefault();
@@ -46,14 +46,14 @@ $effect(() => {
 >
   <h2 id={titleId}>{title}</h2>
   {@render children?.()}
-  {#if error}<p class="sh-alert sh-alert-error" role="alert">{error}</p>{/if}
-  <div class="sh-dialog-actions">
-    <button type="button" class="sh-btn" disabled={busy} onclick={oncancel}>
+  {#if error}<p class="smrt-app-shell__alert smrt-app-shell__alert-error" role="alert">{error}</p>{/if}
+  <div class="smrt-app-shell__dialog-actions">
+    <button type="button" class="smrt-app-shell__btn" disabled={busy} onclick={oncancel}>
       Cancel
     </button>
     <button
       type="button"
-      class="sh-btn {danger ? 'sh-btn-danger' : 'sh-btn-primary'}"
+      class="smrt-app-shell__btn {danger ? 'smrt-app-shell__btn-danger' : 'smrt-app-shell__btn-primary'}"
       disabled={busy}
       onclick={onconfirm}
     >

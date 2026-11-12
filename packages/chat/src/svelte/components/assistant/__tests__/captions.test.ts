@@ -33,7 +33,9 @@ describe('caption components', () => {
   ] as const)('uses the host-localized speaker label for visible and accessible names', (component, speakerLabel) => {
     render(component, { props: { enabled: true, lines, speakerLabel } });
     const region = screen.getByRole('region', { name: speakerLabel });
-    expect(region.querySelector('.speaker')).toHaveTextContent(speakerLabel);
+    expect(region.querySelector('[data-smrt-part="label"]')).toHaveTextContent(
+      speakerLabel,
+    );
   });
 
   it('keeps heard captions hidden until independently enabled, bounds visible lines, and escapes text', () => {
@@ -59,7 +61,7 @@ describe('caption components', () => {
       },
     });
     const region = screen.getByLabelText('Assistant is speaking');
-    expect(region.querySelector('.caption-lines')).toHaveAttribute(
+    expect(region.querySelector('[data-smrt-part="body"]')).toHaveAttribute(
       'aria-live',
       'off',
     );
@@ -68,7 +70,7 @@ describe('caption components', () => {
       announce: true,
       lines: [{ ...lines[1], speaker: 'spoken' as const }],
     });
-    expect(region.querySelector('.caption-lines')).toHaveAttribute(
+    expect(region.querySelector('[data-smrt-part="body"]')).toHaveAttribute(
       'aria-live',
       'polite',
     );

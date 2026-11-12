@@ -602,7 +602,7 @@ function setImageWidth(frame: HTMLElement, width: number) {
   );
 
   frame.setAttribute('data-smrt-width', String(clamped));
-  frame.style.width = `${clamped}px`;
+  frame.style.setProperty('--smrt-content-body-image-width', `${clamped}px`);
   frame.style.maxWidth = '100%';
 
   if (getImagePlacement(frame) === 'full') {
@@ -1033,13 +1033,15 @@ function applyImagePlacement(placement: ContentBodyImagePlacement) {
 
   if (placement === 'full') {
     frame.removeAttribute('data-smrt-width');
-    frame.style.width = '100%';
+    frame.style.removeProperty('--smrt-content-body-image-width');
     frame.style.maxWidth = '100%';
   } else if (placement === 'left' || placement === 'right') {
     const wrappedWidth = Math.min(360, Math.round(getMaxImageWidth() * 0.45));
     setImageWidth(frame, Math.min(getImageWidth(frame), wrappedWidth));
-  } else if (frame.style.width === '100%') {
-    frame.style.removeProperty('width');
+  } else if (
+    frame.style.getPropertyValue('--smrt-content-body-image-width') === '100%'
+  ) {
+    frame.style.removeProperty('--smrt-content-body-image-width');
   }
 
   selectImageElement(image, { notify: false });
@@ -1532,7 +1534,7 @@ function handleSurfacePointerOut(event: PointerEvent) {
   if (!hoveredImage) return;
   const next = event.relatedTarget as Element | null;
   // Moving onto the badge keeps it; moving elsewhere in the text hides it.
-  if (next?.closest?.('.image-change-badge')) return;
+  if (next?.closest?.('.smrt-content-body-editor__image-change-badge')) return;
   if (next && next === hoveredImage) return;
   hoveredImage = null;
   hoveredImageBox = null;
@@ -1633,8 +1635,8 @@ function handleEditorDragEnd() {
 </script>
 
 <!-- svelte-ignore a11y_no_static_element_interactions -->
-<div bind:this={rootElement} class="content-body-editor" onpointerleave={handleRootPointerLeave} data-smrt-component="ContentBodyEditor">
-  <div class="body-editor-toolbar" aria-label={t(M['content.content_body_editor.toolbar'])}>
+<div bind:this={rootElement} class="smrt-content-body-editor__root" onpointerleave={handleRootPointerLeave} data-smrt-component="ContentBodyEditor">
+  <div class="smrt-content-body-editor__toolbar" data-smrt-part="actions" aria-label={t(M['content.content_body_editor.toolbar'])}>
     <Button variant="ghost" size="sm" class="editor-toolbar-button" type="button" title={t(M['content.content_body_editor.bold'])} aria-label={t(M['content.content_body_editor.bold'])} onclick={() => runCommand('bold')}>
       <strong>B</strong>
     </Button>
@@ -1654,7 +1656,7 @@ function handleEditorDragEnd() {
         <circle cx="4" cy="18" r="1"></circle>
       </svg>
     </Button>
-    <span class="editor-toolbar-slot" bind:this={imageButtonElement}>
+    <span class="smrt-content-body-editor__toolbar-slot" data-smrt-part="trigger" bind:this={imageButtonElement}>
     <Button
       variant="ghost"
       size="sm"
@@ -1675,7 +1677,7 @@ function handleEditorDragEnd() {
     </span>
 
     {#if showFormatPicker}
-      <label class="format-select">
+      <label class="smrt-content-body-editor__format-select" data-smrt-part="field">
         <span>{t(M['content.content_body_editor.save_as'])}</span>
         <Select
           value={currentFormat}
@@ -1694,7 +1696,8 @@ function handleEditorDragEnd() {
     <section
       bind:this={imagePanelElement}
       id={imagePanelId}
-      class="body-editor-image-panel"
+      class="smrt-content-body-editor__image-panel"
+      data-smrt-part="panel"
       aria-label={resolvedImagePanelLabel}
       tabindex="-1"
       onkeydown={handleImagePanelKeydown}
@@ -1706,7 +1709,8 @@ function handleEditorDragEnd() {
 
   {#if dropIndicatorTop !== null}
     <div
-      class="body-drop-indicator"
+      class="smrt-content-body-editor__drop-indicator"
+      data-smrt-part="indicator"
       style={`top: ${dropIndicatorTop}px;`}
       aria-hidden="true"
       data-testid="body-drop-indicator"
@@ -1715,7 +1719,8 @@ function handleEditorDragEnd() {
 
   {#if selectedImageBox}
     <div
-      class="image-control-popover"
+      class="smrt-content-body-editor__image-control-popover"
+      data-smrt-part="actions"
       style={`top: ${Math.max(44, selectedImageBox.top + 8)}px; left: ${selectedImageBox.left + selectedImageBox.width / 2}px;`}
       aria-label={t(M['content.content_body_editor.selected_image_controls'])}
     >
@@ -1726,7 +1731,7 @@ function handleEditorDragEnd() {
             <path d="M19 15v4"></path>
             <path d="M17 17h4"></path>
           </svg>
-          <span class="editor-popover-button-text">{t(M['content.content_body_editor.change_image_short'])}</span>
+          <span class="smrt-content-body-editor__popover-button-text" data-smrt-part="label">{t(M['content.content_body_editor.change_image_short'])}</span>
         </Button>
       {/if}
       <Button variant="ghost" size="sm" class="editor-popover-button" type="button" title={t(M['content.content_body_editor.move_image'])} aria-label={t(M['content.content_body_editor.move_image'])} onpointerdown={startImageMove}>
@@ -1751,7 +1756,7 @@ function handleEditorDragEnd() {
           <path d="m19 12-7 7-7-7"></path>
         </svg>
       </Button>
-      <span class="image-control-divider"></span>
+      <span class="smrt-content-body-editor__image-control-divider" data-smrt-part="marker"></span>
       <Button
         variant="ghost"
         size="sm"
@@ -1820,7 +1825,7 @@ function handleEditorDragEnd() {
           <path d="M3 19h18"></path>
         </svg>
       </Button>
-      <span class="image-control-divider"></span>
+      <span class="smrt-content-body-editor__image-control-divider" data-smrt-part="marker"></span>
       <Button variant="ghost" size="sm" class="editor-popover-button" type="button" title={t(M['content.content_body_editor.make_smaller'])} aria-label={t(M['content.content_body_editor.make_image_smaller'])} onclick={() => resizeSelectedImage(-IMAGE_WIDTH_STEP)}>
         <svg viewBox="0 0 24 24" width="15" height="15" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round">
           <path d="M5 12h14"></path>
@@ -1854,7 +1859,8 @@ function handleEditorDragEnd() {
     <!-- raw-primitive-allow: custom press-and-drag image resize handle driven by onpointerdown pointer-capture gesture and absolute positioning; no Button primitive owns this draggable resize grabber -->
     <button
       type="button"
-      class="image-resize-handle"
+      class="smrt-content-body-editor__image-resize-handle"
+      data-smrt-part="meta"
       title={t(M['content.content_body_editor.resize_image'])}
       aria-label={t(M['content.content_body_editor.resize_selected_image'])}
       style={`top: ${selectedImageBox.top + selectedImageBox.height - 12}px; left: ${selectedImageBox.left + selectedImageBox.width - 12}px;`}
@@ -1871,7 +1877,8 @@ function handleEditorDragEnd() {
     <!-- raw-primitive-allow: a round 44px icon button pinned to a picture's corner (absolute position over the story); Button's padding and layout do not fit an overlay badge -->
     <button
       type="button"
-      class="image-change-badge"
+      class="smrt-content-body-editor__image-change-badge"
+      data-smrt-part="badge"
       title={t(M['content.content_body_editor.change_image_hint'])}
       aria-label={t(M['content.content_body_editor.change_image'])}
       style={`top: ${changeBadgeBox.top + changeBadgeBox.height - 52}px; left: ${changeBadgeBox.left + 8}px;`}
@@ -1892,8 +1899,9 @@ function handleEditorDragEnd() {
     aria-label={resolvedLabel}
     data-smrt-control={name || undefined}
     data-smrt-form={interactionContext?.formId}
-    class="body-editor-surface"
-    class:body-editor-surface--dragging={isDragging}
+    class="smrt-content-body-editor__surface"
+    class:smrt-content-body-editor__surface--dragging={isDragging}
+    data-smrt-part="body"
     contenteditable="true"
     role="textbox"
     aria-multiline="true"
@@ -1930,280 +1938,199 @@ function handleEditorDragEnd() {
 
 <style>
 @layer smrt.reset, smrt.structure, smrt.theme;
-@layer smrt.theme {
-  .content-body-editor {
+@layer smrt.structure {
+  .smrt-content-body-editor__root {
     position: relative;
     display: flex;
     flex-direction: column;
-    border: var(--smrt-hairline);
-    border-radius: 0.85rem;
-    background: var(--smrt-color-surface);
     overflow: visible;
   }
-
-  .body-editor-toolbar {
+  .smrt-content-body-editor__toolbar {
     display: flex;
     align-items: center;
     gap: 0.35rem;
     padding: 0.45rem 0.55rem;
-    border-bottom: var(--smrt-hairline);
-    background: var(--smrt-color-surface-container-low, var(--smrt-color-surface-container));
   }
-
   /* Icon buttons are a fixed square. smrt-ui's `size="sm"` padding
-     (0.5rem 0.75rem) would leave a 2rem button ~6px of content width, which
-     squeezed the SVG icons (list, image) far below the text glyphs (B, I, H2).
-     Zero the padding and never let an icon shrink: every toolbar glyph renders
-     at the same --smrt-content-editor-icon-size. */
-  .body-editor-toolbar :global(.editor-toolbar-button) {
+  (0.5rem 0.75rem) would leave a 2rem button ~6px of content width, which
+  squeezed the SVG icons (list, image) far below the text glyphs (B, I, H2).
+  Zero the padding and never let an icon shrink: every toolbar glyph renders
+  at the same --smrt-content-editor-icon-size. */
+  .smrt-content-body-editor__toolbar :global(.editor-toolbar-button) {
     width: 2.25rem;
     height: 2.25rem;
     min-width: 2.25rem;
     padding: 0;
     display: inline-grid;
     place-items: center;
-    border: 1px solid transparent;
-    border-radius: 0.45rem;
-    background: transparent;
-    color: var(--smrt-color-on-surface);
     cursor: pointer;
   }
-
-  .body-editor-toolbar :global(.editor-toolbar-button svg),
-  .image-control-popover :global(.editor-popover-button svg) {
+  .smrt-content-body-editor__toolbar :global(.editor-toolbar-button svg),
+  .smrt-content-body-editor__image-control-popover :global(.editor-popover-button svg) {
     flex-shrink: 0;
     width: var(--smrt-content-editor-icon-size, 1.125rem);
     height: var(--smrt-content-editor-icon-size, 1.125rem);
   }
-
   /* Touch screens: 44px targets (WCAG 2.5.5), same icon size. The toolbar
-     wraps rather than scrolling off a phone. */
+  wraps rather than scrolling off a phone. */
   @media (pointer: coarse) {
-    .body-editor-toolbar {
+    .smrt-content-body-editor__toolbar {
       flex-wrap: wrap;
     }
-
-    .body-editor-toolbar :global(.editor-toolbar-button) {
+    .smrt-content-body-editor__toolbar :global(.editor-toolbar-button) {
       width: 2.75rem;
       height: 2.75rem;
       min-width: 2.75rem;
     }
   }
-
-  .body-editor-toolbar :global(.editor-toolbar-button[aria-expanded='true']) {
-    border-color: var(--smrt-color-primary);
-    background: var(--smrt-color-primary-container, var(--smrt-color-surface-container));
-    color: var(--smrt-color-on-primary-container, var(--smrt-color-primary));
-  }
-
-  .body-editor-toolbar :global(.editor-toolbar-button:hover) {
-    border-color: var(--smrt-hairline-color);
-    background: var(--smrt-color-surface-container);
-  }
-
-  .editor-toolbar-slot {
+  .smrt-content-body-editor__toolbar-slot {
     display: inline-flex;
   }
-
   /* The image panel sits between the toolbar and the text so it opens above
-     the story rather than below it. Full width, in the page flow (no modal),
-     so it works the same on a phone. */
-  .body-editor-image-panel {
-    border-bottom: var(--smrt-hairline);
-    background: var(--smrt-color-surface-container-lowest, var(--smrt-color-surface));
+  the story rather than below it. Full width, in the page flow (no modal),
+  so it works the same on a phone. */
+  .smrt-content-body-editor__image-panel {
     padding: 0.75rem;
     max-height: min(70vh, 40rem);
     overflow: auto;
     overscroll-behavior: contain;
   }
-
-  .body-editor-image-panel:focus-visible {
-    outline: 2px solid var(--smrt-color-primary);
-    outline-offset: -2px;
-  }
-
-  .format-select {
+  .smrt-content-body-editor__format-select {
     margin-left: auto;
     display: inline-flex;
     align-items: center;
     gap: 0.4rem;
-    font-size: var(--smrt-typography-label-medium-size, 0.78rem);
-    color: var(--smrt-color-on-surface-variant);
   }
-
-  .format-select :global([data-smrt-component="Select"]) {
+  .smrt-content-body-editor__format-select :global([data-smrt-component="Select"]) {
     min-height: 2rem;
-    border: var(--smrt-hairline);
-    border-radius: 0.45rem;
-    background: var(--smrt-color-surface);
-    color: var(--smrt-color-on-surface);
     padding: 0 0.5rem;
   }
-
-  .body-editor-surface {
+  .smrt-content-body-editor__surface {
     min-height: 22rem;
     padding: clamp(1rem, 2vw, 1.5rem);
-    outline: none;
-    color: var(--smrt-color-on-surface);
-    font-size: var(--smrt-typography-body-large-size, 1.05rem);
-    line-height: var(--smrt-typography-body-large-line-height, 1.65);
     overflow: auto;
     overflow-wrap: anywhere;
   }
-
-  .body-editor-surface::after {
-    content: '';
+  .smrt-content-body-editor__surface::after {
     display: block;
     clear: both;
+    content: '';
   }
-
-  .body-editor-surface:empty::before {
+  .smrt-content-body-editor__surface:empty::before {
     content: attr(data-placeholder);
-    color: var(--smrt-color-on-surface-variant);
     pointer-events: none;
   }
-
-  .body-editor-surface--dragging {
-    box-shadow: inset 0 0 0 2px var(--smrt-color-primary);
-    background: color-mix(in srgb, var(--smrt-color-primary) 6%, var(--smrt-color-surface));
-  }
-
-  .body-editor-surface :global(p:first-child),
-  .body-editor-surface :global(h1:first-child),
-  .body-editor-surface :global(h2:first-child),
-  .body-editor-surface :global(h3:first-child) {
+  .smrt-content-body-editor__surface :global(p:first-child),
+  .smrt-content-body-editor__surface :global(h1:first-child),
+  .smrt-content-body-editor__surface :global(h2:first-child),
+  .smrt-content-body-editor__surface :global(h3:first-child) {
     margin-top: 0;
   }
-
-  .body-editor-surface :global(p:last-child) {
+  .smrt-content-body-editor__surface :global(p:last-child) {
     margin-bottom: 0;
   }
-
-  .body-editor-surface :global(p) {
+  .smrt-content-body-editor__surface :global(p) {
     min-height: 1.65em;
   }
-
-  .body-editor-surface :global(h1),
-  .body-editor-surface :global(h2),
-  .body-editor-surface :global(h3) {
-    line-height: 1.2;
+  .smrt-content-body-editor__surface :global(h1),
+  .smrt-content-body-editor__surface :global(h2),
+  .smrt-content-body-editor__surface :global(h3) {
     margin: 1.25em 0 0.5em;
   }
-
-  .body-editor-surface :global(figure[data-smrt-inline-image]) {
+  .smrt-content-body-editor__surface :global(figure[data-smrt-inline-image]) {
     display: block;
-    width: min(100%, 32rem);
+    width: var(--smrt-content-body-image-width, min(100%, 32rem));
     max-width: 100%;
     margin: 1.25rem 0;
     clear: none;
   }
-
-  .body-editor-surface :global(figure[data-smrt-inline-image] img) {
+  .smrt-content-body-editor__surface :global(figure[data-smrt-inline-image] img) {
     display: block;
     width: 100%;
     max-width: 100%;
   }
-
-  .body-editor-surface :global(figure[data-smrt-placement='left']),
-  .body-editor-surface :global(img[data-smrt-placement='left']) {
+  .smrt-content-body-editor__surface :global(figure[data-smrt-placement='left']),
+  .smrt-content-body-editor__surface :global(img[data-smrt-placement='left']) {
     float: left;
-    width: min(45%, 22rem);
+    width: var(--smrt-content-body-image-width, min(45%, 22rem));
     margin: 0.4rem 1.25rem 0.75rem 0;
   }
-
-  .body-editor-surface :global(figure[data-smrt-placement='right']),
-  .body-editor-surface :global(img[data-smrt-placement='right']) {
+  .smrt-content-body-editor__surface :global(figure[data-smrt-placement='right']),
+  .smrt-content-body-editor__surface :global(img[data-smrt-placement='right']) {
     float: right;
-    width: min(45%, 22rem);
+    width: var(--smrt-content-body-image-width, min(45%, 22rem));
     margin: 0.4rem 0 0.75rem 1.25rem;
   }
-
-  .body-editor-surface :global(figure[data-smrt-placement='center']),
-  .body-editor-surface :global(figure[data-smrt-placement='block']),
-  .body-editor-surface :global(img[data-smrt-placement='center']),
-  .body-editor-surface :global(img[data-smrt-placement='block']) {
+  .smrt-content-body-editor__surface :global(figure[data-smrt-placement='center']),
+  .smrt-content-body-editor__surface :global(figure[data-smrt-placement='block']),
+  .smrt-content-body-editor__surface :global(img[data-smrt-placement='center']),
+  .smrt-content-body-editor__surface :global(img[data-smrt-placement='block']) {
     float: none;
     display: block;
     clear: both;
     margin-left: auto;
     margin-right: auto;
   }
-
-  .body-editor-surface :global(figure[data-smrt-placement='full']),
-  .body-editor-surface :global(img[data-smrt-placement='full']) {
+  .smrt-content-body-editor__surface :global(figure[data-smrt-placement='full']),
+  .smrt-content-body-editor__surface :global(img[data-smrt-placement='full']),
+  .smrt-content-body-editor__surface :global(img[data-smrt-inline-image][data-smrt-placement='full']) {
     float: none;
-    width: 100% !important;
+    width: 100%;
     max-width: 100%;
     margin-left: 0;
     margin-right: 0;
     clear: both;
   }
-
-  .body-editor-surface :global(img) {
-    /* iOS: no callout on a long press, which asks for a change instead. */
-    -webkit-touch-callout: none;
+  .smrt-content-body-editor__surface :global(img) {
     display: block;
+    width: var(--smrt-content-body-image-width, auto);
     max-width: min(100%, 44rem);
     height: auto;
-    border-radius: 0.55rem;
+    /* iOS: no callout on a long press, which asks for a change instead. */
+    -webkit-touch-callout: none;
   }
-
-  .body-editor-surface :global(img[data-smrt-inline-image]) {
-    width: min(100%, 32rem);
+  .smrt-content-body-editor__surface :global(img[data-smrt-inline-image]) {
+    width: var(--smrt-content-body-image-width, min(100%, 32rem));
     max-width: 100%;
     margin-top: 1.25rem;
     margin-bottom: 1.25rem;
     clear: both;
   }
-
-  .body-editor-surface :global(img[data-smrt-inline-image][data-smrt-placement='left']),
-  .body-editor-surface :global(img[data-smrt-inline-image][data-smrt-placement='right']) {
-    width: min(45%, 22rem);
+  .smrt-content-body-editor__surface :global(img[data-smrt-inline-image][data-smrt-placement='left']),
+  .smrt-content-body-editor__surface :global(img[data-smrt-inline-image][data-smrt-placement='right']) {
+    width: var(--smrt-content-body-image-width, min(45%, 22rem));
     clear: none;
   }
-
-  .body-editor-surface :global(figure[data-smrt-inline-image] img) {
+  .smrt-content-body-editor__surface :global(figure[data-smrt-inline-image] img) {
     width: 100%;
     max-width: 100%;
     margin: 0;
   }
-
-  .body-editor-surface :global(img[data-smrt-placement='full']) {
+  .smrt-content-body-editor__surface :global(img[data-smrt-placement='full']),
+  .smrt-content-body-editor__surface :global(img[data-smrt-inline-image][data-smrt-placement='full']) {
     width: 100%;
     max-width: 100%;
   }
-
-  .body-editor-surface :global(img[data-smrt-thumbnail][data-smrt-placement='full']) {
+  .smrt-content-body-editor__surface :global(img[data-smrt-thumbnail][data-smrt-placement='full']) {
     margin-top: 0;
   }
-
-  .body-editor-surface :global(img[data-smrt-thumbnail][data-smrt-placement='right']) {
+  .smrt-content-body-editor__surface :global(img[data-smrt-thumbnail][data-smrt-placement='right']) {
     margin-top: 0.25rem;
   }
-
   /* Phones: wrapped images stack full width, as the published page shows them. */
   @media (max-width: 36rem) {
-    .body-editor-surface :global(figure[data-smrt-placement='left']),
-    .body-editor-surface :global(figure[data-smrt-placement='right']),
-    .body-editor-surface :global(img[data-smrt-placement='left']),
-    .body-editor-surface :global(img[data-smrt-placement='right']) {
+    .smrt-content-body-editor__surface :global(figure[data-smrt-placement='left']),
+    .smrt-content-body-editor__surface :global(figure[data-smrt-placement='right']),
+    .smrt-content-body-editor__surface :global(img[data-smrt-placement='left']),
+    .smrt-content-body-editor__surface :global(img[data-smrt-placement='right']),
+    .smrt-content-body-editor__surface :global(img[data-smrt-inline-image][data-smrt-placement='left']),
+    .smrt-content-body-editor__surface :global(img[data-smrt-inline-image][data-smrt-placement='right']) {
       float: none;
-      width: 100% !important;
+      width: 100%;
       margin: 0.75rem 0;
     }
   }
-
-  .body-editor-surface :global(img[data-smrt-selected='true']) {
-    outline: 3px solid var(--smrt-color-primary);
-    outline-offset: 3px;
-  }
-
-  .body-editor-surface :global([data-smrt-moving='true']),
-  .body-editor-surface :global([data-smrt-resizing='true']) {
-    opacity: 0.78;
-  }
-
-  .image-change-badge {
+  .smrt-content-body-editor__image-change-badge {
     position: absolute;
     z-index: 19;
     display: inline-grid;
@@ -2211,128 +2138,216 @@ function handleEditorDragEnd() {
     inline-size: 44px;
     block-size: 44px;
     padding: 0;
-    border: var(--smrt-hairline);
-    border-radius: var(--smrt-radius-full);
-    background: color-mix(in srgb, var(--smrt-color-surface) 94%, transparent);
-    color: var(--smrt-color-primary);
-    box-shadow: var(--smrt-elevation-3, 0 0.4rem 1rem color-mix(in srgb, var(--smrt-color-shadow) 20%, transparent));
     cursor: pointer;
   }
-
-  .image-change-badge:hover,
-  .image-change-badge:focus-visible {
-    background: var(--smrt-color-primary-container);
-  }
-
-  .image-control-popover :global(.editor-popover-button.editor-popover-button--change) {
+  .smrt-content-body-editor__image-control-popover :global(.editor-popover-button.editor-popover-button--change) {
     inline-size: auto;
     min-inline-size: 44px;
     block-size: 44px;
     padding: 0 0.7rem 0 0.55rem;
     gap: 0.3rem;
     display: inline-flex;
-    color: var(--smrt-color-primary);
-    font-weight: var(--smrt-typography-weight-semibold, 600);
   }
-
   /* Phones: the picture toolbar is already wide; Change is icon-only there
-     (still 44px and named "Change this picture"). */
+  (still 44px and named "Change this picture"). */
   @media (max-width: 48rem) {
-    .image-control-popover :global(.editor-popover-button-text) {
+    .smrt-content-body-editor__image-control-popover :global(.smrt-content-body-editor__popover-button-text) {
       display: none;
     }
-
-    .image-control-popover :global(.editor-popover-button.editor-popover-button--change) {
+    .smrt-content-body-editor__image-control-popover :global(.editor-popover-button.editor-popover-button--change) {
       padding: 0;
       inline-size: 44px;
     }
   }
-
-  .image-control-popover {
+  .smrt-content-body-editor__image-control-popover {
     position: absolute;
     z-index: 20;
     display: inline-flex;
     align-items: center;
     gap: 0.1rem;
     padding: 0.25rem;
-    border: var(--smrt-hairline);
-    border-radius: var(--smrt-radius-full);
-    background: color-mix(in srgb, var(--smrt-color-surface) 96%, transparent);
-    color: var(--smrt-color-on-surface);
-    box-shadow: var(--smrt-elevation-5, 0 0.75rem 1.75rem color-mix(in srgb, var(--smrt-color-shadow) 18%, transparent));
     transform: translateX(-50%);
-    backdrop-filter: blur(10px);
   }
-
-  .image-control-popover :global(.editor-popover-button),
-  .image-resize-handle {
+  .smrt-content-body-editor__image-control-popover :global(.editor-popover-button),
+  .smrt-content-body-editor__image-resize-handle {
     display: inline-grid;
     place-items: center;
-    border: 0;
-    background: transparent;
-    color: inherit;
     cursor: pointer;
   }
-
-  .image-control-popover :global(.editor-popover-button) {
+  .smrt-content-body-editor__image-control-popover :global(.editor-popover-button) {
     width: 2rem;
     height: 2rem;
     min-width: 2rem;
     padding: 0;
-    border-radius: var(--smrt-radius-full);
   }
-
   /* Move up / Move down: full 44px touch targets. */
-  .image-control-popover :global(.editor-popover-button.editor-popover-button--move) {
+  .smrt-content-body-editor__image-control-popover :global(.editor-popover-button.editor-popover-button--move) {
     width: 2.75rem;
     height: 2.75rem;
     min-width: 2.75rem;
   }
-
-  .image-control-popover :global(.editor-popover-button:disabled) {
-    opacity: 0.4;
+  .smrt-content-body-editor__image-control-popover :global(.editor-popover-button:disabled) {
     cursor: default;
   }
-
-  .body-drop-indicator {
+  .smrt-content-body-editor__drop-indicator {
     position: absolute;
     z-index: 19;
     left: 1rem;
     right: 1rem;
     height: 4px;
-    border-radius: var(--smrt-radius-sm);
-    background: var(--smrt-color-primary);
-    box-shadow: 0 0 0 2px color-mix(in srgb, var(--smrt-color-primary) 25%, transparent);
     pointer-events: none;
   }
-
-  .image-control-popover :global(.editor-popover-button:hover),
-  .image-control-popover :global(.editor-popover-button.editor-popover-button--active) {
-    background: var(--smrt-color-surface-container);
-    color: var(--smrt-color-primary);
-  }
-
-  .image-control-divider {
+  .smrt-content-body-editor__image-control-divider {
     width: 1px;
     height: 1.15rem;
     margin: 0 0.15rem;
-    background: var(--smrt-color-outline-variant);
   }
-
-  .image-resize-handle {
+  .smrt-content-body-editor__image-resize-handle {
     position: absolute;
     z-index: 21;
     width: 1.45rem;
     height: 1.45rem;
+    cursor: nwse-resize;
+  }
+}
+
+@layer smrt.theme {
+  .smrt-content-body-editor__root {
+    border: var(--smrt-hairline);
+    border-radius: 0.85rem;
+    background: var(--smrt-color-surface);
+  }
+  .smrt-content-body-editor__toolbar {
+    border-bottom: var(--smrt-hairline);
+    background: var(--smrt-color-surface-container-low, var(--smrt-color-surface-container));
+  }
+  /* Icon buttons are a fixed square. smrt-ui's `size="sm"` padding
+  (0.5rem 0.75rem) would leave a 2rem button ~6px of content width, which
+  squeezed the SVG icons (list, image) far below the text glyphs (B, I, H2).
+  Zero the padding and never let an icon shrink: every toolbar glyph renders
+  at the same --smrt-content-editor-icon-size. */
+  .smrt-content-body-editor__toolbar :global(.editor-toolbar-button) {
+    border: 1px solid transparent;
+    border-radius: 0.45rem;
+    background: transparent;
+    color: var(--smrt-color-on-surface);
+  }
+  .smrt-content-body-editor__toolbar :global(.editor-toolbar-button[aria-expanded='true']) {
+    border-color: var(--smrt-color-primary);
+    background: var(--smrt-color-primary-container, var(--smrt-color-surface-container));
+    color: var(--smrt-color-on-primary-container, var(--smrt-color-primary));
+  }
+  .smrt-content-body-editor__toolbar :global(.editor-toolbar-button:hover) {
+    border-color: var(--smrt-hairline-color);
+    background: var(--smrt-color-surface-container);
+  }
+  /* The image panel sits between the toolbar and the text so it opens above
+  the story rather than below it. Full width, in the page flow (no modal),
+  so it works the same on a phone. */
+  .smrt-content-body-editor__image-panel {
+    border-bottom: var(--smrt-hairline);
+    background: var(--smrt-color-surface-container-lowest, var(--smrt-color-surface));
+  }
+  .smrt-content-body-editor__image-panel:focus-visible {
+    outline: 2px solid var(--smrt-color-primary);
+    outline-offset: -2px;
+  }
+  .smrt-content-body-editor__format-select {
+    font-size: var(--smrt-typography-label-medium-size, 0.78rem);
+    color: var(--smrt-color-on-surface-variant);
+  }
+  .smrt-content-body-editor__format-select :global([data-smrt-component="Select"]) {
+    border: var(--smrt-hairline);
+    border-radius: 0.45rem;
+    background: var(--smrt-color-surface);
+    color: var(--smrt-color-on-surface);
+  }
+  .smrt-content-body-editor__surface {
+    outline: none;
+    color: var(--smrt-color-on-surface);
+    font-size: var(--smrt-typography-body-large-size, 1.05rem);
+    line-height: var(--smrt-typography-body-large-line-height, 1.65);
+  }
+  .smrt-content-body-editor__surface:empty::before {
+    color: var(--smrt-color-on-surface-variant);
+  }
+  .smrt-content-body-editor__surface--dragging {
+    box-shadow: inset 0 0 0 2px var(--smrt-color-primary);
+    background: color-mix(in srgb, var(--smrt-color-primary) 6%, var(--smrt-color-surface));
+  }
+  .smrt-content-body-editor__surface :global(h1),
+  .smrt-content-body-editor__surface :global(h2),
+  .smrt-content-body-editor__surface :global(h3) {
+    line-height: 1.2;
+  }
+  .smrt-content-body-editor__surface :global(img) {
+    border-radius: 0.55rem;
+  }
+  .smrt-content-body-editor__surface :global(img[data-smrt-selected='true']) {
+    outline: 3px solid var(--smrt-color-primary);
+    outline-offset: 3px;
+  }
+  .smrt-content-body-editor__surface :global([data-smrt-moving='true']),
+  .smrt-content-body-editor__surface :global([data-smrt-resizing='true']) {
+    opacity: 0.78;
+  }
+  .smrt-content-body-editor__image-change-badge {
+    border: var(--smrt-hairline);
+    border-radius: var(--smrt-radius-full);
+    background: color-mix(in srgb, var(--smrt-color-surface) 94%, transparent);
+    color: var(--smrt-color-primary);
+    box-shadow: var(--smrt-elevation-3, 0 0.4rem 1rem color-mix(in srgb, var(--smrt-color-shadow) 20%, transparent));
+  }
+  .smrt-content-body-editor__image-change-badge:hover,
+  .smrt-content-body-editor__image-change-badge:focus-visible {
+    background: var(--smrt-color-primary-container);
+  }
+  .smrt-content-body-editor__image-control-popover :global(.editor-popover-button.editor-popover-button--change) {
+    color: var(--smrt-color-primary);
+    font-weight: var(--smrt-typography-weight-semibold, 600);
+  }
+  .smrt-content-body-editor__image-control-popover {
+    border: var(--smrt-hairline);
+    border-radius: var(--smrt-radius-full);
+    background: color-mix(in srgb, var(--smrt-color-surface) 96%, transparent);
+    color: var(--smrt-color-on-surface);
+    box-shadow: var(--smrt-elevation-5, 0 0.75rem 1.75rem color-mix(in srgb, var(--smrt-color-shadow) 18%, transparent));
+    backdrop-filter: blur(10px);
+  }
+  .smrt-content-body-editor__image-control-popover :global(.editor-popover-button),
+  .smrt-content-body-editor__image-resize-handle {
+    border: 0;
+    background: transparent;
+    color: inherit;
+  }
+  .smrt-content-body-editor__image-control-popover :global(.editor-popover-button) {
+    border-radius: var(--smrt-radius-full);
+  }
+  .smrt-content-body-editor__image-control-popover :global(.editor-popover-button:disabled) {
+    opacity: 0.4;
+  }
+  .smrt-content-body-editor__drop-indicator {
+    border-radius: var(--smrt-radius-sm);
+    background: var(--smrt-color-primary);
+    box-shadow: 0 0 0 2px color-mix(in srgb, var(--smrt-color-primary) 25%, transparent);
+  }
+  .smrt-content-body-editor__image-control-popover :global(.editor-popover-button:hover),
+  .smrt-content-body-editor__image-control-popover :global(.editor-popover-button.editor-popover-button--active) {
+    background: var(--smrt-color-surface-container);
+    color: var(--smrt-color-primary);
+  }
+  .smrt-content-body-editor__image-control-divider {
+    background: var(--smrt-color-outline-variant);
+  }
+  .smrt-content-body-editor__image-resize-handle {
     border: var(--smrt-hairline);
     border-radius: var(--smrt-radius-full);
     background: var(--smrt-color-surface);
     box-shadow: var(--smrt-elevation-4, 0 0.45rem 1rem color-mix(in srgb, var(--smrt-color-shadow) 18%, transparent));
-    cursor: nwse-resize;
   }
-
-  .image-resize-handle:hover {
+  .smrt-content-body-editor__image-resize-handle:hover {
     color: var(--smrt-color-primary);
   }
 }
+
 </style>

@@ -391,6 +391,71 @@ export function getClassByConstructor(
 }
 
 /**
+ * Replacement index: registry key a constructor was registered under → the
+ * live entry whose `replacedQualifiedNames` names that key and whose
+ * constructor extends it. Derived once per registry generation (#3047, #4921),
+ * never per row.
+ */
+let replacementIndex:
+  | {
+      generation: number;
+      classes: Map<string, RegisteredClass>;
+      byKey: Map<string, RegisteredClass[]>;
+    }
+  | undefined;
+
+function getReplacementIndex(): Map<string, RegisteredClass[]> {
+  const classes = getClasses();
+  const generation = getRegistryGeneration();
+  if (
+    replacementIndex &&
+    replacementIndex.generation === generation &&
+    replacementIndex.classes === classes
+  ) {
+    return replacementIndex.byKey;
+  }
+  const byKey = new Map<string, RegisteredClass[]>();
+  for (const entry of classes.values()) {
+    for (const replaced of entry.replacedQualifiedNames ?? []) {
+      const bucket = byKey.get(replaced);
+      if (bucket) {
+        if (!bucket.includes(entry)) bucket.push(entry);
+      } else {
+        byKey.set(replaced, [entry]);
+      }
+    }
+  }
+  replacementIndex = { generation, classes, byKey };
+  return byKey;
+}
+
+/**
+ * Resolve the same-named subclass that replaced `ctor`'s registry entry
+ * (#4921), or undefined.
+ *
+ * A registered class loses its entry when an app class declares the same
+ * simple name and extends it (the `sti-child-wins` collision policy). The
+ * constructor index keeps the old key, so the replacing entry is the one
+ * whose `replacedQualifiedNames` lists that key AND whose constructor
+ * extends `ctor`. Never resolves by simple name — `Account` exists in two
+ * packages. Callers check {@link getClassByConstructor} first; this returns
+ * undefined while `ctor` still has a live entry or was never registered.
+ */
+export function getReplacementClassByConstructor(
+  ctor: SmrtObjectConstructor,
+): RegisteredClass | undefined {
+  const registeredKey = getConstructorIndex().get(ctor);
+  if (!registeredKey || getClasses().has(registeredKey)) return undefined;
+  return getReplacementIndex()
+    .get(registeredKey)
+    ?.find(
+      (candidate) =>
+        candidate.constructor !== ctor &&
+        candidate.constructor.prototype instanceof ctor,
+    );
+}
+
+/**
  * Get a registered class by its qualified name (O(1) direct lookup).
  *
  * A deprecated qualified name declared in a class's `previousQualifiedNames`

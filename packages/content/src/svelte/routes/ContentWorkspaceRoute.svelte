@@ -163,17 +163,17 @@ function closeForms() {
 }
 </script>
 
-<div class:workspace-shell={true} class:workspace-shell--embedded={embedded} data-smrt-component="ContentWorkspaceRoute">
-  <header class="workspace-header">
-    <div class="workspace-header__copy">
-      <div class="eyebrow">{t(M['content.workspace.eyebrow'])}</div>
+<div class="smrt-content-workspace-route__root" class:smrt-content-workspace-route__root--embedded={embedded} data-smrt-component="ContentWorkspaceRoute">
+  <header class="smrt-content-workspace-route__header" data-smrt-part="header">
+    <div class="smrt-content-workspace-route__copy" data-smrt-part="body">
+      <div class="smrt-content-workspace-route__eyebrow" data-smrt-part="label">{t(M['content.workspace.eyebrow'])}</div>
       <h1>{t(M['content.workspace.heading'])}</h1>
       <p>
         {t(M['content.workspace.intro'])}
       </p>
     </div>
 
-    <nav class="workspace-nav" aria-label={t(M['content.workspace.nav_aria'])}>
+    <nav class="smrt-content-workspace-route__nav" data-smrt-part="nav" aria-label={t(M['content.workspace.nav_aria'])}>
       {#each navigation as item (item.routeId)}
         <a
           href={item.href}
@@ -187,29 +187,29 @@ function closeForms() {
     </nav>
   </header>
 
-  <main class="workspace-main">
-    <section class="callout-grid">
-      <article class="callout-card">
+  <main class="smrt-content-workspace-route__main" data-smrt-part="body">
+    <section class="smrt-content-workspace-route__callout-grid" data-smrt-part="grid">
+      <article class="smrt-content-workspace-route__callout-card" data-smrt-part="status">
         <strong>{stats.total}</strong>
         <span>{t(M['content.workspace.stat_total'])}</span>
       </article>
-      <article class="callout-card">
+      <article class="smrt-content-workspace-route__callout-card" data-smrt-part="status">
         <strong>{stats.published}</strong>
         <span>{t(M['content.workspace.stat_published'])}</span>
       </article>
     </section>
 
     {#if loading}
-      <section class="panel">
+      <section class="smrt-content-workspace-route__panel" data-smrt-part="panel">
         <p>{t(M['content.workspace.loading'])}</p>
       </section>
     {:else if error}
-      <section class="panel panel--error">
+      <section class="smrt-content-workspace-route__panel smrt-content-workspace-route__panel--error" data-smrt-part="panel">
         <p><strong>Error:</strong> {error}</p>
         <Button variant="secondary" type="button" onclick={loadContents}>{t(M['content.workspace.try_again'])}</Button>
       </section>
     {:else if showAddForm || editingContent}
-      <section class="panel">
+      <section class="smrt-content-workspace-route__panel" data-smrt-part="panel">
         {#if editorMode === 'governed'}
           <GovernedContentEditor
             {apiBaseUrl}
@@ -234,7 +234,7 @@ function closeForms() {
         {/if}
       </section>
     {:else}
-      <section class="panel">
+      <section class="smrt-content-workspace-route__panel" data-smrt-part="panel">
         <ContentList
           {apiBaseUrl}
           {contents}
@@ -245,7 +245,7 @@ function closeForms() {
           onAdd={handleAddContent}
         >
           {#snippet controls()}
-            <div class="workspace-controls">
+            <div class="smrt-content-workspace-route__controls" data-smrt-part="actions">
               <Button
                 variant="ghost"
                 type="button"
@@ -254,7 +254,7 @@ function closeForms() {
               >
                 {t(M['content.workspace.create_governed'])}
               </Button>
-              <a class="inline-link" href={governanceHref}>
+              <a class="smrt-content-workspace-route__inline-link" data-smrt-part="action" href={governanceHref}>
                 {t(M['content.workspace.review_governance'])}
               </a>
             </div>
@@ -267,9 +267,89 @@ function closeForms() {
 
 <style>
 @layer smrt.reset, smrt.structure, smrt.theme;
-@layer smrt.theme {
-  :global(body:has(.workspace-shell:not(.workspace-shell--embedded))) {
+@layer smrt.structure {
+  :global(body:has(.smrt-content-workspace-route__root:not(.smrt-content-workspace-route__root--embedded))) {
     margin: 0;
+    min-height: 100vh;
+  }
+  .smrt-content-workspace-route__root {
+    min-height: 100vh;
+    padding: 2rem 1.25rem 3rem;
+    display: grid;
+    gap: 1.5rem;
+    max-width: 1280px;
+    margin: 0 auto;
+  }
+  .smrt-content-workspace-route__root--embedded {
+    min-height: auto;
+    padding: 0;
+    max-width: none;
+  }
+  .smrt-content-workspace-route__header {
+    display: flex;
+    justify-content: space-between;
+    gap: 1rem;
+    align-items: flex-start;
+    flex-wrap: wrap;
+  }
+  .smrt-content-workspace-route__copy {
+    max-width: 44rem;
+  }
+  .smrt-content-workspace-route__header h1 {
+    margin: 0.35rem 0 0.65rem;
+  }
+  .smrt-content-workspace-route__header p {
+    margin: 0;
+    max-width: 38rem;
+  }
+  .smrt-content-workspace-route__nav {
+    display: flex;
+    gap: 0.75rem;
+    flex-wrap: wrap;
+    align-items: center;
+  }
+  .smrt-content-workspace-route__nav a {
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    min-height: 2.5rem;
+    padding: 0 1rem;
+  }
+  .smrt-content-workspace-route__main {
+    display: grid;
+    gap: 1rem;
+  }
+  .smrt-content-workspace-route__callout-grid {
+    display: grid;
+    gap: 1rem;
+    grid-template-columns: repeat(auto-fit, minmax(180px, 1fr));
+  }
+  .smrt-content-workspace-route__callout-card {
+    padding: 1rem 1.1rem;
+    display: grid;
+    gap: 0.3rem;
+  }
+  .smrt-content-workspace-route__panel {
+    padding: 1rem;
+  }
+  .smrt-content-workspace-route__panel--error {
+    display: grid;
+    gap: 0.75rem;
+  }
+  .smrt-content-workspace-route__controls {
+    display: flex;
+    flex-wrap: wrap;
+    align-items: center;
+    gap: 0.75rem;
+  }
+  .smrt-content-workspace-route__controls :global(.secondary-action) {
+    padding: 0.65rem 0.95rem;
+    cursor: pointer;
+  }
+}
+
+@layer smrt.theme {
+  :global(body:has(.smrt-content-workspace-route__root:not(.smrt-content-workspace-route__root--embedded))) {
     font-family:
       var(--smrt-font-family, 'Inter', -apple-system, BlinkMacSystemFont,
       'Segoe UI', Roboto, sans-serif);
@@ -281,69 +361,22 @@ function closeForms() {
       ),
       var(--smrt-color-background);
     color: var(--smrt-color-on-background);
-    min-height: 100vh;
   }
-
-  .workspace-shell {
-    min-height: 100vh;
-    padding: 2rem 1.25rem 3rem;
-    display: grid;
-    gap: 1.5rem;
-    max-width: 1280px;
-    margin: 0 auto;
-  }
-
-  .workspace-shell--embedded {
-    min-height: auto;
-    padding: 0;
-    max-width: none;
-  }
-
-  .workspace-header {
-    display: flex;
-    justify-content: space-between;
-    gap: 1rem;
-    align-items: flex-start;
-    flex-wrap: wrap;
-  }
-
-  .workspace-header__copy {
-    max-width: 44rem;
-  }
-
-  .eyebrow {
+  .smrt-content-workspace-route__eyebrow {
     color: var(--smrt-color-on-surface-variant);
     text-transform: uppercase;
     letter-spacing: var(--smrt-typography-label-medium-tracking, 0.08em);
     font-size: var(--smrt-typography-label-medium-size, 0.78rem);
     font-weight: var(--smrt-typography-weight-bold, 700);
   }
-
-  .workspace-header h1 {
-    margin: 0.35rem 0 0.65rem;
+  .smrt-content-workspace-route__header h1 {
     font-size: clamp(2rem, 5vw, 3rem);
     line-height: 1.05;
   }
-
-  .workspace-header p {
-    margin: 0;
+  .smrt-content-workspace-route__header p {
     color: var(--smrt-color-on-surface-variant);
-    max-width: 38rem;
   }
-
-  .workspace-nav {
-    display: flex;
-    gap: 0.75rem;
-    flex-wrap: wrap;
-    align-items: center;
-  }
-
-  .workspace-nav a {
-    display: inline-flex;
-    align-items: center;
-    justify-content: center;
-    min-height: 2.5rem;
-    padding: 0 1rem;
+  .smrt-content-workspace-route__nav a {
     border-radius: var(--smrt-radius-full);
     border: var(--smrt-hairline);
     background: color-mix(
@@ -355,8 +388,7 @@ function closeForms() {
     text-decoration: none;
     font-weight: var(--smrt-typography-weight-semibold, 600);
   }
-
-  .workspace-nav a[aria-current='page'] {
+  .smrt-content-workspace-route__nav a[aria-current='page'] {
     color: var(--smrt-color-primary);
     border-color: color-mix(
       in srgb,
@@ -369,20 +401,8 @@ function closeForms() {
       var(--smrt-color-surface)
     );
   }
-
-  .workspace-main {
-    display: grid;
-    gap: 1rem;
-  }
-
-  .callout-grid {
-    display: grid;
-    gap: 1rem;
-    grid-template-columns: repeat(auto-fit, minmax(180px, 1fr));
-  }
-
-  .callout-card,
-  .panel {
+  .smrt-content-workspace-route__callout-card,
+  .smrt-content-workspace-route__panel {
     border: var(--smrt-hairline);
     background: color-mix(
       in srgb,
@@ -392,38 +412,13 @@ function closeForms() {
     box-shadow: var(--smrt-elevation-1, 0 8px 24px rgba(15, 23, 42, 0.05));
     border-radius: 1rem;
   }
-
-  .callout-card {
-    padding: 1rem 1.1rem;
-    display: grid;
-    gap: 0.3rem;
-  }
-
-  .callout-card strong {
+  .smrt-content-workspace-route__callout-card strong {
     font-size: var(--smrt-typography-headline-medium-size, 1.8rem);
   }
-
-  .callout-card span {
+  .smrt-content-workspace-route__callout-card span {
     color: var(--smrt-color-on-surface-variant);
   }
-
-  .panel {
-    padding: 1rem;
-  }
-
-  .panel--error {
-    display: grid;
-    gap: 0.75rem;
-  }
-
-  .workspace-controls {
-    display: flex;
-    flex-wrap: wrap;
-    align-items: center;
-    gap: 0.75rem;
-  }
-
-  .workspace-controls :global(.secondary-action) {
+  .smrt-content-workspace-route__controls :global(.secondary-action) {
     border: 1px solid color-mix(
       in srgb,
       var(--smrt-color-primary) 30%,
@@ -431,21 +426,18 @@ function closeForms() {
     );
     background: transparent;
     color: var(--smrt-color-primary);
-    padding: 0.65rem 0.95rem;
     border-radius: var(--smrt-radius-full);
     font-weight: var(--smrt-typography-weight-semibold, 600);
-    cursor: pointer;
   }
-
-  .inline-link {
+  .smrt-content-workspace-route__inline-link {
     color: var(--smrt-color-primary);
     text-decoration: none;
     font-weight: var(--smrt-typography-weight-semibold, 600);
   }
-
-  .inline-link:hover,
-  .workspace-nav a:hover {
+  .smrt-content-workspace-route__inline-link:hover,
+  .smrt-content-workspace-route__nav a:hover {
     text-decoration: underline;
   }
 }
+
 </style>

@@ -40,45 +40,46 @@ const formattedValue = $derived(
 const unit = $derived(format === 'hhmm' ? '' : 'h');
 </script>
 
-<span class="duration" class:sm={size === 'sm'} class:lg={size === 'lg'} data-smrt-component="DurationDisplay">
-  <span class="value">{formattedValue}</span>
+<span class="smrt-duration-display__root" class:smrt-duration-display__sm={size === 'sm'} class:smrt-duration-display__lg={size === 'lg'} data-smrt-component="DurationDisplay">
+  <span class="smrt-duration-display__value" data-smrt-part="value">{formattedValue}</span>
   {#if showLabel && unit}
-    <span class="unit">{unit}</span>
+    <span class="smrt-duration-display__unit" data-smrt-part="unit">{unit}</span>
   {/if}
 </span>
 
 <style>
 @layer smrt.reset, smrt.structure, smrt.theme;
-@layer smrt.theme {
-  .duration {
+@layer smrt.structure {
+  .smrt-duration-display__root {
     display: inline-flex;
     align-items: baseline;
     gap: 0.125rem;
+  }
+}
+
+@layer smrt.theme {
+  .smrt-duration-display__root {
     font-variant-numeric: tabular-nums;
     font-size: var(--smrt-typography-body-large-size, 1rem);
   }
-
-  .value {
+  .smrt-duration-display__value {
     font-weight: var(--smrt-typography-title-medium-weight, 500);
     color: var(--smrt-color-on-surface);
   }
-
-  .unit {
+  .smrt-duration-display__unit {
     font-weight: var(--smrt-typography-body-medium-weight, 400);
     color: var(--smrt-color-on-surface-variant);
   }
-
   /* Size variants */
-  .duration.sm {
+  .smrt-duration-display__root.smrt-duration-display__sm {
     font-size: var(--smrt-typography-body-medium-size, 0.875rem);
   }
-
-  .duration.sm .value {
+  .smrt-duration-display__root.smrt-duration-display__sm .smrt-duration-display__value {
     font-weight: var(--smrt-typography-body-medium-weight, 400);
   }
-
-  .duration.lg {
+  .smrt-duration-display__root.smrt-duration-display__lg {
     font-size: var(--smrt-typography-headline-small-size, 1.5rem);
   }
 }
+
 </style>

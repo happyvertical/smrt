@@ -166,7 +166,7 @@ const title = $derived(
 );
 </script>
 
-<section class="quote-editor" aria-label={title} data-smrt-component="QuoteEditor">
+<section class="smrt-quote-editor__root" aria-label={title} data-smrt-component="QuoteEditor">
   <h2>{title}</h2>
   <p>{t(Q[kind === 'vendor-quotation' ? 'commerce.quote.vendor_hint' : 'commerce.quote.estimate_hint'])}</p>
   {#if money}<p>{t(Q['commerce.quote.money_amounts_are'], { amountType: lineAmountTypeText(money.lineAmountType) })}</p>{#if money.lineAmountType === 'inclusive' && money.taxMinor !== 0}<p>{t(Q['commerce.quote.money_includes_tax'], { amount: quoteMinorText({currency: values.currency, minorUnitDigits: money.minorUnitDigits, amountMinor: money.taxMinor}) })}</p>{/if}{/if}
@@ -177,7 +177,7 @@ const title = $derived(
     {#if money}<Input type="hidden" name={moneyFieldName} value={money.lineAmountType} />{/if}
     <fieldset disabled={readonly || busy}>
       <legend>{title}</legend>
-      {#if !readonly}<div class="actions"><Button type="submit" name={intents.name} value={intents.save} density="touch">{labels.save ?? t(Q['commerce.quote.save'])}</Button></div>{/if}
+      {#if !readonly}<div class="smrt-quote-editor__actions" data-smrt-part="actions"><Button type="submit" name={intents.name} value={intents.save} density="touch">{labels.save ?? t(Q['commerce.quote.save'])}</Button></div>{/if}
       <FormGroup label={labels.counterparty ?? t(Q[kind === 'vendor-quotation' ? 'commerce.quote.vendor_party' : 'commerce.quote.customer_party'])} error={errors.counterpartyId} required>
         <Select name={fields.counterpartyId} value={values.counterpartyId} required density="touch">
           <option value="">{t(Q['commerce.quote.choose'])}</option>
@@ -216,7 +216,7 @@ const title = $derived(
     {#if cancelHref}<Button href={cancelHref} variant="secondary" density="touch">{t(Q['commerce.quote.cancel'])}</Button>{/if}
   </Form>
   {#if attachments}
-    <fieldset class="editor-attachments" disabled={readonly || busy}>
+    <fieldset class="smrt-quote-editor__attachments" data-smrt-part="group" disabled={readonly || busy}>
       {@render attachments()}
     </fieldset>
   {/if}
@@ -224,10 +224,38 @@ const title = $derived(
 
 <style>
 @layer smrt.reset, smrt.structure, smrt.theme;
-@layer smrt.theme {
-.editor-attachments { min-width: 0; margin: 0; padding: 0; border: 0; }
-.quote-editor { max-width: 48rem; min-width: 0; color: var(--smrt-color-on-surface); overflow-wrap: anywhere; }
-fieldset { min-width: 0; margin-block: var(--smrt-spacing-4, 1rem); padding: var(--smrt-spacing-4, 1rem); border: var(--smrt-hairline); border-radius: var(--smrt-radius-md, 0.5rem); }
-.actions { margin-top: var(--smrt-spacing-4, 1rem); }
+@layer smrt.structure {
+  .smrt-quote-editor__attachments {
+    min-width: 0;
+    margin: 0;
+    padding: 0;
+  }
+  .smrt-quote-editor__root {
+    max-width: 48rem;
+    min-width: 0;
+    overflow-wrap: anywhere;
+  }
+  fieldset {
+    min-width: 0;
+    margin-block: var(--smrt-spacing-4, 1rem);
+    padding: var(--smrt-spacing-4, 1rem);
+  }
+  .smrt-quote-editor__actions {
+    margin-top: var(--smrt-spacing-4, 1rem);
+  }
 }
+
+@layer smrt.theme {
+  .smrt-quote-editor__attachments {
+    border: 0;
+  }
+  .smrt-quote-editor__root {
+    color: var(--smrt-color-on-surface);
+  }
+  fieldset {
+    border: var(--smrt-hairline);
+    border-radius: var(--smrt-radius-md, 0.5rem);
+  }
+}
+
 </style>

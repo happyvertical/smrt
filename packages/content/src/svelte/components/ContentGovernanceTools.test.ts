@@ -437,7 +437,7 @@ describe('ContentVersionsTool component', () => {
     const dialog = target.querySelector('dialog');
     expect(dialog).not.toBeNull();
     const confirmButton = dialog?.querySelector(
-      'button.btn-filled',
+      'button[data-smrt-part="confirm"]',
     ) as HTMLButtonElement;
     expect(confirmButton).toBeTruthy();
     confirmButton.dispatchEvent(new MouseEvent('click', { bubbles: true }));

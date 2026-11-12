@@ -1,6 +1,6 @@
 {
   "name": "@happyvertical/smrt-svelte",
-  "version": "0.60.16",
+  "version": "0.60.17",
   "smrtJsdoc": "strict",
   "description": "Svelte 5 components for SMRT user management - auth, users, tenants, roles, permissions, groups",
   "type": "module",
@@ -14,6 +14,11 @@
       "svelte": "./dist/index.js",
       "import": "./dist/index.js",
       "default": "./dist/index.js"
+    },
+    "./playground": {
+      "types": "./dist/svelte/playground.d.ts",
+      "svelte": "./dist/svelte/playground.js",
+      "import": "./dist/svelte/playground.js"
     },
     "./forms": {
       "types": "./dist/components/forms/index.d.ts",

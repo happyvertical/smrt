@@ -96,8 +96,8 @@ export interface PortabilityContext {
   path?: string;
   /**
    * Encrypted export (#4797): receives the serialized bundle and the new
-   * destination, writes an encrypted snapshot there (never plaintext), and
-   * returns secret-free details for the result.
+   * destination, owns parent creation and encrypted publication there (never
+   * plaintext), and returns secret-free details for the result.
    */
   sealBundle?: (
     bundle: Buffer,
@@ -388,7 +388,6 @@ export async function exportApplication(
       ),
     label: 'Export destination',
   });
-  mkdirSync(dirname(outputPath), { recursive: true, mode: 0o700 });
   const temporaryPath = join(
     dirname(outputPath),
     `.${basename(outputPath)}.${process.pid}.${randomBytes(8).toString('hex')}.tmp`,
@@ -414,6 +413,7 @@ export async function exportApplication(
       bytes.fill(0);
     }
   }
+  mkdirSync(dirname(outputPath), { recursive: true, mode: 0o700 });
   try {
     writeFileSync(temporaryPath, serialized, { flag: 'wx', mode: 0o600 });
     // A same-filesystem hard link publishes the complete mode-0600 inode

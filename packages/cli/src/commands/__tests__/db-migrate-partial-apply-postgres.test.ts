@@ -357,9 +357,9 @@ describePostgres(
 
     it('--null-orphans refuses when the manifest says nullable but the live column is still NOT NULL, and an unrelated index still applies under --apply-unblocked (review, #2748)', async () => {
       // Drift case the reviewer flagged: the manifest was relaxed to
-      // nullable but the live column has not been altered yet (the same
-      // drift --relax-columns handles for plain columns). Nullability
-      // eligibility for --null-orphans must follow the LIVE column, not
+      // nullable but the live column has not been altered yet (PostgreSQL
+      // now drops that NOT NULL by default, #4897, but only in the same batch
+      // that runs after planning). Nullability eligibility for --null-orphans must follow the LIVE column, not
       // just the manifest — otherwise PostgreSQL rejects the UPDATE
       // outright and the whole atomic batch (including the unrelated
       // index) rolls back.

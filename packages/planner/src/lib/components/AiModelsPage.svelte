@@ -12,29 +12,31 @@ interface AiModelsPageProps {
 let { backHref }: AiModelsPageProps = $props();
 </script>
 
-<div class="ai-page">
-  <p class="meta"><a href={backHref}>Planner</a> / AI models</p>
+<div class="smrt-ai-models-page__root" data-smrt-component="AiModelsPage">
+  <p class="smrt-ai-models-page__meta" data-smrt-part="meta"><a href={backHref}>Planner</a> / AI models</p>
   <h1>Set up your assistant</h1>
-  <p class="privacy">{aiState.privacyNote}</p>
+  <p class="smrt-ai-models-page__privacy" data-smrt-part="description">{aiState.privacyNote}</p>
   <AiSetup />
 </div>
 
 <style>
 @layer smrt.reset, smrt.structure, smrt.theme;
-@layer smrt.theme {
-  .ai-page {
+@layer smrt.structure {
+  .smrt-ai-models-page__root {
     display: grid;
     gap: var(--smrt-spacing-4);
   }
-
   h1,
   p {
     margin: 0;
   }
+}
 
-  .meta,
-  .privacy {
+@layer smrt.theme {
+  .smrt-ai-models-page__meta,
+  .smrt-ai-models-page__privacy {
     color: var(--smrt-color-on-surface-variant);
   }
 }
+
 </style>

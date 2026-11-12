@@ -1,6 +1,9 @@
 import assert from 'node:assert/strict';
 import { test } from 'node:test';
-import { rootsOf } from './component-roots.mjs';
+import { mkdirSync, mkdtempSync, rmSync, writeFileSync } from 'node:fs';
+import { tmpdir } from 'node:os';
+import { join } from 'node:path';
+import { checkAll, exportedComponents, rootsOf } from './component-roots.mjs';
 
 const tags = (source) => rootsOf(source).map((el) => el.name ?? 'svelte:element');
 
@@ -42,4 +45,31 @@ test('a wrapper whose only child is a component has no root element', () => {
 
 test('distinct elements in both branches are each a root', () => {
   assert.deepEqual(tags('{#if a}<i></i>{:else}<i></i>{/if}'), ['i', 'i']);
+});
+
+// Model a fresh generator output without relying on ignored build artifacts.
+test('real generated exports fail closed until their output carries the hook', (t) => {
+  const root = mkdtempSync(join(tmpdir(), 'smrt-roots-'));
+  t.after(() => rmSync(root, { recursive: true, force: true }));
+  const pkg = join(root, 'packages', 'fixture');
+  mkdirSync(join(pkg, 'src'), { recursive: true });
+  writeFileSync(join(pkg, 'package.json'), JSON.stringify({ exports: { '.': './dist/index.js', './direct': './dist/Direct.svelte' } }));
+  writeFileSync(join(pkg, 'src/index.ts'), `
+    // export { default } from './Commented.svelte';
+    /** export { default } from './Example.svelte'; */
+    const example = "export { default } from './String.svelte'";
+    export { default as Generated } from './Generated.svelte';
+    export { store } from './product-store.svelte';
+    import Aliased from './Aliased.svelte';
+    export { Aliased as PublicName };
+  `);
+  writeFileSync(join(pkg, 'src/product-store.svelte.ts'), 'export const store = $state({});');
+  writeFileSync(join(pkg, 'src/Aliased.svelte'), '<div data-smrt-component="Aliased"></div>');
+  writeFileSync(join(pkg, 'src/Direct.svelte'), '<div data-smrt-component="Direct"></div>');
+  assert.deepEqual([...exportedComponents(root).values()].sort(), ['Aliased', 'Direct', 'Generated']);
+  assert.match(checkAll(root).find((r) => r.name === 'Generated').problems[0], /source is missing/);
+  writeFileSync(join(pkg, 'src/Generated.svelte'), '{#if ready}<div></div>{:else}<p></p>{/if}');
+  assert.equal(checkAll(root).find((r) => r.name === 'Generated').problems.length, 2);
+  writeFileSync(join(pkg, 'src/Generated.svelte'), '{#if ready}<div data-smrt-component="Generated"></div>{:else}<p data-smrt-component="Generated"></p>{/if}');
+  assert.ok(checkAll(root).every((r) => r.problems.length === 0));
 });

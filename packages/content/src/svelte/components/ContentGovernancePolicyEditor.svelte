@@ -46,7 +46,7 @@ function handleSubmit() {
 }
 </script>
 
-<div class="governance-editor-shell" data-smrt-component="ContentGovernancePolicyEditor">
+<div class="smrt-content-governance-policy-editor__root" data-smrt-component="ContentGovernancePolicyEditor">
   <Form class="governance-editor" onsubmit={(event) => {
     event.preventDefault();
     handleSubmit();
@@ -71,12 +71,12 @@ function handleSubmit() {
       Instructions
       <Textarea rows={4} bind:value={draft.instructions}></Textarea>
     </label>
-    <label class="checkbox">
+    <label class="smrt-content-governance-policy-editor__checkbox" data-smrt-part="field">
       <!-- raw-primitive-allow: native checkbox; no Provider-free checkbox primitive (Toggle is a switch with different semantics, CheckboxInput requires a Provider) -->
       <input type="checkbox" bind:checked={draft.enabled} />
       Enabled
     </label>
-    <div class="actions">
+    <div class="smrt-content-governance-policy-editor__actions" data-smrt-part="actions">
       <Button variant="primary" type="submit">{t(M['content.governance_policy_editor.save_policy'])}</Button>
       {#if onCancel}
         <Button variant="secondary" type="button" onclick={() => onCancel?.()}>
@@ -89,27 +89,30 @@ function handleSubmit() {
 
 <style>
 @layer smrt.reset, smrt.structure, smrt.theme;
-@layer smrt.theme {
-  .governance-editor-shell :global(.governance-editor) {
+@layer smrt.structure {
+  .smrt-content-governance-policy-editor__root :global(.governance-editor) {
     display: grid;
     gap: 0.75rem;
   }
-
   label {
     display: grid;
     gap: 0.35rem;
-    font-size: var(--smrt-typography-label-large-size, 0.9rem);
   }
-
-  .checkbox {
+  .smrt-content-governance-policy-editor__checkbox {
     display: flex;
     align-items: center;
     gap: 0.5rem;
   }
-
-  .actions {
+  .smrt-content-governance-policy-editor__actions {
     display: flex;
     gap: 0.75rem;
   }
 }
+
+@layer smrt.theme {
+  label {
+    font-size: var(--smrt-typography-label-large-size, 0.9rem);
+  }
+}
+
 </style>

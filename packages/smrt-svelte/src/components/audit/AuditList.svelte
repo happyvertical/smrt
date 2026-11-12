@@ -82,7 +82,7 @@ function apply() {
 
 <section aria-label={t(M['ui.audit.list'])} data-smrt-component="AuditList">
   {#if showFilters}
-    <Form onsubmit={apply} class="smrt-audit-filters">
+    <Form onsubmit={apply} class="smrt-audit-list__filters">
       <FormGroup label={t(M['ui.audit.person'])}><Input bind:value={profileId} /></FormGroup>
       <FormGroup label={t(M['ui.audit.record'])}><Input bind:value={resourceId} /></FormGroup>
       <FormGroup label={t(M['ui.audit.from'])}><Input type="date" bind:value={from} max={to || undefined} /></FormGroup>
@@ -104,7 +104,16 @@ function apply() {
 
 <style>
 @layer smrt.reset, smrt.structure, smrt.theme;
-@layer smrt.theme {
-  .smrt-audit-filters { display: flex; flex-wrap: wrap; gap: var(--smrt-spacing-3); align-items: end; }
+@layer smrt.structure {
+  .smrt-audit-list__filters {
+    display: flex;
+    flex-wrap: wrap;
+    gap: var(--smrt-spacing-3);
+    align-items: end;
+  }
 }
+
+@layer smrt.theme {
+}
+
 </style>

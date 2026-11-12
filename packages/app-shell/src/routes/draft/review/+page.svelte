@@ -103,13 +103,13 @@ onMount(() => {
 </script>
 
 <svelte:head><title>Review and publish</title></svelte:head>
-<div class="sh-page">
-  <header class="sh-head"><h1>Review and publish{name ? `: ${name}` : ''}</h1></header>
+<div class="smrt-app-shell__page">
+  <header class="smrt-app-shell__head"><h1>Review and publish{name ? `: ${name}` : ''}</h1></header>
   {#if !data.description?.draft}
     <p>No draft is open.</p>
     <Button href="/" variant="secondary">Back to app</Button>
   {:else}
-    {#if error}<p class="sh-alert sh-alert-error" role="alert">{error}</p>{/if}
+    {#if error}<p class="smrt-app-shell__alert smrt-app-shell__alert-error" role="alert">{error}</p>{/if}
     {#if busy}<p role="status">Working…</p>{/if}
     {#if preview}<PublishPreview {preview} />{/if}
     {#if reviewAgain}

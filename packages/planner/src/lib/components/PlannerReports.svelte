@@ -31,7 +31,7 @@ $effect(() => {
 });
 </script>
 
-<div class="reports">
+<div class="smrt-planner-reports__root" data-smrt-component="PlannerReports">
   {#if recordId}
     <!-- A new report is a new page: its heading is a new node (focus after a
          dock navigation targets it, #4100). -->
@@ -52,10 +52,14 @@ $effect(() => {
 
 <style>
 @layer smrt.reset, smrt.structure, smrt.theme;
-@layer smrt.theme {
-  .reports {
+@layer smrt.structure {
+  .smrt-planner-reports__root {
     display: grid;
     gap: var(--smrt-spacing-4);
   }
 }
+
+@layer smrt.theme {
+}
+
 </style>

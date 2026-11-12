@@ -237,21 +237,21 @@ function onKey(event: KeyboardEvent) {
 onDestroy(() => controller?.abort());
 </script>
 
-<div id="assistant-panel" class="panel">
-  <header class="bar">
-    <div class="title">
+<div id="assistant-panel" class="smrt-assistant-panel__panel">
+  <header class="smrt-assistant-panel__bar">
+    <div class="smrt-assistant-panel__title">
       <h2>Assistant</h2>
       {#if buildingInDraft}<Badge variant="warning">Building in draft</Badge>{/if}
-      {#if dock.engineLabel}<p class="sh-muted engine">Using {dock.engineLabel}</p>{/if}
+      {#if dock.engineLabel}<p class="smrt-app-shell__muted smrt-assistant-panel__engine">Using {dock.engineLabel}</p>{/if}
     </div>
-    <div class="bar-actions">
-      <button type="button" class="sh-btn" onclick={newChat} disabled={dock.items.length === 0 && !dock.running}>New chat</button>
+    <div class="smrt-assistant-panel__bar-actions">
+      <button type="button" class="smrt-app-shell__btn" onclick={newChat} disabled={dock.items.length === 0 && !dock.running}>New chat</button>
     </div>
   </header>
 
   <!-- svelte-ignore a11y_no_noninteractive_tabindex (keyboard scrolling of the conversation) -->
   <div
-    class="log"
+    class="smrt-assistant-panel__log"
     bind:this={log}
     role="log"
     aria-label="Conversation"
@@ -259,36 +259,36 @@ onDestroy(() => controller?.abort());
     tabindex="0"
   >
     {#if dock.availability === 'unavailable'}
-      <div class="sh-alert sh-alert-warn" role="status">
+      <div class="smrt-app-shell__alert smrt-app-shell__alert-warn" role="status">
         <strong>The assistant is off.</strong>
         {dock.unavailableMessage}
         <a href={dock.unavailableAction?.href ?? '/settings/inference'}>{dock.unavailableAction?.label ?? 'Open Inference settings'}</a>
       </div>
     {:else if dock.items.length === 0 && dock.availability === 'ready'}
-      <p class="sh-muted hint">
+      <p class="smrt-app-shell__muted smrt-assistant-panel__hint">
         Tell me what you want to keep track of, or what to change in your app.
       </p>
     {/if}
 
     {#each dock.items as item (item.id)}
       {#if item.kind === 'user'}
-        <p class="msg user"><span class="sr-only">You: </span>{item.text}</p>
+        <p class="smrt-assistant-panel__msg smrt-assistant-panel__user"><span class="smrt-assistant-panel__sr-only">You: </span>{item.text}</p>
       {:else if item.kind === 'assistant'}
-        <p class="msg bot"><span class="sr-only">Assistant: </span>{item.text}</p>
+        <p class="smrt-assistant-panel__msg smrt-assistant-panel__bot"><span class="smrt-assistant-panel__sr-only">Assistant: </span>{item.text}</p>
       {:else if item.kind === 'tool'}
         <p
-          class="chip"
-          class:err={item.state === 'error'}
+          class="smrt-assistant-panel__chip"
+          class:smrt-assistant-panel__err={item.state === 'error'}
           title={item.summary}
         >
           <span aria-hidden="true">{item.state === 'running' ? '…' : item.state === 'ok' ? '✓' : '!'}</span>
           <span>{toolLabel(item.name)}</span>
-          {#if item.summary}<span class="sh-muted sum">{item.summary}</span>{/if}
-          {#if item.copy}<span class="sh-muted">{item.copy === 'draft' ? 'Draft copy. Your live app is unchanged.' : 'Live copy.'}</span>{/if}
-          <span class="sr-only">{item.state === 'running' ? 'running' : item.state === 'ok' ? 'done' : 'did not work'}</span>
+          {#if item.summary}<span class="smrt-app-shell__muted smrt-assistant-panel__sum">{item.summary}</span>{/if}
+          {#if item.copy}<span class="smrt-app-shell__muted">{item.copy === 'draft' ? 'Draft copy. Your live app is unchanged.' : 'Live copy.'}</span>{/if}
+          <span class="smrt-assistant-panel__sr-only">{item.state === 'running' ? 'running' : item.state === 'ok' ? 'done' : 'did not work'}</span>
         </p>
       {:else if item.kind === 'approval'}
-        <div class="card">
+        <div class="smrt-assistant-panel__card">
           <ApprovalCard
             approval={view(item)}
             {owner}
@@ -299,22 +299,22 @@ onDestroy(() => controller?.abort());
               : undefined}
           />
           {#if item.detached && item.state === 'pending'}
-            <p class="sh-muted">This was asked earlier. Approve it to apply it now.</p>
+            <p class="smrt-app-shell__muted">This was asked earlier. Approve it to apply it now.</p>
           {/if}
         </div>
       {:else}
-        <p class="sh-alert {item.tone === 'error' ? 'sh-alert-error' : ''}" role={item.tone === 'error' ? 'alert' : 'status'}>{item.text}{#if item.action} <a class="sh-link" href={item.action.href}>{item.action.label}</a>{/if}</p>
+        <p class="smrt-app-shell__alert {item.tone === 'error' ? 'smrt-app-shell__alert-error' : ''}" role={item.tone === 'error' ? 'alert' : 'status'}>{item.text}{#if item.action} <a class="smrt-app-shell__link" href={item.action.href}>{item.action.label}</a>{/if}</p>
       {/if}
     {/each}
   </div>
 
-  <div class="sr-only" aria-live="polite" role="status">{announce}</div>
+  <div class="smrt-assistant-panel__sr-only" aria-live="polite" role="status">{announce}</div>
 
-  <form class="compose" onsubmit={(e) => { e.preventDefault(); void submit(); }}>
-    <label class="sr-only" for="assistant-input">Message the assistant</label>
+  <form class="smrt-assistant-panel__compose" onsubmit={(e) => { e.preventDefault(); void submit(); }}>
+    <label class="smrt-assistant-panel__sr-only" for="assistant-input">Message the assistant</label>
     <textarea
       id="assistant-input"
-      class="sh-input"
+      class="smrt-app-shell__input"
       bind:this={field}
       bind:value={draft}
       rows="2"
@@ -324,52 +324,48 @@ onDestroy(() => controller?.abort());
       onkeydown={onKey}
     ></textarea>
     {#if dock.running}
-      <button type="button" class="sh-btn" onclick={stop}>Stop</button>
+      <button type="button" class="smrt-app-shell__btn" onclick={stop}>Stop</button>
     {:else}
-      <button type="submit" class="sh-btn sh-btn-primary" disabled={!canSend}>Send</button>
+      <button type="submit" class="smrt-app-shell__btn smrt-app-shell__btn-primary" disabled={!canSend}>Send</button>
     {/if}
   </form>
 </div>
 
 <style>
 @layer smrt.reset, smrt.structure, smrt.theme;
-@layer smrt.theme {
+
+@layer smrt.structure {
   /* Fills the docked column the layout gives it; the column owns the edge,
-     width and resizing. */
-  .panel {
+  width and resizing. */
+  .smrt-assistant-panel__panel {
     display: flex;
     flex-direction: column;
     flex: 1;
     min-block-size: 0;
     block-size: 100%;
-    background: var(--smrt-color-surface);
-    color: var(--smrt-color-on-surface, inherit);
     overflow: hidden;
   }
-  .bar {
+  .smrt-assistant-panel__bar {
     display: flex;
     align-items: center;
     justify-content: space-between;
     gap: var(--smrt-spacing-sm, 0.5rem);
     padding: var(--smrt-spacing-sm, 0.5rem) var(--smrt-spacing-md, 0.75rem);
-    border-block-end: var(--smrt-hairline);
   }
-  .bar h2 {
+  .smrt-assistant-panel__bar h2 {
     margin: 0;
-    font-size: 1rem;
   }
-  .title {
+  .smrt-assistant-panel__title {
     min-inline-size: 0;
   }
-  .engine {
+  .smrt-assistant-panel__engine {
     margin: 0;
-    font-size: 0.8125rem;
   }
-  .bar-actions {
+  .smrt-assistant-panel__bar-actions {
     display: flex;
     gap: var(--smrt-spacing-xs, 0.25rem);
   }
-  .log {
+  .smrt-assistant-panel__log {
     flex: 1;
     min-block-size: 0;
     overflow-y: auto;
@@ -379,23 +375,19 @@ onDestroy(() => controller?.abort());
     gap: var(--smrt-spacing-sm, 0.5rem);
     overflow-wrap: anywhere;
   }
-  .msg {
+  .smrt-assistant-panel__msg {
     margin: 0;
     padding: var(--smrt-spacing-xs, 0.25rem) var(--smrt-spacing-md, 0.75rem);
-    border-radius: var(--smrt-radius-md, 0.5rem);
     white-space: pre-wrap;
     max-inline-size: 90%;
   }
-  .user {
+  .smrt-assistant-panel__user {
     align-self: flex-end;
-    background: var(--smrt-color-primary-container, rgb(128 128 128 / 0.2));
-    color: var(--smrt-color-on-primary-container, inherit);
   }
-  .bot {
+  .smrt-assistant-panel__bot {
     align-self: flex-start;
-    background: var(--smrt-color-surface-container, rgb(128 128 128 / 0.1));
   }
-  .chip {
+  .smrt-assistant-panel__chip {
     display: flex;
     flex-wrap: wrap;
     align-items: baseline;
@@ -403,38 +395,31 @@ onDestroy(() => controller?.abort());
     margin: 0;
     align-self: flex-start;
     padding: 0.125rem var(--smrt-spacing-sm, 0.5rem);
-    border: var(--smrt-hairline);
-    border-radius: var(--smrt-radius-full);
-    font-size: 0.8125rem;
   }
-  .chip.err {
-    border-color: var(--smrt-color-error);
-  }
-  .sum {
+  .smrt-assistant-panel__sum {
     max-inline-size: 16rem;
     overflow: hidden;
     text-overflow: ellipsis;
     white-space: nowrap;
   }
-  .hint {
+  .smrt-assistant-panel__hint {
     margin: 0;
   }
-  .card :global(.sh-card) {
+  .smrt-assistant-panel__card :global(.smrt-app-shell__card) {
     margin: 0;
   }
-  .compose {
+  .smrt-assistant-panel__compose {
     display: flex;
     gap: var(--smrt-spacing-sm, 0.5rem);
     align-items: flex-end;
     padding: var(--smrt-spacing-sm, 0.5rem) var(--smrt-spacing-md, 0.75rem);
-    border-block-start: var(--smrt-hairline);
   }
-  .compose textarea {
+  .smrt-assistant-panel__compose textarea {
     flex: 1;
     resize: none;
     min-inline-size: 0;
   }
-  .sr-only {
+  .smrt-assistant-panel__sr-only {
     position: absolute;
     inline-size: 1px;
     block-size: 1px;
@@ -443,6 +428,47 @@ onDestroy(() => controller?.abort());
     overflow: hidden;
     clip-path: inset(50%);
     white-space: nowrap;
+  }
+}
+
+@layer smrt.theme {
+  /* Fills the docked column the layout gives it; the column owns the edge,
+  width and resizing. */
+  .smrt-assistant-panel__panel {
+    background: var(--smrt-color-surface);
+    color: var(--smrt-color-on-surface, inherit);
+  }
+  .smrt-assistant-panel__bar {
+    border-block-end: var(--smrt-hairline);
+  }
+  .smrt-assistant-panel__bar h2 {
+    font-size: 1rem;
+  }
+  .smrt-assistant-panel__engine {
+    font-size: 0.8125rem;
+  }
+  .smrt-assistant-panel__msg {
+    border-radius: var(--smrt-radius-md, 0.5rem);
+  }
+  .smrt-assistant-panel__user {
+    background: var(--smrt-color-primary-container, rgb(128 128 128 / 0.2));
+    color: var(--smrt-color-on-primary-container, inherit);
+  }
+  .smrt-assistant-panel__bot {
+    background: var(--smrt-color-surface-container, rgb(128 128 128 / 0.1));
+  }
+  .smrt-assistant-panel__chip {
+    border: var(--smrt-hairline);
+    border-radius: var(--smrt-radius-full);
+    font-size: 0.8125rem;
+  }
+  .smrt-assistant-panel__chip.smrt-assistant-panel__err {
+    border-color: var(--smrt-color-error);
+  }
+  .smrt-assistant-panel__compose {
+    border-block-start: var(--smrt-hairline);
+  }
+  .smrt-assistant-panel__sr-only {
     border: 0;
   }
 }

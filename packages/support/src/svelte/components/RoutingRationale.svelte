@@ -35,24 +35,24 @@ function factorChips(
 </script>
 
 {#if ranking.length === 0}
-  <p class="routing-rationale-empty" data-smrt-component="RoutingRationale">{emptyMessage}</p>
+  <p class="smrt-routing-rationale__empty" data-smrt-component="RoutingRationale" >{emptyMessage}</p>
 {:else}
-  <ul class="routing-rationale" data-smrt-component="RoutingRationale">
+  <ul class="smrt-routing-rationale__root" data-smrt-component="RoutingRationale">
     {#each ranking as entry (entry.specialistId)}
-      <li class="routing-rationale-row">
-        <span class="routing-rationale-main">
-          <span class="routing-rationale-head">
-            <span class="routing-rationale-name">{entry.displayName}</span>
-            <span class="routing-rationale-score">score {entry.score}</span>
+      <li class="smrt-routing-rationale__row" data-smrt-part="row">
+        <span class="smrt-routing-rationale__main" data-smrt-part="body">
+          <span class="smrt-routing-rationale__head" data-smrt-part="header">
+            <span class="smrt-routing-rationale__name" data-smrt-part="title">{entry.displayName}</span>
+            <span class="smrt-routing-rationale__score" data-smrt-part="value">score {entry.score}</span>
             <StatusBadge
               status={entry.eligible ? 'success' : 'inactive'}
               label={entry.eligible ? 'eligible' : 'ineligible'}
               size="sm"
             />
           </span>
-          <span class="routing-rationale-factors">
+          <span class="smrt-routing-rationale__factors" data-smrt-part="list">
             {#each factorChips(entry.factors) as chip (chip)}
-              <span class="routing-rationale-factor">{chip}</span>
+              <span class="smrt-routing-rationale__factor" data-smrt-part="badge">{chip}</span>
             {/each}
           </span>
         </span>
@@ -73,8 +73,8 @@ function factorChips(
 
 <style>
 @layer smrt.reset, smrt.structure, smrt.theme;
-@layer smrt.theme {
-  .routing-rationale {
+@layer smrt.structure {
+  .smrt-routing-rationale__root {
     list-style: none;
     margin: 0;
     padding: 0;
@@ -82,55 +82,55 @@ function factorChips(
     flex-direction: column;
     gap: 0.5rem;
   }
-
-  .routing-rationale-row {
+  .smrt-routing-rationale__row {
     display: flex;
     align-items: flex-start;
     justify-content: space-between;
     gap: 0.75rem;
   }
-
-  .routing-rationale-main {
+  .smrt-routing-rationale__main {
     display: flex;
     flex-direction: column;
     gap: 0.25rem;
     min-width: 0;
   }
-
-  .routing-rationale-head {
+  .smrt-routing-rationale__head {
     display: flex;
     align-items: center;
     gap: 0.5rem;
     flex-wrap: wrap;
   }
-
-  .routing-rationale-name {
-    font-weight: 500;
-  }
-
-  .routing-rationale-score {
-    font-size: 0.75rem;
-    color: var(--smrt-color-on-surface-variant, inherit);
-  }
-
-  .routing-rationale-factors {
+  .smrt-routing-rationale__factors {
     display: flex;
     flex-wrap: wrap;
     gap: 0.25rem;
   }
-
-  .routing-rationale-factor {
-    font-size: 0.6875rem;
+  .smrt-routing-rationale__factor {
     padding: 0.0625rem 0.375rem;
+  }
+  .smrt-routing-rationale__empty {
+    padding: 1rem 0;
+  }
+}
+
+@layer smrt.theme {
+  .smrt-routing-rationale__name {
+    font-weight: 500;
+  }
+  .smrt-routing-rationale__score {
+    font-size: 0.75rem;
+    color: var(--smrt-color-on-surface-variant, inherit);
+  }
+  .smrt-routing-rationale__factor {
+    font-size: 0.6875rem;
     border-radius: 0.5rem;
     background: var(--smrt-color-surface-container-highest, transparent);
     color: var(--smrt-color-on-surface-variant, inherit);
     border: var(--smrt-hairline);
   }
-
-  .routing-rationale-empty {
+  .smrt-routing-rationale__empty {
     color: var(--smrt-color-on-surface-variant, inherit);
-    padding: 1rem 0;
   }
 }
+
 </style>

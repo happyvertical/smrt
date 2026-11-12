@@ -56,8 +56,8 @@ function toggle(entry: FeatureEntry, on: boolean) {
 }
 </script>
 
-<div class="features">
-  <p class="meta">
+<div class="smrt-record-features__root" data-smrt-component="RecordFeatures">
+  <p class="smrt-record-features__meta" data-smrt-part="meta">
     Models no recipe covers. Add one to give it a list and a form of its own
     under More in the menu.
   </p>
@@ -73,7 +73,7 @@ function toggle(entry: FeatureEntry, on: boolean) {
   />
 
   {#if chips.length > 1}
-    <div class="chips" role="group" aria-label="Filter by package">
+    <div class="smrt-record-features__chips" role="group" aria-label="Filter by package" data-smrt-part="list">
       <ToggleButton pressed={active === null} onclick={() => (packageId = null)}>
         All
       </ToggleButton>
@@ -88,8 +88,8 @@ function toggle(entry: FeatureEntry, on: boolean) {
     </div>
   {/if}
 
-  <div class="bar">
-    <h2 class="count">
+  <div class="smrt-record-features__bar" data-smrt-part="actions">
+    <h2 class="smrt-record-features__count" data-smrt-part="count">
       {results.length} {results.length === 1 ? 'feature' : 'features'}{hidden
         ? ` (${hidden} hidden)`
         : ''}
@@ -104,19 +104,19 @@ function toggle(entry: FeatureEntry, on: boolean) {
   </div>
 
   {#if results.length}
-    <ul class="rows" aria-label="Features">
+    <ul class="smrt-record-features__rows" aria-label="Features" data-smrt-part="list">
       {#each results as entry (entry.id)}
         {@const on = recipeState.hasFeature(entry.id)}
-        <li class:selected={on} animate:flip={{ duration: motionDuration('medium2', 300) }}>
-          <span class="icon" aria-hidden="true"><Icon path={DATABASE} size={22} /></span>
-          <div class="text">
-            <span class="name">
+        <li class:smrt-record-features__selected={on} animate:flip={{ duration: motionDuration('medium2', 300) }} data-smrt-part="row">
+          <span class="smrt-record-features__icon" aria-hidden="true" data-smrt-part="icon"><Icon path={DATABASE} size={22} /></span>
+          <div class="smrt-record-features__text" data-smrt-part="body">
+            <span class="smrt-record-features__name" data-smrt-part="title">
               <a href={appHref(`/packages/${entry.packageId}/`)}>{entry.label}</a>
-              {#if entry.plumbing}<span class="tag">plumbing</span>{/if}
+              {#if entry.plumbing}<span class="smrt-record-features__tag" data-smrt-part="badge">plumbing</span>{/if}
             </span>
-            <span class="meta">{featureSummary(entry)}</span>
+            <span class="smrt-record-features__meta" data-smrt-part="meta">{featureSummary(entry)}</span>
             {#if entry.includes.length}
-              <span class="includes">+ {entry.includes.join(', ')}</span>
+              <span class="smrt-record-features__includes" data-smrt-part="meta">+ {entry.includes.join(', ')}</span>
             {/if}
           </div>
           <Switch
@@ -128,127 +128,121 @@ function toggle(entry: FeatureEntry, on: boolean) {
       {/each}
     </ul>
   {:else}
-    <p class="empty">No features match "{query}".</p>
+    <p class="smrt-record-features__empty" data-smrt-part="empty">No features match "{query}".</p>
   {/if}
-  <p class="notice" role="status" aria-live="polite">{notice}</p>
+  <p class="smrt-record-features__notice" role="status" aria-live="polite" data-smrt-part="status">{notice}</p>
 </div>
 
 <style>
 @layer smrt.reset, smrt.structure, smrt.theme;
-@layer smrt.theme {
-  .features {
+@layer smrt.structure {
+  .smrt-record-features__root {
     display: grid;
     gap: var(--smrt-spacing-3);
   }
-
   h2,
   p {
     margin: 0;
   }
-
-  .meta,
-  .notice,
-  .empty,
-  .count {
-    color: var(--smrt-color-on-surface-variant);
-  }
-
-  .count {
-    font-size: var(--smrt-typography-body-medium-size);
-    font-weight: 400;
-  }
-
-  .notice:empty {
+  .smrt-record-features__notice:empty {
     display: none;
   }
-
-  .chips {
+  .smrt-record-features__chips {
     display: flex;
     flex-wrap: wrap;
     gap: var(--smrt-spacing-2);
   }
-
-  .rows {
+  .smrt-record-features__rows {
     display: grid;
     margin: 0;
     padding: 0;
     list-style: none;
-    border: var(--smrt-hairline);
-    border-radius: var(--smrt-radius-large);
     overflow: hidden;
   }
-
-  .rows li {
+  .smrt-record-features__rows li {
     display: flex;
     align-items: center;
     gap: var(--smrt-spacing-3);
     padding: var(--smrt-spacing-3) var(--smrt-spacing-4);
   }
-
-  .rows li + li {
-    border-top: var(--smrt-hairline);
-  }
-
-  .rows li.selected {
-    background: color-mix(in srgb, currentColor calc(var(--smrt-state-selected) * 100%), transparent);
-  }
-
-  .includes {
-    color: var(--smrt-color-on-surface-variant);
-    font-size: var(--smrt-typography-body-small-size);
-  }
-
-  .icon {
+  .smrt-record-features__icon {
     display: inline-flex;
-    color: var(--smrt-color-on-surface-variant);
   }
-
-  .text {
+  .smrt-record-features__text {
     display: grid;
     flex: 1;
     min-width: 0;
   }
-
-  .bar {
+  .smrt-record-features__bar {
     display: flex;
     align-items: center;
     justify-content: space-between;
     gap: var(--smrt-spacing-3);
   }
-
-  .name {
+  .smrt-record-features__name {
     display: flex;
     align-items: baseline;
     gap: var(--smrt-spacing-2);
   }
-
-  .tag {
+  .smrt-record-features__tag {
     padding: 0 var(--smrt-spacing-2);
+  }
+  .smrt-record-features__text a {
+    width: fit-content;
+  }
+  .smrt-record-features__text .smrt-record-features__meta {
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+  }
+}
+
+@layer smrt.theme {
+  .smrt-record-features__meta,
+  .smrt-record-features__notice,
+  .smrt-record-features__empty,
+  .smrt-record-features__count {
+    color: var(--smrt-color-on-surface-variant);
+  }
+  .smrt-record-features__count {
+    font-size: var(--smrt-typography-body-medium-size);
+    font-weight: 400;
+  }
+  .smrt-record-features__rows {
+    border: var(--smrt-hairline);
+    border-radius: var(--smrt-radius-large);
+  }
+  .smrt-record-features__rows li + li {
+    border-top: var(--smrt-hairline);
+  }
+  .smrt-record-features__rows li.smrt-record-features__selected {
+    background: color-mix(in srgb, currentColor calc(var(--smrt-state-selected) * 100%), transparent);
+  }
+  .smrt-record-features__includes {
+    color: var(--smrt-color-on-surface-variant);
+    font-size: var(--smrt-typography-body-small-size);
+  }
+  .smrt-record-features__icon {
+    color: var(--smrt-color-on-surface-variant);
+  }
+  .smrt-record-features__tag {
     border: var(--smrt-hairline);
     border-radius: var(--smrt-radius-large);
     color: var(--smrt-color-on-surface-variant);
     font-size: var(--smrt-typography-label-small-size);
   }
-
-  .text a {
-    width: fit-content;
+  .smrt-record-features__text a {
     color: var(--smrt-color-on-surface);
     font-weight: 500;
   }
-
-  .text .meta {
-    overflow: hidden;
-    text-overflow: ellipsis;
-    white-space: nowrap;
-  }
-
   /* Forced colours: the selected tint is dropped, so a switched-on row gets a
-     Highlight frame. */
+  Highlight frame. */
   @media (forced-colors: active) {
-    .rows li.selected {
+    .smrt-record-features__rows li.smrt-record-features__selected {
       outline: 0.125rem solid Highlight;
       outline-offset: -0.125rem;
     }
   }
 }
+
 </style>

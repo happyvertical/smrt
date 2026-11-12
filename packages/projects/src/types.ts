@@ -41,6 +41,13 @@ export type RepositoryProviderType =
   | 'gitlab'
   | 'bitbucket'
   | 'azure';
+/** Rolled-up CI state of a repository's default-branch head commit. */
+export type RepositoryCiState =
+  | 'success'
+  | 'failure'
+  | 'pending'
+  | 'none'
+  | 'unknown';
 export type ProjectProviderType = 'github' | 'jira' | 'linear' | 'zenhub';
 
 /**

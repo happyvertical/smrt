@@ -60,75 +60,76 @@ async function skip() {
 
 <svelte:head><title>Welcome</title></svelte:head>
 
-<div class="sh-page welcome">
-  <header class="sh-head">
+<div class="smrt-app-shell__page smrt-app-shell-welcome__welcome">
+  <header class="smrt-app-shell__head">
     <div>
-      <p class="sh-sub" id="progress">Step {step} of 2</p>
+      <p class="smrt-app-shell__sub" id="progress">Step {step} of 2</p>
       <h1 tabindex="-1" bind:this={heading} aria-describedby="progress">
         {step === 1 ? 'Connect your AI' : 'How do you want to start?'}
       </h1>
     </div>
-    <button type="button" class="sh-btn" onclick={skip} disabled={busy}>Skip for now</button>
+    <button type="button" class="smrt-app-shell__btn" onclick={skip} disabled={busy}>Skip for now</button>
   </header>
 
   {#if step === 1}
-    <section class="sh-card" aria-labelledby="connect-intro">
+    <section class="smrt-app-shell__card" aria-labelledby="connect-intro">
       <p id="connect-intro">
         The assistant builds and changes your app for you. It runs on your own
         Claude Code, or on your ChatGPT plan.
       </p>
       <ConnectAi onchange={(_info, ok) => (ready = ok)} />
     </section>
-    <div class="actions">
-      <button type="button" class="sh-btn sh-btn-primary" disabled={!ready} onclick={() => go(2)}>Next</button>
+    <div class="smrt-app-shell-welcome__actions">
+      <button type="button" class="smrt-app-shell__btn smrt-app-shell__btn-primary" disabled={!ready} onclick={() => go(2)}>Next</button>
       {#if !ready}
-        <span class="sh-muted">Connect an AI to continue.</span>
+        <span class="smrt-app-shell__muted">Connect an AI to continue.</span>
       {/if}
     </div>
   {:else}
     <form
-      class="sh-card"
+      class="smrt-app-shell__card"
       onsubmit={(e) => {
         e.preventDefault();
         if (start === 'fresh') void finish();
       }}
     >
       <fieldset>
-        <legend class="sh-sr-only">Starting point</legend>
-        <label class="sh-choice" class:sh-choice-on={start === 'fresh'}>
+        <legend class="smrt-app-shell__sr-only">Starting point</legend>
+        <label class="smrt-app-shell__choice" class:smrt-app-shell__choice-on={start === 'fresh'}>
           <input type="radio" name="start" value="fresh" bind:group={start} />
           <span>
             <strong>Fresh</strong>
-            <span class="sh-muted">Start with an empty app. Tell the assistant what to build.</span>
+            <span class="smrt-app-shell__muted">Start with an empty app. Tell the assistant what to build.</span>
           </span>
         </label>
-        <label class="sh-choice sh-choice-off">
+        <label class="smrt-app-shell__choice smrt-app-shell__choice-off">
           <input type="radio" name="start" value="wizard" disabled aria-describedby="wizard-soon" />
           <span>
             <strong>Wizard</strong>
-            <span class="sh-muted" id="wizard-soon">A guided setup for a whole project. Coming soon.</span>
+            <span class="smrt-app-shell__muted" id="wizard-soon">A guided setup for a whole project. Coming soon.</span>
           </span>
         </label>
       </fieldset>
-      <div class="actions">
-        <button type="button" class="sh-btn" onclick={() => go(1)} disabled={busy}>Back</button>
-        <button type="submit" class="sh-btn sh-btn-primary" disabled={busy || start !== 'fresh'}>
+      <div class="smrt-app-shell-welcome__actions">
+        <button type="button" class="smrt-app-shell__btn" onclick={() => go(1)} disabled={busy}>Back</button>
+        <button type="submit" class="smrt-app-shell__btn smrt-app-shell__btn-primary" disabled={busy || start !== 'fresh'}>
           {busy ? 'Starting…' : 'Start'}
         </button>
       </div>
     </form>
   {/if}
 
-  <p class="sh-alert sh-alert-error" role="alert" hidden={!error}>{error}</p>
+  <p class="smrt-app-shell__alert smrt-app-shell__alert-error" role="alert" hidden={!error}>{error}</p>
 </div>
 
 <style>
 @layer smrt.reset, smrt.structure, smrt.theme;
-@layer smrt.theme {
-  .welcome {
+
+@layer smrt.structure {
+  .smrt-app-shell-welcome__welcome {
     max-inline-size: 40rem;
   }
-  .actions {
+  .smrt-app-shell-welcome__actions {
     display: flex;
     flex-wrap: wrap;
     align-items: center;
@@ -136,11 +137,16 @@ async function skip() {
     margin-block-start: var(--smrt-spacing-md, 0.75rem);
   }
   fieldset {
-    border: 0;
     margin: 0;
     padding: 0;
     display: grid;
     gap: var(--smrt-spacing-sm, 0.5rem);
+  }
+}
+
+@layer smrt.theme {
+  fieldset {
+    border: 0;
   }
   h1:focus {
     outline: none;

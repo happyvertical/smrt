@@ -246,15 +246,15 @@ function handleManagerDrop(event: DragEvent) {
 
 <!-- svelte-ignore a11y_no_static_element_interactions -->
 <div
-  class="asset-manager"
-  class:asset-manager--drag-over={managerDragOver}
+  class="smrt-asset-manager__root"
+  class:smrt-asset-manager__drag-over={managerDragOver}
   onpaste={handlePaste}
   ondragover={handleManagerDragOver}
   ondragleave={handleManagerDragLeave}
   ondrop={handleManagerDrop} data-smrt-component="AssetManager"
 >
   {#if actionError}
-    <p class="asset-manager__error" role="alert" aria-live="assertive">
+    <p class="smrt-asset-manager__error" data-smrt-part="error" role="alert" aria-live="assertive">
       {actionError}
     </p>
   {/if}
@@ -278,7 +278,7 @@ function handleManagerDrop(event: DragEvent) {
   />
 
   <!-- Main content area -->
-  <div class="asset-manager__content">
+  <div class="smrt-asset-manager__content" data-smrt-part="body">
     {#if view === 'grid'}
       <AssetGrid
         {assets}
@@ -316,8 +316,8 @@ function handleManagerDrop(event: DragEvent) {
 
   <!-- Drag overlay indicator -->
   {#if managerDragOver}
-    <div class="drag-overlay">
-      <div class="drag-overlay__content">
+    <div class="smrt-asset-manager__drag-overlay" data-smrt-part="backdrop">
+      <div class="smrt-asset-manager__drag-overlay-content" data-smrt-part="body">
         <svg xmlns="http://www.w3.org/2000/svg" width="48" height="48" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round">
           <path d="M21 15v4a2 2 0 01-2 2H5a2 2 0 01-2-2v-4"></path>
           <polyline points="17 8 12 3 7 8"></polyline>
@@ -350,64 +350,75 @@ function handleManagerDrop(event: DragEvent) {
 
 <style>
 @layer smrt.reset, smrt.structure, smrt.theme;
-@layer smrt.theme {
-  .asset-manager__error {
+@layer smrt.structure {
+  .smrt-asset-manager__error {
     margin: 0 0 var(--smrt-spacing-2, 0.5rem);
     padding: var(--smrt-spacing-2, 0.5rem) var(--smrt-spacing-3, 0.75rem);
-    border-radius: var(--smrt-radius-medium, 0.5rem);
-    background: var(--smrt-color-error-container);
-    color: var(--smrt-color-on-error-container);
-    font-size: var(--smrt-typography-body-small-size, 0.8rem);
   }
-
-  .asset-manager {
+  .smrt-asset-manager__root {
     position: relative;
     display: flex;
     flex-direction: column;
     height: 100%;
     min-height: 400px;
-    background: var(--smrt-color-surface);
-    border: var(--smrt-hairline);
-    border-radius: var(--smrt-radius-large, 0.75rem);
     overflow: hidden;
-    font-family: var(--smrt-font-family, inherit);
   }
-
-  .asset-manager--drag-over {
-    border-color: var(--smrt-color-primary);
-  }
-
-  .asset-manager__content {
+  .smrt-asset-manager__content {
     flex: 1;
     overflow-y: auto;
   }
-
   /* Drag overlay */
-  .drag-overlay {
+  .smrt-asset-manager__drag-overlay {
     position: absolute;
     inset: 0;
     display: flex;
     align-items: center;
     justify-content: center;
-    background: color-mix(in srgb, var(--smrt-color-primary) 8%, transparent);
-    border: 2px dashed var(--smrt-color-primary);
-    border-radius: var(--smrt-radius-large, 0.75rem);
     z-index: 10;
+    /* The overlay is a drop indicator only; keep pointer events on the manager
+    so dragover/drop stay attached to the root. */
     pointer-events: none;
   }
-
-  .drag-overlay__content {
+  .smrt-asset-manager__drag-overlay-content {
     display: flex;
     flex-direction: column;
     align-items: center;
     gap: var(--smrt-spacing-2, 0.5rem);
+  }
+  .smrt-asset-manager__drag-overlay-content p {
+    margin: 0;
+  }
+}
+
+@layer smrt.theme {
+  .smrt-asset-manager__error {
+    border-radius: var(--smrt-radius-medium, 0.5rem);
+    background: var(--smrt-color-error-container);
+    color: var(--smrt-color-on-error-container);
+    font-size: var(--smrt-typography-body-small-size, 0.8rem);
+  }
+  .smrt-asset-manager__root {
+    background: var(--smrt-color-surface);
+    border: var(--smrt-hairline);
+    border-radius: var(--smrt-radius-large, 0.75rem);
+    font-family: var(--smrt-font-family, inherit);
+  }
+  .smrt-asset-manager__drag-over {
+    border-color: var(--smrt-color-primary);
+  }
+  /* Drag overlay */
+  .smrt-asset-manager__drag-overlay {
+    background: color-mix(in srgb, var(--smrt-color-primary) 8%, transparent);
+    border: 2px dashed var(--smrt-color-primary);
+    border-radius: var(--smrt-radius-large, 0.75rem);
+  }
+  .smrt-asset-manager__drag-overlay-content {
     color: var(--smrt-color-primary);
     font-weight: var(--smrt-typography-weight-medium, 500);
   }
-
-  .drag-overlay__content p {
-    margin: 0;
+  .smrt-asset-manager__drag-overlay-content p {
     font-size: var(--smrt-typography-body-large-size, 1.1rem);
   }
 }
+
 </style>

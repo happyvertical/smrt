@@ -142,7 +142,7 @@ describe('InferenceSettingsPanel default view', () => {
     ).toBeNull();
     expect(target.querySelector('select[name="kind"]')).toBeNull();
     const toggle = target.querySelector<HTMLButtonElement>(
-      '.isp-advanced-toggle',
+      '[data-smrt-part="trigger"]',
     );
     expect(toggle?.getAttribute('aria-expanded')).toBe('false');
     toggle?.click();
@@ -301,8 +301,9 @@ describe('InferenceSettingsPanel advanced', () => {
   it('shows each scope its own revert preview', () => {
     const app = render({ tiers: TIERS, scope: 'app', advancedOpen: true });
     expect(
-      app.querySelector('[data-testid="inference-tier-great"] .itr-hint')
-        ?.textContent,
+      app.querySelector(
+        '[data-testid="inference-tier-great"] [data-smrt-part="description"]',
+      )?.textContent,
     ).toContain('anthropic/claude-config');
     const tenant = render({
       tiers: TIERS,
@@ -310,7 +311,7 @@ describe('InferenceSettingsPanel advanced', () => {
       advancedOpen: true,
     });
     const hint = tenant.querySelectorAll(
-      '[data-testid="inference-tier-great"] .itr-hint',
+      '[data-testid="inference-tier-great"] [data-smrt-part="description"]',
     );
     const text = hint[hint.length - 1]?.textContent ?? '';
     // Tenant revert returns to config + app override, never the bare default.

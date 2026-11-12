@@ -53,7 +53,9 @@ describe('AppShell', () => {
     expect(link?.textContent).toContain('Planner');
     // Logo + title with no subtitle: the title is a wordmark.
     expect(
-      container.querySelector('.smrt-admin-shell__brand-text.wordmark'),
+      container.querySelector(
+        '[data-smrt-component="ShellBrand"] [data-smrt-part="label"].smrt-shell-brand__wordmark',
+      ),
     ).not.toBeNull();
   });
 
@@ -72,7 +74,7 @@ describe('AppShell', () => {
     const brand = container.querySelector(
       '[data-slot="header.start"] .smrt-admin-shell__brand',
     );
-    expect(brand?.classList.contains('compact')).toBe(false);
+    expect(brand?.classList.contains('smrt-shell-brand__compact')).toBe(false);
     expect(brand?.getAttribute('aria-label')).toBe('Bakery');
     expect(brand?.querySelector('img')?.getAttribute('src')).toBe('/mark.svg');
     expect(

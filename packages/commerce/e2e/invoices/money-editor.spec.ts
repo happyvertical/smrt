@@ -39,7 +39,7 @@ function hasTaxRows(kind: (typeof cases)[number]) {
 }
 
 async function foregroundContrast(page: import('@playwright/test').Page) {
-  return page.locator('.money-editor').evaluate((element) => {
+  return page.locator('[data-smrt-component="MoneyInvoiceEditor"]').evaluate((element) => {
     const channels = (value: string) => value.match(/\d+(?:\.\d+)?/g)?.slice(0, 3).map(Number) ?? [];
     const linear = (channel: number) => {
       const value = channel / 255;

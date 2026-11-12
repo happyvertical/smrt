@@ -91,7 +91,7 @@ function handleClick() {
   type="button"
   variant="ghost"
   size="sm"
-  class={`smrt-dictation-button${active ? ' smrt-dictation-button--listening' : ''}${active && handsFree ? ' smrt-dictation-button--hands-free' : ''}${speaking ? ' smrt-dictation-button--speaking' : ''}${paused ? ' smrt-dictation-button--paused' : ''} ${className}`.trim()}
+  class={`smrt-dictation-button__root${active ? ' smrt-dictation-button__listening' : ''}${active && handsFree ? ' smrt-dictation-button__hands-free' : ''}${speaking ? ' smrt-dictation-button__speaking' : ''}${paused ? ' smrt-dictation-button__paused' : ''} ${className}`.trim()}
   aria-label={name}
   aria-pressed={active}
   aria-busy={busy || undefined}
@@ -111,20 +111,20 @@ function handleClick() {
     <path d="M12 17v4"></path>
   </svg>
   {#if active}
-    <span class="smrt-dictation-dot" aria-hidden="true"></span>
+    <span class="smrt-dictation-button__dot" data-smrt-part="indicator" aria-hidden="true"></span>
   {/if}
   {#if writing || (handsFree && dictation.state === 'transcribing')}
-    <span class="smrt-dictation-writing" aria-hidden="true"></span>
+    <span class="smrt-dictation-button__writing" data-smrt-part="spinner" aria-hidden="true"></span>
   {/if}
 </Button>
 {#if hint !== name}
-  <span id={helpId} class="smrt-dictation-help" data-smrt-component="DictationButton">{hint}</span>
+  <span id={helpId} class="smrt-dictation-button__help" data-smrt-component="DictationButton">{hint}</span>
 {/if}
 
 <style>
 @layer smrt.reset, smrt.structure, smrt.theme;
-@layer smrt.theme {
-  :global(.smrt-dictation-button) {
+@layer smrt.structure {
+  :global(.smrt-dictation-button__root) {
     position: relative;
     flex-shrink: 0;
     display: inline-flex;
@@ -134,17 +134,9 @@ function handleClick() {
     block-size: 44px;
     min-inline-size: 44px;
     padding: 0;
-    border-radius: var(--smrt-radius-full);
-    color: var(--smrt-color-on-surface-variant);
   }
-
-  :global(.smrt-dictation-button--listening) {
-    background: var(--smrt-color-error-container);
-    color: var(--smrt-color-on-error-container);
-  }
-
   /* Read out with the button's name; never shown. */
-  .smrt-dictation-help {
+  .smrt-dictation-button__help {
     position: absolute;
     inline-size: 1px;
     block-size: 1px;
@@ -152,25 +144,43 @@ function handleClick() {
     clip-path: inset(50%);
     white-space: nowrap;
   }
-
-  .smrt-dictation-dot {
+  .smrt-dictation-button__dot {
     position: absolute;
     inset-block-start: 6px;
     inset-inline-end: 6px;
     inline-size: 10px;
     block-size: 10px;
+  }
+  /* Sentences are being written down. */
+  .smrt-dictation-button__writing {
+    position: absolute;
+    inset-block-end: 6px;
+    inset-inline-end: 6px;
+    inline-size: 10px;
+    block-size: 10px;
+  }
+}
+
+@layer smrt.theme {
+  :global(.smrt-dictation-button__root) {
+    border-radius: var(--smrt-radius-full);
+    color: var(--smrt-color-on-surface-variant);
+  }
+  :global(.smrt-dictation-button__listening) {
+    background: var(--smrt-color-error-container);
+    color: var(--smrt-color-on-error-container);
+  }
+  .smrt-dictation-button__dot {
     border-radius: 50%;
     background: var(--smrt-color-error);
     animation: smrt-dictation-pulse 1.2s ease-in-out infinite;
   }
-
   /* Hands-free: a steady ring while listening ... */
-  :global(.smrt-dictation-button--hands-free) {
+  :global(.smrt-dictation-button__hands-free) {
     box-shadow: 0 0 0 2px var(--smrt-color-error);
   }
-
   /* ... and a halo that swells with the voice while someone is speaking. */
-  :global(.smrt-dictation-button--speaking) {
+  :global(.smrt-dictation-button__speaking) {
     box-shadow:
       0 0 0 3px var(--smrt-color-error),
       0 0 0
@@ -178,40 +188,30 @@ function handleClick() {
         color-mix(in srgb, var(--smrt-color-error) 28%, transparent);
     transition: box-shadow 80ms linear;
   }
-
   /* Paused while the assistant speaks: a dashed, dimmed ring (not color alone). */
-  :global(.smrt-dictation-button--paused) {
+  :global(.smrt-dictation-button__paused) {
     opacity: 0.6;
     box-shadow: none;
     outline: 2px dashed var(--smrt-color-outline);
     outline-offset: -2px;
   }
-
-  :global(.smrt-dictation-button--paused) .smrt-dictation-dot {
+  :global(.smrt-dictation-button__paused) .smrt-dictation-button__dot {
     animation: none;
     opacity: 0.4;
   }
-
   /* Sentences are being written down. */
-  .smrt-dictation-writing {
-    position: absolute;
-    inset-block-end: 6px;
-    inset-inline-end: 6px;
-    inline-size: 10px;
-    block-size: 10px;
+  .smrt-dictation-button__writing {
     border-radius: 50%;
     border: 2px solid var(--smrt-color-outline-variant);
     border-block-start-color: var(--smrt-color-primary);
     background: var(--smrt-color-surface);
     animation: smrt-dictation-spin 0.9s linear infinite;
   }
-
   @keyframes smrt-dictation-spin {
     to {
       transform: rotate(360deg);
     }
   }
-
   @keyframes smrt-dictation-pulse {
     0%,
     100% {
@@ -221,18 +221,17 @@ function handleClick() {
       opacity: 0.35;
     }
   }
-
   @media (prefers-reduced-motion: reduce) {
-    .smrt-dictation-dot,
-    .smrt-dictation-writing {
+    .smrt-dictation-button__dot,
+    .smrt-dictation-button__writing {
       animation: none;
     }
-
     /* Still ringed, but the halo no longer animates with the voice. */
-    :global(.smrt-dictation-button--speaking) {
+    :global(.smrt-dictation-button__speaking) {
       transition: none;
       box-shadow: 0 0 0 4px var(--smrt-color-error);
     }
   }
 }
+
 </style>

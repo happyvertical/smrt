@@ -169,20 +169,20 @@ async function confirmDelete(): Promise<void> {
 
 {#snippet fieldList(list: ScreenField[])}
   {#each groupScreenFields(list) as [group, groupFields] (group ?? '')}
-    <section class="smrt-detail-screen__group">
-      {#if group}<h2 class="smrt-detail-screen__group-title">{group}</h2>{/if}
-      <dl class="smrt-detail-screen__fields">
+    <section class="smrt-detail-screen__group" data-smrt-part="group">
+      {#if group}<h2 class="smrt-detail-screen__group-title" data-smrt-part="title">{group}</h2>{/if}
+      <dl class="smrt-detail-screen__fields" data-smrt-part="field">
         {#each groupFields as field (field.name)}
           {@const text = display(field)}
-          <div class="smrt-detail-screen__field">
-            <dt>{field.label}</dt>
+          <div class="smrt-detail-screen__field" data-smrt-part="field">
+            <dt data-smrt-part="label">{field.label}</dt>
             <dd>
               {#if text === ''}
-                <span class="smrt-detail-screen__empty">{t(M['ui.screens.not_set'])}</span>
+                <span class="smrt-detail-screen__empty" data-smrt-part="empty">{t(M['ui.screens.not_set'])}</span>
               {:else if field.kind === 'json'}
                 {@const entries = jsonScreenEntries(record[field.name])}
                 {#if entries}
-                  <dl class="smrt-detail-screen__pairs">
+                  <dl class="smrt-detail-screen__pairs" data-smrt-part="field">
                     {#each entries as entry (entry.key)}
                       <div>
                         <dt>{humanizeFieldName(entry.key)}</dt>
@@ -191,19 +191,19 @@ async function confirmDelete(): Promise<void> {
                     {/each}
                   </dl>
                 {:else}
-                  <pre class="smrt-detail-screen__block">{text}</pre>
+                  <pre class="smrt-detail-screen__block" data-smrt-part="body">{text}</pre>
                 {/if}
               {:else if field.kind === 'textarea'}
-                <pre class="smrt-detail-screen__block">{text}</pre>
+                <pre class="smrt-detail-screen__block" data-smrt-part="body">{text}</pre>
               {:else if safeHref(field, text)}
                 <a href={safeHref(field, text)}>{text}</a>
               {:else if field.kind === 'reference'}
                 {@const href = hrefFor?.(field, text) ?? screenReferenceTarget(definition, field, references)?.href?.(text)}
                 {@const label = referenceLabel(field, text)}
                 {#if href}
-                  <a href={href} class="smrt-detail-screen__reference">{#if label}{label}{:else}{@render unavailableReference(text)}{/if}</a>
+                  <a href={href} class="smrt-detail-screen__reference" data-smrt-part="action">{#if label}{label}{:else}{@render unavailableReference(text)}{/if}</a>
                 {:else if label}
-                  <span class="smrt-detail-screen__reference">{label}</span>
+                  <span class="smrt-detail-screen__reference" data-smrt-part="label">{label}</span>
                 {:else}
                   {@render unavailableReference(text)}
                 {/if}
@@ -240,8 +240,8 @@ async function confirmDelete(): Promise<void> {
 {/if}
 
 <article
-  class="smrt-detail-screen"
-  class:smrt-detail-screen--card={variant === 'card'}
+  class="smrt-detail-screen__root"
+  class:smrt-detail-screen__card={variant === 'card'}
   aria-label={variant === 'card' ? t(M['ui.screens.details']) : heading}
   data-smrt-component="DetailScreen"
 >
@@ -284,24 +284,21 @@ async function confirmDelete(): Promise<void> {
 
 <style>
 @layer smrt.reset, smrt.structure, smrt.theme;
-@layer smrt.theme {
-  .smrt-detail-screen {
+
+@layer smrt.structure {
+  .smrt-detail-screen__root {
     display: flex;
     flex-direction: column;
     gap: var(--smrt-spacing-lg, 1.5rem);
   }
-  .smrt-detail-screen--card {
+  .smrt-detail-screen__card {
     padding: var(--smrt-spacing-md, 1rem);
-    border: var(--smrt-hairline);
-    border-radius: var(--smrt-radius-lg);
-    background: var(--smrt-color-surface);
   }
-  .smrt-detail-screen--card .smrt-detail-screen__fields {
+  .smrt-detail-screen__card .smrt-detail-screen__fields {
     grid-template-columns: repeat(auto-fill, minmax(max(14rem, 40%), 1fr));
   }
   .smrt-detail-screen__group-title {
     margin: 0 0 var(--smrt-spacing-sm, 0.5rem);
-    font-size: var(--smrt-typography-title-medium-size, 1rem);
   }
   .smrt-detail-screen__fields {
     display: grid;
@@ -309,16 +306,9 @@ async function confirmDelete(): Promise<void> {
     gap: var(--smrt-spacing-md, 1rem);
     margin: 0;
   }
-  .smrt-detail-screen__field dt {
-    color: var(--smrt-color-on-surface-variant);
-    font-size: var(--smrt-typography-body-medium-size, 0.875rem);
-  }
   .smrt-detail-screen__field dd {
     margin: 0;
     overflow-wrap: anywhere;
-  }
-  .smrt-detail-screen__empty {
-    color: var(--smrt-color-on-surface-variant);
   }
   .smrt-detail-screen__pairs {
     display: grid;
@@ -330,12 +320,34 @@ async function confirmDelete(): Promise<void> {
     flex-wrap: wrap;
     gap: 0 var(--smrt-spacing-sm, 0.5rem);
   }
-  .smrt-detail-screen__pairs dt {
+  .smrt-detail-screen__pairs dd {
+    margin: 0;
+  }
+  .smrt-detail-screen__block {
+    margin: 0;
+    white-space: pre-wrap;
+  }
+}
+
+@layer smrt.theme {
+  .smrt-detail-screen__card {
+    border: var(--smrt-hairline);
+    border-radius: var(--smrt-radius-lg);
+    background: var(--smrt-color-surface);
+  }
+  .smrt-detail-screen__group-title {
+    font-size: var(--smrt-typography-title-medium-size, 1rem);
+  }
+  .smrt-detail-screen__field dt {
     color: var(--smrt-color-on-surface-variant);
     font-size: var(--smrt-typography-body-medium-size, 0.875rem);
   }
-  .smrt-detail-screen__pairs dd {
-    margin: 0;
+  .smrt-detail-screen__empty {
+    color: var(--smrt-color-on-surface-variant);
+  }
+  .smrt-detail-screen__pairs dt {
+    color: var(--smrt-color-on-surface-variant);
+    font-size: var(--smrt-typography-body-medium-size, 0.875rem);
   }
   .smrt-detail-screen__reference {
     color: var(--smrt-color-primary);
@@ -351,8 +363,6 @@ async function confirmDelete(): Promise<void> {
     outline-offset: var(--smrt-focus-ring-offset);
   }
   .smrt-detail-screen__block {
-    margin: 0;
-    white-space: pre-wrap;
     font-family: inherit;
   }
 }

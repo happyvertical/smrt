@@ -254,11 +254,11 @@ const displayLabel = $derived(label ?? status.replace(/_/g, ' '));
 
 <span
   {...rest}
-  class="status-badge"
-  class:sm={size === 'sm'}
-  class:lg={size === 'lg'}
-  class:outline={variant === 'outline'}
-  class:as-is={textCase === 'as-is'}
+  class="smrt-status-badge__root"
+  class:smrt-status-badge__sm={size === 'sm'}
+  class:smrt-status-badge__lg={size === 'lg'}
+  class:smrt-status-badge__outline={variant === 'outline'}
+  class:smrt-status-badge__as-is={textCase === 'as-is'}
   style:--smrt-badge-bg={colors.bg}
   style:--smrt-badge-text={colors.text} data-smrt-component="StatusBadge"
 >
@@ -267,37 +267,44 @@ const displayLabel = $derived(label ?? status.replace(/_/g, ' '));
 
 <style>
 @layer smrt.reset, smrt.structure, smrt.theme;
-@layer smrt.theme {
-  .status-badge {
+@layer smrt.structure {
+  .smrt-status-badge__root {
     display: inline-flex;
     align-items: center;
     padding: 0.25rem 0.75rem;
+    white-space: nowrap;
+  }
+  .smrt-status-badge__root.smrt-status-badge__sm {
+    padding: 0.125rem 0.5rem;
+  }
+  .smrt-status-badge__root.smrt-status-badge__lg {
+    padding: 0.375rem 1rem;
+  }
+}
+
+@layer smrt.theme {
+  .smrt-status-badge__root {
     font-size: var(--smrt-typography-label-medium-size, 0.75rem);
     font-weight: var(--smrt-typography-label-medium-weight, 500);
     border-radius: var(--smrt-radius-full);
-    white-space: nowrap;
     text-transform: capitalize;
     background-color: var(--smrt-badge-bg);
     color: var(--smrt-badge-text);
     line-height: 1.25;
   }
-  .status-badge.as-is {
+  .smrt-status-badge__root.smrt-status-badge__as-is {
     text-transform: none;
   }
-
-  .status-badge.sm {
-    padding: 0.125rem 0.5rem;
+  .smrt-status-badge__root.smrt-status-badge__sm {
     font-size: var(--smrt-typography-label-small-size, 0.625rem);
   }
-
-  .status-badge.lg {
-    padding: 0.375rem 1rem;
+  .smrt-status-badge__root.smrt-status-badge__lg {
     font-size: var(--smrt-typography-label-large-size, 0.875rem);
   }
-
-  .status-badge.outline {
+  .smrt-status-badge__root.smrt-status-badge__outline {
     background-color: transparent;
     border: 1px solid var(--smrt-badge-text);
   }
 }
+
 </style>

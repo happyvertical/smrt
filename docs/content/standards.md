@@ -447,7 +447,9 @@ run deterministically (tool-only, no model-assisted checks) in two places:
   the commit lands. Local-only and best-effort: if gitleaks isn't installed it
   warns and skips (CI is the hard gate). Install with `brew install gitleaks`.
 - **CI (`on-pull-request`)** — the `Secret Scan (gitleaks)` job installs a pinned
-  gitleaks and scans the PR commit range (`merge-base..HEAD`). A finding fails
+  gitleaks, retrying transient release downloads and verifying the archive against
+  the release checksums before extraction. Download or verification failure stops
+  the job. It scans the PR commit range (`merge-base..HEAD`). A finding fails
   the PR.
 
 Both runs pass `--redact`, so a matched secret is never printed to logs (org

@@ -9,10 +9,10 @@ let { data, form }: PageProps = $props();
 <svelte:head><title>Set up your local application</title></svelte:head>
 
 {#if data.desktop}
-  <main class="sh-page" data-owner-setup="desktop">
-    <div class="sh-card">
+  <main class="smrt-app-shell__page" data-owner-setup="desktop">
+    <div class="smrt-app-shell__card">
       <h1>Quit and reopen the app</h1>
-      <p class="sh-muted">
+      <p class="smrt-app-shell__muted">
         The desktop app signs you in on its own. If you see this page, quit
         the app and open it again.
       </p>

@@ -19,18 +19,18 @@ const progress = $derived(pacing ? cappedBudgetProgress(pacing) : 0);
 </script>
 
 {#if !pacing}
-  <p class="empty" data-smrt-component="BudgetPacing">No budget pacing is available.</p>
+  <p class="smrt-budget-pacing__empty" data-smrt-component="BudgetPacing" >No budget pacing is available.</p>
 {:else}
   <Card padding="sm" variant="outlined">
-    <section class="budget-pacing">
-      <header>
-        <h3>{label}</h3>
+    <section class="smrt-budget-pacing__root" data-smrt-part="body">
+      <header data-smrt-part="header">
+        <h3 data-smrt-part="title">{label}</h3>
         <Badge variant={pacingStatusBadgeVariant(pacing.status)} size="sm">
           {humanizeKey(pacing.status)}
         </Badge>
       </header>
 
-      <div class="progress-label">
+      <div class="smrt-budget-pacing__progress-label" data-smrt-part="label">
         <span>{formatCents(pacing.spendCents, pacing.currency, locale)} spent</span>
         <span>
           {pacing.budgetFraction === null
@@ -40,14 +40,14 @@ const progress = $derived(pacing ? cappedBudgetProgress(pacing) : 0);
       </div>
       <Progress value={progress} max={1} label={label} />
 
-      <dl class="facts">
+      <dl class="smrt-budget-pacing__facts" data-smrt-part="meta">
         <div>
           <dt>Budget</dt>
           <dd>{formatCents(pacing.budgetCents, pacing.currency, locale)}</dd>
         </div>
         <div>
           <dt>Remaining</dt>
-          <dd class:negative={pacing.remainingCents < 0}>
+          <dd class:smrt-budget-pacing__negative={pacing.remainingCents < 0} data-smrt-part="value">
             {formatCents(pacing.remainingCents, pacing.currency, locale)}
           </dd>
         </div>
@@ -61,7 +61,7 @@ const progress = $derived(pacing ? cappedBudgetProgress(pacing) : 0);
         </div>
         <div>
           <dt>Variance</dt>
-          <dd class:negative={(pacing.varianceCents ?? 0) > 0}>
+          <dd class:smrt-budget-pacing__negative={(pacing.varianceCents ?? 0) > 0} data-smrt-part="value">
             {pacing.varianceCents === null
               ? '—'
               : formatCents(pacing.varianceCents, pacing.currency, locale)}
@@ -74,62 +74,59 @@ const progress = $derived(pacing ? cappedBudgetProgress(pacing) : 0);
 
 <style>
 @layer smrt.reset, smrt.structure, smrt.theme;
-@layer smrt.theme {
-  .budget-pacing {
+@layer smrt.structure {
+  .smrt-budget-pacing__root {
     display: flex;
     flex-direction: column;
     gap: var(--smrt-spacing-2);
   }
-
   header,
-  .progress-label {
+  .smrt-budget-pacing__progress-label {
     display: flex;
     align-items: center;
     justify-content: space-between;
     gap: var(--smrt-spacing-3);
   }
-
   h3,
-  .empty {
+  .smrt-budget-pacing__empty {
     margin: 0;
   }
-
-  h3 {
-    color: var(--smrt-color-on-surface);
-    font: var(--smrt-typography-title-medium-font);
-  }
-
-  .empty,
-  .progress-label,
-  dt {
-    color: var(--smrt-color-on-surface-variant);
-  }
-
-  .empty {
-    font: var(--smrt-typography-body-medium-font);
-  }
-
-  .progress-label,
-  dt {
-    font: var(--smrt-typography-body-small-font);
-  }
-
-  .facts {
+  .smrt-budget-pacing__facts {
     display: grid;
     grid-template-columns: repeat(auto-fit, minmax(9rem, 1fr));
     gap: var(--smrt-spacing-3);
     margin: var(--smrt-spacing-3) 0 0;
   }
-
-  .facts dd {
+  .smrt-budget-pacing__facts dd {
     margin: var(--smrt-spacing-1) 0 0;
+  }
+}
+
+@layer smrt.theme {
+  h3 {
+    color: var(--smrt-color-on-surface);
+    font: var(--smrt-typography-title-medium-font);
+  }
+  .smrt-budget-pacing__empty,
+  .smrt-budget-pacing__progress-label,
+  dt {
+    color: var(--smrt-color-on-surface-variant);
+  }
+  .smrt-budget-pacing__empty {
+    font: var(--smrt-typography-body-medium-font);
+  }
+  .smrt-budget-pacing__progress-label,
+  dt {
+    font: var(--smrt-typography-body-small-font);
+  }
+  .smrt-budget-pacing__facts dd {
     color: var(--smrt-color-on-surface);
     font: var(--smrt-typography-body-medium-font);
     font-weight: var(--smrt-typography-weight-medium);
   }
-
-  .facts dd.negative {
+  .smrt-budget-pacing__facts dd.smrt-budget-pacing__negative {
     color: var(--smrt-color-error);
   }
 }
+
 </style>

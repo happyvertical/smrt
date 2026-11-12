@@ -29,62 +29,64 @@ const {
 }: Props = $props();
 </script>
 
-<span class="status-indicators" role="group" aria-label={t(M['messages.message_status_indicator.status'])} data-smrt-component="MessageStatusIndicator">
+<span class="smrt-message-status-indicator__root" role="group" aria-label={t(M['messages.message_status_indicator.status'])} data-smrt-component="MessageStatusIndicator">
   {#if !isRead}
-    <span class="indicator unread" title={t(M['messages.message_status_indicator.unread'])} aria-label={t(M['messages.message_status_indicator.unread'])}>
-      <span class="dot"></span>
+    <span class="smrt-message-status-indicator__indicator smrt-message-status-indicator__unread" data-smrt-part="indicator" title={t(M['messages.message_status_indicator.unread'])} aria-label={t(M['messages.message_status_indicator.unread'])}>
+      <span class="smrt-message-status-indicator__marker" data-smrt-part="marker"></span>
     </span>
   {/if}
   {#if isFlagged}
-    <span class="indicator flagged" title={t(M['messages.message_status_indicator.flagged'])} aria-label={t(M['messages.message_status_indicator.flagged'])}>⚑</span>
+    <span class="smrt-message-status-indicator__indicator smrt-message-status-indicator__flagged" data-smrt-part="indicator" title={t(M['messages.message_status_indicator.flagged'])} aria-label={t(M['messages.message_status_indicator.flagged'])}>⚑</span>
   {/if}
   {#if hasAttachments}
-    <span class="indicator attachment" title={t(M['messages.message_status_indicator.has_attachments'])} aria-label={t(M['messages.message_status_indicator.has_attachments'])}>📎</span>
+    <span class="smrt-message-status-indicator__indicator smrt-message-status-indicator__attachment" data-smrt-part="indicator" title={t(M['messages.message_status_indicator.has_attachments'])} aria-label={t(M['messages.message_status_indicator.has_attachments'])}>📎</span>
   {/if}
   {#if isAnswered}
-    <span class="indicator answered" title={t(M['messages.message_status_indicator.replied'])} aria-label={t(M['messages.message_status_indicator.replied'])}>↩</span>
+    <span class="smrt-message-status-indicator__indicator smrt-message-status-indicator__answered" data-smrt-part="indicator" title={t(M['messages.message_status_indicator.replied'])} aria-label={t(M['messages.message_status_indicator.replied'])}>↩</span>
   {/if}
   {#if isDraft}
-    <span class="indicator draft" title={t(M['messages.message_status_indicator.draft'])} aria-label={t(M['messages.message_status_indicator.draft'])}>✎</span>
+    <span class="smrt-message-status-indicator__indicator smrt-message-status-indicator__draft" data-smrt-part="indicator" title={t(M['messages.message_status_indicator.draft'])} aria-label={t(M['messages.message_status_indicator.draft'])}>✎</span>
   {/if}
 </span>
 
 <style>
 @layer smrt.reset, smrt.structure, smrt.theme;
-@layer smrt.theme {
-  .status-indicators {
+@layer smrt.structure {
+  .smrt-message-status-indicator__root {
     display: inline-flex;
     align-items: center;
     gap: 0.375rem;
-    font-size: var(--smrt-typography-label-large-size, 0.875rem);
   }
-
-  .indicator {
+  .smrt-message-status-indicator__indicator {
     display: inline-flex;
     align-items: center;
   }
-
-  .unread .dot {
+  .smrt-message-status-indicator__unread .smrt-message-status-indicator__marker {
     width: 0.5rem;
     height: 0.5rem;
+  }
+}
+
+@layer smrt.theme {
+  .smrt-message-status-indicator__root {
+    font-size: var(--smrt-typography-label-large-size, 0.875rem);
+  }
+  .smrt-message-status-indicator__unread .smrt-message-status-indicator__marker {
     border-radius: var(--smrt-radius-full);
     background: var(--smrt-color-primary);
   }
-
-  .flagged {
+  .smrt-message-status-indicator__flagged {
     color: var(--smrt-color-error);
   }
-
-  .attachment {
+  .smrt-message-status-indicator__attachment {
     color: var(--smrt-color-on-surface-variant);
   }
-
-  .answered {
+  .smrt-message-status-indicator__answered {
     color: var(--smrt-color-primary);
   }
-
-  .draft {
+  .smrt-message-status-indicator__draft {
     color: var(--smrt-color-on-surface-variant);
   }
 }
+
 </style>

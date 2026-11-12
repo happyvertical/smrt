@@ -32,7 +32,14 @@ const dark = $derived(theme.state.isDark);
 
 <style>
 @layer smrt.reset, smrt.structure, smrt.theme;
+
+@layer smrt.structure {
+  .smrt-app-shell-color-scheme {
+    display: inline-flex;
+    align-items: center;
+  }
+}
+
 @layer smrt.theme {
-  .smrt-app-shell-color-scheme { display: inline-flex; align-items: center; }
 }
 </style>

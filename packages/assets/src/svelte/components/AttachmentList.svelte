@@ -81,19 +81,19 @@ async function confirmRemove() {
 
 {#snippet entry(item: AssetAttachmentVersion)}
   <strong>{item.name}</strong>
-  <div class="metadata">
+  <div class="smrt-attachment-list__metadata" data-smrt-part="meta">
     <span>{item.mimeType}</span>
     {#if item.version !== undefined}<span>{t(M['assets.attachments.version'], { version: item.version })}</span>{/if}
     {#if item.recordedAtLabel}<span>{item.recordedAtLabel}</span>{/if}
   </div>
   {#if item.note}<p>{item.note}</p>{/if}
-  <div class="links">
+  <div class="smrt-attachment-list__links" data-smrt-part="actions">
     {#if attachmentLink(item.viewHref)}<Button href={attachmentLink(item.viewHref)} target="_blank" rel="noopener noreferrer" variant="ghost">{t(M['assets.attachments.view'], { name: item.name })}</Button>{/if}
     {#if attachmentLink(item.downloadHref)}<Button href={attachmentLink(item.downloadHref)} variant="ghost">{t(M['assets.attachments.download'], { name: item.name })}</Button>{/if}
   </div>
 {/snippet}
 
-<section class="attachment-list" aria-label={title ?? t(M['assets.attachments.title'])} aria-busy={loading} data-smrt-component="AttachmentList">
+<section class="smrt-attachment-list__root" aria-label={title ?? t(M['assets.attachments.title'])} aria-busy={loading} data-smrt-component="AttachmentList">
   <h3>{title ?? t(M['assets.attachments.title'])}</h3>
   {#if message}<p role="alert">{message}</p>{/if}
   {#if loading}<p role="status">{t(M['assets.attachments.loading'])}</p>{/if}
@@ -103,7 +103,7 @@ async function confirmRemove() {
       <li>
         {@render entry(attachment)}
         {#if removable && attachment.canRemove !== false}
-          <div class="links"><Button type="button" variant="ghost" {density} disabled={busy} onclick={() => askRemove(attachment)}>{t(M['assets.attachments.remove'], { name: attachment.name })}</Button></div>
+          <div class="smrt-attachment-list__links" data-smrt-part="actions"><Button type="button" variant="ghost" {density} disabled={busy} onclick={() => askRemove(attachment)}>{t(M['assets.attachments.remove'], { name: attachment.name })}</Button></div>
         {/if}
         {#if attachment.statusLabel}<p>{attachment.statusLabel}</p>{/if}
         {#if showHistory && attachment.versions?.length}
@@ -138,15 +138,48 @@ async function confirmRemove() {
 
 <style>
 @layer smrt.reset, smrt.structure, smrt.theme;
-@layer smrt.theme {
-  .attachment-list { min-width: 0; overflow-wrap: anywhere; }
-  ul { list-style: none; padding: 0; }
-  ul, ol { display: grid; gap: var(--smrt-spacing-4); }
-  ol { padding-inline-start: var(--smrt-spacing-5); }
-  li { min-width: 0; display: grid; gap: var(--smrt-spacing-2); }
-  .links, .metadata { display: flex; flex-wrap: wrap; gap: var(--smrt-spacing-2); min-width: 0; }
-  .metadata { color: var(--smrt-color-on-surface-variant); }
-  h3, h4, p { margin: 0; }
-  .links :global(a) { max-width: 100%; white-space: normal; overflow-wrap: anywhere; min-width: 0; }
+@layer smrt.structure {
+  .smrt-attachment-list__root {
+    min-width: 0;
+    overflow-wrap: anywhere;
+  }
+  ul {
+    list-style: none;
+    padding: 0;
+  }
+  ul, ol {
+    display: grid;
+    gap: var(--smrt-spacing-4);
+  }
+  ol {
+    padding-inline-start: var(--smrt-spacing-5);
+  }
+  li {
+    min-width: 0;
+    display: grid;
+    gap: var(--smrt-spacing-2);
+  }
+  .smrt-attachment-list__links, .smrt-attachment-list__metadata {
+    display: flex;
+    flex-wrap: wrap;
+    gap: var(--smrt-spacing-2);
+    min-width: 0;
+  }
+  h3, h4, p {
+    margin: 0;
+  }
+  .smrt-attachment-list__links :global(a) {
+    max-width: 100%;
+    white-space: normal;
+    overflow-wrap: anywhere;
+    min-width: 0;
+  }
 }
+
+@layer smrt.theme {
+  .smrt-attachment-list__metadata {
+    color: var(--smrt-color-on-surface-variant);
+  }
+}
+
 </style>

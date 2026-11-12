@@ -505,6 +505,14 @@ format). `ContentTitleField` registers once you give it a `name` (e.g.
 `name="title"`). Pass `idPrefix` to the status and metadata fields, and
 `id`/`name` to the title and body, when two editors share a page.
 
+Image sizing stays in layered CSS. New image HTML stores the chosen width in
+`--smrt-content-body-image-width`; render and editor load normalize legacy
+inline `width` to that same private property. Existing bodies need no migration,
+and saving them again preserves the chosen width. Full-width placement and
+phone wrapping override the chosen width through ordinary CSS specificity;
+consumers can override the layered rules without `!important`. The sanitizer
+accepts only the same restricted width values for the private property.
+
 `mode` (`'full'` by default, or `'simple'`) sets how much of the editor an
 everyday editor sees; `fields` is an explicit allow-list that overrides it:
 

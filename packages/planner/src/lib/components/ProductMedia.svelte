@@ -43,8 +43,8 @@ const nameOf = (product: ModelRecord) =>
   String(product.name ?? 'Untitled product');
 </script>
 
-<section class="media" aria-label="Product images">
-  <div class="heading">
+<section class="smrt-product-media__root" aria-label="Product images" data-smrt-component="ProductMedia">
+  <div class="smrt-product-media__heading" data-smrt-part="header">
     <h3>Product images</h3>
     <p>Images stay in this browser demo and are linked through ProductAsset.</p>
     {#if !gallery}
@@ -52,7 +52,7 @@ const nameOf = (product: ModelRecord) =>
     {/if}
   </div>
 
-  <ul class="products">
+  <ul class="smrt-product-media__products" data-smrt-part="list">
     {#each rows as product (product.id)}
       {@const productImages = images.get(product.id) ?? []}
       <li>
@@ -66,7 +66,7 @@ const nameOf = (product: ModelRecord) =>
             mode="pick"
           />
         {:else}
-          <span class="count">
+          <span class="smrt-product-media__count" data-smrt-part="count">
             {productImages.length}
             {productImages.length === 1 ? 'image' : 'images'}
           </span>
@@ -85,11 +85,34 @@ const nameOf = (product: ModelRecord) =>
 
 <style>
 @layer smrt.reset, smrt.structure, smrt.theme;
-@layer smrt.theme {
-  .media, .heading, li { display: grid; gap: var(--smrt-spacing-2); }
-  h3, p { margin: 0; }
-  p, .count { color: var(--smrt-color-on-surface-variant); }
-  .products { display: grid; gap: var(--smrt-spacing-3); margin: 0; padding: 0; list-style: none; }
-  li { padding: var(--smrt-spacing-2); border: var(--smrt-hairline); border-radius: var(--smrt-radius-medium); }
+@layer smrt.structure {
+  .smrt-product-media__root, .smrt-product-media__heading, li {
+    display: grid;
+    gap: var(--smrt-spacing-2);
+  }
+  h3, p {
+    margin: 0;
+  }
+  .smrt-product-media__products {
+    display: grid;
+    gap: var(--smrt-spacing-3);
+    margin: 0;
+    padding: 0;
+    list-style: none;
+  }
+  li {
+    padding: var(--smrt-spacing-2);
+  }
 }
+
+@layer smrt.theme {
+  p, .smrt-product-media__count {
+    color: var(--smrt-color-on-surface-variant);
+  }
+  li {
+    border: var(--smrt-hairline);
+    border-radius: var(--smrt-radius-medium);
+  }
+}
+
 </style>

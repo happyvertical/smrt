@@ -69,7 +69,7 @@ let {
 {/snippet}
 
 {#if items.length > 0}
-  <div class="content-review-status-tray" role="group" aria-label={label} data-smrt-component="ContentReviewStatusTray">
+  <div class="smrt-content-review-status-tray__root" role="group" aria-label={label} data-smrt-component="ContentReviewStatusTray">
     {#each items as item (item.id)}
       <Button
         variant="ghost"
@@ -82,8 +82,8 @@ let {
         onclick={() => onSelect?.(item)}
       >
         {@render trayIcon(item.icon)}
-        <span class="tray-button__indicator" aria-hidden="true"></span>
-        <span class="sr-only">{item.label}: {item.status}</span>
+        <span class="smrt-content-review-status-tray__indicator" aria-hidden="true" data-smrt-part="indicator"></span>
+        <span class="smrt-content-review-status-tray__sr-only" data-smrt-part="label">{item.label}: {item.status}</span>
       </Button>
     {/each}
   </div>
@@ -91,67 +91,34 @@ let {
 
 <style>
 @layer smrt.reset, smrt.structure, smrt.theme;
-@layer smrt.theme {
-  .content-review-status-tray {
+@layer smrt.structure {
+  .smrt-content-review-status-tray__root {
     display: inline-flex;
     align-items: center;
     gap: 0.35rem;
     min-height: 2.5rem;
   }
-
-  .content-review-status-tray :global(.tray-button) {
+  .smrt-content-review-status-tray__root :global(.tray-button) {
     position: relative;
     display: inline-grid;
     place-items: center;
     width: 2.75rem;
     height: 2.75rem;
-    border: var(--smrt-hairline);
-    border-radius: 0.55rem;
-    background: var(--smrt-color-surface-container-low);
-    color: var(--smrt-color-on-surface-variant);
     cursor: pointer;
     padding: 0;
   }
-
-  .content-review-status-tray :global(.tray-button:hover),
-  .content-review-status-tray :global(.tray-button.tray-button--active) {
-    background: var(--smrt-color-surface-container);
-    color: var(--smrt-color-on-surface);
-  }
-
-  .content-review-status-tray :global(.tray-button svg) {
+  .smrt-content-review-status-tray__root :global(.tray-button svg) {
     width: 1.15rem;
     height: 1.15rem;
-    fill: none;
-    stroke: currentColor;
-    stroke-width: 1.9;
-    stroke-linecap: round;
-    stroke-linejoin: round;
   }
-
-  .content-review-status-tray :global(.tray-button__indicator) {
+  .smrt-content-review-status-tray__root :global(.smrt-content-review-status-tray__indicator) {
     position: absolute;
     right: 0.35rem;
     bottom: 0.35rem;
     width: 0.45rem;
     height: 0.45rem;
-    border-radius: var(--smrt-radius-full);
-    background: var(--smrt-color-outline);
   }
-
-  .content-review-status-tray :global(.tray-button--danger .tray-button__indicator) {
-    background: var(--smrt-color-error);
-  }
-
-  .content-review-status-tray :global(.tray-button--warning .tray-button__indicator) {
-    background: var(--smrt-color-tertiary);
-  }
-
-  .content-review-status-tray :global(.tray-button--success .tray-button__indicator) {
-    background: var(--smrt-color-primary);
-  }
-
-  .content-review-status-tray :global(.sr-only) {
+  .smrt-content-review-status-tray__root :global(.smrt-content-review-status-tray__sr-only) {
     position: absolute;
     width: 1px;
     height: 1px;
@@ -160,4 +127,39 @@ let {
     white-space: nowrap;
   }
 }
+
+@layer smrt.theme {
+  .smrt-content-review-status-tray__root :global(.tray-button) {
+    border: var(--smrt-hairline);
+    border-radius: 0.55rem;
+    background: var(--smrt-color-surface-container-low);
+    color: var(--smrt-color-on-surface-variant);
+  }
+  .smrt-content-review-status-tray__root :global(.tray-button:hover),
+  .smrt-content-review-status-tray__root :global(.tray-button.tray-button--active) {
+    background: var(--smrt-color-surface-container);
+    color: var(--smrt-color-on-surface);
+  }
+  .smrt-content-review-status-tray__root :global(.tray-button svg) {
+    fill: none;
+    stroke: currentColor;
+    stroke-width: 1.9;
+    stroke-linecap: round;
+    stroke-linejoin: round;
+  }
+  .smrt-content-review-status-tray__root :global(.smrt-content-review-status-tray__indicator) {
+    border-radius: var(--smrt-radius-full);
+    background: var(--smrt-color-outline);
+  }
+  .smrt-content-review-status-tray__root :global(.tray-button--danger .smrt-content-review-status-tray__indicator) {
+    background: var(--smrt-color-error);
+  }
+  .smrt-content-review-status-tray__root :global(.tray-button--warning .smrt-content-review-status-tray__indicator) {
+    background: var(--smrt-color-tertiary);
+  }
+  .smrt-content-review-status-tray__root :global(.tray-button--success .smrt-content-review-status-tray__indicator) {
+    background: var(--smrt-color-primary);
+  }
+}
+
 </style>

@@ -10,6 +10,7 @@
  * database is a no-op (the diff is empty, no statements are generated,
  * `applied: false` is returned).
  */
+import { createLogger } from '@happyvertical/logger';
 import type { DatabaseInterface } from '@happyvertical/sql';
 import { ObjectRegistry } from '../registry.js';
 import { getDDLStrategy } from '../schema/ddl/index.js';
@@ -20,6 +21,7 @@ import {
   generateSchemaDiff,
   getSQLFromChanges,
   hasActionableChanges,
+  isAdvisoryOnlyChange,
   resolveMigrationEngine,
 } from './differ.js';
 import {
@@ -27,6 +29,47 @@ import {
   generateMigrationTimestamp,
 } from './generator.js';
 import { MigrationTracker } from './tracker.js';
+
+const logger = createLogger({ level: 'info' });
+
+/**
+ * A live constraint the migrator relaxes to match the manifest: `DROP NOT NULL`
+ * on a manifest-nullable column (automatic on PostgreSQL, #4897) or, with
+ * `relaxColumns`, `DROP DEFAULT`. Listed per column so none is applied silently.
+ */
+export interface RelaxedColumn {
+  table: string;
+  column: string;
+  alteration: 'drop_not_null' | 'drop_default';
+}
+
+/** Executable constraint relaxations in a diff, one entry per column. */
+export function collectRelaxedColumns(
+  diff: Awaited<ReturnType<typeof generateSchemaDiff>>,
+): RelaxedColumn[] {
+  const relaxed: RelaxedColumn[] = [];
+  for (const change of diff.changes) {
+    if (
+      change.type !== 'alter_column' ||
+      !change.name ||
+      (change.alteration !== 'drop_not_null' &&
+        change.alteration !== 'drop_default') ||
+      isAdvisoryOnlyChange(change)
+    ) {
+      continue;
+    }
+    const statements = change.sqlStatements ?? (change.sql ? [change.sql] : []);
+    if (statements.every((statement) => statement.trim().startsWith('--'))) {
+      continue;
+    }
+    relaxed.push({
+      table: change.table,
+      column: change.name,
+      alteration: change.alteration,
+    });
+  }
+  return relaxed;
+}
 
 export interface MigrateSmrtSchemasOptions {
   db: DatabaseInterface;
@@ -115,6 +158,11 @@ export interface MigrateSmrtSchemasResult {
    * full array is easy to gloss over when `applied: false`).
    */
   hasManualDrift: boolean;
+  /**
+   * Constraint relaxations in `statements`, one per column (`DROP NOT NULL` on
+   * manifest-nullable columns by default on PostgreSQL, #4897).
+   */
+  relaxedColumns: RelaxedColumn[];
 }
 
 export interface PendingSchemaStatementsResult {
@@ -136,6 +184,11 @@ export interface PendingSchemaStatementsResult {
    * `MigrateSmrtSchemasResult.hasManualDrift` shortcut.
    */
   hasManualDrift: boolean;
+  /**
+   * Constraint relaxations in `statements`, one per column (`DROP NOT NULL` on
+   * manifest-nullable columns by default on PostgreSQL, #4897).
+   */
+  relaxedColumns: RelaxedColumn[];
 }
 
 /**
@@ -188,6 +241,7 @@ export async function getPendingSchemaStatements(
     hasChanges: hasActionableChanges(diff),
     unactionableChanges,
     hasManualDrift: unactionableChanges.length > 0,
+    relaxedColumns: collectRelaxedColumns(diff),
   };
 }
 
@@ -247,6 +301,7 @@ export async function migrateSmrtSchemas(
       schemaCount: pending.schemaCount,
       unactionableChanges: pending.unactionableChanges,
       hasManualDrift: pending.hasManualDrift,
+      relaxedColumns: [],
     };
   }
 
@@ -285,6 +340,13 @@ export async function migrateSmrtSchemas(
     (result) => result.applied !== false && result.skipped !== true,
   );
 
+  const relaxedColumns = applied ? pending.relaxedColumns : [];
+  for (const { table, column, alteration } of relaxedColumns) {
+    logger.info(
+      `Relaxed ${table}.${column} (${alteration}) to match the manifest`,
+    );
+  }
+
   return {
     applied,
     results,
@@ -292,6 +354,7 @@ export async function migrateSmrtSchemas(
     schemaCount: pending.schemaCount,
     unactionableChanges: pending.unactionableChanges,
     hasManualDrift: pending.hasManualDrift,
+    relaxedColumns,
   };
 }
 

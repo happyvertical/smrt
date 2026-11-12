@@ -3,7 +3,7 @@
   "description": "smrt framework for building vertical AI agents",
   "author": "Will Griffin <willgriffin@gmail.com>",
   "type": "module",
-  "version": "0.60.16",
+  "version": "0.60.17",
   "files": [
     "AGENTS.md",
     "CLAUDE.md"
@@ -18,7 +18,7 @@
     "test:watch": "turbo test:watch",
     "test:coverage": "npx vitest run --coverage",
     "test:ui": "npx vitest --ui",
-    "lint": "npx --yes @biomejs/biome@2.5.3 ci --diagnostic-level=error . && node scripts/component-roots.mjs --check && node scripts/check-smrt-token-vocabulary.mjs && node scripts/check-smrt-cascade-layers.mjs && node scripts/generate-smrt-required-tokens.mjs --check && node scripts/codemod-smrt-fallbacks.mjs --check",
+    "lint": "npx --yes @biomejs/biome@2.5.3 ci --diagnostic-level=error . && node scripts/component-roots.mjs --check && node scripts/check-smrt-token-vocabulary.mjs && node scripts/check-smrt-cascade-layers.mjs && node scripts/check-smrt-sort-layers.mjs && node scripts/generate-smrt-required-tokens.mjs --check && node scripts/codemod-smrt-fallbacks.mjs --check",
     "lint:fix": "pnpm run format",
     "lint:fix-unsafe": "npx --yes @biomejs/biome@2.5.3 check --write --unsafe --staged",
     "clean": "turbo clean && rm -rf .turbo node_modules/.cache",

@@ -178,98 +178,98 @@ async function handleAIEdit() {
 }
 </script>
 
-<div class="smrt-image-editor" data-smrt-component="ImageEditor">
-  <div class="header">
+<div class="smrt-image-editor__root" data-smrt-component="ImageEditor">
+  <div class="smrt-image-editor__header" data-smrt-part="header">
     <h3>{t(M['images.image_editor.title'])}</h3>
     {#if onCancel}
-      <Button variant="ghost" size="sm" class="close-btn--x" onclick={onCancel}>×</Button>
+      <Button variant="ghost" size="sm" class="smrt-image-editor__close" onclick={onCancel}>×</Button>
     {/if}
   </div>
 
   {#if !image}
-    <div class="empty-state">{t(M['images.image_editor.no_image_selected'])}</div>
+    <div class="smrt-image-editor__empty" data-smrt-part="empty">{t(M['images.image_editor.no_image_selected'])}</div>
   {:else}
-    <div class="editor-content">
-      <div class="image-preview" style="background-image: url({image.url})">
+    <div class="smrt-image-editor__content" data-smrt-part="body">
+      <div class="smrt-image-editor__preview" data-smrt-part="panel" style="background-image: url({image.url})">
         <!-- Optional: Interactive crop overlay could go here -->
       </div>
       
-      <div class="editor-controls">
-        <div class="mode-selector">
+      <div class="smrt-image-editor__controls" data-smrt-part="panel">
+        <div class="smrt-image-editor__modes" data-smrt-part="nav">
           <Button
             variant={mode === 'standard' ? 'primary' : 'ghost'}
-            class="mode-tab"
+            class="smrt-image-editor__mode-button"
             onclick={() => (mode = 'standard')}
           >{t(M['images.image_editor.standard_tools'])}</Button>
           <Button
             variant={mode === 'ai' ? 'primary' : 'ghost'}
-            class="mode-tab"
+            class="smrt-image-editor__mode-button"
             onclick={() => (mode = 'ai')}
           >{t(M['images.image_editor.ai_edit'])}</Button>
         </div>
 
         {#if error}
-          <div class="error-msg">{error}</div>
+          <div class="smrt-image-editor__error" data-smrt-part="error">{error}</div>
         {/if}
         {#if successMessage}
-          <div class="success-msg">{successMessage}</div>
+          <div class="smrt-image-editor__success" data-smrt-part="status">{successMessage}</div>
         {/if}
 
         {#if mode === 'standard'}
           <!-- Standard Operations -->
-          <div class="tool-section">
+          <div class="smrt-image-editor__tool" data-smrt-part="group">
             <h4>Resize</h4>
-            <div class="row">
-              <label>Width <Input type="number" class="dim-input" bind:value={width} onfocus={() => isEditingDimensions = true} /></label>
-              <label>Height <Input type="number" class="dim-input" bind:value={height} onfocus={() => isEditingDimensions = true} /></label>
-              <Button variant="ghost" class="tonal-btn--filled" disabled={isProcessing} onclick={handleResize}>{t(M['images.image_editor.apply_resize'])}</Button>
+            <div class="smrt-image-editor__row" data-smrt-part="row">
+              <label>Width <Input type="number" class="smrt-image-editor__dimension-input" bind:value={width} onfocus={() => isEditingDimensions = true} /></label>
+              <label>Height <Input type="number" class="smrt-image-editor__dimension-input" bind:value={height} onfocus={() => isEditingDimensions = true} /></label>
+              <Button variant="ghost" class="smrt-image-editor__tonal-button" disabled={isProcessing} onclick={handleResize}>{t(M['images.image_editor.apply_resize'])}</Button>
             </div>
             {#if isEditingDimensions}
-               <div class="row"><Button variant="ghost" size="sm" class="text-btn--link" onclick={resetDimensions}>{t(M['images.image_editor.reset_dimensions'])}</Button></div>
+               <div class="smrt-image-editor__row" data-smrt-part="row"><Button variant="ghost" size="sm" class="smrt-image-editor__text-button" onclick={resetDimensions}>{t(M['images.image_editor.reset_dimensions'])}</Button></div>
             {/if}
           </div>
 
-          <div class="tool-section">
+          <div class="smrt-image-editor__tool" data-smrt-part="group">
             <h4>Crop</h4>
-            <div class="row">
-              <label>X <Input type="number" class="dim-input" bind:value={cropX} onfocus={() => isCropping = true} /></label>
-              <label>Y <Input type="number" class="dim-input" bind:value={cropY} onfocus={() => isCropping = true} /></label>
+            <div class="smrt-image-editor__row" data-smrt-part="row">
+              <label>X <Input type="number" class="smrt-image-editor__dimension-input" bind:value={cropX} onfocus={() => isCropping = true} /></label>
+              <label>Y <Input type="number" class="smrt-image-editor__dimension-input" bind:value={cropY} onfocus={() => isCropping = true} /></label>
             </div>
-            <div class="row">
-              <label>W <Input type="number" class="dim-input" bind:value={cropW} onfocus={() => isCropping = true} /></label>
-              <label>H <Input type="number" class="dim-input" bind:value={cropH} onfocus={() => isCropping = true} /></label>
-              <Button variant="ghost" class="tonal-btn--filled" disabled={isProcessing} onclick={handleCrop}>{t(M['images.image_editor.apply_crop'])}</Button>
+            <div class="smrt-image-editor__row" data-smrt-part="row">
+              <label>W <Input type="number" class="smrt-image-editor__dimension-input" bind:value={cropW} onfocus={() => isCropping = true} /></label>
+              <label>H <Input type="number" class="smrt-image-editor__dimension-input" bind:value={cropH} onfocus={() => isCropping = true} /></label>
+              <Button variant="ghost" class="smrt-image-editor__tonal-button" disabled={isProcessing} onclick={handleCrop}>{t(M['images.image_editor.apply_crop'])}</Button>
             </div>
             {#if isCropping}
-               <div class="row"><Button variant="ghost" size="sm" class="text-btn--link" onclick={resetDimensions}>{t(M['images.image_editor.reset_dimensions'])}</Button></div>
+               <div class="smrt-image-editor__row" data-smrt-part="row"><Button variant="ghost" size="sm" class="smrt-image-editor__text-button" onclick={resetDimensions}>{t(M['images.image_editor.reset_dimensions'])}</Button></div>
             {/if}
           </div>
 
-          <div class="tool-section">
+          <div class="smrt-image-editor__tool" data-smrt-part="group">
             <h4>{t(M['images.image_editor.convert_format'])}</h4>
-            <div class="row">
-              <Select class="format-select" bind:value={format}>
+            <div class="smrt-image-editor__row" data-smrt-part="row">
+              <Select class="smrt-image-editor__format" bind:value={format}>
                 <option value="webp">WebP</option>
                 <option value="jpeg">JPEG</option>
                 <option value="png">PNG</option>
               </Select>
-              <Button variant="ghost" class="tonal-btn--filled" disabled={isProcessing} onclick={handleConvert}>Convert</Button>
+              <Button variant="ghost" class="smrt-image-editor__tonal-button" disabled={isProcessing} onclick={handleConvert}>Convert</Button>
             </div>
           </div>
         {:else}
           <!-- AI Operations -->
-          <div class="tool-section">
+          <div class="smrt-image-editor__tool" data-smrt-part="group">
             <h4>{t(M['images.image_editor.ai_powered_edit'])}</h4>
-            <p class="hint">{t(M['images.image_editor.ai_powered_edit_hint'])}</p>
+            <p class="smrt-image-editor__hint" data-smrt-part="description">{t(M['images.image_editor.ai_powered_edit_hint'])}</p>
             <Textarea
-              class="ai-prompt"
+              class="smrt-image-editor__prompt"
               bind:value={prompt}
               placeholder={t(M['images.image_editor.ai_prompt_placeholder'])}
               rows={4}
             />
             <Button
               variant="primary"
-              class="primary-btn--pill"
+              class="smrt-image-editor__primary-button"
               disabled={isProcessing || !prompt.trim()}
               onclick={handleAIEdit}
             >
@@ -284,57 +284,135 @@ async function handleAIEdit() {
 
 <style>
 @layer smrt.reset, smrt.structure, smrt.theme;
-@layer smrt.theme {
-  .smrt-image-editor {
+@layer smrt.structure {
+  .smrt-image-editor__root {
     display: flex;
     flex-direction: column;
     gap: 1rem;
     padding: 1.5rem;
+  }
+  .smrt-image-editor__header {
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+    padding-bottom: 1rem;
+    margin-bottom: 0.5rem;
+  }
+  .smrt-image-editor__header h3 {
+    margin: 0;
+  }
+  .smrt-image-editor__empty {
+    padding: 2rem;
+  }
+  .smrt-image-editor__content {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 2rem;
+  }
+  .smrt-image-editor__preview {
+    flex: 1;
+    min-width: 300px;
+    min-height: 300px;
+  }
+  .smrt-image-editor__controls {
+    flex: 1;
+    min-width: 300px;
+    display: flex;
+    flex-direction: column;
+    gap: 1.5rem;
+  }
+  /* Segmented button style for tabs */
+  .smrt-image-editor__modes {
+    display: flex;
+    padding: 0.25rem;
+    gap: 0.25rem;
+  }
+  /* The mode toggles are migrated Buttons (variant primary = active, ghost =
+  inactive). Keep the segmented-pill sizing by piercing into each Button's
+  rendered <button> (see #1589 scoping rule). */
+  .smrt-image-editor__modes :global(.smrt-image-editor__mode-button) {
+    flex: 1;
+    padding: 0.6rem 1rem;
+  }
+  .smrt-image-editor__tool h4 {
+    margin: 0 0 1rem 0;
+  }
+  .smrt-image-editor__row {
+    display: flex;
+    gap: 0.75rem;
+    align-items: center;
+    margin-bottom: 0.75rem;
+    flex-wrap: wrap;
+  }
+  .smrt-image-editor__row label {
+    display: flex;
+    flex-direction: column;
+    gap: 0.25rem;
+  }
+  /* Layout-only overrides for the migrated form primitives. The Input / Select /
+  Textarea primitives own the visual styling (background, border, focus ring);
+  these :global() rules only pierce their rendered controls to constrain box
+  size and spacing (see #1589 scoping rule). */
+  .smrt-image-editor__row label :global(.smrt-image-editor__dimension-input) {
+    width: 90px;
+  }
+  /* Size the format Select to its content instead of the primitive's full-width
+  default so it sits inline beside the Convert button in the flex row. */
+  .smrt-image-editor__row :global(.smrt-image-editor__format) {
+    width: auto;
+  }
+  .smrt-image-editor__tool :global(.smrt-image-editor__prompt) {
+    margin-bottom: 1rem;
+  }
+  /* Migrated Buttons keep their bespoke filled-tonal / text-link / pill looks.
+  :global() pierces into each Button's rendered <button> (see #1589). */
+  .smrt-image-editor__tool :global(.smrt-image-editor__tonal-button) {
+    padding: 0.6rem 1.2rem;
+    margin-top: 1.25rem;
+  }
+  .smrt-image-editor__tool :global(.smrt-image-editor__text-button) {
+    padding: 0;
+  }
+  .smrt-image-editor__tool :global(.smrt-image-editor__primary-button) {
+    padding: 0.6rem 1.5rem;
+  }
+  .smrt-image-editor__hint {
+    margin: 0 0 0.5rem 0;
+  }
+  .smrt-image-editor__error {
+    padding: 0.5rem;
+  }
+  .smrt-image-editor__success {
+    padding: 0.5rem;
+  }
+}
+
+@layer smrt.theme {
+  .smrt-image-editor__root {
     background: var(--smrt-color-surface-container);
     color: var(--smrt-color-on-surface);
     border-radius: var(--smrt-radius-lg);
     border: var(--smrt-hairline);
   }
-
-  .header {
-    display: flex;
-    justify-content: space-between;
-    align-items: center;
+  .smrt-image-editor__header {
     border-bottom: var(--smrt-hairline);
-    padding-bottom: 1rem;
-    margin-bottom: 0.5rem;
   }
-  
-  .header h3 {
-    margin: 0;
+  .smrt-image-editor__header h3 {
     font-size: var(--smrt-typography-title-medium-size, 1.15rem);
     font-weight: var(--smrt-typography-weight-medium, 500);
   }
-
   /* The migrated close Button keeps ghost styling; only bump the × glyph size.
-     :global() pierces into the Button child's rendered <button> (see #1589). */
-  .header :global(.close-btn--x) {
+  :global() pierces into the Button child's rendered <button> (see #1589). */
+  .smrt-image-editor__header :global(.smrt-image-editor__close) {
     color: inherit;
     font-size: var(--smrt-typography-headline-small-size, 1.5rem);
     line-height: 1;
   }
-
-  .empty-state {
-    padding: 2rem;
+  .smrt-image-editor__empty {
     text-align: center;
     color: var(--smrt-color-outline);
   }
-
-  .editor-content {
-    display: flex;
-    flex-wrap: wrap;
-    gap: 2rem;
-  }
-
-  .image-preview {
-    flex: 1;
-    min-width: 300px;
-    min-height: 300px;
+  .smrt-image-editor__preview {
     background-size: contain;
     background-position: center;
     background-repeat: no-repeat;
@@ -342,131 +420,70 @@ async function handleAIEdit() {
     border-radius: var(--smrt-radius-md);
     border: 1px dashed var(--smrt-color-outline-variant);
   }
-
-  .editor-controls {
-    flex: 1;
-    min-width: 300px;
-    display: flex;
-    flex-direction: column;
-    gap: 1.5rem;
-  }
-
   /* Segmented button style for tabs */
-  .mode-selector {
-    display: flex;
+  .smrt-image-editor__modes {
     background: var(--smrt-color-surface-container-high);
     border-radius: var(--smrt-radius-full);
-    padding: 0.25rem;
-    gap: 0.25rem;
   }
-
   /* The mode toggles are migrated Buttons (variant primary = active, ghost =
-     inactive). Keep the segmented-pill sizing by piercing into each Button's
-     rendered <button> (see #1589 scoping rule). */
-  .mode-selector :global(.mode-tab) {
-    flex: 1;
-    padding: 0.6rem 1rem;
+  inactive). Keep the segmented-pill sizing by piercing into each Button's
+  rendered <button> (see #1589 scoping rule). */
+  .smrt-image-editor__modes :global(.smrt-image-editor__mode-button) {
     font-weight: var(--smrt-typography-weight-medium, 500);
     border-radius: var(--smrt-radius-full);
   }
-
-  .tool-section h4 {
-    margin: 0 0 1rem 0;
+  .smrt-image-editor__tool h4 {
     font-size: var(--smrt-typography-title-medium-size, 0.95rem);
     font-weight: var(--smrt-typography-weight-medium, 500);
     color: var(--smrt-color-on-surface-variant);
   }
-
-  .row {
-    display: flex;
-    gap: 0.75rem;
-    align-items: center;
-    margin-bottom: 0.75rem;
-    flex-wrap: wrap;
-  }
-
-  .row label {
-    display: flex;
-    flex-direction: column;
+  .smrt-image-editor__row label {
     font-size: var(--smrt-typography-label-medium-size, 0.8rem);
     font-weight: var(--smrt-typography-weight-medium, 500);
     color: var(--smrt-color-outline);
-    gap: 0.25rem;
   }
-
-  /* Layout-only overrides for the migrated form primitives. The Input / Select /
-     Textarea primitives own the visual styling (background, border, focus ring);
-     these :global() rules only pierce their rendered controls to constrain box
-     size and spacing (see #1589 scoping rule). */
-  .row label :global(.dim-input) {
-    width: 90px;
-  }
-
-  /* Size the format Select to its content instead of the primitive's full-width
-     default so it sits inline beside the Convert button in the flex row. */
-  .row :global(.format-select) {
-    width: auto;
-  }
-
-  .tool-section :global(.ai-prompt) {
-    margin-bottom: 1rem;
-  }
-
   /* Migrated Buttons keep their bespoke filled-tonal / text-link / pill looks.
-     :global() pierces into each Button's rendered <button> (see #1589). */
-  .tool-section :global(.tonal-btn--filled) {
+  :global() pierces into each Button's rendered <button> (see #1589). */
+  .smrt-image-editor__tool :global(.smrt-image-editor__tonal-button) {
     background: var(--smrt-color-surface-container-highest);
     color: var(--smrt-color-primary);
     border: var(--smrt-hairline);
-    padding: 0.6rem 1.2rem;
     border-radius: var(--smrt-radius-full);
     font-weight: var(--smrt-typography-weight-medium, 500);
     transition: background 0.2s;
-    margin-top: 1.25rem;
   }
-
-  .tool-section :global(.tonal-btn--filled:hover:not(:disabled)) {
+  .smrt-image-editor__tool :global(.smrt-image-editor__tonal-button:hover:not(:disabled)) {
     background: var(--smrt-color-surface-container-high);
   }
-
-  .tool-section :global(.text-btn--link) {
+  .smrt-image-editor__tool :global(.smrt-image-editor__text-button) {
     text-decoration: underline;
-    padding: 0;
   }
-  .tool-section :global(.text-btn--link:hover) {
+  .smrt-image-editor__tool :global(.smrt-image-editor__text-button:hover) {
     color: var(--smrt-color-on-surface);
   }
-
-  .tool-section :global(.primary-btn--pill) {
-    padding: 0.6rem 1.5rem;
+  .smrt-image-editor__tool :global(.smrt-image-editor__primary-button) {
     border-radius: var(--smrt-radius-full);
     font-weight: var(--smrt-typography-weight-medium, 500);
   }
-
-  .tool-section :global(.primary-btn--pill:hover:not(:disabled)) {
+  .smrt-image-editor__tool :global(.smrt-image-editor__primary-button:hover:not(:disabled)) {
     filter: brightness(1.1);
   }
-
-  .hint {
+  .smrt-image-editor__hint {
     font-size: var(--smrt-typography-body-small-size, 0.8rem);
     color: var(--smrt-color-outline);
-    margin: 0 0 0.5rem 0;
   }
-
-  .error-msg {
+  .smrt-image-editor__error {
     color: var(--smrt-color-error);
     background: color-mix(in srgb, var(--smrt-color-error) 10%, transparent);
-    padding: 0.5rem;
     border-radius: var(--smrt-radius-sm);
     font-size: var(--smrt-typography-body-medium-size, 0.85rem);
   }
-
-  .success-msg {
+  .smrt-image-editor__success {
     color: var(--smrt-color-success);
     background: color-mix(in srgb, var(--smrt-color-success) 10%, transparent);
-    padding: 0.5rem;
     border-radius: var(--smrt-radius-sm);
     font-size: var(--smrt-typography-body-medium-size, 0.85rem);
   }
 }
+
 </style>

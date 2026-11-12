@@ -113,16 +113,16 @@ describe('FeatureSettingsPanel', () => {
       showKeys: false,
       features: [{ ...DRAFTS, packageName: '@test/app' }],
     });
-    expect(target.querySelector('.fs-key')).toBeNull();
-    expect(target.querySelector('.fs-package')).toBeNull();
+    expect(target.querySelector('[data-smrt-part="key"]')).toBeNull();
+    expect(target.querySelector('[data-smrt-part="meta"]')).toBeNull();
     expect(
       target.querySelector<HTMLInputElement>('input[name="featureKey"]')?.value,
     ).toBe(DRAFTS.featureKey);
     const shown = render({
       features: [{ ...DRAFTS, packageName: '@test/app' }],
     });
-    expect(shown.querySelector('.fs-key')).not.toBeNull();
-    expect(shown.querySelector('.fs-package')).not.toBeNull();
+    expect(shown.querySelector('[data-smrt-part="key"]')).not.toBeNull();
+    expect(shown.querySelector('[data-smrt-part="meta"]')).not.toBeNull();
   });
 
   it('falls back to the key when a definition has no label or description', () => {
@@ -136,9 +136,9 @@ describe('FeatureSettingsPanel', () => {
       ],
     });
 
-    expect(target.querySelector('.fs-title')?.textContent?.trim()).toBe(
-      '@test/app:Invoice#bare',
-    );
+    expect(
+      target.querySelector('[data-smrt-part="title"]')?.textContent?.trim(),
+    ).toBe('@test/app:Invoice#bare');
   });
 
   it('renders an empty state when there are no features', () => {
@@ -202,9 +202,9 @@ describe('FeatureSettingsPanel', () => {
 
     expect(target.querySelector('select[name="globalEffect"]')).toBeNull();
     expect(target.textContent).toContain('Global');
-    expect(target.querySelector('.fs-readonly')?.textContent?.trim()).toBe(
-      'Enabled',
-    );
+    expect(
+      target.querySelector('[data-smrt-part="value"]')?.textContent?.trim(),
+    ).toBe('Enabled');
   });
 
   it('renders an editable global column for a platform-admin tier', () => {

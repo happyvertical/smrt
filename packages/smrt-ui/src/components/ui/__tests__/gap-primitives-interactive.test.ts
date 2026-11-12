@@ -34,7 +34,7 @@ describe('Tooltip', () => {
     });
     await userEvent.hover(screen.getByRole('button', { name: 'Help' }));
     await waitFor(() =>
-      expect(screen.getByRole('tooltip')).toHaveClass('open'),
+      expect(screen.getByRole('tooltip')).toHaveClass('smrt-tooltip__open'),
     );
   });
 

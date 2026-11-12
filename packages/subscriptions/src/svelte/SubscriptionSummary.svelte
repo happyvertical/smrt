@@ -48,7 +48,7 @@ const periodLabel = $derived(
 
 <section class="smrt-subscription-summary" data-smrt-component="SubscriptionSummary">
   <div>
-    <p class="smrt-subscription-summary__label">{t(M['subscriptions.summary.current_plan'])}</p>
+    <p class="smrt-subscription-summary__label" data-smrt-part="label">{t(M['subscriptions.summary.current_plan'])}</p>
     <h2>{resolution?.planKey ?? t(M['subscriptions.summary.no_active_plan'])}</h2>
   </div>
   <dl>
@@ -75,34 +75,36 @@ const periodLabel = $derived(
 
 <style>
 @layer smrt.reset, smrt.structure, smrt.theme;
-@layer smrt.theme {
+@layer smrt.structure {
   .smrt-subscription-summary {
     align-items: center;
     display: flex;
     gap: 1rem;
     justify-content: space-between;
   }
-
   .smrt-subscription-summary h2,
   .smrt-subscription-summary__label {
     margin: 0;
   }
-
-  .smrt-subscription-summary__label,
-  .smrt-subscription-summary dt {
-    color: var(--smrt-color-on-surface-variant);
-    font-size: var(--smrt-typography-label-medium-size, 0.8rem);
-  }
-
   .smrt-subscription-summary dl {
     display: flex;
     gap: 1rem;
     margin: 0;
   }
-
   .smrt-subscription-summary dd {
-    font-weight: var(--smrt-typography-weight-bold, 650);
     margin: 0;
   }
 }
+
+@layer smrt.theme {
+  .smrt-subscription-summary__label,
+  .smrt-subscription-summary dt {
+    color: var(--smrt-color-on-surface-variant);
+    font-size: var(--smrt-typography-label-medium-size, 0.8rem);
+  }
+  .smrt-subscription-summary dd {
+    font-weight: var(--smrt-typography-weight-bold, 650);
+  }
+}
+
 </style>

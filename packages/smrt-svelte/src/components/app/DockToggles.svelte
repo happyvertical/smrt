@@ -79,7 +79,7 @@ function press(event: MouseEvent, toggle: DockToggle): void {
   {/if}
 {/snippet}
 
-<div class="smrt-dock-toggles" data-testid="dock-toggles">
+<div class="smrt-dock-toggles" data-testid="dock-toggles" data-smrt-component="DockToggles">
   {#each toggles as toggle (toggle.tool)}
     {@const resolution = resolve(toggle)}
     {@const registered = resolution.mode === 'toggle'}
@@ -93,7 +93,7 @@ function press(event: MouseEvent, toggle: DockToggle): void {
         data-dock-tool={toggle.tool}
         aria-label={name}
         title={name}
-        onclick={(event) => press(event, toggle)}
+        onclick={(event) => press(event, toggle)} data-smrt-part="trigger"
       >
         {@render glyph(icon)}
       </a>
@@ -102,7 +102,7 @@ function press(event: MouseEvent, toggle: DockToggle): void {
       <button
         type="button"
         class="smrt-dock-toggles__button"
-        class:active={open}
+        class:smrt-dock-toggles__active={open}
         data-dock-tool={toggle.tool}
         aria-label={name}
         title={name}
@@ -110,7 +110,7 @@ function press(event: MouseEvent, toggle: DockToggle): void {
         aria-expanded={open}
         aria-controls="smrt-admin-shell-right-panel"
         aria-disabled={registered ? undefined : true}
-        onclick={(event) => press(event, toggle)}
+        onclick={(event) => press(event, toggle)} data-smrt-part="trigger"
       >
         {@render glyph(icon)}
       </button>
@@ -120,72 +120,82 @@ function press(event: MouseEvent, toggle: DockToggle): void {
 
 <style>
 @layer smrt.reset, smrt.structure, smrt.theme;
-@layer smrt.theme {
+
+@layer smrt.structure {
   .smrt-dock-toggles {
     display: flex;
     align-items: center;
     gap: var(--smrt-spacing-1);
   }
-
   .smrt-dock-toggles__button {
     display: inline-grid;
-    text-decoration: none;
     place-items: center;
     position: relative;
     inline-size: var(--smrt-control-height-small);
     block-size: var(--smrt-control-height-small);
     padding: 0;
-    border: 1px solid transparent;
-    border-radius: var(--smrt-control-radius);
-    background: transparent;
-    color: var(--smrt-color-on-surface);
     cursor: pointer;
   }
-
   @media (max-width: 48rem) {
     .smrt-dock-toggles__button {
       min-inline-size: var(--smrt-touch-target-min);
       min-block-size: var(--smrt-touch-target-min);
     }
   }
+  /* State layer over the button; the active container fill sits under it. */
+  .smrt-dock-toggles__button::after {
+    position: absolute;
+    inset: 0;
+    pointer-events: none;
+  }
+  .smrt-dock-toggles__button[aria-disabled='true'] {
+    cursor: default;
+  }
+}
 
+@layer smrt.theme {
+  .smrt-dock-toggles__button {
+    text-decoration: none;
+    border: 1px solid transparent;
+    border-radius: var(--smrt-control-radius);
+    background: transparent;
+    color: var(--smrt-color-on-surface);
+  }
   /* State layer over the button; the active container fill sits under it. */
   .smrt-dock-toggles__button::after {
     content: '';
-    position: absolute;
-    inset: 0;
     border-radius: inherit;
     background: currentColor;
     opacity: 0;
-    pointer-events: none;
   }
-
   .smrt-dock-toggles__button:hover::after {
     opacity: var(--smrt-state-hover);
   }
-
   .smrt-dock-toggles__button:active::after {
     opacity: var(--smrt-state-pressed);
   }
-
   .smrt-dock-toggles__button:focus-visible {
     outline: var(--smrt-focus-ring-width) solid var(--smrt-focus-ring-color);
     outline-offset: var(--smrt-focus-ring-offset);
   }
-
-  .smrt-dock-toggles__button.active {
+  .smrt-dock-toggles__button.smrt-dock-toggles__active {
     background: var(--smrt-color-primary-container);
     color: var(--smrt-color-on-primary-container);
   }
-
   .smrt-dock-toggles__button[aria-disabled='true'] {
     opacity: var(--smrt-state-disabled);
-    cursor: default;
   }
   /* Forced colors (#3908): selected and open states keep a non-colour indicator. */
   @media (forced-colors: active) {
-    .smrt-dock-toggles__button.active { background: Highlight; color: HighlightText; border-color: Highlight; }
-    .smrt-dock-toggles__button[aria-disabled='true'] { opacity: 1; color: GrayText; }
+    .smrt-dock-toggles__button.smrt-dock-toggles__active {
+      background: Highlight;
+      color: HighlightText;
+      border-color: Highlight;
+    }
+    .smrt-dock-toggles__button[aria-disabled='true'] {
+      opacity: 1;
+      color: GrayText;
+    }
   }
 }
 </style>

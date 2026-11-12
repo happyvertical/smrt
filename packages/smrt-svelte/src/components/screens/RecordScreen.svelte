@@ -327,14 +327,14 @@ function cancel(): void {
     controller.entry(widget).status === 'ready'
       ? summaries[widget.id]
       : undefined}
-  <span class="smrt-record-screen__widget-heading">
-    <span class="smrt-record-screen__widget-title">
-      {widgetTitle}{#if panel && panel.count !== null}<span class="smrt-record-screen__count"
+  <span class="smrt-record-screen__widget-heading" data-smrt-part="header">
+    <span class="smrt-record-screen__widget-title" data-smrt-part="title">
+      {widgetTitle}{#if panel && panel.count !== null}<span class="smrt-record-screen__count" data-smrt-part="count"
           >{' · '}{new Intl.NumberFormat(locale).format(panel.count)}</span
         >{/if}
     </span>
     {#if panel?.href}
-      <a class="smrt-record-screen__view-all" href={panel.href}>{t(M['ui.screens.view_all'])}</a>
+      <a class="smrt-record-screen__view-all" href={panel.href} data-smrt-part="actions">{t(M['ui.screens.view_all'])}</a>
     {/if}
   </span>
 {/snippet}
@@ -360,19 +360,19 @@ function cancel(): void {
     {/key}
   {/if}
   {#if items}
-    <section class="smrt-record-screen__items" aria-label={t(M['ui.screens.items'])}>
+    <section class="smrt-record-screen__items" aria-label={t(M['ui.screens.items'])} data-smrt-part="body">
       {@render items()}
     </section>
   {/if}
 {/snippet}
 
 <div
-  class="smrt-record-screen"
-  class:smrt-record-screen--edit={editing}
+  class="smrt-record-screen__root"
+  class:smrt-record-screen__edit={editing}
   data-mode={mode}
   data-smrt-component="RecordScreen"
 >
-  <div class="smrt-record-screen__main">
+  <div class="smrt-record-screen__main" data-smrt-part="body">
     <RecordHeader
       {references}
       {definition}
@@ -409,7 +409,7 @@ function cancel(): void {
     >
       {@render children?.()}
     </DetailScreen>
-    <section class="smrt-record-screen__related" aria-label={t(M['ui.screens.related'])}>
+    <section class="smrt-record-screen__related" aria-label={t(M['ui.screens.related'])} data-smrt-part="body">
       <OverviewGrid
         {controller}
         editing={layoutEditing}
@@ -422,8 +422,8 @@ function cancel(): void {
     </section>
   </div>
   {#if editing && desktop}
-    <aside class="smrt-record-screen__aside" aria-label={editTitle}>
-      <h2 class="smrt-record-screen__aside-title">{editTitle}</h2>
+    <aside class="smrt-record-screen__aside" aria-label={editTitle} data-smrt-part="panel">
+      <h2 class="smrt-record-screen__aside-title" data-smrt-part="title">{editTitle}</h2>
       {@render editForm()}
     </aside>
   {/if}
@@ -434,7 +434,7 @@ function cancel(): void {
   <section class="smrt-record-screen__sheet" data-smrt-component="RecordScreen">
     <PhoneSheet open={editing} title={editTitle} onclose={cancel} variant="page">
       {#if editing}
-        <div class="smrt-record-screen__sheet-body">{@render editForm()}</div>
+        <div class="smrt-record-screen__sheet-body" data-smrt-part="body">{@render editForm()}</div>
       {/if}
     </PhoneSheet>
   </section>
@@ -442,8 +442,8 @@ function cancel(): void {
 
 <style>
 @layer smrt.reset, smrt.structure, smrt.theme;
-@layer smrt.theme {
-  .smrt-record-screen {
+@layer smrt.structure {
+  .smrt-record-screen__root {
     display: grid;
     grid-template-columns: minmax(0, 1fr);
     gap: var(--smrt-spacing-lg, 1.5rem);
@@ -465,34 +465,20 @@ function cancel(): void {
     justify-content: space-between;
     gap: var(--smrt-spacing-sm, 0.5rem);
   }
-  .smrt-record-screen__count {
-    color: var(--smrt-color-on-surface-variant);
-    font-variant-numeric: tabular-nums;
-  }
-  .smrt-record-screen__view-all {
-    font-size: var(--smrt-typography-body-medium-size, 0.875rem);
-    font-weight: var(--smrt-typography-weight-normal, 400);
-  }
   .smrt-record-screen__aside {
     display: flex;
     flex-direction: column;
     gap: var(--smrt-spacing-md, 1rem);
     padding: var(--smrt-spacing-md, 1rem);
-    border: var(--smrt-hairline);
-    border-radius: var(--smrt-radius-lg);
-    background: var(--smrt-color-surface-container-low, var(--smrt-color-surface));
-    animation: smrt-record-screen-in var(--smrt-duration-medium1)
-      var(--smrt-easing-standard) both;
   }
   .smrt-record-screen__items {
     min-inline-size: 0;
   }
   .smrt-record-screen__aside-title {
     margin: 0;
-    font-size: var(--smrt-typography-title-medium-size, 1rem);
   }
   @media (min-width: 48rem) {
-    .smrt-record-screen--edit {
+    .smrt-record-screen__edit {
       grid-template-columns: minmax(0, 1fr) minmax(20rem, 28rem);
     }
     .smrt-record-screen__aside {
@@ -513,6 +499,27 @@ function cancel(): void {
   .smrt-record-screen__sheet-body {
     padding: var(--smrt-spacing-md, 1rem);
   }
+}
+
+@layer smrt.theme {
+  .smrt-record-screen__count {
+    color: var(--smrt-color-on-surface-variant);
+    font-variant-numeric: tabular-nums;
+  }
+  .smrt-record-screen__view-all {
+    font-size: var(--smrt-typography-body-medium-size, 0.875rem);
+    font-weight: var(--smrt-typography-weight-normal, 400);
+  }
+  .smrt-record-screen__aside {
+    border: var(--smrt-hairline);
+    border-radius: var(--smrt-radius-lg);
+    background: var(--smrt-color-surface-container-low, var(--smrt-color-surface));
+    animation: smrt-record-screen-in var(--smrt-duration-medium1)
+      var(--smrt-easing-standard) both;
+  }
+  .smrt-record-screen__aside-title {
+    font-size: var(--smrt-typography-title-medium-size, 1rem);
+  }
   @keyframes smrt-record-screen-in {
     from {
       opacity: 0;
@@ -529,4 +536,5 @@ function cancel(): void {
     }
   }
 }
+
 </style>

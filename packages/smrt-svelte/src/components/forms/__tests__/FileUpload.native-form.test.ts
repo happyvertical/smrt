@@ -51,7 +51,7 @@ describe('FileUpload — native form wiring', () => {
     // `hidden` would make the control unfocusable, so the browser could not
     // show its required bubble and would silently block the submit.
     expect(input).not.toHaveAttribute('hidden');
-    expect(input).toHaveClass('file-upload__input');
+    expect(input).toHaveClass('smrt-file-upload__input');
     expect(input).toHaveAttribute('aria-hidden', 'true');
     expect(input).toHaveAttribute('tabindex', '-1');
     // Not nested inside the role="button" drop zone (nested-interactive).

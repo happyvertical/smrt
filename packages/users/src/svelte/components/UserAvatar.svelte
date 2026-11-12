@@ -52,60 +52,66 @@ function getColor(name: string): string {
 }
 </script>
 
-<div class="user-avatar" class:sm={size === 'sm'} class:lg={size === 'lg'} class:xl={size === 'xl'} data-smrt-component="UserAvatar">
-  <span class="avatar" style:background-color={getColor(profile.name ?? '')}>
+<div class="smrt-user-avatar__root" class:smrt-user-avatar__sm={size === 'sm'} class:smrt-user-avatar__lg={size === 'lg'} class:smrt-user-avatar__xl={size === 'xl'} data-smrt-component="UserAvatar">
+  <span class="smrt-user-avatar__avatar" data-smrt-part="icon" style:background-color={getColor(profile.name ?? '')}>
     {getInitials(profile.name ?? 'U')}
   </span>
   {#if showName}
-    <span class="name">{profile.name}</span>
+    <span class="smrt-user-avatar__name" data-smrt-part="title">{profile.name}</span>
   {/if}
 </div>
 
 <style>
 @layer smrt.reset, smrt.structure, smrt.theme;
-@layer smrt.theme {
-  .user-avatar {
+@layer smrt.structure {
+  .smrt-user-avatar__root {
     display: inline-flex;
     align-items: center;
     gap: var(--smrt-spacing-sm, 0.5rem);
   }
-
-  .avatar {
+  .smrt-user-avatar__avatar {
     display: flex;
     align-items: center;
     justify-content: center;
     width: 2.5rem;
     height: 2.5rem;
+  }
+  .smrt-user-avatar__sm .smrt-user-avatar__avatar {
+    width: 2rem;
+    height: 2rem;
+  }
+  .smrt-user-avatar__lg .smrt-user-avatar__avatar {
+    width: 3rem;
+    height: 3rem;
+  }
+  .smrt-user-avatar__xl .smrt-user-avatar__avatar {
+    width: 4rem;
+    height: 4rem;
+  }
+}
+
+@layer smrt.theme {
+  .smrt-user-avatar__avatar {
     border-radius: var(--smrt-radius-full);
     color: var(--smrt-color-on-primary, white);
     font: var(--smrt-typography-label-large-font, 600 0.875rem / 1.25 sans-serif);
   }
-
-  .sm .avatar {
-    width: 2rem;
-    height: 2rem;
+  .smrt-user-avatar__sm .smrt-user-avatar__avatar {
     font: var(--smrt-typography-label-medium-font, 0.75rem / 1 sans-serif);
   }
-
-  .lg .avatar {
-    width: 3rem;
-    height: 3rem;
+  .smrt-user-avatar__lg .smrt-user-avatar__avatar {
     font: var(--smrt-typography-title-medium-font, 1rem / 1.5 sans-serif);
   }
-
-  .xl .avatar {
-    width: 4rem;
-    height: 4rem;
+  .smrt-user-avatar__xl .smrt-user-avatar__avatar {
     font: var(--smrt-typography-title-large-font, 1.25rem / 1.25 sans-serif);
   }
-
-  .name {
+  .smrt-user-avatar__name {
     font: var(--smrt-typography-body-medium-font, 500 0.875rem / 1.25 sans-serif);
   }
-
-  .lg .name,
-  .xl .name {
+  .smrt-user-avatar__lg .smrt-user-avatar__name,
+  .smrt-user-avatar__xl .smrt-user-avatar__name {
     font: var(--smrt-typography-body-large-font, 1rem / 1.5 sans-serif);
   }
 }
+
 </style>

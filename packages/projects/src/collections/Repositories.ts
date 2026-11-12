@@ -8,6 +8,11 @@ import { createLogger } from '@happyvertical/logger';
 import { SmrtCollection } from '@happyvertical/smrt-core';
 import { queryGlobal, queryWithGlobals } from '@happyvertical/smrt-tenancy';
 import { Repository } from '../models/Repository';
+import {
+  type SyncOrganizationOptions,
+  type SyncOrganizationResult,
+  syncOrganizationRepositories,
+} from '../services/repository-organization-sync';
 import type { RepositoryProviderType } from '../types';
 
 const logger = createLogger({ level: 'info' });
@@ -109,6 +114,44 @@ export class RepositoryCollection extends SmrtCollection<Repository> {
     }
 
     return synced;
+  }
+
+  /**
+   * Sync every repository of an organization into this collection (see
+   * {@link syncOrganizationRepositories}). Idempotent and throttled; callable
+   * from a scheduled job with a read-only token named by `tokenConfigKey`.
+   *
+   * @param options - Owner, token key, and optional tenant/force/throttle
+   * @returns Counts of listed, created, updated, archived, vanished rows
+   */
+  async syncOrganization(
+    options: SyncOrganizationOptions,
+  ): Promise<SyncOrganizationResult> {
+    return syncOrganizationRepositories(this, options);
+  }
+
+  /**
+   * Repositories for an overview: archived and vanished ones are hidden unless
+   * asked for.
+   *
+   * @param options - `includeArchived`, `includeMissing`, optional `owner`
+   * @returns Matching repositories
+   */
+  async listActive(
+    options: {
+      includeArchived?: boolean;
+      includeMissing?: boolean;
+      owner?: string;
+    } = {},
+  ): Promise<Repository[]> {
+    const rows = await this.list(
+      options.owner ? { where: { owner: options.owner } } : {},
+    );
+    return rows.filter(
+      (r) =>
+        (options.includeArchived || !r.archived) &&
+        (options.includeMissing || !r.missingSince),
+    );
   }
 
   /**

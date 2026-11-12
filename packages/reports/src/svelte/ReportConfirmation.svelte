@@ -113,13 +113,13 @@ function decline() {
 </script>
 
 <section data-smrt-component="ReportConfirmation" aria-label={t(M['reports.confirm_title'])}>
-  <h3 class="report-confirmation-title">{valid ? proposal.spec.title : t(M['reports.confirm_title'])}</h3>
+  <h3 class="smrt-report-confirmation__title" data-smrt-part="title">{valid ? proposal.spec.title : t(M['reports.confirm_title'])}</h3>
   {#if !valid}
     <p role="alert">{t(M['reports.invalid'])}</p>
   {:else}
-    {#if proposal.spec.description}<p class="report-confirmation-description">{proposal.spec.description}</p>{/if}
+    {#if proposal.spec.description}<p class="smrt-report-confirmation__description" data-smrt-part="meta">{proposal.spec.description}</p>{/if}
     {#if description}
-      <dl class="report-confirmation-facts">
+      <dl class="smrt-report-confirmation__facts" data-smrt-part="meta">
         <div><dt>{t(M['reports.source'])}</dt><dd>{description.source}</dd></div>
         <div><dt>{t(M['reports.groupings'])}</dt><dd>{description.groupings || t(M['reports.none'])}</dd></div>
         {#if description.period}
@@ -136,12 +136,12 @@ function decline() {
     {/if}
     <ReportResult result={proposal.preview} {locale} {currency} />
     {#if answered?.status === 'saved'}
-      <p class="report-confirmation-outcome" role="status">{t(M['reports.saved'])} · <a href={reportHref(answered.report.id)}>{t(M['reports.open'])}</a></p>
+      <p class="smrt-report-confirmation__outcome" data-smrt-part="message" role="status">{t(M['reports.saved'])} · <a href={reportHref(answered.report.id)}>{t(M['reports.open'])}</a></p>
     {:else if answered?.status === 'declined'}
-      <p class="report-confirmation-outcome" role="status">{t(M['reports.declined'])}</p>
+      <p class="smrt-report-confirmation__outcome" data-smrt-part="message" role="status">{t(M['reports.declined'])}</p>
     {:else}
       {#if error}<p role="alert">{t(M[error])}</p>{/if}
-      <div class="report-confirmation-actions">
+      <div class="smrt-report-confirmation__actions" data-smrt-part="actions">
         <Button variant="secondary" disabled={status === 'saving'} onclick={decline}>{t(M['reports.decline'])}</Button>
         <Button disabled={status === 'saving'} aria-busy={status === 'saving'} onclick={approve}>{t(M[status === 'saving' ? 'reports.saving' : 'reports.approve'])}</Button>
       </div>
@@ -151,22 +151,85 @@ function decline() {
 
 <style>
 @layer smrt.reset, smrt.structure, smrt.theme;
-@layer smrt.theme {
-  [data-smrt-component='ReportConfirmation'] { display: grid; gap: var(--smrt-spacing-3); inline-size: 100%; min-inline-size: 0; box-sizing: border-box; padding: var(--smrt-spacing-3); border: var(--smrt-hairline); border-radius: var(--smrt-radius-large); background: var(--smrt-color-surface-container); color: var(--smrt-color-on-surface); container-type: inline-size; }
-  .report-confirmation-title { margin: 0; font: var(--smrt-typography-title-medium-font); overflow-wrap: anywhere; }
-  .report-confirmation-description { margin: 0; color: var(--smrt-color-on-surface-variant); font-size: var(--smrt-typography-body-small-size); }
-  .report-confirmation-facts { display: grid; gap: var(--smrt-spacing-1); margin: 0; font-size: var(--smrt-typography-body-small-size); }
-  .report-confirmation-facts > div { display: grid; grid-template-columns: 5.5rem minmax(0, 1fr); gap: var(--smrt-spacing-2); align-items: baseline; }
-  .report-confirmation-facts dt { color: var(--smrt-color-on-surface-variant); }
-  .report-confirmation-facts dd { margin: 0; overflow-wrap: anywhere; }
-  .report-confirmation-actions { display: flex; flex-wrap: wrap; justify-content: flex-end; gap: var(--smrt-spacing-2); }
+@layer smrt.structure {
+  [data-smrt-component='ReportConfirmation'] {
+    display: grid;
+    gap: var(--smrt-spacing-3);
+    inline-size: 100%;
+    min-inline-size: 0;
+    box-sizing: border-box;
+    padding: var(--smrt-spacing-3);
+    container-type: inline-size;
+  }
+  .smrt-report-confirmation__title {
+    margin: 0;
+    overflow-wrap: anywhere;
+  }
+  .smrt-report-confirmation__description {
+    margin: 0;
+  }
+  .smrt-report-confirmation__facts {
+    display: grid;
+    gap: var(--smrt-spacing-1);
+    margin: 0;
+  }
+  .smrt-report-confirmation__facts > div {
+    display: grid;
+    grid-template-columns: 5.5rem minmax(0, 1fr);
+    gap: var(--smrt-spacing-2);
+    align-items: baseline;
+  }
+  .smrt-report-confirmation__facts dd {
+    margin: 0;
+    overflow-wrap: anywhere;
+  }
+  .smrt-report-confirmation__actions {
+    display: flex;
+    flex-wrap: wrap;
+    justify-content: flex-end;
+    gap: var(--smrt-spacing-2);
+  }
   /* A narrow dock: labels over values, and the actions share the row. */
   @container (max-width: 12rem) {
-    .report-confirmation-facts > div { grid-template-columns: minmax(0, 1fr); gap: 0; }
+    .smrt-report-confirmation__facts > div {
+      grid-template-columns: minmax(0, 1fr);
+      gap: 0;
+    }
   }
   @container (max-width: 22rem) {
-    .report-confirmation-actions > :global(*) { flex: 1 1 0; }
+    .smrt-report-confirmation__actions > :global(*) {
+      flex: 1 1 0;
+    }
   }
-  .report-confirmation-outcome { margin: 0; color: var(--smrt-color-on-surface-variant); font-size: var(--smrt-typography-body-small-size); }
+  .smrt-report-confirmation__outcome {
+    margin: 0;
+  }
 }
+
+@layer smrt.theme {
+  [data-smrt-component='ReportConfirmation'] {
+    border: var(--smrt-hairline);
+    border-radius: var(--smrt-radius-large);
+    background: var(--smrt-color-surface-container);
+    color: var(--smrt-color-on-surface);
+  }
+  .smrt-report-confirmation__title {
+    font: var(--smrt-typography-title-medium-font);
+  }
+  .smrt-report-confirmation__description {
+    color: var(--smrt-color-on-surface-variant);
+    font-size: var(--smrt-typography-body-small-size);
+  }
+  .smrt-report-confirmation__facts {
+    font-size: var(--smrt-typography-body-small-size);
+  }
+  .smrt-report-confirmation__facts dt {
+    color: var(--smrt-color-on-surface-variant);
+  }
+  .smrt-report-confirmation__outcome {
+    color: var(--smrt-color-on-surface-variant);
+    font-size: var(--smrt-typography-body-small-size);
+  }
+}
+
 </style>

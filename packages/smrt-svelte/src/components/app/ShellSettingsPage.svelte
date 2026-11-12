@@ -115,7 +115,8 @@ const heading = $derived(
 
 <style>
 @layer smrt.reset, smrt.structure, smrt.theme;
-@layer smrt.theme {
+
+@layer smrt.structure {
   .smrt-shell-settings-page {
     display: grid;
     gap: var(--smrt-spacing-6, 1.5rem);
@@ -132,7 +133,6 @@ const heading = $derived(
   }
   .smrt-shell-settings-page__back {
     justify-self: start;
-    color: var(--smrt-color-on-surface-variant);
   }
   ul {
     display: grid;
@@ -144,6 +144,14 @@ const heading = $derived(
     display: grid;
     gap: var(--smrt-spacing-1, 0.25rem);
     padding-block: var(--smrt-spacing-3, 0.75rem);
+  }
+}
+
+@layer smrt.theme {
+  .smrt-shell-settings-page__back {
+    color: var(--smrt-color-on-surface-variant);
+  }
+  li a {
     border-block-start: var(--smrt-hairline);
     color: inherit;
     text-decoration: none;

@@ -77,18 +77,18 @@ const actionLabel = $derived(listSortActionLabel(sort, columnId, label, spec));
 </script>
 
 {#snippet content()}
-  <span class="sortable-header__label">
+  <span class="smrt-sortable-header__label" data-smrt-part="label">
     {#if children}{@render children()}{:else}{label}{/if}
   </span>
-  <span class="sortable-header__icon" class:is-active={active} aria-hidden="true">
+  <span class="smrt-sortable-header__icon" class:smrt-sortable-header__active={active} data-smrt-part="icon" aria-hidden="true">
     {#if aria === 'ascending'}↑{:else if aria === 'descending'}↓{:else}↕{/if}
   </span>
 {/snippet}
 
 <svelte:element
   this={as}
-  class={`sortable-header sortable-header--${align} ${className}`}
-  class:is-sorted={active}
+  class={`smrt-sortable-header__root smrt-sortable-header__${align} ${className}`}
+  class:smrt-sortable-header__sorted={active}
   scope={as === 'th' ? 'col' : undefined}
   role={as === 'div' ? 'columnheader' : undefined}
   aria-sort={aria}
@@ -96,7 +96,7 @@ const actionLabel = $derived(listSortActionLabel(sort, columnId, label, spec));
 >
   {#if href}
     <a
-      class="sortable-header__control"
+      class="smrt-sortable-header__control" data-smrt-part="sort"
       {href}
       aria-label={actionLabel}
       data-sveltekit-noscroll
@@ -109,7 +109,7 @@ const actionLabel = $derived(listSortActionLabel(sort, columnId, label, spec));
   {:else}
     <button
       type="button"
-      class="sortable-header__control"
+      class="smrt-sortable-header__control" data-smrt-part="sort"
       aria-label={actionLabel}
       onclick={() => onSort?.(columnId)}
     >
@@ -120,25 +120,39 @@ const actionLabel = $derived(listSortActionLabel(sort, columnId, label, spec));
 
 <style>
 @layer smrt.reset, smrt.structure, smrt.theme;
-@layer smrt.theme {
-  .sortable-header {
+@layer smrt.structure {
+  .smrt-sortable-header__root {
     padding: 0;
-    font-weight: inherit;
-    text-align: start;
   }
-  .sortable-header--center {
-    text-align: center;
-  }
-  .sortable-header--end {
-    text-align: end;
-  }
-  .sortable-header__control {
+  .smrt-sortable-header__control {
     display: inline-flex;
     align-items: center;
     gap: 0.25rem;
     min-height: 2.75rem;
     width: 100%;
     padding: var(--smrt-sortable-header-padding, 0.5rem 0.75rem);
+    cursor: pointer;
+  }
+  .smrt-sortable-header__center .smrt-sortable-header__control {
+    justify-content: center;
+  }
+  .smrt-sortable-header__end .smrt-sortable-header__control {
+    justify-content: flex-end;
+  }
+}
+
+@layer smrt.theme {
+  .smrt-sortable-header__root {
+    font-weight: inherit;
+    text-align: start;
+  }
+  .smrt-sortable-header__center {
+    text-align: center;
+  }
+  .smrt-sortable-header__end {
+    text-align: end;
+  }
+  .smrt-sortable-header__control {
     border: 0;
     background: transparent;
     color: inherit;
@@ -146,27 +160,21 @@ const actionLabel = $derived(listSortActionLabel(sort, columnId, label, spec));
     font-weight: var(--smrt-sortable-header-font-weight, 600);
     text-align: inherit;
     text-decoration: none;
-    cursor: pointer;
   }
-  .sortable-header--center .sortable-header__control {
-    justify-content: center;
-  }
-  .sortable-header--end .sortable-header__control {
-    justify-content: flex-end;
-  }
-  .sortable-header__control:hover .sortable-header__label {
+  .smrt-sortable-header__control:hover .smrt-sortable-header__label {
     text-decoration: underline;
   }
-  .sortable-header__control:focus-visible {
+  .smrt-sortable-header__control:focus-visible {
     outline: var(--smrt-focus-ring-width) solid var(--smrt-focus-ring-color);
     outline-offset: calc(var(--smrt-focus-ring-width) * -1);
   }
-  .sortable-header__icon {
+  .smrt-sortable-header__icon {
     opacity: 0.35;
     font-size: 0.85em;
   }
-  .sortable-header__icon.is-active {
+  .smrt-sortable-header__icon.smrt-sortable-header__active {
     opacity: 1;
   }
 }
+
 </style>

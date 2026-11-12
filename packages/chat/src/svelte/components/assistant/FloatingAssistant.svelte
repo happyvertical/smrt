@@ -156,25 +156,25 @@ function handleKeydown(event: KeyboardEvent) {
 <svelte:window onkeydown={handleKeydown} />
 
 <div
-  class="floating-assistant"
-  class:bottom-left={placement === 'bottom-left'}
+  class="smrt-floating-assistant__root"
   data-expanded={panelExpanded || undefined}
   hidden={!visible}
   inert={!visible}
   aria-hidden={!visible} data-smrt-component="FloatingAssistant"
+
+  class:smrt-floating-assistant__bottom-left={placement === 'bottom-left'}
 >
   {#if launcherVisible}
     <Button
       {@attach captureLauncher}
       variant="ghost"
       type="button"
-      class="floating-assistant-launcher"
       aria-expanded={panelExpanded}
       aria-controls={panelId}
       onclick={open}
     >
       {#if character}
-        <span class="floating-assistant-character" aria-hidden="true">
+        <span class="smrt-floating-assistant__character" data-smrt-part="icon" aria-hidden="true">
           {@render character(presentationState)}
         </span>
       {/if}
@@ -185,7 +185,8 @@ function handleKeydown(event: KeyboardEvent) {
   <section
     bind:this={panel}
     id={panelId}
-    class="floating-assistant-panel"
+    class="smrt-floating-assistant__panel"
+    data-smrt-part="panel"
     aria-label={panelLabel}
     aria-hidden={!panelExpanded}
     inert={!panelExpanded}
@@ -193,7 +194,6 @@ function handleKeydown(event: KeyboardEvent) {
     <Button
       variant="ghost"
       type="button"
-      class="floating-assistant-collapse"
       aria-label={t(M['chat.floating_assistant.collapse'])}
       onclick={collapse}
     >
@@ -213,8 +213,8 @@ function handleKeydown(event: KeyboardEvent) {
 
 <style>
 @layer smrt.reset, smrt.structure, smrt.theme;
-@layer smrt.theme {
-  .floating-assistant {
+@layer smrt.structure {
+  .smrt-floating-assistant__root {
     position: fixed;
     z-index: var(--smrt-z-index-overlay, 1200);
     right: max(1rem, env(safe-area-inset-right));
@@ -223,49 +223,83 @@ function handleKeydown(event: KeyboardEvent) {
     justify-items: end;
     gap: 0.75rem;
   }
-  .floating-assistant.bottom-left { right: auto; left: max(1rem, env(safe-area-inset-left)); justify-items: start; }
-
-  .floating-assistant[hidden] {
+  .smrt-floating-assistant__root.smrt-floating-assistant__bottom-left {
+    right: auto;
+    left: max(1rem, env(safe-area-inset-left));
+    justify-items: start;
+  }
+  .smrt-floating-assistant__root[hidden] {
     display: none;
   }
-
-  .floating-assistant :global(.floating-assistant-launcher),
-  .floating-assistant :global(.floating-assistant-collapse) {
-    border: var(--smrt-hairline-strong);
-    border-radius: var(--smrt-radius-full);
-    background: var(--smrt-color-surface, Canvas);
-    color: var(--smrt-color-on-surface, CanvasText);
-    font: inherit;
-  }
-
-  .floating-assistant :global(.floating-assistant-launcher) {
+  .smrt-floating-assistant__root > :global([data-smrt-component="Button"]) {
     display: inline-flex;
     align-items: center;
     gap: 0.5rem;
     min-block-size: 2.75rem;
     padding: 0.5rem 0.875rem;
-    box-shadow: var(
-      --smrt-elevation-4,
-      0 0.5rem 1.5rem color-mix(in srgb, CanvasText 18%, transparent)
-    );
   }
-
-  .floating-assistant-character {
+  .smrt-floating-assistant__character {
     display: grid;
     place-items: center;
     inline-size: 1.75rem;
     block-size: 1.75rem;
     overflow: hidden;
-    border-radius: var(--smrt-radius-full);
   }
-
-  .floating-assistant-panel {
+  .smrt-floating-assistant__root:not([data-expanded]) .smrt-floating-assistant__panel {
+    visibility: hidden;
+    pointer-events: none;
+  }
+  .smrt-floating-assistant__panel {
     box-sizing: border-box;
     display: block;
     inline-size: min(28rem, calc(100vw - 2rem));
     max-block-size: min(42rem, calc(100dvh - 6rem));
     overflow: auto;
     padding: 0.75rem;
+  }
+  .smrt-floating-assistant__panel > :global([data-smrt-component="Button"]) {
+    float: inline-end;
+    min-block-size: 2rem;
+    padding-inline: 0.625rem;
+  }
+  @media (max-width: 30rem) {
+    .smrt-floating-assistant__root {
+      right: max(0.5rem, env(safe-area-inset-right));
+      bottom: max(0.5rem, env(safe-area-inset-bottom));
+    }
+    .smrt-floating-assistant__root.smrt-floating-assistant__bottom-left {
+      right: auto;
+      left: max(0.5rem, env(safe-area-inset-left));
+    }
+    .smrt-floating-assistant__panel {
+      inline-size: calc(100vw - 1rem);
+      max-block-size: calc(100dvh - 4.5rem);
+    }
+  }
+  .smrt-floating-assistant__root:not([data-expanded]) .smrt-floating-assistant__panel {
+    opacity: 0;
+  }
+}
+
+@layer smrt.theme {
+  .smrt-floating-assistant__root > :global([data-smrt-component="Button"]),
+  .smrt-floating-assistant__panel > :global([data-smrt-component="Button"]) {
+    border: var(--smrt-hairline-strong);
+    border-radius: var(--smrt-radius-full);
+    background: var(--smrt-color-surface, Canvas);
+    color: var(--smrt-color-on-surface, CanvasText);
+    font: inherit;
+  }
+  .smrt-floating-assistant__root > :global([data-smrt-component="Button"]) {
+    box-shadow: var(
+      --smrt-elevation-4,
+      0 0.5rem 1.5rem color-mix(in srgb, CanvasText 18%, transparent)
+    );
+  }
+  .smrt-floating-assistant__character {
+    border-radius: var(--smrt-radius-full);
+  }
+  .smrt-floating-assistant__panel {
     border: var(--smrt-hairline-strong);
     border-radius: 1rem;
     background: var(--smrt-color-surface, Canvas);
@@ -276,37 +310,14 @@ function handleKeydown(event: KeyboardEvent) {
     );
     transition: opacity 160ms ease, transform 160ms ease, visibility 160ms ease;
   }
-
-  .floating-assistant:not([data-expanded]) .floating-assistant-panel {
-    visibility: hidden;
-    pointer-events: none;
-    opacity: 0;
+  .smrt-floating-assistant__root:not([data-expanded]) .smrt-floating-assistant__panel {
     transform: translateY(0.5rem);
   }
-
-  .floating-assistant :global(.floating-assistant-collapse) {
-    float: inline-end;
-    min-block-size: 2rem;
-    padding-inline: 0.625rem;
-  }
-
-  @media (max-width: 30rem) {
-    .floating-assistant {
-      right: max(0.5rem, env(safe-area-inset-right));
-      bottom: max(0.5rem, env(safe-area-inset-bottom));
-    }
-    .floating-assistant.bottom-left { right: auto; left: max(0.5rem, env(safe-area-inset-left)); }
-
-    .floating-assistant-panel {
-      inline-size: calc(100vw - 1rem);
-      max-block-size: calc(100dvh - 4.5rem);
-    }
-  }
-
   @media (prefers-reduced-motion: reduce) {
-    .floating-assistant-panel {
+    .smrt-floating-assistant__panel {
       transition: none;
     }
   }
 }
+
 </style>

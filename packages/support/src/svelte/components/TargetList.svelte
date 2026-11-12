@@ -37,25 +37,25 @@ function formatDue(iso: string | null): string {
 </script>
 
 {#if targets.length === 0}
-  <p class="target-list-empty" data-smrt-component="TargetList">{emptyMessage}</p>
+  <p class="smrt-target-list__empty" data-smrt-component="TargetList" >{emptyMessage}</p>
 {:else}
-  <ul class="target-list" data-smrt-component="TargetList">
+  <ul class="smrt-target-list__root" data-smrt-component="TargetList">
     {#each targets as target (target.id)}
-      <li class="target-list-row">
-        <span class="target-list-main">
-          <span class="target-list-type">
+      <li class="smrt-target-list__row" data-smrt-part="row">
+        <span class="smrt-target-list__main" data-smrt-part="body">
+          <span class="smrt-target-list__type" data-smrt-part="title">
             {humanizeStatus(target.targetType)}
             {#if target.cycle > 0}
-              <span class="target-list-cycle">cycle {target.cycle}</span>
+              <span class="smrt-target-list__cycle" data-smrt-part="meta">cycle {target.cycle}</span>
             {/if}
           </span>
           {#if target.dueAt}
-            <span class="target-list-due">due {formatDue(target.dueAt)}</span>
+            <span class="smrt-target-list__due" data-smrt-part="meta">due {formatDue(target.dueAt)}</span>
           {/if}
         </span>
-        <span class="target-list-meta">
+        <span class="smrt-target-list__meta" data-smrt-part="meta">
           {#if target.paused}
-            <span class="target-list-paused">paused</span>
+            <span class="smrt-target-list__paused" data-smrt-part="meta">paused</span>
           {/if}
           <StatusBadge
             status={targetStatusBadgeKey(target.status)}
@@ -70,8 +70,8 @@ function formatDue(iso: string | null): string {
 
 <style>
 @layer smrt.reset, smrt.structure, smrt.theme;
-@layer smrt.theme {
-  .target-list {
+@layer smrt.structure {
+  .smrt-target-list__root {
     list-style: none;
     margin: 0;
     padding: 0;
@@ -79,54 +79,54 @@ function formatDue(iso: string | null): string {
     flex-direction: column;
     gap: 0.375rem;
   }
-
-  .target-list-row {
+  .smrt-target-list__row {
     display: flex;
     align-items: center;
     justify-content: space-between;
     gap: 0.75rem;
   }
-
-  .target-list-main {
+  .smrt-target-list__main {
     display: flex;
     flex-direction: column;
     gap: 0.125rem;
     min-width: 0;
   }
-
-  .target-list-type {
-    font-weight: 500;
-    text-transform: capitalize;
-  }
-
-  .target-list-cycle {
-    font-size: 0.75rem;
-    font-weight: 400;
-    text-transform: none;
-    color: var(--smrt-color-on-surface-variant, inherit);
+  .smrt-target-list__cycle {
     margin-left: 0.375rem;
   }
-
-  .target-list-due,
-  .target-list-paused {
-    font-size: 0.75rem;
-    color: var(--smrt-color-on-surface-variant, inherit);
-  }
-
-  .target-list-paused {
-    font-style: italic;
-  }
-
-  .target-list-meta {
+  .smrt-target-list__meta {
     display: flex;
     align-items: center;
     gap: 0.5rem;
     flex-shrink: 0;
   }
-
-  .target-list-empty {
-    color: var(--smrt-color-on-surface-variant, inherit);
+  .smrt-target-list__empty {
     padding: 1rem 0;
   }
 }
+
+@layer smrt.theme {
+  .smrt-target-list__type {
+    font-weight: 500;
+    text-transform: capitalize;
+  }
+  .smrt-target-list__cycle {
+    font-size: 0.75rem;
+    font-weight: 400;
+    text-transform: none;
+    color: var(--smrt-color-on-surface-variant, inherit);
+  }
+  .smrt-target-list__due,
+  .smrt-target-list__paused {
+    font-size: 0.75rem;
+    color: var(--smrt-color-on-surface-variant, inherit);
+  }
+  .smrt-target-list__paused {
+    font-style: italic;
+  }
+  .smrt-target-list__empty {
+    color: var(--smrt-color-on-surface-variant, inherit);
+  }
+}
+
 </style>

@@ -86,7 +86,7 @@ export interface ToolDef {
    * The component is rendered with no props (`<IconComponent />`); if your
    * icon library needs sizing, wrap it in a thin `.svelte` component that
    * hard-codes the dimensions you want (typically ~18px to match
-   * `.tools-dock__rail-glyph`).
+   * `.smrt-tools-dock__rail-glyph`).
    *
    * @example
    * ```ts

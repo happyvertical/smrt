@@ -219,25 +219,26 @@ const yearOptions = $derived(() => {
 });
 </script>
 
-<div class="calendar" data-smrt-component="Calendar">
-  <header class="calendar-header">
-    <div class="nav-buttons">
-      <button class="nav-btn" onclick={prevMonth} aria-label={t(M['ui.calendar.previous_month'])}>
+<div class="smrt-calendar__root" data-smrt-component="Calendar">
+  <header class="smrt-calendar__header" data-smrt-part="header">
+    <div class="smrt-calendar__nav" data-smrt-part="nav">
+      <button class="smrt-calendar__nav-button" data-smrt-part="previous" onclick={prevMonth} aria-label={t(M['ui.calendar.previous_month'])}>
         <svg width="20" height="20" viewBox="0 0 20 20" fill="none">
           <path d="M12 15L7 10L12 5" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"/>
         </svg>
       </button>
-      <span class="current-month">{MONTHS[currentMonth]} {currentYear}</span>
-      <button class="nav-btn" onclick={nextMonth} aria-label={t(M['ui.calendar.next_month'])}>
+      <span class="smrt-calendar__title" data-smrt-part="title">{MONTHS[currentMonth]} {currentYear}</span>
+      <button class="smrt-calendar__nav-button" data-smrt-part="next" onclick={nextMonth} aria-label={t(M['ui.calendar.next_month'])}>
         <svg width="20" height="20" viewBox="0 0 20 20" fill="none">
           <path d="M8 5L13 10L8 15" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"/>
         </svg>
       </button>
     </div>
 
-    <div class="selectors">
+    <div class="smrt-calendar__selectors" data-smrt-part="nav">
       <select
-        class="month-select"
+        class="smrt-calendar__month"
+        data-smrt-part="month"
         bind:value={currentMonth}
         aria-label={t(M['ui.calendar.select_month'])}
       >
@@ -247,7 +248,8 @@ const yearOptions = $derived(() => {
       </select>
 
       <select
-        class="year-select"
+        class="smrt-calendar__year"
+        data-smrt-part="year"
         bind:value={currentYear}
         aria-label={t(M['ui.calendar.select_year'])}
       >
@@ -256,38 +258,39 @@ const yearOptions = $derived(() => {
         {/each}
       </select>
 
-      <button class="today-btn" onclick={goToToday}>Today</button>
+      <button class="smrt-calendar__today-button" data-smrt-part="today" onclick={goToToday}>Today</button>
     </div>
   </header>
 
-  <div class="calendar-grid">
-    <div class="day-headers">
+  <div class="smrt-calendar__grid" data-smrt-part="grid">
+    <div class="smrt-calendar__weekdays" data-smrt-part="row">
       {#each DAYS as day}
-        <div class="day-header">{day}</div>
+        <div class="smrt-calendar__weekday" data-smrt-part="cell">{day}</div>
       {/each}
     </div>
 
-    <div class="days">
+    <div class="smrt-calendar__days" data-smrt-part="body">
       {#each calendarDays() as { day, month, year, isCurrentMonth, isToday }}
         {@const dayEvents = getEventsForDate(year, month, day)}
         {@const hasEvents = dayEvents.length > 0}
         {@const dateStr = `${year}-${String(month + 1).padStart(2, '0')}-${String(day).padStart(2, '0')}`}
         <a
           href={getDayUrl(year, month, day)}
-          class="day-cell"
-          class:other-month={!isCurrentMonth}
-          class:today={isToday}
-          class:has-events={hasEvents}
+          class="smrt-calendar__day"
+          class:smrt-calendar__day--other-month={!isCurrentMonth}
+          class:smrt-calendar__day--today={isToday}
+          class:smrt-calendar__day--has-events={hasEvents}
+          data-smrt-part="trigger"
           onclick={() => onDateSelect?.(dateStr, hasEvents)}
         >
-          <span class="day-number">{day}</span>
+          <span class="smrt-calendar__day-number" data-smrt-part="label">{day}</span>
           {#if hasEvents}
-            <div class="event-indicators">
+            <div class="smrt-calendar__events" data-smrt-part="list">
               {#each dayEvents.slice(0, 3) as event}
-                <span class="event-icon" title={event.name}>{getEventIcon(event.type)}</span>
+                <span class="smrt-calendar__event" data-smrt-part="event" title={event.name}>{getEventIcon(event.type)}</span>
               {/each}
               {#if dayEvents.length > 3}
-                <span class="event-more">+{dayEvents.length - 3}</span>
+                <span class="smrt-calendar__more" data-smrt-part="more">+{dayEvents.length - 3}</span>
               {/if}
             </div>
           {/if}
@@ -299,8 +302,100 @@ const yearOptions = $derived(() => {
 
 <style>
 @layer smrt.reset, smrt.structure, smrt.theme;
+@layer smrt.structure {
+  .smrt-calendar__root {
+    overflow: hidden;
+  }
+  .smrt-calendar__header {
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+    padding: var(--smrt-spacing-4, 1rem) var(--smrt-spacing-6, 1.5rem);
+    flex-wrap: wrap;
+    gap: var(--smrt-spacing-2, 0.5rem);
+  }
+  .smrt-calendar__nav {
+    display: flex;
+    align-items: center;
+    gap: var(--smrt-spacing-2, 0.5rem);
+  }
+  .smrt-calendar__nav-button {
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    width: 32px;
+    height: 32px;
+  }
+  .smrt-calendar__title {
+    min-width: 160px;
+  }
+  .smrt-calendar__selectors {
+    display: flex;
+    align-items: center;
+    gap: var(--smrt-spacing-2, 0.5rem);
+  }
+  .smrt-calendar__month,
+  .smrt-calendar__year {
+    padding: var(--smrt-spacing-1, 0.25rem) var(--smrt-spacing-2, 0.5rem);
+    cursor: pointer;
+  }
+  .smrt-calendar__today-button {
+    padding: var(--smrt-spacing-1, 0.25rem) var(--smrt-spacing-4, 1rem);
+  }
+  .smrt-calendar__grid {
+    padding: var(--smrt-spacing-2, 0.5rem);
+  }
+  .smrt-calendar__weekdays {
+    display: grid;
+    grid-template-columns: repeat(7, 1fr);
+    gap: var(--smrt-spacing-1);
+    margin-bottom: var(--smrt-spacing-1, 0.25rem);
+  }
+  .smrt-calendar__weekday {
+    padding: var(--smrt-spacing-2, 0.5rem);
+  }
+  .smrt-calendar__days {
+    display: grid;
+    grid-template-columns: repeat(7, 1fr);
+    gap: var(--smrt-spacing-1);
+  }
+  .smrt-calendar__day {
+    aspect-ratio: 1;
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    padding: var(--smrt-spacing-1, 0.25rem);
+    min-height: 60px;
+  }
+  .smrt-calendar__events {
+    display: flex;
+    flex-wrap: wrap;
+    gap: var(--smrt-spacing-1);
+    justify-content: center;
+    margin-top: auto;
+  }
+  @media (max-width: 640px) {
+    .smrt-calendar__header {
+      flex-direction: column;
+      align-items: stretch;
+    }
+    .smrt-calendar__nav {
+      justify-content: center;
+    }
+    .smrt-calendar__selectors {
+      justify-content: center;
+    }
+    .smrt-calendar__weekday {
+      padding: var(--smrt-spacing-1, 0.25rem);
+    }
+    .smrt-calendar__day {
+      min-height: 48px;
+    }
+  }
+}
+
 @layer smrt.theme {
-  .calendar {
+  .smrt-calendar__root {
     --smrt-calendar-bg: var(--smrt-color-surface);
     --smrt-calendar-border: var(--smrt-color-outline-variant);
     --smrt-calendar-header-bg: var(--smrt-color-surface-container-low);
@@ -308,20 +403,17 @@ const yearOptions = $derived(() => {
     --smrt-calendar-today-bg: var(--smrt-color-primary-container);
     --smrt-calendar-today-border: var(--smrt-color-primary);
     --smrt-calendar-other-month: var(--smrt-color-on-surface-variant);
-
     background: var(--smrt-calendar-bg);
     border: 1px solid var(--smrt-calendar-border);
     border-radius: var(--smrt-radius-large);
-    overflow: hidden;
   }
-
   /*
-   * Dark mode. The base `--smrt-color-*` tokens already swap to dark values
-   * under the active dark scheme, so reference them directly (issue #1431 —
-   * the old `--smrt-color-*-dark` tokens were never emitted). Hardcoded
-   * fallbacks preserve the calendar's dark palette when no theme is applied.
-   */
-  :global([data-theme="dark"]) .calendar {
+  * Dark mode. The base `--smrt-color-*` tokens already swap to dark values
+  * under the active dark scheme, so reference them directly (issue #1431 —
+  * the old `--smrt-color-*-dark` tokens were never emitted). Hardcoded
+  * fallbacks preserve the calendar's dark palette when no theme is applied.
+  */
+  :global([data-theme="dark"]) .smrt-calendar__root {
     --smrt-calendar-bg: var(--smrt-color-surface);
     --smrt-calendar-border: var(--smrt-color-outline-variant);
     --smrt-calendar-header-bg: var(--smrt-color-surface-container-low);
@@ -330,9 +422,8 @@ const yearOptions = $derived(() => {
     --smrt-calendar-today-border: var(--smrt-color-primary);
     --smrt-calendar-other-month: var(--smrt-color-on-surface-variant);
   }
-
   @media (prefers-color-scheme: dark) {
-    :global(:root:not([data-theme="light"])) .calendar {
+    :global(:root:not([data-theme="light"])) .smrt-calendar__root {
       --smrt-calendar-bg: var(--smrt-color-surface);
       --smrt-calendar-border: var(--smrt-color-outline-variant);
       --smrt-calendar-header-bg: var(--smrt-color-surface-container-low);
@@ -342,66 +433,33 @@ const yearOptions = $derived(() => {
       --smrt-calendar-other-month: var(--smrt-color-on-surface-variant);
     }
   }
-
-  .calendar-header {
-    display: flex;
-    justify-content: space-between;
-    align-items: center;
-    padding: var(--smrt-spacing-4, 1rem) var(--smrt-spacing-6, 1.5rem);
+  .smrt-calendar__header {
     background: var(--smrt-calendar-header-bg);
     border-bottom: 1px solid var(--smrt-calendar-border);
-    flex-wrap: wrap;
-    gap: var(--smrt-spacing-2, 0.5rem);
   }
-
-  .nav-buttons {
-    display: flex;
-    align-items: center;
-    gap: var(--smrt-spacing-2, 0.5rem);
-  }
-
-  .nav-btn {
-    display: flex;
-    align-items: center;
-    justify-content: center;
-    width: 32px;
-    height: 32px;
+  .smrt-calendar__nav-button {
     border-radius: var(--smrt-radius-medium);
     color: var(--smrt-color-on-surface-variant);
     transition: all var(--smrt-duration-short2, 150ms) var(--smrt-easing-standard, ease);
   }
-
-  .nav-btn:hover {
+  .smrt-calendar__nav-button:hover {
     background: var(--smrt-calendar-day-hover);
     color: var(--smrt-color-on-surface);
   }
-
-  .current-month {
+  .smrt-calendar__title {
     font-size: var(--smrt-typography-title-large-size, 1.125rem);
     font-weight: var(--smrt-typography-title-large-weight, 600);
     color: var(--smrt-color-on-surface);
-    min-width: 160px;
     text-align: center;
   }
-
-  .selectors {
-    display: flex;
-    align-items: center;
-    gap: var(--smrt-spacing-2, 0.5rem);
-  }
-
-  .month-select,
-  .year-select {
-    padding: var(--smrt-spacing-1, 0.25rem) var(--smrt-spacing-2, 0.5rem);
+  .smrt-calendar__month,
+  .smrt-calendar__year {
     border: 1px solid var(--smrt-calendar-border);
     border-radius: var(--smrt-radius-small);
     font-size: var(--smrt-typography-body-medium-size, 0.875rem);
     background: var(--smrt-calendar-bg);
-    cursor: pointer;
   }
-
-  .today-btn {
-    padding: var(--smrt-spacing-1, 0.25rem) var(--smrt-spacing-4, 1rem);
+  .smrt-calendar__today-button {
     border: 1px solid var(--smrt-calendar-border);
     border-radius: var(--smrt-radius-small);
     font-size: var(--smrt-typography-body-medium-size, 0.875rem);
@@ -410,123 +468,62 @@ const yearOptions = $derived(() => {
     font-weight: var(--smrt-typography-body-medium-weight, 500);
     transition: all var(--smrt-duration-short2, 150ms) var(--smrt-easing-standard, ease);
   }
-
-  .today-btn:hover {
+  .smrt-calendar__today-button:hover {
     background: var(--smrt-color-primary-container);
   }
-
-  .calendar-grid {
-    padding: var(--smrt-spacing-2, 0.5rem);
-  }
-
-  .day-headers {
-    display: grid;
-    grid-template-columns: repeat(7, 1fr);
-    gap: var(--smrt-spacing-1);
-    margin-bottom: var(--smrt-spacing-1, 0.25rem);
-  }
-
-  .day-header {
-    padding: var(--smrt-spacing-2, 0.5rem);
+  .smrt-calendar__weekday {
     text-align: center;
     font-size: var(--smrt-typography-body-medium-size, 0.875rem);
     font-weight: var(--smrt-typography-body-medium-weight, 500);
     color: var(--smrt-color-on-surface-variant);
   }
-
-  .days {
-    display: grid;
-    grid-template-columns: repeat(7, 1fr);
-    gap: var(--smrt-spacing-1);
-  }
-
-  .day-cell {
-    aspect-ratio: 1;
-    display: flex;
-    flex-direction: column;
-    align-items: center;
-    padding: var(--smrt-spacing-1, 0.25rem);
+  .smrt-calendar__day {
     border-radius: var(--smrt-radius-small);
     text-decoration: none;
     color: var(--smrt-color-on-surface);
     transition: all var(--smrt-duration-short2, 150ms) var(--smrt-easing-standard, ease);
-    min-height: 60px;
   }
-
-  .day-cell:hover {
+  .smrt-calendar__day:hover {
     background: var(--smrt-calendar-day-hover);
   }
-
-  .day-cell.other-month {
+  .smrt-calendar__day.smrt-calendar__day--other-month {
     color: var(--smrt-calendar-other-month);
   }
-
-  .day-cell.other-month:hover {
+  .smrt-calendar__day.smrt-calendar__day--other-month:hover {
     color: var(--smrt-color-on-surface-variant);
   }
-
-  .day-cell.today {
+  .smrt-calendar__day.smrt-calendar__day--today {
     background: var(--smrt-calendar-today-bg);
     border: 2px solid var(--smrt-calendar-today-border);
   }
-
-  .day-cell.has-events {
+  .smrt-calendar__day.smrt-calendar__day--has-events {
     font-weight: var(--smrt-typography-body-medium-weight, 500);
   }
-
-  .day-number {
+  .smrt-calendar__day-number {
     font-size: var(--smrt-typography-body-medium-size, 0.875rem);
     line-height: 1;
   }
-
-  .event-indicators {
-    display: flex;
-    flex-wrap: wrap;
-    gap: var(--smrt-spacing-1);
-    justify-content: center;
-    margin-top: auto;
+  .smrt-calendar__events {
     font-size: var(--smrt-typography-label-medium-size);
   }
-
-  .event-icon {
+  .smrt-calendar__event {
     line-height: 1;
   }
-
-  .event-more {
+  .smrt-calendar__more {
     font-size: var(--smrt-typography-label-small-size);
     color: var(--smrt-color-on-surface-variant);
   }
-
   @media (max-width: 640px) {
-    .calendar-header {
-      flex-direction: column;
-      align-items: stretch;
-    }
-
-    .nav-buttons {
-      justify-content: center;
-    }
-
-    .selectors {
-      justify-content: center;
-    }
-
-    .day-header {
-      font-size: var(--smrt-typography-body-small-size, 0.75rem);
-      padding: var(--smrt-spacing-1, 0.25rem);
-    }
-
-    .day-cell {
-      min-height: 48px;
-    }
-
-    .day-number {
+    .smrt-calendar__weekday {
       font-size: var(--smrt-typography-body-small-size, 0.75rem);
     }
-
-    .event-indicators {
+    .smrt-calendar__day-number {
+      font-size: var(--smrt-typography-body-small-size, 0.75rem);
+    }
+    .smrt-calendar__events {
       font-size: var(--smrt-typography-label-small-size);
     }
   }
 }
+
 </style>

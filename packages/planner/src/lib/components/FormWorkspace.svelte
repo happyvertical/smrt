@@ -179,10 +179,10 @@ async function addImage(row: ModelRecord, file: File) {
 }
 </script>
 
-<section>
+<section data-smrt-component="FormWorkspace">
   <header>
     <h2>{title ?? (model.name === 'Product' ? 'Products' : model.name)} {#if loaded}<small>{recordCount(rows.length)}</small>{/if}</h2>
-    <div class="new">
+    <div class="smrt-form-workspace__new" data-smrt-part="actions">
       {#each offered as active (active.form.id)}
         <button type="button" onclick={() => open(active)}>
           New {createNoun(active.form.label, noun, scope?.equals !== undefined || offered.length === 1)}
@@ -220,18 +220,18 @@ async function addImage(row: ModelRecord, file: File) {
     <p>No records yet. Create one above.</p>
   {:else}
     <ProductMedia rows={rows} {images} onselect={addImage} />
-    <div class="scroll">
-      <table class="planner-list">
+    <div class="smrt-form-workspace__scroll" data-smrt-part="panel">
+      <table class="smrt-planner-list__root">
         <thead>
           <tr>
             {#each [{ key: 'name', label: 'Name' }, { key: 'kind', label: 'Kind' }, { key: 'price', label: 'Price' }, ...(showStock ? [{ key: 'stock', label: 'Stock' }] : [])] as column (column.key)}
               <th scope="col" aria-sort={sort?.key === column.key ? sort.direction : 'none'}>
-                <button type="button" class="sort-button" onclick={() => (sort = nextListSort(sort, column.key))}>
-                  {column.label}<span class="sort-icon" aria-hidden="true">{sort?.key === column.key ? (sort.direction === 'ascending' ? '↑' : '↓') : '↕'}</span>
+                <button type="button" class="smrt-planner-list__sort" onclick={() => (sort = nextListSort(sort, column.key))}>
+                  {column.label}<span class="smrt-planner-list__icon" aria-hidden="true">{sort?.key === column.key ? (sort.direction === 'ascending' ? '↑' : '↓') : '↕'}</span>
                 </button>
               </th>
             {/each}
-            <th scope="col"><span class="visually-hidden">Actions</span></th>
+            <th scope="col"><span class="smrt-form-workspace__visually-hidden" data-smrt-part="label">Actions</span></th>
           </tr>
         </thead>
         <tbody>
@@ -242,11 +242,12 @@ async function addImage(row: ModelRecord, file: File) {
               <td>{kindLabel(row)}</td>
               <td>{typeof row.price === 'number' ? formatMoney(row.price) : ''}</td>
               {#if showStock}<td>{stock.get(row.id) ?? '–'}</td>{/if}
-              <td class="row-actions">
+              <td class="smrt-form-workspace__row-actions" data-smrt-part="actions">
                 {#if kind}
                   <button
                     type="button"
-                    class="secondary"
+                    class="smrt-form-workspace__secondary"
+                    data-smrt-part="action"
                     aria-label={`Edit ${row.name}`}
                     onclick={() => open(kind, row.id)}
                   >
@@ -255,7 +256,8 @@ async function addImage(row: ModelRecord, file: File) {
                 {/if}
                 <button
                   type="button"
-                  class="secondary"
+                  class="smrt-form-workspace__secondary"
+                  data-smrt-part="action"
                   aria-label={`Delete ${row.name}`}
                   onclick={() => remove(row)}
                 >
@@ -272,12 +274,11 @@ async function addImage(row: ModelRecord, file: File) {
 
 <style>
 @layer smrt.reset, smrt.structure, smrt.theme;
-@layer smrt.theme {
+@layer smrt.structure {
   section {
     display: grid;
     gap: var(--smrt-spacing-4);
   }
-
   header {
     display: flex;
     flex-wrap: wrap;
@@ -285,56 +286,30 @@ async function addImage(row: ModelRecord, file: File) {
     align-items: center;
     justify-content: space-between;
   }
-
   h2 {
     margin: 0;
   }
-
-  small {
-    color: var(--smrt-color-on-surface-variant);
-    font-weight: 400;
-  }
-
-  .new,
-  .row-actions {
+  .smrt-form-workspace__new,
+  .smrt-form-workspace__row-actions {
     display: flex;
     gap: var(--smrt-spacing-2);
   }
-
-  .scroll {
+  .smrt-form-workspace__scroll {
     overflow-x: auto;
   }
-
   table {
     width: 100%;
-    border-collapse: collapse;
   }
-
   th,
   td {
     padding: var(--smrt-spacing-2) var(--smrt-spacing-3);
-    border-bottom: var(--smrt-hairline);
-    text-align: left;
     white-space: nowrap;
   }
-
   button {
     padding: var(--smrt-spacing-2) var(--smrt-spacing-3);
-    border: 0;
-    border-radius: var(--smrt-radius-medium);
-    background: var(--smrt-color-primary);
-    color: var(--smrt-color-on-primary);
-    font: inherit;
     cursor: pointer;
   }
-
-  button.secondary {
-    border: var(--smrt-control-border);
-    background: transparent;
-    color: var(--smrt-color-on-surface);
-  }
-
-  .visually-hidden {
+  .smrt-form-workspace__visually-hidden {
     position: absolute;
     width: 1px;
     height: 1px;
@@ -342,4 +317,29 @@ async function addImage(row: ModelRecord, file: File) {
     clip-path: inset(50%);
   }
 }
+
+@layer smrt.theme {
+  small {
+    color: var(--smrt-color-on-surface-variant);
+    font-weight: 400;
+  }
+  th,
+  td {
+    border-bottom: var(--smrt-hairline);
+    text-align: left;
+  }
+  button {
+    border: 0;
+    border-radius: var(--smrt-radius-medium);
+    background: var(--smrt-color-primary);
+    color: var(--smrt-color-on-primary);
+    font: inherit;
+  }
+  button.smrt-form-workspace__secondary {
+    border: var(--smrt-control-border);
+    background: transparent;
+    color: var(--smrt-color-on-surface);
+  }
+}
+
 </style>

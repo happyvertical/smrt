@@ -96,7 +96,7 @@ function jsonFrom(raw: string): unknown {
 const dateOf = (stored: string): string => stored.slice(0, 10);
 </script>
 
-<div class="field" data-renderer={renderer} data-invalid={error ? '' : undefined}>
+<div class="smrt-planner-form__field" data-renderer={renderer} data-invalid={error ? '' : undefined} data-smrt-component="FieldInput">
   {#if renderer === 'boolean'}
     <Switch
       checked={value === true}
@@ -160,7 +160,7 @@ const dateOf = (stored: string): string => stored.slice(0, 10);
     />
   {:else if renderer === 'percent'}
     <!-- Typed as a percentage (5), stored as the fraction the model expects (0.05). -->
-    <div class="percent">
+    <div class="smrt-field-input__percent" data-smrt-part="row">
       <NumberInput
         name={id}
         {label}
@@ -170,7 +170,7 @@ const dateOf = (stored: string): string => stored.slice(0, 10);
         value={fractionToPercent(value)}
         onchange={(percent) => onchange(percentToFraction(percent))}
       />
-      <span class="percent-sign" aria-hidden="true">%</span>
+      <span class="smrt-field-input__percent-sign" data-smrt-part="label" aria-hidden="true">%</span>
     </div>
   {:else if renderer === 'datetime'}
     <DateTimeInput
@@ -249,7 +249,7 @@ const dateOf = (stored: string): string => stored.slice(0, 10);
     {/if}
   {/if}
   {#if error}
-    <p class="field-error" id={`${id}-error`} role="alert">{error}</p>
+    <p class="smrt-field-input__error" data-smrt-part="error" id={`${id}-error`} role="alert">{error}</p>
   {/if}
   {#if help}
     <small>{help}</small>
@@ -258,48 +258,52 @@ const dateOf = (stored: string): string => stored.slice(0, 10);
 
 <style>
 @layer smrt.reset, smrt.structure, smrt.theme;
-@layer smrt.theme {
-  .field {
+@layer smrt.structure {
+  .smrt-planner-form__field {
     display: grid;
     gap: var(--smrt-spacing-1);
   }
-
-  .percent {
+  .smrt-field-input__percent {
     display: flex;
     align-items: flex-end;
     gap: var(--smrt-spacing-2);
   }
-
-  .percent :global(.smrt-number) {
+  .smrt-field-input__percent :global([data-smrt-component="NumberInput"]) {
     flex: 1;
   }
-
-  .percent-sign {
+  .smrt-field-input__percent-sign {
     padding-bottom: var(--smrt-spacing-2);
-    color: var(--smrt-color-on-surface-variant);
   }
-
-  .field-error {
+  .smrt-field-input__error {
     margin: 0;
-    color: var(--smrt-color-error);
   }
-
-  .field[data-invalid] :global(input),
-  .field[data-invalid] :global(select),
-  .field[data-invalid] :global(textarea) {
-    border-color: var(--smrt-color-error);
-  }
-
-  small {
-    color: var(--smrt-color-on-surface-variant);
-  }
-
-
   input[type='text'],
   input[type='number'],
   input[type='url'],
   textarea {
     padding: var(--smrt-spacing-2) var(--smrt-spacing-3);
+  }
+}
+
+@layer smrt.theme {
+  .smrt-field-input__percent-sign {
+    color: var(--smrt-color-on-surface-variant);
+  }
+  .smrt-field-input__error {
+    color: var(--smrt-color-error);
+  }
+  .smrt-planner-form__field[data-invalid] :global(input),
+  .smrt-planner-form__field[data-invalid] :global(select),
+  .smrt-planner-form__field[data-invalid] :global(textarea) {
+    border-color: var(--smrt-color-error);
+  }
+  small {
+    color: var(--smrt-color-on-surface-variant);
+  }
+  input[type='text'],
+  input[type='number'],
+  input[type='url'],
+  textarea {
     border: var(--smrt-control-border);
     border-radius: var(--smrt-radius-medium);
     background: var(--smrt-surface-control);
@@ -307,4 +311,5 @@ const dateOf = (stored: string): string => stored.slice(0, 10);
     font: inherit;
   }
 }
+
 </style>

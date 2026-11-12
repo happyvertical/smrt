@@ -186,7 +186,7 @@ function handleSubmit(event: SubmitEvent): void {
 }
 </script>
 
-<div class="party-form-preview" onsubmit={handleSubmit}>
+<div class="smrt-party-form-preview__root" onsubmit={handleSubmit} data-smrt-component="PartyFormPreview">
   {#if kind === 'customer'}
     <CustomerForm
       mode="edit"

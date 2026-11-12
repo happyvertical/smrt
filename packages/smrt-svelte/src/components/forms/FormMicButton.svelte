@@ -58,9 +58,9 @@ function handleKeydown(e: KeyboardEvent) {
 
 {#if isSmrt && formContext}
   <span
-    class="form-mic-icon {className}"
-    class:listening={isListening}
-    class:extracting={isExtracting}
+    class="smrt-form-mic-button__root {className}"
+    class:smrt-form-mic-button__listening={isListening}
+    class:smrt-form-mic-button__extracting={isExtracting}
     onclick={handleClick}
     onkeydown={handleKeydown}
     role="button"
@@ -75,7 +75,8 @@ function handleKeydown(e: KeyboardEvent) {
         fill="none"
         stroke="currentColor"
         stroke-width="2"
-        class="spinner"
+        class="smrt-form-mic-button__spinner"
+        data-smrt-part="spinner"
       >
         <circle cx="12" cy="12" r="10" stroke-dasharray="32" stroke-dashoffset="12"/>
       </svg>
@@ -96,90 +97,98 @@ function handleKeydown(e: KeyboardEvent) {
       </svg>
     {/if}
     {#if isListening}
-      <span class="tooltip">{t(M['ui.form_mic_button.tooltip'])}</span>
+      <span class="smrt-form-mic-button__tooltip" data-smrt-part="description">{t(M['ui.form_mic_button.tooltip'])}</span>
     {/if}
   </span>
 {/if}
 
 <style>
 @layer smrt.reset, smrt.structure, smrt.theme;
-@layer smrt.theme {
-  .form-mic-icon {
+@layer smrt.structure {
+  .smrt-form-mic-button__root {
     display: inline-flex;
     align-items: center;
     justify-content: center;
     position: relative;
-    color: var(--smrt-color-on-surface-variant);
     cursor: pointer;
-    transition: color var(--smrt-duration-short2, 150ms) var(--smrt-easing-standard, ease);
-    vertical-align: middle;
     margin-left: 0.5rem;
   }
-
-  .form-mic-icon:hover {
-    color: var(--smrt-color-on-surface-variant);
-  }
-
-  .form-mic-icon.listening {
-    color: var(--smrt-color-primary);
-    animation: pulse 1.5s ease-in-out infinite;
-  }
-
-  .form-mic-icon.extracting {
-    color: var(--smrt-color-primary);
-  }
-
-  .tooltip {
+  .smrt-form-mic-button__tooltip {
     position: absolute;
     top: 100%;
     left: 50%;
-    transform: translateX(-50%);
     margin-top: 0.5rem;
     padding: 0.5rem 0.75rem;
+    white-space: nowrap;
+    z-index: var(--smrt-z-index-tooltip, 1600);
+    transform: translateX(-50%);
+  }
+  .smrt-form-mic-button__tooltip::before {
+    position: absolute;
+    bottom: 100%;
+    left: 50%;
+    content: '';
+    transform: translateX(-50%);
+  }
+}
+
+@layer smrt.theme {
+  .smrt-form-mic-button__root {
+    color: var(--smrt-color-on-surface-variant);
+    transition: color var(--smrt-duration-short2, 150ms) var(--smrt-easing-standard, ease);
+    vertical-align: middle;
+  }
+  .smrt-form-mic-button__root:hover {
+    color: var(--smrt-color-on-surface-variant);
+  }
+  .smrt-form-mic-button__root.smrt-form-mic-button__listening {
+    color: var(--smrt-color-primary);
+    animation: pulse 1.5s ease-in-out infinite;
+  }
+  .smrt-form-mic-button__root.smrt-form-mic-button__extracting {
+    color: var(--smrt-color-primary);
+  }
+  .smrt-form-mic-button__tooltip {
     background: var(--smrt-color-inverse-surface, var(--smrt-color-on-surface));
     color: var(--smrt-color-inverse-on-surface);
     font-size: var(--smrt-typography-label-medium-size, 0.75rem);
     font-weight: var(--smrt-typography-weight-normal, 400);
     border-radius: 0.375rem;
-    white-space: nowrap;
-    z-index: var(--smrt-z-index-tooltip, 1600);
     box-shadow: var(--smrt-elevation-2, 0 4px 6px -1px color-mix(in srgb, var(--smrt-color-shadow) 10%, transparent));
   }
-
-  .tooltip::before {
-    content: '';
-    position: absolute;
-    bottom: 100%;
-    left: 50%;
-    transform: translateX(-50%);
+  .smrt-form-mic-button__tooltip::before {
     border: 6px solid transparent;
     border-bottom-color: var(--smrt-color-inverse-surface, var(--smrt-color-on-surface));
   }
-
   @keyframes pulse {
-    0%, 100% { opacity: 1; }
-    50% { opacity: 0.6; }
+    0%, 100% {
+      opacity: 1;
+    }
+    50% {
+      opacity: 0.6;
+    }
   }
-
   @media (prefers-reduced-motion: reduce) {
-    .form-mic-icon.listening {
+    .smrt-form-mic-button__root.smrt-form-mic-button__listening {
       animation: none;
     }
   }
-
-  .spinner {
+  .smrt-form-mic-button__spinner {
     animation: spin 1s linear infinite;
   }
-
   @keyframes spin {
-    from { transform: rotate(0deg); }
-    to { transform: rotate(360deg); }
+    from {
+      transform: rotate(0deg);
+    }
+    to {
+      transform: rotate(360deg);
+    }
   }
-
   @media (prefers-reduced-motion: reduce) {
-    .spinner {
+    .smrt-form-mic-button__spinner {
       animation: none;
     }
   }
 }
+
 </style>

@@ -166,19 +166,19 @@ async function issueCorrection() {
 }
 </script>
 
-<div class="governance-tool" data-smrt-component="ContentCorrectionsTool">
+<div class="smrt-content-corrections-tool__root" data-smrt-component="ContentCorrectionsTool">
   {#if error}
-    <p class="tool-error" role="alert" aria-live="assertive">{error}</p>
+    <p class="smrt-content-corrections-tool__error" data-smrt-part="error" role="alert" aria-live="assertive">{error}</p>
   {/if}
 
   {#if notice}
-    <p class="tool-notice" role="status" aria-live="polite">{notice}</p>
+    <p class="smrt-content-corrections-tool__notice" data-smrt-part="status" role="status" aria-live="polite">{notice}</p>
   {/if}
 
   {#if !savedContentId}
-    <p class="empty-copy">{t(M['content.corrections_tool.save_to_issue_corrections'])}</p>
+    <p class="smrt-content-corrections-tool__empty" data-smrt-part="empty">{t(M['content.corrections_tool.save_to_issue_corrections'])}</p>
   {:else}
-    <label class="workflow-field">
+    <label class="smrt-content-corrections-tool__field" data-smrt-part="field">
       Summary
       <Input
         type="text"
@@ -187,7 +187,7 @@ async function issueCorrection() {
       />
     </label>
 
-    <label class="workflow-field">
+    <label class="smrt-content-corrections-tool__field" data-smrt-part="field">
       {t(M['content.corrections_tool.related_fact'])}
       <Select bind:value={correctionFactId}>
         <option value="">{t(M['content.corrections_tool.general_correction'])}</option>
@@ -197,7 +197,7 @@ async function issueCorrection() {
       </Select>
     </label>
 
-    <label class="workflow-field">
+    <label class="smrt-content-corrections-tool__field" data-smrt-part="field">
       {t(M['content.corrections_tool.corrected_fact_text'])}
       <Textarea
         rows={4}
@@ -206,7 +206,7 @@ async function issueCorrection() {
       ></Textarea>
     </label>
 
-    <label class="workflow-field">
+    <label class="smrt-content-corrections-tool__field" data-smrt-part="field">
       {t(M['content.corrections_tool.public_note'])}
       <Textarea
         rows={3}
@@ -215,7 +215,7 @@ async function issueCorrection() {
       ></Textarea>
     </label>
 
-    <label class="checkbox-row">
+    <label class="smrt-content-corrections-tool__checkbox-row" data-smrt-part="field">
       <!-- raw-primitive-allow: native checkbox; no Provider-free checkbox primitive (Toggle is a switch with different semantics, CheckboxInput requires a Provider) -->
       <input type="checkbox" bind:checked={publishCorrection} />
       {t(M['content.corrections_tool.publish_immediately'])}
@@ -230,16 +230,16 @@ async function issueCorrection() {
       {busy ? 'Issuing correction...' : 'Issue correction'}
     </Button>
 
-    <div class="tool-list">
-      <div class="section-caption">{t(M['content.corrections_tool.published_history'])}</div>
+    <div class="smrt-content-corrections-tool__list" data-smrt-part="list">
+      <div class="smrt-content-corrections-tool__caption" data-smrt-part="caption">{t(M['content.corrections_tool.published_history'])}</div>
       {#if corrections.length === 0}
-        <p class="empty-copy">{t(M['content.corrections_tool.no_corrections_issued'])}</p>
+        <p class="smrt-content-corrections-tool__empty" data-smrt-part="empty">{t(M['content.corrections_tool.no_corrections_issued'])}</p>
       {:else}
         {#each corrections as correction (correction.id ?? `${correction.correctionType}-${correction.createdAt}`)}
-          <div class="tool-card">
-            <div class="tool-card-header">
+          <div class="smrt-content-corrections-tool__card" data-smrt-part="item">
+            <div class="smrt-content-corrections-tool__card-header" data-smrt-part="header">
               <strong>{correction.correctionType}</strong>
-              <span class={`pill pill--${correction.status}`}>{correction.status}</span>
+              <span class={`smrt-content-corrections-tool__pill smrt-content-corrections-tool__pill--${correction.status}`} data-smrt-part="badge">{correction.status}</span>
             </div>
             <p>{correction.summary}</p>
             <span>{formatTimestamp(correction.publishedAt)}</span>
@@ -255,114 +255,111 @@ async function issueCorrection() {
 
 <style>
 @layer smrt.reset, smrt.structure, smrt.theme;
-@layer smrt.theme {
+@layer smrt.structure {
   /* The tool lays itself out by its own width, not the viewport, so it
-     fits a full page, a side panel, the assistant dock or a phone. */
-  .governance-tool {
+  fits a full page, a side panel, the assistant dock or a phone. */
+  .smrt-content-corrections-tool__root {
     container-type: inline-size;
     container-name: governance-tool;
   }
-
-  .governance-tool,
-  .tool-list,
-  .workflow-field {
+  .smrt-content-corrections-tool__root,
+  .smrt-content-corrections-tool__list,
+  .smrt-content-corrections-tool__field {
     display: flex;
     flex-direction: column;
     gap: 0.75rem;
   }
-
-  .workflow-field {
-    color: var(--smrt-color-on-surface-variant);
-    font-size: var(--smrt-typography-label-large-size, 0.875rem);
-    font-weight: var(--smrt-typography-weight-medium, 500);
-  }
-
-  .tool-card {
+  .smrt-content-corrections-tool__card {
     display: flex;
     flex-direction: column;
     gap: 0.4rem;
-    background: var(--smrt-card-background, var(--smrt-color-surface));
-    border: var(--smrt-card-border, var(--smrt-hairline));
-    box-shadow: var(--smrt-card-shadow, none);
-    border-radius: 0.75rem;
     padding: 0.85rem;
   }
-
-  .tool-card-header {
+  .smrt-content-corrections-tool__card-header {
     display: flex;
     align-items: center;
     justify-content: space-between;
     gap: 0.75rem;
   }
-
-  .tool-card span,
-  .empty-copy,
-  .section-caption {
-    color: var(--smrt-color-on-surface-variant);
-    font-size: var(--smrt-typography-body-medium-size, 0.85rem);
-  }
-
-  .tool-card p {
+  .smrt-content-corrections-tool__card p {
     margin: 0;
   }
-
-  .checkbox-row {
+  .smrt-content-corrections-tool__checkbox-row {
     display: flex;
     align-items: center;
     gap: 0.55rem;
-    color: var(--smrt-color-on-surface);
   }
-
-  .pill {
-    border-radius: var(--smrt-radius-full);
+  .smrt-content-corrections-tool__pill {
     padding: 0.2rem 0.55rem;
-    font-size: var(--smrt-typography-label-medium-size, 0.75rem);
-    font-weight: var(--smrt-typography-weight-bold, 700);
-    text-transform: capitalize;
   }
-
-  .pill--published,
-  .pill--neutral {
-    background: color-mix(in srgb, var(--smrt-color-primary) 14%, transparent);
-    color: var(--smrt-color-on-primary-container);
-  }
-
-  .pill--draft,
-  .pill--retracted {
-    background: color-mix(in srgb, var(--smrt-color-error) 14%, transparent);
-    color: var(--smrt-color-on-error-container);
-  }
-
-  .tool-error,
-  .tool-notice {
+  .smrt-content-corrections-tool__error,
+  .smrt-content-corrections-tool__notice {
     margin: 0;
-    border-radius: 0.6rem;
     padding: 0.75rem 0.9rem;
-    font-size: var(--smrt-typography-body-medium-size, 0.9rem);
   }
-
-  .tool-error {
-    background: color-mix(in srgb, var(--smrt-color-error) 10%, transparent);
-    color: var(--smrt-color-on-error-container);
-  }
-
-  .tool-notice {
-    background: color-mix(in srgb, var(--smrt-color-primary) 10%, transparent);
-    color: var(--smrt-color-on-primary-container);
-  }
-
-  .checkbox-row {
+  .smrt-content-corrections-tool__checkbox-row {
     min-height: 2.75rem;
   }
-
   @container governance-tool (max-width: 30rem) {
-    .governance-tool > :global(button) {
+    .smrt-content-corrections-tool__root > :global(button) {
       width: 100%;
     }
-
-    .tool-card-header {
+    .smrt-content-corrections-tool__card-header {
       flex-wrap: wrap;
     }
   }
 }
+
+@layer smrt.theme {
+  .smrt-content-corrections-tool__field {
+    color: var(--smrt-color-on-surface-variant);
+    font-size: var(--smrt-typography-label-large-size, 0.875rem);
+    font-weight: var(--smrt-typography-weight-medium, 500);
+  }
+  .smrt-content-corrections-tool__card {
+    background: var(--smrt-card-background, var(--smrt-color-surface));
+    border: var(--smrt-card-border, var(--smrt-hairline));
+    box-shadow: var(--smrt-card-shadow, none);
+    border-radius: 0.75rem;
+  }
+  .smrt-content-corrections-tool__card span,
+  .smrt-content-corrections-tool__empty,
+  .smrt-content-corrections-tool__caption {
+    color: var(--smrt-color-on-surface-variant);
+    font-size: var(--smrt-typography-body-medium-size, 0.85rem);
+  }
+  .smrt-content-corrections-tool__checkbox-row {
+    color: var(--smrt-color-on-surface);
+  }
+  .smrt-content-corrections-tool__pill {
+    border-radius: var(--smrt-radius-full);
+    font-size: var(--smrt-typography-label-medium-size, 0.75rem);
+    font-weight: var(--smrt-typography-weight-bold, 700);
+    text-transform: capitalize;
+  }
+  .smrt-content-corrections-tool__pill--published,
+  .smrt-content-corrections-tool__pill--neutral {
+    background: color-mix(in srgb, var(--smrt-color-primary) 14%, transparent);
+    color: var(--smrt-color-on-primary-container);
+  }
+  .smrt-content-corrections-tool__pill--draft,
+  .smrt-content-corrections-tool__pill--retracted {
+    background: color-mix(in srgb, var(--smrt-color-error) 14%, transparent);
+    color: var(--smrt-color-on-error-container);
+  }
+  .smrt-content-corrections-tool__error,
+  .smrt-content-corrections-tool__notice {
+    border-radius: 0.6rem;
+    font-size: var(--smrt-typography-body-medium-size, 0.9rem);
+  }
+  .smrt-content-corrections-tool__error {
+    background: color-mix(in srgb, var(--smrt-color-error) 10%, transparent);
+    color: var(--smrt-color-on-error-container);
+  }
+  .smrt-content-corrections-tool__notice {
+    background: color-mix(in srgb, var(--smrt-color-primary) 10%, transparent);
+    color: var(--smrt-color-on-primary-container);
+  }
+}
+
 </style>

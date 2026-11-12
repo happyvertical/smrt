@@ -295,15 +295,25 @@ setCookbookContext({
 {#snippet assistantPanel({ open }: { open: boolean })}
   {#if assistant && !embed}
     {@const Dock = assistant.component}
-    <section class="cookbook-assistant" aria-label={assistantLabel} hidden={!open}>
+    <section class="smrt-cookbook-app__cookbook-assistant" aria-label={assistantLabel} hidden={!open}>
       <Dock transport={assistant.transport} registry={assistant.registry} contextMode="server" visible={open} messageFormat="markdown" toolPresentation={assistant.toolPresentation} introduction={assistant.introduction} />
     </section>
   {/if}
 {/snippet}
 
 <style>
-  @layer smrt.reset, smrt.structure, smrt.theme;
-  @layer smrt.structure {
-    .cookbook-assistant { height: 100%; min-height: 0; color: var(--smrt-color-on-surface); }
+@layer smrt.reset, smrt.structure, smrt.theme;
+
+@layer smrt.structure {
+  .smrt-cookbook-app__cookbook-assistant {
+    height: 100%;
+    min-height: 0;
   }
+}
+
+@layer smrt.theme {
+  .smrt-cookbook-app__cookbook-assistant {
+    color: var(--smrt-color-on-surface);
+  }
+}
 </style>

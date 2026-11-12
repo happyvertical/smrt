@@ -184,6 +184,7 @@ export type {
   ProjectItem,
   ProjectProviderType,
   ProjectStatus,
+  RepositoryCiState,
   RepositoryConfig,
   RepositoryProviderType,
   SDKComment,

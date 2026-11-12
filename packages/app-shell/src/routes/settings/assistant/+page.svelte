@@ -13,15 +13,16 @@ import ConnectAi from '$lib/components/ConnectAi.svelte';
     your ChatGPT plan, or an API key. Codex is under Advanced.
   </p>
   <ConnectAi variant="settings" advancedHref="/settings/inference" />
-  <p class="again">
-    <a class="sh-link" href="/welcome">Run the welcome steps again</a>
+  <p class="smrt-app-shell-assistant__again">
+    <a class="smrt-app-shell__link" href="/welcome">Run the welcome steps again</a>
   </p>
 </ShellSettingsPage>
 
 <style>
 @layer smrt.reset, smrt.structure, smrt.theme;
-@layer smrt.theme {
-  .again {
+
+@layer smrt.structure {
+  .smrt-app-shell-assistant__again {
     margin-block-start: var(--smrt-spacing-lg, 1rem);
   }
 }

@@ -29,7 +29,7 @@ const { t } = useI18n();
       class="smrt-phone-top-bar__back"
       data-shell-page-navigation-replacement
       href={model.backHref}
-      aria-label={t(M['ui.phone_top_bar.back'], { label: model.backLabel })}
+      aria-label={t(M['ui.phone_top_bar.back'], { label: model.backLabel })} data-smrt-part="trigger"
     >
       <svg
         viewBox="0 0 24 24"
@@ -45,7 +45,7 @@ const { t } = useI18n();
         <path d="m12 19-7-7 7-7M19 12H5" />
       </svg>
     </a>
-    <span class="smrt-phone-top-bar__title" data-shell-page-title-replacement>{model.title}</span>
+    <span class="smrt-phone-top-bar__title" data-shell-page-title-replacement data-smrt-part="title">{model.title}</span>
   {:else}
     <ShellTitle title={model.title} href={homeHref} />
   {/if}
@@ -53,7 +53,8 @@ const { t } = useI18n();
 
 <style>
 @layer smrt.reset, smrt.structure, smrt.theme;
-@layer smrt.theme {
+
+@layer smrt.structure {
   .smrt-phone-top-bar {
     display: flex;
     align-items: center;
@@ -61,43 +62,47 @@ const { t } = useI18n();
     box-sizing: border-box;
     block-size: var(--smrt-admin-shell-phone-top-size, 3.5rem);
     padding: 0 var(--smrt-spacing-2);
-    border-block-end: var(--smrt-hairline);
-    background: var(--smrt-glass-surface);
-    -webkit-backdrop-filter: blur(var(--smrt-glass-blur)) saturate(var(--smrt-glass-saturation));
-    backdrop-filter: blur(var(--smrt-glass-blur)) saturate(var(--smrt-glass-saturation));
-    color: var(--smrt-color-on-surface);
   }
-
   .smrt-phone-top-bar__back {
     display: inline-grid;
     place-items: center;
     flex: none;
     inline-size: 2.75rem;
     block-size: 2.75rem;
+  }
+  .smrt-phone-top-bar__title {
+    min-inline-size: 0;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+  }
+}
+
+@layer smrt.theme {
+  .smrt-phone-top-bar {
+    border-block-end: var(--smrt-hairline);
+    background: var(--smrt-glass-surface);
+    -webkit-backdrop-filter: blur(var(--smrt-glass-blur)) saturate(var(--smrt-glass-saturation));
+    backdrop-filter: blur(var(--smrt-glass-blur)) saturate(var(--smrt-glass-saturation));
+    color: var(--smrt-color-on-surface);
+  }
+  .smrt-phone-top-bar__back {
     border-radius: var(--smrt-radius-full);
     color: inherit;
   }
-
   .smrt-phone-top-bar__back:hover,
   .smrt-phone-top-bar__back:focus-visible {
     background: color-mix(in srgb, currentColor calc(var(--smrt-state-hover) * 100%), transparent);
   }
-
   .smrt-phone-top-bar__back:active {
     background: color-mix(in srgb, currentColor calc(var(--smrt-state-pressed) * 100%), transparent);
   }
-
   .smrt-phone-top-bar__back:focus-visible {
     outline: var(--smrt-focus-ring-width) solid var(--smrt-focus-ring-color);
     outline-offset: calc(-1 * var(--smrt-focus-ring-width));
   }
-
   .smrt-phone-top-bar__title {
-    min-inline-size: 0;
-    overflow: hidden;
     font: var(--smrt-typography-title-medium-font);
-    text-overflow: ellipsis;
-    white-space: nowrap;
   }
 }
 </style>

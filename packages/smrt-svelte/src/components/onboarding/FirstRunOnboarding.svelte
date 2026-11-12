@@ -124,8 +124,8 @@ const step = $derived(
 );
 </script>
 
-<main class="onboarding" data-smrt-component="FirstRunOnboarding" aria-busy={busy}>
-<div class="onboarding-content">
+<main class="smrt-first-run-onboarding__onboarding" data-smrt-component="FirstRunOnboarding" aria-busy={busy}>
+<div class="smrt-first-run-onboarding__onboarding-content">
   <Card padding="lg">
     <p>{t(M['ui.onboarding.step'], { step, total: 3 })}</p>
     <Progress value={step} max={3} label={t(M['ui.onboarding.step'], { step, total: 3 })} />
@@ -141,14 +141,14 @@ const step = $derived(
         <Button variant="secondary" href={safeHref(aiAlternative.href) ?? undefined}>{aiAlternative.label}</Button>
       {/if}
       {#if !ready}<p>{t(M['ui.onboarding.skip_hint'])}</p>{/if}
-      <div class="actions">
+      <div class="smrt-first-run-onboarding__actions">
         <Button variant="ghost" disabled={busy} onclick={() => change({ action: 'back' })}>{t(M['ui.onboarding.back'])}</Button>
         {#if !ready}<Button variant="secondary" disabled={busy} onclick={() => change({ action: 'skip' })}>{t(M['ui.onboarding.skip'])}</Button>{/if}
         <Button disabled={busy || !ready} onclick={() => change({ action: 'continue' })}>{t(M['ui.onboarding.continue'])}</Button>
       </div>
     {:else if progress.step === 'template'}
       {#if !progress.templates.length}<p>{t(M['ui.onboarding.templates_off'])}</p>{/if}
-      <div class="templates">
+      <div class="smrt-first-run-onboarding__templates">
         {#each progress.templates as template (template.id)}
           <Card>
             <h2>{template.id === 'fresh' ? t(M['ui.onboarding.fresh']) : template.name}</h2>
@@ -181,7 +181,7 @@ const step = $derived(
         {/if}
         </section>
       {/if}
-      <div class="actions">
+      <div class="smrt-first-run-onboarding__actions">
         {#if pendingApproval}
           <Button variant="ghost" href={backHref}>{t(M['ui.onboarding.back_settings'])}</Button>
         {:else if progress.rerunning}
@@ -206,13 +206,44 @@ const step = $derived(
 
 <style>
 @layer smrt.reset, smrt.structure, smrt.theme;
+
 @layer smrt.structure {
-  .onboarding { inline-size: 100%; min-block-size: 100dvh; padding: var(--smrt-spacing-4); box-sizing: border-box; color: var(--smrt-color-on-surface); background: var(--smrt-color-background); }
-  .onboarding-content { max-inline-size: calc(var(--smrt-spacing-24) * 10); margin-inline: auto; }
-  .templates { display: grid; grid-template-columns: repeat(auto-fit, minmax(min(100%, calc(var(--smrt-spacing-16) * 4)), 1fr)); gap: var(--smrt-spacing-3); }
-  .actions { display: flex; flex-wrap: wrap; gap: var(--smrt-spacing-3); margin-block-start: var(--smrt-spacing-4); }
-  h1:focus { outline: none; }
-  section { margin-block: var(--smrt-spacing-4); }
-  [role='alert'] { color: var(--smrt-color-error); }
+  .smrt-first-run-onboarding__onboarding {
+    inline-size: 100%;
+    min-block-size: 100dvh;
+    padding: var(--smrt-spacing-4);
+    box-sizing: border-box;
+  }
+  .smrt-first-run-onboarding__onboarding-content {
+    max-inline-size: calc(var(--smrt-spacing-24) * 10);
+    margin-inline: auto;
+  }
+  .smrt-first-run-onboarding__templates {
+    display: grid;
+    grid-template-columns: repeat(auto-fit, minmax(min(100%, calc(var(--smrt-spacing-16) * 4)), 1fr));
+    gap: var(--smrt-spacing-3);
+  }
+  .smrt-first-run-onboarding__actions {
+    display: flex;
+    flex-wrap: wrap;
+    gap: var(--smrt-spacing-3);
+    margin-block-start: var(--smrt-spacing-4);
+  }
+  section {
+    margin-block: var(--smrt-spacing-4);
+  }
+}
+
+@layer smrt.theme {
+  .smrt-first-run-onboarding__onboarding {
+    color: var(--smrt-color-on-surface);
+    background: var(--smrt-color-background);
+  }
+  h1:focus {
+    outline: none;
+  }
+  [role='alert'] {
+    color: var(--smrt-color-error);
+  }
 }
 </style>

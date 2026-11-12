@@ -42,8 +42,8 @@ of those columns:
 **A report-only `alter_column` advisory is deliberately excluded from that
 second loop**, even though `SchemaAdvisory` allows the type. Unlike
 `type_upgrade`, the only producer of an advisory-only `alter_column` is an
-un-opted-into relaxation (`drop_default`/`drop_not_null` when
-`--relax-columns` was not passed) — it says the live column is *stricter*
+un-opted-into relaxation (`drop_default`, or `drop_not_null` on SQLite/orphans,
+when `--relax-columns` was not passed) — it says the live column is *stricter*
 than the manifest, not that anything about the column blocks convergence,
 and it reappears on every run regardless of `--apply-unblocked`. Blocking on
 it reproduced the exact `engineUnsupported` defect for a different shape:
@@ -72,8 +72,9 @@ column — strictly worse than omitting the flag.
 
 **An orphan-blocked `add_foreign_key`'s block is a row-data condition, not
 a column-state one — an `alter_column` relaxation on that same column is
-its remediation, not something unsafe against it.** With `--relax-columns
---apply-unblocked`, a FK child column that is physically `NOT NULL` while
+its remediation, not something unsafe against it.** With `--apply-unblocked` (and
+`--relax-columns` on engines where `DROP NOT NULL` is still opt-in; PostgreSQL
+applies it by default, #4897), a FK child column that is physically `NOT NULL` while
 the manifest declares it nullable (with live orphan rows) stays
 orphan-blocked — `--null-orphans` can't resolve a NOT NULL child. The
 executable `DROP NOT NULL` relaxation for that same column is exactly what

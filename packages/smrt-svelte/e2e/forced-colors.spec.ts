@@ -151,29 +151,31 @@ test.describe('shell under forced-colors: active', () => {
     await page.setViewportSize({ width: 390, height: 844 });
     await page.goto('/forced-colors.html?tabs#queue');
     const highlight = await systemColor(page, 'Highlight');
-    const bar = page.locator('.smrt-phone-bottom-bar');
+    const bar = page.locator('[data-smrt-component="PhoneBottomBar"]');
     await expect(bar).toBeVisible();
-    const active = bar.locator('.smrt-phone-bottom-bar__item.active');
+    const active = bar.locator('[data-smrt-part="item"][aria-current="page"]');
     await expect(active).toHaveCount(1);
     expect(
       await active
-        .locator('.smrt-phone-bottom-bar__icon')
+        .locator('[data-smrt-part="icon"]')
         .evaluate((el) => getComputedStyle(el).backgroundColor),
     ).toBe(highlight);
     const inactive = bar
-      .locator('.smrt-phone-bottom-bar__item:not(.active)')
+      .locator('[data-smrt-part="item"]:not([aria-current="page"])')
       .first();
     expect(
       await inactive
-        .locator('.smrt-phone-bottom-bar__icon')
+        .locator('[data-smrt-part="icon"]')
         .evaluate((el) => getComputedStyle(el).backgroundColor),
     ).not.toBe(highlight);
     const weights = await page.evaluate(() => [
       getComputedStyle(
-        document.querySelector('.smrt-phone-bottom-bar__item.active')!,
+        document.querySelector('[data-smrt-part="item"][aria-current="page"]')!,
       ).fontWeight,
       getComputedStyle(
-        document.querySelector('.smrt-phone-bottom-bar__item:not(.active)')!,
+        document.querySelector(
+          '[data-smrt-part="item"]:not([aria-current="page"])',
+        )!,
       ).fontWeight,
     ]);
     expect(Number(weights[0])).toBeGreaterThan(Number(weights[1]));
@@ -198,7 +200,7 @@ test.describe('shell under forced-colors: active', () => {
     const toggle = page.locator('.smrt-dock-toggles__button').first();
     await expect(toggle).toBeVisible();
     await toggle.click();
-    await expect(toggle).toHaveClass(/active/);
+    await expect(toggle).toHaveAttribute('aria-pressed', 'true');
     expect(
       await toggle.evaluate((el) => getComputedStyle(el).backgroundColor),
     ).toBe(highlight);

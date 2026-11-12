@@ -33,17 +33,6 @@ const OWN_APP_SURFACES = [
   'packages/products/src/app',
 ];
 
-/**
- * Svelte files whose `<style>` still carries `!important`, with the exact count
- * allowed. Each is a stored-content case: body HTML carries inline image widths,
- * and only `!important` beats an inline style. Dropping one needs the body
- * serializer to stop emitting that width, which changes stored content.
- */
-const IMPORTANT_EXEMPTIONS = {
-  'packages/content/src/svelte/components/ContentBodyEditor.svelte': { count: 2 },
-  'packages/content/src/svelte/components/ContentBodyRenderer.svelte': { count: 2 },
-};
-
 /** @param {string} body a `<style>` body */
 function countImportant(body) {
   return (body.replace(/\/\*[\s\S]*?\*\//g, '').match(/!\s*important\b/gi) ?? []).length;
@@ -92,7 +81,7 @@ export function findViolations(files) {
       }
     }
     const important = blocks.reduce((sum, block) => sum + countImportant(block.body), 0);
-    const allowed = IMPORTANT_EXEMPTIONS[rel]?.count ?? 0;
+    const allowed = 0;
     if (important !== allowed) {
       violations.push(
         `${rel}: ${important} !important in <style> (allowed ${allowed}); a layered !important beats consumer unlayered CSS, so consumers cannot override it: raise specificity or source order instead`,

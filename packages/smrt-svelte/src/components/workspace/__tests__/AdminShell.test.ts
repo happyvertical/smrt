@@ -184,7 +184,9 @@ describe('AdminShell', () => {
       await tick();
       expect(container.querySelector('#smrt-admin-shell-top-panel')).toBeNull();
       expect(
-        container.querySelector('.smrt-admin-shell__brand.compact'),
+        container.querySelector(
+          '[data-smrt-component="ShellBrand"].smrt-shell-brand__compact',
+        ),
       ).toHaveAttribute('href', '/app');
       expect(
         container.querySelector('.smrt-admin-shell__tenant-rail-footer')
@@ -195,8 +197,9 @@ describe('AdminShell', () => {
       state.expandPanel('left');
       await tick();
       expect(
-        container.querySelector('.smrt-admin-shell__brand:not(.compact)')
-          ?.textContent,
+        container.querySelector(
+          '[data-smrt-component="ShellBrand"]:not(.smrt-shell-brand__compact)',
+        )?.textContent,
       ).toContain('Workshop');
       expect(
         container.querySelector('.smrt-admin-shell__tenant-footer')

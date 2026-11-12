@@ -64,16 +64,24 @@ describe('MoneyInput — behavior', () => {
     const { container } = render(MoneyInput, {
       props: { name: 'price', label: 'Price' },
     });
-    expect(container.querySelector('.currency-symbol')).toBeNull(); // shown once
-    expect(container.querySelector('.currency-code')?.textContent).toBe('CAD');
+    expect(container.querySelectorAll('[data-smrt-part="unit"]')).toHaveLength(
+      1,
+    );
+    expect(
+      container.querySelector('[data-smrt-part="unit"]')?.textContent,
+    ).toBe('CAD');
   });
 
   it('shows the USD code once when currency=USD', () => {
     const { container } = render(MoneyInput, {
       props: { name: 'price', label: 'Price', currency: 'USD' },
     });
-    expect(container.querySelector('.currency-symbol')).toBeNull(); // shown once
-    expect(container.querySelector('.currency-code')?.textContent).toBe('USD');
+    expect(container.querySelectorAll('[data-smrt-part="unit"]')).toHaveLength(
+      1,
+    );
+    expect(
+      container.querySelector('[data-smrt-part="unit"]')?.textContent,
+    ).toBe('USD');
   });
 
   it('writes the cents value into the hidden submission input', async () => {

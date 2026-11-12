@@ -7,6 +7,7 @@ import {
   extractBodyImages,
   htmlToMarkdown,
   imageAssetToHtml,
+  renderContentBodyHtml,
   renderMarkdownToHtml,
   resolveBodyFormat,
   sanitizeHtml,
@@ -212,5 +213,66 @@ describe('content body format utilities', () => {
       bodyToEditorHtml('![Alt](https://example.com/a.jpg)', 'markdown'),
     ).toContain('<img src="https://example.com/a.jpg" alt="Alt">');
     expect(htmlToMarkdown('<p>Hello</p>')).toBe('Hello');
+  });
+});
+
+describe('component-private image widths', () => {
+  it('keeps the inline width of a figure without editor layout markers', () => {
+    const plain =
+      '<figure style="width: 180px"><img src="/image.png"><figcaption>Caption</figcaption></figure>';
+    const rendered = renderContentBodyHtml(plain, 'html');
+    expect(rendered).toContain('<figure style="width: 180px">');
+    expect(rendered).not.toContain('--smrt-content-body-image-width');
+    const saved = editorHtmlToBody(bodyToEditorHtml(plain, 'html'), 'html');
+    expect(saved).toContain('<figure style="width: 180px">');
+  });
+
+  it.each([
+    'img',
+    'figure',
+  ])('normalizes legacy %s widths at render/load and preserves an old body on re-save', (tag) => {
+    const legacy =
+      tag === 'img'
+        ? '<img src="/image.png" style="width: 180px; max-width: 100%; height: auto" data-smrt-placement="right">'
+        : '<figure style="width: 180px; max-width: 100%" data-smrt-inline-image="true" data-smrt-placement="right"><img src="/image.png"></figure>';
+    const modern = legacy.replace(
+      'width: 180px',
+      '--smrt-content-body-image-width: 180px',
+    );
+    const rendered = renderContentBodyHtml(legacy, 'html');
+    expect(rendered).toBe(renderContentBodyHtml(modern, 'html'));
+    expect(rendered).toContain('--smrt-content-body-image-width: 180px');
+    expect(rendered).not.toMatch(/(?:style="|; )width:/);
+    const loaded = bodyToEditorHtml(legacy, 'html');
+    expect(loaded).toBe(bodyToEditorHtml(modern, 'html'));
+    const saved = editorHtmlToBody(loaded, 'html');
+    expect(extractBodyImages(saved, 'html')[0].width).toBe(180);
+    expect(renderContentBodyHtml(saved, 'html')).toBe(rendered);
+    expect(editorHtmlToBody(bodyToEditorHtml(saved, 'html'), 'html')).toBe(
+      saved,
+    );
+  });
+
+  it('serializes inserted images with a chosen private width', () => {
+    expect(imageAssetToHtml({ url: '/image.png', width: 240 })).toContain(
+      '--smrt-content-body-image-width: 240px',
+    );
+  });
+
+  it.each([
+    'url(javascript:alert(1))',
+    'var(--unsafe)',
+    'expression(alert(1))',
+    '-20px',
+    '20000px',
+    '50%',
+  ])('keeps the existing width value restrictions for %s', (value) => {
+    for (const property of ['width', '--smrt-content-body-image-width']) {
+      expect(
+        sanitizeHtml(
+          `<img src="/image.png" style="${property}: ${value}; position: fixed; --other: red">`,
+        ),
+      ).toBe('<img src="/image.png">');
+    }
   });
 });

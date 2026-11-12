@@ -69,7 +69,9 @@ describe('Board', () => {
     const { container, rerender } = render(Board<SupportCard, BoardColumn>, {
       props: props(),
     });
-    const root = container.querySelector('.smrt-board') as HTMLElement;
+    const root = container.querySelector(
+      '[data-smrt-component="Board"]',
+    ) as HTMLElement;
     expect(root.style.getPropertyValue('--smrt-board-lane-width')).toBe('');
     rerender(props({ laneWidth: '15rem' }));
     expect(root.style.getPropertyValue('--smrt-board-lane-width')).toBe(

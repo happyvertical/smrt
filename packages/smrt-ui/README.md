@@ -1228,7 +1228,8 @@ Components depend on three public things only: **token names** (`--smrt-*`),
 **`data-smrt-*` hooks**. Everything else inside a component's stylesheet can
 change without notice.
 
-Every component `<style>` block is wrapped in `@layer smrt.theme { … }`. The
+Every component `<style>` block separates layout in `smrt.structure` from paint
+and motion in `smrt.theme`. The
 global stylesheets follow the same rule: `themes/styles/base.css` sits in
 `smrt.reset`, and the rule-bearing parts of each preset sit in `smrt.theme`.
 Custom-property token blocks stay unlayered. The layer order is declared once in
@@ -1268,9 +1269,37 @@ are hashed by Svelte and are not a contract:
 ```
 
 `data-smrt-component` roots and `data-smrt-part` hooks are the intended way to
-target internal parts. They are rolling out component by component (tracked
-in #3824). Until a component exposes them, target it through its rendered
-element or your own wrapper.
+target internal parts. Parts describe roles: `header`, `body`, `footer`, `label`, `trigger`, `panel`,
+`list`, `item`, `control`, and `indicator`. Scope them through the component
+root; state stays on native or ARIA attributes such as `aria-selected`. See the
+[part vocabulary](agents/styling.md#smrt-ui-part-vocabulary-wave-3).
+
+### Replace the theme with styleless mode
+
+Start with tokens (`--smrt-color-primary`, `--smrt-radius-md`) for theme-wide
+changes, then unlayered CSS for local overrides, then root/part hooks for precise
+internal roles. To supply a complete theme:
+
+```ts
+import '@happyvertical/smrt-ui/styles/unstyled.css';
+```
+
+This appends `all: revert-layer` to `smrt.theme` for every component subtree,
+including `::before` and `::after`. Structure remains: `display`,
+`grid-template-columns`, `gap`, `padding`, dimensions, positioning, hidden native
+inputs, transparent hit targets, and structural checked/selected indicators.
+Theme disappears: `background`, `border`, `border-radius`, `box-shadow`, `color`,
+`font`, `filter`, `transition`, and `animation`. Text inherits page typography;
+changed font metrics and removed borders can change intrinsic sizes and wrapping.
+Custom properties remain available. Unlayered CSS always wins, so add your own
+`color`, `font`, `background`, and `border` rules through the hooks:
+
+```css
+[data-smrt-component="Card"] [data-smrt-part="header"] {
+  background: #f4f1ea;
+  color: #222;
+}
+```
 
 ### Consumer check when upgrading
 
@@ -1289,12 +1318,16 @@ import `@happyvertical/smrt-ui/themes/styles/base.css`. The recipes are in
 
 ### Adding or changing a component stylesheet
 
-Component `<style>` blocks must be inside `@layer smrt.*`. The lint gate
-`node scripts/check-smrt-cascade-layers.mjs` (part of `pnpm lint`) fails
-otherwise. To wrap an unlayered block, run `node scripts/codemod-smrt-layers.mjs`
-from the repository root. The codemod is idempotent and refuses blocks it cannot
-wrap safely (top-level `@import` or `@charset`, or a mix of layered and
-unlayered rules).
+Declare `@layer smrt.reset, smrt.structure, smrt.theme;`, put layout and
+interaction in `smrt.structure`, and paint/motion in `smrt.theme`. Add
+`data-smrt-component` roots and useful role-named `data-smrt-part` hooks;
+namespace private classes as `smrt-<component>__<part-or-modifier>`.
+`pnpm lint` runs the strict cascade, sorting, namespacing, and root-hook gates.
+A new unsorted component or generic private class fails; there is no ratchet
+budget. Only the [documented exact exceptions](agents/styling.md) remain.
+Use `node scripts/codemod-smrt-sort-layers.mjs --write --file <component>` for
+the mechanical split, review role-dependent declarations, then `--format` on
+the same file. See [styling.md](agents/styling.md) for classification and gates.
 
 ## Development
 

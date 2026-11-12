@@ -158,12 +158,12 @@ function matches(row: DisplayRow): boolean {
   </PageHeader>
 {/if}
 
-<section class="smrt-list-screen" aria-label={heading} data-smrt-component="ListScreen">
+<section class="smrt-list-screen__root" aria-label={heading} data-smrt-component="ListScreen">
   {#if sourceError}
     <Alert variant="error">{sourceError}</Alert>
   {:else}
     {#if searchable}
-      <div class="smrt-list-screen__search">
+      <div class="smrt-list-screen__search" data-smrt-part="field">
         <SearchInput
           value={query}
           onsearch={(next) => {
@@ -207,8 +207,8 @@ function matches(row: DisplayRow): boolean {
 
 <style>
 @layer smrt.reset, smrt.structure, smrt.theme;
-@layer smrt.theme {
-  .smrt-list-screen {
+@layer smrt.structure {
+  .smrt-list-screen__root {
     display: flex;
     flex-direction: column;
     gap: var(--smrt-spacing-md, 1rem);
@@ -217,4 +217,8 @@ function matches(row: DisplayRow): boolean {
     max-width: 24rem;
   }
 }
+
+@layer smrt.theme {
+}
+
 </style>

@@ -40,7 +40,7 @@ import {
   writeEncryptedSnapshot,
 } from '../snapshot-framing.js';
 
-// Records what `fsyncSync` was asked to flush; behaviour is unchanged.
+// Record real file and directory flushes without changing the filesystem work.
 const synced = vi.hoisted(() => ({
   files: [] as number[],
   directories: [] as number[],
@@ -55,6 +55,22 @@ vi.mock('node:fs', async (importOriginal) => {
         details.ino,
       );
       return actual.fsyncSync(fd);
+    },
+  };
+});
+vi.mock('node:fs/promises', async (importOriginal) => {
+  const actual = await importOriginal<typeof import('node:fs/promises')>();
+  return {
+    ...actual,
+    async open(...args: Parameters<typeof actual.open>) {
+      const handle = await actual.open(...args);
+      const sync = handle.sync.bind(handle);
+      vi.spyOn(handle, 'sync').mockImplementation(async () => {
+        await sync();
+        const details = await handle.stat();
+        if (details.isDirectory()) synced.directories.push(details.ino);
+      });
+      return handle;
     },
   };
 });
@@ -228,7 +244,11 @@ describe('encrypted snapshot framing', () => {
     });
     expect(restored.digest).toBe(written.digest);
     expect(readFileSync(destination).equals(plaintext)).toBe(true);
-    expect(synced.directories).toContain(statSync(join(root, 'restored')).ino);
+    if (process.platform !== 'win32') {
+      expect(synced.directories).toContain(
+        statSync(join(root, 'restored')).ino,
+      );
+    }
     expect(statSync(destination).mode & 0o777).toBe(0o600);
     expect(leftovers(join(root, 'restored'))).toEqual([]);
   });
@@ -266,7 +286,9 @@ describe('encrypted snapshot framing', () => {
     for (const path of ['app.sqlite', 'assets/nested/a.bin', 'assets/empty']) {
       expect(synced.files).toContain(statSync(join(candidate, path)).ino);
     }
-    expect(synced.directories).toContain(statSync(root).ino);
+    if (process.platform !== 'win32') {
+      expect(synced.directories).toContain(statSync(root).ino);
+    }
     for (const path of ['app.sqlite', 'assets/nested/a.bin', 'assets/empty']) {
       expect(readFileSync(join(candidate, path))).toEqual(
         readFileSync(join(data, path)),

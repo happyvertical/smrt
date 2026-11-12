@@ -47,7 +47,7 @@ async function submit(event: SubmitEvent) {
 }
 </script>
 
-<section class="assistance" data-smrt-component="AssistanceLauncher">
+<section class="smrt-assistance-launcher__root" data-smrt-component="AssistanceLauncher">
   <Form onsubmit={submit}>
     <header>
       <h2>{t(M['projects.assistance.title'])}</h2>
@@ -71,34 +71,44 @@ async function submit(event: SubmitEvent) {
 
 <style>
 @layer smrt.reset, smrt.structure, smrt.theme;
-@layer smrt.theme {
-  .assistance {
+@layer smrt.structure {
+  .smrt-assistance-launcher__root {
     max-width: 42rem;
   }
-  .assistance :global(form) {
+  .smrt-assistance-launcher__root :global(form) {
     display: grid;
     gap: var(--smrt-spacing-4);
   }
-  .assistance header {
-    border-bottom: var(--smrt-hairline);
+  .smrt-assistance-launcher__root header {
     padding-bottom: var(--smrt-spacing-3);
   }
-  .assistance h2,
-  .assistance p {
+  .smrt-assistance-launcher__root h2,
+  .smrt-assistance-launcher__root p {
     margin: 0;
   }
-  .assistance p {
-    color: var(--smrt-color-on-surface-variant);
+  .smrt-assistance-launcher__root p {
     margin-top: var(--smrt-spacing-1);
   }
-  .assistance label {
+  .smrt-assistance-launcher__root label {
     display: grid;
-    font-weight: 600;
     gap: var(--smrt-spacing-1);
   }
-  .assistance footer {
+  .smrt-assistance-launcher__root footer {
     display: flex;
     justify-content: flex-end;
   }
 }
+
+@layer smrt.theme {
+  .smrt-assistance-launcher__root header {
+    border-bottom: var(--smrt-hairline);
+  }
+  .smrt-assistance-launcher__root p {
+    color: var(--smrt-color-on-surface-variant);
+  }
+  .smrt-assistance-launcher__root label {
+    font-weight: 600;
+  }
+}
+
 </style>
