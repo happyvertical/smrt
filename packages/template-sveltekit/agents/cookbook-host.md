@@ -584,6 +584,7 @@ is added. Tests use the actual runner for idle and initialization-race shutdown,
 reject first initialization after the shutdown event, and clean a runner that
 started before initialization failed without a second failure or exit-code change.
 
+<<<<<<< HEAD
 
 C4 follow-up: `/favicon.ico` redirects with public caching to the shipped
 `/favicon.svg` before runtime authorization/initialization (browser requests need
@@ -599,3 +600,21 @@ Products exports dist/lib/manifest.json; dropping it made all four template
 activation cases fail with ContractLineItem -> Product unresolved. All original
 REST/assistant write and linked-contact assertions remain. No production registry
 or exposure behavior changes.
+=======
+`onboardingWriteThrough.test.ts` retains the generated contact route coverage for
+every bundled template. Mechanic additionally adds a field through the existing
+host MCP HTTP workflow and through a three-pass design run with the native owner
+approval POST. There is currently no structural field-editor UI in this product;
+the MCP case exercises its existing HTTP mutation seam rather than claiming a
+browser editor. Both cases start with the real generated REST fallback, then
+exercise the edited dynamic URL and reopen the host over the same on-disk SQLite
+app after restoring compiled registrations. This is a same-process host replay
+with the existing runtime and public activation coordinator's stable scope;
+the fresh host/editor/job worker retains the composed activation gate. The
+runtime-owned database handles stay alive until both hosts have drained and are
+closed once in final teardown. Separate-process restart belongs to the built
+product browser gate. These cases preserve the same-name configured app
+Customer's curated columns, API metadata, cookbook policy/exposure, original rows
+and custom value. No template-host route workaround is added for a core registry
+or exposure defect.
+>>>>>>> 09e0607df9 (fix(core): retain configured model routes and columns after edits)

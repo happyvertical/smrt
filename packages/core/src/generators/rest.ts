@@ -222,7 +222,12 @@ function runtimeObjectDefinition(
     filePath: info.sourceFilePath || '',
     fields: registeredFieldsToManifest(info.inheritedFields || info.fields),
     methods: registeredMethodsToManifest(info.inheritedMethods || info.methods),
-    decoratorConfig: info.config || {},
+    // Replacement selection needs physical identity even when the provider's
+    // decorator leaves its table name implicit.
+    decoratorConfig: {
+      ...info.config,
+      ...(info.schema?.tableName ? { tableName: info.schema.tableName } : {}),
+    },
     ...(info.qualifiedName ? { qualifiedName: info.qualifiedName } : {}),
     ...(info.packageName ? { packageName: info.packageName } : {}),
     ...(info.visibility ? { visibility: info.visibility } : {}),
@@ -2044,14 +2049,21 @@ export class APIGenerator {
       if (isFrameworkBaseClass(info.name || key, info.packageName)) continue;
       // Primary match: the canonical manifest `collection` segment.
       if (info.collection === segment) {
-        const registryKey = info.qualifiedName || key;
+        // Collections and their row models share a URL. All downstream gates,
+        // policy checks and execution must use the effective row identity,
+        // independent of registration order.
+        const model = ObjectRegistry.getExposureModel(
+          info.qualifiedName || key,
+        );
+        if (!model) continue;
+        const registryKey = model.qualifiedName || model.name;
         if (ObjectRegistry.getSTIBase(registryKey)) {
           const owner = ObjectRegistry.getInheritanceChain(registryKey)
             .map((ancestor) => ObjectRegistry.getClass(ancestor))
             .find((ancestor) => ancestor?.collection === segment);
           if (owner) return owner;
         }
-        return info;
+        return model;
       }
       // Back-compat fallback for classes registered without a `collection`
       // (inline/test stubs): derive the plural segment from the simple name and
@@ -2061,7 +2073,9 @@ export class APIGenerator {
         !info.collection &&
         this.pluralize((info.name || key).toLowerCase()) === segment
       ) {
-        return info;
+        return (
+          ObjectRegistry.getExposureModel(info.qualifiedName || key) ?? null
+        );
       }
     }
     return null;

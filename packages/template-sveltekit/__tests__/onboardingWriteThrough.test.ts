@@ -16,9 +16,14 @@ import { dirname, join, resolve } from 'node:path';
 import { pathToFileURL } from 'node:url';
 import { defaultWriterLease } from '@happyvertical/smrt-app-runtime/sveltekit';
 import { readAssistantTurnStream } from '@happyvertical/smrt-chat/assistant-turn';
+// Keep external provider registrations in the snapshot: Node caches these
+// modules across generated app fixtures while each app subclass is loaded anew.
+import '@happyvertical/smrt-commerce';
+import '@happyvertical/smrt-profiles';
 import { resolveApplicationRuntime } from '@happyvertical/smrt-config';
 import { ObjectRegistry, toSnakeCase } from '@happyvertical/smrt-core';
 import { resolveManifestPath } from '@happyvertical/smrt-core/manifest/discover-smrt-packages';
+import { createActivationCoordinator } from '@happyvertical/smrt-core/activation';
 import { generateActivationRegistration } from '@happyvertical/smrt-core/activation/generate';
 import { BUNDLED_COOKBOOK_TEMPLATES } from '@happyvertical/smrt-core/cookbook/tools';
 import {
@@ -26,27 +31,39 @@ import {
   type SmartObjectManifest,
 } from '@happyvertical/smrt-core/manifest';
 import { generateSvelteKitRoutes } from '@happyvertical/smrt-core/vite-plugin';
+import { snapshotObjectRegistryState } from '@happyvertical/smrt-core/testing';
 import type { Profile } from '@happyvertical/smrt-profiles';
 import { catalogFromManifests, buildCookbookShell } from '@happyvertical/smrt-svelte/cookbook/server';
 import { disableTenancy, withTenant } from '@happyvertical/smrt-tenancy';
 import type { RequestEvent } from '@sveltejs/kit';
+import {
+  CLIENT_CAPABILITIES_META_KEY,
+  CLIENT_INFO_META_KEY,
+  PROTOCOL_VERSION_META_KEY,
+} from '@modelcontextprotocol/server';
 import { build } from 'esbuild';
-import { afterEach, expect, it } from 'vitest';
-import { createCookbookApplication } from '../host/server.js';
+import { afterEach, expect, it, vi } from 'vitest';
+import { createCookbookApplication, createCookbookHost } from '../host/server.js';
+import { createCookbookHostState } from '../host/state.js';
 
 const APP = '@fixture/onboard';
-const origin = 'http://127.0.0.1:4964';
+const origin = 'http://127.0.0.1:4996';
 let root: string;
 let host: ReturnType<typeof createCookbookApplication> | undefined;
 let release: (() => void) | undefined;
 let db:
   | Awaited<ReturnType<NonNullable<typeof host>['runtime']['database']>>
   | undefined;
+const retainedDatabases = new Set<NonNullable<typeof db>>();
 let sessionId: string;
+let restoreRegistry: (() => void) | undefined;
 
 afterEach(async () => {
+  await host?.shutdown();
   host?.dispose();
-  await db?.close?.();
+  if (db) retainedDatabases.add(db);
+  await Promise.all([...retainedDatabases].map((database) => database.close?.()));
+  retainedDatabases.clear();
   release?.();
   disableTenancy();
   delete (globalThis as Record<string, unknown>).__onboardingRuntime;
@@ -57,6 +74,8 @@ afterEach(async () => {
   host = undefined;
   db = undefined;
   release = undefined;
+  restoreRegistry?.();
+  restoreRegistry = undefined;
 });
 
 function event(path: string, method = 'GET', body?: unknown): RequestEvent {
@@ -68,7 +87,7 @@ function event(path: string, method = 'GET', body?: unknown): RequestEvent {
       headers: { origin, host: url.host, 'content-type': 'application/json' },
       ...(body === undefined ? {} : { body: JSON.stringify(body) }),
     }),
-    params: { path: path.replace('/api/assistant/', '') },
+    params: { path: url.pathname.replace('/api/assistant/', '') },
     locals: {},
     cookies: {
       get: (name: string) => (name === 'sid' ? sessionId : undefined),
@@ -89,8 +108,13 @@ function request(
 }
 
 it.each(
-  BUNDLED_COOKBOOK_TEMPLATES,
-)('creates a typed contact through generated REST and assistant after fresh $id onboarding with lazy activation', async (template) => {
+  BUNDLED_COOKBOOK_TEMPLATES.flatMap((template) =>
+    (template.id === 'mechanic' ? ['mcp', 'design'] : ['none']).map(
+      (structuralPath) => ({ ...template, structuralPath }),
+    ),
+  ),
+)('creates a typed contact through generated REST and assistant after fresh $id onboarding with lazy activation ($structuralPath)', async (template) => {
+  restoreRegistry = snapshotObjectRegistryState();
   root = mkdtempSync(join(realpathSync(tmpdir()), 'smrt-onboard-write-'));
   const packages = resolve(import.meta.dirname, '../..');
   const manifests: SmartObjectManifest[] = [];
@@ -122,12 +146,15 @@ it.each(
     const parent = `@happyvertical/smrt-${pkg}:${name}`;
     // Separate files match the generated app: booting identity must not import Customer.
     const sourceFile = join(root, `src/lib/models/${name}.ts`);
+    const presentation = name === 'Customer'
+      ? ",display:{list:['status','email','phone'],label:{via:'profileId',field:'name',fallback:'Unnamed customer'}},api:{include:['list','get','create','update']},mcp:{include:['list','get','create','update']}"
+      : '';
     mkdirSync(dirname(sourceFile), { recursive: true });
     writeFileSync(
       sourceFile,
       `import {smrt} from '@happyvertical/smrt-core';
 import {${name} as Base} from '@happyvertical/smrt-${pkg}';
-@smrt({packageName:'${APP}',name:'${name}'}) export class ${name} extends Base {}
+@smrt({packageName:'${APP}',name:'${name}'${presentation}}) export class ${name} extends Base {}
 `,
     );
     objects[`${APP}:${name}`] = {
@@ -204,9 +231,11 @@ import {${name} as Base} from '@happyvertical/smrt-${pkg}';
   const customerModule = registration.manifest.models[`${APP}:Customer`].module;
   let toolCalls = 0;
   let creatingMember = false;
+  let designOutput: Record<string, unknown> | undefined;
+  let designCalls = 0;
   let memberCreateName = '';
   const errors: unknown[] = [];
-  host = createCookbookApplication({
+  const hostOptions: Parameters<typeof createCookbookApplication>[0] = {
     root,
     title: 'Onboarding regression',
     packageName: APP,
@@ -231,6 +260,9 @@ import {${name} as Base} from '@happyvertical/smrt-${pkg}';
       manifest: activation.activationManifest,
       loaders,
       scope: randomUUID(),
+      alwaysOn: Object.keys(activation.activationManifest.models).filter((id) =>
+        /^@happyvertical\/smrt-(users|profiles|tenancy|chat|approvals|preferences|inference|secrets|jobs):/.test(id),
+      ),
     },
     runtimeOptions: {
       sourceRoot: root,
@@ -249,6 +281,11 @@ import {${name} as Base} from '@happyvertical/smrt-${pkg}';
           _messages: unknown,
           options: { tools?: Array<{ function: { name: string } }> },
         ) => {
+          if (designOutput) {
+            designCalls++;
+            expect(options.tools?.some((tool) => /app_add|recipes_enable/.test(tool.function.name))).toBe(false);
+            return { content: JSON.stringify(designOutput), finishReason: 'stop' };
+          }
           if (creatingMember && toolCalls++ === 0) {
             expect(
               options?.tools?.some(
@@ -280,7 +317,8 @@ import {${name} as Base} from '@happyvertical/smrt-${pkg}';
       } as never,
       onError: (error) => errors.push(error),
     },
-  });
+  };
+  host = createCookbookApplication(hostOptions);
   await host.init();
   db = await host.runtime.database();
   const local = await host.runtime.localRuntime();
@@ -450,4 +488,155 @@ import {${name} as Base} from '@happyvertical/smrt-${pkg}';
       ]),
     );
   });
+  if (template.structuralPath !== 'none') {
+    const generatedGet = vi.fn(async (e: RequestEvent): Promise<Response> => route.GET(e));
+    const baseline = await request('/api/customers', generatedGet);
+    expect(baseline.status, await baseline.clone().text()).toBe(200);
+    expect(generatedGet).toHaveBeenCalledTimes(1);
+    const initialRows = await baseline.json();
+    const initialIds = (initialRows.items ?? initialRows.data ?? initialRows).map((row: { id: string }) => row.id).sort();
+    expect(initialIds).toHaveLength(3);
+    let editor: Awaited<ReturnType<NonNullable<typeof host>['modelEditor']>>;
+    await request('/settings', async () => {
+      editor = await host!.modelEditor(owner.tenantId);
+      return new Response();
+    });
+    const initial = editor!.snapshot();
+    const definition = initial.webDefinitions.find((entry) => entry.name === 'customers')!;
+    const initialColumns = definition.listFields;
+    expect(initialColumns).toEqual(['status', 'email', 'phone']);
+    expect(definition.displayLabelField).toBe('displayLabel');
+    expect(definition.displayLabelProjection).toBeDefined();
+    const api = structuredClone(ObjectRegistry.getConfig(`${APP}:Customer`).api);
+    const exposure = structuredClone(initial.cookbook.exposure);
+    const policies = structuredClone(initial.cookbook.policies);
+    const resetToAot = snapshotObjectRegistryState();
+    const args = { list: memberEntry.label, label: 'Licence plate', kind: 'text', expectedRevision: initial.revision };
+    if (template.structuralPath === 'mcp') {
+      // Exercise the existing structural workflow HTTP handler. The product
+      // has no structural field-editor UI; do not invent one or bypass the
+      // host with editor.apply.
+      const edit = await request('/mcp', (e) => {
+        e.request.headers.set('accept', 'application/json, text/event-stream');
+        e.request.headers.set('mcp-protocol-version', '2026-07-28');
+        e.request.headers.set('mcp-method', 'tools/call');
+        e.request.headers.set('mcp-name', 'app_add_field');
+        return host!.mcp(e);
+      }, {
+        jsonrpc: '2.0', id: 1, method: 'tools/call', params: {
+          name: 'app_add_field', arguments: args,
+          _meta: {
+            [PROTOCOL_VERSION_META_KEY]: '2026-07-28',
+            [CLIENT_INFO_META_KEY]: { name: 'editor-regression', version: '1' },
+            [CLIENT_CAPABILITIES_META_KEY]: {},
+          },
+        },
+      });
+      expect(edit.status, await edit.clone().text()).toBe(200);
+      const result = await edit.json();
+      expect(result.error).toBeUndefined();
+      expect(result.result.isError).not.toBe(true);
+      expect(result.result.structuredContent).toMatchObject({ status: 'ok', revision: initial.revision + 1 });
+    } else {
+      await request('/settings/inference', async (e) => {
+        const saved = await host!.workProfiles.read(e);
+        expect((await host!.workProfiles.write(e, {
+          settings: { design: { previewBeforeApply: true, budgets: { passes: 3 } } },
+          revision: saved.revision,
+        })).ok).toBe(true);
+        return new Response();
+      });
+      designOutput = { summary: 'Add Licence plate to Customers.', checks: ['Customers exists.'], ready: true,
+        operations: [{ tool: 'app.addField', args }] };
+      const admitted = await request('/api/assistant/design-runs', host.assistant.POST,
+        { threadId: id, content: 'Add a licence plate field to Customers.' });
+      expect(admitted.status, await admitted.clone().text()).toBe(202);
+      const runId = (await admitted.json()).run.runId;
+      await vi.waitFor(async () => {
+        const status = await request(`/api/assistant/design-runs?threadId=${id}`, host!.assistant.GET);
+        expect((await status.json()).run.status).toBe('waiting-approval');
+      }, { timeout: 15000 });
+      const pending = await (await request(`/api/assistant/threads/${id}/approvals`, host.assistant.GET)).json();
+      expect(pending.approvals).toHaveLength(1);
+      expect(pending.approvals[0].tool).toBe('app.addField');
+      expect(editor!.snapshot().revision).toBe(initial.revision);
+      const decision = await request(`/api/assistant/approvals/${pending.approvals[0].id}/decide`, host.assistant.POST, { approve: true });
+      expect(decision.status, await decision.clone().text()).toBe(200);
+      await vi.waitFor(async () => {
+        const status = await request(`/api/assistant/design-runs?threadId=${id}`, host!.assistant.GET);
+        expect((await status.json()).run.status).toBe('done');
+      }, { timeout: 15000 });
+      const checkpoint = JSON.parse(String((await db!.query('SELECT payload FROM _smrt_inference_design_runs WHERE id = ?', runId)).rows[0].payload));
+      expect(checkpoint.outputs).toHaveLength(3);
+      expect(designCalls).toBe(3);
+    }
+    for (const phase of ['applied', 'reopened']) {
+      if (phase === 'reopened') {
+        const runtime = host.runtime;
+        await host.shutdown();
+        host.dispose();
+        // The runtime retains ownership of this handle. Keep it alive until
+        // both hosts have drained; closing it here invalidates retained
+        // runtime/collection references during a same-process reopen.
+        retainedDatabases.add(db!);
+        // Replay AOT registrations through a new host/editor/worker using the
+        // process-owned runtime and activation slot. A genuine process restart
+        // is covered by the built-product browser gate.
+        resetToAot();
+        const replayActivation = createActivationCoordinator({
+          ...hostOptions.lazyActivation,
+          packageName: APP,
+          db: db!,
+          readEnabled: async () => (await createCookbookHostState(
+            db!, hostOptions.app!.catalog, hostOptions.app!.cookbook,
+          )).enabledModelUnion(),
+        });
+        host = createCookbookHost({
+          ...hostOptions, runtime, activation: () => replayActivation,
+        });
+        db = await host.runtime.database();
+        await host.init();
+        (globalThis as Record<string, unknown>).__onboardingRuntime = host.runtime;
+      }
+      generatedGet.mockClear();
+      const response = await request('/api/customers', generatedGet);
+      expect(response.status, `${phase}: ${await response.clone().text()}`).toBe(200);
+      expect(generatedGet).not.toHaveBeenCalled();
+      const listed = await response.json();
+      const rows = listed.items ?? listed.data ?? listed;
+      expect(rows.map((row: { id: string }) => row.id).sort()).toEqual(initialIds);
+      expect(rows.find((row: { id: string }) => row.id === created.id)).toMatchObject({ name: 'REST Ada', email: '', phone: '' });
+      await request('/settings', async () => {
+        editor = await host!.modelEditor(owner.tenantId);
+        return new Response();
+      });
+      const snapshot = editor!.snapshot();
+      expect(snapshot.revision).toBe(initial.revision + 1);
+      expect(snapshot.cookbook.policies.filter((policy) => policy.fieldName !== 'licencePlate')).toEqual(policies);
+      expect(snapshot.cookbook.policies.filter((policy) => policy.fieldName === 'licencePlate')).toEqual([{
+        objectRef: '@happyvertical/smrt-commerce:Customer', scopeType: 'app',
+        fieldName: 'licencePlate', label: 'Licence plate',
+      }]);
+      expect(snapshot.cookbook.exposure).toEqual(exposure);
+      expect(snapshot.cookbook.models?.lists ?? {}).toEqual(initial.cookbook.models?.lists ?? {});
+      const definitions = snapshot.webDefinitions.filter((entry) => entry.name === 'customers');
+      expect(definitions).toHaveLength(1);
+      expect(definitions[0].objectRef).toBe(`${APP}:Customer`);
+      expect(definitions[0].listFields).toEqual([...initialColumns!, 'licencePlate']);
+      expect(definitions[0].displayLabelField).toBe('displayLabel');
+      expect(definitions[0].displayLabelProjection).toEqual(definition.displayLabelProjection);
+      expect(ObjectRegistry.getConfig(`${APP}:Customer`).api).toEqual(api);
+      expect(ObjectRegistry.getTableName(`${APP}:Customer`)).toBe('customers');
+      const schema = await db!.query('PRAGMA table_info(customers)');
+      expect(schema.rows.filter((column) => column.name === 'licence_plate')).toHaveLength(1);
+      if (phase === 'applied') {
+        const saved = await itemRequest('PUT', { licencePlate: 'T1-123' });
+        expect(saved.status, await saved.clone().text()).toBe(200);
+      }
+      const saved = await itemRequest('GET');
+      expect(saved.status, await saved.clone().text()).toBe(200);
+      expect(await saved.json()).toMatchObject({ id: created.id, name: 'REST Ada', licencePlate: 'T1-123' });
+      expect(designCalls).toBe(template.structuralPath === 'design' ? 3 : 0);
+    }
+  }
 }, 120_000);

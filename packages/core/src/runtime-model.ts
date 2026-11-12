@@ -359,7 +359,10 @@ export function runtimeModelEntry(
     }
   }
   if (displayLabelProjection) {
-    decoratorConfig.display = { label: { ...displayLabelProjection } };
+    decoratorConfig.display = {
+      ...(decoratorConfig.display as SmartObjectConfig['display']),
+      label: { ...displayLabelProjection },
+    };
     const via = fields[displayLabelProjection.via];
     if (!via?.related || !['foreignKey', 'crossPackageRef'].includes(via.type))
       throw new Error('Runtime display projection requires an own reference');

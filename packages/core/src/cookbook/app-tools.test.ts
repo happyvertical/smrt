@@ -23,7 +23,7 @@ import {
   enableTenancy,
 } from '../../../tenancy/src/interceptor.js';
 import { createActivationCoordinator } from '../activation.js';
-import { field } from '../decorators/index.js';
+import { field, foreignKey } from '../decorators/index.js';
 import { MCPGenerator } from '../generators/mcp.js';
 import { APIGenerator } from '../generators/rest.js';
 import { migrateSmrtSchemas } from '../migrations/orchestrate.js';
@@ -33,7 +33,9 @@ import { ObjectRegistry } from '../registry.js';
 import {
   createCookbookRuntimeExposure,
   setRuntimeExposureGate,
+  setRuntimeModelReadiness,
 } from '../runtime-exposure.js';
+import { registerRuntimeModel } from '../runtime-model.js';
 import { inspectTableSchema } from '../schema/inspection.js';
 import { snapshotObjectRegistryState } from '../test-utils.js';
 import { getTestDatabase } from '../testing/database.js';
@@ -1296,6 +1298,297 @@ describe('app customization tools', () => {
 });
 
 describe('host design action durable boundary', () => {
+  it.each([
+    ['design', false],
+    ['editor', false],
+    ['design', true],
+    ['editor', true],
+  ] as const)('keeps recipe model REST and curated columns through design and editor field edits (%s, existing app %s)', async (entryPoint, existingApp) => {
+    const provider = '@fixture/curated-provider';
+    const member = `${provider}:Member`;
+    const profile = `${provider}:MemberProfile`;
+    // Installed registration can put a collection declaration before its row model.
+    ObjectRegistry.registerFromManifest(`${provider}:Members`, {
+      name: 'members',
+      className: 'Members',
+      qualifiedName: `${provider}:Members`,
+      packageName: provider,
+      collection: 'members',
+      filePath: 'fixture:members',
+      extends: 'SmrtCollection',
+      collectionOf: member,
+      fields: {},
+      methods: {},
+      decoratorConfig: { api: true },
+    });
+    class MemberProfile extends SmrtObject {
+      name = '';
+    }
+    field({ type: 'text' })(MemberProfile.prototype, 'name');
+    ObjectRegistry.register(MemberProfile, {
+      packageName: provider,
+      tenantScoped: true,
+      api: true,
+    });
+    class Member extends SmrtObject {
+      profileId = '';
+      status = 'active';
+    }
+    foreignKey(MemberProfile)(Member.prototype, 'profileId');
+    field({ type: 'text' })(Member.prototype, 'status');
+    ObjectRegistry.register(Member, {
+      packageName: provider,
+      tenantScoped: true,
+      api: { include: ['list', 'get', 'create', 'update'] },
+      display: {
+        label: { via: 'profileId', field: 'name', fallback: 'Unnamed member' },
+        list: ['status'],
+      },
+    });
+    if (existingApp)
+      registerRuntimeModel({
+        name: 'Member',
+        packageName: APP,
+        extends: member,
+        replaces: true,
+        fields: {},
+        display: {
+          label: {
+            via: 'profileId',
+            field: 'name',
+            fallback: 'Unnamed member',
+          },
+          list: ['status'],
+        },
+      });
+    const source: CookbookToolOptions['catalog'] = {
+      models: [member, profile].map((id) => ({
+        id,
+        name: id.split(':').at(-1)!,
+        packageId: 'curated-provider',
+        exposed: true,
+      })),
+      recipes: [
+        {
+          id: 'members',
+          label: 'Members',
+          models: [member, profile],
+          requires: [],
+          nav: [{ model: member, label: 'Members', icon: 'users' }],
+        },
+      ],
+    };
+    const cookbook: Cookbook = { ...initial(), recipes: ['members'] };
+    let current = createCookbookEngine({ catalog: source, cookbook });
+    const activation = createActivationCoordinator({
+      scope: `curated-${randomUUID()}`,
+      db,
+      packageName: APP,
+      manifest: {
+        version: 1,
+        modules: {
+          members: {
+            specifier: 'fixture',
+            models: [member, profile],
+            dependencies: [],
+          },
+        },
+        models: {
+          [member]: {
+            module: 'members',
+            effective: member,
+            table: 'members',
+            dependencies: [],
+          },
+          [profile]: {
+            module: 'members',
+            effective: profile,
+            table: 'member_profiles',
+            dependencies: [],
+          },
+        },
+        tables: {
+          members: { owners: [member], dependencies: [] },
+          member_profiles: { owners: [profile], dependencies: [] },
+        },
+      },
+      loaders: { members: async () => {} },
+      readEnabled: async () => [member, profile],
+    });
+    await activation.boot();
+    gate.dispose();
+    gate = createCookbookRuntimeExposure({
+      catalog: source,
+      engineFor: (c) => (c.tenantId === TENANT ? current : null),
+    });
+    setRuntimeExposureGate(activation.gate(gate));
+    const people = await ObjectRegistry.getCollection(profile, { db });
+    const members = await ObjectRegistry.getCollection(member, { db });
+    const existing = await withTenant({ tenantId: TENANT }, async () => {
+      const person = await people.create({ name: 'Maya' });
+      return members.create({ profileId: person.id, status: 'active' });
+    });
+    // A process reopen replays the journal against the original provider registrations.
+    const restoreProvider = snapshotObjectRegistryState();
+    const open = () =>
+      createAppModelEditor({
+        db,
+        application: 'curated',
+        tenantId: TENANT,
+        packageName: APP,
+        cookbook,
+        catalog: source,
+        authorize: (c) => c.actor === USER && c.tenantId === TENANT,
+        publish: (snapshot) => {
+          current = createCookbookEngine({
+            catalog: source,
+            cookbook: snapshot.cookbook,
+          });
+        },
+      });
+    let edited = await open();
+    if (entryPoint === 'design') {
+      const tools = createCookbookToolService({
+        ...options,
+        catalog: source,
+        modelEditorFor: () => edited,
+        engineFor: () => current,
+        previewBeforeApply: () => false,
+      });
+      expect(
+        (
+          await tools.invoke(
+            'app.addField',
+            {
+              list: 'Members',
+              label: 'Licence plate',
+              kind: 'text',
+              expectedRevision: 0,
+            },
+            {
+              ...context,
+              designAction: {
+                application: 'curated',
+                runId: 'curated-run',
+                actionId: 'field',
+              },
+            },
+          )
+        ).status,
+      ).toBe('ok');
+    } else {
+      await edited.apply(
+        {
+          type: 'add_field',
+          model: member,
+          name: 'licencePlate',
+          field: { type: 'text' },
+          label: 'Licence plate',
+        },
+        {
+          actor: USER,
+          tenantId: TENANT,
+          expectedRevision: 0,
+          requestId: 'curated-field',
+        },
+      );
+    }
+    // The owning generated REST boundary must admit the row model, not the collection declaration.
+    const response = await rest(request('GET', `members/${existing.id}`));
+    expect(response.status, await response.clone().text()).toBe(200);
+    expect(await response.json()).toMatchObject({
+      id: existing.id,
+      status: 'active',
+      displayLabel: 'Maya',
+    });
+    const updated = await rest(
+      request('PUT', `members/${existing.id}`, { licencePlate: 'ABC 123' }),
+    );
+    expect(updated.status).toBe(200);
+    expect(await updated.json()).toMatchObject({
+      id: existing.id,
+      status: 'active',
+      licencePlate: 'ABC 123',
+    });
+    const listed = await rest(request('GET', 'members'));
+    expect(listed.status).toBe(200);
+    expect(await listed.json()).toEqual([
+      expect.objectContaining({
+        id: existing.id,
+        status: 'active',
+        displayLabel: 'Maya',
+        licencePlate: 'ABC 123',
+      }),
+    ]);
+    const definitions = edited
+      .snapshot()
+      .webDefinitions.filter((d) => d.name === 'members');
+    expect(definitions).toHaveLength(1);
+    expect(definitions[0]).toMatchObject({
+      objectRef: `${APP}:Member`,
+      replacedQualifiedNames: [member],
+      listFields: ['status', 'licencePlate'],
+      customFields: ['licencePlate'],
+    });
+    expect(
+      ObjectRegistry.getDeclaredClass(member)?.config.display?.list,
+    ).toEqual(['status']);
+    expect(definitions[0].fields).toHaveProperty('licencePlate');
+    await edited.apply(
+      { type: 'hide_field', model: member, name: 'licencePlate', hidden: true },
+      {
+        actor: USER,
+        tenantId: TENANT,
+        expectedRevision: 1,
+        requestId: 'curated-hide',
+      },
+    );
+    expect(
+      edited.snapshot().webDefinitions.find((d) => d.name === 'members')
+        ?.listFields,
+    ).toEqual(['status']);
+    restoreProvider();
+    globalThis.__smrtModelReadiness?.clear();
+    edited = await open();
+    expect(edited.snapshot().revision).toBe(2);
+    const recovered = await rest(request('GET', `members/${existing.id}`));
+    expect(recovered.status).toBe(200);
+    expect(await recovered.json()).toMatchObject({
+      id: existing.id,
+      status: 'active',
+      displayLabel: 'Maya',
+      licencePlate: 'ABC 123',
+    });
+    const recoveredList = await rest(request('GET', 'members'));
+    expect(recoveredList.status).toBe(200);
+    expect(await recoveredList.json()).toEqual([
+      expect.objectContaining({ id: existing.id, licencePlate: 'ABC 123' }),
+    ]);
+    expect(
+      (await rest(request('DELETE', `members/${existing.id}`))).status,
+    ).not.toBe(200);
+    const foreign = new APIGenerator(
+      { basePath: '/api', authMiddleware: () => async (r) => r },
+      { db, tenantId: OTHER },
+    ).generateHandler();
+    expect(
+      (
+        await withTenant({ tenantId: OTHER }, () =>
+          foreign(request('GET', 'members')),
+        )
+      ).status,
+    ).toBe(404);
+    setRuntimeModelReadiness([`${APP}:Member`], false);
+    expect((await rest(request('GET', 'members'))).status).toBe(404);
+    setRuntimeModelReadiness([`${APP}:Member`], undefined);
+    expect((await rest(request('GET', 'members'))).status).toBe(404);
+    setRuntimeModelReadiness([`${APP}:Member`], true);
+    current = createCookbookEngine({
+      catalog: source,
+      cookbook: { ...cookbook, recipes: [] },
+    });
+    expect((await rest(request('GET', 'members'))).status).toBe(404);
+  });
   const host = (actionId = '1'): CookbookToolContext => ({
     ...context,
     designAction: { application: 'c6', runId: 'design-run', actionId },

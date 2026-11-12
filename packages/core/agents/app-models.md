@@ -135,6 +135,24 @@ relationship/display metadata and web definitions use the normal projection.
 The exposure gate admits cookbook custom lists and denies pending/removed
 models. Unused applications retain the previous behavior.
 
+Provider replacements retain linked display labels and the provider's curated
+`display.list` order. The editor's web projection appends visible custom fields
+to that list without changing the provider configuration; hidden/removed fields
+remain in storage but are omitted from the projected list. Runtime manifests
+carry the physical table binding even when a decorator leaves it implicit, so
+same-name replacement selection emits one effective web definition.
+
+REST auto-discovery resolves a collection declaration to its effective row model
+before activation/exposure checks, authorization, collection construction and
+CRUD dispatch. Collection registration order must not change those decisions;
+sync target discovery uses the same resolver. This retains the ordinary tenant,
+API-operation and cookbook gates rather than admitting a collection separately.
+
+| Regression / boundary | Positive evidence | Negative controls | Executor / scope |
+| --- | --- | --- | --- |
+| Recipe field edit with collection-first registration and implicit table | Both trusted design `app.addField` and direct `editor.apply`; provider and existing same-namespace app replacement; GET/list/PUT preserve the original row, linked name and custom value | Closed delete, foreign tenant, pending or missing readiness, disabled recipe | Existing `cookbook/app-tools.test.ts`, SQLite and prepared in-process PGlite |
+| Curated presentation and journal reopen | One effective definition; original column order followed by custom column; revision replay retains REST record/value | Hidden custom column omitted; no duplicate provider definition | Same four-case matrix; registry restored to provider state before editor reopen |
+
 SQLite appends a pending revision before registration/DDL. Its existing failure
 contract keeps affected models closed and recovers pending work on reopen.
 PostgreSQL claims the revision and migrates application columns plus the tracker

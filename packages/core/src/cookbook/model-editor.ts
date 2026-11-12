@@ -497,18 +497,30 @@ export async function createAppModelEditor(options: AppModelEditorOptions) {
             ...(field.type === 'money' ? [`${name}Currency`] : []),
           ]),
         );
+        const fieldPolicies = Object.fromEntries(
+          doc.policies
+            .filter(
+              (policy) =>
+                ids.includes(policy.objectRef) && policy.scopeType === 'app',
+            )
+            .map((policy) => [policy.fieldName, structuredClone(policy)]),
+        );
         return {
           ...definition,
           customFields: [...new Set(customFields)],
+          ...(definition.listFields
+            ? {
+                listFields: [
+                  ...new Set([...definition.listFields, ...customFields]),
+                ].filter(
+                  (name) =>
+                    Object.hasOwn(definition.fields, name) &&
+                    fieldPolicies[name]?.visibility !== 'hidden',
+                ),
+              }
+            : {}),
           ...(item ? { label: item.label, icon: item.icon } : {}),
-          fieldPolicies: Object.fromEntries(
-            doc.policies
-              .filter(
-                (policy) =>
-                  ids.includes(policy.objectRef) && policy.scopeType === 'app',
-              )
-              .map((policy) => [policy.fieldName, structuredClone(policy)]),
-          ),
+          fieldPolicies,
         };
       }),
     };
