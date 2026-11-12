@@ -42,7 +42,7 @@ import {
 /** All credentials, working directories and MCP authority are bound by the host per turn. */
 export type AgentCliChatBinding = Pick<
   AgentTurnOptions,
-  'mcpUrl' | 'deps' | 'fallback' | 'outputSchema'
+  'mcpUrl' | 'deps' | 'fallback' | 'outputSchema' | 'protection'
 > &
   Pick<AgentTurnHost, 'allowTool' | 'approvals'> & {
     /** Optional MCP wire-name → canonical offered chat slug mapping. Unknown names deny. */
@@ -157,6 +157,7 @@ export function createAgentCliTurnDriver(options: {
           deps: binding.deps,
           fallback: binding.fallback,
           outputSchema: binding.outputSchema,
+          protection: binding.protection,
           signal,
           host: {
             appendMessage: append,

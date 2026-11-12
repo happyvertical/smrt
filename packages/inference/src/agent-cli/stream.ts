@@ -18,7 +18,11 @@ export type AgentEvent =
   | {
       type: 'forbidden';
       what: string;
-      kind?: 'unoffered_mcp' | 'unknown_item' | 'confined_builtin';
+      kind?:
+        | 'unoffered_mcp'
+        | 'unknown_item'
+        | 'confined_builtin'
+        | 'native_builtin';
     }
   | {
       type: 'done';
@@ -67,7 +71,10 @@ export function shellToolName(name: string): string {
 }
 
 /** Stateful: Claude Code streams text deltas, then repeats the text whole. */
-export function claudeParser(outputSchema?: Record<string, unknown>) {
+export function claudeParser(
+  outputSchema?: Record<string, unknown>,
+  protection = true,
+) {
   let streamed = false;
   const resultIds = new Set<string>();
   return (line: string): AgentEvent[] => {
@@ -121,7 +128,10 @@ export function claudeParser(outputSchema?: Record<string, unknown>) {
             out.push({ type: 'result_channel', name: 'StructuredOutput' });
             continue;
           }
-          if (!name.startsWith(CLAUDE_PREFIX))
+          if (!name.startsWith(CLAUDE_PREFIX) && !protection) {
+            resultIds.add(str(b.id));
+            out.push({ type: 'forbidden', what: name, kind: 'native_builtin' });
+          } else if (!name.startsWith(CLAUDE_PREFIX))
             out.push({
               type: 'forbidden',
               what: name || 'a tool',
@@ -198,7 +208,9 @@ const CODEX_ALLOWED_ITEMS: ReadonlySet<string> = new Set([
 ]);
 
 /** Codex `exec --json`: whole items, no text deltas. */
-export function codexParser(options: { confinedBuiltins?: boolean } = {}) {
+export function codexParser(
+  options: { confinedBuiltins?: boolean; nativeTools?: boolean } = {},
+) {
   return (line: string): AgentEvent[] => {
     const e = parse(line);
     if (!e) return [];
@@ -243,6 +255,21 @@ export function codexParser(options: { confinedBuiltins?: boolean } = {}) {
             },
           ]
         : [];
+    if (options.nativeTools && !CODEX_ALLOWED_ITEMS.has(kind))
+      return type === 'item.completed'
+        ? [
+            {
+              type: 'forbidden',
+              what:
+                kind === 'command_execution'
+                  ? 'exec_command'
+                  : kind === 'file_change'
+                    ? 'apply_patch'
+                    : kind,
+              kind: 'native_builtin',
+            },
+          ]
+        : [];
     if (!CODEX_ALLOWED_ITEMS.has(kind))
       return [
         { type: 'forbidden', what: kind || 'an item', kind: 'unknown_item' },
@@ -251,6 +278,16 @@ export function codexParser(options: { confinedBuiltins?: boolean } = {}) {
       return [{ type: 'message', text: str(item.text) }];
     if (kind === 'mcp_tool_call') {
       // Only the shell's own server.
+      if (str(item.server) !== MCP_SERVER_NAME && options.nativeTools)
+        return type === 'item.completed'
+          ? [
+              {
+                type: 'forbidden',
+                what: `mcp__${str(item.server)}__${str(item.tool)}`,
+                kind: 'native_builtin',
+              },
+            ]
+          : [];
       if (str(item.server) !== MCP_SERVER_NAME)
         return [
           {

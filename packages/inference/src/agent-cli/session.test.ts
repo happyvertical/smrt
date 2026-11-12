@@ -16,12 +16,17 @@ import { tempDir } from './test-support.js';
 
 const TOKEN = `smrt_mcp_${'Q'.repeat(43)}`;
 
-function spec(tool: 'claude-code' | 'codex', resumeId?: string) {
+function spec(
+  tool: 'claude-code' | 'codex',
+  resumeId?: string,
+  protection?: boolean,
+) {
   const stateDir = tempDir();
   return {
     stateDir,
     run: buildAgentRun({
       tool,
+      protection,
       location: { path: `/opt/${tool}`, extraPath: ['/opt'] },
       stateDir,
       mcpUrl: 'http://127.0.0.1:4801/mcp',
@@ -651,4 +656,41 @@ it('gives concurrent Codex attempts fresh empty private writable roots and remov
     run.cleanup();
     expect(existsSync(run.cwd)).toBe(false);
   }
+});
+
+it.each([
+  'claude-code',
+  'codex',
+] as const)('allows native %s config/tools only when the host disables protection, retaining token and environment guarantees', (tool) => {
+  const { run, stateDir } = spec(tool, undefined, false);
+  expect(run.args.join(' ')).not.toContain(TOKEN);
+  expect(run.env.OPENAI_API_KEY).toBeUndefined();
+  expect(run.env.ANTHROPIC_API_KEY).toBeUndefined();
+  expect(run.env[TOKEN_ENV]).toBe(TOKEN);
+  expect(run.cwd).toBe(join(stateDir, 'work'));
+  if (tool === 'claude-code') {
+    for (const flag of [
+      '--tools',
+      '--strict-mcp-config',
+      '--setting-sources',
+      '--disable-slash-commands',
+      '--no-chrome',
+    ])
+      expect(run.args).not.toContain(flag);
+    expect(run.args[run.args.indexOf('--permission-mode') + 1]).toBe(
+      'bypassPermissions',
+    );
+    expect(run.args[run.args.indexOf('--permission-prompts') + 1]).toBe('none');
+  } else {
+    for (const flag of ['--disable', '--ignore-user-config', '--ignore-rules'])
+      expect(run.args).not.toContain(flag);
+    expect(run.args).toContain('sandbox_mode="danger-full-access"');
+    expect(run.args).toContain('approval_policy="never"');
+    expect(run.args).toContain('web_search="live"');
+    expect(run.args).toContain(
+      'mcp_servers.smrt.bearer_token_env_var="SMRT_SHELL_MCP_TOKEN"',
+    );
+  }
+  run.cleanup();
+  expect(existsSync(run.cwd)).toBe(true);
 });

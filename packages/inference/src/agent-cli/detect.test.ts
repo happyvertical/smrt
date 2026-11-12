@@ -8,6 +8,7 @@ import { detectAgentCli, detectAgentClis } from './detect.js';
 import { childEnv } from './env.js';
 import { candidateDirs } from './locate.js';
 import { AgentLogin } from './login.js';
+import { createAgentCliService } from './service.js';
 import { fakeDeps, installFakeCli, tempDir } from './test-support.js';
 
 describe('detectAgentCli', () => {
@@ -49,6 +50,27 @@ describe('detectAgentCli', () => {
       ready: false,
       startError: 'cli_invocation',
     });
+  });
+  it.each([
+    'claude-code',
+    'codex',
+  ] as const)('preflights %s separately for each protection state and invalidates both', async (tool) => {
+    const home = tempDir();
+    const bin = tempDir();
+    installFakeCli(bin, tool, { brokenHelp: true });
+    writeFileSync(join(home, 'signed-in'), '');
+    const service = createAgentCliService(fakeDeps(home, [bin]));
+    expect(await service.cliStatus(tool)).toMatchObject({
+      ready: false,
+      startError: 'cli_invocation',
+    });
+    installFakeCli(bin, tool);
+    expect(await service.cliStatus(tool, { protection: false })).toMatchObject({
+      ready: true,
+    });
+    expect(await service.cliStatus(tool)).toMatchObject({ ready: false });
+    service.invalidateCliStatus(tool);
+    expect(await service.cliStatus(tool)).toMatchObject({ ready: true });
   });
   it('reports an unwritable preflight directory without attempting a model turn', async () => {
     const home = tempDir();

@@ -46,11 +46,13 @@ export interface AgentRunSpec {
 }
 
 export interface SpecInput {
+  /** Owner-confirmed app setting; omitted keeps the protected invocation. */
+  protection?: boolean;
   tool: AgentTool;
   profile?: ResolvedWorkProfile;
   outputSchema?: Record<string, unknown>;
   location: AgentCliLocation;
-  /** `<data root>/agent-cli`: holds `work/` (empty cwd) and `run/` (temp). */
+  /** Host-owned engine state under app data: holds `work/` and temporary `run/`. */
   stateDir: string;
   /** Loopback URL of the shell's `/mcp` route. */
   mcpUrl: string;
@@ -114,25 +116,24 @@ function claudeSpec(
       ...(input.outputSchema
         ? ['--json-schema', JSON.stringify(input.outputSchema)]
         : []),
-      // No built-in tools at all (shell, file, web, sub-agents).
-      '--tools',
-      '',
-      // Only the shell's MCP server; the allow rule covers its tools only.
-      '--strict-mcp-config',
+      ...(input.protection === false
+        ? []
+        : [
+            '--tools',
+            '',
+            '--strict-mcp-config',
+            '--allowedTools',
+            `mcp__${MCP_SERVER_NAME}`,
+          ]),
       '--mcp-config',
       configPath,
-      '--allowedTools',
-      `mcp__${MCP_SERVER_NAME}`,
-      // Anything not allowed is denied, never asked.
       '--permission-mode',
-      'dontAsk',
+      input.protection === false ? 'bypassPermissions' : 'dontAsk',
       '--permission-prompts',
       'none',
-      // None of the person's user/project/local settings (hooks, plugins).
-      '--setting-sources',
-      '',
-      '--disable-slash-commands',
-      '--no-chrome',
+      ...(input.protection === false
+        ? []
+        : ['--setting-sources', '', '--disable-slash-commands', '--no-chrome']),
       '--append-system-prompt',
       input.systemPrompt,
       ...(input.resumeId
@@ -142,7 +143,7 @@ function claudeSpec(
     cwd: work,
     env: cliEnv(input.location, input.baseEnv, { [TOKEN_ENV]: input.token }),
     stdin: input.prompt,
-    parse: claudeParser(input.outputSchema),
+    parse: claudeParser(input.outputSchema, input.protection !== false),
     sessionId,
     cleanup: () => rmSync(runDir, { recursive: true, force: true }),
   };
@@ -202,17 +203,26 @@ function codexSpec(
           : (input.profile?.effort ?? 'high'),
       ),
     ],
-    ['sandbox_mode', toml('workspace-write')],
-    ['sandbox_workspace_write.network_access', 'false'],
-    ['sandbox_workspace_write.writable_roots', '[]'],
-    ['sandbox_workspace_write.exclude_slash_tmp', 'true'],
-    ['sandbox_workspace_write.exclude_tmpdir_env_var', 'true'],
-    // No secret-bearing environment is inherited by a model-generated command.
+    [
+      'sandbox_mode',
+      toml(
+        input.protection === false ? 'danger-full-access' : 'workspace-write',
+      ),
+    ],
+    ...(input.protection === false
+      ? []
+      : ([
+          ['sandbox_workspace_write.network_access', 'false'],
+          ['sandbox_workspace_write.writable_roots', '[]'],
+          ['sandbox_workspace_write.exclude_slash_tmp', 'true'],
+          ['sandbox_workspace_write.exclude_tmpdir_env_var', 'true'],
+          ['project_doc_max_bytes', '0'],
+          ['skills.bundled.enabled', 'false'],
+        ] as [string, string][])),
+    // The app credential is for MCP only, even when native tools are allowed.
     ['shell_environment_policy.inherit', toml('none')],
-    ['project_doc_max_bytes', '0'],
-    ['skills.bundled.enabled', 'false'],
     ['approval_policy', toml('never')],
-    ['web_search', toml('disabled')],
+    ['web_search', toml(input.protection === false ? 'live' : 'disabled')],
     [`${server}.url`, toml(input.mcpUrl)],
     [`${server}.bearer_token_env_var`, toml(TOKEN_ENV)],
     // Optional servers get only a short grace period: never start a model
@@ -234,9 +244,13 @@ function codexSpec(
       ...(input.outputSchema ? ['--output-schema', schemaPath] : []),
       // None of the person's config.toml (MCP servers, hooks, profiles) or
       // execpolicy rules; the sign-in (CODEX_HOME) is kept.
-      '--ignore-user-config',
-      '--ignore-rules',
-      ...CODEX_DISABLED_FEATURES.flatMap((f) => ['--disable', f]),
+      ...(input.protection === false
+        ? []
+        : [
+            '--ignore-user-config',
+            '--ignore-rules',
+            ...CODEX_DISABLED_FEATURES.flatMap((f) => ['--disable', f]),
+          ]),
       '--enable',
       CODEX_MODERN_MCP_FEATURE,
       '--enable',
@@ -248,7 +262,10 @@ function codexSpec(
     cwd: work,
     env: cliEnv(input.location, input.baseEnv, { [TOKEN_ENV]: input.token }),
     stdin: input.prompt,
-    parse: codexParser({ confinedBuiltins: true }),
+    parse: codexParser({
+      confinedBuiltins: input.protection !== false,
+      nativeTools: input.protection === false,
+    }),
     sessionId: input.resumeId ?? null,
     cleanup: () => rmSync(runDir, { recursive: true, force: true }),
   };
@@ -266,7 +283,7 @@ export function buildAgentRun(input: SpecInput): AgentRunSpec {
     // Codex's code host brings apply_patch. Its only writable root must be a
     // NEW empty 0700 folder on every attempt (also on resume/fallback).
     const work =
-      input.tool === 'codex'
+      input.tool === 'codex' && input.protection !== false
         ? join(runDir, 'work')
         : join(input.stateDir, 'work');
     mkdirSync(work, { recursive: true, mode: 0o700 });

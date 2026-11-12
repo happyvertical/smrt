@@ -8,7 +8,7 @@ export function createAgentCliService(initialDeps: LocateDeps | null = null) {
   const CACHE_MS = 15_000;
 
   let depsOverride: LocateDeps | null = initialDeps;
-  const cache = new Map<AgentTool, { at: number; status: AgentCliStatus }>();
+  const cache = new Map<string, { at: number; status: AgentCliStatus }>();
   let loginManager: AgentLogin | null = null;
 
   function deps(): LocateDeps {
@@ -23,7 +23,10 @@ export function createAgentCliService(initialDeps: LocateDeps | null = null) {
   }
 
   function invalidateCliStatus(tool?: AgentTool): void {
-    if (tool) cache.delete(tool);
+    if (tool)
+      for (const key of cache.keys()) {
+        if (key.startsWith(`${tool}:`)) cache.delete(key);
+      }
     else cache.clear();
   }
 
@@ -38,18 +41,23 @@ export function createAgentCliService(initialDeps: LocateDeps | null = null) {
   /** One tool's status; `fresh` skips the cache. */
   async function cliStatus(
     tool: AgentTool,
-    options: { fresh?: boolean } = {},
+    options: { fresh?: boolean; protection?: boolean } = {},
   ): Promise<AgentCliStatus> {
-    const hit = cache.get(tool);
+    const key = `${tool}:${options.protection !== false}`;
+    const hit = cache.get(key);
     if (!options.fresh && hit && Date.now() - hit.at < CACHE_MS)
       return hit.status;
-    const status = await detectAgentCli(tool, deps());
-    cache.set(tool, { at: Date.now(), status });
+    const status = await detectAgentCli(
+      tool,
+      deps(),
+      options.protection !== false,
+    );
+    cache.set(key, { at: Date.now(), status });
     return status;
   }
 
   function allCliStatus(
-    options: { fresh?: boolean } = {},
+    options: { fresh?: boolean; protection?: boolean } = {},
   ): Promise<AgentCliStatus[]> {
     return Promise.all(AGENT_TOOLS.map((tool) => cliStatus(tool, options)));
   }

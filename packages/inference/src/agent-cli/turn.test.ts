@@ -132,6 +132,7 @@ async function turn(
     signal?: AbortSignal;
     onEvent?: (e: TurnEvent) => void;
     outputSchema?: Record<string, unknown>;
+    protection?: boolean;
   } = {},
 ) {
   return runOn(
@@ -151,12 +152,14 @@ async function runOn(
     signal?: AbortSignal;
     onEvent?: (e: TurnEvent) => void;
     outputSchema?: Record<string, unknown>;
+    protection?: boolean;
   } = {},
 ) {
   const events: TurnEvent[] = [];
   const stop = await runAgentTurn({
     text,
     outputSchema: options.outputSchema,
+    protection: options.protection,
     tool,
     mcpUrl: 'http://127.0.0.1:4801/mcp',
     deps,
@@ -213,12 +216,25 @@ describe.each(['claude-code', 'codex'] as const)('%s engine', (tool) => {
     ]);
   });
 
-  it('cancel kills the CLI and its helpers', async () => {
+  it.each([
+    true,
+    false,
+  ])('cancel kills the CLI and its helpers (protection %s)', async (protection) => {
     const { deps, stateDir } = setup(tool);
     const controller = new AbortController();
-    const run = turn(tool, 'hang', { deps, signal: controller.signal });
+    const run = turn(tool, 'hang', {
+      deps,
+      signal: controller.signal,
+      protection,
+    });
     const pidsFile = join(stateDir, 'pids.json');
-    await waitFor(() => existsSync(pidsFile));
+    try {
+      await waitFor(() => existsSync(pidsFile));
+    } catch (error) {
+      controller.abort();
+      await run;
+      throw error;
+    }
     const pids = JSON.parse(readFileSync(pidsFile, 'utf8')) as {
       child: number;
       grand: number;
@@ -230,9 +246,12 @@ describe.each(['claude-code', 'codex'] as const)('%s engine', (tool) => {
     await waitFor(() => !alive(pids.child) && !alive(pids.grand));
   });
 
-  it('a timeout kills the whole tree and says so', async () => {
+  it.each([
+    true,
+    false,
+  ])('a timeout kills the whole tree and says so (protection %s)', async (protection) => {
     const { deps, stateDir } = setup(tool, { limits: { turnTimeoutMs: 600 } });
-    const { events, stop } = await turn(tool, 'hang', { deps });
+    const { events, stop } = await turn(tool, 'hang', { deps, protection });
     expect(stop).toBe('timeout');
     expect(events.some((e) => e.type === 'error' && e.code === 'timeout')).toBe(
       true,
@@ -811,11 +830,15 @@ describe('blocked tool diagnostics and schema result channels', () => {
     if (name !== 'Bash')
       expect(all).not.toContain(JSON.stringify(name).slice(1, -1));
   });
-  it('identifies unoffered MCP names without exposing arguments', async () => {
+  it.each([
+    true,
+    false,
+  ])('identifies unoffered MCP names without exposing arguments (protection %s)', async (protection) => {
     const log = vi.spyOn(console, 'error').mockImplementation(() => {});
     const { events, thread, stop } = await turn(
       'codex',
       'blocked-name "approval_decide"',
+      { protection },
     );
     expect(stop).toBe('error');
     expect(events.find((e) => e.type === 'error')).toMatchObject({
@@ -887,4 +910,35 @@ it('continues the app request after sandbox-confined Codex builtins, without log
     /secret-payload|secret-path/,
   );
   expect(readdirSync(join(stateDir, 'run'))).toEqual([]);
+});
+
+it.each([
+  'claude-code',
+  'codex',
+] as const)('enforces the owner protection setting around native %s tool events', async (tool) => {
+  const log = vi.spyOn(console, 'error').mockImplementation(() => {});
+  const protectedTurn = await turn(tool, 'native', { protection: true });
+  expect(protectedTurn.stop).toBe('error');
+  const unprotectedTurn = await turn(tool, 'native', { protection: false });
+  expect(unprotectedTurn.stop).toBe('complete');
+  expect(textOf(unprotectedTurn.events)).toContain('Native tool finished.');
+  expect(log).toHaveBeenCalledWith(
+    '[smrt-inference] local engine failure',
+    expect.objectContaining({
+      code: 'agent_tool_native',
+      blockedKind: 'native_builtin',
+    }),
+  );
+  expect(JSON.stringify(log.mock.calls)).not.toContain('secret-native-payload');
+});
+
+it.each([
+  'claude-code',
+  'codex',
+] as const)('redacts split native-mode credential echoes before events and persistence for %s', async (tool) => {
+  const result = await turn(tool, 'token-echo', { protection: false });
+  expect(result.stop).toBe('complete');
+  expect(textOf(result.events)).not.toContain(minted.at(-1));
+  expect(JSON.stringify(result.thread.messages)).not.toContain(minted.at(-1));
+  expect(textOf(result.events)).toContain('[redacted]');
 });

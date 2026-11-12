@@ -2,6 +2,7 @@
 // tool policy and approval authority; this engine never decides an approval.
 import { randomUUID } from 'node:crypto';
 import type { AIToolCall } from '@happyvertical/ai';
+import { redactInferenceSecret } from '../settings/keys.js';
 import {
   type ResolvedWorkProfile,
   runWorkModelWithFallback,
@@ -123,6 +124,8 @@ export interface AgentTurnMessage {
 }
 
 export interface AgentTurnOptions {
+  /** Trusted host setting, never engine input; default protected. */
+  protection?: boolean;
   text: string;
   profile?: ResolvedWorkProfile;
   outputSchema?: Record<string, unknown>;
@@ -170,6 +173,7 @@ const diagnosticCodes = new Set([
   'agent_mcp_unavailable',
   'agent_tool_blocked',
   'agent_tool_confined',
+  'agent_tool_native',
   'timeout',
   'invalid_scope',
   'owner_unavailable',
@@ -204,7 +208,12 @@ export function reportAgentFailure(
   code?: string,
   blocked?: {
     name: string;
-    kind: 'builtin' | 'unoffered_mcp' | 'unknown_item' | 'confined_builtin';
+    kind:
+      | 'builtin'
+      | 'unoffered_mcp'
+      | 'unknown_item'
+      | 'confined_builtin'
+      | 'native_builtin';
   },
 ): string {
   if (error && typeof error === 'object') {
@@ -489,16 +498,26 @@ async function runAgentTurnImpl(
         case 'text':
           streamedAny = true;
           pendingText += event.delta;
-          emit({ type: 'text', delta: event.delta });
+          if (options.protection !== false)
+            emit({ type: 'text', delta: event.delta });
           return;
         case 'message': {
           const delta = `${pendingText ? '\n\n' : ''}${event.text}`;
           streamedAny = true;
           pendingText += delta;
-          emit({ type: 'text', delta });
+          if (options.protection !== false) emit({ type: 'text', delta });
           return;
         }
         case 'forbidden':
+          if (options.protection === false && event.kind === 'native_builtin') {
+            toolCalls++;
+            sawTool = true;
+            reportAgentFailure(tool, 'guard', undefined, 'agent_tool_native', {
+              name: event.what,
+              kind: event.kind,
+            });
+            return;
+          }
           if (tool === 'codex' && event.kind === 'confined_builtin') {
             toolCalls++;
             // The secured spec owns the OS boundary. Record only the fixed
@@ -518,7 +537,7 @@ async function runAgentTurnImpl(
           // A tool outside the shell's own appeared in the stream: stop at once.
           blockTool(
             event.what,
-            event.kind === 'confined_builtin'
+            event.kind === 'confined_builtin' || event.kind === 'native_builtin'
               ? 'builtin'
               : (event.kind ?? 'builtin'),
           );
@@ -536,6 +555,14 @@ async function runAgentTurnImpl(
             type: 'function',
             function: { name: event.name, arguments: event.args },
           };
+          if (options.protection === false) {
+            pendingText = redactInferenceSecret(pendingText, token);
+            if (pendingText) emit({ type: 'text', delta: pendingText });
+            call.function.arguments = redactInferenceSecret(
+              call.function.arguments,
+              token,
+            );
+          }
           await host.appendMessage({
             role: 'assistant',
             content: pendingText,
@@ -546,13 +573,16 @@ async function runAgentTurnImpl(
             type: 'tool_call',
             id: event.id,
             name: event.name,
-            args: cut(event.args, 400),
+            args: cut(redactInferenceSecret(event.args, token), 400),
           });
           return;
         }
         case 'tool_result': {
           const name = names.get(event.id) ?? '';
-          const text = cut(event.text, limits.toolResultChars);
+          const text = cut(
+            redactInferenceSecret(event.text, token),
+            limits.toolResultChars,
+          );
           const fresh = raised.find((r) => !r.attached);
           let approvalId: string | undefined;
           if (fresh) {
@@ -636,6 +666,7 @@ async function runAgentTurnImpl(
       const guidance = await host.guidance();
       const spec = buildAgentRun({
         tool,
+        protection: options.protection,
         profile: activeProfile,
         outputSchema: options.outputSchema,
         location,
@@ -731,7 +762,8 @@ async function runAgentTurnImpl(
     const done = finished as Extract<AgentEvent, { type: 'done' }> | null;
     if (!streamedAny && done?.ok && done.text) {
       pendingText += done.text;
-      emit({ type: 'text', delta: done.text });
+      if (options.protection !== false)
+        emit({ type: 'text', delta: done.text });
     }
     if (
       stop === 'error' &&
@@ -785,7 +817,8 @@ async function runAgentTurnImpl(
     const note = await host.completionNote?.();
     if (note) {
       pendingText += `${pendingText ? '\n\n' : ''}${note}`;
-      emit({ type: 'text', delta: `\n\n${note}` });
+      if (options.protection !== false)
+        emit({ type: 'text', delta: `\n\n${note}` });
     }
     const execution: WorkRunMetadata | undefined = options.profile
       ? {
@@ -800,6 +833,12 @@ async function runAgentTurnImpl(
           ...(reportedTokens !== undefined ? { tokens: reportedTokens } : {}),
         }
       : undefined;
+    // Native commands can see their process environment. Buffer this mode's
+    // answer until a tool/message boundary so split credentials cannot escape.
+    if (options.protection === false) {
+      pendingText = redactInferenceSecret(pendingText, token);
+      if (pendingText) emit({ type: 'text', delta: pendingText });
+    }
     if (pendingText || sessionId || execution)
       await host.appendMessage({
         role: 'assistant',

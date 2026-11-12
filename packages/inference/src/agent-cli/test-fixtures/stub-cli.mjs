@@ -14,7 +14,7 @@
 //   resume                     say whether it was resumed and with which id
 import { spawn } from 'node:child_process';
 import { readFileSync, renameSync, writeFileSync } from 'node:fs';
-import { dirname, join } from 'node:path';
+import { basename, dirname, join } from 'node:path';
 
 const argv = process.argv.slice(2);
 if (argv.includes('--help')) process.exit(0);
@@ -32,7 +32,7 @@ const sessionOf = () => {
   return { resumed: false, id: j >= 0 ? argv[j + 1] : 'codex-thread-1' };
 };
 const session = sessionOf();
-const sibling = (name) => join(isCodex ? dirname(dirname(dirname(process.cwd()))) : dirname(process.cwd()), name);
+const sibling = (name) => join(isCodex && basename(dirname(dirname(process.cwd()))) === 'run' ? dirname(dirname(dirname(process.cwd()))) : dirname(process.cwd()), name);
 
 function start() {
   if (isCodex) {
@@ -157,6 +157,16 @@ if (head === 'say') {
   writeFileSync(join(work, 'stray-patch'), 'discard me');
   for (const type of ['file_change', 'command_execution']) out({type: 'item.completed', item: {id: type, type, command: 'secret-payload', changes: [{path: 'secret-path'}]}});
   say('App request finished.');
+} else if (head === 'token-echo') {
+  const token = process.env.SMRT_SHELL_MCP_TOKEN;
+  say(token);
+} else if (head === 'native') {
+  if (isCodex) out({ type: 'item.completed', item: { id: 'native', type: 'web_search', query: 'secret-native-payload' } });
+  else {
+    out({ type: 'assistant', message: { content: [{ type: 'tool_use', id: 'native', name: 'Bash', input: { command: 'secret-native-payload' } }] } });
+    out({ type: 'user', message: { content: [{ type: 'tool_result', tool_use_id: 'native', content: 'secret-native-payload' }] } });
+  }
+  say('Native tool finished.');
 } else if (head === 'forbidden') {
   if (isCodex) out({ type: 'item.completed', item: { id: 'x', type: 'unexpected_remote_tool', command: 'ls' } });
   else out({ type: 'assistant', message: { content: [{ type: 'tool_use', id: 'x', name: 'Bash', input: { command: 'ls' } }] } });

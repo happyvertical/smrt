@@ -85,6 +85,7 @@ export async function preflightAgentCli(
   tool: AgentTool,
   location: AgentCliLocation,
   baseEnv: LocateDeps['env'],
+  protection = true,
 ): Promise<Pick<AgentCliStatus, 'ready' | 'startError'>> {
   const fail = (
     startError: NonNullable<AgentCliStatus['startError']>,
@@ -99,6 +100,7 @@ export async function preflightAgentCli(
     directory = mkdtempSync(join(tmpdir(), 'smrt-engine-preflight-'));
     spec = buildAgentRun({
       tool,
+      protection,
       location,
       stateDir: directory,
       mcpUrl: 'http://127.0.0.1:1/mcp',
@@ -220,6 +222,7 @@ export async function preflightAgentCli(
 export async function detectAgentCli(
   tool: AgentTool,
   deps: LocateDeps = defaultLocateDeps(),
+  protection = true,
 ): Promise<AgentCliStatus> {
   const info = AGENT_TOOL_INFO[tool];
   const base = {
@@ -250,7 +253,9 @@ export async function detectAgentCli(
       ? null
       : signedInFrom(tool, status.exitCode, status.stdout);
   const startup =
-    signedIn === true ? await preflightAgentCli(tool, location, deps.env) : {};
+    signedIn === true
+      ? await preflightAgentCli(tool, location, deps.env, protection)
+      : {};
   return {
     ...base,
     installed: true,
