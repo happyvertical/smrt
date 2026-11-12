@@ -186,6 +186,7 @@ async function localRuntime(
 }
 
 interface TestEventOptions {
+  cookies?: Record<string, string>;
   sid?: string;
   headers?: Record<string, string>;
   clientAddress?: string | (() => string);
@@ -193,7 +194,7 @@ interface TestEventOptions {
 }
 
 function testEvent(url: string, options: TestEventOptions = {}) {
-  const jar = new Map<string, string>();
+  const jar = new Map<string, string>(Object.entries(options.cookies ?? {}));
   if (options.sid) jar.set('sid', options.sid);
   const setCookies: Array<{
     name: string;
@@ -630,7 +631,7 @@ describe('local SvelteKit runtime', () => {
     expect(claimed.redirect).toMatchObject({ status: 303, location: '/' });
     expect(claimEvent.setCookies).toHaveLength(1);
     expect(claimEvent.setCookies[0]).toMatchObject({
-      name: 'sid',
+      name: runtime.sessionCookie.name,
       options: {
         path: '/',
         httpOnly: true,
@@ -728,12 +729,16 @@ describe('local SvelteKit runtime', () => {
     }
 
     function signOutEvent(
+      runtime: SmrtSvelteKitRuntime,
       sid: string | undefined,
       method: string,
       headers: Record<string, string>,
     ) {
       const url = 'http://127.0.0.1:5173/sign-out';
-      const event = testEvent(url, sid ? { sid } : {});
+      const event = testEvent(
+        url,
+        sid ? { cookies: { [runtime.sessionCookie.name]: sid } } : {},
+      );
       event.request = new Request(url, { method, headers });
       const deleted: string[] = [];
       const remove = event.cookies.delete;
@@ -755,12 +760,12 @@ describe('local SvelteKit runtime', () => {
       expect(before.locals.authMethod).toBe('local-bootstrap');
       expect(before.locals.sessionParent).toBeNull();
 
-      const { event, deleted } = signOutEvent(sid, 'POST', {
+      const { event, deleted } = signOutEvent(runtime, sid, 'POST', {
         origin: 'http://127.0.0.1:5173',
       });
       const response = await handler(event as never);
       expect(response.status).toBe(204);
-      expect(deleted).toEqual(['sid']);
+      expect(deleted).toEqual([runtime.sessionCookie.name]);
       const after = await runHandle(
         runtime.handle,
         testEvent('http://127.0.0.1:5173/', { sid }),
@@ -770,16 +775,16 @@ describe('local SvelteKit runtime', () => {
       expect(after.locals.sessionParent).toBeNull();
 
       // Already-gone session row: the cookie is still cleared.
-      const again = signOutEvent(sid, 'POST', {
+      const again = signOutEvent(runtime, sid, 'POST', {
         'sec-fetch-site': 'same-origin',
       });
       expect((await handler(again.event as never)).status).toBe(204);
-      expect(again.deleted).toEqual(['sid']);
+      expect(again.deleted).toEqual([runtime.sessionCookie.name]);
     });
 
     it('answers a no-JS form post with a 303 to /', async () => {
       const { runtime, sid } = await signedInRuntime('sign-out-form');
-      const { event } = signOutEvent(sid, 'POST', {
+      const { event } = signOutEvent(runtime, sid, 'POST', {
         origin: 'http://127.0.0.1:5173',
         accept: 'text/html',
       });
@@ -791,7 +796,7 @@ describe('local SvelteKit runtime', () => {
     it('rejects non-POST with 405 and cross-origin with 403 without touching the session', async () => {
       const { runtime, sid } = await signedInRuntime('sign-out-reject');
       const handler = createSignOutHandler(runtime);
-      const get = signOutEvent(sid, 'GET', {
+      const get = signOutEvent(runtime, sid, 'GET', {
         origin: 'http://127.0.0.1:5173',
       });
       const getResponse = await handler(get.event as never);
@@ -803,7 +808,7 @@ describe('local SvelteKit runtime', () => {
         { 'sec-fetch-site': 'same-site' },
         {},
       ]) {
-        const { event, deleted } = signOutEvent(sid, 'POST', headers);
+        const { event, deleted } = signOutEvent(runtime, sid, 'POST', headers);
         expect((await handler(event as never)).status).toBe(403);
         expect(deleted).toEqual([]);
       }
@@ -2865,5 +2870,70 @@ describe('desktop owner link auto sign-in', () => {
     } finally {
       for (const spy of spies) spy.mockRestore();
     }
+  });
+});
+
+describe('app-scoped session cookies', () => {
+  it('isolates two installations on one browser host and migrates only a verified legacy session', async () => {
+    const apps = [];
+    for (const label of ['cookie-first', 'cookie-second']) {
+      const { runtime, dataDirectory, sourceRoot } = await localRuntime(label, {
+        appId: 'shared-app',
+      });
+      await runtime.init();
+      const claim = testEvent(SETUP_URL, {
+        form: {
+          token: await bootstrapToken(runtime),
+          name: 'Owner',
+          email: 'owner@example.com',
+        },
+      });
+      await runAction(createOwnerSetupPage(runtime), claim);
+      const cookie = claim.setCookies[0];
+      expect(cookie.name).toBe(runtime.sessionCookie.name);
+      expect(cookie.name).toMatch(/^smrt_[a-f0-9]{24}_sid$/);
+      const reopened = createSmrtSvelteKitRuntime({
+        appId: 'shared-app',
+        dataDirectory,
+        sourceRoot,
+        runtime: LOCAL,
+      });
+      expect(reopened.sessionCookie.name).toBe(cookie.name);
+      apps.push({ runtime, cookie });
+    }
+    expect(apps[0].cookie.name).not.toBe(apps[1].cookie.name);
+    const jar = Object.fromEntries(
+      apps.map(({ cookie }) => [cookie.name, cookie.value]),
+    );
+    jar.sid = apps[1].cookie.value;
+    for (const { runtime, cookie } of apps) {
+      const observed = await runHandle(
+        runtime.handle,
+        testEvent('http://127.0.0.1:4960/', { cookies: jar }),
+      );
+      expect(observed.locals.sessionId).toBe(cookie.value);
+    }
+    const legacy = testEvent('http://127.0.0.1:4961/', {
+      sid: apps[0].cookie.value,
+    });
+    expect(
+      (await runHandle(apps[0].runtime.handle, legacy)).locals.sessionId,
+    ).toBe(apps[0].cookie.value);
+    expect(legacy.setCookies).toEqual([apps[0].cookie]);
+    const foreign = testEvent('http://127.0.0.1:4961/', {
+      sid: apps[1].cookie.value,
+    });
+    expect(
+      (await runHandle(apps[0].runtime.handle, foreign)).locals.user,
+    ).toBeNull();
+    expect(foreign.setCookies).toEqual([]);
+    const invalidNew = testEvent('http://127.0.0.1:4961/', {
+      sid: apps[0].cookie.value,
+      cookies: { [apps[0].cookie.name]: 'invalid' },
+    });
+    expect(
+      (await runHandle(apps[0].runtime.handle, invalidNew)).locals.user,
+    ).toBeNull();
+    expect(invalidNew.setCookies).toEqual([]);
   });
 });

@@ -20,6 +20,7 @@
  * using `switchSessionTenant()` from `@happyvertical/smrt-users/sveltekit`.
  */
 
+import { createHash } from 'node:crypto';
 import {
   loadConfig,
   type ResolvedApplicationRuntime,
@@ -1057,7 +1058,21 @@ export function composeSmrtSvelteKitRuntime(
     return resolve(event);
   };
 
-  const sessionCookieName = options.session?.cookieName ?? 'sid';
+  const sessionCookieName = () =>
+    options.session?.cookieName ??
+    `smrt_${createHash('sha256')
+      .update(
+        JSON.stringify([
+          applicationId(),
+          resolveApplicationStateRoot({
+            appId: applicationId(),
+            dataDirectory,
+            sourceRoot,
+          }),
+        ]),
+      )
+      .digest('hex')
+      .slice(0, 24)}_sid`;
   const sessionSkipPaths = options.session?.skipPaths ?? [];
   const sessionServiceOptions = (): SessionServiceOptions => ({
     ...baseClassOptions('Session'),
@@ -1307,9 +1322,15 @@ export function composeSmrtSvelteKitRuntime(
       event.url.pathname.startsWith(path),
     );
     if (skipped && !rls) return resolve(event);
-    const sessionId = skipped
+    const scopedSession = skipped
       ? undefined
-      : event.cookies.get(sessionCookieName);
+      : event.cookies.get(sessionCookieName());
+    // Never replace an existing scoped cookie with a different app's legacy sid.
+    const legacySession =
+      !skipped && !scopedSession && !options.session?.cookieName
+        ? event.cookies.get('sid')
+        : undefined;
+    const sessionId = scopedSession ?? legacySession;
     if (!sessionId && !rls) return resolve(event);
 
     let resolveEntered = false;
@@ -1326,6 +1347,17 @@ export function composeSmrtSvelteKitRuntime(
         },
         async (context) => {
           if (context.session) {
+            if (legacySession && context.sessionId) {
+              const cookie = sessionCookie;
+              event.cookies.set(cookie.name, context.sessionId, {
+                path: cookie.path,
+                ...(cookie.domain ? { domain: cookie.domain } : {}),
+                httpOnly: true,
+                secure: cookie.secure ?? event.url.protocol === 'https:',
+                sameSite: cookie.sameSite,
+                maxAge: cookie.maxAgeSeconds,
+              });
+            }
             locals.user = context.user;
             locals.userName = await profileNameOf(context.user);
             locals.membership = context.membership ?? null;
@@ -1356,7 +1388,9 @@ export function composeSmrtSvelteKitRuntime(
   };
 
   const sessionCookie: SmrtRuntimeSessionCookie = Object.freeze({
-    name: options.session?.cookieName ?? 'sid',
+    get name() {
+      return sessionCookieName();
+    },
     path: options.session?.cookiePath ?? '/',
     ...(options.session?.cookieDomain
       ? { domain: options.session.cookieDomain }

@@ -92,7 +92,7 @@ function event(path: string, method = 'GET', body?: unknown): RequestEvent {
     params: { path: url.pathname.replace('/api/assistant/', '') },
     locals: {},
     cookies: {
-      get: (name: string) => (name === 'sid' ? sessionId : undefined),
+      get: (name: string) => (name === host?.runtime.sessionCookie.name ? sessionId : undefined),
       getAll: () => [],
     },
     getClientAddress: () => '127.0.0.1',
