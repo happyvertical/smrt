@@ -31,6 +31,7 @@ import type {
 import { MANIFEST_TIMESTAMP } from '../scanner/types.js';
 import { generateClientModule } from '../vite-plugin/generated-client.js';
 import type { SmrtPluginApi } from '../vite-plugin/index.js';
+import { createDevNativeSsrModules } from '../vite-plugin/native-ssr.js';
 import type {
   SmrtConfigEnv,
   SmrtVitePlugin,
@@ -776,11 +777,7 @@ export function smrtConsumer(
   let producerApi: SmrtPluginApi | undefined;
   let routeLifecycleConfig: object | undefined;
   let isBuild = false;
-  let devServerRoot = projectRoot;
-  const devNativeSsrModules = new Map<
-    string,
-    { externalize: string; type: 'module' | 'commonjs' }
-  >();
+  const devNativeSsrModules = createDevNativeSsrModules();
   let selectiveSsrPackages = new Map<string, SelectiveSsrPackage>();
 
   function loadGenerationSnapshot(): ConsumerManifest {
@@ -1192,16 +1189,7 @@ export function smrtConsumer(
     },
 
     configureServer(server) {
-      devServerRoot = server.config.root;
-      const ssr = server.environments?.ssr;
-      if (!ssr?.fetchModule) return;
-      const fetchModule = ssr.fetchModule.bind(ssr);
-      // Dev import analysis ignores resolveId.external. Keep its ordinary URL
-      // graph, but hand only our resolved server entries to Node's native cache.
-      ssr.fetchModule = async (id, importer, options) => {
-        const native = devNativeSsrModules.get(id.split('?')[0]);
-        return native ?? fetchModule(id, importer, options);
-      };
+      devNativeSsrModules.configureServer(server);
     },
 
     async buildStart() {
@@ -1320,20 +1308,13 @@ export function smrtConsumer(
             if (!resolved) return;
             const filename = resolved.id.split('?')[0];
             if (!path.isAbsolute(filename)) return resolved;
-            const native = {
-              externalize: pathToFileURL(filename).href,
-              type: (filename.endsWith('.mjs') ||
-              (!filename.endsWith('.cjs') && packageJson?.type === 'module')
+            devNativeSsrModules.register(
+              filename,
+              filename.endsWith('.mjs') ||
+                (!filename.endsWith('.cjs') && packageJson?.type === 'module')
                 ? 'module'
-                : 'commonjs') as 'module' | 'commonjs',
-            };
-            devNativeSsrModules.set(filename, native);
-            devNativeSsrModules.set(path.posix.join('/@fs/', filename), native);
-            if (filename.startsWith(`${devServerRoot}/`))
-              devNativeSsrModules.set(
-                filename.slice(devServerRoot.length),
-                native,
-              );
+                : 'commonjs',
+            );
             return resolved;
           }
           break;

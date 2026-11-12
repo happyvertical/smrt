@@ -30,6 +30,7 @@ export interface SmrtDecoratorConfig {
 /** Input capabilities, not a replacement for the application's full config. */
 export interface SmrtUserConfig {
   root?: string;
+  ssr?: { external?: string[] | true };
   mode?: string;
   plugins?: readonly unknown[];
   oxc?: false | { decorator?: SmrtDecoratorConfig };

@@ -166,11 +166,30 @@ The consumer resolver records only exact server entry files selected through
 the importer's installed export map. Its dev SSR environment `fetchModule`
 transport returns those files as native external modules; component barrels,
 Svelte and CSS continue through Vite. Production keeps bare external imports.
+`vite-plugin/native-ssr.ts` owns this shared exact-entry boundary: one transport
+interceptor per SSR environment composes the consumer and preset registrations
+and delegates unknown modules to the original bound transport. Canonical
+filenames stay separate from aliases, so repeated server setup cannot strip
+the root from an alias again and capture an unrelated module. The preset also
+uses it for the exact `smrt-app-runtime` root in dev. Its Kit-facing `/sveltekit`
+wrapper compiles against the app's deduped Kit in both modes, while the native
+root and `/sveltekit-runtime` backend stay in Node. Different pnpm Kit peer
+contexts must not turn owner setup's committed 303 redirect into a 500.
+The shared-runtime config hook runs last and removes only the literal runtime
+root from the merged `ssr.external` list. Svelte's dependency crawler otherwise
+adds that root for component-package dependencies, overriding the wrapper's
+`noExternal` exception. Other externals and explicit subpaths remain unchanged.
+`ssr.external: true` cannot express this split and fails with a remedy: use an
+explicit package list; the preset keeps the exact native entries external.
 Never externalize the complete component-bearing package or switch its mutable
 runtime flags to globals to mask duplicate execution. The real `createServer` /
 `ssrLoadModule` regression in `selective-ssr-dev.test.ts` initializes native
 server state and verifies root/subpath reads plus direct and transitive peer
 Svelte/CSS compilation in one dev request.
+The app-runtime `sveltekit-production.test.ts` fixture explicitly separates the
+app/runtime Kit peers, declares a Svelte host depending on the runtime to trigger
+the real dependency crawler, and proves the final root exclusion plus development
+GET/POST redirects and action failures before its adapter-node production checks.
 
 Not covered by contract: a package whose root is a Svelte entry AND whose
 `@smrt()` objects are exported only from that root. The object loop must then

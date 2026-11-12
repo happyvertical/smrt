@@ -217,6 +217,11 @@ Playwright tracing, video, and screenshots are disabled for every step —
 onboarding carries a single-use token in a URL, and a trace would capture it.
 The harness also masks that token with `::add-mask::` before onboarding runs,
 so a failed navigation cannot echo it into the job log either.
+The server streams stay in a bounded in-memory buffer. Owner setup fails fast
+on a setup/home HTTP 500 and reports only method, pathname, status, an optional
+restricted request ID and a sanitized excerpt. Tokens, full URLs, credentials
+and absolute paths are redacted; no request bodies, cookies or raw server logs
+are retained. Successful runs do not print the buffer.
 Databases, export bundles, browser profiles, cookies, bootstrap artifacts,
 and raw traces are never uploaded, and every temporary root is removed when
 its worker finishes. Retention is seven days.

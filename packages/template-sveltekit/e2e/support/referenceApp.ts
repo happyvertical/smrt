@@ -103,6 +103,8 @@ export interface StartedReferenceApp {
   readonly bootstrapToken: string;
   /** Generated manifest of the copied app, used to derive the tool inventory. */
   readonly manifest: Record<string, unknown>;
+  /** Bounded, sanitized server output for an onboarding failure only. */
+  failureOutput(): string;
   stop(): Promise<void>;
 }
 
@@ -440,8 +442,15 @@ async function provisionReferenceApp(
   );
   // Streams are drained but never forwarded: a dev server echoes request URLs,
   // and one of those URLs carries the single-use bootstrap token.
-  child.stdout?.resume();
-  child.stderr?.resume();
+  let serverOutput = '';
+  let outputTruncated = false;
+  const captureOutput = (chunk: Buffer): void => {
+    const combined = serverOutput + chunk.toString('utf8');
+    outputTruncated ||= combined.length > 64_000;
+    serverOutput = combined.slice(-64_000);
+  };
+  child.stdout?.on('data', captureOutput);
+  child.stderr?.on('data', captureOutput);
 
   let exited = false;
   child.on('exit', () => {
@@ -516,6 +525,18 @@ async function provisionReferenceApp(
     onboardingUrl,
     bootstrapToken,
     manifest,
+    failureOutput: () =>
+      summarizeFailureOutput(
+        (outputTruncated
+          ? serverOutput.includes('\n')
+            ? serverOutput.slice(serverOutput.indexOf('\n') + 1)
+            : ''
+          : serverOutput
+        )
+          .replaceAll(bootstrapToken, '[redacted]')
+          .replaceAll(/https?:\/\/[^\s"'<>]+/g, '[url]'),
+        temporaryRoot,
+      ),
     stop,
   };
 }

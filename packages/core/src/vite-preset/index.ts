@@ -13,6 +13,7 @@ import {
   type SmrtPluginOptions,
   smrtPlugin,
 } from '../vite-plugin/index.js';
+import { createDevNativeSsrModules } from '../vite-plugin/native-ssr.js';
 import type {
   SmrtDecoratorConfig,
   SmrtUserConfig,
@@ -159,31 +160,54 @@ export const SMRT_SHARED_RUNTIME_PACKAGES = ['@sveltejs/kit'] as const;
 
 function sharedRuntimePlugin(): SmrtVitePlugin {
   let isBuild = false;
+  const native = createDevNativeSsrModules();
   return {
     name: 'smrt:shared-runtime',
     enforce: 'pre',
-    resolveId(id, _importer, options) {
+    resolveId(id, importer, options) {
       // ssr.external on the package root would externalize every subpath.
       // Keep only this exact entry external, preserving native dependencies.
-      if (isBuild && options.ssr && id === '@happyvertical/smrt-app-runtime') {
-        return { id, external: true };
+      if (options.ssr && id === '@happyvertical/smrt-app-runtime') {
+        if (isBuild) return { id, external: true };
+        return this.resolve(id, importer, { ...options, skipSelf: true }).then(
+          (resolved) => {
+            if (resolved) native.register(resolved.id.split('?')[0], 'module');
+            return resolved;
+          },
+        );
       }
     },
-    config(_user, { command }) {
-      // Only adapter builds need this split. Dev import analysis ignores a
-      // resolver's external flag, so it must retain normal externalization.
-      isBuild = command === 'build';
-      return {
-        resolve: { dedupe: [...SMRT_SHARED_RUNTIME_PACKAGES] },
-        ...(isBuild
-          ? {
-              ssr: {
-                noExternal: ['@happyvertical/smrt-app-runtime'],
-                external: ['@happyvertical/smrt-app-runtime/sveltekit-runtime'],
-              },
-            }
-          : {}),
-      };
+    configureServer(server) {
+      native.configureServer(server);
+    },
+    config: {
+      // Svelte's dependency crawler can add the broad runtime root to
+      // external, which outranks noExternal for every subpath. Reconcile only
+      // that root after the other config hooks; native entries stay explicit.
+      order: 'post',
+      handler(user, { command }) {
+        if (user.ssr?.external === true) {
+          throw new Error(
+            'smrt() cannot preserve SvelteKit runtime identity with ssr.external: true. Use an explicit external package list so Kit-facing runtime wrappers can compile while native runtime entries stay external.',
+          );
+        }
+        if (Array.isArray(user.ssr?.external)) {
+          user.ssr.external = user.ssr.external.filter(
+            (id) => id !== '@happyvertical/smrt-app-runtime',
+          );
+        }
+        // Both modes compile Kit-facing wrappers against the app's Kit. The
+        // exact root stays native through resolveId in builds and the shared
+        // SSR transport in dev; never inline its native dependency graph.
+        isBuild = command === 'build';
+        return {
+          resolve: { dedupe: [...SMRT_SHARED_RUNTIME_PACKAGES] },
+          ssr: {
+            noExternal: ['@happyvertical/smrt-app-runtime'],
+            external: ['@happyvertical/smrt-app-runtime/sveltekit-runtime'],
+          },
+        };
+      },
     },
   };
 }
