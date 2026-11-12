@@ -1,7 +1,6 @@
 import { expectNoA11yViolations } from '@happyvertical/smrt-ui/test-support/a11y';
 import { render, screen, waitFor } from '@testing-library/svelte';
 import userEvent from '@testing-library/user-event';
-import { createRawSnippet } from 'svelte';
 import { describe, expect, it, vi } from 'vitest';
 import type { ConnectAiClient } from '../../connect-ai/types.js';
 import FirstRunOnboarding from '../FirstRunOnboarding.svelte';
@@ -230,14 +229,30 @@ it('offers Settings when revisiting a completed installation', () => {
 
 it('keeps a host alternative inside the AI step card and removes it on other steps', async () => {
   const f = fixture('ai');
-  const aiFooter = createRawSnippet(() => ({
-    render: () =>
-      '<a href="/settings#own-ai">Use with your own AI in Settings</a>',
-  }));
-  render(FirstRunOnboarding, { props: { ...f.props, aiFooter } });
+  const aiAlternative = {
+    href: '/settings#own-ai',
+    label: 'Use with your own AI in Settings',
+  };
+  render(FirstRunOnboarding, { props: { ...f.props, aiAlternative } });
   const alternative = await screen.findByRole('link', {
     name: 'Use with your own AI in Settings',
   });
   expect(alternative.closest('[data-smrt-component="Card"]')).toBeTruthy();
   expect(alternative.closest('main.onboarding')).toBeTruthy();
+  await userEvent.click(screen.getByRole('button', { name: 'Skip for now' }));
+  expect(screen.queryByRole('link', { name: aiAlternative.label })).toBeNull();
+});
+
+it('does not render an unsafe alternative URL', () => {
+  const f = fixture('ai');
+  render(FirstRunOnboarding, {
+    props: {
+      ...f.props,
+      aiAlternative: {
+        href: 'javascript:alert(1)',
+        label: 'Unsafe alternative',
+      },
+    },
+  });
+  expect(screen.queryByText('Unsafe alternative')).toBeNull();
 });

@@ -165,6 +165,14 @@ true` remain unchanged; Tricia still consumes the canonical handler. Compatible
 Codex no longer receives a version refusal. Tests cover both orders and wording,
 ready/unready states, model preference, sign-in completion and Tricia composer refresh.
 FirstRunOnboarding shows Settings only for a completed/restarted app, hides Skip
-and its hint after readiness, and exposes `aiFooter` (a Svelte snippet) inside the
-AI step card for the host's existing plugin Settings link. Reuse search found the
-existing Card/snippet and wizard actions; no new component, route or transport.
+and its hint after readiness, and exposes `aiAlternative` (the existing `InferenceEngineAction` label/href DTO)
+inside the AI step card for the host's existing plugin Settings link. Reuse search found the
+existing Card, link actions and wizard actions; no new component, route or transport.
+
+The optional onboarding link uses data rather than a Svelte Snippet across the
+package boundary. Linked consumers can use another compatible Svelte patch
+(5.57.1 in the SDK, 5.57.3 in the product); their branded Snippet types differ.
+Reuse `InferenceEngineAction`, Button and safeHref for the actual link requirement.
+Component tests cover placement, disappearance after the AI step and unsafe URLs;
+product svelte-check verifies the real cross-version boundary. No type assertion,
+new action type, helper, component or dependency override is needed.

@@ -54,7 +54,7 @@ a model response; the production exec uses the equivalent workspace overrides.
 | Confined incidental builtins | Patch/command item logs only fixed names, request finishes | Unknown item/foreign MCP/unoffered app tool still kills; token/arguments absent | Owner-bound app authority; OS sandbox independent of DB | Stream + full stub turn; inference test |
 | Ready/startup | Native compatible CLI and stub with code host starts | Unsupported flags/host, missing runtime, signed-out, directory failure | Local process; no model request | Preflight; inference + exact desktop env tests |
 | Ranked OpenAI choices/fallback | Strongest verified offered model, one lower on classified pre-output refusal, fixed wording/memo | Unknown IDs never guessed; no retry after text/tool, no engine/key fallback | Owner/account/catalog generation; existing preference store | Fake sign-in/catalog/model + host tests |
-| Live app data / Stop | Read/create via scoped MCP, held exposed delete decided once, Stop kills child | Customer delete remains absent; UI never decides through a model tool | Local owner/tenant, SQLite generated tools | Built product; docs/qa-live-engines.md |
+| Live app data / Stop | Live read/create via scoped MCP and Stop kills child; fixture held delete decided once | Customer delete remains absent; UI never decides through a model tool | Local owner/tenant, SQLite generated tools | Built product; docs/qa-live-engines.md |
 
 Reuse: configured MCP reviewed inference/Svelte/template/app-shell and architecture
 context queried disposable sandboxes, rank/fallback and connection composition.

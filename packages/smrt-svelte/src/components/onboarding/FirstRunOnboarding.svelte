@@ -3,13 +3,15 @@ import {
   AssistantApprovalCard,
   type AssistantTransport,
 } from '@happyvertical/smrt-chat/svelte';
+import type { InferenceEngineAction } from '@happyvertical/smrt-inference/server';
 import { ConfirmDialog, Progress } from '@happyvertical/smrt-ui/feedback';
 import { useI18n } from '@happyvertical/smrt-ui/i18n';
 import { Button, Card } from '@happyvertical/smrt-ui/ui';
-import { onMount, type Snippet, tick, untrack } from 'svelte';
+import { onMount, tick, untrack } from 'svelte';
 import { M } from '../../i18n/strings.onboarding.js';
 import ConnectAi from '../connect-ai/ConnectAi.svelte';
 import type { ConnectAiClient } from '../connect-ai/types.js';
+import { safeHref } from '../overview/markdown.js';
 import type {
   OnboardingAction,
   OnboardingClient,
@@ -26,7 +28,7 @@ let {
   apiKeyHref,
   oncomplete,
   backHref = '/settings',
-  aiFooter,
+  aiAlternative,
 }: {
   client: OnboardingClient;
   connectAi: ConnectAiClient;
@@ -38,7 +40,7 @@ let {
   oncomplete: () => void | Promise<void>;
   backHref?: string;
   /** Host-owned alternative connection link, inside the AI step card. */
-  aiFooter?: Snippet;
+  aiAlternative?: InferenceEngineAction;
 } = $props();
 const { t } = useI18n();
 let progress = $state<OnboardingState>(untrack(() => initialState));
@@ -135,7 +137,9 @@ const step = $derived(
       {#if progress.completed || progress.rerunning}<Button variant="ghost" href={backHref}>{t(M['ui.onboarding.back_settings'])}</Button>{/if}
     {:else if progress.step === 'ai'}
       <ConnectAi client={connectAi} {apiKeyHref} {headingId} onchange={(_, configured) => { ready = configured; }} />
-      {@render aiFooter?.()}
+      {#if aiAlternative && safeHref(aiAlternative.href)}
+        <Button variant="secondary" href={safeHref(aiAlternative.href) ?? undefined}>{aiAlternative.label}</Button>
+      {/if}
       {#if !ready}<p>{t(M['ui.onboarding.skip_hint'])}</p>{/if}
       <div class="actions">
         <Button variant="ghost" disabled={busy} onclick={() => change({ action: 'back' })}>{t(M['ui.onboarding.back'])}</Button>
