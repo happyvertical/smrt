@@ -48,6 +48,24 @@ export function clearSubtypeLineage(): void {
   parents().clear();
   replacedDeclarations().clear();
 }
+
+/** Roll back only the edited identities, retaining unrelated registrations. */
+export function checkpointSubtypeLineage(
+  names: ReadonlySet<string>,
+): () => void {
+  const links = new Map([...names].map((name) => [name, parents().get(name)]));
+  const declarations = new Map(
+    [...names].map((name) => [name, replacedDeclarations().get(name)]),
+  );
+  return () => {
+    for (const [name, parent] of links)
+      if (parent) parents().set(name, parent);
+      else parents().delete(name);
+    for (const [name, declaration] of declarations)
+      if (declaration) replacedDeclarations().set(name, declaration);
+      else replacedDeclarations().delete(name);
+  };
+}
 export function recordSubtypeParent(
   name: string,
   parent: string | undefined,

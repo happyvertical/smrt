@@ -79,12 +79,14 @@ import {
 } from './registry/class-registration';
 import {
   applyRuntimeOverrides,
+  checkpointRuntimeOverrides,
   clearRuntimeOverrides,
   getRuntimeOverride,
   type RuntimeRegistrationOverride,
   registerRuntimeOverride,
 } from './registry/runtime-overrides';
 import {
+  checkpointSubtypeLineage,
   clearSubtypeLineage,
   findReplacement,
   replacedDeclarations,
@@ -188,6 +190,7 @@ import {
   getCollections,
   getCollectionTableNames,
   getConstructorFieldDecorators,
+  getConstructorIndex,
   getConstructorTenantScopedDeclarations,
   getDbInstanceIds,
   getDiscoveryAttemptCache,
@@ -805,6 +808,59 @@ export interface CollectionCreateTargets {
  * (even from different package resolution paths) share the same registry state.
  */
 export class ObjectRegistry {
+  /**
+   * Checkpoint the named runtime registrations before a transactional schema
+   * edit. The caller serializes registry writers and gates these models until
+   * commit/rollback; restoring never clears unrelated registrations or policy.
+   */
+  static checkpointRegistrations(names: Iterable<string>): () => void {
+    const keys = new Set(names);
+    for (const [key, entry] of ObjectRegistry.classes)
+      if (entry.replacedQualifiedNames?.some((id) => keys.has(id)))
+        keys.add(key);
+    const saved = new Map(
+      [...keys].map((key) => {
+        const entry = ObjectRegistry.classes.get(key);
+        return [
+          key,
+          entry
+            ? {
+                ...entry,
+                fields: new Map(entry.fields),
+                methods: new Map(entry.methods),
+                config: { ...entry.config },
+                replacedQualifiedNames: entry.replacedQualifiedNames
+                  ? [...entry.replacedQualifiedNames]
+                  : undefined,
+              }
+            : undefined,
+        ] as const;
+      }),
+    );
+    const restoreLineage = checkpointSubtypeLineage(keys);
+    const restorePolicies = checkpointRuntimeOverrides(keys);
+    return () => {
+      for (const [key, entry] of saved) {
+        const current = ObjectRegistry.classes.get(key);
+        if (current && current.constructor !== entry?.constructor)
+          getConstructorIndex().delete(
+            current.constructor as SmrtObjectConstructor,
+          );
+        if (entry) {
+          ObjectRegistry.classes.set(key, entry);
+          getConstructorIndex().set(
+            entry.constructor as SmrtObjectConstructor,
+            key,
+          );
+        } else ObjectRegistry.classes.delete(key);
+      }
+      restoreLineage();
+      restorePolicies();
+      applyRuntimeOverrides();
+      ObjectRegistry.collectionCache.clear();
+      ObjectRegistry.invalidateAllInheritanceCaches();
+    };
+  }
   /** Invalidation token for consumers caching generated definitions. */
   static getGeneration(): number {
     return getRegistryGeneration();

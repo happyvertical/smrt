@@ -35,6 +35,22 @@ export function getRuntimeOverride(name: string): Policy | undefined {
   return policies().get(name);
 }
 
+/** Preserve monotonic policies when a staged registration transaction rolls back. */
+export function checkpointRuntimeOverrides(
+  names: ReadonlySet<string>,
+): () => void {
+  const saved = new Map([...names].map((name) => [name, policies().get(name)]));
+  return () => {
+    for (const [name, policy] of saved) {
+      const current = policies().get(name);
+      // A consumer can tighten policy while a migration awaits I/O. Rollback
+      // restores transferred policies but must never reopen a newer denial.
+      if (policy || current)
+        policies().set(name, Object.freeze({ ...policy, ...current }));
+    }
+  };
+}
+
 function invalid(message: string): never {
   throw new ConfigurationError(message, 'CONFIG_INVALID_RUNTIME_OVERRIDE');
 }
