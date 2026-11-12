@@ -79,6 +79,13 @@ export interface FieldMeta {
   default?: unknown;
   /** Per-row SQL backfill for adding/tightening a required column (#3008). */
   backfill?: string;
+  /** Why smrt's own code needs this required field (#4923). */
+  requiredFor?:
+    | 'identity'
+    | 'tenant-scope'
+    | 'idempotency'
+    | 'workflow-state'
+    | 'system-table';
   /** Marks the field as the primary key column. */
   primaryKey?: boolean;
   /** Marks the column as unique. */

@@ -216,6 +216,21 @@ jobs:
       - name: Run Biome lint and format checks
         run: npx --yes @biomejs/biome@2.5.3 ci --diagnostic-level=error .
 
+      # Rule 1 of the data-shape policy (#4923): a required field in a smrt
+      # package states its reason. Plain Node, no install needed.
+      - name: Check required-field reasons
+        run: node scripts/check-required-reasons.mjs
+
+      # The baseline of unexplained fields may only shrink: compare it with the
+      # pull request's base.
+      - name: Check required-field baseline did not grow
+        if: github.event.pull_request.base.sha != ''
+        env:
+          BASE_SHA: ${{ github.event.pull_request.base.sha }}
+        run: |
+          git fetch --no-tags --depth=1 origin "$BASE_SHA"
+          node scripts/check-required-reasons.mjs --against "$BASE_SHA"
+
   affected-typecheck:
     name: Affected Typecheck
     needs: affected-scope

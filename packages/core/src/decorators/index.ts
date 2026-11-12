@@ -82,6 +82,29 @@ export type FieldType =
   | 'oneToMany'
   | 'manyToMany';
 
+/**
+ * Why a smrt package makes a field required (#4923, policy rule 1). smrt
+ * requires a field only when its own code would be wrong or unsafe without it;
+ * `requiredFor` names which of these cases applies. It is carried in the
+ * manifest as `_meta.requiredFor` so other packages and the app build can read
+ * it.
+ *
+ * - `identity`: the field identifies the row or what it belongs to (ids, keys).
+ * - `tenant-scope`: smrt scopes reads or writes by it (tenant ownership).
+ * - `idempotency`: smrt uses it to detect a duplicate or replayed write.
+ * - `workflow-state`: a smrt service steps the row through its values.
+ * - `system-table`: the field is in an internal `_smrt_*` table.
+ */
+export const REQUIRED_FOR_REASONS = [
+  'identity',
+  'tenant-scope',
+  'idempotency',
+  'workflow-state',
+  'system-table',
+] as const;
+
+export type RequiredForReason = (typeof REQUIRED_FOR_REASONS)[number];
+
 export interface FieldOptions {
   /** Use this field in the natural primary key, as supported by schema generation. */
   primaryKey?: boolean;
@@ -91,6 +114,21 @@ export interface FieldOptions {
   sqlType?: SQLDataType;
   /** Whether the field is required */
   required?: boolean;
+  /**
+   * The reason smrt's own code needs this field (see
+   * {@link RequiredForReason}). Every `required: true` field in a smrt package
+   * states one, and `scripts/check-required-reasons.mjs` fails the lint gate
+   * when it does not. The value must be a string literal so the scanner and
+   * the check can read it from source. An app may not loosen a field that
+   * states a reason, because smrt's code depends on it. A field with no
+   * reason is the app's to tighten or loosen.
+   *
+   * ```typescript
+   * @field({ required: true, requiredFor: 'identity' })
+   * slug: string = '';
+   * ```
+   */
+  requiredFor?: RequiredForReason;
   /** Validate that an STI reference resolves to the declared subtype on save/load. */
   validateSubtype?: boolean;
   /** Default value for the field */

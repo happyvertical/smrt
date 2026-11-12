@@ -9,3 +9,12 @@ classes. Rebuild core after scanner/schema-generator edits: the Vite plugin
 consumes deterministic `dist/` artifacts. Vite 8 requires Oxc legacy decorators
 (see core guidance). Svelte subpaths require `svelte-check`, not just `tsc`;
 use named `$props()` interfaces to avoid recursive inline intersections.
+
+## Build-time gates beyond Biome
+
+- `pnpm build` runs `check:manifest-paths` after Turbo: a built manifest must
+  not hold an absolute `filePath` (#4948). Rebuild the named package.
+- `pnpm lint` runs `scripts/check-required-reasons.mjs` (#4923): a
+  `required: true` field in `packages/*/src` states `requiredFor` or sits in
+  `scripts/required-reasons-baseline.json`, which only shrinks
+  (`--prune` drops fixed entries).

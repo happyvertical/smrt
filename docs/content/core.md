@@ -933,6 +933,39 @@ class Product extends SmrtObject {
 }
 ```
 
+### Why a smrt field is required (`requiredFor`)
+
+smrt makes a field required only when its own code would be wrong or unsafe
+without it. A required field in a smrt package says why:
+
+```typescript
+@field({ required: true, requiredFor: 'identity' })
+slug: string = '';
+```
+
+| Value | Meaning |
+|---|---|
+| `identity` | The field identifies the row or what it belongs to. |
+| `tenant-scope` | smrt scopes reads or writes by it. |
+| `idempotency` | smrt uses it to detect a duplicate or replayed write. |
+| `workflow-state` | A smrt service steps the row through its values. |
+| `system-table` | The field is in an internal `_smrt_*` table. |
+
+The value is a string literal. It is carried in the manifest as
+`_meta.requiredFor`, so other packages and your app build can read it. An app
+that subclasses a smrt object owns the rest of its shape and may tighten or
+loosen any field that has no reason. It may not loosen a field that has one.
+
+`node scripts/check-required-reasons.mjs` runs with `pnpm lint` and in CI. It
+fails on a `required: true` field in `packages/*/src` that has no reason and is
+not in `scripts/required-reasons-baseline.json`, and it names the file, class
+and field. The baseline lists the fields that had no reason when the check
+began. It may only shrink: give a field a reason or make it optional, then
+run `node scripts/check-required-reasons.mjs --prune`. The check does not
+judge whether a reason is true; review does that. It reads the literal
+`required: true` in source, so a field the scanner infers as required from its
+TypeScript type is outside it.
+
 ### Adding a required column to a table that already has rows
 
 `smrt db:migrate` adds a new `@field({ required: true })` column to a
