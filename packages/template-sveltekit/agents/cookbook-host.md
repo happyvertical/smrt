@@ -1,10 +1,10 @@
 # Local cookbook host
 
 The real-HTTP CLI fixture in `__tests__/cookbookHost.test.ts` models a compatible
-MCP-only host for both stream protocols: it accepts the locked flags, preflights
-successfully, and calls the app MCP endpoint with built-ins absent. It does not
-model native Codex 0.162.1's incompatible code-mode host; that version remains
-refused as documented in inference's engine contract. The introduction assertion
+app-tool host for both stream protocols: it accepts the secured flags, preflights
+successfully, and calls the app MCP endpoint. Claude has built-ins absent; native
+Codex 0.162.1 now enables its necessary code-mode host and confines incidental
+patch/command items in disposable workspaces (inference's engine contract). The introduction assertion
 uses the test's current cookbook (renamed Members plus enabled Memos), rather than
 the earlier Customers-only snapshot. It still requires configured readiness and
 the same full create/hold/decision/revocation behavior for both compatible stubs.
@@ -583,3 +583,19 @@ No signal handler, forced process exit, detached runner or timer unref workaroun
 is added. Tests use the actual runner for idle and initialization-race shutdown,
 reject first initialization after the shutdown event, and clean a runner that
 started before initialization failed without a second failure or exit-code change.
+
+
+C4 follow-up: `/favicon.ico` redirects with public caching to the shipped
+`/favicon.svg` before runtime authorization/initialization (browser requests need
+no owner session). Cookbook host regression checks this conventional icon path.
+OpenAI work profiles reuse inference's reviewed rankings and single-step fallback;
+ChatGPT catalogs stay account-bound, and fallback memos include catalog, connection
+generation and preference revision. Codex gets the same fallback-store seam as
+Claude. No app-local engine, token or approval implementation is introduced.
+
+Drive-by validation repair: onboardingWriteThrough's test fixture uses core's public
+`resolveManifestPath` rather than assuming every package emits dist/manifest.json.
+Products exports dist/lib/manifest.json; dropping it made all four template
+activation cases fail with ContractLineItem -> Product unresolved. All original
+REST/assistant write and linked-contact assertions remain. No production registry
+or exposure behavior changes.

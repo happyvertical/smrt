@@ -1,20 +1,70 @@
 # Local assistant engines (`./server`)
 
-Codex readiness also exercises its secured startup in a disposable empty HOME
-and CODEX_HOME, without a token or provider credentials. The probe disables its
-MCP connection, overrides the provider to non-listening `127.0.0.1:1` without
-auth, strips proxy variables, and aborts at `turn.started` or a startup error.
-No vendor model can be called. A native disabled-code-host startup error refuses
-readiness as `tool_host_policy`; the turn parser also stops before publishing a
-fallback answer if a caller skips readiness. Unknown startup errors fail closed.
+## Codex containment (owner-authorized 2026-11-12 policy)
 
-Live Codex 0.162.1's default model needs its code host, but enabling that host
-still registers `apply_patch` even with machine features disabled and strict
-third-party mode. Keep the host disabled and report incompatibility. A verified
-MCP-only execution host or upstream built-in-tool allow-list is required before
-enabling this profile; do not substitute another model or billing path silently.
+Codex 0.162.1 is usable. Enable **only `code_mode_host`** in addition to the
+existing modern MCP protocol feature. The host necessarily registers
+`apply_patch`; shell/unified execution and all other optional machine features
+stay disabled. Every Codex attempt (including resume/fallback) now gets a NEW
+empty 0700 `<app data>/agent-cli/run/turn-*/work` folder, removed in the existing
+finally cleanup after completion, error, abort and timeout. Concurrent turns
+never share it. User config/rules are ignored; project document bytes are zero
+and bundled skills disabled. Schema/config files remain outside the writable
+cwd and contain no credential.
 
-## Codex 0.162.1 compatibility evidence and owner options
+Exact containment overrides: `sandbox_mode="workspace-write"`,
+`sandbox_workspace_write.network_access=false`,
+`sandbox_workspace_write.writable_roots=[]`,
+`sandbox_workspace_write.exclude_slash_tmp=true`,
+`sandbox_workspace_write.exclude_tmpdir_env_var=true`,
+`approval_policy="never"`, `web_search="disabled"`,
+`shell_environment_policy.inherit="none"`. No bypass, add-dir, full access or
+terminal approval. Native sandbox policy controls writes/network, not parser
+inspection after an effect. It permits reads according to platform policy; an
+empty cwd is not a read-visibility jail. Provider and loopback MCP HTTP transports
+run in the CLI parent; sandboxed model commands cannot use the network or inherit
+the app's MCP token. API keys remain stripped from the CLI parent environment.
+
+The secured spec opts `codexParser` into recognizing only `file_change` and
+`command_execution` as confined built-ins. Record `agent_tool_confined` plus
+fixed `apply_patch`/`exec_command` names, never their payload/path/output; continue
+the app request. Unknown items, foreign MCP and unoffered app tools still stop
+with W1's redacted name diagnostics. App mutations still require the existing
+scoped MCP dispatcher and durable independent owner approval. Existing work
+profiles, one-step classified fallback and child-group kill/timeout are retained.
+Codex maximum effort maps to xhigh; explicit model remains `-m`.
+
+Readiness exercises the exact invocation's help plus startup in a disposable
+HOME/CODEX_HOME with no auth, token, proxy or reachable model endpoint; abort at
+`turn.started`. Compatible 0.162.1 now passes; incompatible versions still return
+plain `tool_host_policy` or invocation failure. This is a cheap local startup
+preflight, not a billed inference test or proof of account entitlement.
+
+Verified flags: installed `codex exec --help` 0.162.1 and
+[OpenAI configuration reference](https://learn.chatgpt.com/docs/config-file/config-reference).
+A separate native `codex sandbox -P smrt` control used a named profile with
+`filesystem={"/"="read",":workspace_roots"="write"}` and
+`network.enabled=false`: writing inside succeeded, a sibling write and connection
+to a listening loopback HTTP socket were denied. This tests OS enforcement, not
+a model response; the production exec uses the equivalent workspace overrides.
+
+| Invariant / reachable trigger | Positive | Negative/control | Actor/context, executor/runtime | Edge / level / validation |
+| --- | --- | --- | --- | --- |
+| Private Codex attempts, including resume | Distinct empty 0700 roots, own-file writes disappear at cleanup | Failure/abort/timeout and concurrent runs cannot share cwd | Local owner, no DB executor; Node26 subprocess | CLI spec/stub; inference test |
+| Confined incidental builtins | Patch/command item logs only fixed names, request finishes | Unknown item/foreign MCP/unoffered app tool still kills; token/arguments absent | Owner-bound app authority; OS sandbox independent of DB | Stream + full stub turn; inference test |
+| Ready/startup | Native compatible CLI and stub with code host starts | Unsupported flags/host, missing runtime, signed-out, directory failure | Local process; no model request | Preflight; inference + exact desktop env tests |
+| Ranked OpenAI choices/fallback | Strongest verified offered model, one lower on classified pre-output refusal, fixed wording/memo | Unknown IDs never guessed; no retry after text/tool, no engine/key fallback | Owner/account/catalog generation; existing preference store | Fake sign-in/catalog/model + host tests |
+| Live app data / Stop | Read/create via scoped MCP, held exposed delete decided once, Stop kills child | Customer delete remains absent; UI never decides through a model tool | Local owner/tenant, SQLite generated tools | Built product; docs/qa-live-engines.md |
+
+Reuse: configured MCP reviewed inference/Svelte/template/app-shell and architecture
+context queried disposable sandboxes, rank/fallback and connection composition.
+Name + purpose `rg` in UI/Svelte/chat/core/inference found `buildAgentRun`,
+`runProcess`, `codexParser`, `reportAgentFailure`, `strongestWorkModel`,
+`runWorkModelWithFallback` and the existing connection catalog. Extend these
+owning modules. New `rankOpenAIWorkModels`/`nextWorkModel` live in the existing
+work-profiles module; no parallel engine, approval service or credential reader.
+
+## Historical 2026-11-11 incompatibility evidence (superseded by containment above)
 
 Native probes on the installed CLI use its default model, disposable empty
 HOME/CODEX_HOME, a loopback fake Responses provider with auth disabled, and one
@@ -137,9 +187,11 @@ does not supply approval identity or authority.
 
 Allow-list child environment variables: no provider API keys, endpoint overrides
 or host secrets. Token only in child environment, never argv, logs or config
-files. MCP must use HTTP loopback (127.0.0.1, localhost or ::1). Built-in shell,
-file, web and subagent tools are disabled; user config/hooks/plugins are ignored.
-The working directory is private and empty. Stream guards reject foreign tools
+files. MCP must use HTTP loopback (127.0.0.1, localhost or ::1). Claude built-ins
+are absent. Codex enables only its necessary code host and confines its patch
+capability as specified above; shell, web and subagent features stay disabled.
+User config/hooks/plugins are ignored. Codex workspaces are private, empty and
+new per attempt. Stream guards reject foreign tools
 and unknown Codex action kinds. Stop/timeout kills the process group (Windows
 uses taskkill /T). CLI credentials are never read: query the CLI's own status
 and run its own login command, which opens the vendor page itself.
@@ -280,17 +332,27 @@ automatic escalation and preview. These settings carry no tool authority.
 The preferences package stores owner overrides; inference contains no storage.
 
 Claude recommendations select the strongest installed alias, `fable`, then
-`opus`, then `sonnet`; hosts can supply the installed alias inventory. Codex
-and ChatGPT automatic recommendations require a catalog with explicit
-`intelligenceRank` (higher is stronger), or an explicit owner model. Catalog
-order and model-name spelling are not intelligence evidence. The installed
-AI SDK 0.111.10 ChatGPT `getModels()` only maps visible raw entries to
-id/name/capabilities in response order; it exposes no intelligence ranking.
-Consequently a host using that unranked listing must show model selection as
-unavailable until the owner chooses a model or verified ranking is supplied.
-The owning SDK catalog API must expose intelligence ordering before a host can
-promise an automatic strongest ChatGPT choice. No model IDs are invented here.
-Codex readiness still refuses the incompatible disabled code host.
+`opus`, then `sonnet`; hosts can supply the installed alias inventory. Codex recommendations use the reviewed OpenAI model table. ChatGPT automatic
+recommendations intersect that table with the signed-in account's live catalog.
+`rankOpenAIWorkModels` annotates exact IDs only, preserving a future SDK's explicit
+finite `intelligenceRank`; `strongestWorkModel` never infers strength from response
+order or spelling. Reviewed 2026-11-12 against
+[OpenAI's recommended models](https://learn.chatgpt.com/docs/models#recommended-models):
+Astra, 6.1 Sol, 6.1 Terra, Luna. This is versioned app recommendation data grounded
+in official descriptions, not an undocumented server quality field. Unknown IDs
+remain selectable explicitly but never become automatic recommendations. Refresh
+this table when the catalog adds a new model; an unknown-only catalog truthfully
+has no automatic strongest choice. Both design and assist pick the strongest
+ranked offered model. Background keeps its low-effort profile.
+
+`ChatGPTPlanConnection.models()` retains ranks and its ten-minute account cache;
+`defaultModel()` uses ranks. `createChatGPTModel` discovers the catalog when needed
+and derives a single next-lower fallback from it. Host memos include account
+connection generation, catalog and owner preference revision. Fixed fallback
+wording is sent through existing text progress. The installed SDK still rejects
+reasoning/format controls on plan requests; omit them, retain requested effort in
+metadata, and never claim vendor enforcement. Live sign-in/entitlement/inference
+requires the owner and is not proven by fake catalog tests.
 
 `runAgentTurn({ profile, outputSchema })` supplies explicit model and effort,
 Claude `--json-schema`, or Codex `--output-schema` through a private per-pass
@@ -335,7 +397,7 @@ received the MCP result by then: this is not a model-context result bound.
 Resource pages are bounded before context entry; generic MCP observations still
 need a safe serializer with a minimum envelope preserving outcome, approvals and
 cursors without inviting mutation retries. Claude's installed help has no per-call token or
-step limit flag; Codex is incompatible under the required lockdown. Numeric
+step limit flag; Codex is contained by its native sandbox. Numeric
 step/token settings remain host/driver admission and accounting budgets, not a
 claim that a vendor CLI stops at those token counts. Hosts must reserve a
 conservative allowance before a CLI pass when native usage is unknown and

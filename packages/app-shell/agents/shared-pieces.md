@@ -111,3 +111,10 @@ old shell text; the default `preserve` output is tested unchanged for buttons
 and links. The shared approval card alone opts into trimming. This is the
 small additional owning-package edit in `smrt-ui` (Button plus its existing
 golden tests); no new component/helper/model file is added.
+
+
+C4 OpenAI follow-up: shared Connect AI now lists Codex after recommended ChatGPT
+in welcome and settings, preserving the same preflight-backed Tricia handler,
+model preference and composer refresh. DOM expectations retain real ready status
+and assert the shared order instead of the superseded settings-only disclosure.
+Codex containment is owned by inference (`agents/engines.md`), never a shell shim.

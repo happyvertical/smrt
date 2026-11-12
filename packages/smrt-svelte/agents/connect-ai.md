@@ -120,7 +120,7 @@ core gate, verifies API readiness and selection, and proves no model exposure
 lookup is used. No screen, picker, or cookbook module is changed.
 
 Saved-product hosts can opt into `presentation="compact"` for the original
-Tricia wording/layout: Codex is settings-only under Advanced, account/version
+Tricia visual layout: ordered connection options, account/version
 text is optional host-projected data, and a login started here selects its
 engine after completion. Optional client `modelState`/`chooseModel` methods
 connect the settings-only model picker to the host's existing preference.
@@ -155,3 +155,16 @@ its lifetime. Connect AI projects only these safe fields and translates specific
 runtime, invocation and directory failures; it neither renders provider output
 nor offers a ready selection when the probe fails. The mounted tests cover all
 three failures and accessible presentation. No new component/helper file.
+
+## OpenAI route ordering and first-run follow-up
+
+Both presentations now show Claude Code, ChatGPT (recommended OpenAI-plan sign-in),
+Codex CLI (an existing-CLI alternative), then API key. Codex is no longer hidden
+under Settings-only Advanced. Shared status/route preflight and strict `ready ===
+true` remain unchanged; Tricia still consumes the canonical handler. Compatible
+Codex no longer receives a version refusal. Tests cover both orders and wording,
+ready/unready states, model preference, sign-in completion and Tricia composer refresh.
+FirstRunOnboarding shows Settings only for a completed/restarted app, hides Skip
+and its hint after readiness, and exposes `aiFooter` (a Svelte snippet) inside the
+AI step card for the host's existing plugin Settings link. Reuse search found the
+existing Card/snippet and wizard actions; no new component, route or transport.

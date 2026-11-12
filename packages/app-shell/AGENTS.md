@@ -118,8 +118,8 @@ Shared assistant adapters and legacy approval storage: [agents/shared-pieces.md]
   and a local agent CLI (`claude-code`/`codex`, the person's own signed-in
   tool; `agent-cli/`, README "The local agent CLI engine"). The CLI engine gets
   tools only through `/mcp` under a short-lived owner-bound `assistant.use`
-  token in the child env (never argv, file or log), with every machine-touching
-  built-in off, provider keys stripped and the stream guarded; never read a
+  token in the child env (never argv, file or log), with built-ins absent (Claude) or OS-confined (Codex; inference
+  `agents/engines.md`), provider keys stripped and the stream guarded; never read a
   CLI's credential files or keychain, never offer or proxy its login (it opens
   the vendor's page itself), plain-text product names only. Approvals stay the
   shell's: `invariants.test.ts` keeps `agent-cli/` and `agent-turn.ts` free of
