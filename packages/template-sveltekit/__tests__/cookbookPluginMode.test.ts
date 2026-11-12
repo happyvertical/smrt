@@ -12,10 +12,6 @@ import { createServer, type Server } from 'node:http';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { createSmrtSvelteKitRuntime } from '@happyvertical/smrt-app-runtime/sveltekit';
-import {
-  buildManifestToolCatalog,
-  manifestToolToAITool,
-} from '@happyvertical/smrt-chat';
 import { resolveApplicationRuntime } from '@happyvertical/smrt-config';
 import {
   field,
@@ -23,6 +19,9 @@ import {
   SmrtObject,
   smrt,
 } from '@happyvertical/smrt-core';
+import type { AppModelSnapshot } from '@happyvertical/smrt-core/app-models';
+import { APIGenerator } from '@happyvertical/smrt-core/generators/rest';
+import { isRuntimeModelEnabled } from '@happyvertical/smrt-core/runtime-exposure';
 import { disableTenancy } from '@happyvertical/smrt-tenancy';
 import {
   DEFAULT_ROLE_SLUGS,
@@ -39,12 +38,18 @@ import {
 import { StdioClientTransport } from '@modelcontextprotocol/client/stdio';
 import type { RequestEvent } from '@sveltejs/kit';
 import { afterEach, expect, it, vi } from 'vitest';
+import {
+  screenRecordLabel,
+  screenReferenceTarget,
+} from '../../smrt-svelte/src/components/screens/references.js';
+import { createRecipeScreenReferences } from '../../smrt-svelte/src/components/screens/source.js';
 import type { PluginModeState } from '../host/plugin-mode.js';
 import { createCookbookHost } from '../host/server.js';
 
 @smrt({
   packageName: '@fixture/plugin',
   collection: 'plugin_members',
+  tableName: 'plugin_members',
   mcp: { include: ['list', 'get', 'create', 'delete'] },
 })
 class PluginMember extends SmrtObject {
@@ -69,6 +74,9 @@ let origin = '';
 let session = '';
 let failures: string[] = [];
 let stateRoot = '';
+let assistantDefinitions: NonNullable<
+  PluginModeState['tools']
+>[number]['definition'][] = [];
 let released: (() => void) | undefined;
 afterEach(async () => {
   vi.restoreAllMocks();
@@ -165,13 +173,29 @@ it('generates private setup; bridges live tools, writes and durable owner decisi
   host = createCookbookHost({
     title: 'plebeos',
     assistant: {
+      ai: {
+        chat: async (
+          _messages: unknown,
+          options: {
+            tools?: Array<{
+              function: NonNullable<
+                PluginModeState['tools']
+              >[number]['definition'];
+            }>;
+          },
+        ) => {
+          assistantDefinitions =
+            options.tools?.map((tool) => tool.function) ?? [];
+          return { content: 'Catalog inspected.', finishReason: 'stop' };
+        },
+      } as never,
       onError: (e) => {
         failures.push(String(e));
       },
     },
     runtime,
     root: sourceRoot,
-    packageName: '@fixture/plugin',
+    packageName: '@fixture/plugin-app',
     app: {
       cookbook: {
         $schema: 'https://s-m-r-t.dev/schemas/cookbook/v1.json',
@@ -204,6 +228,13 @@ it('generates private setup; bridges live tools, writes and durable owner decisi
             label: 'Members',
             models: [member],
             nav: [{ model: member, label: 'Members' }],
+            requires: ['plugin.identity'],
+          },
+          {
+            id: 'plugin.identity',
+            label: 'Identity prerequisite',
+            models: [task],
+            nav: [],
             requires: [],
           },
           {
@@ -330,12 +361,21 @@ it('generates private setup; bridges live tools, writes and durable owner decisi
           stderr: 'pipe',
         }),
       );
+      const exposure = ObjectRegistry.getExposureModel(member);
+      expect(exposure?.qualifiedName).toBe(member);
       expect(
-        (await otherClient.listTools()).tools.map((t) => t.name),
-      ).toContain('plugin_members_read');
+        isRuntimeModelEnabled(exposure, {
+          surface: 'assistant',
+          tenantId: owner.tenantId,
+        }),
+      ).toBe(true);
+      const publicNames = (await otherClient.listTools()).tools.map(
+        (t) => t.name,
+      );
+      expect(publicNames, publicNames.join(', ')).toContain('members_read');
       payload(
         await otherClient.callTool({
-          name: 'plugin_members_read',
+          name: 'members_read',
           arguments: {},
         }),
       );
@@ -373,33 +413,49 @@ it('generates private setup; bridges live tools, writes and durable owner decisi
     throw new Error(String(error) + '; host: ' + failures.join('; '));
   });
   const names = listed.tools.map((t) => t.name);
-  expect(names).toContain('plugin_members_read');
-  expect(names).not.toContain('plugin_tasks_read');
-  const assistant = buildManifestToolCatalog({ all: true }).filter(
-    (t) => t.qualifiedName === member,
+  expect(names).toContain('members_read');
+  expect(names).not.toContain('tasks_read');
+  const pluginState = (await request('/api/plugin-mode', host.pluginMode).then(
+    (r) => r.json(),
+  )) as PluginModeState;
+  const assistant = pluginState.tools!;
+  expect(names.sort()).toEqual(
+    assistant.map((tool) => tool.definition.name).sort(),
+  );
+  expect(names.some((name) => /plugin_member|plugin_task/.test(name))).toBe(
+    false,
   );
   expect(
-    names.filter((name) => name.startsWith('plugin_members_')).sort(),
-  ).toEqual(assistant.map((tool) => tool.slug.replaceAll('.', '_')).sort());
-  expect(assistant.map((t) => t.action)).toEqual(
-    expect.arrayContaining(['read', 'create', 'delete']),
+    assistant
+      .filter((tool) => tool.source === 'model')
+      .every((tool) => tool.model === member),
+  ).toBe(true);
+  expect(
+    assistant
+      .filter((tool) => tool.source === 'model')
+      .map((tool) => tool.operation),
+  ).toEqual(expect.arrayContaining(['read', 'create', 'delete']));
+  for (const tool of assistant) {
+    const offered = listed.tools.find((t) => t.name === tool.definition.name)!;
+    expect(offered.inputSchema).toEqual(tool.definition.parameters);
+    expect(offered.description).toEqual(tool.definition.description);
+  }
+  const thread = await request('/api/assistant/threads', host.assistant.POST, {
+    title: 'Catalog parity',
+  }).then((r) => r.json());
+  const turn = await request(
+    `/api/assistant/threads/${thread.thread.id}/messages`,
+    host.assistant.POST,
+    { content: 'Inspect available lists', clientRequestId: randomUUID() },
   );
-  expect(names).toEqual(
-    expect.arrayContaining([
-      'plugin_members_read',
-      'plugin_members_create',
-      'plugin_members_delete',
-      'recipes_enable',
-      'app_add_list',
-    ]),
+  expect(turn.status).toBe(200);
+  await turn.text();
+  expect(assistantDefinitions.map((tool) => tool.name).sort()).toEqual(names);
+  expect(assistantDefinitions).toEqual(
+    expect.arrayContaining(assistant.map((tool) => tool.definition)),
   );
-  for (const tool of assistant)
-    expect(
-      listed.tools.find((t) => t.name === tool.slug.replaceAll('.', '_'))!
-        .inputSchema,
-    ).toEqual(manifestToolToAITool(tool, owner.tenantId).function.parameters);
-  await call('plugin_members_read');
-  const created = await call('plugin_members_create', { name: 'Maya Plugin' });
+  await call('members_read');
+  const created = await call('members_create', { name: 'Maya Plugin' });
   const members = await ObjectRegistry.getCollection(
     member,
     runtime.classOptions('PluginMember'),
@@ -409,12 +465,39 @@ it('generates private setup; bridges live tools, writes and durable owner decisi
   const id = rows[0].id!;
   expect(created).toBeTruthy();
   const deletion = vi.spyOn(PluginMember.prototype, 'delete');
-  const pending = await call('plugin_members_delete', { id });
+  const pending = await call('members_delete', { id });
   expect(pending).toMatchObject({
     status: 'approval_required',
     outcomeTool: 'owner_approval_outcome',
     message: "Waiting for the owner's approval in plebeos.",
   });
+  const heldState = (await request('/api/plugin-mode', host.pluginMode).then(
+    (r) => r.json(),
+  )) as PluginModeState;
+  const heldNames = (await client.listTools()).tools
+    .map((tool) => tool.name)
+    .sort();
+  expect(heldNames).toEqual(
+    heldState.tools!.map((tool) => tool.definition.name).sort(),
+  );
+  expect(
+    heldState
+      .tools!.filter((tool) => tool.source === 'lifecycle')
+      .map((tool) => tool.definition.name),
+  ).toEqual(['owner_approval_outcome']);
+  const inspectHold = await request(
+    `/api/assistant/threads/${thread.thread.id}/messages`,
+    host.assistant.POST,
+    {
+      content: 'Inspect pending approval tools',
+      clientRequestId: randomUUID(),
+    },
+  );
+  expect(inspectHold.status).toBe(200);
+  await inspectHold.text();
+  expect(assistantDefinitions.map((tool) => tool.name).sort()).toEqual(
+    heldNames,
+  );
   expect(deletion).not.toHaveBeenCalled();
   expect(await members.get(id)).toBeTruthy();
   const approvals = await request(
@@ -471,12 +554,15 @@ it('generates private setup; bridges live tools, writes and durable owner decisi
   await call('recipes_enable', { id: 'plugin.tasks', expectedRevision: 0 });
   await expect.poll(() => notifications, { timeout: 7000 }).toBeGreaterThan(0);
   expect((await client.listTools()).tools.map((t) => t.name)).toContain(
-    'plugin_tasks_read',
+    'tasks_read',
   );
   const app = await call('app_describe');
   await call('app_add_list', {
     label: 'Guests',
-    fields: [{ label: 'Name', kind: 'text' }],
+    fields: [
+      { label: 'Name', kind: 'text' },
+      { label: 'Member', kind: 'link', linkTo: 'Members' },
+    ],
     nameField: 'Name',
     expectedRevision: app.revision,
   });
@@ -487,6 +573,66 @@ it('generates private setup; bridges live tools, writes and durable owner decisi
       ),
     )
     .toBe(true);
+  const linkedMember = await call('members_create', { name: 'Picker member' });
+  const guest = await call('guests_create', {
+    name: 'Visitor',
+    member: linkedMember.id,
+  });
+  expect(await call('guests_read', { id: guest.id })).toMatchObject({
+    member: linkedMember.id,
+  });
+  const definitions = (await request('/', async () =>
+    Response.json(
+      (await host!.modelEditor(owner.tenantId))!.snapshot().webDefinitions,
+    ),
+  ).then((response) => response.json())) as AppModelSnapshot['webDefinitions'];
+  const guestDefinition = definitions.find(
+    (definition) => definition.className === 'Guests',
+  )!;
+  const rest = new APIGenerator(
+    { basePath: '/api', authMiddleware: () => async (request) => request },
+    {
+      db: runtime.databaseConfig(),
+      tenantId: owner.tenantId,
+      user: { id: owner.userId },
+    },
+  ).generateHandler();
+  const references = createRecipeScreenReferences(
+    Object.fromEntries(
+      definitions.map((definition) => [definition.name, definition]),
+    ),
+    {
+      fetch: async (input, init) => {
+        const url = new URL(String(input), origin);
+        const e = event(url.pathname + url.search);
+        e.request = new Request(url, init);
+        return host!.handle({ event: e, resolve: (e) => rest(e.request) });
+      },
+    },
+  );
+  const target = screenReferenceTarget(
+    guestDefinition,
+    { name: 'member' },
+    references,
+  )!;
+  expect(target.definition.objectRef).toBe(member);
+  const picked = await target.source.search!({
+    query: 'Picker',
+    offset: 0,
+    limit: 10,
+  });
+  expect(screenRecordLabel(target.definition, picked.rows[0])).toBe(
+    'Picker member',
+  );
+  expect(await target.source.get!(String(picked.rows[0].id))).toMatchObject({
+    name: 'Picker member',
+  });
+  const live = (await request('/api/plugin-mode', host.pluginMode).then((r) =>
+    r.json(),
+  )) as PluginModeState;
+  expect(
+    (await client.listTools()).tools.map((tool) => tool.name).sort(),
+  ).toEqual(live.tools!.map((tool) => tool.definition.name).sort());
   const described = await call('app_describe');
   const removing = await call('app_remove_list', {
     list: 'Guests',
@@ -525,7 +671,7 @@ it('generates private setup; bridges live tools, writes and durable owner decisi
     failures.join('; '),
   ).toBe(200);
   expect((await client.listTools()).tools.map((t) => t.name)).not.toContain(
-    'plugin_tasks_read',
+    'tasks_read',
   );
   const preview = await call('cookbook_apply', { id: 'empty' });
   const applying = await call('cookbook_apply', {
@@ -577,7 +723,7 @@ it('generates private setup; bridges live tools, writes and durable owner decisi
   });
   const remaining = (await client.listTools()).tools.map((t) => t.name);
   expect(remaining.some((n) => n.startsWith('recipes_'))).toBe(false);
-  expect(remaining).not.toContain('plugin_members_read');
+  expect(remaining).not.toContain('members_read');
   expect(remaining).toContain('app_add_list');
   const narrow = await local.mcpTokens!.issue({
     scopes: ['plugin_members.read'],
@@ -602,7 +748,7 @@ it('generates private setup; bridges live tools, writes and durable owner decisi
     ).toBe(false);
     const refused = await narrowClient
       .callTool({
-        name: 'plugin_members_create',
+        name: 'members_create',
         arguments: { name: 'Forbidden' },
       })
       .catch(() => null);

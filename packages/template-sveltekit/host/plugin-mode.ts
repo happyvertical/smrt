@@ -2,6 +2,7 @@
 import { access, mkdir, unlink, writeFile } from 'node:fs/promises';
 import { dirname, join, relative } from 'node:path';
 import { fileURLToPath } from 'node:url';
+import type { PrincipalTool } from '@happyvertical/smrt-agents';
 import {
   generateLocalMcpSetup,
   saveCliConfig,
@@ -29,6 +30,14 @@ export type PluginModeState = {
   embed: boolean;
   connections: PluginConnection[];
   chatgpt: string;
+  /** The same live definitions supplied to the in-app assistant. */
+  tools?: Array<{
+    definition: PrincipalTool['aiTool']['function'];
+    source: 'model' | 'recipe' | 'app' | 'lifecycle';
+    model?: string;
+    operation?: string;
+    recipe?: string;
+  }>;
 };
 
 export function createPluginMode(options: {
@@ -36,6 +45,10 @@ export function createPluginMode(options: {
   sourceRoot: string;
   name: string;
   state: () => Promise<Awaited<ReturnType<typeof createCookbookHostState>>>;
+  tools?: (actor: {
+    id: string;
+    tenantId: string;
+  }) => Promise<PluginModeState['tools']>;
   authorize(
     event: RequestEvent,
   ): Promise<{ id: string; tenantId: string } | null>;
@@ -110,6 +123,7 @@ export function createPluginMode(options: {
     if (!local.mcpTokens) throw new Error('Local MCP token store unavailable');
     const records = await local.mcpTokens.list();
     return {
+      tools: await options.tools?.(actor),
       embed: await (await options.state()).embed(actor.tenantId, actor.id),
       connections: await Promise.all(
         (Object.keys(PLUGIN_CLIENTS) as PluginClient[]).map(async (client) => {

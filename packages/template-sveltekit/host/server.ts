@@ -3,7 +3,10 @@
 import { createHash, randomUUID } from 'node:crypto';
 import { readFile } from 'node:fs/promises';
 import { join } from 'node:path';
-import { executeAsPrincipal } from '@happyvertical/smrt-agents';
+import {
+  executeAsPrincipal,
+  type PrincipalTool,
+} from '@happyvertical/smrt-agents';
 import type {
   McpAppPrincipal,
   McpWorkflowToolDefinition,
@@ -68,6 +71,7 @@ import {
   createCookbookToolService,
   setCookbookToolService,
 } from '@happyvertical/smrt-core/cookbook/tools';
+import { resolveApiMethodExposure } from '@happyvertical/smrt-core/generators/custom-action';
 import {
   MCPGenerator,
   type MCPTool,
@@ -250,6 +254,13 @@ export function createCookbookHost(options: CookbookHostOptions) {
   registerPermissionDefinitions([
     ...INFERENCE_PERMISSION_DEFINITIONS,
     {
+      slug: 'app.approvals',
+      category: 'app',
+      name: 'Read your tool approval outcomes',
+      description:
+        'Read the existing owner continuation outcome under the original tool scope',
+    },
+    {
       slug: PLUGIN_PERMISSION,
       category: 'app',
       name: 'Use the app with your own AI',
@@ -349,18 +360,22 @@ export function createCookbookHost(options: CookbookHostOptions) {
         ),
       model: async (record) =>
         executeSaved(record, async (run) => {
-          const offered = (
-            await mcpModels(
-              {
-                id: record.requestedBy,
-                tenantId: record.tenantId,
-                scopes: [...run.permissions],
-              },
-              !!record.context.threadId,
-            )
-          ).find((t) => t.tool.slug === record.tool);
+          const offered =
+            record.context.pluginMode === true || record.context.threadId
+              ? (
+                  await manifest(record.tenantId, record.requestedBy, [
+                    ...run.permissions,
+                  ])
+                ).find((t) => t.slug === record.tool)
+              : (
+                  await mcpModels({
+                    id: record.requestedBy,
+                    tenantId: record.tenantId,
+                    scopes: [...run.permissions],
+                  })
+                ).find((t) => t.tool.slug === record.tool)?.tool;
           if (!offered) throw new Error('Approved tool is no longer offered');
-          return invokeManifestTool(run, offered.tool, record.args, {
+          return invokeManifestTool(run, offered, record.args, {
             db: run.context.database ?? runtime.databaseConfig(),
           });
         }),
@@ -666,10 +681,86 @@ export function createCookbookHost(options: CookbookHostOptions) {
       return { configured: false };
     }
   };
-  const manifest = (tenantId: string): ManifestTool[] =>
-    buildManifestToolCatalog({ all: true }).filter((tool) =>
-      isManifestToolEnabled(tool, tenantId),
-    );
+  const manifest = async (
+    tenantId: string,
+    userId?: string,
+    scopes?: readonly string[],
+  ): Promise<ManifestTool[]> => {
+    const host = await ready();
+    const document = host.state.engineFor({ tenantId })?.cookbook();
+    if (!document) return [];
+    const shell = buildCookbookShell({
+      cookbook: document,
+      catalog: host.catalog,
+    });
+    const engine = userId ? await host.state.engine(tenantId, userId) : null;
+    const mcpSlugs =
+      engine === 'claude-code' || engine === 'codex'
+        ? new Set(
+            (
+              await mcpModels(
+                {
+                  id: userId,
+                  tenantId,
+                  scopes: scopes ? [...scopes] : undefined,
+                },
+                true,
+              )
+            ).map((t) => t.tool.slug),
+          )
+        : undefined;
+    const names = new Set<string>();
+    return buildManifestToolCatalog({ all: true }).flatMap((tool) => {
+      if (
+        !isManifestToolEnabled(tool, tenantId) ||
+        (scopes && !scopes.includes(tool.slug)) ||
+        (mcpSlugs && !mcpSlugs.has(tool.slug))
+      )
+        return [];
+      const key = tool.qualifiedName ?? tool.className;
+      // Custom methods follow the owning API declaration, using its canonical
+      // exposure resolver. The CLI profile already passed the MCP resolver.
+      if (
+        !mcpSlugs &&
+        !['read', 'create', 'update', 'delete'].includes(tool.action)
+      ) {
+        const method = ObjectRegistry.resolveRuntimeMethod(
+          key,
+          tool.action,
+        ).method;
+        if (
+          !method ||
+          !resolveApiMethodExposure({
+            actionName: tool.action,
+            method,
+            apiConfig: ObjectRegistry.getConfig(key).api,
+          }).exposed
+        )
+          return [];
+      }
+      const identity = ObjectRegistry.getClass(key)?.qualifiedName;
+      const entry = [...shell.entries.values()].find(
+        (candidate) =>
+          ObjectRegistry.getClass(candidate.model.id)?.qualifiedName ===
+          identity,
+      );
+      if (!identity || !entry) return [];
+      const functionName = wireName(`${entry.label}_${tool.action}`).slice(
+        0,
+        64,
+      );
+      if (names.has(functionName))
+        throw new Error('Conflicting app list tool names');
+      names.add(functionName);
+      return [
+        {
+          ...tool,
+          functionName,
+          description: `${tool.action} records in the app list ${JSON.stringify(entry.label)}.`,
+        },
+      ];
+    });
+  };
   const mcpModels = async (
     principal: McpAppPrincipal,
     placedOnly = false,
@@ -701,7 +792,9 @@ export function createCookbookHost(options: CookbookHostOptions) {
         permissions: principal.scopes,
       },
     );
-    const manifestTools = manifest(principal.tenantId!);
+    const manifestTools = buildManifestToolCatalog({ all: true }).filter(
+      (tool) => isManifestToolEnabled(tool, principal.tenantId!),
+    );
     const tools = await generator.generateTools();
     return tools.flatMap((descriptor) => {
       if ((COOKBOOK_TOOL_NAMES as readonly string[]).includes(descriptor.name))
@@ -747,7 +840,7 @@ export function createCookbookHost(options: CookbookHostOptions) {
   };
   const extra = async (context: AssistantRequestContext) => {
     const host = await ready();
-    return (
+    const tools: PrincipalTool[] = (
       await host.service.assistantTools({
         surface: 'assistant',
         tenantId: context.principal.tenantId,
@@ -755,6 +848,10 @@ export function createCookbookHost(options: CookbookHostOptions) {
       })
     ).map((tool) => ({
       ...tool,
+      aiTool: {
+        ...tool.aiTool,
+        function: { ...tool.aiTool.function, name: wireName(tool.slug) },
+      },
       execute: (
         input: Parameters<typeof tool.execute>[0] & {
           run: import('@happyvertical/smrt-agents').PrincipalRun;
@@ -770,28 +867,75 @@ export function createCookbookHost(options: CookbookHostOptions) {
           () => tool.execute(input),
         ),
     }));
+    if (
+      context.principal.permissions?.includes('app.approvals') &&
+      (
+        await host.authority.list(
+          {
+            id: context.principal.userId,
+            tenantId: context.principal.tenantId,
+          },
+          false,
+        )
+      ).some((record) => record.requestedBy === context.principal.userId)
+    ) {
+      tools.push({
+        slug: 'app.approvals',
+        aiTool: {
+          type: 'function',
+          function: {
+            name: 'owner_approval_outcome',
+            description:
+              'Read your pending owner approval or its recorded outcome.',
+            parameters: {
+              type: 'object',
+              properties: { id: { type: 'string' } },
+              required: ['id'],
+              additionalProperties: false,
+            },
+          },
+        },
+        execute: async ({ run, args }) => {
+          run.assertToolAllowed('app.approvals');
+          await run.assertOperation('app', 'approvals');
+          return approvalOutcome(
+            {
+              id: run.context.userId!,
+              tenantId: run.context.tenantId!,
+              scopes: [...run.permissions],
+            },
+            String(args.id),
+          );
+        },
+      });
+    }
+    return tools;
   };
+  const approvalOutcome = async (caller: McpAppPrincipal, id: string) => {
+    if (!caller.id || !caller.tenantId)
+      throw new Error('Authentication required');
+    const record = await (await ready()).continuations.outcome(
+      { id: caller.id, tenantId: caller.tenantId },
+      id,
+    );
+    if (!caller.scopes?.includes(record.tool))
+      throw new Error('Approval outcome scope required');
+    return {
+      id: record.id,
+      status: record.status,
+      summary: record.summary,
+      result: record.result ?? null,
+    };
+  };
+
   const allowed = async (context: AssistantRequestContext) => {
     const host = await ready();
-    const engine = await host.state.engine(
+    const tools = await manifest(
       context.principal.tenantId,
       context.principal.userId,
+      context.principal.permissions ??
+        (context.event.locals as SmrtRuntimeLocals).permissions,
     );
-    const tools =
-      engine === 'claude-code' || engine === 'codex'
-        ? (
-            await mcpModels(
-              {
-                id: context.principal.userId,
-                tenantId: context.principal.tenantId,
-                scopes:
-                  context.principal.permissions ??
-                  (context.event.locals as SmrtRuntimeLocals).permissions,
-              },
-              true,
-            )
-          ).map((t) => t.tool)
-        : manifest(context.principal.tenantId);
     return [
       ...tools.map((t) => t.slug),
       ...(await extra(context)).map((t) => t.slug),
@@ -832,19 +976,18 @@ export function createCookbookHost(options: CookbookHostOptions) {
             Parameters<AgentCliChatBinding['approvals']['subscribe']>[0]
           >();
           let tokenHash: string | undefined;
-          const models = await mcpModels(
-            {
-              id: context.principal.userId,
-              tenantId: context.principal.tenantId,
-              scopes: [...(turn.permissions ?? [])],
-            },
-            true,
+          const models = await manifest(
+            context.principal.tenantId,
+            context.principal.userId,
+            [...(turn.permissions ?? [])],
           );
           const names = new Map([
             ...models
-              .filter((t) => turn.tools.some((v) => v.slug === t.tool.slug))
-              .map((t) => [t.descriptor.name, t.tool.slug] as const),
-            ...turn.extraTools.map((t) => [wireName(t.slug), t.slug] as const),
+              .filter((t) => turn.tools.some((v) => v.slug === t.slug))
+              .map((t) => [t.functionName!, t.slug] as const),
+            ...turn.extraTools.map(
+              (t) => [t.aiTool.function.name, t.slug] as const,
+            ),
           ]);
           const credentials = tokenCredentials(async () => local.mcpTokens, {
             holder,
@@ -859,10 +1002,10 @@ export function createCookbookHost(options: CookbookHostOptions) {
             mcpUrl: new URL('/mcp', context.event.url).href,
             canonicalToolName: (name) => names.get(name),
             describeTool: (name, args, outcome) => {
-              const model = models.find((entry) => entry.tool.slug === name);
+              const model = models.find((entry) => entry.slug === name);
               return describeAssistantTool(
-                model?.noun
-                  ? `${toSnakeCase(model.noun).toLowerCase()}.${model.tool.action}`
+                model?.functionName
+                  ? `${model.functionName.slice(0, -(wireName(model.action).length + 1))}.${model.action}`
                   : name,
                 args,
                 outcome,
@@ -998,6 +1141,13 @@ export function createCookbookHost(options: CookbookHostOptions) {
     },
     ...adapters,
     allowedTools: allowed,
+    tools: (context) =>
+      manifest(
+        context.principal.tenantId,
+        context.principal.userId,
+        context.principal.permissions ??
+          (context.event.locals as SmrtRuntimeLocals).permissions,
+      ),
     extraTools: extra,
     approvalContinuations: async () => (await ready()).continuations,
     // These tools hold in their own canonical service; never create a second chat hold.
@@ -1049,6 +1199,48 @@ export function createCookbookHost(options: CookbookHostOptions) {
     sourceRoot: options.root ?? process.cwd(),
     name: options.application ?? 'smrt-app',
     state: async () => (await ready()).state,
+    tools: async (actor) =>
+      runtime.runAsPrincipal(actor, async (bound) => {
+        const host = await prepare(actor.tenantId);
+        const scopes = [...(bound?.scopes ?? [])];
+        const context = {
+          principal: {
+            userId: actor.id,
+            tenantId: actor.tenantId,
+            permissions: scopes,
+          },
+        } as AssistantRequestContext;
+        const shell = buildCookbookShell({
+          cookbook: host.state.engineFor(actor)!.cookbook(),
+          catalog: host.catalog,
+        });
+        return [
+          ...(await manifest(actor.tenantId, actor.id, scopes)).map((tool) => ({
+            definition: manifestToolToAITool(tool, actor.tenantId).function,
+            source: 'model' as const,
+            model: tool.qualifiedName ?? tool.className,
+            operation: tool.action,
+            recipe:
+              [...shell.entries.values()].find(
+                (entry) =>
+                  ObjectRegistry.getClass(entry.model.id)?.qualifiedName ===
+                  ObjectRegistry.getClass(tool.qualifiedName ?? tool.className)
+                    ?.qualifiedName,
+              )?.recipeId ?? undefined,
+          })),
+          ...(await extra(context))
+            .filter((tool) => scopes.includes(tool.slug))
+            .map((tool) => ({
+              definition: tool.aiTool.function,
+              source:
+                tool.slug === 'app.approvals'
+                  ? ('lifecycle' as const)
+                  : tool.slug.startsWith('app.')
+                    ? ('app' as const)
+                    : ('recipe' as const),
+            })),
+        ];
+      }),
     authorize: async (event) => {
       const p = resolveAssistantPrincipalFromLocals(event.locals);
       if (!p) return null;
@@ -1105,7 +1297,9 @@ export function createCookbookHost(options: CookbookHostOptions) {
         )
       : new Set<string>();
     const offered = p
-      ? manifest(p.tenantId).filter((t) => allowedSlugs.has(t.slug))
+      ? (await manifest(p.tenantId, p.userId, [...allowedSlugs])).filter((t) =>
+          allowedSlugs.has(t.slug),
+        )
       : [];
     const extras = p
       ? await host.service.list({
@@ -1367,14 +1561,18 @@ export function createCookbookHost(options: CookbookHostOptions) {
             ).resolvePermissions(verified.id, verified.tenantId)
           ).permissions;
           const offered = new Set([
-            ...manifest(verified.tenantId).map((tool) => tool.slug),
+            ...(await manifest(verified.tenantId, verified.id, [...held])).map(
+              (tool) => tool.slug,
+            ),
             ...(
-              await host.service.list({
-                surface: 'mcp',
-                tenantId: verified.tenantId,
-                userId: verified.id,
-              })
-            ).map((tool) => tool.name),
+              await extra({
+                principal: {
+                  userId: verified.id,
+                  tenantId: verified.tenantId,
+                  permissions: [...held],
+                },
+              } as AssistantRequestContext)
+            ).map((tool) => tool.slug),
           ]);
           return {
             ...verified,
@@ -1406,25 +1604,32 @@ export function createCookbookHost(options: CookbookHostOptions) {
             await prepare(principal.tenantId!);
             const scope = new Set(bound?.scopes ?? []);
             const modelTools = (
-              pluginDelegated
+              pluginDelegated || binding
                 ? []
-                : await mcpModels({ ...principal, scopes: [...scope] }, !!binding)
+                : await mcpModels(
+                    { ...principal, scopes: [...scope] },
+                    !!binding,
+                  )
             ).filter(
               (t) =>
                 !binding ||
                 binding.turn.tools.some((v) => v.slug === t.tool.slug),
             );
             const recipeTools = await host.service.list({
-              surface: 'mcp',
+              surface: pluginDelegated || binding ? 'assistant' : 'mcp',
               tenantId: principal.tenantId,
               userId: principal.id,
             });
             const specs = [
-              ...(pluginDelegated
-                ? manifest(principal.tenantId!)
+              ...(pluginDelegated || binding
+                ? (
+                    await manifest(principal.tenantId!, principal.id!, [
+                      ...scope,
+                    ])
+                  )
                     .filter((tool) => scope.has(tool.slug))
                     .map((tool) => ({
-                      name: wireName(tool.slug),
+                      name: tool.functionName!,
                       slug: tool.slug,
                       ai: manifestToolToAITool(tool, principal.tenantId),
                       model: tool,
@@ -1518,7 +1723,12 @@ export function createCookbookHost(options: CookbookHostOptions) {
                       tool: spec.slug,
                       callId: randomUUID(),
                       args,
-                      summary: describeAssistantTool(spec.slug, args),
+                      summary: describeAssistantTool(
+                        tool.functionName
+                          ? `${tool.functionName.slice(0, -(wireName(tool.action).length + 1))}.${tool.action}`
+                          : spec.slug,
+                        args,
+                      ),
                       context: binding?.turn.thread
                         ? {
                             principal: binding.context.principal,
@@ -1533,7 +1743,9 @@ export function createCookbookHost(options: CookbookHostOptions) {
                             ],
                             driver: 'external',
                           }
-                        : {},
+                        : pluginDelegated
+                          ? { pluginMode: true }
+                          : {},
                     };
                     const hold = await host.continuations.capture(
                       {
@@ -1647,7 +1859,11 @@ export function createCookbookHost(options: CookbookHostOptions) {
               };
             });
             if (
-              !binding &&
+              (!pluginDelegated || scope.has('app.approvals')) &&
+              (!binding ||
+                binding.turn.extraTools.some(
+                  (tool) => tool.slug === 'app.approvals',
+                )) &&
               (
                 await host.authority.list(
                   { id: principal.id!, tenantId: principal.tenantId! },
@@ -1672,18 +1888,7 @@ export function createCookbookHost(options: CookbookHostOptions) {
                 execute: async ({ arguments: args, principal: caller }) => {
                   if (!caller?.id || !caller.tenantId)
                     throw new Error('Authentication required');
-                  const record = await host.continuations.outcome(
-                    { id: caller.id, tenantId: caller.tenantId },
-                    String(args.id),
-                  );
-                  if (!caller.scopes?.includes(record.tool))
-                    throw new Error('Approval outcome scope required');
-                  const result = {
-                    id: record.id,
-                    status: record.status,
-                    summary: record.summary,
-                    result: record.result ?? null,
-                  };
+                  const result = await approvalOutcome(caller, String(args.id));
                   return {
                     content: [{ type: 'text', text: JSON.stringify(result) }],
                     structuredContent: result,

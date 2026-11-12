@@ -17,7 +17,7 @@ import { pathToFileURL } from 'node:url';
 import { defaultWriterLease } from '@happyvertical/smrt-app-runtime/sveltekit';
 import { readAssistantTurnStream } from '@happyvertical/smrt-chat/assistant-turn';
 import { resolveApplicationRuntime } from '@happyvertical/smrt-config';
-import { ObjectRegistry } from '@happyvertical/smrt-core';
+import { ObjectRegistry, toSnakeCase } from '@happyvertical/smrt-core';
 import { generateActivationRegistration } from '@happyvertical/smrt-core/activation/generate';
 import { BUNDLED_COOKBOOK_TEMPLATES } from '@happyvertical/smrt-core/cookbook/tools';
 import {
@@ -26,7 +26,7 @@ import {
 } from '@happyvertical/smrt-core/manifest';
 import { generateSvelteKitRoutes } from '@happyvertical/smrt-core/vite-plugin';
 import type { Profile } from '@happyvertical/smrt-profiles';
-import { catalogFromManifests } from '@happyvertical/smrt-svelte/cookbook/server';
+import { catalogFromManifests, buildCookbookShell } from '@happyvertical/smrt-svelte/cookbook/server';
 import { disableTenancy, withTenant } from '@happyvertical/smrt-tenancy';
 import type { RequestEvent } from '@sveltejs/kit';
 import { build } from 'esbuild';
@@ -203,6 +203,7 @@ import {${name} as Base} from '@happyvertical/smrt-${pkg}';
   const customerModule = registration.manifest.models[`${APP}:Customer`].module;
   let toolCalls = 0;
   let creatingMember = false;
+  let memberCreateName = '';
   const errors: unknown[] = [];
   host = createCookbookApplication({
     root,
@@ -251,7 +252,7 @@ import {${name} as Base} from '@happyvertical/smrt-${pkg}';
             expect(
               options?.tools?.some(
                 (t: { function: { name: string } }) =>
-                  t.function.name === 'customers-create',
+                  t.function.name === memberCreateName,
               ),
             ).toBe(true);
             return {
@@ -262,7 +263,7 @@ import {${name} as Base} from '@happyvertical/smrt-${pkg}';
                   id: randomUUID(),
                   type: 'function',
                   function: {
-                    name: 'customers-create',
+                    name: memberCreateName,
                     arguments: JSON.stringify({
                       name: 'Assistant Ada',
                       email: 'assistant@example.test',
@@ -388,6 +389,11 @@ import {${name} as Base} from '@happyvertical/smrt-${pkg}';
   );
   expect(thread.status, await thread.clone().text()).toBe(201);
   const id = (await thread.json()).thread.id;
+  const shell = buildCookbookShell(await host!.cookbookApp(owner.tenantId));
+  const memberEntry = [...shell.entries.values()].find(entry =>
+    ObjectRegistry.getClass(entry.model.id)?.qualifiedName === ObjectRegistry.getClass('@fixture/onboard:Customer')?.qualifiedName)!;
+  expect(memberEntry).toBeTruthy();
+  memberCreateName = `${toSnakeCase(memberEntry.label).replace(/[^a-z0-9_]/g, '_')}_create`;
   creatingMember = true;
   const turn = await request(
     `/api/assistant/threads/${id}/messages`,

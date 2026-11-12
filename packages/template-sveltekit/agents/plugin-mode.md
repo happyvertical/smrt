@@ -31,8 +31,11 @@ MCP plugin projection reuses `manifestToolToAITool` and `invokeManifestTool` for
 exact assistant schema/operation parity. Wire aliases use the existing snake-case
 converter. Ordinary operation-scoped MCP tokens keep their generated MCP surface
 and package restrictions. Plugin delegation is explicit consent to the in-app
-assistant surface, not a widening of ordinary MCP tokens. Outcome reads are the
-one lifecycle tool added when the owner has a hold.
+assistant surface, not a widening of ordinary MCP tokens. The existing outcome reader is also a principal-bound assistant extra tool,
+`app.approvals` / `owner_approval_outcome`, when this requester has a hold. Both
+transports call the same continuation reader, rechecking the original tool scope.
+`PluginModeState.tools` exposes the actual assistant definitions and source
+metadata to the signed-in local owner for parity inspection; no token is exposed.
 
 All destructive model calls use the existing continuation authority. Native
 recipe/app tools retain executor consumption. The owner-assigned credential label
@@ -104,3 +107,46 @@ ConnectAi composition pattern; no existing component managed app MCP clients.
 Product `/api/plugin-mode/+server.ts` is only a mount. `cookbookPluginMode.test.ts` reuses
 runtime owner/session/SQLite, existing host fixture patterns, and SDK Client/
 StdioClientTransport; its two noun models are test-only fixtures, not app models.
+
+
+## Integration rebase
+
+Rebased on `b018dca6a544e572c10a9541b290eff0110fa875`. Keep the integration
+CLI continuation capture for thread and non-thread model holds; the plugin
+adds its trusted client label and an internal projection marker to that binding.
+It does not restore the old direct-authority thread branch. Scope opt-in still
+uses original issued metadata; per-turn CLI tokens still use their actual offered
+canonical operation intersection. Structured results and synchronous hold
+publication remain intact. Onboarding alone can supply `initialSetup`; plugin
+template apply retains its normal owner hold.
+
+The three-launcher fixture compares every name, description and schema to the
+shared catalog and captures a real in-app fake-model turn, including after the
+outcome reader appears. It enables a recipe that was already an active hidden
+prerequisite, checks list_changed, publishes a linked custom list through MCP,
+and uses the existing screen reference adapter to find/read the named target
+through the authenticated REST path. Same-name app replacement, STI creation
+and inline contact projection are additionally checked in the real packaged app
+and retained host/onboarding fixtures. The explicit Profile STI control now
+places that list deliberately; default prerequisites stay hidden.
+
+Codex plugin configuration/SDK transport success is not in-app engine readiness.
+Native Codex 0.162.1 remains refused by inference's preflight policy; no code-host
+flag, sandbox policy, model or billing fallback is changed. Product Settings
+keeps the integration's shared PrebuiltComponentsSettings composition.
+
+Reuse repeated MCP project reviews/context plus intent-index and name/purpose
+searches for tool aliases, placements, summaries, native holds and scopes in
+UI/Svelte/chat/core and the owning packages. `functionName` extends chat's
+existing renderer/dispatch maps. The outcome tool moves the existing reader
+behind the existing PrincipalTool seam; no new store or approval executor.
+The reference case reuses createRecipeScreenReferences, screenReferenceTarget,
+screenRecordLabel and APIGenerator. No new production file was introduced by
+this follow-up. Generated lock/knowledge artifacts are regenerated, not merged.
+
+API-profile custom methods additionally reuse core's `resolveApiMethodExposure`
+with the effective model config. A permission-catalog method such as Customer's
+internal `getProfileId` must not become an app tool when its owning API include
+list excludes it. Standard principal-scoped CRUD and CLI's generated MCP policy
+remain unchanged. The real Customer assistant regression and packaged catalog
+assertion cover this boundary; there is no hand-written method-name blacklist.

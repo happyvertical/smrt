@@ -16,7 +16,7 @@ an output schema is declared. This preserves the existing recipe service result
 and its policy; it adds no execution or authorization path.
 
 Host TypeScript entry points compile from `host/` to `dist/host/`; smrt-vitest's
-workspace alias table maps all six public entry points back to their authored
+workspace alias table maps public TypeScript host entry points back to their authored
 sources. `host/InferenceSettingsPage.svelte` is a runtime component with an
 effective `svelte` export condition. Only copied scaffold files under
 `./template/*` are classified as `smrt.resourceExports`; runtime components must

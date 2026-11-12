@@ -108,7 +108,7 @@ const catalog = {
   ],
   models: [
     { id: CUSTOMER, name: 'Customer', packageId: 'commerce' },
-    { id: PROFILE, name: 'Profile', packageId: 'profiles' },
+    { id: PROFILE, name: 'Profile', packageId: 'profiles', exposed: true },
     { id: MEMO, name: 'HostMemo', packageId: 'host' },
     ...COLLISIONS.map((id) => ({
       id,
@@ -605,7 +605,7 @@ describe('local cookbook host composition (SQLite, fake model, no providers)', (
     response = () => {
       throw new Error('An API fallback is forbidden');
     };
-    const seen = await turn(await thread(), `tool ${name} {}`);
+    const seen = await turn(await thread(), `tool members_read {}`);
     expect(
       seen.some((e) => e.type === 'error'),
       JSON.stringify({ errors, seen }),
@@ -632,7 +632,7 @@ describe('local cookbook host composition (SQLite, fake model, no providers)', (
 
     const liveTools = seenCatalogs[0];
     expect(liveTools.some((t) => /profile/.test(t.name))).toBe(false);
-    const create = liveTools.find((t) => /customer_create$/.test(t.name))!;
+    const create = liveTools.find((t) => /^members_create$/.test(t.name))!;
     expect(create).toHaveProperty(
       'description',
       expect.stringContaining('Members'),
@@ -640,7 +640,9 @@ describe('local cookbook host composition (SQLite, fake model, no providers)', (
     expect(Object.keys(create.inputSchema.properties)).toEqual(
       expect.arrayContaining(['name', 'email', 'phone']),
     );
-    expect(liveTools.some((t) => /customer_delete$/.test(t.name))).toBe(false);
+    expect(
+      liveTools.some((t) => /(?:customer|members)_delete$/.test(t.name)),
+    ).toBe(false);
     const introduction = await request(event('/'), async (e) =>
       json(await host.load(e)),
     );
@@ -671,7 +673,7 @@ describe('local cookbook host composition (SQLite, fake model, no providers)', (
       return record;
     });
     const deleteName = liveTools.find((t) =>
-      /hostmemo_delete$/.test(t.name),
+      /^memos_delete$/.test(t.name),
     )!.name;
     const threadId = await thread();
     const running = turn(
@@ -1454,17 +1456,38 @@ describe('local cookbook host composition (SQLite, fake model, no providers)', (
   it.each([
     undefined,
     '@fixture/host:Profile',
-  ])('a stub assistant creates a Customer linked to its effective Profile using createType %s, never a Bot', async (createType) => {
+  ])('an explicitly placed Profile list lets a stub assistant create a Customer linked to its effective Profile using createType %s, never a Bot', async (createType) => {
+    const state = await createCookbookHostState(db, catalog, cookbook);
+    await state.refresh(tenantId);
+    const before = state.engineFor({ tenantId })!.state();
+    const after = structuredClone(before);
+    after.cookbook.features.push(PROFILE);
+    after.cookbook.layout = {
+      version: 1,
+      items: { 'item:profiles:Profile': { label: 'People' } },
+    };
+    after.revision++;
+    await state.commit({
+      context: { tenantId, userId: owner.id, surface: 'assistant' },
+      before,
+      after,
+      audit: {
+        context: { tenantId, userId: owner.id, surface: 'assistant' },
+        tool: 'app.describe',
+        outcome: 'changed',
+        summary: 'Explicitly place Profiles for the STI dispatcher control',
+      },
+    });
     let round = 0;
     let profileId = '';
     response = (messages, options) => {
       expect(
-        options.tools?.some((t) => t.function.name === 'customers-read'),
+        options.tools?.some((t) => t.function.name === 'customers_read'),
       ).toBe(true);
       round += 1;
-      if (round === 1) return tool('customers-read', {});
+      if (round === 1) return tool('customers_read', {});
       if (round === 2)
-        return tool('profiles-create', {
+        return tool('people_create', {
           name: 'Ada Customer',
           typeId: profileTypeId,
           ...(createType ? { createType } : {}),
@@ -1473,7 +1496,7 @@ describe('local cookbook host composition (SQLite, fake model, no providers)', (
         profileId = JSON.parse(
           messages.filter((m) => m.role === 'tool').at(-1)!.content,
         ).id;
-        return tool('customers-create', { profileId });
+        return tool('customers_create', { profileId });
       }
       return text();
     };
@@ -1504,11 +1527,48 @@ describe('local cookbook host composition (SQLite, fake model, no providers)', (
     expect(ObjectRegistry.getClass(PROFILE)?.constructor).toBe(Profile);
   });
 
+  it('offers cookbook list vocabulary and excludes unpublished identity helpers from a real assistant turn', async () => {
+    const state = await createCookbookHostState(db, catalog, cookbook);
+    await state.refresh(tenantId);
+    const before = state.engineFor({ tenantId })!.state();
+    const after = structuredClone(before);
+    after.revision++;
+    after.cookbook.layout = {
+      version: 1,
+      items: { 'item:commerce:Customer': { label: 'Members' } },
+    };
+    await state.commit({
+      context: { tenantId, userId: owner.id, surface: 'assistant' },
+      before,
+      after,
+      audit: {
+        context: { tenantId, userId: owner.id, surface: 'assistant' },
+        tool: 'recipes.configure',
+        outcome: 'changed',
+        summary: 'Name the customer list Members',
+      },
+    });
+    response = (_messages, options) => {
+      const names = options.tools?.map((tool) => tool.function.name) ?? [];
+      expect(names).toEqual(
+        expect.arrayContaining(['members_read', 'members_create']),
+      );
+      expect(names).not.toContain('members_get_profile_id');
+      expect(names.some((name) => /customer|profile/.test(name))).toBe(false);
+      return text();
+    };
+    const seen = await turn(await thread(), 'Inspect the member tools');
+    expect(
+      seen.some((event) => event.type === 'error'),
+      JSON.stringify(errors),
+    ).toBe(false);
+  });
+
   it('assistant creates a named member in one ordinary Customer create call', async () => {
     let round = 0;
-    response = (_messages, options) => {
+    response = (messages, options) => {
       const create = options.tools?.find(
-        (t) => t.function.name === 'customers-create',
+        (t) => t.function.name === 'customers_create',
       );
       expect(
         (
@@ -1518,13 +1578,34 @@ describe('local cookbook host composition (SQLite, fake model, no providers)', (
         )?.parameters?.properties,
       ).toHaveProperty('name');
       round++;
-      return round === 1
-        ? tool('customers-create', {
+      if (round === 1)
+        return tool('customers_create', {
+          name: 'Typed Member',
+          email: 'typed@example.test',
+          phone: '555-0100',
+        });
+      const observed = JSON.parse(
+        messages.filter((message) => message.role === 'tool').at(-1)!.content,
+      );
+      if (round === 2) return tool('customers_read', { id: observed.id });
+      if (round === 3) {
+        expect(observed).toMatchObject({
+          name: 'Typed Member',
+          email: 'typed@example.test',
+          phone: '555-0100',
+        });
+        return tool('customers_read', {});
+      }
+      expect(observed).toEqual(
+        expect.arrayContaining([
+          expect.objectContaining({
             name: 'Typed Member',
             email: 'typed@example.test',
             phone: '555-0100',
-          })
-        : text();
+          }),
+        ]),
+      );
+      return text();
     };
     const events = await turn(await thread(), 'Add Typed Member');
     expect(
@@ -1666,7 +1747,7 @@ describe('local cookbook host composition (SQLite, fake model, no providers)', (
     let round = 0;
     response = () =>
       ++round === 1
-        ? tool('host_memos-delete', { id: memo.id, approved: true })
+        ? tool('memos_delete', { id: memo.id, approved: true })
         : text();
     const seen = await turn(await thread(), 'Delete this memo');
     const hold = seen.find((e) => e.type === 'approval_needed');
