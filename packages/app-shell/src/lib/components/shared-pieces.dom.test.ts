@@ -18,6 +18,63 @@ const target = () => {
 };
 
 describe('Tricia shared component adapters', () => {
+  it.each([
+    'welcome',
+    'settings',
+  ] as const)('keeps a signed-in but unusable CLI unselectable with its preflight reason in %s', async (variant) => {
+    vi.stubGlobal(
+      'fetch',
+      vi.fn(
+        async () =>
+          new Response(
+            JSON.stringify({
+              onboarding: null,
+              engine: 'claude-code',
+              apiReady: false,
+              chatgpt: { signedIn: false, signingIn: false },
+              tools: [
+                {
+                  tool: 'claude-code',
+                  label: 'Claude Code',
+                  installed: true,
+                  signedIn: true,
+                  ready: false,
+                  startError: 'cli_invocation',
+                  version: '3.1.0',
+                  login: 'idle',
+                  installUrl: 'https://code.claude.com/docs/en/setup',
+                },
+              ],
+            }),
+          ),
+      ),
+    );
+    const onchange = vi.fn();
+    component = mount(ConnectAi, {
+      target: target(),
+      props: { variant, onchange },
+    });
+    await vi.waitFor(() =>
+      expect(container.textContent).toContain(
+        'Installed, but not usable in this app.',
+      ),
+    );
+    expect(container.querySelector('[role="alert"]')?.textContent).toContain(
+      'does not accept the required secure options',
+    );
+    expect(container.textContent).not.toContain('Ready in this app');
+    expect(
+      [...container.querySelectorAll('button')].some(
+        (button) => button.textContent?.trim() === 'Use Claude Code',
+      ),
+    ).toBe(false);
+    expect(container.textContent).toContain('Check again');
+    expect(onchange).toHaveBeenLastCalledWith(
+      expect.objectContaining({ engine: 'claude-code' }),
+      false,
+    );
+  });
+
   it('renders the shared approval card with the full builder preview and original decision callback', async () => {
     const ondecide = vi.fn();
     component = mount(ApprovalCard, {
@@ -80,6 +137,7 @@ describe('Tricia shared component adapters', () => {
                 label: 'Claude Code',
                 installed: true,
                 signedIn: true,
+                ready: true,
                 version: '3.1.0',
                 login: 'idle',
                 installUrl: 'https://code.claude.com/docs/en/setup',
@@ -89,6 +147,7 @@ describe('Tricia shared component adapters', () => {
                 label: 'Codex',
                 installed: true,
                 signedIn: true,
+                ready: true,
                 login: 'idle',
                 installUrl: 'https://developers.openai.com/codex/cli',
               },
@@ -104,7 +163,7 @@ describe('Tricia shared component adapters', () => {
     });
     await vi.waitFor(() =>
       expect(container.textContent).toContain(
-        'Installed and signed in, version 3.1.0.',
+        'Ready in this app, version 3.1.0.',
       ),
     );
     expect(

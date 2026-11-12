@@ -3,20 +3,13 @@
 // handled here; "connect" asks the server to use the CLI already on this
 // computer (see lib/server/agent-cli/tools.ts for the rule).
 
+import type { ConnectAiState } from '@happyvertical/smrt-svelte/connect-ai';
 import type { AssistantEngineId } from '../assistant/events.ts';
 import { targetPath } from './target.ts';
 
-export interface ToolInfo {
-  tool: 'claude-code' | 'codex';
+export type ToolInfo = ConnectAiState['tools'][number] & {
   label: string;
-  installed: boolean;
-  version?: string;
-  /** `null`: the tool did not answer. */
-  signedIn: boolean | null;
-  ready?: boolean;
-  installUrl: string;
-  login: 'idle' | 'running' | 'finished' | 'failed';
-}
+};
 
 /** Sign in with ChatGPT, as the server reports it. Never a token. */
 export interface ChatGPTInfo {

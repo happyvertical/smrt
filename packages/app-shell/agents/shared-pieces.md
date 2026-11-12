@@ -30,6 +30,24 @@ No parallel parser or tool-label implementation is introduced.
 
 ## Compatibility gaps closed
 
+Onboarding GET delegates readiness to `mountConnectAiRoutes.GET`, backed by
+inference's `createAgentCliService` and locked-command preflight, like the
+cookbook host. Tricia adds its onboarding preference and safe version/account
+presentation; those fields never decide readiness. Its browser `ToolInfo` reuses
+the shared ConnectAiState tool shape rather than maintaining a reduced copy.
+Only successful preflight says Ready in this app (with the version when known).
+A signed-in CLI that cannot start remains unselectable with its fixed reason.
+The real fixture-backed route test verifies ready → broken locked command,
+GET/configuration/status refusal, no path disclosure and no billing fallback.
+Both mounted Tricia variants cover the refused state; the existing composer
+selection/sign-out/saved-key flow is retained. Positive DOM snapshots model the
+server's explicit preflight success instead of implying ready from sign-in.
+
+Reuse for this correction: MCP project reviews of app-shell, smrt-svelte and
+template, the intent index, and name/purpose searches found the existing shared
+status handler, inference CLI service, DTO and translated status messages. No new
+component, helper, model, type definition or route file was added.
+
 - Tool words: generic `_list`/`_search`/`_get` results stay "Checked records";
   arbitrary safe saved summary text remains readable. Both are chat options.
 - Durable holds: Tricia has no expiry. Runtime's explicit `nonExpiring` option

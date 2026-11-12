@@ -180,6 +180,55 @@ describe('connecting a local CLI', () => {
     expect((await get()).body.engine).toBe('codex');
   });
 
+  it('projects shared preflight readiness and refuses a signed-in CLI whose locked command cannot start', async () => {
+    installFakeCli(bin, 'claude-code', { version: '3.1.0' });
+    writeFileSync(join(home, 'signed-in'), '');
+    expect((await post('engine', { engine: 'claude-code' })).status).toBe(200);
+    const state = await get(h.owner, '?fresh=1');
+    expect(state.body).toMatchObject({
+      engine: 'claude-code',
+      configured: true,
+      tools: expect.arrayContaining([
+        expect.objectContaining({
+          tool: 'claude-code',
+          installed: true,
+          signedIn: true,
+          ready: true,
+          version: '3.1.0',
+        }),
+      ]),
+    });
+
+    installFakeCli(bin, 'claude-code', { brokenHelp: true });
+    invalidateCliStatus();
+    const refused = await get(h.owner, '?fresh=1');
+    expect(refused.body).toMatchObject({
+      engine: 'claude-code',
+      configured: false,
+      tools: expect.arrayContaining([
+        expect.objectContaining({
+          tool: 'claude-code',
+          installed: true,
+          signedIn: true,
+          ready: false,
+          startError: 'cli_invocation',
+        }),
+      ]),
+    });
+    expect((await post('connect', { tool: 'claude-code' })).status).toBe(409);
+    expect((await post('engine', { engine: 'claude-code' })).status).toBe(409);
+    const status = await mountAssistantRoutes().status(
+      event(h.owner, 'GET', '/api/assistant/status'),
+    );
+    expect(await status.json()).toMatchObject({
+      configured: false,
+      code: 'agent_cli_startup',
+      startError: 'cli_invocation',
+    });
+    expect(JSON.stringify(refused.body)).not.toContain(bin);
+    expect(JSON.stringify(refused.body)).not.toContain(home);
+  });
+
   it('rejects an unknown tool', async () => {
     expect((await post('connect', { tool: 'rm -rf' })).status).toBe(400);
   });

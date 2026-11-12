@@ -64,6 +64,7 @@ it('refreshes the open composer after engine selection, ChatGPT sign-out and a s
                   label: 'Claude Code',
                   installed: true,
                   signedIn: true,
+                  ready: true,
                   login: 'idle',
                 },
               ],

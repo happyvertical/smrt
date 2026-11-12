@@ -1,3 +1,4 @@
+import type { ConnectAiState } from '@happyvertical/smrt-svelte/connect-ai';
 import { mountConnectAiRoutes } from '@happyvertical/smrt-svelte/connect-ai/server';
 // First-run onboarding and the assistant's engine choice, as owner-only JSON
 // handlers (the route files under `src/routes/api/shell/onboarding/` are
@@ -143,22 +144,25 @@ export function mountOnboardingRoutes(
   return {
     state: guarded(async (event) => {
       const owner = await ownerOf(event);
-      const fresh = event.url.searchParams.get('fresh') === '1';
-      const login = agentLogin();
-      const [settings, tools, api, chatgpt] = await Promise.all([
+      // Use the same preflight-backed, secret-safe status projection as the
+      // cookbook host. Shell metadata supplements it, never decides readiness.
+      const response = await shared.GET(event);
+      if (!response.ok)
+        throw new HttpError(response.status, 'Could not check your AI.');
+      const state = (await response.json()) as ConnectAiState;
+      const [settings, tools, chatgpt] = await Promise.all([
         asSettingsOwner(owner, () => assistantSettings().read()),
-        allCliStatus({ fresh }),
-        assistantStatus(owner, options.config),
+        allCliStatus(), // shared.GET just refreshed this inference-owned cache.
         chatgptConnection().then((c) => c.status()),
       ]);
       return json({
+        ...state,
         onboarding: settings.onboarding,
-        engine: settings.engine,
-        apiReady: api.configured,
         chatgpt,
-        tools: tools.map((t) => ({
+        tools: state.tools.map((t) => ({
           ...t,
-          login: login.snapshot(t.tool).state,
+          label: AGENT_TOOL_INFO[t.tool].label,
+          version: tools.find((found) => found.tool === t.tool)?.version,
         })),
       });
     }),

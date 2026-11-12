@@ -27,7 +27,7 @@ import {
 } from '@happyvertical/smrt-inference/server';
 export const cliEngineStatus = (
   tool: AgentTool,
-  found: Pick<AgentCliStatus, 'installed' | 'signedIn'>,
+  found: Parameters<typeof cliStatusView>[1],
 ): AssistantStatus => cliStatusView(tool, found, SETUP_ACTION);
 export const chatgptEngineStatus = async (): Promise<AssistantStatus> =>
   chatgptStatusView(await chatgptConnection(), {
