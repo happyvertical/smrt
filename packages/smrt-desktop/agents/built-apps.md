@@ -118,3 +118,12 @@ separate component/recipe/intent search tools. Extended existing build-desktop-a
 launch-smoke, bundler config/measurement and Rust supervisor modules. No new
 production component, model, route, helper file or tool implementation was added.
 Product orchestration delegates to these existing framework scripts.
+
+Plugin-mode hosts retain app-cli and smrt-desktop as production dependencies and
+use the bundled bridge. `runLauncher({credentialPath})` reads the existing private
+CLI config, verifies its token/scopes against the same installation and never
+issues a replacement credential. Revoking in Settings therefore survives the
+next client launch. The config must be a bounded regular private user-owned file;
+POSIX symlinks are refused. The default launcher without credentialPath retains
+its existing holder-rotation contract. Node/bridge containment, origin discovery,
+health probing, environment-only credential handoff and redaction are unchanged.
