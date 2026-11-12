@@ -1,3 +1,4 @@
+import { spawn, spawnSync } from 'node:child_process';
 import { generateKeyPairSync, type KeyObject, sign } from 'node:crypto';
 import {
   chmod,
@@ -484,6 +485,327 @@ describe('DeviceEntitlementCache', () => {
     });
   });
 
+  it('persists expired observation across restarts and rejects clock rollback', async () => {
+    const envelope = issue({ expiresAt: NOW + HOUR });
+    await cache().install(envelope);
+    clock = NOW + 2 * HOUR;
+    expect(await cache().status()).toMatchObject({
+      ...LOCAL,
+      state: 'expired',
+      issuedAt: NOW - HOUR,
+      expiresAt: NOW + HOUR,
+      graceEndsAt: NOW + HOUR,
+    });
+    clock = NOW;
+    expect(await cache().status()).toMatchObject({
+      ...LOCAL,
+      state: 'expired',
+    });
+    expect(await cache().grantSource().getGrants('t1')).toBeNull();
+    expect(await cache().install(envelope)).toMatchObject({
+      accepted: false,
+      reason: 'expired',
+    });
+    clock = NOW + 2 * HOUR;
+    expect((await cache({ gracePeriodMs: DAY }).status()).state).toBe('grace');
+  });
+
+  it('keeps ordinary parallel status and grant reads entitled on one cache', async () => {
+    const instance = cache();
+    await instance.install(issue());
+    const statuses = await Promise.all(
+      Array.from({ length: 8 }, () => instance.status()),
+    );
+    expect(statuses.every((status) => status.tier === 'entitled')).toBe(true);
+    const grants = await Promise.all(
+      Array.from({ length: 8 }, () => instance.grantSource().getGrants('t1')),
+    );
+    expect(
+      grants.every((grant) =>
+        grant?.featureKeys.includes(FEATURE_SYNC_DEVICES),
+      ),
+    ).toBe(true);
+  });
+
+  it('enforces an expired observation in a new process without leaking untrusted dates', async () => {
+    await cache().install(issue({ expiresAt: NOW + HOUR }));
+    clock = NOW + 2 * HOUR;
+    expect((await cache().status()).state).toBe('expired');
+    const script = `
+      const { DeviceEntitlementCache } = await import(${JSON.stringify(new URL('./device-entitlements.ts', import.meta.url).href)});
+      const options = JSON.parse(process.argv[1]);
+      const cache = new DeviceEntitlementCache({ ...options, now: () => ${NOW} });
+      process.stdout.write(JSON.stringify(await cache.status()));
+    `;
+    const result = spawnSync(
+      process.execPath,
+      [
+        '--import',
+        'tsx',
+        '--input-type=module',
+        '-e',
+        script,
+        JSON.stringify({
+          filePath: file,
+          accountId: ACCOUNT,
+          deviceId: DEVICE,
+          trustedKeys: {
+            [KEY_ID]: issuer.publicKey.export({ type: 'spki', format: 'pem' }),
+          },
+        }),
+      ],
+      { encoding: 'utf8', timeout: 10_000 },
+    );
+    expect(result.status, result.stderr).toBe(0);
+    expect(JSON.parse(result.stdout)).toMatchObject({
+      ...LOCAL,
+      state: 'expired',
+      issuedAt: NOW - HOUR,
+      expiresAt: NOW + HOUR,
+    });
+    for (const envelope of [
+      issue({ accountId: 'other', expiresAt: NOW + HOUR }),
+      issue({ deviceId: 'other', expiresAt: NOW + HOUR }),
+      issue({ expiresAt: NOW + HOUR }, attacker.privateKey),
+    ]) {
+      await writeFile(file, JSON.stringify(envelope));
+      const status = await cache().status();
+      expect(status.tier).toBe('local');
+      expect(status.issuedAt).toBeUndefined();
+      expect(status.expiresAt).toBeUndefined();
+    }
+  });
+
+  it('upgrades a legacy watermark and preserves equal-time observations', async () => {
+    await cache().install(issue());
+    await writeFile(
+      `${file}.watermark`,
+      JSON.stringify({ version: 1, issuedAt: NOW - HOUR }),
+    );
+    expect((await cache().status()).tier).toBe('entitled');
+    expect((await cache().status()).tier).toBe('entitled');
+    expect(
+      JSON.parse(await readFile(`${file}.watermark`, 'utf8')),
+    ).toMatchObject({ issuedAt: NOW - HOUR, observedAt: NOW });
+    clock = NOW - 1;
+    expect((await cache({ gracePeriodMs: DAY }).status()).tier).toBe('local');
+  });
+
+  it.each([
+    null,
+    'yesterday',
+    1.5,
+  ])('fails closed on malformed observed time %s', async (observedAt) => {
+    await cache().install(issue());
+    await writeFile(
+      `${file}.watermark`,
+      JSON.stringify({ version: 1, issuedAt: NOW - HOUR, observedAt }),
+    );
+    expect(await cache().status()).toMatchObject({
+      ...LOCAL,
+      reason: 'unreadable',
+    });
+  });
+
+  it.each([
+    null,
+    'not-a-sha256-digest',
+    12,
+  ])('fails closed on malformed envelope digest %s', async (envelopeDigest) => {
+    await cache().install(issue());
+    const watermark = JSON.parse(await readFile(`${file}.watermark`, 'utf8'));
+    await writeFile(
+      `${file}.watermark`,
+      JSON.stringify({ ...watermark, envelopeDigest }),
+    );
+    expect(await cache().status()).toMatchObject({
+      ...LOCAL,
+      reason: 'unreadable',
+    });
+  });
+
+  it('keeps the replay floor when snapshot storage fails and permits retry', async () => {
+    const old = issue({ issuedAt: NOW - 2 * HOUR });
+    const newer = issue({ issuedAt: NOW - HOUR });
+    await cache().install(old);
+    await rm(file);
+    await mkdir(file);
+    expect(await cache().install(newer)).toMatchObject({
+      accepted: false,
+      reason: 'storage_failed',
+    });
+    expect(
+      JSON.parse(await readFile(`${file}.watermark`, 'utf8')),
+    ).toMatchObject({ issuedAt: NOW - HOUR, observedAt: NOW });
+    await rm(file, { recursive: true });
+    await writeFile(file, JSON.stringify(old));
+    expect((await cache().status()).reason).toBe('replayed');
+    expect((await cache().install(newer)).accepted).toBe(true);
+  });
+
+  it('reserves same-time identity across partial failure and permits only the exact retry', async () => {
+    await cache().install(issue({ issuedAt: NOW - 2 * HOUR }));
+    const newer = issue({ issuedAt: NOW - HOUR, featureKeys: [] });
+    await rm(file);
+    await mkdir(file);
+    expect(await cache().install(newer)).toMatchObject({
+      accepted: false,
+      reason: 'storage_failed',
+    });
+    await rm(file, { recursive: true });
+    await writeFile(file, JSON.stringify(issue({ issuedAt: NOW - 2 * HOUR })));
+    const conflicting = issue({ issuedAt: NOW - HOUR });
+    expect(await cache().install(conflicting)).toMatchObject({
+      accepted: false,
+      reason: 'replayed',
+    });
+    expect((await cache().install(newer)).accepted).toBe(true);
+    await writeFile(file, JSON.stringify(conflicting));
+    expect((await cache().status()).reason).toBe('replayed');
+  });
+
+  it('observes authenticated expired offers without accepting them or their issuance floor', async () => {
+    const expired = issue({ expiresAt: NOW + HOUR });
+    clock = NOW + 2 * HOUR;
+    expect(await cache().install(expired)).toMatchObject({
+      accepted: false,
+      reason: 'expired',
+    });
+    await expect(readFile(file)).rejects.toMatchObject({ code: 'ENOENT' });
+    expect(
+      JSON.parse(await readFile(`${file}.watermark`, 'utf8')),
+    ).toMatchObject({ issuedAt: Number.MIN_SAFE_INTEGER, observedAt: clock });
+    clock = NOW;
+    expect(await cache().install(expired)).toMatchObject({
+      accepted: false,
+      reason: 'expired',
+    });
+    clock = NOW + 2 * HOUR;
+    expect(
+      (await cache().install(issue({ issuedAt: NOW - 2 * HOUR }))).accepted,
+    ).toBe(true);
+  });
+
+  it('does not trust time from expired offers for another identity or signing key', async () => {
+    clock = NOW + 2 * HOUR;
+    for (const envelope of [
+      issue({ accountId: 'other', expiresAt: NOW + HOUR }),
+      issue({ deviceId: 'other', expiresAt: NOW + HOUR }),
+      issue({ expiresAt: NOW + HOUR }, attacker.privateKey),
+    ]) {
+      expect((await cache().install(envelope)).accepted).toBe(false);
+      await expect(readFile(`${file}.watermark`)).rejects.toMatchObject({
+        code: 'ENOENT',
+      });
+    }
+  });
+
+  it('does not replace the snapshot if watermark persistence fails', async () => {
+    await cache().install(issue());
+    const before = await readFile(file, 'utf8');
+    await rm(`${file}.watermark`);
+    await mkdir(`${file}.watermark`);
+    expect(await cache().install(issue({ issuedAt: NOW }))).toMatchObject({
+      accepted: false,
+      reason: 'storage_failed',
+    });
+    expect(await readFile(file, 'utf8')).toBe(before);
+    await rm(`${file}.watermark`, { recursive: true });
+    expect((await cache().install(issue({ issuedAt: NOW }))).accepted).toBe(
+      true,
+    );
+  });
+
+  it('serializes independent processes and keeps both watermarks monotonic on retry', async () => {
+    await cache().install(issue({ issuedAt: NOW - 3 * HOUR }));
+    const moduleUrl = new URL('./device-entitlements.ts', import.meta.url).href;
+    const script = `
+      import fs from 'node:fs/promises';
+      import { syncBuiltinESMExports } from 'node:module';
+      const original = fs.open;
+      let paused = false;
+      fs.open = async (...args) => {
+        const handle = await original(...args);
+        if (args[0] === process.argv[1] + '.watermark' && !paused) {
+          const read = handle.readFile.bind(handle);
+          handle.readFile = async (...options) => {
+            const text = await read(...options);
+            paused = true;
+            process.send('ready');
+            await new Promise(resolve => process.once('message', resolve));
+            return text;
+          };
+        }
+        return handle;
+      };
+      syncBuiltinESMExports();
+      const { DeviceEntitlementCache } = await import(${JSON.stringify(moduleUrl)});
+      const cache = new DeviceEntitlementCache({ ...JSON.parse(process.argv[2]), now: () => ${NOW + HOUR} });
+      process.send(await cache.install(JSON.parse(process.argv[3])));
+    `;
+    const child = spawn(
+      process.execPath,
+      [
+        '--import',
+        'tsx',
+        '--input-type=module',
+        '-e',
+        script,
+        file,
+        JSON.stringify({
+          filePath: file,
+          trustedKeys: {
+            [KEY_ID]: issuer.publicKey.export({ type: 'spki', format: 'pem' }),
+          },
+          accountId: ACCOUNT,
+          deviceId: DEVICE,
+        }),
+        JSON.stringify(issue({ issuedAt: NOW - 2 * HOUR })),
+      ],
+      { stdio: ['ignore', 'ignore', 'pipe', 'ipc'] },
+    );
+    // Independent process observes a deterministic clock later than the parent.
+    let errors = '';
+    child.stderr?.on('data', (chunk) => {
+      errors += chunk;
+    });
+    const message = () =>
+      new Promise<unknown>((resolve, reject) => {
+        child.once('message', resolve);
+        child.once('error', reject);
+        child.once('exit', (code) =>
+          reject(new Error(`child exited ${code}: ${errors}`)),
+        );
+      });
+    try {
+      expect(await message()).toBe('ready');
+      const newer = issue({ issuedAt: NOW - HOUR });
+      const competing = await cache().install(newer);
+      const done = message();
+      child.send('continue');
+      expect(await done).toMatchObject({ accepted: true });
+      const watermark = JSON.parse(await readFile(`${file}.watermark`, 'utf8'));
+      expect(watermark.issuedAt).toBeGreaterThanOrEqual(
+        competing.accepted ? NOW - HOUR : NOW - 2 * HOUR,
+      );
+      expect(watermark.observedAt).toBeGreaterThanOrEqual(NOW);
+      // The later observed time belongs to the child and cannot be lowered by the parent's clock.
+      expect((await cache().status()).tier).toBe('local');
+      clock = watermark.observedAt;
+      expect((await cache().install(newer)).accepted).toBe(true);
+      const final = JSON.parse(await readFile(`${file}.watermark`, 'utf8'));
+      expect(final.issuedAt).toBe(NOW - HOUR);
+      expect(final.observedAt).toBeGreaterThanOrEqual(watermark.observedAt);
+    } finally {
+      child.kill();
+      await new Promise<void>((resolve) =>
+        child.exitCode !== null || child.signalCode !== null
+          ? resolve()
+          : child.once('exit', () => resolve()),
+      );
+    }
+  }, 20_000);
+
   it('refuses snapshots for another account or device and keeps the old one', async () => {
     await cache().install(issue());
     for (const [overrides, reason] of [
@@ -554,6 +876,23 @@ describe('DeviceEntitlementCache', () => {
     const first = issue();
     expect((await cache().install(first)).accepted).toBe(true);
     expect((await cache().install(first)).accepted).toBe(true);
+    expect(
+      (
+        await cache().install(
+          JSON.stringify(
+            {
+              ignored: true,
+              signature: first.signature,
+              payload: first.payload,
+              keyId: first.keyId,
+              version: first.version,
+            },
+            null,
+            2,
+          ),
+        )
+      ).accepted,
+    ).toBe(true);
     const sibling = issue({ featureKeys: [] });
     expect(await cache().install(sibling)).toMatchObject({
       accepted: false,

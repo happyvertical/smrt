@@ -1207,11 +1207,29 @@ const status = await entitlements.status(); // { tier, state, reason?, featureKe
   after `expiresAt` for a device that cannot reach the host. The status is
   `state: 'grace'` with `graceEndsAt`. Clock skew is tolerated on `issuedAt`
   only; it never extends an expiry.
-- **Replay.** The newest accepted `issuedAt` is kept in `<filePath>.watermark`,
-  and both `install()` and `status()` compare against it. A user who deletes
-  or corrupts the watermark (or both files) or sets the clock back can reuse a
-  snapshot that has not expired; keep issued lifetimes short enough that this is
-  acceptable. A snapshot carries at most 64 keys of 128 characters.
+- **Replay and clock rollback.** `<filePath>.watermark` keeps the newest
+  accepted `issuedAt` and highest observed clock time (`observedAt`), including
+  observations after expiry and authenticated expired offers. Both `install()` and `status()` compare against
+  it; rolling the clock back before `observedAt` yields the Local tier
+  (`expired`), even during grace, until the clock catches up. Expired status
+  retains the authenticated `issuedAt`, `expiresAt`, and `graceEndsAt`.
+  Existing version-1 watermarks without `observedAt` acquire it on the next
+  authenticated read. The standalone `verifyDeviceEntitlementSnapshot()` checks
+  signature, identity and expiry only; use the cache for replay protection.
+- **Concurrency and persistence.** All cooperating processes must share the
+  private cache destination. `<filePath>.lock/operation.lock` uses the runtime's
+  existing operation lock and stale-owner recovery. Calls on one cache instance
+  queue; contention with another instance/process fails closed (`unreadable`
+  status or `storage_failed` install), so retry after the other operation ends.
+  The watermark is atomically replaced before the snapshot: a partial failure
+  may leave an older snapshot denied, and retrying the newer install repairs it.
+  A canonical signed-envelope digest reserves same-timestamp identity before
+  replacement, so a conflicting offer cannot take over after a partial failure.
+  Do not run older binaries that omit this lock against the same cache.
+  A user who deletes or corrupts the watermark (or both files) can still replay
+  a snapshot that has not expired; keep issued lifetimes short enough that this
+  is acceptable. These files do not protect against their owner's rewriting
+  the private directory. A snapshot carries at most 64 keys of 128 characters.
 - **Trust.** The cache file and its directory are not trusted; the key set is.
   Ship the public keys in the application, not in the data root.
 - **Identity inputs must be unforgeable.** `accountId` and `deviceId` are the
