@@ -199,7 +199,7 @@ export const minimalRowExpectedFailures: readonly MinimalRowExpectedFailure[] =
       model: '@happyvertical/smrt-messages:NotificationDelivery',
       field: 'recipientUserId',
       reason:
-        'Validation requires a typed recipient. The minimal row provides none; a populated recipientUserId advances through CRUD.',
+        'Validation requires exactly one typed recipient (user or profile). Neither column can be required alone, so the entry stays (#4935, P9). A populated recipientUserId advances through CRUD.',
       error:
         'Notification requires exactly one matching typed recipient and reserved protected email policy for profiles.',
     },
