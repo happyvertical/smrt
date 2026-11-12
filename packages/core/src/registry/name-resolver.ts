@@ -385,7 +385,7 @@ export function getClassByConstructor(
 ): RegisteredClass | undefined {
   const registeredName = getConstructorIndex().get(ctor);
   if (registeredName) {
-    return getClasses().get(registeredName) ?? findReplacement(registeredName);
+    return getClasses().get(registeredName);
   }
   return undefined;
 }

@@ -1769,7 +1769,7 @@ export class ObjectRegistry {
       }
     )._itemClass;
     const bound = itemConstructor
-      ? _getClassByConstructor(itemConstructor)
+      ? ObjectRegistry.getEffectiveClassByConstructor(itemConstructor)
       : undefined;
     if (bound) return bound;
     const itemName = resolveCollectionItemClassName(

@@ -722,9 +722,10 @@ describe('same-name app subclass', () => {
     expect(ObjectRegistry.getClass(`${UP}:Customer`)?.constructor).toBe(
       f.AppCustomer,
     );
-    expect(ObjectRegistry.getClassByConstructor(f.Customer)?.constructor).toBe(
-      f.AppCustomer,
-    );
+    expect(ObjectRegistry.getClassByConstructor(f.Customer)).toBeUndefined();
+    expect(
+      ObjectRegistry.getEffectiveClassByConstructor(f.Customer)?.constructor,
+    ).toBe(f.AppCustomer);
     expect(
       ObjectRegistry.getClassByQualifiedName('@fixture/a2-old:Customer')
         ?.constructor,

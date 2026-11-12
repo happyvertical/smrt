@@ -8,7 +8,11 @@
  */
 
 import { getInheritanceChain } from './inheritance-resolver';
-import { findClass, getClassByConstructor } from './name-resolver';
+import {
+  findClass,
+  getClassByConstructor,
+  getReplacementClassByConstructor,
+} from './name-resolver';
 import { getClasses } from './shared-state';
 import type {
   RegisteredClass,
@@ -26,6 +30,9 @@ function resolveTarget(
   if (typeof ctor === 'function') {
     const target =
       getClassByConstructor(ctor as import('./types').SmrtObjectConstructor) ??
+      getReplacementClassByConstructor(
+        ctor as import('./types').SmrtObjectConstructor,
+      ) ??
       [...classes.values()].find((entry) => entry.constructor === ctor);
     return target ? (target.qualifiedName ?? target.name) : null;
   }
