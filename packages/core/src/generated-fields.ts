@@ -4,7 +4,7 @@ import {
   ExpressionError,
   type ExpressionResultType,
   renderExpression,
-} from '@happyvertical/sql';
+} from '@happyvertical/sql/query';
 import type { FieldDefinition } from './scanner/types.js';
 import type { DatabaseEngine } from './schema/ddl/types.js';
 import { SmrtError } from './smrt-error.js';
