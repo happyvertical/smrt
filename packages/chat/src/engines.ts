@@ -280,6 +280,7 @@ export async function createChatGPTAssistantAI(
   }
 > {
   const safeFailure = (error: unknown): never => {
+    reportAgentFailure('chatgpt', 'driver', error);
     if (error instanceof ChatGPTSignedOutError)
       throw new InferenceUnavailableError({ reason: 'unconfigured' });
     if (error instanceof EngineModelFailure)

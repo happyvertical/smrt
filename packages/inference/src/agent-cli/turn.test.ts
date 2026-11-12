@@ -20,6 +20,22 @@ import {
 } from './turn.js';
 
 describe('safe correlated engine diagnostics', () => {
+  it('finds a provider code and UUID request id through a wrapped ChatGPT cause without copying metadata', () => {
+    const log = vi.spyOn(console, 'error').mockImplementation(() => {});
+    const requestId = '11430804-5762-4b66-b58d-0d1790cad86f';
+    const cause = Object.assign(
+      new Error('private account and secret response'),
+      { code: 'INVALID_RESPONSE', requestId, account: 'private account' },
+    );
+    reportAgentFailure('chatgpt', 'process', new Error('wrapper', { cause }));
+    expect(log).toHaveBeenCalledWith(
+      '[smrt-inference] local engine failure',
+      expect.objectContaining({ code: 'INVALID_RESPONSE', requestId }),
+    );
+    expect(JSON.stringify(log.mock.calls)).not.toMatch(
+      /private account|secret response|wrapper/,
+    );
+  });
   it('logs the cause class and code location once, with no exception message, cause or unsafe code', () => {
     const log = vi.spyOn(console, 'error').mockImplementation(() => {});
     const error = new TypeError('Bearer secret-test-token', {

@@ -605,3 +605,40 @@ describe('per-request inference adapters', () => {
     expect(api.chat).not.toHaveBeenCalled();
   });
 });
+
+it('reports a ChatGPT provider failure code and request id without its message or account', async () => {
+  const logged = vi.spyOn(console, 'error').mockImplementation(() => {});
+  try {
+    const failure = Object.assign(
+      new Error('secret-bearer owner@example.com'),
+      {
+        code: 'INVALID_RESPONSE',
+        requestId: 'req_s1_failure',
+      },
+    );
+    await expect(
+      createChatGPTAssistantAI({
+        connection: {
+          clientOptions: async () => {
+            throw failure;
+          },
+        },
+        toolNamespace: { name: 'app', description: 'App tools' },
+      }),
+    ).rejects.toMatchObject({ code: 'chatgpt_unavailable' });
+    expect(logged).toHaveBeenCalledWith(
+      '[smrt-inference] local engine failure',
+      expect.objectContaining({
+        tool: 'chatgpt',
+        code: 'INVALID_RESPONSE',
+        requestId: 'req_s1_failure',
+        reference: expect.any(String),
+      }),
+    );
+    expect(JSON.stringify(logged.mock.calls)).not.toMatch(
+      /secret-bearer|owner@example/,
+    );
+  } finally {
+    logged.mockRestore();
+  }
+});

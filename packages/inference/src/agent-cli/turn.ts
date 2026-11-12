@@ -177,11 +177,22 @@ const diagnosticCodes = new Set([
   'cli_invocation',
   'working_directory',
   'tool_host_policy',
+  'INVALID_RESPONSE',
+  'AUTH_ERROR',
+  'RATE_LIMIT',
+  'NETWORK_ERROR',
+  'TIMEOUT',
+  'chatgpt_signed_out',
+  'chatgpt_unavailable',
+  'chatgpt_usage_limit',
+  'chatgpt_session_revoked',
+  'chatgpt_workspace',
+  'chatgpt_unsupported',
 ]);
 
 /** Log only diagnostic structure, never a message, child output, arguments or credentials. */
 export function reportAgentFailure(
-  tool: AgentTool,
+  tool: AgentTool | 'chatgpt',
   phase:
     | 'binding'
     | 'process'
@@ -231,6 +242,37 @@ export function reportAgentFailure(
           })
           .slice(0, 6)
       : [];
+  // Inspect bounded own data fields through wrappers; never messages, account,
+  // arbitrary metadata or getters. The SDK's request id has an explicit shape.
+  let requestId: string | undefined;
+  let providerCode: string | undefined;
+  let causeValue = error;
+  try {
+    for (
+      let depth = 0;
+      depth < 4 && causeValue && typeof causeValue === 'object';
+      depth++
+    ) {
+      const descriptors = Object.getOwnPropertyDescriptors(causeValue);
+      const candidate = descriptors.requestId?.value;
+      if (
+        typeof candidate === 'string' &&
+        /^(?:req_[a-zA-Z0-9_-]{1,100}|[a-fA-F0-9]{8}(?:-[a-fA-F0-9]{4}){3}-[a-fA-F0-9]{12})$/.test(
+          candidate,
+        )
+      )
+        requestId = candidate;
+      const candidateCode = descriptors.code?.value;
+      if (
+        typeof candidateCode === 'string' &&
+        diagnosticCodes.has(candidateCode)
+      )
+        providerCode = candidateCode;
+      causeValue = descriptors.cause?.value;
+    }
+  } catch {
+    /* Opaque proxy wrappers must not replace the engine failure. */
+  }
   // Codes come from this module's fixed vocabulary, never arbitrary SDK fields.
   try {
     // biome-ignore lint/suspicious/noConsole: secret-free server diagnostic, correlated to the safe wire message
@@ -239,7 +281,10 @@ export function reportAgentFailure(
       tool,
       phase,
       cause,
-      code: code && diagnosticCodes.has(code) ? code : 'unexpected_failure',
+      code:
+        providerCode ??
+        (code && diagnosticCodes.has(code) ? code : 'unexpected_failure'),
+      ...(requestId ? { requestId } : {}),
       sites,
       ...(blocked
         ? {
